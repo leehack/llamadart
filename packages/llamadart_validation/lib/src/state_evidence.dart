@@ -36,6 +36,21 @@ bool? expectedStateCapability(
   return true;
 }
 
+/// Identity support is independent of persistence: Web can persist state while
+/// lacking the native build identity required by this public API.
+bool? expectedStateIdentityCapability(
+  ValidationProfile profile, {
+  required bool web,
+  required Map diagnostics,
+}) {
+  if (web) return false;
+  if (profile.runtime == 'litert') {
+    final name = diagnostics['backend_name'];
+    return name is String && name.startsWith('LiteRT-LM ') ? false : null;
+  }
+  return expectedStateCapability(profile, web: false, diagnostics: diagnostics);
+}
+
 bool _same(Object? left, Object? right) =>
     canonicalJson(left) == canonicalJson(right);
 bool _tokens(Object? value) =>
@@ -102,10 +117,27 @@ bool _valid(String id, Map<String, dynamic> record, ValidationProfile profile) {
         'P02.roundtrip',
         'P03.restore_reuse',
         'P04.invalid_recovery',
+        'P05.identity',
       ].contains(id) ||
       record['web'] is! bool ||
       record['diagnostics'] is! Map) {
     return false;
+  }
+  if (id == 'P05.identity' &&
+      expectedStateIdentityCapability(
+            profile,
+            web: record['web'] as bool,
+            diagnostics: record['diagnostics'] as Map,
+          ) ==
+          false) {
+    final recovery = record['recovery'];
+    return record['identity_rejection'] == 'LlamaUnsupportedException' &&
+        !record.containsKey('phases') &&
+        !record.containsKey('identity') &&
+        recovery is Map &&
+        recovery['stream_completed'] == true &&
+        recovery['content'] is String &&
+        (recovery['content'] as String).isNotEmpty;
   }
   final expected = expectedStateCapability(
     profile,
@@ -133,7 +165,7 @@ bool _valid(String id, Map<String, dynamic> record, ValidationProfile profile) {
   final phases = record['phases'];
   final roles = [
     'source',
-    if (id == 'P02.roundtrip')
+    if (id == 'P02.roundtrip' || id == 'P05.identity')
       'roundtrip'
     else ...[
       'reference_full',
@@ -235,6 +267,22 @@ bool _valid(String id, Map<String, dynamic> record, ValidationProfile profile) {
       row['snapshot_sha256'] == artifact['sha256'] &&
       _same(row['loaded_tokens'], tokens);
   if (id == 'P02.roundtrip') return loaded(phases[1] as Map);
+  if (id == 'P05.identity') {
+    final restoredPhase = phases[1] as Map;
+    bool validIdentity(Object? value) =>
+        value is Map &&
+        value['runtime_build'] is String &&
+        (value['runtime_build'] as String).trim().isNotEmpty &&
+        value['session_format_version'] == 11 &&
+        value['context_size'] == profile.contextSize &&
+        _digest(value['context_config_digest']);
+    return loaded(restoredPhase) &&
+        validIdentity(source['identity']) &&
+        validIdentity(restoredPhase['identity_before_load']) &&
+        validIdentity(restoredPhase['identity']) &&
+        _same(source['identity'], restoredPhase['identity_before_load']) &&
+        _same(source['identity'], restoredPhase['identity']);
+  }
   final fullReference = phases[1] as Map;
   final fullTokens = fullReference['tokens'];
   if (!_tokens(fullTokens) ||

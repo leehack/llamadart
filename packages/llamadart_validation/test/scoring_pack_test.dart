@@ -32,6 +32,10 @@ ValidationProfile profile([String id = 'scoring-gguf-cpu']) =>
 /// Deterministic softmax-shaped scores; [fault] breaks one public contract.
 class ScoringEngine extends harness.FakeEngine
     implements StateValidationEngine {
+  @override
+  Future<LlamaStateIdentity> stateIdentity() async =>
+      throw LlamaUnsupportedException('Identity outside this fake');
+
   String? fault;
   bool supported = true;
   Map<String, dynamic> diagnosticsValue = {...cpuDiagnostics};

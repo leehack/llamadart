@@ -155,12 +155,13 @@
         "P01.capability",
         "P02.roundtrip",
         "P03.restore_reuse",
-        "P04.invalid_recovery"
+        "P04.invalid_recovery",
+        "P05.identity"
       ],
       "profiles": [
         "assets/profiles/state-gguf-cpu.json"
       ],
-      "notes": "Catalog 11 binds the public KV persistence obligation. CPU Stories15M is the initial diagnostic profile; pack mapping is not qualification of another model, platform, sampler/RNG checkpoint or arbitrary cross-model rejection."
+      "notes": "Catalog 14 adds raw source/fresh-target identity to the bounded CPU Stories15M state profile. Mapping is contract coverage, not qualification of another model, platform, sampler/RNG checkpoint or exact continuation. Web persistence does not imply native build identity support."
     }
   ],
   "mappings": [
@@ -449,11 +450,7 @@
         "api:LlamaEngine.stateIdentity",
         "matrix:State identity (stateIdentity)"
       ],
-      "exemption": {
-        "id": "state-identity",
-        "reason": "Catalog 11 state cases do not report the identity yet; a versioned state-pack case follows catalog 12. Default CI covers the native report, digest fields, unsupported and pre-v0.7.0-3 runtimes, and a cross-process save, identity match, load and resume against fresh evaluation on the CPU test model. It does not qualify other models, devices or a matching identity as exact resumed output (#1003).",
-        "issue": "https://github.com/leehack/llamadart/issues/1196"
-      }
+      "pack": "state_persistence"
     },
     {
       "surfaces": [

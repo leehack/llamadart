@@ -30,8 +30,17 @@ void main() {
       'max_tokens': 1,
     });
     expect(PublicValidationEngine().isWeb, true);
+    expect(
+      expectedStateIdentityCapability(
+        profile,
+        web: true,
+        diagnostics: {'backend_name': 'WebGPU'},
+      ),
+      false,
+    );
     expect(profile.caseIds.where((id) => id.startsWith('P')), [
       'P01.capability',
+      'P05.identity',
     ]);
     expect(
       expectedStateCapability(
