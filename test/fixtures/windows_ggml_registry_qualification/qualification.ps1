@@ -67,7 +67,8 @@ function Export-BoundSource([string]$Revision,[string]$Name,[string]$Git,[string
   $tracked=@(Get-Content "$O/$Name-source-inventory.stdout.log")
   if($tracked.Count -eq 0){throw 'source inventory unavailable'}
   $archive="$S/$Name.tar"
-  Must "$Name-git-export" $Git "-C `"$Repository`" archive --format=tar --output=`"$archive`" $Revision" 180
+  # Archive honors checkout conversion; the manifest requires the stored blobs.
+  Must "$Name-git-export" $Git "-c core.autocrlf=false -c core.eol=lf -C `"$Repository`" archive --format=tar --output=`"$archive`" $Revision" 180
   $root="$S/$Name-source";New-Item -ItemType Directory $root | Out-Null
   Must "$Name-source-extract" "$env:WINDIR/System32/tar.exe" "-xf `"$archive`" -C `"$root`"" 180
   $manifest=@();$seen=@{}

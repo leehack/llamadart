@@ -31,7 +31,11 @@ $git=(Get-Command git).Source
 & $git -C $repo init -q
 & $git -C $repo config user.name Fixture
 & $git -C $repo config user.email fixture@example.invalid
-[IO.File]::WriteAllText("$repo/source.txt",'bound source bytes')
+[IO.File]::WriteAllText("$repo/.gitattributes","*.txt text`nliteral-crlf.txt -text`npayload.bin -text`n")
+[IO.File]::WriteAllText("$repo/source.txt","bound source bytes`nsecond line`n")
+[IO.File]::WriteAllText("$repo/literal-crlf.txt","literal CRLF bytes`r`nsecond line`r`n")
+[IO.File]::WriteAllBytes("$repo/payload.bin",[byte[]](0,255,13,10,10,128))
+& $git -C $repo config core.autocrlf false
 & $git -C $repo add .
 & $git -C $repo commit -qm fixture
 $head=(& $git -C $repo rev-parse HEAD).Trim()
@@ -43,7 +47,14 @@ function Must($name,$exe,$arguments,$seconds=180){
   & $originalMust $name $exe $arguments $seconds
   if($mutate -and $name -like '*-source-extract'){[IO.File]::AppendAllText("$S/wrong-source/source.txt",'corruption')}
 }
-Export-BoundSource $head 'good' $git $repo | Out-Null
+foreach($autocrlf in @('false','true')){
+  & $git -C $repo config core.autocrlf $autocrlf
+  & $git -C $repo config core.eol crlf
+  Export-BoundSource $head "good-$autocrlf" $git $repo | Out-Null
+  foreach($name in @('source.txt','literal-crlf.txt','payload.bin')){
+    if((Hash "$S/good-$autocrlf-source/$name") -cne (Hash "$repo/$name")){throw "source export changed literal bytes $autocrlf $name"}
+  }
+}
 Reject {Export-BoundSource ('0'*40) 'wrong-commit' $git $repo} 'wrong source commit'
 $mutate=$true
 Reject {Export-BoundSource $head 'wrong' $git $repo} 'wrong exported source bytes'
