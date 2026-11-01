@@ -52,12 +52,15 @@ def extract_artifact(archive, destination, digest):
     with zipfile.ZipFile(archive) as bundle:
         names = set()
         for item in bundle.infolist():
-            path = PurePosixPath(item.filename)
+            # ZipInfo.filename has already normalized Windows separators and
+            # truncated NULs, so validate the original ZIP header name.
+            name = item.orig_filename
+            path = PurePosixPath(name)
             if (str(path) in names or path.is_absolute()
-                    or '..' in path.parts or '\\' in item.filename
-                    or not path.parts or ':' in item.filename
-                    or str(path) != item.filename.rstrip('/')
-                    or re.search(r'[\x00-\x1f\x7f]', item.filename)
+                    or '..' in path.parts or '\\' in name
+                    or not path.parts or ':' in name
+                    or str(path) != name.rstrip('/')
+                    or re.search(r'[\x00-\x1f\x7f]', name)
                     or stat.S_ISLNK(item.external_attr >> 16)):
                 raise ValueError('Unsafe or duplicate artifact archive entry')
             names.add(str(path))
