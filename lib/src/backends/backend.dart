@@ -309,10 +309,11 @@ abstract class BackendDartLogLevel {
 abstract class BackendRuntimeDiagnostics {
   /// Returns resolved GPU layers used for the active model load.
   ///
-  /// This value reflects the final layer count passed to native model load
-  /// after backend policy/fallback decisions, or 0 when no GPU can take them:
-  /// the registry holds no GPU device and the load lists none. A load that
-  /// lists a device, such as BLAS, keeps its layers.
+  /// Meaning is backend-specific. For llama.cpp this is the final layer count
+  /// after device selection and fallback, including 0 for forced CPU fallback;
+  /// mainGpu and per-device layer allocation determine where offload occurs.
+  /// LiteRT-LM reports 0 for CPU and the requested maximum for other backends,
+  /// rather than a measured per-device allocation.
   Future<int?> getResolvedGpuLayers();
 }
 

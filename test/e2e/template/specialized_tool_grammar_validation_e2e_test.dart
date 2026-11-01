@@ -1921,6 +1921,56 @@ void main() {
   });
 
   test(
+    'LFM2 auto force-json grammar enforces parallel bounds through render',
+    () {
+      const template =
+          'List of tools: <|tool_list_start|>[{"name":"x"}]<|tool_list_end|>'
+          '{% for message in messages %}{{ message["content"] }}{% endfor %}';
+      const one =
+          '<|tool_call_start|>[{"name": "weather", '
+          '"arguments": {"city": "Seoul"}}]<|tool_call_end|>';
+      const two =
+          '<|tool_call_start|>[{"name": "weather", '
+          '"arguments": {"city": "Seoul"}}, {"name": "weather", '
+          '"arguments": {"city": "Paris"}}]<|tool_call_end|>';
+      for (final parallel in [false, true]) {
+        final rendered = ChatTemplateEngine.render(
+          templateSource: template,
+          messages: const [
+            LlamaChatMessage.fromText(
+              role: LlamaChatRole.system,
+              text: 'Force JSON schema.\nUse the weather tool.',
+            ),
+            LlamaChatMessage.fromText(
+              role: LlamaChatRole.user,
+              text: 'Weather?',
+            ),
+          ],
+          metadata: const {},
+          tools: [_weatherWithCityTool],
+          toolChoice: ToolChoice.auto,
+          parallelToolCalls: parallel,
+        );
+        expect(rendered.format, ChatFormat.lfm2.index);
+        expect(rendered.grammarLazy, isTrue);
+        expect(rendered.prompt, isNot(contains('Force JSON schema.')));
+        _expectGrammar(
+          validator,
+          rendered.grammar!,
+          valid: [one, if (parallel) two],
+          invalid: [
+            if (!parallel) two,
+            '<|tool_call_start|>[]<|tool_call_end|>',
+            one.replaceFirst('"weather"', '"unknown"'),
+            one.replaceFirst('"Seoul"', '1'),
+            one.replaceFirst('<|tool_call_end|>', ''),
+          ],
+        );
+      }
+    },
+  );
+
+  test(
     'Firefunction v2 required tool grammar leaves the call id undeclared',
     () {
       final rendered = ChatTemplateEngine.render(
