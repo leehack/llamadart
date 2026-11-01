@@ -450,6 +450,10 @@ class FakeEngine implements ValidationEngine, StructuredValidationEngine {
 class CountingFakeEngine extends FakeEngine
     implements TokenCountValidationEngine, StateValidationEngine {
   @override
+  Future<LlamaStateIdentity> stateIdentity() async =>
+      throw LlamaUnsupportedException('Identity outside this fake');
+
+  @override
   Future<int> getTokenCount(String text) async => (await tokenize(text)).length;
   @override
   bool get supportsStatePersistence => false;

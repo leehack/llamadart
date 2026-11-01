@@ -5,6 +5,7 @@ part of 'runner.dart';
 abstract interface class StateValidationEngine {
   bool get supportsStatePersistence;
   bool get supportsNextTokenScoring;
+  Future<LlamaStateIdentity> stateIdentity();
   Future<List<int>> tokenizeStatePrompt(String text);
   Future<Map<String, dynamic>> scoreStatePrompt(
     String text, {
@@ -49,6 +50,8 @@ mixin _PublicStateValidation implements StateValidationEngine {
   bool get supportsStatePersistence => _engine.supportsStatePersistence;
   @override
   bool get supportsNextTokenScoring => _engine.supportsNextTokenScoring;
+  @override
+  Future<LlamaStateIdentity> stateIdentity() => _engine.stateIdentity();
   @override
   Future<List<int>> tokenizeStatePrompt(String text) =>
       _engine.tokenize(text, addSpecial: true);
@@ -135,6 +138,43 @@ extension _StateValidation on ValidationRunner {
       'diagnostics': diagnostics,
       'web': engine.isWeb,
     };
+    if (id == 'P05.identity' &&
+        expectedStateIdentityCapability(
+              profile,
+              web: engine.isWeb,
+              diagnostics: diagnostics,
+            ) ==
+            false) {
+      String rejection;
+      try {
+        await _checked(state.stateIdentity);
+        rejection = 'accepted';
+      } catch (error) {
+        rejection = error is LlamaUnsupportedException
+            ? 'LlamaUnsupportedException'
+            : error.runtimeType.toString();
+      }
+      final evidence = <String, dynamic>{
+        ...capability,
+        'identity_rejection': rejection,
+        'recovery': await _checked(
+          () => engine.generate(_shortPrompt, profile, raw: !profile.isChat),
+        ),
+      };
+      return {
+        ...evidence,
+        'status':
+            validStateCaseEvidence(
+              id,
+              evidence,
+              profile,
+              web: engine.isWeb,
+              diagnostics: diagnostics,
+            )
+            ? 'PASS'
+            : 'FAIL',
+      };
+    }
     if (expected == null) {
       return {
         ...capability,
@@ -268,6 +308,13 @@ extension _StateValidation on ValidationRunner {
       );
     }
 
+    Map<String, dynamic> identityJson(LlamaStateIdentity identity) => {
+      'runtime_build': identity.runtimeBuild,
+      'session_format_version': identity.sessionFormatVersion,
+      'context_size': identity.contextSize,
+      'context_config_digest': identity.contextConfigDigest,
+    };
+
     try {
       await fresh('source', (row) async {
         tokens = List<int>.of(
@@ -289,6 +336,9 @@ extension _StateValidation on ValidationRunner {
           for (final token in baseline['top'] as List)
             (token as Map)['token'] as int,
         ];
+        if (id == 'P05.identity') {
+          row['identity'] = identityJson(await _checked(state.stateIdentity));
+        }
         row['saved'] = await _checked(
           () => state.saveState(workspace.path('valid'), tokens),
         );
@@ -301,8 +351,18 @@ extension _StateValidation on ValidationRunner {
         };
       });
       evidence['candidates'] = candidates;
-      if (id == 'P02.roundtrip') {
-        await fresh('roundtrip', restore);
+      if (id == 'P02.roundtrip' || id == 'P05.identity') {
+        await fresh('roundtrip', (row) async {
+          if (id == 'P05.identity') {
+            row['identity_before_load'] = identityJson(
+              await _checked(state.stateIdentity),
+            );
+          }
+          await restore(row);
+          if (id == 'P05.identity') {
+            row['identity'] = identityJson(await _checked(state.stateIdentity));
+          }
+        });
       } else {
         await fresh('reference_full', (row) async {
           row['tokens'] = await _checked(() => state.tokenizeStatePrompt(full));

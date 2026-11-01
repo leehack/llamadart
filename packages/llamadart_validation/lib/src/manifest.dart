@@ -615,7 +615,7 @@ class ValidationProfile {
   String? _stateOmission(String id) {
     if (!id.startsWith('P')) return null;
     if (nativeReference) return 'outside_native_reference_scope';
-    if (id == 'P01.capability') return null;
+    if (id == 'P01.capability' || id == 'P05.identity') return null;
     if (runtime != 'gguf' || backend != 'cpu') {
       return 'outside_initial_native_cpu_state_scope';
     }

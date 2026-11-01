@@ -2159,6 +2159,25 @@ external artifacts or runtime attestation. The original pre-fix pilot remains
 UNQUALIFIED because its typed capacity-error assertion failed; this pack does
 not rewrite that result.
 
+
+Catalog 14 adds `P05.identity` to `state-gguf-cpu`. It calls exported
+`stateIdentity()` on the loaded source before saving and on a separately loaded
+target before and after restoring. The journal retains runtime build, session
+format version, allocated context size and context configuration digest. Import
+rechecks the four raw fields, their equality, and the model/configuration/snapshot
+bindings; a producer's `matches: true` cannot establish equality. Catalogs 1–13
+retain their original definitions and inventories.
+
+The identity unsupported contract is independent of persistence: Web can persist
+state but has no native build identity. The identity case checks typed
+`LlamaUnsupportedException` and generation recovery for a known unsupported
+route; accepting identity there fails. Only the maintained CPU profile is mapped
+here. Unsupported-route replay is contract coverage, not Web or LiteRT model
+qualification. Missing build identity on old native runtimes remains unsupported.
+Old P01–P04 receipts do not qualify P05; it requires a fresh run. Identity equality
+does not identify model weights, guarantee exact continuation or establish
+cross-build, sampler/RNG, GPU or device compatibility.
+
 ## Catalog 12: tool-result media
 
 Catalog 12 adds `M01.tool_result_image` (feature `tool_result_media`) to the
