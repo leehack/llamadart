@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
-"""Create a Hugging Face static Space and upload a folder to it.
+"""Upload a folder to a Hugging Face static Space, creating it only if missing.
 
-Hugging Face answers bursts of Space creation with HTTP 429. Only that status
-is retried, with at most MAX_ATTEMPTS tries per call and one MAX_TOTAL_WAIT
-budget shared by create and upload. A numeric Retry-After is honored; an
-HTTP-date, negative or missing value falls back to jittered exponential
-backoff. 401, 403, validation and every other error fail at once so a broken
-deploy stays visible.
+Hugging Face applies a separate quota to Space creation, even with exist_ok.
+Probe existing Spaces first so regular uploads avoid that creation endpoint.
+Only HTTP 429 is retried, with at most MAX_ATTEMPTS tries per call and one
+MAX_TOTAL_WAIT budget shared by probe, create and upload. A numeric Retry-After
+is honored; an HTTP-date, negative or missing value falls back to jittered
+exponential backoff. 401, 403, validation and every other error fail at once so
+a broken deploy stays visible.
 """
 import argparse
 import os
@@ -57,10 +58,16 @@ def with_retry(label, call, budget, sleep=time.sleep, jitter=random.random, log=
 
 def deploy(api, repo, folder, commit_message, delete_patterns, public, **retry_options):
     budget = Budget()
-    create_options = {'private': False} if public else {}
-    with_retry('create_repo', budget=budget, call=lambda: api.create_repo(
-        repo_id=repo, repo_type='space', space_sdk='static', exist_ok=True, **create_options),
-        **retry_options)
+    try:
+        with_retry('repo_info', budget=budget, call=lambda: api.repo_info(
+            repo_id=repo, repo_type='space'), **retry_options)
+    except Exception as error:
+        if status_of(error) != 404:
+            raise
+        create_options = {'private': False} if public else {}
+        with_retry('create_repo', budget=budget, call=lambda: api.create_repo(
+            repo_id=repo, repo_type='space', space_sdk='static', exist_ok=True, **create_options),
+            **retry_options)
     with_retry('upload_folder', budget=budget, call=lambda: api.upload_folder(
         repo_id=repo, repo_type='space', folder_path=folder, revision='main',
         delete_patterns=delete_patterns, commit_message=commit_message),
