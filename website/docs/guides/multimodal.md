@@ -70,8 +70,9 @@ final engine = await LlamaEngine.load(
 ```
 
 A `.litertlm` model takes no projector: passing one throws
-`LlamaUnsupportedException`, before any download when `ModelSource.format` or
-the file name gives the format.
+`LlamaUnsupportedException`, before any download when `ModelSource.format`,
+the file name or a custom backend's fixed runtime identity identifies
+LiteRT-LM. A rejected replacement leaves the loaded model ready to use.
 
 Native LiteRT-LM accepts `LlamaImageContent` and `LlamaAudioContent` backed by
 local paths or encoded media bytes. Remote image URLs and raw PCM

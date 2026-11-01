@@ -22,9 +22,10 @@ description: >-
     model family and release as the model.
   - `.litertlm` (LiteRT-LM): the bundle carries its own media processors. Do
     not pass a projector: `LlamaModel.projector` throws
-    `LlamaUnsupportedException`, before any download when the file name or
-    `ModelSource.format` gives the format, and so does
-    `loadMultimodalProjectorSource` on LiteRT-LM.
+    `LlamaUnsupportedException`, before any download when the file name,
+    `ModelSource.format` or a custom backend's fixed runtime identity names
+    LiteRT-LM. A refused replacement keeps the previous model loaded.
+    `loadMultimodalProjectorSource` also throws on LiteRT-LM.
 - Use `engine.loadMultimodalProjectorSource(source, download: ...)` only to
   change the projector of a model that is already loaded; before a model is
   loaded it throws `LlamaContextException`. A projector that is missing or

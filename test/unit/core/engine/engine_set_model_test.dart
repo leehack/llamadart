@@ -1469,6 +1469,201 @@ void main() {
     });
   });
 
+  group('fixed-runtime projector preflight', () {
+    for (final urlLoading in [false, true]) {
+      for (final name in ['model.gguf', 'download?id=7']) {
+        for (final replacing in [false, true]) {
+          test('$name, URL loading $urlLoading, replacement $replacing '
+              'refuses before I/O and keeps the previous model', () async {
+            final backend = _FixedRuntimeBackend(
+              LlamaRuntime.liteRtLm,
+              urlLoadingSupported: urlLoading,
+            );
+            final source = ModelSource.parse('https://example.com/$name');
+            final manager = _Manager({
+              source: '/cache/new-model',
+              remoteProjector: '/cache/mmproj.gguf',
+            });
+            final resolver = _CountingResolver();
+            final engine = LlamaEngine(
+              backend,
+              modelResolver: resolver,
+              modelDownloadManager: manager,
+            );
+            addTearDown(engine.dispose);
+            if (replacing) await engine.setModel(LlamaModel(localModel));
+            final loads = backend.modelLoadCalls;
+            final urlLoads = backend.modelLoadFromUrlCalls;
+            final previousPath = backend.lastModelPath;
+            resolver.calls = 0;
+            manager.sources.clear();
+            backend.events.clear();
+            final model = LlamaModel(source, projector: remoteProjector);
+
+            final report = await engine.checkLoad(model);
+            expect(resolver.calls, 0);
+            LlamaUnsupportedException? refusal;
+            await expectLater(
+              engine.setModel(model),
+              throwsA(
+                isA<LlamaUnsupportedException>().having(
+                  (error) {
+                    refusal = error;
+                    return error.message;
+                  },
+                  'message',
+                  contains('takes no multimodal projector'),
+                ),
+              ),
+            );
+
+            expect(resolver.calls, 0);
+            expect(manager.sources, isEmpty);
+            expect(backend.events, isEmpty);
+            expect(backend.modelLoadCalls, loads);
+            expect(backend.modelLoadFromUrlCalls, urlLoads);
+            expect(backend.modelFreeCalls, 0);
+            expect(backend.contextFreeCalls, 0);
+            expect(backend.multimodalContextCreateCalls, 0);
+            expect(backend.lastModelPath, previousPath);
+            expect(engine.isReady, replacing);
+            expect(report.status, LlamaLoadCheckStatus.unsupported);
+            expect(refusal!.message, report.error!.message);
+            if (replacing) {
+              expect(
+                await engine.create([
+                  const LlamaChatMessage.fromText(
+                    role: LlamaChatRole.user,
+                    text: 'hi',
+                  ),
+                ]).text(),
+                'response',
+              );
+            }
+          });
+        }
+      }
+
+      for (final identity in [LlamaRuntime.llamaCpp, null]) {
+        test(
+          '$identity, URL loading $urlLoading, still loads a projector',
+          () async {
+            final backend = _FixedRuntimeBackend(
+              identity,
+              urlLoadingSupported: urlLoading,
+            );
+            final engine = LlamaEngine(
+              backend,
+              modelDownloadManager: _Manager(cacheFiles()),
+            );
+            addTearDown(engine.dispose);
+            await engine.setModel(
+              LlamaModel(remoteModel, projector: remoteProjector),
+            );
+            expect(engine.isReady, isTrue);
+            expect(engine.hasMultimodalProjector, isTrue);
+            expect(backend.multimodalContextCreateCalls, 1);
+          },
+        );
+      }
+
+      test('a router previously running LiteRT-LM still loads a GGUF projector '
+          'with URL loading $urlLoading', () async {
+        final backend = _RoutingBackend(urlLoadingSupported: urlLoading);
+        final engine = LlamaEngine(
+          backend,
+          modelDownloadManager: _Manager(cacheFiles()),
+        );
+        addTearDown(engine.dispose);
+        await engine.setModel(
+          LlamaModel(
+            ModelSource.parse(
+              '/models/previous.litertlm',
+              format: ModelFormat.liteRtLm,
+            ),
+          ),
+        );
+        expect(engine.runtime, LlamaRuntime.liteRtLm);
+        final model = LlamaModel(
+          ModelSource.parse(
+            'hf://owner/repo/model.gguf',
+            format: ModelFormat.gguf,
+          ),
+          projector: remoteProjector,
+        );
+        expect(
+          (await engine.checkLoad(model)).status,
+          isNot(LlamaLoadCheckStatus.unsupported),
+        );
+        await engine.setModel(model);
+        expect(engine.runtime, LlamaRuntime.llamaCpp);
+        expect(engine.hasMultimodalProjector, isTrue);
+      });
+
+      test(
+        'fixed LiteRT-LM keeps filename mismatch behavior without a projector '
+        'with URL loading $urlLoading',
+        () async {
+          final backend = _FixedRuntimeBackend(
+            LlamaRuntime.liteRtLm,
+            urlLoadingSupported: urlLoading,
+          );
+          final engine = LlamaEngine(
+            backend,
+            modelDownloadManager: _Manager(cacheFiles()),
+          );
+          addTearDown(engine.dispose);
+          final model = LlamaModel(remoteModel);
+          expect(
+            (await engine.checkLoad(model)).status,
+            LlamaLoadCheckStatus.unknown,
+          );
+          await engine.setModel(model);
+          expect(engine.isReady, isTrue);
+          expect(backend.modelLoadCalls + backend.modelLoadFromUrlCalls, 1);
+        },
+      );
+    }
+
+    test('all projector entry points use the same LiteRT-LM refusal', () async {
+      final backend = _FixedRuntimeBackend(LlamaRuntime.liteRtLm);
+      final resolver = _CountingResolver();
+      final engine = LlamaEngine(
+        backend,
+        modelResolver: resolver,
+        modelDownloadManager: _Manager(cacheFiles()),
+      );
+      addTearDown(engine.dispose);
+      await engine.setModel(LlamaModel(localModel));
+      resolver.calls = 0;
+      final model = LlamaModel(
+        ModelSource.parse('/models/new.litertlm'),
+        projector: remoteProjector,
+      );
+      final reason = (await engine.checkLoad(model)).error!.message;
+      for (final operation in <Future<void> Function()>[
+        () => engine.setModel(model),
+        () => engine.loadMultimodalProjectorSource(remoteProjector),
+        // ignore: deprecated_member_use_from_same_package
+        () => engine.loadMultimodalProjector('/models/mmproj.gguf'),
+      ]) {
+        await expectLater(
+          operation(),
+          throwsA(
+            isA<LlamaUnsupportedException>().having(
+              (error) => error.message,
+              'message',
+              reason,
+            ),
+          ),
+        );
+      }
+      expect(resolver.calls, 0);
+      expect(backend.multimodalContextCreateCalls, 0);
+      expect(engine.isReady, isTrue);
+    });
+  });
+
   group('loadMultimodalProjectorSource', () {
     test(
       'takes download, or the deprecated options, and rejects both',
@@ -1752,6 +1947,14 @@ class _Backend extends MockLlamaBackend {
     await metadataGate?.future;
     return super.modelMetadata(modelHandle);
   }
+}
+
+/// Reports a fixed runtime without routing by the model's format.
+class _FixedRuntimeBackend extends _Backend implements BackendRuntimeIdentity {
+  _FixedRuntimeBackend(this.runtime, {super.urlLoadingSupported});
+
+  @override
+  final LlamaRuntime? runtime;
 }
 
 /// Chooses the runtime from an explicit format, as `LlamaBackend()` does.
