@@ -492,11 +492,11 @@ class LlamaEngine {
   ///
   /// Before any download or file access, the call throws for what it can
   /// already tell: an invalid [params] ([ModelParams.validate]), a
-  /// [LlamaModel.projector] or [ComputeDevice.npu] that the model's runtime
-  /// does not take, when [ModelSource.format] or the file name gives the
-  /// format, [ModelLoadOptions.sha256] for a model with a projector, and on a
-  /// URL-loading backend a [download] option only the package download
-  /// manager provides.
+  /// [LlamaModel.projector] for LiteRT-LM when [ModelSource.format], the file
+  /// name or a fixed backend identity names it, [ComputeDevice.npu] with a
+  /// GGUF format, [ModelLoadOptions.sha256] for a model with a projector,
+  /// and on a URL-loading backend a [download] option only the package
+  /// download manager provides.
   ///
   /// Then every file resolves, the model first, then the projector and the
   /// [ModelParams.loras] sources. [modelResolver] resolves each
@@ -718,11 +718,14 @@ class LlamaEngine {
     ModelFormat? format,
   ) {
     final source = model.source;
-    if (model.projector != null && format == ModelFormat.liteRtLm) {
-      throw LlamaUnsupportedException(
-        'A LiteRT-LM model takes no multimodal projector: a .litertlm bundle '
-        'carries its own media encoders. Leave LlamaModel.projector unset.',
-      );
+    final candidate = backend;
+    if (model.projector != null &&
+        (format == ModelFormat.liteRtLm ||
+            (candidate is! BackendModelFormatRouting &&
+                candidate is BackendRuntimeIdentity &&
+                (candidate as BackendRuntimeIdentity).runtime ==
+                    LlamaRuntime.liteRtLm))) {
+      throw LlamaUnsupportedException(_liteRtLmProjectorUnsupportedReason);
     }
     if (model.projector != null) _requireMultimodalBackend();
     if (params.device == ComputeDevice.npu && format == ModelFormat.gguf) {
@@ -740,7 +743,6 @@ class LlamaEngine {
       );
     }
     if (source.format case final declared?) _checkBackendLoads(declared);
-    final candidate = backend;
     final unchecked = candidate is BackendLoadCheck
         ? (candidate as BackendLoadCheck).checkLoad(params, format)
         : 'This backend does not check a load before it reads the model '
@@ -1518,12 +1520,13 @@ class LlamaEngine {
     }
   }
 
+  static const String _liteRtLmProjectorUnsupportedReason =
+      'A LiteRT-LM model takes no multimodal projector: a .litertlm bundle '
+      'carries its own media encoders. Leave LlamaModel.projector unset.';
+
   void _rejectLiteRtLmProjector() {
     if (runtime != LlamaRuntime.liteRtLm) return;
-    throw LlamaUnsupportedException(
-      'A LiteRT-LM model takes no multimodal projector: a .litertlm bundle '
-      'carries its own media encoders.',
-    );
+    throw LlamaUnsupportedException(_liteRtLmProjectorUnsupportedReason);
   }
 
   Future<void> _loadMultimodalProjectorLocked(String mmProjPath) async {

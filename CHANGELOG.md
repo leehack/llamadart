@@ -1,5 +1,7 @@
 ## Unreleased
 
+- Reject projector requests on fixed LiteRT-LM custom backends before resolving files, preserving the loaded model ([#1556](https://github.com/leehack/llamadart/issues/1556)).
+
 ## 0.17.2
 
 - Fix Windows native runtime overrides failing model loads with `no backends are loaded` ([#1649](https://github.com/leehack/llamadart/issues/1649)).
