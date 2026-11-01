@@ -716,11 +716,7 @@ class RemoteController {
     Map<String, dynamic> state,
   ) async {
     final remote = state['remote'] as Map;
-    final providerMatrix = remote['matrix'] as Map?;
-    final providerPassed = plan.firebase
-        ? remote['state'] == 'FINISHED' &&
-              (providerMatrix?['outcomeSummary'] == 'SUCCESS')
-        : remote['test_exit_code'] == 0;
+    final providerPassed = savedProviderPassed(plan, remote);
     var assertions = false;
     final previousFailure = state.remove('assessment_error');
     if (previousFailure != null && state['error'] == previousFailure) {
@@ -762,6 +758,23 @@ class RemoteController {
       }),
       flush: true,
     );
+  }
+
+  /// Reads a saved run under the lifecycle lock, without consulting a provider.
+  Future<Map<String, dynamic>> reassess(
+    String id,
+    Directory output, {
+    required Future<Map<String, dynamic>> Function(Directory, Directory) replay,
+  }) async {
+    if (!RegExp(r'^qa-[a-z0-9-]+$').hasMatch(id)) {
+      throw const FormatException('Invalid run ID');
+    }
+    final lock = _lock();
+    try {
+      return await replay(Directory(p.join(root.path, id)), output);
+    } finally {
+      lock.release();
+    }
   }
 
   /// Recovery operations use saved IDs under the same lock; never resubmit.
@@ -1508,4 +1521,13 @@ class GcloudProvider implements RemoteProvider {
           'only automatic boot disk; no persistent auxiliary resources',
     };
   }
+}
+
+/// Interprets a captured provider result; this does not refresh remote status.
+bool savedProviderPassed(RemotePlan plan, Map remote) {
+  if (plan.firebase) {
+    return remote['state'] == 'FINISHED' &&
+        (remote['matrix'] as Map?)?['outcomeSummary'] == 'SUCCESS';
+  }
+  return remote['terminal'] == true && remote['test_exit_code'] == 0;
 }

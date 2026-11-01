@@ -20,6 +20,13 @@ import '../../../tool/testing/validation/process.dart';
 import '../../../tool/testing/validation/remote.dart';
 import '../../../tool/testing/validation/runtime_bundle.dart';
 
+class OfflineOnlyProvider implements RemoteProvider {
+  @override
+  dynamic noSuchMethod(Invocation invocation) => throw StateError(
+    'Offline replay called provider: ${invocation.memberName}',
+  );
+}
+
 class FakeProvider implements RemoteProvider {
   int starts = 0;
   Completer<void>? pausePreflight;
@@ -1280,6 +1287,197 @@ void main() {
         stray,
       );
     });
+
+    test(
+      'offline replay uses only the prepared reporter and preserves saved bytes',
+      () async {
+        final first = jsonDecode(LineSplitter.split(journal).first) as Map;
+        final profile = first['profile'] as Map;
+        File(
+          p.join(bundle.path, 'profile.json'),
+        ).writeAsStringSync(jsonEncode(profile));
+        await writeBundleManifest(bundle, {
+          'target': 'android',
+          'profile': 'gemma4-litert-gpu',
+          ...Map<String, dynamic>.from(first['environment'] as Map),
+        });
+        final saved = Directory(p.join(runs.path, 'qa-one'));
+        final raw =
+            File(p.join(saved.path, 'remote-results/device/events.jsonl'))
+              ..createSync(recursive: true)
+              ..writeAsStringSync(journal);
+        final deviceLog = File(
+          p.join(saved.path, 'remote-results/device/logcat'),
+        )..writeAsStringSync(logcat);
+        final oldReport = File(p.join(saved.path, 'report/native.log'))
+          ..createSync(recursive: true)
+          ..writeAsStringSync('old derived capture');
+        final state = <String, dynamic>{
+          'plan': plan(profile: 'gemma4-litert-gpu').json,
+          'remote': {
+            'state': 'FINISHED',
+            'matrix': {'outcomeSummary': 'SUCCESS'},
+          },
+          'collection': 'COMPLETE',
+          'cleanup': 'VERIFIED',
+          'error': null,
+        };
+        final orchestration = File(p.join(saved.path, 'orchestration.json'))
+          ..writeAsStringSync(jsonEncode(state));
+        final before = [
+          raw,
+          deviceLog,
+          oldReport,
+          orchestration,
+        ].map((f) => f.readAsStringSync()).toList();
+        var calls = 0;
+        Future<CommandResult> offlineCommand(
+          String executable,
+          List<String> args, {
+          String? directory,
+          Duration? timeout,
+          Map<String, String>? environment,
+        }) async {
+          calls++;
+          expect(executable, Platform.resolvedExecutable);
+          expect(args.first, startsWith('--packages='));
+          expect(args[1], 'bin/report.dart');
+          expect(args, isNot(contains('pub')));
+          expect(args, isNot(contains('run')));
+          return executeCommand(
+            executable,
+            args,
+            directory: directory,
+            timeout: timeout,
+            environment: environment,
+          );
+        }
+
+        Future<Map<String, dynamic>> replay(String name) =>
+            RemoteController(runs, OfflineOnlyProvider()).reassess(
+              'qa-one',
+              Directory(p.join(scratch.path, name)),
+              replay: (saved, output) => reassessSavedRun(
+                Directory.current.path,
+                saved,
+                output,
+                execute: offlineCommand,
+              ),
+            );
+        final a = await replay('offline-a');
+        final b = await replay('offline-b');
+        expect(a, b);
+        expect(a['assertions_passed'], true);
+        expect(a['qualified'], true);
+        expect(calls, 2);
+        expect(
+          [
+            raw,
+            deviceLog,
+            oldReport,
+            orchestration,
+          ].map((f) => f.readAsStringSync()).toList(),
+          before,
+        );
+        await expectLater(replay('offline-a'), throwsStateError);
+        for (final entry in <String, Object?>{
+          'cleanup': 'UNKNOWN',
+          'collection': 'INCOMPLETE',
+          'error': 'historical failure',
+        }.entries) {
+          final changed = {...state, entry.key: entry.value};
+          orchestration.writeAsStringSync(jsonEncode(changed));
+          expect((await replay('offline-${entry.key}'))['qualified'], false);
+        }
+        orchestration.writeAsStringSync(
+          jsonEncode({
+            ...state,
+            'remote': {'state': 'RUNNING'},
+          }),
+        );
+        expect((await replay('offline-provider'))['qualified'], false);
+        // The old positive derived capture is never reused when binding fails.
+        deviceLog.writeAsStringSync(galaxy);
+        expect((await replay('offline-unbound'))['assertions_passed'], false);
+        expect(
+          File(
+            p.join(scratch.path, 'offline-unbound/report/native.log'),
+          ).existsSync(),
+          false,
+        );
+        deviceLog.writeAsStringSync(
+          logcat.replaceFirst('Mali-G715', 'Mali-G715 Falling back to CPU'),
+        );
+        expect((await replay('offline-marker'))['assertions_passed'], false);
+        deviceLog.writeAsStringSync(logcat.replaceAll(sha, 'a' * 64));
+        expect(
+          (await replay('offline-missing-binding'))['assertions_passed'],
+          false,
+        );
+        deviceLog.writeAsStringSync(logcat);
+        final shifted = Map<String, dynamic>.from(first)
+          ..['started_at'] = DateTime.parse(
+            first['started_at'] as String,
+          ).add(const Duration(days: 30)).toUtc().toIso8601String();
+        raw.writeAsStringSync(
+          [
+            jsonEncode(shifted),
+            ...LineSplitter.split(journal).skip(1),
+          ].join('\n'),
+        );
+        expect(
+          (await replay('offline-log-window'))['assertions_passed'],
+          false,
+        );
+        raw.writeAsStringSync(
+          journal.replaceAll('gemma4-litert-gpu', 'wrong-profile'),
+        );
+        final prior = calls;
+        expect((await replay('offline-profile'))['assertions_passed'], false);
+        expect(calls, prior);
+        raw.writeAsStringSync(journal);
+        final other = File(
+          p.join(saved.path, 'remote-results/device/other.jsonl'),
+        )..writeAsStringSync('$journal\n{"type":"other"}\n');
+        expect((await replay('offline-conflict'))['assertions_passed'], false);
+        other.deleteSync();
+        final badRepository = Directory(p.join(scratch.path, 'unprepared'))
+          ..createSync();
+        await expectLater(
+          reassessSavedRun(
+            badRepository.path,
+            saved,
+            Directory(p.join(scratch.path, 'offline-no-deps')),
+            execute: offlineCommand,
+          ),
+          throwsA(
+            isA<StateError>().having(
+              (e) => e.message,
+              'prerequisite',
+              contains('prepared dependencies'),
+            ),
+          ),
+        );
+        expect(calls, prior);
+        orchestration.writeAsStringSync(
+          jsonEncode({
+            ...state,
+            'plan': {...state['plan'] as Map, 'profile': 'wrong-profile'},
+          }),
+        );
+        await expectLater(replay('offline-plan-profile'), throwsStateError);
+        orchestration.writeAsStringSync(jsonEncode({...state}..remove('plan')));
+        await expectLater(replay('offline-no-plan'), throwsA(isA<TypeError>()));
+        expect(calls, prior);
+        orchestration.writeAsStringSync(jsonEncode(state));
+        File(p.join(bundle.path, 'app.apk')).writeAsStringSync('changed');
+        await expectLater(
+          replay('offline-changed-bundle'),
+          throwsFormatException,
+        );
+      },
+      timeout: const Timeout(Duration(minutes: 3)),
+    );
 
     test('leaves no earlier native log when a run is reassessed', () async {
       File(
