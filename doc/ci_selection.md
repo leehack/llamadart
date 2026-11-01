@@ -244,7 +244,20 @@ before Flutter setup; the build job has no deployment secrets. Deployment uses
 the resulting artifact and verification scripts from the PR base. Closing a PR
 always attempts cleanup regardless of paths, labels or draft status. Converting
 a PR to draft or removing the label skips future ineligible builds; an existing
-preview remains until close. Per-PR concurrency cancels obsolete runs.
+preview remains until close. Unrelated label events skip the build and cannot cancel useful work. Provider writes
+run in a per-PR `queue: max`, `cancel-in-progress: false` job, using only
+trusted base helpers. Up to 100 pending jobs are retained; saturation and
+external cross-provider atomicity are outside this contract. Arrival at the
+queue can differ from dispatch order, so every create, upload, retry, delete
+and comment checks the live PR head/state and eligibility. A delayed close
+requires the original close timestamp, protecting reopen/reclose sequences.
+API failures fail closed. Artifacts are bound to the same run, PR,
+repository, head, archive digest, Git tree and build stamp. A provider-only
+job rerun can reuse a verified artifact from an earlier positive-numbered build
+attempt of that run while the head remains eligible. It never accepts an
+artifact from another run. The production main-only verifier stays separate.
+A PR changing the trusted helper requires that helper to land before its new
+preview workflow can run against the base.
 
 To exercise the production layout locally, cache `stories15M.gguf` at
 `.dart_tool/test_models/stories15M.gguf`, then run:

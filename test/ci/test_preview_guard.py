@@ -55,15 +55,23 @@ class PreviewGuardTest(unittest.TestCase):
         live['closed_at'] = '2026-11-01T00:01:00Z'
         self.assertEqual(guard.live_action(self.event, live, []), 'skip')
 
-    def test_same_run_attempt_repo_head_digest_binding(self):
+    def test_same_run_pr_repo_head_digest_binding(self):
         args = dict(artifact_id=11, digest='d'*64, run_id=22, sha='a'*40,
-                    repository_id=33, name='chat-app-preview-7-1')
+                    repository_id=33, pr_number=7)
         metadata = dict(id=11, expired=False, digest='sha256:'+'d'*64,
-                        name=args['name'], workflow_run=dict(id=22, head_sha='a'*40,
+                        name='chat-app-preview-7-1', workflow_run=dict(id=22, head_sha='a'*40,
                         repository_id=33, head_repository_id=33, head_branch='topic'))
-        guard.verify_preview_artifact(metadata, **args)
+        for attempt in [1, 2, 17]:
+            with self.subTest(attempt=attempt):
+                guard.verify_preview_artifact(
+                    dict(metadata, name=f'chat-app-preview-7-{attempt}'), **args)
         for field, bad in [('id', 12), ('expired', True), ('digest', 'sha256:'+'e'*64),
-                           ('name', 'chat-app-preview-7-2')]:
+                           ('name', 'chat-app-preview-8-1'),
+                           *[('name', name) for name in [
+                               'chat-app-preview-7-0', 'chat-app-preview-7-01',
+                               'chat-app-preview-7--1', 'chat-app-preview-7-1x',
+                               'chat-app-preview-7-1-2', 'chat-app-preview-7-',
+                               'chat-app-preview-7-1\n', None]]]:
             changed = copy.deepcopy(metadata)
             changed[field] = bad
             with self.subTest(field=field), self.assertRaises(ValueError):
@@ -75,7 +83,7 @@ class PreviewGuardTest(unittest.TestCase):
             with self.subTest(field=field), self.assertRaises(ValueError):
                 guard.verify_preview_artifact(changed, **args)
 
-    def test_artifact_download_checks_archive_tree_and_stamp(self):
+    def test_provider_rerun_download_checks_original_artifact_tree_and_stamp(self):
         preview, read = self.preview()
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
@@ -98,7 +106,7 @@ class PreviewGuardTest(unittest.TestCase):
                         if args[0] == 'gh':
                             kw['stdout'].write(data)
                     with patch.dict(os.environ, ARTIFACT_ID='11', ARTIFACT_DIGEST=digest,
-                                    GITHUB_RUN_ID='22', GITHUB_REPOSITORY_ID='33', GITHUB_RUN_ATTEMPT='1'), patch.object(
+                                    GITHUB_RUN_ID='22', GITHUB_REPOSITORY_ID='33', GITHUB_RUN_ATTEMPT='2'), patch.object(
                             guard.subprocess, 'check_call', side_effect=run) as calls, patch.object(
                             guard.subprocess, 'check_output', side_effect=['c'*40, '3.47.1']):
                         if bad:

@@ -432,7 +432,21 @@ void main() {
         checkout['with']['ref'],
         r'${{ github.event.pull_request.base.sha }}',
       );
-      expect(checkout['if'], "github.event.action != 'closed'");
+      expect(checkout.containsKey('if'), isFalse);
+      expect(workflow.containsKey('concurrency'), isFalse);
+      expect(build['if'], contains("github.event.label.name == 'preview'"));
+      expect(deploy['concurrency']['cancel-in-progress'], isFalse);
+      expect(deploy['concurrency']['queue'], 'max');
+      expect(deploy['concurrency']['group'], contains('pull_request.number'));
+      expect(deploy['permissions']['actions'], 'read');
+      expect(deploy['permissions']['pull-requests'], 'write');
+      final operation = (deploy['steps'] as List).singleWhere(
+        (step) => '${step['run']}'.contains('preview_guard.py'),
+      );
+      expect(operation['env']['HF_TOKEN'], contains('secrets.HF_TOKEN'));
+      expect(operation['env']['GH_TOKEN'], contains('github.token'));
+      expect(deploy['env']['ARTIFACT_DIGEST'], contains('artifact-digest'));
+      expect(jsonEncode(deploy), isNot(contains('download-artifact@')));
     },
   );
 

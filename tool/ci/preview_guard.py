@@ -41,10 +41,14 @@ def live_action(event, live, paths):
 
 
 def verify_preview_artifact(metadata, *, artifact_id, digest, run_id,
-                            sha, repository_id, name):
+                            sha, repository_id, pr_number):
     """PR artifacts have their own boundary; production still requires main."""
     origin = metadata.get('workflow_run', {})
-    if (metadata.get('id') != artifact_id or metadata.get('name') != name
+    name = metadata.get('name')
+    valid_name = (type(pr_number) is int and pr_number > 0
+                  and isinstance(name, str)
+                  and re.fullmatch(rf'chat-app-preview-{pr_number}-[1-9][0-9]*', name))
+    if (metadata.get('id') != artifact_id or not valid_name
             or metadata.get('expired') is not False
             or metadata.get('digest') != 'sha256:' + digest
             or origin.get('id') != run_id or origin.get('head_sha') != sha
@@ -94,7 +98,7 @@ class Preview:
             metadata, artifact_id=artifact_id, digest=digest,
             run_id=int(os.environ['GITHUB_RUN_ID']), sha=self.sha,
             repository_id=int(os.environ['GITHUB_REPOSITORY_ID']),
-            name=f'chat-app-preview-{self.number}-{os.environ["GITHUB_RUN_ATTEMPT"]}')
+            pr_number=self.number)
         with open('preview-artifact.zip', 'wb') as archive:
             subprocess.check_call(['gh', 'api',
                                    f'repos/{self.repository}/actions/artifacts/{artifact_id}/zip'],

@@ -14,6 +14,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 import warnings
 import zipfile
 
@@ -52,19 +53,30 @@ class DeploymentTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             guard.verify_artifact({}, **self.args)
 
-    def archive(self, entries):
-        archive = self.root / 'artifact.zip'
+    def archive(self, entries, *, root=None):
+        archive = (root or self.root) / 'artifact.zip'
         with warnings.catch_warnings():
             warnings.simplefilter('ignore', UserWarning)
             with zipfile.ZipFile(archive, 'w') as bundle:
                 for name, content in entries:
-                    bundle.writestr(name, content)
+                    if isinstance(name, str):
+                        item = zipfile.ZipInfo(name)
+                        # Preserve deliberately unsafe names in both ZIP headers,
+                        # bypassing ZipInfo's Windows and NUL normalization.
+                        item.filename = name
+                    else:
+                        item = name
+                    bundle.writestr(item, content)
         return archive, hashlib.sha256(archive.read_bytes()).hexdigest()
 
     def test_extract_preserves_bytes_and_rejects_tampering(self):
         archive, digest = self.archive([('assets/data', b'\x00\xff'), ('index.html', 'app')])
         guard.extract_artifact(archive, self.root / 'out', digest)
+        self.assertEqual(sorted(path.relative_to(self.root / 'out').as_posix()
+                                for path in (self.root / 'out').rglob('*')
+                                if path.is_file()), ['assets/data', 'index.html'])
         self.assertEqual((self.root / 'out/assets/data').read_bytes(), b'\x00\xff')
+        self.assertEqual((self.root / 'out/index.html').read_text(), 'app')
         with self.assertRaises(ValueError):
             guard.extract_artifact(archive, self.root / 'out', digest)
         with archive.open('ab') as stream:
@@ -79,11 +91,31 @@ class DeploymentTest(unittest.TestCase):
         for entries in [[('../escape', '')], [('/absolute', '')], [('a\\b', '')],
                         [('C:drive', '')], [('a/../b', '')], [('a//b', '')],
                         [('a/./b', '')], [('same', ''), ('same', '')], [('same/', ''), ('same', '')], [(link, 'target')]]:
-            with self.subTest(entries=entries):
-                archive, digest = self.archive([('innocent', 'ok'), *entries])
+            with (self.subTest(entries=entries),
+                  tempfile.TemporaryDirectory(dir=self.root) as temp):
+                root = Path(temp)
+                archive, digest = self.archive([('innocent', 'ok'), *entries], root=root)
                 with self.assertRaises(ValueError):
-                    guard.extract_artifact(archive, self.root / 'unsafe', digest)
-                self.assertFalse((self.root / 'unsafe').exists())
+                    guard.extract_artifact(archive, root / 'unsafe', digest)
+                self.assertFalse((root / 'unsafe').exists())
+
+    def test_raw_names_are_rejected_before_platform_normalization_can_hide_them(self):
+        for sep in ['/', '\\']:
+            for name in ['a\\b', 'a\x00b']:
+                with (self.subTest(sep=sep, name=name),
+                      tempfile.TemporaryDirectory(dir=self.root) as temp):
+                    root = Path(temp)
+                    with (mock.patch.object(zipfile.os, 'sep', sep),
+                          mock.patch.object(zipfile.os, 'altsep', None)):
+                        archive, digest = self.archive([('innocent', 'ok'), (name, 'bad')], root=root)
+                        # The local and central headers must both contain the raw
+                        # name; a normalized writer would erase the regression.
+                        self.assertEqual(archive.read_bytes().count(name.encode()), 2)
+                        with zipfile.ZipFile(archive) as bundle:
+                            self.assertEqual(bundle.infolist()[1].orig_filename, name)
+                        with self.assertRaisesRegex(ValueError, 'Unsafe or duplicate'):
+                            guard.extract_artifact(archive, root / 'unsafe', digest)
+                    self.assertFalse((root / 'unsafe').exists())
 
     def test_build_configuration_requires_production_and_exact_source(self):
         metadata = dict(commit='sha', tree='tree', base_href='/',
@@ -193,6 +225,14 @@ class PreviewTest(unittest.TestCase):
         self.event['pull_request']['head']['repo']['full_name'] = 'leehack/llamadart'
         self.event['pull_request']['user']['login'] = 'dependabot[bot]'
         self.assertEqual(guard.preview_action(self.event, []), 'skip')
+
+    def test_unrelated_labels_never_request_a_build(self):
+        for action in ['labeled', 'unlabeled']:
+            self.event['action'] = action
+            self.event['label'] = dict(name='unrelated')
+            self.assertEqual(guard.preview_action(self.event, ['lib/llamadart.dart']), 'skip')
+            self.event['label'] = dict(name='preview')
+            self.assertEqual(guard.preview_action(self.event, ['lib/llamadart.dart']), 'build')
 
     def test_missing_git_history_does_not_emit_build_or_cleanup(self):
         with tempfile.TemporaryDirectory() as temp:

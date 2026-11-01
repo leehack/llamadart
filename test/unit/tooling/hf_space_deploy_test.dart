@@ -44,17 +44,12 @@ void main() {
       return run;
     }
 
-    final preview = helperCall('chat_app_hf_pr_preview');
-    expect(preview, contains('--public'));
-    expect(preview, contains('--folder hf-space-sync'));
-    expect(preview, contains("--delete-pattern '*'"));
-    expect(preview, isNot(contains("'**/*'")));
-    expect(
-      preview,
-      contains(
-        r'--commit-message "deploy PR #${PR_NUMBER} ${PR_HEAD_SHA:0:7}"',
-      ),
-    );
+    // Preview provider calls have per-write live-state guards in preview_guard.
+    final preview = File(
+      '.github/workflows/chat_app_hf_pr_preview.yml',
+    ).readAsStringSync();
+    expect(preview, contains('python3 tool/ci/preview_guard.py'));
+    expect(preview, isNot(contains('python3 tool/ci/hf_space_deploy.py')));
 
     final chat = helperCall('chat_app_hf_static_deploy');
     expect(chat, isNot(contains('--public')));

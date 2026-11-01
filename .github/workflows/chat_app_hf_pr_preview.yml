@@ -7,12 +7,6 @@ on:
 
 permissions:
   contents: read
-  issues: write
-  pull-requests: write
-
-concurrency:
-  group: chat-app-hf-pr-preview-${{ github.event.pull_request.number }}
-  cancel-in-progress: true
 
 jobs:
   build:
@@ -23,10 +17,13 @@ jobs:
       contents: read
     if: >-
       github.event.pull_request.head.repo.full_name == github.repository &&
-      github.event.pull_request.user.login != 'dependabot[bot]'
+      github.event.pull_request.user.login != 'dependabot[bot]' &&
+      ((github.event.action != 'labeled' && github.event.action != 'unlabeled') ||
+       github.event.label.name == 'preview')
     outputs:
       action: ${{ steps.closed.outputs.action || steps.select.outputs.action }}
       artifact-id: ${{ steps.artifact.outputs.artifact-id }}
+      artifact-digest: ${{ steps.artifact.outputs.artifact-digest }}
     steps:
       - id: closed
         if: github.event.action == 'closed'
@@ -74,213 +71,33 @@ jobs:
         github.event.pull_request.head.repo.full_name == github.repository &&
         github.event.pull_request.user.login != 'dependabot[bot]'
       }}
+    # Provider mutations are never cancelled by later events or replaced pending jobs.
+    concurrency:
+      group: chat-app-hf-pr-preview-write-${{ github.event.pull_request.number }}
+      cancel-in-progress: false
+      queue: max
+    permissions:
+      contents: read
+      actions: read
+      pull-requests: write
+      issues: write
     env:
       HF_CHAT_APP_SPACE_REPO: ${{ vars.HF_CHAT_APP_SPACE_REPO }}
       HF_CHAT_APP_PREVIEW_NAMESPACE: ${{ vars.HF_CHAT_APP_PREVIEW_NAMESPACE }}
-      PR_NUMBER: ${{ github.event.pull_request.number }}
-      PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+      PREVIEW_ACTION: ${{ needs.build.outputs.action }}
+      ARTIFACT_ID: ${{ needs.build.outputs.artifact-id }}
+      ARTIFACT_DIGEST: ${{ needs.build.outputs.artifact-digest }}
     steps:
-      - name: Resolve Hugging Face preview target
-        env:
-          HF_TOKEN: ${{ secrets.HF_TOKEN }}
-        id: target
-        run: |
-          if [ -z "$HF_TOKEN" ]; then
-            echo "error: set HF_TOKEN repository secret with write/create access to the preview Space namespace"
-            exit 1
-          fi
-
-          NAMESPACE="$HF_CHAT_APP_PREVIEW_NAMESPACE"
-          if [ -z "$NAMESPACE" ] && [ -n "$HF_CHAT_APP_SPACE_REPO" ]; then
-            NAMESPACE="${HF_CHAT_APP_SPACE_REPO%%/*}"
-          fi
-
-          if [ -z "$NAMESPACE" ]; then
-            echo "error: set HF_CHAT_APP_PREVIEW_NAMESPACE or HF_CHAT_APP_SPACE_REPO"
-            exit 1
-          fi
-
-          SPACE_NAME="llamadart-chat-pr-${PR_NUMBER}"
-          SPACE_REPO="${NAMESPACE}/${SPACE_NAME}"
-          SPACE_URL="https://huggingface.co/spaces/${SPACE_REPO}"
-          APP_HOST="$(printf '%s-%s' "$NAMESPACE" "$SPACE_NAME" | tr '[:upper:]' '[:lower:]')"
-          APP_URL="https://${APP_HOST}.static.hf.space"
-
-          {
-            echo "HF_PREVIEW_NAMESPACE=$NAMESPACE"
-            echo "SPACE_NAME=$SPACE_NAME"
-            echo "SPACE_REPO=$SPACE_REPO"
-            echo "SPACE_URL=$SPACE_URL"
-            echo "APP_URL=$APP_URL"
-          } >> "$GITHUB_ENV"
-
-          {
-            echo "space_repo=$SPACE_REPO"
-            echo "space_url=$SPACE_URL"
-            echo "app_url=$APP_URL"
-          } >> "$GITHUB_OUTPUT"
-
       - uses: actions/checkout@v7
-        if: github.event.action != 'closed'
         with:
-          # Run only trusted verification scripts in the credential-bearing job.
+          # All credential-bearing work runs trusted base helpers, including close.
           ref: ${{ github.event.pull_request.base.sha }}
+          fetch-depth: 0
           persist-credentials: false
-      - uses: actions/download-artifact@v8
-        if: github.event.action != 'closed'
-        with:
-          artifact-ids: ${{ needs.build.outputs.artifact-id }}
-          path: example/chat_app/build/web
-          merge-multiple: true
-
       - name: Install Hugging Face Hub client
         run: python3 -m pip install "huggingface_hub>=0.36.0,<0.37.0"
-
-      - name: Prepare static Space payload
-        if: ${{ github.event.action != 'closed' }}
-        run: |
-          rm -rf hf-space-sync
-          mkdir -p hf-space-sync
-
-          rsync -a --delete \
-            "example/chat_app/build/web/" "hf-space-sync/"
-
-          {
-            printf '%s\n' '---'
-            printf '%s\n' "title: llamadart chat app PR ${PR_NUMBER}"
-            printf '%s\n' 'sdk: static'
-            printf '%s\n' 'app_file: index.html'
-            printf '%s\n' 'custom_headers:'
-            printf '%s\n' '  cross-origin-embedder-policy: require-corp'
-            printf '%s\n' '  cross-origin-opener-policy: same-origin'
-            printf '%s\n' '  cross-origin-resource-policy: cross-origin'
-            printf '%s\n' '---'
-            printf '%s\n' ''
-            printf '%s\n' "llamadart chat app preview for PR ${PR_NUMBER}."
-          } > "hf-space-sync/README.md"
-
-      - name: Create or update preview Space
+      - name: Check live PR, verify artifact and apply preview operation
         env:
+          GH_TOKEN: ${{ github.token }}
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
-        if: ${{ github.event.action != 'closed' }}
-        run: |
-          python3 tool/ci/hf_space_deploy.py \
-            --repo "$SPACE_REPO" \
-            --folder hf-space-sync \
-            --commit-message "deploy PR #${PR_NUMBER} ${PR_HEAD_SHA:0:7}" \
-            --delete-pattern '*' \
-            --public
-
-      - name: Verify deployed preview artifact
-        if: ${{ github.event.action != 'closed' }}
-        run: |
-          ./scripts/verify_chat_app_web_deployment.sh \
-            "$APP_URL" "$PR_HEAD_SHA"
-
-      - name: Delete preview Space
-        env:
-          HF_TOKEN: ${{ secrets.HF_TOKEN }}
-        if: ${{ github.event.action == 'closed' }}
-        run: |
-          python3 - <<'PY'
-          import os
-
-          from huggingface_hub import HfApi
-          from huggingface_hub.errors import HfHubHTTPError
-
-          api = HfApi(token=os.environ["HF_TOKEN"])
-          try:
-              api.delete_repo(
-                  repo_id=os.environ["SPACE_REPO"],
-                  repo_type="space",
-              )
-          except HfHubHTTPError as error:
-              if getattr(error.response, "status_code", None) != 404:
-                  raise
-          PY
-
-      - name: Comment preview URL
-        if: ${{ github.event.action != 'closed' }}
-        uses: actions/github-script@v9
-        env:
-          APP_URL: ${{ steps.target.outputs.app_url }}
-          SPACE_URL: ${{ steps.target.outputs.space_url }}
-          SPACE_REPO: ${{ steps.target.outputs.space_repo }}
-          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-        with:
-          script: |
-            const marker = '<!-- llamadart-chat-app-hf-pr-preview -->';
-            const shortSha = process.env.PR_HEAD_SHA.slice(0, 7);
-            const body = [
-              marker,
-              `Chat app preview deployed for \`${shortSha}\`.`,
-              '',
-              `- App: ${process.env.APP_URL}`,
-              `- Space: ${process.env.SPACE_URL}`,
-              `- Repo: \`${process.env.SPACE_REPO}\``,
-            ].join('\n');
-
-            const {owner, repo} = context.repo;
-            const issue_number = context.issue.number;
-            const comments = await github.paginate(
-              github.rest.issues.listComments,
-              {owner, repo, issue_number, per_page: 100},
-            );
-            const existing = comments.find((comment) =>
-              comment.user?.type === 'Bot' && comment.body?.includes(marker)
-            );
-
-            if (existing) {
-              await github.rest.issues.updateComment({
-                owner,
-                repo,
-                comment_id: existing.id,
-                body,
-              });
-            } else {
-              await github.rest.issues.createComment({
-                owner,
-                repo,
-                issue_number,
-                body,
-              });
-            }
-
-      - name: Comment preview removal
-        if: ${{ github.event.action == 'closed' }}
-        uses: actions/github-script@v9
-        env:
-          SPACE_REPO: ${{ steps.target.outputs.space_repo }}
-        with:
-          script: |
-            const marker = '<!-- llamadart-chat-app-hf-pr-preview -->';
-            const body = [
-              marker,
-              `Chat app preview removed for \`${process.env.SPACE_REPO}\`.`,
-            ].join('\n');
-
-            const {owner, repo} = context.repo;
-            const issue_number = context.issue.number;
-            const comments = await github.paginate(
-              github.rest.issues.listComments,
-              {owner, repo, issue_number, per_page: 100},
-            );
-            const existing = comments.find((comment) =>
-              comment.user?.type === 'Bot' && comment.body?.includes(marker)
-            );
-
-            if (existing) {
-              await github.rest.issues.updateComment({
-                owner,
-                repo,
-                comment_id: existing.id,
-                body,
-              });
-            } else {
-              await github.rest.issues.createComment({
-                owner,
-                repo,
-                issue_number,
-                body,
-              });
-            }
+        run: python3 tool/ci/preview_guard.py
