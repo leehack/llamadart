@@ -105,10 +105,7 @@ Future<void> main(List<String> args) async {
     await generate(1).timeout(const Duration(seconds: 60));
     await engine.unloadModel();
     try {
-      final missingModel = model.replaceFirst(
-        RegExp(r'\.litertlm$'),
-        '.missing.litertlm',
-      );
+      final missingModel = '$model.missing.litertlm';
       await engine.loadModel(missingModel, modelParams: params);
       throw StateError('Missing model unexpectedly loaded');
     } on LlamaModelException {
