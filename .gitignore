@@ -74,6 +74,8 @@ compile_commands.json
 # Models (Large files)
 *.gguf
 *.bin
+# Deterministic transport fixture is source data, not model weights.
+!/test/fixtures/windows_ggml_registry_qualification/transport-selftest.bin
 
 # Test Assets
 /test_assets/
