@@ -1,3 +1,7 @@
+## 0.17.2
+
+* Refresh README installation guidance for core `0.17.4`; Apple SwiftPM stays pinned to `leehack/litert-lm-native@v0.18.1-4`.
+
 ## 0.17.1
 
 * Release with core `0.17.1`; Apple SwiftPM stays pinned to `leehack/litert-lm-native@v0.18.1-4`, so core `0.17.0` still pairs with it. The README now shows the current pairing and privacy-manifest facts.

@@ -1,3 +1,7 @@
+## 0.17.2
+
+* Refresh README installation guidance for core `0.17.4`; Apple SwiftPM stays pinned to `leehack/stable-diffusion-native@v0.3.0-1`.
+
 ## 0.17.1
 
 * Release with core `0.17.1`; Apple SwiftPM stays pinned to `leehack/stable-diffusion-native@v0.3.0-1`, so core `0.17.0` still pairs with it. The README now shows the current pairing and privacy-manifest facts.

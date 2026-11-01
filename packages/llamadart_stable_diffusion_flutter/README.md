@@ -19,8 +19,8 @@ with core `0.17.x`. Upgrade both together. Earlier pairings are in the
 
 ```yaml
 dependencies:
-  llamadart: ^0.17.3
-  llamadart_stable_diffusion_flutter: ^0.17.1
+  llamadart: ^0.17.4
+  llamadart_stable_diffusion_flutter: ^0.17.2
 ```
 
 Adding the package selects the `stable_diffusion` runtime for Flutter iOS and
