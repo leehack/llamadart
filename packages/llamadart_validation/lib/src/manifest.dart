@@ -733,17 +733,15 @@ class ValidationProfile {
     final device = runtime == 'litert'
         ? ComputeDevice.values.byName(backend)
         : ComputeDevice.auto;
-    final requiresAccelerator =
-        device == ComputeDevice.gpu || device == ComputeDevice.npu;
     final gpuLayers = backend == 'cpu' ? 0 : ModelParams.maxGpuLayers;
     if (runtime == 'litert') {
       return LiteRtLmModelParams(
         contextSize: contextSize,
         device: device,
         gpuLayers: gpuLayers,
-        preferredBackend: requiresAccelerator
-            ? GpuBackend.auto
-            : GpuBackend.cpu,
+        preferredBackend: device == ComputeDevice.cpu
+            ? GpuBackend.cpu
+            : GpuBackend.auto,
         numberOfThreads: threads,
       );
     }

@@ -549,6 +549,36 @@ Future<({ValidationReport report, List<Map<String, dynamic>> events})> run(
 }
 
 void main() {
+  test('LiteRT profiles preserve automatic and explicit device selection', () {
+    for (final device in ComputeDevice.values) {
+      final selected = profile(backend: device.name);
+      final params = selected.loadParams;
+      expect(params, isA<LiteRtLmModelParams>());
+      expect(params.device, device);
+      expect(
+        params.preferredBackend,
+        device == ComputeDevice.cpu ? GpuBackend.cpu : GpuBackend.auto,
+      );
+      expect(
+        params.gpuLayers,
+        device == ComputeDevice.cpu ? 0 : ModelParams.maxGpuLayers,
+      );
+      expect(
+        selected.requiresAcceleratorProof,
+        device == ComputeDevice.gpu || device == ComputeDevice.npu,
+      );
+      expect(selected.effectiveConfig['backend'], device.name);
+      expect(selected.effectiveConfig['gpu_layers_hint'], params.gpuLayers);
+      expect(selected.effectiveConfig['batch_threads'], 0);
+      expect(
+        selected.effectiveConfig['sampling_application'],
+        device == ComputeDevice.npu
+            ? 'runtime_defaults_requested_sampler_not_applied'
+            : 'requested_sampler',
+      );
+    }
+  });
+
   test(
     'tool followup errors retain successful call evidence and phase',
     () async {

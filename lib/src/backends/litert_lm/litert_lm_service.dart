@@ -143,6 +143,7 @@ class LiteRtLmService {
   String? _modelPath;
   LiteRtLmModelLink? _modelLink;
   String? _activeBackend;
+  String? _loadedBackend;
   bool _automaticBackend = false;
   bool? _activeSpeculativeDecoding;
   int? _activeMaxNumImages;
@@ -214,6 +215,7 @@ class LiteRtLmService {
     _modelLink = modelLink;
     _modelParams = params;
     _activeBackend = resolvedBackend;
+    _loadedBackend = resolvedBackend;
     _automaticBackend =
         params.device == ComputeDevice.auto &&
         params.liteRtLmBackend.nativeName == null &&
@@ -244,6 +246,7 @@ class LiteRtLmService {
     _modelPath = null;
     _modelParams = null;
     _activeBackend = null;
+    _loadedBackend = null;
     _activeSpeculativeDecoding = null;
     _workingAudioBackend = null;
     _bundleCapabilities = null;
@@ -1158,6 +1161,7 @@ class LiteRtLmService {
     _modelPath = null;
     _modelParams = null;
     _activeBackend = null;
+    _loadedBackend = null;
     _workingAudioBackend = null;
     _modelHandle = null;
     _contextHandle = null;
@@ -1753,6 +1757,14 @@ class LiteRtLmService {
   void _validateContextBackendParams(ModelParams params) {
     final requestedBackend = _explicitContextBackendName(params);
     if (requestedBackend == null) {
+      return;
+    }
+
+    // An automatic hint still names the load-time choice after CPU fallback.
+    if (_automaticBackend &&
+        params.device == ComputeDevice.auto &&
+        params.liteRtLmBackend.nativeName == null &&
+        requestedBackend == _loadedBackend) {
       return;
     }
 
