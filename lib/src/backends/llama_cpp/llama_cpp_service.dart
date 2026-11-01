@@ -374,6 +374,10 @@ class LlamaCppService {
   _GgmlBackendRegNameDart? _ggmlBackendRegNameFallback;
   _GgmlBackendRegByNameDart? _ggmlBackendRegByNameFallback;
   _GgmlBackendRegGetProcAddressDart? _ggmlBackendRegGetProcAddressFallback;
+  // Tests replace this through mirrors to reproduce an absent primary export.
+  // ignore: prefer_final_fields
+  _GgmlBackendRegGetProcAddressDart _ggmlBackendRegGetProcAddressPrimary =
+      ggml_backend_reg_get_proc_address;
   _GgmlBackendRegDevCountDart? _ggmlBackendRegDevCountFallback;
   _GgmlBackendRegDevGetDart? _ggmlBackendRegDevGetFallback;
   _GgmlBackendDevCountDart? _ggmlBackendDevCountFallback;
@@ -3402,7 +3406,7 @@ class LlamaCppService {
     T Function() primaryCall,
     T? Function() fallbackCall,
   ) {
-    if (Platform.isWindows) {
+    if (_isWindows) {
       // Windows split bundles can expose ggml registry state through ggml.dll
       // while the generated default asset points at llama.dll. Prefer the
       // explicit ggml runtime lookup when it is available so count/get/name
