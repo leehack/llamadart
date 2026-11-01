@@ -1160,3 +1160,27 @@ identity. Observe modules after the unmodified production outcome; registry
 getters can initialize state. Run normal published-assets JIT and a compiled
 `dart build cli` bundle outside the checkout as controls. Unit probes and a
 model-free DLL test do not replace these Windows model checks.
+
+## Windows registry qualification
+
+`windows-native-override-registry` is a manual Windows 2022 x64 CPU lane for
+[#1649](https://github.com/leehack/llamadart/issues/1649). In the existing CI
+workflow, enable only the optional `windows_registry_qualification` boolean;
+normal full CI still runs, the qualification result is separate, and production
+chat deployment is disabled for that run. It uses stock `windows-2022` only.
+
+The [fixture README](../test/fixtures/windows_ggml_registry_qualification/README.md)
+documents pinned inputs, source binding, disk preflight,
+local execution and evidence verification. The 18 fresh H/E/P and alias cases
+retain original failures as data, require all fixed cases, real model/context
+creation and unload, passive module/IAT identities, maintained integration and
+typed refusal controls, the actual declaration mutant with byte-exact restoration,
+and the complete copied AOT distribution run from an empty external directory.
+GPU artifacts do not qualify GPU operation. Setup failure, timeout, cancellation,
+missing evidence or a failed terminal never count as qualification.
+
+The one-day immutable artifact contains raw logs and manifests, never model
+weights, Pub cache or SDK/runtime copies. Download by artifact ID and retain a
+verified local copy before expiry; independently verify its outer digest and
+inner inventory using the fixture verifier. A passing normal aggregate does not
+establish a qualification result or replace independent interpretation.

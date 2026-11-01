@@ -9,6 +9,29 @@ import '../../../tool/testing/run_local_e2e.dart';
 import '../../../tool/testing/test_matrix.dart';
 
 void main() {
+  test(
+    'Windows registry matrix reaches the explicitly unskipped integration',
+    () async {
+      final row = testMatrixRows.singleWhere(
+        (r) => r.id == 'windows-native-override-registry',
+      );
+      expect(row.tier, 'platform');
+      expect(row.mode, contains('manual'));
+      final result = await runLocalE2e([
+        '--scenario',
+        row.id,
+        '--dry-run',
+      ], projectRoot: '/repo');
+      expect(result.exitCode, 0, reason: result.stderr);
+      expect(
+        result.stdout,
+        contains(
+          '--run-skipped -t local-only test/integration/windows_ggml_registry_qualification_test.dart',
+        ),
+      );
+    },
+  );
+
   test('local image-set matrix selects the bounded CPU fixture scenario', () {
     final row = testMatrixRows.singleWhere(
       (r) => r.id == 'image-local-checkpoint-sets',

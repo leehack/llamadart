@@ -6,6 +6,12 @@ on:
   pull_request:
     branches: [ main ]
   workflow_dispatch:
+    inputs:
+      windows_registry_qualification:
+        description: Run the pinned Windows CPU registry qualification separately
+        type: boolean
+        required: false
+        default: false
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
@@ -1103,10 +1109,65 @@ jobs:
       - run: flutter test test/validation_controller_test.dart test/validation_app_test.dart
         working-directory: example/chat_app
 
+  windows-registry-qualification:
+    name: Windows registry qualification (manual)
+    if: github.event_name == 'workflow_dispatch' && inputs.windows_registry_qualification == true
+    runs-on: windows-2022
+    timeout-minutes: 75
+    permissions:
+      contents: read
+    env:
+      LLAMADART_WINDOWS_QUALIFICATION: ${{ runner.temp }}/windows-registry-${{ github.run_id }}-${{ github.run_attempt }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Prepare pinned qualification SDK
+        shell: pwsh
+        run: ./test/fixtures/windows_ggml_registry_qualification/qualification.ps1 -Prepare
+      - name: List, inspect and execute the durable scenario
+        shell: pwsh
+        run: |
+          . ./test/fixtures/windows_ggml_registry_qualification/qualification.ps1 -FunctionsOnly
+          $W = $env:LLAMADART_WINDOWS_QUALIFICATION
+          $O = Join-Path $W 'out'
+          $dart = Join-Path $W 'stage/flutter/bin/cache/dart-sdk/bin/dart.exe'
+          $env:Path = (Split-Path $dart) + ';' + $env:Path
+          $cleanPath = $env:Path
+          Must 'launcher-pub-get' $dart 'pub get' 300
+          Must 'launcher-list' $dart 'run tool/testing/run_local_e2e.dart --list' 300
+          Must 'launcher-dry-run' $dart 'run tool/testing/run_local_e2e.dart --scenario windows-native-override-registry --dry-run' 300
+          Must 'launcher-scenario' $dart 'run tool/testing/run_local_e2e.dart --scenario windows-native-override-registry' 3900
+      - name: Seal all qualification evidence
+        if: ${{ always() }}
+        shell: pwsh
+        run: ./test/fixtures/windows_ggml_registry_qualification/qualification.ps1 -Seal
+      - name: Keep immutable qualification evidence
+        id: qualification-artifact
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: windows-registry-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ env.LLAMADART_WINDOWS_QUALIFICATION }}/evidence.zip
+          if-no-files-found: error
+          overwrite: false
+          retention-days: 1
+      - name: Record artifact identity
+        if: ${{ always() }}
+        shell: pwsh
+        env:
+          ARTIFACT_ID: ${{ steps.qualification-artifact.outputs.artifact-id }}
+          ARTIFACT_URL: ${{ steps.qualification-artifact.outputs.artifact-url }}
+          ARTIFACT_DIGEST: ${{ steps.qualification-artifact.outputs.artifact-digest }}
+        run: |
+          "Artifact ID: $env:ARTIFACT_ID`nURL: $env:ARTIFACT_URL`nSHA256: $env:ARTIFACT_DIGEST" >> $env:GITHUB_STEP_SUMMARY
+
   deploy-chat-app:
     needs: [test-linux-web, web-chat-contract]
     if: >-
-      !cancelled() &&
+      !cancelled() && inputs.windows_registry_qualification != true &&
       (github.event_name == 'push' || github.event_name == 'workflow_dispatch') &&
       github.ref == 'refs/heads/main' && github.repository == 'leehack/llamadart' &&
       needs.test-linux-web.result == 'success' && needs.web-chat-contract.result == 'success'
