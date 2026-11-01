@@ -11,9 +11,14 @@ For upgrade planning, combine this page with the
 [Upgrade Checklist](../migration/upgrade-checklist). For breaking changes,
 validate against the exact release tag notes.
 
-## Unreleased
+## 0.17.4
 
 - Restore documentation destinations linked from published package READMEs and protect retained release notes.
+- Refresh Apple companion installation guidance in `0.17.2` with unchanged native runtimes.
+
+- Keep default WebGPU bridge assets at `v0.1.79` (unchanged from 0.17.3).
+
+Runtime baseline unchanged from `0.17.3`: native llama.cpp `v0.8.0-1` and Web use upstream `v0.8.0@8642541b255bfb5dc39cd351a178be09013a55d6`; native LiteRT-LM stays `v0.18.1-4` and stable-diffusion stays `v0.3.0-1`. Web LiteRT-LM stays `@litert-lm/core@0.18.0`. Manifest SHA-256: `66ffee7a1c2c54c187526ba6a27957141b77438fed9a0f2a5afcfa2736682e9c`.
 
 ## 0.17.3
 
