@@ -133,3 +133,15 @@ including what happens when
 How the hook resolves runtimes: [Native runtime configuration](../platforms/native-build-hooks).
 Apple SwiftPM path: [Apple setup](../platforms/apple-setup). Setup check:
 [Diagnose setup](../platforms/diagnose-setup).
+
+## Moved topics
+
+These sections have moved. Published package README links continue to land here.
+
+### Fresh macOS SwiftPM bootstrap
+
+See [Fresh macOS SwiftPM bootstrap](../platforms/apple-setup#fresh-macos-swiftpm-bootstrap) for the current instructions.
+
+### Flutter macOS LiteRT-LM build phase
+
+See [Flutter macOS LiteRT-LM build phase](../platforms/apple-setup#flutter-macos-litert-lm-build-phase) for the current instructions.

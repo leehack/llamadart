@@ -11,6 +11,8 @@ import 'package:llamadart/src/hook/native_release_pins.dart';
 import 'package:pub_semver/pub_semver.dart';
 import 'package:yaml/yaml.dart';
 
+import 'check_released_changelog_sections.dart';
+
 // Keep these maps in sync when adding companion packages or moving the current
 // installation docs. Historical website/versioned_docs pages are intentionally
 // excluded so archived release docs can keep their original package versions.
@@ -935,33 +937,30 @@ const _docsChangelog = 'website/docs/changelog/recent-releases.md';
 
 final RegExp _releaseHeading = RegExp(r'^##\s+(\d+)\.(\d+)\.\d+');
 
-/// Problems with releases older than [core]'s previous minor among
-/// [changelog]'s level-two [headings].
-///
-/// The page keeps the current and previous minor, so a release prep that opens
-/// a new minor drops the one before. Nothing is enforced for a `.0` minor,
-/// whose previous minor the version cannot name.
+/// Requires every published patch in the retained minor series, deriving the
+/// window from the full core changelog rather than guessing patch numbers.
 List<String> docsChangelogRetentionProblems(
   String changelog,
   List<String> headings,
-  Version core,
-) {
-  if (core.minor == 0) return const [];
-  final stale = <String>[];
-  for (final heading in headings) {
-    final match = _releaseHeading.firstMatch(heading);
-    if (match == null) continue;
-    final major = int.parse(match.group(1)!);
-    final minor = int.parse(match.group(2)!);
-    if (major < core.major || (major == core.major && minor < core.minor - 1)) {
-      stale.add(heading.trim());
-    }
-  }
-  if (stale.isEmpty) return const [];
+  Version core, {
+  required List<String> coreHeadings,
+}) {
+  final retained = retainedReleaseHeadings(
+    coreHeadings,
+    major: core.major,
+    minor: core.minor,
+  );
+  final releases = headings.where(_releaseHeading.hasMatch).toList();
+  final missing = retained.where((heading) => !releases.contains(heading));
+  final stale = releases.where((heading) => !retained.contains(heading));
   return [
-    '$changelog keeps only ${core.major}.${core.minor}.x and '
-        '${core.major}.${core.minor - 1}.x; remove ${stale.join(', ')} (older '
-        'releases stay in CHANGELOG.md).',
+    if (missing.isNotEmpty)
+      '$changelog is missing retained release sections: ${missing.join(', ')}. '
+          'Keep every patch from the current and previous published minor '
+          '(see CHANGELOG.md).',
+    if (stale.isNotEmpty)
+      '$changelog keeps only the current and previous published minor; remove '
+          '${stale.join(', ')} (older releases stay in CHANGELOG.md).',
   ];
 }
 
@@ -1052,6 +1051,7 @@ void main(List<String> arguments) {
                 changelog,
                 headings,
                 Version.parse(versions['llamadart']!),
+                coreHeadings: _readLines('CHANGELOG.md', errors) ?? const [],
               ),
             );
           } on FormatException {

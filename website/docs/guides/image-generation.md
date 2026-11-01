@@ -586,3 +586,43 @@ downloads; both keep their pinned sources and settings in the app.
 3. [Advanced requests](./image-generation-advanced): seamless textures, local
    checkpoint sets, image editing, ControlNet, hires fix and reference image
    editing.
+
+## Moved topics
+
+These sections have moved. Published package README links continue to land here.
+
+### VAE tiling
+
+See [VAE tiling](./image-generation-settings#vae-tiling) for the current instructions.
+
+### Conditioning cache
+
+See [Conditioning cache](./image-generation-settings#conditioning-cache) for the current instructions.
+
+### Module placement and GPU memory
+
+See [Module placement and GPU memory](./image-generation-settings#module-placement-and-gpu-memory) for the current instructions.
+
+### Seamless textures
+
+See [Seamless textures](./image-generation-advanced#seamless-textures) for the current instructions.
+
+### Local checkpoint sets
+
+See [Local checkpoint sets](./image-generation-advanced#local-checkpoint-sets) for the current instructions.
+
+### Image editing
+
+See [Image editing](./image-generation-advanced#image-editing) for the current instructions.
+
+### ControlNet
+
+See [ControlNet](./image-generation-advanced#controlnet) for the current instructions.
+
+### Hires fix
+
+See [Hires fix](./image-generation-advanced#hires-fix) for the current instructions.
+
+### Reference image editing
+
+See [Reference image editing](./image-generation-advanced#reference-image-editing) for the current instructions.

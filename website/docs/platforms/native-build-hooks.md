@@ -475,3 +475,19 @@ again, verified as above, or downloads it when the archive is gone.
 The hook also checks each LiteRT-LM archive for its required libraries and
 downloads it again when a cached copy is incomplete. Which
 repository owns which change: [Runtime ownership](../maintainers/runtime-ownership).
+
+## Moved topics
+
+These sections have moved. Published package README links continue to land here.
+
+### Desktop setup report
+
+See [Desktop setup report](./diagnose-setup#desktop-setup-report) for the current instructions.
+
+### Isolated native check
+
+See [Isolated native check](./diagnose-setup#isolated-native-check) for the current instructions.
+
+### Apple privacy manifest
+
+See [Apple privacy manifest](./apple-setup#apple-privacy-manifest) for the current instructions.

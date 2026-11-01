@@ -12,7 +12,8 @@
 ///
 /// The docs changelog keeps only the current and previous minor, so it may
 /// also lose its oldest sections: its tail may be cut at a `## <version>`
-/// heading, provided every section that remains is unchanged.
+/// heading, provided only releases older than the retained two minor series
+/// are removed and every section that remains is unchanged.
 ///
 /// CI runs it on `pull_request` events from a full-history checkout:
 ///
@@ -41,6 +42,37 @@ final RegExp _prepBranch = RegExp(
   r'^release/(prep-[0-9]+\.[0-9]+\.[0-9]+([-+][A-Za-z0-9._-]+)?'
   r'|[0-9]+\.[0-9]+\.[0-9]+([-+][A-Za-z0-9._-]+)?-prep)$',
 );
+
+/// Release headings in the current series and the latest earlier series that
+/// actually shipped. This also retains the last minor of the previous major
+/// when the current minor is zero; missing patch numbers are never invented.
+List<String> retainedReleaseHeadings(
+  Iterable<String> headings, {
+  required int major,
+  required int minor,
+}) {
+  final releases = <(String, int, int)>[];
+  final version = RegExp(r'^## (\d+)\.(\d+)\.\d+\S*\s*$');
+  (int, int)? previous;
+  for (final heading in headings) {
+    final match = version.firstMatch(heading);
+    if (match == null) continue;
+    final series = (int.parse(match[1]!), int.parse(match[2]!));
+    releases.add((heading.trim(), series.$1, series.$2));
+    if ((series.$1 < major || (series.$1 == major && series.$2 < minor)) &&
+        (previous == null ||
+            series.$1 > previous.$1 ||
+            (series.$1 == previous.$1 && series.$2 > previous.$2))) {
+      previous = series;
+    }
+  }
+  return [
+    for (final (heading, releaseMajor, releaseMinor) in releases)
+      if ((releaseMajor == major && releaseMinor == minor) ||
+          (releaseMajor, releaseMinor) == previous)
+        heading,
+  ];
+}
 
 /// Whether a PR is a core release prep, as `release_on_prep_merge.yml`
 /// decides: the `release-prep` label or a versioned prep branch, from this
@@ -112,7 +144,16 @@ bool _isTailTruncation(List<String> released, List<String> candidate) {
   while (next < released.length && released[next].trim().isEmpty) {
     next++;
   }
-  return next < released.length && _versionHeading.hasMatch(released[next]);
+  if (next >= released.length || !_versionHeading.hasMatch(released[next])) {
+    return false;
+  }
+  final current = RegExp(r'^## (\d+)\.(\d+)\.').firstMatch(released.first)!;
+  final retained = retainedReleaseHeadings(
+    released,
+    major: int.parse(current[1]!),
+    minor: int.parse(current[2]!),
+  ).toSet();
+  return !released.skip(next).any(retained.contains);
 }
 
 List<String> _withoutTrailingBlankLines(List<String> lines) {
