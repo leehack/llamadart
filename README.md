@@ -192,3 +192,5 @@ Repository checks, validation commands, and PR expectations are in
 ## License
 
 MIT. See [LICENSE](https://github.com/leehack/llamadart/blob/main/LICENSE).
+
+<!-- Temporary original-artifact preview retry proof; close without merging. -->
