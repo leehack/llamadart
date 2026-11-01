@@ -136,6 +136,8 @@ try {
   } elseif(-not (Test-Path "$S/sdk-ready.json")){throw 'pinned SDK preparation missing'}
   $cleanPath=$env:Path
   $spec=Get-Content "$FixtureRoot/inputs.json" -Raw | ConvertFrom-Json
+  $runtime="$S/published-reference-runtime";$taskRuntimeDirectories=@($runtime)
+  $originalWindowsPath=$env:Path;$hostExecutable=[Diagnostics.Process]::GetCurrentProcess().MainModule.FileName;$hostDirectory=Split-Path $hostExecutable
   if($Prepare){
     @{os=[Environment]::OSVersion.VersionString;imageOS=$env:ImageOS;imageVersion=$env:ImageVersion;processors=[Environment]::ProcessorCount;memoryBytes=(Get-CimInstance Win32_ComputerSystem).TotalPhysicalMemory;freeBytes=FreeBytes} | ConvertTo-Json | Set-Content "$O/host.json"
     # SDK compressed bytes plus Dart-only extraction and staging margin, before downloads.
@@ -166,12 +168,18 @@ try {
     Must 'sdk-dart-version' $dart '--version'
     Must 'sdk-git-version' $git '--version'
     if((Get-Content "$O/sdk-dart-version.stdout.log" -Raw) -notmatch '3\.13\.1 '){throw 'pinned Dart version mismatch'}
+    $pathPlan=New-ComparisonPath $originalWindowsPath @((Split-Path $git),(Split-Path $dart)) $hostDirectory $taskRuntimeDirectories
+    Invoke-ComparisonPathPreflight 'prepared-sdk' $pathPlan.NormalPath $hostExecutable $FixtureRoot $O $git $dart
     @{dartPath=$dart;gitPath=$git;dartSha256=Hash $dart;gitSha256=Hash $git;version='3.13.1'} | ConvertTo-Json | Set-Content "$S/sdk-ready.json"
     Copy-Item "$S/sdk-ready.json" "$O/sdk-executables.json"
     $failed=$false
   } else {
     $dart="$S/flutter/bin/cache/dart-sdk/bin/dart.exe";$git="$S/git/cmd/git.exe"
     $ready=Get-Content "$S/sdk-ready.json" -Raw | ConvertFrom-Json;Verify $dart $ready.dartSha256;Verify $git $ready.gitSha256
+    $pathPlan=New-ComparisonPath $originalWindowsPath @((Split-Path $git),(Split-Path $dart)) $hostDirectory $taskRuntimeDirectories
+    $cleanPath=$pathPlan.NormalPath;$env:Path=$cleanPath
+    Remove-Item Env:LLAMADART_NATIVE_LIB_DIR,Env:LLAMADART_BACKEND_MODULE_DIR -ErrorAction SilentlyContinue
+    Invoke-ComparisonPathPreflight 'qualification-sdk' $cleanPath $hostExecutable $FixtureRoot $O $git $dart
     $repo=(Resolve-Path "$FixtureRoot/../../..").Path
     Must 'checkout-head' $git "-C `"$repo`" rev-parse HEAD"
     $head=(Get-Content "$O/checkout-head.stdout.log" -Raw).Trim()
@@ -181,7 +189,7 @@ try {
     $candidate=Export-BoundSource $head 'candidate' $git $repo
     $baseline=Export-BoundSource $spec.baselineCommit 'baseline' $git $repo
     Assert-FreeSpace (FreeBytes) 4GB 'before-native'
-    $runtime="$S/published-reference-runtime";New-Item -ItemType Directory $runtime | Out-Null
+    New-Item -ItemType Directory $runtime | Out-Null
     $archives=@();foreach($asset in @($spec.assets | Where-Object {$_.name -like 'candidate-*.tgz'})){
       $file=Save-Asset $asset;$archives+=$file
       Must "extract-$($asset.name.Replace('.','-'))" "$env:WINDIR/System32/tar.exe" "-xzf `"$file`" -C `"$runtime`"" 180
@@ -193,12 +201,6 @@ try {
     @{nativeExpandedBytes=$nativeBytes;sourceExpandedBytes=$sourceBytes;nativeCopiesBudget=8;pubAndBuildMarginBytes=2GB;modelBytes=1117320736;additionalPeakBytes=$peak} | ConvertTo-Json | Set-Content "$O/peak-space-budget.json"
     Assert-FreeSpace (FreeBytes) $peak 'before-model-and-cases'
     $model=Save-Asset ($spec.assets | Where-Object {$_.name -eq 'qwen.gguf'})
-    $originalWindowsPath=$env:Path;$hostExecutable=[Diagnostics.Process]::GetCurrentProcess().MainModule.FileName;$hostDirectory=Split-Path $hostExecutable
-    $taskRuntimeDirectories=@($runtime)
-    $pathPlan=New-ComparisonPath $originalWindowsPath @((Split-Path $git),(Split-Path $dart)) $hostDirectory $taskRuntimeDirectories
-    $cleanPath=$pathPlan.NormalPath;$env:Path=$cleanPath
-    Remove-Item Env:LLAMADART_NATIVE_LIB_DIR,Env:LLAMADART_BACKEND_MODULE_DIR -ErrorAction SilentlyContinue
-    Invoke-ComparisonPathPreflight 'qualification-sdk' $cleanPath $hostExecutable $FixtureRoot $O $git $dart
     if(@(Get-CimInstance Win32_PnPEntity | Where-Object {$_.DeviceID -like '*VEN_10DE*'}).Count -or (Test-Path "$env:WINDIR/System32/nvcuda.dll")){throw 'CPU-only hardware/driver required'}
     $C=[pscustomobject]@{candidateSourceRoot=$candidate;baselineSourceRoot=$baseline;candidateSourceFiles="$O/candidate-source-files.json";baselineSourceFiles="$O/baseline-source-files.json";modelPath=$model;candidateRuntimeArchives=$archives;flutterBat=''}
     $env:PUB_CACHE="$W/pub-cache";$env:CI='true';$env:FLUTTER_SUPPRESS_ANALYTICS='true'

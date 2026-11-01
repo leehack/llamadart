@@ -46,6 +46,7 @@ void main() {
   final shell = Platform.environment['LLAMADART_TEST_PWSH'] ?? 'pwsh';
   for (final name in [
     'protocol',
+    'path',
     'registry_mutation',
     'aot_distribution',
     'matrix_workflow',

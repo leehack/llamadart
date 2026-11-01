@@ -1,5 +1,5 @@
 function Normalize-ComparisonDirectory([string]$Value) {
-  return $Value.Trim().Trim([char]34).TrimEnd([char[]]'\/').ToLowerInvariant()
+  return $Value.Trim().Trim([char]34).Replace('/','\').TrimEnd([char[]]'\/').ToLowerInvariant()
 }
 function New-ComparisonPath([string]$OriginalPath,[string[]]$PinnedDirectories,[string]$HostDirectory,[string[]]$TaskRuntimeDirectories,[string]$RuntimeDirectory='') {
   $retained=@();$removed=@()
@@ -36,6 +36,7 @@ function New-ComparisonPath([string]$OriginalPath,[string[]]$PinnedDirectories,[
 function Invoke-ComparisonPathPreflight([string]$Phase,[string]$EffectivePath,[string]$HostExecutable,[string]$ScriptRoot,[string]$OutputDirectory,[string]$GitExecutable='',[string]$DartExecutable='',[string]$FlutterBatch='') {
   $arguments="-NoLogo -NoProfile -NonInteractive -File `"$ScriptRoot/child_path_probe.ps1`" -Phase `"$Phase`""
   if($GitExecutable){$arguments+=" -GitExecutable `"$GitExecutable`" -DartExecutable `"$DartExecutable`""}
+  if($FlutterBatch){$arguments+=" -FlutterBatch `"$FlutterBatch`""}
   $before=$env:Path
   try {
     $env:Path=$EffectivePath
