@@ -1,7 +1,7 @@
 import 'decision_catalog.dart';
 
 /// Current reproducible catalog contract; older journals retain their version.
-const int validationCatalogVersion = 13;
+const int validationCatalogVersion = 14;
 
 /// Versioned core feature selectors. Optional model/media packs are separate.
 const validationFeatures = {
@@ -271,8 +271,9 @@ const catalogFiveCaseIds = {
 
 /// Whether [catalogVersion] declares case [id]. Decision cases exist only in
 /// catalogs 5 and newer, and only decision profiles select them.
-bool catalogDeclaresCase(String id, int catalogVersion) =>
-    nextTokenScoringValidationCases.any((definition) => definition.id == id)
+bool catalogDeclaresCase(String id, int catalogVersion) => id == 'P05.identity'
+    ? catalogVersion >= 14
+    : nextTokenScoringValidationCases.any((definition) => definition.id == id)
     ? catalogVersion >= 13
     : toolResultMediaValidationCases.any((definition) => definition.id == id)
     ? catalogVersion >= 12
@@ -728,7 +729,7 @@ const statePersistenceFixture = <String, Object>{
   'incompatible_version': 2147483647,
 };
 
-/// Public state obligations introduced together in catalog 11.
+/// Public state obligations from catalog 11, with identity added in catalog 14.
 const stateValidationCases = [
   ValidationCaseDefinition(
     'P01.capability',
@@ -747,6 +748,11 @@ const stateValidationCases = [
   ),
   ValidationCaseDefinition(
     'P04.invalid_recovery',
+    ['state_persistence'],
+    ['state_persistence'],
+  ),
+  ValidationCaseDefinition(
+    'P05.identity',
     ['state_persistence'],
     ['state_persistence'],
   ),
