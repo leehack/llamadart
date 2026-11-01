@@ -96,7 +96,6 @@ void main() {
         '## Unreleased\n\n$_released\n## 0.9.0\n\n- Older.\n\n',
         '## Unreleased\n\n$_released',
         '## Unreleased\n\n$_released\n',
-        '## 1.1.0\n\n- New.\n',
       ]) {
         expect(change(head), isNull, reason: head);
       }
@@ -138,6 +137,72 @@ void main() {
         '$_docsChangelog no longer has the released section `## 1.1.0`.',
       );
     });
+  });
+
+  test('derives actual retained patches across minor and major boundaries', () {
+    const headings = [
+      '## 1.1.3',
+      '## 1.1.0',
+      '## 1.0.5',
+      '## 1.0.0',
+      '## 0.19.4',
+      '## 0.19.1',
+      '## 0.18.0',
+    ];
+    expect(
+      retainedReleaseHeadings(headings, major: 1, minor: 1),
+      headings.take(4),
+    );
+    expect(
+      retainedReleaseHeadings(headings, major: 1, minor: 0),
+      headings.skip(2).take(4),
+    );
+    expect(
+      retainedReleaseHeadings(['## 0.0.3', '## 0.0.0'], major: 0, minor: 0),
+      ['## 0.0.3', '## 0.0.0'],
+    );
+  });
+
+  test('retains complete current and previous minor bodies', () {
+    const sections = [
+      '## 1.1.3\n\n- A.\n',
+      '## 1.1.0\n\n- B.\n',
+      '## 1.0.5\n\n- C.\n',
+      '## 1.0.0\n\n- D.\n',
+      '## 0.19.4\n\n- E.\n',
+    ];
+    final base = sections.join('\n');
+    expect(
+      releasedSectionChange(_docsChangelog, base, sections.take(4).join('\n')),
+      isNull,
+    );
+    for (var count = 1; count < 4; count++) {
+      expect(
+        releasedSectionChange(
+          _docsChangelog,
+          base,
+          sections.take(count).join('\n'),
+        ),
+        isNotNull,
+      );
+    }
+    expect(
+      releasedSectionChange(
+        _docsChangelog,
+        base,
+        base.replaceFirst('- C.', '- Changed.'),
+      ),
+      isNotNull,
+    );
+    final majorBase = sections.skip(2).join('\n');
+    expect(
+      releasedSectionChange(
+        _docsChangelog,
+        majorBase,
+        sections.skip(2).take(2).join('\n'),
+      ),
+      isNotNull,
+    );
   });
 
   group('isCoreReleasePrep', () {
@@ -265,7 +330,7 @@ void main() {
       expect(result.stderr, isNot(contains('- CHANGELOG.md')));
     });
 
-    test('lets only the docs changelog drop its oldest sections', () {
+    test('rejects dropping the prior minor in either changelog', () {
       const head = '## Unreleased\n\n- Pending.\n\n## 1.1.0\n\n- New.\n';
       repo.commit({'CHANGELOG.md': head, _docsChangelog: '$_docsIntro$head'});
 
@@ -275,18 +340,18 @@ void main() {
         result.stderr,
         contains('CHANGELOG.md:8 changes a released section'),
       );
-      expect(result.stderr, isNot(contains('- $_docsChangelog')));
+      expect(result.stderr, contains('- $_docsChangelog'));
     });
 
-    test('passes a docs changelog trimmed at a version heading', () {
+    test('rejects a retained minor trimmed at a version heading', () {
       repo.commit({
         _docsChangelog:
             '$_docsIntro## Unreleased\n\n- Pending.\n\n## 1.1.0\n\n- New.\n',
       });
 
       final result = run();
-      expect(result.exitCode, 0, reason: '${result.stderr}');
-      expect(result.stdout, contains('match the base'));
+      expect(result.exitCode, 1, reason: '${result.stderr}');
+      expect(result.stderr, contains('changes a released section'));
     });
 
     test('compares against the merge base, not the base branch tip', () {

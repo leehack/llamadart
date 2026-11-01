@@ -146,8 +146,11 @@ version alignment:
   and `0.17.x` and drops `0.16.x`. Patch releases trim nothing, and
   `CHANGELOG.md` keeps every release. The trim is a manual step:
   `verify_release_docs_versions.dart` fails, with or without `--release-prep`,
-  when the page keeps a release older than the previous minor of the
-  `pubspec.yaml` version, and names the headings to remove.
+  when the page omits any current or previous published minor patch listed
+  in `CHANGELOG.md`, or keeps older sections. For a new major at minor zero,
+  retain the last published minor of the previous major; for the first minor
+  ever published, retain that series alone. The gate derives actual headings
+  from the full changelog rather than inventing missing patch numbers.
 - Each current core release section must state the pinned WebGPU bridge tag.
   If it is unchanged, use an explicit baseline instead of repeating the old
   release's fixes. In `CHANGELOG.md`, use:
@@ -393,8 +396,9 @@ that started the run, so push again after adding the `release-prep` label.
 One change to a released section is allowed outside release prep: the docs
 changelog may lose its oldest sections. It passes when what remains is an
 exact prefix of the base's released sections and the first removed line is a
-`## <version>` heading, so a trim cannot cut a section in half or edit one
-that stays. `CHANGELOG.md` has no such allowance.
+`## <version>` heading, and every removed section is older than the current
+and previous published minor. A trim cannot cut a section in half, drop a retained patch
+or edit one that stays. `CHANGELOG.md` has no such allowance.
 
 Turn union off for release prep, which renames `## Unreleased` and rewrites
 its bullets, and for any rebase across a release-prep commit whose result you
@@ -412,3 +416,19 @@ printf '%s\n' '/CHANGELOG.md merge=text' \
 `verify_release_docs_versions.dart` fails when `## Unreleased` appears twice
 or below a released section, and with `--release-prep` whenever it remains,
 which catches the stray headings union can leave.
+
+## Published README compatibility
+
+Keep moved-topic headings and visible migration links at the old fragments in
+installation, native build hooks and image generation: published package
+READMEs are immutable. `test/fixtures/published_readme_links.json` in the
+website package records the 14 old destinations (17 link occurrences) from
+the published 0.17.0 core and Apple companion READMEs. Website tests exercise
+the same Markdown parser and URL rewriting used by the site.
+
+Working docs changes repair `/docs/next` when deployed; `/docs` continues to
+serve the latest released snapshot until the next version cut. Verify the
+legacy `/docs` destinations after 0.17.4 is cut and deployed, without editing
+historical snapshots. During release prep, decide companion patch bumps from
+all accumulated publishable changes, including README changes; compatibility
+links do not replace that decision.
