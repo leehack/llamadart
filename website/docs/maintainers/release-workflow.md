@@ -346,10 +346,10 @@ rsync -a --delete \
   ```
 
   A later commit is fine when it changed no demo input. If a demo is behind,
-  for example because another merge cancelled the release commit's CI run
-  before its deploy, redeploy `main` by hand. The CI run tests `main`'s tip in
-  full before it deploys the chat app, and replaces a `main` CI run still in
-  progress:
+  for example because its deployment failed, redeploy `main` by hand. The CI
+  run tests `main`'s tip in full before it deploys the chat app. Its unique
+  concurrency group retains other main CI runs, including pending runs;
+  deployment serialization and stale-input guards still apply:
 
   ```bash
   gh workflow run ci.yml --ref main

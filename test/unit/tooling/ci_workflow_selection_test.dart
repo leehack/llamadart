@@ -71,7 +71,206 @@ void expectGuardedUpload(Map<String, dynamic> job, String demo) {
   }
 }
 
+Future<Map<String, bool>> deploymentGuardVerdicts() async {
+  final scratch = await Directory.systemTemp.createTemp('deploy-order-');
+  addTearDown(() => scratch.delete(recursive: true));
+  final origin = await Directory('${scratch.path}/origin').create();
+  final work = '${scratch.path}/work';
+  Future<String> git(List<String> args, {String? cwd}) async {
+    final result = await Process.run(
+      'git',
+      args,
+      workingDirectory: cwd ?? origin.path,
+    );
+    expect(result.exitCode, 0, reason: '${result.stderr}');
+    return '${result.stdout}'.trim();
+  }
+
+  await git(['init', '-q', '-b', 'main']);
+  await git(['config', 'user.name', 'Test']);
+  await git(['config', 'user.email', 'test@example.invalid']);
+  final input = File('${origin.path}/lib/llamadart.dart');
+  await input.parent.create();
+  await input.writeAsString('older');
+  await git(['add', '.']);
+  await git(['commit', '-qm', 'older']);
+  final older = await git(['rev-parse', 'HEAD']);
+  await git(['clone', '-q', '--depth=1', origin.uri.toString(), work]);
+  await input.writeAsString('newer');
+  await git(['commit', '-qam', 'newer']);
+  final newer = await git(['rev-parse', 'HEAD']);
+  final verdicts = <String, bool>{};
+  for (final entry in {'newer': newer, 'older': older}.entries) {
+    final output = File('${scratch.path}/${entry.key}.output');
+    final environment = {...Platform.environment}..remove('GH_TOKEN');
+    environment.addAll({
+      'DEPLOY_SHA': entry.value,
+      'GITHUB_OUTPUT': output.path,
+      'GITHUB_STEP_SUMMARY': '${scratch.path}/${entry.key}.summary',
+    });
+    final result = await Process.run(
+      Platform.isWindows ? 'python' : 'python3',
+      [File('tool/ci/deploy_guard.py').absolute.path, 'chat-app'],
+      workingDirectory: work,
+      environment: environment,
+      includeParentEnvironment: false,
+    );
+    expect(result.exitCode, 0, reason: '${result.stderr}');
+    final value = (await output.readAsString()).replaceAll('\r\n', '\n');
+    expect(value, entry.key == 'newer' ? 'deploy=true\n' : 'deploy=false\n');
+    verdicts[entry.key] = value == 'deploy=true\n';
+  }
+  return verdicts;
+}
+
 void main() {
+  group('CI run retention', () {
+    // Evaluate the workflow's small expression subset; unknown syntax fails
+    // rather than silently testing a policy different from the YAML.
+    Object evaluate(Object input, Map<String, Object?> github) {
+      if (input is! String) return input;
+      return input.replaceAllMapped(RegExp(r'\$\{\{(.*?)\}\}'), (match) {
+        final expression = match[1]!.trim();
+        if (expression.contains(' == ')) {
+          final parts = expression.split(' == ');
+          expect(parts, hasLength(2));
+          expect(parts[1], matches(r"^'[^']*'$"));
+          expect(github.containsKey(parts[0]), isTrue);
+          return '${github[parts[0]] == parts[1].substring(1, parts[1].length - 1)}';
+        }
+        for (final operand in expression.split(' || ')) {
+          expect(github.containsKey(operand), isTrue, reason: operand);
+          final value = github[operand];
+          if (value != null && value != false && value != '' && value != 0) {
+            return '$value';
+          }
+        }
+        return '';
+      });
+    }
+
+    Map<String, String> arrivals(String event, {int? pr}) {
+      final concurrency = readWorkflow('ci')['concurrency'] as Map;
+      final groups = <String, String>{};
+      final states = <String, String>{};
+      for (final id in ['101', '102', '103']) {
+        final github = <String, Object?>{
+          'github.workflow': 'CI',
+          'github.event_name': event,
+          'github.event.pull_request.number': pr,
+          'github.ref': 'refs/heads/main',
+          'github.run_id': id,
+        };
+        final group = '${evaluate(concurrency['group'], github)}';
+        final cancel = '${evaluate(concurrency['cancel-in-progress'], github)}';
+        expect(cancel, anyOf('true', 'false'));
+        // Actions allows one pending run per group even when running-run
+        // cancellation is disabled. Model one occupied runner so 102 queues.
+        for (final previous in groups.keys) {
+          if (groups[previous] == group &&
+              (states[previous] == 'pending' || cancel == 'true')) {
+            states[previous] = 'cancelled';
+          }
+        }
+        groups[id] = group;
+        states[id] = states.containsValue('running') ? 'pending' : 'running';
+        if (pr != null && id == '102') break;
+      }
+      if (pr != null) {
+        expect(groups.values.toSet(), hasLength(1));
+      } else {
+        expect(
+          groups.values.toSet(),
+          hasLength(3),
+          reason: 'Run states: $states',
+        );
+      }
+      return states;
+    }
+
+    test('two pushes to one PR cancel the superseded run', () {
+      expect(arrivals('pull_request', pr: 1646), {
+        '101': 'cancelled',
+        '102': 'running',
+      });
+    });
+
+    for (final event in ['push', 'workflow_dispatch']) {
+      test('three $event runs retain running and pending main checks', () {
+        expect(arrivals(event), {
+          '101': 'running',
+          '102': 'pending',
+          '103': 'pending',
+        });
+      });
+    }
+  });
+
+  group('retained CI deployment ordering', () {
+    Future<void> reverseValidationCompletion({
+      required bool newerPending,
+    }) async {
+      final concurrency =
+          readWorkflow('chat_app_hf_static_deploy')['concurrency'] as Map;
+      expect(concurrency['group'], 'chat-app-hf-static-deploy');
+      final cancel = concurrency['cancel-in-progress'] ?? false;
+      final queue = concurrency['queue'] ?? 'single';
+      expect(cancel, isA<bool>());
+      expect(queue, anyOf('single', 'max'));
+      final verdicts = await deploymentGuardVerdicts();
+      final cancelled = <String>[];
+      final pending = <String>[];
+      final uploaded = <String>[];
+      String? running;
+
+      void arrive(String id) {
+        if (running != null && cancel == true) {
+          cancelled.add(running!);
+          running = null;
+        }
+        // GitHub's default single-pending group replaces waiting work even
+        // when running-work cancellation is disabled.
+        if (queue == 'single') {
+          cancelled.addAll(pending);
+          pending.clear();
+        }
+        if (running == null) {
+          running = id;
+        } else {
+          pending.add(id);
+        }
+      }
+
+      if (newerPending) arrive('occupied');
+      arrive('newer');
+      // Older validation finishes last, after the newer deploy has entered
+      // the shared group but before its upload has finished.
+      arrive('older');
+      while (running != null) {
+        final id = running!;
+        if (verdicts[id] == true) uploaded.add(id);
+        running = pending.isEmpty ? null : pending.removeAt(0);
+      }
+      expect(
+        cancelled,
+        isEmpty,
+        reason: 'Newest deploy must survive: $cancelled',
+      );
+      expect(uploaded, ['newer']);
+    }
+
+    test('stale validation cannot cancel a running newer deployment', () async {
+      await reverseValidationCompletion(newerPending: false);
+    });
+
+    test(
+      'stale validation cannot replace a pending newer deployment',
+      () async {
+        await reverseValidationCompletion(newerPending: true);
+      },
+    );
+  });
+
   // This is the first suite in Test Native (windows-latest, tooling) to start Python,
   // and that runner's first launch has taken up to 54 s (later ones well under
   // 1 s). It runs here, outside the 30 s budget of whichever test would
