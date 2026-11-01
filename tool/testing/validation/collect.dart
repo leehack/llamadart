@@ -582,11 +582,7 @@ Future<Map<String, dynamic>> reassessSavedRun(
     throw StateError('Bundle changed after planning');
   }
   final bundle = await verifyBundle(Directory(plan.bundle));
-  if (bundle['target'] !=
-          (plan.firebase ? plan.target.substring(9) : 'desktop') ||
-      (plan.firebase && bundle['profile'] != plan.profile)) {
-    throw StateError('Saved plan/bundle binding mismatch');
-  }
+  requireRemoteBundleTarget(plan, bundle);
   final packageConfig = File(
     p.join(
       repository,

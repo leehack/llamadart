@@ -334,6 +334,25 @@ class _OperationLock {
   }
 }
 
+/// Binds uploaded and replayed bundles to the saved target, including GCE ABI.
+void requireRemoteBundleTarget(RemotePlan plan, Map<String, dynamic> manifest) {
+  final expectedTarget = plan.firebase
+      ? (plan.windows ? 'invalid' : plan.target.substring(9))
+      : 'desktop';
+  if (manifest['target'] != expectedTarget) {
+    throw StateError('Bundle target mismatch');
+  }
+  if (plan.firebase && manifest['profile'] != plan.profile) {
+    throw StateError('Compiled mobile profile mismatch');
+  }
+  if (!plan.firebase &&
+      (manifest['build_os'] != (plan.windows ? 'windows' : 'linux') ||
+          manifest['build_abi'] !=
+              (plan.windows ? 'windows_x64' : 'linux_x64'))) {
+    throw StateError('GCE requires a matching x64 OS bundle');
+  }
+}
+
 /// Persists intent before mutation and never replaces an uncertain submission.
 class RemoteController {
   static final _lockedRoots = <String>{};
@@ -371,21 +390,7 @@ class RemoteController {
     if (manifest['source_dirty'] != false) {
       throw StateError('Remote runs require a clean committed bundle');
     }
-    final expectedTarget = plan.firebase
-        ? (plan.windows ? 'invalid' : plan.target.substring(9))
-        : 'desktop';
-    if (manifest['target'] != expectedTarget) {
-      throw StateError('Bundle target mismatch');
-    }
-    if (plan.firebase && manifest['profile'] != plan.profile) {
-      throw StateError('Compiled mobile profile mismatch');
-    }
-    if (!plan.firebase &&
-        (manifest['build_os'] != (plan.windows ? 'windows' : 'linux') ||
-            manifest['build_abi'] !=
-                (plan.windows ? 'windows_x64' : 'linux_x64'))) {
-      throw StateError('GCE requires a matching x64 OS bundle');
-    }
+    requireRemoteBundleTarget(plan, manifest);
     final profileFile = File(
       p.join(
         bundle.path,
