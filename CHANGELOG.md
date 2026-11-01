@@ -1,7 +1,10 @@
-## Unreleased
+## 0.17.3
 
 - Reject projector requests on fixed LiteRT-LM custom backends before resolving files, preserving the loaded model ([#1556](https://github.com/leehack/llamadart/issues/1556)).
-- Fixed native LiteRT-LM backend-SPI context recreation after automatic GPU-to-CPU fallback when reusing GPU preference hints.
+- Fix native LiteRT-LM backend-SPI context recreation after automatic GPU-to-CPU fallback when reusing GPU preference hints.
+- Keep the default WebGPU bridge assets at `v0.1.79` (unchanged from 0.17.2).
+
+Runtime baseline unchanged from `0.17.2`: native llama.cpp `v0.8.0-1` and Web use upstream `v0.8.0@8642541b255bfb5dc39cd351a178be09013a55d6`; native LiteRT-LM stays `v0.18.1-4` and stable-diffusion stays `v0.3.0-1`. Web LiteRT-LM stays `@litert-lm/core@0.18.0`. Manifest SHA-256: `66ffee7a1c2c54c187526ba6a27957141b77438fed9a0f2a5afcfa2736682e9c`.
 
 ## 0.17.2
 
