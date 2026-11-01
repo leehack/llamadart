@@ -228,6 +228,50 @@ void main() {
       }
     }
 
+    for (final split in <List<double>>[
+      [1.7e308, 1.7e308],
+      [double.infinity, 1],
+      [double.nan, 1],
+    ]) {
+      test('rejects non-finite sum $split before allocating', () {
+        final allocator = RecordingAllocator();
+        Pointer<Float>? array;
+        Object? failure;
+        try {
+          array = allocateTensorSplit(
+            split,
+            maxDevices: 4,
+            allocator: allocator,
+          );
+        } catch (error) {
+          failure = error;
+        } finally {
+          if (array != null) allocator.free(array);
+        }
+        allocator.expectAllFreed();
+        expect(allocator.allocations, 0);
+        expect(
+          failure,
+          isA<LlamaArgumentException>()
+              .having((error) => error.name, 'name', 'tensorSplit')
+              .having(
+                (error) => error.message,
+                'message',
+                contains('finite sum'),
+              ),
+        );
+      });
+    }
+
+    test('scales a very large finite float64 sum without erasing it', () {
+      final scaled = allocate([double.maxFinite / 2, double.maxFinite / 2]);
+      expect(scaled.take(2), everyElement(isPositive));
+      expect(scaled.take(2).every((value) => value.isFinite), isTrue);
+      expect(scaled[0], scaled[1]);
+      expect(scaled[0] + scaled[1], lessThanOrEqualTo(math.pow(2.0, 64)));
+      expect(scaled.skip(2), [0, 0]);
+    });
+
     test('holds llama_max_devices() floats, zero after the split', () {
       expect(allocate(const [3, 1]), [3, 1, 0, 0]);
       expect(allocate(const [2], maxDevices: 16), [2, ...List.filled(15, 0)]);

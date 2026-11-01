@@ -1579,17 +1579,16 @@ class LlamaCppService {
       }
       preferredDevices = _createDeviceList(placement.devices);
     }
+    final Pointer<Float>? tensorSplit;
     try {
       _checkRowSplitSupported(modelParams, preferredDevices);
+      tensorSplit = _createTensorSplit(placement);
     } catch (_) {
       if (preferredDevices != null) {
         _modelLoadAllocator.free(preferredDevices);
       }
       rethrow;
     }
-    // Allocated after every refusal above: those error paths free only
-    // preferredDevices.
-    final tensorSplit = _createTensorSplit(placement);
     if (tensorSplit != null) {
       mparams.tensor_split = tensorSplit;
     }
@@ -2237,7 +2236,15 @@ class LlamaCppService {
     if (preferredDevices != null) {
       mparams.devices = preferredDevices;
     }
-    final tensorSplit = _createTensorSplit(placement);
+    final Pointer<Float>? tensorSplit;
+    try {
+      tensorSplit = _createTensorSplit(placement);
+    } catch (_) {
+      if (preferredDevices != null) {
+        _modelLoadAllocator.free(preferredDevices);
+      }
+      rethrow;
+    }
     if (tensorSplit != null) {
       mparams.tensor_split = tensorSplit;
     }
