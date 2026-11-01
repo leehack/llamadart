@@ -13,6 +13,8 @@ validate against the exact release tag notes.
 
 ## Unreleased
 
+- Fixed native LiteRT-LM backend-SPI context recreation after automatic GPU-to-CPU fallback when reusing GPU preference hints.
+
 ## 0.17.2
 
 - Fix Windows native runtime overrides failing model loads with `no backends are loaded` ([#1649](https://github.com/leehack/llamadart/issues/1649)).

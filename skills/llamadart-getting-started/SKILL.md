@@ -131,8 +131,11 @@ Linux and web. Full docs: https://llamadart.leehack.com
   reports a GPU or NPU delegate that fails to start from the first
   generation or `tokenize`. Under `auto` it retries a GPU engine that fails
   to start on the CPU with a warning (`getBackendName()` then reports
-  `LiteRT-LM cpu`) and throws the GPU error if the CPU fails too. Leave
-  `device` at `auto` for each runtime's default.
+  `LiteRT-LM cpu`) and throws the GPU error if the CPU fails too. If `auto`
+  already selects CPU, an engine-create failure has no second attempt.
+  Backend-SPI context recreation preserves a successful CPU fallback when
+  reusing the load's automatic GPU hints. Leave `device` at `auto` for each
+  runtime's default.
   `ModelParams.liteRtLmBackend` and `LiteRtLmBackendPreference` are
   deprecated. Keep `contextSize` no larger than the app needs: memory grows
   with it.
