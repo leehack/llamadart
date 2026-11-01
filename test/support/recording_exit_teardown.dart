@@ -48,6 +48,12 @@ final class RecordingExitTeardown {
   /// `llama_dart_synchronize` then does nothing.
   bool Function(String name)? fail;
 
+  /// Replaces only the final model load, after recording its requested params.
+  /// Tests with fake devices can load a CPU fixture without sending fake
+  /// device pointers to llama.cpp.
+  Pointer<llama_model> Function(Pointer<Char> path, llama_model_params params)?
+  modelLoad;
+
   /// Native names of the calls made so far, in order.
   final List<String> calls = <String>[];
 
@@ -201,7 +207,7 @@ final class RecordingExitTeardown {
       ]);
       loadUseExtraBufts.add(params.use_extra_bufts);
       if (!_proceeds('llama_dart_model_load_from_file')) return nullptr;
-      final model = real.modelLoadFromFile(path, params);
+      final model = (modelLoad ?? real.modelLoadFromFile)(path, params);
       owned.add(model.address);
       return model;
     },

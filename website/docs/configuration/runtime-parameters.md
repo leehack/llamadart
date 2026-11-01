@@ -83,7 +83,10 @@ Important fields:
   field, `getBackendName()` names the devices, such as `CUDA (CUDA0, CUDA2)`.
   A speculative draft model loads on the same devices and split, and
   decision heads and multimodal projectors run on the listed GPU `mainGpu`
-  counts within the list, or the first one when it is out of range. Validated
+  counts within the list, or the first one when it is out of range. Only GPUs
+  and integrated GPUs with usable native device handles count for these
+  auxiliary models; if the list has none (for example, it contains only
+  accelerators), decision heads and projectors run on the CPU. Validated
   on one Metal GPU and on a Vulkan Tesla T4, with Mesa lavapipe as the second
   device for two-device lists and splits; two-GPU hardware has no evidence
   yet ([#1528](https://github.com/leehack/llamadart/issues/1528)), and CUDA is not

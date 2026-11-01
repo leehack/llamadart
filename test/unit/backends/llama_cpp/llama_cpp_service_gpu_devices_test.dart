@@ -67,9 +67,8 @@ Object? _loadDraft(LlamaCppService service, int target, String model) {
       .reflectee;
 }
 
-// Fake devices must never reach llama.cpp: each such test is refused before
-// the load. The real-device test loads the synthetic model on this host's
-// first GPU.
+// Fake devices must never reach llama.cpp: tests either stop before the load
+// or replace its device params at the recording boundary with a CPU load.
 void main() {
   late Directory dir;
   late String model;
@@ -882,6 +881,117 @@ void main() {
       expect(projectorParams().use_gpu, isTrue);
       expect(projectorParams().device, nullptr);
     });
+  });
+
+  group('placement retained by a successful load without a host GPU', () {
+    final gpu = _fake('CUDA0', 'CUDA', 0x1000);
+    final igpu = GgmlDeviceEntry(
+      name: 'CUDA1',
+      registry: 'CUDA',
+      type: ggml_backend_dev_type.GGML_BACKEND_DEVICE_TYPE_IGPU.value,
+      device: Pointer.fromAddress(0x2000),
+    );
+    final accel = GgmlDeviceEntry(
+      name: 'ACCEL0',
+      registry: 'CUDA',
+      type: ggml_backend_dev_type.GGML_BACKEND_DEVICE_TYPE_ACCEL.value,
+      device: Pointer.fromAddress(0x3000),
+    );
+
+    void cpuFixtureLoad() {
+      start(
+        registeredDevices: () => [gpu, igpu, accel],
+        backendDevices: (_) => [gpu.device!, igpu.device!, accel.device!],
+        deviceTypes: (_) => [_gpu],
+      );
+      recorder.modelLoad = (path, params) {
+        // Preserve the real service's resolution and storage, but keep the
+        // synthetic native fixture independent of GPU hardware and pointers.
+        params.devices = nullptr;
+        params.tensor_split = nullptr;
+        params.n_gpu_layers = 0;
+        return recorder.real.modelLoadFromFile(path, params);
+      };
+    }
+
+    void expectAuxiliary(int handle, ggml_backend_dev_t? expected) {
+      expect(
+        _invokePrivate<ggml_backend_dev_t?>(service, '_decisionHeadDevice', [
+          handle,
+        ]),
+        expected,
+      );
+      final projector = _invokePrivate<mtmd_context_params>(
+        service,
+        '_mtmdContextParamsFor',
+        [handle],
+      );
+      expect(projector.use_gpu, expected != null);
+      expect(projector.device, expected ?? nullptr);
+    }
+
+    for (final (label, indices, mainGpu, expected) in [
+      ('GPU subset', [0], 1, gpu.device),
+      ('iGPU reordered list', [1, 0], 0, igpu.device),
+      ('negative mainGpu uses first listed GPU', [1, 0], -1, igpu.device),
+      ('GPU after accelerator', [2, 0, 1], 0, gpu.device),
+      ('iGPU after accelerator', [2, 0, 1], 1, igpu.device),
+      ('accelerator-only CPU fallback', [2], 0, null),
+      ('tensor split without device list', null, 1, igpu.device),
+    ]) {
+      test(label, () {
+        cpuFixtureLoad();
+        final handle = service.loadModel(
+          model,
+          ModelParams(
+            preferredBackend: GpuBackend.cuda,
+            gpuDevices: indices,
+            tensorSplit: indices == null ? const [1, 2, 3] : null,
+            mainGpu: mainGpu,
+          ),
+        );
+        expect(recorder.loadDevices.single, [
+          for (final index in indices ?? [0, 1, 2])
+            [gpu, igpu, accel][index].device!.address,
+        ]);
+        expect(
+          recorder.loadTensorSplits.single,
+          indices == null ? [1, 2, 3] : null,
+        );
+        expectAuxiliary(handle, expected);
+        allocator.expectAllFreed();
+      });
+    }
+
+    test(
+      'freeing one model preserves another and a reload stores its own list',
+      () {
+        cpuFixtureLoad();
+        int load(List<int>? indices) => service.loadModel(
+          model,
+          ModelParams(preferredBackend: GpuBackend.cuda, gpuDevices: indices),
+        );
+        final first = load([1]);
+        final second = load([0]);
+        expectAuxiliary(first, igpu.device);
+        expectAuxiliary(second, gpu.device);
+        service.freeModel(first);
+        expectAuxiliary(second, gpu.device);
+        final reloaded = load([2]);
+        expect(reloaded, isNot(first));
+        expectAuxiliary(reloaded, null);
+        service.freeModel(second);
+        service.freeModel(reloaded);
+        final unplaced = load(null);
+        final projector = _invokePrivate<mtmd_context_params>(
+          service,
+          '_mtmdContextParamsFor',
+          [unplaced],
+        );
+        expect(projector.use_gpu, isTrue);
+        expect(projector.device, nullptr);
+      },
+    );
   });
 
   test('a decision head and projector of a model on a listed GPU use that '
