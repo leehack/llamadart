@@ -26,7 +26,7 @@ version.
 
 ```yaml
 dependencies:
-  llamadart: ^0.17.0
+  llamadart: ^0.17.1
 ```
 
 ```bash
@@ -47,10 +47,10 @@ companion shares its core's `MAJOR.MINOR` and constrains `llamadart` to it.
 
 ```yaml
 dependencies:
-  llamadart: ^0.17.0
-  llamadart_llama_cpp_flutter: ^0.17.0 # GGUF / llama.cpp
-  llamadart_litert_lm_flutter: ^0.17.0 # Apple .litertlm / LiteRT-LM targets
-  llamadart_stable_diffusion_flutter: ^0.17.0 # Apple image generation, opt-in
+  llamadart: ^0.17.1
+  llamadart_llama_cpp_flutter: ^0.17.1 # GGUF / llama.cpp
+  llamadart_litert_lm_flutter: ^0.17.1 # Apple .litertlm / LiteRT-LM targets
+  llamadart_stable_diffusion_flutter: ^0.17.1 # Apple image generation, opt-in
 ```
 
 Pairing rules, the SwiftPM bootstrap and the privacy manifest are in
@@ -135,7 +135,7 @@ Current default runtime pins:
 
 | Runtime | Pin |
 | --- | --- |
-| Native llama.cpp / GGUF | `leehack/llamadart-native@v0.8.0` |
+| Native llama.cpp / GGUF | `leehack/llamadart-native@v0.8.0-1` |
 | Native LiteRT-LM / `.litertlm` | `leehack/litert-lm-native@v0.18.1-4` |
 | Web llama.cpp / GGUF | `leehack/llama-web-bridge-assets@v0.1.79` |
 | Web LiteRT-LM / `.litertlm` | `@litert-lm/core@0.18.0` |
