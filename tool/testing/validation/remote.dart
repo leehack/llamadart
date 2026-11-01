@@ -334,6 +334,25 @@ class _OperationLock {
   }
 }
 
+/// Binds uploaded and replayed bundles to the saved target, including GCE ABI.
+void requireRemoteBundleTarget(RemotePlan plan, Map<String, dynamic> manifest) {
+  final expectedTarget = plan.firebase
+      ? (plan.windows ? 'invalid' : plan.target.substring(9))
+      : 'desktop';
+  if (manifest['target'] != expectedTarget) {
+    throw StateError('Bundle target mismatch');
+  }
+  if (plan.firebase && manifest['profile'] != plan.profile) {
+    throw StateError('Compiled mobile profile mismatch');
+  }
+  if (!plan.firebase &&
+      (manifest['build_os'] != (plan.windows ? 'windows' : 'linux') ||
+          manifest['build_abi'] !=
+              (plan.windows ? 'windows_x64' : 'linux_x64'))) {
+    throw StateError('GCE requires a matching x64 OS bundle');
+  }
+}
+
 /// Persists intent before mutation and never replaces an uncertain submission.
 class RemoteController {
   static final _lockedRoots = <String>{};
@@ -371,21 +390,7 @@ class RemoteController {
     if (manifest['source_dirty'] != false) {
       throw StateError('Remote runs require a clean committed bundle');
     }
-    final expectedTarget = plan.firebase
-        ? (plan.windows ? 'invalid' : plan.target.substring(9))
-        : 'desktop';
-    if (manifest['target'] != expectedTarget) {
-      throw StateError('Bundle target mismatch');
-    }
-    if (plan.firebase && manifest['profile'] != plan.profile) {
-      throw StateError('Compiled mobile profile mismatch');
-    }
-    if (!plan.firebase &&
-        (manifest['build_os'] != (plan.windows ? 'windows' : 'linux') ||
-            manifest['build_abi'] !=
-                (plan.windows ? 'windows_x64' : 'linux_x64'))) {
-      throw StateError('GCE requires a matching x64 OS bundle');
-    }
+    requireRemoteBundleTarget(plan, manifest);
     final profileFile = File(
       p.join(
         bundle.path,
@@ -716,11 +721,7 @@ class RemoteController {
     Map<String, dynamic> state,
   ) async {
     final remote = state['remote'] as Map;
-    final providerMatrix = remote['matrix'] as Map?;
-    final providerPassed = plan.firebase
-        ? remote['state'] == 'FINISHED' &&
-              (providerMatrix?['outcomeSummary'] == 'SUCCESS')
-        : remote['test_exit_code'] == 0;
+    final providerPassed = savedProviderPassed(plan, remote);
     var assertions = false;
     final previousFailure = state.remove('assessment_error');
     if (previousFailure != null && state['error'] == previousFailure) {
@@ -762,6 +763,23 @@ class RemoteController {
       }),
       flush: true,
     );
+  }
+
+  /// Reads a saved run under the lifecycle lock, without consulting a provider.
+  Future<Map<String, dynamic>> reassess(
+    String id,
+    Directory output, {
+    required Future<Map<String, dynamic>> Function(Directory, Directory) replay,
+  }) async {
+    if (!RegExp(r'^qa-[a-z0-9-]+$').hasMatch(id)) {
+      throw const FormatException('Invalid run ID');
+    }
+    final lock = _lock();
+    try {
+      return await replay(Directory(p.join(root.path, id)), output);
+    } finally {
+      lock.release();
+    }
   }
 
   /// Recovery operations use saved IDs under the same lock; never resubmit.
@@ -1508,4 +1526,13 @@ class GcloudProvider implements RemoteProvider {
           'only automatic boot disk; no persistent auxiliary resources',
     };
   }
+}
+
+/// Interprets a captured provider result; this does not refresh remote status.
+bool savedProviderPassed(RemotePlan plan, Map remote) {
+  if (plan.firebase) {
+    return remote['state'] == 'FINISHED' &&
+        (remote['matrix'] as Map?)?['outcomeSummary'] == 'SUCCESS';
+  }
+  return remote['terminal'] == true && remote['test_exit_code'] == 0;
 }

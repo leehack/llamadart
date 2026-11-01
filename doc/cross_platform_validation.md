@@ -1040,6 +1040,35 @@ when applicable credit cannot be verified.
 
 ## Recovery and evidence
 
+Offline reassessment of a saved remote run uses the prepared dependency graph:
+
+```sh
+# Prepare while online, before replay (root preparation is also required):
+(cd packages/llamadart_validation && dart pub get)
+# Invoke the source directly: `dart run` can implicitly resolve dependencies.
+dart --packages=.dart_tool/package_config.json tool/testing/validation.dart reassess \
+  --run-id qa-EXACT-ID --out /path/to/new-reassessment
+```
+
+`reassess` verifies the saved plan and complete bundle inventory, then copies raw
+collections and previously extracted XCTest attachments into a new directory.
+It uses the same journal normalization, runtime/profile binding, Android log
+window and report policy as collection. It never calls a provider, resolves
+packages, downloads inputs or invokes `xcrun`; xcresult attachments must already
+be extracted. Missing package configuration fails with a preparation prerequisite.
+The destination must be new and outside the saved run and bundle; original
+journals, reports and lifecycle records remain unchanged. Old derived
+`report/native.log` files are excluded and native evidence is rebound from raw logs.
+
+`reassessment.json` separates replayed `assertions_passed` from `historical`
+provider, collection, cleanup and error observations. Its combined `qualified`
+requires both the replay and successful saved provider/completed collection/
+verified cleanup without saved errors. This is no provider refresh or new device
+run. An old catalog remains historical; Android LiteRT GPU proof remains
+load-time delegate initialization, with no per-request GPU execution attribution.
+This implements only #1019's offline entry point.
+
+
 ```sh
 dart run tool/testing/validation.dart status --run-id qa-EXACT-ID
 dart run tool/testing/validation.dart collect --run-id qa-EXACT-ID

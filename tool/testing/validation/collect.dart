@@ -8,6 +8,7 @@ import 'package:path/path.dart' as p;
 // adding a root package dependency would create a dependency cycle.
 // ignore: avoid_relative_lib_imports
 import '../../../packages/llamadart_validation/lib/src/litert_gpu_failure_markers.dart';
+import 'bundle.dart';
 import 'image_profile.dart';
 import 'process.dart';
 import 'remote.dart';
@@ -19,9 +20,13 @@ Future<bool> assessCollectedRun(
   RemotePlan plan,
   Directory run, {
   CommandExecutor execute = executeCommand,
+  bool offline = false,
 }) async {
   final retainedLog = File(p.join(run.path, 'report', 'native.log'));
   if (retainedLog.existsSync()) retainedLog.deleteSync();
+  final package = p.join(repository, 'packages/llamadart_validation');
+  final packageConfig = File(p.join(package, '.dart_tool/package_config.json'));
+  if (offline) _requirePreparedAssessmentDependencies(packageConfig);
   final source = Directory(p.join(run.path, 'remote-results'));
   if (!source.existsSync()) return false;
   final xcresults = source
@@ -29,7 +34,16 @@ Future<bool> assessCollectedRun(
       .whereType<Directory>()
       .where((d) => d.path.endsWith('.xcresult'))
       .toList();
-  for (var i = 0; i < xcresults.length; i++) {
+  if (offline &&
+      xcresults.isNotEmpty &&
+      !run.listSync().whereType<Directory>().any(
+        (d) => p.basename(d.path).startsWith('xctest-attachments-'),
+      )) {
+    throw StateError(
+      'Offline reassessment requires previously extracted xcresult attachments',
+    );
+  }
+  for (var i = 0; !offline && i < xcresults.length; i++) {
     if (!Platform.isMacOS) continue;
     final output = Directory(p.join(run.path, 'xctest-attachments-$i'));
     if (!output.existsSync()) {
@@ -170,22 +184,23 @@ Future<bool> assessCollectedRun(
       }
     }
   }
-  final package = p.join(repository, 'packages/llamadart_validation');
-  final resolved = await execute(
-    Platform.resolvedExecutable,
-    const ['pub', 'get'],
-    directory: package,
-    timeout: const Duration(minutes: 3),
-  );
-  if (resolved.code != 0) {
-    throw ValidationAssessmentFailure(_stepFailure('dart pub get', resolved));
+  if (!offline) {
+    final resolved = await execute(
+      Platform.resolvedExecutable,
+      const ['pub', 'get'],
+      directory: package,
+      timeout: const Duration(minutes: 3),
+    );
+    if (resolved.code != 0) {
+      throw ValidationAssessmentFailure(_stepFailure('dart pub get', resolved));
+    }
   }
   final resultFile = File(p.join(output.path, 'results.json'));
   if (resultFile.existsSync()) resultFile.deleteSync();
   final generated = await execute(
     Platform.resolvedExecutable,
     [
-      'run',
+      if (offline) '--packages=${packageConfig.path}' else 'run',
       'bin/report.dart',
       output.path,
       if (nativeLog != null) ...['--native-log', nativeLog],
@@ -202,7 +217,7 @@ Future<bool> assessCollectedRun(
   if (result == null || (generated.code != 0 && !unqualified)) {
     throw ValidationAssessmentFailure(
       _stepFailure(
-        'dart run bin/report.dart',
+        offline ? 'prepared Dart reporter' : 'dart run bin/report.dart',
         generated,
         detail: result == null ? 'wrote no results.json' : null,
       ),
@@ -518,4 +533,150 @@ String _redactedTail(String text) {
         RegExp(r'''(?:[A-Za-z]:)?[\\/](?:[^\s\\/:"']+[\\/])+[^\s\\/:"']*'''),
         '<path>',
       );
+}
+
+/// Replays saved raw evidence into a new directory without provider calls or
+/// dependency resolution. Cached lifecycle observations retain their age.
+Future<Map<String, dynamic>> reassessSavedRun(
+  String repository,
+  Directory saved,
+  Directory output, {
+  CommandExecutor execute = executeCommand,
+}) async {
+  String resolvedPath(String value) {
+    final path = p.normalize(p.absolute(value));
+    if (FileSystemEntity.typeSync(path) != FileSystemEntityType.notFound) {
+      return Directory(path).resolveSymbolicLinksSync();
+    }
+    return p.join(resolvedPath(p.dirname(path)), p.basename(path));
+  }
+
+  final savedPath = resolvedPath(saved.path);
+  final outputPath = resolvedPath(output.path);
+  if (output.existsSync() ||
+      FileSystemEntity.typeSync(output.path) != FileSystemEntityType.notFound ||
+      p.isWithin(savedPath, outputPath) ||
+      p.isWithin(outputPath, savedPath)) {
+    throw StateError(
+      'Reassessment requires a new directory outside the saved run',
+    );
+  }
+  final state =
+      jsonDecode(
+            File(p.join(saved.path, 'orchestration.json')).readAsStringSync(),
+          )
+          as Map<String, dynamic>;
+  final plan = RemotePlan(Map<String, dynamic>.from(state['plan'] as Map));
+  if (p.basename(saved.path) != plan.runId) {
+    throw StateError('Saved run ID mismatch');
+  }
+  final bundlePath = resolvedPath(plan.bundle);
+  if (outputPath == bundlePath ||
+      p.isWithin(bundlePath, outputPath) ||
+      p.isWithin(outputPath, bundlePath)) {
+    throw StateError('Reassessment destination overlaps its saved bundle');
+  }
+  final manifestFile = File(p.join(plan.bundle, 'bundle-manifest.json'));
+  if (sha256.convert(manifestFile.readAsBytesSync()).toString() !=
+      plan.json['bundle_sha256']) {
+    throw StateError('Bundle changed after planning');
+  }
+  final bundle = await verifyBundle(Directory(plan.bundle));
+  requireRemoteBundleTarget(plan, bundle);
+  final packageConfig = File(
+    p.join(
+      repository,
+      'packages/llamadart_validation/.dart_tool/package_config.json',
+    ),
+  );
+  _requirePreparedAssessmentDependencies(packageConfig);
+  output.createSync(recursive: true);
+  // Only raw collections and prior attachment extractions enter the replay.
+  // In particular, an old report/native.log can never become placement evidence.
+  for (final directory
+      in saved.listSync(followLinks: false).whereType<Directory>()) {
+    final name = p.basename(directory.path);
+    if (name != 'remote-results' && !name.startsWith('xctest-attachments-')) {
+      continue;
+    }
+    for (final entity in directory.listSync(
+      recursive: true,
+      followLinks: false,
+    )) {
+      if (entity is Link) throw StateError('Symlink in saved evidence');
+      if (entity is File) {
+        final copy = File(
+          p.join(output.path, p.relative(entity.path, from: saved.path)),
+        );
+        copy.parent.createSync(recursive: true);
+        entity.copySync(copy.path);
+      }
+    }
+  }
+  final assertions = await assessCollectedRun(
+    repository,
+    plan,
+    output,
+    execute: execute,
+    offline: true,
+  );
+  final providerPassed = savedProviderPassed(plan, state['remote'] as Map);
+  final result = <String, dynamic>{
+    'schema_version': 1,
+    'kind': 'offline_reassessment_with_historical_lifecycle',
+    'run_id': plan.runId,
+    'bundle_sha256': plan.json['bundle_sha256'],
+    'saved_plan_sha256': sha256
+        .convert(utf8.encode(jsonEncode(plan.json)))
+        .toString(),
+    'assertions_passed': assertions,
+    'historical': {
+      'provider': state['remote'],
+      'provider_passed': providerPassed,
+      'collection': state['collection'],
+      'cleanup': state['cleanup'],
+      'error': state['error'],
+    },
+    'qualified':
+        assertions &&
+        providerPassed &&
+        state['collection'] == 'COMPLETE' &&
+        state['cleanup'] == 'VERIFIED' &&
+        state['error'] == null,
+  };
+  File(
+    p.join(output.path, 'reassessment.json'),
+  ).writeAsStringSync(jsonEncode(result), flush: true);
+  return result;
+}
+
+void _requirePreparedAssessmentDependencies(File config) {
+  try {
+    final graph = jsonDecode(config.readAsStringSync()) as Map;
+    final packages = graph['packages'] as List;
+    if (graph['configVersion'] != 2 ||
+        packages.isEmpty ||
+        !packages.any(
+          (entry) => (entry as Map)['name'] == 'llamadart_validation',
+        )) {
+      throw const FormatException('Unprepared package graph');
+    }
+    for (final entry in packages.cast<Map>()) {
+      final root = config.uri.resolve(entry['rootUri'] as String);
+      if (root.scheme != 'file' ||
+          !Directory.fromUri(root).existsSync() ||
+          !Directory.fromUri(
+            Directory.fromUri(
+              root,
+            ).uri.resolve(entry['packageUri'] as String? ?? 'lib/'),
+          ).existsSync()) {
+        throw const FormatException('Unavailable package');
+      }
+    }
+  } on Object {
+    throw StateError(
+      'Offline reassessment requires prepared dependencies: '
+      'run dart pub get in packages/llamadart_validation before going offline',
+    );
+  }
 }

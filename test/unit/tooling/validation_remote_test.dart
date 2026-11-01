@@ -14,11 +14,82 @@ import 'package:yaml/yaml.dart';
 import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
 
+// The root test uses the canonical private report policy without resolving the
+// independent package; the command boundary remains a model-free spy.
+// ignore: avoid_relative_lib_imports
+import '../../../packages/llamadart_validation/lib/src/report.dart';
 import '../../../tool/testing/validation/bundle.dart';
 import '../../../tool/testing/validation/collect.dart';
 import '../../../tool/testing/validation/process.dart';
 import '../../../tool/testing/validation/remote.dart';
 import '../../../tool/testing/validation/runtime_bundle.dart';
+
+class PreparedReporterSpy {
+  PreparedReporterSpy(Directory scratch)
+    : repository = Directory(p.join(scratch.path, 'prepared-reporter')) {
+    final package = Directory(
+      p.join(repository.path, 'packages/llamadart_validation'),
+    );
+    Directory(p.join(package.path, 'lib')).createSync(recursive: true);
+    File(p.join(package.path, '.dart_tool/package_config.json'))
+      ..createSync(recursive: true)
+      ..writeAsStringSync(
+        jsonEncode({
+          'configVersion': 2,
+          'packages': [
+            {
+              'name': 'llamadart_validation',
+              'rootUri': '../',
+              'packageUri': 'lib/',
+            },
+          ],
+        }),
+      );
+  }
+
+  final Directory repository;
+  int calls = 0;
+
+  Future<CommandResult> execute(
+    String executable,
+    List<String> args, {
+    String? directory,
+    Duration? timeout,
+    Map<String, String>? environment,
+  }) async {
+    calls++;
+    final package = p.join(repository.path, 'packages/llamadart_validation');
+    expect(executable, Platform.resolvedExecutable);
+    expect(directory, package);
+    expect(
+      args.first,
+      '--packages=${p.join(package, '.dart_tool/package_config.json')}',
+    );
+    expect(args[1], 'bin/report.dart');
+    expect(args, isNot(contains('pub')));
+    expect(args, isNot(contains('run')));
+    expect(
+      args.length == 3 || (args.length == 5 && args[3] == '--native-log'),
+      true,
+    );
+    final output = Directory(args[2]);
+    final report = ValidationReport.parse(
+      File(p.join(output.path, 'events.jsonl')).readAsStringSync(),
+      nativeLog: args.length == 5 ? File(args[4]).readAsStringSync() : null,
+    );
+    File(
+      p.join(output.path, 'results.json'),
+    ).writeAsStringSync(jsonEncode(report.toJson()));
+    return CommandResult(report.qualified ? 0 : 1, '', '');
+  }
+}
+
+class OfflineOnlyProvider implements RemoteProvider {
+  @override
+  dynamic noSuchMethod(Invocation invocation) => throw StateError(
+    'Offline replay called provider: ${invocation.memberName}',
+  );
+}
 
 class FakeProvider implements RemoteProvider {
   int starts = 0;
@@ -371,6 +442,25 @@ void main() {
     });
   });
   tearDown(() => scratch.deleteSync(recursive: true));
+
+  test('reassess CLI rejects unsafe run IDs before creating output', () async {
+    final output = Directory(p.join(scratch.path, 'unsafe-reassessment'));
+    final result = await Process.run(Platform.resolvedExecutable, <String>[
+      '--packages=${File('.dart_tool/package_config.json').absolute.path}',
+      File('tool/testing/validation.dart').absolute.path,
+      'reassess',
+      '--run-id',
+      '../unsafe',
+      '--out',
+      output.path,
+    ], workingDirectory: Directory.current.path);
+    expect(result.exitCode, 1);
+    expect(result.stderr, contains('Invalid run ID'));
+    expect(
+      FileSystemEntity.typeSync(output.path),
+      FileSystemEntityType.notFound,
+    );
+  });
 
   RemotePlan plan({
     String id = 'qa-one',
@@ -1281,6 +1371,175 @@ void main() {
       );
     });
 
+    test(
+      'offline replay uses only the prepared reporter and preserves saved bytes',
+      () async {
+        final first = jsonDecode(LineSplitter.split(journal).first) as Map;
+        final profile = first['profile'] as Map;
+        File(
+          p.join(bundle.path, 'profile.json'),
+        ).writeAsStringSync(jsonEncode(profile));
+        await writeBundleManifest(bundle, {
+          'target': 'android',
+          'profile': 'gemma4-litert-gpu',
+          ...Map<String, dynamic>.from(first['environment'] as Map),
+        });
+        final saved = Directory(p.join(runs.path, 'qa-one'));
+        final raw =
+            File(p.join(saved.path, 'remote-results/device/events.jsonl'))
+              ..createSync(recursive: true)
+              ..writeAsStringSync(journal);
+        final deviceLog = File(
+          p.join(saved.path, 'remote-results/device/logcat'),
+        )..writeAsStringSync(logcat);
+        final oldReport = File(p.join(saved.path, 'report/native.log'))
+          ..createSync(recursive: true)
+          ..writeAsStringSync('old derived capture');
+        final state = <String, dynamic>{
+          'plan': plan(profile: 'gemma4-litert-gpu').json,
+          'remote': {
+            'state': 'FINISHED',
+            'matrix': {'outcomeSummary': 'SUCCESS'},
+          },
+          'collection': 'COMPLETE',
+          'cleanup': 'VERIFIED',
+          'error': null,
+        };
+        final orchestration = File(p.join(saved.path, 'orchestration.json'))
+          ..writeAsStringSync(jsonEncode(state));
+        final before = [
+          raw,
+          deviceLog,
+          oldReport,
+          orchestration,
+        ].map((f) => f.readAsStringSync()).toList();
+        final reporter = PreparedReporterSpy(scratch);
+        Future<Map<String, dynamic>> replay(String name) =>
+            RemoteController(runs, OfflineOnlyProvider()).reassess(
+              'qa-one',
+              Directory(p.join(scratch.path, name)),
+              replay: (saved, output) => reassessSavedRun(
+                reporter.repository.path,
+                saved,
+                output,
+                execute: reporter.execute,
+              ),
+            );
+        final a = await replay('offline-a');
+        final b = await replay('offline-b');
+        expect(a, b);
+        expect(a['assertions_passed'], true);
+        expect(a['qualified'], true);
+        expect(reporter.calls, 2);
+        expect(
+          [
+            raw,
+            deviceLog,
+            oldReport,
+            orchestration,
+          ].map((f) => f.readAsStringSync()).toList(),
+          before,
+        );
+        await expectLater(replay('offline-a'), throwsStateError);
+        for (final entry in <String, Object?>{
+          'cleanup': 'UNKNOWN',
+          'collection': 'INCOMPLETE',
+          'error': 'historical failure',
+        }.entries) {
+          final changed = {...state, entry.key: entry.value};
+          orchestration.writeAsStringSync(jsonEncode(changed));
+          expect((await replay('offline-${entry.key}'))['qualified'], false);
+        }
+        orchestration.writeAsStringSync(
+          jsonEncode({
+            ...state,
+            'remote': {'state': 'RUNNING'},
+          }),
+        );
+        expect((await replay('offline-provider'))['qualified'], false);
+        // The old positive derived capture is never reused when binding fails.
+        deviceLog.writeAsStringSync(galaxy);
+        expect((await replay('offline-unbound'))['assertions_passed'], false);
+        expect(
+          File(
+            p.join(scratch.path, 'offline-unbound/report/native.log'),
+          ).existsSync(),
+          false,
+        );
+        deviceLog.writeAsStringSync(
+          logcat.replaceFirst('Mali-G715', 'Mali-G715 Falling back to CPU'),
+        );
+        expect((await replay('offline-marker'))['assertions_passed'], false);
+        deviceLog.writeAsStringSync(logcat.replaceAll(sha, 'a' * 64));
+        expect(
+          (await replay('offline-missing-binding'))['assertions_passed'],
+          false,
+        );
+        deviceLog.writeAsStringSync(logcat);
+        final shifted = Map<String, dynamic>.from(first)
+          ..['started_at'] = DateTime.parse(
+            first['started_at'] as String,
+          ).add(const Duration(days: 30)).toUtc().toIso8601String();
+        raw.writeAsStringSync(
+          [
+            jsonEncode(shifted),
+            ...LineSplitter.split(journal).skip(1),
+          ].join('\n'),
+        );
+        expect(
+          (await replay('offline-log-window'))['assertions_passed'],
+          false,
+        );
+        raw.writeAsStringSync(
+          journal.replaceAll('gemma4-litert-gpu', 'wrong-profile'),
+        );
+        final prior = reporter.calls;
+        expect((await replay('offline-profile'))['assertions_passed'], false);
+        expect(reporter.calls, prior);
+        raw.writeAsStringSync(journal);
+        final other = File(
+          p.join(saved.path, 'remote-results/device/other.jsonl'),
+        )..writeAsStringSync('$journal\n{"type":"other"}\n');
+        expect((await replay('offline-conflict'))['assertions_passed'], false);
+        other.deleteSync();
+        final badRepository = Directory(p.join(scratch.path, 'unprepared'))
+          ..createSync();
+        await expectLater(
+          reassessSavedRun(
+            badRepository.path,
+            saved,
+            Directory(p.join(scratch.path, 'offline-no-deps')),
+            execute: reporter.execute,
+          ),
+          throwsA(
+            isA<StateError>().having(
+              (e) => e.message,
+              'prerequisite',
+              contains('prepared dependencies'),
+            ),
+          ),
+        );
+        expect(reporter.calls, prior);
+        orchestration.writeAsStringSync(
+          jsonEncode({
+            ...state,
+            'plan': {...state['plan'] as Map, 'profile': 'wrong-profile'},
+          }),
+        );
+        await expectLater(replay('offline-plan-profile'), throwsStateError);
+        orchestration.writeAsStringSync(jsonEncode({...state}..remove('plan')));
+        await expectLater(replay('offline-no-plan'), throwsA(isA<TypeError>()));
+        expect(reporter.calls, prior);
+        orchestration.writeAsStringSync(jsonEncode(state));
+        File(p.join(bundle.path, 'app.apk')).writeAsStringSync('changed');
+        await expectLater(
+          replay('offline-changed-bundle'),
+          throwsFormatException,
+        );
+      },
+      timeout: const Timeout(Duration(minutes: 3)),
+    );
+
     test('leaves no earlier native log when a run is reassessed', () async {
       File(
         'packages/llamadart_validation/assets/profiles/gemma4-litert-gpu.json',
@@ -1343,6 +1602,129 @@ void main() {
       expect(retained.existsSync(), isFalse);
     });
   });
+
+  test(
+    'offline GCE replay rejects wrong OS and ABI before reporter execution',
+    () async {
+      const fixture =
+          'packages/llamadart_validation/test/fixtures/windows_native_log';
+      final lines = LineSplitter.split(
+        File('$fixture/tiny.events.jsonl').readAsStringSync(),
+      ).toList();
+      final first = jsonDecode(lines.first) as Map<String, dynamic>;
+      final environment = Map<String, dynamic>.from(
+        first['environment'] as Map,
+      );
+      File(p.join(bundle.path, 'assets/profiles/tiny-gguf-cuda.json'))
+        ..createSync(recursive: true)
+        ..writeAsStringSync(jsonEncode(first['profile']));
+      final saved = Directory(p.join(runs.path, 'qa-one'));
+      final raw = File(p.join(saved.path, 'remote-results/device/events.jsonl'))
+        ..createSync(recursive: true);
+      final native = File(
+        '$fixture/tiny.native.txt',
+      ).copySync(p.join(saved.path, 'remote-results/device/stderr.log'));
+      final originalReport = File(p.join(saved.path, 'report/results.json'))
+        ..createSync(recursive: true)
+        ..writeAsStringSync('historical report');
+      final orchestration = File(p.join(saved.path, 'orchestration.json'));
+      final reporter = PreparedReporterSpy(scratch);
+      for (final variant in [
+        (
+          'matching-windows',
+          'gce-windows-cuda',
+          'windows',
+          'windows_x64',
+          true,
+        ),
+        ('wrong-os', 'gce-windows-cuda', 'linux', 'windows_x64', false),
+        ('wrong-abi', 'gce-windows-cuda', 'windows', 'linux_x64', false),
+        (
+          'relabeled-linux-plan',
+          'gce-linux-cuda',
+          'windows',
+          'windows_x64',
+          false,
+        ),
+      ]) {
+        await writeBundleManifest(bundle, {
+          ...environment,
+          'target': 'desktop',
+          'build_os': variant.$3,
+          'build_abi': variant.$4,
+        });
+        final savedPlan = plan(target: variant.$2, profile: 'tiny-gguf-cuda');
+        first['environment'] = {
+          ...environment,
+          'runtime_bundle_sha256': savedPlan.json['bundle_sha256'],
+        };
+        raw.writeAsStringSync([jsonEncode(first), ...lines.skip(1)].join('\n'));
+        orchestration.writeAsStringSync(
+          jsonEncode({
+            'plan': savedPlan.json,
+            'remote': {'terminal': true, 'test_exit_code': 0},
+            'collection': 'COMPLETE',
+            'cleanup': 'VERIFIED',
+          }),
+        );
+        final inputs = [
+          raw,
+          native,
+          originalReport,
+          orchestration,
+          File(p.join(bundle.path, 'bundle-manifest.json')),
+        ];
+        final before = inputs.map((file) => file.readAsBytesSync()).toList();
+        final output = Directory(p.join(scratch.path, variant.$1));
+        final callsBefore = reporter.calls;
+        final replay = RemoteController(runs, OfflineOnlyProvider()).reassess(
+          'qa-one',
+          output,
+          replay: (saved, output) => reassessSavedRun(
+            reporter.repository.path,
+            saved,
+            output,
+            execute: reporter.execute,
+          ),
+        );
+        if (variant.$5) {
+          expect((await replay)['qualified'], true, reason: variant.$1);
+          expect(reporter.calls, callsBefore + 1);
+        } else {
+          await expectLater(
+            replay,
+            throwsA(
+              isA<StateError>().having(
+                (error) => error.message,
+                'binding',
+                'GCE requires a matching x64 OS bundle',
+              ),
+            ),
+            reason: variant.$1,
+          );
+          expect(reporter.calls, callsBefore, reason: variant.$1);
+          expect(output.existsSync(), false, reason: variant.$1);
+        }
+        expect(
+          inputs.map((file) => file.readAsBytesSync()).toList(),
+          before,
+          reason:
+              '${variant.$1} must preserve raw, historical and bundle evidence',
+        );
+      }
+      for (final target in ['gce-windows-cuda', 'gce-linux-cuda']) {
+        final windows = target == 'gce-windows-cuda';
+        expect(
+          () => requireRemoteBundleTarget(plan(target: target), {
+            'target': 'desktop',
+            'build_os': windows ? 'windows' : 'linux',
+            'build_abi': windows ? 'windows_x64' : 'linux_x64',
+          }),
+          returnsNormally,
+        );
+      }
+    },
+  );
 
   test(
     'collected qualification binds every uploaded runtime identity',
