@@ -457,3 +457,140 @@ external int _llamadartWrapperSamplerSampleAndAcceptN(
   Pointer<Int32> outTokens,
   int outCapacity,
 );
+
+@Native<_GgmlBackendLoadNative>(
+  assetId: 'package:llamadart/ggml',
+  symbol: 'ggml_backend_load',
+)
+external ggml_backend_reg_t _windowsGgmlBackendLoad(Pointer<Char> path);
+
+@Native<_GgmlBackendLoadAllNative>(
+  assetId: 'package:llamadart/ggml',
+  symbol: 'ggml_backend_load_all',
+)
+external void _windowsGgmlBackendLoadAll();
+
+@Native<_GgmlBackendLoadAllFromPathNative>(
+  assetId: 'package:llamadart/ggml',
+  symbol: 'ggml_backend_load_all_from_path',
+)
+external void _windowsGgmlBackendLoadAllFromPath(Pointer<Char> directory);
+
+@Native<_GgmlBackendRegisterNative>(
+  assetId: 'package:llamadart/ggml',
+  symbol: 'ggml_backend_register',
+)
+external void _windowsGgmlBackendRegister(ggml_backend_reg_t registry);
+
+@Native<_GgmlBackendRegCountNative>(
+  assetId: 'package:llamadart/ggml',
+  symbol: 'ggml_backend_reg_count',
+)
+external int _windowsGgmlBackendRegCount();
+
+@Native<_GgmlBackendRegGetNative>(
+  assetId: 'package:llamadart/ggml',
+  symbol: 'ggml_backend_reg_get',
+)
+external ggml_backend_reg_t _windowsGgmlBackendRegGet(int index);
+
+@Native<_GgmlBackendRegNameNative>(
+  assetId: 'package:llamadart/ggml-base',
+  symbol: 'ggml_backend_reg_name',
+)
+external Pointer<Char> _windowsGgmlBackendRegName(ggml_backend_reg_t registry);
+
+@Native<_GgmlBackendRegByNameNative>(
+  assetId: 'package:llamadart/ggml',
+  symbol: 'ggml_backend_reg_by_name',
+)
+external ggml_backend_reg_t _windowsGgmlBackendRegByName(Pointer<Char> name);
+
+@Native<_GgmlBackendRegGetProcAddressNative>(
+  assetId: 'package:llamadart/ggml-base',
+  symbol: 'ggml_backend_reg_get_proc_address',
+)
+external Pointer<Void> _windowsGgmlBackendRegGetProcAddress(
+  ggml_backend_reg_t registry,
+  Pointer<Char> name,
+);
+
+@Native<_GgmlBackendRegDevCountNative>(
+  assetId: 'package:llamadart/ggml-base',
+  symbol: 'ggml_backend_reg_dev_count',
+)
+external int _windowsGgmlBackendRegDevCount(ggml_backend_reg_t registry);
+
+@Native<_GgmlBackendRegDevGetNative>(
+  assetId: 'package:llamadart/ggml-base',
+  symbol: 'ggml_backend_reg_dev_get',
+)
+external ggml_backend_dev_t _windowsGgmlBackendRegDevGet(
+  ggml_backend_reg_t registry,
+  int index,
+);
+
+@Native<_GgmlBackendDevCountNative>(
+  assetId: 'package:llamadart/ggml',
+  symbol: 'ggml_backend_dev_count',
+)
+external int _windowsGgmlBackendDevCount();
+
+@Native<_GgmlBackendDevGetNative>(
+  assetId: 'package:llamadart/ggml',
+  symbol: 'ggml_backend_dev_get',
+)
+external ggml_backend_dev_t _windowsGgmlBackendDevGet(int index);
+
+@Native<_GgmlBackendDevNameNative>(
+  assetId: 'package:llamadart/ggml-base',
+  symbol: 'ggml_backend_dev_name',
+)
+external Pointer<Char> _windowsGgmlBackendDevName(ggml_backend_dev_t device);
+
+@Native<_GgmlBackendDevBackendRegNative>(
+  assetId: 'package:llamadart/ggml-base',
+  symbol: 'ggml_backend_dev_backend_reg',
+)
+external ggml_backend_reg_t _windowsGgmlBackendDevBackendReg(
+  ggml_backend_dev_t device,
+);
+
+@Native<_GgmlBackendDevByTypeNative>(
+  assetId: 'package:llamadart/ggml',
+  symbol: 'ggml_backend_dev_by_type',
+)
+external ggml_backend_dev_t _windowsGgmlBackendDevByType(int type);
+
+@Native<_GgmlBackendDevBufferTypeNative>(
+  assetId: 'package:llamadart/ggml-base',
+  symbol: 'ggml_backend_dev_buffer_type',
+)
+external ggml_backend_buffer_type_t _windowsGgmlBackendDevBufferType(
+  ggml_backend_dev_t device,
+);
+
+@Native<_GgmlBackendDevTypeNative>(
+  assetId: 'package:llamadart/ggml-base',
+  symbol: 'ggml_backend_dev_type',
+)
+external int _windowsGgmlBackendDevType(ggml_backend_dev_t device);
+
+@Native<_GgmlBackendDevGetPropsNative>(
+  assetId: 'package:llamadart/ggml-base',
+  symbol: 'ggml_backend_dev_get_props',
+)
+external void _windowsGgmlBackendDevGetProps(
+  ggml_backend_dev_t device,
+  Pointer<ggml_backend_dev_props> properties,
+);
+
+@Native<_GgmlBackendDevMemoryNative>(
+  assetId: 'package:llamadart/ggml-base',
+  symbol: 'ggml_backend_dev_memory',
+)
+external void _windowsGgmlBackendDevMemory(
+  ggml_backend_dev_t device,
+  Pointer<Size> free,
+  Pointer<Size> total,
+);

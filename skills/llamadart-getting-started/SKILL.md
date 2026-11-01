@@ -165,6 +165,12 @@ Linux and web. Full docs: https://llamadart.leehack.com
   companion manifests, native URLs and checksums.
 - Platform setup the code cannot do for you:
   - Flutter iOS needs deployment target 16.4+, macOS 14.0+.
+  - Windows llama.cpp: replace the complete runtime through the build-hook
+    `llamadart_native_path`. `LLAMADART_NATIVE_LIB_DIR` and
+    `LLAMADART_BACKEND_MODULE_DIR` select backend modules only; ggml registry
+    bindings stay with the hook assets used by model loading. Do not rely on
+    `PATH` to replace those assets. An unavailable ggml code asset or missing
+    `ggml_backend_reg_count` export throws `LlamaUnsupportedException`.
   - Windows: llama.cpp and LiteRT-LM bundle the Visual C++ runtime DLLs
     they need. Machines that run the opt-in `stable_diffusion` runtime need
     the latest Microsoft Visual C++ v14 Redistributable (x64); stock Windows

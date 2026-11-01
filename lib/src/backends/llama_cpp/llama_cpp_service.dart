@@ -2840,7 +2840,31 @@ class LlamaCppService {
   void _resolveGgmlFallbackFunctions({
     List<String>? candidates,
     DynamicLibrary Function(String)? open,
+    Pointer<NativeType> Function(String)? assetSymbol,
   }) {
+    if (_isWindows && candidates == null && open == null) {
+      if (_ggmlFallbackLookupSearchKey == 'windows-code-assets' &&
+          _ggmlBackendRegCountFallback != null) {
+        return;
+      }
+      _ggmlFallbackLookupAttempted = true;
+      _ggmlFallbackLookupSearchKey = 'windows-code-assets';
+      // Filesystem overrides select backend modules, not a second ggml
+      // registry beside the one imported by the hook's llama.dll.
+      _bindGgmlFallbackFunctions(assetSymbol ?? _windowsGgmlSymbolAddress);
+      _ggmlRuntimeProbeOutcome =
+          'the Windows code assets package:llamadart/ggml and '
+          'package:llamadart/ggml-base do not export it';
+      if (_ggmlBackendRegCountFallback == null) {
+        throw LlamaUnsupportedException(
+          'Windows llama.cpp backend registration requires the ggml code '
+          'asset emitted by the llamadart build hook, including the '
+          'ggml_backend_reg_count export used by llama.dll. Use a complete, '
+          'ABI-compatible native bundle through llamadart_native_path.',
+        );
+      }
+      return;
+    }
     candidates ??= _ggmlFallbackCandidates();
 
     final searchKey = candidates.map(path.normalize).join('|');
@@ -2860,143 +2884,7 @@ class LlamaCppService {
       accept: (candidate, library) {
         opened.add(probeCandidateIdentity(candidate));
 
-        _ggmlBackendLoadFallback ??= _tryBind(
-          () => library
-              .lookupFunction<_GgmlBackendLoadNative, _GgmlBackendLoadDart>(
-                'ggml_backend_load',
-              ),
-        );
-        _ggmlBackendLoadAllFallback ??= _tryBind(
-          () =>
-              library.lookupFunction<
-                _GgmlBackendLoadAllNative,
-                _GgmlBackendLoadAllDart
-              >('ggml_backend_load_all'),
-        );
-        _ggmlBackendLoadAllFromPathFallback ??= _tryBind(
-          () =>
-              library.lookupFunction<
-                _GgmlBackendLoadAllFromPathNative,
-                _GgmlBackendLoadAllFromPathDart
-              >('ggml_backend_load_all_from_path'),
-        );
-        _ggmlBackendRegisterFallback ??= _tryBind(
-          () =>
-              library.lookupFunction<
-                _GgmlBackendRegisterNative,
-                _GgmlBackendRegisterDart
-              >('ggml_backend_register'),
-        );
-        _ggmlBackendRegCountFallback ??= _tryBind(
-          () =>
-              library.lookupFunction<
-                _GgmlBackendRegCountNative,
-                _GgmlBackendRegCountDart
-              >('ggml_backend_reg_count'),
-        );
-        _ggmlBackendRegGetFallback ??= _tryBind(
-          () => library
-              .lookupFunction<_GgmlBackendRegGetNative, _GgmlBackendRegGetDart>(
-                'ggml_backend_reg_get',
-              ),
-        );
-        _ggmlBackendRegNameFallback ??= _tryBind(
-          () =>
-              library.lookupFunction<
-                _GgmlBackendRegNameNative,
-                _GgmlBackendRegNameDart
-              >('ggml_backend_reg_name'),
-        );
-        _ggmlBackendRegByNameFallback ??= _tryBind(
-          () =>
-              library.lookupFunction<
-                _GgmlBackendRegByNameNative,
-                _GgmlBackendRegByNameDart
-              >('ggml_backend_reg_by_name'),
-        );
-        _ggmlBackendRegGetProcAddressFallback ??= _tryBind(
-          () =>
-              library.lookupFunction<
-                _GgmlBackendRegGetProcAddressNative,
-                _GgmlBackendRegGetProcAddressDart
-              >('ggml_backend_reg_get_proc_address'),
-        );
-        _ggmlBackendRegDevCountFallback ??= _tryBind(
-          () =>
-              library.lookupFunction<
-                _GgmlBackendRegDevCountNative,
-                _GgmlBackendRegDevCountDart
-              >('ggml_backend_reg_dev_count'),
-        );
-        _ggmlBackendRegDevGetFallback ??= _tryBind(
-          () =>
-              library.lookupFunction<
-                _GgmlBackendRegDevGetNative,
-                _GgmlBackendRegDevGetDart
-              >('ggml_backend_reg_dev_get'),
-        );
-        _ggmlBackendDevCountFallback ??= _tryBind(
-          () =>
-              library.lookupFunction<
-                _GgmlBackendDevCountNative,
-                _GgmlBackendDevCountDart
-              >('ggml_backend_dev_count'),
-        );
-        _ggmlBackendDevGetFallback ??= _tryBind(
-          () => library
-              .lookupFunction<_GgmlBackendDevGetNative, _GgmlBackendDevGetDart>(
-                'ggml_backend_dev_get',
-              ),
-        );
-        _ggmlBackendDevNameFallback ??= _tryBind(
-          () =>
-              library.lookupFunction<
-                _GgmlBackendDevNameNative,
-                _GgmlBackendDevNameDart
-              >('ggml_backend_dev_name'),
-        );
-        _ggmlBackendDevBackendRegFallback ??= _tryBind(
-          () =>
-              library.lookupFunction<
-                _GgmlBackendDevBackendRegNative,
-                _GgmlBackendDevBackendRegDart
-              >('ggml_backend_dev_backend_reg'),
-        );
-        _ggmlBackendDevByTypeFallback ??= _tryBind(
-          () =>
-              library.lookupFunction<
-                _GgmlBackendDevByTypeNative,
-                _GgmlBackendDevByTypeDart
-              >('ggml_backend_dev_by_type'),
-        );
-        _ggmlBackendDevBufferTypeFallback ??= _tryBind(
-          () =>
-              library.lookupFunction<
-                _GgmlBackendDevBufferTypeNative,
-                _GgmlBackendDevBufferTypeDart
-              >('ggml_backend_dev_buffer_type'),
-        );
-        _ggmlBackendDevTypeFallback ??= _tryBind(
-          () =>
-              library.lookupFunction<
-                _GgmlBackendDevTypeNative,
-                _GgmlBackendDevTypeDart
-              >('ggml_backend_dev_type'),
-        );
-        _ggmlBackendDevGetPropsFallback ??= _tryBind(
-          () =>
-              library.lookupFunction<
-                _GgmlBackendDevGetPropsNative,
-                _GgmlBackendDevGetPropsDart
-              >('ggml_backend_dev_get_props'),
-        );
-        _ggmlBackendDevMemoryFallback ??= _tryBind(
-          () =>
-              library.lookupFunction<
-                _GgmlBackendDevMemoryNative,
-                _GgmlBackendDevMemoryDart
-              >('ggml_backend_dev_memory'),
-        );
+        _bindGgmlFallbackFunctions(library.lookup);
 
         return _ggmlFallbacksFullyResolved ? true : null;
       },
@@ -3007,6 +2895,194 @@ class LlamaCppService {
               'export it'
               '${failures.isEmpty ? '' : '; other candidates: ${failures.describe()}'}';
   }
+
+  void _bindGgmlFallbackFunctions(Pointer<NativeType> Function(String) lookup) {
+    _ggmlBackendLoadFallback ??= _tryBind(
+      () => lookup('ggml_backend_load')
+          .cast<NativeFunction<_GgmlBackendLoadNative>>()
+          .asFunction<_GgmlBackendLoadDart>(),
+    );
+    _ggmlBackendLoadAllFallback ??= _tryBind(
+      () => lookup('ggml_backend_load_all')
+          .cast<NativeFunction<_GgmlBackendLoadAllNative>>()
+          .asFunction<_GgmlBackendLoadAllDart>(),
+    );
+    _ggmlBackendLoadAllFromPathFallback ??= _tryBind(
+      () => lookup('ggml_backend_load_all_from_path')
+          .cast<NativeFunction<_GgmlBackendLoadAllFromPathNative>>()
+          .asFunction<_GgmlBackendLoadAllFromPathDart>(),
+    );
+    _ggmlBackendRegisterFallback ??= _tryBind(
+      () => lookup('ggml_backend_register')
+          .cast<NativeFunction<_GgmlBackendRegisterNative>>()
+          .asFunction<_GgmlBackendRegisterDart>(),
+    );
+    _ggmlBackendRegCountFallback ??= _tryBind(
+      () => lookup('ggml_backend_reg_count')
+          .cast<NativeFunction<_GgmlBackendRegCountNative>>()
+          .asFunction<_GgmlBackendRegCountDart>(),
+    );
+    _ggmlBackendRegGetFallback ??= _tryBind(
+      () => lookup('ggml_backend_reg_get')
+          .cast<NativeFunction<_GgmlBackendRegGetNative>>()
+          .asFunction<_GgmlBackendRegGetDart>(),
+    );
+    _ggmlBackendRegNameFallback ??= _tryBind(
+      () => lookup('ggml_backend_reg_name')
+          .cast<NativeFunction<_GgmlBackendRegNameNative>>()
+          .asFunction<_GgmlBackendRegNameDart>(),
+    );
+    _ggmlBackendRegByNameFallback ??= _tryBind(
+      () => lookup('ggml_backend_reg_by_name')
+          .cast<NativeFunction<_GgmlBackendRegByNameNative>>()
+          .asFunction<_GgmlBackendRegByNameDart>(),
+    );
+    _ggmlBackendRegGetProcAddressFallback ??= _tryBind(
+      () => lookup('ggml_backend_reg_get_proc_address')
+          .cast<NativeFunction<_GgmlBackendRegGetProcAddressNative>>()
+          .asFunction<_GgmlBackendRegGetProcAddressDart>(),
+    );
+    _ggmlBackendRegDevCountFallback ??= _tryBind(
+      () => lookup('ggml_backend_reg_dev_count')
+          .cast<NativeFunction<_GgmlBackendRegDevCountNative>>()
+          .asFunction<_GgmlBackendRegDevCountDart>(),
+    );
+    _ggmlBackendRegDevGetFallback ??= _tryBind(
+      () => lookup('ggml_backend_reg_dev_get')
+          .cast<NativeFunction<_GgmlBackendRegDevGetNative>>()
+          .asFunction<_GgmlBackendRegDevGetDart>(),
+    );
+    _ggmlBackendDevCountFallback ??= _tryBind(
+      () => lookup('ggml_backend_dev_count')
+          .cast<NativeFunction<_GgmlBackendDevCountNative>>()
+          .asFunction<_GgmlBackendDevCountDart>(),
+    );
+    _ggmlBackendDevGetFallback ??= _tryBind(
+      () => lookup('ggml_backend_dev_get')
+          .cast<NativeFunction<_GgmlBackendDevGetNative>>()
+          .asFunction<_GgmlBackendDevGetDart>(),
+    );
+    _ggmlBackendDevNameFallback ??= _tryBind(
+      () => lookup('ggml_backend_dev_name')
+          .cast<NativeFunction<_GgmlBackendDevNameNative>>()
+          .asFunction<_GgmlBackendDevNameDart>(),
+    );
+    _ggmlBackendDevBackendRegFallback ??= _tryBind(
+      () => lookup('ggml_backend_dev_backend_reg')
+          .cast<NativeFunction<_GgmlBackendDevBackendRegNative>>()
+          .asFunction<_GgmlBackendDevBackendRegDart>(),
+    );
+    _ggmlBackendDevByTypeFallback ??= _tryBind(
+      () => lookup('ggml_backend_dev_by_type')
+          .cast<NativeFunction<_GgmlBackendDevByTypeNative>>()
+          .asFunction<_GgmlBackendDevByTypeDart>(),
+    );
+    _ggmlBackendDevBufferTypeFallback ??= _tryBind(
+      () => lookup('ggml_backend_dev_buffer_type')
+          .cast<NativeFunction<_GgmlBackendDevBufferTypeNative>>()
+          .asFunction<_GgmlBackendDevBufferTypeDart>(),
+    );
+    _ggmlBackendDevTypeFallback ??= _tryBind(
+      () => lookup('ggml_backend_dev_type')
+          .cast<NativeFunction<_GgmlBackendDevTypeNative>>()
+          .asFunction<_GgmlBackendDevTypeDart>(),
+    );
+    _ggmlBackendDevGetPropsFallback ??= _tryBind(
+      () => lookup('ggml_backend_dev_get_props')
+          .cast<NativeFunction<_GgmlBackendDevGetPropsNative>>()
+          .asFunction<_GgmlBackendDevGetPropsDart>(),
+    );
+    _ggmlBackendDevMemoryFallback ??= _tryBind(
+      () => lookup('ggml_backend_dev_memory')
+          .cast<NativeFunction<_GgmlBackendDevMemoryNative>>()
+          .asFunction<_GgmlBackendDevMemoryDart>(),
+    );
+  }
+
+  static Pointer<NativeType> _windowsGgmlSymbolAddress(String symbol) =>
+      switch (symbol) {
+        'ggml_backend_load' =>
+          Native.addressOf<NativeFunction<_GgmlBackendLoadNative>>(
+            _windowsGgmlBackendLoad,
+          ),
+        'ggml_backend_load_all' =>
+          Native.addressOf<NativeFunction<_GgmlBackendLoadAllNative>>(
+            _windowsGgmlBackendLoadAll,
+          ),
+        'ggml_backend_load_all_from_path' =>
+          Native.addressOf<NativeFunction<_GgmlBackendLoadAllFromPathNative>>(
+            _windowsGgmlBackendLoadAllFromPath,
+          ),
+        'ggml_backend_register' =>
+          Native.addressOf<NativeFunction<_GgmlBackendRegisterNative>>(
+            _windowsGgmlBackendRegister,
+          ),
+        'ggml_backend_reg_count' =>
+          Native.addressOf<NativeFunction<_GgmlBackendRegCountNative>>(
+            _windowsGgmlBackendRegCount,
+          ),
+        'ggml_backend_reg_get' =>
+          Native.addressOf<NativeFunction<_GgmlBackendRegGetNative>>(
+            _windowsGgmlBackendRegGet,
+          ),
+        'ggml_backend_reg_name' =>
+          Native.addressOf<NativeFunction<_GgmlBackendRegNameNative>>(
+            _windowsGgmlBackendRegName,
+          ),
+        'ggml_backend_reg_by_name' =>
+          Native.addressOf<NativeFunction<_GgmlBackendRegByNameNative>>(
+            _windowsGgmlBackendRegByName,
+          ),
+        'ggml_backend_reg_get_proc_address' =>
+          Native.addressOf<NativeFunction<_GgmlBackendRegGetProcAddressNative>>(
+            _windowsGgmlBackendRegGetProcAddress,
+          ),
+        'ggml_backend_reg_dev_count' =>
+          Native.addressOf<NativeFunction<_GgmlBackendRegDevCountNative>>(
+            _windowsGgmlBackendRegDevCount,
+          ),
+        'ggml_backend_reg_dev_get' =>
+          Native.addressOf<NativeFunction<_GgmlBackendRegDevGetNative>>(
+            _windowsGgmlBackendRegDevGet,
+          ),
+        'ggml_backend_dev_count' =>
+          Native.addressOf<NativeFunction<_GgmlBackendDevCountNative>>(
+            _windowsGgmlBackendDevCount,
+          ),
+        'ggml_backend_dev_get' =>
+          Native.addressOf<NativeFunction<_GgmlBackendDevGetNative>>(
+            _windowsGgmlBackendDevGet,
+          ),
+        'ggml_backend_dev_name' =>
+          Native.addressOf<NativeFunction<_GgmlBackendDevNameNative>>(
+            _windowsGgmlBackendDevName,
+          ),
+        'ggml_backend_dev_backend_reg' =>
+          Native.addressOf<NativeFunction<_GgmlBackendDevBackendRegNative>>(
+            _windowsGgmlBackendDevBackendReg,
+          ),
+        'ggml_backend_dev_by_type' =>
+          Native.addressOf<NativeFunction<_GgmlBackendDevByTypeNative>>(
+            _windowsGgmlBackendDevByType,
+          ),
+        'ggml_backend_dev_buffer_type' =>
+          Native.addressOf<NativeFunction<_GgmlBackendDevBufferTypeNative>>(
+            _windowsGgmlBackendDevBufferType,
+          ),
+        'ggml_backend_dev_type' =>
+          Native.addressOf<NativeFunction<_GgmlBackendDevTypeNative>>(
+            _windowsGgmlBackendDevType,
+          ),
+        'ggml_backend_dev_get_props' =>
+          Native.addressOf<NativeFunction<_GgmlBackendDevGetPropsNative>>(
+            _windowsGgmlBackendDevGetProps,
+          ),
+        'ggml_backend_dev_memory' =>
+          Native.addressOf<NativeFunction<_GgmlBackendDevMemoryNative>>(
+            _windowsGgmlBackendDevMemory,
+          ),
+        _ => throw ArgumentError.value(symbol, 'symbol', 'not bound'),
+      };
 
   /// Runs one symbol binding, returning `null` if it fails for any reason so
   /// the caller can keep searching the remaining candidates.

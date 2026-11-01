@@ -147,6 +147,7 @@ Pick targeted rows based on the touched surface:
 | Shared model store package or its guide | `model-store-contracts` |
 | Native sync tooling under `tool/native/`, `lib/src/hook/native_release_pins.dart`, `sync_native_bindings.yml`, an Apple companion `Package.swift`, or a runtime pin constant | `native-sync-python-suites`, `native-release-digests` |
 | Native-assets hook, runtime pin, bundle layout | `native-hook-bundles`, `litert-lm-engine-smoke`, and relevant `platform` rows such as `android-arm64-device-smoke` |
+| Windows llama.cpp registry or native-module override loading | `root-vm`, including `test/integration/windows_ggml_registry_test.dart`; fresh-process Windows model/context load with normal assets and the #1649 override matrix below |
 | llama.cpp / GGUF generation, prompt reuse, context reuse | `native-prompt-reuse-parity`, `native-inference-benchmark`, `gguf-chat-features-smoke`, `native-prompt-cancel` |
 | Generation cancel or engine stream forwarding | `native-prompt-cancel`, plus `web-speech-task-cancel` for browser speech task isolation |
 | llama.cpp native pin, object creation and free paths, exit or isolate shutdown | `native-exit-teardown` |
@@ -1136,3 +1137,26 @@ ordinary reset and reload, with optional exact direct-C references. See
 [the fixture, gates and provenance](image_reference_editing.md). No other
 family, component, host, device or reference-count qualification is
 inferred.
+
+## Windows native override registry
+
+For [#1649](https://github.com/leehack/llamadart/issues/1649), the default Windows
+VM suite includes `test/integration/windows_ggml_registry_test.dart`. It copies
+registry DLLs to a separate module directory, resolves through the production
+fallback, checks the hook registry count, and passively checks that the alternate
+`ggml.dll` was not loaded. It requires no model or GPU.
+
+Model qualification uses fresh processes with the same published runtime, SDK,
+model and CPU settings. Vary these three switches independently: hook
+`llamadart_native_path`, `LLAMADART_NATIVE_LIB_DIR`, and a runtime directory
+prefixed to `PATH`. The eight combinations isolate the minimal trigger; retain
+the known triple-override failure as the pre-fix control. Also check
+`LLAMADART_BACKEND_MODULE_DIR` alone and with the hook override. Do not rerun
+the old release baseline merely to re-establish the already verified failure.
+
+For each fixed combination require successful model/context creation and unload,
+and retain actual loaded DLL paths/hashes plus the model loader's ggml import
+identity. Observe modules after the unmodified production outcome; registry
+getters can initialize state. Run normal published-assets JIT and a compiled
+`dart build cli` bundle outside the checkout as controls. Unit probes and a
+model-free DLL test do not replace these Windows model checks.
