@@ -1170,7 +1170,7 @@ extension _LlamaCppLibraryLoading on LlamaCppService {
   ) {
     return _ggmlRegistryFallbackOr<Pointer<Void>?>(
       null,
-      () => ggml_backend_reg_get_proc_address(reg, name),
+      () => _ggmlBackendRegGetProcAddressPrimary(reg, name),
       () => _ggmlBackendRegGetProcAddressFallback?.call(reg, name),
     );
   }
