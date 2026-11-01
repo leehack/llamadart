@@ -1,6 +1,8 @@
 ## Unreleased
 
 - Fixed Windows native runtime overrides loading a separate ggml backend registry, which could fail model loading with `no backends are loaded` ([#1649](https://github.com/leehack/llamadart/issues/1649)).
+- Direct llama.cpp backend loads reject a non-finite `tensorSplit` sum before model loading instead of silently choosing a free-memory split ([#1554](https://github.com/leehack/llamadart/issues/1554)).
+
 - Preserve assistant reasoning in LFM2.5 templates that read `message.thinking`, including turns with tool calls ([#1623](https://github.com/leehack/llamadart/issues/1623)).
 
 ## 0.17.1

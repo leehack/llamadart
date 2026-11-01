@@ -170,12 +170,21 @@ const double _maxTensorSplitSum = 18446744073709551616.0;
 /// unless one falls below float32's normal range (2^-126). Unscaled,
 /// tensor split mode overflows to infinity once a running sum times a
 /// tensor's row count exceeds the float32 maximum, about 8e34 for 4096 rows.
+/// Throws [LlamaArgumentException] before allocating when the float64 sum is
+/// not finite, including a direct backend load that bypasses validation.
 Pointer<Float> allocateTensorSplit(
   List<double> split, {
   required int maxDevices,
   required Allocator allocator,
 }) {
   final sum = split.fold<double>(0, (sum, value) => sum + value);
+  if (!sum.isFinite) {
+    throw LlamaArgumentException(
+      'ModelParams.tensorSplit must have a finite sum.',
+      name: 'tensorSplit',
+      invalidValue: split,
+    );
+  }
   var scale = 1.0;
   while (sum * scale > _maxTensorSplitSum) {
     scale /= 2;

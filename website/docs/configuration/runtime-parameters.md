@@ -74,7 +74,8 @@ Important fields:
   normalizes them and stores them as float32. `validate()` rejects empty
   lists, negative, NaN or infinite values, values above float32 range or
   nonzero values float32 rounds to 0, a zero sum or one above float32 range,
-  and a length other than that of `gpuDevices`.
+  and a length other than that of `gpuDevices`. Direct llama.cpp backend
+  loads also reject a non-finite sum with `LlamaArgumentException` before loading.
   Native llama.cpp throws `LlamaUnsupportedException` before the model loads
   for a device index the host lacks, a split for another number of devices,
   several GPU backends under `auto`, and a load that would fall back to the
