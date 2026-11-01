@@ -194,6 +194,14 @@ class PreviewTest(unittest.TestCase):
         self.event['pull_request']['user']['login'] = 'dependabot[bot]'
         self.assertEqual(guard.preview_action(self.event, []), 'skip')
 
+    def test_unrelated_labels_never_request_a_build(self):
+        for action in ['labeled', 'unlabeled']:
+            self.event['action'] = action
+            self.event['label'] = dict(name='unrelated')
+            self.assertEqual(guard.preview_action(self.event, ['lib/llamadart.dart']), 'skip')
+            self.event['label'] = dict(name='preview')
+            self.assertEqual(guard.preview_action(self.event, ['lib/llamadart.dart']), 'build')
+
     def test_missing_git_history_does_not_emit_build_or_cleanup(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)

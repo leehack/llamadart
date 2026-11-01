@@ -18,6 +18,9 @@ def preview_action(event, paths):
     if (pr['head']['repo']['full_name'] != event['repository']['full_name']
             or pr['user']['login'] == 'dependabot[bot]'):
         return 'skip'
+    if (event['action'] in ('labeled', 'unlabeled')
+            and event.get('label', {}).get('name') != 'preview'):
+        return 'skip'
     if event['action'] == 'closed':
         return 'cleanup'
     if any(label['name'] == 'preview' for label in pr['labels']):
