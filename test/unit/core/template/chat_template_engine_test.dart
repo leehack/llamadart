@@ -2471,3 +2471,6 @@ void _expectToolCallSerialization(
 Future<Object?> _noopHandler(_) async {
   return 'ok';
 }
+
+// This disposable branch retains the restored hosted Chrome inventory so the
+// shard isolation control can finish without an empty-diff advisory failure.
