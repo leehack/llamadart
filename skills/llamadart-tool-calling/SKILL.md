@@ -108,6 +108,8 @@ description: >-
   `session.create(const [])`. With `engine.create`, append the collected
   `completion.message` (it carries one `LlamaToolCallContent` per call) and
   the tool messages to your own list.
+  Keep its `LlamaThinkingContent` parts too: LFM2/LFM2.5 templates can replay
+  assistant reasoning alongside calls, applying their own history-retention policy.
 - Always cap the number of tool rounds (`maxRounds`, default 5); a model can
   call tools forever.
 - `ToolChoice.auto` lets the model decide, `ToolChoice.required` forces a call

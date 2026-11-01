@@ -80,6 +80,12 @@ Structured output (`responseFormat`, `LlamaStructuredOutput`,
 `chatTemplate(...)` still accepts the deprecated `jsonSchema` shortcut; if both
 are passed, `responseFormat` wins.
 
+When building manual LFM2/LFM2.5 history, retain the assistant's
+`LlamaThinkingContent` parts alongside its text and tool calls. Templates that
+render reasoning receive it on replay. The template controls whether older
+thoughts are retained; for example, LFM2.5-8B-A1B's `preserve_thinking` template
+kwarg retains thoughts from before the latest user turn.
+
 ## When to inspect template output
 
 Inspect template output when debugging:

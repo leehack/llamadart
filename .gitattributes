@@ -10,6 +10,7 @@ test/fixtures/flint/render_upstream.json -text
 test/fixtures/llama_cpp_templates/*.jinja -text
 test/fixtures/media_templates/*.jinja -text
 test/fixtures/required_tool_emissions/*.jinja -text
+test/fixtures/templates/LFM2_5-8B-A1B-6d65c8804847.jinja -text
 test/fixtures/templates/LFM2_5-1_2B-Thinking.jinja -text
 test/fixtures/templates/LFM2_5-1_2B-Thinking-ba551d58630a.jinja -text
 
