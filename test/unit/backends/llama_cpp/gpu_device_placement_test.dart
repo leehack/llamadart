@@ -408,5 +408,37 @@ void main() {
         reason: 'a device without a ggml handle cannot run a component',
       );
     });
+
+    test('ignores null and nullptr handles before counting mainGpu', () {
+      final noHandle = GgmlDeviceEntry(
+        name: 'missing',
+        registry: 'CUDA',
+        type: _gpu,
+      );
+      final nullPointer = device('nullptr', 0, type: _igpu);
+      for (final unavailable in [noHandle, nullPointer]) {
+        expect(
+          auxiliaryPlacementDevice(
+            GpuDevicePlacement(devices: [unavailable, cuda1, cuda3]),
+            0,
+          ),
+          cuda1,
+        );
+        expect(
+          auxiliaryPlacementDevice(
+            GpuDevicePlacement(devices: [unavailable, cuda1, cuda3]),
+            1,
+          ),
+          cuda3,
+        );
+        expect(
+          auxiliaryPlacementDevice(
+            GpuDevicePlacement(devices: [unavailable, accel]),
+            0,
+          ),
+          isNull,
+        );
+      }
+    });
   });
 }

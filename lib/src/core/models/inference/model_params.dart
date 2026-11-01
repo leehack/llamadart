@@ -283,7 +283,10 @@ class ModelParams {
   /// with any; with several, set [preferredBackend]. On native llama.cpp,
   /// decision heads and multimodal projectors of the model run on the listed
   /// GPU [mainGpu] counts within the list, or on the first one when [mainGpu]
-  /// is out of range. [validate] rejects an
+  /// is out of range. Only GPUs and integrated GPUs with a usable native
+  /// device handle count for these auxiliary models; if the list has none
+  /// (for example, it contains only accelerators), they run on the CPU.
+  /// [validate] rejects an
   /// empty list, a negative or repeated index, and a list with
   /// [ModelSplitMode.none], which runs on the [mainGpu] device alone, with
   /// [gpuLayers] `0`, or with a CPU [device] or [preferredBackend]. Native

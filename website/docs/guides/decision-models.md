@@ -56,8 +56,10 @@ with a negative `mainGpu`) that selects no GPU. Otherwise it selects a GPU of
 the load's backend, falling back to CPU if none matches. `mainGpu` picks among
 matching devices; in other split modes a negative or out-of-range index picks
 the first. With `ModelParams.gpuDevices` or `tensorSplit`, `mainGpu` counts
-among the load's devices instead, so the head never runs on a GPU the list
-leaves out. In single-device mode, a nonnegative out-of-range `mainGpu` fails
+among the load's GPUs and integrated GPUs with usable native handles, so the
+head never runs on a GPU the list leaves out. A list with none (including an
+accelerator-only list) keeps the head and multimodal projector on the CPU.
+In single-device mode, a nonnegative out-of-range `mainGpu` fails
 the model load before the head can be loaded.
 `decisions.info.deviceName` names that device, such as `CPU` or `MTL0`; on Web,
 the bridge reports its own device name.
