@@ -2054,6 +2054,105 @@ void main() {
     }
   });
 
+  test('LFM2 auto copied trailing backslashes stay in all-string tools', () {
+    final stringTools = [
+      ToolDefinition(
+        name: 'save',
+        description: '',
+        parameters: [
+          ToolParam.string('text', required: true),
+          ToolParam.string('label'),
+        ],
+      ),
+    ];
+    for (final parallel in [false, true]) {
+      final grammar = buildLfm2AutoGrammar(
+        stringTools,
+        parallelToolCalls: parallel,
+      )!;
+      final valid = [
+        for (final quote in ['"', "'"])
+          '<|tool_call_start|>[save(text=${quote}C:\\temp\\$quote)]<|tool_call_end|>',
+        r'<|tool_call_start|>[save(text="C:\temp\", label="path")]<|tool_call_end|>',
+        r'<|tool_call_start|>[save(label="path", text="C:\temp\")]<|tool_call_end|>',
+        r'<|tool_call_start|>[save(text="C:\temp\", label="D:\")]<|tool_call_end|>',
+        r'<|tool_call_start|>[save(text="Seoul\"), save(text=\"Rome")]<|tool_call_end|>',
+      ];
+      _expectGrammar(
+        validator,
+        grammar,
+        valid: valid,
+        invalid: [
+          r'<|tool_call_start|>[save(text="C:\temp\"), save(text="B")]<|tool_call_end|>',
+          r'<|tool_call_start|>[save(text="C:\temp\"),]<|tool_call_end|>',
+          r'<|tool_call_start|>[save(text="C:\temp\"), save(text="B"),]<|tool_call_end|>',
+          r'<|tool_call_start|>[save(text="C:\temp\"),,]<|tool_call_end|>',
+          r'<|tool_call_start|>[save(text="C:\temp\", text="other")]<|tool_call_end|>',
+          r'<|tool_call_start|>[save(text="C:\temp\", unknown="x")]<|tool_call_end|>',
+        ],
+      );
+      for (final output in valid) {
+        final parsed = Lfm2Handler().parseWithTools(output, tools: stringTools);
+        expect(parsed.toolCalls, isNotEmpty, reason: output);
+        expect(parsed.content, isEmpty, reason: output);
+      }
+    }
+    for (final tail in [2, 4]) {
+      final text = 'path${'\\' * tail}';
+      final tools = [
+        ToolDefinition(
+          name: 'choose',
+          description: '',
+          parameters: [
+            ToolParam.enumType('text', values: [text], required: true),
+            ToolParam.boolean('enabled', required: true),
+          ],
+        ),
+      ];
+      final grammar = buildLfm2AutoGrammar(tools, parallelToolCalls: false)!;
+      final output =
+          '<|tool_call_start|>[choose(text="$text", enabled=True)]<|tool_call_end|>';
+      _expectGrammar(validator, grammar, valid: [output], invalid: []);
+      final parsed = Lfm2Handler().parseWithTools(output, tools: tools);
+      expect(parsed.toolCalls, hasLength(1));
+      expect(jsonDecode(parsed.toolCalls.single.function!.arguments!), {
+        'text': text,
+        'enabled': true,
+      });
+    }
+    final mixed = buildLfm2AutoGrammar([
+      ToolDefinition(
+        name: 'configure',
+        description: '',
+        parameters: [
+          ToolParam.string('text', required: true),
+          ToolParam.boolean('enabled', required: true),
+        ],
+      ),
+      ToolDefinition(
+        name: 'nested',
+        description: '',
+        parameters: [
+          ToolParam.object('config', properties: [ToolParam.string('text')]),
+          ToolParam.array('items', itemType: ToolParam.string('item')),
+        ],
+      ),
+    ], parallelToolCalls: true)!;
+    _expectGrammar(
+      validator,
+      mixed,
+      valid: [
+        r'<|tool_call_start|>[configure(text="C:\temp", enabled=True)]<|tool_call_end|>',
+        r'<|tool_call_start|>[nested(config={"text":"C:\\temp\\"})]<|tool_call_end|>',
+      ],
+      invalid: [
+        r'<|tool_call_start|>[configure(text="C:\temp\", enabled=True)]<|tool_call_end|>',
+        r'<|tool_call_start|>[nested(config={"text":"C:\temp\"})]<|tool_call_end|>',
+        r'<|tool_call_start|>[nested(items=["C:\temp\"]) ]<|tool_call_end|>',
+      ],
+    );
+  });
+
   test('LFM2.5 required tool choice compiles the LFM2 tool-call grammar', () {
     final rendered = ChatTemplateEngine.render(
       templateSource: File(

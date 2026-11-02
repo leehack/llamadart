@@ -13,18 +13,38 @@ String? buildLfm2AutoGrammar(
   if (tools == null || tools.isEmpty) return null;
   final builder = _PythonGrammar();
   final calls = <String>[];
+  final copiedCalls = <String>[];
   for (var index = 0; index < tools.length; index++) {
     final tool = tools[index];
-    calls.add(builder.tool(tool.name, tool.toJsonSchema(), 'tool-$index'));
+    final schema = tool.toJsonSchema();
+    calls.add(builder.tool(tool.name, schema, 'tool-$index'));
+    if (builder.acceptsCopiedStringTail(schema)) {
+      copiedCalls.add(
+        builder.tool(
+          tool.name,
+          schema,
+          'copied-tool-$index',
+          copiedStringTails: true,
+        ),
+      );
+    }
   }
   builder.rules['call'] = calls.join(' | ');
+  if (copiedCalls.isNotEmpty) {
+    builder.rules['copied-call'] = copiedCalls.join(' | ');
+  }
+  final normalList =
+      'call ${parallelToolCalls ? '(close-ws "," close-ws call)* ' : ''}'
+      '(close-ws ",")?';
+  // The legacy all-string parser accepts copied trailing backslashes only in
+  // one call without a list comma. Keep that spelling out of other list forms.
+  final list = copiedCalls.isEmpty ? normalList : '($normalList | copied-call)';
   // A trailing comma lets compound tokens close the last argument and call
   // without forcing the sampler back into an unfinished string. Bound closing
   // whitespace so a completed call cannot consume the remaining token budget.
   builder.rules['root'] =
-      '${ToolCallGrammarUtils.literal('<|tool_call_start|>')} ws "[" ws call '
-      '${parallelToolCalls ? '(close-ws "," close-ws call)* ' : ''}'
-      '(close-ws ",")? close-ws "]" close-ws ${ToolCallGrammarUtils.literal('<|tool_call_end|>')}';
+      '${ToolCallGrammarUtils.literal('<|tool_call_start|>')} ws "[" ws $list '
+      'close-ws "]" close-ws ${ToolCallGrammarUtils.literal('<|tool_call_end|>')}';
   return builder.rules.entries
       .map((entry) => '${entry.key} ::= ${entry.value}')
       .join('\n');
@@ -42,20 +62,34 @@ final class _PythonGrammar {
     'py-string': 'double-string | single-string',
     'double-string': r'''"\"" ([^"\\] | "\\" .)* "\""''',
     'single-string': r'''"'" ([^'\\] | "\\" .)* "'"''',
+    'copied-string': 'copied-double-string | copied-single-string',
+    'copied-double-string': r'''"\"" ([^"\\] | "\\" .)* "\\"? "\""''',
+    'copied-single-string': r'''"'" ([^'\\] | "\\" .)* "\\"? "'"''',
     'integer': r'"-"? ("0" | [1-9] [0-9]*)',
     'number': r'integer ("." [0-9]+)? ([eE] [+-]? [0-9]+)?',
     'boolean': r'"True" | "False" | "true" | "false"',
     'null': r'"None" | "null"',
   };
 
-  String tool(String name, Map<String, dynamic> schema, String rule) {
+  bool acceptsCopiedStringTail(Map<String, dynamic> schema) {
+    final fields = _fields(schema);
+    return fields.isNotEmpty &&
+        fields.values.every((field) => field['type'] == 'string');
+  }
+
+  String tool(
+    String name,
+    Map<String, dynamic> schema,
+    String rule, {
+    bool copiedStringTails = false,
+  }) {
     final fields = _fields(schema);
     final required = (schema['required'] as List? ?? const []).cast<String>();
     final members = <({String name, String value, bool required})>[
       for (final entry in fields.entries)
         (
           name: '${ToolCallGrammarUtils.literal(entry.key)} ws "=" ws',
-          value: value(entry.value),
+          value: value(entry.value, copiedStringTail: copiedStringTails),
           required: required.contains(entry.key),
         ),
     ];
@@ -70,7 +104,7 @@ final class _PythonGrammar {
       entry.key as String: Map<String, dynamic>.from(entry.value as Map),
   };
 
-  String value(Map<String, dynamic> schema) {
+  String value(Map<String, dynamic> schema, {bool copiedStringTail = false}) {
     final choices = schema['enum'];
     if (choices is List) {
       if (choices.isEmpty || choices.any((value) => value is! String)) {
@@ -82,6 +116,15 @@ final class _PythonGrammar {
       rules[rule] = choices
           .cast<String>()
           .map((text) {
+            final trailingBackslashes = text.codeUnits.reversed
+                .takeWhile((codeUnit) => codeUnit == 0x5c)
+                .length;
+            if (trailingBackslashes.isOdd) {
+              throw LlamaUnsupportedException(
+                'LFM2 auto enum values ending in an odd number of backslashes '
+                'cannot preserve strict argument quote boundaries.',
+              );
+            }
             final literals = <String>[];
             for (final quote in ['"', "'"]) {
               if (!text.contains(quote)) {
@@ -100,7 +143,7 @@ final class _PythonGrammar {
       return rule;
     }
     return switch (schema['type']) {
-      'string' => 'py-string',
+      'string' => copiedStringTail ? 'copied-string' : 'py-string',
       'integer' => 'integer',
       'number' => 'number',
       'boolean' => 'boolean',

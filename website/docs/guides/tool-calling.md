@@ -192,7 +192,10 @@ retain their named position, and a declared zero-argument call yields `{}`.
 For a string parameter, `value=False` remains the string `"False"`; copied
 backslashes in Python-style string arguments remain literal. Ambiguous copied
 text and escaped text are not globally unescaped. The existing JSON call form
-keeps JSON string decoding.
+keeps JSON string decoding. For tools whose parameters are all strings, a
+copied trailing backslash may precede the closing argument quote only in a
+singleton list without a terminal comma. Other list forms, mixed-type tools and
+nested containers retain strict quote boundaries.
 
 Declare every argument with the correct type. This parser change does not add
 canonical `ToolDefinition.fromJsonSchema` generation support for LFM2: the
@@ -220,7 +223,8 @@ values is unchanged.
 
 Use legacy `ToolParam` declarations for this path. Grammar expansion is bounded
 to 4096 argument states; oversized declarations, arrays without a declared item
-type, and string enum values containing both quote styles throw
+type, and string enum values containing both quote styles or ending in an odd
+number of backslashes throw
 `LlamaUnsupportedException`. Copied-string backslashes retain the parser policy
 above. Grammar constrains structure and types, not the accuracy of copied text.
 

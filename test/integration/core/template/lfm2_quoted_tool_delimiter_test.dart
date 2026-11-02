@@ -106,6 +106,112 @@ Future<void> _expectStream(
 }
 
 void main() {
+  for (final quote in ['"', "'"]) {
+    test(
+      'copied trailing backslash $quote preserves a singleton call',
+      () async {
+        final rendered = _render(ToolChoice.auto);
+        final output = _envelope('[weather(city=${quote}C:\\temp\\$quote)]');
+        final parsed = ChatTemplateEngine.parseRendered(
+          rendered,
+          output,
+          tools: _tools,
+        );
+        expect(parsed.toolCalls, hasLength(1));
+        expect(jsonDecode(parsed.toolCalls.single.function!.arguments!), {
+          'city': 'C:\\temp\\',
+        });
+        await _expectStream(output, rendered);
+      },
+    );
+  }
+
+  test(
+    'copied trailing backslash does not expand ambiguous list parsing',
+    () async {
+      final rendered = _render(ToolChoice.auto);
+      for (final body in [
+        r'[weather(city="C:\temp\"),]',
+        r'[weather(city="C:\temp\"), weather(city="Rome")]',
+        r'[weather(city="Seoul\"), weather(city="Rome")]',
+      ]) {
+        final output = _envelope(body);
+        expect(
+          ChatTemplateEngine.parseRendered(
+            rendered,
+            output,
+            tools: _tools,
+          ).toolCalls,
+          isEmpty,
+          reason: body,
+        );
+        await _expectStream(output, rendered);
+      }
+    },
+  );
+
+  test('escaped structural-looking text stays in a strict string', () async {
+    const city = r'Seoul\"), weather(city=\"Rome';
+    final rendered = _render(ToolChoice.auto);
+    final output = _envelope('[weather(city="$city")]');
+    final parsed = ChatTemplateEngine.parseRendered(
+      rendered,
+      output,
+      tools: _tools,
+    );
+    expect(parsed.toolCalls, hasLength(1));
+    expect(jsonDecode(parsed.toolCalls.single.function!.arguments!), {
+      'city': city,
+    });
+    await _expectStream(output, rendered);
+  });
+
+  test('copied-tail mode never weakens mixed or nested typed calls', () async {
+    final definitions = [
+      ToolDefinition(
+        name: 'configure',
+        description: '',
+        parameters: [
+          ToolParam.string('text', required: true),
+          ToolParam.boolean('enabled', required: true),
+        ],
+      ),
+      ToolDefinition(
+        name: 'nested',
+        description: '',
+        parameters: [
+          ToolParam.object(
+            'config',
+            properties: [ToolParam.string('text', required: true)],
+            required: true,
+          ),
+        ],
+      ),
+    ];
+    final rendered = _render(ToolChoice.auto, definitions: definitions);
+    for (final body in [
+      r'[configure(text="C:\temp\", enabled=True)]',
+      r'[nested(config={"text":"C:\temp\"})]',
+      r'[weather(city="C:\temp\"), configure(text="C:\temp\", enabled=True)]',
+    ]) {
+      final output = _envelope(body);
+      expect(
+        ChatTemplateEngine.parseRendered(
+          rendered,
+          output,
+          tools: [..._tools, ...definitions],
+        ).toolCalls,
+        isEmpty,
+        reason: body,
+      );
+      await _expectStream(
+        output,
+        rendered,
+        definitions: [..._tools, ...definitions],
+      );
+    }
+  });
+
   final typed = ToolDefinition(
     name: 'configure',
     description: '',

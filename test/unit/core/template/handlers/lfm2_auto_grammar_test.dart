@@ -23,6 +23,34 @@ void main() {
     );
   });
 
+  test('rejects enum values whose copied tail escapes the closing quote', () {
+    for (final tail in [1, 3, 5]) {
+      expect(
+        () => buildLfm2AutoGrammar([
+          ToolDefinition(
+            name: 'choose',
+            description: '',
+            parameters: [
+              ToolParam.enumType(
+                'choice',
+                values: ['path${'\\' * tail}'],
+                required: true,
+              ),
+              ToolParam.boolean('enabled', required: true),
+            ],
+          ),
+        ], parallelToolCalls: false),
+        throwsA(
+          isA<LlamaUnsupportedException>().having(
+            (error) => error.message,
+            'message',
+            contains('odd number of backslashes'),
+          ),
+        ),
+      );
+    }
+  });
+
   test('bounds unique-argument grammar expansion before generation', () {
     expect(
       () => buildLfm2AutoGrammar([
