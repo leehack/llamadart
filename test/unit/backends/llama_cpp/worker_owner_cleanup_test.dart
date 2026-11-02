@@ -4,6 +4,7 @@ library;
 import 'dart:async';
 import 'dart:ffi';
 import 'dart:isolate';
+import 'dart:mirrors';
 
 import 'package:ffi/ffi.dart';
 import 'package:test/test.dart';
@@ -34,10 +35,13 @@ void main() {
           final cleanupStarted = Completer<void>();
           var cleanupCalls = 0;
           final stack = StackTrace.fromString('fixture-owner-cleanup-stack');
-          final backend = NativeLlamaBackend(
+          final ports = <RawReceivePort>[];
+          late final NativeLlamaBackend backend;
+          backend = NativeLlamaBackend(
             workerEntrypoint: _entrypoint(startupFailure),
             workerExitCleanup: (release) {
               releases.add(release);
+              ports.addAll(_capturePorts(backend));
               cleanupCalls++;
               if (!cleanupStarted.isCompleted) cleanupStarted.complete();
               return Future<void>.error(failure, stack);
@@ -99,6 +103,7 @@ void main() {
             reason: 'A failed cleanup must prevent worker restart.',
           );
           expect(backend.isReady, isFalse);
+          _expectPortsClosed(backend, ports);
         },
       );
     }
@@ -113,11 +118,14 @@ void main() {
       final failure = LlamaStateException(
         'fixture delayed owner cleanup failure',
       );
-      final backend = NativeLlamaBackend(
+      final ports = <RawReceivePort>[];
+      late final NativeLlamaBackend backend;
+      backend = NativeLlamaBackend(
         workerEntrypoint: _entrypoint(false),
         cancelFlagAllocator: allocator,
         workerExitCleanup: (release) {
           releases.add(release);
+          ports.addAll(_capturePorts(backend));
           // RawReceivePort invokes its handler in the root zone. Create the
           // failing future there too, so the fixture does not introduce a
           // cross-error-zone future that can never deliver its error.
@@ -175,6 +183,7 @@ void main() {
       expect(requestError?.error, same(failure));
       expect(disposalError?.error, same(failure));
       expect(retryError?.error, same(failure));
+      _expectPortsClosed(backend, ports);
     });
   }
 }
@@ -264,5 +273,49 @@ final class _FlagAllocator implements Allocator {
       malloc.free(Pointer<Void>.fromAddress(address));
     }
     _live.clear();
+  }
+}
+
+List<RawReceivePort> _capturePorts(NativeLlamaBackend backend) {
+  final owner = reflectClass(NativeLlamaBackend).owner as LibraryMirror;
+  final ports = <RawReceivePort>[];
+  for (final name in ['_workerLogPort', '_workerLifecyclePort']) {
+    final port = reflect(
+      backend,
+    ).getField(MirrorSystem.getSymbol(name, owner)).reflectee;
+    if (port is RawReceivePort) {
+      // Closing a RawReceivePort clears this property. Setting it first makes
+      // a skipped close observable; finally below still cleans failing controls.
+      port.keepIsolateAlive = true;
+      ports.add(port);
+    }
+  }
+  return ports;
+}
+
+void _expectPortsClosed(
+  NativeLlamaBackend backend,
+  List<RawReceivePort> ports,
+) {
+  final owner = reflectClass(NativeLlamaBackend).owner as LibraryMirror;
+  Object? field(String name) =>
+      reflect(backend).getField(MirrorSystem.getSymbol(name, owner)).reflectee;
+  try {
+    expect(field('_responsePorts'), isEmpty);
+    expect(field('_workerExits'), isEmpty);
+    expect(field('_workerLogPort'), isNull);
+    expect(field('_workerLifecyclePort'), isNull);
+    expect(ports, isNotEmpty);
+    for (final port in ports) {
+      expect(
+        port.keepIsolateAlive,
+        isFalse,
+        reason: 'Actual raw ports must close on cleanup failure.',
+      );
+    }
+  } finally {
+    for (final port in ports) {
+      port.close();
+    }
   }
 }

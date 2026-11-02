@@ -278,6 +278,34 @@ manually copied candidate: use a local-bundle override or a direct pinned VM
 package:test launcher with the prepared native-assets mapping, and verify the
 library hash before and after each run.
 
+### Production ownership-chain control
+
+`llama_cpp_owner_chain_e2e_test.dart` also exercises the real parent backend,
+its handshake, worker installation/activation, service model/context/projector
+routing and parent release. It uses the test-only forwarding image in
+`test/fixtures/llama_cpp_owner_chain_probe.cpp` to count those boundaries while
+payload operations execute in one unchanged native image. This is instrumented
+pipeline evidence, kept separate from unmodified-artifact model qualification.
+The invalid-projector case proves typed refusal/routing, not projector inference.
+
+On macOS, compile the fixture against the exact owner's wrapper and upstream
+headers as a dynamic library, reexporting the candidate with
+`-Wl,-reexport_library,<candidate>` and an rpath to its directory. The unchanged
+candidate must be named `libllamadart.dylib` to satisfy its install name. Select
+the forwarding image in the prepared native-assets map. Set `OWNER_CHAIN_PROBE`,
+`OWNER_CHAIN_RUNTIME` (the same reexported candidate path), `OWNER_CHAIN_MODEL`
+and each corresponding `_SHA256`. Do not separately load a second copy of the
+runtime: independent native registries cannot exchange objects. The test checks
+that production `@Native` and `DynamicLibrary` resolve the same underlying build
+identity address, and counts parent release separately from worker finalization.
+
+Run the old-pin test in a separate process with its real published asset selected,
+`OWNER_CHAIN_OLD_PIN=1`, and the old library/model hash variables. It must have no
+owner API, choose the production legacy fallback, and load/dispose cleanly. No
+ownership improvement is claimed for that fallback. For exact-artifact model
+cycles, select the unmodified candidate directly; the maintained forced-exit
+suite pins decoding to two CPU threads for repeatable local qualification.
+
 ## Forced worker exit
 
 `Isolate.kill` on a llama.cpp worker
