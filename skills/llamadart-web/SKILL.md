@@ -126,8 +126,11 @@ in the llamadart-getting-started and llamadart-chat-streaming skills.
   throws `LlamaSpeechTranscriptTruncatedException` with
   `LlamaSpeechTranscriptLimit.runtime`: the bridge cannot distinguish output,
   context and media caps. Older bridges cannot report this truncation.
-- WebGPU grammar applies from the first token at `root`: `grammarLazy` or
-  another `grammarRoot` throws `LlamaUnsupportedException`. State files live in
+- WebGPU lazy grammars and custom `grammarRoot` need the loaded core to report
+  `lazyGrammar` (`llama-web-bridge-assets` v0.1.75+). Check
+  `(await engine.capabilities).supportsLazyGrammar`; an unsupported explicit
+  request throws `LlamaUnsupportedException`. Older cores retain best-effort
+  auto tool parsing without a lazy grammar. State files live in
   the bridge's WASMFS and are lost on reload; loading a
   missing one throws `LlamaStateException` and the runtime stays usable.
   `getPerformanceContext()` returns null.

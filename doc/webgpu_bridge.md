@@ -190,8 +190,7 @@ physical playback, intelligibility or speaker-reference fidelity.
   The bridge also accepts `grammarLazy`, `grammarTriggers` and `grammarRoot`
   behind a `lazyGrammar` probe
   ([#199](https://github.com/leehack/llama-web-bridge/pull/199)); llamadart
-  does not send them yet, so `supportsLazyGrammar` stays false
-  ([#1480](https://github.com/leehack/llamadart/issues/1480)).
+  forwards them when that probe is true and reports it as `supportsLazyGrammar`.
 - `v0.1.76+`: the projector GGUF is freed once loaded, removing the retained
   copy behind the repeated wasm32 media batch abort; wasm32 stays unqualified
   ([#1189](https://github.com/leehack/llamadart/issues/1189)) and larger
@@ -345,8 +344,9 @@ with the URL path.
 The real-model smoke also requires `getCompletionCapabilities()` to report
 `penaltyPromptTokens: true` and a plain chat call to carry no
 `penaltyPromptTokens` option. `chat-app-web-tool-penalty-smoke` runs a
-`ToolChoice.auto` chat on a tool-capable `--model-url` and requires
-`penaltyPromptTokens: false` on the completion call.
+`ToolChoice.auto` chat on a tool-capable `--model-url` and requires the
+`lazyGrammar` probe, a lazy grammar with triggers and no `penaltyPromptTokens`
+override on the completion.
 
 On macOS headless Chromium, keep the smoke script's default
 `--browser-angle auto` or pass `--browser-angle metal`. Without Metal ANGLE the
@@ -372,7 +372,7 @@ window.LlamaWebGpuBridge = class LlamaWebGpuBridge {
 - `unloadMultimodalProjector()`
 - `supportsVision()`
 - `supportsAudio()`
-- `createCompletion(prompt, { nPredict, temp, topK, topP, minP, penalty, presencePenalty, penaltyPromptTokens, seed, grammar, thinkingBudget, speculativeDecoding, onToken, parts, signal })`
+- `createCompletion(prompt, { nPredict, temp, topK, topP, minP, penalty, presencePenalty, penaltyPromptTokens, seed, grammar, grammarLazy, grammarTriggers, grammarRoot, thinkingBudget, speculativeDecoding, onToken, parts, signal })`
 - `getCompletionCapabilities()`
 - `loadDraftModel(url, { useCache, signal })`
 - `unloadDraftModel()`
@@ -414,6 +414,23 @@ tag:
   reports the same flags.
   Source: [llama-web-bridge#140](https://github.com/leehack/llama-web-bridge/pull/140)
   and [#144](https://github.com/leehack/llama-web-bridge/pull/144).
+- Lazy grammars and custom grammar roots require `lazyGrammar: true` from the
+  same strict per-load probe (`v0.1.75+` assets). Missing/failed probes and
+  non-boolean flags mean unsupported. `supportsLazyGrammar` reports the same
+  result. Explicit lazy/custom-root requests reject before bridge dispatch on
+  unsupported cores. Supported cores receive `grammarLazy`, `grammarRoot` and
+  string-named `word`, `token`, `pattern`, `pattern-full` triggers in both direct
+  and worker modes. Dart's word/token wire integers differ from the bridge's
+  core integers, so they are never forwarded directly. Token triggers accept
+  `token` or a numeric `value`; invalid/missing token ids reject as arguments.
+  Empty whole-output patterns become `^$`, as native does. Empty word/pattern
+  values and NUL text reject through the bridge's typed validators.
+  With a supported lazy template grammar, the planner keeps its grammar,
+  triggers and preserved tokens and sends no penalty prompt override. Older
+  cores retain generic best-effort auto parsing and the existing override.
+  A post-probe core capability rejection remains `LlamaUnsupportedException`.
+  `web-lazy-grammar` checks real CPU Wasm activation and recovery in both
+  runtimes. It does not qualify hardware WebGPU or LFM2 auto grammar (#1715).
 - A core whose probe reports `penaltyPromptTokens: true` counts a text
   prompt without a `grammar` in the `penalty` and `presencePenalty` window, as
   native does. When `ToolChoice.auto` drops a lazy tool-call grammar, the
@@ -549,3 +566,10 @@ its v0.1.73+ rank-pooling and one-pass overflow rejections are matched on the
 core's exact message, prefix included; any other message stays an inference
 error. Reserved mixed-input media markers are
 rejected as unsupported before dispatch, matching native.
+
+Lazy-grammar option validators in the pinned v0.1.81 facade
+(`llama_webgpu_bridge.js`, `grammarTrigger` / `grammarOptions`) use the same
+anchored argument allowlist in both runtimes. The core's exact invalid-grammar
+and rejected-trigger messages map to `LlamaInferenceException`, matching native
+grammar initialization failures. Worker transport retains these messages and
+does not retry deterministic grammar errors on the main thread.

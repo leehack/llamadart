@@ -805,6 +805,20 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
         'routing, decision engine, or WebGPU bridge pin changes.',
   ),
   TestMatrixRow(
+    id: 'web-lazy-grammar',
+    tier: 'targeted',
+    mode: 'local-only',
+    covers:
+        'lazy word/pattern/pattern-full/token activation after visible text, '
+        'custom roots and typed grammar rejection/reuse through pinned assets '
+        'in direct and worker CPU Wasm runtimes; no tool accuracy or GPU claim',
+    command:
+        'dart run tool/testing/run_local_e2e.dart --scenario web-lazy-grammar',
+    useWhen:
+        'Web grammar capability, trigger transport or bridge pin changes. '
+        'Stage build/web_lazy_grammar/config.json as doc/testing_matrix.md describes.',
+  ),
+  TestMatrixRow(
     id: 'web-speech-task-cancel',
     tier: 'targeted',
     mode: 'local-only',
@@ -1328,7 +1342,7 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
     mode: 'local-only',
     covers:
         'built Flutter web chat app tool chat on a tool-capable GGUF: '
-        'ToolChoice.auto sends penaltyPromptTokens: false',
+        'ToolChoice.auto sends a lazy grammar and no penaltyPromptTokens option',
     command:
         'dart run tool/testing/run_local_e2e.dart --scenario '
         'chat-app-web-tool-penalty-smoke --model-url <tool-capable-gguf-url> '

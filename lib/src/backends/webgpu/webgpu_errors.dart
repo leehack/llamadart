@@ -27,6 +27,15 @@ final RegExp _bridgeArgument = RegExp(
   r'\.(?:startTag|endTag) must be a non-empty string\.|'
   r'\.forcedMessage must be a string\.|'
   r'\.maxTokens must be an integer from )|'
+  r'CompletionOptions\.(?:grammar(?:Root)? contains U\+0000, which the core cannot read\.|'
+  r'grammarRoot must be a non-empty string\.|'
+  r'grammarLazy must be a boolean;|'
+  r'(?:grammarLazy|grammarRoot) needs a non-empty CompletionOptions\.grammar\.|'
+  r'grammarLazy needs at least one CompletionOptions\.grammarTriggers entry\.|'
+  r'grammarTriggers(?: must be an array\.|\[\d+\](?: must be an object\.|'
+  r'\.type must be one of |\.token must be an integer from |'
+  r'\.value must be a non-empty string\.|'
+  r'\.value contains U\+0000, which the core cannot read\.)))|'
   r'CompletionOptions\.speculativeDecoding(?: must be an object\.|'
   r'\.strategies (?:must be a non-empty array\.|has an unknown strategy )|'
   r'\.(?:draftTokenMax|draftTokenMin|ngramSizeN|ngramSizeM|ngramMinHits|'
@@ -41,6 +50,13 @@ final RegExp _bridgeArgument = RegExp(
   r'Next-token (?:candidates(?: must be an array or typed array of token ids\.|'
   r'\[\d+\] is .*; expected a 32-bit integer\.)|'
   r'scoring prompt must be a string\.|topK is .*; expected a 32-bit integer\.))',
+);
+
+final RegExp _bridgeUnsupportedCompletion = RegExp(
+  r'^The loaded WebGPU core does not support CompletionOptions\.'
+  r'(?:presencePenalty|minP|thinkingBudget|grammarLazy|grammarRoot|speculativeDecoding)'
+  r'(?: or CompletionOptions\.'
+  r'(?:presencePenalty|minP|thinkingBudget|grammarLazy|grammarRoot|speculativeDecoding))*\.$',
 );
 
 /// Classifies request rejections without reclassifying unknown runtime errors.
@@ -60,6 +76,23 @@ LlamaException? webGpuBridgeRequestError(
     // Dart errors and primitive JS rejections have no JS error name.
   }
   final message = webGpuBridgeErrorText(error, sourceUrls: sourceUrls);
+  if (name == 'Error' &&
+      message.contains('CompletionOptions.grammar') &&
+      _bridgeUnsupportedCompletion.hasMatch(message)) {
+    return LlamaUnsupportedException(message);
+  }
+  if (name == 'Error' &&
+      (message ==
+              'Failed to start generation: Failed to initialize sampler chain '
+                  '(invalid grammar)' ||
+          message ==
+              'Generation step failed: The lazy grammar rejected the text '
+                  'that triggered it')) {
+    return LlamaInferenceException(
+      'WebGPU grammar generation failed.',
+      message,
+    );
+  }
   if ((name == 'RangeError' || name == 'TypeError' || name == 'Error') &&
       _bridgeArgument.hasMatch(message)) {
     return LlamaArgumentException(message);
