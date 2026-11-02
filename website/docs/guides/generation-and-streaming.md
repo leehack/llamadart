@@ -34,6 +34,52 @@ budgeting applies the same check to history. Tool images go in
 `LlamaToolResultContent.content` instead, where the engine reports them; see
 [tool-result media](./tool-calling#tool-result-media).
 
+## Eager task handles
+
+`engine.createTask(messages)` returns a `ChatGenerationTask` and
+`engine.generateTask(prompt)` returns a `TextGenerationTask`. Options match
+`create` and `generate`; use `chatTemplateKwargs` for language settings. These
+methods start eagerly, so you can await an outcome without subscribing to events:
+
+```dart
+final task = engine.createTask(
+  [LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'Hello!')],
+  params: const GenerationParams(maxTokens: 64),
+);
+final outcome = await task.done;
+if (outcome.state == GenerationTaskState.completed) {
+  print(outcome.result!.text);
+} else if (outcome.state == GenerationTaskState.failed) {
+  print(outcome.error);
+} else {
+  print(outcome.partialResult.text);
+}
+```
+
+`events` is a single-subscription observation stream, containing the original
+completion chunks or raw text deltas. It never emits errors. No listener,
+a paused listener, or cancellation of the events subscription stops the task;
+events buffer until observed, so consume or cancel observation when retaining
+large replies. Call `task.cancel()` explicitly and await `task.done` before
+reusing the engine. A task cancels its own source subscription and never calls
+`engine.cancelGeneration()` or disposes the borrowed engine. Runtime admission
+still limits overlapping inference as before.
+
+`done` is stable, never throws, and completes after source cleanup. Its outcome
+reports completed, cancelled or failed and retains `partialResult`. A successful
+outcome also has `result`; cancellation has no successful result. Cleanup errors
+remain failures even after cancellation. `task.result` is a lazily created future
+that throws on cancellation or failure: attach a handler immediately when reading
+it. An engine-wide cancel or model unload is reflected as cancellation when the
+source ends normally; backend errors remain failures. A finished task is terminal,
+and a later `cancel()` does nothing. Message, tool and media lists are snapshotted
+at task creation; contained option/model objects keep their existing semantics.
+
+The original stream APIs keep their lazy start and subscription cancellation
+behavior. Task handles add no Decision task or automatic chat-session tool loop.
+The [CLI example](https://github.com/leehack/llamadart/blob/main/example/basic_app/bin/llamadart_task_example.dart)
+streams a task and reports its terminal outcome.
+
 ## Generation pipeline (visual)
 
 ```mermaid

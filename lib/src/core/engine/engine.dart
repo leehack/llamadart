@@ -12,6 +12,7 @@ import 'llamadart_engine.dart';
 import 'engine_observation.dart';
 import 'engine_observer.dart';
 import 'generation_cancellation.dart';
+import 'generation_task.dart';
 import 'json_schema_chat_request.dart';
 import 'load_check_report.dart';
 import '../template/response_format.dart';
@@ -2019,6 +2020,48 @@ class LlamaEngine implements LlamadartEngine<LlamaEngineCapabilities> {
     });
   }
 
+  /// Starts an eager chat task with independently observable events and outcome.
+  ///
+  /// The task borrows this engine. Cancelling its events listener only stops
+  /// observation; call `task.cancel()` and await `task.done` for cancellation
+  /// cleanup. Unlike [create], generation starts without an event listener.
+  /// Failures are reported by the task, including preflight failures.
+  ChatGenerationTask createTask(
+    List<LlamaChatMessage> messages, {
+    GenerationParams? params,
+    List<ToolDefinition>? tools,
+    ToolChoice? toolChoice,
+    bool parallelToolCalls = false,
+    bool enableThinking = true,
+    Map<String, dynamic>? responseFormat,
+    Map<String, dynamic>? chatTemplateKwargs,
+    DateTime? templateNow,
+  }) {
+    late GenerationRequest taskRequest;
+    final snapshot = List<LlamaChatMessage>.unmodifiable(messages);
+    final toolSnapshot = tools == null
+        ? null
+        : List<ToolDefinition>.unmodifiable(tools);
+    final source = _generationCancellation.request((request) {
+      taskRequest = request;
+      return _generationCancellation.inherit(
+        request,
+        () => create(
+          snapshot,
+          params: params,
+          tools: toolSnapshot,
+          toolChoice: toolChoice,
+          parallelToolCalls: parallelToolCalls,
+          enableThinking: enableThinking,
+          responseFormat: responseFormat,
+          chatTemplateKwargs: chatTemplateKwargs,
+          templateNow: templateNow,
+        ),
+      );
+    });
+    return startChatGenerationTask(source, taskRequest.isCancelled);
+  }
+
   /// Generates strict structured JSON and decodes the final output.
   ///
   /// This helper applies `output.responseFormat` to [create], collects streamed
@@ -2314,6 +2357,30 @@ class LlamaEngine implements LlamadartEngine<LlamaEngineCapabilities> {
       );
     });
     return generation;
+  }
+
+  /// Starts an eager raw-text task without applying a chat template.
+  ///
+  /// Parameters and media handling match [generate]. Observation is optional;
+  /// cancelling `task.events` does not cancel generation. Use `task.cancel()`
+  /// and await `task.done`. The task never disposes this engine.
+  TextGenerationTask generateTask(
+    String prompt, {
+    GenerationParams params = const GenerationParams(),
+    List<LlamaContentPart>? parts,
+  }) {
+    late GenerationRequest taskRequest;
+    final snapshot = parts == null
+        ? null
+        : List<LlamaContentPart>.unmodifiable(parts);
+    final source = _generationCancellation.request((request) {
+      taskRequest = request;
+      return _generationCancellation.inherit(
+        request,
+        () => generate(prompt, params: params, parts: snapshot),
+      );
+    });
+    return startTextGenerationTask(source, taskRequest.isCancelled);
   }
 
   LlamaOperationResult _generationResult(
