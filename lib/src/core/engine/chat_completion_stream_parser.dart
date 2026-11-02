@@ -245,18 +245,17 @@ class ChatCompletionStreamParser {
         !verbatimForcedThought;
     var verbatimThoughtEnded = false;
     var atReplyStart = leadingThoughtOnly;
-    // Kimi K3 frames its response in protocol channels that only its parse
-    // strips, with or without tools.
+    // Channel-framed replies need their parser even without tool calling.
     final rawWithoutTools =
         !parseToolCallsEnabled &&
+        !traits.hasRepeatedContentChannels &&
         templateResult.format != ChatFormat.gemma4.index &&
         templateResult.format != ChatFormat.kimiK3.index;
     // A forced-open thought can transition straight into a tool envelope
     // without producing `</think>`. Start in parsed mode so that envelope is
     // never streamed as reasoning before the final structured parse. Gated
     // formats stream raw: Hermes parses such an envelope as reasoning, and
-    // the Qwen3-Coder XML reasoning gate holds it back. Without tools, output
-    // other than Gemma 4 streams raw.
+    // the Qwen3-Coder XML reasoning gate holds it back.
     var streamingMode = rawWithoutTools || toolCallOpening != null
         ? _ToolStreamingMode.raw
         : templateResult.thinkingForcedOpen ||

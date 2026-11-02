@@ -113,6 +113,9 @@ description: >-
 - Read arguments from parsed tool-call parts. For LFM2/LFM2.5, quoted
   `<|tool_call_end|>` text inside an argument is literal data; preserve it when
   invoking tools and replaying their results.
+- Consume all parsed Solar Open content-channel segments, preserving the
+  whitespace between them. Parsed and streamed completions remove channel
+  framing while retaining the accepted content.
 - Always cap the number of tool rounds (`maxRounds`, default 5); a model can
   call tools forever.
 - `ToolChoice.auto` lets the model decide, `ToolChoice.required` forces a call

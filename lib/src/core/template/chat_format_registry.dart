@@ -90,6 +90,7 @@ final class ChatFormatTraits {
     this.closedThoughtKeepsTagsAsContent = false,
     this.forcedThoughtContentOpenings = const [],
     this.mayEmbedToolEnvelopeAfterContent = false,
+    this.hasRepeatedContentChannels = false,
     this.disabledByResponseSchema = false,
     this.requiredKeepsLazyGrammar = false,
     this.routesThroughGeneric = false,
@@ -132,6 +133,10 @@ final class ChatFormatTraits {
   /// Whether a tool envelope may follow content, so a stream with tools
   /// parses from its first token instead of deciding from how output starts.
   final bool mayEmbedToolEnvelopeAfterContent;
+
+  /// Whether accepted replies can repeat content channels whose fragments must
+  /// be joined and whose framing must be parsed even without tool calling.
+  final bool hasRepeatedContentChannels;
 
   /// Whether a response schema disables the format's handler, as in
   /// llama.cpp: rendering falls back to generic with tool calls and to
@@ -513,7 +518,10 @@ chatFormatRegistrations = List.unmodifiable(<ChatFormatRegistration>[
       '<|tool_response:name|>',
       '<|tool_response:result|>',
     ]),
-    traits: ChatFormatTraits(qualifiesJsonSchemaTools: false),
+    traits: ChatFormatTraits(
+      qualifiesJsonSchemaTools: false,
+      hasRepeatedContentChannels: true,
+    ),
   ),
   // Before Gemma 3, whose turn markers FunctionGemma templates also use.
   ChatFormatRegistration(
