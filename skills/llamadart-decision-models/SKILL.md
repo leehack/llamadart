@@ -90,8 +90,20 @@ Laya's `system_one` format (https://huggingface.co/convaiinnovations/laya):
   (ask the user, keep the previous state) below it.
 - Cost grows with the number of questions: each question re-encodes the
   state. Use `systemOneBatch([DecisionRequest(...)])` to answer several states
-  in one backend call. Calls cannot be cancelled; in interactive UI run at
-  most one call and collapse pending inputs into the latest.
+  in one backend call. Legacy Future calls run to completion. For cooperative
+  cancellation, use `systemOneTask` or `systemOneBatchTask`: `cancel()` stops
+  preflight at tokenization/dispatch checkpoints or discards the answer after
+  dispatched backend work finishes. Await `done` before considering work
+  stopped; no native interruption is promised. Calls on siblings and a
+  borrowed encoder are unaffected. Disposal or model replacement cancels
+  active tasks; legacy Future semantics remain unchanged.
+- A `DecisionTask<R>` has single-subscription `events` (one final value on
+  success, no errors or synthetic progress), never-erroring `done` with
+  `DecisionCompletionState.completed/cancelled/failed`, and a lazy throwing
+  `result`. Await `result` or attach a handler when reading it. Observe
+  `done.error`/`stackTrace` for failures. Paused, cancelled or absent event
+  listeners do not stop work or block `done`. Inputs are snapshotted at task
+  creation; a batch preserves request order and has no partial output.
 - Limits: sequences are cut to 512 tokens and a long state is truncated
   silently; question text and options share `headMaxTokens` (192 for Laya),
   so keep options few and short. Text containing U+0000 throws

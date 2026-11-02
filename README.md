@@ -9,10 +9,10 @@ through `llama.cpp` and `.litertlm` bundles through LiteRT-LM, on Android, iOS,
 macOS, Linux, Windows and the web, behind one Dart API. Web support is
 experimental. Native targets need no network once the model is on the device.
 
-- Streaming chat and text generation, with structured JSON output.
+- Streaming chat and text generation, with structured JSON output and cancellable task handles.
 - Tool calling driven by the model's chat template.
 - Embeddings, reranking, and image and audio input with multimodal models.
-- Speech to text, text to speech, and decision models.
+- Speech to text, text to speech, and decision models with cooperative task cancellation.
 - Image generation from text prompts on native platforms (Preview).
 - Runtime LoRA adapters, observability hooks and typed capability checks.
 
@@ -144,8 +144,12 @@ Current default runtime pins:
 | --- | --- |
 | Native llama.cpp / GGUF | `leehack/llamadart-native@v0.8.0-1` |
 | Native LiteRT-LM / `.litertlm` | `leehack/litert-lm-native@v0.18.1-4` |
-| Web llama.cpp / GGUF | `leehack/llama-web-bridge-assets@v0.1.79` |
+| Web llama.cpp / GGUF | `leehack/llama-web-bridge-assets@v0.1.81` |
 | Web LiteRT-LM / `.litertlm` | `@litert-lm/core@0.18.0` |
+
+Native LiteRT-LM overrides must match the package's pre-1.0 C bindings.
+LiteRT-LM 0.19 / C API 1.0 is rejected before engine calls; use the pinned
+runtime until the consumer migration in #1677 is delivered.
 
 Native overrides accept stable `vMAJOR.MINOR.PATCH` releases and explicit
 historical or nightly `bNNNN` artifacts. New nightly wrapper rebuilds use
