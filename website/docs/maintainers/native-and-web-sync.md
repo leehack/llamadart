@@ -197,6 +197,48 @@ sync, never `latest`, and do not regenerate bindings. The symbols and wrapper
 fixes a replacement runtime must provide are listed in
 [Override the llama.cpp release](../platforms/native-build-hooks#override-the-llamacpp-release).
 
+## Speculative ABI preparation
+
+The handwritten llama.cpp service uses `llama_dart_speculative_*` for MTP and
+n-gram strategies. Native initialization enables the target outputs each
+strategy consumes, so the service does not require the legacy
+`llama_dart_speculative_need_embd` or `need_embd_nextn` queries. The generated
+bindings and direct legacy-symbol tests remain until an adopted immutable
+artifact removes those exports.
+
+Direct, Windows wrapper code-asset, and dynamic-library resolution require the
+remaining generic API. Direct and Windows probes call it only with null
+handles; an incomplete API fails with `LlamaUnsupportedException` before
+session creation or prompt decoding. Dynamic resolution requires every symbol
+before returning an API. This checks available symbols, not struct-layout or
+behavior compatibility: custom overrides still need the ABI-compatible runtime
+described in [native build hooks](../platforms/native-build-hooks).
+
+[Native #51](https://github.com/leehack/llamadart-native/issues/51) owns coordinated
+export retirement. Consumer preparation alone does not authorize export removal,
+a pin change, or publication. In particular, older Dart consumers' Windows
+factory probes only `free`, then resolves `need_embd` after session creation.
+A local export-removal control exposes an untyped lookup error there; it does
+not establish an actionable old-consumer refusal. The staged retirement therefore removes only the 14 unused `mtp_*`/`ngram_*`
+family exports and retains both compatibility queries, including the
+constant-false `need_embd` shim allowed by
+[native #48](https://github.com/leehack/llamadart-native/issues/48). Local
+14-symbol-removal controls keep old and new consumers working on all three
+binding paths on the host; they do not replace Windows device qualification. Query removal remains a separate compatibility decision;
+it needs verified old-consumer delivery/refusal behavior first. Do not describe
+the current probes as a new runtime-version handshake.
+
+Run the model-free export-set checks with:
+
+```sh
+dart test -p vm test/unit/backends/llama_cpp/speculative_api_skew_test.dart
+```
+
+The tests exercise retained queries, absent legacy queries, and a missing
+required generic export through all three resolution paths. Real-runtime
+old/new controls, representative n-gram/MTP/DFlash generation, and packaged
+platform qualification remain required for the coordinated ABI release.
+
 ## stable_diffusion runtime sync
 
 The opt-in `stable_diffusion` runtime syncs through the
