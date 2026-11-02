@@ -1,5 +1,6 @@
 ## Unreleased
 
+- Reject incompatible native LiteRT-LM C API 1.0 overrides before calling legacy bindings, with runtime migration guidance.
 - Manage text, decision, image and speech engine lifecycles through `LlamadartEngine<C>` with typed capabilities and reentrant-safe final disposal.
 
 ## 0.17.5
