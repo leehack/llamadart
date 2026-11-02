@@ -538,3 +538,5 @@ dart run tool/testing/run_local_e2e.dart --scenario image-seamless-textures \
 Run this command from the repository root. On a CPU-only host set
 `LLAMADART_TEXTURE_DEVICES=cpu`; the default requires CPU and actual Metal.
 See `doc/image_seamless_textures.md` for the independent native comparison.
+
+Run `dart run bin/llamadart_task_example.dart /path/to/model.gguf` to stream an eager chat task. Ctrl+C requests cancellation; the example waits for task cleanup before disposing its engine.

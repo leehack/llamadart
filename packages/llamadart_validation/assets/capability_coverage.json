@@ -632,6 +632,17 @@
         "reason": "ModelParams.cpuMoeLayers and moeCacheBytes have maintained validation, runtime-rejection, override-pattern, device-gate and native parameter tests, plus the local-only LLAMADART_MOE_MODEL scenario that checks the cache allocates its budget and keeps greedy output on Metal (OLMoE-1B-7B). No validation-pack profile covers MoE models; CUDA, multiple GPUs and performance gains are not qualified by this binding.",
         "issue": "https://github.com/leehack/llamadart/issues/1123"
       }
+    },
+    {
+      "surfaces": [
+        "api:LlamaEngine.createTask",
+        "api:LlamaEngine.generateTask"
+      ],
+      "exemption": {
+        "id": "text-generation-tasks",
+        "reason": "These eager task handles reuse existing text generation and parser paths. Model-free VM and Chrome production-path controls cover eager completion without observation, cancellation cleanup, partial output, errors, event subscription independence and borrowed-engine ownership. Existing text/streaming packs do not yet bind task lifecycle observations; this adds no platform or model qualification. Dedicated task pack coverage remains in #1614.",
+        "issue": "https://github.com/leehack/llamadart/issues/1614"
+      }
     }
   ]
 }
