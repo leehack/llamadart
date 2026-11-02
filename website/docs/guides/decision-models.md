@@ -208,6 +208,52 @@ or `Map` with `String` keys of such values. A request needs at least one
 question, question ids must be non-empty, and score levels must be non-empty.
 Invalid questions throw `LlamaDecisionException` before the model runs.
 
+## Cooperative tasks
+
+`systemOneTask` and `systemOneBatchTask` start eagerly and preserve the same
+answers as the Future methods. A `DecisionTask<DecisionResult>` (or
+`DecisionTask<List<DecisionResult>>` for a batch) exposes:
+
+- `events`: a single-subscription stream with exactly one final answer on
+  success, and no invented progress or partial batch. It never emits errors.
+- `done`: a stable, never-erroring `DecisionCompletion<R>` with `state`,
+  `result`, `error` and the original failure `stackTrace`.
+- `result`: a lazily created throwing Future. Await it or attach an error
+  handler when reading it. It throws `LlamaStateException` for cancellation.
+- `cancel()` and `isCancellationRequested`, scoped to this task.
+
+```dart
+final task = decisions.systemOneTask(
+  state: 'Please refund the duplicate charge.',
+  questions: {'refund': DecisionQuestion.noul('Is a refund requested?')},
+);
+// Call task.cancel() when this answer is no longer needed.
+final completion = await task.done;
+if (completion.state == DecisionCompletionState.completed) {
+  print(completion.result!.nouls['refund']!.noul);
+}
+```
+
+Cancellation is cooperative: checkpoints before and after tokenization and
+before dispatch stop preflight. Once dispatched, the backend finishes and
+the answer is discarded. `done` waits for that work; tokenization/backend
+errors remain failures even after cancellation. No native interruption is
+promised. Disposing the Decision engine or unloading/replacing its encoder
+cancels active tasks at these checkpoints; legacy Future calls retain their
+existing behavior. Cancellation never disposes the encoder or stops sibling
+calls. A task created after engine disposal reports a typed state failure.
+
+The single operation snapshots the JSON state and question map when created;
+a batch snapshots the request list and preserves order (`DecisionRequest`
+already freezes its inputs). Validation failures are reported by the task.
+An empty batch completes with an empty list. Pausing, cancelling or never
+adding an events listener does not cancel work or delay `done`. An unobserved
+successful answer stays buffered until the stream is observed or released.
+Calling `cancel()` after completion has no effect.
+
+For a local CLI with Ctrl-C cancellation, see
+[the task example](https://github.com/leehack/llamadart/blob/main/example/basic_app/bin/llamadart_decision_task_example.dart).
+
 ## Laya wire format
 
 `DecisionQuestion.fromJson` parses Laya's `{"type", "instructions",
@@ -540,8 +586,9 @@ backends have not been measured. Validation evidence:
   options.
 - **One encoder pass per question.** The state is re-encoded for every
   question, so cost grows with the number of questions.
-- **No cancellation.** A `systemOne` or `systemOneBatch` call runs to
-  completion.
+- **No native interruption.** Legacy Future calls run to completion. Task
+  cancellation stops preflight or discards the answer after dispatched work
+  finishes; it does not abort that backend call.
 - **Unicode normalization.** Input is not normalized. The Hugging Face
   tokenizer applies NFC, so NFD text, such as a decomposed `é`, can tokenize
   differently. Pass NFC text.

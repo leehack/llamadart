@@ -89,3 +89,19 @@ normalization, distinct inputs, batch parity and reuse. Set the backend to
 embedding inputs; those are covered by the
 `native-multimodal-embeddings` local E2E scenario and the `embedding-gguf-*`
 validation pack.
+
+## Cooperative Decision tasks
+
+The local-only task test uses an existing Laya encoder/head and CPU threads 2:
+
+```bash
+LLAMADART_DECISION_MODEL_PATH=/path/to/laya.gguf \
+LLAMADART_DECISION_HEAD_PATH=/path/to/laya-head.safetensors \
+TMPDIR="$(mktemp -d)" dart test -p vm -j 1 --run-skipped -t local-only \
+  test/e2e/backends/decision_task_e2e_test.dart
+```
+
+It checks real single/batch parity with legacy calls, immediate cancellation
+and reuse. Deterministic VM/Chrome task tests cover pending-backend cancellation,
+head lifetime and sibling isolation; the native smoke does not claim native
+interruption or cross-platform qualification.
