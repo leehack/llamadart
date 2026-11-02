@@ -36,6 +36,42 @@ void main() {
     }
   });
 
+  for (final mode in [
+    'pending',
+    'safe-error',
+    'quarantine',
+    'cancel-failure',
+    'dispose-cancel-failure',
+    'cleanup-failure',
+    'backend-quarantine',
+  ]) {
+    test('native fixture worker settlement: $mode', () async {
+      final path =
+          '${tempDir.path}/conversation.${Platform.isMacOS ? 'dylib' : 'so'}';
+      final build = await Process.run('cc', [
+        '-shared',
+        '-fPIC',
+        '-pthread',
+        'test/fixtures/litert_lm/c_api_v1_conversation.c',
+        '-o',
+        path,
+      ]);
+      expect(build.exitCode, 0, reason: '${build.stderr}');
+      final result = await Process.run(
+        Platform.resolvedExecutable,
+        [
+          '--packages=.dart_tool/package_config.json',
+          'test/fixtures/litert_lm_worker_settlement.dart',
+          mode,
+          path,
+        ],
+        environment: {'LITERT_SETTLEMENT_LIBRARY': path},
+      ).timeout(const Duration(seconds: 20));
+      expect(result.exitCode, 0, reason: '${result.stdout}\n${result.stderr}');
+      expect(result.stdout, contains('case $mode passed'));
+    }, testOn: 'mac-os || linux');
+  }
+
   test(
     'a queued embedding deadline preserves the active call and other requests',
     () async {
@@ -841,51 +877,6 @@ void main() {
     });
 
     test(
-      'skips native dispose when an in-flight request has not settled',
-      () async {
-        final service = _DisposeTrackingBlockingService();
-        final worker = await _startWorkerInCurrentIsolate(
-          service,
-          disposeTimeout: const Duration(milliseconds: 50),
-        );
-
-        final generationPort = ReceivePort();
-        try {
-          worker.sendPort.send(
-            LiteRtLmGenerateRequest(
-              1,
-              'hello',
-              const GenerationParams(),
-              generationPort.sendPort,
-            ),
-          );
-          await service.generateStarted.future;
-
-          final disposePort = ReceivePort();
-          worker.sendPort.send(LiteRtLmDisposeRequest(disposePort.sendPort));
-          final ack = await disposePort.first.timeout(
-            const Duration(seconds: 2),
-          );
-          disposePort.close();
-
-          expect(
-            ack,
-            isA<LiteRtLmErrorResponse>().having(
-              (error) => error.message,
-              'message',
-              contains('has not settled'),
-            ),
-          );
-          // The blocking generation never settled, so the worker must not
-          // delete native handles out from under the in-flight native call.
-          expect(service.disposeCalled, isFalse);
-        } finally {
-          generationPort.close();
-        }
-      },
-    );
-
-    test(
       'disposes native resources when the in-flight request settles',
       () async {
         final service = _DisposeTrackingStreamingService();
@@ -908,29 +899,6 @@ void main() {
         disposePort.close();
 
         expect(service.disposeCalled, isTrue);
-      },
-    );
-
-    test(
-      'reports native dispose failures instead of acknowledging cleanup',
-      () async {
-        final worker = await _startWorkerInCurrentIsolate(
-          _FailingDisposeService(),
-        );
-        final responsePort = ReceivePort();
-        worker.sendPort.send(LiteRtLmDisposeRequest(responsePort.sendPort));
-        try {
-          expect(
-            await responsePort.first.timeout(const Duration(seconds: 1)),
-            isA<LiteRtLmErrorResponse>().having(
-              (response) => response.message,
-              'message',
-              contains('injected cleanup failure'),
-            ),
-          );
-        } finally {
-          responsePort.close();
-        }
       },
     );
 
@@ -1200,35 +1168,6 @@ class _ThrowingGenerationLiteRtLmService extends LiteRtLmService {
   }
 }
 
-class _DisposeTrackingBlockingService extends LiteRtLmService {
-  final Completer<void> generateStarted = Completer<void>();
-  final Completer<void> _releaseGeneration = Completer<void>();
-  bool disposeCalled = false;
-
-  @override
-  Stream<List<int>> generate(
-    int contextHandle,
-    String prompt,
-    GenerationParams params, {
-    List<LlamaContentPart>? parts,
-  }) async* {
-    if (!generateStarted.isCompleted) {
-      generateStarted.complete();
-    }
-    // Block forever; cancellation does not release this in the test, so the
-    // worker's dispose wait must time out.
-    await _releaseGeneration.future;
-  }
-
-  @override
-  void cancelGeneration() {}
-
-  @override
-  void dispose() {
-    disposeCalled = true;
-  }
-}
-
 class _DisposeTrackingStreamingService extends LiteRtLmService {
   bool disposeCalled = false;
 
@@ -1265,11 +1204,6 @@ class _FeatureLiteRtLmService extends LiteRtLmService {
 
   @override
   ({int total, int free}) getVramInfo() => (total: 2048, free: 512);
-}
-
-class _FailingDisposeService extends LiteRtLmService {
-  @override
-  void dispose() => throw StateError('injected cleanup failure');
 }
 
 class _QueuedEmbeddingService extends _BlockingLiteRtLmService {

@@ -84,6 +84,53 @@ void main() {
     await client.generate('Hi').drain<void>();
   }
 
+  for (final stage in [5, _send]) {
+    test(
+      'blocking failure $stage returns only after the native scope unwinds',
+      () async {
+        final client = LiteRtLmRuntimeClient(libraryPath: blocking);
+        _configure(blocking, 0);
+        final library = DynamicLibrary.open(blocking);
+        int count(String name) => library
+            .lookupFunction<Int Function(), int Function()>('fixture_$name')();
+        await initialize(client);
+        client.createConversation(npuBackend: true);
+        final deleted = count('optional_args_deleted');
+        final sends = count('send_calls');
+        _configure(
+          blocking,
+          stage,
+          code: 7,
+          message: 'PERMISSION_DENIED: $modelPath',
+        );
+        final stream = client.generate('Hi');
+        expect(client.nativeSettlement, LiteRtLmNativeSettlement.pending);
+        await expectLater(
+          stream.drain<void>(),
+          throwsA(
+            isA<StateError>().having(
+              (error) => error.message,
+              'redacted native error',
+              allOf(
+                stage == _send
+                    ? contains('PERMISSION_DENIED')
+                    : contains('optional_args_create returned null'),
+                isNot(contains('secret_models')),
+              ),
+            ),
+          ),
+        );
+        expect(client.nativeSettlement, LiteRtLmNativeSettlement.settled);
+        expect(count('send_calls') - sends, stage == _send ? 1 : 0);
+        expect(
+          count('optional_args_deleted') - deleted,
+          stage == _send ? 1 : 0,
+        );
+        client.dispose();
+      },
+    );
+  }
+
   final scenarios = <(String, int, bool, String, _Trigger)>[
     (
       'engine settings creation',

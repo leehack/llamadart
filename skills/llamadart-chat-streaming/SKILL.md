@@ -324,3 +324,11 @@ Future<Ticket> classify(LlamaEngine engine, String text) {
 
 - Generation and streaming: https://llamadart.leehack.com/docs/guides/generation-and-streaming
 - First chat session: https://llamadart.leehack.com/docs/getting-started/first-chat-session
+
+Native LiteRT-LM cleanup failures can leave native callbacks or handles unsettled.
+When the backend requests a process restart, keep its worker, model links and
+cache leases alive; do not kill the isolate or retry on that backend. A closed
+Dart stream or failed request is not proof that native callbacks have drained.
+Custom native integrations can inspect `LiteRtLmRuntimeClient.nativeSettlement`
+from `package:llamadart/backend.dart`; only `LiteRtLmNativeSettlement.settled`
+permits teardown. This does not enable LiteRT-LM C API 1.0 overrides.
