@@ -86,6 +86,11 @@ render reasoning receive it on replay. The template controls whether older
 thoughts are retained; for example, LFM2.5-8B-A1B's `preserve_thinking` template
 kwarg retains thoughts from before the latest user turn.
 
+LFM2/LFM2.5 tool-call markers inside recognized reasoning remain reasoning
+text and produce no executable calls. A call after the thought closes is
+parsed normally. Literal thought tags inside a complete tool argument remain
+argument data, including during streaming.
+
 ## When to inspect template output
 
 Inspect template output when debugging:

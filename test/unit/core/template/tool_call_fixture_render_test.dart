@@ -108,7 +108,9 @@ void main() {
     expect(result.grammar, isNotNull);
     expect(
       messages,
-      contains(contains('ChatTemplateEngine: Disabling parallelToolCalls')),
+      isNot(
+        contains(contains('ChatTemplateEngine: Disabling parallelToolCalls')),
+      ),
     );
     expect(
       messages,

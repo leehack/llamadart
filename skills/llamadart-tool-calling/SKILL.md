@@ -119,6 +119,13 @@ description: >-
   copied backslashes literal; ambiguous Python-style strings are not globally
   unescaped. This does not enable canonical `fromJsonSchema` generation on
   LFM2 or change its existing required JSON grammar.
+- LFM2/LFM2.5 tool markers inside reasoning remain `thinking` text and never
+  produce executable calls. Calls after the thought closes still work; literal
+  `<think>`/`</think>` inside complete tool arguments remain argument data.
+- Set `parallelToolCalls: true` to allow the supported format's parallel tool
+  grammar. Template capability reports describe history rendering and do not
+  silently override that explicit request; the flag cannot add a protocol the
+  format or backend does not implement.
 - Consume all parsed Solar Open content-channel segments, preserving the
   whitespace between them. Parsed and streamed completions remove channel
   framing while retaining the accepted content.

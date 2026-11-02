@@ -207,16 +207,13 @@ class ChatTemplateEngine {
 
     // 3. Prepare template capabilities and render context matching llama.cpp
     final caps = TemplateCaps.detect(effectiveTemplate ?? '');
-    // LFM2 list grammar honors the parallel flag even when capability
-    // detection misses tool_calls in the template.
-    final effectiveParallelToolCalls =
-        allowToolCalls &&
-        parallelToolCalls &&
-        (caps.supportsParallelToolCalls || effectiveFormat == ChatFormat.lfm2);
+    // Capability probes describe history rendering; the caller selects the
+    // output protocol's parallel bound, as in llama.cpp.
+    final effectiveParallelToolCalls = allowToolCalls && parallelToolCalls;
     if (parallelToolCalls && !effectiveParallelToolCalls) {
       LlamaLogger.instance.debug(
-        'ChatTemplateEngine: Disabling parallelToolCalls because template '
-        'does not support parallel tool calls or tool calls are disabled.',
+        'ChatTemplateEngine: Disabling parallelToolCalls because tool calls '
+        'are disabled.',
       );
     }
 

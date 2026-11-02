@@ -99,6 +99,31 @@ Future<void> _expectStream(
 }
 
 void main() {
+  test('public engine keeps thought calls out of executable output', () async {
+    const inner = '<|tool_call_start|>[weather(city="Paris")]<|tool_call_end|>';
+    const outer = '<|tool_call_start|>[weather(city="Rome")]<|tool_call_end|>';
+    final engine = LlamaEngine(
+      _RawLfm2Backend('<think>Plan $inner more.</think>$outer'),
+    );
+    addTearDown(engine.dispose);
+    await engine.loadModel('LFM2-fixture.gguf');
+    final completion = await engine
+        .create(
+          const [
+            LlamaChatMessage.fromText(
+              role: LlamaChatRole.user,
+              text: 'Weather?',
+            ),
+          ],
+          tools: _tools,
+          parallelToolCalls: true,
+        )
+        .collect();
+    expect(completion.thinking, 'Plan $inner more.');
+    expect(completion.text, isEmpty);
+    expect(completion.toolCalls, hasLength(1));
+    expect(completion.toolCalls.single.arguments, {'city': 'Rome'});
+  });
   for (final choice in [ToolChoice.auto, ToolChoice.required]) {
     final rendered = _render(choice);
     for (final quote in ['"', "'"]) {

@@ -601,9 +601,12 @@ void main() {
     final inThinking = handler.parse(
       '<think>reasoning <|tool_call_start|>[{"name":"search","arguments":{"query":"llama"}}]<|tool_call_end|></think>',
     );
-    expect(inThinking.toolCalls, hasLength(1));
-    expect(inThinking.toolCalls.first.function?.name, equals('search'));
-    expect(inThinking.reasoningContent, equals('reasoning'));
+    expect(inThinking.toolCalls, isEmpty);
+    expect(
+      inThinking.reasoningContent,
+      'reasoning <|tool_call_start|>[{"name":"search",'
+      '"arguments":{"query":"llama"}}]<|tool_call_end|>',
+    );
     expect(inThinking.content, isEmpty);
 
     final thinkingOnly = handler.parse(

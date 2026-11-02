@@ -256,7 +256,15 @@ class ChatCompletionStreamParser {
     // never streamed as reasoning before the final structured parse. Gated
     // formats stream raw: Hermes parses such an envelope as reasoning, and
     // the Qwen3-Coder XML reasoning gate holds it back.
-    var streamingMode = rawWithoutTools || toolCallOpening != null
+    // LFM's non-executable reasoning policy needs envelope-aware parsing:
+    // raw thought-tag splitting also sees literal tags inside arguments.
+    final parsesLfmToolChannels =
+        parseToolCallsEnabled &&
+        templateResult.format == ChatFormat.lfm2.index &&
+        !traits.parsesCallsInsideThoughts;
+    var streamingMode = parsesLfmToolChannels
+        ? _ToolStreamingMode.parsed
+        : rawWithoutTools || toolCallOpening != null
         ? _ToolStreamingMode.raw
         : templateResult.thinkingForcedOpen ||
               isFunctionaryV32 ||
@@ -476,10 +484,20 @@ class ChatCompletionStreamParser {
 
         // A partial parse keeps a thought tag that is still arriving as
         // reasoning text; the final parse drops the whole tag.
-        final partialReasoning = withoutTrailingTagPrefix(
+        var partialReasoning = withoutTrailingTagPrefix(
           partialParsed.reasoningContent ?? '',
           [startTag, endTag],
         ).trimRight();
+        if (parsesLfmToolChannels) {
+          // A pending backslash may become an unescaped newline next token.
+          if (partialReasoning.endsWith(r'\')) {
+            partialReasoning = partialReasoning.substring(
+              0,
+              partialReasoning.length - 1,
+            );
+          }
+          partialReasoning = partialReasoning.trim();
+        }
         final partialContent = partialParsed.content.trimRight();
         if (partialReasoning.length > streamedReasoning.length) {
           final delta = partialReasoning.substring(streamedReasoning.length);
