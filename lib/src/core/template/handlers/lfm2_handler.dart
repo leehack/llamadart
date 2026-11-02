@@ -624,11 +624,15 @@ class _PythonCallList {
       _skipSpace();
       final bracketed = _accept('[');
       _skipSpace();
-      do {
+      while (true) {
         _skipSpace();
         calls.add(_call(startIndex + calls.length));
         _skipSpace();
-      } while (_accept(','));
+        if (!_accept(',')) break;
+        _skipSpace();
+        // Python lists permit one terminal separator, unlike bare call text.
+        if (bracketed && _source.startsWith(']', _at)) break;
+      }
       if (bracketed) _expect(']');
       _skipSpace();
       return _at == _source.length ? calls : null;

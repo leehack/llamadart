@@ -19,15 +19,19 @@ final _tools = [
   ),
 ];
 
-LlamaChatTemplateResult _render(ToolChoice choice) => ChatTemplateEngine.render(
+LlamaChatTemplateResult _render(
+  ToolChoice choice, {
+  List<ToolDefinition>? definitions,
+  bool parallel = true,
+}) => ChatTemplateEngine.render(
   templateSource: _routingTemplate,
   messages: const [
     LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'Weather?'),
   ],
   metadata: const {},
-  tools: _tools,
+  tools: definitions ?? _tools,
   toolChoice: choice,
-  parallelToolCalls: true,
+  parallelToolCalls: parallel,
 );
 
 String _envelope(String payload) => '$_opening$payload$_closing';
@@ -39,20 +43,22 @@ Future<void> _expectStream(
   String output,
   LlamaChatTemplateResult rendered, {
   bool tools = true,
+  List<ToolDefinition>? definitions,
 }) async {
+  final declaredTools = definitions ?? _tools;
   expect(rendered.format, ChatFormat.lfm2.index);
   final parsed = ChatTemplateEngine.parseRendered(
     rendered,
     output,
     parseToolCalls: tools,
-    tools: _tools,
+    tools: declaredTools,
   );
   final direct = ChatTemplateEngine.parse(
     rendered.format,
     output,
     parseToolCalls: tools,
     thinkingForcedOpen: rendered.thinkingForcedOpen,
-    tools: _tools,
+    tools: declaredTools,
   );
   expect(direct.content, parsed.content);
   expect(direct.reasoningContent, parsed.reasoningContent);
@@ -71,7 +77,7 @@ Future<void> _expectStream(
       enableThinking: true,
       modelName: 'LFM2',
       completionId: 'quoted-delimiter',
-      tools: _tools,
+      tools: declaredTools,
     ).toList();
     expect(
       chunks.map((c) => c.choices.single.delta.content ?? '').join(),
@@ -100,6 +106,115 @@ Future<void> _expectStream(
 }
 
 void main() {
+  final typed = ToolDefinition(
+    name: 'configure',
+    description: '',
+    parameters: [
+      ToolParam.string('text', required: true),
+      ToolParam.boolean('enabled', required: true),
+    ],
+  );
+  final mixed = ToolDefinition(
+    name: 'configure',
+    description: '',
+    parameters: [
+      ...typed.parameters,
+      ToolParam.nullType('note'),
+      ToolParam.array('counts', itemType: ToolParam.integer('item')),
+      ToolParam.object(
+        'config',
+        properties: [
+          ToolParam.number('ratio', required: true),
+          ToolParam.enumType('mode', values: ['fast', 'safe']),
+        ],
+      ),
+    ],
+  );
+  for (final (name, definition, call, expected) in [
+    (
+      'typed',
+      typed,
+      'configure(text="False", enabled=True)',
+      <String, Object?>{'text': 'False', 'enabled': true},
+    ),
+    (
+      'mixed schema',
+      mixed,
+      'configure(text="False", enabled=True, note=None, counts=[1, -2], config={"ratio": 1.5, "mode": "safe"})',
+      <String, Object?>{
+        'text': 'False',
+        'enabled': true,
+        'note': null,
+        'counts': [1, -2],
+        'config': {'ratio': 1.5, 'mode': 'safe'},
+      },
+    ),
+  ]) {
+    for (final parallel in [false, true]) {
+      test(
+        '$name terminal list comma retains direct and chunked calls (parallel: $parallel)',
+        () async {
+          final definitions = [
+            definition,
+            ToolDefinition(name: 'clock', description: '', parameters: []),
+          ];
+          final rendered = _render(
+            ToolChoice.auto,
+            definitions: definitions,
+            parallel: parallel,
+          );
+          final calls = parallel ? '$call, clock()' : call;
+          for (final comma in ['', ',', ', \n ']) {
+            final output = _envelope('[$calls$comma]');
+            final parsed = ChatTemplateEngine.parseRendered(
+              rendered,
+              output,
+              tools: definitions,
+            );
+            expect(parsed.toolCalls, hasLength(parallel ? 2 : 1));
+            expect([
+              for (final call in parsed.toolCalls) call.index,
+            ], parallel ? [0, 1] : [0]);
+            expect(
+              jsonDecode(parsed.toolCalls.first.function!.arguments!),
+              expected,
+            );
+            if (parallel) {
+              expect(parsed.toolCalls.last.function!.name, 'clock');
+            }
+            await _expectStream(output, rendered, definitions: definitions);
+          }
+        },
+      );
+    }
+    for (final payload in [
+      '[$call,,]',
+      '[,$call]',
+      '[$call, ,$call]',
+      '[$call,]garbage',
+      '$call,',
+      '[,]',
+    ]) {
+      test(
+        '$name malformed list separator is not executable: $payload',
+        () async {
+          final definitions = [definition];
+          final rendered = _render(ToolChoice.auto, definitions: definitions);
+          final output = _envelope(payload);
+          expect(
+            ChatTemplateEngine.parseRendered(
+              rendered,
+              output,
+              tools: definitions,
+            ).toolCalls,
+            isEmpty,
+          );
+          await _expectStream(output, rendered, definitions: definitions);
+        },
+      );
+    }
+  }
+
   test('auto singleton trailing comma preserves one quoted argument', () async {
     final rendered = _render(ToolChoice.auto);
     const city = 'Seoul"), weather(city=';

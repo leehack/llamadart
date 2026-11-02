@@ -2004,6 +2004,12 @@ void main() {
             'enabled=True',
             'enabled=true, note=None, counts=[1, -2], config={"ratio": 1.5, "mode": "safe"}',
           ),
+          first
+              .replaceFirst(
+                'enabled=True',
+                'enabled=true, note=None, counts=[1, -2], config={"ratio": 1.5, "mode": "safe"}',
+              )
+              .replaceFirst(')]', '),\n]'),
           r'<|tool_call_start|>[configure(text="C:\new\table.txt", enabled=False)]<|tool_call_end|>',
           '<|tool_call_start|>[clock()]<|tool_call_end|>',
           if (parallel) two,
@@ -2013,6 +2019,9 @@ void main() {
           if (!parallel) two,
           if (!parallel) two.replaceFirst(')]', '),]'),
           first.replaceFirst(')]', '),,]'),
+          first.replaceFirst('[configure', '[,configure'),
+          first.replaceFirst(')]', '), ,]'),
+          first.replaceFirst(')]', '),]garbage'),
           '<|tool_call_start|>[]<|tool_call_end|>',
           first.replaceFirst('configure', 'unknown'),
           first.replaceFirst('text="False", ', ''),
