@@ -58,7 +58,15 @@ description: >-
   `\x00` matches NUL, and `\\x41` preserves literal `\x41`. A malformed
   escape raises `LlamaException` naming the template source. A valid template
   also needs a runtime that supports the model architecture.
-- Every API returns a `Stream`. Read `chunk.text` for answer text and
+- `engine.createTask(messages)` and `engine.generateTask(prompt)` start eagerly
+  and expose `events`, `done`, `result` and `cancel()`. They borrow the engine.
+  Listening to events is optional; events buffer for a late or paused listener.
+  Cancelling the events subscription only stops observation. Call `task.cancel()`
+  and await `task.done` to stop the request and finish cleanup. `done` never
+  throws and reports `GenerationTaskState.completed`, `cancelled` or `failed`,
+  retaining `partialResult`; `result` throws on cancellation/failure. Attach an
+  error handler as soon as you read `result`. Cleanup errors remain failures.
+- The original generation APIs return a `Stream`. Read `chunk.text` for answer text and
   `chunk.thinking` for reasoning (empty strings when a chunk has none), and
   render the channels separately. `chunk.finishReason` is a typed
   `LlamaFinishReason` (`stop`, `length`, `toolCalls`) on the final chunk only.

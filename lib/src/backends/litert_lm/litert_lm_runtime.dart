@@ -12,6 +12,7 @@ import '../../core/exceptions.dart';
 import '../../core/models/inference/embedding.dart';
 import '../../core/models/inference/model_params.dart';
 import 'litert_lm_asr_types.dart';
+import 'litert_lm_c_api_version.dart';
 import 'litert_lm_embedding.dart';
 import 'litert_lm_embedding_bindings.dart' as emb;
 import 'litert_lm_finish_reason.dart';
@@ -1923,12 +1924,13 @@ class LiteRtLmRuntimeClient {
     _liteRtLmLibraryPath = liteRtLm.path;
     _liteRtLmCompanionLibraryPaths = libraries.companions;
     _companionLibraries = companionLibraries;
+    final bindings = _LiteRtLmBindings(liteRtLm.library);
     _tryLoadEmbeddedStreamProxy(
       liteRtLm.library,
       liteRtLm.path,
       libraries.directCallbackSupported,
     );
-    _bindings = _LiteRtLmBindings(liteRtLm.library);
+    _bindings = bindings;
   }
 
   ({
@@ -3518,7 +3520,9 @@ class _LiteRtLmAsrBindings {
 class _LiteRtLmBindings {
   final DynamicLibrary _library;
 
-  _LiteRtLmBindings(this._library);
+  _LiteRtLmBindings(this._library) {
+    requireLiteRtLmLegacyCApi(_library);
+  }
 
   Pointer<NativeFunction<NativeF>>?
   _lookupOptionalNative<NativeF extends Function>(String symbol) {

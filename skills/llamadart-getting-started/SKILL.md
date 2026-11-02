@@ -24,6 +24,10 @@ interface does not establish backend/model support; read `await engine.capabilit
 
 ## Guidelines
 
+- Keep native LiteRT-LM overrides compatible with the package's pre-1.0 C
+  bindings. LiteRT-LM 0.19 / C API 1.0 is refused before engine calls; use the
+  pinned v0.18.1-4 runtime until the #1677 consumer migration is delivered.
+
 - For a model-free macOS/Linux/Windows setup snapshot, use
   `dart run llamadart:doctor [--json]` or
   `await collectLlamaRuntimeSetupReport()`. It reports pinned publication policy

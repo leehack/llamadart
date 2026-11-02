@@ -49,6 +49,8 @@ in the llamadart-getting-started and llamadart-chat-streaming skills.
 - Set `window.__llamadartBridgeCoreModuleUrlMem64` to the local
   `llama_webgpu_core_mem64.js`; without it only the 32-bit core (4 GiB address
   space, shared with the KV cache) loads.
+  Assets v0.1.81+ improve large known-size wasm32 model writes, but do not
+  increase that address space. Continue to select memory64 for larger models.
 - Serve from a secure context (`https://`, `http://localhost` or
   `http://127.0.0.1`) and send `Cross-Origin-Opener-Policy: same-origin` with
   `Cross-Origin-Embedder-Policy: require-corp` (`credentialless` isolates only
