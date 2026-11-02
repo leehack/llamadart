@@ -1,5 +1,7 @@
 ## Unreleased
 
+- Preserve quoted LFM2/LFM2.5 tool-end markers inside tool arguments during parsing and streaming.
+
 ## 0.17.4
 
 * Restore documentation destinations linked from published package READMEs and protect retained release notes.

@@ -182,6 +182,10 @@ if (reply.toolCalls.isNotEmpty) {
   before the next call.
 - Cap the rounds: a model can keep calling tools.
 
+For LFM2/LFM2.5, a quoted `<|tool_call_end|>` inside an argument is literal
+argument data. Parsed tool calls preserve it until the actual envelope closes,
+including when the response streams in small chunks.
+
 `LlamaToolResultContent.result` may be any JSON-compatible value. Non-string
 results are JSON-encoded into the prompt; strings pass through unchanged. A
 message with several results is rendered as one tool message per result.

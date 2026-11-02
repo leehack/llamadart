@@ -494,6 +494,18 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
           },
           description: 'Compiled tool-grammar acceptance',
         ),
+        LocalE2eCommandStep(
+          workingDirectory: context.projectRoot,
+          executable: 'dart',
+          arguments: const [
+            'test',
+            '--run-skipped',
+            '-t',
+            'local-only',
+            'test/e2e/template/lfm2_quoted_tool_delimiter_e2e_test.dart',
+          ],
+          description: 'LFM2 quoted delimiter with existing affected weights',
+        ),
       ],
     ),
     LocalE2eScenario(
