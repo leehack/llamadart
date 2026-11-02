@@ -39,8 +39,8 @@ class PegChatParser {
 
   /// Parses [output] with a serialized [parser] definition.
   ///
-  /// [accumulateContent] joins native PEG content fragments before trimming the
-  /// final edge. Formats without repeated channels retain their existing mapper.
+  /// [accumulateContent] joins native PEG content fragments without discarding
+  /// whitespace. Formats without repeated channels retain their existing mapper.
   ///
   /// Throws [LlamaInferenceException] when [output] does not match [parser].
   static ChatParseResult parse({
@@ -100,9 +100,7 @@ class PegChatParser {
         : const <LlamaCompletionChunkToolCall>[];
 
     return ChatParseResult(
-      content: accumulateContent
-          ? _trimTrailingWhitespace(message.content)
-          : message.content,
+      content: message.content,
       reasoningContent: message.reasoningContent.isEmpty
           ? null
           : message.reasoningContent,
@@ -140,6 +138,8 @@ class _PegBaseMapper {
     }
     if (node.tag == ChatPegBuilder.contentTag) {
       if (accumulateContent) {
+        // Channel frames interrupt the raw suffix, so the public parser cannot
+        // restore whitespace trimmed from these fragments after they join.
         message.content += node.text;
       } else {
         message.content = _trimTrailingWhitespace(node.text);

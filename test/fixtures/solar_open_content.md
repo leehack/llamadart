@@ -18,8 +18,11 @@ channel frame. Only Solar now opts into concatenated content mapping and its
 existing PEG channel parser for no-tools streaming. Other format defaults,
 reasoning mapping, admission, grammar and schema policy are unchanged.
 
-Per-fragment whitespace is preserved; the existing final-edge trimming policy
-is applied after concatenation. The parser/stream matrix covers whole output,
+Per-fragment and terminal content whitespace are preserved. Trimming the joined
+content would prevent the public parser from restoring a final fragment's
+whitespace when earlier channel frames interrupt the raw-output suffix. The mapper
+helper accepts an optional raw reply argument for terminal-whitespace controls.
+The parser/stream matrix covers whole output,
 every two-way split, code-unit chunks, empty/whitespace channels, tools on/off,
 thinking on/off and accepted truncated or rejected required-tool controls.
 

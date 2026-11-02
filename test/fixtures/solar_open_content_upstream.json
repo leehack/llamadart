@@ -45,5 +45,55 @@
     "content": "Sunny.  more",
     "reasoning": "Plan."
   },
-  "scope": "The template-derived parser rejects the repeated-channel case. The unchanged Dart Solar grammar admits it; primary mapping of that grammar concatenates content. No Solar Open 100B weights are available locally."
+  "scope": "The template-derived parser rejects the repeated-channel case. The unchanged Dart Solar grammar admits it; primary mapping of that grammar concatenates content. No Solar Open 100B weights are available locally.",
+  "trailing_whitespace_mapper": [
+    {
+      "input": "<|content|>A <|end|><|begin|>assistant<|content|>B  ",
+      "scope": "current primary mapper, Dart Solar no-tools grammar; not upstream template admission",
+      "ast": [
+        {
+          "tag": "content",
+          "text": "A "
+        },
+        {
+          "tag": "content",
+          "text": "B  "
+        }
+      ],
+      "content": "A B  ",
+      "reasoning": ""
+    },
+    {
+      "input": "<|content|>  <|end|><|begin|>assistant<|content|> B\t\n",
+      "scope": "current primary mapper, Dart Solar no-tools grammar; not upstream template admission",
+      "ast": [
+        {
+          "tag": "content",
+          "text": "  "
+        },
+        {
+          "tag": "content",
+          "text": " B\t\n"
+        }
+      ],
+      "content": "   B\t\n",
+      "reasoning": ""
+    },
+    {
+      "input": "<|content|>A <|end|><|begin|>assistant<|content|>  ",
+      "scope": "current primary mapper, Dart Solar no-tools grammar; not upstream template admission",
+      "ast": [
+        {
+          "tag": "content",
+          "text": "A "
+        },
+        {
+          "tag": "content",
+          "text": "  "
+        }
+      ],
+      "content": "A   ",
+      "reasoning": ""
+    }
+  ]
 }

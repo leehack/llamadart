@@ -191,6 +191,51 @@ void main() {
       );
     }
   }
+  for (final (output, content) in [
+    ('<|content|>A ${_end}B  ', 'A B  '),
+    ('<|content|>  $_end B\t\n', '   B\t\n'),
+    ('<|content|>A $_end  ', 'A   '),
+    ('<|content|>A $_end B<|en', 'A  B'),
+    ('<|content|>B  ', 'B  '),
+  ]) {
+    for (final tools in [false, true]) {
+      test(
+        'final whitespace survives parsed channels tools=$tools $output',
+        () async {
+          final rendered = _render(tools, ToolChoice.auto);
+          final parsed = ChatTemplateEngine.parseRendered(
+            rendered,
+            output,
+            parseToolCalls: tools,
+            tools: [_tool],
+          );
+          expect(parsed.content, content);
+          await _expectStream(
+            output,
+            rendered,
+            parseTools: tools,
+            thinking: false,
+          );
+          final engine = LlamaEngine(_RawSolarBackend(output));
+          addTearDown(engine.dispose);
+          await engine.loadModel('Solar-Open-fixture.gguf');
+          final completion = await engine
+              .create(
+                const [
+                  LlamaChatMessage.fromText(
+                    role: LlamaChatRole.user,
+                    text: 'Hello',
+                  ),
+                ],
+                tools: tools ? [_tool] : null,
+                enableThinking: false,
+              )
+              .collect();
+          expect(completion.text, content);
+        },
+      );
+    }
+  }
   test('required grammar admission stays strict', () {
     final rendered = _render(true, ToolChoice.required);
     expect(
@@ -238,6 +283,10 @@ void main() {
 }
 
 class _RawSolarBackend implements LlamaBackend {
+  _RawSolarBackend([this.output = '<|think|>Plan.${_end}Sunny. $_end more']);
+
+  final String output;
+
   @override
   bool get supportsUrlLoading => false;
   @override
@@ -273,9 +322,7 @@ class _RawSolarBackend implements LlamaBackend {
     GenerationParams params, {
     List<LlamaContentPart>? parts,
   }) async* {
-    for (final character in '<|think|>Plan.${_end}Sunny. $_end more'.split(
-      '',
-    )) {
+    for (final character in output.split('')) {
       yield utf8.encode(character);
     }
   }
