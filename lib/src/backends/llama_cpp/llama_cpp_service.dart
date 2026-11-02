@@ -51,6 +51,7 @@ import 'moe_expert_placement.dart';
 import 'mtmd_chunk_eval.dart';
 import 'native_barrier_api.dart';
 import 'native_library_candidates.dart';
+import 'native_owner_api.dart';
 import 'vulkan_device_probe.dart';
 
 part 'library_loading.dart';
@@ -307,6 +308,88 @@ class LlamaCppService {
        _modelLoadAllocator = modelLoadAllocator,
        _contextBatchAllocator = contextBatchAllocator,
        _readBuildIdentity = buildIdentity;
+
+  NativeWorkerOwner? _nativeOwner;
+
+  /// Prepares library resolution and creates an empty parent-owned bootstrap.
+  /// No model, context or optional GPU backend is initialized here.
+  static NativeOwnerBootstrap? createOwnerBootstrap() {
+    final service = LlamaCppService();
+    service._prepareLinuxRuntimeDependenciesBeforeBinding();
+    service._preloadLinuxCoreLibrariesForSonameResolution();
+    if (Platform.isWindows) {
+      try {
+        // Resolve the core image before its optional dependent wrapper, as
+        // worker initialization does, without initializing a backend here.
+        Native.addressOf<NativeFunction<Void Function()>>(llama_backend_init);
+      } on ArgumentError {
+        // Preserve the worker's existing missing-runtime diagnostics.
+        return null;
+      }
+    }
+    return NativeOwnerBootstrap.tryCreate();
+  }
+
+  /// Attaches stable cleanup before activating the worker's native owner.
+  void installWorkerOwner(int? token) {
+    if (token == null) return;
+    final current = _nativeOwner;
+    if (current != null) {
+      if (current.token.address == token) {
+        return;
+      }
+      throw LlamaBackendInitializationException(
+        'The worker already has a different native owner.',
+      );
+    }
+    final api = NativeOwnerApi.tryResolve();
+    if (api == null) {
+      throw LlamaBackendInitializationException(
+        'The worker cannot resolve the native owner API selected by its parent.',
+      );
+    }
+    final owner = NativeWorkerOwner(api, Pointer.fromAddress(token));
+    IsolateShutdownReleases.current.installOwner(owner);
+    if (!api.activate(owner.token)) {
+      throw LlamaBackendInitializationException(
+        'The native worker owner expired before activation.',
+      );
+    }
+    _nativeOwner = owner;
+  }
+
+  Pointer<llama_model> _loadOwnedModel(
+    Pointer<Char> path,
+    llama_model_params params,
+  ) {
+    final owner = _nativeOwner;
+    if (owner == null) return _calls.loadModel(path, params);
+    final model = owner.api.loadModel(owner.token, path, params);
+    if (model == nullptr) {
+      _calls.failures.throwIfCaught(
+        'llama_model_load_from_file',
+        LlamaModelException.new,
+      );
+    }
+    return model;
+  }
+
+  Pointer<llama_context> _createOwnedContext(
+    Pointer<llama_model> model,
+    llama_context_params params,
+  ) {
+    final owner = _nativeOwner;
+    if (owner == null) return _calls.createContext(model, params);
+    final context = owner.api.createContext(owner.token, model, params);
+    if (context == nullptr) {
+      _calls.failures.throwIfCaught(
+        'llama_init_from_model',
+        LlamaContextException.new,
+        windowsFreeOnly: [model],
+      );
+    }
+    return context;
+  }
 
   final void Function() _backendInit;
   final Abi _abi;
@@ -1623,7 +1706,7 @@ class LlamaCppService {
     Pointer<llama_model> modelPtr = nullptr;
     final modelPathPtr = modelPath.toNativeUtf8(allocator: _modelLoadAllocator);
     try {
-      modelPtr = _calls.loadModel(modelPathPtr.cast(), mparams);
+      modelPtr = _loadOwnedModel(modelPathPtr.cast(), mparams);
       IsolateShutdownReleases.current.hold(
         ShutdownStage.model,
         _calls.modelFreeAddress,
@@ -2258,7 +2341,7 @@ class LlamaCppService {
       allocator: _modelLoadAllocator,
     );
     try {
-      modelPtr = _calls.loadModel(modelPathPtr.cast(), mparams);
+      modelPtr = _loadOwnedModel(modelPathPtr.cast(), mparams);
       IsolateShutdownReleases.current.hold(
         ShutdownStage.model,
         _calls.modelFreeAddress,
@@ -3774,7 +3857,7 @@ class LlamaCppService {
       ctxParams.pooling_type = llama_pooling_type.LLAMA_POOLING_TYPE_RANK;
       ctxParams.embeddings = true;
     }
-    final ctxPtr = _calls.createContext(model.pointer, ctxParams);
+    final ctxPtr = _createOwnedContext(model.pointer, ctxParams);
     IsolateShutdownReleases.current.hold(
       ShutdownStage.context,
       _calls.contextFreeAddress,
@@ -8143,11 +8226,10 @@ class LlamaCppService {
     if (exitTeardown != null) {
       final params = calloc<mtmd_context_params>()..ref = ctxParams;
       try {
-        final context = exitTeardown.mtmdInitFromFile(
-          mmProjPath,
-          model,
-          params,
-        );
+        final owner = _nativeOwner;
+        final context = owner == null
+            ? exitTeardown.mtmdInitFromFile(mmProjPath, model, params)
+            : owner.api.createProjector(owner.token, mmProjPath, model, params);
         if (context == nullptr) {
           _calls.failures.throwIfCaught(
             'mtmd_init_from_file',
@@ -9163,7 +9245,7 @@ class LlamaCppService {
         _applyConservativeAndroidVulkanContextConfig(ctxParams, modelHandle);
       }
 
-      context = _calls.createContext(model.pointer, ctxParams);
+      context = _createOwnedContext(model.pointer, ctxParams);
       IsolateShutdownReleases.current.hold(
         ShutdownStage.context,
         _calls.contextFreeAddress,
