@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:llamadart/llamadart.dart';
+import 'package:llamadart/backend.dart';
 import 'package:llamadart/src/core/engine/chat_completion_stream_parser.dart';
 import 'package:test/test.dart';
 
@@ -244,6 +245,7 @@ void main() {
                 enableThinking: false,
               )
               .collect();
+          expect(backend.promptPenaltyCalls, choice == ToolChoice.auto ? 1 : 0);
           expect(completion.text, 'BeforeAfter');
           expect(completion.toolCalls, hasLength(1));
           expect(completion.toolCalls.single.arguments, {
@@ -275,10 +277,27 @@ void main() {
   }
 }
 
-class _RawLfm2Backend implements LlamaBackend {
+// This parser fixture replays retained bytes; it does not qualify inference.
+class _RawLfm2Backend implements LlamaBackend, BackendPromptPenaltyGeneration {
   _RawLfm2Backend(this.output, {this.template = _routingTemplate});
   final String output;
   final String template;
+  int promptPenaltyCalls = 0;
+
+  @override
+  bool get supportsPromptPenaltiesWithGrammar => true;
+
+  @override
+  Stream<List<int>> generateWithPromptPenalties(
+    int contextHandle,
+    String prompt,
+    GenerationParams params, {
+    String? mediaMarker,
+    List<LlamaContentPart>? parts,
+  }) {
+    promptPenaltyCalls++;
+    return generate(contextHandle, prompt, params, parts: parts);
+  }
 
   @override
   bool get supportsUrlLoading => false;

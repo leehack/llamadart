@@ -117,6 +117,17 @@ void main() {
         _compiledGrammarAccepts(
           nativeModel!,
           rendered.grammar!,
+          '$prefix$call Visible suffix.',
+          triggers: triggers,
+        ),
+        isFalse,
+        reason:
+            'As in pinned upstream, activation constrains the call through its closing marker and end.',
+      );
+      expect(
+        _compiledGrammarAccepts(
+          nativeModel!,
+          rendered.grammar!,
           prefix,
           triggers: triggers,
         ),

@@ -1924,7 +1924,7 @@
     "lfm2": {
       "noTools": "lfm2 lazy=false grammar=false",
       "noToolsNone": "lfm2 lazy=false grammar=false",
-      "auto": "lfm2 lazy=false grammar=false",
+      "auto": "lfm2 lazy=true grammar=true",
       "required": "lfm2 lazy=false grammar=true",
       "none": "lfm2 lazy=false grammar=false",
       "responseSchema": "lfm2 lazy=false grammar=true",
@@ -1934,7 +1934,7 @@
     "lfm25": {
       "noTools": "lfm2 lazy=false grammar=false",
       "noToolsNone": "lfm2 lazy=false grammar=false",
-      "auto": "lfm2 lazy=false grammar=false",
+      "auto": "lfm2 lazy=true grammar=true",
       "required": "lfm2 lazy=false grammar=true",
       "none": "lfm2 lazy=false grammar=false",
       "responseSchema": "lfm2 lazy=false grammar=true",
