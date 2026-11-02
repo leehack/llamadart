@@ -16,6 +16,8 @@ validate against the exact release tag notes.
 - Preserve quoted LFM2/LFM2.5 tool-end markers inside tool arguments during parsing and streaming.
 - Release checks reject changed Apple companion package contents without a version bump, including README-only changes.
 
+- Preserve Solar Open text across repeated content channels in parsed and streamed replies.
+
 ## 0.17.4
 
 - Restore documentation destinations linked from published package READMEs and protect retained release notes.

@@ -122,6 +122,7 @@ Map<String, Object?> _traitsOf(ChatFormat format) {
     'keepsThoughtTagsAsContent': traits.keepsThoughtTagsAsContent,
     'parsesCallsInsideThoughts': traits.parsesCallsInsideThoughts,
     'mayEmbedToolEnvelopeAfterContent': traits.mayEmbedToolEnvelopeAfterContent,
+    'hasRepeatedContentChannels': traits.hasRepeatedContentChannels,
     'disabledByResponseSchema': traits.disabledByResponseSchema,
     'requiredKeepsLazyGrammar': traits.requiredKeepsLazyGrammar,
     'routesThroughGeneric': traits.routesThroughGeneric,
