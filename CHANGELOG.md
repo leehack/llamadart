@@ -1,5 +1,7 @@
 ## Unreleased
 
+- Start eager chat or text tasks with observable events, request-scoped cancellation, partial output and a terminal outcome independent of event listeners.
+
 - Manage text, decision, image and speech engine lifecycles through `LlamadartEngine<C>` with typed capabilities and reentrant-safe final disposal.
 
 ## 0.17.5
