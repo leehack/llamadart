@@ -12,7 +12,7 @@ experimental. Native targets need no network once the model is on the device.
 - Streaming chat and text generation, with structured JSON output and cancellable task handles.
 - Tool calling driven by the model's chat template.
 - Embeddings, reranking, and image and audio input with multimodal models.
-- Speech to text, text to speech, and decision models.
+- Speech to text, text to speech, and decision models with cooperative task cancellation.
 - Image generation from text prompts on native platforms (Preview).
 - Runtime LoRA adapters, observability hooks and typed capability checks.
 

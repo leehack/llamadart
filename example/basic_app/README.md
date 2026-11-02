@@ -30,7 +30,7 @@ are loaded; normal Dart build hooks can still prepare native assets.
 - **Sampling Controls**: Tune `--temp`, `--top-k`, `--top-p`, and `--penalty`.
 - **Embedding Demo**: Includes a dedicated embedding CLI example.
 - **SQLite Vector Demo**: Stores embeddings in SQLite and runs nearest-neighbor search with `sqlite_vector`.
-- **Decision Model Demo**: Triages a support ticket with a Laya decision model through `DecisionEngine`.
+- **Decision Model Demo**: Triages a support ticket with a Laya decision model through `DecisionEngine`. Run `dart run bin/llamadart_decision_task_example.dart /path/to/laya.gguf /path/to/laya-head.safetensors` for typed task completion and cooperative Ctrl-C cancellation. Once dispatched, cancellation waits for backend work to finish.
 - **Image Generation Demo (experimental)**: Writes a PNG with SDXS, SD-Turbo or a desktop model (SDXL-Lightning, FLUX.1-schnell, SD 3.5 Large Turbo, Z-Image-Turbo) through `ImageGenerationEngine`, with progress and Ctrl-C cancellation.
 
 After loading a model, check `await engine.capabilities` before enabling

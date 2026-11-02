@@ -643,6 +643,16 @@
         "reason": "These eager task handles reuse existing text generation and parser paths. Model-free VM and Chrome production-path controls cover eager completion without observation, cancellation cleanup, partial output, errors, event subscription independence and borrowed-engine ownership. Existing text/streaming packs do not yet bind task lifecycle observations; this adds no platform or model qualification. Dedicated task pack coverage remains in #1614.",
         "issue": "https://github.com/leehack/llamadart/issues/1614"
       }
+    },
+    {
+      "surfaces": [
+        "matrix:Decision tasks (cooperative)"
+      ],
+      "exemption": {
+        "id": "decision-tasks",
+        "reason": "Additive cooperative task adapters preserve the existing Decision backend. Maintained VM/Chrome tests cover tokenization/dispatch checkpoints, pending backend lifetime, sibling and borrowed-encoder isolation, snapshots and event/completion semantics. A local-only native Laya CPU task parity/cancel/reuse test is available; no new runtime or cross-device qualification is claimed. Task lifecycle is not yet a validation-pack scenario.",
+        "issue": "https://github.com/leehack/llamadart/issues/1614"
+      }
     }
   ]
 }
