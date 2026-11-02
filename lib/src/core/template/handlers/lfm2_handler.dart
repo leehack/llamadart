@@ -232,11 +232,17 @@ class Lfm2Handler extends ChatTemplateHandler
     const closing = '<|tool_call_end|>';
     final toolCalls = <LlamaCompletionChunkToolCall>[];
     final content = StringBuffer();
-    var inThought = _startsInsideThought(
+    final initialThought = _initialThoughtState(
       output,
       schemas,
       thinkingForcedOpen: thinkingForcedOpen,
     );
+    // A later explicit opener makes the earlier prefix content in the legacy
+    // final parse. Its channel is not safe to stream until a boundary or EOF.
+    if (isPartial && thinkingForcedOpen && !initialThought.boundarySeen) {
+      return ChatParseResult(content: '');
+    }
+    var inThought = initialThought.inThought;
     var from = 0;
     while (true) {
       final start = output.indexOf(opening, from);
@@ -326,7 +332,7 @@ class Lfm2Handler extends ChatTemplateHandler
     return (end: end, calls: calls);
   }
 
-  bool _startsInsideThought(
+  ({bool inThought, bool boundarySeen}) _initialThoughtState(
     String output,
     Map<String, Map<String, dynamic>> schemas, {
     required bool thinkingForcedOpen,
@@ -342,7 +348,9 @@ class Lfm2Handler extends ChatTemplateHandler
           : close;
       if (tag == -1) break;
       final call = output.indexOf('<|tool_call_start|>', from);
-      if (call == -1 || tag < call) return tag == close;
+      if (call == -1 || tag < call) {
+        return (inThought: tag == close, boundarySeen: true);
+      }
       final payload = call + '<|tool_call_start|>'.length;
       final end = output.indexOf('<|tool_call_end|>', payload);
       if (end == -1 || _toolCallEnd(output, payload) == null) break;
@@ -357,7 +365,7 @@ class Lfm2Handler extends ChatTemplateHandler
           ).end +
           '<|tool_call_end|>'.length;
     }
-    return thinkingForcedOpen;
+    return (inThought: thinkingForcedOpen, boundarySeen: false);
   }
 
   bool _afterThoughtTags(String text, bool inThought) {

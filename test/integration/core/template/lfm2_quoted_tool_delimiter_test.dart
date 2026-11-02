@@ -99,6 +99,27 @@ Future<void> _expectStream(
 }
 
 void main() {
+  test(
+    'public engine preserves calls before a later explicit thought',
+    () async {
+      const call = '<|tool_call_start|>[weather(city="Rome")]<|tool_call_end|>';
+      final engine = LlamaEngine(
+        _RawLfm2Backend(
+          '$call<think>Thought</think>Answer.',
+          template: '$_routingTemplate<think>',
+        ),
+      );
+      addTearDown(engine.dispose);
+      await engine.loadModel('LFM2-fixture.gguf');
+      final completion = await engine.create(const [
+        LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'Weather?'),
+      ], tools: _tools).collect();
+      expect(completion.thinking, 'Thought');
+      expect(completion.text, 'Answer.');
+      expect(completion.toolCalls, hasLength(1));
+      expect(completion.toolCalls.single.arguments, {'city': 'Rome'});
+    },
+  );
   test('public engine keeps thought calls out of executable output', () async {
     const inner = '<|tool_call_start|>[weather(city="Paris")]<|tool_call_end|>';
     const outer = '<|tool_call_start|>[weather(city="Rome")]<|tool_call_end|>';
@@ -255,8 +276,9 @@ void main() {
 }
 
 class _RawLfm2Backend implements LlamaBackend {
-  _RawLfm2Backend(this.output);
+  _RawLfm2Backend(this.output, {this.template = _routingTemplate});
   final String output;
+  final String template;
 
   @override
   bool get supportsUrlLoading => false;
@@ -278,7 +300,7 @@ class _RawLfm2Backend implements LlamaBackend {
   Future<String> getBackendName() async => 'RawLfm2';
   @override
   Future<Map<String, String>> modelMetadata(int modelHandle) async => {
-    'tokenizer.chat_template': _routingTemplate,
+    'tokenizer.chat_template': template,
   };
   @override
   Future<List<int>> tokenize(

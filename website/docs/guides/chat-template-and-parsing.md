@@ -90,6 +90,10 @@ LFM2/LFM2.5 tool-call markers inside recognized reasoning remain reasoning
 text and produce no executable calls. A call after the thought closes is
 parsed normally. Literal thought tags inside a complete tool argument remain
 argument data, including during streaming.
+When the prompt has already opened a thought, an ambiguous LFM2 prefix waits
+for its first explicit thought boundary or the end of the reply before its
+channel is emitted. This preserves calls and answer text before a later
+explicit `<think>` block without leaking them as reasoning.
 
 ## When to inspect template output
 

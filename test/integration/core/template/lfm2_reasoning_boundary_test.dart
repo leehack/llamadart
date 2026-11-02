@@ -16,6 +16,100 @@ const _outer = '<|tool_call_start|>[weather(city="Rome")]<|tool_call_end|>';
 
 void main() {
   for (final scenario in [
+    (prefix: _outer, content: 'Answer.', city: 'Rome'),
+    (prefix: 'Prelude$_outer', content: 'PreludeAnswer.', city: 'Rome'),
+    (
+      prefix:
+          '<|tool_call_start|>[weather(city="<think>literal</think>")]'
+          '<|tool_call_end|>',
+      content: 'Answer.',
+      city: '<think>literal</think>',
+    ),
+  ]) {
+    test(
+      'forced render resolves the call prefix ${scenario.city}/${scenario.content}',
+      () async {
+        final rendered = ChatTemplateEngine.render(
+          templateSource:
+              '{# <|tool_list_start|> <|tool_list_end|> #}'
+              '{{ messages[0].content }}<think>',
+          messages: const [
+            LlamaChatMessage.fromText(
+              role: LlamaChatRole.user,
+              text: 'Weather?',
+            ),
+          ],
+          metadata: const {},
+          tools: _tools,
+        );
+        expect(rendered.thinkingForcedOpen, isTrue);
+        final raw = '${scenario.prefix}<think>Thought</think>Answer.';
+        final direct = ChatTemplateEngine.parseRendered(
+          rendered,
+          raw,
+          tools: _tools,
+        );
+        expect(direct.content, scenario.content);
+        expect(direct.reasoningContent, 'Thought');
+        expect(direct.toolCalls, hasLength(1));
+        expect(jsonDecode(direct.toolCalls.single.function!.arguments!), {
+          'city': scenario.city,
+        });
+        for (final tokens in [
+          [raw],
+          raw.split(''),
+          for (var i = 1; i < raw.length; i++)
+            [raw.substring(0, i), raw.substring(i)],
+        ]) {
+          for (final ending in ['natural', 'length', 'cancel']) {
+            final completion = await ChatCompletionStreamParser.parse(
+              tokenStream: Stream.fromIterable(tokens),
+              templateResult: rendered,
+              parseToolCallsEnabled: true,
+              enableThinking: true,
+              modelName: 'LFM2',
+              completionId: 'forced-prefix',
+              tools: _tools,
+              stoppedAtLimit: () => ending == 'length',
+              cancelled: () => ending == 'cancel',
+            ).collect();
+            expect(completion.thinking, 'Thought', reason: '$ending/$tokens');
+            expect(completion.text, scenario.content);
+            expect(
+              completion.toolCalls.map((c) => c.arguments['city']),
+              ending == 'length' ? isEmpty : [scenario.city],
+            );
+          }
+        }
+      },
+    );
+  }
+
+  test(
+    'forced reasoning without a later boundary is released at EOF',
+    () async {
+      for (final raw in ['Plan $_inner more.', '\n Plan $_inner more.']) {
+        final completion = await ChatCompletionStreamParser.parse(
+          tokenStream: Stream.fromIterable(raw.split('')),
+          templateResult: LlamaChatTemplateResult(
+            prompt: '<think>',
+            format: ChatFormat.lfm2.index,
+            thinkingForcedOpen: true,
+          ),
+          parseToolCallsEnabled: true,
+          enableThinking: true,
+          modelName: 'LFM2',
+          completionId: 'unresolved-prefix-eof',
+          tools: _tools,
+        ).collect();
+        expect(completion.thinking, raw.trimLeft());
+        expect(completion.text, isEmpty);
+        expect(completion.toolCalls, isEmpty);
+      }
+    },
+  );
+
+  for (final scenario in [
     (
       name: 'closed thought',
       raw: '<think>Plan $_inner more.</think>Answer.',

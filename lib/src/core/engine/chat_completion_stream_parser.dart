@@ -615,7 +615,9 @@ class ChatCompletionStreamParser {
       parsedAsPartial = true;
     }
 
-    final finalReasoning = parsed.reasoningContent ?? '';
+    final finalReasoning = parsesLfmToolChannels
+        ? (parsed.reasoningContent ?? '').trimLeft()
+        : parsed.reasoningContent ?? '';
     final reasoningDelta = _computeFinalReconciliationDelta(
       streamedValue: streamedReasoning,
       finalValue: finalReasoning,
