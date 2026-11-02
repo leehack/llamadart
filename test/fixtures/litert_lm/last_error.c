@@ -8,7 +8,7 @@
 #include <stdint.h>
 #include <string.h>
 
-enum { OP_NONE, OP_SETTINGS, OP_ENGINE, OP_CONVERSATION, OP_SEND };
+enum { OP_NONE, OP_SETTINGS, OP_ENGINE, OP_CONVERSATION, OP_SEND, OP_OPTIONAL_ARGS };
 
 typedef struct {
   int generation;
@@ -106,8 +106,11 @@ void* litert_lm_conversation_create(void* e, void* c) {
 }
 void litert_lm_conversation_delete(void* p) {}
 void litert_lm_conversation_cancel_process(void* p) {}
-void* litert_lm_conversation_optional_args_create(void) { return (void*)6; }
-void litert_lm_conversation_optional_args_delete(void* p) {}
+static int optional_args_deleted, send_calls;
+int fixture_optional_args_deleted(void) { return optional_args_deleted; }
+int fixture_send_calls(void) { return send_calls; }
+void* litert_lm_conversation_optional_args_create(void) { return fails(OP_OPTIONAL_ARGS) ? NULL : (void*)6; }
+void litert_lm_conversation_optional_args_delete(void* p) { optional_args_deleted++; }
 void litert_lm_conversation_optional_args_set_max_output_tokens(void* p, int n) {}
 
 #ifdef WITH_STREAM_PROXY
@@ -126,6 +129,7 @@ int litert_lm_conversation_send_message_stream(void* c, const char* m, const cha
 #else
 static char response_text[] = "{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"ok\"}]}";
 void* litert_lm_conversation_send_message(void* c, const char* m, const char* x, void* a) {
+  send_calls++;
   return fails(OP_SEND) ? NULL : (void*)7;
 }
 const char* litert_lm_json_response_get_string(void* r) { return response_text; }

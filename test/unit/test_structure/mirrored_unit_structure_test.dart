@@ -11,6 +11,7 @@ import 'package:test/test.dart';
 const Set<String> behaviorlessSources = <String>{
   'backends/llama_cpp/llama_cpp_raw_bindings.dart',
   'backends/llama_cpp/native_signatures.dart',
+  'backends/litert_lm/litert_lm_native_settlement.dart',
   'backends/webgpu/interop.dart',
   'core/decision/decision_model.dart',
   'core/engine/llamadart_engine.dart',

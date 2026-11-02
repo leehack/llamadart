@@ -304,6 +304,25 @@ the native pin or generated embedding bindings alone is unsafe. Keep pinned
 0.18 support intact during preparation and qualify both artifact directions
 before adoption.
 
+Worker request completion and native settlement are separate. An errored v1
+turn is safe to release only after its actual final callback and successful
+`litert_lm_conversation_wait_until_done`. Cancellation status failures do not
+settle callbacks. A failed drain, missing final, worker timeout or failed native
+cleanup retains the worker, callback, engine family, model link and cache lease;
+queued work fails and that backend requires a process restart. Retention is
+bounded to the failed backend; disposal never reports successful cleanup in this
+state. Do not kill the retained isolate or release its lease to make teardown
+appear complete.
+
+This transport preparation does not select C API 1 publicly. The owner proxy's
+callback ABI 2 and finish-reason ABI 1 alone do not establish lossless callback
+delivery under allocation failure. Owner
+[issue #97](https://github.com/leehack/litert-lm-native/issues/97) defines the
+separate allocation-failure status contract; its immutable artifact and consumer
+admission/readback remain adoption gates alongside ASR, media, tools, schema and
+embedding migration. The ASR bridge has its own versioned ABI, but its current
+Dart loader still passes through the legacy C API refusal.
+
 Use this checklist in native sync PRs:
 
 - Confirm `llamadart-native`, `litert-lm-native` or `stable-diffusion-native`

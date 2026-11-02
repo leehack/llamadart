@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:llamadart/llamadart.dart';
 import 'package:llamadart/src/backends/litert_lm/litert_lm_v1_runtime.dart';
+import 'package:llamadart/src/backends/litert_lm/litert_lm_native_settlement.dart';
 
 Future<void> main(List<String> args) async {
   final library = DynamicLibrary.open(args.single);
@@ -25,6 +26,10 @@ Future<void> main(List<String> args) async {
   call('fail', 19);
   call('emit', 2);
   await failure;
+  if (runtime.nativeSettlement != LiteRtLmNativeSettlement.quarantined ||
+      conversation.nativeSettlement != LiteRtLmNativeSettlement.quarantined) {
+    throw StateError('failed drain did not expose native quarantine');
+  }
   for (final operation in <void Function()>[
     conversation.close,
     () => conversation.sendText('reuse'),

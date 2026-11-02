@@ -1,11 +1,13 @@
 @TestOn('vm && (mac-os || linux)')
 library;
 
+import 'dart:async';
 import 'dart:ffi';
 import 'dart:io';
 
 import 'package:ffi/ffi.dart';
 import 'package:llamadart/src/backends/litert_lm/litert_lm_runtime.dart';
+import 'package:llamadart/src/core/exceptions.dart';
 import 'package:test/test.dart';
 
 // Operations of test/fixtures/litert_lm/last_error.c.
@@ -17,14 +19,16 @@ const _send = 4;
 Future<String> _compileFixture(
   Directory dir,
   String name,
-  List<String> defines,
-) async {
+  List<String> defines, {
+  String source = 'test/fixtures/litert_lm/last_error.c',
+}) async {
   final library = '${dir.path}/$name.${Platform.isMacOS ? 'dylib' : 'so'}';
   final result = await Process.run('cc', [
     '-shared',
     '-fPIC',
     ...defines,
-    'test/fixtures/litert_lm/last_error.c',
+    '-pthread',
+    source,
     '-o',
     library,
   ]);
@@ -61,6 +65,7 @@ void main() {
   late String streaming;
   late String legacy;
   late String modelPath;
+  late String delayed;
 
   setUpAll(() async {
     dir = await Directory.systemTemp.createTemp('litert_last_error_');
@@ -69,6 +74,12 @@ void main() {
       '-DWITH_STREAM_PROXY',
     ]);
     legacy = await _compileFixture(dir, 'legacy', ['-DOMIT_LAST_ERROR']);
+    delayed = await _compileFixture(
+      dir,
+      'delayed',
+      [],
+      source: 'test/fixtures/litert_lm/legacy_stream.c',
+    );
     modelPath = '${dir.path}/secret_models/model.litertlm';
   });
 
@@ -82,6 +93,120 @@ void main() {
     client.createConversation(npuBackend: true);
     arm();
     await client.generate('Hi').drain<void>();
+  }
+
+  for (final finalError in [false, true]) {
+    test(
+      'legacy nonfinal error retains callbacks until actual final: $finalError',
+      () async {
+        final client = LiteRtLmRuntimeClient(libraryPath: delayed);
+        final library = DynamicLibrary.open(delayed);
+        int count(String name) => library
+            .lookupFunction<Int Function(), int Function()>('fixture_$name')();
+        void emit(int kind) =>
+            library.lookupFunction<Void Function(Int), void Function(int)>(
+              'fixture_emit',
+            )(kind);
+        await initialize(client);
+        client.createConversation(npuBackend: true);
+        final deleted = count('conversations_deleted');
+        final output = <String>[];
+        final done = Completer<void>();
+        Object? failure;
+        final subscription = client
+            .generate('Hi')
+            .listen(
+              output.add,
+              onError: (Object error) {
+                failure = error;
+              },
+              onDone: done.complete,
+            );
+        emit(
+          1,
+        ); // Both owned fields must be freed, without freeing their proxy.
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+        expect(client.nativeSettlement, LiteRtLmNativeSettlement.pending);
+        expect(done.isCompleted, isFalse);
+        expect(count('copied_strings'), 0);
+        expect(count('proxies'), 1);
+        expect(count('conversations_deleted'), deleted);
+        expect(client.dispose, throwsA(isA<LlamaStateException>()));
+        emit(0); // Data after the error is copied/freed, then suppressed.
+        emit(finalError ? 3 : 2);
+        await done.future;
+        await subscription.cancel();
+        expect(output, isEmpty);
+        expect(
+          failure,
+          isA<StateError>().having(
+            (error) => error.message,
+            'original failure',
+            'INTERNAL: original native failure',
+          ),
+        );
+        expect(client.nativeSettlement, LiteRtLmNativeSettlement.settled);
+        expect(count('copied_strings'), 0);
+        expect(count('proxies'), 0);
+        client.createConversation(npuBackend: true);
+        final next = client.generate('reuse after drained error').toList();
+        emit(0);
+        emit(2);
+        expect(await next, ['late']);
+        expect(client.nativeSettlement, LiteRtLmNativeSettlement.settled);
+        expect(count('copied_strings'), 0);
+        expect(count('proxies'), 0);
+        client.dispose();
+        expect(count('conversations_deleted'), deleted + 2);
+      },
+    );
+  }
+
+  for (final stage in [5, _send]) {
+    test(
+      'blocking failure $stage returns only after the native scope unwinds',
+      () async {
+        final client = LiteRtLmRuntimeClient(libraryPath: blocking);
+        _configure(blocking, 0);
+        final library = DynamicLibrary.open(blocking);
+        int count(String name) => library
+            .lookupFunction<Int Function(), int Function()>('fixture_$name')();
+        await initialize(client);
+        client.createConversation(npuBackend: true);
+        final deleted = count('optional_args_deleted');
+        final sends = count('send_calls');
+        _configure(
+          blocking,
+          stage,
+          code: 7,
+          message: 'PERMISSION_DENIED: $modelPath',
+        );
+        final stream = client.generate('Hi');
+        expect(client.nativeSettlement, LiteRtLmNativeSettlement.pending);
+        await expectLater(
+          stream.drain<void>(),
+          throwsA(
+            isA<StateError>().having(
+              (error) => error.message,
+              'redacted native error',
+              allOf(
+                stage == _send
+                    ? contains('PERMISSION_DENIED')
+                    : contains('optional_args_create returned null'),
+                isNot(contains('secret_models')),
+              ),
+            ),
+          ),
+        );
+        expect(client.nativeSettlement, LiteRtLmNativeSettlement.settled);
+        expect(count('send_calls') - sends, stage == _send ? 1 : 0);
+        expect(
+          count('optional_args_deleted') - deleted,
+          stage == _send ? 1 : 0,
+        );
+        client.dispose();
+      },
+    );
   }
 
   final scenarios = <(String, int, bool, String, _Trigger)>[
