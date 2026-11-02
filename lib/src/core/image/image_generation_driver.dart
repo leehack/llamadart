@@ -62,6 +62,10 @@ final class ImageGenerationSessionConfig {
   /// Whether the VAE decodes with direct convolutions.
   final bool vaeDirectConvolution;
 
+  /// Requires the native context to preserve its intrinsic tiny decoder
+  /// across model refreshes, including load-time and refresh-time probes.
+  final bool requiresIntrinsicTinyDecoderV1;
+
   /// Creates a session configuration.
   const ImageGenerationSessionConfig({
     required this.files,
@@ -78,6 +82,7 @@ final class ImageGenerationSessionConfig {
     this.referenceEditingRecipeVerified = false,
     this.flashAttention = false,
     this.vaeDirectConvolution = false,
+    this.requiresIntrinsicTinyDecoderV1 = false,
   });
 }
 

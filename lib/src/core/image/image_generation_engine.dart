@@ -408,7 +408,13 @@ class ImageGenerationEngine
   ///   classified by their headers, so [ModelSource.format] is otherwise
   ///   unused here. Also when
   ///   [ImageModelParams.vaeDirectConvolution] is `true` on iOS with the
-  ///   Metal backend, before any file is resolved or loaded. Also, before
+  ///   Metal backend, before any file is resolved or loaded. Full-VAE Metal
+  ///   decoding on iOS is also refused. Known full-VAEs are rejected before
+  ///   native creation; tiny candidates require a native context policy that
+  ///   preserves the intrinsic decoder through automatic source refreshes. Use
+  ///   [ImageModelPlacement.vaeOnCpu] or [ComputeDevice.cpu] for other recipes,
+  ///   including external tiny decoders. Tiling does not bypass this restriction.
+  ///   Also, before
   ///   any file is resolved, for a [placement] other than the default on an
   ///   engine that runs on the CPU, and for
   ///   [ImageModelPlacement.maxGpuMemoryGiB] with
@@ -607,6 +613,30 @@ class ImageGenerationEngine
               ),
           ]);
     throwIfCancelled();
+    final requiresIosTinyDecoder =
+        driver.operatingSystem == 'ios' &&
+        _isMetal(backendName) &&
+        !placement.vaeOnCpu;
+    LlamaUnsupportedException
+    unsupportedIosDecoder() => LlamaUnsupportedException(
+      'Full-VAE decoding on iOS with the Metal backend ($backendName) is '
+      'not supported: repeated decodes can trip the GPU watchdog '
+      '(https://github.com/leehack/llamadart/issues/1047). GPU decoding '
+      'requires a runtime with the intrinsic tiny-decoder v1 context policy '
+      'so model refresh cannot switch to a full VAE. The current pinned '
+      'stable-diffusion-native v0.3.0-1 lacks that policy. External tiny decoders can '
+      'fall back to a full VAE. Use ImageModelPlacement(vaeOnCpu: true) '
+      'or ComputeDevice.cpu for other recipes. VAE tiling does not '
+      'bypass this restriction.',
+    );
+    if (requiresIosTinyDecoder &&
+        (!runtime.supportsIntrinsicTinyDecoderV1 ||
+            !assignment.decodesWithTinyAutoencoder ||
+            assignment.roles.containsKey(ImageModelRole.taesd) ||
+            assignment.roles.containsKey(ImageModelRole.vae) ||
+            !_isQualifiedRuntime(runtime))) {
+      throw unsupportedIosDecoder();
+    }
     if (_isMetal(backendName) && !runtime.loadsFp8AsF16OnMetal) {
       for (final (index, path) in paths.indexed) {
         await validateImageModelMetalDtypes(
@@ -690,6 +720,7 @@ class ImageGenerationEngine
     try {
       final config = ImageGenerationSessionConfig(
         files: files,
+        requiresIntrinsicTinyDecoderV1: requiresIosTinyDecoder,
         backend: _backendAssignment(switch (params.device) {
           ComputeDevice.cpu => 'cpu',
           ComputeDevice.gpu => 'gpu',
@@ -746,6 +777,14 @@ class ImageGenerationEngine
         vaeDirectConvolution: vaeDirectConvolution,
       );
       final session = await driver.start(config);
+      // Retain a driver-boundary check in addition to the native context
+      // policy, which must remain effective after every source refresh.
+      if (requiresIosTinyDecoder &&
+          session.modelVersion != 'SDXS (512-DS)' &&
+          session.modelVersion != 'SDXS (09)') {
+        await session.dispose();
+        throw unsupportedIosDecoder();
+      }
       if (loadsControlNet &&
           (session.modelVersion != 'SD 1.x' || !_supportsControlNet(session))) {
         await session.dispose();

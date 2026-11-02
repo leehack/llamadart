@@ -33,6 +33,9 @@ abstract interface class StableDiffusionNativeApi {
 
   /// [StableDiffusionCalls.loadsFp8AsF16OnMetal] of the runtime.
   bool loadsFp8AsF16OnMetal();
+
+  /// Whether the runtime enforces the intrinsic tiny-decoder v1 contract.
+  bool supportsIntrinsicTinyDecoderV1();
 }
 
 /// The host operating system, as `Platform.operatingSystem` reports it.
@@ -176,6 +179,7 @@ StableDiffusionRuntimeStatus probeStableDiffusionRuntime({
       commit: commit,
       devices: devices,
       loadsFp8AsF16OnMetal: api.loadsFp8AsF16OnMetal(),
+      supportsIntrinsicTinyDecoderV1: api.supportsIntrinsicTinyDecoderV1(),
     );
   } on ArgumentError catch (error) {
     return StableDiffusionRuntimeStatus.unavailable(
@@ -396,6 +400,10 @@ final class BundledStableDiffusionApi implements StableDiffusionNativeApi {
 
   @override
   bool loadsFp8AsF16OnMetal() => resolveCalls()?.loadsFp8AsF16OnMetal ?? false;
+
+  @override
+  bool supportsIntrinsicTinyDecoderV1() =>
+      resolveCalls()?.newContextIntrinsicTinyV1 != null;
 
   static String _string(Pointer<Char> value) =>
       value == nullptr ? '' : value.cast<Utf8>().toDartString();
