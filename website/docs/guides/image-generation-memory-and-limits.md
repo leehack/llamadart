@@ -148,7 +148,7 @@ final engine = await ImageGenerationEngine.load(model);
 
 | Exception | When |
 | --- | --- |
-| `LlamaUnsupportedException` | The runtime is not bundled, the platform or CPU is unsupported, on the web, `ComputeDevice.gpu` without a GPU, `ComputeDevice.npu`, `vaeDirectConvolution: true` on iOS Metal, or `ModelLoadOptions.sha256` set for a `load` of several files |
+| `LlamaUnsupportedException` | The runtime is not bundled, the platform or CPU is unsupported, on the web, `ComputeDevice.gpu` without a GPU, `ComputeDevice.npu`, `vaeDirectConvolution: true` on iOS Metal, iOS Metal VAE decoding without the intrinsic tiny-decoder v1 native context policy (absent from the current pin; use `vaeOnCpu: true`), or `ModelLoadOptions.sha256` set for a `load` of several files |
 | `LlamaModelException` | A file is missing, fails to download or is not an image-model component, two files share a role, a decoder does not match the diffusion model, the model does not fit, or the runtime cannot load it. A load the runtime rejects quotes the errors it logged, with files named by role, such as `tensor '...' extends beyond its model file`; a rejected split model also names the roles it lacks, such as a VAE or text encoder, and `details` lists the roles passed |
 | `LlamaImageGenerationException` | An invalid request or `params:` |
 | `LlamaStateException` | The load's cancel token cancelled it, another generation or load is running, or the engine is disposed |

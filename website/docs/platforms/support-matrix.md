@@ -55,7 +55,13 @@ the opt-in `stable_diffusion` runtime. Per-platform requirements, validated
 models, memory figures and the bounded recipes for tiling, editing, ControlNet,
 hires fix, reference editing, seamless textures, module placement, the
 conditioning cache, FP8 weights and local checkpoint sets are in
-[Image generation](../guides/image-generation#support).
+[Image generation](../guides/image-generation#support). On iOS, Metal VAE
+decoding requires the intrinsic tiny-decoder v1 native context policy, which
+keeps automatic model refresh from selecting a full VAE. The current pinned
+runtime lacks this policy, so use `ImageModelPlacement(vaeOnCpu: true)`
+for Metal diffusion or `ComputeDevice.cpu`, including with SDXS. Tiling does not
+bypass this restriction; iPhone full-VAE watchdog avoidance remains unqualified
+([#1047](https://github.com/leehack/llamadart/issues/1047)).
 
 GGUF Qwen3-ASR accepts WAV, MP3 and FLAC; real-model checks cover all three on
 native macOS and in headless Chromium. LiteRT-LM ASR is CPU-only streaming

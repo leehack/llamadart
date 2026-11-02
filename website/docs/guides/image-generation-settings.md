@@ -81,6 +81,19 @@ Peak memory is the `phys_footprint` interval peak on the iPhone and a sampled
 has no SD-Turbo figures, and its SDXS figures are an observation, not verified
 evidence. The iPhone full-VAE arm has not been measured, because its decode
 trips the GPU watchdog ([#1047](https://github.com/leehack/llamadart/issues/1047)).
+On iOS, Metal VAE decoding requires the intrinsic tiny-decoder v1 native
+context policy. It preserves an intrinsic `SDXS (512-DS)` or `SDXS (09)`
+decoder across automatic source refresh and rejects a replacement before
+runner construction, backend probes and decoding. A header or initial native
+family query alone cannot enforce that invariant.
+
+The pinned stable-diffusion-native `v0.3.0-1` lacks this policy, so use
+`ImageModelPlacement(vaeOnCpu: true)` to keep diffusion on Metal, or
+`ComputeDevice.cpu`, including with SDXS. Recipes with an external TAESD
+also need CPU VAE placement: an external decoder can fail and fall back to a
+full VAE. Setting `vaeDirectConvolution: false` or requesting VAE tiling
+does not bypass the restriction. These guards refuse the unqualified GPU
+decode path; they do not qualify a repaired full-VAE iPhone recipe.
 
 With a tiny autoencoder, direct convolutions cost time for little memory:
 on an M4 Max CPU they took 1.4 to 1.7 s per 512x512 SDXS image against 1.2
