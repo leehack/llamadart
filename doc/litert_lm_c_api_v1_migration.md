@@ -17,8 +17,8 @@ never pass through the legacy typedefs or callback proxy.
 | Version/status errors | Explicit 1.0.x probe; older/future/missing exports refuse | Both directions of artifact skew |
 | Settings/engine | CPU, bounded context/threads, explicit isolated cache, owned engine | More settings/backends and platform evidence |
 | Session/raw text | Fresh greedy synchronous session, explicitly no template application; UTF-8 copy, response and partial-failure cleanup | Production worker dispatch and cancellation transport |
-| Conversations/history/tools | Public compatibility refusal remains | Status/out migration, lifetime ownership, delete/recreate after cancel |
-| Callback streaming/termination | No callback registered by this adapter | Actual selected finish cause and wait/delete ordering |
+| Conversations/history/tools | Internal one-at-a-time text conversation with native history; no tool API | Production dispatch, history/tool policy and broader models |
+| Callback streaming/termination | Internal owner-proxy ABI 2 copied JSON, final+drain ownership, cancel/delete/recreate | Production worker transport and full-family/platform qualification |
 | ASR | Public compatibility refusal remains | ABI-v1 bridge routing, model-family and lifecycle controls |
 | Embeddings/schema | Public compatibility refusal remains | Regenerated/audited signatures, capabilities and model regressions |
 | Hook/SPM/inventory | No changes | Qualified owner publication, TopK removal, bidirectional companion checks |
@@ -48,3 +48,59 @@ correctness or public backend qualification. The candidate rejects the declared
 Greedy sampler enum with UNIMPLEMENTED; use TopP with top-k 1 and temperature 0,
 as the owner qualification tools do. The original unsuccessful probes are
 retained separately from passing parity receipts.
+
+## Internal conversation preparation
+
+The next slice targets upstream `83ce6067f2e2a3fb697556928f93936693ded971`
+and the owner `bf4e1188e1135152a8ce4e7dc057c13041cf18a1` candidate (PR92's
+source-equivalent main tree). It adds an unexported conversation implementation
+without changing public dispatch, shipped pins, legacy bindings or companions.
+It requires the version-checked 1.0 runtime plus owner `stream_proxy_*` exports
+and callback ABI **2**, rejecting old, missing or unknown proxy ABIs before
+allocating a conversation. It never registers a Dart listener for upstream's
+borrowed opaque chunks. The owner proxy copies each string before the native
+callback returns; Dart copies those owned strings and frees both text and error.
+
+`openConversation` owns one child of the loaded CPU engine. `sendText` accepts
+only text and returns a turn whose `chunks` stream contains raw native message
+JSON. `done` carries the authoritative finish reason or error; it can be awaited
+without a chunks subscription. Finish-reason ABI 1 is optional: missing or
+unknown versions yield `unknown`, never a guessed cause. This slice provides no
+media, tools, schema, ASR, embeddings, single-threaded execution or raw-session
+asynchronous generation.
+
+A turn keeps its input, native proxy and `NativeCallable.listener` alive until
+the final callback is received **and** `conversation_wait_until_done` succeeds.
+A nonfinal error does not release callbacks. Status failures read thread-local
+errors synchronously on the calling thread; stream failures use the copied
+callback error, with existing path and URL redaction. Canonical CANCELLED text
+is treated as normal cancellation only when the native finish-reason extension
+independently reports cancellation.
+
+Cancellation requests do not wait. Further copied chunks are freed and
+suppressed while native work finishes. The child is deleted after final+drain;
+its handle is never reused, even if the cancellation request failed. Create a
+new conversation for another turn. A normal completed conversation can accept
+another turn, preserving native history. Repeated closing of an old child
+cannot detach a newer child from its parent. Engine reload, direct raw-session
+generation and disposal refuse while any child exists. Close an idle child or
+cancel and await an active one first.
+
+No timer closes a callback. A missing final callback retains its resources.
+Failed native drain quarantines the entire child/parent family and refuses
+reuse, close, reload and disposal, since callback quiescence is unproved. This
+conservative failure can retain native resources and keep its isolate alive;
+production worker-exit/recovery policy remains an adoption gate. The current
+owner proxy also cannot distinguish absent text from allocation failure, so
+this preparation does not establish lossless behavior under native OOM.
+
+Model-free tests use foreign-thread callbacks that overwrite borrowed chunk
+storage immediately, lifecycle counters, setup/start/cancel/drain failures and
+postcancel callbacks. The failed-drain control runs in its own process so it
+can verify retained callbacks and then exit without pretending they are safe to
+free. Optional candidate tests live in
+`test/integration/litert_lm_v1_candidate_test.dart` (`local-only`); set
+`LLAMADART_LITERT_V1_LIBRARY`, `LLAMADART_LITERT_V1_MODEL` and the corresponding
+`_SHA256` variables. They check normal history reuse, cancellation and fresh
+conversation creation with CPU two-thread decoding. Their output is lifecycle
+evidence, not model-semantic, leak-freedom or public-runtime qualification.
