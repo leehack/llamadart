@@ -3,9 +3,11 @@
 import '../../core/models/inference/model_params.dart';
 import 'litert_lm_asr_types.dart';
 import 'litert_lm_finish_reason.dart';
+import 'litert_lm_native_settlement.dart';
 
 export 'litert_lm_asr_types.dart';
 export 'litert_lm_finish_reason.dart';
+export 'litert_lm_native_settlement.dart';
 
 /// Runtime metrics shape shared with the native LiteRT-LM implementation.
 class LiteRtLmRuntimeMetrics {
@@ -79,6 +81,10 @@ class LiteRtLmRuntimeClient {
   }) {
     throw UnsupportedError('LiteRT-LM runtime requires a native platform.');
   }
+
+  /// No native family exists on this unsupported platform.
+  LiteRtLmNativeSettlement get nativeSettlement =>
+      LiteRtLmNativeSettlement.settled;
 
   /// Dedicated native ASR is unavailable without `dart:ffi`.
   bool get supportsAsrBridge => false;

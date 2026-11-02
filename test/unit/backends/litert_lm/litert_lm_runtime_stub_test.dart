@@ -51,3 +51,7 @@ void schemaConversationContract(LiteRtLmRuntimeClient client) =>
 
 Stream<String> schemaMessageContract(LiteRtLmRuntimeClient client) =>
     client.generateMessageJson('{}', jsonSchema: '{"type":"object"}');
+
+LiteRtLmNativeSettlement nativeSettlementContract(
+  LiteRtLmRuntimeClient client,
+) => client.nativeSettlement;

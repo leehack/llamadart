@@ -2346,7 +2346,7 @@ void main() {
     expect(await backend.getPerformanceContext(1), isNull);
     final mirror = reflect(backend);
     final owner = mirror.type.owner as LibraryMirror;
-    mirror.invoke(MirrorSystem.getSymbol('_killWorker', owner), []);
+    mirror.invoke(MirrorSystem.getSymbol('_stopWorker', owner), []);
     mirror.setField(
       MirrorSystem.getSymbol('_sendPort', owner),
       worker.sendPort,
@@ -3062,6 +3062,58 @@ void main() {
       expect(service.runs.map((run) => run.prompt), ['first', 'second']);
     });
   });
+
+  test(
+    'quarantine settles all callers before queued generation dispatch',
+    () async {
+      final commands = ReceivePort();
+      final generationRequest = Completer<LiteRtLmGenerateRequest>();
+      final tokenizeRequest = Completer<void>();
+      var generationCount = 0;
+      commands.listen((message) {
+        if (message is LiteRtLmGenerateRequest) {
+          generationCount++;
+          if (!generationRequest.isCompleted) {
+            generationRequest.complete(message);
+          }
+        } else if (message is LiteRtLmTokenizeRequest) {
+          tokenizeRequest.complete();
+        } else if (message is LiteRtLmCancelGenerationRequest) {
+          message.sendPort.send(
+            LiteRtLmDoneResponse(
+              nativeSettlement: LiteRtLmNativeSettlement.pending,
+            ),
+          );
+        }
+      });
+      final backend = LiteRtLmBackend(initialSendPort: commands.sendPort);
+      final subscription = backend
+          .generate(1, 'first', const GenerationParams())
+          .listen((_) {});
+      final first = await generationRequest.future;
+      final pending = expectLater(
+        backend.tokenize(1, 'pending'),
+        throwsA(isA<LlamaStateException>()),
+      );
+      await tokenizeRequest.future;
+      await subscription.cancel();
+      final queued = expectLater(
+        backend.generate(1, 'queued', const GenerationParams()).toList(),
+        throwsA(isA<LlamaStateException>()),
+      );
+      first.sendPort.send(
+        LiteRtLmErrorResponse(
+          'drain failed',
+          kind: 'llamaModel',
+          nativeSettlement: LiteRtLmNativeSettlement.quarantined,
+        ),
+      );
+      await Future.wait([pending, queued]).timeout(const Duration(seconds: 2));
+      expect(generationCount, 1);
+      await expectLater(backend.dispose(), throwsA(isA<LlamaStateException>()));
+      commands.close();
+    },
+  );
 
   test('a worker exit ends a generation queued behind a cancel', () async {
     final backend = LiteRtLmBackend(workerEntryPoint: _exitOnCancelWorker);

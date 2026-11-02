@@ -43,6 +43,10 @@ class LiteRtLmBackend
         BackendNativeChatGeneration,
         BackendJsonSchemaChatGeneration,
         BackendDartLogLevel {
+  // Native callbacks can outlive a failed Dart request. Retained workers keep
+  // their NativeCallable, native family, model link and cache lease until exit.
+  static final Set<Isolate> _retainedUnsettledWorkers = {};
+
   Isolate? _isolate;
   ReceivePort? _workerLifecyclePort;
   RawReceivePort? _workerLogPort;
@@ -293,7 +297,7 @@ class LiteRtLmBackend
       );
     } on TimeoutException {
       _nativeSettlementUnverified = true;
-      _killWorker();
+      _stopWorker();
       throw _unsettledWorkerError();
     }
     _isReady = false;
@@ -341,7 +345,7 @@ class LiteRtLmBackend
       _stalePerformanceContexts.remove(contextHandle);
     } on TimeoutException {
       _nativeSettlementUnverified = true;
-      _killWorker();
+      _stopWorker();
       throw _unsettledWorkerError();
     }
   }
@@ -514,6 +518,11 @@ class LiteRtLmBackend
             controller.add(message.bytes);
           }
         } else if (message is LiteRtLmDoneResponse) {
+          if (message.nativeSettlement != LiteRtLmNativeSettlement.settled) {
+            _nativeSettlementUnverified = true;
+            _stopWorker();
+            return;
+          }
           final limit = message.generationLimit;
           if (limit != null && !current.cancelRequested) {
             _generationLimits.limits[stream] = limit;
@@ -521,6 +530,11 @@ class LiteRtLmBackend
           close();
           _finishGeneration(current);
         } else if (message is LiteRtLmErrorResponse) {
+          if (message.nativeSettlement != LiteRtLmNativeSettlement.settled) {
+            _nativeSettlementUnverified = true;
+            _stopWorker();
+            return;
+          }
           close(_exceptionForErrorResponse(message));
           _finishGeneration(current);
         }
@@ -813,7 +827,8 @@ class LiteRtLmBackend
         final response = await responsePort.first.timeout(
           const Duration(seconds: 5),
         );
-        if (response is! LiteRtLmDoneResponse) {
+        if (response is! LiteRtLmDoneResponse ||
+            response.nativeSettlement != LiteRtLmNativeSettlement.settled) {
           _nativeSettlementUnverified = true;
         }
       } catch (_) {
@@ -824,7 +839,7 @@ class LiteRtLmBackend
         responsePort.close();
       }
     }
-    _killWorker();
+    _stopWorker();
     _isReady = false;
     _jsonSchemaAdmitted = false;
     _jsonSchemaEpoch++;
@@ -943,7 +958,7 @@ class LiteRtLmBackend
       if (!completer.isCompleted) {
         completer.completeError(_unsettledWorkerError());
       }
-      _killWorker();
+      _stopWorker();
     });
     late final StreamSubscription<Object?> subscription;
     subscription = tempPort.listen((message) {
@@ -1038,6 +1053,10 @@ class LiteRtLmBackend
           ? await completion.future
           : await completion.future.timeout(timeout);
       if (response is LiteRtLmErrorResponse) {
+        if (response.nativeSettlement == LiteRtLmNativeSettlement.quarantined) {
+          _nativeSettlementUnverified = true;
+          _stopWorker();
+        }
         _throwLiteRtLmError(response);
       }
       return response;
@@ -1047,7 +1066,8 @@ class LiteRtLmBackend
     }
   }
 
-  void _killWorker() {
+  /// Detaches Dart callers without invalidating an unsettled native owner.
+  void _stopWorker() {
     if (_pendingRequests.isNotEmpty) {
       _nativeSettlementUnverified = true;
     }
@@ -1056,11 +1076,11 @@ class LiteRtLmBackend
         : null;
     _activeGenerationCleanup?.call(generationError);
     _closeQueuedGeneration(generationError);
-    // A killed worker sends no terminal response for the running generation.
+    // Late terminal responses cannot revive a detached generation.
     _runningGeneration?.responsePort.close();
     _runningGeneration = null;
-    // A killed worker cannot reply. Closing its callers' ports alone would
-    // leave their futures pending, while leaving ports open retains the VM.
+    // Closing callers' ports alone would leave their futures pending, while
+    // leaving those ports open would retain the caller isolate.
     // This settles Dart requests only; an in-flight native call may still be
     // running and must not have its resources freed here.
     for (final entry in _pendingRequests.entries) {
@@ -1078,7 +1098,14 @@ class LiteRtLmBackend
     _workerLifecyclePort = null;
     _workerLogPort?.close();
     _workerLogPort = null;
-    _isolate?.kill(priority: Isolate.immediate);
+    final isolate = _isolate;
+    if (isolate != null) {
+      if (_nativeSettlementUnverified) {
+        _retainedUnsettledWorkers.add(isolate);
+      } else {
+        isolate.kill(priority: Isolate.immediate);
+      }
+    }
     _isolate = null;
     _sendPort = null;
     _isolateStart = null;
@@ -1124,7 +1151,14 @@ class LiteRtLmBackend
                 responsePort.sendPort,
               ),
       );
-      await responsePort.first.timeout(_cancelAcknowledgementTimeout);
+      final response = await responsePort.first.timeout(
+        _cancelAcknowledgementTimeout,
+      );
+      if (response is LiteRtLmErrorResponse &&
+          response.nativeSettlement == LiteRtLmNativeSettlement.quarantined) {
+        _nativeSettlementUnverified = true;
+        _stopWorker();
+      }
     } catch (_) {
       // Cancellation is best-effort because this method is also used by
       // StreamController.onCancel and dispose paths.

@@ -7,6 +7,7 @@ import 'dart:io';
 
 import 'package:llamadart/llamadart.dart';
 import 'package:llamadart/src/backends/litert_lm/litert_lm_finish_reason.dart';
+import 'package:llamadart/src/backends/litert_lm/litert_lm_native_settlement.dart';
 import 'package:llamadart/src/backends/litert_lm/litert_lm_v1_runtime.dart';
 import 'package:test/test.dart';
 
@@ -132,7 +133,9 @@ void main() {
     () async {
       final runtime = loaded();
       final conversation = runtime.openConversation();
+      expect(runtime.nativeSettlement, LiteRtLmNativeSettlement.settled);
       final turn = conversation.sendText('active');
+      expect(runtime.nativeSettlement, LiteRtLmNativeSettlement.pending);
       for (final operation in <void Function()>[
         () => conversation.sendText('overlap'),
         conversation.close,
@@ -145,6 +148,7 @@ void main() {
       }
       call('emit', 2);
       await turn.done;
+      expect(runtime.nativeSettlement, LiteRtLmNativeSettlement.settled);
       await turn.chunks.drain<void>();
       conversation.close();
       runtime.dispose();

@@ -7,6 +7,7 @@ import 'package:ffi/ffi.dart';
 import '../../core/exceptions.dart';
 import 'litert_lm_last_error.dart';
 import 'litert_lm_finish_reason.dart';
+import 'litert_lm_native_settlement.dart';
 
 part 'litert_lm_v1_conversation.dart';
 
@@ -139,6 +140,10 @@ final class LiteRtLmV1Runtime {
   bool _disposed = false;
   LiteRtLmV1Conversation? _conversation;
   List<String> _diagnosticPaths = const [];
+
+  /// Native lifetime, independent of whether a turn's done future rejected.
+  LiteRtLmNativeSettlement get nativeSettlement =>
+      _conversation?.nativeSettlement ?? LiteRtLmNativeSettlement.settled;
 
   late final _message = _library
       .lookupFunction<Pointer<Utf8> Function(), Pointer<Utf8> Function()>(

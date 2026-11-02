@@ -7,6 +7,24 @@ import 'package:test/test.dart';
 
 void main() {
   group('LiteRT-LM worker messages', () {
+    test(
+      'native settlement is independent of error kind and cancellation ack',
+      () {
+        for (final state in LiteRtLmNativeSettlement.values) {
+          final error = LiteRtLmErrorResponse.from(
+            LlamaModelException('native failure'),
+            nativeSettlement: state,
+          );
+          expect(error.kind, 'llamaModel');
+          expect(error.nativeSettlement, state);
+          expect(
+            LiteRtLmDoneResponse(nativeSettlement: state).nativeSettlement,
+            state,
+          );
+        }
+      },
+    );
+
     test('maps Dart errors into worker error responses', () {
       expect(
         LiteRtLmErrorResponse.from(UnsupportedError('nope')).kind,

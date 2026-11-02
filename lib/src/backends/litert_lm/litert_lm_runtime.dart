@@ -12,10 +12,12 @@ import '../../core/exceptions.dart';
 import '../../core/models/inference/embedding.dart';
 import '../../core/models/inference/model_params.dart';
 import 'litert_lm_asr_types.dart';
+import 'litert_lm_blocking_call.dart';
 import 'litert_lm_c_api_version.dart';
 import 'litert_lm_embedding.dart';
 import 'litert_lm_embedding_bindings.dart' as emb;
 import 'litert_lm_finish_reason.dart';
+import 'litert_lm_native_settlement.dart';
 import 'litert_lm_last_error.dart';
 import 'litert_lm_json_schema_bindings.dart';
 import 'litert_lm_platform.dart';
@@ -23,6 +25,7 @@ import 'litert_lm_sampler_params.dart';
 
 export 'litert_lm_asr_types.dart';
 export 'litert_lm_finish_reason.dart';
+export 'litert_lm_native_settlement.dart';
 
 part 'litert_lm_embedding_native.dart';
 
@@ -962,6 +965,11 @@ class LiteRtLmRuntimeClient {
   List<String> _liteRtLmCompanionLibraryPaths = const <String>[];
   // Paths a native error message may contain, cut to base names there.
   List<String> _diagnosticPaths = const <String>[];
+  LiteRtLmNativeSettlement _nativeSettlement = LiteRtLmNativeSettlement.settled;
+
+  /// Native lifetime; a Dart stream error alone does not establish settlement.
+  LiteRtLmNativeSettlement get nativeSettlement => _nativeSettlement;
+
   Pointer<_LiteRtLmEngine>? _engine;
   Pointer<_LiteRtLmConversation>? _conversation;
   int _defaultMaxOutputTokens = 256;
@@ -1567,9 +1575,18 @@ class LiteRtLmRuntimeClient {
       jsonSchema: jsonSchema,
     );
 
+    _nativeSettlement = LiteRtLmNativeSettlement.pending;
     unawaited(() async {
       try {
-        final raw = await _runBlockingSendMessageInIsolate(request);
+        final result = await _runBlockingSendMessageInIsolate(request);
+        // The child explicitly returned after its synchronous native call and
+        // cleanup unwound. A failed isolate transport supplies no such proof.
+        _nativeSettlement = LiteRtLmNativeSettlement.settled;
+        final failure = result.error;
+        if (failure != null) {
+          Error.throwWithStackTrace(failure, result.stackTrace!);
+        }
+        final raw = result.value!;
         if (!controller.isClosed) {
           final assembler = LiteRtLmChannelAssembler(
             thinkingStartTag: _thinkingStartTag,
@@ -1581,6 +1598,9 @@ class LiteRtLmRuntimeClient {
           }
         }
       } catch (error, stackTrace) {
+        if (_nativeSettlement == LiteRtLmNativeSettlement.pending) {
+          _nativeSettlement = LiteRtLmNativeSettlement.quarantined;
+        }
         if (!controller.isClosed) {
           controller.addError(error, stackTrace);
         }
@@ -1622,6 +1642,7 @@ class LiteRtLmRuntimeClient {
         return;
       }
       cleanedUp = true;
+      _nativeSettlement = LiteRtLmNativeSettlement.settled;
       if (callbackData != nullptr) {
         _proxyDelete?.call(callbackData);
         callbackData = nullptr;
@@ -1647,58 +1668,56 @@ class LiteRtLmRuntimeClient {
       },
     );
 
+    Object? streamFailure;
+    var nativeCancelled = false;
     callable = NativeCallable<_StreamCallbackNative>.listener((
       Pointer<Void> data,
       Pointer<Char> chunk,
       bool isFinal,
       Pointer<Char> errorMessage,
     ) {
-      if (isFinal || errorMessage != nullptr) {
-        // The proxy records the reason before its final callback and frees it
-        // in cleanup(), so it must be read here, before the stream closes.
-        final readFinishReason = _proxyGetFinishReason;
-        if (readFinishReason != null && callbackData != nullptr) {
-          _lastFinishReason = LiteRtLmFinishReason.fromWire(
-            readFinishReason(callbackData),
-          );
-        }
-      }
-      if (errorMessage != nullptr) {
-        final error = errorMessage.cast<Utf8>().toDartString();
-        _proxyFreeString?.call(errorMessage);
-        if (error.startsWith('CANCELLED')) {
-          if (!controller.isClosed) {
-            unawaited(controller.close());
-          }
-        } else {
-          if (!controller.isClosed) {
-            controller.addError(StateError(error));
-            unawaited(controller.close());
+      try {
+        if (errorMessage != nullptr) {
+          final error = errorMessage.cast<Utf8>().toDartString();
+          if (error.startsWith('CANCELLED')) {
+            nativeCancelled = true;
+          } else {
+            streamFailure ??= StateError(error);
           }
         }
-        cleanup();
-        return;
-      }
-
-      if (chunk != nullptr) {
-        final raw = chunk.cast<Utf8>().toDartString();
-        _proxyFreeString?.call(chunk);
-        final text = assembler.add(raw);
-        if (text.isNotEmpty && !controller.isClosed) {
-          controller.add(text);
+        if (chunk != nullptr && streamFailure == null && !nativeCancelled) {
+          final raw = chunk.cast<Utf8>().toDartString();
+          final text = assembler.add(raw);
+          if (text.isNotEmpty && !controller.isClosed) controller.add(text);
         }
+      } catch (_) {
+        streamFailure ??= StateError(
+          'LiteRT-LM stream returned invalid callback data.',
+        );
+      } finally {
+        if (chunk != nullptr) _proxyFreeString?.call(chunk);
+        if (errorMessage != nullptr) _proxyFreeString?.call(errorMessage);
       }
-
-      if (isFinal) {
-        final tail = assembler.flush();
-        if (tail.isNotEmpty && !controller.isClosed) {
-          controller.add(tail);
-        }
-        if (!controller.isClosed) {
-          unawaited(controller.close());
-        }
-        cleanup();
+      // An error is data, not proof that the native callback owner is idle.
+      // Keep the listener/proxy alive until the actual terminal callback.
+      if (!isFinal) return;
+      final readFinishReason = _proxyGetFinishReason;
+      if (readFinishReason != null && callbackData != nullptr) {
+        _lastFinishReason = LiteRtLmFinishReason.fromWire(
+          readFinishReason(callbackData),
+        );
       }
+      if (!controller.isClosed) {
+        final failure = streamFailure;
+        if (failure != null) {
+          controller.addError(failure);
+        } else if (!nativeCancelled) {
+          final tail = assembler.flush();
+          if (tail.isNotEmpty) controller.add(tail);
+        }
+        unawaited(controller.close());
+      }
+      cleanup();
     });
 
     var callbackFn = callable.nativeFunction;
@@ -1743,6 +1762,7 @@ class LiteRtLmRuntimeClient {
 
       final lastError = bindings.lastError;
       lastError?.clear();
+      _nativeSettlement = LiteRtLmNativeSettlement.pending;
       final rc = bindings.conversationSendMessageStream(
         conversation,
         messagePtr.cast(),
@@ -1887,6 +1907,11 @@ class LiteRtLmRuntimeClient {
 
   /// Releases native LiteRT-LM resources.
   void dispose() {
+    if (nativeSettlement != LiteRtLmNativeSettlement.settled) {
+      throw LlamaStateException(
+        'LiteRT-LM native callbacks have not settled; retain resources and restart the process.',
+      );
+    }
     _deleteConversation();
     final engine = _engine;
     final bindings = _bindings;
@@ -2617,11 +2642,9 @@ void _setSessionLoraPath(
   }
 }
 
-Future<String> _runBlockingSendMessageInIsolate(
+Future<LiteRtLmBlockingCallResult<String>> _runBlockingSendMessageInIsolate(
   _BlockingSendMessageRequest request,
-) {
-  return Isolate.run(() => _runBlockingSendMessage(request));
-}
+) => runLiteRtLmBlockingCall(() => _runBlockingSendMessage(request));
 
 String _runBlockingSendMessage(_BlockingSendMessageRequest request) {
   final companionLibraries = liteRtLmOpenCompanionLibraries(

@@ -395,6 +395,7 @@ void main() {
       'LlamaEngineBackendHooks',
       'LiteRtLmBackend',
       'LiteRtLmFinishReason',
+      'LiteRtLmNativeSettlement',
       'LiteRtLmRuntimeClient',
       'LiteRtLmRuntimeMetrics',
       'LiteRtLmRuntimeResult',

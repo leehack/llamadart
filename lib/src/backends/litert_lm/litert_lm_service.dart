@@ -135,6 +135,20 @@ class LiteRtLmService {
   final LiteRtLmLinkCreator? _createLink;
   final bool _useTempCacheDir;
   LiteRtLmRuntimeClient? _client;
+  bool _nativeResourcesQuarantined = false;
+
+  /// Native lifetime; failed Dart requests can still own live callbacks.
+  LiteRtLmNativeSettlement get nativeSettlement => _nativeResourcesQuarantined
+      ? LiteRtLmNativeSettlement.quarantined
+      : _client?.nativeSettlement ?? LiteRtLmNativeSettlement.settled;
+
+  /// Retains this native family, its model link and cache lease until exit.
+  ///
+  /// This is irreversible: callers must restart the process before retrying.
+  void quarantineNativeResources() {
+    _nativeResourcesQuarantined = true;
+  }
+
   bool _jsonSchemaAdmitted = false;
   final bool Function() _jsonSchemaPlatformSupported;
   LiteRtLmEmbeddingSession? _embedding;
@@ -209,7 +223,12 @@ class LiteRtLmService {
       createLink: _createLink,
     );
 
-    _disposeClient();
+    try {
+      _disposeClient();
+    } on Object {
+      modelLink?.dispose();
+      rethrow;
+    }
     _modelLink?.dispose();
     _modelPath = path;
     _modelLink = modelLink;
@@ -2317,16 +2336,18 @@ class LiteRtLmService {
   }
 
   void _disposeClient() {
+    if (nativeSettlement != LiteRtLmNativeSettlement.settled) {
+      throw LlamaStateException(
+        'LiteRT-LM native resources are unsettled; retain the model and caches and restart the process.',
+      );
+    }
     _jsonSchemaAdmitted = false;
     _embedding?.dispose();
     _embedding = null;
-    try {
-      _client?.dispose();
-      _client = null;
-    } finally {
-      _cacheLease?.release();
-      _cacheLease = null;
-    }
+    _client?.dispose();
+    _client = null;
+    _cacheLease?.release();
+    _cacheLease = null;
   }
 
   /// Marks the caches of [modelPath] in [cacheDir] as in use until the client

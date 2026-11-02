@@ -123,6 +123,13 @@ final class LiteRtLmV1Conversation {
   LiteRtLmV1Turn? _turn;
   bool _quarantined = false;
 
+  /// Only a final callback followed by successful native drain settles a turn.
+  LiteRtLmNativeSettlement get nativeSettlement => _quarantined
+      ? LiteRtLmNativeSettlement.quarantined
+      : _turn != null
+      ? LiteRtLmNativeSettlement.pending
+      : LiteRtLmNativeSettlement.settled;
+
   late final _configCreate = _runtime._library
       .lookupFunction<_CreateN, _CreateD>(
         'litert_lm_conversation_config_create',

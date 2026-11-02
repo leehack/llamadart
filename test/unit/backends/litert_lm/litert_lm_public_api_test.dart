@@ -21,6 +21,7 @@ void main() {
     expect(result.text, 'hello');
     expect(result.metrics, same(metrics));
     expect(client, isA<LiteRtLmRuntimeClient>());
+    expect(client.nativeSettlement, LiteRtLmNativeSettlement.settled);
 
     client.configureResponseThinkingTags(
       startTag: '<thought>',

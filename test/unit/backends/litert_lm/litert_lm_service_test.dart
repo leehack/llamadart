@@ -5335,24 +5335,97 @@ void main() {
       });
     }
 
-    test('a client whose dispose throws still releases its lease', () async {
-      final client = _FakeLiteRtLmRuntimeClient()
-        ..disposeError = StateError('dispose failed');
-      final service = LiteRtLmService(clientFactory: () => client);
-      final cacheDir = Directory('${tempDir.path}/cache')..createSync();
-      await createEngine(
-        service,
-        client,
-        ModelParams(
+    test(
+      'failed native cleanup retains its lease until cleanup succeeds',
+      () async {
+        final client = _FakeLiteRtLmRuntimeClient()
+          ..disposeError = StateError('dispose failed');
+        final service = LiteRtLmService(clientFactory: () => client);
+        final cacheDir = Directory('${tempDir.path}/cache')..createSync();
+        await createEngine(
+          service,
+          client,
+          ModelParams(
+            liteRtLmBackend: LiteRtLmBackendPreference.cpu,
+            liteRtLmCacheDir: cacheDir.path,
+          ),
+        );
+        expect(leaseFiles(cacheDir), hasLength(2));
+
+        expect(service.dispose, throwsStateError);
+        expect(leaseFiles(cacheDir), hasLength(2));
+        client.disposeError = null;
+        service.dispose();
+        expect(leaseFiles(cacheDir), isEmpty);
+      },
+    );
+
+    test(
+      'pending callbacks retain the client and lease until native settlement',
+      () async {
+        final client = _FakeLiteRtLmRuntimeClient();
+        final service = LiteRtLmService(clientFactory: () => client);
+        final cacheDir = Directory('${tempDir.path}/cache')..createSync();
+        await createEngine(
+          service,
+          client,
+          ModelParams(
+            liteRtLmBackend: LiteRtLmBackendPreference.cpu,
+            liteRtLmCacheDir: cacheDir.path,
+          ),
+        );
+        client.settlement = LiteRtLmNativeSettlement.pending;
+        expect(service.dispose, throwsA(isA<LlamaStateException>()));
+        expect(client.disposeCount, 0);
+        expect(leaseFiles(cacheDir), hasLength(2));
+        client.settlement = LiteRtLmNativeSettlement.settled;
+        service.dispose();
+        expect(client.disposeCount, 1);
+        expect(leaseFiles(cacheDir), isEmpty);
+      },
+    );
+
+    test(
+      'failed cleanup preserves the model link and protects caches from pruning',
+      () async {
+        final client = _FakeLiteRtLmRuntimeClient();
+        final links = Directory('${tempDir.path}/links')..createSync();
+        final service = LiteRtLmService(
+          clientFactory: () => client,
+          linkParentDirectory: links,
+        );
+        final original = File('${tempDir.path}/download')
+          ..writeAsStringSync('LITERTLM fake model');
+        final cacheDir = Directory('${tempDir.path}/cache')..createSync();
+        final params = ModelParams(
           liteRtLmBackend: LiteRtLmBackendPreference.cpu,
           liteRtLmCacheDir: cacheDir.path,
-        ),
-      );
-      expect(leaseFiles(cacheDir), hasLength(2));
-
-      expect(service.dispose, throwsStateError);
-      expect(leaseFiles(cacheDir), isEmpty);
-    });
+        );
+        final model = await service.loadModel(original.path, params);
+        await startEngine(service, client, model, params);
+        final runtimePath = client.lastModelPath!;
+        final runtimeName = File(runtimePath).uri.pathSegments.last;
+        final program = writeCache(
+          cacheDir,
+          '${runtimeName}_1_2_mldrift_program_cache.bin',
+          16,
+        );
+        client.disposeError = StateError('native cleanup failed');
+        expect(service.dispose, throwsStateError);
+        expect(Link(runtimePath).existsSync(), isTrue);
+        expect(leaseFiles(cacheDir), hasLength(2));
+        pruneLiteRtLmProgramCaches(cacheDir.path, 0);
+        expect(program.existsSync(), isTrue);
+        client.disposeError = null;
+        service.dispose();
+        expect(links.listSync(), isEmpty);
+        expect(leaseFiles(cacheDir), isEmpty);
+        pruneLiteRtLmProgramCaches(cacheDir.path, 0);
+        expect(program.existsSync(), isFalse);
+        expect(original.existsSync(), isTrue);
+      },
+      testOn: '!windows',
+    );
 
     test('a failed engine create releases its lease', () async {
       final client = _FakeLiteRtLmRuntimeClient(
@@ -7409,6 +7482,11 @@ String _expectedAutoLiteRtLmBackend() {
 }
 
 class _FakeLiteRtLmRuntimeClient extends LiteRtLmRuntimeClient {
+  LiteRtLmNativeSettlement settlement = LiteRtLmNativeSettlement.settled;
+
+  @override
+  LiteRtLmNativeSettlement get nativeSettlement => settlement;
+
   _FakeLiteRtLmRuntimeClient({
     bool blockInitialize = false,
     this.initializeError,
