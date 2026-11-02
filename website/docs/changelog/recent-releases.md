@@ -13,6 +13,8 @@ validate against the exact release tag notes.
 
 ## Unreleased
 
+- Add Decision task APIs with typed completion and cooperative per-task cancellation.
+
 - Manage text, decision, image and speech engine lifecycles through `LlamadartEngine<C>` with typed capabilities and reentrant-safe final disposal.
 
 ## 0.17.5

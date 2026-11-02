@@ -86,7 +86,13 @@ export 'src/core/image/image_generation_request.dart'
 
 // Decision models
 export 'src/core/decision/decision_engine.dart'
-    show DecisionCapabilities, DecisionEngine, DecisionModelInfo;
+    show
+        DecisionCapabilities,
+        DecisionEngine,
+        DecisionModelInfo,
+        DecisionTask,
+        DecisionCompletion,
+        DecisionCompletionState;
 export 'src/core/decision/decision_model.dart';
 export 'src/core/decision/decision_model_params.dart';
 export 'src/core/decision/decision_key.dart';
