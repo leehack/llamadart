@@ -129,6 +129,8 @@ description: >-
   interface with a false getter still rejects. Optional native chat cannot
   bypass this route; mandatory structured-chat backends reject it. Argument expansion is bounded
   to 4096 states; unsupported schemas throw rather than silently dropping grammar.
+  Auto grammar allows a trailing list comma and bounds each closing whitespace
+  gap to eight characters; whitespace inside argument values is unchanged.
 - LFM2/LFM2.5 tool markers inside reasoning remain `thinking` text and never
   produce executable calls. Calls after the thought closes still work; literal
   `<think>`/`</think>` inside complete tool arguments remain argument data.

@@ -213,7 +213,10 @@ ordinary text before a call, then enforces declared names, required and unique
 arguments, value types, and the explicit parallel flag. Prompt tokens seed only
 the penalty sampler, preserving sampling before activation without feeding the
 prompt to the grammar. Required and force-JSON requests keep their JSON-list
-grammar; `none` adds no tool grammar.
+grammar; `none` adds no tool grammar. The auto grammar permits a trailing list
+comma and limits each whitespace gap after a completed call to eight characters,
+so closing the envelope cannot loop indefinitely. Whitespace inside argument
+values is unchanged.
 
 Use legacy `ToolParam` declarations for this path. Grammar expansion is bounded
 to 4096 argument states; oversized declarations, arrays without a declared item

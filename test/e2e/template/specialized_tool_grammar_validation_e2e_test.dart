@@ -1996,6 +1996,12 @@ void main() {
         valid: [
           first,
           first.replaceFirst(')]', '),]'),
+          first.replaceFirst(')]', ')${' ' * 8},${'\n' * 8}]'),
+          first.replaceFirst(
+            ']<|tool_call_end|>',
+            ']${'\t' * 8}<|tool_call_end|>',
+          ),
+          first.replaceFirst('text="False"', 'text="${' ' * 32}"'),
           first.replaceFirst(
             'text="False", enabled=True',
             'enabled=false, text=\'hello\'',
@@ -2019,6 +2025,14 @@ void main() {
           if (!parallel) two,
           if (!parallel) two.replaceFirst(')]', '),]'),
           first.replaceFirst(')]', '),,]'),
+          first.replaceFirst(')]', ')${' ' * 9},]'),
+          first.replaceFirst(')]', '),${'\n' * 9}]'),
+          first.replaceFirst(')]', ')${' ' * 9}]'),
+          first.replaceFirst(
+            ']<|tool_call_end|>',
+            ']${'\t' * 9}<|tool_call_end|>',
+          ),
+          if (parallel) two.replaceFirst(', ', ',${' ' * 9}'),
           first.replaceFirst('[configure', '[,configure'),
           first.replaceFirst(')]', '), ,]'),
           first.replaceFirst(')]', '),]garbage'),

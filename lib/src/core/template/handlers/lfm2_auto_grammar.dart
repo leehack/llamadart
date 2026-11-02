@@ -19,11 +19,12 @@ String? buildLfm2AutoGrammar(
   }
   builder.rules['call'] = calls.join(' | ');
   // A trailing comma lets compound tokens close the last argument and call
-  // without forcing the sampler back into an unfinished string.
+  // without forcing the sampler back into an unfinished string. Bound closing
+  // whitespace so a completed call cannot consume the remaining token budget.
   builder.rules['root'] =
       '${ToolCallGrammarUtils.literal('<|tool_call_start|>')} ws "[" ws call '
-      '${parallelToolCalls ? '(ws "," ws call)* ' : ''}'
-      '(ws ",")? ws "]" ws ${ToolCallGrammarUtils.literal('<|tool_call_end|>')}';
+      '${parallelToolCalls ? '(close-ws "," close-ws call)* ' : ''}'
+      '(close-ws ",")? close-ws "]" close-ws ${ToolCallGrammarUtils.literal('<|tool_call_end|>')}';
   return builder.rules.entries
       .map((entry) => '${entry.key} ::= ${entry.value}')
       .join('\n');
@@ -37,6 +38,7 @@ final class _PythonGrammar {
   int _nextValue = 0;
   final Map<String, String> rules = {
     'ws': r'[ \t\n\r]*',
+    'close-ws': r'[ \t\n\r]{0,8}',
     'py-string': 'double-string | single-string',
     'double-string': r'''"\"" ([^"\\] | "\\" .)* "\""''',
     'single-string': r'''"'" ([^'\\] | "\\" .)* "'"''',
