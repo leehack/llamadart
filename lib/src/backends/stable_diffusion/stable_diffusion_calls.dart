@@ -95,6 +95,7 @@ final class StableDiffusionCalls {
     this.log,
     this.gpu,
     this.loadsFp8AsF16OnMetal = false,
+    this.newContextIntrinsicTinyV1,
   });
 
   /// The oldest `stable-diffusion-native` release that exports the `sd_dart_`
@@ -184,6 +185,10 @@ final class StableDiffusionCalls {
     'sd_dart_new_sd_ctx' => Native.addressOf<NativeFunction<_NewContextNative>>(
       sd.sd_dart_new_sd_ctx,
     ),
+    'sd_dart_new_sd_ctx_intrinsic_tiny_v1' =>
+      Native.addressOf<NativeFunction<_NewContextNative>>(
+        _newContextIntrinsicTinyV1,
+      ),
     'sd_dart_generate_image' =>
       Native.addressOf<NativeFunction<_GenerateImageNative>>(
         sd.sd_dart_generate_image,
@@ -259,6 +264,11 @@ final class StableDiffusionCalls {
       newContext: function<_NewContextNative>(
         'sd_dart_new_sd_ctx',
       ).asFunction(),
+      newContextIntrinsicTinyV1: optional(
+        () => function<_NewContextNative>(
+          'sd_dart_new_sd_ctx_intrinsic_tiny_v1',
+        ).asFunction(),
+      ),
       generateImage: function<_GenerateImageNative>(
         'sd_dart_generate_image',
       ).asFunction(),
@@ -330,6 +340,12 @@ final class StableDiffusionCalls {
   /// returns; `nullptr` on failure.
   final Pointer<sd.sd_ctx_t> Function(Pointer<sd.sd_ctx_params_t> params)
   newContext;
+
+  /// Creates a tracked context whose intrinsic SDXS tiny decoder remains
+  /// required across every native source refresh, before runner probes or
+  /// image/video decoding. Null on runtimes without the version 1 contract.
+  final Pointer<sd.sd_ctx_t> Function(Pointer<sd.sd_ctx_params_t>)?
+  newContextIntrinsicTinyV1;
 
   /// `sd_dart_generate_image`: `generate_image` as a call exit teardown
   /// cancels and waits for.
@@ -512,3 +528,11 @@ bool _releaseAtLeast(String tag, String floor) {
   }
   return true;
 }
+
+@Native<_NewContextNative>(
+  symbol: 'sd_dart_new_sd_ctx_intrinsic_tiny_v1',
+  assetId: _stableDiffusionAsset,
+)
+external Pointer<sd.sd_ctx_t> _newContextIntrinsicTinyV1(
+  Pointer<sd.sd_ctx_params_t> params,
+);

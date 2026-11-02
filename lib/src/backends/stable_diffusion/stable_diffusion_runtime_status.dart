@@ -31,12 +31,17 @@ final class StableDiffusionRuntimeStatus {
   /// weights abort the process when a Metal context is created.
   final bool loadsFp8AsF16OnMetal;
 
+  /// Whether a native context can enforce the intrinsic tiny-decoder v1
+  /// policy through every automatic model refresh.
+  final bool supportsIntrinsicTinyDecoderV1;
+
   /// A runtime that loaded and answered the probe.
   const StableDiffusionRuntimeStatus.available({
     required String this.version,
     required String this.commit,
     required this.devices,
     this.loadsFp8AsF16OnMetal = false,
+    this.supportsIntrinsicTinyDecoderV1 = false,
   }) : unavailableReason = null;
 
   /// A runtime that cannot be used, for [reason].
@@ -46,7 +51,8 @@ final class StableDiffusionRuntimeStatus {
       version = null,
       commit = null,
       devices = const [],
-      loadsFp8AsF16OnMetal = false;
+      loadsFp8AsF16OnMetal = false,
+      supportsIntrinsicTinyDecoderV1 = false;
 
   /// Whether the runtime loaded and answered the probe.
   bool get isAvailable => unavailableReason == null;
