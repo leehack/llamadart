@@ -45,6 +45,7 @@ const Map<String, String> _notMarkdownReaders = {
   'test/unit/tooling/classify_high_risk_changes_test.dart':
       'Only classifies Markdown path strings.',
   'test/unit/tooling/companion_pub_preflight_test.dart': _tempTree,
+  'test/unit/tooling/companion_package_contents_test.dart': _tempTree,
   'test/unit/tooling/install_doc_versions_test.dart': _tempTree,
   'test/unit/tooling/litert_lm_tokenizer_fixture_test.dart': _validationTooling,
   'test/unit/tooling/macos_litert_lm_prepare_app_script_test.dart':
