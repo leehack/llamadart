@@ -16,12 +16,33 @@ Future<ProcessResult> runBoundedProcess(
   String? workingDirectory,
   Map<String, String>? environment,
 }) async {
-  final process = await Process.start(
+  final started = Process.start(
     executable,
     arguments,
     workingDirectory: workingDirectory,
     environment: environment,
   );
+  var exited = false;
+  // An interrupted test must reap its child before earlier scratch cleanup.
+  addTearDown(() async {
+    final Process child;
+    try {
+      child = await started;
+    } on Object {
+      return;
+    }
+    if (exited) return;
+    child.kill(ProcessSignal.sigkill);
+    await child.exitCode.timeout(
+      const Duration(seconds: 5),
+      onTimeout: () => fail('Child ${child.pid} survived test teardown.'),
+    );
+  });
+  final process = await started;
+  final exit = process.exitCode.then((code) {
+    exited = true;
+    return code;
+  });
   await process.stdin.close();
   final stdout = StringBuffer();
   final stderr = StringBuffer();
@@ -33,18 +54,18 @@ Future<ProcessResult> runBoundedProcess(
     for (final subscription in subscriptions) subscription.asFuture<void>(),
   ]);
   try {
-    final exitCode = await process.exitCode.timeout(
+    final exitCode = await exit.timeout(
       timeout,
       onTimeout: () async {
         process.kill();
         var cleanup = '';
         try {
-          await process.exitCode.timeout(const Duration(seconds: 5));
+          await exit.timeout(const Duration(seconds: 5));
         } on TimeoutException {
           // Windows terminates directly; POSIX children can ignore SIGTERM.
           process.kill(ProcessSignal.sigkill);
           try {
-            await process.exitCode.timeout(const Duration(seconds: 5));
+            await exit.timeout(const Duration(seconds: 5));
           } on TimeoutException {
             cleanup =
                 '\nChild ${process.pid} did not exit after forced termination.';
