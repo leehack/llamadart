@@ -11,6 +11,8 @@ For upgrade planning, combine this page with the
 [Upgrade Checklist](../migration/upgrade-checklist). For breaking changes,
 validate against the exact release tag notes.
 
+## Unreleased
+
 ## 0.17.5
 
 - Preserve quoted LFM2/LFM2.5 tool-end markers inside tool arguments during parsing and streaming.
