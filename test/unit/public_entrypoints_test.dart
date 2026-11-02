@@ -189,6 +189,7 @@ const _appNames = <String>{
   'LlamaToolResultMedia',
   'LlamaUnsupportedException',
   'LlamaVideoContent',
+  'LlamadartEngine',
   'LocalModelFile',
   'LoraAdapterConfig',
   'ModelCacheEntry',
