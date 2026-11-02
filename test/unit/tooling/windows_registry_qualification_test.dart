@@ -9,6 +9,7 @@ import 'dart:isolate';
 import 'package:test/test.dart';
 
 import '../../fixtures/windows_ggml_registry_qualification/payload/passive_modules.dart';
+import 'support/bounded_process.dart';
 
 void main() {
   test(
@@ -34,6 +35,21 @@ void main() {
       );
       final runner = testLibrary!.resolve('../bin/test.dart').toFilePath();
       final config = File('.dart_tool/package_config.json').absolute.path;
+      final kernel = '$root/test_runner.dill';
+      // Reuse the real runner without recompiling its dependencies seven times.
+      final compiled = await runBoundedProcess(Platform.resolvedExecutable, [
+        'compile',
+        'kernel',
+        '--packages=$config',
+        runner,
+        '-o',
+        kernel,
+      ], timeout: const Duration(seconds: 60));
+      expect(
+        compiled.exitCode,
+        0,
+        reason: '${compiled.stdout}\n${compiled.stderr}',
+      );
       for (final variant in [
         'pass',
         'skip',
@@ -54,11 +70,13 @@ ${variant == 'multiple' ? "test('extra test', () {});" : ''}
         File('${tests.path}/windows_ggml_registry_test.dart').writeAsStringSync(
           "import 'package:test/test.dart';\nvoid main() {$body}\n",
         );
-        final result = await Process.run(
+        final watch = Stopwatch()..start();
+        print('Registry reporter $variant started (45 s child budget)');
+        final result = await runBoundedProcess(
           Platform.resolvedExecutable,
           [
             '--packages=$config',
-            runner,
+            kernel,
             '-p',
             'vm',
             '-j',
@@ -69,6 +87,10 @@ ${variant == 'multiple' ? "test('extra test', () {});" : ''}
           ],
           workingDirectory: core.path,
           environment: {'GITHUB_ACTIONS': 'true'},
+          timeout: const Duration(seconds: 45),
+        );
+        print(
+          'Registry reporter $variant elapsed ${watch.elapsedMilliseconds} ms',
         );
         expect(
           result.exitCode,
@@ -84,7 +106,7 @@ ${variant == 'multiple' ? "test('extra test', () {});" : ''}
           expect('${result.stdout}', isNot(contains('All tests passed!')));
         }
       }
-      final result = await Process.run(
+      final result = await runBoundedProcess(
         Platform.environment['LLAMADART_TEST_PWSH'] ?? 'pwsh',
         [
           '-NoLogo',
@@ -101,10 +123,12 @@ ${variant == 'multiple' ? "test('extra test', () {});" : ''}
           '-OutputPath',
           '$root/receipt.json',
         ],
+        timeout: const Duration(seconds: 30),
       );
       expect(result.exitCode, 0, reason: '${result.stdout}\n${result.stderr}');
     },
-    timeout: const Timeout(Duration(minutes: 2)),
+    // The 405 s child budgets leave time for forced termination and reaping.
+    timeout: const Timeout(Duration(minutes: 8)),
   );
 
   test('observer flushes complete before the next piped snapshot', () async {
