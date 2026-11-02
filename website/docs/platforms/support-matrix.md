@@ -188,6 +188,10 @@ web are on [Known platform issues](./known-platform-issues).
 The native-assets hook currently pins `llamadart-native` tag
 `v0.8.0-1` and
 `litert-lm-native` release `v0.18.1-4` (`lib/src/hook/native_release_pins.dart`).
+
+Native overrides exporting LiteRT-LM's versioned C API are rejected before
+legacy engine calls. LiteRT-LM 0.19 / C API 1.0 needs the separate consumer
+migration tracked in #1677; use the pinned runtime with this package.
 Apps can override the llama.cpp release with `llamadart_native_tag`; accepted
 tag forms, keys, backend modules and local bundles:
 [Native runtime configuration](./native-build-hooks#override-the-llamacpp-release).

@@ -144,6 +144,10 @@ Current default runtime pins:
 | Web llama.cpp / GGUF | `leehack/llama-web-bridge-assets@v0.1.79` |
 | Web LiteRT-LM / `.litertlm` | `@litert-lm/core@0.18.0` |
 
+Native LiteRT-LM overrides must match the package's pre-1.0 C bindings.
+LiteRT-LM 0.19 / C API 1.0 is rejected before engine calls; use the pinned
+runtime until the consumer migration in #1677 is delivered.
+
 Native overrides accept stable `vMAJOR.MINOR.PATCH` releases and explicit
 historical or nightly `bNNNN` artifacts. New nightly wrapper rebuilds use
 `bNNNN-N`; existing `bNNNN-llamadart.N` artifacts stay valid as

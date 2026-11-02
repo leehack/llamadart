@@ -254,6 +254,14 @@ runtime it bundles. Then run the `image-generation-smoke` and
 
 ## Native version update checklist
 
+LiteRT-LM 0.19 changes C function signatures to status returns and output
+parameters. Current handwritten runtime bindings reject the versioned API
+before engine calls. A candidate runtime injected for #1677 must exercise this
+refusal until its complete bindings/lifecycle migration is enabled; replacing
+the native pin or generated embedding bindings alone is unsafe. Keep pinned
+0.18 support intact during preparation and qualify both artifact directions
+before adoption.
+
 Use this checklist in native sync PRs:
 
 - Confirm `llamadart-native`, `litert-lm-native` or `stable-diffusion-native`
