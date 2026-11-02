@@ -9,6 +9,42 @@ import 'package:llamadart/src/backends/webgpu/webgpu_errors.dart';
 import 'package:test/test.dart';
 
 void main() {
+  test('grammar failures preserve the typed category without loose matching', () {
+    for (final (message, matcher) in <(String, Matcher)>[
+      (
+        'The loaded WebGPU core does not support CompletionOptions.grammarLazy.',
+        isA<LlamaUnsupportedException>(),
+      ),
+      (
+        'The loaded WebGPU core does not support CompletionOptions.grammarRoot.',
+        isA<LlamaUnsupportedException>(),
+      ),
+      (
+        'The loaded WebGPU core does not support CompletionOptions.grammarLazy or CompletionOptions.grammarRoot.',
+        isA<LlamaUnsupportedException>(),
+      ),
+      (
+        'The loaded WebGPU core does not support CompletionOptions.minP or CompletionOptions.grammarLazy or CompletionOptions.grammarRoot.',
+        isA<LlamaUnsupportedException>(),
+      ),
+      (
+        'Failed to start generation: Failed to initialize sampler chain (invalid grammar)',
+        isA<LlamaInferenceException>(),
+      ),
+      (
+        'Generation step failed: The lazy grammar rejected the text that triggered it',
+        isA<LlamaInferenceException>(),
+      ),
+    ]) {
+      final error = JSObject()
+        ..setProperty('name'.toJS, 'Error'.toJS)
+        ..setProperty('message'.toJS, message.toJS);
+      expect(webGpuBridgeRequestError(error), matcher);
+      error.setProperty('message'.toJS, 'Network failed: $message'.toJS);
+      expect(webGpuBridgeRequestError(error), isNull);
+    }
+  });
+
   test('preserves typed unsupported errors', () {
     final error = LlamaUnsupportedException('unsupported model');
     expect(webGpuBridgeRequestError(error), same(error));
@@ -81,6 +117,19 @@ void main() {
     for (final message in <String>[
       'CompletionOptions.minP must be a finite number from 0 to 1; got 2.',
       'CompletionOptions.presencePenalty must be a finite number; got NaN.',
+      'CompletionOptions.grammar contains U+0000, which the core cannot read.',
+      'CompletionOptions.grammarRoot contains U+0000, which the core cannot read.',
+      'CompletionOptions.grammarRoot must be a non-empty string.',
+      'CompletionOptions.grammarLazy must be a boolean; got 1.',
+      'CompletionOptions.grammarLazy needs a non-empty CompletionOptions.grammar.',
+      'CompletionOptions.grammarRoot needs a non-empty CompletionOptions.grammar.',
+      'CompletionOptions.grammarLazy needs at least one CompletionOptions.grammarTriggers entry.',
+      'CompletionOptions.grammarTriggers must be an array.',
+      'CompletionOptions.grammarTriggers[0] must be an object.',
+      'CompletionOptions.grammarTriggers[0].type must be one of token, word, pattern, pattern-full; got 9.',
+      'CompletionOptions.grammarTriggers[0].token must be an integer from 0 to 2147483647; got -1.',
+      'CompletionOptions.grammarTriggers[0].value must be a non-empty string.',
+      'CompletionOptions.grammarTriggers[0].value contains U+0000, which the core cannot read.',
       'CompletionOptions.thinkingBudget must be an object.',
       'CompletionOptions.thinkingBudget.startTag must be a non-empty string.',
       'CompletionOptions.thinkingBudget.endTag must be a non-empty string.',

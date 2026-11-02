@@ -100,6 +100,7 @@
     },
     {
       "id": "structured_output",
+      "notes": "Web lazyGrammar capability admission, explicit trigger transport, legacy false-probe fallback and typed version-skew rejection are covered by test/unit/backends/webgpu/webgpu_lazy_grammar_test.dart and webgpu_backend_test.dart. The local web-lazy-grammar scenario checks actual pinned-asset CPU Wasm activation and reuse in direct and worker runtimes. These controls do not qualify LFM2 Python-call auto grammar (#1715), model accuracy or hardware WebGPU.",
       "cases": [
         "S01.capabilities",
         "S02.json_object",
