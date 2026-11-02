@@ -1060,12 +1060,16 @@ class WorkerHandshake {
   /// leaves the worker's logger untouched.
   final SendPort? logPort;
 
+  /// Empty native owner established by the parent before spawning this worker.
+  final int? nativeOwnerToken;
+
   /// Creates a new [WorkerHandshake].
   WorkerHandshake(
     this.initialLogLevel,
     this.sendPort, {
     this.dartLogLevel = LlamaLogLevel.none,
     this.logPort,
+    this.nativeOwnerToken,
   });
 }
 
