@@ -154,6 +154,11 @@ and header/binding regeneration. On Windows, runtime environment directory
 overrides select backend modules; use `llamadart_native_path` to replace the
 complete runtime. The full override rules are in [Native runtime configuration](https://llamadart.leehack.com/docs/platforms/native-build-hooks#override-the-llamacpp-release).
 
+Await engine disposal before host shutdown. Forced worker cleanup during
+native creation requires a runtime with owner API v1; the current pinned
+`v0.8.0-1` runtime retains that gap. See the
+[shutdown contract](doc/llama_cpp_exit_teardown.md#creation-time-owner-preparation).
+
 ## Guides
 
 | Task | Docs |

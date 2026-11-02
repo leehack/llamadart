@@ -223,6 +223,61 @@ it.
 Image models have their own registry in `libstable-diffusion`: see
 "Image models".
 
+## Creation-time owner preparation
+
+When the loaded wrapper exports owner API v1, `NativeLlamaBackend` establishes
+an empty parent-owned token before spawn. The worker attaches one stable native
+finalizer before activation. Model, context and projector creators publish
+ownership inside native code, before returning to Dart. Speculative and TTS
+creators inherit ownership from their inputs. All service objects already
+registered for shutdown share the native registry's stage ordering, so adding a
+session or decision-head stage never detaches a model/context finalizer.
+
+The parent drains after actual worker exit on a cleanup isolate; recorded exit
+and `dispose()` wait for that cleanup. A failed cleanup retains its typed state
+error, cause and original stack for current and later disposal/requests, and
+prevents a worker restart. Closing startup ports does not create an unhandled
+copy of that failed future. Dart cancellation flags and ports still close once
+their worker has actually exited, even when native reclamation fails. Its bootstrap finalizer only aborts
+pending tokens, never active payload used by a live worker. A separate worker
+finalizer covers orderly isolate-group shutdown. The pinned Dart SDK guarantees
+native finalization by group shutdown, rather than prompt callbacks at each
+individual onExit. Host shutdown still has to stop/join workers first.
+
+Opaque token IDs are never reused or dereferenced. Closing drains payload then
+removes the control record; late duplicate finalizers are harmless. Killing the
+parent between empty-token creation and bootstrap attachment may leave a small
+control record until process termination. No guarantee covers arbitrary
+simultaneous parent/worker death. Token registration is separate from payload
+ownership.
+
+This core preparation does not change the native pin. The current published
+`v0.8.0-1` runtime has no owner API and retains the creation-time gap described
+below. Capability resolution is all-or-nothing, so absent/partial/unsupported
+owner APIs use the existing path rather than mixing ownership protocols.
+Native publication, repinning and exact-artifact qualification remain separate.
+
+Raw allocation-to-registration gaps remain under
+[#629](https://github.com/leehack/llamadart/issues/629): token buffers, sampler
+children/chain transfers, decision-head backend/buffer/scheduler and unheld ggml
+contexts, LoRA and temporary allocations. Adoption of a held object preserves
+cleanup order but does not make its earlier allocation kill-safe. This is a
+bounded repair for [#1403](https://github.com/leehack/llamadart/issues/1403), not
+universal allocation reclamation.
+
+The local-only `llama_cpp_owner_creation_e2e_test.dart` uses a compiled test-only
+FFI gate after real model/context creators return. It queues a real worker kill
+before letting FFI return, checks no Dart result handling occurs, and checks
+both parent-assisted drain and separate-isolate-group finalization. Set
+`OWNER_TEST_LIBRARY`, `OWNER_TEST_GATE` and `OWNER_TEST_MODEL` to the exact local
+wrapper, its `llamadart_owner_creation_gate` library and a cached GGUF. Run the
+existing forced-exit suite too, including early/middle/late load kills on the
+closest failing model, idle/generating kills and ordinary disposal controls.
+Record library/model hashes and actual GPU metrics. Build hooks can replace a
+manually copied candidate: use a local-bundle override or a direct pinned VM
+package:test launcher with the prepared native-assets mapping, and verify the
+library hash before and after each run.
+
 ## Forced worker exit
 
 `Isolate.kill` on a llama.cpp worker
@@ -234,8 +289,8 @@ generation, at the `session` stage, so they go before their context. The
 batch is one `malloc` block (`token_batch.dart`) because `llama_batch_free`
 takes the batch by value, which a native finalizer cannot call.
 
-The process keeps running, so an object a native call was still creating
-stays allocated until the process exits. The kill takes effect when the call
+On runtimes without owner API v1, the process keeps running, so an object a
+native call was still creating stays allocated until the process exits. The kill takes effect when the call
 returns, before the isolate holds the object, so it stays tracked: teardown
 frees it at C `exit` on Apple platforms, and nothing frees it elsewhere.
 When the object is a context, the isolate still frees its model, and the
