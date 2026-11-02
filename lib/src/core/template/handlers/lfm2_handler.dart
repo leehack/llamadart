@@ -231,6 +231,7 @@ class Lfm2Handler extends ChatTemplateHandler
     const opening = '<|tool_call_start|>';
     const closing = '<|tool_call_end|>';
     final toolCalls = <LlamaCompletionChunkToolCall>[];
+    final partialToolCalls = <LlamaCompletionChunkToolCall>[];
     final content = StringBuffer();
     final initialThought = _initialThoughtState(
       output,
@@ -267,6 +268,9 @@ class Lfm2Handler extends ChatTemplateHandler
       if (firstEnd == -1 ||
           isPartial && _toolCallEnd(output, payloadStart) == null) {
         if (isPartial) {
+          partialToolCalls.addAll(
+            _unfinishedCalls(output.substring(payloadStart), toolCalls.length),
+          );
           content.write(prefix);
           from = output.length;
         }
@@ -304,7 +308,171 @@ class Lfm2Handler extends ChatTemplateHandler
           : thinking.content.trim(),
       reasoningContent: thinking.reasoning,
       toolCalls: toolCalls,
+      partialToolCalls: partialToolCalls,
     );
+  }
+
+  // Read only the named-call boundary; incomplete arguments remain raw text.
+  // This does not validate schemas, repair syntax or create executable calls.
+  List<LlamaCompletionChunkToolCall> _unfinishedCalls(String text, int index) {
+    final calls = <LlamaCompletionChunkToolCall>[];
+    var at = 0;
+    var position = index;
+    void space() {
+      while (at < text.length && ' \t\r\n'.contains(text[at])) {
+        at++;
+      }
+    }
+
+    space();
+    if (at < text.length && text[at] == '[') {
+      at++;
+    }
+    while (at < text.length) {
+      space();
+      if (at == text.length || text[at] == ']') break;
+      String? name;
+      String? arguments;
+      String? id;
+      int opening;
+      if (text[at] == '{') {
+        opening = at;
+        final end = _diagnosticContainerEnd(text, opening);
+        if (end == null) return const [];
+        final fields = _diagnosticJsonFields(text.substring(opening, end.end));
+        name = fields.name;
+        arguments = fields.arguments;
+        id = fields.id;
+        at = end.end;
+      } else {
+        final match = RegExp(
+          r'([A-Za-z_][A-Za-z0-9_.-]*)\s*\(',
+        ).matchAsPrefix(text, at);
+        if (match == null) break;
+        name = match[1];
+        opening = match.end - 1;
+        final end = _diagnosticContainerEnd(text, opening);
+        if (end == null) return const [];
+        arguments = text.substring(
+          opening + 1,
+          end.closed ? end.end - 1 : end.end,
+        );
+        at = end.end;
+      }
+      if (name != null && name.isNotEmpty && arguments != null) {
+        calls.add(
+          LlamaCompletionChunkToolCall(
+            index: position,
+            id: id,
+            type: 'function',
+            function: LlamaCompletionChunkFunction(
+              name: name,
+              arguments: arguments,
+            ),
+          ),
+        );
+      }
+      position++;
+      space();
+      if (at == text.length || text[at] != ',') break;
+      at++;
+    }
+    return calls;
+  }
+
+  // Returns EOF for an unfinished container, without inventing its closer.
+  ({int end, bool closed})? _diagnosticContainerEnd(String text, int start) {
+    final closers = <String>[];
+    String? quote;
+    for (var i = start; i < text.length; i++) {
+      final char = text[i];
+      if (quote != null) {
+        if (char == r'\') {
+          i++;
+        } else if (char == quote) {
+          quote = null;
+        }
+      } else if (char == '"' || char == "'") {
+        quote = char;
+      } else if ('([{'.contains(char)) {
+        closers.add({'(': ')', '[': ']', '{': '}'}[char]!);
+      } else if (')]}'.contains(char)) {
+        if (closers.isEmpty || closers.removeLast() != char) return null;
+        if (closers.isEmpty) return (end: i + 1, closed: true);
+      }
+    }
+    return (end: text.length, closed: false);
+  }
+
+  ({String? name, String? arguments, String? id}) _diagnosticJsonFields(
+    String text, {
+    bool nested = false,
+  }) {
+    String? name;
+    String? arguments;
+    String? id;
+    var at = 1;
+    final keyPattern = RegExp(r'\s*("(?:[^"\\]|\\.)*")\s*:');
+    while (at < text.length) {
+      final key = keyPattern.matchAsPrefix(text, at);
+      if (key == null) break;
+      final String field;
+      try {
+        field = jsonDecode(key[1]!) as String;
+      } on FormatException {
+        break;
+      }
+      final start = key.end;
+      var end = start;
+      final closers = <String>[];
+      String? quote;
+      for (; end < text.length; end++) {
+        final char = text[end];
+        if (quote != null) {
+          if (char == r'\') {
+            end++;
+          } else if (char == quote) {
+            quote = null;
+          }
+        } else if (char == '"') {
+          quote = char;
+        } else if ('[{'.contains(char)) {
+          closers.add(char == '[' ? ']' : '}');
+        } else if (closers.isNotEmpty && char == closers.last) {
+          closers.removeLast();
+        } else if (closers.isEmpty && (char == ',' || char == '}')) {
+          break;
+        }
+      }
+      // A trailing escape may advance beyond EOF; preserve its exact bytes.
+      end = end.clamp(start, text.length);
+      final value = text.substring(start, end);
+      if (field == 'arguments') {
+        arguments = value;
+      } else if (field == 'function' &&
+          !nested &&
+          value.trimLeft().startsWith('{')) {
+        final function = _diagnosticJsonFields(value.trimLeft(), nested: true);
+        name = function.name;
+        arguments = function.arguments;
+      } else if (field == 'name' || field == 'id') {
+        try {
+          final decoded = jsonDecode(value);
+          if (decoded is String) {
+            if (field == 'name') {
+              name = decoded;
+            } else {
+              id = decoded;
+            }
+          }
+        } on FormatException {
+          /* An unfinished name is not a call. */
+        }
+      }
+      if (end == text.length || text[end] != ',') break;
+      at = end + 1;
+    }
+    return (name: name, arguments: arguments, id: id);
   }
 
   ({int end, List<LlamaCompletionChunkToolCall>? calls}) _parseEnclosedCalls(

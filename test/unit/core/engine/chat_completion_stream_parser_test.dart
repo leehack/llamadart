@@ -3844,7 +3844,7 @@ Future<void> _expectStreamMatchesParse(
   bool thinkingForcedClosed = false,
   bool everySplit = false,
 }) async {
-  final parsed = parseRenderedOutput(
+  var parsed = parseRenderedOutput(
     format.index,
     output,
     parseToolCalls: tools,
@@ -3855,6 +3855,20 @@ Future<void> _expectStreamMatchesParse(
     parser: parser,
     tools: tools ? [_weatherTool] : null,
   );
+  if (atLimit && !cancelled && tools && format == ChatFormat.lfm2) {
+    final partial = parseRenderedOutput(
+      format.index,
+      output,
+      isPartial: true,
+      parseToolCalls: true,
+      thinkingForcedOpen: forcedOpen,
+      thoughtClosedForThinkingOff: thoughtClosed,
+      thinkingForcedClosed: thinkingForcedClosed,
+      parser: parser,
+      tools: [_weatherTool],
+    );
+    if (partial.partialToolCalls.isNotEmpty) parsed = partial;
+  }
   for (final tokens in [
     ..._chunkings(output, openings),
     if (everySplit)
