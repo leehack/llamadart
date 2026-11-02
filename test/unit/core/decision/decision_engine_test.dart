@@ -12,6 +12,7 @@ import 'package:llamadart/src/core/decision/decision_engine.dart';
 import 'package:test/test.dart';
 
 import '../../../support/decision_fixture.dart';
+import '../../../support/engine_lifecycle_contract.dart';
 
 const _headHandle = 7;
 const _headPath = 'laya-head.safetensors';
@@ -621,6 +622,15 @@ void main() {
   });
 
   group('lifecycle', () {
+    test('generic lifecycle ownership frees an attached head once', () async {
+      final decisions = await loadDecisions();
+      final before = await checkEngineLifecycle(decisions);
+      expect(before.isSupported, isTrue);
+      expect(backend.freed, [_headHandle]);
+      expect(engine.isReady, isTrue);
+      expect(engine.isDisposed, isFalse);
+    });
+
     test('dispose is idempotent and frees the head once', () async {
       final decisions = await loadDecisions();
 

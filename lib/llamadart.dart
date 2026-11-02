@@ -44,6 +44,7 @@ export 'src/core/diagnostics/runtime_setup_report.dart'
 export 'src/core/engine/engine.dart'
     show LlamaEngine, LlamaEngineCompletionExtension;
 export 'src/core/engine/engine_capabilities.dart';
+export 'src/core/engine/llamadart_engine.dart';
 export 'src/core/engine/engine_observer.dart';
 export 'src/core/engine/load_check_report.dart'
     show LlamaLoadCheckReport, LlamaLoadCheckStatus;

@@ -3,6 +3,7 @@ import 'dart:math';
 
 import '../../backends/stable_diffusion/stable_diffusion_runtime_status.dart';
 import '../engine/engine_capabilities.dart';
+import '../engine/llamadart_engine.dart';
 import '../exceptions.dart';
 import '../llama_logger.dart';
 import '../models/config/compute_device.dart';
@@ -231,7 +232,8 @@ class ImageGenerationTask {
 ///   await engine.dispose();
 /// }
 /// ```
-class ImageGenerationEngine {
+class ImageGenerationEngine
+    implements LlamadartEngine<ImageGenerationCapabilities> {
   static Object? _activeOperation;
   static Future<StableDiffusionRuntimeStatus>? _runningProbe;
   static final Random _seedRandom = Random();
@@ -789,6 +791,7 @@ class ImageGenerationEngine {
   ///
   /// It changes only when the engine is disposed, so a Flutter app can read
   /// it once after [load] and keep it in its state.
+  @override
   Future<ImageGenerationCapabilities> get capabilities async {
     if (_disposal != null) {
       return const ImageGenerationCapabilities(
@@ -830,6 +833,7 @@ class ImageGenerationEngine {
   }
 
   /// Whether [dispose] has been called.
+  @override
   bool get isDisposed => _disposal != null;
 
   /// Starts generating the images [request] describes and returns the
@@ -1047,6 +1051,7 @@ class ImageGenerationEngine {
 
   /// Cancels a running generation, waits for it to stop, and frees the
   /// model. Calling this more than once is safe.
+  @override
   Future<void> dispose() => _disposal ??= _dispose();
 
   Future<void> _dispose() async {

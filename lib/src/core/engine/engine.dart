@@ -8,6 +8,7 @@ import 'chat_completion_request_planner.dart';
 import 'chat_completion_stream_parser.dart';
 import 'chat_template_renderer.dart';
 import 'engine_capabilities.dart';
+import 'llamadart_engine.dart';
 import 'engine_observation.dart';
 import 'engine_observer.dart';
 import 'generation_cancellation.dart';
@@ -86,7 +87,7 @@ import '../url_redaction.dart';
 /// messages.add(LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'Follow up?'));
 /// final followUp = await engine.create(messages).text();
 /// ```
-class LlamaEngine {
+class LlamaEngine implements LlamadartEngine<LlamaEngineCapabilities> {
   /// The backend implementation used for inference.
   final LlamaBackend backend;
 
@@ -237,6 +238,7 @@ class LlamaEngine {
   /// read; [LlamaEngineCapabilities.unsupportedReason] says which. Read it
   /// again after loading or unloading a model or multimodal projector.
   /// To check a model before loading it, use [checkLoad].
+  @override
   Future<LlamaEngineCapabilities> get capabilities async {
     const disposed = LlamaEngineCapabilities(
       isSupported: false,
@@ -1591,6 +1593,7 @@ class LlamaEngine {
   }
 
   /// Whether [dispose] has been called.
+  @override
   bool get isDisposed => _disposal != null;
 
   /// Waits for a model load or unload in progress, unloads the model, which
@@ -1611,6 +1614,7 @@ class LlamaEngine {
   /// [loadModelSource] or [loadMultimodalProjectorSource] stop, and their
   /// resolution or download work does not hold this call up, even when a
   /// custom resolver or manager ignores cancellation.
+  @override
   Future<void> dispose() {
     final existing = _disposal;
     if (existing != null) return existing;

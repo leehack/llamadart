@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import '../../backends/backend.dart';
 import '../engine/engine.dart';
 import '../engine/engine_capabilities.dart';
+import '../engine/llamadart_engine.dart';
 import '../exceptions.dart';
 import '../models/download/model_download_manager.dart';
 import '../models/inference/model_params.dart';
@@ -428,7 +429,7 @@ class TextToSpeechTask {
 ///   await synthesizer.dispose();
 /// }
 /// ```
-class TextToSpeechEngine {
+class TextToSpeechEngine implements LlamadartEngine<TextToSpeechCapabilities> {
   static const String _leaseOwner = 'text-to-speech';
 
   final LlamaEngine _engine;
@@ -562,10 +563,12 @@ class TextToSpeechEngine {
   };
 
   /// Whether [dispose] has been called.
+  @override
   bool get isDisposed => _disposal != null;
 
   /// Discovers synthesis support for the active runtime, model, and
   /// projector; unsupported once disposed.
+  @override
   Future<TextToSpeechCapabilities> get capabilities async {
     if (_disposal != null) {
       return const TextToSpeechCapabilities(
@@ -716,6 +719,7 @@ class TextToSpeechEngine {
   /// Cancels a running task, waits for it to stop, and disposes the
   /// [LlamaEngine] that [load] created. An engine passed to [attach] stays
   /// loaded. Calling this more than once is safe.
+  @override
   Future<void> dispose() => _disposal ??= _dispose();
 
   Future<void> _dispose() async {

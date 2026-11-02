@@ -12,6 +12,11 @@ For native cross-encoder reranking, run `dart run bin/llamadart_reranking_exampl
 <path/to/reranker.gguf>`. This CPU example loads local weights, probes RANK
 pooling and prints candidate documents by the native classifier score.
 
+For model-free lifecycle ownership across text and attached speech engines, run
+`dart run bin/llamadart_engine_lifecycle_example.dart`. It inspects unloaded
+capabilities and closes dependants before their underlying engine. No weights
+are loaded; normal Dart build hooks can still prepare native assets.
+
 ## Features
 
 - **Interactive Mode**: Have a back-and-forth conversation with an LLM in your terminal.

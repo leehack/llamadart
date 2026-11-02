@@ -12,6 +12,16 @@ llamadart runs local LLMs in Dart and Flutter: GGUF models through llama.cpp
 and `.litertlm` bundles through LiteRT-LM, on Android, iOS, macOS, Windows,
 Linux and web. Full docs: https://llamadart.leehack.com
 
+## Shared lifecycle
+
+All five engine types implement `LlamadartEngine<C extends EngineCapabilities>`.
+Use `List<LlamadartEngine<EngineCapabilities>>` for mixed engine ownership, or
+retain a concrete capability type for its fields. Await `dispose()` in reverse
+dependency order: attached speech/decision engines before the text engine they
+borrow. `isDisposed` becomes true at the first disposal call; repeated calls
+share its future. Loading and inference use each concrete engine's API. The
+interface does not establish backend/model support; read `await engine.capabilities`.
+
 ## Guidelines
 
 - For a model-free macOS/Linux/Windows setup snapshot, use

@@ -13,6 +13,7 @@ const Set<String> behaviorlessSources = <String>{
   'backends/llama_cpp/native_signatures.dart',
   'backends/webgpu/interop.dart',
   'core/decision/decision_model.dart',
+  'core/engine/llamadart_engine.dart',
   'core/image/image_generation_driver.dart',
   'core/image/image_generation_model.dart',
   'core/image/image_model_params.dart',

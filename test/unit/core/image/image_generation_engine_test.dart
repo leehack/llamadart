@@ -12,6 +12,7 @@ import '../../../support/legacy_image_model_params.dart';
 import '../../../support/legacy_image_generation_request.dart';
 import '../../../support/legacy_image_generation_engine.dart';
 import '../../../support/image_model_headers.dart';
+import '../../../support/engine_lifecycle_contract.dart';
 
 const _model = '/models/sd-turbo.gguf';
 const _taesd = '/models/taesd.safetensors';
@@ -100,6 +101,12 @@ void main() {
     }
     engines.clear();
     debugImageGenerationDriverOverride = null;
+  });
+
+  test('generic lifecycle ownership disposes a loaded image engine', () async {
+    final engine = await load(_sdxs());
+    final before = await checkEngineLifecycle(engine);
+    expect(before.isSupported, isTrue);
   });
 
   group('FP8 Metal safety', () {
