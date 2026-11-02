@@ -60,6 +60,15 @@ final class LiteRtLmV1Conversation {
         'C API 1.0 conversation requires owner stream proxy callback ABI 2; detected $abi.',
       );
     }
+    final allocationAbi = library
+        .lookupFunction<Int32 Function(), int Function()>(
+          'stream_proxy_allocation_failure_abi_version',
+        )();
+    if (allocationAbi != 1) {
+      throw LlamaUnsupportedException(
+        'C API 1.0 conversation requires owner stream proxy allocation-failure ABI 1; detected $allocationAbi.',
+      );
+    }
     Pointer<Void> sessionConfig = nullptr, sampler = nullptr, config = nullptr;
     try {
       sessionConfig = _runtime._create(
@@ -105,6 +114,8 @@ final class LiteRtLmV1Conversation {
 
   static const _symbols = <String>[
     'stream_proxy_callback_abi_version',
+    'stream_proxy_allocation_failure_abi_version',
+    'stream_proxy_has_allocation_failure',
     'stream_proxy_create',
     'stream_proxy_delete',
     'stream_proxy_free_string',
@@ -159,6 +170,11 @@ final class LiteRtLmV1Conversation {
   );
   late final _proxyCreate = _runtime._library
       .lookupFunction<_ProxyCreateN, _ProxyCreateD>('stream_proxy_create');
+  late final _proxyHasAllocationFailure = _runtime._library
+      .lookupFunction<
+        Int32 Function(Pointer<Void>),
+        int Function(Pointer<Void>)
+      >('stream_proxy_has_allocation_failure');
   late final _proxyDelete = _runtime._library
       .lookupFunction<_DeleteN, _DeleteD>('stream_proxy_delete');
   late final _freeString = _runtime._library
@@ -215,6 +231,22 @@ final class LiteRtLmV1Conversation {
   }
 }
 
+/// A drained internal turn whose proxy could not copy all callback data.
+///
+/// Native callbacks are settled, but the child conversation is discarded because
+/// its output/history cannot be trusted. The finish reason remains the actual
+/// native terminal cause; allocation loss never converts cancellation into success.
+final class LiteRtLmV1CopyLossException extends LlamaModelException {
+  LiteRtLmV1CopyLossException._(this.finishReason, this.streamFailure)
+    : super('C API 1.0 stream proxy lost callback data during allocation.');
+
+  /// Independently observed native terminal cause, or unknown without its ABI.
+  final LiteRtLmFinishReason finishReason;
+
+  /// Any copied stream failure, already sanitized before native storage is freed.
+  final LlamaModelException? streamFailure;
+}
+
 /// An owned internal streaming turn. Strings are copied before native return.
 final class LiteRtLmV1Turn {
   LiteRtLmV1Turn._(this._conversation) {
@@ -229,7 +261,7 @@ final class LiteRtLmV1Turn {
   Pointer<Utf8> _message = nullptr;
   bool _cancelled = false;
   bool _finished = false;
-  Object? _error;
+  LlamaModelException? _error;
   bool _errorIsCancellation = false;
 
   /// Copied raw message JSON chunks; no borrowed native pointer escapes.
@@ -349,9 +381,13 @@ final class LiteRtLmV1Turn {
         >('stream_proxy_get_finish_reason')(_proxy),
       );
     }
-    // A copied canonical cancellation error is normal only when the native
-    // finish-reason extension independently confirms cancellation.
-    if (_errorIsCancellation && reason == LiteRtLmFinishReason.cancelled) {
+    // The sticky allocation-free status is readable only while the proxy is
+    // alive, after final+drain. A clean final must not hide an earlier lost copy.
+    if (_conversation._proxyHasAllocationFailure(_proxy) != 0) {
+      _error = LiteRtLmV1CopyLossException._(reason, _error);
+    } else if (_errorIsCancellation &&
+        reason == LiteRtLmFinishReason.cancelled) {
+      // Canonical cancellation is normal only with an independent native cause.
       _error = null;
     }
     if (reason == LiteRtLmFinishReason.error && _error == null) {

@@ -318,9 +318,19 @@ This transport preparation does not select C API 1 publicly. The owner proxy's
 callback ABI 2 and finish-reason ABI 1 alone do not establish lossless callback
 delivery under allocation failure. Owner
 [issue #97](https://github.com/leehack/litert-lm-native/issues/97) defines the
-separate allocation-failure status contract; its immutable artifact and consumer
-admission/readback remain adoption gates alongside ASR, media, tools, schema and
-embedding migration. The ASR bridge has its own versioned ABI, but its current
+separate allocation-failure status contract. The internal conversation adapter
+requires both status exports and exactly allocation-failure ABI 1 before child
+or proxy allocation. After the actual final callback and successful drain, it
+reads the sticky status while the proxy is alive. Copy loss rejects the turn
+with its actual native finish reason, discards the child, and leaves the parent
+settled for a fresh child. Even native cancellation cannot normalize copy loss
+into success. Failed drain retains the entire native family without reading the
+status or freeing the proxy.
+
+This is fixture-backed consumer preparation for
+[owner PR #98](https://github.com/leehack/litert-lm-native/pull/98), not adoption
+of an immutable owner artifact. Owner source/release qualification and ASR,
+media, tools, schema and embedding migration remain public adoption gates. The ASR bridge has its own versioned ABI, but its current
 Dart loader still passes through the legacy C API refusal.
 
 Use this checklist in native sync PRs:

@@ -2,9 +2,13 @@
 #include <assert.h>
 #include <stdint.h>
 #include <pthread.h>
+#include <stdatomic.h>
 
 #ifndef PROXY_ABI
 #define PROXY_ABI 2
+#endif
+#ifndef ALLOCATION_FAILURE_ABI
+#define ALLOCATION_FAILURE_ABI 1
 #endif
 #ifndef FINISH_ABI
 #define FINISH_ABI 1
@@ -15,16 +19,23 @@ typedef struct {
   owned_callback callback;
   void *data;
   int reason;
+  atomic_int allocation_failure;
+  bool started, final_seen, loss_read;
 } proxy;
 typedef struct { const char *text, *error; bool final; } borrowed_chunk;
 typedef void (*chunk_callback)(void *, const borrowed_chunk *);
 static int copies, proxies, created, deleted, waits, cancels, sends;
+static int failed_copies, loss_reads, copy_index, fail_copy_mask, proxy_allocations;
 static bool active, drained, cancelled;
 static chunk_callback receiver;
 static void *receiver_data;
 
 int fixture_copies(void) { return copies; }
+int fixture_failed_copies(void) { return failed_copies; }
+int fixture_loss_reads(void) { return loss_reads; }
+void fixture_fail_copies(int mask) { fail_copy_mask = mask; copy_index = 0; }
 int fixture_proxies(void) { return proxies; }
+int fixture_proxy_allocations(void) { return proxy_allocations; }
 int fixture_created(void) { return created; }
 int fixture_deleted(void) { return deleted; }
 int fixture_waits(void) { return waits; }
@@ -37,28 +48,49 @@ int32_t stream_proxy_callback_abi_version(void) { return PROXY_ABI; }
 int32_t stream_proxy_finish_reason_abi_version(void) { return FINISH_ABI; }
 #endif
 int32_t stream_proxy_get_finish_reason(void *data) { return ((proxy *)data)->reason; }
+#ifndef OMIT_ALLOCATION_FAILURE_MARKER
+int32_t stream_proxy_allocation_failure_abi_version(void) { return ALLOCATION_FAILURE_ABI; }
+#endif
+#ifndef OMIT_ALLOCATION_FAILURE_GETTER
+int32_t stream_proxy_has_allocation_failure(const void *data) {
+  if (!data) return 1;
+  assert(drained && !active && ((const proxy *)data)->final_seen);
+  ((proxy *)data)->loss_read = true; ++loss_reads;
+  return atomic_load_explicit(&((const proxy *)data)->allocation_failure, memory_order_acquire);
+}
+#endif
 static char *copy_string(const char *text) {
   if (!text) return NULL;
+  if (fail_copy_mask & (1 << copy_index++)) { ++failed_copies; return NULL; }
   ++copies; return strdup(text);
 }
 static void forward(void *data, const borrowed_chunk *chunk) {
   proxy *context = data;
-  if (chunk->final) context->reason = cancelled ? 4 : chunk->error ? 5 : 1;
-  context->callback(context->data, copy_string(chunk->text), chunk->final, copy_string(chunk->error));
+  if (chunk->final) { context->final_seen = true; context->reason = cancelled ? 4 : chunk->error ? 5 : 1; }
+  // Text then error matches the owner proxy; each bit injects one copy loss.
+  char *text = copy_string(chunk->text);
+  char *error = copy_string(chunk->error);
+  if ((chunk->text && !text) || (chunk->error && !error)) {
+    atomic_store_explicit(&context->allocation_failure, 1, memory_order_release);
+  }
+  context->callback(context->data, text, chunk->final, error);
 }
 #ifndef OMIT_PROXY_CREATE
 void *stream_proxy_create(owned_callback callback, void *data, chunk_callback *out) {
   if (failure == 16) { *out = NULL; return NULL; }
   proxy *context = calloc(1, sizeof *context);
+  atomic_init(&context->allocation_failure, 0);
   context->callback = callback; context->data = data; *out = forward;
-  ++proxies; return context;
+  ++proxies; ++proxy_allocations; return context;
 }
 #endif
 void stream_proxy_free_string(char *text) {
   if (text) { memset(text, 0xCC, strlen(text)); free(text); --copies; }
 }
 void stream_proxy_delete(void *data) {
-  assert(!active || drained); free(data); --proxies;
+  assert(!active || drained);
+  assert(!((proxy *)data)->started || ((proxy *)data)->loss_read);
+  free(data); --proxies;
 }
 int litert_lm_conversation_config_create(void **out) { return create(13, out); }
 void litert_lm_conversation_config_delete(void *config) { drop(config); }
@@ -80,6 +112,7 @@ int litert_lm_conversation_send_message_stream(void *conversation, const char *m
   assert(!active && !cancelled);
   ++sends;
   if (failure == 17) return 13;
+  ((proxy *)data)->started = true;
   receiver = callback; receiver_data = data; drained = false; active = true;
   return 0;
 }
@@ -98,12 +131,12 @@ static void *emit(void *argument) {
   int kind = *(int *)argument;
   char text[] = "borrowed UTF8 世界";
   char error[160] = "callback failure /secret/models/m.litertlm https://user:secret@example.test/model?token=secret";
-  if (kind == 3) strcpy(error, "CANCELLED: stream stopped");
+  if (kind == 3 || kind == 8) strcpy(error, "CANCELLED: stream stopped");
   if (kind == 6) text[0] = (char)0xff;
   borrowed_chunk chunk = {
-    .text = kind == 0 || kind == 4 || kind == 6 ? text : NULL,
-    .error = kind == 1 || kind == 3 || kind == 4 ? error : NULL,
-    .final = kind >= 2,
+    .text = kind == 0 || kind == 4 || kind == 6 || kind == 7 || kind == 8 || kind == 9 ? text : NULL,
+    .error = kind == 1 || kind == 3 || kind == 4 || kind == 7 || kind == 8 ? error : NULL,
+    .final = kind >= 2 && kind != 7,
   };
   receiver(receiver_data, &chunk);
   memset(text, 'X', sizeof text - 1);

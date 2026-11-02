@@ -23,13 +23,21 @@ Future<void> main(List<String> args) async {
       if (error is! LlamaModelException) throw error;
     },
   );
+  final reads = count('loss_reads');
+  call('fail_copies', 3);
   call('fail', 19);
-  call('emit', 2);
+  call('emit', 4);
   await failure;
   if (runtime.nativeSettlement != LiteRtLmNativeSettlement.quarantined ||
       conversation.nativeSettlement != LiteRtLmNativeSettlement.quarantined) {
     throw StateError('failed drain did not expose native quarantine');
   }
+  if (count('loss_reads') != reads || count('failed_copies') != 2) {
+    throw StateError(
+      'failed drain read loss status or missed injected copy loss',
+    );
+  }
+  call('fail_copies', 0);
   for (final operation in <void Function()>[
     conversation.close,
     () => conversation.sendText('reuse'),
@@ -51,7 +59,8 @@ Future<void> main(List<String> args) async {
   if (count('live') != 2 ||
       count('proxies') != 1 ||
       count('copies') != 0 ||
-      count('deleted') != 0) {
+      count('deleted') != 0 ||
+      count('loss_reads') != reads) {
     throw StateError('quarantine lifetime counters failed');
   }
   stdout.writeln('quarantine controls passed');
