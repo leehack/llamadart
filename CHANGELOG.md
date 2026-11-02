@@ -1,5 +1,7 @@
 ## Unreleased
 
+- Manage text, decision, image and speech engine lifecycles through `LlamadartEngine<C>` with typed capabilities and reentrant-safe final disposal.
+
 ## 0.17.5
 
 * Preserve quoted LFM2/LFM2.5 tool-end markers inside tool arguments during parsing and streaming.

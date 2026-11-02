@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import '../../backends/backend.dart';
 import '../engine/engine.dart';
 import '../engine/engine_capabilities.dart';
+import '../engine/llamadart_engine.dart';
 import '../engine/engine_observer.dart';
 import '../exceptions.dart';
 import '../models/config/compute_device.dart';
@@ -134,7 +135,7 @@ class DecisionModelInfo {
 /// print(result.nouls['refund']!.noul);
 /// await decisions.dispose();
 /// ```
-class DecisionEngine {
+class DecisionEngine implements LlamadartEngine<DecisionCapabilities> {
   DecisionEngine._(
     this._engine,
     this._head,
@@ -496,6 +497,7 @@ class DecisionEngine {
   /// Unsupported once [dispose] has been called, and once the model it was
   /// loaded for is unloaded. On Web a bridge runtime restart, which frees the
   /// head, shows only when a call throws [LlamaStateException].
+  @override
   Future<DecisionCapabilities> get capabilities async {
     DecisionCapabilities? unavailable() => isDisposed
         ? const DecisionCapabilities(
@@ -523,6 +525,7 @@ class DecisionEngine {
   final DecisionModelInfo info;
 
   /// Whether [dispose] has been called.
+  @override
   bool get isDisposed => _disposal != null;
 
   /// Answers each question about [state] in one fast encoder pass per
@@ -569,7 +572,17 @@ class DecisionEngine {
   ///
   /// Idempotent. Calls made after it throw [LlamaStateException]. An engine
   /// passed to [attach] stays loaded.
-  Future<void> dispose() => _disposal ??= _dispose();
+  @override
+  Future<void> dispose() {
+    final existing = _disposal;
+    if (existing != null) return existing;
+
+    // Cleanup hooks can reenter before an async body's first suspension.
+    final disposal = Completer<void>();
+    _disposal = disposal.future;
+    disposal.complete(_dispose());
+    return disposal.future;
+  }
 
   Future<void> _dispose() async {
     if (_activeCalls > 0) {

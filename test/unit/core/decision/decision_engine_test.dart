@@ -12,6 +12,7 @@ import 'package:llamadart/src/core/decision/decision_engine.dart';
 import 'package:test/test.dart';
 
 import '../../../support/decision_fixture.dart';
+import '../../../support/engine_lifecycle_contract.dart';
 
 const _headHandle = 7;
 const _headPath = 'laya-head.safetensors';
@@ -621,6 +622,48 @@ void main() {
   });
 
   group('lifecycle', () {
+    test('generic lifecycle ownership frees an attached head once', () async {
+      final decisions = await loadDecisions();
+      final before = await checkEngineLifecycle(decisions);
+      expect(before.isSupported, isTrue);
+      expect(backend.freed, [_headHandle]);
+      expect(engine.isReady, isTrue);
+      expect(engine.isDisposed, isFalse);
+    });
+
+    for (final fails in [false, true]) {
+      test(
+        'disposal publishes terminal state before head cleanup (fails=$fails)',
+        () async {
+          final decisions = await loadDecisions();
+          Future<void>? nested;
+          bool? stateInHook;
+          Future<DecisionCapabilities>? capsInHook;
+          final error = StateError('head cleanup');
+          backend.onHeadFree = () {
+            backend.onHeadFree = null;
+            stateInHook = decisions.isDisposed;
+            capsInHook = decisions.capabilities;
+            nested = decisions.dispose();
+          };
+          if (fails) backend.freeError = error;
+          final first = decisions.dispose();
+          if (fails) {
+            await expectLater(first, throwsA(same(error)));
+            await expectLater(nested, throwsA(same(error)));
+          } else {
+            await first;
+            await nested;
+          }
+          expect(stateInHook, isTrue);
+          expect(nested, same(first));
+          expect((await capsInHook!).isSupported, isFalse);
+          expect(decisions.dispose(), same(first));
+          expect(backend.freed, [_headHandle]);
+        },
+      );
+    }
+
     test('dispose is idempotent and frees the head once', () async {
       final decisions = await loadDecisions();
 
@@ -1710,6 +1753,8 @@ class _DecisionBackend
   final List<int> runHandles = [];
   final List<List<BackendDecisionSequence>> runs = [];
   final List<int> freed = [];
+  void Function()? onHeadFree;
+  Object? freeError;
   final List<(String, ModelParams)> modelLoads = [];
   final List<String> urlModelLoads = [];
   Object? headLoadError;
@@ -1854,7 +1899,9 @@ class _DecisionBackend
 
   @override
   Future<void> decisionHeadFree(int headHandle) async {
+    onHeadFree?.call();
     freed.add(headHandle);
+    if (freeError case final error?) throw error;
   }
 
   BackendDecisionOutput _outputFor(BackendDecisionSequence sequence) {

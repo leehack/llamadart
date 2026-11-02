@@ -12,6 +12,10 @@ extension or `ModelSource.format`
 ([How routing works](../guides/backend-selection#how-routing-works)). To choose backend modules or leave a
 runtime out of the app, see [Native runtime configuration](./native-build-hooks).
 
+All five public engine types share `LlamadartEngine<C extends EngineCapabilities>`
+for capability inspection and final disposal. This lifecycle interface does not
+change the runtime support below; see [engine ownership](../guides/model-lifecycle#shared-engine-ownership).
+
 ## At a glance
 
 Desktop source-CLI diagnostics can opt into

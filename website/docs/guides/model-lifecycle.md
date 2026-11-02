@@ -58,6 +58,45 @@ cancellation. Package-managed transfers stop at their next cancellation
 checkpoint. To free the model's memory and keep the engine, call
 `unloadModel()`; to load another model, call `setModel`.
 
+## Shared engine ownership
+
+`LlamaEngine`, `DecisionEngine`, `ImageGenerationEngine`, `SpeechToTextEngine`
+and `TextToSpeechEngine` implement
+`LlamadartEngine<C extends EngineCapabilities>`. An app can own different engine
+types through one lifecycle interface:
+
+```dart
+Future<void> closeEngines(
+  List<LlamadartEngine<EngineCapabilities>> engines,
+) async {
+  for (final engine in engines.reversed) {
+    await engine.dispose();
+  }
+}
+```
+
+Register an underlying engine before the engines attached to it so the reverse
+order closes dependants first. Attached engines retain their documented
+ownership rules; disposing an attached speech engine does not dispose the
+borrowed text engine. An engine created by a typed `load` factory owns the
+resources documented by that factory.
+
+The interface exposes `Future<C> capabilities`, `isDisposed` and `dispose()`.
+`isDisposed` becomes true when cleanup starts; repeated `dispose()` calls
+return the same future, including synchronous calls from cleanup hooks and
+when cleanup fails. A failed disposal stays terminal and is not retried. Await
+it before releasing dependencies. Keep a concrete
+capability type, such as `LlamadartEngine<LlamaEngineCapabilities>`, when a
+consumer needs its specific fields. Loading, inference and task APIs stay on
+the concrete engines.
+
+This is an additive interface: existing constructors, subclasses and custom
+backends keep their existing methods. A custom engine implementing the new
+interface must meet its lifecycle contract. The interface adds no model,
+backend or platform support. The
+[model-free CLI example](https://github.com/leehack/llamadart/blob/main/example/basic_app/bin/llamadart_engine_lifecycle_example.dart)
+inspects unloaded text/speech engines and disposes them together.
+
 ### Exiting with a model loaded
 
 On macOS Metal, ggml aborts a process that exits with a model, context,

@@ -5,6 +5,7 @@ import '../../backends/backend.dart';
 import '../../backends/litert_lm/litert_lm_asr_types.dart';
 import '../engine/engine.dart';
 import '../engine/engine_capabilities.dart';
+import '../engine/llamadart_engine.dart';
 import '../exceptions.dart';
 import '../image/image_model_classifier.dart';
 import '../models/chat/chat_message.dart';
@@ -560,7 +561,7 @@ abstract interface class SpeechToTextStreamingSession {
 ///   await recognizer.dispose();
 /// }
 /// ```
-class SpeechToTextEngine {
+class SpeechToTextEngine implements LlamadartEngine<SpeechToTextCapabilities> {
   static const String _leaseOwner = 'speech-to-text';
   static const SpeechAudioFormat _liteRtLmPcmFormat = SpeechAudioFormat(
     sampleRateHz: 16000,
@@ -905,6 +906,7 @@ class SpeechToTextEngine {
       adapter as SpeechToTextPromptAdapter;
 
   /// Whether [dispose] has been called.
+  @override
   bool get isDisposed => _disposal != null;
 
   /// Discovers speech recognition support for the configured runtime and
@@ -917,6 +919,7 @@ class SpeechToTextEngine {
   /// that is unreadable or names no type) the model stays supported, and an
   /// empty transcript's [LlamaSpeechException.details] names a possible
   /// model mismatch.
+  @override
   Future<SpeechToTextCapabilities> get capabilities async {
     if (_disposal != null) {
       return const SpeechToTextCapabilities(
@@ -1177,7 +1180,17 @@ class SpeechToTextEngine {
   /// Cancels a running task or stream, waits for it to stop, and disposes
   /// the [LlamaEngine] that [load] created. An engine passed to [attach]
   /// stays loaded. Calling this more than once is safe.
-  Future<void> dispose() => _disposal ??= _dispose();
+  @override
+  Future<void> dispose() {
+    final existing = _disposal;
+    if (existing != null) return existing;
+
+    // Cleanup hooks can reenter before an async body's first suspension.
+    final disposal = Completer<void>();
+    _disposal = disposal.future;
+    disposal.complete(_dispose());
+    return disposal.future;
+  }
 
   Future<void> _dispose() async {
     final task = _activeTask;

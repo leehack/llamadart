@@ -22,6 +22,10 @@ for your application. Genkit is a
 the Flutter Edge AI connector is owned upstream and pins its own llamadart
 version.
 
+All five engine types implement `LlamadartEngine<C extends EngineCapabilities>`
+for shared capability inspection and disposal. Keep loading and requests on the
+concrete engine; see [shared lifecycle ownership](https://llamadart.leehack.com/docs/guides/model-lifecycle#shared-engine-ownership).
+
 ## Install
 
 ```yaml
