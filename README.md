@@ -9,7 +9,7 @@ through `llama.cpp` and `.litertlm` bundles through LiteRT-LM, on Android, iOS,
 macOS, Linux, Windows and the web, behind one Dart API. Web support is
 experimental. Native targets need no network once the model is on the device.
 
-- Streaming chat and text generation, with structured JSON output.
+- Streaming chat and text generation, with structured JSON output and cancellable task handles.
 - Tool calling driven by the model's chat template.
 - Embeddings, reranking, and image and audio input with multimodal models.
 - Speech to text, text to speech, and decision models.

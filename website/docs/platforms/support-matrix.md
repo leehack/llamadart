@@ -16,6 +16,10 @@ All five public engine types share `LlamadartEngine<C extends EngineCapabilities
 for capability inspection and final disposal. This lifecycle interface does not
 change the runtime support below; see [engine ownership](../guides/model-lifecycle#shared-engine-ownership).
 
+Eager `createTask` / `generateTask` handles wrap the same native and Web text
+paths, with request-scoped subscription cancellation and observable terminal
+outcomes. They add no model/backend capability; see [task ownership](../guides/generation-and-streaming#eager-task-handles).
+
 ## At a glance
 
 Desktop source-CLI diagnostics can opt into
