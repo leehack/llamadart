@@ -207,26 +207,39 @@ class Lfm2Handler extends ChatTemplateHandler {
       );
     }
 
+    const opening = '<|tool_call_start|>';
+    const closing = '<|tool_call_end|>';
     final toolCalls = <LlamaCompletionChunkToolCall>[];
-    var contentText = output;
-
-    // LFM2 format:
-    // <|tool_call_start|>[{"name":"fn","arguments":{...}}]<|tool_call_end|>
-    final toolCallRegex = RegExp(
-      r'<\|tool_call_start\|>\s*(.*?)\s*<\|tool_call_end\|>',
-      dotAll: true,
-    );
-
-    final matches = toolCallRegex.allMatches(output);
-    for (var i = 0; i < matches.length; i++) {
-      final match = matches.elementAt(i);
-      final payload = match.group(1)!;
-      final parsedCalls = _parseCallList(payload, startIndex: toolCalls.length);
+    final content = StringBuffer();
+    var from = 0;
+    while (true) {
+      final start = output.indexOf(opening, from);
+      if (start == -1) break;
+      final payloadStart = start + opening.length;
+      final firstEnd = output.indexOf(closing, payloadStart);
+      if (firstEnd == -1) break;
+      var end = _toolCallEnd(output, payloadStart, firstEnd);
+      var parsedCalls = _parseCallList(
+        output.substring(payloadStart, end).trim(),
+        startIndex: toolCalls.length,
+      );
+      // Only extend a legacy envelope when it contains a complete call list.
+      // Otherwise an unmatched quote could consume a later call or prose.
+      if (end != firstEnd && parsedCalls == null) {
+        end = firstEnd;
+        parsedCalls = _parseCallList(
+          output.substring(payloadStart, end).trim(),
+          startIndex: toolCalls.length,
+        );
+      }
       if (parsedCalls != null) {
         toolCalls.addAll(parsedCalls);
       }
-      contentText = contentText.replaceAll(match.group(0)!, '');
+      content.write(output.substring(from, start));
+      from = end + closing.length;
     }
+    content.write(output.substring(from));
+    final contentText = content.toString();
 
     final thinking = extractThinking(
       contentText,
@@ -238,6 +251,26 @@ class Lfm2Handler extends ChatTemplateHandler {
       reasoningContent: thinking.reasoning,
       toolCalls: toolCalls,
     );
+  }
+
+  int _toolCallEnd(String output, int from, int firstEnd) {
+    int? quote;
+    for (var i = from; i < output.length; i++) {
+      final codeUnit = output.codeUnitAt(i);
+      if (quote != null) {
+        if (codeUnit == 0x5c) {
+          i++;
+        } else if (codeUnit == quote) {
+          quote = null;
+        }
+      } else if (codeUnit == 0x22 || codeUnit == 0x27) {
+        quote = codeUnit;
+      } else if (output.startsWith('<|tool_call_end|>', i)) {
+        return i;
+      }
+    }
+    // Preserve the existing malformed/unclosed-quote handling.
+    return firstEnd;
   }
 
   @override
