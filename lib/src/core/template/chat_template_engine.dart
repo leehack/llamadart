@@ -812,6 +812,9 @@ class ChatTemplateEngine {
         output: output,
         isPartial: isPartial,
         parseToolCalls: parseToolCalls,
+        accumulateContent: chatFormatRegistration(
+          format,
+        ).traits.hasRepeatedContentChannels,
       );
       // Preserve strict required-tool failures and tool-call fallback parsing.
       // Only a terminal thought without a tool marker needs upstream leniency.

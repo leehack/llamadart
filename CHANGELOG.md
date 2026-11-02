@@ -1,5 +1,7 @@
 ## Unreleased
 
+- Preserve Solar Open text across repeated content channels in parsed and streamed replies.
+
 ## 0.17.4
 
 * Restore documentation destinations linked from published package READMEs and protect retained release notes.

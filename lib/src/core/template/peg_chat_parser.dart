@@ -39,6 +39,9 @@ class PegChatParser {
 
   /// Parses [output] with a serialized [parser] definition.
   ///
+  /// [accumulateContent] joins native PEG content fragments before trimming the
+  /// final edge. Formats without repeated channels retain their existing mapper.
+  ///
   /// Throws [LlamaInferenceException] when [output] does not match [parser].
   static ChatParseResult parse({
     required String parser,
@@ -46,6 +49,7 @@ class PegChatParser {
     required String output,
     bool isPartial = false,
     bool parseToolCalls = true,
+    bool accumulateContent = false,
   }) {
     if (parser.trim().isEmpty) {
       throw StateError('Missing PEG parser definition.');
@@ -68,7 +72,10 @@ class PegChatParser {
 
     final message = _PegChatMessage();
     final mapper = switch (format) {
-      ChatFormat.pegNative => _PegNativeMapper(message),
+      ChatFormat.pegNative => _PegNativeMapper(
+        message,
+        accumulateContent: accumulateContent,
+      ),
       ChatFormat.pegConstructed => _PegConstructedMapper(message),
       _ => _PegBaseMapper(message),
     };
@@ -93,7 +100,9 @@ class PegChatParser {
         : const <LlamaCompletionChunkToolCall>[];
 
     return ChatParseResult(
-      content: message.content,
+      content: accumulateContent
+          ? _trimTrailingWhitespace(message.content)
+          : message.content,
       reasoningContent: message.reasoningContent.isEmpty
           ? null
           : message.reasoningContent,
@@ -115,9 +124,10 @@ class _PegToolCall {
 }
 
 class _PegBaseMapper {
-  _PegBaseMapper(this.message);
+  _PegBaseMapper(this.message, {this.accumulateContent = false});
 
   final _PegChatMessage message;
+  final bool accumulateContent;
 
   void fromAst(_PegAstArena arena, _PegParseResult result) {
     arena.visitResult(result, map);
@@ -129,13 +139,17 @@ class _PegBaseMapper {
       return;
     }
     if (node.tag == ChatPegBuilder.contentTag) {
-      message.content = _trimTrailingWhitespace(node.text);
+      if (accumulateContent) {
+        message.content += node.text;
+      } else {
+        message.content = _trimTrailingWhitespace(node.text);
+      }
     }
   }
 }
 
 class _PegNativeMapper extends _PegBaseMapper {
-  _PegNativeMapper(super.message);
+  _PegNativeMapper(super.message, {super.accumulateContent});
 
   _PegToolCall? _currentTool;
 

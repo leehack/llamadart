@@ -182,6 +182,10 @@ if (reply.toolCalls.isNotEmpty) {
   before the next call.
 - Cap the rounds: a model can keep calling tools.
 
+Solar Open replies may contain several content-channel segments. Parsed and
+streamed completions preserve each accepted segment and the whitespace between
+them, while removing the channel framing.
+
 `LlamaToolResultContent.result` may be any JSON-compatible value. Non-string
 results are JSON-encoded into the prompt; strings pass through unchanged. A
 message with several results is rendered as one tool message per result.
