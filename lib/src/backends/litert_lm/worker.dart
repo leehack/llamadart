@@ -37,48 +37,97 @@ void runLiteRtLmWorkerForTesting(
   var shuttingDown = false;
   var forwardsLogs = false;
 
+  LiteRtLmErrorResponse generationError(Object error) {
+    if (service.nativeSettlement != LiteRtLmNativeSettlement.settled) {
+      service.quarantineNativeResources();
+      shuttingDown = true;
+    }
+    return LiteRtLmErrorResponse.from(
+      error,
+      nativeSettlement: service.nativeSettlement,
+    );
+  }
+
+  LiteRtLmDoneResponse generationDone() {
+    if (service.nativeSettlement != LiteRtLmNativeSettlement.settled) {
+      throw StateError('LiteRT-LM stream ended before native settlement.');
+    }
+    return LiteRtLmDoneResponse(generationLimit: service.lastGenerationLimit);
+  }
+
   receivePort.listen((message) async {
     if (message is LiteRtLmDisposeRequest) {
       shuttingDown = true;
-      service.cancelGeneration();
+      if (service.nativeSettlement == LiteRtLmNativeSettlement.quarantined) {
+        message.sendPort.send(
+          LiteRtLmErrorResponse(
+            'LiteRT-LM native resources remain quarantined; restart the process.',
+            kind: 'state',
+            nativeSettlement: LiteRtLmNativeSettlement.quarantined,
+          ),
+        );
+        return;
+      }
+      try {
+        service.cancelGeneration();
+      } catch (_) {
+        // Cancellation can fail while the turn still drains successfully.
+        // Only the subsequent native settlement and cleanup decide disposal.
+      }
       var requestSettled = true;
       try {
         await activeRequest.timeout(disposeTimeout);
       } on TimeoutException {
-        // The in-flight native call (e.g. a blocking send_message) may still be
-        // executing. Deleting the engine/conversation now would be a
-        // use-after-free, so skip the native dispose and let the isolate/
-        // process teardown reclaim the (bounded) native memory instead.
         requestSettled = false;
       } catch (_) {
-        // Request errored but is settled; safe to dispose.
+        // The request result does not establish native callback settlement.
       }
-      Object? disposeError;
-      if (requestSettled) {
-        try {
-          service.dispose();
-        } catch (error) {
-          disposeError = error;
-        }
+      if (!requestSettled ||
+          service.nativeSettlement != LiteRtLmNativeSettlement.settled) {
+        service.quarantineNativeResources();
+        message.sendPort.send(
+          LiteRtLmErrorResponse(
+            'LiteRT-LM native operation has not settled; resources retained. '
+            'Restart the process before retrying this runtime.',
+            kind: 'state',
+            nativeSettlement: LiteRtLmNativeSettlement.quarantined,
+          ),
+        );
+        // Keep the callback owner, model link and cache lease alive. Exiting
+        // this isolate could close a NativeCallable still used by native code.
+        return;
       }
-      message.sendPort.send(
-        !requestSettled
-            ? LiteRtLmErrorResponse(
-                'LiteRT-LM native operation has not settled; cleanup skipped.',
-                kind: 'state',
-              )
-            : disposeError != null
-            ? LiteRtLmErrorResponse.from(disposeError)
-            : LiteRtLmDoneResponse(),
-      );
+      try {
+        service.dispose();
+      } catch (error) {
+        service.quarantineNativeResources();
+        message.sendPort.send(
+          LiteRtLmErrorResponse.from(
+            error,
+            nativeSettlement: LiteRtLmNativeSettlement.quarantined,
+          ),
+        );
+        return;
+      }
+      message.sendPort.send(LiteRtLmDoneResponse());
       receivePort.close();
-      if (exitOnDispose) {
-        Isolate.exit();
-      }
+      if (exitOnDispose) Isolate.exit();
+      return;
+    }
+
+    if (shuttingDown && message is LiteRtLmWorkerRequest) {
+      message.sendPort.send(
+        LiteRtLmErrorResponse(
+          'LiteRT-LM worker is shutting down; restart the process before retrying.',
+          kind: 'state',
+          nativeSettlement: service.nativeSettlement,
+        ),
+      );
       return;
     }
 
     if (message is LiteRtLmWorkerHandshake) {
+      if (shuttingDown) return;
       final logPort = message.logPort;
       if (logPort != null) {
         installWorkerLogForwarding(logPort, message.dartLogLevel);
@@ -96,10 +145,21 @@ void runLiteRtLmWorkerForTesting(
       if (embeddings.containsKey(message.embeddingPort)) {
         embeddings[message.embeddingPort] = true;
       }
-      if (activeEmbedding == message.embeddingPort) {
-        service.cancelGeneration();
+      try {
+        if (activeEmbedding == message.embeddingPort) {
+          service.cancelGeneration();
+        }
+        message.sendPort.send(
+          LiteRtLmDoneResponse(nativeSettlement: service.nativeSettlement),
+        );
+      } catch (error) {
+        message.sendPort.send(
+          LiteRtLmErrorResponse.from(
+            error,
+            nativeSettlement: service.nativeSettlement,
+          ),
+        );
       }
-      message.sendPort.send(LiteRtLmDoneResponse());
       return;
     }
 
@@ -108,8 +168,19 @@ void runLiteRtLmWorkerForTesting(
       if (generationInFlight) {
         generationCancelRequested = true;
       }
-      service.cancelGeneration();
-      message.sendPort.send(LiteRtLmDoneResponse());
+      try {
+        service.cancelGeneration();
+        message.sendPort.send(
+          LiteRtLmDoneResponse(nativeSettlement: service.nativeSettlement),
+        );
+      } catch (error) {
+        message.sendPort.send(
+          LiteRtLmErrorResponse.from(
+            error,
+            nativeSettlement: service.nativeSettlement,
+          ),
+        );
+      }
       return;
     }
 
@@ -138,6 +209,7 @@ void runLiteRtLmWorkerForTesting(
             LiteRtLmErrorResponse(
               'LiteRT-LM worker is shutting down.',
               kind: 'state',
+              nativeSettlement: service.nativeSettlement,
             ),
           );
           return;
@@ -237,13 +309,9 @@ void runLiteRtLmWorkerForTesting(
                 message.sendPort.send(LiteRtLmTokenResponse(finalChunk));
               }
 
-              message.sendPort.send(
-                LiteRtLmDoneResponse(
-                  generationLimit: service.lastGenerationLimit,
-                ),
-              );
+              message.sendPort.send(generationDone());
             } catch (error) {
-              message.sendPort.send(LiteRtLmErrorResponse.from(error));
+              message.sendPort.send(generationError(error));
             }
 
           case LiteRtLmGenerateChatRequest():
@@ -300,13 +368,9 @@ void runLiteRtLmWorkerForTesting(
                 message.sendPort.send(LiteRtLmTokenResponse(finalChunk));
               }
 
-              message.sendPort.send(
-                LiteRtLmDoneResponse(
-                  generationLimit: service.lastGenerationLimit,
-                ),
-              );
+              message.sendPort.send(generationDone());
             } catch (error) {
-              message.sendPort.send(LiteRtLmErrorResponse.from(error));
+              message.sendPort.send(generationError(error));
             }
 
           case LiteRtLmTokenizeRequest():
@@ -408,7 +472,12 @@ void runLiteRtLmWorkerForTesting(
             message.sendPort.send(LiteRtLmChatTemplateResponse(result));
         }
       } catch (error) {
-        message.sendPort.send(LiteRtLmErrorResponse.from(error));
+        message.sendPort.send(
+          LiteRtLmErrorResponse.from(
+            error,
+            nativeSettlement: service.nativeSettlement,
+          ),
+        );
       } finally {
         if (message is LiteRtLmEmbedRequest) {
           embeddings.remove(message.sendPort);
