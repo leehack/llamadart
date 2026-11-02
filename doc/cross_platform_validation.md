@@ -912,6 +912,12 @@ a follow-up. Do not insert requested bundle metadata as observed runtime evidenc
 
 `packages/llamadart_validation/assets/image_profiles/` holds the image device
 checks: `image-sdxs-cpu` (Android, CPU) and `image-sdxs-metal` (iOS, Metal).
+With the current stable-diffusion-native `v0.3.0-1` pin, the iOS Metal image
+profile is refused before native creation because the runtime lacks the
+intrinsic tiny-decoder v1 context policy. Use CPU VAE placement for Metal
+diffusion in application code; requalify the profile after consuming a
+runtime with that policy ([#1047](https://github.com/leehack/llamadart/issues/1047)).
+
 They run the chat-app test `integration_test/image_generation_e2e_test.dart`
 (SDXS download through the image screen, one seeded 512x512 image, and a
 verified receipt with both PNGs), not the shared text suite. The

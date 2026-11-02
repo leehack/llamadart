@@ -18,6 +18,8 @@ validate against the exact release tag notes.
 
 - Honor explicit parallel-tool requests even when template probes do not recognize parallel history ([#1713](https://github.com/leehack/llamadart/issues/1713)).
 - Keep LFM2 tool markers inside reasoning non-executable and preserve thought tags inside tool arguments ([#1714](https://github.com/leehack/llamadart/issues/1714)).
+- Require a native decoder policy across model refresh for iOS Metal VAE decoding; the current runtime needs CPU VAE placement or CPU generation, including for SDXS.
+
 - Reject incompatible native LiteRT-LM C API 1.0 overrides before calling legacy bindings, with runtime migration guidance.
 - Start eager chat or text tasks with observable events, request-scoped cancellation, partial output and a terminal outcome independent of event listeners.
 - Add Decision task APIs with typed completion and cooperative per-task cancellation.

@@ -115,6 +115,18 @@ void main() {
       );
     });
 
+    test('reports the native intrinsic tiny-decoder invariant capability', () {
+      for (final supported in [false, true]) {
+        final status = probeStableDiffusionRuntime(
+          abi: Abi.macosArm64,
+          api: _FakeApi(intrinsicTinyV1: supported),
+        );
+        expect(status.supportsIntrinsicTinyDecoderV1, supported);
+      }
+      final absent = BundledStableDiffusionApi(resolveCalls: () => null);
+      expect(absent.supportsIntrinsicTinyDecoderV1(), isFalse);
+    });
+
     test('reports whether the runtime loads FP8 weights as F16 on Metal', () {
       for (final fp8Metal in [true, false]) {
         final status = probeStableDiffusionRuntime(
@@ -705,12 +717,14 @@ final class _FakeApi implements StableDiffusionNativeApi {
     this.error,
     this.wrapperCalls = true,
     this.fp8Metal = false,
+    this.intrinsicTinyV1 = false,
   });
 
   final String devices;
   final ArgumentError? error;
   final bool wrapperCalls;
   final bool fp8Metal;
+  final bool intrinsicTinyV1;
   int calls = 0;
   final List<String> order = [];
 
@@ -746,4 +760,7 @@ final class _FakeApi implements StableDiffusionNativeApi {
 
   @override
   bool loadsFp8AsF16OnMetal() => _call(fp8Metal);
+
+  @override
+  bool supportsIntrinsicTinyDecoderV1() => _call(intrinsicTinyV1);
 }

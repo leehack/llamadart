@@ -353,6 +353,21 @@ exits with code 130. It runs on macOS, Linux and Windows x64 hosts (x64 CPUs nee
 FMA, F16C and BMI2); elsewhere, or when the runtime is not bundled, it exits
 with code 2 and the reason.
 
+For Flutter iOS consumers, use CPU generation or
+`ImageModelPlacement(vaeOnCpu: true)` to keep diffusion on Metal, including
+with SDXS. Metal VAE decoding requires the intrinsic tiny-decoder v1 native
+context policy so automatic model refresh cannot switch to a full VAE. The
+current pinned runtime lacks that policy and is refused before native
+creation. Tiling does not bypass this restriction; full-VAE iPhone watchdog
+avoidance remains unqualified.
+
+The local-only `test/image_ios_decoder_policy_e2e_test.dart` uses existing
+`LLAMADART_SDXS_MODEL` and `LLAMADART_SD_TURBO_MODEL` GGUF paths. On a Metal
+host it exercises the production engine and worker, overriding only the OS
+label to select iOS admission: old-runtime refusal and CPU VAE placement,
+plus unchanged/refreshed SDXS and full-VAE replacement refusal when the
+runtime provides the policy. It does not qualify a physical iPhone.
+
 Image CLI flags (`bin/llamadart_image_example.dart`):
 
 - `--preset`: `sdxs` (default), `sd-turbo`, `sdxl-lightning`,
