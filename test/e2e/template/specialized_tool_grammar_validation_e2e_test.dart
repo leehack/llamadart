@@ -1995,6 +1995,7 @@ void main() {
         rendered.grammar!,
         valid: [
           first,
+          first.replaceFirst(')]', '),]'),
           first.replaceFirst(
             'text="False", enabled=True',
             'enabled=false, text=\'hello\'',
@@ -2006,9 +2007,12 @@ void main() {
           r'<|tool_call_start|>[configure(text="C:\new\table.txt", enabled=False)]<|tool_call_end|>',
           '<|tool_call_start|>[clock()]<|tool_call_end|>',
           if (parallel) two,
+          if (parallel) two.replaceFirst(')]', '),]'),
         ],
         invalid: [
           if (!parallel) two,
+          if (!parallel) two.replaceFirst(')]', '),]'),
+          first.replaceFirst(')]', '),,]'),
           '<|tool_call_start|>[]<|tool_call_end|>',
           first.replaceFirst('configure', 'unknown'),
           first.replaceFirst('text="False", ', ''),

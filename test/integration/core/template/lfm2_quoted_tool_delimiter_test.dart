@@ -100,6 +100,22 @@ Future<void> _expectStream(
 }
 
 void main() {
+  test('auto singleton trailing comma preserves one quoted argument', () async {
+    final rendered = _render(ToolChoice.auto);
+    const city = 'Seoul"), weather(city=';
+    final output = _envelope("[weather(city='$city'), \n ]");
+    final parsed = ChatTemplateEngine.parseRendered(
+      rendered,
+      output,
+      tools: _tools,
+    );
+    expect(parsed.toolCalls, hasLength(1));
+    expect(jsonDecode(parsed.toolCalls.single.function!.arguments!), {
+      'city': city,
+    });
+    await _expectStream(output, rendered);
+  });
+
   test(
     'public engine preserves calls before a later explicit thought',
     () async {

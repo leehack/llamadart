@@ -18,10 +18,12 @@ String? buildLfm2AutoGrammar(
     calls.add(builder.tool(tool.name, tool.toJsonSchema(), 'tool-$index'));
   }
   builder.rules['call'] = calls.join(' | ');
+  // A trailing comma lets compound tokens close the last argument and call
+  // without forcing the sampler back into an unfinished string.
   builder.rules['root'] =
       '${ToolCallGrammarUtils.literal('<|tool_call_start|>')} ws "[" ws call '
       '${parallelToolCalls ? '(ws "," ws call)* ' : ''}'
-      'ws "]" ws ${ToolCallGrammarUtils.literal('<|tool_call_end|>')}';
+      '(ws ",")? ws "]" ws ${ToolCallGrammarUtils.literal('<|tool_call_end|>')}';
   return builder.rules.entries
       .map((entry) => '${entry.key} ::= ${entry.value}')
       .join('\n');
