@@ -67,11 +67,11 @@ an earlier `<script>`:
 
 ## Pinned assets
 
-Default pinned tag in the example is `v0.1.79`.
+Default pinned tag in the example is `v0.1.81`.
 Vendor the pinned assets into the chat app with:
 
 ```bash
-WEBGPU_BRIDGE_ASSETS_TAG=v0.1.79 ./scripts/fetch_webgpu_bridge_assets.sh
+WEBGPU_BRIDGE_ASSETS_TAG=v0.1.81 ./scripts/fetch_webgpu_bridge_assets.sh
 ```
 
 `WEBGPU_BRIDGE_OUT_DIR` changes the destination. The script verifies
@@ -90,17 +90,17 @@ the chat app, set the bootstrap globals before the bootstrap runs:
 ```html
 <script>
   window.__llamadartBridgeAssetsRepo = 'leehack/llama-web-bridge-assets';
-  window.__llamadartBridgeAssetsTag = 'v0.1.79';
+  window.__llamadartBridgeAssetsTag = 'v0.1.81';
 </script>
 ```
 
 That release embeds llama.cpp `v0.8.0`, matching the `hook/build.dart` native pin
 (`v0.8.0-1`, both built from upstream llama.cpp `v0.8.0@8642541b255bfb5dc39cd351a178be09013a55d6`)
-even though the bridge asset tag `v0.1.79` differs from the native runtime tag
-`v0.8.0-1`. Provenance for this immutable consumer artifact: release `429085685`,
-tag commit `79b32dfb4ff13c4ce33e8ba3c848e8b5c2ba35e2`, bridge source
-`fe1b70c86eb96f2932a50606e50583dff1222128`, and manifest SHA-256
-`66ffee7a1c2c54c187526ba6a27957141b77438fed9a0f2a5afcfa2736682e9c`.
+even though the bridge asset tag `v0.1.81` differs from the native runtime tag
+`v0.8.0-1`. Provenance for this immutable consumer artifact: release `431736436`,
+tag commit `ac8971a7c30f9a4033b7f36f2322a4dfc021df5f`, bridge source
+`76b7624e9d2121c3b95235c7c429d17c901f4fea`, and manifest SHA-256
+`7b3596e254e0767c577a084cb608ffe35118ae01afa85a4ba1a44c677afceebe`.
 They expose the API-version-1 media embedding contract. State and extraction
 qualification covers wasm32 and memory64 through direct and worker runtimes. Existing decision,
 scoring, sampling, LoRA, speculative decoding and speech APIs remain available.
