@@ -1,3 +1,7 @@
+## 0.17.3
+
+* Refresh README installation guidance for core `0.17.5`; Apple SwiftPM stays pinned to `leehack/llamadart-native@v0.8.0-1`.
+
 ## 0.17.2
 
 * Refresh README installation guidance for core `0.17.4`; Apple SwiftPM stays pinned to `leehack/llamadart-native@v0.8.0-1`.
