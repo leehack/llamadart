@@ -110,6 +110,9 @@ description: >-
   the tool messages to your own list.
   Keep its `LlamaThinkingContent` parts too: LFM2/LFM2.5 templates can replay
   assistant reasoning alongside calls, applying their own history-retention policy.
+- Read arguments from parsed tool-call parts. For LFM2/LFM2.5, quoted
+  `<|tool_call_end|>` text inside an argument is literal data; preserve it when
+  invoking tools and replaying their results.
 - Always cap the number of tool rounds (`maxRounds`, default 5); a model can
   call tools forever.
 - `ToolChoice.auto` lets the model decide, `ToolChoice.required` forces a call
