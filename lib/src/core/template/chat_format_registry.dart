@@ -80,8 +80,9 @@ typedef IncompleteToolCallCheck =
 /// Per-format routing and streaming behavior, kept with the format's
 /// registration rather than in tables in the engine or stream parser.
 final class ChatFormatTraits {
-  /// Traits that all default to off.
+  /// Traits with explicitly declared schema qualification.
   const ChatFormatTraits({
+    required this.qualifiesJsonSchemaTools,
     this.toolCallOpening,
     this.keepsThoughtTagsAsContent = false,
     this.parsesCallsInsideThoughts = false,
@@ -98,7 +99,9 @@ final class ChatFormatTraits {
   });
 
   /// A format with every trait off.
-  static const ChatFormatTraits none = ChatFormatTraits();
+  static const ChatFormatTraits none = ChatFormatTraits(
+    qualifiesJsonSchemaTools: false,
+  );
 
   /// For a format whose parse drops tool-call envelopes from trimmed content,
   /// the index of the first possible tool-call opening in `text` at or after
@@ -151,11 +154,11 @@ final class ChatFormatTraits {
   final bool rendersToolResultContent;
 
   /// Detects a tool call that a final parse left malformed or incomplete.
-  /// Non-null exactly for formats qualified for canonical JSON Schema tools.
   final IncompleteToolCallCheck? leavesIncompleteToolCall;
 
   /// Whether canonical JSON Schema tools are qualified for the format.
-  bool get qualifiesJsonSchemaTools => leavesIncompleteToolCall != null;
+  /// Changing incomplete-call detection must not change schema admission.
+  final bool qualifiesJsonSchemaTools;
 }
 
 /// Every [ChatFormat], each exactly once, in detection priority order: the
@@ -171,14 +174,20 @@ chatFormatRegistrations = List.unmodifiable(<ChatFormatRegistration>[
     KimiK3Handler.new,
     detect: (s) =>
         _hasAll(s, const ['<|open|>', '<|close|>', '<|end_of_msg|>']),
-    traits: ChatFormatTraits(mayEmbedToolEnvelopeAfterContent: true),
+    traits: ChatFormatTraits(
+      qualifiesJsonSchemaTools: false,
+      mayEmbedToolEnvelopeAfterContent: true,
+    ),
   ),
   // Recipient channels and ATEM calls.
   ChatFormatRegistration(
     ChatFormat.museGlimmer,
     MuseGlimmerHandler.new,
     detect: (s) => _hasAll(s, const ['<atem:function_calls>', '<|eom|>']),
-    traits: ChatFormatTraits(mayEmbedToolEnvelopeAfterContent: true),
+    traits: ChatFormatTraits(
+      qualifiesJsonSchemaTools: false,
+      mayEmbedToolEnvelopeAfterContent: true,
+    ),
   ),
   // Before Hermes: the namespaced envelope contains a literal <tool_call>.
   ChatFormatRegistration(
@@ -186,7 +195,10 @@ chatFormatRegistrations = List.unmodifiable(<ChatFormatRegistration>[
     MinimaxM3Handler.new,
     detect: (s) =>
         _hasAll(s, const [']<]minimax[>[', '<tool_call>', '<invoke name=']),
-    traits: ChatFormatTraits(mayEmbedToolEnvelopeAfterContent: true),
+    traits: ChatFormatTraits(
+      qualifiesJsonSchemaTools: false,
+      mayEmbedToolEnvelopeAfterContent: true,
+    ),
   ),
   // DeepSeek V3.2/V4 DSML family. The marker is assembled from a Jinja
   // variable, so detecting only literal rendered tags misses every variant.
@@ -194,13 +206,19 @@ chatFormatRegistrations = List.unmodifiable(<ChatFormatRegistration>[
     ChatFormat.deepseekV32,
     DeepseekV32Handler.new,
     detect: (s) => _hasAll(s, const ['dsml_token', 'DSML', 'function_calls']),
-    traits: ChatFormatTraits(mayEmbedToolEnvelopeAfterContent: true),
+    traits: ChatFormatTraits(
+      qualifiesJsonSchemaTools: false,
+      mayEmbedToolEnvelopeAfterContent: true,
+    ),
   ),
   ChatFormatRegistration(
     ChatFormat.deepseekV4,
     DeepseekV4Handler.new,
     detect: (s) => _hasAll(s, const ['dsml_token', 'DSML', 'tool_calls']),
-    traits: ChatFormatTraits(mayEmbedToolEnvelopeAfterContent: true),
+    traits: ChatFormatTraits(
+      qualifiesJsonSchemaTools: false,
+      mayEmbedToolEnvelopeAfterContent: true,
+    ),
   ),
   // Newline-delimited JSON tool-call envelope.
   ChatFormatRegistration(
@@ -211,7 +229,10 @@ chatFormatRegistrations = List.unmodifiable(<ChatFormatRegistration>[
       '<beginning_of_sentence>',
       '<tool_calls>',
     ]),
-    traits: ChatFormatTraits(mayEmbedToolEnvelopeAfterContent: true),
+    traits: ChatFormatTraits(
+      qualifiesJsonSchemaTools: false,
+      mayEmbedToolEnvelopeAfterContent: true,
+    ),
   ),
   // Shares GLM-style argument tags but uses explicit assistant and
   // tool-response turns and </assistant> as a stop.
@@ -226,6 +247,7 @@ chatFormatRegistrations = List.unmodifiable(<ChatFormatRegistration>[
       '<arg_value>',
     ]),
     traits: ChatFormatTraits(
+      qualifiesJsonSchemaTools: true,
       mayEmbedToolEnvelopeAfterContent: true,
       leavesIncompleteToolCall: _contentContainsAny(const ['<tool_call>']),
     ),
@@ -237,6 +259,7 @@ chatFormatRegistrations = List.unmodifiable(<ChatFormatRegistration>[
       "message['prefix'] is defined and message['prefix'] and thinking",
     ),
     traits: ChatFormatTraits(
+      qualifiesJsonSchemaTools: false,
       toolCallOpening: DeepseekV3Handler.toolCallOpening,
       keepsForcedThoughtVerbatim: true,
       disabledByResponseSchema: true,
@@ -248,6 +271,7 @@ chatFormatRegistrations = List.unmodifiable(<ChatFormatRegistration>[
     DeepseekR1Handler.new,
     detect: (s) => s.contains('<｜tool▁calls▁begin｜>'),
     traits: ChatFormatTraits(
+      qualifiesJsonSchemaTools: false,
       toolCallOpening: DeepseekR1Handler.toolCallOpening,
       disabledByResponseSchema: true,
     ),
@@ -259,6 +283,7 @@ chatFormatRegistrations = List.unmodifiable(<ChatFormatRegistration>[
     Cohere2MoeHandler.new,
     detect: (s) => _hasAll(s, const ['<|START_TEXT|>', '<|START_ACTION|>']),
     traits: ChatFormatTraits(
+      qualifiesJsonSchemaTools: false,
       toolCallOpening: CommandR7BHandler.toolCallOpening,
       keepsForcedThoughtVerbatim: true,
       forcedThoughtContentOpenings:
@@ -275,6 +300,7 @@ chatFormatRegistrations = List.unmodifiable(<ChatFormatRegistration>[
       '<param name="',
     ]),
     traits: ChatFormatTraits(
+      qualifiesJsonSchemaTools: false,
       toolCallOpening: XmlToolCallFormat.minicpm5.toolCallOpening,
     ),
   ),
@@ -283,6 +309,7 @@ chatFormatRegistrations = List.unmodifiable(<ChatFormatRegistration>[
     CommandR7BHandler.new,
     detect: (s) => s.contains('<|END_THINKING|><|START_ACTION|>'),
     traits: ChatFormatTraits(
+      qualifiesJsonSchemaTools: false,
       toolCallOpening: CommandR7BHandler.toolCallOpening,
       disabledByResponseSchema: true,
     ),
@@ -291,7 +318,10 @@ chatFormatRegistrations = List.unmodifiable(<ChatFormatRegistration>[
     ChatFormat.granite,
     GraniteHandler.new,
     detect: (s) => _hasAll(s, const ['elif thinking', '<|tool_call|>']),
-    traits: ChatFormatTraits(toolCallOpening: GraniteHandler.toolCallOpening),
+    traits: ChatFormatTraits(
+      qualifiesJsonSchemaTools: false,
+      toolCallOpening: GraniteHandler.toolCallOpening,
+    ),
   ),
   ChatFormatRegistration(
     ChatFormat.glm45,
@@ -299,6 +329,7 @@ chatFormatRegistrations = List.unmodifiable(<ChatFormatRegistration>[
     detect: (s) =>
         _hasAll(s, const ['[gMASK]<sop>', '<arg_key>', '<arg_value>']),
     traits: ChatFormatTraits(
+      qualifiesJsonSchemaTools: true,
       mayEmbedToolEnvelopeAfterContent: true,
       disabledByResponseSchema: true,
       leavesIncompleteToolCall: _contentContainsAny(const ['<tool_call>']),
@@ -310,6 +341,7 @@ chatFormatRegistrations = List.unmodifiable(<ChatFormatRegistration>[
     detect: (s) =>
         _hasAll(s, const ['<｜hy_User{}｜>', '<tool_sep{}>', '<arg_key{}>']),
     traits: ChatFormatTraits(
+      qualifiesJsonSchemaTools: true,
       toolCallOpening: HunyuanV3Handler.toolCallOpening,
       leavesIncompleteToolCall: _contentContainsAny(const [
         '<tool_call:opensource>',
@@ -329,6 +361,7 @@ chatFormatRegistrations = List.unmodifiable(<ChatFormatRegistration>[
         (_hasAll(s, const ['<function>', '<parameters>']) ||
             s.contains('Function calls MUST follow the specified format')),
     traits: ChatFormatTraits(
+      qualifiesJsonSchemaTools: false,
       toolCallOpening: XmlToolCallFormat.qwen3Coder.toolCallOpening,
       closedThoughtKeepsTagsAsContent: true,
       keepsForcedThoughtVerbatim: true,
@@ -347,6 +380,7 @@ chatFormatRegistrations = List.unmodifiable(<ChatFormatRegistration>[
       '<tool_response>',
     ]),
     traits: ChatFormatTraits(
+      qualifiesJsonSchemaTools: false,
       toolCallOpening: XmlToolCallFormat.xiaomiMimo.toolCallOpening,
     ),
   ),
@@ -355,7 +389,10 @@ chatFormatRegistrations = List.unmodifiable(<ChatFormatRegistration>[
     ExaoneMoeHandler.new,
     detect: (s) =>
         _hasAll(s, const ['<tool_call>', '<tool_result>', '<|tool_declare|>']),
-    traits: ChatFormatTraits(toolCallOpening: ExaoneMoeHandler.toolCallOpening),
+    traits: ChatFormatTraits(
+      qualifiesJsonSchemaTools: false,
+      toolCallOpening: ExaoneMoeHandler.toolCallOpening,
+    ),
   ),
   // Hermes 2 Pro / Qwen 2.5/3. Every <tool_call> family above must stay
   // above it.
@@ -364,6 +401,7 @@ chatFormatRegistrations = List.unmodifiable(<ChatFormatRegistration>[
     HermesHandler.new,
     detect: (s) => s.contains('<tool_call>'),
     traits: ChatFormatTraits(
+      qualifiesJsonSchemaTools: true,
       toolCallOpening: HermesHandler.toolCallOpening,
       keepsForcedThoughtVerbatim: true,
       disabledByResponseSchema: true,
@@ -377,13 +415,17 @@ chatFormatRegistrations = List.unmodifiable(<ChatFormatRegistration>[
     ChatFormat.gptOss,
     GptOssHandler.new,
     detect: (s) => s.contains('<|channel|>'),
-    traits: ChatFormatTraits(toolCallOpening: GptOssHandler.toolCallOpening),
+    traits: ChatFormatTraits(
+      qualifiesJsonSchemaTools: false,
+      toolCallOpening: GptOssHandler.toolCallOpening,
+    ),
   ),
   ChatFormatRegistration(
     ChatFormat.seedOss,
     SeedOssHandler.new,
     detect: (s) => s.contains('<seed:think>'),
     traits: ChatFormatTraits(
+      qualifiesJsonSchemaTools: false,
       toolCallOpening: XmlToolCallFormat.seedOss.toolCallOpening,
       keepsForcedThoughtVerbatim: true,
     ),
@@ -393,6 +435,7 @@ chatFormatRegistrations = List.unmodifiable(<ChatFormatRegistration>[
     NemotronV2Handler.new,
     detect: (s) => s.contains('<SPECIAL_10>'),
     traits: ChatFormatTraits(
+      qualifiesJsonSchemaTools: false,
       toolCallOpening: NemotronV2Handler.toolCallOpening,
       requiredKeepsLazyGrammar: true,
     ),
@@ -402,6 +445,7 @@ chatFormatRegistrations = List.unmodifiable(<ChatFormatRegistration>[
     ApertusHandler.new,
     detect: (s) => _hasAll(s, const ['<|system_start|>', '<|tools_prefix|>']),
     traits: ChatFormatTraits(
+      qualifiesJsonSchemaTools: false,
       toolCallOpening: ApertusHandler.toolCallOpening,
       requiredKeepsLazyGrammar: true,
     ),
@@ -415,6 +459,7 @@ chatFormatRegistrations = List.unmodifiable(<ChatFormatRegistration>[
         _hasAll(s, const ['<|tool_list_start|>', '<|tool_list_end|>']) ||
         (s.contains('List of tools: [') && !s.contains('<|tool_list_start|>')),
     traits: ChatFormatTraits(
+      qualifiesJsonSchemaTools: false,
       toolCallOpening: Lfm2Handler.toolCallOpening,
       parsesCallsInsideThoughts: true,
       requiredKeepsLazyGrammar: true,
@@ -425,6 +470,7 @@ chatFormatRegistrations = List.unmodifiable(<ChatFormatRegistration>[
     MinimaxM2Handler.new,
     detect: (s) => _hasAll(s, const [']~!b[', ']~b]']),
     traits: ChatFormatTraits(
+      qualifiesJsonSchemaTools: false,
       toolCallOpening: XmlToolCallFormat.minimaxM2.toolCallOpening,
     ),
   ),
@@ -437,6 +483,7 @@ chatFormatRegistrations = List.unmodifiable(<ChatFormatRegistration>[
       '## Return of',
     ]),
     traits: ChatFormatTraits(
+      qualifiesJsonSchemaTools: false,
       toolCallOpening: KimiK2Handler.toolCallOpening,
       parsesCallsInsideThoughts: true,
     ),
@@ -454,6 +501,7 @@ chatFormatRegistrations = List.unmodifiable(<ChatFormatRegistration>[
       ']</tool_calls>',
     ]),
     traits: ChatFormatTraits(
+      qualifiesJsonSchemaTools: false,
       toolCallOpening: XmlToolCallFormat.apriel15.toolCallOpening,
     ),
   ),
@@ -465,7 +513,7 @@ chatFormatRegistrations = List.unmodifiable(<ChatFormatRegistration>[
       '<|tool_response:name|>',
       '<|tool_response:result|>',
     ]),
-    traits: ChatFormatTraits.none,
+    traits: ChatFormatTraits(qualifiesJsonSchemaTools: false),
   ),
   // Before Gemma 3, whose turn markers FunctionGemma templates also use.
   ChatFormatRegistration(
@@ -476,6 +524,7 @@ chatFormatRegistrations = List.unmodifiable(<ChatFormatRegistration>[
         s.contains('<start_function_call>') ||
         s.contains('<start_function_response>'),
     traits: ChatFormatTraits(
+      qualifiesJsonSchemaTools: false,
       toolCallOpening: FunctionGemmaHandler.toolCallOpening,
       keepsThoughtTagsAsContent: true,
     ),
@@ -485,19 +534,23 @@ chatFormatRegistrations = List.unmodifiable(<ChatFormatRegistration>[
     TranslateGemmaHandler.new,
     detect: (s) =>
         _hasAll(s, const ['[source_lang_code]', '[target_lang_code]']),
-    traits: ChatFormatTraits(keepsThoughtTagsAsContent: true),
+    traits: ChatFormatTraits(
+      qualifiesJsonSchemaTools: false,
+      keepsThoughtTagsAsContent: true,
+    ),
   ),
   ChatFormatRegistration(
     ChatFormat.functionaryV32,
     FunctionaryV32Handler.new,
     detect: (s) => s.contains('>>>all'),
-    traits: ChatFormatTraits.none,
+    traits: ChatFormatTraits(qualifiesJsonSchemaTools: false),
   ),
   ChatFormatRegistration(
     ChatFormat.firefunctionV2,
     FirefunctionV2Handler.new,
     detect: (s) => s.contains(' functools['),
     traits: ChatFormatTraits(
+      qualifiesJsonSchemaTools: false,
       toolCallOpening: FirefunctionV2Handler.toolCallOpening,
       keepsThoughtTagsAsContent: true,
     ),
@@ -507,6 +560,7 @@ chatFormatRegistrations = List.unmodifiable(<ChatFormatRegistration>[
     FunctionaryV31Llama31Handler.new,
     detect: (s) => _hasAll(s, const ['<|start_header_id|>', '<function=']),
     traits: ChatFormatTraits(
+      qualifiesJsonSchemaTools: false,
       toolCallOpening: FunctionaryV31Llama31Handler.toolCallOpening,
       keepsThoughtTagsAsContent: true,
     ),
@@ -515,7 +569,7 @@ chatFormatRegistrations = List.unmodifiable(<ChatFormatRegistration>[
     ChatFormat.llama3,
     Llama3Handler.new,
     detect: (s) => s.contains('<|start_header_id|>ipython<|end_header_id|>'),
-    traits: ChatFormatTraits.none,
+    traits: ChatFormatTraits(qualifiesJsonSchemaTools: false),
   ),
   // Ministral templates also carry [THINK] and [TOOL_CALLS], so Ministral
   // precedes Magistral and Mistral Nemo.
@@ -524,19 +578,23 @@ chatFormatRegistrations = List.unmodifiable(<ChatFormatRegistration>[
     MinistralHandler.new,
     detect: (s) =>
         _hasAll(s, const ['[SYSTEM_PROMPT]', '[TOOL_CALLS]', '[ARGS]']),
-    traits: ChatFormatTraits.none,
+    traits: ChatFormatTraits(qualifiesJsonSchemaTools: false),
   ),
   ChatFormatRegistration(
     ChatFormat.magistral,
     MagistralHandler.new,
     detect: (s) => _hasAll(s, const ['[THINK]', '[/THINK]']),
-    traits: ChatFormatTraits(toolCallOpening: MagistralHandler.toolCallOpening),
+    traits: ChatFormatTraits(
+      qualifiesJsonSchemaTools: false,
+      toolCallOpening: MagistralHandler.toolCallOpening,
+    ),
   ),
   ChatFormatRegistration(
     ChatFormat.mistralNemo,
     MistralHandler.new,
     detect: (s) => s.contains('[TOOL_CALLS]'),
     traits: ChatFormatTraits(
+      qualifiesJsonSchemaTools: true,
       toolCallOpening: MistralHandler.toolCallOpening,
       toolChoiceNoneRendersContentOnly: true,
       leavesIncompleteToolCall: _contentContainsAny(const ['[TOOL_CALLS]']),
@@ -547,6 +605,7 @@ chatFormatRegistrations = List.unmodifiable(<ChatFormatRegistration>[
     GemmaHandler.new,
     detect: (s) => s.contains('<start_of_turn>') && !s.contains('<|im_start|>'),
     traits: ChatFormatTraits(
+      qualifiesJsonSchemaTools: false,
       toolCallOpening: GemmaHandler.toolCallOpening,
       keepsThoughtTagsAsContent: true,
       routesThroughGeneric: true,
@@ -556,32 +615,36 @@ chatFormatRegistrations = List.unmodifiable(<ChatFormatRegistration>[
     ChatFormat.gemma4,
     Gemma4Handler.new,
     detect: (s) => _hasAll(s, const ['<|turn>', '<turn|>']),
-    traits: ChatFormatTraits(mayEmbedToolEnvelopeAfterContent: true),
+    traits: ChatFormatTraits(
+      qualifiesJsonSchemaTools: false,
+      mayEmbedToolEnvelopeAfterContent: true,
+    ),
   ),
   ChatFormatRegistration(
     ChatFormat.llama3BuiltinTools,
     Llama3Handler.new,
-    traits: ChatFormatTraits.none,
+    traits: ChatFormatTraits(qualifiesJsonSchemaTools: false),
   ),
   ChatFormatRegistration(
     ChatFormat.pegSimple,
     () => _withoutTemplateToolCalls(ChatFormat.pegSimple),
-    traits: ChatFormatTraits.none,
+    traits: ChatFormatTraits(qualifiesJsonSchemaTools: false),
   ),
   ChatFormatRegistration(
     ChatFormat.pegNative,
     () => _withoutTemplateToolCalls(ChatFormat.pegNative),
-    traits: ChatFormatTraits.none,
+    traits: ChatFormatTraits(qualifiesJsonSchemaTools: false),
   ),
   ChatFormatRegistration(
     ChatFormat.pegConstructed,
     () => _withoutTemplateToolCalls(ChatFormat.pegConstructed),
-    traits: ChatFormatTraits.none,
+    traits: ChatFormatTraits(qualifiesJsonSchemaTools: false),
   ),
   ChatFormatRegistration(
     ChatFormat.generic,
     GenericHandler.new,
     traits: ChatFormatTraits(
+      qualifiesJsonSchemaTools: true,
       toolChoiceNoneRendersContentOnly: true,
       leavesIncompleteToolCall: _genericLeavesIncompleteToolCall,
     ),
@@ -589,7 +652,10 @@ chatFormatRegistrations = List.unmodifiable(<ChatFormatRegistration>[
   ChatFormatRegistration(
     ChatFormat.contentOnly,
     () => _withoutTemplateToolCalls(ChatFormat.contentOnly),
-    traits: ChatFormatTraits(toolChoiceNoneRendersContentOnly: true),
+    traits: ChatFormatTraits(
+      qualifiesJsonSchemaTools: false,
+      toolChoiceNoneRendersContentOnly: true,
+    ),
   ),
 ]);
 

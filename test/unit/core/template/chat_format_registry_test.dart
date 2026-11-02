@@ -2,12 +2,14 @@
 library;
 
 import 'dart:io';
+import 'dart:mirrors';
 
+import 'package:llamadart/llamadart.dart';
 import 'package:llamadart/src/core/template/chat_format.dart';
 import 'package:llamadart/src/core/template/chat_format_registry.dart';
-import 'package:llamadart/src/core/template/chat_parse_result.dart';
-import 'package:llamadart/src/core/template/chat_template_engine.dart';
 import 'package:test/test.dart';
+
+import '../../../support/raw_tool_schema_fixture.dart';
 
 void main() {
   test('registers every ChatFormat exactly once', () {
@@ -163,11 +165,100 @@ void main() {
     );
   });
 
+  test('an incomplete-call callback does not grant schema admission', () {
+    final originalCheck = chatFormatRegistration(
+      ChatFormat.hermes,
+    ).traits.leavesIncompleteToolCall!;
+    var checks = 0;
+    bool check(
+      ChatParseResult result,
+      String output, {
+      required bool thinkingForcedOpen,
+    }) {
+      checks++;
+      return originalCheck(
+        result,
+        output,
+        thinkingForcedOpen: thinkingForcedOpen,
+      );
+    }
+
+    _withHermesTraits(
+      ChatFormatTraits(
+        qualifiesJsonSchemaTools: false,
+        leavesIncompleteToolCall: check,
+      ),
+      () {
+        expect(_renderSchemaTool, throwsA(isA<LlamaUnsupportedException>()));
+        expect(checks, 0);
+        expect(
+          _parseIncompleteSchemaCall,
+          throwsA(isA<LlamaInferenceException>()),
+        );
+        expect(checks, 1);
+      },
+    );
+  });
+
+  test('schema admission does not install an incomplete-call callback', () {
+    _withHermesTraits(
+      const ChatFormatTraits(qualifiesJsonSchemaTools: true),
+      () {
+        final rendered = _renderSchemaTool();
+        expect(rendered.format, ChatFormat.hermes.index);
+        expect(rendered.grammar, isNotEmpty);
+        final parsed = _parseIncompleteSchemaCall();
+        expect(parsed.toolCalls, isEmpty);
+        expect(parsed.content, contains('<tool_call>'));
+      },
+    );
+  });
+
   test('detection falls back to content-only', () {
     expect(detectChatFormat(null), ChatFormat.contentOnly);
     expect(detectChatFormat(''), ChatFormat.contentOnly);
     expect(detectChatFormat('{{ messages }}'), ChatFormat.contentOnly);
   });
+}
+
+LlamaChatTemplateResult _renderSchemaTool() => ChatTemplateEngine.render(
+  templateSource: '<tool_call>',
+  messages: [
+    LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'Inspect'),
+  ],
+  metadata: const {},
+  tools: [rawSchemaTool()],
+);
+
+ChatParseResult _parseIncompleteSchemaCall() => ChatTemplateEngine.parse(
+  ChatFormat.hermes.index,
+  '<tool_call>{"name":"inspect"',
+  tools: [rawSchemaTool()],
+);
+
+/// Exercise independent traits through production consumers without a runtime
+/// registration API. Restore the private registry even when an assertion fails.
+void _withHermesTraits(ChatFormatTraits traits, void Function() body) {
+  final library = reflectClass(ChatFormatTraits).owner as LibraryMirror;
+  final registrations =
+      library
+              .getField(
+                MirrorSystem.getSymbol('_registrationsByFormat', library),
+              )
+              .reflectee
+          as Map<ChatFormat, ChatFormatRegistration>;
+  final original = registrations[ChatFormat.hermes]!;
+  registrations[ChatFormat.hermes] = ChatFormatRegistration(
+    original.format,
+    original.createHandler,
+    detect: original.detect,
+    traits: traits,
+  );
+  try {
+    body();
+  } finally {
+    registrations[ChatFormat.hermes] = original;
+  }
 }
 
 /// Per-format tables in [source]: a `ChatFormat` set, collection or map
