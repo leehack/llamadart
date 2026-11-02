@@ -567,7 +567,7 @@ core's exact message, prefix included; any other message stays an inference
 error. Reserved mixed-input media markers are
 rejected as unsupported before dispatch, matching native.
 
-Lazy-grammar option validators in the pinned v0.1.81 facade
+Lazy-grammar option validators in the pinned facade
 (`llama_webgpu_bridge.js`, `grammarTrigger` / `grammarOptions`) use the same
 anchored argument allowlist in both runtimes. The core's exact invalid-grammar
 and rejected-trigger messages map to `LlamaInferenceException`, matching native
