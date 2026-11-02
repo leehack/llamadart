@@ -16,6 +16,7 @@ import 'package:llamadart/src/core/models/inference/tool_choice.dart';
 import 'package:llamadart/src/core/template/response_format.dart';
 import 'package:llamadart/src/core/template/chat_format.dart';
 import 'package:llamadart/src/core/template/chat_template_engine.dart';
+import 'package:llamadart/src/core/template/template_caps.dart';
 import 'package:llamadart/src/core/template/template_internal_metadata.dart';
 import 'package:llamadart/src/core/template/tool_call_grammar_utils.dart';
 
@@ -1839,6 +1840,46 @@ void main() {
       valid: const [],
       invalid: [twoCalls, threeCalls],
     );
+  });
+
+  test('explicit parallel flag bypasses a false Qwen capability probe', () {
+    const template =
+        '{# <tool_call> <function= <parameter= '
+        'Function calls MUST follow the specified format #}'
+        '{% for message in messages %}{{ message.content }}{% endfor %}';
+    expect(TemplateCaps.detect(template).supportsParallelToolCalls, isFalse);
+    const one =
+        '<tool_call>\n<function=weather>\n<parameter=city>\nSeoul\n'
+        '</parameter>\n</function>\n</tool_call>';
+    const two = '$one\n$one';
+    for (final choice in [ToolChoice.auto, ToolChoice.required]) {
+      for (final parallel in [false, true]) {
+        final rendered = ChatTemplateEngine.render(
+          templateSource: template,
+          messages: const [
+            LlamaChatMessage.fromText(
+              role: LlamaChatRole.user,
+              text: 'Weather?',
+            ),
+          ],
+          metadata: const {},
+          tools: [_weatherWithCityTool],
+          toolChoice: choice,
+          parallelToolCalls: parallel,
+        );
+        expect(rendered.format, ChatFormat.qwen3CoderXml.index);
+        _expectGrammar(
+          validator,
+          rendered.grammar!,
+          valid: [one, if (parallel) two],
+          invalid: [
+            if (!parallel) two,
+            one.replaceFirst('weather', 'unknown'),
+            one.replaceFirst('</tool_call>', ''),
+          ],
+        );
+      }
+    }
   });
 
   test('LFM2.5 required tool choice compiles the LFM2 tool-call grammar', () {

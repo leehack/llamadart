@@ -4,12 +4,62 @@ library;
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:crypto/crypto.dart';
 import 'package:llamadart/src/core/models/tools/tool_definition.dart';
 import 'package:llamadart/src/core/models/tools/tool_param.dart';
 import 'package:llamadart/src/core/template/handlers/lfm2_handler.dart';
 import 'package:test/test.dart';
 
 void main() {
+  final reasoningFixture =
+      jsonDecode(
+            File(
+              'test/fixtures/lfm2_reasoning_boundary_upstream.json',
+            ).readAsStringSync(),
+          )
+          as Map<String, dynamic>;
+  test('reasoning oracle retains its exact upstream template', () {
+    expect(
+      sha256
+          .convert(
+            File(
+              'test/fixtures/${reasoningFixture['template']}',
+            ).readAsBytesSync(),
+          )
+          .toString(),
+      reasoningFixture['template_sha256'],
+    );
+  });
+  for (final entry in reasoningFixture['cases'] as List) {
+    test('reasoning boundary matches pinned upstream ${entry['input']}', () {
+      final parsed = Lfm2Handler().parseWithTools(
+        entry['input'] as String,
+        tools: [
+          ToolDefinition(
+            name: 'get_weather',
+            description: 'Weather',
+            parameters: [ToolParam.string('city', required: true)],
+          ),
+        ],
+      );
+      final expected = entry['expected'] as Map;
+      expect(parsed.content, expected['content']);
+      expect(parsed.reasoningContent, expected['reasoning_content']);
+      expect(
+        [
+          for (final call in parsed.toolCalls)
+            {
+              'name': call.function!.name,
+              'arguments': call.function!.arguments,
+            },
+        ],
+        [
+          for (final call in expected['tool_calls'] as List? ?? const [])
+            call['function'],
+        ],
+      );
+    });
+  }
   final fixture =
       jsonDecode(
             File(

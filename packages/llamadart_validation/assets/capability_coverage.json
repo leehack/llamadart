@@ -664,6 +664,26 @@
         "reason": "Schema-directed legacy ToolParam parsing has durable affected-family raw emissions, unchanged-baseline identical-byte comparisons, typed scalar/container/zero-argument and VM/Chrome tests. It changes Dart parsing only, not LFM inference or canonical raw-schema admission. Historical parsed-only probe rows cannot establish raw replay; the complete historical matrix and remaining parity requirements are tracked in #1610. No new device qualification or validation-pack scenario is claimed.",
         "issue": "https://github.com/leehack/llamadart/issues/1610"
       }
+    },
+    {
+      "surfaces": [
+        "matrix:LFM2 reasoning tool markers"
+      ],
+      "exemption": {
+        "id": "lfm2-reasoning-boundary",
+        "reason": "Primary pinned upstream reasoning fixtures, direct/public-engine and partitioned-stream tests cover non-executable thought calls and literal argument tags. All3967 retained actual emissions are replayed for call/content/reasoning preservation. This is Dart parser qualification, not a new runtime or device validation-pack profile.",
+        "issue": "https://github.com/leehack/llamadart/issues/1714"
+      }
+    },
+    {
+      "surfaces": [
+        "matrix:Explicit parallel tool flags"
+      ],
+      "exemption": {
+        "id": "explicit-parallel-tool-flags",
+        "reason": "A caps-false public Qwen3-Coder render and native compiled grammar controls cover explicit true/false bounds; Ministral/Nemotron parser tests preserve their bounds. Capability probes remain descriptive. Existing tools packs do not qualify every format/backend parallel grammar; no broader runtime support is claimed.",
+        "issue": "https://github.com/leehack/llamadart/issues/1713"
+      }
     }
   ]
 }
