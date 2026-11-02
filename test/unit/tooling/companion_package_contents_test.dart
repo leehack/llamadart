@@ -116,8 +116,9 @@ void main() {
     'unchanged bytes pass using real pub selection outside ancestor ignores',
     () async {
       final files = _files();
+      final archive = _archive(files);
       final asked = <Uri>[];
-      expect(publishedCompanionContents(_archive(files)), {
+      expect(publishedCompanionContents(archive), {
         for (final entry in files.entries)
           entry.key: sha256.convert(entry.value).toString(),
       });
@@ -125,14 +126,14 @@ void main() {
         await candidateCompanionContents(
           Directory(p.join(_repo(files: files).path, _companion.path)),
         ),
-        publishedCompanionContents(_archive(files)),
+        publishedCompanionContents(archive),
       );
       final result = await _preflight(
         _repo(files: files),
-        _archive(files),
+        archive,
         get: (uri) {
           asked.add(uri);
-          return _metadata(_archive(files), uri);
+          return _metadata(archive, uri);
         },
       );
       expect(result.code, 0, reason: result.err);
