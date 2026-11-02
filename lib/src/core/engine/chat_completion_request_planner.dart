@@ -170,6 +170,15 @@ class ChatCompletionRequestPlanner {
         'combination yet.',
       );
     }
+    if (requiresLfmAutoGrammar &&
+        backend is BackendChatMessageValidation &&
+        (backend as BackendChatMessageValidation).requiresStructuredChatInput) {
+      throw LlamaUnsupportedException(
+        'LFM2 auto Python-call grammar requires the rendered prompt-penalty '
+        'generation route, but the active backend requires structured chat '
+        'input. Use a compatible rendered-prompt backend or ToolChoice.required.',
+      );
+    }
     if (skipsLazyTemplateGrammar) {
       if (strictResponseFormat) {
         throw LlamaUnsupportedException(
@@ -243,7 +252,7 @@ class ChatCompletionRequestPlanner {
       preservedTokens: effectivePreservedTokens,
     );
 
-    final nativeChatBackend = schemaTools
+    final nativeChatBackend = schemaTools || requiresLfmAutoGrammar
         ? null
         : _nativeChatBackendFor(
             backend,

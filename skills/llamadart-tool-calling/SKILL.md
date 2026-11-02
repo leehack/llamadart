@@ -126,7 +126,8 @@ description: >-
   penalties with grammar ([bridge #207](https://github.com/leehack/llama-web-bridge/issues/207)), so this new auto route throws before inference.
   Custom backends need the truthful `BackendPromptPenaltyGeneration`
   capability and route from `package:llamadart/backend.dart`; implementing the
-  interface with a false getter still rejects. Argument expansion is bounded
+  interface with a false getter still rejects. Optional native chat cannot
+  bypass this route; mandatory structured-chat backends reject it. Argument expansion is bounded
   to 4096 states; unsupported schemas throw rather than silently dropping grammar.
 - LFM2/LFM2.5 tool markers inside reasoning remain `thinking` text and never
   produce executable calls. Calls after the thought closes still work; literal

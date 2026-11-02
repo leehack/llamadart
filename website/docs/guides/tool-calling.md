@@ -226,7 +226,10 @@ Published Web assets lack the latter capability ([bridge #207](https://github.co
 error before inference on Web. A custom backend must implement
 `BackendPromptPenaltyGeneration` from `package:llamadart/backend.dart`, report
 its loaded runtime's truthful capability, and implement the scoped generation
-route; interface presence alone is insufficient. Existing generic auto fallback
+route; interface presence alone is insufficient. Optional native chat cannot
+bypass this route; a backend requiring structured chat input rejects the
+combination before generation. Nested object keys support quoted and
+backslashed names through parser-compatible literals. Existing generic auto fallback
 is separate. See [#1715](https://github.com/leehack/llamadart/issues/1715);
 length-truncated diagnostics remain tracked by
 [#1716](https://github.com/leehack/llamadart/issues/1716). Required-mode inner-quote

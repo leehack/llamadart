@@ -30,6 +30,8 @@ import 'package:llamadart/src/core/template/handlers/glm45_handler.dart';
 import 'package:llamadart/src/core/template/handlers/hermes_handler.dart';
 import 'package:llamadart/src/core/template/handlers/llama3_handler.dart';
 import 'package:llamadart/src/core/template/handlers/mistral_handler.dart';
+import 'package:llamadart/src/core/template/handlers/lfm2_auto_grammar.dart';
+import 'package:llamadart/src/core/template/handlers/lfm2_handler.dart';
 import 'package:llamadart/src/core/template/handlers/hunyuan_v3_handler.dart';
 import 'package:llamadart/src/core/template/handlers/llama_cpp_specialized_handlers.dart';
 import 'package:test/test.dart';
@@ -1876,6 +1878,70 @@ void main() {
             if (!parallel) two,
             one.replaceFirst('weather', 'unknown'),
             one.replaceFirst('</tool_call>', ''),
+          ],
+        );
+      }
+    }
+  });
+
+  test('LFM2 nested object keys use parser-compatible quoted literals', () {
+    for (final key in [
+      'ordinary',
+      'a"b',
+      "a'b",
+      'a"b\'c',
+      r'a\b',
+      'trailing\\',
+      'line\nkey',
+    ]) {
+      final tools = [
+        ToolDefinition(
+          name: 'configure',
+          description: '',
+          parameters: [
+            ToolParam.object(
+              'config',
+              required: true,
+              properties: [ToolParam.integer(key, required: true)],
+            ),
+          ],
+        ),
+      ];
+      final grammar = buildLfm2AutoGrammar(tools, parallelToolCalls: false)!;
+      final output =
+          '<|tool_call_start|>[configure(config={${jsonEncode(key)}:1})]<|tool_call_end|>';
+      _expectGrammar(validator, grammar, valid: [output], invalid: []);
+      final parsed = Lfm2Handler().parseWithTools(output, tools: tools);
+      expect(jsonDecode(parsed.toolCalls.single.function!.arguments!), {
+        'config': {key: 1},
+      });
+      if (!key.contains("'") && !key.contains(r'\') && !key.contains('\n')) {
+        _expectGrammar(
+          validator,
+          grammar,
+          valid: [
+            "<|tool_call_start|>[configure(config={'$key':1})]<|tool_call_end|>",
+          ],
+          invalid: [],
+        );
+      }
+      if (key == 'a"b\'c') {
+        _expectGrammar(
+          validator,
+          grammar,
+          valid: [],
+          invalid: [
+            "<|tool_call_start|>[configure(config={\"a\"b'c\":1})]<|tool_call_end|>",
+          ],
+        );
+      }
+      if (key == r'a\b') {
+        _expectGrammar(
+          validator,
+          grammar,
+          valid: [],
+          invalid: [
+            r'<|tool_call_start|>[configure(config={"a\b":1})]<|tool_call_end|>',
           ],
         );
       }

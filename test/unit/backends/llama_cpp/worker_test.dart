@@ -618,6 +618,7 @@ void main() {
 
         expect(service.chatPrompts, [('<m>a <img>', '<m>')]);
         expect(service.callerPrompts, ['<img>b']);
+        expect(service.penaltyPolicies, [false, false]);
       } finally {
         await _disposeWorker(worker);
       }

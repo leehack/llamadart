@@ -219,6 +219,8 @@ abstract class BackendLazyGrammarSupport {
 /// of the previously unconstrained prompt. Ordinary explicit grammars retain
 /// [LlamaBackend.generate] semantics. A routed/runtime-dependent backend must
 /// report its actual loaded delegate's support rather than interface presence.
+/// High-level LFM2 auto uses this rendered route even when native chat is also
+/// available; a backend requiring structured chat cannot admit that combination.
 abstract class BackendPromptPenaltyGeneration {
   /// Whether [generateWithPromptPenalties] retains prompt tokens in the
   /// repetition/presence window, even with an attached grammar.

@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import '../../exceptions.dart';
 import '../../models/tools/tool_definition.dart';
 import '../tool_call_grammar_utils.dart';
@@ -128,9 +130,7 @@ final class _PythonGrammar {
     final members = <({String name, String value, bool required})>[
       for (final entry in fields.entries)
         (
-          name:
-              '(${ToolCallGrammarUtils.literal('"${entry.key}"')} | '
-              '${ToolCallGrammarUtils.literal("'${entry.key}'")}) ws ":" ws',
+          name: '${quotedObjectKey(entry.key)} ws ":" ws',
           value: value(entry.value),
           required: required.contains(entry.key),
         ),
@@ -138,6 +138,18 @@ final class _PythonGrammar {
     final body = objectMembers(members, '$rule-members');
     rules[rule] = '"{" ws $body ws "}"';
     return rule;
+  }
+
+  String quotedObjectKey(String key) {
+    // Nested double-quoted keys use JSON decoding in the existing parser.
+    final spellings = [
+      jsonEncode(key),
+      if (!key.contains("'") &&
+          !key.contains(r'\') &&
+          key.runes.every((rune) => rune >= 0x20 && rune != 0x7f))
+        "'$key'",
+    ];
+    return '(${spellings.map(ToolCallGrammarUtils.literal).join(' | ')})';
   }
 
   String objectMembers(

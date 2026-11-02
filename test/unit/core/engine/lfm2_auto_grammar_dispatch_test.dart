@@ -1,5 +1,6 @@
 import 'package:llamadart/backend.dart';
 import 'package:llamadart/llamadart.dart';
+import 'package:llamadart/src/backends/backend.dart' as backend_internal;
 import 'package:test/test.dart';
 
 import 'engine_test.dart';
@@ -51,7 +52,78 @@ class _PenaltyBackend extends MockLlamaBackend
   }
 }
 
+class _HybridBackend extends _PenaltyBackend
+    implements BackendNativeChatGeneration {
+  int nativeCalls = 0;
+  @override
+  bool get supportsNativeChatGeneration => true;
+  @override
+  Stream<List<int>> generateChat(
+    int contextHandle,
+    List<LlamaChatMessage> messages,
+    GenerationParams params, {
+    List<ToolDefinition>? tools,
+    ToolChoice toolChoice = ToolChoice.auto,
+    bool parallelToolCalls = false,
+    bool enableThinking = true,
+    Map<String, dynamic>? chatTemplateKwargs,
+    String? sourceLangCode,
+    String? targetLangCode,
+    DateTime? templateNow,
+  }) {
+    nativeCalls++;
+    return super.generate(contextHandle, 'native', params);
+  }
+}
+
+class _StructuredHybridBackend extends _HybridBackend
+    implements backend_internal.BackendChatMessageValidation {
+  @override
+  bool get requiresStructuredChatInput => true;
+  @override
+  void validateChatMessages(List<LlamaChatMessage> messages) {}
+}
+
 void main() {
+  test(
+    'hybrid native chat backend uses the scoped LFM auto prompt route',
+    () async {
+      final backend = _HybridBackend();
+      final engine = LlamaEngine(backend);
+      addTearDown(engine.dispose);
+      await engine.loadModel('fake.gguf');
+      await engine.create(_messages, tools: _tools).drain<void>();
+      expect(backend.policyDispatches, 1);
+      expect(backend.nativeCalls, 0);
+    },
+  );
+  test(
+    'mandatory structured chat rejects the scoped LFM auto combination',
+    () async {
+      final backend = _StructuredHybridBackend();
+      final engine = LlamaEngine(backend);
+      addTearDown(engine.dispose);
+      await engine.loadModel('fake.gguf');
+      await expectLater(
+        engine.create(_messages, tools: _tools).drain<void>(),
+        throwsA(isA<LlamaUnsupportedException>()),
+      );
+      expect(backend.policyDispatches, 0);
+      expect(backend.nativeCalls, 0);
+    },
+  );
+  test('hybrid native chat remains available for LFM none', () async {
+    final backend = _HybridBackend();
+    final engine = LlamaEngine(backend);
+    addTearDown(engine.dispose);
+    await engine.loadModel('fake.gguf');
+    await engine
+        .create(_messages, tools: _tools, toolChoice: ToolChoice.none)
+        .drain<void>();
+    expect(backend.policyDispatches, 0);
+    expect(backend.nativeCalls, 1);
+  });
+
   test(
     'public LFM auto preserves policy through thought and draft parameter copies',
     () async {
