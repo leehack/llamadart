@@ -11,6 +11,18 @@ description: >-
 
 ## Guidelines
 
+- At a backend-reported length cutoff, LFM `chunk.partialToolCalls` and collected
+  `reply.partialToolCalls` hold raw named-call diagnostics from an unfinished
+  envelope, in order. `function.arguments` preserves exact Python/JSON text,
+  including unfinished syntax or an empty raw string after an argument opener.
+  Unknown names remain diagnostic only; no `{}` or closing syntax is invented.
+  Never decode it as typed arguments, execute it
+  or append it to history. `completion.message`, sessions and automatic loops
+  exclude diagnostics. All executable calls remain withheld at length.
+  Natural EOF/cancellation expose no diagnostics and retain existing policy;
+  none/parsing-disabled output stays literal. This does not resolve LiteRT-LM
+  Web's unknown finish cause (#919).
+
 - Prefer `session.sendWithTools(text, tools: ..., maxRounds: ...)`: it runs
   each call's `ToolDefinition.handler` (concurrently for parallel calls),
   adds a `LlamaChatRole.tool` message per call with the call's id, and

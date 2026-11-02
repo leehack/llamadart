@@ -207,9 +207,38 @@ The capability report still describes that history support; the flag does not
 add an unsupported format or backend protocol. This corrects
 [#1713](https://github.com/leehack/llamadart/issues/1713), while the reasoning
 boundary is tracked by [#1714](https://github.com/leehack/llamadart/issues/1714).
-Auto lazy grammar and length-truncated diagnostics remain separate required
-work in [#1715](https://github.com/leehack/llamadart/issues/1715) and
-[#1716](https://github.com/leehack/llamadart/issues/1716).
+Auto lazy grammar remains separate work in
+[#1715](https://github.com/leehack/llamadart/issues/1715).
+
+When a backend reports a length cutoff inside an LFM tool envelope,
+`chunk.partialToolCalls` and the collected `reply.partialToolCalls` preserve
+recognized named calls as raw diagnostic records. Their `function.arguments`
+is the exact generated argument text: Python keyword arguments or JSON value
+text, including unfinished containers, quotes and escapes. Complete prefixes
+inside that unfinished list keep their order too; this does not make them
+executable. A recognized argument opener with zero emitted argument bytes
+preserves the empty raw string; it never fabricates `{}` or a closing token.
+A name without an argument opening produces no diagnostic call. Unknown names
+may remain in diagnostics; this does not declare or validate a tool.
+The unfinished envelope stays out of answer text, while preceding answer and
+reasoning content remain available. All executable calls are still withheld at
+length, including complete calls from an earlier closed envelope.
+
+Never execute diagnostic records, decode them as typed tool arguments or append
+them as tool calls to history. `completion.message`, `ChatSession` history and
+automatic tool loops exclude them. Natural EOF and cancellation retain their
+existing parsing behavior and expose no `partialToolCalls`; diagnostics never
+establish why generation ended. `ToolChoice.none` and parsing-disabled output
+stay literal. In particular, LiteRT-LM Web still has the unknown-finish-cause
+restriction tracked by [#919](https://github.com/leehack/llamadart/issues/919).
+
+```dart
+final reply = await engine.complete(messages, tools: tools);
+for (final diagnostic in reply.partialToolCalls) {
+  print('${diagnostic.function?.name}: ${diagnostic.function?.arguments}');
+}
+// Run only reply.toolCalls through the normal tool workflow.
+```
 
 Solar Open replies may contain several content-channel segments. Parsed and
 streamed completions preserve each accepted segment and the whitespace between

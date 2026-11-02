@@ -11,6 +11,16 @@ description: >-
 
 ## Guidelines
 
+- At a backend-reported length cutoff, LFM `chunk.partialToolCalls` and collected
+  `reply.partialToolCalls` hold raw named-call diagnostics from an unfinished
+  envelope, in order. `function.arguments` preserves exact Python/JSON text,
+  including unfinished syntax; never decode it as typed arguments, execute it
+  or append it to history. `completion.message`, sessions and automatic loops
+  exclude diagnostics. All executable calls remain withheld at length.
+  Natural EOF/cancellation expose no diagnostics and retain existing policy;
+  none/parsing-disabled output stays literal. This does not resolve LiteRT-LM
+  Web's unknown finish cause (#919).
+
 - Pick the entry point by who owns history:
   - `ChatSession.create(parts)` for multi-turn chat. It applies the system
     prompt, appends user and assistant turns, and trims the oldest turns to fit
@@ -324,3 +334,16 @@ Future<Ticket> classify(LlamaEngine engine, String text) {
 
 - Generation and streaming: https://llamadart.leehack.com/docs/guides/generation-and-streaming
 - First chat session: https://llamadart.leehack.com/docs/getting-started/first-chat-session
+
+## Inspect length-cutoff diagnostics
+
+```dart
+import 'package:llamadart/llamadart.dart';
+
+void inspectPartialCalls(LlamaCompletion reply) {
+  for (final diagnostic in reply.partialToolCalls) {
+    print('${diagnostic.function?.name}: ${diagnostic.function?.arguments}');
+  }
+  // Dispatch only reply.toolCalls, never partialToolCalls.
+}
+```

@@ -168,6 +168,12 @@ if (completion.finishReason == LlamaFinishReason.length) {
 messages.add(completion.message); // Assistant turn for the next request.
 ```
 
+For LFM replies cut off at a backend-reported length limit,
+`chunk.partialToolCalls` and collected `completion.partialToolCalls` contain
+raw unfinished-envelope diagnostics. They never become executable tool calls,
+typed arguments or assistant message parts. Natural EOF and cancellation expose
+no diagnostics and do not imply a length limit; see [tool calling](./tool-calling).
+
 `engine.complete(messages, ...)` is `engine.create(messages, ...).collect()`,
 and `session.send('...')` sends one text turn through a `ChatSession` and
 collects the reply. `completion.message` keeps the whitespace the model ended

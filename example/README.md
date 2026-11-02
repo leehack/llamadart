@@ -205,6 +205,12 @@ flutter run -d macos
 Web needs the WebGPU bridge assets and cross-origin isolation headers; see
 [`laya_command_bar/README.md`](laya_command_bar/README.md#web).
 
+For LFM tool replies cut off at a reported length limit, inspect
+`completion.partialToolCalls` for raw unfinished-envelope diagnostics. Execute
+only `completion.toolCalls`; diagnostic arguments can be unfinished Python or
+JSON, and `completion.message` deliberately excludes them. See the
+[tool-calling guide](https://llamadart.leehack.com/docs/guides/tool-calling).
+
 ## Testing
 
 - `basic_app` (Dart console):
