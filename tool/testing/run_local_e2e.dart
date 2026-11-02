@@ -506,6 +506,18 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
           ],
           description: 'LFM2 quoted delimiter with existing affected weights',
         ),
+        LocalE2eCommandStep(
+          workingDirectory: context.projectRoot,
+          executable: 'dart',
+          arguments: const [
+            'test',
+            '--run-skipped',
+            '-t',
+            'local-only',
+            'test/e2e/template/lfm2_schema_qualification_e2e_test.dart',
+          ],
+          description: 'LFM2 schema parsing with existing affected weights',
+        ),
       ],
     ),
     LocalE2eScenario(

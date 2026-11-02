@@ -26,11 +26,11 @@ are loaded; normal Dart build hooks can still prepare native assets.
 - **Backend Optimization**: Defaults to GPU acceleration (Metal/Vulkan) when available on desktop and CPU for Android llama.cpp. Android Adreno 750 driver `2150604839` is excluded from Vulkan: automatic selection with a Vulkan preference uses CPU with a warning; explicit GPU requests throw.
 - **LoRA Adapters**: Load one or more LoRA adapters with repeated `--lora` flags.
 - **Structured Output**: Pass `--grammar` for GBNF-constrained generation.
-- **Tool Calling Test Mode**: Enable `--tool-test` to exercise function-calling flow.
+- **Tool Calling Test Mode**: Enable `--tool-test` to exercise function-calling flow. LFM2 Python-style calls use declared `ToolParam` types; declare strings as strings to preserve values such as `False` and copied backslashes.
 - **Sampling Controls**: Tune `--temp`, `--top-k`, `--top-p`, and `--penalty`.
 - **Embedding Demo**: Includes a dedicated embedding CLI example.
 - **SQLite Vector Demo**: Stores embeddings in SQLite and runs nearest-neighbor search with `sqlite_vector`.
-- **Decision Model Demo**: Triages a support ticket with a Laya decision model through `DecisionEngine`.
+- **Decision Model Demo**: Triages a support ticket with a Laya decision model through `DecisionEngine`. Run `dart run bin/llamadart_decision_task_example.dart /path/to/laya.gguf /path/to/laya-head.safetensors` for typed task completion and cooperative Ctrl-C cancellation. Once dispatched, cancellation waits for backend work to finish.
 - **Image Generation Demo (experimental)**: Writes a PNG with SDXS, SD-Turbo or a desktop model (SDXL-Lightning, FLUX.1-schnell, SD 3.5 Large Turbo, Z-Image-Turbo) through `ImageGenerationEngine`, with progress and Ctrl-C cancellation.
 
 After loading a model, check `await engine.capabilities` before enabling
@@ -538,3 +538,5 @@ dart run tool/testing/run_local_e2e.dart --scenario image-seamless-textures \
 Run this command from the repository root. On a CPU-only host set
 `LLAMADART_TEXTURE_DEVICES=cpu`; the default requires CPU and actual Metal.
 See `doc/image_seamless_textures.md` for the independent native comparison.
+
+Run `dart run bin/llamadart_task_example.dart /path/to/model.gguf` to stream an eager chat task. Ctrl+C requests cancellation; the example waits for task cleanup before disposing its engine.

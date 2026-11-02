@@ -16,6 +16,10 @@ All five public engine types share `LlamadartEngine<C extends EngineCapabilities
 for capability inspection and final disposal. This lifecycle interface does not
 change the runtime support below; see [engine ownership](../guides/model-lifecycle#shared-engine-ownership).
 
+Eager `createTask` / `generateTask` handles wrap the same native and Web text
+paths, with request-scoped subscription cancellation and observable terminal
+outcomes. They add no model/backend capability; see [task ownership](../guides/generation-and-streaming#eager-task-handles).
+
 ## At a glance
 
 Desktop source-CLI diagnostics can opt into
@@ -59,7 +63,9 @@ recognition. Decision models run on llama.cpp and WebGPU only; on LiteRT-LM
 `DecisionEngine.load` and `attach` throw `LlamaUnsupportedException`. See
 [Speech to text](../guides/speech-to-text#choose-an-approach),
 [Text to speech](../guides/text-to-speech) and
-[Decision models](../guides/decision-models).
+[Decision models](../guides/decision-models). Decision tasks stop preflight or
+discard an already-dispatched answer after the backend finishes; they do not
+add native interruption or support on LiteRT-LM.
 
 ## Compute device
 
@@ -115,6 +121,8 @@ native and web. Model architecture support depends on the pinned runtime; see
 
 | Feature | Native llama.cpp | WebGPU | Native LiteRT-LM | LiteRT-LM Web |
 | --- | --- | --- | --- | --- |
+| Decision tasks (cooperative) | Preflight stop or post-dispatch answer discard; no native interruption | Same, with decision-capable bridge assets | No | No |
+| LFM2 Python tool argument types | Declared legacy ToolParam types; copied string backslashes preserved | Same Dart parser; inference requires LFM-capable assets | N/A: LFM GGUF format | N/A: LFM GGUF format |
 | Model-free setup report | Desktop IO only; publication policy, no native/model probe | Typed unsupported; no live browser check | Desktop IO only; publication policy, no native/model probe | Typed unsupported |
 | Pre-load check | `npu` and options llama.cpp ignores rejected; native library and GPU unchecked | Options the Web runtime ignores rejected; WebGPU and bridge assets unchecked | No runtime on macOS x86_64, Windows arm64 or the x86_64 iOS simulator, and explicit devices the ABI lacks (`gpu` on Linux arm64), and embeddings off macOS arm64, iOS arm64 and Android arm64, rejected; `LlamaEngine(LiteRtLmBackend())` reports `unknown` | Options the Web runtime ignores, `npu` and the embedding engine rejected; browser runtime unchecked |
 | LoRA | `ModelParams.loras` at load and `setLoraSource` at runtime, stacked and scaled; aLoRA rejected | Same, with bridge assets whose `getLoraAdapterCapabilities()` reports support ([llama-web-bridge#142](https://github.com/leehack/llama-web-bridge/pull/142)); otherwise rejected | One default-scale text adapter through `ModelParams.loras` at load | No |
@@ -188,6 +196,10 @@ web are on [Known platform issues](./known-platform-issues).
 The native-assets hook currently pins `llamadart-native` tag
 `v0.8.0-1` and
 `litert-lm-native` release `v0.18.1-4` (`lib/src/hook/native_release_pins.dart`).
+
+Native overrides exporting LiteRT-LM's versioned C API are rejected before
+legacy engine calls. LiteRT-LM 0.19 / C API 1.0 needs the separate consumer
+migration tracked in #1677; use the pinned runtime with this package.
 Apps can override the llama.cpp release with `llamadart_native_tag`; accepted
 tag forms, keys, backend modules and local bundles:
 [Native runtime configuration](./native-build-hooks#override-the-llamacpp-release).
