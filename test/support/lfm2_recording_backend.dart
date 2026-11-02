@@ -6,7 +6,25 @@ import 'package:llamadart/src/backends/native/native_backend.dart';
 
 /// Records bytes before the public completion parser consumes them.
 class Lfm2RecordingBackend extends NativeAutoBackend {
+  Lfm2RecordingBackend({super.llamaCppFactory, super.liteRtLmFactory});
+
   final List<int> bytes = [];
+  final List<List<int>> _byteChunks = [];
+
+  List<List<int>> get byteChunks => [
+    for (final chunk in _byteChunks) List<int>.of(chunk),
+  ];
+  bool limitQueried = false;
+  bool usageQueried = false;
+  BackendGenerationLimit? reportedLimit;
+  LlamaGenerationUsage? reportedUsage;
+
+  Map<String, dynamic> get capturedOutcome => {
+    'limit_queried': limitQueried,
+    'limit': reportedLimit?.name,
+    'usage_queried': usageQueried,
+    'usage': reportedUsage?.toJson(),
+  };
   GenerationParams? lastParams;
   String? lastPrompt;
   bool countedPromptPenalties = false;
@@ -16,6 +34,11 @@ class Lfm2RecordingBackend extends NativeAutoBackend {
 
   void resetCapture() {
     bytes.clear();
+    _byteChunks.clear();
+    limitQueried = false;
+    usageQueried = false;
+    reportedLimit = null;
+    reportedUsage = null;
     lastParams = null;
     lastPrompt = null;
     countedPromptPenalties = false;
@@ -32,6 +55,7 @@ class Lfm2RecordingBackend extends NativeAutoBackend {
     lastParams = params;
     countedPromptPenalties = promptPenalties;
     final captured = source.map((chunk) {
+      _byteChunks.add(List<int>.of(chunk));
       bytes.addAll(chunk);
       return chunk;
     });
@@ -91,10 +115,18 @@ class Lfm2RecordingBackend extends NativeAutoBackend {
   );
 
   @override
-  BackendGenerationLimit? generationLimitOf(Stream<List<int>> generation) =>
-      super.generationLimitOf(_sources[generation] ?? generation);
+  BackendGenerationLimit? generationLimitOf(Stream<List<int>> generation) {
+    limitQueried = true;
+    return reportedLimit = super.generationLimitOf(
+      _sources[generation] ?? generation,
+    );
+  }
 
   @override
-  LlamaGenerationUsage? generationUsageOf(Stream<List<int>> generation) =>
-      super.generationUsageOf(_sources[generation] ?? generation);
+  LlamaGenerationUsage? generationUsageOf(Stream<List<int>> generation) {
+    usageQueried = true;
+    return reportedUsage = super.generationUsageOf(
+      _sources[generation] ?? generation,
+    );
+  }
 }

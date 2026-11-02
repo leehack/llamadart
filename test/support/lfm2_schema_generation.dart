@@ -6,6 +6,7 @@ import 'package:llamadart/llamadart.dart';
 
 import 'lfm2_schema_replay.dart';
 import 'lfm2_recording_backend.dart';
+import 'lfm2_public_completion_capture.dart';
 
 /// Captures fresh generation from exact historical prompt/tool/sampling rows.
 ///
@@ -73,6 +74,7 @@ Future<void> main(List<String> arguments) async {
   }
   final useMetal =
       Platform.environment['LLAMADART_LFM_GENERATION_BACKEND'] == 'metal';
+  final captureIdentity = await _captureIdentity(arguments[0]);
   final output = File(arguments[1]);
   final captures = <Map<String, dynamic>>[];
   for (final model in rows.map((row) => row['model'] as String).toSet()) {
@@ -148,30 +150,27 @@ Future<void> main(List<String> arguments) async {
         );
         recorder.resetCapture();
         final watch = Stopwatch()..start();
-        Object? completionError;
-        try {
-          await engine
-              .create(
-                [
-                  LlamaChatMessage.fromText(
-                    role: LlamaChatRole.system,
-                    text: row['system'] as String,
-                  ),
-                  LlamaChatMessage.fromText(
-                    role: LlamaChatRole.user,
-                    text: row['prompt'] as String,
-                  ),
-                ],
-                params: params,
-                tools: tools,
-                toolChoice: ToolChoice.values.byName(row['choice'] as String),
-                parallelToolCalls: row['parallel'] as bool,
-                enableThinking: row['thinking'] as bool,
-              )
-              .drain<void>();
-        } catch (error) {
-          completionError = error;
-        }
+        final publicCapture = Lfm2PublicCompletionCapture();
+        await publicCapture.consume(
+          engine.create(
+            [
+              LlamaChatMessage.fromText(
+                role: LlamaChatRole.system,
+                text: row['system'] as String,
+              ),
+              LlamaChatMessage.fromText(
+                role: LlamaChatRole.user,
+                text: row['prompt'] as String,
+              ),
+            ],
+            params: params,
+            tools: tools,
+            toolChoice: ToolChoice.values.byName(row['choice'] as String),
+            parallelToolCalls: row['parallel'] as bool,
+            enableThinking: row['thinking'] as bool,
+          ),
+        );
+        final completionError = publicCapture.error;
         final dispatched = recorder.lastParams;
         if (dispatched == null) {
           throw StateError(
@@ -216,8 +215,12 @@ Future<void> main(List<String> arguments) async {
         final raw = recorder.raw;
         final record = <String, dynamic>{
           ...row,
+          'capture_identity': captureIdentity,
           'id': id,
           'raw': raw,
+          'raw_byte_chunks': recorder.byteChunks,
+          'native_outcome': recorder.capturedOutcome,
+          ...publicCapture.toJson(),
           'raw_sha256': sha256.convert(utf8.encode(raw)).toString(),
           'model_sha256': hash,
           'backend': backend,
@@ -303,4 +306,49 @@ void _persist(
   output.writeAsStringSync(
     const JsonEncoder.withIndent('  ').convert(captures),
   );
+}
+
+Future<Map<String, dynamic>> _captureIdentity(String manifestPath) async {
+  Future<String> digest(String path) async =>
+      (await sha256.bind(File(path).openRead()).first).toString();
+  Future<String> git(List<String> arguments) async {
+    final result = await Process.run('git', arguments);
+    if (result.exitCode != 0) throw StateError('Cannot bind capture revision.');
+    return (result.stdout as String).trim();
+  }
+
+  final runtimeArtifact =
+      Platform.environment['LLAMADART_LFM_RUNTIME_ARTIFACT'];
+  return {
+    'head': await git(['rev-parse', 'HEAD']),
+    'tree': await git(['rev-parse', 'HEAD^{tree}']),
+    'tracked_dirty': (await git([
+      'status',
+      '--porcelain',
+      '--untracked-files=no',
+    ])).isNotEmpty,
+    'manifest_sha256': await digest(manifestPath),
+    'support_sha256': {
+      for (final name in [
+        'lfm2_schema_generation.dart',
+        'lfm2_recording_backend.dart',
+        'lfm2_public_completion_capture.dart',
+        'lfm2_schema_replay.dart',
+      ])
+        name: await digest('test/support/$name'),
+    },
+    'package_config_sha256': await digest('.dart_tool/package_config.json'),
+    'pubspec_lock_sha256': await digest('pubspec.lock'),
+    'runtime_artifact': runtimeArtifact == null
+        ? {'status': 'unavailable'}
+        : {
+            'status': 'caller_supplied_bytes_only',
+            'sha256': await digest(runtimeArtifact),
+          },
+    'model_load': {
+      'context_size': 4096,
+      'number_of_threads': 2,
+      'number_of_threads_batch': 2,
+    },
+  };
 }
