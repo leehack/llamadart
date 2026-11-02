@@ -488,20 +488,19 @@ user messages retain the template's usual validation.
 
 ### WebGPU
 
-On Web with WebGPU (llama.cpp), the bridge applies a grammar from the first
-token and cannot wait for a tool-call trigger, so schema tools work only when
-the selected grammar starts at the first token (usually `ToolChoice.required`);
-lazy auto grammars are rejected.
+On Web with WebGPU (llama.cpp), lazy tool-call grammars require the loaded
+bridge core to report `lazyGrammar` (`v0.1.75+` assets). Check
+`(await engine.capabilities).supportsLazyGrammar`. Supported runtimes retain
+the grammar and triggers for `ToolChoice.auto`, including schema-backed tool
+loops, and keep the prompt outside repetition/presence penalties as native does.
 
-- `ToolChoice.auto` skips a lazy tool-call grammar, and tool calls are parsed
-  from the output best-effort.
-- `ToolChoice.required` keeps a grammar that starts at the first token and
-  fails early with `LlamaUnsupportedException` when the chat format's
-  required-tool grammar is lazy.
-- An automatic tool loop changes to `auto` after its first tool round. Hermes
-  and Mistral then need lazy grammars, so their schema-backed automatic loops
-  cannot finish on WebGPU. Use the generic non-lazy JSON format there, or
-  manage a single required-tool request and its follow-up explicitly.
+On older or incompatible cores, `ToolChoice.auto` keeps best-effort parsing
+without the lazy template grammar. Explicit `grammarLazy`, custom grammar roots,
+and schema-tool requests needing a lazy grammar throw
+`LlamaUnsupportedException`. Non-lazy required-tool grammars remain supported.
+This capability does not establish LFM2 auto Python-call grammar enforcement;
+that separate template contract is tracked in
+[#1715](https://github.com/leehack/llamadart/issues/1715).
 
 Parser details, such as call validation against the supplied tools, are in
 [Template engine internals](./template-engine-internals#tool-call-parsing).

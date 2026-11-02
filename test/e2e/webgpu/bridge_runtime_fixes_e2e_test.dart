@@ -23,9 +23,7 @@
 /// - llama.cpp `v0.8.0` refuses a grammar chained past 256 levels with a typed
 ///   error and keeps the runtime, and generated schema grammars with more than
 ///   128 optional properties stay below that limit;
-/// - `GenerationParams.grammarLazy` stays rejected even though the bridge
-///   reports `lazyGrammar`
-///   ([#1480](https://github.com/leehack/llamadart/issues/1480));
+/// - a lazy grammar without triggers reports a typed argument rejection;
 /// - a llama.cpp `v0.8.0` Soprano or LFM3 Audio projector is not reported as
 ///   text-to-speech.
 ///
@@ -397,7 +395,7 @@ void main() {
       }
 
       test(
-        'a lazy grammar stays rejected while the bridge reports it',
+        'a lazy grammar without triggers reports an argument error',
         () async {
           await load('model');
           final probe = await bridge.getCompletionCapabilities()!.toDart;
@@ -413,7 +411,7 @@ void main() {
                   ),
                 )
                 .join(),
-            throwsA(isA<LlamaUnsupportedException>()),
+            throwsA(isA<LlamaArgumentException>()),
           );
         },
       );

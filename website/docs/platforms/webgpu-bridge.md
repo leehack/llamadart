@@ -232,9 +232,11 @@ The feature-by-runtime table is in the
   the turn. Cancellation and normal stops retain their existing outcomes.
   Older assets or a missing termination signal cannot establish truncation.
   The bridge does not distinguish which cap was reached.
-- `grammar` applies from the first token, starting at `root`.
-  `GenerationParams.grammarLazy` and any other `grammarRoot` throw
-  `LlamaUnsupportedException`; `ToolChoice.auto` skips the lazy tool-call
+- Lazy grammars and custom `grammarRoot` require the loaded core's
+  `lazyGrammar` probe (`v0.1.75+` assets). Supported runtimes forward
+  `grammarLazy`, word/pattern/pattern-full/token triggers and the root.
+  Otherwise explicit lazy/custom-root requests throw `LlamaUnsupportedException`,
+  and ordinary `ToolChoice.auto` retains best-effort parsing without its lazy
   grammar ([Tool calling](../guides/tool-calling#tool-choice-semantics)).
 - Speculative decoding needs bridge assets whose
   `getCompletionCapabilities()` reports `speculativeDecoding` strategies:

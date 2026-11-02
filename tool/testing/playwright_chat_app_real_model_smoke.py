@@ -245,6 +245,11 @@ def main() -> int:
         help="Require the completion call to carry no penaltyPromptTokens "
         "option, or penaltyPromptTokens: false.",
     )
+    parser.add_argument(
+        "--expect-lazy-grammar",
+        action="store_true",
+        help="Require the lazyGrammar probe and a non-empty lazy grammar with triggers.",
+    )
     parser.add_argument("--threads", type=int, default=2)
     parser.add_argument("--thread-pool-size", type=int, default=2)
     parser.add_argument("--load-timeout-ms", type=int, default=20 * 60 * 1000)
@@ -411,6 +416,9 @@ def main() -> int:
                 options && 'penaltyPromptTokens' in options
                   ? options.penaltyPromptTokens
                   : '<absent>',
+              hasGrammar: typeof options?.grammar === 'string' && options.grammar.length > 0,
+              grammarLazy: options?.grammarLazy ?? false,
+              grammarTriggerCount: Array.from(options?.grammarTriggers ?? []).length,
               seed: options?.seed ?? null,
               partTypes: Array.from(options?.parts ?? []).map(
                 part => String(part?.type ?? ''),
@@ -870,6 +878,22 @@ def main() -> int:
                 window.__llamadartBridgeSpeechToTextSupported ?? null,
             })"""
         )
+        if args.expect_lazy_grammar:
+            capabilities = completion_check["capabilities"] or {}
+            options = completion_check["options"] or {}
+            if capabilities.get("lazyGrammar") is not True:
+                raise RuntimeError(
+                    f"Bridge did not report lazyGrammar: true: {capabilities!r}"
+                )
+            if (
+                not options.get("hasGrammar")
+                or options.get("grammarLazy") is not True
+                or options.get("grammarTriggerCount", 0) < 1
+            ):
+                raise RuntimeError(
+                    f"Completion did not carry a lazy grammar with triggers: {options!r}"
+                )
+
         if args.expect_penalty_prompt_tokens_probe:
             capabilities = completion_check["capabilities"] or {}
             if capabilities.get("penaltyPromptTokens") is not True:

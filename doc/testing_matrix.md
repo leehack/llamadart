@@ -158,7 +158,7 @@ Pick targeted rows based on the touched surface:
 | Tool-result media (`LlamaToolResultContent.content`, `LlamaToolOutput`) | `root-vm`, `tool-result-image-smoke`, validation `qwen3vl-gguf-cpu` / `-metal` (`M01`) |
 | LiteRT-LM embedding engine | `litert-lm-multimodal-embedding`; includes the documented local-only upstream WebGPU parity diagnostic |
 | LiteRT-LM native backend | `litert-lm-lifecycle`, `litert-lm-engine-smoke`, `litert-lm-chat-features-smoke`, `litert-lm-json-schema`, `litert-lm-asr-smoke` |
-| Web bridge bootstrap or interop | `web-bridge-smoke`, `web-mock-chat-smoke`, `web-real-model-smoke`, `web-tool-penalty-smoke` |
+| Web bridge bootstrap or interop | `web-bridge-smoke`, `web-mock-chat-smoke`, `web-real-model-smoke`, `web-tool-penalty-smoke`, `web-lazy-grammar` |
 | WebGPU multimodal | `webgpu-multimodal-regression`, `web-speech-task-cancel`, plus `web-speech-to-text-smoke` for typed Qwen3-ASR and `web-text-to-speech-smoke` for typed Qwen3-TTS |
 | Large WebGPU GGUF / wasm64 selection | `gemma4-webgpu-mem64` |
 | LiteRT-LM web / Gemma 4 web bundle | `gemma4-litert-web` |
@@ -214,7 +214,7 @@ The matrix is designed to cover these essential axes:
 | Axis | Covered by |
 | --- | --- |
 | llama.cpp native GGUF | `root-vm`, `native-prompt-reuse-parity`, `native-inference-benchmark`, `gguf-chat-features-smoke`, `gguf-audio-chat-smoke`, `decision-model-smoke` |
-| llama.cpp WebGPU GGUF | `web-bridge-smoke`, `web-mock-chat-smoke`, `web-real-model-smoke`, `web-tool-penalty-smoke`, `webgpu-multimodal-regression`, `web-speech-to-text-smoke`, `web-text-to-speech-smoke`, `web-speech-task-cancel`, `gemma4-webgpu-mem64`, `decision-model-web-smoke` |
+| llama.cpp WebGPU GGUF | `web-bridge-smoke`, `web-mock-chat-smoke`, `web-real-model-smoke`, `web-tool-penalty-smoke`, `web-lazy-grammar`, `webgpu-multimodal-regression`, `web-speech-to-text-smoke`, `web-text-to-speech-smoke`, `web-speech-task-cancel`, `gemma4-webgpu-mem64`, `decision-model-web-smoke` |
 | LiteRT-LM native `.litertlm` | `litert-lm-engine-smoke`, `litert-lm-chat-features-smoke`, `native-hook-bundles` |
 | LiteRT-LM web `.litertlm` | `gemma4-litert-web` |
 | Model families | Qwen 2.5 prompt reuse, Qwen 3/3.5 chat/multimodal, Gemma 4 tool/thinking/mem64/LiteRT-LM/audio, Laya ModernBERT decision encoder and head |
@@ -1184,3 +1184,25 @@ weights, Pub cache or SDK/runtime copies. Download by artifact ID and retain a
 verified local copy before expiry; independently verify its outer digest and
 inner inventory using the fixture verifier. A passing normal aggregate does not
 establish a qualification result or replace independent interpretation.
+
+## Web lazy grammar
+
+Stage existing read-only weights under `build/web_lazy_grammar/models/` and write
+`build/web_lazy_grammar/config.json`:
+
+```json
+{"assets":"bridge/","model":"models/stories15M.gguf"}
+```
+
+Run `dart run tool/testing/run_local_e2e.dart --scenario web-lazy-grammar --dry-run`
+first, then omit `--dry-run`. The runner fetches pinned assets into `bridge/` and
+uses `chrome-webgpu` for SharedArrayBuffer support. The suite loads CPU Wasm
+(`gpuLayers: 0`) in direct and worker modes. Greedy output supplies a visible
+prefix and unique two-token trigger; the constrained suffix must match the
+requested grammar for word, pattern and pattern-full triggers. A scored token
+checks token activation. Custom-root, missing-trigger, invalid-grammar and replay
+rejection controls must preserve the runtime and subsequent plain output.
+
+This qualifies the Web grammar plumbing on the selected weights, not hardware
+WebGPU or LFM2 auto accuracy/enforcement (#1715). The latter still needs its
+separate template contract and false-probe restriction.
