@@ -197,9 +197,19 @@ keeps JSON string decoding.
 Declare every argument with the correct type. This parser change does not add
 canonical `ToolDefinition.fromJsonSchema` generation support for LFM2: the
 existing capability gate still rejects it. Required calls retain the existing
-JSON-list grammar; auto lazy grammar, markers inside reasoning, parallel gating
-and length-truncated partial-call behavior remain tracked in
-[#1610](https://github.com/leehack/llamadart/issues/1610).
+JSON-list grammar. Tool markers inside recognized reasoning remain `thinking`
+text and never become executable calls. Calls after the thought closes still
+work, and literal `<think>`/`</think>` inside complete tool arguments stay data.
+
+An explicit `parallelToolCalls: true` reaches the supported format's tool
+grammar even when template probes do not recognize parallel assistant history.
+The capability report still describes that history support; the flag does not
+add an unsupported format or backend protocol. This corrects
+[#1713](https://github.com/leehack/llamadart/issues/1713), while the reasoning
+boundary is tracked by [#1714](https://github.com/leehack/llamadart/issues/1714).
+Auto lazy grammar and length-truncated diagnostics remain separate required
+work in [#1715](https://github.com/leehack/llamadart/issues/1715) and
+[#1716](https://github.com/leehack/llamadart/issues/1716).
 
 Solar Open replies may contain several content-channel segments. Parsed and
 streamed completions preserve each accepted segment and the whitespace between

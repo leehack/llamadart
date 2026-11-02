@@ -237,7 +237,7 @@
     "lfm2": {
       "toolCallOpening": "Lfm2Handler",
       "keepsThoughtTagsAsContent": false,
-      "parsesCallsInsideThoughts": true,
+      "parsesCallsInsideThoughts": false,
       "mayEmbedToolEnvelopeAfterContent": false,
       "hasRepeatedContentChannels": false,
       "disabledByResponseSchema": false,

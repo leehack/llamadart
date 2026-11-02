@@ -232,34 +232,59 @@ class Lfm2Handler extends ChatTemplateHandler
     const closing = '<|tool_call_end|>';
     final toolCalls = <LlamaCompletionChunkToolCall>[];
     final content = StringBuffer();
+    final initialThought = _initialThoughtState(
+      output,
+      schemas,
+      thinkingForcedOpen: thinkingForcedOpen,
+    );
+    // A later explicit opener makes the earlier prefix content in the legacy
+    // final parse. Its channel is not safe to stream until a boundary or EOF.
+    if (isPartial && thinkingForcedOpen && !initialThought.boundarySeen) {
+      return ChatParseResult(content: '');
+    }
+    var inThought = initialThought.inThought;
     var from = 0;
     while (true) {
       final start = output.indexOf(opening, from);
       if (start == -1) break;
+      final prefix = output.substring(from, start);
+      inThought = _afterThoughtTags(prefix, inThought);
+      if (inThought) {
+        // Reasoning is plain text, even when it resembles a quoted call.
+        final thoughtEnd = output.indexOf('</think>', start);
+        final after = thoughtEnd == -1
+            ? output.length
+            : thoughtEnd + '</think>'.length;
+        content
+          ..write(prefix)
+          ..write(output.substring(start, after));
+        from = after;
+        inThought = thoughtEnd == -1;
+        continue;
+      }
       final payloadStart = start + opening.length;
       final firstEnd = output.indexOf(closing, payloadStart);
-      if (firstEnd == -1) break;
-      var end = _toolCallEnd(output, payloadStart, firstEnd);
-      var parsedCalls = _parseCallList(
-        output.substring(payloadStart, end).trim(),
+      if (firstEnd == -1 ||
+          isPartial && _toolCallEnd(output, payloadStart) == null) {
+        if (isPartial) {
+          content.write(prefix);
+          from = output.length;
+        }
+        break;
+      }
+      final envelope = _parseEnclosedCalls(
+        output,
+        payloadStart,
+        firstEnd,
         startIndex: toolCalls.length,
         schemas: schemas,
       );
-      // Only extend a legacy envelope when it contains a complete call list.
-      // Otherwise an unmatched quote could consume a later call or prose.
-      if (end != firstEnd && parsedCalls == null) {
-        end = firstEnd;
-        parsedCalls = _parseCallList(
-          output.substring(payloadStart, end).trim(),
-          startIndex: toolCalls.length,
-          schemas: schemas,
-        );
+      content.write(prefix);
+      final after = envelope.end + closing.length;
+      if (envelope.calls != null) {
+        toolCalls.addAll(envelope.calls!);
       }
-      if (parsedCalls != null) {
-        toolCalls.addAll(parsedCalls);
-      }
-      content.write(output.substring(from, start));
-      from = end + closing.length;
+      from = after;
     }
     content.write(output.substring(from));
     final contentText = content.toString();
@@ -270,13 +295,92 @@ class Lfm2Handler extends ChatTemplateHandler
     );
 
     return ChatParseResult(
-      content: thinking.content.trim(),
+      content: isPartial
+          ? withoutTrailingTagPrefix(thinking.content, [
+              '<think>',
+              '</think>',
+              opening,
+            ]).trim()
+          : thinking.content.trim(),
       reasoningContent: thinking.reasoning,
       toolCalls: toolCalls,
     );
   }
 
-  int _toolCallEnd(String output, int from, int firstEnd) {
+  ({int end, List<LlamaCompletionChunkToolCall>? calls}) _parseEnclosedCalls(
+    String output,
+    int payloadStart,
+    int firstEnd, {
+    required int startIndex,
+    required Map<String, Map<String, dynamic>> schemas,
+  }) {
+    var end = _toolCallEnd(output, payloadStart) ?? firstEnd;
+    var calls = _parseCallList(
+      output.substring(payloadStart, end).trim(),
+      startIndex: startIndex,
+      schemas: schemas,
+    );
+    // An unmatched quote must not consume a later call or visible prose.
+    if (end != firstEnd && calls == null) {
+      end = firstEnd;
+      calls = _parseCallList(
+        output.substring(payloadStart, end).trim(),
+        startIndex: startIndex,
+        schemas: schemas,
+      );
+    }
+    return (end: end, calls: calls);
+  }
+
+  ({bool inThought, bool boundarySeen}) _initialThoughtState(
+    String output,
+    Map<String, Map<String, dynamic>> schemas, {
+    required bool thinkingForcedOpen,
+  }) {
+    var from = 0;
+    while (from < output.length) {
+      final open = output.indexOf('<think>', from);
+      final close = output.indexOf('</think>', from);
+      final tag = open == -1
+          ? close
+          : close == -1 || open < close
+          ? open
+          : close;
+      if (tag == -1) break;
+      final call = output.indexOf('<|tool_call_start|>', from);
+      if (call == -1 || tag < call) {
+        return (inThought: tag == close, boundarySeen: true);
+      }
+      final payload = call + '<|tool_call_start|>'.length;
+      final end = output.indexOf('<|tool_call_end|>', payload);
+      if (end == -1 || _toolCallEnd(output, payload) == null) break;
+      // Tags in a complete argument are data, not the first thought marker.
+      from =
+          _parseEnclosedCalls(
+            output,
+            payload,
+            end,
+            startIndex: 0,
+            schemas: schemas,
+          ).end +
+          '<|tool_call_end|>'.length;
+    }
+    return (inThought: thinkingForcedOpen, boundarySeen: false);
+  }
+
+  bool _afterThoughtTags(String text, bool inThought) {
+    var from = 0;
+    while (from < text.length) {
+      final tag = inThought ? '</think>' : '<think>';
+      final at = text.indexOf(tag, from);
+      if (at == -1) break;
+      inThought = !inThought;
+      from = at + tag.length;
+    }
+    return inThought;
+  }
+
+  int? _toolCallEnd(String output, int from) {
     int? quote;
     for (var i = from; i < output.length; i++) {
       final codeUnit = output.codeUnitAt(i);
@@ -292,8 +396,7 @@ class Lfm2Handler extends ChatTemplateHandler
         return i;
       }
     }
-    // Preserve the existing malformed/unclosed-quote handling.
-    return firstEnd;
+    return null;
   }
 
   @override

@@ -466,7 +466,6 @@ chatFormatRegistrations = List.unmodifiable(<ChatFormatRegistration>[
     traits: ChatFormatTraits(
       qualifiesJsonSchemaTools: false,
       toolCallOpening: Lfm2Handler.toolCallOpening,
-      parsesCallsInsideThoughts: true,
       requiredKeepsLazyGrammar: true,
     ),
   ),

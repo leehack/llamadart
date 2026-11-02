@@ -1414,10 +1414,11 @@ void main() {
       expect(grammar(parallel: true), isNot(grammar(parallel: false)));
     });
 
-    test('still ignores parallelToolCalls on another format the caps deny', () {
+    test('honors explicit parallelToolCalls when Qwen caps deny it', () {
       const template =
-          '{% if tools %}<tools></tools>{% endif %}<|im_start|>user\n'
-          '{{ messages[0]["content"] }}<|im_end|>{# <tool_call> #}';
+          '{# <tool_call> <function= <parameter= '
+          'Function calls MUST follow the specified format #}'
+          '{% for message in messages %}{{ message.content }}{% endfor %}';
       expect(TemplateCaps.detect(template).supportsParallelToolCalls, isFalse);
 
       String? grammar({required bool parallel}) => ChatTemplateEngine.render(
@@ -1429,7 +1430,7 @@ void main() {
         parallelToolCalls: parallel,
       ).grammar;
 
-      expect(grammar(parallel: true), grammar(parallel: false));
+      expect(grammar(parallel: true), isNot(grammar(parallel: false)));
     });
 
     test('keeps lazy grammar for strict LFM2 force-json-schema mode', () {
@@ -1710,9 +1711,7 @@ void main() {
         parallelToolCalls: true,
       );
       expect(minCallsFromParser(autoParallel.parser!), equals(0));
-      // Parallel stays disabled unless template capability detection
-      // confirms tool-call list emission support.
-      expect(maxCallsFromParser(autoParallel.parser!), equals(1));
+      expect(maxCallsFromParser(autoParallel.parser!), equals(-1));
 
       final requiredSingle = ChatTemplateEngine.render(
         templateSource: template,
@@ -1865,9 +1864,7 @@ void main() {
         parallelToolCalls: true,
       );
       expect(minCallsFromParser(autoParallel.parser!), equals(0));
-      // Parallel stays disabled unless template capability detection
-      // confirms tool-call list emission support.
-      expect(maxCallsFromParser(autoParallel.parser!), equals(1));
+      expect(maxCallsFromParser(autoParallel.parser!), equals(-1));
 
       final requiredSingle = ChatTemplateEngine.render(
         templateSource: template,
