@@ -27,8 +27,8 @@ also request an x86_64 Simulator slice must exclude x86_64 for LiteRT-LM builds.
 
 ```yaml
 dependencies:
-  llamadart: ^0.17.4
-  llamadart_litert_lm_flutter: ^0.17.2
+  llamadart: ^0.17.5
+  llamadart_litert_lm_flutter: ^0.17.3
 ```
 
 This package has no runtime Dart API of its own. Import `package:llamadart`
