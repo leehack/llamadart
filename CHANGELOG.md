@@ -1,5 +1,7 @@
 ## Unreleased
 
+- Release checks reject changed Apple companion package contents without a version bump, including README-only changes.
+
 ## 0.17.4
 
 * Restore documentation destinations linked from published package READMEs and protect retained release notes.

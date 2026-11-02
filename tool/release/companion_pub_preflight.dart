@@ -2,7 +2,7 @@
 
 /// Fails a release before any tag is pushed when a Flutter Apple companion
 /// package does not exist on pub.dev yet, or when its checked-out version is
-/// already published with a different `llamadart` constraint.
+/// already published with different constraints or publishable contents.
 ///
 /// `release_on_prep_merge.yml` publishes the core first, then pushes a
 /// `<package>-v<version>` tag for every companion version missing from
@@ -21,10 +21,12 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:crypto/crypto.dart';
 import 'package:pub_semver/pub_semver.dart';
 import 'package:yaml/yaml.dart';
 
 import '../testing/verify_release_docs_versions.dart';
+import 'companion_package_contents.dart';
 
 /// A Flutter Apple SwiftPM companion package checked out under `packages/`.
 typedef CompanionPackage = ({String name, String path});
@@ -186,6 +188,104 @@ Future<List<String>> companionPublishedConstraintProblems(
   return problems;
 }
 
+/// Canonical immutable archive for one published companion version.
+Uri pubDevArchiveUri(String package, String version) =>
+    Uri.https('pub.dev', '/api/archives/$package-$version.tar.gz');
+
+/// Rejects changed publishable contents at a version automation would skip.
+/// The same-version archive is checksum-bound to pub.dev's version response.
+Future<List<String>> companionPublishedContentProblems(
+  Directory repoRoot,
+  List<CompanionPackage> companions,
+  Future<PubDevResponse> Function(Uri uri) get, {
+  Future<List<int>> Function(Uri uri) getArchive = pubDevArchiveGet,
+}) async {
+  final problems = <String>[];
+  for (final companion in companions) {
+    String? version;
+    try {
+      final package = Directory('${repoRoot.path}/${companion.path}');
+      version = _pubspecVersion(
+        File('${package.path}/pubspec.yaml').readAsStringSync(),
+      );
+      if (version == null) throw const FormatException('Missing version.');
+      final response = await get(pubDevVersionUri(companion.name, version));
+      if (response.status == HttpStatus.notFound) continue;
+      if (response.status != HttpStatus.ok) {
+        throw const FormatException('Published version unavailable.');
+      }
+      final metadata = jsonDecode(response.body);
+      final archiveUri = pubDevArchiveUri(companion.name, version);
+      if (metadata is! Map ||
+          metadata['version'] != version ||
+          metadata['pubspec'] is! Map ||
+          metadata['pubspec']['name'] != companion.name ||
+          metadata['pubspec']['version'] != version ||
+          metadata['archive_url'] != '$archiveUri' ||
+          metadata['archive_sha256'] is! String ||
+          !RegExp(r'^[0-9a-f]{64}$').hasMatch(metadata['archive_sha256'])) {
+        throw const FormatException('Invalid published archive identity.');
+      }
+      final archive = await getArchive(archiveUri);
+      if (sha256.convert(archive).toString() != metadata['archive_sha256']) {
+        throw const FormatException('Published archive checksum mismatch.');
+      }
+      final published = publishedCompanionContents(archive);
+      final candidate = await candidateCompanionContents(package);
+      if (candidate.length != published.length ||
+          candidate.entries.any(
+            (entry) => published[entry.key] != entry.value,
+          )) {
+        problems.add(
+          '${companion.name} $version is already on pub.dev, but its '
+          'publishable contents changed. Bump ${companion.name} past $version '
+          'in the release-prep PR. No release tags were pushed.',
+        );
+      }
+    } on Object {
+      // Network/parser/process errors can contain credentials or local paths.
+      problems.add(
+        'Could not verify published contents of ${companion.name} '
+        '${version ?? '(missing version)'}. No release tags were pushed.',
+      );
+    }
+  }
+  return problems;
+}
+
+/// Downloads only a canonical pub.dev archive, with bounded response size.
+Future<List<int>> pubDevArchiveGet(Uri uri) async {
+  if (uri.scheme != 'https' ||
+      uri.host != 'pub.dev' ||
+      uri.hasPort ||
+      uri.userInfo.isNotEmpty ||
+      uri.hasQuery ||
+      uri.hasFragment ||
+      !RegExp(
+        r'^/api/archives/[a-z0-9_]+-[0-9A-Za-z.+-]+\.tar\.gz$',
+      ).hasMatch(uri.path)) {
+    throw const FormatException('Not a canonical pub.dev archive URL.');
+  }
+  final client = HttpClient()..connectionTimeout = const Duration(seconds: 30);
+  try {
+    final request = await client.getUrl(uri);
+    final response = await request.close().timeout(const Duration(seconds: 60));
+    if (response.statusCode != HttpStatus.ok) {
+      throw HttpException('Published archive unavailable.');
+    }
+    return await response
+        .fold<List<int>>(<int>[], (bytes, chunk) {
+          if (bytes.length + chunk.length > 100 * 1024 * 1024) {
+            throw const FormatException('Published archive exceeds 100 MiB.');
+          }
+          return bytes..addAll(chunk);
+        })
+        .timeout(const Duration(seconds: 60));
+  } finally {
+    client.close(force: true);
+  }
+}
+
 String? _pubspecVersion(String source) {
   try {
     final pubspec = loadYaml(source);
@@ -256,7 +356,7 @@ Future<PubDevResponse> getWithOneRetry(
   return get(uri);
 }
 
-/// Runs both preflight checks on the companions under [repoRoot], fetching
+/// Runs all preflight checks on the companions under [repoRoot], fetching
 /// pub.dev through [get], reports to [out] or [err], and returns the exit
 /// code: `0` only when no problem stops the release.
 Future<int> runCompanionPubPreflight(
@@ -264,18 +364,34 @@ Future<int> runCompanionPubPreflight(
   Future<PubDevResponse> Function(Uri uri) get, {
   required StringSink out,
   required StringSink err,
+  Future<List<int>> Function(Uri uri) getArchive = pubDevArchiveGet,
 }) async {
   final companions = discoverAppleCompanionPackages(repoRoot);
   if (companions.isEmpty) {
     err.writeln('No Flutter Apple companion packages found under packages/.');
     return 1;
   }
+  // A version response must not change between the constraint and payload
+  // checks, particularly from an existing version to a transient 404.
+  final responses = <Uri, Future<PubDevResponse>>{};
+  Future<PubDevResponse> cachedGet(Uri uri) =>
+      responses.putIfAbsent(uri, () => get(uri));
   final problems = [
     ...await companionPubPreflightProblems(
       companions,
-      (uri) async => (await get(uri)).status,
+      (uri) async => (await cachedGet(uri)).status,
     ),
-    ...await companionPublishedConstraintProblems(repoRoot, companions, get),
+    ...await companionPublishedConstraintProblems(
+      repoRoot,
+      companions,
+      cachedGet,
+    ),
+    ...await companionPublishedContentProblems(
+      repoRoot,
+      companions,
+      cachedGet,
+      getArchive: getArchive,
+    ),
   ];
   if (problems.isNotEmpty) {
     err.writeln('Companion pub.dev preflight failed:');
@@ -284,7 +400,7 @@ Future<int> runCompanionPubPreflight(
   }
   out.writeln(
     'Companion packages exist on pub.dev, and no published companion '
-    'version declares a different llamadart constraint: '
+    'version changes its constraint or publishable contents: '
     '${companions.map((companion) => companion.name).join(', ')}.',
   );
   return 0;

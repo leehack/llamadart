@@ -35,6 +35,9 @@ YamlMap _step(String workflow, String job, String name) {
 /// to `$STUB_LOG` and answer from files under `$STUB_STATE`.
 const _stubs = <String, String>{
   'dart': r'''
+if [[ "$1" == tool/release/stage_companion_package.dart ]]; then
+  exec "$STUB_REAL_DART" "$@"
+fi
 if [[ -f "$STUB_STATE/dart_failures" ]] && grep -Fxq "$2" "$STUB_STATE/dart_failures"; then
   exit 1
 fi
@@ -800,6 +803,10 @@ List<String> _companionPublishProblems(String workflow) {
   final sandbox = _Sandbox();
   final package = '${sandbox.root}/checkout/packages/companion';
   sandbox
+    ..file(
+      'checkout/tool/release/stage_companion_package.dart',
+      _read('tool/release/stage_companion_package.dart'),
+    )
     ..file('checkout/packages/companion/pubspec.yaml', 'name: companion\n')
     ..file(
       'checkout/packages/companion/pubspec_overrides.yaml',
@@ -818,7 +825,11 @@ List<String> _companionPublishProblems(String workflow) {
   final result = sandbox.run(
     prepare,
     workingDirectory: '${sandbox.root}/checkout',
-    env: {...resolved.env, 'RUNNER_TEMP': runnerTemp},
+    env: {
+      ...resolved.env,
+      'RUNNER_TEMP': runnerTemp,
+      'STUB_REAL_DART': Platform.resolvedExecutable,
+    },
   );
   final published = '$runnerTemp/pub-package';
   if (result.exitCode != 0) {
@@ -1140,8 +1151,9 @@ void main() {
     test('rejects a publish that keeps the checkout override', () {
       final mutations = <String, String Function(String)>{
         'W5 copies pubspec_overrides.yaml': (source) => source.replaceFirst(
-          "            --exclude='pubspec_overrides.yaml' \\\n",
-          '',
+          '          dart tool/release/stage_companion_package.dart \\\n'
+              '            "\$PACKAGE_PATH" "\$RUNNER_TEMP/pub-package"',
+          '          cp -R "\$PACKAGE_PATH" "\$RUNNER_TEMP/pub-package"',
         ),
         'publishes from the checkout': (source) => source.replaceFirst(
           'run: flutter pub publish --force\n'
