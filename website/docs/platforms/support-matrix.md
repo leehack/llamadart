@@ -63,7 +63,9 @@ recognition. Decision models run on llama.cpp and WebGPU only; on LiteRT-LM
 `DecisionEngine.load` and `attach` throw `LlamaUnsupportedException`. See
 [Speech to text](../guides/speech-to-text#choose-an-approach),
 [Text to speech](../guides/text-to-speech) and
-[Decision models](../guides/decision-models).
+[Decision models](../guides/decision-models). Decision tasks stop preflight or
+discard an already-dispatched answer after the backend finishes; they do not
+add native interruption or support on LiteRT-LM.
 
 ## Compute device
 
@@ -119,6 +121,7 @@ native and web. Model architecture support depends on the pinned runtime; see
 
 | Feature | Native llama.cpp | WebGPU | Native LiteRT-LM | LiteRT-LM Web |
 | --- | --- | --- | --- | --- |
+| Decision tasks (cooperative) | Preflight stop or post-dispatch answer discard; no native interruption | Same, with decision-capable bridge assets | No | No |
 | Model-free setup report | Desktop IO only; publication policy, no native/model probe | Typed unsupported; no live browser check | Desktop IO only; publication policy, no native/model probe | Typed unsupported |
 | Pre-load check | `npu` and options llama.cpp ignores rejected; native library and GPU unchecked | Options the Web runtime ignores rejected; WebGPU and bridge assets unchecked | No runtime on macOS x86_64, Windows arm64 or the x86_64 iOS simulator, and explicit devices the ABI lacks (`gpu` on Linux arm64), and embeddings off macOS arm64, iOS arm64 and Android arm64, rejected; `LlamaEngine(LiteRtLmBackend())` reports `unknown` | Options the Web runtime ignores, `npu` and the embedding engine rejected; browser runtime unchecked |
 | LoRA | `ModelParams.loras` at load and `setLoraSource` at runtime, stacked and scaled; aLoRA rejected | Same, with bridge assets whose `getLoraAdapterCapabilities()` reports support ([llama-web-bridge#142](https://github.com/leehack/llama-web-bridge/pull/142)); otherwise rejected | One default-scale text adapter through `ModelParams.loras` at load | No |
