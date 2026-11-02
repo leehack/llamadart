@@ -1,6 +1,7 @@
 ## Unreleased
 
 - Preserve quoted LFM2/LFM2.5 tool-end markers inside tool arguments during parsing and streaming.
+- Release checks reject changed Apple companion package contents without a version bump, including README-only changes.
 
 ## 0.17.4
 

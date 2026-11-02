@@ -119,13 +119,8 @@ jobs:
           PACKAGE_PATH: ${{ steps.package.outputs.path }}
         run: |
           rm -rf "$RUNNER_TEMP/pub-package"
-          mkdir -p "$RUNNER_TEMP/pub-package"
-          rsync -a --delete \
-            --exclude='.dart_tool' \
-            --exclude='build' \
-            --exclude='pubspec.lock' \
-            --exclude='pubspec_overrides.yaml' \
-            "$PACKAGE_PATH/" "$RUNNER_TEMP/pub-package/"
+          dart tool/release/stage_companion_package.dart \
+            "$PACKAGE_PATH" "$RUNNER_TEMP/pub-package"
 
       # pub.dev serves the package listing with max-age=120, so pub can
       # briefly miss the core release_on_prep_merge.yml just saw there.

@@ -134,7 +134,17 @@ version alignment:
   the previous pin.
 - Before any tag is pushed, `tool/release/companion_pub_preflight.dart` also
   fails when a companion's checked-out version is already on pub.dev with a
-  different `llamadart` constraint; bump that companion's version.
+  different `llamadart` constraint or publishable contents. It stages with the
+  same helper as the publisher, uses pub's selected-file inventory and checks
+  the bytes against the checksum-verified published archive. Unchanged packages
+  and publication-excluded caches do not require a bump.
+  The current install-version verifier requires companion README snippets to
+  name the new core patch, so normal core patch preparation changes all three
+  companion payloads and requires documentation version bumps. A bounded
+  core-metadata readiness record does not bypass this unconditional pre-tag
+  check. Archive selection skips dependency validation because the candidate
+  core is not published yet; companion publishing retains its normal dependency
+  resolution, dry-run validation and publication checks.
 - Move accumulated `Unreleased` entries in `CHANGELOG.md` and
   `website/docs/changelog/recent-releases.md` into the new version section and
   remove the heading. `--release-prep` fails while either keeps
