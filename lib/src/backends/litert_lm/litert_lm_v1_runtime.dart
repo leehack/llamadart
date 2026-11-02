@@ -1,9 +1,14 @@
+import 'dart:async';
+import 'dart:convert';
 import 'dart:ffi';
 
 import 'package:ffi/ffi.dart';
 
 import '../../core/exceptions.dart';
 import 'litert_lm_last_error.dart';
+import 'litert_lm_finish_reason.dart';
+
+part 'litert_lm_v1_conversation.dart';
 
 typedef _VersionN = Int Function(Pointer<Int>, Pointer<Int>, Pointer<Int>);
 typedef _VersionD = int Function(Pointer<Int>, Pointer<Int>, Pointer<Int>);
@@ -65,12 +70,12 @@ typedef _GenerateD =
 typedef _TextN = Int Function(Pointer<Void>, Size, Pointer<Pointer<Utf8>>);
 typedef _TextD = int Function(Pointer<Void>, int, Pointer<Pointer<Utf8>>);
 
-/// Internal C API 1.0 preparation adapter for synchronous raw text sessions.
+/// Internal C API 1.0 preparation adapter for CPU text operations.
 ///
-/// This is not selected by the public runtime client. Conversation callbacks,
-/// cancellation, ASR, embeddings and schema constraints remain behind that
-/// client's compatibility refusal until their separate migration is complete.
-/// All calls are synchronous on the owning isolate; handles never escape it.
+/// This is not selected by the public runtime client. Its internal conversation
+/// preparation is separate from raw sessions. ASR, embeddings and schemas remain
+/// behind the public compatibility refusal until their separate migration is
+/// complete. Handle operations run on the owning isolate; handles never escape it.
 final class LiteRtLmV1Runtime {
   /// Opens a caller-supplied candidate library with exactly C API 1.0.x.
   LiteRtLmV1Runtime(DynamicLibrary library) : _library = library {
@@ -132,6 +137,7 @@ final class LiteRtLmV1Runtime {
   final DynamicLibrary _library;
   Pointer<Void> _engine = nullptr;
   bool _disposed = false;
+  LiteRtLmV1Conversation? _conversation;
   List<String> _diagnosticPaths = const [];
 
   late final _message = _library
@@ -241,6 +247,14 @@ final class LiteRtLmV1Runtime {
     if (_disposed) throw LlamaStateException('C API 1.0 adapter is disposed.');
   }
 
+  void _requireNoConversation() {
+    if (_conversation != null) {
+      throw LlamaStateException(
+        'Close the C API 1.0 conversation before changing or using its engine directly.',
+      );
+    }
+  }
+
   /// Creates a CPU candidate engine, retaining an existing engine on failure.
   void load(
     String modelPath, {
@@ -249,6 +263,7 @@ final class LiteRtLmV1Runtime {
     int numberOfThreads = 4,
   }) {
     _requireLive();
+    _requireNoConversation();
     if (modelPath.isEmpty ||
         modelPath.contains('\u0000') ||
         cacheDir.isEmpty ||
@@ -300,6 +315,7 @@ final class LiteRtLmV1Runtime {
   /// before returning, including on a native status failure.
   String generateText(String prompt, {int maxOutputTokens = 32}) {
     _requireLive();
+    _requireNoConversation();
     if (_engine == nullptr) {
       throw LlamaStateException('Load a C API 1.0 engine before generation.');
     }
@@ -368,9 +384,26 @@ final class LiteRtLmV1Runtime {
     }
   }
 
+  /// Opens one internal text conversation on the loaded CPU engine.
+  ///
+  /// The owner bridge must copy callback strings with stream-chunk ABI 2.
+  /// Close the conversation before engine reload, raw generation or disposal.
+  LiteRtLmV1Conversation openConversation({int maxOutputTokens = 32}) {
+    _requireLive();
+    _requireNoConversation();
+    if (_engine == nullptr) {
+      throw LlamaStateException('Load a C API 1.0 engine first.');
+    }
+    if (maxOutputTokens <= 0 || maxOutputTokens > 0x7fffffff) {
+      throw LlamaArgumentException('maxOutputTokens must be positive.');
+    }
+    return _conversation = LiteRtLmV1Conversation._(this, maxOutputTokens);
+  }
+
   /// Releases the owned engine exactly once. Disposal is final.
   void dispose() {
     if (_disposed) return;
+    _requireNoConversation();
     _disposed = true;
     if (_engine != nullptr) _engineDelete(_engine);
     _engine = nullptr;
