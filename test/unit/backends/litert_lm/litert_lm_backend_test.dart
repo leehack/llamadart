@@ -2346,7 +2346,7 @@ void main() {
     expect(await backend.getPerformanceContext(1), isNull);
     final mirror = reflect(backend);
     final owner = mirror.type.owner as LibraryMirror;
-    mirror.invoke(MirrorSystem.getSymbol('_killWorker', owner), []);
+    mirror.invoke(MirrorSystem.getSymbol('_stopWorker', owner), []);
     mirror.setField(
       MirrorSystem.getSymbol('_sendPort', owner),
       worker.sendPort,

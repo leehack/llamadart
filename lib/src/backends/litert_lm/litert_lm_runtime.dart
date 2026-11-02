@@ -1668,58 +1668,56 @@ class LiteRtLmRuntimeClient {
       },
     );
 
+    Object? streamFailure;
+    var nativeCancelled = false;
     callable = NativeCallable<_StreamCallbackNative>.listener((
       Pointer<Void> data,
       Pointer<Char> chunk,
       bool isFinal,
       Pointer<Char> errorMessage,
     ) {
-      if (isFinal || errorMessage != nullptr) {
-        // The proxy records the reason before its final callback and frees it
-        // in cleanup(), so it must be read here, before the stream closes.
-        final readFinishReason = _proxyGetFinishReason;
-        if (readFinishReason != null && callbackData != nullptr) {
-          _lastFinishReason = LiteRtLmFinishReason.fromWire(
-            readFinishReason(callbackData),
-          );
-        }
-      }
-      if (errorMessage != nullptr) {
-        final error = errorMessage.cast<Utf8>().toDartString();
-        _proxyFreeString?.call(errorMessage);
-        if (error.startsWith('CANCELLED')) {
-          if (!controller.isClosed) {
-            unawaited(controller.close());
-          }
-        } else {
-          if (!controller.isClosed) {
-            controller.addError(StateError(error));
-            unawaited(controller.close());
+      try {
+        if (errorMessage != nullptr) {
+          final error = errorMessage.cast<Utf8>().toDartString();
+          if (error.startsWith('CANCELLED')) {
+            nativeCancelled = true;
+          } else {
+            streamFailure ??= StateError(error);
           }
         }
-        cleanup();
-        return;
-      }
-
-      if (chunk != nullptr) {
-        final raw = chunk.cast<Utf8>().toDartString();
-        _proxyFreeString?.call(chunk);
-        final text = assembler.add(raw);
-        if (text.isNotEmpty && !controller.isClosed) {
-          controller.add(text);
+        if (chunk != nullptr && streamFailure == null && !nativeCancelled) {
+          final raw = chunk.cast<Utf8>().toDartString();
+          final text = assembler.add(raw);
+          if (text.isNotEmpty && !controller.isClosed) controller.add(text);
         }
+      } catch (_) {
+        streamFailure ??= StateError(
+          'LiteRT-LM stream returned invalid callback data.',
+        );
+      } finally {
+        if (chunk != nullptr) _proxyFreeString?.call(chunk);
+        if (errorMessage != nullptr) _proxyFreeString?.call(errorMessage);
       }
-
-      if (isFinal) {
-        final tail = assembler.flush();
-        if (tail.isNotEmpty && !controller.isClosed) {
-          controller.add(tail);
-        }
-        if (!controller.isClosed) {
-          unawaited(controller.close());
-        }
-        cleanup();
+      // An error is data, not proof that the native callback owner is idle.
+      // Keep the listener/proxy alive until the actual terminal callback.
+      if (!isFinal) return;
+      final readFinishReason = _proxyGetFinishReason;
+      if (readFinishReason != null && callbackData != nullptr) {
+        _lastFinishReason = LiteRtLmFinishReason.fromWire(
+          readFinishReason(callbackData),
+        );
       }
+      if (!controller.isClosed) {
+        final failure = streamFailure;
+        if (failure != null) {
+          controller.addError(failure);
+        } else if (!nativeCancelled) {
+          final tail = assembler.flush();
+          if (tail.isNotEmpty) controller.add(tail);
+        }
+        unawaited(controller.close());
+      }
+      cleanup();
     });
 
     var callbackFn = callable.nativeFunction;
