@@ -164,7 +164,10 @@ interface does not establish backend/model support; read `await engine.capabilit
   extension members, so call them on a `LlamaEngine`-typed value, never
   through `dynamic`. Runtime LoRA and multimodal projectors are the optional
   `BackendLoraSupport` and `BackendMultimodalSupport`; `LlamaEngine` throws
-  `LlamaUnsupportedException` for a backend without them. Avoid
+  `LlamaUnsupportedException` for a backend without them. New LFM2 automatic
+  Python tool grammar additionally needs `BackendPromptPenaltyGeneration` with
+  a truthful loaded-runtime getter; missing or false support rejects before
+  generation. Ordinary explicit grammar dispatch keeps its existing defaults. Avoid
   `package:llamadart/llama_cpp_bindings.dart`: the raw FFI is native-only
   and can change in any release.
 - Catch the `LlamaException` hierarchy (`LlamaModelException`,

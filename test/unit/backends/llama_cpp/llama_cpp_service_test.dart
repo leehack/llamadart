@@ -1319,6 +1319,117 @@ void main() {
     });
   });
 
+  test(
+    'scoped prompt penalties seed only penalties and never activate a lazy grammar',
+    () {
+      final directory = Directory.systemTemp.createTempSync(
+        'prompt-penalty-grammar-',
+      );
+      addTearDown(() => directory.deleteSync(recursive: true));
+      final file = writeSyntheticLlamaGguf(
+        path.join(directory.path, 'model.gguf'),
+      );
+      final service = LlamaCppService()..initializeBackend();
+      addTearDown(service.dispose);
+      final handle = service.loadModel(
+        file.path,
+        const ModelParams(gpuLayers: 0),
+      );
+      final model = _readPrivateForTesting<Map<int, Object>>(
+        service,
+        '_models',
+      )[handle]!;
+      final vocab = llama_model_get_vocab(
+        reflect(model).getField(#pointer).reflectee as Pointer<llama_model>,
+      );
+      final tokens = [service.tokenize(handle, 'B', false).last];
+      final prompt = calloc<Int32>(1)..value = tokens.single;
+      final grammar = 'root ::= "A"'.toNativeUtf8();
+      final root = 'root'.toNativeUtf8();
+      addTearDown(() {
+        calloc.free(prompt);
+        malloc.free(grammar);
+        malloc.free(root);
+      });
+      for (final withGrammar in [false, true]) {
+        for (final enabled in [false, true]) {
+          final params = GenerationParams(
+            temp: 0,
+            penalty: 1,
+            presencePenalty: 3,
+            grammar: withGrammar ? 'root ::= "A"' : null,
+            grammarLazy: withGrammar,
+            grammarTriggers: [GenerationGrammarTrigger(type: 0, value: 'B')],
+          );
+          final lazy = withGrammar
+              ? _invokePrivateForTesting<Object>(
+                  service,
+                  '_buildLazyGrammarConfig',
+                  [params],
+                )
+              : null;
+          final sampler = _invokePrivateForTesting<Pointer<llama_sampler>>(
+            service,
+            '_initializeSampler',
+            [
+              params,
+              vocab,
+              llama_vocab_n_tokens(vocab),
+              <int>[],
+              withGrammar ? grammar : nullptr,
+              root,
+              lazy,
+              null,
+              null,
+              1,
+              prompt,
+              enabled,
+            ],
+          );
+          try {
+            final data = calloc<llama_token_data>(1);
+            final array = calloc<llama_token_data_array>();
+            try {
+              data.ref
+                ..id = tokens.single
+                ..logit = 5
+                ..p = 0;
+              array.ref
+                ..data = data
+                ..size = 1
+                ..selected = -1
+                ..sorted = false;
+              llama_sampler_apply(llama_sampler_chain_get(sampler, 0), array);
+              expect(
+                data.ref.logit,
+                !withGrammar || enabled ? 2 : 5,
+                reason: 'grammar=$withGrammar policy=$enabled',
+              );
+              if (withGrammar) {
+                data.ref.logit = 5;
+                llama_sampler_apply(llama_sampler_chain_get(sampler, 1), array);
+                expect(
+                  data.ref.logit,
+                  5,
+                  reason:
+                      'Prompt trigger B must not activate the grammar that only accepts A.',
+                );
+              }
+            } finally {
+              calloc.free(data);
+              calloc.free(array);
+            }
+          } finally {
+            _invokePrivateForTesting<void>(service, '_freeSamplerChain', [
+              sampler,
+            ]);
+            if (lazy != null) reflect(lazy).invoke(#dispose, []);
+          }
+        }
+      }
+    },
+  );
+
   test('maps presence penalty to the native penalty sampler', () {
     final service = LlamaCppService();
 

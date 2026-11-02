@@ -69,6 +69,7 @@ class NativeAutoBackend
         BackendNativeChatGeneration,
         BackendJsonSchemaChatGeneration,
         BackendChatPromptGeneration,
+        BackendPromptPenaltyGeneration,
         BackendDeferredEngineCreation,
         BackendTextToSpeech,
         BackendDecision,
@@ -284,6 +285,40 @@ class NativeAutoBackend
       params,
       parts: parts,
     );
+  }
+
+  @override
+  bool get supportsPromptPenaltiesWithGrammar {
+    final delegate = _delegate;
+    return delegate is BackendPromptPenaltyGeneration &&
+        (delegate as BackendPromptPenaltyGeneration)
+            .supportsPromptPenaltiesWithGrammar;
+  }
+
+  @override
+  Stream<List<int>> generateWithPromptPenalties(
+    int contextHandle,
+    String prompt,
+    GenerationParams params, {
+    String? mediaMarker,
+    List<LlamaContentPart>? parts,
+  }) {
+    final delegate = _requireDelegate();
+    if (delegate is! BackendPromptPenaltyGeneration ||
+        !(delegate as BackendPromptPenaltyGeneration)
+            .supportsPromptPenaltiesWithGrammar) {
+      throw LlamaUnsupportedException(
+        'The selected native runtime cannot preserve prompt penalties with a grammar.',
+      );
+    }
+    return (delegate as BackendPromptPenaltyGeneration)
+        .generateWithPromptPenalties(
+          contextHandle,
+          prompt,
+          params,
+          mediaMarker: mediaMarker,
+          parts: parts,
+        );
   }
 
   @override

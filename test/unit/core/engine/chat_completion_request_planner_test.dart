@@ -13,6 +13,7 @@ import 'package:llamadart/src/core/models/tools/tool_definition.dart';
 import 'package:llamadart/src/core/models/tools/tool_param.dart';
 import 'package:llamadart/src/core/template/chat_format.dart';
 import 'package:llamadart/src/core/template/handlers/hermes_handler.dart';
+import 'package:llamadart/src/core/template/template_internal_metadata.dart';
 import 'package:test/test.dart';
 import '../../../support/raw_tool_schema_fixture.dart';
 
@@ -483,6 +484,60 @@ void main() {
         LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'Hello.'),
       ];
 
+      test(
+        'LFM2 auto requires explicit lazy support instead of dropping its grammar',
+        () {
+          final result = withLfm2AutoGrammar(
+            LlamaChatTemplateResult(
+              prompt: 'lfm prompt',
+              format: ChatFormat.lfm2.index,
+              grammar: 'root ::= "call"',
+              grammarLazy: true,
+              grammarTriggers: [
+                GrammarTrigger(type: 0, value: '<|tool_call_start|>'),
+              ],
+            ),
+            enabled: true,
+          );
+          for (final backend in [
+            _EagerGrammarBackend(),
+            _NoGrammarBackend(),
+            _BaseBackend(),
+            _PromptPenaltyBackend(false),
+          ]) {
+            expect(
+              () => ChatCompletionRequestPlanner.build(
+                backend: backend,
+                templateResult: result,
+                messages: messages,
+                tools: [_weatherTool],
+                toolChoice: ToolChoice.auto,
+                parallelToolCalls: false,
+              ),
+              throwsA(
+                isA<LlamaUnsupportedException>().having(
+                  (error) => error.message,
+                  'missing capability',
+                  contains('schema-directed lazy grammar'),
+                ),
+              ),
+            );
+          }
+          final plan = ChatCompletionRequestPlanner.build(
+            backend: _PromptPenaltyBackend(true),
+            templateResult: result,
+            messages: messages,
+            tools: [_weatherTool],
+            toolChoice: ToolChoice.auto,
+            parallelToolCalls: false,
+          );
+          expect(plan.generationParams.grammarLazy, isTrue);
+          expect(plan.generationParams.grammarTriggers, isNotEmpty);
+          expect(plan.excludesPromptFromPenalties, isFalse);
+          expect(plan.includesPromptInPenalties, isTrue);
+        },
+      );
+
       test('skips a lazy template grammar for ToolChoice.auto', () {
         final plan = ChatCompletionRequestPlanner.build(
           backend: _EagerGrammarBackend(),
@@ -702,4 +757,11 @@ class _NoGrammarNativeChatBackend extends _NoGrammarBackend
 class _BaseBackend implements LlamaBackend {
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+class _PromptPenaltyBackend extends _BaseBackend
+    implements BackendPromptPenaltyGeneration {
+  _PromptPenaltyBackend(this.supportsPromptPenaltiesWithGrammar);
+  @override
+  final bool supportsPromptPenaltiesWithGrammar;
 }

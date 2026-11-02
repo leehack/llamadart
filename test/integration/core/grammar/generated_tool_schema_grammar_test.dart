@@ -10,6 +10,9 @@ import 'package:ffi/ffi.dart';
 import 'package:llamadart/backend.dart';
 import 'package:llamadart/llamadart.dart';
 import 'package:llamadart/src/backends/llama_cpp/bindings.dart';
+import 'package:llamadart/src/backends/llama_cpp/lazy_grammar_triggers.dart';
+import 'package:llamadart/src/core/template/handlers/lfm2_handler.dart';
+import 'package:llamadart/src/core/template/template_internal_metadata.dart';
 import 'package:llamadart/src/core/engine/chat_completion_request_planner.dart';
 import 'package:llamadart/src/core/grammar/json_schema_converter.dart';
 import 'package:llamadart/src/core/grammar/tool_grammar_generator.dart'
@@ -66,6 +69,63 @@ void main() {
     }
     await engine.dispose();
   });
+
+  test('LFM2 native lazy grammar waits through visible content and reasoning', () {
+    final tools = [
+      ToolDefinition(name: 'clock', description: '', parameters: []),
+    ];
+    for (final forcedOpen in [false, true]) {
+      final rendered = Lfm2Handler().render(
+        templateSource: forcedOpen ? '<think>' : 'assistant',
+        messages: const [],
+        metadata: {internalToolChoiceMetadataKey: 'auto'},
+        tools: tools,
+      );
+      final triggers = [
+        for (final trigger in rendered.grammarTriggers)
+          GenerationGrammarTrigger.typed(
+            type: GrammarTriggerType.fromWireValue(trigger.type),
+            value: trigger.value,
+            token: trigger.token,
+          ),
+      ];
+      const hiddenCall = '<|tool_call_start|>[not_declared()]<|tool_call_end|>';
+      final prefix = forcedOpen
+          ? 'Reasoning $hiddenCall remains hidden.</think> Visible prefix. '
+          : 'Visible prefix. <think>Reasoning $hiddenCall stays hidden.</think> More content. ';
+      const call = '<|tool_call_start|>[clock()]<|tool_call_end|>';
+      expect(rendered.grammarLazy, isTrue);
+      expect(
+        _compiledGrammarAccepts(
+          nativeModel!,
+          rendered.grammar!,
+          '$prefix$call',
+          triggers: triggers,
+        ),
+        isTrue,
+      );
+      expect(
+        _compiledGrammarAccepts(
+          nativeModel!,
+          rendered.grammar!,
+          '$prefix${call.replaceFirst('clock', 'unknown')}',
+          triggers: triggers,
+        ),
+        isFalse,
+      );
+      expect(
+        _compiledGrammarAccepts(
+          nativeModel!,
+          rendered.grammar!,
+          prefix,
+          triggers: triggers,
+        ),
+        isTrue,
+        reason:
+            'Auto may end without calling; a reasoning marker must not activate the grammar.',
+      );
+    }
+  }, tags: ['local-only']);
 
   test('native compiler accepts generated tool schema grammar', () async {
     final output = await _generateThroughProductionTools(
@@ -331,16 +391,46 @@ void main() {
 bool _compiledGrammarAccepts(
   Pointer<llama_model> model,
   String generatedGrammar,
-  String candidate,
-) {
+  String candidate, {
+  List<GenerationGrammarTrigger> triggers = const [],
+}) {
   final vocab = llama_model_get_vocab(model);
   final grammarPointer = generatedGrammar.toNativeUtf8();
   final rootPointer = 'root'.toNativeUtf8();
-  final sampler = llama_sampler_init_grammar(
-    vocab,
-    grammarPointer.cast<Char>(),
-    rootPointer.cast<Char>(),
-  );
+  late final Pointer<llama_sampler> sampler;
+  if (triggers.isEmpty) {
+    sampler = llama_sampler_init_grammar(
+      vocab,
+      grammarPointer.cast<Char>(),
+      rootPointer.cast<Char>(),
+    );
+  } else {
+    final inputs = lazyGrammarTriggerInputs(triggers);
+    final patterns = [
+      for (final pattern in inputs.patterns) pattern.toNativeUtf8(),
+    ];
+    final pointers = calloc<Pointer<Char>>(patterns.length);
+    try {
+      for (var i = 0; i < patterns.length; i++) {
+        pointers[i] = patterns[i].cast<Char>();
+      }
+      expect(inputs.tokens, isEmpty);
+      sampler = llama_dart_sampler_init_grammar_lazy_patterns(
+        vocab,
+        grammarPointer.cast<Char>(),
+        rootPointer.cast<Char>(),
+        pointers,
+        patterns.length,
+        nullptr,
+        0,
+      );
+    } finally {
+      for (final pattern in patterns) {
+        malloc.free(pattern);
+      }
+      calloc.free(pointers);
+    }
+  }
   malloc
     ..free(grammarPointer)
     ..free(rootPointer);
@@ -369,7 +459,7 @@ bool _compiledGrammarAccepts(
           ..p = 0;
         llama_sampler_apply(sampler, array);
         if (data.ref.logit == double.negativeInfinity) return false;
-        llama_sampler_accept(sampler, token);
+        if (!llama_dart_sampler_accept(sampler, token)) return false;
       }
       final eog = llama_vocab_eos(vocab);
       expect(

@@ -559,6 +559,35 @@ void main() {
       }
     });
 
+    test(
+      'worker forwards the prompt penalty flag on caller and chat routes',
+      () async {
+        final service = _PromptRecordingLlamaCppService();
+        final worker = await _startWorkerInCurrentIsolate(service);
+        try {
+          for (final chat in [false, true]) {
+            for (final enabled in [false, true]) {
+              await _generateUntilDone(
+                worker.sendPort,
+                (port) => GenerateRequest(
+                  7,
+                  'prompt',
+                  const GenerationParams(),
+                  0,
+                  port,
+                  chatMediaMarker: chat ? '<m>' : null,
+                  countPromptTokensInPenalties: enabled,
+                ),
+              );
+            }
+          }
+          expect(service.penaltyPolicies, [false, true, false, true]);
+        } finally {
+          await _disposeWorker(worker);
+        }
+      },
+    );
+
     test('gives the service a chat prompt with its marker and a caller '
         'prompt without one', () async {
       final service = _PromptRecordingLlamaCppService();
@@ -1213,6 +1242,7 @@ class _BlockingLlamaCppService extends LlamaCppService {
     String prompt,
     GenerationParams params,
     int cancelTokenAddress, {
+    bool countPromptTokensInPenalties = false,
     List<LlamaContentPart>? parts,
     void Function(BackendGenerationLimit limit)? onLimit,
   }) async* {
@@ -1278,6 +1308,7 @@ class _UnsupportedGenerationLlamaCppService extends LlamaCppService {
     String prompt,
     GenerationParams params,
     int cancelTokenAddress, {
+    bool countPromptTokensInPenalties = false,
     List<LlamaContentPart>? parts,
     void Function(BackendGenerationLimit limit)? onLimit,
   }) async* {
@@ -1391,6 +1422,7 @@ class _ThrowingTextToSpeechService extends LlamaCppService {
 
 class _PromptRecordingLlamaCppService extends LlamaCppService {
   final List<String> callerPrompts = <String>[];
+  final List<bool> penaltyPolicies = [];
   final List<(String, String)> chatPrompts = <(String, String)>[];
 
   @override
@@ -1405,9 +1437,11 @@ class _PromptRecordingLlamaCppService extends LlamaCppService {
     String prompt,
     GenerationParams params,
     int cancelTokenAddress, {
+    bool countPromptTokensInPenalties = false,
     List<LlamaContentPart>? parts,
     void Function(BackendGenerationLimit limit)? onLimit,
   }) {
+    penaltyPolicies.add(countPromptTokensInPenalties);
     callerPrompts.add(prompt);
     return const Stream<List<int>>.empty();
   }
@@ -1419,9 +1453,11 @@ class _PromptRecordingLlamaCppService extends LlamaCppService {
     GenerationParams params,
     int cancelTokenAddress, {
     required String mediaMarker,
+    bool countPromptTokensInPenalties = false,
     List<LlamaContentPart>? parts,
     void Function(BackendGenerationLimit limit)? onLimit,
   }) {
+    penaltyPolicies.add(countPromptTokensInPenalties);
     chatPrompts.add((prompt, mediaMarker));
     return const Stream<List<int>>.empty();
   }
@@ -1447,6 +1483,7 @@ class _UsageReportingLlamaCppService extends LlamaCppService {
     String prompt,
     GenerationParams params,
     int cancelTokenAddress, {
+    bool countPromptTokensInPenalties = false,
     List<LlamaContentPart>? parts,
     void Function(BackendGenerationLimit limit)? onLimit,
   }) async* {
@@ -1483,6 +1520,7 @@ class _LimitedGenerationLlamaCppService extends LlamaCppService {
     String prompt,
     GenerationParams params,
     int cancelTokenAddress, {
+    bool countPromptTokensInPenalties = false,
     List<LlamaContentPart>? parts,
     void Function(BackendGenerationLimit limit)? onLimit,
   }) async* {
@@ -1510,6 +1548,7 @@ class _InferenceGenerationLlamaCppService extends LlamaCppService {
     String prompt,
     GenerationParams params,
     int cancelTokenAddress, {
+    bool countPromptTokensInPenalties = false,
     List<LlamaContentPart>? parts,
     void Function(BackendGenerationLimit limit)? onLimit,
   }) async* {

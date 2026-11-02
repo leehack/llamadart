@@ -1,3 +1,5 @@
+import '../models/chat/chat_template_result.dart';
+
 import 'tool_call_parsing_utils.dart';
 
 /// Internal metadata key carrying tool choice for handler parity behavior.
@@ -48,3 +50,32 @@ const String internalTemplateNowMetadataKey = 'llamadart.internal.now';
 /// A template that fails to render is named by it in the error.
 const String internalTemplateSourceNameMetadataKey =
     'llamadart.internal.template_source_name';
+
+final Expando<bool> _lfm2AutoGrammar = Expando<bool>(
+  'llamadart.lfm2.autoGrammar',
+);
+
+/// Marks the newly constrained LFM2 Python-auto request, not force-JSON mode.
+LlamaChatTemplateResult withLfm2AutoGrammar(
+  LlamaChatTemplateResult result, {
+  required bool enabled,
+}) {
+  if (enabled) _lfm2AutoGrammar[result] = true;
+  return result;
+}
+
+/// Whether this result requires preservation of pre-grammar prompt penalties.
+bool isLfm2AutoGrammar(LlamaChatTemplateResult result) =>
+    _lfm2AutoGrammar[result] ?? false;
+
+/// Copies the request policy only while the grammar itself is retained.
+LlamaChatTemplateResult withLfm2AutoGrammarOf(
+  LlamaChatTemplateResult copy,
+  LlamaChatTemplateResult source,
+) => withLfm2AutoGrammar(
+  copy,
+  enabled:
+      isLfm2AutoGrammar(source) &&
+      copy.grammar == source.grammar &&
+      copy.grammarLazy == source.grammarLazy,
+);

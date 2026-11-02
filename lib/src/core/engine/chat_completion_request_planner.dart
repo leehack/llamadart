@@ -15,6 +15,7 @@ import '../models/inference/tool_choice.dart';
 import '../models/tools/tool_definition.dart';
 import '../template/chat_format.dart';
 import '../template/chat_template_engine.dart';
+import '../template/template_internal_metadata.dart';
 import '../template/response_format.dart';
 
 /// Prepared generation inputs for a chat-completion request.
@@ -31,6 +32,7 @@ class ChatCompletionRequestPlan {
     required this.nativeChatBackend,
     required this.parseToolCallsEnabled,
     this.excludesPromptFromPenalties = false,
+    this.includesPromptInPenalties = false,
     this.jsonSchemaBackend,
     this.jsonSchema,
   });
@@ -62,6 +64,9 @@ class ChatCompletionRequestPlan {
   /// apply, so the backend should keep the prompt out of its penalty window as
   /// llama.cpp does under that grammar.
   final bool excludesPromptFromPenalties;
+
+  /// Whether new LFM2 Python-auto grammar must retain prompt penalties.
+  final bool includesPromptInPenalties;
 
   /// Whether this plan should call the backend-native chat API.
   bool get usesNativeChatGeneration =>
@@ -150,6 +155,21 @@ class ChatCompletionRequestPlanner {
         templateResult.grammar != null &&
         templateResult.grammarLazy &&
         !supportsLazyGrammar(backend);
+    final requiresLfmAutoGrammar = isLfm2AutoGrammar(templateResult);
+    if (requiresLfmAutoGrammar &&
+        (!backendSupportsGrammarConstraints ||
+            !supportsLazyGrammar(backend) ||
+            backend is! BackendPromptPenaltyGeneration ||
+            !(backend as BackendPromptPenaltyGeneration)
+                .supportsPromptPenaltiesWithGrammar)) {
+      throw LlamaUnsupportedException(
+        'LFM2 auto tool calling requires schema-directed lazy grammar and '
+        'prompt-penalty preservation. The active backend/runtime does not '
+        'report both capabilities; use a supported native llama.cpp runtime '
+        'or ToolChoice.required. Published Web assets do not support this '
+        'combination yet.',
+      );
+    }
     if (skipsLazyTemplateGrammar) {
       if (strictResponseFormat) {
         throw LlamaUnsupportedException(
@@ -241,6 +261,7 @@ class ChatCompletionRequestPlanner {
       nativeChatBackend: nativeChatBackend,
       parseToolCallsEnabled: parseToolCallsEnabled,
       excludesPromptFromPenalties: skipsLazyTemplateGrammar,
+      includesPromptInPenalties: requiresLfmAutoGrammar,
       jsonSchemaBackend: schemaBackend,
       jsonSchema: nativeSchema,
     );

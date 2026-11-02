@@ -119,6 +119,15 @@ description: >-
   copied backslashes literal; ambiguous Python-style strings are not globally
   unescaped. This does not enable canonical `fromJsonSchema` generation on
   LFM2 or change its existing required JSON grammar.
+- Native llama.cpp enforces LFM2/LFM2.5 auto Python calls with a lazy schema
+  grammar after a tool-start marker outside reasoning. Keep legacy `ToolParam`
+  declarations typed; required/force-JSON requests retain their JSON grammar,
+  and `none` adds no tool grammar. Published Web assets cannot preserve prompt
+  penalties with grammar ([bridge #207](https://github.com/leehack/llama-web-bridge/issues/207)), so this new auto route throws before inference.
+  Custom backends need the truthful `BackendPromptPenaltyGeneration`
+  capability and route from `package:llamadart/backend.dart`; implementing the
+  interface with a false getter still rejects. Argument expansion is bounded
+  to 4096 states; unsupported schemas throw rather than silently dropping grammar.
 - LFM2/LFM2.5 tool markers inside reasoning remain `thinking` text and never
   produce executable calls. Calls after the thought closes still work; literal
   `<think>`/`</think>` inside complete tool arguments remain argument data.

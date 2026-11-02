@@ -662,6 +662,16 @@
         "reason": "A caps-false public Qwen3-Coder render and native compiled grammar controls cover explicit true/false bounds; Ministral/Nemotron parser tests preserve their bounds. Capability probes remain descriptive. Existing tools packs do not qualify every format/backend parallel grammar; no broader runtime support is claimed.",
         "issue": "https://github.com/leehack/llamadart/issues/1713"
       }
+    },
+    {
+      "surfaces": [
+        "matrix:LFM2 auto Python-call grammar"
+      ],
+      "exemption": {
+        "id": "lfm2-auto-python-grammar",
+        "issue": "https://github.com/leehack/llamadart/issues/1715",
+        "reason": "Durable compiled grammar, native lazy activation, public completion routing, false/missing capability, draft-parameter copy, native worker transport and prompt-penalty sampler controls cover this bounded legacy ToolParam route. Affected-family fresh generation is a separate required exact-source gate; existing validation packs do not qualify LFM2 schema accuracy or new devices. Published Web assets lack prompt penalties with grammar (llama-web-bridge#207) and the new path rejects before dispatch; no Web enforcement or GPU qualification is claimed."
+      }
     }
   ]
 }

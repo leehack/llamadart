@@ -55,6 +55,7 @@ class NativeLlamaBackend
         BackendGenerationLimitReporting,
         BackendGenerationUsageReporting,
         BackendChatPromptGeneration,
+        BackendPromptPenaltyGeneration,
         BackendToolResultMedia,
         BackendDartLogLevel {
   final Set<_NativeCancelFlag> _embeddingCancelFlags = {};
@@ -566,6 +567,25 @@ class NativeLlamaBackend
   }) => _generate(contextHandle, prompt, params, parts: parts);
 
   @override
+  bool get supportsPromptPenaltiesWithGrammar => true;
+
+  @override
+  Stream<List<int>> generateWithPromptPenalties(
+    int contextHandle,
+    String prompt,
+    GenerationParams params, {
+    String? mediaMarker,
+    List<LlamaContentPart>? parts,
+  }) => _generate(
+    contextHandle,
+    prompt,
+    params,
+    parts: parts,
+    chatMediaMarker: mediaMarker,
+    countPromptTokensInPenalties: true,
+  );
+
+  @override
   Stream<List<int>> generateChatPrompt(
     int contextHandle,
     String prompt,
@@ -586,6 +606,7 @@ class NativeLlamaBackend
     GenerationParams params, {
     List<LlamaContentPart>? parts,
     String? chatMediaMarker,
+    bool countPromptTokensInPenalties = false,
   }) {
     final failure = _workerFailure;
     if (failure != null) return Stream<List<int>>.error(failure);
@@ -614,6 +635,7 @@ class NativeLlamaBackend
         params,
         parts,
         chatMediaMarker,
+        countPromptTokensInPenalties,
       );
     }
 
@@ -668,6 +690,7 @@ class NativeLlamaBackend
     GenerationParams params,
     List<LlamaContentPart>? parts,
     String? chatMediaMarker,
+    bool countPromptTokensInPenalties,
   ) {
     final rp = _openResponsePort();
 
@@ -738,6 +761,7 @@ class NativeLlamaBackend
           rp.sendPort,
           parts: parts,
           chatMediaMarker: chatMediaMarker,
+          countPromptTokensInPenalties: countPromptTokensInPenalties,
         ),
       );
       _stalePerformanceContexts.remove(contextHandle);

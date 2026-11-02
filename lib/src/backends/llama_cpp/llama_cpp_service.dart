@@ -4528,6 +4528,7 @@ class LlamaCppService {
     GenerationParams params,
     int cancelTokenAddress, {
     List<LlamaContentPart>? parts,
+    bool countPromptTokensInPenalties = false,
     void Function(BackendGenerationLimit limit)? onLimit,
   }) => _generate(
     contextHandle,
@@ -4535,6 +4536,7 @@ class LlamaCppService {
     params,
     cancelTokenAddress,
     parts: parts,
+    countPromptTokensInPenalties: countPromptTokensInPenalties,
     onLimit: onLimit,
   );
 
@@ -4548,6 +4550,7 @@ class LlamaCppService {
     int cancelTokenAddress, {
     required String mediaMarker,
     List<LlamaContentPart>? parts,
+    bool countPromptTokensInPenalties = false,
     void Function(BackendGenerationLimit limit)? onLimit,
   }) => _generate(
     contextHandle,
@@ -4555,6 +4558,7 @@ class LlamaCppService {
     params,
     cancelTokenAddress,
     parts: parts,
+    countPromptTokensInPenalties: countPromptTokensInPenalties,
     chatMediaMarker: mediaMarker,
     onLimit: onLimit,
   );
@@ -4565,6 +4569,7 @@ class LlamaCppService {
     GenerationParams params,
     int cancelTokenAddress, {
     List<LlamaContentPart>? parts,
+    bool countPromptTokensInPenalties = false,
     String? chatMediaMarker,
     void Function(BackendGenerationLimit limit)? onLimit,
   }) async* {
@@ -4779,6 +4784,7 @@ class LlamaCppService {
         reasoningBudgetApi,
         promptTokenCount,
         tokensPtr,
+        countPromptTokensInPenalties,
       );
 
       final preservedTokenIds = _resolvePreservedTokenIds(
@@ -6353,6 +6359,7 @@ class LlamaCppService {
     _ReasoningBudgetApi? reasoningBudgetApi,
     int promptTokenCount,
     Pointer<Int32> tokensPtr,
+    bool countPromptTokensInPenalties,
   ) {
     final sampler = llama_sampler_chain_init(
       llama_sampler_chain_default_params(),
@@ -6471,6 +6478,21 @@ class LlamaCppService {
     } else {
       final seed = params.seed ?? DateTime.now().millisecondsSinceEpoch;
       llama_sampler_chain_add(sampler, llama_sampler_init_dist(seed));
+    }
+
+    if (countPromptTokensInPenalties &&
+        grammarPtr != nullptr &&
+        tokensPtr != nullptr &&
+        promptTokenCount > 0) {
+      try {
+        // The prompt must never reach the attached grammar or activate it.
+        for (int i = 0; i < promptTokenCount; i++) {
+          _calls.samplerAccept(penaltiesSampler, tokensPtr[i]);
+        }
+      } on LlamaException {
+        _freeSamplerChain(sampler);
+        rethrow;
+      }
     }
 
     if (grammarPtr == nullptr && tokensPtr != nullptr && promptTokenCount > 0) {

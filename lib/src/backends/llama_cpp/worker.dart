@@ -278,6 +278,8 @@ void runLlamaWorkerForTesting(
                         message.params,
                         message.cancelTokenAddress,
                         parts: message.parts,
+                        countPromptTokensInPenalties:
+                            message.countPromptTokensInPenalties,
                         onLimit: (reached) => limit = reached,
                       )
                     : service.generateChatPrompt(
@@ -287,6 +289,8 @@ void runLlamaWorkerForTesting(
                         message.cancelTokenAddress,
                         mediaMarker: chatMediaMarker,
                         parts: message.parts,
+                        countPromptTokensInPenalties:
+                            message.countPromptTokensInPenalties,
                         onLimit: (reached) => limit = reached,
                       );
 

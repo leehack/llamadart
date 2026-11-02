@@ -1966,6 +1966,7 @@ class LlamaEngine implements LlamadartEngine<LlamaEngineCapabilities> {
                 parts: plan.mediaParts,
                 chatMediaMarker: chatMediaMarker,
                 excludePromptFromPenalties: plan.excludesPromptFromPenalties,
+                includePromptInPenalties: plan.includesPromptInPenalties,
                 onLimit: recordLimit,
                 onUsage: recordUsage,
                 request: request,
@@ -2332,6 +2333,7 @@ class LlamaEngine implements LlamadartEngine<LlamaEngineCapabilities> {
     List<LlamaContentPart>? parts,
     String? chatMediaMarker,
     bool excludePromptFromPenalties = false,
+    bool includePromptInPenalties = false,
     void Function(BackendGenerationLimit limit)? onLimit,
     void Function(LlamaGenerationUsage usage)? onUsage,
     required GenerationRequest request,
@@ -2354,8 +2356,25 @@ class LlamaEngine implements LlamadartEngine<LlamaEngineCapabilities> {
         final candidate = backend;
         reachedBackend = true;
         _beginContextCall(requestContext, requestEpoch);
-        final stream =
-            chatMediaMarker != null && candidate is BackendChatPromptGeneration
+        if (includePromptInPenalties &&
+            (candidate is! BackendPromptPenaltyGeneration ||
+                !(candidate as BackendPromptPenaltyGeneration)
+                    .supportsPromptPenaltiesWithGrammar)) {
+          throw LlamaUnsupportedException(
+            'The loaded runtime no longer supports grammar with prompt penalties.',
+          );
+        }
+        final stream = includePromptInPenalties
+            ? (candidate as BackendPromptPenaltyGeneration)
+                  .generateWithPromptPenalties(
+                    _contextHandle!,
+                    prompt,
+                    resolvedParams,
+                    mediaMarker: chatMediaMarker,
+                    parts: parts,
+                  )
+            : chatMediaMarker != null &&
+                  candidate is BackendChatPromptGeneration
             ? (candidate as BackendChatPromptGeneration).generateChatPrompt(
                 _contextHandle!,
                 prompt,

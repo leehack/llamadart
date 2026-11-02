@@ -1,7 +1,55 @@
 import 'package:llamadart/src/core/template/template_internal_metadata.dart';
+import 'package:llamadart/src/core/models/chat/chat_template_result.dart';
+import 'package:llamadart/src/core/template/thinking_utils.dart';
 import 'package:test/test.dart';
 
 void main() {
+  test(
+    'LFM auto policy follows exact grammar copies, not replaced or unmarked grammars',
+    () {
+      final source = withLfm2AutoGrammar(
+        const LlamaChatTemplateResult(
+          prompt: '<think>',
+          grammar: 'root ::= "ok"',
+          grammarLazy: true,
+        ),
+        enabled: true,
+      );
+      final thoughtCopy = withTemplateOpenedThought(
+        source,
+        startTag: '<think>',
+      );
+      expect(thoughtCopy.thinkingForcedOpen, isTrue);
+      expect(isLfm2AutoGrammar(thoughtCopy), isTrue);
+      for (final (grammar, lazy, expected) in [
+        (source.grammar, true, true),
+        ('root ::= "replaced"', true, false),
+        (source.grammar, false, false),
+      ]) {
+        final copy = withThoughtMarksOf(
+          LlamaChatTemplateResult(
+            prompt: 'copy',
+            grammar: grammar,
+            grammarLazy: lazy,
+          ),
+          source,
+        );
+        expect(isLfm2AutoGrammar(copy), expected);
+      }
+      final ordinary = LlamaChatTemplateResult(
+        prompt: '<think>',
+        grammar: source.grammar,
+        grammarLazy: true,
+      );
+      expect(
+        isLfm2AutoGrammar(
+          withTemplateOpenedThought(ordinary, startTag: '<think>'),
+        ),
+        isFalse,
+      );
+    },
+  );
+
   group('chatTemplateKwargsFromMetadata', () {
     test('decodes the stored kwargs object', () {
       expect(

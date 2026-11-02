@@ -1882,6 +1882,85 @@ void main() {
     }
   });
 
+  test('LFM2 auto Python grammar enforces declared schemas and parallel bounds', () {
+    final tools = [
+      ToolDefinition(
+        name: 'configure',
+        description: '',
+        parameters: [
+          ToolParam.string('text', required: true),
+          ToolParam.boolean('enabled', required: true),
+          ToolParam.nullType('note'),
+          ToolParam.array('counts', itemType: ToolParam.integer('item')),
+          ToolParam.object(
+            'config',
+            properties: [
+              ToolParam.number('ratio', required: true),
+              ToolParam.enumType('mode', values: ['fast', 'safe']),
+            ],
+          ),
+        ],
+      ),
+      ToolDefinition(name: 'clock', description: '', parameters: []),
+    ];
+    for (final parallel in [false, true]) {
+      final rendered = ChatTemplateEngine.render(
+        templateSource: File(
+          'test/fixtures/llama_cpp_templates/LFM2-8B-A1B.jinja',
+        ).readAsStringSync(),
+        messages: const [
+          LlamaChatMessage.fromText(
+            role: LlamaChatRole.user,
+            text: 'Configure it.',
+          ),
+        ],
+        metadata: const {},
+        tools: tools,
+        toolChoice: ToolChoice.auto,
+        parallelToolCalls: parallel,
+      );
+      expect(rendered.grammarLazy, isTrue);
+      expect(rendered.grammarTriggers, isNotEmpty);
+      const first =
+          '<|tool_call_start|>[configure(text="False", enabled=True)]<|tool_call_end|>';
+      const two = '<|tool_call_start|>[clock(), clock()]<|tool_call_end|>';
+      _expectGrammar(
+        validator,
+        rendered.grammar!,
+        valid: [
+          first,
+          first.replaceFirst(
+            'text="False", enabled=True',
+            'enabled=false, text=\'hello\'',
+          ),
+          first.replaceFirst(
+            'enabled=True',
+            'enabled=true, note=None, counts=[1, -2], config={"ratio": 1.5, "mode": "safe"}',
+          ),
+          r'<|tool_call_start|>[configure(text="C:\new\table.txt", enabled=False)]<|tool_call_end|>',
+          '<|tool_call_start|>[clock()]<|tool_call_end|>',
+          if (parallel) two,
+        ],
+        invalid: [
+          if (!parallel) two,
+          '<|tool_call_start|>[]<|tool_call_end|>',
+          first.replaceFirst('configure', 'unknown'),
+          first.replaceFirst('text="False", ', ''),
+          first.replaceFirst('enabled=True', 'enabled=True, enabled=False'),
+          first.replaceFirst('enabled=True', 'enabled=True, extra="x"'),
+          first.replaceFirst('enabled=True', 'enabled="True"'),
+          first.replaceFirst('enabled=True', 'enabled=True, counts=[1, "2"]'),
+          first.replaceFirst(
+            'enabled=True',
+            'enabled=True, config={"mode":"fast"}',
+          ),
+          first.replaceFirst('text="False"', 'text=False'),
+          first.replaceFirst('<|tool_call_end|>', ''),
+        ],
+      );
+    }
+  });
+
   test('LFM2.5 required tool choice compiles the LFM2 tool-call grammar', () {
     final rendered = ChatTemplateEngine.render(
       templateSource: File(

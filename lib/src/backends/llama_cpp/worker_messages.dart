@@ -90,6 +90,9 @@ class GenerateRequest extends WorkerRequest {
   /// the caller wrote.
   final String? chatMediaMarker;
 
+  /// Seeds only the penalties sampler from the prompt, even with a grammar.
+  final bool countPromptTokensInPenalties;
+
   /// Creates a new [GenerateRequest].
   GenerateRequest(
     this.contextHandle,
@@ -99,6 +102,7 @@ class GenerateRequest extends WorkerRequest {
     super.sendPort, {
     this.parts,
     this.chatMediaMarker,
+    this.countPromptTokensInPenalties = false,
   });
 }
 

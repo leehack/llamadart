@@ -213,6 +213,30 @@ abstract class BackendLazyGrammarSupport {
   bool get supportsLazyGrammar;
 }
 
+/// Optional generation route that preserves prompt penalties under a grammar.
+///
+/// New LFM2 Python-auto grammars use this route to retain the sampling behavior
+/// of the previously unconstrained prompt. Ordinary explicit grammars retain
+/// [LlamaBackend.generate] semantics. A routed/runtime-dependent backend must
+/// report its actual loaded delegate's support rather than interface presence.
+abstract class BackendPromptPenaltyGeneration {
+  /// Whether [generateWithPromptPenalties] retains prompt tokens in the
+  /// repetition/presence window, even with an attached grammar.
+  bool get supportsPromptPenaltiesWithGrammar;
+
+  /// Generates with prompt penalties without feeding the prompt to a grammar.
+  ///
+  /// [mediaMarker], when supplied, has [BackendChatPromptGeneration] semantics.
+  /// An unsupported runtime throws [LlamaUnsupportedException] before inference.
+  Stream<List<int>> generateWithPromptPenalties(
+    int contextHandle,
+    String prompt,
+    GenerationParams params, {
+    String? mediaMarker,
+    List<LlamaContentPart>? parts,
+  });
+}
+
 final Expando<bool> _promptExcludedFromPenalties = Expando<bool>(
   'llamadart.promptExcludedFromPenalties',
 );

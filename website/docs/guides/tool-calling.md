@@ -207,9 +207,30 @@ The capability report still describes that history support; the flag does not
 add an unsupported format or backend protocol. This corrects
 [#1713](https://github.com/leehack/llamadart/issues/1713), while the reasoning
 boundary is tracked by [#1714](https://github.com/leehack/llamadart/issues/1714).
-Auto lazy grammar and length-truncated diagnostics remain separate required
-work in [#1715](https://github.com/leehack/llamadart/issues/1715) and
-[#1716](https://github.com/leehack/llamadart/issues/1716).
+LFM2/LFM2.5 `ToolChoice.auto` uses a schema-directed Python-call grammar on
+native llama.cpp. It waits for a tool-start marker outside reasoning, allowing
+ordinary text before a call, then enforces declared names, required and unique
+arguments, value types, and the explicit parallel flag. Prompt tokens seed only
+the penalty sampler, preserving sampling before activation without feeding the
+prompt to the grammar. Required and force-JSON requests keep their JSON-list
+grammar; `none` adds no tool grammar.
+
+Use legacy `ToolParam` declarations for this path. Grammar expansion is bounded
+to 4096 argument states; oversized declarations, arrays without a declared item
+type, and string enum values containing both quote styles throw
+`LlamaUnsupportedException`. Copied-string backslashes retain the parser policy
+above. Grammar constrains structure and types, not the accuracy of copied text.
+
+The new auto path requires both lazy grammar and prompt penalties with grammar.
+Published Web assets lack the latter capability ([bridge #207](https://github.com/leehack/llama-web-bridge/issues/207)), so it throws a typed unsupported
+error before inference on Web. A custom backend must implement
+`BackendPromptPenaltyGeneration` from `package:llamadart/backend.dart`, report
+its loaded runtime's truthful capability, and implement the scoped generation
+route; interface presence alone is insufficient. Existing generic auto fallback
+is separate. See [#1715](https://github.com/leehack/llamadart/issues/1715);
+length-truncated diagnostics remain tracked by
+[#1716](https://github.com/leehack/llamadart/issues/1716). Required-mode inner-quote
+truncation remains tracked by [#1609](https://github.com/leehack/llamadart/issues/1609).
 
 Solar Open replies may contain several content-channel segments. Parsed and
 streamed completions preserve each accepted segment and the whitespace between

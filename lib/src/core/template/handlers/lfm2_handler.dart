@@ -18,6 +18,7 @@ import '../tool_call_fallback_parser.dart';
 import '../tool_call_parsing_utils.dart';
 import '../tool_call_grammar_utils.dart';
 import '../tool_schema_utils.dart';
+import 'lfm2_auto_grammar.dart';
 
 /// Handler for LFM2 and LFM2.5 (Liquid Foundation Model) formats.
 ///
@@ -81,6 +82,10 @@ class Lfm2Handler extends ChatTemplateHandler
     final hasForceJsonMarker = _shouldConstrainWithJsonTools(messages);
     final shouldConstrainWithJsonTools =
         hasTools && (hasForceJsonMarker || toolChoiceRequired);
+    final shouldConstrainWithPythonTools =
+        hasTools &&
+        !shouldConstrainWithJsonTools &&
+        toolChoice != ToolChoice.none.name;
     final effectiveMessages = hasForceJsonMarker
         ? _stripForceJsonSchemaMarker(messages)
         : messages;
@@ -108,27 +113,48 @@ class Lfm2Handler extends ChatTemplateHandler
       },
     );
 
-    return LlamaChatTemplateResult(
-      prompt: prompt,
-      format: format.index,
-      grammar: shouldConstrainWithJsonTools
-          ? _jsonGrammar(tools, parallelToolCalls: parallelToolCalls)
-          : null,
-      grammarLazy: shouldConstrainWithJsonTools && !toolChoiceRequired,
-      additionalStops: getStops(
-        hasTools: hasTools,
-        enableThinking: enableThinking,
+    return withLfm2AutoGrammar(
+      LlamaChatTemplateResult(
+        prompt: prompt,
+        format: format.index,
+        grammar: shouldConstrainWithJsonTools
+            ? _jsonGrammar(tools, parallelToolCalls: parallelToolCalls)
+            : shouldConstrainWithPythonTools
+            ? buildLfm2AutoGrammar(tools, parallelToolCalls: parallelToolCalls)
+            : null,
+        grammarLazy:
+            (shouldConstrainWithJsonTools && !toolChoiceRequired) ||
+            shouldConstrainWithPythonTools,
+        additionalStops: getStops(
+          hasTools: hasTools,
+          enableThinking: enableThinking,
+        ),
+        preservedTokens: hasTools ? preservedTokens : const [],
+        grammarTriggers: shouldConstrainWithJsonTools
+            ? [
+                const GrammarTrigger(
+                  type: 3,
+                  value: r'\s*<\|tool_call_start\|>\s*\[',
+                ),
+              ]
+            : shouldConstrainWithPythonTools
+            ? [GrammarTrigger(type: 3, value: _autoGrammarTrigger(prompt))]
+            : [],
       ),
-      preservedTokens: hasTools ? preservedTokens : const [],
-      grammarTriggers: shouldConstrainWithJsonTools
-          ? [
-              const GrammarTrigger(
-                type: 3,
-                value: r'\s*<\|tool_call_start\|>\s*\[',
-              ),
-            ]
-          : [],
+      enabled: shouldConstrainWithPythonTools,
     );
+  }
+
+  String _autoGrammarTrigger(String prompt) {
+    final initialThought = isThinkingForcedOpen(prompt, startTag: '<think>')
+        ? r'[\s\S]*?</think>'
+        : '';
+    // The sole capturing group marks the replay boundary. Marker text inside
+    // reasoning remains unconstrained and non-executable, as in the parser.
+    return '$initialThought'
+        r'(?:(?!<think>|<\|tool_call_start\|>)[\s\S]|'
+        r'<think>[\s\S]*?</think>)*?'
+        r'(<\|tool_call_start\|>)[\s\S]*';
   }
 
   bool _shouldConstrainWithJsonTools(List<LlamaChatMessage> messages) {
