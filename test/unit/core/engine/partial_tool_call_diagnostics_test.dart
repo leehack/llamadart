@@ -228,6 +228,45 @@ void main() {
   });
 
   test(
+    'diagnostic arguments stay out of automatic logging and parent strings',
+    () async {
+      const sensitive =
+          'https://example.invalid/private-model?token=diagnostic-test-secret';
+      const output = 'Before.$_opening[unknown(path="$sensitive';
+      final records = <LlamaLogRecord>[];
+      final logger = LlamaLogger.instance;
+      final previousLevel = logger.level;
+      logger.setLevel(LlamaLogLevel.debug);
+      logger.setHandler(records.add);
+      try {
+        final chunks = await _parse(output.split('')).toList();
+        final completion = await Stream.fromIterable(chunks).collect();
+        final parsed = Lfm2Handler().parse(output, isPartial: true);
+        expect(
+          completion.partialToolCalls.single.function!.arguments,
+          'path="$sensitive',
+        );
+        for (final text in [
+          chunks.last.toString(),
+          chunks.last.choices.single.toString(),
+          chunks.last.choices.single.delta.toString(),
+          completion.toString(),
+          parsed.toString(),
+          ...records.map((r) => r.toString()),
+        ]) {
+          expect(text, isNot(contains(sensitive)));
+          expect(text, isNot(contains('diagnostic-test-secret')));
+        }
+        expect(records, isNotEmpty);
+        expect(chunks.last.toJson().toString(), contains(sensitive));
+      } finally {
+        logger.setHandler(null);
+        logger.setLevel(previousLevel);
+      }
+    },
+  );
+
+  test(
     'a missing finish-cause reporter never infers length from syntax',
     () async {
       const output = 'Before.$_opening[weather(city="cut';

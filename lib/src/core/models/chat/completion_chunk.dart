@@ -8,6 +8,8 @@ import '../inference/generation_usage.dart';
 /// `tool_calls`. When the backend reports that the reply ended at the token
 /// limit, every call is withheld, including complete ones, and the reply
 /// finishes with `length`.
+/// The same raw record type backs `partialToolCalls`, where entries can be
+/// unfinished diagnostics and must never be executed.
 class LlamaCompletionChunkToolCall {
   /// The position of this call among the calls of the completion.
   final int index;
@@ -289,7 +291,7 @@ class LlamaCompletionChunkDelta {
 
   @override
   String toString() =>
-      'LlamaCompletionChunkDelta(content: $content, toolCalls: $toolCalls, partialToolCalls: $partialToolCalls, thinking: $thinking, role: $role)';
+      'LlamaCompletionChunkDelta(content: $content, toolCalls: $toolCalls, partialToolCallCount: ${partialToolCalls?.length ?? 0}, thinking: $thinking, role: $role)';
 }
 
 /// Why a completion stopped, typed from the `finish_reason` wire value of a
