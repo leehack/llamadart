@@ -25,6 +25,7 @@ import '../../core/models/inference/generation_params.dart';
 import '../../core/models/inference/generation_usage.dart';
 import '../../core/models/inference/state_identity.dart';
 import 'worker.dart';
+import 'llama_cpp_service.dart';
 
 /// Worker entry point used by [NativeLlamaBackend].
 typedef LlamaWorkerEntrypoint = void Function(SendPort initialSendPort);
@@ -64,12 +65,15 @@ class NativeLlamaBackend
   RawReceivePort? _workerLifecyclePort;
   final Map<RawReceivePort, Future<void>> _workerExits = {};
   LlamaStateException? _workerFailure;
+  ({LlamaStateException error, StackTrace stack})? _workerCleanupFailure;
   final Set<ReceivePort> _responsePorts = <ReceivePort>{};
   Future<void>? _isolateStart;
   Future<void>? _disposeStart;
   int _lifecycleEpoch = 0;
   final LlamaWorkerEntrypoint _workerEntrypoint;
   final Duration _workerStartupTimeout;
+  final Future<void> Function(Future<void> Function() release)?
+  _workerExitCleanup;
   final Allocator _cancelFlagAllocator;
   _NativeCancelFlag? _activeCancelToken;
   void Function()? _activeGenerationCleanup;
@@ -100,15 +104,21 @@ class NativeLlamaBackend
   /// invalid. Dispose this backend and create a fresh one before reloading.
   /// A worker that exits frees the native objects it held, such as its
   /// models, contexts, token batches and sampler chains; an object a native
-  /// call was still creating when the worker was killed stays allocated until
-  /// the process exits.
+  /// call was still creating when the worker was killed needs native owner
+  /// API v1 to reclaim it before process exit. Cleanup failure is retained and
+  /// reported by disposal and later requests; it does not report success.
+  /// [workerExitCleanup] replaces owner-release scheduling for VM tests. It
+  /// receives the normal release operation after actual worker exit; production
+  /// callers should omit it.
   /// An externally supplied [initialSendPort] has no owned isolate to monitor.
   NativeLlamaBackend({
     SendPort? initialSendPort,
     LlamaWorkerEntrypoint workerEntrypoint = llamaWorkerEntry,
     Duration workerStartupTimeout = const Duration(seconds: 30),
     Allocator cancelFlagAllocator = malloc,
-  }) : _workerEntrypoint = workerEntrypoint,
+    Future<void> Function(Future<void> Function() release)? workerExitCleanup,
+  }) : _workerExitCleanup = workerExitCleanup,
+       _workerEntrypoint = workerEntrypoint,
        _workerStartupTimeout = workerStartupTimeout,
        _cancelFlagAllocator = cancelFlagAllocator {
     if (initialSendPort != null) {
@@ -173,7 +183,15 @@ class NativeLlamaBackend
     }
   }
 
+  void _throwIfWorkerCleanupFailed() {
+    final failure = _workerCleanupFailure;
+    if (failure != null) {
+      Error.throwWithStackTrace(failure.error, failure.stack);
+    }
+  }
+
   void _throwIfWorkerFailed() {
+    _throwIfWorkerCleanupFailed();
     final failure = _workerFailure;
     if (failure != null) throw failure;
   }
@@ -271,6 +289,7 @@ class NativeLlamaBackend
   }
 
   Future<void> _startIsolate() async {
+    final ownerBootstrap = LlamaCppService.createOwnerBootstrap();
     final completer = Completer<void>();
     final tempPort = ReceivePort();
     final logPort = _openWorkerLogPort();
@@ -278,10 +297,39 @@ class NativeLlamaBackend
     var initialized = false;
     final exited = Completer<void>();
     _workerExits[lifecyclePort] = exited.future;
+    var recordingExit = false;
     void recordExit() {
-      if (!exited.isCompleted) exited.complete();
-      _workerExits.remove(lifecyclePort);
+      if (recordingExit) return;
+      recordingExit = true;
+      Future<void> release() =>
+          ownerBootstrap?.releaseAfterWorkerExit() ?? Future<void>.value();
+      final cleanup = Future<void>.sync(
+        () => _workerExitCleanup?.call(release) ?? release(),
+      );
+      unawaited(
+        cleanup.then(
+          (_) {
+            if (!exited.isCompleted) exited.complete();
+            _workerExits.remove(lifecyclePort);
+          },
+          onError: (Object error, StackTrace stack) {
+            final failure = error is LlamaStateException
+                ? error
+                : LlamaStateException(
+                    'Failed to reclaim native llama.cpp worker resources after exit.',
+                    error,
+                  );
+            _workerCleanupFailure ??= (error: failure, stack: stack);
+            _isReady = false;
+            if (!exited.isCompleted) exited.completeError(failure, stack);
+            _workerExits.remove(lifecyclePort);
+          },
+        ),
+      );
     }
+
+    // Startup may fail before dispose begins awaiting the recorded exit.
+    unawaited(exited.future.catchError((Object _) {}));
 
     lifecyclePort.keepIsolateAlive = false;
     _workerLifecyclePort = lifecyclePort;
@@ -305,6 +353,7 @@ class NativeLlamaBackend
             tempPort.sendPort,
             dartLogLevel: LlamaLogger.instance.level,
             logPort: logPort.sendPort,
+            nativeOwnerToken: ownerBootstrap?.token.address,
           ),
         );
         return;
@@ -373,7 +422,14 @@ class NativeLlamaBackend
       _isolate = null;
       _closeWorkerLogPort(logPort);
       if (!spawned) recordExit();
-      unawaited(exited.future.whenComplete(lifecyclePort.close));
+      // This listener only closes the port. The original failure remains in
+      // the exit future and retained diagnostic for current/later disposal.
+      unawaited(
+        exited.future.then<void>(
+          (_) => lifecyclePort.close(),
+          onError: (Object _, StackTrace _) => lifecyclePort.close(),
+        ),
+      );
       if (identical(_workerLifecyclePort, lifecyclePort)) {
         _workerLifecyclePort = null;
       }
@@ -883,6 +939,7 @@ class NativeLlamaBackend
     String query,
     List<String> documents,
   ) async {
+    _throwIfWorkerFailed();
     final flag = _NativeCancelFlag(_cancelFlagAllocator);
     final rp = _openResponsePort();
     try {
@@ -904,12 +961,16 @@ class NativeLlamaBackend
       if (response is ErrorResponse) throw _workerError(response);
       throw LlamaInferenceException('Native reranking failed.');
     } finally {
-      if (_workerFailure != null) {
-        await Future.wait(_workerExits.values.toList());
+      try {
+        if (_workerFailure != null) {
+          await Future.wait(_workerExits.values.toList());
+          _throwIfWorkerCleanupFailed();
+        }
+      } finally {
+        _closeResponsePort(rp);
+        _embeddingCancelFlags.remove(flag);
+        flag.free();
       }
-      _closeResponsePort(rp);
-      _embeddingCancelFlags.remove(flag);
-      flag.free();
     }
   }
 
@@ -939,6 +1000,7 @@ class NativeLlamaBackend
   }) async {
     if (inputs.isEmpty) return const [];
     // Snapshot before awaiting worker startup; callers retain their buffers.
+    _throwIfWorkerFailed();
     final flag = _NativeCancelFlag(_cancelFlagAllocator);
     final rp = _openResponsePort();
     try {
@@ -961,12 +1023,16 @@ class NativeLlamaBackend
       throw LlamaInferenceException('Content embedding failed');
     } finally {
       // A failed RPC caused by worker exit settles only after onExit.
-      if (_workerFailure != null) {
-        await Future.wait(_workerExits.values.toList());
+      try {
+        if (_workerFailure != null) {
+          await Future.wait(_workerExits.values.toList());
+          _throwIfWorkerCleanupFailed();
+        }
+      } finally {
+        _closeResponsePort(rp);
+        _embeddingCancelFlags.remove(flag);
+        flag.free();
       }
-      _closeResponsePort(rp);
-      _embeddingCancelFlags.remove(flag);
-      flag.free();
     }
   }
 
@@ -1296,7 +1362,7 @@ class NativeLlamaBackend
     cancelTextToSpeech();
 
     var acknowledgedDispose = false;
-    if (_sendPort != null) {
+    if (_sendPort != null && _workerCleanupFailure == null) {
       final rp = _openResponsePort();
       try {
         _dispatchRequest(rp, DisposeRequest(rp.sendPort));
@@ -1319,28 +1385,35 @@ class NativeLlamaBackend
     for (final port in _workerExits.keys) {
       port.keepIsolateAlive = true;
     }
-    await Future.wait(_workerExits.values.toList());
-    // The normal onExit may arrive after the acknowledgement. Clear its
-    // provisional failure only when this disposal actually received a reply.
-    if (acknowledgedDispose) _workerFailure = null;
-    _isolate = null;
-    _sendPort = null;
-    _isolateStart = null;
-    _workerLogPort?.close();
-    _workerLogPort = null;
-    _workerLifecyclePort?.close();
-    _workerLifecyclePort = null;
-    // onExit proves the worker is gone; free the token if a terminal response did not already.
-    _activeFreeToken?.call();
-    _queuedGeneration?.close();
-    _stalePerformanceContexts.clear();
-    textToSpeechCancelFlag?.free();
-    _activeCancelToken = null;
-    _activeGenerationCleanup = null;
-    _activeGenerationFailure = null;
-    _activeFreeToken = null;
-    _activeModelHandle = null;
-    _isReady = false;
+    try {
+      await Future.wait(_workerExits.values.toList());
+    } catch (_) {
+      _throwIfWorkerCleanupFailed();
+      rethrow;
+    } finally {
+      // The normal onExit may arrive after the acknowledgement. Clear its
+      // provisional failure only when this disposal actually received a reply.
+      if (acknowledgedDispose) _workerFailure = null;
+      _isolate = null;
+      _sendPort = null;
+      _isolateStart = null;
+      _workerLogPort?.close();
+      _workerLogPort = null;
+      _workerLifecyclePort?.close();
+      _workerLifecyclePort = null;
+      // onExit proves the worker is gone; free the token if a terminal response did not already.
+      _activeFreeToken?.call();
+      _queuedGeneration?.close();
+      _stalePerformanceContexts.clear();
+      textToSpeechCancelFlag?.free();
+      _activeCancelToken = null;
+      _activeGenerationCleanup = null;
+      _activeGenerationFailure = null;
+      _activeFreeToken = null;
+      _activeModelHandle = null;
+      _isReady = false;
+    }
+    _throwIfWorkerCleanupFailed();
   }
 
   @override

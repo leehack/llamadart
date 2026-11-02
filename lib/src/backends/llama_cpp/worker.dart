@@ -174,6 +174,7 @@ void runLlamaWorkerForTesting(
         forwardsLogs = true;
       }
       try {
+        service.installWorkerOwner(message.nativeOwnerToken);
         service.setLogLevel(message.initialLogLevel);
         if (!isInitialized) {
           service.initializeBackend();

@@ -30,6 +30,7 @@ validate against the exact release tag notes.
 Runtime baseline: native llama.cpp `v0.8.0-1` and Web use upstream `v0.8.0@8642541b255bfb5dc39cd351a178be09013a55d6`; Web LiteRT-LM stays `@litert-lm/core@0.18.0`. Manifest SHA-256: `7b3596e254e0767c577a084cb608ffe35118ae01afa85a4ba1a44c677afceebe`.
 
 - Manage text, decision, image and speech engine lifecycles through `LlamadartEngine<C>` with typed capabilities and reentrant-safe final disposal.
+- Prepare llama.cpp worker cleanup during native creation for runtimes with owner API v1.
 - Parse LFM2 Python-style tool calls using declared argument types while preserving copied string backslashes.
 
 ## 0.17.5
