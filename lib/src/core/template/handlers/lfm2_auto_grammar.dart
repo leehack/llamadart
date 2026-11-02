@@ -18,14 +18,9 @@ String? buildLfm2AutoGrammar(
     final tool = tools[index];
     final schema = tool.toJsonSchema();
     calls.add(builder.tool(tool.name, schema, 'tool-$index'));
-    if (builder.acceptsCopiedStringTail(schema)) {
+    if (builder.acceptsCopiedStringTail(tool.name, schema)) {
       copiedCalls.add(
-        builder.tool(
-          tool.name,
-          schema,
-          'copied-tool-$index',
-          copiedStringTails: true,
-        ),
+        builder.copiedTool(tool.name, schema, 'copied-tool-$index'),
       );
     }
   }
@@ -36,8 +31,8 @@ String? buildLfm2AutoGrammar(
   final normalList =
       'call ${parallelToolCalls ? '(close-ws "," close-ws call)* ' : ''}'
       '(close-ws ",")?';
-  // The legacy all-string parser accepts copied trailing backslashes only in
-  // one call without a list comma. Keep that spelling out of other list forms.
+  // The loose fallback reinterprets quotes and JSON objects. Admit copied tails
+  // only in one required plain path argument, without either ambiguity.
   final list = copiedCalls.isEmpty ? normalList : '($normalList | copied-call)';
   // A trailing comma lets compound tokens close the last argument and call
   // without forcing the sampler back into an unfinished string. Bound closing
@@ -62,34 +57,49 @@ final class _PythonGrammar {
     'py-string': 'double-string | single-string',
     'double-string': r'''"\"" ([^"\\] | "\\" .)* "\""''',
     'single-string': r'''"'" ([^'\\] | "\\" .)* "'"''',
-    'copied-string': 'copied-double-string | copied-single-string',
-    'copied-double-string': r'''"\"" ([^"\\] | "\\" .)* "\\"? "\""''',
-    'copied-single-string': r'''"'" ([^'\\] | "\\" .)* "\\"? "'"''',
+    'copied-path-string':
+        r'''"\"" copied-path-char* "\\" "\"" | "'" copied-path-char* "\\" "'"''',
+    'copied-path-char': r'[a-zA-Z0-9_ ./:\\-] | [\u0080-\U0010FFFF]',
     'integer': r'"-"? ("0" | [1-9] [0-9]*)',
     'number': r'integer ("." [0-9]+)? ([eE] [+-]? [0-9]+)?',
     'boolean': r'"True" | "False" | "true" | "false"',
     'null': r'"None" | "null"',
   };
 
-  bool acceptsCopiedStringTail(Map<String, dynamic> schema) {
+  bool acceptsCopiedStringTail(String name, Map<String, dynamic> schema) {
     final fields = _fields(schema);
-    return fields.isNotEmpty &&
-        fields.values.every((field) => field['type'] == 'string');
+    if (RegExp(r'[A-Za-z_][A-Za-z0-9_.-]*').matchAsPrefix(name)?.end !=
+            name.length ||
+        fields.length != 1) {
+      return false;
+    }
+    final field = fields.entries.single;
+    final required = schema['required'] as List? ?? const [];
+    return RegExp(r'[A-Za-z_][A-Za-z0-9_]*').matchAsPrefix(field.key)?.end ==
+            field.key.length &&
+        required.length == 1 &&
+        required.single == field.key &&
+        field.value['type'] == 'string' &&
+        field.value.keys.every((key) => key == 'type' || key == 'description');
   }
 
-  String tool(
-    String name,
-    Map<String, dynamic> schema,
-    String rule, {
-    bool copiedStringTails = false,
-  }) {
+  String copiedTool(String name, Map<String, dynamic> schema, String rule) {
+    final key = _fields(schema).keys.single;
+    rules[rule] =
+        '${ToolCallGrammarUtils.literal(name)} "(" ws '
+        '${ToolCallGrammarUtils.literal(key)} ws "=" ws copied-path-string '
+        'close-ws ")"';
+    return rule;
+  }
+
+  String tool(String name, Map<String, dynamic> schema, String rule) {
     final fields = _fields(schema);
     final required = (schema['required'] as List? ?? const []).cast<String>();
     final members = <({String name, String value, bool required})>[
       for (final entry in fields.entries)
         (
           name: '${ToolCallGrammarUtils.literal(entry.key)} ws "=" ws',
-          value: value(entry.value, copiedStringTail: copiedStringTails),
+          value: value(entry.value),
           required: required.contains(entry.key),
         ),
     ];
@@ -104,7 +114,7 @@ final class _PythonGrammar {
       entry.key as String: Map<String, dynamic>.from(entry.value as Map),
   };
 
-  String value(Map<String, dynamic> schema, {bool copiedStringTail = false}) {
+  String value(Map<String, dynamic> schema) {
     final choices = schema['enum'];
     if (choices is List) {
       if (choices.isEmpty || choices.any((value) => value is! String)) {
@@ -143,7 +153,7 @@ final class _PythonGrammar {
       return rule;
     }
     return switch (schema['type']) {
-      'string' => copiedStringTail ? 'copied-string' : 'py-string',
+      'string' => 'py-string',
       'integer' => 'integer',
       'number' => 'number',
       'boolean' => 'boolean',

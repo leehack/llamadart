@@ -118,10 +118,13 @@ description: >-
   Named object/array arguments and zero-argument calls are supported. Keep
   copied backslashes literal; ambiguous Python-style strings are not globally
   unescaped. This does not enable canonical `fromJsonSchema` generation on
-  LFM2 or change its existing required JSON grammar. All-string tools retain
-  copied trailing backslashes before an argument quote only in a singleton list
-  without a terminal comma; other list forms, mixed-type tools and nested values
-  keep strict quote boundaries.
+  LFM2 or change its existing required JSON grammar. Auto grammar admits a copied
+  trailing backslash only for one required plain string argument, in a singleton
+  list without a terminal comma. This exception
+  accepts path-like letters, digits, Unicode text, spaces and `_ . / : - \`;
+  ASCII quotes, braces, brackets, call/assignment punctuation and tool markers
+  require ordinary strict strings. Other declarations and list forms keep
+  strict quote boundaries.
 - Native llama.cpp enforces LFM2/LFM2.5 auto Python calls with a lazy schema
   grammar after a tool-start marker outside reasoning. Keep legacy `ToolParam`
   declarations typed; required/force-JSON requests retain their JSON grammar,

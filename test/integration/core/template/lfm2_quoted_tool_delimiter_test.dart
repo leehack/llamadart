@@ -107,23 +107,31 @@ Future<void> _expectStream(
 
 void main() {
   for (final quote in ['"', "'"]) {
-    test(
-      'copied trailing backslash $quote preserves a singleton call',
-      () async {
-        final rendered = _render(ToolChoice.auto);
-        final output = _envelope('[weather(city=${quote}C:\\temp\\$quote)]');
-        final parsed = ChatTemplateEngine.parseRendered(
-          rendered,
-          output,
-          tools: _tools,
-        );
-        expect(parsed.toolCalls, hasLength(1));
-        expect(jsonDecode(parsed.toolCalls.single.function!.arguments!), {
-          'city': 'C:\\temp\\',
-        });
-        await _expectStream(output, rendered);
-      },
-    );
+    for (final path in [
+      'C:\\temp\\',
+      'C:\\Montréal\\서울\\',
+      '\\\\server\\share\\',
+      './relative-name_01\\',
+      '\\',
+    ]) {
+      test(
+        'copied trailing backslash $quote $path preserves a singleton call',
+        () async {
+          final rendered = _render(ToolChoice.auto);
+          final output = _envelope('[weather(city=$quote$path$quote)]');
+          final parsed = ChatTemplateEngine.parseRendered(
+            rendered,
+            output,
+            tools: _tools,
+          );
+          expect(parsed.toolCalls, hasLength(1));
+          expect(jsonDecode(parsed.toolCalls.single.function!.arguments!), {
+            'city': path,
+          });
+          await _expectStream(output, rendered);
+        },
+      );
+    }
   }
 
   test(

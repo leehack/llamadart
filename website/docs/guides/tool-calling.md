@@ -192,10 +192,13 @@ retain their named position, and a declared zero-argument call yields `{}`.
 For a string parameter, `value=False` remains the string `"False"`; copied
 backslashes in Python-style string arguments remain literal. Ambiguous copied
 text and escaped text are not globally unescaped. The existing JSON call form
-keeps JSON string decoding. For tools whose parameters are all strings, a
-copied trailing backslash may precede the closing argument quote only in a
-singleton list without a terminal comma. Other list forms, mixed-type tools and
-nested containers retain strict quote boundaries.
+keeps JSON string decoding. The auto grammar permits a copied trailing backslash
+only for a tool with one required plain string argument, in a singleton list
+without a terminal comma.
+That exception accepts path-like text: letters, digits, Unicode text, spaces and
+`_ . / : - \`. ASCII quotes, braces, brackets, call/assignment punctuation and
+tool markers require the ordinary strict string form. Other declarations and
+list forms keep strict quote boundaries.
 
 Declare every argument with the correct type. This parser change does not add
 canonical `ToolDefinition.fromJsonSchema` generation support for LFM2: the
