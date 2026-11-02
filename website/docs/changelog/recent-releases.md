@@ -13,6 +13,7 @@ validate against the exact release tag notes.
 
 ## Unreleased
 
+- Fail early with an actionable error when a Windows native runtime lacks speculative decoding helpers.
 - Manage text, decision, image and speech engine lifecycles through `LlamadartEngine<C>` with typed capabilities and reentrant-safe final disposal.
 
 ## 0.17.5

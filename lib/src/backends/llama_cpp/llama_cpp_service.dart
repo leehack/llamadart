@@ -3256,7 +3256,10 @@ class LlamaCppService {
     return 'open: $reason${code == null ? '' : ' (Windows error $code)'}';
   }
 
-  _SpeculativeApi _resolveSpeculativeApi() {
+  _SpeculativeApi _resolveSpeculativeApi({
+    List<String>? candidates,
+    DynamicLibrary Function(String)? open,
+  }) {
     final cached = _speculativeApi;
     if (cached != null) {
       return cached;
@@ -3267,7 +3270,7 @@ class LlamaCppService {
     }
     _speculativeApiLookupAttempted = true;
 
-    if (!Platform.isWindows) {
+    if (!_isWindows) {
       try {
         final direct = _SpeculativeApi.direct();
         _speculativeApi = direct;
@@ -3275,7 +3278,7 @@ class LlamaCppService {
       } catch (_) {}
     }
 
-    if (Platform.isWindows) {
+    if (_isWindows) {
       try {
         final asset = _SpeculativeApi.windowsAsset();
         _speculativeApi = asset;
@@ -3283,9 +3286,10 @@ class LlamaCppService {
       } catch (_) {}
     }
 
-    for (final candidate in _llamadartWrapperLibraryCandidates()) {
+    for (final candidate
+        in candidates ?? _llamadartWrapperLibraryCandidates()) {
       try {
-        final library = _openWrapperLibrary(candidate);
+        final library = (open ?? _openWrapperLibrary)(candidate);
         final api = _SpeculativeApi.tryLoad(library);
         if (api != null) {
           _speculativeApi = api;
@@ -4706,9 +4710,8 @@ class LlamaCppService {
         debugOnSpeculativeDraftContextForTesting?.call(
           speculativeApi.getDraftContext(speculativeSession),
         );
-        if (speculativeApi.needEmbd(speculativeSession)) {
-          llama_set_embeddings(ctx.pointer, true);
-        }
+        // Native initialization enables the outputs its selected strategies
+        // consume; the legacy need_embd query always returned false.
         llama_perf_context_reset(ctx.pointer);
       }
 
