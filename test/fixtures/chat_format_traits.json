@@ -8,7 +8,9 @@
       "disabledByResponseSchema": false,
       "requiredKeepsLazyGrammar": false,
       "routesThroughGeneric": false,
-      "toolChoiceNoneRendersContentOnly": true
+      "toolChoiceNoneRendersContentOnly": true,
+      "qualifiesJsonSchemaTools": false,
+      "hasIncompleteToolCallCheck": false
     },
     "generic": {
       "toolCallOpening": null,
@@ -18,7 +20,9 @@
       "disabledByResponseSchema": false,
       "requiredKeepsLazyGrammar": false,
       "routesThroughGeneric": false,
-      "toolChoiceNoneRendersContentOnly": true
+      "toolChoiceNoneRendersContentOnly": true,
+      "qualifiesJsonSchemaTools": true,
+      "hasIncompleteToolCallCheck": true
     },
     "mistralNemo": {
       "toolCallOpening": "MistralHandler",
@@ -28,7 +32,9 @@
       "disabledByResponseSchema": false,
       "requiredKeepsLazyGrammar": false,
       "routesThroughGeneric": false,
-      "toolChoiceNoneRendersContentOnly": true
+      "toolChoiceNoneRendersContentOnly": true,
+      "qualifiesJsonSchemaTools": true,
+      "hasIncompleteToolCallCheck": true
     },
     "magistral": {
       "toolCallOpening": "MagistralHandler",
@@ -38,7 +44,9 @@
       "disabledByResponseSchema": false,
       "requiredKeepsLazyGrammar": false,
       "routesThroughGeneric": false,
-      "toolChoiceNoneRendersContentOnly": false
+      "toolChoiceNoneRendersContentOnly": false,
+      "qualifiesJsonSchemaTools": false,
+      "hasIncompleteToolCallCheck": false
     },
     "llama3": {
       "toolCallOpening": null,
@@ -48,7 +56,9 @@
       "disabledByResponseSchema": false,
       "requiredKeepsLazyGrammar": false,
       "routesThroughGeneric": false,
-      "toolChoiceNoneRendersContentOnly": false
+      "toolChoiceNoneRendersContentOnly": false,
+      "qualifiesJsonSchemaTools": false,
+      "hasIncompleteToolCallCheck": false
     },
     "llama3BuiltinTools": {
       "toolCallOpening": null,
@@ -58,7 +68,9 @@
       "disabledByResponseSchema": false,
       "requiredKeepsLazyGrammar": false,
       "routesThroughGeneric": false,
-      "toolChoiceNoneRendersContentOnly": false
+      "toolChoiceNoneRendersContentOnly": false,
+      "qualifiesJsonSchemaTools": false,
+      "hasIncompleteToolCallCheck": false
     },
     "deepseekR1": {
       "toolCallOpening": "DeepseekR1Handler",
@@ -68,7 +80,9 @@
       "disabledByResponseSchema": true,
       "requiredKeepsLazyGrammar": false,
       "routesThroughGeneric": false,
-      "toolChoiceNoneRendersContentOnly": false
+      "toolChoiceNoneRendersContentOnly": false,
+      "qualifiesJsonSchemaTools": false,
+      "hasIncompleteToolCallCheck": false
     },
     "firefunctionV2": {
       "toolCallOpening": "FirefunctionV2Handler",
@@ -78,7 +92,9 @@
       "disabledByResponseSchema": false,
       "requiredKeepsLazyGrammar": false,
       "routesThroughGeneric": false,
-      "toolChoiceNoneRendersContentOnly": false
+      "toolChoiceNoneRendersContentOnly": false,
+      "qualifiesJsonSchemaTools": false,
+      "hasIncompleteToolCallCheck": false
     },
     "functionaryV32": {
       "toolCallOpening": null,
@@ -88,7 +104,9 @@
       "disabledByResponseSchema": false,
       "requiredKeepsLazyGrammar": false,
       "routesThroughGeneric": false,
-      "toolChoiceNoneRendersContentOnly": false
+      "toolChoiceNoneRendersContentOnly": false,
+      "qualifiesJsonSchemaTools": false,
+      "hasIncompleteToolCallCheck": false
     },
     "functionaryV31Llama31": {
       "toolCallOpening": "FunctionaryV31Llama31Handler",
@@ -98,7 +116,9 @@
       "disabledByResponseSchema": false,
       "requiredKeepsLazyGrammar": false,
       "routesThroughGeneric": false,
-      "toolChoiceNoneRendersContentOnly": false
+      "toolChoiceNoneRendersContentOnly": false,
+      "qualifiesJsonSchemaTools": false,
+      "hasIncompleteToolCallCheck": false
     },
     "deepseekV3": {
       "toolCallOpening": "DeepseekV3Handler",
@@ -108,7 +128,9 @@
       "disabledByResponseSchema": true,
       "requiredKeepsLazyGrammar": false,
       "routesThroughGeneric": false,
-      "toolChoiceNoneRendersContentOnly": false
+      "toolChoiceNoneRendersContentOnly": false,
+      "qualifiesJsonSchemaTools": false,
+      "hasIncompleteToolCallCheck": false
     },
     "hermes": {
       "toolCallOpening": "HermesHandler",
@@ -118,7 +140,9 @@
       "disabledByResponseSchema": true,
       "requiredKeepsLazyGrammar": false,
       "routesThroughGeneric": false,
-      "toolChoiceNoneRendersContentOnly": false
+      "toolChoiceNoneRendersContentOnly": false,
+      "qualifiesJsonSchemaTools": true,
+      "hasIncompleteToolCallCheck": true
     },
     "commandR7B": {
       "toolCallOpening": "CommandR7BHandler",
@@ -128,7 +152,9 @@
       "disabledByResponseSchema": true,
       "requiredKeepsLazyGrammar": false,
       "routesThroughGeneric": false,
-      "toolChoiceNoneRendersContentOnly": false
+      "toolChoiceNoneRendersContentOnly": false,
+      "qualifiesJsonSchemaTools": false,
+      "hasIncompleteToolCallCheck": false
     },
     "granite": {
       "toolCallOpening": "GraniteHandler",
@@ -138,7 +164,9 @@
       "disabledByResponseSchema": false,
       "requiredKeepsLazyGrammar": false,
       "routesThroughGeneric": false,
-      "toolChoiceNoneRendersContentOnly": false
+      "toolChoiceNoneRendersContentOnly": false,
+      "qualifiesJsonSchemaTools": false,
+      "hasIncompleteToolCallCheck": false
     },
     "gptOss": {
       "toolCallOpening": "GptOssHandler",
@@ -148,7 +176,9 @@
       "disabledByResponseSchema": false,
       "requiredKeepsLazyGrammar": false,
       "routesThroughGeneric": false,
-      "toolChoiceNoneRendersContentOnly": false
+      "toolChoiceNoneRendersContentOnly": false,
+      "qualifiesJsonSchemaTools": false,
+      "hasIncompleteToolCallCheck": false
     },
     "seedOss": {
       "toolCallOpening": "XmlToolCallFormat.seedOss",
@@ -158,7 +188,9 @@
       "disabledByResponseSchema": false,
       "requiredKeepsLazyGrammar": false,
       "routesThroughGeneric": false,
-      "toolChoiceNoneRendersContentOnly": false
+      "toolChoiceNoneRendersContentOnly": false,
+      "qualifiesJsonSchemaTools": false,
+      "hasIncompleteToolCallCheck": false
     },
     "nemotronV2": {
       "toolCallOpening": "NemotronV2Handler",
@@ -168,7 +200,9 @@
       "disabledByResponseSchema": false,
       "requiredKeepsLazyGrammar": true,
       "routesThroughGeneric": false,
-      "toolChoiceNoneRendersContentOnly": false
+      "toolChoiceNoneRendersContentOnly": false,
+      "qualifiesJsonSchemaTools": false,
+      "hasIncompleteToolCallCheck": false
     },
     "apertus": {
       "toolCallOpening": "ApertusHandler",
@@ -178,7 +212,9 @@
       "disabledByResponseSchema": false,
       "requiredKeepsLazyGrammar": true,
       "routesThroughGeneric": false,
-      "toolChoiceNoneRendersContentOnly": false
+      "toolChoiceNoneRendersContentOnly": false,
+      "qualifiesJsonSchemaTools": false,
+      "hasIncompleteToolCallCheck": false
     },
     "lfm2": {
       "toolCallOpening": "Lfm2Handler",
@@ -188,7 +224,9 @@
       "disabledByResponseSchema": false,
       "requiredKeepsLazyGrammar": true,
       "routesThroughGeneric": false,
-      "toolChoiceNoneRendersContentOnly": false
+      "toolChoiceNoneRendersContentOnly": false,
+      "qualifiesJsonSchemaTools": false,
+      "hasIncompleteToolCallCheck": false
     },
     "glm45": {
       "toolCallOpening": null,
@@ -198,7 +236,9 @@
       "disabledByResponseSchema": true,
       "requiredKeepsLazyGrammar": false,
       "routesThroughGeneric": false,
-      "toolChoiceNoneRendersContentOnly": false
+      "toolChoiceNoneRendersContentOnly": false,
+      "qualifiesJsonSchemaTools": true,
+      "hasIncompleteToolCallCheck": true
     },
     "minimaxM2": {
       "toolCallOpening": "XmlToolCallFormat.minimaxM2",
@@ -208,7 +248,9 @@
       "disabledByResponseSchema": false,
       "requiredKeepsLazyGrammar": false,
       "routesThroughGeneric": false,
-      "toolChoiceNoneRendersContentOnly": false
+      "toolChoiceNoneRendersContentOnly": false,
+      "qualifiesJsonSchemaTools": false,
+      "hasIncompleteToolCallCheck": false
     },
     "kimiK2": {
       "toolCallOpening": "KimiK2Handler",
@@ -218,7 +260,9 @@
       "disabledByResponseSchema": false,
       "requiredKeepsLazyGrammar": false,
       "routesThroughGeneric": false,
-      "toolChoiceNoneRendersContentOnly": false
+      "toolChoiceNoneRendersContentOnly": false,
+      "qualifiesJsonSchemaTools": false,
+      "hasIncompleteToolCallCheck": false
     },
     "qwen3CoderXml": {
       "toolCallOpening": "XmlToolCallFormat.qwen3Coder",
@@ -228,7 +272,9 @@
       "disabledByResponseSchema": false,
       "requiredKeepsLazyGrammar": false,
       "routesThroughGeneric": false,
-      "toolChoiceNoneRendersContentOnly": false
+      "toolChoiceNoneRendersContentOnly": false,
+      "qualifiesJsonSchemaTools": false,
+      "hasIncompleteToolCallCheck": false
     },
     "apriel15": {
       "toolCallOpening": "XmlToolCallFormat.apriel15",
@@ -238,7 +284,9 @@
       "disabledByResponseSchema": false,
       "requiredKeepsLazyGrammar": false,
       "routesThroughGeneric": false,
-      "toolChoiceNoneRendersContentOnly": false
+      "toolChoiceNoneRendersContentOnly": false,
+      "qualifiesJsonSchemaTools": false,
+      "hasIncompleteToolCallCheck": false
     },
     "xiaomiMimo": {
       "toolCallOpening": "XmlToolCallFormat.xiaomiMimo",
@@ -248,7 +296,9 @@
       "disabledByResponseSchema": false,
       "requiredKeepsLazyGrammar": false,
       "routesThroughGeneric": false,
-      "toolChoiceNoneRendersContentOnly": false
+      "toolChoiceNoneRendersContentOnly": false,
+      "qualifiesJsonSchemaTools": false,
+      "hasIncompleteToolCallCheck": false
     },
     "solarOpen": {
       "toolCallOpening": null,
@@ -258,7 +308,9 @@
       "disabledByResponseSchema": false,
       "requiredKeepsLazyGrammar": false,
       "routesThroughGeneric": false,
-      "toolChoiceNoneRendersContentOnly": false
+      "toolChoiceNoneRendersContentOnly": false,
+      "qualifiesJsonSchemaTools": false,
+      "hasIncompleteToolCallCheck": false
     },
     "exaoneMoe": {
       "toolCallOpening": "ExaoneMoeHandler",
@@ -268,7 +320,9 @@
       "disabledByResponseSchema": false,
       "requiredKeepsLazyGrammar": false,
       "routesThroughGeneric": false,
-      "toolChoiceNoneRendersContentOnly": false
+      "toolChoiceNoneRendersContentOnly": false,
+      "qualifiesJsonSchemaTools": false,
+      "hasIncompleteToolCallCheck": false
     },
     "pegSimple": {
       "toolCallOpening": null,
@@ -278,7 +332,9 @@
       "disabledByResponseSchema": false,
       "requiredKeepsLazyGrammar": false,
       "routesThroughGeneric": false,
-      "toolChoiceNoneRendersContentOnly": false
+      "toolChoiceNoneRendersContentOnly": false,
+      "qualifiesJsonSchemaTools": false,
+      "hasIncompleteToolCallCheck": false
     },
     "pegNative": {
       "toolCallOpening": null,
@@ -288,7 +344,9 @@
       "disabledByResponseSchema": false,
       "requiredKeepsLazyGrammar": false,
       "routesThroughGeneric": false,
-      "toolChoiceNoneRendersContentOnly": false
+      "toolChoiceNoneRendersContentOnly": false,
+      "qualifiesJsonSchemaTools": false,
+      "hasIncompleteToolCallCheck": false
     },
     "pegConstructed": {
       "toolCallOpening": null,
@@ -298,7 +356,9 @@
       "disabledByResponseSchema": false,
       "requiredKeepsLazyGrammar": false,
       "routesThroughGeneric": false,
-      "toolChoiceNoneRendersContentOnly": false
+      "toolChoiceNoneRendersContentOnly": false,
+      "qualifiesJsonSchemaTools": false,
+      "hasIncompleteToolCallCheck": false
     },
     "functionGemma": {
       "toolCallOpening": "FunctionGemmaHandler",
@@ -308,7 +368,9 @@
       "disabledByResponseSchema": false,
       "requiredKeepsLazyGrammar": false,
       "routesThroughGeneric": false,
-      "toolChoiceNoneRendersContentOnly": false
+      "toolChoiceNoneRendersContentOnly": false,
+      "qualifiesJsonSchemaTools": false,
+      "hasIncompleteToolCallCheck": false
     },
     "gemma": {
       "toolCallOpening": "GemmaHandler",
@@ -318,7 +380,9 @@
       "disabledByResponseSchema": false,
       "requiredKeepsLazyGrammar": false,
       "routesThroughGeneric": true,
-      "toolChoiceNoneRendersContentOnly": false
+      "toolChoiceNoneRendersContentOnly": false,
+      "qualifiesJsonSchemaTools": false,
+      "hasIncompleteToolCallCheck": false
     },
     "gemma4": {
       "toolCallOpening": null,
@@ -328,7 +392,9 @@
       "disabledByResponseSchema": false,
       "requiredKeepsLazyGrammar": false,
       "routesThroughGeneric": false,
-      "toolChoiceNoneRendersContentOnly": false
+      "toolChoiceNoneRendersContentOnly": false,
+      "qualifiesJsonSchemaTools": false,
+      "hasIncompleteToolCallCheck": false
     },
     "translateGemma": {
       "toolCallOpening": null,
@@ -338,7 +404,9 @@
       "disabledByResponseSchema": false,
       "requiredKeepsLazyGrammar": false,
       "routesThroughGeneric": false,
-      "toolChoiceNoneRendersContentOnly": false
+      "toolChoiceNoneRendersContentOnly": false,
+      "qualifiesJsonSchemaTools": false,
+      "hasIncompleteToolCallCheck": false
     },
     "ministral": {
       "toolCallOpening": null,
@@ -348,7 +416,9 @@
       "disabledByResponseSchema": false,
       "requiredKeepsLazyGrammar": false,
       "routesThroughGeneric": false,
-      "toolChoiceNoneRendersContentOnly": false
+      "toolChoiceNoneRendersContentOnly": false,
+      "qualifiesJsonSchemaTools": false,
+      "hasIncompleteToolCallCheck": false
     },
     "cohere2Moe": {
       "toolCallOpening": "CommandR7BHandler",
@@ -358,7 +428,9 @@
       "disabledByResponseSchema": true,
       "requiredKeepsLazyGrammar": false,
       "routesThroughGeneric": false,
-      "toolChoiceNoneRendersContentOnly": false
+      "toolChoiceNoneRendersContentOnly": false,
+      "qualifiesJsonSchemaTools": false,
+      "hasIncompleteToolCallCheck": false
     },
     "minicpm5": {
       "toolCallOpening": "XmlToolCallFormat.minicpm5",
@@ -368,7 +440,9 @@
       "disabledByResponseSchema": false,
       "requiredKeepsLazyGrammar": false,
       "routesThroughGeneric": false,
-      "toolChoiceNoneRendersContentOnly": false
+      "toolChoiceNoneRendersContentOnly": false,
+      "qualifiesJsonSchemaTools": false,
+      "hasIncompleteToolCallCheck": false
     },
     "hunyuanV3": {
       "toolCallOpening": "HunyuanV3Handler",
@@ -378,7 +452,9 @@
       "disabledByResponseSchema": false,
       "requiredKeepsLazyGrammar": false,
       "routesThroughGeneric": false,
-      "toolChoiceNoneRendersContentOnly": false
+      "toolChoiceNoneRendersContentOnly": false,
+      "qualifiesJsonSchemaTools": true,
+      "hasIncompleteToolCallCheck": true
     },
     "kimiK3": {
       "toolCallOpening": null,
@@ -388,7 +464,9 @@
       "disabledByResponseSchema": false,
       "requiredKeepsLazyGrammar": false,
       "routesThroughGeneric": false,
-      "toolChoiceNoneRendersContentOnly": false
+      "toolChoiceNoneRendersContentOnly": false,
+      "qualifiesJsonSchemaTools": false,
+      "hasIncompleteToolCallCheck": false
     },
     "minimaxM1": {
       "toolCallOpening": null,
@@ -398,7 +476,9 @@
       "disabledByResponseSchema": false,
       "requiredKeepsLazyGrammar": false,
       "routesThroughGeneric": false,
-      "toolChoiceNoneRendersContentOnly": false
+      "toolChoiceNoneRendersContentOnly": false,
+      "qualifiesJsonSchemaTools": false,
+      "hasIncompleteToolCallCheck": false
     },
     "minimaxM3": {
       "toolCallOpening": null,
@@ -408,7 +488,9 @@
       "disabledByResponseSchema": false,
       "requiredKeepsLazyGrammar": false,
       "routesThroughGeneric": false,
-      "toolChoiceNoneRendersContentOnly": false
+      "toolChoiceNoneRendersContentOnly": false,
+      "qualifiesJsonSchemaTools": false,
+      "hasIncompleteToolCallCheck": false
     },
     "deepseekV4": {
       "toolCallOpening": null,
@@ -418,7 +500,9 @@
       "disabledByResponseSchema": false,
       "requiredKeepsLazyGrammar": false,
       "routesThroughGeneric": false,
-      "toolChoiceNoneRendersContentOnly": false
+      "toolChoiceNoneRendersContentOnly": false,
+      "qualifiesJsonSchemaTools": false,
+      "hasIncompleteToolCallCheck": false
     },
     "museGlimmer": {
       "toolCallOpening": null,
@@ -428,7 +512,9 @@
       "disabledByResponseSchema": false,
       "requiredKeepsLazyGrammar": false,
       "routesThroughGeneric": false,
-      "toolChoiceNoneRendersContentOnly": false
+      "toolChoiceNoneRendersContentOnly": false,
+      "qualifiesJsonSchemaTools": false,
+      "hasIncompleteToolCallCheck": false
     },
     "laguna": {
       "toolCallOpening": null,
@@ -438,7 +524,9 @@
       "disabledByResponseSchema": false,
       "requiredKeepsLazyGrammar": false,
       "routesThroughGeneric": false,
-      "toolChoiceNoneRendersContentOnly": false
+      "toolChoiceNoneRendersContentOnly": false,
+      "qualifiesJsonSchemaTools": true,
+      "hasIncompleteToolCallCheck": true
     },
     "deepseekV32": {
       "toolCallOpening": null,
@@ -448,7 +536,9 @@
       "disabledByResponseSchema": false,
       "requiredKeepsLazyGrammar": false,
       "routesThroughGeneric": false,
-      "toolChoiceNoneRendersContentOnly": false
+      "toolChoiceNoneRendersContentOnly": false,
+      "qualifiesJsonSchemaTools": false,
+      "hasIncompleteToolCallCheck": false
     }
   },
   "incompleteToolCalls": {
