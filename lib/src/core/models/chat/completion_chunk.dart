@@ -8,12 +8,14 @@ import '../inference/generation_usage.dart';
 /// `tool_calls`. When the backend reports that the reply ended at the token
 /// limit, every call is withheld, including complete ones, and the reply
 /// finishes with `length`.
+/// The same raw record type backs `partialToolCalls`, where entries can be
+/// unfinished diagnostics and must never be executed.
 class LlamaCompletionChunkToolCall {
   /// The position of this call among the calls of the completion.
   final int index;
 
   /// The call ID. `LlamaEngine.create` fills `call_<index>` when the model
-  /// output has none.
+  /// output has none for executable calls; diagnostics keep any generated ID.
   final String? id;
 
   /// The type of the tool call. Usually "function".
@@ -66,7 +68,8 @@ class LlamaCompletionChunkFunction {
 
   /// The function arguments as text. From `LlamaEngine.create` this is the
   /// complete arguments as a string, not a streaming fragment: usually a JSON
-  /// object, but it can be empty or not an object.
+  /// object, but it can be empty or not an object. In `partialToolCalls`, this
+  /// is raw diagnostic text and may be unfinished Python or JSON syntax.
   final String? arguments;
 
   /// Creates a new [LlamaCompletionChunkFunction].
@@ -228,6 +231,13 @@ class LlamaCompletionChunkDelta {
   /// The tool calls information.
   final List<LlamaCompletionChunkToolCall>? toolCalls;
 
+  /// Raw calls from an unfinished LFM tool envelope at a reported length limit.
+  ///
+  /// Terminal diagnostics only: arguments preserve generated text and may not
+  /// be JSON. Never execute these records or add them to message history.
+  /// Natural EOF and cancellation do not populate this field or imply a limit.
+  final List<LlamaCompletionChunkToolCall>? partialToolCalls;
+
   /// The thinking content (LlamaDart extension).
   final String? thinking;
 
@@ -238,6 +248,7 @@ class LlamaCompletionChunkDelta {
   LlamaCompletionChunkDelta({
     this.content,
     this.toolCalls,
+    this.partialToolCalls,
     this.thinking,
     this.role,
   });
@@ -247,6 +258,13 @@ class LlamaCompletionChunkDelta {
     return LlamaCompletionChunkDelta(
       content: json['content'] as String?,
       toolCalls: (json['tool_calls'] as List<dynamic>?)
+          ?.map(
+            (e) => LlamaCompletionChunkToolCall.fromJson(
+              e as Map<String, dynamic>,
+            ),
+          )
+          .toList(),
+      partialToolCalls: (json['partial_tool_calls'] as List<dynamic>?)
           ?.map(
             (e) => LlamaCompletionChunkToolCall.fromJson(
               e as Map<String, dynamic>,
@@ -264,6 +282,8 @@ class LlamaCompletionChunkDelta {
       if (content != null) 'content': content,
       if (toolCalls != null)
         'tool_calls': toolCalls!.map((e) => e.toJson()).toList(),
+      if (partialToolCalls != null)
+        'partial_tool_calls': partialToolCalls!.map((e) => e.toJson()).toList(),
       if (thinking != null) 'thinking': thinking,
       if (role != null) 'role': role,
     };
@@ -271,7 +291,7 @@ class LlamaCompletionChunkDelta {
 
   @override
   String toString() =>
-      'LlamaCompletionChunkDelta(content: $content, toolCalls: $toolCalls, thinking: $thinking, role: $role)';
+      'LlamaCompletionChunkDelta(content: $content, toolCalls: $toolCalls, partialToolCallCount: ${partialToolCalls?.length ?? 0}, thinking: $thinking, role: $role)';
 }
 
 /// Why a completion stopped, typed from the `finish_reason` wire value of a
@@ -331,6 +351,10 @@ extension LlamaCompletionChunkExtension on LlamaCompletionChunk {
   /// `collect()` to get complete tool calls.
   List<LlamaCompletionChunkToolCall> get toolCalls =>
       choices.firstOrNull?.delta.toolCalls ?? const [];
+
+  /// Non-executable terminal diagnostics of the first choice, or an empty list.
+  List<LlamaCompletionChunkToolCall> get partialToolCalls =>
+      choices.firstOrNull?.delta.partialToolCalls ?? const [];
 
   /// The typed finish reason of the first choice.
   ///

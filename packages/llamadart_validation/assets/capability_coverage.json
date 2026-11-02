@@ -684,6 +684,16 @@
         "reason": "A caps-false public Qwen3-Coder render and native compiled grammar controls cover explicit true/false bounds; Ministral/Nemotron parser tests preserve their bounds. Capability probes remain descriptive. Existing tools packs do not qualify every format/backend parallel grammar; no broader runtime support is claimed.",
         "issue": "https://github.com/leehack/llamadart/issues/1713"
       }
+    },
+    {
+      "surfaces": [
+        "matrix:Incomplete tool diagnostics"
+      ],
+      "exemption": {
+        "id": "lfm-partial-tool-diagnostics",
+        "issue": "https://github.com/leehack/llamadart/issues/1716",
+        "reason": "Bounded host parser and public completion/session tests cover raw non-executable length diagnostics across stream partitions, terminal controls, serialization, history, dispatch and reuse. No versioned model/backend validation pack qualifies this new surface yet; broader model/backend qualification remains separate. Diagnostics do not qualify a termination cause or lift LiteRT-LM Web issue919."
+      }
     }
   ]
 }

@@ -14,6 +14,7 @@ validate against the exact release tag notes.
 ## Unreleased
 
 - Apply Web lazy tool-call grammars and custom grammar roots when the loaded bridge reports support.
+- Preserve unfinished LFM tool calls as raw `partialToolCalls` diagnostics at reported length cutoffs, separate from executable calls and history ([#1716](https://github.com/leehack/llamadart/issues/1716)).
 
 - Honor explicit parallel-tool requests even when template probes do not recognize parallel history ([#1713](https://github.com/leehack/llamadart/issues/1713)).
 - Keep LFM2 tool markers inside reasoning non-executable and preserve thought tags inside tool arguments ([#1714](https://github.com/leehack/llamadart/issues/1714)).

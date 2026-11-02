@@ -25,6 +25,13 @@ class LlamaCompletion {
   /// generated.
   final List<LlamaToolCallContent> toolCalls;
 
+  /// Raw named calls from an unfinished LFM envelope at a reported length limit.
+  ///
+  /// These diagnostics preserve generated argument text, including incomplete
+  /// containers and escapes. They are never decoded, executable or included in
+  /// [message]. Natural EOF and cancellation do not populate this field.
+  final List<LlamaCompletionChunkToolCall> partialToolCalls;
+
   /// Why generation stopped, from the stream's final chunk.
   ///
   /// It does not report a cancel. On native llama.cpp and LiteRT-LM, a
@@ -47,6 +54,7 @@ class LlamaCompletion {
     required this.text,
     this.thinking = '',
     this.toolCalls = const [],
+    this.partialToolCalls = const [],
     this.finishReason,
     this.usage,
   });
@@ -69,7 +77,8 @@ class LlamaCompletion {
   @override
   String toString() =>
       'LlamaCompletion(text: $text, thinking: $thinking, '
-      'toolCalls: ${toolCalls.length}, finishReason: $finishReason, '
+      'toolCalls: ${toolCalls.length}, partialToolCalls: ${partialToolCalls.length}, '
+      'finishReason: $finishReason, '
       'usage: $usage)';
 }
 
@@ -80,6 +89,7 @@ class LlamaCompletionAccumulator {
   final StringBuffer _text = StringBuffer();
   final StringBuffer _thinking = StringBuffer();
   final Map<int, _ToolCallBuilder> _toolCalls = {};
+  final List<LlamaCompletionChunkToolCall> _partialToolCalls = [];
   String? _finishReason;
   LlamaGenerationUsage? _usage;
 
@@ -103,6 +113,7 @@ class LlamaCompletionAccumulator {
         builder.arguments.write(function!.arguments);
       }
     }
+    _partialToolCalls.addAll(delta.partialToolCalls ?? const []);
     _finishReason = choice.finishReason ?? _finishReason;
   }
 
@@ -113,6 +124,7 @@ class LlamaCompletionAccumulator {
       text: _text.toString(),
       thinking: _thinking.toString(),
       toolCalls: [for (final index in indices) _toolCalls[index]!.build()],
+      partialToolCalls: List.unmodifiable(_partialToolCalls),
       finishReason: LlamaFinishReason.fromWireValue(_finishReason),
       usage: _usage,
     );
