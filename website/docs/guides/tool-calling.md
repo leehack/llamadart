@@ -186,6 +186,21 @@ For LFM2/LFM2.5, a quoted `<|tool_call_end|>` inside an argument is literal
 argument data. Parsed tool calls preserve it until the actual envelope closes,
 including when the response streams in small chunks.
 
+Python-style LFM2 calls such as `[set_flag(enabled=True)]` use each declared
+`ToolParam` type: booleans and null become JSON values, object/array parameters
+retain their named position, and a declared zero-argument call yields `{}`.
+For a string parameter, `value=False` remains the string `"False"`; copied
+backslashes in Python-style string arguments remain literal. Ambiguous copied
+text and escaped text are not globally unescaped. The existing JSON call form
+keeps JSON string decoding.
+
+Declare every argument with the correct type. This parser change does not add
+canonical `ToolDefinition.fromJsonSchema` generation support for LFM2: the
+existing capability gate still rejects it. Required calls retain the existing
+JSON-list grammar; auto lazy grammar, markers inside reasoning, parallel gating
+and length-truncated partial-call behavior remain tracked in
+[#1610](https://github.com/leehack/llamadart/issues/1610).
+
 Solar Open replies may contain several content-channel segments. Parsed and
 streamed completions preserve each accepted segment and the whitespace between
 them, while removing the channel framing.

@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:dinja/dinja.dart';
 
 import '../../exceptions.dart';
@@ -15,13 +17,15 @@ import '../thinking_utils.dart';
 import '../tool_call_fallback_parser.dart';
 import '../tool_call_parsing_utils.dart';
 import '../tool_call_grammar_utils.dart';
+import '../tool_schema_utils.dart';
 
 /// Handler for LFM2 and LFM2.5 (Liquid Foundation Model) formats.
 ///
 /// Uses `<|tool_call_start|>` / `<|tool_call_end|>` special tokens for tool
 /// calls. LFM2 templates wrap tool definitions in `<|tool_list_start|>` /
 /// `<|tool_list_end|>`; LFM2.5 templates write a plain list.
-class Lfm2Handler extends ChatTemplateHandler {
+class Lfm2Handler extends ChatTemplateHandler
+    implements ToolSchemaAwareChatTemplateHandler {
   /// Finds a possible tool-call list for the stream's content gate.
   static int toolCallOpening(String text, [int from = 0]) =>
       ToolCallParsingUtils.literalOpening(text, const [
@@ -196,6 +200,22 @@ class Lfm2Handler extends ChatTemplateHandler {
     bool parseToolCalls = true,
     bool thinkingForcedOpen = false,
   }) {
+    return parseWithTools(
+      output,
+      isPartial: isPartial,
+      parseToolCalls: parseToolCalls,
+      thinkingForcedOpen: thinkingForcedOpen,
+    );
+  }
+
+  @override
+  ChatParseResult parseWithTools(
+    String output, {
+    List<ToolDefinition>? tools,
+    bool isPartial = false,
+    bool parseToolCalls = true,
+    bool thinkingForcedOpen = false,
+  }) {
     if (!parseToolCalls) {
       final thinking = extractThinking(
         output,
@@ -207,6 +227,7 @@ class Lfm2Handler extends ChatTemplateHandler {
       );
     }
 
+    final schemas = toolSchemas(tools);
     const opening = '<|tool_call_start|>';
     const closing = '<|tool_call_end|>';
     final toolCalls = <LlamaCompletionChunkToolCall>[];
@@ -222,6 +243,7 @@ class Lfm2Handler extends ChatTemplateHandler {
       var parsedCalls = _parseCallList(
         output.substring(payloadStart, end).trim(),
         startIndex: toolCalls.length,
+        schemas: schemas,
       );
       // Only extend a legacy envelope when it contains a complete call list.
       // Otherwise an unmatched quote could consume a later call or prose.
@@ -230,6 +252,7 @@ class Lfm2Handler extends ChatTemplateHandler {
         parsedCalls = _parseCallList(
           output.substring(payloadStart, end).trim(),
           startIndex: toolCalls.length,
+          schemas: schemas,
         );
       }
       if (parsedCalls != null) {
@@ -290,6 +313,7 @@ class Lfm2Handler extends ChatTemplateHandler {
   List<LlamaCompletionChunkToolCall>? _parseCallList(
     String payload, {
     required int startIndex,
+    Map<String, Map<String, dynamic>> schemas = const {},
   }) {
     try {
       return ToolCallParsingUtils.parseToolCallArray(
@@ -298,7 +322,9 @@ class Lfm2Handler extends ChatTemplateHandler {
             failOnInvalidItem: false,
             assignFallbackIds: true,
           ) ??
-          _parsePythonStyleToolCallList(payload, startIndex: startIndex);
+          (schemas.isEmpty
+              ? _parsePythonStyleToolCallList(payload, startIndex: startIndex)
+              : _parseSchemaCallList(payload, schemas, startIndex));
     } on LlamaInferenceException {
       // Arguments the wire format refuses (too deep, not finite) are model
       // text, not a caller error, so they must not throw out of parse.
@@ -310,6 +336,37 @@ class Lfm2Handler extends ChatTemplateHandler {
       // stack, and the partial conversion is discarded here.
       return null;
     }
+  }
+
+  List<LlamaCompletionChunkToolCall>? _parseSchemaCallList(
+    String payload,
+    Map<String, Map<String, dynamic>> schemas,
+    int startIndex,
+  ) {
+    final typed = _PythonCallList(
+      payload,
+      schemas,
+    ).parse(startIndex: startIndex);
+    if (typed != null) return typed;
+    // Preserve the established malformed-quote leniency for text-only tools;
+    // typed values must be read from their named schema positions.
+    final legacy = _parsePythonStyleToolCallList(
+      payload,
+      startIndex: startIndex,
+    );
+    if (legacy == null) return null;
+    for (final call in legacy) {
+      final schema = schemas[call.function?.name];
+      if (schema == null ||
+          !schemaProperties(schema).values.every(schemaResolvesToString)) {
+        return null;
+      }
+      final arguments = ToolCallParsingUtils.decodeJsonValue(
+        call.function?.arguments ?? '',
+      );
+      if (!validateToolSchemaValue(arguments, schema).valid) return null;
+    }
+    return legacy;
   }
 
   List<LlamaCompletionChunkToolCall>? _parsePythonStyleToolCallList(
@@ -396,5 +453,301 @@ class Lfm2Handler extends ChatTemplateHandler {
     }
 
     return parts;
+  }
+}
+
+// Python-call strings preserve copied backslashes; schemas determine scalar types.
+class _PythonCallList {
+  _PythonCallList(this._source, this._schemas);
+
+  final Map<String, Map<String, dynamic>> _schemas;
+  static const Set<String> _legacyWrappers = {
+    'arguments',
+    'parameters',
+    'params',
+    'input',
+  };
+
+  static final RegExp _nameAtStart = RegExp(r'[A-Za-z_][A-Za-z0-9_.-]*');
+  static final RegExp _numberAtStart = RegExp(
+    r'-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?',
+  );
+
+  /// One less than the wire format's limit, which counts the arguments map.
+  static const int _maxValueDepth = 127;
+  static const Map<String, Object?> _literals = {
+    'True': true,
+    'False': false,
+    'None': null,
+    'true': true,
+    'false': false,
+    'null': null,
+  };
+
+  final String _source;
+  int _at = 0;
+  int _depth = 0;
+
+  /// The calls of the whole source, or null if it is not such a list.
+  List<LlamaCompletionChunkToolCall>? parse({required int startIndex}) {
+    try {
+      final calls = <LlamaCompletionChunkToolCall>[];
+      _skipSpace();
+      final bracketed = _accept('[');
+      _skipSpace();
+      do {
+        _skipSpace();
+        calls.add(_call(startIndex + calls.length));
+        _skipSpace();
+      } while (_accept(','));
+      if (bracketed) _expect(']');
+      _skipSpace();
+      return _at == _source.length ? calls : null;
+    } on FormatException {
+      return null;
+    }
+  }
+
+  LlamaCompletionChunkToolCall _call(int index) {
+    final name = _matchName();
+    final schema = _schemas[name];
+    if (schema == null) throw const FormatException();
+    final properties = schemaProperties(schema);
+    _skipSpace();
+    _expect('(');
+    _skipSpace();
+    final arguments = <String, dynamic>{};
+    if (!_accept(')')) {
+      while (true) {
+        _skipSpace();
+        final key = _matchName();
+        _skipSpace();
+        _expect('=');
+        _skipSpace();
+        if (arguments.containsKey(key)) throw const FormatException();
+        final property =
+            properties[key] ??
+            (_legacyWrappers.contains(key)
+                ? schema
+                : schema['additionalProperties'] == false
+                ? null
+                : <String, dynamic>{});
+        if (property == null) throw const FormatException();
+        arguments[key] = _value(property);
+        _skipSpace();
+        if (_accept(')')) break;
+        _expect(',');
+        _skipSpace();
+        if (_accept(')')) break;
+      }
+    }
+    if (arguments.length == 1) {
+      final entry = arguments.entries.single;
+      if (_legacyWrappers.contains(entry.key) &&
+          !properties.containsKey(entry.key)) {
+        // A declared property owns its name; otherwise preserve the existing
+        // whole-argument wrapper syntax using the declared inner types.
+        final inner = ToolCallParsingUtils.decodeJsonMapValue(entry.value);
+        if (inner != null) {
+          arguments
+            ..clear()
+            ..addAll(inner);
+        }
+      }
+    }
+    if (!validateToolSchemaValue(arguments, schema).valid) {
+      throw const FormatException();
+    }
+    return ToolCallParsingUtils.createFunctionToolCall(
+      index: index,
+      name: name,
+      arguments: arguments,
+    );
+  }
+
+  Object? _value([Map<String, dynamic> schema = const {}]) {
+    if (_at >= _source.length) throw const FormatException();
+    final alternatives = schema['anyOf'];
+    final types = schema['type'];
+    if (alternatives is List || types is List) {
+      final branches = alternatives is List
+          ? [
+              for (final branch in alternatives)
+                Map<String, dynamic>.from(branch as Map),
+            ]
+          : [
+              for (final type in types as List) {...schema, 'type': type},
+            ];
+      final nullLiteral = RegExp(
+        r'^(?:None|null)(?=\s*[,)}\]])',
+      ).hasMatch(_source.substring(_at));
+      branches.sort((a, b) {
+        int rank(Map<String, dynamic> branch) =>
+            nullLiteral && branch['type'] == 'null'
+            ? 0
+            : schemaResolvesToString(branch)
+            ? 1
+            : 2;
+        return rank(a).compareTo(rank(b));
+      });
+      final start = _at;
+      final depth = _depth;
+      for (final branch in branches) {
+        _at = start;
+        _depth = depth;
+        try {
+          final value = _value(branch);
+          if (validateToolSchemaValue(value, schema).valid) return value;
+        } on FormatException {
+          // A different declared alternative may accept this emitted value.
+        }
+      }
+      _at = start;
+      _depth = depth;
+      throw const FormatException();
+    }
+    final char = _source[_at];
+    if (char == '"' || char == "'") return _string(char);
+    if (schemaResolvesToString(schema)) return _unquotedString();
+    if (char == '[') return _list(schema);
+    if (char == '{') return _dict(schema);
+    final word = _nameAtStart.matchAsPrefix(_source, _at);
+    if (word != null) {
+      if (!_literals.containsKey(word[0])) throw const FormatException();
+      _at = word.end;
+      return _literals[word[0]];
+    }
+    final number = _numberAtStart.matchAsPrefix(_source, _at);
+    if (number == null) throw const FormatException();
+    _at = number.end;
+    final value = jsonDecode(number[0]!) as num;
+    if (!value.isFinite) throw const FormatException();
+    return value;
+  }
+
+  String _string(String quote) {
+    final start = ++_at;
+    while (_at < _source.length) {
+      final char = _source[_at++];
+      if (char == quote) {
+        if (_depth > 0 && quote == '"') {
+          try {
+            return jsonDecode(_source.substring(start - 1, _at)) as String;
+          } on FormatException {
+            // Python containers may contain copied text that is not JSON.
+          }
+        }
+        return _source.substring(start, _at - 1);
+      }
+      if (char == r'\') {
+        _at++;
+      }
+    }
+    throw const FormatException();
+  }
+
+  String _unquotedString() {
+    final start = _at;
+    final closers = <String>[];
+    String? quote;
+    while (_at < _source.length) {
+      final char = _source[_at];
+      if (quote != null) {
+        if (char == r'\') {
+          _at += 2;
+          continue;
+        }
+        if (char == quote) quote = null;
+      } else if (char == '"' || char == "'") {
+        quote = char;
+      } else if (char == '[' || char == '{' || char == '(') {
+        closers.add({'[': ']', '{': '}', '(': ')'}[char]!);
+      } else if (closers.isNotEmpty && char == closers.last) {
+        closers.removeLast();
+      } else if (closers.isEmpty && ',)]}'.contains(char)) {
+        break;
+      }
+      _at++;
+    }
+    if (quote != null || closers.isNotEmpty || _at > _source.length) {
+      throw const FormatException();
+    }
+    final value = _source.substring(start, _at).trim();
+    if (value.isEmpty) throw const FormatException();
+    return value;
+  }
+
+  List<Object?> _list(Map<String, dynamic> schema) {
+    _expect('[');
+    _enterContainer();
+    _skipSpace();
+    final items = <Object?>[];
+    if (!_accept(']')) {
+      do {
+        _skipSpace();
+        final itemSchema = schema['items'];
+        items.add(
+          _value(itemSchema is Map<String, dynamic> ? itemSchema : const {}),
+        );
+        _skipSpace();
+      } while (_accept(','));
+      _expect(']');
+    }
+    _depth--;
+    return items;
+  }
+
+  Map<String, Object?> _dict(Map<String, dynamic> schema) {
+    _expect('{');
+    _enterContainer();
+    _skipSpace();
+    final entries = <String, Object?>{};
+    if (!_accept('}')) {
+      do {
+        _skipSpace();
+        if (_at >= _source.length) throw const FormatException();
+        final quote = _source[_at];
+        if (quote != '"' && quote != "'") throw const FormatException();
+        final key = _string(quote);
+        _skipSpace();
+        _expect(':');
+        _skipSpace();
+        if (entries.containsKey(key)) throw const FormatException();
+        entries[key] = _value(schemaProperties(schema)[key] ?? const {});
+        _skipSpace();
+      } while (_accept(','));
+      _expect('}');
+    }
+    _depth--;
+    return entries;
+  }
+
+  void _enterContainer() {
+    if (++_depth > _maxValueDepth) throw const FormatException();
+  }
+
+  String _matchName() {
+    final match = _nameAtStart.matchAsPrefix(_source, _at);
+    if (match == null) throw const FormatException();
+    _at = match.end;
+    return match[0]!;
+  }
+
+  void _skipSpace() {
+    while (_at < _source.length && ' \t\r\n'.contains(_source[_at])) {
+      _at++;
+    }
+  }
+
+  bool _accept(String char) {
+    if (_at < _source.length && _source[_at] == char) {
+      _at++;
+      return true;
+    }
+    return false;
+  }
+
+  void _expect(String char) {
+    if (!_accept(char)) throw const FormatException();
   }
 }

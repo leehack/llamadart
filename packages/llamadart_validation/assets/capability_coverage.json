@@ -632,6 +632,16 @@
         "reason": "ModelParams.cpuMoeLayers and moeCacheBytes have maintained validation, runtime-rejection, override-pattern, device-gate and native parameter tests, plus the local-only LLAMADART_MOE_MODEL scenario that checks the cache allocates its budget and keeps greedy output on Metal (OLMoE-1B-7B). No validation-pack profile covers MoE models; CUDA, multiple GPUs and performance gains are not qualified by this binding.",
         "issue": "https://github.com/leehack/llamadart/issues/1123"
       }
+    },
+    {
+      "surfaces": [
+        "matrix:LFM2 Python tool argument types"
+      ],
+      "exemption": {
+        "id": "lfm2-schema-parser",
+        "reason": "Schema-directed legacy ToolParam parsing has durable affected-family raw emissions, unchanged-baseline identical-byte comparisons, typed scalar/container/zero-argument and VM/Chrome tests. It changes Dart parsing only, not LFM inference or canonical raw-schema admission. Historical parsed-only probe rows cannot establish raw replay; the complete historical matrix and remaining parity requirements are tracked in #1610. No new device qualification or validation-pack scenario is claimed.",
+        "issue": "https://github.com/leehack/llamadart/issues/1610"
+      }
     }
   ]
 }

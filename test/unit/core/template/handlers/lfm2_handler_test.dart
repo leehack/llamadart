@@ -13,6 +13,224 @@ import 'package:llamadart/src/core/template/template_internal_metadata.dart';
 import 'package:test/test.dart';
 
 void main() {
+  group('schema-directed Python calls', () {
+    ToolDefinition tool(List<ToolParam> parameters) => ToolDefinition(
+      name: 'f',
+      description: 'Test',
+      parameters: parameters,
+      handler: _noop,
+    );
+    Map<String, dynamic> parse(String payload, List<ToolParam> parameters) {
+      final result = Lfm2Handler().parseWithTools(
+        '<|tool_call_start|>[$payload]<|tool_call_end|>',
+        tools: [tool(parameters)],
+      );
+      return jsonDecode(result.toolCalls.single.function!.arguments!)
+          as Map<String, dynamic>;
+    }
+
+    test('types Python booleans using the declared parameter', () {
+      expect(parse('f(x=True)', [ToolParam.boolean('x')]), {'x': true});
+      expect(parse('f(x=False)', [ToolParam.string('x')]), {'x': 'False'});
+    });
+    test('keeps named object arguments without unwrapping aliases', () {
+      expect(
+        parse('f(arguments={"a":1})', [
+          ToolParam.object('arguments', properties: [ToolParam.integer('a')]),
+        ]),
+        {
+          'arguments': {'a': 1},
+        },
+      );
+    });
+    test(
+      'preserves undeclared legacy argument wrappers against the schema',
+      () {
+        for (final wrapper in ['arguments', 'parameters', 'params', 'input']) {
+          final raw =
+              '<|tool_call_start|>[f($wrapper={"a":1})]<|tool_call_end|>';
+          final baseline = Lfm2Handler().parse(raw);
+          expect(jsonDecode(baseline.toolCalls.single.function!.arguments!), {
+            'a': 1,
+          });
+          final candidate = Lfm2Handler().parseWithTools(
+            raw,
+            tools: [
+              tool([ToolParam.integer('a', required: true)]),
+            ],
+          );
+          expect(candidate.toolCalls, hasLength(1), reason: wrapper);
+          expect(jsonDecode(candidate.toolCalls.single.function!.arguments!), {
+            'a': 1,
+          });
+        }
+      },
+    );
+    test('accepts a declared zero-argument call', () {
+      expect(parse('f()', []), isEmpty);
+    });
+    for (final payload in ['f(a=1)', '[f(a=1,)]']) {
+      test('preserves typed legacy call $payload', () {
+        final raw = '<|tool_call_start|>$payload<|tool_call_end|>';
+        final baseline = Lfm2Handler().parse(raw);
+        expect(jsonDecode(baseline.toolCalls.single.function!.arguments!), {
+          'a': 1,
+        });
+        final result = Lfm2Handler().parseWithTools(
+          raw,
+          tools: [
+            tool([ToolParam.integer('a', required: true)]),
+          ],
+        );
+        expect(result.toolCalls, hasLength(1), reason: payload);
+        expect(jsonDecode(result.toolCalls.single.function!.arguments!), {
+          'a': 1,
+        });
+      });
+    }
+    test(
+      'preserves JSON-string wrappers without unwrapping declared aliases',
+      () {
+        for (final wrapper in ['arguments', 'parameters', 'params', 'input']) {
+          final raw =
+              '<|tool_call_start|>[f($wrapper=\'{"a":1}\')]<|tool_call_end|>';
+          final legacy = Lfm2Handler().parse(raw);
+          expect(jsonDecode(legacy.toolCalls.single.function!.arguments!), {
+            'a': 1,
+          });
+          final result = Lfm2Handler().parseWithTools(
+            raw,
+            tools: [
+              tool([ToolParam.integer('a', required: true)]),
+            ],
+          );
+          expect(result.toolCalls, hasLength(1), reason: wrapper);
+          expect(jsonDecode(result.toolCalls.single.function!.arguments!), {
+            'a': 1,
+          }, reason: wrapper);
+          expect(
+            parse('f($wrapper=\'{"a":1}\')', [ToolParam.string(wrapper)]),
+            {wrapper: '{"a":1}'},
+          );
+        }
+      },
+    );
+    test('rejects malformed typed calls and invalid JSON-string wrappers', () {
+      for (final payload in [
+        '[f(a=1,,)]',
+        '[f(a=1,a=2,)]',
+        '[f(a="1",)]',
+        '[f(a=1)] trailing',
+        '[f(a=1)',
+        'f(a=1)]',
+        'f(a=1',
+        '[f(arguments=\'{"a":"1"}\')]',
+        '[f(arguments=\'{"b":1}\')]',
+        '[f(arguments=\'{"a":1\')]',
+        '[f(arguments=\'[1]\')]',
+      ]) {
+        final result = Lfm2Handler().parseWithTools(
+          '<|tool_call_start|>$payload<|tool_call_end|>',
+          tools: [
+            tool([ToolParam.integer('a', required: true)]),
+          ],
+        );
+        expect(result.toolCalls, isEmpty, reason: payload);
+      }
+    });
+    test('preserves copied string backslashes', () {
+      expect(parse(r'f(x="C:\new\table.txt")', [ToolParam.string('x')]), {
+        'x': r'C:\new\table.txt',
+      });
+    });
+    test('preserves unquoted text and container-shaped string values', () {
+      expect(parse('f(x=서울)', [ToolParam.string('x')]), {'x': '서울'});
+      expect(parse("f(x={'a': 1})", [ToolParam.string('x')]), {
+        'x': "{'a': 1}",
+      });
+    });
+    test('uses nested property schemas for Python literals', () {
+      expect(
+        parse('f(config={"text":False,"enabled":True})', [
+          ToolParam.object(
+            'config',
+            properties: [
+              ToolParam.string('text'),
+              ToolParam.boolean('enabled'),
+            ],
+          ),
+        ]),
+        {
+          'config': {'text': 'False', 'enabled': true},
+        },
+      );
+    });
+    test('types nullable values, arrays and nested empty values', () {
+      expect(
+        parse(
+          'f(values=[True,False],note=None,config={"name":"","items":[]})',
+          [
+            ToolParam.array('values', itemType: ToolParam.boolean('item')),
+            ToolParam.nullType('note'),
+            ToolParam.object(
+              'config',
+              properties: [
+                ToolParam.string('name'),
+                ToolParam.array('items', itemType: ToolParam.string('item')),
+              ],
+            ),
+          ],
+        ),
+        {
+          'values': [true, false],
+          'note': null,
+          'config': {'name': '', 'items': []},
+        },
+      );
+    });
+    test('does not coerce quoted booleans into non-string fields', () {
+      final result = Lfm2Handler().parseWithTools(
+        '<|tool_call_start|>[f(x="True")]<|tool_call_end|>',
+        tools: [
+          tool([ToolParam.boolean('x')]),
+        ],
+      );
+      expect(result.toolCalls, isEmpty);
+    });
+    test('rejects unknown tools and missing required arguments', () {
+      for (final payload in ['g(x=True)', 'f()']) {
+        final result = Lfm2Handler().parseWithTools(
+          '<|tool_call_start|>[$payload]<|tool_call_end|>',
+          tools: [
+            tool([ToolParam.boolean('x', required: true)]),
+          ],
+        );
+        expect(result.toolCalls, isEmpty, reason: payload);
+      }
+    });
+    test('tool choice none leaves typed-looking model text literal', () {
+      const output = '<|tool_call_start|>[f(x=True)]<|tool_call_end|>';
+      final result = Lfm2Handler().parseWithTools(
+        output,
+        tools: [
+          tool([ToolParam.boolean('x')]),
+        ],
+        parseToolCalls: false,
+      );
+      expect(result.toolCalls, isEmpty);
+      expect(result.content, output);
+    });
+    test('rejects duplicate argument names', () {
+      final result = Lfm2Handler().parseWithTools(
+        '<|tool_call_start|>[f(x=True,x=False)]<|tool_call_end|>',
+        tools: [
+          tool([ToolParam.boolean('x')]),
+        ],
+      );
+      expect(result.toolCalls, isEmpty);
+    });
+  });
+
   test('reasoning is available to either LFM2 template field', () {
     final rendered = Lfm2Handler().render(
       templateSource:
