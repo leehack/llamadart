@@ -83,7 +83,9 @@ resources documented by that factory.
 
 The interface exposes `Future<C> capabilities`, `isDisposed` and `dispose()`.
 `isDisposed` becomes true when cleanup starts; repeated `dispose()` calls
-return the same future. Await it before releasing dependencies. Keep a concrete
+return the same future, including synchronous calls from cleanup hooks and
+when cleanup fails. A failed disposal stays terminal and is not retried. Await
+it before releasing dependencies. Keep a concrete
 capability type, such as `LlamadartEngine<LlamaEngineCapabilities>`, when a
 consumer needs its specific fields. Loading, inference and task APIs stay on
 the concrete engines.

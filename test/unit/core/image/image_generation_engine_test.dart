@@ -2469,6 +2469,40 @@ void main() {
       }
     });
 
+    for (final fails in [false, true]) {
+      test(
+        'disposal publishes terminal state before session cleanup (fails=$fails)',
+        () async {
+          final engine = await load(_sdxs());
+          Future<void>? nested;
+          bool? stateInHook;
+          Future<ImageGenerationCapabilities>? capsInHook;
+          final error = StateError('image cleanup');
+          driver.session.onDispose = () {
+            driver.session.onDispose = null;
+            stateInHook = engine.isDisposed;
+            capsInHook = engine.capabilities;
+            nested = engine.dispose();
+          };
+          if (fails) driver.session.disposeError = error;
+          final first = engine.dispose();
+          if (fails) {
+            await expectLater(first, throwsA(same(error)));
+            await expectLater(nested, throwsA(same(error)));
+            engines.remove(engine);
+          } else {
+            await first;
+            await nested;
+          }
+          expect(stateInHook, isTrue);
+          expect(nested, same(first));
+          expect((await capsInHook!).isSupported, isFalse);
+          expect(engine.dispose(), same(first));
+          expect(driver.session.disposeCalls, 1);
+        },
+      );
+    }
+
     test('dispose is idempotent', () async {
       final engine = await load(_sdxs());
 
@@ -4134,6 +4168,8 @@ final class _FakeSession
   int disposeCalls = 0;
   bool disposed = false;
   bool disposedAfterGenerate = false;
+  void Function()? onDispose;
+  Object? disposeError;
 
   @override
   String modelVersion = 'SD 2.x';
@@ -4197,9 +4233,11 @@ final class _FakeSession
 
   @override
   Future<void> dispose() async {
+    onDispose?.call();
     disposeCalls++;
     disposed = true;
     disposedAfterGenerate = !_generating;
+    if (disposeError case final error?) throw error;
   }
 }
 

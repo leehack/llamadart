@@ -1052,7 +1052,16 @@ class ImageGenerationEngine
   /// Cancels a running generation, waits for it to stop, and frees the
   /// model. Calling this more than once is safe.
   @override
-  Future<void> dispose() => _disposal ??= _dispose();
+  Future<void> dispose() {
+    final existing = _disposal;
+    if (existing != null) return existing;
+
+    // Cleanup hooks can reenter before an async body's first suspension.
+    final disposal = Completer<void>();
+    _disposal = disposal.future;
+    disposal.complete(_dispose());
+    return disposal.future;
+  }
 
   Future<void> _dispose() async {
     final task = _activeTask;

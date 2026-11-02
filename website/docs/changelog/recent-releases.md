@@ -13,7 +13,7 @@ validate against the exact release tag notes.
 
 ## Unreleased
 
-- Manage text, decision, image and speech engine lifecycles through `LlamadartEngine<C>` while retaining typed capabilities.
+- Manage text, decision, image and speech engine lifecycles through `LlamadartEngine<C>` with typed capabilities and reentrant-safe final disposal.
 
 ## 0.17.5
 

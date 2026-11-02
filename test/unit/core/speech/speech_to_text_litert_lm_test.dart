@@ -50,6 +50,32 @@ void main() {
     await directory.delete(recursive: true);
   });
 
+  test(
+    'disposal publishes terminal state before synchronous ASR cancellation',
+    () async {
+      final engine = await load();
+      final session = await engine.startStream();
+      Future<void>? nested;
+      bool? stateInHook;
+      Future<SpeechToTextCapabilities>? capsInHook;
+      driver.worker.onCancel = () {
+        driver.worker.onCancel = null;
+        stateInHook = engine.isDisposed;
+        capsInHook = engine.capabilities;
+        nested = engine.dispose();
+      };
+      final first = engine.dispose();
+      await first;
+      expect(stateInHook, isTrue);
+      expect(nested, same(first));
+      expect((await capsInHook!).isSupported, isFalse);
+      expect(engine.dispose(), same(first));
+      expect((await session.done).state, SpeechToTextCompletionState.cancelled);
+      expect(driver.worker.cancelCalls, 1);
+      expect(driver.worker.disposeCalls, 1);
+    },
+  );
+
   test('reports dedicated streaming PCM capabilities', () async {
     final engine = await load();
 
@@ -923,6 +949,7 @@ class _FakeLiteRtLmSpeechWorker implements LiteRtLmSpeechToTextWorker {
   bool disposed = false;
   int pushCalls = 0;
   int cancelCalls = 0;
+  void Function()? onCancel;
   int disposeCalls = 0;
   int _acceptedSamples = 0;
 
@@ -978,6 +1005,7 @@ class _FakeLiteRtLmSpeechWorker implements LiteRtLmSpeechToTextWorker {
 
   @override
   Future<void> cancel() async {
+    onCancel?.call();
     cancelCalls++;
     releasePushes();
   }

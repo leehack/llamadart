@@ -21,6 +21,10 @@ abstract interface class LlamadartEngine<C extends EngineCapabilities> {
 
   /// Starts final cleanup and returns the same future on subsequent calls.
   ///
+  /// Terminal state and the shared future are published before cleanup hooks
+  /// can reenter. Cleanup failures complete that future with the error and
+  /// are not retried by a later call.
+  ///
   /// Await this before releasing resources the engine depends on. Concrete
   /// engines document how in-flight requests and attached engines are handled.
   Future<void> dispose();

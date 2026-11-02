@@ -573,7 +573,16 @@ class DecisionEngine implements LlamadartEngine<DecisionCapabilities> {
   /// Idempotent. Calls made after it throw [LlamaStateException]. An engine
   /// passed to [attach] stays loaded.
   @override
-  Future<void> dispose() => _disposal ??= _dispose();
+  Future<void> dispose() {
+    final existing = _disposal;
+    if (existing != null) return existing;
+
+    // Cleanup hooks can reenter before an async body's first suspension.
+    final disposal = Completer<void>();
+    _disposal = disposal.future;
+    disposal.complete(_dispose());
+    return disposal.future;
+  }
 
   Future<void> _dispose() async {
     if (_activeCalls > 0) {

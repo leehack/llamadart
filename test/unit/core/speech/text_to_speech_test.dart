@@ -541,6 +541,39 @@ void main() {
       );
     });
 
+    test(
+      'disposal publishes terminal state before synchronous synthesis cancellation',
+      () async {
+        backend.blockSynthesis = true;
+        final speechEngine = await TextToSpeechEngine.load(
+          model(),
+          backend: backend,
+        );
+        final task = await speechEngine.synthesize(
+          const TextToSpeechRequest(text: 'Hello.'),
+        );
+        await backend.synthesisStarted.future;
+        Future<void>? nested;
+        bool? stateInHook;
+        Future<TextToSpeechCapabilities>? capsInHook;
+        backend.onCancel = () {
+          backend.onCancel = null;
+          stateInHook = speechEngine.isDisposed;
+          capsInHook = speechEngine.capabilities;
+          nested = speechEngine.dispose();
+        };
+        final first = speechEngine.dispose();
+        await first;
+        expect(stateInHook, isTrue);
+        expect(nested, same(first));
+        expect((await capsInHook!).isSupported, isFalse);
+        expect(speechEngine.dispose(), same(first));
+        expect((await task.done).state, TextToSpeechCompletionState.cancelled);
+        expect(backend.cancelCalls, 1);
+        expect(backend.disposeCalls, 1);
+      },
+    );
+
     test('dispose cancels a running task before freeing the engine', () async {
       backend.blockSynthesis = true;
       final synthesizer = await TextToSpeechEngine.load(
@@ -757,6 +790,7 @@ class _TextToSpeechBackend
   final Completer<void> _capabilityRelease = Completer<void>();
   final Completer<void> _synthesisRelease = Completer<void>();
   int cancelCalls = 0;
+  void Function()? onCancel;
   int disposeCalls = 0;
   ModelParams? lastModelParams;
   BackendTextToSpeechRequest? lastRequest;
@@ -853,6 +887,7 @@ class _TextToSpeechBackend
 
   @override
   void cancelTextToSpeech() {
+    onCancel?.call();
     cancelCalls += 1;
     releaseSynthesis();
   }
