@@ -653,6 +653,16 @@
         "reason": "Additive cooperative task adapters preserve the existing Decision backend. Maintained VM/Chrome tests cover tokenization/dispatch checkpoints, pending backend lifetime, sibling and borrowed-encoder isolation, snapshots and event/completion semantics. A local-only native Laya CPU task parity/cancel/reuse test is available; no new runtime or cross-device qualification is claimed. Task lifecycle is not yet a validation-pack scenario.",
         "issue": "https://github.com/leehack/llamadart/issues/1614"
       }
+    },
+    {
+      "surfaces": [
+        "matrix:LFM2 Python tool argument types"
+      ],
+      "exemption": {
+        "id": "lfm2-schema-parser",
+        "reason": "Schema-directed legacy ToolParam parsing has durable affected-family raw emissions, unchanged-baseline identical-byte comparisons, typed scalar/container/zero-argument and VM/Chrome tests. It changes Dart parsing only, not LFM inference or canonical raw-schema admission. Historical parsed-only probe rows cannot establish raw replay; the complete historical matrix and remaining parity requirements are tracked in #1610. No new device qualification or validation-pack scenario is claimed.",
+        "issue": "https://github.com/leehack/llamadart/issues/1610"
+      }
     }
   ]
 }

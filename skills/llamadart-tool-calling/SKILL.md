@@ -112,7 +112,13 @@ description: >-
   assistant reasoning alongside calls, applying their own history-retention policy.
 - Read arguments from parsed tool-call parts. For LFM2/LFM2.5, quoted
   `<|tool_call_end|>` text inside an argument is literal data; preserve it when
-  invoking tools and replaying their results.
+  invoking tools and replaying their results. Python-style LFM2 argument values
+  follow their declared `ToolParam` types: `True`/`None` become boolean/null
+  only for those types, while `False` on a string parameter stays `"False"`.
+  Named object/array arguments and zero-argument calls are supported. Keep
+  copied backslashes literal; ambiguous Python-style strings are not globally
+  unescaped. This does not enable canonical `fromJsonSchema` generation on
+  LFM2 or change its existing required JSON grammar.
 - Consume all parsed Solar Open content-channel segments, preserving the
   whitespace between them. Parsed and streamed completions remove channel
   framing while retaining the accepted content.
