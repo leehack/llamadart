@@ -198,13 +198,13 @@ web are on [Known platform issues](./known-platform-issues).
 
 | Runtime | Pinned release |
 | --- | --- |
-| llama.cpp native | `leehack/llamadart-native@v0.8.0-1` |
+| llama.cpp native | `leehack/llamadart-native@v0.8.0-2` |
 | LiteRT-LM native | `leehack/litert-lm-native@v0.18.1-4` |
 | stable-diffusion.cpp native (opt-in, Preview) | `leehack/stable-diffusion-native@v0.3.0-2`, for [image generation](../guides/image-generation); see [Opt-in stable_diffusion runtime](./native-build-hooks#opt-in-stable_diffusion-runtime-experimental). Flutter iOS/macOS apps link its XCFramework through `llamadart_stable_diffusion_flutter` |
 | WebGPU bridge assets | `leehack/llama-web-bridge-assets`; see [Pinned bridge assets](./webgpu-bridge#pinned-bridge-assets) |
 
 The native-assets hook currently pins `llamadart-native` tag
-`v0.8.0-1` and
+`v0.8.0-2` and
 `litert-lm-native` release `v0.18.1-4` (`lib/src/hook/native_release_pins.dart`).
 
 Native overrides exporting LiteRT-LM's versioned C API are rejected before

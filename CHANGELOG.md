@@ -1,5 +1,11 @@
 ## Unreleased
 
+* Updated the default llama.cpp native runtime pin to
+  `leehack/llamadart-native@v0.8.0-2`, keeping the `v0.8.0` llama.cpp
+  ABI/bindings while picking up wrapper-only native fixes. Refreshed
+  the `llamadart_llama_cpp_flutter` Apple SwiftPM checksum and
+  aligned current README/website native override docs.
+
 - Constrain native LFM2 automatic Python tool calls with lazy schema grammar, preserving copied string data and non-executable foreign-closing diagnostics; reject unsupported Web runtimes.
 - Preserve prompt penalties for supported Web LFM2 automatic tool grammars, with explicit loaded-core capability checks and unchanged ordinary grammar defaults.
 
