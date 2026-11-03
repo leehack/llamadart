@@ -70,7 +70,10 @@ class LiteRtLmRuntimeClient {
       final unsupported = liteRtLmUnsupportedAbiException(liteRtLmGateAbi());
       if (unsupported != null) throw unsupported;
     }
-    final owner = _LegacyLiteRtLmRuntimeClient(libraryPath: _facadeLibraryPath);
+    final owner = _LegacyLiteRtLmRuntimeClient(
+      libraryPath: _facadeLibraryPath,
+      allowV1Inventory: _allowV1,
+    );
     final selected = owner._discoverLibraries();
     _libraryOwner = owner;
     final version = readLiteRtLmCApiVersion(selected.library);

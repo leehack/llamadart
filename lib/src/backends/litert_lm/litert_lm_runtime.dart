@@ -230,22 +230,12 @@ List<String> liteRtLmMacOsCacheDirectoryCandidatesForAbi(Abi abi) {
 
 /// Internal helper used by the LiteRT-LM runtime to validate extracted macOS
 /// native-assets cache directories.
-List<String> liteRtLmMacOsRequiredLibrariesForAbi(Abi abi) {
-  return switch (abi) {
-    Abi.macosArm64 => const <String>[
-      'libCLiteRTLM_mac.dylib',
-      'libGemmaModelConstraintProvider.dylib',
-      'libLiteRt.dylib',
-      'libLiteRtLm.dylib',
-      'libLiteRtMetalAccelerator.dylib',
-      'libLiteRtTopKMetalSampler.dylib',
-      'libLiteRtTopKWebGpuSampler.dylib',
-      'libLiteRtWebGpuAccelerator.dylib',
-      'libwebgpu_dawn.dylib',
-    ],
-    _ => const <String>[],
-  };
-}
+List<String> liteRtLmMacOsRequiredLibrariesForAbi(
+  Abi abi, {
+  bool cApiV1 = false,
+}) => abi == Abi.macosArm64
+    ? liteRtLmRequiredLibrariesForAbi(abi, cApiV1: cApiV1)
+    : const <String>[];
 
 /// Internal helper used by the LiteRT-LM runtime to locate extracted
 /// native-assets cache directories.
@@ -288,14 +278,15 @@ List<String> liteRtLmBundleLibraryDirectoryCandidatesForAbi(
 /// holds every [liteRtLmRequiredLibrariesForAbi] library, or null.
 Directory? liteRtLmFindBundleLibraryDirectoryForAbi(
   String executablePath,
-  Abi abi,
-) {
+  Abi abi, {
+  bool cApiV1 = false,
+}) {
   for (final candidate in liteRtLmBundleLibraryDirectoryCandidatesForAbi(
     executablePath,
     abi,
   )) {
     final dir = Directory(candidate);
-    if (liteRtLmIsCacheDirectoryForAbi(dir, abi)) {
+    if (liteRtLmIsCacheDirectoryForAbi(dir, abi, cApiV1: cApiV1)) {
       return dir;
     }
   }
@@ -305,29 +296,40 @@ Directory? liteRtLmFindBundleLibraryDirectoryForAbi(
 /// Resolves the directory holding the complete LiteRT-LM library set for
 /// [abi] (see [liteRtLmIsCacheDirectoryForAbi]), in precedence order:
 ///
-/// 1. [libDirOverride] (`LLAMADART_LITERT_LM_LIB_DIR`), when complete;
+/// 1. [libDirOverride] (`LLAMADART_LITERT_LM_LIB_DIR`), which must be complete;
 /// 2. the app bundle around [executablePath]
 ///    ([liteRtLmFindBundleLibraryDirectoryForAbi]);
 /// 3. the `.dart_tool/llamadart/litert_lm/<version>` hook cache in any of
 ///    [searchRoots] or their ancestors.
 ///
+/// An incomplete explicit override throws instead of substituting another runtime.
 /// [searchRoots] is only called when the first two steps find nothing.
+/// With [cApiV1], this finds a candidate containing the common 0.19 files; the
+/// selected primary must still prove C API 1.0 before waiving legacy samplers.
 Directory? liteRtLmResolveRuntimeDirectoryForAbi(
   Abi abi, {
   required String? libDirOverride,
   required String executablePath,
   required Iterable<Directory> Function() searchRoots,
+  bool cApiV1 = false,
 }) {
-  if (libDirOverride != null && libDirOverride.isNotEmpty) {
-    final dir = Directory(libDirOverride);
-    if (liteRtLmIsCacheDirectoryForAbi(dir, abi)) {
+  final override = libDirOverride?.trim();
+  if (override != null && override.isNotEmpty) {
+    final dir = Directory(override);
+    if (liteRtLmIsCacheDirectoryForAbi(dir, abi, cApiV1: cApiV1)) {
       return dir.absolute;
     }
+    throw LlamaUnsupportedException(
+      '$_litertLmLibDirEnv must name a complete LiteRT-LM runtime directory '
+      'for $abi; the selected directory is missing required libraries. '
+      'No bundled or cached runtime was substituted.',
+    );
   }
 
   final bundleDir = liteRtLmFindBundleLibraryDirectoryForAbi(
     executablePath,
     abi,
+    cApiV1: cApiV1,
   );
   if (bundleDir != null) {
     return bundleDir;
@@ -342,7 +344,7 @@ Directory? liteRtLmResolveRuntimeDirectoryForAbi(
           '${current.path}/.dart_tool/llamadart/litert_lm/'
           '$_litertLmVersion/$cacheDirectoryCandidate',
         );
-        if (liteRtLmIsCacheDirectoryForAbi(candidate, abi)) {
+        if (liteRtLmIsCacheDirectoryForAbi(candidate, abi, cApiV1: cApiV1)) {
           return candidate;
         }
       }
@@ -400,9 +402,16 @@ List<String> liteRtLmIosLibraryCandidates(
   ];
 }
 
-/// Internal helper used by the LiteRT-LM runtime to validate extracted
-/// native-assets cache directories.
-List<String> liteRtLmRequiredLibrariesForAbi(Abi abi) {
+/// Required desktop runtime files. The default preserves the pinned legacy
+/// inventory; [cApiV1] describes the owner 0.19 inventory after C API admission.
+List<String> liteRtLmRequiredLibrariesForAbi(Abi abi, {bool cApiV1 = false}) {
+  final legacy = _liteRtLmLegacyRequiredLibrariesForAbi(abi);
+  return cApiV1
+      ? legacy.where((file) => !file.contains('TopK')).toList(growable: false)
+      : legacy;
+}
+
+List<String> _liteRtLmLegacyRequiredLibrariesForAbi(Abi abi) {
   return switch (abi) {
     Abi.macosArm64 => const <String>[
       'libCLiteRTLM_mac.dylib',
@@ -494,13 +503,13 @@ List<String> _liteRtLmCompanionDependenciesForAbi(Abi abi) {
 /// [liteRtLmNonPreloadedLibrariesForAbi]: imported dependencies first, then
 /// the rest in inventory order. The runtime opens these before the primary
 /// library when it loads a Linux or Windows runtime directory.
-List<String> liteRtLmCompanionLibrariesForAbi(Abi abi) {
+List<String> liteRtLmCompanionLibrariesForAbi(Abi abi, {bool cApiV1 = false}) {
   final primary = liteRtLmPrimaryLibraryForAbi(abi);
   if (primary == null) {
     return const <String>[];
   }
   final nonPreloaded = liteRtLmNonPreloadedLibrariesForAbi(abi);
-  final companions = liteRtLmRequiredLibrariesForAbi(abi)
+  final companions = liteRtLmRequiredLibrariesForAbi(abi, cApiV1: cApiV1)
       .where((library) => library != primary && !nonPreloaded.contains(library))
       .toList();
   final dependencies = _liteRtLmCompanionDependenciesForAbi(
@@ -570,7 +579,17 @@ Directory? _directoryFromPackageConfigRootUri(
 
 /// Internal helper used by the LiteRT-LM runtime to validate macOS app
 /// framework directories.
-List<String> liteRtLmMacOsRequiredFrameworksForAbi(Abi abi) {
+List<String> liteRtLmMacOsRequiredFrameworksForAbi(
+  Abi abi, {
+  bool cApiV1 = false,
+}) {
+  final files = _liteRtLmMacOsRequiredFrameworksForAbi(abi);
+  return cApiV1
+      ? files.where((file) => !file.contains('TopK')).toList(growable: false)
+      : files;
+}
+
+List<String> _liteRtLmMacOsRequiredFrameworksForAbi(Abi abi) {
   return switch (abi) {
     Abi.macosArm64 => const <String>[
       'CLiteRTLM_mac.framework/Versions/A/CLiteRTLM_mac',
@@ -589,7 +608,17 @@ List<String> liteRtLmMacOsRequiredFrameworksForAbi(Abi abi) {
 
 /// Internal helper used by the LiteRT-LM runtime to validate the native-repo
 /// Apple SPM layout in macOS app bundles.
-List<String> liteRtLmMacOsRequiredNativeSpmFilesForAbi(Abi abi) {
+List<String> liteRtLmMacOsRequiredNativeSpmFilesForAbi(
+  Abi abi, {
+  bool cApiV1 = false,
+}) {
+  final files = _liteRtLmMacOsRequiredNativeSpmFilesForAbi(abi);
+  return cApiV1
+      ? files.where((file) => !file.contains('TopK')).toList(growable: false)
+      : files;
+}
+
+List<String> _liteRtLmMacOsRequiredNativeSpmFilesForAbi(Abi abi) {
   return switch (abi) {
     Abi.macosArm64 => const <String>[
       'LiteRtLm.framework/Versions/A/LiteRtLm',
@@ -606,8 +635,15 @@ List<String> liteRtLmMacOsRequiredNativeSpmFilesForAbi(Abi abi) {
 
 /// Internal helper used by the LiteRT-LM runtime to validate extracted macOS
 /// native-assets cache directories.
-bool liteRtLmIsMacOsCacheDirectoryForAbi(Directory dir, Abi abi) {
-  final requiredLibraries = liteRtLmMacOsRequiredLibrariesForAbi(abi);
+bool liteRtLmIsMacOsCacheDirectoryForAbi(
+  Directory dir,
+  Abi abi, {
+  bool cApiV1 = false,
+}) {
+  final requiredLibraries = liteRtLmMacOsRequiredLibrariesForAbi(
+    abi,
+    cApiV1: cApiV1,
+  );
   return requiredLibraries.isNotEmpty &&
       requiredLibraries.every(
         (library) => File('${dir.path}/$library').existsSync(),
@@ -616,8 +652,15 @@ bool liteRtLmIsMacOsCacheDirectoryForAbi(Directory dir, Abi abi) {
 
 /// Internal helper used by the LiteRT-LM runtime to validate extracted
 /// native-assets cache directories.
-bool liteRtLmIsCacheDirectoryForAbi(Directory dir, Abi abi) {
-  final requiredLibraries = liteRtLmRequiredLibrariesForAbi(abi);
+bool liteRtLmIsCacheDirectoryForAbi(
+  Directory dir,
+  Abi abi, {
+  bool cApiV1 = false,
+}) {
+  final requiredLibraries = liteRtLmRequiredLibrariesForAbi(
+    abi,
+    cApiV1: cApiV1,
+  );
   return requiredLibraries.isNotEmpty &&
       requiredLibraries.every(
         (library) => File('${dir.path}/$library').existsSync(),
@@ -811,9 +854,27 @@ class _LegacyLiteRtLmRuntimeClient extends LiteRtLmRuntimeClient {
   ///
   /// [libraryPath] is an advanced local-validation override. Packaged apps
   /// should omit it and use the platform runtime selected by native assets.
-  _LegacyLiteRtLmRuntimeClient({String? libraryPath})
-    : _libraryPathOverride = libraryPath,
-      super._legacy();
+  _LegacyLiteRtLmRuntimeClient({
+    String? libraryPath,
+    bool allowV1Inventory = false,
+  }) : _libraryPathOverride = libraryPath,
+       _allowV1Inventory = allowV1Inventory,
+       super._legacy();
+
+  final bool _allowV1Inventory;
+  ({Directory directory, List<String> legacy, List<String> v1})?
+  _discoveryInventory;
+
+  void _selectDirectoryInventory(
+    Directory directory,
+    List<String> Function(bool) files,
+  ) {
+    _discoveryInventory = (
+      directory: directory,
+      legacy: files(false),
+      v1: files(true),
+    );
+  }
 
   String _thinkingStartTag = LiteRtLmChannelAssembler.gemma4ThinkingStartTag;
   String _thinkingEndTag = LiteRtLmChannelAssembler.gemma4ThinkingEndTag;
@@ -1962,6 +2023,22 @@ class _LegacyLiteRtLmRuntimeClient extends LiteRtLmRuntimeClient {
 
   ({String path, DynamicLibrary library})? _discoveredLibrary;
   ({String path, DynamicLibrary library}) _discoverLibraries() {
+    try {
+      return _discoverLibrariesImpl();
+    } on ArgumentError catch (error) {
+      final explicitLibrary = _libraryPathOverride?.trim().isNotEmpty ?? false;
+      final explicitDirectory =
+          Platform.environment[_litertLmLibDirEnv]?.trim().isNotEmpty ?? false;
+      if (!explicitLibrary && !explicitDirectory) rethrow;
+      throw LlamaUnsupportedException(
+        'The explicitly selected LiteRT-LM runtime could not be loaded for '
+        '${Abi.current()}. Install a complete matching runtime. '
+        'No bundled, cached or process runtime was substituted. $error',
+      );
+    }
+  }
+
+  ({String path, DynamicLibrary library}) _discoverLibrariesImpl() {
     final existing = _discoveredLibrary;
     if (existing != null) return existing;
     final libraryPathOverride = _libraryPathOverride?.trim();
@@ -1984,8 +2061,45 @@ class _LegacyLiteRtLmRuntimeClient extends LiteRtLmRuntimeClient {
       libraries.liteRtLmCandidates,
       description: 'LiteRT-LM library',
     );
+    final inventory = _discoveryInventory;
+    if (_allowV1Inventory && inventory != null) {
+      // Only the selected image's version probe can waive legacy sampler files.
+      final v1 = readLiteRtLmCApiVersion(liteRtLm.library) != null;
+      final required = v1 ? inventory.v1 : inventory.legacy;
+      final missing = required
+          .where(
+            (file) =>
+                !File(path.join(inventory.directory.path, file)).existsSync(),
+          )
+          .toList();
+      if (missing.isNotEmpty) {
+        throw LlamaUnsupportedException(
+          'The selected LiteRT-LM ${v1 ? "C API 1.0" : "legacy C API"} '
+          'runtime for ${Abi.current()} is incomplete: missing '
+          '${missing.join(", ")}. Install a complete matching runtime; '
+          'no other runtime was substituted.',
+        );
+      }
+      if (!v1) {
+        companionLibraries.addAll(
+          liteRtLmOpenCompanionLibraries(
+            inventory.legacy
+                .where((file) => !inventory.v1.contains(file))
+                .map((file) => path.join(inventory.directory.path, file)),
+          ),
+        );
+      }
+    }
     _liteRtLmLibraryPath = liteRtLm.path;
-    _liteRtLmCompanionLibraryPaths = libraries.companions;
+    _liteRtLmCompanionLibraryPaths = [
+      ...libraries.companions,
+      if (_allowV1Inventory &&
+          inventory != null &&
+          !liteRtLm.library.providesSymbol('litert_lm_get_api_version'))
+        ...inventory.legacy
+            .where((file) => !inventory.v1.contains(file))
+            .map((file) => path.join(inventory.directory.path, file)),
+    ];
     _companionLibraries = companionLibraries;
     return _discoveredLibrary = liteRtLm;
   }
@@ -2005,6 +2119,19 @@ class _LegacyLiteRtLmRuntimeClient extends LiteRtLmRuntimeClient {
       );
     }
     final abi = Abi.current();
+    final directoryOverride = Platform.environment[_litertLmLibDirEnv]?.trim();
+    if (directoryOverride != null &&
+        directoryOverride.isNotEmpty &&
+        liteRtLmPrimaryLibraryForAbi(abi) != null) {
+      final directory = _findLiteRtLmCacheDirForAbi(abi)!;
+      return (
+        liteRtLmCandidates: [
+          path.join(directory.path, liteRtLmPrimaryLibraryForAbi(abi)!),
+        ],
+        companions: _companionLibrariesForAbi(abi, directory),
+        directCallbackSupported: true,
+      );
+    }
     if (Platform.isAndroid &&
         (abi == Abi.androidArm64 || abi == Abi.androidX64)) {
       return (
@@ -2039,7 +2166,7 @@ class _LegacyLiteRtLmRuntimeClient extends LiteRtLmRuntimeClient {
         return (
           liteRtLmCandidates: liteRtLmMacOsLibraryCandidates(
             '${frameworksDir.path}/LiteRtLm.framework/Versions/A/LiteRtLm',
-            explicitOverride: false,
+            explicitOverride: _allowV1Inventory,
           ),
           companions: usesNativeSpmFramework
               ? const []
@@ -2055,7 +2182,7 @@ class _LegacyLiteRtLmRuntimeClient extends LiteRtLmRuntimeClient {
         return (
           liteRtLmCandidates: liteRtLmMacOsLibraryCandidates(
             '${appLibraryDir.path}/libLiteRtLm.dylib',
-            explicitOverride: false,
+            explicitOverride: _allowV1Inventory,
           ),
           companions: [
             for (final library in companions) '${appLibraryDir.path}/$library',
@@ -2071,7 +2198,7 @@ class _LegacyLiteRtLmRuntimeClient extends LiteRtLmRuntimeClient {
         return (
           liteRtLmCandidates: liteRtLmMacOsLibraryCandidates(
             '${cacheDir.path}/libLiteRtLm.dylib',
-            explicitOverride: explicitOverride,
+            explicitOverride: explicitOverride || _allowV1Inventory,
           ),
           companions: [
             for (final library in companions) '${cacheDir.path}/$library',
@@ -2247,15 +2374,24 @@ class _LegacyLiteRtLmRuntimeClient extends LiteRtLmRuntimeClient {
     }
     final requiredNativeSpmFiles = liteRtLmMacOsRequiredNativeSpmFilesForAbi(
       Abi.current(),
+      cApiV1: _allowV1Inventory,
     );
     if (requiredNativeSpmFiles.isNotEmpty &&
         requiredNativeSpmFiles.every(
           (file) => File('${frameworksDir.path}/$file').existsSync(),
         )) {
+      _selectDirectoryInventory(
+        frameworksDir,
+        (v1) => liteRtLmMacOsRequiredNativeSpmFilesForAbi(
+          Abi.current(),
+          cApiV1: v1,
+        ),
+      );
       return frameworksDir;
     }
     final requiredFrameworks = liteRtLmMacOsRequiredFrameworksForAbi(
       Abi.current(),
+      cApiV1: _allowV1Inventory,
     );
     if (requiredFrameworks.isEmpty) {
       return null;
@@ -2265,6 +2401,11 @@ class _LegacyLiteRtLmRuntimeClient extends LiteRtLmRuntimeClient {
         '${frameworksDir.path}/$framework',
     ];
     if (requiredFiles.every((file) => File(file).existsSync())) {
+      _selectDirectoryInventory(
+        frameworksDir,
+        (v1) =>
+            liteRtLmMacOsRequiredFrameworksForAbi(Abi.current(), cApiV1: v1),
+      );
       return frameworksDir;
     }
     return null;
@@ -2279,9 +2420,18 @@ class _LegacyLiteRtLmRuntimeClient extends LiteRtLmRuntimeClient {
     if (!libraryDir.existsSync()) {
       return null;
     }
-    return liteRtLmIsMacOsCacheDirectoryForAbi(libraryDir, Abi.current())
-        ? libraryDir
-        : null;
+    if (!liteRtLmIsMacOsCacheDirectoryForAbi(
+      libraryDir,
+      Abi.current(),
+      cApiV1: _allowV1Inventory,
+    )) {
+      return null;
+    }
+    _selectDirectoryInventory(
+      libraryDir,
+      (v1) => liteRtLmRequiredLibrariesForAbi(Abi.current(), cApiV1: v1),
+    );
+    return libraryDir;
   }
 
   /// Locates the `Frameworks` directory of the running iOS `.app` bundle when
@@ -2313,12 +2463,20 @@ class _LegacyLiteRtLmRuntimeClient extends LiteRtLmRuntimeClient {
   }
 
   Directory? _findLiteRtLmCacheDirForAbi(Abi abi) {
-    return liteRtLmResolveRuntimeDirectoryForAbi(
+    final directory = liteRtLmResolveRuntimeDirectoryForAbi(
       abi,
       libDirOverride: Platform.environment[_litertLmLibDirEnv],
       executablePath: Platform.resolvedExecutable,
       searchRoots: _candidateSearchRoots,
+      cApiV1: _allowV1Inventory,
     );
+    if (directory != null) {
+      _selectDirectoryInventory(
+        directory,
+        (v1) => liteRtLmRequiredLibrariesForAbi(abi, cApiV1: v1),
+      );
+    }
+    return directory;
   }
 
   List<Directory> _candidateSearchRoots() {
@@ -2333,7 +2491,7 @@ class _LegacyLiteRtLmRuntimeClient extends LiteRtLmRuntimeClient {
   }
 
   List<String> _macOsCompanionLibrariesForAbi(Abi abi) {
-    return liteRtLmMacOsRequiredLibrariesForAbi(abi)
+    return liteRtLmMacOsRequiredLibrariesForAbi(abi, cApiV1: _allowV1Inventory)
         .where((library) => library != 'libLiteRtLm.dylib')
         .toList(growable: false);
   }
@@ -2341,6 +2499,7 @@ class _LegacyLiteRtLmRuntimeClient extends LiteRtLmRuntimeClient {
   List<String> _companionLibrariesForAbi(Abi abi, Directory dir) {
     return liteRtLmCompanionLibrariesForAbi(
       abi,
+      cApiV1: _allowV1Inventory,
     ).map((library) => '${dir.path}/$library').toList(growable: false);
   }
 
