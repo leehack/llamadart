@@ -184,13 +184,13 @@ void main() {
     }
   });
 
-  test('stable_diffusion pins the qualified v0.3.0-2 release artifacts', () {
+  test('stable_diffusion pins the qualified v0.3.0-3 release artifacts', () {
     // Exact published owner manifest, independently checked against GitHub
     // asset digests before adoption. This also binds the Apple binary target.
     final manifest =
         jsonDecode(
               File(
-                'test/fixtures/native/stable_diffusion_v0_3_0_2_manifest.json',
+                'test/fixtures/native/stable_diffusion_v0_3_0_3_manifest.json',
               ).readAsStringSync(),
             )
             as Map<String, dynamic>;
@@ -218,7 +218,7 @@ void main() {
     final apple = artifacts.singleWhere(
       (artifact) =>
           artifact['file'] ==
-          'stable-diffusion-native-apple-xcframework-v0.3.0-2.zip',
+          'stable-diffusion-native-apple-xcframework-v0.3.0-3.zip',
     );
     final swift = File(
       'packages/llamadart_stable_diffusion_flutter/darwin/'
@@ -234,7 +234,7 @@ void main() {
     final manifest =
         jsonDecode(
               File(
-                'test/fixtures/native/stable_diffusion_v0_3_0_2_manifest.json',
+                'test/fixtures/native/stable_diffusion_v0_3_0_3_manifest.json',
               ).readAsStringSync(),
             )
             as Map<String, dynamic>;
