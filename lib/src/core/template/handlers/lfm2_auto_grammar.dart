@@ -81,9 +81,10 @@ String _callList(
   if (copiedCalls.isNotEmpty) {
     builder.rules['copied-call'] = copiedCalls.join(' | ');
   }
+  // A diagnostic cannot consume a comma promising another call.
   final normalList =
       'call ${parallelToolCalls ? '(close-ws "," close-ws call)* ' : ''}'
-      '(close-ws ",")?';
+      '${builder.diagnostic ? '' : '(close-ws ",")?'}';
   // The loose fallback reinterprets quotes and JSON objects. Admit copied tails
   // only in one required plain path argument, without either ambiguity.
   return copiedCalls.isEmpty ? normalList : '($normalList | copied-call)';

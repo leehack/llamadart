@@ -85,6 +85,40 @@ void main() {
     }
   });
 
+  test('diagnostic envelopes cannot absorb a pending list continuation', () {
+    final tools = [
+      ToolDefinition(
+        name: 'lookup',
+        description: '',
+        parameters: [ToolParam.string('place')],
+      ),
+    ];
+    for (final parallel in [false, true]) {
+      final grammar = GbnfRecognizer(
+        buildLfm2AutoGrammar(tools, parallelToolCalls: parallel)!,
+      );
+      final calls = [
+        'lookup(place="first")',
+        if (parallel) 'lookup(place="first"), lookup(place="second")',
+      ];
+      for (final call in calls) {
+        final start = '<|tool_call_start|>[$call';
+        expect(grammar.accepts('$start]</result>'), isTrue);
+        expect(grammar.accepts('$start,]<|tool_call_end|>'), isTrue);
+        for (final whitespace in ['', ' \r\n  ']) {
+          for (final bracket in ['', ']']) {
+            expect(
+              grammar.accepts(
+                '$start,$whitespace$bracket</result>lookup(place="later")]',
+              ),
+              isFalse,
+            );
+          }
+        }
+      }
+    }
+  });
+
   test(
     'diagnostic marker exclusion blocks a lenient-parser execution prefix',
     () {

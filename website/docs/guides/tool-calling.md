@@ -200,9 +200,9 @@ non-executable; the grammar does not reinterpret them as a different value.
 Other declarations and list forms retain their declared types and strict quotes.
 An auto reply closed with a foreign XML tag such as `</function_call>` can remain
 raw diagnostic text instead of being forced into an executable tool envelope.
-This diagnostic form requires a schema-valid call prefix, excludes `<` from its
-argument bytes, and excludes special markers from its tail. It never yields an
-executable call. Required/force-JSON and `none` behavior is unchanged.
+This diagnostic form requires a schema-valid call prefix without a trailing
+list comma, excludes `<` from its argument bytes, and excludes special markers
+from its tail. It never yields an executable call. Required/force-JSON and `none` behavior is unchanged.
 For that one-string form, a direct string cannot continue a completed copied-path
 call as argument data. Such values use the existing Python wrapper
 `save_note(arguments={"text":"..."})`, whose JSON string encoding preserves the

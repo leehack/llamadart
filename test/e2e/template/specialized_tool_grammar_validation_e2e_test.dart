@@ -1922,6 +1922,35 @@ void main() {
     );
   });
 
+  test('LFM2 diagnostic roots cannot close after a list continuation', () {
+    final tools = [
+      ToolDefinition(
+        name: 'lookup',
+        description: '',
+        parameters: [ToolParam.string('place')],
+      ),
+    ];
+    for (final parallel in [false, true]) {
+      final grammar = buildLfm2AutoGrammar(tools, parallelToolCalls: parallel)!;
+      for (final call in [
+        'lookup(place="first")',
+        if (parallel) 'lookup(place="first"), lookup(place="second")',
+      ]) {
+        final start = '<|tool_call_start|>[$call';
+        _expectGrammar(
+          validator,
+          grammar,
+          valid: ['$start]</result>', '$start,]<|tool_call_end|>'],
+          invalid: [
+            for (final whitespace in ['', ' \r\n  '])
+              for (final bracket in ['', ']'])
+                '$start,$whitespace$bracket</result>lookup(place="later")]',
+          ],
+        );
+      }
+    }
+  });
+
   test('LFM2 foreign auto closers are non-executable diagnostic roots', () {
     final tools = [
       ToolDefinition(
