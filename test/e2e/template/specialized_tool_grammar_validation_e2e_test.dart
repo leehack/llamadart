@@ -1884,6 +1884,46 @@ void main() {
     }
   });
 
+  test('LFM2 plain singleton strings preserve copied container data', () {
+    final tools = [
+      ToolDefinition(
+        name: 'record',
+        description: '',
+        parameters: [ToolParam.string('value', required: true)],
+      ),
+    ];
+    final values = [
+      "{'count': 13, 'name': 'item'}",
+      r'''{'path': 'D:\\work', 'message': "a\"b"}''',
+      "['first', 'second', 'third']",
+      "{'items': [1, None, True, {'name': 'item'}]}",
+      r'a \ b',
+      r'\\server',
+      'False',
+      '13',
+      '서울',
+    ];
+    String output(String value) =>
+        '<|tool_call_start|>[record(value=$value)]<|tool_call_end|>';
+    _expectGrammar(
+      validator,
+      buildLfm2AutoGrammar(tools, parallelToolCalls: false)!,
+      valid: values.map(output).toList(),
+      invalid: [
+        '<|tool_call_start|>[record(value={"x":1}, extra=True)]<|tool_call_end|>',
+        '<|tool_call_start|>[record(value=first, value=second)]<|tool_call_end|>',
+        '<|tool_call_start|>[record(value=[1)]<|tool_call_end|>',
+        '<|tool_call_start|>[record(value=first), record(value=second)]<|tool_call_end|>',
+      ],
+    );
+    for (final value in values) {
+      final parsed = Lfm2Handler().parseWithTools(output(value), tools: tools);
+      expect(jsonDecode(parsed.toolCalls.single.function!.arguments!), {
+        'value': value,
+      });
+    }
+  });
+
   test('LFM2 nested object keys use parser-compatible quoted literals', () {
     for (final key in [
       'ordinary',

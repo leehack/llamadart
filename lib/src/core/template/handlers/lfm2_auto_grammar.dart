@@ -135,14 +135,19 @@ final class _PythonGrammar {
     String rule, {
     bool prefixSafeString = false,
   }) {
-    if (prefixSafeString) _addPrefixSafeStringRules();
+    if (prefixSafeString) {
+      _addPrefixSafeStringRules();
+      _addCopiedValueRules();
+    }
     final fields = _fields(schema);
     final required = (schema['required'] as List? ?? const []).cast<String>();
     final members = <({String name, String value, bool required})>[
       for (final entry in fields.entries)
         (
           name: '${ToolCallGrammarUtils.literal(entry.key)} ws "=" ws',
-          value: prefixSafeString ? 'prefix-safe-string' : value(entry.value),
+          value: prefixSafeString
+              ? '(prefix-safe-string | copied-value)'
+              : value(entry.value),
           required: required.contains(entry.key),
         ),
     ];
@@ -156,6 +161,22 @@ final class _PythonGrammar {
     for (final entry in (schema['properties'] as Map? ?? const {}).entries)
       entry.key as String: Map<String, dynamic>.from(entry.value as Map),
   };
+
+  void _addCopiedValueRules() {
+    if (rules.containsKey('copied-value')) return;
+    // The parser retains these spellings as text in a plain string argument.
+    // Keeping the emitted spelling avoids forcing a model to re-encode data.
+    rules['copied-value'] = 'copied-container | copied-bare';
+    rules['copied-container'] =
+        '"{" copied-fragment* "}" | "[" copied-fragment* "]" | '
+        '"(" copied-fragment* ")"';
+    rules['copied-fragment'] =
+        r'''py-string | copied-container | [^"'(){}\[\]<>]''';
+    rules['copied-bare-char'] = r'''[^"'(),{}\[\]<> \t\n\r]''';
+    rules['copied-bare'] =
+        'copied-bare-char+ ([ \\t\\n\\r]{1,$_maxWhitespace} '
+        'copied-bare-char+)*';
+  }
 
   void _addPrefixSafeStringRules() {
     if (rules.containsKey('prefix-safe-string')) return;

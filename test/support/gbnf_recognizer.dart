@@ -1,6 +1,6 @@
 /// Decides whether a GBNF grammar accepts a whole string, for the subset the
 /// JSON schema converter emits: literals, character classes, groups,
-/// alternation, `? * +`, `{n}`, `{n,}`, `{n,m}` and rule references. Rule
+/// alternation, `.`, `? * +`, `{n}`, `{n,}`, `{n,m}` and rule references. Rule
 /// references may recurse but not left-recurse.
 class GbnfRecognizer {
   GbnfRecognizer(String grammar) {
@@ -193,6 +193,10 @@ class _Parser {
       final inner = _alternatives();
       _at++;
       return inner;
+    }
+    if (c == '.') {
+      _at++;
+      return _Class(true, const []);
     }
     final name = RegExp(r'[A-Za-z0-9-]+').matchAsPrefix(text, _at)![0]!;
     _at += name.length;
