@@ -100,6 +100,14 @@ objects with exactly `id`, `path`, `sha256`, `source`, `preimageSha256Lf`,
 hashes must be lowercase 64-hex SHA-256 digests. The owner validates patch
 contents and applicability; sync validates the declared provenance shape.
 
+Schema-2 sync updates the runtime discovery table selected by the validated
+upstream compatibility tag: `v0.19.0` updates the admitted C API 1.0 table;
+earlier versions update the legacy table. Library, macOS framework and native
+SwiftPM inventories stay separate, so repinning cannot relax discovery of an
+explicit older runtime. Unknown newer compatibility tags require a reviewed API
+mapping before generation. The sync tests compile and execute both discovery
+paths after generation, including missing-companion refusal.
+
 For schema 2, Apple target selection follows the per-platform owner inventory.
 Sync removes a formerly required iOS Gemma constraint-provider target from a
 modern Swift manifest when the new iOS bundles no longer require it. An optional

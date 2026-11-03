@@ -402,13 +402,12 @@ List<String> liteRtLmIosLibraryCandidates(
   ];
 }
 
-/// Required desktop runtime files. The default preserves the pinned legacy
-/// inventory; [cApiV1] describes the owner 0.19 inventory after C API admission.
+/// Required desktop runtime files. The default preserves legacy discovery;
+/// [cApiV1] describes the owner 0.19 inventory after C API admission.
 List<String> liteRtLmRequiredLibrariesForAbi(Abi abi, {bool cApiV1 = false}) {
-  final legacy = _liteRtLmLegacyRequiredLibrariesForAbi(abi);
   return cApiV1
-      ? legacy.where((file) => !file.contains('TopK')).toList(growable: false)
-      : legacy;
+      ? _liteRtLmV1RequiredLibrariesForAbi(abi)
+      : _liteRtLmLegacyRequiredLibrariesForAbi(abi);
 }
 
 List<String> _liteRtLmLegacyRequiredLibrariesForAbi(Abi abi) {
@@ -447,6 +446,49 @@ List<String> _liteRtLmLegacyRequiredLibrariesForAbi(Abi abi) {
       'libGemmaModelConstraintProvider.dll',
       'libLiteRt.dll',
       'libLiteRtTopKWebGpuSampler.dll',
+      'libLiteRtWebGpuAccelerator.dll',
+      'libwebgpu_dawn.dll',
+      'msvcp140.dll',
+      'vcruntime140.dll',
+      'vcruntime140_1.dll',
+      'vcruntime140_threads.dll',
+      'webgpu_dawn.dll',
+    ],
+    _ => const <String>[],
+  };
+}
+
+List<String> _liteRtLmV1RequiredLibrariesForAbi(Abi abi) {
+  return switch (abi) {
+    Abi.macosArm64 => const <String>[
+      'libCLiteRTLM_mac.dylib',
+      'libGemmaModelConstraintProvider.dylib',
+      'libLiteRt.dylib',
+      'libLiteRtLm.dylib',
+      'libLiteRtMetalAccelerator.dylib',
+      'libLiteRtWebGpuAccelerator.dylib',
+      'libwebgpu_dawn.dylib',
+    ],
+    Abi.linuxArm64 => const <String>[
+      'libGemmaModelConstraintProvider.so',
+      'libLiteRt.so',
+      'libLiteRtLm.so',
+      'libLiteRtWebGpuAccelerator.so',
+      'libwebgpu_dawn.so',
+    ],
+    Abi.linuxX64 => const <String>[
+      'libGemmaModelConstraintProvider.so',
+      'libLiteRt.so',
+      'libLiteRtLm.so',
+      'libLiteRtWebGpuAccelerator.so',
+      'libwebgpu_dawn.so',
+    ],
+    Abi.windowsX64 => const <String>[
+      'LiteRtLm.dll',
+      'dxcompiler.dll',
+      'dxil.dll',
+      'libGemmaModelConstraintProvider.dll',
+      'libLiteRt.dll',
       'libLiteRtWebGpuAccelerator.dll',
       'libwebgpu_dawn.dll',
       'msvcp140.dll',
@@ -583,10 +625,9 @@ List<String> liteRtLmMacOsRequiredFrameworksForAbi(
   Abi abi, {
   bool cApiV1 = false,
 }) {
-  final files = _liteRtLmMacOsRequiredFrameworksForAbi(abi);
   return cApiV1
-      ? files.where((file) => !file.contains('TopK')).toList(growable: false)
-      : files;
+      ? _liteRtLmV1MacOsRequiredFrameworksForAbi(abi)
+      : _liteRtLmMacOsRequiredFrameworksForAbi(abi);
 }
 
 List<String> _liteRtLmMacOsRequiredFrameworksForAbi(Abi abi) {
@@ -606,16 +647,30 @@ List<String> _liteRtLmMacOsRequiredFrameworksForAbi(Abi abi) {
   };
 }
 
+List<String> _liteRtLmV1MacOsRequiredFrameworksForAbi(Abi abi) {
+  return switch (abi) {
+    Abi.macosArm64 => const <String>[
+      'CLiteRTLM_mac.framework/Versions/A/CLiteRTLM_mac',
+      'GemmaModelConstraintProvider.framework/Versions/A/GemmaModelConstraintProvider',
+      'LiteRt.framework/Versions/A/LiteRt',
+      'LiteRtLm.framework/Versions/A/LiteRtLm',
+      'LiteRtMetalAccelerator.framework/Versions/A/LiteRtMetalAccelerator',
+      'LiteRtWebGpuAccelerator.framework/Versions/A/LiteRtWebGpuAccelerator',
+      'webgpu_dawn.framework/Versions/A/webgpu_dawn',
+    ],
+    _ => const <String>[],
+  };
+}
+
 /// Internal helper used by the LiteRT-LM runtime to validate the native-repo
 /// Apple SPM layout in macOS app bundles.
 List<String> liteRtLmMacOsRequiredNativeSpmFilesForAbi(
   Abi abi, {
   bool cApiV1 = false,
 }) {
-  final files = _liteRtLmMacOsRequiredNativeSpmFilesForAbi(abi);
   return cApiV1
-      ? files.where((file) => !file.contains('TopK')).toList(growable: false)
-      : files;
+      ? _liteRtLmV1MacOsRequiredNativeSpmFilesForAbi(abi)
+      : _liteRtLmMacOsRequiredNativeSpmFilesForAbi(abi);
 }
 
 List<String> _liteRtLmMacOsRequiredNativeSpmFilesForAbi(Abi abi) {
@@ -626,6 +681,20 @@ List<String> _liteRtLmMacOsRequiredNativeSpmFilesForAbi(Abi abi) {
       'LiteRtLm.framework/Versions/A/Dependencies/libGemmaModelConstraintProvider.dylib',
       'libLiteRt.dylib',
       'libLiteRtTopKWebGpuSampler.dylib',
+      'libLiteRtWebGpuAccelerator.dylib',
+      'libwebgpu_dawn.dylib',
+    ],
+    _ => const <String>[],
+  };
+}
+
+List<String> _liteRtLmV1MacOsRequiredNativeSpmFilesForAbi(Abi abi) {
+  return switch (abi) {
+    Abi.macosArm64 => const <String>[
+      'LiteRtLm.framework/Versions/A/LiteRtLm',
+      'libCLiteRTLM_mac.dylib',
+      'LiteRtLm.framework/Versions/A/Dependencies/libGemmaModelConstraintProvider.dylib',
+      'libLiteRt.dylib',
       'libLiteRtWebGpuAccelerator.dylib',
       'libwebgpu_dawn.dylib',
     ],

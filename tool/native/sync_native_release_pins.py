@@ -1011,6 +1011,7 @@ def main() -> int:
             runtime_dart_text = replace_litert_lm_runtime_required_libraries(
                 runtime_dart_text,
                 schema2_bundle_libraries,
+                manifest=litert_lm_manifest,
             )
             runtime_dart_text = replace_litert_lm_runtime_macos_inventory(
                 runtime_dart_text,
@@ -3777,7 +3778,7 @@ def _replace_litert_lm_runtime_library_function(
         function_name,
         entries,
     )
-    updated, count = pattern.subn(replacement, runtime_text, count=1)
+    updated, count = pattern.subn(replacement, runtime_text)
     if count != 1:
         raise ReleaseError(
             f"Could not replace LiteRT-LM runtime library function {function_name}"
@@ -3785,11 +3786,34 @@ def _replace_litert_lm_runtime_library_function(
     return updated
 
 
+def _litert_lm_runtime_inventory_is_v1(manifest: dict[str, Any]) -> bool:
+    upstream = manifest.get("upstream")
+    compatibility_tag = require_string(
+        upstream.get("compatibilityTag") if isinstance(upstream, dict) else None,
+        "runtime inventory upstream compatibilityTag",
+    )
+    version = _litert_compatibility_version(compatibility_tag)
+    if version > (0, 19, 0):
+        raise ReleaseError(
+            "LiteRT-LM runtime inventory has no reviewed API mapping for "
+            + compatibility_tag
+        )
+    return version == (0, 19, 0)
+
+
 def replace_litert_lm_runtime_required_libraries(
     runtime_text: str,
     bundle_libraries: dict[str, tuple[str, ...]],
+    *,
+    manifest: dict[str, Any],
 ) -> str:
     runtime_libraries = litert_schema2_runtime_required_libraries(bundle_libraries)
+    # Explicit legacy runtimes must retain their own inventory after a v1 repin.
+    function_name = (
+        "_liteRtLmV1RequiredLibrariesForAbi"
+        if _litert_lm_runtime_inventory_is_v1(manifest)
+        else "_liteRtLmLegacyRequiredLibrariesForAbi"
+    )
     # The bundle keys use hyphens while the Dart ABI enum uses camel case.
     runtime_entries = {
         "macosArm64": runtime_libraries["macos-arm64"],
@@ -3797,15 +3821,9 @@ def replace_litert_lm_runtime_required_libraries(
         "linuxX64": runtime_libraries["linux-x64"],
         "windowsX64": runtime_libraries["windows-x64"],
     }
-    macos_entries = {"macosArm64": runtime_libraries["macos-arm64"]}
-    updated = _replace_litert_lm_runtime_library_function(
-        runtime_text,
-        "liteRtLmMacOsRequiredLibrariesForAbi",
-        macos_entries,
-    )
     return _replace_litert_lm_runtime_library_function(
-        updated,
-        "liteRtLmRequiredLibrariesForAbi",
+        runtime_text,
+        function_name,
         runtime_entries,
     )
 
@@ -3981,14 +3999,19 @@ def replace_litert_lm_runtime_macos_inventory(
     )
     complete_spm = litert_macos_complete_spm_entries(bundle_libraries, native_spm_files)
     runtime_native_spm_entries = {"macosArm64": complete_spm["arm64"]}
+    prefix = (
+        "_liteRtLmV1MacOs"
+        if _litert_lm_runtime_inventory_is_v1(manifest)
+        else "_liteRtLmMacOs"
+    )
     updated = _replace_litert_lm_runtime_library_function(
         runtime_text,
-        "liteRtLmMacOsRequiredFrameworksForAbi",
+        prefix + "RequiredFrameworksForAbi",
         runtime_framework_entries,
     )
     return _replace_litert_lm_runtime_library_function(
         updated,
-        "liteRtLmMacOsRequiredNativeSpmFilesForAbi",
+        prefix + "RequiredNativeSpmFilesForAbi",
         runtime_native_spm_entries,
     )
 
