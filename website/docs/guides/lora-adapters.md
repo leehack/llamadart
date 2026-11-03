@@ -208,9 +208,12 @@ Custom native runtimes must export the aLoRA metadata functions; see
 
 - `ModelParams.loras` and runtime LoRA operations are supported by native
   llama.cpp/GGUF backends.
-- Native LiteRT-LM can accept one default-scale text LoRA adapter at model load
-  through `ModelParams.loras`; runtime LoRA updates, stacking, and custom scales
-  remain unsupported there.
+- Native LiteRT-LM text LoRA is unsupported by the upstream v0.18.1 and v0.19.0
+  advanced engine. Its legacy path setter accepts one default-scale adapter,
+  but session creation rejects it; the C API 1.0 client refuses it explicitly.
+  Use a compatible llama.cpp model/adapter pair. Restoration is tracked in
+  [owner #99](https://github.com/leehack/litert-lm-native/issues/99); runtime
+  updates, stacking and custom scales remain unsupported.
 - WebGPU applies `ModelParams.loras` and runtime LoRA adapters with bridge
   assets whose
   `getLoraAdapterCapabilities()` reports support.

@@ -300,7 +300,14 @@ final class LiteRtLmV1RuntimeClient implements LiteRtLmRuntimeClientContract {
     bool jsonSchemaConstraints = false,
   }) {
     _live();
-    if (loraPath != null) _unsupported('LoRA session path');
+    if (loraPath != null) {
+      throw LlamaUnsupportedException(
+        'Native LiteRT-LM v0.19.0 does not execute initial text LoRA '
+        'adapters in its advanced engine. The session path setter alone '
+        'does not provide adapter support. Use a supported llama.cpp '
+        'model/adapter pair; tracked in litert-lm-native#99.',
+      );
+    }
     if (jsonSchemaConstraints) _unsupported('native JSON Schema chat');
     if (npuBackend && _backend != ComputeDevice.npu) {
       throw LlamaArgumentException('npuBackend requires a loaded NPU engine.');

@@ -335,7 +335,7 @@
       ],
       "exemption": {
         "id": "lora",
-        "reason": "Runtime adapter loading, scaling, removal and unsupported/version-skew paths need a dedicated LoRA pack.",
+        "reason": "Runtime adapter loading, scaling, removal and unsupported/version-skew paths need a dedicated LoRA pack. Current LiteRT-LM advanced engines reject text LoRA; the internal v1 refusal is covered by compiled native fixtures. Runtime support remains tracked at https://github.com/leehack/litert-lm-native/issues/99.",
         "issue": "https://github.com/leehack/llamadart/issues/1196"
       }
     },

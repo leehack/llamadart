@@ -588,6 +588,34 @@ void main() {
     },
   );
   test(
+    'text LoRA refusal preserves the existing native conversation',
+    () async {
+      final adapter = client();
+      await initialize(adapter);
+      adapter.createConversation();
+      final created = nativeInt('created');
+      final live = nativeInt('live');
+      expect(
+        () => adapter.createConversation(loraPath: '/private/adapter.lora'),
+        throwsA(
+          isA<LlamaUnsupportedException>().having(
+            (error) => error.message,
+            'runtime restriction',
+            allOf(
+              contains('v0.19.0'),
+              contains('advanced engine'),
+              contains('litert-lm-native#99'),
+              isNot(contains('/private/')),
+            ),
+          ),
+        ),
+      );
+      expect(nativeInt('created'), created);
+      expect(nativeInt('live'), live);
+      expect(adapter.nativeSettlement, LiteRtLmNativeSettlement.settled);
+    },
+  );
+  test(
     'real service injection reaches v1 text generation, limits and metrics',
     () async {
       final model = File('${directory.path}/service.litertlm')
