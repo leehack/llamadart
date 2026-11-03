@@ -53,8 +53,124 @@ void main() {
       expect(result.exitCode, 0, reason: '${result.stderr}');
       paths[entry.key] = path;
     }
+    for (final entry in {
+      'validation-v1': '-DFACADE_V1',
+      'validation-legacy': '-DFACADE_LEGACY',
+      'validation-companion': '-DFACADE_COMPANION',
+    }.entries) {
+      final path = '${directory.path}/${entry.key}';
+      final result = await Process.run('cc', [
+        '-shared',
+        '-fPIC',
+        '-pthread',
+        entry.value,
+        'test/fixtures/litert_lm/facade_validation_fixture.c',
+        '-o',
+        path,
+      ]);
+      expect(result.exitCode, 0, reason: '${result.stderr}');
+      paths[entry.key] = path;
+    }
   });
   tearDownAll(() => directory.delete(recursive: true));
+
+  for (final mode in ['default', 'v1', 'legacy', 'legacy-disabled']) {
+    test(
+      '$mode validates before any library open or engine creation',
+      () async {
+        final primary =
+            paths[mode == 'legacy' || mode == 'legacy-disabled'
+                ? 'validation-legacy'
+                : 'validation-v1']!;
+        final libraryDir = Directory('${directory.path}/validation-$mode-dir')
+          ..createSync();
+        for (final library in liteRtLmRequiredLibrariesForAbi(
+          Abi.current(),
+          cApiV1: true,
+        )) {
+          File(
+            library == liteRtLmPrimaryLibraryForAbi(Abi.current())
+                ? primary
+                : paths['validation-companion']!,
+          ).copySync('${libraryDir.path}/$library');
+        }
+        final result = await Process.run(
+          Platform.resolvedExecutable,
+          [
+            '--packages=.dart_tool/package_config.json',
+            'test/fixtures/litert_lm/facade_validation_probe.dart',
+            mode,
+            primary,
+          ],
+          environment: {'LLAMADART_LITERT_LM_LIB_DIR': libraryDir.path},
+        );
+        final output = '${result.stderr}';
+        expect(result.exitCode, 0, reason: '${result.stdout}\n$output');
+        final invalid = output.indexOf('FACADE_INVALID_COMPLETE');
+        final opened = output.indexOf('FACADE_LIBRARY_OPEN');
+        final engine = output.indexOf('FACADE_ENGINE_CREATE');
+        final valid = output.indexOf('FACADE_VALID_COMPLETE');
+        expect(invalid, isNonNegative, reason: output);
+        expect(opened, greaterThan(invalid), reason: output);
+        expect(engine, greaterThan(opened), reason: output);
+        expect(valid, greaterThan(engine), reason: output);
+        expect(RegExp('FACADE_ENGINE_CREATE').allMatches(output), hasLength(1));
+      },
+    );
+  }
+
+  test('invalid arguments precede public platform refusal', () async {
+    debugLiteRtLmAbiOverride = Abi.macosX64;
+    addTearDown(() => debugLiteRtLmAbiOverride = null);
+    final client = LiteRtLmRuntimeClient();
+    addTearDown(client.dispose);
+    await expectLater(
+      client.initialize(modelPath: 'fixture', maxTokens: 0),
+      throwsA(
+        isA<ArgumentError>().having((error) => error.name, 'name', 'maxTokens'),
+      ),
+    );
+    expect(
+      () => client.generate('hello', maxOutputTokens: 0),
+      throwsA(
+        isA<ArgumentError>().having(
+          (error) => error.name,
+          'name',
+          'maxOutputTokens',
+        ),
+      ),
+    );
+    expect(
+      () => client.generateMessageJson('{}', visualTokenBudget: 0),
+      throwsA(
+        isA<ArgumentError>().having(
+          (error) => error.name,
+          'name',
+          'visualTokenBudget',
+        ),
+      ),
+    );
+    await expectLater(
+      client.run(prompt: 'hello', measuredRuns: 0),
+      throwsA(
+        isA<ArgumentError>().having(
+          (error) => error.name,
+          'name',
+          'measuredRuns',
+        ),
+      ),
+    );
+    await expectLater(
+      client.initialize(modelPath: 'fixture', backend: 'cpu'),
+      throwsA(
+        isA<LlamaUnsupportedException>().having(
+          (error) => error.message,
+          'platform refusal',
+          contains('macOS x86_64'),
+        ),
+      ),
+    );
+  });
 
   test(
     'explicit legacy path preserves compatibility on an unsupported published ABI',

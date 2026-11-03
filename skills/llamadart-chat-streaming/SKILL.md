@@ -355,4 +355,6 @@ Dart stream or failed request is not proof that native callbacks have drained.
 Custom native integrations can inspect `LiteRtLmRuntimeClient.nativeSettlement`
 from `package:llamadart/backend.dart`; only `LiteRtLmNativeSettlement.settled`
 permits teardown. Native LiteRT-LM selection admits C API 1.0.x; unknown or
-future versions remain unsupported, and artifact/device qualification is separate.
+future versions remain unsupported, and artifact/device qualification is separate. The
+native runtime SPI rejects invalid engine counts/backends, send controls and
+benchmark counts before discovering or loading a library.

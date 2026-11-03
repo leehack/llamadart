@@ -1145,61 +1145,21 @@ class _LegacyLiteRtLmRuntimeClient extends LiteRtLmRuntimeClient {
     String? dispatchLibDir,
     int? numberOfThreads,
   }) async {
-    if (maxTokens <= 0) {
-      throw ArgumentError.value(maxTokens, 'maxTokens', 'must be positive');
-    }
-    if (outputTokens <= 0) {
-      throw ArgumentError.value(
-        outputTokens,
-        'outputTokens',
-        'must be positive',
-      );
-    }
-    if (prefillTokens != null && prefillTokens <= 0) {
-      throw ArgumentError.value(
-        prefillTokens,
-        'prefillTokens',
-        'must be positive when provided',
-      );
-    }
-    if (maxNumImages != null && maxNumImages <= 0) {
-      throw ArgumentError.value(
-        maxNumImages,
-        'maxNumImages',
-        'must be positive when provided',
-      );
-    }
-    if (prefillChunkSize != null && prefillChunkSize <= 0) {
-      throw ArgumentError.value(
-        prefillChunkSize,
-        'prefillChunkSize',
-        'must be positive when provided',
-      );
-    }
-    if (dispatchLibDir != null && dispatchLibDir.trim().isEmpty) {
-      throw ArgumentError.value(
-        dispatchLibDir,
-        'dispatchLibDir',
-        'must be non-empty when provided',
-      );
-    }
-    if (numberOfThreads != null && numberOfThreads <= 0) {
-      throw ArgumentError.value(
-        numberOfThreads,
-        'numberOfThreads',
-        'must be positive when provided',
-      );
-    }
-    final resolvedBackend = _normalizeLiteRtLmRuntimeBackend(backend);
-    final resolvedVisionBackend = visionBackend == null
-        ? null
-        : _normalizeLiteRtLmRuntimeBackend(
-            visionBackend,
-            name: 'visionBackend',
-          );
-    final resolvedAudioBackend = audioBackend == null
-        ? null
-        : _normalizeLiteRtLmRuntimeBackend(audioBackend, name: 'audioBackend');
+    final resolved = _validateLiteRtLmInitializeArguments(
+      backend: backend,
+      visionBackend: visionBackend,
+      audioBackend: audioBackend,
+      maxTokens: maxTokens,
+      outputTokens: outputTokens,
+      prefillTokens: prefillTokens,
+      maxNumImages: maxNumImages,
+      prefillChunkSize: prefillChunkSize,
+      dispatchLibDir: dispatchLibDir,
+      numberOfThreads: numberOfThreads,
+    );
+    final resolvedBackend = resolved.backend;
+    final resolvedVisionBackend = resolved.visionBackend;
+    final resolvedAudioBackend = resolved.audioBackend;
     _defaultMaxOutputTokens = outputTokens;
 
     _ensureLibrariesLoaded();
@@ -1625,28 +1585,13 @@ class _LegacyLiteRtLmRuntimeClient extends LiteRtLmRuntimeClient {
     String? jsonSchema,
   }) {
     final resolvedMaxOutputTokens = maxOutputTokens ?? _defaultMaxOutputTokens;
-    if (repetitionPenalty != null &&
-        !(repetitionPenalty.isFinite && repetitionPenalty >= 1.0)) {
-      throw ArgumentError.value(
-        repetitionPenalty,
-        'repetitionPenalty',
-        'must be finite and at least 1.0',
-      );
-    }
-    if (presencePenalty != null && !presencePenalty.isFinite) {
-      throw ArgumentError.value(
-        presencePenalty,
-        'presencePenalty',
-        'must be finite',
-      );
-    }
-    if (thinkingTokenBudget != null && thinkingTokenBudget <= 0) {
-      throw ArgumentError.value(
-        thinkingTokenBudget,
-        'thinkingTokenBudget',
-        'must be positive when provided',
-      );
-    }
+    _validateLiteRtLmSendArguments(
+      visualTokenBudget: visualTokenBudget,
+      maxOutputTokens: resolvedMaxOutputTokens,
+      repetitionPenalty: repetitionPenalty,
+      presencePenalty: presencePenalty,
+      thinkingTokenBudget: thinkingTokenBudget,
+    );
     final _GenerationControls? generationControls =
         repetitionPenalty == null &&
             presencePenalty == null &&
@@ -1663,20 +1608,6 @@ class _LegacyLiteRtLmRuntimeClient extends LiteRtLmRuntimeClient {
           );
     if (generationControls != null) {
       _checkGenerationControls(_requireBindings(), generationControls);
-    }
-    if (visualTokenBudget != null && visualTokenBudget <= 0) {
-      throw ArgumentError.value(
-        visualTokenBudget,
-        'visualTokenBudget',
-        'must be positive when provided',
-      );
-    }
-    if (resolvedMaxOutputTokens <= 0) {
-      throw ArgumentError.value(
-        resolvedMaxOutputTokens,
-        'maxOutputTokens',
-        'must be positive when provided',
-      );
     }
     // Upstream stream callback strings are only valid during the native call.
     // Dart listener callbacks run later, so streaming requires StreamProxy to
@@ -2017,12 +1948,7 @@ class _LegacyLiteRtLmRuntimeClient extends LiteRtLmRuntimeClient {
     int warmupRuns = 1,
     int measuredRuns = 3,
   }) async {
-    if (warmupRuns < 0) {
-      throw ArgumentError.value(warmupRuns, 'warmupRuns', 'must be >= 0');
-    }
-    if (measuredRuns <= 0) {
-      throw ArgumentError.value(measuredRuns, 'measuredRuns', 'must be > 0');
-    }
+    _validateLiteRtLmBenchmarkArguments(warmupRuns, measuredRuns);
 
     for (var i = 0; i < warmupRuns; i++) {
       createConversation();
@@ -2691,6 +2617,128 @@ class _LegacyLiteRtLmRuntimeClient extends LiteRtLmRuntimeClient {
     } finally {
       bindings.benchmarkInfoDelete(info);
     }
+  }
+}
+
+({String backend, String? visionBackend, String? audioBackend})
+_validateLiteRtLmInitializeArguments({
+  required String backend,
+  String? visionBackend,
+  String? audioBackend,
+  required int maxTokens,
+  required int outputTokens,
+  int? prefillTokens,
+  int? maxNumImages,
+  int? prefillChunkSize,
+  String? dispatchLibDir,
+  int? numberOfThreads,
+}) {
+  if (maxTokens <= 0) {
+    throw ArgumentError.value(maxTokens, 'maxTokens', 'must be positive');
+  }
+  if (outputTokens <= 0) {
+    throw ArgumentError.value(outputTokens, 'outputTokens', 'must be positive');
+  }
+  if (prefillTokens != null && prefillTokens <= 0) {
+    throw ArgumentError.value(
+      prefillTokens,
+      'prefillTokens',
+      'must be positive when provided',
+    );
+  }
+  if (maxNumImages != null && maxNumImages <= 0) {
+    throw ArgumentError.value(
+      maxNumImages,
+      'maxNumImages',
+      'must be positive when provided',
+    );
+  }
+  if (prefillChunkSize != null && prefillChunkSize <= 0) {
+    throw ArgumentError.value(
+      prefillChunkSize,
+      'prefillChunkSize',
+      'must be positive when provided',
+    );
+  }
+  if (dispatchLibDir != null && dispatchLibDir.trim().isEmpty) {
+    throw ArgumentError.value(
+      dispatchLibDir,
+      'dispatchLibDir',
+      'must be non-empty when provided',
+    );
+  }
+  if (numberOfThreads != null && numberOfThreads <= 0) {
+    throw ArgumentError.value(
+      numberOfThreads,
+      'numberOfThreads',
+      'must be positive when provided',
+    );
+  }
+  final resolvedBackend = _normalizeLiteRtLmRuntimeBackend(backend);
+  final resolvedVisionBackend = visionBackend == null
+      ? null
+      : _normalizeLiteRtLmRuntimeBackend(visionBackend, name: 'visionBackend');
+  final resolvedAudioBackend = audioBackend == null
+      ? null
+      : _normalizeLiteRtLmRuntimeBackend(audioBackend, name: 'audioBackend');
+  return (
+    backend: resolvedBackend,
+    visionBackend: resolvedVisionBackend,
+    audioBackend: resolvedAudioBackend,
+  );
+}
+
+void _validateLiteRtLmSendArguments({
+  int? visualTokenBudget,
+  int? maxOutputTokens,
+  double? repetitionPenalty,
+  double? presencePenalty,
+  int? thinkingTokenBudget,
+}) {
+  if (repetitionPenalty != null &&
+      !(repetitionPenalty.isFinite && repetitionPenalty >= 1.0)) {
+    throw ArgumentError.value(
+      repetitionPenalty,
+      'repetitionPenalty',
+      'must be finite and at least 1.0',
+    );
+  }
+  if (presencePenalty != null && !presencePenalty.isFinite) {
+    throw ArgumentError.value(
+      presencePenalty,
+      'presencePenalty',
+      'must be finite',
+    );
+  }
+  if (thinkingTokenBudget != null && thinkingTokenBudget <= 0) {
+    throw ArgumentError.value(
+      thinkingTokenBudget,
+      'thinkingTokenBudget',
+      'must be positive when provided',
+    );
+  }
+  if (visualTokenBudget != null && visualTokenBudget <= 0) {
+    throw ArgumentError.value(
+      visualTokenBudget,
+      'visualTokenBudget',
+      'must be positive when provided',
+    );
+  }
+  if (maxOutputTokens != null && maxOutputTokens <= 0) {
+    throw ArgumentError.value(
+      maxOutputTokens,
+      'maxOutputTokens',
+      'must be positive when provided',
+    );
+  }
+}
+
+void _validateLiteRtLmBenchmarkArguments(int warmupRuns, int measuredRuns) {
+  if (warmupRuns < 0) {
+    throw ArgumentError.value(warmupRuns, 'warmupRuns', 'must be >= 0');
+  }
+  if (measuredRuns <= 0) {
+    throw ArgumentError.value(measuredRuns, 'measuredRuns', 'must be > 0');
   }
 }
 

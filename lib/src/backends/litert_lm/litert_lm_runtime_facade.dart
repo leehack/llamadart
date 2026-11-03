@@ -243,24 +243,38 @@ class LiteRtLmRuntimeClient {
     /// capacity for conversations that may include image inputs. [outputTokens]
     /// is the per-request fallback when generation does not provide an explicit
     /// maximum; it is not an upstream benchmark decode-step count.
-  }) async => _runtime.initialize(
-    modelPath: modelPath,
-    backend: backend,
-    visionBackend: visionBackend,
-    audioBackend: audioBackend,
-    maxTokens: maxTokens,
-    outputTokens: outputTokens,
-    prefillTokens: prefillTokens,
-    maxNumImages: maxNumImages,
-    cacheDir: cacheDir,
-    speculativeDecoding: speculativeDecoding,
-    minLogLevel: minLogLevel,
-    activationDataType: activationDataType,
-    prefillChunkSize: prefillChunkSize,
-    parallelFileSectionLoading: parallelFileSectionLoading,
-    dispatchLibDir: dispatchLibDir,
-    numberOfThreads: numberOfThreads,
-  );
+  }) async {
+    _validateLiteRtLmInitializeArguments(
+      backend: backend,
+      visionBackend: visionBackend,
+      audioBackend: audioBackend,
+      maxTokens: maxTokens,
+      outputTokens: outputTokens,
+      prefillTokens: prefillTokens,
+      maxNumImages: maxNumImages,
+      prefillChunkSize: prefillChunkSize,
+      dispatchLibDir: dispatchLibDir,
+      numberOfThreads: numberOfThreads,
+    );
+    return _runtime.initialize(
+      modelPath: modelPath,
+      backend: backend,
+      visionBackend: visionBackend,
+      audioBackend: audioBackend,
+      maxTokens: maxTokens,
+      outputTokens: outputTokens,
+      prefillTokens: prefillTokens,
+      maxNumImages: maxNumImages,
+      cacheDir: cacheDir,
+      speculativeDecoding: speculativeDecoding,
+      minLogLevel: minLogLevel,
+      activationDataType: activationDataType,
+      prefillChunkSize: prefillChunkSize,
+      parallelFileSectionLoading: parallelFileSectionLoading,
+      dispatchLibDir: dispatchLibDir,
+      numberOfThreads: numberOfThreads,
+    );
+  }
 
   /// Creates a new LiteRT-LM conversation for generation and token operations.
   ///
@@ -346,12 +360,19 @@ class LiteRtLmRuntimeClient {
     ///
     /// [repetitionPenalty] and [presencePenalty] apply as in
     /// [generateMessageJson].
-  }) => _runtime.generate(
-    prompt,
-    maxOutputTokens: maxOutputTokens,
-    repetitionPenalty: repetitionPenalty,
-    presencePenalty: presencePenalty,
-  );
+  }) {
+    _validateLiteRtLmSendArguments(
+      maxOutputTokens: maxOutputTokens,
+      repetitionPenalty: repetitionPenalty,
+      presencePenalty: presencePenalty,
+    );
+    return _runtime.generate(
+      prompt,
+      maxOutputTokens: maxOutputTokens,
+      repetitionPenalty: repetitionPenalty,
+      presencePenalty: presencePenalty,
+    );
+  }
 
   /// Streams generated text by sending a native LiteRT-LM message JSON object.
   ///
@@ -387,16 +408,25 @@ class LiteRtLmRuntimeClient {
     /// channel closed, and enables thinking for this send. Both throw
     /// [LlamaUnsupportedException] when the runtime does not export their API;
     /// see [supportsSamplingPenalties] and [supportsThinkingBudget].
-  }) => _runtime.generateMessageJson(
-    messageJson,
-    extraContext: extraContext,
-    visualTokenBudget: visualTokenBudget,
-    maxOutputTokens: maxOutputTokens,
-    repetitionPenalty: repetitionPenalty,
-    presencePenalty: presencePenalty,
-    thinkingTokenBudget: thinkingTokenBudget,
-    jsonSchema: jsonSchema,
-  );
+  }) {
+    _validateLiteRtLmSendArguments(
+      visualTokenBudget: visualTokenBudget,
+      maxOutputTokens: maxOutputTokens,
+      repetitionPenalty: repetitionPenalty,
+      presencePenalty: presencePenalty,
+      thinkingTokenBudget: thinkingTokenBudget,
+    );
+    return _runtime.generateMessageJson(
+      messageJson,
+      extraContext: extraContext,
+      visualTokenBudget: visualTokenBudget,
+      maxOutputTokens: maxOutputTokens,
+      repetitionPenalty: repetitionPenalty,
+      presencePenalty: presencePenalty,
+      thinkingTokenBudget: thinkingTokenBudget,
+      jsonSchema: jsonSchema,
+    );
+  }
 
   /// Runs a benchmark-style prompt loop and returns runtime metrics.
   Future<LiteRtLmRuntimeResult> run({
@@ -405,11 +435,14 @@ class LiteRtLmRuntimeClient {
     int measuredRuns = 3,
 
     /// Runs a benchmark-style prompt loop and returns runtime metrics.
-  }) async => _runtime.run(
-    prompt: prompt,
-    warmupRuns: warmupRuns,
-    measuredRuns: measuredRuns,
-  );
+  }) async {
+    _validateLiteRtLmBenchmarkArguments(warmupRuns, measuredRuns);
+    return _runtime.run(
+      prompt: prompt,
+      warmupRuns: warmupRuns,
+      measuredRuns: measuredRuns,
+    );
+  }
 
   /// Reads runtime metrics for the active conversation.
   LiteRtLmRuntimeMetrics readMetrics({required int wallMilliseconds}) =>
