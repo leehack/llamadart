@@ -22,6 +22,11 @@ to copy them into the app bundle. Flutter iOS and macOS apps link runtimes
 through SwiftPM companion packages: see [Apple setup](./apple-setup). To check a
 setup before loading a model, see [Diagnose setup](./diagnose-setup).
 
+On desktop, `LLAMADART_LITERT_LM_LIB_DIR` takes priority over bundled and cached
+runtimes and must contain the complete runtime for the process ABI. An incomplete
+or unloadable override throws `LlamaUnsupportedException`; no bundled, cached or
+process runtime is substituted.
+
 Configure the hook under `hooks.user_defines.llamadart` in the app's
 `pubspec.yaml`. Every key is optional:
 
