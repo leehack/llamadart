@@ -137,6 +137,11 @@ description: >-
   ASCII quotes, braces, brackets, call/assignment punctuation and tool markers
   require ordinary strict strings. Other declarations and list forms keep
   strict quote boundaries.
+  For the one-string form, values that would continue a completed copied-path
+  call use the existing Python `tool(arguments={"field":"..."})` envelope with
+  JSON string escaping. The inner object follows the declared single-field
+  schema. A declared `arguments` field uses a `parameters` envelope instead.
+  Read the declared argument from the parsed tool call.
 - Native llama.cpp enforces LFM2/LFM2.5 auto Python calls with a lazy schema
   grammar after a tool-start marker outside reasoning. Keep legacy `ToolParam`
   declarations typed; required/force-JSON requests retain their JSON grammar,

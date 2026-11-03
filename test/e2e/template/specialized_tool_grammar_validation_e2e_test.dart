@@ -2275,6 +2275,211 @@ void main() {
     },
   );
 
+  test('LFM2 copied roots cannot extend through strict string data', () {
+    final tools = [
+      ToolDefinition(
+        name: 'save_note',
+        description: '',
+        parameters: [ToolParam.string('text', required: true)],
+      ),
+    ];
+    final grammar = buildLfm2AutoGrammar(tools, parallelToolCalls: false)!;
+    const start = '<|tool_call_start|>';
+    const end = '<|tool_call_end|>';
+    final gaps = ['', ' ', ' \t\r\n' * 2];
+    for (final quote in ['"', "'"]) {
+      for (final path in [
+        'C:\\temp\\',
+        'C:\\Montréal\\서울\\',
+        'A\u0085\u2028\u2029\u00a0\\',
+      ]) {
+        for (final comma in [false, true]) {
+          for (final first in gaps) {
+            for (final second in gaps) {
+              for (final last in gaps) {
+                final short =
+                    '$start[save_note(text=$quote$path$quote$first)$second'
+                    '${comma ? ',' : ''}]$last$end';
+                final extended = '$short tail$quote)]$end';
+                _expectGrammar(
+                  validator,
+                  grammar,
+                  valid: comma ? [] : [short],
+                  invalid: [if (comma) short, extended],
+                );
+                if (!comma) {
+                  final parsed = Lfm2Handler().parseWithTools(
+                    short,
+                    tools: tools,
+                  );
+                  expect(parsed.toolCalls, hasLength(1));
+                  expect(
+                    jsonDecode(parsed.toolCalls.single.function!.arguments!),
+                    {'text': path},
+                  );
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+    for (final quote in ['"', "'"]) {
+      for (final count in List.generate(9, (index) => index)) {
+        final gap = ' \t\r\n' * 2;
+        final formatted = gap.substring(0, count);
+        final short =
+            '$start[save_note(text=${quote}C:\\temp\\$quote$formatted)$formatted,$formatted]$formatted$end';
+        _expectGrammar(
+          validator,
+          grammar,
+          valid: [],
+          invalid: ['$short tail$quote)]$end'],
+        );
+      }
+    }
+    const closing = ')]<|tool_call_end|>';
+    for (final quote in ['"', "'"]) {
+      for (var length = 0; length < closing.length; length++) {
+        final value = 'C:\\temp\\$quote${closing.substring(0, length)}X';
+        final output = '$start[save_note(text=$quote$value$quote)]$end';
+        _expectGrammar(validator, grammar, valid: [output], invalid: []);
+        final parsed = Lfm2Handler().parseWithTools(output, tools: tools);
+        expect(parsed.toolCalls, hasLength(1));
+        expect(jsonDecode(parsed.toolCalls.single.function!.arguments!), {
+          'text': value,
+        });
+      }
+    }
+    final preserved = [
+      r'<|tool_call_start|>[save_note(text="a\"b")]<|tool_call_end|>',
+      r"<|tool_call_start|>[save_note(text='a\'b')]<|tool_call_end|>",
+      r'<|tool_call_start|>[save_note(text="a<|tool_call_end|>b") ]<|tool_call_end|>',
+      r'<|tool_call_start|>[save_note(text="C:\temp\")x") ]<|tool_call_end|>',
+    ];
+    _expectGrammar(validator, grammar, valid: preserved, invalid: []);
+  });
+
+  test('LFM2 canonical Python wrapper preserves arbitrary string values', () {
+    final values = [
+      'C:\\temp\\',
+      r'''C:\a\")]<|tool_call_end|> and C:\b\')]<|tool_call_end|>''',
+      '{"text":"replacement"}',
+      'Both \' and " with \\ and a trailing \\',
+      '<|tool_call_start|><think>literal</think><|tool_call_end|>',
+      'Montréal\n서울\t🙂\u00a0',
+    ];
+    for (final key in ['text', 'arguments', 'parameters']) {
+      final alias = key == 'arguments' ? 'parameters' : 'arguments';
+      final tools = [
+        ToolDefinition(
+          name: 'save_note',
+          description: '',
+          parameters: [ToolParam.string(key, required: true)],
+        ),
+      ];
+      final grammar = buildLfm2AutoGrammar(tools, parallelToolCalls: true)!;
+      final calls = <String>[];
+      for (final value in [
+        ...values,
+        jsonEncode({key: 'replacement'}),
+      ]) {
+        final call = 'save_note($alias=${jsonEncode({key: value})})';
+        calls.add(call);
+        final output = '<|tool_call_start|>[$call]<|tool_call_end|>';
+        _expectGrammar(validator, grammar, valid: [output], invalid: []);
+        final parsed = Lfm2Handler().parseWithTools(output, tools: tools);
+        expect(parsed.toolCalls, hasLength(1));
+        expect(parsed.toolCalls.single.function!.name, 'save_note');
+        expect(jsonDecode(parsed.toolCalls.single.function!.arguments!), {
+          key: value,
+        });
+        expect(parsed.content, isEmpty);
+      }
+      for (final codePoint in [
+        ...List.generate(128, (index) => index),
+        0x80,
+        0x85,
+        0xa0,
+        0x2028,
+        0x2029,
+        0xd800,
+        0x1f642,
+        0x10ffff,
+      ]) {
+        final value = 'A${String.fromCharCode(codePoint)}Z';
+        final encoded = jsonEncode({
+          key: value,
+        }).replaceAll('\u007f', r'\u007f');
+        final output =
+            '<|tool_call_start|>[save_note($alias=$encoded)]<|tool_call_end|>';
+        _expectGrammar(validator, grammar, valid: [output], invalid: []);
+        final parsed = Lfm2Handler().parseWithTools(output, tools: tools);
+        expect(parsed.toolCalls, hasLength(1));
+        expect(parsed.toolCalls.single.function!.name, 'save_note');
+        expect(jsonDecode(parsed.toolCalls.single.function!.arguments!), {
+          key: value,
+        });
+      }
+      _expectGrammar(
+        validator,
+        grammar,
+        valid: [],
+        invalid: [
+          '<|tool_call_start|>${jsonEncode([
+            {
+              'name': 'save_note',
+              'arguments': {key: 'value'},
+            },
+          ])}<|tool_call_end|>',
+        ],
+      );
+      final parallel =
+          '<|tool_call_start|>[${calls[0]},${calls[1]},]<|tool_call_end|>';
+      _expectGrammar(validator, grammar, valid: [parallel], invalid: []);
+      final parsed = Lfm2Handler().parseWithTools(parallel, tools: tools);
+      expect(parsed.toolCalls, hasLength(2));
+      for (var index = 0; index < 2; index++) {
+        expect(jsonDecode(parsed.toolCalls[index].function!.arguments!), {
+          key: values[index],
+        });
+      }
+      _expectGrammar(
+        validator,
+        buildLfm2AutoGrammar(tools, parallelToolCalls: false)!,
+        valid: [],
+        invalid: [parallel],
+      );
+      for (final inner in [
+        '{}',
+        jsonEncode({key: 'ok', 'extra': 'bad'}),
+        '{"$key":"first","$key":"last"}',
+        '{"$key":false}',
+      ]) {
+        _expectGrammar(
+          validator,
+          grammar,
+          valid: [],
+          invalid: [
+            '<|tool_call_start|>[save_note($alias=$inner)]<|tool_call_end|>',
+          ],
+        );
+      }
+      for (final badCall in [
+        'save_note(unknown=${jsonEncode({key: 'ok'})})',
+        'save_note($alias=${jsonEncode({key: 'ok'})},$key="extra")',
+        'save_note($alias=${jsonEncode({key: 'ok'})},$alias=${jsonEncode({key: 'again'})})',
+      ]) {
+        _expectGrammar(
+          validator,
+          grammar,
+          valid: [],
+          invalid: ['<|tool_call_start|>[$badCall]<|tool_call_end|>'],
+        );
+      }
+    }
+  });
+
   test('LFM2 auto jsonarr closed argument cannot loop before call end', () {
     final tools = [
       ToolDefinition(

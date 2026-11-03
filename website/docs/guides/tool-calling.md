@@ -199,6 +199,12 @@ That exception accepts path-like text: letters, digits, Unicode text, spaces and
 `_ . / : - \`. ASCII quotes, braces, brackets, call/assignment punctuation and
 tool markers require the ordinary strict string form. Other declarations and
 list forms keep strict quote boundaries.
+For that one-string form, a direct string cannot continue a completed copied-path
+call as argument data. Such values use the existing Python wrapper
+`save_note(arguments={"text":"..."})`, whose JSON string encoding preserves the
+value. The generation grammar requires exactly the declared inner property and
+its type. If the declared property is named `arguments`, the envelope uses
+`parameters` instead; parsed calls contain the declared argument.
 
 Declare every argument with the correct type. This parser change does not add
 canonical `ToolDefinition.fromJsonSchema` generation support for LFM2: the

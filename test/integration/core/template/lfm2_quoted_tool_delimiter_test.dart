@@ -106,6 +106,47 @@ Future<void> _expectStream(
 }
 
 void main() {
+  for (final key in ['text', 'arguments', 'parameters']) {
+    for (final value in [
+      'C:\\temp\\',
+      r'''C:\a\")]<|tool_call_end|> and C:\b\')]<|tool_call_end|>''',
+      jsonEncode({key: 'replacement'}),
+      'Both \' and " with \\ and a trailing \\',
+      '<|tool_call_start|><think>literal</think><|tool_call_end|>',
+      'Montréal\n서울\t🙂\u00a0',
+    ]) {
+      test(
+        'canonical Python wrapper $key preserves $value in chunks',
+        () async {
+          final definitions = [
+            ToolDefinition(
+              name: 'save_note',
+              description: '',
+              parameters: [ToolParam.string(key, required: true)],
+            ),
+          ];
+          final alias = key == 'arguments' ? 'parameters' : 'arguments';
+          final rendered = _render(ToolChoice.auto, definitions: definitions);
+          final output = _envelope(
+            '[save_note($alias=${jsonEncode({key: value})})]',
+          );
+          final parsed = ChatTemplateEngine.parseRendered(
+            rendered,
+            output,
+            tools: definitions,
+          );
+          expect(parsed.toolCalls, hasLength(1));
+          expect(parsed.toolCalls.single.function!.name, 'save_note');
+          expect(jsonDecode(parsed.toolCalls.single.function!.arguments!), {
+            key: value,
+          });
+          expect(parsed.content, isEmpty);
+          await _expectStream(output, rendered, definitions: definitions);
+        },
+      );
+    }
+  }
+
   for (final quote in ['"', "'"]) {
     for (final path in [
       'C:\\temp\\',

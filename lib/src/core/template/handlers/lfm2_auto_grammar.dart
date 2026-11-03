@@ -4,6 +4,8 @@ import '../../exceptions.dart';
 import '../../models/tools/tool_definition.dart';
 import '../tool_call_grammar_utils.dart';
 
+const String _toolCallEnd = '<|tool_call_end|>';
+
 /// Builds the schema-directed Python-call language used by LFM2 auto tools.
 /// Required/force-JSON callers retain their separate JSON-list grammar.
 String? buildLfm2AutoGrammar(
@@ -17,10 +19,21 @@ String? buildLfm2AutoGrammar(
   for (var index = 0; index < tools.length; index++) {
     final tool = tools[index];
     final schema = tool.toJsonSchema();
-    calls.add(builder.tool(tool.name, schema, 'tool-$index'));
-    if (builder.acceptsCopiedStringTail(tool.name, schema)) {
+    final copiedPath = builder.acceptsCopiedStringTail(tool.name, schema);
+    calls.add(
+      builder.tool(
+        tool.name,
+        schema,
+        'tool-$index',
+        prefixSafeString: copiedPath,
+      ),
+    );
+    if (copiedPath) {
       copiedCalls.add(
         builder.copiedTool(tool.name, schema, 'copied-tool-$index'),
+      );
+      calls.add(
+        builder.canonicalTool(tool.name, schema, 'canonical-tool-$index'),
       );
     }
   }
@@ -39,7 +52,7 @@ String? buildLfm2AutoGrammar(
   // whitespace so a completed call cannot consume the remaining token budget.
   builder.rules['root'] =
       '${ToolCallGrammarUtils.literal('<|tool_call_start|>')} ws "[" ws $list '
-      'close-ws "]" close-ws ${ToolCallGrammarUtils.literal('<|tool_call_end|>')}';
+      'close-ws "]" close-ws ${ToolCallGrammarUtils.literal(_toolCallEnd)}';
   return builder.rules.entries
       .map((entry) => '${entry.key} ::= ${entry.value}')
       .join('\n');
@@ -49,18 +62,28 @@ final class _PythonGrammar {
   // Uniqueness needs a finite state per remaining argument set. Bound schema
   // expansion before constructing an exponential number of grammar rules.
   static const int _maxArgumentStates = 4096;
+  static const int _maxWhitespace = 8;
+  static const String _whitespace =
+      r'[ \t\n\r]{0,'
+      '$_maxWhitespace}';
+  static const String _pathAscii =
+      r'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_ ./:\-';
+  static const String _pathUnicode = r'[\u0080-\U0010FFFF]';
   int _argumentStates = 0;
   int _nextValue = 0;
   final Map<String, String> rules = {
     // This rule is structural only; string and literal payloads do not use it.
-    'ws': r'[ \t\n\r]{0,8}',
-    'close-ws': r'[ \t\n\r]{0,8}',
+    'ws': _whitespace,
+    'close-ws': _whitespace,
     'py-string': 'double-string | single-string',
     'double-string': r'''"\"" ([^"\\] | "\\" .)* "\""''',
     'single-string': r'''"'" ([^'\\] | "\\" .)* "'"''',
     'copied-path-string':
         r'''"\"" copied-path-char* "\\" "\"" | "'" copied-path-char* "\\" "'"''',
-    'copied-path-char': r'[a-zA-Z0-9_ ./:\\-] | [\u0080-\U0010FFFF]',
+    'copied-path-char': '${_characterClass(_pathAscii)} | $_pathUnicode',
+    'canonical-json-char':
+        r'[^"\\\x7F\x00-\x1F] | [\\] (["\\bfnrt] | "u" [0-9a-fA-F]{4})',
+    'canonical-json-string': r'''"\"" canonical-json-char* "\""''',
     'integer': r'"-"? ("0" | [1-9] [0-9]*)',
     'number': r'integer ("." [0-9]+)? ([eE] [+-]? [0-9]+)?',
     'boolean': r'"True" | "False" | "true" | "false"',
@@ -93,14 +116,33 @@ final class _PythonGrammar {
     return rule;
   }
 
-  String tool(String name, Map<String, dynamic> schema, String rule) {
+  // The existing wrapper unwraps a schema-checked object with JSON strings.
+  // Its name must remain distinct from the declared argument.
+  String canonicalTool(String name, Map<String, dynamic> schema, String rule) {
+    final key = _fields(schema).keys.single;
+    final alias = key == 'arguments' ? 'parameters' : 'arguments';
+    rules[rule] =
+        '${ToolCallGrammarUtils.literal(name)} "(" ws '
+        '${ToolCallGrammarUtils.literal(alias)} ws "=" ws "{" ws '
+        '${ToolCallGrammarUtils.literal(jsonEncode(key))} ws ":" ws '
+        'canonical-json-string ws "}" ws ")"';
+    return rule;
+  }
+
+  String tool(
+    String name,
+    Map<String, dynamic> schema,
+    String rule, {
+    bool prefixSafeString = false,
+  }) {
+    if (prefixSafeString) _addPrefixSafeStringRules();
     final fields = _fields(schema);
     final required = (schema['required'] as List? ?? const []).cast<String>();
     final members = <({String name, String value, bool required})>[
       for (final entry in fields.entries)
         (
           name: '${ToolCallGrammarUtils.literal(entry.key)} ws "=" ws',
-          value: value(entry.value),
+          value: prefixSafeString ? 'prefix-safe-string' : value(entry.value),
           required: required.contains(entry.key),
         ),
     ];
@@ -114,6 +156,89 @@ final class _PythonGrammar {
     for (final entry in (schema['properties'] as Map? ?? const {}).entries)
       entry.key as String: Map<String, dynamic>.from(entry.value as Map),
   };
+
+  void _addPrefixSafeStringRules() {
+    if (rules.containsKey('prefix-safe-string')) return;
+    rules['prefix-safe-string'] = 'prefix-safe-double | prefix-safe-single';
+    for (final (suffix, quote) in [('double', '"'), ('single', "'")]) {
+      final name = 'prefix-safe-$suffix';
+      final body = '$name-body';
+      final prefix = '$name-prefix';
+      final escape = '$name-escape';
+      final pathWithoutSlash = _pathAscii.replaceAll(r'\', '');
+      final nonPath = String.fromCharCodes([
+        for (var char = 0; char < 128; char++)
+          if (!_pathAscii.codeUnits.contains(char) &&
+              char != quote.codeUnitAt(0))
+            char,
+      ]);
+      final nonPathRule = _characterClass(nonPath);
+      final slash = ToolCallGrammarUtils.literal(r'\');
+      final endQuote = ToolCallGrammarUtils.literal(quote);
+      rules[name] = '$endQuote $prefix';
+      rules[body] =
+          '(${_characterClass('$quote\\', inverted: true)} | $slash .)* $endQuote';
+      rules[prefix] =
+          '$endQuote | (${_characterClass(pathWithoutSlash)} | '
+          '$_pathUnicode) '
+          '$prefix | $slash $escape | $nonPathRule $body';
+      rules[escape] =
+          '$endQuote $name-gap-0-0 | copied-path-char $prefix | '
+          '$nonPathRule $body';
+
+      // A completed copied root must not also be a strict string prefix.
+      // Track only that closing sequence; any deviation resumes the full body.
+      // The canonical arguments wrapper represents the excluded value spelling.
+      void state(String rule, Map<String, String?> moves) {
+        final blocked = '$quote\\${moves.keys.join()}';
+        rules[rule] = [
+          endQuote,
+          '$slash . $body',
+          '${_characterClass(blocked, inverted: true)} $body',
+          for (final move in moves.entries)
+            if (move.value != null)
+              '${ToolCallGrammarUtils.literal(move.key)} ${move.value}',
+        ].join(' | ');
+      }
+
+      // The four gaps surround ')', an optional comma, ']', and the marker.
+      for (var group = 0; group < 4; group++) {
+        for (var count = 0; count <= _maxWhitespace; count++) {
+          final moves = <String, String?>{
+            if (group == 0) ')': '$name-gap-1-0',
+            if (group == 1) ',': '$name-gap-2-0',
+            if (group == 1 || group == 2) ']': '$name-gap-3-0',
+            if (group == 3) _toolCallEnd[0]: '$name-marker-1',
+            if (count < _maxWhitespace)
+              for (final char in [' ', '\t', '\n', '\r'])
+                char: '$name-gap-$group-${count + 1}',
+          };
+          state('$name-gap-$group-$count', moves);
+        }
+      }
+      for (var index = 1; index < _toolCallEnd.length; index++) {
+        state('$name-marker-$index', {
+          _toolCallEnd[index]: index + 1 == _toolCallEnd.length
+              ? null
+              : '$name-marker-${index + 1}',
+        });
+      }
+    }
+  }
+
+  static String _characterClass(String value, {bool inverted = false}) {
+    final chars = StringBuffer();
+    for (final char in value.runes.toSet()) {
+      if (char < 0x20 || char == 0x7f || char == 0x5e || char == 0x2d) {
+        chars.write('\\x${char.toRadixString(16).padLeft(2, '0')}');
+      } else {
+        final literal = String.fromCharCode(char);
+        if (r'\]['.contains(literal)) chars.write(r'\');
+        chars.write(literal);
+      }
+    }
+    return '[${inverted ? '^' : ''}$chars]';
+  }
 
   String value(Map<String, dynamic> schema) {
     final choices = schema['enum'];
