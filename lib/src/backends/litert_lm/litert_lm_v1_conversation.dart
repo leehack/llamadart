@@ -52,6 +52,8 @@ final class LiteRtLmV1Conversation {
     if (history != null) {
       _runtime._validateMediaMessages(jsonDecode(history) as List);
     }
+    _schemaEnabled = options.jsonSchemaConstraints;
+    if (_schemaEnabled) _V1JsonSchema(_runtime).requireSupport();
     final library = _runtime._library;
     for (final symbol in _symbols) {
       if (!library.providesSymbol(symbol)) {
@@ -145,6 +147,7 @@ final class LiteRtLmV1Conversation {
         )(config, false),
         'set_enable_constrained_decoding',
       );
+      if (_schemaEnabled) _V1JsonSchema(_runtime).configure(config);
       _handle = _runtime._create(
         'conversation_create',
         (out) => _createConversation(_runtime._engine, config, out),
@@ -187,6 +190,7 @@ final class LiteRtLmV1Conversation {
   Pointer<Void> _handle = nullptr;
   LiteRtLmV1Turn? _turn;
   bool _quarantined = false;
+  late final bool _schemaEnabled;
 
   /// Only a final callback followed by successful native drain settles a turn.
   LiteRtLmNativeSettlement get nativeSettlement => _quarantined
@@ -293,6 +297,11 @@ final class LiteRtLmV1Conversation {
     LiteRtLmV1TurnSettings? settings, {
     String? extraContext,
   }) {
+    if (settings?.jsonSchema != null && !_schemaEnabled) {
+      throw LlamaUnsupportedException(
+        'Create the C API 1.0 conversation with jsonSchemaConstraints before sending a schema.',
+      );
+    }
     settings?._validate(_runtime);
     final args = settings?._createArgs(_runtime) ?? nullptr;
     try {

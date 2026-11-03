@@ -13,6 +13,7 @@ final class LiteRtLmV1TurnSettings {
     this.repetitionPenalty,
     this.presencePenalty,
     this.thinkingTokenBudget,
+    this.jsonSchema,
   });
 
   /// Positive signed C-int total output cap, including any reasoning tokens.
@@ -30,12 +31,33 @@ final class LiteRtLmV1TurnSettings {
   /// Refused until a separate model-metadata/channel admission probe exists.
   final int? thinkingTokenBudget;
 
+  /// JSON Schema for a conversation explicitly created with constraints enabled.
+  final String? jsonSchema;
+
   bool get _hasPenalties =>
       repetitionPenalty != null || presencePenalty != null;
   bool get _hasArgs =>
-      maxOutputTokens != null || visualTokenBudget != null || _hasPenalties;
+      maxOutputTokens != null || visualTokenBudget != null || _hasPenalties || jsonSchema != null;
 
   void _validate(LiteRtLmV1Runtime runtime) {
+    if (jsonSchema case final schema?) {
+      if (schema.isEmpty || schema.contains('\u0000')) {
+        throw LlamaArgumentException(
+          'C API 1.0 JSON Schema must be nonempty without NUL.',
+        );
+      }
+      try {
+        final decoded = jsonDecode(schema);
+        if (decoded is! Map && decoded is! bool) {
+          throw const FormatException();
+        }
+      } on FormatException {
+        throw LlamaArgumentException(
+          'C API 1.0 JSON Schema must be a JSON object or boolean.',
+        );
+      }
+      _V1JsonSchema(runtime).requireSupport();
+    }
     if (thinkingTokenBudget != null) {
       throw LlamaUnsupportedException(
         'C API 1.0 thinkingTokenBudget requires model/channel admission; native setter success can otherwise hide an ignored budget.',
@@ -165,6 +187,9 @@ final class LiteRtLmV1TurnSettings {
         } finally {
           deletePenalty(penalty);
         }
+      }
+      if (jsonSchema case final schema?) {
+        _V1JsonSchema(runtime).constrain(args, schema);
       }
       return args;
     } on Object {

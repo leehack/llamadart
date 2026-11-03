@@ -44,12 +44,13 @@ final class LiteRtLmV1SamplerSettings {
 }
 
 /// Internal, eagerly snapshotted text/tool preface. This does not enable strict
-/// tool choice, media, schemas, LoRA or per-turn options. Unsupported shape/field
+/// tool choice, media or LoRA. JSON Schema decoding is an explicit opt-in. Unsupported shape/field
 /// combinations are refused rather than passed to native best-effort parsing.
 final class LiteRtLmV1ConversationSettings {
   /// Validates and snapshots the supported JSON preface before native allocation.
   factory LiteRtLmV1ConversationSettings({
     int maxOutputTokens = 32,
+    bool jsonSchemaConstraints = false,
     LiteRtLmV1SamplerSettings? sampler,
     String? systemMessage,
     List<Map<String, Object?>>? messages,
@@ -99,18 +100,23 @@ final class LiteRtLmV1ConversationSettings {
     }
     return LiteRtLmV1ConversationSettings._(
       maxOutputTokens,
+      jsonSchemaConstraints,
       sampler,
       Map.unmodifiable(preface),
     );
   }
   const LiteRtLmV1ConversationSettings._(
     this.maxOutputTokens,
+    this.jsonSchemaConstraints,
     this.sampler,
     this._preface,
   );
 
   /// Default session output cap, inherited by sends without an override.
   final int maxOutputTokens;
+
+  /// Enables native JSON Schema decoding with thinking disabled.
+  final bool jsonSchemaConstraints;
 
   /// Explicit CPU/GPU override, or null for native inheritance.
   final LiteRtLmV1SamplerSettings? sampler;

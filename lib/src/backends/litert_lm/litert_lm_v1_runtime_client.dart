@@ -88,7 +88,8 @@ final class LiteRtLmV1RuntimeClient implements LiteRtLmRuntimeClientContract {
           1;
 
   @override
-  bool get supportsJsonSchemaConstraints => false;
+  bool get supportsJsonSchemaConstraints =>
+      _callbacksAdmitted && _hasSymbols(_V1JsonSchema.symbols);
 
   @override
   bool get supportsMessageRendering =>
@@ -308,12 +309,13 @@ final class LiteRtLmV1RuntimeClient implements LiteRtLmRuntimeClientContract {
         'model/adapter pair; tracked in litert-lm-native#99.',
       );
     }
-    if (jsonSchemaConstraints) _unsupported('native JSON Schema chat');
+    if (jsonSchemaConstraints) _V1JsonSchema(_runtime).requireSupport();
     if (npuBackend && _backend != ComputeDevice.npu) {
       throw LlamaArgumentException('npuBackend requires a loaded NPU engine.');
     }
     final settings = LiteRtLmV1ConversationSettings(
       maxOutputTokens: _outputTokens,
+      jsonSchemaConstraints: jsonSchemaConstraints,
       sampler: _backend == ComputeDevice.npu
           ? null
           : LiteRtLmV1SamplerSettings(
@@ -426,7 +428,6 @@ final class LiteRtLmV1RuntimeClient implements LiteRtLmRuntimeClientContract {
     String? jsonSchema,
   }) {
     final conversation = _current;
-    if (jsonSchema != null) _unsupported('native JSON Schema chat');
     Object? message;
     try {
       message = jsonDecode(messageJson);
@@ -446,6 +447,7 @@ final class LiteRtLmV1RuntimeClient implements LiteRtLmRuntimeClientContract {
         repetitionPenalty: repetitionPenalty,
         presencePenalty: presencePenalty,
         thinkingTokenBudget: thinkingTokenBudget,
+        jsonSchema: jsonSchema,
       ),
     );
     _activeTurn = turn;

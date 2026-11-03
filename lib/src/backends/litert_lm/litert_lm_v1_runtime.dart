@@ -24,6 +24,7 @@ import 'litert_lm_runtime.dart' as legacy;
 import 'litert_lm_runtime_client_contract.dart';
 import 'litert_lm_sampler_params.dart';
 
+part 'litert_lm_v1_json_schema.dart';
 part 'litert_lm_v1_embedding.dart';
 part 'litert_lm_v1_conversation.dart';
 part 'litert_lm_v1_conversation_settings.dart';
