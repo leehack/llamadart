@@ -125,10 +125,10 @@ final class LiteRtLmV1ConversationSettings {
   }
 
   static Never _invalid() => throw LlamaArgumentException(
-    'C API 1.0 conversation data has an invalid text/tool shape.',
+    'C API 1.0 conversation data has an invalid supported message shape.',
   );
   static Never _unsupported() => throw LlamaUnsupportedException(
-    'C API 1.0 conversation preparation supports text/tool history only; this role, content or field requires a separate migration.',
+    'C API 1.0 conversation does not support this role, content or field combination.',
   );
   static void _keys(Map value, Set<String> keys) {
     if (value.keys.any((key) => !keys.contains(key))) _unsupported();
@@ -185,6 +185,12 @@ final class LiteRtLmV1ConversationSettings {
           if (part['type'] == 'text') {
             _keys(part, {'type', 'text'});
             if (part['text'] is! String || role == 'tool') _invalid();
+          } else if (part['type'] == 'image' || part['type'] == 'audio') {
+            if (message.containsKey('reasoning_content') ||
+                message.containsKey('tool_calls')) {
+              _unsupported();
+            }
+            _validateV1MediaPart(part, role);
           } else if (part['type'] == 'tool_response') {
             _keys(part, {'type', 'name', 'response'});
             if (role != 'tool' ||

@@ -132,7 +132,9 @@ extension LiteRtLmV1ConversationMetadata on LiteRtLmV1Conversation {
       HashSet<Object>.identity(),
     );
     final encoded = jsonEncode(message);
-    LiteRtLmV1ConversationSettings._messages([jsonDecode(encoded)]);
+    final snapshot = jsonDecode(encoded);
+    LiteRtLmV1ConversationSettings._messages([snapshot]);
+    _runtime._validateMediaMessages([snapshot]);
     const symbol = 'litert_lm_conversation_render_message_to_string';
     _requireV1Symbols(_runtime._library, const [symbol]);
     final render = _runtime._library

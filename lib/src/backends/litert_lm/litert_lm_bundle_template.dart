@@ -120,6 +120,45 @@ String? readLiteRtLmBundleChatTemplate(String path) =>
   }
 }
 
+/// Reads only the declared processor route used by C API 1.0 media admission.
+/// A missing model type can use native tokenizer inference; malformed or future
+/// oneof shapes return null rather than claiming a known processor.
+({int family, bool genericImage, bool genericAudio})?
+readLiteRtLmBundleMediaProcessor(String path) {
+  final metadata = _readLlmMetadata(path);
+  if (metadata == null) return null;
+  try {
+    final modelTypes = _protoFields(metadata).where((entry) => entry.$1 == 6);
+    final modelType = modelTypes.lastOrNull?.$2;
+    if (modelType == null) {
+      return (family: 0, genericImage: false, genericAudio: false);
+    }
+    final entries = _protoFields(modelType).toList();
+    const families = {1, 2, 3, 4, 5, 7, 8, 9, 11, 12, 13};
+    if (entries.isEmpty ||
+        entries.any((entry) => !families.contains(entry.$1))) {
+      return null;
+    }
+    final (family, config) = entries.last;
+    var image = false, audio = false;
+    if (family == 1) {
+      for (final (field, _, value) in _protoEntries(config)) {
+        if (field == 3) {
+          if (value != 0 && value != 1) return null;
+          image = value == 1;
+        }
+        if (field == 4) {
+          if (value != 0 && value != 1) return null;
+          audio = value == 1;
+        }
+      }
+    }
+    return (family: family, genericImage: image, genericAudio: audio);
+  } on FormatException {
+    return null;
+  }
+}
+
 /// The first response channel that the `.litertlm` bundle at [path]
 /// declares, or null when it declares none or cannot be read.
 ///

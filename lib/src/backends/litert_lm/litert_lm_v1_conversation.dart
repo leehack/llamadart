@@ -47,6 +47,11 @@ final class LiteRtLmV1Conversation {
     this._runtime,
     LiteRtLmV1ConversationSettings options,
   ) {
+    final history =
+        options._preface['litert_lm_conversation_config_set_messages'];
+    if (history != null) {
+      _runtime._validateMediaMessages(jsonDecode(history) as List);
+    }
     final library = _runtime._library;
     for (final symbol in _symbols) {
       if (!library.providesSymbol(symbol)) {
@@ -261,7 +266,9 @@ final class LiteRtLmV1Conversation {
       HashSet<Object>.identity(),
     );
     final encoded = jsonEncode(message);
-    LiteRtLmV1ConversationSettings._messages([jsonDecode(encoded)]);
+    final snapshot = jsonDecode(encoded);
+    LiteRtLmV1ConversationSettings._messages([snapshot]);
+    _runtime._validateMediaMessages([snapshot]);
     String? context;
     if (extraContext?.isNotEmpty ?? false) {
       LiteRtLmV1ConversationSettings._jsonValue(

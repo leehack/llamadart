@@ -9,6 +9,7 @@ final class LiteRtLmV1TurnSettings {
   /// Creates immutable overrides without applying GenerationParams defaults.
   const LiteRtLmV1TurnSettings({
     this.maxOutputTokens,
+    this.visualTokenBudget,
     this.repetitionPenalty,
     this.presencePenalty,
     this.thinkingTokenBudget,
@@ -16,6 +17,9 @@ final class LiteRtLmV1TurnSettings {
 
   /// Positive signed C-int total output cap, including any reasoning tokens.
   final int? maxOutputTokens;
+
+  /// Explicit positive Gemma4 image budget; refused for other processors.
+  final int? visualTokenBudget;
 
   /// Finite native float at least 1, or null for no repetition penalty.
   final double? repetitionPenalty;
@@ -28,7 +32,8 @@ final class LiteRtLmV1TurnSettings {
 
   bool get _hasPenalties =>
       repetitionPenalty != null || presencePenalty != null;
-  bool get _hasArgs => maxOutputTokens != null || _hasPenalties;
+  bool get _hasArgs =>
+      maxOutputTokens != null || visualTokenBudget != null || _hasPenalties;
 
   void _validate(LiteRtLmV1Runtime runtime) {
     if (thinkingTokenBudget != null) {
@@ -40,6 +45,18 @@ final class LiteRtLmV1TurnSettings {
       if (limit <= 0 || limit > 0x7fffffff) {
         throw LlamaArgumentException(
           'C API 1.0 per-turn maxOutputTokens must be a positive signed C int.',
+        );
+      }
+    }
+    if (visualTokenBudget case final budget?) {
+      if (budget <= 0 || budget > 0x7fffffff) {
+        throw LlamaArgumentException(
+          'Visual token budget must be a positive signed C int.',
+        );
+      }
+      if (!runtime._inspectMediaSupport().visualBudget) {
+        throw LlamaUnsupportedException(
+          'C API 1.0 visual token budgets require a declared Gemma4 image processor and its native setter export.',
         );
       }
     }
@@ -68,6 +85,8 @@ final class LiteRtLmV1TurnSettings {
       'litert_lm_conversation_optional_args_delete',
       if (maxOutputTokens != null)
         'litert_lm_conversation_optional_args_set_max_output_tokens',
+      if (visualTokenBudget != null)
+        'litert_lm_conversation_optional_args_set_visual_token_budget',
       if (_hasPenalties) ...[
         'litert_lm_repetition_penalty_config_create',
         'litert_lm_repetition_penalty_config_delete',
@@ -104,6 +123,14 @@ final class LiteRtLmV1TurnSettings {
             'litert_lm_conversation_optional_args_set_max_output_tokens',
           )(args, limit),
           'optional_args_set_max_output_tokens',
+        );
+      }
+      if (visualTokenBudget case final budget?) {
+        runtime._check(
+          library.lookupFunction<_SetIntN, _SetIntD>(
+            'litert_lm_conversation_optional_args_set_visual_token_budget',
+          )(args, budget),
+          'optional_args_set_visual_token_budget',
         );
       }
       if (_hasPenalties) {

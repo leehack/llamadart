@@ -32,6 +32,10 @@ abstract interface class LiteRtLmRuntimeClientContract {
   /// Whether native message rendering is available on the selected runtime.
   bool get supportsMessageRendering;
 
+  /// Resolves the service's automatic image-preprocessing hint for this model.
+  /// This is separate from an explicitly requested per-send visual constraint.
+  int? resolveDefaultVisualTokenBudget(int preferredBudget);
+
   /// Terminal native cause of the latest completed turn, or null while pending.
   LiteRtLmFinishReason? get lastFinishReason;
 
@@ -64,6 +68,7 @@ abstract interface class LiteRtLmRuntimeClientContract {
     int maxTokens = 4096,
     int outputTokens = 256,
     int? prefillTokens,
+    // History-derived preparation hint, not an enforced image capacity.
     int? maxNumImages,
     String? cacheDir,
     bool speculativeDecoding = true,

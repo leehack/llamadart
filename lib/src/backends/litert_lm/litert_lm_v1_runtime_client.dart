@@ -95,6 +95,10 @@ final class LiteRtLmV1RuntimeClient implements LiteRtLmRuntimeClientContract {
       _hasSymbols(const ['litert_lm_conversation_render_message_to_string']);
 
   @override
+  int? resolveDefaultVisualTokenBudget(int preferredBudget) =>
+      _runtime._inspectMediaSupport().visualBudget ? preferredBudget : null;
+
+  @override
   LiteRtLmFinishReason? get lastFinishReason => _lastFinishReason;
 
   @override
@@ -232,6 +236,20 @@ final class LiteRtLmV1RuntimeClient implements LiteRtLmRuntimeClientContract {
         'C API 1.0 outputTokens must be a positive C int.',
       );
     }
+    // The service derives this count from all images in the current history.
+    // Advanced engines accept their actual inputs dynamically; no capacity
+    // setter is invoked or advertised by accepting this preparation hint.
+    if (maxNumImages != null &&
+        (maxNumImages <= 0 || maxNumImages > 0x7fffffff)) {
+      throw LlamaArgumentException(
+        'Image history count must be a positive C int.',
+      );
+    }
+    if (maxNumImages != null && visionBackend == null) {
+      throw LlamaUnsupportedException(
+        'Image history requires a vision encoder.',
+      );
+    }
     final options = LiteRtLmV1EngineSettings(
       backend: _device(backend),
       visionBackend: visionBackend == null ? null : _device(visionBackend),
@@ -240,7 +258,7 @@ final class LiteRtLmV1RuntimeClient implements LiteRtLmRuntimeClientContract {
       numberOfThreads: numberOfThreads,
       cacheDir: cacheDir,
       speculativeDecoding: speculativeDecoding,
-      maxNumImages: maxNumImages,
+
       prefillTokens: prefillTokens,
       activationDataType: activationDataType,
       prefillChunkSize: prefillChunkSize,
@@ -401,7 +419,6 @@ final class LiteRtLmV1RuntimeClient implements LiteRtLmRuntimeClientContract {
     String? jsonSchema,
   }) {
     final conversation = _current;
-    if (visualTokenBudget != null) _unsupported('visual token budget');
     if (jsonSchema != null) _unsupported('native JSON Schema chat');
     Object? message;
     try {
@@ -418,6 +435,7 @@ final class LiteRtLmV1RuntimeClient implements LiteRtLmRuntimeClientContract {
       extraContext: extraContext,
       settings: LiteRtLmV1TurnSettings(
         maxOutputTokens: maxOutputTokens ?? _outputTokens,
+        visualTokenBudget: visualTokenBudget,
         repetitionPenalty: repetitionPenalty,
         presencePenalty: presencePenalty,
         thinkingTokenBudget: thinkingTokenBudget,

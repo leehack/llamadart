@@ -817,7 +817,9 @@ class LiteRtLmService {
               jsonSchema: jsonSchema,
               visualTokenBudget: maxNumImages == null
                   ? null
-                  : _gemma4DefaultVisualTokenBudget,
+                  : client.resolveDefaultVisualTokenBudget(
+                      _gemma4DefaultVisualTokenBudget,
+                    ),
               maxOutputTokens: params.maxTokens,
               repetitionPenalty: controls.repetitionPenalty,
               presencePenalty: controls.presencePenalty,

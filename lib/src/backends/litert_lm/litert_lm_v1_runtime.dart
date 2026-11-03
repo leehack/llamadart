@@ -16,6 +16,7 @@ import 'litert_lm_platform.dart';
 import 'litert_lm_last_error.dart';
 import 'litert_lm_v1_blocking_call.dart';
 import 'litert_lm_asr_types.dart';
+import 'litert_lm_bundle_template.dart';
 import 'litert_lm_embedding.dart';
 import 'litert_lm_finish_reason.dart';
 import 'litert_lm_native_settlement.dart';
@@ -29,6 +30,7 @@ part 'litert_lm_v1_conversation_settings.dart';
 part 'litert_lm_v1_engine_settings.dart';
 part 'litert_lm_v1_engine_creation.dart';
 part 'litert_lm_v1_metadata.dart';
+part 'litert_lm_v1_media.dart';
 part 'litert_lm_v1_runtime_client.dart';
 part 'litert_lm_v1_tokenizer.dart';
 part 'litert_lm_v1_turn_settings.dart';
@@ -359,6 +361,10 @@ final class LiteRtLmV1Runtime {
       resources?.release(this);
     }
   }
+
+  String? _engineModelPath;
+  LiteRtLmV1EngineSettings? _engineOptions;
+  _V1MediaSupport? _mediaSupport;
 
   late final _V1TokenizerBindings _tokenizer = _V1TokenizerBindings(_library);
 

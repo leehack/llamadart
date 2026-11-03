@@ -66,6 +66,9 @@ extension _V1EngineCreation on LiteRtLmV1Runtime {
   ) {
     if (_engine != nullptr) _engineDelete(_engine);
     _engine = engine;
+    _engineModelPath = diagnosticPaths.first;
+    _engineOptions = options;
+    _mediaSupport = null;
     _engineBackend = options.backend;
     _engineSpeculativeDecoding = options.speculativeDecoding;
     _diagnosticPaths = diagnosticPaths;

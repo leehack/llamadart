@@ -21,13 +21,13 @@ client/session contracts make v1 embedding dispatch independent of that extensio
 | Engine initialization and backend options | Status/out settings; responsive owned background creation with scalar function/configuration addresses, immediate same-thread canonical error copy, partial-owner cleanup and typed service retry classification. Pending/uncertain creation retains its library/model/cache family. | Qualify each selected backend and exact artifact; missing completion requires process restart. |
 | `tokenize` / `detokenize` / start tokens | Status/out, `size_t`, copied results, legacy BOS semantics | Matching artifact/model qualification. |
 | Bundle capabilities | Owned model-file snapshot; null optional client probe on native read failure | Declarations do not prove executor or channel enforcement. |
-| System, text/tool history and tool descriptors | Validated snapshots; actual service chat fixture with history/tools | Media history and additional supported schema shapes require migration. |
-| `generate` / `generateMessageJson` / chat | Active text/tool messages and snapshotted per-send context; native response/tool-call assembly | Media payloads, visual budgets and their processor contracts. |
+| System, text/tool/media history and tool descriptors | Validated snapshots; encoded local image/audio paths and base64 payloads retain roles/order through the existing service serializer. Loaded-core modality and processor admission precede native history/send. | Real media-family artifact qualification; additional tool schema shapes remain separate. |
+| `generate` / `generateMessageJson` / chat | Active text/tool/encoded-media messages and snapshotted per-send context; native response/tool-call assembly. Explicit visual budgets require declared Gemma4 image processing plus the native setter and use status/out ownership. | Real media/processor quality and platform qualification. |
 | Output cap and generated-token penalties | Owned per-turn options; missing exports refuse before send | Preserve the tested refusal of unqualified penalties with speculation. |
 | Reasoning output | v1 `reasoning_content` identifies a named reasoning channel; duplicate channel text is surfaced once within configured markers | Thinking budgets remain explicitly refused. A metadata boolean alone cannot prove channel end-token enforcement. |
 | Native JSON Schema chat | Explicit typed refusal | Provider/configuration and per-turn constraint status APIs, including the existing thinking-disable contract. |
 | LoRA session path | Explicit typed refusal | Setter status, copied path ownership and supported engine/backend behavior. |
-| Image/audio chat | Explicit typed refusal | Media message validation, processor admission and visual-budget transport. `maxNumImages` is documented legacy-engine-only and must not be silently dropped. Video retains its existing public refusal. |
+| Image/audio chat | Internal encoded-file transport; configured encoder, native modality declarations and a supported processor route are all required. Unknown/missing proof is refused. Service image-history counts prepare dynamic inputs without claiming enforced capacity. Direct legacy-only `maxNumImages` capacity remains unsupported. | Public factory remains disabled. Remote URLs, raw RGB/PCM and video retain their existing refusal; compiled fixtures do not qualify media quality or GPU execution. |
 | Embedding sessions | Independent session contract; explicit v1 refusal | Dedicated v1 engine/options/input/response APIs, `size_t` counts and copied vectors, with existing backend restrictions. |
 | Dedicated ASR | Loaded-library ABI1/layout/full-symbol admission; v1 client and injected actual speech probe/worker use the independent bridge. Compiled fixture covers partial owners, copied text/errors, size_t backpressure, cancel/reset/finalization and worker startup/disposal. | Matching artifact/model/audio qualification through the injected worker; public default selection remains legacy. |
 | Logging | Canonical v1 status checked for declared severity values | Matching artifact qualification. |
@@ -121,3 +121,34 @@ the await, and forbids cache/audio/automatic-backend retry after uncertain
 completion. Settled failures retain the existing typed engine-creation retry and
 fallback behavior. Model-free barriers/TLS fixtures and killed subprocesses test
 these boundaries; they do not substitute actual artifact/model qualification.
+
+## Internal media admission
+
+Image/audio JSON accepts one existing local file path or nonempty standard base64
+blob per encoded part, in user/assistant messages. History is snapshotted before
+native allocation. The service serializer retains every image/audio part across
+history expansion and conversation recreation; system/tool media, mixed media
+with thinking/tool calls, URLs, raw pixels/samples and video are refused. Local
+files must remain available until native processing settles.
+
+Native `loaded_file_supports_input_modality` declarations are necessary but do
+not by themselves prove that a conversation processor consumes media. Admission
+also checks configured encoders and the bounded model-type metadata. Generic
+processors require explicit image/audio switches. Missing type declarations may
+use the exact upstream Gemma3/Gemma3n tokenizer fingerprint; filenames never
+admit a processor. Unknown model types or unavailable native probes stay
+unsupported. A processor omitted from a custom native build still fails native
+conversation creation rather than becoming a text-only success.
+
+The service's automatic visual preprocessing hint is distinct from an explicit
+per-send budget. V1 requests the automatic hint only for a declared Gemma4 image
+processor with its setter export. An explicit budget for another/unknown
+processor is refused: the canonical C wrapper otherwise returns success while
+ignoring it. The status-checked budget and output/penalty options share one owned
+optional-args scope. The service's image-history count is routing/preparation
+information, not a public capacity request; v1 passes all actual images without
+calling the legacy-only count setter. Direct settings that request an enforced
+legacy capacity still fail explicitly.
+
+These source/fixture checks do not activate the public factory, select new
+runtime assets, establish image/audio semantics or qualify hardware.

@@ -32,6 +32,8 @@ final class LiteRtLmLegacyServiceClient
   @override
   bool get supportsMessageRendering => _client.supportsMessageRendering;
   @override
+  int? resolveDefaultVisualTokenBudget(int preferredBudget) => preferredBudget;
+  @override
   LiteRtLmFinishReason? get lastFinishReason => _client.lastFinishReason;
   @override
   LiteRtLmNativeSettlement get nativeSettlement => _client.nativeSettlement;

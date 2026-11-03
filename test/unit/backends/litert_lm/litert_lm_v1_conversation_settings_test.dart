@@ -487,11 +487,11 @@ void main() {
         ],
       },
     ],
-    'media': [
+    'video': [
       {
         'role': 'user',
         'content': [
-          {'type': 'image', 'path': '/secret/image'},
+          {'type': 'video', 'path': '/secret/video'},
         ],
       },
     ],

@@ -567,7 +567,7 @@ void main() {
         ),
 
         () => adapter.generateMessageJson(
-          '{"role":"user","content":[{"type":"image","path":"/image"}]}',
+          '{"role":"user","content":[{"type":"image","blob":"AQID"}]}',
         ),
         () => adapter.createConversation(loraPath: '/lora'),
         () => adapter.createConversation(jsonSchemaConstraints: true),

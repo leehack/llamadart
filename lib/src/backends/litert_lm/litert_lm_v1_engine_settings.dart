@@ -64,7 +64,8 @@ final class LiteRtLmV1EngineSettings {
   /// Engine mode off/on; adaptive and per-session overrides remain separate.
   final bool speculativeDecoding;
 
-  /// Refused until the v1 legacy/new engine capacity distinction can be probed.
+  /// Unsupported enforced capacity for the legacy engine. The service's
+  /// history-derived preparation hint is resolved before this boundary.
   final int? maxNumImages;
 
   void _validate(String modelPath) {
@@ -111,7 +112,7 @@ final class LiteRtLmV1EngineSettings {
     }
     if (maxNumImages != null) {
       throw LlamaUnsupportedException(
-        'C API 1.0 maxNumImages is legacy-engine-only; internal preparation lacks the engine capability proof required to apply it.',
+        'C API 1.0 maxNumImages is a legacy-engine-only capacity; the selected advanced engine accepts actual image inputs dynamically and cannot enforce this capacity.',
       );
     }
     if (prefillTokens != null && !enableBenchmark) {
