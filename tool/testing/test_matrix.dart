@@ -1143,6 +1143,17 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
         'Qualifying internal C API1 schema source against an exact prepared owner artifact. Run --dry-run first; schedule one model job at a time. The public factory and pins remain unchanged; grammar enforcement is separate from model accuracy.',
   ),
   TestMatrixRow(
+    id: 'litert-lm-v1-thinking-budget',
+    tier: 'targeted',
+    mode: 'local-only; injected v1 client, macOS arm64 CPU only',
+    covers:
+        'Fixed Gemma first-channel proof, bounded/unbounded native reasoning, token metrics/finish, cancel/reuse/reload, complete runtime payload hashes/loaded paths and bounded child cleanup',
+    command:
+        'LITERT_LM_V1_LIBRARY=<lib> LITERT_LM_V1_LIBRARY_SHA256=<sha256> LITERT_LM_V1_MODEL_SHA256=181938105e0eefd105961417e8da75903eacda102c4fce9ce90f50b97139a63c LITERT_LM_V1_RUNTIME_MANIFEST=<json> LITERT_LM_V1_RUNTIME_MANIFEST_SHA256=<sha256> dart run tool/testing/run_local_e2e.dart --scenario litert-lm-v1-thinking-budget --model-path <gemma-4-E2B-it.litertlm> --backend cpu',
+    useWhen:
+        'Qualifying actual C API1 thinking-budget enforcement after source admission. Run --dry-run first; the model-job owner admits exact identities and serializes execution. No public activation or other backend/model qualification.',
+  ),
+  TestMatrixRow(
     id: 'qwen3-litert-cpu-unicode',
     tier: 'targeted',
     mode: 'local-only',

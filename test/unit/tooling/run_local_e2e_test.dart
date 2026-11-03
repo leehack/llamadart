@@ -756,6 +756,92 @@ Future<void> main(List<String> args) async {
       },
     );
 
+    test(
+      'thinking qualifier enforces fixed model, CPU and complete payload identity',
+      () async {
+        final identity = {
+          'LITERT_LM_V1_LIBRARY': '/candidate/libLiteRtLm.dylib',
+          'LITERT_LM_V1_LIBRARY_SHA256': 'a' * 64,
+          'LITERT_LM_V1_MODEL_SHA256':
+              '181938105e0eefd105961417e8da75903eacda102c4fce9ce90f50b97139a63c',
+          'LITERT_LM_V1_RUNTIME_MANIFEST': '/candidate/payloads.json',
+          'LITERT_LM_V1_RUNTIME_MANIFEST_SHA256': 'c' * 64,
+        };
+        const arguments = [
+          '--scenario',
+          'litert-lm-v1-thinking-budget',
+          '--model-path',
+          '/Gemma.litertlm',
+          '--backend',
+          'cpu',
+          '--dry-run',
+        ];
+        for (final name in identity.keys) {
+          final result = await runLocalE2e(
+            arguments,
+            projectRoot: '/repo',
+            environment: {...identity}..remove(name),
+          );
+          expect(result.exitCode, 64);
+          expect(result.stderr, contains(name));
+        }
+        final wrongModel = await runLocalE2e(
+          arguments,
+          projectRoot: '/repo',
+          environment: {...identity, 'LITERT_LM_V1_MODEL_SHA256': 'b' * 64},
+        );
+        expect(wrongModel.exitCode, 64);
+        expect(wrongModel.stderr, contains('fixed maintained Gemma'));
+        final malformedManifest = await runLocalE2e(
+          arguments,
+          projectRoot: '/repo',
+          environment: {
+            ...identity,
+            'LITERT_LM_V1_RUNTIME_MANIFEST_SHA256': 'bad',
+          },
+        );
+        expect(malformedManifest.exitCode, 64);
+        final gpu = await runLocalE2e(
+          arguments.map((arg) => arg == 'cpu' ? 'gpu' : arg).toList(),
+          projectRoot: '/repo',
+          environment: identity,
+        );
+        expect(gpu.exitCode, 64);
+        final missingModel = await runLocalE2e(
+          const [
+            '--scenario',
+            'litert-lm-v1-thinking-budget',
+            '--backend',
+            'cpu',
+            '--dry-run',
+          ],
+          projectRoot: '/repo',
+          environment: identity,
+        );
+        expect(missingModel.exitCode, 64);
+        final valid = await runLocalE2e(
+          arguments,
+          projectRoot: '/repo',
+          environment: {...identity, 'LITERT_LM_V1_LOG_DIR': '/evidence'},
+          displayShell: LocalE2eDisplayShell.posix,
+        );
+        expect(valid.exitCode, 0);
+        expect(
+          valid.stdout,
+          contains('test/e2e/backends/litert_lm_v1_thinking_e2e_test.dart'),
+        );
+        expect(
+          valid.stdout,
+          contains('LITERT_LM_V1_RUNTIME_MANIFEST=/candidate/payloads.json'),
+        );
+        expect(
+          valid.stdout,
+          contains('LITERT_LM_V1_RUNTIME_MANIFEST_SHA256=${'c' * 64}'),
+        );
+        expect(valid.stdout, contains('LITERT_LM_V1_LOG_DIR=/evidence'));
+      },
+    );
+
     test('documents shared runner options and defaults', () async {
       final result = await runLocalE2e(const ['--help'], projectRoot: '/repo');
 

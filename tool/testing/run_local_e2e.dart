@@ -1791,6 +1791,44 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
         ],
       ),
     LocalE2eScenario(
+      name: 'litert-lm-v1-thinking-budget',
+      group: LocalE2eScenarioGroup.dartLocalOnly,
+      description:
+          'Qualify exact Gemma CPU native thinking bounds, cancellation, no-budget isolation and reload with complete runtime payload identity.',
+      requiresDevice: false,
+      stepsBuilder: (context) => [
+        LocalE2eCommandStep(
+          workingDirectory: context.projectRoot,
+          executable: 'dart',
+          arguments: const [
+            'test',
+            '--run-skipped',
+            '-p',
+            'vm',
+            '-j',
+            '1',
+            '-t',
+            'local-only',
+            'test/e2e/backends/litert_lm_v1_thinking_e2e_test.dart',
+          ],
+          environment: {
+            'LITERT_LM_V1_MODEL': context.modelPath!,
+            for (final name in const [
+              'LITERT_LM_V1_LIBRARY',
+              'LITERT_LM_V1_LIBRARY_SHA256',
+              'LITERT_LM_V1_MODEL_SHA256',
+              'LITERT_LM_V1_RUNTIME_MANIFEST',
+              'LITERT_LM_V1_RUNTIME_MANIFEST_SHA256',
+            ])
+              name: context.environment[name] ?? '',
+            'LITERT_LM_V1_LOG_DIR':
+                ?context.environment['LITERT_LM_V1_LOG_DIR'],
+          },
+          description: 'Bounded actual v1 Gemma CPU thinking qualification',
+        ),
+      ],
+    ),
+    LocalE2eScenario(
       name: 'qwen3-litert-cpu-unicode',
       group: LocalE2eScenarioGroup.dartLocalOnly,
       description:
@@ -2821,6 +2859,7 @@ Future<LocalE2eResult> runLocalE2e(
   if ((scenario.name == 'llama-cpp-speculative-benchmark' ||
           scenario.name == 'llama-cpp-chat-template-smoke' ||
           scenario.name == 'litert-lm-lifecycle' ||
+          scenario.name == 'litert-lm-v1-thinking-budget' ||
           scenario.name == 'litert-lm-v1-service' ||
           scenario.name == 'litert-lm-v1-json-schema' ||
           scenario.name == 'litert-lm-json-schema' ||
@@ -2874,7 +2913,8 @@ Future<LocalE2eResult> runLocalE2e(
     }
   }
 
-  if (scenario.name == 'litert-lm-v1-service' ||
+  if (scenario.name == 'litert-lm-v1-thinking-budget' ||
+      scenario.name == 'litert-lm-v1-service' ||
       scenario.name == 'litert-lm-v1-json-schema' ||
       scenario.name == 'litert-lm-v1-asr-smoke') {
     if (parsed.backend != 'cpu') {
@@ -2888,6 +2928,10 @@ Future<LocalE2eResult> runLocalE2e(
       'LITERT_LM_V1_LIBRARY',
       'LITERT_LM_V1_LIBRARY_SHA256',
       'LITERT_LM_V1_MODEL_SHA256',
+      if (scenario.name == 'litert-lm-v1-thinking-budget') ...[
+        'LITERT_LM_V1_RUNTIME_MANIFEST',
+        'LITERT_LM_V1_RUNTIME_MANIFEST_SHA256',
+      ],
       if (scenario.name == 'litert-lm-v1-asr-smoke') ...[
         'LITERT_LM_V1_TOKENIZER_SHA256',
         'LITERT_LM_V1_AUDIO_SHA256',
@@ -2914,6 +2958,16 @@ Future<LocalE2eResult> runLocalE2e(
       64,
       stderr:
           'litert-lm-v1-json-schema requires the fixed published Qwen CPU profile model SHA256.\n',
+    );
+  }
+
+  if (scenario.name == 'litert-lm-v1-thinking-budget' &&
+      (environment ?? Platform.environment)['LITERT_LM_V1_MODEL_SHA256']
+              ?.toLowerCase() !=
+          '181938105e0eefd105961417e8da75903eacda102c4fce9ce90f50b97139a63c') {
+    return const LocalE2eResult(
+      64,
+      stderr: 'The fixed maintained Gemma thinking model SHA256 is required.\n',
     );
   }
 
