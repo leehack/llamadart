@@ -518,7 +518,12 @@ void main() {
                 isA<LlamaUnsupportedException>().having(
                   (error) => error.message,
                   'missing capability',
-                  contains('schema-directed lazy grammar'),
+                  allOf(
+                    contains('schema-directed lazy grammar'),
+                    contains('Web requires bridge assets v0.1.82+'),
+                    contains('lazyGrammar and penaltyPromptTokensWithGrammar'),
+                    isNot(contains('Published Web assets do not support')),
+                  ),
                 ),
               ),
             );

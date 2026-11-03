@@ -621,6 +621,7 @@ await prefs.setInt('preferred_backend', backendIndex);
 ### Web Limitations
 
 - Web uses the llama.cpp bridge backend with CPU mode and experimental WebGPU acceleration.
+- LFM2 automatic Python tool calls additionally need bridge v0.1.82+ reporting `penaltyPromptTokensWithGrammar`. That route is text-only and rejects unsupported assets before inference.
 - Lazy tool-call grammars and custom grammar roots require the loaded core's `lazyGrammar` probe. Older cores keep best-effort auto tool parsing; explicit lazy requests reject.
 - Bridge runtime loading prefers local `web/webgpu_bridge` assets on `localhost`/`127.0.0.1` for dev validation, and otherwise prefers pinned jsDelivr assets with local fallback.
 - Override CDN source/version with `window.__llamadartBridgeAssetsRepo` and

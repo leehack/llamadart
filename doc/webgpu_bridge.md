@@ -67,11 +67,11 @@ an earlier `<script>`:
 
 ## Pinned assets
 
-Default pinned tag in the example is `v0.1.81`.
+Default pinned tag in the example is `v0.1.82`.
 Vendor the pinned assets into the chat app with:
 
 ```bash
-WEBGPU_BRIDGE_ASSETS_TAG=v0.1.81 ./scripts/fetch_webgpu_bridge_assets.sh
+WEBGPU_BRIDGE_ASSETS_TAG=v0.1.82 ./scripts/fetch_webgpu_bridge_assets.sh
 ```
 
 `WEBGPU_BRIDGE_OUT_DIR` changes the destination. The script verifies
@@ -90,17 +90,17 @@ the chat app, set the bootstrap globals before the bootstrap runs:
 ```html
 <script>
   window.__llamadartBridgeAssetsRepo = 'leehack/llama-web-bridge-assets';
-  window.__llamadartBridgeAssetsTag = 'v0.1.81';
+  window.__llamadartBridgeAssetsTag = 'v0.1.82';
 </script>
 ```
 
 That release embeds llama.cpp `v0.8.0`, matching the `hook/build.dart` native pin
 (`v0.8.0-1`, both built from upstream llama.cpp `v0.8.0@8642541b255bfb5dc39cd351a178be09013a55d6`)
-even though the bridge asset tag `v0.1.81` differs from the native runtime tag
-`v0.8.0-1`. Provenance for this immutable consumer artifact: release `431736436`,
-tag commit `ac8971a7c30f9a4033b7f36f2322a4dfc021df5f`, bridge source
-`76b7624e9d2121c3b95235c7c429d17c901f4fea`, and manifest SHA-256
-`7b3596e254e0767c577a084cb608ffe35118ae01afa85a4ba1a44c677afceebe`.
+even though the bridge asset tag `v0.1.82` differs from the native runtime tag
+`v0.8.0-1`. Provenance for this immutable consumer artifact: release `432258348`,
+tag commit `33c782f2acdae78860ad1197344240f60290cecb`, bridge source
+`e57b9f68fb38d1471af7b94443229993f777df97`, and manifest SHA-256
+`fda19e047aba5a511020854437cc89e2f53e2f67f5f6cf5fec336faef3a6c362`.
 They expose the API-version-1 media embedding contract. State and extraction
 qualification covers wasm32 and memory64 through direct and worker runtimes. Existing decision,
 scoring, sampling, LoRA, speculative decoding and speech APIs remain available.
@@ -441,6 +441,14 @@ tag:
   grammar there, so it is never normalized to `null`. No public capability
   reports this. Source:
   [llama-web-bridge#187](https://github.com/leehack/llama-web-bridge/pull/187).
+- Assets v0.1.82+ can report `penaltyPromptTokensWithGrammar: true`.
+  `BackendPromptPenaltyGeneration` uses that loaded-core probe and sends the
+  matching opt-in only on its explicit text-only, attached-grammar route.
+  The prompt seeds the penalty sampler without activating lazy grammar or
+  reasoning. Missing, false and non-boolean probes, media, absent grammar and
+  conflicting prompt exclusion reject before dispatch. Ordinary generation
+  omits the new option; grammar defaults stay unchanged. A subsequent core
+  capability refusal remains a typed `LlamaUnsupportedException`.
 - Every `setLoraAdapter`, `removeLoraAdapter` and `clearLoraAdapters` call
   first checks that all five LoRA methods exist and that
   `getLoraAdapterCapabilities()` reports `apiVersion: 1` and

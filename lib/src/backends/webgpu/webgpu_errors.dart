@@ -54,9 +54,9 @@ final RegExp _bridgeArgument = RegExp(
 
 final RegExp _bridgeUnsupportedCompletion = RegExp(
   r'^The loaded WebGPU core does not support CompletionOptions\.'
-  r'(?:presencePenalty|minP|thinkingBudget|grammarLazy|grammarRoot|speculativeDecoding)'
+  r'(?:presencePenalty|minP|thinkingBudget|grammarLazy|grammarRoot|penaltyPromptTokensWithGrammar|speculativeDecoding)'
   r'(?: or CompletionOptions\.'
-  r'(?:presencePenalty|minP|thinkingBudget|grammarLazy|grammarRoot|speculativeDecoding))*\.$',
+  r'(?:presencePenalty|minP|thinkingBudget|grammarLazy|grammarRoot|penaltyPromptTokensWithGrammar|speculativeDecoding))*\.$',
 );
 
 /// Classifies request rejections without reclassifying unknown runtime errors.
@@ -77,7 +77,10 @@ LlamaException? webGpuBridgeRequestError(
   }
   final message = webGpuBridgeErrorText(error, sourceUrls: sourceUrls);
   if (name == 'Error' &&
-      message.contains('CompletionOptions.grammar') &&
+      (message.contains('CompletionOptions.grammar') ||
+          message.contains(
+            'CompletionOptions.penaltyPromptTokensWithGrammar',
+          )) &&
       _bridgeUnsupportedCompletion.hasMatch(message)) {
     return LlamaUnsupportedException(message);
   }

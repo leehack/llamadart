@@ -269,6 +269,11 @@ extension type WebGpuCompletionOptions._(JSObject _) implements JSObject {
   /// core reports `penaltyPromptTokens`.
   @JS('penaltyPromptTokens')
   external set penaltyPromptTokens(bool value);
+
+  /// Seeds only the penalty sampler, leaving an attached grammar untouched.
+  /// Set only when the loaded core reports this capability.
+  @JS('penaltyPromptTokensWithGrammar')
+  external set penaltyPromptTokensWithGrammar(bool value);
 }
 
 /// A lazy-grammar activation in the bridge's string-based trigger protocol.
@@ -316,6 +321,10 @@ extension type WebGpuCompletionCapabilities._(JSObject _) implements JSObject {
   /// applies `penaltyPromptTokens`.
   @JS('penaltyPromptTokens')
   external JSAny? get penaltyPromptTokens;
+
+  /// Whether the loaded core can seed prompt penalties with attached grammar.
+  @JS('penaltyPromptTokensWithGrammar')
+  external JSAny? get penaltyPromptTokensWithGrammar;
 
   /// Whether the loaded core applies lazy grammars and custom grammar roots.
   @JS('lazyGrammar')

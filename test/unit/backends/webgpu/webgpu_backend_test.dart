@@ -6632,6 +6632,173 @@ void main() {
         }
       });
 
+      group('penaltyPromptTokensWithGrammar', () {
+        const params = GenerationParams(grammar: 'root ::= "hello"');
+
+        test(
+          'probe controls the explicit route and resets on unload',
+          () async {
+            expect(backend.supportsPromptPenaltiesWithGrammar, isFalse);
+            newBridge = () => FakeFeatureBridge()
+              ..completionCapabilities = <String, bool>{
+                'penaltyPromptTokensWithGrammar': true,
+              };
+            await loadModel();
+            expect(backend.supportsPromptPenaltiesWithGrammar, isTrue);
+            for (final grammar in ['', 'root ::= "hello"']) {
+              await backend
+                  .generateWithPromptPenalties(
+                    1,
+                    'Hello',
+                    GenerationParams(grammar: grammar),
+                  )
+                  .toList();
+              expect(
+                fake().completionOption('penaltyPromptTokensWithGrammar'),
+                isTrue,
+              );
+              expect(fake().completionOption('grammar'), grammar);
+              expect(
+                fake().hasCompletionOption('penaltyPromptTokens'),
+                isFalse,
+              );
+            }
+            await generate(params);
+            expect(
+              fake().hasCompletionOption('penaltyPromptTokensWithGrammar'),
+              isFalse,
+            );
+            await backend.modelFree(1);
+            expect(backend.supportsPromptPenaltiesWithGrammar, isFalse);
+          },
+        );
+
+        test(
+          'rejects missing, false and nonboolean loaded-core reports',
+          () async {
+            final bridges = <FakeFeatureBridge Function()>[
+              () => FakeFeatureBridge(withCompletionProbe: false),
+              FakeFeatureBridge.new,
+              () => FakeFeatureBridge()
+                ..completionCapabilities = <String, bool>{
+                  'penaltyPromptTokensWithGrammar': false,
+                },
+              () => FakeFeatureBridge()
+                ..completionCapabilitiesResult = (JSObject()
+                  ..setProperty(
+                    'penaltyPromptTokensWithGrammar'.toJS,
+                    'true'.toJS,
+                  )),
+            ];
+            for (final create in bridges) {
+              newBridge = create;
+              await loadModel();
+              expect(backend.supportsPromptPenaltiesWithGrammar, isFalse);
+              expect(
+                () => backend.generateWithPromptPenalties(1, 'Hello', params),
+                throwsA(isA<LlamaUnsupportedException>()),
+              );
+              expect(fake().completionCalls, 0);
+              await backend.modelFree(1);
+            }
+          },
+        );
+
+        test('keeps lazy grammar options and typed runtime refusal', () async {
+          newBridge = () => FakeFeatureBridge()
+            ..completionCapabilities = <String, bool>{
+              'penaltyPromptTokensWithGrammar': true,
+              'lazyGrammar': true,
+            };
+          await loadModel();
+          const lazy = GenerationParams(
+            grammar: 'root ::= "hello"',
+            grammarLazy: true,
+            grammarTriggers: [
+              GenerationGrammarTrigger.typed(
+                type: GrammarTriggerType.word,
+                value: 'hello',
+              ),
+            ],
+          );
+          await backend.generateWithPromptPenalties(1, 'Hello', lazy).toList();
+          expect(fake().completionOption('grammarLazy'), isTrue);
+          expect(fake().completionOption('grammarTriggers'), [
+            {'type': 'word', 'value': 'hello'},
+          ]);
+          fake().object.setProperty(
+            'createCompletion'.toJS,
+            ((JSAny? _, JSAny? _) => _rejectPromise(
+              _jsError(
+                'The loaded WebGPU core does not support CompletionOptions.penaltyPromptTokensWithGrammar.',
+              ),
+            )).toJS,
+          );
+          await expectLater(
+            backend.generateWithPromptPenalties(1, 'Hello', lazy).toList(),
+            throwsA(isA<LlamaUnsupportedException>()),
+          );
+        });
+
+        for (final (index, media) in <LlamaContentPart>[
+          const LlamaImageContent(),
+          LlamaImageContent(bytes: Uint8List(0)),
+          LlamaImageContent(bytes: Uint8List.fromList([1, 2, 3])),
+          const LlamaAudioContent(),
+          LlamaAudioContent(bytes: Uint8List(0)),
+          LlamaAudioContent(samples: Float32List(0)),
+          LlamaAudioContent(samples: Float32List.fromList([0.1])),
+          LlamaVideoContent(bytes: Uint8List(0)),
+        ].indexed) {
+          test(
+            'rejects typed media before generation: ${media.runtimeType} case $index',
+            () async {
+              newBridge = () => FakeFeatureBridge()
+                ..completionCapabilities = <String, bool>{
+                  'penaltyPromptTokensWithGrammar': true,
+                };
+              await loadModel();
+              expect(
+                () => backend.generateWithPromptPenalties(
+                  1,
+                  'Hello',
+                  params,
+                  parts: [media],
+                ),
+                throwsA(
+                  isA<LlamaUnsupportedException>().having(
+                    (error) => error.message,
+                    'message',
+                    contains('text-only'),
+                  ),
+                ),
+              );
+              expect(fake().completionCalls, 0);
+            },
+          );
+        }
+
+        test(
+          'rejects absent grammar and conflicting penalty exclusion before inference',
+          () async {
+            newBridge = () => FakeFeatureBridge()
+              ..completionCapabilities = <String, bool>{
+                'penaltyPromptTokensWithGrammar': true,
+              };
+            await loadModel();
+            final excluded = GenerationParams(grammar: params.grammar);
+            markPromptExcludedFromPenalties(excluded);
+            for (final invalid in [const GenerationParams(), excluded]) {
+              expect(
+                () => backend.generateWithPromptPenalties(1, 'Hello', invalid),
+                throwsA(isA<LlamaUnsupportedException>()),
+              );
+            }
+            expect(fake().completionCalls, 0);
+          },
+        );
+      });
+
       group('penaltyPromptTokens', () {
         GenerationParams marked([String? grammar]) {
           final params = GenerationParams(grammar: grammar);
