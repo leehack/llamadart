@@ -622,9 +622,9 @@ class ImageGenerationEngine
       'Full-VAE decoding on iOS with the Metal backend ($backendName) is '
       'not supported: repeated decodes can trip the GPU watchdog '
       '(https://github.com/leehack/llamadart/issues/1047). GPU decoding '
-      'requires a runtime with the intrinsic tiny-decoder v1 context policy '
-      'so model refresh cannot switch to a full VAE. The current pinned '
-      'stable-diffusion-native v0.3.0-1 lacks that policy. External tiny decoders can '
+      'requires an intrinsic SDXS tiny decoder and a selected runtime with '
+      'the intrinsic tiny-decoder v1 context policy, so model refresh cannot '
+      'switch to a full VAE. External tiny decoders can '
       'fall back to a full VAE. Use ImageModelPlacement(vaeOnCpu: true) '
       'or ComputeDevice.cpu for other recipes. VAE tiling does not '
       'bypass this restriction.',
