@@ -19,6 +19,12 @@ control uses the exact exported Qwen template; the public route keeps its
 normal bundle/template selection. Speculation is off; the legacy default
 repetition penalty remains unapplied, matching the default service.
 
+The immutable profiles retain `threads: 4`. Explicit public CPU uses four
+threads; GPU ignores CPU thread counts, so public GPU and auto pass
+`numberOfThreads: 0` (automatic). The service converts zero to an unset native
+CPU-thread option. Auto therefore attempts GPU first; its CPU fallback also
+uses automatic threads. Native CPU controls keep their four-thread setting.
+
 ## Fixed case graph
 
 | Stage | Maximum seconds | Required result and dependent behavior |

@@ -16,6 +16,7 @@ import 'android_qualification_io.dart';
 
 import 'android_litert_qualification.dart';
 import 'android_litert_qualification_io.dart';
+import 'src/s24_litert_params.dart';
 
 typedef S24LiteRtEmit = void Function(Map<String, dynamic> event);
 
@@ -352,12 +353,8 @@ Future<void> runS24LiteRtQualification(
   phase('public-gpu-refusal');
   LiteRtLmService service() =>
       LiteRtLmService(useTempCacheDir: false)..setLogLevel(LlamaLogLevel.info);
-  ModelParams params(ComputeDevice device, String name) => LiteRtLmModelParams(
-    device: device,
-    contextSize: 1024,
-    numberOfThreads: 4,
-    cacheDir: cache(name).path,
-  );
+  ModelParams params(ComputeDevice device, String name) =>
+      s24LiteRtPublicParams(device, cacheDir: cache(name).path);
   await run('public.legacy.gpu-refusal', (_) async {
     final selected = service();
     if (!selected.reportsFinishReasons()) {
