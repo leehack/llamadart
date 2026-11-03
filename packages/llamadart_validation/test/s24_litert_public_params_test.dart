@@ -109,16 +109,28 @@ void main() {
     expect(row['cpu_creates'], 0);
   });
 
-  test('runner auto options attempt GPU before CPU fallback', () async {
-    final row = await run('auto');
-    expect(row['threads'], 0);
-    expect(row['error'], isNull);
-    expect(row['tokens'], greaterThan(0));
-    expect(row['attempts'], 2);
-    expect(row['gpu_refusals'], 1);
-    expect(row['cpu_creates'], 1);
-    expect(row['warnings'], anyElement(contains(s24LiteRtFallbackWarning)));
-  });
+  test(
+    'runner auto options follow platform selection and preserve fallback',
+    () async {
+      final row = await run('auto');
+      expect(row['threads'], 0);
+      expect(row['error'], isNull);
+      expect(row['tokens'], greaterThan(0));
+      expect(row['cpu_creates'], 1);
+      if (Platform.isLinux) {
+        expect(row['attempts'], 1);
+        expect(row['gpu_refusals'], 0);
+        expect(
+          row['warnings'],
+          isNot(anyElement(contains(s24LiteRtFallbackWarning))),
+        );
+      } else {
+        expect(row['attempts'], 2);
+        expect(row['gpu_refusals'], 1);
+        expect(row['warnings'], anyElement(contains(s24LiteRtFallbackWarning)));
+      }
+    },
+  );
 
   test(
     'runner explicit CPU keeps four threads and reaches the engine',
