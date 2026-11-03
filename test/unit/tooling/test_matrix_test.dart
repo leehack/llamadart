@@ -163,6 +163,52 @@ void main() {
       );
     },
   );
+  test('Web grammar matrix dispatches both pinned-asset Wasm suites', () async {
+    final row = testMatrixRows.singleWhere(
+      (row) => row.id == 'web-lazy-grammar',
+    );
+    final command = row.command.split(' ');
+    expect(command.take(3), ['dart', 'run', 'tool/testing/run_local_e2e.dart']);
+    final steps = <LocalE2eCommandStep>[];
+    final result = await runLocalE2e(
+      command.skip(3).toList(),
+      projectRoot: '/repo',
+      foregroundStepRun: (step) async {
+        steps.add(step);
+        return ProcessResult(0, 0, '', '');
+      },
+    );
+    expect(result.exitCode, 0, reason: result.stderr);
+    expect(steps, hasLength(2));
+    final fetch = steps.first;
+    expect(fetch.executable, 'bash');
+    expect(fetch.arguments, ['scripts/fetch_webgpu_bridge_assets.sh']);
+    expect(fetch.environment, {
+      'WEBGPU_BRIDGE_OUT_DIR': '/repo/build/web_lazy_grammar/bridge',
+    });
+    final tests = steps.last;
+    expect(tests.executable, 'dart');
+    expect(tests.arguments, [
+      'test',
+      '-p',
+      'chrome-webgpu',
+      '--run-skipped',
+      '-t',
+      'local-only',
+      'test/e2e/webgpu/lazy_grammar_e2e_test.dart',
+      'test/e2e/webgpu/prompt_penalty_grammar_e2e_test.dart',
+    ]);
+    for (final step in steps) {
+      expect(step.workingDirectory, '/repo');
+      expect(step.background, isFalse);
+    }
+    for (final target in tests.arguments.where(
+      (arg) => arg.endsWith('.dart'),
+    )) {
+      expect(File(target).existsSync(), isTrue, reason: target);
+    }
+  });
+
   test('tool-result image matrix row reaches its local-only scenario and '
       'names the closest-family template override', () async {
     final row = testMatrixRows.singleWhere(
