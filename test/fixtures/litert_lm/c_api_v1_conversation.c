@@ -92,10 +92,16 @@ void stream_proxy_delete(void *data) {
   assert(!((proxy *)data)->started || ((proxy *)data)->loss_read);
   free(data); --proxies;
 }
-int litert_lm_conversation_config_create(void **out) { return create(13, out); }
+static char preface[5][8192];
+static int constrained;
+const char *fixture_preface(int index) { return preface[index]; }
+int fixture_constrained(void) { return constrained; }
+int litert_lm_conversation_config_create(void **out) {
+  memset(preface,0,sizeof preface);constrained=-1;return create(13, out);
+}
 void litert_lm_conversation_config_delete(void *config) { drop(config); }
 int litert_lm_conversation_config_set_session_config(void *config, void *session) {
-  assert(config && session); return failure == 14 ? 13 : 0;
+  assert(config && session); return status(14);
 }
 int litert_lm_conversation_create(void *engine, void *config, void **out) {
   assert(engine && config);
@@ -147,4 +153,20 @@ void fixture_emit(int kind) {
   assert(active); pthread_t thread;
   assert(!pthread_create(&thread, NULL, emit, &kind));
   assert(!pthread_join(thread, NULL));
+}
+
+static int set_preface(void *config, const char *value, int slot) {
+  assert(config && value && strlen(value) < sizeof preface[slot]);
+  if(status(40+slot))return 13;
+  strcpy(preface[slot],value);return 0;
+}
+int litert_lm_conversation_config_set_system_message(void *config,const char *s) { return set_preface(config,s,0); }
+int litert_lm_conversation_config_set_messages(void *config,const char *s) { return set_preface(config,s,1); }
+int litert_lm_conversation_config_set_tools(void *config,const char *s) { return set_preface(config,s,2); }
+int litert_lm_conversation_config_set_extra_context(void *config,const char *s) { return set_preface(config,s,3); }
+#ifndef OMIT_PROMPT_TEMPLATE
+int litert_lm_conversation_config_set_prompt_template(void *config,const char *s) { return set_preface(config,s,4); }
+#endif
+int litert_lm_conversation_config_set_enable_constrained_decoding(void *config,bool value) {
+  assert(config);if(status(46))return 13;constrained=value;return 0;
 }

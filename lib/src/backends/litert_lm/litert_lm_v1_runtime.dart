@@ -1,6 +1,8 @@
 import 'dart:async';
+import 'dart:collection';
 import 'dart:convert';
 import 'dart:ffi';
+import 'dart:typed_data';
 
 import 'package:ffi/ffi.dart';
 
@@ -10,8 +12,10 @@ import '../../core/models/inference/model_params.dart';
 import 'litert_lm_last_error.dart';
 import 'litert_lm_finish_reason.dart';
 import 'litert_lm_native_settlement.dart';
+import 'litert_lm_sampler_params.dart';
 
 part 'litert_lm_v1_conversation.dart';
+part 'litert_lm_v1_conversation_settings.dart';
 part 'litert_lm_v1_engine_settings.dart';
 
 typedef _VersionN = Int Function(Pointer<Int>, Pointer<Int>, Pointer<Int>);
@@ -141,6 +145,7 @@ final class LiteRtLmV1Runtime {
 
   final DynamicLibrary _library;
   Pointer<Void> _engine = nullptr;
+  ComputeDevice? _engineBackend;
   bool _disposed = false;
   LiteRtLmV1Conversation? _conversation;
   List<String> _diagnosticPaths = const [];
@@ -340,6 +345,7 @@ final class LiteRtLmV1Runtime {
       );
       if (_engine != nullptr) _engineDelete(_engine);
       _engine = engine;
+      _engineBackend = options.backend;
       _diagnosticPaths = diagnosticPaths;
     } on Object {
       _diagnosticPaths = oldDiagnosticPaths;
@@ -435,13 +441,31 @@ final class LiteRtLmV1Runtime {
   LiteRtLmV1Conversation openConversation({int maxOutputTokens = 32}) {
     _requireLive();
     _requireNoConversation();
+    return openConfiguredConversation(
+      LiteRtLmV1ConversationSettings(
+        maxOutputTokens: maxOutputTokens,
+        sampler: const LiteRtLmV1SamplerSettings(
+          temperature: 0,
+          topK: 1,
+          topP: 0.95,
+          seed: 0,
+        ),
+      ),
+    );
+  }
+
+  /// Opens a snapshotted text/tool-history configuration without public routing.
+  /// Null sampler preserves native inheritance; explicit NPU sampling is refused.
+  LiteRtLmV1Conversation openConfiguredConversation(
+    LiteRtLmV1ConversationSettings options,
+  ) {
+    _requireLive();
+    _requireNoConversation();
     if (_engine == nullptr) {
       throw LlamaStateException('Load a C API 1.0 engine first.');
     }
-    if (maxOutputTokens <= 0 || maxOutputTokens > 0x7fffffff) {
-      throw LlamaArgumentException('maxOutputTokens must be positive.');
-    }
-    return _conversation = LiteRtLmV1Conversation._(this, maxOutputTokens);
+    options._validate(_engineBackend!);
+    return _conversation = LiteRtLmV1Conversation._(this, options);
   }
 
   /// Releases the owned engine exactly once. Disposal is final.

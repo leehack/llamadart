@@ -43,7 +43,10 @@ typedef _StatusD = int Function(Pointer<Void>);
 /// deleted after its final callback and successful native drain; recreate it
 /// through the runtime. This never enables single-threaded native execution.
 final class LiteRtLmV1Conversation {
-  LiteRtLmV1Conversation._(this._runtime, int maxOutputTokens) {
+  LiteRtLmV1Conversation._(
+    this._runtime,
+    LiteRtLmV1ConversationSettings options,
+  ) {
     final library = _runtime._library;
     for (final symbol in _symbols) {
       if (!library.providesSymbol(symbol)) {
@@ -70,36 +73,72 @@ final class LiteRtLmV1Conversation {
       );
     }
     Pointer<Void> sessionConfig = nullptr, sampler = nullptr, config = nullptr;
+    final strings = <Pointer<Utf8>>[];
     try {
       sessionConfig = _runtime._create(
         'session_config_create',
         _runtime._configCreate,
       );
       _runtime._check(
-        _runtime._setOutputTokens(sessionConfig, maxOutputTokens),
+        _runtime._setOutputTokens(sessionConfig, options.maxOutputTokens),
         'set_max_output_tokens',
       );
-      sampler = _runtime._create(
-        'sampler_params_create',
-        (out) => _runtime._samplerCreate(2, out),
-      );
-      _runtime._check(_runtime._samplerTopK(sampler, 1), 'sampler_set_top_k');
-      _runtime._check(
-        _runtime._samplerTopP(sampler, 0.95),
-        'sampler_set_top_p',
-      );
-      _runtime._check(
-        _runtime._samplerTemperature(sampler, 0),
-        'sampler_set_temperature',
-      );
-      _runtime._check(
-        _runtime._setSampler(sessionConfig, sampler),
-        'set_sampler_params',
-      );
+      if (options.sampler case final selected?) {
+        sampler = _runtime._create(
+          'sampler_params_create',
+          (out) => _runtime._samplerCreate(2, out),
+        );
+        _runtime._check(
+          _runtime._samplerTopK(
+            sampler,
+            liteRtLmEffectiveTopK(
+              temperature: selected.temperature,
+              topK: selected.topK,
+            ),
+          ),
+          'sampler_set_top_k',
+        );
+        _runtime._check(
+          _runtime._samplerTopP(sampler, selected.topP),
+          'sampler_set_top_p',
+        );
+        _runtime._check(
+          _runtime._samplerTemperature(sampler, selected.temperature),
+          'sampler_set_temperature',
+        );
+        _runtime._check(
+          _runtime._library.lookupFunction<
+            Int Function(Pointer<Void>, Int32),
+            int Function(Pointer<Void>, int)
+          >('litert_lm_sampler_params_set_seed')(sampler, selected.seed),
+          'sampler_set_seed',
+        );
+        _runtime._check(
+          _runtime._setSampler(sessionConfig, sampler),
+          'set_sampler_params',
+        );
+      }
       config = _runtime._create('conversation_config_create', _configCreate);
       _runtime._check(
         _setSessionConfig(config, sessionConfig),
         'conversation_config_set_session_config',
+      );
+      for (final entry in options._preface.entries) {
+        final text = entry.value.toNativeUtf8(allocator: calloc);
+        strings.add(text);
+        _runtime._check(
+          _runtime._library.lookupFunction<_SetStringN, _SetStringD>(entry.key)(
+            config,
+            text,
+          ),
+          entry.key,
+        );
+      }
+      _runtime._check(
+        _runtime._library.lookupFunction<_SetBoolN, _SetBoolD>(
+          'litert_lm_conversation_config_set_enable_constrained_decoding',
+        )(config, false),
+        'set_enable_constrained_decoding',
       );
       _handle = _runtime._create(
         'conversation_create',
@@ -109,10 +148,20 @@ final class LiteRtLmV1Conversation {
       if (config != nullptr) _configDelete(config);
       if (sampler != nullptr) _runtime._samplerDelete(sampler);
       if (sessionConfig != nullptr) _runtime._configDelete(sessionConfig);
+      for (final text in strings) {
+        calloc.free(text);
+      }
     }
   }
 
   static const _symbols = <String>[
+    'litert_lm_sampler_params_set_seed',
+    'litert_lm_conversation_config_set_system_message',
+    'litert_lm_conversation_config_set_messages',
+    'litert_lm_conversation_config_set_tools',
+    'litert_lm_conversation_config_set_extra_context',
+    'litert_lm_conversation_config_set_prompt_template',
+    'litert_lm_conversation_config_set_enable_constrained_decoding',
     'stream_proxy_callback_abi_version',
     'stream_proxy_allocation_failure_abi_version',
     'stream_proxy_has_allocation_failure',

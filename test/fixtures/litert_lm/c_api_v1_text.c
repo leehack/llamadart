@@ -7,7 +7,7 @@
 static int live = 0, failure = 0;
 static char copied[128];
 static char last_error[256] = "candidate failure /secret/models/m.litertlm";
-static int settings_values[9], engine_values[9], calls[40], speculative_live;
+static int settings_values[9], engine_values[9], calls[100], speculative_live;
 static char settings_text[6][256], engine_text[6][256];
 int fixture_value(int index) { return engine_values[index]; }
 int fixture_calls(int index) { return calls[index]; }
@@ -33,6 +33,7 @@ int litert_lm_get_api_version(int *a, int *b, int *c) { *a=1;*b=0;*c=0;return 0;
 static int create(int stage, void **out) {
   *out = NULL;
   if (failure == 12 && stage == 9) return 0;
+  if ((failure == 60 && stage == 4) || (failure == 61 && stage == 6) || (failure == 62 && stage == 13) || (failure == 63 && stage == 15)) return 0;
   if ((failure == 31 && stage == 22) || (failure == 32 && stage == 1) || (failure == 33 && stage == 3)) return 0;
   if (status(stage)) return 13;
   *out = malloc(sizeof(int)); ++live; return 0;
@@ -58,8 +59,10 @@ int litert_lm_engine_create(void *s,void **o) {
 void litert_lm_engine_delete(void *p) { drop(p); }
 int litert_lm_session_config_create(void **o) { return create(4,o); }
 void litert_lm_session_config_delete(void *p) { drop(p); }
-int litert_lm_session_config_set_max_output_tokens(void *p,int n) { (void)p;(void)n;return failure==5 ? 13 : 0; }
-int litert_lm_session_config_set_sampler_params(void *p,void *s) { (void)p;(void)s;return 0; }
+static int output_tokens;
+int fixture_output_tokens(void) { return output_tokens; }
+int litert_lm_session_config_set_max_output_tokens(void *p,int n) { assert(p);if(status(5))return 13;output_tokens=n;return 0; }
+int litert_lm_session_config_set_sampler_params(void *p,void *s) { assert(p && s);return status(39); }
 int litert_lm_sampler_params_create(int type,void **o) { if(type!=2) abort();return create(6,o); }
 void litert_lm_sampler_params_delete(void *p) { drop(p); }
 int litert_lm_engine_create_session(void *e,void *c,void **o) { (void)e;(void)c;return create(7,o); }
@@ -79,9 +82,16 @@ void litert_lm_responses_delete(void *p) { drop(p); }
 
 int litert_lm_session_config_set_apply_prompt_template(void *p,bool value) { (void)p; if(value) abort();return 0; }
 
-int litert_lm_sampler_params_set_top_k(void *p,int k) { (void)p;if(k!=1) abort();return 0; }
-int litert_lm_sampler_params_set_top_p(void *p,float v) { (void)p;if(v<0.94f || v>0.96f) abort();return 0; }
-int litert_lm_sampler_params_set_temperature(void *p,float v) { (void)p;if(v!=0) abort();return 0; }
+static int sampler_k, sampler_seed;
+static float sampler_p, sampler_t;
+int fixture_sampler_int(int index) { return index ? sampler_seed : sampler_k; }
+float fixture_sampler_float(int index) { return index ? sampler_t : sampler_p; }
+int litert_lm_sampler_params_set_top_k(void *p,int k) { assert(p);if(status(35))return 13;sampler_k=k;return 0; }
+int litert_lm_sampler_params_set_top_p(void *p,float v) { assert(p);if(status(36))return 13;sampler_p=v;return 0; }
+int litert_lm_sampler_params_set_temperature(void *p,float v) { assert(p);if(status(37))return 13;sampler_t=v;return 0; }
+#ifndef OMIT_SAMPLER_SEED
+int litert_lm_sampler_params_set_seed(void *p,int seed) { assert(p);if(status(38))return 13;sampler_seed=seed;return 0; }
+#endif
 
 // Engine settings use the v1 status contract. The speculative config is copied
 // into settings, so its caller-owned handle is freed before engine creation.

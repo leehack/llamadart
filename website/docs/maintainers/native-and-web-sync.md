@@ -362,6 +362,31 @@ Logging/status, model capabilities, tokenizer/render/metrics, conversation
 sampler/history/per-turn options and complete worker/service dispatch remain
 separate migration work.
 
+Internal `openConfiguredConversation` adds snapshotted text/tool prefaces and
+explicit TOP_P sampler settings. The convenience `openConversation` retains its
+32-token, zero-temperature, top-k 1, top-p 0.95, seed 0 preparation defaults.
+Zero temperature uses the shared top-k normalization; nonzero sampling preserves
+requested top-k and signed int32 seed. Sampler floats reject non-finite values,
+overflow and positive underflow to native zero. Null sampler inherits the native
+configuration, including on NPU; explicit NPU overrides are refused. The selected
+backend is recorded only after successful engine replacement.
+
+System content is plain text encoded exactly once, even when it looks like JSON.
+Initial message and tool arrays, context objects and raw Jinja overrides are
+validated and snapshotted before native allocation: upstream preface setters
+copy strings but creation can log malformed containers and continue without them.
+The supported preparation subset has system/user/assistant/tool roles; string or
+text-part content; assistant reasoning text and function calls with string/object
+arguments; named tool-response parts with JSON values; and function descriptors
+with object parameter schemas. Media, unknown message/tool fields, strict-tool
+requests, boolean/tuple schema items and empty/NUL raw templates are refused.
+This checks descriptor structure, not full JSON Schema semantics or enforcement.
+All setters use v1 status signatures and owned temporaries are released on failure.
+Constrained decoding stays explicitly disabled. Active structured messages,
+required/parallel tool choice, LoRA, thinking budgets, per-turn controls and
+schema providers still need separate migration; raw chunk delivery does not
+claim tool execution or template/model qualification.
+
 Use this checklist in native sync PRs:
 
 - Confirm `llamadart-native`, `litert-lm-native` or `stable-diffusion-native`
