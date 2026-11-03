@@ -17,27 +17,6 @@ import 'package:test/test.dart';
 const _llamadartWrapperAssetId = 'package:llamadart/llamadart_wrapper';
 const _llamadartPrimaryAssetId = 'package:llamadart/llamadart';
 
-const _mtpSymbols = [
-  'llama_dart_mtp_init',
-  'llama_dart_mtp_init_with_draft_model',
-  'llama_dart_mtp_free',
-  'llama_dart_mtp_get_draft_context',
-  'llama_dart_mtp_begin',
-  'llama_dart_mtp_process_batch',
-  'llama_dart_mtp_draft',
-  'llama_dart_mtp_accept',
-  'llama_dart_sampler_sample_and_accept_n',
-];
-
-const _ngramSymbols = [
-  'llama_dart_ngram_simple_init',
-  'llama_dart_ngram_free',
-  'llama_dart_ngram_begin',
-  'llama_dart_ngram_process_batch',
-  'llama_dart_ngram_draft',
-  'llama_dart_ngram_accept',
-];
-
 const _genericSpeculativeSymbols = [
   'llama_dart_speculative_init',
   'llama_dart_speculative_free',
@@ -48,6 +27,7 @@ const _genericSpeculativeSymbols = [
   'llama_dart_speculative_process_batch',
   'llama_dart_speculative_draft',
   'llama_dart_speculative_accept',
+  'llama_dart_sampler_sample_and_accept_n',
 ];
 
 const _b10514BindingSymbols = [
@@ -232,12 +212,6 @@ typedef _MtmdHelperBitmapInitFromBufDart =
     );
 typedef _MtmdBitmapFreeNative = ffi.Void Function(ffi.Pointer<mtmd_bitmap>);
 typedef _MtmdBitmapFreeDart = void Function(ffi.Pointer<mtmd_bitmap>);
-
-@ffi.Native<ffi.Void Function(ffi.Pointer<llama_dart_mtp>)>(
-  assetId: _llamadartWrapperAssetId,
-  symbol: 'llama_dart_mtp_free',
-)
-external void _windowsMtpFree(ffi.Pointer<llama_dart_mtp> mtp);
 
 File? _llamadartWrapperLibraryFileOrNull() {
   if (Platform.isWindows) {
@@ -723,11 +697,7 @@ void main() {
         'lib/src/backends/llama_cpp/bindings.dart',
       ).readAsStringSync();
 
-      for (final symbol in [
-        ..._mtpSymbols,
-        ..._ngramSymbols,
-        ..._genericSpeculativeSymbols,
-      ]) {
+      for (final symbol in [..._genericSpeculativeSymbols]) {
         expect(
           _declaresExternalFunction(bindingsSource, symbol),
           isTrue,
@@ -900,167 +870,6 @@ void main() {
       expect(printTimingsIndex, greaterThan(deviceIndex));
     });
 
-    test('Verify MTP wrapper symbols are resolvable', () {
-      if (Platform.isWindows) {
-        expect(() => llama_context_default_params(), returnsNormally);
-        expect(
-          () => _windowsMtpFree(ffi.nullptr.cast<llama_dart_mtp>()),
-          returnsNormally,
-        );
-        final wrapper = _windowsMtpWrapperLibraryFile();
-        for (final symbol in _mtpSymbols) {
-          expect(_fileContainsAscii(wrapper, symbol), isTrue, reason: symbol);
-        }
-        return;
-      }
-
-      final nullMtp = ffi.nullptr.cast<llama_dart_mtp>();
-      final nullModel = ffi.nullptr.cast<llama_model>();
-      final nullContext = ffi.nullptr.cast<llama_context>();
-      final nullSampler = ffi.nullptr.cast<llama_sampler>();
-      final nullTokenArray = ffi.nullptr.cast<ffi.Int32>();
-      final ctxParams = llama_context_default_params();
-
-      expect(
-        llama_dart_mtp_init(
-          nullModel,
-          nullContext,
-          ctxParams,
-          1,
-          0,
-          0.0,
-          true,
-        ).address,
-        0,
-      );
-      expect(
-        llama_dart_mtp_init_with_draft_model(
-          nullModel,
-          nullContext,
-          ctxParams,
-          1,
-          0,
-          0.0,
-          true,
-        ).address,
-        0,
-      );
-      expect(() => llama_dart_mtp_free(nullMtp), returnsNormally);
-      expect(llama_dart_mtp_get_draft_context(nullMtp).address, 0);
-      expect(llama_dart_mtp_begin(nullMtp, 0, nullTokenArray, 0), isFalse);
-      expect(
-        llama_dart_mtp_draft(
-          nullMtp,
-          0,
-          0,
-          0,
-          nullTokenArray,
-          0,
-          1,
-          nullTokenArray,
-          0,
-        ),
-        -1,
-      );
-      expect(() => llama_dart_mtp_accept(nullMtp, 0, 0), returnsNormally);
-      expect(
-        llama_dart_sampler_sample_and_accept_n(
-          nullSampler,
-          nullContext,
-          nullTokenArray,
-          0,
-          nullTokenArray,
-          0,
-          nullTokenArray,
-          0,
-        ),
-        -1,
-      );
-
-      final batch = llama_batch_init(1, 0, 1);
-      try {
-        expect(llama_dart_mtp_process_batch(nullMtp, batch), isFalse);
-      } finally {
-        llama_batch_free(batch);
-      }
-    });
-
-    test('Verify ngram wrapper symbols are resolvable when exported', () {
-      final wrapper = _llamadartWrapperLibraryFileOrNull();
-      if (wrapper == null) {
-        markTestSkipped('Unable to locate the llama.cpp wrapper library.');
-        return;
-      }
-
-      final missing = _ngramSymbols
-          .where((symbol) => !_fileContainsAscii(wrapper, symbol))
-          .toList(growable: false);
-      if (missing.isNotEmpty) {
-        markTestSkipped(
-          'Current native bundle does not export ngram wrapper symbols: '
-          '${missing.join(', ')}.',
-        );
-        return;
-      }
-      if (Platform.isWindows) {
-        _expectDynamicLibraryExports(wrapper, _ngramSymbols);
-        return;
-      }
-
-      final nullNgram = ffi.nullptr.cast<llama_dart_ngram>();
-      final nullTokenArray = ffi.nullptr.cast<ffi.Int32>();
-      final session = llama_dart_ngram_simple_init(1, 1);
-      expect(session.address, isNot(0));
-
-      try {
-        expect(() => llama_dart_ngram_free(nullNgram), returnsNormally);
-        expect(
-          llama_dart_ngram_begin(nullNgram, 0, nullTokenArray, 0),
-          isFalse,
-        );
-        expect(llama_dart_ngram_begin(session, 1, nullTokenArray, 0), isFalse);
-        expect(
-          llama_dart_ngram_draft(
-            nullNgram,
-            0,
-            0,
-            0,
-            nullTokenArray,
-            0,
-            1,
-            nullTokenArray,
-            0,
-          ),
-          -1,
-        );
-        expect(
-          llama_dart_ngram_draft(
-            session,
-            1,
-            0,
-            0,
-            nullTokenArray,
-            0,
-            1,
-            nullTokenArray,
-            0,
-          ),
-          -1,
-        );
-        expect(() => llama_dart_ngram_accept(nullNgram, 0, 0), returnsNormally);
-        expect(() => llama_dart_ngram_accept(session, 0, 0), returnsNormally);
-
-        final batch = llama_batch_init(1, 0, 1);
-        try {
-          expect(llama_dart_ngram_process_batch(nullNgram, batch), isFalse);
-        } finally {
-          llama_batch_free(batch);
-        }
-      } finally {
-        llama_dart_ngram_free(session);
-      }
-    });
-
     test('Verify generic speculative symbols are resolvable when exported', () {
       final wrapper = _llamadartWrapperLibraryFileOrNull();
       if (wrapper == null) {
@@ -1088,8 +897,22 @@ void main() {
       final nullContext = ffi.nullptr.cast<llama_context>();
       final nullTokenArray = ffi.nullptr.cast<ffi.Int32>();
       final nullParams = ffi.nullptr.cast<llama_dart_speculative_params>();
+      final nullSampler = ffi.nullptr.cast<llama_sampler>();
       final ctxParams = llama_context_default_params();
 
+      expect(
+        llama_dart_sampler_sample_and_accept_n(
+          nullSampler,
+          nullContext,
+          nullTokenArray,
+          0,
+          nullTokenArray,
+          0,
+          nullTokenArray,
+          0,
+        ),
+        -1,
+      );
       expect(
         llama_dart_speculative_init(
           nullModel,

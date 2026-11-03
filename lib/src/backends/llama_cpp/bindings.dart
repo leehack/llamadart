@@ -6543,173 +6543,85 @@ external int llama_dart_mtmd_tokenize(
   int n_bitmaps,
 );
 
-@ffi.Native<
-  ffi.Void Function(ffi.Pointer<llama_dart_mtp>, llama_seq_id, ffi.Uint16)
->()
-external void llama_dart_mtp_accept(
-  ffi.Pointer<llama_dart_mtp> mtp,
-  int seq_id,
-  int accepted_count,
-);
+@ffi.Native<ffi.Void Function(ffi.Pointer<ffi.Void>)>()
+external void llama_dart_owner_abandon(ffi.Pointer<ffi.Void> owner);
+
+@ffi.Native<ffi.Bool Function(ffi.Pointer<ffi.Void>)>()
+external bool llama_dart_owner_activate(ffi.Pointer<ffi.Void> owner);
+
+@ffi.Native<ffi.Uint32 Function()>()
+external int llama_dart_owner_api_version();
+
+@ffi.Native<ffi.Int32 Function()>()
+external int llama_dart_owner_count();
+
+@ffi.Native<ffi.Pointer<ffi.Void> Function()>()
+external ffi.Pointer<ffi.Void> llama_dart_owner_create();
 
 @ffi.Native<
-  ffi.Bool Function(
-    ffi.Pointer<llama_dart_mtp>,
-    llama_seq_id,
-    ffi.Pointer<llama_token>,
-    ffi.Int32,
-  )
->()
-external bool llama_dart_mtp_begin(
-  ffi.Pointer<llama_dart_mtp> mtp,
-  int seq_id,
-  ffi.Pointer<llama_token> prompt,
-  int prompt_count,
-);
-
-@ffi.Native<
-  ffi.Int32 Function(
-    ffi.Pointer<llama_dart_mtp>,
-    llama_seq_id,
-    llama_pos,
-    llama_token,
-    ffi.Pointer<llama_token>,
-    ffi.Int32,
-    ffi.Int32,
-    ffi.Pointer<llama_token>,
-    ffi.Int32,
-  )
->()
-external int llama_dart_mtp_draft(
-  ffi.Pointer<llama_dart_mtp> mtp,
-  int seq_id,
-  int n_past,
-  int id_last,
-  ffi.Pointer<llama_token> prompt,
-  int prompt_count,
-  int draft_token_max,
-  ffi.Pointer<llama_token> out_tokens,
-  int out_capacity,
-);
-
-@ffi.Native<ffi.Void Function(ffi.Pointer<llama_dart_mtp>)>()
-external void llama_dart_mtp_free(ffi.Pointer<llama_dart_mtp> mtp);
-
-@ffi.Native<ffi.Pointer<llama_context> Function(ffi.Pointer<llama_dart_mtp>)>()
-external ffi.Pointer<llama_context> llama_dart_mtp_get_draft_context(
-  ffi.Pointer<llama_dart_mtp> mtp,
-);
-
-@ffi.Native<
-  ffi.Pointer<llama_dart_mtp> Function(
+  ffi.Pointer<llama_context> Function(
+    ffi.Pointer<ffi.Void>,
     ffi.Pointer<llama_model>,
-    ffi.Pointer<llama_context>,
     llama_context_params,
-    ffi.Int32,
-    ffi.Int32,
-    ffi.Float,
-    ffi.Bool,
   )
 >()
-external ffi.Pointer<llama_dart_mtp> llama_dart_mtp_init(
+external ffi.Pointer<llama_context> llama_dart_owner_init_from_model(
+  ffi.Pointer<ffi.Void> owner,
   ffi.Pointer<llama_model> model,
-  ffi.Pointer<llama_context> ctx_tgt,
-  llama_context_params ctx_params,
-  int draft_token_max,
-  int draft_token_min,
-  double min_probability,
-  bool backend_sampling,
+  llama_context_params params,
 );
 
 @ffi.Native<
-  ffi.Pointer<llama_dart_mtp> Function(
+  ffi.Pointer<llama_model> Function(
+    ffi.Pointer<ffi.Void>,
+    ffi.Pointer<ffi.Char>,
+    llama_model_params,
+  )
+>()
+external ffi.Pointer<llama_model> llama_dart_owner_model_load_from_file(
+  ffi.Pointer<ffi.Void> owner,
+  ffi.Pointer<ffi.Char> path,
+  llama_model_params params,
+);
+
+@ffi.Native<
+  ffi.Pointer<mtmd_context> Function(
+    ffi.Pointer<ffi.Void>,
+    ffi.Pointer<ffi.Char>,
     ffi.Pointer<llama_model>,
-    ffi.Pointer<llama_context>,
-    llama_context_params,
-    ffi.Int32,
-    ffi.Int32,
-    ffi.Float,
-    ffi.Bool,
+    ffi.Pointer<mtmd_context_params>,
   )
 >()
-external ffi.Pointer<llama_dart_mtp> llama_dart_mtp_init_with_draft_model(
-  ffi.Pointer<llama_model> draft_model,
-  ffi.Pointer<llama_context> ctx_tgt,
-  llama_context_params ctx_params,
-  int draft_token_max,
-  int draft_token_min,
-  double min_probability,
-  bool backend_sampling,
+external ffi.Pointer<mtmd_context> llama_dart_owner_mtmd_init_from_file(
+  ffi.Pointer<ffi.Void> owner,
+  ffi.Pointer<ffi.Char> path,
+  ffi.Pointer<llama_model> model,
+  ffi.Pointer<mtmd_context_params> params,
 );
 
-@ffi.Native<ffi.Bool Function(ffi.Pointer<llama_dart_mtp>, llama_batch)>()
-external bool llama_dart_mtp_process_batch(
-  ffi.Pointer<llama_dart_mtp> mtp,
-  llama_batch batch,
-);
-
-@ffi.Native<
-  ffi.Void Function(ffi.Pointer<llama_dart_ngram>, llama_seq_id, ffi.Uint16)
->()
-external void llama_dart_ngram_accept(
-  ffi.Pointer<llama_dart_ngram> ngram,
-  int seq_id,
-  int accepted_count,
-);
-
-@ffi.Native<
-  ffi.Bool Function(
-    ffi.Pointer<llama_dart_ngram>,
-    llama_seq_id,
-    ffi.Pointer<llama_token>,
-    ffi.Int32,
-  )
->()
-external bool llama_dart_ngram_begin(
-  ffi.Pointer<llama_dart_ngram> ngram,
-  int seq_id,
-  ffi.Pointer<llama_token> prompt,
-  int prompt_count,
-);
+@ffi.Native<ffi.Void Function(ffi.Pointer<ffi.Void>)>()
+external void llama_dart_owner_release(ffi.Pointer<ffi.Void> owner);
 
 @ffi.Native<
   ffi.Int32 Function(
-    ffi.Pointer<llama_dart_ngram>,
-    llama_seq_id,
-    llama_pos,
-    llama_token,
-    ffi.Pointer<llama_token>,
-    ffi.Int32,
-    ffi.Int32,
-    ffi.Pointer<llama_token>,
+    ffi.Pointer<ffi.Void>,
+    ffi.Pointer<ffi.Void>,
+    ffi.Pointer<ffi.NativeFunction<ffi.Void Function(ffi.Pointer<ffi.Void>)>>,
     ffi.Int32,
   )
 >()
-external int llama_dart_ngram_draft(
-  ffi.Pointer<llama_dart_ngram> ngram,
-  int seq_id,
-  int n_past,
-  int id_last,
-  ffi.Pointer<llama_token> prompt,
-  int prompt_count,
-  int draft_token_max,
-  ffi.Pointer<llama_token> out_tokens,
-  int out_capacity,
+external int llama_dart_owner_track(
+  ffi.Pointer<ffi.Void> owner,
+  ffi.Pointer<ffi.Void> object,
+  ffi.Pointer<ffi.NativeFunction<ffi.Void Function(ffi.Pointer<ffi.Void>)>>
+  free_fn,
+  int stage,
 );
 
-@ffi.Native<ffi.Void Function(ffi.Pointer<llama_dart_ngram>)>()
-external void llama_dart_ngram_free(ffi.Pointer<llama_dart_ngram> ngram);
-
-@ffi.Native<ffi.Bool Function(ffi.Pointer<llama_dart_ngram>, llama_batch)>()
-external bool llama_dart_ngram_process_batch(
-  ffi.Pointer<llama_dart_ngram> ngram,
-  llama_batch batch,
-);
-
-@ffi.Native<ffi.Pointer<llama_dart_ngram> Function(ffi.Int32, ffi.Int32)>()
-external ffi.Pointer<llama_dart_ngram> llama_dart_ngram_simple_init(
-  int ngram_size,
-  int draft_token_max,
+@ffi.Native<ffi.Bool Function(ffi.Pointer<ffi.Void>, ffi.Pointer<ffi.Void>)>()
+external bool llama_dart_owner_untrack(
+  ffi.Pointer<ffi.Void> owner,
+  ffi.Pointer<ffi.Void> object,
 );
 
 @ffi.Native<
@@ -9888,90 +9800,8 @@ final class UnnamedUnion extends ffi.Union {
   external ffi.Array<ffi.Char> val_str;
 }
 
-final class _IO_FILE extends ffi.Struct {
-  @ffi.Int()
-  external int _flags;
+final class _IO_FILE extends ffi.Opaque {}
 
-  external ffi.Pointer<ffi.Char> _IO_read_ptr;
-
-  external ffi.Pointer<ffi.Char> _IO_read_end;
-
-  external ffi.Pointer<ffi.Char> _IO_read_base;
-
-  external ffi.Pointer<ffi.Char> _IO_write_base;
-
-  external ffi.Pointer<ffi.Char> _IO_write_ptr;
-
-  external ffi.Pointer<ffi.Char> _IO_write_end;
-
-  external ffi.Pointer<ffi.Char> _IO_buf_base;
-
-  external ffi.Pointer<ffi.Char> _IO_buf_end;
-
-  external ffi.Pointer<ffi.Char> _IO_save_base;
-
-  external ffi.Pointer<ffi.Char> _IO_backup_base;
-
-  external ffi.Pointer<ffi.Char> _IO_save_end;
-
-  external ffi.Pointer<_IO_marker> _markers;
-
-  external ffi.Pointer<_IO_FILE> _chain;
-
-  @ffi.Int()
-  external int _fileno;
-
-  @ffi.Int()
-  external int _flags2;
-
-  @__off_t()
-  external int _old_offset;
-
-  @ffi.UnsignedShort()
-  external int _cur_column;
-
-  @ffi.SignedChar()
-  external int _vtable_offset;
-
-  @ffi.Array.multi([1])
-  external ffi.Array<ffi.Char> _shortbuf;
-
-  external ffi.Pointer<_IO_lock_t> _lock;
-
-  @__off64_t()
-  external int _offset;
-
-  external ffi.Pointer<_IO_codecvt> _codecvt;
-
-  external ffi.Pointer<_IO_wide_data> _wide_data;
-
-  external ffi.Pointer<_IO_FILE> _freeres_list;
-
-  external ffi.Pointer<ffi.Void> _freeres_buf;
-
-  @ffi.Size()
-  external int __pad5;
-
-  @ffi.Int()
-  external int _mode;
-
-  @ffi.Array.multi([20])
-  external ffi.Array<ffi.Char> _unused2;
-}
-
-final class _IO_codecvt extends ffi.Opaque {}
-
-typedef _IO_lock_t = ffi.Void;
-typedef Dart_IO_lock_t = void;
-
-final class _IO_marker extends ffi.Opaque {}
-
-final class _IO_wide_data extends ffi.Opaque {}
-
-typedef __off64_t = ffi.Long;
-typedef Dart__off64_t = int;
-typedef __off_t = ffi.Long;
-typedef Dart__off_t = int;
 typedef ggml_abort_callback =
     ffi.Pointer<ffi.NativeFunction<ggml_abort_callbackFunction>>;
 typedef ggml_abort_callbackFunction =
@@ -11695,10 +11525,6 @@ enum llama_dart_mtmd_encode_status {
     ),
   };
 }
-
-final class llama_dart_mtp extends ffi.Opaque {}
-
-final class llama_dart_ngram extends ffi.Opaque {}
 
 enum llama_dart_process_status {
   LLAMA_DART_PROCESS_STATUS_UNSUPPORTED_TYPE(-1),

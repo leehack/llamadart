@@ -7,7 +7,6 @@ import 'dart:io';
 
 import 'package:code_assets/code_assets.dart';
 import 'package:llamadart/src/backends/litert_lm/litert_lm_runtime.dart';
-import 'package:llamadart/src/backends/llama_cpp/bindings.dart';
 import 'package:llamadart/src/hook/native_bundle_config.dart';
 import 'package:llamadart/src/hook/native_release_manifest.dart';
 import 'package:llamadart/src/hook/native_release_pins.dart';
@@ -16,136 +15,30 @@ import 'package:test/test.dart';
 void main() {
   final sha256Pattern = RegExp(r'^[0-9a-f]{64}$');
 
-  test('llama.cpp pins the approved v0.8.0-1 release', () {
-    expect(llamaCppTag, 'v0.8.0-1');
+  test('llama.cpp pins the approved v0.8.0-2 release', () {
+    expect(llamaCppTag, 'v0.8.0-2');
   });
 
   test('llama.cpp tag follows the native release tag grammar', () {
     expect(isValidNativeReleaseTag(llamaCppTag), isTrue, reason: llamaCppTag);
   });
 
-  group('Apple llama.cpp compatibility', () {
-    final proof =
-        jsonDecode(
-              File(
-                'test/fixtures/native/llama_cpp_apple_compatibility.json',
-              ).readAsStringSync(),
-            )
-            as Map<String, dynamic>;
-
-    test('is bound to the verified artifact pair', () {
-      final checksums = proof['xcframework_checksums'] as Map<String, dynamic>;
-      final previous = proof['previous_tag'] as String;
-      expect(proof['current_tag'], llamaCppTag);
-      expect(llamaCppCompatibleAppleCompanionTags.keys, [previous]);
-      expect(
-        llamaCppCompatibleAppleCompanionTags[previous]!.trim(),
-        isNotEmpty,
-      );
-      expect(llamaCppCompatibleAppleCompanionChecksums, {
-        previous: checksums[previous],
-      });
-      expect(
-        File(
-          'packages/llamadart_llama_cpp_flutter/darwin/'
-          'llamadart_llama_cpp_flutter/Package.swift',
-        ).readAsStringSync(),
-        contains('checksum: "${checksums[llamaCppTag]}"'),
-      );
-    });
-
-    test('checked every framework slice', () {
-      final slices = proof['slices'] as List<dynamic>;
-      expect(slices, hasLength(5));
-      for (final slice in slices.cast<Map<String, dynamic>>()) {
-        expect(slice['core_symbols_missing_from_previous'], isEmpty);
-        expect(slice['core_symbols_missing_from_current'], isEmpty);
-      }
-    });
-
-    test('names the checksum the published companions declare', () {
-      final previous = proof['previous_tag'] as String;
-      final published =
-          proof['published_companion_checksums'] as Map<String, dynamic>;
-      expect(published, isNotEmpty);
-      for (final MapEntry(key: tag, value: checksum) in published.entries) {
-        expect(checksum, llamaCppCompatibleAppleCompanionChecksums[previous]);
-        // Release tags are absent from shallow CI checkouts; the recorded
-        // value is checked against the tag wherever it is present.
-        final shown = Process.runSync('git', [
-          'show',
-          '$tag:packages/llamadart_llama_cpp_flutter/darwin/'
-              'llamadart_llama_cpp_flutter/Package.swift',
-        ]);
-        if (shown.exitCode != 0) continue;
-        final manifest = shown.stdout as String;
-        expect(
-          manifest,
-          contains('let llamaCppTag = "$previous"'),
-          reason: tag,
-        );
-        expect(manifest, contains('checksum: "$checksum"'), reason: tag);
-      }
-    });
-
-    test('matches the regenerated struct growth', () {
-      final growth = proof['by_value_struct_growth'] as Map<String, dynamic>;
-      final initOpt = growth['mtmd_helper_init_opt'] as Map<String, dynamic>;
-      expect(sizeOf<mtmd_helper_init_opt>(), initOpt['current_size']);
-    });
-
-    test('core stays off what only the pinned runtime has', () {
-      final changedTypes =
-          (proof['types_changed_and_unused_by_core'] as List<dynamic>)
-              .cast<String>();
-      final bindings = RegExp(r'(^|/)(stable_diffusion_)?bindings\.dart$');
-      final word = RegExp(r'[A-Za-z_][A-Za-z_0-9]*');
-      final llamaBindings = File(
-        'lib/src/backends/llama_cpp/bindings.dart',
-      ).readAsStringSync();
-      final dependingOnChangedTypes = <String>{
-        for (final match in RegExp(
-          r'^(?:external\s+[^;]*?|[\w.<>]+\s+)\b(\w+)\([^;{]*?\)\s*[;{]',
-          multiLine: true,
-        ).allMatches(llamaBindings))
-          if (word
-              .allMatches(match[0]!)
-              .any((w) => changedTypes.contains(w[0])))
-            match[1]!,
-      };
-      expect(
-        dependingOnChangedTypes,
-        containsAll(['mtmd_get_cap_from_file', 'mtmd_gen_audio_process']),
-        reason: 'A binding taking or returning a changed type is derived',
-      );
-      final forbidden = <String>{
-        ...(proof['current_only_symbols'] as List<dynamic>).cast<String>(),
-        ...changedTypes,
-        ...dependingOnChangedTypes,
-      };
-      final uses = <String>[];
-      for (final entity in Directory('lib').listSync(recursive: true)) {
-        if (entity is! File ||
-            !entity.path.endsWith('.dart') ||
-            bindings.hasMatch(entity.path.replaceAll(r'\', '/'))) {
-          continue;
-        }
-        final source = entity.readAsStringSync();
-        for (final match in word.allMatches(source)) {
-          if (forbidden.contains(match[0])) {
-            uses.add('${entity.path}: ${match[0]}');
-          }
-        }
-      }
-      expect(
-        uses,
-        isEmpty,
-        reason:
-            'A published companion links ${proof['previous_tag']}, which '
-            'lacks these or lays them out differently. Probe the runtime '
-            'first, then move the name out of the fixture.',
-      );
-    });
+  test('Apple llama.cpp requires the matching repaired runtime', () {
+    // Older artifacts do not include this release's speculative rollback and
+    // model-creation ownership fixes, even when their exported ABI is usable.
+    expect(llamaCppCompatibleAppleCompanionTags, isEmpty);
+    expect(llamaCppCompatibleAppleCompanionChecksums, isEmpty);
+    final manifest = File(
+      'packages/llamadart_llama_cpp_flutter/darwin/'
+      'llamadart_llama_cpp_flutter/Package.swift',
+    ).readAsStringSync();
+    expect(manifest, contains('let llamaCppTag = "$llamaCppTag"'));
+    expect(
+      manifest,
+      contains(
+        'checksum: "026dba77a76858553e329e4bd317550d8c619a5e3b3e9498a52b72b0712b4d3e"',
+      ),
+    );
   });
 
   test('Apple companion version is the first release pinning llamaCppTag', () {
