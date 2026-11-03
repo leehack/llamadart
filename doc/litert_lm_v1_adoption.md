@@ -29,12 +29,12 @@ client/session contracts make v1 embedding dispatch independent of that extensio
 | LoRA session path | Explicit typed refusal | Setter status, copied path ownership and supported engine/backend behavior. |
 | Image/audio chat | Explicit typed refusal | Media message validation, processor admission and visual-budget transport. `maxNumImages` is documented legacy-engine-only and must not be silently dropped. Video retains its existing public refusal. |
 | Embedding sessions | Independent session contract; explicit v1 refusal | Dedicated v1 engine/options/input/response APIs, `size_t` counts and copied vectors, with existing backend restrictions. |
-| Dedicated ASR | Independent owner ABI 1 exists; explicit v1 refusal | Library admission and actual speech probe/worker dispatch must use the independent bridge safely, without legacy core ABI calls. |
+| Dedicated ASR | Loaded-library ABI1/layout/full-symbol admission; v1 client and injected actual speech probe/worker use the independent bridge. Compiled fixture covers partial owners, copied text/errors, size_t backpressure, cancel/reset/finalization and worker startup/disposal. | Matching artifact/model/audio qualification through the injected worker; public default selection remains legacy. |
 | Logging | Canonical v1 status checked for declared severity values | Matching artifact qualification. |
 | Cancellation, errors and disposal | Final plus successful drain required; cancellation awaits adapter terminal bookkeeping; failed drain/missing final retain native owners in isolated fixtures | Worker/timeout and actual artifact/model qualification must preserve the same retention boundary. |
 | Benchmark metrics / `run` | Legacy metrics value types and aggregation; owned native snapshots | Benchmark loops and actual artifact/model qualification. |
 
-The public legacy runtime and Web stub remain unchanged. Adding an operation to
+The public legacy selection and Web stub remain unchanged. Independent ASR library helpers reuse its bridge bindings without constructing legacy text bindings; malformed success-with-null owners are refused, and a partial engine returned with an error is released. Adding an operation to
 the internal contract requires both ABI implementations to supply it explicitly;
 v1 never inherits a legacy FFI method as a fallback. Unsupported preparations
 throw `LlamaUnsupportedException` before native generation rather than reporting
@@ -76,3 +76,29 @@ the same service must return `4` again. A process deadline bounds unsafe retaine
 work. Logs and the receipt go under `.dart_tool/litert_lm_v1_service/`, or the
 external `LITERT_LM_V1_LOG_DIR`. This is a qualification tool, not public v1
 selection, and does not claim the remaining feature families or other devices.
+
+## Independent ASR dispatch
+
+`createLiteRtLmSpeechToTextDriverWithRuntime` in the IO implementation is an
+internal qualification/integration boundary. Pass an isolate-sendable factory
+that constructs the selected ABI client from the provided library path inside
+the receiving isolate. Both the support probe and the streaming worker use it.
+The default speech factory still uses the legacy client; this does not enable
+public C API1 selection or change runtime pins.
+
+The selected text C API does not determine ASR support. The loaded library must
+report ASR ABI1, exact configuration/result sizes and every required bridge
+symbol. A session retains its own bridge/library and model resources after its
+creation engine is deleted; it can settle and dispose independently of a text
+client. Calls remain synchronous inside the existing worker and cancellation is
+cooperative between windows, as in the owner contract.
+
+For a scheduled real ASR check, use `litert-lm-v1-asr-smoke` from the local E2E
+runner with explicit library/model/tokenizer/audio SHA256 values. Its dry-run
+prints the exact command. The wrapper requires a clean committed checkout,
+compiles an owned AOT child, verifies all four input digests before native
+loading, requests CPU/two threads, and injects the v1 driver into the existing
+public streaming/task/cancellation smoke. It captures source/executable identity,
+stdout/native stderr and a receipt in a unique temporary evidence directory.
+Only its owned child is killed at the four-minute deadline. A successful fixture
+or owner C++ smoke does not replace this actual Dart worker/model qualification.

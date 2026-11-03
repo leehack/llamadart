@@ -514,6 +514,68 @@ Future<void> main(List<String> args) async {
 
   group('run_local_e2e', () {
     test(
+      'v1 ASR requires full inputs and digests and wires bounded wrapper',
+      () async {
+        const args = [
+          '--scenario',
+          'litert-lm-v1-asr-smoke',
+          '--model-path',
+          '/speech',
+          '--tokenizer-path',
+          '/tokenizer',
+          '--audio-path',
+          '/audio.wav',
+          '--model-preset',
+          'moonshine-tiny',
+          '--expect',
+          'country',
+          '--backend',
+          'cpu',
+          '--dry-run',
+        ];
+        final identity = {
+          'LITERT_LM_V1_LIBRARY': '/candidate/libLiteRtLm.dylib',
+          for (final name in ['LIBRARY', 'MODEL', 'TOKENIZER', 'AUDIO'])
+            'LITERT_LM_V1_${name}_SHA256': 'a' * 64,
+        };
+        final valid = await runLocalE2e(
+          args,
+          projectRoot: '/repo',
+          environment: identity,
+        );
+        expect(valid.exitCode, 0);
+        expect(
+          valid.stdout,
+          contains('test/fixtures/litert_lm_v1_asr_qualification.dart'),
+        );
+        expect(valid.stdout, contains('/tokenizer'));
+        for (final name in [
+          'LITERT_LM_V1_TOKENIZER_SHA256',
+          'LITERT_LM_V1_AUDIO_SHA256',
+        ]) {
+          final invalid = await runLocalE2e(
+            args,
+            projectRoot: '/repo',
+            environment: {...identity, name: 'bad'},
+          );
+          expect(invalid.exitCode, 64);
+          expect(invalid.stderr, contains(name));
+        }
+        final gpu = await runLocalE2e(
+          [for (final value in args) value == 'cpu' ? 'gpu' : value],
+          projectRoot: '/repo',
+          environment: identity,
+        );
+        expect(gpu.exitCode, 64);
+        final missing = await runLocalE2e(
+          const ['--scenario', 'litert-lm-v1-asr-smoke', '--dry-run'],
+          projectRoot: '/repo',
+          environment: identity,
+        );
+        expect(missing.exitCode, 64);
+      },
+    );
+    test(
       'v1 service qualification requires model, CPU and exact input digests',
       () async {
         final identity = <String, String>{

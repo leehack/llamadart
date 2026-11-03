@@ -50,7 +50,8 @@ final class LiteRtLmV1RuntimeClient implements LiteRtLmRuntimeClientContract {
           1;
 
   @override
-  bool get supportsAsrBridge => false;
+  bool get supportsAsrBridge =>
+      !_disposed && legacy.supportsLiteRtLmAsrLibrary(_runtime._library);
 
   @override
   bool get supportsSamplingPenalties =>
@@ -114,8 +115,13 @@ final class LiteRtLmV1RuntimeClient implements LiteRtLmRuntimeClientContract {
   }
 
   @override
-  LiteRtLmAsrRuntimeSession createAsrSession(LiteRtLmAsrRuntimeConfig config) =>
-      _unsupported('dedicated ASR');
+  LiteRtLmAsrRuntimeSession createAsrSession(LiteRtLmAsrRuntimeConfig config) {
+    _live();
+    return legacy.createLiteRtLmAsrSessionFromLibrary(
+      _runtime._library,
+      config,
+    );
+  }
 
   @override
   Future<LiteRtLmEmbeddingRuntimeSession> createEmbeddingSession({

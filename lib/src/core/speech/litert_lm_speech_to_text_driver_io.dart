@@ -2,7 +2,9 @@ import 'dart:async';
 import 'dart:isolate';
 import 'dart:typed_data';
 
+import '../../backends/litert_lm/litert_lm_legacy_service_client.dart';
 import '../../backends/litert_lm/litert_lm_runtime.dart';
+import '../../backends/litert_lm/litert_lm_runtime_client_contract.dart';
 import '../exceptions.dart';
 import '../models/model_source.dart';
 import 'litert_lm_speech_to_text_driver.dart';
@@ -35,8 +37,25 @@ LiteRtLmAsrProcessResult? processLiteRtLmSpeechWindow(
 LiteRtLmSpeechToTextDriver createLiteRtLmSpeechToTextDriver() =>
     const _IoLiteRtLmSpeechToTextDriver();
 
+/// Prepares an explicitly selected native ABI for the speech probe and worker.
+/// [runtimeClientFactory] must be isolate-sendable and construct native owners
+/// inside the receiving isolate; it must not capture a loaded native client.
+LiteRtLmSpeechToTextDriver createLiteRtLmSpeechToTextDriverWithRuntime(
+  LiteRtLmRuntimeClientContract Function(String? libraryPath)
+  runtimeClientFactory,
+) => _IoLiteRtLmSpeechToTextDriver(runtimeClientFactory);
+
+LiteRtLmRuntimeClientContract _createLegacySpeechClient(String? libraryPath) =>
+    LiteRtLmLegacyServiceClient(
+      LiteRtLmRuntimeClient(libraryPath: libraryPath),
+    );
+
 class _IoLiteRtLmSpeechToTextDriver implements LiteRtLmSpeechToTextDriver {
-  const _IoLiteRtLmSpeechToTextDriver();
+  const _IoLiteRtLmSpeechToTextDriver([
+    this._runtimeClientFactory = _createLegacySpeechClient,
+  ]);
+
+  final LiteRtLmRuntimeClientContract Function(String?) _runtimeClientFactory;
 
   @override
   Future<LiteRtLmSpeechToTextSupport> probeSupport({
@@ -51,9 +70,9 @@ class _IoLiteRtLmSpeechToTextDriver implements LiteRtLmSpeechToTextDriver {
         );
       }
     }
-    LiteRtLmRuntimeClient? runtime;
+    LiteRtLmRuntimeClientContract? runtime;
     try {
-      runtime = LiteRtLmRuntimeClient(libraryPath: libraryPath);
+      runtime = _runtimeClientFactory(libraryPath);
       if (runtime.supportsAsrBridge) {
         return const LiteRtLmSpeechToTextSupport(isSupported: true);
       }
@@ -76,7 +95,11 @@ class _IoLiteRtLmSpeechToTextDriver implements LiteRtLmSpeechToTextDriver {
   Future<LiteRtLmSpeechToTextWorker> start(
     LiteRtLmAsrRuntimeConfig config, {
     String? libraryPath,
-  }) => _LiteRtLmSpeechWorkerClient.create(config, libraryPath: libraryPath);
+  }) => _LiteRtLmSpeechWorkerClient.create(
+    config,
+    libraryPath: libraryPath,
+    runtimeClientFactory: _runtimeClientFactory,
+  );
 }
 
 class _LiteRtLmSpeechWorkerClient implements LiteRtLmSpeechToTextWorker {
@@ -120,6 +143,8 @@ class _LiteRtLmSpeechWorkerClient implements LiteRtLmSpeechToTextWorker {
   static Future<_LiteRtLmSpeechWorkerClient> create(
     LiteRtLmAsrRuntimeConfig config, {
     String? libraryPath,
+    required LiteRtLmRuntimeClientContract Function(String?)
+    runtimeClientFactory,
   }) async {
     final messages = ReceivePort();
     final errors = ReceivePort();
@@ -148,6 +173,7 @@ class _LiteRtLmSpeechWorkerClient implements LiteRtLmSpeechToTextWorker {
         'maxBufferedAudioMilliseconds': config.maxBufferedAudio.inMilliseconds,
         'overlapRatio': config.overlapRatio,
         'libraryPath': ?libraryPath,
+        'runtimeClientFactory': runtimeClientFactory,
       });
       return client;
     } catch (_) {
@@ -300,7 +326,7 @@ class _LiteRtLmSpeechWorkerClient implements LiteRtLmSpeechToTextWorker {
 void _liteRtLmSpeechWorkerMain(SendPort mainPort) {
   final commands = ReceivePort();
   mainPort.send(<String, Object>{'kind': 'ready', 'port': commands.sendPort});
-  LiteRtLmRuntimeClient? runtime;
+  LiteRtLmRuntimeClientContract? runtime;
   LiteRtLmAsrRuntimeSession? session;
   final confirmed = <String>[];
   var acceptedSamples = 0;
@@ -354,9 +380,10 @@ void _liteRtLmSpeechWorkerMain(SendPort mainPort) {
       switch (command) {
         case 'initialize':
           final payload = raw['payload'] as Map;
-          runtime = LiteRtLmRuntimeClient(
-            libraryPath: payload['libraryPath'] as String?,
-          );
+          final factory =
+              payload['runtimeClientFactory']
+                  as LiteRtLmRuntimeClientContract Function(String?);
+          runtime = factory(payload['libraryPath'] as String?);
           if (!runtime!.supportsAsrBridge) {
             throw StateError(
               'The installed LiteRT-LM runtime does not expose the v0.16+ ASR ABI.',

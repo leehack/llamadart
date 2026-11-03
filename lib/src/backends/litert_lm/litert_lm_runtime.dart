@@ -2898,6 +2898,27 @@ class LiteRtLmChannelAssembler {
   }
 }
 
+/// Probes the independent ASR ABI on an explicitly selected loaded library.
+/// This does not bind or admit the library's text-generation C API.
+bool supportsLiteRtLmAsrLibrary(DynamicLibrary library) {
+  try {
+    _LiteRtLmAsrBindings(library).validateCompatibility();
+    return true;
+  } on Object {
+    return false;
+  }
+}
+
+/// Creates an owned ASR session after validating the independent bridge ABI.
+/// The returned session retains its library independently of text engines.
+LiteRtLmAsrRuntimeSession createLiteRtLmAsrSessionFromLibrary(
+  DynamicLibrary library,
+  LiteRtLmAsrRuntimeConfig config,
+) {
+  _validateLiteRtLmAsrRuntimeConfig(config);
+  return _NativeLiteRtLmAsrRuntimeSession.create(library, config);
+}
+
 const int _liteRtLmAsrAbiVersion = 1;
 const int _liteRtLmAsrStatusOk = 0;
 const int _liteRtLmAsrStatusNeedsMoreAudio = 10;
@@ -3117,13 +3138,18 @@ class _NativeLiteRtLmAsrRuntimeSession implements LiteRtLmAsrRuntimeSession {
       config.ref.overlapRatio = runtimeConfig.overlapRatio;
 
       final engineStatus = bindings.engineCreate(config, engineOut, errorOut);
+      engine = engineOut.value;
       _throwOnAsrStatus(
         bindings,
         engineStatus,
         errorOut,
         operation: 'LiteRT-LM ASR engine creation',
       );
-      engine = engineOut.value;
+      if (engine == nullptr) {
+        throw LlamaSpeechException(
+          'LiteRT-LM ASR engine creation returned no owner on success.',
+        );
+      }
       final sessionStatus = bindings.sessionCreate(
         engine,
         sessionOut,
@@ -3135,6 +3161,11 @@ class _NativeLiteRtLmAsrRuntimeSession implements LiteRtLmAsrRuntimeSession {
         errorOut,
         operation: 'LiteRT-LM ASR session creation',
       );
+      if (sessionOut.value == nullptr) {
+        throw LlamaSpeechException(
+          'LiteRT-LM ASR session creation returned no owner on success.',
+        );
+      }
       session = sessionOut.value;
       return _NativeLiteRtLmAsrRuntimeSession._(bindings, session);
     } on ArgumentError catch (error) {

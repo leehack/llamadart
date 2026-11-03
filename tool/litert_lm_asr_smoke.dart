@@ -9,7 +9,14 @@ import 'package:llamadart/llamadart.dart';
 const int _sampleRateHz = 16000;
 const int _pushSamples = _sampleRateHz ~/ 10;
 
-Future<void> main(List<String> args) async {
+Future<void> main(List<String> args) => runLiteRtLmAsrSmoke(args);
+
+/// Runs the existing public speech checks with explicit qualification settings.
+Future<void> runLiteRtLmAsrSmoke(
+  List<String> args, {
+  String? libraryPath,
+  int numberOfThreads = 4,
+}) async {
   if (args.length < 5) {
     stderr.writeln(
       'Usage: dart run tool/litert_lm_asr_smoke.dart '
@@ -31,17 +38,19 @@ Future<void> main(List<String> args) async {
   }
 
   final fixture = await _readPcm16MonoWav(audioPath);
-  final libraryPath = Platform.environment['LLAMADART_LITERT_LM_LIBRARY_PATH']
-      ?.trim();
+  final selectedLibraryPath =
+      libraryPath ??
+      Platform.environment['LLAMADART_LITERT_LM_LIBRARY_PATH']?.trim();
   final recognizer = await SpeechToTextEngine.load(
     SpeechToTextModel(
       ModelSource.path(modelPath),
       tokenizer: ModelSource.path(tokenizerPath),
       adapter: LiteRtLmAsrAdapter(
         preset,
-        libraryPath: libraryPath == null || libraryPath.isEmpty
+        libraryPath: selectedLibraryPath == null || selectedLibraryPath.isEmpty
             ? null
-            : libraryPath,
+            : selectedLibraryPath,
+        numberOfThreads: numberOfThreads,
       ),
     ),
   );
