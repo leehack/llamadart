@@ -390,3 +390,12 @@ refusal/fallback evidence separate from corrected CPU correctness, isolates the
 corrected GPU attempt in an owned native child, and gates corrected public auto
 on that control. Source/model-free checks establish no device result and do not
 authorize an APK, cloud run or additional budget reservation.
+
+## Original SD24 diagnostic
+
+The maintained `image-original-containers` local E2E scenario uses the private
+[original-mode operator](native/sd_original_mode/README.md) for six bounded
+native/public same-weight RGB cases. It preserves the original external TAESD,
+cache4/flash-attention settings and failed-history evidence. PR41 artifact,
+consumer bindings/build receipts and exact plan need independent admission;
+model-free source tests are not generation or final-published qualification.

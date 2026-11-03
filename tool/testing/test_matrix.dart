@@ -673,6 +673,20 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
         'or restricted native container reader changes.',
   ),
   TestMatrixRow(
+    id: 'image-original-containers',
+    tier: 'targeted',
+    mode: 'local-only',
+    covers:
+        'Original SD24 Safetensors/flat/nested CPU4 external-TAESD native/public '
+        'RGB parity with cache4 and diffusion flash; PR41 diagnostic only',
+    command:
+        'dart run tool/testing/run_local_e2e.dart --scenario '
+        'image-original-containers --model-path <admitted-plan.json>',
+    useWhen:
+        'After independent source/artifact/plan admission for the original '
+        'ZIP load-time investigation; never an ordinary CI/model download gate.',
+  ),
+  TestMatrixRow(
     id: 'image-seamless-textures',
     tier: 'targeted',
     mode: 'local-only',

@@ -953,6 +953,31 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
       ],
     ),
     LocalE2eScenario(
+      name: 'image-original-containers',
+      group: LocalE2eScenarioGroup.dartLocalOnly,
+      description:
+          'Run the six hash-bound original SD24 native/public diagnostic cases '
+          'with external TAESD, cache4 and diffusion flash attention; '
+          '--model-path is the independently admitted local plan.',
+      requiresDevice: false,
+      stepsBuilder: (context) => [
+        LocalE2eCommandStep(
+          workingDirectory: context.projectRoot,
+          executable: context.python,
+          arguments: [
+            'packages/llamadart_validation/native/sd_original_mode/run.py',
+            '--plan',
+            context.modelPath!,
+            '--out',
+            '${context.projectRoot}/build/image-original-containers',
+            '--execute',
+          ],
+          description:
+              'Bounded original-mode diagnostic, not release qualification',
+        ),
+      ],
+    ),
+    LocalE2eScenario(
       name: 'image-seamless-textures',
       group: LocalE2eScenarioGroup.dartLocalOnly,
       description:
@@ -2794,6 +2819,15 @@ Future<LocalE2eResult> runLocalE2e(
             'LLAMADART_HIRES_DEVICE cpu or gpu. See doc/image_hires_fix.md.\n',
       );
     }
+  }
+  if (scenario.name == 'image-original-containers' &&
+      parsed.modelPath == null) {
+    return const LocalE2eResult(
+      64,
+      stderr:
+          '--model-path <independently-admitted-plan.json> is required for '
+          'image-original-containers; see doc/image_weight_formats.md.\n',
+    );
   }
   if (scenario.name == 'image-container-formats' &&
       (parsed.modelPath == null ||
