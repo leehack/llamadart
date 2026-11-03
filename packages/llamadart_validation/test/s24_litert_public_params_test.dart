@@ -11,6 +11,15 @@ import 'package:llamadart_validation/android_litert_qualification.dart';
 import 'package:test/test.dart';
 
 void main() {
+  final abi = Abi.current();
+  if (abi != Abi.macosArm64 && abi != Abi.linuxX64) {
+    test(
+      'native GPU fixture requires a supported host ABI',
+      () {},
+      skip: 'This native GPU fixture supports macOS arm64 and Linux x64.',
+    );
+    return;
+  }
   late Directory directory;
   late String core;
   late File model;
