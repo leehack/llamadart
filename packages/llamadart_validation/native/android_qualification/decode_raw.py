@@ -98,6 +98,24 @@ def recover(rows):
                 raw = files[prefix + '/' + suffix]
                 lock = capture['files'][suffix]
                 require(len(raw) == lock['bytes'] and hashlib.sha256(raw).hexdigest() == lock['sha256'], 'Native capture lock mismatch')
+    native_events = {}
+    public_events = {}
+    for row in rows:
+        event = row.get('event')
+        if event == 'native_capture':
+            key = (row['case_id'], row.get('model_free_launch', False))
+            require(key in started and key not in native_events, 'Unexpected or duplicate native capture')
+            native_events[key] = row
+        elif event in ('public_stderr_capture', 'public_geometry_stderr_snapshot'):
+            key = (row['case_id'], event)
+            require((row['case_id'], False) in started and key not in public_events, 'Unexpected or duplicate public lock')
+            public_events[key] = row
+    for case, launch in started:
+        if '.native.' in case:
+            require((case, launch) in native_events, 'Missing native capture event')
+        else:
+            for event in ('public_stderr_capture', 'public_geometry_stderr_snapshot'):
+                require((case, event) in public_events, 'Missing public lock event')
     for row in rows:
         if row.get('event') == 'public_stderr_capture':
             raw = files[row['case_id'] + '.stderr.log']
@@ -109,7 +127,19 @@ def recover(rows):
         elif row.get('event') == 'native_capture':
             prefix = 'launch' if row.get('model_free_launch') else row['case_id']
             captured = json.loads(files[prefix + '/capture.json'])
-            require(captured['files'] == row['capture']['files'], 'Journal native locks mismatch')
+            require(captured == row['capture'], 'Journal native capture mismatch')
+            require(captured.get('schema') == 1 and captured.get('binding') == manifest.get('execution_binding')
+                    and isinstance(manifest.get('execution_binding'), str)
+                    and len(manifest['execution_binding']) == 64
+                    and captured.get('case_id') == row['case_id']
+                    and type(captured.get('pid')) is int and captured['pid'] > 0, 'Native capture identity mismatch')
+            records = [json.loads(line) for line in files[prefix + '/stdout.jsonl'].splitlines()]
+            for index, record in enumerate(records):
+                require(record.get('schema') == 1 and record.get('binding') == captured['binding']
+                        and record.get('case_id') == captured['case_id'] and record.get('pid') == captured['pid']
+                        and record.get('sequence') == index, 'Native stdout identity mismatch')
+            if 'records' in captured:
+                require(captured['records'] == records, 'Parsed native records mismatch')
     return files
 
 
