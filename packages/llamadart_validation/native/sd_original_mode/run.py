@@ -6,7 +6,8 @@ import os
 import platform
 from pathlib import Path
 import re
-import subprocess
+import shutil
+import time
 import sys
 
 from owned_capture import CaptureInterrupted, capture, digest
@@ -144,67 +145,184 @@ def grade(directory, row, plan, baseline, paired):
     return rgb
 
 
+# Phase workers own all potentially blocking hashing/grading work. No alarms
+# can become pending across Popen registration; every subprocess has one owner.
+BUDGETS = {"preflight": (57, 60), "cases": (1074, 1080), "post": (7, 10)}
+
+
+class PhaseTimeout(TimeoutError):
+    pass
+
+
+class CleanupUnknown(RuntimeError):
+    pass
+
+
+def phase_budget(name):
+    started = time.monotonic()
+    active, total = BUDGETS[name]
+    return {"phase": name, "started": started, "active_end": started + active, "total_end": started + total}
+
+
+def before_deadline(budget):
+    if time.monotonic() >= budget["active_end"]:
+        raise PhaseTimeout(budget["phase"] + " active deadline expired")
+
+
+def settled(record):
+    return (record.get("pid") is None or record.get("leader_reaped") is True) and not record.get("cleanup_errors")
+
+
+def run_owned(command, directory, identity, *, seconds, budget):
+    before_deadline(budget)
+    try:
+        record = capture(command, directory, identity, seconds=seconds,
+                         active_deadline=budget["active_end"], total_deadline=budget["total_end"])
+    except BaseException:
+        try:
+            record = json.loads((directory / "capture.json").read_text())
+        except BaseException as failure:
+            raise CleanupUnknown("owned terminal receipt unavailable") from failure
+        if not settled(record):
+            raise CleanupUnknown("owned cleanup is UNKNOWN")
+        raise
+    if not settled(record):
+        raise CleanupUnknown("owned cleanup is UNKNOWN")
+    require(record["exit"] == 0 and not record["timed_out"] and not record["capture_limit_exceeded"]
+            and not record["received_signals"] and not record["failure_type"]
+            and not record.get("shared_deadline_reached"), "owned phase/case failed")
+    # A zero exit or already-written grade cannot turn an expired phase green.
+    before_deadline(budget)
+    return record
+
+
+def verify_payloads(plan, output):
+    identities = {}
+    for key in ("nativeExecutable", "dartExecutable", "publicSnapshot", "nativeLibrary", "publicLibrary", "artifactReview", "sourceAdmission", "nativeAssets", "nativeBuildReceipt", "publicBuildReceipt", "runtimeStagingReceipt", "taesd"):
+        identities[key] = verify(plan[key])
+    for key in ("nativeExecutable", "dartExecutable"):
+        with Path(plan[key]["path"]).open("rb") as stream:
+            require(stream.read(4) in (bytes.fromhex("cffaedfe"), bytes.fromhex("cafebabe"), bytes.fromhex("cafebabf")),
+                    "direct Mach-O executable required; shell/build launchers refused")
+    with Path(plan["publicSnapshot"]["path"]).open("rb") as stream:
+        require(stream.read(4) == bytes.fromhex("90abcdef"), "precompiled public kernel snapshot required")
+    for model in plan["models"]:
+        identities[model["id"]] = verify(model)
+    (output / "identities.json").write_text(json.dumps(identities, indent=2) + "\n")
+
+
+def worker_command(kind, plan_path, output, expected, case=None):
+    command = [str(Path(sys.executable).resolve()), str(Path(__file__).resolve()),
+               "--phase-worker", kind, "--plan", str(plan_path), "--plan-sha256", expected, "--out", str(output)]
+    if case is not None:
+        command += ["--case-id", case]
+    return command
+
+
+def phase_worker(kind, plan, output, case):
+    if kind == "preflight":
+        verify_payloads(plan, output)
+    elif kind == "grade":
+        row = next(r for r in commands(plan, output) if r["id"] == case)
+        baseline = None if case == "native-safetensors" else (output / "native-safetensors/image.ppm").read_bytes()[len(PREFIX):]
+        paired = (output / ("native-" + row["model"]["id"]) / "image.ppm").read_bytes()[len(PREFIX):] if row["route"] == "public" else None
+        grade(output / case, row, plan, baseline, paired)
+    elif kind == "post":
+        for row in commands(plan, output):
+            retain_image(output / row["id"])
+        summary = json.loads((output / "summary.json").read_text())
+        summary["diagnosticPassed"] = not summary.get("failure") and all(s["status"] == "PASS" for s in summary["cases"])
+        temporary = output / "summary.partial"
+        temporary.write_text(json.dumps(summary, indent=2) + "\n")
+        temporary.replace(output / "summary.json")
+    else:
+        raise ValueError("unknown data-only phase worker")
+    print(json.dumps({"phase": kind, "case": case, "completed": True, "model_inference": False}))
+
+
 def execute(plan, output):
     validate_plan(plan)
+    preflight = phase_budget("preflight")
     output.mkdir(parents=True, exist_ok=False)
     rows = commands(plan, output)
     summary = {"scope": plan["scope"], "qualified": False, "diagnosticPassed": False,
                "host": {"system": platform.system(), "machine": platform.machine(), "osRelease": platform.release(), "macos": platform.mac_ver()[0]},
-               "cases": [{"id": r["id"], "status": "NOT_RUN"} for r in rows]}
-    (output / "frozen-plan.json").write_text(json.dumps(plan, indent=2) + "\n")
-    summary["planSha256"] = digest(output / "frozen-plan.json")
+               "cases": [{"id": r["id"], "status": "NOT_RUN"} for r in rows], "phaseBudgets": {}}
+    plan_path = output / "frozen-plan.json"
+    plan_path.write_text(json.dumps(plan, indent=2) + "\n")
+    summary["planSha256"] = digest(plan_path)
     def save():
         temporary = output / "summary.partial"
         temporary.write_text(json.dumps(summary, indent=2) + "\n")
         temporary.replace(output / "summary.json")
     save()
+    error = None
     try:
         require(sys.platform == "darwin" and platform.machine() == "arm64", "this diagnostic plan is macOS arm64-only")
         require(not any(os.environ.get(k) for k in ("DYLD_INSERT_LIBRARIES", "DYLD_LIBRARY_PATH", "LD_PRELOAD", "LD_LIBRARY_PATH")), "library injection/override environment refused")
-        source = subprocess.check_output(["git", "-C", str(REPO), "rev-parse", "HEAD"], text=True).strip()
-        require(source == plan["sourceCommit"], "consumer source differs")
-        require(not subprocess.check_output(["git", "-C", str(REPO), "status", "--porcelain", "--untracked-files=no"]), "tracked source is dirty")
-        identities = {}
-        for key in ("nativeExecutable", "dartExecutable", "publicSnapshot", "nativeLibrary", "publicLibrary", "artifactReview", "sourceAdmission", "nativeAssets", "nativeBuildReceipt", "publicBuildReceipt", "runtimeStagingReceipt", "taesd"):
-            identities[key] = verify(plan[key])
-        for key in ("nativeExecutable", "dartExecutable"):
-            with Path(plan[key]["path"]).open("rb") as stream:
-                require(stream.read(4) in (bytes.fromhex("cffaedfe"), bytes.fromhex("cafebabe"), bytes.fromhex("cafebabf")),
-                        "direct Mach-O executable required; shell/build launchers refused")
-        with Path(plan["publicSnapshot"]["path"]).open("rb") as stream:
-            require(stream.read(4) == bytes.fromhex("90abcdef"), "precompiled public kernel snapshot required")
-        for model in plan["models"]:
-            identities[model["id"]] = verify(model)
-        (output / "identities.json").write_text(json.dumps(identities, indent=2) + "\n")
+        summary["phaseBudgets"]["preflight"] = preflight
+        git = shutil.which("git")
+        require(git is not None, "git required for frozen source identity")
+        # These two read-only builtins suppress hooks, fsmonitor, paging and
+        # submodule recursion; no unjoined Git child exists in a phase worker.
+        git_prefix = [git, "-c", "core.fsmonitor=false", "-c", "core.untrackedCache=false",
+                      "-c", "core.hooksPath=/dev/null", "--no-pager", "-C", str(REPO)]
+        for name, arguments in (("head", ["rev-parse", "HEAD"]),
+                                ("status", ["status", "--porcelain", "--untracked-files=no", "--ignore-submodules=all"])):
+            directory = output / ("_preflight-git-" + name)
+            run_owned([*git_prefix, *arguments], directory, {"phase": "preflight-git-" + name, "model_inference": False}, seconds=5, budget=preflight)
+            raw = (directory / "stdout.log").read_bytes()
+            require(raw.decode("ascii").strip() == plan["sourceCommit"] if name == "head" else not raw,
+                    "consumer source differs or is dirty")
+        run_owned(worker_command("preflight", plan_path, output, summary["planSha256"]), output / "_preflight-hash",
+                  {"phase": "preflight-hash", "model_inference": False}, seconds=57, budget=preflight)
+        before_deadline(preflight)
         summary["identitiesSha256"] = digest(output / "identities.json")
         summary["identitiesVerified"] = True
-        baseline = None
-        native = {}
+        # This deadline begins here, before any model case is marked/launched.
+        cases = phase_budget("cases")
+        summary["phaseBudgets"]["cases"] = cases
         for row, state in zip(rows, summary["cases"]):
+            before_deadline(cases)
             state["status"] = "RUNNING"
             save()
             directory = output / row["id"]
-            try:
-                capture(row["argv"], directory, {"case": row["id"], "model": row["model"], "ownerCommit": OWNER,
-                                                "planSha256": summary["planSha256"], "identitiesSha256": summary["identitiesSha256"],
-                                                "model_inference": True}, seconds=177)
-            finally:
-                retain_image(directory)
-            rgb = grade(directory, row, plan, baseline, native.get(row["model"]["id"]))
-            if baseline is None:
-                baseline = rgb
-            if row["route"] == "native":
-                native[row["model"]["id"]] = rgb
+            run_owned(row["argv"], directory, {"case": row["id"], "model": row["model"], "ownerCommit": OWNER,
+                      "planSha256": summary["planSha256"], "identitiesSha256": summary["identitiesSha256"], "model_inference": True}, seconds=177, budget=cases)
+            run_owned(worker_command("grade", plan_path, output, summary["planSha256"], row["id"]), output / ("_grade-" + row["id"]),
+                      {"phase": "grade", "case": row["id"], "model_inference": False}, seconds=7, budget=cases)
+            before_deadline(cases)
+            require(json.loads((directory / "grade.json").read_text())["passed"] is True, "grader did not accept")
             state["status"] = "PASS"
             save()
-        summary["diagnosticPassed"] = True
+        before_deadline(cases)
     except BaseException as failure:
+        error = failure
         for state in summary["cases"]:
             if state["status"] == "RUNNING": state["status"] = "FAIL"
         summary["failure"] = type(failure).__name__ + ": " + str(failure)
-        raise
-    finally:
+        if isinstance(failure, CleanupUnknown): summary["cleanup"] = "UNKNOWN"
+    save()
+    # Never create another worker after unknown cleanup or a user cancellation.
+    if summary.get("identitiesVerified") and not isinstance(error, (CleanupUnknown, CaptureInterrupted)):
+        post = phase_budget("post")
+        summary["phaseBudgets"]["post"] = post
         save()
+        try:
+            run_owned(worker_command("post", plan_path, output, summary["planSha256"]), output / "_post",
+                      {"phase": "post", "model_inference": False}, seconds=7, budget=post)
+            before_deadline(post)
+            summary = json.loads((output / "summary.json").read_text())
+        except BaseException as failure:
+            error = failure
+            summary["failure"] = type(failure).__name__ + ": " + str(failure)
+            summary["diagnosticPassed"] = False
+            save()
+    if error is not None:
+        summary["diagnosticPassed"] = False
+        save()
+        raise error
+    require(summary["diagnosticPassed"] is True, "diagnostic did not complete")
     return summary
 
 
@@ -212,11 +330,20 @@ if __name__ == "__main__":
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--plan", type=Path, required=True)
     p.add_argument("--out", type=Path, required=True)
-    p.add_argument("--execute", action="store_true")
+    mode = p.add_mutually_exclusive_group()
+    mode.add_argument("--execute", action="store_true")
+    mode.add_argument("--phase-worker", choices=("preflight", "grade", "post"))
+    p.add_argument("--plan-sha256")
+    p.add_argument("--case-id", choices=[route + "-" + model[0] for model in MODELS for route in ("native", "public")])
     a = p.parse_args()
+    if a.phase_worker:
+        require(a.plan_sha256 is not None and digest(a.plan) == a.plan_sha256, "frozen worker plan differs")
     plan = json.loads(a.plan.read_text())
     validate_plan(plan)
     try:
-        print(json.dumps(execute(plan, a.out.resolve()) if a.execute else commands(plan, a.out.resolve()), indent=2))
+        if a.phase_worker:
+            phase_worker(a.phase_worker, plan, a.out.resolve(), a.case_id)
+        else:
+            print(json.dumps(execute(plan, a.out.resolve()) if a.execute else commands(plan, a.out.resolve()), indent=2))
     except CaptureInterrupted as failure:
         raise SystemExit(128 + failure.signum)

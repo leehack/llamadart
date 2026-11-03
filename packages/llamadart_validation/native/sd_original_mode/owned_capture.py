@@ -1,8 +1,8 @@
 """Owned POSIX capture adapted from the independently reviewed SD metadata runner.
 
-Only the operator's hash-bound native/Dart fixture entrypoints are admitted.
-This is not a general command runner. Signal masking/teardown/reaping/atomic
-terminal receipts preserve the reviewed implementation.
+Only the operator's bound fixture entrypoints, data-only phase workers and two
+scoped Git metadata builtins are admitted. This is not a general command runner.
+Signal masking/teardown/reaping/atomic terminal receipts preserve ownership.
 """
 import contextlib
 import hashlib
@@ -67,15 +67,27 @@ def child_exited_unreaped(child) -> bool:
 
 
 def capture(command: list[str], output: Path, identity: dict, *, seconds: float = 177,
-            observation_seconds: float = 45, max_bytes: int = 2 << 20) -> dict:
+            observation_seconds: float = 45, max_bytes: int = 2 << 20,
+            active_deadline: float | None = None, total_deadline: float | None = None) -> dict:
     if not command or not Path(command[0]).is_absolute():
         raise ValueError('absolute owned executable required')
     if not (0 < seconds <= 177 and 0 < observation_seconds <= 45 and 0 < max_bytes <= 2 << 20):
         raise ValueError('capture bounds cannot be widened')
+    if (active_deadline is None) != (total_deadline is None):
+        raise ValueError('both shared deadlines are required')
+    if active_deadline is not None and active_deadline > total_deadline:
+        raise ValueError('shared deadline order is invalid')
+    if signal.getitimer(signal.ITIMER_REAL)[0] or signal.SIGALRM in signal.sigpending():
+        raise ValueError('active or pending foreign SIGALRM refused before launch')
     output.mkdir(parents=True, exist_ok=False)
     stdout, stderr = output / 'stdout.log', output / 'stderr.log'
     capture_receipt = output / 'capture.json'
     started = time.monotonic()
+    local_active_end = started + seconds
+    local_total_end = started + seconds + 3
+    effective_active_end = min(local_active_end, active_deadline) if active_deadline is not None else local_active_end
+    effective_total_end = min(local_total_end, total_deadline) if total_deadline is not None else local_total_end
+    shared_timed_out = False
     timed_out = limited = reaped = completed = False
     child = None
     error = None
@@ -88,6 +100,10 @@ def capture(command: list[str], output: Path, identity: dict, *, seconds: float 
             with stdout.open('wb') as out, stderr.open('wb') as err:
                 try:
                     try:
+                        if time.monotonic() >= effective_active_end:
+                            timed_out = True
+                            shared_timed_out = active_deadline is not None
+                            raise TimeoutError('owned launch deadline already expired')
                         child = subprocess.Popen(
                             command,
                             stdout=out, stderr=err, start_new_session=True)
@@ -97,7 +113,9 @@ def capture(command: list[str], output: Path, identity: dict, *, seconds: float 
                     while True:
                         if state['signals']:
                             raise CaptureInterrupted(state['signals'][0])
-                        timed_out = time.monotonic() - started >= seconds
+                        now = time.monotonic()
+                        timed_out = now >= effective_active_end
+                        shared_timed_out = active_deadline is not None and now >= active_deadline
                         limited = (stdout.stat().st_size > max_bytes or
                                    stderr.stat().st_size > max_bytes)
                         stages = stage_records(stdout)
@@ -115,9 +133,9 @@ def capture(command: list[str], output: Path, identity: dict, *, seconds: float 
                         time.sleep(0.02)
                 finally:
                     if child is not None:
-                        # Only hash-bound native and compiled Dart fixture entrypoints
-                        # are admitted; neither spawns children. Abnormal paths kill
-                        # the owned group before reaping.
+                        # Admitted fixtures/workers do not spawn children; the two
+                        # scoped Git builtins disable hooks/fsmonitor/submodules.
+                        # Abnormal paths kill the owned group before reaping.
                         # macOS may refuse a signal to an already-exited group.
                         if not completed:
                             try:
@@ -127,7 +145,7 @@ def capture(command: list[str], output: Path, identity: dict, *, seconds: float 
                             except BaseException as failure:
                                 cleanup_errors.append(type(failure).__name__)
                         try:
-                            remaining = max(0, min(3, started + seconds + 3 - time.monotonic()))
+                            remaining = max(0, min(3, effective_total_end - time.monotonic()))
                             child.wait(timeout=remaining)
                             reaped = child.returncode is not None
                         except BaseException as failure:
@@ -157,6 +175,8 @@ def capture(command: list[str], output: Path, identity: dict, *, seconds: float 
                 'timed_out': timed_out, 'capture_limit_exceeded': limited,
                 'deadline_seconds': seconds, 'cleanup_deadline_seconds': 3,
                 'case_deadline_seconds': seconds + 3,
+                'shared_active_deadline': active_deadline, 'shared_total_deadline': total_deadline,
+                'shared_deadline_reached': shared_timed_out,
                 'leader_reaped': reaped, 'cleanup_errors': cleanup_errors,
                 'failure_type': type(error).__name__ if error else None,
                 'received_signals': state['signals'],

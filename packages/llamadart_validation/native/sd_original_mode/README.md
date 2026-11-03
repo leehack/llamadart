@@ -68,15 +68,39 @@ that diagnostic overhead is included conservatively, never hidden as a warm-up.
 A 45-second pending-load observation
 is captured when reached; a completed child records its reported load time.
 Six 180-second case budgets plus the separately admitted two 30-second metadata
-budgets total 19 minutes; separately admitted compilation and input-identity
-hashing occur before those child timers. Cleanup failure is failure.
+budgets total 19 minutes of case allocation. Those metadata runs are already
+settled and are never replayed by this operator. Cleanup failure is failure.
+
+The maintained aggregate controller additionally enforces three absolute
+monotonic phases. Preflight has 57 active seconds plus up to 3 cleanup seconds,
+60 total, for scoped Git metadata and all identity hashing. Before the first
+model launch it starts one shared case deadline: 1,074 active seconds plus
+up to 6 seconds of cleanup reserve, 1,080 total. Every model capture and pure
+grader worker is clamped to that same deadline; no case or PASS can extend it.
+Each grader has its own 7 active plus 3 cleanup maximum, charged inside the
+case phase. Post/finalization has 7 active plus 3 cleanup seconds, 10 total.
+Thus the current run allocates at most 1,150 seconds across these phases;
+the earlier metadata's 60-second allocation is separate. Compilation is
+separately performed and receipted, never run inside a measured case.
+
+All blocking hashing and grading runs in owned data-only Python workers.
+There are no asynchronous alarm contexts crossing a launch boundary. Active
+or OS-pending foreign SIGALRM is refused before Popen, including a cancelled
+timer whose signal remains pending. The two read-only Git builtins are direct
+owned captures with hooks, fsmonitor, paging and submodule recursion disabled;
+no unjoined Git child is hidden inside a successful hashing worker. A stale
+grade/PASS after expiry is rejected. Unknown/unreaped cleanup or cancellation
+prevents any new worker or model case; incomplete receipts stay failures.
+Only exit zero plus the complete on-time receipts and diagnostic summary may
+be accepted, never a summary file alone.
 
 `owned_capture.py` adapts the independently reviewed metadata runner: mask
 SIGINT/SIGTERM through Popen registration, defer repeated signals, kill the
 owned group on abnormal paths before wait/reap, and atomically retain terminal
 raw/hash receipts on exceptions or interruption. The admitted native and
-compiled-Dart entrypoints spawn no processes. Do not repurpose this limited
-operator for arbitrary commands. Each raw stdout/stderr stream is limited
+compiled-Dart and data-only worker entrypoints spawn no processes. Only the
+two explicitly scoped Git builtins are additionally admitted. Do not repurpose
+this limited operator for arbitrary commands. Each raw stdout/stderr stream is limited
 to 2 MiB; oversized/incomplete/malformed captures fail. The native program and
 compiled Dart snapshot run directly, not through `dart run`, test launchers,
 shell strings or build hooks. Missing/ambiguous configuration fails closed.
@@ -162,3 +186,8 @@ tests cover signals during Popen registration, repeated cleanup signals,
 exceptions, actual short deadline/output limit and leader death. Protocol
 tests reject late loads, trivial/wrong pixels, missing disposal, wrong raw
 hashes, input substitution and continuing after a failed baseline.
+Aggregate tests exercise shared deadlines winning over per-case limits,
+prehash/grading/post timeout, no launch after expiry, late-result invalidation,
+unknown-cleanup blocking, real owned Git completion and a real cancelled but
+OS-pending alarm. Native/public child source bytes are unchanged from the
+separately reviewed and built `0e214a5d` revision.
