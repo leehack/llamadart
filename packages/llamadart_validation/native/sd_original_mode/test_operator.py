@@ -126,6 +126,40 @@ class OperatorTest(unittest.TestCase):
         self.assertIn("--original-mode", rows[0]["argv"])
         self.assertEqual(rows[1]["argv"][1], str(self.snapshot))
 
+    def test_whole_case_expiry_rejects_grade_with_aggregate_time_remaining(self):
+        output = self.root / "whole-case"
+        now = [0.0]
+        calls = []
+        def owned(argv, directory, identity, **kwargs):
+            calls.append((identity, kwargs))
+            directory.mkdir()
+            phase = identity.get("phase")
+            if phase == "preflight-git-head": (directory / "stdout.log").write_text("a" * 40 + "\n")
+            if phase == "preflight-git-status": (directory / "stdout.log").write_bytes(b"")
+            if phase == "preflight-hash": (output / "identities.json").write_text("{}")
+            if identity.get("model_inference") and identity["case"] == "native-safetensors": now[0] = 176.5
+            if phase == "grade":
+                (output / identity["case"] / "grade.json").write_text('{"passed":true}')
+                now[0] = 180.5
+            if phase == "post":
+                summary = json.loads((output / "summary.json").read_text())
+                summary["diagnosticPassed"] = not summary.get("failure")
+                (output / "summary.json").write_text(json.dumps(summary))
+        with patch.object(operator.sys, "platform", "darwin"), patch.object(operator.platform, "machine", return_value="arm64"), \
+             patch.dict(operator.os.environ, {k: "" for k in ("DYLD_INSERT_LIBRARIES", "DYLD_LIBRARY_PATH", "LD_PRELOAD", "LD_LIBRARY_PATH")}), \
+             patch.object(operator.time, "monotonic", side_effect=lambda: now[0]), \
+             patch.object(operator, "run_owned", side_effect=owned):
+            with self.assertRaises(operator.PhaseTimeout): operator.execute(self.plan(), output)
+        summary = json.loads((output / "summary.json").read_text())
+        self.assertLess(now[0], summary["phaseBudgets"]["cases"]["active_end"])
+        self.assertFalse(summary["diagnosticPassed"])
+        self.assertEqual([r["status"] for r in summary["cases"]], ["FAIL"] + ["NOT_RUN"] * 5)
+        models = [kwargs for identity, kwargs in calls if identity.get("model_inference")]
+        grades = [kwargs for identity, kwargs in calls if identity.get("phase") == "grade"]
+        self.assertEqual(len(models), 1)
+        self.assertEqual(models[0]["budget"]["total_end"], 180)
+        self.assertEqual(grades[0]["budget"], models[0]["budget"])
+
     def test_loader_overrides_are_refused_before_any_payload_or_child(self):
         keys = ("DYLD_INSERT_LIBRARIES", "DYLD_LIBRARY_PATH", "LD_PRELOAD", "LD_LIBRARY_PATH")
         for key in keys:

@@ -284,15 +284,21 @@ def execute(plan, output):
         summary["phaseBudgets"]["cases"] = cases
         for row, state in zip(rows, summary["cases"]):
             before_deadline(cases)
+            started = time.monotonic()
+            case = {"phase": "cases", "started": started,
+                    "active_end": min(cases["active_end"], started + 180),
+                    "total_end": min(cases["total_end"], started + 180)}
+            state["budget"] = case
             state["status"] = "RUNNING"
             save()
             directory = output / row["id"]
             run_owned(row["argv"], directory, {"case": row["id"], "model": row["model"], "ownerCommit": OWNER,
-                      "planSha256": summary["planSha256"], "identitiesSha256": summary["identitiesSha256"], "model_inference": True}, seconds=177, budget=cases)
+                      "planSha256": summary["planSha256"], "identitiesSha256": summary["identitiesSha256"], "model_inference": True}, seconds=177, budget=case)
             run_owned(worker_command("grade", plan_path, output, summary["planSha256"], row["id"]), output / ("_grade-" + row["id"]),
-                      {"phase": "grade", "case": row["id"], "model_inference": False}, seconds=7, budget=cases)
-            before_deadline(cases)
+                      {"phase": "grade", "case": row["id"], "model_inference": False}, seconds=7, budget=case)
+            before_deadline(case)
             require(json.loads((directory / "grade.json").read_text())["passed"] is True, "grader did not accept")
+            before_deadline(case)
             state["status"] = "PASS"
             save()
         before_deadline(cases)

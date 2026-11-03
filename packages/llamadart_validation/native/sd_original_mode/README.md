@@ -59,8 +59,11 @@ container tests and native CLI behavior remain distinct and unchanged.
 
 ## Bounds, capture and provenance
 
-Each case has 177 seconds of active child time and up to 3 seconds for owned
-group termination/reaping, inside a strict 180-second case cap. The original
+Each whole case, from before RUNNING/launch through grade acceptance, has a
+strict 180-second absolute cap. The model child has at most 177 active seconds
+and up to 3 seconds for owned group termination/reaping. Grading consumes only
+the remaining case time; it receives no extra allocation after model capture.
+Both model and grader are also clamped to the aggregate deadline. The original
 45-second load threshold remains a failing gate: reaching a valid image after
 a late load never converts it to a pass. The public timer includes the cold
 runtime check and binding verification before `ImageGenerationEngine.load`;
