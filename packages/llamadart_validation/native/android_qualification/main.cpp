@@ -1,5 +1,6 @@
 #include "llama.h"
 #include "ggml-backend.h"
+#include "backend_selection.h"
 #include "vector_serialization.h"
 #include <algorithm>
 #include <chrono>
@@ -172,17 +173,8 @@ int main(int argc, char ** argv) {
         }
         ggml_backend_load_all_from_path(argv[4]); llama_backend_init();
         const bool cpu = backend == "cpu";
-        ggml_backend_dev_t selected = cpu ? ggml_backend_dev_by_type(GGML_BACKEND_DEVICE_TYPE_CPU) : nullptr;
-        if (!cpu) {
-            for (size_t i = 0; i < ggml_backend_dev_count(); i++) {
-                auto device = ggml_backend_dev_get(i);
-                if (ggml_backend_dev_type(device) == GGML_BACKEND_DEVICE_TYPE_GPU &&
-                    std::string(ggml_backend_reg_name(ggml_backend_dev_backend_reg(device))) == "Vulkan") {
-                    require(!selected, "multiple Vulkan devices require explicit admission");
-                    selected = device;
-                }
-            }
-        }
+        ggml_backend_dev_t selected = cpu ? ggml_backend_dev_by_type(GGML_BACKEND_DEVICE_TYPE_CPU)
+                                          : android_qualification::select_vulkan_device();
         ggml_backend_dev_t devices[] = {selected, nullptr};
         require(devices[0], "required backend unavailable; fallback forbidden");
         std::cerr << "ANDROID_QUALIFICATION_SELECTED_BACKEND registry="
