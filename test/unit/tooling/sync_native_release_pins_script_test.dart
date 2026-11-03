@@ -12,6 +12,29 @@ import 'package:test/test.dart';
 
 const _pinsPath = 'lib/src/hook/native_release_pins.dart';
 
+const _untouchedV1RuntimeInventories = '''
+List<String> _liteRtLmV1RequiredLibrariesForAbi(Abi abi) {
+  return switch (abi) {
+    Abi.linuxX64 => const <String>['v1-runtime'],
+    _ => const <String>[],
+  };
+}
+
+List<String> _liteRtLmV1MacOsRequiredFrameworksForAbi(Abi abi) {
+  return switch (abi) {
+    Abi.macosArm64 => const <String>['v1-framework'],
+    _ => const <String>[],
+  };
+}
+
+List<String> _liteRtLmV1MacOsRequiredNativeSpmFilesForAbi(Abi abi) {
+  return switch (abi) {
+    Abi.macosArm64 => const <String>['v1-native-spm'],
+    _ => const <String>[],
+  };
+}
+''';
+
 void main() {
   test(
     'stable rebuild entry is explicit and retains rollback guards',
@@ -195,8 +218,8 @@ else:
 const llamaCppTag = 'b9998';
 ${_llamaCppBundleDigestPins()}
 ${_llamaCppAppleCompanionPins()}
-const liteRtLmReleaseTag = 'v1.0.0';
-const liteRtLmVersion = '1.0.0';
+const liteRtLmReleaseTag = 'v0.16.0';
+const liteRtLmVersion = '0.16.0';
 
 const liteRtLmBundleSpecs = <LiteRtLmBundleSpec>[
   LiteRtLmBundleSpec('android-arm64', sha256: '${_hex('0')}', requiredLibraries: {'runtime'}),
@@ -223,21 +246,13 @@ const liteRtLmBundleSpecs = <LiteRtLmBundleSpec>[
     await litertRuntimeDart.writeAsString('''
 import 'dart:ffi';
 
-const _litertLmReleaseTag = 'v1.0.0';
-const _litertLmVersion = '1.0.0';
+const _litertLmReleaseTag = 'v0.16.0';
+const _litertLmVersion = '0.16.0';
 
-List<String> liteRtLmMacOsRequiredLibrariesForAbi(Abi abi) {
+List<String> _liteRtLmLegacyRequiredLibrariesForAbi(Abi abi) {
   return switch (abi) {
     Abi.macosArm64 => const <String>['legacy-macos-arm64'],
     Abi.macosX64 => const <String>['legacy-macos-x64'],
-    _ => const <String>[],
-  };
-}
-
-List<String> liteRtLmRequiredLibrariesForAbi(Abi abi) {
-  return switch (abi) {
-    Abi.macosArm64 => liteRtLmMacOsRequiredLibrariesForAbi(abi),
-    Abi.macosX64 => liteRtLmMacOsRequiredLibrariesForAbi(abi),
     Abi.linuxArm64 => const <String>['legacy-linux-arm64'],
     Abi.linuxX64 => const <String>['legacy-linux-x64'],
     Abi.windowsX64 => const <String>['legacy-windows-x64'],
@@ -245,7 +260,7 @@ List<String> liteRtLmRequiredLibrariesForAbi(Abi abi) {
   };
 }
 
-List<String> liteRtLmMacOsRequiredFrameworksForAbi(Abi abi) {
+List<String> _liteRtLmMacOsRequiredFrameworksForAbi(Abi abi) {
   return switch (abi) {
     Abi.macosArm64 => const <String>['legacy-arm64.framework/legacy-arm64'],
     Abi.macosX64 => const <String>['legacy-x64.framework/legacy-x64'],
@@ -253,13 +268,14 @@ List<String> liteRtLmMacOsRequiredFrameworksForAbi(Abi abi) {
   };
 }
 
-List<String> liteRtLmMacOsRequiredNativeSpmFilesForAbi(Abi abi) {
+List<String> _liteRtLmMacOsRequiredNativeSpmFilesForAbi(Abi abi) {
   return switch (abi) {
     Abi.macosArm64 => const <String>['legacy-arm64-spm'],
     Abi.macosX64 => const <String>['legacy-x64-spm'],
     _ => const <String>[],
   };
 }
+$_untouchedV1RuntimeInventories
 ''');
     final macosPrepareScript = File(
       path.join(root.path, 'tool', 'macos_litert_lm_prepare_app.sh'),
@@ -275,8 +291,8 @@ required_native_spm_files() {
 }
 
 paths=(
-  ".dart_tool/llamadart/litert_lm/1.0.0/macos_arm64"
-  ".dart_tool/llamadart/litert_lm/1.0.0/macos/arm64"
+  ".dart_tool/llamadart/litert_lm/0.16.0/macos_arm64"
+  ".dart_tool/llamadart/litert_lm/0.16.0/macos/arm64"
 )
 ''');
     await _writePackageSwift(
@@ -311,7 +327,7 @@ paths=(
     await _writeProjectDocs(root);
 
     const llamaTag = 'b9999';
-    const litertTag = 'v9.9.9';
+    const litertTag = 'v0.17.0';
     final litertRuntimeChecksum = _hex('1');
     final llamaAppleChecksum = _hex('2');
     final litertAppleChecksums = {
@@ -348,7 +364,7 @@ paths=(
       '--llama-cpp-tag',
       llamaTag,
       '--litert-lm-tag',
-      '9.9.9',
+      '0.17.0',
     ]);
 
     expect(result.exitCode, 0, reason: '${result.stdout}\n${result.stderr}');
@@ -359,7 +375,7 @@ paths=(
     expect(pins, contains("const llamaCppTag = '$llamaTag';"));
     expect(pins, contains(_llamaCppBundleDigestPins(llamaTag)));
     expect(pins, contains("const liteRtLmReleaseTag = '$litertTag';"));
-    expect(pins, contains("const liteRtLmVersion = '9.9.9';"));
+    expect(pins, contains("const liteRtLmVersion = '0.17.0';"));
     expect(pins, contains("sha256: '$litertRuntimeChecksum'"));
     expect(pins, isNot(contains("requiredLibraries: {'runtime'}")));
     expect(pins, contains("'libLiteRtLm.so'"));
@@ -372,7 +388,7 @@ paths=(
     );
     expect(
       litertRuntimeDartText,
-      contains("const _litertLmVersion = '9.9.9';"),
+      contains("const _litertLmVersion = '0.17.0';"),
     );
     expect(
       litertRuntimeDartText,
@@ -401,6 +417,7 @@ paths=(
         "    ],",
       ),
     );
+    expect(litertRuntimeDartText, contains(_untouchedV1RuntimeInventories));
     expect(litertRuntimeDartText, isNot(contains('legacy-macos-arm64')));
     expect(litertRuntimeDartText, isNot(contains('legacy-arm64.framework')));
     expect(litertRuntimeDartText, isNot(contains('legacy-arm64-spm')));
@@ -409,9 +426,9 @@ paths=(
     expect(litertRuntimeDartText, isNot(contains('legacy-x64')));
     final macosPrepareText = (await macosPrepareScript.readAsString())
         .replaceAll('\r\n', '\n');
-    expect(macosPrepareText, contains('litert_lm/9.9.9/macos_arm64'));
-    expect(macosPrepareText, contains('litert_lm/9.9.9/macos/arm64'));
-    expect(macosPrepareText, isNot(contains('litert_lm/1.0.0/')));
+    expect(macosPrepareText, contains('litert_lm/0.17.0/macos_arm64'));
+    expect(macosPrepareText, contains('litert_lm/0.17.0/macos/arm64'));
+    expect(macosPrepareText, isNot(contains('litert_lm/0.16.0/')));
     expect(
       macosPrepareText,
       contains('"libCLiteRTLM_mac.dylib" \\\n        "libLiteRtLm.dylib"'),
@@ -601,7 +618,7 @@ paths=(
     );
 
     const nextLlamaTag = 'b10000';
-    const nextLitertTag = 'v9.9.10';
+    const nextLitertTag = 'v0.18.0';
     final nextLitertRuntimeChecksum = _hex('6');
     final nextLlamaAppleChecksum = _hex('7');
     final nextLitertAppleChecksums = {
@@ -646,6 +663,11 @@ paths=(
       rerunResult.exitCode,
       0,
       reason: '${rerunResult.stdout}\n${rerunResult.stderr}',
+    );
+
+    expect(
+      await litertRuntimeDart.readAsString(),
+      contains(_untouchedV1RuntimeInventories),
     );
 
     final rerunCoreChangelog = await File(
@@ -2779,8 +2801,7 @@ Future<void> _writeReleaseFixture(
       ..['githubPrerelease'] = false;
     upstream
       ..['tag'] = tag
-      ..['compatibilityTag'] = tag
-      ..['prebuiltOverrides'] = <Object>[];
+      ..['compatibilityTag'] = tag;
     for (final platform
         in (manifest['platforms'] as List<dynamic>)
             .cast<Map<String, dynamic>>()) {
