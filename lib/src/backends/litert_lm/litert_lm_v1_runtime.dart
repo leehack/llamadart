@@ -12,13 +12,15 @@ import '../../core/models/inference/model_params.dart';
 import 'litert_lm_last_error.dart';
 import 'litert_lm_finish_reason.dart';
 import 'litert_lm_native_settlement.dart';
+import 'litert_lm_runtime.dart' as legacy;
 import 'litert_lm_sampler_params.dart';
 
 part 'litert_lm_v1_conversation.dart';
 part 'litert_lm_v1_conversation_settings.dart';
 part 'litert_lm_v1_engine_settings.dart';
-part 'litert_lm_v1_turn_settings.dart';
+part 'litert_lm_v1_metadata.dart';
 part 'litert_lm_v1_tokenizer.dart';
+part 'litert_lm_v1_turn_settings.dart';
 
 typedef _VersionN = Int Function(Pointer<Int>, Pointer<Int>, Pointer<Int>);
 typedef _VersionD = int Function(Pointer<Int>, Pointer<Int>, Pointer<Int>);

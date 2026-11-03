@@ -358,9 +358,8 @@ also refused: the v1 header documents it as legacy-engine-only, with no current
 consumer capability proof for the active engine implementation. This remains a
 required migration gap, needing supported-engine proof or an explicit release
 scope decision. Auxiliary backend strings alone do not enable media input.
-Logging/status, model capabilities, tokenizer/render/metrics, conversation
-sampler/history/per-turn options and complete worker/service dispatch remain
-separate migration work.
+Logging/status and complete worker/service dispatch remain separate migration
+work; the following internal slices do not select v1 publicly.
 
 Internal `openConfiguredConversation` adds snapshotted text/tool prefaces and
 explicit TOP_P sampler settings. The convenience `openConversation` retains its
@@ -420,7 +419,28 @@ the adapter's signed 32-bit safety bound are refused. NUL text and out-of-C-int
 input IDs reject instead of being truncated. An idle conversation may stay open;
 pending or quarantined native work prohibits tokenizer access. These are internal
 migration controls, not model-tokenizer qualification or public v1 selection.
-Render, metadata, embeddings, metrics and complete service dispatch remain gaps.
+Embeddings and complete service dispatch remain gaps.
+
+Internal `bundleCapabilities` reads text/vision/audio/video, speculation, thinking
+and function-calling declarations through `model_info.h` status/out APIs. Each
+query owns a loaded-file handle and frees it after copying the flags. Missing
+metadata exports, failed statuses and success without a handle are refused.
+These flags describe a file; they do not qualify an executor, enable media or
+admit thinking budgets. `supports_thinking` reads only the model-info boolean,
+whereas native budget enforcement needs channel end tokens that this C metadata
+API does not expose. The existing budget refusal remains even for a true flag.
+
+Settled internal conversations can render the already validated text/tool message
+subset and copy its conversation-owned UTF-8 buffer before another render.
+Their benchmark snapshots are owned and deleted after every read or failure.
+Metrics preserve legacy aggregation: sum all prefill/decode token counts, use
+the last throughput in each phase, retain native zero timings and use null
+throughput for empty histories. Counts and indices use `size_t`; every getter
+status is checked before cleanup can replace its thread-local error. Invalid
+metrics, signed token-total overflow, null successful results and histories over
+one million turns are refused instead of truncated. Pending or quarantined
+native work prohibits metadata, render and benchmark calls. These remain
+fixture-backed ABI/lifetime controls without model or device qualification.
 
 Use this checklist in native sync PRs:
 
