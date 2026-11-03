@@ -454,9 +454,14 @@ Core `0.17.1` moves the llama.cpp pin to `v0.8.0-1`, built from upstream `v0.8.0
 the `0.17` minor. It keeps companion `0.17.0` (`v0.7.0-3`) through
 `llamaCppCompatibleAppleCompanionTags` because the core calls no symbol that
 framework lacks; `test/fixtures/native/llama_cpp_apple_compatibility.json` records
-the per-slice check and a test keeps the core off the listed v0.8.0-only names. The
+the historical per-slice check. The
 reverse pair is unsafe (`mtmd_helper_init_opt` grows to 32 bytes), so companion
 `0.17.1` needs `llamadart: '>=0.17.1 <0.18.0'`.
+
+The 0.18.0 preparation moves to `v0.8.0-2` and requires its matching Apple
+companion. Older runtimes are no longer admitted: they lack the speculative
+rollback and model-creation ownership fixes. All Apple companions will be
+versioned with the core minor during release preparation.
 
 Native sync PRs can leave the repository in a state where the companion package
 source under `packages/` is ready, but the corresponding pub.dev package version

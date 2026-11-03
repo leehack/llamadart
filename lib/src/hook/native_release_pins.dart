@@ -22,16 +22,10 @@ const llamaCppAppleCompanionVersion = '0.17.4';
 /// companion pins and the build still accepts, each mapped to what its
 /// frameworks lack compared with [llamaCppTag].
 ///
-/// An entry may come from an earlier upstream release. Its frameworks stand in
-/// for [llamaCppTag] only because the core calls no symbol they lack and passes
-/// them no struct they would read or write out of bounds, as
-/// `test/fixtures/native/llama_cpp_apple_compatibility.json` records for the
-/// exact XCFramework checksums in
-/// [llamaCppCompatibleAppleCompanionChecksums]. A test keeps the core off the
-/// symbols and layouts only [llamaCppTag] has, so calling one needs a runtime
-/// probe. The build accepts such a companion with a warning. The native pin
-/// sync clears this map whenever it moves [llamaCppTag], because each entry is
-/// verified against one pin.
+/// No older Apple runtime is admitted for v0.8.0-2: consumers need its
+/// speculative rollback and model-creation ownership fixes. Native pin sync
+/// clears this map whenever the pin moves; additions require exact artifact
+/// compatibility evidence and matching checksums below.
 const llamaCppCompatibleAppleCompanionTags = <String, String>{};
 
 /// The exact XCFramework checksum a companion pinning each
