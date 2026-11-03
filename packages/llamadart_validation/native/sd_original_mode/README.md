@@ -3,8 +3,9 @@
 This private, local-only harness extends the maintained image-container
 qualification. It is a proposed PR41 diagnostic, not final-published-runtime
 qualification or evidence that SD24 is closed. No runtime/model download occurs.
-The user keeps the upstream ZIP report local; this harness does not post it or
-waive the owner's unresolved patch-retirement requirement.
+The patch-specific local-report exception is approved and merged. The upstream
+ZIP report stays local; this harness does not post it or change the general
+patch-retirement policy.
 
 ## Fixed case graph and oracle
 

@@ -191,7 +191,7 @@ quantization/mmap option. Weights load eagerly; see the
 
 On iOS, full VAE and external-decoder recipes require
 `ImageModelPlacement(vaeOnCpu: true)` for Metal diffusion, or
-`ComputeDevice.cpu`. The pinned `v0.3.0-2` runtime provides the intrinsic
+`ComputeDevice.cpu`. The pinned `v0.3.0-3` runtime provides the intrinsic
 tiny-decoder v1 context policy for SDXS Metal decoding: it rejects any
 refreshed model that could select a full VAE before runner probes and
 decoding. This restriction is tested on desktop; it does not establish new
