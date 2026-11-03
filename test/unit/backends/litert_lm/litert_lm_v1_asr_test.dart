@@ -306,11 +306,38 @@ void main() {
     debugLiteRtLmSpeechToTextDriverOverride =
         createLiteRtLmSpeechToTextDriverWithRuntime(_v1SpeechClient);
     addTearDown(() => debugLiteRtLmSpeechToTextDriverOverride = null);
+    final observations = <Map<String, Object?>>[];
     await smoke.runLiteRtLmAsrSmoke(
       [model.path, tokenizer.path, audio.path, 'moonshine-tiny', 'final café'],
       libraryPath: path,
       numberOfThreads: 2,
+      onObservation: observations.add,
     );
+    expect(observations.map((row) => row['phase']), [
+      'stream',
+      'task',
+      'cancel',
+    ]);
+    expect(observations.first['transcript'], contains('final café'));
+    observations.clear();
+    await expectLater(
+      smoke.runLiteRtLmAsrSmoke(
+        [
+          model.path,
+          tokenizer.path,
+          audio.path,
+          'moonshine-tiny',
+          'absent-oracle-phrase',
+        ],
+        libraryPath: path,
+        numberOfThreads: 2,
+        onObservation: observations.add,
+      ),
+      throwsStateError,
+    );
+    expect(observations.single['phase'], 'stream');
+    expect(observations.single['transcript'], contains('final café'));
+
     expect(count('asr_threads'), 2);
     expect(count('asr_engines'), 0);
     expect(count('asr_sessions'), 0);

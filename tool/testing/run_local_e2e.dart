@@ -1721,6 +1721,37 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
         ),
       ],
     ),
+    for (final route in const ['direct', 'service', 'speech'])
+      LocalE2eScenario(
+        name: 'litert-lm-v1-public-$route',
+        group: LocalE2eScenarioGroup.dartLocalOnly,
+        description:
+            'Qualify the uninjected public $route path against hash-bound runtime/model/config bytes; disabled v1 refuses.',
+        requiresDevice: false,
+        stepsBuilder: (context) => [
+          LocalE2eCommandStep(
+            workingDirectory: context.projectRoot,
+            executable: 'dart',
+            arguments: [
+              'run',
+              'test/fixtures/litert_lm_v1_public_qualification.dart',
+              route,
+              context.environment['LITERT_LM_V1_LIBRARY']!,
+              context.environment['LITERT_LM_V1_LIBRARY_SHA256']!.toLowerCase(),
+              context.modelPath!,
+              context.environment['LITERT_LM_V1_MODEL_SHA256']!.toLowerCase(),
+              context.environment['LITERT_LM_V1_RUNTIME_MANIFEST']!,
+              context.environment['LITERT_LM_V1_RUNTIME_MANIFEST_SHA256']!
+                  .toLowerCase(),
+              context.environment['LITERT_LM_V1_PUBLIC_CONFIG']!,
+              context.environment['LITERT_LM_V1_PUBLIC_CONFIG_SHA256']!
+                  .toLowerCase(),
+            ],
+            description:
+                'Bounded public LiteRT v1 $route qualification without injected factories',
+          ),
+        ],
+      ),
     LocalE2eScenario(
       name: 'qwen3-litert-cpu-unicode',
       group: LocalE2eScenarioGroup.dartLocalOnly,
@@ -2772,6 +2803,36 @@ Future<LocalE2eResult> runLocalE2e(
       64,
       stderr: '--model-path is required for ${scenario.name}.\n',
     );
+  }
+
+  if (scenario.name.startsWith('litert-lm-v1-public-')) {
+    if (parsed.modelPath == null || parsed.backend != 'cpu') {
+      return const LocalE2eResult(
+        64,
+        stderr:
+            'Public v1 qualification requires --model-path and --backend cpu.\n',
+      );
+    }
+    final env = environment ?? Platform.environment;
+    for (final name in const [
+      'LITERT_LM_V1_LIBRARY',
+      'LITERT_LM_V1_LIBRARY_SHA256',
+      'LITERT_LM_V1_MODEL_SHA256',
+      'LITERT_LM_V1_RUNTIME_MANIFEST',
+      'LITERT_LM_V1_RUNTIME_MANIFEST_SHA256',
+      'LITERT_LM_V1_PUBLIC_CONFIG',
+      'LITERT_LM_V1_PUBLIC_CONFIG_SHA256',
+    ]) {
+      final value = env[name]?.trim() ?? '';
+      if (value.isEmpty ||
+          (name.endsWith('SHA256') &&
+              !RegExp(r'^[0-9a-fA-F]{64}$').hasMatch(value))) {
+        return LocalE2eResult(
+          64,
+          stderr: '$name is required for public v1 qualification.\n',
+        );
+      }
+    }
   }
 
   if (scenario.name == 'litert-lm-v1-service' ||

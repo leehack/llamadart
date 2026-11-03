@@ -512,6 +512,76 @@ Future<void> main(List<String> args) async {
     },
   );
 
+  for (final route in ['direct', 'service', 'speech']) {
+    test(
+      'public v1 $route requires identities and reaches its uninjected qualifier',
+      () async {
+        final args = [
+          '--scenario',
+          'litert-lm-v1-public-$route',
+          '--model-path',
+          '/model',
+          '--backend',
+          'cpu',
+          '--dry-run',
+        ];
+        final identity = {
+          'LITERT_LM_V1_LIBRARY': '/candidate/libLiteRtLm.dylib',
+          'LITERT_LM_V1_RUNTIME_MANIFEST': '/candidate/runtime.json',
+          'LITERT_LM_V1_PUBLIC_CONFIG': '/candidate/config.json',
+          for (final name in [
+            'LIBRARY',
+            'MODEL',
+            'RUNTIME_MANIFEST',
+            'PUBLIC_CONFIG',
+          ])
+            'LITERT_LM_V1_${name}_SHA256': 'a' * 64,
+        };
+        final valid = await runLocalE2e(
+          args,
+          projectRoot: '/repo',
+          environment: identity,
+        );
+        expect(valid.exitCode, 0, reason: valid.stderr);
+        expect(
+          valid.stdout,
+          contains(
+            'test/fixtures/litert_lm_v1_public_qualification.dart $route',
+          ),
+        );
+        expect(valid.stdout, contains('/candidate/runtime.json'));
+        expect(valid.stdout, isNot(contains('--expect-disabled')));
+        for (final name in identity.keys) {
+          final missing = await runLocalE2e(
+            args,
+            projectRoot: '/repo',
+            environment: {...identity}..remove(name),
+          );
+          expect(missing.exitCode, 64, reason: name);
+          expect(missing.stderr, contains(name));
+        }
+        final missingModel = await runLocalE2e(
+          [
+            '--scenario',
+            'litert-lm-v1-public-$route',
+            '--backend',
+            'cpu',
+            '--dry-run',
+          ],
+          projectRoot: '/repo',
+          environment: identity,
+        );
+        expect(missingModel.exitCode, 64);
+        final gpu = await runLocalE2e(
+          [for (final arg in args) arg == 'cpu' ? 'gpu' : arg],
+          projectRoot: '/repo',
+          environment: identity,
+        );
+        expect(gpu.exitCode, 64);
+      },
+    );
+  }
+
   group('run_local_e2e', () {
     test(
       'v1 ASR requires full inputs and digests and wires bounded wrapper',

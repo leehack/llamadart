@@ -16,6 +16,7 @@ Future<void> runLiteRtLmAsrSmoke(
   List<String> args, {
   String? libraryPath,
   int numberOfThreads = 4,
+  void Function(Map<String, Object?> observation)? onObservation,
 }) async {
   if (args.length < 5) {
     stderr.writeln(
@@ -76,6 +77,12 @@ Future<void> runLiteRtLmAsrSmoke(
     await session.finish();
     final completion = await session.done;
     final events = await eventsFuture;
+    onObservation?.call({
+      'phase': 'stream',
+      'transcript': completion.result?.text,
+      'completion_state': completion.state.name,
+      'sample_count': fixture.samples.length,
+    });
     if (completion.state != SpeechToTextCompletionState.completed ||
         completion.result == null) {
       throw completion.error ??
@@ -95,6 +102,7 @@ Future<void> runLiteRtLmAsrSmoke(
       audio: SpeechAudioPcmInput(fixture.samples),
     );
     final taskTranscript = (await recognizer.transcribeOnce(request)).text;
+    onObservation?.call({'phase': 'task', 'transcript': taskTranscript});
     if (!_normalize(taskTranscript).contains(normalizedExpected)) {
       throw StateError(
         'LiteRT-LM ASR task transcript mismatch: expected a transcript '
@@ -105,6 +113,10 @@ Future<void> runLiteRtLmAsrSmoke(
     final cancelled = await recognizer.transcribe(request);
     cancelled.cancel();
     final cancelledState = (await cancelled.done).state;
+    onObservation?.call({
+      'phase': 'cancel',
+      'cancelled_task_state': cancelledState.name,
+    });
     if (cancelledState != SpeechToTextCompletionState.cancelled) {
       throw StateError(
         'A cancelled LiteRT-LM ASR task reported ${cancelledState.name}.',

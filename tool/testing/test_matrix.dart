@@ -1096,6 +1096,42 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
         'Qualifying the internal C API 1 client/service path against a prepared owner artifact. Run --dry-run first; root owns model serialization. No public factory/pin enablement, GPU, ASR, media, LoRA, schema or embedding qualification is implied.',
   ),
   TestMatrixRow(
+    id: 'litert-lm-v1-public-direct',
+    tier: 'high-risk',
+    mode:
+        'local-only; public defaults, CPU; requires admitted production selection',
+    covers:
+        'Exact full runtime manifest/model/config hashes, public direct dispatch without runtime factory or speech driver overrides, raw observations before oracles, owned deadline and lifecycle',
+    command:
+        'LITERT_LM_V1_LIBRARY=<lib> LITERT_LM_V1_LIBRARY_SHA256=<sha256> LITERT_LM_V1_MODEL_SHA256=<sha256> LITERT_LM_V1_RUNTIME_MANIFEST=<json> LITERT_LM_V1_RUNTIME_MANIFEST_SHA256=<sha256> LITERT_LM_V1_PUBLIC_CONFIG=<profile-or-speech-json> LITERT_LM_V1_PUBLIC_CONFIG_SHA256=<sha256> dart run tool/testing/run_local_e2e.dart --scenario litert-lm-v1-public-direct --model-path <model> --backend cpu',
+    useWhen:
+        'Final public C API1 adoption. Run --dry-run first, then schedule only with exact artifact/model admission. Flag-off refusal and staged status9 fixture controls are model-free evidence, not successful v1, GPU or physical-device qualification.',
+  ),
+  TestMatrixRow(
+    id: 'litert-lm-v1-public-service',
+    tier: 'high-risk',
+    mode:
+        'local-only; public defaults, CPU; requires admitted production selection',
+    covers:
+        'Exact full runtime manifest/model/config hashes, public service dispatch without runtime factory or speech driver overrides, raw observations before oracles, owned deadline and lifecycle',
+    command:
+        'LITERT_LM_V1_LIBRARY=<lib> LITERT_LM_V1_LIBRARY_SHA256=<sha256> LITERT_LM_V1_MODEL_SHA256=<sha256> LITERT_LM_V1_RUNTIME_MANIFEST=<json> LITERT_LM_V1_RUNTIME_MANIFEST_SHA256=<sha256> LITERT_LM_V1_PUBLIC_CONFIG=<profile-or-speech-json> LITERT_LM_V1_PUBLIC_CONFIG_SHA256=<sha256> dart run tool/testing/run_local_e2e.dart --scenario litert-lm-v1-public-service --model-path <model> --backend cpu',
+    useWhen:
+        'Final public C API1 adoption. Run --dry-run first, then schedule only with exact artifact/model admission. Flag-off refusal and staged status9 fixture controls are model-free evidence, not successful v1, GPU or physical-device qualification.',
+  ),
+  TestMatrixRow(
+    id: 'litert-lm-v1-public-speech',
+    tier: 'high-risk',
+    mode:
+        'local-only; public defaults, CPU; requires admitted production selection',
+    covers:
+        'Exact full runtime manifest/model/config hashes, public speech dispatch without runtime factory or speech driver overrides, raw observations before oracles, owned deadline and lifecycle',
+    command:
+        'LITERT_LM_V1_LIBRARY=<lib> LITERT_LM_V1_LIBRARY_SHA256=<sha256> LITERT_LM_V1_MODEL_SHA256=<sha256> LITERT_LM_V1_RUNTIME_MANIFEST=<json> LITERT_LM_V1_RUNTIME_MANIFEST_SHA256=<sha256> LITERT_LM_V1_PUBLIC_CONFIG=<profile-or-speech-json> LITERT_LM_V1_PUBLIC_CONFIG_SHA256=<sha256> dart run tool/testing/run_local_e2e.dart --scenario litert-lm-v1-public-speech --model-path <model> --backend cpu',
+    useWhen:
+        'Final public C API1 adoption. Run --dry-run first, then schedule only with exact artifact/model admission. Flag-off refusal and staged status9 fixture controls are model-free evidence, not successful v1, GPU or physical-device qualification.',
+  ),
+  TestMatrixRow(
     id: 'qwen3-litert-cpu-unicode',
     tier: 'targeted',
     mode: 'local-only',

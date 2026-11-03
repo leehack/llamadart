@@ -193,3 +193,44 @@ reasoning enforcement. Before public adoption, run a scheduled, hash-bound
 thinking-family model check with unbounded reasoning above the bound, bounded
 reasoning within the declared tokenized tolerance, nonempty final content and
 cancel/reuse isolation. Keep runtime/model/host identity and all failed outcomes.
+
+## Final public-path qualification
+
+The `litert-lm-v1-public-direct`, `litert-lm-v1-public-service` and
+`litert-lm-v1-public-speech` local-only rows exercise the public
+`LiteRtLmRuntimeClient`, default `LiteRtLmService` and default
+`SpeechToTextEngine` paths. They provide no runtime-client factory or speech
+driver override. Production selection remains disabled, so these rows must
+refuse until the final activation and artifact gates are admitted.
+
+Supply `LITERT_LM_V1_LIBRARY`, its `LITERT_LM_V1_LIBRARY_SHA256`,
+`LITERT_LM_V1_MODEL_SHA256`, `LITERT_LM_V1_RUNTIME_MANIFEST` and its
+`_SHA256`, plus `LITERT_LM_V1_PUBLIC_CONFIG` and its `_SHA256`. The runtime
+manifest is the existing list of adjacent payload `name`, `bytes` and `sha256`
+records; every library must match. Chat config is the tracked
+`chat-litert-cpu.json` profile. Speech config binds `tokenizer` and `audio`
+objects (`path`/`sha256`), `preset` and `expected_transcript`.
+
+Run `run_local_e2e.dart --scenario litert-lm-v1-public-<route> --model-path
+<model> --backend cpu --dry-run` first. The scheduled execution compiles a
+child from clean committed source, hashes its executable, preserves stdout and
+native stderr before aggregate assertions, and owns its four-minute deadline.
+It records all observed loaded runtime payload identities, two chat engine
+lifetimes, cancellation and reuse. The direct client reports native finish;
+the default service exposes settlement and limit classification but no exact
+cancelled native-finish getter, so its receipt says that explicitly.
+
+Model-free tests separately prove the current uninjected flag-off refusal with
+zero fixture engine attempts. Clearly labeled staging-seam tests exercise the
+status-9 engine error mapping: explicit GPU requests surface typed unsupported
+with the CPU remedy, while automatic GPU preference retains CPU fallback.
+These are consumer mapping controls, not execution of the Android native guard
+or GPU/physical-device qualification. The fixture-only `--expect-disabled`
+control can never produce a successful public-v1 qualification receipt.
+
+Complete default discovery is a separate activation gate: legacy inventories
+include TopK sampler libraries absent from the prepared v0.19 manifest. Do not
+add dummy libraries or weaken completeness to make an actual candidate pass.
+The default service must resolve the admitted version-specific inventory; the
+qualifier rejects a loaded core or companion whose bytes differ from its
+manifest. Other platform and owner-artifact gates remain independent.
