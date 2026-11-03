@@ -50,6 +50,7 @@ void main() {
       mode: FileMode.append,
       flush: true,
     );
+    final rawFiles = <String>{};
     final cases = <String, Map<String, dynamic>>{};
     String? activeCase;
     record({
@@ -131,6 +132,12 @@ void main() {
           'case_id': id,
           'model_free_launch': launch,
         });
+        final captureName = launch ? 'launch' : id;
+        rawFiles.addAll([
+          '$captureName/stdout.jsonl',
+          '$captureName/stderr.log',
+          '$captureName/capture.json',
+        ]);
         final captured = await captureAndroidNativeChild(
           executable: executable,
           arguments: [
@@ -242,6 +249,7 @@ void main() {
         activeCase = id;
         record({'event': 'case_started', 'case_id': id});
         final values = <Map<String, dynamic>>[];
+        rawFiles.addAll(['$id.stderr.log', '$id.maps']);
         await guarded(id, () async {
           final stderr = AndroidQualificationStderr.capture(
             File('${output.path}/$id.stderr.log'),
@@ -444,8 +452,17 @@ void main() {
             : 'Diagnostic failed; raw files retained',
       });
     } finally {
+      final rawComplete = exportAndroidQualificationRaw(
+        output,
+        rawFiles,
+        record,
+      );
+      if (!rawComplete) {
+        failure ??= StateError('Raw capture export incomplete');
+      }
       record({
         'event': 'summary',
+        'raw_export_complete': rawComplete,
         'qualified': false,
         'functional_assertions_passed': failure == null,
         'placement_status': 'REQUIRES_INDEPENDENT_ASSESSMENT',
