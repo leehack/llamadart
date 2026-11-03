@@ -20,7 +20,7 @@ def verify(apk, binding, plan):
             raise ValueError("APK request hash mismatch")
         expected = set(binding["libraries"])
         observed = {Path(name).name for name in names if name.startswith("lib/arm64-v8a/")
-                    and Path(name).name.startswith(("libllama", "libggml"))}
+                    and Path(name).name.startswith(("libllama", "libggml", "libmtmd"))}
         if observed != expected:
             raise ValueError("APK paired-runtime inventory mismatch")
         for name, lock in binding["libraries"].items():

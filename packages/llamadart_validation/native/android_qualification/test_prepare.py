@@ -42,7 +42,17 @@ class PreparationTest(unittest.TestCase):
             struct.pack_into("<I", elf, 64, 1)
             struct.pack_into("<Q", elf, 112, 16384)
             plan = b'{"schema":1}'
-            names = ["libllama.so", "libggml-vulkan.so", "libllamadart_android_qualification.so"]
+            owner_fixture = Path(__file__).resolve().parents[2] / (
+                "test/fixtures/android_qualification/android_arm64_runtime_names.json")
+            owner = json.loads(owner_fixture.read_text())
+            self.assertEqual(owner["native_archive_sha256"], build_probe.ARCHIVE_SHA)
+            # The production default CPU/Vulkan selector omits only OpenCL;
+            # its exact selection is covered by android_qualification_test.dart.
+            names = [name for name in owner["libraries"] if name != "libggml-opencl.so"]
+            self.assertEqual(len(names), 14)
+            self.assertIn("libmtmd.so", names)
+            names.append("libllamadart_android_qualification.so")
+            self.assertEqual(len(names), 15)
             binding = {"plan_sha256": hashlib.sha256(plan).hexdigest(), "libraries": {
                 name: {"bytes": len(elf), "sha256": hashlib.sha256(elf).hexdigest()} for name in names}}
             def apk(mode):
@@ -51,21 +61,30 @@ class PreparationTest(unittest.TestCase):
                     target.writestr("assets/llamadart_android_qualification/binding.json", json.dumps(binding))
                     target.writestr("assets/llamadart_android_qualification/plan.json", plan)
                     for name in names:
-                        if mode == "missing" and name == names[0]:
+                        if mode == "missing-mtmd" and name == "libmtmd.so":
                             continue
                         data = bytes(elf)
-                        if mode == "changed" and name == names[0]:
+                        if mode == "changed-mtmd" and name == "libmtmd.so":
                             data = data[:-1] + b"x"
                         target.writestr("lib/arm64-v8a/" + name, data)
-                    if mode == "extra":
-                        target.writestr("lib/arm64-v8a/libggml-opencl.so", elf)
+                    extras = {
+                        "extra-opencl": "libggml-opencl.so",
+                        "extra-llama": "libllama-unexpected.so",
+                        "extra-ggml": "libggml-unexpected.so",
+                        "extra-mtmd": "libmtmd-unexpected.so",
+                    }
+                    if mode in extras:
+                        target.writestr("lib/arm64-v8a/" + extras[mode], elf)
                 return path
             result = verify_apk.verify(apk("good"), binding, plan)
             self.assertFalse(result["qualified"])
             self.assertFalse(result["android_launch_observed"])
-            for mode in ("missing", "changed", "extra"):
-                with self.assertRaises(ValueError):
-                    verify_apk.verify(apk(mode), binding, plan)
+            for mode in ("missing-mtmd", "extra-opencl", "extra-llama", "extra-ggml", "extra-mtmd"):
+                with self.subTest(mode=mode):
+                    with self.assertRaisesRegex(ValueError, "inventory mismatch"):
+                        verify_apk.verify(apk(mode), binding, plan)
+            with self.assertRaisesRegex(ValueError, "bytes differ"):
+                verify_apk.verify(apk("changed-mtmd"), binding, plan)
 
 if __name__ == "__main__":
     unittest.main()
