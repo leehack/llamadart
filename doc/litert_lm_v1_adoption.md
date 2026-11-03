@@ -234,3 +234,12 @@ add dummy libraries or weaken completeness to make an actual candidate pass.
 The default service must resolve the admitted version-specific inventory; the
 qualifier rejects a loaded core or companion whose bytes differ from its
 manifest. Other platform and owner-artifact gates remain independent.
+
+## Internal JSON Schema qualification
+
+The maintained `litert-lm-v1-json-schema` local-only scenario binds the published
+CPU Qwen profile, exact candidate library and source/child bytes. It checks a
+fixed conflicting plain control, Unicode/typed constrained output with thinking
+disabled, ordinary followup, real cancellation, reuse and reload. This prepares
+actual candidate qualification; adding the scenario alone does not satisfy that
+gate or enable public v1 routing. See `doc/testing_matrix.md`.

@@ -7,6 +7,8 @@ import 'dart:io';
 import 'package:crypto/crypto.dart';
 import 'package:test/test.dart';
 
+import '../../fixtures/litert_lm_v1_schema_contract.dart';
+
 void main() {
   late Directory directory;
   late String executable;
@@ -62,6 +64,30 @@ void main() {
         ]);
         expect(events.first['detail'], contains('SHA256 did not match'));
         expect(events.last['success'], isFalse);
+      },
+    );
+  }
+  for (final wrongHash in [true, false]) {
+    test(
+      'schema mode refuses non-profile ${wrongHash ? 'digest' : 'size'} before library load',
+      () async {
+        final file = File('${directory.path}/schema-model')
+          ..writeAsStringSync('tiny model-free sentinel');
+        final result = await Process.run(executable, [
+          '${directory.path}/missing-library',
+          file.path,
+          'a' * 64,
+          wrongHash ? 'b' * 64 : v1SchemaModelSha256,
+          directory.path,
+          'model-free-profile-negative-control',
+          'json-schema',
+        ]);
+        expect(result.exitCode, 1);
+        expect(
+          '${result.stdout}',
+          contains('fixed published CPU profile model identity'),
+        );
+        expect('${result.stdout}', isNot(contains('"stage":"identity"')));
       },
     );
   }

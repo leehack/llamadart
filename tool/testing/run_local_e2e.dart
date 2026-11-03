@@ -1708,6 +1708,44 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
           ],
           environment: {
             'LITERT_LM_V1_MODEL': context.modelPath!,
+            'LITERT_LM_V1_SCHEMA_QUALIFICATION': '0',
+            for (final name in const [
+              'LITERT_LM_V1_LIBRARY',
+              'LITERT_LM_V1_LIBRARY_SHA256',
+              'LITERT_LM_V1_MODEL_SHA256',
+            ])
+              name: context.environment[name] ?? '',
+            'LITERT_LM_V1_LOG_DIR':
+                ?context.environment['LITERT_LM_V1_LOG_DIR'],
+          },
+          description: 'Bounded actual LiteRT v1 CPU service qualification',
+        ),
+      ],
+    ),
+    LocalE2eScenario(
+      name: 'litert-lm-v1-json-schema',
+      group: LocalE2eScenarioGroup.dartLocalOnly,
+      description:
+          'Qualify internal v1 JSON Schema through the injected CPU service on the fixed published Qwen profile, with Unicode/types, thinking-disabled output, control/followup, cancellation and reload.',
+      requiresDevice: false,
+      stepsBuilder: (context) => [
+        LocalE2eCommandStep(
+          workingDirectory: context.projectRoot,
+          executable: 'dart',
+          arguments: const [
+            'test',
+            '--run-skipped',
+            '-p',
+            'vm',
+            '-j',
+            '1',
+            '-t',
+            'local-only',
+            'test/e2e/backends/litert_lm_v1_service_e2e_test.dart',
+          ],
+          environment: {
+            'LITERT_LM_V1_MODEL': context.modelPath!,
+            'LITERT_LM_V1_SCHEMA_QUALIFICATION': '1',
             for (final name in const [
               'LITERT_LM_V1_LIBRARY',
               'LITERT_LM_V1_LIBRARY_SHA256',
@@ -2784,6 +2822,7 @@ Future<LocalE2eResult> runLocalE2e(
           scenario.name == 'llama-cpp-chat-template-smoke' ||
           scenario.name == 'litert-lm-lifecycle' ||
           scenario.name == 'litert-lm-v1-service' ||
+          scenario.name == 'litert-lm-v1-json-schema' ||
           scenario.name == 'litert-lm-json-schema' ||
           scenario.name == 'litert-lm-multimodal-embedding' ||
           scenario.name == 'litert-lm-web-text-history' ||
@@ -2836,6 +2875,7 @@ Future<LocalE2eResult> runLocalE2e(
   }
 
   if (scenario.name == 'litert-lm-v1-service' ||
+      scenario.name == 'litert-lm-v1-json-schema' ||
       scenario.name == 'litert-lm-v1-asr-smoke') {
     if (parsed.backend != 'cpu') {
       return const LocalE2eResult(
@@ -2864,6 +2904,17 @@ Future<LocalE2eResult> runLocalE2e(
         );
       }
     }
+  }
+
+  if (scenario.name == 'litert-lm-v1-json-schema' &&
+      (environment ?? Platform.environment)['LITERT_LM_V1_MODEL_SHA256']
+              ?.toLowerCase() !=
+          'c5f39b4191926786c3e6668b62af4d6eb15248dfc7a5348252a9b406f33f2108') {
+    return const LocalE2eResult(
+      64,
+      stderr:
+          'litert-lm-v1-json-schema requires the fixed published Qwen CPU profile model SHA256.\n',
+    );
   }
 
   if (scenario.name == 'text-embedding-retrieval') {

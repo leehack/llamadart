@@ -1132,6 +1132,17 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
         'Final public C API1 adoption. Run --dry-run first, then schedule only with exact artifact/model admission. Flag-off refusal and staged status9 fixture controls are model-free evidence, not successful v1, GPU or physical-device qualification.',
   ),
   TestMatrixRow(
+    id: 'litert-lm-v1-json-schema',
+    tier: 'targeted',
+    mode: 'local-only; internal v1, macOS arm64 CPU only',
+    covers:
+        'Fixed published Qwen profile identity; conflicting unconstrained control, constrained Unicode/types with thinking disabled, ordinary followup, native cancellation, schema reuse and engine reload with hash-bound bounded child receipts',
+    command:
+        'LITERT_LM_V1_LIBRARY=<lib> LITERT_LM_V1_LIBRARY_SHA256=<sha256> LITERT_LM_V1_MODEL_SHA256=c5f39b4191926786c3e6668b62af4d6eb15248dfc7a5348252a9b406f33f2108 dart run tool/testing/run_local_e2e.dart --scenario litert-lm-v1-json-schema --model-path <published-Qwen3-0.6B.litertlm> --backend cpu',
+    useWhen:
+        'Qualifying internal C API1 schema source against an exact prepared owner artifact. Run --dry-run first; schedule one model job at a time. The public factory and pins remain unchanged; grammar enforcement is separate from model accuracy.',
+  ),
+  TestMatrixRow(
     id: 'qwen3-litert-cpu-unicode',
     tier: 'targeted',
     mode: 'local-only',
