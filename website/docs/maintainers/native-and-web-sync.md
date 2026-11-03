@@ -538,6 +538,11 @@ Use this checklist in native sync PRs:
 
 ## Companion package release handoff
 
+Core `0.18.0` preparation pairs all three Apple companions at `0.18.0`, with
+SwiftPM pins `v0.8.0-2`, `v0.18.1-4` and `v0.3.0-3`, and constrains each to
+`llamadart: '>=0.18.0 <0.19.0'`. The LiteRT-LM pin remains unchanged; final
+C API 1.0 runtime adoption and qualification remain separate release gates.
+
 Core `0.17.1` preparation pairs all three Apple companions at `0.17.1`, with
 SwiftPM pins `v0.8.0-1`, `v0.18.1-4` and `v0.3.0-1`. The llama.cpp companion
 requires `llamadart: '>=0.17.1 <0.18.0'`. The LiteRT-LM and SD companions keep

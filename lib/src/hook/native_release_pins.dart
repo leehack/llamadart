@@ -16,7 +16,7 @@ const llamaCppTag = 'v0.8.0-2';
 /// `MAJOR.MINOR`, and its own minor's first release otherwise. The native pin
 /// sync sets it to the companion's next release whenever it moves the
 /// companion pin.
-const llamaCppAppleCompanionVersion = '0.17.4';
+const llamaCppAppleCompanionVersion = '0.18.0';
 
 /// Earlier `leehack/llamadart-native` tags that a published Apple llama.cpp
 /// companion pins and the build still accepts, each mapped to what its

@@ -7,14 +7,14 @@ Add this package to a Flutter iOS/macOS app when the app should link the
 prebuilt llama.cpp Apple XCFramework through SwiftPM instead of relying on the
 core package's native-assets fallback.
 
-Use the companion that shares the core's `MAJOR.MINOR`: companion `0.17.x` pairs
-with core `0.17.x`. Upgrade both together. Earlier pairings are in the
+Use the companion that shares the core's `MAJOR.MINOR`: companion `0.18.x` pairs
+with core `0.18.x`. Upgrade both together. Earlier pairings are in the
 [changelog](https://github.com/leehack/llamadart/blob/main/CHANGELOG.md).
 
 ```yaml
 dependencies:
-  llamadart: ^0.17.5
-  llamadart_llama_cpp_flutter: ^0.17.3
+  llamadart: ^0.18.0
+  llamadart_llama_cpp_flutter: ^0.18.0
 ```
 
 This package has no runtime Dart API of its own. Import `package:llamadart`

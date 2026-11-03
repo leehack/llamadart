@@ -13,14 +13,14 @@ writes `MinimumOSVersion` 13.0 into it, while the library requires iOS 16.4.
 The hook reports this as an Xcode build warning, which Xcode and `xcodebuild`
 show but plain `flutter build` and `flutter run` output does not.
 
-Use the companion that shares the core's `MAJOR.MINOR`: companion `0.17.x` pairs
-with core `0.17.x`. Upgrade both together. Earlier pairings are in the
+Use the companion that shares the core's `MAJOR.MINOR`: companion `0.18.x` pairs
+with core `0.18.x`. Upgrade both together. Earlier pairings are in the
 [changelog](https://github.com/leehack/llamadart/blob/main/CHANGELOG.md).
 
 ```yaml
 dependencies:
-  llamadart: ^0.17.5
-  llamadart_stable_diffusion_flutter: ^0.17.3
+  llamadart: ^0.18.0
+  llamadart_stable_diffusion_flutter: ^0.18.0
 ```
 
 Adding the package selects the `stable_diffusion` runtime for Flutter iOS and
