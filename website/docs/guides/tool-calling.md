@@ -192,7 +192,23 @@ retain their named position, and a declared zero-argument call yields `{}`.
 For a string parameter, `value=False` remains the string `"False"`; copied
 backslashes in Python-style string arguments remain literal. Ambiguous copied
 text and escaped text are not globally unescaped. The existing JSON call form
-keeps JSON string decoding.
+keeps JSON string decoding. For a tool with one required plain string argument, auto grammar also preserves
+parser-supported bare text and balanced object/list spellings as strings. Copied
+path-like values may retain a trailing backslash or an unmatched opening quote,
+in a singleton list without a terminal comma. Ambiguous copied spellings remain
+non-executable; the grammar does not reinterpret them as a different value.
+Other declarations and list forms retain their declared types and strict quotes.
+An auto reply closed with a foreign XML tag such as `</function_call>` can remain
+raw diagnostic text instead of being forced into an executable tool envelope.
+This diagnostic form requires a schema-valid call prefix without a trailing
+list comma, excludes `<` from its argument bytes, and excludes special markers
+from its tail. It never yields an executable call. Required/force-JSON and `none` behavior is unchanged.
+For that one-string form, a direct string cannot continue a completed copied-path
+call as argument data. Such values use the existing Python wrapper
+`save_note(arguments={"text":"..."})`, whose JSON string encoding preserves the
+value. The generation grammar requires exactly the declared inner property and
+its type. If the declared property is named `arguments`, the envelope uses
+`parameters` instead; parsed calls contain the declared argument.
 
 Declare every argument with the correct type. This parser change does not add
 canonical `ToolDefinition.fromJsonSchema` generation support for LFM2: the
@@ -207,8 +223,37 @@ The capability report still describes that history support; the flag does not
 add an unsupported format or backend protocol. This corrects
 [#1713](https://github.com/leehack/llamadart/issues/1713), while the reasoning
 boundary is tracked by [#1714](https://github.com/leehack/llamadart/issues/1714).
-Auto lazy grammar remains separate work in
-[#1715](https://github.com/leehack/llamadart/issues/1715).
+LFM2/LFM2.5 `ToolChoice.auto` uses a schema-directed Python-call grammar on
+native llama.cpp. It waits for a tool-start marker outside reasoning, allowing
+ordinary text before a call, then enforces declared names, required and unique
+arguments, value types, and the explicit parallel flag. Prompt tokens seed only
+the penalty sampler, preserving sampling before activation without feeding the
+prompt to the grammar. Required and force-JSON requests keep their JSON-list
+grammar; `none` adds no tool grammar. The auto grammar permits a trailing list
+comma and bounds formatting whitespace outside quoted strings, preventing
+separator loops: eight characters per separator, or up to sixteen in an empty
+call or container where two separators meet. Whitespace inside quoted argument
+values, enum literals and quoted object keys is unchanged.
+
+Use legacy `ToolParam` declarations for this path. Grammar expansion is bounded
+to 4096 argument states; oversized declarations, arrays without a declared item
+type, and string enum values containing both quote styles or ending in an odd
+number of backslashes throw
+`LlamaUnsupportedException`. Copied-string backslashes retain the parser policy
+above. Grammar constrains structure and types, not the accuracy of copied text.
+
+The new auto path requires both lazy grammar and prompt penalties with grammar.
+Published Web assets lack the latter capability ([bridge #207](https://github.com/leehack/llama-web-bridge/issues/207)), so it throws a typed unsupported
+error before inference on Web. A custom backend must implement
+`BackendPromptPenaltyGeneration` from `package:llamadart/backend.dart`, report
+its loaded runtime's truthful capability, and implement the scoped generation
+route; interface presence alone is insufficient. Optional native chat cannot
+bypass this route; a backend requiring structured chat input rejects the
+combination before generation. Nested object keys support quoted and
+backslashed names through parser-compatible literals. Existing generic auto fallback
+is separate. See [#1715](https://github.com/leehack/llamadart/issues/1715);
+length-truncated diagnostics are described below. Required-mode inner-quote
+truncation remains tracked by [#1609](https://github.com/leehack/llamadart/issues/1609).
 
 When a backend reports a length cutoff inside an LFM tool envelope,
 `chunk.partialToolCalls` and the collected `reply.partialToolCalls` preserve

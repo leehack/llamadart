@@ -290,11 +290,32 @@ void main() {
       expect(parallel.grammar, isNot(single.grammar));
     });
 
-    test('auto without the force-json marker leaves grammar unconstrained', () {
-      final result = render([search], toolChoice: ToolChoice.auto);
-      expect(result.grammar, isNull);
-      expect(result.grammarLazy, isFalse);
-      expect(result.grammarTriggers, isEmpty);
+    test(
+      'auto without the force-json marker uses a lazy Python-call grammar',
+      () {
+        final result = render([search], toolChoice: ToolChoice.auto);
+        expect(result.grammar, contains('py-string'));
+        expect(result.grammarLazy, isTrue);
+        expect(result.grammarTriggers, hasLength(1));
+        expect(result.grammarTriggers.single.type, 3);
+      },
+    );
+
+    test('diagnostic roots belong only to Python auto tool choice', () {
+      expect(
+        render([search], toolChoice: ToolChoice.auto).grammar,
+        contains('diagnostic-envelope'),
+      );
+      expect(render([search]).grammar, isNot(contains('diagnostic-envelope')));
+      expect(
+        render(
+          [search],
+          system: 'Force JSON schema.\nSystem',
+          toolChoice: ToolChoice.auto,
+        ).grammar,
+        isNot(contains('diagnostic-envelope')),
+      );
+      expect(render([search], toolChoice: ToolChoice.none).grammar, isNull);
     });
 
     test('buildGrammar is the single-call list', () {
@@ -522,9 +543,9 @@ void main() {
     );
 
     expect(handler.format, isA<ChatFormat>());
-    expect(rendered.grammar, isNull);
-    expect(rendered.grammarLazy, isFalse);
-    expect(rendered.grammarTriggers, isEmpty);
+    expect(rendered.grammar, contains('py-string'));
+    expect(rendered.grammarLazy, isTrue);
+    expect(rendered.grammarTriggers, hasLength(1));
     expect(rendered.preservedTokens, contains('<|tool_call_start|>'));
     expect(rendered.additionalStops, isEmpty);
 

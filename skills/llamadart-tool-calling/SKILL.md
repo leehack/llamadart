@@ -130,7 +130,36 @@ description: >-
   Named object/array arguments and zero-argument calls are supported. Keep
   copied backslashes literal; ambiguous Python-style strings are not globally
   unescaped. This does not enable canonical `fromJsonSchema` generation on
-  LFM2 or change its existing required JSON grammar.
+  LFM2 or change its existing required JSON grammar. Auto grammar preserves copied
+  bare text and balanced object/list spellings as strings only for one required
+  plain string argument. Copied path-like values may retain a trailing backslash
+  or an unmatched opening quote, in a singleton list without a terminal comma.
+  Ambiguous spellings stay non-executable; other declarations retain their types
+  and strict quote boundaries. A schema-valid auto prefix closed with a foreign
+  XML tag can remain raw diagnostic text with no executable calls. A trailing
+  list comma cannot lead into this diagnostic form. Its argument bytes exclude
+  `<` and its tail excludes special markers; never execute these diagnostics. Required/force-JSON and `none` behavior is unchanged.
+  For the one-string form, values that would continue a completed copied-path
+  call use the existing Python `tool(arguments={"field":"..."})` envelope with
+  JSON string escaping. The inner object follows the declared single-field
+  schema. A declared `arguments` field uses a `parameters` envelope instead.
+  Read the declared argument from the parsed tool call.
+- Native llama.cpp enforces LFM2/LFM2.5 auto Python calls with a lazy schema
+  grammar after a tool-start marker outside reasoning. Keep legacy `ToolParam`
+  declarations typed; required/force-JSON requests retain their JSON grammar,
+  and `none` adds no tool grammar. Published Web assets cannot preserve prompt
+  penalties with grammar ([bridge #207](https://github.com/leehack/llama-web-bridge/issues/207)), so this new auto route throws before inference.
+  Custom backends need the truthful `BackendPromptPenaltyGeneration`
+  capability and route from `package:llamadart/backend.dart`; implementing the
+  interface with a false getter still rejects. Optional native chat cannot
+  bypass this route; mandatory structured-chat backends reject it. Argument expansion is bounded
+  to 4096 states; unsupported schemas throw rather than silently dropping grammar.
+  Auto enums ending in an odd number of backslashes throw unsupported before
+  inference; use a plain string parameter for copied paths.
+  Auto grammar allows a trailing list comma and bounds formatting whitespace
+  outside quoted strings: eight characters per separator, up to sixteen in an
+  empty call or container. Quoted argument values, enum literals and quoted
+  object keys keep their whitespace.
 - LFM2/LFM2.5 tool markers inside reasoning remain `thinking` text and never
   produce executable calls. Calls after the thought closes still work; literal
   `<think>`/`</think>` inside complete tool arguments remain argument data.

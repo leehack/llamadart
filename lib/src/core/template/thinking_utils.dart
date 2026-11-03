@@ -1,4 +1,5 @@
 import '../models/chat/chat_template_result.dart';
+import 'template_internal_metadata.dart';
 
 /// Result of extracting thinking/reasoning from model output.
 typedef ThinkingExtraction = ({String content, String? reasoning});
@@ -268,9 +269,12 @@ bool thoughtClosedForThinkingOffOf(LlamaChatTemplateResult result) =>
 LlamaChatTemplateResult withThoughtMarksOf(
   LlamaChatTemplateResult copy,
   LlamaChatTemplateResult source,
-) => withThoughtClosedForThinkingOff(
-  withThinkingForcedClosed(copy, closed: thinkingForcedClosedOf(source)),
-  closed: thoughtClosedForThinkingOffOf(source),
+) => withLfm2AutoGrammarOf(
+  withThoughtClosedForThinkingOff(
+    withThinkingForcedClosed(copy, closed: thinkingForcedClosedOf(source)),
+    closed: thoughtClosedForThinkingOffOf(source),
+  ),
+  source,
 );
 
 /// Returns the thinking flag a request renders, parses and streams with.
@@ -302,16 +306,19 @@ LlamaChatTemplateResult withTemplateOpenedThought(
       !isThinkingForcedOpen(result.prompt, startTag: startTag.trimRight())) {
     return result;
   }
-  return LlamaChatTemplateResult(
-    prompt: result.prompt,
-    format: result.format,
-    grammar: result.grammar,
-    grammarLazy: result.grammarLazy,
-    additionalStops: result.additionalStops,
-    preservedTokens: result.preservedTokens,
-    grammarTriggers: result.grammarTriggers,
-    thinkingForcedOpen: true,
-    parser: result.parser,
-    tokenCount: result.tokenCount,
+  return withLfm2AutoGrammarOf(
+    LlamaChatTemplateResult(
+      prompt: result.prompt,
+      format: result.format,
+      grammar: result.grammar,
+      grammarLazy: result.grammarLazy,
+      additionalStops: result.additionalStops,
+      preservedTokens: result.preservedTokens,
+      grammarTriggers: result.grammarTriggers,
+      thinkingForcedOpen: true,
+      parser: result.parser,
+      tokenCount: result.tokenCount,
+    ),
+    result,
   );
 }

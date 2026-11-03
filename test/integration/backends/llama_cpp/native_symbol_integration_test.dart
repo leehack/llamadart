@@ -538,6 +538,42 @@ void _expectB10545MtmdContextDefaults(mtmd_context_params params) {
 
 void main() {
   group('Native Symbol Availability', () {
+    test(
+      'grammar barrier accepts tokens through the platform wrapper asset',
+      () {
+        final barrier = NativeBarrierApi.tryResolve(
+          isWindows: Platform.isWindows,
+        );
+        expect(barrier, isNotNull);
+        final sampler = llama_sampler_init_penalties(256, 64, 2, 0, 0);
+        expect(sampler, isNot(ffi.nullptr));
+        final data = calloc<llama_token_data>();
+        final candidates = calloc<llama_token_data_array>();
+        try {
+          candidates.ref
+            ..data = data
+            ..size = 1
+            ..selected = -1
+            ..sorted = false;
+          data.ref
+            ..id = 42
+            ..logit = 10
+            ..p = 0;
+          llama_sampler_apply(sampler, candidates);
+          expect(data.ref.logit, 10);
+          expect(barrier!.samplerAccept(sampler, 42), isTrue);
+          data.ref.logit = 10;
+          llama_sampler_apply(sampler, candidates);
+          expect(data.ref.logit, 5);
+          expect(barrier.caughtException(), isNull);
+        } finally {
+          llama_sampler_free(sampler);
+          calloc.free(candidates);
+          calloc.free(data);
+        }
+      },
+    );
+
     test('context batch constants match the pinned llama.cpp defaults', () {
       final params = llama_context_default_params();
 

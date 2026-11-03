@@ -12,6 +12,7 @@ import 'package:llamadart/src/core/engine/chat_completion_stream_parser.dart';
 import 'package:test/test.dart';
 
 import '../../support/suite_system_temp.dart';
+import '../../support/lfm2_recording_backend.dart';
 
 // Captures actual emissions once; baseline/candidate replay must use these bytes.
 void main() {
@@ -26,7 +27,8 @@ void main() {
         markTestSkipped('Set $variable to an existing LFM GGUF; no download.');
         return;
       }
-      final engine = LlamaEngine(LlamaBackend());
+      final recorder = Lfm2RecordingBackend();
+      final engine = LlamaEngine(recorder);
       addTearDown(engine.dispose);
       await engine.loadModel(
         path,
@@ -65,19 +67,26 @@ void main() {
           enableThinking: false,
         );
         expect(rendered.format, ChatFormat.lfm2.index);
-        final raw = await engine
-            .generate(
-              rendered.prompt,
-              params: GenerationParams(
-                maxTokens: 200,
-                temp: 0,
-                seed: 1,
-                grammar: rendered.grammar,
-                preservedTokens: rendered.preservedTokens,
-                stopSequences: rendered.additionalStops,
-              ),
+        expect(rendered.grammar, isNotNull);
+        expect(rendered.grammarLazy, isTrue);
+        expect(rendered.grammarTriggers, isNotEmpty);
+        expect((await engine.capabilities).supportsLazyGrammar, isTrue);
+        recorder.resetCapture();
+        await engine
+            .create(
+              messages,
+              tools: [scenario.tool],
+              toolChoice: ToolChoice.auto,
+              enableThinking: false,
+              params: const GenerationParams(maxTokens: 200, temp: 0, seed: 1),
             )
-            .join();
+            .drain<void>();
+        expect(recorder.countedPromptPenalties, isTrue);
+        final params = recorder.lastParams!;
+        expect(params.grammar, rendered.grammar);
+        expect(params.grammarLazy, isTrue);
+        expect(params.grammarTriggers, isNotEmpty);
+        final raw = recorder.raw;
         final capture = <String, dynamic>{
           'id': scenario.id,
           'model': File(path).uri.pathSegments.last,
@@ -94,6 +103,16 @@ void main() {
           'raw': raw,
           'format': rendered.format,
           'thinking_forced_open': rendered.thinkingForcedOpen,
+          'grammar_lazy': params.grammarLazy,
+          'prompt_penalties_with_grammar': recorder.countedPromptPenalties,
+          'grammar_triggers': [
+            for (final trigger in rendered.grammarTriggers)
+              {
+                'type': trigger.type,
+                'value': trigger.value,
+                'token': trigger.token,
+              },
+          ],
           'expected_arguments': scenario.expected,
           'sampling': {'temp': 0, 'seed': 1, 'max_tokens': 200, 'threads': 2},
         };
