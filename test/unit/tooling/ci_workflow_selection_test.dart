@@ -464,13 +464,12 @@ void main() {
     final job = readWorkflow('ci')['jobs']['model-store'] as Map;
     final steps = (job['steps'] as List).cast<Map>();
     Map step(String name) => steps.singleWhere((s) => s['name'] == name);
-    final checks = step('Analyze and test');
+    final checks = step('Analyze and test on VM');
     expect(checks['working-directory'], 'packages/llamadart_model_store');
     for (final command in [
       'dart format --output=none --set-exit-if-changed .',
       'flutter analyze --fatal-infos',
       'TMPDIR="\$(mktemp -d)" flutter test',
-      'flutter test --platform chrome test/model_store_web_test.dart',
     ]) {
       expect(
         (checks['run'] as String).split('\n'),
@@ -478,6 +477,23 @@ void main() {
         reason: command,
       );
     }
+    final chrome = step('Test on Chrome with bounded shutdown diagnostics');
+    expect(chrome['working-directory'], 'packages/llamadart_model_store');
+    expect(chrome.containsKey('continue-on-error'), isFalse);
+    expect(
+      chrome['run'],
+      allOf(
+        contains('python3 ../../tool/ci/supervise_chrome_test.py'),
+        contains('--timeout-seconds 180 --'),
+        contains(
+          'flutter test --platform chrome test/model_store_web_test.dart',
+        ),
+      ),
+    );
+    final diagnostics = step('Upload Chrome process and phase diagnostics');
+    expect(diagnostics['if'], 'always()');
+    expect(diagnostics['uses'], 'actions/upload-artifact@v7');
+    expect(steps.indexOf(diagnostics), steps.indexOf(chrome) + 1);
     final unchanged = step('Check the lane leaves the package unchanged');
     expect(unchanged.containsKey('if'), isFalse);
     expect(unchanged['working-directory'], 'packages/llamadart_model_store');
@@ -488,7 +504,7 @@ void main() {
         contains('exit 1'),
       ),
     );
-    expect(steps.where((s) => s.containsKey('if')), isEmpty);
+    expect(steps.where((s) => s.containsKey('if')), [diagnostics]);
   });
 
   test('dependabot updates every independently resolved package', () {
