@@ -80,6 +80,38 @@ class SupervisorTest(unittest.TestCase):
         self.assertFalse(result['passed'])
         self.assert_clean(result)
 
+    def unread_consumer(self, stream):
+        payload = b'0123456789abcdef' * 65536
+        program = (
+            f'import sys,time; sys.{stream}.buffer.write(b"0123456789abcdef" * 65536); '
+            f'sys.{stream}.flush(); time.sleep(5)'
+        )
+        child = subprocess.Popen(self.command(program, timeout=0.5),
+                                 stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        try:
+            # wait(), unlike communicate(), leaves both downstream pipes unread.
+            # A forwarding write blocks here once it exceeds the pipe capacity.
+            child.wait(timeout=3)
+            self.assertEqual(child.returncode, 124)
+            result = json.loads((self.output / 'result.json').read_text())
+            self.assertEqual(result['failure_reason'], 'command_timeout')
+            self.assertTrue(result['forced_cleanup'])
+            self.assertFalse(result['passed'])
+            self.assertEqual((self.output / f'{stream}.log').read_bytes(), payload)
+            self.assert_clean(result)
+            forwarded = child.communicate(timeout=2)
+            self.assertEqual(forwarded, (b'', b''))
+        finally:
+            if child.poll() is None:
+                child.kill()
+            child.communicate(timeout=2)
+
+    def test_unread_downstream_stdout_cannot_block_deadline_or_cleanup(self):
+        self.unread_consumer('stdout')
+
+    def test_unread_downstream_stderr_cannot_block_deadline_or_cleanup(self):
+        self.unread_consumer('stderr')
+
     def test_cli_exit_is_distinct_from_inherited_pipe_eof(self):
         child, result = self.run_fixture(
             "import subprocess,sys; subprocess.Popen([sys.executable,'-c','import time; time.sleep(5)'])")

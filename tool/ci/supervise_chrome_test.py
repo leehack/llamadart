@@ -215,9 +215,6 @@ def supervise(command, output, timeout, shutdown, cleanup, snapshot_interval):
                         continue
                     sink.write(chunk)
                     sink.flush()
-                    target = sys.stdout if name == 'stdout' else sys.stderr
-                    target.buffer.write(chunk)
-                    target.buffer.flush()
                     tails[name] = (tails[name] + chunk)[-1024:]
                     if not reported and re.search(rb'All tests passed!|\d+ tests passed\.', tails[name]):
                         reported = True
@@ -299,8 +296,8 @@ def main():
     try:
         return supervise(command, args.output_dir, args.timeout_seconds,
                          args.shutdown_seconds, args.cleanup_seconds, args.snapshot_seconds)
-    except Exception as error:
-        print('Chrome test supervisor failed (' + type(error).__name__ + ')', file=sys.stderr)
+    except Exception:
+        # A stalled CI output pipe must not delay failure or process retirement.
         return 125
 
 

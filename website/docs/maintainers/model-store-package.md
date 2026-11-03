@@ -50,8 +50,10 @@ supervisor records a printed test summary only as an observation; timeout,
 forced cleanup, surviving children or incomplete output capture fails the
 step. The unchanged-package and publish checks still require a passing test.
 
-The artifact contains normal command output and allowlisted process fields,
-without command arguments or environment variables. A CLI exit before output
+Command output is retained in the artifact instead of forwarded to CI output
+pipes, so an unread downstream pipe cannot block the watchdog. The artifact
+also contains allowlisted process fields, without command arguments or
+environment variables. A CLI exit before output
 EOF indicates an inherited pipe may still be open; live children after EOF
 identify a separate cleanup wait. These diagnostics investigate
 [#1702](https://github.com/leehack/llamadart/issues/1702); they do not establish
