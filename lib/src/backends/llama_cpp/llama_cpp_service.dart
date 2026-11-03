@@ -285,6 +285,7 @@ class LlamaCppService {
     Allocator modelLoadAllocator = malloc,
     Allocator contextBatchAllocator = malloc,
     String? Function()? buildIdentity,
+    String? Function(Pointer<llama_model> model)? modelArchitecture,
   }) : _backendInit = backendInit ?? (() => llama_backend_init()),
        _abi = abi ?? Abi.current(),
        _isWindows = isWindows ?? Platform.isWindows,
@@ -307,7 +308,8 @@ class LlamaCppService {
        _splitBufferTypeProbeOverride = splitBufferTypeProbe,
        _modelLoadAllocator = modelLoadAllocator,
        _contextBatchAllocator = contextBatchAllocator,
-       _readBuildIdentity = buildIdentity;
+       _readBuildIdentity = buildIdentity,
+       _modelArchitectureOverride = modelArchitecture;
 
   NativeWorkerOwner? _nativeOwner;
 
@@ -511,10 +513,13 @@ class LlamaCppService {
 
   final Map<int, Map<String, _LlamaLoraWrapper>> _loraAdapters = {};
   final Map<int, Map<String, double>> _activeLoras = {};
+  final String? Function(Pointer<llama_model>)? _modelArchitectureOverride;
+  final Map<int, String> _modelResolvedBackends = <int, String>{};
+  final Map<int, String?> _modelArchitectures = <int, String?>{};
   final Map<int, String> _modelBackendNames = <int, String>{};
   final Map<int, int> _modelResolvedGpuLayers = <int, int>{};
-  // Their reported layers are 0, while _modelResolvedGpuLayers keeps what the
-  // load passed: context and draft settings on such a host stay as they were.
+  // Retain the raw load layers for auxiliary placement, but report zero and
+  // disable context offload when the load selected no GPU.
   final Set<int> _modelsOnNoGpu = <int>{};
   final Map<int, ModelParams> _modelLoadParams = <int, ModelParams>{};
   final Map<int, GpuDevicePlacement> _modelPlacements =
@@ -771,6 +776,68 @@ class LlamaCppService {
         devices.isEmpty ||
         devices.length != registeredDeviceCount ||
         devices.any((device) => device.hasSmallMatmulTileDefect);
+  }
+
+  static const String _qwen35VulkanRestriction =
+      'Qwen3.5 on Android/Vulkan with unsafe or unproven small-matmul '
+      'subgroup facts supports ordinary text only, with microBatchSize unset '
+      'or 1..8 (https://github.com/leehack/llamadart/issues/948). '
+      'Use ComputeDevice.cpu for larger batches, media, speculation or embeddings.';
+
+  // Context preferences cannot move tensors already loaded onto Vulkan.
+  bool _modelUsesAndroidVulkan(int modelHandle) =>
+      _isAndroid &&
+      _modelResolvedBackends[modelHandle] == 'Vulkan' &&
+      (_modelResolvedGpuLayers[modelHandle] ?? 0) > 0 &&
+      !_modelsOnNoGpu.contains(modelHandle);
+
+  bool _requiresQwen35VulkanRestriction(int modelHandle) {
+    if (!_modelUsesAndroidVulkan(modelHandle) ||
+        !_androidVulkanHasSmallMatmulTileDefect()) {
+      return false;
+    }
+    String? architecture;
+    try {
+      architecture = _modelArchitecture(modelHandle);
+    } on Object {
+      // Missing runtime metadata cannot establish admission for this GPU path.
+      architecture = null;
+    }
+    if (architecture == null || architecture.trim().isEmpty) {
+      throw LlamaUnsupportedException(
+        'Cannot establish required model safety for Android/Vulkan with unsafe '
+        'or unproven small-matmul subgroup facts: native general.architecture '
+        'is unavailable (https://github.com/leehack/llamadart/issues/948). '
+        'Use ComputeDevice.cpu.',
+      );
+    }
+    return architecture.toLowerCase().replaceAll(RegExp('[^a-z0-9]'), '') ==
+        'qwen35';
+  }
+
+  String? _modelArchitecture(int modelHandle) =>
+      _modelArchitectures.putIfAbsent(
+        modelHandle,
+        () => _modelArchitectureOverride == null
+            ? _getModelMetadataValue(modelHandle, 'general.architecture')
+            : _modelArchitectureOverride(_models[modelHandle]!.pointer),
+      );
+
+  void _checkQwen35VulkanEmbedding(_LlamaContextWrapper context) {
+    if (context.qwen35VulkanRestricted) {
+      throw LlamaUnsupportedException(
+        'Embeddings are unavailable. $_qwen35VulkanRestriction',
+      );
+    }
+  }
+
+  bool _projectorHasQwen35VulkanRestriction(int mmContextHandle) {
+    for (final entry in _modelToMtmd.entries) {
+      if (entry.value == mmContextHandle) {
+        return _requiresQwen35VulkanRestriction(entry.key);
+      }
+    }
+    return false;
   }
 
   /// Resolves effective context batch parameters.
@@ -1753,6 +1820,7 @@ class LlamaCppService {
       resolvedGpuLayers: gpuLayers,
       forcedCpuFallback: forcedCpuFallback,
     );
+    _modelResolvedBackends[handle] = resolvedBackend;
     _modelBackendNames[handle] = placement == null
         ? resolvedBackend
         : '$resolvedBackend (${placement.deviceNames})';
@@ -1761,7 +1829,11 @@ class LlamaCppService {
     if (placement != null) {
       _modelPlacements[handle] = placement;
     }
-    if (loadsOnNoGpu) {
+    if (loadsOnNoGpu ||
+        selectsNoGpuDevice(
+          splitMode: modelParams.splitMode.llamaCppValue,
+          mainGpu: modelParams.mainGpu,
+        )) {
       _modelsOnNoGpu.add(handle);
     }
     _activateModelReport(handle);
@@ -3255,19 +3327,22 @@ class LlamaCppService {
       minP: true,
       thinkingBudget: _supportsThinkingBudget(),
       streamBatching: true,
-      speculativeDecodingStrategies: const <SpeculativeDecodingStrategy>{
-        SpeculativeDecodingStrategy.backendDefault,
-        SpeculativeDecodingStrategy.mtp,
-        SpeculativeDecodingStrategy.ngramSimple,
-        SpeculativeDecodingStrategy.draftSimple,
-        SpeculativeDecodingStrategy.draftEagle3,
-        SpeculativeDecodingStrategy.draftDflash,
-        SpeculativeDecodingStrategy.ngramMapK,
-        SpeculativeDecodingStrategy.ngramMapK4v,
-        SpeculativeDecodingStrategy.ngramMod,
-        SpeculativeDecodingStrategy.ngramCache,
-        SpeculativeDecodingStrategy.draftDspark,
-      },
+      speculativeDecodingStrategies:
+          _requiresQwen35VulkanRestriction(modelHandle)
+          ? const <SpeculativeDecodingStrategy>{}
+          : const <SpeculativeDecodingStrategy>{
+              SpeculativeDecodingStrategy.backendDefault,
+              SpeculativeDecodingStrategy.mtp,
+              SpeculativeDecodingStrategy.ngramSimple,
+              SpeculativeDecodingStrategy.draftSimple,
+              SpeculativeDecodingStrategy.draftEagle3,
+              SpeculativeDecodingStrategy.draftDflash,
+              SpeculativeDecodingStrategy.ngramMapK,
+              SpeculativeDecodingStrategy.ngramMapK4v,
+              SpeculativeDecodingStrategy.ngramMod,
+              SpeculativeDecodingStrategy.ngramCache,
+              SpeculativeDecodingStrategy.draftDspark,
+            },
     );
   }
 
@@ -3728,6 +3803,8 @@ class LlamaCppService {
       model.dispose();
     }
 
+    _modelResolvedBackends.remove(modelHandle);
+    _modelArchitectures.remove(modelHandle);
     _modelBackendNames.remove(modelHandle);
     _modelResolvedGpuLayers.remove(modelHandle);
     _modelsOnNoGpu.remove(modelHandle);
@@ -3789,6 +3866,15 @@ class LlamaCppService {
       isMacosX64: _isMacosX64,
       platform: Platform.operatingSystem,
     );
+    final qwen35VulkanRestricted = _requiresQwen35VulkanRestriction(
+      modelHandle,
+    );
+    if (qwen35VulkanRestricted &&
+        params.microBatchSize > androidVulkanPromptMicroBatchSize) {
+      throw LlamaUnsupportedException(
+        'microBatchSize=${params.microBatchSize} is unavailable. $_qwen35VulkanRestriction',
+      );
+    }
     if (params.speculativeRollbackTokenMax > 0) {
       _validateRollbackReservation(
         params,
@@ -3827,8 +3913,12 @@ class LlamaCppService {
       ctxParams.kv_unified = true;
     }
 
-    final resolvedModelGpuLayers = _modelResolvedGpuLayers[modelHandle];
-    if (shouldDisableContextGpuOffload(
+    final resolvedModelGpuLayers = _modelsOnNoGpu.contains(modelHandle)
+        ? 0
+        : _modelResolvedGpuLayers[modelHandle];
+    if (qwen35VulkanRestricted) {
+      _applyConservativeAndroidVulkanContextConfig(ctxParams, modelHandle);
+    } else if (shouldDisableContextGpuOffload(
       params,
       resolvedGpuLayers: resolvedModelGpuLayers,
     )) {
@@ -3880,12 +3970,15 @@ class LlamaCppService {
       ctxPtr,
       model,
       _calls,
-      promptMicroBatchLimit: resolvePromptMicroBatchLimit(
-        params,
-        resolvedGpuLayers: resolvedModelGpuLayers,
-        isAndroid: _isAndroid,
-        hasSmallMatmulTileDefect: _androidVulkanHasSmallMatmulTileDefect,
-      ),
+      qwen35VulkanRestricted: qwen35VulkanRestricted,
+      promptMicroBatchLimit: qwen35VulkanRestricted
+          ? androidVulkanPromptMicroBatchSize
+          : resolvePromptMicroBatchLimit(
+              params,
+              resolvedGpuLayers: resolvedModelGpuLayers,
+              isAndroid: _isAndroid,
+              hasSmallMatmulTileDefect: _androidVulkanHasSmallMatmulTileDefect,
+            ),
     );
     _contextToModel[handle] = modelHandle;
     _activeLoras[handle] = {};
@@ -3934,10 +4027,7 @@ class LlamaCppService {
     int modelHandle,
   ) {
     if (!_androidVulkanAllowKqvOffload) {
-      final modelArchitecture = _getModelMetadataValue(
-        modelHandle,
-        'general.architecture',
-      );
+      final modelArchitecture = _modelArchitecture(modelHandle);
       if (!shouldKeepAndroidVulkanKqvOffloadEnabled(modelArchitecture)) {
         ctxParams.offload_kqv = false;
       }
@@ -4690,6 +4780,12 @@ class LlamaCppService {
           false;
       final hasVideoParts =
           parts?.any((part) => part is LlamaVideoContent) ?? false;
+      if (ctx.qwen35VulkanRestricted &&
+          (hasMediaParts ||
+              hasVideoParts ||
+              params.resolvedSpeculativeDecodingConfig != null)) {
+        throw LlamaUnsupportedException(_qwen35VulkanRestriction);
+      }
       if (hasVideoParts) {
         final mmHandle = _modelToMtmd[modelHandle];
         if (mmHandle == null) {
@@ -5144,6 +5240,7 @@ class LlamaCppService {
       throw Exception('Missing context parameters');
     }
     _ensureContextUsable(contextHandle, ctx);
+    _checkQwen35VulkanEmbedding(ctx);
 
     final hasEncoder = llama_model_has_encoder(model.pointer);
     final hasDecoder = llama_model_has_decoder(model.pointer);
@@ -5274,6 +5371,7 @@ class LlamaCppService {
       throw Exception('Missing context parameters');
     }
     _ensureContextUsable(contextHandle, ctx);
+    _checkQwen35VulkanEmbedding(ctx);
 
     final hasEncoder = llama_model_has_encoder(model.pointer);
     final hasDecoder = llama_model_has_decoder(model.pointer);
@@ -8094,6 +8192,8 @@ class LlamaCppService {
     }
     _speculativeDraftModels.clear();
     _modelToSpeculativeDraftModelKeys.clear();
+    _modelResolvedBackends.clear();
+    _modelArchitectures.clear();
     _modelBackendNames.clear();
     _modelResolvedGpuLayers.clear();
     _modelsOnNoGpu.clear();
@@ -8986,7 +9086,8 @@ class LlamaCppService {
   /// Returns whether the active multimodal projector supports vision input.
   bool supportsVision(int mmContextHandle) {
     final mmCtx = _mtmdContexts[mmContextHandle];
-    if (mmCtx == null) {
+    if (mmCtx == null ||
+        _projectorHasQwen35VulkanRestriction(mmContextHandle)) {
       return false;
     }
     return _mtmdHasEncoder(mmCtx, audio: false) ??
@@ -8998,7 +9099,8 @@ class LlamaCppService {
   /// Returns whether the active multimodal projector supports audio input.
   bool supportsAudio(int mmContextHandle) {
     final mmCtx = _mtmdContexts[mmContextHandle];
-    if (mmCtx == null) {
+    if (mmCtx == null ||
+        _projectorHasQwen35VulkanRestriction(mmContextHandle)) {
       return false;
     }
     return _mtmdHasEncoder(mmCtx, audio: true) ??
@@ -10310,12 +10412,14 @@ class _LlamaContextWrapper {
   /// Most tokens of a text prompt one decode call takes, or `null` for the
   /// context's own micro-batch.
   final int? promptMicroBatchLimit;
+  final bool qwen35VulkanRestricted;
 
   _LlamaContextWrapper(
     this.pointer,
     this._modelKeepAlive,
     this._calls, {
     this.promptMicroBatchLimit,
+    this.qwen35VulkanRestricted = false,
   });
   void resetLastPerf() {
     lastPerfPromptEvalMs = 0;

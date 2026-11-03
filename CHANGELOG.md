@@ -1,5 +1,7 @@
 ## Unreleased
 
+- Restrict unqualified Android Vulkan Qwen3.5 paths to bounded ordinary text, with typed errors for larger micro-batches, media, speculation and embeddings ([#948](https://github.com/leehack/llamadart/issues/948)).
+
 - Validate native LiteRT-LM engine settings, send controls and benchmark counts before loading runtime libraries.
 - Enable ABI-aware native LiteRT-LM C API 1.0 public dispatch while retaining legacy runtime compatibility and typed unsupported guards.
 

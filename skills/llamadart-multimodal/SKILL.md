@@ -11,6 +11,13 @@ description: >-
 
 # Multimodal input with llamadart
 
+Native Android Vulkan Qwen3.5 (`general.architecture=qwen35`) with unsafe or
+unproven small-matmul subgroup facts permits only ordinary text with
+`microBatchSize` unset or `1..8`. Larger explicit sizes, media, speculation
+and embeddings are typed unsupported (#948); load on CPU for these features.
+Probe loaded-model modalities and speculative strategies before offering them.
+This restriction does not qualify GPU output or other architectures.
+
 ## Guidelines
 
 - Loading, chat and streaming basics are in the llamadart-getting-started and

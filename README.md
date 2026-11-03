@@ -129,8 +129,14 @@ instead of silently degrading.
 | `.litertlm` | LiteRT-LM deployments, Android GPU/NPU-oriented bundles, Gemma-family LiteRT packages | LiteRT-LM |
 
 llama.cpp uses Metal on Apple platforms, Vulkan on Linux and Windows, and
-WebGPU in the browser. Android Vulkan is experimental and opt-in. LiteRT-LM
-can also use GPU and, on compatible Android deployments, NPU. Image generation
+WebGPU in the browser. Android Vulkan is experimental and opt-in.
+
+On Android Vulkan, Qwen3.5 with unsafe/unproven small-matmul subgroup facts
+accepts ordinary text with `microBatchSize` unset or `1..8`; larger explicit
+sizes, media, speculation and embeddings throw `LlamaUnsupportedException`.
+Use CPU for those features; see the [scope and qualification limits](website/docs/platforms/known-platform-issues.md#android).
+
+LiteRT-LM can also use GPU and, on compatible Android deployments, NPU. Image generation
 is not available on the web. On iOS, use
 `ImageModelPlacement(vaeOnCpu: true)` to keep diffusion on Metal, or CPU
 generation. Metal VAE decoding needs a native context policy that preserves

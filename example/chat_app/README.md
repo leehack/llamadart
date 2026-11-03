@@ -1054,12 +1054,15 @@ default and the only one the test judges, so the sizes must include it: a
 default attempt must load, answer both history prompts with the code and
 nothing else, and end both tool requests as the `get_weather` call.
 
-Every other size is a control that is only recorded. An explicit size, even
-`512` (the default `n_ubatch`), makes the library leave the Android Vulkan
-prompt cap off, so `0+512` compares the capped default with the same context
-uncapped. On a Vulkan device with the small matmul tile defect the control is
-expected to answer wrongly (a Pixel 9 Pro's Mali-G715, subgroup size 16,
-answered `8888...`); a correct control there says the cap is no longer needed.
+Every other size is a control that is only recorded. On restricted native
+Qwen3.5/Android Vulkan device facts, explicit sizes above `8` now produce a
+recorded `LlamaUnsupportedException` before context creation; they are
+unsupported controls, not successful generations. Unset and `1..8` retain
+bounded ordinary text. CPU and exempt device/family paths retain the sweep.
+Historical uncapped Pixel 9 Pro/Mali-G715 subgroup-16 output repeated `8`;
+the original CPU `Cedar17` also failed exact `cedar17`. Preserve those raw
+failures. The restriction does not establish a native repair or final GPU
+qualification ([#948](https://github.com/leehack/llamadart/issues/948)).
 
 Every repeat of the default size runs first, then the controls repeat by
 repeat, and a control sends the tool requests only in its last repeat, so
