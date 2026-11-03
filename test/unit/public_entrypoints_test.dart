@@ -365,6 +365,7 @@ void main() {
       'BackendGrammarConstraintsSupport',
       'BackendJsonSchemaChatGeneration',
       'BackendLazyGrammarSupport',
+      'BackendPromptPenaltyGeneration',
       'BackendLoadCheck',
       'BackendLoraSupport',
       'BackendModelFileTypeDiagnostics',

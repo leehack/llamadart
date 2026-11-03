@@ -473,6 +473,42 @@ void main() {
       },
     );
 
+    test(
+      'prompt penalty policy crosses the worker boundary only on its explicit route',
+      () async {
+        expect(backend.supportsPromptPenaltiesWithGrammar, isTrue);
+        const params = GenerationParams(
+          grammar: 'root ::= "ok"',
+          grammarLazy: true,
+          grammarTriggers: [GenerationGrammarTrigger(type: 0, value: 'go')],
+        );
+        for (final enabled in [false, true, false]) {
+          final stream = enabled
+              ? backend.generateWithPromptPenalties(
+                  1,
+                  '<m>prompt',
+                  params,
+                  mediaMarker: '<m>',
+                )
+              : backend.generateChatPrompt(
+                  1,
+                  '<m>prompt',
+                  params,
+                  mediaMarker: '<m>',
+                );
+          final done = stream.drain<void>();
+          await Future<void>.delayed(Duration.zero);
+          final request = harness.received.whereType<GenerateRequest>().last;
+          expect(request.countPromptTokensInPenalties, enabled);
+          expect(request.chatMediaMarker, '<m>');
+          expect(request.params.grammarLazy, isTrue);
+          expect(request.params.grammarTriggers.single.value, 'go');
+          request.sendPort.send(DoneResponse());
+          await done;
+        }
+      },
+    );
+
     test('generateChatPrompt sends the worker the prompt with its marker, '
         'generate without one', () async {
       GenerateRequest sent() =>

@@ -2,6 +2,11 @@
 
 This directory contains example applications demonstrating how to use the llamadart package.
 
+LFM2 automatic Python tool calls require native llama.cpp with lazy grammar and
+prompt penalties under grammar. Published Web runtimes reject that path before
+inference; see the [tool-calling guide](https://llamadart.leehack.com/docs/guides/tool-calling)
+for typed legacy `ToolParam` declarations and the separate required/none paths.
+
 ## Available Examples
 
 ### 1. Basic App (`basic_app/`)

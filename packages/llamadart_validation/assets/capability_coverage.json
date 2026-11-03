@@ -694,6 +694,16 @@
         "issue": "https://github.com/leehack/llamadart/issues/1716",
         "reason": "Bounded host parser and public completion/session tests cover raw non-executable length diagnostics across stream partitions, terminal controls, serialization, history, dispatch and reuse. No versioned model/backend validation pack qualifies this new surface yet; broader model/backend qualification remains separate. Diagnostics do not qualify a termination cause or lift LiteRT-LM Web issue919."
       }
+    },
+    {
+      "surfaces": [
+        "matrix:LFM2 auto Python-call grammar"
+      ],
+      "exemption": {
+        "id": "lfm2-auto-python-grammar",
+        "issue": "https://github.com/leehack/llamadart/issues/1715",
+        "reason": "Durable compiled grammar, native lazy activation, public completion routing, false/missing capability, draft-parameter copy, native worker transport and prompt-penalty sampler controls cover this bounded legacy ToolParam route. Affected-family fresh generation is a separate required exact-source gate; existing validation packs do not qualify LFM2 schema accuracy or new devices. Published Web assets lack prompt penalties with grammar (llama-web-bridge#207) and the new path rejects before dispatch; no Web enforcement or GPU qualification is claimed."
+      }
     }
   ]
 }

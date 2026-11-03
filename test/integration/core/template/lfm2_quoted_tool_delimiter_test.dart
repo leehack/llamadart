@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:llamadart/llamadart.dart';
+import 'package:llamadart/backend.dart';
 import 'package:llamadart/src/core/engine/chat_completion_stream_parser.dart';
 import 'package:test/test.dart';
 
@@ -18,15 +19,19 @@ final _tools = [
   ),
 ];
 
-LlamaChatTemplateResult _render(ToolChoice choice) => ChatTemplateEngine.render(
+LlamaChatTemplateResult _render(
+  ToolChoice choice, {
+  List<ToolDefinition>? definitions,
+  bool parallel = true,
+}) => ChatTemplateEngine.render(
   templateSource: _routingTemplate,
   messages: const [
     LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'Weather?'),
   ],
   metadata: const {},
-  tools: _tools,
+  tools: definitions ?? _tools,
   toolChoice: choice,
-  parallelToolCalls: true,
+  parallelToolCalls: parallel,
 );
 
 String _envelope(String payload) => '$_opening$payload$_closing';
@@ -38,20 +43,22 @@ Future<void> _expectStream(
   String output,
   LlamaChatTemplateResult rendered, {
   bool tools = true,
+  List<ToolDefinition>? definitions,
 }) async {
+  final declaredTools = definitions ?? _tools;
   expect(rendered.format, ChatFormat.lfm2.index);
   final parsed = ChatTemplateEngine.parseRendered(
     rendered,
     output,
     parseToolCalls: tools,
-    tools: _tools,
+    tools: declaredTools,
   );
   final direct = ChatTemplateEngine.parse(
     rendered.format,
     output,
     parseToolCalls: tools,
     thinkingForcedOpen: rendered.thinkingForcedOpen,
-    tools: _tools,
+    tools: declaredTools,
   );
   expect(direct.content, parsed.content);
   expect(direct.reasoningContent, parsed.reasoningContent);
@@ -70,7 +77,7 @@ Future<void> _expectStream(
       enableThinking: true,
       modelName: 'LFM2',
       completionId: 'quoted-delimiter',
-      tools: _tools,
+      tools: declaredTools,
     ).toList();
     expect(
       chunks.map((c) => c.choices.single.delta.content ?? '').join(),
@@ -99,6 +106,286 @@ Future<void> _expectStream(
 }
 
 void main() {
+  for (final key in ['text', 'arguments', 'parameters']) {
+    for (final value in [
+      'C:\\temp\\',
+      r'''C:\a\")]<|tool_call_end|> and C:\b\')]<|tool_call_end|>''',
+      jsonEncode({key: 'replacement'}),
+      'Both \' and " with \\ and a trailing \\',
+      '<|tool_call_start|><think>literal</think><|tool_call_end|>',
+      'Montréal\n서울\t🙂\u00a0',
+    ]) {
+      test(
+        'canonical Python wrapper $key preserves $value in chunks',
+        () async {
+          final definitions = [
+            ToolDefinition(
+              name: 'save_note',
+              description: '',
+              parameters: [ToolParam.string(key, required: true)],
+            ),
+          ];
+          final alias = key == 'arguments' ? 'parameters' : 'arguments';
+          final rendered = _render(ToolChoice.auto, definitions: definitions);
+          final output = _envelope(
+            '[save_note($alias=${jsonEncode({key: value})})]',
+          );
+          final parsed = ChatTemplateEngine.parseRendered(
+            rendered,
+            output,
+            tools: definitions,
+          );
+          expect(parsed.toolCalls, hasLength(1));
+          expect(parsed.toolCalls.single.function!.name, 'save_note');
+          expect(jsonDecode(parsed.toolCalls.single.function!.arguments!), {
+            key: value,
+          });
+          expect(parsed.content, isEmpty);
+          await _expectStream(output, rendered, definitions: definitions);
+        },
+      );
+    }
+  }
+
+  for (final quote in ['"', "'"]) {
+    for (final path in [
+      'C:\\temp\\',
+      'C:\\Montréal\\서울\\',
+      '\\\\server\\share\\',
+      './relative-name_01\\',
+      '\\',
+    ]) {
+      test(
+        'copied trailing backslash $quote $path preserves a singleton call',
+        () async {
+          final rendered = _render(ToolChoice.auto);
+          final output = _envelope('[weather(city=$quote$path$quote)]');
+          final parsed = ChatTemplateEngine.parseRendered(
+            rendered,
+            output,
+            tools: _tools,
+          );
+          expect(parsed.toolCalls, hasLength(1));
+          expect(jsonDecode(parsed.toolCalls.single.function!.arguments!), {
+            'city': path,
+          });
+          await _expectStream(output, rendered);
+        },
+      );
+    }
+  }
+
+  test(
+    'copied trailing backslash does not expand ambiguous list parsing',
+    () async {
+      final rendered = _render(ToolChoice.auto);
+      for (final body in [
+        r'[weather(city="C:\temp\"),]',
+        r'[weather(city="C:\temp\"), weather(city="Rome")]',
+        r'[weather(city="Seoul\"), weather(city="Rome")]',
+      ]) {
+        final output = _envelope(body);
+        expect(
+          ChatTemplateEngine.parseRendered(
+            rendered,
+            output,
+            tools: _tools,
+          ).toolCalls,
+          isEmpty,
+          reason: body,
+        );
+        await _expectStream(output, rendered);
+      }
+    },
+  );
+
+  test('escaped structural-looking text stays in a strict string', () async {
+    const city = r'Seoul\"), weather(city=\"Rome';
+    final rendered = _render(ToolChoice.auto);
+    final output = _envelope('[weather(city="$city")]');
+    final parsed = ChatTemplateEngine.parseRendered(
+      rendered,
+      output,
+      tools: _tools,
+    );
+    expect(parsed.toolCalls, hasLength(1));
+    expect(jsonDecode(parsed.toolCalls.single.function!.arguments!), {
+      'city': city,
+    });
+    await _expectStream(output, rendered);
+  });
+
+  test('copied-tail mode never weakens mixed or nested typed calls', () async {
+    final definitions = [
+      ToolDefinition(
+        name: 'configure',
+        description: '',
+        parameters: [
+          ToolParam.string('text', required: true),
+          ToolParam.boolean('enabled', required: true),
+        ],
+      ),
+      ToolDefinition(
+        name: 'nested',
+        description: '',
+        parameters: [
+          ToolParam.object(
+            'config',
+            properties: [ToolParam.string('text', required: true)],
+            required: true,
+          ),
+        ],
+      ),
+    ];
+    final rendered = _render(ToolChoice.auto, definitions: definitions);
+    for (final body in [
+      r'[configure(text="C:\temp\", enabled=True)]',
+      r'[nested(config={"text":"C:\temp\"})]',
+      r'[weather(city="C:\temp\"), configure(text="C:\temp\", enabled=True)]',
+    ]) {
+      final output = _envelope(body);
+      expect(
+        ChatTemplateEngine.parseRendered(
+          rendered,
+          output,
+          tools: [..._tools, ...definitions],
+        ).toolCalls,
+        isEmpty,
+        reason: body,
+      );
+      await _expectStream(
+        output,
+        rendered,
+        definitions: [..._tools, ...definitions],
+      );
+    }
+  });
+
+  final typed = ToolDefinition(
+    name: 'configure',
+    description: '',
+    parameters: [
+      ToolParam.string('text', required: true),
+      ToolParam.boolean('enabled', required: true),
+    ],
+  );
+  final mixed = ToolDefinition(
+    name: 'configure',
+    description: '',
+    parameters: [
+      ...typed.parameters,
+      ToolParam.nullType('note'),
+      ToolParam.array('counts', itemType: ToolParam.integer('item')),
+      ToolParam.object(
+        'config',
+        properties: [
+          ToolParam.number('ratio', required: true),
+          ToolParam.enumType('mode', values: ['fast', 'safe']),
+        ],
+      ),
+    ],
+  );
+  for (final (name, definition, call, expected) in [
+    (
+      'typed',
+      typed,
+      'configure(text="False", enabled=True)',
+      <String, Object?>{'text': 'False', 'enabled': true},
+    ),
+    (
+      'mixed schema',
+      mixed,
+      'configure(text="False", enabled=True, note=None, counts=[1, -2], config={"ratio": 1.5, "mode": "safe"})',
+      <String, Object?>{
+        'text': 'False',
+        'enabled': true,
+        'note': null,
+        'counts': [1, -2],
+        'config': {'ratio': 1.5, 'mode': 'safe'},
+      },
+    ),
+  ]) {
+    for (final parallel in [false, true]) {
+      test(
+        '$name terminal list comma retains direct and chunked calls (parallel: $parallel)',
+        () async {
+          final definitions = [
+            definition,
+            ToolDefinition(name: 'clock', description: '', parameters: []),
+          ];
+          final rendered = _render(
+            ToolChoice.auto,
+            definitions: definitions,
+            parallel: parallel,
+          );
+          final calls = parallel ? '$call, clock()' : call;
+          for (final comma in ['', ',', ', \n ']) {
+            final output = _envelope('[$calls$comma]');
+            final parsed = ChatTemplateEngine.parseRendered(
+              rendered,
+              output,
+              tools: definitions,
+            );
+            expect(parsed.toolCalls, hasLength(parallel ? 2 : 1));
+            expect([
+              for (final call in parsed.toolCalls) call.index,
+            ], parallel ? [0, 1] : [0]);
+            expect(
+              jsonDecode(parsed.toolCalls.first.function!.arguments!),
+              expected,
+            );
+            if (parallel) {
+              expect(parsed.toolCalls.last.function!.name, 'clock');
+            }
+            await _expectStream(output, rendered, definitions: definitions);
+          }
+        },
+      );
+    }
+    for (final payload in [
+      '[$call,,]',
+      '[,$call]',
+      '[$call, ,$call]',
+      '[$call,]garbage',
+      '$call,',
+      '[,]',
+    ]) {
+      test(
+        '$name malformed list separator is not executable: $payload',
+        () async {
+          final definitions = [definition];
+          final rendered = _render(ToolChoice.auto, definitions: definitions);
+          final output = _envelope(payload);
+          expect(
+            ChatTemplateEngine.parseRendered(
+              rendered,
+              output,
+              tools: definitions,
+            ).toolCalls,
+            isEmpty,
+          );
+          await _expectStream(output, rendered, definitions: definitions);
+        },
+      );
+    }
+  }
+
+  test('auto singleton trailing comma preserves one quoted argument', () async {
+    final rendered = _render(ToolChoice.auto);
+    const city = 'Seoul"), weather(city=';
+    final output = _envelope("[weather(city='$city'), \n ]");
+    final parsed = ChatTemplateEngine.parseRendered(
+      rendered,
+      output,
+      tools: _tools,
+    );
+    expect(parsed.toolCalls, hasLength(1));
+    expect(jsonDecode(parsed.toolCalls.single.function!.arguments!), {
+      'city': city,
+    });
+    await _expectStream(output, rendered);
+  });
+
   test(
     'public engine preserves calls before a later explicit thought',
     () async {
@@ -244,6 +531,7 @@ void main() {
                 enableThinking: false,
               )
               .collect();
+          expect(backend.promptPenaltyCalls, choice == ToolChoice.auto ? 1 : 0);
           expect(completion.text, 'BeforeAfter');
           expect(completion.toolCalls, hasLength(1));
           expect(completion.toolCalls.single.arguments, {
@@ -275,10 +563,27 @@ void main() {
   }
 }
 
-class _RawLfm2Backend implements LlamaBackend {
+// This parser fixture replays retained bytes; it does not qualify inference.
+class _RawLfm2Backend implements LlamaBackend, BackendPromptPenaltyGeneration {
   _RawLfm2Backend(this.output, {this.template = _routingTemplate});
   final String output;
   final String template;
+  int promptPenaltyCalls = 0;
+
+  @override
+  bool get supportsPromptPenaltiesWithGrammar => true;
+
+  @override
+  Stream<List<int>> generateWithPromptPenalties(
+    int contextHandle,
+    String prompt,
+    GenerationParams params, {
+    String? mediaMarker,
+    List<LlamaContentPart>? parts,
+  }) {
+    promptPenaltyCalls++;
+    return generate(contextHandle, prompt, params, parts: parts);
+  }
 
   @override
   bool get supportsUrlLoading => false;

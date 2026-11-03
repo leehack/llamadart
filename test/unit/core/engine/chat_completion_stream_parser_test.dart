@@ -900,6 +900,48 @@ void main() {
       },
     );
 
+    test(
+      'LFM2 foreign closing diagnostics never stream executable calls',
+      () async {
+        for (final bracket in ['', ']']) {
+          for (final tail in ['', '\n{"raw":true}', '<', '<x><<']) {
+            final raw =
+                '<|tool_call_start|>[weather(city=\\\\host)$bracket</function_call>$tail';
+            for (final ending in ['natural', 'length', 'cancel']) {
+              await _expectStreamMatchesParse(
+                ChatFormat.lfm2,
+                raw,
+                everySplit: true,
+                atLimit: ending == 'length',
+                cancelled: ending == 'cancel',
+                openings: ['<|tool_call_start|>', '</function_call>'],
+              );
+            }
+            for (final tokens in _chunkings(raw, ['</function_call>'])) {
+              final chunks = await ChatCompletionStreamParser.parse(
+                tokenStream: Stream.fromIterable(tokens),
+                templateResult: LlamaChatTemplateResult(
+                  prompt: '',
+                  format: ChatFormat.lfm2.index,
+                ),
+                parseToolCallsEnabled: true,
+                enableThinking: false,
+                modelName: 'LFM2',
+                completionId: 'foreign-diagnostic',
+                tools: [_weatherTool],
+              ).toList();
+              expect(
+                chunks.expand(
+                  (c) => c.choices.single.delta.toolCalls ?? const [],
+                ),
+                isEmpty,
+              );
+            }
+          }
+        }
+      },
+    );
+
     test('LFM2 and Kimi K2 gate tool calls in content and thoughts', () async {
       for (final (format, call, opening) in [
         (

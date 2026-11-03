@@ -46,6 +46,56 @@ import '../../core/engine/engine_test.dart';
 import '../../core/engine/multimodal_embeddings_test.dart';
 
 void main() {
+  test(
+    'prompt penalty capability follows the loaded delegate and explicit false probe',
+    () async {
+      for (final supported in [false, true]) {
+        final delegate = _PromptPenaltyDelegate(supported);
+        final router = NativeAutoBackend(llamaCppFactory: () => delegate);
+        expect(router.supportsPromptPenaltiesWithGrammar, isFalse);
+        await router.modelLoad('fake.gguf', const ModelParams());
+        expect(router.supportsPromptPenaltiesWithGrammar, supported);
+        if (supported) {
+          await router
+              .generateWithPromptPenalties(
+                1,
+                'p',
+                const GenerationParams(),
+                mediaMarker: '<m>',
+              )
+              .drain<void>();
+          expect(delegate.policyCalls, 1);
+          expect(delegate.marker, '<m>');
+        } else {
+          expect(
+            () => router.generateWithPromptPenalties(
+              1,
+              'p',
+              const GenerationParams(),
+            ),
+            throwsA(isA<LlamaUnsupportedException>()),
+          );
+          expect(delegate.policyCalls, 0);
+        }
+        await router.dispose();
+      }
+      final router = NativeAutoBackend(
+        llamaCppFactory: () => MockLlamaBackend(),
+      );
+      await router.modelLoad('fake.gguf', const ModelParams());
+      expect(router.supportsPromptPenaltiesWithGrammar, isFalse);
+      expect(
+        () => router.generateWithPromptPenalties(
+          1,
+          'p',
+          const GenerationParams(),
+        ),
+        throwsA(isA<LlamaUnsupportedException>()),
+      );
+      await router.dispose();
+    },
+  );
+
   test('router cancels content during its own capability probe', () async {
     final delegate = ContentBackend()..probeGate = Completer<void>();
     final router = NativeAutoBackend(llamaCppFactory: () => delegate);
@@ -2843,4 +2893,25 @@ class _FakeModelDownloadManager implements ModelDownloadManager {
 
   @override
   Future<void> remove(String cacheKey, {String? cacheDirectory}) async {}
+}
+
+class _PromptPenaltyDelegate extends MockLlamaBackend
+    implements BackendPromptPenaltyGeneration {
+  _PromptPenaltyDelegate(this.supportsPromptPenaltiesWithGrammar);
+  @override
+  final bool supportsPromptPenaltiesWithGrammar;
+  int policyCalls = 0;
+  String? marker;
+  @override
+  Stream<List<int>> generateWithPromptPenalties(
+    int contextHandle,
+    String prompt,
+    GenerationParams params, {
+    String? mediaMarker,
+    List<LlamaContentPart>? parts,
+  }) {
+    policyCalls++;
+    marker = mediaMarker;
+    return super.generate(contextHandle, prompt, params, parts: parts);
+  }
 }
