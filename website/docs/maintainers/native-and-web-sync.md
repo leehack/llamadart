@@ -452,6 +452,19 @@ checks. The existing public client and Web stub stay unchanged. This does not
 select v1 publicly: `doc/litert_lm_v1_adoption.md` tracks each existing call path,
 the remaining feature families and the owner/artifact gates before adoption.
 
+Staged C API 1.0 discovery accepts the owner's sampler-free 0.19 desktop
+inventory only after probing the selected primary library's supported C API.
+An absent marker still requires every legacy TopK companion. Common companions
+load before that probe; legacy-only samplers load after admission. macOS flat,
+versioned-framework and native-SPM layouts follow the same rule. A staged
+concrete directory keeps its own primary handle rather than falling back to the
+process image; iOS wrapper/process discovery is unchanged.
+
+`LLAMADART_LITERT_LM_LIB_DIR` takes precedence over packaged and cached desktop
+runtimes. An incomplete directory or an unloadable explicit library now fails
+with a typed unsupported error instead of substituting another runtime. These
+controls do not enable public C API 1.0 selection or change the pinned artifacts.
+
 Use this checklist in native sync PRs:
 
 - Confirm `llamadart-native`, `litert-lm-native` or `stable-diffusion-native`
