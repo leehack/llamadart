@@ -70,10 +70,12 @@ class CaptureOwnershipTest(unittest.TestCase):
         for kind in ('deadline', 'limit'):
             with self.subTest(kind=kind):
                 clock = {'launched': False}
+                waits = []
                 class Child:
                     pid = 123456789
                     returncode = None
                     def wait(self, timeout):
+                        waits.append(timeout)
                         self.returncode = -signal.SIGKILL
                         return self.returncode
                 def start(*args, **kwargs):
@@ -92,6 +94,9 @@ class CaptureOwnershipTest(unittest.TestCase):
                 self.assertTrue(result['leader_reaped'])
                 self.assertEqual(result['deadline_seconds'], 177)
                 self.assertEqual(result['cleanup_deadline_seconds'], 3)
+                self.assertEqual(result['case_deadline_seconds'], 180)
+                self.assertEqual(waits, [2 if kind == 'deadline' else 3],
+                                 'cleanup must consume only the remaining absolute case budget')
                 self.assertEqual(result['timed_out'], kind == 'deadline')
                 self.assertEqual(result['capture_limit_exceeded'], kind == 'limit')
                 self.assertNotIn('observation', result)
@@ -200,7 +205,7 @@ except p.CaptureInterrupted as error:
                                   seconds=1, max_bytes=1024)
         self.assertTrue(result['capture_limit_exceeded'])
         self.assertTrue(result['leader_reaped'])
-        for options in ({'seconds':181}, {'max_bytes':(2 << 20)+1}, {'observation_seconds':46}):
+        for options in ({'seconds':178}, {'max_bytes':(2 << 20)+1}, {'observation_seconds':46}):
             with self.assertRaises(ValueError):
                 profiler.capture([sys.executable], self.root / 'not-created', {}, **options)
 

@@ -24,7 +24,7 @@ TAESD = "db169d69145ec4ff064e49d99c95fa05d3eb04ee453de35824a6d0f325513549"
 PREFIX = b"P6\n128 128\n255\n"
 STAGES = ["load_begin", "load_end", "generation_begin", "generation_end", "pixels_written", "disposed"]
 CONFIG = {"backend": "cpu", "threads": 4, "cache": 4, "eager": True, "batchedCfg": False,
-          "diffusionFlash": True, "vaeDirect": False, "flashMode": "off,diffusion=on", "convMode": "off", "autoFit": False}
+          "diffusionFlash": True, "vaeDirect": False, "flashMode": "off,diffusion=on", "convMode": "off", "autoFit": True}
 if not __debug__:
     raise RuntimeError("Python optimization disables diagnostic validation")
 
@@ -72,9 +72,9 @@ def commands(plan, output):
         for route in ("native", "public"):
             case = route + "-" + model["id"]
             image = output / case / "image.ppm"
-            argv = ([plan["nativeExecutable"]["path"], "--original-mode", model["path"], plan["taesd"]["path"], str(image)]
+            argv = ([plan["nativeExecutable"]["path"], "--original-mode", model["path"], plan["taesd"]["path"], str(image), plan["nativeLibrary"]["path"]]
                     if route == "native" else [plan["dartExecutable"]["path"], plan["publicSnapshot"]["path"],
-                    model["path"], plan["taesd"]["path"], str(image), plan["publicLibrary"]["sha256"]])
+                    model["path"], plan["taesd"]["path"], str(image), plan["publicLibrary"]["sha256"], plan["publicLibrary"]["path"]])
             rows.append({"id": case, "route": route, "model": model, "argv": argv})
     return rows
 
@@ -103,6 +103,7 @@ def grade(directory, row, plan, baseline, paired):
         require(not receipt[key], "failed capture: " + key)
     require(receipt["exit"] == 0 and receipt["leader_reaped"] is True, "owned exit/reap required")
     require(receipt["deadline_seconds"] == 177 and receipt["cleanup_deadline_seconds"] == 3, "case bounds changed")
+    require(receipt["case_deadline_seconds"] == 180, "total case cap differs")
     require(set(receipt["raw"]) == {"stdout.log", "stderr.log"}, "complete raw streams required")
     for filename, raw in receipt["raw"].items():
         path = directory / filename
@@ -159,7 +160,7 @@ def execute(plan, output):
     save()
     try:
         require(sys.platform == "darwin" and platform.machine() == "arm64", "this diagnostic plan is macOS arm64-only")
-        require(not any(os.environ.get(k) for k in ("DYLD_INSERT_LIBRARIES", "LD_PRELOAD")), "library injection/override environment refused")
+        require(not any(os.environ.get(k) for k in ("DYLD_INSERT_LIBRARIES", "DYLD_LIBRARY_PATH", "LD_PRELOAD", "LD_LIBRARY_PATH")), "library injection/override environment refused")
         source = subprocess.check_output(["git", "-C", str(REPO), "rev-parse", "HEAD"], text=True).strip()
         require(source == plan["sourceCommit"], "consumer source differs")
         require(not subprocess.check_output(["git", "-C", str(REPO), "status", "--porcelain", "--untracked-files=no"]), "tracked source is dirty")

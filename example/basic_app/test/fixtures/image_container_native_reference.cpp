@@ -3,6 +3,7 @@
 #include <chrono>
 #include <cstdio>
 #include <cstring>
+#include <filesystem>
 #if defined(__APPLE__) || defined(__linux__)
 #include <dlfcn.h>
 #endif
@@ -34,7 +35,7 @@ void stage(const char* name, long long load_ms = -1) {
 }
 
 int main(int argc, char** argv) {
-    original_mode = argc == 5 && std::strcmp(argv[1], "--original-mode") == 0;
+    original_mode = argc == 6 && std::strcmp(argv[1], "--original-mode") == 0;
     if (!original_mode && argc != 3) return 2;
     const char* model = argv[original_mode ? 2 : 1];
     const char* output_path = argv[original_mode ? 4 : 2];
@@ -44,6 +45,11 @@ int main(int argc, char** argv) {
         if (!dladdr(reinterpret_cast<void*>(&sd_dart_new_sd_ctx), &binding) || !binding.dli_fname) return 8;
         std::printf("SD24_BINDING {\"schema\":1,\"route\":\"native\",\"mappedLibraryPath\":%s}\n", quoted(binding.dli_fname).c_str());
         std::fflush(stdout);
+        std::error_code path_error;
+        const auto mapped = std::filesystem::canonical(binding.dli_fname, path_error);
+        if (path_error) return 8;
+        const auto expected = std::filesystem::canonical(argv[5], path_error);
+        if (path_error || mapped != expected) return 8;
 #else
         return 8;
 #endif
@@ -62,7 +68,7 @@ int main(int argc, char** argv) {
         context_params.diffusion_flash_attn = true;
         context_params.diffusion_conv_direct = false;
         context_params.vae_conv_direct = false;
-        context_params.auto_fit = false;
+        context_params.auto_fit = true;
     }
     context_params.flash_attn_mode = original_mode ? "off,diffusion=on" : "off";
     context_params.conv_direct_mode = "off";
