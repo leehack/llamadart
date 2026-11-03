@@ -6,6 +6,8 @@ import 'dart:io';
 
 import 'package:test/test.dart';
 
+import '../../support/lfm2_schema_generation.dart' as capture;
+
 void main() {
   late Directory directory;
   late Map<String, dynamic> row;
@@ -57,6 +59,116 @@ void main() {
       '--dry-run',
     ]);
   }
+
+  test('live snapshot omits a row until parser replay finishes', () {
+    final output = File('${directory.path}/output.json');
+    final captures = <Map<String, dynamic>>[];
+    final first = <String, dynamic>{'id': 'first', 'raw': 'first raw'};
+    capture.recordLfm2Capture(
+      output,
+      captures,
+      first,
+      replay: (_) {
+        expect(output.existsSync(), isFalse);
+        expect(captures, isEmpty);
+        expect(
+          jsonDecode(File('${output.path}.jsonl').readAsStringSync()),
+          first,
+        );
+        return {
+          'calls': ['first call'],
+        };
+      },
+    );
+    final previous = output.readAsStringSync();
+    final second = <String, dynamic>{'id': 'second', 'raw': 'second raw'};
+    capture.recordLfm2Capture(
+      output,
+      captures,
+      second,
+      replay: (_) {
+        // A polling monitor sees the complete previous snapshot during replay.
+        expect(output.readAsStringSync(), previous);
+        expect(captures, [first]);
+        return {
+          'calls': ['second call'],
+        };
+      },
+    );
+    final published = jsonDecode(output.readAsStringSync()) as List;
+    expect(published.length, 2);
+    expect(
+      published.every((row) => (row as Map).containsKey('result')),
+      isTrue,
+    );
+    expect(File('${output.path}.tmp').existsSync(), isFalse);
+  });
+
+  test('captured email wire publishes its production parser result', () {
+    final output = File('${directory.path}/output.json');
+    final record = <String, dynamic>{
+      'id': 'email',
+      'raw':
+          r'<|tool_call_start|>[save_note(text="\w+@\w+\.com")]<|tool_call_end|>',
+      'tools': [
+        {
+          'type': 'function',
+          'function': {
+            'name': 'save_note',
+            'description': 'Saves a note.',
+            'parameters': {
+              'type': 'object',
+              'properties': {
+                'text': {'type': 'string'},
+              },
+              'required': ['text'],
+            },
+          },
+        },
+      ],
+    };
+    capture.recordLfm2Capture(output, [], record);
+    final published = (jsonDecode(output.readAsStringSync()) as List).single;
+    expect(published['result']['calls'], [
+      {
+        'name': 'save_note',
+        'arguments': {'text': r'\w+@\w+\.com'},
+      },
+    ]);
+    expect(published.containsKey('error'), isFalse);
+    expect(published['raw'], record['raw']);
+  });
+
+  test(
+    'failed replay publishes an explicit error while retaining raw bytes',
+    () {
+      final output = File('${directory.path}/output.json');
+      final captures = <Map<String, dynamic>>[];
+      capture.recordLfm2Capture(
+        output,
+        captures,
+        {'id': 'broken', 'raw': 'original raw bytes'},
+        replay: (_) {
+          expect(output.existsSync(), isFalse);
+          throw const FormatException('deliberate parser failure');
+        },
+      );
+      final published = (jsonDecode(output.readAsStringSync()) as List).single;
+      expect(published['raw'], 'original raw bytes');
+      expect(published['result'], isNull);
+      expect(published['error']['type'], 'FormatException');
+      expect(
+        published['error']['message'],
+        contains('deliberate parser failure'),
+      );
+      final rawJournal = jsonDecode(
+        File('${output.path}.jsonl').readAsStringSync(),
+      );
+      expect(rawJournal['raw'], 'original raw bytes');
+      expect(rawJournal.containsKey('result'), isFalse);
+      expect(rawJournal.containsKey('error'), isFalse);
+    },
+  );
 
   test(
     'capture dry-run validates original declarations without loading weights',

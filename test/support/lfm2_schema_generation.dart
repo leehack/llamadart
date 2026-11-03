@@ -247,19 +247,7 @@ Future<void> main(List<String> arguments) async {
           'provenance':
               'Fresh public engine.create generation from exact manifest; raw backend bytes retained before parsing.',
         };
-        captures.add(record);
-        _persist(output, captures, record);
-        try {
-          record['result'] = replayLfm2Capture(record);
-        } catch (error) {
-          record['error'] = {
-            'type': error.runtimeType.toString(),
-            'message': error.toString(),
-          };
-        }
-        output.writeAsStringSync(
-          const JsonEncoder.withIndent('  ').convert(captures),
-        );
+        recordLfm2Capture(output, captures, record);
         stdout.writeln(
           jsonEncode({
             'id': id,
@@ -272,9 +260,7 @@ Future<void> main(List<String> arguments) async {
       }
     } finally {
       await engine.dispose();
-      output.writeAsStringSync(
-        const JsonEncoder.withIndent('  ').convert(captures),
-      );
+      _publishCaptures(output, captures);
     }
   }
 }
@@ -295,17 +281,37 @@ ToolDefinition _tool(Map encoded) {
   return tool;
 }
 
-void _persist(
+/// Journals raw evidence before replay and publishes only finalized rows.
+void recordLfm2Capture(
   File output,
   List<Map<String, dynamic>> captures,
-  Map<String, dynamic> latest,
-) {
+  Map<String, dynamic> latest, {
+  Map<String, dynamic> Function(Map<String, dynamic>) replay =
+      replayLfm2Capture,
+}) {
   File(
     '${output.path}.jsonl',
   ).writeAsStringSync('${jsonEncode(latest)}\n', mode: FileMode.append);
-  output.writeAsStringSync(
-    const JsonEncoder.withIndent('  ').convert(captures),
-  );
+  try {
+    latest['result'] = replay(latest);
+  } catch (error) {
+    latest['error'] = {
+      'type': error.runtimeType.toString(),
+      'message': error.toString(),
+    };
+  }
+  captures.add(latest);
+  _publishCaptures(output, captures);
+}
+
+void _publishCaptures(File output, List<Map<String, dynamic>> captures) {
+  // Monitors must never observe a row before replay finishes or a truncated JSON.
+  final staging = File('${output.path}.tmp')
+    ..writeAsStringSync(
+      const JsonEncoder.withIndent('  ').convert(captures),
+      flush: true,
+    );
+  staging.renameSync(output.path);
 }
 
 Future<Map<String, dynamic>> _captureIdentity(String manifestPath) async {
