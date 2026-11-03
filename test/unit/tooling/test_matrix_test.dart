@@ -148,6 +148,44 @@ void main() {
     );
   }
 
+  for (final route in ['direct', 'service', 'speech']) {
+    test(
+      'public v1 $route matrix command reaches the strict public runner',
+      () async {
+        final row = testMatrixRows.singleWhere(
+          (row) => row.id == 'litert-lm-v1-public-$route',
+        );
+        final command = row.command.split(' '),
+            index = row.command.split(' ').indexOf('dart');
+        final environment = {
+          for (final assignment in command.take(index))
+            assignment.split('=').first: assignment.contains('SHA256=')
+                ? 'a' * 64
+                : '/local/qualified-input',
+        };
+        final result = await runLocalE2e(
+          [
+            ...command
+                .skip(index + 3)
+                .map((value) => value.startsWith('<') ? '/local/model' : value),
+            '--dry-run',
+          ],
+          projectRoot: '/repo',
+          environment: environment,
+        );
+        expect(result.exitCode, 0, reason: result.stderr);
+        expect(
+          result.stdout,
+          contains(
+            'test/fixtures/litert_lm_v1_public_qualification.dart $route',
+          ),
+        );
+        expect(result.stdout, isNot(contains('--expect-disabled')));
+        expect(row.tier, 'high-risk');
+      },
+    );
+  }
+
   test('local image-set matrix selects the bounded CPU fixture scenario', () {
     final row = testMatrixRows.singleWhere(
       (r) => r.id == 'image-local-checkpoint-sets',
