@@ -249,8 +249,13 @@ to the upstream `llama-cli` build you are comparing; the parity table above used
 local b9571-line tool because the b9873 native release did not publish
 standalone CLI artifacts.
 
+Use a non-recurrent target such as Qwen2.5 for this workload. The current native
+runtime rejects the nonzero speculative rollback reserve for recurrent or hybrid
+targets, including Qwen3.5; the historical measurements above retain their original
+runtime and model scope.
+
 ```bash
-MODEL_PATH="${MODEL_PATH:-$HOME/Library/Caches/llamadart/models/Qwen3.5-0.8B-Q4_K_M.gguf}"
+MODEL_PATH="${MODEL_PATH:-$HOME/Library/Caches/llamadart/models/qwen2.5-0.5b-instruct-q4_k_m.gguf}"
 LLAMA_CLI="${LLAMA_CLI:-/path/to/llama-cli}"
 
 PROMPT_REPEAT='Repeat and continue this sequence exactly:
