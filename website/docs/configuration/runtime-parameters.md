@@ -249,7 +249,7 @@ deprecated until 1.0.
 | `cacheDir`, `maxProgramCacheBytes` | Runtime cache directory and GPU program cache size cap; see [LiteRT-LM cache directory](#litert-lm-cache-directory). |
 | `numberOfThreads` | Generation thread count; `0` keeps automatic selection. |
 | `embeddingEngine` | `true` selects the separate LiteRT-LM embedding engine, qualified on CPU on macOS, iOS and Android arm64; defaults to `false`, not `null`. See [Embeddings](../guides/embeddings). |
-| `loras` | At most one adapter, at the default scale of `1.0`, loaded with the model. Runtime LoRA APIs, stacking and custom scales are llama.cpp-only. |
+| `loras` | Native LiteRT-LM text LoRA is unsupported by the current advanced engine, including initial adapters. Use a compatible llama.cpp model/adapter pair; see [LoRA platform support](../guides/lora-adapters#platform-notes). |
 
 `gpuLayers` must be `0` (CPU), `ModelParams.maxGpuLayers` or a negative
 value, which means all layers like `maxGpuLayers`. Native

@@ -36,7 +36,7 @@ typedef _SendStreamD =
 typedef _StatusN = Int Function(Pointer<Void>);
 typedef _StatusD = int Function(Pointer<Void>);
 
-/// Internal C API 1.0 text conversation; not exported or publicly selected.
+/// Internal C API 1.0 conversation used by the selected v1 client.
 ///
 /// Chunks are copied native message JSON, not parsed content or tool calls.
 /// Only one turn may run at a time. A cancelled or failed conversation is

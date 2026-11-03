@@ -354,6 +354,15 @@ settled for a fresh child. Even native cancellation cannot normalize copy loss
 into success. Failed drain retains the entire native family without reading the
 status or freeing the proxy.
 
+### Historical v1 adapter preparation
+
+The following snapshots describe earlier internal slices, when public routing
+and several feature families were still pending. They are retained for ABI and
+ownership context, not as the current capability list. Public direct calls,
+default services and speech now share ABI-aware selection; current coverage and
+remaining artifact/model/platform gates are in `doc/litert_lm_v1_adoption.md`.
+Owner pins and companion assets remain unchanged pending qualified adoption.
+
 This is fixture-backed consumer preparation for
 [owner PR #98](https://github.com/leehack/litert-lm-native/pull/98), not adoption
 of an immutable owner artifact. Owner source/release qualification and ASR,
@@ -474,7 +483,9 @@ checks. The existing public client and Web stub stay unchanged. This does not
 select v1 publicly: `doc/litert_lm_v1_adoption.md` tracks each existing call path,
 the remaining feature families and the owner/artifact gates before adoption.
 
-Staged C API 1.0 discovery accepts the owner's sampler-free 0.19 desktop
+### Current v1 discovery
+
+C API 1.0 discovery accepts the owner's sampler-free 0.19 desktop
 inventory only after probing the selected primary library's supported C API.
 An absent marker still requires every legacy TopK companion. Common companions
 load before that probe; legacy-only samplers load after admission. macOS flat,
@@ -485,7 +496,7 @@ process image; iOS wrapper/process discovery is unchanged.
 `LLAMADART_LITERT_LM_LIB_DIR` takes precedence over packaged and cached desktop
 runtimes. An incomplete directory or an unloadable explicit library now fails
 with a typed unsupported error instead of substituting another runtime. These
-controls do not enable public C API 1.0 selection or change the pinned artifacts.
+controls preserve public ABI-aware selection and do not change pinned artifacts.
 
 Use this checklist in native sync PRs:
 

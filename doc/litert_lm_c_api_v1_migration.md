@@ -1,9 +1,17 @@
 # LiteRT-LM C API 1.0 consumer preparation
 
-Issue #1677 owns adoption. The public `LiteRtLmRuntimeClient` continues to
-reject C API 1.0. Pins, companion assets and published support stay on 0.18.
-`LiteRtLmV1Runtime` is internal preparation code, unexported from package entry
-points and unselected by production backend dispatch.
+The public lazy client, default services and speech worker now select legacy
+runtimes or admitted C API 1.0.x through shared discovery. Unknown, malformed or
+future C API versions are refused before engine calls. Owner pins and companion
+assets remain unchanged pending qualified artifact adoption under #1677.
+[Current adoption coverage and gates](litert_lm_v1_adoption.md) describe the
+selected implementation; [the migration guide](../MIGRATION.md) covers upgrades.
+
+## Historical preparation snapshots
+
+The remainder records earlier adapter slices and their evidence. Statements
+about missing families, public refusal or unselected dispatch describe those
+snapshots, not the current public client or release qualification.
 
 The first adapter targets exact owner candidate `94db8c5` with upstream
 `771b06e1` (`v0.19.0`). It binds only explicit status-return/output-parameter

@@ -96,13 +96,12 @@ typedef _GenerateD =
 typedef _TextN = Int Function(Pointer<Void>, Size, Pointer<Pointer<Utf8>>);
 typedef _TextD = int Function(Pointer<Void>, int, Pointer<Pointer<Utf8>>);
 
-/// Internal C API 1.0 preparation adapter for CPU text operations.
+/// Internal C API 1.0 adapter used by the selected v1 client.
 ///
-/// This is not selected by the public runtime client. Its internal conversation
-/// preparation is separate from raw sessions. ASR, embeddings and schemas remain
-/// behind the public compatibility refusal until their separate migration is
-/// complete. Blocking creation uses scalar addresses in an owned background scope;
-/// its native library and configuration remain retained until explicit completion.
+/// Raw sessions and conversations have separate ownership. Optional feature
+/// groups retain their own admission checks. Blocking creation uses scalar
+/// addresses in an owned background scope; its native library and configuration
+/// remain retained until explicit completion.
 final class LiteRtLmV1Runtime {
   /// Opens a caller-supplied candidate library with exactly C API 1.0.x.
   LiteRtLmV1Runtime(
