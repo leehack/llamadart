@@ -392,6 +392,11 @@ external ffi.Pointer<sd_ctx_t> sd_dart_new_sd_ctx(
   ffi.Pointer<sd_ctx_params_t> sd_ctx_params,
 );
 
+@ffi.Native<ffi.Pointer<sd_ctx_t> Function(ffi.Pointer<sd_ctx_params_t>)>()
+external ffi.Pointer<sd_ctx_t> sd_dart_new_sd_ctx_intrinsic_tiny_v1(
+  ffi.Pointer<sd_ctx_params_t> sd_ctx_params,
+);
+
 @ffi.Native<ffi.Void Function()>()
 external void sd_dart_progress_enable();
 

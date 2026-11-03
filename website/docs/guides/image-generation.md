@@ -160,7 +160,7 @@ The public model roles do not include LoRA, upscaler or external tokenizer
 inputs; `controlNet` loads only in the [ControlNet recipe](./image-generation-advanced#controlnet).
 
 FP8 image weights (`F8_E4M3`/`F8_E5M2` in Safetensors, types 43/44 in
-GGUF) load on Metal with the pinned stable-diffusion-native `v0.3.0-1`, which
+GGUF) load on Metal with stable-diffusion-native `v0.3.0-1` or later, which
 converts them to F16 there: they need twice their file size in memory, which
 `ImageModelParams.checkMemory` counts. FP8
 weights, uninspectable GGUF/Safetensors headers and ordinary JSON shard
@@ -189,18 +189,18 @@ Use trusted model files. There is no public conversion API or load-time
 quantization/mmap option. Weights load eagerly; see the
 [memory check](./image-generation-memory-and-limits#memory-check) before substituting larger unquantized files.
 
-On iOS, the current pinned runtime requires
+On iOS, full VAE and external-decoder recipes require
 `ImageModelPlacement(vaeOnCpu: true)` for Metal diffusion, or
-`ComputeDevice.cpu`, including with SDXS. Metal VAE decoding needs the native
-intrinsic tiny-decoder v1 context policy: it must reject any refreshed model
-that could select a full VAE before runner probes and decoding. The current
-pin lacks that policy. An initial SDXS family query alone cannot keep it safe
-when native source refresh later changes the model
+`ComputeDevice.cpu`. The pinned `v0.3.0-2` runtime provides the intrinsic
+tiny-decoder v1 context policy for SDXS Metal decoding: it rejects any
+refreshed model that could select a full VAE before runner probes and
+decoding. This restriction is tested on desktop; it does not establish new
+physical-iOS qualification or repair the full-VAE watchdog failure
 ([#1047](https://github.com/leehack/llamadart/issues/1047)).
 
 #### Pinned-runtime format checks
 
-With the pinned `stable-diffusion-native v0.3.0-1` (`be48649` plus the owner
+With `stable-diffusion-native v0.3.0-1` (`be48649` plus the owner
 pickle-reader repair), complete byte-equivalent SD-Turbo F16 checkpoints pass
 through `ImageGenerationEngine` on macOS arm64 CPU:
 

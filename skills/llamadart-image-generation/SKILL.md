@@ -53,7 +53,7 @@ description: >-
   `xcodebuild` show both. Use the companion with the core's `MAJOR.MINOR`. Adding it
   opts the app into the runtime (about 37 MB per Apple target).
 The core accepts only an Apple SD companion pinning its own runtime
-(`v0.3.0-1`): earlier runtimes abort on FP8 weights on Metal, and those before
+(`v0.3.0-2`): runtimes before `v0.3.0-1` abort on FP8 weights on Metal, and those before
 `v0.3.0` have a smaller `sd_ctx_params_t`. Upgrade the
 core and `llamadart_stable_diffusion_flutter` together.
 
@@ -147,7 +147,7 @@ core and `llamadart_stable_diffusion_flutter` together.
   compatible component files individually. The guide's
   **Weight formats and layouts** section gives the limits.
 - FP8 Safetensors (`F8_E4M3`/`F8_E5M2`) and GGUF types 43/44 load on Metal
-  with the pinned runtime `v0.3.0-1`, which converts them to F16 there (twice
+  with runtime `v0.3.0-1` or later, which converts them to F16 there (twice
   their file size in memory; `checkMemory` counts it). A runtime without that
   fix makes them, uninspectable GGUF/Safetensors headers and ordinary JSON
   shard indexes throw `LlamaUnsupportedException` on Metal, including automatic
@@ -285,7 +285,7 @@ core and `llamadart_stable_diffusion_flutter` together.
   ([#1044](https://github.com/leehack/llamadart/issues/1044)). Full-VAE Metal
   decoding on iOS is also refused, even with direct convolutions off or tiling.
   GPU decoding needs the intrinsic tiny-decoder v1 policy across refresh.
-  The current pin lacks it: use `ImageModelPlacement(vaeOnCpu: true)` or `ComputeDevice.cpu`, even for SDXS.
+  The pinned `v0.3.0-2` provides that policy for intrinsic SDXS tiny decoders; other recipes require `ImageModelPlacement(vaeOnCpu: true)` or `ComputeDevice.cpu`. Desktop checks do not add physical-iOS qualification.
   External TAESD can fall back to a full VAE; no iPhone full-VAE fix is claimed (#1047).
 - `ImageConditioningCacheParams(capacity: ...)`: ordinary `ImageModelParams`
   preserve the native default of 4 prompt-conditioning entries. `0` disables
