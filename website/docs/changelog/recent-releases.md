@@ -13,6 +13,7 @@ validate against the exact release tag notes.
 
 ## Unreleased
 
+- Validate native LiteRT-LM engine settings, send controls and benchmark counts before loading runtime libraries.
 - Enable ABI-aware native LiteRT-LM C API 1.0 public dispatch while retaining legacy runtime compatibility and typed unsupported guards.
 
 - Reject incomplete `LLAMADART_LITERT_LM_LIB_DIR` overrides instead of substituting a bundled or cached runtime.
