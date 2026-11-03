@@ -21,7 +21,6 @@ static _Atomic int embedding_entered;
 static size_t embedding_byte_count;
 static _Thread_local char embedding_error[256];
 const char *litert_lm_get_last_error_message(void) { return embedding_error; }
-int litert_lm_get_last_error_code(void) { return embedding_error[0] ? 13 : 0; }
 void litert_lm_clear_last_error(void) { embedding_error[0] = 0; }
 typedef struct { size_t size; unsigned char bytes[256]; int type; } embedding_input;
 typedef struct { float values[3]; } embedding_response;

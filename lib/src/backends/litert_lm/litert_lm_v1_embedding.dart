@@ -42,7 +42,6 @@ const _embeddingSymbols = [
   'litert_lm_embedding_response_get_values',
   'litert_lm_embedding_response_delete',
   LiteRtLmLastError.messageSymbol,
-  LiteRtLmLastError.codeSymbol,
   LiteRtLmLastError.clearSymbol,
 ];
 
@@ -66,9 +65,12 @@ final class _V1EmbeddingApi {
   _V1EmbeddingApi(this.addresses, this.paths);
   final Map<String, int> addresses;
   final List<String> paths;
-  late final error = LiteRtLmLastError.probe(
-    (symbol) => Pointer<Void>.fromAddress(addresses[symbol]!),
-  )!;
+  late final clear = function<Void Function()>(
+    LiteRtLmLastError.clearSymbol,
+  ).asFunction<void Function()>();
+  late final message = function<Pointer<Utf8> Function()>(
+    LiteRtLmLastError.messageSymbol,
+  ).asFunction<Pointer<Utf8> Function()>();
   Pointer<NativeFunction<T>> function<T extends Function>(String name) =>
       Pointer<NativeFunction<T>>.fromAddress(addresses[name]!);
   late final settingsCreate = function<_SettingsN>(
@@ -122,10 +124,20 @@ final class _V1EmbeddingApi {
 
   void check(int status, String operation) {
     if (status == 0) return;
-    final detail = error.describe(paths: paths);
+    final pointer = message();
+    final detail = liteRtLmNativeErrorDetail(
+      code: status,
+      message: pointer == nullptr
+          ? ''
+          : utf8.decode(
+              pointer.cast<Uint8>().asTypedList(pointer.length),
+              allowMalformed: true,
+            ),
+      paths: paths,
+    );
     throw LlamaInferenceException(
       'LiteRT-LM C API 1.0 embedding $operation failed (status $status)'
-      '${detail == null ? '.' : ': $detail'}',
+      ': $detail',
     );
   }
 }
@@ -146,7 +158,7 @@ List<double> _computeV1Embedding(_EmbeddingComputeRequest request) {
   Pointer<Void> options = nullptr;
   Pointer<Void> response = nullptr;
   try {
-    api.error.clear();
+    api.clear();
     var status = api.optionsCreate(output);
     options = output.value;
     api.check(status, 'options_create');
@@ -155,9 +167,9 @@ List<double> _computeV1Embedding(_EmbeddingComputeRequest request) {
         'Embedding options creation returned no owner.',
       );
     }
-    api.error.clear();
+    api.clear();
     api.check(api.setNormalize(options, request.normalize), 'set_normalize');
-    api.error.clear();
+    api.clear();
     api.check(api.setOverflow(options, 2), 'set_input_overflow_strategy');
     for (var i = 0; i < request.inputs.length; i++) {
       final part = request.inputs[i];
@@ -165,7 +177,7 @@ List<double> _computeV1Embedding(_EmbeddingComputeRequest request) {
       try {
         bytes.asTypedList(part.bytes.length).setAll(0, part.bytes);
         output.value = nullptr;
-        api.error.clear();
+        api.clear();
         status = api.inputCreate(
           part.type,
           bytes.cast(),
@@ -186,7 +198,7 @@ List<double> _computeV1Embedding(_EmbeddingComputeRequest request) {
       }
     }
     output.value = nullptr;
-    api.error.clear();
+    api.clear();
     status = api.compute(
       Pointer.fromAddress(request.engine),
       inputArray,
@@ -204,9 +216,9 @@ List<double> _computeV1Embedding(_EmbeddingComputeRequest request) {
     final size = calloc<Size>();
     final values = calloc<Pointer<Float>>();
     try {
-      api.error.clear();
+      api.clear();
       api.check(api.responseSize(response, size), 'response_get_size');
-      api.error.clear();
+      api.clear();
       api.check(api.responseValues(response, values), 'response_get_values');
       if (size.value == 0 || values.value == nullptr) {
         throw LlamaInferenceException('LiteRT-LM returned an empty embedding.');
@@ -255,7 +267,7 @@ int _createV1Embedding(_EmbeddingCreateRequest request) {
   Pointer<Void> engine = nullptr;
   var returned = false;
   try {
-    api.error.clear();
+    api.clear();
     var status = api.settingsCreate(
       strings[0],
       strings[1],
@@ -270,19 +282,19 @@ int _createV1Embedding(_EmbeddingCreateRequest request) {
         'Embedding settings creation returned no owner.',
       );
     }
-    api.error.clear();
+    api.clear();
     api.check(api.setCache(settings, strings[2]), 'set_cache_dir');
-    api.error.clear();
+    api.clear();
     api.check(
       api.setContext(settings, request.context),
       'set_max_input_length',
     );
     if (request.threads > 0) {
-      api.error.clear();
+      api.clear();
       api.check(api.setThreads(settings, request.threads), 'set_num_threads');
     }
     output.value = nullptr;
-    api.error.clear();
+    api.clear();
     status = api
         .function<_CreateFromN>(_embeddingSymbols[5])
         .asFunction<_CreateFromD>()(settings, output);
