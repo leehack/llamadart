@@ -1,7 +1,11 @@
 # LiteRT-LM C API 1 adoption
 
-The public runtime factory still rejects C API 1. `LiteRtLmV1RuntimeClient` is
-an internal, explicitly injected service client. Its fixtures prove ABI,
+The public lazy facade, default service probes and speech worker now share
+ABI-aware discovery. Production selection still rejects C API 1 because
+`_liteRtLmV1ProductionSelection` remains false. The internal
+`createLiteRtLmSelectedRuntimeClient(allowV1: true)` entry point exercises that
+same facade with admitted C API 1.0.x fixtures, retaining selected core and
+companion handles and paths. `LiteRtLmV1RuntimeClient` also remains injectable. Its fixtures prove ABI,
 dispatch and lifetime behavior; they do not qualify a model, device or owner
 artifact. Keep the factory disabled and pins unchanged until the required gaps
 below and artifact review are complete.
@@ -17,24 +21,24 @@ client/session contracts make v1 embedding dispatch independent of that extensio
 
 | Public call path | Preparation and evidence | Remaining admission work |
 | --- | --- | --- |
-| Packaged Apple platform floor | Exact owner `5129cd0` candidate declares macOS 14.0 and iOS 15.0 | macOS 14 deployment/runtime refusal, docs and companion SwiftPM must agree before adoption. macOS 13 is unsupported by this artifact; static iOS minima are not device qualification. |
+| Packaged Apple platform floor | Exact owner `5129cd0` candidate declares macOS 14.0 and iOS 15.0 | Staged owned discovery refuses macOS below 14 or unknown versions before any core/companion load, including custom paths; direct v1 operations also check the floor. Public activation and artifact qualification remain pending. macOS 13 is unsupported by this artifact; static iOS minima are not device qualification. |
 | Engine initialization and backend options | Status/out settings; responsive owned background creation with scalar function/configuration addresses, immediate same-thread canonical error copy, partial-owner cleanup and typed service retry classification. Pending/uncertain creation retains its library/model/cache family. | Qualify each selected backend and exact artifact; missing completion requires process restart. |
 | `tokenize` / `detokenize` / start tokens | Status/out, `size_t`, copied results, legacy BOS semantics | Matching artifact/model qualification. |
 | Bundle capabilities | Owned model-file snapshot; null optional client probe on native read failure | Declarations do not prove executor or channel enforcement. |
 | System, text/tool/media history and tool descriptors | Validated snapshots; encoded local image/audio paths and base64 payloads retain roles/order through the existing service serializer. Loaded-core modality and processor admission precede native history/send. | Real media-family artifact qualification; additional tool schema shapes remain separate. |
 | `generate` / `generateMessageJson` / chat | Active text/tool/encoded-media messages and snapshotted per-send context; native response/tool-call assembly. Explicit visual budgets require declared Gemma4 image processing plus the native setter and use status/out ownership. | Real media/processor quality and platform qualification. |
 | Output cap and generated-token penalties | Owned per-turn options; missing exports refuse before send | Preserve the tested refusal of unqualified penalties with speculation. |
-| Reasoning output | v1 `reasoning_content` identifies a named reasoning channel; duplicate channel text is surfaced once within configured markers | Thinking budgets remain explicitly refused. A metadata boolean alone cannot prove channel end-token enforcement. |
+| Reasoning output and budgets | Named reasoning chunks retain configured markers. Positive C-int per-send budgets use status/out thinking options after first-channel boundary and native-tokenizer admission. | Actual matched thinking-family enforcement, cancellation/reuse and final public routing still require qualification; symbols or metadata alone do not prove a model obeys the bound. |
 | Native JSON Schema chat | Complete optional C API 1.0 group, by-value provider enum, status-checked configuration and per-turn constraints with thinking disabled; compiled ABI and service-client fixtures | Exact candidate/model regression and final public routing remain required. Missing exports refuse before conversation replacement; automatic tool constraints remain disabled. |
 | LoRA session path | Explicit typed refusal preserves the current conversation; upstream advanced engines reject initial text adapters | Runtime support remains tracked in [litert-lm-native#99](https://github.com/leehack/litert-lm-native/issues/99); setter availability alone does not provide support. |
 | Image/audio chat | Internal encoded-file transport; configured encoder, native modality declarations and a supported processor route are all required. Unknown/missing proof is refused. Service image-history counts prepare dynamic inputs without claiming enforced capacity. Direct legacy-only `maxNumImages` capacity remains unsupported. | Public factory remains disabled. Remote URLs, raw RGB/PCM and video retain their existing refusal; compiled fixtures do not qualify media quality or GPU execution. |
-| Embedding sessions | Independent session contract; explicit v1 refusal | Dedicated v1 engine/options/input/response APIs, `size_t` counts and copied vectors, with existing backend restrictions. |
-| Dedicated ASR | Loaded-library ABI1/layout/full-symbol admission; v1 client and injected actual speech probe/worker use the independent bridge. Compiled fixture covers partial owners, copied text/errors, size_t backpressure, cancel/reset/finalization and worker startup/disposal. | Matching artifact/model/audio qualification through the injected worker; public default selection remains legacy. |
+| Embedding sessions | Dedicated v1 engine/options/input/response APIs, `size_t` counts and copied vectors; the public extension preserves its concrete session return type through a forwarding session | Matching artifact/model qualification with existing backend restrictions. |
+| Dedicated ASR | Loaded-library ABI1/layout/full-symbol admission; v1 client and injected actual speech probe/worker use the independent bridge. Compiled fixture covers partial owners, copied text/errors, size_t backpressure, cancel/reset/finalization and worker startup/disposal. | Matching artifact/model/audio qualification through the injected worker; staged selector probe/worker fixture passes; production selection remains legacy. |
 | Logging | Canonical v1 status checked for declared severity values | Matching artifact qualification. |
 | Cancellation, errors and disposal | Final plus successful drain required; cancellation awaits adapter terminal bookkeeping; failed drain/missing final retain native owners in isolated fixtures | Worker/timeout and actual artifact/model qualification must preserve the same retention boundary. |
 | Benchmark metrics / `run` | Legacy metrics value types and aggregation; owned native snapshots | Benchmark loops and actual artifact/model qualification. |
 
-The public legacy selection and Web stub remain unchanged. Independent ASR library helpers reuse its bridge bindings without constructing legacy text bindings; malformed success-with-null owners are refused, and a partial engine returned with an error is released. Adding an operation to
+Production selection remains legacy and the Web stub remains unchanged. Independent ASR library helpers reuse its bridge bindings without constructing legacy text bindings; malformed success-with-null owners are refused, and a partial engine returned with an error is released. Adding an operation to
 the internal contract requires both ABI implementations to supply it explicitly;
 v1 never inherits a legacy FFI method as a fallback. Unsupported preparations
 throw `LlamaUnsupportedException` before native generation rather than reporting
@@ -152,3 +156,40 @@ legacy capacity still fail explicitly.
 
 These source/fixture checks do not activate the public factory, select new
 runtime assets, establish image/audio semantics or qualify hardware.
+
+## Internal thinking-budget admission
+
+The runtime capability requires the complete thinking-config, optional-args and
+native-tokenizer export groups without allocating an engine. Each requested
+budget separately checks the loaded model's first declared channel: it must be
+reasoning (an explicit flag or the existing legacy reasoning-name fallback),
+with distinct nonempty UTF-8 start/end strings. The loaded native tokenizer must
+produce nonnegative, nonempty, distinct token sequences and decode each whole
+marker exactly with special tokens retained. A later reasoning channel cannot
+replace the first one used by upstream. Unknown or malformed proof is refused.
+The legacy two-field first-channel reader keeps its existing signature and
+behavior; stricter boundary decoding belongs to the detailed admission reader.
+
+Budgets are positive signed C ints. Every send creates a thinking config, checks
+its returned status, explicitly enables thinking, sets the budget, and attaches
+its copied value to owned optional args. Temporary owners are released on both
+success and failure, after copying native errors. No-budget sends attach no
+thinking override, including after a bounded or cancelled turn. Failed drains
+and missing final callbacks retain the same native family; temporary decode
+options do not release that ownership early.
+
+Conversation context is snapshotted as JSON. Per-send context overrides its keys
+for that send, matching native merge order; an effective false or unknown
+`enable_thinking` refuses a directly requested budget. Schema conversations and
+speculative decoding also refuse it. The existing service behavior remains:
+`enableThinking: false` forwards no budget, and zero budgets or forced messages
+are rejected. The native already-open-channel branch remains responsible for
+using empty start IDs when the rendered prompt has opened the first channel.
+
+Compiled fixtures check ABI values, export/version skew, first-channel and
+native tokenization negatives, status/partial-owner cleanup, schema interplay,
+per-turn isolation, cancellation and unsettled retention. They do not prove
+reasoning enforcement. Before public adoption, run a scheduled, hash-bound
+thinking-family model check with unbounded reasoning above the bound, bounded
+reasoning within the declared tokenized tolerance, nonempty final content and
+cancel/reuse isolation. Keep runtime/model/host identity and all failed outcomes.

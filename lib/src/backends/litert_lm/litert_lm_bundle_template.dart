@@ -169,27 +169,43 @@ readLiteRtLmBundleMediaProcessor(String path) {
 ({String name, bool? isReasoning})? readLiteRtLmBundleFirstChannel(
   String path,
 ) {
+  final channel = _readLiteRtLmFirstChannel(path, boundaries: false);
+  return channel == null
+      ? null
+      : (name: channel.name, isReasoning: channel.isReasoning);
+}
+
+/// The first declared channel and its complete UTF-8 boundary strings.
+/// Missing boundaries remain null; malformed/unknown boundary proof returns null.
+/// This never substitutes a later reasoning channel for the native first one.
+({String name, bool? isReasoning, String? start, String? end})?
+readLiteRtLmBundleFirstChannelDetails(String path) =>
+    _readLiteRtLmFirstChannel(path, boundaries: true);
+
+({String name, bool? isReasoning, String? start, String? end})?
+_readLiteRtLmFirstChannel(String path, {required bool boundaries}) {
   final metadata = _readLlmMetadata(path);
-  if (metadata == null) {
-    return null;
-  }
+  if (metadata == null) return null;
   try {
     for (final (field, channel) in _protoFields(metadata)) {
-      if (field != _channelsField) {
-        continue;
-      }
-      String? name;
+      if (field != _channelsField) continue;
+      String? name, start, end;
       bool? isReasoning;
       for (final (channelField, bytes, value) in _protoEntries(channel)) {
         if (channelField == 1 && bytes != null) {
           name = utf8.decode(bytes);
+        } else if (boundaries && channelField == 2 && bytes != null) {
+          start = utf8.decode(bytes);
+        } else if (boundaries && channelField == 3 && bytes != null) {
+          end = utf8.decode(bytes);
         } else if (channelField == 4 && value != null) {
+          if (boundaries && value != 0 && value != 1) return null;
           isReasoning = value != 0;
         }
       }
       return name == null || name.isEmpty
           ? null
-          : (name: name, isReasoning: isReasoning);
+          : (name: name, isReasoning: isReasoning, start: start, end: end);
     }
     return null;
   } on FormatException {

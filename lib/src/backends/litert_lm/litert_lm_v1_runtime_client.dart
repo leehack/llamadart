@@ -69,7 +69,8 @@ final class LiteRtLmV1RuntimeClient implements LiteRtLmRuntimeClientContract {
       ]);
 
   @override
-  bool get supportsThinkingBudget => false;
+  bool get supportsThinkingBudget =>
+      _callbacksAdmitted && _V1ThinkingBudget(_runtime).supported;
 
   @override
   bool get supportsFinishReasons =>

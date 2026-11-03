@@ -119,16 +119,18 @@ class LiteRtLmService {
            (() => Platform.isMacOS && Abi.current() == Abi.macosArm64),
        _clientFactory =
            runtimeClientFactory ??
-           (() => LiteRtLmLegacyServiceClient(
-             (clientFactory ?? LiteRtLmRuntimeClient.new)(),
-           )),
+           (() => clientFactory == null
+               ? createLiteRtLmSelectedServiceClient()
+               : LiteRtLmLegacyServiceClient(clientFactory())),
        _injectedFinishReasonProbe = runtimeClientFactory == null
            ? null
            : (() => runtimeClientFactory().supportsFinishReasons),
        _readBundleCapabilities =
            readBundleCapabilities ??
            ((modelPath) => runtimeClientFactory == null
-               ? LiteRtLmRuntimeClient().bundleCapabilities(modelPath)
+               ? createLiteRtLmSelectedRuntimeClient().bundleCapabilities(
+                   modelPath,
+                 )
                : runtimeClientFactory().bundleCapabilities(modelPath)),
        _readBundleChatTemplate =
            readBundleChatTemplate ?? readLiteRtLmBundleChatTemplate,
@@ -1948,11 +1950,11 @@ class LiteRtLmService {
   /// Probes a fresh client, so a model load that asks creates no engine.
   bool reportsFinishReasons() =>
       _runtimeFinishReasons ??= _finishReasonProbeLibraryPath != null
-      ? LiteRtLmRuntimeClient(
+      ? createLiteRtLmSelectedRuntimeClient(
           libraryPath: _finishReasonProbeLibraryPath,
         ).supportsFinishReasons
       : _injectedFinishReasonProbe?.call() ??
-            LiteRtLmRuntimeClient().supportsFinishReasons;
+            createLiteRtLmSelectedRuntimeClient().supportsFinishReasons;
 
   /// The token limit that ended the latest generation, or null when it ended
   /// at a stop token, a stop sequence, cancellation or an error, is still

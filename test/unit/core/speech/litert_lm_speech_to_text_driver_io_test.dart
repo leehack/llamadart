@@ -114,7 +114,11 @@ final _startupFailure = isA<LlamaSpeechException>()
       'message',
       'LiteRT-LM speech recognition failed.',
     )
-    .having((error) => error.details, 'details', contains('ASR ABI'));
+    .having(
+      (error) => error.details,
+      'details',
+      contains('Failed to load any LiteRT-LM library candidate'),
+    );
 
 const _missingLibrary = '/nonexistent/llamadart-asr-startup-test/library';
 const _missingConfig = LiteRtLmAsrRuntimeConfig(

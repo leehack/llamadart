@@ -10,6 +10,57 @@ import 'package:llamadart/src/core/exceptions.dart';
 import 'package:test/test.dart';
 
 void main() {
+  test(
+    'C API 1 macOS floor admits 14 and later and rejects unknown versions',
+    () {
+      for (final version in [
+        '14.0',
+        'Version 14.7.1 (Build test)',
+        'Version 26.0 (Build test)',
+      ]) {
+        expect(
+          () => liteRtLmEnsureV1PlatformFloor(
+            isMacOS: true,
+            operatingSystemVersion: version,
+          ),
+          returnsNormally,
+        );
+      }
+      for (final version in [
+        '13.7.2',
+        'Version 13.0 (Build test)',
+        '',
+        'unknown',
+        'Darwin Kernel Version 23.0.0',
+      ]) {
+        expect(
+          () => liteRtLmEnsureV1PlatformFloor(
+            isMacOS: true,
+            operatingSystemVersion: version,
+          ),
+          throwsA(
+            isA<LlamaUnsupportedException>().having(
+              (error) => error.message,
+              'guidance',
+              allOf(
+                contains('macOS 14'),
+                contains('custom library'),
+                contains('llama.cpp'),
+              ),
+            ),
+          ),
+        );
+      }
+      expect(
+        () => liteRtLmEnsureV1PlatformFloor(
+          isMacOS: false,
+          operatingSystemVersion: 'unknown',
+        ),
+        returnsNormally,
+      );
+    },
+  );
+
   test('desktop GPU qualification is restricted to x64 Linux and Windows', () {
     for (final abi in Abi.values) {
       expect(

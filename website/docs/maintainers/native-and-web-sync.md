@@ -297,10 +297,15 @@ runtime it bundles. Then run the `image-generation-smoke` and
 ## Native version update checklist
 
 LiteRT-LM 0.19 changes C function signatures to status returns and output
-parameters. Current handwritten runtime bindings reject the versioned API
-before engine calls. A candidate runtime injected for #1677 must exercise this
-refusal until its complete bindings/lifecycle migration is enabled; replacing
-the native pin or generated embedding bindings alone is unsafe. Keep pinned
+parameters. The public lazy facade, service metadata/finish probes and speech
+worker share discovery and ABI selection. `_liteRtLmV1ProductionSelection` in
+`litert_lm_runtime_facade.dart` remains false pending #1677 qualification.
+Internal selector tests admit only C API 1.0.x; failed, malformed and future
+versions never retry legacy arities. The prepared path checks macOS 14+ before
+core or companion discovery, including explicit paths. A caller-opened library
+cannot retroactively prevent dlopen, so the direct v1 adapter also checks the
+floor before native operations. Replacing the native pin or generated embedding
+bindings alone is unsafe. Keep pinned
 0.18 support intact during preparation and qualify both artifact directions
 before adoption.
 

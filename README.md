@@ -154,9 +154,11 @@ Current default runtime pins:
 | Web llama.cpp / GGUF | `leehack/llama-web-bridge-assets@v0.1.82` |
 | Web LiteRT-LM / `.litertlm` | `@litert-lm/core@0.18.0` |
 
-Native LiteRT-LM overrides must match the package's pre-1.0 C bindings.
-LiteRT-LM 0.19 / C API 1.0 is rejected before engine calls; use the pinned
-runtime until the consumer migration in #1677 is delivered.
+Native LiteRT-LM uses a lazy ABI-aware client for direct calls, services and
+speech. Production selection remains on the pinned pre-1.0 runtime;
+LiteRT-LM 0.19 / C API 1.0 and unknown versions are refused before engine calls
+until #1677 qualification enables the prepared selector. That activation
+requires macOS 14+ for all owned library loads, including custom paths.
 
 Native overrides accept stable `vMAJOR.MINOR.PATCH` releases and explicit
 historical or nightly `bNNNN` artifacts. New nightly wrapper rebuilds use

@@ -1,7 +1,63 @@
 part of 'litert_lm_runtime.dart';
 
-/// Internal embedding-engine integration, sharing the runtime's library loader.
+/// Embedding dispatch through the same selected ABI as text and ASR.
 extension LiteRtLmEmbeddingRuntime on LiteRtLmRuntimeClient {
+  /// Creates an owned session using the selected native runtime.
+  Future<LiteRtLmEmbeddingSession> createEmbeddingSession({
+    required String modelPath,
+    required String backend,
+    required String cacheDir,
+    required int maxInputLength,
+    required int numberOfThreads,
+  }) async {
+    if (this is _LegacyLiteRtLmRuntimeClient) {
+      return _LegacyLiteRtLmEmbeddingRuntime(
+        this as _LegacyLiteRtLmRuntimeClient,
+      ).createEmbeddingSession(
+        modelPath: modelPath,
+        backend: backend,
+        cacheDir: cacheDir,
+        maxInputLength: maxInputLength,
+        numberOfThreads: numberOfThreads,
+      );
+    }
+    final session = await _runtime.createEmbeddingSession(
+      modelPath: modelPath,
+      backend: backend,
+      cacheDir: cacheDir,
+      maxInputLength: maxInputLength,
+      numberOfThreads: numberOfThreads,
+    );
+    if (session is LiteRtLmEmbeddingSession) return session;
+    return _SelectedLiteRtLmEmbeddingSession(session, _libraryOwner!);
+  }
+}
+
+final class _SelectedLiteRtLmEmbeddingSession extends LiteRtLmEmbeddingSession {
+  _SelectedLiteRtLmEmbeddingSession(this._session, this._owner)
+    : super(
+        _owner._liteRtLmLibraryPath!,
+        _owner._liteRtLmCompanionLibraryPaths,
+        0,
+        _session.capabilities,
+      );
+  final LiteRtLmEmbeddingRuntimeSession _session;
+  final _LegacyLiteRtLmRuntimeClient _owner;
+  @override
+  Future<List<double>> compute(
+    List<LiteRtLmEmbeddingPart> input, {
+    required bool normalize,
+    Allocator inputAllocator = calloc,
+  }) => _session.compute(input, normalize: normalize);
+  @override
+  void dispose() {
+    _session.dispose();
+    _keepAlive(_owner);
+  }
+}
+
+/// Internal embedding-engine integration, sharing the runtime's library loader.
+extension _LegacyLiteRtLmEmbeddingRuntime on _LegacyLiteRtLmRuntimeClient {
   /// Creates processors only for actual embedding bundle sections.
   Future<LiteRtLmEmbeddingSession> createEmbeddingSession({
     required String modelPath,

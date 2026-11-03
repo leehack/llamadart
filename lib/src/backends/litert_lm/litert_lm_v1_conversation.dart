@@ -46,7 +46,8 @@ final class LiteRtLmV1Conversation {
   LiteRtLmV1Conversation._(
     this._runtime,
     LiteRtLmV1ConversationSettings options,
-  ) {
+  ) : _thinkingExtraContext =
+          options._preface['litert_lm_conversation_config_set_extra_context'] {
     final history =
         options._preface['litert_lm_conversation_config_set_messages'];
     if (history != null) {
@@ -187,6 +188,7 @@ final class LiteRtLmV1Conversation {
   ];
 
   final LiteRtLmV1Runtime _runtime;
+  final String? _thinkingExtraContext;
   Pointer<Void> _handle = nullptr;
   LiteRtLmV1Turn? _turn;
   bool _quarantined = false;
@@ -302,7 +304,7 @@ final class LiteRtLmV1Conversation {
         'Create the C API 1.0 conversation with jsonSchemaConstraints before sending a schema.',
       );
     }
-    settings?._validate(_runtime);
+    settings?._validate(_runtime, extraContext: extraContext);
     final args = settings?._createArgs(_runtime) ?? nullptr;
     try {
       final turn = LiteRtLmV1Turn._(this);
