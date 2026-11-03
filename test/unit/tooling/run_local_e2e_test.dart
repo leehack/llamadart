@@ -513,6 +513,117 @@ Future<void> main(List<String> args) async {
   );
 
   group('run_local_e2e', () {
+    test(
+      'v1 service qualification requires model, CPU and exact input digests',
+      () async {
+        final identity = <String, String>{
+          'LITERT_LM_V1_LIBRARY': '/candidate/libLiteRtLm.dylib',
+          'LITERT_LM_V1_LIBRARY_SHA256': 'a' * 64,
+          'LITERT_LM_V1_MODEL_SHA256': 'b' * 64,
+        };
+        final missingModel = await runLocalE2e(
+          const [
+            '--scenario',
+            'litert-lm-v1-service',
+            '--backend',
+            'cpu',
+            '--dry-run',
+          ],
+          projectRoot: '/repo',
+          environment: identity,
+        );
+        expect(missingModel.exitCode, 64);
+        expect(missingModel.stderr, contains('--model-path is required'));
+        final gpu = await runLocalE2e(
+          const [
+            '--scenario',
+            'litert-lm-v1-service',
+            '--model-path',
+            '/Qwen3-0.6B.litertlm',
+            '--backend',
+            'gpu',
+            '--dry-run',
+          ],
+          projectRoot: '/repo',
+          environment: identity,
+        );
+        expect(gpu.exitCode, 64);
+        expect(gpu.stderr, contains('--backend cpu'));
+        for (final name in identity.keys) {
+          final missing = await runLocalE2e(
+            const [
+              '--scenario',
+              'litert-lm-v1-service',
+              '--model-path',
+              '/Qwen3-0.6B.litertlm',
+              '--backend',
+              'cpu',
+              '--dry-run',
+            ],
+            projectRoot: '/repo',
+            environment: {...identity}..remove(name),
+          );
+          expect(missing.exitCode, 64);
+          expect(missing.stderr, contains(name));
+        }
+        final malformed = await runLocalE2e(
+          const [
+            '--scenario',
+            'litert-lm-v1-service',
+            '--model-path',
+            '/Qwen3-0.6B.litertlm',
+            '--backend',
+            'cpu',
+            '--dry-run',
+          ],
+          projectRoot: '/repo',
+          environment: {...identity, 'LITERT_LM_V1_MODEL_SHA256': '555579'},
+        );
+        expect(malformed.exitCode, 64);
+        expect(malformed.stderr, contains('64 hexadecimal digits'));
+      },
+    );
+
+    test(
+      'v1 service dry-run wires the bounded local-only exact-byte harness',
+      () async {
+        final result = await runLocalE2e(
+          const [
+            '--scenario',
+            'litert-lm-v1-service',
+            '--model-path',
+            '/Qwen3-0.6B.litertlm',
+            '--backend',
+            'cpu',
+            '--dry-run',
+          ],
+          projectRoot: '/repo',
+          displayShell: LocalE2eDisplayShell.posix,
+          environment: {
+            'LITERT_LM_V1_LIBRARY': '/candidate/libLiteRtLm.dylib',
+            'LITERT_LM_V1_LIBRARY_SHA256': 'a' * 64,
+            'LITERT_LM_V1_MODEL_SHA256': 'b' * 64,
+            'LITERT_LM_V1_LOG_DIR': '/evidence',
+          },
+        );
+        expect(result.exitCode, 0);
+        expect(
+          result.stdout,
+          contains('LITERT_LM_V1_MODEL=/Qwen3-0.6B.litertlm'),
+        );
+        expect(
+          result.stdout,
+          contains('LITERT_LM_V1_LIBRARY=/candidate/libLiteRtLm.dylib'),
+        );
+        expect(result.stdout, contains('LITERT_LM_V1_LOG_DIR=/evidence'));
+        expect(result.stdout, contains('--run-skipped'));
+        expect(
+          result.stdout,
+          contains('test/e2e/backends/litert_lm_v1_service_e2e_test.dart'),
+        );
+      },
+    );
+
     test('documents shared runner options and defaults', () async {
       final result = await runLocalE2e(const ['--help'], projectRoot: '/repo');
 

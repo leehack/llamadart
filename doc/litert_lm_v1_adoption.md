@@ -17,6 +17,7 @@ client/session contracts make v1 embedding dispatch independent of that extensio
 
 | Public call path | Preparation and evidence | Remaining admission work |
 | --- | --- | --- |
+| Packaged Apple platform floor | Exact owner `5129cd0` candidate declares macOS 14.0 and iOS 15.0 | macOS 14 deployment/runtime refusal, docs and companion SwiftPM must agree before adoption. macOS 13 is unsupported by this artifact; static iOS minima are not device qualification. |
 | Engine initialization and backend options | Status/out settings and ownership; injected CPU service fixture | Preserve responsive asynchronous creation and precise native-creation error classification for existing retry policies. Qualify each selected backend. |
 | `tokenize` / `detokenize` / start tokens | Status/out, `size_t`, copied results, legacy BOS semantics | Matching artifact/model qualification. |
 | Bundle capabilities | Owned model-file snapshot; null optional client probe on native read failure | Declarations do not prove executor or channel enforcement. |
@@ -52,3 +53,26 @@ Consumer preparation is checked against upstream
   channel metadata; `runtime/core/tasks.cc` can ignore a budget without end IDs.
 - Owner ASR ABI/layout admission is a separate contract from the core C API
   version. Its model and audio-quality qualification remains independent.
+
+## Actual service qualification
+
+The `litert-lm-v1-service` local-only scenario accepts an explicit library path,
+model path and both expected SHA256 digests. Run its `--dry-run` first, then the
+same command without that flag only when the model-job owner schedules it:
+
+```bash
+LITERT_LM_V1_LIBRARY=<qualified-libLiteRtLm> \
+LITERT_LM_V1_LIBRARY_SHA256=<64-hex-digest> \
+LITERT_LM_V1_MODEL_SHA256=<64-hex-digest> \
+dart run tool/testing/run_local_e2e.dart --scenario litert-lm-v1-service \
+  --model-path <Qwen3-0.6B.litertlm> --backend cpu --dry-run
+```
+
+It compiles an owned child from a clean checkout, binds its executable and source
+revision/tree to the receipt, verifies input bytes, and requests CPU with two
+threads and an isolated cache. Chat must return exactly `4`; cancellation must
+begin after actual output and finish with the native cancelled cause; reloading
+the same service must return `4` again. A process deadline bounds unsafe retained
+work. Logs and the receipt go under `.dart_tool/litert_lm_v1_service/`, or the
+external `LITERT_LM_V1_LOG_DIR`. This is a qualification tool, not public v1
+selection, and does not claim the remaining feature families or other devices.

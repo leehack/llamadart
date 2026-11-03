@@ -1657,6 +1657,42 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
       ],
     ),
     LocalE2eScenario(
+      name: 'litert-lm-v1-service',
+      group: LocalE2eScenarioGroup.dartLocalOnly,
+      description:
+          'Qualify exact v1 library/model bytes through injected CPU service chat, native cancellation and reload.',
+      requiresDevice: false,
+      stepsBuilder: (context) => [
+        LocalE2eCommandStep(
+          workingDirectory: context.projectRoot,
+          executable: 'dart',
+          arguments: const [
+            'test',
+            '--run-skipped',
+            '-p',
+            'vm',
+            '-j',
+            '1',
+            '-t',
+            'local-only',
+            'test/e2e/backends/litert_lm_v1_service_e2e_test.dart',
+          ],
+          environment: {
+            'LITERT_LM_V1_MODEL': context.modelPath!,
+            for (final name in const [
+              'LITERT_LM_V1_LIBRARY',
+              'LITERT_LM_V1_LIBRARY_SHA256',
+              'LITERT_LM_V1_MODEL_SHA256',
+            ])
+              name: context.environment[name] ?? '',
+            'LITERT_LM_V1_LOG_DIR':
+                ?context.environment['LITERT_LM_V1_LOG_DIR'],
+          },
+          description: 'Bounded actual LiteRT v1 CPU service qualification',
+        ),
+      ],
+    ),
+    LocalE2eScenario(
       name: 'qwen3-litert-cpu-unicode',
       group: LocalE2eScenarioGroup.dartLocalOnly,
       description:
@@ -2685,6 +2721,7 @@ Future<LocalE2eResult> runLocalE2e(
   if ((scenario.name == 'llama-cpp-speculative-benchmark' ||
           scenario.name == 'llama-cpp-chat-template-smoke' ||
           scenario.name == 'litert-lm-lifecycle' ||
+          scenario.name == 'litert-lm-v1-service' ||
           scenario.name == 'litert-lm-json-schema' ||
           scenario.name == 'litert-lm-multimodal-embedding' ||
           scenario.name == 'litert-lm-web-text-history' ||
@@ -2704,6 +2741,32 @@ Future<LocalE2eResult> runLocalE2e(
       64,
       stderr: '--model-path is required for ${scenario.name}.\n',
     );
+  }
+
+  if (scenario.name == 'litert-lm-v1-service') {
+    if (parsed.backend != 'cpu') {
+      return const LocalE2eResult(
+        64,
+        stderr: '--backend cpu is required for litert-lm-v1-service.\n',
+      );
+    }
+    final env = environment ?? Platform.environment;
+    for (final name in const [
+      'LITERT_LM_V1_LIBRARY',
+      'LITERT_LM_V1_LIBRARY_SHA256',
+      'LITERT_LM_V1_MODEL_SHA256',
+    ]) {
+      final value = env[name]?.trim() ?? '';
+      if (value.isEmpty ||
+          (name.endsWith('SHA256') &&
+              !RegExp(r'^[0-9a-fA-F]{64}$').hasMatch(value))) {
+        return LocalE2eResult(
+          64,
+          stderr:
+              '$name is required for litert-lm-v1-service (SHA256 inputs require 64 hexadecimal digits).\n',
+        );
+      }
+    }
   }
 
   if (scenario.name == 'text-embedding-retrieval') {
