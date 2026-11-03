@@ -137,7 +137,17 @@ public class MainActivityTest {
         String nonce = java.util.UUID.randomUUID().toString();
         JSONObject config = new JSONObject();
         try (InputStream input = context.getAssets().open("llamadart_android_qualification/binding.json")) {
-            config.put("binding", new JSONObject(new String(input.readAllBytes(), StandardCharsets.UTF_8)));
+            // InputStream.readAllBytes needs API 33; this smoke also targets older devices.
+            ByteArrayOutputStream bindingBytes = new ByteArrayOutputStream();
+            byte[] buffer = new byte[8192];
+            int count;
+            while ((count = input.read(buffer)) != -1) {
+                bindingBytes.write(buffer, 0, count);
+                if (bindingBytes.size() > 1024 * 1024) {
+                    throw new IOException("Qualification binding exceeds size bound");
+                }
+            }
+            config.put("binding", new JSONObject(new String(bindingBytes.toByteArray(), StandardCharsets.UTF_8)));
             config.put("scenario", scenario);
             if (scenario.equals("consumer-cpu")) {
                 String deviceClass = arguments.getString("androidConsumerDeviceClass");
