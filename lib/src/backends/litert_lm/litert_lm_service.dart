@@ -607,7 +607,8 @@ class LiteRtLmService {
         topP: 1,
         jsonSchemaConstraints: true,
       );
-    } on StateError {
+    } catch (error) {
+      if (error is! StateError && error is! LlamaModelException) rethrow;
       throw LlamaUnsupportedException(
         'The loaded LiteRT-LM model cannot construct its JSON Schema provider; the model tokenizer or EOS may be incompatible.',
       );
@@ -640,7 +641,8 @@ class LiteRtLmService {
       )) {
         yield chunk;
       }
-    } on StateError {
+    } catch (error) {
+      if (error is! StateError && error is! LlamaModelException) rethrow;
       // Native diagnostics can echo the schema or model paths.
       throw LlamaInferenceException(
         'Native JSON Schema chat failed during constrained decoding.',
