@@ -52,6 +52,7 @@ class OperatorTest(unittest.TestCase):
         rgb = pixels if pixels is not None else bytes(range(256)) * 192
         (directory / "image.ppm").write_bytes(operator.PREFIX + rgb)
         record = {"exit": 0, "leader_reaped": True, "deadline_seconds": 177, "cleanup_deadline_seconds": 3,
+                  "case_deadline_seconds": 180,
                   "timed_out": False, "capture_limit_exceeded": False, "cleanup_errors": [], "failure_type": None,
                   "received_signals": [], "raw": {}}
         for filename in ("stdout.log", "stderr.log"):
@@ -100,6 +101,7 @@ class OperatorTest(unittest.TestCase):
         def git(args, **kwargs): return "a" * 40 + "\n" if "rev-parse" in args else b""
         def captured(argv, directory, identity, **kwargs): directory.mkdir()
         with patch.object(operator.sys, "platform", "darwin"), patch.object(operator.platform, "machine", return_value="arm64"), \
+             patch.dict(operator.os.environ, {k: "" for k in ("DYLD_INSERT_LIBRARIES", "DYLD_LIBRARY_PATH", "LD_PRELOAD", "LD_LIBRARY_PATH")}), \
              patch.object(operator, "verify", return_value={}), patch.object(operator.subprocess, "check_output", side_effect=git), \
              patch.object(operator, "capture", side_effect=captured) as child, \
              patch.object(operator, "grade", side_effect=ValueError("synthetic baseline failure")):
@@ -117,6 +119,20 @@ class OperatorTest(unittest.TestCase):
         self.assertEqual([r["id"] for r in rows], ["native-safetensors", "public-safetensors", "native-flat", "public-flat", "native-nested", "public-nested"])
         self.assertIn("--original-mode", rows[0]["argv"])
         self.assertEqual(rows[1]["argv"][1], str(self.snapshot))
+
+    def test_loader_overrides_are_refused_before_any_payload_or_child(self):
+        keys = ("DYLD_INSERT_LIBRARIES", "DYLD_LIBRARY_PATH", "LD_PRELOAD", "LD_LIBRARY_PATH")
+        for key in keys:
+            with self.subTest(variable=key):
+                environment = {k: "" for k in keys}
+                environment[key] = "/synthetic/override"
+                with patch.object(operator.sys, "platform", "darwin"), patch.object(operator.platform, "machine", return_value="arm64"), \
+                     patch.dict(operator.os.environ, environment), patch.object(operator, "verify") as verify, \
+                     patch.object(operator, "capture") as child:
+                    with self.assertRaisesRegex(ValueError, "override"):
+                        operator.execute(self.plan(), self.root / key)
+                verify.assert_not_called()
+                child.assert_not_called()
 
 
 if __name__ == "__main__": unittest.main()

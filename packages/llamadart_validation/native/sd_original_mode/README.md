@@ -41,7 +41,8 @@ earlier timeouts, load controls, metadata diagnoses and failed cases.
 
 Public loading uses `ImageConditioningCacheParams(capacity:4,
 device:ComputeDevice.cpu, threads:4, flashAttention:true,
-vaeDirectConvolution:false)`, explicit checkpoint and external TAESD roles.
+vaeDirectConvolution:false)` and explicit
+`ImageModelPlacement(autoFit:true)`, with checkpoint and external TAESD roles.
 No factory, driver, backend override or mock is used by the real child.
 The normal mapper fixes eager loading and unbatched CFG. Its direct-C match is
 `backend="cpu"`, `n_threads=4`, `eager_load=true`,
@@ -49,7 +50,7 @@ The normal mapper fixes eager loading and unbatched CFG. Its direct-C match is
 legacy `flash_attn=false`, `diffusion_flash_attn=true`,
 `diffusion_conv_direct=false`, `vae_conv_direct=false`,
 `flash_attn_mode="off,diffusion=on"`, `conv_direct_mode="off"`, and
-`auto_fit=false`. There is no `offloadDiffusion` setting here;
+`auto_fit=true`. There is no `offloadDiffusion` setting here;
 `off,diffusion=on` is the recorded flash-attention mode.
 
 Every request uses `a red fox in a green forest, watercolor painting`, 128x128,
@@ -83,9 +84,13 @@ shell strings or build hooks. Missing/ambiguous configuration fails closed.
 Hash-bind the native executable, Dart executable, public kernel snapshot,
 native-assets manifest, raw native library, actual public staged library,
 native/public build receipts, runtime staging receipt, independent artifact
-review and source/plan admission. Public `dladdr` identifies the address of
+review and source/plan admission. Both children reject a canonical mapped-path mismatch before any model
+context construction; root prehashes that expected file. The operator also
+refuses loader search/preload override variables. Run it from a clean loader
+environment (unset DYLD/LD search/preload overrides).
+Public `dladdr` identifies the address of
 the actual default native-asset `sd_dart_new_sd_ctx` export before model load,
-and its mapped-file SHA must match. Native `dladdr` identifies its linked
+and its mapped-file SHA must match before runtime probing or model load. Native `dladdr` identifies its linked
 export; the operator verifies that exact path/file hash. Public CPU/family and
 runtime-version observations and native family logs are retained. This is
 source-and-binding evidence, not a measured route counter or per-operation

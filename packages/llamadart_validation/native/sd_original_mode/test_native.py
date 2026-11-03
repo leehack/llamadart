@@ -47,7 +47,7 @@ sd_ctx_t* sd_dart_new_sd_ctx(const sd_ctx_params_t*p){
  bool orig=p->taesd_path!=nullptr;
  if(std::strcmp(p->backend,"cpu")||p->n_threads!=4||!p->eager_load||p->batched_cfg)return nullptr;
  if(p->conditioning_cache_size!=(orig?4:0)||std::strcmp(p->flash_attn_mode,orig?"off,diffusion=on":"off")||std::strcmp(p->conv_direct_mode,"off"))return nullptr;
- if(orig&&(!p->diffusion_flash_attn||p->vae_conv_direct||p->diffusion_conv_direct||p->auto_fit||p->flash_attn))return nullptr;
+ if(orig&&(!p->diffusion_flash_attn||p->vae_conv_direct||p->diffusion_conv_direct||!p->auto_fit||p->flash_attn))return nullptr;
  return std::getenv("FAIL_LOAD")?nullptr:new sd_ctx_t;
 }
 const char* sd_get_model_version_name(sd_ctx_t*){return "SD 2.x";}
@@ -93,7 +93,7 @@ class NativeChildTest(unittest.TestCase):
 
     def invoke(self, name, original=True, env=None, binary=None):
         output = self.root / (name + ".ppm")
-        argv = [str(binary or self.binary)] + (["--original-mode", "synthetic.pt", "synthetic-taesd.safetensors", str(output)] if original else ["synthetic.gguf", str(output)])
+        argv = [str(binary or self.binary)] + (["--original-mode", "synthetic.pt", "synthetic-taesd.safetensors", str(output), str(binary or self.binary)] if original else ["synthetic.gguf", str(output)])
         result = subprocess.run(argv, capture_output=True, timeout=5, env={**os.environ, **(env or {})})
         return result, output
 
@@ -131,6 +131,58 @@ class NativeChildTest(unittest.TestCase):
             binary = self.build("mutant" + str(i), changed)
             result, _ = self.invoke("mutant" + str(i), binary=binary)
             self.assertNotEqual(result.returncode, 0)
+
+    @unittest.skipUnless(sys.platform in ("darwin", "linux"), "POSIX loader redirection")
+    def test_redirected_dso_is_refused_before_context_and_guard_mutant_calls_it(self):
+        root = self.root / "binding"
+        root.mkdir()
+        expected = root / "expected"
+        redirected = root / "redirected"
+        expected.mkdir()
+        redirected.mkdir()
+        library_name = "libstable-diffusion.dylib" if sys.platform == "darwin" else "libstable-diffusion.so"
+        code = STUB.replace('bool orig=p->taesd_path!=nullptr;',
+            'if(const char* path=std::getenv("SD24_CONTEXT_MARKER")){if(FILE*f=std::fopen(path,"w")){std::fputs("CONTEXT_CALLED",f);std::fclose(f);}} bool orig=p->taesd_path!=nullptr;')
+        for directory in (expected, redirected):
+            source = directory / "stub.cpp"
+            source.write_text(code)
+            library_flags = ["-dynamiclib", "-Wl,-install_name,@rpath/" + library_name] if sys.platform == "darwin" else ["-shared", "-fPIC", "-Wl,-soname," + library_name]
+            command = [self.compiler, "-std=c++17", *library_flags, "-I" + str(self.root), str(source),
+                       "-o", str(directory / library_name)]
+            subprocess.run(command, check=True, capture_output=True, timeout=120)
+        def linked(name, source):
+            binary = root / name
+            command = [self.compiler, "-std=c++17", "-I" + str(self.root), str(source),
+                       "-L" + str(expected), "-lstable-diffusion", "-Wl,-rpath," + str(expected), "-o", str(binary)]
+            if sys.platform != "darwin": command.append("-ldl")
+            subprocess.run(command, check=True, capture_output=True, timeout=120)
+            return binary
+        binary = linked("guarded", self.source)
+        marker = root / "context-called"
+        clean = {k: v for k, v in os.environ.items() if k not in ("DYLD_LIBRARY_PATH", "DYLD_INSERT_LIBRARIES", "LD_LIBRARY_PATH", "LD_PRELOAD")}
+        env = {**clean, "SD24_CONTEXT_MARKER": str(marker)}
+        image = root / "expected.ppm"
+        args = ["--original-mode", "synthetic-model", "synthetic-taesd", str(image), str(expected / library_name)]
+        positive = subprocess.run([str(binary), *args], env=env, capture_output=True, timeout=5)
+        self.assertEqual(positive.returncode, 0, positive.stderr)
+        self.assertTrue(marker.exists())
+        marker.unlink()
+        image.unlink()
+        env["DYLD_LIBRARY_PATH" if sys.platform == "darwin" else "LD_LIBRARY_PATH"] = str(redirected)
+        negative = subprocess.run([str(binary), *args], env=env, capture_output=True, timeout=5)
+        self.assertEqual(negative.returncode, 8, negative.stderr)
+        self.assertFalse(marker.exists(), "wrong runtime must not receive a context call")
+        self.assertFalse(image.exists())
+        self.assertIn(str(redirected).encode(), negative.stdout, "control must actually redirect the mapped DSO")
+        mutant = root / "unguarded.cpp"
+        source = self.source.read_text()
+        self.assertIn('path_error || mapped != expected', source)
+        mutant.write_text(source.replace('path_error || mapped != expected', 'path_error'))
+        bypass = linked("unguarded", mutant)
+        result = subprocess.run([str(bypass), *args], env=env, capture_output=True, timeout=5)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue(marker.exists(), "genuine guard-removal mutation must call the wrong runtime")
+        self.assertTrue(image.exists())
 
 
 if __name__ == "__main__": unittest.main()

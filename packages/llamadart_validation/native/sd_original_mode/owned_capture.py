@@ -66,11 +66,11 @@ def child_exited_unreaped(child) -> bool:
     return os.waitid(os.P_PID, child.pid, os.WEXITED | os.WNOHANG | os.WNOWAIT) is not None
 
 
-def capture(command: list[str], output: Path, identity: dict, *, seconds: float = 180,
+def capture(command: list[str], output: Path, identity: dict, *, seconds: float = 177,
             observation_seconds: float = 45, max_bytes: int = 2 << 20) -> dict:
     if not command or not Path(command[0]).is_absolute():
         raise ValueError('absolute owned executable required')
-    if not (0 < seconds <= 180 and 0 < observation_seconds <= 45 and 0 < max_bytes <= 2 << 20):
+    if not (0 < seconds <= 177 and 0 < observation_seconds <= 45 and 0 < max_bytes <= 2 << 20):
         raise ValueError('capture bounds cannot be widened')
     output.mkdir(parents=True, exist_ok=False)
     stdout, stderr = output / 'stdout.log', output / 'stderr.log'
@@ -127,7 +127,8 @@ def capture(command: list[str], output: Path, identity: dict, *, seconds: float 
                             except BaseException as failure:
                                 cleanup_errors.append(type(failure).__name__)
                         try:
-                            child.wait(timeout=3)
+                            remaining = max(0, min(3, started + seconds + 3 - time.monotonic()))
+                            child.wait(timeout=remaining)
                             reaped = child.returncode is not None
                         except BaseException as failure:
                             cleanup_errors.append(type(failure).__name__)
@@ -155,6 +156,7 @@ def capture(command: list[str], output: Path, identity: dict, *, seconds: float 
                 'exit': child.returncode if child is not None else None,
                 'timed_out': timed_out, 'capture_limit_exceeded': limited,
                 'deadline_seconds': seconds, 'cleanup_deadline_seconds': 3,
+                'case_deadline_seconds': seconds + 3,
                 'leader_reaped': reaped, 'cleanup_errors': cleanup_errors,
                 'failure_type': type(error).__name__ if error else None,
                 'received_signals': state['signals'],

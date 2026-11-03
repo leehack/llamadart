@@ -8,6 +8,8 @@ import 'package:ffi/ffi.dart';
 import 'package:llamadart/llamadart.dart';
 import 'package:llamadart/src/backends/stable_diffusion/stable_diffusion_calls.dart';
 
+import 'image_original_container_model.dart';
+
 final class _DlInfo extends Struct {
   external Pointer<Utf8> filename;
   external Pointer<Void> base;
@@ -16,12 +18,12 @@ final class _DlInfo extends Struct {
 }
 
 Future<void> main(List<String> args) async {
-  if (!Platform.isMacOS || args.length != 4) {
+  if (!Platform.isMacOS || args.length != 5) {
     throw ArgumentError(
-      'macOS: model taesd output.ppm expected-library-sha256',
+      'macOS: model taesd output.ppm expected-library-sha256 expected-library-path',
     );
   }
-  final [model, taesd, output, libraryHash] = args;
+  final [model, taesd, output, libraryHash, libraryPath] = args;
   if (!RegExp(r'^[0-9a-f]{64}$').hasMatch(libraryHash) ||
       File(output).existsSync()) {
     throw ArgumentError('exact library identity and fresh output required');
@@ -40,8 +42,6 @@ Future<void> main(List<String> args) async {
     level: LlamaLogLevel.info,
     handler: (record) => stderr.writeln('SD24_NATIVE_LOG ${record.message}'),
   );
-  final runtime = await ImageGenerationEngine.checkRuntime();
-  if (!runtime.isSupported) throw StateError('${runtime.unsupportedReason}');
   final dladdr = DynamicLibrary.process()
       .lookupFunction<
         Int32 Function(Pointer<Void>, Pointer<_DlInfo>),
@@ -54,9 +54,13 @@ Future<void> main(List<String> args) async {
       throw StateError('default native-asset binding could not be identified');
     }
     final path = info.ref.filename.toDartString();
+    if (File(path).resolveSymbolicLinksSync() !=
+        File(libraryPath).resolveSymbolicLinksSync()) {
+      throw StateError('mapped runtime path differs');
+    }
     final actual = (await sha256.bind(File(path).openRead()).first).toString();
     stdout.writeln(
-      'SD24_BINDING ${jsonEncode({'schema': 1, 'route': 'public', 'mappedLibraryPath': path, 'mappedLibrarySha256': actual, 'runtimeVersion': runtime.runtimeVersion})}',
+      'SD24_BINDING ${jsonEncode({'schema': 1, 'route': 'public', 'mappedLibraryPath': path, 'mappedLibrarySha256': actual})}',
     );
     await stdout.flush();
     if (actual != libraryHash) {
@@ -66,25 +70,11 @@ Future<void> main(List<String> args) async {
     calloc.free(info);
   }
 
-  final engine = await ImageGenerationEngine.load(
-    ImageGenerationModel(
-      ModelSource.path(model),
-      role: ImageModelRole.checkpoint,
-      components: [
-        ImageModelComponent(
-          ModelSource.path(taesd),
-          role: ImageModelRole.taesd,
-        ),
-      ],
-    ),
-    params: const ImageConditioningCacheParams(
-      capacity: 4,
-      device: ComputeDevice.cpu,
-      threads: 4,
-      flashAttention: true,
-      vaeDirectConvolution: false,
-    ),
-  );
+  final runtime = await ImageGenerationEngine.checkRuntime();
+  if (!runtime.isSupported) {
+    throw StateError('${runtime.unsupportedReason}');
+  }
+  final engine = await loadOriginalContainer(model, taesd);
   final loadMs = load.elapsedMilliseconds;
   await stage('load_end', loadMs);
   try {
