@@ -22,10 +22,6 @@ final class LiteRtLmV1RuntimeClient implements LiteRtLmRuntimeClientContract {
   String _startTag = legacy.LiteRtLmChannelAssembler.gemma4ThinkingStartTag;
   String _endTag = legacy.LiteRtLmChannelAssembler.gemma4ThinkingEndTag;
 
-  Never _unsupported(String feature) => throw LlamaUnsupportedException(
-    'LiteRT-LM C API 1.0 internal client has not completed the $feature migration; the public factory remains disabled.',
-  );
-
   void _live() {
     if (_disposed) throw LlamaStateException('C API 1.0 client is disposed.');
   }
