@@ -172,6 +172,10 @@ final class StableDiffusionImageWorker
     if (calls == null) {
       throw stableDiffusionWrapperUnsupported();
     }
+    if (config.requiresIntrinsicTinyDecoderV1 &&
+        calls.newContextIntrinsicTinyV1 == null) {
+      throw _intrinsicTinyDecoderUnsupported();
+    }
     if ((Platform.isMacOS || Platform.isIOS) &&
         !calls.loadsFp8AsF16OnMetal &&
         !{'cpu', 'blas'}.contains(config.backend?.toLowerCase())) {
@@ -695,6 +699,11 @@ void _workerMain(
     replies.send(_LoadFailure(stableDiffusionWrapperUnsupported()));
     return;
   }
+  if (config.requiresIntrinsicTinyDecoderV1 &&
+      calls.newContextIntrinsicTinyV1 == null) {
+    replies.send(_LoadFailure(_intrinsicTinyDecoderUnsupported()));
+    return;
+  }
   final log = _WorkerLog(calls.log, logLevel, replies, config.files);
 
   final context = _newContext(calls, config);
@@ -760,6 +769,13 @@ void _workerMain(
   });
 }
 
+LlamaUnsupportedException _intrinsicTinyDecoderUnsupported() =>
+    LlamaUnsupportedException(
+      'iOS Metal decoding requires the native intrinsic tiny-decoder v1 '
+      'context policy. Use ImageModelPlacement(vaeOnCpu: true) or '
+      'ComputeDevice.cpu with an older runtime.',
+    );
+
 Pointer<sd.sd_ctx_t> _newContext(
   StableDiffusionCalls calls,
   ImageGenerationSessionConfig config,
@@ -768,7 +784,10 @@ Pointer<sd.sd_ctx_t> _newContext(
     final params = arena<sd.sd_ctx_params_t>();
     calls.contextParamsInit(params);
     applyStableDiffusionContextParams(params, config, arena);
-    final context = calls.newContext(params);
+    final create = config.requiresIntrinsicTinyDecoderV1
+        ? calls.newContextIntrinsicTinyV1
+        : calls.newContext;
+    final context = create!(params);
     IsolateShutdownReleases.current.hold(
       ShutdownStage.model,
       calls.exitFreeAddress,

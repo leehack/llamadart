@@ -146,6 +146,70 @@ void main() {
     }
 
     test(
+      'required tiny-decoder policy fails closed on an older runtime before worker start',
+      () async {
+        await expectLater(
+          start(
+            config: const ImageGenerationSessionConfig(
+              files: {'model': '/models/sdxs.gguf'},
+              backend: 'gpu',
+              threads: 1,
+              requiresIntrinsicTinyDecoderV1: true,
+            ),
+          ),
+          throwsA(isA<LlamaUnsupportedException>()),
+        );
+        await runtime.flush();
+        expect(runtime.calls('worker'), isEmpty);
+        expect(runtime.calls('caller'), isEmpty);
+      },
+    );
+
+    test(
+      'required tiny-decoder policy calls its native constructor and releases the context',
+      () async {
+        runtime.supportsIntrinsicTinyDecoderV1 = true;
+        final worker = await start(
+          config: const ImageGenerationSessionConfig(
+            files: {'model': '/models/sdxs.gguf'},
+            backend: 'cpu',
+            threads: 1,
+            requiresIntrinsicTinyDecoderV1: true,
+          ),
+        );
+        await worker.dispose();
+        await runtime.flush();
+        expect(
+          runtime.calls('worker'),
+          contains('sd_dart_new_sd_ctx_intrinsic_tiny_v1'),
+        );
+        expect(runtime.calls('worker'), contains('sd_dart_exit_free'));
+      },
+    );
+
+    test(
+      'worker capability loss returns a typed refusal before native creation',
+      () async {
+        runtime
+          ..supportsIntrinsicTinyDecoderV1 = true
+          ..intrinsicTinyMissingInWorker = true;
+        await expectLater(
+          start(
+            config: const ImageGenerationSessionConfig(
+              files: {'model': '/models/sdxs.gguf'},
+              backend: 'cpu',
+              threads: 1,
+              requiresIntrinsicTinyDecoderV1: true,
+            ),
+          ),
+          throwsA(isA<LlamaUnsupportedException>()),
+        );
+        await runtime.flush();
+        expect(runtime.calls('worker'), isEmpty);
+      },
+    );
+
+    test(
       'FP8 Metal preflight precedes native context creation, CPU forwards',
       () async {
         final directory = Directory.systemTemp.createTempSync('image-fp8-');

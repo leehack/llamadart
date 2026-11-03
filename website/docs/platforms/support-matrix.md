@@ -16,6 +16,10 @@ All five public engine types share `LlamadartEngine<C extends EngineCapabilities
 for capability inspection and final disposal. This lifecycle interface does not
 change the runtime support below; see [engine ownership](../guides/model-lifecycle#shared-engine-ownership).
 
+Eager `createTask` / `generateTask` handles wrap the same native and Web text
+paths, with request-scoped subscription cancellation and observable terminal
+outcomes. They add no model/backend capability; see [task ownership](../guides/generation-and-streaming#eager-task-handles).
+
 ## At a glance
 
 Desktop source-CLI diagnostics can opt into
@@ -51,7 +55,13 @@ the opt-in `stable_diffusion` runtime. Per-platform requirements, validated
 models, memory figures and the bounded recipes for tiling, editing, ControlNet,
 hires fix, reference editing, seamless textures, module placement, the
 conditioning cache, FP8 weights and local checkpoint sets are in
-[Image generation](../guides/image-generation#support).
+[Image generation](../guides/image-generation#support). On iOS, Metal VAE
+decoding requires the intrinsic tiny-decoder v1 native context policy, which
+keeps automatic model refresh from selecting a full VAE. The current pinned
+runtime lacks this policy, so use `ImageModelPlacement(vaeOnCpu: true)`
+for Metal diffusion or `ComputeDevice.cpu`, including with SDXS. Tiling does not
+bypass this restriction; iPhone full-VAE watchdog avoidance remains unqualified
+([#1047](https://github.com/leehack/llamadart/issues/1047)).
 
 GGUF Qwen3-ASR accepts WAV, MP3 and FLAC; real-model checks cover all three on
 native macOS and in headless Chromium. LiteRT-LM ASR is CPU-only streaming
@@ -59,7 +69,9 @@ recognition. Decision models run on llama.cpp and WebGPU only; on LiteRT-LM
 `DecisionEngine.load` and `attach` throw `LlamaUnsupportedException`. See
 [Speech to text](../guides/speech-to-text#choose-an-approach),
 [Text to speech](../guides/text-to-speech) and
-[Decision models](../guides/decision-models).
+[Decision models](../guides/decision-models). Decision tasks stop preflight or
+discard an already-dispatched answer after the backend finishes; they do not
+add native interruption or support on LiteRT-LM.
 
 ## Compute device
 
@@ -115,6 +127,7 @@ native and web. Model architecture support depends on the pinned runtime; see
 
 | Feature | Native llama.cpp | WebGPU | Native LiteRT-LM | LiteRT-LM Web |
 | --- | --- | --- | --- | --- |
+| Decision tasks (cooperative) | Preflight stop or post-dispatch answer discard; no native interruption | Same, with decision-capable bridge assets | No | No |
 | LFM2 Python tool argument types | Declared legacy ToolParam types; copied string backslashes preserved | Same Dart parser; inference requires LFM-capable assets | N/A: LFM GGUF format | N/A: LFM GGUF format |
 | LFM2 auto Python-call grammar | Lazy schema enforcement with prompt penalties preserved; legacy ToolParam declarations | Typed unsupported: published assets lack prompt penalties with grammar | N/A: LFM GGUF format | N/A: LFM GGUF format |
 | LFM2 reasoning tool markers | Stay in reasoning; no executable calls | Same Dart parser; inference requires LFM-capable assets | N/A: LFM GGUF format | N/A: LFM GGUF format |
@@ -127,7 +140,7 @@ native and web. Model architecture support depends on the pinned runtime; see
 | Renamed legacy Qwen3 thinking switch | N/A: GGUF metadata | N/A: GGUF metadata | `chatTemplate: liteRtLmQwen3ChatTemplate`; requires native template setter | Canonical override throws at load: no template setter in `@litert-lm/core@0.18.0` |
 | Thinking budget | Text-only, without speculative decoding, when the native reasoning-budget export resolves | Text-only, with bridge assets whose `getCompletionCapabilities()` reports `thinkingBudget` ([llama-web-bridge#144](https://github.com/leehack/llama-web-bridge/pull/144)); otherwise rejected | Native chat, without speculative decoding, on bundles whose first response channel is a thinking channel (Gemma 4); bounds that channel only; `0` and `forcedMessage` rejected | No |
 | Strict `responseFormat` | Yes | Yes, without tools | macOS arm64 CPU, admitted canonical Qwen3 text model; scalar object schema subset, thinking disabled, no tools/media/speculation/caller stops | No |
-| Lazy grammar | Yes | No: `grammar` applies from the first token, from `root` | No GBNF grammar | No GBNF grammar |
+| Lazy grammar | Yes | Yes when the loaded bridge reports `lazyGrammar`; otherwise first-token `root` only | No GBNF grammar | No GBNF grammar |
 | Presence penalty | Yes | With bridge assets whose `getCompletionCapabilities()` reports `presencePenalty` ([llama-web-bridge#140](https://github.com/leehack/llama-web-bridge/pull/140)); otherwise rejects a non-zero value | Yes, without speculative decoding; counts only tokens of the current send | No: rejects a non-zero value |
 | Min-P | Yes | With bridge assets whose `getCompletionCapabilities()` reports `minP` ([llama-web-bridge#140](https://github.com/leehack/llama-web-bridge/pull/140)); otherwise rejects a non-zero value | No: rejects a non-zero value | No: rejects a non-zero value |
 | Repetition `penalty` | Yes | Yes | A value other than the default, at least `1.0`, without speculative decoding; counts only tokens of the current send | No: rejects a value other than the default |
@@ -146,7 +159,8 @@ native and web. Model architecture support depends on the pinned runtime; see
 | Multi-turn `ChatSession` | Yes | Yes | Yes | `LlamaBackend.withTextHistory()` or `LiteRtLmBackend.withTextHistory()` (existing defaults retain single-user-text): system/user/assistant text when the loaded runtime consumes `preface` and exposes `getHistory()` (`@litert-lm/core@0.18.0`); final user message required; model/browser qualification is separate |
 | Deterministic session template time | `TemplateTimeChatSession`, Dart-rendered templates | Same Dart template path | Dart-side rendering only; runtime-owned template clock unchanged | No: runtime-owned clock; explicit template time rejected |
 | Tool calling | Yes | Yes | Yes, through the `LlamaEngine` parser; LiteRT-native constrained tool execution is not wired | No: tool declarations and tool messages throw |
-| Canonical JSON Schema tools | Supported subset and selected formats | Non-lazy grammars only; other combinations rejected | No | No |
+| Incomplete tool diagnostics | LFM raw `partialToolCalls` at reported length limits | Same parser when the runtime reports a length limit | Same Dart parser at reported length limits | No reliable terminal cause; unchanged #919 restriction |
+| Canonical JSON Schema tools | Supported subset and selected formats | Selected formats; lazy grammars require the `lazyGrammar` runtime probe | No | No |
 | Automatic `sendWithTools` / `completeWithTools` loop | Yes | Requires reliable runtime finish reporting | Yes | No: pinned runtime has no reliable termination cause; throws before generation |
 | Multimodal | Image and audio with a projector | Image and audio with a projector URL | Image and audio files or bytes, when the bundle supports them | No |
 | Video | No | No | No | No |
@@ -192,6 +206,10 @@ web are on [Known platform issues](./known-platform-issues).
 The native-assets hook currently pins `llamadart-native` tag
 `v0.8.0-1` and
 `litert-lm-native` release `v0.18.1-4` (`lib/src/hook/native_release_pins.dart`).
+
+Native overrides exporting LiteRT-LM's versioned C API are rejected before
+legacy engine calls. LiteRT-LM 0.19 / C API 1.0 needs the separate consumer
+migration tracked in #1677; use the pinned runtime with this package.
 Apps can override the llama.cpp release with `llamadart_native_tag`; accepted
 tag forms, keys, backend modules and local bundles:
 [Native runtime configuration](./native-build-hooks#override-the-llamacpp-release).

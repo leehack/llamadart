@@ -2093,15 +2093,229 @@ void main() {
           expect(driver.budgetDevices, isEmpty);
         });
 
-        test('null and false load on Metal with the unfolded VAE', () async {
-          for (final value in [null, false]) {
-            final config = await startedWith(
-              iphone,
-              checkpoint,
-              params: ImageModelParams(vaeDirectConvolution: value),
-            );
-            expect(config.vaeDirectConvolution, isFalse, reason: '$value');
+        test('full VAE refuses automatic and explicit Metal before native '
+            'creation, including unfolded convolutions', () async {
+          driver.status = _available(iphone);
+          for (final device in [ComputeDevice.auto, ComputeDevice.gpu]) {
+            for (final value in [null, false]) {
+              await expectLater(
+                load(
+                  checkpoint,
+                  params: ImageModelParams(
+                    device: device,
+                    vaeDirectConvolution: value,
+                  ),
+                ),
+                throwsA(
+                  isA<LlamaUnsupportedException>().having(
+                    (error) => error.message,
+                    'full-VAE safety restriction',
+                    allOf(
+                      contains('Full-VAE decoding on iOS'),
+                      contains('Metal backend (MTL0)'),
+                      contains('/issues/1047'),
+                      contains('vaeOnCpu: true'),
+                      isNot(contains(_model)),
+                    ),
+                  ),
+                ),
+              );
+              expect(driver.started, isEmpty);
+              expect(driver.budgetDevices, isEmpty);
+            }
           }
+        });
+
+        test('a full VAE can explicitly compute on the CPU while diffusion '
+            'uses Metal', () async {
+          driver.status = _available(iphone);
+          await load(
+            checkpoint,
+            params: const ImageModelParams(vaeDirectConvolution: false),
+            placement: const ImageModelPlacement(vaeOnCpu: true),
+          );
+          expect(driver.started.single.vaeDirectConvolution, isFalse);
+          expect(driver.started.single.backend, contains('vae=cpu'));
+          expect(driver.started.single.requiresIntrinsicTinyDecoderV1, isFalse);
+        });
+
+        test(
+          'only native-verified intrinsic SDXS decoders use iOS Metal',
+          () async {
+            const embedded = '/models/embedded-tiny.gguf';
+            driver
+              ..sizes[embedded] = 651 << 20
+              ..headers[embedded] = ImageModelHeaders.sdxsCheckpoint;
+            for (final family in ['SDXS (512-DS)', 'SDXS (09)']) {
+              for (final device in [ComputeDevice.auto, ComputeDevice.gpu]) {
+                driver.session = _FakeSession()..modelVersion = family;
+                final config = await startedWith(
+                  iphone,
+                  ImageGenerationModel(_local(embedded)),
+                  params: ImageModelParams(device: device),
+                );
+                expect(config.vaeDirectConvolution, isFalse);
+                expect(config.requiresIntrinsicTinyDecoderV1, isTrue);
+                expect(config.backend, isNot(contains('vae=cpu')));
+                expect(driver.session.disposed, isFalse);
+              }
+            }
+          },
+        );
+
+        test(
+          'external tiny decoders cannot hide a full-VAE fallback',
+          () async {
+            driver.status = _available(iphone);
+            for (final header in [
+              ImageModelHeaders.taesd,
+              ImageModelHeaders.pickle,
+            ]) {
+              driver
+                ..started.clear()
+                ..headers[_taesd] = header
+                ..session = _FakeSession();
+              final model = ImageGenerationModel(
+                _local(_model),
+                components: [
+                  ImageModelComponent(
+                    _local(_taesd),
+                    role: ImageModelRole.taesd,
+                  ),
+                ],
+              );
+              await expectLater(
+                load(model),
+                throwsA(isA<LlamaUnsupportedException>()),
+              );
+              expect(driver.started, isEmpty);
+              expect(driver.session.disposeCalls, 0);
+              expect(driver.session.requests, isEmpty);
+            }
+            driver
+              ..session = _FakeSession()
+              ..headers[_taesd] = ImageModelHeaders.taesd;
+            await load(
+              _sdxs(null, _local(_taesd)),
+              placement: const ImageModelPlacement(vaeOnCpu: true),
+            );
+            expect(driver.started.last.backend, 'vae=cpu');
+          },
+        );
+
+        test(
+          'tiny header markers and unknown native families fail closed',
+          () async {
+            driver
+              ..status = _available(iphone)
+              ..headers[_model] = ggufHeader(
+                tensors: [
+                  (
+                    'model.diffusion_model.input_blocks.0.0.weight',
+                    [3, 3, 4, 320],
+                  ),
+                  ('model.diffusion_model.out.2.weight', [3, 3, 320, 4]),
+                  (
+                    'model.diffusion_model.middle_block.1.proj_in.weight',
+                    [1, 1, 1280, 1280],
+                  ),
+                  ('first_stage_model.decoder.conv_in.weight', [3, 3, 4, 512]),
+                  ('first_stage_model.quant_conv.weight', [1, 1, 8, 8]),
+                  ('first_stage_model.decoder.layers.0.weight', [3, 3, 4, 64]),
+                  (
+                    'cond_stage_model.model.token_embedding.weight',
+                    [1024, 49408],
+                  ),
+                ],
+              );
+            for (final family in ['', 'Unknown', 'SD 2.x', 'SDXL', 'SDXS']) {
+              driver.session = _FakeSession()..modelVersion = family;
+              await expectLater(
+                load(checkpoint),
+                throwsA(isA<LlamaUnsupportedException>()),
+              );
+              expect(driver.session.disposeCalls, 1, reason: family);
+              expect(driver.session.requests, isEmpty);
+            }
+          },
+        );
+
+        test(
+          'a qualified old runtime refuses intrinsic SDXS before native creation',
+          () async {
+            driver
+              ..status = _available(
+                iphone,
+                supportsIntrinsicTinyDecoderV1: false,
+              )
+              ..headers[_model] = ImageModelHeaders.sdxsCheckpoint
+              ..session = (_FakeSession()..modelVersion = 'SDXS (512-DS)');
+            await expectLater(
+              load(checkpoint),
+              throwsA(
+                isA<LlamaUnsupportedException>().having(
+                  (error) => error.message,
+                  'remedy',
+                  allOf(
+                    contains('intrinsic tiny-decoder v1'),
+                    contains('vaeOnCpu: true'),
+                  ),
+                ),
+              ),
+            );
+            expect(driver.started, isEmpty);
+          },
+        );
+
+        test('an unqualified runtime refuses even tiny candidates before '
+            'native creation', () async {
+          driver.status = StableDiffusionRuntimeStatus.available(
+            version: 'unknown',
+            commit: 'unknown',
+            devices: parseStableDiffusionDeviceList(iphone),
+          );
+          await expectLater(
+            load(_sdxs(null, _local(_taesd))),
+            throwsA(isA<LlamaUnsupportedException>()),
+          );
+          expect(driver.started, isEmpty);
+        });
+
+        test('the full pinned commit without the policy refuses SDXS and other '
+            'runtimes keep CPU alternatives', () async {
+          driver
+            ..status = StableDiffusionRuntimeStatus.available(
+              version: 'master-1017',
+              commit: 'be486498eadc29dc3cd234d944c2180ed42b1415',
+              devices: parseStableDiffusionDeviceList(iphone),
+            )
+            ..headers[_model] = ImageModelHeaders.sdxsCheckpoint
+            ..session = (_FakeSession()..modelVersion = 'SDXS (512-DS)');
+          await expectLater(
+            load(checkpoint),
+            throwsA(isA<LlamaUnsupportedException>()),
+          );
+          expect(driver.started, isEmpty);
+          expect(driver.session.disposed, isFalse);
+          driver
+            ..status = StableDiffusionRuntimeStatus.available(
+              version: 'unknown',
+              commit: 'unknown',
+              devices: parseStableDiffusionDeviceList(iphone),
+            )
+            ..headers[_model] = ImageModelHeaders.sdTurboCheckpoint
+            ..session = _FakeSession();
+          await load(
+            checkpoint,
+            placement: const ImageModelPlacement(vaeOnCpu: true),
+          );
+          expect(driver.started.last.backend, 'vae=cpu');
+          driver.session = _FakeSession();
+          await load(
+            checkpoint,
+            params: const ImageModelParams(device: ComputeDevice.cpu),
+          );
+          expect(driver.started.last.backend, 'cpu');
         });
 
         test('true loads on the CPU', () async {
@@ -3978,11 +4192,13 @@ void main() {
 StableDiffusionRuntimeStatus _available(
   String devices, {
   bool loadsFp8AsF16OnMetal = false,
+  bool supportsIntrinsicTinyDecoderV1 = true,
 }) => StableDiffusionRuntimeStatus.available(
   version: 'master-929',
   commit: 'be48649',
   devices: parseStableDiffusionDeviceList(devices),
   loadsFp8AsF16OnMetal: loadsFp8AsF16OnMetal,
+  supportsIntrinsicTinyDecoderV1: supportsIntrinsicTinyDecoderV1,
 );
 
 final class _FakeDriver implements ImageGenerationDriver {

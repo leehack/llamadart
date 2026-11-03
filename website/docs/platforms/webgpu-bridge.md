@@ -232,9 +232,11 @@ The feature-by-runtime table is in the
   the turn. Cancellation and normal stops retain their existing outcomes.
   Older assets or a missing termination signal cannot establish truncation.
   The bridge does not distinguish which cap was reached.
-- `grammar` applies from the first token, starting at `root`.
-  `GenerationParams.grammarLazy` and any other `grammarRoot` throw
-  `LlamaUnsupportedException`; `ToolChoice.auto` skips the lazy tool-call
+- Lazy grammars and custom `grammarRoot` require the loaded core's
+  `lazyGrammar` probe (`v0.1.75+` assets). Supported runtimes forward
+  `grammarLazy`, word/pattern/pattern-full/token triggers and the root.
+  Otherwise explicit lazy/custom-root requests throw `LlamaUnsupportedException`,
+  and ordinary `ToolChoice.auto` retains best-effort parsing without its lazy
   grammar ([Tool calling](../guides/tool-calling#tool-choice-semantics)).
 - Speculative decoding needs bridge assets whose
   `getCompletionCapabilities()` reports `speculativeDecoding` strategies:
@@ -396,10 +398,10 @@ first model load, for diagnosis or controlled deployments:
 
 ## Pinned bridge assets
 
-This llamadart version pins bridge assets `v0.1.79`, which include the
+This llamadart version pins bridge assets `v0.1.81`, which include the
 API-version-1 media embedding contract.
 
-- The pinned `v0.1.79` bridge assets embed llama.cpp `v0.8.0`, matching the native runtime.
+- The pinned `v0.1.81` bridge assets embed llama.cpp `v0.8.0`, matching the native runtime.
 
 Provenance and the pinned manifest digest are in
 [`doc/webgpu_bridge.md`](https://github.com/leehack/llamadart/blob/main/doc/webgpu_bridge.md).
@@ -407,7 +409,7 @@ Provenance and the pinned manifest digest are in
 In a llamadart checkout, vendor the pinned assets into the chat app with:
 
 ```bash
-WEBGPU_BRIDGE_ASSETS_TAG=v0.1.79 ./scripts/fetch_webgpu_bridge_assets.sh
+WEBGPU_BRIDGE_ASSETS_TAG=v0.1.81 ./scripts/fetch_webgpu_bridge_assets.sh
 ```
 
 The chat app bootstrap takes its CDN source from these globals:
@@ -415,7 +417,7 @@ The chat app bootstrap takes its CDN source from these globals:
 ```html
 <script>
   window.__llamadartBridgeAssetsRepo = 'leehack/llama-web-bridge-assets';
-  window.__llamadartBridgeAssetsTag = 'v0.1.79';
+  window.__llamadartBridgeAssetsTag = 'v0.1.81';
 </script>
 ```
 

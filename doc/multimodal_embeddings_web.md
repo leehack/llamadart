@@ -39,12 +39,13 @@ Bridge source contract inspected read-only at
 restore and structured-clone ownership; those are bridge responsibilities.
 
 Qualification target: EmbeddingGemma-2 BF16 with its matching
-mmproj and pinned assets `v0.1.79` on Chrome CPU wasm memory64
-(`gpuLayers: 0`). The scenario below passes on that pin with the bridge's
-production worker budget, against references from the matching native `v0.8.0`.
+mmproj and pinned assets `v0.1.81` on Chrome CPU wasm memory64
+(`gpuLayers: 0`). The scenario below checks the bridge's production worker
+budget against references from the matching native `v0.8.0`.
 The table below retains the original `v0.1.66` lineage
-([PR 1205](https://github.com/leehack/llamadart/pull/1205)); the current pin
-stayed within its gates (minimum cosine 0.99997, maximum component difference 8.9e-4).
+([PR 1205](https://github.com/leehack/llamadart/pull/1205)); qualification of the
+previous `v0.1.79` pin stayed within its gates (minimum cosine 0.99997,
+maximum component difference 8.9e-4).
 
 The independent PR audit qualified the same model and projector with the
 then-pinned `v0.1.65` assets on Chrome CPU wasm memory64 (`gpuLayers: 0`).

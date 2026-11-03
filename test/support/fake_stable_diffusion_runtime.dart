@@ -78,6 +78,8 @@ const _imageInputBytes = 96;
 const _controlInput = _imageInput + _imageInputBytes * 2;
 const _controlInputBytes = 48;
 const _loadsFp8AsF16OnMetal = _controlInput + _controlInputBytes * 2;
+const _intrinsicTinyPolicy = _loadsFp8AsF16OnMetal + 1;
+const _intrinsicTinyMissingWorker = _loadsFp8AsF16OnMetal + 2;
 // Hires: enabled and ignore flags as bytes, then upscaler, target width and
 // height and steps as Int32, strength and scale as Float, the custom sigma
 // count as Int32 and the upscaler model path address as Int64.
@@ -265,6 +267,11 @@ final class FakeStableDiffusionRuntime {
 
   /// Makes [resolver] return the calls of a runtime that loads FP8 weights
   /// as F16 on Metal, as `StableDiffusionCalls.fp8MetalNativeRelease` does.
+  set supportsIntrinsicTinyDecoderV1(bool value) =>
+      _state[_intrinsicTinyPolicy] = value ? 1 : 0;
+  set intrinsicTinyMissingInWorker(bool value) =>
+      _state[_intrinsicTinyMissingWorker] = value ? 1 : 0;
+
   set loadsFp8AsF16OnMetal(bool value) =>
       _state[_loadsFp8AsF16OnMetal] = value ? 1 : 0;
 
@@ -657,6 +664,14 @@ final class _FakeCalls {
       },
       progressRead: _progressRead,
       newContext: _newContext,
+      newContextIntrinsicTinyV1:
+          _state[_intrinsicTinyPolicy] != 0 &&
+              !(_inWorker && _state[_intrinsicTinyMissingWorker] != 0)
+          ? (params) {
+              _record('sd_dart_new_sd_ctx_intrinsic_tiny_v1');
+              return _newContext(params);
+            }
+          : null,
       generateImage: _generateImage,
       cancelGeneration: (context) {
         _record('sd_dart_cancel_generation');

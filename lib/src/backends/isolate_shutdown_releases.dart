@@ -1,5 +1,7 @@
 import 'dart:ffi';
 
+import '../core/exceptions.dart';
+
 /// When an object held by [IsolateShutdownReleases] is freed: every object of
 /// an earlier stage before any object of a later one, so an object goes before
 /// the objects it uses.
@@ -22,6 +24,26 @@ enum ShutdownStage {
 
   /// Models, and stable-diffusion.cpp contexts.
   model,
+}
+
+/// Native owner integration used by llama.cpp workers. A stable finalizer
+/// drains the native registry; raw allocation-to-registration gaps remain.
+abstract interface class IsolateShutdownOwner {
+  /// Opaque owner identity, never a payload address.
+  Pointer<Void> get token;
+
+  /// Native callback that drains registered stages after worker shutdown.
+  Pointer<NativeFinalizerFunction> get releaseAddress;
+
+  /// Returns 2 for an existing native entry, 1 for newly adopted raw state.
+  int track(
+    ShutdownStage stage,
+    Pointer<NativeFinalizerFunction> free,
+    Pointer<NativeType> object,
+  );
+
+  /// Disowns raw state immediately before its ordinary free.
+  void untrack(Pointer<NativeType> object);
 }
 
 /// Native objects that are freed when the isolate holding them shuts down
@@ -48,6 +70,32 @@ final class IsolateShutdownReleases {
   static final IsolateShutdownReleases current = IsolateShutdownReleases._();
 
   final _Anchor _anchor = _Anchor();
+  IsolateShutdownOwner? _owner;
+  NativeFinalizer? _ownerFinalizer;
+  final Map<
+    int,
+    ({
+      Pointer<NativeFinalizerFunction> free,
+      ShutdownStage stage,
+      bool nativeTracked,
+    })
+  >
+  _owned = {};
+
+  /// Installs exactly one finalizer before the native owner is activated.
+  /// It is never detached or recreated while payloads can exist.
+  void installOwner(IsolateShutdownOwner owner) {
+    if (_owner != null || _held.isNotEmpty) {
+      throw LlamaStateException(
+        'Install the native owner before holding objects.',
+      );
+    }
+    _owner = owner;
+    final finalizer = NativeFinalizer(owner.releaseAddress);
+    _ownerFinalizer = finalizer;
+    _ownerFinalizer!.attach(_anchor, owner.token);
+  }
+
   final List<_StageFinalizer> _finalizers = [];
   final Map<int, (_StageFinalizer, Object)> _held = {};
 
@@ -64,6 +112,22 @@ final class IsolateShutdownReleases {
     if (object == nullptr) {
       return;
     }
+    final owner = _owner;
+    if (owner != null) {
+      final previous = _owned[object.address];
+      final tracked = owner.track(stage, free, object);
+      if (tracked == 0) {
+        throw LlamaStateException(
+          'Native worker owner refused object registration.',
+        );
+      }
+      _owned[object.address] = (
+        free: free,
+        stage: stage,
+        nativeTracked: previous?.nativeTracked ?? tracked == 2,
+      );
+      return;
+    }
     release(object);
     final finalizer = _finalizerFor(stage, free);
     final key = Object();
@@ -77,10 +141,18 @@ final class IsolateShutdownReleases {
   get debugHeldForTesting => [
     for (final (finalizer, _) in _held.values)
       (free: finalizer.free, stage: finalizer.stage),
+    for (final held in _owned.values) (free: held.free, stage: held.stage),
   ];
 
   /// Stops freeing [object] at shutdown; does nothing if it is not held.
   void release(Pointer<NativeType> object) {
+    final owned = _owned.remove(object.address);
+    if (owned != null) {
+      // Existing tracked creators are freed by their wrapper, which claims the
+      // same registry entry. Keep ownership through that free's FFI boundary.
+      if (!owned.nativeTracked) _owner!.untrack(object);
+      return;
+    }
     final held = _held.remove(object.address);
     if (held != null) {
       final (finalizer, key) = held;

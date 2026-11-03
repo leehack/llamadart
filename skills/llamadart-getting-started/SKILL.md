@@ -24,6 +24,10 @@ interface does not establish backend/model support; read `await engine.capabilit
 
 ## Guidelines
 
+- Keep native LiteRT-LM overrides compatible with the package's pre-1.0 C
+  bindings. LiteRT-LM 0.19 / C API 1.0 is refused before engine calls; use the
+  pinned v0.18.1-4 runtime until the #1677 consumer migration is delivered.
+
 - For a model-free macOS/Linux/Windows setup snapshot, use
   `dart run llamadart:doctor [--json]` or
   `await collectLlamaRuntimeSetupReport()`. It reports pinned publication policy
@@ -69,6 +73,10 @@ interface does not establish backend/model support; read `await engine.capabilit
   Caller-owned cancel tokens remain unchanged; transfers stop cooperatively
   at their next checkpoint. Custom resolvers/managers must poll the linked
   token they receive, even though disposal no longer waits for their work.
+- Await `dispose()` before host shutdown. Killing a worker is not cooperative
+  cancellation. Reclaiming models/contexts created during a forced kill needs
+  a native runtime with owner API v1; the current pinned `v0.8.0-1` runtime
+  retains that creation-time gap. Other raw allocations have separate limits.
 - `LlamaBackend()` routes by model format: LiteRT-LM bundles run on LiteRT-LM
   and GGUF on llama.cpp. Native targets read the file header, so extensionless
   files load; a header contradicting the extension throws

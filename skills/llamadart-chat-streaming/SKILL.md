@@ -11,6 +11,16 @@ description: >-
 
 ## Guidelines
 
+- At a backend-reported length cutoff, LFM `chunk.partialToolCalls` and collected
+  `reply.partialToolCalls` hold raw named-call diagnostics from an unfinished
+  envelope, in order. `function.arguments` preserves exact Python/JSON text,
+  including unfinished syntax; never decode it as typed arguments, execute it
+  or append it to history. `completion.message`, sessions and automatic loops
+  exclude diagnostics. All executable calls remain withheld at length.
+  Natural EOF/cancellation expose no diagnostics and retain existing policy;
+  none/parsing-disabled output stays literal. This does not resolve LiteRT-LM
+  Web's unknown finish cause (#919).
+
 - Pick the entry point by who owns history:
   - `ChatSession.create(parts)` for multi-turn chat. It applies the system
     prompt, appends user and assistant turns, and trims the oldest turns to fit
@@ -48,7 +58,15 @@ description: >-
   `\x00` matches NUL, and `\\x41` preserves literal `\x41`. A malformed
   escape raises `LlamaException` naming the template source. A valid template
   also needs a runtime that supports the model architecture.
-- Every API returns a `Stream`. Read `chunk.text` for answer text and
+- `engine.createTask(messages)` and `engine.generateTask(prompt)` start eagerly
+  and expose `events`, `done`, `result` and `cancel()`. They borrow the engine.
+  Listening to events is optional; events buffer for a late or paused listener.
+  Cancelling the events subscription only stops observation. Call `task.cancel()`
+  and await `task.done` to stop the request and finish cleanup. `done` never
+  throws and reports `GenerationTaskState.completed`, `cancelled` or `failed`,
+  retaining `partialResult`; `result` throws on cancellation/failure. Attach an
+  error handler as soon as you read `result`. Cleanup errors remain failures.
+- The original generation APIs return a `Stream`. Read `chunk.text` for answer text and
   `chunk.thinking` for reasoning (empty strings when a chunk has none), and
   render the channels separately. `chunk.finishReason` is a typed
   `LlamaFinishReason` (`stop`, `length`, `toolCalls`) on the final chunk only.
@@ -316,3 +334,24 @@ Future<Ticket> classify(LlamaEngine engine, String text) {
 
 - Generation and streaming: https://llamadart.leehack.com/docs/guides/generation-and-streaming
 - First chat session: https://llamadart.leehack.com/docs/getting-started/first-chat-session
+
+## Inspect length-cutoff diagnostics
+
+```dart
+import 'package:llamadart/llamadart.dart';
+
+void inspectPartialCalls(LlamaCompletion reply) {
+  for (final diagnostic in reply.partialToolCalls) {
+    print('${diagnostic.function?.name}: ${diagnostic.function?.arguments}');
+  }
+  // Dispatch only reply.toolCalls, never partialToolCalls.
+}
+```
+
+Native LiteRT-LM cleanup failures can leave native callbacks or handles unsettled.
+When the backend requests a process restart, keep its worker, model links and
+cache leases alive; do not kill the isolate or retry on that backend. A closed
+Dart stream or failed request is not proof that native callbacks have drained.
+Custom native integrations can inspect `LiteRtLmRuntimeClient.nativeSettlement`
+from `package:llamadart/backend.dart`; only `LiteRtLmNativeSettlement.settled`
+permits teardown. This does not enable LiteRT-LM C API 1.0 overrides.

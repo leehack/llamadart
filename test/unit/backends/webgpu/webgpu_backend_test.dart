@@ -4420,6 +4420,29 @@ void main() {
         expect(backend.supportsLazyGrammar, isFalse);
       });
 
+      test('ToolChoice.auto retains a supported lazy tool grammar', () async {
+        bridge.setProperty(
+          'getCompletionCapabilities'.toJS,
+          (() => Future<JSObject>.value(
+            JSObject()
+              ..setProperty('lazyGrammar'.toJS, true.toJS)
+              ..setProperty('penaltyPromptTokens'.toJS, true.toJS),
+          ).toJS).toJS,
+        );
+        final engine = await loadHermesEngine();
+
+        await createWithTools(engine, ToolChoice.auto);
+
+        expect(backend.supportsLazyGrammar, isTrue);
+        expect(lastGrammar, contains('get_weather'));
+        expect(lastCompletionOptions!['grammarLazy'].dartify(), isTrue);
+        expect(lastCompletionOptions!['grammarTriggers'].dartify(), isNotEmpty);
+        expect(
+          lastCompletionOptions!.hasProperty('penaltyPromptTokens'.toJS).toDart,
+          isFalse,
+        );
+      });
+
       void replayBridgeEmission(List<String> pieces) {
         bridge.setProperty(
           'createCompletion'.toJS,

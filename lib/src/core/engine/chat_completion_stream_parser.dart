@@ -614,6 +614,12 @@ class ChatCompletionStreamParser {
       parsed = parseOutput(isPartial: true);
       parsedAsPartial = true;
     }
+    // Only a backend-reported limit authorizes replacing answer bytes with
+    // diagnostic data. EOF/cancellation keep their established terminal policy.
+    if (endedAtLimit && !wasCancelled && parsesLfmToolChannels) {
+      final partial = parseOutput(isPartial: true);
+      if (partial.partialToolCalls.isNotEmpty) parsed = partial;
+    }
 
     final finalReasoning = parsesLfmToolChannels
         ? (parsed.reasoningContent ?? '').trimLeft()
@@ -689,7 +695,14 @@ class ChatCompletionStreamParser {
       yield _chunk(
         completionId: completionId,
         modelName: modelName,
-        delta: LlamaCompletionChunkDelta(),
+        delta: LlamaCompletionChunkDelta(
+          partialToolCalls:
+              endedAtLimit &&
+                  !wasCancelled &&
+                  parsed.partialToolCalls.isNotEmpty
+              ? parsed.partialToolCalls
+              : null,
+        ),
         finishReason: endedAtLimit ? 'length' : 'stop',
         usage: usage?.call(),
       );

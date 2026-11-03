@@ -108,18 +108,20 @@ class LlamaEngineCapabilities implements EngineCapabilities {
   /// macOS arm64 CPU. That bounded schema route requires thinking disabled
   /// and rejects tools, media, speculation, caller stops and wider schemas;
   /// [supportsGrammar] remains false. Probing may initialize the loaded model.
-  /// LiteRT-LM Web remains unsupported. WebGPU rejects strict output with tools.
+  /// LiteRT-LM Web remains unsupported. WebGPU lazy tool grammars require the
+  /// loaded bridge core to report `lazyGrammar`.
   final bool supportsStructuredOutput;
 
   /// Whether [GenerationParams.grammar], [GenerationParams.grammarTriggers]
   /// and [GenerationParams.preservedTokens] are applied.
   ///
-  /// False on LiteRT-LM. WebGPU also rejects a [GenerationParams.grammarRoot]
-  /// other than `root`.
+  /// False on LiteRT-LM. WebGPU custom roots require its loaded bridge core
+  /// to report `lazyGrammar`.
   final bool supportsGrammar;
 
   /// Whether [GenerationParams.grammarLazy] is applied, so a grammar can wait
-  /// for a trigger. False on LiteRT-LM and WebGPU.
+  /// for a trigger. False on LiteRT-LM; WebGPU follows the loaded core's
+  /// `lazyGrammar` capability probe.
   final bool supportsLazyGrammar;
 
   /// Whether a [GenerationParams.penalty] other than its default is applied.

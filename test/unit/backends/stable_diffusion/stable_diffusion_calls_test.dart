@@ -60,6 +60,7 @@ void main() {
         ..._logSymbols,
         ..._deviceMemorySymbols,
         ..._fp8MetalSymbols,
+        'sd_dart_new_sd_ctx_intrinsic_tiny_v1',
       ]),
     );
     expect(StableDiffusionCalls.wrapperSymbols, unorderedEquals(_symbols));
@@ -117,6 +118,23 @@ void main() {
       expect(calls.log, isNotNull, reason: missing);
     }
   });
+
+  test(
+    'the intrinsic tiny-decoder contract is optional and versioned by its export',
+    () {
+      final absent = StableDiffusionCalls.tryResolve(
+        symbol: (name) => name == 'sd_dart_new_sd_ctx_intrinsic_tiny_v1'
+            ? throw ArgumentError('missing')
+            : Pointer.fromAddress(0x1000),
+      );
+      expect(absent, isNotNull);
+      expect(absent!.newContextIntrinsicTinyV1, isNull);
+      final present = StableDiffusionCalls.tryResolve(
+        symbol: (_) => Pointer.fromAddress(0x1000),
+      );
+      expect(present!.newContextIntrinsicTinyV1, isNotNull);
+    },
+  );
 
   group('loadsFp8AsF16OnMetal', () {
     StableDiffusionCalls resolve({
@@ -187,6 +205,8 @@ void main() {
     final members = <String, void Function()>{
       'sd_dart_progress_enable': calls.progressEnable,
       'sd_dart_new_sd_ctx': () => calls.newContext(nullptr),
+      'sd_dart_new_sd_ctx_intrinsic_tiny_v1': () =>
+          calls.newContextIntrinsicTinyV1!(nullptr),
       'sd_dart_generate_image': () =>
           calls.generateImage(nullptr, nullptr, nullptr, nullptr),
       'sd_dart_cancel_generation': () => calls.cancelGeneration(nullptr),
@@ -298,6 +318,15 @@ final class _RecordingExports {
         >.isolateLocal(
           (Pointer<sd.sd_ctx_params_t> _) =>
               _record('sd_dart_new_sd_ctx', nullptr.cast<sd.sd_ctx_t>()),
+        ),
+    'sd_dart_new_sd_ctx_intrinsic_tiny_v1':
+        NativeCallable<
+          Pointer<sd.sd_ctx_t> Function(Pointer<sd.sd_ctx_params_t>)
+        >.isolateLocal(
+          (Pointer<sd.sd_ctx_params_t> _) => _record(
+            'sd_dart_new_sd_ctx_intrinsic_tiny_v1',
+            nullptr.cast<sd.sd_ctx_t>(),
+          ),
         ),
     'sd_dart_generate_image':
         NativeCallable<

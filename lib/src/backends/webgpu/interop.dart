@@ -246,6 +246,9 @@ extension type WebGpuCompletionOptions._(JSObject _) implements JSObject {
     @JS('presencePenalty') double? presencePenalty,
     int? seed,
     String? grammar,
+    @JS('grammarLazy') bool? grammarLazy,
+    @JS('grammarRoot') String? grammarRoot,
+    @JS('grammarTriggers') JSArray<WebGpuGrammarTrigger>? grammarTriggers,
     @JS('thinkingBudget') WebGpuThinkingBudgetOptions? thinkingBudget,
     @JS('speculativeDecoding')
     WebGpuSpeculativeDecodingOptions? speculativeDecoding,
@@ -266,6 +269,18 @@ extension type WebGpuCompletionOptions._(JSObject _) implements JSObject {
   /// core reports `penaltyPromptTokens`.
   @JS('penaltyPromptTokens')
   external set penaltyPromptTokens(bool value);
+}
+
+/// A lazy-grammar activation in the bridge's string-based trigger protocol.
+@JS()
+@anonymous
+extension type WebGpuGrammarTrigger._(JSObject _) implements JSObject {
+  /// Creates a text or token trigger; token triggers use [token].
+  external factory WebGpuGrammarTrigger({
+    required String type,
+    String? value,
+    int? token,
+  });
 }
 
 /// Reasoning-block budget in [WebGpuCompletionOptions].
@@ -301,6 +316,10 @@ extension type WebGpuCompletionCapabilities._(JSObject _) implements JSObject {
   /// applies `penaltyPromptTokens`.
   @JS('penaltyPromptTokens')
   external JSAny? get penaltyPromptTokens;
+
+  /// Whether the loaded core applies lazy grammars and custom grammar roots.
+  @JS('lazyGrammar')
+  external JSAny? get lazyGrammar;
 
   /// Whether the loaded models can run each speculative strategy, by its
   /// llama.cpp name.

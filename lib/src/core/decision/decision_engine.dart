@@ -23,6 +23,8 @@ import 'decision_question.dart';
 import 'decision_result.dart';
 import 'decision_sequence.dart';
 
+part 'decision_task.dart';
+
 /// Test-only backend factory for the engines `DecisionEngine.load` creates.
 LlamaBackend Function()? debugDecisionBackendFactory;
 
@@ -164,6 +166,7 @@ class DecisionEngine implements LlamadartEngine<DecisionCapabilities> {
   final DecisionHeadConfig _config;
   final int? _modelEpoch;
   final DecisionSequenceSpec _spec;
+  final Set<DecisionTask<Object>> _tasks = {};
   int _activeCalls = 0;
   Completer<void>? _idle;
   Future<void>? _disposal;
@@ -567,6 +570,68 @@ class DecisionEngine implements LlamadartEngine<DecisionCapabilities> {
     return _track(() => _answer(snapshot));
   }
 
+  /// Starts a cooperative task answering [questions] about [state].
+  ///
+  /// Snapshots the state and questions at creation, and starts without an
+  /// events listener. Validation failures are reported through the task.
+  /// Cancellation stops preflight at tokenization/dispatch checkpoints; after
+  /// dispatch it waits for the backend and discards the answer. Backend errors
+  /// still fail the task. Disposing this engine or unloading its model cancels
+  /// active tasks at the same checkpoints. Legacy [systemOne] is unchanged.
+  DecisionTask<DecisionResult> systemOneTask({
+    required Object? state,
+    required Map<String, DecisionQuestion> questions,
+  }) => _startTask(
+    () => [DecisionRequest(state: state, questions: questions)],
+    (List<DecisionResult> results) => results.single,
+  );
+
+  /// Starts one cooperative task for [requests], preserving request order.
+  ///
+  /// Snapshots the list at creation; [DecisionRequest] already freezes its
+  /// state and questions. Emits one final list, including an empty list for
+  /// an empty batch. Cancellation and failure emit no partial results. See
+  /// [systemOneTask] for cancellation and lifecycle semantics.
+  DecisionTask<List<DecisionResult>> systemOneBatchTask(
+    List<DecisionRequest> requests,
+  ) => _startTask(
+    () => List<DecisionRequest>.unmodifiable(requests),
+    (List<DecisionResult> results) => results,
+  );
+
+  DecisionTask<R> _startTask<R extends Object>(
+    List<DecisionRequest> Function() snapshot,
+    R Function(List<DecisionResult>) select,
+  ) {
+    final task = DecisionTask<R>._();
+    _tasks.add(task);
+    void checkpoint() {
+      if (isDisposed || !_hasModel(_engine, _modelEpoch)) task.cancel();
+      task._checkpoint();
+    }
+
+    unawaited(
+      task
+          ._execute(
+            () => _track(() async {
+              final requests = snapshot();
+              if (requests.isNotEmpty && !_hasModel(_engine, _modelEpoch)) {
+                throw LlamaStateException(_modelUnloadedMessage);
+              }
+              // Reserve the active lifetime now, but let an immediate cancel stop
+              // even the first tokenizer call.
+              await Future<void>.value();
+              checkpoint();
+              final results = await _answer(requests, checkpoint: checkpoint);
+              checkpoint();
+              return select(results);
+            }),
+          )
+          .whenComplete(() => _tasks.remove(task)),
+    );
+    return task;
+  }
+
   /// Frees the decision head after in-flight calls finish, then the
   /// [LlamaEngine] when [load] created it.
   ///
@@ -580,6 +645,9 @@ class DecisionEngine implements LlamadartEngine<DecisionCapabilities> {
     // Cleanup hooks can reenter before an async body's first suspension.
     final disposal = Completer<void>();
     _disposal = disposal.future;
+    for (final task in _tasks) {
+      task.cancel();
+    }
     disposal.complete(_dispose());
     return disposal.future;
   }
@@ -613,13 +681,18 @@ class DecisionEngine implements LlamadartEngine<DecisionCapabilities> {
     }
   }
 
-  Future<List<DecisionResult>> _answer(List<DecisionRequest> requests) async {
+  Future<List<DecisionResult>> _answer(
+    List<DecisionRequest> requests, {
+    void Function()? checkpoint,
+  }) async {
     if (requests.isEmpty) return const <DecisionResult>[];
     if (!_hasModel(_engine, _modelEpoch)) {
       throw LlamaStateException(_modelUnloadedMessage);
     }
     try {
-      return await _run(requests);
+      return await _run(requests, checkpoint: checkpoint);
+    } on _DecisionTaskCancelled {
+      rethrow;
     } on LlamaDecisionException {
       rethrow;
     } on LlamaStateException {
@@ -635,9 +708,13 @@ class DecisionEngine implements LlamadartEngine<DecisionCapabilities> {
     }
   }
 
-  Future<List<DecisionResult>> _run(List<DecisionRequest> requests) async {
+  Future<List<DecisionResult>> _run(
+    List<DecisionRequest> requests, {
+    void Function()? checkpoint,
+  }) async {
     final tokenCache = <String, Future<List<int>>>{};
-    Future<List<int>> tokenize(String text) {
+    Future<List<int>> tokenize(String text) async {
+      checkpoint?.call();
       if (text.contains('\u0000')) {
         throw LlamaDecisionException(
           'Decision text contains U+0000, where Web bridge tokenization cuts '
@@ -645,10 +722,12 @@ class DecisionEngine implements LlamadartEngine<DecisionCapabilities> {
           'instructions and options, or pass the state as a JSON value.',
         );
       }
-      return tokenCache.putIfAbsent(
+      final tokens = await tokenCache.putIfAbsent(
         text,
         () => _engine.tokenize(text, addSpecial: false),
       );
+      checkpoint?.call();
+      return tokens;
     }
 
     final sequences = <List<DecisionSequence>>[
@@ -665,6 +744,7 @@ class DecisionEngine implements LlamadartEngine<DecisionCapabilities> {
             questionType: question.type,
           ),
     ];
+    checkpoint?.call();
     final outputs = await _engine.runDecisionBackend(_head.handle, inputs);
     if (outputs.length != inputs.length) {
       throw LlamaDecisionException(

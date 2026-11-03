@@ -189,6 +189,15 @@ Use trusted model files. There is no public conversion API or load-time
 quantization/mmap option. Weights load eagerly; see the
 [memory check](./image-generation-memory-and-limits#memory-check) before substituting larger unquantized files.
 
+On iOS, the current pinned runtime requires
+`ImageModelPlacement(vaeOnCpu: true)` for Metal diffusion, or
+`ComputeDevice.cpu`, including with SDXS. Metal VAE decoding needs the native
+intrinsic tiny-decoder v1 context policy: it must reject any refreshed model
+that could select a full VAE before runner probes and decoding. The current
+pin lacks that policy. An initial SDXS family query alone cannot keep it safe
+when native source refresh later changes the model
+([#1047](https://github.com/leehack/llamadart/issues/1047)).
+
 #### Pinned-runtime format checks
 
 With the pinned `stable-diffusion-native v0.3.0-1` (`be48649` plus the owner

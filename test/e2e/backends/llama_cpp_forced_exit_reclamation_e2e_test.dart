@@ -54,13 +54,23 @@ void main() {
     (
       _Device.cpu,
       const ModelParams(
+        numberOfThreads: 2,
+        numberOfThreadsBatch: 2,
         contextSize: 2048,
         preferredBackend: GpuBackend.cpu,
         gpuLayers: 0,
         useMmap: false,
       ),
     ),
-    (_Device.metal, const ModelParams(contextSize: 2048, useMmap: false)),
+    (
+      _Device.metal,
+      const ModelParams(
+        numberOfThreads: 2,
+        numberOfThreadsBatch: 2,
+        contextSize: 2048,
+        useMmap: false,
+      ),
+    ),
   ]) {
     for (final scenario in _TextScenario.values) {
       test(
@@ -99,7 +109,12 @@ void main() {
       markTestSkipped('Set FORCED_EXIT_KILL_LOADING=1.');
       return;
     }
-    const params = ModelParams(contextSize: 2048, useMmap: false);
+    const params = ModelParams(
+      numberOfThreads: 2,
+      numberOfThreadsBatch: 2,
+      contextSize: 2048,
+      useMmap: false,
+    );
     final loadTime = await _timedLoad(model, params);
     final cycleSamples = <_Cycle>[];
     for (var cycle = 0; cycle < cycles; cycle++) {
@@ -248,7 +263,12 @@ Future<_Sample> _ttsCycle(String model, String projector) async {
   );
   await engine.setModel(
     LlamaModel(ModelSource.path(model), projector: ModelSource.path(projector)),
-    params: const ModelParams(contextSize: 4096, useMmap: false),
+    params: const ModelParams(
+      numberOfThreads: 2,
+      numberOfThreadsBatch: 2,
+      contextSize: 4096,
+      useMmap: false,
+    ),
   );
   final tts = TextToSpeechEngine(
     engine,

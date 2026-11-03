@@ -237,6 +237,7 @@ class FakeFeatureBridge {
           'minP',
           'thinkingBudget',
           'penaltyPromptTokens',
+          'lazyGrammar',
         ]) {
           flags.setProperty(
             name.toJS,

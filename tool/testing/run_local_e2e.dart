@@ -1211,6 +1211,40 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
       ],
     ),
     LocalE2eScenario(
+      name: 'web-lazy-grammar',
+      group: LocalE2eScenarioGroup.webSmoke,
+      description:
+          'Check pinned-asset lazy grammar activation, custom roots and '
+          'typed rejection/reuse in direct and worker CPU Wasm runtimes.',
+      requiresDevice: false,
+      stepsBuilder: (context) => [
+        LocalE2eCommandStep(
+          workingDirectory: context.projectRoot,
+          executable: 'bash',
+          arguments: const ['scripts/fetch_webgpu_bridge_assets.sh'],
+          environment: {
+            'WEBGPU_BRIDGE_OUT_DIR':
+                '${context.projectRoot}/build/web_lazy_grammar/bridge',
+          },
+          description: 'Fetch pinned WebGPU bridge assets for the test server',
+        ),
+        LocalE2eCommandStep(
+          workingDirectory: context.projectRoot,
+          executable: 'dart',
+          arguments: const [
+            'test',
+            '-p',
+            'chrome-webgpu',
+            '--run-skipped',
+            '-t',
+            'local-only',
+            'test/e2e/webgpu/lazy_grammar_e2e_test.dart',
+          ],
+          description: 'Web lazy grammar activation and error recovery',
+        ),
+      ],
+    ),
+    LocalE2eScenario(
       name: 'web-speech-task-cancel',
       group: LocalE2eScenarioGroup.webSmoke,
       description:
@@ -2048,14 +2082,15 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
       group: LocalE2eScenarioGroup.webSmoke,
       description:
           'Build chat_app web and run a ToolChoice.auto chat on a '
-          'tool-capable --model-url; the completion call must send '
-          'penaltyPromptTokens: false.',
+          'tool-capable --model-url; the completion must carry a lazy '
+          'grammar and omit penaltyPromptTokens.',
       requiresDevice: false,
       stepsBuilder: (context) => _webRealModelSmokeSteps(context, const [
         '--tools',
         '--expect-penalty-prompt-tokens-probe',
         '--expect-penalty-prompt-tokens-option',
-        'false',
+        'absent',
+        '--expect-lazy-grammar',
       ]),
     ),
     LocalE2eScenario(

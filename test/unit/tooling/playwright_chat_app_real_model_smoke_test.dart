@@ -413,6 +413,52 @@ void main() {
         );
       }
 
+      test(
+        'lazy grammar smoke requires both probe and applied options',
+        () async {
+          const validOptions = {
+            'hasGrammar': true,
+            'grammarLazy': true,
+            'grammarTriggerCount': 1,
+          };
+          final passed = await runPenaltyCheck(
+            'lazy_valid',
+            ['--expect-lazy-grammar'],
+            capabilities: {'lazyGrammar': true},
+            options: validOptions,
+          );
+          expect(passed.result.exitCode, 0, reason: '${passed.result.stderr}');
+          for (final options in [
+            {...validOptions, 'hasGrammar': false},
+            {...validOptions, 'grammarLazy': false},
+            {...validOptions, 'grammarTriggerCount': 0},
+          ]) {
+            final failed = await runPenaltyCheck(
+              'lazy_missing_option',
+              ['--expect-lazy-grammar'],
+              capabilities: {'lazyGrammar': true},
+              options: options,
+            );
+            expect(failed.result.exitCode, isNot(0));
+            expect(
+              failed.result.stderr,
+              contains('lazy grammar with triggers'),
+            );
+          }
+          final unsupported = await runPenaltyCheck(
+            'lazy_false_probe',
+            ['--expect-lazy-grammar'],
+            capabilities: {'lazyGrammar': 'true'},
+            options: validOptions,
+          );
+          expect(unsupported.result.exitCode, isNot(0));
+          expect(
+            unsupported.result.stderr,
+            contains('did not report lazyGrammar'),
+          );
+        },
+      );
+
       group('penaltyPromptTokens checks', () {
         const probe = '--expect-penalty-prompt-tokens-probe';
         const option = '--expect-penalty-prompt-tokens-option';

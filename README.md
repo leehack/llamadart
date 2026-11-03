@@ -9,10 +9,10 @@ through `llama.cpp` and `.litertlm` bundles through LiteRT-LM, on Android, iOS,
 macOS, Linux, Windows and the web, behind one Dart API. Web support is
 experimental. Native targets need no network once the model is on the device.
 
-- Streaming chat and text generation, with structured JSON output.
+- Streaming chat and text generation, with structured JSON output and cancellable task handles.
 - Tool calling driven by the model's chat template.
 - Embeddings, reranking, and image and audio input with multimodal models.
-- Speech to text, text to speech, and decision models.
+- Speech to text, text to speech, and decision models with cooperative task cancellation.
 - Image generation from text prompts on native platforms (Preview).
 - Runtime LoRA adapters, observability hooks and typed capability checks.
 
@@ -28,7 +28,7 @@ concrete engine; see [shared lifecycle ownership](https://llamadart.leehack.com/
 
 LFM2 Python-style tool calls use declared argument types and preserve copied string backslashes; see [tool calling](https://llamadart.leehack.com/docs/guides/tool-calling).
 Native llama.cpp applies schema-directed lazy grammar to LFM2 automatic Python tool calls; Web rejects this path until its runtime can preserve prompt penalties with grammar.
-LFM2 tool markers inside reasoning stay in reasoning and produce no executable calls. Explicit parallel-tool requests reach supported Dart tool grammars even when template probes do not recognize parallel history.
+LFM2 replies cut off at a reported length limit expose raw `partialToolCalls` diagnostics separately from executable calls and history. LFM2 tool markers inside reasoning stay in reasoning and produce no executable calls. Explicit parallel-tool requests reach supported Dart tool grammars even when template probes do not recognize parallel history.
 
 ## Install
 
@@ -65,7 +65,8 @@ Pairing rules, the SwiftPM bootstrap and the privacy manifest are in
 [Installation](https://llamadart.leehack.com/docs/getting-started/installation) and
 [Apple setup](https://llamadart.leehack.com/docs/platforms/apple-setup).
 Web apps run `dart run llamadart:web_setup` once; see the
-[WebGPU bridge](https://llamadart.leehack.com/docs/platforms/webgpu-bridge).
+[WebGPU bridge](https://llamadart.leehack.com/docs/platforms/webgpu-bridge). Lazy tool-call grammars and
+custom grammar roots follow the loaded bridge core's `lazyGrammar` capability.
 
 llamadart also ships [agent skills](https://dart.dev/tools/pub/package-skills)
 that teach coding agents its APIs. Install them from your app's root:
@@ -130,8 +131,12 @@ instead of silently degrading.
 llama.cpp uses Metal on Apple platforms, Vulkan on Linux and Windows, and
 WebGPU in the browser. Android Vulkan is experimental and opt-in. LiteRT-LM
 can also use GPU and, on compatible Android deployments, NPU. Image generation
-is not available on the web. Per-target support, device limitations and
-runtime options:
+is not available on the web. On iOS, use
+`ImageModelPlacement(vaeOnCpu: true)` to keep diffusion on Metal, or CPU
+generation. Metal VAE decoding needs a native context policy that preserves
+an intrinsic SDXS tiny decoder through model refresh; the current pinned
+runtime lacks it, so all Metal VAE decoding is refused.
+Per-target support, device limitations and runtime options:
 
 - [Platform and backend support matrix](https://llamadart.leehack.com/docs/platforms/support-matrix), including
   [known limitations](https://llamadart.leehack.com/docs/platforms/known-platform-issues)
@@ -145,8 +150,12 @@ Current default runtime pins:
 | --- | --- |
 | Native llama.cpp / GGUF | `leehack/llamadart-native@v0.8.0-1` |
 | Native LiteRT-LM / `.litertlm` | `leehack/litert-lm-native@v0.18.1-4` |
-| Web llama.cpp / GGUF | `leehack/llama-web-bridge-assets@v0.1.79` |
+| Web llama.cpp / GGUF | `leehack/llama-web-bridge-assets@v0.1.81` |
 | Web LiteRT-LM / `.litertlm` | `@litert-lm/core@0.18.0` |
+
+Native LiteRT-LM overrides must match the package's pre-1.0 C bindings.
+LiteRT-LM 0.19 / C API 1.0 is rejected before engine calls; use the pinned
+runtime until the consumer migration in #1677 is delivered.
 
 Native overrides accept stable `vMAJOR.MINOR.PATCH` releases and explicit
 historical or nightly `bNNNN` artifacts. New nightly wrapper rebuilds use
@@ -157,6 +166,11 @@ always name an explicit tag; `latest` is limited to maintainer synchronization
 and header/binding regeneration. On Windows, runtime environment directory
 overrides select backend modules; use `llamadart_native_path` to replace the
 complete runtime. The full override rules are in [Native runtime configuration](https://llamadart.leehack.com/docs/platforms/native-build-hooks#override-the-llamacpp-release).
+
+Await engine disposal before host shutdown. Forced worker cleanup during
+native creation requires a runtime with owner API v1; the current pinned
+`v0.8.0-1` runtime retains that gap. See the
+[shutdown contract](doc/llama_cpp_exit_teardown.md#creation-time-owner-preparation).
 
 ## Guides
 

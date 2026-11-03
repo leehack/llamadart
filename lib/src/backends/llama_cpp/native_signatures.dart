@@ -179,10 +179,6 @@ typedef _LlamaDartSpeculativeGetDraftContextNative =
     Pointer<llama_context> Function(Pointer<llama_dart_speculative>);
 typedef _LlamaDartSpeculativeGetDraftContextDart =
     Pointer<llama_context> Function(Pointer<llama_dart_speculative>);
-typedef _LlamaDartSpeculativeNeedEmbdNative =
-    Bool Function(Pointer<llama_dart_speculative>);
-typedef _LlamaDartSpeculativeNeedEmbdDart =
-    bool Function(Pointer<llama_dart_speculative>);
 typedef _LlamaDartSpeculativeBeginNative =
     Bool Function(
       Pointer<llama_dart_speculative>,
@@ -378,22 +374,6 @@ external void _llamadartWrapperSpeculativeFree(
   symbol: 'llama_dart_speculative_get_draft_context',
 )
 external Pointer<llama_context> _llamadartWrapperSpeculativeGetDraftContext(
-  Pointer<llama_dart_speculative> speculative,
-);
-
-@Native<_LlamaDartSpeculativeNeedEmbdNative>(
-  assetId: _llamadartWrapperAssetId,
-  symbol: 'llama_dart_speculative_need_embd',
-)
-external bool _llamadartWrapperSpeculativeNeedEmbd(
-  Pointer<llama_dart_speculative> speculative,
-);
-
-@Native<_LlamaDartSpeculativeNeedEmbdNative>(
-  assetId: _llamadartWrapperAssetId,
-  symbol: 'llama_dart_speculative_need_embd_nextn',
-)
-external bool _llamadartWrapperSpeculativeNeedEmbdNextn(
   Pointer<llama_dart_speculative> speculative,
 );
 

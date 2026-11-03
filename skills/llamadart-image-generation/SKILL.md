@@ -282,7 +282,11 @@ core and `llamadart_stable_diffusion_flutter` together.
   on Metal; flash attention changes pixels slightly. `vaeDirectConvolution:
   true` on iOS Metal throws `LlamaUnsupportedException` at load: every decode
   tripped the GPU watchdog and returned a corrupt image
-  ([#1044](https://github.com/leehack/llamadart/issues/1044)).
+  ([#1044](https://github.com/leehack/llamadart/issues/1044)). Full-VAE Metal
+  decoding on iOS is also refused, even with direct convolutions off or tiling.
+  GPU decoding needs the intrinsic tiny-decoder v1 policy across refresh.
+  The current pin lacks it: use `ImageModelPlacement(vaeOnCpu: true)` or `ComputeDevice.cpu`, even for SDXS.
+  External TAESD can fall back to a full VAE; no iPhone full-VAE fix is claimed (#1047).
 - `ImageConditioningCacheParams(capacity: ...)`: ordinary `ImageModelParams`
   preserve the native default of 4 prompt-conditioning entries. `0` disables
   reuse; positive values set an LRU entry limit up to `2147483647` (the signed 32-bit ABI

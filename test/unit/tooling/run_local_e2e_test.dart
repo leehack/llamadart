@@ -1300,7 +1300,7 @@ Future<void> main(List<String> args) async {
         result.stdout,
         contains(
           '--tools --expect-penalty-prompt-tokens-probe '
-          '--expect-penalty-prompt-tokens-option false',
+          '--expect-penalty-prompt-tokens-option absent --expect-lazy-grammar',
         ),
       );
     });

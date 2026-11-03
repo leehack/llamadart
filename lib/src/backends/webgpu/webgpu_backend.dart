@@ -44,6 +44,7 @@ typedef _WebGpuCompletionCapabilities = ({
   bool minP,
   bool thinkingBudget,
   bool penaltyPromptTokens,
+  bool lazyGrammar,
   Set<SpeculativeDecodingStrategy> speculativeDecoding,
 });
 
@@ -89,6 +90,7 @@ class WebGpuLlamaBackend
     minP: false,
     thinkingBudget: false,
     penaltyPromptTokens: false,
+    lazyGrammar: false,
     speculativeDecoding: <SpeculativeDecodingStrategy>{},
   );
   static const int _maxThinkingBudgetTokens = 0x7fffffff;
@@ -147,9 +149,9 @@ class WebGpuLlamaBackend
   @override
   bool get isReady => _isReady;
 
-  /// The bridge applies [GenerationParams.grammar] from the first token.
+  /// Whether the loaded core reports lazy-grammar and custom-root support.
   @override
-  bool get supportsLazyGrammar => false;
+  bool get supportsLazyGrammar => _completionCapabilities.lazyGrammar;
 
   @override
   bool get supportsStatePersistence {
@@ -1071,6 +1073,7 @@ class WebGpuLlamaBackend
         minP: reported(capabilities.minP),
         thinkingBudget: reported(capabilities.thinkingBudget),
         penaltyPromptTokens: reported(capabilities.penaltyPromptTokens),
+        lazyGrammar: reported(capabilities.lazyGrammar),
         speculativeDecoding: webGpuSpeculativeStrategiesFrom(
           capabilities.speculativeDecoding,
           hasDraftModelApi:
@@ -1887,20 +1890,24 @@ class WebGpuLlamaBackend
         capabilities.speculativeDecoding,
       );
     }
-    if (params.grammarLazy) {
+    if (params.grammarLazy && !capabilities.lazyGrammar) {
       throw LlamaUnsupportedException(
-        'WebGPU does not support GenerationParams.grammarLazy: llamadart '
-        'does not forward lazy grammars to the Web bridge yet '
-        '(https://github.com/leehack/llamadart/issues/1480).',
+        'WebGPU GenerationParams.grammarLazy requires bridge assets '
+        'v0.1.75+ whose getCompletionCapabilities() reports lazyGrammar; '
+        'the loaded core does not.',
       );
     }
-    if (params.grammarRoot != const GenerationParams().grammarRoot) {
+    if (params.grammarRoot != const GenerationParams().grammarRoot &&
+        !capabilities.lazyGrammar) {
       throw LlamaUnsupportedException(
-        'WebGPU does not support GenerationParams.grammarRoot other than '
-        '"root": llamadart does not forward it to the Web bridge yet '
-        '(https://github.com/leehack/llamadart/issues/1480).',
+        'WebGPU GenerationParams.grammarRoot other than "root" requires '
+        'bridge assets v0.1.75+ whose getCompletionCapabilities() reports '
+        'lazyGrammar; the loaded core does not.',
       );
     }
+    final grammarTriggers = params.grammarLazy
+        ? _bridgeGrammarTriggers(params.grammarTriggers)
+        : null;
 
     final mediaParts = _buildMultimodalParts(parts);
     if (mediaParts != null && !_mmContextActive) {
@@ -2075,6 +2082,9 @@ class WebGpuLlamaBackend
           : params.presencePenalty,
       seed: params.seed ?? DateTime.now().millisecondsSinceEpoch,
       grammar: params.grammar,
+      grammarLazy: capabilities.lazyGrammar ? params.grammarLazy : null,
+      grammarRoot: capabilities.lazyGrammar ? params.grammarRoot : null,
+      grammarTriggers: grammarTriggers,
       thinkingBudget: bridgeThinkingBudget,
       speculativeDecoding: speculative?.options,
       mediaMaxImagePixels: mediaMaxImagePixels,
@@ -2194,6 +2204,41 @@ class WebGpuLlamaBackend
     );
 
     return generation;
+  }
+
+  // The bridge accepts names, not Dart's word/token wire integers.
+  JSArray<WebGpuGrammarTrigger> _bridgeGrammarTriggers(
+    List<GenerationGrammarTrigger> triggers,
+  ) {
+    return triggers
+        .map((trigger) {
+          switch (trigger.triggerType) {
+            case GrammarTriggerType.word:
+              return WebGpuGrammarTrigger(type: 'word', value: trigger.value);
+            case GrammarTriggerType.token:
+              final token = trigger.token ?? int.tryParse(trigger.value);
+              if (token == null || token < 0 || token > _maxInt32) {
+                throw LlamaArgumentException(
+                  'Web lazy-grammar token triggers need an integer token id '
+                  'from 0 to $_maxInt32 in token or value.',
+                );
+              }
+              return WebGpuGrammarTrigger(type: 'token', token: token);
+            case GrammarTriggerType.pattern:
+              return WebGpuGrammarTrigger(
+                type: 'pattern',
+                value: trigger.value,
+              );
+            case GrammarTriggerType.patternFull:
+              // Native interprets the empty whole-output pattern as ^$.
+              return WebGpuGrammarTrigger(
+                type: 'pattern-full',
+                value: trigger.value.isEmpty ? r'^$' : trigger.value,
+              );
+          }
+        })
+        .toList(growable: false)
+        .toJS;
   }
 
   /// Validates [budget] as native llama.cpp generation does and converts it

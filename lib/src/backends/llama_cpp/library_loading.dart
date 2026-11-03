@@ -150,8 +150,6 @@ class _SpeculativeApi {
   final _LlamaDartSpeculativeFreeDart free;
   final Pointer<NativeFinalizerFunction> freeAddress;
   final _LlamaDartSpeculativeGetDraftContextDart getDraftContext;
-  final _LlamaDartSpeculativeNeedEmbdDart needEmbd;
-  final _LlamaDartSpeculativeNeedEmbdDart needEmbdNextn;
   final _LlamaDartSpeculativeBeginDart begin;
   final _LlamaDartSpeculativeProcessBatchDart processBatch;
   final _LlamaDartSpeculativeDraftDart draft;
@@ -163,8 +161,6 @@ class _SpeculativeApi {
     required this.free,
     required this.freeAddress,
     required this.getDraftContext,
-    required this.needEmbd,
-    required this.needEmbdNextn,
     required this.begin,
     required this.processBatch,
     required this.draft,
@@ -181,8 +177,6 @@ class _SpeculativeApi {
             llama_dart_speculative_free,
           ).cast(),
       getDraftContext: llama_dart_speculative_get_draft_context,
-      needEmbd: llama_dart_speculative_need_embd,
-      needEmbdNextn: llama_dart_speculative_need_embd_nextn,
       begin: llama_dart_speculative_begin,
       processBatch: llama_dart_speculative_process_batch,
       draft: llama_dart_speculative_draft,
@@ -194,8 +188,7 @@ class _SpeculativeApi {
   }
 
   factory _SpeculativeApi.windowsAsset() {
-    _llamadartWrapperSpeculativeFree(nullptr.cast<llama_dart_speculative>());
-    return _SpeculativeApi(
+    final api = _SpeculativeApi(
       init: _llamadartWrapperSpeculativeInit,
       free: _llamadartWrapperSpeculativeFree,
       freeAddress:
@@ -203,14 +196,14 @@ class _SpeculativeApi {
             _llamadartWrapperSpeculativeFree,
           ).cast(),
       getDraftContext: _llamadartWrapperSpeculativeGetDraftContext,
-      needEmbd: _llamadartWrapperSpeculativeNeedEmbd,
-      needEmbdNextn: _llamadartWrapperSpeculativeNeedEmbdNextn,
       begin: _llamadartWrapperSpeculativeBegin,
       processBatch: _llamadartWrapperSpeculativeProcessBatch,
       draft: _llamadartWrapperSpeculativeDraft,
       accept: _llamadartWrapperSpeculativeAccept,
       sampleAndAcceptN: _llamadartWrapperSamplerSampleAndAcceptN,
     );
+    api.probe();
+    return api;
   }
 
   void probe() {
@@ -226,8 +219,6 @@ class _SpeculativeApi {
       init(nullModel, nullModel, nullContext, ctxParams, nullParams);
       free(nullSpeculative);
       getDraftContext(nullSpeculative);
-      needEmbd(nullSpeculative);
-      needEmbdNextn(nullSpeculative);
       begin(nullSpeculative, 0, nullTokenArray, 0);
       processBatch(nullSpeculative, batch);
       draft(nullSpeculative, 0, 0, 0, nullTokenArray, 0, 1, nullTokenArray, 0);
@@ -266,16 +257,6 @@ class _SpeculativeApi {
               _LlamaDartSpeculativeGetDraftContextNative,
               _LlamaDartSpeculativeGetDraftContextDart
             >('llama_dart_speculative_get_draft_context'),
-        needEmbd: library
-            .lookupFunction<
-              _LlamaDartSpeculativeNeedEmbdNative,
-              _LlamaDartSpeculativeNeedEmbdDart
-            >('llama_dart_speculative_need_embd'),
-        needEmbdNextn: library
-            .lookupFunction<
-              _LlamaDartSpeculativeNeedEmbdNative,
-              _LlamaDartSpeculativeNeedEmbdDart
-            >('llama_dart_speculative_need_embd_nextn'),
         begin: library
             .lookupFunction<
               _LlamaDartSpeculativeBeginNative,

@@ -86,7 +86,13 @@ export 'src/core/image/image_generation_request.dart'
 
 // Decision models
 export 'src/core/decision/decision_engine.dart'
-    show DecisionCapabilities, DecisionEngine, DecisionModelInfo;
+    show
+        DecisionCapabilities,
+        DecisionEngine,
+        DecisionModelInfo,
+        DecisionTask,
+        DecisionCompletion,
+        DecisionCompletionState;
 export 'src/core/decision/decision_model.dart';
 export 'src/core/decision/decision_model_params.dart';
 export 'src/core/decision/decision_key.dart';
@@ -168,3 +174,11 @@ export 'src/core/cache_policy.dart' show hasPersistentCacheSensitiveUrlParts;
 // LiteRT-LM speech-to-text configuration
 export 'src/backends/litert_lm/litert_lm_asr_types.dart'
     show LiteRtLmAsrBackend, LiteRtLmAsrModelPreset, LiteRtLmAsrRuntimeConfig;
+
+export 'src/core/engine/generation_task.dart'
+    show
+        GenerationTaskState,
+        ChatGenerationTask,
+        ChatGenerationCompletion,
+        TextGenerationTask,
+        TextGenerationCompletion;

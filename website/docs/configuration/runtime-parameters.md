@@ -444,7 +444,7 @@ than the default throws `LlamaUnsupportedException`:
 | `minP` | `supportsMinP` | Yes | Bridge reports | No | No |
 | `thinkingBudget` | `supportsThinkingBudget` | Runtime export resolves | Bridge reports | Runtime export resolves and the bundle declares a thinking channel | No |
 | `grammar`, `grammarTriggers`, `preservedTokens` | `supportsGrammar` | Yes | Yes | No | No |
-| `grammarLazy` | `supportsLazyGrammar` | Yes | No | No | No |
+| `grammarLazy` | `supportsLazyGrammar` | Yes | With the `lazyGrammar` runtime probe | No | No |
 | Stream batching thresholds | `supportsStreamBatching` | Yes | Ignored | Yes | No |
 | Speculative strategies | `speculativeDecodingStrategies` | All, subject to draft/model requirements | Bridge reports | `backendDefault`, `mtp` unless the bundle declares no drafter | None |
 

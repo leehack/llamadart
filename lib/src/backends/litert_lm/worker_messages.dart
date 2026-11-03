@@ -10,9 +10,11 @@ import '../../core/models/inference/tool_choice.dart';
 import '../backend.dart';
 import '../worker_log_message.dart';
 import 'litert_lm_embedding.dart';
+import 'litert_lm_native_settlement.dart';
 import '../../core/models/inference/embedding.dart';
 
 export '../worker_log_message.dart';
+export 'litert_lm_native_settlement.dart';
 
 /// Base class for LiteRT-LM worker requests.
 abstract class LiteRtLmWorkerRequest {
@@ -411,10 +413,30 @@ class LiteRtLmErrorResponse {
   final String message;
 
   /// Creates an error response.
-  LiteRtLmErrorResponse(this.message, {this.kind = 'exception'});
+  LiteRtLmErrorResponse(
+    this.message, {
+    this.kind = 'exception',
+    this.nativeSettlement = LiteRtLmNativeSettlement.settled,
+  });
+
+  /// Native lifetime, independent of the request's error kind.
+  final LiteRtLmNativeSettlement nativeSettlement;
 
   /// Creates a typed response from an error object.
-  factory LiteRtLmErrorResponse.from(Object error) {
+  factory LiteRtLmErrorResponse.from(
+    Object error, {
+    LiteRtLmNativeSettlement nativeSettlement =
+        LiteRtLmNativeSettlement.settled,
+  }) {
+    final response = LiteRtLmErrorResponse._from(error);
+    return LiteRtLmErrorResponse(
+      response.message,
+      kind: response.kind,
+      nativeSettlement: nativeSettlement,
+    );
+  }
+
+  factory LiteRtLmErrorResponse._from(Object error) {
     if (error is LlamaUnsupportedException) {
       return LiteRtLmErrorResponse(error.message, kind: 'llamaUnsupported');
     }
@@ -551,7 +573,13 @@ class LiteRtLmDoneResponse {
   final BackendGenerationLimit? generationLimit;
 
   /// Creates a completion response.
-  LiteRtLmDoneResponse({this.generationLimit});
+  LiteRtLmDoneResponse({
+    this.generationLimit,
+    this.nativeSettlement = LiteRtLmNativeSettlement.settled,
+  });
+
+  /// Native lifetime at completion; a cancellation acknowledgement may be pending.
+  final LiteRtLmNativeSettlement nativeSettlement;
 }
 
 /// Handshake message sent from the backend to the worker.

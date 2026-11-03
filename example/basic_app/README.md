@@ -30,7 +30,7 @@ are loaded; normal Dart build hooks can still prepare native assets.
 - **Sampling Controls**: Tune `--temp`, `--top-k`, `--top-p`, and `--penalty`.
 - **Embedding Demo**: Includes a dedicated embedding CLI example.
 - **SQLite Vector Demo**: Stores embeddings in SQLite and runs nearest-neighbor search with `sqlite_vector`.
-- **Decision Model Demo**: Triages a support ticket with a Laya decision model through `DecisionEngine`.
+- **Decision Model Demo**: Triages a support ticket with a Laya decision model through `DecisionEngine`. Run `dart run bin/llamadart_decision_task_example.dart /path/to/laya.gguf /path/to/laya-head.safetensors` for typed task completion and cooperative Ctrl-C cancellation. Once dispatched, cancellation waits for backend work to finish.
 - **Image Generation Demo (experimental)**: Writes a PNG with SDXS, SD-Turbo or a desktop model (SDXL-Lightning, FLUX.1-schnell, SD 3.5 Large Turbo, Z-Image-Turbo) through `ImageGenerationEngine`, with progress and Ctrl-C cancellation.
 
 After loading a model, check `await engine.capabilities` before enabling
@@ -353,6 +353,21 @@ exits with code 130. It runs on macOS, Linux and Windows x64 hosts (x64 CPUs nee
 FMA, F16C and BMI2); elsewhere, or when the runtime is not bundled, it exits
 with code 2 and the reason.
 
+For Flutter iOS consumers, use CPU generation or
+`ImageModelPlacement(vaeOnCpu: true)` to keep diffusion on Metal, including
+with SDXS. Metal VAE decoding requires the intrinsic tiny-decoder v1 native
+context policy so automatic model refresh cannot switch to a full VAE. The
+current pinned runtime lacks that policy and is refused before native
+creation. Tiling does not bypass this restriction; full-VAE iPhone watchdog
+avoidance remains unqualified.
+
+The local-only `test/image_ios_decoder_policy_e2e_test.dart` uses existing
+`LLAMADART_SDXS_MODEL` and `LLAMADART_SD_TURBO_MODEL` GGUF paths. On a Metal
+host it exercises the production engine and worker, overriding only the OS
+label to select iOS admission: old-runtime refusal and CPU VAE placement,
+plus unchanged/refreshed SDXS and full-VAE replacement refusal when the
+runtime provides the policy. It does not qualify a physical iPhone.
+
 Image CLI flags (`bin/llamadart_image_example.dart`):
 
 - `--preset`: `sdxs` (default), `sd-turbo`, `sdxl-lightning`,
@@ -538,3 +553,5 @@ dart run tool/testing/run_local_e2e.dart --scenario image-seamless-textures \
 Run this command from the repository root. On a CPU-only host set
 `LLAMADART_TEXTURE_DEVICES=cpu`; the default requires CPU and actual Metal.
 See `doc/image_seamless_textures.md` for the independent native comparison.
+
+Run `dart run bin/llamadart_task_example.dart /path/to/model.gguf` to stream an eager chat task. Ctrl+C requests cancellation; the example waits for task cleanup before disposing its engine.
