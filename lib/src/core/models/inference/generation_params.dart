@@ -976,6 +976,10 @@ class GenerationParams {
   /// that path; WebGPU needs bridge assets that report `ngram-mod`. LiteRT-LM
   /// web rejects this option.
   ///
+  /// Native Qwen3.5 on Android Vulkan with unsafe or unproven small-matmul
+  /// subgroup facts rejects speculation before evaluation (#948); use ordinary
+  /// text with microBatchSize unset or 1..8, or load on the CPU.
+  ///
   /// Prefer [speculativeDecodingConfig] for new code that needs a specific
   /// strategy or runtime-neutral options.
   final bool speculativeDecoding;

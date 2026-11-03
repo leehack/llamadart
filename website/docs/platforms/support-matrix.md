@@ -75,6 +75,12 @@ recognition. Decision models run on llama.cpp and WebGPU only; on LiteRT-LM
 discard an already-dispatched answer after the backend finishes; they do not
 add native interruption or support on LiteRT-LM.
 
+Native Android Vulkan Qwen3.5 permits bounded ordinary text only
+on unsafe/unproven small-matmul subgroup facts: `microBatchSize` unset or
+`1..8`; larger explicit values, media, speculation and embeddings are typed
+unsupported. CPU and complete safe-subgroup facts are exempt. See
+[the exact predicate and qualification limits](./known-platform-issues#android).
+
 ## Compute device
 
 `ModelParams.device` (`ComputeDevice`) applies to every runtime. `auto` keeps

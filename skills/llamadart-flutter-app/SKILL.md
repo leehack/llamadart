@@ -197,14 +197,12 @@ or shipping runtimes the app does not use.
   driver `2150604839` is excluded: an explicit GPU request throws; automatic
   selection with a Vulkan preference falls back to CPU with a warning.
   A shader-compiler workaround alone does not qualify quantized output. Leave
-  `ModelParams.microBatchSize` unset on Android Vulkan: on a GPU whose
-  subgroup size is 16, below 8 or unreadable a text prompt is then decoded at
-  most 8 tokens at a time, and a value above 32 returns wrong text there. The
-  cap applies to text-prompt decoding only: it does not
-  cover prompts with image or audio input, embeddings, decision models,
-  text-to-speech, or speculative-decoding verification batches during
-  generation, which can exceed 32 tokens, so speculative decoding can still
-  produce wrong output on an affected GPU.
+  `ModelParams.microBatchSize` unset on Android Vulkan for bounded text calls.
+  Native `qwen35` (Qwen3.5) with unsafe/unproven small-matmul subgroup facts
+  accepts only unset or `1..8`; larger explicit values, media, speculation
+  and embeddings throw `LlamaUnsupportedException` (#948). Use CPU for those
+  features. The family-wide rule is conservative; it does not qualify final
+  GPU output or assert that every Qwen artifact or size 9..32 fails.
   LiteRT-LM defaults to the GPU on
   Android (`ComputeDevice.auto`), and on adapters with a 128 MiB
   storage-buffer limit (for example Adreno 750) a model with a larger weight

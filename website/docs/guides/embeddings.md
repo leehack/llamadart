@@ -12,6 +12,13 @@ prefixes and Matryoshka dimensions to text, and the LiteRT-LM embedding engine
 `LlamaReranker` re-scores retrieved candidates with a cross-encoder; see
 [Reranking](./reranking).
 
+Native Qwen3.5 (`general.architecture=qwen35`) loaded with Vulkan GPU layers on
+Android accepts ordinary text with `microBatchSize` unset or `1..8` when
+small-matmul subgroup facts are unsafe or unproven. Larger explicit values,
+media, speculation and embeddings throw `LlamaUnsupportedException`; load on
+CPU for those features. This conservative restriction is not final-artifact
+GPU qualification; see [Android Vulkan](../platforms/known-platform-issues#android).
+
 ## Basic usage
 
 ```dart

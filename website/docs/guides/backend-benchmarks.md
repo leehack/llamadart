@@ -48,11 +48,11 @@ device (Mali-G715) a prompt longer than about 32 tokens evaluated in one batch
 returns wrong text, confirmed so far with one model (Qwen3.5-0.8B Q4_0)
 ([#948](https://github.com/leehack/llamadart/issues/948),
 [known limitations](../platforms/known-platform-issues)).
-As a workaround, llamadart decodes text prompts on an Android Vulkan GPU with
-this defect (subgroup size 16 or below 8, or one it cannot read) in
-micro-batches of at most 8 tokens by default, so the wrong text needs an
-explicit `ModelParams.microBatchSize` above 32 or one of the paths the cap
-does not cover, listed in the known limitations.
+Current native Qwen3.5 on Android Vulkan with unsafe or unproven small-matmul
+subgroup facts accepts only ordinary text with `microBatchSize` unset or
+`1..8`. Larger explicit sizes, media, speculation and embeddings throw typed
+unsupported before evaluation. This conservative restriction is not proof of
+a native repair or final-artifact GPU qualification; CPU remains available.
 
 The Pixel 9 Pro was explicitly woken and kept awake with `svc power stayon true`.
 Thermal status was 0 before the benchmark and 1 after the run, so the Android
