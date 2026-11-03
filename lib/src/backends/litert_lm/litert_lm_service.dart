@@ -157,10 +157,13 @@ class LiteRtLmService {
   final bool _useTempCacheDir;
   LiteRtLmRuntimeClientContract? _client;
   bool _nativeResourcesQuarantined = false;
+  bool _embeddingPreparing = false;
 
   /// Native lifetime; failed Dart requests can still own live callbacks.
   LiteRtLmNativeSettlement get nativeSettlement => _nativeResourcesQuarantined
       ? LiteRtLmNativeSettlement.quarantined
+      : _embeddingPreparing
+      ? LiteRtLmNativeSettlement.pending
       : _client?.nativeSettlement ?? LiteRtLmNativeSettlement.settled;
 
   /// Retains this native family, its model link and cache lease until exit.
@@ -353,10 +356,18 @@ class LiteRtLmService {
     if (existing != null) {
       return existing;
     }
+    if (nativeSettlement != LiteRtLmNativeSettlement.settled) {
+      throw LlamaStateException(
+        'Embedding creation has unsettled native resources.',
+      );
+    }
     final params = _modelParams!;
     final cache = _effectiveCacheDir(params) ?? liteRtLmNoCacheDirectory;
     final client = _clientFactory();
     final lease = _leaseCacheDirectory(cache, _modelPath!);
+    _client = client;
+    _cacheLease = lease;
+    _embeddingPreparing = true;
     try {
       final session = await client.createEmbeddingSession(
         modelPath: _modelLink?.path ?? _modelPath!,
@@ -365,13 +376,17 @@ class LiteRtLmService {
         maxInputLength: params.contextSize,
         numberOfThreads: params.numberOfThreads,
       );
-      _client = client;
-      _cacheLease = lease;
       return _embedding = session;
     } catch (_) {
-      lease?.release();
-      client.dispose();
+      _embeddingPreparing = false;
+      if (client.nativeSettlement != LiteRtLmNativeSettlement.settled) {
+        quarantineNativeResources();
+      } else {
+        _disposeClient();
+      }
       rethrow;
+    } finally {
+      _embeddingPreparing = false;
     }
   }
 

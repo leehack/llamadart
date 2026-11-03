@@ -9,6 +9,9 @@ final class LiteRtLmV1RuntimeClient implements LiteRtLmRuntimeClientContract {
 
   final LiteRtLmV1Runtime _runtime;
   LiteRtLmV1Conversation? _conversation;
+  _V1EmbeddingSession? _embedding;
+  LiteRtLmNativeSettlement _embeddingCreation =
+      LiteRtLmNativeSettlement.settled;
   LiteRtLmV1Turn? _activeTurn;
   int _outputTokens = 256;
   ComputeDevice? _backend;
@@ -93,7 +96,20 @@ final class LiteRtLmV1RuntimeClient implements LiteRtLmRuntimeClientContract {
   LiteRtLmFinishReason? get lastFinishReason => _lastFinishReason;
 
   @override
-  LiteRtLmNativeSettlement get nativeSettlement => _runtime.nativeSettlement;
+  LiteRtLmNativeSettlement get nativeSettlement {
+    final states = [
+      _runtime.nativeSettlement,
+      _embeddingCreation,
+      _embedding?.settlement,
+    ];
+    if (states.contains(LiteRtLmNativeSettlement.quarantined)) {
+      return LiteRtLmNativeSettlement.quarantined;
+    }
+    if (states.contains(LiteRtLmNativeSettlement.pending)) {
+      return LiteRtLmNativeSettlement.pending;
+    }
+    return LiteRtLmNativeSettlement.settled;
+  }
 
   @override
   ({bool vision, bool audio, bool speculativeDecoding})? bundleCapabilities(
@@ -130,7 +146,52 @@ final class LiteRtLmV1RuntimeClient implements LiteRtLmRuntimeClientContract {
     required String cacheDir,
     required int maxInputLength,
     required int numberOfThreads,
-  }) async => _unsupported('embedding engine');
+  }) async {
+    _live();
+    if (_embedding != null ||
+        nativeSettlement != LiteRtLmNativeSettlement.settled) {
+      throw LlamaStateException(
+        'Client already owns an embedding or unsettled native work.',
+      );
+    }
+    liteRtLmEnsureNativeEmbeddingsQualified();
+    ensureLiteRtLmNativeEmbeddingBackend(backend);
+    if (maxInputLength <= 0 || numberOfThreads < 0) {
+      throw LlamaArgumentException(
+        'Embedding context must be positive and thread count nonnegative.',
+      );
+    }
+    final addresses = _embeddingAddresses(_runtime._library);
+    final capabilities = _embeddingBundle(modelPath);
+    final paths = [modelPath, cacheDir];
+    _embeddingCreation = LiteRtLmNativeSettlement.pending;
+    late LiteRtLmBlockingCallResult<int> result;
+    try {
+      result = await _dispatchEmbeddingCreate((
+        addresses: addresses,
+        paths: paths,
+        model: modelPath,
+        cache: cacheDir,
+        context: maxInputLength,
+        threads: numberOfThreads,
+        capabilities: capabilities,
+      ));
+    } catch (_) {
+      _embeddingCreation = LiteRtLmNativeSettlement.quarantined;
+      rethrow;
+    }
+    _embeddingCreation = LiteRtLmNativeSettlement.settled;
+    if (result.error case final error?) {
+      Error.throwWithStackTrace(error, result.stackTrace!);
+    }
+    return _embedding = _V1EmbeddingSession(
+      _runtime._library,
+      addresses,
+      paths,
+      result.value!,
+      capabilities,
+    );
+  }
 
   ComputeDevice _device(String value) => switch (value.trim().toLowerCase()) {
     'cpu' => ComputeDevice.cpu,
@@ -459,6 +520,12 @@ final class LiteRtLmV1RuntimeClient implements LiteRtLmRuntimeClientContract {
   @override
   void dispose() {
     if (_disposed) return;
+    if (nativeSettlement != LiteRtLmNativeSettlement.settled) {
+      throw LlamaStateException(
+        'Cannot dispose a client with unsettled native work.',
+      );
+    }
+    _embedding?.dispose();
     _closeConversation();
     _runtime.dispose();
     _disposed = true;

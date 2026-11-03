@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:collection';
 import 'dart:convert';
 import 'dart:ffi';
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:ffi/ffi.dart';
@@ -9,6 +10,9 @@ import 'package:ffi/ffi.dart';
 import '../../core/exceptions.dart';
 import '../../core/models/config/compute_device.dart';
 import '../../core/models/inference/model_params.dart';
+import '../../core/models/inference/embedding.dart';
+import 'litert_lm_blocking_call.dart';
+import 'litert_lm_platform.dart';
 import 'litert_lm_last_error.dart';
 import 'litert_lm_asr_types.dart';
 import 'litert_lm_embedding.dart';
@@ -18,6 +22,7 @@ import 'litert_lm_runtime.dart' as legacy;
 import 'litert_lm_runtime_client_contract.dart';
 import 'litert_lm_sampler_params.dart';
 
+part 'litert_lm_v1_embedding.dart';
 part 'litert_lm_v1_conversation.dart';
 part 'litert_lm_v1_conversation_settings.dart';
 part 'litert_lm_v1_engine_settings.dart';
