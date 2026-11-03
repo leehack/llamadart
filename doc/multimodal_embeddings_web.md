@@ -39,7 +39,7 @@ Bridge source contract inspected read-only at
 restore and structured-clone ownership; those are bridge responsibilities.
 
 Qualification target: EmbeddingGemma-2 BF16 with its matching
-mmproj and pinned assets `v0.1.81` on Chrome CPU wasm memory64
+mmproj and pinned assets `v0.1.82` on Chrome CPU wasm memory64
 (`gpuLayers: 0`). The scenario below checks the bridge's production worker
 budget against references from the matching native `v0.8.0`.
 The table below retains the original `v0.1.66` lineage

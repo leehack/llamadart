@@ -372,7 +372,7 @@ const String bridgeLlamaCppTag = 'v0.8.0';
 const String bridgeLlamaCppCommit = '8642541b255bfb5dc39cd351a178be09013a55d6';
 
 /// The exact bridge source commit used to build the pinned bridge assets.
-const String bridgeSourceCommit = '76b7624e9d2121c3b95235c7c429d17c901f4fea';
+const String bridgeSourceCommit = 'e57b9f68fb38d1471af7b94443229993f777df97';
 
 /// Canonical repository identities recorded in the approved manifest.
 const String bridgeAssetsRepository = 'leehack/llama-web-bridge-assets';
@@ -389,10 +389,10 @@ const String bridgeNativeReleaseTag = 'v0.8.0-1';
 const String bridgeApprovedNativePin = 'v0.8.0-1';
 
 /// The asset repository release that published the pinned bridge assets.
-const String bridgeAssetsReleaseId = '431736436';
+const String bridgeAssetsReleaseId = '432258348';
 
 /// The asset repository commit the pinned bridge asset tag points at.
-const String bridgeAssetsTagCommit = 'ac8971a7c30f9a4033b7f36f2322a4dfc021df5f';
+const String bridgeAssetsTagCommit = '33c782f2acdae78860ad1197344240f60290cecb';
 
 /// SHA-256 hash of the exact approved published manifest.json.
 ///

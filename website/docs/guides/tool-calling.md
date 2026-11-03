@@ -224,7 +224,7 @@ add an unsupported format or backend protocol. This corrects
 [#1713](https://github.com/leehack/llamadart/issues/1713), while the reasoning
 boundary is tracked by [#1714](https://github.com/leehack/llamadart/issues/1714).
 LFM2/LFM2.5 `ToolChoice.auto` uses a schema-directed Python-call grammar on
-native llama.cpp. It waits for a tool-start marker outside reasoning, allowing
+native llama.cpp and supported Web bridge runtimes. It waits for a tool-start marker outside reasoning, allowing
 ordinary text before a call, then enforces declared names, required and unique
 arguments, value types, and the explicit parallel flag. Prompt tokens seed only
 the penalty sampler, preserving sampling before activation without feeding the
@@ -243,8 +243,10 @@ number of backslashes throw
 above. Grammar constrains structure and types, not the accuracy of copied text.
 
 The new auto path requires both lazy grammar and prompt penalties with grammar.
-Published Web assets lack the latter capability ([bridge #207](https://github.com/leehack/llama-web-bridge/issues/207)), so it throws a typed unsupported
-error before inference on Web. A custom backend must implement
+Web requires assets v0.1.82+ whose loaded core reports both `lazyGrammar` and
+`penaltyPromptTokensWithGrammar`. Missing, false or non-boolean reports reject
+before inference. This scoped Web route is text-only; ordinary grammar requests
+keep their previous prompt-penalty behavior. A custom backend must implement
 `BackendPromptPenaltyGeneration` from `package:llamadart/backend.dart`, report
 its loaded runtime's truthful capability, and implement the scoped generation
 route; interface presence alone is insufficient. Optional native chat cannot

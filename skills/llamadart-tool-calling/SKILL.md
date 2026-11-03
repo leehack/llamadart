@@ -147,8 +147,9 @@ description: >-
 - Native llama.cpp enforces LFM2/LFM2.5 auto Python calls with a lazy schema
   grammar after a tool-start marker outside reasoning. Keep legacy `ToolParam`
   declarations typed; required/force-JSON requests retain their JSON grammar,
-  and `none` adds no tool grammar. Published Web assets cannot preserve prompt
-  penalties with grammar ([bridge #207](https://github.com/leehack/llama-web-bridge/issues/207)), so this new auto route throws before inference.
+  and `none` adds no tool grammar. Web text-only requests require assets
+  v0.1.82+ and loaded-core `lazyGrammar`/`penaltyPromptTokensWithGrammar` probes;
+  older runtimes or media inputs throw before inference.
   Custom backends need the truthful `BackendPromptPenaltyGeneration`
   capability and route from `package:llamadart/backend.dart`; implementing the
   interface with a false getter still rejects. Optional native chat cannot

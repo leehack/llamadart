@@ -44,6 +44,7 @@ typedef _WebGpuCompletionCapabilities = ({
   bool minP,
   bool thinkingBudget,
   bool penaltyPromptTokens,
+  bool penaltyPromptTokensWithGrammar,
   bool lazyGrammar,
   Set<SpeculativeDecodingStrategy> speculativeDecoding,
 });
@@ -65,6 +66,7 @@ class WebGpuLlamaBackend
         BackendGenerationUsageReporting,
         BackendGenerationLimitReporting,
         BackendChatPromptGeneration,
+        BackendPromptPenaltyGeneration,
         BackendNextTokenScoring,
         BackendNextTokenScoringSupport,
         BackendStatePersistence,
@@ -90,6 +92,7 @@ class WebGpuLlamaBackend
     minP: false,
     thinkingBudget: false,
     penaltyPromptTokens: false,
+    penaltyPromptTokensWithGrammar: false,
     lazyGrammar: false,
     speculativeDecoding: <SpeculativeDecodingStrategy>{},
   );
@@ -152,6 +155,10 @@ class WebGpuLlamaBackend
   /// Whether the loaded core reports lazy-grammar and custom-root support.
   @override
   bool get supportsLazyGrammar => _completionCapabilities.lazyGrammar;
+
+  @override
+  bool get supportsPromptPenaltiesWithGrammar =>
+      _completionCapabilities.penaltyPromptTokensWithGrammar;
 
   @override
   bool get supportsStatePersistence {
@@ -1073,6 +1080,9 @@ class WebGpuLlamaBackend
         minP: reported(capabilities.minP),
         thinkingBudget: reported(capabilities.thinkingBudget),
         penaltyPromptTokens: reported(capabilities.penaltyPromptTokens),
+        penaltyPromptTokensWithGrammar: reported(
+          capabilities.penaltyPromptTokensWithGrammar,
+        ),
         lazyGrammar: reported(capabilities.lazyGrammar),
         speculativeDecoding: webGpuSpeculativeStrategiesFrom(
           capabilities.speculativeDecoding,
@@ -1845,6 +1855,30 @@ class WebGpuLlamaBackend
   );
 
   @override
+  Stream<List<int>> generateWithPromptPenalties(
+    int contextHandle,
+    String prompt,
+    GenerationParams params, {
+    String? mediaMarker,
+    List<LlamaContentPart>? parts,
+  }) => webGpuValidateArguments(
+    () => _generate(
+      contextHandle,
+      mediaMarker == null
+          ? prompt
+          : chatPromptForMarkerRuntime(
+              prompt,
+              chatMarker: mediaMarker,
+              marker: mtmdMediaMarker,
+              runtimePlaceholders: webGpuBridgeMediaPlaceholders,
+            ),
+      params,
+      parts: parts,
+      countPromptTokensInPenalties: true,
+    ),
+  );
+
+  @override
   Stream<List<int>> generate(
     int contextHandle,
     String prompt,
@@ -1859,8 +1893,24 @@ class WebGpuLlamaBackend
     String prompt,
     GenerationParams params, {
     List<LlamaContentPart>? parts,
+    bool countPromptTokensInPenalties = false,
   }) {
     final capabilities = _completionCapabilities;
+    if (countPromptTokensInPenalties &&
+        !capabilities.penaltyPromptTokensWithGrammar) {
+      throw LlamaUnsupportedException(
+        'Web prompt penalties with grammar require bridge assets v0.1.82+ '
+        'whose loaded core reports penaltyPromptTokensWithGrammar; '
+        'the loaded core does not.',
+      );
+    }
+    if (countPromptTokensInPenalties &&
+        (params.grammar == null || isPromptExcludedFromPenalties(params))) {
+      throw LlamaUnsupportedException(
+        'Web prompt penalties with grammar require an attached grammar and '
+        'cannot be combined with prompt-penalty exclusion.',
+      );
+    }
     if (params.presencePenalty != 0.0 && !capabilities.presencePenalty) {
       throw UnsupportedError(
         'WebGPU presence penalty needs bridge assets whose '
@@ -1909,6 +1959,18 @@ class WebGpuLlamaBackend
         ? _bridgeGrammarTriggers(params.grammarTriggers)
         : null;
 
+    if (countPromptTokensInPenalties &&
+        (parts?.any(
+              (part) =>
+                  part is LlamaImageContent ||
+                  part is LlamaAudioContent ||
+                  part is LlamaVideoContent,
+            ) ??
+            false)) {
+      throw LlamaUnsupportedException(
+        'Web prompt penalties with grammar currently support text-only prompts.',
+      );
+    }
     final mediaParts = _buildMultimodalParts(parts);
     if (mediaParts != null && !_mmContextActive) {
       throw LlamaUnsupportedException(
@@ -2108,6 +2170,9 @@ class WebGpuLlamaBackend
       parts: mediaParts,
       signal: abortController.signal,
     );
+    if (countPromptTokensInPenalties) {
+      options.penaltyPromptTokensWithGrammar = true;
+    }
     // A core without the capability never counts the prompt, so there the
     // mark needs no option.
     if (capabilities.penaltyPromptTokens &&

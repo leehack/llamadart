@@ -126,9 +126,10 @@ in the llamadart-getting-started and llamadart-chat-streaming skills.
   throws `LlamaSpeechTranscriptTruncatedException` with
   `LlamaSpeechTranscriptLimit.runtime`: the bridge cannot distinguish output,
   context and media caps. Older bridges cannot report this truncation.
-- New LFM2 automatic Python tool grammar throws before inference: published
-  Web assets cannot preserve prompt penalties with grammar ([bridge #207](https://github.com/leehack/llama-web-bridge/issues/207)). Required/none and
-  existing generic auto routing retain their separate behavior.
+- LFM2 automatic Python tool grammar needs v0.1.82+ loaded-core
+  `lazyGrammar` and `penaltyPromptTokensWithGrammar` probes. This route is
+  text-only; missing/false capabilities reject before inference. Required/none
+  and existing generic auto routing retain their separate behavior.
 - WebGPU lazy grammars and custom `grammarRoot` need the loaded core to report
   `lazyGrammar` (`llama-web-bridge-assets` v0.1.75+). Check
   `(await engine.capabilities).supportsLazyGrammar`; an unsupported explicit

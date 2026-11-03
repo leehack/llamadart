@@ -14,6 +14,7 @@ validate against the exact release tag notes.
 ## Unreleased
 
 - Constrain native LFM2 automatic Python tool calls with lazy schema grammar, preserving copied string data and non-executable foreign-closing diagnostics; reject unsupported Web runtimes.
+- Preserve prompt penalties for supported Web LFM2 automatic tool grammars, with explicit loaded-core capability checks and unchanged ordinary grammar defaults.
 
 - Honor explicit parallel-tool requests even when template probes do not recognize parallel history ([#1713](https://github.com/leehack/llamadart/issues/1713)).
 - Keep LFM2 tool markers inside reasoning non-executable and preserve thought tags inside tool arguments ([#1714](https://github.com/leehack/llamadart/issues/1714)).
@@ -32,9 +33,9 @@ validate against the exact release tag notes.
 - Add Decision task APIs with typed completion and cooperative per-task cancellation.
 
 - Fail early with an actionable error when a Windows native runtime lacks speculative decoding helpers.
-- Aligned default WebGPU bridge assets to `v0.1.81` with bounded preallocation for large wasm32 model writes.
+- Aligned default WebGPU bridge assets to `v0.1.82` with bounded preallocation for large wasm32 model writes.
 
-Runtime baseline: native llama.cpp `v0.8.0-1` and Web use upstream `v0.8.0@8642541b255bfb5dc39cd351a178be09013a55d6`; Web LiteRT-LM stays `@litert-lm/core@0.18.0`. Manifest SHA-256: `7b3596e254e0767c577a084cb608ffe35118ae01afa85a4ba1a44c677afceebe`.
+Runtime baseline: native llama.cpp `v0.8.0-1` and Web use upstream `v0.8.0@8642541b255bfb5dc39cd351a178be09013a55d6`; Web LiteRT-LM stays `@litert-lm/core@0.18.0`. Manifest SHA-256: `fda19e047aba5a511020854437cc89e2f53e2f67f5f6cf5fec336faef3a6c362`.
 
 - Manage text, decision, image and speech engine lifecycles through `LlamadartEngine<C>` with typed capabilities and reentrant-safe final disposal.
 - Prepare llama.cpp worker cleanup during native creation for runtimes with owner API v1.
