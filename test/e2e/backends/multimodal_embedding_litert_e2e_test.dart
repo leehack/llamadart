@@ -4,10 +4,17 @@
 library;
 
 import 'dart:convert';
+import 'dart:ffi';
 import 'dart:io';
+import 'dart:isolate';
 import 'dart:math' as math;
 
+import 'package:crypto/crypto.dart';
 import 'package:llamadart/llamadart.dart';
+import 'package:llamadart/src/backends/litert_lm/litert_lm_backend.dart';
+import 'package:llamadart/src/backends/litert_lm/litert_lm_service.dart';
+import 'package:llamadart/src/backends/litert_lm/litert_lm_v1_runtime.dart';
+import 'package:llamadart/src/backends/litert_lm/worker.dart';
 import 'package:llamadart/src/backends/litert_lm/litert_lm_embedding.dart';
 import 'package:test/test.dart';
 
@@ -19,11 +26,47 @@ void main() {
   final temp = useSuiteSystemTemp();
   final model = Platform.environment['LITERT_LM_EMBEDDING_MODEL'];
   final gpu = Platform.environment['LITERT_LM_EMBEDDING_BACKEND'] == 'gpu';
+  final candidate = Platform.environment['LITERT_LM_V1_LIBRARY'];
+  setUpAll(() async {
+    if (candidate == null) return;
+    for (final entry in {
+      'LITERT_LM_V1_LIBRARY': candidate,
+      'LITERT_LM_EMBEDDING_MODEL': model,
+    }.entries) {
+      final expected = Platform.environment['${entry.key}_SHA256'];
+      expect(expected, matches(RegExp(r'^[0-9a-f]{64}$')));
+      expect(entry.value, isNotNull);
+      expect(
+        (await sha256.bind(File(entry.value!).openRead()).first).toString(),
+        expected,
+      );
+    }
+  });
+  Future<LlamaEngine> createEngine() async {
+    if (candidate == null) return LlamaEngine(LlamaBackend());
+    final port = ReceivePort();
+    try {
+      runLiteRtLmWorkerForTesting(
+        port.sendPort,
+        LiteRtLmService(
+          runtimeClientFactory: () =>
+              LiteRtLmV1RuntimeClient(DynamicLibrary.open(candidate)),
+        ),
+        exitOnDispose: false,
+      );
+      return LlamaEngine(
+        LiteRtLmBackend(initialSendPort: await port.first as SendPort),
+      );
+    } finally {
+      port.close();
+    }
+  }
+
   test(
     'unload and dispose cancel a sixty-item native batch between items',
     () async {
       for (final dispose in [false, true]) {
-        final engine = LlamaEngine(LlamaBackend());
+        final engine = await createEngine();
         addTearDown(engine.dispose);
         await engine.loadModel(
           model!,
@@ -63,7 +106,7 @@ void main() {
   );
   test('repeated CPU embeddings of every input are bit-identical '
       '(litert-lm-native#82, llamadart#1340)', () async {
-    final engine = LlamaEngine(LlamaBackend());
+    final engine = await createEngine();
     addTearDown(engine.dispose);
     await engine.loadModel(
       model!,
@@ -86,7 +129,7 @@ void main() {
     }
   }, skip: model == null ? 'Set LITERT_LM_EMBEDDING_MODEL.' : false);
   test('LiteRT embedding-only model text/media/batch/limits/reuse', () async {
-    final engine = LlamaEngine(LlamaBackend());
+    final engine = await createEngine();
     addTearDown(engine.dispose);
     await engine.loadModel(
       model!,

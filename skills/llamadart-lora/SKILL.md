@@ -75,17 +75,17 @@ llamadart applies LoRA adapters at inference time; it does not train them.
     `ModelSource.path` is a URL relative to the document, or a `blob:` URL. Older bridge assets throw
     `LlamaUnsupportedException` on every LoRA call and on a load with
     `ModelParams.loras`.
-  - Native LiteRT-LM (`.litertlm`): exactly one text adapter at scale `1.0`,
-    passed as `ModelParams.loras` at load. More than one adapter or a
-    non-default scale fails the load with `LlamaUnsupportedException`.
+  - Native LiteRT-LM (`.litertlm`): current upstream v0.18.1/v0.19.0 advanced
+    engines reject initial text adapters. The legacy setter accepting a path
+    does not prove adapter application; the C API 1.0 client refuses it.
+    Restoration is tracked in [owner #99](https://github.com/leehack/litert-lm-native/issues/99).
     `setLoraSource`, `removeLoraSource` and `clearLoras` throw
     `LlamaUnsupportedException`.
   - LiteRT-LM on web: no LoRA. Any `ModelParams.loras` entry fails the load and
     the runtime calls throw `LlamaUnsupportedException`.
 - Do not catch and ignore `LlamaUnsupportedException` from LoRA calls; it means
   the adapter is not applied. If output looks unchanged, confirm the model runs
-  on llama.cpp (`engine.getBackendName()`), or on native LiteRT-LM with the single
-  default-scale adapter passed at load.
+  on a compatible llama.cpp model (`engine.getBackendName()`).
 
 ## Examples
 

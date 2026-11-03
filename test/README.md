@@ -46,6 +46,18 @@ tool/testing/run_template_parity_suites.sh
 - Mark platform-specific files with `@TestOn('vm')` or `@TestOn('browser')`.
 - Use `@Tags(['local-only'])` for tests that should not run in default/CI flows.
 
+## Internal LiteRT C API 1.0 embeddings
+
+The `litert-lm-multimodal-embedding` local E2E scenario can exercise the
+injection-only v1 client without changing the public factory or runtime pin.
+Set `LITERT_LM_V1_LIBRARY` and its `LITERT_LM_V1_LIBRARY_SHA256`, plus
+`LITERT_LM_EMBEDDING_MODEL_SHA256`; pass the existing model through
+`--model-path` and select `--backend cpu`. The test verifies both files before
+loading native code, then runs the maintained multimodal, batch, cancellation
+and reuse controls. Synthetic media establishes transport, not retrieval quality.
+Run the scenario with `--dry-run` first. Omit the candidate-library variable to
+exercise the normal published runtime instead.
+
 ## FP8 image weights on Metal
 
 Use an existing FP8 checkpoint to verify public automatic/explicit Metal

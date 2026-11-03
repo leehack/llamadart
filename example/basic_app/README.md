@@ -24,7 +24,7 @@ are loaded; normal Dart build hooks can still prepare native assets.
 - **Automatic Model Management**: Accepts local paths, HTTP(S) URLs, and `hf://` Hugging Face model sources, then resolves remote sources through the package-managed cache.
 - **Platform Cache Defaults**: Remote model URLs use `DefaultModelDownloadManager`, so desktop/server runs share the per-user `llamadart` model cache while explicit local paths are loaded directly.
 - **Backend Optimization**: Defaults to GPU acceleration (Metal/Vulkan) when available on desktop and CPU for Android llama.cpp. Android Adreno 750 driver `2150604839` is excluded from Vulkan: automatic selection with a Vulkan preference uses CPU with a warning; explicit GPU requests throw.
-- **LoRA Adapters**: Load one or more LoRA adapters with repeated `--lora` flags.
+- **LoRA Adapters**: Load one or more compatible llama.cpp adapters with repeated `--lora` flags. Current native LiteRT-LM advanced engines reject initial text adapters.
 - **Structured Output**: Pass `--grammar` for GBNF-constrained generation.
 - **Tool Calling Test Mode**: Enable `--tool-test` to exercise function-calling flow. LFM2 Python-style calls use declared `ToolParam` types; declare strings as strings to preserve values such as `False` and copied backslashes. Tool markers inside LFM2 reasoning stay in reasoning rather than becoming tool requests.
 - **Sampling Controls**: Tune `--temp`, `--top-k`, `--top-p`, and `--penalty`.

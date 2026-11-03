@@ -830,6 +830,35 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
       ],
     ),
     LocalE2eScenario(
+      name: 'litert-lm-v1-asr-smoke',
+      group: LocalE2eScenarioGroup.dartLocalOnly,
+      description:
+          'Qualify exact v1 ASR inputs through the injected public speech probe and worker with an owned process deadline.',
+      requiresDevice: false,
+      stepsBuilder: (context) => [
+        LocalE2eCommandStep(
+          workingDirectory: context.projectRoot,
+          executable: 'dart',
+          arguments: [
+            'run',
+            'test/fixtures/litert_lm_v1_asr_qualification.dart',
+            context.environment['LITERT_LM_V1_LIBRARY']!,
+            context.environment['LITERT_LM_V1_LIBRARY_SHA256']!.toLowerCase(),
+            context.modelPath!,
+            context.environment['LITERT_LM_V1_MODEL_SHA256']!.toLowerCase(),
+            context.tokenizerPath!,
+            context.environment['LITERT_LM_V1_TOKENIZER_SHA256']!.toLowerCase(),
+            context.audioPath!,
+            context.environment['LITERT_LM_V1_AUDIO_SHA256']!.toLowerCase(),
+            context.modelPreset,
+            context.expect,
+          ],
+          description:
+              'Bounded injected v1 CPU ASR stream/task/cancellation qualification',
+        ),
+      ],
+    ),
+    LocalE2eScenario(
       name: 'text-to-speech-smoke',
       group: LocalE2eScenarioGroup.dartLocalOnly,
       description:
@@ -1653,6 +1682,42 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
             'LITERT_LM_BACKEND': context.backend,
           },
           description: 'LiteRT-LM lifecycle and process cleanup',
+        ),
+      ],
+    ),
+    LocalE2eScenario(
+      name: 'litert-lm-v1-service',
+      group: LocalE2eScenarioGroup.dartLocalOnly,
+      description:
+          'Qualify exact v1 library/model bytes through injected CPU service chat, native cancellation and reload.',
+      requiresDevice: false,
+      stepsBuilder: (context) => [
+        LocalE2eCommandStep(
+          workingDirectory: context.projectRoot,
+          executable: 'dart',
+          arguments: const [
+            'test',
+            '--run-skipped',
+            '-p',
+            'vm',
+            '-j',
+            '1',
+            '-t',
+            'local-only',
+            'test/e2e/backends/litert_lm_v1_service_e2e_test.dart',
+          ],
+          environment: {
+            'LITERT_LM_V1_MODEL': context.modelPath!,
+            for (final name in const [
+              'LITERT_LM_V1_LIBRARY',
+              'LITERT_LM_V1_LIBRARY_SHA256',
+              'LITERT_LM_V1_MODEL_SHA256',
+            ])
+              name: context.environment[name] ?? '',
+            'LITERT_LM_V1_LOG_DIR':
+                ?context.environment['LITERT_LM_V1_LOG_DIR'],
+          },
+          description: 'Bounded actual LiteRT v1 CPU service qualification',
         ),
       ],
     ),
@@ -2507,6 +2572,7 @@ Future<LocalE2eResult> runLocalE2e(
     'gguf-audio-chat-smoke',
     'speech-to-text-smoke',
     'litert-lm-asr-smoke',
+    'litert-lm-v1-asr-smoke',
     'litert-lm-chat-features-smoke',
     'chat-app-web-speech-to-text-smoke',
     'chat-app-web-text-to-speech-smoke',
@@ -2541,7 +2607,8 @@ Future<LocalE2eResult> runLocalE2e(
           'chat-app-web-speech-to-text-smoke.\n',
     );
   }
-  if (scenario.name == 'litert-lm-asr-smoke' &&
+  if ((scenario.name == 'litert-lm-asr-smoke' ||
+          scenario.name == 'litert-lm-v1-asr-smoke') &&
       (parsed.modelPath == null ||
           parsed.tokenizerPath == null ||
           parsed.audioPath == null ||
@@ -2685,6 +2752,7 @@ Future<LocalE2eResult> runLocalE2e(
   if ((scenario.name == 'llama-cpp-speculative-benchmark' ||
           scenario.name == 'llama-cpp-chat-template-smoke' ||
           scenario.name == 'litert-lm-lifecycle' ||
+          scenario.name == 'litert-lm-v1-service' ||
           scenario.name == 'litert-lm-json-schema' ||
           scenario.name == 'litert-lm-multimodal-embedding' ||
           scenario.name == 'litert-lm-web-text-history' ||
@@ -2704,6 +2772,37 @@ Future<LocalE2eResult> runLocalE2e(
       64,
       stderr: '--model-path is required for ${scenario.name}.\n',
     );
+  }
+
+  if (scenario.name == 'litert-lm-v1-service' ||
+      scenario.name == 'litert-lm-v1-asr-smoke') {
+    if (parsed.backend != 'cpu') {
+      return const LocalE2eResult(
+        64,
+        stderr: '--backend cpu is required for litert-lm-v1-service.\n',
+      );
+    }
+    final env = environment ?? Platform.environment;
+    for (final name in [
+      'LITERT_LM_V1_LIBRARY',
+      'LITERT_LM_V1_LIBRARY_SHA256',
+      'LITERT_LM_V1_MODEL_SHA256',
+      if (scenario.name == 'litert-lm-v1-asr-smoke') ...[
+        'LITERT_LM_V1_TOKENIZER_SHA256',
+        'LITERT_LM_V1_AUDIO_SHA256',
+      ],
+    ]) {
+      final value = env[name]?.trim() ?? '';
+      if (value.isEmpty ||
+          (name.endsWith('SHA256') &&
+              !RegExp(r'^[0-9a-fA-F]{64}$').hasMatch(value))) {
+        return LocalE2eResult(
+          64,
+          stderr:
+              '$name is required for litert-lm-v1-service (SHA256 inputs require 64 hexadecimal digits).\n',
+        );
+      }
+    }
   }
 
   if (scenario.name == 'text-embedding-retrieval') {

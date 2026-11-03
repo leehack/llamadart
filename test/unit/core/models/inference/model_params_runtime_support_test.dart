@@ -55,6 +55,19 @@ void main() {
     required bool web,
   }) => modelParamsUnsupportedBy(params, runtime, web: web);
 
+  test('unsupported LiteRT options do not advertise unavailable LoRA', () {
+    try {
+      checkModelParamsSupportedBy(
+        const ModelParams(batchSize: 128),
+        LlamaRuntime.liteRtLm,
+        web: false,
+      );
+      fail('llama.cpp-only batch size must be rejected');
+    } on LlamaUnsupportedException catch (error) {
+      expect(error.toString(), contains('batchSize'));
+      expect(error.toString().toLowerCase(), isNot(contains('lora')));
+    }
+  });
   test('defaults apply on every runtime', () {
     for (final runtime in LlamaRuntime.values) {
       for (final web in [false, true]) {

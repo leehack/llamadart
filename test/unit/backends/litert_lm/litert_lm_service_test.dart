@@ -153,52 +153,57 @@ void main() {
       expect(client.generateCount, 0);
       expect(client.createConversationCount, 0);
     });
-    test(
-      'provider construction failure cannot be treated as support',
-      () async {
-        final context = service.createContext(1, params);
-        client.onCreateConversation = () =>
-            throw StateError('/private/model-secret invalid EOS');
-        await expectLater(
-          service.prepareJsonSchemaChat(),
-          throwsA(
-            isA<LlamaUnsupportedException>().having(
-              (e) => e.message,
-              'redacted native diagnostic',
-              isNot(contains('model-secret')),
+    for (final nativeError in <(String, Object Function(String))>[
+      ('legacy', StateError.new),
+      ('v1', LlamaModelException.new),
+    ]) {
+      test(
+        '${nativeError.$1} provider failure cannot be treated as support',
+        () async {
+          final context = service.createContext(1, params);
+          client.onCreateConversation = () =>
+              throw nativeError.$2('/private/model-secret invalid EOS');
+          await expectLater(
+            service.prepareJsonSchemaChat(),
+            throwsA(
+              isA<LlamaUnsupportedException>().having(
+                (e) => e.message,
+                'redacted native diagnostic',
+                isNot(contains('model-secret')),
+              ),
             ),
-          ),
-        );
-        expect(client.generateCount, 0);
-        client.onCreateConversation = null;
-        await service.prepareJsonSchemaChat();
-        expect(client.lastJsonSchemaConfig, isTrue);
-        client.onCreateConversation = () =>
-            throw StateError('/private/model-secret schema-secret');
-        await expectLater(
-          service
-              .generateJsonSchemaChat(
-                context,
-                const [
-                  LlamaChatMessage.fromText(
-                    role: LlamaChatRole.user,
-                    text: 'p',
-                  ),
-                ],
-                const GenerationParams(),
-                jsonSchema: '{"type":"object"}',
-              )
-              .toList(),
-          throwsA(
-            isA<LlamaInferenceException>().having(
-              (e) => e.message,
-              'redacted schema diagnostic',
-              isNot(contains('secret')),
+          );
+          expect(client.generateCount, 0);
+          client.onCreateConversation = null;
+          await service.prepareJsonSchemaChat();
+          expect(client.lastJsonSchemaConfig, isTrue);
+          client.onCreateConversation = () =>
+              throw nativeError.$2('/private/model-secret schema-secret');
+          await expectLater(
+            service
+                .generateJsonSchemaChat(
+                  context,
+                  const [
+                    LlamaChatMessage.fromText(
+                      role: LlamaChatRole.user,
+                      text: 'p',
+                    ),
+                  ],
+                  const GenerationParams(),
+                  jsonSchema: '{"type":"object"}',
+                )
+                .toList(),
+            throwsA(
+              isA<LlamaInferenceException>().having(
+                (e) => e.message,
+                'redacted schema diagnostic',
+                isNot(contains('secret')),
+              ),
             ),
-          ),
-        );
-      },
-    );
+          );
+        },
+      );
+    }
   });
 
   group('bundleCapabilities', () {
