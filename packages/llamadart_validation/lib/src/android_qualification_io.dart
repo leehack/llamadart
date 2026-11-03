@@ -8,6 +8,7 @@ import 'package:path/path.dart' as p;
 import 'package:ffi/ffi.dart';
 
 import 'android_qualification.dart';
+import 'android_qualification_libraries.dart';
 
 /// Binds the child to the full admitted source/runtime/plan envelope.
 String androidQualificationExecutionHash(Map<String, dynamic> binding) =>
@@ -38,6 +39,7 @@ Map<String, dynamic> readAndroidQualificationBinding(
     'source_inventory_sha256',
     'hook_sha256',
     'probe_sha256',
+    'selector_sha256',
   ]) {
     if (value[key] is! String ||
         !RegExp(r'^[a-f0-9]{64}$').hasMatch(value[key] as String)) {
@@ -45,6 +47,7 @@ Map<String, dynamic> readAndroidQualificationBinding(
     }
   }
   final libraries = value['libraries'];
+  final archive = value['archive_libraries'];
   if (libraries is! Map ||
       !libraries.containsKey('libllama.so') ||
       !libraries.containsKey('libggml-vulkan.so') ||
@@ -52,22 +55,58 @@ Map<String, dynamic> readAndroidQualificationBinding(
     throw const FormatException('Missing diagnostic runtime inventory');
   }
   for (final entry in libraries.entries) {
-    final record = entry.value;
-    if (entry.key is! String ||
-        !RegExp(r'^lib[A-Za-z0-9_.-]+\.so$').hasMatch(entry.key as String) ||
-        record is! Map ||
-        record['bytes'] is! int ||
-        record['bytes'] <= 0 ||
-        record['sha256'] is! String ||
-        !RegExp(r'^[a-f0-9]{64}$').hasMatch(record['sha256'] as String)) {
-      throw const FormatException('Invalid diagnostic library lock');
-    }
+    _validateAndroidLibraryLock(entry.key, entry.value);
+  }
+  if (archive is! Map<String, dynamic> ||
+      archive.isEmpty ||
+      archive.containsKey('libllamadart_android_qualification.so')) {
+    throw const FormatException('Missing complete owner archive provenance');
+  }
+  for (final entry in archive.entries) {
+    _validateAndroidLibraryLock(entry.key, entry.value);
+  }
+  final expected = androidQualificationLibrarySelection(archive.keys);
+  final selection = value['packaging_selection'];
+  if (selection is! Map ||
+      selection.length != expected.length ||
+      expected.entries.any(
+        (entry) =>
+            !selection.containsKey(entry.key) ||
+            jsonEncode(selection[entry.key]) != jsonEncode(entry.value),
+      )) {
+    throw const FormatException(
+      'Diagnostic packaged selection differs from the normal hook',
+    );
+  }
+  final packaged = (expected['packaged'] as List<String>);
+  if (libraries.length != packaged.length + 1 ||
+      packaged.any(
+        (name) =>
+            !libraries.containsKey(name) ||
+            libraries[name]['bytes'] != archive[name]['bytes'] ||
+            libraries[name]['sha256'] != archive[name]['sha256'],
+      )) {
+    throw const FormatException(
+      'Diagnostic packaged inventory differs from owner bytes',
+    );
   }
   if (libraries['libllamadart_android_qualification.so']['sha256'] !=
       value['probe_sha256']) {
     throw const FormatException('Conflicting diagnostic probe identity');
   }
   return value;
+}
+
+void _validateAndroidLibraryLock(Object? name, Object? value) {
+  if (name is! String ||
+      !RegExp(r'^lib[A-Za-z0-9_.-]+\.so$').hasMatch(name) ||
+      value is! Map ||
+      value['bytes'] is! int ||
+      value['bytes'] <= 0 ||
+      value['sha256'] is! String ||
+      !RegExp(r'^[a-f0-9]{64}$').hasMatch(value['sha256'] as String)) {
+    throw const FormatException('Invalid diagnostic library lock');
+  }
 }
 
 /// Hashes actual regular files before any model load or child launch.
@@ -191,6 +230,8 @@ class AndroidQualificationStderr {
 ///
 /// Native controls also arm their own watchdog. This outer deadline kills only
 /// this child; model-free host tests do not prove Android executable admission.
+/// S24 callers validate their separate protocol and binding from the retained
+/// raw files; `protocol_complete` describes only the GGUF-shaped parser.
 Future<Map<String, dynamic>> captureAndroidNativeChild({
   required String executable,
   required List<String> arguments,
@@ -203,7 +244,7 @@ Future<Map<String, dynamic>> captureAndroidNativeChild({
   int stderrLimit = 8 * 1024 * 1024,
 }) async {
   if (!RegExp(r'^[a-f0-9]{64}$').hasMatch(binding) ||
-      !RegExp(r'^(a35|pixel8a)\.native\.[a-z-]+$').hasMatch(caseId) ||
+      !RegExp(r'^(a35|pixel8a|s24)\.native\.[a-z-]+$').hasMatch(caseId) ||
       timeout <= Duration.zero ||
       timeout > const Duration(seconds: 120) ||
       stdoutLimit <= 0 ||

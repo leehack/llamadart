@@ -1,5 +1,6 @@
 #include "llama.h"
 #include "ggml-backend.h"
+#include "vector_serialization.h"
 #include <algorithm>
 #include <chrono>
 #include <cmath>
@@ -137,18 +138,11 @@ void embed(llama_model * model, llama_context * context, bool probe_only) {
                     ",\"phase\":\"" + phase + "\",\"tokens\":" + std::to_string(tokens.size()) +
                     ",\"vector_f32_le_hex\":\"" + hex(std::string(
                         reinterpret_cast<const char *>(raw.data()), raw.size() * sizeof(float))) + "\"");
-                double norm = 0;
-                for (int i = 0; i < width; i++) {
-                    require(std::isfinite(raw[i]), "nonfinite embedding");
-                    norm += double(raw[i]) * raw[i];
-                }
-                norm = std::sqrt(norm); require(norm > 0, "zero embedding");
-                std::ostringstream vector; vector << std::setprecision(17);
-                for (int i = 0; i < width; i++) { if (i) vector << ","; vector << double(raw[i]) / norm; }
+                const auto vector = android_qualification::normalized_vector_json(raw);
                 emit("embedding", ",\"input\":" + std::to_string(input) +
                     ",\"phase\":\"" + phase + "\",\"tokens\":" + std::to_string(tokens.size()) +
                     ",\"operation_ms\":" + std::to_string(elapsed) +
-                    ",\"vector\":[" + vector.str() + "]");
+                    ",\"vector\":[" + vector + "]");
             }
         }
     } catch (...) { llama_set_embeddings(context, false); llama_batch_free(batch); throw; }

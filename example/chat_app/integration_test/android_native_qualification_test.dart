@@ -5,6 +5,7 @@ library;
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:crypto/crypto.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
@@ -251,8 +252,18 @@ void main() {
               LlamaModel(ModelSource.path(model.path)),
               params: plan.params(actual),
             );
+            final diagnosticBytes = File(
+              '${output.path}/$id.stderr.log',
+            ).readAsBytesSync();
+            record({
+              'event': 'public_geometry_stderr_snapshot',
+              'case_id': id,
+              'bytes': diagnosticBytes.length,
+              'sha256': sha256.convert(diagnosticBytes).toString(),
+              'text_view': 'utf8_allow_malformed',
+            });
             if (!matchesAndroidQualificationGeometry(
-              File('${output.path}/$id.stderr.log').readAsStringSync(),
+              androidQualificationDiagnosticText(diagnosticBytes),
               plan,
             )) {
               throw StateError(
@@ -295,8 +306,18 @@ void main() {
               }
             } else {
               for (var input = 0; input < 2; input++) {
-                final tokens = await engine.getTokenCount(plan.prompts[input]);
-                if (tokens != (input == 0 ? 9 : 46)) {
+                final tokenIds = await androidQualificationEmbeddingTokens(
+                  engine,
+                  plan.prompts[input],
+                );
+                record({
+                  'event': 'public_embedding_tokenization',
+                  'case_id': id,
+                  'input': input,
+                  'add_special': true,
+                  'token_ids': tokenIds,
+                });
+                if (tokenIds.length != (input == 0 ? 9 : 46)) {
                   throw StateError('Public token count mismatch');
                 }
                 for (final phase
@@ -311,7 +332,7 @@ void main() {
                     'event': 'embedding',
                     'input': input,
                     'phase': phase,
-                    'tokens': tokens,
+                    'tokens': tokenIds.length,
                     'sdk_wall_ms': clock.elapsedMicroseconds / 1000,
                     'vector': [
                       for (final value in vector) value.isFinite ? value : null,
@@ -366,6 +387,15 @@ void main() {
               await engine.dispose();
             } finally {
               stderr.close();
+              final bytes = File(
+                '${output.path}/$id.stderr.log',
+              ).readAsBytesSync();
+              record({
+                'event': 'public_stderr_capture',
+                'case_id': id,
+                'bytes': bytes.length,
+                'sha256': sha256.convert(bytes).toString(),
+              });
             }
           }
         });
