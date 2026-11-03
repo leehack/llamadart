@@ -61,7 +61,7 @@ void main() {
     },
   );
 
-  test('desktop GPU qualification is restricted to x64 Linux and Windows', () {
+  test('desktop GPU availability is restricted to x64 Linux and Windows', () {
     for (final abi in Abi.values) {
       expect(
         liteRtLmDesktopGpuSupportedForAbi(abi),

@@ -126,9 +126,10 @@ void liteRtLmEnsureNativeEmbeddingsQualified() {
   );
 }
 
-/// Returns whether a Linux or Windows ABI has qualified GPU runtime support.
+/// Returns whether a Linux or Windows ABI exposes the explicit GPU backend.
 ///
-/// ARM64 desktop targets remain unavailable until separately qualified.
+/// Backend availability does not establish model or hardware qualification.
+/// ARM64 desktop GPU backends remain unavailable.
 bool liteRtLmDesktopGpuSupportedForAbi(Abi abi) {
   return abi == Abi.linuxX64 || abi == Abi.windowsX64;
 }

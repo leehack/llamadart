@@ -69,9 +69,14 @@ feature. For which runtime supports which feature, see the
   hosts ([#572](https://github.com/leehack/llamadart/issues/572)).
 - Windows x64 LiteRT-LM GPU needs `dxil.dll` and `dxcompiler.dll`, which the
   pinned runtime bundles. Its GPU accelerator and sampler load
-  `webgpu_dawn.dll`, which the hook bundles. Qwen3 0.6B ran on an NVIDIA L4
-  (Direct3D 12) through `dart run` and a `dart build cli` bundle; a Flutter
-  Windows app has not been run with it.
+  `webgpu_dawn.dll`, which the hook bundles. Windows Qwen3 0.6B GPU execution
+  remains unqualified: the retained Windows Server 2022 / NVIDIA L4-vWS run
+  on `v0.17.0-7` emitted 24 Dawn validation errors despite passing all 15
+  functional checks. Conflicting storage usages and invalid command submissions
+  remain unresolved; a new runtime regression has not been established
+  ([litert-lm-native#64](https://github.com/leehack/litert-lm-native/issues/64)).
+  Use `ComputeDevice.cpu` to avoid this GPU path. A Flutter Windows app has not
+  been run with it.
 
 ## Android
 
