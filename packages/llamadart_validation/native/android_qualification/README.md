@@ -191,3 +191,16 @@ functional PASS rows cannot override it. The original c327 A35 run remains
 functional-only because its stderr/maps were not retained. The repaired export
 still requires physical-device qualification; local round-trip tests are not
 proof of provider retention.
+
+Recover a collected journal offline into a new directory:
+
+```sh
+python3 packages/llamadart_validation/native/android_qualification/decode_raw.py \
+  /local/diagnostic.jsonl --out /local/fresh-recovered-captures
+python3 -m unittest discover \
+  -s packages/llamadart_validation/native/android_qualification \
+  -p test_decode_raw.py -v
+```
+
+Successful decoding proves raw integrity only. It does not establish GPU
+placement, correct effective geometry, functional success or release readiness.
