@@ -4009,10 +4009,9 @@ def replace_swift_binary_target_checksum(
     return updated
 
 
-def _remove_litert_lm_obsolete_topk_samplers(
-    swift_text: str, *, current_tag: str,
-) -> str:
-    # This is the maintained nine-target topology before the v0.19 inventory.
+def _validate_litert_lm_v019_swift_topology(
+    swift_text: str, *, current_tag: str, include_obsolete_samplers: bool,
+) -> dict[str, str]:
     platforms = {
         "LiteRtLm": ".iOS, .macOS",
         "CLiteRTLM": ".iOS",
@@ -4024,7 +4023,10 @@ def _remove_litert_lm_obsolete_topk_samplers(
         "LiteRtWebGpuAccelerator": ".macOS",
         "WebgpuDawn": ".macOS",
     }
-    label = "LiteRT-LM v0.19 sampler removal"
+    if not include_obsolete_samplers:
+        platforms.pop("LiteRtTopKMetalSampler")
+        platforms.pop("LiteRtTopKWebGpuSampler")
+    label = "LiteRT-LM v0.19 Swift topology"
     assets = swift_native_repo_binary_targets(
         swift_text, tag_variable="liteRtLmTag", current_tag=current_tag,
     )
@@ -4077,12 +4079,21 @@ def _remove_litert_lm_obsolete_topk_samplers(
         "", dependencies[0] if dependencies else "",
     ).strip(" \t\r\n,"):
         raise ReleaseError(f"{label} has malformed dependency inventory")
+    return blocks
+
+
+def _remove_litert_lm_obsolete_topk_samplers(
+    swift_text: str, *, current_tag: str,
+) -> str:
+    blocks = _validate_litert_lm_v019_swift_topology(
+        swift_text, current_tag=current_tag, include_obsolete_samplers=True,
+    )
     for sampler, platform in (
         ("LiteRtTopKMetalSampler", ".iOS"),
         ("LiteRtTopKWebGpuSampler", ".macOS"),
     ):
         if swift_text.count(sampler) != 3:
-            raise ReleaseError(f"{label} has ambiguous sampler references")
+            raise ReleaseError("LiteRT-LM v0.19 removal has ambiguous sampler references")
         swift_text = swift_text.replace(blocks[sampler], "", 1)
         swift_text = replace_one(
             swift_text,
@@ -4135,6 +4146,14 @@ def prepare_litert_lm_package_swift(
                 swift_text, current_tag=original_tag,
             )
             current_targets -= obsolete_samplers
+        if (
+            manifest["upstream"]["compatibilityTag"] == "v0.19.0"
+            and expected_targets == sampler_free_targets
+            and current_targets == expected_targets
+        ):
+            _validate_litert_lm_v019_swift_topology(
+                swift_text, current_tag=original_tag, include_obsolete_samplers=False,
+            )
         if current_targets == legacy_targets:
             if swift_text.count("GemmaModelConstraintProvider") != 3:
                 raise ReleaseError(

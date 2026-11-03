@@ -870,6 +870,42 @@ class LiteRtV019SamplerTransitionTest(unittest.TestCase):
         self.assertEqual(prepared, expected)
         self.assertEqual(self.prepare(prepared), prepared)
 
+    def test_already_current_topology_rejects_wrong_ios_platform(self) -> None:
+        prepared = self.prepare(self.original)
+        original = '.target(name: "CLiteRTLM", condition: .when(platforms: [.iOS])),'
+        malformed = prepared.replace(original, original.replace(".iOS", ".macOS"))
+        self.assertNotEqual(malformed, prepared)
+        with self.assertRaisesRegex(ReleaseError, "platform dependency"):
+            self.prepare(malformed)
+
+    def test_already_current_topology_rejects_missing_ios_dependency(self) -> None:
+        prepared = self.prepare(self.original)
+        dependency = '.target(name: "CLiteRTLM", condition: .when(platforms: [.iOS])),'
+        malformed = prepared.replace(dependency, "")
+        self.assertNotEqual(malformed, prepared)
+        with self.assertRaisesRegex(ReleaseError, "platform dependency"):
+            self.prepare(malformed)
+
+    def test_already_current_topology_rejects_wrong_repository(self) -> None:
+        prepared = self.prepare(self.original)
+        malformed = prepared.replace(
+            'repository: "leehack/litert-lm-native",',
+            'repository: "other/runtime",', 1,
+        )
+        self.assertNotEqual(malformed, prepared)
+        with self.assertRaisesRegex(ReleaseError, "canonical"):
+            self.prepare(malformed)
+
+    def test_already_current_topology_rejects_duplicate_binary_target(self) -> None:
+        prepared = self.prepare(self.original)
+        block = re.search(
+            r'(?m)^[ \t]*nativeRepoBinaryTarget\(\s*name: "CLiteRTLM",.*?^[ \t]*\),\n',
+            prepared, re.DOTALL,
+        ).group()
+        malformed = prepared.replace(block, block * 2)
+        with self.assertRaisesRegex(ReleaseError, "duplicate or unexpected"):
+            self.prepare(malformed)
+
     def test_actual_owner_projection_does_not_require_prebuilt_topk(self) -> None:
         self.assertEqual(self.projection["ownerCommit"], "7ea10d0cce10dfddbae273bb69e253d9ea97e1d2")
         self.assertEqual(self.projection["upstreamCommit"], "83ce6067f2e2a3fb697556928f93936693ded971")
