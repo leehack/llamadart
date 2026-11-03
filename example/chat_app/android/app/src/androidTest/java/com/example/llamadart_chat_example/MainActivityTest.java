@@ -175,7 +175,10 @@ public class MainActivityTest {
                     }
                     if (!request.exists()) { armedAt = 0; step = ""; }
                     else {
-                        JSONObject value = new JSONObject(java.nio.file.Files.readString(request.toPath()));
+                        String requestJson = StandardCharsets.UTF_8.newDecoder()
+                            .decode(java.nio.ByteBuffer.wrap(java.nio.file.Files.readAllBytes(request.toPath())))
+                            .toString();
+                        JSONObject value = new JSONObject(requestJson);
                         if (!nonce.equals(value.getString("nonce")) || value.getInt("pid") != Process.myPid()) {
                             throw new IOException("Qualification watchdog binding mismatch");
                         }
