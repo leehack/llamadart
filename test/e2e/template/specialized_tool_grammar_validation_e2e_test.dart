@@ -1884,6 +1884,78 @@ void main() {
     }
   });
 
+  test('LFM2 singleton copied quote spellings remain text or non-executable', () {
+    final tools = [
+      ToolDefinition(
+        name: 'record',
+        description: '',
+        parameters: [ToolParam.string('value', required: true)],
+      ),
+    ];
+    final values = [
+      r'''"{'path': 'D:\\work', 'message': "'q'r'}"''',
+      r'''"{'path': 'D:\\work', 'message': "'q'r'"}"''',
+      r"'alpha\\.example\\'.tail'",
+    ];
+    String output(String value) =>
+        '<|tool_call_start|>[record(value=$value)]<|tool_call_end|>';
+    const ambiguous =
+        '<|tool_call_start|>[record(value="{"count":13}")]<|tool_call_end|>';
+    _expectGrammar(
+      validator,
+      buildLfm2AutoGrammar(tools, parallelToolCalls: false)!,
+      valid: [...values.map(output), ambiguous],
+      invalid: [
+        '<|tool_call_start|>[record(value="{"count":13}", extra=True)]<|tool_call_end|>',
+        '<|tool_call_start|>[record(value="{"count":13}"), record(value="extra")]<|tool_call_end|>',
+      ],
+    );
+    for (final value in values) {
+      final parsed = Lfm2Handler().parseWithTools(output(value), tools: tools);
+      expect(jsonDecode(parsed.toolCalls.single.function!.arguments!), {
+        'value': value.substring(1, value.length - 1),
+      });
+    }
+    expect(
+      Lfm2Handler().parseWithTools(ambiguous, tools: tools).toolCalls,
+      isEmpty,
+    );
+  });
+
+  test('LFM2 unclosed copied path roots cannot extend through string data', () {
+    final tools = [
+      ToolDefinition(
+        name: 'record',
+        description: '',
+        parameters: [ToolParam.string('value', required: true)],
+      ),
+    ];
+    final grammar = buildLfm2AutoGrammar(tools, parallelToolCalls: false)!;
+    for (final quote in ['"', "'"]) {
+      for (final path in [r'prefix/\//-/suffix', r'D:\work\', r'\\server']) {
+        final raw =
+            '<|tool_call_start|>[record(value=$quote$path)]<|tool_call_end|>';
+        _expectGrammar(
+          validator,
+          grammar,
+          valid: [raw],
+          invalid: [
+            '$raw extra$quote)]<|tool_call_end|>',
+            raw.replaceFirst(')]', '),]'),
+            raw.replaceFirst(')]', '), record(value="extra")]'),
+          ],
+        );
+        final parsed = Lfm2Handler().parseWithTools(raw, tools: tools);
+        final legacy = Lfm2Handler().parse(raw);
+        expect(parsed.toolCalls, hasLength(1));
+        expect(
+          parsed.toolCalls.single.function!.arguments,
+          legacy.toolCalls.single.function!.arguments,
+        );
+      }
+    }
+  });
+
   test('LFM2 plain singleton strings preserve copied container data', () {
     final tools = [
       ToolDefinition(

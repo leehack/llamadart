@@ -9,6 +9,72 @@ import '../../../../support/gbnf_recognizer.dart';
 
 void main() {
   test(
+    'singleton strings preserve legacy quote spellings without rewriting',
+    () {
+      final tools = [
+        ToolDefinition(
+          name: 'record',
+          description: '',
+          parameters: [ToolParam.string('value', required: true)],
+        ),
+      ];
+      final grammar = GbnfRecognizer(
+        buildLfm2AutoGrammar(tools, parallelToolCalls: false)!,
+      );
+      final values = [
+        r'''"{'path': 'D:\\work', 'message': "'q'r'}"''',
+        r'''"{'path': 'D:\\work', 'message': "'q'r'"}"''',
+        r"'alpha\\.example\\'.tail'",
+      ];
+      for (final value in values) {
+        final raw =
+            '<|tool_call_start|>[record(value=$value)]<|tool_call_end|>';
+        expect(grammar.accepts(raw), isTrue, reason: raw);
+        final parsed = Lfm2Handler().parseWithTools(raw, tools: tools);
+        expect(parsed.toolCalls, hasLength(1), reason: raw);
+        expect(jsonDecode(parsed.toolCalls.single.function!.arguments!), {
+          'value': value.substring(1, value.length - 1),
+        }, reason: raw);
+      }
+      const ambiguous =
+          '<|tool_call_start|>[record(value="{"count":13}")]<|tool_call_end|>';
+      expect(grammar.accepts(ambiguous), isTrue);
+      expect(
+        Lfm2Handler().parseWithTools(ambiguous, tools: tools).toolCalls,
+        isEmpty,
+      );
+    },
+  );
+
+  test('unclosed copied paths cannot absorb the completed call and prose', () {
+    final tools = [
+      ToolDefinition(
+        name: 'record',
+        description: '',
+        parameters: [ToolParam.string('value', required: true)],
+      ),
+    ];
+    final grammar = GbnfRecognizer(
+      buildLfm2AutoGrammar(tools, parallelToolCalls: false)!,
+    );
+    for (final quote in ['"', "'"]) {
+      for (final path in [r'prefix/\//-/suffix', r'D:\work\', r'\\server']) {
+        final raw =
+            '<|tool_call_start|>[record(value=$quote$path)]<|tool_call_end|>';
+        expect(grammar.accepts(raw), isTrue, reason: raw);
+        expect(grammar.accepts('$raw extra$quote)]<|tool_call_end|>'), isFalse);
+        final legacy = Lfm2Handler().parse(raw);
+        final candidate = Lfm2Handler().parseWithTools(raw, tools: tools);
+        expect(candidate.toolCalls, hasLength(1));
+        expect(
+          candidate.toolCalls.single.function!.arguments,
+          legacy.toolCalls.single.function!.arguments,
+        );
+      }
+    }
+  });
+
+  test(
     'plain singleton strings retain copied wire spelling and value types',
     () {
       final tools = [

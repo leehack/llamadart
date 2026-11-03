@@ -32,6 +32,14 @@ String? buildLfm2AutoGrammar(
       copiedCalls.add(
         builder.copiedTool(tool.name, schema, 'copied-tool-$index'),
       );
+      copiedCalls.add(
+        builder.copiedTool(
+          tool.name,
+          schema,
+          'unclosed-tool-$index',
+          stringRule: 'unclosed-path-string',
+        ),
+      );
       calls.add(
         builder.canonicalTool(tool.name, schema, 'canonical-tool-$index'),
       );
@@ -80,6 +88,8 @@ final class _PythonGrammar {
     'single-string': r'''"'" ([^'\\] | "\\" .)* "'"''',
     'copied-path-string':
         r'''"\"" copied-path-char* "\\" "\"" | "'" copied-path-char* "\\" "'"''',
+    'unclosed-path-string':
+        r'''"\"" copied-path-char+ | "'" copied-path-char+''',
     'copied-path-char': '${_characterClass(_pathAscii)} | $_pathUnicode',
     'canonical-json-char':
         r'[^"\\\x7F\x00-\x1F] | [\\] (["\\bfnrt] | "u" [0-9a-fA-F]{4})',
@@ -107,11 +117,16 @@ final class _PythonGrammar {
         field.value.keys.every((key) => key == 'type' || key == 'description');
   }
 
-  String copiedTool(String name, Map<String, dynamic> schema, String rule) {
+  String copiedTool(
+    String name,
+    Map<String, dynamic> schema,
+    String rule, {
+    String stringRule = 'copied-path-string',
+  }) {
     final key = _fields(schema).keys.single;
     rules[rule] =
         '${ToolCallGrammarUtils.literal(name)} "(" ws '
-        '${ToolCallGrammarUtils.literal(key)} ws "=" ws copied-path-string '
+        '${ToolCallGrammarUtils.literal(key)} ws "=" ws $stringRule '
         'close-ws ")"';
     return rule;
   }
@@ -166,12 +181,18 @@ final class _PythonGrammar {
     if (rules.containsKey('copied-value')) return;
     // The parser retains these spellings as text in a plain string argument.
     // Keeping the emitted spelling avoids forcing a model to re-encode data.
-    rules['copied-value'] = 'copied-container | copied-bare';
+    rules['copied-value'] =
+        'copied-container | copied-bare | copied-quoted-container';
     rules['copied-container'] =
         '"{" copied-fragment* "}" | "[" copied-fragment* "]" | '
         '"(" copied-fragment* ")"';
     rules['copied-fragment'] =
         r'''py-string | copied-container | [^"'(){}\[\]<>]''';
+    rules['copied-quoted-container'] =
+        r'''"\"" copied-opaque-container "\"" | "'" copied-opaque-container "'"''';
+    rules['copied-opaque-container'] =
+        '"{" copied-opaque-fragment* "}" | "[" copied-opaque-fragment* "]"';
+    rules['copied-opaque-fragment'] = r'copied-opaque-container | [^{}\[\]<>]';
     rules['copied-bare-char'] = r'''[^"'(),{}\[\]<> \t\n\r]''';
     rules['copied-bare'] =
         'copied-bare-char+ ([ \\t\\n\\r]{1,$_maxWhitespace} '
@@ -187,10 +208,14 @@ final class _PythonGrammar {
       final prefix = '$name-prefix';
       final escape = '$name-escape';
       final pathWithoutSlash = _pathAscii.replaceAll(r'\', '');
+      final quoteContinuation = _characterClass(
+        pathWithoutSlash.replaceAll(' ', ''),
+      );
       final nonPath = String.fromCharCodes([
         for (var char = 0; char < 128; char++)
           if (!_pathAscii.codeUnits.contains(char) &&
-              char != quote.codeUnitAt(0))
+              char != quote.codeUnitAt(0) &&
+              char != 0x29)
             char,
       ]);
       final nonPathRule = _characterClass(nonPath);
@@ -200,12 +225,13 @@ final class _PythonGrammar {
       rules[body] =
           '(${_characterClass('$quote\\', inverted: true)} | $slash .)* $endQuote';
       rules[prefix] =
-          '$endQuote | (${_characterClass(pathWithoutSlash)} | '
-          '$_pathUnicode) '
-          '$prefix | $slash $escape | $nonPathRule $body';
+          '$endQuote | $endQuote ($quoteContinuation | $_pathUnicode) $prefix | '
+          '(${_characterClass(pathWithoutSlash)} | '
+          '$_pathUnicode) $prefix | $slash $escape | '
+          '")" $name-gap-1-0 | $nonPathRule $body';
       rules[escape] =
           '$endQuote $name-gap-0-0 | copied-path-char $prefix | '
-          '$nonPathRule $body';
+          '")" $name-gap-1-0 | $nonPathRule $body';
 
       // A completed copied root must not also be a strict string prefix.
       // Track only that closing sequence; any deviation resumes the full body.
