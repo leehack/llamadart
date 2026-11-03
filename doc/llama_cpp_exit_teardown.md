@@ -251,11 +251,10 @@ control record until process termination. No guarantee covers arbitrary
 simultaneous parent/worker death. Token registration is separate from payload
 ownership.
 
-This core preparation does not change the native pin. The current published
-`v0.8.0-1` runtime has no owner API and retains the creation-time gap described
-below. Capability resolution is all-or-nothing, so absent/partial/unsupported
-owner APIs use the existing path rather than mixing ownership protocols.
-Native publication, repinning and exact-artifact qualification remain separate.
+The pinned `v0.8.0-2` runtime supplies owner API v1 for this creation-time
+cleanup path. Capability resolution remains all-or-nothing: custom runtimes
+with absent, partial or unsupported owner APIs use the existing path and
+retain its creation-time gap rather than mixing ownership protocols.
 
 Raw allocation-to-registration gaps remain under
 [#629](https://github.com/leehack/llamadart/issues/629): token buffers, sampler
