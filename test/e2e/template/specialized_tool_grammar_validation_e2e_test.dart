@@ -2054,6 +2054,251 @@ void main() {
     }
   });
 
+  test(
+    'LFM2 auto bounds structural whitespace without bounding string data',
+    () {
+      const start = '<|tool_call_start|>';
+      const end = '<|tool_call_end|>';
+      const body =
+          'configure(text="x",enabled=True,counts=[1,2],'
+          'config={"name":"z","other":False})';
+      final tools = [
+        ToolDefinition(
+          name: 'configure',
+          description: '',
+          parameters: [
+            ToolParam.string('text', required: true),
+            ToolParam.boolean('enabled', required: true),
+            ToolParam.array(
+              'counts',
+              itemType: ToolParam.integer('item'),
+              required: true,
+            ),
+            ToolParam.object(
+              'config',
+              properties: [
+                ToolParam.string('name', required: true),
+                ToolParam.boolean('other'),
+              ],
+              required: true,
+            ),
+          ],
+        ),
+        ToolDefinition(
+          name: 'save_note',
+          description: '',
+          parameters: [ToolParam.string('text', required: true)],
+        ),
+        ToolDefinition(name: 'clock', description: '', parameters: []),
+        ToolDefinition(
+          name: 'maybe',
+          description: '',
+          parameters: [ToolParam.boolean('enabled')],
+        ),
+        ToolDefinition(
+          name: 'collect',
+          description: '',
+          parameters: [
+            ToolParam.array(
+              'items',
+              itemType: ToolParam.string('item'),
+              required: true,
+            ),
+          ],
+        ),
+        ToolDefinition(
+          name: 'object',
+          description: '',
+          parameters: [
+            ToolParam.object('config', properties: [], required: true),
+          ],
+        ),
+      ];
+      final grammar = buildLfm2AutoGrammar(tools, parallelToolCalls: true)!;
+      String envelope(String call) => '$start[$call]$end';
+      final layouts = [
+        '$start~[$body]$end',
+        '$start[~$body]$end',
+        envelope(body.replaceFirst('configure(', 'configure(~')),
+        envelope(body.replaceFirst('text=', 'text~=')),
+        envelope(body.replaceFirst('text=', 'text=~')),
+        envelope(body.replaceFirst('"x",', '"x"~,')),
+        envelope(body.replaceFirst('"x",', '"x",~')),
+        envelope(body.replaceFirst('counts=[1', 'counts=[~1')),
+        envelope(body.replaceFirst('[1,2]', '[1~,2]')),
+        envelope(body.replaceFirst('[1,2]', '[1,~2]')),
+        envelope(body.replaceFirst('[1,2]', '[1,2~]')),
+        envelope(body.replaceFirst('config={', 'config={~')),
+        envelope(body.replaceFirst('"name":', '"name"~:')),
+        envelope(body.replaceFirst('"name":', '"name":~')),
+        envelope(body.replaceFirst('"z",', '"z"~,')),
+        envelope(body.replaceFirst('"z",', '"z",~')),
+        envelope(body.replaceFirst('False}', 'False~}')),
+        envelope(body.replaceFirst('})', '}~)')),
+        '$start[$body~]$end',
+      ];
+      final formatting = [' ' * 8, '\r\n' * 4, ' \t\r\n' * 2];
+      final valid = [
+        for (final layout in layouts)
+          for (final gap in formatting) layout.replaceFirst('~', gap),
+      ];
+      _expectGrammar(
+        validator,
+        grammar,
+        valid: valid,
+        invalid: [
+          for (final layout in layouts) layout.replaceFirst('~', ' ' * 9),
+        ],
+      );
+      for (final output in valid) {
+        final parsed = Lfm2Handler().parseWithTools(output, tools: tools);
+        expect(parsed.toolCalls, hasLength(1), reason: output);
+        expect(jsonDecode(parsed.toolCalls.single.function!.arguments!), {
+          'text': 'x',
+          'enabled': true,
+          'counts': [1, 2],
+          'config': {'name': 'z', 'other': false},
+        }, reason: output);
+      }
+      for (final (layout, expected) in [
+        ('clock(~)', <String, Object?>{}),
+        ('maybe(~)', <String, Object?>{}),
+        ('collect(items=[~])', <String, Object?>{'items': <Object?>[]}),
+        (
+          'object(config={~})',
+          <String, Object?>{'config': <String, Object?>{}},
+        ),
+      ]) {
+        final output = envelope(layout.replaceFirst('~', ' ' * 16));
+        _expectGrammar(
+          validator,
+          grammar,
+          valid: [output],
+          invalid: [envelope(layout.replaceFirst('~', ' ' * 17))],
+        );
+        final parsed = Lfm2Handler().parseWithTools(output, tools: tools);
+        expect(parsed.toolCalls, hasLength(1), reason: output);
+        expect(
+          jsonDecode(parsed.toolCalls.single.function!.arguments!),
+          expected,
+        );
+      }
+      for (final gap in [' ' * 128, '\t' * 64, '\r\n' * 32]) {
+        final text = 'A${gap}Z';
+        final stringCall = envelope('save_note(text="$text")');
+        final arrayCall = envelope('collect(items=["$text"])');
+        _expectGrammar(
+          validator,
+          grammar,
+          valid: [stringCall, arrayCall],
+          invalid: [],
+        );
+        for (final (output, expected) in [
+          (stringCall, <String, Object?>{'text': text}),
+          (
+            arrayCall,
+            <String, Object?>{
+              'items': [text],
+            },
+          ),
+        ]) {
+          final parsed = Lfm2Handler().parseWithTools(output, tools: tools);
+          expect(parsed.toolCalls, hasLength(1), reason: output);
+          expect(
+            jsonDecode(parsed.toolCalls.single.function!.arguments!),
+            expected,
+          );
+        }
+        final literalTools = [
+          ToolDefinition(
+            name: 'choose',
+            description: '',
+            parameters: [
+              ToolParam.enumType('text', values: [text], required: true),
+            ],
+          ),
+          ToolDefinition(
+            name: 'key',
+            description: '',
+            parameters: [
+              ToolParam.object(
+                'value',
+                properties: [ToolParam.string(text, required: true)],
+                required: true,
+              ),
+            ],
+          ),
+        ];
+        final literalGrammar = buildLfm2AutoGrammar(
+          literalTools,
+          parallelToolCalls: false,
+        )!;
+        final literalCalls = [
+          (envelope('choose(text="$text")'), <String, Object?>{'text': text}),
+          (
+            envelope('key(value={${jsonEncode(text)}:"v"})'),
+            <String, Object?>{
+              'value': {text: 'v'},
+            },
+          ),
+        ];
+        _expectGrammar(
+          validator,
+          literalGrammar,
+          valid: [for (final row in literalCalls) row.$1],
+          invalid: [],
+        );
+        for (final (output, expected) in literalCalls) {
+          final parsed = Lfm2Handler().parseWithTools(
+            output,
+            tools: literalTools,
+          );
+          expect(parsed.toolCalls, hasLength(1), reason: output);
+          expect(
+            jsonDecode(parsed.toolCalls.single.function!.arguments!),
+            expected,
+          );
+        }
+      }
+      for (final layout in [
+        r'save_note(~text="C:\temp\")',
+        r'save_note(text~="C:\temp\")',
+        r'save_note(text=~"C:\temp\")',
+      ]) {
+        _expectGrammar(
+          validator,
+          grammar,
+          valid: [envelope(layout.replaceFirst('~', ' ' * 8))],
+          invalid: [envelope(layout.replaceFirst('~', ' ' * 9))],
+        );
+      }
+    },
+  );
+
+  test('LFM2 auto jsonarr closed argument cannot loop before call end', () {
+    final tools = [
+      ToolDefinition(
+        name: 'save_note',
+        description: '',
+        parameters: [ToolParam.string('text', required: true)],
+      ),
+    ];
+    final grammar = buildLfm2AutoGrammar(tools, parallelToolCalls: false)!;
+    String output(String gap) =>
+        "<|tool_call_start|>[save_note(text=']['$gap)]<|tool_call_end|>";
+    _expectGrammar(
+      validator,
+      grammar,
+      valid: [output(''), output('\r\n' * 4)],
+      invalid: [output(' ' * 9), output('\r\n ' * 32)],
+    );
+    final parsed = Lfm2Handler().parseWithTools(output(''), tools: tools);
+    expect(parsed.toolCalls, hasLength(1));
+    expect(jsonDecode(parsed.toolCalls.single.function!.arguments!), {
+      'text': '][',
+    });
+  });
+
   test('LFM2 auto copied trailing backslashes stay in plain path calls', () {
     final stringTools = [
       ToolDefinition(

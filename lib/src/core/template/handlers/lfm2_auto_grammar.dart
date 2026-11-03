@@ -52,7 +52,8 @@ final class _PythonGrammar {
   int _argumentStates = 0;
   int _nextValue = 0;
   final Map<String, String> rules = {
-    'ws': r'[ \t\n\r]*',
+    // This rule is structural only; string and literal payloads do not use it.
+    'ws': r'[ \t\n\r]{0,8}',
     'close-ws': r'[ \t\n\r]{0,8}',
     'py-string': 'double-string | single-string',
     'double-string': r'''"\"" ([^"\\] | "\\" .)* "\""''',

@@ -137,8 +137,10 @@ description: >-
   to 4096 states; unsupported schemas throw rather than silently dropping grammar.
   Auto enums ending in an odd number of backslashes throw unsupported before
   inference; use a plain string parameter for copied paths.
-  Auto grammar allows a trailing list comma and bounds each closing whitespace
-  gap to eight characters; whitespace inside argument values is unchanged.
+  Auto grammar allows a trailing list comma and bounds formatting whitespace
+  outside quoted strings: eight characters per separator, up to sixteen in an
+  empty call or container. Quoted argument values, enum literals and quoted
+  object keys keep their whitespace.
 - LFM2/LFM2.5 tool markers inside reasoning remain `thinking` text and never
   produce executable calls. Calls after the thought closes still work; literal
   `<think>`/`</think>` inside complete tool arguments remain argument data.
