@@ -18,6 +18,7 @@ part 'litert_lm_v1_conversation.dart';
 part 'litert_lm_v1_conversation_settings.dart';
 part 'litert_lm_v1_engine_settings.dart';
 part 'litert_lm_v1_turn_settings.dart';
+part 'litert_lm_v1_tokenizer.dart';
 
 typedef _VersionN = Int Function(Pointer<Int>, Pointer<Int>, Pointer<Int>);
 typedef _VersionD = int Function(Pointer<Int>, Pointer<Int>, Pointer<Int>);
@@ -358,6 +359,47 @@ final class LiteRtLmV1Runtime {
       for (final pointer in strings) {
         calloc.free(pointer);
       }
+    }
+  }
+
+  late final _V1TokenizerBindings _tokenizer = _V1TokenizerBindings(_library);
+
+  /// Tokenizes with the internal v1 engine and optionally prepends its BOS.
+  ///
+  /// A string BOS is tokenized separately, matching the legacy client. An idle
+  /// conversation may remain open; native work must be settled before access.
+  List<int> tokenize(String text, {bool addSpecial = true}) {
+    _requireTokenizerReady();
+    if (text.contains('\u0000')) {
+      throw LlamaArgumentException(
+        'C API 1.0 tokenizer text must not contain NUL.',
+      );
+    }
+    return _tokenizer.tokenize(this, text, addSpecial: addSpecial);
+  }
+
+  /// Copies detokenized UTF-8 before releasing its native result owner.
+  String detokenize(List<int> tokens) {
+    _requireTokenizerReady();
+    if (tokens.isEmpty) return '';
+    final snapshot = List<int>.of(tokens);
+    if (snapshot.any((token) => token < -0x80000000 || token > 0x7fffffff)) {
+      throw LlamaArgumentException(
+        'C API 1.0 token IDs must fit a signed C int.',
+      );
+    }
+    return _tokenizer.detokenize(this, snapshot);
+  }
+
+  void _requireTokenizerReady() {
+    _requireLive();
+    if (_engine == nullptr) {
+      throw LlamaStateException('Load a C API 1.0 engine before tokenization.');
+    }
+    if (nativeSettlement != LiteRtLmNativeSettlement.settled) {
+      throw LlamaStateException(
+        'C API 1.0 tokenization requires native settlement.',
+      );
     }
   }
 

@@ -404,6 +404,24 @@ native contract. Structured active messages, media, per-turn template context,
 schema constraints and additional penalty controls remain separate work. This
 preparation changes no public routing, capability or runtime pin.
 
+Internal v1 tokenization and detokenization now use status/out signatures and
+`size_t` counts. `addSpecial: false` skips BOS lookup; the default prepends the
+configured ID sequence or separately tokenizes its string, preserving the legacy
+client's ordering. A missing or empty BOS adds nothing. Borrowed arrays and UTF-8
+strings are copied before their result/union owner is deleted, including when
+BOS text requires a second tokenizer call. Empty detokenization returns `''`
+without a native call, after checking the engine lifetime.
+
+The whole tokenizer symbol group is checked before nonempty/native operations;
+legacy/version-skew libraries remain refused by the adapter's existing version
+admission. Failed statuses copy the calling thread's diagnostic before cleanup.
+Invalid native union types, null nonempty arrays/strings, and counts exceeding
+the adapter's signed 32-bit safety bound are refused. NUL text and out-of-C-int
+input IDs reject instead of being truncated. An idle conversation may stay open;
+pending or quarantined native work prohibits tokenizer access. These are internal
+migration controls, not model-tokenizer qualification or public v1 selection.
+Render, metadata, embeddings, metrics and complete service dispatch remain gaps.
+
 Use this checklist in native sync PRs:
 
 - Confirm `llamadart-native`, `litert-lm-native` or `stable-diffusion-native`
