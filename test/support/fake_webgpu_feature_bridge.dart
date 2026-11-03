@@ -237,6 +237,7 @@ class FakeFeatureBridge {
           'minP',
           'thinkingBudget',
           'penaltyPromptTokens',
+          'penaltyPromptTokensWithGrammar',
           'lazyGrammar',
         ]) {
           flags.setProperty(

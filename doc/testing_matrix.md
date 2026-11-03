@@ -1203,6 +1203,12 @@ requested grammar for word, pattern and pattern-full triggers. A scored token
 checks token activation. Custom-root, missing-trigger, invalid-grammar and replay
 rejection controls must preserve the runtime and subsequent plain output.
 
+The prompt-penalty control also runs wasm32 and memory64 in both direct and
+worker modes, checking actual runtime metadata. It finds a decisive scored
+prompt token, verifies unchanged ordinary grammar defaults, and verifies that
+explicit prompt penalties change the pick without activating a prompt-matching
+lazy trigger. Keep both memory64 assets beside the wasm32 files.
+
 This qualifies the Web grammar plumbing on the selected weights, not hardware
 WebGPU or LFM2 auto accuracy/enforcement (#1715). The latter still needs its
 separate template contract and false-probe restriction.

@@ -166,8 +166,8 @@ class ChatCompletionRequestPlanner {
         'LFM2 auto tool calling requires schema-directed lazy grammar and '
         'prompt-penalty preservation. The active backend/runtime does not '
         'report both capabilities; use a supported native llama.cpp runtime '
-        'or ToolChoice.required. Published Web assets do not support this '
-        'combination yet.',
+        'or ToolChoice.required. Web requires bridge assets v0.1.82+ whose '
+        'loaded core reports lazyGrammar and penaltyPromptTokensWithGrammar.',
       );
     }
     if (requiresLfmAutoGrammar &&

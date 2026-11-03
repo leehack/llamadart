@@ -702,7 +702,7 @@
       "exemption": {
         "id": "lfm2-auto-python-grammar",
         "issue": "https://github.com/leehack/llamadart/issues/1715",
-        "reason": "Durable compiled grammar, native lazy activation, public completion routing, false/missing capability, draft-parameter copy, native worker transport and prompt-penalty sampler controls cover this bounded legacy ToolParam route. Affected-family fresh generation is a separate required exact-source gate; existing validation packs do not qualify LFM2 schema accuracy or new devices. Published Web assets lack prompt penalties with grammar (llama-web-bridge#207) and the new path rejects before dispatch; no Web enforcement or GPU qualification is claimed."
+        "reason": "Durable compiled grammar, native lazy activation, public completion routing, false/missing capability, draft-parameter copy, native worker transport and prompt-penalty sampler controls cover this bounded legacy ToolParam route. Affected-family fresh generation is a separate required exact-source gate; existing validation packs do not qualify LFM2 schema accuracy or new devices. Web loaded-core admission and version-skew refusal are covered by webgpu_backend_test.dart; prompt_penalty_grammar_e2e_test.dart checks direct/worker wasm32/memory64 transport and sampler behavior. These pipeline checks do not establish affected-family accuracy or hardware GPU qualification (llama-web-bridge#207)."
       }
     }
   ]

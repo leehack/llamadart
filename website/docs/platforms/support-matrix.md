@@ -129,7 +129,7 @@ native and web. Model architecture support depends on the pinned runtime; see
 | --- | --- | --- | --- | --- |
 | Decision tasks (cooperative) | Preflight stop or post-dispatch answer discard; no native interruption | Same, with decision-capable bridge assets | No | No |
 | LFM2 Python tool argument types | Declared legacy ToolParam types; copied string backslashes preserved | Same Dart parser; inference requires LFM-capable assets | N/A: LFM GGUF format | N/A: LFM GGUF format |
-| LFM2 auto Python-call grammar | Lazy schema enforcement with prompt penalties preserved; legacy ToolParam declarations | Typed unsupported: published assets lack prompt penalties with grammar | N/A: LFM GGUF format | N/A: LFM GGUF format |
+| LFM2 auto Python-call grammar | Lazy schema enforcement with prompt penalties preserved; legacy ToolParam declarations | Text-only; requires v0.1.82+ loaded-core `lazyGrammar` and `penaltyPromptTokensWithGrammar` probes; otherwise typed unsupported | N/A: LFM GGUF format | N/A: LFM GGUF format |
 | LFM2 reasoning tool markers | Stay in reasoning; no executable calls | Same Dart parser; inference requires LFM-capable assets | N/A: LFM GGUF format | N/A: LFM GGUF format |
 | Explicit parallel tool flags | Supported Dart tool grammars honor the request independently of history probes | Same Dart routing; enforcement depends on the active grammar capability | Runtime-managed; no new constraint capability | No tool declarations |
 | Model-free setup report | Desktop IO only; publication policy, no native/model probe | Typed unsupported; no live browser check | Desktop IO only; publication policy, no native/model probe | Typed unsupported |

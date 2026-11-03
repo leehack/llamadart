@@ -12,6 +12,10 @@ void main() {
   test('grammar failures preserve the typed category without loose matching', () {
     for (final (message, matcher) in <(String, Matcher)>[
       (
+        'The loaded WebGPU core does not support CompletionOptions.penaltyPromptTokensWithGrammar.',
+        isA<LlamaUnsupportedException>(),
+      ),
+      (
         'The loaded WebGPU core does not support CompletionOptions.grammarLazy.',
         isA<LlamaUnsupportedException>(),
       ),

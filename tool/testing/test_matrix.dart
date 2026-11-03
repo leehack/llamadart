@@ -810,8 +810,9 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
     mode: 'local-only',
     covers:
         'lazy word/pattern/pattern-full/token activation after visible text, '
-        'custom roots and typed grammar rejection/reuse through pinned assets '
-        'in direct and worker CPU Wasm runtimes; no tool accuracy or GPU claim',
+        'custom roots, grammar prompt penalties and typed rejection/reuse through '
+        'pinned assets in direct and worker CPU Wasm runtimes; prompt penalties '
+        'cover wasm32 and memory64; no tool accuracy or GPU claim',
     command:
         'dart run tool/testing/run_local_e2e.dart --scenario web-lazy-grammar',
     useWhen:
