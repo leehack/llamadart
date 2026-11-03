@@ -1238,3 +1238,19 @@ is uncertain. No automatic retry or accuracy-prompt tuning is performed.
 This is schema enforcement and lifecycle evidence. It does not establish general
 reasoning/geography accuracy, GPU/media support, public v1 activation or the
 native IDs of the earlier malformed-output generation.
+
+
+### Internal LiteRT v1 thinking budgets
+
+Use `litert-lm-v1-thinking-budget` only for the maintained Gemma4 CPU bundle and
+an explicitly admitted candidate runtime. It requires the core SHA256 and a
+hash-bound manifest of all adjacent dylib names, byte sizes and SHA256 values.
+It records actual loaded payload paths, native metrics/finish, exact output
+bytes, native rendered inputs and effective sampler values. One prospectively
+reviewed output cap of 1536 preserves both earlier 768-token failures; no automatic
+cap escalation is allowed. The fixed train prompt compares unbounded
+reasoning with budget 12, then checks no-budget isolation, cancellation, reload
+and a false-context refusal. Run `--dry-run` first; the model-job owner schedules
+the actual 600-second child. See [the adoption procedure](litert_lm_v1_adoption.md#actual-thinking-qualification)
+for the complete environment and unchanged model/oracle identity. Passing this
+scenario does not activate the public v1 factory or qualify GPU/media behavior.

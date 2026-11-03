@@ -243,3 +243,63 @@ fixed conflicting plain control, Unicode/typed constrained output with thinking
 disabled, ordinary followup, real cancellation, reuse and reload. This prepares
 actual candidate qualification; adding the scenario alone does not satisfy that
 gate or enable public v1 routing. See `doc/testing_matrix.md`.
+
+
+## Actual thinking qualification
+
+`litert-lm-v1-thinking-budget` is a separate local-only preparation scenario for
+the maintained `gemma4-litert-cpu` bundle (SHA256 `181938105e0eefd105961417e8da75903eacda102c4fce9ce90f50b97139a63c`).
+It preserves the existing generation-controls train prompt, deterministic
+sampler and reasoning oracle: unbounded reasoning exceeds 24 tokens, budget 12
+allows at most 14 tokenized reasoning tokens and requires nonempty final content.
+Every send uses one fixed total output cap of 1536 tokens. This is a separately
+reviewed prospective run: the earlier candidate and legacy 768-token baseline
+failures remain failed evidence. There is no automatic cap escalation.
+Completed generations must report a native stop and settled work. Unbounded
+bytes must match before and after the bounded turn, cancellation and reload.
+Cancellation requires actual output and a native cancelled cause. A separate
+client refuses an explicit budget under false context, then proves bounded reuse.
+Before direct client initialization, the qualifier creates and write-probes a
+private cache under its existing scratch directory. The outer scratch owner
+retains that cache until the owned child exits, including unsettled cleanup.
+
+Native finish and settlement observations belong to the exact client/engine
+epoch recorded by successful native creation. A harmless tokenizer call forces
+lazy initialization before capturing each turn's owner; capability probes never
+select it. Unknown finish evidence from a new owner cannot borrow a disposed
+client's earlier stop result. Engine replacement during a turn is refused.
+
+The scenario requires core and manifest SHA256 inputs. The manifest is a JSON
+array of every adjacent runtime dylib, each with basename `name`, positive
+`bytes` and lowercase `sha256`; optional metadata is ignored. All files must
+remain within the core directory. The child verifies each payload before loading
+and records dependency graphs, actual dyld-loaded runtime paths, effective
+status-checked sampler values, marker token IDs, emitted assembled UTF-8 bytes,
+native metrics/finish causes and native stderr before checking the oracles.
+Before every service send, a delegating observer captures the actual native
+rendering, UTF-8 bytes, hash and native token IDs with and without start tokens,
+plus conversation settings after successful production status checks. The first
+baseline must match the preserved legacy native render byte-for-byte and by hash
+before generation; this prospective gate does not assert parity of the old failed
+candidate run. Later stages retain their prescribed inputs. Per-send
+settings remain labelled requested until the turn succeeds; no native sampler
+readback is claimed. Input metrics sum all prefill work, including native KV-cache
+refills after reasoning removal, so they are not the initial prompt-token count.
+Assembled output bytes are not represented as raw native response JSON.
+
+Run the dry-run below first. Execute only after the model-job owner admits the
+clean frozen source, exact runtime payload manifest and fixture identity. The
+outer test compiles and hashes an owned child, captures logs in a unique run
+directory and kills only that child at 600 seconds. No automatic retry or prompt
+selection is performed. This qualifies CPU budget enforcement and lifecycle,
+not train-answer accuracy, other models/backends or public v1 activation.
+
+```bash
+LITERT_LM_V1_LIBRARY=<candidate-libLiteRtLm.dylib> \
+LITERT_LM_V1_LIBRARY_SHA256=<sha256> \
+LITERT_LM_V1_RUNTIME_MANIFEST=<runtime-payloads.json> \
+LITERT_LM_V1_RUNTIME_MANIFEST_SHA256=<sha256> \
+LITERT_LM_V1_MODEL_SHA256=181938105e0eefd105961417e8da75903eacda102c4fce9ce90f50b97139a63c \
+dart run tool/testing/run_local_e2e.dart --scenario litert-lm-v1-thinking-budget \
+  --model-path <gemma-4-E2B-it.litertlm> --backend cpu --dry-run
+```
