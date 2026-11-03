@@ -25,9 +25,9 @@ interface does not establish backend/model support; read `await engine.capabilit
 ## Guidelines
 
 - Use the pinned native LiteRT-LM v0.18.1-4 runtime. Direct calls, service
-  probes and speech share ABI-aware discovery, but production C API 1 selection
-  remains disabled pending #1677 qualification. Versioned or unknown overrides
-  are refused before engine calls. The prepared C API 1 activation requires
+  probes and speech share ABI-aware discovery. Public selection admits legacy
+  runtimes and C API 1.0.x; unknown/future versions are refused before engine
+  calls. The default pin remains unchanged pending artifact adoption. C API 1 requires
   macOS 14+ even for custom library paths; it does not change Web selection.
 
 - For a model-free macOS/Linux/Windows setup snapshot, use

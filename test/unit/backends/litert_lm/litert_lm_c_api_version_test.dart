@@ -86,24 +86,32 @@ void main() {
       try {
         await expectLater(
           client.initialize(modelPath: 'unused.litertlm', backend: 'cpu'),
-          throwsA(
-            isA<LlamaUnsupportedException>()
-                .having(
-                  (error) => error.message,
-                  'version',
-                  contains(entry.value),
+          entry.key == 'v1'
+              ? throwsA(
+                  isA<LlamaUnsupportedException>().having(
+                    (error) => error.message,
+                    'incomplete admitted v1',
+                    contains('missing required preparation export'),
+                  ),
                 )
-                .having(
-                  (error) => error.message,
-                  'repair',
-                  contains('v0.18.1-4'),
-                )
-                .having(
-                  (error) => error.message,
-                  'migration',
-                  contains('#1677'),
+              : throwsA(
+                  isA<LlamaUnsupportedException>()
+                      .having(
+                        (error) => error.message,
+                        'version',
+                        contains(entry.value),
+                      )
+                      .having(
+                        (error) => error.message,
+                        'repair',
+                        contains('v0.18.1-4'),
+                      )
+                      .having(
+                        (error) => error.message,
+                        'migration',
+                        contains('#1677'),
+                      ),
                 ),
-          ),
         );
       } finally {
         client.dispose();

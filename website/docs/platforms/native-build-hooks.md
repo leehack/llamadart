@@ -99,7 +99,8 @@ hooks:
   that error on x86_64; a `libraryPath` passed to `LiteRtLmRuntimeClient`
   does for the legacy runtime. The prepared C API 1 selector keeps unsupported
   ABI checks and requires macOS 14+ before loading even an explicit path;
-  production C API 1 activation remains disabled pending #1677.
+  public selection admits C API 1.0.x while unknown/future versions remain
+  unsupported. The default runtime pin is unchanged pending artifact adoption.
 - An empty or all-unknown selection falls back to `llama_cpp` and
   `litert_lm`; one that leaves no runtime, such as `none`, fails the build.
 

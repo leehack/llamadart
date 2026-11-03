@@ -299,8 +299,9 @@ runtime it bundles. Then run the `image-generation-smoke` and
 LiteRT-LM 0.19 changes C function signatures to status returns and output
 parameters. The public lazy facade, service metadata/finish probes and speech
 worker share discovery and ABI selection. `_liteRtLmV1ProductionSelection` in
-`litert_lm_runtime_facade.dart` remains false pending #1677 qualification.
-Internal selector tests admit only C API 1.0.x; failed, malformed and future
+`litert_lm_runtime_facade.dart` enables public C API 1.0.x dispatch. Default
+owner pins remain unchanged pending qualified publication/adoption. Selector tests
+admit only C API 1.0.x; failed, malformed and future
 versions never retry legacy arities. The prepared path checks macOS 14+ before
 core or companion discovery, including explicit paths. A caller-opened library
 cannot retroactively prevent dlopen, so the direct v1 adapter also checks the
@@ -319,7 +320,9 @@ bounded to the failed backend; disposal never reports successful cleanup in this
 state. Do not kill the retained isolate or release its lease to make teardown
 appear complete.
 
-This transport preparation does not select C API 1 publicly. The owner proxy's
+Public ABI-aware selection is enabled, while owner pins remain unchanged and
+exact-artifact qualification is pending. This transport contract alone does not
+qualify an artifact or model. The owner proxy's
 callback ABI 2 and finish-reason ABI 1 alone do not establish lossless callback
 delivery under allocation failure. Owner
 [issue #97](https://github.com/leehack/litert-lm-native/issues/97) defines the

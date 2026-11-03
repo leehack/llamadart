@@ -196,14 +196,14 @@ void main() {
   );
 
   test(
-    'default public client still refuses C API 1 without engine calls',
+    'default public client initializes v1 and releases native owners',
     () async {
       final legacy = LiteRtLmRuntimeClient(libraryPath: libraryPath);
       addTearDown(legacy.dispose);
-      await expectLater(
-        initialize(LiteRtLmLegacyServiceClient(legacy)),
-        throwsA(isA<LlamaUnsupportedException>()),
-      );
+      await initialize(LiteRtLmLegacyServiceClient(legacy));
+      expect(legacy.supportsFinishReasons, isTrue);
+      expect(legacy.tokenize('ABC', addSpecial: false), [3, 65, 67]);
+      legacy.dispose();
       expect(nativeInt('live'), 0);
     },
   );

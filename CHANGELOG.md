@@ -1,5 +1,7 @@
 ## Unreleased
 
+- Enable ABI-aware native LiteRT-LM C API 1.0 public dispatch while retaining legacy runtime compatibility and typed unsupported guards.
+
 - Reject incomplete `LLAMADART_LITERT_LM_LIB_DIR` overrides instead of substituting a bundled or cached runtime.
 - Update the llama.cpp native runtime to `v0.8.0-2` for speculative-decoding rollback and model-creation ownership fixes, with matching Apple binaries.
 

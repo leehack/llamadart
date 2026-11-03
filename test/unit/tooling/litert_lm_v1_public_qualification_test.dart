@@ -13,13 +13,12 @@ import 'package:llamadart/src/backends/litert_lm/litert_lm_service.dart';
 import 'package:test/test.dart';
 
 import '../../support/dart_script_snapshot.dart';
-import '../../support/litert_lm_v1_public_qualification.dart';
 import '../../support/suite_system_temp.dart';
 
 void main() {
   useSuiteSystemTemp();
   late Directory directory;
-  late String script, core;
+  late String script, dispatchScript, core;
   late File model, manifest, chat, speech;
   late DynamicLibrary library;
   String hash(File file) => sha256.convert(file.readAsBytesSync()).toString();
@@ -31,6 +30,9 @@ void main() {
     );
     script = await compileDartScript(
       'test/fixtures/litert_lm_v1_public_qualification.dart',
+    );
+    dispatchScript = await compileDartScript(
+      'test/fixtures/litert_lm_v1_public_dispatch_smoke.dart',
     );
     final names = liteRtLmRequiredLibrariesForAbi(Abi.current());
     final coreName = Platform.isMacOS ? 'libLiteRtLm.dylib' : 'libLiteRtLm.so';
@@ -100,7 +102,7 @@ void main() {
   tearDownAll(() => directory.deleteSync(recursive: true));
   for (final route in ['direct', 'service', 'speech']) {
     test(
-      'public default $route refuses v1 before a model-free engine while activation is off',
+      'public default $route dispatches compiled v1 fixture and settles without overrides',
       () async {
         final config = route == 'speech' ? speech : chat;
         // Valid WAV bytes are needed to reach the default speech capability probe.
@@ -143,22 +145,7 @@ void main() {
         }
         final result = await Process.run(
           Platform.resolvedExecutable,
-          [
-            script,
-            '--child',
-            '--expect-disabled',
-            route,
-            core,
-            hash(File(core)),
-            model.path,
-            hash(model),
-            manifest.path,
-            hash(manifest),
-            config.path,
-            hash(config),
-            directory.path,
-            'model-free-public-refusal',
-          ],
+          [dispatchScript, route, core, model.path, config.path],
           environment: {
             'LLAMADART_LITERT_LM_LIB_DIR': directory.path,
             'TMPDIR': directory.path,
@@ -169,20 +156,12 @@ void main() {
           0,
           reason: '${result.stdout}\n${result.stderr}',
         );
-        final events = '${result.stdout}'
-            .split('\n')
-            .where((line) => line.startsWith(publicLiteRtLmEventPrefix))
-            .map(
-              (line) =>
-                  jsonDecode(line.substring(publicLiteRtLmEventPrefix.length))
-                      as Map<String, dynamic>,
-            )
-            .toList();
         expect(
-          publicLiteRtLmReceiptErrors(events, route, expectedDisabled: true),
-          isEmpty,
+          '${result.stdout}',
+          contains(
+            'PUBLIC_FIXTURE_DISPATCH $route settled; model_qualification=false',
+          ),
         );
-        expect(events.last['qualified_public_v1'], isFalse);
       },
     );
   }

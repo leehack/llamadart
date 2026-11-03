@@ -115,7 +115,7 @@ void main() {
       expect(client().supportsAsrBridge, isTrue);
       expect(
         LiteRtLmRuntimeClient(libraryPath: path).supportsAsrBridge,
-        isFalse,
+        isTrue,
       );
     },
   );

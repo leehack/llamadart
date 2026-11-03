@@ -14,8 +14,8 @@ description: >-
 ## Guidelines
 
 - Native LiteRT-LM speech probes and workers share the text client's ABI-aware
-  discovery. Production C API 1 activation remains disabled pending #1677;
-  keep the pinned runtime. The prepared selector checks macOS 14+ before owned
+  discovery. Public selection admits legacy runtimes and C API 1.0.x; the
+  default pin remains unchanged pending artifact adoption. The selector checks macOS 14+ before owned
   loads, including custom paths. ASR also requires its independent bridge
   version, layout and complete export group; a text C API version proves none
   of those capabilities.
