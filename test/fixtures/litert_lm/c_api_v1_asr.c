@@ -30,8 +30,10 @@ LitertLmAsrStatus litert_lm_asr_config_init_for_model_preset(LitertLmAsrConfig* 
  memset(c,0,sizeof(*c));c->struct_size=sizeof(*c);c->abi_version=1;c->sample_rate_hz=16000;c->num_channels=1;asr_preset=preset;return LITERT_LM_ASR_STATUS_OK;
 }
 void litert_lm_asr_result_init(LitertLmAsrResult* r) { memset(r,0,sizeof(*r));r->struct_size=sizeof(*r);asr_results++; }
-void litert_lm_asr_free_string(char* s) { if(s){memset(s,'X',strlen(s));free(s);asr_strings--;} }
-void litert_lm_asr_result_release(LitertLmAsrResult* r) { litert_lm_asr_free_string(r->confirmed_text);litert_lm_asr_free_string(r->unconfirmed_text);memset(r,0,sizeof(*r));asr_results--; }
+// Keep accounting local: ELF can interpose an earlier runtime's public export.
+static void asr_release_string(char* s) { if(s){memset(s,'X',strlen(s));free(s);asr_strings--;} }
+void litert_lm_asr_free_string(char* s) { asr_release_string(s); }
+void litert_lm_asr_result_release(LitertLmAsrResult* r) { asr_release_string(r->confirmed_text);asr_release_string(r->unconfirmed_text);memset(r,0,sizeof(*r));asr_results--; }
 LitertLmAsrStatus litert_lm_asr_engine_create(const LitertLmAsrConfig* c,LitertLmAsrEngine** out,char** error) {
  *out=NULL;*error=NULL;asr_backend=c->backend;asr_threads=c->num_threads;asr_buffers=c->max_buffered_audio_milliseconds;asr_overlap=c->overlap_ratio;
  snprintf(asr_model,sizeof(asr_model),"%s",c->model_path);snprintf(asr_tokenizer,sizeof(asr_tokenizer),"%s",c->tokenizer_path);

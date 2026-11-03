@@ -86,6 +86,30 @@ void main() {
     );
   });
   test(
+    'ELF global exports cannot bypass fixture string ownership accounting',
+    () async {
+      final executable = '${directory.path}/asr_elf_ownership_probe';
+      final compile = await Process.run('cc', [
+        '-std=c11',
+        '-rdynamic',
+        'test/fixtures/litert_lm/asr_elf_ownership_probe.c',
+        '-ldl',
+        '-o',
+        executable,
+      ]);
+      expect(compile.exitCode, 0, reason: '${compile.stderr}');
+      final result = await Process.run(executable, [path]);
+      expect(result.exitCode, 0, reason: '${result.stdout}\n${result.stderr}');
+      expect(
+        result.stdout,
+        contains('strings=0 results=0 engines=0 sessions=0 collision_calls=0'),
+      );
+    },
+    skip: !Platform.isLinux
+        ? 'ELF symbol interposition is Linux-specific'
+        : false,
+  );
+  test(
     'actual loaded v1 admits independent ASR without legacy core binding',
     () {
       expect(client().supportsAsrBridge, isTrue);
