@@ -442,6 +442,11 @@ one million turns are refused instead of truncated. Pending or quarantined
 native work prohibits metadata, render and benchmark calls. These remain
 fixture-backed ABI/lifetime controls without model or device qualification.
 
+The internal v1 client can now be explicitly injected through `LiteRtLmService` for text/tool chat, response assembly, metrics and lifetime
+checks. The existing public client and Web stub stay unchanged. This does not
+select v1 publicly: `doc/litert_lm_v1_adoption.md` tracks each existing call path,
+the remaining feature families and the owner/artifact gates before adoption.
+
 Use this checklist in native sync PRs:
 
 - Confirm `llamadart-native`, `litert-lm-native` or `stable-diffusion-native`

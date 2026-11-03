@@ -1,3 +1,5 @@
+#ifndef LITERT_V1_CONVERSATION_FIXTURE
+#define LITERT_V1_CONVERSATION_FIXTURE
 #include "c_api_v1_text.c"
 #include <assert.h>
 #include <stdint.h>
@@ -38,6 +40,7 @@ static int args_live, penalty_live;
 static turn_options sent_options;
 static bool sent_args;
 static char sent_message[8192];
+static char sent_extra_context[8192];
 int fixture_args_live(void) { return args_live; }
 int fixture_penalty_live(void) { return penalty_live; }
 int fixture_turn_int(int index) {
@@ -53,6 +56,7 @@ float fixture_turn_float(int index) {
   return index == 0 ? sent_options.repetition : index == 1 ? sent_options.presence : sent_options.frequency;
 }
 const char *fixture_message(void) { return sent_message; }
+const char *fixture_extra_context(void) { return sent_extra_context; }
 #ifndef OMIT_TURN_CREATE
 int litert_lm_conversation_optional_args_create(void **out) {
   *out=NULL;if(status(70))return 13;if(failure==76)return 0;
@@ -181,10 +185,12 @@ void litert_lm_conversation_delete(void *conversation) {
 }
 int litert_lm_conversation_send_message_stream(void *conversation, const char *message,
     const char *extra, const void *args, chunk_callback callback, void *data) {
-  assert(conversation && message && !extra && callback);
+  assert(conversation && message && callback);
   assert(penalty_live == 0);
   assert(!active && !cancelled);
   assert(strlen(message)<sizeof sent_message);strcpy(sent_message,message);
+  assert(!extra || strlen(extra)<sizeof sent_extra_context);
+  snprintf(sent_extra_context,sizeof sent_extra_context,"%s",extra ? extra : "");
   sent_args=args!=NULL;memset(&sent_options,0,sizeof sent_options);
   if(args)sent_options=*(const turn_options *)args;
   ++sends;
@@ -242,3 +248,4 @@ int litert_lm_conversation_config_set_prompt_template(void *config,const char *s
 int litert_lm_conversation_config_set_enable_constrained_decoding(void *config,bool value) {
   assert(config);if(status(46))return 13;constrained=value;return 0;
 }
+#endif

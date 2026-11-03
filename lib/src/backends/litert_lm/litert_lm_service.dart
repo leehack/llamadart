@@ -33,6 +33,8 @@ import 'litert_lm_chat_templates.dart';
 import 'litert_lm_model_link.dart';
 import 'litert_lm_platform.dart';
 import 'litert_lm_runtime.dart';
+import 'litert_lm_runtime_client_contract.dart';
+import 'litert_lm_legacy_service_client.dart';
 import 'litert_lm_sampler_params.dart';
 
 const int _gemma4DefaultVisualTokenBudget = 280;
@@ -98,8 +100,12 @@ class LiteRtLmService {
   /// [readBundleFirstChannel] replaces [readLiteRtLmBundleFirstChannel].
   /// [finishReasonProbeLibraryPath] is the runtime library that
   /// [reportsFinishReasons] probes, the default runtime when null.
+  /// [runtimeClientFactory] injects a version-specific internal client together
+  /// with its metadata and finish-reason probes. It is exclusive with the legacy
+  /// [clientFactory]; neither changes the production runtime selection.
   LiteRtLmService({
     LiteRtLmRuntimeClient Function()? clientFactory,
+    LiteRtLmRuntimeClientContract Function()? runtimeClientFactory,
     Directory? linkParentDirectory,
     bool? useTempCacheDir,
     LiteRtLmLinkCreator? createLink,
@@ -111,11 +117,19 @@ class LiteRtLmService {
   }) : _jsonSchemaPlatformSupported =
            jsonSchemaPlatformSupported ??
            (() => Platform.isMacOS && Abi.current() == Abi.macosArm64),
-       _clientFactory = clientFactory ?? LiteRtLmRuntimeClient.new,
+       _clientFactory =
+           runtimeClientFactory ??
+           (() => LiteRtLmLegacyServiceClient(
+             (clientFactory ?? LiteRtLmRuntimeClient.new)(),
+           )),
+       _injectedFinishReasonProbe = runtimeClientFactory == null
+           ? null
+           : (() => runtimeClientFactory().supportsFinishReasons),
        _readBundleCapabilities =
            readBundleCapabilities ??
-           ((modelPath) =>
-               LiteRtLmRuntimeClient().bundleCapabilities(modelPath)),
+           ((modelPath) => runtimeClientFactory == null
+               ? LiteRtLmRuntimeClient().bundleCapabilities(modelPath)
+               : runtimeClientFactory().bundleCapabilities(modelPath)),
        _readBundleChatTemplate =
            readBundleChatTemplate ?? readLiteRtLmBundleChatTemplate,
        _readBundleFirstChannel =
@@ -124,17 +138,24 @@ class LiteRtLmService {
        _linkParentDirectory = linkParentDirectory,
        _createLink = createLink,
        _useTempCacheDir =
-           useTempCacheDir ?? (Platform.isMacOS || Platform.isAndroid);
+           useTempCacheDir ?? (Platform.isMacOS || Platform.isAndroid) {
+    if (clientFactory != null && runtimeClientFactory != null) {
+      throw LlamaArgumentException(
+        'Choose either the legacy client factory or the version-specific runtime client factory.',
+      );
+    }
+  }
 
-  final LiteRtLmRuntimeClient Function() _clientFactory;
+  final LiteRtLmRuntimeClientContract Function() _clientFactory;
   final LiteRtLmBundleCapabilitiesReader _readBundleCapabilities;
   final LiteRtLmBundleChatTemplateReader _readBundleChatTemplate;
   final LiteRtLmBundleFirstChannelReader _readBundleFirstChannel;
   final String? _finishReasonProbeLibraryPath;
+  final bool Function()? _injectedFinishReasonProbe;
   final Directory? _linkParentDirectory;
   final LiteRtLmLinkCreator? _createLink;
   final bool _useTempCacheDir;
-  LiteRtLmRuntimeClient? _client;
+  LiteRtLmRuntimeClientContract? _client;
   bool _nativeResourcesQuarantined = false;
 
   /// Native lifetime; failed Dart requests can still own live callbacks.
@@ -151,7 +172,7 @@ class LiteRtLmService {
 
   bool _jsonSchemaAdmitted = false;
   final bool Function() _jsonSchemaPlatformSupported;
-  LiteRtLmEmbeddingSession? _embedding;
+  LiteRtLmEmbeddingRuntimeSession? _embedding;
   LiteRtLmCacheLease? _cacheLease;
   ModelParams? _modelParams;
   String? _modelPath;
@@ -322,7 +343,7 @@ class LiteRtLmService {
     }
   }
 
-  Future<LiteRtLmEmbeddingSession> _ensureEmbedding() async {
+  Future<LiteRtLmEmbeddingRuntimeSession> _ensureEmbedding() async {
     if (!(_modelParams?.liteRtLmEmbeddingEngine ?? false)) {
       throw LlamaUnsupportedException(
         'LiteRT-LM embeddings require loading with LiteRtLmModelParams(embeddingEngine: true); the active model is a conversation engine.',
@@ -855,7 +876,7 @@ class LiteRtLmService {
   /// decides, once, whether its conversations use
   /// [liteRtLmTextContentAdapter] around the template read from the bundle.
   void _createBundleTemplateConversation(
-    LiteRtLmRuntimeClient client, {
+    LiteRtLmRuntimeClientContract client, {
     required void Function(String? template) create,
     required void Function(String? template) createProbe,
   }) {
@@ -874,7 +895,7 @@ class LiteRtLmService {
   /// cannot be read from the bundle, the bundle template stays and a warning
   /// says so.
   void _probeBundleTemplate(
-    LiteRtLmRuntimeClient client,
+    LiteRtLmRuntimeClientContract client,
     void Function(String? template) createProbe,
   ) {
     if (!client.supportsMessageRendering) {
@@ -1198,7 +1219,7 @@ class LiteRtLmService {
     _cancelRequested = false;
   }
 
-  Future<LiteRtLmRuntimeClient> _ensureClientForGeneration(
+  Future<LiteRtLmRuntimeClientContract> _ensureClientForGeneration(
     GenerationParams params, {
     int? maxNumImages,
     bool? enableAudio,
@@ -1211,7 +1232,7 @@ class LiteRtLmService {
     );
   }
 
-  Future<LiteRtLmRuntimeClient> _ensureClientForRuntime({
+  Future<LiteRtLmRuntimeClientContract> _ensureClientForRuntime({
     bool? speculativeDecoding,
     int? maxNumImages,
     bool? enableVision,
@@ -1283,7 +1304,7 @@ class LiteRtLmService {
       );
     }
 
-    Future<LiteRtLmRuntimeClient> initializeClient(
+    Future<LiteRtLmRuntimeClientContract> initializeClient(
       String engineBackend,
       String? visionBackend,
       String? audioBackend,
@@ -1330,10 +1351,8 @@ class LiteRtLmService {
       }
     }
 
-    Future<({LiteRtLmRuntimeClient client, String? audioBackend})> createEngine(
-      String engineBackend,
-      _LiteRtLmEngineOptions options,
-    ) async {
+    Future<({LiteRtLmRuntimeClientContract client, String? audioBackend})>
+    createEngine(String engineBackend, _LiteRtLmEngineOptions options) async {
       final runtimeCacheDir = options.runtimeCacheDir;
       try {
         return (
@@ -1390,7 +1409,7 @@ class LiteRtLmService {
     }
 
     final options = engineOptions(backend);
-    late ({LiteRtLmRuntimeClient client, String? audioBackend}) engine;
+    late ({LiteRtLmRuntimeClientContract client, String? audioBackend}) engine;
     var engineBackend = backend;
     var created = false;
     try {
@@ -1878,9 +1897,12 @@ class LiteRtLmService {
   ///
   /// Probes a fresh client, so a model load that asks creates no engine.
   bool reportsFinishReasons() =>
-      _runtimeFinishReasons ??= LiteRtLmRuntimeClient(
-        libraryPath: _finishReasonProbeLibraryPath,
-      ).supportsFinishReasons;
+      _runtimeFinishReasons ??= _finishReasonProbeLibraryPath != null
+      ? LiteRtLmRuntimeClient(
+          libraryPath: _finishReasonProbeLibraryPath,
+        ).supportsFinishReasons
+      : _injectedFinishReasonProbe?.call() ??
+            LiteRtLmRuntimeClient().supportsFinishReasons;
 
   /// The token limit that ended the latest generation, or null when it ended
   /// at a stop token, a stop sequence, cancellation or an error, is still
@@ -1889,7 +1911,9 @@ class LiteRtLmService {
 
   // Cancellation, including a Dart stop sequence, which cancels the native
   // turn, wins over a limit the runtime reported at the same time.
-  BackendGenerationLimit? _generationLimitOf(LiteRtLmRuntimeClient client) {
+  BackendGenerationLimit? _generationLimitOf(
+    LiteRtLmRuntimeClientContract client,
+  ) {
     if (_cancelRequested) {
       return null;
     }

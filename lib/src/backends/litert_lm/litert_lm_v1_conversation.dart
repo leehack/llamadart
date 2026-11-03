@@ -238,21 +238,61 @@ final class LiteRtLmV1Conversation {
   /// allowing a caller to await completion without subscribing to chunks.
   /// Null [settings] inherits conversation limits without applying penalties.
   LiteRtLmV1Turn sendText(String text, {LiteRtLmV1TurnSettings? settings}) {
+    _requireReadyForSend();
+    if (text.contains('\u0000')) {
+      throw LlamaArgumentException('Conversation text must not contain NUL.');
+    }
+    return _sendEncoded(
+      jsonEncode({'role': 'user', 'content': text}),
+      settings,
+    );
+  }
+
+  /// Sends the snapshotted text/tool message subset accepted by the preface.
+  /// Media and unknown fields remain explicitly refused before native work.
+  LiteRtLmV1Turn sendMessage(
+    Map<String, Object?> message, {
+    LiteRtLmV1TurnSettings? settings,
+    Map<String, Object?>? extraContext,
+  }) {
+    _requireReadyForSend();
+    LiteRtLmV1ConversationSettings._jsonValue(
+      message,
+      HashSet<Object>.identity(),
+    );
+    final encoded = jsonEncode(message);
+    LiteRtLmV1ConversationSettings._messages([jsonDecode(encoded)]);
+    String? context;
+    if (extraContext?.isNotEmpty ?? false) {
+      LiteRtLmV1ConversationSettings._jsonValue(
+        extraContext,
+        HashSet<Object>.identity(),
+      );
+      context = jsonEncode(extraContext);
+    }
+    return _sendEncoded(encoded, settings, extraContext: context);
+  }
+
+  void _requireReadyForSend() {
     if (_quarantined || _handle == nullptr || _turn != null) {
       throw LlamaStateException(
         'C API 1.0 conversation is closed, quarantined or already streaming.',
       );
     }
-    if (text.contains('\u0000')) {
-      throw LlamaArgumentException('Conversation text must not contain NUL.');
-    }
+  }
+
+  LiteRtLmV1Turn _sendEncoded(
+    String encoded,
+    LiteRtLmV1TurnSettings? settings, {
+    String? extraContext,
+  }) {
     settings?._validate(_runtime);
     final args = settings?._createArgs(_runtime) ?? nullptr;
     try {
       final turn = LiteRtLmV1Turn._(this);
       _turn = turn;
       try {
-        turn._start(jsonEncode({'role': 'user', 'content': text}), args);
+        turn._start(encoded, args, extraContext: extraContext);
         return turn;
       } on Object {
         _turn = null;
@@ -321,10 +361,16 @@ final class LiteRtLmV1Turn {
   late final NativeCallable<_OwnedCallbackN> _callback;
   Pointer<Void> _proxy = nullptr;
   Pointer<Utf8> _message = nullptr;
+  Pointer<Utf8> _extraContext = nullptr;
   bool _cancelled = false;
   bool _finished = false;
   LlamaModelException? _error;
   bool _errorIsCancellation = false;
+  LiteRtLmFinishReason? _finishReason;
+
+  /// Actual cause read after final and successful drain, including on copy loss.
+  /// Failed drain leaves this null because the live proxy cannot be inspected.
+  LiteRtLmFinishReason? get finishReason => _finishReason;
 
   /// Copied raw message JSON chunks; no borrowed native pointer escapes.
   Stream<String> get chunks => _chunks.stream;
@@ -335,11 +381,12 @@ final class LiteRtLmV1Turn {
   /// cancellation is a terminal reason, never permission to reuse its handle.
   Future<LiteRtLmFinishReason> get done => _done.future;
 
-  void _start(String message, Pointer<Void> args) {
+  void _start(String message, Pointer<Void> args, {String? extraContext}) {
     _message = message.toNativeUtf8(allocator: calloc);
     _callback = NativeCallable<_OwnedCallbackN>.listener(_onChunk);
     final out = calloc<Pointer<NativeFunction<_ChunkCallbackN>>>();
     try {
+      _extraContext = extraContext?.toNativeUtf8(allocator: calloc) ?? nullptr;
       _proxy = _conversation._proxyCreate(
         _callback.nativeFunction,
         nullptr,
@@ -353,7 +400,7 @@ final class LiteRtLmV1Turn {
         _conversation._send(
           _conversation._handle,
           _message,
-          nullptr,
+          _extraContext,
           args,
           out.value,
           _proxy,
@@ -443,6 +490,7 @@ final class LiteRtLmV1Turn {
         >('stream_proxy_get_finish_reason')(_proxy),
       );
     }
+    _finishReason = reason;
     // The sticky allocation-free status is readable only while the proxy is
     // alive, after final+drain. A clean final must not hide an earlier lost copy.
     if (_conversation._proxyHasAllocationFailure(_proxy) != 0) {
@@ -479,5 +527,7 @@ final class LiteRtLmV1Turn {
     _callback.close();
     if (_message != nullptr) calloc.free(_message);
     _message = nullptr;
+    if (_extraContext != nullptr) calloc.free(_extraContext);
+    _extraContext = nullptr;
   }
 }
