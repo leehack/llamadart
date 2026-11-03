@@ -11,6 +11,7 @@ import 'package:llamadart/backend.dart';
 import 'package:llamadart/llamadart.dart';
 import 'package:llamadart/src/backends/llama_cpp/bindings.dart';
 import 'package:llamadart/src/backends/llama_cpp/lazy_grammar_triggers.dart';
+import 'package:llamadart/src/backends/llama_cpp/native_barrier_api.dart';
 import 'package:llamadart/src/core/template/handlers/lfm2_handler.dart';
 import 'package:llamadart/src/core/template/template_internal_metadata.dart';
 import 'package:llamadart/src/core/engine/chat_completion_request_planner.dart';
@@ -405,6 +406,14 @@ bool _compiledGrammarAccepts(
   String candidate, {
   List<GenerationGrammarTrigger> triggers = const [],
 }) {
+  final barrier = NativeBarrierApi.tryResolve(isWindows: Platform.isWindows);
+  expect(
+    barrier,
+    isNotNull,
+    reason:
+        'The pinned native runtime must export its grammar exception barrier.',
+  );
+  final nativeBarrier = barrier!;
   final vocab = llama_model_get_vocab(model);
   final grammarPointer = generatedGrammar.toNativeUtf8();
   final rootPointer = 'root'.toNativeUtf8();
@@ -426,7 +435,7 @@ bool _compiledGrammarAccepts(
         pointers[i] = patterns[i].cast<Char>();
       }
       expect(inputs.tokens, isEmpty);
-      sampler = llama_dart_sampler_init_grammar_lazy_patterns(
+      sampler = nativeBarrier.samplerInitGrammarLazyPatterns(
         vocab,
         grammarPointer.cast<Char>(),
         rootPointer.cast<Char>(),
@@ -470,7 +479,7 @@ bool _compiledGrammarAccepts(
           ..p = 0;
         llama_sampler_apply(sampler, array);
         if (data.ref.logit == double.negativeInfinity) return false;
-        if (!llama_dart_sampler_accept(sampler, token)) return false;
+        if (!nativeBarrier.samplerAccept(sampler, token)) return false;
       }
       final eog = llama_vocab_eos(vocab);
       expect(
