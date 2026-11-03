@@ -1074,6 +1074,28 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
         'LiteRT-LM worker lifecycle, request settlement, or native teardown changes. Repeat with the affected requested backend; placement remains unverified.',
   ),
   TestMatrixRow(
+    id: 'litert-lm-v1-asr-smoke',
+    tier: 'targeted',
+    mode: 'local-only; explicit unselected v1 speech client, CPU only',
+    covers:
+        'Exact library/model/tokenizer/audio hashes, actual injected speech support probe and worker, streaming updates, transcribeOnce and cancellation with bounded child exit and captured native stderr',
+    command:
+        'LITERT_LM_V1_LIBRARY=<lib> LITERT_LM_V1_LIBRARY_SHA256=<sha256> LITERT_LM_V1_MODEL_SHA256=<sha256> LITERT_LM_V1_TOKENIZER_SHA256=<sha256> LITERT_LM_V1_AUDIO_SHA256=<sha256> dart run tool/testing/run_local_e2e.dart --scenario litert-lm-v1-asr-smoke --model-path <speech-model> --tokenizer-path <tokenizer> --audio-path <wav> --model-preset moonshine-tiny --expect <known-transcript> --backend cpu',
+    useWhen:
+        'Qualifying C API1 ASR consumer dispatch against a prepared owner artifact. Run --dry-run first and schedule one model job at a time. Default factory and pins remain unchanged.',
+  ),
+  TestMatrixRow(
+    id: 'litert-lm-v1-service',
+    tier: 'targeted',
+    mode: 'local-only; explicit unselected v1 client, CPU only',
+    covers:
+        'Exact library/model SHA256, actual injected service arithmetic chat, native cancellation cause, settled reload/reuse and bounded process exit with captured native stderr',
+    command:
+        'LITERT_LM_V1_LIBRARY=<lib> LITERT_LM_V1_LIBRARY_SHA256=<sha256> LITERT_LM_V1_MODEL_SHA256=<sha256> dart run tool/testing/run_local_e2e.dart --scenario litert-lm-v1-service --model-path <Qwen3-0.6B.litertlm> --backend cpu',
+    useWhen:
+        'Qualifying the internal C API 1 client/service path against a prepared owner artifact. Run --dry-run first; root owns model serialization. No public factory/pin enablement, GPU, ASR, media, LoRA, schema or embedding qualification is implied.',
+  ),
+  TestMatrixRow(
     id: 'qwen3-litert-cpu-unicode',
     tier: 'targeted',
     mode: 'local-only',

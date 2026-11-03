@@ -14,7 +14,7 @@ experimental. Native targets need no network once the model is on the device.
 - Embeddings, reranking, and image and audio input with multimodal models.
 - Speech to text, text to speech, and decision models with cooperative task cancellation.
 - Image generation from text prompts on native platforms (Preview).
-- Runtime LoRA adapters, observability hooks and typed capability checks.
+- Runtime LoRA adapters for llama.cpp, observability hooks and typed capability checks.
 
 Choose [direct llamadart, Genkit, or Flutter Edge AI](https://llamadart.leehack.com/docs/integrations/choosing-an-api)
 for your application. Genkit is a

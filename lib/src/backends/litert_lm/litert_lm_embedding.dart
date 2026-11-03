@@ -30,6 +30,21 @@ class LiteRtLmEmbeddingPart {
   LiteRtLmEmbeddingPart(this.type, this.bytes);
 }
 
+/// Worker-owned session contract shared by version-specific embedding ABIs.
+abstract interface class LiteRtLmEmbeddingRuntimeSession {
+  /// Processor-backed modalities of the loaded bundle.
+  LlamaEmbeddingCapabilities get capabilities;
+
+  /// Copies one vector from the selected runtime's owned native response.
+  Future<List<double>> compute(
+    List<LiteRtLmEmbeddingPart> input, {
+    required bool normalize,
+  });
+
+  /// Releases a settled engine exactly once.
+  void dispose();
+}
+
 /// Snapshots bytes, rejects unresolved sources and merges adjacent text verbatim.
 List<LiteRtLmEmbeddingPart> prepareLiteRtLmEmbedding(
   LlamaEmbeddingInput input,

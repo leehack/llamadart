@@ -43,7 +43,17 @@ typedef _StatusD = int Function(Pointer<Void>);
 /// deleted after its final callback and successful native drain; recreate it
 /// through the runtime. This never enables single-threaded native execution.
 final class LiteRtLmV1Conversation {
-  LiteRtLmV1Conversation._(this._runtime, int maxOutputTokens) {
+  LiteRtLmV1Conversation._(
+    this._runtime,
+    LiteRtLmV1ConversationSettings options,
+  ) {
+    final history =
+        options._preface['litert_lm_conversation_config_set_messages'];
+    if (history != null) {
+      _runtime._validateMediaMessages(jsonDecode(history) as List);
+    }
+    _schemaEnabled = options.jsonSchemaConstraints;
+    if (_schemaEnabled) _V1JsonSchema(_runtime).requireSupport();
     final library = _runtime._library;
     for (final symbol in _symbols) {
       if (!library.providesSymbol(symbol)) {
@@ -60,38 +70,84 @@ final class LiteRtLmV1Conversation {
         'C API 1.0 conversation requires owner stream proxy callback ABI 2; detected $abi.',
       );
     }
+    final allocationAbi = library
+        .lookupFunction<Int32 Function(), int Function()>(
+          'stream_proxy_allocation_failure_abi_version',
+        )();
+    if (allocationAbi != 1) {
+      throw LlamaUnsupportedException(
+        'C API 1.0 conversation requires owner stream proxy allocation-failure ABI 1; detected $allocationAbi.',
+      );
+    }
     Pointer<Void> sessionConfig = nullptr, sampler = nullptr, config = nullptr;
+    final strings = <Pointer<Utf8>>[];
     try {
       sessionConfig = _runtime._create(
         'session_config_create',
         _runtime._configCreate,
       );
       _runtime._check(
-        _runtime._setOutputTokens(sessionConfig, maxOutputTokens),
+        _runtime._setOutputTokens(sessionConfig, options.maxOutputTokens),
         'set_max_output_tokens',
       );
-      sampler = _runtime._create(
-        'sampler_params_create',
-        (out) => _runtime._samplerCreate(2, out),
-      );
-      _runtime._check(_runtime._samplerTopK(sampler, 1), 'sampler_set_top_k');
-      _runtime._check(
-        _runtime._samplerTopP(sampler, 0.95),
-        'sampler_set_top_p',
-      );
-      _runtime._check(
-        _runtime._samplerTemperature(sampler, 0),
-        'sampler_set_temperature',
-      );
-      _runtime._check(
-        _runtime._setSampler(sessionConfig, sampler),
-        'set_sampler_params',
-      );
+      if (options.sampler case final selected?) {
+        sampler = _runtime._create(
+          'sampler_params_create',
+          (out) => _runtime._samplerCreate(2, out),
+        );
+        _runtime._check(
+          _runtime._samplerTopK(
+            sampler,
+            liteRtLmEffectiveTopK(
+              temperature: selected.temperature,
+              topK: selected.topK,
+            ),
+          ),
+          'sampler_set_top_k',
+        );
+        _runtime._check(
+          _runtime._samplerTopP(sampler, selected.topP),
+          'sampler_set_top_p',
+        );
+        _runtime._check(
+          _runtime._samplerTemperature(sampler, selected.temperature),
+          'sampler_set_temperature',
+        );
+        _runtime._check(
+          _runtime._library.lookupFunction<
+            Int Function(Pointer<Void>, Int32),
+            int Function(Pointer<Void>, int)
+          >('litert_lm_sampler_params_set_seed')(sampler, selected.seed),
+          'sampler_set_seed',
+        );
+        _runtime._check(
+          _runtime._setSampler(sessionConfig, sampler),
+          'set_sampler_params',
+        );
+      }
       config = _runtime._create('conversation_config_create', _configCreate);
       _runtime._check(
         _setSessionConfig(config, sessionConfig),
         'conversation_config_set_session_config',
       );
+      for (final entry in options._preface.entries) {
+        final text = entry.value.toNativeUtf8(allocator: calloc);
+        strings.add(text);
+        _runtime._check(
+          _runtime._library.lookupFunction<_SetStringN, _SetStringD>(entry.key)(
+            config,
+            text,
+          ),
+          entry.key,
+        );
+      }
+      _runtime._check(
+        _runtime._library.lookupFunction<_SetBoolN, _SetBoolD>(
+          'litert_lm_conversation_config_set_enable_constrained_decoding',
+        )(config, false),
+        'set_enable_constrained_decoding',
+      );
+      if (_schemaEnabled) _V1JsonSchema(_runtime).configure(config);
       _handle = _runtime._create(
         'conversation_create',
         (out) => _createConversation(_runtime._engine, config, out),
@@ -100,11 +156,23 @@ final class LiteRtLmV1Conversation {
       if (config != nullptr) _configDelete(config);
       if (sampler != nullptr) _runtime._samplerDelete(sampler);
       if (sessionConfig != nullptr) _runtime._configDelete(sessionConfig);
+      for (final text in strings) {
+        calloc.free(text);
+      }
     }
   }
 
   static const _symbols = <String>[
+    'litert_lm_sampler_params_set_seed',
+    'litert_lm_conversation_config_set_system_message',
+    'litert_lm_conversation_config_set_messages',
+    'litert_lm_conversation_config_set_tools',
+    'litert_lm_conversation_config_set_extra_context',
+    'litert_lm_conversation_config_set_prompt_template',
+    'litert_lm_conversation_config_set_enable_constrained_decoding',
     'stream_proxy_callback_abi_version',
+    'stream_proxy_allocation_failure_abi_version',
+    'stream_proxy_has_allocation_failure',
     'stream_proxy_create',
     'stream_proxy_delete',
     'stream_proxy_free_string',
@@ -122,6 +190,7 @@ final class LiteRtLmV1Conversation {
   Pointer<Void> _handle = nullptr;
   LiteRtLmV1Turn? _turn;
   bool _quarantined = false;
+  late final bool _schemaEnabled;
 
   /// Only a final callback followed by successful native drain settles a turn.
   LiteRtLmNativeSettlement get nativeSettlement => _quarantined
@@ -159,6 +228,11 @@ final class LiteRtLmV1Conversation {
   );
   late final _proxyCreate = _runtime._library
       .lookupFunction<_ProxyCreateN, _ProxyCreateD>('stream_proxy_create');
+  late final _proxyHasAllocationFailure = _runtime._library
+      .lookupFunction<
+        Int32 Function(Pointer<Void>),
+        int Function(Pointer<Void>)
+      >('stream_proxy_has_allocation_failure');
   late final _proxyDelete = _runtime._library
       .lookupFunction<_DeleteN, _DeleteD>('stream_proxy_delete');
   late final _freeString = _runtime._library
@@ -171,24 +245,84 @@ final class LiteRtLmV1Conversation {
   ///
   /// The chunks stream closes after drain; errors are reported only by done,
   /// allowing a caller to await completion without subscribing to chunks.
-  LiteRtLmV1Turn sendText(String text) {
+  /// Null [settings] inherits conversation limits without applying penalties.
+  LiteRtLmV1Turn sendText(String text, {LiteRtLmV1TurnSettings? settings}) {
+    _requireReadyForSend();
+    if (text.contains('\u0000')) {
+      throw LlamaArgumentException('Conversation text must not contain NUL.');
+    }
+    return _sendEncoded(
+      jsonEncode({'role': 'user', 'content': text}),
+      settings,
+    );
+  }
+
+  /// Sends the snapshotted text/tool message subset accepted by the preface.
+  /// Media and unknown fields remain explicitly refused before native work.
+  LiteRtLmV1Turn sendMessage(
+    Map<String, Object?> message, {
+    LiteRtLmV1TurnSettings? settings,
+    Map<String, Object?>? extraContext,
+  }) {
+    _requireReadyForSend();
+    LiteRtLmV1ConversationSettings._jsonValue(
+      message,
+      HashSet<Object>.identity(),
+    );
+    final encoded = jsonEncode(message);
+    final snapshot = jsonDecode(encoded);
+    LiteRtLmV1ConversationSettings._messages([snapshot]);
+    _runtime._validateMediaMessages([snapshot]);
+    String? context;
+    if (extraContext?.isNotEmpty ?? false) {
+      LiteRtLmV1ConversationSettings._jsonValue(
+        extraContext,
+        HashSet<Object>.identity(),
+      );
+      context = jsonEncode(extraContext);
+    }
+    return _sendEncoded(encoded, settings, extraContext: context);
+  }
+
+  void _requireReadyForSend() {
     if (_quarantined || _handle == nullptr || _turn != null) {
       throw LlamaStateException(
         'C API 1.0 conversation is closed, quarantined or already streaming.',
       );
     }
-    if (text.contains('\u0000')) {
-      throw LlamaArgumentException('Conversation text must not contain NUL.');
+  }
+
+  LiteRtLmV1Turn _sendEncoded(
+    String encoded,
+    LiteRtLmV1TurnSettings? settings, {
+    String? extraContext,
+  }) {
+    if (settings?.jsonSchema != null && !_schemaEnabled) {
+      throw LlamaUnsupportedException(
+        'Create the C API 1.0 conversation with jsonSchemaConstraints before sending a schema.',
+      );
     }
-    final turn = LiteRtLmV1Turn._(this);
-    _turn = turn;
+    settings?._validate(_runtime);
+    final args = settings?._createArgs(_runtime) ?? nullptr;
     try {
-      turn._start(jsonEncode({'role': 'user', 'content': text}));
-      return turn;
-    } on Object {
-      _turn = null;
-      _release();
-      rethrow;
+      final turn = LiteRtLmV1Turn._(this);
+      _turn = turn;
+      try {
+        turn._start(encoded, args, extraContext: extraContext);
+        return turn;
+      } on Object {
+        _turn = null;
+        _release();
+        rethrow;
+      }
+    } finally {
+      // The C entry point copies these values before launching native work.
+      // This says nothing about whether the callback family has settled.
+      if (args != nullptr) {
+        _runtime._library.lookupFunction<_DeleteN, _DeleteD>(
+          'litert_lm_conversation_optional_args_delete',
+        )(args);
+      }
     }
   }
 
@@ -215,6 +349,22 @@ final class LiteRtLmV1Conversation {
   }
 }
 
+/// A drained internal turn whose proxy could not copy all callback data.
+///
+/// Native callbacks are settled, but the child conversation is discarded because
+/// its output/history cannot be trusted. The finish reason remains the actual
+/// native terminal cause; allocation loss never converts cancellation into success.
+final class LiteRtLmV1CopyLossException extends LlamaModelException {
+  LiteRtLmV1CopyLossException._(this.finishReason, this.streamFailure)
+    : super('C API 1.0 stream proxy lost callback data during allocation.');
+
+  /// Independently observed native terminal cause, or unknown without its ABI.
+  final LiteRtLmFinishReason finishReason;
+
+  /// Any copied stream failure, already sanitized before native storage is freed.
+  final LlamaModelException? streamFailure;
+}
+
 /// An owned internal streaming turn. Strings are copied before native return.
 final class LiteRtLmV1Turn {
   LiteRtLmV1Turn._(this._conversation) {
@@ -227,10 +377,16 @@ final class LiteRtLmV1Turn {
   late final NativeCallable<_OwnedCallbackN> _callback;
   Pointer<Void> _proxy = nullptr;
   Pointer<Utf8> _message = nullptr;
+  Pointer<Utf8> _extraContext = nullptr;
   bool _cancelled = false;
   bool _finished = false;
-  Object? _error;
+  LlamaModelException? _error;
   bool _errorIsCancellation = false;
+  LiteRtLmFinishReason? _finishReason;
+
+  /// Actual cause read after final and successful drain, including on copy loss.
+  /// Failed drain leaves this null because the live proxy cannot be inspected.
+  LiteRtLmFinishReason? get finishReason => _finishReason;
 
   /// Copied raw message JSON chunks; no borrowed native pointer escapes.
   Stream<String> get chunks => _chunks.stream;
@@ -241,11 +397,12 @@ final class LiteRtLmV1Turn {
   /// cancellation is a terminal reason, never permission to reuse its handle.
   Future<LiteRtLmFinishReason> get done => _done.future;
 
-  void _start(String message) {
+  void _start(String message, Pointer<Void> args, {String? extraContext}) {
     _message = message.toNativeUtf8(allocator: calloc);
     _callback = NativeCallable<_OwnedCallbackN>.listener(_onChunk);
     final out = calloc<Pointer<NativeFunction<_ChunkCallbackN>>>();
     try {
+      _extraContext = extraContext?.toNativeUtf8(allocator: calloc) ?? nullptr;
       _proxy = _conversation._proxyCreate(
         _callback.nativeFunction,
         nullptr,
@@ -259,8 +416,8 @@ final class LiteRtLmV1Turn {
         _conversation._send(
           _conversation._handle,
           _message,
-          nullptr,
-          nullptr,
+          _extraContext,
+          args,
           out.value,
           _proxy,
         ),
@@ -349,9 +506,14 @@ final class LiteRtLmV1Turn {
         >('stream_proxy_get_finish_reason')(_proxy),
       );
     }
-    // A copied canonical cancellation error is normal only when the native
-    // finish-reason extension independently confirms cancellation.
-    if (_errorIsCancellation && reason == LiteRtLmFinishReason.cancelled) {
+    _finishReason = reason;
+    // The sticky allocation-free status is readable only while the proxy is
+    // alive, after final+drain. A clean final must not hide an earlier lost copy.
+    if (_conversation._proxyHasAllocationFailure(_proxy) != 0) {
+      _error = LiteRtLmV1CopyLossException._(reason, _error);
+    } else if (_errorIsCancellation &&
+        reason == LiteRtLmFinishReason.cancelled) {
+      // Canonical cancellation is normal only with an independent native cause.
       _error = null;
     }
     if (reason == LiteRtLmFinishReason.error && _error == null) {
@@ -381,5 +543,7 @@ final class LiteRtLmV1Turn {
     _callback.close();
     if (_message != nullptr) calloc.free(_message);
     _message = nullptr;
+    if (_extraContext != nullptr) calloc.free(_extraContext);
+    _extraContext = nullptr;
   }
 }

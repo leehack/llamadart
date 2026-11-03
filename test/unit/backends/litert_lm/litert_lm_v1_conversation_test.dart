@@ -39,6 +39,10 @@ void main() {
       'future-proxy': ['-DPROXY_ABI=3'],
       'missing-proxy': ['-DOMIT_PROXY_CREATE'],
       'unmarked-proxy': ['-DOMIT_PROXY_MARKER'],
+      'missing-loss-marker': ['-DOMIT_ALLOCATION_FAILURE_MARKER'],
+      'missing-loss-getter': ['-DOMIT_ALLOCATION_FAILURE_GETTER'],
+      'old-loss': ['-DALLOCATION_FAILURE_ABI=0'],
+      'future-loss': ['-DALLOCATION_FAILURE_ABI=2'],
       'unknown-finish': ['-DFINISH_ABI=2'],
       'missing-finish': ['-DOMIT_FINISH_MARKER'],
     }.entries) {
@@ -66,6 +70,7 @@ void main() {
   tearDownAll(() => directory.delete(recursive: true));
   setUp(() {
     call('fail', 0);
+    call('fail_copies', 0);
     expect(count('live'), 0);
     expect(count('copies'), 0);
     expect(count('proxies'), 0);
@@ -81,6 +86,10 @@ void main() {
     'future-proxy',
     'missing-proxy',
     'unmarked-proxy',
+    'missing-loss-marker',
+    'missing-loss-getter',
+    'old-loss',
+    'future-loss',
   ]) {
     test('$name refuses before conversation allocation or stream dispatch', () {
       final selected = incompatible[name]!;
@@ -89,7 +98,12 @@ void main() {
         runtime.openConversation,
         throwsA(isA<LlamaUnsupportedException>()),
       );
-      for (final counter in ['created', 'sends', 'proxies']) {
+      for (final counter in [
+        'created',
+        'sends',
+        'proxies',
+        'proxy_allocations',
+      ]) {
         expect(
           selected.lookupFunction<Int Function(), int Function()>(
             'fixture_$counter',
@@ -111,6 +125,7 @@ void main() {
       final runtime = loaded();
       final conversation = runtime.openConversation();
       final before = count('created');
+      final reads = count('loss_reads');
       for (var index = 0; index < 2; index++) {
         final turn = conversation.sendText('Text 世界');
         final chunks = turn.chunks.toList();
@@ -122,6 +137,7 @@ void main() {
         expect(count('proxies'), 0);
       }
       expect(count('created'), before);
+      expect(count('loss_reads'), reads + 2);
       conversation.close();
       conversation.close();
       runtime.dispose();
@@ -391,6 +407,185 @@ void main() {
       runtime.dispose();
     },
   );
+  for (final caseData in [
+    (name: 'nonfinal text then clean final', kind: 0, mask: 1, cancel: false),
+    (name: 'final text', kind: 9, mask: 1, cancel: false),
+    for (final mask in [1, 2, 3]) ...[
+      (
+        name: 'nonfinal pair loss $mask then clean final',
+        kind: 7,
+        mask: mask,
+        cancel: false,
+      ),
+      (name: 'final pair loss $mask', kind: 4, mask: mask, cancel: false),
+      (name: 'cancelled pair loss $mask', kind: 8, mask: mask, cancel: true),
+    ],
+  ]) {
+    test(
+      'copy loss ${caseData.name} fails but settles and discards the child',
+      () async {
+        final runtime = loaded();
+        final conversation = runtime.openConversation();
+        final turn = conversation.sendText('lost copy');
+        final chunks = turn.chunks.toList();
+        final reads = count('loss_reads');
+        final failedCopies = count('failed_copies');
+        final reason = caseData.cancel
+            ? LiteRtLmFinishReason.cancelled
+            : caseData.kind == 4
+            ? LiteRtLmFinishReason.error
+            : LiteRtLmFinishReason.stop;
+        final errorDelivered =
+            [4, 7, 8].contains(caseData.kind) && caseData.mask == 1;
+        final failure = expectLater(
+          turn.done,
+          throwsA(
+            isA<LiteRtLmV1CopyLossException>()
+                .having((error) => error.finishReason, 'native reason', reason)
+                .having(
+                  (error) => error.streamFailure,
+                  'copied failure',
+                  errorDelivered
+                      ? isA<LlamaModelException>().having(
+                          (failure) => failure.toString(),
+                          'copied failure redacted',
+                          allOf(
+                            isNot(contains('/secret')),
+                            isNot(contains('token=secret')),
+                            isNot(contains('user:secret')),
+                          ),
+                        )
+                      : isNull,
+                )
+                .having(
+                  (error) => error.toString(),
+                  'redacted',
+                  isNot(contains('/secret')),
+                ),
+          ),
+        );
+        if (caseData.cancel) turn.cancel();
+        call('fail_copies', caseData.mask);
+        call('emit', caseData.kind);
+        if (caseData.kind == 0 || caseData.kind == 7) {
+          await tick();
+          expect(
+            conversation.nativeSettlement,
+            LiteRtLmNativeSettlement.pending,
+          );
+          expect(count('loss_reads'), reads);
+          expect(count('proxies'), 1);
+          expect(conversation.close, throwsA(isA<LlamaStateException>()));
+          call('fail_copies', 0);
+          call('emit', 2);
+        }
+        await failure;
+        expect(
+          await chunks,
+          !caseData.cancel && caseData.mask == 2
+              ? ['borrowed UTF8 世界']
+              : isEmpty,
+        );
+        expect(
+          count('failed_copies') - failedCopies,
+          caseData.mask == 3 ? 2 : 1,
+        );
+        expect(count('loss_reads'), reads + 1);
+        expect(count('proxies'), 0);
+        expect(count('copies'), 0);
+        expect(count('live'), 1);
+        expect(conversation.nativeSettlement, LiteRtLmNativeSettlement.settled);
+        expect(runtime.nativeSettlement, LiteRtLmNativeSettlement.settled);
+        expect(
+          () => conversation.sendText('poisoned'),
+          throwsA(isA<LlamaStateException>()),
+        );
+        // A fresh proxy has no inherited sticky error; the parent remains reusable.
+        call('fail_copies', 0);
+        final fresh = runtime.openConversation();
+        final next = fresh.sendText('clean reuse');
+        final nextChunks = next.chunks.toList();
+        call('emit', 0);
+        call('emit', 2);
+        expect(await next.done, LiteRtLmFinishReason.stop);
+        expect(await nextChunks, ['borrowed UTF8 世界']);
+        fresh.close();
+        runtime.dispose();
+      },
+    );
+  }
+
+  test(
+    'cancellation status error does not hide subsequent settled copy loss',
+    () async {
+      final runtime = loaded();
+      final conversation = runtime.openConversation();
+      final turn = conversation.sendText('cancel failed');
+      final failure = expectLater(
+        turn.done,
+        throwsA(
+          isA<LiteRtLmV1CopyLossException>().having(
+            (error) => error.finishReason,
+            'native cause',
+            LiteRtLmFinishReason.cancelled,
+          ),
+        ),
+      );
+      call('fail', 18);
+      expect(turn.cancel, throwsA(isA<LlamaModelException>()));
+      expect(runtime.nativeSettlement, LiteRtLmNativeSettlement.pending);
+      call('fail', 0);
+      call('fail_copies', 3);
+      call('emit', 8);
+      await failure;
+      await turn.chunks.drain<void>();
+      expect(runtime.nativeSettlement, LiteRtLmNativeSettlement.settled);
+      expect(count('proxies'), 0);
+      runtime.dispose();
+    },
+  );
+
+  for (final name in ['unknown-finish', 'missing-finish']) {
+    test(
+      'copy loss with $name preserves unknown native cause and still fails',
+      () async {
+        final selected = incompatible[name]!;
+        void emit(int kind) =>
+            selected.lookupFunction<Void Function(Int), void Function(int)>(
+              'fixture_emit',
+            )(kind);
+        void failCopies(int mask) =>
+            selected.lookupFunction<Void Function(Int), void Function(int)>(
+              'fixture_fail_copies',
+            )(mask);
+        final runtime = loaded(selected);
+        final conversation = runtime.openConversation();
+        final turn = conversation.sendText('unknown loss');
+        final failure = expectLater(
+          turn.done,
+          throwsA(
+            isA<LiteRtLmV1CopyLossException>().having(
+              (error) => error.finishReason,
+              'native cause',
+              LiteRtLmFinishReason.unknown,
+            ),
+          ),
+        );
+        failCopies(1);
+        emit(9);
+        await failure;
+        await turn.chunks.drain<void>();
+        failCopies(0);
+        expect(runtime.nativeSettlement, LiteRtLmNativeSettlement.settled);
+        expect(
+          () => conversation.sendText('closed'),
+          throwsA(isA<LlamaStateException>()),
+        );
+        runtime.dispose();
+      },
+    );
+  }
+
   test('argument and idle-state refusal avoids native work', () {
     final runtime = LiteRtLmV1Runtime(library);
     expect(runtime.openConversation, throwsA(isA<LlamaStateException>()));

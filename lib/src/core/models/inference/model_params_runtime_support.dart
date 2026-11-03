@@ -130,8 +130,8 @@ String unsupportedModelParamsMessage(
           '$fields. Supported LiteRT-LM load options are contextSize, '
           'chatTemplate, device or the deprecated liteRtLmBackend for '
           'explicit CPU/GPU/NPU selection, preferredBackend, all-or-CPU '
-          'gpuLayers hints, numberOfThreads, one default-scale initial LoRA '
-          'adapter, and the LiteRT-LM options of LiteRtLmModelParams '
+          'gpuLayers hints, numberOfThreads, and the LiteRT-LM options of '
+          'LiteRtLmModelParams '
           '(liteRtLm* fields on ModelParams).',
     (LlamaRuntime.liteRtLm, true) =>
       'LiteRtLmBackend web does not support these native or '

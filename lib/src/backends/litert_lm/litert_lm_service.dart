@@ -33,6 +33,8 @@ import 'litert_lm_chat_templates.dart';
 import 'litert_lm_model_link.dart';
 import 'litert_lm_platform.dart';
 import 'litert_lm_runtime.dart';
+import 'litert_lm_runtime_client_contract.dart';
+import 'litert_lm_legacy_service_client.dart';
 import 'litert_lm_sampler_params.dart';
 
 const int _gemma4DefaultVisualTokenBudget = 280;
@@ -98,8 +100,12 @@ class LiteRtLmService {
   /// [readBundleFirstChannel] replaces [readLiteRtLmBundleFirstChannel].
   /// [finishReasonProbeLibraryPath] is the runtime library that
   /// [reportsFinishReasons] probes, the default runtime when null.
+  /// [runtimeClientFactory] injects a version-specific internal client together
+  /// with its metadata and finish-reason probes. It is exclusive with the legacy
+  /// [clientFactory]; neither changes the production runtime selection.
   LiteRtLmService({
     LiteRtLmRuntimeClient Function()? clientFactory,
+    LiteRtLmRuntimeClientContract Function()? runtimeClientFactory,
     Directory? linkParentDirectory,
     bool? useTempCacheDir,
     LiteRtLmLinkCreator? createLink,
@@ -111,11 +117,19 @@ class LiteRtLmService {
   }) : _jsonSchemaPlatformSupported =
            jsonSchemaPlatformSupported ??
            (() => Platform.isMacOS && Abi.current() == Abi.macosArm64),
-       _clientFactory = clientFactory ?? LiteRtLmRuntimeClient.new,
+       _clientFactory =
+           runtimeClientFactory ??
+           (() => LiteRtLmLegacyServiceClient(
+             (clientFactory ?? LiteRtLmRuntimeClient.new)(),
+           )),
+       _injectedFinishReasonProbe = runtimeClientFactory == null
+           ? null
+           : (() => runtimeClientFactory().supportsFinishReasons),
        _readBundleCapabilities =
            readBundleCapabilities ??
-           ((modelPath) =>
-               LiteRtLmRuntimeClient().bundleCapabilities(modelPath)),
+           ((modelPath) => runtimeClientFactory == null
+               ? LiteRtLmRuntimeClient().bundleCapabilities(modelPath)
+               : runtimeClientFactory().bundleCapabilities(modelPath)),
        _readBundleChatTemplate =
            readBundleChatTemplate ?? readLiteRtLmBundleChatTemplate,
        _readBundleFirstChannel =
@@ -124,22 +138,33 @@ class LiteRtLmService {
        _linkParentDirectory = linkParentDirectory,
        _createLink = createLink,
        _useTempCacheDir =
-           useTempCacheDir ?? (Platform.isMacOS || Platform.isAndroid);
+           useTempCacheDir ?? (Platform.isMacOS || Platform.isAndroid) {
+    if (clientFactory != null && runtimeClientFactory != null) {
+      throw LlamaArgumentException(
+        'Choose either the legacy client factory or the version-specific runtime client factory.',
+      );
+    }
+  }
 
-  final LiteRtLmRuntimeClient Function() _clientFactory;
+  final LiteRtLmRuntimeClientContract Function() _clientFactory;
   final LiteRtLmBundleCapabilitiesReader _readBundleCapabilities;
   final LiteRtLmBundleChatTemplateReader _readBundleChatTemplate;
   final LiteRtLmBundleFirstChannelReader _readBundleFirstChannel;
   final String? _finishReasonProbeLibraryPath;
+  final bool Function()? _injectedFinishReasonProbe;
   final Directory? _linkParentDirectory;
   final LiteRtLmLinkCreator? _createLink;
   final bool _useTempCacheDir;
-  LiteRtLmRuntimeClient? _client;
+  LiteRtLmRuntimeClientContract? _client;
   bool _nativeResourcesQuarantined = false;
+  bool _embeddingPreparing = false;
+  bool _nativeInitializationPending = false;
 
   /// Native lifetime; failed Dart requests can still own live callbacks.
   LiteRtLmNativeSettlement get nativeSettlement => _nativeResourcesQuarantined
       ? LiteRtLmNativeSettlement.quarantined
+      : _nativeInitializationPending || _embeddingPreparing
+      ? LiteRtLmNativeSettlement.pending
       : _client?.nativeSettlement ?? LiteRtLmNativeSettlement.settled;
 
   /// Retains this native family, its model link and cache lease until exit.
@@ -149,9 +174,22 @@ class LiteRtLmService {
     _nativeResourcesQuarantined = true;
   }
 
+  bool _retainUnsettledClient(
+    LiteRtLmRuntimeClientContract client,
+    LiteRtLmCacheLease? lease,
+  ) {
+    if (client.nativeSettlement == LiteRtLmNativeSettlement.settled) {
+      return false;
+    }
+    _client = client;
+    _cacheLease = lease;
+    quarantineNativeResources();
+    return true;
+  }
+
   bool _jsonSchemaAdmitted = false;
   final bool Function() _jsonSchemaPlatformSupported;
-  LiteRtLmEmbeddingSession? _embedding;
+  LiteRtLmEmbeddingRuntimeSession? _embedding;
   LiteRtLmCacheLease? _cacheLease;
   ModelParams? _modelParams;
   String? _modelPath;
@@ -322,7 +360,7 @@ class LiteRtLmService {
     }
   }
 
-  Future<LiteRtLmEmbeddingSession> _ensureEmbedding() async {
+  Future<LiteRtLmEmbeddingRuntimeSession> _ensureEmbedding() async {
     if (!(_modelParams?.liteRtLmEmbeddingEngine ?? false)) {
       throw LlamaUnsupportedException(
         'LiteRT-LM embeddings require loading with LiteRtLmModelParams(embeddingEngine: true); the active model is a conversation engine.',
@@ -332,10 +370,18 @@ class LiteRtLmService {
     if (existing != null) {
       return existing;
     }
+    if (nativeSettlement != LiteRtLmNativeSettlement.settled) {
+      throw LlamaStateException(
+        'Embedding creation has unsettled native resources.',
+      );
+    }
     final params = _modelParams!;
     final cache = _effectiveCacheDir(params) ?? liteRtLmNoCacheDirectory;
     final client = _clientFactory();
     final lease = _leaseCacheDirectory(cache, _modelPath!);
+    _client = client;
+    _cacheLease = lease;
+    _embeddingPreparing = true;
     try {
       final session = await client.createEmbeddingSession(
         modelPath: _modelLink?.path ?? _modelPath!,
@@ -344,13 +390,17 @@ class LiteRtLmService {
         maxInputLength: params.contextSize,
         numberOfThreads: params.numberOfThreads,
       );
-      _client = client;
-      _cacheLease = lease;
       return _embedding = session;
     } catch (_) {
-      lease?.release();
-      client.dispose();
+      _embeddingPreparing = false;
+      if (client.nativeSettlement != LiteRtLmNativeSettlement.settled) {
+        quarantineNativeResources();
+      } else {
+        _disposeClient();
+      }
       rethrow;
+    } finally {
+      _embeddingPreparing = false;
     }
   }
 
@@ -557,7 +607,8 @@ class LiteRtLmService {
         topP: 1,
         jsonSchemaConstraints: true,
       );
-    } on StateError {
+    } catch (error) {
+      if (error is! StateError && error is! LlamaModelException) rethrow;
       throw LlamaUnsupportedException(
         'The loaded LiteRT-LM model cannot construct its JSON Schema provider; the model tokenizer or EOS may be incompatible.',
       );
@@ -590,7 +641,8 @@ class LiteRtLmService {
       )) {
         yield chunk;
       }
-    } on StateError {
+    } catch (error) {
+      if (error is! StateError && error is! LlamaModelException) rethrow;
       // Native diagnostics can echo the schema or model paths.
       throw LlamaInferenceException(
         'Native JSON Schema chat failed during constrained decoding.',
@@ -767,7 +819,9 @@ class LiteRtLmService {
               jsonSchema: jsonSchema,
               visualTokenBudget: maxNumImages == null
                   ? null
-                  : _gemma4DefaultVisualTokenBudget,
+                  : client.resolveDefaultVisualTokenBudget(
+                      _gemma4DefaultVisualTokenBudget,
+                    ),
               maxOutputTokens: params.maxTokens,
               repetitionPenalty: controls.repetitionPenalty,
               presencePenalty: controls.presencePenalty,
@@ -855,7 +909,7 @@ class LiteRtLmService {
   /// decides, once, whether its conversations use
   /// [liteRtLmTextContentAdapter] around the template read from the bundle.
   void _createBundleTemplateConversation(
-    LiteRtLmRuntimeClient client, {
+    LiteRtLmRuntimeClientContract client, {
     required void Function(String? template) create,
     required void Function(String? template) createProbe,
   }) {
@@ -874,7 +928,7 @@ class LiteRtLmService {
   /// cannot be read from the bundle, the bundle template stays and a warning
   /// says so.
   void _probeBundleTemplate(
-    LiteRtLmRuntimeClient client,
+    LiteRtLmRuntimeClientContract client,
     void Function(String? template) createProbe,
   ) {
     if (!client.supportsMessageRendering) {
@@ -1198,7 +1252,7 @@ class LiteRtLmService {
     _cancelRequested = false;
   }
 
-  Future<LiteRtLmRuntimeClient> _ensureClientForGeneration(
+  Future<LiteRtLmRuntimeClientContract> _ensureClientForGeneration(
     GenerationParams params, {
     int? maxNumImages,
     bool? enableAudio,
@@ -1211,7 +1265,7 @@ class LiteRtLmService {
     );
   }
 
-  Future<LiteRtLmRuntimeClient> _ensureClientForRuntime({
+  Future<LiteRtLmRuntimeClientContract> _ensureClientForRuntime({
     bool? speculativeDecoding,
     int? maxNumImages,
     bool? enableVision,
@@ -1283,7 +1337,9 @@ class LiteRtLmService {
       );
     }
 
-    Future<LiteRtLmRuntimeClient> initializeClient(
+    var initializationUnsettled = false;
+
+    Future<LiteRtLmRuntimeClientContract> initializeClient(
       String engineBackend,
       String? visionBackend,
       String? audioBackend,
@@ -1295,11 +1351,14 @@ class LiteRtLmService {
         cacheLease,
       );
       final client = _clientFactory();
-      client.configureResponseThinkingTags(
-        startTag: responseThinkingTags.startTag,
-        endTag: responseThinkingTags.endTag,
-      );
+      _client = client;
+      _cacheLease = cacheLease;
+      _nativeInitializationPending = true;
       try {
+        client.configureResponseThinkingTags(
+          startTag: responseThinkingTags.startTag,
+          endTag: responseThinkingTags.endTag,
+        );
         await client.initialize(
           modelPath: runtimeModelPath,
           backend: engineBackend,
@@ -1319,21 +1378,29 @@ class LiteRtLmService {
               ? null
               : modelParams.numberOfThreads,
         );
+        _nativeInitializationPending = false;
         return client;
       } catch (_) {
+        _nativeInitializationPending = false;
+        if (_retainUnsettledClient(client, cacheLease)) {
+          initializationUnsettled = true;
+          rethrow;
+        }
         try {
           client.dispose();
         } catch (_) {
           // Preserve the initialization error reported by the runtime.
         }
+        if (identical(_client, client)) {
+          _client = null;
+          _cacheLease = null;
+        }
         rethrow;
       }
     }
 
-    Future<({LiteRtLmRuntimeClient client, String? audioBackend})> createEngine(
-      String engineBackend,
-      _LiteRtLmEngineOptions options,
-    ) async {
+    Future<({LiteRtLmRuntimeClientContract client, String? audioBackend})>
+    createEngine(String engineBackend, _LiteRtLmEngineOptions options) async {
       final runtimeCacheDir = options.runtimeCacheDir;
       try {
         return (
@@ -1346,6 +1413,7 @@ class LiteRtLmService {
           audioBackend: options.audio,
         );
       } catch (initialError, initialStackTrace) {
+        if (initializationUnsettled) rethrow;
         // The GPU backend fails engine creation on a cache it rejects, such
         // as a truncated weight cache, when it cannot write a new one.
         final uncachedDir =
@@ -1390,13 +1458,14 @@ class LiteRtLmService {
     }
 
     final options = engineOptions(backend);
-    late ({LiteRtLmRuntimeClient client, String? audioBackend}) engine;
+    late ({LiteRtLmRuntimeClientContract client, String? audioBackend}) engine;
     var engineBackend = backend;
     var created = false;
     try {
       try {
         engine = await createEngine(backend, options);
       } catch (gpuError, gpuStackTrace) {
+        if (initializationUnsettled) rethrow;
         if (!_mayRetryAutoGpuOnCpu(modelParams, backend)) {
           rethrow;
         }
@@ -1454,7 +1523,7 @@ class LiteRtLmService {
         stackTrace,
       );
     } finally {
-      if (!created) {
+      if (!created && !initializationUnsettled) {
         cacheLease?.release();
       }
     }
@@ -1878,9 +1947,12 @@ class LiteRtLmService {
   ///
   /// Probes a fresh client, so a model load that asks creates no engine.
   bool reportsFinishReasons() =>
-      _runtimeFinishReasons ??= LiteRtLmRuntimeClient(
-        libraryPath: _finishReasonProbeLibraryPath,
-      ).supportsFinishReasons;
+      _runtimeFinishReasons ??= _finishReasonProbeLibraryPath != null
+      ? LiteRtLmRuntimeClient(
+          libraryPath: _finishReasonProbeLibraryPath,
+        ).supportsFinishReasons
+      : _injectedFinishReasonProbe?.call() ??
+            LiteRtLmRuntimeClient().supportsFinishReasons;
 
   /// The token limit that ended the latest generation, or null when it ended
   /// at a stop token, a stop sequence, cancellation or an error, is still
@@ -1889,7 +1961,9 @@ class LiteRtLmService {
 
   // Cancellation, including a Dart stop sequence, which cancels the native
   // turn, wins over a limit the runtime reported at the same time.
-  BackendGenerationLimit? _generationLimitOf(LiteRtLmRuntimeClient client) {
+  BackendGenerationLimit? _generationLimitOf(
+    LiteRtLmRuntimeClientContract client,
+  ) {
     if (_cancelRequested) {
       return null;
     }

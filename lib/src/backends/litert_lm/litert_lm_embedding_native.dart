@@ -154,7 +154,7 @@ int _createEmbeddingEngine(
 }
 
 /// Owns an embedding engine; callers serialize operations and await settlement.
-class LiteRtLmEmbeddingSession {
+class LiteRtLmEmbeddingSession implements LiteRtLmEmbeddingRuntimeSession {
   /// Loaded runtime path.
   final String library;
 
@@ -162,6 +162,7 @@ class LiteRtLmEmbeddingSession {
   final List<String> companions;
 
   /// Processor-backed modalities of the loaded bundle.
+  @override
   final LlamaEmbeddingCapabilities capabilities;
   int _address;
 
@@ -175,6 +176,7 @@ class LiteRtLmEmbeddingSession {
 
   /// Copies one vector before deleting its native response; cancellation waits for this call.
   /// [inputAllocator] substitutes temporary allocations for VM ownership tests.
+  @override
   Future<List<double>> compute(
     List<LiteRtLmEmbeddingPart> input, {
     required bool normalize,
@@ -198,6 +200,7 @@ class LiteRtLmEmbeddingSession {
   }
 
   /// Deletes the settled engine exactly once.
+  @override
   void dispose() {
     if (_address == 0) {
       return;

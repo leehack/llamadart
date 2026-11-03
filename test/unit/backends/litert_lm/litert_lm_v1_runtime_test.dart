@@ -85,6 +85,24 @@ void main() {
     );
   });
 
+  test(
+    'CPU load wrapper preserves measured metrics and speculation defaults',
+    () {
+      final runtime = LiteRtLmV1Runtime(library);
+      runtime.load('/secret/models/m.litertlm', cacheDir: '/secret/cache');
+      int setting(int field) =>
+          library.lookupFunction<Int Function(Int), int Function(int)>(
+            'fixture_value',
+          )(field);
+      expect(setting(0), 4096);
+      expect(setting(1), 4);
+      expect(setting(5), 1);
+      expect(setting(7), 0);
+      runtime.dispose();
+      expect(live(), 0);
+    },
+  );
+
   for (final stage in [1, 2, 3]) {
     test('load failure $stage releases settings and preserves old engine', () {
       final runtime = LiteRtLmV1Runtime(library);

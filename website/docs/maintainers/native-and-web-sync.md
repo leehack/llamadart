@@ -318,10 +318,134 @@ This transport preparation does not select C API 1 publicly. The owner proxy's
 callback ABI 2 and finish-reason ABI 1 alone do not establish lossless callback
 delivery under allocation failure. Owner
 [issue #97](https://github.com/leehack/litert-lm-native/issues/97) defines the
-separate allocation-failure status contract; its immutable artifact and consumer
-admission/readback remain adoption gates alongside ASR, media, tools, schema and
-embedding migration. The ASR bridge has its own versioned ABI, but its current
-Dart loader still passes through the legacy C API refusal.
+separate allocation-failure status contract. The internal conversation adapter
+requires both status exports and exactly allocation-failure ABI 1 before child
+or proxy allocation. After the actual final callback and successful drain, it
+reads the sticky status while the proxy is alive. Copy loss rejects the turn
+with its actual native finish reason, discards the child, and leaves the parent
+settled for a fresh child. Even native cancellation cannot normalize copy loss
+into success. Failed drain retains the entire native family without reading the
+status or freeing the proxy.
+
+This is fixture-backed consumer preparation for
+[owner PR #98](https://github.com/leehack/litert-lm-native/pull/98), not adoption
+of an immutable owner artifact. Owner source/release qualification and ASR,
+media, tools, schema and embedding migration remain public adoption gates. The
+ASR bridge has its own versioned ABI, but its current Dart loader still passes
+through the legacy C API refusal.
+
+Internal v1 `loadConfigured` transports resolved engine options through the
+status-returning API. Its typed settings use the existing compute-device and
+activation enums. CPU/GPU/NPU strings and optional vision/audio executor strings
+are passed unchanged, with no automatic device selection or fallback. This is
+ABI preparation, not device or media qualification. The service still owns
+platform defaults, ModelParams validation, thread-zero normalization, cache
+leases/pruning and retry policy; none is selected by this adapter.
+
+The configuration defaults to context 4096, benchmark metrics enabled, and
+speculation off, as the maintained service does. Nullable threads, prefill
+chunks, cache/dispatch paths, activation and parallel loading remain unset in
+native settings. The older `load` helper retains its four explicit CPU threads
+and required cache path. Benchmark prefill counts are separate from response
+limits; no benchmark decode-step override or single-threaded execution is set.
+Speculation uses the new owned v1 config and its copied engine setting, with
+status checks and cleanup on every failure.
+
+Explicit CPU thread/prefill-chunk requests on another main backend are refused:
+the native setters otherwise report success without applying them. Dispatch
+paths require NPU, and NPU speculation is refused. Explicit `maxNumImages` is
+also refused: the v1 header documents it as legacy-engine-only, with no current
+consumer capability proof for the active engine implementation. This remains a
+required migration gap, needing supported-engine proof or an explicit release
+scope decision. Auxiliary backend strings alone do not enable media input.
+Logging/status and complete worker/service dispatch remain separate migration
+work; the following internal slices do not select v1 publicly.
+
+Internal `openConfiguredConversation` adds snapshotted text/tool prefaces and
+explicit TOP_P sampler settings. The convenience `openConversation` retains its
+32-token, zero-temperature, top-k 1, top-p 0.95, seed 0 preparation defaults.
+Zero temperature uses the shared top-k normalization; nonzero sampling preserves
+requested top-k and signed int32 seed. Sampler floats reject non-finite values,
+overflow and positive underflow to native zero. Null sampler inherits the native
+configuration, including on NPU; explicit NPU overrides are refused. The selected
+backend is recorded only after successful engine replacement.
+
+System content is plain text encoded exactly once, even when it looks like JSON.
+Initial message and tool arrays, context objects and raw Jinja overrides are
+validated and snapshotted before native allocation: upstream preface setters
+copy strings but creation can log malformed containers and continue without them.
+The supported preparation subset has system/user/assistant/tool roles; string or
+text-part content; assistant reasoning text and function calls with string/object
+arguments; named tool-response parts with JSON values; and function descriptors
+with object parameter schemas. Media, unknown message/tool fields, strict-tool
+requests, boolean/tuple schema items and empty/NUL raw templates are refused.
+This checks descriptor structure, not full JSON Schema semantics or enforcement.
+All setters use v1 status signatures and owned temporaries are released on failure.
+Constrained decoding stays explicitly disabled. Active structured messages,
+required/parallel tool choice, LoRA, thinking budgets, broader per-turn controls and
+schema providers still need separate migration; raw chunk delivery does not
+claim tool execution or template/model qualification.
+
+Internal `sendText` accepts nullable per-turn output limits and repetition/presence
+penalties. Omitted or empty settings keep null native optional arguments: there
+is no implicit default penalty. The total output cap includes thinking tokens;
+penalties count only the current send's generated tokens. Explicit penalties
+with speculative decoding are refused, preserving the service's unqualified
+combination restriction. Each send copies its options into native decode state,
+then frees owned option/config temporaries after the start call returns. This
+does not settle callbacks: failed drain still retains their native family.
+
+Requested thinking budgets are explicitly refused until model/channel admission
+exists. Upstream can report successful setters and then ignore a budget without
+thinking end tokens. Sampler and seed remain conversation-scoped; adapting public
+per-request sampling still requires conversation recreation or another proven
+native contract. Structured active messages, media, per-turn template context,
+schema constraints and additional penalty controls remain separate work. This
+preparation changes no public routing, capability or runtime pin.
+
+Internal v1 tokenization and detokenization now use status/out signatures and
+`size_t` counts. `addSpecial: false` skips BOS lookup; the default prepends the
+configured ID sequence or separately tokenizes its string, preserving the legacy
+client's ordering. A missing or empty BOS adds nothing. Borrowed arrays and UTF-8
+strings are copied before their result/union owner is deleted, including when
+BOS text requires a second tokenizer call. Empty detokenization returns `''`
+without a native call, after checking the engine lifetime.
+
+The whole tokenizer symbol group is checked before nonempty/native operations;
+legacy/version-skew libraries remain refused by the adapter's existing version
+admission. Failed statuses copy the calling thread's diagnostic before cleanup.
+Invalid native union types, null nonempty arrays/strings, and counts exceeding
+the adapter's signed 32-bit safety bound are refused. NUL text and out-of-C-int
+input IDs reject instead of being truncated. An idle conversation may stay open;
+pending or quarantined native work prohibits tokenizer access. These are internal
+migration controls, not model-tokenizer qualification or public v1 selection.
+Embeddings and complete service dispatch remain gaps.
+
+Internal `bundleCapabilities` reads text/vision/audio/video, speculation, thinking
+and function-calling declarations through `model_info.h` status/out APIs. Each
+query owns a loaded-file handle and frees it after copying the flags. Missing
+metadata exports, failed statuses and success without a handle are refused.
+These flags describe a file; they do not qualify an executor, enable media or
+admit thinking budgets. `supports_thinking` reads only the model-info boolean,
+whereas native budget enforcement needs channel end tokens that this C metadata
+API does not expose. The existing budget refusal remains even for a true flag.
+
+Settled internal conversations can render the already validated text/tool message
+subset and copy its conversation-owned UTF-8 buffer before another render.
+Their benchmark snapshots are owned and deleted after every read or failure.
+Metrics preserve legacy aggregation: sum all prefill/decode token counts, use
+the last throughput in each phase, retain native zero timings and use null
+throughput for empty histories. Counts and indices use `size_t`; every getter
+status is checked before cleanup can replace its thread-local error. Invalid
+metrics, signed token-total overflow, null successful results and histories over
+one million turns are refused instead of truncated. Pending or quarantined
+native work prohibits metadata, render and benchmark calls. These remain
+fixture-backed ABI/lifetime controls without model or device qualification.
+
+The internal v1 client can now be explicitly injected through `LiteRtLmService` for text/tool chat, response assembly, metrics and lifetime
+checks. The existing public client and Web stub stay unchanged. This does not
+select v1 publicly: `doc/litert_lm_v1_adoption.md` tracks each existing call path,
+the remaining feature families and the owner/artifact gates before adoption.
 
 Use this checklist in native sync PRs:
 
