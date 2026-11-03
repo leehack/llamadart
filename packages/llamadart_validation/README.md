@@ -381,3 +381,12 @@ qualification. Missing build identity on old native runtimes remains unsupported
 Old P01–P04 receipts do not qualify P05; it requires a fresh run. Identity equality
 does not identify model weights, guarantee exact continuation or establish
 cross-build, sampler/RNG, GPU or device compatibility.
+
+## Prospective S24 LiteRT native/public qualifier
+
+The [fixed S24 case graph](native/android_litert/README.md) prepares one reviewed
+SC-51E/API36 run against the eventual final 0.19 artifact. It keeps legacy GPU
+refusal/fallback evidence separate from corrected CPU correctness, isolates the
+corrected GPU attempt in an owned native child, and gates corrected public auto
+on that control. Source/model-free checks establish no device result and do not
+authorize an APK, cloud run or additional budget reservation.
