@@ -217,6 +217,35 @@ except p.CaptureInterrupted as error:
         self.assertTrue((self.root / 'malformed-stage/capture.json').is_file())
         self.assertEqual(result['cleanup_errors'], [])
 
+    def test_active_foreign_alarm_is_refused_before_popen(self):
+        previous = signal.pthread_sigmask(signal.SIG_BLOCK, {signal.SIGALRM})
+        try:
+            signal.setitimer(signal.ITIMER_REAL, 10)
+            with patch.object(profiler.subprocess, 'Popen') as launch:
+                with self.assertRaisesRegex(ValueError, 'SIGALRM'):
+                    profiler.capture([sys.executable], self.root / 'active-alarm', {})
+                launch.assert_not_called()
+        finally:
+            signal.setitimer(signal.ITIMER_REAL, 0)
+            if signal.SIGALRM in signal.sigpending(): signal.sigwait({signal.SIGALRM})
+            signal.pthread_sigmask(signal.SIG_SETMASK, previous)
+
+    def test_expired_cancelled_os_alarm_is_refused_before_popen(self):
+        previous = signal.pthread_sigmask(signal.SIG_BLOCK, {signal.SIGALRM})
+        try:
+            signal.setitimer(signal.ITIMER_REAL, 0.01)
+            time.sleep(0.03)
+            signal.setitimer(signal.ITIMER_REAL, 0)
+            self.assertIn(signal.SIGALRM, signal.sigpending(), 'real cancelled alarm must remain pending')
+            with patch.object(profiler.subprocess, 'Popen') as launch:
+                with self.assertRaisesRegex(ValueError, 'SIGALRM'):
+                    profiler.capture([sys.executable], self.root / 'no-alarm-launch', {})
+                launch.assert_not_called()
+        finally:
+            signal.setitimer(signal.ITIMER_REAL, 0)
+            if signal.SIGALRM in signal.sigpending(): signal.sigwait({signal.SIGALRM})
+            signal.pthread_sigmask(signal.SIG_SETMASK, previous)
+
 
 if __name__ == '__main__':
     unittest.main()

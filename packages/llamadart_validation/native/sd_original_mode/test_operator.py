@@ -98,18 +98,24 @@ class OperatorTest(unittest.TestCase):
 
     def test_first_baseline_failure_stops_all_remaining_children(self):
         output = self.root / "run"
-        def git(args, **kwargs): return "a" * 40 + "\n" if "rev-parse" in args else b""
-        def captured(argv, directory, identity, **kwargs): directory.mkdir()
+        calls = []
+        def owned(argv, directory, identity, **kwargs):
+            calls.append((identity, kwargs))
+            directory.mkdir()
+            phase = identity.get("phase")
+            if phase == "preflight-git-head": (directory / "stdout.log").write_text("a" * 40 + "\n")
+            if phase == "preflight-git-status": (directory / "stdout.log").write_bytes(b"")
+            if phase == "preflight-hash": (output / "identities.json").write_text("{}")
+            if phase == "grade": raise ValueError("synthetic baseline failure")
         with patch.object(operator.sys, "platform", "darwin"), patch.object(operator.platform, "machine", return_value="arm64"), \
              patch.dict(operator.os.environ, {k: "" for k in ("DYLD_INSERT_LIBRARIES", "DYLD_LIBRARY_PATH", "LD_PRELOAD", "LD_LIBRARY_PATH")}), \
-             patch.object(operator, "verify", return_value={}), patch.object(operator.subprocess, "check_output", side_effect=git), \
-             patch.object(operator, "capture", side_effect=captured) as child, \
-             patch.object(operator, "grade", side_effect=ValueError("synthetic baseline failure")):
+             patch.object(operator, "run_owned", side_effect=owned):
             with self.assertRaisesRegex(ValueError, "baseline failure"):
                 operator.execute(self.plan(), output)
-        self.assertEqual(child.call_count, 1)
-        self.assertEqual(child.call_args.kwargs["seconds"], 177,
-                         "active deadline must reserve three seconds inside the 180-second case cap")
+        models = [(identity, kwargs) for identity, kwargs in calls if identity.get("model_inference")]
+        self.assertEqual(len(models), 1)
+        self.assertEqual(models[0][1]["seconds"], 177)
+        self.assertEqual(models[0][1]["budget"]["phase"], "cases")
         summary = json.loads((output / "summary.json").read_text())
         self.assertFalse(summary["diagnosticPassed"])
         self.assertEqual([r["status"] for r in summary["cases"]], ["FAIL"] + ["NOT_RUN"] * 5)
@@ -133,6 +139,42 @@ class OperatorTest(unittest.TestCase):
                         operator.execute(self.plan(), self.root / key)
                 verify.assert_not_called()
                 child.assert_not_called()
+
+    def test_late_grade_or_post_success_cannot_mark_diagnostic_passed(self):
+        for failure_at in ("grade", "post", "unknown"):
+            with self.subTest(failure_at=failure_at):
+                output = self.root / ("aggregate-" + failure_at)
+                calls = []
+                def owned(argv, directory, identity, **kwargs):
+                    calls.append(identity)
+                    directory.mkdir()
+                    phase = identity.get("phase")
+                    if phase == "preflight-git-head": (directory / "stdout.log").write_text("a" * 40 + "\n")
+                    if phase == "preflight-git-status": (directory / "stdout.log").write_bytes(b"")
+                    if phase == "preflight-hash": (output / "identities.json").write_text("{}")
+                    if identity.get("model_inference") and failure_at == "unknown":
+                        raise operator.CleanupUnknown("synthetic unverified cleanup")
+                    if phase == "grade":
+                        (output / identity["case"] / "grade.json").write_text('{"passed":true}')
+                        if failure_at == "grade": kwargs["budget"]["active_end"] = -1
+                    if phase == "post":
+                        summary = json.loads((output / "summary.json").read_text())
+                        summary["diagnosticPassed"] = True
+                        (output / "summary.json").write_text(json.dumps(summary))
+                        if failure_at == "post": raise operator.PhaseTimeout("synthetic late post")
+                with patch.object(operator.sys, "platform", "darwin"), patch.object(operator.platform, "machine", return_value="arm64"), \
+                     patch.dict(operator.os.environ, {k: "" for k in ("DYLD_INSERT_LIBRARIES", "DYLD_LIBRARY_PATH", "LD_PRELOAD", "LD_LIBRARY_PATH")}), \
+                     patch.object(operator, "run_owned", side_effect=owned):
+                    with self.assertRaises((operator.PhaseTimeout, operator.CleanupUnknown)):
+                        operator.execute(self.plan(), output)
+                summary = json.loads((output / "summary.json").read_text())
+                self.assertFalse(summary["diagnosticPassed"])
+                if failure_at != "post":
+                    self.assertEqual(summary["cases"][0]["status"], "FAIL")
+                    self.assertEqual(sum(bool(c.get("model_inference")) for c in calls), 1)
+                if failure_at == "unknown":
+                    self.assertEqual(summary["cleanup"], "UNKNOWN")
+                    self.assertFalse(any(c.get("phase") == "post" for c in calls))
 
 
 if __name__ == "__main__": unittest.main()
