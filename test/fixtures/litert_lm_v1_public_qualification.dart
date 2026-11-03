@@ -14,6 +14,7 @@ import 'package:llamadart/src/backends/litert_lm/litert_lm_runtime.dart'
 import 'package:llamadart/src/backends/litert_lm/litert_lm_service.dart';
 
 import '../../tool/litert_lm_asr_smoke.dart' as speech;
+import '../support/litert_lm_thinking_direct_cache.dart';
 import '../support/litert_lm_v1_public_qualification.dart';
 
 Future<String> _digest(String path) async =>
@@ -201,13 +202,14 @@ Future<void> _direct(List<String> args, bool expectedDisabled) async {
   client.configureResponseThinkingTags(startTag: '<think>', endTag: '</think>');
   final watch = Stopwatch()..start();
   try {
+    final directCache = createThinkingDirectCache(Directory(args[9]));
     Future<void> load() => client.initialize(
       modelPath: args[3],
       backend: 'cpu',
       numberOfThreads: profile['threads'] as int,
       maxTokens: profile['context_size'] as int,
       outputTokens: profile['max_tokens'] as int,
-      cacheDir: '${args[9]}/direct-cache',
+      cacheDir: directCache.path,
       speculativeDecoding: false,
     );
     await load();
