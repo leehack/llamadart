@@ -8,9 +8,13 @@ import 'litert_lm_runtime_client_contract.dart';
 final class LiteRtLmLegacyServiceClient
     implements LiteRtLmRuntimeClientContract {
   /// Wraps the exact client selected by the existing service factory.
-  LiteRtLmLegacyServiceClient(this._client);
+  LiteRtLmLegacyServiceClient(
+    this._client, {
+    int? Function(int)? resolveVisualTokenBudget,
+  }) : _resolveVisualTokenBudget = resolveVisualTokenBudget;
 
   final LiteRtLmRuntimeClient _client;
+  final int? Function(int)? _resolveVisualTokenBudget;
 
   @override
   void configureResponseThinkingTags({
@@ -32,7 +36,10 @@ final class LiteRtLmLegacyServiceClient
   @override
   bool get supportsMessageRendering => _client.supportsMessageRendering;
   @override
-  int? resolveDefaultVisualTokenBudget(int preferredBudget) => preferredBudget;
+  int? resolveDefaultVisualTokenBudget(int preferredBudget) =>
+      _resolveVisualTokenBudget == null
+      ? preferredBudget
+      : _resolveVisualTokenBudget(preferredBudget);
   @override
   LiteRtLmFinishReason? get lastFinishReason => _client.lastFinishReason;
   @override

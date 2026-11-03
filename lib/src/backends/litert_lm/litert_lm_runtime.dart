@@ -22,12 +22,16 @@ import 'litert_lm_last_error.dart';
 import 'litert_lm_json_schema_bindings.dart';
 import 'litert_lm_platform.dart';
 import 'litert_lm_sampler_params.dart';
+import 'litert_lm_legacy_service_client.dart';
+import 'litert_lm_runtime_client_contract.dart';
+import 'litert_lm_v1_runtime.dart';
 
 export 'litert_lm_asr_types.dart';
 export 'litert_lm_finish_reason.dart';
 export 'litert_lm_native_settlement.dart';
 
 part 'litert_lm_embedding_native.dart';
+part 'litert_lm_runtime_facade.dart';
 
 const _litertLmReleaseTag = 'v0.18.1-4';
 const _litertLmVersion = '0.18.1-4';
@@ -802,18 +806,20 @@ final class _BlockingSendMessageRequest {
 /// Most callers should use [LiteRtLmBackend] through the high-level
 /// `LlamaEngine` API. This client is exported for benchmark tools and advanced
 /// native integrations that need direct access to LiteRT-LM bundles.
-class LiteRtLmRuntimeClient {
+class _LegacyLiteRtLmRuntimeClient extends LiteRtLmRuntimeClient {
   /// Creates a low-level LiteRT-LM runtime client.
   ///
   /// [libraryPath] is an advanced local-validation override. Packaged apps
   /// should omit it and use the platform runtime selected by native assets.
-  LiteRtLmRuntimeClient({String? libraryPath})
-    : _libraryPathOverride = libraryPath;
+  _LegacyLiteRtLmRuntimeClient({String? libraryPath})
+    : _libraryPathOverride = libraryPath,
+      super._legacy();
 
   String _thinkingStartTag = LiteRtLmChannelAssembler.gemma4ThinkingStartTag;
   String _thinkingEndTag = LiteRtLmChannelAssembler.gemma4ThinkingEndTag;
 
   /// Configures how LiteRT-LM thought-channel chunks are exposed to parsers.
+  @override
   void configureResponseThinkingTags({
     required String startTag,
     required String endTag,
@@ -826,6 +832,7 @@ class LiteRtLmRuntimeClient {
   ///
   /// Runtime load failures are reported as unsupported rather than thrown so
   /// callers can use this as a capability probe.
+  @override
   bool get supportsAsrBridge {
     try {
       _ensureLibrariesLoaded();
@@ -843,6 +850,7 @@ class LiteRtLmRuntimeClient {
   ///
   /// Runtime load failures are reported as unsupported rather than thrown so
   /// callers can use this as a capability probe.
+  @override
   bool get supportsSamplingPenalties {
     try {
       _ensureLibrariesLoaded();
@@ -857,6 +865,7 @@ class LiteRtLmRuntimeClient {
   ///
   /// Runtime load failures are reported as unsupported rather than thrown so
   /// callers can use this as a capability probe.
+  @override
   bool get supportsThinkingBudget {
     try {
       _ensureLibrariesLoaded();
@@ -873,6 +882,7 @@ class LiteRtLmRuntimeClient {
   ///
   /// Runtime load failures are reported as unsupported rather than thrown so
   /// callers can use this as a capability probe.
+  @override
   bool get supportsFinishReasons {
     try {
       _ensureLibrariesLoaded();
@@ -886,6 +896,7 @@ class LiteRtLmRuntimeClient {
   ///
   /// Set before that stream closes. Null while a stream is running, before
   /// the first one, and on runtimes without [supportsFinishReasons].
+  @override
   LiteRtLmFinishReason? get lastFinishReason => _lastFinishReason;
 
   /// What the `.litertlm` bundle at [modelPath] declares in its section
@@ -896,6 +907,7 @@ class LiteRtLmRuntimeClient {
   /// API or cannot read the bundle. The reader matches section types
   /// case-sensitively and the runtime does not, so a `false` can be wrong
   /// for a bundle whose section types are not lowercase.
+  @override
   ({bool vision, bool audio, bool speculativeDecoding})? bundleCapabilities(
     String modelPath,
   ) {
@@ -933,6 +945,7 @@ class LiteRtLmRuntimeClient {
   }
 
   /// Whether the loaded runtime exports the complete optional schema API.
+  @override
   bool get supportsJsonSchemaConstraints {
     _ensureLibrariesLoaded();
     return _bindings!.jsonSchemaApi != null;
@@ -942,6 +955,7 @@ class LiteRtLmRuntimeClient {
   ///
   /// The current bridge accepts mono 16 kHz float PCM. Inference calls block;
   /// high-level clients should own this session from a worker isolate.
+  @override
   LiteRtLmAsrRuntimeSession createAsrSession(LiteRtLmAsrRuntimeConfig config) {
     _validateLiteRtLmAsrRuntimeConfig(config);
     _ensureLibrariesLoaded();
@@ -968,6 +982,7 @@ class LiteRtLmRuntimeClient {
   LiteRtLmNativeSettlement _nativeSettlement = LiteRtLmNativeSettlement.settled;
 
   /// Native lifetime; a Dart stream error alone does not establish settlement.
+  @override
   LiteRtLmNativeSettlement get nativeSettlement => _nativeSettlement;
 
   Pointer<_LiteRtLmEngine>? _engine;
@@ -981,6 +996,7 @@ class LiteRtLmRuntimeClient {
   /// capacity for conversations that may include image inputs. [outputTokens]
   /// is the per-request fallback when generation does not provide an explicit
   /// maximum; it is not an upstream benchmark decode-step count.
+  @override
   Future<void> initialize({
     required String modelPath,
     String backend = 'gpu',
@@ -1220,6 +1236,7 @@ class LiteRtLmRuntimeClient {
   ///
   /// With [temperature] `0`, [topK] is forced to `1`. [npuBackend] sets no
   /// sampler parameters.
+  @override
   void createConversation({
     String? systemMessage,
     String? promptTemplate,
@@ -1347,12 +1364,14 @@ class LiteRtLmRuntimeClient {
   }
 
   /// Updates the native LiteRT-LM log level.
+  @override
   void setMinLogLevel(int level) {
     _ensureLibrariesLoaded();
     _bindings!.setMinLogLevel(level);
   }
 
   /// Tokenizes text with the native LiteRT-LM tokenizer.
+  @override
   List<int> tokenize(String text, {bool addSpecial = true}) {
     final tokens = _tokenizeRaw(text);
     if (!addSpecial) {
@@ -1366,6 +1385,7 @@ class LiteRtLmRuntimeClient {
   }
 
   /// Converts native LiteRT-LM token ids back to text.
+  @override
   String detokenize(List<int> tokens) {
     final bindings = _requireBindings();
     final engine = _requireEngine();
@@ -1400,6 +1420,7 @@ class LiteRtLmRuntimeClient {
 
   /// Whether a runtime is loaded and provides the entry point of
   /// [renderMessageToString].
+  @override
   bool get supportsMessageRendering =>
       _bindings?._library.providesSymbol(
         'litert_lm_conversation_render_message_to_string',
@@ -1410,6 +1431,7 @@ class LiteRtLmRuntimeClient {
   ///
   /// The returned string is copied into Dart before the native conversation may
   /// invalidate the underlying buffer.
+  @override
   String renderMessageToString(Map<String, dynamic> message) {
     final bindings = _requireBindings();
     final conversation = _requireConversation();
@@ -1434,6 +1456,7 @@ class LiteRtLmRuntimeClient {
   ///
   /// [repetitionPenalty] and [presencePenalty] apply as in
   /// [generateMessageJson].
+  @override
   Stream<String> generate(
     String prompt, {
     int? maxOutputTokens,
@@ -1460,6 +1483,7 @@ class LiteRtLmRuntimeClient {
   /// channel closed, and enables thinking for this send. Both throw
   /// [LlamaUnsupportedException] when the runtime does not export their API;
   /// see [supportsSamplingPenalties] and [supportsThinkingBudget].
+  @override
   Stream<String> generateMessageJson(
     String messageJson, {
     Map<String, dynamic>? extraContext,
@@ -1857,6 +1881,7 @@ class LiteRtLmRuntimeClient {
   }
 
   /// Runs a benchmark-style prompt loop and returns runtime metrics.
+  @override
   Future<LiteRtLmRuntimeResult> run({
     required String prompt,
     int warmupRuns = 1,
@@ -1892,11 +1917,13 @@ class LiteRtLmRuntimeClient {
   }
 
   /// Reads runtime metrics for the active conversation.
+  @override
   LiteRtLmRuntimeMetrics readMetrics({required int wallMilliseconds}) {
     return _readMetrics(wallMilliseconds);
   }
 
   /// Cancels active native generation.
+  @override
   void cancel() {
     final conversation = _conversation;
     final bindings = _bindings;
@@ -1906,6 +1933,7 @@ class LiteRtLmRuntimeClient {
   }
 
   /// Releases native LiteRT-LM resources.
+  @override
   void dispose() {
     if (nativeSettlement != LiteRtLmNativeSettlement.settled) {
       throw LlamaStateException(
@@ -1926,6 +1954,16 @@ class LiteRtLmRuntimeClient {
     if (_bindings != null) {
       return;
     }
+    final liteRtLm = _discoverLibraries();
+    final bindings = _LiteRtLmBindings(liteRtLm.library);
+    _tryLoadEmbeddedStreamProxy(liteRtLm.library, liteRtLm.path, true);
+    _bindings = bindings;
+  }
+
+  ({String path, DynamicLibrary library})? _discoveredLibrary;
+  ({String path, DynamicLibrary library}) _discoverLibraries() {
+    final existing = _discoveredLibrary;
+    if (existing != null) return existing;
     final libraryPathOverride = _libraryPathOverride?.trim();
     if (libraryPathOverride == null || libraryPathOverride.isEmpty) {
       final unsupported = liteRtLmUnsupportedAbiException(liteRtLmGateAbi());
@@ -1949,13 +1987,7 @@ class LiteRtLmRuntimeClient {
     _liteRtLmLibraryPath = liteRtLm.path;
     _liteRtLmCompanionLibraryPaths = libraries.companions;
     _companionLibraries = companionLibraries;
-    final bindings = _LiteRtLmBindings(liteRtLm.library);
-    _tryLoadEmbeddedStreamProxy(
-      liteRtLm.library,
-      liteRtLm.path,
-      libraries.directCallbackSupported,
-    );
-    _bindings = bindings;
+    return _discoveredLibrary = liteRtLm;
   }
 
   ({
@@ -2097,7 +2129,9 @@ class LiteRtLmRuntimeClient {
     for (final candidate in candidates) {
       try {
         final library = _openLiteRtLmLibraryCandidate(candidate);
-        _validateLiteRtLmLibrary(library);
+        if (!library.providesSymbol('litert_lm_get_api_version')) {
+          _validateLiteRtLmLibrary(library);
+        }
         return (path: candidate, library: library);
       } catch (error) {
         errors.add('  - $candidate: $error');

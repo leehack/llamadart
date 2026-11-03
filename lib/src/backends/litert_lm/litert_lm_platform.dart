@@ -151,3 +151,20 @@ String? normalizeLiteRtLmNativeBackendOverride(String? backend) {
     'LiteRtLmBackend backend must be cpu, gpu, or npu; got $backend',
   );
 }
+
+/// Refuses the C API 1 runtime's macOS floor before any owned library load.
+/// Unknown version strings fail closed; custom paths obey the same floor.
+void liteRtLmEnsureV1PlatformFloor({
+  bool? isMacOS,
+  String? operatingSystemVersion,
+}) {
+  if (!(isMacOS ?? Platform.isMacOS)) return;
+  final version = operatingSystemVersion ?? Platform.operatingSystemVersion;
+  final match = RegExp(
+    r'^(?:Version\s+)?(\d+)\.(\d+)(?:\.\d+)?(?:\s|$)',
+  ).firstMatch(version);
+  if (match != null && int.parse(match.group(1)!) >= 14) return;
+  throw LlamaUnsupportedException(
+    'LiteRT-LM C API 1 native runtime requires macOS 14 or newer on Apple silicon, including custom library paths. The OS version is older or could not be verified. Upgrade macOS or use the llama.cpp backend.',
+  );
+}

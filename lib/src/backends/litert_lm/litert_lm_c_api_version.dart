@@ -9,6 +9,32 @@ typedef _GetApiVersionNative =
 typedef _GetApiVersionDart =
     int Function(Pointer<Int>, Pointer<Int>, Pointer<Int>);
 
+/// Reads the only admitted versioned ABI without calling any engine function.
+/// A missing marker means legacy; every malformed or unknown version is refused.
+({int major, int minor, int patch})? readLiteRtLmCApiVersion(
+  DynamicLibrary library,
+) {
+  if (!library.providesSymbol('litert_lm_get_api_version')) return null;
+  final getVersion = library
+      .lookupFunction<_GetApiVersionNative, _GetApiVersionDart>(
+        'litert_lm_get_api_version',
+      );
+  final parts = calloc<Int>(3);
+  try {
+    parts[0] = parts[1] = parts[2] = -1;
+    final status = getVersion(parts, parts + 1, parts + 2);
+    if (status != 0 || parts[0] != 1 || parts[1] != 0 || parts[2] < 0) {
+      throw LlamaUnsupportedException(
+        'LiteRT-LM rejects C API ${parts[0]}.${parts[1]}.${parts[2]} (version probe status $status). '
+        'Use the pinned litert-lm-native v0.18.1-4 runtime until llamadart#1677 qualification completes. No legacy engine call was attempted.',
+      );
+    }
+    return (major: parts[0], minor: parts[1], patch: parts[2]);
+  } finally {
+    calloc.free(parts);
+  }
+}
+
 /// Refuses versioned C APIs before using the pre-1.0 LiteRT-LM bindings.
 ///
 /// LiteRT-LM 0.19 introduces `litert_lm_get_api_version` alongside status-return

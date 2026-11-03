@@ -12,6 +12,7 @@ import '../../core/models/config/compute_device.dart';
 import '../../core/models/inference/model_params.dart';
 import '../../core/models/inference/embedding.dart';
 import 'litert_lm_blocking_call.dart';
+import 'litert_lm_c_api_version.dart';
 import 'litert_lm_platform.dart';
 import 'litert_lm_last_error.dart';
 import 'litert_lm_v1_blocking_call.dart';
@@ -35,9 +36,8 @@ part 'litert_lm_v1_media.dart';
 part 'litert_lm_v1_runtime_client.dart';
 part 'litert_lm_v1_tokenizer.dart';
 part 'litert_lm_v1_turn_settings.dart';
+part 'litert_lm_v1_thinking.dart';
 
-typedef _VersionN = Int Function(Pointer<Int>, Pointer<Int>, Pointer<Int>);
-typedef _VersionD = int Function(Pointer<Int>, Pointer<Int>, Pointer<Int>);
 typedef _CreateN = Int Function(Pointer<Pointer<Void>>);
 typedef _CreateD = int Function(Pointer<Pointer<Void>>);
 typedef _CreateFromN = Int Function(Pointer<Void>, Pointer<Pointer<Void>>);
@@ -110,23 +110,11 @@ final class LiteRtLmV1Runtime {
     LiteRtLmV1CreateRunner? createRunner,
   }) : _library = library,
        _createRunner = createRunner ?? runLiteRtLmV1Create {
-    if (!library.providesSymbol('litert_lm_get_api_version')) {
+    liteRtLmEnsureV1PlatformFloor();
+    if (readLiteRtLmCApiVersion(library) == null) {
       throw LlamaUnsupportedException(
         'C API 1.0 adapter requires a versioned LiteRT-LM runtime; legacy libraries use the existing runtime client.',
       );
-    }
-    final parts = calloc<Int>(3);
-    try {
-      final status = library.lookupFunction<_VersionN, _VersionD>(
-        'litert_lm_get_api_version',
-      )(parts, parts + 1, parts + 2);
-      if (status != 0 || parts[0] != 1 || parts[1] != 0 || parts[2] < 0) {
-        throw LlamaUnsupportedException(
-          'C API 1.0 adapter rejects version ${parts[0]}.${parts[1]}.${parts[2]} (probe status $status).',
-        );
-      }
-    } finally {
-      calloc.free(parts);
     }
     for (final symbol in _requiredSymbols) {
       if (!library.providesSymbol(symbol)) {

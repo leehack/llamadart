@@ -30,7 +30,7 @@ validate against the exact release tag notes.
 - Keep LFM2 tool markers inside reasoning non-executable and preserve thought tags inside tool arguments ([#1714](https://github.com/leehack/llamadart/issues/1714)).
 - Retain unsettled LiteRT-LM workers and their model caches after native cleanup failures, with explicit process-restart guidance.
 
-- Reject incompatible native LiteRT-LM C API 1.0 overrides before calling legacy bindings, with runtime migration guidance.
+- Reject incompatible or malformed native LiteRT-LM C API overrides before calling legacy bindings, with consistent migration guidance for speech probes.
 - Start eager chat or text tasks with observable events, request-scoped cancellation, partial output and a terminal outcome independent of event listeners.
 - Add Decision task APIs with typed completion and cooperative per-task cancellation.
 

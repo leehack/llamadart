@@ -24,9 +24,11 @@ interface does not establish backend/model support; read `await engine.capabilit
 
 ## Guidelines
 
-- Keep native LiteRT-LM overrides compatible with the package's pre-1.0 C
-  bindings. LiteRT-LM 0.19 / C API 1.0 is refused before engine calls; use the
-  pinned v0.18.1-4 runtime until the #1677 consumer migration is delivered.
+- Use the pinned native LiteRT-LM v0.18.1-4 runtime. Direct calls, service
+  probes and speech share ABI-aware discovery, but production C API 1 selection
+  remains disabled pending #1677 qualification. Versioned or unknown overrides
+  are refused before engine calls. The prepared C API 1 activation requires
+  macOS 14+ even for custom library paths; it does not change Web selection.
 
 - For a model-free macOS/Linux/Windows setup snapshot, use
   `dart run llamadart:doctor [--json]` or

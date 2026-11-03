@@ -2,7 +2,6 @@ import 'dart:async';
 import 'dart:isolate';
 import 'dart:typed_data';
 
-import '../../backends/litert_lm/litert_lm_legacy_service_client.dart';
 import '../../backends/litert_lm/litert_lm_runtime.dart';
 import '../../backends/litert_lm/litert_lm_runtime_client_contract.dart';
 import '../exceptions.dart';
@@ -45,14 +44,13 @@ LiteRtLmSpeechToTextDriver createLiteRtLmSpeechToTextDriverWithRuntime(
   runtimeClientFactory,
 ) => _IoLiteRtLmSpeechToTextDriver(runtimeClientFactory);
 
-LiteRtLmRuntimeClientContract _createLegacySpeechClient(String? libraryPath) =>
-    LiteRtLmLegacyServiceClient(
-      LiteRtLmRuntimeClient(libraryPath: libraryPath),
-    );
+LiteRtLmRuntimeClientContract _createSelectedSpeechClient(
+  String? libraryPath,
+) => createLiteRtLmSelectedServiceClient(libraryPath: libraryPath, eager: true);
 
 class _IoLiteRtLmSpeechToTextDriver implements LiteRtLmSpeechToTextDriver {
   const _IoLiteRtLmSpeechToTextDriver([
-    this._runtimeClientFactory = _createLegacySpeechClient,
+    this._runtimeClientFactory = _createSelectedSpeechClient,
   ]);
 
   final LiteRtLmRuntimeClientContract Function(String?) _runtimeClientFactory;
