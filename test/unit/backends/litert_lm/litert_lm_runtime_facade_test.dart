@@ -37,7 +37,7 @@ void main() {
     directory = await Directory.systemTemp.createTemp('litert_selected_');
     for (final entry in {
       'legacy': 'c_api_legacy_service.c',
-      'v1': 'c_api_v1_asr.c',
+      'v1': 'c_api_v1_public_dispatch.c',
       'missing': 'c_api_version.c',
     }.entries) {
       final path =
@@ -57,28 +57,82 @@ void main() {
   tearDownAll(() => directory.delete(recursive: true));
 
   test(
-    'public facade remains lazy and keeps v1 production selection disabled',
+    'explicit legacy path preserves compatibility on an unsupported published ABI',
     () async {
-      final client = LiteRtLmRuntimeClient(libraryPath: paths['v1']);
-      client.configureResponseThinkingTags(
-        startTag: '<think>',
-        endTag: '</think>',
-      );
-      expect(client.nativeSettlement, LiteRtLmNativeSettlement.settled);
-      expect(client.supportsFinishReasons, isFalse);
-      await expectLater(
-        client.initialize(modelPath: 'unused', backend: 'cpu'),
-        throwsA(
-          isA<LlamaUnsupportedException>().having(
-            (error) => error.message,
-            'pending migration',
-            contains('#1677'),
-          ),
-        ),
-      );
-      client.dispose();
+      debugLiteRtLmAbiOverride = Abi.macosX64;
+      addTearDown(() => debugLiteRtLmAbiOverride = null);
+      final client = LiteRtLmRuntimeClient(libraryPath: paths['legacy']);
+      try {
+        await client.initialize(
+          modelPath: 'fixture',
+          backend: 'cpu',
+          speculativeDecoding: false,
+        );
+        expect(client.nativeSettlement, LiteRtLmNativeSettlement.settled);
+      } finally {
+        client.dispose();
+      }
     },
   );
+
+  test(
+    'explicit v1 path rejects an unsupported ABI before creating an engine',
+    () async {
+      debugLiteRtLmAbiOverride = Abi.macosX64;
+      addTearDown(() => debugLiteRtLmAbiOverride = null);
+      final library = DynamicLibrary.open(paths['v1']!);
+      final attempts = library.lookupFunction<Int Function(), int Function()>(
+        'fixture_public_engine_attempts',
+      );
+      final before = attempts();
+      final client = LiteRtLmRuntimeClient(libraryPath: paths['v1']);
+      try {
+        await expectLater(
+          client.initialize(modelPath: 'fixture', backend: 'cpu'),
+          throwsA(
+            isA<LlamaUnsupportedException>().having(
+              (error) => error.message,
+              'unsupported ABI',
+              contains('macOS x86_64'),
+            ),
+          ),
+        );
+        expect(attempts(), before);
+      } finally {
+        client.dispose();
+      }
+    },
+  );
+
+  test('public facade lazily selects v1 and releases its engine', () async {
+    final client = LiteRtLmRuntimeClient(libraryPath: paths['v1']);
+    expect(client.nativeSettlement, LiteRtLmNativeSettlement.settled);
+    expect(client.supportsFinishReasons, isTrue);
+    await client.initialize(
+      modelPath: 'unused',
+      backend: 'cpu',
+      speculativeDecoding: false,
+    );
+    expect(client.tokenize('hello', addSpecial: false), [5, 104, 111]);
+    client.dispose();
+    final library = DynamicLibrary.open(paths['v1']!);
+    expect(
+      library.lookupFunction<Int Function(), int Function()>('fixture_live')(),
+      0,
+    );
+  });
+
+  test('explicit disabled selector refuses v1 before engine calls', () async {
+    final client = createLiteRtLmSelectedRuntimeClient(
+      libraryPath: paths['v1'],
+      allowV1: false,
+    );
+    await expectLater(
+      client.initialize(modelPath: 'unused', backend: 'cpu'),
+      throwsA(isA<LlamaUnsupportedException>()),
+    );
+    client.dispose();
+  });
 
   test(
     'staged discovery selects complete v1 without creating engines for probes',
@@ -171,13 +225,16 @@ void main() {
     client.dispose();
   });
 
-  test('public speech default retains typed pending-v1 guidance', () async {
-    final support = await createLiteRtLmSpeechToTextDriver().probeSupport(
-      libraryPath: paths['v1'],
-    );
-    expect(support.isSupported, isFalse);
-    expect(support.unsupportedReason, contains('#1677'));
-  });
+  test(
+    'public speech default admits the complete independent v1 ASR bridge',
+    () async {
+      final support = await createLiteRtLmSpeechToTextDriver().probeSupport(
+        libraryPath: paths['v1'],
+      );
+      expect(support.isSupported, isTrue);
+      expect(support.unsupportedReason, isNull);
+    },
+  );
 
   test(
     'same staged selector serves speech capability and receiving-isolate worker',

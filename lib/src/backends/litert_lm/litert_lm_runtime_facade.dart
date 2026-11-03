@@ -1,9 +1,9 @@
 part of 'litert_lm_runtime.dart';
 
 // Activation changes only after artifact and public-path qualification.
-const bool _liteRtLmV1ProductionSelection = false;
+const bool _liteRtLmV1ProductionSelection = true;
 
-/// Internal activation qualification entry point; production keeps C API 1 disabled.
+/// Internal selection seam for ABI and compatibility qualification.
 LiteRtLmRuntimeClient createLiteRtLmSelectedRuntimeClient({
   String? libraryPath,
   bool allowV1 = _liteRtLmV1ProductionSelection,
@@ -67,8 +67,10 @@ class LiteRtLmRuntimeClient {
   LiteRtLmRuntimeClientContract _selectRuntime() {
     if (_allowV1) {
       liteRtLmEnsureV1PlatformFloor(operatingSystemVersion: _macOsVersion);
-      final unsupported = liteRtLmUnsupportedAbiException(liteRtLmGateAbi());
-      if (unsupported != null) throw unsupported;
+      if (_facadeLibraryPath == null) {
+        final unsupported = liteRtLmUnsupportedAbiException(liteRtLmGateAbi());
+        if (unsupported != null) throw unsupported;
+      }
     }
     final owner = _LegacyLiteRtLmRuntimeClient(
       libraryPath: _facadeLibraryPath,
@@ -79,6 +81,8 @@ class LiteRtLmRuntimeClient {
     final version = readLiteRtLmCApiVersion(selected.library);
     final LiteRtLmRuntimeClientContract client;
     if (version != null && _allowV1) {
+      final unsupported = liteRtLmUnsupportedAbiException(liteRtLmGateAbi());
+      if (unsupported != null) throw unsupported;
       client = LiteRtLmV1RuntimeClient(selected.library);
     } else {
       requireLiteRtLmLegacyCApi(selected.library);

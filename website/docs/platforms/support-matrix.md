@@ -208,9 +208,9 @@ The native-assets hook currently pins `llamadart-native` tag
 `litert-lm-native` release `v0.18.1-4` (`lib/src/hook/native_release_pins.dart`).
 
 The direct native client, service probes and speech worker share ABI-aware
-discovery. Production selection still refuses LiteRT-LM 0.19 / C API 1.0 and
-unknown versions before engine calls; use the pinned runtime until #1677
-qualification enables the prepared selector. C API 1 activation requires
+discovery. Public selection admits legacy runtimes and C API 1.0.x; unknown
+or future versions are refused before engine calls. The default runtime pin
+remains unchanged pending artifact adoption. C API 1 requires
 macOS 14+ before loading any core or companion library, including custom paths.
 The Flutter companion's iOS 16.4 floor remains separate.
 Apps can override the llama.cpp release with `llamadart_native_tag`; accepted

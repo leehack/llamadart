@@ -155,10 +155,10 @@ Current default runtime pins:
 | Web LiteRT-LM / `.litertlm` | `@litert-lm/core@0.18.0` |
 
 Native LiteRT-LM uses a lazy ABI-aware client for direct calls, services and
-speech. Production selection remains on the pinned pre-1.0 runtime;
-LiteRT-LM 0.19 / C API 1.0 and unknown versions are refused before engine calls
-until #1677 qualification enables the prepared selector. That activation
-requires macOS 14+ for all owned library loads, including custom paths.
+speech. The public selector admits legacy runtimes and C API 1.0.x; unknown or
+future versions are refused before engine calls. The default runtime pin remains
+unchanged pending artifact adoption. C API 1 requires macOS 14+ for all owned
+library loads, including custom paths.
 
 Native overrides accept stable `vMAJOR.MINOR.PATCH` releases and explicit
 historical or nightly `bNNNN` artifacts. New nightly wrapper rebuilds use

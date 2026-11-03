@@ -1,14 +1,15 @@
 # LiteRT-LM C API 1 adoption
 
 The public lazy facade, default service probes and speech worker now share
-ABI-aware discovery. Production selection still rejects C API 1 because
-`_liteRtLmV1ProductionSelection` remains false. The internal
+ABI-aware discovery. Public production selection now admits C API 1.0.x;
+unknown/future versions remain unsupported. Owner pins remain unchanged pending
+qualified artifact publication/adoption. The internal
 `createLiteRtLmSelectedRuntimeClient(allowV1: true)` entry point exercises that
 same facade with admitted C API 1.0.x fixtures, retaining selected core and
 companion handles and paths. `LiteRtLmV1RuntimeClient` also remains injectable. Its fixtures prove ABI,
 dispatch and lifetime behavior; they do not qualify a model, device or owner
-artifact. Keep the factory disabled and pins unchanged until the required gaps
-below and artifact review are complete.
+artifact. Keep owner pins unchanged until the required artifact/model/platform gates
+below are complete. Public activation source alone is not qualification.
 
 `LiteRtLmService.runtimeClientFactory` selects this preparation path and probes
 metadata/finish capabilities from that same factory. It is exclusive with the
@@ -21,7 +22,7 @@ client/session contracts make v1 embedding dispatch independent of that extensio
 
 | Public call path | Preparation and evidence | Remaining admission work |
 | --- | --- | --- |
-| Packaged Apple platform floor | Exact owner `5129cd0` candidate declares macOS 14.0 and iOS 15.0 | Staged owned discovery refuses macOS below 14 or unknown versions before any core/companion load, including custom paths; direct v1 operations also check the floor. Public activation and artifact qualification remain pending. macOS 13 is unsupported by this artifact; static iOS minima are not device qualification. |
+| Packaged Apple platform floor | Exact owner `5129cd0` candidate declares macOS 14.0 and iOS 15.0 | Staged owned discovery refuses macOS below 14 or unknown versions before any core/companion load, including custom paths; direct v1 operations also check the floor. Public ABI-aware selection is enabled; owner pins remain unchanged and exact-artifact qualification is pending. macOS 13 is unsupported by this artifact; static iOS minima are not device qualification. |
 | Engine initialization and backend options | Status/out settings; responsive owned background creation with scalar function/configuration addresses, immediate same-thread canonical error copy, partial-owner cleanup and typed service retry classification. Pending/uncertain creation retains its library/model/cache family. | Qualify each selected backend and exact artifact; missing completion requires process restart. |
 | `tokenize` / `detokenize` / start tokens | Status/out, `size_t`, copied results, legacy BOS semantics | Matching artifact/model qualification. |
 | Bundle capabilities | Owned model-file snapshot; null optional client probe on native read failure | Declarations do not prove executor or channel enforcement. |
@@ -31,14 +32,14 @@ client/session contracts make v1 embedding dispatch independent of that extensio
 | Reasoning output and budgets | Named reasoning chunks retain configured markers. Positive C-int per-send budgets use status/out thinking options after first-channel boundary and native-tokenizer admission. | Actual matched thinking-family enforcement, cancellation/reuse and final public routing still require qualification; symbols or metadata alone do not prove a model obeys the bound. |
 | Native JSON Schema chat | Complete optional C API 1.0 group, by-value provider enum, status-checked configuration and per-turn constraints with thinking disabled; compiled ABI and service-client fixtures | Exact candidate/model regression and final public routing remain required. Missing exports refuse before conversation replacement; automatic tool constraints remain disabled. |
 | LoRA session path | Explicit typed refusal preserves the current conversation; upstream advanced engines reject initial text adapters | Runtime support remains tracked in [litert-lm-native#99](https://github.com/leehack/litert-lm-native/issues/99); setter availability alone does not provide support. |
-| Image/audio chat | Internal encoded-file transport; configured encoder, native modality declarations and a supported processor route are all required. Unknown/missing proof is refused. Service image-history counts prepare dynamic inputs without claiming enforced capacity. Direct legacy-only `maxNumImages` capacity remains unsupported. | Public factory remains disabled. Remote URLs, raw RGB/PCM and video retain their existing refusal; compiled fixtures do not qualify media quality or GPU execution. |
+| Image/audio chat | Internal encoded-file transport; configured encoder, native modality declarations and a supported processor route are all required. Unknown/missing proof is refused. Service image-history counts prepare dynamic inputs without claiming enforced capacity. Direct legacy-only `maxNumImages` capacity remains unsupported. | Public selection does not qualify media artifacts. Remote URLs, raw RGB/PCM and video retain their existing refusal; compiled fixtures do not qualify media quality or GPU execution. |
 | Embedding sessions | Dedicated v1 engine/options/input/response APIs, `size_t` counts and copied vectors; the public extension preserves its concrete session return type through a forwarding session | Matching artifact/model qualification with existing backend restrictions. |
-| Dedicated ASR | Loaded-library ABI1/layout/full-symbol admission; v1 client and injected actual speech probe/worker use the independent bridge. Compiled fixture covers partial owners, copied text/errors, size_t backpressure, cancel/reset/finalization and worker startup/disposal. | Matching artifact/model/audio qualification through the injected worker; staged selector probe/worker fixture passes; production selection remains legacy. |
+| Dedicated ASR | Loaded-library ABI1/layout/full-symbol admission; v1 client and injected actual speech probe/worker use the independent bridge. Compiled fixture covers partial owners, copied text/errors, size_t backpressure, cancel/reset/finalization and worker startup/disposal. | Matching artifact/model/audio qualification through the final public worker remains required; compiled default probe/worker fixtures cover dispatch only. |
 | Logging | Canonical v1 status checked for declared severity values | Matching artifact qualification. |
 | Cancellation, errors and disposal | Final plus successful drain required; cancellation awaits adapter terminal bookkeeping; failed drain/missing final retain native owners in isolated fixtures | Worker/timeout and actual artifact/model qualification must preserve the same retention boundary. |
 | Benchmark metrics / `run` | Legacy metrics value types and aggregation; owned native snapshots | Benchmark loops and actual artifact/model qualification. |
 
-Production selection remains legacy and the Web stub remains unchanged. Independent ASR library helpers reuse its bridge bindings without constructing legacy text bindings; malformed success-with-null owners are refused, and a partial engine returned with an error is released. Adding an operation to
+Public selection supports both admitted native ABIs; the Web stub is unchanged. Independent ASR library helpers reuse its bridge bindings without constructing legacy text bindings; malformed success-with-null owners are refused, and a partial engine returned with an error is released. Adding an operation to
 the internal contract requires both ABI implementations to supply it explicitly;
 v1 never inherits a legacy FFI method as a fallback. Unsupported preparations
 throw `LlamaUnsupportedException` before native generation rather than reporting
@@ -87,8 +88,8 @@ selection, and does not claim the remaining feature families or other devices.
 internal qualification/integration boundary. Pass an isolate-sendable factory
 that constructs the selected ABI client from the provided library path inside
 the receiving isolate. Both the support probe and the streaming worker use it.
-The default speech factory still uses the legacy client; this does not enable
-public C API1 selection or change runtime pins.
+The default speech factory uses the public ABI-aware selector; independent ASR
+bridge admission remains required. Runtime pins are unchanged.
 
 The selected text C API does not determine ASR support. The loaded library must
 report ASR ABI1, exact configuration/result sizes and every required bridge
@@ -200,8 +201,8 @@ The `litert-lm-v1-public-direct`, `litert-lm-v1-public-service` and
 `litert-lm-v1-public-speech` local-only rows exercise the public
 `LiteRtLmRuntimeClient`, default `LiteRtLmService` and default
 `SpeechToTextEngine` paths. They provide no runtime-client factory or speech
-driver override. Production selection remains disabled, so these rows must
-refuse until the final activation and artifact gates are admitted.
+driver override. Public selection admits C API 1.0.x; these rows still require
+exact artifact/model qualification on the final activation/adoption head.
 
 Supply `LITERT_LM_V1_LIBRARY`, its `LITERT_LM_V1_LIBRARY_SHA256`,
 `LITERT_LM_V1_MODEL_SHA256`, `LITERT_LM_V1_RUNTIME_MANIFEST` and its
@@ -220,8 +221,12 @@ lifetimes, cancellation and reuse. The direct client reports native finish;
 the default service exposes settlement and limit classification but no exact
 cancelled native-finish getter, so its receipt says that explicitly.
 
-Model-free tests separately prove the current uninjected flag-off refusal with
-zero fixture engine attempts. Clearly labeled staging-seam tests exercise the
+Before activation, model-free tests proved uninjected flag-off refusal with
+zero fixture engine attempts. Explicit disabled-selector controls retain that
+refusal contract. Activated compiled-fixture tests
+exercise default direct/service stream, cancellation after output, reload and
+cleanup, plus default speech streaming/task/cancellation. These are explicitly
+not model qualification. Clearly labeled staging-seam tests exercise the
 status-9 engine error mapping: explicit GPU requests surface typed unsupported
 with the CPU remedy, while automatic GPU preference retains CPU fallback.
 These are consumer mapping controls, not execution of the Android native guard
