@@ -407,10 +407,18 @@ def litert_spm_asset_patterns(
     allowed: bool,
 ) -> tuple[str, ...]:
     patterns: list[str] = list(LITERT_SPM_ASSET_PATTERNS)
-    if _litert_compatibility_version(compatibility_tag) >= (0, 16, 0):
+    version = _litert_compatibility_version(compatibility_tag)
+    if version >= (0, 16, 0):
         patterns.extend(LITERT_V0_16_SPM_ASSET_PATTERNS)
         if allowed:
             patterns.extend(LITERT_V0_16_ALLOWED_SPM_COMPANION_ASSET_PATTERNS)
+        if version == (0, 19, 0):
+            # The reviewed v0.19 owner links both TopK samplers from source.
+            obsolete = {
+                "litert-lm-native-apple-LiteRtTopKMetalSampler-xcframework-{tag}.zip",
+                "litert-lm-native-apple-LiteRtTopKWebGpuSampler-xcframework-{tag}.zip",
+            }
+            patterns = [pattern for pattern in patterns if pattern not in obsolete]
     return tuple(patterns)
 
 
@@ -529,7 +537,10 @@ def required_litert_manifest_paths(
     version = _litert_compatibility_version(compatibility_tag)
     required = set(LITERT_REQUIRED_RUNTIME_PATHS)
     if version >= (0, 16, 0):
-        required.update(LITERT_V0_16_IOS_GPU_PATHS)
+        required.update(
+            path for path in LITERT_V0_16_IOS_GPU_PATHS
+            if version != (0, 19, 0) or "TopKMetalSampler" not in path
+        )
     if official_assets and version >= (0, 14, 0):
         required.update(
             {
@@ -622,6 +633,15 @@ def litert_schema2_apple_targets(
     # Optional release assets alone do not imply a dependency. Include the
     # provider only when an iOS runtime bundle actually requires its binary.
     bundles = litert_schema2_bundle_required_libraries(manifest)
+    if compatibility_tag == "v0.19.0" and any(
+        "TopKMetalSampler" in library or "TopKWebGpuSampler" in library
+        for bundle, libraries in bundles.items()
+        if bundle.startswith(("ios-", "macos-"))
+        for library in libraries
+    ):
+        raise ReleaseError(
+            "LiteRT-LM v0.19.0 owner inventory unexpectedly requires a prebuilt TopK sampler"
+        )
     if any(
         "GemmaModelConstraintProvider" in libraries
         for bundle, libraries in bundles.items() if bundle.startswith("ios-")
@@ -3989,6 +4009,91 @@ def replace_swift_binary_target_checksum(
     return updated
 
 
+def _remove_litert_lm_obsolete_topk_samplers(
+    swift_text: str, *, current_tag: str,
+) -> str:
+    # This is the maintained nine-target topology before the v0.19 inventory.
+    platforms = {
+        "LiteRtLm": ".iOS, .macOS",
+        "CLiteRTLM": ".iOS",
+        "CLiteRTLMMac": ".macOS",
+        "LiteRtMetalAccelerator": ".iOS",
+        "LiteRtTopKMetalSampler": ".iOS",
+        "LiteRt": ".macOS",
+        "LiteRtTopKWebGpuSampler": ".macOS",
+        "LiteRtWebGpuAccelerator": ".macOS",
+        "WebgpuDawn": ".macOS",
+    }
+    label = "LiteRT-LM v0.19 sampler removal"
+    assets = swift_native_repo_binary_targets(
+        swift_text, tag_variable="liteRtLmTag", current_tag=current_tag,
+    )
+    if (
+        len(assets) != len(platforms)
+        or {name for name, _ in assets} != set(platforms)
+        or len(re.findall(r"\bnativeRepoBinaryTarget\s*\(", swift_text))
+        != len(platforms) + 1
+    ):
+        raise ReleaseError(f"{label} has duplicate or unexpected binary targets")
+    blocks = {}
+    for target in platforms:
+        artifact = re.escape(f"litert-lm-native-apple-{target}-xcframework-")
+        interpolated = re.escape(r'\(liteRtLmTag)')
+        tag = rf"(?:{interpolated}|{re.escape(current_tag)})"
+        pattern = (
+            r'(?m)^[ \t]*nativeRepoBinaryTarget\(\s*'
+            rf'name: "{target}",\s*'
+            r'repository: "leehack/litert-lm-native",\s*'
+            rf'artifactName: "{artifact}{tag}\.zip",\s*'
+            r'tag: liteRtLmTag,\s*checksum: "[0-9a-f]{64}"\s*'
+            r'\),\n'
+        )
+        matches = re.findall(pattern, swift_text)
+        if len(matches) != 1:
+            raise ReleaseError(f"{label} requires the canonical {target} binary target")
+        blocks[target] = matches[0]
+        dependencies = re.findall(
+            rf'\.target\(name: "{target}", condition: '
+            r'\.when\(platforms: \[([^]]*)\]\)\)', swift_text,
+        )
+        if (
+            dependencies != [platforms[target]]
+            or swift_text.count(f'name: "{target}"') != 2
+        ):
+            raise ReleaseError(f"{label} requires the maintained {target} platform dependency")
+    references = re.findall(r'\.target\s*\(\s*name\s*:\s*"([^\"]+)"', swift_text)
+    if (
+        sorted(references) != sorted(set(platforms) | {"llamadart_litert_lm_flutter"})
+        or len(re.findall(r'\.target\s*\(', swift_text)) != len(references)
+    ):
+        raise ReleaseError(f"{label} has unexpected target references")
+    dependencies = re.findall(
+        r'\bdependencies\s*:\s*\[(.*?)\]\s*,\s*linkerSettings\s*:',
+        swift_text, re.DOTALL,
+    )
+    if len(dependencies) != 1 or re.sub(
+        r'\.target\s*\(\s*name\s*:\s*"[^\"]+"\s*,\s*condition\s*:\s*'
+        r'\.when\s*\(\s*platforms\s*:\s*\[[^]]*\]\s*\)\s*\)',
+        "", dependencies[0] if dependencies else "",
+    ).strip(" \t\r\n,"):
+        raise ReleaseError(f"{label} has malformed dependency inventory")
+    for sampler, platform in (
+        ("LiteRtTopKMetalSampler", ".iOS"),
+        ("LiteRtTopKWebGpuSampler", ".macOS"),
+    ):
+        if swift_text.count(sampler) != 3:
+            raise ReleaseError(f"{label} has ambiguous sampler references")
+        swift_text = swift_text.replace(blocks[sampler], "", 1)
+        swift_text = replace_one(
+            swift_text,
+            rf'(?m)^[ \t]*\.target\(name: "{sampler}", '
+            rf'condition: \.when\(platforms: \[{re.escape(platform)}\]\)\),\n',
+            "",
+            f"LiteRT-LM obsolete {sampler} must have exactly one {platform} dependency",
+        )
+    return swift_text
+
+
 def prepare_litert_lm_package_swift(
     original_swift_text: str,
     *,
@@ -4016,6 +4121,20 @@ def prepare_litert_lm_package_swift(
                 current_tag=original_tag,
             )
         }
+        obsolete_samplers = {"LiteRtTopKMetalSampler", "LiteRtTopKWebGpuSampler"}
+        sampler_free_targets = {
+            "LiteRtLm", "CLiteRTLM", "CLiteRTLMMac", "LiteRtMetalAccelerator",
+            "LiteRt", "LiteRtWebGpuAccelerator", "WebgpuDawn",
+        }
+        if (
+            manifest["upstream"]["compatibilityTag"] == "v0.19.0"
+            and expected_targets == sampler_free_targets
+            and current_targets == expected_targets | obsolete_samplers
+        ):
+            swift_text = _remove_litert_lm_obsolete_topk_samplers(
+                swift_text, current_tag=original_tag,
+            )
+            current_targets -= obsolete_samplers
         if current_targets == legacy_targets:
             if swift_text.count("GemmaModelConstraintProvider") != 3:
                 raise ReleaseError(
@@ -4137,6 +4256,12 @@ def prepare_litert_lm_package_swift(
             raise ReleaseError(
                 "LiteRT-LM Package.swift binary targets do not match the legacy "
                 "or schema-2 owner inventory"
+            )
+        if manifest["upstream"]["compatibilityTag"] == "v0.19.0" and any(
+            sampler in swift_text for sampler in obsolete_samplers
+        ):
+            raise ReleaseError(
+                "LiteRT-LM Package.swift has malformed or unexpected obsolete sampler references"
             )
         if (
             "GemmaModelConstraintProvider" not in expected_targets

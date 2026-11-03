@@ -110,6 +110,16 @@ provider retain it; malformed or ambiguous Swift target layouts fail before
 pin files are replaced. Updating the sync tool does not change the current pins
 or publish a runtime.
 
+The reviewed `v0.19.0` owner links both TopK samplers from source, so its
+Apple inventory no longer requires the prebuilt iOS `LiteRtTopKMetalSampler`
+or macOS `LiteRtTopKWebGpuSampler`. Earlier core requirements for those 0.19
+artifacts were stale. Sync removes both targets only from the known nine-target
+layout after validating every canonical artifact and platform dependency, and
+only when the owner bundles no longer require either library. It preserves the
+Metal accelerator and other runtime targets. Versions 0.16 through 0.18 retain
+their prebuilt sampler requirements. This removal does not apply to other
+versions or layouts, which need a reviewed transition before pin files change.
+
 Changing between stable and development channels requires
 `--allow-litert-channel-transition`; changing between two distinct `g<sha>`
 lines requires `--allow-litert-development-line-transition`. Both flags default
