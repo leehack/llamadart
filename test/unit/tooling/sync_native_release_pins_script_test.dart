@@ -666,7 +666,7 @@ paths=(
     );
 
     expect(
-      await litertRuntimeDart.readAsString(),
+      (await litertRuntimeDart.readAsString()).replaceAll('\r\n', '\n'),
       contains(_untouchedV1RuntimeInventories),
     );
 

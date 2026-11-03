@@ -12,6 +12,7 @@ import 'package:llamadart/src/backends/stable_diffusion/stable_diffusion_binding
 import 'package:llamadart/src/backends/stable_diffusion/stable_diffusion_params.dart';
 import 'package:llamadart/src/backends/stable_diffusion/stable_diffusion_runtime_status.dart';
 import 'package:llamadart/src/core/image/image_generation_driver.dart';
+import 'package:path/path.dart' as path;
 import 'package:test/test.dart';
 
 import '../../../example/basic_app/test/fixtures/image_original_container_model.dart';
@@ -24,9 +25,9 @@ void main() {
       final directory = Directory.systemTemp.createTempSync(
         'sd24-public-model-free-',
       );
-      final model = File('${directory.path}/header.gguf')
+      final model = File(path.join(directory.path, 'header.gguf'))
         ..writeAsBytesSync(ImageModelHeaders.sdTurboCheckpoint);
-      final taesd = File('${directory.path}/header.safetensors')
+      final taesd = File(path.join(directory.path, 'header.safetensors'))
         ..writeAsBytesSync(ImageModelHeaders.taesd);
       final driver = _RecordingDriver();
       debugImageGenerationDriverOverride = driver;
