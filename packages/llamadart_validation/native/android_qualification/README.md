@@ -204,3 +204,120 @@ python3 -m unittest discover \
 
 Successful decoding proves raw integrity only. It does not establish GPU
 placement, correct effective geometry, functional success or release readiness.
+
+## Android full/compact consumer release smoke
+
+`integration_test/android_consumer_profile_test.dart` closes the automation gap
+in `doc/android_runtime_smoke_test_plan.md`; it does not reuse the A35 Vulkan
+qualification as CPU-profile evidence. It exercises only the unmodified public
+`LlamaEngine(LlamaBackend())` path. There is no native control, library-path
+override or injected service/factory. The issue diagnostic above retains its
+native/public controls. `full` and `compact` refer to consumer hook packaging,
+not Flutter build mode: both APKs must be **release** builds.
+
+Use two new isolated checkouts of the exact source being qualified. In each,
+replace the chat app's complete `hooks.user_defines.llamadart` map with:
+
+```yaml
+llamadart_native_runtimes: llama_cpp
+llamadart_native_tag: v0.8.0-2
+llamadart_native_backends:
+  platforms:
+    android-arm64:
+      cpu_profile: full # compact in the second checkout
+```
+
+Commit each configuration separately, prepare dependencies with the pinned SDK,
+and retain both commit/tree identities and the exact pubspec hashes. This narrows
+the example's optional `all` runtimes to the default public llama.cpp consumer;
+backend selection stays the normal CPU/Vulkan policy. Full packages all seven
+CPU modules; compact packages only `android_armv8.0_1`. Never copy runtime `.so`
+files into the stage. The real hook must emit every runtime library.
+
+The following are preparation/build instructions for the authorized operator,
+not device dispatch authorization. From each clean committed checkout:
+
+```sh
+python3 packages/llamadart_validation/native/android_qualification/prepare_consumer.py \
+  --dart /path/to/pinned-flutter/bin/cache/dart-sdk/bin/dart \
+  --native-archive /path/to/llamadart-native-android-arm64-v0.8.0-2.tar.gz \
+  --profile full --out .dart_tool/android-consumer/full
+```
+
+The preparer checks the pinned archive SHA, reads the actual consumer pubspec,
+uses the production selector, and binds the complete source inventory and
+selected owner bytes. It does not compile a native probe, download inputs, read
+models, build an APK or call a device/provider. The existing `verify_apk.py`
+accepts this no-probe binding and rejects omitted/extra/modified runtime files.
+This is static admission only. `--dry-run` reads no archive or model and emits prospective
+build commands and old/modern NOT_RUN drafts without creating an output directory.
+Actual preparation saves `operator-plan.json` with both commands and the same
+base64-encoded Dart defines for Gradle.
+
+Set `LLAMADART_ANDROID_CONSUMER_PROFILE_STAGE` to the absolute generated `stage`
+directory for **both** build commands. This stages binding assets only, retains
+installed library bytes and sets AGP's instrumentation test build type to release.
+From `example/chat_app`, substitute the committed profile's actual hashes:
+
+```sh
+flutter build apk --release --target integration_test/android_consumer_profile_test.dart \
+  --target-platform android-arm64 \
+  --dart-define=LLAMADART_ANDROID_CPU_PROFILE=full \
+  --dart-define=LLAMADART_SOURCE_COMMIT=COMMITTED_40_HEX \
+  --dart-define=LLAMADART_SOURCE_TREE=COMMITTED_TREE_40_HEX
+cd android
+./gradlew app:assembleAndroidTest \
+  -Ptarget=integration_test/android_consumer_profile_test.dart \
+  -Ptarget-platform=android-arm64
+```
+
+The APK pair is `app-release.apk` and
+`outputs/apk/androidTest/release/app-release-androidTest.apk`. Preserve build logs,
+source inventory, actual compiled defines, merged manifests, instrumentation
+classes/target, APK hashes and static verification. Use the preparer's exact second command, including `-Pdart-defines`, so both
+builds receive identical compiled profile/source identities.
+Do not admit an unmatched test APK or a debug/profile build. Unset all other
+qualification/NPU stage variables.
+
+Run **both APK pairs on both admitted device classes**, zero flaky retries.
+Before dispatch, freeze exact old/modern device model, API, build and CPU/ISA
+facts and record why the old device has lower ISA support. The operator supplies:
+
+- `stageModel=true`, with the exact A35 LFM2.5-230M Q4_K_M file at the existing
+  `/data/local/tmp/llamadart-smoke.gguf` staging path;
+- `androidQualificationScenario=consumer-cpu`;
+- `androidConsumerDeviceClass=old` or `modern`;
+- `androidConsumerDeviceModel=EXACT_BUILD_MODEL` and
+  `androidConsumerDeviceApi=EXACT_API`.
+
+The native Java preflight rejects a mismatched model/API tuple. Device class is
+an operator assertion, not a hardware capability probe. Dart checks release mode,
+compiled profile/source identity, model SHA/size and installed runtime bytes
+before loading; runtime build identity, CPU backend/zero GPU layers, effective
+geometry, streamed output, wall times and maps are retained. It requires Paris
+in the frozen 24-token output and exact output equality after full disposal and
+reload. A Java watchdog bounds native stalls independently of Dart.
+
+Collect the same `android_qualification/<nonce>` envelope. Raw export includes
+CPU facts, installed APK hash, stderr and mapped paths. A completed public summary
+proves only its asserted cases; process-scoped logcat, successful provider terminal
+state and liveness must separately show no SIGILL, illegal instruction, SIGSEGV,
+fatal signal, watchdog failure or crash. A missing summary/raw export or later
+process failure never counts as a pass. Compare full/compact wall times on the
+same modern device under recorded thermal/order conditions before applying the
+existing within-noise performance criterion. Timing samples from this short smoke
+alone do not establish a regression benchmark.
+
+The required acceptance inventory remains four rows, each tied to its actual APK:
+
+| Device class | Consumer profile | Required evidence |
+| --- | --- | --- |
+| old arm64 | full | load, Paris generation, dispose/reload, no crash/SIGILL |
+| old arm64 | compact | same |
+| modern arm64 | full | same, plus full/compact timing comparison |
+| modern arm64 | compact | same |
+
+Source/model-free checks and draft plans leave every row **NOT_RUN**. No waiver,
+qualification or final 0.18 release acceptance is implied. Rerun against the final
+release-prep artifact or independently admit a complete source/artifact mapping;
+keep unrelated native-family, Vulkan and LiteRT gates separate.
