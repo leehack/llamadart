@@ -58,7 +58,7 @@ class PreparationTest(unittest.TestCase):
                             data = data[:-1] + b"x"
                         target.writestr("lib/arm64-v8a/" + name, data)
                     if mode == "extra":
-                        target.writestr("lib/arm64-v8a/libggml-other.so", elf)
+                        target.writestr("lib/arm64-v8a/libggml-opencl.so", elf)
                 return path
             result = verify_apk.verify(apk("good"), binding, plan)
             self.assertFalse(result["qualified"])

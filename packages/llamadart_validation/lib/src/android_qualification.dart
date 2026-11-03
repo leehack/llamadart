@@ -8,6 +8,16 @@ import 'package:llamadart/llamadart.dart';
 /// The two admitted diagnostics; this is deliberately not a general matrix API.
 enum AndroidQualificationScenario { a35, pixel8a }
 
+/// Replacement decoding is only a view of native diagnostics, never wire data.
+String androidQualificationDiagnosticText(List<int> bytes) =>
+    utf8.decode(bytes, allowMalformed: true);
+
+/// Matches the embedding operation's special-token policy for the frozen prompts.
+Future<List<int>> androidQualificationEmbeddingTokens(
+  LlamaEngine engine,
+  String prompt,
+) => engine.tokenize(prompt, addSpecial: true);
+
 /// Lossless returned-vector capture, including values JSON cannot represent.
 String androidQualificationVectorBytes(List<double> vector) {
   final bytes = ByteData(vector.length * 8);
@@ -245,18 +255,17 @@ List<Map<String, dynamic>> parseAndroidNativeRecords(
     }
     if (value['event'] == 'embedding') {
       if (records.isEmpty ||
-          records.last['event'] != 'embedding_raw' ||
-          records.last['input'] != value['input'] ||
-          records.last['phase'] != value['phase']) {
-        throw const FormatException('Missing preceding native vector bytes');
+          _androidCapturedVector(records.last, value) == null) {
+        throw const FormatException(
+          'Native vector bytes and reported values disagree',
+        );
       }
     }
     if (value['event'] == 'embedding_raw') {
-      final raw = value['vector_f32_le_hex'];
-      if (raw is! String ||
-          raw.length != 768 * 4 * 2 ||
-          !RegExp(r'^[a-f0-9]+$').hasMatch(raw)) {
-        throw const FormatException('Invalid native vector byte capture');
+      if (_normalizedAndroidRawVector(value['vector_f32_le_hex']) == null) {
+        throw const FormatException(
+          'Invalid native vector bytes, values or norm',
+        );
       }
     }
     records.add(value);
@@ -268,6 +277,73 @@ List<Map<String, dynamic>> parseAndroidNativeRecords(
     throw const FormatException('Incomplete child lifetime');
   }
   return records;
+}
+
+List<double>? _normalizedAndroidRawVector(Object? hex) {
+  if (hex is! String ||
+      hex.length != 768 * 4 * 2 ||
+      !RegExp(r'^[a-f0-9]+$').hasMatch(hex)) {
+    return null;
+  }
+  final bytes = Uint8List.fromList([
+    for (var index = 0; index < hex.length; index += 2)
+      int.parse(hex.substring(index, index + 2), radix: 16),
+  ]);
+  final data = ByteData.sublistView(bytes);
+  final vector = [
+    for (var index = 0; index < 768; index++)
+      data.getFloat32(index * 4, Endian.little),
+  ];
+  if (vector.any((value) => !value.isFinite)) return null;
+  final normSquared = vector.fold<double>(
+    0,
+    (sum, value) => sum + value * value,
+  );
+  if (!normSquared.isFinite || normSquared <= 0) return null;
+  final norm = math.sqrt(normSquared);
+  return vector.map((value) => value / norm).toList();
+}
+
+List<double>? _androidCapturedVector(Map raw, Map reported) {
+  if (raw['event'] != 'embedding_raw' ||
+      raw['input'] is! int ||
+      reported['input'] is! int ||
+      raw['tokens'] is! int ||
+      reported['tokens'] is! int ||
+      raw['input'] != reported['input'] ||
+      raw['phase'] != reported['phase'] ||
+      raw['tokens'] != reported['tokens'] ||
+      !const [0, 1].contains(reported['input']) ||
+      reported['tokens'] != (reported['input'] == 0 ? 9 : 46)) {
+    return null;
+  }
+  final normalized = _normalizedAndroidRawVector(raw['vector_f32_le_hex']);
+  final values = reported['vector'];
+  if (normalized == null ||
+      values is! List ||
+      values.length != 768 ||
+      values.any((value) => value is! num || !value.isFinite)) {
+    return null;
+  }
+  final vector = values.map((value) => (value as num).toDouble()).toList();
+  // The producer serializes double normalization with 17 significant digits.
+  // A relative bound also rejects invented zeros for tiny measured components.
+  // This transport check is separate from the model's 0.999 cosine oracle.
+  for (var index = 0; index < 768; index++) {
+    final scale = math.max(normalized[index].abs(), vector[index].abs());
+    if ((normalized[index] - vector[index]).abs() > scale * 1e-12) return null;
+  }
+  return vector;
+}
+
+List<double>? _androidVectorFromRecords(
+  List<Map<String, dynamic>> records,
+  Map<String, dynamic> reported,
+) {
+  final index = records.indexOf(reported);
+  return index > 0
+      ? _androidCapturedVector(records[index - 1], reported)
+      : null;
 }
 
 /// Checks both inputs and every requested phase before timing is admitted.
@@ -319,13 +395,8 @@ bool assessAndroidEmbeddingRecords(
           value['operation_ms'] < 0) {
         return false;
       }
-      List<double>? vector(Map record) {
-        final value = record['vector'];
-        if (value is! List || value.any((item) => item is! num)) return null;
-        return value.map((item) => (item as num).toDouble()).toList();
-      }
-
-      final observed = vector(value), reference = vector(references.single);
+      final observed = _androidVectorFromRecords(actual, value);
+      final reference = _androidVectorFromRecords(cpu, references.single);
       if (observed == null ||
           reference == null ||
           assessAndroidEmbedding(observed, reference)['passed'] != true) {

@@ -21,7 +21,14 @@ hashes and PID/case/source-runtime binding are persisted before parsing/oracles.
 Mapped runtime paths must be the installed APK paths and their bytes must match
 the admitted archive. Native IEEE float32 bytes and returned public float64 bytes
 are captured before numerical predicates, retaining nonfinite failures that JSON
-cannot encode. Native operation wall includes memory reset, embedding toggles,
+cannot encode. The consumer decodes raw little-endian float32, requires finite
+768-dimensional values with a positive finite norm, binds input/phase/token
+identity and requires its normalization to match the reported JSON within 1e-12
+relative error per component (zero must match zero). The native producer uses
+17 significant digits; a compiled
+model-free C++ fixture shares that exact serializer and exercises the real
+consumer. This transport bound leaves the 0.999 cosine/1e-4 norm oracle unchanged.
+Native operation wall includes memory reset, embedding toggles,
 compute and vector copy; it excludes normalization and record writes. Vulkan
 selection requires exactly one Vulkan-registry GPU;
 no CPU or OpenCL substitution is accepted. Real placement still needs the raw
@@ -33,6 +40,8 @@ process; cache, order and thermal history limit timing comparisons. A Java threa
 independent of Dart enforces each public stage deadline and native-stderr size
 bound by terminating the owned app process on failure. It leaves a failure file
 next to already flushed diagnostics. A provider timeout remains the outer bound.
+Malformed native metadata is replacement-decoded only for its geometry view;
+the original stderr bytes and hashes remain evidence. Wire/model text stays strict.
 
 A35 retains explicit 512 batch/microbatch as a diagnostic override, never a
 default-cap lift. Native CPU/default-Vulkan/conservative-Vulkan precede public
@@ -41,7 +50,9 @@ when each public backend agrees with its native control. An error records the
 active case and leaves later cases NOT_RUN. A completed short control does not
 close the missing reporter details or qualify general Mali correctness.
 
-Pixel native CPU/Vulkan probe processes each produce both inputs before the
+Pixel counts use public tokenization with special tokens, matching embedding
+ingestion and preserving the original 9/46 precondition; token IDs are retained.
+Native CPU/Vulkan probe processes each produce both inputs before the
 separate timing processes can start. Full vectors must be 768-dimensional,
 finite, unit normalized within 1e-4 and cosine >= 0.999 against the same-artifact CPU
 control. Public cells check their first vector before further timed calls and
@@ -77,6 +88,7 @@ cd packages/llamadart_validation
 dart run bin/android_qualification_plan.dart a35 /tmp/a35-plan.json
 cd ../..
 python3 packages/llamadart_validation/native/android_qualification/build_probe.py \
+  --dart /path/to/pinned-flutter/bin/cache/dart-sdk/bin/dart \
   --ndk /path/to/android-ndk-28.2.13676358 \
   --native-archive /path/to/llamadart-native-android-arm64-v0.8.0-2.tar.gz \
   --headers-archive /path/to/llamadart-native-headers-v0.8.0-2.tar.gz \
@@ -85,9 +97,14 @@ python3 packages/llamadart_validation/native/android_qualification/build_probe.p
 
 Select `pixel8a` with a separate plan/stage for Pixel. The builder verifies both
 archive hashes, confines extraction, compiles with 16KiB LOAD alignment and seals
-the tracked source inventory, hook, probe, runtime files and request hash. Runtime
-libraries come through the normal hook; the optional stage adds only the probe
-and binding assets. Exact library bytes are retained through AGP packaging.
+the tracked source inventory, hook, probe, runtime files and request hash. It
+retains all 15 owner archive files as provenance, then calls the real production
+hook selector with its normal Android CPU/Vulkan policy: 14 packaged runtime
+libraries plus the probe. OpenCL remains in archive provenance and is omitted
+from the packaged lock; the stage does not inject it. The selection and selector
+source hash are sealed. Runtime libraries come through the normal hook; the
+optional stage adds only the probe and binding assets. Exact selected library
+bytes are retained through AGP packaging.
 
 After source audit, local APK preparation uses the existing Flutter
 instrumentation recipe, with `LLAMADART_ANDROID_QUALIFICATION_STAGE` set to the
@@ -133,6 +150,20 @@ The very first child is an explicit **model-free launch probe**. Failure stops
 all inference and retains captured loader stderr. Only successful real Android
 launch can satisfy this gate; host tests and an ELF entry point cannot. A full
 local device execution was not performed during implementation.
+
+After source and APK admission, an app-UID packaging check can invoke the same
+bounded probe directly without a model or the instrumentation preparation path:
+
+```sh
+<nativeLibraryDir>/libllamadart_android_qualification.so probe cpu /dev/null \
+  <nativeLibraryDir> <64-hex-execution-binding> pixel8a.native.cpu-probe 10
+```
+
+It resolves linked runtime dependencies and emits actual maps before any backend
+initialization or model loading. This proves only admitted executable launch and
+linker resolution, not Vulkan initialization, placement or inference. Running it
+on a temporary emulator remains a separate operator action, not a new APK-build
+or device-dispatch permission inferred from this document.
 
 Collect the whole exact `android_qualification/<nonce>` external app directory,
 including failed raw bytes, `diagnostic.jsonl`, all native `capture.json` receipts,

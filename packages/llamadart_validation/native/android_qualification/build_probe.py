@@ -38,6 +38,7 @@ def unpack(archive, destination, expected):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--ndk", type=Path, required=True)
+    parser.add_argument("--dart", type=Path, required=True)
     parser.add_argument("--native-archive", type=Path, required=True)
     parser.add_argument("--headers-archive", type=Path, required=True)
     parser.add_argument("--plan", type=Path, required=True)
@@ -72,8 +73,17 @@ def main():
                     "-I" + str(headers / "llama_cpp/ggml/include"),
                     str(Path(__file__).with_name("main.cpp")), "-L" + str(native),
                     "-lllama", "-lggml", "-lggml-base", "-ldl", "-o", str(probe)], check=True)
-    libraries = {file.name: {"bytes": file.stat().st_size, "sha256": sha(file)}
-                 for file in sorted(native.glob("*.so"))}
+    archive_libraries = {file.name: {"bytes": file.stat().st_size, "sha256": sha(file)}
+                         for file in sorted(native.glob("*.so"))}
+    archive_inventory = output / "archive-library-inventory.json"
+    archive_inventory.write_text(json.dumps(archive_libraries, sort_keys=True) + "\n")
+    selection_path = output / "packaging-selection.json"
+    package = ROOT / "packages/llamadart_validation"
+    subprocess.run([str(args.dart), "--packages=" + str(package / ".dart_tool/package_config.json"),
+                    str(package / "bin/android_qualification_libraries.dart"),
+                    str(archive_inventory), str(selection_path)], cwd=ROOT, check=True)
+    selection = json.loads(selection_path.read_text())
+    libraries = {name: archive_libraries[name] for name in selection["packaged"]}
     libraries[probe.name] = {"bytes": probe.stat().st_size, "sha256": sha(probe)}
     inventory = {}
     for name in command("git", "ls-files", "-z").split("\0"):
@@ -91,7 +101,10 @@ def main():
                "hook_sha256": sha(ROOT / "hook/build.dart"),
                "native_tag": "v0.8.0-2", "native_archive_sha256": ARCHIVE_SHA,
                "headers_archive_sha256": HEADERS_SHA,
-               "probe_sha256": sha(probe), "libraries": libraries}
+               "probe_sha256": sha(probe), "libraries": libraries,
+               "archive_libraries": archive_libraries,
+               "packaging_selection": selection,
+               "selector_sha256": sha(ROOT / "lib/src/hook/native_bundle_config.dart")}
     if command("git", "status", "--porcelain", "--untracked-files=all"):
         raise ValueError("Source changed while staging")
     (assets / "binding.json").write_text(json.dumps(binding, sort_keys=True) + "\n")
