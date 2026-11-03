@@ -156,9 +156,12 @@ final class LiteRtLmV1RuntimeClient implements LiteRtLmRuntimeClientContract {
     }
     liteRtLmEnsureNativeEmbeddingsQualified();
     ensureLiteRtLmNativeEmbeddingBackend(backend);
-    if (maxInputLength <= 0 || numberOfThreads < 0) {
+    if (maxInputLength <= 0 ||
+        maxInputLength > 0x7fffffff ||
+        numberOfThreads < 0 ||
+        numberOfThreads > 0x7fffffff) {
       throw LlamaArgumentException(
-        'Embedding context must be positive and thread count nonnegative.',
+        'Embedding context must be 1..2147483647 and thread count 0..2147483647.',
       );
     }
     final addresses = _embeddingAddresses(_runtime._library);

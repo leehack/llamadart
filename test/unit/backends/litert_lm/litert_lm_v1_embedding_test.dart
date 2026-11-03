@@ -179,6 +179,41 @@ void main() {
     },
   );
 
+  test('embedding C int settings reject overflow before allocation', () async {
+    final value = client();
+    final before = count('call_count');
+    for (final pair in [
+      (0, 2),
+      (-1, 2),
+      (0x80000000, 2),
+      (0x100000001, 2),
+      (1024, -1),
+      (1024, 0x80000000),
+      (1024, 0x100000002),
+    ]) {
+      await expectLater(
+        value.createEmbeddingSession(
+          modelPath: model,
+          backend: 'cpu',
+          cacheDir: '/secret/cache',
+          maxInputLength: pair.$1,
+          numberOfThreads: pair.$2,
+        ),
+        throwsA(isA<LlamaArgumentException>()),
+      );
+    }
+    expect(count('call_count'), before);
+    final session = await value.createEmbeddingSession(
+      modelPath: model,
+      backend: 'cpu',
+      cacheDir: '/secret/cache',
+      maxInputLength: 0x7fffffff,
+      numberOfThreads: 0x7fffffff,
+    );
+    expect([count('context'), count('threads')], [0x7fffffff, 0x7fffffff]);
+    session.dispose();
+  });
+
   for (final stage in [1, 2, 3, 4, 5, 101, 105, 201, 205]) {
     test(
       'creation failure $stage releases partial owners and snapshots TLS',
