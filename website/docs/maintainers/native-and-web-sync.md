@@ -330,8 +330,37 @@ status or freeing the proxy.
 This is fixture-backed consumer preparation for
 [owner PR #98](https://github.com/leehack/litert-lm-native/pull/98), not adoption
 of an immutable owner artifact. Owner source/release qualification and ASR,
-media, tools, schema and embedding migration remain public adoption gates. The ASR bridge has its own versioned ABI, but its current
-Dart loader still passes through the legacy C API refusal.
+media, tools, schema and embedding migration remain public adoption gates. The
+ASR bridge has its own versioned ABI, but its current Dart loader still passes
+through the legacy C API refusal.
+
+Internal v1 `loadConfigured` transports resolved engine options through the
+status-returning API. Its typed settings use the existing compute-device and
+activation enums. CPU/GPU/NPU strings and optional vision/audio executor strings
+are passed unchanged, with no automatic device selection or fallback. This is
+ABI preparation, not device or media qualification. The service still owns
+platform defaults, ModelParams validation, thread-zero normalization, cache
+leases/pruning and retry policy; none is selected by this adapter.
+
+The configuration defaults to context 4096, benchmark metrics enabled, and
+speculation off, as the maintained service does. Nullable threads, prefill
+chunks, cache/dispatch paths, activation and parallel loading remain unset in
+native settings. The older `load` helper retains its four explicit CPU threads
+and required cache path. Benchmark prefill counts are separate from response
+limits; no benchmark decode-step override or single-threaded execution is set.
+Speculation uses the new owned v1 config and its copied engine setting, with
+status checks and cleanup on every failure.
+
+Explicit CPU thread/prefill-chunk requests on another main backend are refused:
+the native setters otherwise report success without applying them. Dispatch
+paths require NPU, and NPU speculation is refused. Explicit `maxNumImages` is
+also refused: the v1 header documents it as legacy-engine-only, with no current
+consumer capability proof for the active engine implementation. This remains a
+required migration gap, needing supported-engine proof or an explicit release
+scope decision. Auxiliary backend strings alone do not enable media input.
+Logging/status, model capabilities, tokenizer/render/metrics, conversation
+sampler/history/per-turn options and complete worker/service dispatch remain
+separate migration work.
 
 Use this checklist in native sync PRs:
 

@@ -5,11 +5,14 @@ import 'dart:ffi';
 import 'package:ffi/ffi.dart';
 
 import '../../core/exceptions.dart';
+import '../../core/models/config/compute_device.dart';
+import '../../core/models/inference/model_params.dart';
 import 'litert_lm_last_error.dart';
 import 'litert_lm_finish_reason.dart';
 import 'litert_lm_native_settlement.dart';
 
 part 'litert_lm_v1_conversation.dart';
+part 'litert_lm_v1_engine_settings.dart';
 
 typedef _VersionN = Int Function(Pointer<Int>, Pointer<Int>, Pointer<Int>);
 typedef _VersionD = int Function(Pointer<Int>, Pointer<Int>, Pointer<Int>);
@@ -101,7 +104,7 @@ final class LiteRtLmV1Runtime {
     for (final symbol in _requiredSymbols) {
       if (!library.providesSymbol(symbol)) {
         throw LlamaUnsupportedException(
-          'LiteRT-LM C API 1.0 runtime is missing required text-session export $symbol.',
+          'LiteRT-LM C API 1.0 runtime is missing required preparation export $symbol.',
         );
       }
     }
@@ -114,6 +117,7 @@ final class LiteRtLmV1Runtime {
     'litert_lm_engine_settings_set_num_threads',
     'litert_lm_engine_settings_set_max_num_tokens',
     'litert_lm_engine_settings_set_cache_dir',
+    ..._engineSettingsSymbols,
     'litert_lm_engine_create',
     'litert_lm_engine_delete',
     'litert_lm_session_config_create',
@@ -260,7 +264,10 @@ final class LiteRtLmV1Runtime {
     }
   }
 
-  /// Creates a CPU candidate engine, retaining an existing engine on failure.
+  /// Creates a CPU candidate with explicit context, cache and thread settings.
+  ///
+  /// Use [loadConfigured] for nullable threads (runtime selection) and the other
+  /// internal engine settings. This wrapper preserves four explicit CPU threads.
   void load(
     String modelPath, {
     required String cacheDir,
@@ -269,47 +276,79 @@ final class LiteRtLmV1Runtime {
   }) {
     _requireLive();
     _requireNoConversation();
-    if (modelPath.isEmpty ||
-        modelPath.contains('\u0000') ||
-        cacheDir.isEmpty ||
-        cacheDir.contains('\u0000') ||
-        contextSize <= 0 ||
-        contextSize > 0x7fffffff ||
-        numberOfThreads <= 0 ||
-        numberOfThreads > 0x7fffffff) {
+    if (cacheDir.isEmpty) {
       throw LlamaArgumentException(
-        'C API 1.0 load requires nonempty paths without NUL and positive context/thread counts.',
+        'C API 1.0 load requires a nonempty cache path.',
       );
     }
+    loadConfigured(
+      modelPath,
+      LiteRtLmV1EngineSettings(
+        cacheDir: cacheDir,
+        contextSize: contextSize,
+        numberOfThreads: numberOfThreads,
+      ),
+    );
+  }
+
+  /// Loads internal v1 settings without device fallback or public selection.
+  ///
+  /// Native status failures preserve the previous engine. Backend strings are
+  /// transported, not qualified for the current platform/model. Every optional
+  /// unset setting remains the runtime default. No single-threaded execution is
+  /// enabled: listener callbacks require independent native progress.
+  void loadConfigured(String modelPath, LiteRtLmV1EngineSettings options) {
+    _requireLive();
+    _requireNoConversation();
+    options._validate(modelPath);
     final oldDiagnosticPaths = _diagnosticPaths;
-    _diagnosticPaths = [...oldDiagnosticPaths, modelPath, cacheDir];
-    final model = modelPath.toNativeUtf8(allocator: calloc);
-    final backend = 'cpu'.toNativeUtf8(allocator: calloc);
-    final cache = cacheDir.toNativeUtf8(allocator: calloc);
+    final diagnosticPaths = [
+      modelPath,
+      ?options.cacheDir,
+      ?options.dispatchLibDir,
+    ];
+    _diagnosticPaths = [...oldDiagnosticPaths, ...diagnosticPaths];
+    final strings = <Pointer<Utf8>>[];
+    Pointer<Utf8> owned(String? value) {
+      if (value == null) return nullptr;
+      final pointer = value.toNativeUtf8(allocator: calloc);
+      strings.add(pointer);
+      return pointer;
+    }
+
     Pointer<Void> settings = nullptr;
     try {
+      final model = owned(modelPath);
+      final backend = owned(options.backend.name);
+      final vision = owned(options.visionBackend?.name);
+      final audio = owned(options.audioBackend?.name);
       settings = _create(
         'engine_settings_create',
-        (out) => _settingsCreate(model, backend, nullptr, nullptr, out),
+        (out) => _settingsCreate(model, backend, vision, audio, out),
       );
-      _check(_setContext(settings, contextSize), 'set_max_num_tokens');
-      _check(_setThreads(settings, numberOfThreads), 'set_num_threads');
-      _check(_setCache(settings, cache), 'set_cache_dir');
+      _check(_setContext(settings, options.contextSize), 'set_max_num_tokens');
+      if (options.numberOfThreads case final threads?) {
+        _check(_setThreads(settings, threads), 'set_num_threads');
+      }
+      if (options.cacheDir case final cache?) {
+        _check(_setCache(settings, owned(cache)), 'set_cache_dir');
+      }
+      _applyEngineSettings(settings, options, owned);
       final engine = _create(
         'engine_create',
         (out) => _engineCreate(settings, out),
       );
       if (_engine != nullptr) _engineDelete(_engine);
       _engine = engine;
-      _diagnosticPaths = [modelPath, cacheDir];
+      _diagnosticPaths = diagnosticPaths;
     } on Object {
       _diagnosticPaths = oldDiagnosticPaths;
       rethrow;
     } finally {
       if (settings != nullptr) _settingsDelete(settings);
-      calloc.free(model);
-      calloc.free(backend);
-      calloc.free(cache);
+      for (final pointer in strings) {
+        calloc.free(pointer);
+      }
     }
   }
 
