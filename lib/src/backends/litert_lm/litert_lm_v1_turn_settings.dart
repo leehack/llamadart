@@ -37,7 +37,10 @@ final class LiteRtLmV1TurnSettings {
   bool get _hasPenalties =>
       repetitionPenalty != null || presencePenalty != null;
   bool get _hasArgs =>
-      maxOutputTokens != null || visualTokenBudget != null || _hasPenalties || jsonSchema != null;
+      maxOutputTokens != null ||
+      visualTokenBudget != null ||
+      _hasPenalties ||
+      jsonSchema != null;
 
   void _validate(LiteRtLmV1Runtime runtime) {
     if (jsonSchema case final schema?) {
