@@ -591,8 +591,71 @@ def _run_generated_macos_prepare(
     )
 
 
+def _runtime_inventory_function(runtime: str, name: str) -> str:
+    match = re.search(
+        rf"List<String> {name}\(Abi abi\) \{{\n.*?\n\}}\n", runtime, re.DOTALL,
+    )
+    if match is None:
+        raise AssertionError(f"Missing runtime inventory function {name}")
+    return match.group()
+
+
+def _v019_inventory_projection() -> dict:
+    fixture = Path(__file__).resolve().parent / "fixtures/litert_lm_v019_apple_inventory_projection.json"
+    return json.loads(fixture.read_text())
+
+
+def _preserved_runtime_lane_probe_checks(runtime: str, *, c_api_v1: bool) -> str:
+    flag = str(c_api_v1).lower()
+    prefix = "_liteRtLmV1MacOs" if c_api_v1 else "_liteRtLmMacOs"
+    names = {
+        "liteRtLmRequiredLibrariesForAbi": (
+            "_liteRtLmV1RequiredLibrariesForAbi" if c_api_v1
+            else "_liteRtLmLegacyRequiredLibrariesForAbi"
+        ),
+        "liteRtLmMacOsRequiredFrameworksForAbi": prefix + "RequiredFrameworksForAbi",
+        "liteRtLmMacOsRequiredNativeSpmFilesForAbi": prefix + "RequiredNativeSpmFilesForAbi",
+    }
+    declarations, checks = [], []
+    for public, private in names.items():
+        expected = "expected" + public
+        declarations.append(_runtime_inventory_function(runtime, private).replace(private, expected))
+        for abi in ("macosArm64", "macosX64", "linuxArm64", "linuxX64", "windowsX64", "androidArm64"):
+            checks.append(
+                f"  _expectList('preserved {public} {abi} v1={flag}', "
+                f"{public}(Abi.{abi}, cApiV1: {flag}), {expected}(Abi.{abi}));"
+            )
+    return "\n".join(declarations + checks)
+
+
+def _runtime_inventory_probe_checks(
+    *,
+    c_api_v1: bool,
+    libraries: dict[str, tuple[str, ...]],
+    frameworks: tuple[str, ...],
+    native_spm: tuple[str, ...],
+) -> str:
+    checks = []
+    flag = str(c_api_v1).lower()
+    for abi in ("macosArm64", "macosX64", "linuxArm64", "linuxX64", "windowsX64", "androidArm64"):
+        for function, expected in (
+            ("liteRtLmRequiredLibrariesForAbi", libraries.get(abi, ())),
+            ("liteRtLmMacOsRequiredLibrariesForAbi", libraries.get(abi, ()) if abi == "macosArm64" else ()),
+            ("liteRtLmMacOsRequiredFrameworksForAbi", frameworks if abi == "macosArm64" else ()),
+            ("liteRtLmMacOsRequiredNativeSpmFilesForAbi", native_spm if abi == "macosArm64" else ()),
+        ):
+            checks.append(
+                f"  _expectList('{function} {abi} v1={flag}', "
+                f"{function}(Abi.{abi}, cApiV1: {flag}), "
+                f"<String>{json.dumps(list(expected))});"
+            )
+    return "\n".join(checks)
+
+
 def _run_dart_inventory_checks(
     repo_root: Path,
+    *,
+    checks: str | None = None,
 ) -> tuple[
     subprocess.CompletedProcess[str],
     subprocess.CompletedProcess[str],
@@ -600,8 +663,45 @@ def _run_dart_inventory_checks(
 ]:
     generated = repo_root / "tool/native/generated_litert_lm_inventory.dart"
     generated.parent.mkdir(parents=True, exist_ok=True)
+    if checks is None:
+        projection = _v019_inventory_projection()
+        manifest = {
+            "upstream": {"compatibilityTag": projection["compatibilityTag"]},
+            "platforms": projection["platforms"],
+        }
+        bundles = pins.litert_schema2_runtime_required_libraries(
+            pins.litert_schema2_bundle_required_libraries(manifest)
+        )
+        checks = _runtime_inventory_probe_checks(
+            c_api_v1=False,
+            libraries={
+                "macosArm64": ("libCLiteRTLM_mac.dylib", "libLiteRtLm.dylib"),
+                "linuxArm64": ("libLiteRtLm.so",),
+                "linuxX64": ("libLiteRtLm.so",),
+                "windowsX64": ("LiteRtLm.dll",),
+            },
+            frameworks=(
+                "CLiteRTLM_mac.framework/Versions/A/CLiteRTLM_mac",
+                "LiteRtLm.framework/Versions/A/LiteRtLm",
+            ),
+            native_spm=("LiteRtLm.framework/Versions/A/LiteRtLm", "libCLiteRTLM_mac.dylib"),
+        )
+        checks += "\n" + _runtime_inventory_probe_checks(
+            c_api_v1=True,
+            libraries={
+                "macosArm64": bundles["macos-arm64"],
+                "linuxArm64": bundles["linux-arm64"],
+                "linuxX64": bundles["linux-x64"],
+                "windowsX64": bundles["windows-x64"],
+            },
+            frameworks=pins._litert_schema2_macos_framework_entries(bundles)["arm64"],
+            native_spm=pins.litert_macos_complete_spm_entries(
+                bundles, pins.litert_schema2_macos_required_native_spm_files(manifest, projection["releaseTag"]),
+            )["arm64"],
+        )
     generated.write_text(
         """import 'dart:ffi';
+import 'dart:io';
 
 import '../../lib/src/backends/litert_lm/litert_lm_runtime.dart';
 
@@ -615,44 +715,7 @@ void _expectList(String label, List<String> actual, List<String> expected) {
 }
 
 void main() {
-  _expectList(
-    'macOS arm64 libraries',
-    liteRtLmMacOsRequiredLibrariesForAbi(Abi.macosArm64),
-    <String>['libCLiteRTLM_mac.dylib', 'libLiteRtLm.dylib'],
-  );
-  _expectList(
-    'macOS x64 libraries',
-    liteRtLmMacOsRequiredLibrariesForAbi(Abi.macosX64),
-    <String>[],
-  );
-  _expectList(
-    'macOS arm64 frameworks',
-    liteRtLmMacOsRequiredFrameworksForAbi(Abi.macosArm64),
-    <String>[
-      'CLiteRTLM_mac.framework/Versions/A/CLiteRTLM_mac',
-      'LiteRtLm.framework/Versions/A/LiteRtLm',
-    ],
-  );
-  _expectList(
-    'macOS x64 frameworks',
-    liteRtLmMacOsRequiredFrameworksForAbi(Abi.macosX64),
-    <String>[],
-  );
-  _expectList(
-    'macOS arm64 native SPM files',
-    liteRtLmMacOsRequiredNativeSpmFilesForAbi(Abi.macosArm64),
-    <String>[
-      'LiteRtLm.framework/Versions/A/LiteRtLm',
-      'libCLiteRTLM_mac.dylib',
-    ],
-  );
-  _expectList(
-    'macOS x64 native SPM files',
-    liteRtLmMacOsRequiredNativeSpmFilesForAbi(Abi.macosX64),
-    <String>[],
-  );
-}
-""",
+""" + checks + "\n}\n",
         encoding="utf-8",
     )
     format_result = subprocess.run(
@@ -691,6 +754,145 @@ void main() {
         cwd=repo_root,
     )
     return format_result, analyze_result, run_result
+
+
+class LiteRtRuntimeInventoryDispatchTest(unittest.TestCase):
+    def setUp(self) -> None:
+        self.source_root = Path(__file__).resolve().parents[2]
+        self.runtime = (self.source_root / "lib/src/backends/litert_lm/litert_lm_runtime.dart").read_text()
+        self.projection = _v019_inventory_projection()
+        self.manifest = {
+            "upstream": {"compatibilityTag": self.projection["compatibilityTag"]},
+            "platforms": self.projection["platforms"],
+        }
+        self.bundles = pins.litert_schema2_bundle_required_libraries(self.manifest)
+
+    def replace(self, runtime: str) -> str:
+        updated = pins.replace_litert_lm_runtime_required_libraries(
+            runtime, self.bundles, manifest=self.manifest,
+        )
+        return pins.replace_litert_lm_runtime_macos_inventory(
+            updated, self.bundles, manifest=self.manifest,
+            resolved_tag=self.projection["releaseTag"],
+        )
+
+    def test_v019_sync_generates_only_admitted_inventory_and_is_idempotent(self) -> None:
+        # Distinct reviewed companions detect a stale/no-op inventory generator.
+        mac = next(item for item in self.manifest["platforms"] if item["platform"] == "macos")
+        mac["artifactPaths"].remove("bin/macos/arm64/libGemmaModelConstraintProvider.dylib")
+        self.bundles = pins.litert_schema2_bundle_required_libraries(self.manifest)
+        updated = self.replace(self.runtime)
+        self.assertNotEqual(updated, self.runtime)
+        self.assertEqual(self.replace(updated), updated)
+        for name in (
+            "_liteRtLmLegacyRequiredLibrariesForAbi",
+            "_liteRtLmMacOsRequiredFrameworksForAbi",
+            "_liteRtLmMacOsRequiredNativeSpmFilesForAbi",
+        ):
+            self.assertEqual(_runtime_inventory_function(updated, name), _runtime_inventory_function(self.runtime, name))
+        for name in (
+            "_liteRtLmV1RequiredLibrariesForAbi",
+            "_liteRtLmV1MacOsRequiredFrameworksForAbi",
+            "_liteRtLmV1MacOsRequiredNativeSpmFilesForAbi",
+        ):
+            output = _runtime_inventory_function(updated, name)
+            self.assertNotIn("TopK", output)
+            self.assertNotIn("libGemmaModelConstraintProvider.dylib", output)
+            self.assertNotIn("GemmaModelConstraintProvider.framework", output)
+
+    def test_legacy_sync_preserves_admitted_inventory(self) -> None:
+        for compatibility in ("v0.16.0", "v0.17.0", "v0.18.0", "v0.18.1"):
+            with self.subTest(version=compatibility):
+                self.manifest["upstream"]["compatibilityTag"] = compatibility
+                updated = self.replace(self.runtime)
+                for name in (
+                    "_liteRtLmV1RequiredLibrariesForAbi",
+                    "_liteRtLmV1MacOsRequiredFrameworksForAbi",
+                    "_liteRtLmV1MacOsRequiredNativeSpmFilesForAbi",
+                ):
+                    self.assertEqual(_runtime_inventory_function(updated, name), _runtime_inventory_function(self.runtime, name))
+
+    def test_compatibility_tag_selects_lane_even_for_development_release(self) -> None:
+        self.manifest["release"] = {"tag": "g83ce6067f2e2"}
+        self.assertTrue(pins._litert_lm_runtime_inventory_is_v1(self.manifest))
+        self.manifest["upstream"]["compatibilityTag"] = "v0.18.1"
+        self.assertFalse(pins._litert_lm_runtime_inventory_is_v1(self.manifest))
+
+    def test_unknown_or_malformed_api_mapping_refuses(self) -> None:
+        for version in ("v0.19.1", "v0.20.0", "v1.0.0", "g83ce6067f2e2", "", None):
+            with self.subTest(version=version):
+                self.manifest["upstream"]["compatibilityTag"] = version
+                with self.assertRaises(ReleaseError):
+                    self.replace(self.runtime)
+
+    def test_missing_or_duplicate_generated_function_refuses(self) -> None:
+        for name in (
+            "_liteRtLmV1RequiredLibrariesForAbi",
+            "_liteRtLmV1MacOsRequiredFrameworksForAbi",
+            "_liteRtLmV1MacOsRequiredNativeSpmFilesForAbi",
+        ):
+            block = _runtime_inventory_function(self.runtime, name)
+            for malformed in (self.runtime.replace(block, ""), self.runtime + block):
+                with self.subTest(function=name), self.assertRaisesRegex(ReleaseError, name):
+                    self.replace(malformed)
+
+    def test_generated_v019_dart_uses_real_owner_files_without_changing_legacy(self) -> None:
+        if shutil.which("dart") is None:
+            self.skipTest("Dart SDK is required to execute generated inventory")
+        with tempfile.TemporaryDirectory() as temp:
+            repo = Path(temp) / "repo"
+            shutil.copytree(self.source_root / "lib", repo / "lib")
+            (repo / ".dart_tool").mkdir()
+            shutil.copyfile(self.source_root / ".dart_tool/package_config.json", repo / ".dart_tool/package_config.json")
+            shutil.copyfile(self.source_root / "pubspec.yaml", repo / "pubspec.yaml")
+            runtime_path = repo / "lib/src/backends/litert_lm/litert_lm_runtime.dart"
+            runtime_path.write_text(self.replace(self.runtime))
+            entries = pins.litert_schema2_runtime_required_libraries(self.bundles)
+            checks = _preserved_runtime_lane_probe_checks(self.runtime, c_api_v1=False)
+            checks += "\n" + _runtime_inventory_probe_checks(
+                c_api_v1=True,
+                libraries={
+                    "macosArm64": entries["macos-arm64"],
+                    "linuxArm64": entries["linux-arm64"],
+                    "linuxX64": entries["linux-x64"],
+                    "windowsX64": entries["windows-x64"],
+                },
+                frameworks=pins._litert_schema2_macos_framework_entries(self.bundles)["arm64"],
+                native_spm=pins.litert_macos_complete_spm_entries(
+                    self.bundles,
+                    pins.litert_schema2_macos_required_native_spm_files(self.manifest, self.projection["releaseTag"]),
+                )["arm64"],
+            )
+            # Removing any owner-required v1 companion still refuses completeness;
+            # the same no-sampler directory must never be admitted as legacy.
+            checks += """
+  final root = Directory.systemTemp.createTempSync('generated_inventory_');
+  try {
+    for (final abi in [Abi.macosArm64, Abi.linuxArm64, Abi.linuxX64, Abi.windowsX64]) {
+      final dir = Directory('${root.path}/$abi')..createSync();
+      final files = liteRtLmRequiredLibrariesForAbi(abi, cApiV1: true);
+      for (final file in files) {
+        File('${dir.path}/$file').createSync();
+      }
+      if (!liteRtLmIsCacheDirectoryForAbi(dir, abi, cApiV1: true) ||
+          liteRtLmIsCacheDirectoryForAbi(dir, abi)) {
+        throw StateError('v1/legacy inventory admission crossed for $abi');
+      }
+      for (final file in files) {
+        final missing = File('${dir.path}/$file')..deleteSync();
+        if (liteRtLmIsCacheDirectoryForAbi(dir, abi, cApiV1: true)) {
+          throw StateError('missing $file was accepted for $abi');
+        }
+        missing.createSync();
+      }
+    }
+  } finally {
+    root.deleteSync(recursive: true);
+  }
+"""
+            results = _run_dart_inventory_checks(repo, checks=checks)
+            for result in results:
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
 
 class LiteRtSourcePatchesTest(unittest.TestCase):
@@ -819,7 +1021,10 @@ class LiteRtV019SamplerTransitionTest(unittest.TestCase):
         self.manifest["release"]["tag"] = self.tag
         self.manifest["upstream"]["compatibilityTag"] = self.projection["compatibilityTag"]
         self.manifest["platforms"] = [item for item in self.manifest["platforms"]
-            if item["platform"] not in ("ios", "macos")] + self.projection["platforms"]
+            if item["platform"] not in ("ios", "macos")] + [
+                item for item in self.projection["platforms"]
+                if item["platform"] in ("ios", "macos")
+            ]
         self.macos = next(item for item in self.manifest["platforms"]
             if item["platform"] == "macos")
         self.targets = {
@@ -2530,7 +2735,7 @@ class SyncNativeReleasePinsTest(unittest.TestCase):
                 "libwebgpu_dawn.dylib",
             )
             runtime = (root / "repo/lib/src/backends/litert_lm/litert_lm_runtime.dart").read_text()
-            function = runtime.split("liteRtLmMacOsRequiredNativeSpmFilesForAbi", 1)[1].split("\n}", 1)[0]
+            function = _runtime_inventory_function(runtime, "_liteRtLmMacOsRequiredNativeSpmFilesForAbi")
             arm64 = function.split("Abi.macosArm64", 1)[1].split("Abi.macosX64", 1)[0]
             self.assertEqual(re.findall(r"'([^']+)'", arm64), list(expected))
             self.assertNotIn("WebGpuAccelerator.framework", function)
@@ -2559,7 +2764,7 @@ class SyncNativeReleasePinsTest(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             repo = root / "repo"
             runtime = (repo / "lib/src/backends/litert_lm/litert_lm_runtime.dart").read_text()
-            spm = runtime.split("liteRtLmMacOsRequiredNativeSpmFilesForAbi", 1)[1].split("\n}", 1)[0]
+            spm = _runtime_inventory_function(runtime, "_liteRtLmMacOsRequiredNativeSpmFilesForAbi")
             prepare = (repo / "tool/macos_litert_lm_prepare_app.sh").read_text()
             prepare_spm = prepare.split("required_native_spm_files()", 1)[1].split("\n}", 1)[0]
             for text in (spm, prepare_spm):
@@ -2629,8 +2834,9 @@ class SyncNativeReleasePinsTest(unittest.TestCase):
             "Abi.windowsX64 => const <String>['LiteRtLm.dll'],",
             runtime,
         )
-        self.assertNotIn("libGemmaModelConstraintProvider.dylib", runtime)
-        self.assertNotIn("libLiteRtTopKWebGpuSampler.so", runtime)
+        legacy = _runtime_inventory_function(runtime, "_liteRtLmLegacyRequiredLibrariesForAbi")
+        self.assertNotIn("libGemmaModelConstraintProvider.dylib", legacy)
+        self.assertNotIn("libLiteRtTopKWebGpuSampler.so", legacy)
 
     def test_schema_2_sync_updates_real_macos_inventory_surfaces(self) -> None:
         manifest, release = _schema2_fixture_payloads()
@@ -2643,6 +2849,7 @@ class SyncNativeReleasePinsTest(unittest.TestCase):
                 release,
                 include_runtime_dependencies=True,
             )
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             repo_root = temp_path / "repo"
             prepare = (repo_root / "tool/macos_litert_lm_prepare_app.sh").read_text(
                 encoding="utf-8"
@@ -2725,8 +2932,9 @@ class SyncNativeReleasePinsTest(unittest.TestCase):
             """Abi.macosArm64 => const <String>[\n      'LiteRtLm.framework/Versions/A/LiteRtLm',\n      'libCLiteRTLM_mac.dylib',\n    ],""",
             runtime,
         )
-        self.assertNotIn("GemmaModelConstraintProvider.framework", runtime)
-        self.assertNotIn("LiteRtMetalAccelerator.framework", runtime)
+        frameworks = _runtime_inventory_function(runtime, "_liteRtLmMacOsRequiredFrameworksForAbi")
+        self.assertNotIn("GemmaModelConstraintProvider.framework", frameworks)
+        self.assertNotIn("LiteRtMetalAccelerator.framework", frameworks)
         for target in (
             "LiteRtLm",
             "CLiteRTLM",

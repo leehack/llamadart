@@ -1,6 +1,7 @@
 @TestOn('vm')
 library;
 
+import 'dart:convert';
 import 'dart:ffi';
 import 'dart:io';
 
@@ -44,6 +45,42 @@ void main() {
       },
     );
   }
+
+  test('v1 discovery matches the frozen owner 0.19 desktop inventory', () {
+    final projection =
+        jsonDecode(
+              File(
+                'tool/native/fixtures/litert_lm_v019_apple_inventory_projection.json',
+              ).readAsStringSync(),
+            )
+            as Map<String, dynamic>;
+    expect(projection['compatibilityTag'], 'v0.19.0');
+    final platforms = projection['platforms'] as List<dynamic>;
+    for (final entry in {
+      Abi.macosArm64: ('macos', 'arm64'),
+      Abi.linuxArm64: ('linux', 'arm64'),
+      Abi.linuxX64: ('linux', 'x64'),
+      Abi.windowsX64: ('windows', 'x64'),
+    }.entries) {
+      final platform = platforms.cast<Map<String, dynamic>>().singleWhere(
+        (item) =>
+            item['platform'] == entry.value.$1 &&
+            item['arch'] == entry.value.$2,
+      );
+      final expected =
+          (platform['artifactPaths'] as List<dynamic>)
+              .cast<String>()
+              .where((file) => !file.endsWith('.lib'))
+              .map(path.basename)
+              .toList()
+            ..sort();
+      expect(
+        liteRtLmRequiredLibrariesForAbi(entry.key, cApiV1: true),
+        expected,
+        reason: '${entry.key} owner inventory',
+      );
+    }
+  });
 
   test('v1 Windows still loads CRT and Dawn before their importers', () {
     final order = liteRtLmCompanionLibrariesForAbi(
