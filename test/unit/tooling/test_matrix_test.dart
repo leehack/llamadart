@@ -110,6 +110,44 @@ void main() {
     },
   );
 
+  for (final entry in {
+    'litert-lm-v1-asr-smoke':
+        'test/fixtures/litert_lm_v1_asr_qualification.dart',
+    'litert-lm-v1-service':
+        'test/e2e/backends/litert_lm_v1_service_e2e_test.dart',
+  }.entries) {
+    test(
+      '${entry.key} matrix command reaches the hash-bound qualifier',
+      () async {
+        final row = testMatrixRows.singleWhere((row) => row.id == entry.key);
+        final command = row.command.split(' ');
+        final dartIndex = command.indexOf('dart');
+        expect(dartIndex, greaterThan(0));
+        final environment = <String, String>{
+          for (final assignment in command.take(dartIndex))
+            assignment.split('=').first: assignment.contains('SHA256=')
+                ? List.filled(64, 'a').join()
+                : '/local/runtime',
+        };
+        final arguments = command
+            .skip(dartIndex + 3)
+            .map((arg) => arg.startsWith('<') ? '/local/fixture' : arg)
+            .toList();
+        final result = await runLocalE2e(
+          [...arguments, '--dry-run'],
+          projectRoot: '/repo',
+          environment: environment,
+          displayShell: LocalE2eDisplayShell.posix,
+        );
+        expect(result.exitCode, 0, reason: result.stderr);
+        expect(result.stdout, contains(entry.value));
+        expect(result.stdout, contains('/local/runtime'));
+        expect(result.stdout, contains(List.filled(64, 'a').join()));
+        expect(result.stdout, contains('/local/fixture'));
+      },
+    );
+  }
+
   test('local image-set matrix selects the bounded CPU fixture scenario', () {
     final row = testMatrixRows.singleWhere(
       (r) => r.id == 'image-local-checkpoint-sets',

@@ -682,7 +682,7 @@ void main() {
   test(
     'single-item compute copies pooled width, normalize and overflow-error options',
     () async {
-      final session = await create();
+      final LiteRtLmEmbeddingRuntimeSession session = await create();
       expect(processorBackends(), 3);
       expect(
         [

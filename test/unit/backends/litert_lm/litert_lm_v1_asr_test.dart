@@ -1,6 +1,7 @@
 @TestOn('vm && (mac-os || linux)')
 library;
 
+import 'dart:convert';
 import 'dart:ffi';
 import 'dart:io';
 import 'dart:typed_data';
@@ -13,6 +14,8 @@ import 'package:llamadart/src/backends/litert_lm/litert_lm_v1_runtime.dart';
 import 'package:llamadart/src/core/speech/litert_lm_speech_to_text_driver.dart';
 import 'package:llamadart/src/core/speech/litert_lm_speech_to_text_driver_io.dart';
 import 'package:test/test.dart';
+
+import '../../../../tool/litert_lm_asr_smoke.dart' as smoke;
 
 LiteRtLmRuntimeClientContract _v1SpeechClient(String? path) =>
     LiteRtLmV1RuntimeClient(DynamicLibrary.open(path!));
@@ -253,6 +256,41 @@ void main() {
       }
     },
   );
+  test('ASR smoke forwards its explicit library and thread count', () async {
+    final model = File('${directory.path}/smoke.litertlm')
+      ..writeAsStringSync('model-free ASR fixture');
+    final tokenizer = File('${directory.path}/smoke-tokenizer.json')
+      ..writeAsStringSync('{}');
+    final wav = Uint8List(52);
+    final header = ByteData.sublistView(wav);
+    void tag(int offset, String value) =>
+        wav.setRange(offset, offset + value.length, ascii.encode(value));
+    tag(0, 'RIFF');
+    header.setUint32(4, 44, Endian.little);
+    tag(8, 'WAVE');
+    tag(12, 'fmt ');
+    header.setUint32(16, 16, Endian.little);
+    header.setUint16(20, 1, Endian.little);
+    header.setUint16(22, 1, Endian.little);
+    header.setUint32(24, 16000, Endian.little);
+    header.setUint32(28, 32000, Endian.little);
+    header.setUint16(32, 2, Endian.little);
+    header.setUint16(34, 16, Endian.little);
+    tag(36, 'data');
+    header.setUint32(40, 8, Endian.little);
+    final audio = File('${directory.path}/smoke.wav')..writeAsBytesSync(wav);
+    debugLiteRtLmSpeechToTextDriverOverride =
+        createLiteRtLmSpeechToTextDriverWithRuntime(_v1SpeechClient);
+    addTearDown(() => debugLiteRtLmSpeechToTextDriverOverride = null);
+    await smoke.runLiteRtLmAsrSmoke(
+      [model.path, tokenizer.path, audio.path, 'moonshine-tiny', 'final café'],
+      libraryPath: path,
+      numberOfThreads: 2,
+    );
+    expect(count('asr_threads'), 2);
+    expect(count('asr_engines'), 0);
+    expect(count('asr_sessions'), 0);
+  });
   test(
     'public speech model dispatch reaches injected v1 worker and settles',
     () async {
