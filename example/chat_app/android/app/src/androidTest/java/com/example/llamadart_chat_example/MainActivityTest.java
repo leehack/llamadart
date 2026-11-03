@@ -5,6 +5,8 @@ import android.content.Context;
 import android.os.Bundle;
 import android.os.ParcelFileDescriptor;
 import android.os.Process;
+import android.os.Build;
+import android.os.SystemClock;
 import android.util.Log;
 import androidx.test.platform.app.InstrumentationRegistry;
 import androidx.test.rule.ActivityTestRule;
@@ -31,6 +33,7 @@ public class MainActivityTest {
         if ("true".equals(arguments.getString("stageModel"))) stageModel(instrumentation);
         forwardReloadMemoryArguments(arguments, instrumentation);
         forwardMicroBatchSweepArguments(arguments, instrumentation);
+        forwardAndroidQualificationArguments(arguments, instrumentation);
     }
 
     private static void stageModel(Instrumentation instrumentation) throws IOException {
@@ -118,6 +121,102 @@ public class MainActivityTest {
     private static String optional(Bundle arguments, String name) {
         String value = arguments.getString(name);
         return value == null || value.trim().isEmpty() ? null : value;
+    }
+
+    private static void forwardAndroidQualificationArguments(Bundle arguments,
+            Instrumentation instrumentation) throws IOException {
+        String scenario = arguments.getString("androidQualificationScenario");
+        if (scenario == null) return;
+        if (!scenario.equals("a35") && !scenario.equals("pixel8a")) {
+            throw new IOException("Unknown Android qualification scenario");
+        }
+        Context context = instrumentation.getTargetContext();
+        File cache = context.getCacheDir();
+        File request = new File(cache, "android_qualification_watchdog.json");
+        if (request.exists()) throw new IOException("Stale qualification watchdog request");
+        String nonce = java.util.UUID.randomUUID().toString();
+        JSONObject config = new JSONObject();
+        try (InputStream input = context.getAssets().open("llamadart_android_qualification/binding.json")) {
+            config.put("binding", new JSONObject(new String(input.readAllBytes(), StandardCharsets.UTF_8)));
+            config.put("scenario", scenario);
+            config.put("pid", Process.myPid());
+            config.put("nonce", nonce);
+            config.put("native_directory", context.getApplicationInfo().nativeLibraryDir);
+            config.put("device_model", Build.MODEL);
+            config.put("device_manufacturer", Build.MANUFACTURER);
+            config.put("device_build", Build.FINGERPRINT);
+            config.put("android_api", Build.VERSION.SDK_INT);
+            config.put("soc_model", Build.VERSION.SDK_INT >= 31 ? Build.SOC_MODEL : "unknown");
+            File output = new File(context.getExternalFilesDir(null), "android_qualification/" + nonce);
+            if (output.exists() || !output.mkdirs()) throw new IOException("Qualification output already exists");
+            config.put("output", output.getPath());
+            write(new File(cache, "android_qualification_args.json"), config.toString());
+            instrumentation.getUiAutomation();
+            saveDeviceFacts(instrumentation, "android_qualification/" + nonce);
+            startQualificationWatchdog(request, output, nonce);
+        } catch (JSONException error) {
+            throw new IOException(error);
+        }
+    }
+
+    // A Flutter Future timeout cannot stop native work. This Java thread owns
+    // the entire test process deadline independently of the Dart event loop.
+    private static void startQualificationWatchdog(File request, File output, String nonce) {
+        Thread watcher = new Thread(() -> {
+            final long runStarted = SystemClock.elapsedRealtime();
+            long armedAt = 0;
+            long timeout = 0;
+            String step = "";
+            while (!Thread.currentThread().isInterrupted()) {
+                try {
+                    if (new File(output, "watchdog.done").isFile()) return;
+                    if (SystemClock.elapsedRealtime() - runStarted >= 20L * 60 * 1000) {
+                        throw new IOException("Qualification run deadline exceeded");
+                    }
+                    if (!request.exists()) { armedAt = 0; step = ""; }
+                    else {
+                        JSONObject value = new JSONObject(java.nio.file.Files.readString(request.toPath()));
+                        if (!nonce.equals(value.getString("nonce")) || value.getInt("pid") != Process.myPid()) {
+                            throw new IOException("Qualification watchdog binding mismatch");
+                        }
+                        String current = value.getString("step");
+                        if (!current.equals(step)) {
+                            timeout = value.getLong("timeout_ms");
+                            if (timeout <= 0 || timeout > 120000) throw new IOException("Invalid qualification deadline");
+                            step = current;
+                            armedAt = SystemClock.elapsedRealtime();
+                        }
+                        if (SystemClock.elapsedRealtime() - armedAt >= timeout) {
+                            write(new File(output, "watchdog-failure.json"),
+                                "{\"qualified\":false,\"reason\":\"public_process_deadline\"}");
+                            Process.killProcess(Process.myPid());
+                            return;
+                        }
+                        File[] logs = output.listFiles((directory, name) -> name.endsWith(".stderr.log"));
+                        if (logs == null) throw new IOException("Qualification output unavailable");
+                        for (File log : logs) {
+                            if (log.length() > 8L * 1024 * 1024) {
+                                throw new IOException("Public native stderr exceeds capture bound");
+                            }
+                        }
+                    }
+                    Thread.sleep(25);
+                } catch (java.nio.file.NoSuchFileException error) {
+                    // Dart can disarm between exists() and the atomic-file read.
+                    armedAt = 0;
+                    step = "";
+                } catch (InterruptedException error) { return; }
+                catch (IOException | JSONException | RuntimeException error) {
+                    try { write(new File(output, "watchdog-failure.json"),
+                        "{\"qualified\":false,\"reason\":\"watchdog_protocol_failed\"}"); }
+                    catch (IOException ignored) { }
+                    Process.killProcess(Process.myPid());
+                    return;
+                }
+            }
+        }, "android-qualification-deadline");
+        watcher.setDaemon(true);
+        watcher.start();
     }
 
     // Next to the journal: the Vulkan driver's own limits, from which a WebGPU

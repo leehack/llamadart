@@ -1,0 +1,143 @@
+# Paired Android diagnostic controls
+
+This private harness refreshes only core [#1092](https://github.com/leehack/llamadart/issues/1092)
+(Galaxy A35 fence timeout) and [#1304](https://github.com/leehack/llamadart/issues/1304)
+(Pixel 8a EG2 Q8 correctness and warm wall time). It changes no production
+selection, Android default guard, runtime pin or public API. It never sets
+`qualified=true`; successful assertions require separate placement, provider,
+cleanup and independent release assessment.
+
+`AndroidQualificationPlan` freezes model revisions/hashes/sizes, requests and
+case order. The model sizes and LFS hashes were read from the public Hugging Face
+revision API on 2026-11-03. A35 uses the original 153406304-byte LFM2.5 Q4_K_M;
+Pixel uses the original 309855456-byte EG2 Q8, not the multimodal BF16 pack.
+`bin/android_qualification_plan.dart` exports the immutable download manifest and
+request contract; models are pre-staged separately and hashed again on device.
+
+Native controls are separate owned PIE processes linked to the exact APK
+libraries, not replacements for the reporter's CLI. Each arms its own alarm;
+the parent bounds stdout/stderr and kills/reaps a stuck child. Original bytes,
+hashes and PID/case/source-runtime binding are persisted before parsing/oracles.
+Mapped runtime paths must be the installed APK paths and their bytes must match
+the admitted archive. Native IEEE float32 bytes and returned public float64 bytes
+are captured before numerical predicates, retaining nonfinite failures that JSON
+cannot encode. Native operation wall includes memory reset, embedding toggles,
+compute and vector copy; it excludes normalization and record writes. Vulkan
+selection requires exactly one Vulkan-registry GPU;
+no CPU or OpenCL substitution is accepted. Real placement still needs the raw
+positive offload/compute records and hardware device facts independently assessed.
+
+The public path uses `LlamaEngine(LlamaBackend())`, complete serialized engine
+lifetimes and no client/service factory. Public cells share one Flutter OS
+process; cache, order and thermal history limit timing comparisons. A Java thread
+independent of Dart enforces each public stage deadline and native-stderr size
+bound by terminating the owned app process on failure. It leaves a failure file
+next to already flushed diagnostics. A provider timeout remains the outer bound.
+
+A35 retains explicit 512 batch/microbatch as a diagnostic override, never a
+default-cap lift. Native CPU/default-Vulkan/conservative-Vulkan precede public
+CPU/Vulkan/reload. Raw text stays exact; failed CPU/GPU parity remains FAIL even
+when each public backend agrees with its native control. An error records the
+active case and leaves later cases NOT_RUN. A completed short control does not
+close the missing reporter details or qualify general Mali correctness.
+
+Pixel native CPU/Vulkan probe processes each produce both inputs before the
+separate timing processes can start. Full vectors must be 768-dimensional,
+finite, unit normalized within 1e-4 and cosine >= 0.999 against the same-artifact CPU
+control. Public cells check their first vector before further timed calls and
+each subsequent vector before continuing. Both 9/46-token inputs, every phase
+and five warm measurements must be present, unique and valid. Raw failed vectors
+and timings remain available; failed timings are not admitted. Native operation
+wall and SDK wall remain separate. These controls do not assign shader/driver
+ownership or qualify Q4/Q5/Q6, alternate full-model formats or another Mali stack.
+
+## Model-free checks
+
+Use the pinned Flutter SDK and prepare the workspace first. From the private
+package directory:
+
+```sh
+dart pub get
+TMPDIR="$(mktemp -d)" dart test -p vm test/android_qualification_test.dart
+python3 -m unittest discover -s native/android_qualification -p 'test_*.py'
+dart analyze
+```
+
+Host capture, process-death, malformed/truncated record, vector, build-binding
+and hostile artifact checks load no model. Cross-compilation, ELF inspection and
+these tests do not prove Android permits launching the installed executable.
+
+## Local stage and APK preparation
+
+Freeze clean committed source before staging. The root owns independent source
+audit and metered admission. Use a new ignored output directory. From the root:
+
+```sh
+cd packages/llamadart_validation
+dart run bin/android_qualification_plan.dart a35 /tmp/a35-plan.json
+cd ../..
+python3 packages/llamadart_validation/native/android_qualification/build_probe.py \
+  --ndk /path/to/android-ndk-28.2.13676358 \
+  --native-archive /path/to/llamadart-native-android-arm64-v0.8.0-2.tar.gz \
+  --headers-archive /path/to/llamadart-native-headers-v0.8.0-2.tar.gz \
+  --plan /tmp/a35-plan.json --out .dart_tool/android-qualification/a35
+```
+
+Select `pixel8a` with a separate plan/stage for Pixel. The builder verifies both
+archive hashes, confines extraction, compiles with 16KiB LOAD alignment and seals
+the tracked source inventory, hook, probe, runtime files and request hash. Runtime
+libraries come through the normal hook; the optional stage adds only the probe
+and binding assets. Exact library bytes are retained through AGP packaging.
+
+After source audit, local APK preparation uses the existing Flutter
+instrumentation recipe, with `LLAMADART_ANDROID_QUALIFICATION_STAGE` set to the
+absolute stage directory for **both** commands:
+
+```sh
+cd example/chat_app
+flutter build apk --debug --target integration_test/android_native_qualification_test.dart \
+  --target-platform android-arm64
+cd android
+./gradlew app:assembleAndroidTest \
+  -Ptarget=integration_test/android_native_qualification_test.dart \
+  -Ptarget-platform=android-arm64
+```
+
+The matched APKs are `build/app/outputs/flutter-apk/app-debug.apk` and
+`build/app/outputs/apk/androidTest/debug/app-debug-androidTest.apk`. Preserve both
+hashes/source binding and the build logs. Check the app before admission:
+
+```sh
+python3 packages/llamadart_validation/native/android_qualification/verify_apk.py \
+  --apk /path/to/app-debug.apk --plan /tmp/a35-plan.json \
+  --binding .dart_tool/android-qualification/a35/stage/assets/llamadart_android_qualification/binding.json
+```
+
+Independent admission also checks the actual merged manifest/extraction policy,
+instrumentation target/classes, source/APK provenance and test APK. The static
+verifier alone deliberately cannot claim any of them from matching library hashes.
+
+## Device execution contract (not dispatch authorization)
+
+Use one selected device, zero flaky retries, a 20-minute provider timeout and the
+shared bounded-budget journal. No dispatch helper is added here. Root must supply
+fresh personal-account project/billing/quota/device receipts, record the admitted
+APK pair and retain prior reservations. The existing instrumentation `stageModel`
+path copies `/data/local/tmp/llamadart-smoke.gguf` into app cache. Supply exactly
+the scenario's verified model there, `stageModel=true` and
+`androidQualificationScenario=a35` or `pixel8a`. The app checks A35/API35 or
+Pixel8a/API34 before loading. Changing the device/OS needs a separate prospective
+scope decision; a different tuple never inherits qualification.
+
+The very first child is an explicit **model-free launch probe**. Failure stops
+all inference and retains captured loader stderr. Only successful real Android
+launch can satisfy this gate; host tests and an ELF entry point cannot. A full
+local device execution was not performed during implementation.
+
+Collect the whole exact `android_qualification/<nonce>` external app directory,
+including failed raw bytes, `diagnostic.jsonl`, all native `capture.json` receipts,
+public stderr/maps, `vkjson.json`, installed APK hash and any watchdog-failure
+file. Do not import this envelope as a catalog suite or invent fixture passes.
+The journal is not a replacement for native placement analysis, provider terminal
+state, cleanup read-back or independent acceptance. Preserve original issue
+failures; never use successful collection or process launch as inference evidence.

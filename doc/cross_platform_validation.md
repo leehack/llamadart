@@ -2028,6 +2028,12 @@ models, runtime backends or devices.
 
 ## Android trace collection capability
 
+The private [A35/Pixel native-public diagnostic harness](../packages/llamadart_validation/native/android_qualification/README.md)
+retains exact #1092 generation and #1304 EG2 Q8 controls, owned native deadlines,
+raw capture and correctness gates. Its diagnostic envelopes never grant portable
+suite or release qualification; Android launch, placement and provider cleanup
+remain separate admission and evidence requirements.
+
 The maintained [model-free Perfetto probe](android_perfetto_capability.md)
 collects registered producer descriptors and a fresh trace with CPU/idle
 controls on Android/API 34+. Use its separate A6-capability row, exact reviewed
