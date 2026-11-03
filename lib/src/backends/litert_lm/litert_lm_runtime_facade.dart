@@ -214,8 +214,9 @@ class LiteRtLmRuntimeClient {
   /// Initializes the native LiteRT-LM engine for a `.litertlm` model bundle.
   ///
   /// [visionBackend] and [audioBackend] enable the native media executors for
-  /// multimodal bundles. [maxNumImages] configures the image preprocessor
-  /// capacity for conversations that may include image inputs. [outputTokens]
+  /// multimodal bundles. [maxNumImages] configures legacy image capacity; C API
+  /// 1 treats it as a history hint, requires [visionBackend], and accepts actual
+  /// images dynamically without enforcing a capacity. [outputTokens]
   /// is the per-request fallback when generation does not provide an explicit
   /// maximum; it is not an upstream benchmark decode-step count.
   Future<void> initialize({
@@ -235,14 +236,6 @@ class LiteRtLmRuntimeClient {
     bool? parallelFileSectionLoading,
     String? dispatchLibDir,
     int? numberOfThreads,
-
-    /// Initializes the native LiteRT-LM engine for a `.litertlm` model bundle.
-    ///
-    /// [visionBackend] and [audioBackend] enable the native media executors for
-    /// multimodal bundles. [maxNumImages] configures the image preprocessor
-    /// capacity for conversations that may include image inputs. [outputTokens]
-    /// is the per-request fallback when generation does not provide an explicit
-    /// maximum; it is not an upstream benchmark decode-step count.
   }) async {
     _validateLiteRtLmInitializeArguments(
       backend: backend,

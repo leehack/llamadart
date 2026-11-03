@@ -2,6 +2,41 @@
 
 This document covers the major breaking upgrade paths.
 
+## `0.17.x` -> `0.18.0`: native LiteRT-LM ABI selection
+
+The public `LiteRtLmRuntimeClient`, default services and speech worker now share
+lazy ABI-aware discovery. Runtimes without `litert_lm_get_api_version` use the
+legacy client; a successful version probe reporting exactly `1.0.x` selects the
+C API 1 client. Failed probes, malformed versions and other versions throw
+`LlamaUnsupportedException` before engine calls; they never retry legacy
+signatures. Required exports and optional capability groups are checked before
+use. A version marker alone does not establish feature support.
+
+The selected native loader requires macOS 14 or newer on Apple silicon before
+loading core or companion libraries, including custom paths. Older or
+unverifiable macOS versions are refused even when the library would use the
+legacy ABI. Upgrade macOS or use llama.cpp. Other platform/backend restrictions
+remain in the [support matrix](website/docs/platforms/support-matrix.md).
+
+Behavior to recheck with a C API 1 runtime:
+
+- Initial text LoRA adapters remain unsupported by the advanced engine. Use a
+  compatible llama.cpp model/adapter pair.
+- `LiteRtLmRuntimeClient.initialize(maxNumImages: ...)` is an image-history hint,
+  not an enforced capacity. V1 accepts actual images dynamically and requires a
+  configured vision encoder for that hint.
+- Thinking budgets, JSON Schema, media and dedicated ASR require their own
+  admitted exports and model/configuration capabilities. Unsupported combinations
+  throw typed errors; accepting the ABI does not qualify a model or device.
+- A missing final callback, failed native drain or uncertain cleanup retains the
+  worker and its native/model/cache owners. That backend requires a process
+  restart; an ended request does not prove native cleanup completed.
+
+The default owner pin and Apple companion assets are unchanged in this source
+migration. Final runtime adoption and companion/version preparation require
+separate qualification; this guide does not announce a published artifact.
+See [the adoption checklist](doc/litert_lm_v1_adoption.md) for its gates.
+
 ## `0.17.0` -> `0.17.1`: llama.cpp native runtime `v0.8.0-1`
 
 The hook and the llama.cpp Apple companion source pin `v0.8.0-1`. Flutter iOS and

@@ -1,7 +1,7 @@
 part of 'litert_lm_v1_runtime.dart';
 
-/// Injection-only C API 1.0 service client. The production factory remains on
-/// the qualified legacy client until every adoption and artifact gate passes.
+/// C API 1.0 client selected by the public ABI-aware facade or injected directly.
+/// Runtime selection does not qualify an artifact, model or backend.
 final class LiteRtLmV1RuntimeClient implements LiteRtLmRuntimeClientContract {
   /// Admits an explicitly supplied library; never discovers a different runtime.
   LiteRtLmV1RuntimeClient(
