@@ -808,6 +808,182 @@ class LiteRtSourcePatchesTest(unittest.TestCase):
                         self._validate()
 
 
+class LiteRtV019SamplerTransitionTest(unittest.TestCase):
+    def setUp(self) -> None:
+        fixture = Path(__file__).resolve().parent / "fixtures"
+        self.source_path = fixture / "litert_lm_v018_samplers_Package.swift"
+        self.original = self.source_path.read_text(encoding="utf-8")
+        self.projection = json.loads((fixture / "litert_lm_v019_apple_inventory_projection.json").read_text())
+        self.manifest, _ = _schema2_fixture_payloads()
+        self.tag = self.projection["releaseTag"]
+        self.manifest["release"]["tag"] = self.tag
+        self.manifest["upstream"]["compatibilityTag"] = self.projection["compatibilityTag"]
+        self.manifest["platforms"] = [item for item in self.manifest["platforms"]
+            if item["platform"] not in ("ios", "macos")] + self.projection["platforms"]
+        self.macos = next(item for item in self.manifest["platforms"]
+            if item["platform"] == "macos")
+        self.targets = {
+            "LiteRtLm", "CLiteRTLM", "CLiteRTLMMac", "LiteRtMetalAccelerator",
+            "LiteRt", "LiteRtWebGpuAccelerator", "WebgpuDawn",
+        }
+        self.release = {"assets": [{"name": item["fileName"], "digest": "sha256:" + item["sha256"]}
+            for item in self.projection["spmArtifacts"]]}
+        self.samplers = {"LiteRtTopKMetalSampler": ".iOS", "LiteRtTopKWebGpuSampler": ".macOS"}
+
+    def asset(self, target: str) -> dict:
+        return {
+            "name": f"litert-lm-native-apple-{target}-xcframework-{self.tag}.zip",
+            "digest": "sha256:" + hashlib.sha256(target.encode()).hexdigest(),
+        }
+
+    def binary_block(self, target: str) -> str:
+        return re.search(
+            rf'(?m)^[ \t]*nativeRepoBinaryTarget\(\s*name: "{target}",.*?^[ \t]*\),\n',
+            self.original, re.DOTALL,
+        ).group()
+
+    def dependency(self, target: str) -> str:
+        return f'.target(name: "{target}", condition: .when(platforms: [{self.samplers[target]}])),'
+
+    def prepare(self, source: str) -> str:
+        return prepare_litert_lm_package_swift(
+            source, release=self.release, manifest=self.manifest, resolved_tag=self.tag,
+        )
+
+    def test_removes_both_obsolete_samplers_and_is_idempotent(self) -> None:
+        prepared = self.prepare(self.original)
+        self.assertEqual(self.source_path.read_text(encoding="utf-8"), self.original)
+        expected = self.original
+        for sampler in self.samplers:
+            self.assertNotIn(sampler, prepared)
+            expected = expected.replace(self.binary_block(sampler), "").replace(
+                '                ' + self.dependency(sampler) + '\n', "",
+            )
+        self.assertEqual({name for name, _ in pins.swift_native_repo_binary_targets(
+            prepared, tag_variable="liteRtLmTag", current_tag=self.tag,
+        )}, self.targets)
+        self.assertIn('.target(name: "LiteRtMetalAccelerator", condition: .when(platforms: [.iOS]))', prepared)
+        expected = expected.replace('let liteRtLmTag = "v0.18.1-4"', f'let liteRtLmTag = "{self.tag}"')
+        for target in self.targets:
+            asset = next(item for item in self.release["assets"] if item["name"] == self.asset(target)["name"])
+            expected = pins.replace_swift_binary_target_checksum(expected, target, asset["digest"][7:])
+        self.assertEqual(prepared, expected)
+        self.assertEqual(self.prepare(prepared), prepared)
+
+    def test_actual_owner_projection_does_not_require_prebuilt_topk(self) -> None:
+        self.assertEqual(self.projection["ownerCommit"], "7ea10d0cce10dfddbae273bb69e253d9ea97e1d2")
+        self.assertEqual(self.projection["upstreamCommit"], "83ce6067f2e2a3fb697556928f93936693ded971")
+        paths = {path for platform in self.projection["platforms"] for path in platform["artifactPaths"]}
+        self.assertTrue(any("LiteRtMetalAccelerator" in path for path in paths))
+        self.assertFalse(any("TopK" in path for path in paths))
+        self.assertFalse(any("TopK" in path for path in pins.required_litert_manifest_paths(
+            "v0.19.0", self.tag, official_assets=False,
+        )))
+        pins.validate_litert_spm_artifact_inventory(
+            {item["path"] for item in self.projection["spmArtifacts"]},
+            compatibility_tag="v0.19.0", release_tag=self.tag,
+        )
+
+    def test_v016_through_v018_still_require_prebuilt_ios_sampler(self) -> None:
+        for compatibility in ["v0.16.0", "v0.17.0", "v0.18.0", "v0.18.1"]:
+            with self.subTest(version=compatibility):
+                required = pins.required_litert_manifest_paths(compatibility, self.tag, official_assets=False)
+                for arch in ["arm64", "arm64-sim"]:
+                    self.assertIn(f"bin/ios/{arch}/LiteRtTopKMetalSampler.framework/LiteRtTopKMetalSampler", required)
+                self.assertIn(f"dist/spm/{self.tag}/litert-lm-native-apple-LiteRtTopKMetalSampler-xcframework-{self.tag}.zip", required)
+
+    def test_v018_owner_inventory_retains_both_sampler_dependencies(self) -> None:
+        self.manifest["upstream"]["compatibilityTag"] = "v0.18.1"
+        self.macos["artifactPaths"].append("bin/macos/arm64/libLiteRtTopKWebGpuSampler.dylib")
+        for sampler in self.samplers:
+            self.release["assets"].append(self.asset(sampler))
+        prepared = self.prepare(self.original)
+        for sampler in self.samplers:
+            self.assertIn(self.dependency(sampler), prepared)
+        self.assertEqual(self.prepare(prepared), prepared)
+        self.release["assets"] = [item for item in self.release["assets"]
+            if item["name"] != self.asset("LiteRtTopKMetalSampler")["name"]]
+        with self.assertRaisesRegex(ReleaseError, "required asset.*LiteRtTopKMetalSampler"):
+            self.prepare(self.original)
+
+    def test_v019_rejects_sampler_required_by_manifest_or_archive(self) -> None:
+        for sampler, platform in self.samplers.items():
+            with self.subTest(sampler=sampler):
+                bundle = self.macos if platform == ".macOS" else next(
+                    item for item in self.manifest["platforms"] if item["platform"] == "ios")
+                path = ("bin/macos/arm64/lib" + sampler + ".dylib" if platform == ".macOS"
+                    else f'bin/ios/{bundle["arch"]}/{sampler}.framework/{sampler}')
+                bundle["artifactPaths"].append(path)
+                with self.assertRaisesRegex(ReleaseError, "prebuilt TopK"):
+                    self.prepare(self.original)
+                bundle["artifactPaths"].remove(path)
+                with self.assertRaisesRegex(ReleaseError, "unexpected="):
+                    pins.validate_litert_spm_artifact_inventory(
+                        {item["path"] for item in self.projection["spmArtifacts"]}
+                        | {f'dist/spm/{self.tag}/{self.asset(sampler)["name"]}'},
+                        compatibility_tag="v0.19.0", release_tag=self.tag,
+                    )
+
+    def test_unknown_inventory_or_version_transition_refuses(self) -> None:
+        self.macos["artifactPaths"].remove("bin/macos/arm64/libLiteRtWebGpuAccelerator.dylib")
+        with self.assertRaisesRegex(ReleaseError, "owner inventory"):
+            self.prepare(self.original)
+        self.setUp()
+        self.manifest["upstream"]["compatibilityTag"] = "v0.20.0"
+        with self.assertRaisesRegex(ReleaseError, "owner inventory"):
+            self.prepare(self.original)
+
+    def test_malformed_or_ambiguous_topology_refuses(self) -> None:
+        for sampler in self.samplers:
+            block, dependency = self.binary_block(sampler), self.dependency(sampler)
+            other = self.binary_block("LiteRtWebGpuAccelerator")
+            for label, source in (
+                ("duplicate-block", self.original.replace(block, block * 2)),
+                ("duplicate-other-block", self.original.replace(other, other * 2)),
+                ("duplicate-dependency", self.original.replace(dependency, dependency * 2)),
+                ("missing-dependency", self.original.replace(dependency, "")),
+                ("orphan-dependency", self.original.replace(block, "")),
+                ("bad-checksum-field", self.original.replace(block, block.replace("checksum:", "badChecksum:"))),
+                ("short-checksum", self.original.replace(block, re.sub(r'checksum: "[0-9a-f]+"', 'checksum: "a"', block))),
+                ("wrong-repository", self.original.replace(block, block.replace("leehack/litert-lm-native", "other/runtime"))),
+                ("wrong-tag-argument", self.original.replace(block, block.replace("tag: liteRtLmTag", 'tag: "other"'))),
+                ("extra-sampler-reference", self.original + '\n// ' + sampler),
+                ("string-dependency", self.original.replace(dependency, dependency + '\n"Other",')),
+                ("dynamic-dependency", self.original.replace(dependency, dependency + '\n.target(name: dynamicTarget),')),
+                ("dangling-dependency", self.original.replace(dependency, dependency + '\n.target(name: "Other"),')),
+                ("unknown-binary-call", self.original + '\nlet extra = nativeRepoBinaryTarget(name: dynamicTarget)\n'),
+            ):
+                with self.subTest(sampler=sampler, source=label), self.assertRaises(ReleaseError):
+                    self.prepare(source)
+
+    def test_every_platform_dependency_is_preserved(self) -> None:
+        for target, original, wrong in (
+            ("LiteRtTopKMetalSampler", ".iOS", ".macOS"),
+            ("LiteRtTopKWebGpuSampler", ".macOS", ".iOS"),
+            ("LiteRtLm", ".iOS, .macOS", ".iOS"),
+            ("CLiteRTLM", ".iOS", ".macOS"),
+            ("CLiteRTLMMac", ".macOS", ".iOS"),
+            ("LiteRtMetalAccelerator", ".iOS", ".macOS"),
+            ("LiteRt", ".macOS", ".iOS"),
+            ("LiteRtWebGpuAccelerator", ".macOS", ".iOS"),
+            ("WebgpuDawn", ".macOS", ".iOS"),
+        ):
+            dependency = f'.target(name: "{target}", condition: .when(platforms: [{original}]))'
+            with self.subTest(target=target), self.assertRaisesRegex(ReleaseError, "platform dependency"):
+                source = self.original.replace(dependency, dependency.replace(original, wrong))
+                self.assertNotEqual(source, self.original)
+                self.prepare(source)
+
+    def test_wrong_artifact_cannot_rewire_any_retained_target(self) -> None:
+        for target in self.targets | set(self.samplers):
+            source = self.original.replace(
+                f'artifactName: "litert-lm-native-apple-{target}-xcframework-',
+                'artifactName: "litert-lm-native-apple-WrongTarget-xcframework-',
+            )
+            with self.subTest(target=target), self.assertRaisesRegex(ReleaseError, "canonical"):
+                self.prepare(source)
+
+
 class SyncNativeReleasePinsTest(unittest.TestCase):
     def test_exact_keys_rejects_non_object_json(self) -> None:
         with self.assertRaisesRegex(ReleaseError, "must be an object"):
