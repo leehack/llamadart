@@ -301,6 +301,23 @@ void main() {
       },
     );
 
+    test('diagnostic roots belong only to Python auto tool choice', () {
+      expect(
+        render([search], toolChoice: ToolChoice.auto).grammar,
+        contains('diagnostic-envelope'),
+      );
+      expect(render([search]).grammar, isNot(contains('diagnostic-envelope')));
+      expect(
+        render(
+          [search],
+          system: 'Force JSON schema.\nSystem',
+          toolChoice: ToolChoice.auto,
+        ).grammar,
+        isNot(contains('diagnostic-envelope')),
+      );
+      expect(render([search], toolChoice: ToolChoice.none).grammar, isNull);
+    });
+
     test('buildGrammar is the single-call list', () {
       expect(Lfm2Handler().buildGrammar([search]), render([search]).grammar);
     });

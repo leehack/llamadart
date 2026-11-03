@@ -1922,6 +1922,69 @@ void main() {
     );
   });
 
+  test('LFM2 foreign auto closers are non-executable diagnostic roots', () {
+    final tools = [
+      ToolDefinition(
+        name: 'record',
+        description: '',
+        parameters: [ToolParam.string('value', required: true)],
+      ),
+    ];
+    final grammar = buildLfm2AutoGrammar(tools, parallelToolCalls: false)!;
+    const start = '<|tool_call_start|>[';
+    _expectGrammar(
+      validator,
+      grammar,
+      valid: [
+        r'<|tool_call_start|>[record(value=\\host)</tool>'
+            '\n{"raw":true}',
+        '${start}record(value="ok")]</x:result-2><x><<',
+        '${start}record(value="ok")]</tool><',
+      ],
+      invalid: [
+        '${start}record(value="ok")]',
+        '${start}unknown(value="ok")]</tool>',
+        '${start}record(value="ok", value="wrong")]</tool>',
+        '${start}record(value="ok"), record(value="wrong")]</tool>',
+        '${start}record(value="ok")]</tool><|tool_call_end|>',
+        '${start}record(value="ok")]</tool><<|tool_call_end|>',
+        '${start}record(value="ok")]</tool><|',
+        r'<|tool_call_start|>[record(value="ok)]<|tool_call_end|>x")]</tool>',
+        r'<|tool_call_start|>[record(value="C:\temp\")]<|tool_call_end|>tail")]</tool>',
+        r'<|tool_call_start|>[record(value="\<|tool_call_end|>")]</tool>',
+        r'<|tool_call_start|>[record(arguments={"value":"<|tool_call_end|>"})]</tool>',
+      ],
+    );
+    for (final tool in [
+      ToolDefinition(
+        name: 'x<|tool_call_end|>',
+        description: '',
+        parameters: [],
+      ),
+      ToolDefinition(
+        name: 'x',
+        description: '',
+        parameters: [
+          ToolParam.enumType(
+            'value',
+            values: ['<|tool_call_end|>'],
+            required: true,
+          ),
+        ],
+      ),
+    ]) {
+      _expectGrammar(
+        validator,
+        buildLfm2AutoGrammar([tool], parallelToolCalls: false)!,
+        valid: [],
+        invalid: [
+          '<|tool_call_start|>[x<|tool_call_end|>()]</tool>',
+          '<|tool_call_start|>[x(value="<|tool_call_end|>")]</tool>',
+        ],
+      );
+    }
+  });
+
   test('LFM2 unclosed copied path roots cannot extend through string data', () {
     final tools = [
       ToolDefinition(

@@ -8,6 +8,140 @@ import 'package:test/test.dart';
 import '../../../../support/gbnf_recognizer.dart';
 
 void main() {
+  test('foreign auto closers stay raw and cannot complete an executable call', () {
+    final tools = [
+      ToolDefinition(
+        name: 'record',
+        description: '',
+        parameters: [ToolParam.string('value', required: true)],
+      ),
+      ToolDefinition(
+        name: 'configure',
+        description: '',
+        parameters: [
+          ToolParam.string('text', required: true),
+          ToolParam.boolean('enabled', required: true),
+        ],
+      ),
+    ];
+    final grammar = GbnfRecognizer(
+      buildLfm2AutoGrammar(tools, parallelToolCalls: false)!,
+    );
+    for (final call in [
+      r'record(value=\\host)',
+      'configure(text="ok", enabled=True)',
+    ]) {
+      for (final bracket in ['', ']']) {
+        for (final tag in ['tool', 'function_call', 'x:result-2']) {
+          final raw =
+              '<|tool_call_start|>[$call$bracket</$tag>\n{"raw":true}<x><<';
+          expect(grammar.accepts(raw), isTrue, reason: raw);
+          final finalParse = Lfm2Handler().parseWithTools(raw, tools: tools);
+          expect(finalParse.toolCalls, isEmpty, reason: raw);
+          expect(finalParse.content, raw, reason: raw);
+          for (var end = 0; end <= raw.length; end++) {
+            expect(
+              Lfm2Handler()
+                  .parseWithTools(
+                    raw.substring(0, end),
+                    tools: tools,
+                    isPartial: true,
+                  )
+                  .toolCalls,
+              isEmpty,
+              reason: raw.substring(0, end),
+            );
+          }
+        }
+      }
+    }
+    const start = '<|tool_call_start|>[';
+    for (final raw in [
+      '${start}record(value=ok)]',
+      '${start}unknown(value=ok)</tool>',
+      '${start}record(value=ok, value=wrong)</tool>',
+      '${start}record(value=ok), record(value=wrong)</tool>',
+      '${start}configure(text="ok", enabled="True")</tool>',
+      '${start}configure(text=False, enabled=True)</tool>',
+      '${start}configure(text="ok")</tool>',
+      '${start}record(value=ok)</>',
+      '${start}record(value=ok)</2tool>',
+      '${start}record(value=ok)</tool><|tool_call_end|>',
+      '${start}record(value=ok)</tool><<|tool_call_start|>',
+      r'<|tool_call_start|>[record(value="ok)]<|tool_call_end|>x")]</tool>',
+      r'<|tool_call_start|>[record(value="C:\temp\")]<|tool_call_end|>tail")]</tool>',
+      r'<|tool_call_start|>[record(value="\<|tool_call_end|>")]</tool>',
+      r'<|tool_call_start|>[record(arguments={"value":"<|tool_call_end|>"})]</tool>',
+    ]) {
+      expect(grammar.accepts(raw), isFalse, reason: raw);
+    }
+    // A partial special-marker prefix is diagnostic text, but cannot grow into
+    // a canonical marker and resurrect its preceding call.
+    const marker = '<|tool_call_end|>';
+    for (var count = 1; count <= marker.length; count++) {
+      final raw =
+          '${start}record(value=ok)</tool>${marker.substring(0, count)}';
+      expect(grammar.accepts(raw), count == 1, reason: raw);
+    }
+  });
+
+  test(
+    'diagnostic marker exclusion blocks a lenient-parser execution prefix',
+    () {
+      final tools = [
+        ToolDefinition(
+          name: 'record',
+          description: '',
+          parameters: [ToolParam.string('value', required: true)],
+        ),
+      ];
+      final grammar = GbnfRecognizer(
+        buildLfm2AutoGrammar(tools, parallelToolCalls: false)!,
+      );
+      for (final raw in [
+        r'<|tool_call_start|>[record(value="ok)]<|tool_call_end|>x")]</tool>',
+        r'<|tool_call_start|>[record(value="C:\temp\")]<|tool_call_end|>tail")]</tool>',
+      ]) {
+        expect(
+          Lfm2Handler().parseWithTools(raw, tools: tools).toolCalls,
+          hasLength(1),
+        );
+        expect(grammar.accepts(raw), isFalse);
+      }
+    },
+  );
+
+  test('diagnostic terminals cannot hide markers in schema literals', () {
+    const marker = '<|tool_call_end|>';
+    for (final tool in [
+      ToolDefinition(name: 'record$marker', description: '', parameters: []),
+      ToolDefinition(
+        name: 'record',
+        description: '',
+        parameters: [ToolParam.string('value$marker', required: true)],
+      ),
+      ToolDefinition(
+        name: 'record',
+        description: '',
+        parameters: [
+          ToolParam.enumType('value', values: [marker], required: true),
+        ],
+      ),
+    ]) {
+      final grammar = GbnfRecognizer(
+        buildLfm2AutoGrammar([tool], parallelToolCalls: false)!,
+      );
+      final calls = [
+        'record$marker()',
+        'record(value$marker="ok")',
+        'record(value="$marker")',
+      ];
+      for (final call in calls) {
+        expect(grammar.accepts('<|tool_call_start|>[$call]</tool>'), isFalse);
+      }
+    }
+  });
+
   test(
     'singleton strings preserve legacy quote spellings without rewriting',
     () {

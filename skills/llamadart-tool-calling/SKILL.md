@@ -130,13 +130,15 @@ description: >-
   Named object/array arguments and zero-argument calls are supported. Keep
   copied backslashes literal; ambiguous Python-style strings are not globally
   unescaped. This does not enable canonical `fromJsonSchema` generation on
-  LFM2 or change its existing required JSON grammar. Auto grammar admits a copied
-  trailing backslash only for one required plain string argument, in a singleton
-  list without a terminal comma. This exception
-  accepts path-like letters, digits, Unicode text, spaces and `_ . / : - \`;
-  ASCII quotes, braces, brackets, call/assignment punctuation and tool markers
-  require ordinary strict strings. Other declarations and list forms keep
-  strict quote boundaries.
+  LFM2 or change its existing required JSON grammar. Auto grammar preserves copied
+  bare text and balanced object/list spellings as strings only for one required
+  plain string argument. Copied path-like values may retain a trailing backslash
+  or an unmatched opening quote, in a singleton list without a terminal comma.
+  Ambiguous spellings stay non-executable; other declarations retain their types
+  and strict quote boundaries. A schema-valid auto prefix closed with a foreign
+  XML tag can remain raw diagnostic text with no executable calls. Its argument
+  bytes exclude `<` and its tail excludes special markers; never execute these
+  diagnostics. Required/force-JSON and `none` behavior is unchanged.
   For the one-string form, values that would continue a completed copied-path
   call use the existing Python `tool(arguments={"field":"..."})` envelope with
   JSON string escaping. The inner object follows the declared single-field

@@ -26,7 +26,7 @@ All five engine types implement `LlamadartEngine<C extends EngineCapabilities>`
 for shared capability inspection and disposal. Keep loading and requests on the
 concrete engine; see [shared lifecycle ownership](https://llamadart.leehack.com/docs/guides/model-lifecycle#shared-engine-ownership).
 
-LFM2 Python-style tool calls use declared argument types and preserve copied string backslashes; see [tool calling](https://llamadart.leehack.com/docs/guides/tool-calling). The automatic grammar can use an existing Python arguments wrapper for unambiguous JSON-escaped string values.
+LFM2 Python-style tool calls use declared argument types and preserve copied string backslashes; see [tool calling](https://llamadart.leehack.com/docs/guides/tool-calling). The automatic grammar preserves copied singleton string spellings and can use an existing Python arguments wrapper for unambiguous JSON-escaped string values. Foreign XML closing tags remain raw diagnostics with no executable calls.
 Native llama.cpp applies schema-directed lazy grammar to LFM2 automatic Python tool calls; Web rejects this path until its runtime can preserve prompt penalties with grammar.
 LFM2 replies cut off at a reported length limit expose raw `partialToolCalls` diagnostics separately from executable calls and history. LFM2 tool markers inside reasoning stay in reasoning and produce no executable calls. Explicit parallel-tool requests reach supported Dart tool grammars even when template probes do not recognize parallel history.
 

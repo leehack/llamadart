@@ -192,13 +192,17 @@ retain their named position, and a declared zero-argument call yields `{}`.
 For a string parameter, `value=False` remains the string `"False"`; copied
 backslashes in Python-style string arguments remain literal. Ambiguous copied
 text and escaped text are not globally unescaped. The existing JSON call form
-keeps JSON string decoding. The auto grammar permits a copied trailing backslash
-only for a tool with one required plain string argument, in a singleton list
-without a terminal comma.
-That exception accepts path-like text: letters, digits, Unicode text, spaces and
-`_ . / : - \`. ASCII quotes, braces, brackets, call/assignment punctuation and
-tool markers require the ordinary strict string form. Other declarations and
-list forms keep strict quote boundaries.
+keeps JSON string decoding. For a tool with one required plain string argument, auto grammar also preserves
+parser-supported bare text and balanced object/list spellings as strings. Copied
+path-like values may retain a trailing backslash or an unmatched opening quote,
+in a singleton list without a terminal comma. Ambiguous copied spellings remain
+non-executable; the grammar does not reinterpret them as a different value.
+Other declarations and list forms retain their declared types and strict quotes.
+An auto reply closed with a foreign XML tag such as `</function_call>` can remain
+raw diagnostic text instead of being forced into an executable tool envelope.
+This diagnostic form requires a schema-valid call prefix, excludes `<` from its
+argument bytes, and excludes special markers from its tail. It never yields an
+executable call. Required/force-JSON and `none` behavior is unchanged.
 For that one-string form, a direct string cannot continue a completed copied-path
 call as argument data. Such values use the existing Python wrapper
 `save_note(arguments={"text":"..."})`, whose JSON string encoding preserves the

@@ -13,7 +13,7 @@ validate against the exact release tag notes.
 
 ## Unreleased
 
-- Constrain native LFM2 automatic Python tool calls with lazy schema grammar and bounded formatting whitespace while preserving prompt penalties; reject unsupported Web runtimes.
+- Constrain native LFM2 automatic Python tool calls with lazy schema grammar, preserving copied string data and non-executable foreign-closing diagnostics; reject unsupported Web runtimes.
 
 - Honor explicit parallel-tool requests even when template probes do not recognize parallel history ([#1713](https://github.com/leehack/llamadart/issues/1713)).
 - Keep LFM2 tool markers inside reasoning non-executable and preserve thought tags inside tool arguments ([#1714](https://github.com/leehack/llamadart/issues/1714)).

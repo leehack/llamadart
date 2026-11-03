@@ -14,6 +14,38 @@ String? buildLfm2AutoGrammar(
 }) {
   if (tools == null || tools.isEmpty) return null;
   final builder = _PythonGrammar();
+  final list = _callList(builder, tools, parallelToolCalls);
+  // A trailing comma lets compound tokens close the last argument and call
+  // without forcing the sampler back into an unfinished string. Bound closing
+  // whitespace so a completed call cannot consume the remaining token budget.
+  builder.rules['root'] =
+      '${ToolCallGrammarUtils.literal('<|tool_call_start|>')} ws "[" ws $list '
+      'close-ws "]" close-ws ${ToolCallGrammarUtils.literal(_toolCallEnd)}';
+  final diagnostic = _PythonGrammar(diagnostic: true);
+  final diagnosticList = _callList(diagnostic, tools, parallelToolCalls);
+  diagnostic.rules['envelope'] =
+      '"[" ws $diagnosticList close-ws ("]" close-ws)? '
+      'foreign-close diagnostic-tail';
+  diagnostic.rules['foreign-close'] = r'"</" [A-Za-z_] [A-Za-z0-9_.:-]* ">"';
+  // Neither the call payload nor its diagnostic tail may contain a special
+  // marker: the lenient parser could otherwise execute an earlier prefix.
+  diagnostic.rules['diagnostic-tail'] = r'([^<] | "<"+ [^<|])* "<"*';
+  builder.rules['root'] =
+      '${builder.rules['root']} | '
+      '${ToolCallGrammarUtils.literal('<|tool_call_start|>')} '
+      'diagnostic-ws diagnostic-envelope';
+
+  return builder.rules.entries
+      .map((entry) => '${entry.key} ::= ${entry.value}')
+      .followedBy(diagnostic.render(prefix: 'diagnostic-'))
+      .join('\n');
+}
+
+String _callList(
+  _PythonGrammar builder,
+  List<ToolDefinition> tools,
+  bool parallelToolCalls,
+) {
   final calls = <String>[];
   final copiedCalls = <String>[];
   for (var index = 0; index < tools.length; index++) {
@@ -54,19 +86,40 @@ String? buildLfm2AutoGrammar(
       '(close-ws ",")?';
   // The loose fallback reinterprets quotes and JSON objects. Admit copied tails
   // only in one required plain path argument, without either ambiguity.
-  final list = copiedCalls.isEmpty ? normalList : '($normalList | copied-call)';
-  // A trailing comma lets compound tokens close the last argument and call
-  // without forcing the sampler back into an unfinished string. Bound closing
-  // whitespace so a completed call cannot consume the remaining token budget.
-  builder.rules['root'] =
-      '${ToolCallGrammarUtils.literal('<|tool_call_start|>')} ws "[" ws $list '
-      'close-ws "]" close-ws ${ToolCallGrammarUtils.literal(_toolCallEnd)}';
-  return builder.rules.entries
-      .map((entry) => '${entry.key} ::= ${entry.value}')
-      .join('\n');
+  return copiedCalls.isEmpty ? normalList : '($normalList | copied-call)';
 }
 
 final class _PythonGrammar {
+  _PythonGrammar({this.diagnostic = false}) {
+    if (diagnostic) {
+      rules['double-string'] = r'''"\"" ([^"\\<] | "\\" [^<])* "\""''';
+      rules['single-string'] = r'''"'" ([^'\\<] | "\\" [^<])* "'"''';
+      rules['canonical-json-char'] =
+          r'[^"\\<\x7F\x00-\x1F] | [\\] (["\\bfnrt] | "u" [0-9a-fA-F]{4})';
+      rules['never'] = r'[^\x00-\U0010FFFF]';
+    }
+  }
+
+  final bool diagnostic;
+
+  String _literal(String text) => diagnostic && text.contains('<')
+      ? 'never'
+      : ToolCallGrammarUtils.literal(text);
+
+  Iterable<String> render({required String prefix}) sync* {
+    // Match terminals before rule names so literal data is never renamed.
+    final tokens = RegExp(
+      r'"(?:[^"\\]|\\.)*"|\[(?:[^\]\\]|\\.)*\]|[A-Za-z][A-Za-z0-9-]*',
+    );
+    for (final entry in rules.entries) {
+      final expression = entry.value.replaceAllMapped(tokens, (match) {
+        final text = match[0]!;
+        return rules.containsKey(text) ? '$prefix$text' : text;
+      });
+      yield '$prefix${entry.key} ::= $expression';
+    }
+  }
+
   // Uniqueness needs a finite state per remaining argument set. Bound schema
   // expansion before constructing an exponential number of grammar rules.
   static const int _maxArgumentStates = 4096;
@@ -125,8 +178,8 @@ final class _PythonGrammar {
   }) {
     final key = _fields(schema).keys.single;
     rules[rule] =
-        '${ToolCallGrammarUtils.literal(name)} "(" ws '
-        '${ToolCallGrammarUtils.literal(key)} ws "=" ws $stringRule '
+        '${_literal(name)} "(" ws '
+        '${_literal(key)} ws "=" ws $stringRule '
         'close-ws ")"';
     return rule;
   }
@@ -137,9 +190,9 @@ final class _PythonGrammar {
     final key = _fields(schema).keys.single;
     final alias = key == 'arguments' ? 'parameters' : 'arguments';
     rules[rule] =
-        '${ToolCallGrammarUtils.literal(name)} "(" ws '
-        '${ToolCallGrammarUtils.literal(alias)} ws "=" ws "{" ws '
-        '${ToolCallGrammarUtils.literal(jsonEncode(key))} ws ":" ws '
+        '${_literal(name)} "(" ws '
+        '${_literal(alias)} ws "=" ws "{" ws '
+        '${_literal(jsonEncode(key))} ws ":" ws '
         'canonical-json-string ws "}" ws ")"';
     return rule;
   }
@@ -151,7 +204,7 @@ final class _PythonGrammar {
     bool prefixSafeString = false,
   }) {
     if (prefixSafeString) {
-      _addPrefixSafeStringRules();
+      if (!diagnostic) _addPrefixSafeStringRules();
       _addCopiedValueRules();
     }
     final fields = _fields(schema);
@@ -159,16 +212,15 @@ final class _PythonGrammar {
     final members = <({String name, String value, bool required})>[
       for (final entry in fields.entries)
         (
-          name: '${ToolCallGrammarUtils.literal(entry.key)} ws "=" ws',
+          name: '${_literal(entry.key)} ws "=" ws',
           value: prefixSafeString
-              ? '(prefix-safe-string | copied-value)'
+              ? '(${diagnostic ? 'py-string' : 'prefix-safe-string'} | copied-value)'
               : value(entry.value),
           required: required.contains(entry.key),
         ),
     ];
     final arguments = objectMembers(members, '$rule-args');
-    rules[rule] =
-        '${ToolCallGrammarUtils.literal(name)} "(" ws $arguments ws ")"';
+    rules[rule] = '${_literal(name)} "(" ws $arguments ws ")"';
     return rule;
   }
 
@@ -219,8 +271,8 @@ final class _PythonGrammar {
             char,
       ]);
       final nonPathRule = _characterClass(nonPath);
-      final slash = ToolCallGrammarUtils.literal(r'\');
-      final endQuote = ToolCallGrammarUtils.literal(quote);
+      final slash = _literal(r'\');
+      final endQuote = _literal(quote);
       rules[name] = '$endQuote $prefix';
       rules[body] =
           '(${_characterClass('$quote\\', inverted: true)} | $slash .)* $endQuote';
@@ -243,8 +295,7 @@ final class _PythonGrammar {
           '$slash . $body',
           '${_characterClass(blocked, inverted: true)} $body',
           for (final move in moves.entries)
-            if (move.value != null)
-              '${ToolCallGrammarUtils.literal(move.key)} ${move.value}',
+            if (move.value != null) '${_literal(move.key)} ${move.value}',
         ].join(' | ');
       }
 
@@ -311,7 +362,7 @@ final class _PythonGrammar {
             final literals = <String>[];
             for (final quote in ['"', "'"]) {
               if (!text.contains(quote)) {
-                literals.add(ToolCallGrammarUtils.literal('$quote$text$quote'));
+                literals.add(_literal('$quote$text$quote'));
               }
             }
             if (literals.isEmpty) {
@@ -379,7 +430,7 @@ final class _PythonGrammar {
           key.runes.every((rune) => rune >= 0x20 && rune != 0x7f))
         "'$key'",
     ];
-    return '(${spellings.map(ToolCallGrammarUtils.literal).join(' | ')})';
+    return '(${spellings.map(_literal).join(' | ')})';
   }
 
   String objectMembers(
