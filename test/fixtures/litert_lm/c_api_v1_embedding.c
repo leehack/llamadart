@@ -3,10 +3,12 @@
 #define litert_lm_input_data_create fixture_text_input_create
 #define litert_lm_input_data_delete fixture_text_input_delete
 #define litert_lm_get_last_error_message fixture_text_error_message
+#define litert_lm_clear_last_error fixture_text_clear_error
 #include "c_api_v1_client.c"
 #undef litert_lm_input_data_create
 #undef litert_lm_input_data_delete
 #undef litert_lm_get_last_error_message
+#undef litert_lm_clear_last_error
 
 #include <math.h>
 #include <stdatomic.h>

@@ -18,7 +18,7 @@ client/session contracts make v1 embedding dispatch independent of that extensio
 | Public call path | Preparation and evidence | Remaining admission work |
 | --- | --- | --- |
 | Packaged Apple platform floor | Exact owner `5129cd0` candidate declares macOS 14.0 and iOS 15.0 | macOS 14 deployment/runtime refusal, docs and companion SwiftPM must agree before adoption. macOS 13 is unsupported by this artifact; static iOS minima are not device qualification. |
-| Engine initialization and backend options | Status/out settings and ownership; injected CPU service fixture | Preserve responsive asynchronous creation and precise native-creation error classification for existing retry policies. Qualify each selected backend. |
+| Engine initialization and backend options | Status/out settings; responsive owned background creation with scalar function/configuration addresses, immediate same-thread canonical error copy, partial-owner cleanup and typed service retry classification. Pending/uncertain creation retains its library/model/cache family. | Qualify each selected backend and exact artifact; missing completion requires process restart. |
 | `tokenize` / `detokenize` / start tokens | Status/out, `size_t`, copied results, legacy BOS semantics | Matching artifact/model qualification. |
 | Bundle capabilities | Owned model-file snapshot; null optional client probe on native read failure | Declarations do not prove executor or channel enforcement. |
 | System, text/tool history and tool descriptors | Validated snapshots; actual service chat fixture with history/tools | Media history and additional supported schema shapes require migration. |
@@ -102,3 +102,22 @@ public streaming/task/cancellation smoke. It captures source/executable identity
 stdout/native stderr and a receipt in a unique temporary evidence directory.
 Only its owned child is killed at the four-minute deadline. A successful fixture
 or owner C++ smoke does not replace this actual Dart worker/model qualification.
+
+## Asynchronous engine ownership
+
+The v1 service client awaits `loadConfiguredAsync`; the explicit synchronous
+internal `loadConfigured` helper keeps its existing behavior. Short settings
+construction stays on the owner isolate. The blocking constructor runs through
+`runLiteRtLmBlockingCall` with scalar addresses and plain diagnostic strings,
+while the client retains the original library, settings and borrowed strings.
+The completed scope copies canonical v1 message/clear error state on that thread
+using the returned status, then releases a failing partial engine. It never
+queries the removed legacy error-code getter.
+
+Only an explicit returned scope permits settings cleanup and engine adoption.
+Lost transport quarantines the family and refuses reuse/disposal. The service
+exposes pending initialization, retains its client/model-link/cache lease before
+the await, and forbids cache/audio/automatic-backend retry after uncertain
+completion. Settled failures retain the existing typed engine-creation retry and
+fallback behavior. Model-free barriers/TLS fixtures and killed subprocesses test
+these boundaries; they do not substitute actual artifact/model qualification.

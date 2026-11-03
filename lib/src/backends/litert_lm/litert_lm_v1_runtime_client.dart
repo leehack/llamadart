@@ -4,8 +4,10 @@ part of 'litert_lm_v1_runtime.dart';
 /// the qualified legacy client until every adoption and artifact gate passes.
 final class LiteRtLmV1RuntimeClient implements LiteRtLmRuntimeClientContract {
   /// Admits an explicitly supplied library; never discovers a different runtime.
-  LiteRtLmV1RuntimeClient(DynamicLibrary library)
-    : _runtime = LiteRtLmV1Runtime(library);
+  LiteRtLmV1RuntimeClient(
+    DynamicLibrary library, {
+    LiteRtLmV1CreateRunner? createRunner,
+  }) : _runtime = LiteRtLmV1Runtime(library, createRunner: createRunner);
 
   final LiteRtLmV1Runtime _runtime;
   LiteRtLmV1Conversation? _conversation;
@@ -248,7 +250,7 @@ final class LiteRtLmV1RuntimeClient implements LiteRtLmRuntimeClientContract {
     options._validate(modelPath);
     _closeConversation();
     setMinLogLevel(minLogLevel);
-    _runtime.loadConfigured(modelPath, options);
+    await _runtime.loadConfiguredAsync(modelPath, options);
     _backend = options.backend;
     _outputTokens = outputTokens;
     _lastFinishReason = null;

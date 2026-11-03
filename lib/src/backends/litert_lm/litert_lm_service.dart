@@ -158,11 +158,12 @@ class LiteRtLmService {
   LiteRtLmRuntimeClientContract? _client;
   bool _nativeResourcesQuarantined = false;
   bool _embeddingPreparing = false;
+  bool _nativeInitializationPending = false;
 
   /// Native lifetime; failed Dart requests can still own live callbacks.
   LiteRtLmNativeSettlement get nativeSettlement => _nativeResourcesQuarantined
       ? LiteRtLmNativeSettlement.quarantined
-      : _embeddingPreparing
+      : _nativeInitializationPending || _embeddingPreparing
       ? LiteRtLmNativeSettlement.pending
       : _client?.nativeSettlement ?? LiteRtLmNativeSettlement.settled;
 
@@ -171,6 +172,19 @@ class LiteRtLmService {
   /// This is irreversible: callers must restart the process before retrying.
   void quarantineNativeResources() {
     _nativeResourcesQuarantined = true;
+  }
+
+  bool _retainUnsettledClient(
+    LiteRtLmRuntimeClientContract client,
+    LiteRtLmCacheLease? lease,
+  ) {
+    if (client.nativeSettlement == LiteRtLmNativeSettlement.settled) {
+      return false;
+    }
+    _client = client;
+    _cacheLease = lease;
+    quarantineNativeResources();
+    return true;
   }
 
   bool _jsonSchemaAdmitted = false;
@@ -1319,6 +1333,8 @@ class LiteRtLmService {
       );
     }
 
+    var initializationUnsettled = false;
+
     Future<LiteRtLmRuntimeClientContract> initializeClient(
       String engineBackend,
       String? visionBackend,
@@ -1331,11 +1347,14 @@ class LiteRtLmService {
         cacheLease,
       );
       final client = _clientFactory();
-      client.configureResponseThinkingTags(
-        startTag: responseThinkingTags.startTag,
-        endTag: responseThinkingTags.endTag,
-      );
+      _client = client;
+      _cacheLease = cacheLease;
+      _nativeInitializationPending = true;
       try {
+        client.configureResponseThinkingTags(
+          startTag: responseThinkingTags.startTag,
+          endTag: responseThinkingTags.endTag,
+        );
         await client.initialize(
           modelPath: runtimeModelPath,
           backend: engineBackend,
@@ -1355,12 +1374,22 @@ class LiteRtLmService {
               ? null
               : modelParams.numberOfThreads,
         );
+        _nativeInitializationPending = false;
         return client;
       } catch (_) {
+        _nativeInitializationPending = false;
+        if (_retainUnsettledClient(client, cacheLease)) {
+          initializationUnsettled = true;
+          rethrow;
+        }
         try {
           client.dispose();
         } catch (_) {
           // Preserve the initialization error reported by the runtime.
+        }
+        if (identical(_client, client)) {
+          _client = null;
+          _cacheLease = null;
         }
         rethrow;
       }
@@ -1380,6 +1409,7 @@ class LiteRtLmService {
           audioBackend: options.audio,
         );
       } catch (initialError, initialStackTrace) {
+        if (initializationUnsettled) rethrow;
         // The GPU backend fails engine creation on a cache it rejects, such
         // as a truncated weight cache, when it cannot write a new one.
         final uncachedDir =
@@ -1431,6 +1461,7 @@ class LiteRtLmService {
       try {
         engine = await createEngine(backend, options);
       } catch (gpuError, gpuStackTrace) {
+        if (initializationUnsettled) rethrow;
         if (!_mayRetryAutoGpuOnCpu(modelParams, backend)) {
           rethrow;
         }
@@ -1488,7 +1519,7 @@ class LiteRtLmService {
         stackTrace,
       );
     } finally {
-      if (!created) {
+      if (!created && !initializationUnsettled) {
         cacheLease?.release();
       }
     }

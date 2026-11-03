@@ -29,6 +29,9 @@ static void copy_path(int index, const char *value) {
 void fixture_fail(int stage) { failure = stage; }
 int fixture_live(void) { return live; }
 const char *litert_lm_get_last_error_message(void) { return last_error; }
+#ifndef OMIT_CLEAR_LAST_ERROR
+void litert_lm_clear_last_error(void) { last_error[0] = 0; }
+#endif
 int litert_lm_get_api_version(int *a, int *b, int *c) { *a=1;*b=0;*c=0;return 0; }
 static int create(int stage, void **out) {
   *out = NULL;

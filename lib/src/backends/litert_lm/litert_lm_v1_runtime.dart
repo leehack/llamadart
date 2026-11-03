@@ -14,6 +14,7 @@ import '../../core/models/inference/embedding.dart';
 import 'litert_lm_blocking_call.dart';
 import 'litert_lm_platform.dart';
 import 'litert_lm_last_error.dart';
+import 'litert_lm_v1_blocking_call.dart';
 import 'litert_lm_asr_types.dart';
 import 'litert_lm_embedding.dart';
 import 'litert_lm_finish_reason.dart';
@@ -26,6 +27,7 @@ part 'litert_lm_v1_embedding.dart';
 part 'litert_lm_v1_conversation.dart';
 part 'litert_lm_v1_conversation_settings.dart';
 part 'litert_lm_v1_engine_settings.dart';
+part 'litert_lm_v1_engine_creation.dart';
 part 'litert_lm_v1_metadata.dart';
 part 'litert_lm_v1_runtime_client.dart';
 part 'litert_lm_v1_tokenizer.dart';
@@ -96,10 +98,15 @@ typedef _TextD = int Function(Pointer<Void>, int, Pointer<Pointer<Utf8>>);
 /// This is not selected by the public runtime client. Its internal conversation
 /// preparation is separate from raw sessions. ASR, embeddings and schemas remain
 /// behind the public compatibility refusal until their separate migration is
-/// complete. Handle operations run on the owning isolate; handles never escape it.
+/// complete. Blocking creation uses scalar addresses in an owned background scope;
+/// its native library and configuration remain retained until explicit completion.
 final class LiteRtLmV1Runtime {
   /// Opens a caller-supplied candidate library with exactly C API 1.0.x.
-  LiteRtLmV1Runtime(DynamicLibrary library) : _library = library {
+  LiteRtLmV1Runtime(
+    DynamicLibrary library, {
+    LiteRtLmV1CreateRunner? createRunner,
+  }) : _library = library,
+       _createRunner = createRunner ?? runLiteRtLmV1Create {
     if (!library.providesSymbol('litert_lm_get_api_version')) {
       throw LlamaUnsupportedException(
         'C API 1.0 adapter requires a versioned LiteRT-LM runtime; legacy libraries use the existing runtime client.',
@@ -157,6 +164,10 @@ final class LiteRtLmV1Runtime {
   ];
 
   final DynamicLibrary _library;
+  final LiteRtLmV1CreateRunner _createRunner;
+  LiteRtLmNativeSettlement _creationSettlement =
+      LiteRtLmNativeSettlement.settled;
+  _V1EngineCreationResources? _pendingCreation;
   Pointer<Void> _engine = nullptr;
   ComputeDevice? _engineBackend;
   bool _engineSpeculativeDecoding = false;
@@ -165,8 +176,9 @@ final class LiteRtLmV1Runtime {
   List<String> _diagnosticPaths = const [];
 
   /// Native lifetime, independent of whether a turn's done future rejected.
-  LiteRtLmNativeSettlement get nativeSettlement =>
-      _conversation?.nativeSettlement ?? LiteRtLmNativeSettlement.settled;
+  LiteRtLmNativeSettlement get nativeSettlement => _pendingCreation != null
+      ? _creationSettlement
+      : _conversation?.nativeSettlement ?? LiteRtLmNativeSettlement.settled;
 
   late final _message = _library
       .lookupFunction<Pointer<Utf8> Function(), Pointer<Utf8> Function()>(
@@ -273,6 +285,11 @@ final class LiteRtLmV1Runtime {
 
   void _requireLive() {
     if (_disposed) throw LlamaStateException('C API 1.0 adapter is disposed.');
+    if (_creationSettlement != LiteRtLmNativeSettlement.settled) {
+      throw LlamaStateException(
+        'Settle C API 1.0 engine creation before accessing its native family.',
+      );
+    }
   }
 
   void _requireNoConversation() {
@@ -327,49 +344,19 @@ final class LiteRtLmV1Runtime {
       ?options.dispatchLibDir,
     ];
     _diagnosticPaths = [...oldDiagnosticPaths, ...diagnosticPaths];
-    final strings = <Pointer<Utf8>>[];
-    Pointer<Utf8> owned(String? value) {
-      if (value == null) return nullptr;
-      final pointer = value.toNativeUtf8(allocator: calloc);
-      strings.add(pointer);
-      return pointer;
-    }
-
-    Pointer<Void> settings = nullptr;
+    _V1EngineCreationResources? resources;
     try {
-      final model = owned(modelPath);
-      final backend = owned(options.backend.name);
-      final vision = owned(options.visionBackend?.name);
-      final audio = owned(options.audioBackend?.name);
-      settings = _create(
-        'engine_settings_create',
-        (out) => _settingsCreate(model, backend, vision, audio, out),
-      );
-      _check(_setContext(settings, options.contextSize), 'set_max_num_tokens');
-      if (options.numberOfThreads case final threads?) {
-        _check(_setThreads(settings, threads), 'set_num_threads');
-      }
-      if (options.cacheDir case final cache?) {
-        _check(_setCache(settings, owned(cache)), 'set_cache_dir');
-      }
-      _applyEngineSettings(settings, options, owned);
+      resources = _prepareEngineCreation(modelPath, options);
       final engine = _create(
         'engine_create',
-        (out) => _engineCreate(settings, out),
+        (out) => _engineCreate(resources!.settings, out),
       );
-      if (_engine != nullptr) _engineDelete(_engine);
-      _engine = engine;
-      _engineBackend = options.backend;
-      _engineSpeculativeDecoding = options.speculativeDecoding;
-      _diagnosticPaths = diagnosticPaths;
+      _adoptEngine(engine, options, diagnosticPaths);
     } on Object {
       _diagnosticPaths = oldDiagnosticPaths;
       rethrow;
     } finally {
-      if (settings != nullptr) _settingsDelete(settings);
-      for (final pointer in strings) {
-        calloc.free(pointer);
-      }
+      resources?.release(this);
     }
   }
 
@@ -527,6 +514,11 @@ final class LiteRtLmV1Runtime {
   /// Releases the owned engine exactly once. Disposal is final.
   void dispose() {
     if (_disposed) return;
+    if (_creationSettlement != LiteRtLmNativeSettlement.settled) {
+      throw LlamaStateException(
+        'Native C API 1.0 engine creation has not settled; retain its library and configuration.',
+      );
+    }
     _requireNoConversation();
     _disposed = true;
     if (_engine != nullptr) _engineDelete(_engine);
