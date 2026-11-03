@@ -2557,6 +2557,30 @@ dev_dependencies:
     );
 
     test(
+      'original container diagnosis requires a plan and selects bounded operator',
+      () async {
+        final missing = await runLocalE2e(const [
+          '--scenario',
+          'image-original-containers',
+          '--dry-run',
+        ], projectRoot: '/repo');
+        expect(missing.exitCode, 64);
+        final ready = await runLocalE2e(const [
+          '--scenario',
+          'image-original-containers',
+          '--model-path',
+          'admitted.json',
+          '--dry-run',
+        ], projectRoot: '/repo');
+        expect(ready.exitCode, 0);
+        expect(ready.stdout, contains('sd_original_mode/run.py'));
+        expect(ready.stdout, contains('--plan admitted.json'));
+        expect(ready.stdout, contains('--execute'));
+        expect(ready.stdout, contains('/repo/build/image-original-containers'));
+      },
+    );
+
+    test(
       'local image sets require a source and select builder plus public suite',
       () async {
         const args = ['--scenario', 'image-local-checkpoint-sets', '--dry-run'];

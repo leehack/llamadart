@@ -123,3 +123,16 @@ Managed directories, shard-set containment and aggregate identities remain
 separate #1219 work; explicit index forwarding is not a managed-set contract.
 Weights still load eagerly; no public mmap, load-time weight conversion or
 quantization option is added.
+
+## Original SD24 mode — preparation only
+
+The separate maintained `image-original-containers` scenario prepares the six
+original Safetensors/flat/nested native/public cases with external full TAESD,
+conditioning cache4 and diffusion flash attention. Its fixed settings, strict
+177s active +3s cleanup case budget,45s load gate, source/artifact bindings and
+stop-on-failure graph are documented in the
+[private operator contract](../packages/llamadart_validation/native/sd_original_mode/README.md).
+It currently targets the reviewed PR41 diagnostic artifact, not a final
+published runtime. No generation result is recorded here; source/artifact/plan
+admission and root execution remain separate. Earlier failures and the ordinary
+embedded-VAE/cache0/flash-off qualification above retain their original scope.
