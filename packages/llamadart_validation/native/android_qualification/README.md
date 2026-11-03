@@ -30,7 +30,7 @@ model-free C++ fixture shares that exact serializer and exercises the real
 consumer. This transport bound leaves the 0.999 cosine/1e-4 norm oracle unchanged.
 Native operation wall includes memory reset, embedding toggles,
 compute and vector copy; it excludes normalization and record writes. Vulkan
-selection requires exactly one Vulkan-registry GPU;
+selection requires exactly one Vulkan-registry discrete or integrated GPU;
 no CPU or OpenCL substitution is accepted. Real placement still needs the raw
 positive offload/compute records and hardware device facts independently assessed.
 
