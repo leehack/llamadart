@@ -234,7 +234,10 @@ except p.CaptureInterrupted as error:
         previous = signal.pthread_sigmask(signal.SIG_BLOCK, {signal.SIGALRM})
         try:
             signal.setitimer(signal.ITIMER_REAL, 0.01)
-            time.sleep(0.03)
+            pending_deadline = time.monotonic() + 2
+            while signal.SIGALRM not in signal.sigpending() and time.monotonic() < pending_deadline:
+                time.sleep(0.005)
+            self.assertIn(signal.SIGALRM, signal.sigpending(), 'alarm must expire before cancellation')
             signal.setitimer(signal.ITIMER_REAL, 0)
             self.assertIn(signal.SIGALRM, signal.sigpending(), 'real cancelled alarm must remain pending')
             with patch.object(profiler.subprocess, 'Popen') as launch:
