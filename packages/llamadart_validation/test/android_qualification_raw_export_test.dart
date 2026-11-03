@@ -35,6 +35,11 @@ void main() {
         .readAsLinesSync()
         .map((s) => jsonDecode(s) as Map)
         .toList();
+    final starts = rows.where((r) => r['event'] == 'raw_file_start').toList();
+    expect(starts.length, 2);
+    expect(starts.first['bytes'], original.length);
+    expect(starts.first['sha256'], sha256.convert(original).toString());
+    expect(starts.first['chunks'], 4);
     final chunks = rows.where((r) => r['event'] == 'raw_file_chunk').toList();
     expect(chunks.map((r) => r['index']), [0, 1, 2, 3]);
     final recovered = chunks
