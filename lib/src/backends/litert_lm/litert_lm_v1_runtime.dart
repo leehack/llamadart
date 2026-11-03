@@ -17,6 +17,7 @@ import 'litert_lm_sampler_params.dart';
 part 'litert_lm_v1_conversation.dart';
 part 'litert_lm_v1_conversation_settings.dart';
 part 'litert_lm_v1_engine_settings.dart';
+part 'litert_lm_v1_turn_settings.dart';
 
 typedef _VersionN = Int Function(Pointer<Int>, Pointer<Int>, Pointer<Int>);
 typedef _VersionD = int Function(Pointer<Int>, Pointer<Int>, Pointer<Int>);
@@ -146,6 +147,7 @@ final class LiteRtLmV1Runtime {
   final DynamicLibrary _library;
   Pointer<Void> _engine = nullptr;
   ComputeDevice? _engineBackend;
+  bool _engineSpeculativeDecoding = false;
   bool _disposed = false;
   LiteRtLmV1Conversation? _conversation;
   List<String> _diagnosticPaths = const [];
@@ -346,6 +348,7 @@ final class LiteRtLmV1Runtime {
       if (_engine != nullptr) _engineDelete(_engine);
       _engine = engine;
       _engineBackend = options.backend;
+      _engineSpeculativeDecoding = options.speculativeDecoding;
       _diagnosticPaths = diagnosticPaths;
     } on Object {
       _diagnosticPaths = oldDiagnosticPaths;

@@ -29,6 +29,73 @@ static int failed_copies, loss_reads, copy_index, fail_copy_mask, proxy_allocati
 static bool active, drained, cancelled;
 static chunk_callback receiver;
 static void *receiver_data;
+typedef struct {
+  bool max_present, penalty_present;
+  int max_tokens, window;
+  float repetition, presence, frequency;
+} turn_options;
+static int args_live, penalty_live;
+static turn_options sent_options;
+static bool sent_args;
+static char sent_message[8192];
+int fixture_args_live(void) { return args_live; }
+int fixture_penalty_live(void) { return penalty_live; }
+int fixture_turn_int(int index) {
+  switch(index) {
+    case 0: return sent_args;
+    case 1: return sent_options.max_present;
+    case 2: return sent_options.max_tokens;
+    case 3: return sent_options.penalty_present;
+    default: return sent_options.window;
+  }
+}
+float fixture_turn_float(int index) {
+  return index == 0 ? sent_options.repetition : index == 1 ? sent_options.presence : sent_options.frequency;
+}
+const char *fixture_message(void) { return sent_message; }
+#ifndef OMIT_TURN_CREATE
+int litert_lm_conversation_optional_args_create(void **out) {
+  *out=NULL;if(status(70))return 13;if(failure==76)return 0;
+  *out=calloc(1,sizeof(turn_options));++live;++args_live;return 0;
+}
+#endif
+#ifndef OMIT_TURN_DELETE
+void litert_lm_conversation_optional_args_delete(void *args) { ++calls[78];--args_live;drop(args); }
+#endif
+#ifndef OMIT_TURN_MAX
+int litert_lm_conversation_optional_args_set_max_output_tokens(void *args,int value) {
+  assert(args);if(status(71))return 13;
+  ((turn_options *)args)->max_present=true;((turn_options *)args)->max_tokens=value;return 0;
+}
+#endif
+#ifndef OMIT_TURN_PENALTY_CREATE
+int litert_lm_repetition_penalty_config_create(void **out) {
+  *out=NULL;if(status(72))return 13;if(failure==77)return 0;
+  turn_options *config=calloc(1,sizeof *config);config->repetition=1;
+  *out=config;++live;++penalty_live;return 0;
+}
+#endif
+#ifndef OMIT_TURN_PENALTY_DELETE
+void litert_lm_repetition_penalty_config_delete(void *config) { ++calls[79];--penalty_live;drop(config); }
+#endif
+#ifndef OMIT_TURN_REPETITION
+int litert_lm_repetition_penalty_config_set_repetition_penalty(void *config,float value) {
+  assert(config);if(status(73))return 13;((turn_options *)config)->repetition=value;return 0;
+}
+#endif
+#ifndef OMIT_TURN_PRESENCE
+int litert_lm_repetition_penalty_config_set_presence_penalty(void *config,float value) {
+  assert(config);if(status(74))return 13;((turn_options *)config)->presence=value;return 0;
+}
+#endif
+#ifndef OMIT_TURN_ATTACH
+int litert_lm_conversation_optional_args_set_repetition_penalty_config(void *args,const void *config) {
+  assert(args&&config);if(status(75))return 13;
+  turn_options *options=args;const turn_options *penalty=config;
+  options->penalty_present=true;options->repetition=penalty->repetition;options->presence=penalty->presence;
+  options->frequency=penalty->frequency;options->window=penalty->window;return 0;
+}
+#endif
 
 int fixture_copies(void) { return copies; }
 int fixture_failed_copies(void) { return failed_copies; }
@@ -114,10 +181,14 @@ void litert_lm_conversation_delete(void *conversation) {
 }
 int litert_lm_conversation_send_message_stream(void *conversation, const char *message,
     const char *extra, const void *args, chunk_callback callback, void *data) {
-  assert(conversation && message && !extra && !args && callback);
+  assert(conversation && message && !extra && callback);
+  assert(penalty_live == 0);
   assert(!active && !cancelled);
+  assert(strlen(message)<sizeof sent_message);strcpy(sent_message,message);
+  sent_args=args!=NULL;memset(&sent_options,0,sizeof sent_options);
+  if(args)sent_options=*(const turn_options *)args;
   ++sends;
-  if (failure == 17) return 13;
+  if (status(17)) return 13;
   ((proxy *)data)->started = true;
   receiver = callback; receiver_data = data; drained = false; active = true;
   return 0;
@@ -134,6 +205,7 @@ int litert_lm_conversation_wait_until_done(void *conversation) {
 // Invoke from a foreign thread; overwrite borrowed storage immediately after
 // callback return so an asynchronous Dart borrowed-pointer consumer is wrong.
 static void *emit(void *argument) {
+  assert(args_live==0 && penalty_live==0);
   int kind = *(int *)argument;
   char text[] = "borrowed UTF8 世界";
   char error[160] = "callback failure /secret/models/m.litertlm https://user:secret@example.test/model?token=secret";

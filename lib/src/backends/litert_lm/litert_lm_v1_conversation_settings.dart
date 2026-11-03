@@ -109,7 +109,7 @@ final class LiteRtLmV1ConversationSettings {
     this._preface,
   );
 
-  /// Default session output cap; per-turn overrides are not implemented here.
+  /// Default session output cap, inherited by sends without an override.
   final int maxOutputTokens;
 
   /// Explicit CPU/GPU override, or null for native inheritance.

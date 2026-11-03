@@ -236,7 +236,8 @@ final class LiteRtLmV1Conversation {
   ///
   /// The chunks stream closes after drain; errors are reported only by done,
   /// allowing a caller to await completion without subscribing to chunks.
-  LiteRtLmV1Turn sendText(String text) {
+  /// Null [settings] inherits conversation limits without applying penalties.
+  LiteRtLmV1Turn sendText(String text, {LiteRtLmV1TurnSettings? settings}) {
     if (_quarantined || _handle == nullptr || _turn != null) {
       throw LlamaStateException(
         'C API 1.0 conversation is closed, quarantined or already streaming.',
@@ -245,15 +246,27 @@ final class LiteRtLmV1Conversation {
     if (text.contains('\u0000')) {
       throw LlamaArgumentException('Conversation text must not contain NUL.');
     }
-    final turn = LiteRtLmV1Turn._(this);
-    _turn = turn;
+    settings?._validate(_runtime);
+    final args = settings?._createArgs(_runtime) ?? nullptr;
     try {
-      turn._start(jsonEncode({'role': 'user', 'content': text}));
-      return turn;
-    } on Object {
-      _turn = null;
-      _release();
-      rethrow;
+      final turn = LiteRtLmV1Turn._(this);
+      _turn = turn;
+      try {
+        turn._start(jsonEncode({'role': 'user', 'content': text}), args);
+        return turn;
+      } on Object {
+        _turn = null;
+        _release();
+        rethrow;
+      }
+    } finally {
+      // The C entry point copies these values before launching native work.
+      // This says nothing about whether the callback family has settled.
+      if (args != nullptr) {
+        _runtime._library.lookupFunction<_DeleteN, _DeleteD>(
+          'litert_lm_conversation_optional_args_delete',
+        )(args);
+      }
     }
   }
 
@@ -322,7 +335,7 @@ final class LiteRtLmV1Turn {
   /// cancellation is a terminal reason, never permission to reuse its handle.
   Future<LiteRtLmFinishReason> get done => _done.future;
 
-  void _start(String message) {
+  void _start(String message, Pointer<Void> args) {
     _message = message.toNativeUtf8(allocator: calloc);
     _callback = NativeCallable<_OwnedCallbackN>.listener(_onChunk);
     final out = calloc<Pointer<NativeFunction<_ChunkCallbackN>>>();
@@ -341,7 +354,7 @@ final class LiteRtLmV1Turn {
           _conversation._handle,
           _message,
           nullptr,
-          nullptr,
+          args,
           out.value,
           _proxy,
         ),

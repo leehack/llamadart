@@ -383,9 +383,26 @@ requests, boolean/tuple schema items and empty/NUL raw templates are refused.
 This checks descriptor structure, not full JSON Schema semantics or enforcement.
 All setters use v1 status signatures and owned temporaries are released on failure.
 Constrained decoding stays explicitly disabled. Active structured messages,
-required/parallel tool choice, LoRA, thinking budgets, per-turn controls and
+required/parallel tool choice, LoRA, thinking budgets, broader per-turn controls and
 schema providers still need separate migration; raw chunk delivery does not
 claim tool execution or template/model qualification.
+
+Internal `sendText` accepts nullable per-turn output limits and repetition/presence
+penalties. Omitted or empty settings keep null native optional arguments: there
+is no implicit default penalty. The total output cap includes thinking tokens;
+penalties count only the current send's generated tokens. Explicit penalties
+with speculative decoding are refused, preserving the service's unqualified
+combination restriction. Each send copies its options into native decode state,
+then frees owned option/config temporaries after the start call returns. This
+does not settle callbacks: failed drain still retains their native family.
+
+Requested thinking budgets are explicitly refused until model/channel admission
+exists. Upstream can report successful setters and then ignore a budget without
+thinking end tokens. Sampler and seed remain conversation-scoped; adapting public
+per-request sampling still requires conversation recreation or another proven
+native contract. Structured active messages, media, per-turn template context,
+schema constraints and additional penalty controls remain separate work. This
+preparation changes no public routing, capability or runtime pin.
 
 Use this checklist in native sync PRs:
 

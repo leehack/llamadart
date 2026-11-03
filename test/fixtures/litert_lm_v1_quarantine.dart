@@ -6,7 +6,7 @@ import 'package:llamadart/src/backends/litert_lm/litert_lm_v1_runtime.dart';
 import 'package:llamadart/src/backends/litert_lm/litert_lm_native_settlement.dart';
 
 Future<void> main(List<String> args) async {
-  final library = DynamicLibrary.open(args.single);
+  final library = DynamicLibrary.open(args.first);
   void call(String name, int value) =>
       library.lookupFunction<Void Function(Int), void Function(int)>(
         'fixture_$name',
@@ -16,7 +16,19 @@ Future<void> main(List<String> args) async {
   final runtime = LiteRtLmV1Runtime(library);
   runtime.load('/secret/models/m.litertlm', cacheDir: '/secret/cache');
   final conversation = runtime.openConversation();
-  final turn = conversation.sendText('quarantine');
+  final turn = conversation.sendText(
+    'quarantine',
+    settings: args.length == 2
+        ? const LiteRtLmV1TurnSettings(
+            maxOutputTokens: 7,
+            repetitionPenalty: 1.2,
+            presencePenalty: -0.3,
+          )
+        : null,
+  );
+  if (count('args_live') != 0 || count('penalty_live') != 0) {
+    throw StateError('native turn retained copied option temporaries');
+  }
   final failure = turn.done.then<void>(
     (_) => throw StateError('drain succeeded unexpectedly'),
     onError: (Object error) {
