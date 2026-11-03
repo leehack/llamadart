@@ -127,7 +127,7 @@ public class MainActivityTest {
             Instrumentation instrumentation) throws IOException {
         String scenario = arguments.getString("androidQualificationScenario");
         if (scenario == null) return;
-        if (!scenario.equals("a35") && !scenario.equals("pixel8a")) {
+        if (!scenario.equals("a35") && !scenario.equals("pixel8a") && !scenario.equals("consumer-cpu")) {
             throw new IOException("Unknown Android qualification scenario");
         }
         Context context = instrumentation.getTargetContext();
@@ -139,6 +139,17 @@ public class MainActivityTest {
         try (InputStream input = context.getAssets().open("llamadart_android_qualification/binding.json")) {
             config.put("binding", new JSONObject(new String(input.readAllBytes(), StandardCharsets.UTF_8)));
             config.put("scenario", scenario);
+            if (scenario.equals("consumer-cpu")) {
+                String deviceClass = arguments.getString("androidConsumerDeviceClass");
+                String model = arguments.getString("androidConsumerDeviceModel");
+                String api = arguments.getString("androidConsumerDeviceApi");
+                if (!("old".equals(deviceClass) || "modern".equals(deviceClass)) ||
+                        model == null || api == null || !Build.MODEL.equals(model) ||
+                        !Integer.toString(Build.VERSION.SDK_INT).equals(api)) {
+                    throw new IOException("Missing or mismatched prospective consumer device tuple");
+                }
+                config.put("consumer_device_class", deviceClass);
+            }
             config.put("pid", Process.myPid());
             config.put("nonce", nonce);
             config.put("native_directory", context.getApplicationInfo().nativeLibraryDir);

@@ -20,6 +20,13 @@ android {
         packaging.jniLibs.useLegacyPackaging = true
         packaging.jniLibs.keepDebugSymbols += "**/*.so"
     }
+    val consumerProfileStage = System.getenv("LLAMADART_ANDROID_CONSUMER_PROFILE_STAGE")
+    if (consumerProfileStage != null) {
+        sourceSets.getByName("main").assets.srcDir("$consumerProfileStage/assets")
+        packaging.jniLibs.useLegacyPackaging = true
+        packaging.jniLibs.keepDebugSymbols += "**/*.so"
+        testBuildType = "release"
+    }
     // The maintained bundle builder provides an isolated, verified staging tree.
     val npuStage = System.getenv("LLAMADART_VALIDATION_NPU_STAGE")
     if (npuStage != null) {

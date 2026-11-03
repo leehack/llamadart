@@ -18,7 +18,8 @@ def recover(rows):
     cases = manifest['plan']['cases']
     require(isinstance(cases, list) and len(cases) == len(set(cases)), 'Invalid manifest cases')
     started = set()
-    expected = set()
+    expected = ({'app_apk.sha256', 'vkjson.json', 'cpuinfo.txt'}
+                if manifest['plan'].get('scenario') == 'consumer-cpu' else set())
     files = {}
     inventory = []
     active = None

@@ -399,3 +399,12 @@ native/public same-weight RGB cases. It preserves the original external TAESD,
 cache4/flash-attention settings and failed-history evidence. PR41 artifact,
 consumer bindings/build receipts and exact plan need independent admission;
 model-free source tests are not generation or final-published qualification.
+
+## Android consumer CPU release profiles
+
+The [full/compact release smoke](native/android_qualification/README.md#android-fullcompact-consumer-release-smoke)
+uses separately bound consumer configurations and release instrumentation APKs
+for old/modern arm64 public CPU load, deterministic generation and full reload.
+It reuses raw capture, installed runtime verification and the independent Java
+watchdog. Source checks do not qualify any device/profile combination or replace
+the existing native/public issue controls.

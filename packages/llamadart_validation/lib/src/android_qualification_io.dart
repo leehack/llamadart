@@ -17,12 +17,17 @@ String androidQualificationExecutionHash(Map<String, dynamic> binding) =>
 /// Reads and checks the admitted build binding, never inferring clean source.
 Map<String, dynamic> readAndroidQualificationBinding(
   String text,
-  AndroidQualificationPlan plan,
-) {
+  AndroidQualificationPlan plan, {
+  String? consumerCpuProfile,
+  String? consumerPlanHash,
+}) {
+  if ((consumerCpuProfile == null) != (consumerPlanHash == null)) {
+    throw const FormatException('Incomplete consumer profile binding');
+  }
   final value = jsonDecode(text);
   if (value is! Map<String, dynamic> ||
       value['schema'] != 1 ||
-      value['plan_sha256'] != plan.hash ||
+      value['plan_sha256'] != (consumerPlanHash ?? plan.hash) ||
       value['source_dirty'] != false ||
       value['native_tag'] != 'v0.8.0-2' ||
       value['native_archive_sha256'] !=
@@ -38,7 +43,8 @@ Map<String, dynamic> readAndroidQualificationBinding(
   for (final key in [
     'source_inventory_sha256',
     'hook_sha256',
-    'probe_sha256',
+    if (consumerCpuProfile == null) 'probe_sha256',
+    if (consumerCpuProfile != null) 'consumer_pubspec_sha256',
     'selector_sha256',
   ]) {
     if (value[key] is! String ||
@@ -51,7 +57,8 @@ Map<String, dynamic> readAndroidQualificationBinding(
   if (libraries is! Map ||
       !libraries.containsKey('libllama.so') ||
       !libraries.containsKey('libggml-vulkan.so') ||
-      !libraries.containsKey('libllamadart_android_qualification.so')) {
+      (consumerCpuProfile == null &&
+          !libraries.containsKey('libllamadart_android_qualification.so'))) {
     throw const FormatException('Missing diagnostic runtime inventory');
   }
   for (final entry in libraries.entries) {
@@ -65,7 +72,10 @@ Map<String, dynamic> readAndroidQualificationBinding(
   for (final entry in archive.entries) {
     _validateAndroidLibraryLock(entry.key, entry.value);
   }
-  final expected = androidQualificationLibrarySelection(archive.keys);
+  final expected = androidQualificationLibrarySelection(
+    archive.keys,
+    cpuProfile: consumerCpuProfile,
+  );
   final selection = value['packaging_selection'];
   if (selection is! Map ||
       selection.length != expected.length ||
@@ -79,7 +89,8 @@ Map<String, dynamic> readAndroidQualificationBinding(
     );
   }
   final packaged = (expected['packaged'] as List<String>);
-  if (libraries.length != packaged.length + 1 ||
+  if (libraries.length !=
+          packaged.length + (consumerCpuProfile == null ? 1 : 0) ||
       packaged.any(
         (name) =>
             !libraries.containsKey(name) ||
@@ -90,8 +101,9 @@ Map<String, dynamic> readAndroidQualificationBinding(
       'Diagnostic packaged inventory differs from owner bytes',
     );
   }
-  if (libraries['libllamadart_android_qualification.so']['sha256'] !=
-      value['probe_sha256']) {
+  if (consumerCpuProfile == null &&
+      libraries['libllamadart_android_qualification.so']['sha256'] !=
+          value['probe_sha256']) {
     throw const FormatException('Conflicting diagnostic probe identity');
   }
   return value;
