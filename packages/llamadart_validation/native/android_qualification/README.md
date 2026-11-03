@@ -172,3 +172,22 @@ file. Do not import this envelope as a catalog suite or invent fixture passes.
 The journal is not a replacement for native placement analysis, provider terminal
 state, cleanup read-back or independent acceptance. Preserve original issue
 failures; never use successful collection or process launch as inference evidence.
+
+### Raw evidence transport
+
+Test Lab may retain `diagnostic.jsonl` while omitting sibling captures. The
+private harness therefore also exports each started native capture and public
+stderr/maps as binary base64 chunks in that journal, before its final summary.
+`raw_file_start` and `raw_file_end` bind name, byte length, SHA-256 and chunk
+count; chunks have zero-based consecutive indexes. `raw_export_end` lists the
+completed files. Missing files or the 4 MiB per-file / 32 MiB aggregate limit
+make export incomplete and fail the test. Each chunk contains at most 24 KiB
+of original bytes. Failed native cases retain their available raw captures too.
+
+Reviewers must recover bytes without UTF-8 conversion, require every index and
+matching start/end inventory, and verify lengths and hashes. A missing final
+envelope, missing expected capture, or digest mismatch is an evidence failure;
+functional PASS rows cannot override it. The original c327 A35 run remains
+functional-only because its stderr/maps were not retained. The repaired export
+still requires physical-device qualification; local round-trip tests are not
+proof of provider retention.
