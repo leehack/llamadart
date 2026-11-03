@@ -390,8 +390,11 @@ final class LiteRtLmV1RuntimeClient implements LiteRtLmRuntimeClientContract {
         }
       }
       await completion;
-      _lastFinishReason = supportsFinishReasons ? turn.finishReason : null;
-      if (identical(_activeTurn, turn)) _activeTurn = null;
+      // Final-data listeners may already have started a different turn.
+      if (identical(_activeTurn, turn)) {
+        _lastFinishReason = supportsFinishReasons ? turn.finishReason : null;
+        _activeTurn = null;
+      }
       if (failure case final error?) {
         controller.addError(error, failureStack);
       } else {

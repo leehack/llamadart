@@ -1,6 +1,7 @@
 @TestOn('vm && (mac-os || linux)')
 library;
 
+import 'dart:async';
 import 'dart:convert';
 import 'dart:ffi';
 import 'dart:io';
@@ -127,6 +128,72 @@ void main() {
     )();
     set('fail_copies', 0);
   });
+
+  test(
+    'reentrant final data preserves a fresh pending turn finish state',
+    () async {
+      final adapter = client();
+      await initialize(adapter);
+      adapter.createConversation();
+      final nextStarted = Completer<void>();
+      final firstClosed = Completer<void>();
+      final firstChunks = <String>[];
+      Future<List<String>>? second;
+      final first = adapter
+          .generate('first')
+          .listen(
+            (text) {
+              firstChunks.add(text);
+              if (nextStarted.isCompleted) return;
+              try {
+                adapter.createConversation();
+                second = adapter.generate('second').toList();
+                nextStarted.complete();
+              } on Object catch (error, stack) {
+                nextStarted.completeError(error, stack);
+              }
+            },
+            onDone: () {
+              if (!firstClosed.isCompleted) firstClosed.complete();
+            },
+            onError: (Object error, StackTrace stack) {
+              if (!nextStarted.isCompleted) {
+                nextStarted.completeError(error, stack);
+              }
+              if (!firstClosed.isCompleted) {
+                firstClosed.completeError(error, stack);
+              }
+            },
+          );
+      final firstFinished = Future.wait([
+        nextStarted.future,
+        firstClosed.future,
+      ]);
+      emit(
+        '{"role":"assistant","content":[{"type":"text","text":"first answer"}]}',
+        finalChunk: true,
+        reason: 2,
+      );
+      try {
+        await firstFinished.timeout(const Duration(seconds: 5));
+        expect(firstChunks, ['first answer']);
+        expect(adapter.nativeSettlement, LiteRtLmNativeSettlement.pending);
+        expect(adapter.lastFinishReason, isNull);
+      } finally {
+        if (second != null) {
+          emit(
+            '{"role":"assistant","content":[{"type":"text","text":"second answer"}]}',
+            finalChunk: true,
+            reason: 1,
+          );
+          expect((await second!).join(), 'second answer');
+        }
+        await first.cancel();
+      }
+      expect(adapter.lastFinishReason, LiteRtLmFinishReason.stop);
+      expect(adapter.nativeSettlement, LiteRtLmNativeSettlement.settled);
+    },
+  );
 
   test(
     'default public client still refuses C API 1 without engine calls',
