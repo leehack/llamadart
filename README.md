@@ -134,8 +134,9 @@ can also use GPU and, on compatible Android deployments, NPU. Image generation
 is not available on the web. On iOS, use
 `ImageModelPlacement(vaeOnCpu: true)` to keep diffusion on Metal, or CPU
 generation. Metal VAE decoding needs a native context policy that preserves
-an intrinsic SDXS tiny decoder through model refresh; the current pinned
-runtime lacks it, so all Metal VAE decoding is refused.
+an intrinsic SDXS tiny decoder through model refresh. The pinned
+`v0.3.0-2` runtime provides that policy; full VAE and external-decoder
+Metal decoding remain refused on iOS. This is not new physical-device qualification.
 Per-target support, device limitations and runtime options:
 
 - [Platform and backend support matrix](https://llamadart.leehack.com/docs/platforms/support-matrix), including

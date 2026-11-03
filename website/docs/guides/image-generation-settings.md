@@ -87,9 +87,10 @@ decoder across automatic source refresh and rejects a replacement before
 runner construction, backend probes and decoding. A header or initial native
 family query alone cannot enforce that invariant.
 
-The pinned stable-diffusion-native `v0.3.0-1` lacks this policy, so use
+The pinned stable-diffusion-native `v0.3.0-2` provides this policy for
+intrinsic SDXS tiny decoders. For other models, use
 `ImageModelPlacement(vaeOnCpu: true)` to keep diffusion on Metal, or
-`ComputeDevice.cpu`, including with SDXS. Recipes with an external TAESD
+`ComputeDevice.cpu`. Recipes with an external TAESD
 also need CPU VAE placement: an external decoder can fail and fall back to a
 full VAE. Setting `vaeDirectConvolution: false` or requesting VAE tiling
 does not bypass the restriction. These guards refuse the unqualified GPU
@@ -110,7 +111,7 @@ attention where a device has no kernel for it.
 instead of all at once. The decoder's compute buffer then scales with the
 tile instead of the image, so peak memory drops most for large images and
 full VAEs; decoding takes longer, and pixels change slightly where tiles
-blend. It requires the pinned `stable_diffusion` v0.3.0-1 runtime (upstream `be48649`)
+blend. It requires `stable_diffusion` v0.3.0-1 or later (upstream `be48649`)
 and accepts header-verified SD 2.x checkpoints with their embedded full VAE
 or a valid TAESD override on CPU or Metal. SD-Turbo is the measured artifact;
 other accepted SD 2.x checkpoints and phones remain unmeasured. Unknown

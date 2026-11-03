@@ -2258,6 +2258,9 @@ void main() {
                   'remedy',
                   allOf(
                     contains('intrinsic tiny-decoder v1'),
+                    contains('intrinsic SDXS tiny decoder'),
+                    contains('selected runtime'),
+                    isNot(contains('current pinned')),
                     contains('vaeOnCpu: true'),
                   ),
                 ),

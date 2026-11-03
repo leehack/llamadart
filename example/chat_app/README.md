@@ -301,6 +301,7 @@ layouts) opens a separate screen for the experimental `ImageGenerationEngine`
   runtime…** meanwhile. With an empty Metal shader cache the first check
   compiles ggml's Metal library, about 16 s on an M4 Max; with the cache warm
   it takes under 0.5 s.
+- On iOS, the pinned SD runtime preserves the intrinsic SDXS tiny decoder across model refresh. Full VAE and external-decoder recipes require CPU VAE placement or CPU generation; this update does not add physical-iOS qualification.
 - Models: **SDXS-512** (683 MB, recommended, fits most phones) and
   **SD-Turbo + TAESD** (2.0 GB). Both download into the app's model cache
   from pinned Hugging Face revisions with exact sizes and SHA-256 checks; an
