@@ -1271,7 +1271,7 @@ void main() {
     });
 
     test(
-      'ignores metadata whose file path points outside its cache entry',
+      'uses the current entry instead of a saved outside file path',
       () async {
         final manager = DefaultModelDownloadManager(
           defaultCacheDirectory: tempDir.path,
@@ -1292,11 +1292,13 @@ void main() {
         metadata['file_path'] = outsideFile.path;
         metadataFile.writeAsStringSync(jsonEncode(metadata));
 
-        expect(await manager.list(), isEmpty);
+        expect((await manager.list()).single.filePath, entry.filePath);
+        expect((await manager.get(source.cacheKey))?.filePath, entry.filePath);
 
         await manager.remove(source.cacheKey);
 
-        expect(outsideFile.existsSync(), isTrue);
+        expect(File(entry.filePath).existsSync(), isFalse);
+        expect(outsideFile.readAsStringSync(), 'outside');
       },
     );
 

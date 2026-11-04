@@ -95,7 +95,14 @@ or shipping runtimes the app does not use.
   `DefaultModelDownloadManager.globalCacheDirectory` at startup before the
   first load, in every isolate that creates engines. A manager you build yourself goes to
   `LlamaEngine(..., modelDownloadManager:)` too, so loads and cache inspection
-  agree. On web the default manager's operations throw
+  agree. Resolve OS-provided directories on every launch: an iOS update can
+  move the app container. Persist the `ModelSource`, rather than a cache root
+  or `entry.filePath`. Native `list()`/`get()` report retained entries at their
+  current paths before any load, without rewriting metadata. For verified
+  offline reuse, call `ensureModel(source, options:
+  ModelLoadOptions(cachePolicy: ModelCachePolicy.cacheOnly))` on that manager;
+  it checks the retained file's recorded length and any stored or supplied
+  SHA-256. On web the default manager's operations throw
   `LlamaUnsupportedException`.
 - Do not cancel downloads on every app pause or screen lock. Downloads are
   foreground Dart HTTP requests; a later session resumes from the `.part`

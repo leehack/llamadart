@@ -96,6 +96,62 @@ void main() {
     expect(result.exitCode, 0, reason: '${result.stderr}');
   }
 
+  group('after the store directory moves', () {
+    Future<void> moveStore() async {
+      final previous = root;
+      final moved = '${root.path}_moved';
+      await previous.rename(moved);
+      root = Directory(moved);
+    }
+
+    test('inventory and final release work before another ensure', () async {
+      final a = await open('app.a');
+      final entry = await a.ensure(pair);
+      await (await open('app.b')).ensure(pair);
+      await moveStore();
+      final movedA = await open('app.a');
+      final movedB = await open('app.b');
+      final listed = (await movedA.entries()).single;
+      final files = await movedA.list();
+      expect(files, hasLength(2));
+      expect(listed.id, entry.id);
+      expect(listed.references.map((r) => r.appId).toSet(), {'app.a', 'app.b'});
+      for (final file in [listed.model, listed.projector!]) {
+        expect(p.isWithin(movedA.directory, file.filePath), isTrue);
+        expect((await movedA.get(file.cacheKey))?.filePath, file.filePath);
+      }
+      await movedA.release(entry.id);
+      expect(File(listed.model.filePath).existsSync(), isTrue);
+      expect(await movedA.prune(maxBytes: 0), isEmpty);
+      await movedB.release(entry.id);
+      expect(File(listed.model.filePath).existsSync(), isFalse);
+      expect(File(listed.projector!.filePath).existsSync(), isFalse);
+      expect(await movedB.entries(), isEmpty);
+      expect(server.requests['/model.gguf'], 1);
+      expect(server.requests['/mmproj.gguf'], 1);
+    });
+
+    test('prune collects relocated unreferenced files before ensure', () async {
+      final a = await open('app.a');
+      final entry = await a.ensure(pair);
+      final refs = Directory(p.join(root.path, 'entries', entry.id, 'refs'));
+      await refs.delete(recursive: true);
+      await moveStore();
+      final moved = await open('collector');
+      final files = await moved.list();
+      expect((await moved.prune(maxBytes: 0)).map((e) => e.fileName).toSet(), {
+        'model.gguf',
+        'mmproj.gguf',
+      });
+      for (final file in files) {
+        expect(File(file.filePath).existsSync(), isFalse);
+      }
+      expect(await moved.entries(), isEmpty);
+      expect(server.requests['/model.gguf'], 1);
+      expect(server.requests['/mmproj.gguf'], 1);
+    });
+  });
+
   group('ensure', () {
     test('keeps a model and its projector as one referenced entry', () async {
       final store = await open('app.a');

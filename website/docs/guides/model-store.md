@@ -59,6 +59,11 @@ be created, written or locked, so an app can fall back to its own cache.
 - **One logical entry.** A model and its projector share an entry id derived
   from both files' cache keys. A projector two entries share stays until
   neither is referenced.
+- **Moved directories.** Resolve the OS-provided directory and reopen the
+  store on every launch. After an app container moves, inventory reports the
+  retained model and projector at their current paths before another
+  `ensure`, and cleanup still honors app references. Persist model sources
+  or entry ids rather than file paths.
 - **References before downloads.** `ensure` records the app's reference
   before downloading, under a store-wide lock that `release`, `remove`,
   `clear` and `prune` also take. Another app therefore never deletes a file

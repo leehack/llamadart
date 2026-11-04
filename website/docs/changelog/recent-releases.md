@@ -13,7 +13,7 @@ validate against the exact release tag notes.
 
 ## Unreleased
 
-- Reuse a cached model after its cache root moves, as an iOS app update moves the app's container, instead of downloading it again ([#1741](https://github.com/leehack/llamadart/issues/1741)).
+- Keep cached models reusable, visible and removable after their cache root moves, including iOS app container updates ([#1741](https://github.com/leehack/llamadart/issues/1741)).
 - Update the llama.cpp native runtime to `v0.8.0-2` for speculative-decoding rollback and model-creation ownership fixes, with matching Apple binaries.
 - Constrain native LFM2 automatic Python tool calls with lazy schema grammar, preserving copied string data and non-executable foreign-closing diagnostics; reject unsupported Web runtimes.
 - Preserve prompt penalties for supported Web LFM2 automatic tool grammars, with explicit loaded-core capability checks and unchanged ordinary grammar defaults.

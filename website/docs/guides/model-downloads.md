@@ -232,7 +232,8 @@ DefaultModelDownloadManager.globalCacheDirectory = p.join(
 ```
 
 Resolve the directory on every launch rather than saving its path: an iOS app
-update can move the app's container to a new path.
+update can move the app's container to a new path. Persist the `ModelSource`
+rather than `ModelCacheEntry.filePath`, which can become stale for the same reason.
 
 `DefaultModelDownloadManager.auto(...)` keeps one call site for every
 platform: desktop and server use a per-user shared cache; Android and iOS use
@@ -322,6 +323,16 @@ try {
   print('Kept ${error.entryDirectories.length} entries in use.');
 }
 ```
+
+After a cache root moves, `list()` and `get()` report retained files under the
+current root before any load, and `remove()` and `prune()` can clean them up.
+Inspection does not rewrite metadata or update last-use timestamps, and it
+checks file presence rather than rehashing model contents. To verify a cached
+file before loading it directly, use `ensureModel(source, options:
+ModelLoadOptions(cachePolicy: ModelCachePolicy.cacheOnly))`: it applies the
+recorded length and any stored or supplied SHA-256 checks without downloading.
+Saved metadata paths never select files outside the current cache entry;
+symlink model files, metadata files and entry directories are not reused.
 
 `remove` and `clear` never wait for an entry in use: they remove the rest and
 then throw `ModelCacheEntryInUseException` naming the entries they kept.
