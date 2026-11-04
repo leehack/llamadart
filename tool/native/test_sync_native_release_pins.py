@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import http.client
+import io
 import json
 import os
 import re
@@ -483,6 +484,13 @@ def _add_macos_spm_companions(manifest: dict, release: dict) -> None:
         )
 
 
+def _hook_for_litert_swift(hook: str, swift: str) -> str:
+    return re.sub(
+        r"(const _liteRtLmCompanionManifestTemplateSha256 =\s*')[0-9a-f]{64}(';)",
+        r"\g<1>" + pins.litert_lm_companion_template_hash(swift) + r"\g<2>", hook,
+    )
+
+
 def _run_schema2_sync(
     temp_dir: Path,
     manifest: dict,
@@ -504,6 +512,7 @@ def _run_schema2_sync(
         )
         shutil.copyfile(source_root / "pubspec.yaml", repo_root / "pubspec.yaml")
     for relative_path in (
+        "hook/build.dart",
         "lib/src/hook/native_release_pins.dart",
         "lib/src/backends/litert_lm/litert_lm_runtime.dart",
         "tool/macos_litert_lm_prepare_app.sh",
@@ -535,6 +544,8 @@ def _run_schema2_sync(
         shutil.copyfile(LEGACY_LITERT_SWIFT, swift)
     else:
         swift.write_text(starting_swift, encoding="utf-8")
+    hook = repo_root / "hook/build.dart"
+    hook.write_text(_hook_for_litert_swift(hook.read_text(), swift.read_text()))
     release_dir = temp_dir / "releases"
     release_dir.mkdir()
     _materialize_schema2_release_fixtures(release_dir, manifest, release)
@@ -1223,6 +1234,148 @@ class LiteRtV019SamplerTransitionTest(unittest.TestCase):
             )
             with self.subTest(target=target), self.assertRaisesRegex(ReleaseError, "canonical"):
                 self.prepare(source)
+
+
+class LiteRtCompanionTemplateSyncTest(unittest.TestCase):
+    def setUp(self) -> None:
+        self.source_root = Path(__file__).resolve().parents[2]
+        self.hook = (self.source_root / "hook/build.dart").read_text()
+        self.hook = self.hook.replace(
+            self.declared_hash(self.hook),
+            "be71ff20cc6f29dae94ccfadcc8d7ae1cc78945385d11aa625223ccd559a9e74",
+        )
+        self.original = (self.source_root / "tool/native/fixtures/litert_lm_v018_samplers_Package.swift").read_text()
+        projection = _v019_inventory_projection()
+        self.manifest, _ = _schema2_fixture_payloads()
+        self.manifest["release"]["tag"] = "v0.19.0"
+        self.manifest["upstream"]["compatibilityTag"] = "v0.19.0"
+        self.manifest["platforms"] = projection["platforms"]
+        self.release = {"tag_name": "v0.19.0", "assets": [
+            {"name": item["fileName"], "digest": "sha256:" + item["sha256"]}
+            for item in projection["spmArtifacts"]
+        ]}
+        for bundle in pins.litert_lm_bundle_names(
+            (self.source_root / pins.DEFAULT_NATIVE_RELEASE_PINS).read_text()
+        ):
+            self.release["assets"].append({
+                "name": f"litert-lm-native-runtime-{bundle}-v0.19.0.tar.gz",
+                "digest": "sha256:" + hashlib.sha256(bundle.encode()).hexdigest(),
+            })
+        self.prepared = prepare_litert_lm_package_swift(
+            self.original, release=self.release, manifest=self.manifest,
+            resolved_tag="v0.19.0",
+        )
+
+    def declared_hash(self, hook: str) -> str:
+        return re.search(
+            r"const _liteRtLmCompanionManifestTemplateSha256 =\s*'([0-9a-f]{64})';",
+            hook,
+        ).group(1)
+
+    def stage(self, root: Path) -> None:
+        for relative in (
+            "hook/build.dart", pins.DEFAULT_NATIVE_RELEASE_PINS,
+            pins.DEFAULT_LITERT_LM_RUNTIME_DART,
+            pins.DEFAULT_LITERT_LM_MACOS_PREPARE_SCRIPT,
+            *pins.DEFAULT_LLAMA_CPP_PROJECT_DOCS,
+        ):
+            target = root / relative
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(self.source_root / relative, target)
+        package = "packages/llamadart_litert_lm_flutter"
+        shutil.copytree(self.source_root / package, root / package)
+        (root / "hook/build.dart").write_text(self.hook)
+        (root / pins.DEFAULT_LITERT_LM_PACKAGE_SWIFT).write_text(self.original)
+        pin_path = root / pins.DEFAULT_NATIVE_RELEASE_PINS
+        pin_path.write_text(re.sub(
+            r"const liteRtLmReleaseTag = '[^']+';",
+            "const liteRtLmReleaseTag = 'v0.18.1-4';", pin_path.read_text(),
+        ))
+
+    def sync(self, root: Path, *, dry_run: bool = False) -> str:
+        argv = ["sync", "--repo-root", str(root), "--litert-lm-tag", "v0.19.0"]
+        if dry_run:
+            argv.append("--dry-run")
+        output = io.StringIO()
+        with patch.object(sys, "argv", argv), patch.object(
+            pins, "fetch_release", return_value=self.release,
+        ), patch.object(
+            pins, "validate_litert_lm_release_manifest", return_value=self.manifest,
+        ), patch.object(pins, "write_github_output"), patch("sys.stdout", output):
+            self.assertEqual(pins.main(), 0)
+        return output.getvalue()
+
+    def test_ordinary_sync_updates_hook_from_rendered_seven_target_manifest(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            self.stage(root)
+            self.sync(root)
+            updated = (root / "hook/build.dart").read_text()
+            self.assertEqual(self.declared_hash(updated),
+                             "df03e4e53c34d1d7c7039e221092d30fb72b2a71d93b4f6227299af41aff26cb")
+            self.assertEqual((root / pins.DEFAULT_LITERT_LM_PACKAGE_SWIFT).read_text(), self.prepared)
+            self.assertIn("const liteRtLmReleaseTag = 'v0.19.0';",
+                          (root / pins.DEFAULT_NATIVE_RELEASE_PINS).read_text())
+            self.assertNotIn("TopK", self.prepared)
+            first = {p: p.read_bytes() for p in root.rglob("*") if p.is_file()}
+            self.sync(root)
+            self.assertEqual(first, {p: p.read_bytes() for p in root.rglob("*") if p.is_file()})
+
+    def test_dry_run_reports_prospective_hash_without_changing_current_eighteen(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            self.stage(root)
+            before = {p: p.read_bytes() for p in root.rglob("*") if p.is_file()}
+            output = self.sync(root, dry_run=True)
+            self.assertIn("df03e4e53c34d1d7c7039e221092d30fb72b2a71d93b4f6227299af41aff26cb", output)
+            self.assertEqual(before, {p: p.read_bytes() for p in root.rglob("*") if p.is_file()})
+            self.assertIn("const liteRtLmReleaseTag = 'v0.18.1-4';",
+                          (root / pins.DEFAULT_NATIVE_RELEASE_PINS).read_text())
+
+    def test_stale_admitted_hash_refuses_before_any_sync_write(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            self.stage(root)
+            hook = root / "hook/build.dart"
+            hook.write_text(self.hook.replace(self.declared_hash(self.hook), "0" * 64))
+            before = {p: p.read_bytes() for p in root.rglob("*") if p.is_file()}
+            with self.assertRaisesRegex(ReleaseError, "reviewed.*template"):
+                self.sync(root)
+            self.assertEqual(before, {p: p.read_bytes() for p in root.rglob("*") if p.is_file()})
+
+    def test_current_nine_target_template_retains_current_hook(self) -> None:
+        self.assertEqual(pins.replace_litert_lm_companion_template_hash(
+            self.hook, original_swift=self.original,
+            prepared_swift=self.original.replace("\n", "\r\n"),
+            resolved_tag="v0.18.1-4",
+        ), self.hook)
+
+    def test_rendered_version_skew_cannot_authorize_a_template(self) -> None:
+        with self.assertRaisesRegex(ReleaseError, "rendered.*tag"):
+            pins.replace_litert_lm_companion_template_hash(
+                self.hook, original_swift=self.original,
+                prepared_swift=self.prepared, resolved_tag="v0.18.1-4",
+            )
+
+    def test_duplicate_rendered_tag_cannot_authorize_a_template(self) -> None:
+        with self.assertRaisesRegex(ReleaseError, "one.*template tag"):
+            pins.replace_litert_lm_companion_template_hash(
+                self.hook, original_swift=self.original,
+                prepared_swift=self.prepared + '\nlet liteRtLmTag = "v0.19.0"\n',
+                resolved_tag="v0.19.0",
+            )
+
+    def test_missing_or_duplicate_hook_contract_refuses(self) -> None:
+        declaration = re.search(
+            r"const _liteRtLmCompanionManifestTemplateSha256 =\s*'[0-9a-f]{64}';",
+            self.hook,
+        ).group()
+        for hook in (self.hook.replace(declaration, ""), self.hook + declaration):
+            with self.subTest(hook=hook[-100:]), self.assertRaises(ReleaseError):
+                pins.replace_litert_lm_companion_template_hash(
+                    hook, original_swift=self.original,
+                    prepared_swift=self.prepared, resolved_tag="v0.19.0",
+                )
 
 
 class SyncNativeReleasePinsTest(unittest.TestCase):
@@ -2491,6 +2644,8 @@ class SyncNativeReleasePinsTest(unittest.TestCase):
                             r"const liteRtLmReleaseTag = '[^']+';",
                             f"const liteRtLmReleaseTag = '{current_tag}';", expected,
                         )
+                    elif relative.as_posix() == "hook/build.dart":
+                        expected = _hook_for_litert_swift(expected, modern)
                     self.assertEqual(path.read_text(), expected, str(relative))
 
     def test_schema_2_prepares_hook_libraries_from_owner_inventory(self) -> None:

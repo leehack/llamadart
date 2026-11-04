@@ -1,5 +1,7 @@
 ## Unreleased
 
+- Keep future LiteRT-LM SwiftPM pin syncs aligned with macOS app-bundle runtime discovery.
+
 - Fix native LiteRT-LM C API 1.0 loading with tagged Android arm64 pointers.
 
 - Restrict unqualified Android Vulkan Qwen3.5 paths to bounded ordinary text, with typed errors for larger micro-batches, media, speculation and embeddings ([#948](https://github.com/leehack/llamadart/issues/948)).

@@ -25,6 +25,7 @@ DEFAULT_LLAMADART_NATIVE_REPO = "leehack/llamadart-native"
 DEFAULT_LITERT_LM_NATIVE_REPO = "leehack/litert-lm-native"
 DEFAULT_STABLE_DIFFUSION_NATIVE_REPO = "leehack/stable-diffusion-native"
 DEFAULT_NATIVE_RELEASE_PINS = "lib/src/hook/native_release_pins.dart"
+DEFAULT_BUILD_HOOK = "hook/build.dart"
 DEFAULT_LLAMA_CPP_PACKAGE_SWIFT = (
     "packages/llamadart_llama_cpp_flutter/darwin/"
     "llamadart_llama_cpp_flutter/Package.swift"
@@ -1073,6 +1074,20 @@ def main() -> int:
                 manifest=litert_lm_manifest,
                 resolved_tag=resolved_litert_lm_tag,
                 repo=args.litert_lm_native_repo,
+            )
+            hook_path = repo_root / DEFAULT_BUILD_HOOK
+            if not hook_path.exists():
+                raise ReleaseError(f"Missing native build hook {hook_path}")
+            hook_text = hook_path.read_text(encoding="utf-8")
+            pending_writes[hook_path] = replace_litert_lm_companion_template_hash(
+                hook_text,
+                original_swift=original_swift_text,
+                prepared_swift=swift_text,
+                resolved_tag=resolved_litert_lm_tag,
+            )
+            summaries.append(
+                "LiteRT-LM SwiftPM template SHA-256 -> "
+                + litert_lm_companion_template_hash(swift_text)
             )
             pending_writes[litert_lm_package_swift_path] = swift_text
             package_root = companion_package_root(litert_lm_package_swift_path)
@@ -4374,6 +4389,54 @@ def prepare_litert_lm_package_swift(
             checksum,
         )
     return swift_text
+
+
+def litert_lm_companion_template_hash(swift_text: str) -> str:
+    """Match the full-manifest normalization used by the macOS build hook."""
+    normalized, count = re.subn(
+        r'(?m)^let liteRtLmTag = "[^"\n]+"$',
+        'let liteRtLmTag = "PIN"',
+        swift_text.replace("\r\n", "\n"),
+    )
+    if count != 1:
+        raise ReleaseError("Expected one LiteRT-LM companion template tag")
+    normalized = re.sub(
+        r'checksum: "[0-9a-f]{64}"', 'checksum: "CHECKSUM"', normalized,
+    )
+    return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
+
+
+def replace_litert_lm_companion_template_hash(
+    hook_text: str,
+    *,
+    original_swift: str,
+    prepared_swift: str,
+    resolved_tag: str,
+) -> str:
+    pattern = (
+        r"(?m)(^const _liteRtLmCompanionManifestTemplateSha256 =\s*')"
+        r"([0-9a-f]{64})(';)"
+    )
+    matches = list(re.finditer(pattern, hook_text))
+    if len(matches) != 1:
+        raise ReleaseError("Expected one reviewed LiteRT-LM companion template hash")
+    if matches[0].group(2) != litert_lm_companion_template_hash(original_swift):
+        raise ReleaseError(
+            "The hook does not admit the reviewed LiteRT-LM companion template; "
+            "review its manifest contract before syncing"
+        )
+    prepared_tag = swift_variable_value(
+        prepared_swift, "liteRtLmTag", "rendered LiteRT-LM companion tag",
+    )
+    if prepared_tag != resolved_tag:
+        raise ReleaseError("The rendered LiteRT-LM companion tag differs from the resolved tag")
+    # The production renderer validates the owner inventory and known target
+    # transition before this contract is staged in the same atomic write.
+    return replace_one(
+        hook_text, pattern,
+        r"\g<1>" + litert_lm_companion_template_hash(prepared_swift) + r"\g<3>",
+        "LiteRT-LM companion template hash",
+    )
 
 
 def swift_variable_value(

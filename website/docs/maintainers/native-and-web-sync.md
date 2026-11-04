@@ -129,6 +129,13 @@ Metal accelerator and other runtime targets. Versions 0.16 through 0.18 retain
 their prebuilt sampler requirements. This removal does not apply to other
 versions or layouts, which need a reviewed transition before pin files change.
 
+LiteRT-LM sync also stages the hook's accepted full-manifest template hash from
+the same rendered `Package.swift`. The original manifest must already match the
+hook's reviewed template; a stale hash or a hand-edited manifest fails before any
+file is written. Dry-run prints the prospective hash. This keeps the known
+v0.19 seven-target transition on the macOS app-bundle path without relaxing the
+manifest contract or changing the currently pinned runtime.
+
 Changing between stable and development channels requires
 `--allow-litert-channel-transition`; changing between two distinct `g<sha>`
 lines requires `--allow-litert-development-line-transition`. Both flags default
