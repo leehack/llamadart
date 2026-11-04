@@ -87,6 +87,12 @@ records the backend name. Vulkan retains the Adreno 750 hardware-adapter and
 WebGPU-environment checks. The shared LiteRT GpuEnvironment message, a
 recoverable OpenCL loader probe and an immediately compiled, single-signature
 CPU embedder are not GPU fallback or conflicting OpenCL initialization. Unbound CPU delegation remains rejected.
+Public qualification services use DEBUG (v1 API Debug, value 1). Upstream maps
+both Debug and the direct child's Verbose (value 0) to TFLite VERBOSE output.
+INFO suppresses the two full-delegation records required below; a GPU backend
+name and correct answers cannot replace those records. The full proof stays
+required for C04 and its cancellation predecessor.
+
 OpenCL requires one created OpenCL device and
 LiteRT GpuEnvironment, followed by fully delegated positive `LITERT_CL`
 `decode` and `prefill_N` graphs, each with one partition, positive external
