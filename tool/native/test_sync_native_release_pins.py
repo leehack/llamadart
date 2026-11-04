@@ -423,7 +423,8 @@ def _materialize_schema2_release_fixtures(
         "SHA256SUMS",
         hashlib.sha256(checksum_text).hexdigest(),
     )
-    (fixture_dir / f"google-ai-edge__LiteRT-LM__v0.16.0__commit.json").write_text(
+    upstream_ref = manifest["upstream"]["tag"] or manifest["upstream"]["commit"]
+    (fixture_dir / f"google-ai-edge__LiteRT-LM__{upstream_ref}__commit.json").write_text(
         json.dumps({"sha": manifest["upstream"]["commit"]}),
         encoding="utf-8",
     )
@@ -1386,6 +1387,123 @@ class LiteRtCompanionTemplateSyncTest(unittest.TestCase):
                     hook, original_swift=self.original,
                     prepared_swift=self.prepared, resolved_tag="v0.19.0",
                 )
+
+
+class LiteRtV019PrebuiltOverridesTest(unittest.TestCase):
+    def setUp(self) -> None:
+        self.fixtures = Path(__file__).resolve().parent / "fixtures"
+        self.manifest_bytes = (
+            self.fixtures / "litert_lm_v019_owner_manifest.json"
+        ).read_bytes()
+        self.manifest = json.loads(self.manifest_bytes)
+        self.release = json.loads(
+            (self.fixtures / "litert_lm_v019_owner_release.json").read_text()
+        )
+        self.tag = "v0.19.0"
+
+    def validate(self, fixture_dir: Path) -> dict:
+        return validate_litert_lm_release_manifest(
+            self.release,
+            repo="leehack/litert-lm-native",
+            tag=self.tag,
+            release_json_dir=str(fixture_dir),
+            required_bundles=[
+                f"{item['platform']}-{item['arch']}"
+                for item in self.manifest["platforms"]
+            ],
+        )
+
+    def test_published_owner_bytes_pass_full_manifest_validation(self) -> None:
+        self.assertEqual(
+            hashlib.sha256(self.manifest_bytes).hexdigest(),
+            "bd6f67c047bbd853fd962d363e0507c043be0658c00502b4e486b02c27107871",
+        )
+        self.assertEqual(
+            self.manifest["native"]["commit"],
+            "f173fe9b18a30fdc23cc896be27a36bf85657921",
+        )
+        checksum_bytes = (
+            self.fixtures / "litert_lm_v019_owner_SHA256SUMS"
+        ).read_bytes()
+        self.assertEqual(
+            hashlib.sha256(checksum_bytes).hexdigest(),
+            "735f30d786f1f2bac9d145396370139c69c54643c931a239cdb0f96eeb48cc28",
+        )
+        published_digests = {
+            asset["name"]: asset["digest"] for asset in self.release["assets"]
+        }
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            _materialize_schema2_release_fixtures(root, self.manifest, self.release)
+            for name, payload in (
+                ("manifest.json", self.manifest_bytes),
+                ("SHA256SUMS", checksum_bytes),
+            ):
+                (root / f"leehack__litert-lm-native__{self.tag}__{name}").write_bytes(payload)
+                self.assertEqual(
+                    published_digests[name],
+                    "sha256:" + hashlib.sha256(payload).hexdigest(),
+                )
+                _set_release_asset_digest(
+                    self.release, name, published_digests[name].removeprefix("sha256:")
+                )
+            self.assertEqual(self.validate(root), self.manifest)
+            stale_table = dict(pins.LITERT_PREBUILT_OVERRIDES)
+            del stale_table[self.tag]
+            with patch.object(pins, "LITERT_PREBUILT_OVERRIDES", stale_table):
+                with self.assertRaisesRegex(
+                    ReleaseError,
+                    "LITERT_PREBUILT_OVERRIDES has no entry for upstream v0.19.0",
+                ):
+                    self.validate(root)
+
+    def test_v019_override_provenance_rejects_missing_and_altered_records(self) -> None:
+        original = json.loads(json.dumps(self.manifest))
+        cases = (
+            ("missing", None, None),
+            ("sourceCommit", "sourceCommit", "1" * 40),
+            ("sourcePath", "sourcePath", "prebuilt/android_arm64/other.so"),
+            ("sourceRepository", "sourceRepository", "other/LiteRT-LM"),
+            ("targetPath", "targetPath", "bin/android/arm64/other.so"),
+            ("sha256", "sha256", "1" * 64),
+        )
+        for label, field, value in cases:
+            with self.subTest(field=label), tempfile.TemporaryDirectory() as temp:
+                self.manifest = json.loads(json.dumps(original))
+                overrides = self.manifest["upstream"]["prebuiltOverrides"]
+                if field is None:
+                    overrides.pop()
+                else:
+                    overrides[0][field] = value
+                _materialize_schema2_release_fixtures(
+                    Path(temp), self.manifest, self.release
+                )
+                with self.assertRaisesRegex(ReleaseError, "prebuilt override provenance"):
+                    self.validate(Path(temp))
+
+    def test_v019_override_target_artifact_hash_is_still_enforced(self) -> None:
+        target = self.manifest["upstream"]["prebuiltOverrides"][0]["targetPath"]
+        artifact = next(
+            item for item in self.manifest["artifacts"] if item["path"] == target
+        )
+        artifact["sha256"] = "1" * 64
+        with tempfile.TemporaryDirectory() as temp:
+            _materialize_schema2_release_fixtures(
+                Path(temp), self.manifest, self.release
+            )
+            with self.assertRaisesRegex(
+                ReleaseError, "prebuilt override target provenance"
+            ):
+                self.validate(Path(temp))
+
+    def test_v019_override_provenance_does_not_admit_version_skew(self) -> None:
+        self.manifest["upstream"]["compatibilityTag"] = "v0.18.1"
+        with tempfile.TemporaryDirectory() as temp:
+            _materialize_schema2_release_fixtures(
+                Path(temp), self.manifest, self.release
+            )
+            with self.assertRaisesRegex(ReleaseError, "compatibility tag"):
+                self.validate(Path(temp))
 
 
 class SyncNativeReleasePinsTest(unittest.TestCase):
