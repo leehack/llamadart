@@ -3,10 +3,9 @@
 `integration_test/pixel_qwen35_guard_test.dart` in the chat app is a separate
 private entrypoint for `core018-pixel-supported-cases-20261104`: Pixel 9 Pro
 (`caiman`), API35, Mali-G715, native `v0.8.0-2`. It never sets `qualified=true`.
-Freeze clean source and obtain fresh independent review before APK preparation;
-root owns exact artifact/APK/operator/budget admission and the eventual run.
-The ceiling is one execution, USD2.50, 20 minutes and zero retries. This source
-does not reserve budget, authorize dispatch or qualify any GPU.
+Freeze clean source and obtain fresh independent review before APK preparation.
+The operator must separately approve the exact artifact, device, execution and
+budget. This source does not authorize dispatch or qualify any GPU.
 
 The original [#948](https://github.com/leehack/llamadart/issues/948) describes
 Qwen3.5-0.8B Q4_0 on caiman/Android15, a 59-token C06 history prompt repeating
@@ -37,9 +36,11 @@ The public backend is `LlamaEngine(LlamaBackend())`, with no service factory,
 worker entrypoint, library override, custom projector or model substitution.
 Vulkan cells explicitly request GPU plus Vulkan and require positive layers;
 Ordinary CPU cells explicitly request CPU plus CPU/zero layers; the separate
-zero-layer control keeps its Vulkan/GPU preference while requesting zero layers. The example hook family
-is `llama_cpp` only for this isolated build, retaining normal native hook
-selection and the final pin while excluding unrelated runtime bundles.
+zero-layer control keeps its Vulkan/GPU preference while requesting zero layers.
+The maintained chat example selects all runtime families. A separately reviewed
+isolated build may select only `llama_cpp`, retaining normal native hook
+selection and the final pin while excluding unrelated runtime bundles. Bind
+that staged selector explicitly; do not change the maintained example for a run.
 
 Order: CPU/unset runs the existing C04.arithmetic fixture first: unchanged
 `What is 2 + 2? Reply with only the number.`, strict `^4[.!]?$` on trimmed
