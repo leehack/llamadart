@@ -306,11 +306,10 @@ bool s24LiteRtGpuInitialized(String log) =>
 String? s24LiteRtGpuInitializationBackend(String log) {
   if (containsLiteRtGpuFailureMarker(log) ||
       RegExp(
-        r'Created TensorFlow Lite XNNPACK delegate for CPU|'
         r'delegate \(XNNPACK|delegate \(CPU|'
         r'\b(?:ERROR|FATAL)\b|^[EF][0-9]{4} |'
-        r'(?:failed|failure|error)[^\n]*(?:OpenCL|GpuEnvironment|GPU delegate)|'
-        r'(?:OpenCL|GpuEnvironment|GPU delegate)[^\n]*(?:failed|failure|error)',
+        r'(?:failed|failure|error)[^\n]*(?:GpuEnvironment|GPU delegate)|'
+        r'(?:GpuEnvironment|GPU delegate)[^\n]*(?:failed|failure|error)',
         caseSensitive: false,
         multiLine: true,
       ).hasMatch(log)) {
@@ -321,12 +320,12 @@ String? s24LiteRtGpuInitializationBackend(String log) {
       log.contains('Created a WebGPU environment.');
   final hasOpenCl =
       log.contains('Created OpenCL device') ||
-      log.contains('Created LiteRT GpuEnvironment.') ||
       log.contains('LITERT_CL') ||
       log.contains('Initializing OpenCL-based API');
   if (hasVulkan && hasOpenCl) return null;
   if (hasVulkan) {
-    return 'Selected adapter:'.allMatches(log).length == 1 &&
+    return !_s24LiteRtHasUnexpectedCpuDelegate(log) &&
+            'Selected adapter:'.allMatches(log).length == 1 &&
             RegExp(
                   r'Selected adapter: [^\n]*Adreno[^\n]*750[^\n]*backend=Vulkan, adapterType=(?:Integrated GPU|Discrete GPU)',
                 ).allMatches(log).length ==
@@ -338,7 +337,15 @@ String? s24LiteRtGpuInitializationBackend(String log) {
         ? 'Vulkan'
         : null;
   }
-  if (!hasOpenCl) return null;
+  if (!hasOpenCl ||
+      log.contains('Created TensorFlow Lite XNNPACK delegate for CPU.') ||
+      RegExp(
+        r'(?:failed|failure|error)[^\n]*(?:OpenCL|GpuEnvironment|GPU delegate)|'
+        r'(?:OpenCL|GpuEnvironment|GPU delegate)[^\n]*(?:failed|failure|error)',
+        caseSensitive: false,
+      ).hasMatch(log)) {
+    return null;
+  }
 
   // The two compiled C04 graphs each emit delegation, tensors, then API init.
   // Require the complete ordered sequence; registration and dlopen prove none
@@ -387,4 +394,35 @@ String? s24LiteRtGpuInitializationBackend(String log) {
     }
   }
   return 'OpenCL';
+}
+
+// Vulkan multimodal bundles can compile a separate CPU embedder after their
+// GPU graphs. Its adjacent single-signature compilation is not CPU fallback.
+bool _s24LiteRtHasUnexpectedCpuDelegate(String log) {
+  var singleSignature = false;
+  var auxiliaryEmbedder = false;
+  var previousCompiled = false;
+  for (final line in log.split('\n')) {
+    if (line.contains('Loaded: num_subgraphs=')) {
+      singleSignature = line.endsWith(
+        'Loaded: num_subgraphs=1, num_signatures=1',
+      );
+      auxiliaryEmbedder = false;
+    }
+    if (line.contains('signature=')) {
+      auxiliaryEmbedder =
+          singleSignature &&
+          RegExp(
+            r'\bsignature=(?:embedder|per_layer_embedder),',
+          ).hasMatch(line);
+    }
+    if (line.contains('Created TensorFlow Lite XNNPACK delegate for CPU.') &&
+        !(auxiliaryEmbedder && previousCompiled)) {
+      return true;
+    }
+    previousCompiled = line.endsWith(
+      'Flatbuffer model initialized directly from incoming litert model.',
+    );
+  }
+  return false;
 }

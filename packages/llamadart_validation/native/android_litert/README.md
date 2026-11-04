@@ -76,7 +76,10 @@ accelerator execution proof, general GPU support or a throughput measurement.
 
 The private GPU predicate admits two distinct initialization backends and
 records the backend name. Vulkan retains the Adreno 750 hardware-adapter and
-WebGPU-environment checks. OpenCL requires one created OpenCL device and
+WebGPU-environment checks. The shared LiteRT GpuEnvironment message, a
+recoverable OpenCL loader probe and an immediately compiled, single-signature
+CPU embedder are not GPU fallback or conflicting OpenCL initialization. Unbound CPU delegation remains rejected.
+OpenCL requires one created OpenCL device and
 LiteRT GpuEnvironment, followed by fully delegated positive `LITERT_CL`
 `decode` and `prefill_N` graphs, each with one partition, positive external
 tensors and initialized OpenCL API, in order. Partial, repeated, malformed,

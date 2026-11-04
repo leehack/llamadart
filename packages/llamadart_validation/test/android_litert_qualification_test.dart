@@ -300,6 +300,68 @@ void main() {
     expect(s24LiteRtStageSeconds.values.fold<int>(0, (a, b) => a + b), 1050);
     expect(s24LiteRtStageSeconds.values.every((value) => value <= 150), isTrue);
   });
+  test(
+    'authentic Vulkan lifetime retains shared environment and CPU embedder',
+    () {
+      final lines = File(
+        'test/fixtures/android_logcat/galaxys24-gemma4-litert-gpu.logcat.txt',
+      ).readAsLinesSync();
+      final lifetime = lines.take(114).join('\n');
+      final initialization = [
+        45,
+        46,
+        49,
+        53,
+      ].map((n) => lines[n - 1]).join('\n');
+      for (final log in [lifetime, initialization]) {
+        expect(s24LiteRtGpuInitializationBackend(log), 'Vulkan');
+        expect(s24LiteRtGpuInitialized(log), isTrue);
+      }
+      expect(lifetime, contains('Failed to load OpenCL library with dlopen:'));
+      expect(lifetime, contains('Trying ICD loader.'));
+      expect(
+        lifetime,
+        contains('Created TensorFlow Lite XNNPACK delegate for CPU.'),
+      );
+      final negatives = <String, String>{
+        'CPU fallback': '$lifetime\nFalling back to CPU',
+        'CPU graph':
+            '$lifetime\nReplacing 1 out of 1 node(s) with delegate (XNNPACK)',
+        'unbound CPU delegate':
+            '$lifetime\nCreated TensorFlow Lite XNNPACK delegate for CPU.',
+        'wrong CPU model': lifetime.replaceAll(
+          'signature=embedder,',
+          'signature=decode,',
+        ),
+        'multiple CPU graphs': lifetime.replaceAll(
+          'Loaded: num_subgraphs=1, num_signatures=1',
+          'Loaded: num_subgraphs=2, num_signatures=1',
+        ),
+        'uncompiled CPU model': lifetime.replaceAll(
+          'Flatbuffer model initialized directly from incoming litert model.',
+          'Missing compiled model',
+        ),
+        'GPU failure':
+            '$lifetime\nGPU accelerator could not be loaded and registered',
+        'shared environment failure':
+            '$lifetime\nGpuEnvironment initialization failed',
+        'delegate failure': '$lifetime\nGPU delegate initialization failed',
+        'GPU device lost': '$lifetime\nVK_ERROR_DEVICE_LOST',
+        'OpenCL device conflict':
+            '$lifetime\nCreated OpenCL device from provided device id and platform id.',
+        'OpenCL API conflict':
+            '$lifetime\nInitializing OpenCL-based API from serialized data.',
+        'OpenCL graph conflict': '$lifetime\nLITERT_CL',
+      };
+      for (final entry in negatives.entries) {
+        expect(
+          s24LiteRtGpuInitializationBackend(entry.value),
+          isNull,
+          reason: entry.key,
+        );
+      }
+    },
+  );
   test('owned OpenCL log requires both full ordered positive GPU graphs', () {
     final log = File('test/fixtures/s24_opencl_stderr.txt').readAsStringSync();
     expect(
@@ -311,6 +373,9 @@ void main() {
     final negatives = <String, String>{
       'library only': 'INFO: Loaded OpenCL library with dlopen.',
       'CPU registry only': 'XNNPACK CPU accelerator registered.',
+      'shared environment only': 'Created LiteRT GpuEnvironment.',
+      'loader failure on OpenCL':
+          '$log\nFailed to load OpenCL library with dlopen: dlopen failed: library libvndksupport.so not found. Trying ICD loader.',
       'missing device': log.replaceAll(
         'Created OpenCL device',
         'Absent device',
