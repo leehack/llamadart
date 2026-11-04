@@ -3,15 +3,27 @@ import argparse
 import hashlib
 import json
 from pathlib import Path
+import re
 import struct
 import subprocess
 import tempfile
+import xml.etree.ElementTree as ET
 import zipfile
 
 INSTRUMENTATION_CLASSES = frozenset({
     "dev.flutter.plugins.integration_test.IntegrationTestPlugin",
     "dev.flutter.plugins.integration_test.FlutterTestRunner",
 })
+ANDROID_RUNNER = "androidx.test.runner.AndroidJUnitRunner"
+TEST_CLASS = "com.example.llamadart_chat_example.MainActivityTest"
+FRAMEWORK_CLASSES = frozenset({
+    ANDROID_RUNNER,
+    "androidx.test.rule.ActivityTestRule",
+    "androidx.test.platform.app.InstrumentationRegistry",
+    "org.junit.runner.RunWith",
+    "org.junit.Rule",
+})
+ANDROID = "{http://schemas.android.com/apk/res/android}"
 
 
 def parse_defined_classes(output):
@@ -30,25 +42,73 @@ def parse_defined_classes(output):
     return classes
 
 
-def verify_instrumentation_classes(apk, apkanalyzer):
-    if apkanalyzer is None:
-        raise ValueError("Consumer release APK verification requires --apkanalyzer")
+def analyze(apkanalyzer, *arguments):
     with tempfile.TemporaryFile() as output:
         result = subprocess.run(
-            [str(apkanalyzer), "dex", "packages", "--defined-only", str(apk)],
+            [str(apkanalyzer), *map(str, arguments)],
             stdout=output, stderr=subprocess.PIPE, timeout=120, check=False)
         if result.returncode != 0:
-            raise ValueError("apkanalyzer failed to inspect actual DEX definitions")
+            raise ValueError("apkanalyzer failed to inspect APK")
         if output.tell() > 64 * 1024 * 1024:
             raise ValueError("apkanalyzer output exceeds size bound")
         output.seek(0)
-        classes = parse_defined_classes(output.read().decode("utf-8"))
-    if not INSTRUMENTATION_CLASSES.issubset(classes):
+        return output.read().decode("utf-8")
+
+
+def manifest_identity(output):
+    root = ET.fromstring(output)
+    package = root.get("package")
+    if root.tag != "manifest" or not package:
+        raise ValueError("APK manifest lacks package identity")
+    return root, package
+
+
+def verify_test_annotations(output):
+    # Inspect the actual test DEX: class-name definitions alone cannot prove
+    # that R8 retained the runtime annotations used by both runner layers.
+    header = output.split("# static fields", 1)[0].split("# instance fields", 1)[0]
+    if not re.search(
+            r"(?m)^\.annotation runtime Lorg/junit/runner/RunWith;\s+"
+            r"value = Ldev/flutter/plugins/integration_test/FlutterTestRunner;\s+"
+            r"\.end annotation$", header):
+        raise ValueError("Test DEX lacks runtime @RunWith(FlutterTestRunner)")
+    fields = re.findall(r"(?ms)^\.field .*?^\.end field$", output)
+    if not any(re.search(r"(?m)^\.field public rule:Landroidx/test/rule/ActivityTestRule;$", field)
+               and re.search(r"(?m)^    \.annotation runtime Lorg/junit/Rule;\s+"
+                             r"\.end annotation$", field) for field in fields):
+        raise ValueError("Test DEX lacks public ActivityTestRule with runtime @Rule")
+
+
+def verify_instrumentation_classes(apk, test_apk, apkanalyzer):
+    if apkanalyzer is None:
+        raise ValueError("Consumer release APK verification requires --apkanalyzer")
+    if test_apk is None or test_apk.resolve() == apk.resolve():
+        raise ValueError("Consumer release APK verification requires a separate --test-apk")
+    app_manifest, app_package = manifest_identity(analyze(apkanalyzer, "manifest", "print", apk))
+    test_manifest, test_package = manifest_identity(analyze(apkanalyzer, "manifest", "print", test_apk))
+    declarations = test_manifest.findall("instrumentation")
+    if (app_manifest.findall("instrumentation") or len(declarations) != 1 or
+            test_package == app_package or declarations[0].get(ANDROID + "targetPackage") != app_package):
+        raise ValueError("APK pair instrumentation target mismatch")
+    runner = declarations[0].get(ANDROID + "name")
+    if runner != ANDROID_RUNNER:
+        raise ValueError("Unexpected manifest-declared instrumentation runner")
+    app_classes = parse_defined_classes(analyze(apkanalyzer, "dex", "packages", "--defined-only", apk))
+    test_classes = parse_defined_classes(analyze(apkanalyzer, "dex", "packages", "--defined-only", test_apk))
+    if not INSTRUMENTATION_CLASSES.issubset(app_classes):
         raise ValueError("Consumer APK lacks defined, unobfuscated integration_test classes")
-    return sorted(INSTRUMENTATION_CLASSES)
+    if not FRAMEWORK_CLASSES.issubset(app_classes | test_classes):
+        raise ValueError("APK pair lacks defined, unobfuscated manifest runner or reflective test framework")
+    if TEST_CLASS not in test_classes:
+        raise ValueError("Test APK lacks defined MainActivityTest")
+    verify_test_annotations(analyze(apkanalyzer, "dex", "code", "--class", TEST_CLASS, test_apk))
+    return {"classes_defined": sorted(INSTRUMENTATION_CLASSES | FRAMEWORK_CLASSES | {TEST_CLASS}),
+            "runner": runner, "target_package": app_package,
+            "test_apk_sha256": hashlib.sha256(test_apk.read_bytes()).hexdigest(),
+            "test_runtime_annotations_verified": True}
 
 
-def verify(apk, binding, plan, apkanalyzer=None):
+def verify(apk, binding, plan, apkanalyzer=None, test_apk=None):
     with zipfile.ZipFile(apk) as archive:
         names = archive.namelist()
         if len(names) != len(set(names)):
@@ -93,7 +153,7 @@ def verify(apk, binding, plan, apkanalyzer=None):
     result = {"qualified": False, "android_launch_observed": False,
               "apk_sha256": hashlib.sha256(apk.read_bytes()).hexdigest()}
     if json.loads(plan).get("scenario") == "consumer-cpu":
-        result["instrumentation_classes_defined"] = verify_instrumentation_classes(apk, apkanalyzer)
+        result["instrumentation"] = verify_instrumentation_classes(apk, test_apk, apkanalyzer)
     return result
 
 if __name__ == "__main__":
@@ -101,5 +161,7 @@ if __name__ == "__main__":
     for name in ("apk", "binding", "plan"):
         parser.add_argument("--" + name, type=Path, required=True)
     parser.add_argument("--apkanalyzer", type=Path)
+    parser.add_argument("--test-apk", type=Path)
     args = parser.parse_args()
-    print(json.dumps(verify(args.apk, json.loads(args.binding.read_text()), args.plan.read_bytes(), args.apkanalyzer)))
+    print(json.dumps(verify(args.apk, json.loads(args.binding.read_text()), args.plan.read_bytes(),
+                            args.apkanalyzer, args.test_apk)))
