@@ -267,8 +267,13 @@ Set `LLAMADART_ANDROID_CONSUMER_PROFILE_STAGE` to the absolute generated `stage`
 directory for **both** build commands. This stages binding assets only, retains
 installed library bytes and sets AGP's instrumentation test build type to release.
 It also applies `consumer-profile-proguard-rules.pro` only to this qualification
-release: the separate test APK needs the SDK runner/plugin classes and names
-preserved through app-only R8 shrinking. Other app release builds are unchanged.
+release: the separate test APK needs the SDK runner/plugin, manifest-declared
+`AndroidJUnitRunner`, `ActivityTestRule`, instrumentation registry and JUnit
+`RunWith`/`Rule` annotations preserved through app-only R8 shrinking. The SDK
+exports this framework on the app classpath, so AGP omits it from the test APK;
+keeping only the Flutter plugin classes leaves a manifest runner that is absent
+from both APKs. The rules keep these entry points and annotation metadata while
+allowing internal framework shrinking. Other app release builds are unchanged.
 From `example/chat_app`, substitute the committed profile's actual hashes:
 
 ```sh
@@ -294,21 +299,34 @@ regeneration; use it only after pub resolution has refreshed the final consumer
 plugin metadata. Dropping `--no-pub` while leaving the plugin dev-only removes
 the registrant reference but still excludes the required release plugin.
 
-Verify the actual app DEX definitions as well as the bound runtime inventory:
+Verify both APKs' actual manifests/DEX as well as the bound runtime inventory:
 
 ```sh
 python3 packages/llamadart_validation/native/android_qualification/verify_apk.py \
   --apk /path/to/app-release.apk \
+  --test-apk /path/to/app-release-androidTest.apk \
   --binding /path/to/stage/assets/llamadart_android_qualification/binding.json \
   --plan /path/to/stage/assets/llamadart_android_qualification/plan.json \
   --apkanalyzer /path/to/android-sdk/cmdline-tools/latest/bin/apkanalyzer
 ```
 
-The consumer verifier requires Android SDK `apkanalyzer dex packages
---defined-only` class-definition rows for `IntegrationTestPlugin` and
-`FlutterTestRunner` under `dev.flutter.plugins.integration_test`. A referenced
-name, method/package row, removed class or obfuscated replacement cannot pass.
-This is static presence proof, not plugin registration or device execution proof.
+The consumer verifier requires `--test-apk` and Android SDK `apkanalyzer`. It
+checks the test manifest's single `AndroidJUnitRunner` declaration and target
+package against the app, then requires actual `dex packages --defined-only`
+class rows for the Flutter plugin in the app, the declared runner and reflective
+framework across the pair, and `MainActivityTest` in the test APK. `dex code`
+must show runtime `@RunWith(FlutterTestRunner.class)` and a public
+`ActivityTestRule` field with runtime `@Rule` in that test. References,
+method/package rows, removed/obfuscated classes and stripped/renamed annotations
+cannot pass. The result binds the test APK hash too. This is static packaging
+proof, not plugin registration, instrumentation launch or inference proof.
+
+Before any paid device dispatch, retain a successful local release
+instrumentation launch with this exact pair (or a separately identified
+model-free release pipeline pair), using an explicitly selected
+`MainActivityTest` and the manifest-declared runner. A provider validation error
+or zero executed tests is not a launch result. Keep this evidence separate from
+the model/device qualification below.
 
 Run **both APK pairs on both admitted device classes**, zero flaky retries.
 Before dispatch, freeze exact old/modern device model, API, build and CPU/ISA
