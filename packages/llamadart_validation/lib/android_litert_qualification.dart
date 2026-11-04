@@ -6,6 +6,7 @@ import 'dart:convert';
 import 'package:crypto/crypto.dart';
 
 import 'src/manifest.dart';
+import 'src/s24_litert_capture.dart';
 
 const s24LiteRtCpuHash =
     'c5f39b4191926786c3e6668b62af4d6eb15248dfc7a5348252a9b406f33f2108';
@@ -230,15 +231,7 @@ void requireS24LiteRtCpuObservation(
         value['mapped_core_verified'] == true,
     'CPU functionality lacks correlated native/provenance/lifecycle evidence',
   );
-  List<int> captured(Map value) {
-    final bytes = base64Decode(value['base64'] as String);
-    _require(
-      bytes.length == value['bytes'] &&
-          sha256.convert(bytes).toString() == value['sha256'],
-      'Changed native CPU evidence bytes',
-    );
-    return bytes;
-  }
+  List<int> captured(Map value) => decodeS24LiteRtCapture(value);
 
   final initialization = value['process_cpu_delegate_initialization'];
   final current = value['native_stderr'];

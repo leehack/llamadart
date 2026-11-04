@@ -11,6 +11,7 @@ import 'package:llamadart/llamadart.dart';
 
 import 'android_litert_qualification.dart';
 import 'src/litert_gpu_failure_markers.dart';
+import 'src/s24_litert_capture.dart';
 
 Future<String> s24LiteRtFileHash(File file) async =>
     (await sha256.bind(file.openRead()).first).toString();
@@ -44,21 +45,15 @@ Future<void> requireS24LiteRtPayloads(Directory directory, Map binding) async {
   }
 }
 
-/// Copies captured bytes before parsing or running an oracle.
-Map<String, dynamic> captureS24LiteRtBytes(List<int> bytes) => {
-  'bytes': bytes.length,
-  'sha256': sha256.convert(bytes).toString(),
-  'base64': base64Encode(bytes),
-};
+/// Copies the existing base64 envelope, also consumed by the Pixel qualifier.
+Map<String, dynamic> captureS24LiteRtBytes(List<int> bytes) =>
+    encodeS24LiteRtCapture(bytes, allowUtf8: false);
 
-List<int> readS24LiteRtBytes(Map capture) {
-  final bytes = base64Decode(capture['base64'] as String);
-  if (bytes.length != capture['bytes'] ||
-      sha256.convert(bytes).toString() != capture['sha256']) {
-    throw const FormatException('Changed S24 captured bytes');
-  }
-  return bytes;
-}
+/// Copies S24 bytes with the smaller lossless UTF-8 or base64 envelope.
+Map<String, dynamic> captureCompactS24LiteRtBytes(List<int> bytes) =>
+    encodeS24LiteRtCapture(bytes);
+
+List<int> readS24LiteRtBytes(Map capture) => decodeS24LiteRtCapture(capture);
 
 /// Actual process mappings plus file hashes; same-name substitutions are refused.
 Future<Map<String, dynamic>> captureS24LiteRtMappings(
@@ -126,7 +121,7 @@ Future<Map<String, dynamic>> verifyS24LiteRtMappings(
     diagnostic?.call('mapping_hash_completed', entry.key);
   }
   return {
-    'capture': captureS24LiteRtBytes(raw),
+    'capture': captureCompactS24LiteRtBytes(raw),
     'verified': observed.keys.toList()..sort(),
   };
 }

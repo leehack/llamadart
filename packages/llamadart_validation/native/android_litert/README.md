@@ -117,13 +117,62 @@ fields were omitted. It is a negative regression
 for corrected public GPU qualification. Its historical producer PASS result
 is not rewritten or upgraded to GPU evidence.
 
-The journal copies bytes with their size, SHA-256 and base64 before parsing or
-grading. Child capture first validates owned PID, exit, deadline, byte limits
+The journal copies bytes with their original size and SHA-256 before parsing or
+grading. Each capture contains exactly one `utf8` or `base64` payload. Strictly
+valid UTF-8 is used only when it round-trips to the exact original bytes and its
+escaped JSON envelope is smaller; binary, invalid UTF-8 and nonbeneficial text
+retain base64. S24 explicitly opts into the compact writer; the existing
+`captureS24LiteRtBytes` wrapper shared by Pixel continues emitting base64, so
+Pixel source and host decoders keep their current wire format. Both S24 readers
+share the bounded codec in
+`lib/src/s24_litert_capture.dart`. It rejects ambiguous/missing encodings, invalid
+Unicode, changed size/hash and oversized claims before payload allocation.
+No raw line or mapping snapshot is filtered, truncated or reused across
+lifetimes. The watchdog retains the same 16 MiB physical JSONL and 8 MiB native
+stderr limits; its failure reason names the file basename, observed size and
+limit. A real overflow or missing final completion still fails.
+
+Child capture first validates owned PID, exit, deadline, byte limits
 and file hashes, then its own strict S24 protocol. The shared helper's GGUF
 `protocol_complete` field is not S24 acceptance. Invalid UTF-8 remains preserved
 in raw capture and fails wire parsing. Mapped libraries must have the admitted
 installed paths and hashes. Earlier failed/transport-only JNI runs are unchanged
 and receive no public-path or corrected-model credit.
+
+The maintained host transport decoder is `native/android_litert/decode_s24.py`
+with `s24_capture.py`; both files must be copied and hash-admitted together into
+a new operator package. The existing frozen private base64-only decoder and
+past journals remain unchanged. This decoder verifies byte integrity and
+completion, always reports `qualified: false`, and does not replace independent
+semantic/GPU/cleanup grading.
+JSONL records are framed on literal LF bytes, with optional CR immediately
+before LF. Strict UTF-8 capture strings may contain U+0085, U+2028 or U+2029;
+those characters never split a record. Each frame is byte-bounded before text
+decoding, and empty, truncated, malformed or non-object frames fail.
+
+Model-free codec/transport checks, without compiling or running the native child:
+
+```sh
+TMPDIR="$(mktemp -d)" dart test -p vm test/s24_litert_capture_test.dart \
+  test/android_litert_qualification_test.dart test/android_litert_mappings_test.dart \
+  test/s24_litert_gpu_observation_test.dart
+DART_BIN="$(command -v dart)" python3 -m unittest discover \
+  -s native/android_litert -p 'test_s24_capture.py'
+```
+
+The Python transport lane invokes `DART_BIN` directly with the prepared package
+configuration to serialize complete model-free20-case Unicode fixtures using
+the actual Dart codec and `jsonEncode`, with both LF and CRLF framing.
+
+`test/support/replay_s24_capture_encoding.dart RETAINED_JSONL NEW_ANALYSIS_DIR`
+replays only capture encoding, verifies every original event/capture identity and
+writes a clearly labelled derived artifact. It never supplies a missing
+completion or upgrades an interrupted run. A future device confirmation still
+requires independent exact-source review, a clean source/inventory/binding seal,
+fresh APK build and static/model-free probe review, new hash-bound host decoder
+and financial admission, and separate paid authorization. The existing bootstrap
+and final binding build procedure below is unchanged; no native rebuild is
+needed for this Dart/diagnostic-only change.
 
 ## Source and APK admission still required
 

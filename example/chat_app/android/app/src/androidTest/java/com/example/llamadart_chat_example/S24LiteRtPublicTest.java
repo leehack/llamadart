@@ -112,9 +112,12 @@ public class S24LiteRtPublicTest {
                             + (now - phaseStarted > timeout ? "stage" : "process"));
                     }
                     for (File entry : output.listFiles()) {
-                        if ((entry.getName().endsWith(".stderr") && entry.length() > 8388608) ||
-                            (entry.getName().endsWith(".jsonl") && entry.length() > 16777216)) {
-                            throw new IOException("S24 public capture byte limit exceeded");
+                        long bytes = entry.length();
+                        long limit = entry.getName().endsWith(".stderr") ? 8388608
+                            : entry.getName().endsWith(".jsonl") ? 16777216 : -1;
+                        if (limit >= 0 && bytes > limit) {
+                            throw new IOException("S24 public capture byte limit exceeded file="
+                                + entry.getName() + " observed_bytes=" + bytes + " limit_bytes=" + limit);
                         }
                     }
                     Thread.sleep(100);
