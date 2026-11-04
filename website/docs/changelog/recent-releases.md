@@ -11,6 +11,10 @@ For upgrade planning, combine this page with the
 [Upgrade Checklist](../migration/upgrade-checklist). For breaking changes,
 validate against the exact release tag notes.
 
+## Unreleased
+
+- Fix native LiteRT-LM C API 1.0 loading with tagged Android arm64 pointers.
+
 ## 0.18.0
 
 - Add `LlamadartEngine<C>` lifecycle and capability contracts for text, decision, image and speech engines, with safe final disposal.

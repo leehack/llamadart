@@ -11,6 +11,13 @@ dispatch and lifetime behavior; they do not qualify a model, device or owner
 artifact. Keep owner pins unchanged until the required artifact/model/platform gates
 below are complete. Public activation source alone is not qualification.
 
+Asynchronous creation preserves the full native pointer value across isolates.
+Only address zero denotes a missing function or configuration: Android arm64
+heap pointers can carry a [high-byte tag](https://source.android.com/docs/security/test/tagged-pointers)
+that makes their Dart integer negative.
+Tags must remain intact through native calls and disposal; tagged-handle fixtures
+cover default public dispatch, not Android artifact or model qualification.
+
 `LiteRtLmService.runtimeClientFactory` selects this preparation path and probes
 metadata/finish capabilities from that same factory. It is exclusive with the
 existing `clientFactory`. The existing factory retains its creation counts and

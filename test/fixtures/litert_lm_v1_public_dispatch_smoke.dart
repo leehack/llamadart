@@ -195,6 +195,16 @@ Future<void> main(List<String> args) async {
     throw ArgumentError('Unknown fixture route.');
   }
   require(count('live') == 0, 'Native fixture owners leaked.');
+  if (args.length > 4 && args[4] == 'tagged-settings') {
+    final tagged = count('public_tagged_creates');
+    final attempts = count('public_engine_attempts');
+    final cpu = count('public_cpu_creates');
+    final gpu = count('public_gpu_refusals');
+    require(
+      tagged == attempts && cpu >= 2 && tagged == cpu + gpu,
+      'Tagged settings changed across native creation or automatic fallback: tagged=$tagged attempts=$attempts cpu=$cpu gpu=$gpu.',
+    );
+  }
   print(
     'PUBLIC_FIXTURE_DISPATCH ${args[0]} settled; model_qualification=false',
   );
