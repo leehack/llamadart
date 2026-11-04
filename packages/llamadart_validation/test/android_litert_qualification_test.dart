@@ -127,6 +127,16 @@ void main() {
     captured['base64'] = base64Encode([0, 0xc3]);
     expect(() => readS24LiteRtBytes(captured), throwsFormatException);
   });
+  test('Pixel-shared capture stays base64 while S24 explicitly opts in', () {
+    final raw = utf8.encode('native capture lines\n' * 100);
+    final original = captureS24LiteRtBytes(raw);
+    final compact = captureCompactS24LiteRtBytes(raw);
+    expect(original['base64'], base64Encode(raw));
+    expect(original.containsKey('utf8'), isFalse);
+    expect(compact.containsKey('utf8'), isTrue);
+    expect(readS24LiteRtBytes(original), raw);
+    expect(readS24LiteRtBytes(compact), raw);
+  });
   test('C04 semantic oracles do not become transport-only passes', () {
     requireS24LiteRtAnswer('hello', utf8.encode('Hello!'));
     requireS24LiteRtAnswer('arithmetic', utf8.encode('7'));

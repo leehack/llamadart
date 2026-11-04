@@ -121,7 +121,10 @@ Future<void> runS24LiteRtQualification(
     // body retains unsettled work forever; the outer process owns its timeout.
     capture.close();
     final raw = await stderr.readAsBytes();
-    record({'event': 'native_stderr', 'capture': captureS24LiteRtBytes(raw)});
+    record({
+      'event': 'native_stderr',
+      'capture': captureCompactS24LiteRtBytes(raw),
+    });
     record({'event': 'mappings', ...await mappings()});
     if (error != null) failures.add(id);
     record({
@@ -202,8 +205,8 @@ Future<void> runS24LiteRtQualification(
       record({
         'event': 'owned_child_capture',
         'receipt': captured,
-        'stdout': captureS24LiteRtBytes(rawOut),
-        'stderr': captureS24LiteRtBytes(rawErr),
+        'stdout': captureCompactS24LiteRtBytes(rawOut),
+        'stderr': captureCompactS24LiteRtBytes(rawErr),
         'shared_gguf_protocol_ignored': true,
       });
       final rows = readS24LiteRtChildRecords(
@@ -295,7 +298,7 @@ Future<void> runS24LiteRtQualification(
             'event': 'native_answer_observation',
             'fixture': name,
             'model_sha256': s24LiteRtCpuHash,
-            'answer_capture': captureS24LiteRtBytes(utf8.encode(answer)),
+            'answer_capture': captureCompactS24LiteRtBytes(utf8.encode(answer)),
             'native_finish': 'not_exposed_by_sync_native_control',
           });
           requireS24LiteRtAnswer(name, utf8.encode(answer));
@@ -307,8 +310,12 @@ Future<void> runS24LiteRtQualification(
             'fixtures': {
               for (final name in ['hello', 'arithmetic'])
                 name: {
-                  'cpu': captureS24LiteRtBytes(nativeAnswers['cpu']![name]!),
-                  'gpu': captureS24LiteRtBytes(nativeAnswers['gpu']![name]!),
+                  'cpu': captureCompactS24LiteRtBytes(
+                    nativeAnswers['cpu']![name]!,
+                  ),
+                  'gpu': captureCompactS24LiteRtBytes(
+                    nativeAnswers['gpu']![name]!,
+                  ),
                   'byte_equal':
                       base64Encode(nativeAnswers['cpu']![name]!) ==
                       base64Encode(nativeAnswers['gpu']![name]!),
@@ -406,7 +413,7 @@ Future<void> runS24LiteRtQualification(
         record({
           'event': 'public_chunk',
           'boundary': 'default_service_UTF8',
-          'capture': captureS24LiteRtBytes(chunk),
+          'capture': captureCompactS24LiteRtBytes(chunk),
         });
       }
     } on Object catch (error) {
@@ -507,7 +514,7 @@ Future<void> runS24LiteRtQualification(
                 record({
                   'event': 'public_chunk',
                   'boundary': 'default_service_UTF8',
-                  'capture': captureS24LiteRtBytes(chunk),
+                  'capture': captureCompactS24LiteRtBytes(chunk),
                 });
               }
               record({
@@ -530,7 +537,7 @@ Future<void> runS24LiteRtQualification(
                 processCpuDelegateInitialization = {
                   'pid': pid,
                   'lifetime_id': prefix,
-                  'capture': captureS24LiteRtBytes(native),
+                  'capture': captureCompactS24LiteRtBytes(native),
                 };
                 record({
                   'event': 'process_cpu_delegate_initialization',
@@ -544,7 +551,7 @@ Future<void> runS24LiteRtQualification(
                 'requested_device': device.name,
                 'model_profile': profileName,
                 'model_sha256': (selectedProfile['model'] as Map)['sha256'],
-                'answer_capture': captureS24LiteRtBytes(bytes),
+                'answer_capture': captureCompactS24LiteRtBytes(bytes),
                 'native_finish': 'not_exposed_by_default_service',
                 'native_settlement': selected.nativeSettlement.name,
                 'backend_name': selected.getActiveBackendName(),
@@ -566,7 +573,7 @@ Future<void> runS24LiteRtQualification(
                   'libLiteRtLm.so',
                 ),
                 'native_stderr': {
-                  ...captureS24LiteRtBytes(native),
+                  ...captureCompactS24LiteRtBytes(native),
                   'lifetime_id': prefix,
                   'empty_at_load': true,
                 },
@@ -636,7 +643,7 @@ Future<void> runS24LiteRtQualification(
               record({
                 'event': 'public_chunk',
                 'boundary': 'default_service_UTF8',
-                'capture': captureS24LiteRtBytes(chunk),
+                'capture': captureCompactS24LiteRtBytes(chunk),
               });
               if (!cancelled && chunk.isNotEmpty) {
                 selected.cancelGeneration();
@@ -652,7 +659,7 @@ Future<void> runS24LiteRtQualification(
             record({
               'event': 'public_cancel',
               'cancel_sent': cancelled,
-              'answer_capture': captureS24LiteRtBytes(
+              'answer_capture': captureCompactS24LiteRtBytes(
                 chunks.expand((value) => value).toList(),
               ),
               'native_finish': 'not_exposed_by_default_service',
@@ -676,7 +683,7 @@ Future<void> runS24LiteRtQualification(
                   'native_gpu_initialization_backend':
                       s24LiteRtGpuInitializationBackend(log),
                   'native_stderr': {
-                    ...captureS24LiteRtBytes(native),
+                    ...captureCompactS24LiteRtBytes(native),
                     'lifetime_id': prefix,
                     'empty_at_load': true,
                   },
@@ -710,7 +717,9 @@ Future<void> runS24LiteRtQualification(
             'event': 'lifetime_closed',
             'route': route,
             'lifetime': lifetime,
-            'native_stderr': captureS24LiteRtBytes(await stderr.readAsBytes()),
+            'native_stderr': captureCompactS24LiteRtBytes(
+              await stderr.readAsBytes(),
+            ),
           });
           active = null;
         }
