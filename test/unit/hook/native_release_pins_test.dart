@@ -151,7 +151,6 @@ void main() {
           'CLiteRTLM',
           'LiteRtLm',
           'LiteRtMetalAccelerator',
-          'LiteRtTopKMetalSampler',
         ]),
         reason: bundle,
       );
@@ -165,7 +164,7 @@ void main() {
     );
   });
 
-  test('desktop bundle specs agree with the runtime required lists', () {
+  test('desktop bundle specs agree with the C API 1.0 required lists', () {
     const desktopBundles = {
       'macos-arm64': Abi.macosArm64,
       'linux-arm64': Abi.linuxArm64,
@@ -177,10 +176,33 @@ void main() {
         (spec) => spec.bundle == entry.key,
       );
       expect(
-        liteRtLmRequiredLibrariesForAbi(entry.value),
+        liteRtLmRequiredLibrariesForAbi(entry.value, cApiV1: true),
         unorderedEquals(spec.requiredLibraries),
         reason: entry.key,
       );
+    }
+  });
+
+  test('legacy overrides retain their prebuilt sampler requirements', () {
+    const samplers = {
+      Abi.macosArm64: [
+        'libLiteRtTopKMetalSampler.dylib',
+        'libLiteRtTopKWebGpuSampler.dylib',
+      ],
+      Abi.linuxArm64: ['libLiteRtTopKWebGpuSampler.so'],
+      Abi.linuxX64: ['libLiteRtTopKWebGpuSampler.so'],
+      Abi.windowsX64: ['libLiteRtTopKWebGpuSampler.dll'],
+    };
+    for (final entry in samplers.entries) {
+      final modern = liteRtLmRequiredLibrariesForAbi(entry.key, cApiV1: true);
+      expect(
+        liteRtLmRequiredLibrariesForAbi(entry.key),
+        unorderedEquals([...modern, ...entry.value]),
+        reason: entry.key.toString(),
+      );
+      for (final sampler in entry.value) {
+        expect(modern, isNot(contains(sampler)), reason: entry.key.toString());
+      }
     }
   });
 
