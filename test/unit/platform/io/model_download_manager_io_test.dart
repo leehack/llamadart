@@ -969,6 +969,115 @@ void main() {
       },
     );
 
+    group('after the cache root moves, as an iOS app update does', () {
+      late String oldRoot;
+      late String newRoot;
+
+      setUp(() {
+        oldRoot = path.join(tempDir.path, 'AAAA', 'Library', 'Caches');
+        newRoot = path.join(tempDir.path, 'BBBB', 'Library', 'Caches');
+      });
+
+      Future<void> moveContainer() => Directory(
+        path.join(tempDir.path, 'AAAA'),
+      ).rename(path.join(tempDir.path, 'BBBB'));
+
+      test('cacheOnly reuses the entry and records its new path', () async {
+        final source = ModelSource.url(server.modelUri, fileName: 'tiny.gguf');
+        server.payload = utf8.encode('moved-model');
+        final first = await DefaultModelDownloadManager(
+          defaultCacheDirectory: oldRoot,
+        ).ensureModel(source);
+        await moveContainer();
+        final manager = DefaultModelDownloadManager(
+          defaultCacheDirectory: newRoot,
+        );
+
+        server.payload = utf8.encode('remote-newer-model');
+        final moved = await manager.ensureModel(
+          source,
+          options: ModelLoadOptions(cachePolicy: ModelCachePolicy.cacheOnly),
+        );
+
+        final newPath = path.join(
+          newRoot,
+          path.relative(first.filePath, from: oldRoot),
+        );
+        expect(server.requestCount, 1);
+        expect(moved.filePath, newPath);
+        expect(File(moved.filePath).readAsStringSync(), 'moved-model');
+        final metadata =
+            jsonDecode(
+                  File(
+                    path.join(path.dirname(newPath), 'metadata.json'),
+                  ).readAsStringSync(),
+                )
+                as Map<String, dynamic>;
+        expect(metadata['file_path'], newPath);
+        expect((await manager.list()).single.filePath, newPath);
+      });
+
+      test('a recorded length mismatch still downloads again', () async {
+        final source = ModelSource.url(server.modelUri, fileName: 'tiny.gguf');
+        server.payload = utf8.encode('moved-model');
+        final first = await DefaultModelDownloadManager(
+          defaultCacheDirectory: oldRoot,
+        ).ensureModel(source);
+        await moveContainer();
+        final metadataFile = File(
+          path.join(
+            newRoot,
+            path.relative(path.dirname(first.filePath), from: oldRoot),
+            'metadata.json',
+          ),
+        );
+        final metadata =
+            jsonDecode(metadataFile.readAsStringSync()) as Map<String, dynamic>;
+        metadata['bytes'] = 1024 * 1024;
+        await metadataFile.writeAsString(jsonEncode(metadata));
+
+        server.payload = utf8.encode('redownloaded-model');
+        final refreshed = await DefaultModelDownloadManager(
+          defaultCacheDirectory: newRoot,
+        ).ensureModel(source);
+
+        expect(server.requestCount, 2);
+        expect(
+          File(refreshed.filePath).readAsStringSync(),
+          'redownloaded-model',
+        );
+      });
+
+      test('a stored sha256 mismatch still downloads again', () async {
+        final source = ModelSource.url(server.modelUri, fileName: 'tiny.gguf');
+        server.payload = utf8.encode('checksummed-model');
+        final first =
+            await DefaultModelDownloadManager(
+              defaultCacheDirectory: oldRoot,
+            ).ensureModel(
+              source,
+              options: ModelLoadOptions(
+                sha256: sha256.convert(server.payload).toString(),
+              ),
+            );
+        await moveContainer();
+        await File(
+          path.join(newRoot, path.relative(first.filePath, from: oldRoot)),
+        ).writeAsString('checksum-mismatch');
+
+        server.payload = utf8.encode('redownloaded-model');
+        final refreshed = await DefaultModelDownloadManager(
+          defaultCacheDirectory: newRoot,
+        ).ensureModel(source);
+
+        expect(server.requestCount, 2);
+        expect(
+          File(refreshed.filePath).readAsStringSync(),
+          'redownloaded-model',
+        );
+      });
+    });
+
     test(
       'cache hit redownloads when metadata byte length does not match file',
       () async {
@@ -1162,7 +1271,7 @@ void main() {
     });
 
     test(
-      'ignores metadata whose file path points outside its cache entry',
+      'uses the current entry instead of a saved outside file path',
       () async {
         final manager = DefaultModelDownloadManager(
           defaultCacheDirectory: tempDir.path,
@@ -1183,11 +1292,13 @@ void main() {
         metadata['file_path'] = outsideFile.path;
         metadataFile.writeAsStringSync(jsonEncode(metadata));
 
-        expect(await manager.list(), isEmpty);
+        expect((await manager.list()).single.filePath, entry.filePath);
+        expect((await manager.get(source.cacheKey))?.filePath, entry.filePath);
 
         await manager.remove(source.cacheKey);
 
-        expect(outsideFile.existsSync(), isTrue);
+        expect(File(entry.filePath).existsSync(), isFalse);
+        expect(outsideFile.readAsStringSync(), 'outside');
       },
     );
 

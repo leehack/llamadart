@@ -96,6 +96,62 @@ void main() {
     expect(result.exitCode, 0, reason: '${result.stderr}');
   }
 
+  group('after the store directory moves', () {
+    Future<void> moveStore() async {
+      final previous = root;
+      final moved = '${root.path}_moved';
+      await previous.rename(moved);
+      root = Directory(moved);
+    }
+
+    test('inventory and final release work before another ensure', () async {
+      final a = await open('app.a');
+      final entry = await a.ensure(pair);
+      await (await open('app.b')).ensure(pair);
+      await moveStore();
+      final movedA = await open('app.a');
+      final movedB = await open('app.b');
+      final listed = (await movedA.entries()).single;
+      final files = await movedA.list();
+      expect(files, hasLength(2));
+      expect(listed.id, entry.id);
+      expect(listed.references.map((r) => r.appId).toSet(), {'app.a', 'app.b'});
+      for (final file in [listed.model, listed.projector!]) {
+        expect(p.isWithin(movedA.directory, file.filePath), isTrue);
+        expect((await movedA.get(file.cacheKey))?.filePath, file.filePath);
+      }
+      await movedA.release(entry.id);
+      expect(File(listed.model.filePath).existsSync(), isTrue);
+      expect(await movedA.prune(maxBytes: 0), isEmpty);
+      await movedB.release(entry.id);
+      expect(File(listed.model.filePath).existsSync(), isFalse);
+      expect(File(listed.projector!.filePath).existsSync(), isFalse);
+      expect(await movedB.entries(), isEmpty);
+      expect(server.requests['/model.gguf'], 1);
+      expect(server.requests['/mmproj.gguf'], 1);
+    });
+
+    test('prune collects relocated unreferenced files before ensure', () async {
+      final a = await open('app.a');
+      final entry = await a.ensure(pair);
+      final refs = Directory(p.join(root.path, 'entries', entry.id, 'refs'));
+      await refs.delete(recursive: true);
+      await moveStore();
+      final moved = await open('collector');
+      final files = await moved.list();
+      expect((await moved.prune(maxBytes: 0)).map((e) => e.fileName).toSet(), {
+        'model.gguf',
+        'mmproj.gguf',
+      });
+      for (final file in files) {
+        expect(File(file.filePath).existsSync(), isFalse);
+      }
+      expect(await moved.entries(), isEmpty);
+      expect(server.requests['/model.gguf'], 1);
+      expect(server.requests['/mmproj.gguf'], 1);
+    });
+  });
+
   group('ensure', () {
     test('keeps a model and its projector as one referenced entry', () async {
       final store = await open('app.a');
@@ -1082,23 +1138,59 @@ void main() {
         defaultCacheDirectory: files,
       ).ensureModel(single('/other.gguf').source);
       File(stale.filePath).deleteSync();
-      // Reading this FIFO holds the store's listing of its files until the
-      // test writes to it, so the files become unreadable in between.
-      final gate = File(p.join(files, 'gate', 'metadata.json'))
-        ..parent.createSync();
-      expect((await Process.run('mkfifo', [gate.path])).exitCode, 0);
+      final metadata = File(p.join(p.dirname(stale.filePath), 'metadata.json'));
+      final metadataBytes = metadata.readAsBytesSync();
+      final realFiles = Directory(files);
+      final systemIO = _SystemIO();
+      var listings = 0;
+      var completedInventories = 0;
+      var failedListings = 0;
       addTearDown(() => Process.run('chmod', ['755', files]));
 
-      final pruning = a.prune();
-      final writer = await gate.open(mode: FileMode.writeOnly);
-      await Process.run('chmod', ['333', files]);
-      await writer.close();
+      try {
+        final removed = await IOOverrides.runZoned(
+          () => a.prune(),
+          createDirectory: (path) {
+            final directory = systemIO.createDirectory(path);
+            if (!p.equals(p.normalize(p.absolute(path)), files)) {
+              return directory;
+            }
+            return _AfterListDirectory(
+              directory,
+              onStart: () => listings++,
+              onFailure: () => failedListings++,
+              onComplete: () async {
+                if (++completedInventories != 1) {
+                  return;
+                }
+                // Revoke listing permission after store inventory, before the
+                // core cleanup pass. Metadata must remain a regular file.
+                expect(
+                  (await Process.run('chmod', ['333', files])).exitCode,
+                  0,
+                );
+                await expectLater(
+                  realFiles.list().toList(),
+                  throwsA(isA<FileSystemException>()),
+                );
+              },
+            );
+          },
+        );
 
-      expect(await pruning, isEmpty);
-      await Process.run('chmod', ['755', files]);
-      gate.parent.deleteSync(recursive: true);
+        expect(removed, isEmpty);
+        expect(completedInventories, 1);
+        expect(listings, 2);
+        expect(failedListings, 1);
+        expect(metadata.readAsBytesSync(), metadataBytes);
+        expect(Directory(p.dirname(stale.filePath)).existsSync(), isTrue);
+      } finally {
+        expect((await Process.run('chmod', ['755', files])).exitCode, 0);
+      }
+
       expect((await a.prune()).map((e) => e.fileName), ['other.gguf']);
-    }, skip: Platform.isWindows ? 'POSIX permissions and FIFOs' : false);
+      expect(Directory(p.dirname(stale.filePath)).existsSync(), isFalse);
+    }, skip: Platform.isWindows ? 'POSIX permissions' : false);
 
     test('prune deletes leftover entries without references', () async {
       final a = await open('app.a');
@@ -1190,4 +1282,51 @@ String _dartExecutable() {
     return p.join(flutterRoot, 'bin', Platform.isWindows ? 'dart.bat' : 'dart');
   }
   return 'dart';
+}
+
+final class _SystemIO extends IOOverrides {}
+
+class _AfterListDirectory implements Directory {
+  _AfterListDirectory(
+    this.directory, {
+    required this.onStart,
+    required this.onComplete,
+    required this.onFailure,
+  });
+
+  final Directory directory;
+  final void Function() onStart;
+  final Future<void> Function() onComplete;
+  final void Function() onFailure;
+
+  @override
+  String get path => directory.path;
+  @override
+  Directory get absolute => directory.absolute;
+  @override
+  Future<bool> exists() => directory.exists();
+  @override
+  Future<String> resolveSymbolicLinks() => directory.resolveSymbolicLinks();
+  @override
+  Stream<FileSystemEntity> list({
+    bool recursive = false,
+    bool followLinks = true,
+  }) async* {
+    onStart();
+    try {
+      await for (final entity in directory.list(
+        recursive: recursive,
+        followLinks: followLinks,
+      )) {
+        yield entity;
+      }
+    } on FileSystemException {
+      onFailure();
+      rethrow;
+    }
+    await onComplete();
+  }
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => throw UnimplementedError();
 }
