@@ -786,7 +786,37 @@ class DefaultModelDownloadManager implements ModelDownloadManager {
   }
 
   String _cacheLockKey(Directory cacheDirectory) {
-    return path.normalize(path.absolute(cacheDirectory.path));
+    var ancestor = path.normalize(path.absolute(cacheDirectory.path));
+    final missing = <String>[];
+    try {
+      while (true) {
+        try {
+          final resolved = Directory(ancestor).resolveSymbolicLinksSync();
+          return path.normalize(path.joinAll([resolved, ...missing.reversed]));
+        } on FileSystemException catch (error) {
+          final notFound =
+              error.osError?.errorCode == 2 ||
+              (Platform.isWindows && error.osError?.errorCode == 3);
+          // A new cache root must keep its identity after it is created.
+          // Resolve its existing ancestor instead of using alias spelling.
+          if (!notFound ||
+              FileSystemEntity.typeSync(ancestor, followLinks: false) !=
+                  FileSystemEntityType.notFound) {
+            rethrow;
+          }
+          final parent = path.dirname(ancestor);
+          if (path.equals(parent, ancestor)) {
+            rethrow;
+          }
+          missing.add(path.basename(ancestor));
+          ancestor = parent;
+        }
+      }
+    } on FileSystemException {
+      throw LlamaStateException(
+        'Cannot resolve the model cache directory for locking.',
+      );
+    }
   }
 
   void _rejectUnsupportedLocalOptions(ModelLoadOptions options) {

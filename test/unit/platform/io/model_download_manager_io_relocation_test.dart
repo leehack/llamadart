@@ -1,6 +1,7 @@
 @TestOn('vm')
 library;
 
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -369,6 +370,222 @@ void main() {
     skip: Platform.isWindows ? 'Symbolic links need privileges' : false,
   );
 
+  for (final spelling in [
+    'same alias',
+    'alias to physical',
+    'physical to alias',
+    'system alias',
+  ]) {
+    for (final operation in ['remove', 'prune', 'clear']) {
+      test(
+        '$operation keeps an active $spelling entry when OS locks are unavailable',
+        () async {
+          final alias = Link(path.join(sandbox.path, 'selected'))
+            ..createSync(root.path);
+          if (spelling == 'system alias' &&
+              (!Platform.isMacOS || !root.path.startsWith('/private/'))) {
+            markTestSkipped('No macOS /private system-directory alias');
+            return;
+          }
+          final ensureRoot = spelling == 'system alias'
+              ? root.path.substring('/private'.length)
+              : spelling == 'physical to alias'
+              ? root.path
+              : alias.path;
+          final removalRoot =
+              spelling == 'alias to physical' || spelling == 'system alias'
+              ? root.path
+              : alias.path;
+          final downloading = DefaultModelDownloadManager(
+            defaultCacheDirectory: ensureRoot,
+          );
+          final removing = DefaultModelDownloadManager(
+            defaultCacheDirectory: removalRoot,
+          );
+          final previousLocker = modelCacheEntryLocker;
+          addTearDown(() => modelCacheEntryLocker = previousLocker);
+          final entered = Completer<void>();
+          final release = Completer<ModelCacheEntryLock?>();
+          var held = false;
+          modelCacheEntryLocker =
+              (lockPath, {required throwIfCancelled}) async {
+                if (!held &&
+                    path.basename(lockPath) ==
+                        '${source.cacheDirectoryName}.lock') {
+                  held = true;
+                  entered.complete();
+                  return release.future;
+                }
+                return null;
+              };
+          final ensuring = downloading
+              .ensureModel(
+                source,
+                options: ModelLoadOptions(
+                  cachePolicy: ModelCachePolicy.cacheOnly,
+                ),
+              )
+              .then<Object>((entry) => entry, onError: (Object error) => error);
+          try {
+            await entered.future.timeout(const Duration(seconds: 5));
+            if (operation == 'prune') {
+              expect(await removing.prune(maxAge: Duration.zero), isEmpty);
+            } else {
+              await expectLater(
+                operation == 'remove'
+                    ? removing.remove(source.cacheKey)
+                    : removing.clear(),
+                throwsA(isA<ModelCacheEntryInUseException>()),
+              );
+            }
+            expect(modelFile.readAsBytesSync(), payload);
+          } finally {
+            release.complete(null);
+            expect(await ensuring, isA<ModelCacheEntry>());
+          }
+        },
+        skip: Platform.isWindows ? 'Symbolic links need privileges' : false,
+      );
+    }
+  }
+
+  for (final operation in ['remove', 'prune', 'clear']) {
+    test(
+      '$operation keeps the lock identity when a new aliased root appears',
+      () async {
+        final alias = Link(path.join(sandbox.path, 'selected'))
+          ..createSync(sandbox.path);
+        final selectedRoot = path.join(alias.path, 'new', 'cache');
+        final physicalRoot = path.join(sandbox.path, 'new', 'cache');
+        final downloading = DefaultModelDownloadManager(
+          defaultCacheDirectory: selectedRoot,
+        );
+        final removing = DefaultModelDownloadManager(
+          defaultCacheDirectory: physicalRoot,
+        );
+        final previousLocker = modelCacheEntryLocker;
+        addTearDown(() => modelCacheEntryLocker = previousLocker);
+        final entered = Completer<void>();
+        final release = Completer<ModelCacheEntryLock?>();
+        var held = false;
+        final currentFile = File(
+          path.join(selectedRoot, source.cacheDirectoryName, source.fileName),
+        );
+        modelCacheEntryLocker = (lockPath, {required throwIfCancelled}) async {
+          if (!held &&
+              path.basename(lockPath) == '${source.cacheDirectoryName}.lock') {
+            held = true;
+            // The entry appears after ensure selected its lock key for a root
+            // that did not exist yet, as a concurrent writer can complete it.
+            currentFile.parent.createSync(recursive: true);
+            currentFile.writeAsBytesSync(payload);
+            File(
+              path.join(currentFile.parent.path, 'metadata.json'),
+            ).writeAsBytesSync(metadataFile.readAsBytesSync());
+            entered.complete();
+            return release.future;
+          }
+          return null;
+        };
+        final client = _MemoryClient(
+          _MemoryResponse(Stream.value(payload), payload.length),
+        );
+        final ensuring = HttpOverrides.runZoned(
+          () => downloading.ensureModel(source),
+          createHttpClient: (_) => client,
+        ).then<Object>((entry) => entry, onError: (Object error) => error);
+        try {
+          await entered.future.timeout(const Duration(seconds: 5));
+          if (operation == 'prune') {
+            expect(await removing.prune(maxAge: Duration.zero), isEmpty);
+          } else {
+            await expectLater(
+              operation == 'remove'
+                  ? removing.remove(source.cacheKey)
+                  : removing.clear(),
+              throwsA(isA<ModelCacheEntryInUseException>()),
+            );
+          }
+          expect(currentFile.readAsBytesSync(), payload);
+        } finally {
+          release.complete(null);
+          expect(await ensuring, isA<ModelCacheEntry>());
+        }
+        expect(client.requests, 0);
+      },
+      skip: Platform.isWindows ? 'Symbolic links need privileges' : false,
+    );
+  }
+
+  test(
+    'remove keeps an active refresh through a root alias without OS locks',
+    () async {
+      final alias = Link(path.join(sandbox.path, 'selected'))
+        ..createSync(root.path);
+      final downloading = DefaultModelDownloadManager(
+        defaultCacheDirectory: alias.path,
+      );
+      final previousLocker = modelCacheEntryLocker;
+      addTearDown(() => modelCacheEntryLocker = previousLocker);
+      modelCacheEntryLocker = (lockPath, {required throwIfCancelled}) async =>
+          null;
+      final body = StreamController<List<int>>();
+      final entered = Completer<void>();
+      final refreshed = utf8.encode('refreshed fixture');
+      final firstChunk = refreshed.sublist(0, 4);
+      final refreshing = HttpOverrides.runZoned(
+        () => downloading.ensureModel(
+          source,
+          options: ModelLoadOptions(
+            cachePolicy: ModelCachePolicy.refresh,
+            maxRetries: 0,
+          ),
+          onProgress: (progress) {
+            if (!entered.isCompleted) entered.complete();
+          },
+        ),
+        createHttpClient: (_) =>
+            _MemoryClient(_MemoryResponse(body.stream, refreshed.length)),
+      ).then<Object>((entry) => entry, onError: (Object error) => error);
+      body.add(firstChunk);
+      try {
+        await entered.future.timeout(const Duration(seconds: 5));
+        await expectLater(
+          manager.remove(source.cacheKey),
+          throwsA(isA<ModelCacheEntryInUseException>()),
+        );
+        expect(modelFile.readAsBytesSync(), payload);
+      } finally {
+        body.add(refreshed.sublist(firstChunk.length));
+        await body.close();
+        expect(await refreshing, isA<ModelCacheEntry>());
+      }
+      expect(modelFile.readAsBytesSync(), refreshed);
+    },
+    skip: Platform.isWindows ? 'Symbolic links need privileges' : false,
+  );
+
+  test(
+    'an unresolvable root does not acquire a different lexical lock key',
+    () async {
+      final missing = path.join(sandbox.path, 'missing');
+      final alias = Link(path.join(sandbox.path, 'selected'))
+        ..createSync(missing);
+      final unresolved = DefaultModelDownloadManager(
+        defaultCacheDirectory: alias.path,
+      );
+      await expectLater(
+        unresolved.ensureModel(
+          source,
+          options: ModelLoadOptions(cachePolicy: ModelCachePolicy.cacheOnly),
+        ),
+        throwsA(isA<LlamaStateException>()),
+      );
+      expect(Directory(missing).existsSync(), isFalse);
+    },
+    skip: Platform.isWindows ? 'Symbolic links need privileges' : false,
+  );
+
   test(
     'prune revalidates relocated metadata after acquiring its entry lock',
     () async {
@@ -391,4 +608,72 @@ void main() {
       expect(modelFile.readAsBytesSync(), payload);
     },
   );
+}
+
+class _MemoryHeaders implements HttpHeaders {
+  @override
+  String? value(String name) => null;
+  @override
+  void set(String name, Object value, {bool preserveHeaderCase = false}) {}
+  @override
+  dynamic noSuchMethod(Invocation invocation) => throw UnimplementedError();
+}
+
+class _MemoryResponse extends Stream<List<int>> implements HttpClientResponse {
+  _MemoryResponse(this.body, this.contentLength);
+  final Stream<List<int>> body;
+  @override
+  final int contentLength;
+  @override
+  int get statusCode => HttpStatus.ok;
+  @override
+  HttpClientResponseCompressionState get compressionState =>
+      HttpClientResponseCompressionState.notCompressed;
+  @override
+  HttpHeaders get headers => _MemoryHeaders();
+  @override
+  StreamSubscription<List<int>> listen(
+    void Function(List<int>)? onData, {
+    Function? onError,
+    void Function()? onDone,
+    bool? cancelOnError,
+  }) => body.listen(
+    onData,
+    onError: onError,
+    onDone: onDone,
+    cancelOnError: cancelOnError,
+  );
+  @override
+  dynamic noSuchMethod(Invocation invocation) => throw UnimplementedError();
+}
+
+class _MemoryRequest implements HttpClientRequest {
+  _MemoryRequest(this.response);
+  final HttpClientResponse response;
+  @override
+  set followRedirects(bool value) {}
+  @override
+  Future<HttpClientResponse> close() async => response;
+  @override
+  HttpHeaders get headers => _MemoryHeaders();
+  @override
+  dynamic noSuchMethod(Invocation invocation) => throw UnimplementedError();
+}
+
+class _MemoryClient implements HttpClient {
+  _MemoryClient(this.response);
+  final HttpClientResponse response;
+  int requests = 0;
+  @override
+  set connectionTimeout(Duration? value) {}
+  @override
+  Future<HttpClientRequest> getUrl(Uri url) async {
+    requests++;
+    return _MemoryRequest(response);
+  }
+
+  @override
+  void close({bool force = false}) {}
+  @override
+  dynamic noSuchMethod(Invocation invocation) => throw UnimplementedError();
 }
