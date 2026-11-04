@@ -157,7 +157,14 @@ parsing. Directory identity and file snapshots are checked before and after read
 and after parsing; a final bounded reread verifies every admitted hash. Replaced,
 deleted, resized or rewritten journals fail, including canonical or parent swaps.
 The parser consumes only the bounded admitted canonical bytes, never a reopened
-journal path. All descriptors close on success or error.
+journal path. Comparisons fill bounded logical blocks across legal short reads;
+individual `read` boundaries cannot make identical aliases differ. Final
+rediscovery repeats the alias cap, file admission checks and exact alias-set and
+identity checks. A streaming digest snapshots the identities and content-change
+times of every directory inside the collection, including directories without
+an original alias. New aliases and transient directory-content changes fail the
+collection; shared ancestors outside it are excluded. All descriptors close on
+success or error.
 
 This private host decoder requires POSIX `O_NOFOLLOW`, `O_DIRECTORY`,
 `O_NONBLOCK`, and descriptor-relative `open`/nonsymlink `stat`. A host without

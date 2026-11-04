@@ -287,6 +287,87 @@ class DescriptorAdmissionTests(AliasFixture):
         with patch.object(decoder, 'decode', side_effect=decode):
             self.assert_rejected('Collection directory changed')
 
+    def test_new_alias_in_existing_unadmitted_subtree_rejects_whole_collection(self):
+        original_decode = decoder.decode
+        for kind in ('different', 'identical', 'empty', 'oversized', 'symlink'):
+            with self.subTest(kind=kind):
+                canonical = self.install()
+                target = self.root / 'z' / self.plan['run_id'] / canonical.name
+                target.parent.mkdir(parents=True)
+                def decode(*args, **kwargs):
+                    result = original_decode(*args, **kwargs)
+                    raw = canonical.read_bytes()
+                    if kind == 'symlink': target.symlink_to(canonical)
+                    elif kind == 'oversized':
+                        with target.open('wb') as stream: stream.truncate(decoder.JOURNAL_LIMIT + 1)
+                    else:
+                        target.write_bytes(raw if kind == 'identical' else b'' if kind == 'empty' else raw + b' ')
+                    return result
+                with patch.object(decoder, 'decode', side_effect=decode):
+                    self.assert_rejected()
+                self.assertTrue(target.exists())
+                shutil.rmtree(self.root / 'a'); shutil.rmtree(self.root / 'z')
+
+    def test_final_discovery_exact_alias_set_is_checked_independently_of_metadata(self):
+        canonical = self.install()
+        original_decode = decoder.decode
+        def decode(*args, **kwargs):
+            result = original_decode(*args, **kwargs)
+            self.install('z')
+            return result
+        with patch.object(decoder, 'decode', side_effect=decode), \
+             patch.object(decoder, 'directory_identity', return_value='forced-stable-metadata'):
+            self.assert_rejected('alias set changed')
+        self.assertTrue(canonical.is_file())
+
+    def test_transient_unadmitted_subtree_content_change_is_detected(self):
+        canonical = self.install()
+        target = self.root / 'z' / self.plan['run_id'] / canonical.name
+        target.parent.mkdir(parents=True)
+        original_decode = decoder.decode
+        def decode(*args, **kwargs):
+            result = original_decode(*args, **kwargs)
+            target.write_bytes(canonical.read_bytes() + b' ')
+            target.unlink()
+            return result
+        with patch.object(decoder, 'decode', side_effect=decode):
+            self.assert_rejected('directory contents changed')
+
+    def test_shared_ancestor_content_changes_do_not_reject_collection(self):
+        self.install()
+        original_decode = decoder.decode
+        def decode(*args, **kwargs):
+            result = original_decode(*args, **kwargs)
+            # The sibling changes the shared temp parent's contents, not ours.
+            with tempfile.TemporaryDirectory(dir=self.root.parent): pass
+            return result
+        with patch.object(decoder, 'decode', side_effect=decode):
+            result = self.inspect()
+        self.assertTrue(result['strict_raw_decode_complete'], result)
+
+    def test_independent_non_EOF_short_reads_accept_identical_aliases(self):
+        self.install('a'); self.install('z')
+        original_read = os.read
+        original_admit = decoder.admit_journal
+        for canonical_cap, alias_cap in ((64 * 1024, 7), (13, 7), (1, 64 * 1024)):
+            with self.subTest(canonical_cap=canonical_cap, alias_cap=alias_cap):
+                caps = {}; calls = []
+                def admit(candidate, stack):
+                    journal = original_admit(candidate, stack)
+                    caps[journal.fd] = canonical_cap if candidate.path.parts[-3] == 'a' else alias_cap
+                    return journal
+                def read(fd, amount):
+                    calls.append(amount)
+                    self.assertLessEqual(amount, 64 * 1024)
+                    return original_read(fd, min(amount, caps[fd]))
+                with patch.object(decoder, 'admit_journal', side_effect=admit), \
+                     patch.object(decoder.os, 'read', side_effect=read):
+                    result = self.inspect()
+                self.assertTrue(result['strict_raw_decode_complete'], result)
+                self.assertFalse(result['qualified'])
+                self.assertTrue(calls)
+                self.assertEqual(result['journal_aliases'][0]['sha256'], result['journal_aliases'][1]['sha256'])
+
     def test_required_descriptor_primitives_fail_closed(self):
         self.install()
         with patch.object(decoder.os, 'supports_dir_fd', set()):
@@ -302,7 +383,7 @@ class DescriptorAdmissionTests(AliasFixture):
     def test_descriptors_close_on_success_partial_admission_compare_read_and_parse_error(self):
         original_open = os.open
         original_supports = os.supports_dir_fd
-        for stage in ('success', 'partial-admission', 'compare', 'read', 'parse'):
+        for stage in ('success', 'partial-admission', 'compare', 'read', 'parse', 'rediscovery'):
             with self.subTest(stage=stage):
                 self.install('a'); alias = self.install('z'); opened = []
                 def open_fd(*args, **kwargs):
@@ -314,6 +395,10 @@ class DescriptorAdmissionTests(AliasFixture):
                     if stage == 'compare': alias.write_bytes(alias.read_bytes() + b' ')
                     if stage == 'read': stack.enter_context(patch.object(decoder.os, 'read', side_effect=OSError('injected read error')))
                     if stage == 'parse': stack.enter_context(patch.object(decoder, 'decode', side_effect=ValueError('injected parse error')))
+                    if stage == 'rediscovery':
+                        original_discover = decoder.journal_aliases
+                        discovery = original_discover(self.root, self.plan['run_id'])
+                        stack.enter_context(patch.object(decoder, 'journal_aliases', side_effect=[discovery, ValueError('injected final discovery error')]))
                     result = self.inspect()
                 self.assertEqual(result['strict_raw_decode_complete'], stage == 'success', result)
                 self.assertTrue(opened)

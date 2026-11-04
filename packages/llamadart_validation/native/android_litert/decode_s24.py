@@ -239,7 +239,9 @@ def file_identity(info):
             info.st_size, info.st_mtime_ns, info.st_ctime_ns)
 
 def directory_identity(info):
-    return (info.st_dev, info.st_ino, info.st_mode)
+    # Only collection directories use this snapshot, never shared ancestors.
+    return (info.st_dev, info.st_ino, info.st_mode, info.st_nlink,
+            info.st_size, info.st_mtime_ns, info.st_ctime_ns)
 
 @dataclass
 class JournalCandidate:
@@ -248,11 +250,24 @@ class JournalCandidate:
     parents: tuple
 
 
+@dataclass
+class JournalDiscovery:
+    candidates: list
+    directories_sha256: str
+
+
 def journal_aliases(directory, run_id):
     root_info = directory.lstat()
     require(stat.S_ISDIR(root_info.st_mode), 'Invalid collection directory')
-    journals = []
+    journals = []; directory_hash = hashlib.sha256()
     for parent, directories, files in os.walk(directory, followlinks=False, onerror=collection_walk_error):
+        directories.sort()
+        parent_path = Path(parent)
+        parent_info = parent_path.lstat()
+        require(stat.S_ISDIR(parent_info.st_mode), 'Collection directory changed')
+        directory_hash.update(json.dumps([parent_path.relative_to(directory).as_posix(),
+                                         directory_identity(parent_info)], separators=(',', ':')).encode())
+        directory_hash.update(b'\n')
         for name in directories:
             require(not (Path(parent) / name).is_symlink(), 'Symlink directory in collection')
         if 's24-litert-public.jsonl' in files or 's24-litert-public.jsonl' in directories:
@@ -271,7 +286,9 @@ def journal_aliases(directory, run_id):
             journals.append(JournalCandidate(path, info, tuple(parents)))
             require(len(journals) <= MAX_JOURNAL_ALIASES, 'Journal alias count limit exceeded')
     require(journals, 'Missing run journal')
-    return sorted(journals, key=lambda candidate: candidate.path.relative_to(directory).as_posix())
+    return JournalDiscovery(
+        sorted(journals, key=lambda candidate: candidate.path.relative_to(directory).as_posix()),
+        directory_hash.hexdigest())
 
 @dataclass
 class AdmittedJournal:
@@ -333,14 +350,24 @@ def read_journal(journal, *, retain=False):
     return {'bytes': size, 'sha256': hashed.hexdigest()}, raw
 
 
+def read_comparison_block(fd):
+    # A regular-file read may legally return fewer bytes before EOF.
+    block = bytearray()
+    while len(block) < 64 * 1024:
+        chunk = os.read(fd, 64 * 1024 - len(block))
+        if not chunk: break
+        block.extend(chunk)
+    return block
+
+
 def compare_journal_alias(canonical, alias):
     # Both descriptors stay pinned; compare exact bytes in constant-size buffers.
     canonical.verify(); alias.verify()
     os.lseek(canonical.fd, 0, os.SEEK_SET); os.lseek(alias.fd, 0, os.SEEK_SET)
     hashed = hashlib.sha256(); size = 0
     while True:
-        left = os.read(canonical.fd, 64 * 1024)
-        right = os.read(alias.fd, 64 * 1024)
+        left = read_comparison_block(canonical.fd)
+        right = read_comparison_block(alias.fd)
         size += len(right)
         require(size <= JOURNAL_LIMIT, 'Journal alias grew beyond original16MiB bound')
         require(left == right, 'Journal aliases differ in bytes/size')
@@ -355,7 +382,8 @@ def inspect_collection(directory, plan):
     result = {'qualified': False, 'journal_present': False, 'strict_raw_decode_complete': False,
               'journal_candidates': [], 'errors': []}
     try:
-        journals = journal_aliases(directory, plan['run_id'])
+        discovery = journal_aliases(directory, plan['run_id'])
+        journals = discovery.candidates
         result['journal_present'] = True
         result['journal_candidates'] = [candidate.path.relative_to(directory).as_posix() for candidate in journals]
         result['canonical_journal'] = result['journal_candidates'][0]
@@ -374,6 +402,14 @@ def inspect_collection(directory, plan):
             for journal, lock in zip(admitted, locks):
                 current_lock, _ = read_journal(journal)
                 require(current_lock == lock, 'Journal alias bytes changed after admission')
+            final_discovery = journal_aliases(directory, plan['run_id'])
+            require([candidate.path for candidate in final_discovery.candidates] ==
+                    [candidate.path for candidate in journals], 'Journal alias set changed after admission')
+            require(all(file_identity(before.info) == file_identity(after.info)
+                        for before, after in zip(journals, final_discovery.candidates)),
+                    'Journal alias identity/content changed after admission')
+            require(final_discovery.directories_sha256 == discovery.directories_sha256,
+                    'Collection directory contents changed after admission')
             for journal in admitted: journal.verify()
         result['decoded'] = decoded
         result['strict_raw_decode_complete'] = True
