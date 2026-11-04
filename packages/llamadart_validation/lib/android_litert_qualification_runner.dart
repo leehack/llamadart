@@ -371,7 +371,7 @@ Future<void> runS24LiteRtQualification(
   }
   phase('public-gpu-refusal');
   LiteRtLmService service() =>
-      LiteRtLmService(useTempCacheDir: false)..setLogLevel(LlamaLogLevel.info);
+      LiteRtLmService(useTempCacheDir: false)..setLogLevel(LlamaLogLevel.debug);
   ModelParams params(ComputeDevice device, String name) =>
       s24LiteRtPublicParams(device, cacheDir: cache(name).path);
   await run('public.legacy.gpu-refusal', (_) async {
