@@ -6,6 +6,8 @@ import 'package:llamadart_validation/android_consumer_profile.dart';
 import 'package:llamadart_validation/android_qualification_io.dart';
 import 'package:test/test.dart';
 
+import 'support/bounded_fixture_process.dart';
+
 void main() {
   final names =
       (jsonDecode(
@@ -137,6 +139,33 @@ void main() {
       addTearDown(() => temporary.deleteSync(recursive: true));
       final inventory = File('${temporary.path}/inventory.json')
         ..writeAsStringSync(jsonEncode({for (final name in names) name: {}}));
+      final sdk = File(Platform.resolvedExecutable).parent.parent.path;
+      final kernel = '${temporary.path}/consumer-plan.dill';
+      final compileWatch = Stopwatch()..start();
+      // Reuse the real CLI without recompiling its public imports per mutation.
+      // Invoke the compiler directly so its deadline owns the compiler itself.
+      final compiled = await runBoundedFixtureProcess(
+        '$sdk/bin/dartaotruntime${Platform.isWindows ? '.exe' : ''}',
+        [
+          '$sdk/bin/snapshots/gen_kernel_aot.dart.snapshot',
+          '--platform',
+          '$sdk/lib/_internal/vm_platform_strong.dill',
+          '--packages',
+          File('.dart_tool/package_config.json').absolute.path,
+          '--output',
+          kernel,
+          File('bin/android_consumer_profile_plan.dart').absolute.path,
+        ],
+        timeout: const Duration(seconds: 60),
+      );
+      expect(
+        compiled.exitCode,
+        0,
+        reason: '${compiled.stdout}\n${compiled.stderr}',
+      );
+      print(
+        'Consumer CLI kernel compilation ${compileWatch.elapsedMilliseconds} ms',
+      );
       for (final profile in ['full', 'compact']) {
         final plan = AndroidConsumerProfilePlan(profile);
         for (final variant in [
@@ -188,14 +217,15 @@ void main() {
               }),
             );
           final output = File('${temporary.path}/$profile-$variant.json');
-          final result = await Process.run(Platform.resolvedExecutable, [
-            '--packages=.dart_tool/package_config.json',
-            'bin/android_consumer_profile_plan.dart',
-            profile,
-            spec.path,
-            inventory.path,
-            output.path,
-          ]);
+          final watch = Stopwatch()..start();
+          final result = await runBoundedFixtureProcess(
+            Platform.resolvedExecutable,
+            [kernel, profile, spec.path, inventory.path, output.path],
+            timeout: const Duration(seconds: 10),
+          );
+          print(
+            'Consumer CLI $profile/$variant ${watch.elapsedMilliseconds} ms',
+          );
           expect(
             result.exitCode,
             variant == 'good' ? 0 : isNot(0),
