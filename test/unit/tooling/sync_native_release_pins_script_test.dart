@@ -86,7 +86,7 @@ for platform in manifest['platforms']:
         platform['artifactPaths'].append(f"bin/ios/{platform['arch']}/{provider}.framework/{provider}")
 release['assets'].append({'name': f'litert-lm-native-apple-{provider}-xcframework-{tag}.zip',
                           'digest': 'sha256:' + 'a' * 64})
-# The checked-in manifest links the v0.18.0 macOS GPU inventory.
+# Preserve the historical v0.18 macOS GPU inventory for this repair.
 for platform in manifest['platforms']:
     if platform['platform'] == 'macos' and platform['arch'] == 'arm64':
         for library, target in (('libLiteRt.dylib', 'LiteRt'),
@@ -96,7 +96,7 @@ for platform in manifest['platforms']:
             platform['artifactPaths'].append(f'bin/macos/arm64/{library}')
             release['assets'].append({'name': f'litert-lm-native-apple-{target}-xcframework-{tag}.zip',
                                       'digest': 'sha256:' + 'b' * 64})
-source = Path('packages/llamadart_litert_lm_flutter/darwin/llamadart_litert_lm_flutter/Package.swift').read_text()
+source = (fixtures / 'litert_lm_v018_samplers_Package.swift').read_text()
 print(prepare_litert_lm_package_swift(source, release=release, manifest=manifest, resolved_tag=tag))
 ''',
       ]);
@@ -1602,7 +1602,7 @@ printf '%s\\n' '{"tag_name":"v0.2.0-1","assets":[]}'
 
   test('keeps LiteRT release identity separate from cache version', () {
     final pins = File(_pinsPath).readAsStringSync();
-    expect(pins, contains("const liteRtLmReleaseTag = 'v0.18.1-4';"));
+    expect(pins, contains("const liteRtLmReleaseTag = 'v0.19.0';"));
     final hook = File('hook/build.dart').readAsStringSync();
     expect(hook, contains(r"'$liteRtLmReleaseTag'"));
     expect(hook, isNot(contains(r"v$liteRtLmVersion")));
