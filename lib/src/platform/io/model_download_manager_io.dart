@@ -792,14 +792,25 @@ class DefaultModelDownloadManager implements ModelDownloadManager {
       while (true) {
         try {
           final resolved = Directory(ancestor).resolveSymbolicLinksSync();
-          return path.normalize(path.joinAll([resolved, ...missing.reversed]));
+          if (FileSystemEntity.typeSync(resolved, followLinks: false) ==
+              FileSystemEntityType.directory) {
+            return path.normalize(
+              path.joinAll([resolved, ...missing.reversed]),
+            );
+          }
+          // Let directory creation report a file occupying part of the root.
+          missing.add(path.basename(ancestor));
+          ancestor = path.dirname(ancestor);
         } on FileSystemException catch (error) {
-          final notFound =
+          final missingPath =
               error.osError?.errorCode == 2 ||
-              (Platform.isWindows && error.osError?.errorCode == 3);
+              error.osError?.errorCode == 20 ||
+              (Platform.isWindows &&
+                  (error.osError?.errorCode == 3 ||
+                      error.osError?.errorCode == 267));
           // A new cache root must keep its identity after it is created.
           // Resolve its existing ancestor instead of using alias spelling.
-          if (!notFound ||
+          if (!missingPath ||
               FileSystemEntity.typeSync(ancestor, followLinks: false) !=
                   FileSystemEntityType.notFound) {
             rethrow;

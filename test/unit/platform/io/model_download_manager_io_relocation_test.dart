@@ -587,6 +587,26 @@ void main() {
   );
 
   test(
+    'a looping root fails safely without acquiring a lexical lock',
+    () async {
+      final alias = Link(path.join(sandbox.path, 'loop'));
+      alias.createSync(alias.path);
+      final unresolved = DefaultModelDownloadManager(
+        defaultCacheDirectory: alias.path,
+      );
+      await expectLater(
+        unresolved.ensureModel(
+          source,
+          options: ModelLoadOptions(cachePolicy: ModelCachePolicy.cacheOnly),
+        ),
+        throwsA(isA<LlamaStateException>()),
+      );
+      expect(modelFile.readAsBytesSync(), payload);
+    },
+    skip: Platform.isWindows ? 'Symbolic links need privileges' : false,
+  );
+
+  test(
     'prune revalidates relocated metadata after acquiring its entry lock',
     () async {
       await moveRoot();
