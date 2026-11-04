@@ -329,7 +329,7 @@ paths=(
     final hookContract =
         'const _liteRtLmCompanionManifestTemplateSha256 =\n'
         "    '$templateSha256';\n";
-    await hookFile.writeAsString(hookContract);
+    await hookFile.writeAsString(hookContract.replaceAll('\n', '\r\n'));
     await _writeCompanionDocs(
       root,
       'packages/llamadart_llama_cpp_flutter',
@@ -390,7 +390,10 @@ paths=(
       result.stdout,
       contains('LiteRT-LM SwiftPM template SHA-256 -> $templateSha256'),
     );
-    expect(await hookFile.readAsString(), hookContract);
+    expect(
+      (await hookFile.readAsString()).replaceAll('\r\n', '\n'),
+      hookContract,
+    );
     expect(
       _litertTemplateSha256(await litertSwiftFile.readAsString()),
       templateSha256,
