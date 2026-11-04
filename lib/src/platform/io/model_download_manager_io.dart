@@ -935,9 +935,12 @@ class DefaultModelDownloadManager implements ModelDownloadManager {
       return _recoverMetadataEntry(source, metadataFile, finalFile, options);
     }
 
+    // The stored path is not compared: an iOS app update moves the app's
+    // container, and this cache with it, to a new path. [finalFile] comes
+    // from the current root and is verified against the recorded length and
+    // checksum instead.
     if (entry.cacheKey != source.cacheKey ||
-        entry.fileName != source.fileName ||
-        entry.filePath != finalFile.path) {
+        entry.fileName != source.fileName) {
       return null;
     }
     final verification = await _verifyCompletedFile(
@@ -953,7 +956,7 @@ class DefaultModelDownloadManager implements ModelDownloadManager {
       sourceCanonicalKey: entry.sourceCanonicalKey,
       cacheKey: entry.cacheKey,
       fileName: entry.fileName,
-      filePath: entry.filePath,
+      filePath: finalFile.path,
       bytes: verification.bytes!,
       sha256: verification.sha256 ?? entry.sha256,
       etag: entry.etag,

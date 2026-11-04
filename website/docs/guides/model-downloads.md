@@ -231,6 +231,9 @@ DefaultModelDownloadManager.globalCacheDirectory = p.join(
 );
 ```
 
+Resolve the directory on every launch rather than saving its path: an iOS app
+update can move the app's container to a new path.
+
 `DefaultModelDownloadManager.auto(...)` keeps one call site for every
 platform: desktop and server use a per-user shared cache; Android and iOS use
 the app-private directory you pass, else the app cache directory.
@@ -437,9 +440,12 @@ concurrent use from several machines; their locking depends on the server and
 client configuration.
 
 **Metadata.** Each entry has a versioned `metadata.json` sidecar next to the
-model file. An entry is reused only when the sidecar matches the cache key,
-file name and file path, and the file matches the recorded length and any
-supplied or stored SHA-256. If the file is intact but the sidecar is missing,
+model file. An entry is reused only when the sidecar matches the cache key
+and file name, and the file matches the recorded length and any supplied or
+stored SHA-256. The file is looked up under the current cache root, not at the
+path the sidecar recorded, so an entry still hits after the root moves, as it
+does when an iOS app update moves the app's container; the sidecar then
+records the new path. If the file is intact but the sidecar is missing,
 malformed or from an unsupported schema version, the manager rebuilds the
 sidecar without a network request, so `cacheOnly` survives metadata damage. A
 missing file or a failed length or checksum check counts as a cache miss, and
