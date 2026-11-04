@@ -12,6 +12,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:llamadart/llamadart.dart';
 import 'package:llamadart_validation/android_litert_qualification_io.dart';
+import 'package:llamadart_validation/android_pixel_qualification_io.dart';
 import 'package:llamadart_validation/llamadart_validation.dart';
 import 'package:path_provider/path_provider.dart';
 
@@ -42,30 +43,7 @@ Future<Map<String, dynamic>> _maps(
   required bool gpu,
 }) async {
   final raw = await File('/proc/self/maps').readAsBytes();
-  final observed = <String, String>{};
-  final inventory = binding['libraries'] as Map;
-  for (final line in utf8.decode(raw).split('\n')) {
-    final match = RegExp(r'(/[^\n]*\.so)(?: \(deleted\))?$').firstMatch(line);
-    if (match == null) continue;
-    final path = match[1]!;
-    final name = Uri.file(path).pathSegments.last;
-    if (!inventory.containsKey(name)) continue;
-    if (line.endsWith(' (deleted)') || path != '${directory.path}/$name') {
-      throw StateError('Unbound or deleted native mapping');
-    }
-    await requireS24LiteRtFile(File(path), inventory[name] as Map);
-    observed[name] = path;
-  }
-  for (final name in [
-    'libllamadart.so',
-    'libllama.so',
-    if (gpu) 'libggml-vulkan.so',
-  ]) {
-    if (!observed.containsKey(name)) {
-      throw StateError('Missing runtime mapping');
-    }
-  }
-  return {'capture': captureS24LiteRtBytes(raw), 'verified_paths': observed};
+  return verifyPixelQwen35Mappings(raw, directory, binding, gpu: gpu);
 }
 
 void main() {
