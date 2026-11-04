@@ -103,68 +103,77 @@ void main() {
               ? LlamaImageContent(bytes: Uint8List.fromList(bytes))
               : LlamaAudioContent(bytes: Uint8List.fromList(bytes));
 
-          test('$bundle renders the $kind marker in the Dart template', () async {
-            final loaded = await load(
-              bundle,
-              encoders: true,
-              rendersMessages: rendersMessages,
-            );
-            try {
-              final rendered = await loaded.engine.chatTemplate(
-                [user(media())],
-                tools: [
-                  ToolDefinition(
-                    name: 'lookup',
-                    description: 'Lookup',
-                    parameters: const [],
-                    handler: (_) async => 'unused',
+          test(
+            '$bundle renders the $kind marker in the Dart template',
+            () async {
+              final loaded = await load(
+                bundle,
+                encoders: true,
+                rendersMessages: rendersMessages,
+              );
+              try {
+                final rendered = await loaded.engine.chatTemplate(
+                  [user(media())],
+                  tools: [
+                    ToolDefinition(
+                      name: 'lookup',
+                      description: 'Lookup',
+                      parameters: const [],
+                      handler: (_) async => 'unused',
+                    ),
+                  ],
+                  includeTokenCount: false,
+                );
+                expect(
+                  rendered.prompt,
+                  endsWith(
+                    '<|im_start|>user\nDescribe this.<__media__><|im_end|>\n'
+                    '<|im_start|>assistant\n',
                   ),
-                ],
-                includeTokenCount: false,
-              );
-              expect(
-                rendered.prompt,
-                endsWith(
-                  '<|im_start|>user\nDescribe this.<__media__><|im_end|>\n'
-                  '<|im_start|>assistant\n',
-                ),
-              );
-              expect(rendered.format, ChatFormat.hermes.index);
-              expect(rendered.grammarTriggers.single.value, '<tool_call>');
-              expect(rendered.preservedTokens, ['<tool_call>', '</tool_call>']);
-            } finally {
-              await loaded.engine.dispose();
-            }
-          });
+                );
+                expect(rendered.format, ChatFormat.hermes.index);
+                expect(rendered.grammarTriggers.single.value, '<tool_call>');
+                expect(rendered.preservedTokens, [
+                  '<tool_call>',
+                  '</tool_call>',
+                ]);
+              } finally {
+                await loaded.engine.dispose();
+              }
+            },
+          );
 
-          test('$bundle $kind request fails at the native media boundary when the '
-              'bundle has no $kind encoder', () async {
-            final loaded = await load(
-              bundle,
-              encoders: false,
-              rendersMessages: rendersMessages,
-            );
-            try {
-              await expectLater(
-                loaded.engine.create([user(media())]).drain<void>(),
-                throwsA(
-                  isA<LlamaUnsupportedException>().having(
-                    (error) => error.message,
-                    'message',
-                    allOf(
-                      contains('declares no $kind encoder'),
-                      contains('conversation create failed'),
+          test(
+            '$bundle $kind request fails at the native media boundary when the '
+            'bundle has no $kind encoder',
+            () async {
+              final loaded = await load(
+                bundle,
+                encoders: false,
+                rendersMessages: rendersMessages,
+              );
+              try {
+                await expectLater(
+                  loaded.engine.create([user(media())]).drain<void>(),
+                  throwsA(
+                    isA<LlamaUnsupportedException>().having(
+                      (error) => error.message,
+                      'message',
+                      allOf(
+                        contains('declares no $kind encoder'),
+                        contains('conversation create failed'),
+                      ),
                     ),
                   ),
-                ),
-              );
-              expect(loaded.clients.last.conversations, 1);
-              expect(loaded.clients.last.events, ['create']);
-              expect(loaded.clients.last.messageJson, isNull);
-            } finally {
-              await loaded.engine.dispose();
-            }
-          });
+                );
+                expect(loaded.clients.last.conversations, 1);
+                expect(loaded.clients.last.events, ['create']);
+                expect(loaded.clients.last.messageJson, isNull);
+              } finally {
+                await loaded.engine.dispose();
+              }
+            },
+          );
 
           test('$bundle $kind request reaches the native conversation with the '
               'bundle template', () async {
@@ -174,7 +183,10 @@ void main() {
               rendersMessages: rendersMessages,
             );
             try {
-              expect(await loaded.engine.create([user(media())]).text(), 'A cat.');
+              expect(
+                await loaded.engine.create([user(media())]).text(),
+                'A cat.',
+              );
               final client = loaded.clients.last;
               expectMediaConversation(client);
               expect(jsonDecode(client.messageJson!), {
@@ -198,7 +210,10 @@ void main() {
             );
             try {
               final session = ChatSession(loaded.engine);
-              expect(await session.create(user(media()).parts).text(), 'A cat.');
+              expect(
+                await session.create(user(media()).parts).text(),
+                'A cat.',
+              );
               expectMediaConversation(loaded.clients.last);
               expect(session.history.map((message) => message.role), [
                 LlamaChatRole.user,
@@ -238,7 +253,10 @@ void main() {
               ),
             ),
           );
-          expect(loaded.clients.every((client) => client.conversations == 0), true);
+          expect(
+            loaded.clients.every((client) => client.conversations == 0),
+            true,
+          );
         } finally {
           await loaded.engine.dispose();
         }
@@ -254,7 +272,10 @@ void main() {
         try {
           expect(
             await loaded.engine.create(const [
-              LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'Hello'),
+              LlamaChatMessage.fromText(
+                role: LlamaChatRole.user,
+                text: 'Hello',
+              ),
             ]).text(),
             'A cat.',
           );
