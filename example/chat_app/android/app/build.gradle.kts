@@ -26,6 +26,7 @@ android {
         packaging.jniLibs.useLegacyPackaging = true
         packaging.jniLibs.keepDebugSymbols += "**/*.so"
         testBuildType = "release"
+        buildTypes.getByName("release").proguardFiles("consumer-profile-proguard-rules.pro")
     }
     // The maintained bundle builder provides an isolated, verified staging tree.
     val npuStage = System.getenv("LLAMADART_VALIDATION_NPU_STAGE")

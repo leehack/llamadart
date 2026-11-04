@@ -14,6 +14,19 @@ void main(List<String> arguments) {
   }
   final plan = AndroidConsumerProfilePlan(arguments[0]);
   final pubspec = loadYaml(File(arguments[1]).readAsStringSync()) as Map;
+  final dependencies = pubspec['dependencies'];
+  final devDependencies = pubspec['dev_dependencies'];
+  final plugin = dependencies is Map ? dependencies['integration_test'] : null;
+  if (plugin is! Map ||
+      plugin.length != 1 ||
+      plugin['sdk'] != 'flutter' ||
+      (devDependencies is Map &&
+          devDependencies.containsKey('integration_test'))) {
+    throw const FormatException(
+      'Release instrumentation requires integration_test as an SDK dependency, '
+      'not a dev dependency, in the isolated qualification consumer',
+    );
+  }
   final actual = pubspec['hooks']['user_defines']['llamadart'];
   if (actual is! Map ||
       actual.length != plan.hookDefines.length ||
