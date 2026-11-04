@@ -9,6 +9,7 @@ import 'package:llamadart/src/core/template/chat_format.dart';
 import 'package:llamadart/src/core/template/chat_format_registry.dart';
 import 'package:test/test.dart';
 
+import '../../../support/chat_format_policy_scan.dart';
 import '../../../support/raw_tool_schema_fixture.dart';
 
 void main() {
@@ -79,18 +80,29 @@ void main() {
     }
   });
 
-  test('format tables live only in the registry', () {
-    for (final path in const [
-      'lib/src/core/engine/chat_completion_stream_parser.dart',
-      'lib/src/core/template/chat_template_engine.dart',
-    ]) {
-      expect(
-        _formatTables(File(path).readAsStringSync()),
-        isEmpty,
-        reason: path,
-      );
-    }
-  });
+  test(
+    'format tables live only in the registry or exact reviewed dispatch',
+    () {
+      final used = <(String, String)>{};
+      for (final file in chatFormatPolicySources(Directory.current)) {
+        final path = chatFormatPolicyPath(Directory.current, file);
+        for (final table in chatFormatPolicyTables(file.readAsStringSync())) {
+          final key = (path, table.code);
+          expect(
+            _policyExceptions.containsKey(key),
+            isTrue,
+            reason: '$path: $table',
+          );
+          expect(
+            used.add(key),
+            isTrue,
+            reason: 'Duplicate exception use: $key',
+          );
+        }
+      }
+      expect(used, _policyExceptions.keys.toSet(), reason: 'Stale exceptions');
+    },
+  );
 
   test('the table scan finds each kind of format table', () {
     expect(_formatTables('const Set<ChatFormat> lazy = {};'), isNotEmpty);
@@ -103,7 +115,7 @@ void main() {
     );
     expect(
       _formatTables(
-        'switch (format) { ChatFormat.hermes => true, _ => false }',
+        'final result = switch (format) { ChatFormat.hermes => true, _ => false };',
       ),
       isNotEmpty,
     );
@@ -135,8 +147,113 @@ void main() {
         'final isLlama3 = f == ChatFormat.llama3.index || '
         'f == ChatFormat.llama3BuiltinTools.index;',
       ),
+      isNotEmpty,
+    );
+  });
+
+  for (final (name, source) in const [
+    ('guarded case', 'switch (f) { case ChatFormat.gemma when ok: break; }'),
+    (
+      'or case',
+      'switch (f) { case ChatFormat.gemma || ChatFormat.lfm2: break; }',
+    ),
+    (
+      'guarded arm',
+      'final x = switch (f) { ChatFormat.gemma when ok => 1, _ => 0 };',
+    ),
+    (
+      'or arm',
+      'final x = switch (f) { ChatFormat.gemma || ChatFormat.lfm2 => 1, _ => 0 };',
+    ),
+    ('commented key', 'const table = {/* policy */ ChatFormat.gemma: 1};'),
+    ('index key', 'const table = {ChatFormat.gemma.index: 1};'),
+    (
+      'commented index key',
+      'const table = {/* policy */ ChatFormat.gemma.index: 1};',
+    ),
+    (
+      'two-format helper',
+      'final x = f == ChatFormat.gemma || f == ChatFormat.lfm2;',
+    ),
+  ]) {
+    test('new production files cannot hide a $name policy table', () {
+      final root = Directory.systemTemp.createTempSync('format-policy-');
+      addTearDown(() => root.deleteSync(recursive: true));
+      File('${root.path}/lib/new_consumer/policy.dart')
+        ..createSync(recursive: true)
+        ..writeAsStringSync('void probe() { $source }');
+      final sources = chatFormatPolicySources(root).toList();
+      expect(
+        sources.map((source) => chatFormatPolicyPath(root, source)),
+        contains('lib/new_consumer/policy.dart'),
+      );
+      expect(
+        chatFormatPolicyTables(sources.single.readAsStringSync()),
+        isNotEmpty,
+      );
+    });
+  }
+
+  test('the scan ignores comments, strings, identity checks and dispatch', () {
+    expect(
+      chatFormatPolicyTables('ChatFormat get format => ChatFormat.gemma;'),
       isEmpty,
     );
+    for (final source in const [
+      '// const table = {ChatFormat.gemma: 1};',
+      '/* case ChatFormat.gemma when ok: */',
+      r"const text = 'case ChatFormat.gemma || ChatFormat.lfm2:';",
+      r"const text = '{ChatFormat.gemma.index: 1}';",
+      'final same = f == ChatFormat.gemma;',
+      'final same = f == ChatFormat.gemma || f == ChatFormat.gemma;',
+      'final chosen = ok ? ChatFormat.gemma : ChatFormat.generic;',
+      'switch (event) { case Event.start: handle(ChatFormat.gemma); break; }',
+    ]) {
+      expect(_formatTables(source), isEmpty, reason: source);
+    }
+  });
+
+  test('the registry is the only excluded production source', () {
+    final root = Directory.systemTemp.createTempSync('format-inventory-');
+    addTearDown(() => root.deleteSync(recursive: true));
+    for (final path in const [
+      'lib/src/core/template/chat_format_registry.dart',
+      'lib/src/core/template/handlers/new_handler.dart',
+      'lib/src/new_consumer.dart',
+    ]) {
+      File('${root.path}/$path').createSync(recursive: true);
+    }
+    expect(
+      chatFormatPolicySources(
+        root,
+      ).map((file) => chatFormatPolicyPath(root, file)).toSet(),
+      {
+        'lib/src/core/template/handlers/new_handler.dart',
+        'lib/src/new_consumer.dart',
+      },
+    );
+  });
+
+  test('policy exceptions reject edited and copied expressions', () {
+    for (final entry in _policyExceptions.entries) {
+      final (path, code) = entry.key;
+      expect(entry.value, isNotEmpty);
+      expect(chatFormatPolicyTables('final result = $code;').single.code, code);
+      expect(
+        _policyExceptions.containsKey(('lib/new_consumer.dart', code)),
+        isFalse,
+      );
+      final edited = code.replaceFirst(
+        RegExp(r'ChatFormat\.\w+'),
+        'ChatFormat.apertus',
+      );
+      final table = chatFormatPolicyTables('final result = $edited;').single;
+      expect(
+        _policyExceptions.containsKey((path, table.code)),
+        isFalse,
+        reason: '$path must re-review changed format membership',
+      );
+    }
   });
 
   test('generic reads an incomplete call outside a forced-open thinking '
@@ -261,31 +378,64 @@ void _withHermesTraits(ChatFormatTraits traits, void Function() body) {
   }
 }
 
-/// Per-format tables in [source]: a `ChatFormat` set, collection or map
-/// literal, a switch or `case` arm on a format, or one statement naming three or more formats.
-List<String> _formatTables(String source) => [
-  if (source.contains('Set<ChatFormat>')) 'Set<ChatFormat>',
-  for (final match in RegExp(
-    r'[\[{]\s*ChatFormat\.\w+\s*[,}\]]',
-  ).allMatches(source))
-    'literal: ${match[0]}',
-  for (final match in RegExp(r'ChatFormat\.\w+\s*=>').allMatches(source))
-    'switch arm: ${match[0]}',
-  for (final match in RegExp(
-    r'[\[{,]\s*ChatFormat\.\w+\s*:',
-  ).allMatches(source))
-    'map key: ${match[0]}',
-  for (final match in RegExp(
-    r'\bcase\s+ChatFormat\.\w+\s*:',
-  ).allMatches(source))
-    'case arm: ${match[0]}',
-  for (final statement in source.split(';'))
-    if ({
-          for (final match in RegExp(
-            r'ChatFormat\.(?!values\b)(\w+)',
-          ).allMatches(statement))
-            match[1],
-        }.length >=
-        3)
-      'statement: ${statement.trim()}',
-];
+// Keep the original small source controls usable as function-body fragments.
+List<ChatFormatPolicyTable> _formatTables(String source) =>
+    chatFormatPolicyTables('void probe() {\n$source;\n}');
+
+// #1666 chooses exact, reviewable exceptions rather than changing production
+// routing during release qualification. A changed or copied expression needs
+// review again; the production test also rejects unused exceptions. Handler
+// format getters and other single-format identity/dispatch need no exemption.
+final Map<(String, String), String> _policyExceptions = {
+  _exception(
+    _engine,
+    'resultFormat == ChatFormat.generic || resultFormat == ChatFormat.contentOnly',
+  ): 'Only the two fallback routes generate generic tool grammar; handlers own their grammar.',
+  _exception(
+    _engine,
+    'formatIndex == ChatFormat.seedOss.index || formatIndex == ChatFormat.cohere2Moe.index',
+  ): 'These forced-open prompt formats restore a thought only after their closing marker.',
+  _exception(
+    _stream,
+    'templateResult.format == ChatFormat.cohere2Moe.index || templateResult.format == ChatFormat.seedOss.index',
+  ): 'The initial stream probe restores the forced-open thought used by these prompts.',
+  _exception(
+    _stream,
+    'isFunctionaryV32 || templateResult.format == ChatFormat.minimaxM1.index || templateResult.format == ChatFormat.museGlimmer.index',
+  ): 'These partial parsers preserve thought tags as content when tool parsing is disabled.',
+  _exception(
+    _stream,
+    'templateResult.format == ChatFormat.llama3.index || templateResult.format == ChatFormat.llama3BuiltinTools.index',
+  ): 'Both Llama3 wire formats use typed tool envelopes, with different opening gates.',
+  _exception(
+    _stream,
+    'templateResult.format == ChatFormat.cohere2Moe.index || templateResult.format == ChatFormat.commandR7B.index',
+  ): 'Text-only streams strip the shared Command R response markers.',
+  _exception(
+    _stream,
+    '!parseToolCallsEnabled && !traits.hasRepeatedContentChannels && templateResult.format != ChatFormat.gemma4.index && templateResult.format != ChatFormat.kimiK3.index',
+  ): 'Gemma4 and KimiK3 channel frames require their parser even with tools disabled.',
+  _exception(
+    _stream,
+    'toolCallOpening == null && templateResult.format != ChatFormat.gemma4.index && templateResult.format != ChatFormat.minimaxM1.index && parsed.hasToolCalls && _isToolCallEnvelopeBuffer(fullOutput, startTag: startTag, endTag: endTag, thinkingForcedOpen: templateResult.thinkingForcedOpen)',
+  ): 'These two parsers own envelope handling; the shared fallback must not reinterpret it.',
+  _exception(
+    _peg,
+    'switch (format) { ChatFormat.pegSimple => ChatFormat.pegSimple, ChatFormat.pegNative => ChatFormat.pegNative, ChatFormat.pegConstructed => ChatFormat.pegConstructed, ChatFormat.ministral => hasPegParser ? ChatFormat.pegNative : null, ChatFormat.solarOpen => hasPegParser ? ChatFormat.pegNative : null, ChatFormat.qwen3CoderXml => hasPegParser ? ChatFormat.pegConstructed : null, _ => null }',
+  ): 'Selects serialized PEG parser variants, including artifact-dependent handler dispatch.',
+  _exception(
+    _peg,
+    "switch (format) { ChatFormat.pegSimple => 'peg-simple', ChatFormat.pegNative => 'peg-native', ChatFormat.pegConstructed => 'peg-constructed', _ => format.name }",
+  ): 'Preserves upstream diagnostic wire spellings, including historical peg-constructed.',
+  _exception(
+    _peg,
+    'switch (format) { ChatFormat.pegNative => _PegNativeMapper(message, accumulateContent: accumulateContent), ChatFormat.pegConstructed => _PegConstructedMapper(message), _ => _PegBaseMapper(message) }',
+  ): 'Dispatches serialized PEG ASTs to their concrete mapper implementations.',
+};
+
+const _engine = 'lib/src/core/template/chat_template_engine.dart';
+const _stream = 'lib/src/core/engine/chat_completion_stream_parser.dart';
+const _peg = 'lib/src/core/template/peg_chat_parser.dart';
+
+(String, String) _exception(String path, String expression) =>
+    (path, chatFormatPolicyExpression(expression));
