@@ -34,6 +34,7 @@ public class MainActivityTest {
         forwardReloadMemoryArguments(arguments, instrumentation);
         forwardMicroBatchSweepArguments(arguments, instrumentation);
         forwardAndroidQualificationArguments(arguments, instrumentation);
+        forwardPixelQwen35GuardArguments(arguments, instrumentation);
     }
 
     private static void stageModel(Instrumentation instrumentation) throws IOException {
@@ -180,9 +181,68 @@ public class MainActivityTest {
         }
     }
 
+    private static void forwardPixelQwen35GuardArguments(Bundle arguments,
+            Instrumentation instrumentation) throws IOException {
+        String mode = arguments.getString("qwen35GuardMode");
+        if (mode == null) return;
+        if (!"core018-pixel-supported-cases-20261104".equals(mode)
+                || !"Pixel 9 Pro".equals(Build.MODEL) || !"caiman".equals(Build.DEVICE)
+                || Build.VERSION.SDK_INT != 35
+                || !"true".equals(arguments.getString("stageModel"))) {
+            throw new IOException("Pixel Qwen3.5 guard requires admitted caiman/API35 and staged model");
+        }
+        String bindingSha = arguments.getString("qwen35GuardBindingSha256");
+        if (bindingSha == null || !bindingSha.matches("[0-9a-f]{64}")) {
+            throw new IOException("Missing Pixel Qwen3.5 binding hash");
+        }
+        Context context = instrumentation.getTargetContext();
+        File cache = context.getCacheDir();
+        File request = new File(cache, "pixel_qwen35_guard_watchdog.json");
+        File configFile = new File(cache, "pixel_qwen35_guard_args.json");
+        File output = new File(context.getExternalFilesDir(null), mode);
+        if (request.exists() || configFile.exists() || output.exists() || !output.mkdirs()) {
+            throw new IOException("Fresh Pixel Qwen3.5 run directory required");
+        }
+        String nonce = java.util.UUID.randomUUID().toString();
+        try (InputStream input = context.getAssets().open("pixel_qwen35_guard/binding.json")) {
+            ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+            byte[] buffer = new byte[8192];
+            int count;
+            while ((count = input.read(buffer)) != -1) {
+                bytes.write(buffer, 0, count);
+                if (bytes.size() > 1024 * 1024) throw new IOException("Guard binding exceeds size bound");
+            }
+            write(new File(output, "binding.json"), new String(bytes.toByteArray(), StandardCharsets.UTF_8));
+            JSONObject config = new JSONObject();
+            config.put("pid", Process.myPid());
+            config.put("nonce", nonce);
+            config.put("run_id", mode);
+            config.put("binding_sha256", bindingSha);
+            config.put("native_directory", context.getApplicationInfo().nativeLibraryDir);
+            config.put("watchdog", request.getPath());
+            config.put("output", output.getPath());
+            config.put("device_model", Build.MODEL);
+            config.put("device", Build.DEVICE);
+            config.put("android_api", Build.VERSION.SDK_INT);
+            config.put("device_build", Build.FINGERPRINT);
+            config.put("soc_model", Build.SOC_MODEL);
+            write(configFile, config.toString());
+            write(new File(output, "cpuinfo.txt"), shell(instrumentation, "cat /proc/cpuinfo"));
+            write(new File(output, "getprop.txt"), shell(instrumentation, "getprop"));
+            write(new File(output, "vkjson.json"), shell(instrumentation, "cmd gpu vkjson"));
+            write(new File(output, "app_apk.sha256"), shell(instrumentation,
+                "sha256sum " + context.getPackageCodePath()));
+            startQualificationWatchdog(request, output, nonce, 19L * 60 * 1000);
+        } catch (JSONException error) { throw new IOException(error); }
+    }
+
     // A Flutter Future timeout cannot stop native work. This Java thread owns
     // the entire test process deadline independently of the Dart event loop.
     private static void startQualificationWatchdog(File request, File output, String nonce) {
+        startQualificationWatchdog(request, output, nonce, 20L * 60 * 1000);
+    }
+
+    private static void startQualificationWatchdog(File request, File output, String nonce, long runLimit) {
         Thread watcher = new Thread(() -> {
             final long runStarted = SystemClock.elapsedRealtime();
             long armedAt = 0;
@@ -191,7 +251,7 @@ public class MainActivityTest {
             while (!Thread.currentThread().isInterrupted()) {
                 try {
                     if (new File(output, "watchdog.done").isFile()) return;
-                    if (SystemClock.elapsedRealtime() - runStarted >= 20L * 60 * 1000) {
+                    if (SystemClock.elapsedRealtime() - runStarted >= runLimit) {
                         throw new IOException("Qualification run deadline exceeded");
                     }
                     if (!request.exists()) { armedAt = 0; step = ""; }
