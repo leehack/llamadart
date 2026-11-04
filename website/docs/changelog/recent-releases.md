@@ -15,8 +15,6 @@ validate against the exact release tag notes.
 
 - Fix native LiteRT-LM C API 1.0 loading with tagged Android arm64 pointers.
 
-## 0.18.0
-
 - Restrict unqualified Android Vulkan Qwen3.5 paths to bounded ordinary text, with typed errors for larger micro-batches, media, speculation and embeddings ([#948](https://github.com/leehack/llamadart/issues/948)).
 
 - Validate native LiteRT-LM engine settings, send controls and benchmark counts before loading runtime libraries.
