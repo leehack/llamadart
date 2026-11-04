@@ -48,6 +48,12 @@ class AndroidConsumerProfilePlan {
     'scenario': 'consumer-cpu',
     'cpu_profile': profile,
     'flutter_build_mode': 'release',
+    'instrumentation_plugin': {
+      'package': 'integration_test',
+      'sdk': 'flutter',
+      'dependency': 'main',
+      'keep_android_classes': true,
+    },
     'hook_defines': hookDefines,
     'model': fixture.model,
     'prompt': fixture.prompts.single,

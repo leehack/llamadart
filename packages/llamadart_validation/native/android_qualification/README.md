@@ -227,9 +227,18 @@ llamadart_native_backends:
       cpu_profile: full # compact in the second checkout
 ```
 
-Commit each configuration separately, prepare dependencies with the pinned SDK,
-and retain both commit/tree identities and the exact pubspec hashes. This narrows
-the example's optional `all` runtimes to the default public llama.cpp consumer;
+In each isolated qualification checkout only, also move the existing
+`integration_test: {sdk: flutter}` entry from `dev_dependencies` to `dependencies`.
+Keep it under `dev_dependencies` in the normal chat example. Flutter 3.47.1 omits
+dev-only Android plugins from release dependencies and release registrants; the
+instrumentation target requires this SDK plugin in the release app itself. The
+planner rejects missing, dev-only, duplicated or non-SDK entries before building.
+
+Resolve the changed consumer with the pinned SDK (`flutter pub get --offline`
+when dependencies are cached), then commit its `pubspec.yaml` and generated
+`pubspec.lock`. Never edit the lock by hand. Retain both commit/tree identities
+and the exact pubspec hashes. This narrows the example's optional `all` runtimes
+to the default public llama.cpp consumer;
 backend selection stays the normal CPU/Vulkan policy. Full packages all seven
 CPU modules; compact packages only `android_armv8.0_1`. Never copy runtime `.so`
 files into the stage. The real hook must emit every runtime library.
@@ -257,6 +266,9 @@ base64-encoded Dart defines for Gradle.
 Set `LLAMADART_ANDROID_CONSUMER_PROFILE_STAGE` to the absolute generated `stage`
 directory for **both** build commands. This stages binding assets only, retains
 installed library bytes and sets AGP's instrumentation test build type to release.
+It also applies `consumer-profile-proguard-rules.pro` only to this qualification
+release: the separate test APK needs the SDK runner/plugin classes and names
+preserved through app-only R8 shrinking. Other app release builds are unchanged.
 From `example/chat_app`, substitute the committed profile's actual hashes:
 
 ```sh
@@ -277,7 +289,26 @@ source inventory, actual compiled defines, merged manifests, instrumentation
 classes/target, APK hashes and static verification. Use the preparer's exact second command, including `-Pdart-defines`, so both
 builds receive identical compiled profile/source identities.
 Do not admit an unmatched test APK or a debug/profile build. Unset all other
-qualification/NPU stage variables.
+qualification/NPU stage variables. `--no-pub` skips Flutter's tooling/registrant
+regeneration; use it only after pub resolution has refreshed the final consumer
+plugin metadata. Dropping `--no-pub` while leaving the plugin dev-only removes
+the registrant reference but still excludes the required release plugin.
+
+Verify the actual app DEX definitions as well as the bound runtime inventory:
+
+```sh
+python3 packages/llamadart_validation/native/android_qualification/verify_apk.py \
+  --apk /path/to/app-release.apk \
+  --binding /path/to/stage/assets/llamadart_android_qualification/binding.json \
+  --plan /path/to/stage/assets/llamadart_android_qualification/plan.json \
+  --apkanalyzer /path/to/android-sdk/cmdline-tools/latest/bin/apkanalyzer
+```
+
+The consumer verifier requires Android SDK `apkanalyzer dex packages
+--defined-only` class-definition rows for `IntegrationTestPlugin` and
+`FlutterTestRunner` under `dev.flutter.plugins.integration_test`. A referenced
+name, method/package row, removed class or obfuscated replacement cannot pass.
+This is static presence proof, not plugin registration or device execution proof.
 
 Run **both APK pairs on both admitted device classes**, zero flaky retries.
 Before dispatch, freeze exact old/modern device model, API, build and CPU/ISA

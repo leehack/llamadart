@@ -119,3 +119,6 @@ lib/src/backends/litert_lm/litert_lm_embedding_bindings.dart @leehack
 /test/fixtures/windows_ggml_registry_qualification/ @leehack
 /test/integration/windows_ggml_registry_qualification_test.dart @leehack
 /tool/testing/run_local_e2e.dart @leehack
+
+# Private Android release-instrumentation class retention.
+/example/chat_app/android/app/consumer-profile-proguard-rules.pro @leehack

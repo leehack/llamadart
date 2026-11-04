@@ -4,9 +4,51 @@ import hashlib
 import json
 from pathlib import Path
 import struct
+import subprocess
+import tempfile
 import zipfile
 
-def verify(apk, binding, plan):
+INSTRUMENTATION_CLASSES = frozenset({
+    "dev.flutter.plugins.integration_test.IntegrationTestPlugin",
+    "dev.flutter.plugins.integration_test.FlutterTestRunner",
+})
+
+
+def parse_defined_classes(output):
+    # Android SDK apkanalyzer: row kind, defined/reference, method counts,
+    # byte size, then the exact class name. References and members cannot pass.
+    classes = set()
+    for line in output.splitlines():
+        fields = line.split()
+        if not fields or fields[0] != "C":
+            continue
+        if (len(fields) != 6 or fields[1] not in ("d", "r") or
+                not all(value.isdecimal() for value in fields[2:5])):
+            raise ValueError("Malformed apkanalyzer class row")
+        if fields[1] == "d":
+            classes.add(fields[5])
+    return classes
+
+
+def verify_instrumentation_classes(apk, apkanalyzer):
+    if apkanalyzer is None:
+        raise ValueError("Consumer release APK verification requires --apkanalyzer")
+    with tempfile.TemporaryFile() as output:
+        result = subprocess.run(
+            [str(apkanalyzer), "dex", "packages", "--defined-only", str(apk)],
+            stdout=output, stderr=subprocess.PIPE, timeout=120, check=False)
+        if result.returncode != 0:
+            raise ValueError("apkanalyzer failed to inspect actual DEX definitions")
+        if output.tell() > 64 * 1024 * 1024:
+            raise ValueError("apkanalyzer output exceeds size bound")
+        output.seek(0)
+        classes = parse_defined_classes(output.read().decode("utf-8"))
+    if not INSTRUMENTATION_CLASSES.issubset(classes):
+        raise ValueError("Consumer APK lacks defined, unobfuscated integration_test classes")
+    return sorted(INSTRUMENTATION_CLASSES)
+
+
+def verify(apk, binding, plan, apkanalyzer=None):
     with zipfile.ZipFile(apk) as archive:
         names = archive.namelist()
         if len(names) != len(set(names)):
@@ -48,12 +90,16 @@ def verify(apk, binding, plan):
             if name == "libllamadart_android_qualification.so":
                 if struct.unpack_from("<Q", data, 24)[0] == 0:
                     raise ValueError("Diagnostic probe lacks an executable entry point")
-    return {"qualified": False, "android_launch_observed": False,
-            "apk_sha256": hashlib.sha256(apk.read_bytes()).hexdigest()}
+    result = {"qualified": False, "android_launch_observed": False,
+              "apk_sha256": hashlib.sha256(apk.read_bytes()).hexdigest()}
+    if json.loads(plan).get("scenario") == "consumer-cpu":
+        result["instrumentation_classes_defined"] = verify_instrumentation_classes(apk, apkanalyzer)
+    return result
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     for name in ("apk", "binding", "plan"):
         parser.add_argument("--" + name, type=Path, required=True)
+    parser.add_argument("--apkanalyzer", type=Path)
     args = parser.parse_args()
-    print(json.dumps(verify(args.apk, json.loads(args.binding.read_text()), args.plan.read_bytes())))
+    print(json.dumps(verify(args.apk, json.loads(args.binding.read_text()), args.plan.read_bytes(), args.apkanalyzer)))

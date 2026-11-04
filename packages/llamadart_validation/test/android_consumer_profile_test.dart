@@ -145,6 +145,10 @@ void main() {
           'runtimes',
           'profile',
           'variants',
+          'dev-only-plugin',
+          'missing-plugin',
+          'versioned-plugin',
+          'duplicate-plugin',
         ]) {
           final defines =
               jsonDecode(jsonEncode(plan.hookDefines)) as Map<String, dynamic>;
@@ -160,9 +164,24 @@ void main() {
               defines['llamadart_native_backends']['platforms']['android-arm64']['cpu_variants'] =
                   ['android_armv8.0_1'];
           }
+          final dependencies = <String, Object?>{
+            'integration_test': {'sdk': 'flutter'},
+          };
+          final devDependencies = <String, Object?>{};
+          if (variant == 'dev-only-plugin' || variant == 'missing-plugin') {
+            dependencies.remove('integration_test');
+          }
+          if (variant == 'dev-only-plugin' || variant == 'duplicate-plugin') {
+            devDependencies['integration_test'] = {'sdk': 'flutter'};
+          }
+          if (variant == 'versioned-plugin') {
+            dependencies['integration_test'] = '^1.0.0';
+          }
           final spec = File('${temporary.path}/$profile-$variant.yaml')
             ..writeAsStringSync(
               jsonEncode({
+                'dependencies': dependencies,
+                'dev_dependencies': devDependencies,
                 'hooks': {
                   'user_defines': {'llamadart': defines},
                 },

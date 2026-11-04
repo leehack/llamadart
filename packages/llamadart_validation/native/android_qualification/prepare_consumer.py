@@ -15,6 +15,9 @@ def operator_plan(profile, commit, tree, output):
     encoded = ",".join(base64.b64encode(value.encode()).decode() for value in defines)
     target = "integration_test/android_consumer_profile_test.dart"
     return {"qualification": False, "profile": profile,
+            "consumer_dependency_requirements": {
+                "integration_test": {"sdk": "flutter", "section": "dependencies",
+                                     "forbidden_section": "dev_dependencies"}},
             "source_commit": commit, "source_tree": tree,
             "environment": {"LLAMADART_ANDROID_CONSUMER_PROFILE_STAGE": str(output / "stage")},
             "commands": [

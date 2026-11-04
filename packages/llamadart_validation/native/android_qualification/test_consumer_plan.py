@@ -21,6 +21,9 @@ class ConsumerPlanTest(unittest.TestCase):
             self.assertEqual([row["device_class"] for row in plan["run_drafts"]], ["old", "modern"])
             self.assertTrue(all(row["status"] == "NOT_RUN" for row in plan["run_drafts"]))
             self.assertFalse(plan["qualification"])
+            self.assertEqual(plan["consumer_dependency_requirements"]["integration_test"],
+                             {"sdk": "flutter", "section": "dependencies",
+                              "forbidden_section": "dev_dependencies"})
             self.assertTrue(all(row["app_apk_sha256"] is None for row in plan["run_drafts"]))
 
 
