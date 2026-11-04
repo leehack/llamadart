@@ -1,6 +1,8 @@
 """Source-only admission of retained Dart transport bytes; no SDK or device calls."""
+from contextlib import ExitStack
 import hashlib
 import json
+import os
 from pathlib import Path
 import shutil
 import tempfile
@@ -12,7 +14,7 @@ import decode_s24 as decoder
 FIXTURES = Path(__file__).parent / 'fixtures/dart_transport'
 
 
-class ExportAliasTests(unittest.TestCase):
+class AliasFixture(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
@@ -40,6 +42,7 @@ class ExportAliasTests(unittest.TestCase):
             self.assertIn(text, result['errors'][0]['message'])
         return result
 
+class ExportAliasTests(AliasFixture):
     def test_pinned_actual_Dart_fixtures_hashes_and_complete_single_journal(self):
         manifest = json.loads((FIXTURES / 'manifest.json').read_bytes())
         for name, lock in manifest.items():
@@ -58,6 +61,7 @@ class ExportAliasTests(unittest.TestCase):
                         self.assertEqual(len(decoded['producer_statuses']), 20)
                         self.assertEqual(set(decoded['producer_statuses'].values()), {'PASS'})
                         self.assertFalse(decoded['qualified'])
+                        self.assertTrue(self.inspect()['strict_raw_decode_complete'])
                         self.assertEqual(sum(row['event'] == 'lifetime_closed' for row in decoder.jsonl(raw, decoder.JOURNAL_LIMIT, decoder.JOURNAL_LIMIT)), 6)
                         shutil.rmtree(path.parent.parent)
         self.install()
@@ -133,6 +137,189 @@ class ExportAliasTests(unittest.TestCase):
                 canonical.write_bytes(raw)
                 alias.write_bytes(raw)
                 self.assert_rejected(error)
+
+
+class DescriptorAdmissionTests(AliasFixture):
+    def mutate(self, path, kind):
+        if kind == 'symlink':
+            raw_copy = self.root / 'linked-copy'
+            raw_copy.write_bytes(path.read_bytes())
+            path.unlink(); path.symlink_to(raw_copy)
+        elif kind == 'replacement':
+            replacement = path.with_suffix('.replacement')
+            replacement.write_bytes(path.read_bytes())
+            replacement.replace(path)
+        elif kind == 'delete':
+            path.unlink()
+        elif kind == 'same-size-content':
+            original = path.read_bytes()
+            path.write_bytes(original.replace(b'synthetic-byte-fixture', b'synthetic-byte-fixturX'))
+        elif kind == 'grow':
+            with path.open('ab') as stream: stream.write(b' ')
+        else:
+            parent = path.parent
+            saved = parent.with_name(parent.name + '-saved')
+            parent.rename(saved)
+            if kind == 'parent-symlink':
+                parent.symlink_to(saved, target_is_directory=True)
+            else:
+                shutil.copytree(saved, parent)
+
+    def test_discovery_to_open_races_reject_alias_and_canonical(self):
+        original_discover = decoder.journal_aliases
+        for export in ('a', 'z'):
+            for kind in ('symlink', 'replacement', 'delete', 'parent-symlink', 'parent-replacement'):
+                with self.subTest(export=export, kind=kind):
+                    self.install('a'); self.install('z')
+                    path = self.root / export / self.plan['run_id'] / 's24-litert-public.jsonl'
+                    def discover(*args):
+                        candidates = original_discover(*args)
+                        self.mutate(path, kind)
+                        return candidates
+                    with patch.object(decoder, 'journal_aliases', side_effect=discover):
+                        self.assert_rejected()
+                    shutil.rmtree(self.root / 'a'); shutil.rmtree(self.root / 'z')
+                    (self.root / 'linked-copy').unlink(missing_ok=True)
+
+    def test_pinned_descriptors_reject_path_or_content_mutation_during_comparison(self):
+        original_compare = decoder.compare_journal_alias
+        for export in ('a', 'z'):
+            for kind in ('symlink', 'replacement', 'delete', 'parent-symlink',
+                         'parent-replacement', 'same-size-content', 'grow'):
+                with self.subTest(export=export, kind=kind):
+                    self.install('a'); self.install('z')
+                    path = self.root / export / self.plan['run_id'] / 's24-litert-public.jsonl'
+                    def compare(*args):
+                        self.mutate(path, kind)
+                        return original_compare(*args)
+                    with patch.object(decoder, 'compare_journal_alias', side_effect=compare):
+                        self.assert_rejected()
+                    shutil.rmtree(self.root / 'a'); shutil.rmtree(self.root / 'z')
+                    (self.root / 'linked-copy').unlink(missing_ok=True)
+
+    def test_during_read_rewrite_grow_and_truncate_rejected(self):
+        original_read = os.read
+        for kind in ('same-size-content', 'grow', 'truncate'):
+            with self.subTest(kind=kind):
+                path = self.install()
+                changed = False
+                def read(fd, amount):
+                    nonlocal changed
+                    raw = original_read(fd, amount)
+                    self.assertLessEqual(amount, 64 * 1024)
+                    if raw and not changed:
+                        changed = True
+                        if kind == 'truncate': path.write_bytes(b'')
+                        else: self.mutate(path, kind)
+                    return raw
+                with patch.object(decoder.os, 'read', side_effect=read):
+                    self.assert_rejected()
+                shutil.rmtree(path.parent.parent)
+
+    def test_same_size_rewrite_with_restored_mtime_still_changes_ctime(self):
+        path = self.install()
+        original_read = os.read
+        before = path.stat()
+        changed = False
+        def read(fd, amount):
+            nonlocal changed
+            raw = original_read(fd, amount)
+            if raw and not changed:
+                changed = True
+                self.mutate(path, 'same-size-content')
+                os.utime(path, ns=(before.st_atime_ns, before.st_mtime_ns))
+                self.assertEqual(path.stat().st_size, before.st_size)
+                self.assertEqual(path.stat().st_mtime_ns, before.st_mtime_ns)
+                self.assertNotEqual(path.stat().st_ctime_ns, before.st_ctime_ns)
+            return raw
+        with patch.object(decoder.os, 'read', side_effect=read):
+            self.assert_rejected('identity/content changed')
+
+    def test_exact_alias_count_limit_remains_accepted(self):
+        for number in range(decoder.MAX_JOURNAL_ALIASES): self.install(str(number))
+        result = self.inspect()
+        self.assertTrue(result['strict_raw_decode_complete'], result)
+        self.assertEqual(len(result['journal_aliases']), 16)
+
+    def test_parser_consumes_admitted_bytes_without_reopening_canonical(self):
+        self.install('a'); self.install('z')
+        original_open = Path.open
+        def open_path(path, *args, **kwargs):
+            if path.name == 's24-litert-public.jsonl':
+                self.fail('Parser reopened a mutable journal path')
+            return original_open(path, *args, **kwargs)
+        with patch.object(Path, 'open', open_path):
+            result = self.inspect()
+        self.assertTrue(result['strict_raw_decode_complete'], result)
+
+    def test_post_parse_path_mutation_and_hash_change_rejected(self):
+        original_decode = decoder.decode
+        for kind in ('replacement', 'delete', 'parent-symlink', 'same-size-content'):
+            with self.subTest(kind=kind):
+                path = self.install()
+                def decode(*args, **kwargs):
+                    result = original_decode(*args, **kwargs)
+                    self.mutate(path, kind)
+                    return result
+                with patch.object(decoder, 'decode', side_effect=decode):
+                    self.assert_rejected()
+                shutil.rmtree(self.root / 'a')
+        # Even unchanged metadata cannot waive the independently reread byte hash.
+        path = self.install()
+        def decode(*args, **kwargs):
+            result = original_decode(*args, **kwargs)
+            self.mutate(path, 'same-size-content')
+            return result
+        with patch.object(decoder, 'decode', side_effect=decode), \
+             patch.object(decoder, 'file_identity', return_value='forced-stable-metadata'):
+            self.assert_rejected('bytes changed')
+
+    def test_collection_directory_replacement_rejected(self):
+        self.install()
+        original_decode = decoder.decode
+        saved = self.root.with_name(self.root.name + '-saved')
+        self.addCleanup(lambda: shutil.rmtree(saved, ignore_errors=True))
+        def decode(*args, **kwargs):
+            result = original_decode(*args, **kwargs)
+            self.root.rename(saved)
+            shutil.copytree(saved, self.root)
+            return result
+        with patch.object(decoder, 'decode', side_effect=decode):
+            self.assert_rejected('Collection directory changed')
+
+    def test_required_descriptor_primitives_fail_closed(self):
+        self.install()
+        with patch.object(decoder.os, 'supports_dir_fd', set()):
+            self.assert_rejected('Host lacks required no-follow descriptor admission primitives')
+        for flag in ('O_NOFOLLOW', 'O_DIRECTORY', 'O_NONBLOCK'):
+            with self.subTest(flag=flag), patch.object(decoder.os, flag):
+                # Absence, rather than a zero-valued fallback, is unsupported.
+                saved = getattr(decoder.os, flag)
+                delattr(decoder.os, flag)
+                try: self.assert_rejected('Host lacks required')
+                finally: setattr(decoder.os, flag, saved)
+
+    def test_descriptors_close_on_success_partial_admission_compare_read_and_parse_error(self):
+        original_open = os.open
+        original_supports = os.supports_dir_fd
+        for stage in ('success', 'partial-admission', 'compare', 'read', 'parse'):
+            with self.subTest(stage=stage):
+                self.install('a'); alias = self.install('z'); opened = []
+                def open_fd(*args, **kwargs):
+                    if stage == 'partial-admission' and len(opened) == 5:
+                        raise PermissionError('injected partial admission failure')
+                    fd = original_open(*args, **kwargs); opened.append(fd); return fd
+                with patch.object(decoder.os, 'open', side_effect=open_fd) as mocked_open, ExitStack() as stack:
+                    stack.enter_context(patch.object(decoder.os, 'supports_dir_fd', original_supports | {mocked_open}))
+                    if stage == 'compare': alias.write_bytes(alias.read_bytes() + b' ')
+                    if stage == 'read': stack.enter_context(patch.object(decoder.os, 'read', side_effect=OSError('injected read error')))
+                    if stage == 'parse': stack.enter_context(patch.object(decoder, 'decode', side_effect=ValueError('injected parse error')))
+                    result = self.inspect()
+                self.assertEqual(result['strict_raw_decode_complete'], stage == 'success', result)
+                self.assertTrue(opened)
+                for fd in opened:
+                    with self.assertRaises(OSError): os.fstat(fd)
+                shutil.rmtree(self.root / 'a'); shutil.rmtree(self.root / 'z')
 
 
 if __name__ == '__main__':

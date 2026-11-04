@@ -149,8 +149,24 @@ Provider exports may contain up to 16 journal aliases. Every candidate must be
 an ordinary nonsymlink file in the exact run directory, nonempty and within the
 unchanged 16 MiB journal limit. The host compares every byte using 64 KiB read
 buffers and verifies equal size and SHA-256; any differing or invalid alias
-fails the collection. The cap bounds discovery metadata and repeated reads while
-allowing the observed pair of provider export paths. The lexicographically first
+fails the collection. Discovery snapshots each file's device, inode, mode, link
+count, size, and nanosecond modification/change times. Admission opens every
+collection-relative parent through its directory descriptor and opens each leaf
+with `O_NOFOLLOW`; regular-file descriptors remain open through comparison and
+parsing. Directory identity and file snapshots are checked before and after reads
+and after parsing; a final bounded reread verifies every admitted hash. Replaced,
+deleted, resized or rewritten journals fail, including canonical or parent swaps.
+The parser consumes only the bounded admitted canonical bytes, never a reopened
+journal path. All descriptors close on success or error.
+
+This private host decoder requires POSIX `O_NOFOLLOW`, `O_DIRECTORY`,
+`O_NONBLOCK`, and descriptor-relative `open`/nonsymlink `stat`. A host without
+these primitives reports `Host lacks required no-follow descriptor admission
+primitives`; there is no path-following fallback. This requirement does not
+change public Dart platform support.
+
+The alias cap bounds discovery metadata and repeated reads while allowing the
+observed pair of provider export paths. The lexicographically first
 relative path is canonical; the report retains all alias paths, sizes and hashes.
 Only that canonical directory supplies the independently retained child files.
 No raw export is modified, and alias admission supplies no missing completion,

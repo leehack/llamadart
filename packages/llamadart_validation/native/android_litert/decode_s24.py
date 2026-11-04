@@ -1,5 +1,7 @@
 """Decode only retained S24 bytes; never infer qualification or contact a service."""
 import argparse
+from contextlib import ExitStack
+from dataclasses import dataclass
 import hashlib
 import json
 import os
@@ -109,10 +111,11 @@ def child(row, execution_hash, directory, status):
             'stdout_sha256': digest(rawout), 'stderr_sha256': digest(rawerr),
             'native_generation_jsons': sum('native_json_hex' in x for x in rows)}
 
-def decode(path, binding):
-    require(path.stat().st_size <= 16 * 1024 * 1024, 'Journal exceeds original16MiB bound')
-    with path.open('rb') as stream:
-        raw = stream.read(16 * 1024 * 1024 + 1)
+def decode(path, binding, *, raw=None):
+    if raw is None:
+        require(path.stat().st_size <= 16 * 1024 * 1024, 'Journal exceeds original16MiB bound')
+        with path.open('rb') as stream:
+            raw = stream.read(16 * 1024 * 1024 + 1)
     rows = jsonl(raw, 16 * 1024 * 1024, 16 * 1024 * 1024)
     identities = [row for row in rows if row.get('event') == 'identity']
     require(len(identities) == 1 and rows[0] is identities[0], 'Missing/duplicate/out-of-order identity')
@@ -230,8 +233,24 @@ JOURNAL_LIMIT = 16 * 1024 * 1024
 def collection_walk_error(error):
     raise error
 
+def file_identity(info):
+    # atime changes during our reads; ctime also detects same-size rewrites.
+    return (info.st_dev, info.st_ino, info.st_mode, info.st_nlink,
+            info.st_size, info.st_mtime_ns, info.st_ctime_ns)
+
+def directory_identity(info):
+    return (info.st_dev, info.st_ino, info.st_mode)
+
+@dataclass
+class JournalCandidate:
+    path: Path
+    info: object
+    parents: tuple
+
+
 def journal_aliases(directory, run_id):
-    require(not directory.is_symlink() and directory.is_dir(), 'Invalid collection directory')
+    root_info = directory.lstat()
+    require(stat.S_ISDIR(root_info.st_mode), 'Invalid collection directory')
     journals = []
     for parent, directories, files in os.walk(directory, followlinks=False, onerror=collection_walk_error):
         for name in directories:
@@ -242,23 +261,93 @@ def journal_aliases(directory, run_id):
             require(stat.S_ISREG(info.st_mode), 'Journal alias is not a regular nonsymlink file')
             require(path.parent.name == run_id, 'Foreign run journal alias')
             require(0 < info.st_size <= JOURNAL_LIMIT, 'Empty/oversized journal alias')
-            journals.append(path)
+            parents = [(directory, root_info)]
+            current = directory
+            for part in path.parent.relative_to(directory).parts:
+                current = current / part
+                parent_info = current.lstat()
+                require(stat.S_ISDIR(parent_info.st_mode), 'Journal parent is not a nonsymlink directory')
+                parents.append((current, parent_info))
+            journals.append(JournalCandidate(path, info, tuple(parents)))
             require(len(journals) <= MAX_JOURNAL_ALIASES, 'Journal alias count limit exceeded')
     require(journals, 'Missing run journal')
-    return sorted(journals, key=lambda path: path.relative_to(directory).as_posix())
+    return sorted(journals, key=lambda candidate: candidate.path.relative_to(directory).as_posix())
+
+@dataclass
+class AdmittedJournal:
+    candidate: JournalCandidate
+    fd: int
+    # Each child is checked through its still-open parent, never a followed path.
+    parents: tuple
+
+    def verify(self):
+        root_fd, root_path, root_info = self.parents[0]
+        require(directory_identity(root_path.lstat()) == directory_identity(root_info) ==
+                directory_identity(os.fstat(root_fd)), 'Collection directory changed')
+        for (parent_fd, _, _), (fd, path, info) in zip(self.parents, self.parents[1:]):
+            current = os.stat(path.name, dir_fd=parent_fd, follow_symlinks=False)
+            require(directory_identity(current) == directory_identity(info) ==
+                    directory_identity(os.fstat(fd)), 'Journal parent directory changed')
+        current = os.stat(self.candidate.path.name, dir_fd=self.parents[-1][0], follow_symlinks=False)
+        require(file_identity(current) == file_identity(self.candidate.info) ==
+                file_identity(os.fstat(self.fd)), 'Journal alias identity/content changed')
+
+
+def admit_journal(candidate, stack):
+    require(all(hasattr(os, name) for name in ('O_NOFOLLOW', 'O_DIRECTORY', 'O_NONBLOCK')) and
+            os.open in os.supports_dir_fd and os.stat in os.supports_dir_fd and
+            os.stat in os.supports_follow_symlinks,
+            'Host lacks required no-follow descriptor admission primitives')
+    parents = []
+    for path, info in candidate.parents:
+        fd = os.open(path if not parents else path.name,
+                     os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
+                     **({} if not parents else {'dir_fd': parents[-1][0]}))
+        stack.callback(os.close, fd)
+        require(directory_identity(os.fstat(fd)) == directory_identity(info), 'Journal parent directory changed')
+        parents.append((fd, path, info))
+    # NONBLOCK prevents a concurrently substituted FIFO from hanging before fstat.
+    fd = os.open(candidate.path.name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK,
+                 dir_fd=parents[-1][0])
+    stack.callback(os.close, fd)
+    require(stat.S_ISREG(os.fstat(fd).st_mode), 'Journal alias is not a regular nonsymlink file')
+    admitted = AdmittedJournal(candidate, fd, tuple(parents))
+    admitted.verify()
+    return admitted
+
+
+def read_journal(journal, *, retain=False):
+    journal.verify()
+    os.lseek(journal.fd, 0, os.SEEK_SET)
+    hashed = hashlib.sha256(); size = 0
+    raw = bytearray() if retain else None
+    while True:
+        chunk = os.read(journal.fd, 64 * 1024)
+        if not chunk: break
+        size += len(chunk)
+        require(size <= JOURNAL_LIMIT, 'Journal alias grew beyond original16MiB bound')
+        hashed.update(chunk)
+        if retain: raw.extend(chunk)
+    journal.verify()
+    require(size == journal.candidate.info.st_size, 'Empty/changed journal alias size')
+    return {'bytes': size, 'sha256': hashed.hexdigest()}, raw
+
 
 def compare_journal_alias(canonical, alias):
-    # Compare exact bytes as well as size/hash, with constant-size read buffers.
+    # Both descriptors stay pinned; compare exact bytes in constant-size buffers.
+    canonical.verify(); alias.verify()
+    os.lseek(canonical.fd, 0, os.SEEK_SET); os.lseek(alias.fd, 0, os.SEEK_SET)
     hashed = hashlib.sha256(); size = 0
-    with canonical.open('rb') as reference, alias.open('rb') as candidate:
-        while True:
-            left, right = reference.read(64 * 1024), candidate.read(64 * 1024)
-            size += len(right)
-            require(size <= JOURNAL_LIMIT, 'Journal alias grew beyond original16MiB bound')
-            require(left == right, 'Journal aliases differ in bytes/size')
-            if not right: break
-            hashed.update(right)
-    require(size > 0 and size == canonical.stat().st_size == alias.stat().st_size,
+    while True:
+        left = os.read(canonical.fd, 64 * 1024)
+        right = os.read(alias.fd, 64 * 1024)
+        size += len(right)
+        require(size <= JOURNAL_LIMIT, 'Journal alias grew beyond original16MiB bound')
+        require(left == right, 'Journal aliases differ in bytes/size')
+        if not right: break
+        hashed.update(right)
+    canonical.verify(); alias.verify()
+    require(size == canonical.candidate.info.st_size == alias.candidate.info.st_size,
             'Empty/changed journal alias size')
     return {'bytes': size, 'sha256': hashed.hexdigest()}
 
@@ -268,16 +357,24 @@ def inspect_collection(directory, plan):
     try:
         journals = journal_aliases(directory, plan['run_id'])
         result['journal_present'] = True
-        result['journal_candidates'] = [path.relative_to(directory).as_posix() for path in journals]
-        canonical = journals[0]
+        result['journal_candidates'] = [candidate.path.relative_to(directory).as_posix() for candidate in journals]
         result['canonical_journal'] = result['journal_candidates'][0]
         result['journal_selection'] = 'lexicographically_first_identical_alias'
-        locks = [compare_journal_alias(canonical, alias) for alias in journals]
-        require(all(lock == locks[0] for lock in locks), 'Journal alias hashes/sizes differ')
-        result['journal_aliases'] = [dict(path=name, **lock) for name, lock in zip(result['journal_candidates'], locks)]
-        decoded = decode(canonical, loads(Path(plan['binding']['path']).read_bytes()))
-        require(decoded['journal_bytes'] == locks[0]['bytes'] and decoded['journal_sha256'] == locks[0]['sha256'],
-                'Journal changed after alias admission')
+        with ExitStack() as stack:
+            admitted = [admit_journal(candidate, stack) for candidate in journals]
+            canonical = admitted[0]
+            first_lock, raw = read_journal(canonical, retain=True)
+            locks = [first_lock] + [compare_journal_alias(canonical, alias) for alias in admitted[1:]]
+            require(all(lock == first_lock for lock in locks), 'Journal alias hashes/sizes differ')
+            result['journal_aliases'] = [dict(path=name, **lock) for name, lock in zip(result['journal_candidates'], locks)]
+            decoded = decode(canonical.candidate.path, loads(Path(plan['binding']['path']).read_bytes()), raw=raw)
+            require(decoded['journal_bytes'] == first_lock['bytes'] and decoded['journal_sha256'] == first_lock['sha256'],
+                    'Journal changed after alias admission')
+            # Reject mutation/deletion during comparison or parsing, including canonical.
+            for journal, lock in zip(admitted, locks):
+                current_lock, _ = read_journal(journal)
+                require(current_lock == lock, 'Journal alias bytes changed after admission')
+            for journal in admitted: journal.verify()
         result['decoded'] = decoded
         result['strict_raw_decode_complete'] = True
     except (ValueError, KeyError, TypeError, OSError, UnicodeError) as error:
