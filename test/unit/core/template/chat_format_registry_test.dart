@@ -179,11 +179,14 @@ void main() {
     test('new production files cannot hide a $name policy table', () {
       final root = Directory.systemTemp.createTempSync('format-policy-');
       addTearDown(() => root.deleteSync(recursive: true));
-      final file = File('${root.path}/lib/new_consumer/policy.dart')
+      File('${root.path}/lib/new_consumer/policy.dart')
         ..createSync(recursive: true)
         ..writeAsStringSync('void probe() { $source }');
       final sources = chatFormatPolicySources(root).toList();
-      expect(sources.map((source) => source.path), contains(file.path));
+      expect(
+        sources.map((source) => chatFormatPolicyPath(root, source)),
+        contains('lib/new_consumer/policy.dart'),
+      );
       expect(
         chatFormatPolicyTables(sources.single.readAsStringSync()),
         isNotEmpty,
