@@ -60,8 +60,11 @@ def check(root, dart='dart'):
         [dart, 'pub', '--verbose', 'publish', '--dry-run'], cwd=root,
         capture_output=True, text=True, timeout=300)
     if published.returncode:
-        raise RuntimeError('pub dry-run failed; run dart pub publish --dry-run '
-                           'for diagnostics (exit %s)' % published.returncode)
+        diagnostic_limit = 16 * 1024
+        raise RuntimeError(
+            'pub dry-run failed (exit %s)\nstdout (tail):\n%s\nstderr (tail):\n%s' %
+            (published.returncode, published.stdout[-diagnostic_limit:],
+             published.stderr[-diagnostic_limit:]))
     files = archive_files(published.stdout + published.stderr, root)
     errors = archive_errors(files)
     if errors:

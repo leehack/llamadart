@@ -1,6 +1,8 @@
 """Pub inventory parsing and missing/checkout-only package controls."""
 import importlib.util
+import json
 from pathlib import Path
+import subprocess
 import tempfile
 from types import SimpleNamespace
 import unittest
@@ -14,6 +16,31 @@ spec.loader.exec_module(archive)
 
 
 class CoreArchiveTest(unittest.TestCase):
+    def test_fixture_log_exceptions_do_not_unignore_other_logs(self):
+        prefix = 'packages/llamadart_validation/native/android_litert/fixtures/dart_transport/'
+        manifest = json.loads((ROOT / prefix / 'manifest.json').read_text())
+        fixture_logs = [prefix + path for path in manifest if path.endswith('/stderr.log')]
+        self.assertTrue(fixture_logs)
+        unrelated = ['runtime.log', prefix + 'unicode-0085/s24.native.launch/runtime.log',
+                     prefix + 'unicode-0085/s24.native.other/stderr.log',
+                     prefix + 'unicode-2030/s24.native.launch/stderr.log']
+        with tempfile.TemporaryDirectory() as scratch:
+            root = Path(scratch)
+            (root / '.gitignore').write_text((ROOT / '.gitignore').read_text())
+            excludes = root / 'empty-global-ignore'
+            excludes.write_text('')
+            subprocess.run(['git', 'init', '-q'], cwd=root, check=True)
+            command = ['git', '-c', 'core.excludesFile=' + str(excludes),
+                       'check-ignore', '--no-index', '--stdin']
+            result = subprocess.run(command, cwd=root, input='\n'.join(fixture_logs) + '\n',
+                                    capture_output=True, text=True)
+            self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+            self.assertEqual(result.stdout, '')
+            result = subprocess.run(command, cwd=root, input='\n'.join(unrelated) + '\n',
+                                    capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(set(result.stdout.splitlines()), set(unrelated))
+
     def test_inventory_comes_from_pub_and_preserves_nested_files(self):
         with tempfile.TemporaryDirectory() as scratch:
             root = Path(scratch).resolve()
@@ -90,6 +117,23 @@ class CoreArchiveTest(unittest.TestCase):
                               side_effect=[success, failure, failure, failure, failure]):
                 with self.assertRaisesRegex(RuntimeError, 'consumer failed'):
                     archive.check(root)
+
+    def test_pub_failure_preserves_bounded_diagnostic_tails(self):
+        failure = SimpleNamespace(
+            returncode=65,
+            stdout='discarded stdout prefix\n' + 'x' * 20000 + '\nSDK stdout cause',
+            stderr='discarded stderr prefix\n' + 'y' * 20000 + '\nSDK stderr cause')
+        with patch.object(archive.subprocess, 'run', return_value=failure) as run:
+            with self.assertRaises(RuntimeError) as raised:
+                archive.check(ROOT)
+        message = str(raised.exception)
+        self.assertIn('exit 65', message)
+        self.assertIn('SDK stdout cause', message)
+        self.assertIn('SDK stderr cause', message)
+        self.assertNotIn('discarded stdout prefix', message)
+        self.assertNotIn('discarded stderr prefix', message)
+        self.assertLess(len(message), 34000)
+        self.assertEqual(run.call_count, 1)
 
 
 if __name__ == '__main__':

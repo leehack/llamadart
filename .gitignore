@@ -91,6 +91,19 @@ third_party/
 
 coverage/
 *.log
+# Pub checks tracked fixtures against Git ignores even outside its archive.
+!/packages/llamadart_validation/native/android_litert/fixtures/dart_transport/unicode-0085/s24.native.cpu-corrected/stderr.log
+!/packages/llamadart_validation/native/android_litert/fixtures/dart_transport/unicode-0085/s24.native.gpu-corrected/stderr.log
+!/packages/llamadart_validation/native/android_litert/fixtures/dart_transport/unicode-0085/s24.native.gpu-guard/stderr.log
+!/packages/llamadart_validation/native/android_litert/fixtures/dart_transport/unicode-0085/s24.native.launch/stderr.log
+!/packages/llamadart_validation/native/android_litert/fixtures/dart_transport/unicode-2028/s24.native.cpu-corrected/stderr.log
+!/packages/llamadart_validation/native/android_litert/fixtures/dart_transport/unicode-2028/s24.native.gpu-corrected/stderr.log
+!/packages/llamadart_validation/native/android_litert/fixtures/dart_transport/unicode-2028/s24.native.gpu-guard/stderr.log
+!/packages/llamadart_validation/native/android_litert/fixtures/dart_transport/unicode-2028/s24.native.launch/stderr.log
+!/packages/llamadart_validation/native/android_litert/fixtures/dart_transport/unicode-2029/s24.native.cpu-corrected/stderr.log
+!/packages/llamadart_validation/native/android_litert/fixtures/dart_transport/unicode-2029/s24.native.gpu-corrected/stderr.log
+!/packages/llamadart_validation/native/android_litert/fixtures/dart_transport/unicode-2029/s24.native.gpu-guard/stderr.log
+!/packages/llamadart_validation/native/android_litert/fixtures/dart_transport/unicode-2029/s24.native.launch/stderr.log
 
 # FVM Version Cache
 .fvm/
