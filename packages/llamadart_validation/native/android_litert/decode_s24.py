@@ -2,8 +2,10 @@
 import argparse
 import hashlib
 import json
+import os
 from pathlib import Path
 import re
+import stat
 
 from s24_capture import decode_capture
 
@@ -221,13 +223,62 @@ def decode(path, binding):
             'unexecuted_required_cases': final['unexecuted_required_cases'], 'qualified': False,
             'semantic_or_placement_assessment': 'NOT_ASSESSED; byte-integrity/protocol checks only'}
 
+# A provider collection normally has two exports; cap aliases independently of bytes.
+MAX_JOURNAL_ALIASES = 16
+JOURNAL_LIMIT = 16 * 1024 * 1024
+
+def collection_walk_error(error):
+    raise error
+
+def journal_aliases(directory, run_id):
+    require(not directory.is_symlink() and directory.is_dir(), 'Invalid collection directory')
+    journals = []
+    for parent, directories, files in os.walk(directory, followlinks=False, onerror=collection_walk_error):
+        for name in directories:
+            require(not (Path(parent) / name).is_symlink(), 'Symlink directory in collection')
+        if 's24-litert-public.jsonl' in files or 's24-litert-public.jsonl' in directories:
+            path = Path(parent) / 's24-litert-public.jsonl'
+            info = path.lstat()
+            require(stat.S_ISREG(info.st_mode), 'Journal alias is not a regular nonsymlink file')
+            require(path.parent.name == run_id, 'Foreign run journal alias')
+            require(0 < info.st_size <= JOURNAL_LIMIT, 'Empty/oversized journal alias')
+            journals.append(path)
+            require(len(journals) <= MAX_JOURNAL_ALIASES, 'Journal alias count limit exceeded')
+    require(journals, 'Missing run journal')
+    return sorted(journals, key=lambda path: path.relative_to(directory).as_posix())
+
+def compare_journal_alias(canonical, alias):
+    # Compare exact bytes as well as size/hash, with constant-size read buffers.
+    hashed = hashlib.sha256(); size = 0
+    with canonical.open('rb') as reference, alias.open('rb') as candidate:
+        while True:
+            left, right = reference.read(64 * 1024), candidate.read(64 * 1024)
+            size += len(right)
+            require(size <= JOURNAL_LIMIT, 'Journal alias grew beyond original16MiB bound')
+            require(left == right, 'Journal aliases differ in bytes/size')
+            if not right: break
+            hashed.update(right)
+    require(size > 0 and size == canonical.stat().st_size == alias.stat().st_size,
+            'Empty/changed journal alias size')
+    return {'bytes': size, 'sha256': hashed.hexdigest()}
+
 def inspect_collection(directory, plan):
-    journals = list(directory.rglob('s24-litert-public.jsonl'))
-    result = {'qualified': False, 'journal_present': len(journals) == 1, 'strict_raw_decode_complete': False,
-              'journal_candidates': [str(path.relative_to(directory)) for path in journals], 'errors': []}
+    result = {'qualified': False, 'journal_present': False, 'strict_raw_decode_complete': False,
+              'journal_candidates': [], 'errors': []}
     try:
-        require(len(journals) == 1 and journals[0].parent.name == plan['run_id'], 'Missing/ambiguous/foreign run journal')
-        result['decoded'] = decode(journals[0], loads(Path(plan['binding']['path']).read_bytes()))
+        journals = journal_aliases(directory, plan['run_id'])
+        result['journal_present'] = True
+        result['journal_candidates'] = [path.relative_to(directory).as_posix() for path in journals]
+        canonical = journals[0]
+        result['canonical_journal'] = result['journal_candidates'][0]
+        result['journal_selection'] = 'lexicographically_first_identical_alias'
+        locks = [compare_journal_alias(canonical, alias) for alias in journals]
+        require(all(lock == locks[0] for lock in locks), 'Journal alias hashes/sizes differ')
+        result['journal_aliases'] = [dict(path=name, **lock) for name, lock in zip(result['journal_candidates'], locks)]
+        decoded = decode(canonical, loads(Path(plan['binding']['path']).read_bytes()))
+        require(decoded['journal_bytes'] == locks[0]['bytes'] and decoded['journal_sha256'] == locks[0]['sha256'],
+                'Journal changed after alias admission')
+        result['decoded'] = decoded
         result['strict_raw_decode_complete'] = True
     except (ValueError, KeyError, TypeError, OSError, UnicodeError) as error:
         result['errors'].append({'type': type(error).__name__, 'message': str(error)})

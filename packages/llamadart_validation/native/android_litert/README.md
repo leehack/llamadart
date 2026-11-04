@@ -145,6 +145,18 @@ a new operator package. The existing frozen private base64-only decoder and
 past journals remain unchanged. This decoder verifies byte integrity and
 completion, always reports `qualified: false`, and does not replace independent
 semantic/GPU/cleanup grading.
+Provider exports may contain up to 16 journal aliases. Every candidate must be
+an ordinary nonsymlink file in the exact run directory, nonempty and within the
+unchanged 16 MiB journal limit. The host compares every byte using 64 KiB read
+buffers and verifies equal size and SHA-256; any differing or invalid alias
+fails the collection. The cap bounds discovery metadata and repeated reads while
+allowing the observed pair of provider export paths. The lexicographically first
+relative path is canonical; the report retains all alias paths, sizes and hashes.
+Only that canonical directory supplies the independently retained child files.
+No raw export is modified, and alias admission supplies no missing completion,
+semantic assessment or GPU qualification. This host-only change needs a new
+hash-admitted decoder alongside the unchanged codec; it changes no APK bytes.
+
 JSONL records are framed on literal LF bytes, with optional CR immediately
 before LF. Strict UTF-8 capture strings may contain U+0085, U+2028 or U+2029;
 those characters never split a record. Each frame is byte-bounded before text
@@ -160,7 +172,15 @@ DART_BIN="$(command -v dart)" python3 -m unittest discover \
   -s native/android_litert -p 'test_s24_capture.py'
 ```
 
-The Python transport lane invokes `DART_BIN` directly with the prepared package
+Source-only alias/framing regressions use the pinned original Dart outputs in
+`native/android_litert/fixtures/dart_transport`, including their raw child files
+and SHA-256 manifest. Run them without Dart or a prepared package:
+
+```sh
+python3 -m unittest discover -s native/android_litert -p 'test_s24*.py'
+```
+
+The Python transport lane additionally invokes `DART_BIN` directly with the prepared package
 configuration to serialize complete model-free20-case Unicode fixtures using
 the actual Dart codec and `jsonEncode`, with both LF and CRLF framing.
 
