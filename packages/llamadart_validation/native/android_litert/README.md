@@ -35,7 +35,7 @@ uses automatic threads. Native CPU controls keep their four-thread setting.
 | Native corrected CPU | 120 | Owned child runs both fixed C04 requests; raw native JSON, positive counters, mapped core and both semantic oracles must pass. |
 | Public corrected CPU | 150 | Default service, two complete engine lifetimes, both C04 oracles each lifetime, cancellation and reload. |
 | Public legacy auto | 150 | Real GPU failure warning, CPU selection, positive counters, process-wide CPU initialization plus fresh per-lifetime compilation, UTF-8 transport, cancellation and reload. Every legacy semantic result is recorded separately; transport success never qualifies legacy accuracy. |
-| Native corrected GPU | 120 | Runs only after the native corrected CPU control passes. Owned child attempts the same two C04 requests once; exact raw JSON, positive counters, both semantic oracles and correlated Adreno/Vulkan delegate initialization must pass. Failure/crash/timeout/malformed evidence is FAIL. |
+| Native corrected GPU | 120 | Runs only after the native corrected CPU control passes. Owned child attempts the same two C04 requests once; exact raw JSON, positive counters, both semantic oracles and correlated Adreno/Vulkan or full OpenCL delegate initialization must pass. Failure/crash/timeout/malformed evidence is FAIL. |
 | Public corrected auto | 150 | Runs only after the corrected native GPU control passes. Same corrected C04/cancel/reload obligations; observes the actual selected route and correlated native initialization. A CPU result needs a real GPU-failure warning; a GPU result needs initialization evidence. Neither is forced in advance. |
 | Cleanup and export | 60 | Persist final statuses, failed cases, legacy semantic failures and every unexecuted required case. |
 
@@ -73,6 +73,25 @@ lifetimes but only one delegate-created line; no repeat initialization is invent
 control and is never attributed to the public route. Synchronous native finish
 is likewise labelled unexposed. GPU delegate initialization is not per-request
 accelerator execution proof, general GPU support or a throughput measurement.
+
+The private GPU predicate admits two distinct initialization backends and
+records the backend name. Vulkan retains the Adreno 750 hardware-adapter and
+WebGPU-environment checks. OpenCL requires one created OpenCL device and
+LiteRT GpuEnvironment, followed by fully delegated positive `LITERT_CL`
+`decode` and `prefill_N` graphs, each with one partition, positive external
+tensors and initialized OpenCL API, in order. Partial, repeated, malformed,
+CPU-delegated, failed or conflicting-backend evidence fails. CPU accelerator
+registration alone is availability, not CPU delegation. These predicates only
+interpret the owned, source/model/PID-bound logs after the existing positive
+C04 controls; they cannot qualify arbitrary unbound log text. OpenCL evidence
+does not qualify Vulkan, and per-request GPU execution remains unobserved.
+
+The saved-log fixture `test/fixtures/s24_opencl_stderr.txt` is the unchanged
+11,951-byte GPU-child stderr retained from the failed mapsfix run, SHA-256
+`f26a99f7e73e3d76b92a740794de3e9794ae843714a8a111a161d0624ebb5007`.
+Its replay checks initialization recognition only. That run's protocol failure
+and five dependent NOT_RUN cases remain unchanged; the fixture grants no
+actual corrected-public-GPU or full-20-case qualification.
 
 The journal copies bytes with their size, SHA-256 and base64 before parsing or
 grading. Child capture first validates owned PID, exit, deadline, byte limits

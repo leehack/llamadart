@@ -12,6 +12,7 @@ import 'package:llamadart/llamadart.dart';
 // Same default-service boundary as the accepted macOS public qualifier.
 // ignore: implementation_imports
 import 'package:llamadart/src/backends/litert_lm/litert_lm_service.dart';
+
 import 'android_qualification_io.dart';
 
 import 'android_litert_qualification.dart';
@@ -316,12 +317,21 @@ Future<void> runS24LiteRtQualification(
             'oracle': 'unchanged_C04_positive_oracles',
           });
         }
+        if (mode == 'gpu') {
+          record({
+            'event': 'native_gpu_initialization',
+            'backend': s24LiteRtGpuInitializationBackend(
+              utf8.decode(rawErr, allowMalformed: true),
+            ),
+            'gpu_per_request_execution': 'not_observed',
+          });
+        }
         if (mode == 'gpu' &&
             !s24LiteRtGpuInitialized(
               utf8.decode(rawErr, allowMalformed: true),
             )) {
           throw StateError(
-            'Native corrected GPU control lacks correlated Adreno/Vulkan delegate initialization',
+            'Native corrected GPU control lacks correlated Vulkan or full OpenCL delegate initialization',
           );
         }
       }
@@ -544,6 +554,10 @@ Future<void> runS24LiteRtQualification(
                 'public_process_pid': pid,
                 'process_cpu_delegate_initialization':
                     processCpuDelegateInitialization,
+                'native_gpu_initialization_backend':
+                    s24LiteRtGpuInitializationBackend(
+                      utf8.decode(native, allowMalformed: true),
+                    ),
                 'native_gpu_initialization': s24LiteRtGpuInitialized(
                   utf8.decode(native, allowMalformed: true),
                 ),

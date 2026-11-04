@@ -285,6 +285,12 @@ void main() {
         'Selected adapter: Adreno (TM) 750, arch=adreno, vendor=Qualcomm, backend=Vulkan, adapterType=Integrated GPU\n'
         'Created a WebGPU environment.\nTotal 2 external tensors are used for delegate inputs and outputs';
     expect(s24LiteRtGpuInitialized(log), isTrue);
+    expect(s24LiteRtGpuInitializationBackend(log), 'Vulkan');
+    expect(
+      s24LiteRtGpuInitialized(log.replaceAll('Total 2', 'Total 0')),
+      isFalse,
+    );
+    expect(s24LiteRtGpuInitialized('$log\nSelected adapter: CPU'), isFalse);
     expect(s24LiteRtGpuInitialized('GPU registered'), isFalse);
     expect(
       s24LiteRtGpuInitialized(log.replaceAll('Vulkan', 'OpenGL')),
@@ -293,5 +299,86 @@ void main() {
     expect(s24LiteRtGpuInitialized('$log\nVK_ERROR_DEVICE_LOST'), isFalse);
     expect(s24LiteRtStageSeconds.values.fold<int>(0, (a, b) => a + b), 1050);
     expect(s24LiteRtStageSeconds.values.every((value) => value <= 150), isTrue);
+  });
+  test('owned OpenCL log requires both full ordered positive GPU graphs', () {
+    final log = File('test/fixtures/s24_opencl_stderr.txt').readAsStringSync();
+    expect(
+      captureS24LiteRtBytes(utf8.encode(log))['sha256'],
+      'f26a99f7e73e3d76b92a740794de3e9794ae843714a8a111a161d0624ebb5007',
+    );
+    expect(s24LiteRtGpuInitializationBackend(log), 'OpenCL');
+    expect(s24LiteRtGpuInitialized(log), isTrue);
+    final negatives = <String, String>{
+      'library only': 'INFO: Loaded OpenCL library with dlopen.',
+      'CPU registry only': 'XNNPACK CPU accelerator registered.',
+      'missing device': log.replaceAll(
+        'Created OpenCL device',
+        'Absent device',
+      ),
+      'missing environment': log.replaceAll(
+        'Created LiteRT GpuEnvironment.',
+        '',
+      ),
+      'zero graph': log.replaceAll('1306 out of 1306', '0 out of 0'),
+      'partial decode': log.replaceAll('1306 out of 1306', '1305 out of 1306'),
+      'partial prefill': log.replaceAll('1358 out of 1358', '1357 out of 1358'),
+      'malformed counts': log.replaceAll(
+        '1306 out of 1306',
+        '1306x out of 1306',
+      ),
+      'noncanonical counts': log.replaceAll(
+        '1306 out of 1306',
+        '01306 out of 01306',
+      ),
+      'overflow counts': log.replaceAll(
+        '1306 out of 1306',
+        '${'9' * 30} out of ${'9' * 30}',
+      ),
+      'overflow tensors': log.replaceAll('Total 113', 'Total ${'9' * 30}'),
+      'no delegation': log.replaceAll(
+        RegExp(r'^VERBOSE: Replacing.*$', multiLine: true),
+        '',
+      ),
+      'decode only': log.replaceAll(
+        RegExp(r'^VERBOSE: Replacing.*prefill_128.*$', multiLine: true),
+        '',
+      ),
+      'multiple partitions': log.replaceAll(
+        'yielding 1 partitions',
+        'yielding 2 partitions',
+      ),
+      'zero tensors': log.replaceAll('Total 113', 'Total 0'),
+      'missing API': log.replaceFirst(
+        'Initializing OpenCL-based API from serialized data.',
+        '',
+      ),
+      'wrong graph': log.replaceAll(
+        'subgraph 0 (decode)',
+        'subgraph 0 (prefill_128)',
+      ),
+      'missing prefill': log.replaceAll(
+        'subgraph 1 (prefill_128)',
+        'subgraph 2 (prefill_128)',
+      ),
+      'CPU graph': log.replaceFirst('(LITERT_CL)', '(XNNPACK)'),
+      'CPU delegate': '$log\nCreated TensorFlow Lite XNNPACK delegate for CPU.',
+      'fallback': '$log\nFalling back to CPU',
+      'GPU error': '$log\nOpenCL initialization failed',
+      'GPU failure marker': '$log\nFailed to modify graph with delegate',
+      'error severity': '$log\nERROR: GPU unavailable',
+      'error severity prefix':
+          '$log\nE0000 00:00:1793800461 GPU initialization refused',
+      'repeated load': '$log\n$log',
+      'conflicting backend': '$log\nCreated a WebGPU environment.',
+      'conflicting adapter': '$log\nSelected adapter: CPU backend=Vulkan',
+    };
+    for (final entry in negatives.entries) {
+      expect(
+        s24LiteRtGpuInitializationBackend(entry.value),
+        isNull,
+        reason: entry.key,
+      );
+      expect(s24LiteRtGpuInitialized(entry.value), isFalse, reason: entry.key);
+    }
   });
 }

@@ -296,15 +296,95 @@ String readS24LiteRtNativeAnswer(List<int> bytes) {
   return text.toString();
 }
 
-/// This observes initialization, never per-request accelerator execution.
+/// This observes initialization in an owned S24 load log, never per-request
+/// execution. Callers separately bind the GPU request, runtime, model and PID,
+/// and require completed positive C04 controls before accepting qualification.
 bool s24LiteRtGpuInitialized(String log) =>
-    RegExp(
-      r'Selected adapter: [^\n]*Adreno[^\n]*750[^\n]*backend=Vulkan, adapterType=(?:Integrated GPU|Discrete GPU)',
-    ).hasMatch(log) &&
-    log.contains('Created a WebGPU environment.') &&
-    RegExp(
-      r'Total \d+ external tensors are used for delegate inputs and outputs',
-    ).hasMatch(log) &&
-    !liteRtGpuFailureMarkers.any(
-      (marker) => log.toLowerCase().contains(marker.toLowerCase()),
-    );
+    s24LiteRtGpuInitializationBackend(log) != null;
+
+/// Identifies the initialized delegate without relabeling OpenCL as Vulkan.
+String? s24LiteRtGpuInitializationBackend(String log) {
+  if (containsLiteRtGpuFailureMarker(log) ||
+      RegExp(
+        r'Created TensorFlow Lite XNNPACK delegate for CPU|'
+        r'delegate \(XNNPACK|delegate \(CPU|'
+        r'\b(?:ERROR|FATAL)\b|^[EF][0-9]{4} |'
+        r'(?:failed|failure|error)[^\n]*(?:OpenCL|GpuEnvironment|GPU delegate)|'
+        r'(?:OpenCL|GpuEnvironment|GPU delegate)[^\n]*(?:failed|failure|error)',
+        caseSensitive: false,
+        multiLine: true,
+      ).hasMatch(log)) {
+    return null;
+  }
+  final hasVulkan =
+      log.contains('Selected adapter:') ||
+      log.contains('Created a WebGPU environment.');
+  final hasOpenCl =
+      log.contains('Created OpenCL device') ||
+      log.contains('Created LiteRT GpuEnvironment.') ||
+      log.contains('LITERT_CL') ||
+      log.contains('Initializing OpenCL-based API');
+  if (hasVulkan && hasOpenCl) return null;
+  if (hasVulkan) {
+    return 'Selected adapter:'.allMatches(log).length == 1 &&
+            RegExp(
+                  r'Selected adapter: [^\n]*Adreno[^\n]*750[^\n]*backend=Vulkan, adapterType=(?:Integrated GPU|Discrete GPU)',
+                ).allMatches(log).length ==
+                1 &&
+            'Created a WebGPU environment.'.allMatches(log).length == 1 &&
+            RegExp(
+              r'Total [1-9][0-9]* external tensors are used for delegate inputs and outputs',
+            ).hasMatch(log)
+        ? 'Vulkan'
+        : null;
+  }
+  if (!hasOpenCl) return null;
+
+  // The two compiled C04 graphs each emit delegation, tensors, then API init.
+  // Require the complete ordered sequence; registration and dlopen prove none
+  // of this, and mixed/repeated loads cannot supply another load's evidence.
+  final records = log
+      .split('\n')
+      .where(
+        (line) =>
+            line.contains('Created OpenCL device') ||
+            line.contains('Created LiteRT GpuEnvironment.') ||
+            line.contains('Replacing ') ||
+            line.contains(
+              'external tensors are used for delegate inputs and outputs',
+            ) ||
+            line.contains('Initializing OpenCL-based API'),
+      )
+      .toList();
+  if (records.length != 8 ||
+      !records[0].endsWith(
+        'Created OpenCL device from provided device id and platform id.',
+      ) ||
+      !records[1].endsWith('Created LiteRT GpuEnvironment.')) {
+    return null;
+  }
+  for (var graph = 0; graph < 2; graph++) {
+    final offset = 2 + graph * 3;
+    final delegated = RegExp(
+      r'^VERBOSE: Replacing ([1-9][0-9]*) out of ([1-9][0-9]*) node\(s\) with delegate \(LITERT_CL\) node, yielding 1 partitions for subgraph ([01]) \((decode|prefill_[1-9][0-9]*)\)\.$',
+    ).firstMatch(records[offset]);
+    final tensors = RegExp(
+      r'\] Total ([1-9][0-9]*) external tensors are used for delegate inputs and outputs$',
+    ).firstMatch(records[offset + 1]);
+    if (delegated == null ||
+        delegated[1] != delegated[2] ||
+        int.tryParse(delegated[1]!) == null ||
+        delegated[3] != '$graph' ||
+        (graph == 0
+            ? delegated[4] != 'decode'
+            : !delegated[4]!.startsWith('prefill_')) ||
+        tensors == null ||
+        int.tryParse(tensors[1]!) == null ||
+        !records[offset + 2].endsWith(
+          '] Initializing OpenCL-based API from serialized data.',
+        )) {
+      return null;
+    }
+  }
+  return 'OpenCL';
+}
