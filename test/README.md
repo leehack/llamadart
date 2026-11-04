@@ -46,6 +46,18 @@ tool/testing/run_template_parity_suites.sh
 - Mark platform-specific files with `@TestOn('vm')` or `@TestOn('browser')`.
 - Use `@Tags(['local-only'])` for tests that should not run in default/CI flows.
 
+## Chat-format policy guard
+
+`chat_format_registry_test.dart` scans every Dart file under `lib/`, including
+new files and handler implementations. Only `chat_format_registry.dart` is
+excluded. The AST scan ignores comments and string contents; a handler's
+single-format getter and ordinary identity/ternary dispatch are allowed without
+excluding its file. Format collections, switch patterns, and multi-format
+logical helpers require the registry or an exact path-and-expression exception.
+The current exceptions preserve shipped routing and PEG dispatch; each gives a
+reason and must be reviewed independently. Tests reject unused, copied, and
+edited exceptions. Add a causal production-file control for new scan syntax.
+
 ## Internal LiteRT C API 1.0 embeddings
 
 The `litert-lm-multimodal-embedding` local E2E scenario can exercise the
