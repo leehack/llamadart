@@ -8,7 +8,7 @@
 - Restrict unqualified Android Vulkan Qwen3.5 paths to bounded ordinary text, with typed errors for larger micro-batches, media, speculation and embeddings ([#948](https://github.com/leehack/llamadart/issues/948)).
 
 - Validate native LiteRT-LM engine settings, send controls and benchmark counts before loading runtime libraries.
-- Enable ABI-aware native LiteRT-LM C API 1.0 public dispatch while retaining legacy runtime compatibility and typed unsupported guards.
+- Update native LiteRT-LM to `v0.19.0` for C API 1.0, retaining legacy ABI compatibility, typed unsupported guards and existing model/platform limits.
 
 - Reject incomplete `LLAMADART_LITERT_LM_LIB_DIR` overrides instead of substituting a bundled or cached runtime.
 - Keep cached models reusable, visible and removable after their cache root moves, including iOS app container updates ([#1741](https://github.com/leehack/llamadart/issues/1741)).

@@ -87,11 +87,17 @@ feature. For which runtime supports which feature, see the
   larger Qwen3 weight buffer. `ComputeDevice.gpu` fails on GPU creation;
   `auto` retries on the CPU with a warning
   ([#1034](https://github.com/leehack/llamadart/issues/1034)). The legacy
-  Qwen3 artifact's incorrect-output history remains unresolved; a corrected
-  artifact passing a separate native OpenCL control does not qualify the
-  public app route. That route and the manifest correction still need fresh
-  device evidence ([#1677](https://github.com/leehack/llamadart/issues/1677),
-  [litert-lm-native#51](https://github.com/leehack/litert-lm-native/issues/51)).
+  Qwen3 FP32 artifact's four semantic failures remain unqualified under
+  [litert-lm-native#51](https://github.com/leehack/litert-lm-native/issues/51).
+  Published native v0.19.0 has accepted corrected-model default-service OpenCL
+  evidence only for SC-51E / API36 / DEBUG: all 20 cases, six closed lifetimes,
+  final completion and eight full-graph placement proofs, including corrected
+  C04, cancellation and reload. Fifteen exact sidecars were forensically
+  extracted from the retained generation-bound journal; they were not
+  independently downloaded, and the original collector FAIL is unchanged.
+  This qualifies that scoped public route, not every Qwen artifact, device or
+  release profile. Final source-adoption consumers remain
+  [#1677](https://github.com/leehack/llamadart/issues/1677).
   `ModelParams(device: ComputeDevice.cpu)` skips the GPU attempt. Gemma 4
   E2B has separate GPU evidence; it does not qualify Qwen3.
 - Android NPU depends on the device SoC, the `.litertlm` bundle and the LiteRT

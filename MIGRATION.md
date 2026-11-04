@@ -32,9 +32,12 @@ Behavior to recheck with a C API 1 runtime:
   worker and its native/model/cache owners. That backend requires a process
   restart; an ended request does not prove native cleanup completed.
 
-The default owner pin and Apple companion assets are unchanged in this source
-migration. Final runtime adoption and companion/version preparation require
-separate qualification; this guide does not announce a published artifact.
+The native hook and Apple companion source now pin published
+[LiteRT-LM v0.19.0](https://github.com/leehack/litert-lm-native/releases/tag/v0.19.0)
+(owner `f173fe9b`, upstream `83ce6067`). This source adoption does not publish
+core or Apple packages: final default-discovery consumers, Apple embedding and
+signatures, integration CI/audit and coordinated release preparation remain
+separate gates. Web LiteRT-LM remains `@litert-lm/core@0.18.0`.
 See [the adoption checklist](doc/litert_lm_v1_adoption.md) for its gates.
 
 ## `0.17.0` -> `0.17.1`: llama.cpp native runtime `v0.8.0-1`

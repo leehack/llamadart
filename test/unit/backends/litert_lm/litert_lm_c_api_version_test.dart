@@ -104,12 +104,19 @@ void main() {
                       .having(
                         (error) => error.message,
                         'repair',
-                        contains('v0.18.1-4'),
+                        contains('v0.19.0'),
                       )
                       .having(
                         (error) => error.message,
-                        'migration',
-                        contains('#1677'),
+                        'admitted ABI',
+                        contains('supported C API 1.0.x'),
+                      )
+                      .having(
+                        (error) => error.message,
+                        'ABI contract',
+                        contains(
+                          'https://github.com/leehack/llamadart/issues/1677',
+                        ),
                       ),
                 ),
         );
@@ -117,5 +124,38 @@ void main() {
         client.dispose();
       }
     });
+    test(
+      '${entry.key} legacy gate directs callers to the admitting client',
+      () {
+        expect(
+          () => requireLiteRtLmLegacyCApi(
+            DynamicLibrary.open(libraries[entry.key]!),
+          ),
+          throwsA(
+            isA<LlamaUnsupportedException>()
+                .having(
+                  (error) => error.message,
+                  'legacy refusal',
+                  contains('incompatible with the pre-1.0 bindings'),
+                )
+                .having(
+                  (error) => error.message,
+                  'admitting client',
+                  contains('default LiteRtLmRuntimeClient or LiteRtLmService'),
+                )
+                .having(
+                  (error) => error.message,
+                  'compatible override',
+                  contains('compatible legacy runtime override'),
+                )
+                .having(
+                  (error) => error.message,
+                  'no legacy engine call',
+                  contains('No legacy engine call was attempted'),
+                ),
+          ),
+        );
+      },
+    );
   }
 }

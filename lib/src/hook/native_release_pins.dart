@@ -105,10 +105,10 @@ const llamaCppBackendSidecarSpecs = <LlamaCppBackendSidecarSpec>[
 ];
 
 /// `leehack/litert-lm-native` release tag downloaded for the LiteRT-LM runtime.
-const liteRtLmReleaseTag = 'v0.18.1-4';
+const liteRtLmReleaseTag = 'v0.19.0';
 
 /// LiteRT-LM cache directory version derived from [liteRtLmReleaseTag].
-const liteRtLmVersion = '0.18.1-4';
+const liteRtLmVersion = '0.19.0';
 
 /// A published LiteRT-LM runtime archive and the libraries it must contain.
 class LiteRtLmBundleSpec {
@@ -133,101 +133,82 @@ class LiteRtLmBundleSpec {
 const liteRtLmBundleSpecs = <LiteRtLmBundleSpec>[
   LiteRtLmBundleSpec(
     'android-arm64',
-    sha256: '0bbca576bd4b5d36ae78b262079ac4a4fd12806e9b463783895994bb867c90de',
+    sha256: '6a4609798e8eb1bbf5e31fcf076b8b07326b850f4b1733d4ad805534c179d5d6',
     requiredLibraries: {
       'libGemmaModelConstraintProvider.so',
       'libLiteRtGpuAccelerator.so',
       'libLiteRtLm.so',
       'libLiteRtOpenClAccelerator.so',
-      'libLiteRtTopKOpenClSampler.so',
-      'libLiteRtTopKWebGpuSampler.so',
       'libLiteRtWebGpuAccelerator.so',
       'libwebgpu_dawn.so',
     },
   ),
   LiteRtLmBundleSpec(
     'android-x64',
-    sha256: 'b1f16fc017a214a8607ad6d0ca96f76f1b6b656af20aae98d1bddc33bc9d33ae',
+    sha256: '9b23afe5e970794810eb319a92afd8005f1108f7b86f250da7eebd012516547b',
     requiredLibraries: {
       'libGemmaModelConstraintProvider.so',
       'libLiteRtGpuAccelerator.so',
       'libLiteRtLm.so',
       'libLiteRtOpenClAccelerator.so',
-      'libLiteRtTopKOpenClSampler.so',
-      'libLiteRtTopKWebGpuSampler.so',
       'libLiteRtWebGpuAccelerator.so',
       'libwebgpu_dawn.so',
     },
   ),
   LiteRtLmBundleSpec(
     'ios-arm64',
-    sha256: 'ca392ebb8aafe9a75d5907376efa51c66a67a75e74ead6ce42d2375f1a961838',
-    requiredLibraries: {
-      'CLiteRTLM',
-      'LiteRtLm',
-      'LiteRtMetalAccelerator',
-      'LiteRtTopKMetalSampler',
-    },
+    sha256: '1a877b3289671829b1655c4c32d076e9165dfe9e8bcc32ffde3b6823f8c09bc5',
+    requiredLibraries: {'CLiteRTLM', 'LiteRtLm', 'LiteRtMetalAccelerator'},
   ),
   LiteRtLmBundleSpec(
     'ios-arm64-sim',
-    sha256: '078d28b539050b5f16fc98b99d85657fcf88ee79b4457456311a0d6d2481daad',
-    requiredLibraries: {
-      'CLiteRTLM',
-      'LiteRtLm',
-      'LiteRtMetalAccelerator',
-      'LiteRtTopKMetalSampler',
-    },
+    sha256: 'a6851a8358be0fe13cacde4d2c135c03faebe9aaec94ffdc32003231f8c6b9a7',
+    requiredLibraries: {'CLiteRTLM', 'LiteRtLm', 'LiteRtMetalAccelerator'},
   ),
   LiteRtLmBundleSpec(
     'macos-arm64',
-    sha256: '14bfe47e9beb032fd62c4020a79b555a3909df4940a443eb40daf47bbad7817a',
+    sha256: 'b5d7855378500b68e9395bc17bef431ee852c68ddb8ac88e4d6686c5e09e505f',
     requiredLibraries: {
       'libCLiteRTLM_mac.dylib',
       'libGemmaModelConstraintProvider.dylib',
       'libLiteRt.dylib',
       'libLiteRtLm.dylib',
       'libLiteRtMetalAccelerator.dylib',
-      'libLiteRtTopKMetalSampler.dylib',
-      'libLiteRtTopKWebGpuSampler.dylib',
       'libLiteRtWebGpuAccelerator.dylib',
       'libwebgpu_dawn.dylib',
     },
   ),
   LiteRtLmBundleSpec(
     'linux-arm64',
-    sha256: '3e29ede495035369366cf0ab1562f8d96c32d2e6405cab7212565d748a076f29',
+    sha256: '85133f85c1413af4c62bce40d78b47567bc1213cce40b47205dc8648b5225e2f',
     requiredLibraries: {
       'libGemmaModelConstraintProvider.so',
       'libLiteRt.so',
       'libLiteRtLm.so',
-      'libLiteRtTopKWebGpuSampler.so',
       'libLiteRtWebGpuAccelerator.so',
       'libwebgpu_dawn.so',
     },
   ),
   LiteRtLmBundleSpec(
     'linux-x64',
-    sha256: 'c8246d836120c97595a7ed6844d0b16ef2fd6db0fdacf739b4d67bb5566d845c',
+    sha256: '9b0a0518edd7059726c7f24411f4519207814ec8d7039a8fc131ce6428cf4247',
     requiredLibraries: {
       'libGemmaModelConstraintProvider.so',
       'libLiteRt.so',
       'libLiteRtLm.so',
-      'libLiteRtTopKWebGpuSampler.so',
       'libLiteRtWebGpuAccelerator.so',
       'libwebgpu_dawn.so',
     },
   ),
   LiteRtLmBundleSpec(
     'windows-x64',
-    sha256: 'f253a32582d140cae62d777a8df8be5320c927a97fe652e186d466aab6581250',
+    sha256: '77a2f84a342d1341cecb9a12470bee35ff3eb200eecbbb7ff3294ed099422a17',
     requiredLibraries: {
       'LiteRtLm.dll',
       'dxcompiler.dll',
       'dxil.dll',
       'libGemmaModelConstraintProvider.dll',
       'libLiteRt.dll',
-      'libLiteRtTopKWebGpuSampler.dll',
       'libLiteRtWebGpuAccelerator.dll',
       'libwebgpu_dawn.dll',
       'msvcp140.dll',

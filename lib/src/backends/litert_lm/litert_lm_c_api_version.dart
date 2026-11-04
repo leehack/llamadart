@@ -26,7 +26,9 @@ typedef _GetApiVersionDart =
     if (status != 0 || parts[0] != 1 || parts[1] != 0 || parts[2] < 0) {
       throw LlamaUnsupportedException(
         'LiteRT-LM rejects C API ${parts[0]}.${parts[1]}.${parts[2]} (version probe status $status). '
-        'Use the pinned litert-lm-native v0.18.1-4 runtime until llamadart#1677 qualification completes. No legacy engine call was attempted.',
+        'Use the packaged litert-lm-native v0.19.0 runtime with supported C API 1.0.x. '
+        'See https://github.com/leehack/llamadart/issues/1677 for the admitted ABI contract. '
+        'No legacy engine call was attempted.',
       );
     }
     return (major: parts[0], minor: parts[1], patch: parts[2]);
@@ -39,8 +41,9 @@ typedef _GetApiVersionDart =
 ///
 /// LiteRT-LM 0.19 introduces `litert_lm_get_api_version` alongside status-return
 /// and output-parameter signatures. Reusing the legacy function names does not
-/// make their calling conventions compatible. The pinned 0.18 runtime has no
-/// version export and continues through the existing capability checks.
+/// make their calling conventions compatible. Compatible legacy runtime
+/// overrides have no version export and continue through capability checks.
+/// The packaged 0.19 runtime requires the default ABI-selecting client.
 void requireLiteRtLmLegacyCApi(DynamicLibrary library) {
   if (!library.providesSymbol('litert_lm_get_api_version')) {
     return;
@@ -56,11 +59,12 @@ void requireLiteRtLmLegacyCApi(DynamicLibrary library) {
         ? '${parts[0]}.${parts[1]}.${parts[2]}'
         : 'unknown (version probe status $status)';
     throw LlamaUnsupportedException(
-      'Native LiteRT-LM C API $version is incompatible with this package\'s '
-      'pre-1.0 bindings. LiteRT-LM 0.19 and C API 1.0 require the consumer '
-      'migration tracked in llamadart#1677. Use the pinned '
-      'litert-lm-native v0.18.1-4 runtime, or a package release explicitly '
-      'supporting the selected C API. No legacy engine call was attempted.',
+      'Native LiteRT-LM C API $version is incompatible with the pre-1.0 bindings. '
+      'Use the default LiteRtLmRuntimeClient or LiteRtLmService to select the '
+      'admitted C API 1.0.x route for the packaged litert-lm-native v0.19.0 '
+      'runtime, or select a compatible legacy runtime override for these bindings. '
+      'See https://github.com/leehack/llamadart/issues/1677 for the admitted ABI contract. '
+      'No legacy engine call was attempted.',
     );
   } finally {
     calloc.free(parts);

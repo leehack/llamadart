@@ -598,7 +598,9 @@ class LiteRtLmService {
     final client = await _ensureClientForGeneration(const GenerationParams());
     if (!client.supportsJsonSchemaConstraints) {
       throw LlamaUnsupportedException(
-        'Native JSON Schema chat requires all constraint-provider and thinking-config symbols in the packaged LiteRT-LM v0.18.1-4 runtime.',
+        'Native JSON Schema chat requires all constraint-provider and thinking-config symbols. '
+        'Use the packaged LiteRT-LM v0.19.0 runtime through the default ABI-selecting client; '
+        'model and platform qualification still applies.',
       );
     }
     try {

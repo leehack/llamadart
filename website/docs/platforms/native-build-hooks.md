@@ -97,10 +97,13 @@ hooks:
   native assets, and loading a `.litertlm` model there throws
   `LlamaUnsupportedException`. `LLAMADART_LITERT_LM_LIB_DIR` does not lift
   that error on x86_64; a `libraryPath` passed to `LiteRtLmRuntimeClient`
-  does for the legacy runtime. The prepared C API 1 selector keeps unsupported
-  ABI checks and requires macOS 14+ before loading even an explicit path;
-  public selection admits C API 1.0.x while unknown/future versions remain
-  unsupported. The default runtime pin is unchanged pending artifact adoption.
+  does for the legacy runtime. The ABI-aware selector keeps unsupported
+  ABI checks and requires macOS 14+ before loading even an explicit path or
+  legacy library; public selection admits C API 1.0.x while unknown/future
+  versions remain unsupported. The source pin and companion source assets now
+  use published native `v0.19.0`; final default-discovery consumers and Apple
+  embedding/signature checks remain [#1677](https://github.com/leehack/llamadart/issues/1677)
+  gates before coordinated package release.
 - An empty or all-unknown selection falls back to `llama_cpp` and
   `litert_lm`; one that leaves no runtime, such as `none`, fails the build.
 

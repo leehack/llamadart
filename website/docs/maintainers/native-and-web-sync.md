@@ -325,16 +325,22 @@ runtime it bundles. Then run the `image-generation-smoke` and
 LiteRT-LM 0.19 changes C function signatures to status returns and output
 parameters. The public lazy facade, service metadata/finish probes and speech
 worker share discovery and ABI selection. `_liteRtLmV1ProductionSelection` in
-`litert_lm_runtime_facade.dart` enables public C API 1.0.x dispatch. Default
-owner pins remain unchanged pending qualified publication/adoption. Selector tests
-admit only C API 1.0.x; failed, malformed and future
-versions never retry legacy arities. The prepared path checks macOS 14+ before
-core or companion discovery, including explicit paths. A caller-opened library
-cannot retroactively prevent dlopen, so the direct v1 adapter also checks the
-floor before native operations. Replacing the native pin or generated embedding
-bindings alone is unsafe. Keep pinned
-0.18 support intact during preparation and qualify both artifact directions
-before adoption.
+`litert_lm_runtime_facade.dart` enables public C API 1.0.x dispatch. The native
+hook and Apple companion source now pin published
+[v0.19.0](https://github.com/leehack/litert-lm-native/releases/tag/v0.19.0),
+owner `f173fe9b` / upstream `83ce6067`. Independent readback matched all 21 public
+assets to qualified bytes; GitHub reports `immutable: false`, so this is verified
+snapshot evidence, not enforced immutability. Public selection retains legacy
+overrides when the version marker is absent; a present marker must report C API
+1.0.x. Failed, malformed and future versions never retry legacy arities, and
+optional capabilities still require their complete export/probe groups. The
+selected path checks macOS 14+ before core or companion discovery, including
+legacy libraries and explicit paths. A caller-opened library cannot retroactively
+prevent dlopen, so the direct v1 adapter also checks the floor before native
+operations. Replacing the native pin or generated embedding bindings alone is
+unsafe. Preserve tested legacy compatibility and complete affected default
+consumers, SwiftPM/Apple embedding/signature checks and exact-head CI/audit before
+merge or release. Source pin adoption does not publish core or Apple packages.
 
 Worker request completion and native settlement are separate. An errored v1
 turn is safe to release only after its actual final callback and successful
@@ -346,9 +352,10 @@ bounded to the failed backend; disposal never reports successful cleanup in this
 state. Do not kill the retained isolate or release its lease to make teardown
 appear complete.
 
-Public ABI-aware selection is enabled, while owner pins remain unchanged and
-exact-artifact qualification is pending. This transport contract alone does not
-qualify an artifact or model. The owner proxy's
+Public ABI-aware selection and the v0.19.0 source pin are enabled; remaining
+consumer, feature and platform gates are recorded in
+`doc/litert_lm_v1_adoption.md`. This transport contract alone does not qualify a
+model or device. The owner proxy's
 callback ABI 2 and finish-reason ABI 1 alone do not establish lossless callback
 delivery under allocation failure. Owner
 [issue #97](https://github.com/leehack/litert-lm-native/issues/97) defines the
@@ -368,14 +375,17 @@ and several feature families were still pending. They are retained for ABI and
 ownership context, not as the current capability list. Public direct calls,
 default services and speech now share ABI-aware selection; current coverage and
 remaining artifact/model/platform gates are in `doc/litert_lm_v1_adoption.md`.
-Owner pins and companion assets remain unchanged pending qualified adoption.
+At that stage, owner pins and companion assets were unchanged pending qualified
+adoption.
 
-This is fixture-backed consumer preparation for
-[owner PR #98](https://github.com/leehack/litert-lm-native/pull/98), not adoption
-of an immutable owner artifact. Owner source/release qualification and ASR,
-media, tools, schema and embedding migration remain public adoption gates. The
-ASR bridge has its own versioned ABI, but its current Dart loader still passes
-through the legacy C API refusal.
+The [owner PR #98](https://github.com/leehack/litert-lm-native/pull/98) snapshot
+was fixture-backed consumer preparation, not adoption of a published owner
+artifact. Owner source/release qualification and ASR, media, tools, schema and
+embedding migration were still public adoption gates. The ASR bridge already
+had its own versioned ABI, but the Dart loader at that stage still passed
+through the legacy C API refusal. The current speech worker uses the shared
+ABI-aware facade and independently checks the ASR bridge version, layout and
+complete exports; the historical refusal is not its current capability status.
 
 Internal v1 `loadConfigured` transports resolved engine options through the
 status-returning API. Its typed settings use the existing compute-device and
@@ -485,10 +495,11 @@ one million turns are refused instead of truncated. Pending or quarantined
 native work prohibits metadata, render and benchmark calls. These remain
 fixture-backed ABI/lifetime controls without model or device qualification.
 
-The internal v1 client can now be explicitly injected through `LiteRtLmService` for text/tool chat, response assembly, metrics and lifetime
-checks. The existing public client and Web stub stay unchanged. This does not
-select v1 publicly: `doc/litert_lm_v1_adoption.md` tracks each existing call path,
-the remaining feature families and the owner/artifact gates before adoption.
+At that stage, the internal v1 client could be explicitly injected through
+`LiteRtLmService` for text/tool chat, response assembly, metrics and lifetime
+checks. That slice left the public client and Web stub unchanged and did not
+select v1 publicly. Current public selection and the remaining feature-family
+and consumer gates are tracked in `doc/litert_lm_v1_adoption.md`.
 
 ### Current v1 discovery
 

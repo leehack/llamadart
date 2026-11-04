@@ -218,9 +218,15 @@ or shipping runtimes the app does not use.
   on Adreno 750 can reject larger weight buffers. Failed GPU creation under
   `auto` retries on CPU with a warning; explicit `ComputeDevice.gpu` fails.
   Check the active backend, and use `ModelParams(device: ComputeDevice.cpu)`
-  to skip the GPU attempt. Corrected Qwen3 public GPU qualification remains
-  pending (#1677, litert-lm-native#51); preserve the legacy artifact's failed
-  history. `ComputeDevice.npu` needs a
+  to skip the GPU attempt. Native v0.19.0 has accepted corrected-model
+  default-service OpenCL evidence only on SC-51E/API36/DEBUG: 20 cases, six
+  closed lifetimes, eight full-graph placement proofs, cancellation and reload.
+  Preserve the legacy FP32 artifact's four unqualified semantic failures and
+  the unchanged collector FAIL; 15 exact sidecars were forensically extracted
+  from the retained journal, not independently downloaded. This does not
+  qualify every Qwen artifact/device or release profile; see
+  [the platform limits](../../website/docs/platforms/known-platform-issues.md#android)
+  and #1677 / litert-lm-native#51. `ComputeDevice.npu` needs a
   supporting SoC and bundle, and throws `LlamaUnsupportedException` without
   one.
 - Budget memory for phones: 1B-3B parameter models, a `contextSize` no larger
