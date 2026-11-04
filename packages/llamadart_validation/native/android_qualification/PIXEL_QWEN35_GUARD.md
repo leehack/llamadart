@@ -36,11 +36,14 @@ The public backend is `LlamaEngine(LlamaBackend())`, with no service factory,
 worker entrypoint, library override, custom projector or model substitution.
 Vulkan cells explicitly request GPU plus Vulkan and require positive layers;
 Ordinary CPU cells explicitly request CPU plus CPU/zero layers; the separate
-zero-layer control keeps its Vulkan/GPU preference while requesting zero layers.
-The maintained chat example selects all runtime families. A separately reviewed
-isolated build may select only `llama_cpp`, retaining normal native hook
-selection and the final pin while excluding unrelated runtime bundles. Bind
-that staged selector explicitly; do not change the maintained example for a run.
+zero-layer control requests `device: auto`, retains `preferredBackend: vulkan`
+and requests zero layers. Explicit `device: gpu` with zero layers is rejected
+by production `ModelParams.validate()` before native load. The shared request
+helper runs that same validation for every cell. The maintained chat example
+selects all runtime families. A separately reviewed isolated build may select
+only `llama_cpp`, retaining normal native hook selection and the final pin
+while excluding unrelated runtime bundles. Bind that staged selector
+explicitly; do not change the maintained example for a run.
 
 Order: CPU/unset runs the existing C04.arithmetic fixture first: unchanged
 `What is 2 + 2? Reply with only the number.`, strict `^4[.!]?$` on trimmed
@@ -122,7 +125,17 @@ Collect the exact external-files run directory, raw instrumentation and
 attributable full logcat/crash logs even when the test fails. The JSONL retains
 source/model/runtime binding, complete required-case inventory, each result,
 raw output, counters, capability/device-fact records, actual maps with hashes,
-per-lifetime raw native log files/hashes and disposal observations. The complete
+per-lifetime raw native log files and exact embedded bytes/hashes with disposal
+observations. Each `stderr` record uses `pixel-native-stderr.v1` and carries
+canonical base64, byte length and SHA256. Files still have the shared capture
+helper's existing permissions; collection no longer depends on exporting them.
+Native-file size and projected base64 length are checked before reading or
+encoding, reserving 64KiB within the unchanged 8MiB journal ceiling for record
+metadata. The append gate checks the exact final encoded record too. Exceeding
+either bound fails incomplete; no log is truncated or replaced by a hash.
+Stderr restoration and capture run in `finally` even when disposal fails; a
+non-disposed lifetime cannot pass import. Log geometry may replacement-decode
+malformed text while the embedded native bytes remain exact. The complete
 marker separates restriction failures from correctness failures. A CPU
 `Cedar17` or GPU repeated-8 answer remains FAIL even if every restriction passes;
 the final Flutter assertion still fails. Missing required cases/placement,
@@ -137,3 +150,17 @@ FAIL rows and missing rows. A passing bounded C04 range cannot erase C06 FAIL,
 close #948 or make strict overall correctness true. Model-free unit checks
 cover semantic failure gating, byte/ID/count/finish/config/input mismatches,
 missing geometry/stream evidence and required recovery/control completeness.
+
+
+The maintained host importer is `pixel_qwen35_decoder.py` in this directory.
+It requires the new embedded stderr schema, reconstructs length/hash/base64 and
+placement/geometry from those exact bytes, and rejects any collected raw sibling
+that differs. Model-free checks run with
+`python3 -m unittest discover -s packages/llamadart_validation/native/android_qualification -p test_pixel_qwen35_decoder.py`.
+It selects only the canonical `caiman-35-en-portrait/artifacts/sdcard/Android/data/com.example.llamadart_chat_example/files/<run>/journal.jsonl`.
+One `<run>/journal.jsonl` immediately nested under that same run directory is
+accepted only when bounded length, SHA256 and bytes all match the canonical
+journal. Foreign, extra, conflicting, oversize or symlinked exports fail closed.
+This importer does not modify frozen importers, create missing captures or repair
+historical runs. Raw-file-only historical evidence needs its original importer;
+missing native bytes, missing terminal or missing required cells remain incomplete.

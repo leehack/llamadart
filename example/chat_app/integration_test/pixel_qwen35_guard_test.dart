@@ -234,6 +234,12 @@ void main() {
     }) async {
       final gpu = backend == 'vulkan' && !zeroLayers;
       final profile = profiles[backend]!;
+      final loadParams = pixelQwen35LoadParams(
+        profile.loadParams,
+        backend: backend,
+        microBatchSize: size,
+        zeroLayers: zeroLayers,
+      );
       final log = File('${output.path}/$id.stderr.log');
       if (log.existsSync()) {
         throw StateError('Fresh per-lifetime stderr required');
@@ -249,13 +255,7 @@ void main() {
         try {
           await engine.setModel(
             LlamaModel(ModelSource.path(model.path)),
-            params: profile.loadParams.copyWith(
-              microBatchSize: size,
-              gpuLayers: zeroLayers ? 0 : profile.loadParams.gpuLayers,
-              device: backend == 'vulkan'
-                  ? ComputeDevice.gpu
-                  : ComputeDevice.cpu,
-            ),
+            params: loadParams,
           );
           loaded = true;
         } on Object catch (error) {
@@ -292,8 +292,8 @@ void main() {
           'architecture': architecture,
           'micro_batch': size,
           'requested_backend': backend,
-          'requested_gpu_layers': zeroLayers ? 0 : profile.loadParams.gpuLayers,
-          'requested_device': backend == 'vulkan' ? 'gpu' : 'cpu',
+          'requested_gpu_layers': loadParams.gpuLayers,
+          'requested_device': loadParams.device.name,
           'mappings': await _maps(directory, binding, gpu: gpu),
         });
         if (gpu && !pixelQwen35RestrictedFacts(messages)) {
@@ -570,45 +570,54 @@ void main() {
         }
         if (probes) await arithmetic('$id.C04.post-refusal');
       } finally {
-        arm('$id.dispose', seconds: 30, cleanup: true);
-        await engine.dispose();
-        stderr.close();
-        final raw = await log.readAsBytes();
-        final text = utf8.decode(raw);
-        final unexpectedContext =
-            refuseLoad &&
-            RegExp(
-              r'llama_context:|(?:sched_reserve|reserve_compute_meta):.*compute buffer',
-            ).hasMatch(text);
-        record({
-          'event': 'lifetime_complete',
-          'case_id': id,
-          'is_disposed': engine.isDisposed,
-          'is_ready': engine.isReady,
-          'stderr': {
-            'file': log.uri.pathSegments.last,
-            'bytes': raw.length,
-            'sha256': sha256.convert(raw).toString(),
-          },
-          'positive_vulkan_placement': gpu && loaded && !refuseLoad
-              ? pixelQwen35VulkanPlacement(text)
-              : null,
-          'device_fact_logs': messages
-              .where((m) => m.contains('Android Vulkan text prompt decode'))
-              .toList(),
-          'observed_native_n_ubatch': RegExp(
-            r'n_ubatch\s*=\s*(\d+)',
-          ).allMatches(text).map((m) => int.parse(m[1]!)).toList(),
-          'unexpected_context_on_refused_load': unexpectedContext,
-        });
-        if (unexpectedContext) {
-          restrictions.add('$id.native-context-created');
+        try {
+          arm('$id.dispose', seconds: 30, cleanup: true);
+          await engine.dispose();
+        } finally {
+          stderr.close();
+          final capture = await capturePixelQwen35Stderr(
+            log,
+            journalRemainingBytes: 8 * 1024 * 1024 - journal.lengthSync(),
+          );
+          // Geometry parsing may replace malformed log text; the capture stays exact.
+          final text = utf8.decode(
+            readS24LiteRtBytes(capture),
+            allowMalformed: true,
+          );
+          final unexpectedContext =
+              refuseLoad &&
+              RegExp(
+                r'llama_context:|(?:sched_reserve|reserve_compute_meta):.*compute buffer',
+              ).hasMatch(text);
+          record({
+            'event': 'lifetime_complete',
+            'case_id': id,
+            'is_disposed': engine.isDisposed,
+            'is_ready': engine.isReady,
+            'stderr': capture,
+            'positive_vulkan_placement': gpu && loaded && !refuseLoad
+                ? pixelQwen35VulkanPlacement(text)
+                : null,
+            'device_fact_logs': messages
+                .where((m) => m.contains('Android Vulkan text prompt decode'))
+                .toList(),
+            'observed_native_n_ubatch': RegExp(
+              r'n_ubatch\s*=\s*(\d+)',
+            ).allMatches(text).map((m) => int.parse(m[1]!)).toList(),
+            'unexpected_context_on_refused_load': unexpectedContext,
+          });
+          if (unexpectedContext) {
+            restrictions.add('$id.native-context-created');
+          }
+          if (gpu &&
+              loaded &&
+              !refuseLoad &&
+              !pixelQwen35VulkanPlacement(text)) {
+            throw StateError('Positive actual Mali Vulkan placement missing');
+          }
+          expect(engine.isDisposed, isTrue);
+          expect(engine.isReady, isFalse);
         }
-        if (gpu && loaded && !refuseLoad && !pixelQwen35VulkanPlacement(text)) {
-          throw StateError('Positive actual Mali Vulkan placement missing');
-        }
-        expect(engine.isDisposed, isTrue);
-        expect(engine.isReady, isFalse);
       }
     }
 

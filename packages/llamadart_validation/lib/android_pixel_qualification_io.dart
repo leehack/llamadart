@@ -59,3 +59,39 @@ Future<Map<String, dynamic>> verifyPixelQwen35Mappings(
   }
   return {'capture': captureS24LiteRtBytes(raw), 'verified_paths': observed};
 }
+
+/// Embeds exact native bytes so collection does not depend on file permissions.
+/// A lifetime is accepted only after native disposal and stderr restoration.
+Future<Map<String, dynamic>> capturePixelQwen35Stderr(
+  File file, {
+  required int journalRemainingBytes,
+}) async {
+  const maximum = 8 * 1024 * 1024;
+  const recordReserve = 64 * 1024;
+  if (FileSystemEntity.typeSync(file.path, followLinks: false) !=
+          FileSystemEntityType.file ||
+      await file.resolveSymbolicLinks() != file.path) {
+    throw StateError('Native stderr must be a canonical regular file');
+  }
+  final length = await file.length();
+  final encodedLength = ((length + 2) ~/ 3) * 4;
+  if (length > maximum ||
+      encodedLength + recordReserve > journalRemainingBytes) {
+    throw StateError('Native stderr capture exceeds native or journal bound');
+  }
+  final input = await file.open();
+  late List<int> raw;
+  try {
+    raw = await input.read(length + 1);
+    if (raw.length != length || await input.length() != length) {
+      throw StateError('Native stderr changed after disposal');
+    }
+  } finally {
+    await input.close();
+  }
+  return {
+    'schema': 'pixel-native-stderr.v1',
+    'file': file.uri.pathSegments.last,
+    ...captureS24LiteRtBytes(raw),
+  };
+}

@@ -46,6 +46,60 @@ void main() {
     }
     expect(configs[0], configs[1]);
   });
+  test(
+    'zero-layer control reaches production validation with automatic device',
+    () {
+      final profile = ValidationProfile.fromJson(
+        jsonDecode(
+              File(
+                '../../packages/llamadart_validation/assets/profiles/chat-gguf-vulkan.json',
+              ).readAsStringSync(),
+            )
+            as Map<String, dynamic>,
+      ).loadParams;
+      expect(
+        () => profile
+            .copyWith(
+              device: ComputeDevice.gpu,
+              gpuLayers: 0,
+              microBatchSize: 32,
+            )
+            .validate(),
+        throwsA(isA<LlamaArgumentException>()),
+      );
+      final zero = pixelQwen35LoadParams(
+        profile,
+        backend: 'vulkan',
+        microBatchSize: 32,
+        zeroLayers: true,
+      );
+      zero.validate();
+      expect(zero.device, ComputeDevice.auto);
+      expect(zero.preferredBackend, GpuBackend.vulkan);
+      expect(zero.gpuLayers, 0);
+      expect(zero.microBatchSize, 32);
+      final gpu = pixelQwen35LoadParams(
+        profile,
+        backend: 'vulkan',
+        microBatchSize: 0,
+      );
+      expect(gpu.device, ComputeDevice.gpu);
+      expect(gpu.gpuLayers, profile.gpuLayers);
+      expect(gpu.preferredBackend, profile.preferredBackend);
+      final cpuProfile = profile.copyWith(
+        preferredBackend: GpuBackend.cpu,
+        gpuLayers: 0,
+      );
+      final cpu = pixelQwen35LoadParams(
+        cpuProfile,
+        backend: 'cpu',
+        microBatchSize: 32,
+      );
+      expect(cpu.device, ComputeDevice.cpu);
+      expect(cpu.preferredBackend, GpuBackend.cpu);
+      expect(cpu.gpuLayers, 0);
+    },
+  );
   Map<String, dynamic> passing() => {
     'content': '4',
     'visible_output_utf8': [52],

@@ -13,6 +13,26 @@ const pixelQwen35NativeArchiveSha256 =
 const pixelQwen35AcceptedSizes = [0, 1, 2, 3, 4, 5, 6, 7, 8];
 const pixelQwen35RefusedSizes = [9, 32, 33, 64, 512];
 
+/// Builds the exact public request, including the CPU zero-layer control.
+ModelParams pixelQwen35LoadParams(
+  ModelParams profile, {
+  required String backend,
+  required int microBatchSize,
+  bool zeroLayers = false,
+}) {
+  final params = profile.copyWith(
+    microBatchSize: microBatchSize,
+    gpuLayers: zeroLayers ? 0 : profile.gpuLayers,
+    device: zeroLayers
+        ? ComputeDevice.auto
+        : backend == 'vulkan'
+        ? ComputeDevice.gpu
+        : ComputeDevice.cpu,
+  );
+  params.validate();
+  return params;
+}
+
 /// Preserves the maintained C06 comparison, including case sensitivity.
 bool pixelQwen35HistoryPass(String content) => content.trim() == 'cedar17';
 
