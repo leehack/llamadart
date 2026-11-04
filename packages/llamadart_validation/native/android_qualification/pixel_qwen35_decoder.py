@@ -195,7 +195,6 @@ def decode(path,binding,binding_sha,app_sha):
                 require(r['positive_vulkan_placement'] is placement(text),'Positive placement flag contradicts raw logs')
                 if not placement(text):semantic.append(case+'.actual-placement')
                 if not capped(r['device_fact_logs']):semantic.append(case+'.actual-cap-facts')
-                if ub and any(n!=(8 if size(case)==0 else size(case)) for n in ub):semantic.append(case+'.actual-microbatch')
             else:require(r['positive_vulkan_placement'] is None,'NonGPU lifetime claims placement')
             life[case]=r;active=None
     complete_seen=bool(complete)

@@ -63,7 +63,13 @@ retokenization uses addSpecial=false; rendered input uses addSpecial=true.
 These are public-output/count/finish comparisons, NEVER sampled native token
 IDs, EOG or hidden stop-token parity. Timing fields are not token counts.
 Observed native n_ubatch values are retained where emitted; requested sizes
-alone do not establish geometry or GPU execution.
+alone do not establish geometry or GPU execution. Native `n_ubatch` is the
+context capacity, separate from the per-call prompt decode cap. The unset
+Vulkan lifetime can retain the runtime's default capacity (for example 512)
+while each prompt decode call is capped at eight tokens. The importer requires
+an observed native capacity for every admitted load, exact requested capacity
+for explicit sizes1..8 and both size32 controls, and eight-token cap facts plus
+positive Vulkan placement for every admitted GPU lifetime.
 
 Vulkan/unset retains the unchanged loaded capability, media, speculation and
 embedding refusal matrix, then repeats C04 with prefix reuse disabled and the
