@@ -7,6 +7,7 @@ import android.os.Bundle;
 import android.os.ParcelFileDescriptor;
 import android.os.Process;
 import android.os.SystemClock;
+import android.util.Log;
 import java.util.UUID;
 import androidx.test.platform.app.InstrumentationRegistry;
 import androidx.test.rule.ActivityTestRule;
@@ -89,7 +90,7 @@ public class S24LiteRtPublicTest {
         final int ownedPid = Process.myPid();
         Thread thread = new Thread(() -> {
             long started = SystemClock.elapsedRealtime(), phaseStarted = started;
-            int step = -1;
+            int step = -1, lastReadStep = -1, timeout = 120000;
             try {
                 while (true) {
                     JSONObject state = new JSONObject(new String(
@@ -98,14 +99,17 @@ public class S24LiteRtPublicTest {
                         throw new IOException("S24 watchdog identity mismatch");
                     }
                     if (state.optBoolean("finished", false)) return;
-                    int next = state.getInt("step"), timeout = state.getInt("timeout_ms");
+                    int next = state.getInt("step");
+                    lastReadStep = next;
+                    timeout = state.getInt("timeout_ms");
                     if (next < step || timeout <= 0 || timeout > 150000) {
                         throw new IOException("S24 watchdog stage bounds changed");
                     }
                     long now = SystemClock.elapsedRealtime();
                     if (next != step) { step = next; phaseStarted = now; }
                     if (now - phaseStarted > timeout || now - started > 1140000) {
-                        throw new IOException("S24 owned process deadline exceeded");
+                        throw new IOException("S24 owned process deadline exceeded: "
+                            + (now - phaseStarted > timeout ? "stage" : "process"));
                     }
                     for (File entry : output.listFiles()) {
                         if ((entry.getName().endsWith(".stderr") && entry.length() > 8388608) ||
@@ -116,10 +120,21 @@ public class S24LiteRtPublicTest {
                     Thread.sleep(100);
                 }
             } catch (Exception failure) {
+                long failedAt = SystemClock.elapsedRealtime();
+                String diagnostic = "S24 watchdog failure reason=" + failure.getClass().getSimpleName()
+                    + ": " + failure.getMessage() + " step=" + step + " last_read_step=" + lastReadStep
+                    + " stage_elapsed_ms=" + (failedAt - phaseStarted)
+                    + " total_elapsed_ms=" + (failedAt - started) + " timeout_ms=" + timeout;
+                Log.e("S24LiteRtWatchdog", diagnostic);
                 try (FileOutputStream stream = new FileOutputStream(new File(output, "watchdog-failure.json"))) {
-                    stream.write(("{\"failed\":true,\"pid\":" + ownedPid + "}").getBytes(StandardCharsets.UTF_8));
+                    JSONObject receipt = new JSONObject().put("failed", true).put("pid", ownedPid)
+                        .put("reason", failure.getClass().getSimpleName() + ": " + failure.getMessage())
+                        .put("step", step).put("last_read_step", lastReadStep).put("timeout_ms", timeout)
+                        .put("stage_elapsed_ms", failedAt - phaseStarted)
+                        .put("total_elapsed_ms", failedAt - started);
+                    stream.write(receipt.toString().getBytes(StandardCharsets.UTF_8));
                     stream.getFD().sync();
-                } catch (IOException ignored) { }
+                } catch (Exception ignored) { }
                 Process.killProcess(ownedPid);
             }
         }, "s24-litert-watchdog");

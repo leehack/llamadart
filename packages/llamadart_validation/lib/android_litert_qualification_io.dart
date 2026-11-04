@@ -61,27 +61,67 @@ List<int> readS24LiteRtBytes(Map capture) {
 /// Actual process mappings plus file hashes; same-name substitutions are refused.
 Future<Map<String, dynamic>> captureS24LiteRtMappings(
   Directory directory,
-  Map binding,
-) async {
+  Map binding, {
+  void Function(String phase, String? library)? diagnostic,
+}) async {
+  diagnostic?.call('mapping_capture_started', null);
   final raw = await File('/proc/self/maps').readAsBytes();
+  final result = await verifyS24LiteRtMappings(
+    raw,
+    directory,
+    binding,
+    diagnostic: diagnostic,
+  );
+  diagnostic?.call('mapping_capture_completed', null);
+  return result;
+}
+
+/// Verifies captured maps; the optional hash boundary supports model-free tests.
+Future<Map<String, dynamic>> verifyS24LiteRtMappings(
+  List<int> raw,
+  Directory directory,
+  Map binding, {
+  Future<String> Function(File file)? hashFile,
+  void Function(String phase, String? library)? diagnostic,
+}) async {
+  final inventory = binding['libraries'] as Map;
+  final canonicalDirectory = await directory.resolveSymbolicLinks();
+  if (directory.path != canonicalDirectory) {
+    throw const FormatException('Noncanonical Android native directory');
+  }
   final observed = <String, String>{};
   for (final line in utf8.decode(raw).split('\n')) {
     final match = RegExp(r'(/[^\n]*\.so)(?: \(deleted\))?$').firstMatch(line);
     if (match == null) continue;
     final path = match.group(1)!;
     final name = Uri.file(path).pathSegments.last;
-    if (!(binding['libraries'] as Map).containsKey(name)) continue;
-    if (path != '${directory.path}/$name') {
+    if (!inventory.containsKey(name)) continue;
+    final file = File(path);
+    if (path != '$canonicalDirectory/$name' ||
+        line.endsWith(' (deleted)') ||
+        FileSystemEntity.typeSync(path, followLinks: false) !=
+            FileSystemEntityType.file ||
+        await file.resolveSymbolicLinks() != path) {
       throw const FormatException('Another Android runtime payload is mapped');
     }
-    await requireS24LiteRtFile(
-      File(path),
-      (binding['libraries'] as Map)[name] as Map,
-    );
     observed[name] = path;
   }
   if (!observed.containsKey('libLiteRtLm.so')) {
     throw const FormatException('Bound LiteRT core was not observed mapped');
+  }
+  // Validate every segment/path before deduplicating expensive content reads.
+  // The set is local to this capture: later captures must recheck file bytes.
+  for (final entry in observed.entries) {
+    final file = File(entry.value);
+    final lock = inventory[entry.key] as Map;
+    diagnostic?.call('mapping_hash_started', entry.key);
+    if (await file.length() != lock['bytes'] ||
+        await (hashFile ?? s24LiteRtFileHash)(file) != lock['sha256']) {
+      throw const FormatException(
+        'S24 input bytes differ from admitted identity',
+      );
+    }
+    diagnostic?.call('mapping_hash_completed', entry.key);
   }
   return {
     'capture': captureS24LiteRtBytes(raw),

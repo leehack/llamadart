@@ -25,6 +25,7 @@ Future<void> runS24LiteRtQualification(
   Map<String, dynamic> config,
   S24LiteRtEmit emit,
 ) async {
+  final producerClock = Stopwatch()..start();
   if (!Platform.isAndroid ||
       Abi.current() != Abi.androidArm64 ||
       config['pid'] != pid) {
@@ -93,6 +94,17 @@ Future<void> runS24LiteRtQualification(
   var sequence = 0;
   void record(Map<String, dynamic> value) =>
       emit({'sequence': sequence++, 'case_id': active, ...value});
+  void milestone(String phase, {String? library}) => record({
+    'event': 'producer_phase',
+    'phase': phase,
+    'monotonic_elapsed_us': producerClock.elapsedMicroseconds,
+    'library': ?library,
+  });
+  Future<Map<String, dynamic>> mappings() => captureS24LiteRtMappings(
+    directory,
+    binding,
+    diagnostic: (phase, library) => milestone(phase, library: library),
+  );
   final failures = <String>[];
   Future<void> run(String id, Future<void> Function(File stderr) body) async {
     active = id;
@@ -109,10 +121,7 @@ Future<void> runS24LiteRtQualification(
     capture.close();
     final raw = await stderr.readAsBytes();
     record({'event': 'native_stderr', 'capture': captureS24LiteRtBytes(raw)});
-    record({
-      'event': 'mappings',
-      ...await captureS24LiteRtMappings(directory, binding),
-    });
+    record({'event': 'mappings', ...await mappings()});
     if (error != null) failures.add(id);
     record({
       'event': 'case_result',
@@ -362,10 +371,7 @@ Future<void> runS24LiteRtQualification(
         'Default discovery did not admit the bound v1 finish capability',
       );
     }
-    record({
-      'event': 'default_discovery_probe',
-      'mappings': await captureS24LiteRtMappings(directory, binding),
-    });
+    record({'event': 'default_discovery_probe', 'mappings': await mappings()});
     Object? refusal;
     try {
       final options = params(ComputeDevice.gpu, 'public-gpu');
@@ -448,7 +454,7 @@ Future<void> runS24LiteRtQualification(
         }
         record({
           'event': 'default_discovery_probe',
-          'mappings': await captureS24LiteRtMappings(directory, binding),
+          'mappings': await mappings(),
         });
         final prefix = '$route.$lifetime';
         final stderr = File('${output.path}/$prefix.lifetime.stderr');
@@ -493,10 +499,17 @@ Future<void> runS24LiteRtQualification(
                   'capture': captureS24LiteRtBytes(chunk),
                 });
               }
+              record({
+                'event': 'producer_phase',
+                'phase': 'public_stream_completed',
+                'monotonic_elapsed_us': producerClock.elapsedMicroseconds,
+                'native_settlement': selected.nativeSettlement.name,
+              });
               final bytes = chunks.expand((value) => value).toList();
               final metrics = selected.getPerformanceContext(context);
+              milestone('public_metrics_completed');
               final native = await stderr.readAsBytes();
-              final maps = await captureS24LiteRtMappings(directory, binding);
+              final maps = await mappings();
               if (processCpuDelegateInitialization == null &&
                   utf8
                       .decode(native, allowMalformed: true)
@@ -629,6 +642,12 @@ Future<void> runS24LiteRtQualification(
               }
             }
             record({
+              'event': 'producer_phase',
+              'phase': 'public_cancel_stream_completed',
+              'monotonic_elapsed_us': producerClock.elapsedMicroseconds,
+              'native_settlement': selected.nativeSettlement.name,
+            });
+            record({
               'event': 'public_cancel',
               'cancel_sent': cancelled,
               'answer_capture': captureS24LiteRtBytes(
@@ -647,7 +666,9 @@ Future<void> runS24LiteRtQualification(
           }
         } finally {
           await retainIfUnsettled(selected.nativeSettlement);
+          milestone('lifetime_dispose_started');
           selected.dispose();
+          milestone('lifetime_dispose_completed');
           selected = null;
           capture.close();
           record({
