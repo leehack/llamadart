@@ -314,6 +314,22 @@ paths=(
           entry.key: entry.value.$1.replaceAll('{tag}', '\\(liteRtLmTag)'),
       },
     );
+    final litertSwiftFile = File(
+      path.join(
+        root.path,
+        'packages/llamadart_litert_lm_flutter/darwin/'
+        'llamadart_litert_lm_flutter/Package.swift',
+      ),
+    );
+    final templateSha256 = _litertTemplateSha256(
+      await litertSwiftFile.readAsString(),
+    );
+    final hookFile = File(path.join(root.path, 'hook', 'build.dart'));
+    await hookFile.parent.create(recursive: true);
+    final hookContract =
+        'const _liteRtLmCompanionManifestTemplateSha256 =\n'
+        "    '$templateSha256';\n";
+    await hookFile.writeAsString(hookContract);
     await _writeCompanionDocs(
       root,
       'packages/llamadart_llama_cpp_flutter',
@@ -370,6 +386,15 @@ paths=(
     expect(result.exitCode, 0, reason: '${result.stdout}\n${result.stderr}');
     expect(result.stdout, contains('llama.cpp -> leehack/llamadart-native'));
     expect(result.stdout, contains('LiteRT-LM -> leehack/litert-lm-native'));
+    expect(
+      result.stdout,
+      contains('LiteRT-LM SwiftPM template SHA-256 -> $templateSha256'),
+    );
+    expect(await hookFile.readAsString(), hookContract);
+    expect(
+      _litertTemplateSha256(await litertSwiftFile.readAsString()),
+      templateSha256,
+    );
 
     final pins = (await pinsFile.readAsString()).replaceAll('\r\n', '\n');
     expect(pins, contains("const llamaCppTag = '$llamaTag';"));
@@ -2658,6 +2683,17 @@ ${targetNames.map((target) => '''
     ]
 )
 ''');
+}
+
+String _litertTemplateSha256(String swift) {
+  final normalized = swift
+      .replaceAll('\r\n', '\n')
+      .replaceAll(
+        RegExp(r'^let liteRtLmTag = "[^"\n]+"$', multiLine: true),
+        'let liteRtLmTag = "PIN"',
+      )
+      .replaceAll(RegExp(r'checksum: "[0-9a-f]{64}"'), 'checksum: "CHECKSUM"');
+  return sha256.convert(utf8.encode(normalized)).toString();
 }
 
 Future<void> _writeCompanionDocs(

@@ -1343,6 +1343,16 @@ class LiteRtCompanionTemplateSyncTest(unittest.TestCase):
                 self.sync(root)
             self.assertEqual(before, {p: p.read_bytes() for p in root.rglob("*") if p.is_file()})
 
+    def test_missing_hook_refuses_before_any_sync_write(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            self.stage(root)
+            (root / "hook/build.dart").unlink()
+            before = {p: p.read_bytes() for p in root.rglob("*") if p.is_file()}
+            with self.assertRaisesRegex(ReleaseError, "Missing native build hook"):
+                self.sync(root)
+            self.assertEqual(before, {p: p.read_bytes() for p in root.rglob("*") if p.is_file()})
+
     def test_current_nine_target_template_retains_current_hook(self) -> None:
         self.assertEqual(pins.replace_litert_lm_companion_template_hash(
             self.hook, original_swift=self.original,
