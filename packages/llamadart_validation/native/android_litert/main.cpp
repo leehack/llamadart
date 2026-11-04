@@ -1,5 +1,6 @@
 // A separate executable process owns every potentially blocking native handle.
 #include <dlfcn.h>
+#include <fcntl.h>
 #include <signal.h>
 #include <unistd.h>
 
@@ -14,6 +15,29 @@ namespace {
 void* library = nullptr;
 std::string binding, case_id;
 unsigned sequence = 0;
+FILE* protocol = nullptr;
+[[noreturn]] void ProtocolFailure() {
+  std::fprintf(stderr, "S24_LITERT_CHILD_ERROR protocol capture unavailable\n");
+  _exit(74);
+}
+struct ProtocolOutput {
+  ProtocolOutput() {
+    // Keep the parent's stdout exclusively for records before loading vendor code.
+    const int descriptor = fcntl(STDOUT_FILENO, F_DUPFD_CLOEXEC, 3);
+    if (descriptor < 0) ProtocolFailure();
+    protocol = fdopen(descriptor, "w");
+    if (!protocol) { close(descriptor); ProtocolFailure(); }
+    if (dup2(STDERR_FILENO, STDOUT_FILENO) < 0) {
+      std::fclose(protocol); protocol = nullptr; ProtocolFailure();
+    }
+  }
+  ~ProtocolOutput() {
+    FILE* owned = protocol; protocol = nullptr;
+    if (std::fclose(owned) != 0) ProtocolFailure();
+  }
+  ProtocolOutput(const ProtocolOutput&) = delete;
+  ProtocolOutput& operator=(const ProtocolOutput&) = delete;
+};
 std::string Quote(const std::string& input) {
   std::string output = "\"";
   for (unsigned char c : input) {
@@ -30,9 +54,12 @@ std::string Hex(const std::string& input) {
   return result;
 }
 void Record(const char* event, const std::string& fields = "") {
-  std::printf("{\"schema\":1,\"binding\":%s,\"case_id\":%s,\"pid\":%d,\"sequence\":%u,\"event\":%s%s}\n",
-      Quote(binding).c_str(), Quote(case_id).c_str(), getpid(), sequence++, Quote(event).c_str(), fields.c_str());
-  std::fflush(stdout);
+  const std::string record = "{\"schema\":1,\"binding\":" + Quote(binding) +
+      ",\"case_id\":" + Quote(case_id) + ",\"pid\":" + std::to_string(getpid()) +
+      ",\"sequence\":" + std::to_string(sequence) + ",\"event\":" + Quote(event) + fields + "}\n";
+  if (!protocol || std::fwrite(record.data(), 1, record.size(), protocol) != record.size() ||
+      std::fflush(protocol) != 0) ProtocolFailure();
+  ++sequence;
 }
 std::string Read(const std::string& path, size_t limit) {
   std::ifstream file(path, std::ios::binary);
@@ -112,6 +139,7 @@ int main(int argc, char** argv) {
   if (argc != 8) return 64;
   binding = argv[6]; case_id = argv[7];
   signal(SIGALRM, Deadline); alarm(115);
+  ProtocolOutput output;
   setvbuf(stdout, nullptr, _IONBF, 0); setvbuf(stderr, nullptr, _IONBF, 0);
   Record("started", ",\"mode\":" + Quote(argv[1]));
   if (std::string(argv[1]) == "probe") { Record("finished", ",\"model_free_launch\":true"); return 0; }

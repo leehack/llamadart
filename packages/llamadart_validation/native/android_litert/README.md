@@ -140,3 +140,32 @@ python3 -m unittest discover -s native/android_litert -p 'test_*.py'
 The C++ host fixture executes the actual child against a synthetic C API and
 checks exact settings/prompts, raw response copying, counters, refusal, missing
 JSON and wrong ABI. It loads no model and establishes no device result.
+
+`protocol_output_fixture.cpp` includes the actual child translation unit with its
+entry point renamed. Its `channels` mode exercises `Record` alongside simulated
+vendor `printf`, raw stderr and C++ `cout`; it calls no runtime API. Expected
+stdout is exactly two JSON records (`started`, `finished`, sequences 0 and 1).
+Expected stderr is exactly these raw lines, in order:
+
+```text
+INFO: Loaded OpenCL library with dlopen.
+vendor stderr
+vendor cout
+```
+
+The `probe` mode calls the actual production entry point with nonexistent input
+paths and must return zero with exactly its two JSON records and empty stderr.
+`closed-stdout`, `closed-stderr` and `broken-protocol` must exit 74 without a
+`finished` record. The protocol owns a close-on-exec duplicate of original
+stdout; ordinary FD 1 is redirected to stderr before any runtime load. Setup,
+write, flush or close failure is fatal; the strict JSON decoder stays unchanged.
+
+For an old-source contamination control, compile the same fixture with
+`-DS24_OLD_PROTOCOL_CONTROL` and
+`-DS24_CHILD_SOURCE='"/absolute/path/to/old-main.cpp"'`, where `old-main.cpp`
+is the unchanged pre-isolation translation unit extracted from the admitted
+source revision. Its `channels` mode must retain the OpenCL and `cout` lines
+on stdout, making strict JSON parsing fail; only `vendor stderr` remains on
+stderr. Compilation alone establishes no channel behavior. The operator owns
+execution and raw-channel capture; this fixture grants no runtime/model, APK,
+emulator or device-run authorization.
