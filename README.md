@@ -136,7 +136,14 @@ accepts ordinary text with `microBatchSize` unset or `1..8`; larger explicit
 sizes, media, speculation and embeddings throw `LlamaUnsupportedException`.
 Use CPU for those features; see the [scope and qualification limits](website/docs/platforms/known-platform-issues.md#android).
 
-LiteRT-LM can also use GPU and, on compatible Android deployments, NPU. Image generation
+LiteRT-LM can also use GPU and, on compatible Android deployments, NPU.
+Android 12+ apps targeting API 31+ must request the optional vendor OpenCL
+library in their manifest; see [Android LiteRT-LM setup](website/docs/getting-started/installation.md#android-litert-lm-setup).
+GPU support still depends on the device, driver and model. If GPU engine
+creation fails, `ComputeDevice.auto` retries on the CPU with a warning;
+`ComputeDevice.gpu` fails instead.
+
+Image generation
 is not available on the web. On iOS, use
 `ImageModelPlacement(vaeOnCpu: true)` to keep diffusion on Metal, or CPU
 generation. Metal VAE decoding needs a native context policy that preserves

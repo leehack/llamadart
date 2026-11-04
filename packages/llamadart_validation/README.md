@@ -388,7 +388,9 @@ The [fixed S24 case graph](native/android_litert/README.md) prepares one reviewe
 SC-51E/API36 run against the eventual final 0.19 artifact. It keeps legacy GPU
 refusal/fallback evidence separate from corrected CPU correctness, isolates the
 corrected GPU attempt in an owned native child, and gates corrected public auto
-on that control. Source/model-free checks establish no device result and do not
+on that control. Corrected public auto must then retain GPU placement and
+fresh native initialization across both lifetimes; CPU fallback fails this
+GPU gate while remaining normal product behavior. Source/model-free checks establish no device result and do not
 authorize an APK, cloud run or additional budget reservation.
 
 ## Original SD24 diagnostic

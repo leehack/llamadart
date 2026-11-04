@@ -80,17 +80,20 @@ feature. For which runtime supports which feature, see the
 
 ## Android
 
-- Android LiteRT-LM on Adreno 750 (Galaxy S24): `ComputeDevice.auto`, the
-  default, runs LiteRT-LM on the GPU, which cannot run Qwen3 0.6B. The
-  adapter's 128 MiB storage-buffer binding limit is smaller than one of the
-  model's weight buffers, so expect the same from any model and adapter with
-  that mismatch. GPU engine creation fails: on a Galaxy S24 the
-  first use throws `LlamaUnsupportedException` when `ComputeDevice.gpu` was
-  requested; `auto` retries on the CPU with a warning
-  ([#1034](https://github.com/leehack/llamadart/issues/1034)). Gemma 4 E2B
-  runs on that GPU. `ModelParams(device: ComputeDevice.cpu)` skips the GPU
-  attempt and answers correctly on the same device (upstream
-  [LiteRT-LM#3866](https://github.com/google-ai-edge/LiteRT-LM/issues/3866)).
+- Android LiteRT-LM needs the app's optional vendor OpenCL manifest request
+  when targeting API 31+ on Android 12+; see [Android setup](../getting-started/installation#android-litert-lm-setup).
+  Without accessible OpenCL, the runtime can try WebGPU. On Adreno 750
+  (Galaxy S24), WebGPU's 128 MiB storage-buffer binding limit rejects a
+  larger Qwen3 weight buffer. `ComputeDevice.gpu` fails on GPU creation;
+  `auto` retries on the CPU with a warning
+  ([#1034](https://github.com/leehack/llamadart/issues/1034)). The legacy
+  Qwen3 artifact's incorrect-output history remains unresolved; a corrected
+  artifact passing a separate native OpenCL control does not qualify the
+  public app route. That route and the manifest correction still need fresh
+  device evidence ([#1677](https://github.com/leehack/llamadart/issues/1677),
+  [litert-lm-native#51](https://github.com/leehack/litert-lm-native/issues/51)).
+  `ModelParams(device: ComputeDevice.cpu)` skips the GPU attempt. Gemma 4
+  E2B has separate GPU evidence; it does not qualify Qwen3.
 - Android NPU depends on the device SoC, the `.litertlm` bundle and the LiteRT
   dispatch libraries (`LiteRtLmModelParams.dispatchLibDir`). If native
   LiteRT-LM cannot create an NPU engine, use `cpu` or `gpu`.

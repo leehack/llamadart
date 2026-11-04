@@ -485,6 +485,7 @@ Future<void> runS24LiteRtQualification(
             options,
           );
           final context = selected.createContext(model, options);
+          Map<String, dynamic>? completedGpuObservation;
           for (final entry in (selectedProfile['fixtures'] as Map).entries) {
             active = '$prefix.${entry.key}';
             record({'event': 'case_started'});
@@ -590,28 +591,15 @@ Future<void> runS24LiteRtQualification(
                   'Fixed corrected-model C04 semantic oracle failed',
                 );
               }
-              final actual = selected.getActiveBackendName();
-              if (device == ComputeDevice.cpu ||
-                  legacy ||
-                  actual == 'LiteRT-LM cpu') {
+              if (device == ComputeDevice.cpu || legacy) {
                 requireS24LiteRtCpuObservation(
                   observation,
                   automatic: device == ComputeDevice.auto,
                   lifetimeId: prefix,
                 );
-              } else if (actual != 'LiteRT-LM gpu' ||
-                  selected.getResolvedGpuLayers() != ModelParams.maxGpuLayers ||
-                  observation['native_gpu_initialization'] != true ||
-                  observation['native_settlement'] != 'settled' ||
-                  metrics == null ||
-                  metrics.promptEvalTokens <= 0 ||
-                  metrics.evalTokens <= 0 ||
-                  warnings.any(
-                    (line) => line.contains(s24LiteRtFallbackWarning),
-                  )) {
-                throw StateError(
-                  'Auto GPU selection lacks correlated native initialization and completed functionality',
-                );
+              } else {
+                requireS24LiteRtGpuObservation(observation, lifetimeId: prefix);
+                completedGpuObservation = observation;
               }
               if (utf8.decode(bytes).trim().isEmpty) {
                 throw StateError('Empty public transport');
@@ -670,10 +658,43 @@ Future<void> runS24LiteRtQualification(
               'native_finish': 'not_exposed_by_default_service',
               'native_settlement': selected.nativeSettlement.name,
             });
-            final pass =
+            var pass =
                 cancelled &&
                 selected.nativeSettlement ==
                     spi.LiteRtLmNativeSettlement.settled;
+            if (device == ComputeDevice.auto && !legacy) {
+              try {
+                final native = await stderr.readAsBytes();
+                final log = utf8.decode(native);
+                final gpu = <String, dynamic>{
+                  ...?completedGpuObservation,
+                  'backend_name': selected.getActiveBackendName(),
+                  'reported_gpu_layers': selected.getResolvedGpuLayers(),
+                  'native_settlement': selected.nativeSettlement.name,
+                  'warnings': List<String>.of(warnings),
+                  'native_gpu_initialization': s24LiteRtGpuInitialized(log),
+                  'native_gpu_initialization_backend':
+                      s24LiteRtGpuInitializationBackend(log),
+                  'native_stderr': {
+                    ...captureS24LiteRtBytes(native),
+                    'lifetime_id': prefix,
+                    'empty_at_load': true,
+                  },
+                };
+                record({
+                  'event': 'public_cancel_gpu_observation',
+                  'counters_source': 'preceding_completed_C04',
+                  'observation': gpu,
+                });
+                requireS24LiteRtGpuObservation(gpu, lifetimeId: prefix);
+              } on Object catch (error) {
+                pass = false;
+                record({
+                  'event': 'public_cancel_gpu_failed',
+                  'error': '$error',
+                });
+              }
+            }
             statuses[active!] = pass ? 'PASS' : 'FAIL';
             if (!pass) failures.add(active!);
             record({'event': 'case_result', 'status': statuses[active]});

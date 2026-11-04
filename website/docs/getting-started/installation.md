@@ -53,6 +53,29 @@ Companions use the core's `MAJOR.MINOR`; pub refuses a mismatched pair.
 versions and checks, the privacy manifest, Intel Macs, the SwiftPM bootstrap for
 a fresh macOS build, and the LiteRT-LM build phase.
 
+## Android LiteRT-LM setup
+
+On Android 12 and newer, apps targeting API 31+ must explicitly request
+vendor OpenCL access in `android/app/src/main/AndroidManifest.xml`, inside
+`<application>`:
+
+```xml
+<uses-native-library
+    android:name="libOpenCL.so"
+    android:required="false" />
+```
+
+Keep it optional so devices without that library can install the app.
+[Android's native-library manifest contract](https://developer.android.com/guide/topics/manifest/uses-native-library-element)
+applies to the consuming app; bundling LiteRT-LM alone does not grant access.
+The chat example includes this declaration.
+
+This enables library discovery, not model/device qualification. A GPU engine
+can still fail because of driver or buffer limits. `ComputeDevice.auto`
+retries on the CPU with a warning; `ComputeDevice.gpu` fails instead. Check
+the active backend and [Android limitations](../platforms/known-platform-issues#android)
+before reporting GPU acceleration.
+
 ## Web
 
 Web apps must load the WebGPU bridge script in their `web/index.html`; the

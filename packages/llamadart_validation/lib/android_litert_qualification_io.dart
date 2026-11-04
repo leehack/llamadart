@@ -7,7 +7,9 @@ import 'dart:io';
 
 import 'package:crypto/crypto.dart';
 import 'package:ffi/ffi.dart';
+import 'package:llamadart/llamadart.dart';
 
+import 'android_litert_qualification.dart';
 import 'src/litert_gpu_failure_markers.dart';
 
 Future<String> s24LiteRtFileHash(File file) async =>
@@ -301,6 +303,47 @@ String readS24LiteRtNativeAnswer(List<int> bytes) {
 /// and require completed positive C04 controls before accepting qualification.
 bool s24LiteRtGpuInitialized(String log) =>
     s24LiteRtGpuInitializationBackend(log) != null;
+
+/// Corrected public auto must retain GPU placement after its native control.
+/// CPU fallback remains valid product behavior, but cannot qualify this route.
+void requireS24LiteRtGpuObservation(
+  Map<String, dynamic> value, {
+  required String lifetimeId,
+}) {
+  final warnings = value['warnings'];
+  final capture = value['native_stderr'];
+  if (value['backend_name'] != 'LiteRT-LM gpu' ||
+      value['reported_gpu_layers'] != ModelParams.maxGpuLayers ||
+      value['native_finish'] != 'not_exposed_by_default_service' ||
+      value['native_settlement'] != 'settled' ||
+      value['input_tokens'] is! int ||
+      value['input_tokens'] <= 0 ||
+      value['output_tokens'] is! int ||
+      value['output_tokens'] <= 0 ||
+      value['public_process_pid'] is! int ||
+      value['public_process_pid'] <= 0 ||
+      value['mapped_core_verified'] != true ||
+      warnings is! List ||
+      warnings.any((line) => line is! String) ||
+      warnings.any((line) => line.contains(s24LiteRtFallbackWarning)) ||
+      capture is! Map ||
+      capture['lifetime_id'] != lifetimeId ||
+      capture['empty_at_load'] != true) {
+    throw const FormatException(
+      'Corrected public auto requires GPU placement, positive counters and fresh settled evidence without CPU fallback',
+    );
+  }
+  final backend = s24LiteRtGpuInitializationBackend(
+    utf8.decode(readS24LiteRtBytes(capture)),
+  );
+  if (backend == null ||
+      value['native_gpu_initialization'] != true ||
+      value['native_gpu_initialization_backend'] != backend) {
+    throw const FormatException(
+      'Corrected public auto lacks correlated native GPU initialization',
+    );
+  }
+}
 
 /// Identifies the initialized delegate without relabeling OpenCL as Vulkan.
 String? s24LiteRtGpuInitializationBackend(String log) {

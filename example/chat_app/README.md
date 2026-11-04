@@ -504,6 +504,12 @@ await prefs.setInt('preferred_backend', backendIndex);
   `litert_lm` for your target. This example does that for supported native
   targets, excludes the unsupported iOS x86_64 Simulator architecture, and
   keeps Windows arm64 GGUF-only.
+- Android 12+ apps targeting API 31+ also need the optional `libOpenCL.so`
+  manifest request included in this example; see [Android LiteRT-LM setup](../../website/docs/getting-started/installation.md#android-litert-lm-setup).
+  GPU initialization still depends on the model, device and driver. `Auto`
+  retries on CPU with a warning when GPU creation fails; check the selected
+  backend before reporting GPU acceleration. The manifest correction awaits
+  fresh corrected-Qwen3 public GPU qualification (#1677).
 - If you recently changed native backend or runtime config and are upgrading
   from an older build cache, run a one-time `flutter clean`.
 

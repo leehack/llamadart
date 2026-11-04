@@ -101,6 +101,12 @@ The WebGPU bridge ignores negative `mainGpu` values, including with
 `splitMode: ModelSplitMode.none`; they do not select the CPU as they do in
 native llama.cpp. Explicit `gpu` still requires WebGPU after load.
 
+Android LiteRT-LM apps targeting API 31+ need an optional `libOpenCL.so`
+manifest request on Android 12+; see [Android setup](../getting-started/installation#android-litert-lm-setup).
+An accessible OpenCL library does not guarantee GPU initialization or correct
+model output. WebGPU buffer limits remain device-dependent; an automatic CPU
+retry is CPU execution and does not qualify a GPU path.
+
 Under `auto`, `gpuLayers: 0` or a CPU or BLAS `preferredBackend` selects the
 CPU on both llama.cpp and LiteRT-LM, and a GPU `preferredBackend` (Vulkan,
 Metal, CUDA, OpenCL or HIP) selects the LiteRT-LM GPU backend. On Linux x64

@@ -36,7 +36,7 @@ uses automatic threads. Native CPU controls keep their four-thread setting.
 | Public corrected CPU | 150 | Default service, two complete engine lifetimes, both C04 oracles each lifetime, cancellation and reload. |
 | Public legacy auto | 150 | Real GPU failure warning, CPU selection, positive counters, process-wide CPU initialization plus fresh per-lifetime compilation, UTF-8 transport, cancellation and reload. Every legacy semantic result is recorded separately; transport success never qualifies legacy accuracy. |
 | Native corrected GPU | 120 | Runs only after the native corrected CPU control passes. Owned child attempts the same two C04 requests once; exact raw JSON, positive counters, both semantic oracles and correlated Adreno/Vulkan or full OpenCL delegate initialization must pass. Failure/crash/timeout/malformed evidence is FAIL. |
-| Public corrected auto | 150 | Runs only after the corrected native GPU control passes. Same corrected C04/cancel/reload obligations; observes the actual selected route and correlated native initialization. A CPU result needs a real GPU-failure warning; a GPU result needs initialization evidence. Neither is forced in advance. |
+| Public corrected auto | 150 | Runs only after the corrected native GPU control passes. Both C04 oracles in two fresh GPU engine lifetimes, positive counters, settled cancellation/reload, exact mapped core and correlated native GPU initialization are required. CPU fallback fails GPU qualification even with a real warning. |
 | Cleanup and export | 60 | Persist final statuses, failed cases, legacy semantic failures and every unexecuted required case. |
 
 Caps sum to 1,050 seconds. A Java watchdog independent of Dart enforces stage
@@ -61,6 +61,14 @@ factory, speech driver or backend override. Its default discovery probe and
 each lifetime check exact mapped payload bytes. C API 1.0 plus frozen default
 source and the mapped-library binding establish the selected route; no runtime
 selection counter is exposed or claimed measured.
+
+Corrected public auto requires the actual GPU backend, all GPU layers and
+fresh per-lifetime initialization bytes without GPU errors or CPU fallback.
+The product's automatic CPU retry remains unchanged; this GPU qualification
+route must fail when that retry occurs. Legacy auto continues to require its
+observed warning and CPU evidence. Earlier journals retain their recorded
+results; an older all-PASS journal that selected CPU cannot establish public
+GPU qualification.
 
 Public chunks are exact default-service UTF-8 bytes. Finish is always labelled
 `not_exposed_by_default_service`; settlement and positive token counters remain
@@ -95,6 +103,13 @@ The saved-log fixture `test/fixtures/s24_opencl_stderr.txt` is the unchanged
 Its replay checks initialization recognition only. That run's protocol failure
 and five dependent NOT_RUN cases remain unchanged; the fixture grants no
 actual corrected-public-GPU or full-20-case qualification.
+
+`test/fixtures/s24_public_auto_cpu_fallback.json` retains observation 432 from
+`core018-litert019-s24-protocolfix-20261104`, including its original native
+stderr capture and CPU fallback warning. Only unrelated answer and maps
+fields were omitted. It is a negative regression
+for corrected public GPU qualification. Its historical producer PASS result
+is not rewritten or upgraded to GPU evidence.
 
 The journal copies bytes with their size, SHA-256 and base64 before parsing or
 grading. Child capture first validates owned PID, exit, deadline, byte limits
@@ -148,6 +163,20 @@ This lane keeps the existing third reservation at **USD 2.50**, the unchanged
 new reservation or dispatch permission. Fresh source/APK/device/budget admission
 and an exact class-targeted command are still required; these files contain no
 cloud submission command.
+
+The built target APK must request `libOpenCL.so` once under `<application>`
+with `android:required="false"`. Check the effective merged manifest, not
+just source XML, before source/APK admission:
+
+```sh
+python3 native/android_litert/verify_manifest.py \
+  --apk /path/to/app.apk --apkanalyzer /path/to/apkanalyzer
+```
+
+This static check binds the APK hash and target SDK and grants no device or
+GPU result. The app's Android 12+/target 31+ vendor-library allowlist and the
+actual OpenCL load/device result still need fresh correlated evidence. The
+manifest correction does not resolve #1677 or litert-lm-native#51 by itself.
 
 ## Model-free source checks
 

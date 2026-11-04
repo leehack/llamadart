@@ -203,12 +203,17 @@ or shipping runtimes the app does not use.
   and embeddings throw `LlamaUnsupportedException` (#948). Use CPU for those
   features. The family-wide rule is conservative; it does not qualify final
   GPU output or assert that every Qwen artifact or size 9..32 fails.
-  LiteRT-LM defaults to the GPU on
-  Android (`ComputeDevice.auto`), and on adapters with a 128 MiB
-  storage-buffer limit (for example Adreno 750) a model with a larger weight
-  buffer, such as Qwen3 0.6B, loads and then produces wrong text without an
-  error; load it with `ModelParams(device: ComputeDevice.cpu)` or let the
-  user switch. `ComputeDevice.npu` needs a
+  LiteRT-LM attempts GPU on Android under `ComputeDevice.auto`. On Android
+  12+ with target API 31+, add `<uses-native-library
+  android:name="libOpenCL.so" android:required="false"/>` inside the app's
+  manifest `<application>` so vendor OpenCL is accessible. Keep it optional.
+  This does not qualify the driver or model: WebGPU's 128 MiB binding limit
+  on Adreno 750 can reject larger weight buffers. Failed GPU creation under
+  `auto` retries on CPU with a warning; explicit `ComputeDevice.gpu` fails.
+  Check the active backend, and use `ModelParams(device: ComputeDevice.cpu)`
+  to skip the GPU attempt. Corrected Qwen3 public GPU qualification remains
+  pending (#1677, litert-lm-native#51); preserve the legacy artifact's failed
+  history. `ComputeDevice.npu` needs a
   supporting SoC and bundle, and throws `LlamaUnsupportedException` without
   one.
 - Budget memory for phones: 1B-3B parameter models, a `contextSize` no larger
