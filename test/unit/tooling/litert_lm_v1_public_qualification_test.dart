@@ -100,6 +100,57 @@ void main() {
     library = DynamicLibrary.open(core);
   });
   tearDownAll(() => directory.deleteSync(recursive: true));
+  for (final route in ['direct', 'service']) {
+    test(
+      'public default $route preserves signed tagged settings across async creation',
+      () async {
+        final tagged = Directory('${directory.path}/tagged-$route')
+          ..createSync();
+        final taggedCore = '${tagged.path}/${File(core).uri.pathSegments.last}';
+        final built = await Process.run('cc', [
+          '-shared',
+          '-fPIC',
+          '-pthread',
+          '-DFIXTURE_TAGGED_SETTINGS',
+          'test/fixtures/litert_lm/c_api_v1_public_dispatch.c',
+          '-o',
+          taggedCore,
+        ]);
+        expect(built.exitCode, 0, reason: '${built.stderr}');
+        for (final name in liteRtLmRequiredLibrariesForAbi(Abi.current())) {
+          if (name != File(core).uri.pathSegments.last) {
+            File('${directory.path}/$name').copySync('${tagged.path}/$name');
+          }
+        }
+        final result = await Process.run(
+          Platform.resolvedExecutable,
+          [
+            dispatchScript,
+            route,
+            taggedCore,
+            model.path,
+            chat.path,
+            'tagged-settings',
+          ],
+          environment: {
+            'LLAMADART_LITERT_LM_LIB_DIR': tagged.path,
+            'TMPDIR': tagged.path,
+          },
+        );
+        expect(
+          result.exitCode,
+          0,
+          reason: '${result.stdout}\n${result.stderr}',
+        );
+        expect(
+          '${result.stdout}',
+          contains(
+            'PUBLIC_FIXTURE_DISPATCH $route settled; model_qualification=false',
+          ),
+        );
+      },
+    );
+  }
   for (final route in ['direct', 'service', 'speech']) {
     test(
       'public default $route dispatches compiled v1 fixture and settles without overrides',
