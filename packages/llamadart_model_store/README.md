@@ -102,6 +102,10 @@ when it cannot be created, written or locked.
   in the other is about to return.
 - `directory` resolves symbolic links, so every spelling of one directory
   opens the same store.
+- Resolve the OS-provided directory and reopen the store on every launch.
+  If an app update moves it, `entries`, `list` and `get` report retained files
+  at their current paths before another `ensure`; release and pruning still
+  honor app references. Persist model sources or entry ids, not file paths.
 - On iOS, the store holds a file lock in the App Group container only for
   the metadata update around a call, and a download holds core's entry lock:
   finish or cancel downloads before the app is suspended.

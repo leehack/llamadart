@@ -262,10 +262,32 @@ class DefaultModelDownloadManager implements ModelDownloadManager {
       return _ensureModelUnlocked(source, options, onProgress);
     }
 
+    final root = _rootDirectory(options.cacheDirectory);
     final cacheDir = _cacheDirectory(source, options);
+    Future<void> checkDirectory() async {
+      final type = await FileSystemEntity.type(
+        cacheDir.path,
+        followLinks: false,
+      );
+      if (type != FileSystemEntityType.notFound &&
+          await _cacheEntryDirectory(cacheDir, root) == null) {
+        throw LlamaStateException(
+          'Model cache entry must be a directory directly under its cache root.',
+        );
+      }
+    }
+
     return _withCacheLock(_cacheLockKey(cacheDir), () async {
+      await checkDirectory();
       if (options.cachePolicy == ModelCachePolicy.cacheOnly &&
-          !await File(path.join(cacheDir.path, source.fileName)).exists()) {
+          (await FileSystemEntity.type(
+                    path.join(cacheDir.path, source.fileName),
+                    followLinks: false,
+                  ) !=
+                  FileSystemEntityType.file ||
+              !await File(
+                path.join(cacheDir.path, source.fileName),
+              ).exists())) {
         // A miss needs no lock directory, which a read-only cache root could
         // not hold. Checked after this isolate's earlier calls for the entry,
         // so a download they finish counts; reading an entry that appears
@@ -274,16 +296,15 @@ class DefaultModelDownloadManager implements ModelDownloadManager {
           'No cached model is available for ${_redactedSourceName(source)}.',
         );
       }
-      return _withEntryLock(
-        cacheDir,
-        options,
-        (locked) => _ensureModelUnlocked(
+      return _withEntryLock(cacheDir, options, (locked) async {
+        await checkDirectory();
+        return _ensureModelUnlocked(
           source,
           options,
           onProgress,
           ownsPartFiles: locked,
-        ),
-      );
+        );
+      });
     });
   }
 
@@ -576,32 +597,35 @@ class DefaultModelDownloadManager implements ModelDownloadManager {
       }, locks: _removalLocks);
 
   @override
-  Future<List<ModelCacheEntry>> list({String? cacheDirectory}) async {
+  Future<List<ModelCacheEntry>> list({String? cacheDirectory}) async => [
+    for (final snapshot in await _listEntries(cacheDirectory: cacheDirectory))
+      snapshot.entry,
+  ];
+
+  Future<List<_ManagedCacheEntry>> _listEntries({
+    String? cacheDirectory,
+  }) async {
     final root = _rootDirectory(cacheDirectory);
     if (!await root.exists()) {
-      return <ModelCacheEntry>[];
+      return <_ManagedCacheEntry>[];
     }
-    final entries = <ModelCacheEntry>[];
+    final entries = <_ManagedCacheEntry>[];
     await for (final entity in root.list(followLinks: false)) {
       if (entity is! Directory) {
         continue;
       }
       final metadataFile = File(path.join(entity.path, _metadataFileName));
-      if (!await metadataFile.exists()) {
-        continue;
-      }
       try {
-        final entry = await _readMetadata(metadataFile);
-        final entryFile = _entryFileInCacheDirectory(entry, entity);
-        if (entryFile != null && await entryFile.exists()) {
-          entries.add(entry);
+        final snapshot = await _readManagedEntry(metadataFile, root);
+        if (snapshot != null) {
+          entries.add(snapshot);
         }
       } catch (_) {
         // Ignore malformed cache entries so one corrupt metadata file does not
         // make cache inspection unusable.
       }
     }
-    entries.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+    entries.sort((a, b) => b.entry.updatedAt.compareTo(a.entry.updatedAt));
     return entries;
   }
 
@@ -616,15 +640,12 @@ class DefaultModelDownloadManager implements ModelDownloadManager {
       cacheDirectory: cacheDirectory,
     )) {
       try {
-        final entry = await _readMetadata(metadataFile);
-        final entryFile = _entryFileInCacheDirectory(
-          entry,
-          metadataFile.parent,
+        final snapshot = await _readManagedEntry(
+          metadataFile,
+          metadataFile.parent.parent,
         );
-        if (entry.cacheKey == cacheKey &&
-            entryFile != null &&
-            await entryFile.exists()) {
-          entries.add(entry);
+        if (snapshot != null && snapshot.entry.cacheKey == cacheKey) {
+          entries.add(snapshot.entry);
         }
       } catch (_) {
         // Ignore malformed candidates so a corrupt entry does not make cache
@@ -718,28 +739,31 @@ class DefaultModelDownloadManager implements ModelDownloadManager {
     int? maxBytes,
     String? cacheDirectory,
   }) async {
-    final entries = await list(cacheDirectory: cacheDirectory);
+    final entries = await _listEntries(cacheDirectory: cacheDirectory);
     final removed = await _removeStaleMetadataEntries(cacheDirectory);
     final now = DateTime.now().toUtc();
 
-    for (final entry in entries) {
+    for (final snapshot in entries) {
+      final entry = snapshot.entry;
       if (maxAge != null && now.difference(entry.updatedAt.toUtc()) > maxAge) {
-        if (await _removeEntry(entry, cacheDirectory: cacheDirectory)) {
+        if (await _removeEntry(snapshot, cacheDirectory: cacheDirectory)) {
           removed.add(entry);
         }
       }
     }
 
     if (maxBytes != null) {
-      final remaining = (await list(cacheDirectory: cacheDirectory)).toList()
-        ..sort((a, b) => a.updatedAt.compareTo(b.updatedAt));
+      final remaining =
+          (await _listEntries(cacheDirectory: cacheDirectory)).toList()
+            ..sort((a, b) => a.entry.updatedAt.compareTo(b.entry.updatedAt));
       final sizes = <int>[
-        for (final entry in remaining) await _entrySize(entry),
+        for (final snapshot in remaining) await _entrySize(snapshot.entry),
       ];
       var total = sizes.fold(0, (sum, size) => sum + size);
       for (var i = 0; i < remaining.length && total > maxBytes; i += 1) {
-        final entry = remaining[i];
-        if (await _removeEntry(entry, cacheDirectory: cacheDirectory)) {
+        final snapshot = remaining[i];
+        final entry = snapshot.entry;
+        if (await _removeEntry(snapshot, cacheDirectory: cacheDirectory)) {
           removed.add(entry);
           total -= sizes[i];
         } else if (!await Directory(path.dirname(entry.filePath)).exists()) {
@@ -765,8 +789,58 @@ class DefaultModelDownloadManager implements ModelDownloadManager {
     return Directory(cacheDirectory ?? defaultCacheDirectory);
   }
 
+  Future<Directory> _resolvedRootDirectory(String? cacheDirectory) async {
+    final root = _rootDirectory(cacheDirectory).absolute;
+    try {
+      return Directory(await root.resolveSymbolicLinks());
+    } on FileSystemException {
+      return root;
+    }
+  }
+
   String _cacheLockKey(Directory cacheDirectory) {
-    return path.normalize(path.absolute(cacheDirectory.path));
+    var ancestor = path.normalize(path.absolute(cacheDirectory.path));
+    final missing = <String>[];
+    try {
+      while (true) {
+        try {
+          final resolved = Directory(ancestor).resolveSymbolicLinksSync();
+          if (FileSystemEntity.typeSync(resolved, followLinks: false) ==
+              FileSystemEntityType.directory) {
+            return path.normalize(
+              path.joinAll([resolved, ...missing.reversed]),
+            );
+          }
+          // Let directory creation report a file occupying part of the root.
+          missing.add(path.basename(ancestor));
+          ancestor = path.dirname(ancestor);
+        } on FileSystemException catch (error) {
+          final missingPath =
+              error.osError?.errorCode == 2 ||
+              error.osError?.errorCode == 20 ||
+              (Platform.isWindows &&
+                  (error.osError?.errorCode == 3 ||
+                      error.osError?.errorCode == 267));
+          // A new cache root must keep its identity after it is created.
+          // Resolve its existing ancestor instead of using alias spelling.
+          if (!missingPath ||
+              FileSystemEntity.typeSync(ancestor, followLinks: false) !=
+                  FileSystemEntityType.notFound) {
+            rethrow;
+          }
+          final parent = path.dirname(ancestor);
+          if (path.equals(parent, ancestor)) {
+            rethrow;
+          }
+          missing.add(path.basename(ancestor));
+          ancestor = parent;
+        }
+      }
+    } on FileSystemException {
+      throw LlamaStateException(
+        'Cannot resolve the model cache directory for locking.',
+      );
+    }
   }
 
   void _rejectUnsupportedLocalOptions(ModelLoadOptions options) {
@@ -905,10 +979,18 @@ class DefaultModelDownloadManager implements ModelDownloadManager {
     ModelLoadOptions options,
   ) async {
     try {
-      if (!await finalFile.exists()) {
+      if (await FileSystemEntity.type(finalFile.path, followLinks: false) !=
+          FileSystemEntityType.file) {
         return null;
       }
-      if (!await metadataFile.exists()) {
+      final metadataType = await FileSystemEntity.type(
+        metadataFile.path,
+        followLinks: false,
+      );
+      if (metadataType == FileSystemEntityType.link) {
+        return null;
+      }
+      if (metadataType == FileSystemEntityType.notFound) {
         return await _recoverMetadataEntry(
           source,
           metadataFile,
@@ -935,9 +1017,12 @@ class DefaultModelDownloadManager implements ModelDownloadManager {
       return _recoverMetadataEntry(source, metadataFile, finalFile, options);
     }
 
+    // The stored path is not compared: an iOS app update moves the app's
+    // container, and this cache with it, to a new path. [finalFile] comes
+    // from the current root and is verified against the recorded length and
+    // checksum instead.
     if (entry.cacheKey != source.cacheKey ||
-        entry.fileName != source.fileName ||
-        entry.filePath != finalFile.path) {
+        entry.fileName != source.fileName) {
       return null;
     }
     final verification = await _verifyCompletedFile(
@@ -953,7 +1038,7 @@ class DefaultModelDownloadManager implements ModelDownloadManager {
       sourceCanonicalKey: entry.sourceCanonicalKey,
       cacheKey: entry.cacheKey,
       fileName: entry.fileName,
-      filePath: entry.filePath,
+      filePath: finalFile.path,
       bytes: verification.bytes!,
       sha256: verification.sha256 ?? entry.sha256,
       etag: entry.etag,
@@ -1480,20 +1565,32 @@ class DefaultModelDownloadManager implements ModelDownloadManager {
         continue;
       }
       final metadataFile = File(path.join(entity.path, _metadataFileName));
-      if (!await metadataFile.exists()) {
-        continue;
-      }
       try {
-        final entry = await _readMetadata(metadataFile);
-        final entryFile = _entryFileInCacheDirectory(entry, entity);
-        if (entryFile != null && !await entryFile.exists()) {
+        final snapshot = await _readManagedEntry(
+          metadataFile,
+          root,
+          requireFile: false,
+        );
+        if (snapshot != null && !await File(snapshot.entry.filePath).exists()) {
           final result = await _removeCacheDirectory(
             entity,
             cacheDirectory: cacheDirectory,
-            stillRemovable: () async => !await entryFile.exists(),
+            stillRemovable: () async {
+              final current = await _readManagedEntry(
+                metadataFile,
+                root,
+                requireFile: false,
+              );
+              return current != null &&
+                  current.recordedFilePath == snapshot.recordedFilePath &&
+                  current.entry.cacheKey == snapshot.entry.cacheKey &&
+                  current.entry.fileName == snapshot.entry.fileName &&
+                  current.entry.updatedAt == snapshot.entry.updatedAt &&
+                  !await File(current.entry.filePath).exists();
+            },
           );
           if (result == _Removal.removed) {
-            removed.add(entry);
+            removed.add(snapshot.entry);
           }
         }
       } catch (_) {
@@ -1509,25 +1606,41 @@ class DefaultModelDownloadManager implements ModelDownloadManager {
     required List<String> inUse,
     String? cacheDirectory,
   }) async {
+    final root = await _resolvedRootDirectory(cacheDirectory);
     for (final metadataFile in await _candidateMetadataFiles(
       cacheKey,
-      cacheDirectory: cacheDirectory,
+      cacheDirectory: root.path,
     )) {
-      final ModelCacheEntry entry;
+      final _ManagedCacheEntry? snapshot;
       try {
-        entry = await _readMetadata(metadataFile);
+        snapshot = await _readManagedEntry(
+          metadataFile,
+          root,
+          requireFile: false,
+        );
       } catch (_) {
         // Ignore malformed metadata so a corrupt entry does not block removing
         // other cache directories with the same key prefix.
         continue;
       }
-      if (entry.cacheKey != cacheKey ||
-          _entryFileInCacheDirectory(entry, metadataFile.parent) == null) {
+      if (snapshot == null || snapshot.entry.cacheKey != cacheKey) {
         continue;
       }
       final result = await _removeCacheDirectory(
         metadataFile.parent,
-        cacheDirectory: cacheDirectory,
+        cacheDirectory: root.path,
+        stillRemovable: () async {
+          try {
+            final current = await _readManagedEntry(
+              metadataFile,
+              root,
+              requireFile: false,
+            );
+            return current?.entry.cacheKey == cacheKey;
+          } catch (_) {
+            return false;
+          }
+        },
       );
       if (result == _Removal.inUse) {
         inUse.add(metadataFile.parent.path);
@@ -1535,33 +1648,119 @@ class DefaultModelDownloadManager implements ModelDownloadManager {
     }
   }
 
-  File? _entryFileInCacheDirectory(ModelCacheEntry entry, Directory directory) {
+  Future<Directory?> _cacheEntryDirectory(
+    Directory directory,
+    Directory root,
+  ) async {
     final directoryPath = path.normalize(path.absolute(directory.path));
-    final filePath = path.normalize(path.absolute(entry.filePath));
-    if (!path.isWithin(directoryPath, filePath) ||
-        !path.equals(path.dirname(filePath), directoryPath)) {
+    final rootPath = path.normalize(path.absolute(root.path));
+    if (!path.equals(path.dirname(directoryPath), rootPath)) {
       return null;
     }
-    return File(filePath);
+    try {
+      if (await FileSystemEntity.type(directoryPath, followLinks: false) !=
+          FileSystemEntityType.directory) {
+        return null;
+      }
+      final resolvedRoot = await root.resolveSymbolicLinks();
+      final resolvedDirectory = await directory.resolveSymbolicLinks();
+      return path.equals(path.dirname(resolvedDirectory), resolvedRoot)
+          ? Directory(resolvedDirectory)
+          : null;
+    } on FileSystemException catch (error) {
+      // Another remover can delete a listed entry before we take its lock.
+      // A dangling/replaced link is unsafe, rather than an already-gone entry.
+      if ((error.osError?.errorCode == 2 ||
+              (Platform.isWindows && error.osError?.errorCode == 3)) &&
+          await FileSystemEntity.type(directoryPath, followLinks: false) ==
+              FileSystemEntityType.notFound) {
+        return null;
+      }
+      rethrow;
+    }
   }
 
-  /// Removes [entry] unless it is in use or its metadata changed since it was
+  Future<_ManagedCacheEntry?> _readManagedEntry(
+    File metadataFile,
+    Directory root, {
+    bool requireFile = true,
+  }) async {
+    final directory = metadataFile.parent;
+    if (await _cacheEntryDirectory(directory, root) == null ||
+        await FileSystemEntity.type(metadataFile.path, followLinks: false) !=
+            FileSystemEntityType.file) {
+      return null;
+    }
+    final entry = await _readMetadata(metadataFile);
+    final prefixLength = entry.cacheKey.length < 12
+        ? entry.cacheKey.length
+        : 12;
+    final prefix = RegExp.escape(entry.cacheKey.substring(0, prefixLength));
+    if (!RegExp(
+      '-$prefix(?:-nocache-[0-9]+)?\$',
+    ).hasMatch(path.basename(directory.path))) {
+      return null;
+    }
+    // filePath is historical: an app update can move the whole container.
+    // Only the current entry directory and the validated basename select a file.
+    final file = File(path.join(directory.path, entry.fileName));
+    if (!path.equals(
+      path.dirname(path.normalize(path.absolute(file.path))),
+      path.normalize(path.absolute(directory.path)),
+    )) {
+      return null;
+    }
+    final type = await FileSystemEntity.type(file.path, followLinks: false);
+    if (type != FileSystemEntityType.file &&
+        (requireFile || type != FileSystemEntityType.notFound)) {
+      return null;
+    }
+    return (
+      recordedFilePath: entry.filePath,
+      entry: ModelCacheEntry(
+        sourceCanonicalKey: entry.sourceCanonicalKey,
+        cacheKey: entry.cacheKey,
+        fileName: entry.fileName,
+        filePath: file.path,
+        bytes: entry.bytes,
+        sha256: entry.sha256,
+        etag: entry.etag,
+        lastModified: entry.lastModified,
+        createdAt: entry.createdAt,
+        updatedAt: entry.updatedAt,
+        expiresAt: entry.expiresAt,
+      ),
+    );
+  }
+
+  /// Removes the entry in [snapshot] unless it is in use or its metadata changed
   /// listed: a cache hit refreshes `updatedAt` under the entry lock.
   Future<bool> _removeEntry(
-    ModelCacheEntry entry, {
+    _ManagedCacheEntry snapshot, {
     String? cacheDirectory,
   }) async {
-    final directory = Directory(path.dirname(entry.filePath));
+    final entry = snapshot.entry;
+    final directory = await _cacheEntryDirectory(
+      Directory(path.dirname(entry.filePath)),
+      _rootDirectory(cacheDirectory),
+    );
+    if (directory == null) {
+      return false;
+    }
     final result = await _removeCacheDirectory(
       directory,
-      cacheDirectory: cacheDirectory,
+      cacheDirectory: directory.parent.path,
       stillRemovable: () async {
         try {
-          final current = await _readMetadata(
+          final current = await _readManagedEntry(
             File(path.join(directory.path, _metadataFileName)),
+            directory.parent,
           );
-          return current.filePath == entry.filePath &&
-              current.updatedAt == entry.updatedAt;
+          return current != null &&
+              current.recordedFilePath == snapshot.recordedFilePath &&
+              current.entry.cacheKey == entry.cacheKey &&
+              current.entry.fileName == entry.fileName &&
+              current.entry.updatedAt == entry.updatedAt;
         } catch (_) {
           return false;
         }
@@ -1575,19 +1774,24 @@ class DefaultModelDownloadManager implements ModelDownloadManager {
     String? cacheDirectory,
     Future<bool> Function()? stillRemovable,
   }) async {
-    final rootPath = path.normalize(
-      path.absolute(_rootDirectory(cacheDirectory).path),
+    final cacheDirectoryToRemove = await _cacheEntryDirectory(
+      directory,
+      _rootDirectory(cacheDirectory),
     );
-    final directoryPath = path.normalize(path.absolute(directory.path));
+    if (cacheDirectoryToRemove == null) {
+      return _Removal.skipped;
+    }
+    final root = cacheDirectoryToRemove.parent;
+    final rootPath = root.path;
+    final directoryPath = cacheDirectoryToRemove.path;
     if (path.equals(directoryPath, rootPath) ||
         !path.isWithin(rootPath, directoryPath) ||
         path.basename(directoryPath) == _lockDirectoryName) {
       return _Removal.skipped;
     }
-    final cacheDirectoryToRemove = Directory(directoryPath);
     var result = _Removal.skipped;
     Future<void> remove() async {
-      if (!await cacheDirectoryToRemove.exists() ||
+      if (await _cacheEntryDirectory(cacheDirectoryToRemove, root) == null ||
           (stillRemovable != null && !await stillRemovable())) {
         return;
       }
@@ -2114,3 +2318,6 @@ String _redactedSourceName(ModelSource source) => redactUrlSecrets(
     if (source.resolvedUri case final uri?) uri.toString(),
   ],
 );
+
+// The historical path is a metadata-change token, never a file-system target.
+typedef _ManagedCacheEntry = ({ModelCacheEntry entry, String recordedFilePath});
