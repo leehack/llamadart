@@ -606,6 +606,100 @@ void main() {
     skip: Platform.isWindows ? 'Symbolic links need privileges' : false,
   );
 
+  for (final missing in [false, true]) {
+    test(
+      'prune keeps ${missing ? 'stale metadata' : 'an entry'} when its recorded path changes after inventory',
+      () async {
+        final previousLocker = modelCacheEntryLocker;
+        addTearDown(() => modelCacheEntryLocker = previousLocker);
+        final otherFile = File(path.join(modelFile.parent.path, 'other.gguf'))
+          ..writeAsBytesSync(payload);
+        if (missing) modelFile.deleteSync();
+        var changed = false;
+        modelCacheEntryLocker = (lockPath, {required throwIfCancelled}) async {
+          if (!changed) {
+            changed = true;
+            editMetadata({'file_path': otherFile.path});
+          }
+          return previousLocker(lockPath, throwIfCancelled: throwIfCancelled);
+        };
+        expect(await manager.prune(maxAge: Duration.zero), isEmpty);
+        expect(changed, isTrue);
+        expect(metadataFile.existsSync(), isTrue);
+        if (!missing) expect(modelFile.readAsBytesSync(), payload);
+        expect(otherFile.readAsBytesSync(), payload);
+      },
+    );
+  }
+
+  test('cacheOnly preserves its first existence-check miss', () async {
+    await IOOverrides.runWithIOOverrides(
+      () => expectLater(
+        manager.ensureModel(
+          source,
+          options: ModelLoadOptions(cachePolicy: ModelCachePolicy.cacheOnly),
+        ),
+        throwsA(isA<LlamaStateException>()),
+      ),
+      _FirstExistsCheckMisses(modelFile.path),
+    );
+    expect(modelFile.readAsBytesSync(), payload);
+  });
+
+  test(
+    'clear tolerates an entry disappearing after its no-follow type check',
+    () async {
+      final systemIO = _SystemIO();
+      var disappeared = false;
+      await IOOverrides.runZoned(
+        () => manager.clear(),
+        fseGetType: (requested, followLinks) async {
+          final type = await systemIO.fseGetType(requested, followLinks);
+          if (!disappeared &&
+              path.equals(requested, modelFile.parent.path) &&
+              type == FileSystemEntityType.directory) {
+            disappeared = true;
+            await modelFile.parent.delete(recursive: true);
+          }
+          return type;
+        },
+      );
+      expect(disappeared, isTrue);
+      expect(root.existsSync(), isTrue);
+      expect(modelFile.parent.existsSync(), isFalse);
+    },
+  );
+
+  test(
+    'clear does not mistake a replacement dangling link for a removed entry',
+    () async {
+      final systemIO = _SystemIO();
+      final missingTarget = path.join(sandbox.path, 'missing-outside-target');
+      var replaced = false;
+      await expectLater(
+        IOOverrides.runZoned(
+          () => manager.clear(),
+          fseGetType: (requested, followLinks) async {
+            final type = await systemIO.fseGetType(requested, followLinks);
+            if (!replaced &&
+                path.equals(requested, modelFile.parent.path) &&
+                type == FileSystemEntityType.directory) {
+              replaced = true;
+              await modelFile.parent.delete(recursive: true);
+              await Link(modelFile.parent.path).create(missingTarget);
+            }
+            return type;
+          },
+        ),
+        throwsA(isA<FileSystemException>()),
+      );
+      expect(replaced, isTrue);
+      expect(Link(modelFile.parent.path).existsSync(), isTrue);
+      expect(Directory(missingTarget).existsSync(), isFalse);
+    },
+    skip: Platform.isWindows ? 'Symbolic links need privileges' : false,
+  );
+
   test(
     'prune revalidates relocated metadata after acquiring its entry lock',
     () async {
@@ -697,3 +791,39 @@ class _MemoryClient implements HttpClient {
   @override
   dynamic noSuchMethod(Invocation invocation) => throw UnimplementedError();
 }
+
+/// Answers the first `exists()` check of [_path] with false, as if another
+/// process wrote the file just after it.
+final class _FirstExistsCheckMisses extends IOOverrides {
+  _FirstExistsCheckMisses(this._path);
+
+  final String _path;
+  bool _missed = false;
+
+  @override
+  File createFile(String path) {
+    if (_missed || path != _path) {
+      return super.createFile(path);
+    }
+    _missed = true;
+    return _MissingFile(super.createFile(path));
+  }
+}
+
+final class _MissingFile implements File {
+  _MissingFile(this._file);
+
+  final File _file;
+
+  @override
+  String get path => _file.path;
+
+  @override
+  Future<bool> exists() async => false;
+
+  @override
+  Object? noSuchMethod(Invocation invocation) =>
+      throw UnsupportedError('${invocation.memberName} on $path');
+}
+
+final class _SystemIO extends IOOverrides {}
