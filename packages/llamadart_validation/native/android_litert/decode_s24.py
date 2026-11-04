@@ -46,10 +46,16 @@ def captures(value, key=None):
 
 def jsonl(raw, maximum, line_maximum):
     require(len(raw) <= maximum and raw.endswith(b'\n'), 'Truncated/oversized JSONL')
-    lines = raw.decode('utf-8').splitlines()
-    require(lines and all(line and len(line.encode()) <= line_maximum for line in lines), 'Empty/oversized JSONL line')
-    rows = [loads(line) for line in lines]
-    require(all(isinstance(row, dict) for row in rows), 'JSONL record is not an object')
+    rows = []; start = 0
+    while start < len(raw):
+        end = raw.find(b'\n', start)
+        # Unicode line separators are capture data; only physical LF frames JSONL.
+        body_end = end - 1 if end > start and raw[end - 1] == 13 else end
+        require(start < body_end and body_end - start <= line_maximum, 'Empty/oversized JSONL line')
+        require(raw.find(b'\r', start, body_end) < 0, 'Bare CR in JSONL frame')
+        row = loads(raw[start:body_end].decode('utf-8', errors='strict'))
+        require(isinstance(row, dict), 'JSONL record is not an object')
+        rows.append(row); start = end + 1
     return rows
 
 def child(row, execution_hash, directory, status):

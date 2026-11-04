@@ -145,6 +145,10 @@ a new operator package. The existing frozen private base64-only decoder and
 past journals remain unchanged. This decoder verifies byte integrity and
 completion, always reports `qualified: false`, and does not replace independent
 semantic/GPU/cleanup grading.
+JSONL records are framed on literal LF bytes, with optional CR immediately
+before LF. Strict UTF-8 capture strings may contain U+0085, U+2028 or U+2029;
+those characters never split a record. Each frame is byte-bounded before text
+decoding, and empty, truncated, malformed or non-object frames fail.
 
 Model-free codec/transport checks, without compiling or running the native child:
 
@@ -152,8 +156,13 @@ Model-free codec/transport checks, without compiling or running the native child
 TMPDIR="$(mktemp -d)" dart test -p vm test/s24_litert_capture_test.dart \
   test/android_litert_qualification_test.dart test/android_litert_mappings_test.dart \
   test/s24_litert_gpu_observation_test.dart
-python3 -m unittest discover -s native/android_litert -p 'test_s24_capture.py'
+DART_BIN="$(command -v dart)" python3 -m unittest discover \
+  -s native/android_litert -p 'test_s24_capture.py'
 ```
+
+The Python transport lane invokes `DART_BIN` directly with the prepared package
+configuration to serialize complete model-free20-case Unicode fixtures using
+the actual Dart codec and `jsonEncode`, with both LF and CRLF framing.
 
 `test/support/replay_s24_capture_encoding.dart RETAINED_JSONL NEW_ANALYSIS_DIR`
 replays only capture encoding, verifies every original event/capture identity and

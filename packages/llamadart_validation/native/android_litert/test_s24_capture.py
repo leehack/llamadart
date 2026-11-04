@@ -3,6 +3,9 @@ import base64
 import copy
 import hashlib
 import json
+import os
+import shutil
+import subprocess
 from pathlib import Path
 import tempfile
 import unittest
@@ -93,6 +96,50 @@ class CompleteTransportTests(unittest.TestCase):
     def test_duplicate_keys_and_nonfinite_JSON_reject(self):
         for raw in ('{"x":1,"x":2}','{"x":NaN}'):
             with self.assertRaises(ValueError):decoder.loads(raw)
+
+
+class DartSerializedTransportTests(unittest.TestCase):
+    setUp=CompleteTransportTests.setUp
+    @classmethod
+    def setUpClass(cls):
+        cls.dart=os.environ.get('DART_BIN') or shutil.which('dart')
+        package=Path(__file__).resolve().parents[2]
+        cls.config=package/'.dart_tool/package_config.json'
+        cls.script=package/'test/support/serialize_s24_transport.dart'
+        if not cls.dart or not cls.config.is_file():
+            raise unittest.SkipTest('Prepared package config and DART_BIN/Dart SDK required')
+    def test_actual_Dart_complete20_Unicode_LF_CRLF_and_legacy_base64(self):
+        for point in (0x85,0x2028,0x2029):
+            for encoding in ('base64','compact'):
+                for ending in ('lf','crlf'):
+                    with self.subTest(point=f'U+{point:04X}',encoding=encoding,ending=ending):
+                        result=subprocess.run([self.dart,'--packages='+str(self.config),str(self.script),str(point),encoding,ending],input=json.dumps(self.rows).encode(),capture_output=True,check=True,timeout=30)
+                        raw=result.stdout
+                        self.assertTrue(raw.endswith(b'\n' if ending=='lf' else b'\r\n'))
+                        self.assertEqual(chr(point).encode() in raw,encoding=='compact')
+                        literal_rows=[json.loads(line) for line in raw.split(b'\n') if line]
+                        capture=next(row for row in literal_rows if row['event']=='public_observation')['mappings']['capture']
+                        self.assertEqual(codec.decode_capture(capture),f'native {chr(point)} log\n'.encode())
+                        self.path.write_bytes(raw);decoded=decoder.decode(self.path,self.binding)
+                        self.assertEqual(decoded['records'],106)
+                        self.assertEqual(set(decoded['producer_statuses'].values()),{'PASS'})
+                        self.assertEqual(len(decoded['producer_statuses']),20)
+                        self.assertFalse(decoded['qualified'])
+
+
+class PhysicalFramingTests(unittest.TestCase):
+    def test_LF_and_CRLF_physical_frames_preserve_valid_objects(self):
+        for raw in (b'{}\n',b'{}\r\n',b' {} \r\n{}\n'):
+            self.assertEqual(decoder.jsonl(raw,100,10),[{}]*(2 if raw.count(b'\n')==2 else 1))
+        self.assertEqual(decoder.jsonl(b'{}\r\n',4,2),[{}])
+    def test_empty_truncated_nonobject_invalid_UTF8_or_bare_separator_reject(self):
+        values=[b'',b'{}',b'{}\r',b'\n',b'\r\n',b'{}\n\n',b'[]\n',b'\xff\n',b'{}\r{}\n',b'\r{}\n',b'{}\r\r\n',b'{}\r \n']
+        values += [b'{}'+chr(point).encode()+b'{}\n' for point in (0x85,0x2028,0x2029)]
+        for raw in values:
+            with self.subTest(raw=raw),self.assertRaises((ValueError,UnicodeError)):decoder.jsonl(raw,100,100)
+    def test_line_byte_bound_rejects_before_UTF8_or_JSON_allocation(self):
+        with patch.object(decoder,'loads',side_effect=AssertionError('Do not parse oversized frame')):
+            with self.assertRaisesRegex(ValueError,'Empty/oversized'):decoder.jsonl(b'\xff'*8+b'\n',100,4)
 
 
 if __name__=='__main__':unittest.main()
