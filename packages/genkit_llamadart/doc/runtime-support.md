@@ -47,7 +47,7 @@ with `finishReason: failed`, so inspect the result's error.
 | Runtime capability snapshot | Adapter behavior |
 | --- | --- |
 | llama.cpp GGUF | Uses loaded capabilities for tools, history, grammar, embeddings, and projector media. A projector path alone does not confirm media support. |
-| Native LiteRT-LM | Preserves chat and tools when supported; rejects strict JSON and embeddings when unsupported. Built-in encoders need no projector. Media declarations can under-report encoders, so native media requests retain llamadart's best-effort runtime validation; unconfirmed media is not advertised. |
+| Native LiteRT-LM | Preserves chat and tools when supported; rejects strict JSON and embeddings when unsupported. Built-in encoders need no projector. Media declarations from a custom runtime older than LiteRT-LM v0.18.0 can under-report encoders, so native media requests retain llamadart's best-effort runtime validation; unconfirmed media is not advertised. |
 | LiteRT-LM Web | A snapshot that reports latest-text-only chat rejects history, system messages, tools, and media instead of silently dropping them. This does not establish Genkit Dart browser compatibility. |
 
 Backend support does not prove model quality or template behavior. For example,

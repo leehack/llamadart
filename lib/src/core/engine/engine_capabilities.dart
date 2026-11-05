@@ -150,8 +150,7 @@ class LlamaEngineCapabilities implements EngineCapabilities {
   /// [GenerationParams.speculativeDecoding] flag. Native LiteRT-LM reports
   /// [SpeculativeDecodingStrategy.backendDefault] and
   /// [SpeculativeDecodingStrategy.mtp] unless the bundle declares no
-  /// speculative drafter, a declaration that can under-report as for
-  /// [supportsVision]. A runtime can still reject a
+  /// speculative drafter. A runtime can still reject a
   /// request that uses only these strategies, such as one that combines
   /// strategies, sets a tuning field or draft model the runtime does not take,
   /// or has media parts, a grammar or a thinking budget.

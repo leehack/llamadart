@@ -106,8 +106,9 @@ void checkRuntimeModelRequest(
     }
   }
 
-  // Native LiteRT bundle declarations can under-report encoders. Preserve the
-  // core runtime's best-effort media validation without advertising support.
+  // A custom native runtime older than LiteRT-LM v0.18.0 can under-report bundle encoders.
+  // Preserve the core runtime's best-effort media validation without
+  // advertising support.
   final bestEffortMedia =
       const bool.fromEnvironment('dart.library.io') &&
       capabilities?.runtime == llama.LlamaRuntime.liteRtLm;

@@ -723,8 +723,7 @@ class LiteRtLmBackend
   /// speculative decoding through the LiteRT-LM runtime switch, which
   /// [SpeculativeDecodingStrategy.backendDefault] and
   /// [SpeculativeDecodingStrategy.mtp] turn on, unless the loaded bundle
-  /// declares no speculative decoding drafter. The declaration can
-  /// under-report; see `LiteRtLmRuntimeClient.bundleCapabilities`.
+  /// declares no speculative decoding drafter.
   @override
   Future<BackendGenerationCapabilities> generationCapabilities() async {
     final bundle = await _bundleCapabilities();
@@ -848,8 +847,7 @@ class LiteRtLmBackend
     }
   }
 
-  /// Reports the image and audio input that the loaded bundle declares,
-  /// which can under-report; see `LiteRtLmRuntimeClient.bundleCapabilities`.
+  /// Reports the image and audio input that the loaded bundle declares.
   @override
   Future<({bool vision, bool audio})> directMediaInput() async {
     final bundle = await _bundleCapabilities();
