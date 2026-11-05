@@ -4,6 +4,7 @@ import 'dart:io';
 
 import 'package:llamadart/src/backends/litert_lm/litert_lm_runtime.dart'
     as runtime;
+import 'package:llamadart/src/hook/native_release_pins.dart';
 
 const _liteRtLmAssetId = 'package:llamadart/litert_lm_LiteRtLm';
 const _litertLmLibDirEnv = 'LLAMADART_LITERT_LM_LIB_DIR';
@@ -28,6 +29,7 @@ void main() {
   final opened = openLiteRtLmSmokeLibrary(
     directory: Platform.environment[_litertLmLibDirEnv],
     abi: Abi.current(),
+    cApiV1: liteRtLmSmokeUsesCApiV1(liteRtLmReleaseTag),
   );
   final library = opened.library;
   for (final symbol in _requiredSymbols) {
@@ -45,11 +47,23 @@ bool _isSupportedHost() {
       (Platform.isWindows && abi == Abi.windowsX64);
 }
 
+/// Selects only a reviewed release's required smoke inventory.
+bool liteRtLmSmokeUsesCApiV1(String releaseTag) {
+  return switch (releaseTag) {
+    'v0.19.0' => true,
+    'v0.18.1-4' => false,
+    _ => throw UnsupportedError(
+      'LiteRT-LM library smoke has no reviewed C API inventory for $releaseTag.',
+    ),
+  };
+}
+
 /// Opens the smoke runtime with the same dependency handling as production.
 ({String path, DynamicLibrary library, List<DynamicLibrary> companions})
 openLiteRtLmSmokeLibrary({
   required String? directory,
   required Abi abi,
+  bool cApiV1 = false,
   DynamicLibrary Function(String)? openLibrary,
 }) {
   final open = openLibrary ?? DynamicLibrary.open;
@@ -61,12 +75,18 @@ openLiteRtLmSmokeLibrary({
     }
 
     final companionPaths = [
-      for (final library in runtime.liteRtLmCompanionLibrariesForAbi(abi))
+      for (final library in runtime.liteRtLmCompanionLibrariesForAbi(
+        abi,
+        cApiV1: cApiV1,
+      ))
         '$envDir/$library',
     ];
     // Production discovery can skip absent optional candidates; the smoke
     // must fail if any required inventory entry is missing.
-    for (final library in runtime.liteRtLmRequiredLibrariesForAbi(abi)) {
+    for (final library in runtime.liteRtLmRequiredLibrariesForAbi(
+      abi,
+      cApiV1: cApiV1,
+    )) {
       final file = '$envDir/$library';
       if (!File(file).existsSync()) {
         throw StateError('Required LiteRT-LM smoke library is missing: $file');
