@@ -582,6 +582,7 @@ Future<_NativeMediaRenderResult> _renderNativeMediaPrompt({
     await client.initialize(
       modelPath: modelPath,
       backend: _runtimeBackendName(backend),
+      visionBackend: _runtimeBackendName(backend),
       maxTokens: 2048,
       outputTokens: 32,
       maxNumImages: 1,
