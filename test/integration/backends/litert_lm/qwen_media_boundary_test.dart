@@ -166,9 +166,20 @@ void main() {
                     ),
                   ),
                 );
-                expect(loaded.clients.last.conversations, 1);
-                expect(loaded.clients.last.events, ['create']);
-                expect(loaded.clients.last.messageJson, isNull);
+                // Failure diagnostics may create a fresh metadata-only client.
+                final client = loaded.clients.singleWhere(
+                  (client) => client.conversations > 0,
+                );
+                expect(client.conversations, 1);
+                expect(client.events, ['create']);
+                expect(
+                  loaded.clients.map((client) => client.messageJson),
+                  everyElement(isNull),
+                );
+                expect(
+                  loaded.clients.expand((client) => client.renderedMessages),
+                  isEmpty,
+                );
               } finally {
                 await loaded.engine.dispose();
               }
