@@ -441,11 +441,11 @@ def _materialize_schema2_release_fixtures(
 _MACOS_SPM_COMPANION_DIGEST = "b" * 64
 
 
-def _checked_in_litert_swift(tag: str = "v0.16.0-native.2") -> str:
+def _v018_litert_swift(tag: str = "v0.16.0-native.2") -> str:
+    # Historical schema-2 inventories retain samplers removed in v0.19.0.
     source = (
-        Path(__file__).resolve().parents[2]
-        / "packages/llamadart_litert_lm_flutter/darwin/"
-        "llamadart_litert_lm_flutter/Package.swift"
+        Path(__file__).resolve().parent
+        / "fixtures/litert_lm_v018_samplers_Package.swift"
     ).read_text(encoding="utf-8")
     return re.sub(r'let liteRtLmTag = "[^"]+"', f'let liteRtLmTag = "{tag}"', source)
 
@@ -3006,7 +3006,7 @@ class SyncNativeReleasePinsTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
             result = _run_schema2_sync(
-                root, manifest, release, starting_swift=_checked_in_litert_swift(),
+                root, manifest, release, starting_swift=_v018_litert_swift(),
             )
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             expected = (
@@ -3042,7 +3042,7 @@ class SyncNativeReleasePinsTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
             result = _run_schema2_sync(
-                root, manifest, release, starting_swift=_checked_in_litert_swift(),
+                root, manifest, release, starting_swift=_v018_litert_swift(),
             )
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             repo = root / "repo"
@@ -3067,7 +3067,7 @@ class SyncNativeReleasePinsTest(unittest.TestCase):
         starting = re.sub(
             r'(?ms)^[ \t]*nativeRepoBinaryTarget\(\s*name: "LiteRt",.*?^[ \t]*\),\n',
             "",
-            _checked_in_litert_swift(),
+            _v018_litert_swift(),
         )
         starting = re.sub(r'(?m)^[ \t]*\.target\(name: "LiteRt", .*\n', "", starting)
         self.assertNotIn('name: "LiteRt"', starting)
