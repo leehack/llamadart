@@ -21,11 +21,31 @@ The repository also contains a direct HEAD-to-main push in
 `.github/workflows/docs_version_cut.yml`, tag creation in `release_on_prep_merge.yml` and
 `release_genkit_on_prep_merge.yml` (the latter creates only
 `genkit_llamadart-vX.Y.Z` tags),
+`tool/release/nonpublishing_auth_probe.py` diagnostic tag creation and cleanup,
 historical companion tag-push examples under `website/versioned_docs/`, a
 forced local detached checkout for an upstream test fixture, `codesign --force`,
 and `pub publish --force`. None writes an open PR head ref. The static test
 distinguishes these from remote `refs/heads/*` mutation rather than banning
 unrelated uses of the word `force`.
+
+## Diagnostic tag-only writer
+
+`tool/release/nonpublishing_auth_probe.py`, invoked by
+`.github/workflows/nonpublishing_release_auth_probe.yml`, is an explicit
+nonrelease tag-only writer. An approved operator dispatches it on reviewed
+`main` with the exact expected commit. Its read-only `GITHUB_TOKEN` attempts a
+negative create; `RELEASE_AUTOMATION_TOKEN` creates the positive diagnostic tag
+and cleans up invocation-owned tags. The only write API operations are POST
+create and DELETE under `refs/tags/ci-auth-probe-<runid>-<32hex>`, with a positive
+decimal sender run ID and 32 lowercase random hexadecimal characters. No
+release tag or open PR head is writable through this helper.
+
+Creation requires absence and reads back the exact commit. Cleanup accepts only
+one of that invocation's generated tags and verifies its commit before DELETE,
+then verifies absence. The read-before-delete movement guard is **not atomic
+compare-and-swap**; an intervening ref change remains a race. Ambiguous outcomes
+retain inspection evidence for operator follow-up rather than report success.
+This registration grants no general branch or ref-update exception.
 
 ## PR #434 evidence and consequence
 

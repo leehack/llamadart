@@ -1422,6 +1422,49 @@ void main() {
           expect(content, contains(r'"ref=refs/tags/$TAG"'));
           expect(content, contains(r'tag="genkit_llamadart-v$version"'));
           expect(RegExp(r'git/refs').allMatches(content).length, 1);
+        } else if (path == 'tool/release/nonpublishing_auth_probe.py') {
+          // Keep this registration tied to the diagnostic namespace, operation
+          // gate and invocation ownership; additional ref APIs require review.
+          expect(RegExp(r'git/refs').allMatches(content).length, 4);
+          expect(
+            RegExp(r'method == "([A-Z]+)"')
+                .allMatches(content)
+                .map((match) => match[1])
+                .toList(),
+            ['GET', 'POST', 'DELETE'],
+          );
+          for (final contract in [
+            r'TAG = re.compile(r"ci-auth-probe-([1-9][0-9]*)-([0-9a-f]{32})\Z")',
+            r'''require(path.startswith(ROOT) and (
+            (method == "GET" and allowed_read and body is None)
+            or (method == "POST" and suffix == "/git/refs" and isinstance(body, dict)
+                and set(body) == {"ref", "sha"} and body["ref"].startswith("refs/tags/")
+                and TAG.fullmatch(body["ref"][10:]) and commit(body["sha"]))
+            or (method == "DELETE" and re.fullmatch(r"/git/refs/tags/ci-auth-probe-[1-9][0-9]*-[0-9a-f]{32}", suffix)
+                and body is None)), "invalid-api-operation")''',
+            '''def ref_path(self, tag, plural=False):
+        require(TAG.fullmatch(tag) and TAG.fullmatch(tag)[1] == self.c["run_id"]
+                and tag in self.owned_tags, "owned-ref-guard")
+        return ROOT + ("/git/refs/tags/" if plural else "/git/ref/tags/") + tag''',
+            '''def create(self, tag, token):
+        self.ref_path(tag)
+        return self.call("POST", ROOT + "/git/refs", token,
+                         {"ref": "refs/tags/" + tag, "sha": self.c["sha"]})''',
+            '''self.identity(self.get(self.ref_path(tag)), tag)
+        status = None
+        try:
+            status, _, _ = self.call("DELETE", self.ref_path(tag, True), token)
+        finally:
+            observed = self.inspect(tag)''',
+            '"atomicCompareAndSwap": False',
+            'require(status == 204 and observed == "absent", "cleanup-incomplete")',
+            'negative, positive = ["ci-auth-probe-" + self.c["run_id"] + "-" + n for n in nonces]',
+            'self.owned_tags = (negative, positive)',
+            'self.absent(negative)',
+            'self.absent(positive)',
+          ]) {
+            expect(content, contains(contract), reason: path);
+          }
         } else {
           expect(
             content,
