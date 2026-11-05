@@ -61,7 +61,10 @@ Iterable<MapEntry<String, String>> maintainedWriterSources(
 ) sync* {
   for (final entry in maintainedFiles(root)) {
     if (isMaintainedWriterSource(entry.key)) {
-      yield MapEntry(entry.key, entry.value.readAsStringSync());
+      yield MapEntry(
+        entry.key,
+        entry.value.readAsStringSync().replaceAll('\r\n', '\n'),
+      );
     }
   }
 }
