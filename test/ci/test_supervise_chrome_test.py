@@ -1,4 +1,5 @@
 """Model-free Linux process/pipe fixtures for the production Chrome supervisor."""
+import importlib.util
 import json
 import os
 from pathlib import Path
@@ -8,10 +9,46 @@ import sys
 import tempfile
 import time
 import unittest
+from unittest import mock
 
 
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = ROOT / 'tool/ci/supervise_chrome_test.py'
+
+
+def load_supervisor():
+    spec = importlib.util.spec_from_file_location('supervise_chrome_test', SCRIPT)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+class ProcessTableTest(unittest.TestCase):
+    def test_processes_exiting_mid_scan_do_not_abort_the_table(self):
+        supervisor = load_supervisor()
+        with tempfile.TemporaryDirectory() as temp:
+            proc = Path(temp)
+            stat_tail = ' '.join(['S', '1', '10', '10'] + ['0'] * 15 + ['4242'])
+            for pid in ('100', '101', '102'):
+                (proc / pid).mkdir()
+                (proc / pid / 'stat').write_text(f'{pid} (worker) {stat_tail}\n')
+                (proc / pid / 'wchan').write_text('do_wait')
+            vanished = {proc / '101' / 'stat', proc / '102' / 'wchan'}
+            read_text = Path.read_text
+
+            def racing_read(path, *args, **kwargs):
+                if path in vanished:
+                    raise ProcessLookupError(3, 'No such process')
+                return read_text(path, *args, **kwargs)
+
+            with mock.patch.object(supervisor, 'Path', lambda _: proc), \
+                    mock.patch.object(Path, 'read_text', racing_read):
+                table = supervisor.process_table()
+
+        self.assertEqual(sorted(table), [100, 102])
+        self.assertEqual(table[100]['wchan'], 'do_wait')
+        self.assertEqual(table[102]['wchan'], 'unavailable')
+        self.assertEqual(table[102]['start_ticks'], 4242)
 
 
 @unittest.skipUnless(sys.platform == 'linux', 'Requires Linux /proc and pidfds')

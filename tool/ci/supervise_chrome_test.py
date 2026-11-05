@@ -27,7 +27,7 @@ def process_table():
             pid = int(directory.name)
             try:
                 wait = (directory / 'wchan').read_text().strip()
-            except (FileNotFoundError, PermissionError):
+            except (FileNotFoundError, PermissionError, ProcessLookupError):
                 wait = 'unavailable'
             table[pid] = {
                 'pid': pid, 'ppid': int(fields[1]), 'pgid': int(fields[2]),
@@ -36,7 +36,8 @@ def process_table():
                 'comm': re.sub(r'[^a-zA-Z0-9:._-]', '?', raw[raw.index('(') + 1:end])[:64],
                 'wchan': re.sub(r'[^a-zA-Z0-9_]', '?', wait)[:64],
             }
-        except FileNotFoundError:
+        except (FileNotFoundError, ProcessLookupError):
+            # A process reaped mid-read raises ESRCH rather than ENOENT.
             continue
     return table
 
