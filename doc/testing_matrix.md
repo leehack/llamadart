@@ -157,7 +157,7 @@ Pick targeted rows based on the touched surface:
 | Chat template, parser, tools, thinking extraction | `template-parity`, `llama-cpp-chat-template-smoke`, `gguf-chat-features-smoke`, `litert-lm-chat-features-smoke` |
 | Tool-result media (`LlamaToolResultContent.content`, `LlamaToolOutput`) | `root-vm`, `tool-result-image-smoke`, validation `qwen3vl-gguf-cpu` / `-metal` (`M01`) |
 | LiteRT-LM embedding engine | `litert-lm-multimodal-embedding`; includes the documented local-only upstream WebGPU parity diagnostic |
-| LiteRT-LM native backend | `litert-lm-lifecycle`, `litert-lm-engine-smoke`, `litert-lm-chat-features-smoke`, `litert-lm-json-schema`, `litert-lm-asr-smoke` |
+| LiteRT-LM native backend | `litert-lm-lifecycle`, `litert-lm-engine-smoke`, `litert-lm-chat-features-smoke`, `litert-lm-json-schema`, `litert-lm-asr-smoke`, `litert-lm-asr-preservation`, `litert-lm-media-preservation`, `litert-lm-utility-preservation` |
 | Web bridge bootstrap or interop | `web-bridge-smoke`, `web-mock-chat-smoke`, `web-real-model-smoke`, `web-tool-penalty-smoke`, `web-lazy-grammar` |
 | WebGPU multimodal | `webgpu-multimodal-regression`, `web-speech-task-cancel`, plus `web-speech-to-text-smoke` for typed Qwen3-ASR and `web-text-to-speech-smoke` for typed Qwen3-TTS |
 | Large WebGPU GGUF / wasm64 selection | `gemma4-webgpu-mem64` |
@@ -167,7 +167,7 @@ Pick targeted rows based on the touched surface:
 | LiteRT-LM bundle in a read-only directory on a device | `chat-app-litert-read-only-bundle` |
 | Android Vulkan prompt cap, Vulkan device facts or the Vulkan 1.2 load refusal on a device | `chat-app-micro-batch-sweep` |
 | Isolate shutdown releases, exit teardown, a Flutter pin bump, or app-exit guidance | `chat-app-macos-quit` |
-| Speech-to-text API or adapter | `speech-to-text-smoke`, `web-speech-to-text-smoke`, plus `litert-lm-asr-smoke` for the dedicated LiteRT-LM streaming engine |
+| Speech-to-text API or adapter | `speech-to-text-smoke`, `web-speech-to-text-smoke`, plus `litert-lm-asr-smoke` and `litert-lm-asr-preservation` for the dedicated LiteRT-LM streaming engine |
 | Text-to-speech API or adapter | `text-to-speech-smoke`, plus `web-text-to-speech-smoke` for browser synthesis/playback/export |
 | Decision engine, decision head, or safetensors reader | `decision-model-smoke`, plus `decision-model-web-smoke` for the Web decision head or bridge pin |
 | Image generation API or `stable_diffusion` runtime | `image-generation-smoke`, `native-hook-bundles` |
@@ -181,6 +181,20 @@ Pick targeted rows based on the touched surface:
 | Chat-app live LiteRT-LM dictation | `litert-lm-asr-smoke`, `chat-app-live-speech-smoke` |
 | Chat-app Ask with voice | `gguf-audio-chat-smoke`, `litert-lm-chat-features-smoke`, `chat-app-voice-question-smoke` |
 | Example app, CLI, or server package | `examples-tests` |
+
+`litert-lm-asr-preservation` is a local-only CPU campaign using the public
+`SpeechToTextEngine` and normal published native assets, with Whisper Tiny
+(`92f194600d98e1d94b1ff6f636d109c0f4ac66f3f6a1803f7a665e93daf78012`), its
+tokenizer (`27fc476bfe7f17299480be2273fc0608e4d5a99aba2ab5dec5374b4482d1a566`)
+and the JFK mono 16 kHz PCM16 WAV
+(`59dfb9a4acb36fe2a2affc14bacbee2920ff435cb13cc314a08c13f66ba7860e`).
+Pass those files with `--model-path`, `--tokenizer-path` and `--audio-path`;
+the scenario fixes the preset and expected transcript. It checks streaming
+partials and final text, three seconds of empty silence through stream and task,
+active stream/task cancellation, same-engine reuse and fresh recognizer reload.
+Each case is bounded to 30 seconds and the suite to three minutes. JSON evidence
+includes fixture hashes, completion states, text and event counts. This row does
+not qualify GPU placement, microphone UI, latency or other model families.
 
 Apple companion hook changes also require
 `dart test -p vm --run-skipped test/integration/apple_companion_flutter_cache_test.dart` on
@@ -669,6 +683,64 @@ The executable quick suite and provider commands are documented in the
 [cross-platform validation runbook](cross_platform_validation.md). Discover the
 model-free `validation-harness` and opt-in `validation-model-core` matrix rows.
 
+
+### LiteRT-LM public utility preservation
+
+```bash
+dart run tool/testing/run_local_e2e.dart --scenario litert-lm-utility-preservation \
+  --model-path /path/to/Qwen3-0.6B.litertlm --backend cpu --dry-run
+```
+
+Remove `--dry-run` to run this local-only, download-free row. Use the corrected
+Qwen3-0.6B bundle (613,722,264 bytes, SHA-256
+`c5f39b4191926786c3e6668b62af4d6eb15248dfc7a5348252a9b406f33f2108`);
+direct execution uses `LITERT_LM_UTILITY_MODEL`. The test uses the public
+`LiteRtLmRuntimeClient()` with default runtime discovery, CPU, context 1024,
+output limit 32, native speculation disabled, and canonical `minLogLevel: 3`.
+
+The tokenizer checks the established split-token `Hello! 😊` fixture, four
+Unicode round trips, and the configured start-token prefix with `addSpecial`.
+It records that prefix and both token sequences, allowing an empty configured
+prefix without claiming a nonempty BOS token. A real `run` performs one warmup and two measured runs, followed by a second
+call with zero warmups and one measured run on the same client. Both calls
+require nonempty raw output, native settlement, positive token counts and
+positive finite TTFT, prefill throughput and decode throughput. The oracle
+does not require a semantic greeting from a short thinking-enabled response.
+Async operations have 30-second bounds and the test a three-minute limit;
+the suite owns its temporary cache and disposes the client.
+
+Record source revision, runtime artifact identity and device with the result.
+This row covers tokenizer and benchmark utility preservation on Qwen3 CPU; it
+does not establish other logging levels, devices, model families or media.
+
+### LiteRT-LM generative image preservation
+
+```bash
+dart run tool/testing/run_local_e2e.dart --scenario litert-lm-media-preservation \
+  --model-path /path/to/Qwen3.5-0.8B-VL_int8.litertlm --backend cpu --dry-run
+```
+
+Remove `--dry-run` to run this local-only row; it downloads nothing. Use
+`litert-community/Qwen3.5-0.8B` revision
+`10243c0a01d24e6b122a0e814f8c4d984c9c92d6`, file
+`Qwen3.5-0.8B-VL_int8.litertlm` (1,302,262,448 bytes, SHA-256
+`e3360b658c929ff35ab740a21f5e4b688096a72e351b8d347e26ccda314121b7`).
+The test verifies these bytes before loading through public runtime discovery
+with CPU, context 2048 and native speculation disabled. Direct execution uses
+`LITERT_LM_VISION_MODEL`.
+
+The shared deterministic 32-pixel checker PNG is 117 bytes, SHA-256
+`608559c1cef09a7d4669ea459ee1e8825771634f543fb1a93a6e768a48da9b09`.
+The row requires the supported vision probe, visible `checkerboard` output,
+greedy path/bytes parity, image/assistant/follow-up history, same-engine reuse
+after first-chunk cancellation, and dispose/reload reproduction. Operations
+have 30-second bounds and the test a three-minute limit; caches and fixture
+files stay in its suite-owned temporary directory.
+
+Record source revision, runtime artifact identity and device with the result.
+This row qualifies image wiring, history and lifecycle for this model and CPU;
+it does not qualify audio, thinking, GPU or perceptual quality generally. The
+independent `litert-lm-chat-features-smoke` retains its thinking oracle.
 
 ### LiteRT-LM lifecycle regression
 

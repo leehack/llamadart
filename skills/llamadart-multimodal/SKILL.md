@@ -33,6 +33,9 @@ This restriction does not qualify GPU output or other architectures.
     `ModelSource.format` or a custom backend's fixed runtime identity names
     LiteRT-LM. A refused replacement keeps the previous model loaded.
     `loadMultimodalProjectorSource` also throws on LiteRT-LM.
+- Cancelling native LiteRT-LM image chat causes the next request to reinitialize
+  its native engine once work settles, including a late subscription cancel.
+  Keep using the public engine; allow for initialization latency on that request.
 - Use `engine.loadMultimodalProjectorSource(source, download: ...)` only to
   change the projector of a model that is already loaded; before a model is
   loaded it throws `LlamaContextException`. A projector that is missing or

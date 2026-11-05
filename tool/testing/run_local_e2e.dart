@@ -830,6 +830,36 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
       ],
     ),
     LocalE2eScenario(
+      name: 'litert-lm-asr-preservation',
+      group: LocalE2eScenarioGroup.dartLocalOnly,
+      description:
+          'Preserve hash-bound Whisper Tiny CPU transcription, silence, cancellation and reuse through the public engine.',
+      requiresDevice: false,
+      stepsBuilder: (context) => [
+        LocalE2eCommandStep(
+          workingDirectory: context.projectRoot,
+          executable: 'dart',
+          arguments: const [
+            'test',
+            '-p',
+            'vm',
+            '-j',
+            '1',
+            '--run-skipped',
+            '-t',
+            'local-only',
+            'test/e2e/backends/litert_lm_asr_preservation_e2e_test.dart',
+          ],
+          environment: {
+            'LITERT_LM_ASR_MODEL': context.modelPath!,
+            'LITERT_LM_ASR_TOKENIZER': context.tokenizerPath!,
+            'LITERT_LM_ASR_AUDIO': context.audioPath!,
+          },
+          description: 'Public CPU ASR preservation with fixed fixture hashes',
+        ),
+      ],
+    ),
+    LocalE2eScenario(
       name: 'litert-lm-v1-asr-smoke',
       group: LocalE2eScenarioGroup.dartLocalOnly,
       description:
@@ -1678,6 +1708,58 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
             'LITERT_LM_EMBEDDING_BACKEND': context.backend,
           },
           description: 'LiteRT-LM multimodal embedding qualification',
+        ),
+      ],
+    ),
+    LocalE2eScenario(
+      name: 'litert-lm-utility-preservation',
+      group: LocalE2eScenarioGroup.dartLocalOnly,
+      description:
+          'Qualify hash-pinned Qwen3 CPU public tokenizer, native benchmark metrics and client reuse; no downloads.',
+      requiresDevice: false,
+      stepsBuilder: (context) => [
+        LocalE2eCommandStep(
+          workingDirectory: context.projectRoot,
+          executable: 'dart',
+          arguments: const [
+            'test',
+            '--run-skipped',
+            '-p',
+            'vm',
+            '-j',
+            '1',
+            '-t',
+            'local-only',
+            'test/e2e/backends/litert_lm_utility_preservation_e2e_test.dart',
+          ],
+          environment: {'LITERT_LM_UTILITY_MODEL': context.modelPath!},
+          description: 'Qwen3 CPU tokenizer and benchmark utility preservation',
+        ),
+      ],
+    ),
+    LocalE2eScenario(
+      name: 'litert-lm-media-preservation',
+      group: LocalE2eScenarioGroup.dartLocalOnly,
+      description:
+          'Qualify hash-pinned Qwen3.5 CPU image path/bytes, history, cancellation and reload; no downloads.',
+      requiresDevice: false,
+      stepsBuilder: (context) => [
+        LocalE2eCommandStep(
+          workingDirectory: context.projectRoot,
+          executable: 'dart',
+          arguments: const [
+            'test',
+            '--run-skipped',
+            '-p',
+            'vm',
+            '-j',
+            '1',
+            '-t',
+            'local-only',
+            'test/e2e/backends/litert_lm_media_preservation_e2e_test.dart',
+          ],
+          environment: {'LITERT_LM_VISION_MODEL': context.modelPath!},
+          description: 'Qwen3.5 CPU generative image preservation',
         ),
       ],
     ),
@@ -2685,7 +2767,9 @@ Future<LocalE2eResult> runLocalE2e(
     );
   }
   if ((scenario.name == 'qwen3-litert-cpu-unicode' ||
-          scenario.name == 'litert-lm-json-schema') &&
+          scenario.name == 'litert-lm-json-schema' ||
+          scenario.name == 'litert-lm-media-preservation' ||
+          scenario.name == 'litert-lm-utility-preservation') &&
       parsed.backendProvided &&
       parsed.backend != 'cpu') {
     return LocalE2eResult(
@@ -2704,6 +2788,7 @@ Future<LocalE2eResult> runLocalE2e(
     'gguf-audio-chat-smoke',
     'speech-to-text-smoke',
     'litert-lm-asr-smoke',
+    'litert-lm-asr-preservation',
     'litert-lm-v1-asr-smoke',
     'litert-lm-chat-features-smoke',
     'chat-app-web-speech-to-text-smoke',
@@ -2737,6 +2822,25 @@ Future<LocalE2eResult> runLocalE2e(
       stderr:
           '--audio-path and a nonempty --expect are required for '
           'chat-app-web-speech-to-text-smoke.\n',
+    );
+  }
+  if (scenario.name == 'litert-lm-asr-preservation' &&
+      (parsed.modelPath == null ||
+          parsed.tokenizerPath == null ||
+          parsed.audioPath == null)) {
+    return const LocalE2eResult(
+      64,
+      stderr:
+          '--model-path, --tokenizer-path and --audio-path are required for '
+          'litert-lm-asr-preservation.\n',
+    );
+  }
+  if (scenario.name == 'litert-lm-asr-preservation' &&
+      parsed.backendProvided &&
+      parsed.backend != 'cpu') {
+    return const LocalE2eResult(
+      64,
+      stderr: 'litert-lm-asr-preservation requires --backend cpu.\n',
     );
   }
   if ((scenario.name == 'litert-lm-asr-smoke' ||
@@ -2893,6 +2997,8 @@ Future<LocalE2eResult> runLocalE2e(
   if ((scenario.name == 'llama-cpp-speculative-benchmark' ||
           scenario.name == 'llama-cpp-chat-template-smoke' ||
           scenario.name == 'litert-lm-lifecycle' ||
+          scenario.name == 'litert-lm-media-preservation' ||
+          scenario.name == 'litert-lm-utility-preservation' ||
           scenario.name == 'litert-lm-v1-thinking-budget' ||
           scenario.name == 'litert-lm-v1-service' ||
           scenario.name == 'litert-lm-v1-json-schema' ||

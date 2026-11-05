@@ -105,6 +105,10 @@ This restriction does not qualify GPU output or other architectures.
   subscription (including `break` out of `await for`), which also stops the
   backend. Keep a `StreamSubscription` in UI code so a Stop button can cancel
   it.
+- After a native LiteRT-LM image-chat cancellation, the next request
+  reinitializes the native engine after pending work settles. This also applies
+  to a late cancellation after an image turn has finished, so expect the next
+  request to pay initialization cost. The public engine and model stay loaded.
 - Native llama.cpp and LiteRT-LM report `getPerformanceContext() == null`
   after a queued generation is cancelled before it runs, including a request
   already sent to the LiteRT-LM worker. LiteRT-LM validation failures,

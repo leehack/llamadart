@@ -606,6 +606,21 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
         'speech work. This CPU-only engine row does not establish microphone UI.',
   ),
   TestMatrixRow(
+    id: 'litert-lm-asr-preservation',
+    tier: 'targeted',
+    mode: 'local-only',
+    covers:
+        'hash-bound public Whisper Tiny CPU transcript/partials, empty silence, '
+        'stream/task cancellation, same-engine reuse and fresh reload',
+    command:
+        'dart run tool/testing/run_local_e2e.dart --scenario '
+        'litert-lm-asr-preservation --model-path <whisper-tiny.tflite> '
+        '--tokenizer-path <tokenizer.json> --audio-path <jfk.wav> --backend cpu',
+    useWhen:
+        'Dedicated LiteRT-LM ASR preservation after runtime or speech changes. '
+        'CPU subset only; no GPU, microphone, latency or device qualification.',
+  ),
+  TestMatrixRow(
     id: 'text-to-speech-smoke',
     tier: 'targeted',
     mode: 'local-only',
@@ -1075,6 +1090,28 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
         'dart run tool/testing/run_local_e2e.dart --scenario litert-lm-multimodal-embedding --model-path <model.litertlm> --backend cpu',
     useWhen:
         'LiteRT-LM embeddings or embedding-engine loading. Chrome/reference procedure: doc/multimodal_embeddings_litert.md.',
+  ),
+  TestMatrixRow(
+    id: 'litert-lm-utility-preservation',
+    tier: 'targeted',
+    mode: 'local-only; Qwen3 CPU only',
+    covers:
+        'Hash-pinned public runtime-client tokenizer, Unicode round trips, special-token prefix, native run metrics and reuse',
+    command:
+        'dart run tool/testing/run_local_e2e.dart --scenario litert-lm-utility-preservation --model-path <Qwen3-0.6B.litertlm> --backend cpu',
+    useWhen:
+        'LiteRT-LM runtime-client tokenizer, run loop or metrics changes. CPU and canonical minLogLevel 3 only; fixture and procedure: doc/testing_matrix.md.',
+  ),
+  TestMatrixRow(
+    id: 'litert-lm-media-preservation',
+    tier: 'targeted',
+    mode: 'local-only; Qwen3.5 VL CPU only',
+    covers:
+        'Hash-pinned Qwen3.5 generative image path/bytes parity, vision probe, image history, cancellation reuse and dispose/reload',
+    command:
+        'dart run tool/testing/run_local_e2e.dart --scenario litert-lm-media-preservation --model-path <Qwen3.5-0.8B-VL_int8.litertlm> --backend cpu',
+    useWhen:
+        'LiteRT-LM image wiring, conversation history or lifecycle changes. No audio, thinking, GPU or general perceptual-quality qualification; fixture identity and procedure: doc/testing_matrix.md.',
   ),
   TestMatrixRow(
     id: 'litert-lm-lifecycle',

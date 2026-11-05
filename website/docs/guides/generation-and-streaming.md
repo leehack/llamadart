@@ -531,6 +531,11 @@ depends on the backend.
 Cancelling a stream's subscription also sends the cancel to its backend at
 once, even before the first token.
 
+After native LiteRT-LM image chat is cancelled, its next request reinitializes
+the native engine once pending work settles. The public engine and model remain
+loaded. This also covers a late subscription cancellation after an image turn
+has finished; allow for initialization latency on the next request.
+
 On native llama.cpp, a cancel during text prompt evaluation takes effect at the
 next prompt micro-batch (`ModelParams.microBatchSize` tokens), or at the next
 batch (`ModelParams.batchSize` tokens) with speculative decoding.
