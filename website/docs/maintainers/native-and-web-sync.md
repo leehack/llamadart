@@ -653,8 +653,10 @@ reverse pair is unsafe (`mtmd_helper_init_opt` grows to 32 bytes), so companion
 
 The 0.18.0 preparation moves to `v0.8.0-2` and requires its matching Apple
 companion. Older runtimes are no longer admitted: they lack the speculative
-rollback and model-creation ownership fixes. All Apple companions will be
-versioned with the core minor during release preparation.
+rollback and model-creation ownership fixes. All three Apple companions are
+prepared at `0.18.0`, constrained to
+`llamadart: ">=0.18.0 <0.19.0"`, with SwiftPM pins `v0.8.0-2`, `v0.19.0`
+and `v0.3.0-3`. Package publication still requires explicit release approval.
 
 Native sync PRs can leave the repository in a state where the companion package
 source under `packages/` is ready, but the corresponding pub.dev package version

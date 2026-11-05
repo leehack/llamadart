@@ -1,6 +1,7 @@
-## Unreleased
+## 0.18.0
 
-* Updated Apple SwiftPM native pin to `leehack/litert-lm-native@v0.19.0`.
+- Pair with core `>=0.18.0 <0.19.0`; update Apple SwiftPM to
+  `leehack/litert-lm-native@v0.19.0` for C API 1.0 and updated Apple runtime libraries.
 
 ## 0.17.3
 
