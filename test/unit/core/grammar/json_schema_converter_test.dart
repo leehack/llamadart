@@ -86,6 +86,7 @@ void main() {
           'type': 'string',
           'enum': ['a"b'],
         },
+        'short': {'type': 'string', 'maxLength': 8},
       },
       'additionalProperties': {'type': 'string'},
     };
@@ -132,6 +133,8 @@ void main() {
       expect(grammar.accepts('{"x": "v"w"}'), isTrue);
       expect(grammar.accepts(r'{"unit": "a\"b"}'), isTrue);
       expect(grammar.accepts('{"unit": "a"b"}'), isFalse);
+      expect(grammar.accepts('{"short": "ab"}'), isTrue);
+      expect(grammar.accepts('{"short": "a"b"}'), isFalse);
     });
   });
 

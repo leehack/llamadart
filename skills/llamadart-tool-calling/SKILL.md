@@ -130,7 +130,8 @@ description: >-
   Named object/array arguments and zero-argument calls are supported. Keep
   copied backslashes literal; ambiguous Python-style strings are not globally
   unescaped. This does not enable canonical `fromJsonSchema` generation on
-  LFM2. In `ToolChoice.required`, LFM2 string arguments keep a double quote
+  LFM2. In LFM2 JSON tool calls (`ToolChoice.required` or a
+  `Force JSON schema.` prompt), string arguments keep a double quote
   the model left unescaped where no closing quote could stand; a quote before
   `,`, `}` or `]` still ends the string. Auto grammar preserves copied
   bare text and balanced object/list spellings as strings only for one required

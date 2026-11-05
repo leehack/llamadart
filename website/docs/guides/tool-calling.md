@@ -256,7 +256,8 @@ backslashed names through parser-compatible literals. Existing generic auto fall
 is separate. See [#1715](https://github.com/leehack/llamadart/issues/1715);
 length-truncated diagnostics are described below.
 
-In `ToolChoice.required`, LFM2/LFM2.5 string arguments keep a double quote the
+In LFM2/LFM2.5 JSON tool calls (`ToolChoice.required`, or a prompt carrying
+LFM2's `Force JSON schema.` marker), string arguments keep a double quote the
 model left unescaped when no closing quote could stand there, so
 `print(f"hi {name}")` arrives whole. A quote followed by `,`, `}` or `]`
 (except `}"`) still ends the string

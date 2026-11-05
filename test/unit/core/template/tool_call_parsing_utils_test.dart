@@ -46,6 +46,7 @@ void main() {
           ToolCallParsingUtils.innerQuoteJsonContainerEnd(text, 0);
       expect(end('[{"a": "b"c"}] x'), 14);
       expect(end('{"a": "x"}"} ]'), 12);
+      expect(end('[{"a": "x"\n}] y'), 13);
       expect(end('[{"a": "b"}'), isNull);
       expect(end('"a"'), isNull);
     });
