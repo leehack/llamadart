@@ -23,10 +23,10 @@ that makes their Dart integer negative.
 Tags must remain intact through native calls and disposal; tagged-handle fixtures
 cover default public dispatch, not Android artifact or model qualification.
 
-`LiteRtLmService.runtimeClientFactory` selects this preparation path and probes
-metadata/finish capabilities from that same factory. It is exclusive with the
-existing `clientFactory`. The existing factory retains its creation counts and
-public client behavior through `LiteRtLmLegacyServiceClient`; its statically
+`LiteRtLmService.runtimeClientFactory` injects a version-specific runtime client
+and probes metadata/finish capabilities from that same factory. It is exclusive
+with the existing `clientFactory`. The existing factory retains its creation
+counts and public client behavior through `LiteRtLmLegacyServiceClient`; its statically
 dispatched embedding extension stays on the legacy implementation. The internal
 client/session contracts make v1 embedding dispatch independent of that extension.
 
