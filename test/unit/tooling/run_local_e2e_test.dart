@@ -165,9 +165,8 @@ Future<void> main(List<String> args) async {
     test(
       'the CLI uses diagnostic decoding and strict protocol decoding',
       () async {
-        final runner = File(
-          'tool/testing/run_local_e2e.dart',
-        ).copySync('${directory.path}/runner.dart');
+        final runner = File('tool/testing/run_local_e2e.dart')
+            .copySync('${directory.path}/runner.dart');
         final shim = File('${directory.path}/dart');
         String quote(String value) => "'${value.replaceAll("'", "'\\''")}'";
         for (final stream in ['stdout', 'stderr']) {
@@ -235,140 +234,134 @@ Future<void> main(List<String> args) async {
     });
   });
 
-  test(
-    'native JSON Schema scenario consumes the maintained CPU test and local model',
-    () async {
-      const scenario = 'litert-lm-json-schema';
-      const model = '/local/corrected-Qwen3.litertlm';
-      const target = 'test/e2e/backends/litert_lm_json_schema_e2e_test.dart';
-      final listed = await runLocalE2e(['--list'], projectRoot: '/repo');
-      expect(listed.exitCode, 0);
-      expect(listed.stdout, contains(scenario));
-      final steps = <LocalE2eCommandStep>[];
-      Future<ProcessResult> capture(LocalE2eCommandStep step) async {
-        steps.add(step);
-        return ProcessResult(0, 0, '', '');
-      }
+  test('native JSON Schema scenario consumes the maintained CPU test and local model', () async {
+    const scenario = 'litert-lm-json-schema';
+    const model = '/local/corrected-Qwen3.litertlm';
+    const target = 'test/e2e/backends/litert_lm_json_schema_e2e_test.dart';
+    final listed = await runLocalE2e(['--list'], projectRoot: '/repo');
+    expect(listed.exitCode, 0);
+    expect(listed.stdout, contains(scenario));
+    final steps = <LocalE2eCommandStep>[];
+    Future<ProcessResult> capture(LocalE2eCommandStep step) async {
+      steps.add(step);
+      return ProcessResult(0, 0, '', '');
+    }
 
-      for (final invalid in [
-        ['--scenario', scenario],
-        for (final backend in ['auto', 'gpu', 'npu'])
-          ['--scenario', scenario, '--model-path', model, '--backend', backend],
-      ]) {
-        final result = await runLocalE2e(
-          invalid,
-          projectRoot: '/repo',
-          foregroundStepRun: capture,
-        );
-        expect(result.exitCode, 64);
-        expect(
-          steps,
-          isEmpty,
-          reason: 'rejected requests must not dispatch a child',
-        );
-      }
-      final args = [
-        '--scenario',
-        scenario,
-        '--model-path',
-        model,
-        '--backend',
-        'cpu',
-      ];
-      final dry = await runLocalE2e(
-        [...args, '--dry-run'],
-        projectRoot: '/repo',
-        displayShell: LocalE2eDisplayShell.posix,
-      );
-      expect(dry.exitCode, 0);
-      expect(dry.stdout, contains('LITERT_LM_MODEL=$model'));
-      expect(
-        dry.stdout,
-        contains('dart test -p vm -j 1 --run-skipped -t local-only $target'),
-      );
-      final dispatched = await runLocalE2e(
-        args,
+    for (final invalid in [
+      ['--scenario', scenario],
+      for (final backend in ['auto', 'gpu', 'npu'])
+        ['--scenario', scenario, '--model-path', model, '--backend', backend],
+    ]) {
+      final result = await runLocalE2e(
+        invalid,
         projectRoot: '/repo',
         foregroundStepRun: capture,
       );
-      expect(dispatched.exitCode, 0);
-      final step = steps.single;
-      expect(step.executable, 'dart');
-      expect(step.workingDirectory, '/repo');
-      expect(step.arguments, [
-        'test',
-        '-p',
-        'vm',
-        '-j',
-        '1',
-        '--run-skipped',
-        '-t',
-        'local-only',
-        target,
-      ]);
-      expect(step.environment, {'LITERT_LM_MODEL': model});
-      expect(step.background, isFalse);
-      expect(File(target).existsSync(), isTrue);
-    },
-  );
+      expect(result.exitCode, 64);
+      expect(
+        steps,
+        isEmpty,
+        reason: 'rejected requests must not dispatch a child',
+      );
+    }
+    final args = [
+      '--scenario',
+      scenario,
+      '--model-path',
+      model,
+      '--backend',
+      'cpu',
+    ];
+    final dry = await runLocalE2e(
+      [...args, '--dry-run'],
+      projectRoot: '/repo',
+      displayShell: LocalE2eDisplayShell.posix,
+    );
+    expect(dry.exitCode, 0);
+    expect(dry.stdout, contains('LITERT_LM_MODEL=$model'));
+    expect(
+      dry.stdout,
+      contains('dart test -p vm -j 1 --run-skipped -t local-only $target'),
+    );
+    final dispatched = await runLocalE2e(
+      args,
+      projectRoot: '/repo',
+      foregroundStepRun: capture,
+    );
+    expect(dispatched.exitCode, 0);
+    final step = steps.single;
+    expect(step.executable, 'dart');
+    expect(step.workingDirectory, '/repo');
+    expect(step.arguments, [
+      'test',
+      '-p',
+      'vm',
+      '-j',
+      '1',
+      '--run-skipped',
+      '-t',
+      'local-only',
+      target,
+    ]);
+    expect(step.environment, {'LITERT_LM_MODEL': model});
+    expect(step.background, isFalse);
+    expect(File(target).existsSync(), isTrue);
+  });
 
-  test(
-    'LiteRT Web history requires an explicit backend and local model',
-    () async {
-      for (final args in [
-        ['--scenario', 'litert-lm-web-text-history', '--dry-run'],
+  test('LiteRT Web history requires an explicit backend and local model', () async {
+    for (final args in [
+      ['--scenario', 'litert-lm-web-text-history', '--dry-run'],
+      [
+        '--scenario',
+        'litert-lm-web-text-history',
+        '--model-path',
+        'model.litertlm',
+        '--dry-run',
+      ],
+      [
+        '--scenario',
+        'litert-lm-web-text-history',
+        '--model-path',
+        'model.litertlm',
+        '--backend',
+        'npu',
+        '--dry-run',
+      ],
+      [
+        '--scenario',
+        'litert-lm-web-text-history',
+        '--backend',
+        'cpu',
+        '--dry-run',
+      ],
+    ]) {
+      expect((await runLocalE2e(args, projectRoot: '/repo')).exitCode, 64);
+    }
+    for (final backend in ['cpu', 'gpu']) {
+      final result = await runLocalE2e(
         [
           '--scenario',
           'litert-lm-web-text-history',
           '--model-path',
-          'model.litertlm',
-          '--dry-run',
-        ],
-        [
-          '--scenario',
-          'litert-lm-web-text-history',
-          '--model-path',
-          'model.litertlm',
+          'models/existing.litertlm',
           '--backend',
-          'npu',
+          backend,
           '--dry-run',
         ],
-        [
-          '--scenario',
-          'litert-lm-web-text-history',
-          '--backend',
-          'cpu',
-          '--dry-run',
-        ],
-      ]) {
-        expect((await runLocalE2e(args, projectRoot: '/repo')).exitCode, 64);
-      }
-      for (final backend in ['cpu', 'gpu']) {
-        final result = await runLocalE2e(
-          [
-            '--scenario',
-            'litert-lm-web-text-history',
-            '--model-path',
-            'models/existing.litertlm',
-            '--backend',
-            backend,
-            '--dry-run',
-          ],
-          projectRoot: '/repo',
-          displayShell: LocalE2eDisplayShell.posix,
-        );
-        expect(result.exitCode, 0);
-        expect(
-          result.stdout,
-          contains(
-            'python3 tool/testing/litert_text_history_web_e2e.py --model-path models/existing.litertlm --backend $backend',
-          ),
-        );
-        expect(result.stdout, isNot(contains('build web')));
-        expect(result.stdout, isNot(contains('download')));
-      }
-    },
-  );
+        projectRoot: '/repo',
+        displayShell: LocalE2eDisplayShell.posix,
+      );
+      expect(result.exitCode, 0);
+      expect(
+        result.stdout,
+        contains(
+          'python3 tool/testing/litert_text_history_web_e2e.py --model-path models/existing.litertlm --backend $backend',
+        ),
+      );
+      expect(result.stdout, isNot(contains('build web')));
+      expect(result.stdout, isNot(contains('download')));
+    }
+  });
 
   test(
     'Qwen scenario preserves UTF-8 stdout from the real child process',
@@ -381,16 +374,15 @@ Future<void> main(List<String> args) async {
         'name: qwen_stdout_fixture\nenvironment:\n  sdk: ^3.10.7\n',
       );
       final tool = await Directory('${project.path}/tool').create();
-      await File(
-        '${tool.path}/litert_lm_chat_features_smoke.dart',
-      ).writeAsString(
-        "import 'dart:convert';\n"
-        "import 'dart:io';\n"
-        'void main() {\n'
-        "  stdout.add(utf8.encode(jsonEncode({'decoded': 'Hello! 😊', "
-        "'literal': 'ĠðŁĺĬ', 'mixed': 'café 한글 日本語'})));\n"
-        '}\n',
-      );
+      await File('${tool.path}/litert_lm_chat_features_smoke.dart')
+          .writeAsString(
+            "import 'dart:convert';\n"
+            "import 'dart:io';\n"
+            'void main() {\n'
+            "  stdout.add(utf8.encode(jsonEncode({'decoded': 'Hello! 😊', "
+            "'literal': 'ĠðŁĺĬ', 'mixed': 'café 한글 日本語'})));\n"
+            '}\n',
+          );
       final result = await runLocalE2e([
         '--scenario',
         'qwen3-litert-cpu-unicode',
@@ -440,36 +432,33 @@ Future<void> main(List<String> args) async {
     },
   );
 
-  test(
-    'native multimodal embedding qualification requires local weights and references',
-    () async {
-      const environment = {
-        'LLAMADART_EMBEDDING_MODELS_DIR': '/local/models',
-        'LLAMADART_EMBEDDING_REFERENCE_CPU': '/local/cpu.json',
-        'LLAMADART_EMBEDDING_REFERENCE_METAL': '/local/metal.json',
-      };
-      for (final missing in environment.keys) {
-        final result = await runLocalE2e(
-          ['--scenario', 'native-multimodal-embeddings', '--dry-run'],
-          projectRoot: '/repo',
-          environment: {...environment}..remove(missing),
-        );
-        expect(result.exitCode, 64);
-        expect(result.stderr, contains(missing));
-      }
+  test('native multimodal embedding qualification requires local weights and references', () async {
+    const environment = {
+      'LLAMADART_EMBEDDING_MODELS_DIR': '/local/models',
+      'LLAMADART_EMBEDDING_REFERENCE_CPU': '/local/cpu.json',
+      'LLAMADART_EMBEDDING_REFERENCE_METAL': '/local/metal.json',
+    };
+    for (final missing in environment.keys) {
       final result = await runLocalE2e(
         ['--scenario', 'native-multimodal-embeddings', '--dry-run'],
         projectRoot: '/repo',
-        environment: environment,
+        environment: {...environment}..remove(missing),
       );
-      expect(result.exitCode, 0);
-      expect(
-        result.stdout,
-        contains('multimodal_embedding_native_e2e_test.dart'),
-      );
-      expect(result.stdout, contains('--tags local-only'));
-    },
-  );
+      expect(result.exitCode, 64);
+      expect(result.stderr, contains(missing));
+    }
+    final result = await runLocalE2e(
+      ['--scenario', 'native-multimodal-embeddings', '--dry-run'],
+      projectRoot: '/repo',
+      environment: environment,
+    );
+    expect(result.exitCode, 0);
+    expect(
+      result.stdout,
+      contains('multimodal_embedding_native_e2e_test.dart'),
+    );
+    expect(result.stdout, contains('--tags local-only'));
+  });
 
   test(
     'Qwen Unicode scenario wires the exact fixture and forces CPU',
@@ -756,91 +745,88 @@ Future<void> main(List<String> args) async {
       },
     );
 
-    test(
-      'thinking qualifier enforces fixed model, CPU and complete payload identity',
-      () async {
-        final identity = {
-          'LITERT_LM_V1_LIBRARY': '/candidate/libLiteRtLm.dylib',
-          'LITERT_LM_V1_LIBRARY_SHA256': 'a' * 64,
-          'LITERT_LM_V1_MODEL_SHA256':
-              '181938105e0eefd105961417e8da75903eacda102c4fce9ce90f50b97139a63c',
-          'LITERT_LM_V1_RUNTIME_MANIFEST': '/candidate/payloads.json',
-          'LITERT_LM_V1_RUNTIME_MANIFEST_SHA256': 'c' * 64,
-        };
-        const arguments = [
+    test('thinking qualifier enforces fixed model, CPU and complete payload identity', () async {
+      final identity = {
+        'LITERT_LM_V1_LIBRARY': '/candidate/libLiteRtLm.dylib',
+        'LITERT_LM_V1_LIBRARY_SHA256': 'a' * 64,
+        'LITERT_LM_V1_MODEL_SHA256':
+            '181938105e0eefd105961417e8da75903eacda102c4fce9ce90f50b97139a63c',
+        'LITERT_LM_V1_RUNTIME_MANIFEST': '/candidate/payloads.json',
+        'LITERT_LM_V1_RUNTIME_MANIFEST_SHA256': 'c' * 64,
+      };
+      const arguments = [
+        '--scenario',
+        'litert-lm-v1-thinking-budget',
+        '--model-path',
+        '/Gemma.litertlm',
+        '--backend',
+        'cpu',
+        '--dry-run',
+      ];
+      for (final name in identity.keys) {
+        final result = await runLocalE2e(
+          arguments,
+          projectRoot: '/repo',
+          environment: {...identity}..remove(name),
+        );
+        expect(result.exitCode, 64);
+        expect(result.stderr, contains(name));
+      }
+      final wrongModel = await runLocalE2e(
+        arguments,
+        projectRoot: '/repo',
+        environment: {...identity, 'LITERT_LM_V1_MODEL_SHA256': 'b' * 64},
+      );
+      expect(wrongModel.exitCode, 64);
+      expect(wrongModel.stderr, contains('fixed maintained Gemma'));
+      final malformedManifest = await runLocalE2e(
+        arguments,
+        projectRoot: '/repo',
+        environment: {
+          ...identity,
+          'LITERT_LM_V1_RUNTIME_MANIFEST_SHA256': 'bad',
+        },
+      );
+      expect(malformedManifest.exitCode, 64);
+      final gpu = await runLocalE2e(
+        arguments.map((arg) => arg == 'cpu' ? 'gpu' : arg).toList(),
+        projectRoot: '/repo',
+        environment: identity,
+      );
+      expect(gpu.exitCode, 64);
+      final missingModel = await runLocalE2e(
+        const [
           '--scenario',
           'litert-lm-v1-thinking-budget',
-          '--model-path',
-          '/Gemma.litertlm',
           '--backend',
           'cpu',
           '--dry-run',
-        ];
-        for (final name in identity.keys) {
-          final result = await runLocalE2e(
-            arguments,
-            projectRoot: '/repo',
-            environment: {...identity}..remove(name),
-          );
-          expect(result.exitCode, 64);
-          expect(result.stderr, contains(name));
-        }
-        final wrongModel = await runLocalE2e(
-          arguments,
-          projectRoot: '/repo',
-          environment: {...identity, 'LITERT_LM_V1_MODEL_SHA256': 'b' * 64},
-        );
-        expect(wrongModel.exitCode, 64);
-        expect(wrongModel.stderr, contains('fixed maintained Gemma'));
-        final malformedManifest = await runLocalE2e(
-          arguments,
-          projectRoot: '/repo',
-          environment: {
-            ...identity,
-            'LITERT_LM_V1_RUNTIME_MANIFEST_SHA256': 'bad',
-          },
-        );
-        expect(malformedManifest.exitCode, 64);
-        final gpu = await runLocalE2e(
-          arguments.map((arg) => arg == 'cpu' ? 'gpu' : arg).toList(),
-          projectRoot: '/repo',
-          environment: identity,
-        );
-        expect(gpu.exitCode, 64);
-        final missingModel = await runLocalE2e(
-          const [
-            '--scenario',
-            'litert-lm-v1-thinking-budget',
-            '--backend',
-            'cpu',
-            '--dry-run',
-          ],
-          projectRoot: '/repo',
-          environment: identity,
-        );
-        expect(missingModel.exitCode, 64);
-        final valid = await runLocalE2e(
-          arguments,
-          projectRoot: '/repo',
-          environment: {...identity, 'LITERT_LM_V1_LOG_DIR': '/evidence'},
-          displayShell: LocalE2eDisplayShell.posix,
-        );
-        expect(valid.exitCode, 0);
-        expect(
-          valid.stdout,
-          contains('test/e2e/backends/litert_lm_v1_thinking_e2e_test.dart'),
-        );
-        expect(
-          valid.stdout,
-          contains('LITERT_LM_V1_RUNTIME_MANIFEST=/candidate/payloads.json'),
-        );
-        expect(
-          valid.stdout,
-          contains('LITERT_LM_V1_RUNTIME_MANIFEST_SHA256=${'c' * 64}'),
-        );
-        expect(valid.stdout, contains('LITERT_LM_V1_LOG_DIR=/evidence'));
-      },
-    );
+        ],
+        projectRoot: '/repo',
+        environment: identity,
+      );
+      expect(missingModel.exitCode, 64);
+      final valid = await runLocalE2e(
+        arguments,
+        projectRoot: '/repo',
+        environment: {...identity, 'LITERT_LM_V1_LOG_DIR': '/evidence'},
+        displayShell: LocalE2eDisplayShell.posix,
+      );
+      expect(valid.exitCode, 0);
+      expect(
+        valid.stdout,
+        contains('test/e2e/backends/litert_lm_v1_thinking_e2e_test.dart'),
+      );
+      expect(
+        valid.stdout,
+        contains('LITERT_LM_V1_RUNTIME_MANIFEST=/candidate/payloads.json'),
+      );
+      expect(
+        valid.stdout,
+        contains('LITERT_LM_V1_RUNTIME_MANIFEST_SHA256=${'c' * 64}'),
+      );
+      expect(valid.stdout, contains('LITERT_LM_V1_LOG_DIR=/evidence'));
+    });
 
     test('documents shared runner options and defaults', () async {
       final result = await runLocalE2e(const ['--help'], projectRoot: '/repo');
@@ -993,34 +979,31 @@ Future<void> main(List<String> args) async {
       expect(result.stdout, contains('Web smoke'));
     });
 
-    test(
-      'Android Perfetto plan checks evidence before an offline model-free build',
-      () async {
-        final result = await runLocalE2e(
-          const ['--scenario', 'android-perfetto-capability', '--dry-run'],
-          projectRoot: '/repo',
-          displayShell: LocalE2eDisplayShell.posix,
-        );
+    test('Android Perfetto plan checks evidence before an offline model-free build', () async {
+      final result = await runLocalE2e(
+        const ['--scenario', 'android-perfetto-capability', '--dry-run'],
+        projectRoot: '/repo',
+        displayShell: LocalE2eDisplayShell.posix,
+      );
 
-        expect(result.exitCode, 0);
-        final commands = result.stdout
-            .split('\n')
-            .where((line) => line.startsWith('  cd '))
-            .toList();
-        expect(commands, hasLength(2));
-        expect(commands.first, contains('python3 -m unittest discover'));
-        expect(
-          commands.first,
-          contains('tool/testing/validation/android_perfetto'),
-        );
-        expect(commands.last, contains('--offline --no-daemon'));
-        expect(commands.last, contains('app:testDebugUnitTest'));
-        expect(commands.last, contains('app:assembleDebugAndroidTest'));
-        expect(result.stdout, isNot(contains('gcloud firebase')));
-        expect(result.stdout, isNot(contains('--model-path is required')));
-        expect(result.stdout, isNot(contains('--device is required')));
-      },
-    );
+      expect(result.exitCode, 0);
+      final commands = result.stdout
+          .split('\n')
+          .where((line) => line.startsWith('  cd '))
+          .toList();
+      expect(commands, hasLength(2));
+      expect(commands.first, contains('python3 -m unittest discover'));
+      expect(
+        commands.first,
+        contains('tool/testing/validation/android_perfetto'),
+      );
+      expect(commands.last, contains('--offline --no-daemon'));
+      expect(commands.last, contains('app:testDebugUnitTest'));
+      expect(commands.last, contains('app:assembleDebugAndroidTest'));
+      expect(result.stdout, isNot(contains('gcloud firebase')));
+      expect(result.stdout, isNot(contains('--model-path is required')));
+      expect(result.stdout, isNot(contains('--device is required')));
+    });
 
     test('builds the GBNF validator before the grammar test uses it', () async {
       final result = await runLocalE2e(
@@ -1546,62 +1529,59 @@ Future<void> main(List<String> args) async {
       },
     );
 
-    test(
-      'dry-runs Web real-model smoke with build, serve, and Playwright steps',
-      () async {
-        final result = await runLocalE2e(
-          const [
-            '--scenario',
-            'chat-app-web-real-model-smoke',
-            '--model-url',
-            'http://127.0.0.1:7358/models/tiny.gguf',
-            '--expect',
-            'ok',
-            '--allow-any-response',
-            '--python',
-            '/custom/python',
-            '--dry-run',
-          ],
-          projectRoot: '/repo',
-          displayShell: LocalE2eDisplayShell.posix,
-        );
+    test('dry-runs Web real-model smoke with build, serve, and Playwright steps', () async {
+      final result = await runLocalE2e(
+        const [
+          '--scenario',
+          'chat-app-web-real-model-smoke',
+          '--model-url',
+          'http://127.0.0.1:7358/models/tiny.gguf',
+          '--expect',
+          'ok',
+          '--allow-any-response',
+          '--python',
+          '/custom/python',
+          '--dry-run',
+        ],
+        projectRoot: '/repo',
+        displayShell: LocalE2eDisplayShell.posix,
+      );
 
-        expect(result.exitCode, 0);
-        expect(result.stdout, contains('scripts/build_chat_app_web.sh'));
-        expect(
-          result.stdout,
-          contains(
-            'CHAT_APP_BASE_HREF=/example/chat_app/build/web/ '
-            'bash scripts/build_chat_app_web.sh',
-          ),
-        );
-        expect(result.stdout, contains('serve_static_with_headers.py'));
-        expect(
-          result.stdout,
-          contains('playwright_chat_app_real_model_smoke.py'),
-        );
-        expect(
-          result.stdout,
-          contains(
-            '/custom/python tool/testing/playwright_chat_app_real_model_smoke.py',
-          ),
-        );
-        expect(
-          result.stdout,
-          contains('--model-url http://127.0.0.1:7358/models/tiny.gguf'),
-        );
-        expect(result.stdout, contains('--expect ok'));
-        expect(result.stdout, contains('--allow-any-response'));
-        expect(
-          result.stdout,
-          contains(
-            '--expect-penalty-prompt-tokens-probe '
-            '--expect-penalty-prompt-tokens-option absent',
-          ),
-        );
-        expect(result.stdout, isNot(contains('--tools')));
-      },
-    );
+      expect(result.exitCode, 0);
+      expect(result.stdout, contains('scripts/build_chat_app_web.sh'));
+      expect(
+        result.stdout,
+        contains(
+          'CHAT_APP_BASE_HREF=/example/chat_app/build/web/ '
+          'bash scripts/build_chat_app_web.sh',
+        ),
+      );
+      expect(result.stdout, contains('serve_static_with_headers.py'));
+      expect(
+        result.stdout,
+        contains('playwright_chat_app_real_model_smoke.py'),
+      );
+      expect(
+        result.stdout,
+        contains(
+          '/custom/python tool/testing/playwright_chat_app_real_model_smoke.py',
+        ),
+      );
+      expect(
+        result.stdout,
+        contains('--model-url http://127.0.0.1:7358/models/tiny.gguf'),
+      );
+      expect(result.stdout, contains('--expect ok'));
+      expect(result.stdout, contains('--allow-any-response'));
+      expect(
+        result.stdout,
+        contains(
+          '--expect-penalty-prompt-tokens-probe '
+          '--expect-penalty-prompt-tokens-option absent',
+        ),
+      );
+      expect(result.stdout, isNot(contains('--tools')));
+    });
 
     test('dry-runs the Web tool penalty smoke and requires a model', () async {
       final missing = await runLocalE2e(
@@ -2023,6 +2003,69 @@ Future<void> main(List<String> args) async {
       expect(result.stderr, contains('--tokenizer-path'));
     });
 
+    test(
+      'dry-runs hash-bound ASR preservation without an expectation',
+      () async {
+        final result = await runLocalE2e(
+          const [
+            '--scenario',
+            'litert-lm-asr-preservation',
+            '--model-path',
+            'models/whisper.tflite',
+            '--tokenizer-path',
+            'models/tokenizer.json',
+            '--audio-path',
+            'test/fixtures/jfk.wav',
+            '--dry-run',
+          ],
+          projectRoot: '/repo',
+          displayShell: LocalE2eDisplayShell.posix,
+        );
+        expect(result.exitCode, 0);
+        expect(
+          result.stdout,
+          contains('litert_lm_asr_preservation_e2e_test.dart'),
+        );
+        expect(result.stdout, contains('LITERT_LM_ASR_MODEL'));
+        expect(result.stdout, contains('models/whisper.tflite'));
+        expect(result.stdout, contains('LITERT_LM_ASR_TOKENIZER'));
+        expect(result.stdout, contains('LITERT_LM_ASR_AUDIO'));
+        expect(result.stdout, contains('--run-skipped'));
+      },
+    );
+
+    test('requires all hash-bound ASR preservation fixture paths', () async {
+      final result = await runLocalE2e(const [
+        '--scenario',
+        'litert-lm-asr-preservation',
+        '--model-path',
+        'models/whisper.tflite',
+        '--audio-path',
+        'test/fixtures/jfk.wav',
+        '--dry-run',
+      ], projectRoot: '/repo');
+      expect(result.exitCode, 64);
+      expect(result.stderr, contains('--tokenizer-path'));
+    });
+
+    test('rejects non-CPU ASR preservation requests', () async {
+      final result = await runLocalE2e(const [
+        '--scenario',
+        'litert-lm-asr-preservation',
+        '--model-path',
+        'models/whisper.tflite',
+        '--tokenizer-path',
+        'models/tokenizer.json',
+        '--audio-path',
+        'test/fixtures/jfk.wav',
+        '--backend',
+        'gpu',
+        '--dry-run',
+      ], projectRoot: '/repo');
+      expect(result.exitCode, 64);
+      expect(result.stderr, contains('requires --backend cpu'));
+    });
+
     test('dry-runs typed text-to-speech with model and projector', () async {
       final result = await runLocalE2e(
         const [
@@ -2108,13 +2151,15 @@ Future<void> main(List<String> args) async {
       expect(result.stdout, isNot(contains('--run-skipped')));
     });
 
-    test('image smoke configuration preserves unavailable-case skips', () async {
-      final directory = Directory.systemTemp.createTempSync(
-        'image-smoke-skip-',
-      );
-      addTearDown(() => directory.deleteSync(recursive: true));
-      final fixture = File('${directory.path}/skip_control_test.dart');
-      fixture.writeAsStringSync("""
+    test(
+      'image smoke configuration preserves unavailable-case skips',
+      () async {
+        final directory = Directory.systemTemp.createTempSync(
+          'image-smoke-skip-',
+        );
+        addTearDown(() => directory.deleteSync(recursive: true));
+        final fixture = File('${directory.path}/skip_control_test.dart');
+        fixture.writeAsStringSync("""
 @Tags(['local-only'])
 library;
 import 'package:test/test.dart';
@@ -2124,52 +2169,56 @@ void main() {
       skip: 'Unavailable model negative control');
 }
 """);
-      // Resolve only package:test in the scratch package. A nested root
-      // `dart test` re-bundles native assets held open by the parent on Windows.
-      final testLibrary = (await Isolate.resolvePackageUri(
-        Uri.parse('package:test/test.dart'),
-      ))!;
-      final testPubspec = File.fromUri(
-        testLibrary.resolve('../pubspec.yaml'),
-      ).readAsStringSync();
-      final testVersion = RegExp(
-        r'^version: ([^\s]+)$',
-        multiLine: true,
-      ).firstMatch(testPubspec)!.group(1)!;
-      File('${directory.path}/pubspec.yaml').writeAsStringSync("""
+        // Resolve only package:test in the scratch package. A nested root
+        // `dart test` re-bundles native assets held open by the parent on Windows.
+        final testLibrary = (await Isolate.resolvePackageUri(
+          Uri.parse('package:test/test.dart'),
+        ))!;
+        final testPubspec = File.fromUri(testLibrary.resolve('../pubspec.yaml'))
+            .readAsStringSync();
+        final testVersion = RegExp(
+          r'^version: ([^\s]+)$',
+          multiLine: true,
+        ).firstMatch(testPubspec)!.group(1)!;
+        File('${directory.path}/pubspec.yaml').writeAsStringSync("""
 name: image_smoke_skip_control
 environment:
   sdk: ^3.10.7
 dev_dependencies:
   test: $testVersion
 """);
-      final prepared = await Process.run(Platform.resolvedExecutable, [
-        'pub',
-        'get',
-        '--offline',
-      ], workingDirectory: directory.path);
-      expect(
-        prepared.exitCode,
-        0,
-        reason: '${prepared.stdout}\n${prepared.stderr}',
-      );
-      final configuration = File(
-        'example/basic_app/test/image_generation_smoke.yaml',
-      ).absolute.path;
-      final result = await Process.run(Platform.resolvedExecutable, [
-        'test',
-        '--configuration',
-        configuration,
-        '-t',
-        'local-only',
-        '-r',
-        'expanded',
-        fixture.path,
-      ], workingDirectory: directory.path);
-      expect(result.exitCode, 0, reason: '${result.stdout}\n${result.stderr}');
-      expect(result.stdout, contains('Unavailable model negative control'));
-      expect(result.stdout, contains('+1 ~1: All tests passed!'));
-    });
+        final prepared = await Process.run(Platform.resolvedExecutable, [
+          'pub',
+          'get',
+          '--offline',
+        ], workingDirectory: directory.path);
+        expect(
+          prepared.exitCode,
+          0,
+          reason: '${prepared.stdout}\n${prepared.stderr}',
+        );
+        final configuration = File(
+          'example/basic_app/test/image_generation_smoke.yaml',
+        ).absolute.path;
+        final result = await Process.run(Platform.resolvedExecutable, [
+          'test',
+          '--configuration',
+          configuration,
+          '-t',
+          'local-only',
+          '-r',
+          'expanded',
+          fixture.path,
+        ], workingDirectory: directory.path);
+        expect(
+          result.exitCode,
+          0,
+          reason: '${result.stdout}\n${result.stderr}',
+        );
+        expect(result.stdout, contains('Unavailable model negative control'));
+        expect(result.stdout, contains('+1 ~1: All tests passed!'));
+      },
+    );
 
     test('dry-runs the image exit teardown in the opted-in example, and '
         'requires its model', () async {
@@ -2496,89 +2545,80 @@ dev_dependencies:
       expect(ready.stdout, contains('test/image_generation_smoke.yaml'));
     });
 
-    test(
-      'container qualification requires both manifest and independent references',
-      () async {
-        for (final arguments in [
-          const ['--scenario', 'image-container-formats', '--dry-run'],
-          const [
-            '--scenario',
-            'image-container-formats',
-            '--model-path',
-            'models.json',
-            '--dry-run',
-          ],
-        ]) {
-          final result = await runLocalE2e(
-            arguments,
-            projectRoot: '/repo',
-            environment: const {},
-          );
-          expect(result.exitCode, 64);
-          expect(
-            result.stderr,
-            contains('LLAMADART_IMAGE_CONTAINER_REFERENCES'),
-          );
-        }
-        final result = await runLocalE2e(
-          const [
-            '--scenario',
-            'image-container-formats',
-            '--model-path',
-            'models.json',
-            '--dry-run',
-          ],
-          projectRoot: '/repo',
-          displayShell: LocalE2eDisplayShell.posix,
-          environment: const {
-            'LLAMADART_IMAGE_CONTAINER_REFERENCES': '/references',
-          },
-        );
-        expect(result.exitCode, 0);
-        expect(
-          result.stdout,
-          contains(
-            'cd /repo/example/basic_app && LLAMADART_IMAGE_CONTAINER_SET=models.json',
-          ),
-        );
-        expect(
-          result.stdout,
-          contains(
-            'LLAMADART_IMAGE_OUTPUT_DIR=/repo/build/image-container-formats',
-          ),
-        );
-        expect(result.stdout, contains('test/image_generation_e2e_test.dart'));
-        expect(
-          result.stdout,
-          contains(r"--name '^checkpoint containers preserve CPU pixels$'"),
-        );
-        expect(result.stdout, isNot(contains('--run-skipped')));
-      },
-    );
-
-    test(
-      'original container diagnosis requires a plan and selects bounded operator',
-      () async {
-        final missing = await runLocalE2e(const [
+    test('container qualification requires both manifest and independent references', () async {
+      for (final arguments in [
+        const ['--scenario', 'image-container-formats', '--dry-run'],
+        const [
           '--scenario',
-          'image-original-containers',
-          '--dry-run',
-        ], projectRoot: '/repo');
-        expect(missing.exitCode, 64);
-        final ready = await runLocalE2e(const [
-          '--scenario',
-          'image-original-containers',
+          'image-container-formats',
           '--model-path',
-          'admitted.json',
+          'models.json',
           '--dry-run',
-        ], projectRoot: '/repo');
-        expect(ready.exitCode, 0);
-        expect(ready.stdout, contains('sd_original_mode/run.py'));
-        expect(ready.stdout, contains('--plan admitted.json'));
-        expect(ready.stdout, contains('--execute'));
-        expect(ready.stdout, contains('/repo/build/image-original-containers'));
-      },
-    );
+        ],
+      ]) {
+        final result = await runLocalE2e(
+          arguments,
+          projectRoot: '/repo',
+          environment: const {},
+        );
+        expect(result.exitCode, 64);
+        expect(result.stderr, contains('LLAMADART_IMAGE_CONTAINER_REFERENCES'));
+      }
+      final result = await runLocalE2e(
+        const [
+          '--scenario',
+          'image-container-formats',
+          '--model-path',
+          'models.json',
+          '--dry-run',
+        ],
+        projectRoot: '/repo',
+        displayShell: LocalE2eDisplayShell.posix,
+        environment: const {
+          'LLAMADART_IMAGE_CONTAINER_REFERENCES': '/references',
+        },
+      );
+      expect(result.exitCode, 0);
+      expect(
+        result.stdout,
+        contains(
+          'cd /repo/example/basic_app && LLAMADART_IMAGE_CONTAINER_SET=models.json',
+        ),
+      );
+      expect(
+        result.stdout,
+        contains(
+          'LLAMADART_IMAGE_OUTPUT_DIR=/repo/build/image-container-formats',
+        ),
+      );
+      expect(result.stdout, contains('test/image_generation_e2e_test.dart'));
+      expect(
+        result.stdout,
+        contains(r"--name '^checkpoint containers preserve CPU pixels$'"),
+      );
+      expect(result.stdout, isNot(contains('--run-skipped')));
+    });
+
+    test('original container diagnosis requires a plan and selects bounded operator', () async {
+      final missing = await runLocalE2e(const [
+        '--scenario',
+        'image-original-containers',
+        '--dry-run',
+      ], projectRoot: '/repo');
+      expect(missing.exitCode, 64);
+      final ready = await runLocalE2e(const [
+        '--scenario',
+        'image-original-containers',
+        '--model-path',
+        'admitted.json',
+        '--dry-run',
+      ], projectRoot: '/repo');
+      expect(ready.exitCode, 0);
+      expect(ready.stdout, contains('sd_original_mode/run.py'));
+      expect(ready.stdout, contains('--plan admitted.json'));
+      expect(ready.stdout, contains('--execute'));
+      expect(ready.stdout, contains('/repo/build/image-original-containers'));
+    });
 
     test(
       'local image sets require a source and select builder plus public suite',
@@ -2605,28 +2645,25 @@ dev_dependencies:
       },
     );
 
-    test(
-      'image editing requires a checkpoint and selects the maintained CPU suite',
-      () async {
-        const args = ['--scenario', 'image-editing', '--dry-run'];
-        final missing = await runLocalE2e(
-          args,
-          projectRoot: '/repo',
-          displayShell: LocalE2eDisplayShell.posix,
-        );
-        expect(missing.exitCode, 64);
-        expect(missing.stderr, contains('--model-path <sd-turbo.gguf>'));
-        final ready = await runLocalE2e(
-          [...args, '--model-path', '/model.gguf'],
-          projectRoot: '/repo',
-          displayShell: LocalE2eDisplayShell.posix,
-        );
-        expect(ready.exitCode, 0);
-        expect(ready.stdout, contains('test/image_editing_e2e_test.dart'));
-        expect(ready.stdout, contains('LLAMADART_SD_TURBO_MODEL=/model.gguf'));
-        expect(ready.stdout, contains('test/image_generation_smoke.yaml'));
-      },
-    );
+    test('image editing requires a checkpoint and selects the maintained CPU suite', () async {
+      const args = ['--scenario', 'image-editing', '--dry-run'];
+      final missing = await runLocalE2e(
+        args,
+        projectRoot: '/repo',
+        displayShell: LocalE2eDisplayShell.posix,
+      );
+      expect(missing.exitCode, 64);
+      expect(missing.stderr, contains('--model-path <sd-turbo.gguf>'));
+      final ready = await runLocalE2e(
+        [...args, '--model-path', '/model.gguf'],
+        projectRoot: '/repo',
+        displayShell: LocalE2eDisplayShell.posix,
+      );
+      expect(ready.exitCode, 0);
+      expect(ready.stdout, contains('test/image_editing_e2e_test.dart'));
+      expect(ready.stdout, contains('LLAMADART_SD_TURBO_MODEL=/model.gguf'));
+      expect(ready.stdout, contains('test/image_generation_smoke.yaml'));
+    });
 
     test('requires an SDXS model for image generation', () async {
       final result = await runLocalE2e(
@@ -2891,9 +2928,8 @@ dev_dependencies:
           'test/e2e/backends/decision_engine_web_e2e_test.dart',
         ),
       );
-      final e2e = File(
-        'test/e2e/backends/decision_engine_web_e2e_test.dart',
-      ).readAsStringSync();
+      final e2e = File('test/e2e/backends/decision_engine_web_e2e_test.dart')
+          .readAsStringSync();
       expect(e2e, contains("@Tags(['local-only', 'e2e'])"));
       expect(e2e, contains("'../../../build/decision_web_e2e/'"));
     });

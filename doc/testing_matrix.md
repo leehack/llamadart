@@ -157,7 +157,7 @@ Pick targeted rows based on the touched surface:
 | Chat template, parser, tools, thinking extraction | `template-parity`, `llama-cpp-chat-template-smoke`, `gguf-chat-features-smoke`, `litert-lm-chat-features-smoke` |
 | Tool-result media (`LlamaToolResultContent.content`, `LlamaToolOutput`) | `root-vm`, `tool-result-image-smoke`, validation `qwen3vl-gguf-cpu` / `-metal` (`M01`) |
 | LiteRT-LM embedding engine | `litert-lm-multimodal-embedding`; includes the documented local-only upstream WebGPU parity diagnostic |
-| LiteRT-LM native backend | `litert-lm-lifecycle`, `litert-lm-engine-smoke`, `litert-lm-chat-features-smoke`, `litert-lm-json-schema`, `litert-lm-asr-smoke` |
+| LiteRT-LM native backend | `litert-lm-lifecycle`, `litert-lm-engine-smoke`, `litert-lm-chat-features-smoke`, `litert-lm-json-schema`, `litert-lm-asr-smoke`, `litert-lm-asr-preservation` |
 | Web bridge bootstrap or interop | `web-bridge-smoke`, `web-mock-chat-smoke`, `web-real-model-smoke`, `web-tool-penalty-smoke`, `web-lazy-grammar` |
 | WebGPU multimodal | `webgpu-multimodal-regression`, `web-speech-task-cancel`, plus `web-speech-to-text-smoke` for typed Qwen3-ASR and `web-text-to-speech-smoke` for typed Qwen3-TTS |
 | Large WebGPU GGUF / wasm64 selection | `gemma4-webgpu-mem64` |
@@ -167,7 +167,7 @@ Pick targeted rows based on the touched surface:
 | LiteRT-LM bundle in a read-only directory on a device | `chat-app-litert-read-only-bundle` |
 | Android Vulkan prompt cap, Vulkan device facts or the Vulkan 1.2 load refusal on a device | `chat-app-micro-batch-sweep` |
 | Isolate shutdown releases, exit teardown, a Flutter pin bump, or app-exit guidance | `chat-app-macos-quit` |
-| Speech-to-text API or adapter | `speech-to-text-smoke`, `web-speech-to-text-smoke`, plus `litert-lm-asr-smoke` for the dedicated LiteRT-LM streaming engine |
+| Speech-to-text API or adapter | `speech-to-text-smoke`, `web-speech-to-text-smoke`, plus `litert-lm-asr-smoke` and `litert-lm-asr-preservation` for the dedicated LiteRT-LM streaming engine |
 | Text-to-speech API or adapter | `text-to-speech-smoke`, plus `web-text-to-speech-smoke` for browser synthesis/playback/export |
 | Decision engine, decision head, or safetensors reader | `decision-model-smoke`, plus `decision-model-web-smoke` for the Web decision head or bridge pin |
 | Image generation API or `stable_diffusion` runtime | `image-generation-smoke`, `native-hook-bundles` |
@@ -181,6 +181,20 @@ Pick targeted rows based on the touched surface:
 | Chat-app live LiteRT-LM dictation | `litert-lm-asr-smoke`, `chat-app-live-speech-smoke` |
 | Chat-app Ask with voice | `gguf-audio-chat-smoke`, `litert-lm-chat-features-smoke`, `chat-app-voice-question-smoke` |
 | Example app, CLI, or server package | `examples-tests` |
+
+`litert-lm-asr-preservation` is a local-only CPU campaign using the public
+`SpeechToTextEngine` and normal published native assets, with Whisper Tiny
+(`92f194600d98e1d94b1ff6f636d109c0f4ac66f3f6a1803f7a665e93daf78012`), its
+tokenizer (`27fc476bfe7f17299480be2273fc0608e4d5a99aba2ab5dec5374b4482d1a566`)
+and the JFK mono 16 kHz PCM16 WAV
+(`59dfb9a4acb36fe2a2affc14bacbee2920ff435cb13cc314a08c13f66ba7860e`).
+Pass those files with `--model-path`, `--tokenizer-path` and `--audio-path`;
+the scenario fixes the preset and expected transcript. It checks streaming
+partials and final text, three seconds of empty silence through stream and task,
+active stream/task cancellation, same-engine reuse and fresh recognizer reload.
+Each case is bounded to 30 seconds and the suite to three minutes. JSON evidence
+includes fixture hashes, completion states, text and event counts. This row does
+not qualify GPU placement, microphone UI, latency or other model families.
 
 Apple companion hook changes also require
 `dart test -p vm --run-skipped test/integration/apple_companion_flutter_cache_test.dart` on

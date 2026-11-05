@@ -312,8 +312,7 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
     LocalE2eScenario(
       name: 'windows-native-override-registry',
       group: LocalE2eScenarioGroup.dartLocalOnly,
-      description:
-          'Pinned Windows x64 CPU H/E/P registry matrix, declaration mutation and distributed AOT evidence.',
+      description: 'Pinned Windows x64 CPU H/E/P registry matrix, declaration mutation and distributed AOT evidence.',
       requiresDevice: false,
       stepsBuilder: (context) => [
         LocalE2eCommandStep(
@@ -330,8 +329,7 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
             'local-only',
             'test/integration/windows_ggml_registry_qualification_test.dart',
           ],
-          description:
-              'Run the Windows-only model-backed qualification; set LLAMADART_WINDOWS_QUALIFICATION to a fresh evidence root.',
+          description: 'Run the Windows-only model-backed qualification; set LLAMADART_WINDOWS_QUALIFICATION to a fresh evidence root.',
         ),
       ],
     ),
@@ -354,8 +352,7 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
             '-p',
             'test_*.py',
           ],
-          description:
-              'Git change inventory, dependency selection and aggregate behavior',
+          description: 'Git change inventory, dependency selection and aggregate behavior',
         ),
         LocalE2eCommandStep(
           workingDirectory: context.projectRoot,
@@ -373,8 +370,7 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
     LocalE2eScenario(
       name: 'android-perfetto-capability',
       group: LocalE2eScenarioGroup.dartLocalOnly,
-      description:
-          'Build model-free Android trace probe and run evidence negatives; no cloud run.',
+      description: 'Build model-free Android trace probe and run evidence negatives; no cloud run.',
       requiresDevice: false,
       stepsBuilder: (context) => [
         LocalE2eCommandStep(
@@ -432,8 +428,7 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
             'test/unit/tooling/validation_embedding_profile_test.dart',
             'test/unit/tooling/validation_npu_test.dart',
           ],
-          description:
-              'Provider safety, bundle identity, image grading and NPU input checks',
+          description: 'Provider safety, bundle identity, image grading and NPU input checks',
         ),
         LocalE2eCommandStep(
           workingDirectory: context.projectRoot,
@@ -661,8 +656,7 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
     LocalE2eScenario(
       name: 'gguf-chat-features-smoke',
       group: LocalE2eScenarioGroup.dartLocalOnly,
-      description:
-          'Run real GGUF chat, thinking-budget/suppression, tool-call, and optional image path/bytes smoke.',
+      description: 'Run real GGUF chat, thinking-budget/suppression, tool-call, and optional image path/bytes smoke.',
       requiresDevice: false,
       stepsBuilder: (context) {
         final arguments = <String>['run', 'tool/gguf_chat_features_smoke.dart'];
@@ -781,8 +775,7 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
     LocalE2eScenario(
       name: 'speech-to-text-smoke',
       group: LocalE2eScenarioGroup.dartLocalOnly,
-      description:
-          'Run typed native Qwen3-ASR file/bytes transcription, cancellation and recovery against a known fixture.',
+      description: 'Run typed native Qwen3-ASR file/bytes transcription, cancellation and recovery against a known fixture.',
       requiresDevice: false,
       stepsBuilder: (context) => [
         LocalE2eCommandStep(
@@ -809,8 +802,7 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
     LocalE2eScenario(
       name: 'litert-lm-asr-smoke',
       group: LocalE2eScenarioGroup.dartLocalOnly,
-      description:
-          'Run the public dedicated LiteRT-LM speech engine against a known PCM16 fixture.',
+      description: 'Run the public dedicated LiteRT-LM speech engine against a known PCM16 fixture.',
       requiresDevice: false,
       stepsBuilder: (context) => [
         LocalE2eCommandStep(
@@ -830,10 +822,38 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
       ],
     ),
     LocalE2eScenario(
+      name: 'litert-lm-asr-preservation',
+      group: LocalE2eScenarioGroup.dartLocalOnly,
+      description: 'Preserve hash-bound Whisper Tiny CPU transcription, silence, cancellation and reuse through the public engine.',
+      requiresDevice: false,
+      stepsBuilder: (context) => [
+        LocalE2eCommandStep(
+          workingDirectory: context.projectRoot,
+          executable: 'dart',
+          arguments: const [
+            'test',
+            '-p',
+            'vm',
+            '-j',
+            '1',
+            '--run-skipped',
+            '-t',
+            'local-only',
+            'test/e2e/backends/litert_lm_asr_preservation_e2e_test.dart',
+          ],
+          environment: {
+            'LITERT_LM_ASR_MODEL': context.modelPath!,
+            'LITERT_LM_ASR_TOKENIZER': context.tokenizerPath!,
+            'LITERT_LM_ASR_AUDIO': context.audioPath!,
+          },
+          description: 'Public CPU ASR preservation with fixed fixture hashes',
+        ),
+      ],
+    ),
+    LocalE2eScenario(
       name: 'litert-lm-v1-asr-smoke',
       group: LocalE2eScenarioGroup.dartLocalOnly,
-      description:
-          'Qualify exact v1 ASR inputs through the injected public speech probe and worker with an owned process deadline.',
+      description: 'Qualify exact v1 ASR inputs through the injected public speech probe and worker with an owned process deadline.',
       requiresDevice: false,
       stepsBuilder: (context) => [
         LocalE2eCommandStep(
@@ -853,8 +873,7 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
             context.modelPreset,
             context.expect,
           ],
-          description:
-              'Bounded injected v1 CPU ASR stream/task/cancellation qualification',
+          description: 'Bounded injected v1 CPU ASR stream/task/cancellation qualification',
         ),
       ],
     ),
@@ -1009,8 +1028,7 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
     LocalE2eScenario(
       name: 'image-local-checkpoint-sets',
       group: LocalE2eScenarioGroup.dartLocalOnly,
-      description:
-          'Qualify the bounded complete SD-Turbo F16/F32 local index/directory recipe on macOS CPU, owned snapshots, aggregate accounting, cache reuse, source-removal lifetime, cancellation and reference parity.',
+      description: 'Qualify the bounded complete SD-Turbo F16/F32 local index/directory recipe on macOS CPU, owned snapshots, aggregate accounting, cache reuse, source-removal lifetime, cancellation and reference parity.',
       requiresDevice: false,
       stepsBuilder: (context) => [
         LocalE2eCommandStep(
@@ -1021,8 +1039,7 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
             context.modelPath!,
             '${context.projectRoot}/build/local-image-set-fixture',
           ],
-          description:
-              'Build the owned, content-verified two-shard qualification fixture',
+          description: 'Build the owned, content-verified two-shard qualification fixture',
         ),
         LocalE2eCommandStep(
           workingDirectory: '${context.projectRoot}/example/basic_app',
@@ -1049,8 +1066,7 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
     LocalE2eScenario(
       name: 'image-editing',
       group: LocalE2eScenarioGroup.dartLocalOnly,
-      description:
-          'Qualify SD-Turbo embedded full-VAE macOS CPU RGB inputs, binary masks, strength, direct-C parity, cancellation and reset.',
+      description: 'Qualify SD-Turbo embedded full-VAE macOS CPU RGB inputs, binary masks, strength, direct-C parity, cancellation and reset.',
       requiresDevice: false,
       stepsBuilder: (context) => [
         LocalE2eCommandStep(
@@ -1436,8 +1452,7 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
     LocalE2eScenario(
       name: 'web-multimodal-embeddings',
       group: LocalE2eScenarioGroup.dartLocalOnly,
-      description:
-          'Qualify direct/worker Web media embeddings against local native reference vectors; no downloads. See doc/multimodal_embeddings_web.md.',
+      description: 'Qualify direct/worker Web media embeddings against local native reference vectors; no downloads. See doc/multimodal_embeddings_web.md.',
       requiresDevice: false,
       stepsBuilder: (context) => [
         LocalE2eCommandStep(
@@ -1452,16 +1467,14 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
             'local-only',
             'test/e2e/backends/multimodal_embedding_web_e2e_test.dart',
           ],
-          description:
-              'Web media embedding reference qualification (local assets/weights required)',
+          description: 'Web media embedding reference qualification (local assets/weights required)',
         ),
       ],
     ),
     LocalE2eScenario(
       name: 'native-multimodal-embeddings',
       group: LocalE2eScenarioGroup.dartLocalOnly,
-      description:
-          'Qualify EmbeddingGemma-2 mixed image/audio/text vectors against the pinned native reference (environment supplies local weights and reference JSON).',
+      description: 'Qualify EmbeddingGemma-2 mixed image/audio/text vectors against the pinned native reference (environment supplies local weights and reference JSON).',
       requiresDevice: false,
       stepsBuilder: (context) => [
         LocalE2eCommandStep(
@@ -1478,16 +1491,14 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
             'local-only',
             'test/e2e/backends/multimodal_embedding_native_e2e_test.dart',
           ],
-          description:
-              'Native CPU/Metal multimodal embedding qualification; no downloads',
+          description: 'Native CPU/Metal multimodal embedding qualification; no downloads',
         ),
       ],
     ),
     LocalE2eScenario(
       name: 'native-reranking',
       group: LocalE2eScenarioGroup.dartLocalOnly,
-      description:
-          'Qualify native reranking against pinned upstream full-class and server oracles with local Qwen3/Jina weights; see doc/native_reranking.md.',
+      description: 'Qualify native reranking against pinned upstream full-class and server oracles with local Qwen3/Jina weights; see doc/native_reranking.md.',
       requiresDevice: false,
       stepsBuilder: (context) => [
         LocalE2eCommandStep(
@@ -1504,16 +1515,14 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
             'local-only',
             'test/e2e/backends/native_reranking_e2e_test.dart',
           ],
-          description:
-              'Native reranking CPU/Metal reference qualification; no downloads',
+          description: 'Native reranking CPU/Metal reference qualification; no downloads',
         ),
       ],
     ),
     LocalE2eScenario(
       name: 'text-embedding-retrieval',
       group: LocalE2eScenarioGroup.dartLocalOnly,
-      description:
-          'Compare EmbeddingGemma-2 text helpers at 768/512/256/128 dimensions with the official float32 CPU reference; no downloads. See doc/embedding_text_helpers.md.',
+      description: 'Compare EmbeddingGemma-2 text helpers at 768/512/256/128 dimensions with the official float32 CPU reference; no downloads. See doc/embedding_text_helpers.md.',
       requiresDevice: false,
       stepsBuilder: (context) => [
         LocalE2eCommandStep(
@@ -1633,8 +1642,7 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
     LocalE2eScenario(
       name: 'litert-lm-web-text-history',
       group: LocalE2eScenarioGroup.webSmoke,
-      description:
-          'Compare ordered Web text history/system prompts with pinned JS and bypass controls using an existing local model.',
+      description: 'Compare ordered Web text history/system prompts with pinned JS and bypass controls using an existing local model.',
       requiresDevice: false,
       stepsBuilder: (context) => [
         LocalE2eCommandStep(
@@ -1647,16 +1655,14 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
             '--backend',
             context.backend,
           ],
-          description:
-              'LiteRT Web text history, direct-runtime controls, reset and cancellation (local port 5198)',
+          description: 'LiteRT Web text history, direct-runtime controls, reset and cancellation (local port 5198)',
         ),
       ],
     ),
     LocalE2eScenario(
       name: 'litert-lm-multimodal-embedding',
       group: LocalE2eScenarioGroup.dartLocalOnly,
-      description:
-          'Qualify embedding-only LiteRT-LM text, image, audio, mixed inputs and batch order.',
+      description: 'Qualify embedding-only LiteRT-LM text, image, audio, mixed inputs and batch order.',
       requiresDevice: false,
       stepsBuilder: (context) => [
         LocalE2eCommandStep(
@@ -1684,8 +1690,7 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
     LocalE2eScenario(
       name: 'litert-lm-lifecycle',
       group: LocalE2eScenarioGroup.dartLocalOnly,
-      description:
-          'Verify real LiteRT-LM reload, recovery, and timed-out cleanup in bounded child processes.',
+      description: 'Verify real LiteRT-LM reload, recovery, and timed-out cleanup in bounded child processes.',
       requiresDevice: false,
       stepsBuilder: (context) => [
         LocalE2eCommandStep(
@@ -1713,8 +1718,7 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
     LocalE2eScenario(
       name: 'litert-lm-v1-service',
       group: LocalE2eScenarioGroup.dartLocalOnly,
-      description:
-          'Qualify exact v1 library/model bytes through injected CPU service chat, native cancellation and reload.',
+      description: 'Qualify exact v1 library/model bytes through injected CPU service chat, native cancellation and reload.',
       requiresDevice: false,
       stepsBuilder: (context) => [
         LocalE2eCommandStep(
@@ -1750,8 +1754,7 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
     LocalE2eScenario(
       name: 'litert-lm-v1-json-schema',
       group: LocalE2eScenarioGroup.dartLocalOnly,
-      description:
-          'Qualify internal v1 JSON Schema through the injected CPU service on the fixed published Qwen profile, with Unicode/types, thinking-disabled output, control/followup, cancellation and reload.',
+      description: 'Qualify internal v1 JSON Schema through the injected CPU service on the fixed published Qwen profile, with Unicode/types, thinking-disabled output, control/followup, cancellation and reload.',
       requiresDevice: false,
       stepsBuilder: (context) => [
         LocalE2eCommandStep(
@@ -1818,8 +1821,7 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
     LocalE2eScenario(
       name: 'litert-lm-v1-thinking-budget',
       group: LocalE2eScenarioGroup.dartLocalOnly,
-      description:
-          'Qualify exact Gemma CPU native thinking bounds, cancellation, no-budget isolation and reload with complete runtime payload identity.',
+      description: 'Qualify exact Gemma CPU native thinking bounds, cancellation, no-budget isolation and reload with complete runtime payload identity.',
       requiresDevice: false,
       stepsBuilder: (context) => [
         LocalE2eCommandStep(
@@ -1909,8 +1911,7 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
     LocalE2eScenario(
       name: 'litert-lm-chat-features-smoke',
       group: LocalE2eScenarioGroup.dartLocalOnly,
-      description:
-          'Run real LiteRT-LM chat, thinking, tool-call, and optional media smoke.',
+      description: 'Run real LiteRT-LM chat, thinking, tool-call, and optional media smoke.',
       requiresDevice: false,
       stepsBuilder: (context) {
         final arguments = <String>[
@@ -2185,8 +2186,7 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
     LocalE2eScenario(
       name: 'chat-app-web-production-smoke',
       group: LocalE2eScenarioGroup.webSmoke,
-      description:
-          'Test the exact production-root build with mock and real GGUF smokes.',
+      description: 'Test the exact production-root build with mock and real GGUF smokes.',
       requiresDevice: false,
       stepsBuilder: (context) => [
         LocalE2eCommandStep(
@@ -2680,8 +2680,7 @@ Future<LocalE2eResult> runLocalE2e(
       (parsed.modelPath == null || parsed.headPath == null)) {
     return const LocalE2eResult(
       64,
-      stderr:
-          '--model-path and --head-path are required for decision-model-smoke.\n',
+      stderr: '--model-path and --head-path are required for decision-model-smoke.\n',
     );
   }
   if ((scenario.name == 'qwen3-litert-cpu-unicode' ||
@@ -2704,6 +2703,7 @@ Future<LocalE2eResult> runLocalE2e(
     'gguf-audio-chat-smoke',
     'speech-to-text-smoke',
     'litert-lm-asr-smoke',
+    'litert-lm-asr-preservation',
     'litert-lm-v1-asr-smoke',
     'litert-lm-chat-features-smoke',
     'chat-app-web-speech-to-text-smoke',
@@ -2737,6 +2737,25 @@ Future<LocalE2eResult> runLocalE2e(
       stderr:
           '--audio-path and a nonempty --expect are required for '
           'chat-app-web-speech-to-text-smoke.\n',
+    );
+  }
+  if (scenario.name == 'litert-lm-asr-preservation' &&
+      (parsed.modelPath == null ||
+          parsed.tokenizerPath == null ||
+          parsed.audioPath == null)) {
+    return const LocalE2eResult(
+      64,
+      stderr:
+          '--model-path, --tokenizer-path and --audio-path are required for '
+          'litert-lm-asr-preservation.\n',
+    );
+  }
+  if (scenario.name == 'litert-lm-asr-preservation' &&
+      parsed.backendProvided &&
+      parsed.backend != 'cpu') {
+    return const LocalE2eResult(
+      64,
+      stderr: 'litert-lm-asr-preservation requires --backend cpu.\n',
     );
   }
   if ((scenario.name == 'litert-lm-asr-smoke' ||
@@ -2849,16 +2868,14 @@ Future<LocalE2eResult> runLocalE2e(
       parsed.modelPath == null) {
     return const LocalE2eResult(
       64,
-      stderr:
-          '--model-path <complete-sd-turbo.safetensors> is required for image-local-checkpoint-sets.\n',
+      stderr: '--model-path <complete-sd-turbo.safetensors> is required for image-local-checkpoint-sets.\n',
     );
   }
   if (scenario.name == 'text-to-speech-smoke' &&
       (parsed.modelPath == null || parsed.mmprojPath == null)) {
     return const LocalE2eResult(
       64,
-      stderr:
-          '--model-path and --mmproj-path are required for text-to-speech-smoke.\n',
+      stderr: '--model-path and --mmproj-path are required for text-to-speech-smoke.\n',
     );
   }
   if (scenario.name == 'gguf-audio-chat-smoke' &&
@@ -2921,8 +2938,7 @@ Future<LocalE2eResult> runLocalE2e(
     if (parsed.modelPath == null || parsed.backend != 'cpu') {
       return const LocalE2eResult(
         64,
-        stderr:
-            'Public v1 qualification requires --model-path and --backend cpu.\n',
+        stderr: 'Public v1 qualification requires --model-path and --backend cpu.\n',
       );
     }
     final env = environment ?? Platform.environment;
@@ -2990,8 +3006,7 @@ Future<LocalE2eResult> runLocalE2e(
           'c5f39b4191926786c3e6668b62af4d6eb15248dfc7a5348252a9b406f33f2108') {
     return const LocalE2eResult(
       64,
-      stderr:
-          'litert-lm-v1-json-schema requires the fixed published Qwen CPU profile model SHA256.\n',
+      stderr: 'litert-lm-v1-json-schema requires the fixed published Qwen CPU profile model SHA256.\n',
     );
   }
 

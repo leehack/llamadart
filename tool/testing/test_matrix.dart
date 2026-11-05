@@ -38,52 +38,39 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
     id: 'genkit-contracts',
     tier: 'targeted',
     mode: 'CI + local; model-free',
-    covers:
-        'independent published/local-core resolution, minimum Dart and lower bounds, docs snippets and browser guards',
-    command:
-        'CI job genkit in .github/workflows/ci.yml; package commands in packages/genkit_llamadart/CONTRIBUTING.md',
-    useWhen:
-        'Genkit adapter, core API or integration quickstart changes. Browser guards do not qualify a full Genkit Web deployment.',
+    covers: 'independent published/local-core resolution, minimum Dart and lower bounds, docs snippets and browser guards',
+    command: 'CI job genkit in .github/workflows/ci.yml; package commands in packages/genkit_llamadart/CONTRIBUTING.md',
+    useWhen: 'Genkit adapter, core API or integration quickstart changes. Browser guards do not qualify a full Genkit Web deployment.',
   ),
   TestMatrixRow(
     id: 'genkit-native-cpu',
     tier: 'platform',
     mode: 'local + tiny-model CI; CPU',
-    covers:
-        'adapter native capability guards, embeddings, cancellation, disposal and owner isolation',
-    command:
-        'From packages/genkit_llamadart: supply LLAMADART_INTEGRATION_MODEL_PATH and LLAMADART_INTEGRATION_EMBED_MODEL_PATH, then dart test -t real-model -j 1; optional-family fixtures are documented in CONTRIBUTING.md',
-    useWhen:
-        'Adapter runtime or core integration changes; reuse local fixtures and record skipped families explicitly.',
+    covers: 'adapter native capability guards, embeddings, cancellation, disposal and owner isolation',
+    command: 'From packages/genkit_llamadart: supply LLAMADART_INTEGRATION_MODEL_PATH and LLAMADART_INTEGRATION_EMBED_MODEL_PATH, then dart test -t real-model -j 1; optional-family fixtures are documented in CONTRIBUTING.md',
+    useWhen: 'Adapter runtime or core integration changes; reuse local fixtures and record skipped families explicitly.',
   ),
   TestMatrixRow(
     id: 'genkit-release',
     tier: 'release',
     mode: 'CI + local; no publication',
-    covers:
-        'core/adapter release isolation, two-file prep scope, tag/version guards, HTTP failure handling and standalone staging',
-    command:
-        'dart test -p vm test/unit/tooling/genkit_release_routing_test.dart test/unit/tooling/genkit_package_staging_test.dart',
-    useWhen:
-        'Independent adapter release routing or archives change; owner handoff checklist: website/docs/maintainers/genkit-package.md.',
+    covers: 'core/adapter release isolation, two-file prep scope, tag/version guards, HTTP failure handling and standalone staging',
+    command: 'dart test -p vm test/unit/tooling/genkit_release_routing_test.dart test/unit/tooling/genkit_package_staging_test.dart',
+    useWhen: 'Independent adapter release routing or archives change; owner handoff checklist: website/docs/maintainers/genkit-package.md.',
   ),
   TestMatrixRow(
     id: 'model-store-contracts',
     tier: 'targeted',
     mode: 'CI + local; model-free',
-    covers:
-        'shared model store references, deletes, prune, metadata redaction, cross-process store lock and the browser refusal against checkout core',
-    command:
-        'CI job model-store in .github/workflows/ci.yml; from packages/llamadart_model_store: TMPDIR="\$(mktemp -d)" flutter test, then flutter test --platform chrome test/model_store_web_test.dart',
-    useWhen:
-        'llamadart_model_store, its guide, or core download manager changes. Foreground only: no device backgrounding or sleep evidence.',
+    covers: 'shared model store references, deletes, prune, metadata redaction, cross-process store lock and the browser refusal against checkout core',
+    command: 'CI job model-store in .github/workflows/ci.yml; from packages/llamadart_model_store: TMPDIR="\$(mktemp -d)" flutter test, then flutter test --platform chrome test/model_store_web_test.dart',
+    useWhen: 'llamadart_model_store, its guide, or core download manager changes. Foreground only: no device backgrounding or sleep evidence.',
   ),
   TestMatrixRow(
     id: 'ci-selection',
     tier: 'targeted',
     mode: 'CI + local; no models',
-    covers:
-        'dependency-aware job/target selection, complete Git inventory and truthful aggregation',
+    covers: 'dependency-aware job/target selection, complete Git inventory and truthful aggregation',
     command: 'dart run tool/testing/run_local_e2e.dart --scenario ci-selection',
     useWhen:
         'CI workflow or impact selection changes; see doc/ci_selection.md.',
@@ -107,10 +94,8 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
     id: 'validation-harness',
     tier: 'targeted',
     mode: 'CI + local; model-free',
-    covers:
-        'private runner, planned model/backend coverage, result integrity, provider lifecycle, artifact and NPU input checks',
-    command:
-        'dart run tool/testing/run_local_e2e.dart --scenario validation-harness',
+    covers: 'private runner, planned model/backend coverage, result integrity, provider lifecycle, artifact and NPU input checks',
+    command: 'dart run tool/testing/run_local_e2e.dart --scenario validation-harness',
     useWhen:
         'Validation harness, report, bundle or cloud orchestration changes.',
   ),
@@ -118,12 +103,10 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
     id: 'validation-model-core',
     tier: 'platform',
     mode: 'opt-in; owned hardware or explicit remote run',
-    covers:
-        'public package load, tokenizer, inference, cancellation, reload, limits and TPS',
+    covers: 'public package load, tokenizer, inference, cancellation, reload, limits and TPS',
     command:
         'dart run tool/testing/validation.dart local --profile tiny-gguf-cpu',
-    useWhen:
-        'Real-model qualification; see doc/cross_platform_validation.md for bundles and cloud lifecycle.',
+    useWhen: 'Real-model qualification; see doc/cross_platform_validation.md for bundles and cloud lifecycle.',
   ),
   TestMatrixRow(
     id: 'validation-speech',
@@ -137,8 +120,7 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
         'dart run tool/testing/run_local_e2e.dart --scenario validation-speech-stt; '
         'dart run tool/testing/run_local_e2e.dart --scenario validation-speech-tts; '
         'dart run tool/testing/run_local_e2e.dart --scenario validation-voice-round-trip',
-    useWhen:
-        'Speech model/backend validation; diagnostic results do not qualify GPU placement or listening quality.',
+    useWhen: 'Speech model/backend validation; diagnostic results do not qualify GPU placement or listening quality.',
   ),
   TestMatrixRow(
     id: 'gguf-stop-sequences',
@@ -251,8 +233,7 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
     id: 'release-metadata-verification',
     tier: 'high-risk',
     mode: 'local exact-head release evidence',
-    covers:
-        'bounded core-patch metadata diff and unchanged release regression suite',
+    covers: 'bounded core-patch metadata diff and unchanged release regression suite',
     command:
         'dart run tool/testing/verify_release_docs_versions.dart --release-prep && '
         'dart test -p vm -j 1 test/unit/tooling/verify_release_docs_companion_pins_test.dart',
@@ -298,8 +279,7 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
     command:
         'dart run tool/testing/verify_release_docs_versions.dart '
         '(add --release-prep during release prep)',
-    useWhen:
-        'Release prep, companion package version bumps, or current install docs.',
+    useWhen: 'Release prep, companion package version bumps, or current install docs.',
   ),
   TestMatrixRow(
     id: 'webgpu-bridge-tag-consistency',
@@ -388,12 +368,9 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
     id: 'windows-native-override-registry',
     tier: 'platform',
     mode: 'manual local-only Windows x64 CPU',
-    covers:
-        '18 fresh H/E/P and alias model/context/unload cases, passive registry/IAT identity, maintained declaration mutation, whole-bundle AOT distribution',
-    command:
-        'dart run tool/testing/run_local_e2e.dart --scenario windows-native-override-registry',
-    useWhen:
-        'Windows native override or registry changes; pinned SDK/native/model inputs, complete immutable evidence archive and independent review required. GPU remains unqualified.',
+    covers: '18 fresh H/E/P and alias model/context/unload cases, passive registry/IAT identity, maintained declaration mutation, whole-bundle AOT distribution',
+    command: 'dart run tool/testing/run_local_e2e.dart --scenario windows-native-override-registry',
+    useWhen: 'Windows native override or registry changes; pinned SDK/native/model inputs, complete immutable evidence archive and independent review required. GPU remains unqualified.',
   ),
   TestMatrixRow(
     id: 'native-inference-benchmark',
@@ -404,30 +381,23 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
         'dart run tool/testing/native_inference_benchmark.dart '
         '--model <model.gguf> --gpu-layers 0 --mode all --runs 3 '
         '--max-tokens 128',
-    useWhen:
-        'Generation latency, streaming, batching, prompt reuse, or performance changes.',
+    useWhen: 'Generation latency, streaming, batching, prompt reuse, or performance changes.',
   ),
   TestMatrixRow(
     id: 'web-multimodal-embeddings',
     tier: 'targeted',
     mode: 'local-only',
-    covers:
-        'Direct/worker Web text/image/audio/mixed vectors against local native references, normalization, order and adjacent text',
-    command:
-        'dart run tool/testing/run_local_e2e.dart --scenario web-multimodal-embeddings',
-    useWhen:
-        'Web embedding bridge changes; requires local assets v0.1.64+, EmbeddingGemma-2/projector and reference vectors per doc/multimodal_embeddings_web.md. Numerically unqualified until run.',
+    covers: 'Direct/worker Web text/image/audio/mixed vectors against local native references, normalization, order and adjacent text',
+    command: 'dart run tool/testing/run_local_e2e.dart --scenario web-multimodal-embeddings',
+    useWhen: 'Web embedding bridge changes; requires local assets v0.1.64+, EmbeddingGemma-2/projector and reference vectors per doc/multimodal_embeddings_web.md. Numerically unqualified until run.',
   ),
   TestMatrixRow(
     id: 'native-multimodal-embeddings',
     tier: 'targeted',
     mode: 'local-only',
-    covers:
-        'EmbeddingGemma-2 text/image/audio/interleaved vectors versus pinned upstream, raw/normalized outputs, adjacent-text parity, batch order, capacity, cancellation and reuse on CPU/Metal',
-    command:
-        'dart run tool/testing/run_local_e2e.dart --scenario native-multimodal-embeddings',
-    useWhen:
-        'Native multimodal embedding or mixed-batch changes; set local model/reference paths per doc/multimodal_embeddings_native.md. No downloads.',
+    covers: 'EmbeddingGemma-2 text/image/audio/interleaved vectors versus pinned upstream, raw/normalized outputs, adjacent-text parity, batch order, capacity, cancellation and reuse on CPU/Metal',
+    command: 'dart run tool/testing/run_local_e2e.dart --scenario native-multimodal-embeddings',
+    useWhen: 'Native multimodal embedding or mixed-batch changes; set local model/reference paths per doc/multimodal_embeddings_native.md. No downloads.',
   ),
   TestMatrixRow(
     id: 'native-reranking',
@@ -435,21 +405,16 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
     mode: 'local-only',
     command:
         'dart run tool/testing/run_local_e2e.dart --scenario native-reranking',
-    covers:
-        'Qwen3 named-template/multiclass and Jina fallback/single-score parity against pinned upstream; batching, overflow, cancellation and lifecycle',
-    useWhen:
-        'Native reranker APIs, classifier output or pair framing changes. Requires local weights and exact oracle paths per doc/native_reranking.md; no downloads.',
+    covers: 'Qwen3 named-template/multiclass and Jina fallback/single-score parity against pinned upstream; batching, overflow, cancellation and lifecycle',
+    useWhen: 'Native reranker APIs, classifier output or pair framing changes. Requires local weights and exact oracle paths per doc/native_reranking.md; no downloads.',
   ),
   TestMatrixRow(
     id: 'text-embedding-retrieval',
     tier: 'targeted',
     mode: 'local-only; pinned official EG2 weights and reference',
-    covers:
-        'text task/document/prepared helpers, title formatting, Matryoshka dimensions and real production retrieval against official float32 CPU vectors',
-    command:
-        'dart run tool/testing/run_local_e2e.dart --scenario text-embedding-retrieval',
-    useWhen:
-        'Embedding text profiles, task formatting or output dimensions change. Follow doc/embedding_text_helpers.md; no GPU, quantized or media qualification.',
+    covers: 'text task/document/prepared helpers, title formatting, Matryoshka dimensions and real production retrieval against official float32 CPU vectors',
+    command: 'dart run tool/testing/run_local_e2e.dart --scenario text-embedding-retrieval',
+    useWhen: 'Embedding text profiles, task formatting or output dimensions change. Follow doc/embedding_text_helpers.md; no GPU, quantized or media qualification.',
   ),
   TestMatrixRow(
     id: 'native-embedding-benchmark',
@@ -585,8 +550,7 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
         '--mmproj-path <mmproj.gguf> '
         '--audio-path <fixture.wav|.mp3|.flac> '
         '--expect "<expected transcript>"',
-    useWhen:
-        'Speech API, native audio routing, transcript normalization, or chat-app transcription changes.',
+    useWhen: 'Speech API, native audio routing, transcript normalization, or chat-app transcription changes.',
   ),
   TestMatrixRow(
     id: 'litert-lm-asr-smoke',
@@ -604,6 +568,21 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
     useWhen:
         'LiteRT-LM ASR bridge, public speech API, native pins, or streaming '
         'speech work. This CPU-only engine row does not establish microphone UI.',
+  ),
+  TestMatrixRow(
+    id: 'litert-lm-asr-preservation',
+    tier: 'targeted',
+    mode: 'local-only',
+    covers:
+        'hash-bound public Whisper Tiny CPU transcript/partials, empty silence, '
+        'stream/task cancellation, same-engine reuse and fresh reload',
+    command:
+        'dart run tool/testing/run_local_e2e.dart --scenario '
+        'litert-lm-asr-preservation --model-path <whisper-tiny.tflite> '
+        '--tokenizer-path <tokenizer.json> --audio-path <jfk.wav> --backend cpu',
+    useWhen:
+        'Dedicated LiteRT-LM ASR preservation after runtime or speech changes. '
+        'CPU subset only; no GPU, microphone, latency or device qualification.',
   ),
   TestMatrixRow(
     id: 'text-to-speech-smoke',
@@ -698,63 +677,47 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
     command:
         'dart run tool/testing/run_local_e2e.dart --scenario '
         'image-seamless-textures --model-path <sdxs.gguf>',
-    useWhen:
-        'SeamlessImageGenerationRequest, circular ABI wiring or decoder routing changes.',
+    useWhen: 'SeamlessImageGenerationRequest, circular ABI wiring or decoder routing changes.',
   ),
   TestMatrixRow(
     id: 'image-local-checkpoint-sets',
     tier: 'targeted',
     mode: 'local-only',
-    covers:
-        'Bounded complete SD-Turbo F16/F32 Safetensors index/directory CPU recipe; immutable per-file identities, owned snapshots, aggregate bytes, source-removal lifetime, cache reuse, cancellation cleanup and native-reference parity; no Diffusers or editing/tiling/seamless qualification',
-    command:
-        'dart run tool/testing/run_local_e2e.dart --scenario image-local-checkpoint-sets --model-path <complete-sd-turbo.safetensors>',
-    useWhen:
-        'Local image-set resolution, cache/snapshot lifetime, model-set factory, aggregate accounting or checkpoint-set native mapping changes.',
+    covers: 'Bounded complete SD-Turbo F16/F32 Safetensors index/directory CPU recipe; immutable per-file identities, owned snapshots, aggregate bytes, source-removal lifetime, cache reuse, cancellation cleanup and native-reference parity; no Diffusers or editing/tiling/seamless qualification',
+    command: 'dart run tool/testing/run_local_e2e.dart --scenario image-local-checkpoint-sets --model-path <complete-sd-turbo.safetensors>',
+    useWhen: 'Local image-set resolution, cache/snapshot lifetime, model-set factory, aggregate accounting or checkpoint-set native mapping changes.',
   ),
   TestMatrixRow(
     id: 'image-editing',
     tier: 'targeted',
     mode: 'local-only',
-    covers:
-        'SD-Turbo embedded full-VAE macOS CPU RGB/mask ownership and polarity, strength, direct-C reference parity, cancellation/reuse, ordinary defaults reset and reload; other recipes unmeasured or refused',
-    command:
-        'dart run tool/testing/run_local_e2e.dart --scenario image-editing --model-path <sd-turbo.gguf>',
-    useWhen:
-        'ImageEditingRequest, image-editing capability, worker transport or init/mask/strength native mapping changes.',
+    covers: 'SD-Turbo embedded full-VAE macOS CPU RGB/mask ownership and polarity, strength, direct-C reference parity, cancellation/reuse, ordinary defaults reset and reload; other recipes unmeasured or refused',
+    command: 'dart run tool/testing/run_local_e2e.dart --scenario image-editing --model-path <sd-turbo.gguf>',
+    useWhen: 'ImageEditingRequest, image-editing capability, worker transport or init/mask/strength native mapping changes.',
   ),
   TestMatrixRow(
     id: 'image-controlnet',
     tier: 'targeted',
     mode: 'local-only',
-    covers:
-        'SD 1.x checkpoint plus original-layout SD 1.x ControlNet on macOS CPU: control image and strength effects, strength-0 and ordinary reset equivalence, direct-C reference parity, cancellation/reuse and reload; other families, layouts and devices refused',
-    command:
-        'LLAMADART_SD15_CONTROLNET=<controlnet.safetensors> dart run tool/testing/run_local_e2e.dart --scenario image-controlnet --model-path <sd15.safetensors>',
-    useWhen:
-        'ControlNetImageGenerationRequest, ImageModelRole.controlNet admission, supportsControlNet, worker ControlNet probe/failure detection or control_net_path/control_image/control_strength native mapping changes.',
+    covers: 'SD 1.x checkpoint plus original-layout SD 1.x ControlNet on macOS CPU: control image and strength effects, strength-0 and ordinary reset equivalence, direct-C reference parity, cancellation/reuse and reload; other families, layouts and devices refused',
+    command: 'LLAMADART_SD15_CONTROLNET=<controlnet.safetensors> dart run tool/testing/run_local_e2e.dart --scenario image-controlnet --model-path <sd15.safetensors>',
+    useWhen: 'ControlNetImageGenerationRequest, ImageModelRole.controlNet admission, supportsControlNet, worker ControlNet probe/failure detection or control_net_path/control_image/control_strength native mapping changes.',
   ),
   TestMatrixRow(
     id: 'image-hires-fix',
     tier: 'targeted',
     mode: 'local-only',
-    covers:
-        'Two-pass latent hires fix with an SD 1.x or SD 2.x full-VAE checkpoint on macOS CPU or Metal: final size, direct-C reference parity, one-pass reset, composition kept, second-pass cancellation/reuse and reload; other families, decoders, hosts and devices refused',
-    command:
-        'LLAMADART_HIRES_RECIPE=<sd15|turbo> LLAMADART_HIRES_DEVICE=<cpu|gpu> dart run tool/testing/run_local_e2e.dart --scenario image-hires-fix --model-path <checkpoint>',
-    useWhen:
-        'HiresFixImageGenerationRequest, ImageHiresFix limits, supportsHiresFix, two-pass progress or sd_hires_params_t native mapping changes.',
+    covers: 'Two-pass latent hires fix with an SD 1.x or SD 2.x full-VAE checkpoint on macOS CPU or Metal: final size, direct-C reference parity, one-pass reset, composition kept, second-pass cancellation/reuse and reload; other families, decoders, hosts and devices refused',
+    command: 'LLAMADART_HIRES_RECIPE=<sd15|turbo> LLAMADART_HIRES_DEVICE=<cpu|gpu> dart run tool/testing/run_local_e2e.dart --scenario image-hires-fix --model-path <checkpoint>',
+    useWhen: 'HiresFixImageGenerationRequest, ImageHiresFix limits, supportsHiresFix, two-pass progress or sd_hires_params_t native mapping changes.',
   ),
   TestMatrixRow(
     id: 'image-reference-editing',
     tier: 'targeted',
     mode: 'local-only',
-    covers:
-        'FLUX.1 Kontext [dev] reference image editing on macOS Metal: a visible requested edit with preserved content, a reference effect against ordinary text-to-image, direct-C reference parity, cancellation/reuse, ordinary reset and reload; other families, components, hosts, devices and reference counts refused',
-    command:
-        'LLAMADART_REFERENCE_EDIT_VAE=<ae> LLAMADART_REFERENCE_EDIT_CLIP_L=<clip_l> LLAMADART_REFERENCE_EDIT_T5XXL=<t5xxl> dart run tool/testing/run_local_e2e.dart --scenario image-reference-editing --model-path <flux1-kontext-dev>',
-    useWhen:
-        'ReferenceImageEditingRequest, ImageReferenceEditingRecipe, supportsReferenceImageEditing, FLUX.1 Kontext header admission or ref_images/ref_image_args native mapping changes.',
+    covers: 'FLUX.1 Kontext [dev] reference image editing on macOS Metal: a visible requested edit with preserved content, a reference effect against ordinary text-to-image, direct-C reference parity, cancellation/reuse, ordinary reset and reload; other families, components, hosts, devices and reference counts refused',
+    command: 'LLAMADART_REFERENCE_EDIT_VAE=<ae> LLAMADART_REFERENCE_EDIT_CLIP_L=<clip_l> LLAMADART_REFERENCE_EDIT_T5XXL=<t5xxl> dart run tool/testing/run_local_e2e.dart --scenario image-reference-editing --model-path <flux1-kontext-dev>',
+    useWhen: 'ReferenceImageEditingRequest, ImageReferenceEditingRecipe, supportsReferenceImageEditing, FLUX.1 Kontext header admission or ref_images/ref_image_args native mapping changes.',
   ),
   TestMatrixRow(
     id: 'image-exit-teardown',
@@ -1069,103 +1032,73 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
     id: 'litert-lm-multimodal-embedding',
     tier: 'targeted',
     mode: 'local-only',
-    covers:
-        'LiteRT-LM embedding-only load, text/image/audio/interleaved, normalization, batch order, limits and cancellation',
-    command:
-        'dart run tool/testing/run_local_e2e.dart --scenario litert-lm-multimodal-embedding --model-path <model.litertlm> --backend cpu',
-    useWhen:
-        'LiteRT-LM embeddings or embedding-engine loading. Chrome/reference procedure: doc/multimodal_embeddings_litert.md.',
+    covers: 'LiteRT-LM embedding-only load, text/image/audio/interleaved, normalization, batch order, limits and cancellation',
+    command: 'dart run tool/testing/run_local_e2e.dart --scenario litert-lm-multimodal-embedding --model-path <model.litertlm> --backend cpu',
+    useWhen: 'LiteRT-LM embeddings or embedding-engine loading. Chrome/reference procedure: doc/multimodal_embeddings_litert.md.',
   ),
   TestMatrixRow(
     id: 'litert-lm-lifecycle',
     tier: 'targeted',
     mode: 'local-only',
-    covers:
-        'Real-model unload/reload, missing-model recovery, and timed-out native initialization cleanup with outer process deadlines',
-    command:
-        'dart run tool/testing/run_local_e2e.dart --scenario litert-lm-lifecycle --model-path <model.litertlm> --backend cpu',
-    useWhen:
-        'LiteRT-LM worker lifecycle, request settlement, or native teardown changes. Repeat with the affected requested backend; placement remains unverified.',
+    covers: 'Real-model unload/reload, missing-model recovery, and timed-out native initialization cleanup with outer process deadlines',
+    command: 'dart run tool/testing/run_local_e2e.dart --scenario litert-lm-lifecycle --model-path <model.litertlm> --backend cpu',
+    useWhen: 'LiteRT-LM worker lifecycle, request settlement, or native teardown changes. Repeat with the affected requested backend; placement remains unverified.',
   ),
   TestMatrixRow(
     id: 'litert-lm-v1-asr-smoke',
     tier: 'targeted',
     mode: 'local-only; explicit unselected v1 speech client, CPU only',
-    covers:
-        'Exact library/model/tokenizer/audio hashes, actual injected speech support probe and worker, streaming updates, transcribeOnce and cancellation with bounded child exit and captured native stderr',
-    command:
-        'LITERT_LM_V1_LIBRARY=<lib> LITERT_LM_V1_LIBRARY_SHA256=<sha256> LITERT_LM_V1_MODEL_SHA256=<sha256> LITERT_LM_V1_TOKENIZER_SHA256=<sha256> LITERT_LM_V1_AUDIO_SHA256=<sha256> dart run tool/testing/run_local_e2e.dart --scenario litert-lm-v1-asr-smoke --model-path <speech-model> --tokenizer-path <tokenizer> --audio-path <wav> --model-preset moonshine-tiny --expect <known-transcript> --backend cpu',
-    useWhen:
-        'Qualifying C API1 ASR consumer dispatch against a prepared owner artifact. Run --dry-run first and schedule one model job at a time. Default factory and pins remain unchanged.',
+    covers: 'Exact library/model/tokenizer/audio hashes, actual injected speech support probe and worker, streaming updates, transcribeOnce and cancellation with bounded child exit and captured native stderr',
+    command: 'LITERT_LM_V1_LIBRARY=<lib> LITERT_LM_V1_LIBRARY_SHA256=<sha256> LITERT_LM_V1_MODEL_SHA256=<sha256> LITERT_LM_V1_TOKENIZER_SHA256=<sha256> LITERT_LM_V1_AUDIO_SHA256=<sha256> dart run tool/testing/run_local_e2e.dart --scenario litert-lm-v1-asr-smoke --model-path <speech-model> --tokenizer-path <tokenizer> --audio-path <wav> --model-preset moonshine-tiny --expect <known-transcript> --backend cpu',
+    useWhen: 'Qualifying C API1 ASR consumer dispatch against a prepared owner artifact. Run --dry-run first and schedule one model job at a time. Default factory and pins remain unchanged.',
   ),
   TestMatrixRow(
     id: 'litert-lm-v1-service',
     tier: 'targeted',
     mode: 'local-only; explicit unselected v1 client, CPU only',
-    covers:
-        'Exact library/model SHA256, actual injected service arithmetic chat, native cancellation cause, settled reload/reuse and bounded process exit with captured native stderr',
-    command:
-        'LITERT_LM_V1_LIBRARY=<lib> LITERT_LM_V1_LIBRARY_SHA256=<sha256> LITERT_LM_V1_MODEL_SHA256=<sha256> dart run tool/testing/run_local_e2e.dart --scenario litert-lm-v1-service --model-path <Qwen3-0.6B.litertlm> --backend cpu',
-    useWhen:
-        'Qualifying the internal C API 1 client/service path against a prepared owner artifact. Run --dry-run first; root owns model serialization. No public factory/pin enablement, GPU, ASR, media, LoRA, schema or embedding qualification is implied.',
+    covers: 'Exact library/model SHA256, actual injected service arithmetic chat, native cancellation cause, settled reload/reuse and bounded process exit with captured native stderr',
+    command: 'LITERT_LM_V1_LIBRARY=<lib> LITERT_LM_V1_LIBRARY_SHA256=<sha256> LITERT_LM_V1_MODEL_SHA256=<sha256> dart run tool/testing/run_local_e2e.dart --scenario litert-lm-v1-service --model-path <Qwen3-0.6B.litertlm> --backend cpu',
+    useWhen: 'Qualifying the internal C API 1 client/service path against a prepared owner artifact. Run --dry-run first; root owns model serialization. No public factory/pin enablement, GPU, ASR, media, LoRA, schema or embedding qualification is implied.',
   ),
   TestMatrixRow(
     id: 'litert-lm-v1-public-direct',
     tier: 'high-risk',
-    mode:
-        'local-only; public defaults, CPU; requires admitted production selection',
-    covers:
-        'Exact full runtime manifest/model/config hashes, public direct dispatch without runtime factory or speech driver overrides, raw observations before oracles, owned deadline and lifecycle',
-    command:
-        'LITERT_LM_V1_LIBRARY=<lib> LITERT_LM_V1_LIBRARY_SHA256=<sha256> LITERT_LM_V1_MODEL_SHA256=<sha256> LITERT_LM_V1_RUNTIME_MANIFEST=<json> LITERT_LM_V1_RUNTIME_MANIFEST_SHA256=<sha256> LITERT_LM_V1_PUBLIC_CONFIG=<profile-or-speech-json> LITERT_LM_V1_PUBLIC_CONFIG_SHA256=<sha256> dart run tool/testing/run_local_e2e.dart --scenario litert-lm-v1-public-direct --model-path <model> --backend cpu',
-    useWhen:
-        'Final public C API1 adoption. Run --dry-run first, then schedule only with exact artifact/model admission. Flag-off refusal and staged status9 fixture controls are model-free evidence, not successful v1, GPU or physical-device qualification.',
+    mode: 'local-only; public defaults, CPU; requires admitted production selection',
+    covers: 'Exact full runtime manifest/model/config hashes, public direct dispatch without runtime factory or speech driver overrides, raw observations before oracles, owned deadline and lifecycle',
+    command: 'LITERT_LM_V1_LIBRARY=<lib> LITERT_LM_V1_LIBRARY_SHA256=<sha256> LITERT_LM_V1_MODEL_SHA256=<sha256> LITERT_LM_V1_RUNTIME_MANIFEST=<json> LITERT_LM_V1_RUNTIME_MANIFEST_SHA256=<sha256> LITERT_LM_V1_PUBLIC_CONFIG=<profile-or-speech-json> LITERT_LM_V1_PUBLIC_CONFIG_SHA256=<sha256> dart run tool/testing/run_local_e2e.dart --scenario litert-lm-v1-public-direct --model-path <model> --backend cpu',
+    useWhen: 'Final public C API1 adoption. Run --dry-run first, then schedule only with exact artifact/model admission. Flag-off refusal and staged status9 fixture controls are model-free evidence, not successful v1, GPU or physical-device qualification.',
   ),
   TestMatrixRow(
     id: 'litert-lm-v1-public-service',
     tier: 'high-risk',
-    mode:
-        'local-only; public defaults, CPU; requires admitted production selection',
-    covers:
-        'Exact full runtime manifest/model/config hashes, public service dispatch without runtime factory or speech driver overrides, raw observations before oracles, owned deadline and lifecycle',
-    command:
-        'LITERT_LM_V1_LIBRARY=<lib> LITERT_LM_V1_LIBRARY_SHA256=<sha256> LITERT_LM_V1_MODEL_SHA256=<sha256> LITERT_LM_V1_RUNTIME_MANIFEST=<json> LITERT_LM_V1_RUNTIME_MANIFEST_SHA256=<sha256> LITERT_LM_V1_PUBLIC_CONFIG=<profile-or-speech-json> LITERT_LM_V1_PUBLIC_CONFIG_SHA256=<sha256> dart run tool/testing/run_local_e2e.dart --scenario litert-lm-v1-public-service --model-path <model> --backend cpu',
-    useWhen:
-        'Final public C API1 adoption. Run --dry-run first, then schedule only with exact artifact/model admission. Flag-off refusal and staged status9 fixture controls are model-free evidence, not successful v1, GPU or physical-device qualification.',
+    mode: 'local-only; public defaults, CPU; requires admitted production selection',
+    covers: 'Exact full runtime manifest/model/config hashes, public service dispatch without runtime factory or speech driver overrides, raw observations before oracles, owned deadline and lifecycle',
+    command: 'LITERT_LM_V1_LIBRARY=<lib> LITERT_LM_V1_LIBRARY_SHA256=<sha256> LITERT_LM_V1_MODEL_SHA256=<sha256> LITERT_LM_V1_RUNTIME_MANIFEST=<json> LITERT_LM_V1_RUNTIME_MANIFEST_SHA256=<sha256> LITERT_LM_V1_PUBLIC_CONFIG=<profile-or-speech-json> LITERT_LM_V1_PUBLIC_CONFIG_SHA256=<sha256> dart run tool/testing/run_local_e2e.dart --scenario litert-lm-v1-public-service --model-path <model> --backend cpu',
+    useWhen: 'Final public C API1 adoption. Run --dry-run first, then schedule only with exact artifact/model admission. Flag-off refusal and staged status9 fixture controls are model-free evidence, not successful v1, GPU or physical-device qualification.',
   ),
   TestMatrixRow(
     id: 'litert-lm-v1-public-speech',
     tier: 'high-risk',
-    mode:
-        'local-only; public defaults, CPU; requires admitted production selection',
-    covers:
-        'Exact full runtime manifest/model/config hashes, public speech dispatch without runtime factory or speech driver overrides, raw observations before oracles, owned deadline and lifecycle',
-    command:
-        'LITERT_LM_V1_LIBRARY=<lib> LITERT_LM_V1_LIBRARY_SHA256=<sha256> LITERT_LM_V1_MODEL_SHA256=<sha256> LITERT_LM_V1_RUNTIME_MANIFEST=<json> LITERT_LM_V1_RUNTIME_MANIFEST_SHA256=<sha256> LITERT_LM_V1_PUBLIC_CONFIG=<profile-or-speech-json> LITERT_LM_V1_PUBLIC_CONFIG_SHA256=<sha256> dart run tool/testing/run_local_e2e.dart --scenario litert-lm-v1-public-speech --model-path <model> --backend cpu',
-    useWhen:
-        'Final public C API1 adoption. Run --dry-run first, then schedule only with exact artifact/model admission. Flag-off refusal and staged status9 fixture controls are model-free evidence, not successful v1, GPU or physical-device qualification.',
+    mode: 'local-only; public defaults, CPU; requires admitted production selection',
+    covers: 'Exact full runtime manifest/model/config hashes, public speech dispatch without runtime factory or speech driver overrides, raw observations before oracles, owned deadline and lifecycle',
+    command: 'LITERT_LM_V1_LIBRARY=<lib> LITERT_LM_V1_LIBRARY_SHA256=<sha256> LITERT_LM_V1_MODEL_SHA256=<sha256> LITERT_LM_V1_RUNTIME_MANIFEST=<json> LITERT_LM_V1_RUNTIME_MANIFEST_SHA256=<sha256> LITERT_LM_V1_PUBLIC_CONFIG=<profile-or-speech-json> LITERT_LM_V1_PUBLIC_CONFIG_SHA256=<sha256> dart run tool/testing/run_local_e2e.dart --scenario litert-lm-v1-public-speech --model-path <model> --backend cpu',
+    useWhen: 'Final public C API1 adoption. Run --dry-run first, then schedule only with exact artifact/model admission. Flag-off refusal and staged status9 fixture controls are model-free evidence, not successful v1, GPU or physical-device qualification.',
   ),
   TestMatrixRow(
     id: 'litert-lm-v1-json-schema',
     tier: 'targeted',
     mode: 'local-only; internal v1, macOS arm64 CPU only',
-    covers:
-        'Fixed published Qwen profile identity; conflicting unconstrained control, constrained Unicode/types with thinking disabled, ordinary followup, native cancellation, schema reuse and engine reload with hash-bound bounded child receipts',
-    command:
-        'LITERT_LM_V1_LIBRARY=<lib> LITERT_LM_V1_LIBRARY_SHA256=<sha256> LITERT_LM_V1_MODEL_SHA256=c5f39b4191926786c3e6668b62af4d6eb15248dfc7a5348252a9b406f33f2108 dart run tool/testing/run_local_e2e.dart --scenario litert-lm-v1-json-schema --model-path <published-Qwen3-0.6B.litertlm> --backend cpu',
-    useWhen:
-        'Qualifying internal C API1 schema source against an exact prepared owner artifact. Run --dry-run first; schedule one model job at a time. The public factory and pins remain unchanged; grammar enforcement is separate from model accuracy.',
+    covers: 'Fixed published Qwen profile identity; conflicting unconstrained control, constrained Unicode/types with thinking disabled, ordinary followup, native cancellation, schema reuse and engine reload with hash-bound bounded child receipts',
+    command: 'LITERT_LM_V1_LIBRARY=<lib> LITERT_LM_V1_LIBRARY_SHA256=<sha256> LITERT_LM_V1_MODEL_SHA256=c5f39b4191926786c3e6668b62af4d6eb15248dfc7a5348252a9b406f33f2108 dart run tool/testing/run_local_e2e.dart --scenario litert-lm-v1-json-schema --model-path <published-Qwen3-0.6B.litertlm> --backend cpu',
+    useWhen: 'Qualifying internal C API1 schema source against an exact prepared owner artifact. Run --dry-run first; schedule one model job at a time. The public factory and pins remain unchanged; grammar enforcement is separate from model accuracy.',
   ),
   TestMatrixRow(
     id: 'litert-lm-v1-thinking-budget',
     tier: 'targeted',
     mode: 'local-only; injected v1 client, macOS arm64 CPU only',
-    covers:
-        'Fixed Gemma first-channel proof, bounded/unbounded native reasoning, token metrics/finish, cancel/reuse/reload, complete runtime payload hashes/loaded paths and bounded child cleanup',
-    command:
-        'LITERT_LM_V1_LIBRARY=<lib> LITERT_LM_V1_LIBRARY_SHA256=<sha256> LITERT_LM_V1_MODEL_SHA256=181938105e0eefd105961417e8da75903eacda102c4fce9ce90f50b97139a63c LITERT_LM_V1_RUNTIME_MANIFEST=<json> LITERT_LM_V1_RUNTIME_MANIFEST_SHA256=<sha256> dart run tool/testing/run_local_e2e.dart --scenario litert-lm-v1-thinking-budget --model-path <gemma-4-E2B-it.litertlm> --backend cpu',
-    useWhen:
-        'Qualifying actual C API1 thinking-budget enforcement after source admission. Run --dry-run first; the model-job owner admits exact identities and serializes execution. No public activation or other backend/model qualification.',
+    covers: 'Fixed Gemma first-channel proof, bounded/unbounded native reasoning, token metrics/finish, cancel/reuse/reload, complete runtime payload hashes/loaded paths and bounded child cleanup',
+    command: 'LITERT_LM_V1_LIBRARY=<lib> LITERT_LM_V1_LIBRARY_SHA256=<sha256> LITERT_LM_V1_MODEL_SHA256=181938105e0eefd105961417e8da75903eacda102c4fce9ce90f50b97139a63c LITERT_LM_V1_RUNTIME_MANIFEST=<json> LITERT_LM_V1_RUNTIME_MANIFEST_SHA256=<sha256> dart run tool/testing/run_local_e2e.dart --scenario litert-lm-v1-thinking-budget --model-path <gemma-4-E2B-it.litertlm> --backend cpu',
+    useWhen: 'Qualifying actual C API1 thinking-budget enforcement after source admission. Run --dry-run first; the model-job owner admits exact identities and serializes execution. No public activation or other backend/model qualification.',
   ),
   TestMatrixRow(
     id: 'qwen3-litert-cpu-unicode',
@@ -1186,23 +1119,17 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
     id: 'litert-lm-web-text-history',
     tier: 'targeted',
     mode: 'local-only',
-    covers:
-        'Ordered system/user/assistant Web text history, matching pinned JS reference, no-history/no-system bypass controls, reset and cancellation/reuse',
-    command:
-        'dart run tool/testing/run_local_e2e.dart --scenario litert-lm-web-text-history --model-path <existing-model.litertlm> --backend cpu',
-    useWhen:
-        'LiteRT-LM Web conversation serialization, runtime capability probe, ChatSession history or system prompts. Repeat with the affected model/backend; no other browser/backend or tool/media/template support is implied.',
+    covers: 'Ordered system/user/assistant Web text history, matching pinned JS reference, no-history/no-system bypass controls, reset and cancellation/reuse',
+    command: 'dart run tool/testing/run_local_e2e.dart --scenario litert-lm-web-text-history --model-path <existing-model.litertlm> --backend cpu',
+    useWhen: 'LiteRT-LM Web conversation serialization, runtime capability probe, ChatSession history or system prompts. Repeat with the affected model/backend; no other browser/backend or tool/media/template support is implied.',
   ),
   TestMatrixRow(
     id: 'litert-lm-json-schema',
     tier: 'high-risk',
     mode: 'local-only; macOS arm64 CPU',
-    covers:
-        'Adversarial native JSON Schema enforcement, separate GBNF capability, scalar object subset, per-request reset, history/system, cancellation and length cutoff',
-    command:
-        'dart run tool/testing/run_local_e2e.dart --scenario litert-lm-json-schema --model-path <corrected-Qwen3-0.6B.litertlm> --backend cpu',
-    useWhen:
-        'Changing native schema constraints, provider admission or request transport. Fixed corrected Qwen3 artifact; no GPU, Web or other-platform qualification.',
+    covers: 'Adversarial native JSON Schema enforcement, separate GBNF capability, scalar object subset, per-request reset, history/system, cancellation and length cutoff',
+    command: 'dart run tool/testing/run_local_e2e.dart --scenario litert-lm-json-schema --model-path <corrected-Qwen3-0.6B.litertlm> --backend cpu',
+    useWhen: 'Changing native schema constraints, provider admission or request transport. Fixed corrected Qwen3 artifact; no GPU, Web or other-platform qualification.',
   ),
   TestMatrixRow(
     id: 'litert-lm-chat-features-smoke',
@@ -1371,8 +1298,7 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
         'FLUTTER_SHUTDOWN_HEADERS=<extracted-native-headers> dart run '
         'tool/testing/run_local_e2e.dart --scenario '
         'chat-app-flutter-active-shutdown --model-path <chat.gguf>',
-    useWhen:
-        'Host shutdown, native worker lifecycle, exit teardown or Flutter pin changes.',
+    useWhen: 'Host shutdown, native worker lifecycle, exit teardown or Flutter pin changes.',
   ),
   TestMatrixRow(
     id: 'chat-app-flutter-image-shutdown',
@@ -1385,8 +1311,7 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
         'FLUTTER_SHUTDOWN_HEADERS=<extracted-native-headers> dart run '
         'tool/testing/run_local_e2e.dart --scenario '
         'chat-app-flutter-image-shutdown --model-path <image.gguf>',
-    useWhen:
-        'Image worker shutdown, stable-diffusion runtime or Flutter host changes.',
+    useWhen: 'Image worker shutdown, stable-diffusion runtime or Flutter host changes.',
   ),
   TestMatrixRow(
     id: 'web-bridge-smoke',
@@ -1402,10 +1327,8 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
     mode: 'CI + local',
     covers:
         'one production-root build tested by mock and real worker/GGUF smokes',
-    command:
-        'dart run tool/testing/run_local_e2e.dart --scenario chat-app-web-production-smoke',
-    useWhen:
-        'Web build, CI artifact promotion or static deployment changes. Requires the cached stories15M model or --model-url.',
+    command: 'dart run tool/testing/run_local_e2e.dart --scenario chat-app-web-production-smoke',
+    useWhen: 'Web build, CI artifact promotion or static deployment changes. Requires the cached stories15M model or --model-url.',
   ),
   TestMatrixRow(
     id: 'web-mock-chat-smoke',
@@ -1415,8 +1338,7 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
     command:
         'dart run tool/testing/run_local_e2e.dart --scenario '
         'chat-app-web-mock-smoke',
-    useWhen:
-        'Web chat app UI, prompt wiring, settings, or bridge integration changes.',
+    useWhen: 'Web chat app UI, prompt wiring, settings, or bridge integration changes.',
   ),
   TestMatrixRow(
     id: 'web-real-model-smoke',
@@ -1535,8 +1457,7 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
     id: 'windows-arm64-hook-coverage',
     tier: 'platform',
     mode: 'hook-only + manual/runtime',
-    covers:
-        'Windows arm64 bundle selection; runtime smoke requires Windows arm64 hardware',
+    covers: 'Windows arm64 bundle selection; runtime smoke requires Windows arm64 hardware',
     command:
         'dart test -p vm -j 1 test/unit/hook --exclude-tags local-only; '
         'for runtime proof, run the GGUF local smoke on Windows arm64 hardware.',
