@@ -157,8 +157,9 @@ void main() {
         ),
       )..createSync(recursive: true);
       addTearDown(() => legacy.deleteSync(recursive: true));
+      final legacyBytes = _archive('legacy');
       final legacyArchive = File(path.join(legacy.path, archiveName(tag)))
-        ..writeAsBytesSync(_archive('legacy'));
+        ..writeAsBytesSync(legacyBytes);
       final archive = _archive('compatible');
       final fixture = RuntimeBundleHttpFixture({
         releaseUrl(_forkRepository, tag, 'SHA256SUMS'): sha256SumsFor({
@@ -180,7 +181,7 @@ void main() {
         fixture.requests,
         contains(releaseUrl(_forkRepository, tag, archiveName(tag))),
       );
-      expect(legacyArchive.readAsBytesSync(), _archive('legacy'));
+      expect(legacyArchive.readAsBytesSync(), legacyBytes);
       expect(
         File(
           path.joinAll([
