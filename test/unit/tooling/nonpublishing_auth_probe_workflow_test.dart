@@ -6,11 +6,13 @@ import 'dart:io';
 import 'package:test/test.dart';
 import 'package:yaml/yaml.dart';
 
-YamlMap workflow() => loadYaml(
-  File(
-    '.github/workflows/nonpublishing_release_auth_probe.yml',
-  ).readAsStringSync(),
-) as YamlMap;
+YamlMap workflow() =>
+    loadYaml(
+          File(
+            '.github/workflows/nonpublishing_release_auth_probe.yml',
+          ).readAsStringSync(),
+        )
+        as YamlMap;
 
 List<YamlMap> steps(YamlMap job) => (job['steps'] as YamlList).cast<YamlMap>();
 
@@ -44,26 +46,29 @@ void main() {
     });
   });
 
-  test('probe has read-only permissions and invocation-isolated concurrency', () {
-    final config = workflow();
-    expect(config['permissions'], {'contents': 'read', 'actions': 'read'});
-    expect(config['env'], isNull);
-    expect(config['defaults'], isNull);
-    expect(config['concurrency'], {
-      'group': r'nonpublishing-auth-probe-${{ github.run_id }}',
-      'cancel-in-progress': false,
-    });
-    final jobs = config['jobs'] as YamlMap;
-    expect(jobs.keys, unorderedEquals(['sender', 'receiver']));
-    for (final job in jobs.values.cast<YamlMap>()) {
-      expect(job['permissions'], isNull);
-      expect(job['uses'], isNull);
-      expect(job['secrets'], isNull);
-      expect(job['env'], isNull);
-      expect(job['defaults'], isNull);
-      expect(job['concurrency'], isNull);
-    }
-  });
+  test(
+    'probe has read-only permissions and invocation-isolated concurrency',
+    () {
+      final config = workflow();
+      expect(config['permissions'], {'contents': 'read', 'actions': 'read'});
+      expect(config['env'], isNull);
+      expect(config['defaults'], isNull);
+      expect(config['concurrency'], {
+        'group': r'nonpublishing-auth-probe-${{ github.run_id }}',
+        'cancel-in-progress': false,
+      });
+      final jobs = config['jobs'] as YamlMap;
+      expect(jobs.keys, unorderedEquals(['sender', 'receiver']));
+      for (final job in jobs.values.cast<YamlMap>()) {
+        expect(job['permissions'], isNull);
+        expect(job['uses'], isNull);
+        expect(job['secrets'], isNull);
+        expect(job['env'], isNull);
+        expect(job['defaults'], isNull);
+        expect(job['concurrency'], isNull);
+      }
+    },
+  );
 
   test('sender and receiver guards reject other events and unsafe pushes', () {
     final jobs = workflow()['jobs'] as YamlMap;
@@ -90,7 +95,10 @@ void main() {
       final job = jobs[role] as YamlMap;
       expect(job['runs-on'], 'ubuntu-latest');
       expect(job['timeout-minutes'], allOf(isA<int>(), greaterThan(0)));
-      expect(job['timeout-minutes'], lessThanOrEqualTo(role == 'sender' ? 12 : 5));
+      expect(
+        job['timeout-minutes'],
+        lessThanOrEqualTo(role == 'sender' ? 12 : 5),
+      );
       final jobSteps = steps(job);
       expect(jobSteps, hasLength(3));
       final checkout = jobSteps[0];
@@ -105,14 +113,18 @@ void main() {
       expect(helper['uses'], isNull);
       expect(helper['if'], isNull);
       expect(helper['continue-on-error'], isNull);
-      expect(helper['run'], 'python3 tool/release/nonpublishing_auth_probe.py $role');
+      expect(
+        helper['run'],
+        'python3 tool/release/nonpublishing_auth_probe.py $role',
+      );
       final expectedEnv = <String, String>{
         'PROBE_OWNER_ID': r'${{ github.repository_owner_id }}',
         'PROBE_REPOSITORY_ID': r'${{ github.repository_id }}',
         'PROBE_READ_TOKEN': r'${{ github.token }}',
         if (role == 'sender') ...{
           'EXPECTED_SHA': r'${{ inputs.expected_sha }}',
-          'RELEASE_AUTOMATION_TOKEN': r'${{ secrets.RELEASE_AUTOMATION_TOKEN }}',
+          'RELEASE_AUTOMATION_TOKEN':
+              r'${{ secrets.RELEASE_AUTOMATION_TOKEN }}',
         },
       };
       expect(helper['env'], expectedEnv);
@@ -136,7 +148,8 @@ void main() {
       expect(artifact['env'], isNull);
       expect(artifact['if'], 'always()');
       expect(artifact['with'], {
-        'name': 'auth-probe-$role-'
+        'name':
+            'auth-probe-$role-'
             r'${{ github.run_id }}-attempt-${{ github.run_attempt }}',
         'path': r'${{ runner.temp }}/auth-probe/',
         'if-no-files-found': 'error',
