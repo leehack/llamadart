@@ -167,14 +167,17 @@ void main() {
             directory: runtimeDir.path,
             abi: abi,
             cApiV1: cApiV1,
-            openLibrary: (_) => fail('must validate every required member first'),
+            openLibrary: (_) =>
+                fail('must validate every required member first'),
           ),
           throwsA(
             isA<StateError>().having(
               (error) => error.message,
               'message',
-              contains('Required LiteRT-LM smoke library is missing: '
-                  '${runtimeDir.path}/$missing'),
+              contains(
+                'Required LiteRT-LM smoke library is missing: '
+                '${runtimeDir.path}/$missing',
+              ),
             ),
           ),
         );
