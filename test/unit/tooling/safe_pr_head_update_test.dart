@@ -1427,10 +1427,9 @@ void main() {
           // gate and invocation ownership; additional ref APIs require review.
           expect(RegExp(r'git/refs').allMatches(content).length, 4);
           expect(
-            RegExp(r'method == "([A-Z]+)"')
-                .allMatches(content)
-                .map((match) => match[1])
-                .toList(),
+            RegExp(
+              r'method == "([A-Z]+)"',
+            ).allMatches(content).map((match) => match[1]).toList(),
             ['GET', 'POST', 'DELETE'],
           );
           for (final contract in [
