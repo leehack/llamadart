@@ -2978,13 +2978,60 @@ final segment = '${Object()}ImageEditingRequest${Object()}';
       });
     }
 
-    test('rejects Python paths outside the native-sync suites', () async {
+    test('release-auth suite keeps helper and command pairing', () async {
+      const source = 'tool/release/nonpublishing_auth_probe.py';
+      const target = 'test/ci/test_nonpublishing_auth_probe.py';
+      const unrelated = 'tool/native/native_header_archive.py';
+      final evidence = backendEvidence()
+        ..['surfaces'] = ['releaseAutomation']
+        ..['affected_test_paths'] = [target];
+      final proof = testProof(source);
+      evidence['test_evidence'] = {target: proof};
+      Future<HighRiskReadinessResult> evaluate() => evaluatorFor(
+        const [
+          RepositoryChange(path: source, kind: RepositoryChangeKind.modified),
+        ],
+        existingPaths: {source, target, unrelated},
+      ).evaluate(evidence: evidence, context: context);
+
+      for (final command in [
+        'python3 -B $target',
+        'python3 -B -m unittest test.ci.test_nonpublishing_auth_probe',
+      ]) {
+        proof['command'] = command;
+        expect(
+          (await evaluate()).decision,
+          ReadinessDecision.unverifiedPrerequisites,
+          reason: command,
+        );
+      }
+
+      proof['command'] = 'python3 tool/native/test_native_header_archive.py';
+      expectFailure(
+        await evaluate(),
+        ReadinessFailureClassification.missingStructuredOutputEvidence,
+      );
+      proof['command'] = 'python3 -B $target';
+      proof['production_refs'] = productionRefs(unrelated);
+      expectFailure(
+        await evaluate(),
+        ReadinessFailureClassification.missingStructuredOutputEvidence,
+      );
+      proof['production_refs'] = productionRefs(source);
+      proof['control_result'] = 'pass';
+      expect((await evaluate()).decision, ReadinessDecision.rejected);
+    });
+
+    test('rejects Python paths outside the explicitly paired suites', () async {
       for (final path in [
         'tool/native/sync_native_release_pins.py',
         'tool/native/test_unlisted_suite.py',
         'tool/native/fixtures/test_sync_native_release_pins.py',
         'tool/testing/validation/test_npu_apk.py',
         'test/ci/test_workflow.py',
+        'test/ci/test_nonpublishing_auth_probe_extra.py',
+        'test/ci/fixtures/test_nonpublishing_auth_probe.py',
+        'test/ci/../ci/test_nonpublishing_auth_probe.py',
         'test/unit/tooling/sync_native_release_pins_test.py',
       ]) {
         final evidence = backendEvidence()..['affected_test_paths'] = [path];
@@ -3817,6 +3864,7 @@ final segment = '${Object()}ImageEditingRequest${Object()}';
         'tool/native/test_sync_native_headers_and_bindings.py',
         'tool/native/test_sync_native_release_pins.py',
         'tool/native/test_sync_stable_diffusion_bindings.py',
+        'test/ci/test_nonpublishing_auth_probe.py',
       ]) {
         expect(testPathPattern.hasMatch(path), isTrue, reason: path);
       }
@@ -3829,6 +3877,10 @@ final segment = '${Object()}ImageEditingRequest${Object()}';
         'tool/native/sync_native_release_pins.py',
         'tool/native/test_unlisted_suite.py',
         'tool/testing/validation/test_npu_apk.py',
+        'test/ci/test_workflow.py',
+        'test/ci/test_nonpublishing_auth_probe_extra.py',
+        'test/ci/fixtures/test_nonpublishing_auth_probe.py',
+        'test/ci/../ci/test_nonpublishing_auth_probe.py',
         'test/unit/tooling/sync_native_release_pins_test.py',
       ]) {
         expect(testPathPattern.hasMatch(path), isFalse, reason: path);
