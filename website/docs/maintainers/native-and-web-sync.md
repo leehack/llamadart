@@ -18,12 +18,13 @@ SwiftPM native pin must match the core hook pin (`llamaCppTag` or
 Each companion has its own template hash in `hook/build.dart`. Updating a
 declared dependency constraint alone is insufficient: rerun `flutter pub get`
 and resolve the matching companion. Core native tag/path/backend overrides do
-not replace SwiftPM frameworks and cannot bypass this check. A companion that
-pins an earlier compatible tag (`llamaCppCompatibleAppleCompanionTags`,
-`stableDiffusionCompatibleAppleCompanionTags`) must also declare that tag's
-exact XCFramework checksum (`llamaCppCompatibleAppleCompanionChecksums`,
-`stableDiffusionAppleCompanionChecksums`); the native pin sync clears both
-when the pin moves.
+not replace SwiftPM frameworks and cannot bypass this check. A companion must
+also declare the qualified current tag's exact XCFramework checksum (`llamaCppCompatibleAppleCompanionChecksums`,
+`stableDiffusionAppleCompanionChecksums`). Earlier admitted tags
+(`llamaCppCompatibleAppleCompanionTags`,
+`stableDiffusionCompatibleAppleCompanionTags`) require their own exact checksum.
+Native pin sync rejects a changed same-tag checksum, and replaces the current
+checksum and clears earlier compatibility when the pin moves.
 
 Local `Artifacts` overrides in that companion are rejected because their ABI
 provenance is unverified. Remove the override and use the pinned remote
@@ -241,18 +242,33 @@ behavior compatibility: custom overrides still need the ABI-compatible runtime
 described in [native build hooks](../platforms/native-build-hooks).
 
 [Native #51](https://github.com/leehack/llamadart-native/issues/51) owns coordinated
-export retirement. Consumer preparation alone does not authorize export removal,
-a pin change, or publication. In particular, older Dart consumers' Windows
-factory probes only `free`, then resolves `need_embd` after session creation.
-A local export-removal control exposes an untyped lookup error there; it does
-not establish an actionable old-consumer refusal. The staged retirement therefore removes only the 14 unused `mtp_*`/`ngram_*`
-family exports and retains both compatibility queries, including the
-constant-false `need_embd` shim allowed by
-[native #48](https://github.com/leehack/llamadart-native/issues/48). Local
-14-symbol-removal controls keep old and new consumers working on all three
-binding paths on the host; they do not replace Windows device qualification. Query removal remains a separate compatibility decision;
-it needs verified old-consumer delivery/refusal behavior first. Do not describe
-the current probes as a new runtime-version handshake.
+export retirement, including the constant-false `need_embd` query. The genuine
+`need_embd_nextn` export remains. This preparation keeps the currently qualified
+`v0.8.0-2` pin and generated bindings; regenerate them and remove the direct
+`need_embd` export test only after the owner publishes the qualified replacement.
+It adds no manifest version or runtime handshake.
+
+The llama.cpp hook writer, Windows fallback scanner and Linux dependency-copy
+reader all use the sibling `native_bundles_v2` cache. New default acquisitions
+and compatible explicit tag/repository/local-archive acquisitions stay outside
+legacy `native_bundles`, which older consumers scan in reused checkouts and
+working-directory ancestors. Leave those old caches and immutable release
+assets intact; never migrate or copy new bundles into them. There is no legacy
+cache fallback in the new core. LiteRT-LM, stable-diffusion and model caches keep
+their existing namespaces.
+
+Published package versions already have distinct package roots and exact
+release pins. Explicit incompatible overrides remain outside the documented
+ABI- and symbol-compatible override contract. Older dynamic speculative lookup
+can refuse missing queries with a typed error, while older Windows code-asset
+factories probe only `free` and can fail at a late untyped query lookup. Cache
+isolation protects automatic shared-checkout fallback; it does not retrofit
+that factory or isolate arbitrary system-loader substitutions.
+
+Before adoption, qualify old/new delivery and shared-root cache isolation,
+exact current-tag Apple checksum refusal, generic missing-symbol refusal, and
+retained `need_embd_nextn` behavior against the final owner artifact. Keep
+Windows host/AOT and packaged Apple evidence separate from host VM fixtures.
 
 Run the model-free export-set checks with:
 
@@ -643,10 +659,10 @@ bounded image recipes gate on the upstream commit
 (`ImageGenerationEngine._isQualifiedRuntime`): a repin that moves it reruns
 their `run_local_e2e.dart` scenarios before moving that gate.
 
-Core `0.17.1` moves the llama.cpp pin to `v0.8.0-1`, built from upstream `v0.8.0`, inside
-the `0.17` minor. It keeps companion `0.17.0` (`v0.7.0-3`) through
-`llamaCppCompatibleAppleCompanionTags` because the core calls no symbol that
-framework lacks; `test/fixtures/native/llama_cpp_apple_compatibility.json` records
+Historically, core `0.17.1` moved the llama.cpp pin to `v0.8.0-1`, built from upstream `v0.8.0`, inside
+the `0.17` minor. It kept companion `0.17.0` (`v0.7.0-3`) through
+`llamaCppCompatibleAppleCompanionTags` because that core called no symbol that
+framework lacked; `test/fixtures/native/llama_cpp_apple_compatibility.json` records
 the historical per-slice check. The
 reverse pair is unsafe (`mtmd_helper_init_opt` grows to 32 bytes), so companion
 `0.17.1` needs `llamadart: '>=0.17.1 <0.18.0'`.

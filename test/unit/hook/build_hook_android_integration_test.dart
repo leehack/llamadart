@@ -19,7 +19,7 @@ void main() {
   final project = HookProjectRoot.create();
   final bundleDir = Directory(
     project.resolve(
-      '.dart_tool/llamadart/native_bundles/$nativeTag/android-arm64/extracted',
+      '.dart_tool/llamadart/native_bundles_v2/$nativeTag/android-arm64/extracted',
     ),
   );
   final litertBundleDir = Directory(

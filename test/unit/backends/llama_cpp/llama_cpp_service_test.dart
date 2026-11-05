@@ -7631,7 +7631,7 @@ void main() {
           tempRoot.path,
           '.dart_tool',
           'llamadart',
-          'native_bundles',
+          'native_bundles_v2',
           'b8095',
           'windows-x64',
           'extracted',
@@ -7652,13 +7652,43 @@ void main() {
       expect(path.normalize(resolved!), path.normalize(extractedDir.path));
     });
 
+    test('ignores legacy hook caches even when their tag sorts newer', () {
+      Directory bundle(String root, String tag) {
+        final directory = Directory(
+          path.join(
+            tempRoot.path,
+            '.dart_tool',
+            'llamadart',
+            root,
+            tag,
+            'windows-x64',
+            'extracted',
+          ),
+        )..createSync(recursive: true);
+        _createWindowsBundleMarkerFiles(directory.path);
+        return directory;
+      }
+
+      final legacy = bundle('native_bundles', 'v9.9.9');
+      final compatible = bundle('native_bundles_v2', 'v0.8.0-2');
+      String? resolve() => LlamaCppService.resolveWindowsBackendModuleDirectory(
+        resolvedExecutablePath: path.join(tempRoot.path, 'sdk', 'dart.exe'),
+        currentDirectoryPath: tempRoot.path,
+        environment: const {},
+      );
+
+      expect(path.normalize(resolve()!), path.normalize(compatible.path));
+      compatible.deleteSync(recursive: true);
+      expect(path.normalize(resolve()!), isNot(path.normalize(legacy.path)));
+    });
+
     test('finds custom GitHub hook cache namespace', () {
       final extractedDir = Directory(
         path.join(
           tempRoot.path,
           '.dart_tool',
           'llamadart',
-          'native_bundles',
+          'native_bundles_v2',
           'github',
           'example',
           'native-fork',
@@ -7688,7 +7718,7 @@ void main() {
           tempRoot.path,
           '.dart_tool',
           'llamadart',
-          'native_bundles',
+          'native_bundles_v2',
           'local',
           '0123456789abcdef',
           'b8095',
@@ -7725,7 +7755,7 @@ void main() {
           tempRoot.path,
           '.dart_tool',
           'llamadart',
-          'native_bundles',
+          'native_bundles_v2',
           'b8095',
           'windows-x64',
           'extracted',
@@ -7854,6 +7884,55 @@ void main() {
         tempRoot.deleteSync(recursive: true);
       }
     });
+
+    test('dependency fallback copies only from the v2 cache', () {
+      final target = Directory(path.join(tempRoot.path, 'target'))
+        ..createSync(recursive: true);
+      final service = LlamaCppService();
+      IOOverrides.runZoned(() {
+        final bundles = _invokePrivateForTesting<List<String>>(
+          service,
+          '_linuxBundleNamesForCurrentAbi',
+          const <Object?>[],
+        );
+        for (final root in ['native_bundles', 'native_bundles_v2']) {
+          for (final bundle in bundles) {
+            final source = Directory(
+              path.join(
+                tempRoot.path,
+                '.dart_tool',
+                'llamadart',
+                root,
+                'v0.8.0-2',
+                bundle,
+                'extracted',
+              ),
+            )..createSync(recursive: true);
+            File(path.join(source.path, 'libggml.so')).writeAsStringSync(root);
+          }
+        }
+        final sources = _invokePrivateForTesting<List<String>>(
+          service,
+          '_linuxDependencySourceDirectories',
+          <Object?>[target.path],
+        );
+        expect(sources.first, target.path);
+        expect(sources.skip(1), hasLength(bundles.length));
+        expect(sources.skip(1), everyElement(contains('native_bundles_v2')));
+        expect(
+          LlamaCppService.copyMissingLinuxLibrary(
+            targetDirectory: target.path,
+            sourceDirectories: sources,
+            fileName: 'libggml.so',
+          ),
+          isTrue,
+        );
+        expect(
+          File(path.join(target.path, 'libggml.so')).readAsStringSync(),
+          'native_bundles_v2',
+        );
+      }, getCurrentDirectory: () => tempRoot);
+    }, skip: !Platform.isLinux);
 
     test('copyMissingLinuxLibrary copies from the first available source', () {
       final targetDir = Directory(path.join(tempRoot.path, 'target'))
@@ -8302,7 +8381,7 @@ String? _locateGgmlRuntimeLibraryForTesting() {
         Directory.current.path,
         '.dart_tool',
         'llamadart',
-        'native_bundles',
+        'native_bundles_v2',
       ),
     ),
   ];

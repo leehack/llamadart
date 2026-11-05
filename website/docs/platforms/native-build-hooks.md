@@ -271,7 +271,7 @@ Selection rules:
   CUDA inside a `windows-x64` archive of about 700 MiB, which the hook
   downloads even when `cuda` is not selected.
   Archives are cached under the llamadart package's
-  `.dart_tool/llamadart/native_bundles/`. To skip the download, set
+  `.dart_tool/llamadart/native_bundles_v2/`. To skip the download, set
   `llamadart_native_path` to a local archive or bundle.
 - On `windows-x64`, the hook rejects a bundle whose `cuda` module lacks the
   cudart and cuBLAS DLLs, or whose `blas` module lacks OpenBLAS.
@@ -322,7 +322,7 @@ hooks:
 - On Linux, a process whose working directory is the package root, as with
   `dart run` and `dart test`, copies each backend module missing from
   `.dart_tool/lib` out of the hook's download cache,
-  `.dart_tool/llamadart/native_bundles/<tag>/linux-<arch>/extracted`, when the
+  `.dart_tool/llamadart/native_bundles_v2/<tag>/linux-<arch>/extracted`, when the
   backend starts. The cache holds every module in the release, `cuda` and
   `hip` included on x64, so there CUDA loads without the user-define when its
   [system libraries](./linux-prerequisites) are installed.
@@ -394,7 +394,7 @@ hooks:
   hook contract other than 1 or 2. A release without `assets.json` counts as
   contract 1.
 - The hook keeps the release's `SHA256SUMS` beside the cached archive under
-  the llamadart package's `.dart_tool/llamadart/native_bundles/`. A cached archive that it lists is
+  the llamadart package's `.dart_tool/llamadart/native_bundles_v2/`. A cached archive that it lists is
   used without network access; any download is checked against a freshly
   fetched `SHA256SUMS`. To build an override offline, pre-seed both files in
   the directory the error names (`SHA256SUMS` as UTF-8 or ASCII text), or use
@@ -425,13 +425,25 @@ hooks:
 
 Overrides do not regenerate the Dart FFI bindings, so the binary must stay ABI-
 and symbol-compatible with the pinned release; the hook logs a warning when an
-override is active. This core requires the v0.7.0 ABI, including its changed
-context-parameter and performance-data layouts; it calls nothing that
-`v0.7.0-3` lacks. Native v0.6.0 and older
-bundles are incompatible even when they export the same symbol names. Use
-core `0.13.x` for its v0.6.0 runtime and companions. Do not point a core before
+override is active. This core requires the pinned `v0.8.0-2` runtime's
+speculative rollback and model-creation ownership fixes, as well as compatible
+struct layouts and symbols. Older binaries are not qualified by symbol presence
+alone. Use core `0.13.x` for its v0.6.0 runtime and companions. Do not point a core before
 `0.17.1` at native `v0.8.0` or later: its bindings give
 `mtmd_helper_init_opt` 24 bytes, and `v0.8.0` writes past them.
+
+The hook and runtime fallbacks use `native_bundles_v2` for llama.cpp only,
+including explicit compatible tag/repository overrides and extracted local
+archives. They do not scan, copy or migrate the old `native_bundles` cache;
+a reused checkout downloads its requested release into the new namespace.
+LiteRT-LM, stable-diffusion and model caches are unchanged. A caller-supplied
+extracted bundle directory still uses that directory directly.
+
+Keep older release assets and pins intact. When an older consumer needs
+`llama_dart_speculative_need_embd`, a runtime that removes that export is not a
+compatible manual override. Remove the override or upgrade the consumer and
+runtime together. Older Windows code-asset consumers can fail at a late symbol
+lookup; they do not universally report a typed unsupported error.
 
 State files are tied to the llama.cpp release of the runtime that wrote them
 ([Save and restore prompt state](../guides/model-lifecycle#save-and-restore-prompt-state)).

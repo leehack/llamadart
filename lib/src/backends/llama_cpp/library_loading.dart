@@ -897,7 +897,7 @@ extension _LlamaCppLibraryLoading on LlamaCppService {
         Directory.current.path,
         '.dart_tool',
         'llamadart',
-        'native_bundles',
+        'native_bundles_v2',
       ),
     );
     if (!cacheRoot.existsSync()) {

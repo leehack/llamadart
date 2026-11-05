@@ -1207,7 +1207,7 @@ class LlamaCppService {
   /// 2. Directory of resolved executable (if it looks like a native bundle)
   /// 3. Standard CLI `bin/../lib` directory (if it looks like a native bundle)
   /// 4. Current working directory (if it looks like a native bundle)
-  /// 5. Hook cache under `.dart_tool/llamadart/native_bundles`, including
+  /// 5. Hook cache under `.dart_tool/llamadart/native_bundles_v2`, including
   ///    default, custom GitHub, and local archive cache namespaces.
   /// 6. Directory of resolved executable (best-effort fallback)
   static String? resolveWindowsBackendModuleDirectory({
@@ -1333,7 +1333,7 @@ class LlamaCppService {
     var cursor = Directory(currentDirectoryPath).absolute;
     while (true) {
       final cacheRoot = Directory(
-        path.join(cursor.path, '.dart_tool', 'llamadart', 'native_bundles'),
+        path.join(cursor.path, '.dart_tool', 'llamadart', 'native_bundles_v2'),
       );
       if (cacheRoot.existsSync()) {
         final found = _selectWindowsBundleDirectoryFromCache(

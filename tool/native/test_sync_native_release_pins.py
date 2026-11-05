@@ -4111,11 +4111,19 @@ class LlamaCppAppleCompanionCompatibilitySyncTest(unittest.TestCase):
         *,
         contract: int = 1,
         sidecar_artifacts: tuple[dict, ...] = (),
+        apple_checksum: str | None = None,
     ) -> None:
         def asset(name: str) -> dict:
+            digest = hashlib.sha256(name.encode()).hexdigest()
+            if name == f"llamadart-native-apple-xcframework-{tag}.zip":
+                source = self.pins.read_text(encoding="utf-8")
+                contract = pins._COMPATIBLE_APPLE_COMPANION_CHECKSUMS_PATTERN.search(source)
+                assert contract is not None
+                recorded = dict(re.findall(r"'([^']+)':\s*'([a-f0-9]{64})'", contract.group(1)))
+                digest = apple_checksum or recorded.get(tag, digest)
             return {
                 "name": name,
-                "digest": "sha256:" + hashlib.sha256(name.encode()).hexdigest(),
+                "digest": "sha256:" + digest,
                 "browser_download_url": (
                     "https://github.com/leehack/llamadart-native/releases/"
                     f"download/{tag}/{name}"
@@ -4169,11 +4177,13 @@ class LlamaCppAppleCompanionCompatibilitySyncTest(unittest.TestCase):
         *extra: str,
         contract: int = 1,
         sidecar_artifacts: tuple[dict, ...] = (),
+        apple_checksum: str | None = None,
     ) -> subprocess.CompletedProcess[str]:
         self.write_release(
             tag,
             contract=contract,
             sidecar_artifacts=sidecar_artifacts,
+            apple_checksum=apple_checksum,
         )
         return subprocess.run(
             [
@@ -4232,11 +4242,11 @@ class LlamaCppAppleCompanionCompatibilitySyncTest(unittest.TestCase):
                     "<String, String>{};",
                     text,
                 )
-                self.assertIn(
-                    "const llamaCppCompatibleAppleCompanionChecksums = "
-                    "<String, String>{};",
-                    text,
-                )
+                checksum = hashlib.sha256(
+                    f"llamadart-native-apple-xcframework-{target}.zip".encode()
+                ).hexdigest()
+                self.assertIn(f"'{target}':\n      '{checksum}',", text)
+                self.assertNotIn(f"'{current}':", text)
                 self.assertIn(
                     "const llamaCppAppleCompanionVersion = "
                     f"'{pins.bump_patch_version(version)}';",
@@ -4403,6 +4413,28 @@ class LlamaCppAppleCompanionCompatibilitySyncTest(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn(compatible.group(0), self.pins.read_text(encoding="utf-8"))
         self.assertNotIn("cleared compatible Apple llama.cpp companion tags", result.stdout)
+
+    def test_same_tag_checksum_change_fails_before_writing(self) -> None:
+        original = self.pins.read_text(encoding="utf-8")
+        swift = self.repo_root / self.COMPANION / "darwin/llamadart_llama_cpp_flutter/Package.swift"
+        original_swift = swift.read_text(encoding="utf-8")
+        result = self.run_sync(pins.read_hook_native_tag(original), apple_checksum="a" * 64)
+        self.assertEqual(result.returncode, 1, result.stdout)
+        self.assertIn("Same-tag Apple llama.cpp checksum changed", result.stderr)
+        self.assertEqual(self.pins.read_text(encoding="utf-8"), original)
+        self.assertEqual(swift.read_text(encoding="utf-8"), original_swift)
+
+    def test_checksum_refresh_rejects_malformed_contracts(self) -> None:
+        original = self.pins.read_text(encoding="utf-8")
+        pattern = pins._COMPATIBLE_APPLE_COMPANION_CHECKSUMS_PATTERN
+        for body in ("// comment\n", "'x': compute(),", "'x': '" + "a" * 64 + "',\n'x': '" + "b" * 64 + "',"):
+            with self.subTest(body=body):
+                malformed = pattern.sub(
+                    "const llamaCppCompatibleAppleCompanionChecksums = <String, String>{" + body + "};",
+                    original,
+                )
+                with self.assertRaisesRegex(ReleaseError, "Malformed Apple llama.cpp checksum contract"):
+                    pins.refresh_llama_cpp_apple_checksum(malformed, "v1.0.0", "a" * 64)
 
     def test_clear_reports_every_listed_tag_and_requires_the_constant(self) -> None:
         text = self.pins.read_text(encoding="utf-8")

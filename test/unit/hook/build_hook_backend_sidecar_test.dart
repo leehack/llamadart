@@ -54,7 +54,7 @@ final _sidecarUrl = _url(_sidecarArchive);
 
 void main() {
   // Each test builds in its own package root, so the hook's
-  // `.dart_tool/llamadart/native_bundles` cache never touches this checkout's.
+  // `.dart_tool/llamadart/native_bundles_v2` cache never touches this checkout's.
   late Directory packageRoot;
   late Directory releaseCacheDir;
 
@@ -1031,7 +1031,7 @@ String _bundlesDir(Directory packageRoot, String tag) => path.join(
   packageRoot.path,
   '.dart_tool',
   'llamadart',
-  'native_bundles',
+  'native_bundles_v2',
   tag,
 );
 
