@@ -94,6 +94,29 @@ void main() {
   });
 
   test(
+    'reports the scheduler state of a timed-out child',
+    testOn: 'linux',
+    () async {
+      await expectLater(
+        runBoundedProcess('sleep', const [
+          '30',
+        ], timeout: const Duration(seconds: 1)),
+        throwsA(
+          isA<TestFailure>().having(
+            (failure) => failure.message,
+            'message',
+            allOf(
+              contains('did not exit within 1 s.\nChild '),
+              contains(' at timeout: State:\tS (sleeping); wchan: '),
+              matches(RegExp(r'; read_bytes: \d+\n')),
+            ),
+          ),
+        ),
+      );
+    },
+  );
+
+  test(
     'interrupted tests reap children before deleting their directory',
     () async {
       final directory = Directory.systemTemp.createTempSync(

@@ -523,6 +523,17 @@ jobs:
         shell: bash
         run: bash tool/ci/litert_lm_temp_canary.sh seed
 
+      # The image's first `node` start pages the binary in from a cold disk
+      # (once past two minutes); tooling fixtures bound each Node harness run
+      # at 60 s, which must not absorb that load.
+      - name: Load Node for tooling fixtures
+        if: matrix.shard == 'tooling'
+        timeout-minutes: 5
+        shell: bash
+        run: |
+          command -v node
+          time node -e 'console.log(process.version)'
+
       - name: Run VM tests (with coverage)
         env:
           LLAMADART_TEST_MODELS_DIR: ${{ github.workspace }}/.dart_tool/test_models
