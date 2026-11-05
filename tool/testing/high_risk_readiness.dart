@@ -610,6 +610,8 @@ class HighRiskReadinessEvaluator {
         'tool/native/sync_native_release_pins.py',
     'tool/native/test_sync_stable_diffusion_bindings.py':
         'tool/native/sync_stable_diffusion_bindings.py',
+    'test/ci/test_nonpublishing_auth_probe.py':
+        'tool/release/nonpublishing_auth_probe.py',
   };
 
   Future<HighRiskReadinessResult> evaluate({
