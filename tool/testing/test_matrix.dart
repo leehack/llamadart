@@ -606,6 +606,21 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
         'speech work. This CPU-only engine row does not establish microphone UI.',
   ),
   TestMatrixRow(
+    id: 'litert-lm-asr-preservation',
+    tier: 'targeted',
+    mode: 'local-only',
+    covers:
+        'hash-bound public Whisper Tiny CPU transcript/partials, empty silence, '
+        'stream/task cancellation, same-engine reuse and fresh reload',
+    command:
+        'dart run tool/testing/run_local_e2e.dart --scenario '
+        'litert-lm-asr-preservation --model-path <whisper-tiny.tflite> '
+        '--tokenizer-path <tokenizer.json> --audio-path <jfk.wav> --backend cpu',
+    useWhen:
+        'Dedicated LiteRT-LM ASR preservation after runtime or speech changes. '
+        'CPU subset only; no GPU, microphone, latency or device qualification.',
+  ),
+  TestMatrixRow(
     id: 'text-to-speech-smoke',
     tier: 'targeted',
     mode: 'local-only',

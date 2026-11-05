@@ -2126,6 +2126,69 @@ Future<void> main(List<String> args) async {
       expect(result.stderr, contains('--tokenizer-path'));
     });
 
+    test(
+      'dry-runs hash-bound ASR preservation without an expectation',
+      () async {
+        final result = await runLocalE2e(
+          const [
+            '--scenario',
+            'litert-lm-asr-preservation',
+            '--model-path',
+            'models/whisper.tflite',
+            '--tokenizer-path',
+            'models/tokenizer.json',
+            '--audio-path',
+            'test/fixtures/jfk.wav',
+            '--dry-run',
+          ],
+          projectRoot: '/repo',
+          displayShell: LocalE2eDisplayShell.posix,
+        );
+        expect(result.exitCode, 0);
+        expect(
+          result.stdout,
+          contains('litert_lm_asr_preservation_e2e_test.dart'),
+        );
+        expect(result.stdout, contains('LITERT_LM_ASR_MODEL'));
+        expect(result.stdout, contains('models/whisper.tflite'));
+        expect(result.stdout, contains('LITERT_LM_ASR_TOKENIZER'));
+        expect(result.stdout, contains('LITERT_LM_ASR_AUDIO'));
+        expect(result.stdout, contains('--run-skipped'));
+      },
+    );
+
+    test('requires all hash-bound ASR preservation fixture paths', () async {
+      final result = await runLocalE2e(const [
+        '--scenario',
+        'litert-lm-asr-preservation',
+        '--model-path',
+        'models/whisper.tflite',
+        '--audio-path',
+        'test/fixtures/jfk.wav',
+        '--dry-run',
+      ], projectRoot: '/repo');
+      expect(result.exitCode, 64);
+      expect(result.stderr, contains('--tokenizer-path'));
+    });
+
+    test('rejects non-CPU ASR preservation requests', () async {
+      final result = await runLocalE2e(const [
+        '--scenario',
+        'litert-lm-asr-preservation',
+        '--model-path',
+        'models/whisper.tflite',
+        '--tokenizer-path',
+        'models/tokenizer.json',
+        '--audio-path',
+        'test/fixtures/jfk.wav',
+        '--backend',
+        'gpu',
+        '--dry-run',
+      ], projectRoot: '/repo');
+      expect(result.exitCode, 64);
+      expect(result.stderr, contains('requires --backend cpu'));
+    });
+
     test('dry-runs typed text-to-speech with model and projector', () async {
       final result = await runLocalE2e(
         const [

@@ -830,6 +830,36 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
       ],
     ),
     LocalE2eScenario(
+      name: 'litert-lm-asr-preservation',
+      group: LocalE2eScenarioGroup.dartLocalOnly,
+      description:
+          'Preserve hash-bound Whisper Tiny CPU transcription, silence, cancellation and reuse through the public engine.',
+      requiresDevice: false,
+      stepsBuilder: (context) => [
+        LocalE2eCommandStep(
+          workingDirectory: context.projectRoot,
+          executable: 'dart',
+          arguments: const [
+            'test',
+            '-p',
+            'vm',
+            '-j',
+            '1',
+            '--run-skipped',
+            '-t',
+            'local-only',
+            'test/e2e/backends/litert_lm_asr_preservation_e2e_test.dart',
+          ],
+          environment: {
+            'LITERT_LM_ASR_MODEL': context.modelPath!,
+            'LITERT_LM_ASR_TOKENIZER': context.tokenizerPath!,
+            'LITERT_LM_ASR_AUDIO': context.audioPath!,
+          },
+          description: 'Public CPU ASR preservation with fixed fixture hashes',
+        ),
+      ],
+    ),
+    LocalE2eScenario(
       name: 'litert-lm-v1-asr-smoke',
       group: LocalE2eScenarioGroup.dartLocalOnly,
       description:
@@ -2758,6 +2788,7 @@ Future<LocalE2eResult> runLocalE2e(
     'gguf-audio-chat-smoke',
     'speech-to-text-smoke',
     'litert-lm-asr-smoke',
+    'litert-lm-asr-preservation',
     'litert-lm-v1-asr-smoke',
     'litert-lm-chat-features-smoke',
     'chat-app-web-speech-to-text-smoke',
@@ -2791,6 +2822,25 @@ Future<LocalE2eResult> runLocalE2e(
       stderr:
           '--audio-path and a nonempty --expect are required for '
           'chat-app-web-speech-to-text-smoke.\n',
+    );
+  }
+  if (scenario.name == 'litert-lm-asr-preservation' &&
+      (parsed.modelPath == null ||
+          parsed.tokenizerPath == null ||
+          parsed.audioPath == null)) {
+    return const LocalE2eResult(
+      64,
+      stderr:
+          '--model-path, --tokenizer-path and --audio-path are required for '
+          'litert-lm-asr-preservation.\n',
+    );
+  }
+  if (scenario.name == 'litert-lm-asr-preservation' &&
+      parsed.backendProvided &&
+      parsed.backend != 'cpu') {
+    return const LocalE2eResult(
+      64,
+      stderr: 'litert-lm-asr-preservation requires --backend cpu.\n',
     );
   }
   if ((scenario.name == 'litert-lm-asr-smoke' ||

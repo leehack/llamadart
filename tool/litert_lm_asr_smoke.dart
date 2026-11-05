@@ -38,7 +38,7 @@ Future<void> runLiteRtLmAsrSmoke(
     throw ArgumentError.value(args[4], 'expected', 'must not be empty');
   }
 
-  final fixture = await _readPcm16MonoWav(audioPath);
+  final fixture = await readLiteRtLmAsrSmokeFixture(audioPath);
   final selectedLibraryPath =
       libraryPath ??
       Platform.environment['LLAMADART_LITERT_LM_LIBRARY_PATH']?.trim();
@@ -156,7 +156,10 @@ LiteRtLmAsrModelPreset _parsePreset(String value) {
 String _normalize(String value) =>
     value.trim().toLowerCase().replaceAll(RegExp(r'\s+'), ' ');
 
-Future<_WavFixture> _readPcm16MonoWav(String filePath) async {
+/// Reads a nonempty mono 16 kHz PCM16 WAV and identifies its exact file bytes.
+Future<({Float32List samples, String fixtureId})> readLiteRtLmAsrSmokeFixture(
+  String filePath,
+) async {
   final bytes = await File(filePath).readAsBytes();
   if (bytes.length < 44 ||
       ascii.decode(bytes.sublist(0, 4), allowInvalid: true) != 'RIFF' ||
@@ -207,15 +210,5 @@ Future<_WavFixture> _readPcm16MonoWav(String filePath) async {
   for (var index = 0; index < samples.length; index++) {
     samples[index] = pcmData.getInt16(index * 2, Endian.little) / 32768.0;
   }
-  return _WavFixture(
-    samples: samples,
-    fixtureId: 'sha256:${sha256.convert(bytes)}',
-  );
-}
-
-class _WavFixture {
-  const _WavFixture({required this.samples, required this.fixtureId});
-
-  final Float32List samples;
-  final String fixtureId;
+  return (samples: samples, fixtureId: 'sha256:${sha256.convert(bytes)}');
 }
