@@ -64,7 +64,7 @@ The input binds:
 - `classification` and the exact classified `surfaces`;
 - the exact required matrix row IDs and matching row evidence;
 - an independent audit record for high-risk changes;
-- relevant production tests under `test/**/_test.dart` (or a native-sync
+- relevant production tests under `test/**/_test.dart` (or an explicitly paired
   Python suite, below), with causal evidence;
 - structured-output coverage and affected-family evidence when applicable.
 
@@ -87,7 +87,7 @@ Both commits must exist and the base must be an ancestor of the head. Rename
 source and destination paths are both classified. Every cited test must:
 
 - be a normalized, wildcard-free repository-relative `test/**/_test.dart` path
-  or one of the native-sync Python suites listed below;
+  or one of the explicitly paired Python suites listed below;
 - not be deleted or the old side of a rename;
 - resolve literally to one regular blob in the exact candidate tree via
   `git ls-tree`.
@@ -120,7 +120,7 @@ snippet must occur in its exact candidate blob, like any source reference.
 This does not admit other harness assets or arbitrary package paths, or relax
 compiled-grammar, independent-audit or external-authentication requirements.
 
-Changes to the native-sync scripts may cite the Python suites CI runs
+Changes to the following scripts may cite the Python suites CI runs
 directly, each only with its paired script in `production_refs` and a
 `command` that names the suite (path or dotted unittest module):
 
@@ -130,6 +130,7 @@ directly, each only with its paired script in `production_refs` and a
 | `tool/native/test_sync_native_headers_and_bindings.py` | `tool/native/sync_native_headers_and_bindings.sh` |
 | `tool/native/test_sync_native_release_pins.py` | `tool/native/sync_native_release_pins.py` |
 | `tool/native/test_sync_stable_diffusion_bindings.py` | `tool/native/sync_stable_diffusion_bindings.py` |
+| `test/ci/test_nonpublishing_auth_probe.py` | `tool/release/nonpublishing_auth_probe.py` |
 
 Every other path rule, case/snippet and causal-control obligation applies. Other
 Python files are rejected regardless of name or extension. Everything under
