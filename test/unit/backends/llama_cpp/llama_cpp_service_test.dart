@@ -7886,14 +7886,20 @@ void main() {
     });
 
     test('dependency fallback copies only from the v2 cache', () {
-      final target = Directory(path.join(tempRoot.path, 'target'))
+      final target = Directory(path.join(tempRoot.path, '.dart_tool', 'lib'))
         ..createSync(recursive: true);
+      File(path.join(target.path, 'libllamadart.so')).writeAsStringSync('');
       final service = LlamaCppService();
       IOOverrides.runZoned(() {
-        final bundles = _invokePrivateForTesting<List<String>>(
-          service,
-          '_linuxBundleNamesForCurrentAbi',
-          const <Object?>[],
+        final bundles = service.debugLinuxBundleNamesForTesting();
+        expect(bundles, isNotEmpty);
+        expect(
+          LlamaCppService.resolveLinuxPrimaryLibraryDirectory(
+            resolvedExecutablePath: Platform.resolvedExecutable,
+            currentDirectoryPath: tempRoot.path,
+            environment: Platform.environment,
+          ),
+          target.path,
         );
         for (final root in ['native_bundles', 'native_bundles_v2']) {
           for (final bundle in bundles) {
@@ -7909,27 +7915,29 @@ void main() {
               ),
             )..createSync(recursive: true);
             File(path.join(source.path, 'libggml.so')).writeAsStringSync(root);
+            if (root == 'native_bundles') {
+              File(
+                path.join(source.path, 'libggml-hip.so'),
+              ).writeAsStringSync('legacy-only');
+            }
           }
         }
-        final sources = _invokePrivateForTesting<List<String>>(
+        _invokePrivateForTesting<Object?>(
           service,
-          '_linuxDependencySourceDirectories',
-          <Object?>[target.path],
-        );
-        expect(sources.first, target.path);
-        expect(sources.skip(1), hasLength(bundles.length));
-        expect(sources.skip(1), everyElement(contains('native_bundles_v2')));
-        expect(
-          LlamaCppService.copyMissingLinuxLibrary(
-            targetDirectory: target.path,
-            sourceDirectories: sources,
-            fileName: 'libggml.so',
-          ),
-          isTrue,
+          '_prepareLinuxRuntimeDependenciesBeforeBinding',
+          const <Object?>[],
         );
         expect(
           File(path.join(target.path, 'libggml.so')).readAsStringSync(),
           'native_bundles_v2',
+        );
+        expect(
+          File(path.join(target.path, 'libggml.so.0')).readAsStringSync(),
+          'native_bundles_v2',
+        );
+        expect(
+          File(path.join(target.path, 'libggml-hip.so')).existsSync(),
+          isFalse,
         );
       }, getCurrentDirectory: () => tempRoot);
     }, skip: !Platform.isLinux);
