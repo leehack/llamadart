@@ -12,7 +12,7 @@
 - Reinitialize native LiteRT-LM image-chat engines after cancellation before reusing them ([#1749](https://github.com/leehack/llamadart/issues/1749)).
 - Keep future LiteRT-LM SwiftPM pin syncs aligned with macOS app-bundle runtime discovery.
 - Request optional Android vendor OpenCL access in the chat example and document LiteRT-LM GPU setup and CPU fallback.
-- Use WebGPU bridge assets `v0.1.82` with bounded preallocation for large wasm32 model writes.
+- Aligned the default WebGPU bridge assets to `v0.1.82` with bounded preallocation for large wasm32 model writes.
 - Pair all three Apple runtime companions at `0.18.0` with matching native binaries.
 
 Runtime baseline: native llama.cpp `v0.8.0-2` and Web use upstream `v0.8.0@8642541b255bfb5dc39cd351a178be09013a55d6`; native LiteRT-LM uses `v0.19.0` and stable-diffusion uses `v0.3.0-3`. Web LiteRT-LM stays `@litert-lm/core@0.18.0`. Manifest SHA-256: `fda19e047aba5a511020854437cc89e2f53e2f67f5f6cf5fec336faef3a6c362`.
