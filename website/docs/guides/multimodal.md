@@ -143,9 +143,9 @@ on the loaded bridge's runtime capability report.
 
 Native `.litertlm` bundles process media themselves, without a projector.
 `capabilities.supportsVision` and `supportsAudio` report the modalities the
-bundle declares. That declaration can under-report for bundles whose section
-types are not lowercase ([litert-lm-native#60](https://github.com/leehack/litert-lm-native/issues/60)), so a `false` does not block the
-request. `LlamaModel.projector` and `loadMultimodalProjectorSource` apply only
+bundle declares. A `false` does not block the request: a custom runtime
+older than LiteRT-LM v0.18.0 can under-report bundles whose section types are not
+lowercase ([litert-lm-native#60](https://github.com/leehack/litert-lm-native/issues/60)). `LlamaModel.projector` and `loadMultimodalProjectorSource` apply only
 to GGUF models; the
 `engine.supportsVision` and `engine.supportsAudio` getters report what
 `capabilities` reports, for both formats.

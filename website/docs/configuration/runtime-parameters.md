@@ -456,7 +456,8 @@ at generation start. Advertising a strategy does not waive these requirements.
 
 Every field is `false`, and the strategy set empty, before a load. Native
 LiteRT-LM reads speculative, image and audio support from the bundle's
-declaration, which can under-report ([litert-lm-native#60](https://github.com/leehack/litert-lm-native/issues/60)); such a `false` does not
+declaration, which only a custom runtime older than LiteRT-LM v0.18.0 can under-report
+([litert-lm-native#60](https://github.com/leehack/litert-lm-native/issues/60)); a `false` does not
 reject the request, and a runtime failure it explains throws
 `LlamaUnsupportedException`. Use it to
 send a control only where it applies:
