@@ -1059,6 +1059,109 @@ Future<void> main(List<String> args) async {
       }
     });
 
+    test('wires CPU runtime utility qualification without downloads', () async {
+      final missing = await runLocalE2e(
+        const ['--scenario', 'litert-lm-utility-preservation', '--dry-run'],
+        projectRoot: '/repo',
+        displayShell: LocalE2eDisplayShell.posix,
+      );
+      expect(missing.exitCode, 64);
+      expect(missing.stderr, contains('--model-path is required'));
+      final result = await runLocalE2e(
+        const [
+          '--scenario',
+          'litert-lm-utility-preservation',
+          '--model-path',
+          '/model.litertlm',
+          '--dry-run',
+        ],
+        projectRoot: '/repo',
+        displayShell: LocalE2eDisplayShell.posix,
+      );
+      expect(result.exitCode, 0);
+      expect(
+        result.stdout,
+        contains('LITERT_LM_UTILITY_MODEL=/model.litertlm'),
+      );
+      expect(
+        result.stdout,
+        contains(
+          'dart test --run-skipped -p vm -j 1 -t local-only '
+          'test/e2e/backends/litert_lm_utility_preservation_e2e_test.dart',
+        ),
+      );
+      expect(result.stdout, isNot(contains('curl')));
+      expect(result.stdout, isNot(contains('wget')));
+      final gpu = await runLocalE2e(
+        const [
+          '--scenario',
+          'litert-lm-utility-preservation',
+          '--model-path',
+          '/model.litertlm',
+          '--backend',
+          'gpu',
+          '--dry-run',
+        ],
+        projectRoot: '/repo',
+        displayShell: LocalE2eDisplayShell.posix,
+      );
+      expect(gpu.exitCode, 64);
+      expect(gpu.stderr, contains('requires --backend cpu'));
+    });
+
+    test(
+      'wires hash-pinned CPU image preservation without downloads',
+      () async {
+        final missing = await runLocalE2e(
+          const ['--scenario', 'litert-lm-media-preservation', '--dry-run'],
+          projectRoot: '/repo',
+          displayShell: LocalE2eDisplayShell.posix,
+        );
+        expect(missing.exitCode, 64);
+        expect(missing.stderr, contains('--model-path is required'));
+        final result = await runLocalE2e(
+          const [
+            '--scenario',
+            'litert-lm-media-preservation',
+            '--model-path',
+            '/model.litertlm',
+            '--dry-run',
+          ],
+          projectRoot: '/repo',
+          displayShell: LocalE2eDisplayShell.posix,
+        );
+        expect(result.exitCode, 0);
+        expect(
+          result.stdout,
+          contains('LITERT_LM_VISION_MODEL=/model.litertlm'),
+        );
+        expect(
+          result.stdout,
+          contains(
+            'dart test --run-skipped -p vm -j 1 -t local-only '
+            'test/e2e/backends/litert_lm_media_preservation_e2e_test.dart',
+          ),
+        );
+        expect(result.stdout, isNot(contains('curl')));
+        expect(result.stdout, isNot(contains('wget')));
+        final gpu = await runLocalE2e(
+          const [
+            '--scenario',
+            'litert-lm-media-preservation',
+            '--model-path',
+            '/model.litertlm',
+            '--backend',
+            'gpu',
+            '--dry-run',
+          ],
+          projectRoot: '/repo',
+          displayShell: LocalE2eDisplayShell.posix,
+        );
+        expect(gpu.exitCode, 64);
+        expect(gpu.stderr, contains('requires --backend cpu'));
+      },
+    );
+
     test(
       'requires a model and wires the bounded LiteRT lifecycle scenario',
       () async {

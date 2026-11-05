@@ -1682,6 +1682,58 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
       ],
     ),
     LocalE2eScenario(
+      name: 'litert-lm-utility-preservation',
+      group: LocalE2eScenarioGroup.dartLocalOnly,
+      description:
+          'Qualify hash-pinned Qwen3 CPU public tokenizer, native benchmark metrics and client reuse; no downloads.',
+      requiresDevice: false,
+      stepsBuilder: (context) => [
+        LocalE2eCommandStep(
+          workingDirectory: context.projectRoot,
+          executable: 'dart',
+          arguments: const [
+            'test',
+            '--run-skipped',
+            '-p',
+            'vm',
+            '-j',
+            '1',
+            '-t',
+            'local-only',
+            'test/e2e/backends/litert_lm_utility_preservation_e2e_test.dart',
+          ],
+          environment: {'LITERT_LM_UTILITY_MODEL': context.modelPath!},
+          description: 'Qwen3 CPU tokenizer and benchmark utility preservation',
+        ),
+      ],
+    ),
+    LocalE2eScenario(
+      name: 'litert-lm-media-preservation',
+      group: LocalE2eScenarioGroup.dartLocalOnly,
+      description:
+          'Qualify hash-pinned Qwen3.5 CPU image path/bytes, history, cancellation and reload; no downloads.',
+      requiresDevice: false,
+      stepsBuilder: (context) => [
+        LocalE2eCommandStep(
+          workingDirectory: context.projectRoot,
+          executable: 'dart',
+          arguments: const [
+            'test',
+            '--run-skipped',
+            '-p',
+            'vm',
+            '-j',
+            '1',
+            '-t',
+            'local-only',
+            'test/e2e/backends/litert_lm_media_preservation_e2e_test.dart',
+          ],
+          environment: {'LITERT_LM_VISION_MODEL': context.modelPath!},
+          description: 'Qwen3.5 CPU generative image preservation',
+        ),
+      ],
+    ),
+    LocalE2eScenario(
       name: 'litert-lm-lifecycle',
       group: LocalE2eScenarioGroup.dartLocalOnly,
       description:
@@ -2685,7 +2737,9 @@ Future<LocalE2eResult> runLocalE2e(
     );
   }
   if ((scenario.name == 'qwen3-litert-cpu-unicode' ||
-          scenario.name == 'litert-lm-json-schema') &&
+          scenario.name == 'litert-lm-json-schema' ||
+          scenario.name == 'litert-lm-media-preservation' ||
+          scenario.name == 'litert-lm-utility-preservation') &&
       parsed.backendProvided &&
       parsed.backend != 'cpu') {
     return LocalE2eResult(
@@ -2893,6 +2947,8 @@ Future<LocalE2eResult> runLocalE2e(
   if ((scenario.name == 'llama-cpp-speculative-benchmark' ||
           scenario.name == 'llama-cpp-chat-template-smoke' ||
           scenario.name == 'litert-lm-lifecycle' ||
+          scenario.name == 'litert-lm-media-preservation' ||
+          scenario.name == 'litert-lm-utility-preservation' ||
           scenario.name == 'litert-lm-v1-thinking-budget' ||
           scenario.name == 'litert-lm-v1-service' ||
           scenario.name == 'litert-lm-v1-json-schema' ||
