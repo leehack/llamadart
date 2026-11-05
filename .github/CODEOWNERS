@@ -11,6 +11,9 @@ scripts/validate_chat_app_web_build.sh @leehack
 scripts/verify_chat_app_web_deployment.sh @leehack
 
 # Version, release, and native-runtime publication surfaces.
+/.github/workflows/nonpublishing_release_auth_probe.yml @leehack
+/tool/release/nonpublishing_auth_probe.py @leehack
+/test/ci/test_nonpublishing_auth_probe.py @leehack
 pubspec.yaml @leehack
 CHANGELOG.md @leehack
 /.gitattributes @leehack

@@ -216,6 +216,48 @@ before relying on the post-merge workflow as the publication approval boundary.
 When adding new workflow, release, version, or native-runtime publication
 surfaces, update `.github/CODEOWNERS` in the same PR.
 
+### Nonpublishing token diagnostic
+
+After an independent review and merge, `nonpublishing_release_auth_probe.yml`
+can be manually run on owner `main` with its reviewed current full SHA as
+`expected_sha`. Before that run, review current effective tag rules, inherited
+policies, actor restrictions and deletion eligibility for `ci-auth-probe-*`.
+Also inspect every workflow's direct and transitive triggers at that exact
+source SHA: this diagnostic prefix must not enter publishing, docs or deployment
+routes. Stop if policy or trigger safety is uncertain; do not alter governance
+to make the probe pass.
+
+The diagnostic first requires a read-only-token write denial and exact ref
+absence. It then uses the current `RELEASE_AUTOMATION_TOKEN` to create one
+unpredictable, invocation-owned `ci-auth-probe-<runId>-<32hex>` tag at that SHA,
+requires the actual read-only push receiver and its bound receipt, and deletes
+only the same verified ref. Intent and outcome artifacts include run attempts
+and never overwrite existing artifacts. A failure is not automatically retried.
+
+API traffic stays on `api.github.com` and rejects redirects. The sole exception
+is the exact receiver-artifact download: its validated API redirect is followed
+once with a fresh request carrying no credentials, cookies or referrer, only to
+an HTTPS `*.blob.core.windows.net` artifact host. The signed URL stays in memory.
+Compressed size and SHA-256 must match immutable artifact metadata, and the
+bounded ZIP must contain only the expected JSON receipt. Other hosts and further
+redirects fail closed.
+
+An ambiguous create/delete, source drift, moved ref or receiver failure retains
+its failure. Cancellation or runner loss can leave a diagnostic tag: use the
+retained exact intent for independent inspection and an explicitly assessed
+cleanup, never a prefix sweep. The ref API's DELETE has no expected-SHA atomic
+compare-and-swap; the immediately preceding exact GET guards against observed
+movement but cannot eliminate a concurrent writer race.
+
+A pass proves this diagnostic ref's creation, push delivery and deletion at that
+time. It does not prove release-prefix policy eligibility, future token validity,
+workflow-dispatch permission or pub.dev publication. It never creates a release
+tag, GitHub Release or package version, and never calls a publishing workflow.
+The code-owner protection context and the user's final explicit core/Apple
+publication approval remain separate requirements.
+
+### Propagation waits
+
 The post-merge workflow waits for pub.dev and GitHub Release propagation using
 repository-variable defaults that can be tuned without editing the workflow:
 
