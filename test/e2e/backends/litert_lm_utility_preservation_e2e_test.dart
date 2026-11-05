@@ -31,6 +31,8 @@ void main() {
             .toString(),
         qwen3UpdatedModelSha256,
       );
+      final cache = Directory('${temp().path}/cache');
+      await cache.create(recursive: true);
       final client = LiteRtLmRuntimeClient();
       try {
         await client
@@ -39,7 +41,7 @@ void main() {
               backend: 'cpu',
               maxTokens: 1024,
               outputTokens: 32,
-              cacheDir: '${temp().path}/cache',
+              cacheDir: cache.path,
               speculativeDecoding: false,
               minLogLevel: 3,
             )
