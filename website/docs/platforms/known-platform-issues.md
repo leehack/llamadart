@@ -175,3 +175,7 @@ feature. For which runtime supports which feature, see the
   [GPU crash or device loss](../troubleshooting/common-issues#gpu-crash-or-device-loss).
 - WebGPU readiness depends on the browser, device, bridge assets and model
   size; see [WebGPU bridge](./webgpu-bridge).
+- Safari terminates a hidden or background tab that exceeds its inactive
+  memory limit. Loading Gemma 4 E2B through LiteRT-LM Web peaks near 7 GB, so
+  keep the tab visible until the model finishes loading
+  ([#1025](https://github.com/leehack/llamadart/issues/1025)).

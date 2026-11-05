@@ -59,7 +59,7 @@ The bridge's worker threads need a cross-origin isolated page:
 `web_dev_config.yaml` makes `flutter run` send
 `Cross-Origin-Opener-Policy: same-origin` and
 `Cross-Origin-Embedder-Policy: credentialless`, which isolates the page in
-Chromium-based browsers but may not in WebKit
+Chromium-based browsers but not in Safari
 ([#1025](https://github.com/leehack/llamadart/issues/1025)); the deployed Space
 uses `require-corp`, which Safari also supports. `flutter build web` copies the
 bridge assets into `build/web`; serve it with those headers, for example from
