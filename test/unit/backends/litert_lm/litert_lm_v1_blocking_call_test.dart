@@ -5,6 +5,7 @@ import 'dart:ffi';
 import 'dart:io';
 
 import 'package:ffi/ffi.dart';
+import 'package:llamadart/src/core/exceptions.dart';
 import 'package:llamadart/src/backends/litert_lm/litert_lm_v1_blocking_call.dart';
 import 'package:test/test.dart';
 
@@ -87,6 +88,47 @@ void main() {
     expect(result.error, isNull);
     return result.value!;
   }
+
+  for (final missing in ['create', 'config', 'delete', 'message', 'clear']) {
+    test(
+      'null $missing address refuses before calling native creation',
+      () async {
+        final errors = liteRtLmV1ErrorAddressesForLibrary(library);
+        final completion = await runLiteRtLmV1CreateFromConfig(
+          createAddress: missing == 'create'
+              ? 0
+              : library.lookup<Void>('litert_lm_engine_create').address,
+          configAddress: missing == 'config' ? 0 : settings.address,
+          deleteAddress: missing == 'delete'
+              ? 0
+              : library.lookup<Void>('litert_lm_engine_delete').address,
+          errors: (
+            message: missing == 'message' ? 0 : errors.message,
+            clear: missing == 'clear' ? 0 : errors.clear,
+          ),
+        );
+        expect(
+          completion.error,
+          missing == 'message' || missing == 'clear'
+              ? isA<LlamaUnsupportedException>()
+              : isA<LlamaStateException>(),
+        );
+        expect(count('async_calls'), 0);
+        expect(count('live'), 1);
+      },
+    );
+  }
+
+  test('signed error addresses reconstruct without changing their bits', () {
+    // Construct only: these opaque synthetic function pointers must not run.
+    final addresses = (message: 0xb400000000001230, clear: 0xb400000000004560);
+    expect(addresses.message, isNegative);
+    expect(
+      Pointer<Void>.fromAddress(addresses.message).address,
+      addresses.message,
+    );
+    expect(() => liteRtLmV1LastErrorFromAddresses(addresses), returnsNormally);
+  });
 
   test(
     'status/out creation transfers one owner after native completion',

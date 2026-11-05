@@ -25,6 +25,7 @@ DEFAULT_LLAMADART_NATIVE_REPO = "leehack/llamadart-native"
 DEFAULT_LITERT_LM_NATIVE_REPO = "leehack/litert-lm-native"
 DEFAULT_STABLE_DIFFUSION_NATIVE_REPO = "leehack/stable-diffusion-native"
 DEFAULT_NATIVE_RELEASE_PINS = "lib/src/hook/native_release_pins.dart"
+DEFAULT_BUILD_HOOK = "hook/build.dart"
 DEFAULT_LLAMA_CPP_PACKAGE_SWIFT = (
     "packages/llamadart_llama_cpp_flutter/darwin/"
     "llamadart_llama_cpp_flutter/Package.swift"
@@ -195,6 +196,8 @@ LITERT_PREBUILT_OVERRIDES = {
     # Stock v0.18 still loses the Vulkan device on Pixel Mali-G715.
     "v0.18.0": LITERT_ANDROID_DAWN_OVERRIDES,
     "v0.18.1": LITERT_ANDROID_DAWN_OVERRIDES,
+    # v0.19 rebuilds Dawn; the owner retains the correction pending Pixel/Mali evidence.
+    "v0.19.0": LITERT_ANDROID_DAWN_OVERRIDES,
 }
 LITERT_REQUIRED_RUNTIME_PATHS = {
     "bin/android/arm64/libLiteRtLm.so",
@@ -407,10 +410,18 @@ def litert_spm_asset_patterns(
     allowed: bool,
 ) -> tuple[str, ...]:
     patterns: list[str] = list(LITERT_SPM_ASSET_PATTERNS)
-    if _litert_compatibility_version(compatibility_tag) >= (0, 16, 0):
+    version = _litert_compatibility_version(compatibility_tag)
+    if version >= (0, 16, 0):
         patterns.extend(LITERT_V0_16_SPM_ASSET_PATTERNS)
         if allowed:
             patterns.extend(LITERT_V0_16_ALLOWED_SPM_COMPANION_ASSET_PATTERNS)
+        if version == (0, 19, 0):
+            # The reviewed v0.19 owner links both TopK samplers from source.
+            obsolete = {
+                "litert-lm-native-apple-LiteRtTopKMetalSampler-xcframework-{tag}.zip",
+                "litert-lm-native-apple-LiteRtTopKWebGpuSampler-xcframework-{tag}.zip",
+            }
+            patterns = [pattern for pattern in patterns if pattern not in obsolete]
     return tuple(patterns)
 
 
@@ -529,7 +540,10 @@ def required_litert_manifest_paths(
     version = _litert_compatibility_version(compatibility_tag)
     required = set(LITERT_REQUIRED_RUNTIME_PATHS)
     if version >= (0, 16, 0):
-        required.update(LITERT_V0_16_IOS_GPU_PATHS)
+        required.update(
+            path for path in LITERT_V0_16_IOS_GPU_PATHS
+            if version != (0, 19, 0) or "TopKMetalSampler" not in path
+        )
     if official_assets and version >= (0, 14, 0):
         required.update(
             {
@@ -622,6 +636,15 @@ def litert_schema2_apple_targets(
     # Optional release assets alone do not imply a dependency. Include the
     # provider only when an iOS runtime bundle actually requires its binary.
     bundles = litert_schema2_bundle_required_libraries(manifest)
+    if compatibility_tag == "v0.19.0" and any(
+        "TopKMetalSampler" in library or "TopKWebGpuSampler" in library
+        for bundle, libraries in bundles.items()
+        if bundle.startswith(("ios-", "macos-"))
+        for library in libraries
+    ):
+        raise ReleaseError(
+            "LiteRT-LM v0.19.0 owner inventory unexpectedly requires a prebuilt TopK sampler"
+        )
     if any(
         "GemmaModelConstraintProvider" in libraries
         for bundle, libraries in bundles.items() if bundle.startswith("ios-")
@@ -991,6 +1014,7 @@ def main() -> int:
             runtime_dart_text = replace_litert_lm_runtime_required_libraries(
                 runtime_dart_text,
                 schema2_bundle_libraries,
+                manifest=litert_lm_manifest,
             )
             runtime_dart_text = replace_litert_lm_runtime_macos_inventory(
                 runtime_dart_text,
@@ -1052,6 +1076,20 @@ def main() -> int:
                 manifest=litert_lm_manifest,
                 resolved_tag=resolved_litert_lm_tag,
                 repo=args.litert_lm_native_repo,
+            )
+            hook_path = repo_root / DEFAULT_BUILD_HOOK
+            if not hook_path.exists():
+                raise ReleaseError(f"Missing native build hook {hook_path}")
+            hook_text = hook_path.read_text(encoding="utf-8")
+            pending_writes[hook_path] = replace_litert_lm_companion_template_hash(
+                hook_text,
+                original_swift=original_swift_text,
+                prepared_swift=swift_text,
+                resolved_tag=resolved_litert_lm_tag,
+            )
+            summaries.append(
+                "LiteRT-LM SwiftPM template SHA-256 -> "
+                + litert_lm_companion_template_hash(swift_text)
             )
             pending_writes[litert_lm_package_swift_path] = swift_text
             package_root = companion_package_root(litert_lm_package_swift_path)
@@ -3757,7 +3795,7 @@ def _replace_litert_lm_runtime_library_function(
         function_name,
         entries,
     )
-    updated, count = pattern.subn(replacement, runtime_text, count=1)
+    updated, count = pattern.subn(replacement, runtime_text)
     if count != 1:
         raise ReleaseError(
             f"Could not replace LiteRT-LM runtime library function {function_name}"
@@ -3765,11 +3803,34 @@ def _replace_litert_lm_runtime_library_function(
     return updated
 
 
+def _litert_lm_runtime_inventory_is_v1(manifest: dict[str, Any]) -> bool:
+    upstream = manifest.get("upstream")
+    compatibility_tag = require_string(
+        upstream.get("compatibilityTag") if isinstance(upstream, dict) else None,
+        "runtime inventory upstream compatibilityTag",
+    )
+    version = _litert_compatibility_version(compatibility_tag)
+    if version > (0, 19, 0):
+        raise ReleaseError(
+            "LiteRT-LM runtime inventory has no reviewed API mapping for "
+            + compatibility_tag
+        )
+    return version == (0, 19, 0)
+
+
 def replace_litert_lm_runtime_required_libraries(
     runtime_text: str,
     bundle_libraries: dict[str, tuple[str, ...]],
+    *,
+    manifest: dict[str, Any],
 ) -> str:
     runtime_libraries = litert_schema2_runtime_required_libraries(bundle_libraries)
+    # Explicit legacy runtimes must retain their own inventory after a v1 repin.
+    function_name = (
+        "_liteRtLmV1RequiredLibrariesForAbi"
+        if _litert_lm_runtime_inventory_is_v1(manifest)
+        else "_liteRtLmLegacyRequiredLibrariesForAbi"
+    )
     # The bundle keys use hyphens while the Dart ABI enum uses camel case.
     runtime_entries = {
         "macosArm64": runtime_libraries["macos-arm64"],
@@ -3777,15 +3838,9 @@ def replace_litert_lm_runtime_required_libraries(
         "linuxX64": runtime_libraries["linux-x64"],
         "windowsX64": runtime_libraries["windows-x64"],
     }
-    macos_entries = {"macosArm64": runtime_libraries["macos-arm64"]}
-    updated = _replace_litert_lm_runtime_library_function(
-        runtime_text,
-        "liteRtLmMacOsRequiredLibrariesForAbi",
-        macos_entries,
-    )
     return _replace_litert_lm_runtime_library_function(
-        updated,
-        "liteRtLmRequiredLibrariesForAbi",
+        runtime_text,
+        function_name,
         runtime_entries,
     )
 
@@ -3961,14 +4016,19 @@ def replace_litert_lm_runtime_macos_inventory(
     )
     complete_spm = litert_macos_complete_spm_entries(bundle_libraries, native_spm_files)
     runtime_native_spm_entries = {"macosArm64": complete_spm["arm64"]}
+    prefix = (
+        "_liteRtLmV1MacOs"
+        if _litert_lm_runtime_inventory_is_v1(manifest)
+        else "_liteRtLmMacOs"
+    )
     updated = _replace_litert_lm_runtime_library_function(
         runtime_text,
-        "liteRtLmMacOsRequiredFrameworksForAbi",
+        prefix + "RequiredFrameworksForAbi",
         runtime_framework_entries,
     )
     return _replace_litert_lm_runtime_library_function(
         updated,
-        "liteRtLmMacOsRequiredNativeSpmFilesForAbi",
+        prefix + "RequiredNativeSpmFilesForAbi",
         runtime_native_spm_entries,
     )
 
@@ -3987,6 +4047,102 @@ def replace_swift_binary_target_checksum(
     if count != 1:
         raise ReleaseError(f"Could not replace Package.swift checksum for {target_name}")
     return updated
+
+
+def _validate_litert_lm_v019_swift_topology(
+    swift_text: str, *, current_tag: str, include_obsolete_samplers: bool,
+) -> dict[str, str]:
+    platforms = {
+        "LiteRtLm": ".iOS, .macOS",
+        "CLiteRTLM": ".iOS",
+        "CLiteRTLMMac": ".macOS",
+        "LiteRtMetalAccelerator": ".iOS",
+        "LiteRtTopKMetalSampler": ".iOS",
+        "LiteRt": ".macOS",
+        "LiteRtTopKWebGpuSampler": ".macOS",
+        "LiteRtWebGpuAccelerator": ".macOS",
+        "WebgpuDawn": ".macOS",
+    }
+    if not include_obsolete_samplers:
+        platforms.pop("LiteRtTopKMetalSampler")
+        platforms.pop("LiteRtTopKWebGpuSampler")
+    label = "LiteRT-LM v0.19 Swift topology"
+    assets = swift_native_repo_binary_targets(
+        swift_text, tag_variable="liteRtLmTag", current_tag=current_tag,
+    )
+    if (
+        len(assets) != len(platforms)
+        or {name for name, _ in assets} != set(platforms)
+        or len(re.findall(r"\bnativeRepoBinaryTarget\s*\(", swift_text))
+        != len(platforms) + 1
+    ):
+        raise ReleaseError(f"{label} has duplicate or unexpected binary targets")
+    blocks = {}
+    for target in platforms:
+        artifact = re.escape(f"litert-lm-native-apple-{target}-xcframework-")
+        interpolated = re.escape(r'\(liteRtLmTag)')
+        tag = rf"(?:{interpolated}|{re.escape(current_tag)})"
+        pattern = (
+            r'(?m)^[ \t]*nativeRepoBinaryTarget\(\s*'
+            rf'name: "{target}",\s*'
+            r'repository: "leehack/litert-lm-native",\s*'
+            rf'artifactName: "{artifact}{tag}\.zip",\s*'
+            r'tag: liteRtLmTag,\s*checksum: "[0-9a-f]{64}"\s*'
+            r'\),\n'
+        )
+        matches = re.findall(pattern, swift_text)
+        if len(matches) != 1:
+            raise ReleaseError(f"{label} requires the canonical {target} binary target")
+        blocks[target] = matches[0]
+        dependencies = re.findall(
+            rf'\.target\(name: "{target}", condition: '
+            r'\.when\(platforms: \[([^]]*)\]\)\)', swift_text,
+        )
+        if (
+            dependencies != [platforms[target]]
+            or swift_text.count(f'name: "{target}"') != 2
+        ):
+            raise ReleaseError(f"{label} requires the maintained {target} platform dependency")
+    references = re.findall(r'\.target\s*\(\s*name\s*:\s*"([^\"]+)"', swift_text)
+    if (
+        sorted(references) != sorted(set(platforms) | {"llamadart_litert_lm_flutter"})
+        or len(re.findall(r'\.target\s*\(', swift_text)) != len(references)
+    ):
+        raise ReleaseError(f"{label} has unexpected target references")
+    dependencies = re.findall(
+        r'\bdependencies\s*:\s*\[(.*?)\]\s*,\s*linkerSettings\s*:',
+        swift_text, re.DOTALL,
+    )
+    if len(dependencies) != 1 or re.sub(
+        r'\.target\s*\(\s*name\s*:\s*"[^\"]+"\s*,\s*condition\s*:\s*'
+        r'\.when\s*\(\s*platforms\s*:\s*\[[^]]*\]\s*\)\s*\)',
+        "", dependencies[0] if dependencies else "",
+    ).strip(" \t\r\n,"):
+        raise ReleaseError(f"{label} has malformed dependency inventory")
+    return blocks
+
+
+def _remove_litert_lm_obsolete_topk_samplers(
+    swift_text: str, *, current_tag: str,
+) -> str:
+    blocks = _validate_litert_lm_v019_swift_topology(
+        swift_text, current_tag=current_tag, include_obsolete_samplers=True,
+    )
+    for sampler, platform in (
+        ("LiteRtTopKMetalSampler", ".iOS"),
+        ("LiteRtTopKWebGpuSampler", ".macOS"),
+    ):
+        if swift_text.count(sampler) != 3:
+            raise ReleaseError("LiteRT-LM v0.19 removal has ambiguous sampler references")
+        swift_text = swift_text.replace(blocks[sampler], "", 1)
+        swift_text = replace_one(
+            swift_text,
+            rf'(?m)^[ \t]*\.target\(name: "{sampler}", '
+            rf'condition: \.when\(platforms: \[{re.escape(platform)}\]\)\),\n',
+            "",
+            f"LiteRT-LM obsolete {sampler} must have exactly one {platform} dependency",
+        )
+    return swift_text
 
 
 def prepare_litert_lm_package_swift(
@@ -4016,6 +4172,28 @@ def prepare_litert_lm_package_swift(
                 current_tag=original_tag,
             )
         }
+        obsolete_samplers = {"LiteRtTopKMetalSampler", "LiteRtTopKWebGpuSampler"}
+        sampler_free_targets = {
+            "LiteRtLm", "CLiteRTLM", "CLiteRTLMMac", "LiteRtMetalAccelerator",
+            "LiteRt", "LiteRtWebGpuAccelerator", "WebgpuDawn",
+        }
+        if (
+            manifest["upstream"]["compatibilityTag"] == "v0.19.0"
+            and expected_targets == sampler_free_targets
+            and current_targets == expected_targets | obsolete_samplers
+        ):
+            swift_text = _remove_litert_lm_obsolete_topk_samplers(
+                swift_text, current_tag=original_tag,
+            )
+            current_targets -= obsolete_samplers
+        if (
+            manifest["upstream"]["compatibilityTag"] == "v0.19.0"
+            and expected_targets == sampler_free_targets
+            and current_targets == expected_targets
+        ):
+            _validate_litert_lm_v019_swift_topology(
+                swift_text, current_tag=original_tag, include_obsolete_samplers=False,
+            )
         if current_targets == legacy_targets:
             if swift_text.count("GemmaModelConstraintProvider") != 3:
                 raise ReleaseError(
@@ -4138,6 +4316,12 @@ def prepare_litert_lm_package_swift(
                 "LiteRT-LM Package.swift binary targets do not match the legacy "
                 "or schema-2 owner inventory"
             )
+        if manifest["upstream"]["compatibilityTag"] == "v0.19.0" and any(
+            sampler in swift_text for sampler in obsolete_samplers
+        ):
+            raise ReleaseError(
+                "LiteRT-LM Package.swift has malformed or unexpected obsolete sampler references"
+            )
         if (
             "GemmaModelConstraintProvider" not in expected_targets
             and "GemmaModelConstraintProvider" in swift_text
@@ -4207,6 +4391,54 @@ def prepare_litert_lm_package_swift(
             checksum,
         )
     return swift_text
+
+
+def litert_lm_companion_template_hash(swift_text: str) -> str:
+    """Match the full-manifest normalization used by the macOS build hook."""
+    normalized, count = re.subn(
+        r'(?m)^let liteRtLmTag = "[^"\n]+"$',
+        'let liteRtLmTag = "PIN"',
+        swift_text.replace("\r\n", "\n"),
+    )
+    if count != 1:
+        raise ReleaseError("Expected one LiteRT-LM companion template tag")
+    normalized = re.sub(
+        r'checksum: "[0-9a-f]{64}"', 'checksum: "CHECKSUM"', normalized,
+    )
+    return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
+
+
+def replace_litert_lm_companion_template_hash(
+    hook_text: str,
+    *,
+    original_swift: str,
+    prepared_swift: str,
+    resolved_tag: str,
+) -> str:
+    pattern = (
+        r"(?m)(^const _liteRtLmCompanionManifestTemplateSha256 =\s*')"
+        r"([0-9a-f]{64})(';)"
+    )
+    matches = list(re.finditer(pattern, hook_text))
+    if len(matches) != 1:
+        raise ReleaseError("Expected one reviewed LiteRT-LM companion template hash")
+    if matches[0].group(2) != litert_lm_companion_template_hash(original_swift):
+        raise ReleaseError(
+            "The hook does not admit the reviewed LiteRT-LM companion template; "
+            "review its manifest contract before syncing"
+        )
+    prepared_tag = swift_variable_value(
+        prepared_swift, "liteRtLmTag", "rendered LiteRT-LM companion tag",
+    )
+    if prepared_tag != resolved_tag:
+        raise ReleaseError("The rendered LiteRT-LM companion tag differs from the resolved tag")
+    # The production renderer validates the owner inventory and known target
+    # transition before this contract is staged in the same atomic write.
+    return replace_one(
+        hook_text, pattern,
+        r"\g<1>" + litert_lm_companion_template_hash(prepared_swift) + r"\g<3>",
+        "LiteRT-LM companion template hash",
+    )
 
 
 def swift_variable_value(

@@ -22,15 +22,19 @@ import 'litert_lm_last_error.dart';
 import 'litert_lm_json_schema_bindings.dart';
 import 'litert_lm_platform.dart';
 import 'litert_lm_sampler_params.dart';
+import 'litert_lm_legacy_service_client.dart';
+import 'litert_lm_runtime_client_contract.dart';
+import 'litert_lm_v1_runtime.dart';
 
 export 'litert_lm_asr_types.dart';
 export 'litert_lm_finish_reason.dart';
 export 'litert_lm_native_settlement.dart';
 
 part 'litert_lm_embedding_native.dart';
+part 'litert_lm_runtime_facade.dart';
 
-const _litertLmReleaseTag = 'v0.18.1-4';
-const _litertLmVersion = '0.18.1-4';
+const _litertLmReleaseTag = 'v0.19.0';
+const _litertLmVersion = '0.19.0';
 const _litertLmLibDirEnv = 'LLAMADART_LITERT_LM_LIB_DIR';
 const _liteRtLmIosNativeAsset = 'package:llamadart/litert_lm_LiteRtLm';
 const _processLibraryCandidate = '<process>';
@@ -226,22 +230,12 @@ List<String> liteRtLmMacOsCacheDirectoryCandidatesForAbi(Abi abi) {
 
 /// Internal helper used by the LiteRT-LM runtime to validate extracted macOS
 /// native-assets cache directories.
-List<String> liteRtLmMacOsRequiredLibrariesForAbi(Abi abi) {
-  return switch (abi) {
-    Abi.macosArm64 => const <String>[
-      'libCLiteRTLM_mac.dylib',
-      'libGemmaModelConstraintProvider.dylib',
-      'libLiteRt.dylib',
-      'libLiteRtLm.dylib',
-      'libLiteRtMetalAccelerator.dylib',
-      'libLiteRtTopKMetalSampler.dylib',
-      'libLiteRtTopKWebGpuSampler.dylib',
-      'libLiteRtWebGpuAccelerator.dylib',
-      'libwebgpu_dawn.dylib',
-    ],
-    _ => const <String>[],
-  };
-}
+List<String> liteRtLmMacOsRequiredLibrariesForAbi(
+  Abi abi, {
+  bool cApiV1 = false,
+}) => abi == Abi.macosArm64
+    ? liteRtLmRequiredLibrariesForAbi(abi, cApiV1: cApiV1)
+    : const <String>[];
 
 /// Internal helper used by the LiteRT-LM runtime to locate extracted
 /// native-assets cache directories.
@@ -284,14 +278,15 @@ List<String> liteRtLmBundleLibraryDirectoryCandidatesForAbi(
 /// holds every [liteRtLmRequiredLibrariesForAbi] library, or null.
 Directory? liteRtLmFindBundleLibraryDirectoryForAbi(
   String executablePath,
-  Abi abi,
-) {
+  Abi abi, {
+  bool cApiV1 = false,
+}) {
   for (final candidate in liteRtLmBundleLibraryDirectoryCandidatesForAbi(
     executablePath,
     abi,
   )) {
     final dir = Directory(candidate);
-    if (liteRtLmIsCacheDirectoryForAbi(dir, abi)) {
+    if (liteRtLmIsCacheDirectoryForAbi(dir, abi, cApiV1: cApiV1)) {
       return dir;
     }
   }
@@ -301,29 +296,40 @@ Directory? liteRtLmFindBundleLibraryDirectoryForAbi(
 /// Resolves the directory holding the complete LiteRT-LM library set for
 /// [abi] (see [liteRtLmIsCacheDirectoryForAbi]), in precedence order:
 ///
-/// 1. [libDirOverride] (`LLAMADART_LITERT_LM_LIB_DIR`), when complete;
+/// 1. [libDirOverride] (`LLAMADART_LITERT_LM_LIB_DIR`), which must be complete;
 /// 2. the app bundle around [executablePath]
 ///    ([liteRtLmFindBundleLibraryDirectoryForAbi]);
 /// 3. the `.dart_tool/llamadart/litert_lm/<version>` hook cache in any of
 ///    [searchRoots] or their ancestors.
 ///
+/// An incomplete explicit override throws instead of substituting another runtime.
 /// [searchRoots] is only called when the first two steps find nothing.
+/// With [cApiV1], this finds a candidate containing the common 0.19 files; the
+/// selected primary must still prove C API 1.0 before waiving legacy samplers.
 Directory? liteRtLmResolveRuntimeDirectoryForAbi(
   Abi abi, {
   required String? libDirOverride,
   required String executablePath,
   required Iterable<Directory> Function() searchRoots,
+  bool cApiV1 = false,
 }) {
-  if (libDirOverride != null && libDirOverride.isNotEmpty) {
-    final dir = Directory(libDirOverride);
-    if (liteRtLmIsCacheDirectoryForAbi(dir, abi)) {
+  final override = libDirOverride?.trim();
+  if (override != null && override.isNotEmpty) {
+    final dir = Directory(override);
+    if (liteRtLmIsCacheDirectoryForAbi(dir, abi, cApiV1: cApiV1)) {
       return dir.absolute;
     }
+    throw LlamaUnsupportedException(
+      '$_litertLmLibDirEnv must name a complete LiteRT-LM runtime directory '
+      'for $abi; the selected directory is missing required libraries. '
+      'No bundled or cached runtime was substituted.',
+    );
   }
 
   final bundleDir = liteRtLmFindBundleLibraryDirectoryForAbi(
     executablePath,
     abi,
+    cApiV1: cApiV1,
   );
   if (bundleDir != null) {
     return bundleDir;
@@ -338,7 +344,7 @@ Directory? liteRtLmResolveRuntimeDirectoryForAbi(
           '${current.path}/.dart_tool/llamadart/litert_lm/'
           '$_litertLmVersion/$cacheDirectoryCandidate',
         );
-        if (liteRtLmIsCacheDirectoryForAbi(candidate, abi)) {
+        if (liteRtLmIsCacheDirectoryForAbi(candidate, abi, cApiV1: cApiV1)) {
           return candidate;
         }
       }
@@ -396,9 +402,15 @@ List<String> liteRtLmIosLibraryCandidates(
   ];
 }
 
-/// Internal helper used by the LiteRT-LM runtime to validate extracted
-/// native-assets cache directories.
-List<String> liteRtLmRequiredLibrariesForAbi(Abi abi) {
+/// Required desktop runtime files. The default preserves legacy discovery;
+/// [cApiV1] describes the owner 0.19 inventory after C API admission.
+List<String> liteRtLmRequiredLibrariesForAbi(Abi abi, {bool cApiV1 = false}) {
+  return cApiV1
+      ? _liteRtLmV1RequiredLibrariesForAbi(abi)
+      : _liteRtLmLegacyRequiredLibrariesForAbi(abi);
+}
+
+List<String> _liteRtLmLegacyRequiredLibrariesForAbi(Abi abi) {
   return switch (abi) {
     Abi.macosArm64 => const <String>[
       'libCLiteRTLM_mac.dylib',
@@ -434,6 +446,49 @@ List<String> liteRtLmRequiredLibrariesForAbi(Abi abi) {
       'libGemmaModelConstraintProvider.dll',
       'libLiteRt.dll',
       'libLiteRtTopKWebGpuSampler.dll',
+      'libLiteRtWebGpuAccelerator.dll',
+      'libwebgpu_dawn.dll',
+      'msvcp140.dll',
+      'vcruntime140.dll',
+      'vcruntime140_1.dll',
+      'vcruntime140_threads.dll',
+      'webgpu_dawn.dll',
+    ],
+    _ => const <String>[],
+  };
+}
+
+List<String> _liteRtLmV1RequiredLibrariesForAbi(Abi abi) {
+  return switch (abi) {
+    Abi.macosArm64 => const <String>[
+      'libCLiteRTLM_mac.dylib',
+      'libGemmaModelConstraintProvider.dylib',
+      'libLiteRt.dylib',
+      'libLiteRtLm.dylib',
+      'libLiteRtMetalAccelerator.dylib',
+      'libLiteRtWebGpuAccelerator.dylib',
+      'libwebgpu_dawn.dylib',
+    ],
+    Abi.linuxArm64 => const <String>[
+      'libGemmaModelConstraintProvider.so',
+      'libLiteRt.so',
+      'libLiteRtLm.so',
+      'libLiteRtWebGpuAccelerator.so',
+      'libwebgpu_dawn.so',
+    ],
+    Abi.linuxX64 => const <String>[
+      'libGemmaModelConstraintProvider.so',
+      'libLiteRt.so',
+      'libLiteRtLm.so',
+      'libLiteRtWebGpuAccelerator.so',
+      'libwebgpu_dawn.so',
+    ],
+    Abi.windowsX64 => const <String>[
+      'LiteRtLm.dll',
+      'dxcompiler.dll',
+      'dxil.dll',
+      'libGemmaModelConstraintProvider.dll',
+      'libLiteRt.dll',
       'libLiteRtWebGpuAccelerator.dll',
       'libwebgpu_dawn.dll',
       'msvcp140.dll',
@@ -490,13 +545,13 @@ List<String> _liteRtLmCompanionDependenciesForAbi(Abi abi) {
 /// [liteRtLmNonPreloadedLibrariesForAbi]: imported dependencies first, then
 /// the rest in inventory order. The runtime opens these before the primary
 /// library when it loads a Linux or Windows runtime directory.
-List<String> liteRtLmCompanionLibrariesForAbi(Abi abi) {
+List<String> liteRtLmCompanionLibrariesForAbi(Abi abi, {bool cApiV1 = false}) {
   final primary = liteRtLmPrimaryLibraryForAbi(abi);
   if (primary == null) {
     return const <String>[];
   }
   final nonPreloaded = liteRtLmNonPreloadedLibrariesForAbi(abi);
-  final companions = liteRtLmRequiredLibrariesForAbi(abi)
+  final companions = liteRtLmRequiredLibrariesForAbi(abi, cApiV1: cApiV1)
       .where((library) => library != primary && !nonPreloaded.contains(library))
       .toList();
   final dependencies = _liteRtLmCompanionDependenciesForAbi(
@@ -566,7 +621,16 @@ Directory? _directoryFromPackageConfigRootUri(
 
 /// Internal helper used by the LiteRT-LM runtime to validate macOS app
 /// framework directories.
-List<String> liteRtLmMacOsRequiredFrameworksForAbi(Abi abi) {
+List<String> liteRtLmMacOsRequiredFrameworksForAbi(
+  Abi abi, {
+  bool cApiV1 = false,
+}) {
+  return cApiV1
+      ? _liteRtLmV1MacOsRequiredFrameworksForAbi(abi)
+      : _liteRtLmMacOsRequiredFrameworksForAbi(abi);
+}
+
+List<String> _liteRtLmMacOsRequiredFrameworksForAbi(Abi abi) {
   return switch (abi) {
     Abi.macosArm64 => const <String>[
       'CLiteRTLM_mac.framework/Versions/A/CLiteRTLM_mac',
@@ -583,9 +647,33 @@ List<String> liteRtLmMacOsRequiredFrameworksForAbi(Abi abi) {
   };
 }
 
+List<String> _liteRtLmV1MacOsRequiredFrameworksForAbi(Abi abi) {
+  return switch (abi) {
+    Abi.macosArm64 => const <String>[
+      'CLiteRTLM_mac.framework/Versions/A/CLiteRTLM_mac',
+      'GemmaModelConstraintProvider.framework/Versions/A/GemmaModelConstraintProvider',
+      'LiteRt.framework/Versions/A/LiteRt',
+      'LiteRtLm.framework/Versions/A/LiteRtLm',
+      'LiteRtMetalAccelerator.framework/Versions/A/LiteRtMetalAccelerator',
+      'LiteRtWebGpuAccelerator.framework/Versions/A/LiteRtWebGpuAccelerator',
+      'webgpu_dawn.framework/Versions/A/webgpu_dawn',
+    ],
+    _ => const <String>[],
+  };
+}
+
 /// Internal helper used by the LiteRT-LM runtime to validate the native-repo
 /// Apple SPM layout in macOS app bundles.
-List<String> liteRtLmMacOsRequiredNativeSpmFilesForAbi(Abi abi) {
+List<String> liteRtLmMacOsRequiredNativeSpmFilesForAbi(
+  Abi abi, {
+  bool cApiV1 = false,
+}) {
+  return cApiV1
+      ? _liteRtLmV1MacOsRequiredNativeSpmFilesForAbi(abi)
+      : _liteRtLmMacOsRequiredNativeSpmFilesForAbi(abi);
+}
+
+List<String> _liteRtLmMacOsRequiredNativeSpmFilesForAbi(Abi abi) {
   return switch (abi) {
     Abi.macosArm64 => const <String>[
       'LiteRtLm.framework/Versions/A/LiteRtLm',
@@ -600,10 +688,31 @@ List<String> liteRtLmMacOsRequiredNativeSpmFilesForAbi(Abi abi) {
   };
 }
 
+List<String> _liteRtLmV1MacOsRequiredNativeSpmFilesForAbi(Abi abi) {
+  return switch (abi) {
+    Abi.macosArm64 => const <String>[
+      'LiteRtLm.framework/Versions/A/LiteRtLm',
+      'libCLiteRTLM_mac.dylib',
+      'LiteRtLm.framework/Versions/A/Dependencies/libGemmaModelConstraintProvider.dylib',
+      'libLiteRt.dylib',
+      'libLiteRtWebGpuAccelerator.dylib',
+      'libwebgpu_dawn.dylib',
+    ],
+    _ => const <String>[],
+  };
+}
+
 /// Internal helper used by the LiteRT-LM runtime to validate extracted macOS
 /// native-assets cache directories.
-bool liteRtLmIsMacOsCacheDirectoryForAbi(Directory dir, Abi abi) {
-  final requiredLibraries = liteRtLmMacOsRequiredLibrariesForAbi(abi);
+bool liteRtLmIsMacOsCacheDirectoryForAbi(
+  Directory dir,
+  Abi abi, {
+  bool cApiV1 = false,
+}) {
+  final requiredLibraries = liteRtLmMacOsRequiredLibrariesForAbi(
+    abi,
+    cApiV1: cApiV1,
+  );
   return requiredLibraries.isNotEmpty &&
       requiredLibraries.every(
         (library) => File('${dir.path}/$library').existsSync(),
@@ -612,8 +721,15 @@ bool liteRtLmIsMacOsCacheDirectoryForAbi(Directory dir, Abi abi) {
 
 /// Internal helper used by the LiteRT-LM runtime to validate extracted
 /// native-assets cache directories.
-bool liteRtLmIsCacheDirectoryForAbi(Directory dir, Abi abi) {
-  final requiredLibraries = liteRtLmRequiredLibrariesForAbi(abi);
+bool liteRtLmIsCacheDirectoryForAbi(
+  Directory dir,
+  Abi abi, {
+  bool cApiV1 = false,
+}) {
+  final requiredLibraries = liteRtLmRequiredLibrariesForAbi(
+    abi,
+    cApiV1: cApiV1,
+  );
   return requiredLibraries.isNotEmpty &&
       requiredLibraries.every(
         (library) => File('${dir.path}/$library').existsSync(),
@@ -802,18 +918,38 @@ final class _BlockingSendMessageRequest {
 /// Most callers should use [LiteRtLmBackend] through the high-level
 /// `LlamaEngine` API. This client is exported for benchmark tools and advanced
 /// native integrations that need direct access to LiteRT-LM bundles.
-class LiteRtLmRuntimeClient {
+class _LegacyLiteRtLmRuntimeClient extends LiteRtLmRuntimeClient {
   /// Creates a low-level LiteRT-LM runtime client.
   ///
   /// [libraryPath] is an advanced local-validation override. Packaged apps
   /// should omit it and use the platform runtime selected by native assets.
-  LiteRtLmRuntimeClient({String? libraryPath})
-    : _libraryPathOverride = libraryPath;
+  _LegacyLiteRtLmRuntimeClient({
+    String? libraryPath,
+    bool allowV1Inventory = false,
+  }) : _libraryPathOverride = libraryPath,
+       _allowV1Inventory = allowV1Inventory,
+       super._legacy();
+
+  final bool _allowV1Inventory;
+  ({Directory directory, List<String> legacy, List<String> v1})?
+  _discoveryInventory;
+
+  void _selectDirectoryInventory(
+    Directory directory,
+    List<String> Function(bool) files,
+  ) {
+    _discoveryInventory = (
+      directory: directory,
+      legacy: files(false),
+      v1: files(true),
+    );
+  }
 
   String _thinkingStartTag = LiteRtLmChannelAssembler.gemma4ThinkingStartTag;
   String _thinkingEndTag = LiteRtLmChannelAssembler.gemma4ThinkingEndTag;
 
   /// Configures how LiteRT-LM thought-channel chunks are exposed to parsers.
+  @override
   void configureResponseThinkingTags({
     required String startTag,
     required String endTag,
@@ -826,6 +962,7 @@ class LiteRtLmRuntimeClient {
   ///
   /// Runtime load failures are reported as unsupported rather than thrown so
   /// callers can use this as a capability probe.
+  @override
   bool get supportsAsrBridge {
     try {
       _ensureLibrariesLoaded();
@@ -843,6 +980,7 @@ class LiteRtLmRuntimeClient {
   ///
   /// Runtime load failures are reported as unsupported rather than thrown so
   /// callers can use this as a capability probe.
+  @override
   bool get supportsSamplingPenalties {
     try {
       _ensureLibrariesLoaded();
@@ -857,6 +995,7 @@ class LiteRtLmRuntimeClient {
   ///
   /// Runtime load failures are reported as unsupported rather than thrown so
   /// callers can use this as a capability probe.
+  @override
   bool get supportsThinkingBudget {
     try {
       _ensureLibrariesLoaded();
@@ -873,6 +1012,7 @@ class LiteRtLmRuntimeClient {
   ///
   /// Runtime load failures are reported as unsupported rather than thrown so
   /// callers can use this as a capability probe.
+  @override
   bool get supportsFinishReasons {
     try {
       _ensureLibrariesLoaded();
@@ -886,6 +1026,7 @@ class LiteRtLmRuntimeClient {
   ///
   /// Set before that stream closes. Null while a stream is running, before
   /// the first one, and on runtimes without [supportsFinishReasons].
+  @override
   LiteRtLmFinishReason? get lastFinishReason => _lastFinishReason;
 
   /// What the `.litertlm` bundle at [modelPath] declares in its section
@@ -894,6 +1035,7 @@ class LiteRtLmRuntimeClient {
   ///
   /// Returns null when the runtime lacks LiteRT-LM's loaded-file capability
   /// API or cannot read the bundle.
+  @override
   ({bool vision, bool audio, bool speculativeDecoding})? bundleCapabilities(
     String modelPath,
   ) {
@@ -931,6 +1073,7 @@ class LiteRtLmRuntimeClient {
   }
 
   /// Whether the loaded runtime exports the complete optional schema API.
+  @override
   bool get supportsJsonSchemaConstraints {
     _ensureLibrariesLoaded();
     return _bindings!.jsonSchemaApi != null;
@@ -940,6 +1083,7 @@ class LiteRtLmRuntimeClient {
   ///
   /// The current bridge accepts mono 16 kHz float PCM. Inference calls block;
   /// high-level clients should own this session from a worker isolate.
+  @override
   LiteRtLmAsrRuntimeSession createAsrSession(LiteRtLmAsrRuntimeConfig config) {
     _validateLiteRtLmAsrRuntimeConfig(config);
     _ensureLibrariesLoaded();
@@ -966,6 +1110,7 @@ class LiteRtLmRuntimeClient {
   LiteRtLmNativeSettlement _nativeSettlement = LiteRtLmNativeSettlement.settled;
 
   /// Native lifetime; a Dart stream error alone does not establish settlement.
+  @override
   LiteRtLmNativeSettlement get nativeSettlement => _nativeSettlement;
 
   Pointer<_LiteRtLmEngine>? _engine;
@@ -979,6 +1124,7 @@ class LiteRtLmRuntimeClient {
   /// capacity for conversations that may include image inputs. [outputTokens]
   /// is the per-request fallback when generation does not provide an explicit
   /// maximum; it is not an upstream benchmark decode-step count.
+  @override
   Future<void> initialize({
     required String modelPath,
     String backend = 'gpu',
@@ -997,61 +1143,21 @@ class LiteRtLmRuntimeClient {
     String? dispatchLibDir,
     int? numberOfThreads,
   }) async {
-    if (maxTokens <= 0) {
-      throw ArgumentError.value(maxTokens, 'maxTokens', 'must be positive');
-    }
-    if (outputTokens <= 0) {
-      throw ArgumentError.value(
-        outputTokens,
-        'outputTokens',
-        'must be positive',
-      );
-    }
-    if (prefillTokens != null && prefillTokens <= 0) {
-      throw ArgumentError.value(
-        prefillTokens,
-        'prefillTokens',
-        'must be positive when provided',
-      );
-    }
-    if (maxNumImages != null && maxNumImages <= 0) {
-      throw ArgumentError.value(
-        maxNumImages,
-        'maxNumImages',
-        'must be positive when provided',
-      );
-    }
-    if (prefillChunkSize != null && prefillChunkSize <= 0) {
-      throw ArgumentError.value(
-        prefillChunkSize,
-        'prefillChunkSize',
-        'must be positive when provided',
-      );
-    }
-    if (dispatchLibDir != null && dispatchLibDir.trim().isEmpty) {
-      throw ArgumentError.value(
-        dispatchLibDir,
-        'dispatchLibDir',
-        'must be non-empty when provided',
-      );
-    }
-    if (numberOfThreads != null && numberOfThreads <= 0) {
-      throw ArgumentError.value(
-        numberOfThreads,
-        'numberOfThreads',
-        'must be positive when provided',
-      );
-    }
-    final resolvedBackend = _normalizeLiteRtLmRuntimeBackend(backend);
-    final resolvedVisionBackend = visionBackend == null
-        ? null
-        : _normalizeLiteRtLmRuntimeBackend(
-            visionBackend,
-            name: 'visionBackend',
-          );
-    final resolvedAudioBackend = audioBackend == null
-        ? null
-        : _normalizeLiteRtLmRuntimeBackend(audioBackend, name: 'audioBackend');
+    final resolved = _validateLiteRtLmInitializeArguments(
+      backend: backend,
+      visionBackend: visionBackend,
+      audioBackend: audioBackend,
+      maxTokens: maxTokens,
+      outputTokens: outputTokens,
+      prefillTokens: prefillTokens,
+      maxNumImages: maxNumImages,
+      prefillChunkSize: prefillChunkSize,
+      dispatchLibDir: dispatchLibDir,
+      numberOfThreads: numberOfThreads,
+    );
+    final resolvedBackend = resolved.backend;
+    final resolvedVisionBackend = resolved.visionBackend;
+    final resolvedAudioBackend = resolved.audioBackend;
     _defaultMaxOutputTokens = outputTokens;
 
     _ensureLibrariesLoaded();
@@ -1218,6 +1324,7 @@ class LiteRtLmRuntimeClient {
   ///
   /// With [temperature] `0`, [topK] is forced to `1`. [npuBackend] sets no
   /// sampler parameters.
+  @override
   void createConversation({
     String? systemMessage,
     String? promptTemplate,
@@ -1236,7 +1343,10 @@ class LiteRtLmRuntimeClient {
     final engine = _requireEngine();
     if (jsonSchemaConstraints && bindings.jsonSchemaApi == null) {
       throw LlamaUnsupportedException(
-        'Native JSON Schema chat requires the complete LiteRT-LM constraint-provider and thinking API. Use the packaged v0.18.1-4 runtime.',
+        'Native JSON Schema chat requires the complete LiteRT-LM constraint-provider and thinking API. '
+        'Use the default LiteRtLmRuntimeClient or LiteRtLmService with the packaged '
+        'litert-lm-native v0.19.0 runtime; legacy overrides must provide this complete API '
+        'and meet the JSON Schema qualification limits.',
       );
     }
     _deleteConversation();
@@ -1345,12 +1455,14 @@ class LiteRtLmRuntimeClient {
   }
 
   /// Updates the native LiteRT-LM log level.
+  @override
   void setMinLogLevel(int level) {
     _ensureLibrariesLoaded();
     _bindings!.setMinLogLevel(level);
   }
 
   /// Tokenizes text with the native LiteRT-LM tokenizer.
+  @override
   List<int> tokenize(String text, {bool addSpecial = true}) {
     final tokens = _tokenizeRaw(text);
     if (!addSpecial) {
@@ -1364,6 +1476,7 @@ class LiteRtLmRuntimeClient {
   }
 
   /// Converts native LiteRT-LM token ids back to text.
+  @override
   String detokenize(List<int> tokens) {
     final bindings = _requireBindings();
     final engine = _requireEngine();
@@ -1398,6 +1511,7 @@ class LiteRtLmRuntimeClient {
 
   /// Whether a runtime is loaded and provides the entry point of
   /// [renderMessageToString].
+  @override
   bool get supportsMessageRendering =>
       _bindings?._library.providesSymbol(
         'litert_lm_conversation_render_message_to_string',
@@ -1408,6 +1522,7 @@ class LiteRtLmRuntimeClient {
   ///
   /// The returned string is copied into Dart before the native conversation may
   /// invalidate the underlying buffer.
+  @override
   String renderMessageToString(Map<String, dynamic> message) {
     final bindings = _requireBindings();
     final conversation = _requireConversation();
@@ -1432,6 +1547,7 @@ class LiteRtLmRuntimeClient {
   ///
   /// [repetitionPenalty] and [presencePenalty] apply as in
   /// [generateMessageJson].
+  @override
   Stream<String> generate(
     String prompt, {
     int? maxOutputTokens,
@@ -1458,6 +1574,7 @@ class LiteRtLmRuntimeClient {
   /// channel closed, and enables thinking for this send. Both throw
   /// [LlamaUnsupportedException] when the runtime does not export their API;
   /// see [supportsSamplingPenalties] and [supportsThinkingBudget].
+  @override
   Stream<String> generateMessageJson(
     String messageJson, {
     Map<String, dynamic>? extraContext,
@@ -1469,28 +1586,13 @@ class LiteRtLmRuntimeClient {
     String? jsonSchema,
   }) {
     final resolvedMaxOutputTokens = maxOutputTokens ?? _defaultMaxOutputTokens;
-    if (repetitionPenalty != null &&
-        !(repetitionPenalty.isFinite && repetitionPenalty >= 1.0)) {
-      throw ArgumentError.value(
-        repetitionPenalty,
-        'repetitionPenalty',
-        'must be finite and at least 1.0',
-      );
-    }
-    if (presencePenalty != null && !presencePenalty.isFinite) {
-      throw ArgumentError.value(
-        presencePenalty,
-        'presencePenalty',
-        'must be finite',
-      );
-    }
-    if (thinkingTokenBudget != null && thinkingTokenBudget <= 0) {
-      throw ArgumentError.value(
-        thinkingTokenBudget,
-        'thinkingTokenBudget',
-        'must be positive when provided',
-      );
-    }
+    _validateLiteRtLmSendArguments(
+      visualTokenBudget: visualTokenBudget,
+      maxOutputTokens: resolvedMaxOutputTokens,
+      repetitionPenalty: repetitionPenalty,
+      presencePenalty: presencePenalty,
+      thinkingTokenBudget: thinkingTokenBudget,
+    );
     final _GenerationControls? generationControls =
         repetitionPenalty == null &&
             presencePenalty == null &&
@@ -1507,20 +1609,6 @@ class LiteRtLmRuntimeClient {
           );
     if (generationControls != null) {
       _checkGenerationControls(_requireBindings(), generationControls);
-    }
-    if (visualTokenBudget != null && visualTokenBudget <= 0) {
-      throw ArgumentError.value(
-        visualTokenBudget,
-        'visualTokenBudget',
-        'must be positive when provided',
-      );
-    }
-    if (resolvedMaxOutputTokens <= 0) {
-      throw ArgumentError.value(
-        resolvedMaxOutputTokens,
-        'maxOutputTokens',
-        'must be positive when provided',
-      );
     }
     // Upstream stream callback strings are only valid during the native call.
     // Dart listener callbacks run later, so streaming requires StreamProxy to
@@ -1855,17 +1943,13 @@ class LiteRtLmRuntimeClient {
   }
 
   /// Runs a benchmark-style prompt loop and returns runtime metrics.
+  @override
   Future<LiteRtLmRuntimeResult> run({
     required String prompt,
     int warmupRuns = 1,
     int measuredRuns = 3,
   }) async {
-    if (warmupRuns < 0) {
-      throw ArgumentError.value(warmupRuns, 'warmupRuns', 'must be >= 0');
-    }
-    if (measuredRuns <= 0) {
-      throw ArgumentError.value(measuredRuns, 'measuredRuns', 'must be > 0');
-    }
+    _validateLiteRtLmBenchmarkArguments(warmupRuns, measuredRuns);
 
     for (var i = 0; i < warmupRuns; i++) {
       createConversation();
@@ -1890,11 +1974,13 @@ class LiteRtLmRuntimeClient {
   }
 
   /// Reads runtime metrics for the active conversation.
+  @override
   LiteRtLmRuntimeMetrics readMetrics({required int wallMilliseconds}) {
     return _readMetrics(wallMilliseconds);
   }
 
   /// Cancels active native generation.
+  @override
   void cancel() {
     final conversation = _conversation;
     final bindings = _bindings;
@@ -1904,6 +1990,7 @@ class LiteRtLmRuntimeClient {
   }
 
   /// Releases native LiteRT-LM resources.
+  @override
   void dispose() {
     if (nativeSettlement != LiteRtLmNativeSettlement.settled) {
       throw LlamaStateException(
@@ -1924,6 +2011,32 @@ class LiteRtLmRuntimeClient {
     if (_bindings != null) {
       return;
     }
+    final liteRtLm = _discoverLibraries();
+    final bindings = _LiteRtLmBindings(liteRtLm.library);
+    _tryLoadEmbeddedStreamProxy(liteRtLm.library, liteRtLm.path, true);
+    _bindings = bindings;
+  }
+
+  ({String path, DynamicLibrary library})? _discoveredLibrary;
+  ({String path, DynamicLibrary library}) _discoverLibraries() {
+    try {
+      return _discoverLibrariesImpl();
+    } on ArgumentError catch (error) {
+      final explicitLibrary = _libraryPathOverride?.trim().isNotEmpty ?? false;
+      final explicitDirectory =
+          Platform.environment[_litertLmLibDirEnv]?.trim().isNotEmpty ?? false;
+      if (!explicitLibrary && !explicitDirectory) rethrow;
+      throw LlamaUnsupportedException(
+        'The explicitly selected LiteRT-LM runtime could not be loaded for '
+        '${Abi.current()}. Install a complete matching runtime. '
+        'No bundled, cached or process runtime was substituted. $error',
+      );
+    }
+  }
+
+  ({String path, DynamicLibrary library}) _discoverLibrariesImpl() {
+    final existing = _discoveredLibrary;
+    if (existing != null) return existing;
     final libraryPathOverride = _libraryPathOverride?.trim();
     if (libraryPathOverride == null || libraryPathOverride.isEmpty) {
       final unsupported = liteRtLmUnsupportedAbiException(liteRtLmGateAbi());
@@ -1944,16 +2057,47 @@ class LiteRtLmRuntimeClient {
       libraries.liteRtLmCandidates,
       description: 'LiteRT-LM library',
     );
+    final inventory = _discoveryInventory;
+    if (_allowV1Inventory && inventory != null) {
+      // Only the selected image's version probe can waive legacy sampler files.
+      final v1 = readLiteRtLmCApiVersion(liteRtLm.library) != null;
+      final required = v1 ? inventory.v1 : inventory.legacy;
+      final missing = required
+          .where(
+            (file) =>
+                !File(path.join(inventory.directory.path, file)).existsSync(),
+          )
+          .toList();
+      if (missing.isNotEmpty) {
+        throw LlamaUnsupportedException(
+          'The selected LiteRT-LM ${v1 ? "C API 1.0" : "legacy C API"} '
+          'runtime for ${Abi.current()} is incomplete: missing '
+          '${missing.join(", ")}. Install a complete matching runtime; '
+          'no other runtime was substituted.',
+        );
+      }
+      if (!v1) {
+        companionLibraries.addAll(
+          liteRtLmOpenCompanionLibraries(
+            inventory.legacy
+                .where((file) => !inventory.v1.contains(file))
+                .map((file) => path.join(inventory.directory.path, file)),
+          ),
+        );
+      }
+    }
     _liteRtLmLibraryPath = liteRtLm.path;
-    _liteRtLmCompanionLibraryPaths = libraries.companions;
+    _liteRtLmCompanionLibraryPaths = [
+      ...libraries.companions,
+      if (_allowV1Inventory &&
+          inventory != null &&
+          !liteRtLm.library.providesSymbol('litert_lm_get_api_version'))
+        ...inventory.legacy
+            .where((file) => !inventory.v1.contains(file))
+            .map((file) => path.join(inventory.directory.path, file)),
+    ];
     _companionLibraries = companionLibraries;
-    final bindings = _LiteRtLmBindings(liteRtLm.library);
-    _tryLoadEmbeddedStreamProxy(
-      liteRtLm.library,
-      liteRtLm.path,
-      libraries.directCallbackSupported,
-    );
-    _bindings = bindings;
+    return _discoveredLibrary = liteRtLm;
   }
 
   ({
@@ -1971,6 +2115,19 @@ class LiteRtLmRuntimeClient {
       );
     }
     final abi = Abi.current();
+    final directoryOverride = Platform.environment[_litertLmLibDirEnv]?.trim();
+    if (directoryOverride != null &&
+        directoryOverride.isNotEmpty &&
+        liteRtLmPrimaryLibraryForAbi(abi) != null) {
+      final directory = _findLiteRtLmCacheDirForAbi(abi)!;
+      return (
+        liteRtLmCandidates: [
+          path.join(directory.path, liteRtLmPrimaryLibraryForAbi(abi)!),
+        ],
+        companions: _companionLibrariesForAbi(abi, directory),
+        directCallbackSupported: true,
+      );
+    }
     if (Platform.isAndroid &&
         (abi == Abi.androidArm64 || abi == Abi.androidX64)) {
       return (
@@ -2005,7 +2162,7 @@ class LiteRtLmRuntimeClient {
         return (
           liteRtLmCandidates: liteRtLmMacOsLibraryCandidates(
             '${frameworksDir.path}/LiteRtLm.framework/Versions/A/LiteRtLm',
-            explicitOverride: false,
+            explicitOverride: _allowV1Inventory,
           ),
           companions: usesNativeSpmFramework
               ? const []
@@ -2021,7 +2178,7 @@ class LiteRtLmRuntimeClient {
         return (
           liteRtLmCandidates: liteRtLmMacOsLibraryCandidates(
             '${appLibraryDir.path}/libLiteRtLm.dylib',
-            explicitOverride: false,
+            explicitOverride: _allowV1Inventory,
           ),
           companions: [
             for (final library in companions) '${appLibraryDir.path}/$library',
@@ -2037,7 +2194,7 @@ class LiteRtLmRuntimeClient {
         return (
           liteRtLmCandidates: liteRtLmMacOsLibraryCandidates(
             '${cacheDir.path}/libLiteRtLm.dylib',
-            explicitOverride: explicitOverride,
+            explicitOverride: explicitOverride || _allowV1Inventory,
           ),
           companions: [
             for (final library in companions) '${cacheDir.path}/$library',
@@ -2095,7 +2252,9 @@ class LiteRtLmRuntimeClient {
     for (final candidate in candidates) {
       try {
         final library = _openLiteRtLmLibraryCandidate(candidate);
-        _validateLiteRtLmLibrary(library);
+        if (!library.providesSymbol('litert_lm_get_api_version')) {
+          _validateLiteRtLmLibrary(library);
+        }
         return (path: candidate, library: library);
       } catch (error) {
         errors.add('  - $candidate: $error');
@@ -2211,15 +2370,24 @@ class LiteRtLmRuntimeClient {
     }
     final requiredNativeSpmFiles = liteRtLmMacOsRequiredNativeSpmFilesForAbi(
       Abi.current(),
+      cApiV1: _allowV1Inventory,
     );
     if (requiredNativeSpmFiles.isNotEmpty &&
         requiredNativeSpmFiles.every(
           (file) => File('${frameworksDir.path}/$file').existsSync(),
         )) {
+      _selectDirectoryInventory(
+        frameworksDir,
+        (v1) => liteRtLmMacOsRequiredNativeSpmFilesForAbi(
+          Abi.current(),
+          cApiV1: v1,
+        ),
+      );
       return frameworksDir;
     }
     final requiredFrameworks = liteRtLmMacOsRequiredFrameworksForAbi(
       Abi.current(),
+      cApiV1: _allowV1Inventory,
     );
     if (requiredFrameworks.isEmpty) {
       return null;
@@ -2229,6 +2397,11 @@ class LiteRtLmRuntimeClient {
         '${frameworksDir.path}/$framework',
     ];
     if (requiredFiles.every((file) => File(file).existsSync())) {
+      _selectDirectoryInventory(
+        frameworksDir,
+        (v1) =>
+            liteRtLmMacOsRequiredFrameworksForAbi(Abi.current(), cApiV1: v1),
+      );
       return frameworksDir;
     }
     return null;
@@ -2243,9 +2416,18 @@ class LiteRtLmRuntimeClient {
     if (!libraryDir.existsSync()) {
       return null;
     }
-    return liteRtLmIsMacOsCacheDirectoryForAbi(libraryDir, Abi.current())
-        ? libraryDir
-        : null;
+    if (!liteRtLmIsMacOsCacheDirectoryForAbi(
+      libraryDir,
+      Abi.current(),
+      cApiV1: _allowV1Inventory,
+    )) {
+      return null;
+    }
+    _selectDirectoryInventory(
+      libraryDir,
+      (v1) => liteRtLmRequiredLibrariesForAbi(Abi.current(), cApiV1: v1),
+    );
+    return libraryDir;
   }
 
   /// Locates the `Frameworks` directory of the running iOS `.app` bundle when
@@ -2277,12 +2459,20 @@ class LiteRtLmRuntimeClient {
   }
 
   Directory? _findLiteRtLmCacheDirForAbi(Abi abi) {
-    return liteRtLmResolveRuntimeDirectoryForAbi(
+    final directory = liteRtLmResolveRuntimeDirectoryForAbi(
       abi,
       libDirOverride: Platform.environment[_litertLmLibDirEnv],
       executablePath: Platform.resolvedExecutable,
       searchRoots: _candidateSearchRoots,
+      cApiV1: _allowV1Inventory,
     );
+    if (directory != null) {
+      _selectDirectoryInventory(
+        directory,
+        (v1) => liteRtLmRequiredLibrariesForAbi(abi, cApiV1: v1),
+      );
+    }
+    return directory;
   }
 
   List<Directory> _candidateSearchRoots() {
@@ -2297,7 +2487,7 @@ class LiteRtLmRuntimeClient {
   }
 
   List<String> _macOsCompanionLibrariesForAbi(Abi abi) {
-    return liteRtLmMacOsRequiredLibrariesForAbi(abi)
+    return liteRtLmMacOsRequiredLibrariesForAbi(abi, cApiV1: _allowV1Inventory)
         .where((library) => library != 'libLiteRtLm.dylib')
         .toList(growable: false);
   }
@@ -2305,6 +2495,7 @@ class LiteRtLmRuntimeClient {
   List<String> _companionLibrariesForAbi(Abi abi, Directory dir) {
     return liteRtLmCompanionLibrariesForAbi(
       abi,
+      cApiV1: _allowV1Inventory,
     ).map((library) => '${dir.path}/$library').toList(growable: false);
   }
 
@@ -2427,6 +2618,128 @@ class LiteRtLmRuntimeClient {
     } finally {
       bindings.benchmarkInfoDelete(info);
     }
+  }
+}
+
+({String backend, String? visionBackend, String? audioBackend})
+_validateLiteRtLmInitializeArguments({
+  required String backend,
+  String? visionBackend,
+  String? audioBackend,
+  required int maxTokens,
+  required int outputTokens,
+  int? prefillTokens,
+  int? maxNumImages,
+  int? prefillChunkSize,
+  String? dispatchLibDir,
+  int? numberOfThreads,
+}) {
+  if (maxTokens <= 0) {
+    throw ArgumentError.value(maxTokens, 'maxTokens', 'must be positive');
+  }
+  if (outputTokens <= 0) {
+    throw ArgumentError.value(outputTokens, 'outputTokens', 'must be positive');
+  }
+  if (prefillTokens != null && prefillTokens <= 0) {
+    throw ArgumentError.value(
+      prefillTokens,
+      'prefillTokens',
+      'must be positive when provided',
+    );
+  }
+  if (maxNumImages != null && maxNumImages <= 0) {
+    throw ArgumentError.value(
+      maxNumImages,
+      'maxNumImages',
+      'must be positive when provided',
+    );
+  }
+  if (prefillChunkSize != null && prefillChunkSize <= 0) {
+    throw ArgumentError.value(
+      prefillChunkSize,
+      'prefillChunkSize',
+      'must be positive when provided',
+    );
+  }
+  if (dispatchLibDir != null && dispatchLibDir.trim().isEmpty) {
+    throw ArgumentError.value(
+      dispatchLibDir,
+      'dispatchLibDir',
+      'must be non-empty when provided',
+    );
+  }
+  if (numberOfThreads != null && numberOfThreads <= 0) {
+    throw ArgumentError.value(
+      numberOfThreads,
+      'numberOfThreads',
+      'must be positive when provided',
+    );
+  }
+  final resolvedBackend = _normalizeLiteRtLmRuntimeBackend(backend);
+  final resolvedVisionBackend = visionBackend == null
+      ? null
+      : _normalizeLiteRtLmRuntimeBackend(visionBackend, name: 'visionBackend');
+  final resolvedAudioBackend = audioBackend == null
+      ? null
+      : _normalizeLiteRtLmRuntimeBackend(audioBackend, name: 'audioBackend');
+  return (
+    backend: resolvedBackend,
+    visionBackend: resolvedVisionBackend,
+    audioBackend: resolvedAudioBackend,
+  );
+}
+
+void _validateLiteRtLmSendArguments({
+  int? visualTokenBudget,
+  int? maxOutputTokens,
+  double? repetitionPenalty,
+  double? presencePenalty,
+  int? thinkingTokenBudget,
+}) {
+  if (repetitionPenalty != null &&
+      !(repetitionPenalty.isFinite && repetitionPenalty >= 1.0)) {
+    throw ArgumentError.value(
+      repetitionPenalty,
+      'repetitionPenalty',
+      'must be finite and at least 1.0',
+    );
+  }
+  if (presencePenalty != null && !presencePenalty.isFinite) {
+    throw ArgumentError.value(
+      presencePenalty,
+      'presencePenalty',
+      'must be finite',
+    );
+  }
+  if (thinkingTokenBudget != null && thinkingTokenBudget <= 0) {
+    throw ArgumentError.value(
+      thinkingTokenBudget,
+      'thinkingTokenBudget',
+      'must be positive when provided',
+    );
+  }
+  if (visualTokenBudget != null && visualTokenBudget <= 0) {
+    throw ArgumentError.value(
+      visualTokenBudget,
+      'visualTokenBudget',
+      'must be positive when provided',
+    );
+  }
+  if (maxOutputTokens != null && maxOutputTokens <= 0) {
+    throw ArgumentError.value(
+      maxOutputTokens,
+      'maxOutputTokens',
+      'must be positive when provided',
+    );
+  }
+}
+
+void _validateLiteRtLmBenchmarkArguments(int warmupRuns, int measuredRuns) {
+  if (warmupRuns < 0) {
+    throw ArgumentError.value(warmupRuns, 'warmupRuns', 'must be >= 0');
+  }
+  if (measuredRuns <= 0) {
+    throw ArgumentError.value(measuredRuns, 'measuredRuns', 'must be > 0');
   }
 }
 

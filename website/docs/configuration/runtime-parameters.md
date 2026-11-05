@@ -158,12 +158,13 @@ const params = LlamaCppModelParams(
 - `microBatchSize`: context physical micro-batch size (`n_ubatch`). On native,
   decoder/generative models use `min(n_batch, 512)` when this is `0`, while
   encoder-only models retain the resolved logical batch. WebGPU follows its
-  resolved logical batch unless a safety preset applies. On Android, a context that runs on
-  Vulkan keeps that `n_ubatch` but can decode a text prompt in smaller micro-batches when this is `0`, and an
-  explicit value above `32` can
-  return wrong text on some GPUs
-  ([Android llama.cpp Vulkan](../platforms/known-platform-issues#android)).
-  Explicit positive values are preserved within
+  resolved logical batch unless a safety preset applies. Android Vulkan can
+  keep `n_ubatch` while decoding text in smaller calls. Native Qwen3.5 on
+  unsafe or unproven small-matmul subgroup facts accepts only unset or `1..8`;
+  a larger explicit request throws `LlamaUnsupportedException` before context
+  creation. Media, speculation and embeddings are unavailable on this path;
+  use CPU ([Android llama.cpp Vulkan](../platforms/known-platform-issues#android)).
+  Other paths preserve explicit positive values within
   `n_ubatch <= n_batch <= n_ctx`. Native
   encoder-only models, models without a KV cache (such as BERT and ModernBERT),
   non-causal attention models, and MEAN/CLS pooling embed each input in one
@@ -249,7 +250,7 @@ deprecated until 1.0.
 | `cacheDir`, `maxProgramCacheBytes` | Runtime cache directory and GPU program cache size cap; see [LiteRT-LM cache directory](#litert-lm-cache-directory). |
 | `numberOfThreads` | Generation thread count; `0` keeps automatic selection. |
 | `embeddingEngine` | `true` selects the separate LiteRT-LM embedding engine, qualified on CPU on macOS, iOS and Android arm64; defaults to `false`, not `null`. See [Embeddings](../guides/embeddings). |
-| `loras` | At most one adapter, at the default scale of `1.0`, loaded with the model. Runtime LoRA APIs, stacking and custom scales are llama.cpp-only. |
+| `loras` | Native LiteRT-LM text LoRA is unsupported by the current advanced engine, including initial adapters. Use a compatible llama.cpp model/adapter pair; see [LoRA platform support](../guides/lora-adapters#platform-notes). |
 
 `gpuLayers` must be `0` (CPU), `ModelParams.maxGpuLayers` or a negative
 value, which means all layers like `maxGpuLayers`. Native
@@ -423,7 +424,8 @@ Important fields:
   decoding. Native LiteRT-LM uses the boolean, or a
   `SpeculativeDecodingConfig.backendDefault()` or `.mtp()` config without
   draft tuning, on bundles that carry a speculative drafter; native llama.cpp takes any `SpeculativeDecodingConfig`
-  strategy, and `draftMicroBatchSize` sizes its draft context's micro-batch.
+  strategy permitted by its active capabilities (the restricted Android Vulkan
+  Qwen3.5 path reports none), and `draftMicroBatchSize` sizes its draft context's micro-batch.
   `draftModel` is a `ModelSource` that native backends download
   and cache when a generation starts, with `draftModelDownload`. WebGPU takes
   the strategies its bridge assets report, with a remote `draftModel` whose

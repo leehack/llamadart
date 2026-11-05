@@ -15,6 +15,11 @@ extension NativeContentEmbeddings on LlamaCppService {
       return const LlamaEmbeddingCapabilities();
     }
     _ensureContextUsable(contextHandle, context);
+    if (context.qwen35VulkanRestricted) {
+      return const LlamaEmbeddingCapabilities(
+        mediaUnsupportedReason: LlamaCppService._qwen35VulkanRestriction,
+      );
+    }
     final pooling = _calls.embeddingContextInfo(context.pointer).pooling;
     final modelInfo = _calls.embeddingModelInfo(model.pointer);
     final text =
@@ -60,6 +65,10 @@ extension NativeContentEmbeddings on LlamaCppService {
     if (inputs.isEmpty) return const [];
     _ensureNoActiveTts(contextHandle, 'embed content');
     _contexts[contextHandle]?.performanceAvailable = false;
+    final contextForAdmission = _contexts[contextHandle];
+    if (contextForAdmission != null) {
+      _checkQwen35VulkanEmbedding(contextForAdmission);
+    }
     final capabilities = getEmbeddingCapabilities(contextHandle);
     for (final input in inputs) {
       for (final kind in input.partKinds) {

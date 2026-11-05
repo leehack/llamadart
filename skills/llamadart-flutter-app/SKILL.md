@@ -204,20 +204,29 @@ or shipping runtimes the app does not use.
   driver `2150604839` is excluded: an explicit GPU request throws; automatic
   selection with a Vulkan preference falls back to CPU with a warning.
   A shader-compiler workaround alone does not qualify quantized output. Leave
-  `ModelParams.microBatchSize` unset on Android Vulkan: on a GPU whose
-  subgroup size is 16, below 8 or unreadable a text prompt is then decoded at
-  most 8 tokens at a time, and a value above 32 returns wrong text there. The
-  cap applies to text-prompt decoding only: it does not
-  cover prompts with image or audio input, embeddings, decision models,
-  text-to-speech, or speculative-decoding verification batches during
-  generation, which can exceed 32 tokens, so speculative decoding can still
-  produce wrong output on an affected GPU.
-  LiteRT-LM defaults to the GPU on
-  Android (`ComputeDevice.auto`), and on adapters with a 128 MiB
-  storage-buffer limit (for example Adreno 750) a model with a larger weight
-  buffer, such as Qwen3 0.6B, loads and then produces wrong text without an
-  error; load it with `ModelParams(device: ComputeDevice.cpu)` or let the
-  user switch. `ComputeDevice.npu` needs a
+  `ModelParams.microBatchSize` unset on Android Vulkan for bounded text calls.
+  Native `qwen35` (Qwen3.5) with unsafe/unproven small-matmul subgroup facts
+  accepts only unset or `1..8`; larger explicit values, media, speculation
+  and embeddings throw `LlamaUnsupportedException` (#948). Use CPU for those
+  features. The family-wide rule is conservative; it does not qualify final
+  GPU output or assert that every Qwen artifact or size 9..32 fails.
+  LiteRT-LM attempts GPU on Android under `ComputeDevice.auto`. On Android
+  12+ with target API 31+, add `<uses-native-library
+  android:name="libOpenCL.so" android:required="false"/>` inside the app's
+  manifest `<application>` so vendor OpenCL is accessible. Keep it optional.
+  This does not qualify the driver or model: WebGPU's 128 MiB binding limit
+  on Adreno 750 can reject larger weight buffers. Failed GPU creation under
+  `auto` retries on CPU with a warning; explicit `ComputeDevice.gpu` fails.
+  Check the active backend, and use `ModelParams(device: ComputeDevice.cpu)`
+  to skip the GPU attempt. Native v0.19.0 has accepted corrected-model
+  default-service OpenCL evidence only on SC-51E/API36/DEBUG: 20 cases, six
+  closed lifetimes, eight full-graph placement proofs, cancellation and reload.
+  Preserve the legacy FP32 artifact's four unqualified semantic failures and
+  the unchanged collector FAIL; 15 exact sidecars were forensically extracted
+  from the retained journal, not independently downloaded. This does not
+  qualify every Qwen artifact/device or release profile; see
+  [the platform limits](../../website/docs/platforms/known-platform-issues.md#android)
+  and #1677 / litert-lm-native#51. `ComputeDevice.npu` needs a
   supporting SoC and bundle, and throws `LlamaUnsupportedException` without
   one.
 - Budget memory for phones: 1B-3B parameter models, a `contextSize` no larger

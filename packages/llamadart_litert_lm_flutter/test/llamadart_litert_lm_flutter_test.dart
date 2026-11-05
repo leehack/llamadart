@@ -16,7 +16,6 @@ void main() {
     expect(manifest, contains('name: "llamadart-litert-lm-flutter"'));
     expect(manifest, isNot(contains('GemmaModelConstraintProvider')));
     expect(manifest, contains('name: "LiteRtMetalAccelerator"'));
-    expect(manifest, contains('name: "LiteRtTopKMetalSampler"'));
     expect(
       manifest,
       isNot(
@@ -40,14 +39,13 @@ void main() {
       manifest,
       contains('name: "CLiteRTLM", condition: .when(platforms: [.iOS])'),
     );
-    // The v0.18.0 macOS slices of these two carry an invalid signature, and
-    // the macOS GPU path uses the WebGPU accelerator instead.
-    for (final target in ['LiteRtMetalAccelerator', 'LiteRtTopKMetalSampler']) {
-      expect(
-        manifest,
-        contains('name: "$target", condition: .when(platforms: [.iOS])'),
-      );
-    }
+    // macOS uses WebGPU; the Metal accelerator remains iOS-only.
+    expect(
+      manifest,
+      contains(
+        'name: "LiteRtMetalAccelerator", condition: .when(platforms: [.iOS])',
+      ),
+    );
   });
 
   test('links the complete macOS arm64 runtime', () {
@@ -55,12 +53,7 @@ void main() {
       'darwin/llamadart_litert_lm_flutter/Package.swift',
     ).readAsStringSync();
 
-    for (final target in [
-      'LiteRt',
-      'LiteRtTopKWebGpuSampler',
-      'LiteRtWebGpuAccelerator',
-      'WebgpuDawn',
-    ]) {
+    for (final target in ['LiteRt', 'LiteRtWebGpuAccelerator', 'WebgpuDawn']) {
       expect(
         manifest,
         contains(
@@ -73,6 +66,30 @@ void main() {
         contains('name: "$target", condition: .when(platforms: [.macOS])'),
       );
     }
+  });
+
+  test('declares the seven published v0.19 runtime targets', () {
+    final manifest = File(
+      'darwin/llamadart_litert_lm_flutter/Package.swift',
+    ).readAsStringSync();
+    final targets = RegExp(
+      r'nativeRepoBinaryTarget\(\s*name: "([^"]+)"',
+    ).allMatches(manifest).map((match) => match.group(1)).toList();
+
+    expect(
+      targets,
+      unorderedEquals([
+        'LiteRtLm',
+        'CLiteRTLM',
+        'CLiteRTLMMac',
+        'LiteRtMetalAccelerator',
+        'LiteRt',
+        'LiteRtWebGpuAccelerator',
+        'WebgpuDawn',
+      ]),
+    );
+    expect(manifest, isNot(contains('LiteRtTopKMetalSampler')));
+    expect(manifest, isNot(contains('LiteRtTopKWebGpuSampler')));
   });
 
   test('macOS plugin source does not import the runtime modules', () {

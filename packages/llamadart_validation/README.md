@@ -381,3 +381,32 @@ qualification. Missing build identity on old native runtimes remains unsupported
 Old P01–P04 receipts do not qualify P05; it requires a fresh run. Identity equality
 does not identify model weights, guarantee exact continuation or establish
 cross-build, sampler/RNG, GPU or device compatibility.
+
+## Prospective S24 LiteRT native/public qualifier
+
+The [fixed S24 case graph](native/android_litert/README.md) prepares one reviewed
+SC-51E/API36 run against the eventual final 0.19 artifact. It keeps legacy GPU
+refusal/fallback evidence separate from corrected CPU correctness, isolates the
+corrected GPU attempt in an owned native child, and gates corrected public auto
+on that control. Corrected public auto must then retain GPU placement and
+fresh native initialization across both lifetimes; CPU fallback fails this
+GPU gate while remaining normal product behavior. Source/model-free checks establish no device result and do not
+authorize an APK, cloud run or additional budget reservation.
+
+## Original SD24 diagnostic
+
+The maintained `image-original-containers` local E2E scenario uses the private
+[original-mode operator](native/sd_original_mode/README.md) for six bounded
+native/public same-weight RGB cases. It preserves the original external TAESD,
+cache4/flash-attention settings and failed-history evidence. PR41 artifact,
+consumer bindings/build receipts and exact plan need independent admission;
+model-free source tests are not generation or final-published qualification.
+
+## Android consumer CPU release profiles
+
+The [full/compact release smoke](native/android_qualification/README.md#android-fullcompact-consumer-release-smoke)
+uses separately bound consumer configurations and release instrumentation APKs
+for old/modern arm64 public CPU load, deterministic generation and full reload.
+It reuses raw capture, installed runtime verification and the independent Java
+watchdog. Source checks do not qualify any device/profile combination or replace
+the existing native/public issue controls.

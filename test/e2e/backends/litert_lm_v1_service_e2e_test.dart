@@ -23,6 +23,8 @@ void main() {
         return value;
       }
 
+      final schemaMode =
+          Platform.environment['LITERT_LM_V1_SCHEMA_QUALIFICATION'] == '1';
       final library = required('LITERT_LM_V1_LIBRARY');
       final model = required('LITERT_LM_V1_MODEL');
       final librarySha = required('LITERT_LM_V1_LIBRARY_SHA256').toLowerCase();
@@ -92,6 +94,7 @@ void main() {
         modelSha,
         systemTemp().path,
         '${revision.stdout}'.trim(),
+        if (schemaMode) 'json-schema',
       ]);
       final stdout = process.stdout
           .transform(const Utf8Decoder(allowMalformed: true))
@@ -124,6 +127,7 @@ void main() {
       await File('${output.path}/receipt.json').writeAsString(
         const JsonEncoder.withIndent('  ').convert({
           'source_revision': '${revision.stdout}'.trim(),
+          'qualification_mode': schemaMode ? 'json-schema' : 'service',
           'source_tree': '${tree.stdout}'.trim(),
           'executable_sha256': executableSha,
           'library_sha256': librarySha,
@@ -144,25 +148,100 @@ void main() {
       );
       expect(code, 0, reason: '$text\n$native');
       expect(unchanged, isTrue, reason: 'Source changed during qualification.');
-      final stages = events.map((event) => event['stage']).toList();
-      expect(stages, [
-        'identity',
-        'chat',
-        'cancel',
-        'reload_chat',
-        'cleanup',
-        'run_end',
-      ]);
-      expect(events.last['success'], isTrue);
+      final stages = events
+          .where(
+            (event) =>
+                event['stage'] != 'schema_observation' &&
+                event['stage'] != 'cancel_observation',
+          )
+          .map((event) => event['stage'])
+          .toList();
       expect(
-        events
-            .where(
-              (event) =>
-                  event['stage'] == 'chat' || event['stage'] == 'reload_chat',
-            )
-            .map((event) => event['answer']),
-        ['4', '4'],
+        stages,
+        schemaMode
+            ? [
+                'identity',
+                'schema_control',
+                'schema_chat',
+                'schema_followup',
+                'cancel',
+                'schema_after_cancel',
+                'reload_schema',
+                'reload_followup',
+                'cleanup',
+                'run_end',
+              ]
+            : [
+                'identity',
+                'chat',
+                'cancel',
+                'reload_chat',
+                'cleanup',
+                'run_end',
+              ],
       );
+      expect(events.last['success'], isTrue);
+      if (schemaMode) {
+        expect(events.first['qualification_mode'], 'json-schema');
+        expect(
+          events
+              .where((event) => event['stage'] == 'schema_observation')
+              .map((event) => event['request']),
+          [
+            'schema_control',
+            'schema_chat',
+            'schema_followup',
+            'schema_after_cancel',
+            'reload_schema',
+            'reload_followup',
+          ],
+        );
+        expect(
+          events
+              .where((event) => event['stage'] == 'cancel_observation')
+              .length,
+          1,
+        );
+        expect(
+          events
+              .where(
+                (event) => [
+                  'schema_control',
+                  'schema_followup',
+                  'reload_followup',
+                ].contains(event['stage']),
+              )
+              .map((event) => (event['answer'] as String).trim()),
+          ['BANANA', 'BANANA', 'BANANA'],
+        );
+        expect(
+          events
+              .where(
+                (event) => [
+                  'schema_chat',
+                  'schema_after_cancel',
+                  'reload_schema',
+                ].contains(event['stage']),
+              )
+              .map((event) => event['decoded']),
+          List.filled(3, {
+            'café': '日本 😊',
+            'count': 3,
+            'active': true,
+            'empty': null,
+          }),
+        );
+      } else {
+        expect(
+          events
+              .where(
+                (event) =>
+                    event['stage'] == 'chat' || event['stage'] == 'reload_chat',
+              )
+              .map((event) => event['answer']),
+          ['4', '4'],
+        );
+      }
     },
   );
 }

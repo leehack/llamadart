@@ -231,4 +231,4 @@ Custom native runtimes must export the aLoRA metadata functions; see
 - Ensure adapter/base-model compatibility (architecture/family alignment).
 - When behavior seems unchanged, confirm you are testing on a llama.cpp/GGUF
   target, native or WebGPU with capable bridge assets, and not a LiteRT-LM
-  path (native LiteRT-LM applies only one default-scale adapter passed at load).
+  path: its advanced engine does not support initial text adapters.

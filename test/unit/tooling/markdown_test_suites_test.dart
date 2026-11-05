@@ -48,6 +48,8 @@ const Map<String, String> _notMarkdownReaders = {
   'test/unit/tooling/companion_package_contents_test.dart': _tempTree,
   'test/unit/tooling/install_doc_versions_test.dart': _tempTree,
   'test/unit/tooling/litert_lm_tokenizer_fixture_test.dart': _validationTooling,
+  'test/unit/tooling/litert_lm_v1_schema_qualification_test.dart':
+      'Only reads the JSON CPU profile and renders dry-run plans; it does not execute validation or read Markdown.',
   'test/unit/tooling/macos_litert_lm_prepare_app_script_test.dart':
       'Reads the installation docs only on macOS; this job runs on Linux.',
   'test/unit/tooling/run_local_e2e_test.dart': _validationTooling,

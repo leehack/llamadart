@@ -117,6 +117,25 @@ void main() {
       );
     }, skip: Platform.isWindows ? 'requires bash and POSIX symlinks' : false);
 
+    for (final missing in _arm64Libraries) {
+      test('rejects an arm64 runtime missing $missing', () async {
+        final root = await Directory.systemTemp.createTemp(
+          'litert_prepare_missing_',
+        );
+        addTearDown(() => root.delete(recursive: true));
+
+        final libDir = await _arm64LibraryDir(root);
+        await File(path.join(libDir.path, missing)).delete();
+        final appDir = Directory(path.join(root.path, 'Test.app'));
+        final result = await _runPrepareApp(appDir, libDir, arch: 'arm64');
+
+        expect(result.exitCode, 2, reason: result.stderr.toString());
+        expect(result.stderr, contains('library directory is incomplete'));
+        expect(result.stderr, contains('  - $missing'));
+        expect(_stagedRuntime(appDir).existsSync(), isFalse);
+      }, skip: Platform.isWindows ? 'requires bash and POSIX symlinks' : false);
+    }
+
     test('installs the full arm64 companion library set', () async {
       final root = await Directory.systemTemp.createTemp(
         'litert_prepare_full_',
@@ -124,7 +143,10 @@ void main() {
       addTearDown(() => root.delete(recursive: true));
 
       final libDir = Directory(path.join(root.path, 'litert'))..createSync();
-      for (final library in _arm64Libraries) {
+      for (final library in [
+        ..._arm64Libraries,
+        ..._obsoleteSamplerLibraries,
+      ]) {
         await File(path.join(libDir.path, library)).create();
       }
 
@@ -139,6 +161,13 @@ void main() {
       for (final library in _arm64Libraries) {
         final libraryPath = path.join(runtimeDir, library);
         expect(File(libraryPath).existsSync(), isTrue, reason: library);
+      }
+      for (final library in _obsoleteSamplerLibraries) {
+        expect(
+          File(path.join(runtimeDir, library)).existsSync(),
+          isFalse,
+          reason: library,
+        );
       }
       for (final framework in _oldFrameworks) {
         expect(
@@ -555,19 +584,21 @@ const List<String> _arm64Libraries = [
   'libLiteRt.dylib',
   'libLiteRtLm.dylib',
   'libLiteRtMetalAccelerator.dylib',
-  'libLiteRtTopKMetalSampler.dylib',
-  'libLiteRtTopKWebGpuSampler.dylib',
   'libLiteRtWebGpuAccelerator.dylib',
   'libwebgpu_dawn.dylib',
 ];
 
-/// What Xcode embeds from the companion's v0.18.0 xcframeworks.
+const List<String> _obsoleteSamplerLibraries = [
+  'libLiteRtTopKMetalSampler.dylib',
+  'libLiteRtTopKWebGpuSampler.dylib',
+];
+
+/// What Xcode embeds from the companion's v0.19.0 xcframeworks.
 const List<String> _arm64SwiftPmFiles = [
   'LiteRtLm.framework/Versions/A/LiteRtLm',
   'libCLiteRTLM_mac.dylib',
   'LiteRtLm.framework/Versions/A/Dependencies/libGemmaModelConstraintProvider.dylib',
   'libLiteRt.dylib',
-  'libLiteRtTopKWebGpuSampler.dylib',
   'libLiteRtWebGpuAccelerator.dylib',
   'libwebgpu_dawn.dylib',
 ];

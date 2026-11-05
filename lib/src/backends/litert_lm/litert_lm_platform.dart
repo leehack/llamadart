@@ -126,9 +126,10 @@ void liteRtLmEnsureNativeEmbeddingsQualified() {
   );
 }
 
-/// Returns whether a Linux or Windows ABI has qualified GPU runtime support.
+/// Returns whether a Linux or Windows ABI exposes the explicit GPU backend.
 ///
-/// ARM64 desktop targets remain unavailable until separately qualified.
+/// Backend availability does not establish model or hardware qualification.
+/// ARM64 desktop GPU backends remain unavailable.
 bool liteRtLmDesktopGpuSupportedForAbi(Abi abi) {
   return abi == Abi.linuxX64 || abi == Abi.windowsX64;
 }
@@ -149,5 +150,22 @@ String? normalizeLiteRtLmNativeBackendOverride(String? backend) {
   }
   throw ArgumentError(
     'LiteRtLmBackend backend must be cpu, gpu, or npu; got $backend',
+  );
+}
+
+/// Refuses the C API 1 runtime's macOS floor before any owned library load.
+/// Unknown version strings fail closed; custom paths obey the same floor.
+void liteRtLmEnsureV1PlatformFloor({
+  bool? isMacOS,
+  String? operatingSystemVersion,
+}) {
+  if (!(isMacOS ?? Platform.isMacOS)) return;
+  final version = operatingSystemVersion ?? Platform.operatingSystemVersion;
+  final match = RegExp(
+    r'^(?:Version\s+)?(\d+)\.(\d+)(?:\.\d+)?(?:\s|$)',
+  ).firstMatch(version);
+  if (match != null && int.parse(match.group(1)!) >= 14) return;
+  throw LlamaUnsupportedException(
+    'LiteRT-LM C API 1 native runtime requires macOS 14 or newer on Apple silicon, including custom library paths. The OS version is older or could not be verified. Upgrade macOS or use the llama.cpp backend.',
   );
 }

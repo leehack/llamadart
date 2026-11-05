@@ -18,13 +18,11 @@
 /// the sweep when a default attempt did not pass. On Android Vulkan the
 /// default is the capped path wherever the library applies the cap.
 ///
-/// Every other size is a control and is only recorded. An explicit size, even
-/// one equal to the default `n_ubatch` (512), makes the library leave the cap
-/// off, so `0,512` compares the capped default with the same context
-/// uncapped. That control is expected to answer wrongly on a Vulkan device
-/// with the small matmul tile defect (a Pixel 9 Pro's Mali-G715, subgroup size
-/// 16, answered `8888...`); a correct control there says the cap is no longer
-/// needed.
+/// Every other size is a recorded control. Restricted Qwen3.5 Android Vulkan
+/// paths now refuse explicit sizes above 8 before context creation, recording
+/// typed unsupported rather than a successful generation. Historically the
+/// uncapped Pixel 9 Pro/Mali-G715 subgroup-16 control repeated `8`; the original
+/// CPU `Cedar17` failed exact `cedar17`. Neither becomes a passing result.
 ///
 /// Every repeat of the default size runs first, then the controls repeat by
 /// repeat, and a control sends the tool requests only in its last repeat: a
@@ -318,6 +316,10 @@ void main() {
         journal.log({
           'event': 'attempt_error',
           ...labels,
+          'unsupported_control':
+              !judged &&
+              error is LlamaUnsupportedException &&
+              error.message.contains('llamadart/issues/948'),
           'error_type': '${error.runtimeType}',
           'error': '$error',
         });

@@ -98,6 +98,93 @@ void main() {
     );
   });
 
+  test('smoke inventory selection admits only reviewed release tags', () {
+    expect(liteRtLmSmokeUsesCApiV1('v0.19.0'), isTrue);
+    expect(liteRtLmSmokeUsesCApiV1('v0.18.1-4'), isFalse);
+    for (final tag in ['v0.19.0-1', 'v0.19.1', 'v0.20.0', 'g0123456789ab']) {
+      expect(
+        () => liteRtLmSmokeUsesCApiV1(tag),
+        throwsA(
+          isA<UnsupportedError>().having(
+            (error) => error.message,
+            'message',
+            contains('no reviewed C API inventory for $tag'),
+          ),
+        ),
+      );
+    }
+  });
+
+  for (final (tag, abi) in [
+    ('v0.19.0', Abi.linuxX64),
+    ('v0.19.0', Abi.windowsX64),
+    ('v0.18.1-4', Abi.linuxX64),
+    ('v0.18.1-4', Abi.windowsX64),
+  ]) {
+    final cApiV1 = liteRtLmSmokeUsesCApiV1(tag);
+    final required = liteRtLmRequiredLibrariesForAbi(abi, cApiV1: cApiV1);
+    test('$tag $abi smoke opens its complete reviewed inventory', () {
+      final runtimeDir = Directory(path.join(directory.path, 'runtime'))
+        ..createSync();
+      for (final name in required) {
+        File(path.join(runtimeDir.path, name)).writeAsStringSync('fixture');
+      }
+      final calls = <String>[];
+      final opened = openLiteRtLmSmokeLibrary(
+        directory: runtimeDir.path,
+        abi: abi,
+        cApiV1: cApiV1,
+        openLibrary: (library) {
+          calls.add(path.basename(library));
+          return DynamicLibrary.process();
+        },
+      );
+      final primary = liteRtLmPrimaryLibraryForAbi(abi)!;
+      final nonPreloaded = liteRtLmNonPreloadedLibrariesForAbi(abi);
+      expect(
+        calls,
+        unorderedEquals(required.where((name) => !nonPreloaded.contains(name))),
+      );
+      expect(calls.last, primary);
+      expect(opened.companions, hasLength(calls.length - 1));
+      expect(calls, isNot(anyElement(isIn(nonPreloaded))));
+      if (cApiV1) {
+        expect(calls, isNot(anyElement(contains('TopK'))));
+      } else {
+        expect(calls, anyElement(contains('TopKWebGpuSampler')));
+      }
+    });
+
+    for (final missing in required) {
+      test('$tag $abi refuses missing $missing before any library opens', () {
+        final runtimeDir = Directory(path.join(directory.path, 'runtime'))
+          ..createSync();
+        for (final name in required.where((name) => name != missing)) {
+          File(path.join(runtimeDir.path, name)).writeAsStringSync('fixture');
+        }
+        expect(
+          () => openLiteRtLmSmokeLibrary(
+            directory: runtimeDir.path,
+            abi: abi,
+            cApiV1: cApiV1,
+            openLibrary: (_) =>
+                fail('must validate every required member first'),
+          ),
+          throwsA(
+            isA<StateError>().having(
+              (error) => error.message,
+              'message',
+              contains(
+                'Required LiteRT-LM smoke library is missing: '
+                '${runtimeDir.path}/$missing',
+              ),
+            ),
+          ),
+        );
+      });
+    }
+  }
+
   test('an unresolved DLL dependency still fails the smoke', () {
     final failure = ArgumentError('missing external dependency');
     expect(

@@ -234,6 +234,8 @@ void main() {
     'repetition overflow': const LiteRtLmV1TurnSettings(
       repetitionPenalty: 3.5e38,
     ),
+    'thinking zero': const LiteRtLmV1TurnSettings(thinkingTokenBudget: 0),
+    'thinking unlimited': const LiteRtLmV1TurnSettings(thinkingTokenBudget: -1),
     'presence nan': const LiteRtLmV1TurnSettings(presencePenalty: double.nan),
     'presence infinity': const LiteRtLmV1TurnSettings(
       presencePenalty: double.negativeInfinity,
@@ -266,8 +268,6 @@ void main() {
       repetitionPenalty: 0.9,
     ),
     'thinking positive': const LiteRtLmV1TurnSettings(thinkingTokenBudget: 4),
-    'thinking zero': const LiteRtLmV1TurnSettings(thinkingTokenBudget: 0),
-    'thinking unlimited': const LiteRtLmV1TurnSettings(thinkingTokenBudget: -1),
   }.entries) {
     test(
       '${entry.key} is typed unsupported without native allocation',

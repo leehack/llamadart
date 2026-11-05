@@ -151,7 +151,6 @@ void main() {
           'CLiteRTLM',
           'LiteRtLm',
           'LiteRtMetalAccelerator',
-          'LiteRtTopKMetalSampler',
         ]),
         reason: bundle,
       );
@@ -165,7 +164,7 @@ void main() {
     );
   });
 
-  test('desktop bundle specs agree with the runtime required lists', () {
+  test('desktop bundle specs agree with the C API 1.0 required lists', () {
     const desktopBundles = {
       'macos-arm64': Abi.macosArm64,
       'linux-arm64': Abi.linuxArm64,
@@ -177,20 +176,43 @@ void main() {
         (spec) => spec.bundle == entry.key,
       );
       expect(
-        liteRtLmRequiredLibrariesForAbi(entry.value),
+        liteRtLmRequiredLibrariesForAbi(entry.value, cApiV1: true),
         unorderedEquals(spec.requiredLibraries),
         reason: entry.key,
       );
     }
   });
 
-  test('stable_diffusion pins the qualified v0.3.0-2 release artifacts', () {
+  test('legacy overrides retain their prebuilt sampler requirements', () {
+    const samplers = {
+      Abi.macosArm64: [
+        'libLiteRtTopKMetalSampler.dylib',
+        'libLiteRtTopKWebGpuSampler.dylib',
+      ],
+      Abi.linuxArm64: ['libLiteRtTopKWebGpuSampler.so'],
+      Abi.linuxX64: ['libLiteRtTopKWebGpuSampler.so'],
+      Abi.windowsX64: ['libLiteRtTopKWebGpuSampler.dll'],
+    };
+    for (final entry in samplers.entries) {
+      final modern = liteRtLmRequiredLibrariesForAbi(entry.key, cApiV1: true);
+      expect(
+        liteRtLmRequiredLibrariesForAbi(entry.key),
+        unorderedEquals([...modern, ...entry.value]),
+        reason: entry.key.toString(),
+      );
+      for (final sampler in entry.value) {
+        expect(modern, isNot(contains(sampler)), reason: entry.key.toString());
+      }
+    }
+  });
+
+  test('stable_diffusion pins the qualified v0.3.0-3 release artifacts', () {
     // Exact published owner manifest, independently checked against GitHub
     // asset digests before adoption. This also binds the Apple binary target.
     final manifest =
         jsonDecode(
               File(
-                'test/fixtures/native/stable_diffusion_v0_3_0_2_manifest.json',
+                'test/fixtures/native/stable_diffusion_v0_3_0_3_manifest.json',
               ).readAsStringSync(),
             )
             as Map<String, dynamic>;
@@ -218,7 +240,7 @@ void main() {
     final apple = artifacts.singleWhere(
       (artifact) =>
           artifact['file'] ==
-          'stable-diffusion-native-apple-xcframework-v0.3.0-2.zip',
+          'stable-diffusion-native-apple-xcframework-v0.3.0-3.zip',
     );
     final swift = File(
       'packages/llamadart_stable_diffusion_flutter/darwin/'
@@ -234,7 +256,7 @@ void main() {
     final manifest =
         jsonDecode(
               File(
-                'test/fixtures/native/stable_diffusion_v0_3_0_2_manifest.json',
+                'test/fixtures/native/stable_diffusion_v0_3_0_3_manifest.json',
               ).readAsStringSync(),
             )
             as Map<String, dynamic>;

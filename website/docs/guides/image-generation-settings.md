@@ -87,7 +87,7 @@ decoder across automatic source refresh and rejects a replacement before
 runner construction, backend probes and decoding. A header or initial native
 family query alone cannot enforce that invariant.
 
-The pinned stable-diffusion-native `v0.3.0-2` provides this policy for
+The pinned stable-diffusion-native `v0.3.0-3` provides this policy for
 intrinsic SDXS tiny decoders. For other models, use
 `ImageModelPlacement(vaeOnCpu: true)` to keep diffusion on Metal, or
 `ComputeDevice.cpu`. Recipes with an external TAESD

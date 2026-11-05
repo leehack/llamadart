@@ -953,6 +953,31 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
       ],
     ),
     LocalE2eScenario(
+      name: 'image-original-containers',
+      group: LocalE2eScenarioGroup.dartLocalOnly,
+      description:
+          'Run the six hash-bound original SD24 native/public diagnostic cases '
+          'with external TAESD, cache4 and diffusion flash attention; '
+          '--model-path is the independently admitted local plan.',
+      requiresDevice: false,
+      stepsBuilder: (context) => [
+        LocalE2eCommandStep(
+          workingDirectory: context.projectRoot,
+          executable: context.python,
+          arguments: [
+            'packages/llamadart_validation/native/sd_original_mode/run.py',
+            '--plan',
+            context.modelPath!,
+            '--out',
+            '${context.projectRoot}/build/image-original-containers',
+            '--execute',
+          ],
+          description:
+              'Bounded original-mode diagnostic, not release qualification',
+        ),
+      ],
+    ),
+    LocalE2eScenario(
       name: 'image-seamless-textures',
       group: LocalE2eScenarioGroup.dartLocalOnly,
       description:
@@ -1708,6 +1733,7 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
           ],
           environment: {
             'LITERT_LM_V1_MODEL': context.modelPath!,
+            'LITERT_LM_V1_SCHEMA_QUALIFICATION': '0',
             for (final name in const [
               'LITERT_LM_V1_LIBRARY',
               'LITERT_LM_V1_LIBRARY_SHA256',
@@ -1718,6 +1744,112 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
                 ?context.environment['LITERT_LM_V1_LOG_DIR'],
           },
           description: 'Bounded actual LiteRT v1 CPU service qualification',
+        ),
+      ],
+    ),
+    LocalE2eScenario(
+      name: 'litert-lm-v1-json-schema',
+      group: LocalE2eScenarioGroup.dartLocalOnly,
+      description:
+          'Qualify internal v1 JSON Schema through the injected CPU service on the fixed published Qwen profile, with Unicode/types, thinking-disabled output, control/followup, cancellation and reload.',
+      requiresDevice: false,
+      stepsBuilder: (context) => [
+        LocalE2eCommandStep(
+          workingDirectory: context.projectRoot,
+          executable: 'dart',
+          arguments: const [
+            'test',
+            '--run-skipped',
+            '-p',
+            'vm',
+            '-j',
+            '1',
+            '-t',
+            'local-only',
+            'test/e2e/backends/litert_lm_v1_service_e2e_test.dart',
+          ],
+          environment: {
+            'LITERT_LM_V1_MODEL': context.modelPath!,
+            'LITERT_LM_V1_SCHEMA_QUALIFICATION': '1',
+            for (final name in const [
+              'LITERT_LM_V1_LIBRARY',
+              'LITERT_LM_V1_LIBRARY_SHA256',
+              'LITERT_LM_V1_MODEL_SHA256',
+            ])
+              name: context.environment[name] ?? '',
+            'LITERT_LM_V1_LOG_DIR':
+                ?context.environment['LITERT_LM_V1_LOG_DIR'],
+          },
+          description: 'Bounded actual LiteRT v1 CPU service qualification',
+        ),
+      ],
+    ),
+    for (final route in const ['direct', 'service', 'speech'])
+      LocalE2eScenario(
+        name: 'litert-lm-v1-public-$route',
+        group: LocalE2eScenarioGroup.dartLocalOnly,
+        description:
+            'Qualify the uninjected public $route path against hash-bound runtime/model/config bytes; disabled v1 refuses.',
+        requiresDevice: false,
+        stepsBuilder: (context) => [
+          LocalE2eCommandStep(
+            workingDirectory: context.projectRoot,
+            executable: 'dart',
+            arguments: [
+              'run',
+              'test/fixtures/litert_lm_v1_public_qualification.dart',
+              route,
+              context.environment['LITERT_LM_V1_LIBRARY']!,
+              context.environment['LITERT_LM_V1_LIBRARY_SHA256']!.toLowerCase(),
+              context.modelPath!,
+              context.environment['LITERT_LM_V1_MODEL_SHA256']!.toLowerCase(),
+              context.environment['LITERT_LM_V1_RUNTIME_MANIFEST']!,
+              context.environment['LITERT_LM_V1_RUNTIME_MANIFEST_SHA256']!
+                  .toLowerCase(),
+              context.environment['LITERT_LM_V1_PUBLIC_CONFIG']!,
+              context.environment['LITERT_LM_V1_PUBLIC_CONFIG_SHA256']!
+                  .toLowerCase(),
+            ],
+            description:
+                'Bounded public LiteRT v1 $route qualification without injected factories',
+          ),
+        ],
+      ),
+    LocalE2eScenario(
+      name: 'litert-lm-v1-thinking-budget',
+      group: LocalE2eScenarioGroup.dartLocalOnly,
+      description:
+          'Qualify exact Gemma CPU native thinking bounds, cancellation, no-budget isolation and reload with complete runtime payload identity.',
+      requiresDevice: false,
+      stepsBuilder: (context) => [
+        LocalE2eCommandStep(
+          workingDirectory: context.projectRoot,
+          executable: 'dart',
+          arguments: const [
+            'test',
+            '--run-skipped',
+            '-p',
+            'vm',
+            '-j',
+            '1',
+            '-t',
+            'local-only',
+            'test/e2e/backends/litert_lm_v1_thinking_e2e_test.dart',
+          ],
+          environment: {
+            'LITERT_LM_V1_MODEL': context.modelPath!,
+            for (final name in const [
+              'LITERT_LM_V1_LIBRARY',
+              'LITERT_LM_V1_LIBRARY_SHA256',
+              'LITERT_LM_V1_MODEL_SHA256',
+              'LITERT_LM_V1_RUNTIME_MANIFEST',
+              'LITERT_LM_V1_RUNTIME_MANIFEST_SHA256',
+            ])
+              name: context.environment[name] ?? '',
+            'LITERT_LM_V1_LOG_DIR':
+                ?context.environment['LITERT_LM_V1_LOG_DIR'],
+          },
+          description: 'Bounded actual v1 Gemma CPU thinking qualification',
         ),
       ],
     ),
@@ -2688,6 +2820,15 @@ Future<LocalE2eResult> runLocalE2e(
       );
     }
   }
+  if (scenario.name == 'image-original-containers' &&
+      parsed.modelPath == null) {
+    return const LocalE2eResult(
+      64,
+      stderr:
+          '--model-path <independently-admitted-plan.json> is required for '
+          'image-original-containers; see doc/image_weight_formats.md.\n',
+    );
+  }
   if (scenario.name == 'image-container-formats' &&
       (parsed.modelPath == null ||
           (environment ??
@@ -2752,7 +2893,9 @@ Future<LocalE2eResult> runLocalE2e(
   if ((scenario.name == 'llama-cpp-speculative-benchmark' ||
           scenario.name == 'llama-cpp-chat-template-smoke' ||
           scenario.name == 'litert-lm-lifecycle' ||
+          scenario.name == 'litert-lm-v1-thinking-budget' ||
           scenario.name == 'litert-lm-v1-service' ||
+          scenario.name == 'litert-lm-v1-json-schema' ||
           scenario.name == 'litert-lm-json-schema' ||
           scenario.name == 'litert-lm-multimodal-embedding' ||
           scenario.name == 'litert-lm-web-text-history' ||
@@ -2774,7 +2917,39 @@ Future<LocalE2eResult> runLocalE2e(
     );
   }
 
-  if (scenario.name == 'litert-lm-v1-service' ||
+  if (scenario.name.startsWith('litert-lm-v1-public-')) {
+    if (parsed.modelPath == null || parsed.backend != 'cpu') {
+      return const LocalE2eResult(
+        64,
+        stderr:
+            'Public v1 qualification requires --model-path and --backend cpu.\n',
+      );
+    }
+    final env = environment ?? Platform.environment;
+    for (final name in const [
+      'LITERT_LM_V1_LIBRARY',
+      'LITERT_LM_V1_LIBRARY_SHA256',
+      'LITERT_LM_V1_MODEL_SHA256',
+      'LITERT_LM_V1_RUNTIME_MANIFEST',
+      'LITERT_LM_V1_RUNTIME_MANIFEST_SHA256',
+      'LITERT_LM_V1_PUBLIC_CONFIG',
+      'LITERT_LM_V1_PUBLIC_CONFIG_SHA256',
+    ]) {
+      final value = env[name]?.trim() ?? '';
+      if (value.isEmpty ||
+          (name.endsWith('SHA256') &&
+              !RegExp(r'^[0-9a-fA-F]{64}$').hasMatch(value))) {
+        return LocalE2eResult(
+          64,
+          stderr: '$name is required for public v1 qualification.\n',
+        );
+      }
+    }
+  }
+
+  if (scenario.name == 'litert-lm-v1-thinking-budget' ||
+      scenario.name == 'litert-lm-v1-service' ||
+      scenario.name == 'litert-lm-v1-json-schema' ||
       scenario.name == 'litert-lm-v1-asr-smoke') {
     if (parsed.backend != 'cpu') {
       return const LocalE2eResult(
@@ -2787,6 +2962,10 @@ Future<LocalE2eResult> runLocalE2e(
       'LITERT_LM_V1_LIBRARY',
       'LITERT_LM_V1_LIBRARY_SHA256',
       'LITERT_LM_V1_MODEL_SHA256',
+      if (scenario.name == 'litert-lm-v1-thinking-budget') ...[
+        'LITERT_LM_V1_RUNTIME_MANIFEST',
+        'LITERT_LM_V1_RUNTIME_MANIFEST_SHA256',
+      ],
       if (scenario.name == 'litert-lm-v1-asr-smoke') ...[
         'LITERT_LM_V1_TOKENIZER_SHA256',
         'LITERT_LM_V1_AUDIO_SHA256',
@@ -2803,6 +2982,27 @@ Future<LocalE2eResult> runLocalE2e(
         );
       }
     }
+  }
+
+  if (scenario.name == 'litert-lm-v1-json-schema' &&
+      (environment ?? Platform.environment)['LITERT_LM_V1_MODEL_SHA256']
+              ?.toLowerCase() !=
+          'c5f39b4191926786c3e6668b62af4d6eb15248dfc7a5348252a9b406f33f2108') {
+    return const LocalE2eResult(
+      64,
+      stderr:
+          'litert-lm-v1-json-schema requires the fixed published Qwen CPU profile model SHA256.\n',
+    );
+  }
+
+  if (scenario.name == 'litert-lm-v1-thinking-budget' &&
+      (environment ?? Platform.environment)['LITERT_LM_V1_MODEL_SHA256']
+              ?.toLowerCase() !=
+          '181938105e0eefd105961417e8da75903eacda102c4fce9ce90f50b97139a63c') {
+    return const LocalE2eResult(
+      64,
+      stderr: 'The fixed maintained Gemma thinking model SHA256 is required.\n',
+    );
   }
 
   if (scenario.name == 'text-embedding-retrieval') {

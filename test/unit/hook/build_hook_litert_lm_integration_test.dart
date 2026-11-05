@@ -997,13 +997,47 @@ dependency_overrides: {llamadart_llama_cpp_flutter: {path: resolved companion}}
         'let liteRtLmTag = "$pin"',
       );
 
+  for (final pin in ['v0.18.0', coreLiteRtLmTag]) {
+    test('build hook rejects the published 0.0.15 manifest topology '
+        'even when it declares $pin', () async {
+      final manifest = _publishedLiteRtLmCompanion0015Manifest().replaceFirst(
+        'let liteRtLmTag = "v0.18.0"',
+        'let liteRtLmTag = "$pin"',
+      );
+      final stderrLines = await _capturingStderr(
+        () async => project.testCodeBuildHook(
+          mainMethod: build_hook.main,
+          targetOS: OS.macOS,
+          targetArchitecture: Architecture.arm64,
+          userDefines: await _flutterLiteRtLmOnlyUserDefines(
+            liteRtLmManifest: manifest,
+          ),
+          check: (input, output) {
+            expect(output.assets.encodedAssets, isEmpty);
+            expect(
+              Directory(
+                path.join(input.outputDirectory.toFilePath(), 'llamadart_bin'),
+              ).existsSync(),
+              isTrue,
+            );
+          },
+        ),
+      );
+      expect(
+        stderrLines.where((line) => line.startsWith('warning: llamadart:')),
+        [
+          'warning: llamadart: The resolved llamadart_litert_lm_flutter '
+              'does not link the complete macOS LiteRT-LM runtime '
+              '(its Package.swift is not the macOS-complete manifest), '
+              'so LiteRT-LM stays in the hook cache, which a sandboxed or '
+              'relocated app cannot load. Upgrade llamadart_litert_lm_flutter '
+              'together with llamadart.',
+        ],
+      );
+    });
+  }
+
   for (final (scenario, manifest, pin, upgradeCompanion) in [
-    (
-      'the published 0.0.15 manifest',
-      _publishedLiteRtLmCompanion0015Manifest,
-      'v0.18.0',
-      coreUpstream == 'v0.18.0',
-    ),
     if (coreRebuild > 0)
       (
         'a macOS-complete manifest pinning the bare upstream release',
@@ -2682,8 +2716,6 @@ const List<String> _androidLiteRtLibraries = [
   'libLiteRtGpuAccelerator.so',
   'libLiteRtLm.so',
   'libLiteRtOpenClAccelerator.so',
-  'libLiteRtTopKOpenClSampler.so',
-  'libLiteRtTopKWebGpuSampler.so',
   'libLiteRtWebGpuAccelerator.so',
   'libwebgpu_dawn.so',
 ];
@@ -2692,14 +2724,12 @@ const List<String> _iosLiteRtLibraries = [
   'LiteRtLm',
   'CLiteRTLM',
   'LiteRtMetalAccelerator',
-  'LiteRtTopKMetalSampler',
 ];
 
 const List<String> _iosLiteRtAssetNames = [
   'litert_lm_LiteRtLm',
   'litert_lm_CLiteRTLM',
   'litert_lm_LiteRtMetalAccelerator',
-  'litert_lm_LiteRtTopKMetalSampler',
 ];
 
 const List<String> _macosArm64LiteRtLibraries = [
@@ -2708,8 +2738,6 @@ const List<String> _macosArm64LiteRtLibraries = [
   'libLiteRt.dylib',
   'libLiteRtLm.dylib',
   'libLiteRtMetalAccelerator.dylib',
-  'libLiteRtTopKMetalSampler.dylib',
-  'libLiteRtTopKWebGpuSampler.dylib',
   'libLiteRtWebGpuAccelerator.dylib',
   'libwebgpu_dawn.dylib',
 ];
@@ -2719,7 +2747,6 @@ const List<String> _linuxLiteRtLibraries = [
   'libLiteRt.so',
   'libLiteRtLm.so',
   'libwebgpu_dawn.so',
-  'libLiteRtTopKWebGpuSampler.so',
   'libLiteRtWebGpuAccelerator.so',
 ];
 
@@ -2728,7 +2755,6 @@ const List<String> _linuxLiteRtAssetNames = [
   'litert_lm_LiteRt',
   'litert_lm_LiteRtLm',
   'litert_lm_webgpu_dawn',
-  'litert_lm_LiteRtTopKWebGpuSampler',
   'litert_lm_LiteRtWebGpuAccelerator',
 ];
 
@@ -2740,7 +2766,6 @@ const List<String> _windowsLiteRtLibraries = [
   'libLiteRt.dll',
   'libwebgpu_dawn.dll',
   'webgpu_dawn.dll',
-  'libLiteRtTopKWebGpuSampler.dll',
   'libLiteRtWebGpuAccelerator.dll',
   'msvcp140.dll',
   'vcruntime140.dll',

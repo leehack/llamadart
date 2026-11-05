@@ -100,6 +100,14 @@ objects with exactly `id`, `path`, `sha256`, `source`, `preimageSha256Lf`,
 hashes must be lowercase 64-hex SHA-256 digests. The owner validates patch
 contents and applicability; sync validates the declared provenance shape.
 
+Schema-2 sync updates the runtime discovery table selected by the validated
+upstream compatibility tag: `v0.19.0` updates the admitted C API 1.0 table;
+earlier versions update the legacy table. Library, macOS framework and native
+SwiftPM inventories stay separate, so repinning cannot relax discovery of an
+explicit older runtime. Unknown newer compatibility tags require a reviewed API
+mapping before generation. The sync tests compile and execute both discovery
+paths after generation, including missing-companion refusal.
+
 For schema 2, Apple target selection follows the per-platform owner inventory.
 Sync removes a formerly required iOS Gemma constraint-provider target from a
 modern Swift manifest when the new iOS bundles no longer require it. An optional
@@ -109,6 +117,24 @@ in the generated inventories. Releases whose iOS bundles still require the
 provider retain it; malformed or ambiguous Swift target layouts fail before
 pin files are replaced. Updating the sync tool does not change the current pins
 or publish a runtime.
+
+The reviewed `v0.19.0` owner links both TopK samplers from source, so its
+Apple inventory no longer requires the prebuilt iOS `LiteRtTopKMetalSampler`
+or macOS `LiteRtTopKWebGpuSampler`. Earlier core requirements for those 0.19
+artifacts were stale. Sync removes both targets only from the known nine-target
+layout after validating every canonical artifact and platform dependency, and
+only when the owner bundles no longer require either library. The same checks
+apply when refreshing an already converted seven-target manifest. It preserves the
+Metal accelerator and other runtime targets. Versions 0.16 through 0.18 retain
+their prebuilt sampler requirements. This removal does not apply to other
+versions or layouts, which need a reviewed transition before pin files change.
+
+LiteRT-LM sync also stages the hook's accepted full-manifest template hash from
+the same rendered `Package.swift`. The original manifest must already match the
+hook's reviewed template; a stale hash or a hand-edited manifest fails before any
+file is written. Dry-run prints the prospective hash. This keeps the known
+v0.19 seven-target transition on the macOS app-bundle path without relaxing the
+manifest contract or changing the currently pinned runtime.
 
 Changing between stable and development channels requires
 `--allow-litert-channel-transition`; changing between two distinct `g<sha>`
@@ -297,12 +323,24 @@ runtime it bundles. Then run the `image-generation-smoke` and
 ## Native version update checklist
 
 LiteRT-LM 0.19 changes C function signatures to status returns and output
-parameters. Current handwritten runtime bindings reject the versioned API
-before engine calls. A candidate runtime injected for #1677 must exercise this
-refusal until its complete bindings/lifecycle migration is enabled; replacing
-the native pin or generated embedding bindings alone is unsafe. Keep pinned
-0.18 support intact during preparation and qualify both artifact directions
-before adoption.
+parameters. The public lazy facade, service metadata/finish probes and speech
+worker share discovery and ABI selection. `_liteRtLmV1ProductionSelection` in
+`litert_lm_runtime_facade.dart` enables public C API 1.0.x dispatch. The native
+hook and Apple companion source now pin published
+[v0.19.0](https://github.com/leehack/litert-lm-native/releases/tag/v0.19.0),
+owner `f173fe9b` / upstream `83ce6067`. Independent readback matched all 21 public
+assets to qualified bytes; GitHub reports `immutable: false`, so this is verified
+snapshot evidence, not enforced immutability. Public selection retains legacy
+overrides when the version marker is absent; a present marker must report C API
+1.0.x. Failed, malformed and future versions never retry legacy arities, and
+optional capabilities still require their complete export/probe groups. The
+selected path checks macOS 14+ before core or companion discovery, including
+legacy libraries and explicit paths. A caller-opened library cannot retroactively
+prevent dlopen, so the direct v1 adapter also checks the floor before native
+operations. Replacing the native pin or generated embedding bindings alone is
+unsafe. Preserve tested legacy compatibility and complete affected default
+consumers, SwiftPM/Apple embedding/signature checks and exact-head CI/audit before
+merge or release. Source pin adoption does not publish core or Apple packages.
 
 Worker request completion and native settlement are separate. An errored v1
 turn is safe to release only after its actual final callback and successful
@@ -314,7 +352,10 @@ bounded to the failed backend; disposal never reports successful cleanup in this
 state. Do not kill the retained isolate or release its lease to make teardown
 appear complete.
 
-This transport preparation does not select C API 1 publicly. The owner proxy's
+Public ABI-aware selection and the v0.19.0 source pin are enabled; remaining
+consumer, feature and platform gates are recorded in
+`doc/litert_lm_v1_adoption.md`. This transport contract alone does not qualify a
+model or device. The owner proxy's
 callback ABI 2 and finish-reason ABI 1 alone do not establish lossless callback
 delivery under allocation failure. Owner
 [issue #97](https://github.com/leehack/litert-lm-native/issues/97) defines the
@@ -327,12 +368,24 @@ settled for a fresh child. Even native cancellation cannot normalize copy loss
 into success. Failed drain retains the entire native family without reading the
 status or freeing the proxy.
 
-This is fixture-backed consumer preparation for
-[owner PR #98](https://github.com/leehack/litert-lm-native/pull/98), not adoption
-of an immutable owner artifact. Owner source/release qualification and ASR,
-media, tools, schema and embedding migration remain public adoption gates. The
-ASR bridge has its own versioned ABI, but its current Dart loader still passes
-through the legacy C API refusal.
+### Historical v1 adapter preparation
+
+The following snapshots describe earlier internal slices, when public routing
+and several feature families were still pending. They are retained for ABI and
+ownership context, not as the current capability list. Public direct calls,
+default services and speech now share ABI-aware selection; current coverage and
+remaining artifact/model/platform gates are in `doc/litert_lm_v1_adoption.md`.
+At that stage, owner pins and companion assets were unchanged pending qualified
+adoption.
+
+The [owner PR #98](https://github.com/leehack/litert-lm-native/pull/98) snapshot
+was fixture-backed consumer preparation, not adoption of a published owner
+artifact. Owner source/release qualification and ASR, media, tools, schema and
+embedding migration were still public adoption gates. The ASR bridge already
+had its own versioned ABI, but the Dart loader at that stage still passed
+through the legacy C API refusal. The current speech worker uses the shared
+ABI-aware facade and independently checks the ASR bridge version, layout and
+complete exports; the historical refusal is not its current capability status.
 
 Internal v1 `loadConfigured` transports resolved engine options through the
 status-returning API. Its typed settings use the existing compute-device and
@@ -442,10 +495,26 @@ one million turns are refused instead of truncated. Pending or quarantined
 native work prohibits metadata, render and benchmark calls. These remain
 fixture-backed ABI/lifetime controls without model or device qualification.
 
-The internal v1 client can now be explicitly injected through `LiteRtLmService` for text/tool chat, response assembly, metrics and lifetime
-checks. The existing public client and Web stub stay unchanged. This does not
-select v1 publicly: `doc/litert_lm_v1_adoption.md` tracks each existing call path,
-the remaining feature families and the owner/artifact gates before adoption.
+At that stage, the internal v1 client could be explicitly injected through
+`LiteRtLmService` for text/tool chat, response assembly, metrics and lifetime
+checks. That slice left the public client and Web stub unchanged and did not
+select v1 publicly. Current public selection and the remaining feature-family
+and consumer gates are tracked in `doc/litert_lm_v1_adoption.md`.
+
+### Current v1 discovery
+
+C API 1.0 discovery accepts the owner's sampler-free 0.19 desktop
+inventory only after probing the selected primary library's supported C API.
+An absent marker still requires every legacy TopK companion. Common companions
+load before that probe; legacy-only samplers load after admission. macOS flat,
+versioned-framework and native-SPM layouts follow the same rule. A staged
+concrete directory keeps its own primary handle rather than falling back to the
+process image; iOS wrapper/process discovery is unchanged.
+
+`LLAMADART_LITERT_LM_LIB_DIR` takes precedence over packaged and cached desktop
+runtimes. An incomplete directory or an unloadable explicit library now fails
+with a typed unsupported error instead of substituting another runtime. These
+controls preserve public ABI-aware selection and do not change pinned artifacts.
 
 Use this checklist in native sync PRs:
 

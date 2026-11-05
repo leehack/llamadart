@@ -119,16 +119,18 @@ class LiteRtLmService {
            (() => Platform.isMacOS && Abi.current() == Abi.macosArm64),
        _clientFactory =
            runtimeClientFactory ??
-           (() => LiteRtLmLegacyServiceClient(
-             (clientFactory ?? LiteRtLmRuntimeClient.new)(),
-           )),
+           (() => clientFactory == null
+               ? createLiteRtLmSelectedServiceClient()
+               : LiteRtLmLegacyServiceClient(clientFactory())),
        _injectedFinishReasonProbe = runtimeClientFactory == null
            ? null
            : (() => runtimeClientFactory().supportsFinishReasons),
        _readBundleCapabilities =
            readBundleCapabilities ??
            ((modelPath) => runtimeClientFactory == null
-               ? LiteRtLmRuntimeClient().bundleCapabilities(modelPath)
+               ? createLiteRtLmSelectedRuntimeClient().bundleCapabilities(
+                   modelPath,
+                 )
                : runtimeClientFactory().bundleCapabilities(modelPath)),
        _readBundleChatTemplate =
            readBundleChatTemplate ?? readLiteRtLmBundleChatTemplate,
@@ -596,7 +598,9 @@ class LiteRtLmService {
     final client = await _ensureClientForGeneration(const GenerationParams());
     if (!client.supportsJsonSchemaConstraints) {
       throw LlamaUnsupportedException(
-        'Native JSON Schema chat requires all constraint-provider and thinking-config symbols in the packaged LiteRT-LM v0.18.1-4 runtime.',
+        'Native JSON Schema chat requires all constraint-provider and thinking-config symbols. '
+        'Use the packaged LiteRT-LM v0.19.0 runtime through the default ABI-selecting client; '
+        'model and platform qualification still applies.',
       );
     }
     try {
@@ -1947,11 +1951,11 @@ class LiteRtLmService {
   /// Probes a fresh client, so a model load that asks creates no engine.
   bool reportsFinishReasons() =>
       _runtimeFinishReasons ??= _finishReasonProbeLibraryPath != null
-      ? LiteRtLmRuntimeClient(
+      ? createLiteRtLmSelectedRuntimeClient(
           libraryPath: _finishReasonProbeLibraryPath,
         ).supportsFinishReasons
       : _injectedFinishReasonProbe?.call() ??
-            LiteRtLmRuntimeClient().supportsFinishReasons;
+            createLiteRtLmSelectedRuntimeClient().supportsFinishReasons;
 
   /// The token limit that ended the latest generation, or null when it ended
   /// at a stop token, a stop sequence, cancellation or an error, is still

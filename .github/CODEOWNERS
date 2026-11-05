@@ -76,6 +76,8 @@ test/ci/test_deploy_guard.py @leehack
 tool/ci/select_jobs.py @leehack
 tool/ci/native_test_timing.dart @leehack
 tool/ci/litert_lm_temp_canary.sh @leehack
+tool/ci/supervise_chrome_test.py @leehack
+test/ci/test_supervise_chrome_test.py @leehack
 
 example/chat_app/linux/runner/my_application.cc @leehack
 
@@ -117,3 +119,6 @@ lib/src/backends/litert_lm/litert_lm_embedding_bindings.dart @leehack
 /test/fixtures/windows_ggml_registry_qualification/ @leehack
 /test/integration/windows_ggml_registry_qualification_test.dart @leehack
 /tool/testing/run_local_e2e.dart @leehack
+
+# Private Android release-instrumentation class retention.
+/example/chat_app/android/app/consumer-profile-proguard-rules.pro @leehack

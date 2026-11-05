@@ -304,8 +304,8 @@ void main() {
       expect(
         () => client.bundleCapabilities('/missing/model.litertlm'),
         throwsA(
-          isA<ArgumentError>().having(
-            (error) => error.toString(),
+          isA<LlamaUnsupportedException>().having(
+            (error) => error.message,
             'message',
             contains('/missing/libLiteRtLm.dylib'),
           ),
@@ -937,11 +937,11 @@ void main() {
       final incompleteOverride = Directory(path.join(root.path, 'partial'))
         ..createSync();
       expect(
-        resolve(
+        () => resolve(
           libDirOverride: incompleteOverride.path,
           searchRootsAllowed: false,
         ),
-        bundle.path,
+        throwsA(isA<LlamaUnsupportedException>()),
       );
     });
 

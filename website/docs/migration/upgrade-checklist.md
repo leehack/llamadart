@@ -91,3 +91,13 @@ and [Download and cache models](../guides/model-downloads).
 
 Shorthand `android-arm64: [vulkan]` now uses the default `cpu_profile: full`.
 Set `cpu_profile: compact` for baseline-only, smaller packaging.
+
+## Android Vulkan Qwen3.5 safety envelope
+
+For native `qwen35` with unsafe/unproven small-matmul subgroup facts, retain
+ordinary text with `microBatchSize` unset or `1..8`, or reload on CPU. Explicit
+sizes above `8`, media, speculation and embeddings now throw typed unsupported
+before evaluation. Use loaded-model capability probes; see
+[the exact scope](../platforms/known-platform-issues#android) and
+[#948](https://github.com/leehack/llamadart/issues/948). Sizes `9..32` are
+conservatively excluded pending qualification, not reported as reproduced failures.

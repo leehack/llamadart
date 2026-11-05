@@ -90,7 +90,7 @@ LiteRtLmV1ErrorAddresses liteRtLmV1ErrorAddressesForLibrary(
 LiteRtLmV1LastError liteRtLmV1LastErrorFromAddresses(
   LiteRtLmV1ErrorAddresses addresses,
 ) {
-  if (addresses.message <= 0 || addresses.clear <= 0) {
+  if (addresses.message == 0 || addresses.clear == 0) {
     throw LlamaUnsupportedException(
       'C API 1.0 requires canonical native error message and clear functions.',
     );
@@ -145,9 +145,11 @@ Future<LiteRtLmBlockingCallResult<LiteRtLmV1CreateResult>> runLiteRtLmV1Create(
 }
 
 LiteRtLmV1CreateResult _create(LiteRtLmV1CreateRequest request) {
-  if (request.createAddress <= 0 ||
-      request.configAddress <= 0 ||
-      request.deleteAddress <= 0) {
+  // Android arm64 heap tags can set the sign bit of a non-null pointer.
+  // Preserve every address bit when crossing the isolate boundary.
+  if (request.createAddress == 0 ||
+      request.configAddress == 0 ||
+      request.deleteAddress == 0) {
     throw LlamaStateException(
       'C API 1.0 creation requires admitted native function/configuration addresses.',
     );

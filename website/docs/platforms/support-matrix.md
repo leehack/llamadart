@@ -36,7 +36,7 @@ unchecked. See [scope and limits](./diagnose-setup#isolated-native-check).
 | iOS (arm64, arm64 simulator, x86_64 simulator) | CPU, Metal; on a simulator Metal returns incorrect output and `auto` uses the CPU ([#950](https://github.com/leehack/llamadart/issues/950)) | CPU, GPU; none on the x86_64 simulator | iOS 16.4 deployment target; LiteRT-LM run on a device only on iOS 18.3.2 | Qwen3-ASR (GGUF); LiteRT-LM ASR | Qwen3-TTS | Untested | Metal, iOS 16.4; validated on iPhone 16 Pro and SE 3; `vaeDirectConvolution: true` throws on Metal ([#1044](https://github.com/leehack/llamadart/issues/1044)) | Supported |
 | macOS (arm64, x86_64) | CPU, Metal; on x86_64, Rosetta included, `auto` uses the CPU because Metal returns garbled output on Intel Macs with AMD GPUs ([#1597](https://github.com/leehack/llamadart/issues/1597)) | arm64: CPU, GPU; x86_64: none ([litert-lm-native#72](https://github.com/leehack/litert-lm-native/issues/72)) | macOS 14.0 (Flutter) | Qwen3-ASR (GGUF); LiteRT-LM ASR | Qwen3-TTS | Validated on Metal and CPU | Metal, macOS 13.3; validated on arm64 | Supported |
 | Linux (arm64, x64) | CPU, Vulkan; BLAS opt-in; x64: CUDA, HIP opt-in | arm64: CPU; x64: CPU, explicit GPU | Not set by llamadart | Qwen3-ASR (GGUF); LiteRT-LM ASR | Qwen3-TTS | Untested | CPU or Vulkan; x64 needs AVX2; validated on x64 (CPU, NVIDIA L4) | Supported |
-| Windows (arm64, x64) | CPU, Vulkan; BLAS opt-in; x64: CUDA opt-in | x64: CPU, explicit GPU; arm64: none | Not set by llamadart | Qwen3-ASR (GGUF); LiteRT-LM ASR on x64 | Qwen3-TTS | Untested | x64 CPU or Vulkan, needs AVX2 and the Visual C++ runtime; validated on Windows Server 2022 (CPU, NVIDIA L4) | Supported |
+| Windows (arm64, x64) | CPU, Vulkan; BLAS opt-in; x64: CUDA opt-in | x64: CPU, explicit GPU ([Qwen unqualified](./known-platform-issues#linux-and-windows)); arm64: none | Not set by llamadart | Qwen3-ASR (GGUF); LiteRT-LM ASR on x64 | Qwen3-TTS | Untested | x64 CPU or Vulkan, needs AVX2 and the Visual C++ runtime; validated on Windows Server 2022 (CPU, NVIDIA L4) | Supported |
 | Web | WebGPU, WebAssembly CPU | CPU, GPU through `@litert-lm/core` | Chrome 128, Firefox 129, Safari 17.4 (unvalidated, [#1025](https://github.com/leehack/llamadart/issues/1025)) | Qwen3-ASR, WAV, MP3 or FLAC bytes | Qwen3-TTS, memory64 | Checked in headless Chromium on macOS | Not yet ([#969](https://github.com/leehack/llamadart/issues/969)) | Experimental |
 
 On Windows, the llama.cpp and LiteRT-LM bundles ship the Visual C++ runtime
@@ -56,11 +56,13 @@ models, memory figures and the bounded recipes for tiling, editing, ControlNet,
 hires fix, reference editing, seamless textures, module placement, the
 conditioning cache, FP8 weights and local checkpoint sets are in
 [Image generation](../guides/image-generation#support). On iOS, Metal VAE
-decoding requires the intrinsic tiny-decoder v1 native context policy, which
-keeps automatic model refresh from selecting a full VAE. The current pinned
-runtime lacks this policy, so use `ImageModelPlacement(vaeOnCpu: true)`
-for Metal diffusion or `ComputeDevice.cpu`, including with SDXS. Tiling does not
-bypass this restriction; iPhone full-VAE watchdog avoidance remains unqualified
+decoding requires an intrinsic SDXS tiny decoder and a selected runtime with
+the intrinsic tiny-decoder v1 context policy, which keeps automatic model
+refresh from selecting a full VAE. The pinned `v0.3.0-3` runtime provides this
+policy. Full VAE and external-decoder Metal decoding remain refused; use
+`ImageModelPlacement(vaeOnCpu: true)` for Metal diffusion or `ComputeDevice.cpu`
+for other recipes. Tiling does not bypass this restriction; iPhone full-VAE
+watchdog avoidance remains unqualified
 ([#1047](https://github.com/leehack/llamadart/issues/1047)).
 
 GGUF Qwen3-ASR accepts WAV, MP3 and FLAC; real-model checks cover all three on
@@ -72,6 +74,12 @@ recognition. Decision models run on llama.cpp and WebGPU only; on LiteRT-LM
 [Decision models](../guides/decision-models). Decision tasks stop preflight or
 discard an already-dispatched answer after the backend finishes; they do not
 add native interruption or support on LiteRT-LM.
+
+Native Android Vulkan Qwen3.5 permits bounded ordinary text only
+on unsafe/unproven small-matmul subgroup facts: `microBatchSize` unset or
+`1..8`; larger explicit values, media, speculation and embeddings are typed
+unsupported. CPU and complete safe-subgroup facts are exempt. See
+[the exact predicate and qualification limits](./known-platform-issues#android).
 
 ## Compute device
 
@@ -92,6 +100,12 @@ each runtime's default; `cpu`, `gpu` and `npu` run there or throw
 The WebGPU bridge ignores negative `mainGpu` values, including with
 `splitMode: ModelSplitMode.none`; they do not select the CPU as they do in
 native llama.cpp. Explicit `gpu` still requires WebGPU after load.
+
+Android LiteRT-LM apps targeting API 31+ need an optional `libOpenCL.so`
+manifest request on Android 12+; see [Android setup](../getting-started/installation#android-litert-lm-setup).
+An accessible OpenCL library does not guarantee GPU initialization or correct
+model output. WebGPU buffer limits remain device-dependent; an automatic CPU
+retry is CPU execution and does not qualify a GPU path.
 
 Under `auto`, `gpuLayers: 0` or a CPU or BLAS `preferredBackend` selects the
 CPU on both llama.cpp and LiteRT-LM, and a GPU `preferredBackend` (Vulkan,
@@ -199,17 +213,25 @@ web are on [Known platform issues](./known-platform-issues).
 | Runtime | Pinned release |
 | --- | --- |
 | llama.cpp native | `leehack/llamadart-native@v0.8.0-2` |
-| LiteRT-LM native | `leehack/litert-lm-native@v0.18.1-4` |
-| stable-diffusion.cpp native (opt-in, Preview) | `leehack/stable-diffusion-native@v0.3.0-2`, for [image generation](../guides/image-generation); see [Opt-in stable_diffusion runtime](./native-build-hooks#opt-in-stable_diffusion-runtime-experimental). Flutter iOS/macOS apps link its XCFramework through `llamadart_stable_diffusion_flutter` |
+| LiteRT-LM native | `leehack/litert-lm-native@v0.19.0` |
+| stable-diffusion.cpp native (opt-in, Preview) | `leehack/stable-diffusion-native@v0.3.0-3`, for [image generation](../guides/image-generation); see [Opt-in stable_diffusion runtime](./native-build-hooks#opt-in-stable_diffusion-runtime-experimental). Flutter iOS/macOS apps link its XCFramework through `llamadart_stable_diffusion_flutter` |
 | WebGPU bridge assets | `leehack/llama-web-bridge-assets`; see [Pinned bridge assets](./webgpu-bridge#pinned-bridge-assets) |
 
 The native-assets hook currently pins `llamadart-native` tag
 `v0.8.0-2` and
-`litert-lm-native` release `v0.18.1-4` (`lib/src/hook/native_release_pins.dart`).
+`litert-lm-native` release `v0.19.0` (`lib/src/hook/native_release_pins.dart`).
 
-Native overrides exporting LiteRT-LM's versioned C API are rejected before
-legacy engine calls. LiteRT-LM 0.19 / C API 1.0 needs the separate consumer
-migration tracked in #1677; use the pinned runtime with this package.
+The direct native client, service probes and speech worker share ABI-aware
+discovery. Public selection admits legacy runtimes and C API 1.0.x; unknown
+or future versions are refused before engine calls. The source pin adopts
+published native
+[v0.19.0](https://github.com/leehack/litert-lm-native/releases/tag/v0.19.0)
+(owner `f173fe9b`, upstream `83ce6067`). The selected loader requires macOS 14+
+before loading any core or companion library, including legacy libraries and
+custom paths. Final default-discovery and Apple embedding/signature checks remain
+in [#1677](https://github.com/leehack/llamadart/issues/1677); the source pin does
+not publish core or companion packages. Web stays `@litert-lm/core@0.18.0`.
+The Flutter companion's iOS 16.4 floor remains separate.
 Apps can override the llama.cpp release with `llamadart_native_tag`; accepted
 tag forms, keys, backend modules and local bundles:
 [Native runtime configuration](./native-build-hooks#override-the-llamacpp-release).

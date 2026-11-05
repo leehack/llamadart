@@ -1212,3 +1212,45 @@ lazy trigger. Keep both memory64 assets beside the wasm32 files.
 This qualifies the Web grammar plumbing on the selected weights, not hardware
 WebGPU or LFM2 auto accuracy/enforcement (#1715). The latter still needs its
 separate template contract and false-probe restriction.
+
+### Internal LiteRT C API1 JSON Schema candidate
+
+`litert-lm-v1-json-schema` uses the internal injected v1 service, with the public
+factory and runtime pins unchanged. It requires the existing CPU profile model
+at revision `e6687177e00897731e7716267eebd4eba0dde7c2`, SHA-256
+`c5f39b4191926786c3e6668b62af4d6eb15248dfc7a5348252a9b406f33f2108`,
+613722264 bytes. The separately repaired local #48 artifact is not this input.
+Supply the exact candidate library and both SHA256 environment variables shown
+by `test_matrix.dart`; run `--list` and `--dry-run` before execution.
+
+The fixed prompt first requests plain `BANANA`, independently of the target
+schema. The qualifier requires that unconstrained control before testing a
+Unicode-key/string, integer, boolean and null object with no additional fields.
+It requires complete raw JSON without thinking delimiters, then repeats the
+plain control to detect retained constraints. It cancels a longer fixed-schema
+response after content, checks the actual native cancelled cause and settlement,
+reuses schema generation, reloads the engine and repeats constrained/plain
+requests. Prompt/schema hashes, source/tree identity, compiled-child hash,
+runtime/model identity, events and native stderr are retained. The outer owner
+bounds the child to 240 seconds and kills only that child if native completion
+is uncertain. No automatic retry or accuracy-prompt tuning is performed.
+
+This is schema enforcement and lifecycle evidence. It does not establish general
+reasoning/geography accuracy, GPU/media support, public v1 activation or the
+native IDs of the earlier malformed-output generation.
+
+
+### Internal LiteRT v1 thinking budgets
+
+Use `litert-lm-v1-thinking-budget` only for the maintained Gemma4 CPU bundle and
+an explicitly admitted candidate runtime. It requires the core SHA256 and a
+hash-bound manifest of all adjacent dylib names, byte sizes and SHA256 values.
+It records actual loaded payload paths, native metrics/finish, exact output
+bytes, native rendered inputs and effective sampler values. One prospectively
+reviewed output cap of 1536 preserves both earlier 768-token failures; no automatic
+cap escalation is allowed. The fixed train prompt compares unbounded
+reasoning with budget 12, then checks no-budget isolation, cancellation, reload
+and a false-context refusal. Run `--dry-run` first; the model-job owner schedules
+the actual 600-second child. See [the adoption procedure](litert_lm_v1_adoption.md#actual-thinking-qualification)
+for the complete environment and unchanged model/oracle identity. Passing this
+scenario does not activate the public v1 factory or qualify GPU/media behavior.

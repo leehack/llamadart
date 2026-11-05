@@ -9,6 +9,25 @@ android {
     namespace = "com.example.llamadart_chat_example"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = "28.2.13676358"
+    val qualificationStage = System.getenv("LLAMADART_ANDROID_QUALIFICATION_STAGE")
+    if (qualificationStage != null) {
+        sourceSets.getByName("main") {
+            assets.srcDir("$qualificationStage/assets")
+            jniLibs.srcDir("$qualificationStage/jniLibs")
+        }
+        // The owned PIE must be executable in nativeLibraryDir, and all paths
+        // must retain the exact admitted archive bytes for native/public pairing.
+        packaging.jniLibs.useLegacyPackaging = true
+        packaging.jniLibs.keepDebugSymbols += "**/*.so"
+    }
+    val consumerProfileStage = System.getenv("LLAMADART_ANDROID_CONSUMER_PROFILE_STAGE")
+    if (consumerProfileStage != null) {
+        sourceSets.getByName("main").assets.srcDir("$consumerProfileStage/assets")
+        packaging.jniLibs.useLegacyPackaging = true
+        packaging.jniLibs.keepDebugSymbols += "**/*.so"
+        testBuildType = "release"
+        buildTypes.getByName("release").proguardFiles("consumer-profile-proguard-rules.pro")
+    }
     // The maintained bundle builder provides an isolated, verified staging tree.
     val npuStage = System.getenv("LLAMADART_VALIDATION_NPU_STAGE")
     if (npuStage != null) {

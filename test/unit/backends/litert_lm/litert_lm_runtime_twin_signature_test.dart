@@ -10,7 +10,10 @@ const _stubPath = 'lib/src/backends/litert_lm/litert_lm_runtime_stub.dart';
 const _barrelPath = 'lib/backend.dart';
 
 void main() {
-  final native = _Source(File(_nativePath).readAsStringSync());
+  final native = _Source(
+    '${File(_nativePath).readAsStringSync()}\n'
+    '${File("lib/src/backends/litert_lm/litert_lm_runtime_facade.dart").readAsStringSync()}',
+  );
   final stub = _Source(File(_stubPath).readAsStringSync());
   final shown = _shownNames(File(_barrelPath).readAsStringSync());
 

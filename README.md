@@ -129,13 +129,26 @@ instead of silently degrading.
 | `.litertlm` | LiteRT-LM deployments, Android GPU/NPU-oriented bundles, Gemma-family LiteRT packages | LiteRT-LM |
 
 llama.cpp uses Metal on Apple platforms, Vulkan on Linux and Windows, and
-WebGPU in the browser. Android Vulkan is experimental and opt-in. LiteRT-LM
-can also use GPU and, on compatible Android deployments, NPU. Image generation
+WebGPU in the browser. Android Vulkan is experimental and opt-in.
+
+On Android Vulkan, Qwen3.5 with unsafe/unproven small-matmul subgroup facts
+accepts ordinary text with `microBatchSize` unset or `1..8`; larger explicit
+sizes, media, speculation and embeddings throw `LlamaUnsupportedException`.
+Use CPU for those features; see the [scope and qualification limits](website/docs/platforms/known-platform-issues.md#android).
+
+LiteRT-LM can also use GPU and, on compatible Android deployments, NPU.
+Android 12+ apps targeting API 31+ must request the optional vendor OpenCL
+library in their manifest; see [Android LiteRT-LM setup](website/docs/getting-started/installation.md#android-litert-lm-setup).
+GPU support still depends on the device, driver and model. If GPU engine
+creation fails, `ComputeDevice.auto` retries on the CPU with a warning;
+`ComputeDevice.gpu` fails instead.
+
+Image generation
 is not available on the web. On iOS, use
 `ImageModelPlacement(vaeOnCpu: true)` to keep diffusion on Metal, or CPU
 generation. Metal VAE decoding needs a native context policy that preserves
 an intrinsic SDXS tiny decoder through model refresh. The pinned
-`v0.3.0-2` runtime provides that policy; full VAE and external-decoder
+`v0.3.0-3` runtime provides that policy; full VAE and external-decoder
 Metal decoding remain refused on iOS. This is not new physical-device qualification.
 Per-target support, device limitations and runtime options:
 
@@ -150,13 +163,20 @@ Current default runtime pins:
 | Runtime | Pin |
 | --- | --- |
 | Native llama.cpp / GGUF | `leehack/llamadart-native@v0.8.0-2` |
-| Native LiteRT-LM / `.litertlm` | `leehack/litert-lm-native@v0.18.1-4` |
+| Native LiteRT-LM / `.litertlm` | `leehack/litert-lm-native@v0.19.0` |
 | Web llama.cpp / GGUF | `leehack/llama-web-bridge-assets@v0.1.82` |
 | Web LiteRT-LM / `.litertlm` | `@litert-lm/core@0.18.0` |
 
-Native LiteRT-LM overrides must match the package's pre-1.0 C bindings.
-LiteRT-LM 0.19 / C API 1.0 is rejected before engine calls; use the pinned
-runtime until the consumer migration in #1677 is delivered.
+Native LiteRT-LM uses a lazy ABI-aware client for direct calls, services and
+speech. The public selector admits legacy runtimes and C API 1.0.x; unknown or
+future versions are refused before engine calls. The source pin now uses
+published native
+[v0.19.0](https://github.com/leehack/litert-lm-native/releases/tag/v0.19.0),
+owner source `f173fe9b` / upstream `83ce6067`. The selected loader requires
+macOS 14+ before owned library loads, including legacy libraries and custom
+paths. Final core/Apple consumer checks and package release remain separate
+[#1677](https://github.com/leehack/llamadart/issues/1677) gates; Web LiteRT-LM
+stays on `@litert-lm/core@0.18.0`.
 
 Native overrides accept stable `vMAJOR.MINOR.PATCH` releases and explicit
 historical or nightly `bNNNN` artifacts. New nightly wrapper rebuilds use

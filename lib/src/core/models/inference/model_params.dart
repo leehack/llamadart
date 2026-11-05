@@ -417,16 +417,16 @@ class ModelParams {
   /// the resolved logical batch size for compatibility. Other backends may
   /// preserve the same architecture-agnostic fallback.
   ///
-  /// On Android, while this is unset, a llama.cpp context that runs on Vulkan
-  /// decodes a text prompt in micro-batches of at most 8 tokens: ggml-vulkan
-  /// returns wrong results for one of more than 32 tokens on some GPUs
-  /// ([#948](https://github.com/leehack/llamadart/issues/948)). An explicit
-  /// value is used as given, so one above 32 can bring the wrong results
-  /// back. The cap applies to text-prompt decoding only: it does not cover
-  /// prompts with image or audio input, embeddings, decision models,
-  /// text-to-speech, or speculative-decoding verification batches during
-  /// generation. Those batches can exceed 32 tokens, so speculative decoding
-  /// can still produce wrong output on an affected GPU.
+  /// Android Vulkan keeps an eight-token text-prompt cap when this is unset
+  /// and small-matmul subgroup facts are unsafe or unproven. For native
+  /// `general.architecture=qwen35` (Qwen3.5), an explicit value above 8 throws
+  /// `LlamaUnsupportedException` before context creation; unset and 1..8
+  /// retain bounded ordinary text. Media, speculation and embeddings throw
+  /// before evaluation on that model/device path. Use [ComputeDevice.cpu]
+  /// for those features. This conservative restriction includes unqualified
+  /// sizes 9..32; it does not establish failures at those sizes or qualify
+  /// other model/device combinations
+  /// ([#948](https://github.com/leehack/llamadart/issues/948)).
   ///
   /// Native encoder-only models and models whose context has no KV cache,
   /// such as BERT and ModernBERT, embed each input in one micro-batch, so a

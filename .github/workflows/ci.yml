@@ -169,14 +169,28 @@ jobs:
           flutter-version: 3.47.1
           channel: stable
           cache: true
-      - name: Analyze and test
+      - name: Analyze and test on VM
         working-directory: packages/llamadart_model_store
         run: |
           flutter pub get
           dart format --output=none --set-exit-if-changed .
           flutter analyze --fatal-infos
           TMPDIR="$(mktemp -d)" flutter test
+      - name: Test on Chrome with bounded shutdown diagnostics
+        working-directory: packages/llamadart_model_store
+        run: >-
+          python3 ../../tool/ci/supervise_chrome_test.py
+          --output-dir "$RUNNER_TEMP/model-store-chrome"
+          --timeout-seconds 180 --
           flutter test --platform chrome test/model_store_web_test.dart
+      - name: Upload Chrome process and phase diagnostics
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: model-store-chrome-diagnostics
+          path: ${{ runner.temp }}/model-store-chrome
+          if-no-files-found: ignore
+          retention-days: 7
       - name: Check the lane leaves the package unchanged
         working-directory: packages/llamadart_model_store
         run: |

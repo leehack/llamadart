@@ -110,7 +110,11 @@ void main() {
             'think',
             settings: LiteRtLmV1TurnSettings(thinkingTokenBudget: budget),
           ),
-          throwsA(isA<LlamaUnsupportedException>()),
+          throwsA(
+            budget <= 0
+                ? isA<LlamaArgumentException>()
+                : isA<LlamaUnsupportedException>(),
+          ),
         );
       }
     } finally {

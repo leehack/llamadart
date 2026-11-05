@@ -9,6 +9,13 @@ description: >-
 
 # Chat and streaming with llamadart
 
+Native Android Vulkan Qwen3.5 (`general.architecture=qwen35`) with unsafe or
+unproven small-matmul subgroup facts permits only ordinary text with
+`microBatchSize` unset or `1..8`. Larger explicit sizes, media, speculation
+and embeddings are typed unsupported (#948); load on CPU for these features.
+Probe loaded-model modalities and speculative strategies before offering them.
+This restriction does not qualify GPU output or other architectures.
+
 ## Guidelines
 
 - At a backend-reported length cutoff, LFM `chunk.partialToolCalls` and collected
@@ -354,4 +361,7 @@ cache leases alive; do not kill the isolate or retry on that backend. A closed
 Dart stream or failed request is not proof that native callbacks have drained.
 Custom native integrations can inspect `LiteRtLmRuntimeClient.nativeSettlement`
 from `package:llamadart/backend.dart`; only `LiteRtLmNativeSettlement.settled`
-permits teardown. This does not enable LiteRT-LM C API 1.0 overrides.
+permits teardown. Native LiteRT-LM selection admits C API 1.0.x; unknown or
+future versions remain unsupported, and artifact/device qualification is separate. The
+native runtime SPI rejects invalid engine counts/backends, send controls and
+benchmark counts before discovering or loading a library.

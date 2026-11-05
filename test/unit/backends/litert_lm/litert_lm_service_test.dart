@@ -148,7 +148,24 @@ void main() {
       client.jsonSchemaSupport = false;
       await expectLater(
         service.prepareJsonSchemaChat(),
-        throwsA(isA<LlamaUnsupportedException>()),
+        throwsA(
+          isA<LlamaUnsupportedException>()
+              .having(
+                (error) => error.message,
+                'current runtime',
+                contains('packaged LiteRT-LM v0.19.0 runtime'),
+              )
+              .having(
+                (error) => error.message,
+                'ABI selection',
+                contains('default ABI-selecting client'),
+              )
+              .having(
+                (error) => error.message,
+                'qualification limits',
+                contains('model and platform qualification still applies'),
+              ),
+        ),
       );
       expect(client.generateCount, 0);
       expect(client.createConversationCount, 0);

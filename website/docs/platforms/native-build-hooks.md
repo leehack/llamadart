@@ -22,6 +22,11 @@ to copy them into the app bundle. Flutter iOS and macOS apps link runtimes
 through SwiftPM companion packages: see [Apple setup](./apple-setup). To check a
 setup before loading a model, see [Diagnose setup](./diagnose-setup).
 
+On desktop, `LLAMADART_LITERT_LM_LIB_DIR` takes priority over bundled and cached
+runtimes and must contain the complete runtime for the process ABI. An incomplete
+or unloadable override throws `LlamaUnsupportedException`; no bundled, cached or
+process runtime is substituted.
+
 Configure the hook under `hooks.user_defines.llamadart` in the app's
 `pubspec.yaml`. Every key is optional:
 
@@ -92,7 +97,13 @@ hooks:
   native assets, and loading a `.litertlm` model there throws
   `LlamaUnsupportedException`. `LLAMADART_LITERT_LM_LIB_DIR` does not lift
   that error on x86_64; a `libraryPath` passed to `LiteRtLmRuntimeClient`
-  does.
+  does for the legacy runtime. The ABI-aware selector keeps unsupported
+  ABI checks and requires macOS 14+ before loading even an explicit path or
+  legacy library; public selection admits C API 1.0.x while unknown/future
+  versions remain unsupported. The source pin and companion source assets now
+  use published native `v0.19.0`; final default-discovery consumers and Apple
+  embedding/signature checks remain [#1677](https://github.com/leehack/llamadart/issues/1677)
+  gates before coordinated package release.
 - An empty or all-unknown selection falls back to `llama_cpp` and
   `litert_lm`; one that leaves no runtime, such as `none`, fails the build.
 

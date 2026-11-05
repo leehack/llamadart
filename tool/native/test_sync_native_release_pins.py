@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import http.client
+import io
 import json
 import os
 import re
@@ -422,7 +423,8 @@ def _materialize_schema2_release_fixtures(
         "SHA256SUMS",
         hashlib.sha256(checksum_text).hexdigest(),
     )
-    (fixture_dir / f"google-ai-edge__LiteRT-LM__v0.16.0__commit.json").write_text(
+    upstream_ref = manifest["upstream"]["tag"] or manifest["upstream"]["commit"]
+    (fixture_dir / f"google-ai-edge__LiteRT-LM__{upstream_ref}__commit.json").write_text(
         json.dumps({"sha": manifest["upstream"]["commit"]}),
         encoding="utf-8",
     )
@@ -439,11 +441,11 @@ def _materialize_schema2_release_fixtures(
 _MACOS_SPM_COMPANION_DIGEST = "b" * 64
 
 
-def _checked_in_litert_swift(tag: str = "v0.16.0-native.2") -> str:
+def _v018_litert_swift(tag: str = "v0.16.0-native.2") -> str:
+    # Historical schema-2 inventories retain samplers removed in v0.19.0.
     source = (
-        Path(__file__).resolve().parents[2]
-        / "packages/llamadart_litert_lm_flutter/darwin/"
-        "llamadart_litert_lm_flutter/Package.swift"
+        Path(__file__).resolve().parent
+        / "fixtures/litert_lm_v018_samplers_Package.swift"
     ).read_text(encoding="utf-8")
     return re.sub(r'let liteRtLmTag = "[^"]+"', f'let liteRtLmTag = "{tag}"', source)
 
@@ -483,6 +485,13 @@ def _add_macos_spm_companions(manifest: dict, release: dict) -> None:
         )
 
 
+def _hook_for_litert_swift(hook: str, swift: str) -> str:
+    return re.sub(
+        r"(const _liteRtLmCompanionManifestTemplateSha256 =\s*')[0-9a-f]{64}(';)",
+        r"\g<1>" + pins.litert_lm_companion_template_hash(swift) + r"\g<2>", hook,
+    )
+
+
 def _run_schema2_sync(
     temp_dir: Path,
     manifest: dict,
@@ -504,6 +513,7 @@ def _run_schema2_sync(
         )
         shutil.copyfile(source_root / "pubspec.yaml", repo_root / "pubspec.yaml")
     for relative_path in (
+        "hook/build.dart",
         "lib/src/hook/native_release_pins.dart",
         "lib/src/backends/litert_lm/litert_lm_runtime.dart",
         "tool/macos_litert_lm_prepare_app.sh",
@@ -535,6 +545,8 @@ def _run_schema2_sync(
         shutil.copyfile(LEGACY_LITERT_SWIFT, swift)
     else:
         swift.write_text(starting_swift, encoding="utf-8")
+    hook = repo_root / "hook/build.dart"
+    hook.write_text(_hook_for_litert_swift(hook.read_text(), swift.read_text()))
     release_dir = temp_dir / "releases"
     release_dir.mkdir()
     _materialize_schema2_release_fixtures(release_dir, manifest, release)
@@ -591,8 +603,71 @@ def _run_generated_macos_prepare(
     )
 
 
+def _runtime_inventory_function(runtime: str, name: str) -> str:
+    match = re.search(
+        rf"List<String> {name}\(Abi abi\) \{{\n.*?\n\}}\n", runtime, re.DOTALL,
+    )
+    if match is None:
+        raise AssertionError(f"Missing runtime inventory function {name}")
+    return match.group()
+
+
+def _v019_inventory_projection() -> dict:
+    fixture = Path(__file__).resolve().parent / "fixtures/litert_lm_v019_apple_inventory_projection.json"
+    return json.loads(fixture.read_text())
+
+
+def _preserved_runtime_lane_probe_checks(runtime: str, *, c_api_v1: bool) -> str:
+    flag = str(c_api_v1).lower()
+    prefix = "_liteRtLmV1MacOs" if c_api_v1 else "_liteRtLmMacOs"
+    names = {
+        "liteRtLmRequiredLibrariesForAbi": (
+            "_liteRtLmV1RequiredLibrariesForAbi" if c_api_v1
+            else "_liteRtLmLegacyRequiredLibrariesForAbi"
+        ),
+        "liteRtLmMacOsRequiredFrameworksForAbi": prefix + "RequiredFrameworksForAbi",
+        "liteRtLmMacOsRequiredNativeSpmFilesForAbi": prefix + "RequiredNativeSpmFilesForAbi",
+    }
+    declarations, checks = [], []
+    for public, private in names.items():
+        expected = "expected" + public
+        declarations.append(_runtime_inventory_function(runtime, private).replace(private, expected))
+        for abi in ("macosArm64", "macosX64", "linuxArm64", "linuxX64", "windowsX64", "androidArm64"):
+            checks.append(
+                f"  _expectList('preserved {public} {abi} v1={flag}', "
+                f"{public}(Abi.{abi}, cApiV1: {flag}), {expected}(Abi.{abi}));"
+            )
+    return "\n".join(declarations + checks)
+
+
+def _runtime_inventory_probe_checks(
+    *,
+    c_api_v1: bool,
+    libraries: dict[str, tuple[str, ...]],
+    frameworks: tuple[str, ...],
+    native_spm: tuple[str, ...],
+) -> str:
+    checks = []
+    flag = str(c_api_v1).lower()
+    for abi in ("macosArm64", "macosX64", "linuxArm64", "linuxX64", "windowsX64", "androidArm64"):
+        for function, expected in (
+            ("liteRtLmRequiredLibrariesForAbi", libraries.get(abi, ())),
+            ("liteRtLmMacOsRequiredLibrariesForAbi", libraries.get(abi, ()) if abi == "macosArm64" else ()),
+            ("liteRtLmMacOsRequiredFrameworksForAbi", frameworks if abi == "macosArm64" else ()),
+            ("liteRtLmMacOsRequiredNativeSpmFilesForAbi", native_spm if abi == "macosArm64" else ()),
+        ):
+            checks.append(
+                f"  _expectList('{function} {abi} v1={flag}', "
+                f"{function}(Abi.{abi}, cApiV1: {flag}), "
+                f"<String>{json.dumps(list(expected))});"
+            )
+    return "\n".join(checks)
+
+
 def _run_dart_inventory_checks(
     repo_root: Path,
+    *,
+    checks: str | None = None,
 ) -> tuple[
     subprocess.CompletedProcess[str],
     subprocess.CompletedProcess[str],
@@ -600,8 +675,45 @@ def _run_dart_inventory_checks(
 ]:
     generated = repo_root / "tool/native/generated_litert_lm_inventory.dart"
     generated.parent.mkdir(parents=True, exist_ok=True)
+    if checks is None:
+        projection = _v019_inventory_projection()
+        manifest = {
+            "upstream": {"compatibilityTag": projection["compatibilityTag"]},
+            "platforms": projection["platforms"],
+        }
+        bundles = pins.litert_schema2_runtime_required_libraries(
+            pins.litert_schema2_bundle_required_libraries(manifest)
+        )
+        checks = _runtime_inventory_probe_checks(
+            c_api_v1=False,
+            libraries={
+                "macosArm64": ("libCLiteRTLM_mac.dylib", "libLiteRtLm.dylib"),
+                "linuxArm64": ("libLiteRtLm.so",),
+                "linuxX64": ("libLiteRtLm.so",),
+                "windowsX64": ("LiteRtLm.dll",),
+            },
+            frameworks=(
+                "CLiteRTLM_mac.framework/Versions/A/CLiteRTLM_mac",
+                "LiteRtLm.framework/Versions/A/LiteRtLm",
+            ),
+            native_spm=("LiteRtLm.framework/Versions/A/LiteRtLm", "libCLiteRTLM_mac.dylib"),
+        )
+        checks += "\n" + _runtime_inventory_probe_checks(
+            c_api_v1=True,
+            libraries={
+                "macosArm64": bundles["macos-arm64"],
+                "linuxArm64": bundles["linux-arm64"],
+                "linuxX64": bundles["linux-x64"],
+                "windowsX64": bundles["windows-x64"],
+            },
+            frameworks=pins._litert_schema2_macos_framework_entries(bundles)["arm64"],
+            native_spm=pins.litert_macos_complete_spm_entries(
+                bundles, pins.litert_schema2_macos_required_native_spm_files(manifest, projection["releaseTag"]),
+            )["arm64"],
+        )
     generated.write_text(
         """import 'dart:ffi';
+import 'dart:io';
 
 import '../../lib/src/backends/litert_lm/litert_lm_runtime.dart';
 
@@ -615,44 +727,7 @@ void _expectList(String label, List<String> actual, List<String> expected) {
 }
 
 void main() {
-  _expectList(
-    'macOS arm64 libraries',
-    liteRtLmMacOsRequiredLibrariesForAbi(Abi.macosArm64),
-    <String>['libCLiteRTLM_mac.dylib', 'libLiteRtLm.dylib'],
-  );
-  _expectList(
-    'macOS x64 libraries',
-    liteRtLmMacOsRequiredLibrariesForAbi(Abi.macosX64),
-    <String>[],
-  );
-  _expectList(
-    'macOS arm64 frameworks',
-    liteRtLmMacOsRequiredFrameworksForAbi(Abi.macosArm64),
-    <String>[
-      'CLiteRTLM_mac.framework/Versions/A/CLiteRTLM_mac',
-      'LiteRtLm.framework/Versions/A/LiteRtLm',
-    ],
-  );
-  _expectList(
-    'macOS x64 frameworks',
-    liteRtLmMacOsRequiredFrameworksForAbi(Abi.macosX64),
-    <String>[],
-  );
-  _expectList(
-    'macOS arm64 native SPM files',
-    liteRtLmMacOsRequiredNativeSpmFilesForAbi(Abi.macosArm64),
-    <String>[
-      'LiteRtLm.framework/Versions/A/LiteRtLm',
-      'libCLiteRTLM_mac.dylib',
-    ],
-  );
-  _expectList(
-    'macOS x64 native SPM files',
-    liteRtLmMacOsRequiredNativeSpmFilesForAbi(Abi.macosX64),
-    <String>[],
-  );
-}
-""",
+""" + checks + "\n}\n",
         encoding="utf-8",
     )
     format_result = subprocess.run(
@@ -691,6 +766,145 @@ void main() {
         cwd=repo_root,
     )
     return format_result, analyze_result, run_result
+
+
+class LiteRtRuntimeInventoryDispatchTest(unittest.TestCase):
+    def setUp(self) -> None:
+        self.source_root = Path(__file__).resolve().parents[2]
+        self.runtime = (self.source_root / "lib/src/backends/litert_lm/litert_lm_runtime.dart").read_text()
+        self.projection = _v019_inventory_projection()
+        self.manifest = {
+            "upstream": {"compatibilityTag": self.projection["compatibilityTag"]},
+            "platforms": self.projection["platforms"],
+        }
+        self.bundles = pins.litert_schema2_bundle_required_libraries(self.manifest)
+
+    def replace(self, runtime: str) -> str:
+        updated = pins.replace_litert_lm_runtime_required_libraries(
+            runtime, self.bundles, manifest=self.manifest,
+        )
+        return pins.replace_litert_lm_runtime_macos_inventory(
+            updated, self.bundles, manifest=self.manifest,
+            resolved_tag=self.projection["releaseTag"],
+        )
+
+    def test_v019_sync_generates_only_admitted_inventory_and_is_idempotent(self) -> None:
+        # Distinct reviewed companions detect a stale/no-op inventory generator.
+        mac = next(item for item in self.manifest["platforms"] if item["platform"] == "macos")
+        mac["artifactPaths"].remove("bin/macos/arm64/libGemmaModelConstraintProvider.dylib")
+        self.bundles = pins.litert_schema2_bundle_required_libraries(self.manifest)
+        updated = self.replace(self.runtime)
+        self.assertNotEqual(updated, self.runtime)
+        self.assertEqual(self.replace(updated), updated)
+        for name in (
+            "_liteRtLmLegacyRequiredLibrariesForAbi",
+            "_liteRtLmMacOsRequiredFrameworksForAbi",
+            "_liteRtLmMacOsRequiredNativeSpmFilesForAbi",
+        ):
+            self.assertEqual(_runtime_inventory_function(updated, name), _runtime_inventory_function(self.runtime, name))
+        for name in (
+            "_liteRtLmV1RequiredLibrariesForAbi",
+            "_liteRtLmV1MacOsRequiredFrameworksForAbi",
+            "_liteRtLmV1MacOsRequiredNativeSpmFilesForAbi",
+        ):
+            output = _runtime_inventory_function(updated, name)
+            self.assertNotIn("TopK", output)
+            self.assertNotIn("libGemmaModelConstraintProvider.dylib", output)
+            self.assertNotIn("GemmaModelConstraintProvider.framework", output)
+
+    def test_legacy_sync_preserves_admitted_inventory(self) -> None:
+        for compatibility in ("v0.16.0", "v0.17.0", "v0.18.0", "v0.18.1"):
+            with self.subTest(version=compatibility):
+                self.manifest["upstream"]["compatibilityTag"] = compatibility
+                updated = self.replace(self.runtime)
+                for name in (
+                    "_liteRtLmV1RequiredLibrariesForAbi",
+                    "_liteRtLmV1MacOsRequiredFrameworksForAbi",
+                    "_liteRtLmV1MacOsRequiredNativeSpmFilesForAbi",
+                ):
+                    self.assertEqual(_runtime_inventory_function(updated, name), _runtime_inventory_function(self.runtime, name))
+
+    def test_compatibility_tag_selects_lane_even_for_development_release(self) -> None:
+        self.manifest["release"] = {"tag": "g83ce6067f2e2"}
+        self.assertTrue(pins._litert_lm_runtime_inventory_is_v1(self.manifest))
+        self.manifest["upstream"]["compatibilityTag"] = "v0.18.1"
+        self.assertFalse(pins._litert_lm_runtime_inventory_is_v1(self.manifest))
+
+    def test_unknown_or_malformed_api_mapping_refuses(self) -> None:
+        for version in ("v0.19.1", "v0.20.0", "v1.0.0", "g83ce6067f2e2", "", None):
+            with self.subTest(version=version):
+                self.manifest["upstream"]["compatibilityTag"] = version
+                with self.assertRaises(ReleaseError):
+                    self.replace(self.runtime)
+
+    def test_missing_or_duplicate_generated_function_refuses(self) -> None:
+        for name in (
+            "_liteRtLmV1RequiredLibrariesForAbi",
+            "_liteRtLmV1MacOsRequiredFrameworksForAbi",
+            "_liteRtLmV1MacOsRequiredNativeSpmFilesForAbi",
+        ):
+            block = _runtime_inventory_function(self.runtime, name)
+            for malformed in (self.runtime.replace(block, ""), self.runtime + block):
+                with self.subTest(function=name), self.assertRaisesRegex(ReleaseError, name):
+                    self.replace(malformed)
+
+    def test_generated_v019_dart_uses_real_owner_files_without_changing_legacy(self) -> None:
+        if shutil.which("dart") is None:
+            self.skipTest("Dart SDK is required to execute generated inventory")
+        with tempfile.TemporaryDirectory() as temp:
+            repo = Path(temp) / "repo"
+            shutil.copytree(self.source_root / "lib", repo / "lib")
+            (repo / ".dart_tool").mkdir()
+            shutil.copyfile(self.source_root / ".dart_tool/package_config.json", repo / ".dart_tool/package_config.json")
+            shutil.copyfile(self.source_root / "pubspec.yaml", repo / "pubspec.yaml")
+            runtime_path = repo / "lib/src/backends/litert_lm/litert_lm_runtime.dart"
+            runtime_path.write_text(self.replace(self.runtime))
+            entries = pins.litert_schema2_runtime_required_libraries(self.bundles)
+            checks = _preserved_runtime_lane_probe_checks(self.runtime, c_api_v1=False)
+            checks += "\n" + _runtime_inventory_probe_checks(
+                c_api_v1=True,
+                libraries={
+                    "macosArm64": entries["macos-arm64"],
+                    "linuxArm64": entries["linux-arm64"],
+                    "linuxX64": entries["linux-x64"],
+                    "windowsX64": entries["windows-x64"],
+                },
+                frameworks=pins._litert_schema2_macos_framework_entries(self.bundles)["arm64"],
+                native_spm=pins.litert_macos_complete_spm_entries(
+                    self.bundles,
+                    pins.litert_schema2_macos_required_native_spm_files(self.manifest, self.projection["releaseTag"]),
+                )["arm64"],
+            )
+            # Removing any owner-required v1 companion still refuses completeness;
+            # the same no-sampler directory must never be admitted as legacy.
+            checks += """
+  final root = Directory.systemTemp.createTempSync('generated_inventory_');
+  try {
+    for (final abi in [Abi.macosArm64, Abi.linuxArm64, Abi.linuxX64, Abi.windowsX64]) {
+      final dir = Directory('${root.path}/$abi')..createSync();
+      final files = liteRtLmRequiredLibrariesForAbi(abi, cApiV1: true);
+      for (final file in files) {
+        File('${dir.path}/$file').createSync();
+      }
+      if (!liteRtLmIsCacheDirectoryForAbi(dir, abi, cApiV1: true) ||
+          liteRtLmIsCacheDirectoryForAbi(dir, abi)) {
+        throw StateError('v1/legacy inventory admission crossed for $abi');
+      }
+      for (final file in files) {
+        final missing = File('${dir.path}/$file')..deleteSync();
+        if (liteRtLmIsCacheDirectoryForAbi(dir, abi, cApiV1: true)) {
+          throw StateError('missing $file was accepted for $abi');
+        }
+        missing.createSync();
+      }
+    }
+  } finally {
+    root.deleteSync(recursive: true);
+  }
+"""
+            results = _run_dart_inventory_checks(repo, checks=checks)
+            for result in results:
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
 
 class LiteRtSourcePatchesTest(unittest.TestCase):
@@ -806,6 +1020,490 @@ class LiteRtSourcePatchesTest(unittest.TestCase):
                         rf"sourcePatches\[1\] {key} must be an exact SHA-256 digest",
                     ):
                         self._validate()
+
+
+class LiteRtV019SamplerTransitionTest(unittest.TestCase):
+    def setUp(self) -> None:
+        fixture = Path(__file__).resolve().parent / "fixtures"
+        self.source_path = fixture / "litert_lm_v018_samplers_Package.swift"
+        self.original = self.source_path.read_text(encoding="utf-8")
+        self.projection = json.loads((fixture / "litert_lm_v019_apple_inventory_projection.json").read_text())
+        self.manifest, _ = _schema2_fixture_payloads()
+        self.tag = self.projection["releaseTag"]
+        self.manifest["release"]["tag"] = self.tag
+        self.manifest["upstream"]["compatibilityTag"] = self.projection["compatibilityTag"]
+        self.manifest["platforms"] = [item for item in self.manifest["platforms"]
+            if item["platform"] not in ("ios", "macos")] + [
+                item for item in self.projection["platforms"]
+                if item["platform"] in ("ios", "macos")
+            ]
+        self.macos = next(item for item in self.manifest["platforms"]
+            if item["platform"] == "macos")
+        self.targets = {
+            "LiteRtLm", "CLiteRTLM", "CLiteRTLMMac", "LiteRtMetalAccelerator",
+            "LiteRt", "LiteRtWebGpuAccelerator", "WebgpuDawn",
+        }
+        self.release = {"assets": [{"name": item["fileName"], "digest": "sha256:" + item["sha256"]}
+            for item in self.projection["spmArtifacts"]]}
+        self.samplers = {"LiteRtTopKMetalSampler": ".iOS", "LiteRtTopKWebGpuSampler": ".macOS"}
+
+    def asset(self, target: str) -> dict:
+        return {
+            "name": f"litert-lm-native-apple-{target}-xcframework-{self.tag}.zip",
+            "digest": "sha256:" + hashlib.sha256(target.encode()).hexdigest(),
+        }
+
+    def binary_block(self, target: str) -> str:
+        return re.search(
+            rf'(?m)^[ \t]*nativeRepoBinaryTarget\(\s*name: "{target}",.*?^[ \t]*\),\n',
+            self.original, re.DOTALL,
+        ).group()
+
+    def dependency(self, target: str) -> str:
+        return f'.target(name: "{target}", condition: .when(platforms: [{self.samplers[target]}])),'
+
+    def prepare(self, source: str) -> str:
+        return prepare_litert_lm_package_swift(
+            source, release=self.release, manifest=self.manifest, resolved_tag=self.tag,
+        )
+
+    def test_removes_both_obsolete_samplers_and_is_idempotent(self) -> None:
+        prepared = self.prepare(self.original)
+        self.assertEqual(self.source_path.read_text(encoding="utf-8"), self.original)
+        expected = self.original
+        for sampler in self.samplers:
+            self.assertNotIn(sampler, prepared)
+            expected = expected.replace(self.binary_block(sampler), "").replace(
+                '                ' + self.dependency(sampler) + '\n', "",
+            )
+        self.assertEqual({name for name, _ in pins.swift_native_repo_binary_targets(
+            prepared, tag_variable="liteRtLmTag", current_tag=self.tag,
+        )}, self.targets)
+        self.assertIn('.target(name: "LiteRtMetalAccelerator", condition: .when(platforms: [.iOS]))', prepared)
+        expected = expected.replace('let liteRtLmTag = "v0.18.1-4"', f'let liteRtLmTag = "{self.tag}"')
+        for target in self.targets:
+            asset = next(item for item in self.release["assets"] if item["name"] == self.asset(target)["name"])
+            expected = pins.replace_swift_binary_target_checksum(expected, target, asset["digest"][7:])
+        self.assertEqual(prepared, expected)
+        self.assertEqual(self.prepare(prepared), prepared)
+
+    def test_already_current_topology_rejects_wrong_ios_platform(self) -> None:
+        prepared = self.prepare(self.original)
+        original = '.target(name: "CLiteRTLM", condition: .when(platforms: [.iOS])),'
+        malformed = prepared.replace(original, original.replace(".iOS", ".macOS"))
+        self.assertNotEqual(malformed, prepared)
+        with self.assertRaisesRegex(ReleaseError, "platform dependency"):
+            self.prepare(malformed)
+
+    def test_already_current_topology_rejects_missing_ios_dependency(self) -> None:
+        prepared = self.prepare(self.original)
+        dependency = '.target(name: "CLiteRTLM", condition: .when(platforms: [.iOS])),'
+        malformed = prepared.replace(dependency, "")
+        self.assertNotEqual(malformed, prepared)
+        with self.assertRaisesRegex(ReleaseError, "platform dependency"):
+            self.prepare(malformed)
+
+    def test_already_current_topology_rejects_wrong_repository(self) -> None:
+        prepared = self.prepare(self.original)
+        malformed = prepared.replace(
+            'repository: "leehack/litert-lm-native",',
+            'repository: "other/runtime",', 1,
+        )
+        self.assertNotEqual(malformed, prepared)
+        with self.assertRaisesRegex(ReleaseError, "canonical"):
+            self.prepare(malformed)
+
+    def test_already_current_topology_rejects_duplicate_binary_target(self) -> None:
+        prepared = self.prepare(self.original)
+        block = re.search(
+            r'(?m)^[ \t]*nativeRepoBinaryTarget\(\s*name: "CLiteRTLM",.*?^[ \t]*\),\n',
+            prepared, re.DOTALL,
+        ).group()
+        malformed = prepared.replace(block, block * 2)
+        with self.assertRaisesRegex(ReleaseError, "duplicate or unexpected"):
+            self.prepare(malformed)
+
+    def test_actual_owner_projection_does_not_require_prebuilt_topk(self) -> None:
+        self.assertEqual(self.projection["ownerCommit"], "7ea10d0cce10dfddbae273bb69e253d9ea97e1d2")
+        self.assertEqual(self.projection["upstreamCommit"], "83ce6067f2e2a3fb697556928f93936693ded971")
+        paths = {path for platform in self.projection["platforms"] for path in platform["artifactPaths"]}
+        self.assertTrue(any("LiteRtMetalAccelerator" in path for path in paths))
+        self.assertFalse(any("TopK" in path for path in paths))
+        self.assertFalse(any("TopK" in path for path in pins.required_litert_manifest_paths(
+            "v0.19.0", self.tag, official_assets=False,
+        )))
+        pins.validate_litert_spm_artifact_inventory(
+            {item["path"] for item in self.projection["spmArtifacts"]},
+            compatibility_tag="v0.19.0", release_tag=self.tag,
+        )
+
+    def test_v016_through_v018_still_require_prebuilt_ios_sampler(self) -> None:
+        for compatibility in ["v0.16.0", "v0.17.0", "v0.18.0", "v0.18.1"]:
+            with self.subTest(version=compatibility):
+                required = pins.required_litert_manifest_paths(compatibility, self.tag, official_assets=False)
+                for arch in ["arm64", "arm64-sim"]:
+                    self.assertIn(f"bin/ios/{arch}/LiteRtTopKMetalSampler.framework/LiteRtTopKMetalSampler", required)
+                self.assertIn(f"dist/spm/{self.tag}/litert-lm-native-apple-LiteRtTopKMetalSampler-xcframework-{self.tag}.zip", required)
+
+    def test_v018_owner_inventory_retains_both_sampler_dependencies(self) -> None:
+        self.manifest["upstream"]["compatibilityTag"] = "v0.18.1"
+        self.macos["artifactPaths"].append("bin/macos/arm64/libLiteRtTopKWebGpuSampler.dylib")
+        for sampler in self.samplers:
+            self.release["assets"].append(self.asset(sampler))
+        prepared = self.prepare(self.original)
+        for sampler in self.samplers:
+            self.assertIn(self.dependency(sampler), prepared)
+        self.assertEqual(self.prepare(prepared), prepared)
+        self.release["assets"] = [item for item in self.release["assets"]
+            if item["name"] != self.asset("LiteRtTopKMetalSampler")["name"]]
+        with self.assertRaisesRegex(ReleaseError, "required asset.*LiteRtTopKMetalSampler"):
+            self.prepare(self.original)
+
+    def test_v019_rejects_sampler_required_by_manifest_or_archive(self) -> None:
+        for sampler, platform in self.samplers.items():
+            with self.subTest(sampler=sampler):
+                bundle = self.macos if platform == ".macOS" else next(
+                    item for item in self.manifest["platforms"] if item["platform"] == "ios")
+                path = ("bin/macos/arm64/lib" + sampler + ".dylib" if platform == ".macOS"
+                    else f'bin/ios/{bundle["arch"]}/{sampler}.framework/{sampler}')
+                bundle["artifactPaths"].append(path)
+                with self.assertRaisesRegex(ReleaseError, "prebuilt TopK"):
+                    self.prepare(self.original)
+                bundle["artifactPaths"].remove(path)
+                with self.assertRaisesRegex(ReleaseError, "unexpected="):
+                    pins.validate_litert_spm_artifact_inventory(
+                        {item["path"] for item in self.projection["spmArtifacts"]}
+                        | {f'dist/spm/{self.tag}/{self.asset(sampler)["name"]}'},
+                        compatibility_tag="v0.19.0", release_tag=self.tag,
+                    )
+
+    def test_unknown_inventory_or_version_transition_refuses(self) -> None:
+        self.macos["artifactPaths"].remove("bin/macos/arm64/libLiteRtWebGpuAccelerator.dylib")
+        with self.assertRaisesRegex(ReleaseError, "owner inventory"):
+            self.prepare(self.original)
+        self.setUp()
+        self.manifest["upstream"]["compatibilityTag"] = "v0.20.0"
+        with self.assertRaisesRegex(ReleaseError, "owner inventory"):
+            self.prepare(self.original)
+
+    def test_malformed_or_ambiguous_topology_refuses(self) -> None:
+        for sampler in self.samplers:
+            block, dependency = self.binary_block(sampler), self.dependency(sampler)
+            other = self.binary_block("LiteRtWebGpuAccelerator")
+            for label, source in (
+                ("duplicate-block", self.original.replace(block, block * 2)),
+                ("duplicate-other-block", self.original.replace(other, other * 2)),
+                ("duplicate-dependency", self.original.replace(dependency, dependency * 2)),
+                ("missing-dependency", self.original.replace(dependency, "")),
+                ("orphan-dependency", self.original.replace(block, "")),
+                ("bad-checksum-field", self.original.replace(block, block.replace("checksum:", "badChecksum:"))),
+                ("short-checksum", self.original.replace(block, re.sub(r'checksum: "[0-9a-f]+"', 'checksum: "a"', block))),
+                ("wrong-repository", self.original.replace(block, block.replace("leehack/litert-lm-native", "other/runtime"))),
+                ("wrong-tag-argument", self.original.replace(block, block.replace("tag: liteRtLmTag", 'tag: "other"'))),
+                ("extra-sampler-reference", self.original + '\n// ' + sampler),
+                ("string-dependency", self.original.replace(dependency, dependency + '\n"Other",')),
+                ("dynamic-dependency", self.original.replace(dependency, dependency + '\n.target(name: dynamicTarget),')),
+                ("dangling-dependency", self.original.replace(dependency, dependency + '\n.target(name: "Other"),')),
+                ("unknown-binary-call", self.original + '\nlet extra = nativeRepoBinaryTarget(name: dynamicTarget)\n'),
+            ):
+                with self.subTest(sampler=sampler, source=label), self.assertRaises(ReleaseError):
+                    self.prepare(source)
+
+    def test_every_platform_dependency_is_preserved(self) -> None:
+        for target, original, wrong in (
+            ("LiteRtTopKMetalSampler", ".iOS", ".macOS"),
+            ("LiteRtTopKWebGpuSampler", ".macOS", ".iOS"),
+            ("LiteRtLm", ".iOS, .macOS", ".iOS"),
+            ("CLiteRTLM", ".iOS", ".macOS"),
+            ("CLiteRTLMMac", ".macOS", ".iOS"),
+            ("LiteRtMetalAccelerator", ".iOS", ".macOS"),
+            ("LiteRt", ".macOS", ".iOS"),
+            ("LiteRtWebGpuAccelerator", ".macOS", ".iOS"),
+            ("WebgpuDawn", ".macOS", ".iOS"),
+        ):
+            dependency = f'.target(name: "{target}", condition: .when(platforms: [{original}]))'
+            with self.subTest(target=target), self.assertRaisesRegex(ReleaseError, "platform dependency"):
+                source = self.original.replace(dependency, dependency.replace(original, wrong))
+                self.assertNotEqual(source, self.original)
+                self.prepare(source)
+
+    def test_wrong_artifact_cannot_rewire_any_retained_target(self) -> None:
+        for target in self.targets | set(self.samplers):
+            source = self.original.replace(
+                f'artifactName: "litert-lm-native-apple-{target}-xcframework-',
+                'artifactName: "litert-lm-native-apple-WrongTarget-xcframework-',
+            )
+            with self.subTest(target=target), self.assertRaisesRegex(ReleaseError, "canonical"):
+                self.prepare(source)
+
+
+class LiteRtCompanionTemplateSyncTest(unittest.TestCase):
+    def setUp(self) -> None:
+        self.source_root = Path(__file__).resolve().parents[2]
+        self.hook = (self.source_root / "hook/build.dart").read_text()
+        self.hook = self.hook.replace(
+            self.declared_hash(self.hook),
+            "be71ff20cc6f29dae94ccfadcc8d7ae1cc78945385d11aa625223ccd559a9e74",
+        )
+        self.original = (self.source_root / "tool/native/fixtures/litert_lm_v018_samplers_Package.swift").read_text()
+        projection = _v019_inventory_projection()
+        self.manifest, _ = _schema2_fixture_payloads()
+        self.manifest["release"]["tag"] = "v0.19.0"
+        self.manifest["upstream"]["compatibilityTag"] = "v0.19.0"
+        self.manifest["platforms"] = projection["platforms"]
+        self.release = {"tag_name": "v0.19.0", "assets": [
+            {"name": item["fileName"], "digest": "sha256:" + item["sha256"]}
+            for item in projection["spmArtifacts"]
+        ]}
+        for bundle in pins.litert_lm_bundle_names(
+            (self.source_root / pins.DEFAULT_NATIVE_RELEASE_PINS).read_text()
+        ):
+            self.release["assets"].append({
+                "name": f"litert-lm-native-runtime-{bundle}-v0.19.0.tar.gz",
+                "digest": "sha256:" + hashlib.sha256(bundle.encode()).hexdigest(),
+            })
+        self.prepared = prepare_litert_lm_package_swift(
+            self.original, release=self.release, manifest=self.manifest,
+            resolved_tag="v0.19.0",
+        )
+
+    def declared_hash(self, hook: str) -> str:
+        return re.search(
+            r"const _liteRtLmCompanionManifestTemplateSha256 =\s*'([0-9a-f]{64})';",
+            hook,
+        ).group(1)
+
+    def stage(self, root: Path) -> None:
+        for relative in (
+            "hook/build.dart", pins.DEFAULT_NATIVE_RELEASE_PINS,
+            pins.DEFAULT_LITERT_LM_RUNTIME_DART,
+            pins.DEFAULT_LITERT_LM_MACOS_PREPARE_SCRIPT,
+            *pins.DEFAULT_LLAMA_CPP_PROJECT_DOCS,
+        ):
+            target = root / relative
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(self.source_root / relative, target)
+        package = "packages/llamadart_litert_lm_flutter"
+        shutil.copytree(self.source_root / package, root / package)
+        (root / "hook/build.dart").write_text(self.hook)
+        (root / pins.DEFAULT_LITERT_LM_PACKAGE_SWIFT).write_text(self.original)
+        pin_path = root / pins.DEFAULT_NATIVE_RELEASE_PINS
+        pin_path.write_text(re.sub(
+            r"const liteRtLmReleaseTag = '[^']+';",
+            "const liteRtLmReleaseTag = 'v0.18.1-4';", pin_path.read_text(),
+        ))
+
+    def sync(self, root: Path, *, dry_run: bool = False) -> str:
+        argv = ["sync", "--repo-root", str(root), "--litert-lm-tag", "v0.19.0"]
+        if dry_run:
+            argv.append("--dry-run")
+        output = io.StringIO()
+        with patch.object(sys, "argv", argv), patch.object(
+            pins, "fetch_release", return_value=self.release,
+        ), patch.object(
+            pins, "validate_litert_lm_release_manifest", return_value=self.manifest,
+        ), patch.object(pins, "write_github_output"), patch("sys.stdout", output):
+            self.assertEqual(pins.main(), 0)
+        return output.getvalue()
+
+    def test_ordinary_sync_updates_hook_from_rendered_seven_target_manifest(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            self.stage(root)
+            self.sync(root)
+            updated = (root / "hook/build.dart").read_text()
+            self.assertEqual(self.declared_hash(updated),
+                             "df03e4e53c34d1d7c7039e221092d30fb72b2a71d93b4f6227299af41aff26cb")
+            self.assertEqual((root / pins.DEFAULT_LITERT_LM_PACKAGE_SWIFT).read_text(), self.prepared)
+            self.assertIn("const liteRtLmReleaseTag = 'v0.19.0';",
+                          (root / pins.DEFAULT_NATIVE_RELEASE_PINS).read_text())
+            self.assertNotIn("TopK", self.prepared)
+            first = {p: p.read_bytes() for p in root.rglob("*") if p.is_file()}
+            self.sync(root)
+            self.assertEqual(first, {p: p.read_bytes() for p in root.rglob("*") if p.is_file()})
+
+    def test_dry_run_reports_prospective_hash_without_changing_current_eighteen(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            self.stage(root)
+            before = {p: p.read_bytes() for p in root.rglob("*") if p.is_file()}
+            output = self.sync(root, dry_run=True)
+            self.assertIn("df03e4e53c34d1d7c7039e221092d30fb72b2a71d93b4f6227299af41aff26cb", output)
+            self.assertEqual(before, {p: p.read_bytes() for p in root.rglob("*") if p.is_file()})
+            self.assertIn("const liteRtLmReleaseTag = 'v0.18.1-4';",
+                          (root / pins.DEFAULT_NATIVE_RELEASE_PINS).read_text())
+
+    def test_stale_admitted_hash_refuses_before_any_sync_write(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            self.stage(root)
+            hook = root / "hook/build.dart"
+            hook.write_text(self.hook.replace(self.declared_hash(self.hook), "0" * 64))
+            before = {p: p.read_bytes() for p in root.rglob("*") if p.is_file()}
+            with self.assertRaisesRegex(ReleaseError, "reviewed.*template"):
+                self.sync(root)
+            self.assertEqual(before, {p: p.read_bytes() for p in root.rglob("*") if p.is_file()})
+
+    def test_missing_hook_refuses_before_any_sync_write(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            self.stage(root)
+            (root / "hook/build.dart").unlink()
+            before = {p: p.read_bytes() for p in root.rglob("*") if p.is_file()}
+            with self.assertRaisesRegex(ReleaseError, "Missing native build hook"):
+                self.sync(root)
+            self.assertEqual(before, {p: p.read_bytes() for p in root.rglob("*") if p.is_file()})
+
+    def test_current_nine_target_template_retains_current_hook(self) -> None:
+        self.assertEqual(pins.replace_litert_lm_companion_template_hash(
+            self.hook, original_swift=self.original,
+            prepared_swift=self.original.replace("\n", "\r\n"),
+            resolved_tag="v0.18.1-4",
+        ), self.hook)
+
+    def test_rendered_version_skew_cannot_authorize_a_template(self) -> None:
+        with self.assertRaisesRegex(ReleaseError, "rendered.*tag"):
+            pins.replace_litert_lm_companion_template_hash(
+                self.hook, original_swift=self.original,
+                prepared_swift=self.prepared, resolved_tag="v0.18.1-4",
+            )
+
+    def test_duplicate_rendered_tag_cannot_authorize_a_template(self) -> None:
+        with self.assertRaisesRegex(ReleaseError, "one.*template tag"):
+            pins.replace_litert_lm_companion_template_hash(
+                self.hook, original_swift=self.original,
+                prepared_swift=self.prepared + '\nlet liteRtLmTag = "v0.19.0"\n',
+                resolved_tag="v0.19.0",
+            )
+
+    def test_missing_or_duplicate_hook_contract_refuses(self) -> None:
+        declaration = re.search(
+            r"const _liteRtLmCompanionManifestTemplateSha256 =\s*'[0-9a-f]{64}';",
+            self.hook,
+        ).group()
+        for hook in (self.hook.replace(declaration, ""), self.hook + declaration):
+            with self.subTest(hook=hook[-100:]), self.assertRaises(ReleaseError):
+                pins.replace_litert_lm_companion_template_hash(
+                    hook, original_swift=self.original,
+                    prepared_swift=self.prepared, resolved_tag="v0.19.0",
+                )
+
+
+class LiteRtV019PrebuiltOverridesTest(unittest.TestCase):
+    def setUp(self) -> None:
+        self.fixtures = Path(__file__).resolve().parent / "fixtures"
+        self.manifest_bytes = (
+            self.fixtures / "litert_lm_v019_owner_manifest.json"
+        ).read_bytes()
+        self.manifest = json.loads(self.manifest_bytes)
+        self.release = json.loads(
+            (self.fixtures / "litert_lm_v019_owner_release.json").read_text()
+        )
+        self.tag = "v0.19.0"
+
+    def validate(self, fixture_dir: Path) -> dict:
+        return validate_litert_lm_release_manifest(
+            self.release,
+            repo="leehack/litert-lm-native",
+            tag=self.tag,
+            release_json_dir=str(fixture_dir),
+            required_bundles=[
+                f"{item['platform']}-{item['arch']}"
+                for item in self.manifest["platforms"]
+            ],
+        )
+
+    def test_published_owner_bytes_pass_full_manifest_validation(self) -> None:
+        self.assertEqual(
+            hashlib.sha256(self.manifest_bytes).hexdigest(),
+            "bd6f67c047bbd853fd962d363e0507c043be0658c00502b4e486b02c27107871",
+        )
+        self.assertEqual(
+            self.manifest["native"]["commit"],
+            "f173fe9b18a30fdc23cc896be27a36bf85657921",
+        )
+        checksum_bytes = (
+            self.fixtures / "litert_lm_v019_owner_SHA256SUMS"
+        ).read_bytes()
+        self.assertEqual(
+            hashlib.sha256(checksum_bytes).hexdigest(),
+            "735f30d786f1f2bac9d145396370139c69c54643c931a239cdb0f96eeb48cc28",
+        )
+        published_digests = {
+            asset["name"]: asset["digest"] for asset in self.release["assets"]
+        }
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            _materialize_schema2_release_fixtures(root, self.manifest, self.release)
+            for name, payload in (
+                ("manifest.json", self.manifest_bytes),
+                ("SHA256SUMS", checksum_bytes),
+            ):
+                (root / f"leehack__litert-lm-native__{self.tag}__{name}").write_bytes(payload)
+                self.assertEqual(
+                    published_digests[name],
+                    "sha256:" + hashlib.sha256(payload).hexdigest(),
+                )
+                _set_release_asset_digest(
+                    self.release, name, published_digests[name].removeprefix("sha256:")
+                )
+            self.assertEqual(self.validate(root), self.manifest)
+            stale_table = dict(pins.LITERT_PREBUILT_OVERRIDES)
+            del stale_table[self.tag]
+            with patch.object(pins, "LITERT_PREBUILT_OVERRIDES", stale_table):
+                with self.assertRaisesRegex(
+                    ReleaseError,
+                    "LITERT_PREBUILT_OVERRIDES has no entry for upstream v0.19.0",
+                ):
+                    self.validate(root)
+
+    def test_v019_override_provenance_rejects_missing_and_altered_records(self) -> None:
+        original = json.loads(json.dumps(self.manifest))
+        cases = (
+            ("missing", None, None),
+            ("sourceCommit", "sourceCommit", "1" * 40),
+            ("sourcePath", "sourcePath", "prebuilt/android_arm64/other.so"),
+            ("sourceRepository", "sourceRepository", "other/LiteRT-LM"),
+            ("targetPath", "targetPath", "bin/android/arm64/other.so"),
+            ("sha256", "sha256", "1" * 64),
+        )
+        for label, field, value in cases:
+            with self.subTest(field=label), tempfile.TemporaryDirectory() as temp:
+                self.manifest = json.loads(json.dumps(original))
+                overrides = self.manifest["upstream"]["prebuiltOverrides"]
+                if field is None:
+                    overrides.pop()
+                else:
+                    overrides[0][field] = value
+                _materialize_schema2_release_fixtures(
+                    Path(temp), self.manifest, self.release
+                )
+                with self.assertRaisesRegex(ReleaseError, "prebuilt override provenance"):
+                    self.validate(Path(temp))
+
+    def test_v019_override_target_artifact_hash_is_still_enforced(self) -> None:
+        target = self.manifest["upstream"]["prebuiltOverrides"][0]["targetPath"]
+        artifact = next(
+            item for item in self.manifest["artifacts"] if item["path"] == target
+        )
+        artifact["sha256"] = "1" * 64
+        with tempfile.TemporaryDirectory() as temp:
+            _materialize_schema2_release_fixtures(
+                Path(temp), self.manifest, self.release
+            )
+            with self.assertRaisesRegex(
+                ReleaseError, "prebuilt override target provenance"
+            ):
+                self.validate(Path(temp))
+
+    def test_v019_override_provenance_does_not_admit_version_skew(self) -> None:
+        self.manifest["upstream"]["compatibilityTag"] = "v0.18.1"
+        with tempfile.TemporaryDirectory() as temp:
+            _materialize_schema2_release_fixtures(
+                Path(temp), self.manifest, self.release
+            )
+            with self.assertRaisesRegex(ReleaseError, "compatibility tag"):
+                self.validate(Path(temp))
 
 
 class SyncNativeReleasePinsTest(unittest.TestCase):
@@ -2074,6 +2772,8 @@ class SyncNativeReleasePinsTest(unittest.TestCase):
                             r"const liteRtLmReleaseTag = '[^']+';",
                             f"const liteRtLmReleaseTag = '{current_tag}';", expected,
                         )
+                    elif relative.as_posix() == "hook/build.dart":
+                        expected = _hook_for_litert_swift(expected, modern)
                     self.assertEqual(path.read_text(), expected, str(relative))
 
     def test_schema_2_prepares_hook_libraries_from_owner_inventory(self) -> None:
@@ -2306,7 +3006,7 @@ class SyncNativeReleasePinsTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
             result = _run_schema2_sync(
-                root, manifest, release, starting_swift=_checked_in_litert_swift(),
+                root, manifest, release, starting_swift=_v018_litert_swift(),
             )
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             expected = (
@@ -2318,7 +3018,7 @@ class SyncNativeReleasePinsTest(unittest.TestCase):
                 "libwebgpu_dawn.dylib",
             )
             runtime = (root / "repo/lib/src/backends/litert_lm/litert_lm_runtime.dart").read_text()
-            function = runtime.split("liteRtLmMacOsRequiredNativeSpmFilesForAbi", 1)[1].split("\n}", 1)[0]
+            function = _runtime_inventory_function(runtime, "_liteRtLmMacOsRequiredNativeSpmFilesForAbi")
             arm64 = function.split("Abi.macosArm64", 1)[1].split("Abi.macosX64", 1)[0]
             self.assertEqual(re.findall(r"'([^']+)'", arm64), list(expected))
             self.assertNotIn("WebGpuAccelerator.framework", function)
@@ -2342,12 +3042,12 @@ class SyncNativeReleasePinsTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
             result = _run_schema2_sync(
-                root, manifest, release, starting_swift=_checked_in_litert_swift(),
+                root, manifest, release, starting_swift=_v018_litert_swift(),
             )
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             repo = root / "repo"
             runtime = (repo / "lib/src/backends/litert_lm/litert_lm_runtime.dart").read_text()
-            spm = runtime.split("liteRtLmMacOsRequiredNativeSpmFilesForAbi", 1)[1].split("\n}", 1)[0]
+            spm = _runtime_inventory_function(runtime, "_liteRtLmMacOsRequiredNativeSpmFilesForAbi")
             prepare = (repo / "tool/macos_litert_lm_prepare_app.sh").read_text()
             prepare_spm = prepare.split("required_native_spm_files()", 1)[1].split("\n}", 1)[0]
             for text in (spm, prepare_spm):
@@ -2367,7 +3067,7 @@ class SyncNativeReleasePinsTest(unittest.TestCase):
         starting = re.sub(
             r'(?ms)^[ \t]*nativeRepoBinaryTarget\(\s*name: "LiteRt",.*?^[ \t]*\),\n',
             "",
-            _checked_in_litert_swift(),
+            _v018_litert_swift(),
         )
         starting = re.sub(r'(?m)^[ \t]*\.target\(name: "LiteRt", .*\n', "", starting)
         self.assertNotIn('name: "LiteRt"', starting)
@@ -2417,8 +3117,9 @@ class SyncNativeReleasePinsTest(unittest.TestCase):
             "Abi.windowsX64 => const <String>['LiteRtLm.dll'],",
             runtime,
         )
-        self.assertNotIn("libGemmaModelConstraintProvider.dylib", runtime)
-        self.assertNotIn("libLiteRtTopKWebGpuSampler.so", runtime)
+        legacy = _runtime_inventory_function(runtime, "_liteRtLmLegacyRequiredLibrariesForAbi")
+        self.assertNotIn("libGemmaModelConstraintProvider.dylib", legacy)
+        self.assertNotIn("libLiteRtTopKWebGpuSampler.so", legacy)
 
     def test_schema_2_sync_updates_real_macos_inventory_surfaces(self) -> None:
         manifest, release = _schema2_fixture_payloads()
@@ -2431,6 +3132,7 @@ class SyncNativeReleasePinsTest(unittest.TestCase):
                 release,
                 include_runtime_dependencies=True,
             )
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             repo_root = temp_path / "repo"
             prepare = (repo_root / "tool/macos_litert_lm_prepare_app.sh").read_text(
                 encoding="utf-8"
@@ -2513,8 +3215,9 @@ class SyncNativeReleasePinsTest(unittest.TestCase):
             """Abi.macosArm64 => const <String>[\n      'LiteRtLm.framework/Versions/A/LiteRtLm',\n      'libCLiteRTLM_mac.dylib',\n    ],""",
             runtime,
         )
-        self.assertNotIn("GemmaModelConstraintProvider.framework", runtime)
-        self.assertNotIn("LiteRtMetalAccelerator.framework", runtime)
+        frameworks = _runtime_inventory_function(runtime, "_liteRtLmMacOsRequiredFrameworksForAbi")
+        self.assertNotIn("GemmaModelConstraintProvider.framework", frameworks)
+        self.assertNotIn("LiteRtMetalAccelerator.framework", frameworks)
         for target in (
             "LiteRtLm",
             "CLiteRTLM",

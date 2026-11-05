@@ -43,7 +43,7 @@ const _liteRtLmFlutterPackageName = 'llamadart_litert_lm_flutter';
 // normalized. Only this manifest links the complete macOS runtime, so any other
 // resolved companion keeps macOS LiteRT-LM on the hook cache.
 const _liteRtLmCompanionManifestTemplateSha256 =
-    'be71ff20cc6f29dae94ccfadcc8d7ae1cc78945385d11aa625223ccd559a9e74';
+    'df03e4e53c34d1d7c7039e221092d30fb72b2a71d93b4f6227299af41aff26cb';
 const _stableDiffusionFlutterPackageName = 'llamadart_stable_diffusion_flutter';
 const _stableDiffusionCompanionManifestTemplateSha256 =
     '829188afd63eec24b16259b05c0d884725818558fed30b41fae40fa39eeef66c';

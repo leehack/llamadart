@@ -24,9 +24,14 @@ interface does not establish backend/model support; read `await engine.capabilit
 
 ## Guidelines
 
-- Keep native LiteRT-LM overrides compatible with the package's pre-1.0 C
-  bindings. LiteRT-LM 0.19 / C API 1.0 is refused before engine calls; use the
-  pinned v0.18.1-4 runtime until the #1677 consumer migration is delivered.
+- Use the pinned native LiteRT-LM v0.19.0 runtime. Direct calls, service
+  probes and speech share ABI-aware discovery. Public selection admits legacy
+  runtimes and C API 1.0.x; unknown/future versions are refused before engine
+  calls. The source pin adopts published native v0.19.0 (owner `f173fe9b`,
+  upstream `83ce6067`); final core/Apple consumers and package release remain
+  [#1677](https://github.com/leehack/llamadart/issues/1677) gates. The selected
+  loader requires macOS 14+ even for legacy libraries and custom paths. Web
+  remains `@litert-lm/core@0.18.0`.
 
 - For a model-free macOS/Linux/Windows setup snapshot, use
   `dart run llamadart:doctor [--json]` or

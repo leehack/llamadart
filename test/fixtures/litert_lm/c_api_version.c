@@ -3,6 +3,12 @@
 #ifndef API_MAJOR
 #define API_MAJOR 1
 #endif
+#ifndef API_MINOR
+#define API_MINOR 0
+#endif
+#ifndef API_PATCH
+#define API_PATCH 0
+#endif
 #ifndef API_STATUS
 #define API_STATUS 0
 #endif
@@ -10,8 +16,10 @@
 #ifndef OMIT_API_VERSION
 int litert_lm_get_api_version(int *major, int *minor, int *patch) {
   *major = API_MAJOR;
-  *minor = 0;
-  *patch = 0;
+  *minor = API_MINOR;
+#ifndef OMIT_PATCH_WRITE
+  *patch = API_PATCH;
+#endif
   return API_STATUS;
 }
 #endif
