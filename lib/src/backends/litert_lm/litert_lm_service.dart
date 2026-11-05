@@ -1045,8 +1045,7 @@ class LiteRtLmService {
   /// bundle declares absent as that missing piece.
   ///
   /// The declaration only explains a failure and never rejects a request
-  /// itself: LiteRT-LM's capability reader matches section types
-  /// case-sensitively and the runtime does not, so it can under-report.
+  /// itself.
   Stream<List<int>> _explainUndeclaredFailure(
     Stream<List<int>> generation, {
     required bool hasImages,

@@ -54,8 +54,9 @@ description: >-
   must `shutdown()`. Dispose all three when the screen or app closes.
 - For llama.cpp image or audio input, pass `mmprojSource` (and `mmprojOptions`);
   the loaded projector must confirm support. Native LiteRT-LM can use built-in
-  encoders without a projector; declarations can under-report media, so native
-  media requests retain best-effort runtime validation.
+  encoders without a projector; a custom runtime older than LiteRT-LM v0.18.0 can
+  under-report media, so native media requests retain best-effort runtime
+  validation.
 - `.litertlm` LiteRT-LM bundles work for chat and tools where llamadart
   supports LiteRT-LM, but have no grammar constraints: prepare them with
   `supportsConstrainedOutput: false`.

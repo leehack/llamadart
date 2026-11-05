@@ -44,8 +44,9 @@ This restriction does not qualify GPU output or other architectures.
   from the model card. `engine.hasMultimodalProjector` only says a projector is
   loaded.
 - For a GGUF model they report the loaded projector; for a native `.litertlm`
-  bundle they report the modalities the bundle declares, which can
-  under-report, so treat `false` there as unknown rather than absent. The
+  bundle they report the modalities the bundle declares. A `false` there does
+  not block the request; only a custom runtime older than LiteRT-LM v0.18.0 can
+  under-report it. The
   `engine.supportsVision` and `engine.supportsAudio` getters report the same
   values as `capabilities`.
 - Always check before sending media to a GGUF model. With no projector loaded,
