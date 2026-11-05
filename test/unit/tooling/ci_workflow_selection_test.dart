@@ -1383,6 +1383,19 @@ for event,flag,cancel,good,main in itertools.product(('push','pull_request','wor
           r'--coverage=coverage ${{ matrix.paths }}',
         ),
       );
+      // Node-backed tooling fixtures bound each harness run; the runner's
+      // cold first `node` start must happen before them.
+      final loadNode = shardSteps.indexWhere(
+        (s) => '${s['run']}'.contains('node -e '),
+      );
+      expect(loadNode, greaterThanOrEqualTo(0));
+      expect(shardSteps[loadNode]['if'], "matrix.shard == 'tooling'");
+      expect(
+        loadNode,
+        lessThan(
+          shardRuns.indexWhere((run) => run.startsWith('dart test -p vm')),
+        ),
+      );
       final upload =
           shardSteps.singleWhere(
                 (s) => '${s['uses']}'.startsWith('actions/upload-artifact@'),
