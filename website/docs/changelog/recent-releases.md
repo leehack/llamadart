@@ -13,6 +13,7 @@ validate against the exact release tag notes.
 
 ## Unreleased
 
+- Reinitialize native LiteRT-LM image-chat engines after cancellation before reusing them ([#1749](https://github.com/leehack/llamadart/issues/1749)).
 - Keep future LiteRT-LM SwiftPM pin syncs aligned with macOS app-bundle runtime discovery.
 - Request optional Android vendor OpenCL access in the chat example and document LiteRT-LM GPU setup and CPU fallback.
 

@@ -4879,6 +4879,236 @@ void main() {
     }
   }
 
+  group('cancelled image engine recovery', () {
+    const generation = GenerationParams(
+      maxTokens: 32,
+      temp: 0,
+      seed: 9,
+      speculativeDecoding: false,
+    );
+    late _FakeLiteRtLmRuntimeClient firstClient;
+    late _FakeLiteRtLmRuntimeClient nextClient;
+    late LiteRtLmService service;
+    late ModelParams params;
+    late int context;
+
+    List<LlamaChatMessage> messages({String modality = 'image'}) => [
+      LlamaChatMessage.withContent(
+        role: LlamaChatRole.user,
+        content: [
+          const LlamaTextContent('describe'),
+          if (modality == 'image')
+            LlamaImageContent(bytes: Uint8List.fromList([1, 2, 3])),
+          if (modality == 'audio')
+            LlamaAudioContent(bytes: Uint8List.fromList([4, 5, 6])),
+        ],
+      ),
+    ];
+
+    Stream<List<int>> generate({String modality = 'image'}) =>
+        service.generateChat(
+          context,
+          messages(modality: modality),
+          generation,
+          enableThinking: false,
+        );
+
+    Future<void> finish(
+      Stream<List<int>> stream,
+      _FakeLiteRtLmRuntimeClient client,
+    ) async {
+      final done = stream.toList();
+      await client.generateStarted.future;
+      client.generated.add('answer');
+      await client.generated.close();
+      expect(await done, [utf8.encode('answer')]);
+    }
+
+    setUp(() async {
+      firstClient = _FakeLiteRtLmRuntimeClient();
+      nextClient = _FakeLiteRtLmRuntimeClient();
+      params = ModelParams(
+        device: ComputeDevice.cpu,
+        contextSize: 768,
+        numberOfThreads: 2,
+        liteRtLmCacheDir: '${tempDir.path}/recovery-cache',
+      );
+      service = LiteRtLmService(
+        clientFactory: () =>
+            firstClient.disposeCount == 0 ? firstClient : nextClient,
+        linkParentDirectory: tempDir,
+        useTempCacheDir: false,
+      );
+      final model = await service.loadModel(modelFile.path, params);
+      context = service.createContext(model, params);
+    });
+
+    tearDown(() async {
+      for (final client in [firstClient, nextClient]) {
+        final unused = client.generateCount == 0
+            ? client.generated.stream.drain<void>()
+            : null;
+        await client.generated.close();
+        await unused;
+      }
+      service.dispose();
+    });
+
+    for (final explicitCancel in [false, true]) {
+      test('recreates a settled cancelled image engine on its next use '
+          '(requested: $explicitCancel)', () async {
+        final done = generate().drain<void>();
+        await firstClient.generateStarted.future;
+        if (explicitCancel) service.cancelGeneration();
+        firstClient.finishReason = explicitCancel
+            ? null
+            : LiteRtLmFinishReason.cancelled;
+        await firstClient.generated.close();
+        await done;
+        expect(firstClient.disposeCount, 0);
+        expect(nextClient.initializeStarted.isCompleted, isFalse);
+
+        await finish(generate(), nextClient);
+        expect(firstClient.disposeCount, 1);
+        expect(nextClient.lastModelPath, firstClient.lastModelPath);
+        expect(nextClient.lastBackend, 'cpu');
+        expect(nextClient.lastVisionBackend, 'cpu');
+        expect(nextClient.lastCacheDir, firstClient.lastCacheDir);
+        expect(nextClient.lastMaxTokens, 768);
+        expect(nextClient.lastMaxNumImages, 1);
+        expect(nextClient.lastNumberOfThreads, 2);
+        expect(nextClient.lastSpeculativeDecoding, isFalse);
+        expect(nextClient.lastTemperature, 0);
+        expect(nextClient.lastTopK, 1);
+        expect(nextClient.lastSeed, 9);
+        expect(service.getContextSize(context), 768);
+
+        nextClient.generated = StreamController<String>();
+        await finish(generate(), nextClient);
+        expect(nextClient.disposeCount, 0);
+        expect(nextClient.generateCount, 2);
+      });
+    }
+
+    for (final modality in ['image', 'text', 'audio']) {
+      test('keeps ordinary reuse for $modality '
+          '(cancelled: ${modality != 'image'})', () async {
+        final done = generate(modality: modality).drain<void>();
+        await firstClient.generateStarted.future;
+        if (modality != 'image') {
+          service.cancelGeneration();
+          firstClient.finishReason = LiteRtLmFinishReason.cancelled;
+        }
+        await firstClient.generated.close();
+        await done;
+        firstClient
+          ..generated = StreamController<String>()
+          ..finishReason = LiteRtLmFinishReason.stop;
+        await finish(generate(modality: modality), firstClient);
+        expect(firstClient.disposeCount, 0);
+        expect(nextClient.initializeStarted.isCompleted, isFalse);
+      });
+    }
+
+    test(
+      'a late subscription cancellation recreates the settled image engine',
+      () async {
+        await finish(generate(), firstClient);
+        service.cancelGeneration();
+        expect(firstClient.disposeCount, 0);
+        await finish(generate(), nextClient);
+        expect(firstClient.disposeCount, 1);
+      },
+    );
+
+    test(
+      'a refused image cancellation remains visible before recovery',
+      () async {
+        final done = generate().drain<void>();
+        await firstClient.generateStarted.future;
+        final refusal = LlamaStateException('Cancellation was refused.');
+        firstClient.cancelError = refusal;
+        expect(service.cancelGeneration, throwsA(same(refusal)));
+        await firstClient.generated.close();
+        await done;
+        expect(firstClient.disposeCount, 0);
+        await finish(generate(), nextClient);
+        expect(firstClient.disposeCount, 1);
+      },
+    );
+
+    test(
+      'subscription cancellation retains the engine until final drain',
+      () async {
+        final drain = Completer<void>();
+        final unused = firstClient.generated.stream.drain<void>();
+        await firstClient.generated.close();
+        await unused;
+        firstClient.generated = StreamController<String>(
+          onCancel: () async {
+            await drain.future;
+            firstClient
+              ..settlement = LiteRtLmNativeSettlement.settled
+              ..finishReason = LiteRtLmFinishReason.cancelled;
+          },
+        );
+        final firstChunk = Completer<void>();
+        final subscription = generate().listen((_) => firstChunk.complete());
+        await firstClient.generateStarted.future;
+        firstClient
+          ..settlement = LiteRtLmNativeSettlement.pending
+          ..generated.add('partial');
+        await firstChunk.future;
+        service.cancelGeneration();
+        final cancelled = subscription.cancel();
+        try {
+          await Future<void>.delayed(Duration.zero);
+          expect(service.nativeSettlement, LiteRtLmNativeSettlement.pending);
+          expect(firstClient.disposeCount, 0);
+          expect(nextClient.initializeStarted.isCompleted, isFalse);
+          expect(service.dispose, throwsA(isA<LlamaStateException>()));
+        } finally {
+          drain.complete();
+          await cancelled;
+        }
+        expect(service.nativeSettlement, LiteRtLmNativeSettlement.settled);
+        expect(firstClient.disposeCount, 0);
+        await finish(generate(), nextClient);
+        expect(firstClient.disposeCount, 1);
+      },
+    );
+
+    for (final unsettled in [
+      LiteRtLmNativeSettlement.pending,
+      LiteRtLmNativeSettlement.quarantined,
+    ]) {
+      test(
+        'recovery never closes an engine whose lifetime is $unsettled',
+        () async {
+          final done = generate().drain<void>();
+          await firstClient.generateStarted.future;
+          service.cancelGeneration();
+          firstClient.finishReason = LiteRtLmFinishReason.cancelled;
+          await firstClient.generated.close();
+          await done;
+          firstClient.settlement = unsettled;
+          try {
+            await expectLater(
+              generate().drain<void>(),
+              throwsA(isA<LlamaStateException>()),
+            );
+            expect(firstClient.disposeCount, 0);
+            expect(nextClient.initializeStarted.isCompleted, isFalse);
+          } finally {
+            firstClient.settlement = LiteRtLmNativeSettlement.settled;
+          }
+          await finish(generate(), nextClient);
+          expect(firstClient.disposeCount, 1);
+        },
+      );
+    }
+  });
+
   group('finish reasons', () {
     const params = ModelParams(liteRtLmBackend: LiteRtLmBackendPreference.cpu);
 
@@ -7581,6 +7811,7 @@ class _FakeLiteRtLmRuntimeClient extends LiteRtLmRuntimeClient {
   int createConversationCount = 0;
   int generateCount = 0;
   int cancelCount = 0;
+  Object? cancelError;
   int disposeCount = 0;
   Object? disposeError;
 
@@ -7805,6 +8036,8 @@ class _FakeLiteRtLmRuntimeClient extends LiteRtLmRuntimeClient {
   void cancel() {
     _checkNotDisposed();
     cancelCount += 1;
+    final error = cancelError;
+    if (error != null) throw error;
   }
 
   @override

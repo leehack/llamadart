@@ -203,6 +203,7 @@ class LiteRtLmService {
   int? _activeMaxNumImages;
   bool? _activeVisionEnabled;
   bool? _activeAudioEnabled;
+  bool _recreateClientAfterImageCancellation = false;
   String? _workingAudioBackend;
   int _nextModelHandle = 1;
   int _nextContextHandle = 1;
@@ -854,6 +855,15 @@ class LiteRtLmService {
       );
     } finally {
       sw.stop();
+      // A fresh conversation can retain degraded image-generation state after
+      // cancellation. Reinitialize the engine on its next use, only after the
+      // callback family has drained; this costs one engine initialization.
+      if (maxNumImages != null &&
+          (_cancelRequested ||
+              client.lastFinishReason == LiteRtLmFinishReason.cancelled) &&
+          nativeSettlement == LiteRtLmNativeSettlement.settled) {
+        _recreateClientAfterImageCancellation = true;
+      }
       try {
         _lastMetrics = client.readMetrics(
           wallMilliseconds: sw.elapsedMilliseconds,
@@ -981,6 +991,13 @@ class LiteRtLmService {
   void cancelGeneration() {
     _cancelRequested = true;
     _client?.cancel();
+    // Late subscription cancels can follow a settled image turn, so cancelling
+    // an idle image-enabled engine also costs one reinitialization before reuse.
+    if (_activeVisionEnabled == true &&
+        (_activeMaxNumImages ?? 0) > 0 &&
+        nativeSettlement == LiteRtLmNativeSettlement.settled) {
+      _recreateClientAfterImageCancellation = true;
+    }
   }
 
   /// Tokenizes text with the loaded LiteRT-LM model tokenizer.
@@ -1289,6 +1306,7 @@ class LiteRtLmService {
     final backend = _activeBackend ?? _backendNameFor(modelParams);
     final existing = _client;
     if (existing != null &&
+        !_recreateClientAfterImageCancellation &&
         (speculativeDecoding == null ||
             _activeSpeculativeDecoding == resolvedSpeculativeDecoding) &&
         (maxNumImages == null || _activeMaxNumImages == resolvedMaxNumImages) &&
@@ -2423,6 +2441,7 @@ class LiteRtLmService {
     _embedding = null;
     _client?.dispose();
     _client = null;
+    _recreateClientAfterImageCancellation = false;
     _cacheLease?.release();
     _cacheLease = null;
   }
