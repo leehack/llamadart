@@ -6,8 +6,15 @@ unknown/future versions remain unsupported. The native hook and Apple companion
 source now pin published [v0.19.0](https://github.com/leehack/litert-lm-native/releases/tag/v0.19.0),
 owner `f173fe9b` / upstream `83ce6067f2e2a3fb697556928f93936693ded971`.
 All 21 public owner assets were independently matched to the qualified bytes.
-Final default-discovery consumers, Apple embedding/signatures and core/companion
-package release remain separate gates in [#1677](https://github.com/leehack/llamadart/issues/1677).
+Source adoption merged in [#1743](https://github.com/leehack/llamadart/pull/1743)
+at `42585e838`; maintained ASR preservation merged in
+[#1748](https://github.com/leehack/llamadart/pull/1748) at `21dd`, after passing
+CI and independent review of the equivalent `457` tree. Historical release head
+`a47e6ff2` passed default-discovery consumer, SwiftPM and macOS Release app
+embedding/signature checks for all three Apple companions. Final integration,
+renewed exact-head evidence and approval to publish core plus the three companions
+remain gates for draft [#1746](https://github.com/leehack/llamadart/pull/1746)
+and [#1677](https://github.com/leehack/llamadart/issues/1677).
 Web remains `@litert-lm/core@0.18.0`. The internal
 `createLiteRtLmSelectedRuntimeClient(allowV1: true)` entry point exercises that
 same facade with admitted C API 1.0.x fixtures, retaining selected core and
@@ -35,8 +42,10 @@ client/session contracts make v1 embedding dispatch independent of that extensio
 Owner [PR #106](https://github.com/leehack/litert-lm-native/pull/106) repaired the
 Android loader collision before v0.19.0 publication. Final Windows/Linux/macOS
 CPU text checks and three owner Moonshine ASR smokes are accepted within their
-recorded inputs; they do not establish Windows GPU, desktop embeddings, LoRA
-or every final Dart worker/consumer path.
+recorded inputs; they do not establish Windows GPU, unsupported desktop
+embeddings, LoRA or every Dart worker/consumer path. The final macOS CPU subset
+also includes public schema, embedding and Whisper Tiny ASR checks described
+below. Platform and model limits remain independent.
 
 The exact corrected-model default-service OpenCL route is accepted on physical
 SC-51E / API36 / DEBUG: 20 cases passed, all six lifetimes closed, final completion
@@ -55,23 +64,23 @@ their separate qualification limits.
 
 | Public call path | Preparation and evidence | Remaining admission work |
 | --- | --- | --- |
-| Published owner bytes and source pin | DONE: all 21 public v0.19.0 owner assets match qualified bytes; hook and companion source pins are updated. | Final default-discovery consumers, SwiftPM consumption, Apple embedding/signatures, integration CI/audit and coordinated core/companion version preparation remain pending. |
-| Packaged Apple platform floor | Selected discovery refuses macOS below 14 or unknown versions before core/companion loading, including legacy libraries and custom paths; direct v1 operations also check the floor. The Flutter companion retains iOS 16.4. | Final Apple app embedding/signature and supported-device execution checks remain pending. Declared deployment minima alone are not device qualification; macOS 13 remains unsupported. |
+| Published owner bytes and source pin | DONE: all 21 public v0.19.0 owner assets match qualified bytes; hook and companion source pins are updated. | Default-discovery consumers, SwiftPM and all three macOS Release companion embedding/signature checks passed at historical release head `a47e6ff2`. Renew integration CI/audit and release metadata evidence at the final head; publication still needs approval. |
+| Packaged Apple platform floor | Selected discovery refuses macOS below 14 or unknown versions before core/companion loading, including legacy libraries and custom paths; direct v1 operations also check the floor. The Flutter companion retains iOS 16.4. | All three macOS Release companion embedding/signature checks passed at `a47e6ff2`; supported-device execution remains separate. Declared deployment minima alone are not device qualification; macOS 13 remains unsupported. |
 | Engine initialization and backend options | Status/out settings; responsive owned background creation with scalar function/configuration addresses, immediate same-thread canonical error copy, partial-owner cleanup and typed service retry classification. Pending/uncertain creation retains its library/model/cache family. | Narrow CPU text and the scoped Android S24 default-service route above are accepted. Qualify other selected backends/artifacts independently; missing completion requires process restart. |
-| `tokenize` / `detokenize` / start tokens | Status/out, `size_t`, copied results, legacy BOS semantics | Matching artifact/model qualification. |
+| `tokenize` / `detokenize` / start tokens | Status/out, `size_t`, copied results, legacy BOS semantics | Exact Qwen CPU evidence preserves split-token decoding and four Unicode round trips with `addSpecial: false`, mapped through unchanged tokenizer sources. The later default-public CPU campaign at `d25b86ee` also passed `addSpecial: true`: configured start tokens were empty and raw/special IDs matched. Its source still needs landing and final integration. |
 | Bundle capabilities | Owned model-file snapshot; null optional client probe on native read failure | Declarations do not prove executor or channel enforcement. |
-| System, text/tool/media history and tool descriptors | Validated snapshots; encoded local image/audio paths and base64 payloads retain roles/order through the existing service serializer. Loaded-core modality and processor admission precede native history/send. | Real media-family artifact qualification; additional tool schema shapes remain separate. |
-| `generate` / `generateMessageJson` / chat | Active text/tool/encoded-media messages and snapshotted per-send context; native response/tool-call assembly. Explicit visual budgets require declared Gemma4 image processing plus the native setter and use status/out ownership. | Scoped CPU text and the corrected-model S24 default-service route above are accepted; final core default-discovery consumers and real media/processor/platform qualification remain. |
+| System, text/tool/media history and tool descriptors | Validated snapshots; encoded local image/audio paths and base64 payloads retain roles/order through the existing service serializer. Loaded-core modality and processor admission precede native history/send. | The matched Qwen3.5 CPU image campaign below passes path/bytes/history, subscription cancellation/reuse and reload with engine recreation. Other generative media families/platforms and additional tool schema shapes remain separate. |
+| `generate` / `generateMessageJson` / chat | Active text/tool/encoded-media messages and snapshotted per-send context; native response/tool-call assembly. Explicit visual budgets require declared Gemma4 image processing plus the native setter and use status/out ownership. | Scoped CPU text, historical final default-discovery consumers and the corrected-model S24 default-service route above are accepted. Renew final-head integration evidence; real media/processor/platform qualification remains separate. |
 | Output cap and generated-token penalties | Owned per-turn options; missing exports refuse before send | Preserve the tested refusal of unqualified penalties with speculation. |
 | Reasoning output and budgets | Named reasoning chunks retain configured markers. Positive C-int per-send budgets use status/out thinking options after first-channel boundary and native-tokenizer admission. | Actual matched thinking-family enforcement, cancellation/reuse and final public routing still require qualification; symbols or metadata alone do not prove a model obeys the bound. |
-| Native JSON Schema chat | Complete optional C API 1.0 group, by-value provider enum, status-checked configuration and per-turn constraints with thinking disabled; compiled ABI and service-client fixtures | Exact candidate/model regression and final public routing remain required. Missing exports refuse before conversation replacement; automatic tool constraints remain disabled. |
+| Native JSON Schema chat | Complete optional C API 1.0 group, by-value provider enum, status-checked configuration and per-turn constraints with thinking disabled; compiled ABI and service-client fixtures | Fourteen observations passed in the maintained default-public Qwen CPU test at `a47e6ff2`: controls, objects, enums, scalars, const, history, cancellation/reuse and length. No new Unicode-key, reload, GPU or other-platform claim. Missing exports refuse before conversation replacement; automatic tool constraints remain disabled. |
 | LoRA session path | Explicit typed refusal preserves the current conversation; upstream advanced engines reject initial text adapters | Runtime support remains tracked in [litert-lm-native#99](https://github.com/leehack/litert-lm-native/issues/99); setter availability alone does not provide support. |
-| Image/audio chat | Internal encoded-file transport; configured encoder, native modality declarations and a supported processor route are all required. Unknown/missing proof is refused. Service image-history counts prepare dynamic inputs without claiming enforced capacity. Direct legacy-only `maxNumImages` capacity remains unsupported. | Public selection does not qualify media artifacts. Remote URLs, raw RGB/PCM and video retain their existing refusal; compiled fixtures do not qualify media quality or GPU execution. |
-| Embedding sessions | Dedicated v1 engine/options/input/response APIs, `size_t` counts and copied vectors; the public extension preserves its concrete session return type through a forwarding session | Matching artifact/model qualification with existing backend restrictions. |
-| Dedicated ASR | Loaded-library ABI1/layout/full-symbol admission; v1 client and injected actual speech probe/worker use the independent bridge. Compiled fixture covers partial owners, copied text/errors, size_t backpressure, cancel/reset/finalization and worker startup/disposal. | Three owner Moonshine smokes are accepted, not a substitute for final default Dart worker/model/audio checks on the adoption head. Compiled default probe/worker fixtures cover dispatch only; independent ASR ABI/layout/export admission remains required. |
-| Logging | Canonical v1 status checked for declared severity values | Matching artifact qualification. |
-| Cancellation, errors and disposal | Final plus successful drain required; cancellation awaits adapter terminal bookkeeping; failed drain/missing final retain native owners in isolated fixtures | Scoped S24 cancellation/reload, six closed lifetimes and final completion are accepted. Final core consumers and other worker/artifact/model paths must preserve the same retention boundary. |
-| Benchmark metrics / `run` | Legacy metrics value types and aggregation; owned native snapshots | Benchmark loops and actual artifact/model qualification. |
+| Image/audio chat | Internal encoded-file transport; configured encoder, native modality declarations and a supported processor route are all required. Unknown/missing proof is refused. Service image-history counts prepare dynamic inputs without claiming enforced capacity. Direct legacy-only `maxNumImages` capacity remains unsupported. | The matched Qwen3.5 CPU image campaign below passes with the cancellation recovery. This does not qualify generative audio, other processors, GPU or other platforms. Remote URLs, raw RGB/PCM and video retain their existing refusal; embeddings do not qualify chat media. |
+| Embedding sessions | Dedicated v1 engine/options/input/response APIs, `size_t` counts and copied vectors; the public extension preserves its concrete session return type through a forwarding session | Three maintained default-public EmbeddingGemma 2 CPU tests passed at `a47e6ff2`: six finite normalized 768-wide vectors, 60 equal repeat calls, batches, overflow atomicity, cancellation/reuse and engine separation. No fresh C-reference comparison or broader platform/model claim; see [embedding qualification](multimodal_embeddings_litert.md). |
+| Dedicated ASR | Loaded-library ABI1/layout/full-symbol admission; v1 client and injected actual speech probe/worker use the independent bridge. Compiled fixture covers partial owners, copied text/errors, size_t backpressure, cancel/reset/finalization and worker startup/disposal. | Seven maintained public default-discovery Whisper Tiny CPU cases passed at `457`: normalized JFK phrase, partials/final, empty silence, stream/task cancellation, reuse and reload. Source landed in #1748; renew final integration evidence. Other ASR families, GPU, microphone UI and devices remain unqualified; independent ASR ABI/layout/export admission still applies. |
+| Logging | Canonical v1 status checked for declared severity values | Successful initialization exercised status-checked declared severity 3 through unchanged v1 client sources. The later default-public utility campaign at `d25b86ee` passed initialization. Other severity/filtering/handler behavior is not claimed. |
+| Cancellation, errors and disposal | Final plus successful drain required; cancellation awaits adapter terminal bookkeeping; failed drain/missing final retain native owners in isolated fixtures | Scoped S24 cancellation/reload and bounded public CPU schema, embedding, ASR and Qwen3.5 image recovery are accepted. Settled image cancellations, including late idle cancellation, cause one next-use engine initialization. Pending or uncertain work retains its owners; other paths keep their separate qualification limits. |
+| Benchmark metrics / `run` | Legacy metrics value types and aggregation; owned native snapshots | Historical exact Qwen CPU direct/default-service observations exercised owned metric snapshots through source-equivalent clients. The later default-public CPU campaign at `d25b86ee` passed `run()` with warmup/measured counts 1/2, then reuse at 0/1, settled native work and positive finite metrics. Its output hit the 32-token reasoning cap: no completed-answer or calibrated-performance claim. Source landing and final integration remain pending. |
 
 Public selection supports both admitted native ABIs; the Web stub is unchanged. Independent ASR library helpers reuse its bridge bindings without constructing legacy text bindings; malformed success-with-null owners are refused, and a partial engine returned with an error is released. Adding an operation to
 the internal contract requires both ABI implementations to supply it explicitly;
@@ -124,7 +133,9 @@ that constructs the selected ABI client from the provided library path inside
 the receiving isolate. Both the support probe and the streaming worker use it.
 The default speech factory uses the public ABI-aware selector; independent ASR
 bridge admission remains required. The source pin now uses published v0.19.0;
-owner ASR smokes do not replace final default-worker qualification.
+owner ASR smokes remain distinct from the accepted seven-case public default-worker
+Whisper Tiny CPU campaign. Its source landed in #1748; other models and devices
+retain their separate gates.
 
 The selected text C API does not determine ASR support. The loaded library must
 report ASR ABI1, exact configuration/result sizes and every required bridge
@@ -226,7 +237,7 @@ using empty start IDs when the rendered prompt has opened the first channel.
 Compiled fixtures check ABI values, export/version skew, first-channel and
 native tokenization negatives, status/partial-owner cleanup, schema interplay,
 per-turn isolation, cancellation and unsettled retention. They do not prove
-reasoning enforcement. Before public adoption, run a scheduled, hash-bound
+reasoning enforcement. Before claiming model enforcement, run a scheduled, hash-bound
 thinking-family model check with unbounded reasoning above the bound, bounded
 reasoning within the declared tokenized tolerance, nonempty final content and
 cancel/reuse isolation. Keep runtime/model/host identity and all failed outcomes.
@@ -238,8 +249,10 @@ The `litert-lm-v1-public-direct`, `litert-lm-v1-public-service` and
 `LiteRtLmRuntimeClient`, default `LiteRtLmService` and default
 `SpeechToTextEngine` paths. They provide no runtime-client factory or speech
 driver override. Public selection admits C API 1.0.x. The scoped S24
-default-service route above is accepted; final core default-discovery consumers
-and other exact artifact/model/route checks remain required on the adoption head.
+default-service route above and historical final default-discovery consumers are
+accepted. The schema, embedding and ASR checks below add only their stated CPU
+subsets. Renew exact-head integration evidence after source changes; other
+artifact/model/route checks remain independent.
 
 Supply `LITERT_LM_V1_LIBRARY`, its `LITERT_LM_V1_LIBRARY_SHA256`,
 `LITERT_LM_V1_MODEL_SHA256`, `LITERT_LM_V1_RUNTIME_MANIFEST` and its
@@ -270,24 +283,72 @@ These are consumer mapping controls, not execution of the Android native guard
 or GPU/physical-device qualification. The fixture-only `--expect-disabled`
 control can never produce a successful public-v1 qualification receipt.
 
-Complete default discovery remains a final consumer gate: legacy inventories
-include TopK sampler libraries absent from the published v0.19 manifest. The
-source selects the admitted version-specific inventory; do not add dummy
-libraries or weaken completeness. Final consumers must prove discovery from
-the pin and actual loaded core/companion bytes against the manifest, including
-SwiftPM and Apple app embedding/signatures. Integration CI/audit and coordinated
-core/companion release versions remain pending. Explicit-library device evidence
-does not replace these checks. Other platform gates remain independent.
+Default-discovery consumers at `a47e6ff2` matched the normal published v0.19
+payloads; SwiftPM and all three macOS Release app embedding/signature checks
+also passed. Legacy inventories include TopK libraries absent from v0.19, so
+selection must retain the admitted version-specific inventory without dummy
+libraries or weakened completeness. These historical checks do not grant final
+integration CI/audit or publication approval after the head changes. Other
+platform gates and supported-device execution remain independent.
 
 ## Internal JSON Schema qualification
 
 The maintained `litert-lm-v1-json-schema` local-only scenario binds the published
 CPU Qwen profile, exact candidate library and source/child bytes. It checks a
 fixed conflicting plain control, Unicode/typed constrained output with thinking
-disabled, ordinary followup, real cancellation, reuse and reload. This prepares
-actual candidate qualification; adding the scenario alone does not satisfy that
-gate or enable public v1 routing. See `doc/testing_matrix.md`.
+disabled, ordinary followup, real cancellation, reuse and reload. The later
+maintained default-public Qwen CPU test passed fourteen observations at
+`a47e6ff2`, covering conflicting controls, objects, enums, scalars, const, history,
+cancellation/reuse and length. This acceptance adds no new Unicode-key, reload,
+GPU or other-platform claim. Public v1 selection is already enabled; scenario
+source or compiled fixtures alone never qualify a model. See
+`doc/testing_matrix.md`.
 
+
+## Actual image-chat qualification
+
+The maintained `litert-lm-media-preservation` campaign passed on macOS arm64
+CPU at `8d7edfa8`, using default discovery of the published v0.19.0 payloads.
+The exact Qwen3.5-0.8B VL bundle
+(`e3360b658c929ff35ab740a21f5e4b688096a72e351b8d347e26ccda314121b7`)
+and deterministic 117-byte checkerboard PNG are hash-bound. Native rendering,
+capability probing, encoded path/bytes parity, image history, subscription
+cancellation followed by reuse, and fresh reload passed the unchanged oracle.
+
+Earlier runs repeated the prompt or produced repetitive output after cancellation;
+a full public unload/reload recovered the reply, while one CPU thread did not.
+The service now recreates the underlying engine on next use after settled image
+cancellation, including a late cancel after an image-enabled turn finishes.
+The public engine/model identity stays loaded; that next request pays initialization
+cost. Pending or uncertain work is retained rather than closed early. The
+underlying native cause remains unassigned in [#1749](https://github.com/leehack/llamadart/issues/1749).
+Ordinary full collection also changed wording while still describing the image
+correctly; that observation alone is not corruption. These results qualify this
+image recovery subset, not audio chat, general perception quality, native-cancel
+timing, GPU or other model/platform combinations. Exact-head causal review, CI,
+source landing and final release integration remain separate gates.
+
+## Actual utility qualification
+
+Historical exact Qwen CPU evidence decoded split Unicode tokens and four round
+trips with `addSpecial: false`. Successful initialization exercised the canonical
+status-checked severity 3 setting. Direct-client and default-service observations
+read owned native metrics over two lifetimes each; their unchanged relevant
+sources map that evidence to `a47e6ff2`. Those receipts retain their original
+source and discovery attribution. They are not a new public utility run,
+`addSpecial: true` execution, a `run()` warmup/measured-loop check, or a calibrated
+performance result.
+
+The later maintained default-public CPU campaign passed at `d25b86ee`. It
+asserted four Unicode controls, `addSpecial: false` and `true`, and configured
+start tokens of `[]`; both tokenizations returned `[9707, 0, 26525, 232]`. Public
+`run()` passed one warmup and two measured runs, then same-client reuse with zero
+warmups and one measured run. Both observations settled and reported 18 input
+and 32 output tokens with positive finite TTFT, prefill and decode metrics.
+Output was a raw reasoning channel truncated at the 32-token cap, so this proves
+utility API, metric and reuse behavior, not a completed semantic answer or
+calibrated performance. The new campaign source still needs landing and final
+integration.
 
 ## Actual thinking qualification
 

@@ -12,8 +12,8 @@ generation and tokenizer APIs reject embedding mode. GGUF loaders still reject
 the LiteRT-LM-only flag. A context cannot change its model's selected engine.
 
 The capability probe checks the actual bundle's text-encoder/embedder and
-vision/audio encoder/adapter sections, the complete optional v0.18 embedding C
-ABI, and successful processor creation. Unknown or unloaded contexts return
+vision/audio encoder/adapter sections, the complete optional embedding C ABI
+for the selected runtime, and successful processor creation. Unknown or unloaded contexts return
 all-false without runtime I/O. Native CPU is qualified on macOS arm64 and iOS
 arm64 (iPhone 16 Pro and the arm64 simulator). Android arm64 is verified on a
 Galaxy S24 (Snapdragon 8 Gen 3, no SVE/SME) and on arm64 emulators with and
@@ -67,9 +67,13 @@ native processor on the caller isolate.
 
 ## Exact qualification
 
-Model: `litert-community/embeddinggemma-2-740m.litertlm`, supplied revision
-`24d962e9`. SHA-256:
+Model: [`litert-community/embeddinggemma-2-740m-litert-lm`](https://huggingface.co/litert-community/embeddinggemma-2-740m-litert-lm),
+revision `24d962e906c7d332c6428e71c9676855024569e2`, file
+`embeddinggemma-2-740m.litertlm` (484,622,336 bytes). SHA-256:
 `e7a8a2204b91e0f96e92960e84a09a89212e1633dcb7575a9bf3378b4df77f4c`.
+
+### Historical v0.18 comparison
+
 Native: hook-prepared `v0.18.1-2` (upstream LiteRT-LM `v0.18.1`, with the
 XNNPACK PF32 SME2 kernels of `v0.18.0-2` restored and its int4 `pqs8_qc4w` SME2 path
 gated off), macOS arm64 (M4 Max, SME2)
@@ -97,6 +101,22 @@ about 0.997-0.999), so re-embed stored media vectors before comparing them.
 | One-second 16 kHz silence | 0.9998176891 | 1.91% |
 | One-second 440 Hz tone | 0.9996702551 | 2.57% |
 | Interleaved text/image/audio | 0.9988463550 | 4.80% |
+
+### Final v0.19 CPU preservation
+
+At historical release head `a47e6ff2`, three maintained tests passed through the
+public default-discovery engine with published v0.19.0 on macOS arm64 CPU and
+the same model bytes. They produced six finite normalized vectors of width 768,
+checked 60 repeat calls for exact numeric equality, and covered media/interleaved
+inputs, batch order and limits, whole-call overflow failure, cancellation,
+unload/dispose/reuse and chat-engine separation. This was no fresh standalone
+C-reference comparison; the historical numbers above remain unchanged. It does
+not establish retrieval quality, raw bit-pattern identity, another model family,
+GPU support or additional platforms. Generative image/audio chat is a separate
+qualification path. Final release integration evidence must be renewed at the
+final head; publication remains subject to approval.
+
+### Historical Web comparison
 
 Web: Chrome 155.0.8059.40, headless with `--enable-unsafe-webgpu --use-angle=metal`
 and the test runner's GPU-disable flags removed. `navigator.gpu.requestAdapter()`
@@ -179,7 +199,10 @@ To retain native vectors and exact synthetic input bytes for a C reference:
 LITERT_LM_EMBEDDING_MODEL=/path/model.litertlm LITERT_LM_EMBEDDING_OUTPUT="$TMPDIR/qualification" dart test -p vm --run-skipped test/e2e/backends/multimodal_embedding_litert_e2e_test.dart
 ```
 
-Compare the exported inputs against the upstream C API directly (macOS arm64):
+The historical v0.18.1-2 C-reference comparison used the command below
+(macOS arm64). A new runtime comparison needs its matching runtime directory;
+the v0.19 preservation campaign did not rerun this reference:
+
 
 ```bash
 python3 test/e2e/backends/multimodal_embedding_litert_reference.py --model-path /path/model.litertlm --runtime-dir .dart_tool/llamadart/litert_lm/0.18.1-2/macos/arm64 --output "$TMPDIR/qualification"

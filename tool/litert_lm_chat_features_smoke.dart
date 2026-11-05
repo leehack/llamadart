@@ -174,7 +174,7 @@ Future<void> main(List<String> args) async {
 
     final nativeMediaRender = imagePath == null
         ? null
-        : await _renderNativeMediaPrompt(
+        : await renderLiteRtLmNativeMediaPrompt(
             modelPath: modelPath,
             backend: backend,
             imagePath: imagePath,
@@ -572,7 +572,11 @@ Future<_ScenarioResult> _runScenario({
   );
 }
 
-Future<_NativeMediaRenderResult> _renderNativeMediaPrompt({
+/// Renders an encoded image through the smoke tool's native runtime client.
+///
+/// Shared by the CLI and local qualification test to check the same encoder
+/// configuration. This tool helper is not exported by the package.
+Future<LiteRtLmNativeMediaRenderResult> renderLiteRtLmNativeMediaPrompt({
   required String modelPath,
   required LiteRtLmBackendPreference backend,
   required String imagePath,
@@ -582,6 +586,7 @@ Future<_NativeMediaRenderResult> _renderNativeMediaPrompt({
     await client.initialize(
       modelPath: modelPath,
       backend: _runtimeBackendName(backend),
+      visionBackend: _runtimeBackendName(backend),
       maxTokens: 2048,
       outputTokens: 32,
       maxNumImages: 1,
@@ -602,7 +607,7 @@ Future<_NativeMediaRenderResult> _renderNativeMediaPrompt({
         '${_tail(rendered)}',
       );
     }
-    return _NativeMediaRenderResult(
+    return LiteRtLmNativeMediaRenderResult(
       marker: marker,
       renderedLength: rendered.length,
       renderedTail: _tail(rendered),
@@ -715,17 +720,25 @@ class _RequiredToolScenarioResult {
       {'status': 'unsupported', 'message': unsupportedMessage};
 }
 
-class _NativeMediaRenderResult {
-  const _NativeMediaRenderResult({
+/// Native image-render diagnostics shared by the smoke tool and its test.
+class LiteRtLmNativeMediaRenderResult {
+  /// Creates diagnostics for a prompt containing a recognized image marker.
+  const LiteRtLmNativeMediaRenderResult({
     required this.marker,
     required this.renderedLength,
     required this.renderedTail,
   });
 
+  /// Recognized native image marker in the rendered prompt.
   final String marker;
+
+  /// Number of characters in the rendered prompt.
   final int renderedLength;
+
+  /// Final characters of the rendered prompt for bounded diagnostics.
   final String renderedTail;
 
+  /// Serializes the bounded native rendering diagnostics.
   Map<String, Object?> toJson() => {
     'marker': marker,
     'renderedLength': renderedLength,
