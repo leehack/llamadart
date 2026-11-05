@@ -14,6 +14,7 @@ scripts/verify_chat_app_web_deployment.sh @leehack
 /.github/workflows/nonpublishing_release_auth_probe.yml @leehack
 /tool/release/nonpublishing_auth_probe.py @leehack
 /test/ci/test_nonpublishing_auth_probe.py @leehack
+/test/unit/tooling/nonpublishing_auth_probe_workflow_test.dart @leehack
 pubspec.yaml @leehack
 CHANGELOG.md @leehack
 /.gitattributes @leehack
