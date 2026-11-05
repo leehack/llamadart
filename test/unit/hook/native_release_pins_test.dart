@@ -27,7 +27,10 @@ void main() {
     // Older artifacts do not include this release's speculative rollback and
     // model-creation ownership fixes, even when their exported ABI is usable.
     expect(llamaCppCompatibleAppleCompanionTags, isEmpty);
-    expect(llamaCppCompatibleAppleCompanionChecksums, isEmpty);
+    expect(llamaCppCompatibleAppleCompanionChecksums, {
+      llamaCppTag:
+          '026dba77a76858553e329e4bd317550d8c619a5e3b3e9498a52b72b0712b4d3e',
+    });
     final manifest = File(
       'packages/llamadart_llama_cpp_flutter/darwin/'
       'llamadart_llama_cpp_flutter/Package.swift',

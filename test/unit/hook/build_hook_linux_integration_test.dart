@@ -20,12 +20,12 @@ void main() {
   final litertVersion = _readHookLiteRtLmVersion();
   final project = HookProjectRoot.create();
   final cacheRelativeDir =
-      '.dart_tool/llamadart/native_bundles/$nativeTag/linux-x64';
+      '.dart_tool/llamadart/native_bundles_v2/$nativeTag/linux-x64';
   final bundleDir = Directory(project.resolve('$cacheRelativeDir/extracted'));
   const historicalNativeTag = 'b10545';
   final historicalBundleDir = Directory(
     project.resolve(
-      '.dart_tool/llamadart/native_bundles/$historicalNativeTag/'
+      '.dart_tool/llamadart/native_bundles_v2/$historicalNativeTag/'
       'linux-x64/extracted',
     ),
   );
@@ -423,7 +423,7 @@ void main() {
     const overrideTag = 'v9.8.7';
     final overrideCacheDir = Directory(
       project.resolve(
-        '.dart_tool/llamadart/native_bundles/$overrideTag/linux-x64',
+        '.dart_tool/llamadart/native_bundles_v2/$overrideTag/linux-x64',
       ),
     );
     final overrideArchive = File(

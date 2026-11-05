@@ -23,7 +23,7 @@ void main() {
   final project = HookProjectRoot.create();
   final nativeBundleDir = Directory(
     project.resolve(
-      '.dart_tool/llamadart/native_bundles/$nativeTag/linux-arm64/extracted',
+      '.dart_tool/llamadart/native_bundles_v2/$nativeTag/linux-arm64/extracted',
     ),
   );
   final litertBundleDir = Directory(
@@ -33,7 +33,7 @@ void main() {
   );
   final macosArm64NativeBundleDir = Directory(
     project.resolve(
-      '.dart_tool/llamadart/native_bundles/$nativeTag/macos-arm64/extracted',
+      '.dart_tool/llamadart/native_bundles_v2/$nativeTag/macos-arm64/extracted',
     ),
   );
   final macosArm64LitertBundleDir = Directory(
@@ -43,22 +43,22 @@ void main() {
   );
   final macosX64NativeBundleDir = Directory(
     project.resolve(
-      '.dart_tool/llamadart/native_bundles/$nativeTag/macos-x86_64/extracted',
+      '.dart_tool/llamadart/native_bundles_v2/$nativeTag/macos-x86_64/extracted',
     ),
   );
   final iosDeviceNativeBundleDir = Directory(
     project.resolve(
-      '.dart_tool/llamadart/native_bundles/$nativeTag/ios-arm64/extracted',
+      '.dart_tool/llamadart/native_bundles_v2/$nativeTag/ios-arm64/extracted',
     ),
   );
   final iosArm64SimNativeBundleDir = Directory(
     project.resolve(
-      '.dart_tool/llamadart/native_bundles/$nativeTag/ios-arm64-sim/extracted',
+      '.dart_tool/llamadart/native_bundles_v2/$nativeTag/ios-arm64-sim/extracted',
     ),
   );
   final iosX64SimNativeBundleDir = Directory(
     project.resolve(
-      '.dart_tool/llamadart/native_bundles/$nativeTag/ios-x86_64-sim/extracted',
+      '.dart_tool/llamadart/native_bundles_v2/$nativeTag/ios-x86_64-sim/extracted',
     ),
   );
   final iosDeviceLitertBundleDir = Directory(
@@ -422,6 +422,37 @@ void main() {
   String coreLabel(String? core) => core ?? 'checkout $checkoutCore';
 
   for (final target in [OS.iOS, OS.macOS]) {
+    test(
+      'Apple $target rejects the current tag with an arbitrary checksum',
+      () async {
+        final defines = await _flutterAppleUserDefines(
+          dependencies: const ['llamadart_llama_cpp_flutter'],
+          companionTag: llamaCppTag,
+          companionChecksum: List.filled(64, 'a').join(),
+        );
+        var emitted = false;
+        await expectLater(
+          project.testCodeBuildHook(
+            mainMethod: build_hook.main,
+            targetOS: target,
+            targetArchitecture: Architecture.arm64,
+            targetIOSSdk: target == OS.iOS ? IOSSdk.iPhoneOS : null,
+            userDefines: defines,
+            check: (_, _) => emitted = true,
+          ),
+          throwsA(
+            predicate(
+              (error) => error.toString().contains(
+                'XCFramework checksum does not match the qualified published '
+                'artifact for $llamaCppTag.',
+              ),
+            ),
+          ),
+        );
+        expect(emitted, isFalse);
+      },
+    );
+
     for (final MapEntry(key: tag, value: missing)
         in llamaCppCompatibleAppleCompanionTags.entries) {
       for (final MapEntry(key: core, value: constraint)

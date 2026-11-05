@@ -169,7 +169,7 @@ void main() {
       stubs,
       isEmpty,
       reason:
-          'Delete .dart_tool/llamadart/native_bundles/*/*/extracted, '
+          'Delete .dart_tool/llamadart/native_bundles_v2/*/*/extracted, '
           '.dart_tool/lib and .dart_tool/hooks_runner/shared/llamadart.',
     );
   });

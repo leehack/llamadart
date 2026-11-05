@@ -19,12 +19,13 @@ validate against the exact release tag notes.
 - Adopt native LiteRT-LM `v0.19.0` and C API 1.0 with legacy compatibility, tagged Android pointer support, validated settings and typed unsupported-path errors.
 - Preserve LiteRT-LM workers and model caches after unsettled native cleanup; reject incomplete runtime overrides and document process-restart recovery and unsupported text LoRA.
 - Keep cached models reusable, visible and removable after cache-root moves, including iOS app updates ([#1741](https://github.com/leehack/llamadart/issues/1741)).
-- Adopt llama.cpp `v0.8.0-2` for speculative rollback and model-creation ownership fixes, with actionable errors for missing Windows speculative helpers.
+- Adopt llama.cpp `v0.8.0-2` for speculative rollback and model-creation ownership fixes; isolate native bundle caches from older apps, verify Apple framework identity and report missing Windows speculative helpers.
 - Restrict unqualified Android Vulkan Qwen3.5 combinations to bounded ordinary text; refuse larger micro-batches, media, speculation and embeddings ([#948](https://github.com/leehack/llamadart/issues/948)).
 - Adopt stable-diffusion `v0.3.0-3` for original SD checkpoint containers while retaining the SDXS tiny-decoder policy and iOS full-VAE Metal restrictions.
 - Reinitialize native LiteRT-LM image-chat engines after cancellation before reusing them ([#1749](https://github.com/leehack/llamadart/issues/1749)).
 - Keep future LiteRT-LM SwiftPM pin syncs aligned with macOS app-bundle runtime discovery.
 - Request optional Android vendor OpenCL access in the chat example and document LiteRT-LM GPU setup and CPU fallback.
+- Document Safari 27 LiteRT-LM Web GPU support, required `require-corp` isolation and hidden-tab termination during large model loads ([#1025](https://github.com/leehack/llamadart/issues/1025)).
 - Aligned default WebGPU bridge assets to `v0.1.82` with bounded preallocation for large wasm32 model writes.
 - Pair all three Apple runtime companions at `0.18.0` with matching native binaries.
 

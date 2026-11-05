@@ -57,6 +57,7 @@ Future<ProcessResult> runBoundedProcess(
     final exitCode = await exit.timeout(
       timeout,
       onTimeout: () async {
+        final state = _linuxProcessState(process.pid);
         process.kill();
         var cleanup = '';
         try {
@@ -83,7 +84,8 @@ Future<ProcessResult> runBoundedProcess(
         );
         fail(
           '`$executable ${arguments.join(' ')}` did not exit within '
-          '${timeout.inSeconds} s.$cleanup\nstdout:\n$stdout\nstderr:\n$stderr',
+          '${timeout.inSeconds} s.$state$cleanup\nstdout:\n$stdout\nstderr:\n'
+          '$stderr',
         );
       },
     );
@@ -94,4 +96,26 @@ Future<ProcessResult> runBoundedProcess(
       await subscription.cancel();
     }
   }
+}
+
+/// Tells a child blocked in disk I/O (`D`, rising `read_bytes`), for example
+/// paging in a cold executable, from one idling in its own event loop (`S`).
+String _linuxProcessState(int pid) {
+  if (!Platform.isLinux) return '';
+  String read(String name) {
+    try {
+      return File('/proc/$pid/$name').readAsStringSync().trim();
+    } on FileSystemException {
+      return '';
+    }
+  }
+
+  String field(String text, String name) => text
+      .split('\n')
+      .firstWhere((line) => line.startsWith('$name:'), orElse: () => '')
+      .trim();
+
+  final status = read('status');
+  return '\nChild $pid at timeout: ${field(status, 'State')}; '
+      'wchan: ${read('wchan')}; ${field(read('io'), 'read_bytes')}';
 }

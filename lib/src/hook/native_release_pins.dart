@@ -28,13 +28,15 @@ const llamaCppAppleCompanionVersion = '0.18.0';
 /// compatibility evidence and matching checksums below.
 const llamaCppCompatibleAppleCompanionTags = <String, String>{};
 
-/// The exact XCFramework checksum a companion pinning each
-/// [llamaCppCompatibleAppleCompanionTags] entry must declare.
+/// Exact XCFramework checksums for [llamaCppTag] and any admitted earlier
+/// [llamaCppCompatibleAppleCompanionTags] entries.
 ///
-/// A tag alone establishes no ABI compatibility, so the build rejects a
-/// compatible tag whose checksum is missing here or differs. The native pin
-/// sync clears it together with [llamaCppCompatibleAppleCompanionTags].
-const llamaCppCompatibleAppleCompanionChecksums = <String, String>{};
+/// Native pin sync preserves this proof on a same-tag refresh and replaces it
+/// with the newly published artifact's checksum when the pin moves.
+const llamaCppCompatibleAppleCompanionChecksums = <String, String>{
+  'v0.8.0-2':
+      '026dba77a76858553e329e4bd317550d8c619a5e3b3e9498a52b72b0712b4d3e',
+};
 
 /// SHA-256 of each published `llamadart-native-<bundle>-<llamaCppTag>.tar.gz`
 /// archive, keyed by bundle.

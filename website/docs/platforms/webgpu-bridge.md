@@ -46,10 +46,9 @@ after load. The bridge ignores negative `mainGpu` values, including with
   ```
 
   `require-corp` is the portable choice. `Cross-Origin-Embedder-Policy:
-  credentialless` isolates the page in Chromium-based browsers. Do not rely on
-  it in Safari or other WebKit browsers: a macOS WKWebView probe reported
-  `crossOriginIsolated === false` with it, and Safari itself has not been
-  validated ([#1025](https://github.com/leehack/llamadart/issues/1025)).
+  credentialless` isolates the page in Chromium-based browsers only: Safari 27
+  reports `crossOriginIsolated === false` with it and `true` with
+  `require-corp` ([#1025](https://github.com/leehack/llamadart/issues/1025)).
   Without isolation (`window.crossOriginIsolated === false`) the bridge caps
   inference at one thread and records `threads_capped_no_coi` in its runtime
   notes.
