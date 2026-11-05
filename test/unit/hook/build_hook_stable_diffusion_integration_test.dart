@@ -24,7 +24,7 @@ const _liteRtLmAssetIdPrefix = 'package:llamadart/litert_lm_';
 void main() {
   final project = HookProjectRoot.create();
   final nativeBundlesRoot = project.resolve(
-    '.dart_tool/llamadart/native_bundles/$llamaCppTag',
+    '.dart_tool/llamadart/native_bundles_v2/$llamaCppTag',
   );
   final stableDiffusionRoot = project.resolve(
     '.dart_tool/llamadart/stable_diffusion/$stableDiffusionVersion',

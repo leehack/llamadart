@@ -8,6 +8,7 @@ import 'package:archive/archive.dart';
 import 'package:code_assets/code_assets.dart';
 import 'package:crypto/crypto.dart';
 import 'package:hooks/hooks.dart';
+import 'package:llamadart/src/backends/llama_cpp/llama_cpp_service.dart';
 import 'package:llamadart/src/hook/windows_file_version.dart';
 import 'package:path/path.dart' as path;
 import 'package:test/test.dart';
@@ -24,7 +25,7 @@ void main() {
   final litertVersion = _readHookLiteRtLmVersion();
   final project = HookProjectRoot.create();
   final cacheRelativeDir =
-      '.dart_tool/llamadart/native_bundles/$nativeTag/windows-x64';
+      '.dart_tool/llamadart/native_bundles_v2/$nativeTag/windows-x64';
   final bundleDir = Directory(project.resolve('$cacheRelativeDir/extracted'));
   final litertBundleDir = Directory(
     project.resolve(
@@ -53,6 +54,66 @@ void main() {
   });
 
   tearDownAll(project.delete);
+
+  test(
+    'hook assets and Windows fallback share v2 and leave legacy untouched',
+    () async {
+      final legacy = Directory(
+        project.resolve(
+          '.dart_tool/llamadart/native_bundles/v9.9.9/windows-x64/extracted',
+        ),
+      );
+      await _writeBundleLibraries(legacy, const [
+        'llamadart-windows-x64.dll',
+        'llama-windows-x64.dll',
+        'ggml-windows-x64.dll',
+        'ggml-cpu-windows-x64.dll',
+      ]);
+      final sentinel = File(path.join(legacy.path, 'llama-windows-x64.dll'))
+        ..writeAsStringSync('legacy runtime');
+      final original = sentinel.readAsBytesSync();
+
+      await project.testCodeBuildHook(
+        mainMethod: build_hook.main,
+        targetOS: OS.windows,
+        targetArchitecture: Architecture.x64,
+        userDefines: PackageUserDefines(
+          workspacePubspec: PackageUserDefinesSource(
+            defines: {
+              'llamadart_native_runtimes': ['llama_cpp'],
+            },
+            basePath: Directory.current.uri,
+          ),
+        ),
+        check: (_, output) {
+          final assets = output.assets.encodedAssets
+              .where((asset) => asset.isCodeAsset)
+              .map((asset) => asset.asCodeAsset);
+          expect(assets, isNotEmpty);
+          for (final asset in assets) {
+            final emitted = File.fromUri(asset.file!);
+            expect(
+              emitted.readAsBytesSync(),
+              File(
+                path.join(bundleDir.path, path.basename(emitted.path)),
+              ).readAsBytesSync(),
+            );
+          }
+          final resolved = LlamaCppService.resolveWindowsBackendModuleDirectory(
+            resolvedExecutablePath: path.join(
+              project.directory.path,
+              'sdk',
+              'dart.exe',
+            ),
+            currentDirectoryPath: project.directory.path,
+            environment: const {},
+          );
+          expect(path.normalize(resolved!), path.normalize(bundleDir.path));
+        },
+      );
+      expect(sentinel.readAsBytesSync(), original);
+    },
+  );
 
   test(
     'build hook selects configured backend modules and all runtimes by default',
@@ -249,7 +310,7 @@ void main() {
       const overrideTag = 'v9.8.7';
       final overrideCacheDir = Directory(
         project.resolve(
-          '.dart_tool/llamadart/native_bundles/$overrideTag/windows-x64',
+          '.dart_tool/llamadart/native_bundles_v2/$overrideTag/windows-x64',
         ),
       );
       final overrideArchive = File(
@@ -351,7 +412,7 @@ void main() {
     ]) {
       final overrideCacheDir = Directory(
         project.resolve(
-          '.dart_tool/llamadart/native_bundles/$overrideTag/windows-x64',
+          '.dart_tool/llamadart/native_bundles_v2/$overrideTag/windows-x64',
         ),
       );
       final overrideBundleDir = Directory(
@@ -431,7 +492,7 @@ void main() {
     const customRepository = 'example/native-fork';
     final repoCacheRoot = Directory(
       project.resolve(
-        '.dart_tool/llamadart/native_bundles/github/example/native-fork',
+        '.dart_tool/llamadart/native_bundles_v2/github/example/native-fork',
       ),
     );
     final overrideBundleDir = Directory(
@@ -942,7 +1003,7 @@ String _localPathCacheRoot({
     path.join(
       '.dart_tool',
       'llamadart',
-      'native_bundles',
+      'native_bundles_v2',
       'local',
       digest,
       nativeTag,

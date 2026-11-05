@@ -50,7 +50,7 @@ const _windowsCudaLibraries = [
 void main() {
   final project = HookProjectRoot.create();
   final nativeBundlesDir = project.resolve(
-    path.join('.dart_tool', 'llamadart', 'native_bundles'),
+    path.join('.dart_tool', 'llamadart', 'native_bundles_v2'),
   );
   final defaultCacheDir = Directory(
     path.join(nativeBundlesDir, llamaCppTag, _bundle),
@@ -146,6 +146,56 @@ void main() {
   });
 
   tearDownAll(project.delete);
+
+  test(
+    'an explicit compatible tag downloads into v2 without reusing legacy',
+    () async {
+      const tag = 'v0.8.0-2';
+      final legacy = Directory(
+        project.resolve(
+          path.join('.dart_tool', 'llamadart', 'native_bundles', tag, _bundle),
+        ),
+      )..createSync(recursive: true);
+      addTearDown(() => legacy.deleteSync(recursive: true));
+      final legacyArchive = File(path.join(legacy.path, archiveName(tag)))
+        ..writeAsBytesSync(_archive('legacy'));
+      final archive = _archive('compatible');
+      final fixture = RuntimeBundleHttpFixture({
+        releaseUrl(_forkRepository, tag, 'SHA256SUMS'): sha256SumsFor({
+          archiveName(tag): archive,
+        }).codeUnits,
+        releaseUrl(_forkRepository, tag, archiveName(tag)): archive,
+      });
+
+      final libraries = await _runHook(
+        project,
+        fixture,
+        tag: tag,
+        repository: _forkRepository,
+        check: () {},
+      );
+
+      expect(libraries['libllamadart.so'], 'compatible-libllamadart.so');
+      expect(
+        fixture.requests,
+        contains(releaseUrl(_forkRepository, tag, archiveName(tag))),
+      );
+      expect(legacyArchive.readAsBytesSync(), _archive('legacy'));
+      expect(
+        File(
+          path.joinAll([
+            nativeBundlesDir,
+            'github',
+            ..._forkRepository.split('/'),
+            tag,
+            _bundle,
+            archiveName(tag),
+          ]),
+        ),
+        _exists,
+      );
+    },
+  );
 
   group('llama.cpp pinned release', () {
     test('rejects a downloaded archive that differs from its pin', () async {

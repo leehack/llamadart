@@ -192,6 +192,13 @@ interface does not establish backend/model support; read `await engine.capabilit
   `flutter pub get`, raise only the generated package floor, then build with
   `--no-pub`. Repeat after regeneration; preserve Runner's 14.0+ target and
   companion manifests, native URLs and checksums.
+- llama.cpp automatic bundles and runtime fallbacks use
+  `.dart_tool/llamadart/native_bundles_v2`; older `native_bundles` caches are
+  left untouched and are not reused. Compatible explicit tag/repository and
+  local-archive overrides use the new namespace too. Keep manual overrides
+  ABI- and symbol-compatible with the pinned runtime; remove a mismatched
+  override or upgrade the consumer/runtime together. Apple companions must
+  match the qualified tag and exact XCFramework checksum.
 - Platform setup the code cannot do for you:
   - Flutter iOS needs deployment target 16.4+, macOS 14.0+.
   - Windows llama.cpp: replace the complete runtime through the build-hook

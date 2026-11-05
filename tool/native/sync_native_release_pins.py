@@ -902,6 +902,9 @@ def main() -> int:
                 f"llamadart-native-apple-xcframework-{resolved_llama_cpp_tag}.zip",
                 repo=args.llamadart_native_repo,
             )
+            pins_text = refresh_llama_cpp_apple_checksum(
+                pins_text, resolved_llama_cpp_tag, checksum
+            )
             original_swift_text = llama_cpp_package_swift_path.read_text(
                 encoding="utf-8"
             )
@@ -3370,6 +3373,33 @@ _COMPATIBLE_APPLE_COMPANION_CHECKSUMS_PATTERN = re.compile(
     r"const llamaCppCompatibleAppleCompanionChecksums = <String, String>\{(.*?)\};",
     re.DOTALL,
 )
+
+
+def refresh_llama_cpp_apple_checksum(source: str, tag: str, checksum: str) -> str:
+    """Record the current qualified artifact without changing same-tag proof."""
+    matches = list(_COMPATIBLE_APPLE_COMPANION_CHECKSUMS_PATTERN.finditer(
+        _native_pins_code_mask(source)
+    ))
+    if len(matches) != 1:
+        raise ReleaseError("Could not uniquely find Apple llama.cpp checksum contract")
+    match = matches[0]
+    body = source[match.start(1):match.end(1)]
+    entry_pattern = r"'([^'\r\n]+)':\s*'([a-f0-9]{64})'\s*,"
+    if re.fullmatch(r"(?:\s*" + entry_pattern + r")*\s*", body) is None:
+        raise ReleaseError("Malformed Apple llama.cpp checksum contract")
+    entries = re.findall(entry_pattern, body)
+    checksums = dict(entries)
+    if len(checksums) != len(entries):
+        raise ReleaseError("Malformed Apple llama.cpp checksum contract; duplicate tag")
+    if tag in checksums:
+        if checksums[tag] != checksum:
+            raise ReleaseError("Same-tag Apple llama.cpp checksum changed; requalify the contract")
+        return source
+    checksums[tag] = checksum
+    rendered = "\n" + "".join(
+        f"  '{key}':\n      '{value}',\n" for key, value in checksums.items()
+    )
+    return source[:match.start(1)] + rendered + source[match.end(1):]
 
 
 def clear_compatible_apple_companion_tags(pins_text: str) -> tuple[str, list[str]]:
