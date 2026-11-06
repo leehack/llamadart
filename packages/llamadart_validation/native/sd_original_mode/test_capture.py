@@ -189,15 +189,88 @@ except p.CaptureInterrupted as error:
     def test_sigint_during_owned_capture_and_repeated_cleanup_signals(self) -> None:
         self.signal_subprocess(signal.SIGINT, False)
 
-    def test_actual_short_deadline_records_load_observation_and_reaps(self):
-        script = ('import time\nprint(\'SD24_STAGE {"schema":1,"stage":"load_begin","elapsedMs":0,"loadMs":-1}\',flush=True)\ntime.sleep(60)\n')
-        result = profiler.capture([sys.executable, '-c', script], self.root / 'actual-deadline', {},
+    def test_actual_short_deadline_without_load_marker_retains_receipt_and_reaps(self):
+        # Interpreter startup is charged to the deadline and cannot prove load.
+        script = 'import time\ntime.sleep(60)\n'
+        output = self.root / 'actual-deadline'
+        result = profiler.capture([sys.executable, '-c', script], output, {},
                                   seconds=0.2, observation_seconds=0.05)
         self.assertTrue(result['timed_out'])
         self.assertTrue(result['leader_reaped'])
+        self.assertEqual(result['exit'], -signal.SIGKILL)
         self.assertEqual(result['cleanup_errors'], [])
-        self.assertTrue(result['load_observation']['pending'])
+        self.assertIsNone(result['failure_type'])
+        self.assertIsNone(result['load_observation']['pending'])
+        self.assertIsNone(result['load_observation']['reported_load_ms'])
+        self.assertFalse(result['qualified'])
+        self.assertEqual(result['deadline_seconds'], 0.2)
+        self.assertEqual(result['cleanup_deadline_seconds'], 3)
+        self.assertEqual(result['case_deadline_seconds'], 3.2)
+        self.assertEqual(json.loads((output / 'capture.json').read_text()), result)
         with self.assertRaises(ProcessLookupError): os.kill(result['pid'], 0)
+
+    def test_load_observation_uses_marker_time_without_extending_absolute_deadline(self):
+        for label, marker_at, pending in (('early', 100.0, True),
+                                          ('late', 100.18, None),
+                                          ('absent', None, None)):
+            with self.subTest(marker=label):
+                clock = {'now': 100.0, 'stdout': None, 'emitted': False}
+                calls = []
+                class Child:
+                    pid = 123456789
+                    returncode = None
+                    def wait(self, timeout):
+                        calls.append(('wait', timeout, clock['now']))
+                        self.returncode = -signal.SIGKILL
+                        return self.returncode
+                child = Child()
+                def emit_marker():
+                    if marker_at is not None and not clock['emitted'] and clock['now'] >= marker_at:
+                        clock['stdout'].write(b'SD24_STAGE {"schema":1,"stage":"load_begin","elapsedMs":0,"loadMs":-1}\n')
+                        clock['stdout'].flush()
+                        clock['emitted'] = True
+                def start(*args, **kwargs):
+                    self.assertTrue(kwargs['start_new_session'])
+                    calls.append(('Popen', clock['now']))
+                    clock['stdout'] = kwargs['stdout']
+                    emit_marker()
+                    return child
+                def sleep(seconds):
+                    self.assertEqual(seconds, 0.02)
+                    clock['now'] = round(clock['now'] + seconds, 9)
+                    emit_marker()
+                def kill(pid, signum):
+                    calls.append(('killpg', pid, signum, clock['now']))
+                output = self.root / ('marker-' + label)
+                with patch.object(profiler.subprocess, 'Popen', side_effect=start), \
+                        patch.object(profiler, 'child_exited_unreaped', return_value=False), \
+                        patch.object(profiler.time, 'monotonic', side_effect=lambda: clock['now']), \
+                        patch.object(profiler.time, 'sleep', side_effect=sleep), \
+                        patch.object(profiler.os, 'killpg', side_effect=kill):
+                    result = profiler.capture([str(self.binary)], output, {},
+                                              seconds=0.2, observation_seconds=0.05)
+                self.assertEqual(calls, [('Popen', 100.0),
+                                        ('killpg', child.pid, signal.SIGKILL, 100.2),
+                                        ('wait', 3, 100.2)])
+                self.assertEqual(clock['now'], 100.2)
+                self.assertEqual(calls[-1][2] + calls[-1][1], 103.2)
+                self.assertEqual(result['exit'], -signal.SIGKILL)
+                self.assertTrue(result['timed_out'])
+                self.assertTrue(result['leader_reaped'])
+                self.assertEqual(result['cleanup_errors'], [])
+                self.assertIsNone(result['failure_type'])
+                self.assertFalse(result['qualified'])
+                self.assertEqual(result['deadline_seconds'], 0.2)
+                self.assertEqual(result['cleanup_deadline_seconds'], 3)
+                self.assertEqual(result['case_deadline_seconds'], 3.2)
+                self.assertAlmostEqual(result['elapsed_seconds'], 0.2)
+                self.assertIsNone(result['shared_active_deadline'])
+                self.assertIsNone(result['shared_total_deadline'])
+                self.assertEqual(result['load_observation']['at_seconds'], 0.05)
+                self.assertIs(result['load_observation']['pending'], pending)
+                self.assertIsNone(result['load_observation']['reported_load_ms'])
+                self.assertEqual(clock['emitted'], marker_at is not None)
+                self.assertEqual(json.loads((output / 'capture.json').read_text()), result)
 
     def test_actual_output_limit_and_widened_bounds_are_not_accepted(self):
         script = "import time\nprint('x'*4096,flush=True)\ntime.sleep(60)\n"
