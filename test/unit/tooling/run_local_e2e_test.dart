@@ -42,6 +42,7 @@ void main() {
         launches++;
         expect(step.workingDirectory, '/repo');
         expect(step.background, isFalse);
+        expect(step.environment, {'PYTHONDONTWRITEBYTECODE': '1'});
         expect(step.arguments, [
           'test/fixtures/native_default_consumer_qualification/qualify.py',
           '--core-root', '/repo', '--expected-core-sha', identity['LLAMADART_DEFAULT_AOT_EXPECTED_SHA'],

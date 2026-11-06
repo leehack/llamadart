@@ -335,6 +335,7 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
             context.environment['LLAMADART_DEFAULT_AOT_OUTPUT_ROOT'] ??
                 '<LLAMADART_DEFAULT_AOT_OUTPUT_ROOT>',
           ],
+          environment: const {'PYTHONDONTWRITEBYTECODE': '1'},
           description:
               'Run the maintained real consumer/provider/AOT driver; expected tag verifies the source pin and never overrides it.',
         ),

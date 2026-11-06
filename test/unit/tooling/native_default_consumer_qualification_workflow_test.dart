@@ -104,10 +104,11 @@ void main() {
     final job = qualification();
     final env = job['env'] as YamlMap;
     expect(env.keys, unorderedEquals([
-      'QUALIFICATION_PLATFORM', 'QUALIFICATION_ARCH',
+      'PYTHONDONTWRITEBYTECODE', 'QUALIFICATION_PLATFORM', 'QUALIFICATION_ARCH',
       'LLAMADART_DEFAULT_AOT_EXPECTED_SHA', 'LLAMADART_DEFAULT_AOT_EXPECTED_NATIVE_TAG',
       'LLAMADART_DEFAULT_AOT_MODEL_PATH', 'LLAMADART_DEFAULT_AOT_OUTPUT_ROOT',
     ]));
+    expect(env['PYTHONDONTWRITEBYTECODE'], '1');
     expect(env['QUALIFICATION_PLATFORM'], r'${{ matrix.platform }}');
     expect(env['QUALIFICATION_ARCH'], r'${{ matrix.arch }}');
     expect(env['LLAMADART_DEFAULT_AOT_EXPECTED_SHA'], r'${{ inputs.expected_sha }}');
@@ -191,7 +192,7 @@ exec(sys.argv[1], {})
 ''';
     final cases = <(String, Map<String, String>, bool)>[
       ('invalid-sha', {'LLAMADART_DEFAULT_AOT_EXPECTED_SHA': 'not-a-sha'}, false),
-      ('event-drift', {'GITHUB_SHA': '2222222222222222222222222222222222222222'}, false),
+      ('event-drift', {'GITHUB_SHA': '2222222222222222222222222222222222222222', 'TEST_CHECKOUT': sha}, false),
       ('checkout-drift', {'TEST_CHECKOUT': '2222222222222222222222222222222222222222'}, false),
       ('pin-drift', {'LLAMADART_DEFAULT_AOT_EXPECTED_NATIVE_TAG': 'v0.8.0-3'}, false),
       ('wrong-platform', {'TEST_PLATFORM': 'win32'}, false),

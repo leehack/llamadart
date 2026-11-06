@@ -37,6 +37,7 @@ jobs:
             platform: windows
             arch: x64
     env:
+      PYTHONDONTWRITEBYTECODE: '1'
       QUALIFICATION_PLATFORM: ${{ matrix.platform }}
       QUALIFICATION_ARCH: ${{ matrix.arch }}
       LLAMADART_DEFAULT_AOT_EXPECTED_SHA: ${{ inputs.expected_sha }}
