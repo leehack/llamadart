@@ -93,8 +93,9 @@ class Cancelled(RuntimeError):
 
 
 class CancellationGuard:
-    """Local, restored handlers; defer cancellation across ownership/cleanup."""
-    def __init__(self):
+    """Record-only signal handlers; cancellation raises only at safe checkpoints."""
+    def __init__(self, on_cancel=None):
+        self.on_cancel = on_cancel
         self.signals = []
         self.depth = 0
         self.previous = {}
@@ -123,12 +124,29 @@ class CancellationGuard:
     def _handle(self, signum, frame):
         if len(self.signals) < 16:
             self.signals.append(signum)
-        if not self.depth:
-            raise Cancelled(signum)
+        # Never raise from a signal handler: an exception at a finally/context
+        # entry can bypass ownership cleanup even when its body is protected.
 
     def checkpoint(self):
         if self.signals:
+            if self.on_cancel is not None:
+                self.on_cancel(self.signals)
             raise Cancelled(self.signals[0])
+
+    def wait(self, process, timeout):
+        import subprocess
+        deadline = time.monotonic() + timeout
+        while True:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise subprocess.TimeoutExpired(process.args, timeout)
+            self.checkpoint()
+            try:
+                result = process.wait(timeout=min(.1, remaining))
+            except subprocess.TimeoutExpired:
+                continue
+            self.checkpoint()
+            return result
 
     def deferred(self, *, deliver=True):
         from contextlib import contextmanager
@@ -147,8 +165,12 @@ class CancellationGuard:
     def __exit__(self, exception_type, exception, traceback):
         import signal
         self.depth += 1
-        for signum, previous in self.previous.items():
-            signal.signal(signum, previous)
-        if exception_type is None:
-            self.checkpoint()
+        try:
+            if exception_type is None:
+                self.checkpoint()
+            elif self.signals and self.on_cancel is not None:
+                self.on_cancel(self.signals)
+        finally:
+            for signum, previous in self.previous.items():
+                signal.signal(signum, previous)
         return False
