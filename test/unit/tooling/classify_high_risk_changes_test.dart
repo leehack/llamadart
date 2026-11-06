@@ -73,6 +73,21 @@ void main() {
   });
 
   group('assessHighRiskFiles', () {
+    test('only exact root ffigen config is an artifact consumer', () {
+      expect(assessHighRiskFiles(['ffigen.yaml']).surfaces, {
+        HighRiskSurface.artifactConsumer,
+      });
+      for (final path in [
+        'ffigen.yml',
+        'ffigen.yaml.backup',
+        'nested/ffigen.yaml',
+        'analysis_options.yaml',
+        'dart_test.yaml',
+      ]) {
+        expect(assessHighRiskFiles([path]).isHighRisk, isFalse, reason: path);
+      }
+    });
+
     test(
       'independent Genkit runtime, schema, archive and policy paths retain gates',
       () {

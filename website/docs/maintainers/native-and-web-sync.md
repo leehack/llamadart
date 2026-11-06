@@ -30,6 +30,30 @@ Local `Artifacts` overrides in that companion are rejected because their ABI
 provenance is unverified. Remove the override and use the pinned remote
 framework. Non-Apple native-assets and LiteRT selection are unchanged.
 
+## Default consumer and AOT acceptance
+
+Use the explicit `native-default-consumer-aot` scenario and dedicated manual
+workflow to qualify ordinary default-hook consumers on macOS arm64 and Windows
+x64. See the [test matrix](https://github.com/leehack/llamadart/blob/main/doc/testing_matrix.md#default-native-consumer-and-distributed-aot)
+for the exact source/model identity and invocation. The expected native tag is
+verification-only and must equal the checked-in pin; no runtime override is
+introduced. Reviewed unmerged source may be tested without landing the pin first.
+
+A new dispatch workflow must first exist on the default branch. For its initial
+premerge validation, the registered `ci.yml` offers an explicit manual-only
+`native_default_qualification` bridge. It calls the same-commit reusable
+workflow, passes reviewed SHA/tag inputs, and skips ordinary CI/deployment only
+in that mode. The flag defaults to false; the dedicated dispatch route remains
+available after registration. See the test matrix for the bootstrap command.
+
+`v0.8.0-2` establishes pipeline behavior only. `v0.8.0-3` needs its own complete
+owner/public-artifact gates, actual provider identity, inference and distributed
+AOT receipts and independent acceptance. Historical Windows 16-case evidence
+uses `v0.8.0-1`; help/list/build success cannot replace these runtime gates.
+Acceptance is tracked in [#1762](https://github.com/leehack/llamadart/issues/1762);
+source integration alone does not close it. This maintainer infrastructure adds
+no public capability or publication approval.
+
 ## Native sync flow
 
 When native behavior or bindings need updates:
@@ -165,9 +189,17 @@ python3 tool/native/sync_native_release_pins.py \
 ```
 
 Run the header and bindings step on Linux, as the workflow does (Ubuntu with
-`llvm-dev`, `libclang-dev` and `clang`): `ggml.h` pulls in the C library's
-`FILE`, so a macOS run of the same `ffigen.yaml` rewrites that struct and
-nothing else.
+`llvm-dev`, `libclang-dev` and `clang`). `ggml.h` pulls in libc's `FILE`, whose
+name and layout differ on macOS. `ffigen.yaml` explicitly excludes Linux's
+`_IO_FILE` from direct inclusion and makes pointer-only struct dependencies
+opaque, preserving the committed `Pointer<FILE>` contract without exposing
+libc internals. The unused libc dependency closure is excluded as well.
+Directly included native structs and structs required by value
+retain their fields. Do not normalize generated Dart by hand: regenerate with
+the pinned SDK and lockfile, and inspect the entire diff for unrelated layout
+changes. The tooling policy test exercises ffigen's actual configuration and
+AST transformation without libclang; real header generation remains a separate
+validation step.
 
 The pin sync rejects same-channel rollback and release/manifest version skew.
 After the default pin moves to the stable channel, an intentional compatibility

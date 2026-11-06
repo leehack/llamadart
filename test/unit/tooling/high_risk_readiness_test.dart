@@ -3172,6 +3172,223 @@ final segment = '${Object()}ImageEditingRequest${Object()}';
     );
   });
 
+  group('exact root ffigen config evidence', () {
+    const config = 'ffigen.yaml';
+    const target =
+        'test/unit/tooling/native_bindings_generator_policy_test.dart';
+    const caseName =
+        'repo policy keeps pointer-only libc FILE opaque and its alias usable';
+    const callsite =
+        "jsonDecode(jsonEncode(loadYaml(File('ffigen.yaml').readAsStringSync())))";
+    const configSnippet = 'name: LlamaCpp';
+    const changes = [
+      RepositoryChange(path: config, kind: RepositoryChangeKind.modified),
+      RepositoryChange(path: target, kind: RepositoryChangeKind.added),
+    ];
+
+    Map<String, dynamic> evidenceFor([String testPath = target]) {
+      final evidence = backendEvidence()
+        ..['surfaces'] = ['artifactConsumer']
+        ..['affected_test_paths'] = [testPath];
+      evidence['test_evidence'] = {
+        testPath: testProof(config)
+          ..['test_case'] = caseName
+          ..['test_snippet'] = callsite
+          ..['production_refs'] = [
+            {'path': config, 'snippet': configSnippet},
+          ]
+          ..['command'] = 'dart test -p vm $testPath',
+      };
+      return evidence;
+    }
+
+    Future<HighRiskReadinessResult> evaluate(
+      Map<String, dynamic> evidence, {
+      List<RepositoryChange> inventory = changes,
+      Map<String, ReadinessFile>? headFiles,
+      Set<String> missingHeadPaths = const {},
+    }) {
+      final files = <String, ReadinessFile>{
+        config: (mode: '100644', contents: '$configSnippet\n'),
+        for (final path in [
+          target,
+          backendTest,
+          'test/ci/test_nonpublishing_auth_probe.py',
+        ])
+          path: (mode: '100644', contents: '$caseName\n$callsite'),
+        backendSource: (mode: '100644', contents: 'productionCall();'),
+        'tool/native/sync_native_headers_and_bindings.sh': (
+          mode: '100755',
+          contents: 'productionCall();',
+        ),
+        ...?headFiles,
+      };
+      for (final path in missingHeadPaths) {
+        files.remove(path);
+      }
+      return HighRiskReadinessEvaluator(
+        repositoryState: FakeRepositoryState(
+          changes: inventory,
+          existingPaths: files.keys.toSet(),
+          files: {
+            baseSha: {config: (mode: '100644', contents: '$configSnippet\n')},
+            headSha: files,
+          },
+        ),
+        clock: () => DateTime.utc(2026, 8, 28, 13),
+      ).evaluate(evidence: evidence, context: context);
+    }
+
+    test('paired ffigen config preserves causal and external gates', () async {
+      final result = await evaluate(evidenceFor());
+      expect(result.decision, ReadinessDecision.unverifiedPrerequisites);
+      expect(result.isReady, isFalse);
+      final evaluation = result.toJson()['evaluation'] as Map;
+      final external = evaluation['external_prerequisites'] as Map;
+      for (final key in [
+        'app_installed',
+        'protected_environment_configured',
+        'independent_auditor_authenticated',
+        'ruleset_enforced',
+      ]) {
+        expect(external[key], isFalse);
+      }
+      final failedControl = evidenceFor();
+      failedControl['test_evidence'][target]['control_result'] = 'pass';
+      expectFailure(
+        await evaluate(failedControl),
+        ReadinessFailureClassification.schemaViolation,
+      );
+    });
+
+    test('ffigen config rejects unpaired Dart and Python evidence', () async {
+      for (final testPath in [
+        backendTest,
+        'test/ci/test_nonpublishing_auth_probe.py',
+      ]) {
+        final result = await evaluate(evidenceFor(testPath));
+        expect(result.decision, ReadinessDecision.rejected);
+        expect(result.message, contains('must pair only'), reason: testPath);
+      }
+    });
+
+    test(
+      'ffigen policy test cannot substitute or append an uncalled producer',
+      () async {
+        for (final refs in [
+          productionRefs('tool/native/sync_native_headers_and_bindings.sh'),
+          [
+            {'path': config, 'snippet': configSnippet},
+            ...productionRefs(backendSource),
+          ],
+        ]) {
+          final evidence = evidenceFor();
+          evidence['test_evidence'][target]['production_refs'] = refs;
+          final result = await evaluate(evidence);
+          expect(result.decision, ReadinessDecision.rejected);
+          expect(result.message, contains('must pair only'));
+        }
+      },
+    );
+
+    test(
+      'changed ffigen config cannot omit its paired causal record',
+      () async {
+        final evidence = evidenceFor(backendTest);
+        evidence['test_evidence'][backendTest] = testProof(backendSource);
+        final result = await evaluate(
+          evidence,
+          headFiles: {
+            backendTest: (
+              mode: '100644',
+              contents: 'regression case\nproductionCall();',
+            ),
+          },
+        );
+        expect(result.decision, ReadinessDecision.rejected);
+        expect(result.message, contains('disconnected'));
+      },
+    );
+
+    test(
+      'ffigen config and consumer snippets bind the exact candidate blobs',
+      () async {
+        for (final file in [config, target]) {
+          final result = await evaluate(
+            evidenceFor(),
+            headFiles: {
+              file: (mode: '100644', contents: 'unrelated head blob'),
+            },
+          );
+          expect(result.decision, ReadinessDecision.rejected, reason: file);
+        }
+        final wrongSnippet = evidenceFor();
+        wrongSnippet['test_evidence'][target]['production_refs'][0]['snippet'] =
+            'invented config';
+        expect(
+          (await evaluate(wrongSnippet)).decision,
+          ReadinessDecision.rejected,
+        );
+      },
+    );
+
+    test('ffigen config requires a current regular head blob', () async {
+      expect(
+        (await evaluate(evidenceFor(), missingHeadPaths: {config})).decision,
+        ReadinessDecision.rejected,
+      );
+      for (final file in [
+        (mode: '120000', contents: '$configSnippet\n'),
+        (mode: '100644', contents: ''),
+      ]) {
+        expect(
+          (await evaluate(evidenceFor(), headFiles: {config: file})).decision,
+          ReadinessDecision.rejected,
+        );
+      }
+      for (final change in [
+        const RepositoryChange(
+          path: config,
+          kind: RepositoryChangeKind.deleted,
+        ),
+        const RepositoryChange(
+          path: 'retired-ffigen.yaml',
+          previousPath: config,
+          kind: RepositoryChangeKind.renamed,
+        ),
+      ]) {
+        final result = await evaluate(
+          evidenceFor(),
+          inventory: [change, changes.last],
+        );
+        expect(result.decision, ReadinessDecision.rejected);
+        expect(result.message, contains('current root config'));
+      }
+    });
+
+    test(
+      'root config pairing admits no lookalikes or non-production policy refs',
+      () async {
+        for (final path in [
+          'ffigen.yml',
+          'ffigen.yaml.backup',
+          'nested/ffigen.yaml',
+          'analysis_options.yaml',
+          'dart_test.yaml',
+          '.github/CODEOWNERS',
+        ]) {
+          final evidence = evidenceFor();
+          evidence['test_evidence'][target]['production_refs'] = [
+            {'path': path, 'snippet': configSnippet},
+          ];
+          final result = await evaluate(evidence);
+          expectFailure(result, ReadinessFailureClassification.schemaViolation);
+          expect(result.message, 'Invalid production reference.', reason: path);
+        }
+      },
+    );
+  });
+
   group('private harness evidence admission', () {
     const source = 'packages/llamadart_validation/lib/src/tokenization.dart';
     const registry =
