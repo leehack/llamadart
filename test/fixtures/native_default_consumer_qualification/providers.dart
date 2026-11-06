@@ -4,7 +4,9 @@ import 'dart:io';
 
 import 'package:crypto/crypto.dart';
 import 'package:ffi/ffi.dart';
-import 'package:llamadart/llama_cpp_bindings.dart' as bindings;
+// This private observer needs the generated @Native declaration; the public
+// conditional entrypoint defaults to FFI-free stubs during source analysis.
+import 'package:llamadart/src/backends/llama_cpp/bindings.dart' as bindings;
 
 import 'passive_modules.dart' as windows;
 
@@ -191,8 +193,9 @@ Future<Map<String, Object?>> observe() async {
     final registry = exports
         .where((row) => row['symbol'] == 'ggml_backend_reg_count')
         .toList();
-    if (registry.length != 1)
+    if (registry.length != 1) {
       throw StateError('self-owned registry export required');
+    }
     final registryOwner = owner(address.cast());
     final modelAddress =
         Native.addressOf<
