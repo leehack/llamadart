@@ -213,8 +213,7 @@ Map<String, dynamic> metadataEvidence() {
     'row_id': releaseMetadataRow,
     'result': 'pass',
     'command': releaseMetadataCommand,
-    'evidence_notes':
-        'Strict verifier and existing companion-pin tests passed on exact head.',
+    'evidence_notes': 'Strict verifier and existing companion-pin tests passed on exact head.',
   };
   evidence['affected_test_paths'] = [releaseMetadataTest];
   evidence['test_evidence'] = <String, dynamic>{};
@@ -421,13 +420,10 @@ void main() {
     test(
       '${scenario.$2} keeps only applicable gates and rejects each missing gate',
       () async {
-        final evidence =
-            jsonDecode(
-                  jsonEncode(
-                    structuredEvidence(),
-                  ).replaceAll(structuredSource, scenario.$1),
-                )
-                as Map<String, dynamic>;
+        final evidence = jsonDecode(
+          jsonEncode(structuredEvidence())
+              .replaceAll(structuredSource, scenario.$1),
+        ) as Map<String, dynamic>;
         final structured = evidence['structured_output_evidence'] as Map;
         for (final impact in StructuredImpact.values) {
           structured['impacts'][impact.name]['applicable'] =
@@ -467,13 +463,11 @@ void main() {
     const testPath =
         'test/unit/core/template/template_render_context_test.dart';
     Map<String, dynamic> renderingEvidence() {
-      final evidence =
-          jsonDecode(
-                jsonEncode(structuredEvidence())
-                    .replaceAll(structuredSource, source)
-                    .replaceAll(compiledTest, testPath),
-              )
-              as Map<String, dynamic>;
+      final evidence = jsonDecode(
+        jsonEncode(structuredEvidence())
+            .replaceAll(structuredSource, source)
+            .replaceAll(compiledTest, testPath),
+      ) as Map<String, dynamic>;
       final structured = evidence['structured_output_evidence'] as Map;
       final coverage = structured['coverage'] as Map;
       for (final axis in coverage.keys) {
@@ -506,87 +500,82 @@ void main() {
       ),
     ).evaluate(evidence: evidence, context: context);
 
-    test(
-      'existing test evidence reads committed blobs, not working tree edits',
-      () async {
-        final repo = Directory.systemTemp.createTempSync(
-          'impact-evidence-git-',
+    test('existing test evidence reads committed blobs, not working tree edits', () async {
+      final repo = Directory.systemTemp.createTempSync('impact-evidence-git-');
+      addTearDown(() => repo.deleteSync(recursive: true));
+      String git(List<String> args) {
+        final result = Process.runSync(
+          'git',
+          args,
+          workingDirectory: repo.path,
         );
-        addTearDown(() => repo.deleteSync(recursive: true));
-        String git(List<String> args) {
-          final result = Process.runSync(
-            'git',
-            args,
+        expect(result.exitCode, 0, reason: '${result.stderr}');
+        return (result.stdout as String).trim();
+      }
+
+      git(['init', '--quiet']);
+      git(['config', 'user.name', 'Impact evidence test']);
+      git(['config', 'user.email', 'impact@example.invalid']);
+      final sourceFile = File('${repo.path}/$source');
+      sourceFile.parent.createSync(recursive: true);
+      sourceFile.writeAsStringSync('bool productionCall() => false;\n');
+      final testFile = File('${repo.path}/$testPath');
+      testFile.parent.createSync(recursive: true);
+      testFile.writeAsStringSync(
+        "void main() { test('regression case', () { productionCall(); }); }\n",
+      );
+      git(['add', '.']);
+      git(['commit', '--quiet', '-m', 'base']);
+      final base = git(['rev-parse', 'HEAD']);
+      sourceFile.writeAsStringSync('bool productionCall() => true;\n');
+      git(['add', '.']);
+      git(['commit', '--quiet', '-m', 'head']);
+      final head = git(['rev-parse', 'HEAD']);
+      final evidence = renderingEvidence()
+        ..['expected_pr_head_sha'] = head
+        ..['current_base_sha'] = base;
+      evidence['independent_audit']['audit_head_sha'] = head;
+      evidence['independent_audit']['audit_base_sha'] = base;
+      final refs = [
+        {'path': source, 'snippet': 'bool productionCall() => true;'},
+      ];
+      evidence['test_evidence'][testPath]['production_refs'] = refs;
+      for (final impact in StructuredImpact.values) {
+        evidence['structured_output_evidence']['impacts'][impact
+                .name]['production_refs'] =
+            refs;
+      }
+      Future<HighRiskReadinessResult> evaluate() =>
+          const HighRiskReadinessEvaluator().evaluate(
+            evidence: evidence,
+            context: PullRequestContext(
+              repository: context.repository,
+              prNumber: context.prNumber,
+              headSha: head,
+              baseSha: base,
+              author: context.author,
+            ),
             workingDirectory: repo.path,
           );
-          expect(result.exitCode, 0, reason: '${result.stderr}');
-          return (result.stdout as String).trim();
-        }
-
-        git(['init', '--quiet']);
-        git(['config', 'user.name', 'Impact evidence test']);
-        git(['config', 'user.email', 'impact@example.invalid']);
-        final sourceFile = File('${repo.path}/$source');
-        sourceFile.parent.createSync(recursive: true);
-        sourceFile.writeAsStringSync('bool productionCall() => false;\n');
-        final testFile = File('${repo.path}/$testPath');
-        testFile.parent.createSync(recursive: true);
-        testFile.writeAsStringSync(
-          "void main() { test('regression case', () { productionCall(); }); }\n",
-        );
-        git(['add', '.']);
-        git(['commit', '--quiet', '-m', 'base']);
-        final base = git(['rev-parse', 'HEAD']);
-        sourceFile.writeAsStringSync('bool productionCall() => true;\n');
-        git(['add', '.']);
-        git(['commit', '--quiet', '-m', 'head']);
-        final head = git(['rev-parse', 'HEAD']);
-        final evidence = renderingEvidence()
-          ..['expected_pr_head_sha'] = head
-          ..['current_base_sha'] = base;
-        evidence['independent_audit']['audit_head_sha'] = head;
-        evidence['independent_audit']['audit_base_sha'] = base;
-        final refs = [
-          {'path': source, 'snippet': 'bool productionCall() => true;'},
-        ];
-        evidence['test_evidence'][testPath]['production_refs'] = refs;
-        for (final impact in StructuredImpact.values) {
-          evidence['structured_output_evidence']['impacts'][impact
-                  .name]['production_refs'] =
-              refs;
-        }
-        Future<HighRiskReadinessResult> evaluate() =>
-            const HighRiskReadinessEvaluator().evaluate(
-              evidence: evidence,
-              context: PullRequestContext(
-                repository: context.repository,
-                prNumber: context.prNumber,
-                headSha: head,
-                baseSha: base,
-                author: context.author,
-              ),
-              workingDirectory: repo.path,
-            );
-        expect(
-          (await evaluate()).decision,
-          ReadinessDecision.unverifiedPrerequisites,
-        );
-        testFile.writeAsStringSync('invented local test case');
-        evidence['test_evidence'][testPath]['test_case'] =
-            'invented local test case';
-        expectFailure(
-          await evaluate(),
-          ReadinessFailureClassification.missingStructuredOutputEvidence,
-        );
-        evidence['test_evidence'][testPath]['test_case'] = 'regression case';
-        refs.single['snippet'] = 'bool productionCall() => false;';
-        sourceFile.writeAsStringSync('bool productionCall() => false;');
-        expectFailure(
-          await evaluate(),
-          ReadinessFailureClassification.missingStructuredOutputEvidence,
-        );
-      },
-    );
+      expect(
+        (await evaluate()).decision,
+        ReadinessDecision.unverifiedPrerequisites,
+      );
+      testFile.writeAsStringSync('invented local test case');
+      evidence['test_evidence'][testPath]['test_case'] =
+          'invented local test case';
+      expectFailure(
+        await evaluate(),
+        ReadinessFailureClassification.missingStructuredOutputEvidence,
+      );
+      evidence['test_evidence'][testPath]['test_case'] = 'regression case';
+      refs.single['snippet'] = 'bool productionCall() => false;';
+      sourceFile.writeAsStringSync('bool productionCall() => false;');
+      expectFailure(
+        await evaluate(),
+        ReadinessFailureClassification.missingStructuredOutputEvidence,
+      );
+    });
     test(
       'rendering-only accepts unchanged relevant test without grammar edits',
       () async {
@@ -812,8 +801,7 @@ void main() {
         ),
         imageTest: (
           mode: '100644',
-          contents:
-              "void main() { test('regression case', () { productionCall(); }); }",
+          contents: "void main() { test('regression case', () { productionCall(); }); }",
         ),
       };
       return {
@@ -851,8 +839,7 @@ void main() {
       for (final impact in StructuredImpact.values) {
         structured['impacts'][impact.name] = {
           'applicable': false,
-          'rationale':
-              'Independent review excludes this chat effect for the image classes.',
+          'rationale': 'Independent review excludes this chat effect for the image classes.',
           'production_refs': <Map<String, dynamic>>[
             for (final ref in refs) {...ref},
           ],
@@ -1277,8 +1264,7 @@ final segment = '${Object()}ImageEditingRequest${Object()}';
         final files = imageFiles();
         files[baseSha]!['lib/src/core/exceptions.dart'] = (
           mode: '100644',
-          contents:
-              'class LlamaException {} void example() { final ImageEditingRequest = 0; }',
+          contents: 'class LlamaException {} void example() { final ImageEditingRequest = 0; }',
         );
         final result = await evaluateImage(files: files);
         expectFailure(
@@ -1335,8 +1321,7 @@ final segment = '${Object()}ImageEditingRequest${Object()}';
         final files = imageFiles();
         files[revision]!['lib/src/core/exceptions.dart'] = (
           mode: '100644',
-          contents:
-              "export 'image/image_editing_request.dart';\nclass LlamaException {}",
+          contents: "export 'image/image_editing_request.dart';\nclass LlamaException {}",
         );
         final result = await evaluateImage(files: files);
         expectFailure(
@@ -1350,8 +1335,7 @@ final segment = '${Object()}ImageEditingRequest${Object()}';
       final files = imageFiles();
       files[headSha]!['lib/src/core/exceptions.dart'] = (
         mode: '100644',
-        contents:
-            "export 'safe.dart' if (dart.library.io) 'collision.dart';\nclass LlamaException {}",
+        contents: "export 'safe.dart' if (dart.library.io) 'collision.dart';\nclass LlamaException {}",
       );
       files[headSha]!['lib/src/core/safe.dart'] = (
         mode: '100644',
@@ -1599,41 +1583,38 @@ final segment = '${Object()}ImageEditingRequest${Object()}';
         }
       },
     );
-    test(
-      'existing active JSX template attributes and script bodies cannot use exception',
-      () async {
-        for (final pair in [
-          (
-            before: '<div title={`safe`} />',
-            after: r'<div title={`${dangerous()}`} />',
-          ),
-          (
-            before: '<script>safe()</script>',
-            after: '<script>dangerous()</script>',
-          ),
-          (
-            before: '<style>body{color:red}</style>',
-            after: '<style>body{display:none}</style>',
-          ),
-        ]) {
-          final files = metadataFiles();
-          final base = files[baseSha]!['README.md']!;
-          final head = files[headSha]!['README.md']!;
-          files[baseSha]!['README.md'] = (
-            mode: base.mode,
-            contents: '${base.contents}\n${pair.before}\n',
-          );
-          files[headSha]!['README.md'] = (
-            mode: head.mode,
-            contents: '${head.contents}\n${pair.after}\n',
-          );
-          expectFailure(
-            await evaluateMetadata(files: files),
-            ReadinessFailureClassification.invalidReleaseMetadata,
-          );
-        }
-      },
-    );
+    test('existing active JSX template attributes and script bodies cannot use exception', () async {
+      for (final pair in [
+        (
+          before: '<div title={`safe`} />',
+          after: r'<div title={`${dangerous()}`} />',
+        ),
+        (
+          before: '<script>safe()</script>',
+          after: '<script>dangerous()</script>',
+        ),
+        (
+          before: '<style>body{color:red}</style>',
+          after: '<style>body{display:none}</style>',
+        ),
+      ]) {
+        final files = metadataFiles();
+        final base = files[baseSha]!['README.md']!;
+        final head = files[headSha]!['README.md']!;
+        files[baseSha]!['README.md'] = (
+          mode: base.mode,
+          contents: '${base.contents}\n${pair.before}\n',
+        );
+        files[headSha]!['README.md'] = (
+          mode: head.mode,
+          contents: '${head.contents}\n${pair.after}\n',
+        );
+        expectFailure(
+          await evaluateMetadata(files: files),
+          ReadinessFailureClassification.invalidReleaseMetadata,
+        );
+      }
+    });
     for (final omitted in releaseMetadataPaths) {
       test('omitting required $omitted rejects stale metadata', () async {
         final changes = [
@@ -1725,29 +1706,26 @@ final segment = '${Object()}ImageEditingRequest${Object()}';
         );
       },
     );
-    test(
-      'documented grammar and repeated existing runtime identity are inert',
-      () async {
-        final files = metadataFiles();
-        for (final sha in [baseSha, headSha]) {
-          final old = files[sha]!['README.md']!;
-          files[sha]!['README.md'] = (
-            mode: old.mode,
-            contents: '${old.contents}\nNative v0.4.0.\n',
-          );
-        }
-        final candidate = files[headSha]!['README.md']!;
-        files[headSha]!['README.md'] = (
-          mode: candidate.mode,
-          contents:
-              '${candidate.contents}\nKnown v0.4.0 limitation: `root ::= "a"{2000}`.\n',
+    test('documented grammar and repeated existing runtime identity are inert', () async {
+      final files = metadataFiles();
+      for (final sha in [baseSha, headSha]) {
+        final old = files[sha]!['README.md']!;
+        files[sha]!['README.md'] = (
+          mode: old.mode,
+          contents: '${old.contents}\nNative v0.4.0.\n',
         );
-        expect(
-          (await evaluateMetadata(files: files)).decision,
-          ReadinessDecision.unverifiedPrerequisites,
-        );
-      },
-    );
+      }
+      final candidate = files[headSha]!['README.md']!;
+      files[headSha]!['README.md'] = (
+        mode: candidate.mode,
+        contents:
+            '${candidate.contents}\nKnown v0.4.0 limitation: `root ::= "a"{2000}`.\n',
+      );
+      expect(
+        (await evaluateMetadata(files: files)).decision,
+        ReadinessDecision.unverifiedPrerequisites,
+      );
+    });
     test(
       'fence and inline context cannot convert existing fragments to MDX',
       () async {
@@ -1830,9 +1808,10 @@ final segment = '${Object()}ImageEditingRequest${Object()}';
           RepositoryChange(path: path, kind: RepositoryChangeKind.modified),
         ];
         final evidence = metadataEvidence();
-        evidence['surfaces'] = assessHighRiskFiles(
-          changes.map((c) => c.path),
-        ).surfaces.map((s) => s.name).toList();
+        evidence['surfaces'] = assessHighRiskFiles(changes.map((c) => c.path))
+            .surfaces
+            .map((s) => s.name)
+            .toList();
         expect(
           (await evaluateMetadata(
             evidence: evidence,
@@ -2497,9 +2476,8 @@ final segment = '${Object()}ImageEditingRequest${Object()}';
             ),
           ],
         ]) {
-          final result = await evaluatorFor(
-            changes,
-          ).evaluate(evidence: backendEvidence(), context: context);
+          final result = await evaluatorFor(changes)
+              .evaluate(evidence: backendEvidence(), context: context);
           expectFailure(
             result,
             ReadinessFailureClassification.changedFilesMismatch,
@@ -2621,106 +2599,92 @@ final segment = '${Object()}ImageEditingRequest${Object()}';
   });
 
   group('candidate-tree evidence paths', () {
-    test(
-      'only maintained compiled adapter suites can satisfy grammar axes',
-      () async {
-        const source =
-            'packages/genkit_llamadart/lib/src/integration/genkit/converters/constrained_tools.dart';
-        const compiled =
-            'packages/genkit_llamadart/test/integration/genkit/plugin/real_model_constrained_grammar_test.dart';
-        const ordinary =
-            'packages/genkit_llamadart/test/integration/genkit/plugin/ordinary_test.dart';
-        final evidence =
-            jsonDecode(
-                  jsonEncode(structuredEvidence())
-                      .replaceAll(structuredSource, source)
-                      .replaceAll(compiledTest, compiled),
-                )
-                as Map<String, dynamic>;
-        evidence['surfaces'] = ['structuredOutput', 'backendRuntime'];
-        final changes = [
-          const RepositoryChange(
-            path: source,
-            kind: RepositoryChangeKind.modified,
-          ),
-          const RepositoryChange(
-            path: compiled,
-            kind: RepositoryChangeKind.modified,
-          ),
-          const RepositoryChange(
-            path: ordinary,
-            kind: RepositoryChangeKind.added,
-          ),
-        ];
-        Future<HighRiskReadinessResult> evaluate() => evaluatorFor(
-          changes,
-        ).evaluate(evidence: evidence, context: context);
-        expect(
-          (await evaluate()).decision,
-          ReadinessDecision.unverifiedPrerequisites,
-        );
-        evidence['affected_test_paths'].add(ordinary);
-        evidence['test_evidence'][ordinary] = testProof(source);
-        for (final axis in [
-          'compiled_grammar_acceptance',
-          'compiled_grammar_rejection',
-        ]) {
-          evidence['structured_output_evidence']['coverage'][axis] = [ordinary];
-        }
-        final result = await evaluate();
-        expectFailure(
-          result,
-          ReadinessFailureClassification.missingStructuredOutputEvidence,
-        );
-        expect(result.message, contains('compiled production grammar test'));
-      },
-    );
+    test('only maintained compiled adapter suites can satisfy grammar axes', () async {
+      const source =
+          'packages/genkit_llamadart/lib/src/integration/genkit/converters/constrained_tools.dart';
+      const compiled =
+          'packages/genkit_llamadart/test/integration/genkit/plugin/real_model_constrained_grammar_test.dart';
+      const ordinary =
+          'packages/genkit_llamadart/test/integration/genkit/plugin/ordinary_test.dart';
+      final evidence = jsonDecode(
+        jsonEncode(structuredEvidence())
+            .replaceAll(structuredSource, source)
+            .replaceAll(compiledTest, compiled),
+      ) as Map<String, dynamic>;
+      evidence['surfaces'] = ['structuredOutput', 'backendRuntime'];
+      final changes = [
+        const RepositoryChange(
+          path: source,
+          kind: RepositoryChangeKind.modified,
+        ),
+        const RepositoryChange(
+          path: compiled,
+          kind: RepositoryChangeKind.modified,
+        ),
+        const RepositoryChange(
+          path: ordinary,
+          kind: RepositoryChangeKind.added,
+        ),
+      ];
+      Future<HighRiskReadinessResult> evaluate() =>
+          evaluatorFor(changes).evaluate(evidence: evidence, context: context);
+      expect(
+        (await evaluate()).decision,
+        ReadinessDecision.unverifiedPrerequisites,
+      );
+      evidence['affected_test_paths'].add(ordinary);
+      evidence['test_evidence'][ordinary] = testProof(source);
+      for (final axis in [
+        'compiled_grammar_acceptance',
+        'compiled_grammar_rejection',
+      ]) {
+        evidence['structured_output_evidence']['coverage'][axis] = [ordinary];
+      }
+      final result = await evaluate();
+      expectFailure(
+        result,
+        ReadinessFailureClassification.missingStructuredOutputEvidence,
+      );
+      expect(result.message, contains('compiled production grammar test'));
+    });
 
-    test(
-      'Genkit test and production paths bind exact-head evidence without bypasses',
-      () async {
-        const source =
-            'packages/genkit_llamadart/lib/src/core/runtime/engine_registry.dart';
-        const target =
-            'packages/genkit_llamadart/test/core/runtime/engine_registry/reuse_test.dart';
-        final evidence =
-            jsonDecode(
-                  jsonEncode(backendEvidence())
-                      .replaceAll(backendSource, source)
-                      .replaceAll(backendTest, target),
-                )
-                as Map<String, dynamic>;
-        final changes = [
-          const RepositoryChange(
-            path: source,
-            kind: RepositoryChangeKind.modified,
-          ),
-          const RepositoryChange(
-            path: target,
-            kind: RepositoryChangeKind.added,
-          ),
-        ];
-        Future<HighRiskReadinessResult> evaluate() => evaluatorFor(
-          changes,
-          existingPaths: {source, target, backendSource},
-        ).evaluate(evidence: evidence, context: context);
-        expect(
-          (await evaluate()).decision,
-          ReadinessDecision.unverifiedPrerequisites,
-        );
-        evidence['test_evidence'][target]['production_refs'] = productionRefs(
-          backendSource,
-        );
-        final disconnected = await evaluate();
-        expect(disconnected.decision, ReadinessDecision.rejected);
-        expect(disconnected.message, contains('disconnected'));
-        evidence['test_evidence'][target]['production_refs'] = productionRefs(
-          source,
-        );
-        evidence['test_evidence'][target]['control_result'] = 'pass';
-        expect((await evaluate()).decision, ReadinessDecision.rejected);
-      },
-    );
+    test('Genkit test and production paths bind exact-head evidence without bypasses', () async {
+      const source =
+          'packages/genkit_llamadart/lib/src/core/runtime/engine_registry.dart';
+      const target =
+          'packages/genkit_llamadart/test/core/runtime/engine_registry/reuse_test.dart';
+      final evidence = jsonDecode(
+        jsonEncode(backendEvidence())
+            .replaceAll(backendSource, source)
+            .replaceAll(backendTest, target),
+      ) as Map<String, dynamic>;
+      final changes = [
+        const RepositoryChange(
+          path: source,
+          kind: RepositoryChangeKind.modified,
+        ),
+        const RepositoryChange(path: target, kind: RepositoryChangeKind.added),
+      ];
+      Future<HighRiskReadinessResult> evaluate() => evaluatorFor(
+        changes,
+        existingPaths: {source, target, backendSource},
+      ).evaluate(evidence: evidence, context: context);
+      expect(
+        (await evaluate()).decision,
+        ReadinessDecision.unverifiedPrerequisites,
+      );
+      evidence['test_evidence'][target]['production_refs'] = productionRefs(
+        backendSource,
+      );
+      final disconnected = await evaluate();
+      expect(disconnected.decision, ReadinessDecision.rejected);
+      expect(disconnected.message, contains('disconnected'));
+      evidence['test_evidence'][target]['production_refs'] = productionRefs(
+        source,
+      );
+      evidence['test_evidence'][target]['control_result'] = 'pass';
+      expect((await evaluate()).decision, ReadinessDecision.rejected);
+    });
 
     test(
       'workflow changes bind tooling tests to the changed workflow',
@@ -2851,13 +2815,11 @@ final segment = '${Object()}ImageEditingRequest${Object()}';
         const target = 'tool/native/test_sync_native_release_pins.py';
         const otherSource = 'tool/native/native_header_archive.py';
         const otherTarget = 'tool/native/test_native_header_archive.py';
-        final evidence =
-            jsonDecode(
-                  jsonEncode(backendEvidence())
-                      .replaceAll(backendSource, source)
-                      .replaceAll(backendTest, target),
-                )
-                as Map<String, dynamic>;
+        final evidence = jsonDecode(
+          jsonEncode(backendEvidence())
+              .replaceAll(backendSource, source)
+              .replaceAll(backendTest, target),
+        ) as Map<String, dynamic>;
         evidence['surfaces'] = ['artifactConsumer'];
         final proof = evidence['test_evidence'][target] as Map<String, dynamic>;
         var changes = const [
@@ -3079,9 +3041,8 @@ final segment = '${Object()}ImageEditingRequest${Object()}';
                   ),
                 ];
           expectFailure(
-            await evaluatorFor(
-              changes,
-            ).evaluate(evidence: evidence, context: context),
+            await evaluatorFor(changes)
+                .evaluate(evidence: evidence, context: context),
             ReadinessFailureClassification.nonTestPathCited,
           );
         }
@@ -3090,9 +3051,8 @@ final segment = '${Object()}ImageEditingRequest${Object()}';
 
     test('rejects absent, deleted, renamed-old, and phantom paths', () async {
       expectFailure(
-        await evaluatorFor([
-          backendChanges.first,
-        ]).evaluate(evidence: backendEvidence(), context: context),
+        await evaluatorFor([backendChanges.first])
+            .evaluate(evidence: backendEvidence(), context: context),
         ReadinessFailureClassification.missingTestPath,
       );
 
@@ -3174,9 +3134,12 @@ final segment = '${Object()}ImageEditingRequest${Object()}';
 
   group('exact root ffigen config evidence', () {
     const config = 'ffigen.yaml';
-    const target = 'test/unit/tooling/native_bindings_generator_policy_test.dart';
-    const caseName = 'repo policy keeps pointer-only libc FILE opaque and its alias usable';
-    const callsite = "jsonDecode(jsonEncode(loadYaml(File('ffigen.yaml').readAsStringSync())))";
+    const target =
+        'test/unit/tooling/native_bindings_generator_policy_test.dart';
+    const caseName =
+        'repo policy keeps pointer-only libc FILE opaque and its alias usable';
+    const callsite =
+        "jsonDecode(jsonEncode(loadYaml(File('ffigen.yaml').readAsStringSync())))";
     const configSnippet = 'name: LlamaCpp';
     const changes = [
       RepositoryChange(path: config, kind: RepositoryChangeKind.modified),
@@ -3207,11 +3170,16 @@ final segment = '${Object()}ImageEditingRequest${Object()}';
     }) {
       final files = <String, ReadinessFile>{
         config: (mode: '100644', contents: '$configSnippet\n'),
-        for (final path in [target, backendTest, 'test/ci/test_nonpublishing_auth_probe.py'])
+        for (final path in [
+          target,
+          backendTest,
+          'test/ci/test_nonpublishing_auth_probe.py',
+        ])
           path: (mode: '100644', contents: '$caseName\n$callsite'),
         backendSource: (mode: '100644', contents: 'productionCall();'),
         'tool/native/sync_native_headers_and_bindings.sh': (
-          mode: '100755', contents: 'productionCall();',
+          mode: '100755',
+          contents: 'productionCall();',
         ),
         ...?headFiles,
       };
@@ -3238,96 +3206,147 @@ final segment = '${Object()}ImageEditingRequest${Object()}';
       final evaluation = result.toJson()['evaluation'] as Map;
       final external = evaluation['external_prerequisites'] as Map;
       for (final key in [
-        'app_installed', 'protected_environment_configured',
-        'independent_auditor_authenticated', 'ruleset_enforced',
+        'app_installed',
+        'protected_environment_configured',
+        'independent_auditor_authenticated',
+        'ruleset_enforced',
       ]) {
         expect(external[key], isFalse);
       }
       final failedControl = evidenceFor();
       failedControl['test_evidence'][target]['control_result'] = 'pass';
-      expectFailure(await evaluate(failedControl), ReadinessFailureClassification.schemaViolation);
+      expectFailure(
+        await evaluate(failedControl),
+        ReadinessFailureClassification.schemaViolation,
+      );
     });
 
     test('ffigen config rejects unpaired Dart and Python evidence', () async {
-      for (final testPath in [backendTest, 'test/ci/test_nonpublishing_auth_probe.py']) {
+      for (final testPath in [
+        backendTest,
+        'test/ci/test_nonpublishing_auth_probe.py',
+      ]) {
         final result = await evaluate(evidenceFor(testPath));
         expect(result.decision, ReadinessDecision.rejected);
         expect(result.message, contains('must pair only'), reason: testPath);
       }
     });
 
-    test('ffigen policy test cannot substitute or append an uncalled producer', () async {
-      for (final refs in [
-        productionRefs('tool/native/sync_native_headers_and_bindings.sh'),
-        [
-          {'path': config, 'snippet': configSnippet},
-          ...productionRefs(backendSource),
-        ],
-      ]) {
-        final evidence = evidenceFor();
-        evidence['test_evidence'][target]['production_refs'] = refs;
-        final result = await evaluate(evidence);
-        expect(result.decision, ReadinessDecision.rejected);
-        expect(result.message, contains('must pair only'));
-      }
-    });
+    test(
+      'ffigen policy test cannot substitute or append an uncalled producer',
+      () async {
+        for (final refs in [
+          productionRefs('tool/native/sync_native_headers_and_bindings.sh'),
+          [
+            {'path': config, 'snippet': configSnippet},
+            ...productionRefs(backendSource),
+          ],
+        ]) {
+          final evidence = evidenceFor();
+          evidence['test_evidence'][target]['production_refs'] = refs;
+          final result = await evaluate(evidence);
+          expect(result.decision, ReadinessDecision.rejected);
+          expect(result.message, contains('must pair only'));
+        }
+      },
+    );
 
-    test('changed ffigen config cannot omit its paired causal record', () async {
-      final evidence = evidenceFor(backendTest);
-      evidence['test_evidence'][backendTest] = testProof(backendSource);
-      final result = await evaluate(evidence);
-      expect(result.decision, ReadinessDecision.rejected);
-      expect(result.message, contains('disconnected'));
-    });
-
-    test('ffigen config and consumer snippets bind the exact candidate blobs', () async {
-      for (final file in [config, target]) {
+    test(
+      'changed ffigen config cannot omit its paired causal record',
+      () async {
+        final evidence = evidenceFor(backendTest);
+        evidence['test_evidence'][backendTest] = testProof(backendSource);
         final result = await evaluate(
-          evidenceFor(),
-          headFiles: {file: (mode: '100644', contents: 'unrelated head blob')},
+          evidence,
+          headFiles: {
+            backendTest: (
+              mode: '100644',
+              contents: 'regression case\nproductionCall();',
+            ),
+          },
         );
-        expect(result.decision, ReadinessDecision.rejected, reason: file);
-      }
-      final wrongSnippet = evidenceFor();
-      wrongSnippet['test_evidence'][target]['production_refs'][0]['snippet'] = 'invented config';
-      expect((await evaluate(wrongSnippet)).decision, ReadinessDecision.rejected);
-    });
+        expect(result.decision, ReadinessDecision.rejected);
+        expect(result.message, contains('disconnected'));
+      },
+    );
+
+    test(
+      'ffigen config and consumer snippets bind the exact candidate blobs',
+      () async {
+        for (final file in [config, target]) {
+          final result = await evaluate(
+            evidenceFor(),
+            headFiles: {
+              file: (mode: '100644', contents: 'unrelated head blob'),
+            },
+          );
+          expect(result.decision, ReadinessDecision.rejected, reason: file);
+        }
+        final wrongSnippet = evidenceFor();
+        wrongSnippet['test_evidence'][target]['production_refs'][0]['snippet'] =
+            'invented config';
+        expect(
+          (await evaluate(wrongSnippet)).decision,
+          ReadinessDecision.rejected,
+        );
+      },
+    );
 
     test('ffigen config requires a current regular head blob', () async {
-      expect((await evaluate(evidenceFor(), missingHeadPaths: {config})).decision,
-          ReadinessDecision.rejected);
+      expect(
+        (await evaluate(evidenceFor(), missingHeadPaths: {config})).decision,
+        ReadinessDecision.rejected,
+      );
       for (final file in [
         (mode: '120000', contents: '$configSnippet\n'),
         (mode: '100644', contents: ''),
       ]) {
-        expect((await evaluate(evidenceFor(), headFiles: {config: file})).decision,
-            ReadinessDecision.rejected);
+        expect(
+          (await evaluate(evidenceFor(), headFiles: {config: file})).decision,
+          ReadinessDecision.rejected,
+        );
       }
       for (final change in [
-        const RepositoryChange(path: config, kind: RepositoryChangeKind.deleted),
-        const RepositoryChange(path: 'retired-ffigen.yaml', previousPath: config,
-            kind: RepositoryChangeKind.renamed),
+        const RepositoryChange(
+          path: config,
+          kind: RepositoryChangeKind.deleted,
+        ),
+        const RepositoryChange(
+          path: 'retired-ffigen.yaml',
+          previousPath: config,
+          kind: RepositoryChangeKind.renamed,
+        ),
       ]) {
-        final result = await evaluate(evidenceFor(), inventory: [change, changes.last]);
+        final result = await evaluate(
+          evidenceFor(),
+          inventory: [change, changes.last],
+        );
         expect(result.decision, ReadinessDecision.rejected);
         expect(result.message, contains('current root config'));
       }
     });
 
-    test('root config pairing admits no lookalikes or non-production policy refs', () async {
-      for (final path in [
-        'ffigen.yml', 'ffigen.yaml.backup', 'nested/ffigen.yaml',
-        'analysis_options.yaml', 'dart_test.yaml', '.github/CODEOWNERS',
-      ]) {
-        final evidence = evidenceFor();
-        evidence['test_evidence'][target]['production_refs'] = [
-          {'path': path, 'snippet': configSnippet},
-        ];
-        final result = await evaluate(evidence);
-        expectFailure(result, ReadinessFailureClassification.schemaViolation);
-        expect(result.message, 'Invalid production reference.', reason: path);
-      }
-    });
+    test(
+      'root config pairing admits no lookalikes or non-production policy refs',
+      () async {
+        for (final path in [
+          'ffigen.yml',
+          'ffigen.yaml.backup',
+          'nested/ffigen.yaml',
+          'analysis_options.yaml',
+          'dart_test.yaml',
+          '.github/CODEOWNERS',
+        ]) {
+          final evidence = evidenceFor();
+          evidence['test_evidence'][target]['production_refs'] = [
+            {'path': path, 'snippet': configSnippet},
+          ];
+          final result = await evaluate(evidence);
+          expectFailure(result, ReadinessFailureClassification.schemaViolation);
+          expect(result.message, 'Invalid production reference.', reason: path);
+        }
+      },
+    );
   });
 
   group('private harness evidence admission', () {
@@ -3437,9 +3456,9 @@ final segment = '${Object()}ImageEditingRequest${Object()}';
       evidence['independent_audit']['audit_head_sha'] = head;
       evidence['independent_audit']['audit_base_sha'] = base;
       final evidenceFile = File('${repo.path}/evidence.json');
-      final script = File(
-        'tool/testing/high_risk_readiness.dart',
-      ).absolute.path;
+      final script = File('tool/testing/high_risk_readiness.dart')
+          .absolute
+          .path;
       print(
         'readiness CLI fixture: Git setup ${fixtureWatch.elapsedMilliseconds} ms',
       );
@@ -3582,26 +3601,23 @@ final segment = '${Object()}ImageEditingRequest${Object()}';
       },
     );
 
-    test(
-      'private harness admission excludes other packages and assets',
-      () async {
-        for (final path in [
-          'packages/other/lib/runtime.dart',
-          'packages/llamadart_validation_extra/lib/runtime.dart',
-          'packages/llamadart_validation/assets/profiles.json',
-          'packages/llamadart_validation/assets/capability_coverage.json.backup',
-          'packages/llamadart_validation/lib/../assets/profiles.json',
-        ]) {
-          final evidence = evidenceFor(target);
-          (evidence['test_evidence'][target]['production_refs'] as List).addAll(
-            productionRefs(path),
-          );
-          final result = await evaluate(evidence);
-          expectFailure(result, ReadinessFailureClassification.schemaViolation);
-          expect(result.message, 'Invalid production reference.', reason: path);
-        }
-      },
-    );
+    test('private harness admission excludes other packages and assets', () async {
+      for (final path in [
+        'packages/other/lib/runtime.dart',
+        'packages/llamadart_validation_extra/lib/runtime.dart',
+        'packages/llamadart_validation/assets/profiles.json',
+        'packages/llamadart_validation/assets/capability_coverage.json.backup',
+        'packages/llamadart_validation/lib/../assets/profiles.json',
+      ]) {
+        final evidence = evidenceFor(target);
+        (evidence['test_evidence'][target]['production_refs'] as List).addAll(
+          productionRefs(path),
+        );
+        final result = await evaluate(evidence);
+        expectFailure(result, ReadinessFailureClassification.schemaViolation);
+        expect(result.message, 'Invalid production reference.', reason: path);
+      }
+    });
 
     test(
       'private harness rejects deleted renamed-old and phantom tests',
@@ -3855,13 +3871,10 @@ final segment = '${Object()}ImageEditingRequest${Object()}';
 
     test('emitted keys and enum values match the canonical schema', () async {
       final output = (await evaluateStructured(structuredEvidence())).toJson();
-      final schema =
-          jsonDecode(
-                File(
-                  'tool/testing/high_risk_readiness_evidence.schema.json',
-                ).readAsStringSync(),
-              )
-              as Map<String, dynamic>;
+      final schema = jsonDecode(
+        File('tool/testing/high_risk_readiness_evidence.schema.json')
+            .readAsStringSync(),
+      ) as Map<String, dynamic>;
       expect(output.keys.toSet(), (schema['required'] as List).toSet());
       expect(output.keys.toSet(), (schema['properties'] as Map).keys.toSet());
 
