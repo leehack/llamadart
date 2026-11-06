@@ -66,6 +66,30 @@ def decode(body):
     return result
 
 
+def negative_denial_predicates(status, headers, raw):
+    body = None
+    try:
+        body = decode(raw)
+    except Failure as error:
+        # Only parser rejections are observations; cancellation must propagate.
+        if type(error) is not Failure or str(error) not in {
+                "response-too-large", "duplicate-json-key", "invalid-json", "invalid-json-object"}:
+            raise
+    remaining = headers.get("x-ratelimit-remaining")
+    return {
+        "statusIs403": status == 403,
+        "rateLimitRemainingPresent": "x-ratelimit-remaining" in headers,
+        "rateLimitRemainingCanonicalDecimal": isinstance(remaining, str)
+            and bool(re.fullmatch(r"0|[1-9][0-9]*", remaining)),
+        "rateLimitRemainingIsNotZero": remaining != "0",
+        "retryAfterAbsent": "retry-after" not in headers,
+        "acceptedPermissionsPresent": "x-accepted-github-permissions" in headers,
+        "acceptedPermissionsIsContentsWrite": headers.get("x-accepted-github-permissions") == "contents=write",
+        "bodyIsJsonObject": body is not None,
+        "messageIsIntegrationDenial": body is not None and body.get("message") == "Resource not accessible by integration",
+    }
+
+
 class NoRedirect(urllib.request.HTTPRedirectHandler):
     def redirect_request(self, req, fp, code, msg, headers, newurl):
         return None
@@ -368,10 +392,20 @@ class Probe:
                 self.created(negative, raw)
                 self.cleanup(negative, self.secret())
                 raise Failure("negative-unexpectedly-created")
-            require(status == 403 and headers.get("x-ratelimit-remaining") != "0"
-                    and "retry-after" not in headers
-                    and headers.get("x-accepted-github-permissions") == "contents=write"
-                    and decode(raw).get("message") == "Resource not accessible by integration", "negative-not-write-denial")
+            predicates = negative_denial_predicates(status, headers, raw)
+            try:
+                require(status == 403 and headers.get("x-ratelimit-remaining") != "0"
+                        and "retry-after" not in headers
+                        and headers.get("x-accepted-github-permissions") == "contents=write"
+                        and decode(raw).get("message") == "Resource not accessible by integration", "negative-not-write-denial")
+            except Exception:
+                try:
+                    self.journal.save("negative-denial.json", predicates)
+                except BaseException:
+                    # Keep the denial failure and still inspect the owned ref.
+                    pass
+                raise
+            self.journal.save("negative-denial.json", predicates)
             self.absent(negative)
         except BaseException:
             self.journal.save("negative-inspection.json", {"tag": negative, "observed": self.inspect(negative)})
