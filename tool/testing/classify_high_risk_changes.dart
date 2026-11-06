@@ -198,6 +198,7 @@ bool _isArtifactConsumer(String path) {
       path == 'packages/genkit_llamadart/.pubignore' ||
       path == 'pubspec.yaml' ||
       path == 'pubspec.lock' ||
+      path == 'ffigen.yaml' ||
       path.startsWith('hook/') ||
       path.startsWith('lib/src/hook/') ||
       path.startsWith('tool/native/') ||

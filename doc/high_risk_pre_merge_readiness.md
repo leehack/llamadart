@@ -120,6 +120,18 @@ snippet must occur in its exact candidate blob, like any source reference.
 This does not admit other harness assets or arbitrary package paths, or relax
 compiled-grammar, independent-audit or external-authentication requirements.
 
+The exact root `ffigen.yaml` is an artifact-consumer production reference,
+paired only with
+`test/unit/tooling/native_bindings_generator_policy_test.dart`. That test reads
+the actual YAML through the locked ffigen configuration and AST transformer;
+it does not invoke the native header-sync shell script. Its evidence must
+reference only `ffigen.yaml`, present at the exact head, with the real case,
+callsite, config snippet and observed causal control. Changed config coverage
+is required. A deleted or renamed-away config cannot use this pairing. Other
+root configs and policy files remain outside production-reference admission.
+This bounded pairing changes no audit, caller-binding or external-prerequisite
+requirements; the reviewer still verifies actual producer reachability.
+
 Changes to the following scripts may cite the Python suites CI runs
 directly, each only with its paired script in `production_refs` and a
 `command` that names the suite (path or dotted unittest module):
