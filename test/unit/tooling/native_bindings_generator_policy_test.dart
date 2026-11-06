@@ -73,7 +73,9 @@ final class _AstContext implements generator.Context {
     (structs['exclude'] as List<dynamic>).remove('_IO_FILE');
   }
   if (includeDependency != null) {
-    final category = includeDependency.startsWith('_IO_') && includeDependency != '_IO_lock_t'
+    final category =
+        includeDependency.startsWith('_IO_') &&
+            includeDependency != '_IO_lock_t'
         ? structs
         : config['typedefs'] as Map<String, dynamic>;
     (category['exclude'] as List<dynamic>).remove(includeDependency);
@@ -86,9 +88,21 @@ final class _AstContext implements generator.Context {
   );
   final context = _AstContext(yaml.configAdapter());
   final integer = cg.NativeType(cg.SupportedNativeType.int32);
-  final marker = cg.Struct(name: '_IO_marker', context: context, isIncomplete: true);
-  final codecvt = cg.Struct(name: '_IO_codecvt', context: context, isIncomplete: true);
-  final wideData = cg.Struct(name: '_IO_wide_data', context: context, isIncomplete: true);
+  final marker = cg.Struct(
+    name: '_IO_marker',
+    context: context,
+    isIncomplete: true,
+  );
+  final codecvt = cg.Struct(
+    name: '_IO_codecvt',
+    context: context,
+    isIncomplete: true,
+  );
+  final wideData = cg.Struct(
+    name: '_IO_wide_data',
+    context: context,
+    isIncomplete: true,
+  );
   final lock = cg.Typealias(name: '_IO_lock_t', type: cg.voidType);
   final offset = cg.Typealias(name: '__off_t', type: cg.longType);
   final offset64 = cg.Typealias(name: '__off64_t', type: cg.longType);
@@ -122,9 +136,7 @@ final class _AstContext implements generator.Context {
   final function = cg.Func(
     name: 'llama_synthetic_stream',
     returnType: cg.PointerType(fileAlias),
-    parameters: [
-      cg.Parameter(name: 'params', type: cg.PointerType(params)),
-    ],
+    parameters: [cg.Parameter(name: 'params', type: cg.PointerType(params))],
     loadFromNativeAsset: true,
   );
   final bindings = parser.transformBindings([function, params], context);
@@ -136,33 +148,56 @@ final class _AstContext implements generator.Context {
 }
 
 void main() {
-  test('repo policy keeps pointer-only libc FILE opaque and its alias usable', () {
-    final result = _transform();
-    expect(result.file.isOpaque, isTrue);
-    expect(result.output, contains('final class _IO_FILE extends ffi.Opaque'));
-    expect(result.output, contains('typedef FILE = _IO_FILE;'));
-    expect(result.output, contains('ffi.Pointer<FILE>'));
-    expect(result.output, isNot(contains('private_flags')));
-  });
+  test(
+    'repo policy keeps pointer-only libc FILE opaque and its alias usable',
+    () {
+      final result = _transform();
+      expect(result.file.isOpaque, isTrue);
+      expect(
+        result.output,
+        contains('final class _IO_FILE extends ffi.Opaque'),
+      );
+      expect(result.output, contains('typedef FILE = _IO_FILE;'));
+      expect(result.output, contains('ffi.Pointer<FILE>'));
+      expect(result.output, isNot(contains('private_flags')));
+    },
+  );
 
   test('unused libc closure is omitted and each exclusion is causal', () {
     const dependencies = [
-      '_IO_codecvt', '_IO_marker', '_IO_wide_data', '_IO_lock_t', '__off64_t', '__off_t',
+      '_IO_codecvt',
+      '_IO_marker',
+      '_IO_wide_data',
+      '_IO_lock_t',
+      '__off64_t',
+      '__off_t',
     ];
     final output = _transform().output;
     for (final name in dependencies) {
       expect(output, isNot(contains(name)), reason: name);
-      expect(_transform(includeDependency: name).output, contains(name), reason: name);
+      expect(
+        _transform(includeDependency: name).output,
+        contains(name),
+        reason: name,
+      );
     }
   });
 
-  test('directly included native structs retain fields even behind a pointer', () {
-    final result = _transform();
-    expect(result.params.isOpaque, isFalse);
-    expect(result.params.members.map((member) => member.name), ['token_count']);
-    expect(result.output, contains('external int token_count;'));
-    expect(result.output, contains('llama_synthetic_params extends ffi.Struct'));
-  });
+  test(
+    'directly included native structs retain fields even behind a pointer',
+    () {
+      final result = _transform();
+      expect(result.params.isOpaque, isFalse);
+      expect(result.params.members.map((member) => member.name), [
+        'token_count',
+      ]);
+      expect(result.output, contains('external int token_count;'));
+      expect(
+        result.output,
+        contains('llama_synthetic_params extends ffi.Struct'),
+      );
+    },
+  );
 
   test('full dependency policy reproduces the unwanted FILE definition', () {
     final result = _transform(fullDependencies: true);
@@ -171,11 +206,14 @@ void main() {
     expect(result.output, contains('external int private_flags;'));
   });
 
-  test('including FILE bypasses dependency-only opacity and exposes its fields', () {
-    final result = _transform(includeFile: true);
-    expect(result.file.isOpaque, isFalse);
-    expect(result.output, contains('external int private_flags;'));
-  });
+  test(
+    'including FILE bypasses dependency-only opacity and exposes its fields',
+    () {
+      final result = _transform(includeFile: true);
+      expect(result.file.isOpaque, isFalse);
+      expect(result.output, contains('external int private_flags;'));
+    },
+  );
 
   test('an excluded struct required by value keeps its complete layout', () {
     final result = _transform(fileByValue: true);
