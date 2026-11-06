@@ -254,8 +254,14 @@ bypass this route; a backend requiring structured chat input rejects the
 combination before generation. Nested object keys support quoted and
 backslashed names through parser-compatible literals. Existing generic auto fallback
 is separate. See [#1715](https://github.com/leehack/llamadart/issues/1715);
-length-truncated diagnostics are described below. Required-mode inner-quote
-truncation remains tracked by [#1609](https://github.com/leehack/llamadart/issues/1609).
+length-truncated diagnostics are described below.
+
+In LFM2/LFM2.5 JSON tool calls (`ToolChoice.required`, or a prompt carrying
+LFM2's `Force JSON schema.` marker), string arguments keep a double quote the
+model left unescaped when no closing quote could stand there, so
+`print(f"hi {name}")` arrives whole. A quote followed by `,`, `}` or `]`
+(except `}"`) still ends the string
+([#1609](https://github.com/leehack/llamadart/issues/1609)).
 
 When a backend reports a length cutoff inside an LFM tool envelope,
 `chunk.partialToolCalls` and the collected `reply.partialToolCalls` preserve

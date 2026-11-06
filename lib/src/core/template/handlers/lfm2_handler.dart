@@ -575,8 +575,19 @@ class Lfm2Handler extends ChatTemplateHandler
   }
 
   int? _toolCallEnd(String output, int from) {
+    var start = from;
+    final list = RegExp(r'\s*\[\s*\{').matchAsPrefix(output, from);
+    if (list != null) {
+      // JSON lists use the inner-quote reading of their grammar.
+      final end = ToolCallParsingUtils.innerQuoteJsonContainerEnd(
+        output,
+        output.indexOf('[', from),
+      );
+      if (end == null) return null;
+      start = end;
+    }
     int? quote;
-    for (var i = from; i < output.length; i++) {
+    for (var i = start; i < output.length; i++) {
       final codeUnit = output.codeUnitAt(i);
       if (quote != null) {
         if (codeUnit == 0x5c) {
@@ -605,6 +616,8 @@ class Lfm2Handler extends ChatTemplateHandler
     prefix: '<|tool_call_start|>',
     suffix: '<|tool_call_end|>',
     allowParallelToolCalls: parallelToolCalls,
+    // LFM2 models copy quotes into JSON strings without escaping them.
+    innerQuoteStrings: true,
   );
 
   List<LlamaCompletionChunkToolCall>? _parseCallList(
@@ -614,7 +627,8 @@ class Lfm2Handler extends ChatTemplateHandler
   }) {
     try {
       return ToolCallParsingUtils.parseToolCallArray(
-            ToolCallParsingUtils.decodeJsonValue(payload),
+            ToolCallParsingUtils.decodeJsonValue(payload) ??
+                ToolCallParsingUtils.decodeJsonValueWithInnerQuotes(payload),
             startIndex: startIndex,
             failOnInvalidItem: false,
             assignFallbackIds: true,

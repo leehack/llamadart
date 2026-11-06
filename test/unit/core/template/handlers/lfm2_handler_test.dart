@@ -12,6 +12,8 @@ import 'package:llamadart/src/core/template/handlers/lfm2_handler.dart';
 import 'package:llamadart/src/core/template/template_internal_metadata.dart';
 import 'package:test/test.dart';
 
+import '../../../../support/gbnf_recognizer.dart';
+
 void main() {
   group('schema-directed Python calls', () {
     ToolDefinition tool(List<ToolParam> parameters) => ToolDefinition(
@@ -316,6 +318,75 @@ void main() {
         isNot(contains('diagnostic-envelope')),
       );
       expect(render([search], toolChoice: ToolChoice.none).grammar, isNull);
+    });
+
+    test('string arguments keep raw quotes no closing quote could precede', () {
+      final grammar = GbnfRecognizer(render([search]).grammar!);
+      String call(String query) =>
+          '<|tool_call_start|>[{"name": "search", "arguments": '
+          '{"query": "$query"}}]<|tool_call_end|>';
+      for (final (raw, value) in [
+        ('print(f"hi {name}")', 'print(f"hi {name}")'),
+        ('{"a": 1, "b": "two"}', '{"a": 1, "b": "two"}'),
+        ('She said "hi"', 'She said "hi"'),
+        (r'C:\\Users\\me', r'C:\Users\me'),
+        (r'say \"hi\"', 'say "hi"'),
+      ]) {
+        final output = call(raw);
+        expect(grammar.accepts(output), isTrue, reason: output);
+        for (final parsed in [
+          Lfm2Handler().parse(output),
+          Lfm2Handler().parseWithTools(output, tools: [search]),
+        ]) {
+          expect(parsed.content, isEmpty, reason: output);
+          expect(jsonDecode(parsed.toolCalls.single.function!.arguments!), {
+            'query': value,
+          }, reason: output);
+        }
+      }
+      // A miscounted closer still ends the string, so the grammar corrects it.
+      expect(grammar.accepts(call('a"}]] b')), isFalse);
+      expect(grammar.accepts(call('a", "b')), isFalse);
+    });
+
+    test('an odd raw quote parses once the call is complete', () {
+      const call =
+          '<|tool_call_start|>[{"name": "search", "arguments": '
+          '{"query": "it"s"}}]';
+      const output = '$call<|tool_call_end|>';
+      expect(GbnfRecognizer(render([search]).grammar!).accepts(output), isTrue);
+      expect(Lfm2Handler().parse(call, isPartial: true).toolCalls, isEmpty);
+      for (final partial in [true, false]) {
+        expect(
+          jsonDecode(
+            Lfm2Handler()
+                .parse(output, isPartial: partial)
+                .toolCalls
+                .single
+                .function!
+                .arguments!,
+          ),
+          {'query': 'it"s'},
+        );
+      }
+    });
+
+    test('an end marker inside a raw-quoted string is argument text', () {
+      const call =
+          '<|tool_call_start|>[{"name": "search", "arguments": '
+          '{"query": "f("x)}}]<|tool_call_end|> it"s."}}]';
+      const output = '$call<|tool_call_end|>';
+      expect(GbnfRecognizer(render([search]).grammar!).accepts(output), isTrue);
+      expect(Lfm2Handler().parse(call, isPartial: true).toolCalls, isEmpty);
+      for (final parsed in [
+        Lfm2Handler().parse(output),
+        Lfm2Handler().parse(output, isPartial: true),
+      ]) {
+        expect(parsed.content, isEmpty);
+        expect(jsonDecode(parsed.toolCalls.single.function!.arguments!), {
+          'query': 'f("x)}}]<|tool_call_end|> it"s.',
+        });
+      }
     });
 
     test('buildGrammar is the single-call list', () {
