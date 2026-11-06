@@ -52,6 +52,8 @@ const Map<String, String> _notMarkdownReaders = {
       'Only reads the JSON CPU profile and renders dry-run plans; it does not execute validation or read Markdown.',
   'test/unit/tooling/macos_litert_lm_prepare_app_script_test.dart':
       'Reads the installation docs only on macOS; this job runs on Linux.',
+  'test/unit/tooling/native_default_consumer_qualification_workflow_test.dart':
+      'Names the qualification driver in argv assertions; runs only path-initializer and preflight fakes, not its tracked-source export.',
   'test/unit/tooling/run_local_e2e_test.dart': _validationTooling,
   'test/unit/tooling/validation_android_java_home_test.dart':
       _validationTooling,
