@@ -180,18 +180,19 @@ void main() {
       }
       expect(jobEnv.containsKey('LLAMADART_DEFAULT_AOT_MODEL_PATH'), isFalse);
       expect(jobEnv.containsKey('LLAMADART_DEFAULT_AOT_OUTPUT_ROOT'), isFalse);
-      final binding = step('paths');
+      final ordered = steps();
+      final ids = ordered.map((item) => item['id']).toList();
+      final pathsIndex = ids.indexOf('paths');
+      final inputsIndex = ids.indexOf('inputs');
+      final qualificationIndex = ids.indexOf('qualification');
+      for (final index in [pathsIndex, inputsIndex, qualificationIndex]) {
+        expect(index, greaterThanOrEqualTo(0));
+      }
+      expect(pathsIndex, lessThan(inputsIndex));
+      expect(pathsIndex, lessThan(qualificationIndex));
+      final binding = ordered[pathsIndex];
       expect(binding['shell'], 'python');
       expect(binding['if'], isNull);
-      final ordered = steps();
-      expect(
-        ordered.indexOf(binding),
-        lessThan(ordered.indexOf(step('inputs'))),
-      );
-      expect(
-        ordered.indexOf(binding),
-        lessThan(ordered.indexOf(step('qualification'))),
-      );
       final root = Directory.systemTemp.createTempSync('runner path context ');
       addTearDown(() => root.deleteSync(recursive: true));
       for (final attempt in ['1', '2']) {
