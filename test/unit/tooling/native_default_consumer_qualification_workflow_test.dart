@@ -161,11 +161,19 @@ void main() {
     () async {
       final jobEnv = qualification()['env'] as YamlMap;
       const allowedJobContexts = {
-        'github', 'inputs', 'matrix', 'needs', 'secrets', 'strategy', 'vars',
+        'github',
+        'inputs',
+        'matrix',
+        'needs',
+        'secrets',
+        'strategy',
+        'vars',
       };
       for (final value in jobEnv.values.whereType<String>()) {
         for (final expression in RegExp(r'\$\{\{(.*?)\}\}').allMatches(value)) {
-          for (final context in RegExp(r'([A-Za-z_][A-Za-z0-9_]*)\.').allMatches(expression[1]!)) {
+          for (final context in RegExp(
+            r'([A-Za-z_][A-Za-z0-9_]*)\.',
+          ).allMatches(expression[1]!)) {
             expect(allowedJobContexts, contains(context[1]));
           }
         }
@@ -176,8 +184,14 @@ void main() {
       expect(binding['shell'], 'python');
       expect(binding['if'], isNull);
       final ordered = steps();
-      expect(ordered.indexOf(binding), lessThan(ordered.indexOf(step('inputs'))));
-      expect(ordered.indexOf(binding), lessThan(ordered.indexOf(step('qualification'))));
+      expect(
+        ordered.indexOf(binding),
+        lessThan(ordered.indexOf(step('inputs'))),
+      );
+      expect(
+        ordered.indexOf(binding),
+        lessThan(ordered.indexOf(step('qualification'))),
+      );
       final root = Directory.systemTemp.createTempSync('runner path context ');
       addTearDown(() => root.deleteSync(recursive: true));
       for (final attempt in ['1', '2']) {
@@ -192,16 +206,27 @@ void main() {
             'GITHUB_ENV': environmentFile.path,
           },
         );
-        expect(result.exitCode, 0, reason: '${result.stdout}\n${result.stderr}');
-        final owned = Directory('${root.path}/native-default-aot-123456-$attempt');
+        expect(
+          result.exitCode,
+          0,
+          reason: '${result.stdout}\n${result.stderr}',
+        );
+        final owned = Directory(
+          '${root.path}/native-default-aot-123456-$attempt',
+        );
         final values = {
           for (final line in environmentFile.readAsLinesSync())
-            line.substring(0, line.indexOf('=')): line.substring(line.indexOf('=') + 1),
+            line.substring(0, line.indexOf('=')): line.substring(
+              line.indexOf('=') + 1,
+            ),
         };
-        expect(values.keys, unorderedEquals([
-          'LLAMADART_DEFAULT_AOT_MODEL_PATH',
-          'LLAMADART_DEFAULT_AOT_OUTPUT_ROOT',
-        ]));
+        expect(
+          values.keys,
+          unorderedEquals([
+            'LLAMADART_DEFAULT_AOT_MODEL_PATH',
+            'LLAMADART_DEFAULT_AOT_OUTPUT_ROOT',
+          ]),
+        );
         expect(
           File(values['LLAMADART_DEFAULT_AOT_MODEL_PATH']!).uri,
           File('${owned.path}/qwen2.5-1.5b-instruct-q4_k_m.gguf').uri,
