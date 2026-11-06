@@ -147,6 +147,7 @@ Pick targeted rows based on the touched surface:
 | Shared model store package or its guide | `model-store-contracts` |
 | Native sync tooling under `tool/native/`, `lib/src/hook/native_release_pins.dart`, `sync_native_bindings.yml`, an Apple companion `Package.swift`, or a runtime pin constant | `native-sync-python-suites`, `native-release-digests` |
 | Native-assets hook, runtime pin, bundle layout | `native-hook-bundles`, `litert-lm-engine-smoke`, and relevant `platform` rows such as `android-arm64-device-smoke` |
+| Ordinary default llama.cpp consumer and distributed AOT | `native-default-consumer-aot` (explicit local/manual macOS arm64 and Windows x64; native2 pipeline-only, exact native3 qualification separately accepted) |
 | Windows llama.cpp registry or native-module override loading | `root-vm`, including `test/integration/windows_ggml_registry_test.dart`; fresh-process Windows model/context load with normal assets and the #1649 override matrix below |
 | llama.cpp / GGUF generation, prompt reuse, context reuse | `native-prompt-reuse-parity`, `native-inference-benchmark`, `gguf-chat-features-smoke`, `native-prompt-cancel` |
 | Generation cancel or engine stream forwarding | `native-prompt-cancel`, plus `web-speech-task-cancel` for browser speech task isolation |
@@ -1232,6 +1233,53 @@ identity. Observe modules after the unmodified production outcome; registry
 getters can initialize state. Run normal published-assets JIT and a compiled
 `dart build cli` bundle outside the checkout as controls. Unit probes and a
 model-free DLL test do not replace these Windows model checks.
+
+## Default native consumer and distributed AOT
+
+`native-default-consumer-aot` exercises the ordinary checkout consumer, default
+native hooks and distributed AOT on macOS arm64 and Windows x64. It is heavy and
+runs only through explicit local execution or the dedicated
+[`native_default_consumer_qualification.yml`](../.github/workflows/native_default_consumer_qualification.yml)
+manual workflow. Default CI runs only model-free fixture controls and source/dispatcher/YAML
+contracts; it does not fetch the model or execute inference/AOT. The maintained
+Dart wrapper discovers `test_*.py` under
+`test/fixtures/native_default_consumer_qualification` with bytecode writes
+disabled; its synthetic controls require no SDK, native runtime or model.
+
+Inspect first, without executing the driver or reading a model:
+
+```sh
+dart run tool/testing/run_local_e2e.dart --list
+dart run tool/testing/run_local_e2e.dart --scenario native-default-consumer-aot --dry-run
+```
+
+The outer dry-run prints the command with placeholders when inputs are absent;
+it produces no qualification result. Before real local execution set all four:
+
+- `LLAMADART_DEFAULT_AOT_EXPECTED_SHA`: reviewed full lowercase checkout commit.
+- `LLAMADART_DEFAULT_AOT_EXPECTED_NATIVE_TAG`: `v0.8.0-2` or `v0.8.0-3`, which must
+  match the source pin. This verifies identity and never overrides the pin.
+- `LLAMADART_DEFAULT_AOT_MODEL_PATH`: the admitted local Qwen2.5-1.5B Instruct
+  Q4_K_M fixture; local execution downloads nothing through the dispatcher.
+- `LLAMADART_DEFAULT_AOT_OUTPUT_ROOT`: a fresh owned evidence directory.
+
+Then remove `--dry-run` to invoke the maintained driver. The manual workflow
+accepts a reviewed unmerged branch, requires its exact SHA, and checks both the
+source pin and actual host architecture. Its fixed model revision is
+`91cad51170dc346986eccefdc2dd33a9da36ead9`, 1,117,320,736 bytes, SHA-256
+`6a1a2eb6d15622bf3c96857206351ba97e1af16c30d7a74ee38970e434e9407e`.
+It downloads once with streaming size/digest verification, offers no URL input,
+and retains per-platform/SHA/run/attempt artifacts for seven days, including
+failures. Transport errors never print redirect locations or signed URLs.
+
+Native `v0.8.0-2` is **pipeline baseline only**; it provides no native3 acceptance.
+Native3 acceptance remains [#1762](https://github.com/leehack/llamadart/issues/1762).
+It requires its own source/artifact/provenance gates, actual provider
+identity, model inference and distributed AOT results, plus independent
+acceptance. A `--help`, list, build or source-check pass supplies no inference or
+AOT evidence. Historical Windows 16-case evidence belongs to native
+`v0.8.0-1`; it does not qualify native2 or native3. No GPU/device-family or core
+publication claim follows from this bounded consumer campaign.
 
 ## Windows registry qualification
 

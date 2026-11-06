@@ -310,6 +310,37 @@ const List<String> _referenceEditComponentVariables = [
 List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
   return [
     LocalE2eScenario(
+      name: 'native-default-consumer-aot',
+      group: LocalE2eScenarioGroup.dartLocalOnly,
+      description:
+          'Explicit macOS/Windows default-hook consumer and distributed AOT qualification; native v0.8.0-2 is pipeline-only.',
+      requiresDevice: false,
+      stepsBuilder: (context) => [
+        LocalE2eCommandStep(
+          workingDirectory: context.projectRoot,
+          executable: context.python,
+          arguments: [
+            'test/fixtures/native_default_consumer_qualification/qualify.py',
+            '--core-root', context.projectRoot,
+            '--expected-core-sha',
+            context.environment['LLAMADART_DEFAULT_AOT_EXPECTED_SHA'] ??
+                '<LLAMADART_DEFAULT_AOT_EXPECTED_SHA>',
+            '--expected-native-tag',
+            context.environment['LLAMADART_DEFAULT_AOT_EXPECTED_NATIVE_TAG'] ??
+                '<LLAMADART_DEFAULT_AOT_EXPECTED_NATIVE_TAG>',
+            '--model',
+            context.environment['LLAMADART_DEFAULT_AOT_MODEL_PATH'] ??
+                '<LLAMADART_DEFAULT_AOT_MODEL_PATH>',
+            '--output',
+            context.environment['LLAMADART_DEFAULT_AOT_OUTPUT_ROOT'] ??
+                '<LLAMADART_DEFAULT_AOT_OUTPUT_ROOT>',
+          ],
+          description:
+              'Run the maintained real consumer/provider/AOT driver; expected tag verifies the source pin and never overrides it.',
+        ),
+      ],
+    ),
+    LocalE2eScenario(
       name: 'windows-native-override-registry',
       group: LocalE2eScenarioGroup.dartLocalOnly,
       description:
@@ -2725,6 +2756,27 @@ Future<LocalE2eResult> runLocalE2e(
       stderr:
           'Unknown local E2E scenario: $scenarioName\nUse --list to inspect scenarios.\n',
     );
+  }
+  if (scenario.name == 'native-default-consumer-aot' && !parsed.dryRun) {
+    final env = environment ?? Platform.environment;
+    final sha = env['LLAMADART_DEFAULT_AOT_EXPECTED_SHA'] ?? '';
+    final tag = env['LLAMADART_DEFAULT_AOT_EXPECTED_NATIVE_TAG'];
+    if (sha.length != 40 || !RegExp(r'^[0-9a-f]{40}$').hasMatch(sha) ||
+        sha == '0000000000000000000000000000000000000000' ||
+        !const {'v0.8.0-2', 'v0.8.0-3'}.contains(tag) ||
+        (env['LLAMADART_DEFAULT_AOT_MODEL_PATH'] ?? '').trim().isEmpty ||
+        (env['LLAMADART_DEFAULT_AOT_OUTPUT_ROOT'] ?? '').trim().isEmpty) {
+      return const LocalE2eResult(
+        64,
+        stderr:
+            'native-default-consumer-aot requires '
+            'LLAMADART_DEFAULT_AOT_EXPECTED_SHA (full lowercase commit), '
+            'LLAMADART_DEFAULT_AOT_EXPECTED_NATIVE_TAG (v0.8.0-2 or v0.8.0-3), '
+            'LLAMADART_DEFAULT_AOT_MODEL_PATH and '
+            'LLAMADART_DEFAULT_AOT_OUTPUT_ROOT (fresh output). '
+            'Expected tag is verification only; native2 is pipeline-only.\n',
+      );
+    }
   }
   if (scenario.name == 'litert-lm-web-text-history' &&
       !const ['cpu', 'gpu'].contains(parsed.backend)) {

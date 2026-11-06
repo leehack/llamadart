@@ -15,6 +15,12 @@ scripts/verify_chat_app_web_deployment.sh @leehack
 /tool/release/nonpublishing_auth_probe.py @leehack
 /test/ci/test_nonpublishing_auth_probe.py @leehack
 /test/unit/tooling/nonpublishing_auth_probe_workflow_test.dart @leehack
+/.github/workflows/native_default_consumer_qualification.yml @leehack
+/test/fixtures/native_default_consumer_qualification/ @leehack
+/test/unit/tooling/native_default_consumer_qualification_workflow_test.dart @leehack
+/test/unit/tooling/native_default_consumer_qualification_test.dart @leehack
+/test/unit/tooling/run_local_e2e_test.dart @leehack
+/test/unit/tooling/test_matrix_test.dart @leehack
 pubspec.yaml @leehack
 CHANGELOG.md @leehack
 /.gitattributes @leehack
