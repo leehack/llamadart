@@ -2004,9 +2004,9 @@ class HighRiskReadinessEvaluator {
 
   static bool _isGitHubLogin(Object? value) =>
       value is String &&
-      RegExp(r'^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$').hasMatch(value) &&
-      !value.endsWith('-') &&
-      !value.contains('--');
+      RegExp(
+        r'^(?!.*--)[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?(?:\[bot\])?(?![\s\S])',
+      ).hasMatch(value);
 
   static bool _isIdentifier(Object? value) =>
       value is String &&

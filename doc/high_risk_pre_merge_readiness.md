@@ -489,6 +489,17 @@ The binding values must come from an independent source such as a read-only
 GitHub API query. Repeating values copied from the evidence file checks
 consistency but does not create trust.
 
+For `--pr-author` and `pr_author`, preserve the canonical REST PR `user.login`
+(with `user.type` distinguishing a Bot from a User). Both ordinary valid logins
+and a valid login prefix followed by the exact `[bot]` suffix are accepted.
+For example, `github-actions[bot]` is distinct from the human login
+`github-actions`. A CLI or GraphQL alias such as `app/github-actions` must be
+resolved through authoritative REST metadata; never strip `app/`, append a
+suffix, or otherwise guess the login. Author comparison remains case-insensitive,
+and emitted evidence preserves the independently supplied spelling. This syntax
+check adds no authentication or auditor authority; self-approval checks and the
+local `unverifiedPrerequisites`/exit 2 boundary are unchanged.
+
 Exit codes:
 
 | Code | Meaning |

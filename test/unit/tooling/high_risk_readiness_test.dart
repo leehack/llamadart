@@ -2510,6 +2510,168 @@ final segment = '${Object()}ImageEditingRequest${Object()}';
     );
   });
 
+  group('canonical PR author identities', () {
+    PullRequestContext authorContext(String author) => PullRequestContext(
+      repository: context.repository,
+      prNumber: context.prNumber,
+      headSha: context.headSha,
+      baseSha: context.baseSha,
+      author: author,
+    );
+
+    RegExp authorPattern() {
+      final schema =
+          jsonDecode(
+                File(
+                  'tool/testing/high_risk_readiness_evidence.schema.json',
+                ).readAsStringSync(),
+              )
+              as Map<String, dynamic>;
+      return RegExp(schema['properties']['pr_author']['pattern'] as String);
+    }
+
+    test(
+      'canonical human and bot authors agree with schema and emitted identity',
+      () async {
+        final pattern = authorPattern();
+        for (final author in [
+          'leehack',
+          'github-actions',
+          'github-actions[bot]',
+          'dependabot[bot]',
+          'a',
+          'a[bot]',
+          List.filled(39, 'a').join(),
+          '${List.filled(39, 'a').join()}[bot]',
+        ]) {
+          expect(pattern.hasMatch(author), isTrue, reason: author);
+          final evidence = backendEvidence()..['pr_author'] = author;
+          final result = await evaluatorFor(
+            backendChanges,
+          ).evaluate(evidence: evidence, context: authorContext(author));
+          expect(
+            result.decision,
+            ReadinessDecision.unverifiedPrerequisites,
+            reason: author,
+          );
+          expect(result.isReady, isFalse);
+          expectEmittedIdentity(
+            result,
+            repository: context.repository,
+            prNumber: context.prNumber,
+            headSha: headSha,
+            baseSha: baseSha,
+            author: author,
+          );
+        }
+      },
+    );
+
+    test(
+      'canonical bot matching preserves context spelling without alias conversion',
+      () async {
+        final evidence = backendEvidence()
+          ..['pr_author'] = 'GITHUB-ACTIONS[bot]';
+        final result = await evaluatorFor(backendChanges).evaluate(
+          evidence: evidence,
+          context: authorContext('GitHub-Actions[bot]'),
+        );
+        expect(result.decision, ReadinessDecision.unverifiedPrerequisites);
+        expect(result.toJson()['pr_author'], 'GitHub-Actions[bot]');
+        for (final pair in [
+          ('github-actions', 'github-actions[bot]'),
+          ('github-actions[bot]', 'github-actions'),
+        ]) {
+          final mismatch = backendEvidence()..['pr_author'] = pair.$1;
+          final rejected = await evaluatorFor(
+            backendChanges,
+          ).evaluate(evidence: mismatch, context: authorContext(pair.$2));
+          expectFailure(
+            rejected,
+            ReadinessFailureClassification.authorMismatch,
+          );
+          expect(rejected.toJson()['pr_author'], pair.$2);
+        }
+      },
+    );
+
+    test(
+      'aliases and malformed bot logins fail schema and context before Git',
+      () async {
+        final pattern = authorPattern();
+        for (final author in [
+          '',
+          'app/github-actions',
+          'app/github-actions[bot]',
+          '../github-actions',
+          '[bot]',
+          '-bot[bot]',
+          'bot-[bot]',
+          'bad--bot[bot]',
+          'github-actions[BOT]',
+          'github-actions[Bot]',
+          'github-actions[bot]extra',
+          'github-actions[bot][bot]',
+          'github-actions[bot]/main',
+          'github-actions [bot]',
+          ' github-actions[bot]',
+          'github-actions[bot] ',
+          'github-actions[bot]\n',
+          'github_actions[bot]',
+          List.filled(40, 'a').join(),
+          '${List.filled(40, 'a').join()}[bot]',
+        ]) {
+          expect(pattern.hasMatch(author), isFalse, reason: author);
+          final repository = FakeRepositoryState(changes: backendChanges);
+          final invalidContext =
+              await HighRiskReadinessEvaluator(
+                repositoryState: repository,
+              ).evaluate(
+                evidence: backendEvidence(),
+                context: authorContext(author),
+              );
+          expectFailure(
+            invalidContext,
+            ReadinessFailureClassification.invalidInput,
+          );
+          expect(repository.repositoryCallCount, 0);
+          expect(invalidContext.toJson()['pr_author'], 'invalid-author');
+          final invalidEvidence = backendEvidence()..['pr_author'] = author;
+          expectFailure(
+            await evaluatorFor(
+              backendChanges,
+            ).evaluate(evidence: invalidEvidence, context: context),
+            ReadinessFailureClassification.schemaViolation,
+          );
+        }
+      },
+    );
+
+    test(
+      'canonical author support preserves human and bot self-approval refusal',
+      () async {
+        final human = backendEvidence()..['pr_author'] = 'github-actions';
+        human['independent_audit']['auditor_identity'] = 'GITHUB-ACTIONS';
+        expectFailure(
+          await evaluatorFor(
+            backendChanges,
+          ).evaluate(evidence: human, context: authorContext('github-actions')),
+          ReadinessFailureClassification.selfApprovalProhibited,
+        );
+        final bot = backendEvidence()..['pr_author'] = 'github-actions[bot]';
+        bot['independent_audit']['auditor_identity'] = 'github-actions[bot]';
+        // Author admission does not widen the independent auditor identifier.
+        expectFailure(
+          await evaluatorFor(backendChanges).evaluate(
+            evidence: bot,
+            context: authorContext('github-actions[bot]'),
+          ),
+          ReadinessFailureClassification.schemaViolation,
+        );
+      },
+    );
+  });
+
   group('audit and matrix invariants', () {
     test('valid local evidence is never operationally ready', () async {
       final result = await evaluateStructured(structuredEvidence());
@@ -3539,7 +3701,7 @@ final segment = '${Object()}ImageEditingRequest${Object()}';
         0,
         reason: '${compiled.stdout}\n${compiled.stderr}',
       );
-      Future<ProcessResult> run(String name) {
+      Future<ProcessResult> run(String name, {String? author}) {
         evidenceFile.writeAsStringSync(jsonEncode(evidence));
         return stage(
           name,
@@ -3556,7 +3718,7 @@ final segment = '${Object()}ImageEditingRequest${Object()}';
             '--base-sha',
             base,
             '--pr-author',
-            context.author,
+            author ?? context.author,
           ],
           const Duration(seconds: 15),
           workingDirectory: repo.path,
@@ -3574,6 +3736,16 @@ final segment = '${Object()}ImageEditingRequest${Object()}';
       );
       final output = jsonDecode(accepted.stdout as String) as Map;
       expect(output['evaluation']['decision'], 'unverifiedPrerequisites');
+      evidence['pr_author'] = 'github-actions[bot]';
+      final bot = await run(
+        'canonical bot author',
+        author: 'github-actions[bot]',
+      );
+      expect(bot.exitCode, 2, reason: '${bot.stdout}\n${bot.stderr}');
+      final botOutput = jsonDecode(bot.stdout as String) as Map;
+      expect(botOutput['pr_author'], 'github-actions[bot]');
+      expect(botOutput['evaluation']['decision'], 'unverifiedPrerequisites');
+      evidence['pr_author'] = context.author;
       final refs = evidence['test_evidence'][target]['production_refs'] as List;
       refs.last['snippet'] = '"schema_version": 2';
       final rejected = await run('forged snippet');
