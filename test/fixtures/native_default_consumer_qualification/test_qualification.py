@@ -226,6 +226,113 @@ class QualificationControls(unittest.TestCase):
         self.assertTrue(json.loads(stdout.getvalue())['dryRun'])
         self.assertFalse((self.root / 'out').exists())
 
+    def run_synthetic_driver(self, failure=None):
+        core = self.root / 'core'; core.mkdir()
+        fixture_dir = core / 'test/fixtures/native_default_consumer_qualification'
+        fixture_dir.mkdir(parents=True)
+        for name in ('consumer.dart', 'providers.dart', 'passive_modules.dart'):
+            (fixture_dir / name).write_text((qualify.FIXTURE / name).read_text())
+        pin = core / 'lib/src/hook/native_release_pins.dart'; pin.parent.mkdir(parents=True)
+        pin.write_text((qualify.FIXTURE.parents[2] / 'lib/src/hook/native_release_pins.dart').read_text())
+        (core / '.flutter-version').write_text('3.47.1\n')
+        files = [p.relative_to(core).as_posix() for p in core.rglob('*') if p.is_file()]
+        sdk = self.root / 'synthetic-sdk'; (sdk / 'bin/cache').mkdir(parents=True)
+        (sdk / 'bin/cache/flutter.version.json').write_text(json.dumps({
+            'frameworkVersion': '3.47.1', 'dartSdkVersion': '3.13.1'}))
+        model = self.root / 'synthetic-model'; model.write_bytes(b'synthetic-not-a-model')
+        output = self.root / 'out'
+        args = argparse.Namespace(core_root=str(core), expected_core_sha='a' * 40,
+            expected_native_tag='v0.8.0-2', model=str(model), output=str(output), dry_run=False)
+        calls = []
+        def fake_git(root, *arguments):
+            if arguments[0] == 'rev-parse': return b'a' * 40 + b'\n'
+            if arguments[0] == 'status': return b''
+            if arguments[0] == 'ls-files': return b'\0'.join(name.encode() for name in files) + b'\0'
+            raise AssertionError(arguments)
+        def libraries(directory):
+            directory.mkdir(parents=True, exist_ok=True)
+            for name in ('libllamadart.dylib', 'libllama.dylib', 'libggml.dylib'):
+                (directory / name).write_bytes(fixture())
+        def fake_command(argv, *, cwd, env, timeout, log):
+            calls.append([str(value) for value in argv])
+            stage = Path(log).name
+            stdout = ''
+            if stage == 'dart-version': stdout = 'Dart SDK version: 3.13.1 (stable)'
+            if stage == 'jit':
+                libraries(output / 'jit-provider')
+                stdout = observations(output / 'jit-provider')
+            if stage == 'build':
+                bundle = Path(cwd) / 'build/default/bundle'
+                (bundle / 'bin').mkdir(parents=True)
+                (bundle / 'bin/consumer').write_bytes(b'not-an-executable')
+                libraries(bundle / 'lib')
+                (bundle / '.hidden/nested').mkdir(parents=True)
+                (bundle / '.hidden/nested/sidecar').write_bytes(b'required hidden sidecar')
+                (bundle.parent / 'parent-only').write_bytes(b'do not copy')
+            if stage == 'aot':
+                self.assertEqual({}, v.inventory(cwd))
+                self.assertNotIn('synthetic-sdk', env['PATH'])
+                self.assertTrue((output / 'distributed/.hidden/nested/sidecar').is_file())
+                self.assertFalse((output / 'distributed/parent-only').exists())
+                stdout = observations(output / 'distributed/lib')
+                if failure == 'cwd': (Path(cwd) / 'write').write_text('forbidden')
+                if failure == 'bundle': (output / 'distributed/bin/consumer').write_bytes(b'changed')
+                if failure == 'result': stdout = stdout.replace('"accepted": 5', '"accepted": 0')
+                if failure == 'source': pin.write_text(pin.read_text() + '\nchanged')
+            Path(str(log) + '.stdout.log').write_text(stdout)
+            Path(str(log) + '.stderr.log').write_text('')
+            Path(str(log) + '.command.json').write_text(json.dumps({'synthetic': True, 'cleanupComplete': True}))
+            return stdout
+        members = {name: {'bytes': fixture(), 'archive': 'synthetic', 'member': 'lib/' + name}
+                   for name in ('libllamadart.dylib', 'libllama.dylib', 'libggml.dylib')}
+        with (patch.dict(os.environ, {}, clear=True), patch.object(qualify, 'FIXTURE', fixture_dir),
+              patch.object(qualify, 'git', side_effect=fake_git),
+              patch.object(qualify, 'sdk_paths', return_value=(sdk, sdk / 'flutter', sdk / 'dart')),
+              patch.object(qualify, 'command', side_effect=fake_command),
+              patch.object(qualify.platform, 'system', return_value='Darwin'),
+              patch.object(qualify.platform, 'machine', return_value='arm64'),
+              patch.object(v, 'MODEL_BYTES', model.stat().st_size),
+              patch.object(v, 'MODEL_SHA256', v.sha256(model)),
+              patch.object(v, 'archive_members', return_value=({'synthetic': True}, members))):
+            if failure:
+                with self.assertRaises(v.Refusal): qualify.qualify(args)
+            else:
+                qualify.qualify(args)
+        return json.loads((output / 'terminal.json').read_text()), calls, output
+
+    def test_synthetic_driver_builds_real_bundle_callsite_and_seals_pipeline_scope(self):
+        terminal, calls, output = self.run_synthetic_driver()
+        self.assertTrue(terminal['completed'])
+        self.assertFalse(terminal['finalNative3Qualified'])
+        build = next(call for call in calls if 'build' in call)
+        self.assertEqual(['build', 'cli', '-o', 'build/default', '-t', 'consumer.dart'], build[1:])
+        self.assertIn('distributed/bin/consumer', calls[-1][0])
+        self.assertTrue((output / 'source-after.json').is_file())
+        manifest = json.loads((output / 'manifest.json').read_text())
+        self.assertEqual(v.sha256(output / 'terminal.json'), manifest['terminalSha256'])
+        self.assertTrue(v.verify_seal(output)['completed'])
+        (output / 'logs/aot.stdout.log').write_text('tampered after seal')
+        with self.assertRaisesRegex(v.Refusal, 'sealed evidence'):
+            v.verify_seal(output)
+
+    def test_synthetic_driver_refuses_written_cwd(self):
+        terminal, _, _ = self.run_synthetic_driver('cwd')
+        self.assertFalse(terminal['completed'])
+
+    def test_synthetic_driver_refuses_changed_whole_bundle(self):
+        terminal, _, _ = self.run_synthetic_driver('bundle')
+        self.assertFalse(terminal['completed'])
+
+    def test_synthetic_driver_refuses_zero_activity(self):
+        terminal, _, _ = self.run_synthetic_driver('result')
+        self.assertFalse(terminal['completed'])
+
+    def test_synthetic_driver_retains_changed_source_failure_inventory(self):
+        terminal, _, output = self.run_synthetic_driver('source')
+        self.assertFalse(terminal['completed'])
+        self.assertIn('inventoryFailures', terminal)
+        self.assertTrue((output / 'source-after.json').is_file())
+
     def test_synthetic_python_child_timeout_is_reaped_and_receipted(self):
         with self.assertRaises(subprocess.TimeoutExpired):
             qualify.command([sys.executable, '-c', 'import time; time.sleep(30)'], cwd=self.root,
@@ -233,6 +340,18 @@ class QualificationControls(unittest.TestCase):
         receipt = json.loads((self.root / 'timeout.command.json').read_text())
         self.assertTrue(receipt['cleanupComplete'])
         self.assertNotIn('exitCode', receipt)
+
+    def test_synthetic_python_descendant_is_stopped_when_leader_exits(self):
+        marker = self.root / 'orphan-wrote'
+        code = "import time,pathlib; time.sleep(.3); pathlib.Path(" + repr(str(marker)) + ").write_text('leaked')"
+        parent = "import subprocess,sys; subprocess.Popen([sys.executable,'-c'," + repr(code) + "])"
+        qualify.command([sys.executable, '-c', parent], cwd=self.root,
+            env=dict(os.environ), timeout=5, log=self.root / 'tree')
+        # A synthetic Python-only delay lets the refused writer's deadline pass.
+        import time
+        time.sleep(.4)
+        self.assertFalse(marker.exists())
+        self.assertTrue(json.loads((self.root / 'tree.command.json').read_text())['cleanupComplete'])
 
     def test_synthetic_python_child_failure_still_has_cleanup_receipt(self):
         with self.assertRaises(v.Refusal):

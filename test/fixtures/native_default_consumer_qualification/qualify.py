@@ -18,6 +18,8 @@ import subprocess
 import sys
 import time
 
+sys.dont_write_bytecode = True
+
 import verify as v
 from owned_process import WindowsJob
 
@@ -47,9 +49,14 @@ def command(argv, *, cwd, env, timeout, log):
                 receipt['exitCode'] = process.wait(timeout=timeout)
             finally:
                 # Reap descendants even if the leader exited but left children.
+                cleanup_error = None
                 if job is not None:
-                    job.close()
-                    job = None
+                    try:
+                        job.close()
+                    except OSError as error:
+                        cleanup_error = error
+                    finally:
+                        job = None
                 else:
                     try:
                         os.killpg(process.pid, signal.SIGKILL)
@@ -58,7 +65,9 @@ def command(argv, *, cwd, env, timeout, log):
                 if process.poll() is None:
                     process.kill()
                 process.wait(timeout=30)
-                receipt['cleanupComplete'] = True
+                receipt['cleanupComplete'] = cleanup_error is None
+                if cleanup_error is not None:
+                    raise cleanup_error
         v.require(receipt['exitCode'] == 0, 'child failed: ' + Path(argv[0]).name)
         return Path(str(log) + '.stdout.log').read_text(encoding='utf-8')
     finally:
@@ -154,6 +163,8 @@ def qualify(args):
     v.require(target is not None, 'supported qualification hosts: macOS arm64 or Windows x64')
     v.require(git(root, 'rev-parse', 'HEAD').decode().strip() == args.expected_core_sha, 'reviewed source SHA mismatch')
     v.require(not git(root, 'status', '--porcelain=v1', '--untracked-files=normal').strip(), 'reviewed source is dirty')
+    v.require(FIXTURE == root / 'test/fixtures/native_default_consumer_qualification',
+              'driver must run from the reviewed core checkout')
     files = [name.decode('utf-8') for name in git(root, 'ls-files', '-z').split(b'\0') if name]
     v.require(all(not name.startswith('/') and '..' not in Path(name).parts for name in files), 'unsafe source inventory')
     source_before = v.inventory(root, files)
@@ -230,6 +241,8 @@ def qualify(args):
         v.unchanged(bundle_before, v.inventory(bundle), 'SDK source bundle')
         v.unchanged(bundle_before, v.inventory(distributed), 'distributed bundle')
         write_json(output / 'bundle-after.json', v.inventory(distributed))
+        v.require(model.stat().st_size == v.MODEL_BYTES and v.sha256(model) == v.MODEL_SHA256,
+                  'fixed model changed during qualification')
         v.unchanged(source_before, v.inventory(source, files), 'exported tracked source')
         v.unchanged(source_before, v.inventory(root, files), 'reviewed tracked source')
         v.require(not git(root, 'status', '--porcelain=v1', '--untracked-files=normal').strip(), 'reviewed source became dirty')
@@ -240,12 +253,33 @@ def qualify(args):
         terminal['failure'] = str(error)
         raise
     finally:
+        for label, snapshot_root in (('source', root), ('exported-source', output / 'source')):
+            if snapshot_root.exists():
+                try:
+                    after = v.inventory(snapshot_root, files)
+                    write_json(output / (label + '-after.json'), after)
+                    v.unchanged(source_before, after, label)
+                except (v.Refusal, OSError) as error:
+                    terminal.update({'completed': False, **v.scope(args.expected_native_tag, False)})
+                    terminal.setdefault('inventoryFailures', []).append({'scope': label, 'error': str(error)})
+        if 'bundle_before' in locals():
+            for label, bundle_root in (('sdk-bundle', bundle), ('distributed-bundle', distributed)):
+                try:
+                    after = v.inventory(bundle_root)
+                    write_json(output / (label + '-after.json'), after)
+                    v.unchanged(bundle_before, after, label)
+                except (v.Refusal, OSError) as error:
+                    terminal.update({'completed': False, **v.scope(args.expected_native_tag, False)})
+                    terminal.setdefault('inventoryFailures', []).append({'scope': label, 'error': str(error)})
         # The manifest seals retained regular evidence, with its own file
         # excluded. A partial campaign is always retained as completed=false.
         terminal['evidenceInventory'] = v.inventory(logs)
         write_json(output / 'terminal.json', terminal)
         write_json(output / 'manifest.json', {'schemaVersion': 1,
             'files': v.inventory(output), 'terminalSha256': v.sha256(output / 'terminal.json')})
+        v.verify_seal(output)
+        if terminal.get('inventoryFailures') and sys.exc_info()[0] is None:
+            raise v.Refusal('final source/bundle inventory changed')
 
 
 def main():

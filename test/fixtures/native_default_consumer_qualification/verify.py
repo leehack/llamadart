@@ -300,3 +300,18 @@ def scope(tag, complete):
             'finalNative3Qualified': tag == TAGS[1] and complete,
             'independentAcceptance': 'required separately', 'platformScopeOnly': True,
             'gpuQualification': False}
+
+
+def verify_seal(output):
+    output = Path(output)
+    manifest = json.loads((output / 'manifest.json').read_text(encoding='utf-8'))
+    require(manifest.get('schemaVersion') == 1, 'unknown evidence manifest schema')
+    actual = inventory(output)
+    actual.pop('manifest.json', None)
+    unchanged(manifest.get('files'), actual, 'sealed evidence inventory')
+    require(manifest.get('terminalSha256') == sha256(output / 'terminal.json'), 'terminal seal mismatch')
+    terminal = json.loads((output / 'terminal.json').read_text(encoding='utf-8'))
+    require(terminal.get('finalNative3Qualified') is
+            (terminal.get('expectedNativeTag') == TAGS[1] and terminal.get('completed') is True),
+            'terminal native3 scope contradicts completion')
+    return terminal
