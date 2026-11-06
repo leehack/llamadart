@@ -113,8 +113,9 @@ Future<void> main(List<String> args) async {
     result['reuseOutput'] = reused;
     result['reuseParity'] = reused == baseline;
     if (result['reuseParity'] != true) throw StateError('reuse parity failed');
-    if (result['reloadParity'] != true)
+    if (result['reloadParity'] != true) {
       throw StateError('reload parity failed');
+    }
     await engine.unloadModel();
     result['unloaded'] = true;
     result['completed'] = true;
