@@ -6812,11 +6812,6 @@ external ffi.Pointer<llama_dart_speculative> llama_dart_speculative_init(
 );
 
 @ffi.Native<ffi.Bool Function(ffi.Pointer<llama_dart_speculative>)>()
-external bool llama_dart_speculative_need_embd(
-  ffi.Pointer<llama_dart_speculative> speculative,
-);
-
-@ffi.Native<ffi.Bool Function(ffi.Pointer<llama_dart_speculative>)>()
 external bool llama_dart_speculative_need_embd_nextn(
   ffi.Pointer<llama_dart_speculative> speculative,
 );
