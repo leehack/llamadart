@@ -21,7 +21,7 @@ import time
 sys.dont_write_bytecode = True
 
 import verify as v
-from owned_process import WindowsJob
+from owned_process import WindowsJob, CancellationGuard, Cancelled
 
 FIXTURE = Path(__file__).resolve().parent
 
@@ -31,56 +31,82 @@ def write_json(path, value):
 
 
 def command(argv, *, cwd, env, timeout, log):
-    """Own, terminate and reap the whole child group before returning/raising."""
+    """Register before initializing Popen; own every catchable cancellation."""
     argv = [str(value) for value in argv]
+    v.require(timeout > 0 and log is not None, 'owned command requires bounded timeout and receipt')
     started = time.monotonic()
-    process = None
-    job = WindowsJob() if os.name == 'nt' else None
     receipt = {'argv': argv, 'cwd': str(cwd), 'timeoutSeconds': timeout,
                'cleanupComplete': False}
-    try:
-        with Path(str(log) + '.stdout.log').open('wb') as stdout, Path(str(log) + '.stderr.log').open('wb') as stderr:
-            options = {'creationflags': subprocess.CREATE_NEW_PROCESS_GROUP | 0x4} if os.name == 'nt' else {'start_new_session': True}
-            process = subprocess.Popen(argv, cwd=cwd, env=env, stdout=stdout, stderr=stderr, **options)
-            receipt['pid'] = process.pid
-            try:
-                if job is not None:
-                    job.attach_and_resume(process)
+    process = job = failure = traceback = None
+    with CancellationGuard() as cancellation:
+        try:
+            with Path(str(log) + '.stdout.log').open('wb') as stdout, Path(str(log) + '.stderr.log').open('wb') as stderr:
+                # The handler records signals until both the object and PID/job
+                # are registered. The object exists before __init__ can spawn.
+                with cancellation.deferred():
+                    job = WindowsJob() if os.name == 'nt' else None
+                    options = ({'creationflags': subprocess.CREATE_NEW_PROCESS_GROUP | 0x4}
+                               if os.name == 'nt' else {'start_new_session': True})
+                    process = subprocess.Popen.__new__(subprocess.Popen)
+                    process.__init__(argv, cwd=cwd, env=env, stdout=stdout, stderr=stderr, **options)
+                    receipt['pid'] = process.pid
+                    if job is not None:
+                        job.attach_and_resume(process)
                 receipt['exitCode'] = process.wait(timeout=timeout)
-            finally:
-                # Reap descendants even if the leader exited but left children.
-                cleanup_error = None
+            v.require(receipt['exitCode'] == 0, 'child failed: ' + Path(argv[0]).name)
+        except BaseException as error:
+            failure, traceback = error, error.__traceback__
+        finally:
+            with cancellation.deferred(deliver=False):
+                cleanup_errors = []
+                pid = getattr(process, 'pid', None)
+                if pid is not None:
+                    receipt['pid'] = pid
                 if job is not None:
                     try:
-                        job.close()
-                    except OSError as error:
-                        cleanup_error = error
-                    finally:
-                        job = None
-                else:
+                        job.close()  # Includes zero-ActiveProcesses proof.
+                    except BaseException as error:
+                        cleanup_errors.append(error)
+                elif pid is not None:
                     try:
-                        os.killpg(process.pid, signal.SIGKILL)
+                        os.killpg(pid, signal.SIGKILL)
                     except ProcessLookupError:
                         pass
-                if process.poll() is None:
-                    process.kill()
-                process.wait(timeout=30)
-                receipt['cleanupComplete'] = cleanup_error is None
-                if cleanup_error is not None:
-                    raise cleanup_error
-        v.require(receipt['exitCode'] == 0, 'child failed: ' + Path(argv[0]).name)
+                    except BaseException as error:
+                        cleanup_errors.append(error)
+                if pid is not None:
+                    try:
+                        if process.poll() is None:
+                            process.kill()
+                        process.wait(timeout=30)
+                        receipt['reapedExitCode'] = process.returncode
+                    except BaseException as error:
+                        cleanup_errors.append(error)
+                receipt['cleanupComplete'] = not cleanup_errors
+                if cleanup_errors:
+                    receipt['cleanupErrors'] = [f'{type(error).__name__}: {error}' for error in cleanup_errors]
+                if failure is None:
+                    if cancellation.signals:
+                        failure = Cancelled(cancellation.signals[0])
+                    elif cleanup_errors:
+                        failure = cleanup_errors[0]
+                if failure is not None:
+                    receipt.update({'failureType': type(failure).__name__, 'failure': str(failure)})
+                receipt['cancelledSignals'] = cancellation.signals
+                receipt['elapsedSeconds'] = time.monotonic() - started
+                write_json(str(log) + '.command.json', receipt)
+        if failure is not None:
+            raise failure.with_traceback(traceback)
+        cancellation.checkpoint()
         return Path(str(log) + '.stdout.log').read_text(encoding='utf-8')
-    finally:
-        if job is not None:
-            job.close()
-        receipt['elapsedSeconds'] = time.monotonic() - started
-        write_json(str(log) + '.command.json', receipt)
 
 
-def git(root, *args):
-    # No fetch, credentials or remote command; exact source is local.
+def git(root, *args, log=None):
+    # A missing receipt is refusal before creation, including preflight Git.
+    v.require(log is not None, 'git requires a bounded owned command receipt')
     environment = dict(os.environ, GIT_NO_LAZY_FETCH='1', GIT_OPTIONAL_LOCKS='0')
-    return subprocess.check_output(['git', '-C', str(root), *args], env=environment)
+    return command(['git', '-C', str(root), *args], cwd=root, env=environment,
+                   timeout=60, log=log).encode('utf-8')
 
 
 def pubspec(source):
@@ -145,6 +171,11 @@ def plan(args):
 
 
 def qualify(args):
+    with CancellationGuard() as cancellation:
+        return _qualify(args, cancellation)
+
+
+def _qualify(args, cancellation):
     root, output, checksums = plan(args)
     if args.dry_run:
         print(json.dumps({'dryRun': True, 'coreRoot': str(root), 'expectedCoreSha': args.expected_core_sha,
@@ -161,29 +192,30 @@ def qualify(args):
     target = {('Darwin', 'arm64'): 'macos-arm64', ('Windows', 'AMD64'): 'windows-x64',
               ('Windows', 'x86_64'): 'windows-x64'}.get((system, platform.machine()))
     v.require(target is not None, 'supported qualification hosts: macOS arm64 or Windows x64')
-    v.require(git(root, 'rev-parse', 'HEAD').decode().strip() == args.expected_core_sha, 'reviewed source SHA mismatch')
-    v.require(not git(root, 'status', '--porcelain=v1', '--untracked-files=normal').strip(), 'reviewed source is dirty')
-    v.require(FIXTURE == root / 'test/fixtures/native_default_consumer_qualification',
-              'driver must run from the reviewed core checkout')
-    files = [name.decode('utf-8') for name in git(root, 'ls-files', '-z').split(b'\0') if name]
-    v.require(all(not name.startswith('/') and '..' not in Path(name).parts for name in files), 'unsafe source inventory')
-    source_before = v.inventory(root, files)
-    v.require(all(row['kind'] == 'file' for row in source_before.values()), 'source must contain only regular tracked files')
-    model = Path(args.model).absolute()
-    v.no_links(model)
-    v.require(model.is_file() and model.stat().st_size == v.MODEL_BYTES
-              and v.sha256(model) == v.MODEL_SHA256, 'fixed Qwen model checksum/size mismatch')
-    flutter_root, flutter, dart = sdk_paths(os.environ)
     output.mkdir()
     logs = output / 'logs'; logs.mkdir()
     temporary = output / 'temp'; temporary.mkdir()
     pub_cache = output / 'pub-cache'; pub_cache.mkdir()
-    environment = clean_environment(os.environ, temporary, pub_cache, sdk=dart.parent)
+    files = source_before = None
     terminal = {'schemaVersion': 1, 'completed': False, 'expectedCoreSha': args.expected_core_sha,
                 'target': target, 'model': {'bytes': v.MODEL_BYTES, 'sha256': v.MODEL_SHA256},
                 **v.scope(args.expected_native_tag, False)}
-    write_json(output / 'source-before.json', source_before)
     try:
+        v.require(git(root, 'rev-parse', 'HEAD', log=logs / 'git-head').decode().strip() == args.expected_core_sha, 'reviewed source SHA mismatch')
+        v.require(not git(root, 'status', '--porcelain=v1', '--untracked-files=normal', log=logs / 'git-clean-before').strip(), 'reviewed source is dirty')
+        v.require(FIXTURE == root / 'test/fixtures/native_default_consumer_qualification',
+                  'driver must run from the reviewed core checkout')
+        files = [name.decode('utf-8') for name in git(root, 'ls-files', '-z', log=logs / 'git-files').split(b'\0') if name]
+        v.require(all(not name.startswith('/') and '..' not in Path(name).parts for name in files), 'unsafe source inventory')
+        source_before = v.inventory(root, files)
+        v.require(all(row['kind'] == 'file' for row in source_before.values()), 'source must contain only regular tracked files')
+        model = Path(args.model).absolute()
+        v.no_links(model)
+        v.require(model.is_file() and model.stat().st_size == v.MODEL_BYTES
+                  and v.sha256(model) == v.MODEL_SHA256, 'fixed Qwen model checksum/size mismatch')
+        flutter_root, flutter, dart = sdk_paths(os.environ)
+        environment = clean_environment(os.environ, temporary, pub_cache, sdk=dart.parent)
+        write_json(output / 'source-before.json', source_before)
         # Invoke the pinned Dart directly. Flutter version is read from its
         # machine-readable pinned SDK version file, avoiding shell/.bat dispatch.
         flutter_version = json.loads((flutter_root / 'bin/cache/flutter.version.json').read_text(encoding='utf-8'))
@@ -245,41 +277,55 @@ def qualify(args):
                   'fixed model changed during qualification')
         v.unchanged(source_before, v.inventory(source, files), 'exported tracked source')
         v.unchanged(source_before, v.inventory(root, files), 'reviewed tracked source')
-        v.require(not git(root, 'status', '--porcelain=v1', '--untracked-files=normal').strip(), 'reviewed source became dirty')
+        v.require(not git(root, 'status', '--porcelain=v1', '--untracked-files=normal', log=logs / 'git-clean-after').strip(), 'reviewed source became dirty')
         write_json(output / 'source-after.json', v.inventory(root, files))
         terminal.update({'completed': True, **v.scope(args.expected_native_tag, True)})
     except BaseException as error:
+        terminal.update({'completed': False, **v.scope(args.expected_native_tag, False)})
+        if isinstance(error, Cancelled):
+            terminal['cancelledSignals'] = [error.signum]
         terminal['failureType'] = type(error).__name__
         terminal['failure'] = str(error)
         raise
     finally:
-        for label, snapshot_root in (('source', root), ('exported-source', output / 'source')):
-            if snapshot_root.exists():
-                try:
-                    after = v.inventory(snapshot_root, files)
-                    write_json(output / (label + '-after.json'), after)
-                    v.unchanged(source_before, after, label)
-                except (v.Refusal, OSError) as error:
-                    terminal.update({'completed': False, **v.scope(args.expected_native_tag, False)})
-                    terminal.setdefault('inventoryFailures', []).append({'scope': label, 'error': str(error)})
-        if 'bundle_before' in locals():
-            for label, bundle_root in (('sdk-bundle', bundle), ('distributed-bundle', distributed)):
-                try:
-                    after = v.inventory(bundle_root)
-                    write_json(output / (label + '-after.json'), after)
-                    v.unchanged(bundle_before, after, label)
-                except (v.Refusal, OSError) as error:
-                    terminal.update({'completed': False, **v.scope(args.expected_native_tag, False)})
-                    terminal.setdefault('inventoryFailures', []).append({'scope': label, 'error': str(error)})
-        # The manifest seals retained regular evidence, with its own file
-        # excluded. A partial campaign is always retained as completed=false.
-        terminal['evidenceInventory'] = v.inventory(logs)
-        write_json(output / 'terminal.json', terminal)
-        write_json(output / 'manifest.json', {'schemaVersion': 1,
-            'files': v.inventory(output), 'terminalSha256': v.sha256(output / 'terminal.json')})
-        v.verify_seal(output)
-        if terminal.get('inventoryFailures') and sys.exc_info()[0] is None:
-            raise v.Refusal('final source/bundle inventory changed')
+        with cancellation.deferred(deliver=False):
+            for label, snapshot_root in (('source', root), ('exported-source', output / 'source')):
+                if files is not None and source_before is not None and snapshot_root.exists():
+                    try:
+                        after = v.inventory(snapshot_root, files)
+                        write_json(output / (label + '-after.json'), after)
+                        v.unchanged(source_before, after, label)
+                    except (v.Refusal, OSError) as error:
+                        terminal.update({'completed': False, **v.scope(args.expected_native_tag, False)})
+                        terminal.setdefault('inventoryFailures', []).append({'scope': label, 'error': str(error)})
+            if 'bundle_before' in locals():
+                for label, bundle_root in (('sdk-bundle', bundle), ('distributed-bundle', distributed)):
+                    try:
+                        after = v.inventory(bundle_root)
+                        write_json(output / (label + '-after.json'), after)
+                        v.unchanged(bundle_before, after, label)
+                    except (v.Refusal, OSError) as error:
+                        terminal.update({'completed': False, **v.scope(args.expected_native_tag, False)})
+                        terminal.setdefault('inventoryFailures', []).append({'scope': label, 'error': str(error)})
+            # A catchable signal during the first seal invalidates success
+            # and causes one failure-only reseal; inference/build never repeat.
+            for seal_pass in range(2):
+                if cancellation.signals:
+                    terminal.update({'completed': False, **v.scope(args.expected_native_tag, False),
+                        'cancelledSignals': cancellation.signals})
+                    terminal.setdefault('failureType', 'Cancelled')
+                    terminal.setdefault('failure', str(Cancelled(cancellation.signals[0])))
+                terminal['evidenceInventory'] = v.inventory(logs)
+                write_json(output / 'terminal.json', terminal)
+                evidence = v.inventory(output)
+                evidence.pop('manifest.json', None)
+                write_json(output / 'manifest.json', {'schemaVersion': 1,
+                    'files': evidence, 'terminalSha256': v.sha256(output / 'terminal.json')})
+                v.verify_seal(output)
+                if not (cancellation.signals and terminal['completed']):
+                    break
+            if terminal.get('inventoryFailures') and sys.exc_info()[0] is None:
+                raise v.Refusal('final source/bundle inventory changed')
 
 
 def main():
@@ -294,6 +340,12 @@ def main():
     args = parser.parse_args()
     try:
         qualify(args)
+    except Cancelled as error:
+        print(str(error), file=sys.stderr)
+        return 128 + error.signum
+    except KeyboardInterrupt:
+        print('qualification cancelled by keyboard interruption', file=sys.stderr)
+        return 130
     except (v.Refusal, OSError, subprocess.SubprocessError) as error:
         print(f'qualification refused: {error}', file=sys.stderr)
         return 1

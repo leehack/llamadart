@@ -1,0 +1,169 @@
+"""Real synthetic Python cancellation controls, without SDK/model/native input."""
+import json
+import os
+from pathlib import Path
+import signal
+import subprocess
+import sys
+import tempfile
+import time
+import threading
+import unittest
+from unittest.mock import patch
+
+import qualify
+
+
+def alive(pid):
+    try:
+        os.kill(pid, 0)
+        return True
+    except ProcessLookupError:
+        return False
+
+
+class CancellationControls(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.root = Path(self.temp.name).resolve()
+
+    def tearDown(self):
+        self.temp.cleanup()
+
+    def test_interrupt_after_spawn_before_constructor_return_has_registered_owner(self):
+        original = subprocess.Popen.__init__
+        spawned = []
+        def interrupted_init(process, *args, **kwargs):
+            original(process, *args, **kwargs)
+            spawned.append(process)
+            raise KeyboardInterrupt('synthetic constructor-return interruption')
+        try:
+            with patch.object(subprocess.Popen, '__init__', interrupted_init):
+                with self.assertRaises(KeyboardInterrupt):
+                    qualify.command([sys.executable, '-c', 'import time; time.sleep(30)'],
+                        cwd=self.root, env=dict(os.environ), timeout=5, log=self.root / 'registration')
+            self.assertEqual(1, len(spawned))
+            self.assertIsNotNone(spawned[0].poll(), 'child escaped ownership during constructor return')
+            receipt = json.loads((self.root / 'registration.command.json').read_text())
+            self.assertEqual(spawned[0].pid, receipt['pid'])
+            self.assertTrue(receipt['cleanupComplete'])
+            self.assertEqual('KeyboardInterrupt', receipt['failureType'])
+        finally:
+            for process in spawned:
+                if process.poll() is None:
+                    process.kill()
+                process.wait(timeout=5)
+
+    def test_control_signal_during_constructor_is_deferred_until_owner_registration(self):
+        for name in ('SIGINT', 'SIGBREAK'):
+            if hasattr(signal, name):
+                with self.subTest(signal=name):
+                    self.assert_signal_during_constructor(getattr(signal, name))
+
+    def assert_signal_during_constructor(self, signum):
+        original = subprocess.Popen.__init__
+        spawned = []
+        previous = {name: signal.getsignal(getattr(signal, name))
+                    for name in ('SIGINT', 'SIGTERM', 'SIGBREAK') if hasattr(signal, name)}
+        def cancelled_init(process, *args, **kwargs):
+            original(process, *args, **kwargs)
+            spawned.append(process)
+            signal.raise_signal(signum)
+        try:
+            with patch.object(subprocess.Popen, '__init__', cancelled_init):
+                with self.assertRaises(qualify.Cancelled):
+                    qualify.command([sys.executable, '-c', 'import time; time.sleep(30)'],
+                        cwd=self.root, env=dict(os.environ), timeout=5, log=self.root / 'signal-registration')
+            self.assertIsNotNone(spawned[0].poll())
+            receipt = json.loads((self.root / 'signal-registration.command.json').read_text())
+            self.assertEqual([signum], receipt['cancelledSignals'])
+            self.assertEqual(spawned[0].pid, receipt['pid'])
+            self.assertTrue(receipt['cleanupComplete'])
+            for name, handler in previous.items():
+                self.assertEqual(handler, signal.getsignal(getattr(signal, name)))
+        finally:
+            for process in spawned:
+                if process.poll() is None: process.kill()
+                process.wait(timeout=5)
+
+    @unittest.skipIf(os.name == 'nt', 'POSIX group cleanup injection; Windows job covered on actual Windows')
+    def test_repeated_sigterm_during_cleanup_is_deferred_and_preserves_timeout(self):
+        original = os.killpg
+        def interrupted_cleanup(pid, signum):
+            original(pid, signum)
+            signal.raise_signal(signal.SIGTERM)
+            signal.raise_signal(signal.SIGTERM)
+        with patch.object(os, 'killpg', interrupted_cleanup):
+            with self.assertRaises(subprocess.TimeoutExpired):
+                qualify.command([sys.executable, '-c', 'import time; time.sleep(30)'],
+                    cwd=self.root, env=dict(os.environ), timeout=.03, log=self.root / 'cleanup-signal')
+        receipt = json.loads((self.root / 'cleanup-signal.command.json').read_text())
+        self.assertTrue(receipt['cleanupComplete'])
+        self.assertEqual('TimeoutExpired', receipt['failureType'])
+        self.assertEqual([signal.SIGTERM, signal.SIGTERM], receipt['cancelledSignals'])
+        self.assertFalse(alive(receipt['pid']))
+
+    def test_background_thread_refuses_before_child_creation(self):
+        errors = []
+        def invoke():
+            try:
+                qualify.command([sys.executable, '-c', 'raise SystemExit(0)'],
+                    cwd=self.root, env=dict(os.environ), timeout=5, log=self.root / 'thread')
+            except BaseException as error:
+                errors.append(error)
+        with patch.object(subprocess.Popen, '__init__') as constructor:
+            thread = threading.Thread(target=invoke)
+            thread.start(); thread.join(timeout=5)
+            self.assertFalse(thread.is_alive())
+            constructor.assert_not_called()
+        self.assertEqual(1, len(errors))
+        self.assertIn('main thread', str(errors[0]))
+
+    def test_git_uses_owned_timeout_receipt_or_refuses_before_creation(self):
+        with patch.object(qualify, 'command', return_value='synthetic git output') as runner:
+            result = qualify.git(self.root, 'rev-parse', 'HEAD', log=self.root / 'git')
+            self.assertEqual(b'synthetic git output', result)
+            self.assertEqual(60, runner.call_args.kwargs['timeout'])
+            self.assertEqual(self.root / 'git', runner.call_args.kwargs['log'])
+            self.assertEqual('1', runner.call_args.kwargs['env']['GIT_NO_LAZY_FETCH'])
+        with patch.object(qualify, 'command') as runner:
+            with self.assertRaises(qualify.v.Refusal):
+                qualify.git(self.root, 'status')
+            runner.assert_not_called()
+
+    @unittest.skipIf(os.name == 'nt', 'POSIX supervisor SIGTERM; Windows control events tested separately')
+    def test_supervisor_sigterm_cleans_new_session_child_and_writes_failure_receipt(self):
+        child_pid = self.root / 'child.pid'
+        child = f'import os,pathlib,time; pathlib.Path({str(child_pid)!r}).write_text(str(os.getpid())); time.sleep(30)'
+        supervisor = ('import sys,os; sys.path.insert(0,' + repr(str(qualify.FIXTURE)) + '); import qualify; '
+            + f'qualify.command([sys.executable,"-c",{child!r}],cwd={str(self.root)!r},'
+            + f'env=dict(os.environ),timeout=30,log={str(self.root / "supervisor")!r})')
+        process = subprocess.Popen([sys.executable, '-B', '-c', supervisor],
+            stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, start_new_session=True)
+        pid = None
+        try:
+            deadline = time.monotonic() + 5
+            while not child_pid.exists() and time.monotonic() < deadline and process.poll() is None:
+                time.sleep(.01)
+            self.assertTrue(child_pid.exists(), 'synthetic child did not become ready')
+            pid = int(child_pid.read_text())
+            os.kill(process.pid, signal.SIGTERM)
+            _, stderr = process.communicate(timeout=5)
+            self.assertNotEqual(0, process.returncode, stderr.decode())
+            self.assertFalse(alive(pid), 'SIGTERM left owned child alive')
+            receipt = json.loads((self.root / 'supervisor.command.json').read_text())
+            self.assertEqual(pid, receipt['pid'])
+            self.assertTrue(receipt['cleanupComplete'])
+            self.assertIn(signal.SIGTERM, receipt['cancelledSignals'])
+        finally:
+            if process.poll() is None:
+                os.killpg(process.pid, signal.SIGKILL)
+            process.wait(timeout=5)
+            if pid and alive(pid):
+                os.kill(pid, signal.SIGKILL)
+            if process.stderr:
+                process.stderr.close()
+
+
+if __name__ == '__main__':
+    unittest.main()
