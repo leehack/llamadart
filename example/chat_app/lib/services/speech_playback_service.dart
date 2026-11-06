@@ -2,6 +2,9 @@ import 'dart:typed_data';
 
 import 'package:audioplayers/audioplayers.dart';
 
+import 'speech_wav_source_stub.dart'
+    if (dart.library.io) 'speech_wav_source_io.dart';
+
 /// Plays complete synthesized WAV buffers in the chat example.
 abstract class SpeechPlaybackService {
   /// Creates the native audio-player implementation.
@@ -22,17 +25,24 @@ abstract class SpeechPlaybackService {
 
 class _AudioPlayersSpeechPlaybackService implements SpeechPlaybackService {
   final AudioPlayer _player = AudioPlayer();
+  final SpeechWavSources _sources = SpeechWavSources();
 
   @override
   Stream<void> get onComplete => _player.onPlayerComplete;
 
   @override
-  Future<void> playWav(Uint8List wavBytes) =>
-      _player.play(BytesSource(wavBytes, mimeType: 'audio/wav'));
+  Future<void> playWav(Uint8List wavBytes) async =>
+      _player.play(await _sources.create(wavBytes));
 
   @override
   Future<void> stop() => _player.stop();
 
   @override
-  Future<void> dispose() => _player.dispose();
+  Future<void> dispose() async {
+    try {
+      await _player.dispose();
+    } finally {
+      await _sources.dispose();
+    }
+  }
 }
