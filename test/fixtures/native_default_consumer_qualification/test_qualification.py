@@ -259,6 +259,8 @@ class QualificationControls(unittest.TestCase):
         self.assertFalse((self.root / 'out').exists())
 
     def run_synthetic_driver(self, failure=None):
+        # Windows' system-only PATH still requires the actual host root.
+        parent_environment = {'SystemRoot': os.environ['SystemRoot']} if os.name == 'nt' else {}
         core = self.root / 'core'; core.mkdir()
         fixture_dir = core / 'test/fixtures/native_default_consumer_qualification'
         fixture_dir.mkdir(parents=True)
@@ -334,7 +336,7 @@ class QualificationControls(unittest.TestCase):
             if failure == 'exit-signal':
                 signal.raise_signal(signal.SIGTERM)
             return original_exit(guard, *arguments)
-        with (patch.dict(os.environ, {}, clear=True), patch.object(qualify, 'FIXTURE', fixture_dir),
+        with (patch.dict(os.environ, parent_environment, clear=True), patch.object(qualify, 'FIXTURE', fixture_dir),
               patch.object(qualify.CancellationGuard, '__exit__', signal_at_guard_exit),
               patch.object(qualify, 'write_json', side_effect=signal_while_sealing),
               patch.object(qualify, 'git', side_effect=fake_git),
@@ -366,6 +368,20 @@ class QualificationControls(unittest.TestCase):
         (output / 'logs/aot.stdout.log').write_text('tampered after seal')
         with self.assertRaisesRegex(v.Refusal, 'sealed evidence'):
             v.verify_seal(output)
+
+    def test_synthetic_driver_retains_only_required_host_environment(self):
+        expected = {'SYSTEMROOT': os.environ['SystemRoot']} if os.name == 'nt' else {}
+        parents = []
+        original = qualify.clean_environment
+        def clean_environment(parent, *args, **kwargs):
+            parents.append({key.upper(): value for key, value in parent.items()})
+            return original(parent, *args, **kwargs)
+        with (patch.dict(os.environ, {'LLAMADART_NATIVE_LIB_DIR': 'ambient-override',
+                                     'PATH': 'ambient-path', 'TOKEN': 'ambient-secret'}),
+              patch.object(qualify, 'clean_environment', side_effect=clean_environment)):
+            terminal, _, _ = self.run_synthetic_driver()
+        self.assertTrue(terminal['completed'])
+        self.assertEqual([expected, expected], parents)
 
     def test_synthetic_driver_refuses_written_cwd(self):
         terminal, _, _ = self.run_synthetic_driver('cwd')
