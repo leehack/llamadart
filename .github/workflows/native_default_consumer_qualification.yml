@@ -51,8 +51,6 @@ jobs:
       QUALIFICATION_ARCH: ${{ matrix.arch }}
       LLAMADART_DEFAULT_AOT_EXPECTED_SHA: ${{ inputs.expected_sha }}
       LLAMADART_DEFAULT_AOT_EXPECTED_NATIVE_TAG: ${{ inputs.expected_native_tag }}
-      LLAMADART_DEFAULT_AOT_MODEL_PATH: ${{ runner.temp }}/native-default-aot-${{ github.run_id }}-${{ github.run_attempt }}/qwen2.5-1.5b-instruct-q4_k_m.gguf
-      LLAMADART_DEFAULT_AOT_OUTPUT_ROOT: ${{ runner.temp }}/native-default-aot-${{ github.run_id }}-${{ github.run_attempt }}/results
     steps:
       - uses: actions/checkout@v7
         with:
@@ -62,6 +60,17 @@ jobs:
       - uses: actions/setup-python@v7
         with:
           python-version: '3.12'
+      - name: Bind invocation-owned runtime paths
+        id: paths
+        shell: python
+        run: |
+          import os
+          from pathlib import Path
+          root = Path(os.environ['RUNNER_TEMP']) / (
+              'native-default-aot-' + os.environ['GITHUB_RUN_ID'] + '-' + os.environ['GITHUB_RUN_ATTEMPT'])
+          with open(os.environ['GITHUB_ENV'], 'a', encoding='utf-8') as stream:
+              stream.write('LLAMADART_DEFAULT_AOT_MODEL_PATH=' + str(root / 'qwen2.5-1.5b-instruct-q4_k_m.gguf') + '\n')
+              stream.write('LLAMADART_DEFAULT_AOT_OUTPUT_ROOT=' + str(root / 'results') + '\n')
       - uses: subosito/flutter-action@v2
         with:
           flutter-version: '3.47.1'
