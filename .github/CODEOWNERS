@@ -21,6 +21,7 @@ scripts/verify_chat_app_web_deployment.sh @leehack
 /test/unit/tooling/native_default_consumer_qualification_test.dart @leehack
 /test/unit/tooling/run_local_e2e_test.dart @leehack
 /test/unit/tooling/test_matrix_test.dart @leehack
+/test/unit/tooling/ci_workflow_selection_test.dart @leehack
 pubspec.yaml @leehack
 CHANGELOG.md @leehack
 /.gitattributes @leehack

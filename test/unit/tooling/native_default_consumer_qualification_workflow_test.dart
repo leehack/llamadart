@@ -23,7 +23,13 @@ void main() {
   test('qualification is explicit dispatch with reviewed SHA and source-pin verification', () {
     final config = workflow();
     final triggers = config['on'] as YamlMap;
-    expect(triggers.keys, ['workflow_dispatch']);
+    expect(triggers.keys, unorderedEquals(['workflow_dispatch', 'workflow_call']));
+    expect(triggers['workflow_call'], {
+      'inputs': {
+        'expected_sha': {'required': true, 'type': 'string'},
+        'expected_native_tag': {'required': true, 'type': 'string'},
+      },
+    });
     final inputs = triggers['workflow_dispatch']['inputs'] as YamlMap;
     expect(inputs.keys, unorderedEquals(['expected_sha', 'expected_native_tag']));
     expect(inputs['expected_sha']['required'], isTrue);
@@ -77,18 +83,17 @@ void main() {
       'flutter-version': File('.flutter-version').readAsStringSync().trim(),
       'channel': 'stable', 'cache': false,
     });
-    final python = steps().singleWhere((step) => step['uses'] == 'actions/setup-python@v6');
+    final python = steps().singleWhere((step) => step['uses'] == 'actions/setup-python@v7');
     expect(python['with'], {'python-version': '3.12'});
     expect(
       steps().map((step) => step['uses']).whereType<String>(),
       unorderedEquals([
-        'actions/checkout@v7', 'actions/setup-python@v6',
+        'actions/checkout@v7', 'actions/setup-python@v7',
         'subosito/flutter-action@v2', 'actions/upload-artifact@v7',
       ]),
     );
     expect(steps(), hasLength(6));
     expect(config.toString(), isNot(contains('secrets.')));
-    expect(config.toString(), isNot(contains('workflow_call')));
     final scripts = steps().map((step) => step['run']).whereType<String>().join('\n');
     expect(scripts, isNot(matches(RegExp(r'\b(?:publish|deploy|dispatch|push|createRef|updateRef|deleteRef)\b', caseSensitive: false))));
     for (final forbidden in ['/git/refs', 'Authorization', 'Bearer', 'GITHUB_TOKEN']) {
@@ -104,10 +109,11 @@ void main() {
     final job = qualification();
     final env = job['env'] as YamlMap;
     expect(env.keys, unorderedEquals([
-      'QUALIFICATION_PLATFORM', 'QUALIFICATION_ARCH',
+      'PYTHONDONTWRITEBYTECODE', 'QUALIFICATION_PLATFORM', 'QUALIFICATION_ARCH',
       'LLAMADART_DEFAULT_AOT_EXPECTED_SHA', 'LLAMADART_DEFAULT_AOT_EXPECTED_NATIVE_TAG',
       'LLAMADART_DEFAULT_AOT_MODEL_PATH', 'LLAMADART_DEFAULT_AOT_OUTPUT_ROOT',
     ]));
+    expect(env['PYTHONDONTWRITEBYTECODE'], '1');
     expect(env['QUALIFICATION_PLATFORM'], r'${{ matrix.platform }}');
     expect(env['QUALIFICATION_ARCH'], r'${{ matrix.arch }}');
     expect(env['LLAMADART_DEFAULT_AOT_EXPECTED_SHA'], r'${{ inputs.expected_sha }}');
@@ -191,7 +197,7 @@ exec(sys.argv[1], {})
 ''';
     final cases = <(String, Map<String, String>, bool)>[
       ('invalid-sha', {'LLAMADART_DEFAULT_AOT_EXPECTED_SHA': 'not-a-sha'}, false),
-      ('event-drift', {'GITHUB_SHA': '2222222222222222222222222222222222222222'}, false),
+      ('event-drift', {'GITHUB_SHA': '2222222222222222222222222222222222222222', 'TEST_CHECKOUT': sha}, false),
       ('checkout-drift', {'TEST_CHECKOUT': '2222222222222222222222222222222222222222'}, false),
       ('pin-drift', {'LLAMADART_DEFAULT_AOT_EXPECTED_NATIVE_TAG': 'v0.8.0-3'}, false),
       ('wrong-platform', {'TEST_PLATFORM': 'win32'}, false),

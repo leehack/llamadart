@@ -39,6 +39,13 @@ for the exact source/model identity and invocation. The expected native tag is
 verification-only and must equal the checked-in pin; no runtime override is
 introduced. Reviewed unmerged source may be tested without landing the pin first.
 
+A new dispatch workflow must first exist on the default branch. For its initial
+premerge validation, the registered `ci.yml` offers an explicit manual-only
+`native_default_qualification` bridge. It calls the same-commit reusable
+workflow, passes reviewed SHA/tag inputs, and skips ordinary CI/deployment only
+in that mode. The flag defaults to false; the dedicated dispatch route remains
+available after registration. See the test matrix for the bootstrap command.
+
 `v0.8.0-2` establishes pipeline behavior only. `v0.8.0-3` needs its own complete
 owner/public-artifact gates, actual provider identity, inference and distributed
 AOT receipts and independent acceptance. Historical Windows 16-case evidence
