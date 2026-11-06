@@ -45,22 +45,41 @@ def line(result):
 
 
 def observations(root):
-    paths = [str(root / name) for name in ('libllamadart.dylib', 'libllama.dylib', 'libggml.dylib')]
-    wrapper, llama, ggml = paths
+    wrapper = str(root / 'libllamadart.dylib')
     digest = hashlib.sha256(fixture()).hexdigest()
-    owner = {'address': 2048, 'ownerBase': 1024, 'ownerPath': ggml}
-    rows = [{'modulePath': path, 'checkpoint': 'after-public-model-outcome', 'sha256': digest,
-        'exports': ([{'symbol': 'llama_model_load_from_file', 'address': 3000, 'ownerPath': llama}]
-                    if path == llama else []), 'imports': []} for path in paths]
-    registry = {'primaryMatchesCodeAsset': True, 'noUnintendedDuplicateRegistry': True,
+    exports = [{'symbol': symbol, 'address': address, 'ownerBase': 1024, 'ownerPath': wrapper}
+               for symbol, address in zip(v.MAC_SYMBOLS, (2048, 3000, 4000, 5000))]
+    row = {'modulePath': wrapper, 'moduleBase': 1024, 'sha256': digest,
+           'exports': exports, 'imports': []}
+    registry = {'runtimeLayout': 'consolidated-apple', 'codeAssetId': v.MAC_ASSET,
+        'primaryMatchesCodeAsset': True, 'noUnintendedDuplicateRegistry': True,
         'observerAfterFirstPassiveSnapshot': True, 'codeAssetAddress': 2048,
-        'codeAssetProvider': [owner], 'primaryRegistryImports': [owner]}
+        'codeAssetOwner': {**exports[0], 'sha256': digest},
+        'codeAssetProvider': [exports[0]], 'primaryRegistryExport': exports[0],
+        'primaryRegistryImports': [], 'distinctRegistryProviderBasesBefore': 1,
+        'modelCodeAsset': {**exports[2], 'assetId': v.MAC_ASSET, 'sha256': digest}}
     result = good_result()
     result['query'] = {'hasNextn': True, 'nextnNullFalse': True, 'probeAfterPublicOutcome': True,
         'hasLegacyQuery': True, 'wrapperPath': wrapper, 'wrapperSha256': digest,
-        'nextnOwnerPath': wrapper, 'nextnOwnerSha256': digest}
-    text = ''.join('PASSIVE_MODULE ' + json.dumps(row) + '\n' for row in rows)
-    return text + 'REGISTRY_IDENTITY ' + json.dumps(registry) + '\n' + line(result)
+        'nextnOwnerPath': wrapper, 'nextnOwnerSha256': digest,
+        'nextnAddress': 5000, 'nextnOwnerBase': 1024}
+    return ('PASSIVE_MODULE ' + json.dumps({**row, 'checkpoint': 'after-public-model-outcome'}) + '\n'
+        + 'REGISTRY_IDENTITY ' + json.dumps(registry) + '\n'
+        + 'PASSIVE_MODULE ' + json.dumps({**row, 'checkpoint': 'after-registry-observation'}) + '\n'
+        + line(result))
+
+
+def split_observations(root):
+    wrapper, llama, ggml = [str(root / name) for name in ('llamadart.dll', 'llama.dll', 'ggml.dll')]
+    digest = hashlib.sha256(b'syntheticDLL').hexdigest()
+    registry = {'address': 2048, 'ownerBase': 1024, 'ownerPath': ggml}
+    rows = [{'modulePath': path, 'checkpoint': 'after-public-model-outcome', 'sha256': digest,
+        'exports': ([{'symbol': 'llama_model_load_from_file', 'address': 3000, 'ownerPath': llama}]
+                    if path == llama else []), 'imports': []} for path in (wrapper, llama, ggml)]
+    identity = {'primaryMatchesCodeAsset': True, 'noUnintendedDuplicateRegistry': True,
+        'observerAfterFirstPassiveSnapshot': True, 'codeAssetAddress': 2048,
+        'codeAssetProvider': [registry], 'primaryRegistryImports': [registry]}
+    return ''.join('PASSIVE_MODULE ' + json.dumps(row) + '\n' for row in rows) + 'REGISTRY_IDENTITY ' + json.dumps(identity) + '\n'
 
 
 class QualificationControls(unittest.TestCase):
@@ -167,13 +186,13 @@ class QualificationControls(unittest.TestCase):
         wrong = stdout.replace('"codeAssetAddress": 2048', '"codeAssetAddress": 2049')
         with self.assertRaisesRegex(v.Refusal, 'addresses disagree'):
             v.native_modules(wrong, 'macos-arm64')
-        wrong = stdout.replace('"ownerPath": ' + json.dumps(str(self.root / 'libggml.dylib')),
+        wrong = stdout.replace('"ownerPath": ' + json.dumps(str(self.root / 'libllamadart.dylib')),
                                '"ownerPath": "/foreign/libggml.dylib"')
-        with self.assertRaisesRegex(v.Refusal, 'owner outside'):
+        with self.assertRaisesRegex(v.Refusal, 'consolidated export owner'):
             v.native_modules(wrong, 'macos-arm64')
 
     def test_provider_binding_preserves_actual_hash_and_rejects_foreign_or_changed(self):
-        path = self.root / 'libllama.dylib'; path.write_bytes(fixture())
+        path = self.root / 'libllamadart.dylib'; path.write_bytes(fixture())
         members = {path.name: {'bytes': fixture(), 'archive': 'synthetic', 'member': 'lib/' + path.name}}
         modules = {str(path): {'sha256': v.sha256(path)}}
         bound = v.bind_providers(modules, members, 'macos', self.root)
@@ -211,12 +230,12 @@ class QualificationControls(unittest.TestCase):
         archive = directory / f'llamadart-native-{target}-{tag}.tar.gz'
         def make(unsafe=False):
             with tarfile.open(archive, 'w:gz') as bundle:
-                for name in ('libllamadart.dylib', 'libllama.dylib', 'libggml.dylib'):
-                    row = tarfile.TarInfo('../escape' if unsafe else 'lib/' + name)
+                for name in ('libllamadart.dylib',):
+                    row = tarfile.TarInfo('../escape' if unsafe else './' + name)
                     row.size = len(fixture()); bundle.addfile(row, io.BytesIO(fixture()))
         make()
         acquired, members = v.archive_members(self.root, tag, target, {target: v.sha256(archive)})
-        self.assertEqual(3, len(members)); self.assertEqual(1, len(acquired))
+        self.assertEqual(1, len(members)); self.assertEqual(1, len(acquired))
         with self.assertRaisesRegex(v.Refusal, 'checksum mismatch'):
             v.archive_members(self.root, tag, target, {target: '0' * 64})
         make(True)
@@ -265,7 +284,7 @@ class QualificationControls(unittest.TestCase):
             raise AssertionError(arguments)
         def libraries(directory):
             directory.mkdir(parents=True, exist_ok=True)
-            for name in ('libllamadart.dylib', 'libllama.dylib', 'libggml.dylib'):
+            for name in ('libllamadart.dylib',):
                 (directory / name).write_bytes(fixture())
         def fake_command(argv, *, cwd, env, timeout, log):
             calls.append([str(value) for value in argv])
@@ -301,7 +320,7 @@ class QualificationControls(unittest.TestCase):
             Path(str(log) + '.command.json').write_text(json.dumps({'synthetic': True, 'cleanupComplete': True}))
             return stdout
         members = {name: {'bytes': fixture(), 'archive': 'synthetic', 'member': 'lib/' + name}
-                   for name in ('libllamadart.dylib', 'libllama.dylib', 'libggml.dylib')}
+                   for name in ('libllamadart.dylib',)}
         original_write = qualify.write_json
         signalled = False
         def signal_while_sealing(path, value):

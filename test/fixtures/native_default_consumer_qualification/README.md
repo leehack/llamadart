@@ -62,15 +62,22 @@ never qualifies the campaign. Uncatchable process termination cannot write a
 receipt. Background-thread callers are refused before child creation.
 
 Observers run after the public outcome. Windows reuses the maintained passive
-module/IAT observer with pinned-SDK formatting only; macOS enumerates dyld images, records actual
-provider hashes, reads the primary's loaded indirect registry import pointer,
-and resolves actual symbol owners with `dladdr`. Code-asset resolution/getters
+module/IAT observer with pinned-SDK formatting only; macOS requires the reviewed consolidated single-image layout. It enumerates
+dyld images, records their actual base/hash, and resolves self-owned registry,
+model-loader, wrapper-loader and retained-query exports with `dladdr`. The
+registry probe uses the emitted `package:llamadart/llamadart` asset, and the
+generated wrapper-model binding's actual code-asset address must match its
+resident self-export. This consolidated relation does not manufacture an
+import row; split or mixed Apple runtime layouts fail closed. Code-asset resolution/getters
 are explicitly labeled as potentially loading or initializing, after the first
 passive snapshot. Query probing uses only an already-observed resident wrapper.
 The retained `nextn(null)` must be false; the legacy query must exist for native2
 and be absent for native3. Runtime modules and actual native symbol owners must
 remain within the copied bundle for AOT, with no foreign native fallback.
 
+The macOS archive must have exactly one regular root runtime member,
+`libllamadart.dylib`, as verified for native2 and native3. Extra, missing, split
+or nested raw members fail; Windows retains its split-module/IAT contract.
 Checksums bind hook-cache archives to committed release pins; loaded Windows
 DLLs must match their verified raw members exactly. macOS preserves each actual
 whole-file hash. When whole-file bytes differ, the copied maintained comparator

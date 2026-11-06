@@ -149,6 +149,52 @@ def public_result(stdout):
     return result
 
 
+MAC_SYMBOLS = ('ggml_backend_reg_count', 'llama_model_load_from_file',
+               'llama_dart_model_load_from_file', 'llama_dart_speculative_need_embd_nextn')
+MAC_ASSET = 'package:llamadart/llamadart'
+
+
+def mac_self_exports(row):
+    path, base = row.get('modulePath'), row.get('moduleBase')
+    require(type(base) is int and base > 0, 'consolidated image base missing')
+    require(path.replace('\\', '/').rsplit('/', 1)[-1] == 'libllamadart.dylib',
+            'unsupported consolidated Apple provider name')
+    required = {}
+    for symbol in MAC_SYMBOLS:
+        candidates = [entry for entry in row.get('exports', []) if entry.get('symbol') == symbol]
+        require(len(candidates) == 1, 'missing/duplicate consolidated self-owned export: ' + symbol)
+        exported = candidates[0]
+        require(exported.get('ownerPath') == path and exported.get('ownerBase') == base
+                and type(exported.get('address')) is int and exported['address'] > base,
+                'foreign or invalid consolidated export owner: ' + symbol)
+        required[symbol] = exported
+    require(not row.get('imports'), 'consolidated Apple cannot substitute split native imports')
+    return required
+
+
+def mac_registry_identity(modules, identity):
+    require(len(modules) == 1, 'consolidated Apple requires exactly one native provider')
+    row = next(iter(modules.values()))
+    exports = mac_self_exports(row)
+    registry = exports['ggml_backend_reg_count']
+    require(identity.get('runtimeLayout') == 'consolidated-apple', 'unknown Apple runtime layout')
+    require(identity.get('codeAssetId') == MAC_ASSET, 'wrong consolidated code-asset ID')
+    require(identity.get('primaryRegistryImports') == [], 'fabricated consolidated registry imports')
+    require(identity.get('primaryRegistryExport') == registry
+            and identity.get('codeAssetProvider') == [registry], 'consolidated registry export relation mismatch')
+    require(identity.get('codeAssetAddress') == registry['address'], 'registry addresses disagree')
+    for key, symbol in (('codeAssetOwner', 'ggml_backend_reg_count'),
+                        ('modelCodeAsset', 'llama_dart_model_load_from_file')):
+        actual = identity.get(key, {})
+        exported = exports[symbol]
+        require(all(actual.get(field) == exported[field] for field in ('address', 'ownerPath', 'ownerBase'))
+                and actual.get('sha256') == row['sha256'], 'consolidated code-asset owner/hash mismatch: ' + key)
+    require(identity['modelCodeAsset'].get('assetId') == MAC_ASSET
+            and identity['modelCodeAsset'].get('symbol') == 'llama_dart_model_load_from_file',
+            'wrong model code-asset contract')
+    require(identity.get('distinctRegistryProviderBasesBefore') == 1, 'ambiguous consolidated registry base')
+
+
 def native_modules(stdout, platform):
     rows = [json.loads(line.removeprefix('PASSIVE_MODULE ')) for line in stdout.splitlines()
             if line.startswith('PASSIVE_MODULE ')]
@@ -164,7 +210,18 @@ def native_modules(stdout, platform):
         previous = modules.get(path)
         require(previous is None or previous['sha256'] == row['sha256'], 'loaded provider changed between observations')
         modules[path] = row
-    require(len(modules) >= 3, 'incomplete native provider map')
+    require(platform in ('macos-arm64', 'windows-x64'), 'unsupported provider qualification target')
+    if platform == 'macos-arm64':
+        require(len(modules) == 1, 'consolidated Apple requires exactly one native provider')
+        checkpoints = set()
+        for row in rows:
+            if row.get('modulePath') in modules:
+                mac_self_exports(row)
+                checkpoints.add(row['checkpoint'])
+        require(checkpoints == {'after-public-model-outcome', 'after-registry-observation'},
+                'incomplete consolidated before/after observation')
+    else:
+        require(len(modules) >= 3, 'incomplete native provider map')
     model_owners = set()
     for row in modules.values():
         for exported in row.get('exports', []):
@@ -187,6 +244,9 @@ def native_modules(stdout, platform):
             'native primary/code-asset registry mismatch')
     require(identity.get('observerAfterFirstPassiveSnapshot') is True,
             'code-asset resolution must follow passive observation')
+    if platform == 'macos-arm64':
+        mac_registry_identity(modules, identity)
+        return modules, identity
     # Check the emitted actual owner map, rather than trusting only booleans.
     providers = identity.get('codeAssetProvider', [])
     primary = identity.get('primaryRegistryImports', [])
@@ -207,10 +267,18 @@ def query_result(result, modules, tag):
         require(query.get(path_key) in modules, 'query provider outside observed native map')
         require(query.get(hash_key) == modules[query[path_key]]['sha256'], 'query owner hash mismatch')
     require(query['wrapperPath'] == query['nextnOwnerPath'], 'retained query forwarded to foreign provider')
+    if len(modules) == 1 and Path(query['wrapperPath']).name == 'libllamadart.dylib':
+        row = modules[query['wrapperPath']]
+        exported = mac_self_exports(row)['llama_dart_speculative_need_embd_nextn']
+        require(query.get('nextnAddress') == exported['address']
+                and query.get('nextnOwnerBase') == row['moduleBase'], 'retained query address/base mismatch')
 
 
 def archive_members(cache, tag, target, expected):
     """Read only checksum-verified hook archives, never the extracted-cache oracle."""
+    require(target in ('macos-arm64', 'windows-x64'), 'unsupported archive qualification target')
+    if target == 'macos-arm64':
+        require(set(expected) == {target}, 'unexpected consolidated Apple sidecar')
     cache = Path(cache)
     acquired = {}
     members = {}
@@ -235,13 +303,18 @@ def archive_members(cache, tag, target, expected):
                 require(row.name not in seen, 'duplicate archive member')
                 seen.add(row.name)
                 require(row.isdir() or row.isfile(), 'archive links/special entries require explicit review')
+                if target == 'macos-arm64' and row.isfile():
+                    require(name.as_posix() == 'libllamadart.dylib', 'extra/unknown consolidated archive member')
                 if not row.isfile() or not NATIVE_NAME.fullmatch(name.name):
                     continue
                 require(0 < row.size <= 1_000_000_000, 'invalid native member size')
                 content = bundle.extractfile(row).read()
                 require(name.name not in members, 'ambiguous native member basename')
                 members[name.name] = {'archive': archive, 'member': row.name, 'bytes': content}
-    require(len(members) >= 3, 'incomplete verified native archive members')
+    if target == 'macos-arm64':
+        require(set(members) == {'libllamadart.dylib'}, 'missing consolidated archive member')
+    else:
+        require(len(members) >= 3, 'incomplete verified native archive members')
     return acquired, members
 
 
@@ -274,6 +347,11 @@ def mac_relation(raw, actual):
 
 
 def bind_providers(modules, members, platform, allowed_root):
+    if platform == 'macos':
+        require(set(members) == {'libllamadart.dylib'}
+                and len(modules) == 1
+                and Path(next(iter(modules))).name == 'libllamadart.dylib',
+                'consolidated Apple provider/member set mismatch')
     bound = {}
     for path, row in modules.items():
         require(inside(path, allowed_root), 'foreign loaded provider outside allowed root')
