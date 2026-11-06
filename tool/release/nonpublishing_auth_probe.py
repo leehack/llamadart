@@ -25,6 +25,10 @@ TAG = re.compile(r"ci-auth-probe-([1-9][0-9]*)-([0-9a-f]{32})\Z")
 SHA = re.compile(r"[0-9a-f]{40}\Z")
 LIMIT = 128 * 1024
 API_LIMIT = 2 * 1024 * 1024
+WRITE_PERMISSION_SETS = {
+    frozenset((("contents", "write"),)): "contents-write",
+    frozenset((("contents", "write"), ("workflows", "write"))): "contents-and-workflows-write",
+}
 
 
 class Failure(Exception):
@@ -66,6 +70,41 @@ def decode(body):
     return result
 
 
+def accepted_permissions_classification(value):
+    # GitHub joins required permissions with commas and alternatives with semicolons.
+    if value is None:
+        return "missing"
+    if (not isinstance(value, str) or not 1 <= len(value) <= 256
+            or any(not (32 <= ord(char) <= 126 or char == "\t") for char in value)):
+        return "malformed"
+    alternatives = value.split(";")
+    if not 1 <= len(alternatives) <= 2:
+        return "malformed"
+    parsed = []
+    for alternative in alternatives:
+        terms = alternative.split(",")
+        if not 1 <= len(terms) <= 2:
+            return "malformed"
+        permissions = {}
+        for term in terms:
+            term = term.strip(" \t")
+            if not re.fullmatch(r"[a-z][a-z0-9_]*=[a-z][a-z0-9_]*", term):
+                return "malformed"
+            name, level = term.split("=")
+            if name in permissions:
+                return "malformed"
+            permissions[name] = level
+        branch = frozenset(permissions.items())
+        if branch not in WRITE_PERMISSION_SETS:
+            return "unrecognized"
+        if branch in parsed:
+            return "malformed"
+        parsed.append(branch)
+    if len(parsed) == 2:
+        return "documented-alternatives"
+    return WRITE_PERMISSION_SETS[parsed[0]]
+
+
 def negative_denial_predicates(status, headers, raw):
     body = None
     try:
@@ -76,6 +115,7 @@ def negative_denial_predicates(status, headers, raw):
                 "response-too-large", "duplicate-json-key", "invalid-json", "invalid-json-object"}:
             raise
     remaining = headers.get("x-ratelimit-remaining")
+    permissions = accepted_permissions_classification(headers.get("x-accepted-github-permissions"))
     return {
         "statusIs403": status == 403,
         "rateLimitRemainingPresent": "x-ratelimit-remaining" in headers,
@@ -85,6 +125,9 @@ def negative_denial_predicates(status, headers, raw):
         "retryAfterAbsent": "retry-after" not in headers,
         "acceptedPermissionsPresent": "x-accepted-github-permissions" in headers,
         "acceptedPermissionsIsContentsWrite": headers.get("x-accepted-github-permissions") == "contents=write",
+        "acceptedPermissionsClassification": permissions,
+        "acceptedPermissionsRequireContentsWrite": permissions in {
+            *WRITE_PERMISSION_SETS.values(), "documented-alternatives"},
         "bodyIsJsonObject": body is not None,
         "messageIsIntegrationDenial": body is not None and body.get("message") == "Resource not accessible by integration",
     }
@@ -396,7 +439,7 @@ class Probe:
             try:
                 require(status == 403 and headers.get("x-ratelimit-remaining") != "0"
                         and "retry-after" not in headers
-                        and headers.get("x-accepted-github-permissions") == "contents=write"
+                        and predicates["acceptedPermissionsRequireContentsWrite"]
                         and decode(raw).get("message") == "Resource not accessible by integration", "negative-not-write-denial")
             except Exception:
                 try:

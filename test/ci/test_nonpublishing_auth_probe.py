@@ -250,9 +250,101 @@ class ProbeTests(unittest.TestCase):
                 self.assertEqual(1, len(self.mutations()))
 
     def denial_receipt(self):
-        return json.loads((self.probe.journal.directory / "negative-denial.json").read_text())
+        receipt = json.loads((self.probe.journal.directory / "negative-denial.json").read_text())
+        self.assertIn(receipt["acceptedPermissionsClassification"], {
+            "missing", "malformed", "unrecognized", "contents-write",
+            "contents-and-workflows-write", "documented-alternatives"})
+        self.assertTrue(all(type(value) is bool for key, value in receipt.items()
+                            if key != "acceptedPermissionsClassification"))
+        return receipt
 
-    def test_negative_denial_receipt_records_only_fixed_boolean_predicates(self):
+    def test_documented_permission_header_forms_complete_sender(self):
+        cases = [
+            ("literal", "contents=write", "contents-write"),
+            ("and", "contents=write,workflows=write", "contents-and-workflows-write"),
+            ("and-reordered", "workflows=write,contents=write", "contents-and-workflows-write"),
+            ("alternatives", "contents=write; contents=write,workflows=write", "documented-alternatives"),
+            ("alternatives-inner-reordered", "contents=write;workflows=write,contents=write", "documented-alternatives"),
+            ("alternatives-outer-reordered", "contents=write,workflows=write;contents=write", "documented-alternatives"),
+            ("alternatives-reordered", "workflows=write,contents=write;contents=write", "documented-alternatives"),
+            ("literal-whitespace", "\t contents=write \t", "contents-write"),
+            ("whitespace", "\t contents=write , workflows=write \t", "contents-and-workflows-write"),
+        ]
+        for name, value, classification in cases:
+            with self.subTest(case=name):
+                self.setUp()
+                self.http.options["negative_headers"] = {"x-accepted-github-permissions": value}
+                result = self.probe.sender()
+                self.assertTrue(result["passed"])
+                receipt = self.denial_receipt()
+                self.assertEqual(classification, receipt["acceptedPermissionsClassification"])
+                self.assertIs(True, receipt["acceptedPermissionsRequireContentsWrite"])
+                self.assertEqual(value == "contents=write", receipt["acceptedPermissionsIsContentsWrite"])
+                self.assertEqual(["POST", "POST", "DELETE"], [call[0] for call in self.mutations()])
+                self.assertEqual({}, self.http.refs)
+
+    def test_unknown_or_malformed_permission_header_stops_before_positive(self):
+        cases = [
+            ("missing", None, "missing"), ("wrong-type", [], "malformed"),
+            ("empty", "", "malformed"), ("read-only", "contents=read", "unrecognized"),
+            ("workflows-only", "workflows=write", "unrecognized"),
+            ("unknown-conjunct", "contents=write,metadata=read", "unrecognized"),
+            ("unknown-alternative", "contents=write;issues=write", "unrecognized"),
+            ("unknown-first-alternative", "issues=write;contents=write", "unrecognized"),
+            ("weaker-alternative", "contents=write;contents=read", "unrecognized"),
+            ("unknown-level", "contents=admin", "unrecognized"),
+            ("duplicate-term", "contents=write,contents=write", "malformed"),
+            ("conflicting-term", "contents=write,contents=read", "malformed"),
+            ("duplicate-alternative", "contents=write;contents=write", "malformed"),
+            ("reordered-duplicate-alternative",
+             "contents=write,workflows=write;workflows=write,contents=write", "malformed"),
+            ("leading-delimiter", ";contents=write", "malformed"),
+            ("trailing-delimiter", "contents=write;", "malformed"),
+            ("empty-term", "contents=write,", "malformed"),
+            ("extra-equals", "contents==write", "malformed"),
+            ("quoted", '"contents=write"', "malformed"),
+            ("newline", "contents=write\n", "malformed"),
+            ("crlf", "contents=write\r\nX: injected", "malformed"),
+            ("nul", "contents=write\x00", "malformed"),
+            ("del", "contents=write\x7f", "malformed"),
+            ("non-ascii", "contents=wr\u0131te", "malformed"),
+            ("case-change", "Contents=write", "malformed"),
+            ("internal-whitespace", "contents =write", "malformed"),
+            ("too-many-alternatives", "contents=write;contents=write,workflows=write;contents=write", "malformed"),
+            ("too-many-terms", "contents=write,workflows=write,issues=write", "malformed"),
+            ("oversized", "x" * 257, "malformed"),
+            ("secret-url-injection", "contents=write," + READ + SECRET + SAS + LOCATION, "malformed"),
+        ]
+        for name, value, classification in cases:
+            with self.subTest(case=name):
+                self.setUp()
+                self.http.options["negative_headers"] = {"x-accepted-github-permissions": value}
+                self.assertEqual("negative-not-write-denial", self.fail())
+                receipt = self.denial_receipt()
+                self.assertEqual(classification, receipt["acceptedPermissionsClassification"])
+                self.assertIs(False, receipt["acceptedPermissionsRequireContentsWrite"])
+                self.assertNotIn("RELEASE_AUTOMATION_TOKEN", self.credentials)
+                self.assertEqual([("POST", p.ROOT + "/git/refs", READ,
+                                   {"ref": "refs/tags/" + NEGATIVE, "sha": SHA})], self.mutations())
+                self.assertEqual("absent", json.loads((self.probe.journal.directory /
+                    "negative-inspection.json").read_text())["observed"])
+                self.assertFalse((self.probe.journal.directory / "positive-create-intent.json").exists())
+                evidence = "".join(path.read_text() for path in self.probe.journal.directory.iterdir())
+                for secret in (READ, SECRET, SAS, LOCATION):
+                    self.assertNotIn(secret, evidence)
+
+    def test_denial_guard_consumes_the_same_permission_parse_as_telemetry(self):
+        with patch.object(p, "accepted_permissions_classification", return_value="unrecognized") as parser:
+            self.assertEqual("negative-not-write-denial", self.fail())
+        parser.assert_called_once_with("contents=write")
+        receipt = self.denial_receipt()
+        self.assertIs(True, receipt["acceptedPermissionsIsContentsWrite"])
+        self.assertEqual("unrecognized", receipt["acceptedPermissionsClassification"])
+        self.assertIs(False, receipt["acceptedPermissionsRequireContentsWrite"])
+        self.assertNotIn("RELEASE_AUTOMATION_TOKEN", self.credentials)
+        self.assertEqual(1, len(self.mutations()))
+
+    def test_negative_denial_receipt_records_only_fixed_predicates_and_classification(self):
         self.probe.sender()
         self.assertEqual({
             "statusIs403": True,
@@ -262,6 +354,8 @@ class ProbeTests(unittest.TestCase):
             "retryAfterAbsent": True,
             "acceptedPermissionsPresent": True,
             "acceptedPermissionsIsContentsWrite": True,
+            "acceptedPermissionsClassification": "contents-write",
+            "acceptedPermissionsRequireContentsWrite": True,
             "bodyIsJsonObject": True,
             "messageIsIntegrationDenial": True,
         }, self.denial_receipt())
@@ -294,7 +388,6 @@ class ProbeTests(unittest.TestCase):
                 self.assertEqual(category, self.fail())
                 receipt = self.denial_receipt()
                 self.assertIs(False, receipt[predicate])
-                self.assertTrue(all(type(value) is bool for value in receipt.values()))
                 self.assertNotIn("RELEASE_AUTOMATION_TOKEN", self.credentials)
                 self.assertEqual([("POST", p.ROOT + "/git/refs", READ,
                                    {"ref": "refs/tags/" + NEGATIVE, "sha": SHA})], self.mutations())
@@ -324,7 +417,7 @@ class ProbeTests(unittest.TestCase):
         evidence = "".join(path.read_text() for path in self.probe.journal.directory.iterdir())
         for value in (READ, SECRET, SAS, LOCATION, "https://", "blob.core.windows.net"):
             self.assertNotIn(value, evidence)
-        self.assertTrue(all(type(value) is bool for value in self.denial_receipt().values()))
+        self.denial_receipt()
 
     def test_accepted_denial_never_retains_unrelated_response_fields(self):
         self.http.options = {
@@ -365,6 +458,26 @@ class ProbeTests(unittest.TestCase):
             else:
                 raise AssertionError("SIGTERM cancellation was swallowed")
         self.assertEqual([True], signals)
+        self.assert_stopped_at_negative()
+
+    def test_sigterm_during_permission_parse_cannot_reach_positive_operations(self):
+        previous = signal.signal(signal.SIGTERM, p.interrupted)
+        self.addCleanup(signal.signal, signal.SIGTERM, previous)
+        original = p.accepted_permissions_classification
+        signals = []
+        def classify(value):
+            signals.append(True)
+            signal.raise_signal(signal.SIGTERM)
+            return original(value)
+        with patch.object(p, "accepted_permissions_classification", side_effect=classify):
+            self.assertEqual("cancelled", self.fail())
+        self.assertEqual([True], signals)
+        self.assert_stopped_at_negative()
+
+    def test_operational_permission_parse_failure_stops_before_positive(self):
+        with patch.object(p, "accepted_permissions_classification", side_effect=OSError(SECRET + LOCATION)), \
+                self.assertRaises(OSError):
+            self.probe.sender()
         self.assert_stopped_at_negative()
 
     def test_denial_observation_propagates_operational_and_unexpected_decode_failures(self):
