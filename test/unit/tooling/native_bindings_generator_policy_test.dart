@@ -30,6 +30,15 @@ final class _AstContext implements generator.Context {
   @override
   final Logger logger = Logger.detached('synthetic-binding-policy');
 
+  // Compound construction checks Objective-C imports even for C structs.
+  @override
+  late final cg.ObjCBuiltInFunctions objCBuiltInFunctions =
+      cg.ObjCBuiltInFunctions(
+        this,
+        // ignore: deprecated_member_use
+        config.objectiveC?.generateForPackageObjectiveC ?? false,
+      );
+
   @override
   final generator.LibraryImports libs = generator.LibraryImports();
 
