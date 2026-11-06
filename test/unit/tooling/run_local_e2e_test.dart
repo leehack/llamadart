@@ -12,6 +12,67 @@ import '../../../tool/audio_chat_smoke_support.dart';
 import '../../../tool/testing/run_local_e2e.dart';
 
 void main() {
+  group('default native consumer AOT scenario', () {
+    const identity = {
+      'LLAMADART_DEFAULT_AOT_EXPECTED_SHA': '1111111111111111111111111111111111111111',
+      'LLAMADART_DEFAULT_AOT_EXPECTED_NATIVE_TAG': 'v0.8.0-2',
+      'LLAMADART_DEFAULT_AOT_MODEL_PATH': '/local/Qwen fixture.gguf',
+      'LLAMADART_DEFAULT_AOT_OUTPUT_ROOT': '/local/fresh evidence',
+    };
+    test('list and outer dry-run never execute the qualification driver', () async {
+      Future<ProcessResult> forbidden(LocalE2eCommandStep step) async {
+        fail('list/dry-run must not launch ${step.executable}');
+      }
+      final listed = await runLocalE2e(['--list'], projectRoot: '/repo',
+          environment: {}, foregroundStepRun: forbidden);
+      expect(listed.stdout, contains('native-default-consumer-aot'));
+      final inspected = await runLocalE2e(
+        ['--scenario', 'native-default-consumer-aot', '--dry-run'],
+        projectRoot: '/repo', environment: {}, foregroundStepRun: forbidden,
+      );
+      expect(inspected.exitCode, 0);
+      expect(inspected.stdout, contains('native_default_consumer_qualification/qualify.py'));
+      for (final variable in identity.keys) {
+        expect(inspected.stdout, contains('<$variable>'));
+      }
+    });
+    test('execution requires independent identity and passes opaque paths as argv', () async {
+      var launches = 0;
+      Future<ProcessResult> inspect(LocalE2eCommandStep step) async {
+        launches++;
+        expect(step.workingDirectory, '/repo');
+        expect(step.background, isFalse);
+        expect(step.arguments, [
+          'test/fixtures/native_default_consumer_qualification/qualify.py',
+          '--core-root', '/repo', '--expected-core-sha', identity['LLAMADART_DEFAULT_AOT_EXPECTED_SHA'],
+          '--expected-native-tag', 'v0.8.0-2', '--model', '/local/Qwen fixture.gguf',
+          '--output', '/local/fresh evidence',
+        ]);
+        return ProcessResult(1, 7, '', 'synthetic qualification failure');
+      }
+      for (final missing in identity.keys) {
+        final result = await runLocalE2e(['--scenario', 'native-default-consumer-aot'],
+          projectRoot: '/repo', environment: {...identity}..remove(missing),
+          foregroundStepRun: inspect);
+        expect(result.exitCode, 64);
+      }
+      for (final malformed in ['BAD', '0000000000000000000000000000000000000000']) {
+        final result = await runLocalE2e(['--scenario', 'native-default-consumer-aot'],
+          projectRoot: '/repo', environment: {...identity, 'LLAMADART_DEFAULT_AOT_EXPECTED_SHA': malformed},
+          foregroundStepRun: inspect);
+        expect(result.exitCode, 64);
+      }
+      final wrongTag = await runLocalE2e(['--scenario', 'native-default-consumer-aot'],
+        projectRoot: '/repo', environment: {...identity, 'LLAMADART_DEFAULT_AOT_EXPECTED_NATIVE_TAG': 'v0.8.0-1'},
+        foregroundStepRun: inspect);
+      expect(wrongTag.exitCode, 64);
+      expect(launches, 0);
+      final actual = await runLocalE2e(['--scenario', 'native-default-consumer-aot'],
+        projectRoot: '/repo', environment: identity, foregroundStepRun: inspect);
+      expect(actual.exitCode, 7);
+      expect(launches, 1);
+    });
+  });
   group('foreground output decoding', () {
     late Directory directory;
     late File child;
