@@ -4,6 +4,7 @@ import hashlib
 import io
 import json
 import os
+import re
 from pathlib import Path
 import subprocess
 import sys
@@ -15,6 +16,14 @@ from unittest.mock import patch
 import qualify
 import verify as v
 from test_compare_macho_identity import fixture, dylib
+
+
+def pin_fixture(tag='v0.8.0-2'):
+    # Model both future source pins without pinning source-only controls to
+    # today's production tag. Archive bytes are fabricated in separate tests.
+    source = (qualify.FIXTURE.parents[2] / 'lib/src/hook/native_release_pins.dart').read_text()
+    return re.sub(r"^const llamaCppTag = '[^']+';$", "const llamaCppTag = '" + tag + "';",
+                  source, count=1, flags=re.M)
 
 
 def good_result():
@@ -69,10 +78,12 @@ class QualificationControls(unittest.TestCase):
         self.assertTrue(v.scope('v0.8.0-3', True)['finalNative3Qualified'])
 
     def test_tag_is_verification_only_and_mismatch_refused(self):
-        source = (qualify.FIXTURE.parents[2] / 'lib/src/hook/native_release_pins.dart').read_text()
-        self.assertIn('macos-arm64', v.pins(source, 'v0.8.0-2', 'macos-arm64'))
-        with self.assertRaisesRegex(v.Refusal, 'committed default pin'):
-            v.pins(source, 'v0.8.0-3', 'macos-arm64')
+        for tag in v.TAGS:
+            source = pin_fixture(tag)
+            self.assertIn('macos-arm64', v.pins(source, tag, 'macos-arm64'))
+            other = next(value for value in v.TAGS if value != tag)
+            with self.assertRaisesRegex(v.Refusal, 'committed default pin'):
+                v.pins(source, other, 'macos-arm64')
         config = qualify.pubspec(self.root)
         self.assertIn('llamadart_native_runtimes: [llama_cpp]', config)
         for forbidden in ('native_tag', 'native_path', 'native_repository', 'native_backends', 'v0.8.0'):
@@ -213,7 +224,7 @@ class QualificationControls(unittest.TestCase):
     def test_dry_run_uses_no_child_sdk_or_model_read(self):
         core = self.root / 'core'; core.mkdir()
         pins = core / 'lib/src/hook/native_release_pins.dart'; pins.parent.mkdir(parents=True)
-        pins.write_text((qualify.FIXTURE.parents[2] / 'lib/src/hook/native_release_pins.dart').read_text())
+        pins.write_text(pin_fixture())
         (core / '.flutter-version').write_text('3.47.1\n')
         args = argparse.Namespace(core_root=str(core), expected_core_sha='a' * 40,
             expected_native_tag='v0.8.0-2', model='/nonexistent-model', output=str(self.root / 'out'), dry_run=True)
@@ -233,7 +244,7 @@ class QualificationControls(unittest.TestCase):
         for name in ('consumer.dart', 'providers.dart', 'passive_modules.dart'):
             (fixture_dir / name).write_text((qualify.FIXTURE / name).read_text())
         pin = core / 'lib/src/hook/native_release_pins.dart'; pin.parent.mkdir(parents=True)
-        pin.write_text((qualify.FIXTURE.parents[2] / 'lib/src/hook/native_release_pins.dart').read_text())
+        pin.write_text(pin_fixture())
         (core / '.flutter-version').write_text('3.47.1\n')
         files = [p.relative_to(core).as_posix() for p in core.rglob('*') if p.is_file()]
         sdk = self.root / 'synthetic-sdk'; (sdk / 'bin/cache').mkdir(parents=True)
