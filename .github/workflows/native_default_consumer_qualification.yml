@@ -13,6 +13,15 @@ on:
         type: choice
         options: ['v0.8.0-2', 'v0.8.0-3']
 
+  workflow_call:
+    inputs:
+      expected_sha:
+        required: true
+        type: string
+      expected_native_tag:
+        required: true
+        type: string
+
 permissions:
   contents: read
 
@@ -50,7 +59,7 @@ jobs:
           ref: ${{ github.sha }}
           fetch-depth: 0
           persist-credentials: false
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.12'
       - uses: subosito/flutter-action@v2

@@ -1272,6 +1272,26 @@ It downloads once with streaming size/digest verification, offers no URL input,
 and retains per-platform/SHA/run/attempt artifacts for seven days, including
 failures. Transport errors never print redirect locations or signed URLs.
 
+Before the dedicated workflow first lands on the default branch, use the
+already registered `ci.yml` manual bridge at the reviewed branch commit.
+[GitHub requires the dispatch workflow to exist on the default branch](https://docs.github.com/en/actions/how-tos/manage-workflow-runs/manually-run-a-workflow).
+The bridge calls the new workflow from the same commit with read-only
+permissions and no secrets:
+
+```sh
+gh workflow run ci.yml --ref REVIEWED_BRANCH \
+  -f native_default_qualification=true \
+  -f native_default_expected_sha=REVIEWED_FULL_SHA \
+  -f native_default_expected_native_tag=v0.8.0-2
+```
+
+This explicit mode skips normal CI selection/fanout, its aggregate, the older
+Windows registry campaign and deployment. The flag defaults to false, retaining
+ordinary push, PR and manual CI behavior. The reusable entry accepts only the
+same required SHA/tag strings; it adds no automatic model trigger. Direct
+`workflow_dispatch` on the dedicated workflow remains available after its
+default-branch registration. Reruns are refused by the attempt-1 guard.
+
 Native `v0.8.0-2` is **pipeline baseline only**; it provides no native3 acceptance.
 Native3 acceptance remains [#1762](https://github.com/leehack/llamadart/issues/1762).
 It requires its own source/artifact/provenance gates, actual provider
