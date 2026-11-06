@@ -191,6 +191,41 @@ class CancellationControls(unittest.TestCase):
         self.assertEqual('Cancelled', receipt['failureType'])
         self.assertIn(signal.SIGTERM, receipt['cancelledSignals'])
 
+    def test_signal_during_handler_restoration_is_delivered_after_restoration(self):
+        exit_code = qualify.CancellationGuard.__exit__.__code__
+        lines, first = inspect.getsourcelines(qualify.CancellationGuard.__exit__)
+        restore = next(first + offset for offset, text in enumerate(lines)
+                       if 'for signum, previous in self.previous.items()' in text)
+        for timeout in (False, True):
+            with self.subTest(original_timeout=timeout):
+                observed = []
+                previous_handlers = {getattr(signal, name): signal.getsignal(getattr(signal, name))
+                    for name in ('SIGINT', 'SIGTERM', 'SIGBREAK') if hasattr(signal, name)}
+                def trace(frame, event, argument):
+                    if (frame.f_code is exit_code and event == 'line'
+                            and frame.f_lineno == restore and not observed):
+                        signal.raise_signal(signal.SIGTERM)
+                        observed.append(list(frame.f_locals['self'].signals))
+                    return trace
+                previous_trace = sys.gettrace()
+                log = self.root / ('restore-timeout' if timeout else 'restore-success')
+                try:
+                    sys.settrace(trace)
+                    expected = subprocess.TimeoutExpired if timeout else qualify.Cancelled
+                    with self.assertRaises(expected):
+                        qualify.command([sys.executable, '-c',
+                            'import time; time.sleep(30)' if timeout else 'pass'],
+                            cwd=self.root, env=dict(os.environ), timeout=.03 if timeout else 5, log=log)
+                    self.assertEqual([[signal.SIGTERM]], observed)
+                    receipt = json.loads(Path(str(log) + '.command.json').read_text())
+                    self.assertTrue(receipt['cleanupComplete'])
+                    self.assertEqual(expected.__name__, receipt['failureType'])
+                    self.assertIn(signal.SIGTERM, receipt['cancelledSignals'])
+                    for signum, previous in previous_handlers.items():
+                        self.assertEqual(previous, signal.getsignal(signum))
+                finally:
+                    sys.settrace(previous_trace)
+
     def test_background_thread_refuses_before_child_creation(self):
         errors = []
         def invoke():
