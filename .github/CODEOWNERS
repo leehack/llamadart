@@ -56,6 +56,7 @@ tool/native/sync_native_release_pins.py @leehack
 tool/native/test_sync_native_release_pins.py @leehack
 tool/native/sync_stable_diffusion_bindings.py @leehack
 tool/native/test_sync_stable_diffusion_bindings.py @leehack
+ffigen.yaml @leehack
 ffigen_stable_diffusion.yaml @leehack
 lib/src/backends/stable_diffusion/stable_diffusion_bindings.dart @leehack
 tool/native/fixtures/ @leehack

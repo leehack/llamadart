@@ -24,6 +24,18 @@ functions:
     - 'llama_dart_exit_call_begin'
     - 'llama_dart_exit_call_end'
     - 'llama_dart_exit_teardown'
+structs:
+  dependency-only: opaque
+  exclude:
+    - '_IO_FILE'
+    - '_IO_codecvt'
+    - '_IO_marker'
+    - '_IO_wide_data'
+typedefs:
+  exclude:
+    - '_IO_lock_t'
+    - '__off64_t'
+    - '__off_t'
 compiler-opts:
   - '-I.dart_tool/llamadart/ffigen_headers/llama_cpp/ggml/include'
   - '-I.dart_tool/llamadart/ffigen_headers/llama_cpp/include'
