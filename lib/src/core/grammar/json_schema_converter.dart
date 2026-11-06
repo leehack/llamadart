@@ -41,6 +41,19 @@ const _primitiveRules = <String, _BuiltinRule>{
     [],
   ),
   'string': _BuiltinRule(r'"\"" char* "\"" space', ['char']),
+  // A raw quote is text when the next non-space character cannot follow a
+  // closing quote, or when `"` or `}"` follows it. Closers before other text
+  // still end the string, so a model that miscounts closers is corrected
+  // rather than left inside the string.
+  'inner-quote-string': _BuiltinRule(
+    r'"\"" ( char | inner-quote | inner-quote-run+ inner-quote )* inner-quote-run* "\"" space',
+    ['char', 'inner-quote', 'inner-quote-run'],
+  ),
+  'inner-quote': _BuiltinRule(
+    r'"\"" " "* ( [^"\\\x7F\x00-\x1F ,}\]] | [\\] (["\\bfnrt] | "u" [0-9a-fA-F]{4}) )',
+    [],
+  ),
+  'inner-quote-run': _BuiltinRule(r'"\"" "}"?', []),
   'null': _BuiltinRule('"null" space', []),
 };
 
@@ -104,6 +117,12 @@ const _literalEscapes = <String, String>{
 ///
 /// Port of llama.cpp's `SchemaConverter` (json-schema-to-grammar.mjs).
 class JsonSchemaConverter {
+  /// Creates a converter; see [convert] for [innerQuoteStrings].
+  JsonSchemaConverter({this.innerQuoteStrings = false});
+
+  /// Whether unconstrained `string` schemas accept raw inner quotes.
+  final bool innerQuoteStrings;
+
   final Map<String, String> _rules = {'space': _spaceRule};
   final Map<String, dynamic> _refs = {};
   final Set<String> _refsBeingResolved = {};
@@ -190,8 +209,16 @@ class JsonSchemaConverter {
   /// Convert a JSON Schema to a GBNF grammar string.
   ///
   /// This is the main entry point. Pass the full JSON Schema as a map.
-  static String convert(Map<String, dynamic> schema) {
-    final converter = JsonSchemaConverter();
+  ///
+  /// With [innerQuoteStrings], values of unconstrained `string` schemas also
+  /// accept a raw `"` that no valid JSON continuation could follow, for models
+  /// that copy quotes into JSON strings unescaped. Object keys and constrained
+  /// strings keep the strict rule.
+  static String convert(
+    Map<String, dynamic> schema, {
+    bool innerQuoteStrings = false,
+  }) {
+    final converter = JsonSchemaConverter(innerQuoteStrings: innerQuoteStrings);
     converter.resolveRefs(schema, schema);
     converter.visit(schema, 'root');
     return converter.formatGrammar();
@@ -550,6 +577,16 @@ class JsonSchemaConverter {
       return _addRule(
         ruleName,
         _addPrimitive('object', _primitiveRules['object']!),
+      );
+    }
+
+    if (schemaType == 'string' && innerQuoteStrings) {
+      return _addRule(
+        ruleName,
+        _addPrimitive(
+          'inner-quote-string',
+          _primitiveRules['inner-quote-string']!,
+        ),
       );
     }
 

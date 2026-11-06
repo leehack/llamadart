@@ -220,6 +220,84 @@ class ToolCallParsingUtils {
     }
   }
 
+  /// Decodes [text] as JSON whose string values may hold raw inner quotes,
+  /// as `JsonSchemaConverter.convert(innerQuoteStrings: true)` admits them.
+  ///
+  /// A raw `"` in a string value is text when the next non-space character
+  /// cannot follow a closing quote, or when `"` or `}"` follows it;
+  /// otherwise it closes the string. Keys keep strict JSON. Returns null when
+  /// [text] is not JSON under that reading.
+  static Object? decodeJsonValueWithInnerQuotes(String text) {
+    final out = StringBuffer();
+    _scanInnerQuoteJson(text, 0, out);
+    return decodeJsonValue(out.toString());
+  }
+
+  /// The end offset of the JSON object or array at [start], read as
+  /// [decodeJsonValueWithInnerQuotes] reads it, or null when it is unclosed.
+  static int? innerQuoteJsonContainerEnd(String text, int start) =>
+      start < text.length && '[{'.contains(text[start])
+      ? _scanInnerQuoteJson(text, start, null)
+      : null;
+
+  /// With [out], copies [text] from [start] with inner quotes escaped and
+  /// returns null; without it, returns the offset after the container that
+  /// opens at [start], or null when that container is unclosed.
+  static int? _scanInnerQuoteJson(String text, int start, StringBuffer? out) {
+    final objects = <bool>[];
+    var key = false;
+    for (var i = start; i < text.length; i++) {
+      final char = text[i];
+      out?.write(char);
+      if (char != '"') {
+        switch (char) {
+          case '{':
+            objects.add(true);
+            key = true;
+          case '[':
+            objects.add(false);
+            key = false;
+          case '}' || ']':
+            if (objects.isNotEmpty) objects.removeLast();
+            key = false;
+            if (out == null && objects.isEmpty) return i + 1;
+          case ':':
+            key = false;
+          case ',':
+            key = objects.isNotEmpty && objects.last;
+        }
+        continue;
+      }
+      for (i++; i < text.length; i++) {
+        final inner = text[i];
+        if (inner == r'\') {
+          out?.write(inner);
+          if (++i < text.length) out?.write(text[i]);
+        } else if (inner == '"' && !key && _isInnerQuote(text, i)) {
+          out?.write(r'\"');
+        } else {
+          out?.write(inner);
+          if (inner == '"') break;
+        }
+      }
+    }
+    return null;
+  }
+
+  static bool _isInnerQuote(String text, int quote) {
+    final after = quote + 1;
+    if (text.startsWith('"', after) || text.startsWith('}"', after)) {
+      return true;
+    }
+    var at = after;
+    while (at < text.length && text[at] == ' ') {
+      at++;
+    }
+    if (at == text.length) return false;
+    final next = text.codeUnitAt(at);
+    return next >= 0x20 && next != 0x7f && !'",}]'.contains(text[at]);
+  }
+
   /// Decodes [text] as JSON and falls back to the original string on failure.
   static Object? decodeJsonValueOrString(
     String text, {

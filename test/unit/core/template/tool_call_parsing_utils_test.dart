@@ -1,9 +1,85 @@
 import 'dart:convert';
+import 'dart:math';
 
+import 'package:llamadart/src/core/grammar/json_schema_converter.dart';
 import 'package:llamadart/src/core/template/tool_call_parsing_utils.dart';
 import 'package:test/test.dart';
 
+import '../../../support/gbnf_recognizer.dart';
+
 void main() {
+  group('ToolCallParsingUtils.decodeJsonValueWithInnerQuotes', () {
+    Object? decode(String text) =>
+        ToolCallParsingUtils.decodeJsonValueWithInnerQuotes(text);
+
+    test('escapes raw quotes that no closing quote could precede', () {
+      expect(decode('{"code": "print(f"hi {name}")"}'), {
+        'code': 'print(f"hi {name}")',
+      });
+      expect(decode('{"text": "{"a": 1, "b": "two"}"}'), {
+        'text': '{"a": 1, "b": "two"}',
+      });
+      expect(decode('[{"t": "say "hi""}]'), [
+        {'t': 'say "hi"'},
+      ]);
+    });
+
+    test('keeps escapes and strict JSON unchanged', () {
+      expect(decode(r'{"p": "C:\\Users\\me", "q": "a\"b"}'), {
+        'p': r'C:\Users\me',
+        'q': 'a"b',
+      });
+      expect(decode('{"a": "x", "b": ["y", "z"]}'), {
+        'a': 'x',
+        'b': ['y', 'z'],
+      });
+    });
+
+    test('closes before a comma or a closer that text follows', () {
+      expect(decode('{"t": "a", "b"}'), isNull);
+      expect(decode('{"t": "a"}] b"}'), isNull);
+      expect(decode('{"k"x": "v"}'), isNull);
+    });
+
+    test('finds where a container ends under the same reading', () {
+      int? end(String text) =>
+          ToolCallParsingUtils.innerQuoteJsonContainerEnd(text, 0);
+      expect(end('[{"a": "b"c"}] x'), 14);
+      expect(end('{"a": "x"}"} ]'), 12);
+      expect(end('[{"a": "x"\n}] y'), 13);
+      expect(end('[{"a": "b"}'), isNull);
+      expect(end('"a"'), isNull);
+    });
+
+    test('reads exactly what the inner-quote grammar accepts', () {
+      final grammar = GbnfRecognizer(
+        JsonSchemaConverter.convert({
+          'type': 'object',
+          'properties': {
+            'a': {'type': 'string'},
+            'b': {'type': 'string'},
+          },
+          'required': ['a', 'b'],
+        }, innerQuoteStrings: true),
+      );
+      final random = Random(1609);
+      String text() => String.fromCharCodes([
+        for (var i = random.nextInt(7); i > 0; i--)
+          'a" }],:'.codeUnitAt(random.nextInt(7)),
+      ]);
+      for (var i = 0; i < 4000; i++) {
+        final a = text();
+        final b = text();
+        final json = '{"a": "$a", "b": "$b"}';
+        expect(
+          grammar.accepts(json),
+          equals(jsonEncode(decode(json)) == jsonEncode({'a': a, 'b': b})),
+          reason: json,
+        );
+      }
+    });
+  });
+
   group('ToolCallParsingUtils.literalOpening', () {
     test('finds the first whole or partial opening', () {
       const openings = ['<tool_call>', '[TOOL_CALLS]'];

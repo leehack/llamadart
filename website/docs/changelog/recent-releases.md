@@ -13,6 +13,8 @@ validate against the exact release tag notes.
 
 ## Unreleased
 
+- Keep unescaped inner double quotes in LFM2 JSON tool-call string arguments (`ToolChoice.required` or a `Force JSON schema.` prompt) instead of cutting the string at the first one ([#1609](https://github.com/leehack/llamadart/issues/1609)).
+
 - Document Safari 27 support for LiteRT-LM Web GPU generation, its `require-corp` isolation requirement and its termination of hidden tabs during large model loads ([#1025](https://github.com/leehack/llamadart/issues/1025)).
 
 - Isolate llama.cpp native bundle caches from older consumers and verify the current Apple companion’s exact framework checksum.

@@ -77,6 +77,67 @@ void main() {
     );
   });
 
+  group('innerQuoteStrings', () {
+    final schema = <String, dynamic>{
+      'type': 'object',
+      'properties': {
+        'text': {'type': 'string'},
+        'unit': {
+          'type': 'string',
+          'enum': ['a"b'],
+        },
+        'short': {'type': 'string', 'maxLength': 8},
+      },
+      'additionalProperties': {'type': 'string'},
+    };
+    final grammar = GbnfRecognizer(
+      JsonSchemaConverter.convert(schema, innerQuoteStrings: true),
+    );
+    String text(String raw) => '{"text": "$raw"}';
+
+    test('is off by default', () {
+      expect(
+        JsonSchemaConverter.convert(schema),
+        isNot(contains('inner-quote')),
+      );
+    });
+
+    test('takes a raw quote that no closing quote could precede', () {
+      for (final raw in [
+        'print(f"hi {name}")',
+        '{"a": 1, "b": "two"}',
+        'She said "hi"',
+        'a "" b',
+        r'a\"b',
+      ]) {
+        expect(grammar.accepts(text(raw)), isTrue, reason: raw);
+      }
+    });
+
+    test('ends the string where a closing quote can stand', () {
+      for (final raw in [
+        'a", "b',
+        'a" }',
+        'a"}]] b',
+        'a"]}"',
+        'a"]"b',
+        'a" "b',
+        'a\\x',
+      ]) {
+        expect(grammar.accepts(text(raw)), isFalse, reason: raw);
+      }
+    });
+
+    test('keeps keys and constrained strings strict', () {
+      expect(grammar.accepts('{"x"y": "v"}'), isFalse);
+      expect(grammar.accepts('{"x": "v"w"}'), isTrue);
+      expect(grammar.accepts(r'{"unit": "a\"b"}'), isTrue);
+      expect(grammar.accepts('{"unit": "a"b"}'), isFalse);
+      expect(grammar.accepts('{"short": "ab"}'), isTrue);
+      expect(grammar.accepts('{"short": "a"b"}'), isFalse);
+    });
+  });
+
   group('llama.cpp grammar loading', () {
     // Boundaries checked against the test-gbnf-validator of the shipped
     // runtime (upstream v0.6.0), built by
