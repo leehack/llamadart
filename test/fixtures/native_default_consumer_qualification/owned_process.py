@@ -1,6 +1,7 @@
 """Windows kill-on-close job ownership, established before the child resumes."""
 import ctypes
 import os
+import time
 
 
 class WindowsJob:
@@ -17,6 +18,8 @@ class WindowsJob:
         self.api.AssignProcessToJobObject.restype = w.BOOL
         self.api.TerminateJobObject.argtypes = [w.HANDLE, w.UINT]
         self.api.TerminateJobObject.restype = w.BOOL
+        self.api.QueryInformationJobObject.argtypes = [w.HANDLE, ctypes.c_int, ctypes.c_void_p, w.DWORD, ctypes.c_void_p]
+        self.api.QueryInformationJobObject.restype = w.BOOL
         self.api.CloseHandle.argtypes = [w.HANDLE]
         self.api.CloseHandle.restype = w.BOOL
 
@@ -56,9 +59,28 @@ class WindowsJob:
             raise RuntimeError('cannot resume owned suspended child')
 
     def close(self):
+        from ctypes import wintypes as w
+
+        class Accounting(ctypes.Structure):
+            _fields_ = [(name, ctypes.c_int64) for name in ('TotalUserTime', 'TotalKernelTime',
+                'ThisPeriodTotalUserTime', 'ThisPeriodTotalKernelTime')] + [
+                (name, w.DWORD) for name in ('TotalPageFaultCount', 'TotalProcesses',
+                'ActiveProcesses', 'TotalTerminatedProcesses')]
+
         try:
             if not self.api.TerminateJobObject(self.handle, 1):
                 raise ctypes.WinError(ctypes.get_last_error())
+            deadline = time.monotonic() + 30
+            while True:
+                accounting = Accounting()
+                if not self.api.QueryInformationJobObject(self.handle, 1, ctypes.byref(accounting),
+                        ctypes.sizeof(accounting), None):
+                    raise ctypes.WinError(ctypes.get_last_error())
+                if accounting.ActiveProcesses == 0:
+                    break
+                if time.monotonic() >= deadline:
+                    raise OSError('owned Windows job did not become empty before cleanup deadline')
+                time.sleep(.01)
         finally:
             if not self.api.CloseHandle(self.handle):
                 raise ctypes.WinError(ctypes.get_last_error())

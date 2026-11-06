@@ -46,11 +46,11 @@ The entire SDK `build/default/bundle` is copied, including hidden and nested
 entries, outside all source/app roots. AOT runs from a distinct initially empty
 CWD with a system-only PATH. Complete source/bundle inventories and child logs
 are retained. POSIX children own a process group; Windows children are suspended
-until attached to a kill-on-close job, then resumed. Timeouts terminate/reap
-the owned tree without retries.
+until attached to a kill-on-close job, then resumed. Cleanup waits for the
+job to have no active processes. Timeouts terminate/reap the owned tree without retries.
 
 Observers run after the public outcome. Windows reuses the maintained passive
-module/IAT observer unchanged; macOS enumerates dyld images, records actual
+module/IAT observer with pinned-SDK formatting only; macOS enumerates dyld images, records actual
 provider hashes, reads the primary's loaded indirect registry import pointer,
 and resolves actual symbol owners with `dladdr`. Code-asset resolution/getters
 are explicitly labeled as potentially loading or initializing, after the first

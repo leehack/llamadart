@@ -206,7 +206,7 @@ def qualify(args):
             # Read the reviewed exported fixture, not an unrelated checkout.
             shutil.copy2(source / 'test/fixtures/native_default_consumer_qualification' / name, app / name)
         command([dart, 'pub', 'get'], cwd=app, env=environment, timeout=600, log=logs / 'pub-get')
-        command([dart, 'analyze', 'consumer.dart', 'providers.dart', 'passive_modules.dart'],
+        command([dart, 'analyze', '--fatal-infos', 'consumer.dart', 'providers.dart', 'passive_modules.dart'],
                 cwd=app, env=environment, timeout=120, log=logs / 'analyze')
         jit_stdout = command([dart, 'run', 'consumer.dart', model], cwd=app, env=environment,
                              timeout=900, log=logs / 'jit')
