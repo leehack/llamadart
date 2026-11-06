@@ -84,3 +84,71 @@ class WindowsJob:
         finally:
             if not self.api.CloseHandle(self.handle):
                 raise ctypes.WinError(ctypes.get_last_error())
+
+
+class Cancelled(RuntimeError):
+    def __init__(self, signum):
+        self.signum = signum
+        super().__init__(f'qualification cancelled by signal {signum}')
+
+
+class CancellationGuard:
+    """Local, restored handlers; defer cancellation across ownership/cleanup."""
+    def __init__(self):
+        self.signals = []
+        self.depth = 0
+        self.previous = {}
+
+    def __enter__(self):
+        import signal
+        import threading
+        # Python permits signal handlers only in the main thread. Refuse
+        # before creating any child rather than claim thread cancellation safety.
+        if threading.current_thread() is not threading.main_thread():
+            raise RuntimeError('owned commands require the supervisor main thread')
+        self.depth = 1
+        try:
+            for name in ('SIGINT', 'SIGTERM', 'SIGBREAK'):
+                signum = getattr(signal, name, None)
+                if signum is not None:
+                    self.previous[signum] = signal.signal(signum, self._handle)
+            self.depth = 0
+            self.checkpoint()
+        except BaseException:
+            for signum, previous in self.previous.items():
+                signal.signal(signum, previous)
+            raise
+        return self
+
+    def _handle(self, signum, frame):
+        if len(self.signals) < 16:
+            self.signals.append(signum)
+        if not self.depth:
+            raise Cancelled(signum)
+
+    def checkpoint(self):
+        if self.signals:
+            raise Cancelled(self.signals[0])
+
+    def deferred(self, *, deliver=True):
+        from contextlib import contextmanager
+
+        @contextmanager
+        def protection():
+            self.depth += 1
+            try:
+                yield
+            finally:
+                self.depth -= 1
+            if deliver:
+                self.checkpoint()
+        return protection()
+
+    def __exit__(self, exception_type, exception, traceback):
+        import signal
+        self.depth += 1
+        for signum, previous in self.previous.items():
+            signal.signal(signum, previous)
+        if exception_type is None:
+            self.checkpoint()
+        return False

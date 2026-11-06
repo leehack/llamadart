@@ -5,6 +5,7 @@ import io
 import json
 import os
 import re
+import signal
 from pathlib import Path
 import subprocess
 import sys
@@ -255,7 +256,8 @@ class QualificationControls(unittest.TestCase):
         args = argparse.Namespace(core_root=str(core), expected_core_sha='a' * 40,
             expected_native_tag='v0.8.0-2', model=str(model), output=str(output), dry_run=False)
         calls = []
-        def fake_git(root, *arguments):
+        def fake_git(root, *arguments, log=None):
+            self.assertIsNotNone(log)
             if arguments[0] == 'rev-parse': return b'a' * 40 + b'\n'
             if arguments[0] == 'status': return b''
             if arguments[0] == 'ls-files': return b'\0'.join(name.encode() for name in files) + b'\0'
@@ -290,13 +292,23 @@ class QualificationControls(unittest.TestCase):
                 if failure == 'bundle': (output / 'distributed/bin/consumer').write_bytes(b'changed')
                 if failure == 'result': stdout = stdout.replace('"accepted": 5', '"accepted": 0')
                 if failure == 'source': pin.write_text(pin.read_text() + '\nchanged')
+                if failure == 'signal': signal.raise_signal(signal.SIGTERM)
             Path(str(log) + '.stdout.log').write_text(stdout)
             Path(str(log) + '.stderr.log').write_text('')
             Path(str(log) + '.command.json').write_text(json.dumps({'synthetic': True, 'cleanupComplete': True}))
             return stdout
         members = {name: {'bytes': fixture(), 'archive': 'synthetic', 'member': 'lib/' + name}
                    for name in ('libllamadart.dylib', 'libllama.dylib', 'libggml.dylib')}
+        original_write = qualify.write_json
+        signalled = False
+        def signal_while_sealing(path, value):
+            nonlocal signalled
+            original_write(path, value)
+            if failure == 'seal-signal' and Path(path).name == 'terminal.json' and not signalled:
+                signalled = True
+                signal.raise_signal(signal.SIGTERM)
         with (patch.dict(os.environ, {}, clear=True), patch.object(qualify, 'FIXTURE', fixture_dir),
+              patch.object(qualify, 'write_json', side_effect=signal_while_sealing),
               patch.object(qualify, 'git', side_effect=fake_git),
               patch.object(qualify, 'sdk_paths', return_value=(sdk, sdk / 'flutter', sdk / 'dart')),
               patch.object(qualify, 'command', side_effect=fake_command),
@@ -306,7 +318,8 @@ class QualificationControls(unittest.TestCase):
               patch.object(v, 'MODEL_SHA256', v.sha256(model)),
               patch.object(v, 'archive_members', return_value=({'synthetic': True}, members))):
             if failure:
-                with self.assertRaises(v.Refusal): qualify.qualify(args)
+                expected = qualify.Cancelled if failure in ('signal', 'seal-signal') else v.Refusal
+                with self.assertRaises(expected): qualify.qualify(args)
             else:
                 qualify.qualify(args)
         return json.loads((output / 'terminal.json').read_text()), calls, output
@@ -343,6 +356,19 @@ class QualificationControls(unittest.TestCase):
         self.assertFalse(terminal['completed'])
         self.assertIn('inventoryFailures', terminal)
         self.assertTrue((output / 'source-after.json').is_file())
+
+    def test_synthetic_driver_sigterm_leaves_failure_terminal(self):
+        terminal, _, output = self.run_synthetic_driver('signal')
+        self.assertFalse(terminal['completed'])
+        self.assertFalse(terminal['finalNative3Qualified'])
+        self.assertEqual('Cancelled', terminal['failureType'])
+        self.assertFalse(v.verify_seal(output)['completed'])
+
+    def test_sigterm_during_terminal_write_cannot_leave_qualified_receipt(self):
+        terminal, _, output = self.run_synthetic_driver('seal-signal')
+        self.assertFalse(terminal['completed'])
+        self.assertIn(signal.SIGTERM, terminal['cancelledSignals'])
+        self.assertFalse(v.verify_seal(output)['completed'])
 
     def test_synthetic_python_child_timeout_is_reaped_and_receipted(self):
         with self.assertRaises(subprocess.TimeoutExpired):

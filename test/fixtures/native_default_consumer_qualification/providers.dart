@@ -43,8 +43,9 @@ Map<String, Object?> owner(Pointer<Void> address) {
     final handle = calloc<Pointer<Void>>();
     final name = calloc<Uint16>(32768).cast<Utf16>();
     try {
-      if (lookup(6, address, handle) == 0)
+      if (lookup(6, address, handle) == 0) {
         throw StateError('symbol owner absent');
+      }
       final length = filename(handle.value, name, 32768);
       if (length == 0 || length >= 32768) throw StateError('owner path absent');
       return {
@@ -112,15 +113,17 @@ List<Map<String, Object?>> macImports(Uint8List bytes, int slide) {
       throw StateError('invalid load command');
     }
     if (command == 2) {
-      if (size != 24 || symbols != null)
+      if (size != 24 || symbols != null) {
         throw StateError('invalid symbol command');
+      }
       symbols = u32(cursor + 8);
       symbolCount = u32(cursor + 12);
       strings = u32(cursor + 16);
       stringBytes = u32(cursor + 20);
     } else if (command == 0xb) {
-      if (size != 80 || indirect != null)
+      if (size != 80 || indirect != null) {
         throw StateError('invalid indirect command');
+      }
       indirect = u32(cursor + 56);
       indirectCount = u32(cursor + 60);
     } else if (command == 0x19) {
@@ -156,8 +159,9 @@ List<Map<String, Object?>> macImports(Uint8List bytes, int slide) {
   bounded(indirect, indirectCount * 4);
   final result = <Map<String, Object?>>[];
   for (final slot in slots) {
-    if (slot.$3 + slot.$2 > indirectCount)
+    if (slot.$3 + slot.$2 > indirectCount) {
       throw StateError('indirect index overflow');
+    }
     for (var index = 0; index < slot.$2; index++) {
       final symbol = u32(indirect + 4 * (slot.$3 + index));
       if ((symbol & 0xc0000000) != 0) continue;
@@ -168,17 +172,20 @@ List<Map<String, Object?>> macImports(Uint8List bytes, int slide) {
       while (stop < strings + stringBytes && bytes[stop] != 0) {
         stop++;
       }
-      if (stop == strings + stringBytes)
+      if (stop == strings + stringBytes) {
         throw StateError('unterminated symbol');
+      }
       final name = utf8.decode(bytes.sublist(strings + string, stop));
       if (!const [
         '_ggml_backend_reg_count',
         '_llama_model_load_from_file',
         '_llama_dart_model_load_from_file',
-      ].contains(name))
+      ].contains(name)) {
         continue;
-      final address = Pointer<Pointer<Void>>.fromAddress(slot.$1 + index * 8)
-          .value;
+      }
+      final address = Pointer<Pointer<Void>>.fromAddress(
+        slot.$1 + index * 8,
+      ).value;
       result.add({'symbol': name.substring(1), ...owner(address)});
     }
   }
@@ -253,8 +260,9 @@ Future<Map<String, Object?>> observe() async {
         ).hasMatch(row['modulePath']! as String),
       )
       .toList();
-  if (wrappers.length != 1)
+  if (wrappers.length != 1) {
     throw StateError('unique resident wrapper required');
+  }
   final wrapper = wrappers.single;
   final library = DynamicLibrary.open(wrapper['modulePath']! as String);
   const nextn = 'llama_dart_speculative_need_embd_nextn';
@@ -289,8 +297,9 @@ Future<Map<String, Object?>> observe() async {
     final primary = <Map<String, Object?>>[];
     for (final row in before) {
       for (final exported in row['exports']! as List<Map<String, Object?>>) {
-        if (exported['symbol'] == 'ggml_backend_reg_count')
+        if (exported['symbol'] == 'ggml_backend_reg_count') {
           providers.add(exported);
+        }
       }
       if ((row['modulePath']! as String).endsWith('/libllama.dylib')) {
         primary.addAll(
