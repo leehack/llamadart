@@ -1,5 +1,6 @@
 """Real synthetic Python cancellation controls, without SDK/model/native input."""
 import json
+import inspect
 import os
 from pathlib import Path
 import signal
@@ -103,6 +104,93 @@ class CancellationControls(unittest.TestCase):
         self.assertEqual([signal.SIGTERM, signal.SIGTERM], receipt['cancelledSignals'])
         self.assertFalse(alive(receipt['pid']))
 
+    def test_sigterm_at_cleanup_entry_preserves_timeout_and_reaps_child(self):
+        lines, first = inspect.getsourcelines(qualify.command)
+        entry = next(first + offset for offset, text in enumerate(lines)
+                     if 'with cancellation.deferred(deliver=False):' in text)
+        injected = []
+        owned = []
+        def trace(frame, event, argument):
+            if (frame.f_code is qualify.command.__code__ and event == 'line'
+                    and frame.f_lineno == entry and not injected):
+                injected.append(frame.f_locals['cancellation'].depth)
+                owned.append(frame.f_locals['process'])
+                signal.raise_signal(signal.SIGTERM)
+            return trace
+        previous_trace = sys.gettrace()
+        try:
+            sys.settrace(trace)
+            with self.assertRaises(subprocess.TimeoutExpired):
+                qualify.command([sys.executable, '-c', 'import time; time.sleep(30)'],
+                    cwd=self.root, env=dict(os.environ), timeout=.03, log=self.root / 'cleanup-entry')
+            self.assertEqual([0], injected)
+            self.assertIsNotNone(owned[0].poll())
+            receipt = json.loads((self.root / 'cleanup-entry.command.json').read_text())
+            self.assertTrue(receipt['cleanupComplete'])
+            self.assertEqual('TimeoutExpired', receipt['failureType'])
+            self.assertEqual([signal.SIGTERM], receipt['cancelledSignals'])
+        finally:
+            sys.settrace(previous_trace)
+            for process in owned:
+                if process.poll() is None: process.kill()
+                process.wait(timeout=5)
+
+    def test_real_sigterm_at_command_boundaries_never_skips_cleanup(self):
+        boundaries = [
+            ("receipt['pid'] = process.pid", qualify.Cancelled),
+            ("receipt['exitCode'] = cancellation.wait", qualify.Cancelled),
+            ('failure, traceback = error, error.__traceback__', subprocess.TimeoutExpired),
+            ('cleanup_errors = []', subprocess.TimeoutExpired),
+            ('write_json(str(log)', subprocess.TimeoutExpired),
+            ('cancellation.on_cancel = record_late_cancellation', subprocess.TimeoutExpired),
+        ]
+        lines, first = inspect.getsourcelines(qualify.command)
+        previous_trace = sys.gettrace()
+        for index, (needle, expected) in enumerate(boundaries):
+            with self.subTest(boundary=needle):
+                entry = next(first + offset for offset, text in enumerate(lines) if needle in text)
+                owned = []
+                fired = False
+                def trace(frame, event, argument):
+                    nonlocal fired
+                    if (frame.f_code is qualify.command.__code__ and event == 'line'
+                            and frame.f_lineno == entry and not fired):
+                        fired = True
+                        owned.append(frame.f_locals['process'])
+                        signal.raise_signal(signal.SIGTERM)
+                    return trace
+                log = self.root / f'boundary-{index}'
+                try:
+                    sys.settrace(trace)
+                    with self.assertRaises(expected):
+                        qualify.command([sys.executable, '-c', 'import time; time.sleep(30)'],
+                            cwd=self.root, env=dict(os.environ), timeout=.03, log=log)
+                    self.assertTrue(fired)
+                    self.assertIsNotNone(owned[0].poll())
+                    receipt = json.loads(Path(str(log) + '.command.json').read_text())
+                    self.assertTrue(receipt['cleanupComplete'])
+                    self.assertEqual(expected.__name__, receipt['failureType'])
+                    self.assertIn(signal.SIGTERM, receipt['cancelledSignals'])
+                finally:
+                    sys.settrace(previous_trace)
+                    for process in owned:
+                        if process.poll() is None: process.kill()
+                        process.wait(timeout=5)
+
+    def test_sigterm_at_completed_command_guard_exit_still_records_cancellation(self):
+        original = qualify.CancellationGuard.__exit__
+        def interrupted_exit(guard, *args):
+            signal.raise_signal(signal.SIGTERM)
+            return original(guard, *args)
+        with patch.object(qualify.CancellationGuard, '__exit__', interrupted_exit):
+            with self.assertRaises(qualify.Cancelled):
+                qualify.command([sys.executable, '-c', 'pass'], cwd=self.root,
+                    env=dict(os.environ), timeout=5, log=self.root / 'exit-signal')
+        receipt = json.loads((self.root / 'exit-signal.command.json').read_text())
+        self.assertTrue(receipt['cleanupComplete'])
+        self.assertEqual('Cancelled', receipt['failureType'])
+        self.assertIn(signal.SIGTERM, receipt['cancelledSignals'])
+
     def test_background_thread_refuses_before_child_creation(self):
         errors = []
         def invoke():
@@ -137,7 +225,7 @@ class CancellationControls(unittest.TestCase):
         child = f'import os,pathlib,time; pathlib.Path({str(child_pid)!r}).write_text(str(os.getpid())); time.sleep(30)'
         supervisor = ('import sys,os; sys.path.insert(0,' + repr(str(qualify.FIXTURE)) + '); import qualify; '
             + f'qualify.command([sys.executable,"-c",{child!r}],cwd={str(self.root)!r},'
-            + f'env=dict(os.environ),timeout=30,log={str(self.root / "supervisor")!r})')
+            + f'env=dict(os.environ),timeout=900,log={str(self.root / "supervisor")!r})')
         process = subprocess.Popen([sys.executable, '-B', '-c', supervisor],
             stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, start_new_session=True)
         pid = None
@@ -147,9 +235,11 @@ class CancellationControls(unittest.TestCase):
                 time.sleep(.01)
             self.assertTrue(child_pid.exists(), 'synthetic child did not become ready')
             pid = int(child_pid.read_text())
+            cancelled_at = time.monotonic()
             os.kill(process.pid, signal.SIGTERM)
             _, stderr = process.communicate(timeout=5)
             self.assertNotEqual(0, process.returncode, stderr.decode())
+            self.assertLess(time.monotonic() - cancelled_at, 3, 'cancellation waited for the 900-second deadline')
             self.assertFalse(alive(pid), 'SIGTERM left owned child alive')
             receipt = json.loads((self.root / 'supervisor.command.json').read_text())
             self.assertEqual(pid, receipt['pid'])

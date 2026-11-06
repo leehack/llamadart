@@ -47,9 +47,13 @@ entries, outside all source/app roots. AOT runs from a distinct initially empty
 CWD with a system-only PATH. Complete source/bundle inventories and child logs
 are retained. POSIX children own a process group; Windows children are suspended
 until attached to a kill-on-close job, then resumed. Cleanup waits for the
-job to have no active processes. Timeouts terminate/reap the owned tree without retries. SIGINT/SIGTERM and Windows SIGBREAK use restored,
-local handlers. Creation/PID/job registration and cleanup defer those signals;
-the Popen object is registered before its constructor can spawn. Git preflight
+job to have no active processes. Timeouts terminate/reap the owned tree.
+SIGINT/SIGTERM and Windows SIGBREAK use restored,
+record-only local handlers. They never raise asynchronously, including at
+cleanup entry. Cancellation is delivered at explicit safe checkpoints, and
+child waits poll at most every 100 ms against one absolute deadline. No child
+execution is retried. The Popen object is registered before its constructor
+can spawn. Git preflight
 uses the same bounded owned runner. Cancellation retains a failure receipt and
 never qualifies the campaign. Uncatchable process termination cannot write a
 receipt. Background-thread callers are refused before child creation.

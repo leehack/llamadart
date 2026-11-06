@@ -271,6 +271,8 @@ class QualificationControls(unittest.TestCase):
             stage = Path(log).name
             stdout = ''
             if stage == 'dart-version': stdout = 'Dart SDK version: 3.13.1 (stable)'
+            if stage == 'analyze' and failure == 'before-model-signal':
+                signal.raise_signal(signal.SIGTERM)
             if stage == 'jit':
                 libraries(output / 'jit-provider')
                 stdout = observations(output / 'jit-provider')
@@ -307,7 +309,13 @@ class QualificationControls(unittest.TestCase):
             if failure == 'seal-signal' and Path(path).name == 'terminal.json' and not signalled:
                 signalled = True
                 signal.raise_signal(signal.SIGTERM)
+        original_exit = qualify.CancellationGuard.__exit__
+        def signal_at_guard_exit(guard, *arguments):
+            if failure == 'exit-signal':
+                signal.raise_signal(signal.SIGTERM)
+            return original_exit(guard, *arguments)
         with (patch.dict(os.environ, {}, clear=True), patch.object(qualify, 'FIXTURE', fixture_dir),
+              patch.object(qualify.CancellationGuard, '__exit__', signal_at_guard_exit),
               patch.object(qualify, 'write_json', side_effect=signal_while_sealing),
               patch.object(qualify, 'git', side_effect=fake_git),
               patch.object(qualify, 'sdk_paths', return_value=(sdk, sdk / 'flutter', sdk / 'dart')),
@@ -318,7 +326,7 @@ class QualificationControls(unittest.TestCase):
               patch.object(v, 'MODEL_SHA256', v.sha256(model)),
               patch.object(v, 'archive_members', return_value=({'synthetic': True}, members))):
             if failure:
-                expected = qualify.Cancelled if failure in ('signal', 'seal-signal') else v.Refusal
+                expected = qualify.Cancelled if failure in ('signal', 'seal-signal', 'exit-signal', 'before-model-signal') else v.Refusal
                 with self.assertRaises(expected): qualify.qualify(args)
             else:
                 qualify.qualify(args)
@@ -367,6 +375,20 @@ class QualificationControls(unittest.TestCase):
     def test_sigterm_during_terminal_write_cannot_leave_qualified_receipt(self):
         terminal, _, output = self.run_synthetic_driver('seal-signal')
         self.assertFalse(terminal['completed'])
+        self.assertIn(signal.SIGTERM, terminal['cancelledSignals'])
+        self.assertFalse(v.verify_seal(output)['completed'])
+
+    def test_pending_outer_signal_refuses_the_next_model_child_before_creation(self):
+        terminal, calls, output = self.run_synthetic_driver('before-model-signal')
+        self.assertFalse(terminal['completed'])
+        self.assertFalse(any('run' in call or 'build' in call for call in calls))
+        self.assertFalse(v.verify_seal(output)['completed'])
+
+    def test_signal_after_driver_seal_at_guard_exit_invalidates_success(self):
+        terminal, _, output = self.run_synthetic_driver('exit-signal')
+        self.assertFalse(terminal['completed'])
+        self.assertFalse(terminal['finalNative3Qualified'])
+        self.assertEqual('Cancelled', terminal['failureType'])
         self.assertIn(signal.SIGTERM, terminal['cancelledSignals'])
         self.assertFalse(v.verify_seal(output)['completed'])
 

@@ -52,7 +52,7 @@ def command(argv, *, cwd, env, timeout, log):
                     receipt['pid'] = process.pid
                     if job is not None:
                         job.attach_and_resume(process)
-                receipt['exitCode'] = process.wait(timeout=timeout)
+                receipt['exitCode'] = cancellation.wait(process, timeout)
             v.require(receipt['exitCode'] == 0, 'child failed: ' + Path(argv[0]).name)
         except BaseException as error:
             failure, traceback = error, error.__traceback__
@@ -95,6 +95,12 @@ def command(argv, *, cwd, env, timeout, log):
                 receipt['cancelledSignals'] = cancellation.signals
                 receipt['elapsedSeconds'] = time.monotonic() - started
                 write_json(str(log) + '.command.json', receipt)
+        def record_late_cancellation(signals):
+            receipt['cancelledSignals'] = list(signals)
+            receipt.setdefault('failureType', 'Cancelled')
+            receipt.setdefault('failure', str(Cancelled(signals[0])))
+            write_json(str(log) + '.command.json', receipt)
+        cancellation.on_cancel = record_late_cancellation
         if failure is not None:
             raise failure.with_traceback(traceback)
         cancellation.checkpoint()
@@ -170,6 +176,27 @@ def plan(args):
     return root, output, checksums
 
 
+def seal_terminal(output, terminal):
+    terminal['evidenceInventory'] = v.inventory(output / 'logs')
+    write_json(output / 'terminal.json', terminal)
+    evidence = v.inventory(output)
+    evidence.pop('manifest.json', None)
+    write_json(output / 'manifest.json', {'schemaVersion': 1,
+        'files': evidence, 'terminalSha256': v.sha256(output / 'terminal.json')})
+    v.verify_seal(output)
+
+
+def invalidate_cancelled_receipt(output, tag, signals):
+    receipt = output / 'terminal.json'
+    if receipt.exists():
+        terminal = json.loads(receipt.read_text(encoding='utf-8'))
+        terminal.update({'completed': False, **v.scope(tag, False),
+            'cancelledSignals': list(signals)})
+        terminal.setdefault('failureType', 'Cancelled')
+        terminal.setdefault('failure', str(Cancelled(signals[0])))
+        seal_terminal(output, terminal)
+
+
 def qualify(args):
     with CancellationGuard() as cancellation:
         return _qualify(args, cancellation)
@@ -177,6 +204,7 @@ def qualify(args):
 
 def _qualify(args, cancellation):
     root, output, checksums = plan(args)
+    cancellation.checkpoint()
     if args.dry_run:
         print(json.dumps({'dryRun': True, 'coreRoot': str(root), 'expectedCoreSha': args.expected_core_sha,
             'expectedNativeTagVerificationOnly': args.expected_native_tag,
@@ -200,12 +228,24 @@ def _qualify(args, cancellation):
     terminal = {'schemaVersion': 1, 'completed': False, 'expectedCoreSha': args.expected_core_sha,
                 'target': target, 'model': {'bytes': v.MODEL_BYTES, 'sha256': v.MODEL_SHA256},
                 **v.scope(args.expected_native_tag, False)}
+    # Register a receipt callback only after this invocation owns fresh output.
+    cancellation.on_cancel = lambda signals: invalidate_cancelled_receipt(
+        output, args.expected_native_tag, signals)
+
+    def run_command(*arguments, **options):
+        cancellation.checkpoint()
+        return command(*arguments, **options)
+
+    def run_git(*arguments, **options):
+        cancellation.checkpoint()
+        return git(*arguments, **options)
+
     try:
-        v.require(git(root, 'rev-parse', 'HEAD', log=logs / 'git-head').decode().strip() == args.expected_core_sha, 'reviewed source SHA mismatch')
-        v.require(not git(root, 'status', '--porcelain=v1', '--untracked-files=normal', log=logs / 'git-clean-before').strip(), 'reviewed source is dirty')
+        v.require(run_git(root, 'rev-parse', 'HEAD', log=logs / 'git-head').decode().strip() == args.expected_core_sha, 'reviewed source SHA mismatch')
+        v.require(not run_git(root, 'status', '--porcelain=v1', '--untracked-files=normal', log=logs / 'git-clean-before').strip(), 'reviewed source is dirty')
         v.require(FIXTURE == root / 'test/fixtures/native_default_consumer_qualification',
                   'driver must run from the reviewed core checkout')
-        files = [name.decode('utf-8') for name in git(root, 'ls-files', '-z', log=logs / 'git-files').split(b'\0') if name]
+        files = [name.decode('utf-8') for name in run_git(root, 'ls-files', '-z', log=logs / 'git-files').split(b'\0') if name]
         v.require(all(not name.startswith('/') and '..' not in Path(name).parts for name in files), 'unsafe source inventory')
         source_before = v.inventory(root, files)
         v.require(all(row['kind'] == 'file' for row in source_before.values()), 'source must contain only regular tracked files')
@@ -221,13 +261,14 @@ def _qualify(args, cancellation):
         flutter_version = json.loads((flutter_root / 'bin/cache/flutter.version.json').read_text(encoding='utf-8'))
         v.require(flutter_version.get('frameworkVersion') == '3.47.1'
                   and flutter_version.get('dartSdkVersion', '').split()[0] == '3.13.1', 'Flutter/Dart version pin mismatch')
-        dart_version = command([dart, '--version'], cwd=output, env=environment, timeout=60, log=logs / 'dart-version')
+        dart_version = run_command([dart, '--version'], cwd=output, env=environment, timeout=60, log=logs / 'dart-version')
         # Dart writes version to stdout on the pinned SDK; retain stderr too.
         version_text = dart_version + (logs / 'dart-version.stderr.log').read_text()
         v.require('Dart SDK version: 3.13.1 ' in version_text, 'Dart executable version mismatch')
         terminal['sdk'] = {'flutterRoot': str(flutter_root), 'dart': str(dart), 'version': flutter_version}
         source = output / 'source'; source.mkdir()
         for name in files:
+            cancellation.checkpoint()
             destination = source / name
             destination.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(root / name, destination)
@@ -237,15 +278,15 @@ def _qualify(args, cancellation):
         for name in ('consumer.dart', 'providers.dart', 'passive_modules.dart'):
             # Read the reviewed exported fixture, not an unrelated checkout.
             shutil.copy2(source / 'test/fixtures/native_default_consumer_qualification' / name, app / name)
-        command([dart, 'pub', 'get'], cwd=app, env=environment, timeout=600, log=logs / 'pub-get')
-        command([dart, 'analyze', '--fatal-infos', 'consumer.dart', 'providers.dart', 'passive_modules.dart'],
+        run_command([dart, 'pub', 'get'], cwd=app, env=environment, timeout=600, log=logs / 'pub-get')
+        run_command([dart, 'analyze', '--fatal-infos', 'consumer.dart', 'providers.dart', 'passive_modules.dart'],
                 cwd=app, env=environment, timeout=120, log=logs / 'analyze')
-        jit_stdout = command([dart, 'run', 'consumer.dart', model], cwd=app, env=environment,
+        jit_stdout = run_command([dart, 'run', 'consumer.dart', model], cwd=app, env=environment,
                              timeout=900, log=logs / 'jit')
         jit_result = v.public_result(jit_stdout)
         jit_modules, jit_registry = v.native_modules(jit_stdout, target)
         v.query_result(jit_result, jit_modules, args.expected_native_tag)
-        command([dart, 'build', 'cli', '-o', 'build/default', '-t', 'consumer.dart'],
+        run_command([dart, 'build', 'cli', '-o', 'build/default', '-t', 'consumer.dart'],
                 cwd=app, env=environment, timeout=600, log=logs / 'build')
         bundle = app / 'build/default/bundle'
         distributed = output / 'distributed'
@@ -256,7 +297,7 @@ def _qualify(args, cancellation):
         executable = distributed / 'bin' / ('consumer.exe' if system == 'Windows' else 'consumer')
         v.require(executable.is_file(), 'SDK CLI executable missing in complete bundle')
         aot_env = clean_environment(os.environ, temporary, pub_cache)
-        aot_stdout = command([executable, model], cwd=empty_cwd, env=aot_env,
+        aot_stdout = run_command([executable, model], cwd=empty_cwd, env=aot_env,
                              timeout=900, log=logs / 'aot')
         v.unchanged(cwd_before, v.inventory(empty_cwd), 'empty execution CWD')
         aot_result = v.public_result(aot_stdout)
@@ -277,8 +318,9 @@ def _qualify(args, cancellation):
                   'fixed model changed during qualification')
         v.unchanged(source_before, v.inventory(source, files), 'exported tracked source')
         v.unchanged(source_before, v.inventory(root, files), 'reviewed tracked source')
-        v.require(not git(root, 'status', '--porcelain=v1', '--untracked-files=normal', log=logs / 'git-clean-after').strip(), 'reviewed source became dirty')
+        v.require(not run_git(root, 'status', '--porcelain=v1', '--untracked-files=normal', log=logs / 'git-clean-after').strip(), 'reviewed source became dirty')
         write_json(output / 'source-after.json', v.inventory(root, files))
+        cancellation.checkpoint()
         terminal.update({'completed': True, **v.scope(args.expected_native_tag, True)})
     except BaseException as error:
         terminal.update({'completed': False, **v.scope(args.expected_native_tag, False)})
@@ -315,13 +357,7 @@ def _qualify(args, cancellation):
                         'cancelledSignals': cancellation.signals})
                     terminal.setdefault('failureType', 'Cancelled')
                     terminal.setdefault('failure', str(Cancelled(cancellation.signals[0])))
-                terminal['evidenceInventory'] = v.inventory(logs)
-                write_json(output / 'terminal.json', terminal)
-                evidence = v.inventory(output)
-                evidence.pop('manifest.json', None)
-                write_json(output / 'manifest.json', {'schemaVersion': 1,
-                    'files': evidence, 'terminalSha256': v.sha256(output / 'terminal.json')})
-                v.verify_seal(output)
+                seal_terminal(output, terminal)
                 if not (cancellation.signals and terminal['completed']):
                     break
             if terminal.get('inventoryFailures') and sys.exc_info()[0] is None:
