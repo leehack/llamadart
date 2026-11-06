@@ -4,6 +4,7 @@ import importlib.util
 import io
 import json
 from pathlib import Path
+import signal
 import stat
 import tempfile
 import unittest
@@ -337,19 +338,62 @@ class ProbeTests(unittest.TestCase):
         for value in (READ, SECRET, SAS, LOCATION):
             self.assertNotIn(value, evidence)
 
-    def test_denial_observation_does_not_replace_unexpected_decode_failure(self):
-        original = p.decode
-        self.http.options["negative_raw"] = b"decode-failure-fixture"
-        def decode(raw):
-            if raw == b"decode-failure-fixture":
-                raise RecursionError(SECRET + LOCATION)
-            return original(raw)
-        with patch.object(p, "decode", side_effect=decode), self.assertRaises(RecursionError):
-            self.probe.sender()
-        self.assertIs(False, self.denial_receipt()["bodyIsJsonObject"])
+    def assert_stopped_at_negative(self):
         self.assertTrue((self.probe.journal.directory / "negative-inspection.json").is_file())
         self.assertNotIn("RELEASE_AUTOMATION_TOKEN", self.credentials)
         self.assertEqual(1, len(self.mutations()))
+        self.assertEqual(("POST", p.ROOT + "/git/refs", READ,
+                          {"ref": "refs/tags/" + NEGATIVE, "sha": SHA}), self.mutations()[0])
+        self.assertFalse((self.probe.journal.directory / "positive-create-intent.json").exists())
+        self.assertFalse((self.probe.journal.directory / "negative-denial.json").exists())
+
+    def test_sigterm_during_denial_observation_cannot_reach_positive_operations(self):
+        previous = signal.signal(signal.SIGTERM, p.interrupted)
+        self.addCleanup(signal.signal, signal.SIGTERM, previous)
+        original = p.decode
+        signals = []
+        def decode(raw):
+            if raw == b'{"message": "Resource not accessible by integration"}' and not signals:
+                signals.append(True)
+                signal.raise_signal(signal.SIGTERM)
+            return original(raw)
+        with patch.object(p, "decode", side_effect=decode):
+            try:
+                self.probe.sender()
+            except p.Failure as error:
+                self.assertEqual("cancelled", str(error))
+            else:
+                raise AssertionError("SIGTERM cancellation was swallowed")
+        self.assertEqual([True], signals)
+        self.assert_stopped_at_negative()
+
+    def test_denial_observation_propagates_operational_and_unexpected_decode_failures(self):
+        class OperationalFailure(p.Failure):
+            pass
+        for problem in (p.Failure("cancelled"), p.Failure("transport-error"),
+                        OperationalFailure("invalid-json"), RecursionError(SECRET + LOCATION),
+                        OSError(SECRET + LOCATION), ValueError(SECRET + LOCATION)):
+            with self.subTest(problem=type(problem)):
+                self.setUp()
+                original = p.decode
+                failures = []
+                def decode(raw):
+                    if raw == b'{"message": "Resource not accessible by integration"}' and not failures:
+                        failures.append(True)
+                        raise problem
+                    return original(raw)
+                with patch.object(p, "decode", side_effect=decode):
+                    try:
+                        self.probe.sender()
+                    except BaseException as error:
+                        self.assertIs(problem, error)
+                    else:
+                        raise AssertionError("Operational decode failure was swallowed")
+                self.assertEqual([True], failures)
+                self.assert_stopped_at_negative()
+                evidence = "".join(path.read_text() for path in self.probe.journal.directory.iterdir())
+                for value in (READ, SECRET, SAS, LOCATION):
+                    self.assertNotIn(value, evidence)
 
     def test_denial_journal_error_keeps_original_failure_and_negative_inspection(self):
         for error in (OSError, KeyboardInterrupt, p.Failure):
