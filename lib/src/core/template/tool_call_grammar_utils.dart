@@ -38,6 +38,7 @@ class ToolCallGrammarUtils {
     String? idKey,
     String? idPattern,
     bool allowParallelToolCalls = true,
+    bool innerQuoteStrings = false,
   }) {
     if (tools == null || tools.isEmpty) {
       return null;
@@ -52,7 +53,10 @@ class ToolCallGrammarUtils {
       allowParallelToolCalls: allowParallelToolCalls,
     );
 
-    final grammar = JsonSchemaConverter.convert(schema);
+    final grammar = JsonSchemaConverter.convert(
+      schema,
+      innerQuoteStrings: innerQuoteStrings,
+    );
     return wrapRootGrammar(grammar, prefix: prefix, suffix: suffix);
   }
 
