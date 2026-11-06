@@ -30,6 +30,30 @@ Local `Artifacts` overrides in that companion are rejected because their ABI
 provenance is unverified. Remove the override and use the pinned remote
 framework. Non-Apple native-assets and LiteRT selection are unchanged.
 
+## Default consumer and AOT acceptance
+
+Use the explicit `native-default-consumer-aot` scenario and dedicated manual
+workflow to qualify ordinary default-hook consumers on macOS arm64 and Windows
+x64. See the [test matrix](https://github.com/leehack/llamadart/blob/main/doc/testing_matrix.md#default-native-consumer-and-distributed-aot)
+for the exact source/model identity and invocation. The expected native tag is
+verification-only and must equal the checked-in pin; no runtime override is
+introduced. Reviewed unmerged source may be tested without landing the pin first.
+
+A new dispatch workflow must first exist on the default branch. For its initial
+premerge validation, the registered `ci.yml` offers an explicit manual-only
+`native_default_qualification` bridge. It calls the same-commit reusable
+workflow, passes reviewed SHA/tag inputs, and skips ordinary CI/deployment only
+in that mode. The flag defaults to false; the dedicated dispatch route remains
+available after registration. See the test matrix for the bootstrap command.
+
+`v0.8.0-2` establishes pipeline behavior only. `v0.8.0-3` needs its own complete
+owner/public-artifact gates, actual provider identity, inference and distributed
+AOT receipts and independent acceptance. Historical Windows 16-case evidence
+uses `v0.8.0-1`; help/list/build success cannot replace these runtime gates.
+Acceptance is tracked in [#1762](https://github.com/leehack/llamadart/issues/1762);
+source integration alone does not close it. This maintainer infrastructure adds
+no public capability or publication approval.
+
 ## Native sync flow
 
 When native behavior or bindings need updates:
