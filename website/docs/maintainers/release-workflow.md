@@ -234,12 +234,19 @@ requires the actual read-only push receiver and its bound receipt, and deletes
 only the same verified ref. Intent and outcome artifacts include run attempts
 and never overwrite existing artifacts. A failure is not automatically retried.
 
-The sender retains `negative-denial.json` with fixed boolean observations of
-the response status, selected header presence and matches, rate-limit value
-shape, and JSON/message matches. Raw headers, bodies and URLs are never retained.
-These observations preserve the existing denial criteria; header-presence and
-decimal-shape fields are diagnostic only. A mismatch does not establish a
-credential or policy cause.
+The sender retains `negative-denial.json` with fixed boolean observations and
+an allowlisted permission-header classification. GitHub documents
+[comma-separated required permissions and semicolon-separated alternatives](https://docs.github.com/en/rest/using-the-rest-api/troubleshooting-the-rest-api#resource-not-accessible).
+Every alternative must be exactly `contents=write` or
+`contents=write,workflows=write`, the documented
+[Create Reference permission sets](https://docs.github.com/en/rest/git/refs#create-a-reference).
+The parser accepts either ordering and space/tab around items, with at most
+256 ASCII characters, two unique alternatives and two permissions per set.
+Unknown, malformed or duplicate sets are refused before positive-token access.
+The guard and receipt use the same parse result. The exact-literal comparison,
+header-presence and rate-limit decimal-shape fields remain diagnostic only.
+Raw headers, bodies and URLs are never retained, so a literal mismatch cannot
+identify the returned representation or establish a credential or policy cause.
 
 API traffic stays on `api.github.com` and rejects redirects. The sole exception
 is the exact receiver-artifact download: its validated API redirect is followed
