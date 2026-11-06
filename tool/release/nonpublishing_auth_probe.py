@@ -70,9 +70,11 @@ def negative_denial_predicates(status, headers, raw):
     body = None
     try:
         body = decode(raw)
-    except Exception:
-        # Observation must not replace the guard's original decode failure.
-        pass
+    except Failure as error:
+        # Only parser rejections are observations; cancellation must propagate.
+        if type(error) is not Failure or str(error) not in {
+                "response-too-large", "duplicate-json-key", "invalid-json", "invalid-json-object"}:
+            raise
     remaining = headers.get("x-ratelimit-remaining")
     return {
         "statusIs403": status == 403,
