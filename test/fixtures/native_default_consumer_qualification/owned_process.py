@@ -165,12 +165,12 @@ class CancellationGuard:
     def __exit__(self, exception_type, exception, traceback):
         import signal
         self.depth += 1
-        try:
-            if exception_type is None:
-                self.checkpoint()
-            elif self.signals and self.on_cancel is not None:
-                self.on_cancel(self.signals)
-        finally:
-            for signum, previous in self.previous.items():
-                signal.signal(signum, previous)
+        for signum, previous in self.previous.items():
+            signal.signal(signum, previous)
+        # The record-only handlers can still run during their restoration.
+        # Close that observation interval before the final delivery/receipt.
+        if exception_type is None:
+            self.checkpoint()
+        elif self.signals and self.on_cancel is not None:
+            self.on_cancel(self.signals)
         return False

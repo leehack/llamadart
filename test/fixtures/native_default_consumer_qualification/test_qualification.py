@@ -1,6 +1,7 @@
 """Synthetic contracts only. No SDK, model, provider or archive release is read."""
 import argparse
 import hashlib
+import inspect
 import io
 import json
 import os
@@ -326,7 +327,7 @@ class QualificationControls(unittest.TestCase):
               patch.object(v, 'MODEL_SHA256', v.sha256(model)),
               patch.object(v, 'archive_members', return_value=({'synthetic': True}, members))):
             if failure:
-                expected = qualify.Cancelled if failure in ('signal', 'seal-signal', 'exit-signal', 'before-model-signal') else v.Refusal
+                expected = qualify.Cancelled if failure in ('signal', 'seal-signal', 'exit-signal', 'before-model-signal', 'restore-signal') else v.Refusal
                 with self.assertRaises(expected): qualify.qualify(args)
             else:
                 qualify.qualify(args)
@@ -391,6 +392,31 @@ class QualificationControls(unittest.TestCase):
         self.assertEqual('Cancelled', terminal['failureType'])
         self.assertIn(signal.SIGTERM, terminal['cancelledSignals'])
         self.assertFalse(v.verify_seal(output)['completed'])
+
+    def test_signal_recorded_during_final_handler_restoration_invalidates_driver(self):
+        exit_code = qualify.CancellationGuard.__exit__.__code__
+        lines, first = inspect.getsourcelines(qualify.CancellationGuard.__exit__)
+        restore = next(first + offset for offset, text in enumerate(lines)
+                       if 'for signum, previous in self.previous.items()' in text)
+        observed = []
+        def trace(frame, event, argument):
+            if (frame.f_code is exit_code and event == 'line'
+                    and frame.f_lineno == restore and not observed):
+                signal.raise_signal(signal.SIGTERM)
+                observed.append(list(frame.f_locals['self'].signals))
+            return trace
+        previous_trace = sys.gettrace()
+        try:
+            sys.settrace(trace)
+            terminal, _, output = self.run_synthetic_driver('restore-signal')
+            self.assertEqual([[signal.SIGTERM]], observed)
+            self.assertFalse(terminal['completed'])
+            self.assertFalse(terminal['finalNative3Qualified'])
+            self.assertEqual('Cancelled', terminal['failureType'])
+            self.assertIn(signal.SIGTERM, terminal['cancelledSignals'])
+            self.assertFalse(v.verify_seal(output)['completed'])
+        finally:
+            sys.settrace(previous_trace)
 
     def test_synthetic_python_child_timeout_is_reaped_and_receipted(self):
         with self.assertRaises(subprocess.TimeoutExpired):

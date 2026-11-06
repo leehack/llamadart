@@ -50,7 +50,10 @@ until attached to a kill-on-close job, then resumed. Cleanup waits for the
 job to have no active processes. Timeouts terminate/reap the owned tree.
 SIGINT/SIGTERM and Windows SIGBREAK use restored,
 record-only local handlers. They never raise asynchronously, including at
-cleanup entry. Cancellation is delivered at explicit safe checkpoints, and
+cleanup entry. A final recorded-signal check follows restoration of all
+previous handlers, so signals recorded during restoration also invalidate
+the receipt. Signals after restoration and uncatchable termination are outside
+that observation interval. Cancellation uses explicit safe checkpoints, and
 child waits poll at most every 100 ms against one absolute deadline. No child
 execution is retried. The Popen object is registered before its constructor
 can spawn. Git preflight
