@@ -12,6 +12,21 @@ on:
         type: boolean
         required: false
         default: false
+      native_default_qualification:
+        description: Run only default native consumer and AOT qualification
+        type: boolean
+        required: false
+        default: false
+      native_default_expected_sha:
+        description: Reviewed selected branch commit for default consumer qualification
+        type: string
+        required: false
+        default: ''
+      native_default_expected_native_tag:
+        description: Verify checked-in v0.8.0-2 or v0.8.0-3 pin; never override it
+        type: string
+        required: false
+        default: ''
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
@@ -19,6 +34,7 @@ concurrency:
 
 jobs:
   changes:
+    if: inputs.native_default_qualification != true
     name: Select affected checks
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -905,7 +921,7 @@ jobs:
 
   test-linux-web:
     name: Test Linux & Web (with Coverage)
-    if: ${{ always() }}
+    if: ${{ always() && inputs.native_default_qualification != true }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     needs:
@@ -1136,7 +1152,7 @@ jobs:
 
   windows-registry-qualification:
     name: Windows registry qualification (manual)
-    if: github.event_name == 'workflow_dispatch' && inputs.windows_registry_qualification == true
+    if: github.event_name == 'workflow_dispatch' && inputs.windows_registry_qualification == true && inputs.native_default_qualification != true
     runs-on: windows-2022
     timeout-minutes: 75
     permissions:
@@ -1193,10 +1209,21 @@ jobs:
         run: |
           "Artifact ID: $env:ARTIFACT_ID`nURL: $env:ARTIFACT_URL`nSHA256: $env:ARTIFACT_DIGEST" >> $env:GITHUB_STEP_SUMMARY
 
+  native-default-consumer-qualification:
+    name: Default native consumer qualification (manual)
+    if: github.event_name == 'workflow_dispatch' && inputs.native_default_qualification == true && github.repository == 'leehack/llamadart' && github.run_attempt == 1
+    permissions:
+      contents: read
+    uses: ./.github/workflows/native_default_consumer_qualification.yml
+    with:
+      expected_sha: ${{ inputs.native_default_expected_sha }}
+      expected_native_tag: ${{ inputs.native_default_expected_native_tag }}
+
   deploy-chat-app:
     needs: [test-linux-web, web-chat-contract]
     if: >-
       !cancelled() && inputs.windows_registry_qualification != true &&
+      inputs.native_default_qualification != true &&
       (github.event_name == 'push' || github.event_name == 'workflow_dispatch') &&
       github.ref == 'refs/heads/main' && github.repository == 'leehack/llamadart' &&
       needs.test-linux-web.result == 'success' && needs.web-chat-contract.result == 'success'

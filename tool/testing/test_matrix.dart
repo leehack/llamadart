@@ -385,6 +385,17 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
         'Native prompt reuse, context reuse, generation stability changes.',
   ),
   TestMatrixRow(
+    id: 'native-default-consumer-aot',
+    tier: 'platform',
+    mode: 'manual local-only macOS and Windows',
+    covers:
+        'Ordinary default-hook consumer inference, actual provider identity and distributed AOT with exact core/native/model provenance',
+    command:
+        'dart run tool/testing/run_local_e2e.dart --scenario native-default-consumer-aot',
+    useWhen:
+        'Native pin or consumer/AOT qualification; explicit local/manual execution only. Expected tag must match source; native2 is pipeline-only, native3 needs independent acceptance.',
+  ),
+  TestMatrixRow(
     id: 'windows-native-override-registry',
     tier: 'platform',
     mode: 'manual local-only Windows x64 CPU',
