@@ -360,7 +360,7 @@ class QualificationControls(unittest.TestCase):
         self.assertFalse(terminal['finalNative3Qualified'])
         build = next(call for call in calls if 'build' in call)
         self.assertEqual(['build', 'cli', '-o', 'build/default', '-t', 'consumer.dart'], build[1:])
-        self.assertIn('distributed/bin/consumer', calls[-1][0])
+        self.assertIn('distributed/bin/consumer', Path(calls[-1][0]).as_posix())
         self.assertTrue((output / 'source-after.json').is_file())
         manifest = json.loads((output / 'manifest.json').read_text())
         self.assertEqual(v.sha256(output / 'terminal.json'), manifest['terminalSha256'])
