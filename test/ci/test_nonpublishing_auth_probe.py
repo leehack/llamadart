@@ -74,9 +74,11 @@ class FakeHTTP:
                     raise TimeoutError(SECRET)
                 headers = {"x-accepted-github-permissions": "contents=write", "x-ratelimit-remaining": "100"}
                 headers.update(o.get("negative_headers", {}))
+                headers = {key: value for key, value in headers.items() if value is not None}
                 value = o.get("negative_body", {"message": "Resource not accessible by integration"})
                 if o.get("negative_raw"):
-                    return 403, headers, b'{"message":'
+                    raw = o["negative_raw"]
+                    return o.get("negative_status", 403), headers, raw if isinstance(raw, bytes) else b'{"message":'
                 return self.response(o.get("negative_status", 403), value, headers)
             self.refs[tag] = SHA
             if o.get("positive_timeout") and tag == POSITIVE:
@@ -246,6 +248,136 @@ class ProbeTests(unittest.TestCase):
                 self.assertNotIn("RELEASE_AUTOMATION_TOKEN", self.credentials)
                 self.assertEqual(1, len(self.mutations()))
 
+    def denial_receipt(self):
+        return json.loads((self.probe.journal.directory / "negative-denial.json").read_text())
+
+    def test_negative_denial_receipt_records_only_fixed_boolean_predicates(self):
+        self.probe.sender()
+        self.assertEqual({
+            "statusIs403": True,
+            "rateLimitRemainingPresent": True,
+            "rateLimitRemainingCanonicalDecimal": True,
+            "rateLimitRemainingIsNotZero": True,
+            "retryAfterAbsent": True,
+            "acceptedPermissionsPresent": True,
+            "acceptedPermissionsIsContentsWrite": True,
+            "bodyIsJsonObject": True,
+            "messageIsIntegrationDenial": True,
+        }, self.denial_receipt())
+
+    def test_negative_denial_receipt_identifies_each_failed_predicate_without_retry(self):
+        scenarios = [
+            ({"negative_status": 429}, "statusIs403", "negative-not-write-denial"),
+            ({"negative_headers": {"x-ratelimit-remaining": "0"}},
+             "rateLimitRemainingIsNotZero", "negative-not-write-denial"),
+            ({"negative_headers": {"retry-after": ""}}, "retryAfterAbsent", "negative-not-write-denial"),
+            ({"negative_headers": {"x-accepted-github-permissions": None}},
+             "acceptedPermissionsPresent", "negative-not-write-denial"),
+            ({"negative_headers": {"x-accepted-github-permissions": "contents=write,metadata=read"}},
+             "acceptedPermissionsIsContentsWrite", "negative-not-write-denial"),
+            ({"negative_body": {"message": "secondary rate limit"}},
+             "messageIsIntegrationDenial", "negative-not-write-denial"),
+            ({"negative_body": ["Resource not accessible by integration"]},
+             "bodyIsJsonObject", "invalid-json-object"),
+            ({"negative_raw": True}, "bodyIsJsonObject", "invalid-json"),
+            ({"negative_raw": b'{"message":"x","message":"y"}'},
+             "bodyIsJsonObject", "duplicate-json-key"),
+            ({"negative_status": 429, "negative_raw": True},
+             "bodyIsJsonObject", "negative-not-write-denial"),
+            ({"negative_raw": b'\xff'}, "bodyIsJsonObject", "invalid-json"),
+        ]
+        for options, predicate, category in scenarios:
+            with self.subTest(options=options):
+                self.setUp()
+                self.http.options = options
+                self.assertEqual(category, self.fail())
+                receipt = self.denial_receipt()
+                self.assertIs(False, receipt[predicate])
+                self.assertTrue(all(type(value) is bool for value in receipt.values()))
+                self.assertNotIn("RELEASE_AUTOMATION_TOKEN", self.credentials)
+                self.assertEqual([("POST", p.ROOT + "/git/refs", READ,
+                                   {"ref": "refs/tags/" + NEGATIVE, "sha": SHA})], self.mutations())
+                self.assertEqual("absent", json.loads((self.probe.journal.directory /
+                    "negative-inspection.json").read_text())["observed"])
+                self.assertFalse((self.probe.journal.directory / "positive-create-intent.json").exists())
+
+    def test_negative_denial_telemetry_does_not_change_existing_rate_limit_criteria(self):
+        for remaining in (None, "", "unknown", "00", "-1", " 100", "100 " + SECRET):
+            with self.subTest(remaining=remaining):
+                self.setUp()
+                self.http.options["negative_headers"] = {"x-ratelimit-remaining": remaining}
+                self.probe.sender()
+                receipt = self.denial_receipt()
+                self.assertEqual(remaining is not None, receipt["rateLimitRemainingPresent"])
+                self.assertIs(False, receipt["rateLimitRemainingCanonicalDecimal"])
+                self.assertIs(True, receipt["rateLimitRemainingIsNotZero"])
+
+    def test_negative_denial_receipt_never_echoes_headers_body_secrets_or_urls(self):
+        self.http.options = {
+            "negative_headers": {"x-ratelimit-remaining": READ + LOCATION,
+                "retry-after": SECRET + LOCATION, "x-accepted-github-permissions": SAS + LOCATION,
+                "location": LOCATION, SECRET: READ},
+            "negative_body": {"message": READ + SECRET + SAS + LOCATION, "url": LOCATION},
+        }
+        self.assertEqual("negative-not-write-denial", self.fail())
+        evidence = "".join(path.read_text() for path in self.probe.journal.directory.iterdir())
+        for value in (READ, SECRET, SAS, LOCATION, "https://", "blob.core.windows.net"):
+            self.assertNotIn(value, evidence)
+        self.assertTrue(all(type(value) is bool for value in self.denial_receipt().values()))
+
+    def test_accepted_denial_never_retains_unrelated_response_fields(self):
+        self.http.options = {
+            "negative_headers": {"location": LOCATION, SECRET: READ},
+            "negative_body": {"message": "Resource not accessible by integration",
+                              "documentation_url": LOCATION, "untrusted": SECRET},
+        }
+        self.probe.sender()
+        self.assertTrue(all(self.denial_receipt().values()))
+        evidence = "".join(path.read_text() for path in self.probe.journal.directory.iterdir())
+        for value in (READ, SECRET, SAS, LOCATION):
+            self.assertNotIn(value, evidence)
+
+    def test_denial_observation_does_not_replace_unexpected_decode_failure(self):
+        original = p.decode
+        self.http.options["negative_raw"] = b"decode-failure-fixture"
+        def decode(raw):
+            if raw == b"decode-failure-fixture":
+                raise RecursionError(SECRET + LOCATION)
+            return original(raw)
+        with patch.object(p, "decode", side_effect=decode), self.assertRaises(RecursionError):
+            self.probe.sender()
+        self.assertIs(False, self.denial_receipt()["bodyIsJsonObject"])
+        self.assertTrue((self.probe.journal.directory / "negative-inspection.json").is_file())
+        self.assertNotIn("RELEASE_AUTOMATION_TOKEN", self.credentials)
+        self.assertEqual(1, len(self.mutations()))
+
+    def test_denial_journal_error_keeps_original_failure_and_negative_inspection(self):
+        for error in (OSError, KeyboardInterrupt, p.Failure):
+            with self.subTest(error=error):
+                self.setUp()
+                original = self.probe.journal.save
+                def save(name, value):
+                    if name == "negative-denial.json":
+                        raise error(SECRET + LOCATION)
+                    original(name, value)
+                self.probe.journal.save = save
+                self.http.options["negative_raw"] = True
+                self.assertEqual("invalid-json", self.fail())
+                self.assertTrue((self.probe.journal.directory / "negative-inspection.json").is_file())
+                self.assertNotIn("RELEASE_AUTOMATION_TOKEN", self.credentials)
+
+    def test_successful_denial_with_journal_error_stops_before_positive(self):
+        original = self.probe.journal.save
+        def save(name, value):
+            if name == "negative-denial.json":
+                raise OSError(SECRET + LOCATION)
+            original(name, value)
+        self.probe.journal.save = save
+        with self.assertRaises(OSError):
+            self.probe.sender()
+        self.assertNotIn("RELEASE_AUTOMATION_TOKEN", self.credentials)
+        self.assertEqual(1, len(self.mutations()))
+
     def test_unexpected_negative_creation_cleans_only_owned_negative_and_fails(self):
         self.http.options["negative_created"] = True
         self.fail("negative-unexpectedly-created")
@@ -291,7 +423,10 @@ class ProbeTests(unittest.TestCase):
         self.assertEqual(1, len(self.mutations()))
 
     def test_process_boundary_returns_zero_only_for_complete_success_and_sanitizes_failure(self):
-        for options, expected in (({}, 0), ({"blob_error": True}, 1), ({"delete_status": 500}, 1)):
+        for options, expected in (({}, 0), ({"blob_error": True}, 1), ({"delete_status": 500}, 1),
+                                  ({"negative_headers": {"retry-after": SECRET + LOCATION},
+                                    "negative_body": {"message": READ + SAS + LOCATION}}, 1),
+                                  ({"negative_body": [SECRET, LOCATION]}, 1)):
             with self.subTest(options=options):
                 self.setUp()
                 self.http.options = options
@@ -306,7 +441,8 @@ class ProbeTests(unittest.TestCase):
                         patch.object(p.signal, "signal"), patch.object(p.sys, "stdout", output), patch.object(p.sys, "stderr", output):
                     self.assertEqual(expected, p.main())
                 self.assertEqual(expected == 0, (self.root / "runner/auth-probe/result.json").exists())
-                evidence = output.getvalue() + "".join(f.read_text() for f in (self.root / "runner/auth-probe").iterdir())
+                evidence = output.getvalue() + "".join(f.read_text() for directory in
+                    (self.root / "runner/auth-probe", self.probe.journal.directory) for f in directory.iterdir())
                 for secret in (READ, SECRET, SAS, LOCATION):
                     self.assertNotIn(secret, evidence)
 

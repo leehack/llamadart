@@ -234,6 +234,13 @@ requires the actual read-only push receiver and its bound receipt, and deletes
 only the same verified ref. Intent and outcome artifacts include run attempts
 and never overwrite existing artifacts. A failure is not automatically retried.
 
+The sender retains `negative-denial.json` with fixed boolean observations of
+the response status, selected header presence and matches, rate-limit value
+shape, and JSON/message matches. Raw headers, bodies and URLs are never retained.
+These observations preserve the existing denial criteria; header-presence and
+decimal-shape fields are diagnostic only. A mismatch does not establish a
+credential or policy cause.
+
 API traffic stays on `api.github.com` and rejects redirects. The sole exception
 is the exact receiver-artifact download: its validated API redirect is followed
 once with a fresh request carrying no credentials, cookies or referrer, only to
