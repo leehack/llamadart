@@ -11,9 +11,7 @@ String digest(String value) => sha256.convert(utf8.encode(value)).toString();
 
 Future<void> main(List<String> args) async {
   if (!(Platform.isWindows || Platform.isMacOS) || args.length != 1) {
-    throw ArgumentError(
-      'macOS/Windows required: MODEL',
-    );
+    throw ArgumentError('macOS/Windows required: MODEL');
   }
   final engine = LlamaEngine(LlamaBackend());
   final result = <String, Object?>{

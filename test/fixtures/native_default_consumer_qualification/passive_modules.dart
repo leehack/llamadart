@@ -231,8 +231,7 @@ Future<List<Map<String, Object?>>> snapshot(
         'checkpoint': checkpoint,
         'registryGettersCalled': includeCounts,
         'registryCountsPotentiallyInitializing': includeCounts,
-        'observationScope':
-            'post-outcome only; observer process lookup can first-touch OLE32; no pre-load state claim',
+        'observationScope': 'post-outcome only; observer process lookup can first-touch OLE32; no pre-load state claim',
         'pid': pid,
         'moduleBase': module.address,
         'modulePath': name,
