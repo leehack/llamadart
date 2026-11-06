@@ -124,7 +124,7 @@ void main() {
           'actions/upload-artifact@v7',
         ]),
       );
-      expect(steps(), hasLength(6));
+      expect(steps(), hasLength(7));
       expect(config.toString(), isNot(contains('secrets.')));
       final scripts = steps()
           .map((step) => step['run'])
@@ -157,6 +157,65 @@ void main() {
   );
 
   test(
+    'runner paths bind in step scope and job env uses only available contexts',
+    () async {
+      final jobEnv = qualification()['env'] as YamlMap;
+      const allowedJobContexts = {
+        'github', 'inputs', 'matrix', 'needs', 'secrets', 'strategy', 'vars',
+      };
+      for (final value in jobEnv.values.whereType<String>()) {
+        for (final expression in RegExp(r'\$\{\{(.*?)\}\}').allMatches(value)) {
+          for (final context in RegExp(r'([A-Za-z_][A-Za-z0-9_]*)\.').allMatches(expression[1]!)) {
+            expect(allowedJobContexts, contains(context[1]));
+          }
+        }
+      }
+      expect(jobEnv.containsKey('LLAMADART_DEFAULT_AOT_MODEL_PATH'), isFalse);
+      expect(jobEnv.containsKey('LLAMADART_DEFAULT_AOT_OUTPUT_ROOT'), isFalse);
+      final binding = step('paths');
+      expect(binding['shell'], 'python');
+      expect(binding['if'], isNull);
+      final ordered = steps();
+      expect(ordered.indexOf(binding), lessThan(ordered.indexOf(step('inputs'))));
+      expect(ordered.indexOf(binding), lessThan(ordered.indexOf(step('qualification'))));
+      final root = Directory.systemTemp.createTempSync('runner path context ');
+      addTearDown(() => root.deleteSync(recursive: true));
+      for (final attempt in ['1', '2']) {
+        final environmentFile = File('${root.path}/env-$attempt');
+        final result = await Process.run(
+          Platform.isWindows ? 'python' : 'python3',
+          ['-c', binding['run'] as String],
+          environment: {
+            'RUNNER_TEMP': root.path,
+            'GITHUB_RUN_ID': '123456',
+            'GITHUB_RUN_ATTEMPT': attempt,
+            'GITHUB_ENV': environmentFile.path,
+          },
+        );
+        expect(result.exitCode, 0, reason: '${result.stdout}\n${result.stderr}');
+        final owned = Directory('${root.path}/native-default-aot-123456-$attempt');
+        final values = {
+          for (final line in environmentFile.readAsLinesSync())
+            line.substring(0, line.indexOf('=')): line.substring(line.indexOf('=') + 1),
+        };
+        expect(values.keys, unorderedEquals([
+          'LLAMADART_DEFAULT_AOT_MODEL_PATH',
+          'LLAMADART_DEFAULT_AOT_OUTPUT_ROOT',
+        ]));
+        expect(
+          File(values['LLAMADART_DEFAULT_AOT_MODEL_PATH']!).uri,
+          File('${owned.path}/qwen2.5-1.5b-instruct-q4_k_m.gguf').uri,
+        );
+        expect(
+          Directory(values['LLAMADART_DEFAULT_AOT_OUTPUT_ROOT']!).uri,
+          Directory('${owned.path}/results').uri,
+        );
+        expect(owned.existsSync(), isFalse);
+      }
+    },
+  );
+
+  test(
     'driver route has verification-only inputs and retains attempt-bound evidence',
     () {
       final job = qualification();
@@ -169,8 +228,6 @@ void main() {
           'QUALIFICATION_ARCH',
           'LLAMADART_DEFAULT_AOT_EXPECTED_SHA',
           'LLAMADART_DEFAULT_AOT_EXPECTED_NATIVE_TAG',
-          'LLAMADART_DEFAULT_AOT_MODEL_PATH',
-          'LLAMADART_DEFAULT_AOT_OUTPUT_ROOT',
         ]),
       );
       expect(env['PYTHONDONTWRITEBYTECODE'], '1');
@@ -184,13 +241,6 @@ void main() {
         env['LLAMADART_DEFAULT_AOT_EXPECTED_NATIVE_TAG'],
         r'${{ inputs.expected_native_tag }}',
       );
-      const root =
-          r'${{ runner.temp }}/native-default-aot-${{ github.run_id }}-${{ github.run_attempt }}';
-      expect(
-        env['LLAMADART_DEFAULT_AOT_MODEL_PATH'],
-        '$root/qwen2.5-1.5b-instruct-q4_k_m.gguf',
-      );
-      expect(env['LLAMADART_DEFAULT_AOT_OUTPUT_ROOT'], '$root/results');
       final driver = step('qualification');
       expect(driver['shell'], 'python');
       expect(driver['if'], isNull);
