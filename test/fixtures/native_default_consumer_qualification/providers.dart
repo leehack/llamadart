@@ -88,9 +88,11 @@ Future<List<Map<String, Object?>>> macSnapshot(String checkpoint) async {
         Pointer<Utf8> Function(Uint32),
         Pointer<Utf8> Function(int)
       >('_dyld_get_image_name');
-  final header = process.lookupFunction<Pointer<Void> Function(Uint32), Pointer<Void> Function(int)>(
-    '_dyld_get_image_header',
-  );
+  final header = process
+      .lookupFunction<
+        Pointer<Void> Function(Uint32),
+        Pointer<Void> Function(int)
+      >('_dyld_get_image_header');
   final images = <(String, int)>[];
   final length = count();
   for (var index = 0; index < length; index++) {
@@ -186,40 +188,50 @@ Future<Map<String, Object?>> observe() async {
       throw StateError('consolidated Apple image required');
     }
     final exports = wrapper['exports']! as List<Map<String, Object?>>;
-    final registry = exports.where((row) => row['symbol'] == 'ggml_backend_reg_count').toList();
-    if (registry.length != 1) throw StateError('self-owned registry export required');
+    final registry = exports
+        .where((row) => row['symbol'] == 'ggml_backend_reg_count')
+        .toList();
+    if (registry.length != 1)
+      throw StateError('self-owned registry export required');
     final registryOwner = owner(address.cast());
-    final modelAddress = Native.addressOf<NativeFunction<
-      Pointer<bindings.llama_model> Function(Pointer<Char>, bindings.llama_model_params)
-    >>(bindings.llama_dart_model_load_from_file);
+    final modelAddress =
+        Native.addressOf<
+          NativeFunction<
+            Pointer<bindings.llama_model> Function(
+              Pointer<Char>,
+              bindings.llama_model_params,
+            )
+          >
+        >(bindings.llama_dart_model_load_from_file);
     final modelOwner = owner(modelAddress.cast());
     Map<String, Object?> hashedOwner(Map<String, Object?> actual) => {
       ...actual,
-      'sha256': sha256.convert(File(actual['ownerPath']! as String).readAsBytesSync()).toString(),
+      'sha256': sha256
+          .convert(File(actual['ownerPath']! as String).readAsBytesSync())
+          .toString(),
     };
-    final primaryMatches = registry.single['address'] == address.address &&
+    final primaryMatches =
+        registry.single['address'] == address.address &&
         registryOwner['ownerPath'] == wrapper['modulePath'] &&
         registryOwner['ownerBase'] == wrapper['moduleBase'];
-    stdout.writeln('REGISTRY_IDENTITY ${jsonEncode({
-      'runtimeLayout': 'consolidated-apple',
-      'observerAfterFirstPassiveSnapshot': true,
-      'codeAssetResolutionAndGetterPotentiallyLoadingOrInitializing': true,
-      'codeAssetId': 'package:llamadart/llamadart',
-      'codeAssetAddress': address.address,
-      'codeAssetOwner': hashedOwner(registryOwner),
-      'codeAssetProvider': registry,
-      'primaryRegistryExport': registry.single,
-      'primaryRegistryImports': <Map<String, Object?>>[],
-      'modelCodeAsset': {
-        'symbol': 'llama_dart_model_load_from_file',
-        'assetId': 'package:llamadart/llamadart',
-        ...hashedOwner(modelOwner),
-      },
-      'distinctRegistryProviderBasesBefore': 1,
-      'primaryMatchesCodeAsset': primaryMatches,
-      'noUnintendedDuplicateRegistry': before.length == 1,
-      'registryCountAfterOutcome': hookRegistryCount(),
-    })}');
+    stdout.writeln(
+      'REGISTRY_IDENTITY ${jsonEncode({
+        'runtimeLayout': 'consolidated-apple',
+        'observerAfterFirstPassiveSnapshot': true,
+        'codeAssetResolutionAndGetterPotentiallyLoadingOrInitializing': true,
+        'codeAssetId': 'package:llamadart/llamadart',
+        'codeAssetAddress': address.address,
+        'codeAssetOwner': hashedOwner(registryOwner),
+        'codeAssetProvider': registry,
+        'primaryRegistryExport': registry.single,
+        'primaryRegistryImports': <Map<String, Object?>>[],
+        'modelCodeAsset': {'symbol': 'llama_dart_model_load_from_file', 'assetId': 'package:llamadart/llamadart', ...hashedOwner(modelOwner)},
+        'distinctRegistryProviderBasesBefore': 1,
+        'primaryMatchesCodeAsset': primaryMatches,
+        'noUnintendedDuplicateRegistry': before.length == 1,
+        'registryCountAfterOutcome': hookRegistryCount(),
+      })}',
+    );
     await macSnapshot('after-registry-observation');
   }
   return query;
