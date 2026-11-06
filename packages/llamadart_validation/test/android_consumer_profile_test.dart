@@ -180,9 +180,9 @@ void main() {
       print(
         'Consumer CLI kernel compilation ${compileWatch.elapsedMilliseconds} ms',
       );
-      final tagParts = llamaCppTag.split('-');
-      final staleNativeTag =
-          '${tagParts.first}-${int.parse(tagParts.last) - 1}';
+      final staleNativeTag = llamaCppTag == 'v0.8.0-2'
+          ? 'v0.8.0-1'
+          : 'v0.8.0-2';
       for (final profile in ['full', 'compact']) {
         final plan = AndroidConsumerProfilePlan(profile);
         for (final variant in [
