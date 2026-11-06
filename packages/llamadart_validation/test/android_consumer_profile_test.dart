@@ -2,6 +2,9 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:crypto/crypto.dart';
+// The private release harness must verify the committed core runtime pin.
+// ignore: implementation_imports
+import 'package:llamadart/src/hook/native_release_pins.dart';
 import 'package:llamadart_validation/android_consumer_profile.dart';
 import 'package:llamadart_validation/android_qualification_io.dart';
 import 'package:test/test.dart';
@@ -65,6 +68,17 @@ void main() {
     expect(full['backends'], compact['backends']);
     expect(full['omitted'], ['libggml-opencl.so']);
     expect(() => AndroidConsumerProfilePlan('unknown'), throwsFormatException);
+  });
+
+  test('consumer profiles bind the committed core runtime pin', () {
+    for (final profile in ['full', 'compact']) {
+      final plan = AndroidConsumerProfilePlan(profile);
+      expect(plan.hookDefines['llamadart_native_tag'], llamaCppTag);
+      expect(
+        (plan.wire['hook_defines'] as Map)['llamadart_native_tag'],
+        llamaCppTag,
+      );
+    }
   });
 
   test(
@@ -166,10 +180,14 @@ void main() {
       print(
         'Consumer CLI kernel compilation ${compileWatch.elapsedMilliseconds} ms',
       );
+      final tagParts = llamaCppTag.split('-');
+      final staleNativeTag =
+          '${tagParts.first}-${int.parse(tagParts.last) - 1}';
       for (final profile in ['full', 'compact']) {
         final plan = AndroidConsumerProfilePlan(profile);
         for (final variant in [
           'good',
+          'native-tag',
           'path',
           'runtimes',
           'profile',
@@ -181,7 +199,10 @@ void main() {
         ]) {
           final defines =
               jsonDecode(jsonEncode(plan.hookDefines)) as Map<String, dynamic>;
+          defines['llamadart_native_tag'] = llamaCppTag;
           switch (variant) {
+            case 'native-tag':
+              defines['llamadart_native_tag'] = staleNativeTag;
             case 'path':
               defines['llamadart_native_path'] = '/unadmitted';
             case 'runtimes':
