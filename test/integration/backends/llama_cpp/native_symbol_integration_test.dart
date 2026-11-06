@@ -21,7 +21,6 @@ const _genericSpeculativeSymbols = [
   'llama_dart_speculative_init',
   'llama_dart_speculative_free',
   'llama_dart_speculative_get_draft_context',
-  'llama_dart_speculative_need_embd',
   'llama_dart_speculative_need_embd_nextn',
   'llama_dart_speculative_begin',
   'llama_dart_speculative_process_batch',
@@ -931,7 +930,6 @@ void main() {
         llama_dart_speculative_get_draft_context(nullSpeculative).address,
         0,
       );
-      expect(llama_dart_speculative_need_embd(nullSpeculative), isFalse);
       expect(llama_dart_speculative_need_embd_nextn(nullSpeculative), isFalse);
       expect(
         llama_dart_speculative_begin(nullSpeculative, 0, nullTokenArray, 0),

@@ -1,7 +1,7 @@
 ## 0.18.0
 
 - Pair with core `>=0.18.0 <0.19.0`; update Apple SwiftPM to
-  `leehack/llamadart-native@v0.8.0-2` for speculative rollback and model-creation ownership fixes.
+  `leehack/llamadart-native@v0.8.0-3` for speculative rollback and model-creation ownership fixes and retirement of the unused embedding query; retain the genuine nextn query.
 
 ## 0.17.3
 

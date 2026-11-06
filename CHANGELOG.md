@@ -6,7 +6,7 @@
 - Adopt native LiteRT-LM `v0.19.0` and C API 1.0 with legacy compatibility, tagged Android pointer support, validated settings and typed unsupported-path errors.
 - Preserve LiteRT-LM workers and model caches after unsettled native cleanup; reject incomplete runtime overrides and document process-restart recovery and unsupported text LoRA.
 - Keep cached models reusable, visible and removable after cache-root moves, including iOS app updates ([#1741](https://github.com/leehack/llamadart/issues/1741)).
-- Adopt llama.cpp `v0.8.0-2` for speculative rollback and model-creation ownership fixes; isolate native bundle caches from older apps, verify Apple framework identity and report missing Windows speculative helpers.
+- Adopt llama.cpp `v0.8.0-3` for speculative rollback and model-creation ownership fixes, retaining the genuine nextn query while retiring the unused embedding query; isolate native bundle caches from older apps, verify Apple framework identity and report missing Windows speculative helpers.
 - Restrict unqualified Android Vulkan Qwen3.5 combinations to bounded ordinary text; refuse larger micro-batches, media, speculation and embeddings ([#948](https://github.com/leehack/llamadart/issues/948)).
 - Adopt stable-diffusion `v0.3.0-3` for original SD checkpoint containers while retaining the SDXS tiny-decoder policy and iOS full-VAE Metal restrictions.
 - Reinitialize native LiteRT-LM image-chat engines after cancellation before reusing them ([#1749](https://github.com/leehack/llamadart/issues/1749)).
@@ -16,7 +16,7 @@
 - Aligned the default WebGPU bridge assets to `v0.1.82` with bounded preallocation for large wasm32 model writes.
 - Pair all three Apple runtime companions at `0.18.0` with matching native binaries.
 
-Runtime baseline: native llama.cpp `v0.8.0-2` and Web use upstream `v0.8.0@8642541b255bfb5dc39cd351a178be09013a55d6`; native LiteRT-LM uses `v0.19.0` and stable-diffusion uses `v0.3.0-3`. Web LiteRT-LM stays `@litert-lm/core@0.18.0`. Manifest SHA-256: `fda19e047aba5a511020854437cc89e2f53e2f67f5f6cf5fec336faef3a6c362`.
+Runtime baseline: native llama.cpp `v0.8.0-3` and Web use upstream `v0.8.0@8642541b255bfb5dc39cd351a178be09013a55d6`; native LiteRT-LM uses `v0.19.0` and stable-diffusion uses `v0.3.0-3`. Web LiteRT-LM stays `@litert-lm/core@0.18.0`. Manifest SHA-256: `fda19e047aba5a511020854437cc89e2f53e2f67f5f6cf5fec336faef3a6c362`.
 
 ## 0.17.5
 

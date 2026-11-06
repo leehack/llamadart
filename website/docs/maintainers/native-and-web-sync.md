@@ -229,9 +229,10 @@ fixes a replacement runtime must provide are listed in
 The handwritten llama.cpp service uses `llama_dart_speculative_*` for MTP and
 n-gram strategies. Native initialization enables the target outputs each
 strategy consumes, so the service does not require the legacy
-`llama_dart_speculative_need_embd` or `need_embd_nextn` queries. The generated
-bindings and direct legacy-symbol tests remain until an adopted immutable
-artifact removes those exports.
+`llama_dart_speculative_need_embd` or `need_embd_nextn` queries. The native
+`v0.8.0-3` header removes the unused `need_embd` query; generated
+bindings and direct symbol tests follow that header. The genuine
+`llama_dart_speculative_need_embd_nextn` export and its null-false check remain.
 
 Direct, Windows wrapper code-asset, and dynamic-library resolution require the
 remaining generic API. Direct and Windows probes call it only with null
@@ -241,12 +242,14 @@ before returning an API. This checks available symbols, not struct-layout or
 behavior compatibility: custom overrides still need the ABI-compatible runtime
 described in [native build hooks](../platforms/native-build-hooks).
 
-[Native #51](https://github.com/leehack/llamadart-native/issues/51) owns coordinated
-export retirement, including the constant-false `need_embd` query. The genuine
-`need_embd_nextn` export remains. This preparation keeps the currently qualified
-`v0.8.0-2` pin and generated bindings; regenerate them and remove the direct
-`need_embd` export test only after the owner publishes the qualified replacement.
-It adds no manifest version or runtime handshake.
+[Native #51](https://github.com/leehack/llamadart-native/issues/51) coordinates
+retirement of the constant-false `need_embd` query. The published `v0.8.0-3`
+wrapper rebuild retains upstream `v0.8.0` and the genuine `need_embd_nextn`
+export. Owner publication readback permits mechanical adoption; it does not
+qualify this core's ordinary default acquisition or whole distributed AOT.
+Fresh macOS ARM64 and Windows x64 consumer/AOT evidence remains required
+against the adopted source and published artifacts. This adds no manifest
+version or runtime handshake.
 
 The llama.cpp hook writer, Windows fallback scanner and Linux dependency-copy
 reader all use the sibling `native_bundles_v2` cache. New default acquisitions
@@ -265,7 +268,8 @@ factories probe only `free` and can fail at a late untyped query lookup. Cache
 isolation protects automatic shared-checkout fallback; it does not retrofit
 that factory or isolate arbitrary system-loader substitutions.
 
-Before adoption, qualify old/new delivery and shared-root cache isolation,
+Before accepting the adoption, qualify old/new delivery and shared-root cache
+isolation,
 exact current-tag Apple checksum refusal, generic missing-symbol refusal, and
 retained `need_embd_nextn` behavior against the final owner artifact. Keep
 Windows host/AOT and packaged Apple evidence separate from host VM fixtures.
@@ -276,8 +280,9 @@ Run the model-free export-set checks with:
 dart test -p vm test/unit/backends/llama_cpp/speculative_api_skew_test.dart
 ```
 
-The tests exercise retained queries, absent legacy queries, and a missing
-required generic export through all three resolution paths. Real-runtime
+The tests exercise both the legacy and retired-query export sets, retaining
+nextn in both, plus a missing required generic export through all three
+resolution paths. Real-runtime
 old/new controls, representative n-gram/MTP/DFlash generation, and packaged
 platform qualification remain required for the coordinated ABI release.
 
@@ -667,11 +672,11 @@ the historical per-slice check. The
 reverse pair is unsafe (`mtmd_helper_init_opt` grows to 32 bytes), so companion
 `0.17.1` needs `llamadart: '>=0.17.1 <0.18.0'`.
 
-The 0.18.0 preparation moves to `v0.8.0-2` and requires its matching Apple
+The 0.18.0 preparation moves to `v0.8.0-3` and requires its matching Apple
 companion. Older runtimes are no longer admitted: they lack the speculative
 rollback and model-creation ownership fixes. All three Apple companions are
 prepared at `0.18.0`, constrained to
-`llamadart: ">=0.18.0 <0.19.0"`, with SwiftPM pins `v0.8.0-2`, `v0.19.0`
+`llamadart: ">=0.18.0 <0.19.0"`, with SwiftPM pins `v0.8.0-3`, `v0.19.0`
 and `v0.3.0-3`. Package publication still requires explicit release approval.
 
 Native sync PRs can leave the repository in a state where the companion package

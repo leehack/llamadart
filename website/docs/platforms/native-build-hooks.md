@@ -425,7 +425,7 @@ hooks:
 
 Overrides do not regenerate the Dart FFI bindings, so the binary must stay ABI-
 and symbol-compatible with the pinned release; the hook logs a warning when an
-override is active. This core requires the pinned `v0.8.0-2` runtime's
+override is active. This core requires the pinned `v0.8.0-3` runtime's
 speculative rollback and model-creation ownership fixes, as well as compatible
 struct layouts and symbols. Older binaries are not qualified by symbol presence
 alone. Use core `0.13.x` for its v0.6.0 runtime and companions. Do not point a core before
