@@ -600,6 +600,10 @@ class HighRiskReadinessEvaluator {
     'packages/genkit_llamadart/test/integration/genkit/plugin/real_model_constrained_grammar_test.dart',
     'packages/genkit_llamadart/test/integration/genkit/plugin/real_model_rich_tool_schemas_test.dart',
   };
+  static const _ffigenConfig = 'ffigen.yaml';
+  static const _ffigenPolicyTest =
+      'test/unit/tooling/native_bindings_generator_policy_test.dart';
+
   // Python suites CI runs directly, each bound to the one script it drives.
   static const _nativeSyncPythonTests = <String, String>{
     'tool/native/test_native_header_archive.py':
@@ -1296,6 +1300,18 @@ class HighRiskReadinessEvaluator {
       final referenced = refs
           .map((ref) => (ref as Map)['path'] as String)
           .toSet();
+      final ffigenTest = entry.key == _ffigenPolicyTest;
+      if ((ffigenTest || referenced.contains(_ffigenConfig)) &&
+          (!ffigenTest ||
+              referenced.length != 1 ||
+              !referenced.contains(_ffigenConfig))) {
+        return 'Ffigen config evidence must pair only $_ffigenPolicyTest with $_ffigenConfig.';
+      }
+      if (referenced.contains(_ffigenConfig) &&
+          (changes[_ffigenConfig]?.kind == RepositoryChangeKind.deleted ||
+              renamedSources.contains(_ffigenConfig))) {
+        return 'Ffigen config evidence requires the current root config at the head.';
+      }
       final harnessTest = entry.key.startsWith(
         'packages/llamadart_validation/test/',
       );
@@ -2017,6 +2033,7 @@ class HighRiskReadinessEvaluator {
   }
 
   static bool _isProductionPath(String path) =>
+      path == _ffigenConfig ||
       path.startsWith('lib/') ||
       path.startsWith('tool/') ||
       path.startsWith('hook/') ||
