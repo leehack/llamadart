@@ -189,9 +189,17 @@ python3 tool/native/sync_native_release_pins.py \
 ```
 
 Run the header and bindings step on Linux, as the workflow does (Ubuntu with
-`llvm-dev`, `libclang-dev` and `clang`): `ggml.h` pulls in the C library's
-`FILE`, so a macOS run of the same `ffigen.yaml` rewrites that struct and
-nothing else.
+`llvm-dev`, `libclang-dev` and `clang`). `ggml.h` pulls in libc's `FILE`, whose
+name and layout differ on macOS. `ffigen.yaml` explicitly excludes Linux's
+`_IO_FILE` from direct inclusion and makes pointer-only struct dependencies
+opaque, preserving the committed `Pointer<FILE>` contract without exposing
+libc internals. The unused libc dependency closure is excluded as well.
+Directly included native structs and structs required by value
+retain their fields. Do not normalize generated Dart by hand: regenerate with
+the pinned SDK and lockfile, and inspect the entire diff for unrelated layout
+changes. The tooling policy test exercises ffigen's actual configuration and
+AST transformation without libclang; real header generation remains a separate
+validation step.
 
 The pin sync rejects same-channel rollback and release/manifest version skew.
 After the default pin moves to the stable channel, an intentional compatibility
