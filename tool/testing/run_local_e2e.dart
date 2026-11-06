@@ -321,7 +321,8 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
           executable: context.python,
           arguments: [
             'test/fixtures/native_default_consumer_qualification/qualify.py',
-            '--core-root', context.projectRoot,
+            '--core-root',
+            context.projectRoot,
             '--expected-core-sha',
             context.environment['LLAMADART_DEFAULT_AOT_EXPECTED_SHA'] ??
                 '<LLAMADART_DEFAULT_AOT_EXPECTED_SHA>',
@@ -2762,7 +2763,8 @@ Future<LocalE2eResult> runLocalE2e(
     final env = environment ?? Platform.environment;
     final sha = env['LLAMADART_DEFAULT_AOT_EXPECTED_SHA'] ?? '';
     final tag = env['LLAMADART_DEFAULT_AOT_EXPECTED_NATIVE_TAG'];
-    if (sha.length != 40 || !RegExp(r'^[0-9a-f]{40}$').hasMatch(sha) ||
+    if (sha.length != 40 ||
+        !RegExp(r'^[0-9a-f]{40}$').hasMatch(sha) ||
         sha == '0000000000000000000000000000000000000000' ||
         !const {'v0.8.0-2', 'v0.8.0-3'}.contains(tag) ||
         (env['LLAMADART_DEFAULT_AOT_MODEL_PATH'] ?? '').trim().isEmpty ||

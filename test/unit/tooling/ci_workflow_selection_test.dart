@@ -124,54 +124,81 @@ Future<Map<String, bool>> deploymentGuardVerdicts() async {
 }
 
 void main() {
-  test('registered manual bootstrap calls the same-revision read-only qualifier', () {
-    final ci = readWorkflow('ci');
-    final jobs = ci['jobs'] as Map;
-    final job = jobs['native-default-consumer-qualification'] as Map;
-    expect(job['uses'], './.github/workflows/native_default_consumer_qualification.yml');
-    expect(job['permissions'], {'contents': 'read'});
-    expect(job.containsKey('secrets'), isFalse);
-    expect(job.containsKey('needs'), isFalse);
-    expect(job.containsKey('steps'), isFalse);
-    expect(job['with'], {
-      'expected_sha': r'${{ inputs.native_default_expected_sha }}',
-      'expected_native_tag': r'${{ inputs.native_default_expected_native_tag }}',
-    });
-    final qualifier = readWorkflow('native_default_consumer_qualification');
-    expect(qualifier['on']['workflow_call'], {
-      'inputs': {
-        'expected_sha': {'required': true, 'type': 'string'},
-        'expected_native_tag': {'required': true, 'type': 'string'},
-      },
-    });
-    expect(qualifier['concurrency'], {
-      'group': r'native-default-aot-${{ github.run_id }}',
-      'cancel-in-progress': false,
-    });
-    expect(ci['name'], 'CI');
-    expect(ci['concurrency']['group'],
-        r'${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}');
-    // Called workflows retain caller context; distinct prefixes avoid a caller
-    // cancelling its own child while both hold the same run ID.
-    expect(qualifier['concurrency']['group'], isNot(startsWith('CI-')));
-    expect((jobs['test-linux-web']['needs'] as List),
-        isNot(contains('native-default-consumer-qualification')));
-    final ordinary = jobs.keys.toSet().difference({
-      'changes', 'test-linux-web', 'deploy-chat-app',
-      'windows-registry-qualification', 'native-default-consumer-qualification',
-    });
-    for (final name in ordinary) {
-      final needs = jobs[name]['needs'];
-      expect(needs is String ? [needs] : needs, contains('changes'), reason: '$name');
-      expect(jobs[name]['if'], contains('needs.changes.outputs.'), reason: '$name');
-      expect(jobs[name]['if'], isNot(contains('always()')), reason: '$name');
-    }
-  });
+  test(
+    'registered manual bootstrap calls the same-revision read-only qualifier',
+    () {
+      final ci = readWorkflow('ci');
+      final jobs = ci['jobs'] as Map;
+      final job = jobs['native-default-consumer-qualification'] as Map;
+      expect(
+        job['uses'],
+        './.github/workflows/native_default_consumer_qualification.yml',
+      );
+      expect(job['permissions'], {'contents': 'read'});
+      expect(job.containsKey('secrets'), isFalse);
+      expect(job.containsKey('needs'), isFalse);
+      expect(job.containsKey('steps'), isFalse);
+      expect(job['with'], {
+        'expected_sha': r'${{ inputs.native_default_expected_sha }}',
+        'expected_native_tag':
+            r'${{ inputs.native_default_expected_native_tag }}',
+      });
+      final qualifier = readWorkflow('native_default_consumer_qualification');
+      expect(qualifier['on']['workflow_call'], {
+        'inputs': {
+          'expected_sha': {'required': true, 'type': 'string'},
+          'expected_native_tag': {'required': true, 'type': 'string'},
+        },
+      });
+      expect(qualifier['concurrency'], {
+        'group': r'native-default-aot-${{ github.run_id }}',
+        'cancel-in-progress': false,
+      });
+      expect(ci['name'], 'CI');
+      expect(
+        ci['concurrency']['group'],
+        r'${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}',
+      );
+      // Called workflows retain caller context; distinct prefixes avoid a caller
+      // cancelling its own child while both hold the same run ID.
+      expect(qualifier['concurrency']['group'], isNot(startsWith('CI-')));
+      expect(
+        (jobs['test-linux-web']['needs'] as List),
+        isNot(contains('native-default-consumer-qualification')),
+      );
+      final ordinary = jobs.keys.toSet().difference({
+        'changes',
+        'test-linux-web',
+        'deploy-chat-app',
+        'windows-registry-qualification',
+        'native-default-consumer-qualification',
+      });
+      for (final name in ordinary) {
+        final needs = jobs[name]['needs'];
+        expect(
+          needs is String ? [needs] : needs,
+          contains('changes'),
+          reason: '$name',
+        );
+        expect(
+          jobs[name]['if'],
+          contains('needs.changes.outputs.'),
+          reason: '$name',
+        );
+        expect(jobs[name]['if'], isNot(contains('always()')), reason: '$name');
+      }
+    },
+  );
 
-  test('manual default qualification skips normal fanout and all deploy routes', () async {
-    final jobs = readWorkflow('ci')['jobs'] as Map;
-    final result = await Process.run(Platform.isWindows ? 'python' : 'python3', [
-      '-c', r"""
+  test(
+    'manual default qualification skips normal fanout and all deploy routes',
+    () async {
+      final jobs = readWorkflow('ci')['jobs'] as Map;
+      final result = await Process.run(
+        Platform.isWindows ? 'python' : 'python3',
+        [
+          '-c',
+          r"""
 import itertools,json,sys
 changes,aggregate,qualification,registry,deploy=json.loads(sys.argv[1])
 for event,mode,oldflag,owner,attempt,cancel,good,main in itertools.product(('push','pull_request','workflow_dispatch'),(False,True),(False,True),(False,True),(1,2),(False,True),(False,True),(False,True)):
@@ -186,14 +213,18 @@ for event,mode,oldflag,owner,attempt,cancel,good,main in itertools.product(('pus
  assert run(registry)==(event=='workflow_dispatch' and oldflag and not mode)
  assert run(deploy)==(not cancel and not oldflag and not mode and event in ('push','workflow_dispatch') and owner and main and good)
 """,
-      jsonEncode([
-        jobs['changes']['if'], jobs['test-linux-web']['if'],
-        jobs['native-default-consumer-qualification']['if'],
-        jobs['windows-registry-qualification']['if'], jobs['deploy-chat-app']['if'],
-      ]),
-    ]);
-    expect(result.exitCode, 0, reason: '${result.stdout}\n${result.stderr}');
-  });
+          jsonEncode([
+            jobs['changes']['if'],
+            jobs['test-linux-web']['if'],
+            jobs['native-default-consumer-qualification']['if'],
+            jobs['windows-registry-qualification']['if'],
+            jobs['deploy-chat-app']['if'],
+          ]),
+        ],
+      );
+      expect(result.exitCode, 0, reason: '${result.stdout}\n${result.stderr}');
+    },
+  );
 
   group('CI run retention', () {
     // Evaluate the workflow's small expression subset; unknown syntax fails
@@ -614,7 +645,10 @@ for event,mode,oldflag,owner,attempt,cancel,good,main in itertools.product(('pus
         'native-default-consumer-qualification',
       });
       final aggregate = jobs['test-linux-web'] as Map;
-      expect(aggregate['if'], r'${{ always() && inputs.native_default_qualification != true }}');
+      expect(
+        aggregate['if'],
+        r'${{ always() && inputs.native_default_qualification != true }}',
+      );
       expect((aggregate['needs'] as List).toSet(), {
         ...planned,
         ...shards.keys,
@@ -673,16 +707,25 @@ for event,mode,oldflag,owner,attempt,cancel,good,main in itertools.product(('pus
           'default': false,
         },
         'native_default_qualification': {
-          'description': 'Run only default native consumer and AOT qualification',
-          'type': 'boolean', 'required': false, 'default': false,
+          'description':
+              'Run only default native consumer and AOT qualification',
+          'type': 'boolean',
+          'required': false,
+          'default': false,
         },
         'native_default_expected_sha': {
-          'description': 'Reviewed selected branch commit for default consumer qualification',
-          'type': 'string', 'required': false, 'default': '',
+          'description':
+              'Reviewed selected branch commit for default consumer qualification',
+          'type': 'string',
+          'required': false,
+          'default': '',
         },
         'native_default_expected_native_tag': {
-          'description': 'Verify checked-in v0.8.0-2 or v0.8.0-3 pin; never override it',
-          'type': 'string', 'required': false, 'default': '',
+          'description':
+              'Verify checked-in v0.8.0-2 or v0.8.0-3 pin; never override it',
+          'type': 'string',
+          'required': false,
+          'default': '',
         },
       });
       for (final name in ['push', 'pull_request']) {
