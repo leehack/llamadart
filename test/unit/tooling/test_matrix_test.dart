@@ -10,23 +10,40 @@ import '../../../tool/testing/run_local_e2e.dart';
 import '../../../tool/testing/test_matrix.dart';
 
 void main() {
-  test('default consumer AOT matrix selects only its explicit manual scenario', () async {
-    final row = testMatrixRows.singleWhere((row) => row.id == 'native-default-consumer-aot');
-    expect(row.tier, 'platform');
-    expect(row.mode, contains('manual local-only'));
-    expect(row.command, 'dart run tool/testing/run_local_e2e.dart --scenario native-default-consumer-aot');
-    final scenario = buildLocalE2eScenarios().singleWhere((scenario) => scenario.name == row.id);
-    expect(scenario.group, LocalE2eScenarioGroup.dartLocalOnly);
-    expect(scenario.requiresDevice, isFalse);
-    final dryRun = await runLocalE2e(['--scenario', row.id, '--dry-run'],
-        projectRoot: '/repo', environment: {}, foregroundStepRun: (_) async {
+  test(
+    'default consumer AOT matrix selects only its explicit manual scenario',
+    () async {
+      final row = testMatrixRows.singleWhere(
+        (row) => row.id == 'native-default-consumer-aot',
+      );
+      expect(row.tier, 'platform');
+      expect(row.mode, contains('manual local-only'));
+      expect(
+        row.command,
+        'dart run tool/testing/run_local_e2e.dart --scenario native-default-consumer-aot',
+      );
+      final scenario = buildLocalE2eScenarios().singleWhere(
+        (scenario) => scenario.name == row.id,
+      );
+      expect(scenario.group, LocalE2eScenarioGroup.dartLocalOnly);
+      expect(scenario.requiresDevice, isFalse);
+      final dryRun = await runLocalE2e(
+        ['--scenario', row.id, '--dry-run'],
+        projectRoot: '/repo',
+        environment: {},
+        foregroundStepRun: (_) async {
           fail('manual matrix inspection must not execute qualification');
-        });
-    expect(dryRun.exitCode, 0);
-    expect(dryRun.stdout, contains('native_default_consumer_qualification/qualify.py'));
-    expect(dryRun.stdout, contains('--expected-native-tag'));
-    expect(row.useWhen, contains('pipeline-only'));
-  });
+        },
+      );
+      expect(dryRun.exitCode, 0);
+      expect(
+        dryRun.stdout,
+        contains('native_default_consumer_qualification/qualify.py'),
+      );
+      expect(dryRun.stdout, contains('--expected-native-tag'));
+      expect(row.useWhen, contains('pipeline-only'));
+    },
+  );
   group('maintained runtime CI job names', () {
     final ci =
         loadYaml(File('.github/workflows/ci.yml').readAsStringSync()) as Map;
