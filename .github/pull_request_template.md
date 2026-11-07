@@ -29,6 +29,7 @@
 - [ ] `dart analyze`
 - [ ] `dart test -p vm -j 1 --exclude-tags local-only`
 - [ ] `dart test -p chrome --exclude-tags local-only` <!-- N/A with reason if not relevant -->
+- [ ] `coverage-lib` matrix row when `lib/` behavior changes <!-- PR CI skips coverage; main enforces the 70% threshold after merge. N/A with reason otherwise -->
 - [ ] Other targeted/local-only validation: <!-- Use `dart run tool/testing/test_matrix.dart --list` and `dart run tool/testing/run_local_e2e.dart --list`; e.g. Web mock smoke, WebGPU smoke, Flutter app E2E, docs build, N/A -->
 
 ## Matrix Evidence

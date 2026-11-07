@@ -147,7 +147,9 @@ These rows are not claims that every model works on every backend.
 - `tool/testing/validation.dart`: build, local, report, npu-preflight, plan, run, status, collect,
   reconcile, cleanup. Provider helpers live beside it under `tool/testing/validation/`.
 - `.github/workflows/validation_bundles.yml`: build-only workflow on relevant PR
-  changes (tiny CPU profile) or explicit manual selection. No cloud
+  changes and `main` pushes (tiny CPU profile) or explicit manual selection.
+  PRs defer the macOS desktop and Android builds to `main` unless they change
+  those builds' inputs (`doc/ci_selection.md`). No cloud
   credentials, model runs, VM creation or Firebase submission in CI.
   Desktop jobs extract the transport archive outside the checkout and verify
   command startup and bundled profile discovery without loading a model.

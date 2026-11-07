@@ -220,14 +220,18 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
     id: 'coverage-lib',
     tier: 'essential',
     mode: 'CI + local',
-    covers: '>=70% line coverage for maintainable lib/ code',
+    covers:
+        '>=70% line coverage for maintainable lib/ code; CI enforces it '
+        'after merge only',
     command:
         'dart test -p vm --coverage=coverage; '
         'dart run tool/testing/format_lcov.dart --lcov '
         '--in=coverage/test --out=coverage/lcov.info --report-on=lib '
         '--check-ignore; '
         'dart run tool/testing/check_lcov_threshold.dart coverage/lcov.info 70',
-    useWhen: 'Before merge when lib/ behavior changes or coverage is in doubt.',
+    useWhen:
+        'Before merge when lib/ behavior changes or coverage is in doubt; PR '
+        'CI does not check it.',
   ),
   TestMatrixRow(
     id: 'high-risk-exact-head-independent-qa',
@@ -1571,7 +1575,7 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
     tier: 'platform',
     mode: 'CI + local',
     covers:
-        'Windows x64 VM tests, hook bundle validation, LiteRT-LM native '
+        'Windows x64 host VM tests, hook bundle validation, LiteRT-LM native '
         'library smoke, and opportunistic LiteRT-LM CPU engine smoke',
     command:
         'CI jobs "Test Native (windows-tooling, <shard>/<shards>)", '

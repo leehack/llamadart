@@ -1,6 +1,11 @@
 name: Validation bundles
 
+# PRs build macOS desktop and Android only when they change those targets'
+# own build inputs (POST_MERGE_TARGETS in tool/ci/select_jobs.py); every push
+# to main builds all targets its change selects.
 on:
+  push:
+    branches: [main]
   pull_request:
     branches: [main]
   workflow_dispatch:

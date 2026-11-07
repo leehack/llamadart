@@ -260,6 +260,51 @@ class SelectionTest(unittest.TestCase):
             for job in ('test-linux-coverage', 'test-web', 'test-other-os'):
                 self.assertTrue(plan['jobs'][job])
 
+    def test_pull_requests_build_macos_desktop_and_android_for_their_inputs_only(self):
+        for paths in (['lib/llamadart.dart'], ['lib/src/core/engine.dart', 'README.md'],
+                      ['.github/workflows/ci.yml'], ['new/unknown.file'],
+                      ['example/basic_app/lib/main.dart'], ['example/chat_app/web/config'],
+                      ['example/chat_app/test/unit_test.dart']):
+            with self.subTest(paths=paths):
+                after_merge = ci.select(paths)
+                plan = ci.select(paths, pull_request=True)
+                self.assertNotIn('macos-15', plan['desktops'])
+                self.assertNotIn('android', plan['apps'])
+                self.assertEqual(plan['jobs'], after_merge['jobs'])
+                self.assertEqual(
+                    [d for d in after_merge['desktops'] if d != 'macos-15'], plan['desktops'])
+                self.assertEqual(
+                    [a for a in after_merge['apps'] if a != 'android'], plan['apps'])
+        for path in ('hook/build.dart', 'lib/src/hook/native_release_pins.dart', 'pubspec.yaml',
+                     'pubspec.lock', 'tool/testing/validation/bundle.dart',
+                     'tool/testing/validation.dart', 'packages/llamadart_validation/bin/run.dart',
+                     '.github/workflows/validation_bundles.yml', 'tool/ci/select_jobs.py'):
+            with self.subTest(path=path):
+                plan = ci.select([path], pull_request=True)
+                self.assertIn('macos-15', plan['desktops'])
+                self.assertIn('android', plan['apps'])
+        for path in ('example/chat_app/android/app/build.gradle', 'example/chat_app/lib/main.dart',
+                     'example/chat_app/pubspec.yaml',
+                     'packages/llamadart_llama_cpp_flutter/pubspec.yaml'):
+            with self.subTest(path=path):
+                plan = ci.select([path], pull_request=True)
+                self.assertNotIn('macos-15', plan['desktops'])
+                self.assertIn('android', plan['apps'])
+        # An unknown or unreadable inventory stays full.
+        self.assertEqual(ci.select([], pull_request=True)['desktops'], list(ci.DESKTOPS))
+        self.assertEqual(ci.select(['README.md'], force_full=True, pull_request=True)['apps'],
+                         list(ci.APPS))
+
+    def test_coverage_runs_after_merge_only(self):
+        self.assertTrue(ci.select(['lib/llamadart.dart'])['coverage'])
+        self.assertTrue(ci.select([], force_full=True)['coverage'])
+        plan = ci.select(['lib/llamadart.dart'], pull_request=True)
+        self.assertFalse(plan['coverage'])
+        self.assertTrue(plan['jobs']['test-linux-coverage'])
+        expected = ci.expected_jobs(plan)
+        self.assertTrue(expected['test-linux-vm'])
+        self.assertFalse(expected['test-linux-coverage'])
+
     def test_workflows_select_real_artifact_roundtrip(self):
         for path in ('.github/workflows/ci.yml', '.github/workflows/validation_bundles.yml',
                      'tool/ci/select_jobs.py', 'test/ci/test_select_jobs.py'):
@@ -357,6 +402,24 @@ class SelectionTest(unittest.TestCase):
             plan = json.loads(result.stdout)
             self.assertTrue(plan['jobs']['test-other-os'])
             self.assertIn('desktops-enabled=true', output.read_text())
+            self.assertIn('coverage=true', output.read_text())
+
+    def test_cli_pull_request_skips_coverage_even_when_it_falls_back_full(self):
+        with tempfile.TemporaryDirectory() as scratch:
+            event = Path(scratch) / 'event.json'
+            event.write_text(json.dumps({'pull_request': {'base': {'sha': '0' * 40},
+                                                          'head': {'sha': '1' * 40}}}))
+            output = Path(scratch) / 'output'
+            env = dict(os.environ, GITHUB_EVENT_NAME='pull_request',
+                       GITHUB_EVENT_PATH=str(event), GITHUB_OUTPUT=str(output))
+            result = subprocess.run([sys.executable, str(ROOT / 'tool/ci/select_jobs.py'), 'select'],
+                                    env=env, capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            plan = json.loads(result.stdout)
+            self.assertTrue(plan['jobs']['test-linux-coverage'])
+            self.assertFalse(plan['coverage'])
+            self.assertEqual(plan['desktops'], list(ci.DESKTOPS))
+            self.assertIn('coverage=false', output.read_text())
 
     def test_cli_manual_run_selects_every_job_that_gates_the_chat_app_deploy(self):
         with tempfile.TemporaryDirectory() as scratch:
@@ -375,9 +438,10 @@ class SelectionTest(unittest.TestCase):
 
 class AggregateTest(unittest.TestCase):
     def test_each_selected_job_must_succeed_and_each_unselected_job_must_skip(self):
-        for bundle in (False, True):
-            for paths in (['README.md'], ['lib/llamadart.dart'], ['example/chat_app/android/a']):
-                plan = ci.select(paths)
+        for bundle, pull_request in ((False, False), (True, False), (False, True), (True, True)):
+            for paths in (['README.md'], ['lib/llamadart.dart'], ['example/chat_app/android/a'],
+                          ['example/chat_app/ios/a']):
+                plan = ci.select(paths, pull_request=pull_request)
                 expected = ci.expected_jobs(plan, bundle)
                 needs = {'changes': {'result': 'success'}}
                 needs.update({j: {'result': 'success' if selected else 'skipped'} for j, selected in expected.items()})
@@ -444,7 +508,8 @@ class AggregateTest(unittest.TestCase):
 
     def test_malformed_selection_cannot_turn_missing_work_into_success(self):
         for field, value in [('jobs', {}), ('desktops', ['unknown']), ('apps', ['web', 'web']),
-                             ('companions', ['packages/llamadart_llama_cpp_flutter'])]:
+                             ('companions', ['packages/llamadart_llama_cpp_flutter']),
+                             ('coverage', 'false')]:
             plan = ci.select(['README.md'])
             plan[field] = value
             with self.subTest(field=field), self.assertRaises(ValueError):

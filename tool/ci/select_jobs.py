@@ -25,14 +25,27 @@ CORE_JOBS = (
     'native-prompt-reuse-parity', 'artifact-contract',
     'genkit', 'example-packages', 'model-store', 'markdown-tests',
 )
-# Jobs outside the plan that run exactly when the planned job they feed runs:
-# the Linux VM test shards whose raw coverage test-linux-coverage merges.
+# Jobs outside the plan that run exactly when the planned job they feed is
+# selected: the Linux VM test shards. The planned test-linux-coverage job only
+# merges their coverage, which runs after merge (push and manual runs).
 SHARD_JOBS = {'test-linux-vm': 'test-linux-coverage'}
 # The companion-packages job also hosts macOS steps selected apart from the
 # packages, so it runs, and must succeed, when any of these checks is selected.
 COMPANION_JOB_CHECKS = ('companion-packages', 'test-other-os', 'validation-harness')
 DESKTOPS = ('ubuntu-24.04', 'windows-2022', 'macos-15')
 APPS = ('android', 'web', 'ios-inputs')
+# Bundle targets a pull request builds only when it changes their own build
+# inputs; pushes to main and manual runs build them for every selecting change.
+# Their Dart code also compiles in the Linux desktop and Web builds.
+_BUNDLE_WORKFLOW = ('.github/workflows/validation_bundles.yml', 'tool/ci/select_jobs.py')
+_NATIVE_BUILD_INPUTS = ('hook/', 'lib/src/hook/', 'pubspec.yaml', 'pubspec.lock',
+                        'tool/testing/validation/', 'tool/testing/validation.dart')
+POST_MERGE_TARGETS = {
+    'macos-15': _BUNDLE_WORKFLOW + _NATIVE_BUILD_INPUTS,
+    'android': _BUNDLE_WORKFLOW + _NATIVE_BUILD_INPUTS + tuple(
+        'packages/' + name + '/' + part for name in COMPANIONS
+        for part in ('lib/', 'pubspec.yaml')),
+}
 # Imported by tool/testing/validation/image_profile.dart, whose root tests run
 # in validation-integration.
 VALIDATION_IMPORTED_CHAT_APP_FILES = (
@@ -68,7 +81,22 @@ def inventory(raw):
     return paths
 
 
-def select(paths, force_full=False):
+def builds_target(target, path):
+    """Whether a pull request changing [path] builds a post-merge [target]."""
+    if path.startswith(POST_MERGE_TARGETS[target]):
+        return True
+    if path.startswith('packages/llamadart_validation/'):
+        return not path.startswith(('packages/llamadart_validation/test/',
+                                    'packages/llamadart_validation/assets/',
+                                    'packages/llamadart_validation/schemas/'))
+    if target == 'android' and path.startswith('example/chat_app/'):
+        return not (path.endswith('.md') or path.startswith(tuple(
+            'example/chat_app/' + part + '/'
+            for part in ('test', 'test_vm', 'web', 'ios', 'macos', 'linux', 'windows'))))
+    return False
+
+
+def select(paths, force_full=False, pull_request=False):
     jobs, companions, desktops, apps = set(), set(), set(), set()
     reasons = []
 
@@ -159,9 +187,16 @@ def select(paths, force_full=False):
     if 'test-linux-coverage' in jobs and 'web-chat-contract' in jobs:
         # Both root provider tests and all Flutter consumer tests are covered.
         jobs.discard('validation-integration')
+    if pull_request and paths and not force_full:
+        for target in POST_MERGE_TARGETS:
+            if not any(builds_target(target, path) for path in paths):
+                desktops.discard(target)
+                apps.discard(target)
     return {
         'schema_version': 1,
         'jobs': {job: job in jobs for job in CORE_JOBS},
+        # PRs skip coverage; main and manual runs collect and enforce it.
+        'coverage': not pull_request,
         'companions': ['packages/' + name for name in COMPANIONS if name in companions],
         'desktops': [name for name in DESKTOPS if name in desktops],
         'apps': [name for name in APPS if name in apps],
@@ -177,6 +212,8 @@ def validate_plan(plan):
         raise ValueError('Incomplete job selection')
     if any(type(value) is not bool for value in jobs.values()):
         raise ValueError('Selections must be boolean')
+    if type(plan.get('coverage')) is not bool:
+        raise ValueError('Coverage selection must be boolean')
     for field, allowed in (
         ('companions', ['packages/' + name for name in COMPANIONS]),
         ('desktops', DESKTOPS), ('apps', APPS),
@@ -197,6 +234,7 @@ def expected_jobs(plan, bundle=False):
     return {
         **plan['jobs'],
         **{job: plan['jobs'][fed] for job, fed in SHARD_JOBS.items()},
+        'test-linux-coverage': plan['jobs']['test-linux-coverage'] and plan['coverage'],
         'companion-packages': companion_job_selected(plan),
     }
 
@@ -256,11 +294,13 @@ def main():
         for error in errors:
             print(error, file=sys.stderr)
         return int(bool(errors))
+    pull_request = os.environ.get('GITHUB_EVENT_NAME') == 'pull_request'
     try:
         event = json.loads(Path(os.environ['GITHUB_EVENT_PATH']).read_text())
-        plan = select(event_paths(os.environ['GITHUB_EVENT_NAME'], event))
+        plan = select(event_paths(os.environ['GITHUB_EVENT_NAME'], event),
+                      pull_request=pull_request)
     except (KeyError, ValueError, TypeError, OSError, subprocess.SubprocessError) as error:
-        plan = select([], force_full=True)
+        plan = select([], force_full=True, pull_request=pull_request)
         plan['reasons'] = ['Full fallback: ' + type(error).__name__]
     encoded = json.dumps(plan, separators=(',', ':'))
     print(json.dumps(plan, indent=2))
@@ -269,6 +309,7 @@ def main():
         for name, selected in plan['jobs'].items():
             out.write(f'{name}={str(selected).lower()}\n')
         out.write(f'companion-job={str(companion_job_selected(plan)).lower()}\n')
+        out.write(f'coverage={str(plan["coverage"]).lower()}\n')
         out.write('validation-harness-os=' + json.dumps(validation_harness_oses(plan), separators=(',', ':')) + '\n')
         for name in ('companions', 'desktops', 'apps'):
             out.write(name + '=' + json.dumps(plan[name], separators=(',', ':')) + '\n')
