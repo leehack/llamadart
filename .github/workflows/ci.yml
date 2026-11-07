@@ -473,7 +473,7 @@ jobs:
       # balanced by measured time; each keeps -j 1. After merge each also
       # writes raw coverage that test-linux-coverage merges.
       matrix:
-        shard: [1, 2, 3, 4]
+        shard: [1, 2, 3]
     steps:
       - uses: actions/checkout@v7
 
