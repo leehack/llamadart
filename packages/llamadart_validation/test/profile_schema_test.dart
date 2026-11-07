@@ -316,6 +316,7 @@ void main() {
                   'native_json_schema_capability',
                   'state_persistence',
                   'next_token_scoring',
+                  'sampler_controls',
                   'tool_result_media',
                 }.contains(entry.key) &&
                 field.value is String)

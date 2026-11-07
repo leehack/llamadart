@@ -75,6 +75,8 @@ const oldHashes = <String, String>{
       "f21fb14fbe84ad63b8ec5f662a001d35b4109aa8797fb17d251cb24773d355fd",
   "scoring-gguf-cpu.json":
       "688fc4c9bc10129689c2e8e95f3933e837a0e3082be60859ab05551b3a517d24",
+  "sampler-gguf-cpu.json":
+      "b9f39172ef2883e0067ec9d54382eb835b1e161e016a2e59833d911560f1fe4e",
   "scoring-litert-cpu.json":
       "35e2f644c19d7727ba4cdb6ae02fd4f3bc8e2fe5eca7ca89515e9410a90b9f56",
   "decision-gguf-webgpu.json":
