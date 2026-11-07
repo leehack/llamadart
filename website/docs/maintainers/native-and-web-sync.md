@@ -139,8 +139,8 @@ contents and applicability; sync validates the declared provenance shape.
 Schema-2 sync updates the runtime discovery table selected by the validated
 upstream compatibility tag: `v0.19.0` and `v0.19.1` update the admitted C API
 1.0 table; earlier versions update the legacy table. `v0.19.1` keeps C API
-1.0.0 with the same exports, so it shares the `v0.19.0` mapping. Library, macOS framework and native
-SwiftPM inventories stay separate, so repinning cannot relax discovery of an
+1.0.0 with the same exports, so it shares the `v0.19.0` mapping. Library,
+macOS framework and native SwiftPM inventories stay separate, so repinning cannot relax discovery of an
 explicit older runtime. Unknown newer compatibility tags require a reviewed API
 mapping before generation. The sync tests compile and execute both discovery
 paths after generation, including missing-companion refusal.
@@ -628,11 +628,16 @@ Use this checklist in native sync PRs:
 
 After core `0.18.0`, the LiteRT-LM pin moved to `v0.19.1`. The release that
 ships it bumps `llamadart_litert_lm_flutter` by a patch to pin `v0.19.1`, with a
-core lower bound that excludes `0.18.0`. A new upstream version is not an
-earlier build of the core's release, so the new core keeps macOS LiteRT-LM in
-the hook cache with the published `0.18.0` companion (`v0.19.0`) and warns to
-upgrade both, and core `0.18.0` does the same with the new companion. The
-release-prep verifier reports this pending bump.
+core lower bound that excludes `0.18.0`: core `0.18.0` keeps macOS LiteRT-LM in
+the hook cache with the new companion. The release-prep verifier reports this
+pending bump. The new core lists `v0.19.0` in
+`liteRtLmCompatibleAppleCompanionTags`, with the exact XCFramework checksums of
+the published `0.18.0` companion, because `v0.19.0` exports the same C API
+1.0.0 symbols. A macOS build with that companion still links its SwiftPM
+runtime and warns to upgrade the companion, and release prep accepts the
+published companion. Other earlier pins, or `v0.19.0` with other checksums,
+keep LiteRT-LM in the hook cache. Native pin sync clears the list when the pin
+moves.
 
 Core `0.17.1` preparation pairs all three Apple companions at `0.17.1`, with
 SwiftPM pins `v0.8.0-1`, `v0.18.1-4` and `v0.3.0-1`. The llama.cpp companion

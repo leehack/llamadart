@@ -1152,6 +1152,117 @@ dependency_overrides: {llamadart_llama_cpp_flutter: {path: resolved companion}}
     });
   }
 
+  String withChecksums(String manifest, List<String> checksums) {
+    var index = 0;
+    final updated = manifest.replaceAllMapped(
+      RegExp(r'checksum: "[0-9a-f]{64}"'),
+      (_) => 'checksum: "${checksums[index++]}"',
+    );
+    expect(index, checksums.length);
+    return updated;
+  }
+
+  // Companion 0.18.0 as published: v0.19.0 with its exact XCFramework checksums.
+  String published0180Manifest() =>
+      withChecksums(pinningLiteRtLm('v0.19.0'), const [
+        '7bd77599638d59b6c674805ad40ac5f4eb6d7d0de692050da180433e9b76adf6',
+        '952e74e4baeefd694a57811bfdf168ed1d1ae8ca91fda4c6f1a1b527c0a366c7',
+        'fcc60ebdb00c95b75f2bad4a606101bb7eefc512b6a42d11076442ff7baf336e',
+        '6a8228fc87a26ee4029fe15f0850ebad2872c2b4e0fbca6198f46d3aa5fa48a8',
+        '11320e97060f4798893a72102ece83714bdb220fab1a6261d6fe6ec672e1d36c',
+        'e25c905748b227b56921748302fb7c582b9c1a215af5f52cdbb1d9c4c0fba342',
+        '4c9227579b8d095078a03b779be82415eed334b84527a353513e349acf9ef739',
+      ]);
+
+  test('build hook links the published v0.19.0 LiteRT-LM companion from '
+      'SwiftPM on Flutter macOS with an upgrade warning', () async {
+    expect(coreLiteRtLmTag, 'v0.19.1');
+    final records = <String>[];
+    final subscription = Logger.root.onRecord.listen(
+      (record) => records.add(record.message),
+    );
+    addTearDown(subscription.cancel);
+    final stderrLines = await _capturingStderr(
+      () async => project.testCodeBuildHook(
+        mainMethod: build_hook.main,
+        targetOS: OS.macOS,
+        targetArchitecture: Architecture.arm64,
+        userDefines: await _flutterLiteRtLmOnlyUserDefines(
+          liteRtLmManifest: published0180Manifest(),
+        ),
+        check: (input, output) {
+          expect(output.assets.encodedAssets, isEmpty);
+          expect(
+            Directory(
+              path.join(input.outputDirectory.toFilePath(), 'llamadart_bin'),
+            ).existsSync(),
+            isFalse,
+          );
+        },
+      ),
+    );
+    expect(
+      records,
+      contains(
+        'LiteRT-LM will resolve symbols from the SPM-linked process image.',
+      ),
+    );
+    expect(
+      stderrLines.where((line) => line.startsWith('warning: llamadart:')),
+      [
+        'warning: llamadart: The resolved llamadart_litert_lm_flutter pins '
+            'leehack/litert-lm-native@v0.19.0, an earlier LiteRT-LM runtime '
+            'than v0.19.1 that this core still supports, so this build links '
+            'it. Its frameworks lack the upstream v0.19.1 default of four '
+            'images per prefill when max_num_images is unset. Upgrade '
+            'llamadart_litert_lm_flutter to the release pinning v0.19.1.',
+      ],
+    );
+  });
+
+  for (final (scenario, manifest, reason) in [
+    (
+      'v0.19.0 with other XCFramework checksums',
+      () => pinningLiteRtLm('v0.19.0'),
+      'does not link the complete macOS LiteRT-LM runtime (its XCFramework '
+          'checksums do not match the published '
+          'leehack/litert-lm-native@v0.19.0 artifacts)',
+    ),
+    for (final pin in ['v0.18.1', 'v0.19.0-1', 'v0.19.2'])
+      (
+        'the unadmitted pin $pin',
+        () => pinningLiteRtLm(pin),
+        'pins leehack/litert-lm-native@$pin rather than this core\'s '
+            'v0.19.1, so LiteRT-LM stays in the hook cache',
+      ),
+  ]) {
+    test('build hook keeps Flutter macOS LiteRT-LM on the hook cache for '
+        '$scenario', () async {
+      final stderrLines = await _capturingStderr(
+        () async => project.testCodeBuildHook(
+          mainMethod: build_hook.main,
+          targetOS: OS.macOS,
+          targetArchitecture: Architecture.arm64,
+          userDefines: await _flutterLiteRtLmOnlyUserDefines(
+            liteRtLmManifest: manifest(),
+          ),
+          check: (input, output) {
+            expect(
+              Directory(
+                path.join(input.outputDirectory.toFilePath(), 'llamadart_bin'),
+              ).existsSync(),
+              isTrue,
+            );
+          },
+        ),
+      );
+      expect(
+        stderrLines.where((line) => line.startsWith('warning: llamadart:')),
+        [contains(reason)],
+      );
+    });
+  }
+
   test('build hook prints no companion warning for a Flutter macOS app '
       'without the LiteRT-LM companion', () async {
     final stderrLines = await _capturingStderr(

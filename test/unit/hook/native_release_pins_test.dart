@@ -44,6 +44,38 @@ void main() {
     );
   });
 
+  test('Apple LiteRT-LM admits only the published v0.19.0 companion '
+      'artifacts', () {
+    expect(liteRtLmCompatibleAppleCompanionTags.keys, ['v0.19.0']);
+    expect(liteRtLmCompatibleAppleCompanionChecksums.keys, ['v0.19.0']);
+    final targets = RegExp(r'nativeRepoBinaryTarget\(\s*name: "(\w+)"')
+        .allMatches(
+          File(
+            'packages/llamadart_litert_lm_flutter/darwin/'
+            'llamadart_litert_lm_flutter/Package.swift',
+          ).readAsStringSync(),
+        )
+        .map((match) => match.group(1)!)
+        .toList();
+    final release =
+        jsonDecode(
+              File(
+                'tool/native/fixtures/litert_lm_v019_owner_release.json',
+              ).readAsStringSync(),
+            )
+            as Map<String, Object?>;
+    final digests = {
+      for (final asset in (release['assets']! as List).cast<Map>())
+        asset['name'] as String: (asset['digest'] as String).substring(7),
+    };
+    expect(release['tag_name'], 'v0.19.0');
+    expect(targets, hasLength(7));
+    expect(liteRtLmCompatibleAppleCompanionChecksums['v0.19.0'], [
+      for (final target in targets)
+        digests['litert-lm-native-apple-$target-xcframework-v0.19.0.zip'],
+    ]);
+  });
+
   test('Apple companion version is the first release pinning llamaCppTag', () {
     const companion = 'packages/llamadart_llama_cpp_flutter';
     final version = RegExp(

@@ -465,6 +465,7 @@ Map<String, Set<String>> coreAcceptedCompanionPins() => <String, Set<String>>{
   'llamadart_litert_lm_flutter': <String>{
     liteRtLmReleaseTag,
     ...earlierLiteRtLmRebuilds(liteRtLmReleaseTag),
+    ...liteRtLmCompatibleAppleCompanionTags.keys,
   },
   'llamadart_stable_diffusion_flutter': <String>{
     stableDiffusionReleaseTag,
@@ -506,7 +507,10 @@ List<String> checkCompanionPublishedCorePins(Directory repoRoot) {
       'llamaCppTag',
       'llamaCppCompatibleAppleCompanionTags',
     ),
-    'llamadart_litert_lm_flutter': ('liteRtLmReleaseTag', null),
+    'llamadart_litert_lm_flutter': (
+      'liteRtLmReleaseTag',
+      'liteRtLmCompatibleAppleCompanionTags',
+    ),
     'llamadart_stable_diffusion_flutter': (
       'stableDiffusionReleaseTag',
       'stableDiffusionCompatibleAppleCompanionTags',

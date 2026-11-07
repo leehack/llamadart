@@ -113,6 +113,36 @@ const liteRtLmReleaseTag = 'v0.19.1';
 /// LiteRT-LM cache directory version derived from [liteRtLmReleaseTag].
 const liteRtLmVersion = '0.19.1';
 
+/// Earlier `leehack/litert-lm-native` tags that a published Apple LiteRT-LM
+/// companion pins and a macOS build still links from SwiftPM with an upgrade
+/// warning, each mapped to what its frameworks lack compared with
+/// [liteRtLmReleaseTag].
+///
+/// `v0.19.0`, pinned by companion `0.18.0`, exports the same symbols and C API
+/// 1.0.0 as `v0.19.1`, so a core patch can move the pin without leaving that
+/// companion's apps on the hook cache. Native pin sync clears this map
+/// whenever the pin moves; additions require that export comparison and the
+/// exact checksums below.
+const liteRtLmCompatibleAppleCompanionTags = <String, String>{
+  'v0.19.0':
+      'the upstream v0.19.1 default of four images per prefill when '
+      'max_num_images is unset',
+};
+
+/// Exact XCFramework checksums, in maintained `Package.swift` order, of each
+/// [liteRtLmCompatibleAppleCompanionTags] entry.
+const liteRtLmCompatibleAppleCompanionChecksums = <String, List<String>>{
+  'v0.19.0': [
+    '7bd77599638d59b6c674805ad40ac5f4eb6d7d0de692050da180433e9b76adf6',
+    '952e74e4baeefd694a57811bfdf168ed1d1ae8ca91fda4c6f1a1b527c0a366c7',
+    'fcc60ebdb00c95b75f2bad4a606101bb7eefc512b6a42d11076442ff7baf336e',
+    '6a8228fc87a26ee4029fe15f0850ebad2872c2b4e0fbca6198f46d3aa5fa48a8',
+    '11320e97060f4798893a72102ece83714bdb220fab1a6261d6fe6ec672e1d36c',
+    'e25c905748b227b56921748302fb7c582b9c1a215af5f52cdbb1d9c4c0fba342',
+    '4c9227579b8d095078a03b779be82415eed334b84527a353513e349acf9ef739',
+  ],
+};
+
 /// A published LiteRT-LM runtime archive and the libraries it must contain.
 class LiteRtLmBundleSpec {
   /// Release bundle key such as `linux-x64`.

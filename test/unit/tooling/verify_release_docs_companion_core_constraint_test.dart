@@ -392,6 +392,15 @@ void main() {
       );
     });
 
+    test('accepts the published v0.19.0 LiteRT-LM companion and no other '
+        'earlier upstream release', () {
+      expect(liteRtLmReleaseTag, 'v0.19.1');
+      expect(coreAcceptedCompanionPins()[_liteRtLm], {'v0.19.1', 'v0.19.0'});
+      for (final pin in ['v0.18.1', 'v0.19.0-1', 'v0.19.2']) {
+        expect(coreAcceptedCompanionPins()[_liteRtLm], isNot(contains(pin)));
+      }
+    });
+
     test('defaults to the pins the checkout core accepts', () {
       expect(coreAcceptedCompanionPins().keys.toSet(), {
         for (final companion in companionSwiftPins) companion.package,
@@ -491,6 +500,35 @@ const stableDiffusionReleaseTag = '$oldPin';
           contains('Cannot uniquely read stableDiffusionReleaseTag'),
         ]);
       }
+    });
+
+    test('a published core admits a LiteRT-LM pin its compatibility map '
+        'lists', () {
+      String source(String map) =>
+          '''
+const llamaCppTag = '$llamaCppTag';
+const liteRtLmReleaseTag = 'v9.9.9';
+const stableDiffusionReleaseTag = '$stableDiffusionReleaseTag';
+$map
+''';
+      expect(
+        checkCompanionPublishedCorePins(
+          pair(
+            source: source('''
+const liteRtLmCompatibleAppleCompanionTags = <String, String>{
+  '$liteRtLmReleaseTag': 'identical exports',
+};
+'''),
+          ),
+        ),
+        isEmpty,
+      );
+      expect(checkCompanionPublishedCorePins(pair(source: source(''))), [
+        allOf(
+          contains('llamadart_litert_lm_flutter pins'),
+          contains('published core v0.15.1 whose hook rejects that pin'),
+        ),
+      ]);
     });
 
     test('historical compatibility is interpreted as data, not executed', () {

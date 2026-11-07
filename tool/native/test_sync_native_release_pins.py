@@ -1328,12 +1328,37 @@ class LiteRtCompanionTemplateSyncTest(unittest.TestCase):
             self.assertEqual(self.declared_hash(updated),
                              "df03e4e53c34d1d7c7039e221092d30fb72b2a71d93b4f6227299af41aff26cb")
             self.assertEqual((root / pins.DEFAULT_LITERT_LM_PACKAGE_SWIFT).read_text(), self.prepared)
-            self.assertIn("const liteRtLmReleaseTag = 'v0.19.0';",
-                          (root / pins.DEFAULT_NATIVE_RELEASE_PINS).read_text())
+            synced_pins = (root / pins.DEFAULT_NATIVE_RELEASE_PINS).read_text()
+            self.assertIn("const liteRtLmReleaseTag = 'v0.19.0';", synced_pins)
+            # Earlier companion admissions hold for one pin only.
+            self.assertIn(
+                "const liteRtLmCompatibleAppleCompanionTags = <String, String>{};",
+                synced_pins,
+            )
+            self.assertIn(
+                "const liteRtLmCompatibleAppleCompanionChecksums = "
+                "<String, List<String>>{};",
+                synced_pins,
+            )
             self.assertNotIn("TopK", self.prepared)
             first = {p: p.read_bytes() for p in root.rglob("*") if p.is_file()}
             self.sync(root)
             self.assertEqual(first, {p: p.read_bytes() for p in root.rglob("*") if p.is_file()})
+
+    def test_clearing_compatible_companion_tags_keeps_other_pins(self) -> None:
+        source = (self.source_root / pins.DEFAULT_NATIVE_RELEASE_PINS).read_text()
+        cleared, tags = pins.clear_litert_compatible_apple_companion_tags(source)
+        self.assertEqual(tags, ["v0.19.0"])
+        self.assertNotIn("7bd77599638d59b6c674805ad40ac5f4eb6d7d0de692050da180433e9b76adf6", cleared)
+        self.assertEqual(
+            re.sub(r"const liteRtLmCompatibleApple\w+ = <[^{]+\{[^;]*\};", "", cleared),
+            re.sub(r"const liteRtLmCompatibleApple\w+ = <[^{]+\{.*?\n\};", "", source, flags=re.DOTALL),
+        )
+        self.assertEqual(pins.clear_litert_compatible_apple_companion_tags(cleared), (cleared, []))
+        with self.assertRaisesRegex(ReleaseError, "liteRtLmCompatibleAppleCompanionChecksums"):
+            pins.clear_litert_compatible_apple_companion_tags(
+                cleared.replace("const liteRtLmCompatibleAppleCompanionChecksums", "const other")
+            )
 
     def test_dry_run_reports_prospective_hash_without_changing_current_eighteen(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
@@ -4159,7 +4184,7 @@ class StableDiffusionPinSyncTest(unittest.TestCase):
             (companion / "CHANGELOG.md")
             .read_text(encoding="utf-8")
             .startswith(
-                "## Unreleased\n\n* Updated Apple SwiftPM native pin to "
+                "## Unreleased\n\n- Updated Apple SwiftPM native pin to "
                 "`leehack/stable-diffusion-native@v0.3.0`."
             )
         )
