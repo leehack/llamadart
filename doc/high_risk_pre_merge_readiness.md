@@ -489,6 +489,15 @@ The binding values must come from an independent source such as a read-only
 GitHub API query. Repeating values copied from the evidence file checks
 consistency but does not create trust.
 
+For `--pr-author` and `pr_author`, use the PR's REST `user.login`
+(`gh api repos/<owner>/<repo>/pulls/<number> --jq .user.login`). Bot authors
+keep their `[bot]` suffix, so `github-actions[bot]` and the human
+`github-actions` are different authors. `gh pr view` reports bots as
+`app/<slug>`; never strip that prefix or add a suffix by hand. Matching is
+case-insensitive, and the output keeps the supplied spelling. Accepting bot
+logins grants no auditor authority: auditor identities and self-approval
+checks are unchanged.
+
 Exit codes:
 
 | Code | Meaning |
