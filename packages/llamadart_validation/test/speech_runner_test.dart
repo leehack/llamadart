@@ -623,6 +623,15 @@ class SynthesisSpeechEngine extends FakeSpeechEngine {
   }
 }
 
+/// A stopwatch that reads 1% slow, so a timer set from its own readings fires
+/// before it reaches its target, as Dart timers occasionally do.
+class SlowStopwatch extends FakeTimeStopwatch {
+  SlowStopwatch(super.async);
+
+  @override
+  int get elapsedMicroseconds => super.elapsedMicroseconds * 99 ~/ 100;
+}
+
 /// A [Stopwatch] that reads [FakeAsync.elapsed], so timed checks see the
 /// exact delays [SynthesisSpeechEngine] schedules.
 class FakeTimeStopwatch implements Stopwatch {
@@ -3249,6 +3258,28 @@ void main() {
       newStopwatch: newStopwatch,
     );
   }
+
+  test('the decode cancellation lead survives an early timer', () async {
+    await runInFakeTime((async) async {
+      final adapter = synthesisAdapter(
+        SynthesisSpeechEngine(),
+        newStopwatch: () => SlowStopwatch(async),
+      );
+      await adapter.load();
+      await adapter.execute();
+      final decode = await adapter.executeDecodeCancel();
+      final references = decode['references'] as List;
+      final shortest = references
+          .map((reference) => (reference['decode_ms'] as num).toDouble())
+          .reduce(math.min);
+      expect(decode['cancel_in_flight'], isTrue);
+      expect(
+        decode['cancel_after_decode_start_ms'],
+        greaterThanOrEqualTo(shortest * speechDecodeCancelLeadFraction),
+      );
+      await adapter.dispose();
+    });
+  });
 
   test('the public adapter interrupts a synthesis in flight', () async {
     await runInFakeTime((async) async {

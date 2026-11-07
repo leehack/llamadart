@@ -319,6 +319,17 @@ class PublicSpeechValidationAdapter
     };
   }
 
+  /// Dart timers can fire slightly before the stopwatch reaches their target,
+  /// so a lead measured on [watch] is completed by re-arming.
+  Future<void> _finishWaitingUntil(
+    Stopwatch watch,
+    int targetMicroseconds,
+  ) async {
+    while (watch.elapsedMicroseconds < targetMicroseconds) {
+      await Future<void>.delayed(const Duration(milliseconds: 1));
+    }
+  }
+
   Future<Map<String, Object?>> _cancelTask(
     Stopwatch watch,
     Stopwatch cancelWatch,
@@ -347,9 +358,7 @@ class PublicSpeechValidationAdapter
     final leadMicroseconds =
         (reference * speechCancelInFlightLeadFraction * 1000).ceil();
     await Future<void>.delayed(Duration(microseconds: leadMicroseconds));
-    while (watch.elapsedMicroseconds < leadMicroseconds) {
-      await Future<void>.delayed(const Duration(milliseconds: 1));
-    }
+    await _finishWaitingUntil(watch, leadMicroseconds);
     final afterMs = watch.elapsedMicroseconds / 1000;
     final inFlight = !settled;
     final landed = landing?.call();
@@ -691,27 +700,33 @@ class PublicSpeechValidationAdapter
     var inFlight = false;
     var finals = 0;
     Timer? timer;
+    var finished = false;
     await for (final event in task.events) {
       if (event is TextToSpeechProgressEvent &&
           capEventMs == null &&
           event.framesGenerated >= speechDecodeCancelFrameCap) {
-        capEventMs = watch.elapsedMicroseconds / 1000;
+        final capMicroseconds = watch.elapsedMicroseconds;
+        capEventMs = capMicroseconds / 1000;
         capFrames = event.framesGenerated;
         if (cancelLeadMs != null) {
-          timer = Timer(
-            Duration(microseconds: (cancelLeadMs * 1000).ceil()),
-            () {
-              cancelAtMs = watch.elapsedMicroseconds / 1000;
-              inFlight = !settled;
-              task.cancel();
-            },
-          );
+          final leadMicroseconds = (cancelLeadMs * 1000).ceil();
+          timer = Timer(Duration(microseconds: leadMicroseconds), () async {
+            await _finishWaitingUntil(
+              watch,
+              capMicroseconds + leadMicroseconds,
+            );
+            if (finished) return;
+            cancelAtMs = watch.elapsedMicroseconds / 1000;
+            inFlight = !settled;
+            task.cancel();
+          });
         }
       }
       if (event is TextToSpeechFinalEvent) finals++;
     }
     final completion = await done;
     final doneMs = watch.elapsedMicroseconds / 1000;
+    finished = true;
     timer?.cancel();
     return (
       capEventMs: capEventMs,
