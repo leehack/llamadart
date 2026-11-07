@@ -1,5 +1,7 @@
 ## Unreleased
 
+- Fix LiteRT-LM text-only or audio-only turns that failed with "Image history requires a vision encoder." after an image turn on the same engine ([#1781](https://github.com/leehack/llamadart/issues/1781)).
+
 ## 0.18.0
 
 - Fix synthesized speech playback in the macOS chat example.

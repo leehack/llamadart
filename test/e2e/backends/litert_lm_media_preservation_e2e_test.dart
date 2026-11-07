@@ -150,6 +150,26 @@ void main() {
           ),
         ]);
         print(jsonEncode({'case': 'image_history', 'text': historyReply}));
+        final textOnly = await engine
+            .create(
+              const [
+                LlamaChatMessage.fromText(
+                  role: LlamaChatRole.user,
+                  text: 'What is 2 + 3? Answer with one digit.',
+                ),
+              ],
+              enableThinking: false,
+              params: _params,
+            )
+            .collect()
+            .timeout(_operationTimeout);
+        expect(textOnly.text, contains('5'));
+        print(
+          jsonEncode({
+            'case': 'text_only_after_image',
+            'text': textOnly.text.trim(),
+          }),
+        );
         // Cancelling the subscription must leave the same engine reusable.
         await engine
             .create(bytesMessages, enableThinking: false, params: _params)

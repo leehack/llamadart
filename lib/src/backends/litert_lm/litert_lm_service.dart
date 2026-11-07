@@ -1300,8 +1300,12 @@ class LiteRtLmService {
 
     final resolvedSpeculativeDecoding =
         speculativeDecoding ?? _activeSpeculativeDecoding ?? false;
-    final resolvedMaxNumImages = maxNumImages ?? _activeMaxNumImages;
     final resolvedVisionEnabled = enableVision ?? _activeVisionEnabled ?? false;
+    // The runtime rejects an image count without a vision encoder, so a turn
+    // whose history holds no images drops the previous turn's count.
+    final resolvedMaxNumImages = resolvedVisionEnabled
+        ? maxNumImages ?? _activeMaxNumImages
+        : null;
     final resolvedAudioEnabled = enableAudio ?? _activeAudioEnabled ?? false;
     final backend = _activeBackend ?? _backendNameFor(modelParams);
     final existing = _client;
