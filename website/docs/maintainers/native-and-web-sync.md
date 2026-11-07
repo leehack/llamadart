@@ -140,10 +140,11 @@ Schema-2 sync updates the runtime discovery table selected by the validated
 upstream compatibility tag: `v0.19.0` and `v0.19.1` update the admitted C API
 1.0 table; earlier versions update the legacy table. `v0.19.1` keeps C API
 1.0.0 with the same exports, so it shares the `v0.19.0` mapping. Library,
-macOS framework and native SwiftPM inventories stay separate, so repinning cannot relax discovery of an
-explicit older runtime. Unknown newer compatibility tags require a reviewed API
-mapping before generation. The sync tests compile and execute both discovery
-paths after generation, including missing-companion refusal.
+macOS framework and native SwiftPM inventories stay separate, so repinning
+cannot relax discovery of an explicit older runtime. Unknown newer
+compatibility tags require a reviewed API mapping before generation. The sync
+tests compile and execute both discovery paths after generation, including
+missing-companion refusal.
 
 For schema 2, Apple target selection follows the per-platform owner inventory.
 Sync removes a formerly required iOS Gemma constraint-provider target from a
@@ -626,18 +627,13 @@ Use this checklist in native sync PRs:
 
 ## Companion package release handoff
 
-After core `0.18.0`, the LiteRT-LM pin moved to `v0.19.1`. The release that
-ships it bumps `llamadart_litert_lm_flutter` by a patch to pin `v0.19.1`, with a
-core lower bound that excludes `0.18.0`: core `0.18.0` keeps macOS LiteRT-LM in
-the hook cache with the new companion. The release-prep verifier reports this
-pending bump. The new core lists `v0.19.0` in
-`liteRtLmCompatibleAppleCompanionTags`, with the exact XCFramework checksums of
-the published `0.18.0` companion, because `v0.19.0` exports the same C API
-1.0.0 symbols. A macOS build with that companion still links its SwiftPM
-runtime and warns to upgrade the companion, and release prep accepts the
-published companion. Other earlier pins, or `v0.19.0` with other checksums,
-keep LiteRT-LM in the hook cache. Native pin sync clears the list when the pin
-moves.
+After core `0.18.0`, the LiteRT-LM pin moved to `v0.19.1`. It ships in core
+`0.19.0`, which re-releases all three Apple companions at `0.19.0` with
+`llamadart: '>=0.19.0 <0.20.0'`; the LiteRT-LM companion pins `v0.19.1`. Pub
+cannot resolve a `0.19.x` core beside a `0.18.x` companion, so no mixed pair
+exists. A `0.18.x` patch from `main` would accept only `v0.19.1`, while the
+published `0.18.0` companion it resolves beside pins `v0.19.0`; release prep
+rejects that pair, so `main` can no longer ship a `0.18.x` patch.
 
 Core `0.17.1` preparation pairs all three Apple companions at `0.17.1`, with
 SwiftPM pins `v0.8.0-1`, `v0.18.1-4` and `v0.3.0-1`. The llama.cpp companion

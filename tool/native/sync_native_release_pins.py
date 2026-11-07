@@ -1011,16 +1011,6 @@ def main() -> int:
             f"const liteRtLmVersion = '{litert_version}';",
             "native pins LiteRT-LM version",
         )
-        if resolved_litert_lm_tag != current_litert_lm_tag:
-            pins_text, cleared_tags = clear_litert_compatible_apple_companion_tags(
-                pins_text
-            )
-            if cleared_tags:
-                summaries.append(
-                    "cleared compatible Apple LiteRT-LM companion tags "
-                    f"{', '.join(cleared_tags)}; re-verify their C API exports "
-                    f"against {resolved_litert_lm_tag} before listing them again"
-                )
         if not litert_lm_runtime_dart_path.exists():
             raise ReleaseError(
                 f"Missing LiteRT-LM Dart runtime {litert_lm_runtime_dart_path}"
@@ -3466,53 +3456,6 @@ def clear_compatible_apple_companion_tags(pins_text: str) -> tuple[str, list[str
         pins_text = (
             pins_text[: match.start()]
             + f"const {name} = <String, String>{{}};"
-            + pins_text[match.end() :]
-        )
-    return pins_text, cleared
-
-
-_LITERT_COMPATIBLE_APPLE_COMPANION_PATTERNS = (
-    (
-        "liteRtLmCompatibleAppleCompanionTags",
-        "<String, String>",
-        re.compile(
-            r"const liteRtLmCompatibleAppleCompanionTags = <String, String>\{(.*?)\};",
-            re.DOTALL,
-        ),
-    ),
-    (
-        "liteRtLmCompatibleAppleCompanionChecksums",
-        "<String, List<String>>",
-        re.compile(
-            r"const liteRtLmCompatibleAppleCompanionChecksums = "
-            r"<String, List<String>>\{(.*?)\n?\};",
-            re.DOTALL,
-        ),
-    ),
-)
-
-
-def clear_litert_compatible_apple_companion_tags(
-    pins_text: str,
-) -> tuple[str, list[str]]:
-    """Empty the earlier LiteRT-LM companion tags and their checksums, which
-    hold for one pin only."""
-    cleared: list[str] = []
-    for name, map_type, pattern in _LITERT_COMPATIBLE_APPLE_COMPANION_PATTERNS:
-        matches = list(pattern.finditer(_native_pins_code_mask(pins_text)))
-        if len(matches) != 1:
-            raise ReleaseError(
-                f"Could not find {name} in {DEFAULT_NATIVE_RELEASE_PINS}"
-            )
-        match = matches[0]
-        if not cleared:
-            cleared = re.findall(
-                r"^  '([^']+)':", pins_text[match.start(1):match.end(1)],
-                re.MULTILINE,
-            )
-        pins_text = (
-            pins_text[: match.start()]
-            + f"const {name} = {map_type}{{}};"
             + pins_text[match.end() :]
         )
     return pins_text, cleared

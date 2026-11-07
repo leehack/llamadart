@@ -220,12 +220,6 @@ ${_llamaCppBundleDigestPins()}
 ${_llamaCppAppleCompanionPins()}
 const liteRtLmReleaseTag = 'v0.16.0';
 const liteRtLmVersion = '0.16.0';
-const liteRtLmCompatibleAppleCompanionTags = <String, String>{
-  'v0.15.0': 'x',
-};
-const liteRtLmCompatibleAppleCompanionChecksums = <String, List<String>>{
-  'v0.15.0': ['${'a' * 64}'],
-};
 
 const liteRtLmBundleSpecs = <LiteRtLmBundleSpec>[
   LiteRtLmBundleSpec('android-arm64', sha256: '${_hex('0')}', requiredLibraries: {'runtime'}),
@@ -410,19 +404,6 @@ paths=(
     expect(pins, contains(_llamaCppBundleDigestPins(llamaTag)));
     expect(pins, contains("const liteRtLmReleaseTag = '$litertTag';"));
     expect(pins, contains("const liteRtLmVersion = '0.17.0';"));
-    expect(
-      pins,
-      contains(
-        'const liteRtLmCompatibleAppleCompanionTags = <String, String>{};',
-      ),
-    );
-    expect(
-      pins,
-      contains(
-        'const liteRtLmCompatibleAppleCompanionChecksums = '
-        '<String, List<String>>{};',
-      ),
-    );
     expect(pins, contains("sha256: '$litertRuntimeChecksum'"));
     expect(pins, isNot(contains("requiredLibraries: {'runtime'}")));
     expect(pins, contains("'libLiteRtLm.so'"));

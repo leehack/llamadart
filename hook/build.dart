@@ -732,13 +732,10 @@ _AppleCompanions? _flutterAppleCompanions({
   if (dependencies.contains(_liteRtLmFlutterPackageName)) {
     runtimes.add(nativeRuntimeLiteRtLm);
     if (code.targetOS == OS.macOS) {
-      final companion = _liteRtLmMacOsCompanionCheck(consumerRoot, output);
-      if (companion != null && companion.linksCompanion) {
-        log.warning(companion.message);
-        stderr.writeln('warning: llamadart: ${companion.message}');
-      } else {
-        liteRtLmMacOsWarning = companion?.message;
-      }
+      liteRtLmMacOsWarning = _liteRtLmMacOsCompanionWarning(
+        consumerRoot,
+        output,
+      );
     }
   }
   final stableDiffusion = dependencies.contains(
@@ -1257,15 +1254,11 @@ Directory _resolvedCompanionRoot(
 
 /// The build warning for a resolved LiteRT-LM companion that does not match
 /// this core on macOS, or `null` when its manifest is the maintained one
-/// pinning [liteRtLmReleaseTag]. [linksCompanion] is true only for an
-/// admitted [liteRtLmCompatibleAppleCompanionTags] pin with its exact
-/// checksums, which the build still links from SwiftPM.
-({String message, bool linksCompanion})? _liteRtLmMacOsCompanionCheck(
+/// pinning [liteRtLmReleaseTag].
+String? _liteRtLmMacOsCompanionWarning(
   Directory consumerRoot,
   BuildOutputBuilder output,
 ) {
-  ({String message, bool linksCompanion}) hookCache(String message) =>
-      (message: message, linksCompanion: false);
   Never gap(String reason) => throw _CompanionGap(reason);
   try {
     final companionRoot = _resolvedCompanionRoot(
@@ -1306,61 +1299,28 @@ Directory _resolvedCompanionRoot(
     }
     final pin = pins.single.group(1)!;
     if (pin == liteRtLmReleaseTag) return null;
-    final missing = liteRtLmCompatibleAppleCompanionTags[pin];
-    if (missing != null) {
-      final checksums = RegExp(
-        r'checksum: "([0-9a-f]{64})"',
-      ).allMatches(source).map((match) => match.group(1)!).toList();
-      final expected = liteRtLmCompatibleAppleCompanionChecksums[pin];
-      if (expected == null ||
-          checksums.length != expected.length ||
-          Iterable<int>.generate(
-            expected.length,
-          ).any((index) => checksums[index] != expected[index])) {
-        gap(
-          'its XCFramework checksums do not match the published '
-          'leehack/litert-lm-native@$pin artifacts',
-        );
-      }
-      return (
-        message:
-            'The resolved $_liteRtLmFlutterPackageName pins '
-            'leehack/litert-lm-native@$pin, an earlier LiteRT-LM runtime '
-            'than $liteRtLmReleaseTag that this core still supports, so '
-            'this build links it. Its frameworks lack $missing. Upgrade '
-            '$_liteRtLmFlutterPackageName to the release pinning '
-            '$liteRtLmReleaseTag.',
-        linksCompanion: true,
-      );
-    }
     if (_isEarlierLiteRtLmRebuild(pin)) {
-      return hookCache(
-        'The resolved $_liteRtLmFlutterPackageName pins '
-        'leehack/litert-lm-native@$pin, an earlier build of this core\'s '
-        'LiteRT-LM release $liteRtLmReleaseTag. It still embeds its '
-        'complete macOS LiteRT-LM runtime, which the app loads from its '
-        'bundle. Upgrade $_liteRtLmFlutterPackageName to the release '
-        'pinning $liteRtLmReleaseTag.',
-      );
+      return 'The resolved $_liteRtLmFlutterPackageName pins '
+          'leehack/litert-lm-native@$pin, an earlier build of this core\'s '
+          'LiteRT-LM release $liteRtLmReleaseTag. It still embeds its '
+          'complete macOS LiteRT-LM runtime, which the app loads from its '
+          'bundle. Upgrade $_liteRtLmFlutterPackageName to the release '
+          'pinning $liteRtLmReleaseTag.';
     }
-    return hookCache(
-      'The resolved $_liteRtLmFlutterPackageName pins '
-      'leehack/litert-lm-native@$pin rather than this core\'s '
-      '$liteRtLmReleaseTag, so LiteRT-LM stays in the hook cache. Upgrade '
-      '$_liteRtLmFlutterPackageName and $_packageName together to a '
-      'matching released pair.',
-    );
+    return 'The resolved $_liteRtLmFlutterPackageName pins '
+        'leehack/litert-lm-native@$pin rather than this core\'s '
+        '$liteRtLmReleaseTag, so LiteRT-LM stays in the hook cache. Upgrade '
+        '$_liteRtLmFlutterPackageName and $_packageName together to a '
+        'matching released pair.';
   } on _CompanionGap catch (error) {
-    return hookCache(_liteRtLmIncompleteCompanionWarning(error.reason));
+    return _liteRtLmIncompleteCompanionWarning(error.reason);
   } on FileSystemException {
-    return hookCache(
-      _liteRtLmIncompleteCompanionWarning('its metadata could not be read'),
+    return _liteRtLmIncompleteCompanionWarning(
+      'its metadata could not be read',
     );
   } on FormatException {
-    return hookCache(
-      _liteRtLmIncompleteCompanionWarning(
-        'the resolved package configuration is malformed',
-      ),
+    return _liteRtLmIncompleteCompanionWarning(
+      'the resolved package configuration is malformed',
     );
   }
 }
