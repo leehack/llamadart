@@ -176,8 +176,9 @@ records its budget there, not under `bounds`:
 - `decode_cancel` first cancels `speechDecodeCancelOverheadRuns` syntheses
   capped at `speechDecodeCancelFrameCap` frames as soon as each is handed
   back, and takes the largest latency among them as the fixed cost of a
-  cancellation. It then times the audio decode of
-  `speechDecodeCancelReferenceRuns` uncancelled capped syntheses, from the
+  cancellation. After one uncancelled capped synthesis as an untimed
+  warm-up, it times the audio decode of `speechDecodeCancelReferenceRuns`
+  uncancelled capped syntheses, from the
   progress event reporting the cap to the terminal state, running half before
   and half after one more synthesis. That one is cancelled
   `speechDecodeCancelLeadFraction` of the shortest earlier decode after that
@@ -188,8 +189,9 @@ records its budget there, not under `bounds`:
   fails; it also fails if the cancelled synthesis emits a final result. It
   records `NOT_RUN` with a `not_run_reason` and the measured numbers when the
   latest normal synthesis does not exceed the cap, a probe does not end
-  cancelled, a reference does not stop at the cap, the cancellation does not
-  reach a synthesis that has reported the cap at its scheduled lead, or the
+  cancelled, the warm-up or a reference does not stop at the cap, the
+  cancellation does not reach a synthesis that has reported the cap at its
+  scheduled lead, or the
   shortest reference decode left after the cancellation, less the overhead,
   is within the margin. In that last case even an immediate cancellation
   could not pass. `NOT_RUN` leaves `functional_pass` false.

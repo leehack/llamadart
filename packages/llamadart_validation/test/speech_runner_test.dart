@@ -404,10 +404,10 @@ class FakeInterruptSpeech extends FakeSpeech
   Map<String, Object?> decodeReport = {};
 
   /// Shortest reference 400 ms (run after the cancel), spread 100 ms, so the
-  /// margin is 200 ms. The lead is 0.25 of the 450 ms shortest reference run
-  /// before the cancel, leaving 287.5 ms; less the 3 ms overhead, that is
-  /// 284.5 ms. The cancelled synthesis must end before 200 ms, a latency below
-  /// 87.5 ms.
+  /// margin is 90 ms. The lead is 0.1 of the 450 ms shortest reference run
+  /// before the cancel, leaving 355 ms; less the 3 ms overhead, that is
+  /// 352 ms. The cancelled synthesis must end before 310 ms, a latency below
+  /// 265 ms.
   static Map<String, Object?> passingDecode() => {
     'frame_cap': speechDecodeCancelFrameCap,
     'uncapped_frames': speechDecodeCancelFrameCap + 1,
@@ -419,17 +419,31 @@ class FakeInterruptSpeech extends FakeSpeech
           'cancel_latency_ms': latency,
         },
     ],
+    'warm_up': {
+      'frames': speechDecodeCancelFrameCap,
+      'truncated': true,
+      'decode_ms': 520.0,
+    },
     'references': [
-      for (final decode in [500.0, 450.0, 400.0, 420.0])
+      for (final decode in [
+        500.0,
+        450.0,
+        460.0,
+        470.0,
+        400.0,
+        420.0,
+        430.0,
+        440.0,
+      ])
         {
           'frames': speechDecodeCancelFrameCap,
           'truncated': true,
           'decode_ms': decode,
         },
     ],
-    'references_before_cancel': 2,
+    'references_before_cancel': 4,
     'frames_before_cancel': speechDecodeCancelFrameCap,
-    'cancel_after_decode_start_ms': 112.5,
+    'cancel_after_decode_start_ms': 45.0,
     'cancel_in_flight': true,
     'completion_state': 'cancelled',
     'final_events': 0,
@@ -540,6 +554,8 @@ class SynthesisSpeechEngine extends FakeSpeechEngine {
     this.teardownCancels = true,
     this.frameStep = frameDelay,
     this.decodeStep = decodeDelay,
+    this.decodeTail = Duration.zero,
+    this.coldDecode = Duration.zero,
   }) {
     speechBackend
       ..textToSpeech = qwen3TtsCapabilities
@@ -550,6 +566,13 @@ class SynthesisSpeechEngine extends FakeSpeechEngine {
   final bool teardownCancels;
   final Duration frameStep;
   final Duration decodeStep;
+
+  /// Work after the decode that a cancellation cannot skip, as on CUDA.
+  final Duration decodeTail;
+
+  /// Extra time the first decode takes after syntheses that never decoded.
+  final Duration coldDecode;
+  var _decoded = false;
   static const naturalFrames = 20;
   static const frameDelay = Duration(milliseconds: 4);
   static const decodeDelay = Duration(milliseconds: 300);
@@ -610,7 +633,15 @@ class SynthesisSpeechEngine extends FakeSpeechEngine {
       );
     }
     if (!_cancelled) {
-      await _wait(decodeStep, interruptible: decodeHonoursCancel);
+      final cold = !_decoded && coldDecode > Duration.zero;
+      _decoded = true;
+      await _wait(
+        cold ? decodeStep + coldDecode : decodeStep,
+        interruptible: decodeHonoursCancel,
+      );
+      if (decodeTail > Duration.zero) await Future<void>.delayed(decodeTail);
+    } else {
+      _decoded = false;
     }
     cancelledRuns.add(_cancelled);
     return BackendTextToSpeechResult(
@@ -621,6 +652,15 @@ class SynthesisSpeechEngine extends FakeSpeechEngine {
       truncated: naturalFrames > request.maxFrames,
     );
   }
+}
+
+/// A stopwatch that reads 1% slow, so a timer set from its own readings fires
+/// before it reaches its target, as Dart timers occasionally do.
+class SlowStopwatch extends FakeTimeStopwatch {
+  SlowStopwatch(super.async);
+
+  @override
+  int get elapsedMicroseconds => super.elapsedMicroseconds * 99 ~/ 100;
 }
 
 /// A [Stopwatch] that reads [FakeAsync.elapsed], so timed checks see the
@@ -3006,36 +3046,51 @@ void main() {
           },
           'measure the overhead',
         ),
-        (
-          {'references': refs.take(3).toList()},
-          'did not stop at the frame cap',
-        ),
-        ({'references_before_cancel': 1}, 'did not stop at the frame cap'),
+        ({'warm_up': null}, 'warm-up synthesis did not stop'),
+        ({'warm_up': reference(truncated: false)}, 'warm-up synthesis'),
+        ({'warm_up': reference(frames: 11)}, 'warm-up synthesis'),
         (
           {
-            'references': [...refs.take(3), reference(truncated: false)],
+            'warm_up': {...reference(), 'decode_ms': null},
+          },
+          'warm-up synthesis',
+        ),
+        (
+          {'references': refs.take(7).toList()},
+          'did not stop at the frame cap',
+        ),
+        ({'references_before_cancel': 2}, 'did not stop at the frame cap'),
+        (
+          {
+            'references': [...refs.take(7), reference(truncated: false)],
           },
           'did not stop at the frame cap',
         ),
         (
           {
-            'references': [...refs.take(3), reference(frames: 11)],
+            'references': [...refs.take(7), reference(frames: 11)],
           },
           'did not stop at the frame cap',
         ),
         (
           {
-            'references': references([500.0, 450.0, 400.0, 0.0]),
+            'references': [
+              ...refs.take(7),
+              ...references([0.0]),
+            ],
           },
           'did not stop at the frame cap',
         ),
         (
           {
-            'references': references([500.0, 450.0, 400.0, null]),
+            'references': [
+              ...refs.take(7),
+              ...references([null]),
+            ],
           },
           'did not stop at the frame cap',
         ),
-        ({'cancel_after_decode_start_ms': 112.499}, 'not issued at its lead'),
+        ({'cancel_after_decode_start_ms': 44.999}, 'not issued at its lead'),
         ({'cancel_after_decode_start_ms': null}, 'not issued at its lead'),
         ({'frames_before_cancel': null}, 'decoding synthesis'),
         ({'cancel_in_flight': false}, 'decoding synthesis'),
@@ -3076,21 +3131,21 @@ void main() {
     () async {
       for (final (latency, status) in [
         (1.0, 'PASS'),
-        (87.499, 'PASS'),
-        (87.5, 'FAIL'),
-        (87.501, 'FAIL'),
+        (264.999, 'PASS'),
+        (265.0, 'FAIL'),
+        (265.001, 'FAIL'),
         (400.0, 'FAIL'),
       ]) {
         final result = await decodeRun({'cancel_latency_ms': latency});
         final row = rowOf(result, 'decode_cancel');
         expect(row['reference_decode_ms'], 400.0, reason: '$latency');
         expect(row['reference_spread_ms'], 100.0, reason: '$latency');
-        expect(row['margin_ms'], 200.0, reason: '$latency');
+        expect(row['margin_ms'], 90.0, reason: '$latency');
         expect(row['cancel_overhead_ms'], 3.0, reason: '$latency');
-        expect(row['reference_remainder_ms'], 287.5, reason: '$latency');
-        expect(row['cancel_end_ms'], 112.5 + latency, reason: '$latency');
-        expect(row['lead_fraction'], 0.25, reason: '$latency');
-        expect(row['noise_multiple'], 2.0, reason: '$latency');
+        expect(row['reference_remainder_ms'], 355.0, reason: '$latency');
+        expect(row['cancel_end_ms'], 45.0 + latency, reason: '$latency');
+        expect(row['lead_fraction'], 0.1, reason: '$latency');
+        expect(row['noise_multiple'], 0.9, reason: '$latency');
         expect(row['margin_floor_fraction'], 0.1, reason: '$latency');
         expect(row['status'], status, reason: '$latency');
         expect(result['functional_pass'], status == 'PASS', reason: '$latency');
@@ -3101,7 +3156,16 @@ void main() {
   test('decode cancellation margin has a floor of 0.1 of the decode', () async {
     for (final (latency, status) in [(259.999, 'PASS'), (260.0, 'FAIL')]) {
       final result = await decodeRun({
-        'references': references([400.0, 400.5, 401.0, 400.2]),
+        'references': references([
+          400.0,
+          400.5,
+          401.0,
+          400.2,
+          400.1,
+          400.3,
+          400.4,
+          400.6,
+        ]),
         'cancel_after_decode_start_ms': 100.0,
         'cancel_latency_ms': latency,
       });
@@ -3111,37 +3175,108 @@ void main() {
     }
   });
 
+  test('a decode cancel that saved nothing fails', () async {
+    final decodes = [500.0, 450.0, 460.0, 470.0, 400.0, 420.0, 430.0, 440.0];
+    for (final decode in decodes) {
+      final row = rowOf(
+        await decodeRun({'cancel_latency_ms': decode - 45.0}),
+        'decode_cancel',
+      );
+      expect(row['status'], 'FAIL', reason: '$decode');
+    }
+  });
+
+  test('the decode cancel margin keeps the four-reference false-pass rate', () {
+    // A cancellation that saves nothing ends like one more reference decode.
+    // It passes when it ends more than the margin before the shortest
+    // reference; the floor is left out so only the noise term is compared.
+    final random = math.Random(759);
+    double gauss() =>
+        math.sqrt(-2 * math.log(1 - random.nextDouble())) *
+        math.cos(2 * math.pi * random.nextDouble());
+    double stall() => -math.log(1 - random.nextDouble());
+    final models = <String, double Function()>{
+      'gauss': gauss,
+      'stall': stall,
+      'mixed': () => gauss() + (random.nextDouble() < 0.25 ? 5 * stall() : 0),
+      'heavy': () => gauss() / math.sqrt(math.max(1e-9, gauss().abs())),
+    };
+    double falsePasses(double Function() draw, int references, double k) {
+      const trials = 200000;
+      var passes = 0;
+      for (var trial = 0; trial < trials; trial++) {
+        var shortest = double.infinity;
+        var longest = double.negativeInfinity;
+        for (var run = 0; run < references; run++) {
+          final decode = draw();
+          shortest = math.min(shortest, decode);
+          longest = math.max(longest, decode);
+        }
+        if (shortest - draw() > k * (longest - shortest)) passes++;
+      }
+      return passes / trials;
+    }
+
+    for (final MapEntry(key: model, value: draw) in models.entries) {
+      final before = falsePasses(draw, 4, 2.0);
+      final now = falsePasses(
+        draw,
+        speechDecodeCancelReferenceRuns,
+        speechDecodeCancelNoiseMultiple,
+      );
+      expect(now, lessThanOrEqualTo(before), reason: '$model $now > $before');
+    }
+  });
+
   test(
     'a decode left too short to tell a cancellation apart is NOT_RUN',
     () async {
       for (final (report, status) in <(Map<String, Object?>, String)>[
         (
           {
-            'overhead_probes': probes([1.0, 87.499, 2.0]),
+            'overhead_probes': probes([1.0, 264.999, 2.0]),
           },
           'PASS',
         ),
         (
           {
-            'overhead_probes': probes([1.0, 87.5, 2.0]),
+            'overhead_probes': probes([1.0, 265.0, 2.0]),
           },
           'NOT_RUN',
         ),
         (
           {
-            'overhead_probes': probes([87.5, 1.0, 2.0]),
+            'overhead_probes': probes([265.0, 1.0, 2.0]),
           },
           'NOT_RUN',
         ),
         (
           {
-            'references': references([500.0, 450.0, 100.0, 420.0]),
+            'references': references([
+              500.0,
+              450.0,
+              460.0,
+              470.0,
+              100.0,
+              420.0,
+              430.0,
+              440.0,
+            ]),
           },
           'NOT_RUN',
         ),
         (
           {
-            'references': references([900.0, 450.0, 400.0, 420.0]),
+            'references': references([
+              900.0,
+              450.0,
+              460.0,
+              470.0,
+              400.0,
+              420.0,
+              430.0,
+              440.0,
+            ]),
           },
           'NOT_RUN',
         ),
@@ -3250,6 +3385,28 @@ void main() {
     );
   }
 
+  test('the decode cancellation lead survives an early timer', () async {
+    await runInFakeTime((async) async {
+      final adapter = synthesisAdapter(
+        SynthesisSpeechEngine(),
+        newStopwatch: () => SlowStopwatch(async),
+      );
+      await adapter.load();
+      await adapter.execute();
+      final decode = await adapter.executeDecodeCancel();
+      final references = decode['references'] as List;
+      final shortest = references
+          .map((reference) => (reference['decode_ms'] as num).toDouble())
+          .reduce(math.min);
+      expect(decode['cancel_in_flight'], isTrue);
+      expect(
+        decode['cancel_after_decode_start_ms'],
+        greaterThanOrEqualTo(shortest * speechDecodeCancelLeadFraction),
+      );
+      await adapter.dispose();
+    });
+  });
+
   test('the public adapter interrupts a synthesis in flight', () async {
     await runInFakeTime((async) async {
       final engine = SynthesisSpeechEngine();
@@ -3292,16 +3449,13 @@ void main() {
 
       final runsBefore = engine.requestedFrames.length;
       final decode = await adapter.executeDecodeCancel();
-      expect(engine.requestedFrames.sublist(runsBefore), List.filled(8, 12));
+      expect(engine.requestedFrames.sublist(runsBefore), List.filled(13, 12));
       expect(engine.cancelledRuns.sublist(runsBefore), [
-        true,
-        true,
-        true,
+        ...List.filled(speechDecodeCancelOverheadRuns, true),
         false,
-        false,
+        ...List.filled(speechDecodeCancelReferenceRuns ~/ 2, false),
         true,
-        false,
-        false,
+        ...List.filled(speechDecodeCancelReferenceRuns ~/ 2, false),
       ]);
       expect(decode['uncapped_frames'], SynthesisSpeechEngine.naturalFrames);
       final probes = decode['overhead_probes'] as List;
@@ -3396,6 +3550,72 @@ void main() {
       expect(result['functional_pass'], failing.isEmpty, reason: '$failing');
     }
   });
+
+  test(
+    'the decode cancel warm-up keeps a cold decode out of the spread',
+    () async {
+      final result = await runInFakeTime(
+        (async) => runSpeechValidation(
+          DelegatingSpeech(
+            synthesisAdapter(
+              SynthesisSpeechEngine(
+                coldDecode: const Duration(milliseconds: 50),
+              ),
+              newStopwatch: () => FakeTimeStopwatch(async),
+            ),
+          ),
+          checkSynthesisInterrupts: true,
+          footprintBytes: stableFootprintBytes,
+        ),
+      );
+      final row = rowOf(result, 'decode_cancel');
+      expect((row['warm_up'] as Map)['decode_ms'], 350);
+      expect(row['reference_decode_ms'], 300);
+      expect(row['reference_spread_ms'], 0);
+      expect(row['status'], 'PASS');
+    },
+  );
+
+  test(
+    'decode cancellation passes only when it stops the decode, not its tail',
+    () async {
+      // Linux CUDA shape: 145 ms from the cap report, about half of it after
+      // the native decode. A cancel that lands after that decode finished
+      // saves nothing.
+      for (final (decode, tail, status) in [
+        (75, 70, 'PASS'),
+        (10, 135, 'FAIL'),
+      ]) {
+        final result = await runInFakeTime(
+          (async) => runSpeechValidation(
+            DelegatingSpeech(
+              synthesisAdapter(
+                SynthesisSpeechEngine(
+                  decodeStep: Duration(milliseconds: decode),
+                  decodeTail: Duration(milliseconds: tail),
+                ),
+                newStopwatch: () => FakeTimeStopwatch(async),
+              ),
+            ),
+            checkSynthesisInterrupts: true,
+            footprintBytes: stableFootprintBytes,
+          ),
+        );
+        final row = rowOf(result, 'decode_cancel');
+        expect(row['reference_decode_ms'], 145, reason: '$decode');
+        expect(row['margin_ms'], 14.5, reason: '$decode');
+        expect(row['cancel_after_decode_start_ms'], 14.5, reason: '$decode');
+        expect(row['completion_state'], 'cancelled', reason: '$decode');
+        expect(row['final_events'], 0, reason: '$decode');
+        expect(row['status'], status, reason: '$row');
+        expect(
+          row['saved_ms'],
+          status == 'PASS' ? 145 - 14.5 - tail : 0,
+          reason: '$decode',
+        );
+      }
+    },
+  );
 
   PublicSpeechValidationAdapter limitAdapter(LimitedRecognitionEngine engine) {
     final wav = Uint8List.fromList(

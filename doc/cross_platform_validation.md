@@ -1698,12 +1698,15 @@ GGUF TTS adds three interrupt checks after `leak_slope_bound`, then
 `interrupt_memory_bound`. `unload_during_synthesis` and
 `dispose_during_synthesis` call `unloadModel()` or `dispose()` once a progress
 event reports a frame; the task must end cancelled within the 500 ms budget,
-and a synthesis after the reload must pass. `decode_cancel` times the audio
-decode of four uncancelled 12-frame syntheses, two before and two after a
-fifth that it cancels a quarter of the shorter earlier decode time after its
-twelfth frame is reported. Timed from that report, the cancelled synthesis
-must end sooner than the shortest reference by more than a margin: twice the
-spread of the four decode times, or a tenth of that decode if larger. If the
+and a synthesis after the reload must pass. After one untimed warm-up,
+`decode_cancel` times the audio decode of eight uncancelled 12-frame
+syntheses, four before and four after a ninth that it cancels a tenth of the
+shortest earlier decode time after its twelfth frame is reported. Timed from
+that report, the cancelled synthesis must end sooner than the shortest
+reference by more than a margin: 0.9 times the spread of the eight decode
+times, or a tenth of that decode if larger. With eight references, that
+margin lets a cancellation that saves nothing pass no more often than twice
+the spread of four did ([#759](https://github.com/leehack/llamadart/issues/759)). If the
 decode left after the cancel, less the largest latency of three syntheses
 cancelled on hand-back, is within that margin, even an immediate cancellation
 could not pass, so the check records `NOT_RUN`, as it does for any unmet
