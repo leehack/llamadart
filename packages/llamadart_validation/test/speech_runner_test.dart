@@ -404,10 +404,10 @@ class FakeInterruptSpeech extends FakeSpeech
   Map<String, Object?> decodeReport = {};
 
   /// Shortest reference 400 ms (run after the cancel), spread 100 ms, so the
-  /// margin is 200 ms. The lead is 0.1 of the 450 ms shortest reference run
+  /// margin is 90 ms. The lead is 0.1 of the 450 ms shortest reference run
   /// before the cancel, leaving 355 ms; less the 3 ms overhead, that is
-  /// 352 ms. The cancelled synthesis must end before 200 ms, a latency below
-  /// 155 ms.
+  /// 352 ms. The cancelled synthesis must end before 310 ms, a latency below
+  /// 265 ms.
   static Map<String, Object?> passingDecode() => {
     'frame_cap': speechDecodeCancelFrameCap,
     'uncapped_frames': speechDecodeCancelFrameCap + 1,
@@ -419,15 +419,29 @@ class FakeInterruptSpeech extends FakeSpeech
           'cancel_latency_ms': latency,
         },
     ],
+    'warm_up': {
+      'frames': speechDecodeCancelFrameCap,
+      'truncated': true,
+      'decode_ms': 520.0,
+    },
     'references': [
-      for (final decode in [500.0, 450.0, 400.0, 420.0])
+      for (final decode in [
+        500.0,
+        450.0,
+        460.0,
+        470.0,
+        400.0,
+        420.0,
+        430.0,
+        440.0,
+      ])
         {
           'frames': speechDecodeCancelFrameCap,
           'truncated': true,
           'decode_ms': decode,
         },
     ],
-    'references_before_cancel': 2,
+    'references_before_cancel': 4,
     'frames_before_cancel': speechDecodeCancelFrameCap,
     'cancel_after_decode_start_ms': 45.0,
     'cancel_in_flight': true,
@@ -541,6 +555,7 @@ class SynthesisSpeechEngine extends FakeSpeechEngine {
     this.frameStep = frameDelay,
     this.decodeStep = decodeDelay,
     this.decodeTail = Duration.zero,
+    this.coldDecode = Duration.zero,
   }) {
     speechBackend
       ..textToSpeech = qwen3TtsCapabilities
@@ -554,6 +569,10 @@ class SynthesisSpeechEngine extends FakeSpeechEngine {
 
   /// Work after the decode that a cancellation cannot skip, as on CUDA.
   final Duration decodeTail;
+
+  /// Extra time the first decode takes after syntheses that never decoded.
+  final Duration coldDecode;
+  var _decoded = false;
   static const naturalFrames = 20;
   static const frameDelay = Duration(milliseconds: 4);
   static const decodeDelay = Duration(milliseconds: 300);
@@ -614,8 +633,15 @@ class SynthesisSpeechEngine extends FakeSpeechEngine {
       );
     }
     if (!_cancelled) {
-      await _wait(decodeStep, interruptible: decodeHonoursCancel);
+      final cold = !_decoded && coldDecode > Duration.zero;
+      _decoded = true;
+      await _wait(
+        cold ? decodeStep + coldDecode : decodeStep,
+        interruptible: decodeHonoursCancel,
+      );
       if (decodeTail > Duration.zero) await Future<void>.delayed(decodeTail);
+    } else {
+      _decoded = false;
     }
     cancelledRuns.add(_cancelled);
     return BackendTextToSpeechResult(
@@ -3020,32 +3046,47 @@ void main() {
           },
           'measure the overhead',
         ),
-        (
-          {'references': refs.take(3).toList()},
-          'did not stop at the frame cap',
-        ),
-        ({'references_before_cancel': 1}, 'did not stop at the frame cap'),
+        ({'warm_up': null}, 'warm-up synthesis did not stop'),
+        ({'warm_up': reference(truncated: false)}, 'warm-up synthesis'),
+        ({'warm_up': reference(frames: 11)}, 'warm-up synthesis'),
         (
           {
-            'references': [...refs.take(3), reference(truncated: false)],
+            'warm_up': {...reference(), 'decode_ms': null},
+          },
+          'warm-up synthesis',
+        ),
+        (
+          {'references': refs.take(7).toList()},
+          'did not stop at the frame cap',
+        ),
+        ({'references_before_cancel': 2}, 'did not stop at the frame cap'),
+        (
+          {
+            'references': [...refs.take(7), reference(truncated: false)],
           },
           'did not stop at the frame cap',
         ),
         (
           {
-            'references': [...refs.take(3), reference(frames: 11)],
+            'references': [...refs.take(7), reference(frames: 11)],
           },
           'did not stop at the frame cap',
         ),
         (
           {
-            'references': references([500.0, 450.0, 400.0, 0.0]),
+            'references': [
+              ...refs.take(7),
+              ...references([0.0]),
+            ],
           },
           'did not stop at the frame cap',
         ),
         (
           {
-            'references': references([500.0, 450.0, 400.0, null]),
+            'references': [
+              ...refs.take(7),
+              ...references([null]),
+            ],
           },
           'did not stop at the frame cap',
         ),
@@ -3090,21 +3131,21 @@ void main() {
     () async {
       for (final (latency, status) in [
         (1.0, 'PASS'),
-        (154.999, 'PASS'),
-        (155.0, 'FAIL'),
-        (155.001, 'FAIL'),
+        (264.999, 'PASS'),
+        (265.0, 'FAIL'),
+        (265.001, 'FAIL'),
         (400.0, 'FAIL'),
       ]) {
         final result = await decodeRun({'cancel_latency_ms': latency});
         final row = rowOf(result, 'decode_cancel');
         expect(row['reference_decode_ms'], 400.0, reason: '$latency');
         expect(row['reference_spread_ms'], 100.0, reason: '$latency');
-        expect(row['margin_ms'], 200.0, reason: '$latency');
+        expect(row['margin_ms'], 90.0, reason: '$latency');
         expect(row['cancel_overhead_ms'], 3.0, reason: '$latency');
         expect(row['reference_remainder_ms'], 355.0, reason: '$latency');
         expect(row['cancel_end_ms'], 45.0 + latency, reason: '$latency');
         expect(row['lead_fraction'], 0.1, reason: '$latency');
-        expect(row['noise_multiple'], 2.0, reason: '$latency');
+        expect(row['noise_multiple'], 0.9, reason: '$latency');
         expect(row['margin_floor_fraction'], 0.1, reason: '$latency');
         expect(row['status'], status, reason: '$latency');
         expect(result['functional_pass'], status == 'PASS', reason: '$latency');
@@ -3115,7 +3156,16 @@ void main() {
   test('decode cancellation margin has a floor of 0.1 of the decode', () async {
     for (final (latency, status) in [(259.999, 'PASS'), (260.0, 'FAIL')]) {
       final result = await decodeRun({
-        'references': references([400.0, 400.5, 401.0, 400.2]),
+        'references': references([
+          400.0,
+          400.5,
+          401.0,
+          400.2,
+          400.1,
+          400.3,
+          400.4,
+          400.6,
+        ]),
         'cancel_after_decode_start_ms': 100.0,
         'cancel_latency_ms': latency,
       });
@@ -3125,75 +3175,56 @@ void main() {
     }
   });
 
-  // Recorded by the CUDA runs in #759: reference decodes, hand-back cancel
-  // latencies, timer lateness past the lead, latency from the cancel to the
-  // terminal state, and the verdict at the 0.25 lead those runs used.
-  const cudaDecodeCancels = [
-    // Windows r11: the widest spread, 22.0 ms.
-    (
-      [185.689, 168.279, 164.949, 163.72],
-      [0.833, 0.587, 0.41],
-      1.739,
-      78.282,
-      'FAIL',
-    ),
-    // Windows r12: a fast outlier puts the shortest reference 11 ms low.
-    (
-      [170.995, 154.716, 174.904, 165.8],
-      [0.818, 0.604, 0.387],
-      0.361,
-      83.922,
-      'FAIL',
-    ),
-    // Windows r06: the slowest recorded cancellation.
-    (
-      [171.632, 167.375, 162.833, 163.469],
-      [0.793, 0.483, 0.441],
-      1.103,
-      96.824,
-      'PASS',
-    ),
-    // Linux r04.
-    (
-      [148.334, 146.13, 145.377, 144.735],
-      [0.506, 0.298, 0.277],
-      0.66,
-      76.752,
-      'PASS',
-    ),
-  ];
-
-  test('a recorded CUDA decode cancel clears its reference jitter', () async {
-    for (final (decodes, overheads, lateness, latency, atQuarter)
-        in cudaDecodeCancels) {
-      final shortestBefore = math.min(decodes[0], decodes[1]);
-      Future<Map<String, Object?>> row(double lead, double latency) async =>
-          rowOf(
-            await decodeRun({
-              'references': references(decodes),
-              'overhead_probes': probes(overheads),
-              'cancel_after_decode_start_ms': lead,
-              'cancel_latency_ms': latency,
-            }),
-            'decode_cancel',
-          );
-      // The margin is unchanged, so the recorded runs replay as recorded.
-      final quarter = await row(shortestBefore * 0.25 + lateness, latency);
-      expect(quarter['status'], atQuarter, reason: '$quarter');
-
-      final lead = shortestBefore * speechDecodeCancelLeadFraction + lateness;
-      final passed = await row(lead, latency);
-      expect(passed['status'], 'PASS', reason: '$passed');
-      expect(
-        passed['saved_ms']! as double,
-        greaterThan((passed['margin_ms']! as double) + 14),
-        reason: '$passed',
+  test('a decode cancel that saved nothing fails', () async {
+    final decodes = [500.0, 450.0, 460.0, 470.0, 400.0, 420.0, 430.0, 440.0];
+    for (final decode in decodes) {
+      final row = rowOf(
+        await decodeRun({'cancel_latency_ms': decode - 45.0}),
+        'decode_cancel',
       );
-      // A cancel that saved nothing ends like a reference decode.
-      for (final decode in decodes) {
-        final none = await row(lead, decode - lead);
-        expect(none['status'], 'FAIL', reason: '$none');
+      expect(row['status'], 'FAIL', reason: '$decode');
+    }
+  });
+
+  test('the decode cancel margin keeps the four-reference false-pass rate', () {
+    // A cancellation that saves nothing ends like one more reference decode.
+    // It passes when it ends more than the margin before the shortest
+    // reference; the floor is left out so only the noise term is compared.
+    final random = math.Random(759);
+    double gauss() =>
+        math.sqrt(-2 * math.log(1 - random.nextDouble())) *
+        math.cos(2 * math.pi * random.nextDouble());
+    double stall() => -math.log(1 - random.nextDouble());
+    final models = <String, double Function()>{
+      'gauss': gauss,
+      'stall': stall,
+      'mixed': () => gauss() + (random.nextDouble() < 0.25 ? 5 * stall() : 0),
+      'heavy': () => gauss() / math.sqrt(math.max(1e-9, gauss().abs())),
+    };
+    double falsePasses(double Function() draw, int references, double k) {
+      const trials = 200000;
+      var passes = 0;
+      for (var trial = 0; trial < trials; trial++) {
+        var shortest = double.infinity;
+        var longest = double.negativeInfinity;
+        for (var run = 0; run < references; run++) {
+          final decode = draw();
+          shortest = math.min(shortest, decode);
+          longest = math.max(longest, decode);
+        }
+        if (shortest - draw() > k * (longest - shortest)) passes++;
       }
+      return passes / trials;
+    }
+
+    for (final MapEntry(key: model, value: draw) in models.entries) {
+      final before = falsePasses(draw, 4, 2.0);
+      final now = falsePasses(
+        draw,
+        speechDecodeCancelReferenceRuns,
+        speechDecodeCancelNoiseMultiple,
+      );
+      expect(now, lessThanOrEqualTo(before), reason: '$model $now > $before');
     }
   });
 
@@ -3203,31 +3234,49 @@ void main() {
       for (final (report, status) in <(Map<String, Object?>, String)>[
         (
           {
-            'overhead_probes': probes([1.0, 154.999, 2.0]),
+            'overhead_probes': probes([1.0, 264.999, 2.0]),
           },
           'PASS',
         ),
         (
           {
-            'overhead_probes': probes([1.0, 155.0, 2.0]),
+            'overhead_probes': probes([1.0, 265.0, 2.0]),
           },
           'NOT_RUN',
         ),
         (
           {
-            'overhead_probes': probes([155.0, 1.0, 2.0]),
+            'overhead_probes': probes([265.0, 1.0, 2.0]),
           },
           'NOT_RUN',
         ),
         (
           {
-            'references': references([500.0, 450.0, 100.0, 420.0]),
+            'references': references([
+              500.0,
+              450.0,
+              460.0,
+              470.0,
+              100.0,
+              420.0,
+              430.0,
+              440.0,
+            ]),
           },
           'NOT_RUN',
         ),
         (
           {
-            'references': references([900.0, 450.0, 400.0, 420.0]),
+            'references': references([
+              900.0,
+              450.0,
+              460.0,
+              470.0,
+              400.0,
+              420.0,
+              430.0,
+              440.0,
+            ]),
           },
           'NOT_RUN',
         ),
@@ -3400,16 +3449,13 @@ void main() {
 
       final runsBefore = engine.requestedFrames.length;
       final decode = await adapter.executeDecodeCancel();
-      expect(engine.requestedFrames.sublist(runsBefore), List.filled(8, 12));
+      expect(engine.requestedFrames.sublist(runsBefore), List.filled(13, 12));
       expect(engine.cancelledRuns.sublist(runsBefore), [
-        true,
-        true,
-        true,
+        ...List.filled(speechDecodeCancelOverheadRuns, true),
         false,
-        false,
+        ...List.filled(speechDecodeCancelReferenceRuns ~/ 2, false),
         true,
-        false,
-        false,
+        ...List.filled(speechDecodeCancelReferenceRuns ~/ 2, false),
       ]);
       expect(decode['uncapped_frames'], SynthesisSpeechEngine.naturalFrames);
       final probes = decode['overhead_probes'] as List;
@@ -3504,6 +3550,31 @@ void main() {
       expect(result['functional_pass'], failing.isEmpty, reason: '$failing');
     }
   });
+
+  test(
+    'the decode cancel warm-up keeps a cold decode out of the spread',
+    () async {
+      final result = await runInFakeTime(
+        (async) => runSpeechValidation(
+          DelegatingSpeech(
+            synthesisAdapter(
+              SynthesisSpeechEngine(
+                coldDecode: const Duration(milliseconds: 50),
+              ),
+              newStopwatch: () => FakeTimeStopwatch(async),
+            ),
+          ),
+          checkSynthesisInterrupts: true,
+          footprintBytes: stableFootprintBytes,
+        ),
+      );
+      final row = rowOf(result, 'decode_cancel');
+      expect((row['warm_up'] as Map)['decode_ms'], 350);
+      expect(row['reference_decode_ms'], 300);
+      expect(row['reference_spread_ms'], 0);
+      expect(row['status'], 'PASS');
+    },
+  );
 
   test(
     'decode cancellation passes only when it stops the decode, not its tail',
