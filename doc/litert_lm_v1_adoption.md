@@ -3,7 +3,10 @@
 The public lazy facade, default service probes and speech worker now share
 ABI-aware discovery. Public production selection now admits C API 1.0.x;
 unknown/future versions remain unsupported. The native hook and Apple companion
-source now pin published [v0.19.0](https://github.com/leehack/litert-lm-native/releases/tag/v0.19.0),
+source now pin published [v0.19.1](https://github.com/leehack/litert-lm-native/releases/tag/v0.19.1),
+owner `1fa4d437` / upstream `7a03724cece417f1724c923b3d527b4319730841`, which
+keeps C API 1.0.0 and the v0.19.0 exports. The adoption below used published
+[v0.19.0](https://github.com/leehack/litert-lm-native/releases/tag/v0.19.0),
 owner `f173fe9b` / upstream `83ce6067f2e2a3fb697556928f93936693ded971`.
 All 21 public owner assets were independently matched to the qualified bytes.
 Source adoption merged in [#1743](https://github.com/leehack/llamadart/pull/1743)
