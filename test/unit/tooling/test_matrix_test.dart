@@ -56,15 +56,18 @@ void main() {
     void expectCurrentJobNames(Map<String, String> commands) {
       final jobs = ci['jobs'] as Map;
       final native = jobs['test-other-os'] as Map;
-      final windowsNames = [
+      // The row names the Windows shards once, with a placeholder shard.
+      final windowsNames = {
         for (final entry
             in (native['strategy']['matrix']['include'] as List).cast<Map>())
           if (entry['os'] == 'windows-latest')
-            (native['name'] as String).replaceAll(
-              r'${{ matrix.leg }}',
-              entry['leg'] as String,
-            ),
-      ];
+            (native['name'] as String)
+                .replaceAll(r'${{ matrix.os }}', entry['os'] as String)
+                .replaceAll(
+                  r'${{ matrix.shard }}/${{ matrix.shards }}',
+                  '<shard>/<shards>',
+                ),
+      };
       final smokeJob = smoke['jobs']['native-smoke'] as Map;
       String smokeName(String os) {
         expect(

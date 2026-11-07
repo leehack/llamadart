@@ -73,9 +73,13 @@ jobs:
   genkit:
     needs: changes
     if: needs.changes.outputs.genkit == 'true'
-    name: Genkit (lower bounds, published and local core)
+    name: Genkit (${{ matrix.part }})
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        part: [lower bounds and published, local core]
     steps:
       - uses: actions/checkout@v7
         with:
@@ -84,20 +88,23 @@ jobs:
       # Before Flutter on purpose: flutter-action puts its own dart first on PATH
       # and sets FLUTTER_ROOT, which would let a Flutter-only dependency resolve.
       - uses: dart-lang/setup-dart@v1
+        if: matrix.part == 'lower bounds and published'
         with:
           sdk: 3.12.0
       - name: Resolve independent minimum dependencies
+        if: matrix.part == 'lower bounds and published'
         working-directory: packages/genkit_llamadart
         run: |
           dart --version
           dart pub add crypto@3.0.7 genkit@1.0.0 http@1.6.0 llamadart@0.17.0 schemantic@1.0.0
       - name: Analyze and test minimum dependencies
+        if: matrix.part == 'lower bounds and published'
         working-directory: packages/genkit_llamadart
         run: |
           dart analyze --fatal-infos
           TMPDIR="$(mktemp -d)" dart test -x real-model
       - name: Restore the package after the minimum dependency check
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && matrix.part == 'lower bounds and published' }}
         run: |
           git restore -- packages/genkit_llamadart
           git clean -fdxq -- packages/genkit_llamadart
@@ -108,7 +115,7 @@ jobs:
           channel: stable
           cache: true
       - name: Verify published dependencies, docs and archive
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && matrix.part == 'lower bounds and published' }}
         working-directory: packages/genkit_llamadart
         run: |
           dart --version
@@ -119,14 +126,14 @@ jobs:
           python3 .github/check_docs.py
           TMPDIR="$(mktemp -d)" dart test -x real-model
       - name: Verify standalone adapter archive and score
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && matrix.part == 'lower bounds and published' }}
         run: |
           python3 tool/release/stage_genkit_package.py "$RUNNER_TEMP/genkit-package"
           (cd "$RUNNER_TEMP/genkit-package" && dart pub get && dart pub publish --dry-run)
           dart pub global activate pana
           python3 tool/ci/check_genkit_package_score.py "$RUNNER_TEMP/genkit-package"
       - name: Test adapter against checkout core
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && matrix.part == 'local core' }}
         working-directory: packages/genkit_llamadart
         run: |
           printf 'dependency_overrides:\n  llamadart:\n    path: ../..\n' > pubspec_overrides.yaml
@@ -134,19 +141,19 @@ jobs:
           dart analyze --fatal-infos
           TMPDIR="$(mktemp -d)" dart test -x real-model
       - name: Cache existing real-model fixtures
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && matrix.part == 'local core' }}
         uses: actions/cache@v6
         with:
           path: packages/genkit_llamadart/.dart_tool/llamadart_test_models
           key: ${{ runner.os }}-genkit-models-${{ hashFiles('packages/genkit_llamadart/test/integration/genkit/test_support/real_model_test_support.dart') }}
       - name: Run existing native real-model contracts
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && matrix.part == 'local core' }}
         working-directory: packages/genkit_llamadart
         env:
           LLAMADART_AUTO_DOWNLOAD_TEST_MODELS: '1'
         run: TMPDIR="$(mktemp -d)" dart test -t real-model -j 1
       - name: Verify browser contracts against checkout core
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && matrix.part == 'local core' }}
         working-directory: packages/genkit_llamadart
         run: >-
           dart test -p chrome
@@ -166,7 +173,7 @@ jobs:
           test/integration/genkit/actions/model_action/rich_tool_schemas_test.dart
           test/integration/genkit/plugin/rich_tool_schema_loop_test.dart
       - name: Remove local override
-        if: always()
+        if: ${{ always() && matrix.part == 'local core' }}
         working-directory: packages/genkit_llamadart
         run: rm -f pubspec_overrides.yaml
 
@@ -456,32 +463,16 @@ jobs:
   test-linux-vm:
     needs: changes
     if: needs.changes.outputs.test-linux-coverage == 'true'
-    name: Test Linux VM (${{ matrix.shard }})
+    name: Test Linux VM (${{ matrix.shard }}/${{ strategy.job-total }})
     runs-on: ubuntu-latest
     timeout-minutes: 30
     strategy:
       fail-fast: false
-      # Together the shards run every root test file exactly once; each keeps
-      # -j 1 and writes raw coverage that test-linux-coverage merges.
+      # tool/ci/test_shards.dart puts every root test file in exactly one shard,
+      # balanced by measured time; each keeps -j 1 and writes raw coverage that
+      # test-linux-coverage merges.
       matrix:
-        include:
-          - shard: core-template
-            paths: >-
-              test/unit/core/template test/unit/core/models
-              test/unit/core/grammar test/unit/core/speech
-              test/unit/core/image test/unit/platform
-          - shard: engine
-            paths: >-
-              test/unit/core/engine test/unit/core/decision
-              test/unit/core/diagnostics test/unit/core/*_test.dart
-              test/unit/hook test/integration
-          - shard: tooling
-            paths: >-
-              test/unit/tooling test/unit/test_structure test/unit/web_setup
-              test/unit/public_entrypoints_test.dart
-              test/unit/public_entrypoints_web_test.dart
-          - shard: backends
-            paths: test/unit/backends test/e2e
+        shard: [1, 2, 3, 4, 5, 6]
     steps:
       - uses: actions/checkout@v7
 
@@ -539,11 +530,15 @@ jobs:
         shell: bash
         run: bash tool/ci/litert_lm_temp_canary.sh seed
 
+      - name: Select shard test files
+        id: shard
+        run: dart tool/ci/test_shards.dart linux-vm ${{ matrix.shard }} ${{ strategy.job-total }}
+
       # The image's first `node` start pages the binary in from a cold disk
       # (once past two minutes); tooling fixtures bound each Node harness run
       # at 60 s, which must not absorb that load.
       - name: Load Node for tooling fixtures
-        if: matrix.shard == 'tooling'
+        if: contains(steps.shard.outputs.files, 'test/unit/tooling/playwright_chat_app_real_model_smoke_test.dart')
         timeout-minutes: 5
         shell: bash
         run: |
@@ -555,12 +550,25 @@ jobs:
           LLAMADART_TEST_MODELS_DIR: ${{ github.workspace }}/.dart_tool/test_models
           LLAMA_CPP_TEMPLATES_DIR: ${{ github.workspace }}/.dart_tool/llama_cpp_templates
           REQUIRE_LLAMA_CPP_TEMPLATES: '1'
-        run: dart test -p vm -j 1 --exclude-tags local-only --coverage=coverage ${{ matrix.paths }}
+        run: dart test -p vm -j 1 --exclude-tags local-only --coverage=coverage --file-reporter=json:.dart_tool/test_events.jsonl ${{ steps.shard.outputs.files }}
 
       - name: Check the LiteRT-LM cache canary
         if: ${{ !cancelled() }}
         shell: bash
         run: bash tool/ci/litert_lm_temp_canary.sh check
+
+      - name: Summarize test timing
+        if: ${{ !cancelled() && hashFiles('.dart_tool/test_events.jsonl') != '' }}
+        run: dart tool/ci/native_test_timing.dart .dart_tool/test_events.jsonl .dart_tool/test_timing.json
+
+      - name: Upload test timing
+        if: ${{ !cancelled() && hashFiles('.dart_tool/test_timing.json') != '' }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: test-timing-linux-vm-${{ matrix.shard }}-${{ github.run_attempt }}
+          path: .dart_tool/test_timing.json
+          if-no-files-found: error
+          retention-days: 14
 
       - name: Upload raw coverage
         uses: actions/upload-artifact@v7
@@ -624,7 +632,7 @@ jobs:
   test-web:
     needs: changes
     if: needs.changes.outputs.test-web == 'true'
-    name: Test Web (Chrome, ${{ matrix.shard }})
+    name: Test Web (Chrome, ${{ matrix.shard }}/${{ strategy.job-total }})
     runs-on: ubuntu-latest
     timeout-minutes: 25
     strategy:
@@ -632,21 +640,7 @@ jobs:
       # Whole files, not `--total-shards`: most of this lane is compiling each
       # suite with dart2js, which test-level shards would all repeat.
       matrix:
-        include:
-          - shard: core-template
-            paths: >-
-              test/unit/core/template test/unit/core/image
-              test/unit/core/grammar test/unit/core/speech
-              test/unit/core/decision
-          - shard: rest
-            paths: >-
-              test/unit/core/engine test/unit/core/models
-              test/unit/core/diagnostics test/unit/core/*_test.dart
-              test/unit/backends test/unit/tooling test/unit/hook
-              test/unit/platform test/unit/test_structure test/unit/web_setup
-              test/unit/public_entrypoints_test.dart
-              test/unit/public_entrypoints_web_test.dart
-              test/integration test/e2e
+        shard: [1, 2, 3]
     steps:
       - uses: actions/checkout@v7
 
@@ -660,8 +654,25 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
 
+      - name: Select shard test files
+        id: shard
+        run: dart tool/ci/test_shards.dart chrome ${{ matrix.shard }} ${{ strategy.job-total }}
+
       - name: Run Browser tests
-        run: dart test -p chrome --exclude-tags local-only ${{ matrix.paths }}
+        run: dart test -p chrome --exclude-tags local-only --file-reporter=json:.dart_tool/test_events.jsonl ${{ steps.shard.outputs.files }}
+
+      - name: Summarize test timing
+        if: ${{ !cancelled() && hashFiles('.dart_tool/test_events.jsonl') != '' }}
+        run: dart tool/ci/native_test_timing.dart .dart_tool/test_events.jsonl .dart_tool/test_timing.json
+
+      - name: Upload test timing
+        if: ${{ !cancelled() && hashFiles('.dart_tool/test_timing.json') != '' }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: test-timing-chrome-${{ matrix.shard }}-${{ github.run_attempt }}
+          path: .dart_tool/test_timing.json
+          if-no-files-found: error
+          retention-days: 14
 
   # chat_app's tests run in web-chat-contract. Model-backed tests are tagged
   # local-only, so this job needs no model.
@@ -956,32 +967,21 @@ jobs:
   test-other-os:
     needs: changes
     if: needs.changes.outputs.test-other-os == 'true'
-    name: Test Native (${{ matrix.leg }})
+    name: Test Native (${{ matrix.os }}, ${{ matrix.shard }}/${{ matrix.shards }})
     runs-on: ${{ matrix.os }}
     timeout-minutes: 45
     strategy:
       fail-fast: false
-      # Windows paths stay directories and plain files: PowerShell does not
-      # expand globs. Together its shards run every root test file exactly once.
+      # tool/ci/test_shards.dart puts every root test file in exactly one shard
+      # of each OS, balanced by measured time.
       matrix:
         include:
-          - os: macos-latest
-            leg: macos-latest
-            shard: all
-            paths: ''
-          - os: windows-latest
-            leg: windows-latest, tooling
-            shard: tooling
-            paths: >-
-              test/unit/tooling test/unit/hook test/unit/test_structure
-              test/unit/web_setup test/unit/public_entrypoints_test.dart
-              test/unit/public_entrypoints_web_test.dart
-          - os: windows-latest
-            leg: windows-latest, runtime
-            shard: runtime
-            paths: >-
-              test/unit/core test/unit/backends test/unit/platform
-              test/integration test/e2e
+          - {os: macos-latest, lane: macos, shard: 1, shards: 3}
+          - {os: macos-latest, lane: macos, shard: 2, shards: 3}
+          - {os: macos-latest, lane: macos, shard: 3, shards: 3}
+          - {os: windows-latest, lane: windows, shard: 1, shards: 3}
+          - {os: windows-latest, lane: windows, shard: 2, shards: 3}
+          - {os: windows-latest, lane: windows, shard: 3, shards: 3}
 
     steps:
       - uses: actions/checkout@v7
@@ -1022,11 +1022,22 @@ jobs:
         shell: bash
         run: bash tool/ci/litert_lm_temp_canary.sh seed
 
+      - name: Select shard test files
+        id: shard
+        run: dart tool/ci/test_shards.dart ${{ matrix.lane }} ${{ matrix.shard }} ${{ matrix.shards }}
+
+      # A Windows runner's first Python start has taken up to 54 s, and any
+      # shard's tooling suites may be the first to start it within a 30 s test.
+      - name: Load Python for tooling fixtures
+        if: runner.os == 'Windows'
+        timeout-minutes: 5
+        run: python -c "import sys; print(sys.version)"
+
       - name: Run native tests
         env:
           GGML_METAL_DEVICES: "0"
           LLAMADART_TEST_MODELS_DIR: ${{ github.workspace }}/.dart_tool/test_models
-        run: dart test -p vm -j 1 --exclude-tags local-only --file-reporter=json:.dart_tool/native_test_events.jsonl ${{ matrix.paths }}
+        run: dart test -p vm -j 1 --exclude-tags local-only --file-reporter=json:.dart_tool/test_events.jsonl ${{ steps.shard.outputs.files }}
 
       - name: Check the LiteRT-LM cache canary
         if: ${{ !cancelled() }}
@@ -1035,25 +1046,25 @@ jobs:
 
       # Two steps: Windows PowerShell would ignore a failing first command.
       - name: Install validation harness dependencies
-        if: ${{ !cancelled() && matrix.shard == 'tooling' && needs.changes.outputs.validation-harness == 'true' }}
+        if: ${{ !cancelled() && matrix.lane == 'windows' && matrix.shard == 1 && needs.changes.outputs.validation-harness == 'true' }}
         working-directory: packages/llamadart_validation
         run: dart pub get
 
       - name: Test validation process memory
-        if: ${{ !cancelled() && matrix.shard == 'tooling' && needs.changes.outputs.validation-harness == 'true' }}
+        if: ${{ !cancelled() && matrix.lane == 'windows' && matrix.shard == 1 && needs.changes.outputs.validation-harness == 'true' }}
         working-directory: packages/llamadart_validation
         run: dart test test/process_memory_test.dart
 
-      - name: Summarize native test timing
-        if: ${{ !cancelled() && hashFiles('.dart_tool/native_test_events.jsonl') != '' }}
-        run: dart tool/ci/native_test_timing.dart .dart_tool/native_test_events.jsonl .dart_tool/native_test_timing.json
+      - name: Summarize test timing
+        if: ${{ !cancelled() && hashFiles('.dart_tool/test_events.jsonl') != '' }}
+        run: dart tool/ci/native_test_timing.dart .dart_tool/test_events.jsonl .dart_tool/test_timing.json
 
-      - name: Upload native test timing
-        if: ${{ !cancelled() && hashFiles('.dart_tool/native_test_timing.json') != '' }}
+      - name: Upload test timing
+        if: ${{ !cancelled() && hashFiles('.dart_tool/test_timing.json') != '' }}
         uses: actions/upload-artifact@v7
         with:
-          name: native-test-timing-${{ matrix.os }}-${{ matrix.shard }}-${{ github.run_attempt }}
-          path: .dart_tool/native_test_timing.json
+          name: test-timing-${{ matrix.lane }}-${{ matrix.shard }}-${{ github.run_attempt }}
+          path: .dart_tool/test_timing.json
           if-no-files-found: error
           retention-days: 14
 

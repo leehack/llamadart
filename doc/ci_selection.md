@@ -62,26 +62,32 @@ heuristic and does not prove the absence of every possible Markdown reader.
 Because Linux coverage can no longer stand in for
 `validation-integration` on a Markdown path, that job stays selected there.
 
-Linux VM tests run as parallel shards (`core-template`, `engine`, `tooling`,
-`backends`), split by directory. Together they run every root `*_test.dart` file
-exactly once, each with `-j 1 --exclude-tags local-only` and its own LiteRT-LM
-temp canary; `ci_workflow_selection_test.dart` fails when a test file belongs to
-no shard or to two, so a new top-level test directory needs a shard in `ci.yml`.
-Each shard uploads its raw VM coverage.
+Root tests run as file shards: Linux VM (6, with coverage), Chrome (3), and
+macOS and Windows `Test Native` (3 each). `tool/ci/test_shards.dart` lists every
+root `*_test.dart` file and assigns each to exactly one shard of its lane,
+longest first onto the lightest shard, using suite times in
+`tool/ci/test_shard_weights.json`; a new file counts as the median suite until
+the weights are refreshed (`doc/testing_matrix.md`, "Test timing and shards").
+Stale weights only unbalance shards; they cannot drop or repeat a file. A shard
+count is the length of its matrix, which `ci_workflow_selection_test.dart`
+checks against the selector call. VM shards keep `-j 1 --exclude-tags
+local-only` and their own LiteRT-LM temp canary.
+Each Linux shard uploads its raw VM coverage.
 `Test Linux VM (with Coverage)` waits for every shard, formats their combined
 raw coverage with `format_lcov.dart` exactly as one full run would, then
 enforces the threshold and uploads to Codecov. The aggregate requires the
 shards (`SHARD_JOBS` in the selector) as well as that job whenever Linux
-coverage is selected.
+coverage is selected. A job's aggregate result is `failure` if any of its
+shards fails. Shard by whole files: most of the Chrome lane is dart2js compiling
+each suite, and on the VM each suite's load and coverage collection would
+repeat under `dart test --total-shards`.
 
-`Test Web (Chrome)` and the Windows leg of `Test Native` have two shards each,
-listed in their `ci.yml` matrices; macOS stays one job. A job's aggregate result
-is `failure` if any of its shards fails. `ci_workflow_selection_test.dart` fails
-when a test file belongs to no shard or to two in any of these lanes, so a new
-test directory needs a shard there. Shard by whole files: most of the Chrome
-lane is dart2js compiling each suite, so `dart test --total-shards` would repeat
-it in every shard. Sharding adds jobs against the 20-job cap, so it only pays
-while the lanes on the critical path shorten together.
+Shards add jobs against the account's concurrent-job cap, so counts are set
+so that no shard outlasts the longest unsharded job (`Companion Packages
+(macOS)`). Windows shards start Python once before their tests, since any
+shard's tooling suites may be the first to start it. `Genkit` runs its lower
+bound and published checks and its checkout-core, real-model and browser
+checks as two matrix legs.
 
 Checks share a job to stay under GitHub Free's limit of 5 concurrent macOS jobs
 across the owner's repositories, and each keeps its own selection on its step:

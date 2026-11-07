@@ -118,6 +118,15 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
+      - name: Cache Gradle downloads
+        if: matrix.target == 'android'
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ runner.os }}-${{ hashFiles('example/chat_app/android/**/*.gradle*', 'example/chat_app/android/gradle/wrapper/gradle-wrapper.properties') }}
+          restore-keys: gradle-${{ runner.os }}-
       - run: dart run tool/prepare_workspace.dart
       - run: dart run tool/testing/validation.dart build --target ${{ matrix.target }} --profile ${{ inputs.profile || 'tiny-gguf-cpu' }} --out .dart_tool/validation/bundle
       - name: Preserve executable permissions in transport

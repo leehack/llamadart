@@ -1095,12 +1095,11 @@ until their model-backed runs pass.
 Set `LLAMADART_TEXTURE_DEVICES=cpu` on a host without Metal; this qualifies
 CPU only. The default `cpu,metal` requires an actual `MTL` backend for Metal.
 
-## Native test timing
+## Test timing and shards
 
-The macOS/Windows `Test Native` jobs retain their existing selection,
-single-suite concurrency and cache canary.
-The additional JSON file reporter records test intervals; the ordinary reporter
-and test exit status are unchanged. `native-test-timing-<os>-<shard>-<attempt>` artifacts
+Every root test lane (Linux VM, Chrome, macOS and Windows `Test Native`) also
+writes a JSON file reporter; the ordinary reporter and test exit status are
+unchanged. `test-timing-<lane>-<shard>-<attempt>` artifacts
 contain sanitized suite paths, source lines, test IDs, intervals, hidden/skip
 flags and results. Test names, printed messages and errors stay out of the
 uploaded summary. Hidden intervals include suite loading and group setup or
@@ -1109,17 +1108,26 @@ teardown; they are not separately classified as build-hook time.
 To summarize a local run, use an isolated system temp directory on macOS and run:
 
 ```bash
-dart test -p vm -j 1 --exclude-tags local-only --file-reporter=json:.dart_tool/native_test_events.jsonl
-dart tool/ci/native_test_timing.dart .dart_tool/native_test_events.jsonl .dart_tool/native_test_timing.json
+dart test -p vm -j 1 --exclude-tags local-only --file-reporter=json:.dart_tool/test_events.jsonl
+dart tool/ci/native_test_timing.dart .dart_tool/test_events.jsonl .dart_tool/test_timing.json
 ```
 
 The summary marks missing terminal results or unfinished tests incomplete.
 Malformed/truncated JSON produces no report. Intervals can overlap, and the
 reporter excludes startup before its initialization. Compare them with the
-native-test step's hosted timestamps; neither their sum nor the difference
+test step's hosted timestamps; neither their sum nor the difference
 isolates build-hook cost, CPU time, billing or a causal speedup. This advances
 [#532's measurement work](https://github.com/leehack/llamadart/issues/532);
 the full-gate median targets and integration policy remain separate.
+
+`tool/ci/test_shards.dart` splits each lane's files across its jobs by the
+suite times in `tool/ci/test_shard_weights.json`. Rebalance a lane from one
+full CI run's timing artifacts:
+
+```bash
+gh run download <run-id> -p 'test-timing-macos-*' -D /tmp/timing
+dart tool/ci/test_shards.dart weights macos /tmp/timing/*/test_timing.json
+```
 
 ## LiteRT-LM Web text history
 
