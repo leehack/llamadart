@@ -117,7 +117,7 @@ feature. For which runtime supports which feature, see the
   ([llamadart-native#79](https://github.com/leehack/llamadart-native/issues/79)).
   The first failure is associated with llama.cpp's subgroup-16 small-matmul
   tile ([llama.cpp#28637](https://github.com/ggml-org/llama.cpp/issues/28637)).
-  The pinned native `v0.8.0-2` includes upstream
+  The pinned native `v0.8.0-3` includes upstream
   [#30106](https://github.com/ggml-org/llama.cpp/pull/30106), but matched
   final-artifact Pixel/Qwen correctness remains unqualified. The historical
   GPU history failure repeated `8`; the original CPU result `Cedar17` also

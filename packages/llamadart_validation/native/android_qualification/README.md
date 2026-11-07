@@ -90,8 +90,8 @@ cd ../..
 python3 packages/llamadart_validation/native/android_qualification/build_probe.py \
   --dart /path/to/pinned-flutter/bin/cache/dart-sdk/bin/dart \
   --ndk /path/to/android-ndk-28.2.13676358 \
-  --native-archive /path/to/llamadart-native-android-arm64-v0.8.0-2.tar.gz \
-  --headers-archive /path/to/llamadart-native-headers-v0.8.0-2.tar.gz \
+  --native-archive /path/to/llamadart-native-android-arm64-v0.8.0-3.tar.gz \
+  --headers-archive /path/to/llamadart-native-headers-v0.8.0-3.tar.gz \
   --plan /tmp/a35-plan.json --out .dart_tool/android-qualification/a35
 ```
 
@@ -220,7 +220,7 @@ replace the chat app's complete `hooks.user_defines.llamadart` map with:
 
 ```yaml
 llamadart_native_runtimes: llama_cpp
-llamadart_native_tag: v0.8.0-2
+llamadart_native_tag: v0.8.0-3
 llamadart_native_backends:
   platforms:
     android-arm64:
@@ -249,7 +249,7 @@ not device dispatch authorization. From each clean committed checkout:
 ```sh
 python3 packages/llamadart_validation/native/android_qualification/prepare_consumer.py \
   --dart /path/to/pinned-flutter/bin/cache/dart-sdk/bin/dart \
-  --native-archive /path/to/llamadart-native-android-arm64-v0.8.0-2.tar.gz \
+  --native-archive /path/to/llamadart-native-android-arm64-v0.8.0-3.tar.gz \
   --profile full --out .dart_tool/android-consumer/full
 ```
 
@@ -370,3 +370,8 @@ Source/model-free checks and draft plans leave every row **NOT_RUN**. No waiver,
 qualification or final 0.18 release acceptance is implied. Rerun against the final
 release-prep artifact or independently admit a complete source/artifact mapping;
 keep unrelated native-family, Vulkan and LiteRT gates separate.
+
+The maintained staging commands now bind native `v0.8.0-3`. They require new
+source/plan/runtime receipts before final-runtime acceptance; retained native2
+Pixel observations and captured library-name fixtures remain historical evidence.
+Retargeting these bindings does not qualify a device or authorize a device run.
