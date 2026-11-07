@@ -45,6 +45,10 @@ dart test -p chrome --exclude-tags local-only
   LiteRT-LM generation settings and the image screen's unsupported state.
 - Pick further validation from `dart run tool/testing/test_matrix.dart --list`
   (`doc/testing_matrix.md`) and put its `--pr-template` rows in the PR.
+- PR CI runs no coverage (`main` enforces the 70% threshold after merge), so
+  run the `coverage-lib` row when `lib/` behavior changes. It runs a root test
+  on macOS and Windows only when the test can differ by host OS; check with
+  `dart tool/ci/test_shards.dart hosts <file>` (`doc/ci_selection.md`).
 - Heavy, device- or model-backed checks stay out of default CI: tag such tests
   `local-only`, or wire the scenario into `run_local_e2e.dart` and
   `test_matrix.dart` and document it. Run one with `run_local_e2e.dart --list`,

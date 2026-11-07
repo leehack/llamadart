@@ -124,26 +124,221 @@ void main() {
     expect(testShardLanes.values.toSet(), weightLanes.toSet());
   });
 
-  test('Windows lanes split the root tests between tooling and runtime', () {
+  group('hostReasons', () {
+    late Directory root;
+    setUp(() => root = Directory.systemTemp.createTempSync('test-hosts-'));
+    tearDown(() => root.deleteSync(recursive: true));
+
+    void write(String path, String source) => File('${root.path}/$path')
+      ..createSync(recursive: true)
+      ..writeAsStringSync(source);
+    List<String> reasons(String path, String source) {
+      write(path, source);
+      return hostReasons(path, root.path);
+    }
+
+    const neutral = """
+import 'package:llamadart/llamadart.dart';
+import 'package:test/test.dart';
+
+void main() => test('renders', () {});
+""";
+
+    test('keeps platform-neutral tests on Linux only', () {
+      expect(reasons('test/unit/core/template/a_test.dart', neutral), isEmpty);
+      expect(reasons('test/integration/core/a_test.dart', neutral), isEmpty);
+      expect(reasons('test/unit/tooling/a_test.dart', neutral), isEmpty);
+      expect(reasons('test/unit/backends/web/a_test.dart', neutral), isEmpty);
+    });
+
+    test('runs host-bound areas on every OS', () {
+      for (final path in [
+        'test/unit/backends/llama_cpp/a_test.dart',
+        'test/unit/backends/litert_lm/a_test.dart',
+        'test/unit/backends/stable_diffusion/a_test.dart',
+        'test/unit/backends/native/a_test.dart',
+        'test/unit/backends/a_test.dart',
+        'test/unit/hook/a_test.dart',
+        'test/unit/platform/io/a_test.dart',
+        'test/integration/a_test.dart',
+        'test/integration/backends/llama_cpp/a_test.dart',
+        'test/e2e/backends/a_test.dart',
+      ]) {
+        expect(reasons(path, neutral), isNotEmpty, reason: path);
+      }
+      expect(reasons('test/unit/core/a_io_test.dart', neutral), [
+        'dart:io implementation',
+      ]);
+    });
+
+    test('follows test helpers to native code and real models', () {
+      write(
+        'test/support/native.dart',
+        "import 'package:llamadart/src/backends/llama_cpp/bindings.dart';\n",
+      );
+      write(
+        'test/support/model.dart',
+        'final dir = Platform.environment["LLAMADART_TEST_MODELS_DIR"];\n',
+      );
+      write(
+        'test/support/portable.dart',
+        "final exe = Platform.isWindows ? 'dart.exe' : 'dart';\n",
+      );
+
+      expect(
+        reasons(
+          'test/unit/core/a_test.dart',
+          "import '../../support/native.dart';\n",
+        ),
+        [
+          'imports lib/src/backends/llama_cpp/bindings.dart via '
+              'test/support/native.dart',
+        ],
+      );
+      expect(
+        reasons(
+          'test/unit/core/b_test.dart',
+          'import "../../support/model.dart";\n',
+        ),
+        ['loads a test model via test/support/model.dart'],
+      );
+      // A helper's own portability branch is not a host check of the test.
+      expect(
+        reasons(
+          'test/unit/tooling/c_test.dart',
+          "import '../../support/portable.dart';\n",
+        ),
+        isEmpty,
+      );
+    });
+
+    test('finds native imports, conditional ones included', () {
+      expect(reasons('test/unit/core/a_test.dart', "import 'dart:ffi';\n"), [
+        'imports dart:ffi',
+      ]);
+      expect(
+        reasons(
+          'test/unit/core/b_test.dart',
+          "import 'stub.dart'\n"
+              "    if (dart.library.io) "
+              "'package:llamadart/src/platform/io/native_diagnostics.dart';\n",
+        ),
+        ['imports lib/src/platform/io/native_diagnostics.dart'],
+      );
+      expect(
+        reasons('test/unit/core/c_test.dart', 'final b = LlamaBackend();\n'),
+        ['constructs the platform backend'],
+      );
+    });
+
+    test('runs tests that check the host OS on every OS', () {
+      for (final source in [
+        "@TestOn('windows')\nlibrary;\n",
+        "@TestOn('vm && mac-os')\nlibrary;\n",
+        "@TestOn('vm && !windows')\nlibrary;\n",
+        "test('a', () {}, skip: !Platform.isLinux);\n",
+        "test('a', () {}, skip: Platform.isWindows ? false : 'Windows only');\n",
+        "test('a', () {}, onPlatform: {'windows': Skip()});\n",
+      ]) {
+        expect(reasons('test/unit/tooling/a_test.dart', source), [
+          'checks the host OS',
+        ], reason: source);
+      }
+      expect(
+        reasons(
+          'test/unit/tooling/b_test.dart',
+          "import 'dart:io';\nimport 'package:path/path.dart' as p;\n",
+        ),
+        ['builds host paths'],
+      );
+    });
+
+    test('a POSIX-only skip guard alone keeps a test on Linux only', () {
+      for (final guard in [
+        "skip: Platform.isWindows ? 'requires bash' : false,",
+        'skip: Platform.isWindows ? _posixOnly : null)',
+        'skip: Platform.isWindows,',
+      ]) {
+        expect(
+          reasons('test/unit/tooling/a_test.dart', "test('a', () {}, $guard\n"),
+          isEmpty,
+          reason: guard,
+        );
+      }
+    });
+  });
+
+  group('host OS lanes', () {
     final files = rootTestFiles();
+    final macos = laneFiles('macos', files);
     final tooling = laneFiles('windows-tooling', files);
     final runtime = laneFiles('windows-runtime', files);
 
-    expect(
-      tooling,
-      contains('test/unit/hook/apple_companion_constraint_test.dart'),
-    );
-    expect(tooling, contains('test/unit/public_entrypoints_test.dart'));
-    expect(
-      runtime,
-      contains(
-        'test/integration/backends/llama_cpp/prompt_state_isolation_test.dart',
-      ),
-    );
-    expect([...tooling, ...runtime]..sort(), files);
-    for (final lane in ['linux-vm', 'chrome', 'macos']) {
-      expect(laneFiles(lane, files), files, reason: lane);
-    }
+    test('Linux VM and Chrome run every file; macOS and Windows the same '
+        'host-sensitive ones', () {
+      expect(laneFiles('linux-vm', files), files);
+      expect(laneFiles('chrome', files), files);
+      expect(macos, [
+        for (final file in files)
+          if (hostReasons(file).isNotEmpty) file,
+      ]);
+      expect(tooling.toSet().intersection(runtime.toSet()), isEmpty);
+      expect([...tooling, ...runtime]..sort(), macos);
+      expect(tooling, everyElement(startsWith('test/unit/')));
+      expect(
+        tooling,
+        contains('test/unit/tooling/windows_registry_qualification_test.dart'),
+      );
+      expect(
+        runtime,
+        contains(
+          'test/integration/backends/llama_cpp/prompt_state_isolation_test.dart',
+        ),
+      );
+    });
+
+    test('a file that skips Linux runs on the other hosts', () {
+      final restricted = RegExp(r"@TestOn\('([^']*)'\)");
+      for (final file in files) {
+        final platforms = restricted
+            .firstMatch(File(file).readAsStringSync())
+            ?.group(1);
+        if (platforms == null || platforms.contains('linux')) continue;
+        if (!platforms.contains('windows') && !platforms.contains('mac-os')) {
+          continue;
+        }
+        expect(macos, contains(file), reason: '$file: $platforms');
+      }
+    });
+
+    test('lists only existing history suites the rules would miss', () {
+      for (final MapEntry(key: file, value: evidence)
+          in hostHistoryTests.entries) {
+        expect(files, contains(file));
+        expect(hostReasons(file), ['host history: $evidence'], reason: file);
+      }
+    });
+
+    test('keeps known host-specific suites on macOS and Windows', () {
+      for (final file in [
+        'test/integration/windows_ggml_registry_test.dart',
+        'test/integration/apple_companion_flutter_cache_test.dart',
+        'test/integration/core/grammar/grammar_regression_test.dart',
+        'test/unit/core/engine/engine_set_model_io_test.dart',
+        'test/unit/tooling/bounded_process_test.dart',
+        'test/unit/tooling/sync_native_release_pins_script_test.dart',
+      ]) {
+        expect(macos, contains(file));
+      }
+      for (final file in [
+        'test/unit/core/template/chat_format_registry_test.dart',
+        'test/unit/core/engine/chat_completion_stream_parser_test.dart',
+        'test/unit/tooling/safe_pr_head_update_test.dart',
+        'test/unit/tooling/test_matrix_test.dart',
+      ]) {
+        expect(macos, isNot(contains(file)));
+      }
+    });
   });
 
   group('command line', () {

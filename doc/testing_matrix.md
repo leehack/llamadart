@@ -60,7 +60,9 @@ For a typical code PR, include:
 - `static-format-analyze`
 - `root-vm`
 - `root-chrome` when shared, web, template, or public API code changed
-- `coverage-lib` when `lib/` behavior changed or coverage is in doubt
+- `coverage-lib` when `lib/` behavior changed or coverage is in doubt: PR CI
+  runs no coverage, and `main` enforces the 70% threshold after merge
+  (`doc/ci_selection.md`)
 
 On macOS, run `root-vm` and other local VM rows with an isolated temp directory
 (`TMPDIR="$(mktemp -d)"`). LiteRT-LM engines without `liteRtLmCacheDir` prune
@@ -1121,8 +1123,12 @@ isolates build-hook cost, CPU time, billing or a causal speedup. This advances
 the full-gate median targets and integration policy remain separate.
 
 `tool/ci/test_shards.dart` splits each lane's files across its jobs by the
-suite times in `tool/ci/test_shard_weights.json`. Rebalance a lane from one
-full CI run's timing artifacts:
+suite times in `tool/ci/test_shard_weights.json`. macOS and Windows run only
+the host tests (`doc/ci_selection.md`, "Host OS lanes"); `dart
+tool/ci/test_shards.dart hosts <file>` shows where a test runs and why.
+Rebalance a lane from one full CI run's timing artifacts; take `linux-vm`
+from a pull request run, which runs without coverage like the PRs it
+balances:
 
 ```bash
 gh run download <run-id> -p 'test-timing-macos-*' -D /tmp/timing

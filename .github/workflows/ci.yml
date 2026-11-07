@@ -51,6 +51,7 @@ jobs:
       validation-integration: ${{ steps.select.outputs.validation-integration }}
       companion-job: ${{ steps.select.outputs.companion-job }}
       test-linux-coverage: ${{ steps.select.outputs.test-linux-coverage }}
+      coverage: ${{ steps.select.outputs.coverage }}
       test-web: ${{ steps.select.outputs.test-web }}
       web-chat-contract: ${{ steps.select.outputs.web-chat-contract }}
       test-other-os: ${{ steps.select.outputs.test-other-os }}
@@ -469,10 +470,10 @@ jobs:
     strategy:
       fail-fast: false
       # tool/ci/test_shards.dart puts every root test file in exactly one shard,
-      # balanced by measured time; each keeps -j 1 and writes raw coverage that
-      # test-linux-coverage merges.
+      # balanced by measured time; each keeps -j 1. After merge each also
+      # writes raw coverage that test-linux-coverage merges.
       matrix:
-        shard: [1, 2, 3, 4, 5, 6, 7]
+        shard: [1, 2, 3, 4]
     steps:
       - uses: actions/checkout@v7
 
@@ -545,12 +546,13 @@ jobs:
           command -v node
           time node -e 'console.log(process.version)'
 
-      - name: Run VM tests (with coverage)
+      # Collecting coverage doubles the VM time, so only post-merge runs do.
+      - name: Run VM tests
         env:
           LLAMADART_TEST_MODELS_DIR: ${{ github.workspace }}/.dart_tool/test_models
           LLAMA_CPP_TEMPLATES_DIR: ${{ github.workspace }}/.dart_tool/llama_cpp_templates
           REQUIRE_LLAMA_CPP_TEMPLATES: '1'
-        run: dart test -p vm -j 1 --exclude-tags local-only --coverage=coverage --file-reporter=json:.dart_tool/test_events.jsonl ${{ steps.shard.outputs.files }}
+        run: dart test -p vm -j 1 --exclude-tags local-only ${{ needs.changes.outputs.coverage == 'true' && '--coverage=coverage' || '' }} --file-reporter=json:.dart_tool/test_events.jsonl ${{ steps.shard.outputs.files }}
 
       - name: Check the LiteRT-LM cache canary
         if: ${{ !cancelled() }}
@@ -571,6 +573,7 @@ jobs:
           retention-days: 14
 
       - name: Upload raw coverage
+        if: needs.changes.outputs.coverage == 'true'
         uses: actions/upload-artifact@v7
         with:
           name: linux-vm-coverage-${{ matrix.shard }}
@@ -579,9 +582,10 @@ jobs:
           retention-days: 1
           overwrite: true
 
+  # Runs after merge (push and manual runs) only; a failure here fails main.
   test-linux-coverage:
     needs: [changes, test-linux-vm]
-    if: needs.changes.outputs.test-linux-coverage == 'true'
+    if: needs.changes.outputs.test-linux-coverage == 'true' && needs.changes.outputs.coverage == 'true'
     name: Test Linux VM (with Coverage)
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -610,6 +614,13 @@ jobs:
           dart run tool/testing/format_lcov.dart --lcov --in=coverage/test --out=coverage/lcov.info --report-on=lib --check-ignore
           dart run tool/testing/check_lcov_threshold.dart coverage/lcov.info 70
 
+      - name: Report the failed coverage gate
+        if: failure()
+        run: |
+          message="Post-merge coverage gate failed on $GITHUB_SHA: lib/ line coverage is below 70% or could not be measured. PRs do not run this gate, so fix main before merging more changes."
+          echo "::error title=Coverage gate failed on main::$message"
+          echo "### :x: $message" >> "$GITHUB_STEP_SUMMARY"
+
       - name: Import Codecov uploader verification key
         run: |
           curl --fail --location --silent --show-error \
@@ -620,7 +631,6 @@ jobs:
             | grep -q "2703 4E7F DB85 0E0B BC2C  62FF 806B B28A ED77 9869"
 
       - name: Upload coverage to Codecov
-        if: ${{ github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]' }}
         uses: codecov/codecov-action@v7
         with:
           files: coverage/lcov.info
@@ -972,16 +982,15 @@ jobs:
     timeout-minutes: 45
     strategy:
       fail-fast: false
-      # tool/ci/test_shards.dart puts every root test file in exactly one shard
-      # of each OS, balanced by measured time. Windows keeps tooling and
-      # runtime suites in separate processes (see windowsToolingPaths there).
+      # tool/ci/test_shards.dart puts every root test file that can behave
+      # differently by host OS (hostReasons there) in exactly one shard of each
+      # OS, balanced by measured time; Linux VM runs every file. Windows keeps
+      # tooling and runtime suites in separate processes (windowsToolingPaths).
       matrix:
         include:
-          - {os: macos-latest, lane: macos, shard: 1, shards: 3}
-          - {os: macos-latest, lane: macos, shard: 2, shards: 3}
-          - {os: macos-latest, lane: macos, shard: 3, shards: 3}
-          - {os: windows-latest, lane: windows-tooling, shard: 1, shards: 2}
-          - {os: windows-latest, lane: windows-tooling, shard: 2, shards: 2}
+          - {os: macos-latest, lane: macos, shard: 1, shards: 2}
+          - {os: macos-latest, lane: macos, shard: 2, shards: 2}
+          - {os: windows-latest, lane: windows-tooling, shard: 1, shards: 1}
           - {os: windows-latest, lane: windows-runtime, shard: 1, shards: 2}
           - {os: windows-latest, lane: windows-runtime, shard: 2, shards: 2}
 

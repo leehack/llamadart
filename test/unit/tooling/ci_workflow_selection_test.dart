@@ -125,6 +125,13 @@ Future<Map<String, bool>> deploymentGuardVerdicts() async {
   return verdicts;
 }
 
+/// The Linux VM shard command: coverage only when the selector asks for it.
+const String linuxVmRun =
+    'dart test -p vm -j 1 --exclude-tags local-only '
+    r"${{ needs.changes.outputs.coverage == 'true' && '--coverage=coverage' || '' }} "
+    '--file-reporter=json:.dart_tool/test_events.jsonl '
+    r'${{ steps.shard.outputs.files }}';
+
 void main() {
   test(
     'registered manual bootstrap calls the same-revision read-only qualifier',
@@ -672,7 +679,11 @@ for event,mode,oldflag,owner,attempt,cancel,good,main in itertools.product(('pus
         );
         expect(
           jobs[name]['if'],
-          "needs.changes.outputs.$name == 'true'",
+          shard == null
+              ? "needs.changes.outputs.$name == 'true'"
+              // Merging shard coverage runs after merge only.
+              : "needs.changes.outputs.$name == 'true' && "
+                    "needs.changes.outputs.coverage == 'true'",
           reason: '$name',
         );
         expect(
@@ -1284,6 +1295,11 @@ for event,flag,native,cancel,good,main in itertools.product(('push','pull_reques
         (workflow['on']['pull_request'] as Map).containsKey('paths'),
         isFalse,
       );
+      // Main builds every target its push selects, including the macOS
+      // desktop and Android builds a PR defers when it leaves their inputs.
+      expect(workflow['on']['push'], {
+        'branches': ['main'],
+      });
       expect(
         workflow['concurrency']['cancel-in-progress'],
         r"${{ github.event_name == 'pull_request' }}",
@@ -1562,13 +1578,10 @@ for event,flag,native,cancel,good,main in itertools.product(('push','pull_reques
       );
       final shardSteps = jobs['test-linux-vm']['steps'] as List;
       final shardRuns = shardSteps.map((s) => '${s['run']}').toList();
+      expect(shardRuns, contains(linuxVmRun));
       expect(
-        shardRuns,
-        contains(
-          'dart test -p vm -j 1 --exclude-tags local-only --coverage=coverage '
-          '--file-reporter=json:.dart_tool/test_events.jsonl '
-          r'${{ steps.shard.outputs.files }}',
-        ),
+        jobs['changes']['outputs']['coverage'],
+        r'${{ steps.select.outputs.coverage }}',
       );
       // Node-backed tooling fixtures bound each harness run; the runner's
       // cold first `node` start must happen before them.
@@ -1608,7 +1621,7 @@ for event,flag,native,cancel,good,main in itertools.product(('push','pull_reques
         'retention-days': 1,
         'overwrite': true,
       });
-      expect(upload.containsKey('if'), isFalse);
+      expect(upload['if'], "needs.changes.outputs.coverage == 'true'");
 
       final coverageSteps = jobs['test-linux-coverage']['steps'] as List;
       int index(bool Function(Map step) test) =>
@@ -1636,6 +1649,13 @@ for event,flag,native,cancel,good,main in itertools.product(('push','pull_reques
           'dart run tool/testing/check_lcov_threshold.dart '
           'coverage/lcov.info 70',
         ),
+      );
+      // A failed post-merge gate names itself on the run and its summary.
+      final report = index((s) => s['if'] == 'failure()');
+      expect(report, greaterThan(format));
+      expect(
+        coverageSteps[report]['run'],
+        allOf(contains('::error title='), contains(r'$GITHUB_STEP_SUMMARY')),
       );
       final codecov = index(
         (s) => '${s['uses']}'.startsWith('codecov/codecov-action@'),
@@ -1748,12 +1768,7 @@ for event,flag,native,cancel,good,main in itertools.product(('push','pull_reques
     test('each run step tests exactly its shard and timing names are unique', () {
       final all = jobs();
       for (final (job, run) in [
-        (
-          'test-linux-vm',
-          'dart test -p vm -j 1 --exclude-tags local-only --coverage=coverage '
-              '--file-reporter=json:.dart_tool/test_events.jsonl '
-              r'${{ steps.shard.outputs.files }}',
-        ),
+        ('test-linux-vm', linuxVmRun),
         (
           'test-web',
           'dart test -p chrome --exclude-tags local-only '

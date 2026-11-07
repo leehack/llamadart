@@ -134,7 +134,7 @@ Its output is the current exemption inventory. A mapping records an obligation,
 not model, backend or device qualification. See the
 [validation runbook](doc/cross_platform_validation.md) for execution evidence.
 
-We take testing seriously. CI enforces **>=70% line coverage on maintainable `lib/` code**. Auto-generated files are excluded when they are marked with `// coverage:ignore-file`.
+We take testing seriously. CI enforces **>=70% line coverage on maintainable `lib/` code** after merge: PR CI runs no coverage, so run the `coverage-lib` matrix row before merging a change that could lower it. Auto-generated files are excluded when they are marked with `// coverage:ignore-file`.
 
 The authoritative contributor test matrix lives in
 [`doc/testing_matrix.md`](https://github.com/leehack/llamadart/blob/main/doc/testing_matrix.md)
