@@ -78,6 +78,20 @@ void main() {
     });
   });
 
+  test('suiteWeights averages a suite over several summaries', () {
+    Map<String, dynamic> run(int duration) => {
+      'reporterElapsedMs': duration,
+      'suites': [
+        {'id': 7, 'path': 'test/a_test.dart'},
+      ],
+      'tests': [
+        {'suiteId': 7, 'startMs': 0, 'durationMs': duration},
+      ],
+    };
+
+    expect(suiteWeights([run(10), run(31)]), {'test/a_test.dart': 20});
+  });
+
   group('rootTestFiles', () {
     late Directory root;
     setUp(() => root = Directory.systemTemp.createTempSync('test-shards-'));

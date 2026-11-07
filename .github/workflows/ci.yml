@@ -472,7 +472,7 @@ jobs:
       # balanced by measured time; each keeps -j 1 and writes raw coverage that
       # test-linux-coverage merges.
       matrix:
-        shard: [1, 2, 3, 4, 5, 6]
+        shard: [1, 2, 3, 4, 5, 6, 7]
     steps:
       - uses: actions/checkout@v7
 
@@ -980,9 +980,9 @@ jobs:
           - {os: macos-latest, lane: macos, shard: 1, shards: 3}
           - {os: macos-latest, lane: macos, shard: 2, shards: 3}
           - {os: macos-latest, lane: macos, shard: 3, shards: 3}
-          - {os: windows-latest, lane: windows-tooling, shard: 1, shards: 2}
-          - {os: windows-latest, lane: windows-tooling, shard: 2, shards: 2}
-          - {os: windows-latest, lane: windows-runtime, shard: 1, shards: 1}
+          - {os: windows-latest, lane: windows-tooling, shard: 1, shards: 1}
+          - {os: windows-latest, lane: windows-runtime, shard: 1, shards: 2}
+          - {os: windows-latest, lane: windows-runtime, shard: 2, shards: 2}
 
     steps:
       - uses: actions/checkout@v7

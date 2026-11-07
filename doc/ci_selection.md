@@ -62,12 +62,15 @@ heuristic and does not prove the absence of every possible Markdown reader.
 Because Linux coverage can no longer stand in for
 `validation-integration` on a Markdown path, that job stays selected there.
 
-Root tests run as file shards: Linux VM (6, with coverage), Chrome (3), and
-macOS and Windows `Test Native` (3 each). `tool/ci/test_shards.dart` lists every
-root `*_test.dart` file and assigns each to exactly one shard of its lane,
-longest first onto the lightest shard, using suite times in
-`tool/ci/test_shard_weights.json`; a new file counts as the median suite until
-the weights are refreshed (`doc/testing_matrix.md`, "Test timing and shards").
+Root tests run as file shards: Linux VM (7, with coverage), Chrome (3), macOS
+`Test Native` (3) and Windows `Test Native` (1 `windows-tooling`, 2
+`windows-runtime`). `tool/ci/test_shards.dart` lists every root `*_test.dart`
+file and assigns each to exactly one shard of its lane, longest first onto the
+lightest shard, using suite times in `tool/ci/test_shard_weights.json`; a new
+file counts as the median suite until the weights are refreshed
+(`doc/testing_matrix.md`, "Test timing and shards"). Windows keeps tooling and
+runtime suites in separate processes: a tooling suite's `dart run` child cannot
+replace `.dart_tool/lib` DLLs a native suite in the same process holds open.
 Stale weights only unbalance shards; they cannot drop or repeat a file. A shard
 count is the length of its matrix, which `ci_workflow_selection_test.dart`
 checks against the selector call. VM shards keep `-j 1 --exclude-tags

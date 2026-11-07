@@ -101,9 +101,10 @@ List<List<String>> partitionTests(
 /// Per-suite wall time in milliseconds from `native_test_timing.dart`
 /// summaries: from the suite's first start (its load) to its last end or, if
 /// later, to the next suite's start, which adds the coverage collection a
-/// `-j 1` VM run spends between suites.
+/// `-j 1` VM run spends between suites. A suite in several summaries, such as
+/// several runs' artifacts, gets its mean time.
 Map<String, int> suiteWeights(Iterable<Map<String, dynamic>> summaries) {
-  final weights = <String, int>{};
+  final times = <String, List<int>>{};
   for (final summary in summaries) {
     final paths = {
       for (final suite in (summary['suites'] as List).cast<Map>())
@@ -126,10 +127,13 @@ Map<String, int> suiteWeights(Iterable<Map<String, dynamic>> summaries) {
         (start) => start > first,
         orElse: () => elapsed,
       );
-      weights[path] = (next > last ? next : last) - first;
+      (times[path] ??= []).add((next > last ? next : last) - first);
     }
   }
-  return weights;
+  return {
+    for (final MapEntry(key: path, value: runs) in times.entries)
+      path: runs.reduce((a, b) => a + b) ~/ runs.length,
+  };
 }
 
 Map<String, Map<String, int>> readWeights([String file = weightsPath]) {
