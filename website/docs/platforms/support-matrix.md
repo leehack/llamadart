@@ -212,13 +212,13 @@ web are on [Known platform issues](./known-platform-issues).
 
 | Runtime | Pinned release |
 | --- | --- |
-| llama.cpp native | `leehack/llamadart-native@v0.8.0-2` |
+| llama.cpp native | `leehack/llamadart-native@v0.8.0-3` |
 | LiteRT-LM native | `leehack/litert-lm-native@v0.19.0` |
 | stable-diffusion.cpp native (opt-in, Preview) | `leehack/stable-diffusion-native@v0.3.0-3`, for [image generation](../guides/image-generation); see [Opt-in stable_diffusion runtime](./native-build-hooks#opt-in-stable_diffusion-runtime-experimental). Flutter iOS/macOS apps link its XCFramework through `llamadart_stable_diffusion_flutter` |
 | WebGPU bridge assets | `leehack/llama-web-bridge-assets`; see [Pinned bridge assets](./webgpu-bridge#pinned-bridge-assets) |
 
 The native-assets hook currently pins `llamadart-native` tag
-`v0.8.0-2` and
+`v0.8.0-3` and
 `litert-lm-native` release `v0.19.0` (`lib/src/hook/native_release_pins.dart`).
 
 The direct native client, service probes and speech worker share ABI-aware

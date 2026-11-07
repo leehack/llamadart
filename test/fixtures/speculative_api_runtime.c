@@ -70,5 +70,5 @@ EXPORT int32_t llama_dart_sampler_sample_and_accept_n(void *sampler, void *conte
 }
 #ifdef RETAIN_LEGACY_QUERIES
 EXPORT bool llama_dart_speculative_need_embd(void *session) { require_null(session); calls[8]++; return false; }
-EXPORT bool llama_dart_speculative_need_embd_nextn(void *session) { require_null(session); calls[9]++; return false; }
 #endif
+EXPORT bool llama_dart_speculative_need_embd_nextn(void *session) { require_null(session); calls[9]++; return false; }

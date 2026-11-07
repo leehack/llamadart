@@ -7,8 +7,8 @@ import subprocess
 import tarfile
 
 ROOT = Path(__file__).resolve().parents[4]
-ARCHIVE_SHA = "a40669ffb3ab20a62028fbe65c0d217e5a36f71e4beef36447a6a630d5953a76"
-HEADERS_SHA = "8833599772a264537504c630ea12444761221a81f3f0e9309f83c5f8fabfe057"
+ARCHIVE_SHA = "d55b7df7307307e2bbffde8c1afdcea74294cc8df0076466012a86337570f37c"
+HEADERS_SHA = "58739bb2f099babb3ca0f479edb026e5d3bd627a7154d1dc5d7fa1f5c5c917fc"
 
 def sha(path):
     value = hashlib.sha256()
@@ -99,7 +99,7 @@ def main():
                "source_dirty": False,
                "source_inventory_sha256": hashlib.sha256(encoded_inventory).hexdigest(),
                "hook_sha256": sha(ROOT / "hook/build.dart"),
-               "native_tag": "v0.8.0-2", "native_archive_sha256": ARCHIVE_SHA,
+               "native_tag": "v0.8.0-3", "native_archive_sha256": ARCHIVE_SHA,
                "headers_archive_sha256": HEADERS_SHA,
                "probe_sha256": sha(probe), "libraries": libraries,
                "archive_libraries": archive_libraries,

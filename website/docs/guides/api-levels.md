@@ -133,7 +133,7 @@ Future<void> main() async {
 
 Always await `backend.dispose()` before shutting down its host. A forced
 worker kill cannot interrupt synchronous native creation. Creation-time
-reclamation uses owner API v1 in the pinned `v0.8.0-2` runtime. See the maintainer
+reclamation uses owner API v1 in the pinned `v0.8.0-3` runtime. See the maintainer
 [shutdown contract](https://github.com/leehack/llamadart/blob/main/doc/llama_cpp_exit_teardown.md#creation-time-owner-preparation)
 for the bounded guarantee and remaining raw-allocation limits.
 

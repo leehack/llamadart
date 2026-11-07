@@ -5,7 +5,7 @@
 library;
 
 /// `leehack/llamadart-native` release tag downloaded for the llama.cpp runtime.
-const llamaCppTag = 'v0.8.0-2';
+const llamaCppTag = 'v0.8.0-3';
 
 /// The first `llamadart_llama_cpp_flutter` release whose `Package.swift` pins
 /// [llamaCppTag].
@@ -16,15 +16,16 @@ const llamaCppTag = 'v0.8.0-2';
 /// `MAJOR.MINOR`, and its own minor's first release otherwise. The native pin
 /// sync sets it to the companion's next release whenever it moves the
 /// companion pin.
-const llamaCppAppleCompanionVersion = '0.17.4';
+const llamaCppAppleCompanionVersion = '0.18.0';
 
 /// Earlier `leehack/llamadart-native` tags that a published Apple llama.cpp
 /// companion pins and the build still accepts, each mapped to what its
 /// frameworks lack compared with [llamaCppTag].
 ///
-/// No older Apple runtime is admitted for v0.8.0-2: consumers need its
-/// speculative rollback and model-creation ownership fixes. Native pin sync
-/// clears this map whenever the pin moves; additions require exact artifact
+/// No older Apple runtime is admitted for v0.8.0-3: consumers need its
+/// speculative rollback and model-creation ownership fixes, with the unused
+/// embedding query retired. Native pin sync clears this map whenever the pin
+/// moves; additions require exact artifact
 /// compatibility evidence and matching checksums below.
 const llamaCppCompatibleAppleCompanionTags = <String, String>{};
 
@@ -34,8 +35,8 @@ const llamaCppCompatibleAppleCompanionTags = <String, String>{};
 /// Native pin sync preserves this proof on a same-tag refresh and replaces it
 /// with the newly published artifact's checksum when the pin moves.
 const llamaCppCompatibleAppleCompanionChecksums = <String, String>{
-  'v0.8.0-2':
-      '026dba77a76858553e329e4bd317550d8c619a5e3b3e9498a52b72b0712b4d3e',
+  'v0.8.0-3':
+      '6f069871b33ccab82f70b4dfe6a7f358e593961748ba9496e7b9101410ee3cd2',
 };
 
 /// SHA-256 of each published `llamadart-native-<bundle>-<llamaCppTag>.tar.gz`
@@ -45,27 +46,27 @@ const llamaCppCompatibleAppleCompanionChecksums = <String, String>{
 /// against this map before extracting it.
 const llamaCppBundleSha256 = <String, String>{
   'android-arm64':
-      'a40669ffb3ab20a62028fbe65c0d217e5a36f71e4beef36447a6a630d5953a76',
+      'd55b7df7307307e2bbffde8c1afdcea74294cc8df0076466012a86337570f37c',
   'android-x64':
-      'a6044487a3ba51d18f8c3544187959bf30f857447bd35b35b2f0a6d3005c90ba',
+      'a6058e5124f2b4fa59585db66253c810a5ba31622c5e4e041e5b603ebc11620c',
   'ios-arm64':
-      'f678bea09764dcc689e29388404fc00244565097fbc948f447527c5c2c9608f1',
+      '889e729b97be5611ef62888aae0a02dcb19bb3d474d2bb94eaa38e150554a0c0',
   'ios-arm64-sim':
-      'ebb9de05c816984f746a8b1a390a216f7a8b3a2c6156991356cc2a28458bc13f',
+      '05db2b25f1f8c8b1c710a49ac89c134c7c3a1cf426d1faf5e59047e2adc9df63',
   'ios-x86_64-sim':
-      '7c94a70cf8cd426c88e2af378226fc2229e877d8ea55d9a390f320b846508662',
+      '94e6243b441d50388dae8a8afad37aca8f9dc24ff87571b4fbc5f6287cd174a7',
   'linux-arm64':
-      '8681a9b0e9ab93faff3d5f9c87aa8c078cc7cffbfa75a090e4bc94895ed45816',
+      '069ddd5b63b2b17601425700c9a03d50ef9a171ea728080e79d7be39b9cd1dc8',
   'linux-x64':
-      'b9d04424898f21a0c162211031523be4ee54acffe4f69fd72955ba2f6c66a595',
+      'a7c4e70556fb7487704dfbc5fc8534b014ca494c75d024957eb149db08a1482e',
   'macos-arm64':
-      '03ce83c196380d04a77b78530b3596294d218a3d260a7c00a958ed1318aa7732',
+      '632946dbe37964c1172b753ddfed7754d5f7398c7078f73f57f464e759d2b586',
   'macos-x86_64':
-      '6230e3fc532b33895bd0960f5d302255f8716d4626f7cdb3a300349fe85b2859',
+      '3ff6f6be5d1572d8aa1e07780964d817eccfa51298b70ef31830b4b3eaebae73',
   'windows-arm64':
-      '429a492f3c4a991f72fe8e2c9490278217c9d0d763e55253c5152351383f043e',
+      '3b0f13bbf3d321dd8ac0dea1757c4a95793cda93e6c5c6358c92728d59df87ec',
   'windows-x64':
-      '130f8ba56439b3b7ad13ea820b812432b7ff9c67c8e0bbd007856e2d712c75d6',
+      '86fbae8a6133c22b2bfc9e9bbc565d097ed40dc83feee0a70b73f124de708b9b',
 };
 
 /// The `hook_contract_version` of the [llamaCppTag] release's `assets.json`.
@@ -102,7 +103,7 @@ const llamaCppBackendSidecarSpecs = <LlamaCppBackendSidecarSpec>[
     bundle: 'windows-x64',
     backend: 'cuda',
     archive: 'windows-x64-cuda12',
-    sha256: '0ed33465d8713482c023b0e8706d8f968ca75358edd90d0a5bb0a26b4b9d7819',
+    sha256: '967e29a4af1f1ad62fce5e49d74df524cca79b250d1c9f80c7a4d5f56b4a867e',
   ),
 ];
 
@@ -227,7 +228,7 @@ const liteRtLmBundleSpecs = <LiteRtLmBundleSpec>[
 const stableDiffusionReleaseTag = 'v0.3.0-3';
 
 /// First Apple companion release containing [stableDiffusionReleaseTag].
-const stableDiffusionAppleCompanionVersion = '0.17.4';
+const stableDiffusionAppleCompanionVersion = '0.18.0';
 
 /// Explicitly qualified older Apple SD pins that preserve existing app locks.
 ///

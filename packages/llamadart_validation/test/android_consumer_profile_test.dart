@@ -2,6 +2,9 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:crypto/crypto.dart';
+// The private release harness must verify the committed core runtime pin.
+// ignore: implementation_imports
+import 'package:llamadart/src/hook/native_release_pins.dart';
 import 'package:llamadart_validation/android_consumer_profile.dart';
 import 'package:llamadart_validation/android_qualification_io.dart';
 import 'package:test/test.dart';
@@ -36,9 +39,9 @@ void main() {
       'consumer_pubspec_sha256': 'a' * 64,
       'hook_sha256': 'a' * 64,
       'selector_sha256': 'a' * 64,
-      'native_tag': 'v0.8.0-2',
+      'native_tag': 'v0.8.0-3',
       'native_archive_sha256':
-          'a40669ffb3ab20a62028fbe65c0d217e5a36f71e4beef36447a6a630d5953a76',
+          'd55b7df7307307e2bbffde8c1afdcea74294cc8df0076466012a86337570f37c',
       'archive_libraries': archive,
       'packaging_selection': selection,
       'libraries': {
@@ -67,6 +70,17 @@ void main() {
     expect(() => AndroidConsumerProfilePlan('unknown'), throwsFormatException);
   });
 
+  test('consumer profiles bind the committed core runtime pin', () {
+    for (final profile in ['full', 'compact']) {
+      final plan = AndroidConsumerProfilePlan(profile);
+      expect(plan.hookDefines['llamadart_native_tag'], llamaCppTag);
+      expect(
+        (plan.wire['hook_defines'] as Map)['llamadart_native_tag'],
+        llamaCppTag,
+      );
+    }
+  });
+
   test(
     'consumer binding refuses crossed profile, mutation and probe injection',
     () {
@@ -79,7 +93,7 @@ void main() {
           consumerCpuProfile: profile,
           consumerPlanHash: plan.hash,
         );
-        expect(read(good)['native_tag'], 'v0.8.0-2');
+        expect(read(good)['native_tag'], 'v0.8.0-3');
         for (final bad in [
           {...good, 'source_dirty': true},
           {...good, 'consumer_pubspec_sha256': ''},
@@ -166,10 +180,14 @@ void main() {
       print(
         'Consumer CLI kernel compilation ${compileWatch.elapsedMilliseconds} ms',
       );
+      final staleNativeTag = llamaCppTag == 'v0.8.0-2'
+          ? 'v0.8.0-1'
+          : 'v0.8.0-2';
       for (final profile in ['full', 'compact']) {
         final plan = AndroidConsumerProfilePlan(profile);
         for (final variant in [
           'good',
+          'native-tag',
           'path',
           'runtimes',
           'profile',
@@ -181,7 +199,10 @@ void main() {
         ]) {
           final defines =
               jsonDecode(jsonEncode(plan.hookDefines)) as Map<String, dynamic>;
+          defines['llamadart_native_tag'] = llamaCppTag;
           switch (variant) {
+            case 'native-tag':
+              defines['llamadart_native_tag'] = staleNativeTag;
             case 'path':
               defines['llamadart_native_path'] = '/unadmitted';
             case 'runtimes':
