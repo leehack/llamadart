@@ -119,6 +119,17 @@ so development assets use `g<sha>` directly and never synthesize `vg<sha>` URLs.
 Schema 1 manifests remain accepted only when the downloaded bytes, GitHub asset
 digest, and immutable tag commit match the checked-in historical allowlist.
 
+The schema-2 reader preserves historical callback ABI 1 declarations, including
+published `v0.19.0` metadata, and accepts integer ABI 2 only for upstream
+compatibility `v0.15.0` or later with the required stream-chunk capability.
+This compatibility reader does not qualify a new candidate: the owner's
+new-manifest validator requires the version-correct declaration
+([owner issue #107](https://github.com/leehack/litert-lm-native/issues/107)).
+Reading either declaration does not replace live runtime probes: C API 1.0
+still requires callback ABI 2 and independent allocation-failure ABI 1;
+finish-reason ABI 1 and ASR bridge ABI 1 keep their separate contracts.
+Corrected artifact verification and a pin update remain separate work.
+
 Schema 2 optionally accepts `upstream.sourcePatches` as a non-empty list of
 objects with exactly `id`, `path`, `sha256`, `source`, `preimageSha256Lf`,
 `postimageSha256Lf` and `scope`. All fields are non-empty strings; the three
