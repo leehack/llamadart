@@ -2268,3 +2268,34 @@ within 0.01. Non-PASS records do not enter that comparison. N04 shows reuse does
 scores; it does not prove the cache was used (see P03 for counters). Scores
 are raw logits, so no sampler setting is covered. The pack does not qualify
 Web, accelerators, other models or physical devices.
+
+## Catalog 15: sampler controls
+
+Catalog 15 adds the bounded public `sampler_controls` pack for
+[#1196](https://github.com/leehack/llamadart/issues/1196). Catalogs 1-14 keep
+their inventories and hashes. Every case decodes raw text with top-K and top-P
+disabled, so only the control under test differs from the greedy baseline.
+
+| Case | Required proof |
+| --- | --- |
+| `G01.capability` | Reported `supportsPenalty`, `supportsPresencePenalty`, `supportsMinP` and `supportsThinkingBudget` match the independent expectation; an expected-unsupported control (LiteRT-LM Min-P) throws `LlamaUnsupportedException` and the engine still generates |
+| `G02.min_p` | At temperature 1.5, Min-P 1.0 returns the greedy text for seeds 1-4, and at least one seed without Min-P does not |
+| `G03.repeat_penalty` | Repetition penalty 1.5 is reproducible, differs from the greedy baseline and repeats fewer word trigrams |
+| `G04.presence_penalty` | Presence penalty 2.0, under the same rules as G03 |
+| `G05.thinking_budget` | After a prompt ending in `<think>`, budgets 0 and 4 keep exactly the first 0 or 4 greedy tokens, then force `Time is up.</think>`; the unbudgeted text never closes the block, a budget without tags is rejected, and a rerun matches |
+
+```sh
+dart run tool/testing/validation.dart local --profile sampler-gguf-cpu \
+  --model /path/to/stories15M.gguf --out /tmp/sampler-cpu-run
+```
+
+The profile locks Stories15M (SHA256
+`61b50d457809a5194818fd22e6724b456cd7bb9a6264c52c8110684c53f3704a`) on CPU,
+context 256 and two threads. Non-CPU or non-GGUF profiles omit `G02`-`G05` as
+`outside_initial_native_cpu_sampler_scope`; Web and unsealed hosts are
+`NOT_RUN`. On LiteRT-LM, `G01` asserts only that Min-P is unsupported, because
+its penalty and budget support depend on the runtime and bundle. Among passing
+records, the importer requires the G02, G03 and G04 greedy baselines to agree.
+G05 passes explicit tags to raw generation; tags derived from a chat template,
+WebGPU bridge capability skew and the LiteRT-LM Qwen3 thinking switch remain
+unqualified, as do accelerators, other models and physical devices.

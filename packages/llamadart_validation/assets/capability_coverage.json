@@ -152,6 +152,20 @@
       ]
     },
     {
+      "id": "sampler_controls",
+      "cases": [
+        "G01.capability",
+        "G02.min_p",
+        "G03.repeat_penalty",
+        "G04.presence_penalty",
+        "G05.thinking_budget"
+      ],
+      "profiles": [
+        "assets/profiles/sampler-gguf-cpu.json"
+      ],
+      "notes": "Catalog 15 binds greedy-equivalent Min-P, repetition and presence penalties, and raw-prompt thinking-budget forcing on CPU Stories15M, plus typed LiteRT-LM Min-P rejection in G01. Template-derived budget tags, WebGPU bridge skew, LiteRT penalties/budgets and other models or platforms are not qualified by this mapping."
+    },
+    {
       "id": "state_persistence",
       "cases": [
         "P01.capability",
@@ -375,13 +389,18 @@
         "capability:LlamaEngineCapabilities.supportsThinkingBudget",
         "matrix:Min-P",
         "matrix:Presence penalty",
-        "matrix:Renamed legacy Qwen3 thinking switch",
         "matrix:Repetition penalty",
         "matrix:Thinking budget"
       ],
+      "pack": "sampler_controls"
+    },
+    {
+      "surfaces": [
+        "matrix:Renamed legacy Qwen3 thinking switch"
+      ],
       "exemption": {
-        "id": "sampler-controls",
-        "reason": "Thinking-output cases do not establish sampler-control or thinking-budget semantics. Native LiteRT-LM penalties and thinking budgets are qualified by a local-only real-model test (test/e2e/backends/litert_lm_generation_controls_e2e_test.dart); dedicated positive/unsupported/runtime-skew pack coverage remains.",
+        "id": "litert-qwen3-thinking-switch",
+        "reason": "The renamed Qwen3 thinking switch is a native LiteRT-LM chat-template override (liteRtLmQwen3ChatTemplate); GGUF reads the switch from model metadata, so the GGUF sampler pack cannot observe it. It needs a LiteRT-LM Qwen3 template scenario.",
         "issue": "https://github.com/leehack/llamadart/issues/1196"
       }
     },

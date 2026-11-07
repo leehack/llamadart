@@ -198,7 +198,7 @@ jobs:
           python3 ../../tool/ci/supervise_chrome_test.py
           --output-dir "$RUNNER_TEMP/model-store-chrome"
           --timeout-seconds 180 --
-          flutter test --platform chrome test/model_store_web_test.dart
+          dart test -p chrome test/model_store_web_test.dart
       - name: Upload Chrome process and phase diagnostics
         if: always()
         uses: actions/upload-artifact@v7

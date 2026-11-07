@@ -448,7 +448,21 @@ class FakeEngine implements ValidationEngine, StructuredValidationEngine {
 
 /// Release-selection double includes the new public token-count boundary.
 class CountingFakeEngine extends FakeEngine
-    implements TokenCountValidationEngine, StateValidationEngine {
+    implements
+        TokenCountValidationEngine,
+        StateValidationEngine,
+        SamplerValidationEngine {
+  @override
+  Future<LlamaEngineCapabilities> samplerCapabilities() async =>
+      const LlamaEngineCapabilities(isSupported: true, supportsPenalty: true);
+  @override
+  Future<String> generateSampled(String prompt, GenerationParams params) async {
+    if (params.minP != 0) {
+      throw LlamaUnsupportedException('LiteRT Min-P unsupported');
+    }
+    throw UnimplementedError();
+  }
+
   @override
   Future<LlamaStateIdentity> stateIdentity() async =>
       throw LlamaUnsupportedException('Identity outside this fake');
