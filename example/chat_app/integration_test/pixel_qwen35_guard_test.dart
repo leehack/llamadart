@@ -81,7 +81,7 @@ void main() {
         jsonDecode(bindingFile.readAsStringSync()) as Map<String, dynamic>;
     expect(binding['schema'], 'pixel-qwen35-supported-cases.v2');
     expect(binding['run_id'], pixelQwen35RunId);
-    expect(binding['native_tag'], 'v0.8.0-2');
+    expect(binding['native_tag'], 'v0.8.0-3');
     expect(binding['native_archive_sha256'], pixelQwen35NativeArchiveSha256);
     expect(binding['source_dirty'], isFalse);
     expect(binding['source_commit'], matches(RegExp(r'^[0-9a-f]{40}$')));

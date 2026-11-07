@@ -13,14 +13,14 @@ with core `0.17.x`. Upgrade both together. Earlier pairings are in the
 
 ```yaml
 dependencies:
-  llamadart: ^0.17.5
-  llamadart_llama_cpp_flutter: ^0.17.3
+  llamadart: ^0.18.0
+  llamadart_llama_cpp_flutter: ^0.18.0
 ```
 
 This package has no runtime Dart API of its own. Import `package:llamadart`
 normally from the core package and use `LlamaBackend()` / `LlamaEngine` there.
 
-The Apple SwiftPM manifest pins `leehack/llamadart-native@v0.8.0-2`.
+The Apple SwiftPM manifest pins `leehack/llamadart-native@v0.8.0-3`.
 
 Apps bound for the App Store should use this package: the Apple privacy
 manifest for the llama.cpp runtime ships inside this XCFramework, never in the

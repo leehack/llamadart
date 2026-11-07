@@ -105,7 +105,7 @@ adb logcat -d | grep -E "SIGILL|SIGSEGV|Fatal signal|llamadart|ggml"
 The private [consumer release smoke](../packages/llamadart_validation/native/android_qualification/README.md#android-fullcompact-consumer-release-smoke)
 provides deterministic public load/generate/dispose/reload evidence for the four
 required device/profile cells. It binds separately committed full/compact hook
-configurations and release APKs to native `v0.8.0-2`, the fixed LFM2.5-230M Q4_K_M
+configurations and release APKs to native `v0.8.0-3`, the fixed LFM2.5-230M Q4_K_M
 Paris fixture and actual installed runtime bytes. Device/provider admission,
 process-scoped crash/SIGILL checks and the modern-device timing comparison remain
 operator assessments. Source tests and preparation receipts are not device runs.

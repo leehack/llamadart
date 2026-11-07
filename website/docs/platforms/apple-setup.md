@@ -67,7 +67,7 @@ patch versions move independently of the core's.
 
 The build also checks the resolved companions' runtime pins and fails on a
 mismatch or on an unverified local `Artifacts` override. The llama.cpp error
-names the companion release to depend on, such as `^0.17.1` with core `0.17.1`.
+names the companion release to depend on, such as `^0.18.0` with core `0.18.0`.
 A llama.cpp companion pinning an earlier release is accepted, with an upgrade
 warning, only when the core explicitly lists that pin as ABI-compatible; any
 other earlier pin is rejected. The stable_diffusion check accepts only the
