@@ -13,14 +13,14 @@ and is not part of this repository.
 ## Version boundary
 
 `flutter_edge_ai_llama 0.0.4` is on pub.dev and requires exactly
-`llamadart >=0.15.1 <0.15.2`, so it does not resolve alongside llamadart 0.17.
+`llamadart >=0.15.1 <0.15.2`, so it does not resolve alongside llamadart 0.18.
 For the connector, follow its
 [README](https://github.com/DenisovAV/flutter_edge_ai/blob/main/packages/flutter_edge_ai_llama/README.md)
 and [platform guide](https://github.com/DenisovAV/flutter_edge_ai/blob/main/packages/flutter_edge_ai_llama/doc/platforms.md),
 including its llamadart-specific setup; llamadart's build hook settings belong in
 the application root.
 
-To use llamadart 0.17 features, call llamadart directly or through
+To use llamadart 0.18 features, call llamadart directly or through
 [Genkit](./genkit) until the connector widens its constraint.
 
 ## Combining with LiteRT-LM
