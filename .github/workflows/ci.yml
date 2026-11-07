@@ -980,7 +980,8 @@ jobs:
           - {os: macos-latest, lane: macos, shard: 1, shards: 3}
           - {os: macos-latest, lane: macos, shard: 2, shards: 3}
           - {os: macos-latest, lane: macos, shard: 3, shards: 3}
-          - {os: windows-latest, lane: windows-tooling, shard: 1, shards: 1}
+          - {os: windows-latest, lane: windows-tooling, shard: 1, shards: 2}
+          - {os: windows-latest, lane: windows-tooling, shard: 2, shards: 2}
           - {os: windows-latest, lane: windows-runtime, shard: 1, shards: 2}
           - {os: windows-latest, lane: windows-runtime, shard: 2, shards: 2}
 

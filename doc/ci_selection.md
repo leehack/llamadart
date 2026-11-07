@@ -63,7 +63,7 @@ Because Linux coverage can no longer stand in for
 `validation-integration` on a Markdown path, that job stays selected there.
 
 Root tests run as file shards: Linux VM (7, with coverage), Chrome (3), macOS
-`Test Native` (3) and Windows `Test Native` (1 `windows-tooling`, 2
+`Test Native` (3) and Windows `Test Native` (2 `windows-tooling`, 2
 `windows-runtime`). `tool/ci/test_shards.dart` lists every root `*_test.dart`
 file and assigns each to exactly one shard of its lane, longest first onto the
 lightest shard, using suite times in `tool/ci/test_shard_weights.json`; a new
