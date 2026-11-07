@@ -1,7 +1,7 @@
 import 'decision_catalog.dart';
 
 /// Current reproducible catalog contract; older journals retain their version.
-const int validationCatalogVersion = 14;
+const int validationCatalogVersion = 15;
 
 /// Versioned core feature selectors. Optional model/media packs are separate.
 const validationFeatures = {
@@ -20,6 +20,7 @@ const validationFeatures = {
   'state_persistence': 1,
   'tool_result_media': 1,
   'next_token_scoring': 1,
+  'sampler_controls': 1,
 };
 
 /// Feature selectors that catalogs before 8 do not declare.
@@ -101,6 +102,7 @@ const validationFixtures = <String, Map<String, Object>>{
   'state_persistence': statePersistenceFixture,
   'tool_result_media': toolResultMediaFixture,
   'next_token_scoring': nextTokenScoringFixture,
+  'sampler_controls': samplerControlsFixture,
 };
 
 /// Case identity and fixture dependencies. False implementation flags always
@@ -252,6 +254,7 @@ const extendedValidationCases = [
   ...stateValidationCases,
   ...toolResultMediaValidationCases,
   ...nextTokenScoringValidationCases,
+  ...samplerControlValidationCases,
 ];
 
 /// Stable order for the complete selected/omitted inventory.
@@ -271,7 +274,10 @@ const catalogFiveCaseIds = {
 
 /// Whether [catalogVersion] declares case [id]. Decision cases exist only in
 /// catalogs 5 and newer, and only decision profiles select them.
-bool catalogDeclaresCase(String id, int catalogVersion) => id == 'P05.identity'
+bool catalogDeclaresCase(String id, int catalogVersion) =>
+    samplerControlValidationCases.any((definition) => definition.id == id)
+    ? catalogVersion >= 15
+    : id == 'P05.identity'
     ? catalogVersion >= 14
     : nextTokenScoringValidationCases.any((definition) => definition.id == id)
     ? catalogVersion >= 13
@@ -837,5 +843,56 @@ const nextTokenScoringValidationCases = [
     'N05.guards',
     ['next_token_scoring'],
     ['next_token_scoring'],
+  ),
+];
+
+/// Greedy and seeded generation settings for the public sampler controls.
+/// Every case decodes with top-K and top-P disabled, so only the control under
+/// test differs from its greedy baseline.
+const samplerControlsFixture = <String, Object>{
+  'prompt':
+      'Once upon a time, there was a little girl named Lily. She loved to play with her ball.',
+  'max_tokens': 48,
+  'seeds': [1, 2, 3, 4],
+  'sampling_temperature': 1.5,
+  'min_p': 1.0,
+  'repeat_penalty': 1.5,
+  'presence_penalty': 2.0,
+  'repeat_ngram_words': 3,
+  'budget_prompt': 'One day Lily wrote a secret note. <think>',
+  'budget_max_tokens': 24,
+  'budgets': [0, 4],
+  'start_tag': '<think>',
+  'end_tag': '</think>',
+  'forced_message': 'Time is up.',
+  'unsupported_min_p': 0.05,
+};
+
+/// Public sampler-control obligations introduced together in catalog 15.
+const samplerControlValidationCases = [
+  ValidationCaseDefinition(
+    'G01.capability',
+    ['sampler_controls'],
+    ['sampler_controls'],
+  ),
+  ValidationCaseDefinition(
+    'G02.min_p',
+    ['sampler_controls'],
+    ['sampler_controls'],
+  ),
+  ValidationCaseDefinition(
+    'G03.repeat_penalty',
+    ['sampler_controls'],
+    ['sampler_controls'],
+  ),
+  ValidationCaseDefinition(
+    'G04.presence_penalty',
+    ['sampler_controls'],
+    ['sampler_controls'],
+  ),
+  ValidationCaseDefinition(
+    'G05.thinking_budget',
+    ['sampler_controls'],
+    ['sampler_controls'],
   ),
 ];

@@ -197,6 +197,7 @@ class ValidationProfile {
                         'state_persistence',
                         'tool_result_media',
                         'next_token_scoring',
+                        'sampler_controls',
                       }.contains(entry.key) &&
                       (entry.value as Map).isNotEmpty) ||
                   (entry.value as Map).entries.any(
@@ -418,6 +419,7 @@ class ValidationProfile {
           _stateOmission(definition.id) == null &&
           _mediaOmission(definition.id) == null &&
           _scoringOmission(definition.id) == null &&
+          _samplerOmission(definition.id) == null &&
           (selection == 'release' ||
               (selection == 'focused' &&
                   definition.features.any(focusFeatures.contains))))
@@ -437,6 +439,7 @@ class ValidationProfile {
 
   Map<String, dynamic> _fixturesForVersion(int version) {
     final resolved = fixtures;
+    if (version < 15) resolved.remove('sampler_controls');
     if (version < 13) resolved.remove('next_token_scoring');
     if (version < 12) resolved.remove('tool_result_media');
     if (version < 11) resolved.remove('state_persistence');
@@ -508,6 +511,14 @@ class ValidationProfile {
         'Batching selection requires catalog version 2',
       );
     }
+    if (version < 15 &&
+        (focusFeatures.contains('sampler_controls') ||
+            (data['fixtures'] as Map?)?.containsKey('sampler_controls') ==
+                true)) {
+      throw const FormatException(
+        'Sampler-control selection or fixture requires catalog version 15',
+      );
+    }
     if (version < 13 &&
         (focusFeatures.contains('next_token_scoring') ||
             (data['fixtures'] as Map?)?.containsKey('next_token_scoring') ==
@@ -566,7 +577,8 @@ class ValidationProfile {
               (version >= 9 || entry.key != 'tokenization') &&
               (version >= 11 || entry.key != 'state_persistence') &&
               (version >= 12 || entry.key != 'tool_result_media') &&
-              (version >= 13 || entry.key != 'next_token_scoring'))
+              (version >= 13 || entry.key != 'next_token_scoring') &&
+              (version >= 15 || entry.key != 'sampler_controls'))
             entry.key: entry.value,
         if (isDecision) 'decision': 1,
         if (isEmbedding) 'embeddings': 1,
@@ -632,6 +644,16 @@ class ValidationProfile {
     return null;
   }
 
+  String? _samplerOmission(String id) {
+    if (!id.startsWith('G')) return null;
+    if (nativeReference) return 'outside_native_reference_scope';
+    if (id == 'G01.capability') return null;
+    if (runtime != 'gguf' || backend != 'cpu') {
+      return 'outside_initial_native_cpu_sampler_scope';
+    }
+    return null;
+  }
+
   /// Why this profile cannot run tool-result media case [id], or null.
   String? _mediaOmission(String id) {
     if (!id.startsWith('M')) return null;
@@ -647,6 +669,8 @@ class ValidationProfile {
     if (media != null) return media;
     final scoring = _scoringOmission(id);
     if (scoring != null) return scoring;
+    final sampler = _samplerOmission(id);
+    if (sampler != null) return sampler;
     final state = _stateOmission(id);
     if (state != null) return state;
     if (id.startsWith('T') && nativeReference) {

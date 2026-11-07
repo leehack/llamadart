@@ -8,6 +8,7 @@ import 'placement.dart';
 import 'structured_output_evidence.dart';
 import 'tokenization_evidence.dart';
 import 'tool_result_media_evidence.dart';
+import 'sampler_evidence.dart';
 import 'scoring_evidence.dart';
 import 'state_evidence.dart';
 
@@ -261,6 +262,28 @@ class ValidationReport {
         problems.add('Invalid scoring case evidence: $id');
       }
       if (profile != null &&
+          id.startsWith('G') &&
+          event['status'] == 'PASS' &&
+          !validSamplerCaseEvidence(
+            id,
+            event,
+            profile,
+            web: (manifest['environment'] as Map?)?['web'] == true,
+            diagnostics:
+                events
+                    .where(
+                      (entry) =>
+                          entry['case_id'] == 'C01.load' &&
+                          entry['status'] == 'PASS',
+                    )
+                    .map((entry) => entry['diagnostics'])
+                    .whereType<Map>()
+                    .firstOrNull ??
+                const {},
+          )) {
+        problems.add('Invalid sampler-control case evidence: $id');
+      }
+      if (profile != null &&
           id.startsWith('P') &&
           event['status'] == 'PASS' &&
           !validStateCaseEvidence(
@@ -332,6 +355,13 @@ class ValidationReport {
               record,
         ], profile)) {
       problems.add('Scoring cases disagree on the same fresh prompt');
+    }
+    if (profile != null &&
+        !samplerBaselinesAgree([
+          for (final record in records.values)
+            if (record['status'] == 'PASS') record,
+        ])) {
+      problems.add('Sampler-control cases disagree on the greedy baseline');
     }
     final endings = events.where((e) => e['type'] == 'run_end').toList();
     final finished =

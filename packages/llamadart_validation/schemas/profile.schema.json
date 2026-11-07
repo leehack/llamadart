@@ -212,7 +212,8 @@
           "tokenization",
           "state_persistence",
           "tool_result_media",
-          "next_token_scoring"
+          "next_token_scoring",
+          "sampler_controls"
         ]
       }
     },
@@ -400,6 +401,11 @@
           "properties": {}
         },
         "next_token_scoring": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {}
+        },
+        "sampler_controls": {
           "type": "object",
           "additionalProperties": false,
           "properties": {}
