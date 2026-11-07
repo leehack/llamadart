@@ -63,7 +63,7 @@ Because Linux coverage can no longer stand in for
 `validation-integration` on a Markdown path, that job stays selected there.
 
 Root tests run as file shards: Linux VM (3), Chrome (3), macOS `Test Native`
-(2) and Windows `Test Native` (1 `windows-tooling`, 2 `windows-runtime`).
+(3) and Windows `Test Native` (1 `windows-tooling`, 2 `windows-runtime`).
 Linux VM and Chrome run every root test file; macOS and Windows run only the
 host tests described under "Host OS lanes". `tool/ci/test_shards.dart` lists
 every root `*_test.dart` file and assigns each to exactly one shard of each

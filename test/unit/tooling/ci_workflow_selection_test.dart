@@ -1165,19 +1165,19 @@ for event,flag,native,cancel,good,main in itertools.product(('push','pull_reques
     );
     expect(memory['run'], 'dart test test/process_memory_test.dart');
     const selected =
-        "\${{ !cancelled() && matrix.lane == 'windows-tooling' && matrix.shard == 1 && needs.changes.outputs.validation-harness == 'true' }}";
+        "\${{ !cancelled() && matrix.lane == 'windows-runtime' && matrix.shard == 2 && needs.changes.outputs.validation-harness == 'true' }}";
     final legs =
         (jobs['test-other-os']['strategy']['matrix']['include'] as List)
             .cast<Map>();
     expect(
       legs.where(
-        (leg) => leg['lane'] == 'windows-tooling' && leg['shard'] == 1,
+        (leg) => leg['lane'] == 'windows-runtime' && leg['shard'] == 2,
       ),
       hasLength(1),
     );
     expect(
       legs.singleWhere(
-        (leg) => leg['lane'] == 'windows-tooling' && leg['shard'] == 1,
+        (leg) => leg['lane'] == 'windows-runtime' && leg['shard'] == 2,
       )['os'],
       'windows-latest',
     );

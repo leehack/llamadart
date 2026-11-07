@@ -988,8 +988,9 @@ jobs:
       # tooling and runtime suites in separate processes (windowsToolingPaths).
       matrix:
         include:
-          - {os: macos-latest, lane: macos, shard: 1, shards: 2}
-          - {os: macos-latest, lane: macos, shard: 2, shards: 2}
+          - {os: macos-latest, lane: macos, shard: 1, shards: 3}
+          - {os: macos-latest, lane: macos, shard: 2, shards: 3}
+          - {os: macos-latest, lane: macos, shard: 3, shards: 3}
           - {os: windows-latest, lane: windows-tooling, shard: 1, shards: 1}
           - {os: windows-latest, lane: windows-runtime, shard: 1, shards: 2}
           - {os: windows-latest, lane: windows-runtime, shard: 2, shards: 2}
@@ -1057,12 +1058,12 @@ jobs:
 
       # Two steps: Windows PowerShell would ignore a failing first command.
       - name: Install validation harness dependencies
-        if: ${{ !cancelled() && matrix.lane == 'windows-tooling' && matrix.shard == 1 && needs.changes.outputs.validation-harness == 'true' }}
+        if: ${{ !cancelled() && matrix.lane == 'windows-runtime' && matrix.shard == 2 && needs.changes.outputs.validation-harness == 'true' }}
         working-directory: packages/llamadart_validation
         run: dart pub get
 
       - name: Test validation process memory
-        if: ${{ !cancelled() && matrix.lane == 'windows-tooling' && matrix.shard == 1 && needs.changes.outputs.validation-harness == 'true' }}
+        if: ${{ !cancelled() && matrix.lane == 'windows-runtime' && matrix.shard == 2 && needs.changes.outputs.validation-harness == 'true' }}
         working-directory: packages/llamadart_validation
         run: dart test test/process_memory_test.dart
 
