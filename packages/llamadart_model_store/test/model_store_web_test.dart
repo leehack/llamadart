@@ -1,9 +1,9 @@
 @TestOn('browser')
 library;
 
-import 'package:flutter_test/flutter_test.dart';
 import 'package:llamadart/llamadart.dart';
 import 'package:llamadart_model_store/llamadart_model_store.dart';
+import 'package:test/test.dart';
 
 void main() {
   test('open reports that browsers have no shared model store', () async {

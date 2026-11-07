@@ -446,7 +446,7 @@ void main() {
     expect(row.command, contains('CI job model-store'));
     for (final command in [
       'flutter test',
-      'flutter test --platform chrome test/model_store_web_test.dart',
+      'dart test -p chrome test/model_store_web_test.dart',
     ]) {
       expect(row.command, contains(command));
       expect(workflow, contains(command));

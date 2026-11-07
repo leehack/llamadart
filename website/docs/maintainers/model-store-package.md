@@ -32,7 +32,7 @@ flutter pub get
 dart format --output=none --set-exit-if-changed .
 flutter analyze --fatal-infos
 TMPDIR="$(mktemp -d)" flutter test
-flutter test --platform chrome test/model_store_web_test.dart
+dart test -p chrome test/model_store_web_test.dart
 ```
 
 The `model-store` CI job runs these and a publish dry-run against checkout
@@ -55,10 +55,15 @@ pipes, so an unread downstream pipe cannot block the watchdog. The artifact
 also contains allowlisted process fields, without command arguments or
 environment variables. A CLI exit before output
 EOF indicates an inherited pipe may still be open; live children after EOF
-identify a separate cleanup wait. These diagnostics investigate
-[#1702](https://github.com/leehack/llamadart/issues/1702); they do not establish
-the cause of the hosted hang. Cold and warm Linux Chrome runs with the pinned
-SDK remain required to qualify any repair or tooling workaround.
+identify a separate cleanup wait.
+
+The browser test uses `package:test` and `dart test`, not `flutter_test` and
+`flutter test --platform chrome`, because it needs no Flutter APIs. Flutter
+3.47.1 closes Chrome by awaiting a DevTools `Browser.close` reply with no
+timeout; when Chrome exits before sending it, `flutter test` hangs after
+reporting its results
+([#1702](https://github.com/leehack/llamadart/issues/1702)). `dart test` stops
+Chrome with a signal and does not wait on DevTools.
 
 ## Open design questions
 
