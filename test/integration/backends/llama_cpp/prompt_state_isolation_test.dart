@@ -209,7 +209,7 @@ final class _Session {
       microBatchSize: 8,
       gpuLayers: 0,
     );
-    final service = LlamaCppService(objectCalls: calls);
+    final service = LlamaCppService(objectCalls: calls)..initializeBackend();
     final modelHandle = service.loadModel(modelPath, params);
     return _Session._(
       service,

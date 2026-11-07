@@ -1574,7 +1574,8 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
         'Windows x64 VM tests, hook bundle validation, LiteRT-LM native '
         'library smoke, and opportunistic LiteRT-LM CPU engine smoke',
     command:
-        'CI jobs "Test Native (windows-latest, <shard>/<shards>)" and '
+        'CI jobs "Test Native (windows-tooling, <shard>/<shards>)", '
+        '"Test Native (windows-runtime, <shard>/<shards>)" and '
         '"LiteRT-LM Smoke / Native smoke (windows-latest)".',
     useWhen: 'Any native runtime or release change affecting Windows x64.',
   ),

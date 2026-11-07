@@ -50,24 +50,32 @@ void main() {
     });
   });
 
-  test('suiteWeights spans each suite from first start to last end', () {
+  test('suiteWeights runs from a suite start to its end or the next start', () {
     final weights = suiteWeights([
       {
+        'reporterElapsedMs': 100,
         'suites': [
           {'id': 0, 'path': 'test/a_test.dart'},
           {'id': 1, 'path': 'test/b_test.dart'},
           {'id': 2, 'path': '<external-or-loading-suite>'},
+          {'id': 3, 'path': 'test/c_test.dart'},
         ],
         'tests': [
           {'suiteId': 0, 'startMs': 10, 'durationMs': 5},
           {'suiteId': 0, 'startMs': 12, 'durationMs': 20},
           {'suiteId': 1, 'startMs': 40, 'durationMs': null},
           {'suiteId': 2, 'startMs': 0, 'durationMs': 9},
+          {'suiteId': 3, 'startMs': 45, 'durationMs': 30},
         ],
       },
     ]);
 
-    expect(weights, {'test/a_test.dart': 22, 'test/b_test.dart': 0});
+    // a ends at 32 but b starts at 40; c overlaps nothing after it.
+    expect(weights, {
+      'test/a_test.dart': 30,
+      'test/b_test.dart': 5,
+      'test/c_test.dart': 55,
+    });
   });
 
   group('rootTestFiles', () {
@@ -97,8 +105,31 @@ void main() {
     });
   });
 
-  test('the weights file has an entry for every lane', () {
-    expect(readWeights().keys, testShardLanes);
+  test('the weights file has an entry for every timing source', () {
+    expect(readWeights().keys, weightLanes);
+    expect(testShardLanes.values.toSet(), weightLanes.toSet());
+  });
+
+  test('Windows lanes split the root tests between tooling and runtime', () {
+    final files = rootTestFiles();
+    final tooling = laneFiles('windows-tooling', files);
+    final runtime = laneFiles('windows-runtime', files);
+
+    expect(
+      tooling,
+      contains('test/unit/hook/apple_companion_constraint_test.dart'),
+    );
+    expect(tooling, contains('test/unit/public_entrypoints_test.dart'));
+    expect(
+      runtime,
+      contains(
+        'test/integration/backends/llama_cpp/prompt_state_isolation_test.dart',
+      ),
+    );
+    expect([...tooling, ...runtime]..sort(), files);
+    for (final lane in ['linux-vm', 'chrome', 'macos']) {
+      expect(laneFiles(lane, files), files, reason: lane);
+    }
   });
 
   group('command line', () {
@@ -116,13 +147,13 @@ void main() {
       final output = File('${scratch.path}/output')..createSync();
 
       final result = await run(
-        ['windows', '2', '3'],
+        ['windows-tooling', '2', '3'],
         environment: {'GITHUB_OUTPUT': output.path},
       );
 
       expect(result.exitCode, 0, reason: '${result.stderr}');
       final expected = partitionTests(
-        rootTestFiles(),
+        laneFiles('windows-tooling', rootTestFiles()),
         readWeights()['windows']!,
         3,
       )[1];

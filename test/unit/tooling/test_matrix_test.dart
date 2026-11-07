@@ -62,7 +62,7 @@ void main() {
             in (native['strategy']['matrix']['include'] as List).cast<Map>())
           if (entry['os'] == 'windows-latest')
             (native['name'] as String)
-                .replaceAll(r'${{ matrix.os }}', entry['os'] as String)
+                .replaceAll(r'${{ matrix.lane }}', entry['lane'] as String)
                 .replaceAll(
                   r'${{ matrix.shard }}/${{ matrix.shards }}',
                   '<shard>/<shards>',

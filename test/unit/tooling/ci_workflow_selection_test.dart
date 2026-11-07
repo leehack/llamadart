@@ -1154,17 +1154,19 @@ for event,flag,native,cancel,good,main in itertools.product(('push','pull_reques
     );
     expect(memory['run'], 'dart test test/process_memory_test.dart');
     const selected =
-        "\${{ !cancelled() && matrix.lane == 'windows' && matrix.shard == 1 && needs.changes.outputs.validation-harness == 'true' }}";
+        "\${{ !cancelled() && matrix.lane == 'windows-tooling' && matrix.shard == 1 && needs.changes.outputs.validation-harness == 'true' }}";
     final legs =
         (jobs['test-other-os']['strategy']['matrix']['include'] as List)
             .cast<Map>();
     expect(
-      legs.where((leg) => leg['lane'] == 'windows' && leg['shard'] == 1),
+      legs.where(
+        (leg) => leg['lane'] == 'windows-tooling' && leg['shard'] == 1,
+      ),
       hasLength(1),
     );
     expect(
       legs.singleWhere(
-        (leg) => leg['lane'] == 'windows' && leg['shard'] == 1,
+        (leg) => leg['lane'] == 'windows-tooling' && leg['shard'] == 1,
       )['os'],
       'windows-latest',
     );
@@ -1686,7 +1688,7 @@ for event,flag,native,cancel,good,main in itertools.product(('push','pull_reques
           select: selectOf('test-linux-vm'),
         ),
         'chrome': (legs: uniform('test-web'), select: selectOf('test-web')),
-        for (final lane in ['macos', 'windows'])
+        for (final lane in ['macos', 'windows-tooling', 'windows-runtime'])
           lane: (
             legs: [
               for (final leg in native)
@@ -1700,7 +1702,7 @@ for event,flag,native,cancel,good,main in itertools.product(('push','pull_reques
 
     test('every lane runs shards 1..n of one count through the selector', () {
       final all = lanes();
-      expect(all.keys, unorderedEquals(testShardLanes));
+      expect(all.keys, unorderedEquals(testShardLanes.keys));
       for (final MapEntry(key: lane, value: (:legs, :select)) in all.entries) {
         expect(legs, isNotEmpty, reason: lane);
         final count = legs.first.$2;
@@ -1728,7 +1730,7 @@ for event,flag,native,cancel,good,main in itertools.product(('push','pull_reques
       ]);
       expect(
         jobs()['test-other-os']['name'],
-        r'Test Native (${{ matrix.os }}, ${{ matrix.shard }}/${{ matrix.shards }})',
+        r'Test Native (${{ matrix.lane }}, ${{ matrix.shard }}/${{ matrix.shards }})',
       );
     });
 
