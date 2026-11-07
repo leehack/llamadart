@@ -588,7 +588,7 @@ for event,mode,oldflag,owner,attempt,cancel,good,main in itertools.product(('pus
         contains('python3 ../../tool/ci/supervise_chrome_test.py'),
         contains('--timeout-seconds 180 --'),
         contains(
-          'flutter test --platform chrome test/model_store_web_test.dart',
+          'dart test -p chrome test/model_store_web_test.dart',
         ),
       ),
     );
