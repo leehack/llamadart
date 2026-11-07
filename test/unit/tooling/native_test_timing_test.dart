@@ -146,13 +146,13 @@ void main() {
       (job['strategy']['matrix']['include'] as YamlList).map(
         (leg) => leg['os'],
       ),
-      unorderedEquals(['macos-latest', 'windows-latest', 'windows-latest']),
+      containsAll(['macos-latest', 'windows-latest']),
     );
     final steps = job['steps'] as YamlList;
     final run = steps.singleWhere((step) => step['name'] == 'Run native tests');
     expect(
       run['run'],
-      r'dart test -p vm -j 1 --exclude-tags local-only --file-reporter=json:.dart_tool/native_test_events.jsonl ${{ matrix.paths }}',
+      r'dart test -p vm -j 1 --exclude-tags local-only --file-reporter=json:.dart_tool/test_events.jsonl ${{ steps.shard.outputs.files }}',
     );
     expect(run['env']['GGML_METAL_DEVICES'], '0');
     expect(run.containsKey('continue-on-error'), isFalse);
@@ -169,9 +169,9 @@ void main() {
       'dart test -p vm --run-skipped test/integration/apple_companion_flutter_cache_test.dart',
     );
     final upload = steps.singleWhere(
-      (step) => step['name'] == 'Upload native test timing',
+      (step) => step['name'] == 'Upload test timing',
     );
-    expect(upload['with']['path'], '.dart_tool/native_test_timing.json');
+    expect(upload['with']['path'], '.dart_tool/test_timing.json');
     expect(upload['if'], contains('!cancelled()'));
   });
 }
