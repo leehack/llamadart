@@ -1,5 +1,7 @@
 ## Unreleased
 
+- Adopt llama.cpp `v0.9.0`, which accumulates F16 matrix products in F32 on ARM CPUs so they no longer overflow, and applies a GGUF's suppress tokens when sampling Qwen3-TTS codes.
+
 ## 0.18.0
 
 - Fix synthesized speech playback in the macOS chat example.
