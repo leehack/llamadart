@@ -1,53 +1,25 @@
 ## Unreleased
 
+## 0.18.0
+
 - Fix synthesized speech playback in the macOS chat example.
-
-- Keep unescaped inner double quotes in LFM2 JSON tool-call string arguments (`ToolChoice.required` or a `Force JSON schema.` prompt) instead of cutting the string at the first one ([#1609](https://github.com/leehack/llamadart/issues/1609)).
-
-- Document Safari 27 support for LiteRT-LM Web GPU generation, its `require-corp` isolation requirement and its termination of hidden tabs during large model loads ([#1025](https://github.com/leehack/llamadart/issues/1025)).
-
-- Isolate llama.cpp native bundle caches from older consumers and verify the current Apple companion’s exact framework checksum.
-
+- Add shared `LlamadartEngine<C>` lifecycle management and eager text/chat and Decision tasks with events, completion and request-scoped cancellation.
+- Parse LFM2 tool arguments against their schemas, preserve unescaped inner quotes in required JSON string arguments ([#1609](https://github.com/leehack/llamadart/issues/1609)), honor explicit parallel requests, keep reasoning non-executable and expose unfinished calls as separate diagnostics.
+- Apply supported native/Web lazy tool grammars and Web prompt penalties with explicit capability checks and unchanged ordinary grammar defaults.
+- Adopt native LiteRT-LM `v0.19.0` and C API 1.0 with legacy compatibility, tagged Android pointer support, validated settings and typed unsupported-path errors.
+- Preserve LiteRT-LM workers and model caches after unsettled native cleanup; reject incomplete runtime overrides and document process-restart recovery and unsupported text LoRA.
+- Keep cached models reusable, visible and removable after cache-root moves, including iOS app updates ([#1741](https://github.com/leehack/llamadart/issues/1741)).
+- Adopt llama.cpp `v0.8.0-3` for speculative rollback and model-creation ownership fixes, retaining the genuine nextn query while retiring the unused embedding query; isolate native bundle caches from older apps, verify Apple framework identity and report missing Windows speculative helpers.
+- Restrict unqualified Android Vulkan Qwen3.5 combinations to bounded ordinary text; refuse larger micro-batches, media, speculation and embeddings ([#948](https://github.com/leehack/llamadart/issues/948)).
+- Adopt stable-diffusion `v0.3.0-3` for original SD checkpoint containers while retaining the SDXS tiny-decoder policy and iOS full-VAE Metal restrictions.
 - Reinitialize native LiteRT-LM image-chat engines after cancellation before reusing them ([#1749](https://github.com/leehack/llamadart/issues/1749)).
 - Keep future LiteRT-LM SwiftPM pin syncs aligned with macOS app-bundle runtime discovery.
 - Request optional Android vendor OpenCL access in the chat example and document LiteRT-LM GPU setup and CPU fallback.
-
-- Fix native LiteRT-LM C API 1.0 loading with tagged Android arm64 pointers.
-
-- Restrict unqualified Android Vulkan Qwen3.5 paths to bounded ordinary text, with typed errors for larger micro-batches, media, speculation and embeddings ([#948](https://github.com/leehack/llamadart/issues/948)).
-
-- Validate native LiteRT-LM engine settings, send controls and benchmark counts before loading runtime libraries.
-- Update native LiteRT-LM to `v0.19.0` for C API 1.0, retaining legacy ABI compatibility, typed unsupported guards and existing model/platform limits.
-
-- Reject incomplete `LLAMADART_LITERT_LM_LIB_DIR` overrides instead of substituting a bundled or cached runtime.
-- Keep cached models reusable, visible and removable after their cache root moves, including iOS app container updates ([#1741](https://github.com/leehack/llamadart/issues/1741)).
-- Update the llama.cpp native runtime to `v0.8.0-2` for speculative-decoding rollback and model-creation ownership fixes, with matching Apple binaries.
-
-- Constrain native LFM2 automatic Python tool calls with lazy schema grammar, preserving copied string data and non-executable foreign-closing diagnostics; reject unsupported Web runtimes.
-- Preserve prompt penalties for supported Web LFM2 automatic tool grammars, with explicit loaded-core capability checks and unchanged ordinary grammar defaults.
-
-- Honor explicit parallel-tool requests even when template probes do not recognize parallel history ([#1713](https://github.com/leehack/llamadart/issues/1713)).
-- Keep LFM2 tool markers inside reasoning non-executable and preserve thought tags inside tool arguments ([#1714](https://github.com/leehack/llamadart/issues/1714)).
-- Manage text, decision, image and speech engine lifecycles through `LlamadartEngine<C>` with typed capabilities and reentrant-safe final disposal.
-- Update stable-diffusion to `v0.3.0-3` for original SD checkpoint container loading, retaining the SDXS tiny-decoder policy and iOS full-VAE Metal restrictions.
-- Correct native LiteRT-LM text LoRA guidance: current advanced engines reject initial adapters; C API 1.0 reports that restriction explicitly.
-
-- Apply Web lazy tool-call grammars and custom grammar roots when the loaded bridge reports support.
-- Preserve unfinished LFM tool calls as raw `partialToolCalls` diagnostics at reported length cutoffs, separate from executable calls and history ([#1716](https://github.com/leehack/llamadart/issues/1716)).
-
-- Retain unsettled LiteRT-LM workers and their model caches after native cleanup failures, with explicit process-restart guidance.
-
-- Reject incompatible or malformed native LiteRT-LM C API overrides before calling legacy bindings, with consistent migration guidance for speech probes.
-- Start eager chat or text tasks with observable events, request-scoped cancellation, partial output and a terminal outcome independent of event listeners.
-- Add Decision task APIs with typed completion and cooperative per-task cancellation.
-
-- Fail early with an actionable error when a Windows native runtime lacks speculative decoding helpers.
+- Document Safari 27 LiteRT-LM Web GPU support, required `require-corp` isolation and hidden-tab termination during large model loads ([#1025](https://github.com/leehack/llamadart/issues/1025)).
 - Aligned the default WebGPU bridge assets to `v0.1.82` with bounded preallocation for large wasm32 model writes.
+- Pair all three Apple runtime companions at `0.18.0` with matching native binaries.
 
-Runtime baseline: native llama.cpp `v0.8.0-2` and Web use upstream `v0.8.0@8642541b255bfb5dc39cd351a178be09013a55d6`; Web LiteRT-LM stays `@litert-lm/core@0.18.0`. Manifest SHA-256: `fda19e047aba5a511020854437cc89e2f53e2f67f5f6cf5fec336faef3a6c362`.
-
-- Prepare llama.cpp worker cleanup during native creation for runtimes with owner API v1.
-- Parse LFM2 Python-style tool calls using declared argument types while preserving copied string backslashes.
+Runtime baseline: native llama.cpp `v0.8.0-3` and Web use upstream `v0.8.0@8642541b255bfb5dc39cd351a178be09013a55d6`; native LiteRT-LM uses `v0.19.0` and stable-diffusion uses `v0.3.0-3`. Web LiteRT-LM stays `@litert-lm/core@0.18.0`. Manifest SHA-256: `fda19e047aba5a511020854437cc89e2f53e2f67f5f6cf5fec336faef3a6c362`.
 
 ## 0.17.5
 

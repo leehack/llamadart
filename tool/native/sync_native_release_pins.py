@@ -2572,9 +2572,21 @@ def validate_litert_lm_release_manifest(
         abi.get("streamProxyCallback"), "stream proxy callback ABI", minimum=1
     )
     asr_bridge_abi = require_int(abi.get("asrBridge"), "ASR bridge ABI", minimum=1)
+    # Historical owner manifests declared 1 even for modern runtimes
+    # (leehack/litert-lm-native#107).
+    # New-candidate declaration correctness belongs to the owner validator;
+    # runtime admission still uses the library's independent ABI probes.
+    allowed_callback_abis = (
+        (1, 2) if _litert_compatibility_version(compatibility_tag) >= (0, 15, 0)
+        else (1,)
+    )
+    if stream_proxy_abi not in allowed_callback_abis:
+        raise ReleaseError(
+            f"LiteRT-LM manifest has unsupported stream proxy callback ABI "
+            f"{stream_proxy_abi} for {compatibility_tag}"
+        )
     if (
         abi.get("upstreamC") != "c/engine.h"
-        or stream_proxy_abi != 1
         or asr_bridge_abi != 1
     ):
         raise ReleaseError("LiteRT-LM manifest does not declare required bridge ABIs")

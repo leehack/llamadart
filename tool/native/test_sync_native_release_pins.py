@@ -1389,6 +1389,108 @@ class LiteRtCompanionTemplateSyncTest(unittest.TestCase):
                 )
 
 
+class LiteRtCallbackAbiAdmissionTest(unittest.TestCase):
+    def _payloads(self, version: str) -> tuple[dict, dict]:
+        if version == "v0.16.0":
+            return _schema2_fixture_payloads()
+        fixtures = Path(__file__).resolve().parent / "fixtures"
+        return tuple(
+            json.loads((fixtures / f"litert_lm_v019_owner_{name}.json").read_text())
+            for name in ("manifest", "release")
+        )
+
+    def _validate(self, manifest: dict, release: dict) -> dict:
+        with tempfile.TemporaryDirectory() as temp:
+            _materialize_schema2_release_fixtures(Path(temp), manifest, release)
+            return validate_litert_lm_release_manifest(
+                release,
+                repo="leehack/litert-lm-native",
+                tag=manifest["release"]["tag"],
+                release_json_dir=temp,
+                required_bundles=[
+                    f"{item['platform']}-{item['arch']}"
+                    for item in manifest["platforms"]
+                ],
+            )
+
+    def test_synthetic_corrected_modern_declarations_are_accepted(self) -> None:
+        for version in ("v0.16.0", "v0.19.0"):
+            with self.subTest(version=version):
+                manifest, release = self._payloads(version)
+                # In-memory stand-in only; no corrected published artifact exists.
+                manifest["abi"]["streamProxyCallback"] = 2
+                manifest["native"]["commit"] = "a" * 40
+                release["target_commitish"] = "a" * 40
+                for smoke in manifest["realModelSmokes"]:
+                    smoke["nativeCommit"] = "a" * 40
+                self.assertEqual(self._validate(manifest, release), manifest)
+
+    def test_historical_callback1_declarations_remain_readable(self) -> None:
+        for version in ("v0.16.0", "v0.19.0"):
+            with self.subTest(version=version):
+                manifest, release = self._payloads(version)
+                self.assertEqual(manifest["abi"]["streamProxyCallback"], 1)
+                self.assertEqual(self._validate(manifest, release), manifest)
+
+    def test_callback_scalars_and_unknown_versions_are_rejected(self) -> None:
+        for value in (True, False, None, "2", 2.0, 0, 3):
+            with self.subTest(value=value):
+                manifest, release = self._payloads("v0.19.0")
+                manifest["abi"]["streamProxyCallback"] = value
+                with self.assertRaisesRegex(ReleaseError, "callback ABI"):
+                    self._validate(manifest, release)
+
+    def test_pre_v015_callback2_is_rejected(self) -> None:
+        manifest, release = _schema2_fixture_payloads()
+        tag = manifest["release"]["tag"]
+        manifest = json.loads(json.dumps(manifest).replace(tag, "v0.14.0"))
+        release = json.loads(json.dumps(release).replace(tag, "v0.14.0"))
+        manifest["upstream"].update(
+            tag="v0.14.0", compatibilityTag="v0.14.0", prebuiltOverrides=[]
+        )
+        manifest["release"].update(
+            kind="upstream", rebuild=0, githubPrerelease=False
+        )
+        release["prerelease"] = False
+        manifest["abi"]["streamProxyCallback"] = 2
+        with self.assertRaisesRegex(ReleaseError, "callback ABI 2 for v0.14.0"):
+            self._validate(manifest, release)
+
+    def test_callback2_preserves_other_abi_and_capability_checks(self) -> None:
+        for section, field, value in (
+            ("abi", "asrBridge", 2),
+            ("abi", "asrBridge", True),
+            ("abi", "upstreamC", "c/unknown.h"),
+            ("capabilities", "streamChunkAccessors", False),
+            ("capabilities", "streamChunkAccessors", 1),
+        ):
+            with self.subTest(field=field, value=value):
+                manifest, release = self._payloads("v0.19.0")
+                manifest["abi"]["streamProxyCallback"] = 2
+                manifest[section][field] = value
+                with self.assertRaises(ReleaseError):
+                    self._validate(manifest, release)
+
+    def test_callback2_preserves_exact_source_and_digest_checks(self) -> None:
+        manifest, release = self._payloads("v0.19.0")
+        manifest["abi"]["streamProxyCallback"] = 2
+        release["target_commitish"] = "b" * 40
+        with self.assertRaisesRegex(ReleaseError, "release target"):
+            self._validate(manifest, release)
+        release["target_commitish"] = manifest["native"]["commit"]
+        with tempfile.TemporaryDirectory() as temp:
+            _materialize_schema2_release_fixtures(Path(temp), manifest, release)
+            _set_release_asset_digest(release, "manifest.json", "0" * 64)
+            with self.assertRaisesRegex(ReleaseError, "manifest bytes"):
+                validate_litert_lm_release_manifest(
+                    release,
+                    repo="leehack/litert-lm-native",
+                    tag=manifest["release"]["tag"],
+                    release_json_dir=temp,
+                    required_bundles=[],
+                )
+
+
 class LiteRtV019PrebuiltOverridesTest(unittest.TestCase):
     def setUp(self) -> None:
         self.fixtures = Path(__file__).resolve().parent / "fixtures"
