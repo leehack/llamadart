@@ -76,7 +76,7 @@ selected lane participates in the existing truthful aggregate.
 
 The adapter CI job runs two parallel legs. The first checks lower bounds: on
 Dart 3.12.0, before Flutter is set up, it uses exact runtime dependency minima,
-including published llamadart 0.17.0, then restores the package. It then
+including published llamadart 0.18.0, then restores the package. It then
 resolves published dependencies and checks docs, tests and publication. The
 second creates an ignored `pubspec_overrides.yaml` to test against checkout
 core, analyzes/tests again, runs the real-model contracts and checks browser

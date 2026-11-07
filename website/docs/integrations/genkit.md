@@ -16,7 +16,7 @@ This example targets published **genkit_llamadart 3.6.0**, **Genkit 1.0.0** and
 versioned after its source moves into this repository. Core's Dart floor remains
 3.10.7; installing this optional adapter raises the application requirement.
 
-The next `genkit_llamadart` release is planned to target llamadart 0.17; it is
+The next `genkit_llamadart` release is planned to target llamadart 0.18; it is
 not published yet.
 
 ```bash
