@@ -932,7 +932,12 @@ const speechDecodeCancelReferenceRuns = 4;
 
 /// How far into the audio decode `decode_cancel` cancels, as a fraction of the
 /// shortest decode time among the references run before it.
-const speechDecodeCancelLeadFraction = 0.25;
+///
+/// On CUDA about half of that time is a tail after the native decode that a
+/// cancellation cannot skip, and the decode stops within a few milliseconds of
+/// the cancel wherever it lands, so an early lead leaves more to save than
+/// reference timing jitter can hide (#759).
+const speechDecodeCancelLeadFraction = 0.1;
 
 /// `decode_cancel` margin as a multiple of the spread, longest minus
 /// shortest, of all reference decode times.

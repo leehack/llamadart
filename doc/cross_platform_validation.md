@@ -1700,7 +1700,7 @@ GGUF TTS adds three interrupt checks after `leak_slope_bound`, then
 event reports a frame; the task must end cancelled within the 500 ms budget,
 and a synthesis after the reload must pass. `decode_cancel` times the audio
 decode of four uncancelled 12-frame syntheses, two before and two after a
-fifth that it cancels a quarter of the shorter earlier decode time after its
+fifth that it cancels a tenth of the shorter earlier decode time after its
 twelfth frame is reported. Timed from that report, the cancelled synthesis
 must end sooner than the shortest reference by more than a margin: twice the
 spread of the four decode times, or a tenth of that decode if larger. If the
