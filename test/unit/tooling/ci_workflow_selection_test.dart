@@ -588,9 +588,7 @@ for event,mode,oldflag,owner,attempt,cancel,good,main in itertools.product(('pus
       allOf(
         contains('python3 ../../tool/ci/supervise_chrome_test.py'),
         contains('--timeout-seconds 180 --'),
-        contains(
-          'flutter test --platform chrome test/model_store_web_test.dart',
-        ),
+        contains('dart test -p chrome test/model_store_web_test.dart'),
       ),
     );
     final diagnostics = step('Upload Chrome process and phase diagnostics');

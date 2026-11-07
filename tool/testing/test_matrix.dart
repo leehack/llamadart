@@ -74,7 +74,7 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
     covers:
         'shared model store references, deletes, prune, metadata redaction, cross-process store lock and the browser refusal against checkout core',
     command:
-        'CI job model-store in .github/workflows/ci.yml; from packages/llamadart_model_store: TMPDIR="\$(mktemp -d)" flutter test, then flutter test --platform chrome test/model_store_web_test.dart',
+        'CI job model-store in .github/workflows/ci.yml; from packages/llamadart_model_store: TMPDIR="\$(mktemp -d)" flutter test, then dart test -p chrome test/model_store_web_test.dart',
     useWhen:
         'llamadart_model_store, its guide, or core download manager changes. Foreground only: no device backgrounding or sleep evidence.',
   ),
