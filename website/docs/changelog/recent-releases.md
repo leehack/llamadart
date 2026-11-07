@@ -11,6 +11,8 @@ For upgrade planning, combine this page with the
 [Upgrade Checklist](../migration/upgrade-checklist). For breaking changes,
 validate against the exact release tag notes.
 
+## Unreleased
+
 ## 0.18.0
 
 - Fix synthesized speech playback in the macOS chat example.
