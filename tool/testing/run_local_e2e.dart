@@ -954,7 +954,8 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
       name: 'text-to-speech-models-smoke',
       group: LocalE2eScenarioGroup.dartLocalOnly,
       description:
-          'Run typed native LFM3-Audio and Soprano synthesis with voices, '
+          'Run typed native LFM3-Audio, Soprano, Chatterbox and Pocket TTS '
+          'synthesis with voices, speaker references, languages, '
           'refusals, seed repeats and an ASR round trip, for each model whose '
           'LLAMADART_TTS_<MODEL>_MODEL_PATH and _MMPROJ_PATH are set.',
       requiresDevice: false,

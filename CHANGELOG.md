@@ -1,11 +1,13 @@
 ## Unreleased
 
 - Add LFM3-Audio and Soprano speech output on native llama.cpp (`Lfm3AudioTtsAdapter`, `SopranoTtsAdapter`) and predefined voice selection (`TextToSpeechRequest.voice`, `TextToSpeechCapabilities.voices`); runtimes before llamadart-native v0.8.0 refuse them with `LlamaUnsupportedException` ([#1615](https://github.com/leehack/llamadart/issues/1615)).
+- Add Chatterbox Turbo, Chatterbox Multilingual and Pocket TTS speech output on native llama.cpp (`ChatterboxTtsAdapter`, `PocketTtsAdapter`) with listed predefined voices and speaker-reference cloning; they need llamadart-native v0.9.0 ([#1783](https://github.com/leehack/llamadart/issues/1783)).
 - Update the default llama.cpp native runtime to `leehack/llamadart-native@v0.9.0` (llama.cpp `v0.9.0`). On ARM64 CPUs, F16 dot products of large values no longer overflow to inf or NaN ([llamadart-native#174](https://github.com/leehack/llamadart-native/issues/174)), and Qwen3-TTS sampling applies the GGUF's suppress tokens. Flutter Apple apps get it from `llamadart_llama_cpp_flutter` `0.19.0`, released with this core. Web keeps llama.cpp `v0.8.0` until a later bridge repin.
 - Fix LiteRT-LM text-only or audio-only turns that failed with "Image history requires a vision encoder." after an image turn on the same engine ([#1781](https://github.com/leehack/llamadart/issues/1781)).
 - Move Web LiteRT-LM to `@litert-lm/core@0.19.0`; WebGPU loads keep the runtime's default backend, so standard `.litertlm` bundles can load there. Web embeddings, tool loops, media and custom templates stay unsupported.
 - Update the default LiteRT-LM native runtime to `leehack/litert-lm-native@v0.19.1` (upstream LiteRT-LM `v0.19.1`); the C API is unchanged. Flutter Apple apps get it from `llamadart_litert_lm_flutter` `0.19.0`, released with this core.
 - Check Web LiteRT-LM on `@litert-lm/core@0.19.0` in Safari 27: GPU text, history and the chat app pass; on CPU, the runtime's compat build can leave Qwen3 0.6B thinking through its whole token budget ([#1025](https://github.com/leehack/llamadart/issues/1025), [#1802](https://github.com/leehack/llamadart/issues/1802)).
+- Native Qwen3.5 on Android Vulkan now supports `microBatchSize` above 8, media (with the image encoder on the CPU), speculation and embeddings with the bundled runtime; llama.cpp runtimes older than ggml `0.28.0` (llamadart-native `v0.8.0`) keep the text-only restriction ([#948](https://github.com/leehack/llamadart/issues/948)).
 
 ## 0.18.0
 

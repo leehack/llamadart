@@ -38,6 +38,16 @@ Use this checklist when upgrading `llamadart` across minor or major versions.
 
 ## Version-specific notes
 
+### 0.19.x: Android Vulkan Qwen3.5
+
+With the bundled runtime, native `qwen35` on Android Vulkan again accepts
+`microBatchSize` above `8`, media, speculation and embeddings. A native release
+override or custom build older than ggml `0.28.0` (llamadart-native `v0.8.0`)
+keeps the text-only restriction, so check loaded-model capabilities rather than
+the platform. The eight-token prompt cap with `microBatchSize` unset stays as a
+speed default; see [the exact scope](../platforms/known-platform-issues#android)
+and [#948](https://github.com/leehack/llamadart/issues/948).
+
 ### 0.17.x: optional backend capabilities
 
 Follow [Upgrade to 0.17](./upgrade-to-0-17). Custom backends implement
@@ -91,13 +101,3 @@ and [Download and cache models](../guides/model-downloads).
 
 Shorthand `android-arm64: [vulkan]` now uses the default `cpu_profile: full`.
 Set `cpu_profile: compact` for baseline-only, smaller packaging.
-
-## Android Vulkan Qwen3.5 safety envelope
-
-For native `qwen35` with unsafe/unproven small-matmul subgroup facts, retain
-ordinary text with `microBatchSize` unset or `1..8`, or reload on CPU. Explicit
-sizes above `8`, media, speculation and embeddings now throw typed unsupported
-before evaluation. Use loaded-model capability probes; see
-[the exact scope](../platforms/known-platform-issues#android) and
-[#948](https://github.com/leehack/llamadart/issues/948). Sizes `9..32` are
-conservatively excluded pending qualification, not reported as reproduced failures.

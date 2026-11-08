@@ -721,6 +721,38 @@ void main() {
       }
     });
 
+    test('answers the text-to-speech model support probe', () async {
+      final service = _BlockingTextToSpeechService();
+      final worker = await _startWorkerInCurrentIsolate(service);
+      final responsePort = ReceivePort();
+      final responses = StreamIterator<dynamic>(responsePort);
+
+      Future<String?> probe(BackendTextToSpeechModel model) async {
+        worker.sendPort.send(
+          TextToSpeechModelSupportRequest(model, responsePort.sendPort),
+        );
+        expect(await responses.moveNext(), isTrue);
+        return (responses.current as TextToSpeechModelSupportResponse)
+            .unsupportedReason;
+      }
+
+      try {
+        expect(
+          await probe(BackendTextToSpeechModel.soprano),
+          'Soprano is not driven here.',
+        );
+        expect(await probe(BackendTextToSpeechModel.qwen3Tts), isNull);
+        expect(service.probedModels, <BackendTextToSpeechModel>[
+          BackendTextToSpeechModel.soprano,
+          BackendTextToSpeechModel.qwen3Tts,
+        ]);
+      } finally {
+        await responses.cancel();
+        responsePort.close();
+        await _disposeWorker(worker);
+      }
+    });
+
     test('preserves text-to-speech error categories', () async {
       final cases = <(Object, WorkerErrorKind)>[
         (
@@ -1330,6 +1362,8 @@ class _BlockingTextToSpeechService extends LlamaCppService {
   int? receivedCancelFlagAddress;
   (int, int)? capabilityHandles;
   (int, int)? synthesisHandles;
+  final List<BackendTextToSpeechModel> probedModels =
+      <BackendTextToSpeechModel>[];
 
   void releaseSynthesis() {
     if (!_releaseSynthesis.isCompleted) {
@@ -1342,6 +1376,14 @@ class _BlockingTextToSpeechService extends LlamaCppService {
 
   @override
   void setLogLevel(LlamaLogLevel level) {}
+
+  @override
+  String? textToSpeechModelUnsupportedReason(BackendTextToSpeechModel model) {
+    probedModels.add(model);
+    return model == BackendTextToSpeechModel.qwen3Tts
+        ? null
+        : 'Soprano is not driven here.';
+  }
 
   @override
   BackendTextToSpeechCapabilities textToSpeechCapabilities(

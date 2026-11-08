@@ -43,16 +43,12 @@ requests for large local model artifacts.
 | Web, Chromium on Apple M4 Max | llama.cpp | `gemma-4-E2B-it-Q4_K_S.gguf` | WebGPU bridge | 23.90 | 24.40 | `loadMilliseconds=58641`; WebGPU worker, wasm64, 99 GPU layers |
 
 The Pixel 9 Pro Vulkan row is a speed measurement, not a recommendation.
-Android llama.cpp Vulkan is experimental and device-dependent, and on this
-device (Mali-G715) a prompt longer than about 32 tokens evaluated in one batch
-returns wrong text, confirmed so far with one model (Qwen3.5-0.8B Q4_0)
-([#948](https://github.com/leehack/llamadart/issues/948),
-[known limitations](../platforms/known-platform-issues)).
-Current native Qwen3.5 on Android Vulkan with unsafe or unproven small-matmul
-subgroup facts accepts only ordinary text with `microBatchSize` unset or
-`1..8`. Larger explicit sizes, media, speculation and embeddings throw typed
-unsupported before evaluation. This conservative restriction is not proof of
-a native repair or final-artifact GPU qualification; CPU remains available.
+Android llama.cpp Vulkan is experimental and device-dependent. Before ggml
+`0.28.0` (llamadart-native `v0.8.0`), this device (Mali-G715) returned wrong
+text for prompts evaluated more than 32 tokens at a time
+([#948](https://github.com/leehack/llamadart/issues/948)); with the bundled
+runtime, Qwen3.5-0.8B Q4_0 on Vulkan matches the CPU there but runs slower
+([known limitations](../platforms/known-platform-issues)).
 
 The Pixel 9 Pro was explicitly woken and kept awake with `svc power stayon true`.
 Thermal status was 0 before the benchmark and 1 after the run, so the Android

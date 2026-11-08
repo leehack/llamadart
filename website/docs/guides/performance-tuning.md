@@ -11,12 +11,11 @@ Treat tuning as a measurement problem:
 3. Change one variable at a time.
 4. Keep the fastest stable configuration.
 
-Native Qwen3.5 (`general.architecture=qwen35`) loaded with Vulkan GPU layers on
-Android accepts ordinary text with `microBatchSize` unset or `1..8` when
-small-matmul subgroup facts are unsafe or unproven. Larger explicit values,
-media, speculation and embeddings throw `LlamaUnsupportedException`; load on
-CPU for those features. This conservative restriction is not final-artifact
-GPU qualification; see [Android Vulkan](../platforms/known-platform-issues#android).
+On Android Vulkan, leaving `microBatchSize` unset evaluates text prompts eight
+tokens per call on GPUs with a subgroup size below 32 other than 8, which was
+faster on the Mali-G715 measured; a llama.cpp runtime older than ggml `0.28.0`
+also limits native Qwen3.5 there to ordinary text. See
+[Android Vulkan](../platforms/known-platform-issues#android).
 
 ## Pick a tuning goal
 

@@ -719,8 +719,10 @@ await prefs.setInt('preferred_backend', backendIndex);
 - Runtime details include native llama.cpp timing breakdowns: `p_eval`, `eval`,
   `sample`, and `reuse`.
 - Android text-only chat is stable even when `mmproj` is loaded.
-- Android real image prompting is currently recommended in `CPU` mode for
-  Qwen3.5 `0.8B`; `Vulkan` multimodal is still not reliable enough.
+- Android keeps the Qwen3.5 image encoder on the CPU when the model runs on a
+  `Vulkan` GPU with a subgroup size below 32 other than 8 or unknown device
+  facts, and keeps Qwen3.5 `0.8B` projector files (matched by file name) on
+  the CPU on every Android GPU.
 
 ### Hugging Face static deployment (CI)
 
@@ -1061,15 +1063,13 @@ default and the only one the test judges, so the sizes must include it: a
 default attempt must load, answer both history prompts with the code and
 nothing else, and end both tool requests as the `get_weather` call.
 
-Every other size is a control that is only recorded. On restricted native
-Qwen3.5/Android Vulkan device facts, explicit sizes above `8` now produce a
-recorded `LlamaUnsupportedException` before context creation; they are
-unsupported controls, not successful generations. Unset and `1..8` retain
-bounded ordinary text. CPU and exempt device/family paths retain the sweep.
-Historical uncapped Pixel 9 Pro/Mali-G715 subgroup-16 output repeated `8`;
-the original CPU `Cedar17` also failed exact `cedar17`. Preserve those raw
-failures. The restriction does not establish a native repair or final GPU
-qualification ([#948](https://github.com/leehack/llamadart/issues/948)).
+Every other size is a control that is only recorded. With the bundled
+runtime, explicit sizes above `8` run uncapped. On a llama.cpp runtime older
+than ggml `0.28.0`, native Qwen3.5 on restricted Android Vulkan device facts
+records them as a `LlamaUnsupportedException` before context creation instead
+([#948](https://github.com/leehack/llamadart/issues/948)). The CPU answers
+`Cedar17` to the history prompt; the sweep's oracle accepts the code in any
+case.
 
 Every repeat of the default size runs first, then the controls repeat by
 repeat, and a control sends the tool requests only in its last repeat, so

@@ -190,10 +190,11 @@ facts.
   not covered.
 - An Android Vulkan context keeps the 8-token text-prompt decode cap unless
   the facts list exactly the registered devices and each has a subgroup size
-  ggml-vulkan tiles correctly (8, or 32 and above). llama.cpp `v0.7.0` gives
-  a warp of the small matmul tile 8 rows only at a subgroup size of exactly 8
-  (`s_warptile_wm`), which is wrong at 16 and at every size below 8
-  (https://github.com/ggml-org/llama.cpp/issues/28637).
+  ggml-vulkan tiles correctly (8, or 32 and above). Before ggml `0.28.0`, a
+  warp of the small matmul tile gets 8 rows only at a subgroup size of
+  exactly 8 (`s_warptile_wm`), which is wrong at 16 and at every size below 8
+  (https://github.com/ggml-org/llama.cpp/issues/28637). From `0.28.0` the cap
+  is a speed default, and Qwen3.5 is no longer restricted on those GPUs.
 
 A runtime without the functions, a loader that cannot be queried and a device
 that cannot be matched all count as unknown: the cap stays, and no load is

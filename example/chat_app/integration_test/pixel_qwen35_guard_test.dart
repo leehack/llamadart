@@ -46,6 +46,9 @@ Future<Map<String, dynamic>> _maps(
   return verifyPixelQwen35Mappings(raw, directory, binding, gpu: gpu);
 }
 
+// Retired: its bound native v0.8.0-2 has ggml 0.28.0, where llamadart no
+// longer applies the #948 restriction, so the refusal cells fail by design
+// (PIXEL_QWEN35_GUARD.md).
 void main() {
   final flutterBinding =
       IntegrationTestWidgetsFlutterBinding.ensureInitialized();

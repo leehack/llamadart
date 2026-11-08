@@ -1,5 +1,12 @@
 # Prospective Pixel Qwen3.5 restriction check
 
+**Retired.** llamadart now applies the #948 restriction only to llama.cpp
+runtimes older than ggml `0.28.0`. The bound native `v0.8.0-2` has ggml
+`0.28.0`, so the pack's refusal cells fail by design; do not dispatch it. The
+lift's device evidence (CPU-equal Vulkan output on Pixel 9 Pro, Pixel 9 and
+Pixel 7) is on [#948](https://github.com/leehack/llamadart/issues/948). The
+text below is kept as the record of the restriction check.
+
 `integration_test/pixel_qwen35_guard_test.dart` in the chat app is a separate
 private entrypoint for `core018-pixel-supported-cases-20261104`: Pixel 9 Pro
 (`caiman`), API35, Mali-G715, native `v0.8.0-2`. It never sets `qualified=true`.

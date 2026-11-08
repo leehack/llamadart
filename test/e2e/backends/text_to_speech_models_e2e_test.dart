@@ -1,6 +1,6 @@
 @TestOn('vm')
 @Tags(<String>['local-only', 'e2e'])
-@Timeout(Duration(minutes: 30))
+@Timeout(Duration(minutes: 60))
 library;
 
 import 'dart:io';
@@ -11,22 +11,22 @@ import 'package:test/test.dart';
 
 const _asrModelKey = 'LLAMADART_STT_MODEL_PATH';
 const _asrMmprojKey = 'LLAMADART_STT_MMPROJ_PATH';
+const _speakerKey = 'LLAMADART_TTS_SPEAKER_REFERENCE_PATH';
 const _outputDirectoryKey = 'LLAMADART_TTS_OUTPUT_DIR';
 const _gpuKey = 'LLAMADART_TTS_GPU';
 const _text = 'Good morning. The weather is sunny and warm today.';
 
-const _params = ModelParams(
+ModelParams _params({int sequences = 1}) => ModelParams(
   contextSize: 4096,
   numberOfThreads: 2,
   numberOfThreadsBatch: 2,
-  preferredBackend: GpuBackend.cpu,
-  gpuLayers: 0,
-);
-const _gpuParams = ModelParams(
-  contextSize: 4096,
-  numberOfThreads: 2,
-  numberOfThreadsBatch: 2,
-  gpuLayers: ModelParams.maxGpuLayers,
+  maxParallelSequences: sequences,
+  preferredBackend: Platform.environment[_gpuKey] == '1'
+      ? GpuBackend.auto
+      : GpuBackend.cpu,
+  gpuLayers: Platform.environment[_gpuKey] == '1'
+      ? ModelParams.maxGpuLayers
+      : 0,
 );
 
 class _Spec {
@@ -34,8 +34,19 @@ class _Spec {
   final String key;
   final TextToSpeechAdapter adapter;
   final int sampleRateHz;
+
+  /// The leading listed voices, and how many there are when more.
   final List<String> voices;
+  final int? listedVoices;
+
+  /// Whether a request without a voice speaks the first listed voice.
+  final bool defaultIsFirstVoice;
   final bool supportsLanguage;
+  final bool supportsSpeakerReference;
+  final int sequences;
+
+  /// Text in another language and its code, spoken and transcribed back.
+  final (String, String)? otherLanguage;
   final double temperature;
 
   const _Spec({
@@ -44,9 +55,16 @@ class _Spec {
     required this.adapter,
     required this.sampleRateHz,
     this.voices = const <String>[],
+    this.listedVoices,
+    this.defaultIsFirstVoice = false,
     this.supportsLanguage = false,
+    this.supportsSpeakerReference = false,
+    this.sequences = 1,
+    this.otherLanguage,
     this.temperature = 0.8,
   });
+
+  int get voiceCount => listedVoices ?? voices.length;
 
   String get modelKey => 'LLAMADART_TTS_${key}_MODEL_PATH';
   String get mmprojKey => 'LLAMADART_TTS_${key}_MMPROJ_PATH';
@@ -68,6 +86,36 @@ const _specs = <_Spec>[
     sampleRateHz: 32000,
     temperature: 0,
   ),
+  _Spec(
+    name: 'Chatterbox Turbo',
+    key: 'CHATTERBOX_TURBO',
+    adapter: ChatterboxTtsAdapter(),
+    sampleRateHz: 24000,
+    voices: ['default'],
+    defaultIsFirstVoice: true,
+    supportsSpeakerReference: true,
+  ),
+  _Spec(
+    name: 'Chatterbox Multilingual',
+    key: 'CHATTERBOX_MULTILINGUAL',
+    adapter: ChatterboxTtsAdapter(),
+    sampleRateHz: 24000,
+    voices: ['default'],
+    defaultIsFirstVoice: true,
+    supportsLanguage: true,
+    supportsSpeakerReference: true,
+    sequences: 2,
+    otherLanguage: ('Bonjour, comment allez-vous aujourd\'hui?', 'fr'),
+  ),
+  _Spec(
+    name: 'Pocket TTS',
+    key: 'POCKET',
+    adapter: PocketTtsAdapter(),
+    sampleRateHz: 24000,
+    voices: ['alba', 'anna', 'azelma'],
+    listedVoices: 25,
+    defaultIsFirstVoice: true,
+  ),
 ];
 
 void main() {
@@ -83,7 +131,7 @@ void main() {
         projector: ModelSource.path(projector),
         adapter: const Qwen3AsrAdapter(),
       ),
-      params: _params,
+      params: _params(),
     );
   });
 
@@ -93,17 +141,23 @@ void main() {
     group(spec.name, () {
       TextToSpeechEngine? synthesizer;
 
-      setUpAll(() async {
+      TextToSpeechModel? model() {
         final model = _file(spec.modelKey);
         final projector = _file(spec.mmprojKey);
-        if (model == null || projector == null) return;
+        if (model == null || projector == null) return null;
+        return TextToSpeechModel(
+          ModelSource.path(model),
+          projector: ModelSource.path(projector),
+          adapter: spec.adapter,
+        );
+      }
+
+      setUpAll(() async {
+        final files = model();
+        if (files == null) return;
         synthesizer = await TextToSpeechEngine.load(
-          TextToSpeechModel(
-            ModelSource.path(model),
-            projector: ModelSource.path(projector),
-            adapter: spec.adapter,
-          ),
-          params: Platform.environment[_gpuKey] == '1' ? _gpuParams : _params,
+          files,
+          params: _params(sequences: spec.sequences),
         );
       });
 
@@ -120,14 +174,21 @@ void main() {
         return value;
       }
 
-      TextToSpeechRequest request({String? voice, int seed = 1}) =>
-          TextToSpeechRequest(
-            text: _text,
-            voice: voice,
-            maxFrames: 1024,
-            temperature: spec.temperature,
-            seed: seed,
-          );
+      TextToSpeechRequest request({
+        String text = _text,
+        String? voice,
+        String? language,
+        SpeechAudioInput? speakerReference,
+        int seed = 1,
+      }) => TextToSpeechRequest(
+        text: text,
+        voice: voice,
+        language: language,
+        speakerReference: speakerReference,
+        maxFrames: 1024,
+        temperature: spec.temperature,
+        seed: seed,
+      );
 
       test('reports the model capabilities', () async {
         final tts = engine();
@@ -141,9 +202,13 @@ void main() {
         expect(capabilities.sampleRateHz, spec.sampleRateHz);
         expect(capabilities.channelCount, 1);
         expect(capabilities.supportsVoice, spec.voices.isNotEmpty);
-        expect(capabilities.voices, spec.voices);
+        expect(capabilities.voices, hasLength(spec.voiceCount));
+        expect(capabilities.voices.take(spec.voices.length), spec.voices);
         expect(capabilities.supportsLanguage, spec.supportsLanguage);
-        expect(capabilities.supportsSpeakerReference, isFalse);
+        expect(
+          capabilities.supportsSpeakerReference,
+          spec.supportsSpeakerReference,
+        );
       });
 
       test('speech transcribes back to the text', () async {
@@ -152,28 +217,90 @@ void main() {
         final result = await tts.synthesizeOnce(request());
         expect(result.sampleRateHz, spec.sampleRateHz);
         expect(result.truncated, isFalse);
-        await _expectTranscript(recognizer, result, '${spec.key}-default');
-      });
-
-      test('each listed voice speaks the text and changes the audio', () async {
-        final tts = engine();
-        if (tts == null) return;
-        if (spec.voices.length < 2) {
-          markTestSkipped('${spec.name} lists fewer than two voices.');
-          return;
-        }
-        final first = await tts.synthesizeOnce(
-          request(voice: spec.voices.first),
-        );
-        final last = await tts.synthesizeOnce(
-          request(voice: spec.voices.last.toUpperCase()),
-        );
-        expect(last.samples, isNot(orderedEquals(first.samples)));
         await _expectTranscript(
           recognizer,
-          last,
-          '${spec.key}-${spec.voices.last}',
+          result,
+          _text,
+          '${spec.key}-default',
         );
+      });
+
+      test('a request without a voice speaks the first listed voice', () async {
+        final tts = engine();
+        if (tts == null) return;
+        if (!spec.defaultIsFirstVoice) {
+          markTestSkipped('${spec.name} has no default voice to compare.');
+          return;
+        }
+        final unnamed = await tts.synthesizeOnce(request());
+        final named = await tts.synthesizeOnce(
+          request(voice: spec.voices.first.toUpperCase()),
+        );
+        expect(named.samples, orderedEquals(unnamed.samples));
+      });
+
+      test(
+        'another listed voice speaks the text and changes the audio',
+        () async {
+          final tts = engine();
+          if (tts == null) return;
+          final voices = (await tts.capabilities).voices;
+          if (voices.length < 2) {
+            markTestSkipped('${spec.name} lists fewer than two voices.');
+            return;
+          }
+          final first = await tts.synthesizeOnce(request(voice: voices.first));
+          final last = await tts.synthesizeOnce(
+            request(voice: voices.last.toUpperCase()),
+          );
+          expect(last.samples, isNot(orderedEquals(first.samples)));
+          await _expectTranscript(
+            recognizer,
+            last,
+            _text,
+            '${spec.key}-${voices.last}',
+          );
+        },
+      );
+
+      test('a speaker reference changes the voice', () async {
+        final tts = engine();
+        if (tts == null) return;
+        final reference = _file(_speakerKey);
+        if (!spec.supportsSpeakerReference || reference == null) {
+          markTestSkipped(
+            spec.supportsSpeakerReference
+                ? 'Set $_speakerKey to a speech clip of about 10 seconds.'
+                : '${spec.name} takes no speaker reference.',
+          );
+          return;
+        }
+        final plain = await tts.synthesizeOnce(request());
+        final cloned = await tts.synthesizeOnce(
+          request(speakerReference: SpeechAudioFileInput(reference)),
+        );
+        expect(cloned.samples, isNot(orderedEquals(plain.samples)));
+        await _expectTranscript(
+          recognizer,
+          cloned,
+          _text,
+          '${spec.key}-cloned',
+        );
+      });
+
+      test('speaks another language', () async {
+        final tts = engine();
+        if (tts == null) return;
+        final other = spec.otherLanguage;
+        if (other == null) {
+          markTestSkipped('${spec.name} has no other-language check.');
+          return;
+        }
+        final (text, code) = other;
+        final result = await tts.synthesizeOnce(
+          request(text: text, language: code),
+        );
+        await _expectTranscript(recognizer, result, text, '${spec.key}-$code');
       });
 
       test('rejects what the model does not take before synthesis', () async {
@@ -192,23 +319,27 @@ void main() {
         }
         if (!spec.supportsLanguage) {
           await expectLater(
-            tts.synthesize(
-              const TextToSpeechRequest(text: _text, language: 'en'),
-            ),
+            tts.synthesize(request(language: 'en')),
             throwsA(isA<LlamaUnsupportedException>()),
           );
         }
-        await expectLater(
-          tts.synthesize(
-            TextToSpeechRequest(
-              text: _text,
-              speakerReference: SpeechAudioBytesInput(
-                Uint8List.fromList(const [1, 2, 3]),
-              ),
-            ),
-          ),
-          throwsA(isA<LlamaUnsupportedException>()),
+        final reference = SpeechAudioBytesInput(
+          Uint8List.fromList(const [1, 2, 3]),
         );
+        if (!spec.supportsSpeakerReference) {
+          await expectLater(
+            tts.synthesize(request(speakerReference: reference)),
+            throwsA(isA<LlamaUnsupportedException>()),
+          );
+        }
+        if (spec.voices.isNotEmpty) {
+          await expectLater(
+            tts.synthesize(
+              request(voice: spec.voices.first, speakerReference: reference),
+            ),
+            throwsA(isA<LlamaTextToSpeechException>()),
+          );
+        }
       });
 
       test('a fixed seed repeats after a cancelled task', () async {
@@ -228,6 +359,25 @@ void main() {
         expect(repeated.framesGenerated, first.framesGenerated);
         expect(repeated.samples, orderedEquals(first.samples));
       });
+
+      test('refuses a context without its guidance sequence', () async {
+        if (spec.sequences < 2) {
+          markTestSkipped('${spec.name} needs one sequence.');
+          return;
+        }
+        final files = model();
+        if (files == null || engine() == null) return;
+        await expectLater(
+          TextToSpeechEngine.load(files, params: _params()),
+          throwsA(
+            isA<LlamaUnsupportedException>().having(
+              (error) => error.message,
+              'message',
+              contains('maxParallelSequences of at least 2'),
+            ),
+          ),
+        );
+      });
     });
   }
 }
@@ -235,6 +385,7 @@ void main() {
 Future<void> _expectTranscript(
   SpeechToTextEngine? recognizer,
   TextToSpeechResult result,
+  String text,
   String name,
 ) async {
   final wav = result.toWavBytes();
@@ -260,7 +411,7 @@ Future<void> _expectTranscript(
   )).text;
   print('TRANSCRIPT $name: $transcript');
   expect(
-    _wordErrorRate(_text, transcript),
+    _wordErrorRate(text, transcript),
     lessThanOrEqualTo(0.25),
     reason: 'transcript: $transcript',
   );

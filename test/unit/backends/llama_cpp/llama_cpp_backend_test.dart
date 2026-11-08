@@ -937,6 +937,43 @@ void main() {
       );
     });
 
+    test('routes the text-to-speech model support probe', () async {
+      expect(
+        await backend.textToSpeechModelUnsupportedReason(
+          BackendTextToSpeechModel.chatterbox,
+        ),
+        'needs v0.9.0',
+      );
+      expect(
+        await backend.textToSpeechModelUnsupportedReason(
+          BackendTextToSpeechModel.qwen3Tts,
+        ),
+        isNull,
+      );
+      await expectLater(
+        backend.textToSpeechModelUnsupportedReason(
+          BackendTextToSpeechModel.pocketTts,
+        ),
+        throwsA(
+          isA<Exception>().having(
+            (error) => '$error',
+            'message',
+            contains('probe failed'),
+          ),
+        ),
+      );
+      expect(
+        harness.received.whereType<TextToSpeechModelSupportRequest>().map(
+          (request) => request.model,
+        ),
+        <BackendTextToSpeechModel>[
+          BackendTextToSpeechModel.chatterbox,
+          BackendTextToSpeechModel.qwen3Tts,
+          BackendTextToSpeechModel.pocketTts,
+        ],
+      );
+    });
+
     test(
       'routes text-to-speech capability, progress, result, and cancel',
       () async {
@@ -2630,6 +2667,13 @@ class _FakeWorkerHarness {
           message.sendPort.send(false);
         case SupportsVideoRequest():
           message.sendPort.send(false);
+        case TextToSpeechModelSupportRequest():
+          message.sendPort.send(switch (message.model) {
+            BackendTextToSpeechModel.qwen3Tts =>
+              TextToSpeechModelSupportResponse(null),
+            BackendTextToSpeechModel.pocketTts => ErrorResponse('probe failed'),
+            _ => TextToSpeechModelSupportResponse('needs v0.9.0'),
+          });
         case TextToSpeechCapabilitiesRequest():
           message.sendPort.send(
             TextToSpeechCapabilitiesResponse(
