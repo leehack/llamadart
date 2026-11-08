@@ -479,6 +479,25 @@ Future<void> main(List<String> args) async {
     },
   );
 
+  test(
+    'LiteRT Web scenarios leave the browser to the Chrome default',
+    () async {
+      final chatApp = await runLocalE2e(
+        [
+          '--scenario',
+          'chat-app-web-litert-gemma4-smoke',
+          '--skip-build',
+          '--dry-run',
+        ],
+        projectRoot: '/repo',
+        displayShell: LocalE2eDisplayShell.posix,
+      );
+      expect(chatApp.exitCode, 0);
+      expect(chatApp.stdout, contains('--response-timeout-ms 600000'));
+      expect(chatApp.stdout, isNot(contains('--browser')));
+    },
+  );
+
   test('LiteRT Web scenarios forward only a supported --browser', () async {
     const history = [
       '--scenario',

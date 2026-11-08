@@ -6,6 +6,7 @@ import contextlib
 import json
 import socket
 import subprocess
+import tempfile
 import time
 import urllib.error
 import urllib.request
@@ -38,10 +39,13 @@ class SafariSession:
     def __init__(self, *, command_timeout_s: float = 300) -> None:
         self._timeout = command_timeout_s
         self._port = _free_port()
+        # A file, not a pipe: nothing reads stderr while the driver runs, and a
+        # chatty driver would block on a full pipe.
+        self._stderr = tempfile.TemporaryFile()
         self._driver = subprocess.Popen(
             [SAFARIDRIVER, "-p", str(self._port)],
             stdout=subprocess.DEVNULL,
-            stderr=subprocess.PIPE,
+            stderr=self._stderr,
         )
         self._base = f"http://127.0.0.1:{self._port}"
         self.session_id: str | None = None
@@ -62,7 +66,8 @@ class SafariSession:
         deadline = time.monotonic() + _DRIVER_START_TIMEOUT_S
         while time.monotonic() < deadline:
             if self._driver.poll() is not None:
-                stderr = self._driver.stderr.read().decode(errors="replace")
+                self._stderr.seek(0)
+                stderr = self._stderr.read().decode(errors="replace")
                 raise WebDriverError(f"safaridriver exited: {stderr.strip()}")
             try:
                 self._request("GET", "/status")
@@ -136,6 +141,7 @@ class SafariSession:
             except subprocess.TimeoutExpired:
                 self._driver.kill()
                 self._driver.wait()
+        self._stderr.close()
 
     def __enter__(self) -> "SafariSession":
         return self
