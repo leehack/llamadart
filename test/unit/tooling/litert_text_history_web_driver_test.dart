@@ -33,7 +33,52 @@ void main() {
     },
     timeout: Timeout(_processTimeout + const Duration(seconds: 10)),
   );
+
+  test(
+    'Web history driver runs Safari through the dart test safari platform',
+    () async {
+      final result = await runBoundedProcess(
+        Platform.isWindows ? 'python' : 'python3',
+        ['-B', '-c', _safariPlatformSource],
+        timeout: _processTimeout,
+      );
+      expect(result.exitCode, 0, reason: '${result.stdout}\n${result.stderr}');
+      expect(result.stdout, contains('DRIVER_PLATFORM safari'));
+    },
+    timeout: Timeout(_processTimeout + const Duration(seconds: 10)),
+  );
 }
+
+const _safariPlatformSource = r'''
+import pathlib
+import runpy
+import sys
+import tempfile
+from unittest.mock import patch
+
+sys.path.insert(0, str(pathlib.Path('tool/testing').resolve()))
+import serve_static_with_headers
+
+real_server = serve_static_with_headers.ThreadingTcpServer
+
+def child(command):
+    print('DRIVER_PLATFORM ' + command[command.index('-p') + 1], flush=True)
+    return 0
+
+with tempfile.TemporaryDirectory(prefix='litert_web_driver_') as scratch:
+    model = pathlib.Path(scratch) / 'tiny.litertlm'
+    model.write_bytes(b'fixture')
+    sys.argv = ['litert_text_history_web_e2e.py', '--model-path', str(model),
+                '--browser', 'safari']
+    with patch.object(serve_static_with_headers, 'ThreadingTcpServer',
+                      lambda _, handler: real_server(('127.0.0.1', 0), handler)):
+        with patch('subprocess.call', side_effect=child):
+            try:
+                runpy.run_path('tool/testing/litert_text_history_web_e2e.py',
+                               run_name='__main__')
+            except SystemExit as exit:
+                sys.exit(exit.code)
+''';
 
 String _exerciseDriver(Duration contractTimeout) => _driverSource.replaceAll(
   '__CONTRACT_SECONDS__',

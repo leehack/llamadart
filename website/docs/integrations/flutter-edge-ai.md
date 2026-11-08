@@ -12,8 +12,9 @@ and is not part of this repository.
 
 ## Version boundary
 
-`flutter_edge_ai_llama 0.0.4` is on pub.dev and requires exactly
-`llamadart >=0.15.1 <0.15.2`, so it does not resolve alongside llamadart 0.18.
+`flutter_edge_ai_llama 0.1.0` is on pub.dev (checked 2026-11-08). It depends on
+`flutter_edge_ai ^2.6.0` and requires exactly `llamadart >=0.17.5 <0.17.6`, so
+it does not resolve alongside llamadart 0.18.
 For the connector, follow its
 [README](https://github.com/DenisovAV/flutter_edge_ai/blob/main/packages/flutter_edge_ai_llama/README.md)
 and [platform guide](https://github.com/DenisovAV/flutter_edge_ai/blob/main/packages/flutter_edge_ai_llama/doc/platforms.md),

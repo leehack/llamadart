@@ -694,7 +694,8 @@ await prefs.setInt('preferred_backend', backendIndex);
   `dart run tool/testing/run_local_e2e.dart --scenario chat-app-web-litert-gemma4-smoke`.
   This builds the Flutter web app, serves it with COOP/COEP headers, loads the
   `gemma-4-E2B-it-web.litertlm` bundle through `@litert-lm/core`, and captures
-  streamed single-turn LiteRT-LM text output in Playwright. That smoke does
+  streamed single-turn LiteRT-LM text output in Playwright; add
+  `--browser safari` to drive the Safari app through safaridriver. That smoke does
   not qualify ordered history or system forwarding. Use the maintained
   `litert-lm-web-text-history` local scenario with an existing compatible model
   for matched direct-JS history/system and cancellation controls; dry-run it
@@ -720,8 +721,8 @@ await prefs.setInt('preferred_backend', backendIndex);
 - Android text-only chat is stable even when `mmproj` is loaded.
 - Android keeps the Qwen3.5 image encoder on the CPU when the model runs on a
   `Vulkan` GPU with a subgroup size below 32 other than 8 or unknown device
-  facts, and keeps Qwen3.5 `0.8B` projector files (matched by file name) on
-  the CPU on every Android GPU.
+  facts, and keeps the projector of a Qwen3.5 `0.8B` model (matched by the model file
+  name) on the CPU on every Android GPU.
 
 ### Hugging Face static deployment (CI)
 

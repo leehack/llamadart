@@ -388,8 +388,8 @@ const String bridgeApprovedNativePin = 'v0.9.0';
 
 /// The upstream llama.cpp release the native pin may run ahead of
 /// [bridgeLlamaCppTag] on until the next bridge repin; equal to it when they
-/// must match. Web and native share no ABI: the bridge assets are
-/// self-contained and Web builds keep the older runtime's behavior.
+/// must match, as they do now. Web and native share no ABI: the bridge assets
+/// are self-contained, so a skew changes only which release each runtime uses.
 const String bridgeApprovedNativeUpstreamAhead = 'v0.9.0';
 
 /// The asset repository release that published the pinned bridge assets.
@@ -539,8 +539,9 @@ List<String> findBridgeRuntimeDrift(Directory repoRoot, String bridgeTag) {
       problems.add(
         'bridge assets embed llama.cpp $bridgeTag but $nativeLlamaCppTagPath '
         'pins $nativeTag (upstream family $normalizedNativeFamily) — Web and '
-        'native must share an upstream llama.cpp release, or the native pin '
-        'may run ahead on the approved $bridgeApprovedNativeUpstreamAhead',
+        'native must share an upstream llama.cpp release unless a skew is '
+        'approved in bridgeApprovedNativeUpstreamAhead '
+        '($bridgeApprovedNativeUpstreamAhead)',
       );
     }
   }

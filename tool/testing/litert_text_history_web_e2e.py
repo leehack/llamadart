@@ -14,6 +14,8 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--model-path', required=True)
     parser.add_argument('--backend', choices=['cpu', 'gpu'], default='cpu')
+    # `dart test -p safari` drives the Safari app through safaridriver.
+    parser.add_argument('--browser', choices=['chrome', 'safari'], default='chrome')
     args = parser.parse_args()
     model = pathlib.Path(args.model_path).resolve(strict=True)
     with model.open('rb') as source:
@@ -58,7 +60,9 @@ def main():
         try:
             print('LITERT_TEXT_HISTORY_INPUT ' + json.dumps(manifest), flush=True)
             return subprocess.call([
-                'dart', 'test', '-p', 'chrome-webgpu', '--run-skipped',
+                'dart', 'test', '-p',
+                'safari' if args.browser == 'safari' else 'chrome-webgpu',
+                '--run-skipped',
                 '-t', 'local-only',
                 'test/e2e/backends/litert_lm_text_history_web_e2e_test.dart',
             ])
