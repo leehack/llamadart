@@ -766,7 +766,8 @@ class ValidationProfile {
         preferredBackend: device == ComputeDevice.cpu
             ? GpuBackend.cpu
             : GpuBackend.auto,
-        numberOfThreads: threads,
+        // LiteRT-LM rejects a thread count for any backend but CPU.
+        numberOfThreads: device == ComputeDevice.cpu ? threads : 0,
       );
     }
     return LlamaCppModelParams(
