@@ -111,8 +111,10 @@ retry is CPU execution and does not qualify a GPU path.
 Under `auto`, `gpuLayers: 0` or a CPU or BLAS `preferredBackend` selects the
 CPU on both llama.cpp and LiteRT-LM, and a GPU `preferredBackend` (Vulkan,
 Metal, CUDA, OpenCL or HIP) selects the LiteRT-LM GPU backend. On Linux x64
-and Windows x64, the LiteRT-LM GPU backend is not CUDA; use `device: cpu` on
-hosts without a hardware Vulkan driver. Windows arm64 has no LiteRT-LM
+and Windows x64, the LiteRT-LM GPU backend is not CUDA. On Linux x64 it needs
+a hardware Vulkan driver: with only software Vulkan devices (llvmpipe,
+lavapipe, SwiftShader) explicit `gpu` throws `LlamaUnsupportedException` and
+`auto` runs on the CPU. Windows arm64 has no LiteRT-LM
 runtime. The deprecated `liteRtLmBackend` selector works until 1.0; an
 unavailable choice there throws `LlamaModelException`.
 

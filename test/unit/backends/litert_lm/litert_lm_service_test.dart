@@ -13,6 +13,7 @@ import 'package:llamadart/src/backends/backend.dart';
 import 'package:llamadart/src/backends/litert_lm/litert_lm_bundle_template.dart';
 import 'package:llamadart/src/backends/litert_lm/litert_lm_cache.dart';
 import 'package:llamadart/src/backends/litert_lm/litert_lm_chat_templates.dart';
+import 'package:llamadart/src/backends/litert_lm/litert_lm_gpu_adapter.dart';
 import 'package:llamadart/src/backends/litert_lm/litert_lm_platform.dart';
 import 'package:llamadart/src/backends/litert_lm/litert_lm_service.dart';
 import 'package:llamadart/src/backends/litert_lm/litert_lm_runtime.dart';
@@ -3523,6 +3524,161 @@ void main() {
         expect(nextClient, 1);
         expect(clients.first.lastBackend, 'cpu');
         expect(records, isEmpty);
+      } finally {
+        service.dispose();
+      }
+    });
+  });
+
+  group('GPU loads on software Vulkan adapters', () {
+    final records = <LlamaLogRecord>[];
+    const llvmpipe = LiteRtLmVulkanAdapter(
+      name: 'llvmpipe (LLVM 20.1.2, 256 bits)',
+      deviceType: vulkanPhysicalDeviceTypeCpu,
+    );
+    const discreteGpu = LiteRtLmVulkanAdapter(name: 'NVIDIA L4', deviceType: 2);
+    const softwareOnly = LiteRtLmVulkanAdapters.devices([llvmpipe]);
+    var probes = 0;
+
+    setUp(() {
+      records.clear();
+      probes = 0;
+      LlamaLogger.instance.setLevel(LlamaLogLevel.warn);
+      LlamaLogger.instance.setHandler(records.add);
+    });
+
+    tearDown(() {
+      LlamaLogger.instance.setLevel(LlamaLogLevel.none);
+      LlamaLogger.instance.setHandler(null);
+    });
+
+    bool skipWithoutGpu() {
+      if (liteRtLmNativeGpuSupportedOnCurrentPlatform()) return false;
+      markTestSkipped('No LiteRT-LM GPU backend on this platform.');
+      return true;
+    }
+
+    LiteRtLmService serviceWith(
+      _FakeLiteRtLmRuntimeClient client,
+      LiteRtLmVulkanAdapters adapters,
+    ) => LiteRtLmService(
+      clientFactory: () => client,
+      useTempCacheDir: false,
+      probeGpuAdapters: () {
+        probes++;
+        return adapters;
+      },
+    );
+
+    for (final (name, params, backendOverride) in [
+      ('ComputeDevice.gpu', const ModelParams(device: ComputeDevice.gpu), null),
+      (
+        'LiteRtLmBackendPreference.gpu',
+        const ModelParams(liteRtLmBackend: LiteRtLmBackendPreference.gpu),
+        null,
+      ),
+      ('the deprecated gpu backend override', const ModelParams(), 'gpu'),
+    ]) {
+      test('$name fails to load with a typed error', () async {
+        if (skipWithoutGpu()) return;
+        final client = _FakeLiteRtLmRuntimeClient();
+        final service = serviceWith(client, softwareOnly);
+        try {
+          await expectLater(
+            service.loadModel(
+              modelFile.path,
+              params,
+              backendOverride: backendOverride,
+            ),
+            throwsA(
+              isA<LlamaUnsupportedException>().having(
+                (error) => error.message,
+                'message',
+                allOf(
+                  contains('needs a hardware Vulkan device'),
+                  contains('"llvmpipe (LLVM 20.1.2, 256 bits)"'),
+                  contains('VK_PHYSICAL_DEVICE_TYPE_CPU'),
+                  contains('ComputeDevice.cpu'),
+                ),
+              ),
+            ),
+          );
+          expect(probes, 1);
+          expect(client.lastBackend, isNull);
+          expect(records, isEmpty);
+        } finally {
+          service.dispose();
+        }
+      });
+    }
+
+    test('a ComputeDevice.auto GPU hint runs on the CPU with a '
+        'warning', () async {
+      if (skipWithoutGpu()) return;
+      final client = _FakeLiteRtLmRuntimeClient();
+      final service = serviceWith(client, softwareOnly);
+      try {
+        const params = ModelParams(preferredBackend: GpuBackend.vulkan);
+        final model = await service.loadModel(modelFile.path, params);
+        expect(service.getActiveBackendName(), 'LiteRT-LM cpu');
+        await startEngine(service, client, model, params);
+
+        expect(client.lastBackend, 'cpu');
+        expect(records, hasLength(1));
+        expect(records.single.level, LlamaLogLevel.warn);
+        expect(
+          records.single.message,
+          allOf(
+            contains('only software Vulkan devices'),
+            contains('"llvmpipe (LLVM 20.1.2, 256 bits)"'),
+            contains('ComputeDevice.auto'),
+            contains('running on the CPU'),
+          ),
+        );
+      } finally {
+        service.dispose();
+      }
+    });
+
+    for (final (name, adapters) in [
+      (
+        'a hardware adapter beside llvmpipe',
+        const LiteRtLmVulkanAdapters.devices([llvmpipe, discreteGpu]),
+      ),
+      ('no listed adapter', const LiteRtLmVulkanAdapters.devices([])),
+      (
+        'an unavailable probe',
+        const LiteRtLmVulkanAdapters.unavailable('no loader'),
+      ),
+    ]) {
+      test('ComputeDevice.gpu with $name starts a GPU engine', () async {
+        if (skipWithoutGpu()) return;
+        final client = _FakeLiteRtLmRuntimeClient();
+        final service = serviceWith(client, adapters);
+        try {
+          const params = ModelParams(device: ComputeDevice.gpu);
+          final model = await service.loadModel(modelFile.path, params);
+          await startEngine(service, client, model, params);
+
+          expect(probes, 1);
+          expect(client.lastBackend, 'gpu');
+          expect(records, isEmpty);
+        } finally {
+          service.dispose();
+        }
+      });
+    }
+
+    test('a CPU load does not probe the adapters', () async {
+      final client = _FakeLiteRtLmRuntimeClient();
+      final service = serviceWith(client, softwareOnly);
+      try {
+        const params = ModelParams(device: ComputeDevice.cpu);
+        final model = await service.loadModel(modelFile.path, params);
+        await startEngine(service, client, model, params);
+
+        expect(probes, 0);
+        expect(client.lastBackend, 'cpu');
       } finally {
         service.dispose();
       }

@@ -28,6 +28,7 @@ import '../native/model_format_probe.dart';
 import 'litert_lm_bundle_template.dart';
 import 'litert_lm_cache.dart';
 import 'litert_lm_embedding.dart';
+import 'litert_lm_gpu_adapter.dart';
 import 'litert_lm_chat_template.dart';
 import 'litert_lm_chat_templates.dart';
 import 'litert_lm_model_link.dart';
@@ -38,6 +39,11 @@ import 'litert_lm_legacy_service_client.dart';
 import 'litert_lm_sampler_params.dart';
 
 const int _gemma4DefaultVisualTokenBudget = 280;
+
+// Probed once per isolate, on the first GPU load: each probe creates a Vulkan
+// instance, and the installed drivers do not change while the process runs.
+final LiteRtLmVulkanAdapters _systemVulkanAdapters =
+    probeLiteRtLmVulkanAdapters();
 const String _liteRtLmVideoUnsupportedMessage =
     'LiteRT-LM video input is not supported through llamadart. '
     'Extract and send image frames instead.';
@@ -103,6 +109,9 @@ class LiteRtLmService {
   /// [runtimeClientFactory] injects a version-specific internal client together
   /// with its metadata and finish-reason probes. It is exclusive with the legacy
   /// [clientFactory]; neither changes the production runtime selection.
+  /// [probeGpuAdapters] lists the Vulkan devices a GPU engine can use; by
+  /// default the system Vulkan loader on Linux when neither factory is
+  /// injected, and nothing otherwise.
   LiteRtLmService({
     LiteRtLmRuntimeClient Function()? clientFactory,
     LiteRtLmRuntimeClientContract Function()? runtimeClientFactory,
@@ -114,7 +123,15 @@ class LiteRtLmService {
     LiteRtLmBundleFirstChannelReader? readBundleFirstChannel,
     String? finishReasonProbeLibraryPath,
     bool Function()? jsonSchemaPlatformSupported,
-  }) : _jsonSchemaPlatformSupported =
+    LiteRtLmVulkanAdapters Function()? probeGpuAdapters,
+  }) : _probeGpuAdapters =
+           probeGpuAdapters ??
+           (Platform.isLinux &&
+                   clientFactory == null &&
+                   runtimeClientFactory == null
+               ? (() => _systemVulkanAdapters)
+               : null),
+       _jsonSchemaPlatformSupported =
            jsonSchemaPlatformSupported ??
            (() => Platform.isMacOS && Abi.current() == Abi.macosArm64),
        _clientFactory =
@@ -149,6 +166,7 @@ class LiteRtLmService {
   }
 
   final LiteRtLmRuntimeClientContract Function() _clientFactory;
+  final LiteRtLmVulkanAdapters Function()? _probeGpuAdapters;
   final LiteRtLmBundleCapabilitiesReader _readBundleCapabilities;
   final LiteRtLmBundleChatTemplateReader _readBundleChatTemplate;
   final LiteRtLmBundleFirstChannelReader _readBundleFirstChannel;
@@ -254,6 +272,13 @@ class LiteRtLmService {
       params,
       backendOverride: backendOverride,
     );
+    final automaticBackend =
+        params.device == ComputeDevice.auto &&
+        params.liteRtLmBackend.nativeName == null &&
+        normalizeLiteRtLmNativeBackendOverride(backendOverride) == null;
+    final engineBackend = resolvedBackend == liteRtLmGpuBackend
+        ? _gpuBackendForAdapters(automatic: automaticBackend)
+        : resolvedBackend;
     if (params.liteRtLmEmbeddingEngine) {
       liteRtLmEnsureNativeEmbeddingsQualified();
       ensureLiteRtLmNativeEmbeddingBackend(resolvedBackend);
@@ -274,12 +299,9 @@ class LiteRtLmService {
     _modelPath = path;
     _modelLink = modelLink;
     _modelParams = params;
-    _activeBackend = resolvedBackend;
+    _activeBackend = engineBackend;
     _loadedBackend = resolvedBackend;
-    _automaticBackend =
-        params.device == ComputeDevice.auto &&
-        params.liteRtLmBackend.nativeName == null &&
-        normalizeLiteRtLmNativeBackendOverride(backendOverride) == null;
+    _automaticBackend = automaticBackend;
     _activeSpeculativeDecoding = null;
     _workingAudioBackend = null;
     _bundleCapabilities = null;
@@ -1753,6 +1775,31 @@ class LiteRtLmService {
       }
     }
     return stopIndex;
+  }
+
+  /// The backend for a GPU request: the GPU unless every Vulkan device is
+  /// software, on which the GPU backend can silently return wrong text
+  /// (#572). Then an automatic choice runs on the CPU and an explicit one
+  /// fails.
+  String _gpuBackendForAdapters({required bool automatic}) {
+    final software = _probeGpuAdapters?.call().softwareOnly;
+    if (software == null) return liteRtLmGpuBackend;
+    final names = software.map((device) => '"${device.name}"').join(', ');
+    if (automatic) {
+      _warn(
+        'LiteRT-LM found only software Vulkan devices ($names) under '
+        'ComputeDevice.auto; running on the CPU. Install the GPU vendor\'s '
+        'Vulkan driver to use the GPU.',
+      );
+      return liteRtLmCpuBackend;
+    }
+    throw LlamaUnsupportedException(
+      'LiteRT-LM GPU on ${Platform.operatingSystem} needs a hardware Vulkan '
+      'device, but every Vulkan device here is a software rasterizer '
+      '(VK_PHYSICAL_DEVICE_TYPE_CPU: $names), on which the GPU backend can '
+      'return wrong text. Install the GPU vendor\'s Vulkan driver, or load '
+      'with ComputeDevice.cpu.',
+    );
   }
 
   String _resolveBackendName(ModelParams params, {String? backendOverride}) {
