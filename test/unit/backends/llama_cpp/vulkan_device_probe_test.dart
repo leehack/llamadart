@@ -147,7 +147,8 @@ void main() {
       expect(readGgmlVersion(call: () => nullptr), isNull);
     });
 
-    // Runs the real llama.cpp runtime.
+    // Runs the real llama.cpp runtime. Windows bundles keep ggml symbols out
+    // of the default asset, and only Android reads the version.
     test('the pinned runtime has the small matmul tile fix', () {
       LlamaCppService().initializeBackend();
 
@@ -155,7 +156,7 @@ void main() {
 
       expect(version, isNotNull);
       expect(ggmlHasSmallMatmulTileFix(version), isTrue, reason: version);
-    });
+    }, testOn: '!windows');
   });
 
   group('VulkanDeviceInfoApi', () {

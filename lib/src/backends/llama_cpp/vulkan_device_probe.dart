@@ -123,7 +123,7 @@ bool ggmlHasSmallMatmulTileFix(String? version) {
 }
 
 /// The version the loaded ggml reports, or `null` when it does not export
-/// `ggml_version`.
+/// `ggml_version` through the default asset, as Windows bundles do not.
 ///
 /// The string is a constant of the library, so the call needs no
 /// exit-teardown guard. [call] replaces the native function and, like a
