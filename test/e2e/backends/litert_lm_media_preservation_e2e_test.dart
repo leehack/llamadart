@@ -150,6 +150,20 @@ void main() {
           ),
         ]);
         print(jsonEncode({'case': 'image_history', 'text': historyReply}));
+        // Cancelling the subscription must leave the same engine reusable.
+        await engine
+            .create(bytesMessages, enableThinking: false, params: _params)
+            .first
+            .timeout(_operationTimeout);
+        final afterCancellation = await generate(pathMessages);
+        expect(afterCancellation, baseline);
+        print(
+          jsonEncode({
+            'case': 'first_chunk_cancellation_reuse',
+            'subscriptionCancelled': true,
+            'text': afterCancellation,
+          }),
+        );
         final textOnly = await engine
             .create(
               const [
@@ -168,20 +182,6 @@ void main() {
           jsonEncode({
             'case': 'text_only_after_image',
             'text': textOnly.text.trim(),
-          }),
-        );
-        // Cancelling the subscription must leave the same engine reusable.
-        await engine
-            .create(bytesMessages, enableThinking: false, params: _params)
-            .first
-            .timeout(_operationTimeout);
-        final afterCancellation = await generate(pathMessages);
-        expect(afterCancellation, baseline);
-        print(
-          jsonEncode({
-            'case': 'first_chunk_cancellation_reuse',
-            'subscriptionCancelled': true,
-            'text': afterCancellation,
           }),
         );
         await engine.dispose().timeout(_operationTimeout);

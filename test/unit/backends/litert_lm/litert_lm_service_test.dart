@@ -4000,6 +4000,7 @@ void main() {
   group('a turn after an image turn', () {
     late List<_FakeLiteRtLmRuntimeClient> clients;
     late LiteRtLmService service;
+    late int modelHandle;
     late int contextHandle;
     late LlamaChatMessage imageTurn;
 
@@ -4031,7 +4032,7 @@ void main() {
         ],
       );
       const params = ModelParams(preferredBackend: GpuBackend.cpu);
-      final modelHandle = await service.loadModel(modelFile.path, params);
+      modelHandle = await service.loadModel(modelFile.path, params);
       contextHandle = service.createContext(modelHandle, params);
     });
 
@@ -4073,6 +4074,16 @@ void main() {
       expect(clients.single.lastVisionBackend, 'cpu');
       expect(clients.single.lastMaxNumImages, 1);
       expect(clients.single.generateCount, 2);
+    });
+
+    test('a rebuild that names no media keeps the image count', () async {
+      await chat([imageTurn]);
+      service.cancelGeneration();
+      await service.tokenize(modelHandle, 'Hello', false);
+
+      expect(clients, hasLength(2));
+      expect(clients.last.lastVisionBackend, 'cpu');
+      expect(clients.last.lastMaxNumImages, 1);
     });
 
     test('drops the image count for a fresh text-only conversation', () async {
