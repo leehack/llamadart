@@ -11,6 +11,8 @@ For upgrade planning, combine this page with the
 [Upgrade Checklist](../migration/upgrade-checklist). For breaking changes,
 validate against the exact release tag notes.
 
+## Unreleased
+
 ## 0.19.0
 
 - Add native llama.cpp speech output for LFM3-Audio, Soprano, Chatterbox Turbo, Chatterbox Multilingual and Pocket TTS (`Lfm3AudioTtsAdapter`, `SopranoTtsAdapter`, `ChatterboxTtsAdapter`, `PocketTtsAdapter`), with predefined voice selection (`TextToSpeechRequest.voice`, `TextToSpeechCapabilities.voices`) and Chatterbox and Pocket speaker-reference cloning. LFM3-Audio and Soprano need llamadart-native `v0.8.0` and Chatterbox and Pocket `v0.9.0`; older runtimes refuse them with `LlamaUnsupportedException` ([#1615](https://github.com/leehack/llamadart/issues/1615), [#1783](https://github.com/leehack/llamadart/issues/1783)).
