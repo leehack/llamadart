@@ -119,10 +119,11 @@ feature. For which runtime supports which feature, see the
   Pixel 9 Pro (Mali-G715), Qwen3.5-0.8B Q4_0 answered long prompts with
   repeated `8`, and a grammar or tool request could abort the process
   ([#948](https://github.com/leehack/llamadart/issues/948)). With the bundled
-  runtime, the same model on Vulkan matched the CPU output byte for byte on a
-  Pixel 9 Pro, a Pixel 9 (Mali-G715) and a Pixel 7 (Mali-G710): text at
+  runtime, the same model on Vulkan returned exactly the CPU's text on a Pixel
+  9 Pro, a Pixel 9 (Mali-G715) and a Pixel 7 (Mali-G710): prompts at
   micro-batch 32 and 512, grammar and tool calls, image prompts, speculative
-  verify batches above 32 tokens, embeddings, and cancel, reuse and reload.
+  verify batches above 32 tokens, and cancel, reuse and reload. Embeddings
+  matched the CPU to a cosine similarity of at least 0.9997.
   Other GPUs and other Qwen3.5 sizes or quantizations were not measured, and
   Vulkan was slower than the CPU on all three phones. On those GPUs (subgroup
   size below 32 other than 8, or unknown facts), a Qwen3.5 projector, or one

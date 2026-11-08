@@ -148,7 +148,7 @@ void main() {
     });
 
     // Runs the real llama.cpp runtime. Windows bundles keep ggml symbols out
-    // of the default asset, and only Android reads the version.
+    // of the default asset, so the read returns null there.
     test('the pinned runtime has the small matmul tile fix', () {
       LlamaCppService().initializeBackend();
 

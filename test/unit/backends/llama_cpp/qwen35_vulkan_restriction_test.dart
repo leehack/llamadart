@@ -605,6 +605,58 @@ void main() {
     );
   }
 
+  test('older-runtime refusals name the fix version, runtime and issue', () async {
+    const restriction =
+        'Qwen3.5 on Android/Vulkan with a llama.cpp runtime older than ggml '
+        '0.28.0 (llamadart-native v0.8.0) and unsafe or unproven small-matmul '
+        'subgroup facts supports ordinary text only, with microBatchSize unset '
+        'or 1..8 (https://github.com/leehack/llamadart/issues/948). Use the '
+        'bundled runtime, or ComputeDevice.cpu for larger batches, media, '
+        'speculation or embeddings.';
+    Matcher message(String text) => throwsA(
+      isA<LlamaUnsupportedException>().having(
+        (e) => e.message,
+        'message',
+        text,
+      ),
+    );
+    final h = load();
+    expect(
+      () => h.service.createContext(h.model, contextParams(9)),
+      message('microBatchSize=9 is unavailable. $restriction'),
+    );
+    final context = h.service.createContext(h.model, contextParams());
+    expect(
+      () => h.service.embed(context, 'a'),
+      message('Embeddings are unavailable. $restriction'),
+    );
+    final cancel = calloc<Int8>();
+    addTearDown(() => calloc.free(cancel));
+    await expectLater(
+      h.service
+          .generate(
+            context,
+            'hello',
+            const GenerationParams(speculativeDecoding: true),
+            cancel.address,
+          )
+          .drain<void>(),
+      message(restriction),
+    );
+    final missing = load(architecture: null);
+    expect(
+      () => missing.service.createContext(missing.model, contextParams()),
+      message(
+        'Cannot establish required model safety for Android/Vulkan with a '
+        'llama.cpp runtime older than ggml 0.28.0 (llamadart-native v0.8.0) '
+        'and unsafe or unproven small-matmul subgroup facts: native '
+        'general.architecture is unavailable '
+        '(https://github.com/leehack/llamadart/issues/948). Use the bundled '
+        'runtime or ComputeDevice.cpu.',
+      ),
+    );
+  });
+
   group('projector placement', () {
     for (final version in [_unfixedGgml, '0.29.0']) {
       test('keeps a Qwen3.5 projector on the CPU on ggml $version', () {
@@ -622,10 +674,12 @@ void main() {
         expect(_projectorUsesGpu(h.service, h.model), isFalse);
       }
     });
-    test('leaves other architectures on the GPU', () {
-      final h = load(ggmlVersion: '0.29.0', architecture: 'llama');
-      expect(_projectorUsesGpu(h.service, h.model), isTrue);
-    });
+    for (final architecture in ['llama', 'qwen3', 'qwen35moe']) {
+      test('leaves $architecture projectors on the GPU', () {
+        final h = load(ggmlVersion: '0.29.0', architecture: architecture);
+        expect(_projectorUsesGpu(h.service, h.model), isTrue);
+      });
+    }
     test('leaves Qwen3.5 on the GPU with safe subgroup facts', () {
       final h = load(ggmlVersion: '0.29.0', subgroup: 32);
       expect(_projectorUsesGpu(h.service, h.model), isTrue);
