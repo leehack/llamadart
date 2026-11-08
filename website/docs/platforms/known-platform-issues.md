@@ -179,9 +179,9 @@ feature. For which runtime supports which feature, see the
   memory limit. Loading Gemma 4 E2B through LiteRT-LM Web peaks near 7 GB, so
   keep the tab visible until the model finishes loading
   ([#1025](https://github.com/leehack/llamadart/issues/1025)).
-- In Safari 27 (macOS 26.7.1, Apple silicon), `@litert-lm/core@0.19.0`
-  loads Gemma 4 E2B `-web` on WebGPU and answers, but llamadart's LiteRT-LM
-  Web text path failed the history check there: a Gemma 4 E2B GPU generation
-  did not finish, and Qwen3 0.6B on CPU returned an empty multi-turn reply.
-  Chrome passes both. The runs had a locked screen, so they await an unlocked
-  recheck ([#1802](https://github.com/leehack/llamadart/issues/1802)).
+- Browsers without WebAssembly relaxed SIMD, including Safari 27, run
+  LiteRT-LM Web on CPU through the runtime's compat build, which can generate
+  different tokens from Chrome's. With Qwen3 0.6B and default thinking, a
+  multi-turn reply can spend the whole `maxTokens` budget thinking and return
+  no text where Chrome answers
+  ([#1802](https://github.com/leehack/llamadart/issues/1802)).

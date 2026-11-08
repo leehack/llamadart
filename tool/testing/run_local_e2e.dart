@@ -2634,6 +2634,7 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
               '${40 * 60 * 1000}',
               '--response-timeout-ms',
               '${10 * 60 * 1000}',
+              if (context.browser == 'safari') ...['--browser', 'safari'],
             ],
             description: 'Run Playwright Gemma 4 LiteRT-LM web smoke',
           ),
@@ -2816,12 +2817,16 @@ Future<LocalE2eResult> runLocalE2e(
     }
   }
   if (parsed.browser case final browser?
-      when scenario.name != 'litert-lm-web-text-history' ||
+      when !const [
+            'litert-lm-web-text-history',
+            'chat-app-web-litert-gemma4-smoke',
+          ].contains(scenario.name) ||
           !const ['chrome', 'safari'].contains(browser)) {
     return const LocalE2eResult(
       64,
       stderr:
-          '--browser chrome or safari applies only to litert-lm-web-text-history.\n',
+          '--browser chrome or safari applies only to litert-lm-web-text-history '
+          'and chat-app-web-litert-gemma4-smoke.\n',
     );
   }
   if (scenario.name == 'litert-lm-web-text-history' &&
@@ -3493,7 +3498,7 @@ Options:
   --model-url <url>              Model URL for real-model web smoke.
   --mmproj-url <url>             Projector URL for real-model web smoke.
   --backend <name>               Backend for local model scenarios (default: auto; decision-model-smoke: cpu).
-  --browser <name>               litert-lm-web-text-history browser: chrome (default) or safari (safaridriver).
+  --browser <name>               LiteRT-LM Web history and Gemma 4 smoke browser: chrome (default) or safari (safaridriver).
   --speculative-cases <list>     Benchmark cases for llama.cpp speculative benchmark.
   --benchmark-gpu-layers <n>     GPU layers for benchmark scenarios (default: 0).
   --benchmark-max-tokens <n>     Max tokens for benchmark scenarios (default: 128).

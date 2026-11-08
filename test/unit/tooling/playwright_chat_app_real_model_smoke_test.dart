@@ -121,6 +121,84 @@ def sync_playwright():
     return _Playwright()
 ''';
 
+// Stands in for safaridriver: answers W3C WebDriver commands for one scripted
+// chat-app page and logs each command for the test to inspect.
+const _fakeSafariDriver = r'''#!/usr/bin/env python3
+import json
+import os
+import sys
+from http.server import BaseHTTPRequestHandler, HTTPServer
+
+SCENARIO = json.loads(os.environ['LLAMADART_FAKE_SAFARI_SCENARIO'])
+ELEMENT = {'element-6066-11e4-a52e-4f735466cecf': 'node-1'}
+
+
+def log(entry):
+    with open(SCENARIO['logPath'], 'a', encoding='utf-8') as out:
+        out.write(json.dumps(entry) + '\n')
+
+
+def execute(script, args):
+    if 'requestAnimationFrame(tick)' in script:
+        return {'visibility': SCENARIO['visibility'], 'frames': SCENARIO['frames']}
+    if 'querySelectorAll(selector)' in script:
+        return ELEMENT
+    if 'document.body.innerText' in script:
+        return 'Model loaded successfully! Ready to chat.'
+    if 'liteRtLmResponse:' in script:
+        return {'liteRtLmResponse': '4'}
+    if "getEntriesByType('resource')" in script:
+        return ['https://cdn.jsdelivr.net/npm/@litert-lm/core@0.19.0/+esm']
+    return None
+
+
+class Handler(BaseHTTPRequestHandler):
+    def _reply(self, value):
+        data = json.dumps({'value': value}).encode()
+        self.send_response(200)
+        self.send_header('Content-Type', 'application/json')
+        self.send_header('Content-Length', str(len(data)))
+        self.end_headers()
+        self.wfile.write(data)
+
+    def do_GET(self):
+        self._reply({'ready': True})
+
+    def do_DELETE(self):
+        log({'method': 'DELETE', 'path': self.path})
+        self._reply(None)
+
+    def do_POST(self):
+        body = json.loads(self.rfile.read(int(self.headers['Content-Length'])) or b'{}')
+        command = self.path.split('/')[-1]
+        log({'method': 'POST', 'command': command, 'body': body})
+        if self.path == '/session':
+            self._reply({'sessionId': 's1', 'capabilities': {'browserVersion': '27.0'}})
+        elif command == 'sync':
+            self._reply(execute(body['script'], body['args']))
+        else:
+            self._reply(None)
+
+    def log_message(self, *_):
+        pass
+
+
+HTTPServer(('127.0.0.1', int(sys.argv[sys.argv.index('-p') + 1])), Handler).serve_forever()
+''';
+
+// Runs the smoke helper with safari_webdriver pointed at the fake driver.
+const _safariSmokeLauncher = r'''
+import runpy
+import sys
+
+sys.path.insert(0, 'tool/testing')
+import safari_webdriver
+
+safari_webdriver.SAFARIDRIVER = sys.argv.pop(1)
+sys.argv[0] = 'tool/testing/playwright_chat_app_real_model_smoke.py'
+runpy.run_path(sys.argv[0], run_name='__main__')
+''';
+
 // Runs the recorded page scripts against a stand-in `@litert-lm/core` module,
 // loading the wrapped module the way `LiteRtLmBackend` does on the Web.
 const _pageScriptHarness = r'''
@@ -292,6 +370,126 @@ void main() {
       contains('--speech-microphone requires a WAV --speech-audio-path'),
     );
   });
+
+  test('rejects speech input in Safari', () async {
+    final audio = File(p.join(tempDir.path, 'speech.wav'))
+      ..writeAsBytesSync(const <int>[0]);
+    final result = await _runProcess(
+      Platform.isWindows ? 'python' : 'python3',
+      [
+        _script,
+        'http://127.0.0.1:1/',
+        '--model-url',
+        'http://127.0.0.1:1/model.gguf',
+        '--mmproj-url',
+        'http://127.0.0.1:1/mmproj.gguf',
+        '--speech-audio-path',
+        audio.path,
+        '--browser',
+        'safari',
+      ],
+      environment: {'PYTHONPATH': tempDir.path},
+    );
+
+    expect(result.exitCode, 2);
+    expect(
+      result.stderr,
+      contains('--browser safari supports plain chat only'),
+    );
+  });
+
+  group(
+    'Safari chat run against a scripted safaridriver',
+    testOn: '!windows',
+    () {
+      Future<({ProcessResult result, List<Map<String, dynamic>> commands})>
+      runSafari({required String visibility, required int frames}) async {
+        final driver = File(p.join(tempDir.path, 'fake_safaridriver'))
+          ..writeAsStringSync(_fakeSafariDriver);
+        await Process.run('chmod', ['+x', driver.path]);
+        final logPath = p.join(tempDir.path, 'safari_commands.jsonl');
+        final result = await _runProcess(
+          'python3',
+          [
+            '-c',
+            _safariSmokeLauncher,
+            driver.path,
+            'http://127.0.0.1:1/app/',
+            '--model-url',
+            'http://127.0.0.1:1/model.litertlm',
+            '--prompt',
+            '2+2?',
+            '--response-source',
+            'litert',
+            '--load-timeout-ms',
+            '4000',
+            '--response-timeout-ms',
+            '4000',
+            '--browser',
+            'safari',
+          ],
+          environment: {
+            'PYTHONPATH': tempDir.path,
+            'LLAMADART_FAKE_SAFARI_SCENARIO': jsonEncode({
+              'logPath': logPath,
+              'visibility': visibility,
+              'frames': frames,
+            }),
+          },
+        );
+        final log = File(logPath);
+        return (
+          result: result,
+          commands: log.existsSync()
+              ? [
+                  for (final line in log.readAsLinesSync())
+                    jsonDecode(line) as Map<String, dynamic>,
+                ]
+              : <Map<String, dynamic>>[],
+        );
+      }
+
+      test('loads, sends the prompt and reports the LiteRT-LM reply', () async {
+        final run = await runSafari(visibility: 'visible', frames: 60);
+
+        expect(run.result.exitCode, 0, reason: '${run.result.stderr}');
+        final events = [
+          for (final line in (run.result.stdout as String).split('\n'))
+            if (line.startsWith('{')) jsonDecode(line) as Map<String, dynamic>,
+        ];
+        final result = events.singleWhere(
+          (event) => event['event'] == 'result',
+        );
+        expect(result['ok'], isTrue);
+        expect(result['bridgeResponse'], '4');
+        expect(result['liteRtLmRuntimeRequests'], [
+          'https://cdn.jsdelivr.net/npm/@litert-lm/core@0.19.0/+esm',
+        ]);
+        final commands = run.commands.map((c) => c['command']).toList();
+        expect(commands.where((c) => c == 'url'), hasLength(2));
+        expect(commands.where((c) => c == 'click'), hasLength(3));
+        final typed = run.commands
+            .where((c) => c['command'] == 'actions')
+            .expand(
+              (c) => (c['body']['actions'] as List).single['actions'] as List,
+            )
+            .where((a) => a['type'] == 'keyDown')
+            .map((a) => a['value'])
+            .join();
+        expect(typed, '2+2?');
+        expect(run.commands.last['method'], 'DELETE');
+      });
+
+      test('fails before loading when the page is hidden', () async {
+        final run = await runSafari(visibility: 'hidden', frames: 0);
+
+        expect(run.result.exitCode, isNot(0));
+        expect(run.result.stderr, contains('Safari page is not visible'));
+        expect(run.commands.where((c) => c['command'] == 'click'), isEmpty);
+        expect(run.commands.last['method'], 'DELETE');
+      });
+    },
+  );
 
   group(
     'LiteRT-LM chat run against a scripted page',

@@ -5,7 +5,7 @@
 - Fix LiteRT-LM text-only or audio-only turns that failed with "Image history requires a vision encoder." after an image turn on the same engine ([#1781](https://github.com/leehack/llamadart/issues/1781)).
 - Move Web LiteRT-LM to `@litert-lm/core@0.19.0`; WebGPU loads keep the runtime's default backend, so standard `.litertlm` bundles can load there. Web embeddings, tool loops, media and custom templates stay unsupported.
 - Update the default LiteRT-LM native runtime to `leehack/litert-lm-native@v0.19.1` (upstream LiteRT-LM `v0.19.1`); the C API is unchanged. Flutter Apple apps get it from `llamadart_litert_lm_flutter` `0.19.0`, released with this core.
-- Record Safari 27 results on `@litert-lm/core@0.19.0`: the runtime runs Gemma 4 E2B on WebGPU, but llamadart's Web LiteRT-LM text path is not yet qualified in Safari ([#1802](https://github.com/leehack/llamadart/issues/1802)).
+- Check Web LiteRT-LM on `@litert-lm/core@0.19.0` in Safari 27: GPU text, history and the chat app pass; on CPU, the runtime's compat build can leave Qwen3 0.6B thinking through its whole token budget ([#1025](https://github.com/leehack/llamadart/issues/1025), [#1802](https://github.com/leehack/llamadart/issues/1802)).
 
 ## 0.18.0
 
