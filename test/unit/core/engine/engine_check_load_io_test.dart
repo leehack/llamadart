@@ -142,7 +142,7 @@ void main() {
         liteRtLmEmbeddingEngine: true,
         device: ComputeDevice.cpu,
       );
-      for (final abi in [Abi.linuxX64, Abi.linuxArm64, Abi.windowsX64]) {
+      for (final abi in [Abi.androidX64]) {
         debugLiteRtLmAbiOverride = abi;
         for (final customLiteRtLm in [false, true]) {
           final report = await check(
@@ -158,11 +158,19 @@ void main() {
         }
       }
 
-      debugLiteRtLmAbiOverride = Abi.macosArm64;
-      expect(
-        (await check(liteRtLm, params: embeddings)).status,
-        LlamaLoadCheckStatus.supported,
-      );
+      for (final abi in [
+        Abi.macosArm64,
+        Abi.linuxX64,
+        Abi.linuxArm64,
+        Abi.windowsX64,
+      ]) {
+        debugLiteRtLmAbiOverride = abi;
+        expect(
+          (await check(liteRtLm, params: embeddings)).status,
+          LlamaLoadCheckStatus.supported,
+          reason: '$abi',
+        );
+      }
 
       // The runtime checks the device before the embedding engine.
       debugLiteRtLmAbiOverride = Abi.linuxArm64;

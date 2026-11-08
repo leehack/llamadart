@@ -393,9 +393,12 @@ parameters. The public lazy facade, service metadata/finish probes and speech
 worker share discovery and ABI selection. `_liteRtLmV1ProductionSelection` in
 `litert_lm_runtime_facade.dart` enables public C API 1.0.x dispatch. The native
 hook and Apple companion source now pin published
-[v0.19.1](https://github.com/leehack/litert-lm-native/releases/tag/v0.19.1),
-owner `1fa4d437` / upstream `7a03724c`, which keeps C API 1.0.0 and the
-`v0.19.0` exports. Its only runtime change makes the main executor default
+[v0.19.1-1](https://github.com/leehack/litert-lm-native/releases/tag/v0.19.1-1),
+owner `82d4ae1c` / upstream `7a03724c`, which keeps C API 1.0.0 and the
+`v0.19.0` exports. The `-1` rebuild links LiteRT into the Linux and Windows
+`libLiteRtLm` ([litert-lm-native#112](https://github.com/leehack/litert-lm-native/pull/112));
+its Apple and Android binaries are identical to `v0.19.1`. Upstream
+`v0.19.1`'s only runtime change makes the main executor default
 `max_num_images` to 4 when unset; the v1 client never sets it, and every macOS
 arm64 LiteRT-LM consumer scenario, including a multi-image probe, matched
 `v0.19.0` output. `v0.19.0` (owner `f173fe9b` / upstream `83ce6067`) was
@@ -423,7 +426,7 @@ bounded to the failed backend; disposal never reports successful cleanup in this
 state. Do not kill the retained isolate or release its lease to make teardown
 appear complete.
 
-Public ABI-aware selection and the v0.19.1 source pin are enabled; remaining
+Public ABI-aware selection and the v0.19.1-1 source pin are enabled; remaining
 consumer, feature and platform gates are recorded in
 `doc/litert_lm_v1_adoption.md`. This transport contract alone does not qualify a
 model or device. The owner proxy's
@@ -627,11 +630,11 @@ Use this checklist in native sync PRs:
 
 ## Companion package release handoff
 
-After core `0.18.0`, the LiteRT-LM pin moved to `v0.19.1`. It ships in core
+After core `0.18.0`, the LiteRT-LM pin moved to `v0.19.1-1`. It ships in core
 `0.19.0`, which re-releases all three Apple companions at `0.19.0` with
-`llamadart: '>=0.19.0 <0.20.0'`; the LiteRT-LM companion pins `v0.19.1`. Pub
+`llamadart: '>=0.19.0 <0.20.0'`; the LiteRT-LM companion pins `v0.19.1-1`. Pub
 cannot resolve a `0.19.x` core beside a `0.18.x` companion, so no mixed pair
-exists. A `0.18.x` patch from `main` would accept only `v0.19.1`, while the
+exists. A `0.18.x` patch from `main` would accept only `v0.19.1-1`, while the
 published `0.18.0` companion it resolves beside pins `v0.19.0`; release prep
 rejects that pair, so `main` can no longer ship a `0.18.x` patch.
 

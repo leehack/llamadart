@@ -104,7 +104,7 @@ void main() {
                       .having(
                         (error) => error.message,
                         'repair',
-                        contains('litert-lm-native v0.19.1'),
+                        contains('litert-lm-native v0.19.1-1'),
                       )
                       .having(
                         (error) => error.message,

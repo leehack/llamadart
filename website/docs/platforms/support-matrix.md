@@ -148,7 +148,7 @@ native and web. Model architecture support depends on the pinned runtime; see
 | LFM2 reasoning tool markers | Stay in reasoning; no executable calls | Same Dart parser; inference requires LFM-capable assets | N/A: LFM GGUF format | N/A: LFM GGUF format |
 | Explicit parallel tool flags | Supported Dart tool grammars honor the request independently of history probes | Same Dart routing; enforcement depends on the active grammar capability | Runtime-managed; no new constraint capability | No tool declarations |
 | Model-free setup report | Desktop IO only; publication policy, no native/model probe | Typed unsupported; no live browser check | Desktop IO only; publication policy, no native/model probe | Typed unsupported |
-| Pre-load check | `npu` and options llama.cpp ignores rejected; native library and GPU unchecked | Options the Web runtime ignores rejected; WebGPU and bridge assets unchecked | No runtime on macOS x86_64, Windows arm64 or the x86_64 iOS simulator, and explicit devices the ABI lacks (`gpu` on Linux arm64), and embeddings off macOS arm64, iOS arm64 and Android arm64, rejected; `LlamaEngine(LiteRtLmBackend())` reports `unknown` | Options the Web runtime ignores, `npu` and the embedding engine rejected; browser runtime unchecked |
+| Pre-load check | `npu` and options llama.cpp ignores rejected; native library and GPU unchecked | Options the Web runtime ignores rejected; WebGPU and bridge assets unchecked | No runtime on macOS x86_64, Windows arm64 or the x86_64 iOS simulator, and explicit devices the ABI lacks (`gpu` on Linux arm64), and embeddings on Android x86_64, rejected; `LlamaEngine(LiteRtLmBackend())` reports `unknown` | Options the Web runtime ignores, `npu` and the embedding engine rejected; browser runtime unchecked |
 | LoRA | `ModelParams.loras` at load and `setLoraSource` at runtime, stacked and scaled; aLoRA rejected | Same, with bridge assets whose `getLoraAdapterCapabilities()` reports support ([llama-web-bridge#142](https://github.com/leehack/llama-web-bridge/pull/142)); otherwise rejected | Unsupported by the current advanced engine; see [owner #99](https://github.com/leehack/litert-lm-native/issues/99) | No |
 | GPU device list and split (`gpuDevices`, `tensorSplit`) | Devices of one backend by `listGpuDevices` index, with proportions; validated on one Metal GPU and a Vulkan Tesla T4 (two-device paths with Mesa lavapipe as the second device); two-GPU hardware has no evidence ([#1528](https://github.com/leehack/llamadart/issues/1528)) and CUDA is not hardware-qualified | No | No | No |
 | Row split (`ModelSplitMode.row`) | Needs llama.cpp split buffer types, which no bundled backend provides; a load on a bundled GPU backend whose module loads (Metal, CUDA, HIP, Vulkan, OpenCL), with `GpuBackend.blas` or `GpuBackend.cpu`, with `auto` on Android, the iOS simulator and macOS x86_64 (which runs on the CPU), or that falls back to the CPU because the requested backend is missing or Vulkan is refused, throws `LlamaUnsupportedException` before the model loads, so use `ModelSplitMode.layer`; a bundled module that fails to load or finds no device loads row on the CPU instead ([#1576](https://github.com/leehack/llamadart/issues/1576)) | No | No | No |
@@ -163,10 +163,10 @@ native and web. Model architecture support depends on the pinned runtime; see
 | MoE expert placement and cache | `cpuMoeLayers` keeps experts in host memory; `moeCacheBytes` caches them on Metal and CUDA GPUs (qualified on Metal with OLMoE; CUDA has no hardware evidence); only `moeCacheBytes` throws `LlamaUnsupportedException` on Vulkan, other backends and tensor split, while `cpuMoeLayers` alone runs there | No | No | No |
 | State persistence | Yes | Yes; WASMFS paths, lost on page reload | No | No |
 | State identity (`stateIdentity`) | `llamadart-native` `v0.7.0-3+` | No: the bridge reports no build identity | No | No |
-| Embeddings | Yes; one-pass attention and MEAN/CLS inputs must fit the physical micro-batch | Yes; rejects rerankers and over-long one-pass input as native does | CPU, explicit embedding engine; macOS arm64 and iOS arm64 qualified; Android arm64 verified on a Galaxy S24 without SME and on arm64 emulators; other platforms throw `LlamaUnsupportedException` at load ([#1367](https://github.com/leehack/llamadart/issues/1367)) | Unsupported (parity gate) |
+| Embeddings | Yes; one-pass attention and MEAN/CLS inputs must fit the physical micro-batch | Yes; rejects rerankers and over-long one-pass input as native does | CPU, explicit embedding engine; macOS arm64, iOS arm64, Linux x64 and arm64, and Windows x64 qualified; Android arm64 verified on a Galaxy S24 without SME and on arm64 emulators; Android x86_64 throws `LlamaUnsupportedException` at load | Unsupported (parity gate) |
 | Reranking | Rank-pooled GGUF only; explicit loaded-context probe, complete-pair limits and independent sequence batching | No | No | No |
 | Text task helpers and Matryoshka | Opt-in EG2 text profile; CPU BF16 retrieval reference | Same Dart helpers on an available embedding engine; no new Web qualification | Same Dart helpers on an available CPU embedding engine; bundle requires independent retrieval qualification | Unsupported with the underlying embedding engine |
-| Image/audio embeddings (`embedContent`) | EmbeddingGemma-2 + compatible projector, native v0.7.0-1; one complete micro-batch (BF16 qualified on CPU on macOS arm64, Linux x64, Windows x64, Android and iOS, and on macOS Metal; other GPU backends unqualified) | Explicit API-version-1 modality probe + compatible projector; EmbeddingGemma-2 qualified Chrome CPU wasm memory64 vs native CPU/Metal; repeated media batches qualified only on memory64 (wasm32 unqualified); hardware WebGPU unqualified | CPU; bundle processors on macOS arm64, iOS arm64 and Android arm64 (Galaxy S24 and emulators) | Unsupported (parity gate) |
+| Image/audio embeddings (`embedContent`) | EmbeddingGemma-2 + compatible projector, native v0.7.0-1; one complete micro-batch (BF16 qualified on CPU on macOS arm64, Linux x64, Windows x64, Android and iOS, and on macOS Metal; other GPU backends unqualified) | Explicit API-version-1 modality probe + compatible projector; EmbeddingGemma-2 qualified Chrome CPU wasm memory64 vs native CPU/Metal; repeated media batches qualified only on memory64 (wasm32 unqualified); hardware WebGPU unqualified | CPU; bundle processors on macOS arm64, iOS arm64, Android arm64 (Galaxy S24 and emulators), Linux x64 and arm64, and Windows x64 | Unsupported (parity gate) |
 | Next-token scores | Yes | Yes | No | No |
 | Generation-limit reporting | `length` for output or context limits | `length` with the bridge usage probe; cap cause unspecified | `length` for output or context limits | No |
 | Per-request usage | `usage` on the final `create` chunk | Yes | No | No ([#725](https://github.com/leehack/llamadart/issues/725)) |
@@ -214,20 +214,20 @@ web are on [Known platform issues](./known-platform-issues).
 | Runtime | Pinned release |
 | --- | --- |
 | llama.cpp native | `leehack/llamadart-native@v0.9.0` |
-| LiteRT-LM native | `leehack/litert-lm-native@v0.19.1` |
+| LiteRT-LM native | `leehack/litert-lm-native@v0.19.1-1` |
 | stable-diffusion.cpp native (opt-in, Preview) | `leehack/stable-diffusion-native@v0.3.0-3`, for [image generation](../guides/image-generation); see [Opt-in stable_diffusion runtime](./native-build-hooks#opt-in-stable_diffusion-runtime-experimental). Flutter iOS/macOS apps link its XCFramework through `llamadart_stable_diffusion_flutter` |
 | WebGPU bridge assets | `leehack/llama-web-bridge-assets`; see [Pinned bridge assets](./webgpu-bridge#pinned-bridge-assets) |
 
 The native-assets hook currently pins `llamadart-native` tag
 `v0.9.0` and
-`litert-lm-native` release `v0.19.1` (`lib/src/hook/native_release_pins.dart`).
+`litert-lm-native` release `v0.19.1-1` (`lib/src/hook/native_release_pins.dart`).
 
 The direct native client, service probes and speech worker share ABI-aware
 discovery. Public selection admits legacy runtimes and C API 1.0.x; unknown
 or future versions are refused before engine calls. The source pin adopts
 published native
-[v0.19.1](https://github.com/leehack/litert-lm-native/releases/tag/v0.19.1)
-(owner `1fa4d437`, upstream `7a03724c`). The selected loader requires macOS 14+
+[v0.19.1-1](https://github.com/leehack/litert-lm-native/releases/tag/v0.19.1-1)
+(owner `82d4ae1c`, upstream `7a03724c`). The selected loader requires macOS 14+
 before loading any core or companion library, including legacy libraries and
 custom paths. Final default-discovery and Apple embedding/signature checks remain
 in [#1677](https://github.com/leehack/llamadart/issues/1677); the source pin does

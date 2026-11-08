@@ -599,7 +599,7 @@ void main() {
           isA<LlamaUnsupportedException>().having(
             (e) => e.message,
             'ABI diagnostic',
-            allOf(contains('v0.18.1'), contains('dd3db31236')),
+            allOf(contains('requalified on GPU'), contains('dd3db31236')),
           ),
         ),
       );
@@ -623,24 +623,19 @@ void main() {
   int settingsCreates() => DynamicLibrary.open(
     library,
   ).lookupFunction<Int Function(), int Function()>('settings_creates')();
-  for (final (abi, reason) in [
-    (Abi.linuxArm64, 'creation fails there with'),
-    (Abi.windowsX64, 'creation crashes the process there'),
-    (Abi.linuxX64, 'fails there, and a repeated attempt crashes the process'),
-    (Abi.androidX64, 'they are not qualified there'),
-  ]) {
+  for (final abi in [Abi.androidX64, Abi.windowsArm64]) {
     test('$abi rejects embedding loads on a custom runtime before any native '
         'call', () async {
       debugLiteRtLmAbiOverride = abi;
       final matcher = throwsA(
         isA<LlamaUnsupportedException>().having(
           (e) => e.message,
-          'capability, platform and issue',
+          'capability, platform and condition',
           allOf(
             contains('LiteRT-LM native embeddings are unsupported on $abi'),
-            contains(reason),
-            contains('leehack/llamadart#1367'),
+            contains('they are not qualified there'),
             contains('every LiteRT-LM runtime library, including a custom one'),
+            contains('Linux x64 and arm64, and Windows x64'),
             isNot(contains('pinned')),
           ),
         ),
@@ -667,6 +662,41 @@ void main() {
         const ModelParams(device: ComputeDevice.cpu),
       );
       expect(chat, isPositive);
+    });
+  }
+  for (final abi in [Abi.linuxArm64, Abi.linuxX64, Abi.windowsX64]) {
+    test('$abi rejects embeddings on a legacy runtime before any native '
+        'call', () async {
+      debugLiteRtLmAbiOverride = abi;
+      final matcher = throwsA(
+        isA<LlamaUnsupportedException>().having(
+          (e) => e.message,
+          'capability, legacy runtime condition and required runtime',
+          allOf(
+            contains('LiteRT-LM native embeddings on $abi'),
+            contains('C API 1 runtime from litert-lm-native v0.19.1-1'),
+            contains('legacy one without litert_lm_get_api_version'),
+            contains('v0.18.x'),
+          ),
+        ),
+      );
+      await expectLater(create(), matcher);
+
+      final port = ReceivePort();
+      final service = LiteRtLmService(
+        clientFactory: () => LiteRtLmRuntimeClient(libraryPath: library),
+      );
+      runLiteRtLmWorkerForTesting(port.sendPort, service, exitOnDispose: false);
+      final backend = LiteRtLmBackend(
+        initialSendPort: await port.first as SendPort,
+      );
+      port.close();
+      addTearDown(backend.dispose);
+      final handle = await backend.modelLoad(model, embeddingParams);
+      final context = await backend.contextCreate(handle, embeddingParams);
+      await expectLater(backend.getEmbeddingCapabilities(context), matcher);
+      expect(settingsCreates(), 0);
+      expect(allocations(), 0);
     });
   }
   for (final abi in [Abi.macosArm64, Abi.iosArm64, Abi.androidArm64]) {
