@@ -153,7 +153,7 @@ void main() {
               .having(
                 (error) => error.message,
                 'current runtime',
-                contains('packaged LiteRT-LM v0.19.0 runtime'),
+                contains('packaged LiteRT-LM v0.19.1 runtime'),
               )
               .having(
                 (error) => error.message,

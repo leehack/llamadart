@@ -15,7 +15,7 @@ description: >-
 
 - Native LiteRT-LM speech probes and workers share the text client's ABI-aware
   discovery. Public selection admits legacy runtimes and C API 1.0.x; the
-  source pin now adopts published native v0.19.0. Final default-worker and
+  source pin now adopts published native v0.19.1. Final default-worker and
   Apple consumer checks remain separate from the accepted owner Moonshine
   smokes. The selector checks macOS 14+ before owned loads, including legacy
   libraries and custom paths. ASR also requires its independent bridge
