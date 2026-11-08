@@ -594,6 +594,12 @@ enum BackendTextToSpeechModel {
 
   /// Soprano speech output through llama.cpp mtmd.
   soprano,
+
+  /// Chatterbox Turbo and Chatterbox Multilingual through llama.cpp mtmd.
+  chatterbox,
+
+  /// Pocket TTS through llama.cpp mtmd.
+  pocketTts,
 }
 
 /// Phase reported while a backend synthesizes speech.

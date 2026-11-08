@@ -171,7 +171,7 @@ Pick targeted rows based on the touched surface:
 | Android Vulkan prompt cap, Vulkan device facts or the Vulkan 1.2 load refusal on a device | `chat-app-micro-batch-sweep` |
 | Isolate shutdown releases, exit teardown, a Flutter pin bump, or app-exit guidance | `chat-app-macos-quit` |
 | Speech-to-text API or adapter | `speech-to-text-smoke`, `web-speech-to-text-smoke`, plus `litert-lm-asr-smoke` and `litert-lm-asr-preservation` for the dedicated LiteRT-LM streaming engine |
-| Text-to-speech API or adapter | `text-to-speech-smoke`, `text-to-speech-models-smoke` for LFM3-Audio and Soprano, plus `web-text-to-speech-smoke` for browser synthesis/playback/export |
+| Text-to-speech API or adapter | `text-to-speech-smoke`, `text-to-speech-models-smoke` for LFM3-Audio, Soprano, Chatterbox and Pocket TTS, plus `web-text-to-speech-smoke` for browser synthesis/playback/export |
 | Decision engine, decision head, or safetensors reader | `decision-model-smoke`, plus `decision-model-web-smoke` for the Web decision head or bridge pin |
 | Image generation API or `stable_diffusion` runtime | `image-generation-smoke`, `native-hook-bundles` |
 | Complete image checkpoint formats or explicit role transport | `image-container-formats` (local hashed inputs and independent CPU references) |
@@ -455,6 +455,13 @@ LLAMADART_TTS_LFM3_MODEL_PATH=/path/to/LFM3-Audio-2B-Q4_K_M.gguf \
 LLAMADART_TTS_LFM3_MMPROJ_PATH=/path/to/mmproj-LFM3-Audio-2B-Q8_0.gguf \
 LLAMADART_TTS_SOPRANO_MODEL_PATH=/path/to/soprano.gguf \
 LLAMADART_TTS_SOPRANO_MMPROJ_PATH=/path/to/mmproj-soprano.gguf \
+LLAMADART_TTS_CHATTERBOX_TURBO_MODEL_PATH=/path/to/chatterbox-turbo-Q8_0.gguf \
+LLAMADART_TTS_CHATTERBOX_TURBO_MMPROJ_PATH=/path/to/mmproj-chatterbox-turbo-F16.gguf \
+LLAMADART_TTS_CHATTERBOX_MULTILINGUAL_MODEL_PATH=/path/to/chatterbox-Q8_0.gguf \
+LLAMADART_TTS_CHATTERBOX_MULTILINGUAL_MMPROJ_PATH=/path/to/mmproj-chatterbox-F16.gguf \
+LLAMADART_TTS_POCKET_MODEL_PATH=/path/to/pocket-tts-english.gguf \
+LLAMADART_TTS_POCKET_MMPROJ_PATH=/path/to/mmproj-pocket-tts-english.gguf \
+LLAMADART_TTS_SPEAKER_REFERENCE_PATH=/path/to/ten-second-speech.wav \
 LLAMADART_STT_MODEL_PATH=/path/to/Qwen3-ASR-0.6B-Q8_0.gguf \
 LLAMADART_STT_MMPROJ_PATH=/path/to/mmproj-Qwen3-ASR-0.6B-Q8_0.gguf \
 dart run tool/testing/run_local_e2e.dart --scenario text-to-speech-models-smoke
@@ -856,7 +863,8 @@ is excluded from Linux qualification. These subprocess checks do not prove
 Flutter engine shutdown ordering.
 
 On macOS, `EXIT_TEARDOWN_TTS_MODEL`, `EXIT_TEARDOWN_TTS_MMPROJ` and
-`EXIT_TEARDOWN_TTS_ADAPTER` (`qwen3-tts`, `lfm3-audio` or `soprano`) add
+`EXIT_TEARDOWN_TTS_ADAPTER` (`qwen3-tts`, `lfm3-audio`, `soprano`,
+`chatterbox` or `pocket-tts`) add
 `quit-speaking`, which calls C `exit` once synthesis has generated a frame.
 
 On macOS, the row runs `test/fixtures/llama_cpp_exit_probe.dart` as a
