@@ -587,6 +587,7 @@ void main() {
       );
       expect(selected.effectiveConfig['backend'], device.name);
       expect(selected.effectiveConfig['gpu_layers_hint'], params.gpuLayers);
+      expect(params.numberOfThreads, device == ComputeDevice.cpu ? 4 : 0);
       expect(selected.effectiveConfig['batch_threads'], 0);
       expect(
         selected.effectiveConfig['sampling_application'],

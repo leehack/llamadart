@@ -1,4 +1,4 @@
-## Unreleased
+## 3.7.0 - 2026-11-08
 
 - Upgrade to llamadart 0.18.0 and matching 0.18.x Apple companions.
 
