@@ -64,6 +64,14 @@ feature. For which runtime supports which feature, see the
 
 ## Linux and Windows
 
+- A custom LiteRT-LM runtime (`LLAMADART_LITERT_LM_LIB_DIR`) on Linux or
+  Windows must be litert-lm-native `v0.19.1-1` or later. Earlier desktop
+  runtimes link a prebuilt LiteRT built with a different C++ runtime: CPU
+  embedding engine creation fails on Linux and crashes on Windows x64
+  ([#1367](https://github.com/leehack/llamadart/issues/1367)), and `v0.19.1`
+  explicit GPU generation crashes at the first decode on Linux x64 and
+  Windows x64 ([#1795](https://github.com/leehack/llamadart/issues/1795)).
+  The load gate cannot detect such a runtime.
 - Linux x64 LiteRT-LM GPU needs a hardware Vulkan driver. On Mesa llvmpipe
   alone it answers a few prompts, then crashes the process; use `cpu` on such
   hosts ([#572](https://github.com/leehack/llamadart/issues/572)).

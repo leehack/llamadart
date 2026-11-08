@@ -296,7 +296,7 @@ void main() {
         create(value, backend: 'gpu'),
         throwsA(isA<LlamaUnsupportedException>()),
       );
-      debugLiteRtLmAbiOverride = Abi.linuxX64;
+      debugLiteRtLmAbiOverride = Abi.androidX64;
       await expectLater(
         create(value),
         throwsA(isA<LlamaUnsupportedException>()),

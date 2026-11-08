@@ -249,7 +249,7 @@ deprecated until 1.0.
 | `dispatchLibDir` | LiteRT dispatch library directory for Android NPU deployments. Must be non-empty. |
 | `cacheDir`, `maxProgramCacheBytes` | Runtime cache directory and GPU program cache size cap; see [LiteRT-LM cache directory](#litert-lm-cache-directory). |
 | `numberOfThreads` | Generation thread count; `0` keeps automatic selection. |
-| `embeddingEngine` | `true` selects the separate LiteRT-LM embedding engine, qualified on CPU on macOS, iOS and Android arm64; defaults to `false`, not `null`. See [Embeddings](../guides/embeddings). |
+| `embeddingEngine` | `true` selects the separate LiteRT-LM embedding engine, qualified on CPU on macOS, iOS and Android arm64, Linux x64 and arm64, and Windows x64; defaults to `false`, not `null`. See [Embeddings](../guides/embeddings). |
 | `loras` | Native LiteRT-LM text LoRA is unsupported by the current advanced engine, including initial adapters. Use a compatible llama.cpp model/adapter pair; see [LoRA platform support](../guides/lora-adapters#platform-notes). |
 
 `gpuLayers` must be `0` (CPU), `ModelParams.maxGpuLayers` or a negative

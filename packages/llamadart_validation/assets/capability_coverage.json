@@ -43,7 +43,7 @@
       "profiles": [
         "assets/profiles/embedding-gguf-cpu.json"
       ],
-      "notes": "Model-free recording tests cover the conservative native qwen35 Android Vulkan #948 restriction: unsafe/unproven subgroup facts admit bounded ordinary text only; larger explicit micro-batches, media, speculation and embeddings are typed unsupported before evaluation. This does not qualify final artifacts or GPU output. https://github.com/leehack/llamadart/issues/948"
+      "notes": "LiteRT-LM native CPU embeddings are qualified by the local-only litert-lm-multimodal-embedding scenario, not by this pack's profiles; Linux x64, Linux arm64 and Windows x64 joined macOS, iOS and Android arm64 with litert-lm-native v0.19.1-1 (https://github.com/leehack/llamadart/issues/1367). Model-free recording tests cover the conservative native qwen35 Android Vulkan #948 restriction: unsafe/unproven subgroup facts admit bounded ordinary text only; larger explicit micro-batches, media, speculation and embeddings are typed unsupported before evaluation. This does not qualify final artifacts or GPU output. https://github.com/leehack/llamadart/issues/948"
     },
     {
       "id": "history",

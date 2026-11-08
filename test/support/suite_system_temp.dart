@@ -40,10 +40,30 @@ Directory Function() useSuiteSystemTemp() {
       isEmpty,
       reason: 'files deleted from ${realCacheRoot.path}',
     );
-    root.deleteSync(recursive: true);
+    _deleteSuiteRoot(root);
   });
 
   return () => root;
+}
+
+/// Deletes [root], except on Windows the XNNPack caches that LiteRT-LM keeps
+/// open after its engines are disposed, until the process exits.
+void _deleteSuiteRoot(Directory root) {
+  try {
+    root.deleteSync(recursive: true);
+  } on FileSystemException {
+    if (!Platform.isWindows) rethrow;
+    final undeletable = <String>[];
+    for (final file in root.listSync(recursive: true).whereType<File>()) {
+      if (file.path.endsWith('.xnnpack_cache')) continue;
+      try {
+        file.deleteSync();
+      } on FileSystemException {
+        undeletable.add(file.path);
+      }
+    }
+    if (undeletable.isNotEmpty) rethrow;
+  }
 }
 
 Set<String> _fileNames(Directory dir) {

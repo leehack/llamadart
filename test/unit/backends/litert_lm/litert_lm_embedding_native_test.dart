@@ -599,7 +599,7 @@ void main() {
           isA<LlamaUnsupportedException>().having(
             (e) => e.message,
             'ABI diagnostic',
-            allOf(contains('v0.18.1'), contains('dd3db31236')),
+            allOf(contains('requalified on GPU'), contains('dd3db31236')),
           ),
         ),
       );
@@ -623,24 +623,19 @@ void main() {
   int settingsCreates() => DynamicLibrary.open(
     library,
   ).lookupFunction<Int Function(), int Function()>('settings_creates')();
-  for (final (abi, reason) in [
-    (Abi.linuxArm64, 'creation fails there with'),
-    (Abi.windowsX64, 'creation crashes the process there'),
-    (Abi.linuxX64, 'fails there, and a repeated attempt crashes the process'),
-    (Abi.androidX64, 'they are not qualified there'),
-  ]) {
+  for (final abi in [Abi.androidX64, Abi.windowsArm64]) {
     test('$abi rejects embedding loads on a custom runtime before any native '
         'call', () async {
       debugLiteRtLmAbiOverride = abi;
       final matcher = throwsA(
         isA<LlamaUnsupportedException>().having(
           (e) => e.message,
-          'capability, platform and issue',
+          'capability, platform and condition',
           allOf(
             contains('LiteRT-LM native embeddings are unsupported on $abi'),
-            contains(reason),
-            contains('leehack/llamadart#1367'),
+            contains('they are not qualified there'),
             contains('every LiteRT-LM runtime library, including a custom one'),
+            contains('Linux x64 and arm64, and Windows x64'),
             isNot(contains('pinned')),
           ),
         ),
@@ -669,7 +664,14 @@ void main() {
       expect(chat, isPositive);
     });
   }
-  for (final abi in [Abi.macosArm64, Abi.iosArm64, Abi.androidArm64]) {
+  for (final abi in [
+    Abi.macosArm64,
+    Abi.iosArm64,
+    Abi.androidArm64,
+    Abi.linuxArm64,
+    Abi.linuxX64,
+    Abi.windowsX64,
+  ]) {
     test('$abi creates the embedding engine', () async {
       debugLiteRtLmAbiOverride = abi;
       final session = await create();

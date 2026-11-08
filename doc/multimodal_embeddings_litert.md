@@ -18,8 +18,10 @@ all-false without runtime I/O. Native CPU is qualified on macOS arm64 and iOS
 arm64 (iPhone 16 Pro and the arm64 simulator). Android arm64 is verified on a
 Galaxy S24 (Snapdragon 8 Gen 3, no SVE/SME) and on arm64 emulators with and
 without SME, with vectors bit-identical to the iPhone run; other Android devices
-are not individually verified. Native GPU/NPU, other native
-platforms and all Web embeddings remain unsupported. Synthetic media establishes wiring, not
+are not individually verified. Linux x64 and arm64 and Windows x64 are
+qualified on litert-lm-native `v0.19.1-1`, which links LiteRT into
+`libLiteRtLm` ([litert-lm-native#112](https://github.com/leehack/litert-lm-native/pull/112)).
+Native GPU/NPU, Android x86_64 and all Web embeddings remain unsupported. Synthetic media establishes wiring, not
 retrieval quality. Other devices and embedding families were not qualified.
 
 Inputs preserve order and merge adjacent text verbatim. Accepted media are
@@ -162,28 +164,26 @@ external weight for buffer id 2147483863 (tensor 1451)`.
 
 ## Unsupported paths and upstream gaps
 
-- **Native platforms other than macOS, iOS and Android arm64:** fail at load,
-  before any native call, whichever runtime library is loaded. With
-  EmbeddingGemma 2 on every `v0.18` pin, CPU engine creation returns an empty
-  `UNKNOWN` error from the vision executor compile on Linux arm64 and crashes
-  the process (`0xC0000005` in `libLiteRt.dll`) on Windows x64. On Linux x64,
-  observed only under x86_64 emulation (Docker on Rosetta), the first creation
-  returns `UNKNOWN` and a second one in the same process crashes with `SIGSEGV`
-  in `LiteRtCreateCompiledModel` from `VisionEncoder::Initialize`. Android
-  x86_64 is unqualified ([#1367](https://github.com/leehack/llamadart/issues/1367)).
-  The Galaxy S24 has no SME and works, so missing SME alone does not explain
-  the Linux arm64 failure; the failure follows the Linux and Windows builds.
-  Requalify a platform before adding it to
-  `liteRtLmNativeEmbeddingsQualifiedForAbi`.
+- **Android x86_64:** fails at load, before any native call, whichever runtime
+  library is loaded; it is unqualified. Requalify a platform before adding it
+  to `liteRtLmNativeEmbeddingsQualifiedForAbi`.
+- **Linux and Windows runtimes older than `v0.19.1-1`:** their `libLiteRtLm`
+  was built with libstdc++ or the MSVC STL but linked the prebuilt libc++
+  `libLiteRt`, so LiteRT-LM's external-weight handoff was not ABI-valid.
+  EmbeddingGemma 2 engine creation fails with `Failed to open tflite_weights`
+  on Linux and crashes the process on Windows x64
+  ([#1367](https://github.com/leehack/llamadart/issues/1367),
+  [litert-lm-native#111](https://github.com/leehack/litert-lm-native/issues/111)).
+  The load gate cannot detect such a runtime, so a custom
+  `LLAMADART_LITERT_LM_LIB_DIR` must be `v0.19.1-1` or later.
 - **Native GPU:** fail before native engine creation. `v0.18.0-3` has a
   WebGPU accelerator/absl ABI mismatch that crashed the upstream-only reference
   as well as the prototype. The upstream repair is
   [LiteRT dd3db31236](https://github.com/google-ai-edge/LiteRT/commit/dd3db31236).
-  Pinned `v0.18.1-2` builds `libLiteRtLm` with it but ships the same prebuilt
-  macOS WebGPU accelerator, and EmbeddingGemma 2 still crashes on GPU there.
-  A runtime with a repaired accelerator and requalification are required; no
-  unsafe accelerator call or silent CPU fallback is made. NPU embeddings are
-  unqualified.
+  `v0.18.1-2` built `libLiteRtLm` with it but shipped the same prebuilt macOS
+  WebGPU accelerator, and EmbeddingGemma 2 still crashed on GPU there. No later
+  runtime has been requalified on GPU; no unsafe accelerator call or silent CPU
+  fallback is made. NPU embeddings are unqualified.
 - **Web CPU host weights:** fail before I/O. The pinned source streams text-encoder
   weights only for WebGPU ([upstream lines 794–818](https://github.com/google-ai-edge/LiteRT-LM/blob/b2f686e2ed4718fb84ec398a61dd59ca0f0aff27/runtime/core/embedding_engine_impl.cc#L794-L818)).
   The upstream-only CPU creation error is `Failed to get external weight for
