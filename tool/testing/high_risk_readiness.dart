@@ -1361,6 +1361,15 @@ class HighRiskReadinessEvaluator {
           await _isAdditiveImageExport(context, changes, workingDirectory)) {
         continue;
       }
+      if (exportOnlyEntrypoints.contains(path) &&
+          await _isExportOnlyEntrypointChange(
+            path,
+            context,
+            changes,
+            workingDirectory,
+          )) {
+        continue;
+      }
       minimumImpacts.addAll(contribution);
     }
     if (!hasProductionContribution) {
@@ -1393,6 +1402,213 @@ class HighRiskReadinessEvaluator {
     }
     return null;
   }
+
+  // Adding names to `show` exports cannot change runtime behavior, so the
+  // entrypoint itself may contribute no minimum impacts. Every other line must
+  // match the base byte for byte. Each added name must resolve, through head
+  // blobs, to a declaration whose whole export chain already exists at base
+  // and stays outside structured-output areas, and no other export route of
+  // the entrypoint may reach that name. Anything unproven retains the ordinary
+  // minima; the changed declaring files still contribute their own impacts.
+  Future<bool> _isExportOnlyEntrypointChange(
+    String entrypoint,
+    PullRequestContext context,
+    Map<String, RepositoryChange> changes,
+    String? workingDirectory,
+  ) async {
+    final change = changes[entrypoint];
+    if (change?.kind != RepositoryChangeKind.modified ||
+        change?.previousPath != null) {
+      return false;
+    }
+    Future<ReadinessFile?> read(String sha, String path) =>
+        repositoryState.fileAt(sha, path, workingDirectory: workingDirectory);
+    final base = await read(context.baseSha, entrypoint);
+    final head = await read(context.headSha, entrypoint);
+    if (base?.mode != '100644' || head?.mode != '100644') return false;
+    final baseExports = _exportLines(base!.contents);
+    final headExports = _exportLines(head!.contents);
+    if (baseExports == null ||
+        headExports == null ||
+        baseExports.skeleton != headExports.skeleton ||
+        !headExports.byTarget.keys.toSet().containsAll(
+          baseExports.byTarget.keys,
+        )) {
+      return false;
+    }
+    final added = <ExportDirective, Set<String>>{};
+    for (final entry in headExports.byTarget.entries) {
+      final headDirective = entry.value;
+      final baseDirective = baseExports.byTarget[entry.key];
+      final headShown = _shownNames(headDirective);
+      if (baseDirective == null) {
+        if (headShown == null || headDirective.configurations.isNotEmpty) {
+          return false;
+        }
+        added[headDirective] = headShown;
+        continue;
+      }
+      final baseShown = _shownNames(baseDirective);
+      if (baseShown == null) {
+        String combinators(ExportDirective directive) => [
+          for (final combinator in directive.combinators) combinator.toSource(),
+        ].join(' ');
+        if (combinators(headDirective) != combinators(baseDirective)) {
+          return false;
+        }
+        continue;
+      }
+      if (headShown == null || !headShown.containsAll(baseShown)) return false;
+      added[headDirective] = headShown.difference(baseShown);
+    }
+
+    final units = <String, Future<CompilationUnit?>>{};
+    Future<CompilationUnit?> headUnit(
+      String path,
+    ) => units[path] ??= read(context.headSha, path).then((file) {
+      final unit = file?.mode == '100644' ? _parseExact(file!.contents) : null;
+      return unit == null ||
+              _declaredNames(unit) == null ||
+              unit.directives.any(
+                (directive) =>
+                    directive is PartDirective || directive is PartOfDirective,
+              )
+          ? null
+          : unit;
+    });
+
+    // Whether [path] exports [name]; `null` when its export graph is
+    // uncertain or, for an added name, leaves the reviewed bounds.
+    Future<bool?> declares(
+      String path,
+      String name, {
+      required bool addedName,
+      Set<String> chain = const {},
+    }) async {
+      if (chain.contains(path)) return null;
+      if (addedName &&
+          (isStructuredOutputExport(path, name) ||
+              (await read(context.baseSha, path))?.mode != '100644')) {
+        return null;
+      }
+      final unit = await headUnit(path);
+      if (unit == null) return null;
+      if (_declaredNames(unit)!.contains(name)) return true;
+      var found = false;
+      for (final directive in unit.directives.whereType<ExportDirective>()) {
+        if (!_exportAdmits(directive, name)) continue;
+        for (final uri in _exportUris(directive)) {
+          final child = _localExportPath(path, uri);
+          if (child == null) return null;
+          final result = await declares(
+            child,
+            name,
+            addedName: addedName,
+            chain: {...chain, path},
+          );
+          if (result == null) return null;
+          found = found || result;
+        }
+      }
+      return found;
+    }
+
+    for (final MapEntry(key: adding, value: names) in added.entries) {
+      for (final name in names) {
+        if (headExports.declared.contains(name)) return false;
+        for (final directive in headExports.byTarget.values) {
+          if (!_exportAdmits(directive, name)) continue;
+          for (final uri in _exportUris(directive)) {
+            final target = _localExportPath(entrypoint, uri);
+            final isAdding = identical(directive, adding);
+            if (target == null ||
+                await declares(target, name, addedName: isAdding) != isAdding) {
+              return false;
+            }
+          }
+        }
+      }
+    }
+    return true;
+  }
+
+  static CompilationUnit? _parseExact(String source) {
+    final parsed = parseString(content: source, throwIfDiagnostics: false);
+    return parsed.errors.isEmpty ? parsed.unit : null;
+  }
+
+  /// Export directives keyed by URI and conditional branches, [source] with
+  /// each directive's whole lines removed, and the names [source] declares.
+  /// `null` when a directive shares a line with other code, carries
+  /// annotations or repeats a key.
+  static ({
+    String skeleton,
+    Map<String, ExportDirective> byTarget,
+    Set<String> declared,
+  })?
+  _exportLines(String source) {
+    final unit = _parseExact(source);
+    final declared = unit == null ? null : _declaredNames(unit);
+    if (unit == null || declared == null) return null;
+    final byTarget = <String, ExportDirective>{};
+    final skeleton = StringBuffer();
+    var kept = 0;
+    for (final directive in unit.directives.whereType<ExportDirective>()) {
+      final start = source.lastIndexOf('\n', directive.offset - 1) + 1;
+      final newline = source.indexOf('\n', directive.end);
+      final end = newline < 0 ? source.length : newline + 1;
+      final key = [
+        directive.uri.stringValue,
+        for (final branch in directive.configurations) branch.toSource(),
+      ].join('\n');
+      if (start < kept ||
+          directive.metadata.isNotEmpty ||
+          directive.uri.stringValue == null ||
+          source.substring(start, directive.offset).trim().isNotEmpty ||
+          source.substring(directive.end, end).trim().isNotEmpty ||
+          byTarget.containsKey(key)) {
+        return null;
+      }
+      byTarget[key] = directive;
+      skeleton.write(source.substring(kept, start));
+      kept = end;
+    }
+    skeleton.write(source.substring(kept));
+    return (
+      skeleton: skeleton.toString(),
+      byTarget: byTarget,
+      declared: declared,
+    );
+  }
+
+  /// The names of [directive]'s single `show` combinator, or `null` for any
+  /// other combinator shape or a repeated name.
+  static Set<String>? _shownNames(ExportDirective directive) {
+    if (directive.combinators.length != 1) return null;
+    final combinator = directive.combinators.single;
+    if (combinator is! ShowCombinator) return null;
+    final names = {for (final name in combinator.shownNames) name.name};
+    return names.length == combinator.shownNames.length ? names : null;
+  }
+
+  static bool _exportAdmits(ExportDirective directive, String name) {
+    for (final combinator in directive.combinators) {
+      if (combinator is ShowCombinator &&
+          !combinator.shownNames.any((shown) => shown.name == name)) {
+        return false;
+      }
+      if (combinator is HideCombinator &&
+          combinator.hiddenNames.any((hidden) => hidden.name == name)) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  static List<String?> _exportUris(ExportDirective directive) => [
+    directive.uri.stringValue,
+    for (final branch in directive.configurations) branch.uri.stringValue,
+  ];
 
   // This recognizes one reviewed export shape, not arbitrary "image paths".
   // It proves additive namespace/loading properties; the independent review
@@ -1611,6 +1827,16 @@ class HighRiskReadinessEvaluator {
       }
       return false;
     }
+    // Existing head image code may reference the new types inside methods.
+    final declared = _declaredNames(unit);
+    return declared == null || declared.any(names.contains);
+  }
+
+  /// Top-level names [unit] declares, or `null` when a declaration node or
+  /// name shape is unknown. Inspects actual namespace declarations, never a
+  /// guessed header boundary: record and function return types can contain
+  /// braces before the name.
+  static Set<String>? _declaredNames(CompilationUnit unit) {
     Token? nameAfter(Token keyword, {bool optionalConst = false}) {
       var token = keyword.next;
       if (optionalConst && token != null && token.lexeme == 'const') {
@@ -1619,9 +1845,7 @@ class HighRiskReadinessEvaluator {
       return token?.type == TokenType.IDENTIFIER ? token : null;
     }
 
-    // Existing head image code may reference the new types inside methods.
-    // Inspect actual namespace declarations, never a guessed header boundary:
-    // record and function return types can contain braces before the name.
+    final names = <String>{};
     for (final declaration in unit.declarations) {
       final declared = switch (declaration) {
         // Keyword-anchored name tokens span analyzer 8 through 14. The newer
@@ -1648,12 +1872,12 @@ class HighRiskReadinessEvaluator {
           declared.any(
             (token) =>
                 token == null || token.isSynthetic || token.lexeme.isEmpty,
-          ) ||
-          declared.any((token) => names.contains(token?.lexeme))) {
-        return true;
+          )) {
+        return null;
       }
+      names.addAll(declared.map((token) => token!.lexeme));
     }
-    return false;
+    return names;
   }
 
   Future<(ReadinessFailureClassification, String)?> _validateEvidencePath(

@@ -327,6 +327,33 @@ other changed production source, adds any affected chat impact and supplies the
 corresponding coverage. An internally consistent result still exits 2 for the
 unconfigured external prerequisites; it never establishes operational readiness.
 
+A second Git-derived refinement covers export-only changes to `lib/backend.dart`
+and `lib/llamadart.dart` (`exportOnlyEntrypoints`), such as #1791's
+`BackendTextToSpeechModelSupport` SPI export. Such an entrypoint contributes no
+minimum impacts, so each impact may be `applicable: false` with a rationale and
+production references. Everything else above still applies, including causal
+test evidence for the export and the declaring sources' own contributions.
+
+The entrypoint must be modified in place as a non-executable regular blob at
+both revisions, and both revisions must parse. Removing every export
+directive's whole lines must leave them byte-identical, so any other changed
+line keeps the full requirement: a comment, import, declaration or library doc.
+A directive must not share a line with other code or carry annotations. Every
+base export stays with the same URI, conditional branches and combinators,
+except that a single `show` list may gain names. A new directive must be
+unconditional with a single `show`. Removed names, wildcards, `hide` changes and
+conditional additions keep the requirement.
+
+Each added name must resolve through head blobs to its declaration, in every
+branch of a conditional export. Every library on that chain must already exist
+at base and lie outside structured-output areas. `isStructuredOutputExport`
+rejects the classifier's structured paths, including the public entrypoints,
+and any path or name containing `chat`, `template`, `jinja`, `render`,
+`grammar`, `gbnf`, `schema`, `pars`, `tool`, `structured`, `completion` or
+`stream`. No other export route, and no declaration in the entrypoint itself,
+may reach an added name. Parts, nonlocal exports, cycles and unknown
+declaration shapes on any route the check inspects keep the requirement.
+
 The `families` list retains unique `tested`/`unavailable` entries, relevant tests
 and a rationale. Missing weights require named unavailable families and primary
 upstream emissions plus fixtures; unrelated model evidence remains pipeline-only.

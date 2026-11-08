@@ -64,8 +64,32 @@ Set<StructuredImpact>? structuredProductionImpactHints(String path) {
     return {StructuredImpact.grammarSchema};
   }
   // Handlers, shared utilities, exports, and unknown paths can mix effects.
+  // Only the readiness evaluator may drop a public entrypoint's contribution,
+  // after proving its diff export-only (see exportOnlyEntrypoints).
   return StructuredImpact.values.toSet();
 }
+
+/// Public entrypoints whose contribution the readiness evaluator may drop when
+/// their diff only adds names to `show` exports.
+const Set<String> exportOnlyEntrypoints = {
+  'lib/backend.dart',
+  'lib/llamadart.dart',
+};
+
+/// Whether exporting [symbol], declared or re-exported through [path], reaches
+/// a parser, grammar, template or chat-rendering area. Such an export keeps
+/// the entrypoint's full contribution.
+bool isStructuredOutputExport(String path, String symbol) =>
+    _isStructuredOutput(path) ||
+    _structuredExportPattern.hasMatch(path) ||
+    _structuredExportPattern.hasMatch(symbol);
+
+// Deliberately broad: a false match only keeps the full requirement.
+final RegExp _structuredExportPattern = RegExp(
+  'chat|template|jinja|render|grammar|gbnf|schema|pars|tool|structured'
+  '|completion|stream',
+  caseSensitive: false,
+);
 
 /// Platform-independent result of classifying paths read from standard input.
 class HighRiskCliResult {

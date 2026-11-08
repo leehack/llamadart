@@ -72,6 +72,37 @@ void main() {
     );
   });
 
+  test('exports from structured-output areas keep the full requirement', () {
+    expect(
+      isStructuredOutputExport(
+        'lib/src/backends/backend.dart',
+        'BackendTextToSpeechModelSupport',
+      ),
+      isFalse,
+    );
+    for (final (path, symbol) in [
+      ('lib/src/core/template/chat_format.dart', 'Format'),
+      ('lib/src/core/grammar/limits.dart', 'Limits'),
+      ('lib/src/core/models/tools/tool_param.dart', 'Param'),
+      ('lib/src/core/models/chat/chat_role.dart', 'Role'),
+      ('lib/src/core/engine/chat_template_renderer.dart', 'Renderer'),
+      ('lib/src/backends/litert_lm/litert_lm_templates.dart', 'Templates'),
+      ('lib/src/backends/backend.dart', 'BackendNativeChatGeneration'),
+      ('lib/src/backends/backend.dart', 'BackendGrammarConstraintsSupport'),
+      ('lib/src/backends/backend.dart', 'BackendJsonSchemaChatGeneration'),
+      ('lib/src/backends/backend.dart', 'BackendToolResultMedia'),
+      ('lib/src/core/engine/engine.dart', 'LlamaEngineCompletionExtension'),
+      ('lib/src/core/engine/engine.dart', 'ParseResult'),
+      ('lib/src/core/engine/engine.dart', 'TokenStream'),
+    ]) {
+      expect(
+        isStructuredOutputExport(path, symbol),
+        isTrue,
+        reason: '$path $symbol',
+      );
+    }
+  });
+
   group('assessHighRiskFiles', () {
     test('only exact root ffigen config is an artifact consumer', () {
       expect(assessHighRiskFiles(['ffigen.yaml']).surfaces, {

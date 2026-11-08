@@ -1555,8 +1555,8 @@ final segment = '${Object()}ImageEditingRequest${Object()}';
           '-j',
           '1',
           paths.last,
-          '--plain-name',
-          'Git-bound additive image export impacts',
+          '--name',
+          '^Git-bound ',
           '--exclude-tags',
           'local-only',
           '--reporter',
@@ -1577,6 +1577,523 @@ final segment = '${Object()}ImageEditingRequest${Object()}';
     tags: 'local-only',
     timeout: const Timeout(Duration(minutes: 4)),
   );
+
+  group('Git-bound export-only entrypoint impacts', () {
+    const entrypoint = 'lib/backend.dart';
+    const spi = 'lib/src/backends/backend.dart';
+    const entrypointTest = 'test/unit/public_entrypoints_test.dart';
+    const addedName = '        BackendTextToSpeechModelSupport,\n';
+    const oldEntrypoint =
+        '/// The service-provider interface for custom llamadart backends.\n'
+        'library;\n'
+        '\n'
+        "export 'src/backends/backend.dart'\n"
+        '    show\n'
+        '        LlamaBackend,\n'
+        '        BackendTextToSpeech,\n'
+        '        BackendToolResultMedia;\n'
+        "export 'src/core/engine/engine.dart' show LlamaEngineBackendHooks;\n";
+    final newEntrypoint = oldEntrypoint.replaceFirst(
+      '        BackendToolResultMedia;',
+      '$addedName        BackendToolResultMedia;',
+    );
+    const oldSpi =
+        'abstract class LlamaBackend {}\n'
+        'abstract class BackendTextToSpeech {}\n'
+        'abstract class BackendToolResultMedia {}\n';
+    const newSpi =
+        '${oldSpi}abstract class BackendTextToSpeechModelSupport {}\n'
+        'abstract class BackendChatTemplateSupport {}\n';
+    Map<String, Map<String, ReadinessFile>> exportFiles({
+      String? head,
+      Map<String, String> extra = const {},
+    }) {
+      final old = <String, ReadinessFile>{
+        for (final entry in extra.entries)
+          entry.key: (mode: '100644', contents: entry.value),
+        entrypoint: (mode: '100644', contents: oldEntrypoint),
+        spi: (mode: '100644', contents: oldSpi),
+        'lib/src/core/engine/engine.dart': (
+          mode: '100644',
+          contents: 'class LlamaEngineBackendHooks {}\n',
+        ),
+        entrypointTest: (
+          mode: '100644',
+          contents:
+              "void main() { test('regression case', () { productionCall(); }); }",
+        ),
+      };
+      return {
+        baseSha: old,
+        headSha: {
+          ...old,
+          entrypoint: (mode: '100644', contents: head ?? newEntrypoint),
+          spi: (mode: '100644', contents: newSpi),
+        },
+      };
+    }
+
+    const exportChanges = [
+      RepositoryChange(path: entrypoint, kind: RepositoryChangeKind.modified),
+      RepositoryChange(path: spi, kind: RepositoryChangeKind.modified),
+    ];
+    Map<String, dynamic> exportEvidence(Map<String, String> extraRefs) {
+      final evidence = structuredEvidence();
+      evidence['surfaces'] = ['structuredOutput', 'backendRuntime'];
+      evidence['affected_test_paths'] = [entrypointTest];
+      final refs = <Map<String, dynamic>>[
+        {'path': entrypoint, 'snippet': 'library;'},
+        {'path': spi, 'snippet': 'abstract class LlamaBackend {}'},
+        for (final ref in extraRefs.entries)
+          {'path': ref.key, 'snippet': ref.value},
+      ];
+      evidence['test_evidence'] = {
+        entrypointTest: testProof(entrypoint)
+          ..['production_refs'] = <Map<String, dynamic>>[
+            for (final ref in refs) {...ref},
+          ],
+      };
+      final structured = evidence['structured_output_evidence'] as Map;
+      for (final axis in (structured['coverage'] as Map).keys) {
+        structured['coverage'][axis] = <String>[];
+      }
+      for (final impact in StructuredImpact.values) {
+        structured['impacts'][impact.name] = {
+          'applicable': false,
+          'rationale':
+              'Independent review: the entrypoint diff only exports the SPI.',
+          'production_refs': <Map<String, dynamic>>[
+            for (final ref in refs) {...ref},
+          ],
+        };
+      }
+      structured['families'] = [
+        {
+          'family': 'speech',
+          'status': 'tested',
+          'evidence_test_paths': [entrypointTest],
+          'rationale': 'No chat or tool-call family is affected.',
+        },
+      ];
+      return evidence;
+    }
+
+    Future<HighRiskReadinessResult> evaluateExport({
+      Map<String, Map<String, ReadinessFile>>? files,
+      List<RepositoryChange> changes = exportChanges,
+      Map<String, String> extraRefs = const {},
+    }) {
+      final state = files ?? exportFiles();
+      return HighRiskReadinessEvaluator(
+        repositoryState: FakeRepositoryState(
+          changes: changes,
+          existingPaths: state[headSha]!.keys.toSet(),
+          files: state,
+        ),
+      ).evaluate(evidence: exportEvidence(extraRefs), context: context);
+    }
+
+    Future<void> expectFullRequirement(
+      Future<HighRiskReadinessResult> evaluation,
+    ) async {
+      final result = await evaluation;
+      expectFailure(
+        result,
+        ReadinessFailureClassification.missingStructuredOutputEvidence,
+      );
+      expect(result.message, contains('cannot be excluded'));
+    }
+
+    test('a name added to an existing show export (#1791) may be '
+        'marked not applicable', () async {
+      final result = await evaluateExport();
+      expect(result.decision, ReadinessDecision.unverifiedPrerequisites);
+      expect(
+        result.failureClassification,
+        ReadinessFailureClassification.externalPrerequisitesUnavailable,
+      );
+    });
+
+    final accepted = <String, (String, Map<String, String>)>{
+      'a new show export of a non-structured library': (
+        "${oldEntrypoint}export 'src/core/speech/voices.dart' show "
+            'SpeechVoice;\n',
+        {'lib/src/core/speech/voices.dart': 'class SpeechVoice {}\n'},
+      ),
+      'a name re-exported through a non-structured library': (
+        "${oldEntrypoint}export 'src/core/speech/speech.dart' show "
+            'SpeechVoice;\n',
+        {
+          'lib/src/core/speech/speech.dart':
+              "export 'voices.dart' hide OtherVoice;\n",
+          'lib/src/core/speech/voices.dart': 'class SpeechVoice {}\n',
+        },
+      ),
+      'a documented new export': (
+        "$oldEntrypoint/// Speech voices.\nexport "
+            "'src/core/speech/voices.dart' show SpeechVoice;\n",
+        {'lib/src/core/speech/voices.dart': 'class SpeechVoice {}\n'},
+      ),
+    };
+    for (final entry in accepted.entries) {
+      test('${entry.key} may be marked not applicable', () async {
+        final result = await evaluateExport(
+          files: exportFiles(head: entry.value.$1, extra: entry.value.$2),
+        );
+        expect(result.decision, ReadinessDecision.unverifiedPrerequisites);
+      });
+    }
+
+    final rejected = <String, (String Function(String), Map<String, String>)>{
+      'an added comment line': ((s) => '$s// Speech\n', {}),
+      'a changed library doc comment': (
+        (s) => s.replaceFirst('custom llamadart', 'custom'),
+        {},
+      ),
+      'an added import': ((s) => "import 'dart:async';\n$s", {}),
+      'an added declaration': ((s) => '${s}const version = 1;\n', {}),
+      'an export sharing a line with a comment': (
+        (s) => s.replaceFirst(
+          'LlamaEngineBackendHooks;',
+          'LlamaEngineBackendHooks; // hooks',
+        ),
+        {},
+      ),
+      'an annotated export': (
+        (s) => s.replaceFirst(
+          "export 'src/core/engine",
+          "@Deprecated('x')\nexport 'src/core/engine",
+        ),
+        {},
+      ),
+      'a removed shown name': (
+        (s) => s.replaceFirst('        BackendTextToSpeech,\n', ''),
+        {},
+      ),
+      'a removed export': (
+        (s) => s.replaceFirst(
+          "export 'src/core/engine/engine.dart' show LlamaEngineBackendHooks;\n",
+          '',
+        ),
+        {},
+      ),
+      'a structured-output symbol name': (
+        (s) => s.replaceFirst(
+          'BackendTextToSpeechModelSupport,',
+          'BackendChatTemplateSupport,',
+        ),
+        {},
+      ),
+      'a symbol declared in a template library': (
+        (s) => "${s}export 'src/core/template/chat_format.dart' show Format;\n",
+        {'lib/src/core/template/chat_format.dart': 'class Format {}\n'},
+      ),
+      'a symbol declared in a grammar library': (
+        (s) => "${s}export 'src/core/grammar/limits.dart' show Limits;\n",
+        {'lib/src/core/grammar/limits.dart': 'class Limits {}\n'},
+      ),
+      'a symbol declared in a chat-rendering library': (
+        (s) => "${s}export 'src/core/models/chat/role.dart' show Role;\n",
+        {'lib/src/core/models/chat/role.dart': 'class Role {}\n'},
+      ),
+      'a symbol re-exported from a parser library': (
+        (s) => "${s}export 'src/core/speech/speech.dart' show Result;\n",
+        {
+          'lib/src/core/speech/speech.dart':
+              "export '../template/peg_chat_parser.dart';\n",
+          'lib/src/core/template/peg_chat_parser.dart': 'class Result {}\n',
+        },
+      ),
+      'a symbol re-exported through another public entrypoint': (
+        (s) => "${s}export 'llamadart.dart' show SpeechVoice;\n",
+        {'lib/llamadart.dart': 'class SpeechVoice {}\n'},
+      ),
+      'a symbol no library declares': (
+        (s) => "${s}export 'src/core/speech/voices.dart' show Missing;\n",
+        {'lib/src/core/speech/voices.dart': 'class SpeechVoice {}\n'},
+      ),
+      'a symbol from a library with parts': (
+        (s) => "${s}export 'src/core/speech/voices.dart' show SpeechVoice;\n",
+        {
+          'lib/src/core/speech/voices.dart':
+              "part 'voices_part.dart';\nclass SpeechVoice {}\n",
+        },
+      ),
+      'a symbol behind a nonlocal re-export': (
+        (s) => "${s}export 'src/core/speech/speech.dart' show SpeechVoice;\n",
+        {
+          'lib/src/core/speech/speech.dart':
+              "export 'package:other/voices.dart';\n",
+        },
+      ),
+      'a wildcard new export': (
+        (s) => "${s}export 'src/core/speech/voices.dart';\n",
+        {'lib/src/core/speech/voices.dart': 'class SpeechVoice {}\n'},
+      ),
+      'a hiding new export': (
+        (s) => "${s}export 'src/core/speech/voices.dart' hide Other;\n",
+        {'lib/src/core/speech/voices.dart': 'class SpeechVoice {}\n'},
+      ),
+      'a conditional new export': (
+        (s) =>
+            "${s}export 'src/core/speech/voices.dart' if (dart.library.io) "
+            "'src/core/speech/io_voices.dart' show SpeechVoice;\n",
+        {
+          'lib/src/core/speech/voices.dart': 'class SpeechVoice {}\n',
+          'lib/src/core/speech/io_voices.dart': 'class SpeechVoice {}\n',
+        },
+      ),
+      'a repeated export target': (
+        (s) =>
+            "${s}export 'src/core/engine/engine.dart' show "
+            'LlamaEngineBackendHooks;\n',
+        {},
+      ),
+      'invalid syntax': ((s) => '${s}export', {}),
+      'an import sharing a line with a new export': (
+        (s) =>
+            "${s}import 'dart:async'; export 'src/core/speech/voices.dart' "
+            'show SpeechVoice;\n',
+        {'lib/src/core/speech/voices.dart': 'class SpeechVoice {}\n'},
+      ),
+      'a repeated shown name': (
+        (s) =>
+            "${s}export 'src/core/speech/voices.dart' show "
+            'SpeechVoice, SpeechVoice;\n',
+        {'lib/src/core/speech/voices.dart': 'class SpeechVoice {}\n'},
+      ),
+    };
+    for (final entry in rejected.entries) {
+      test('${entry.key} keeps the full requirement', () async {
+        await expectFullRequirement(
+          evaluateExport(
+            files: exportFiles(
+              head: entry.value.$1(newEntrypoint),
+              extra: entry.value.$2,
+            ),
+          ),
+        );
+      });
+    }
+
+    final otherRoutes = <String, (String, Map<String, String>)>{
+      'another export also reaching the added name': (
+        "export 'src/core/speech/voices.dart';\n",
+        {
+          'lib/src/core/speech/voices.dart':
+              'class BackendTextToSpeechModelSupport {}\n',
+        },
+      ),
+      'another export re-exporting the added name': (
+        "export 'src/core/speech/speech.dart' hide Other;\n",
+        {
+          'lib/src/core/speech/speech.dart': "export 'voices.dart';\n",
+          'lib/src/core/speech/voices.dart':
+              'class BackendTextToSpeechModelSupport {}\n',
+        },
+      ),
+      'the entrypoint declaring the added name': (
+        'class BackendTextToSpeechModelSupport {}\n',
+        {},
+      ),
+      'an uncertain nonlocal export': (
+        "export 'package:other/other.dart';\n",
+        {},
+      ),
+      'an uncertain nonlocal re-export': (
+        "export 'src/core/speech/speech.dart';\n",
+        {'lib/src/core/speech/speech.dart': "export 'package:other/a.dart';\n"},
+      ),
+      'an export cycle': (
+        "export 'src/core/speech/a.dart';\n",
+        {
+          'lib/src/core/speech/a.dart': "export 'b.dart';\n",
+          'lib/src/core/speech/b.dart': "export 'a.dart';\n",
+        },
+      ),
+      'an uncertain export with parts': (
+        "export 'src/core/speech/speech.dart';\n",
+        {'lib/src/core/speech/speech.dart': "part 'speech_part.dart';\n"},
+      ),
+    };
+    for (final entry in otherRoutes.entries) {
+      test('${entry.key} keeps the full requirement', () async {
+        final files = exportFiles(extra: entry.value.$2);
+        for (final sha in [baseSha, headSha]) {
+          files[sha]![entrypoint] = (
+            mode: '100644',
+            contents: files[sha]![entrypoint]!.contents + entry.value.$1,
+          );
+        }
+        await expectFullRequirement(evaluateExport(files: files));
+      });
+    }
+
+    test('a name another export hides is not a collision', () async {
+      final files = exportFiles(
+        extra: {
+          'lib/src/core/speech/voices.dart':
+              'class BackendTextToSpeechModelSupport {}\n',
+        },
+      );
+      for (final sha in [baseSha, headSha]) {
+        files[sha]![entrypoint] = (
+          mode: '100644',
+          contents:
+              "${files[sha]![entrypoint]!.contents}export "
+              "'src/core/speech/voices.dart' "
+              'hide BackendTextToSpeechModelSupport;\n',
+        );
+      }
+      final result = await evaluateExport(files: files);
+      expect(result.decision, ReadinessDecision.unverifiedPrerequisites);
+    });
+
+    test(
+      'a name declared in a new library keeps the full requirement',
+      () async {
+        final files = exportFiles(
+          head:
+              "${oldEntrypoint}export 'src/core/speech/voices.dart' show "
+              'SpeechVoice;\n',
+        );
+        files[headSha]!['lib/src/core/speech/voices.dart'] = (
+          mode: '100644',
+          contents: 'class SpeechVoice {}\n',
+        );
+        await expectFullRequirement(
+          evaluateExport(
+            files: files,
+            changes: const [
+              ...exportChanges,
+              RepositoryChange(
+                path: 'lib/src/core/speech/voices.dart',
+                kind: RepositoryChangeKind.added,
+              ),
+            ],
+            extraRefs: {'lib/src/core/speech/voices.dart': 'SpeechVoice'},
+          ),
+        );
+      },
+    );
+
+    test('a conditional export gaining a name from a structured branch '
+        'keeps the full requirement', () async {
+      const stub = 'lib/src/backends/speech_stub.dart';
+      const io = 'lib/src/core/template/speech_io.dart';
+      const directive =
+          "export 'src/backends/speech_stub.dart'\n"
+          "    if (dart.library.io) 'src/core/template/speech_io.dart'\n";
+      final files = exportFiles(
+        extra: {
+          stub: 'class Voice {}\nclass Speaker {}\n',
+          io: 'class Voice {}\nclass Speaker {}\n',
+        },
+      );
+      files[baseSha]![entrypoint] = (
+        mode: '100644',
+        contents: '$oldEntrypoint$directive    show Voice;\n',
+      );
+      files[headSha]![entrypoint] = (
+        mode: '100644',
+        contents: '$newEntrypoint$directive    show Voice, Speaker;\n',
+      );
+      await expectFullRequirement(evaluateExport(files: files));
+      for (final sha in [baseSha, headSha]) {
+        files[sha]![entrypoint] = (
+          mode: '100644',
+          contents: files[sha]![entrypoint]!.contents.replaceFirst(
+            'core/template/speech_io',
+            'backends/speech_stub_io',
+          ),
+        );
+        files[sha]!['lib/src/backends/speech_stub_io.dart'] = files[sha]![io]!;
+      }
+      final result = await evaluateExport(files: files);
+      expect(result.decision, ReadinessDecision.unverifiedPrerequisites);
+    });
+
+    test('a wildcard base export changed to show keeps the full '
+        'requirement', () async {
+      final base = oldEntrypoint.replaceFirst(
+        ' show LlamaEngineBackendHooks',
+        '',
+      );
+      final files = exportFiles();
+      files[baseSha]![entrypoint] = (mode: '100644', contents: base);
+      await expectFullRequirement(evaluateExport(files: files));
+    });
+
+    test('an executable entrypoint keeps the full requirement', () async {
+      final files = exportFiles();
+      files[headSha]![entrypoint] = (mode: '100755', contents: newEntrypoint);
+      await expectFullRequirement(evaluateExport(files: files));
+    });
+
+    test('a renamed entrypoint keeps the full requirement', () async {
+      const other = 'lib/backend_spi.dart';
+      for (final (from, to) in [(entrypoint, other), (other, entrypoint)]) {
+        final files = exportFiles();
+        files[baseSha]![from] = (mode: '100644', contents: oldEntrypoint);
+        files[headSha]![to] = (mode: '100644', contents: newEntrypoint);
+        files[headSha]!.remove(from);
+        await expectFullRequirement(
+          evaluateExport(
+            files: files,
+            changes: [
+              RepositoryChange(
+                path: to,
+                kind: RepositoryChangeKind.renamed,
+                previousPath: from,
+              ),
+              exportChanges.last,
+            ],
+            extraRefs: {other: 'library;'},
+          ),
+        );
+      }
+    });
+
+    test('other public entrypoints keep the full requirement', () async {
+      const bindings = 'lib/llama_cpp_bindings.dart';
+      final files = exportFiles();
+      for (final sha in [baseSha, headSha]) {
+        files[sha]![bindings] = files[sha]![entrypoint]!;
+      }
+      await expectFullRequirement(
+        evaluateExport(
+          files: files,
+          changes: const [
+            ...exportChanges,
+            RepositoryChange(
+              path: bindings,
+              kind: RepositoryChangeKind.modified,
+            ),
+          ],
+          extraRefs: {bindings: 'library;'},
+        ),
+      );
+    });
+
+    test('other changed structured paths keep their own minima', () async {
+      const parser = 'lib/src/core/template/peg_chat_parser.dart';
+      final files = exportFiles();
+      files[headSha]![parser] = (mode: '100644', contents: 'class Parser {}');
+      final result = await evaluateExport(
+        files: files,
+        changes: const [
+          ...exportChanges,
+          RepositoryChange(path: parser, kind: RepositoryChangeKind.added),
+        ],
+        extraRefs: {parser: 'class Parser {}'},
+      );
+      expectFailure(
+        result,
+        ReadinessFailureClassification.missingStructuredOutputEvidence,
+      );
+      expect(result.message, contains('outputParsingStreaming'));
+    });
+  });
 
   group('bounded metadata-only release evidence', () {
     test(
