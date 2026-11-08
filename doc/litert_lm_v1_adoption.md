@@ -63,6 +63,17 @@ observer usage remains null. [Owner #51](https://github.com/leehack/litert-lm-na
 remains open for its legacy-artifact history; other devices and profiles retain
 their separate qualification limits.
 
+The same 20-case graph passed again on published v0.19.1 (Test Lab matrix
+`matrix-1nd80qbdta8cf`, run `core019-litert0191-s24-20261108`, source
+`f836cdd5`, 2026-11-08). The APK packaged the hook's v0.19.1 Android payload
+byte-identical to the release archive (`abe67320`). All six lifetimes closed,
+completion was present, and the unchanged decoder accepted the journal plus 15
+sidecars extracted from its lossless envelopes. Native GPU and both public
+corrected-auto lifetimes initialized OpenCL with full `LITERT_CL` delegation
+(1306/1306 decode, 1358/1358 prefill) and no CPU fallback. The four legacy
+semantic failures are unchanged. The qualifier binding now admits only
+`v0.19.1`.
+
 ## Required coverage
 
 | Public call path | Preparation and evidence | Remaining admission work |
