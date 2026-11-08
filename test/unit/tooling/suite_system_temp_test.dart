@@ -144,6 +144,8 @@ Future<void> main(List<String> args) async {
       }
       expect(root.existsSync(), isFalse, reason: 'the reaper removes the root');
     },
+    // The child compiles the support file, then the reaper outlives it.
+    timeout: const Timeout(Duration(minutes: 3)),
     skip: Platform.isWindows ? false : 'needs Windows file locking',
   );
 }
