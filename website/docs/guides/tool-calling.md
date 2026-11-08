@@ -605,7 +605,7 @@ context stops the loop as `truncated` without running its calls. Native
 LiteRT-LM reports why a reply ended on runtimes whose
 `stream_proxy_finish_reason_abi_version` export returns 1: litert-lm-native
 `v0.18.0-3` and later, including the default pin. Older native runtimes, and
-Web `@litert-lm/core@0.18.0`, which reports no cause
+Web `@litert-lm/core@0.19.0`, which reports no cause
 ([#919](https://github.com/leehack/llamadart/issues/919)), throw
 `LlamaUnsupportedException` before starting the loop or modifying its history, including when resuming a turn or
 passing an empty tools list. Plain `ChatSession.create` and

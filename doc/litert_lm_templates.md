@@ -160,7 +160,7 @@ these paths using read-only symlinks to a local legacy bundle.
 
 ### Web limitation
 
-`@litert-lm/core@0.18.0` wraps the supplied string as a user message and exposes
+`@litert-lm/core@0.19.0` wraps the supplied string as a user message and exposes
 no conversation-template setter. Rendering Qwen3 ChatML in Dart therefore nests
 it inside the bundle's wrapper and cannot enforce the disabled-thinking prefix.
 Web model loads with the complete current canonical Qwen3 override (including

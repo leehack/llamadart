@@ -600,7 +600,7 @@ class LiteRtLmService {
     if (!client.supportsJsonSchemaConstraints) {
       throw LlamaUnsupportedException(
         'Native JSON Schema chat requires all constraint-provider and thinking-config symbols. '
-        'Use the packaged LiteRT-LM v0.19.0 runtime through the default ABI-selecting client; '
+        'Use the packaged LiteRT-LM v0.19.1 runtime through the default ABI-selecting client; '
         'model and platform qualification still applies.',
       );
     }
@@ -1300,8 +1300,12 @@ class LiteRtLmService {
 
     final resolvedSpeculativeDecoding =
         speculativeDecoding ?? _activeSpeculativeDecoding ?? false;
-    final resolvedMaxNumImages = maxNumImages ?? _activeMaxNumImages;
     final resolvedVisionEnabled = enableVision ?? _activeVisionEnabled ?? false;
+    // The runtime rejects an image count without a vision encoder, so a turn
+    // whose history holds no images drops the previous turn's count.
+    final resolvedMaxNumImages = resolvedVisionEnabled
+        ? maxNumImages ?? _activeMaxNumImages
+        : null;
     final resolvedAudioEnabled = enableAudio ?? _activeAudioEnabled ?? false;
     final backend = _activeBackend ?? _backendNameFor(modelParams);
     final existing = _client;

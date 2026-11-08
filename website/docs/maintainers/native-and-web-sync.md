@@ -137,12 +137,14 @@ hashes must be lowercase 64-hex SHA-256 digests. The owner validates patch
 contents and applicability; sync validates the declared provenance shape.
 
 Schema-2 sync updates the runtime discovery table selected by the validated
-upstream compatibility tag: `v0.19.0` updates the admitted C API 1.0 table;
-earlier versions update the legacy table. Library, macOS framework and native
-SwiftPM inventories stay separate, so repinning cannot relax discovery of an
-explicit older runtime. Unknown newer compatibility tags require a reviewed API
-mapping before generation. The sync tests compile and execute both discovery
-paths after generation, including missing-companion refusal.
+upstream compatibility tag: `v0.19.0` and `v0.19.1` update the admitted C API
+1.0 table; earlier versions update the legacy table. `v0.19.1` keeps C API
+1.0.0 with the same exports, so it shares the `v0.19.0` mapping. Library,
+macOS framework and native SwiftPM inventories stay separate, so repinning
+cannot relax discovery of an explicit older runtime. Unknown newer
+compatibility tags require a reviewed API mapping before generation. The sync
+tests compile and execute both discovery paths after generation, including
+missing-companion refusal.
 
 For schema 2, Apple target selection follows the per-platform owner inventory.
 Sync removes a formerly required iOS Gemma constraint-provider target from a
@@ -154,8 +156,8 @@ provider retain it; malformed or ambiguous Swift target layouts fail before
 pin files are replaced. Updating the sync tool does not change the current pins
 or publish a runtime.
 
-The reviewed `v0.19.0` owner links both TopK samplers from source, so its
-Apple inventory no longer requires the prebuilt iOS `LiteRtTopKMetalSampler`
+The reviewed `v0.19.0` and `v0.19.1` owners link both TopK samplers from
+source, so their Apple inventory no longer requires the prebuilt iOS `LiteRtTopKMetalSampler`
 or macOS `LiteRtTopKWebGpuSampler`. Earlier core requirements for those 0.19
 artifacts were stale. Sync removes both targets only from the known nine-target
 layout after validating every canonical artifact and platform dependency, and
@@ -391,10 +393,15 @@ parameters. The public lazy facade, service metadata/finish probes and speech
 worker share discovery and ABI selection. `_liteRtLmV1ProductionSelection` in
 `litert_lm_runtime_facade.dart` enables public C API 1.0.x dispatch. The native
 hook and Apple companion source now pin published
-[v0.19.0](https://github.com/leehack/litert-lm-native/releases/tag/v0.19.0),
-owner `f173fe9b` / upstream `83ce6067`. Independent readback matched all 21 public
-assets to qualified bytes; GitHub reports `immutable: false`, so this is verified
-snapshot evidence, not enforced immutability. Public selection retains legacy
+[v0.19.1](https://github.com/leehack/litert-lm-native/releases/tag/v0.19.1),
+owner `1fa4d437` / upstream `7a03724c`, which keeps C API 1.0.0 and the
+`v0.19.0` exports. Its only runtime change makes the main executor default
+`max_num_images` to 4 when unset; the v1 client never sets it, and every macOS
+arm64 LiteRT-LM consumer scenario, including a multi-image probe, matched
+`v0.19.0` output. `v0.19.0` (owner `f173fe9b` / upstream `83ce6067`) was
+adopted after independent readback matched all 21 public assets to qualified
+bytes; GitHub reports `immutable: false` for both, so this is verified snapshot
+evidence, not enforced immutability. Public selection retains legacy
 overrides when the version marker is absent; a present marker must report C API
 1.0.x. Failed, malformed and future versions never retry legacy arities, and
 optional capabilities still require their complete export/probe groups. The
@@ -416,7 +423,7 @@ bounded to the failed backend; disposal never reports successful cleanup in this
 state. Do not kill the retained isolate or release its lease to make teardown
 appear complete.
 
-Public ABI-aware selection and the v0.19.0 source pin are enabled; remaining
+Public ABI-aware selection and the v0.19.1 source pin are enabled; remaining
 consumer, feature and platform gates are recorded in
 `doc/litert_lm_v1_adoption.md`. This transport contract alone does not qualify a
 model or device. The owner proxy's
@@ -619,6 +626,14 @@ Use this checklist in native sync PRs:
 - Update public docs that mention the pinned native versions or source table.
 
 ## Companion package release handoff
+
+After core `0.18.0`, the LiteRT-LM pin moved to `v0.19.1`. It ships in core
+`0.19.0`, which re-releases all three Apple companions at `0.19.0` with
+`llamadart: '>=0.19.0 <0.20.0'`; the LiteRT-LM companion pins `v0.19.1`. Pub
+cannot resolve a `0.19.x` core beside a `0.18.x` companion, so no mixed pair
+exists. A `0.18.x` patch from `main` would accept only `v0.19.1`, while the
+published `0.18.0` companion it resolves beside pins `v0.19.0`; release prep
+rejects that pair, so `main` can no longer ship a `0.18.x` patch.
 
 Core `0.17.1` preparation pairs all three Apple companions at `0.17.1`, with
 SwiftPM pins `v0.8.0-1`, `v0.18.1-4` and `v0.3.0-1`. The llama.cpp companion
