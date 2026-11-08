@@ -461,6 +461,24 @@ class TextToSpeechCapabilitiesRequest extends WorkerRequest {
   );
 }
 
+/// Request for why the runtime cannot drive a text-to-speech model.
+class TextToSpeechModelSupportRequest extends WorkerRequest {
+  /// The model family to check.
+  final BackendTextToSpeechModel model;
+
+  /// Creates a TTS model support request.
+  TextToSpeechModelSupportRequest(this.model, super.sendPort);
+}
+
+/// Worker response to a [TextToSpeechModelSupportRequest].
+class TextToSpeechModelSupportResponse {
+  /// Why the runtime cannot drive the model, or null when it can.
+  final String? unsupportedReason;
+
+  /// Creates a TTS model support response.
+  TextToSpeechModelSupportResponse(this.unsupportedReason);
+}
+
 /// Request to synthesize one complete utterance.
 class TextToSpeechSynthesizeRequest extends WorkerRequest {
   /// Handle of the loaded llama context.

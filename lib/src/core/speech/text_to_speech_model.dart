@@ -119,3 +119,59 @@ class Qwen3TtsAdapter extends TextToSpeechAdapter {
     return code;
   }
 }
+
+/// LFM3-Audio and LFM3-Omni speech output on llama.cpp, with the model's
+/// audio projector.
+///
+/// The model speaks through its `tts` chat template, so load the LFM3 model
+/// that matches the projector; one without that template is unsupported.
+/// Output is 24 kHz mono PCM.
+///
+/// - [TextToSpeechRequest.voice] selects `female` (the default) or `male`.
+/// - [TextToSpeechRequest.language] is rendered into the template as given,
+///   as a code such as `en` or a language name; nothing validates it, so
+///   check it against the model card. Without one the template's default,
+///   English, applies.
+/// - Speaker references are unsupported.
+/// - Audio codes are sampled with the model's own GGUF settings:
+///   [TextToSpeechRequest.topK], `topP`, `minP` and `temperature` are
+///   validated but unused. [TextToSpeechRequest.seed] seeds the generation.
+///
+/// Needs llamadart-native v0.8.0 or later; earlier runtimes report the
+/// projector as unsupported.
+class Lfm3AudioTtsAdapter extends TextToSpeechAdapter {
+  /// Creates the LFM3-Audio adapter.
+  const Lfm3AudioTtsAdapter();
+
+  @override
+  String get name => 'LFM3-Audio';
+
+  @override
+  bool supportsModel(BackendTextToSpeechModel? model) =>
+      model == BackendTextToSpeechModel.lfm3Audio;
+
+  @override
+  String normalizeLanguage(String language) => language;
+}
+
+/// Soprano on llama.cpp, with its Vocos-decoder projector.
+///
+/// Soprano takes no language, voice or speaker reference; requests with any
+/// of them are unsupported. It samples with the request's settings, whose
+/// default temperature is 0.8; upstream's example decodes greedily, so pass
+/// `temperature: 0` to match it. Output is 32 kHz mono PCM, decoded on the
+/// last generation step. Fewer than two generated frames fail the synthesis.
+///
+/// No llama.cpp-format Soprano GGUF is published; see the text-to-speech
+/// guide for converting one. Needs llamadart-native v0.8.0 or later.
+class SopranoTtsAdapter extends TextToSpeechAdapter {
+  /// Creates the Soprano adapter.
+  const SopranoTtsAdapter();
+
+  @override
+  String get name => 'Soprano';
+
+  @override
+  bool supportsModel(BackendTextToSpeechModel? model) =>
+      model == BackendTextToSpeechModel.soprano;
+}

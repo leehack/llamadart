@@ -90,6 +90,8 @@ examples use. `.litertlm` bundles process media themselves. See
 | Speech to text (whole file) | Qwen3-ASR 0.6B | Validated | `ggml-org/Qwen3-ASR-0.6B-GGUF` |
 | Speech to text (live, LiteRT-LM) | Moonshine Tiny | Validated | `litert-community/moonshine-tiny` |
 | Text to speech | Qwen3-TTS 1.7B | Validated | `ggml-org/Qwen3-TTS-12Hz-1.7B-Base-GGUF` |
+| Text to speech | LFM3-Audio 2B | Checked on macOS arm64 | `LiquidAI/LFM3-Audio-2B-GGUF` |
+| Text to speech | Soprano 1.1 80M | Checked on macOS arm64 | Convert `ekwek/Soprano-1.1-80M` ([guide](../guides/text-to-speech#soprano)) |
 | Embeddings | EmbeddingGemma 300M | Used by the basic example | `ggml-org/embeddinggemma-300M-GGUF` |
 | Decision models | Laya (ModernBERT) | Validated | `fr0stbit3/laya-gguf` |
 

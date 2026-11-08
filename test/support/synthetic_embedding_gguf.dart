@@ -76,6 +76,7 @@ File writeSyntheticLlamaGguf(
   String path, {
   String architecture = 'llama',
   Map<String, int> uint32Metadata = const {},
+  Map<String, String> stringMetadata = const {},
   int? eosTokenId,
   int? poolingType,
   bool? causalAttention,
@@ -102,6 +103,8 @@ File writeSyntheticLlamaGguf(
         '$arch.pooling_type': _GgufValue.uint32(poolingType),
       for (final MapEntry(:key, :value) in uint32Metadata.entries)
         key: _GgufValue.uint32(value),
+      for (final MapEntry(:key, :value) in stringMetadata.entries)
+        key: _GgufValue.string(value),
     },
     tensors: {
       'token_embd.weight': _weights(random, [_embd, _tokens.length]),
