@@ -33,35 +33,31 @@ Directory Function() useSuiteSystemTemp() {
     IOOverrides.global = _SystemTempOverrides(root);
   });
 
-  tearDownAll(() async {
+  tearDownAll(() {
     IOOverrides.global = previous;
     expect(
       realCacheFiles.difference(_fileNames(realCacheRoot)),
       isEmpty,
       reason: 'files deleted from ${realCacheRoot.path}',
     );
-    await deleteSuiteRoot(root);
+    deleteSuiteRoot(root);
   });
 
   return () => root;
 }
 
-/// Deletes [root]. On Windows, LiteRT-LM keeps the XNNPack caches it wrote
-/// open after its engines are disposed, until the process exits: when only
-/// those resist, everything else is deleted now and [deleteAfterExit] removes
-/// [root] once this process has exited. Any other undeletable file throws.
+/// Deletes [root], except on Windows the XNNPack caches that LiteRT-LM keeps
+/// open after its engines are disposed, until the process exits: those and
+/// [root] are left behind. Any other undeletable file throws.
 ///
 /// [isWindows] and [delete] replace the host checks in tests.
-Future<void> deleteSuiteRoot(
+void deleteSuiteRoot(
   Directory root, {
   bool? isWindows,
   void Function(FileSystemEntity entity) delete = _deleteRecursively,
-  Future<void> Function(Directory root) deleteAfterExit =
-      deleteAfterProcessExit,
-}) async {
+}) {
   try {
     delete(root);
-    return;
   } on FileSystemException {
     if (!(isWindows ?? Platform.isWindows)) rethrow;
     final undeletable = <String>[];
@@ -77,38 +73,10 @@ Future<void> deleteSuiteRoot(
     }
     if (undeletable.isNotEmpty) rethrow;
   }
-  try {
-    delete(root);
-  } on FileSystemException {
-    await deleteAfterExit(root);
-  }
 }
 
 void _deleteRecursively(FileSystemEntity entity) =>
     entity.deleteSync(recursive: true);
-
-/// Starts a detached Windows PowerShell that deletes [root] after this
-/// process exits and releases the files it holds open.
-Future<void> deleteAfterProcessExit(Directory root) => Process.start(
-  'powershell.exe',
-  suiteRootReaperArguments(root.path, pid),
-  mode: ProcessStartMode.detached,
-);
-
-/// PowerShell arguments that wait for [processId] to exit, then delete
-/// [rootPath], retrying for a minute while scanners briefly hold its files.
-List<String> suiteRootReaperArguments(String rootPath, int processId) => [
-  '-NoProfile',
-  '-NonInteractive',
-  '-Command',
-  'Wait-Process -Id $processId -ErrorAction SilentlyContinue; '
-      "\$root = '${rootPath.replaceAll("'", "''")}'; "
-      'foreach (\$attempt in 1..60) { '
-      'try { Remove-Item -LiteralPath \$root -Recurse -Force -ErrorAction Stop; '
-      'exit 0 } catch { if (-not (Test-Path -LiteralPath \$root)) { exit 0 }; '
-      '\$failure = \$_; Start-Sleep -Seconds 1 } }; '
-      'Write-Error \$failure; exit 1',
-];
 
 Set<String> _fileNames(Directory dir) {
   if (!dir.existsSync()) return <String>{};
