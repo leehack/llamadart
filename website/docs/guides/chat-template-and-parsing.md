@@ -190,7 +190,7 @@ still produce empty content. Keep `Qwen3` in the filename, or set
 it follows the installed template across upgrades, so copied Jinja is unnecessary.
 Native text conversations honor `enableThinking: false`.
 
-Web `@litert-lm/core@0.18.0` has no conversation-template setter and rejects this
+Web `@litert-lm/core@0.19.0` has no conversation-template setter and rejects this
 canonical Qwen3 override at model load with `LlamaUnsupportedException`.
 Use native LiteRT-LM for this contract. Generic Web overrides and loads without
 an override retain their existing behavior.

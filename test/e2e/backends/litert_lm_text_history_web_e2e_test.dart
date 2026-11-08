@@ -18,7 +18,7 @@ import 'package:web/web.dart';
 void main() {
   test('text history and system prompts match the published JS runtime', () async {
     const moduleUrl =
-        'https://cdn.jsdelivr.net/npm/@litert-lm/core@0.18.0/+esm';
+        'https://cdn.jsdelivr.net/npm/@litert-lm/core@0.19.0/+esm';
     final manifestResponse = await window
         .fetch('http://127.0.0.1:5198/manifest.json'.toJS)
         .toDart;
@@ -38,7 +38,7 @@ void main() {
               .map((entry) => entry.name)
               .where(
                 (name) => name.startsWith(
-                  'https://cdn.jsdelivr.net/npm/@litert-lm/core@0.18.0/',
+                  'https://cdn.jsdelivr.net/npm/@litert-lm/core@0.19.0/',
                 ),
               )
               .toSet()
@@ -117,7 +117,8 @@ void main() {
             'create'.toJS,
             <String, Object>{
               'model': model,
-              'backend': device == ComputeDevice.cpu ? 3 : 2,
+              // GPU keeps the runtime default, as the adapter does.
+              if (device == ComputeDevice.cpu) 'backend': 3,
               'mainExecutorSettings': {'maxNumTokens': 1024},
             }.jsify(),
           )
@@ -144,6 +145,12 @@ void main() {
       fail('Published JS model load failed: $directError');
     }
     final direct = directEngine!;
+    final directBackend =
+        (direct
+                .getProperty<JSObject>('settings'.toJS)
+                .getProperty<JSNumber>('backend'.toJS))
+            .toDartInt;
+    print('LITERT_TEXT_HISTORY_DIRECT_BACKEND $directBackend');
     Future<String> reference(
       List<Map<String, String>> history,
       String prompt, {
@@ -156,7 +163,7 @@ void main() {
               'preface': {'messages': history},
               'sessionConfig': {
                 'maxOutputTokens': params.maxTokens,
-                'samplerBackend': device == ComputeDevice.cpu ? 3 : 2,
+                'samplerBackend': directBackend,
                 'samplerParams': {'k': 1, 'p': 1, 'temperature': 0, 'seed': 42},
               },
             }.jsify(),
@@ -268,7 +275,13 @@ void main() {
       adapterError = error.toString();
     }
     print(
-      'LITERT_TEXT_HISTORY_LOAD ${jsonEncode({...identity, 'directError': directError, 'adapterError': adapterError, 'execution': device == ComputeDevice.cpu ? 'WASM CPU' : 'WebGPU_ARTISAN', 'engineResidency': 'serial'})}',
+      'LITERT_TEXT_HISTORY_LOAD ${jsonEncode({
+        ...identity,
+        'directError': directError,
+        'adapterError': adapterError,
+        'execution': const {2: 'WebGPU_ARTISAN', 3: 'WASM CPU', 4: 'WebGPU'}[directBackend],
+        'engineResidency': 'serial',
+      })}',
     );
     expect(
       directError,

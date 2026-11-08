@@ -373,7 +373,7 @@ class ModelParams {
   /// only generic ChatML metadata cannot be identified after renaming: keep
   /// Qwen3 in the filename or set this to `liteRtLmQwen3ChatTemplate`, the
   /// public accessor for the installed canonical template. Do not copy its
-  /// bytes across package upgrades. Web `@litert-lm/core@0.18.0` cannot set a
+  /// bytes across package upgrades. Web `@litert-lm/core@0.19.0` cannot set a
   /// conversation template and rejects this Qwen3 override at model load with
   /// [LlamaUnsupportedException]; use native LiteRT-LM for this contract.
   /// Other families keep their native bundle template and content adapter.

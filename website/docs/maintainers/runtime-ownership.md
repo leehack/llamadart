@@ -60,7 +60,7 @@ report why a conversation stream turn ended, and llamadart reads it
   `generationLimitUnsupportedReason` is null only after a load on a reporting
   runtime.
 
-Web `@litert-lm/core@0.18.0` exposes no cause, so LiteRT-LM Web keeps
+Web `@litert-lm/core@0.19.0` exposes no cause, so LiteRT-LM Web keeps
 rejecting automatic tool loops. It needs a terminal cause from a qualified
 `@litert-lm/core` release (or an owned bridge package) that distinguishes EOS,
 output and context budgets and cancellation, a capability probe for it in
@@ -84,7 +84,7 @@ Why the cause needs the owner patch, from upstream `v0.18.0`:
   forwards only text, final and error, so a proxy-only change cannot recover
   the discarded cause.
 - The official pinned
-  [Web conversation implementation](https://cdn.jsdelivr.net/npm/@litert-lm/core@0.18.0/dist/conversation.js)
+  [Web conversation implementation](https://cdn.jsdelivr.net/npm/@litert-lm/core@0.19.0/dist/conversation.js)
   streams messages and closes after `waitUntilDone`. It exposes no terminal
   cause; native artifact publication alone does not repair the browser package.
 
