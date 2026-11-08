@@ -3678,9 +3678,36 @@ def replace_litert_lm_bundle_checksum(
     return updated
 
 
+# From v0.19.1-1, Linux and Windows hosts link LiteRT in, and the owner build
+# fails if they still import it (litert-lm-native#112). Bundles keep the
+# upstream prebuilt only to preserve their layout, so it is not required.
+LITERT_DESKTOP_LINKED_LITERT_FIRST_RELEASE = ((0, 19, 1), 1)
+LITERT_DESKTOP_UNLOADED_PREBUILTS = {
+    "linux": "libLiteRt.so",
+    "windows": "libLiteRt.dll",
+}
+
+
+def _litert_desktop_hosts_link_litert(manifest: dict[str, Any]) -> bool:
+    release = manifest.get("release")
+    tag = release.get("tag") if isinstance(release, dict) else None
+    if not isinstance(tag, str):
+        return False
+    try:
+        order = stable_release_order(tag)
+    except ReleaseError:
+        return False
+    return order >= LITERT_DESKTOP_LINKED_LITERT_FIRST_RELEASE
+
+
 def litert_schema2_bundle_required_libraries(
     manifest: dict[str, Any],
 ) -> dict[str, tuple[str, ...]]:
+    unloaded_prebuilts = (
+        LITERT_DESKTOP_UNLOADED_PREBUILTS
+        if _litert_desktop_hosts_link_litert(manifest)
+        else {}
+    )
     platforms = manifest.get("platforms")
     if not isinstance(platforms, list):
         raise ReleaseError("LiteRT-LM manifest platforms must be a list")
@@ -3737,6 +3764,8 @@ def litert_schema2_bundle_required_libraries(
                 if (Path(path).parent.as_posix() != f"bin/windows/{arch}"
                         or Path(path).with_suffix(".dll").as_posix() not in paths):
                     raise ReleaseError("LiteRT-LM Windows import library has no matching DLL")
+                continue
+            if Path(path).name == unloaded_prebuilts.get(platform_name):
                 continue
             library_paths.append(path)
         if not library_paths:

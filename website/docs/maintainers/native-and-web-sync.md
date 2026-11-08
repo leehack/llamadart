@@ -583,7 +583,12 @@ An absent marker still requires every legacy TopK companion. Common companions
 load before that probe; legacy-only samplers load after admission. macOS flat,
 versioned-framework and native-SPM layouts follow the same rule. A staged
 concrete directory keeps its own primary handle rather than falling back to the
-process image; iOS wrapper/process discovery is unchanged.
+process image; iOS wrapper/process discovery is unchanged. From `v0.19.1-1`,
+`sync_native_release_pins.py` leaves the Linux and Windows prebuilt
+`libLiteRt` out of the required inventory: those hosts link LiteRT in
+([litert-lm-native#112](https://github.com/leehack/litert-lm-native/pull/112)),
+so the hook neither ships nor opens it. Syncing an earlier release keeps it,
+and legacy (`v0.18.x`) overrides still require and open it.
 
 `LLAMADART_LITERT_LM_LIB_DIR` takes precedence over packaged and cached desktop
 runtimes. An incomplete directory or an unloadable explicit library now fails

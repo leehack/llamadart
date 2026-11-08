@@ -403,7 +403,9 @@ List<String> liteRtLmIosLibraryCandidates(
 }
 
 /// Required desktop runtime files. The default preserves legacy discovery;
-/// [cApiV1] describes the owner 0.19 inventory after C API admission.
+/// [cApiV1] describes the owner 0.19 inventory after C API admission, less
+/// the prebuilt `libLiteRt` that Linux and Windows hosts from v0.19.1-1 link
+/// in instead of loading (litert-lm-native#112).
 List<String> liteRtLmRequiredLibrariesForAbi(Abi abi, {bool cApiV1 = false}) {
   return cApiV1
       ? _liteRtLmV1RequiredLibrariesForAbi(abi)
@@ -471,14 +473,12 @@ List<String> _liteRtLmV1RequiredLibrariesForAbi(Abi abi) {
     ],
     Abi.linuxArm64 => const <String>[
       'libGemmaModelConstraintProvider.so',
-      'libLiteRt.so',
       'libLiteRtLm.so',
       'libLiteRtWebGpuAccelerator.so',
       'libwebgpu_dawn.so',
     ],
     Abi.linuxX64 => const <String>[
       'libGemmaModelConstraintProvider.so',
-      'libLiteRt.so',
       'libLiteRtLm.so',
       'libLiteRtWebGpuAccelerator.so',
       'libwebgpu_dawn.so',
@@ -488,7 +488,6 @@ List<String> _liteRtLmV1RequiredLibrariesForAbi(Abi abi) {
       'dxcompiler.dll',
       'dxil.dll',
       'libGemmaModelConstraintProvider.dll',
-      'libLiteRt.dll',
       'libLiteRtWebGpuAccelerator.dll',
       'libwebgpu_dawn.dll',
       'msvcp140.dll',

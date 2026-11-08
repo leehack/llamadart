@@ -184,7 +184,6 @@ const liteRtLmBundleSpecs = <LiteRtLmBundleSpec>[
     sha256: '7d7520ba8e6e5a0a3faae1262ab9e027a33a96e3feebdddff7460fbd4c65e98e',
     requiredLibraries: {
       'libGemmaModelConstraintProvider.so',
-      'libLiteRt.so',
       'libLiteRtLm.so',
       'libLiteRtWebGpuAccelerator.so',
       'libwebgpu_dawn.so',
@@ -195,7 +194,6 @@ const liteRtLmBundleSpecs = <LiteRtLmBundleSpec>[
     sha256: '1c93ead8d8977b0b1e69d0054555881af16e2b6e46a584870ab86cd51c28589c',
     requiredLibraries: {
       'libGemmaModelConstraintProvider.so',
-      'libLiteRt.so',
       'libLiteRtLm.so',
       'libLiteRtWebGpuAccelerator.so',
       'libwebgpu_dawn.so',
@@ -209,7 +207,6 @@ const liteRtLmBundleSpecs = <LiteRtLmBundleSpec>[
       'dxcompiler.dll',
       'dxil.dll',
       'libGemmaModelConstraintProvider.dll',
-      'libLiteRt.dll',
       'libLiteRtWebGpuAccelerator.dll',
       'libwebgpu_dawn.dll',
       'msvcp140.dll',

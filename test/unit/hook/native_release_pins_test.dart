@@ -196,11 +196,18 @@ void main() {
       Abi.linuxX64: ['libLiteRtTopKWebGpuSampler.so'],
       Abi.windowsX64: ['libLiteRtTopKWebGpuSampler.dll'],
     };
+    // v0.18.x Linux and Windows hosts import the prebuilt libLiteRt that
+    // C API 1 hosts from v0.19.1-1 link in.
+    const liteRt = {
+      Abi.linuxArm64: ['libLiteRt.so'],
+      Abi.linuxX64: ['libLiteRt.so'],
+      Abi.windowsX64: ['libLiteRt.dll'],
+    };
     for (final entry in samplers.entries) {
       final modern = liteRtLmRequiredLibrariesForAbi(entry.key, cApiV1: true);
       expect(
         liteRtLmRequiredLibrariesForAbi(entry.key),
-        unorderedEquals([...modern, ...entry.value]),
+        unorderedEquals([...modern, ...entry.value, ...?liteRt[entry.key]]),
         reason: entry.key.toString(),
       );
       for (final sampler in entry.value) {

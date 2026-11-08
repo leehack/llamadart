@@ -16,34 +16,43 @@ void main() {
     Abi.linuxX64,
     Abi.windowsX64,
   ];
+  // Linux and Windows hosts from v0.19.1-1 link LiteRT in and never load
+  // the prebuilt libLiteRt their owner archive still carries.
+  const linkedInLiteRt = {
+    Abi.linuxArm64: 'libLiteRt.so',
+    Abi.linuxX64: 'libLiteRt.so',
+    Abi.windowsX64: 'libLiteRt.dll',
+  };
   for (final abi in desktopAbis) {
-    test(
-      '$abi v1 keeps all owner companions except retired TopK libraries',
-      () {
-        final legacy = liteRtLmRequiredLibrariesForAbi(abi);
-        final modern = liteRtLmRequiredLibrariesForAbi(abi, cApiV1: true);
-        expect(modern.length, switch (abi) {
-          Abi.macosArm64 => 7,
-          Abi.windowsX64 => 12,
-          _ => 5,
-        });
-        expect(
-          legacy.toSet().difference(modern.toSet()),
-          everyElement(contains('TopK')),
-        );
-        expect(modern, containsAll(liteRtLmNonPreloadedLibrariesForAbi(abi)));
-        expect(
-          liteRtLmCompanionLibrariesForAbi(abi, cApiV1: true),
-          unorderedEquals(
-            modern.where(
-              (file) =>
-                  file != liteRtLmPrimaryLibraryForAbi(abi) &&
-                  !liteRtLmNonPreloadedLibrariesForAbi(abi).contains(file),
-            ),
+    test('$abi v1 keeps all owner companions except retired TopK libraries '
+        'and a linked-in LiteRT', () {
+      final legacy = liteRtLmRequiredLibrariesForAbi(abi);
+      final modern = liteRtLmRequiredLibrariesForAbi(abi, cApiV1: true);
+      expect(modern.length, switch (abi) {
+        Abi.macosArm64 => 7,
+        Abi.windowsX64 => 11,
+        _ => 4,
+      });
+      final retired = legacy.toSet().difference(modern.toSet());
+      expect(
+        retired.where((file) => file != linkedInLiteRt[abi]),
+        everyElement(contains('TopK')),
+      );
+      if (linkedInLiteRt[abi] case final liteRt?) {
+        expect(retired, contains(liteRt));
+      }
+      expect(modern, containsAll(liteRtLmNonPreloadedLibrariesForAbi(abi)));
+      expect(
+        liteRtLmCompanionLibrariesForAbi(abi, cApiV1: true),
+        unorderedEquals(
+          modern.where(
+            (file) =>
+                file != liteRtLmPrimaryLibraryForAbi(abi) &&
+                !liteRtLmNonPreloadedLibrariesForAbi(abi).contains(file),
           ),
-        );
-      },
-    );
+        ),
+      );
+    });
   }
 
   test('v1 discovery matches the frozen owner 0.19 desktop inventory', () {
@@ -67,13 +76,16 @@ void main() {
             item['platform'] == entry.value.$1 &&
             item['arch'] == entry.value.$2,
       );
-      final expected =
+      final owner =
           (platform['artifactPaths'] as List<dynamic>)
               .cast<String>()
               .where((file) => !file.endsWith('.lib'))
               .map(path.basename)
               .toList()
             ..sort();
+      final linked = linkedInLiteRt[entry.key];
+      if (linked != null) expect(owner, contains(linked));
+      final expected = owner.where((file) => file != linked).toList();
       expect(
         liteRtLmRequiredLibrariesForAbi(entry.key, cApiV1: true),
         expected,

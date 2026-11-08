@@ -33,41 +33,78 @@ Directory Function() useSuiteSystemTemp() {
     IOOverrides.global = _SystemTempOverrides(root);
   });
 
-  tearDownAll(() {
+  tearDownAll(() async {
     IOOverrides.global = previous;
     expect(
       realCacheFiles.difference(_fileNames(realCacheRoot)),
       isEmpty,
       reason: 'files deleted from ${realCacheRoot.path}',
     );
-    _deleteSuiteRoot(root);
+    await deleteSuiteRoot(root);
   });
 
   return () => root;
 }
 
-/// Deletes [root], except on Windows the XNNPack caches that LiteRT-LM keeps
-/// open after its engines are disposed, until the process exits.
-void _deleteSuiteRoot(Directory root) {
+/// Deletes [root]. On Windows, LiteRT-LM keeps the XNNPack caches it wrote
+/// open after its engines are disposed, until the process exits: when only
+/// those resist, everything else is deleted now and [deleteAfterExit] removes
+/// [root] once this process has exited. Any other undeletable file throws.
+///
+/// [isWindows] and [delete] replace the host checks in tests.
+Future<void> deleteSuiteRoot(
+  Directory root, {
+  bool? isWindows,
+  void Function(FileSystemEntity entity) delete = _deleteRecursively,
+  Future<void> Function(Directory root) deleteAfterExit =
+      deleteAfterProcessExit,
+}) async {
   try {
-    root.deleteSync(recursive: true);
+    delete(root);
+    return;
   } on FileSystemException {
-    if (!Platform.isWindows) rethrow;
+    if (!(isWindows ?? Platform.isWindows)) rethrow;
     final undeletable = <String>[];
     for (final file
         in root
             .listSync(recursive: true, followLinks: false)
             .whereType<File>()) {
-      if (file.path.endsWith('.xnnpack_cache')) continue;
       try {
-        file.deleteSync();
+        delete(file);
       } on FileSystemException {
-        undeletable.add(file.path);
+        if (!file.path.endsWith('.xnnpack_cache')) undeletable.add(file.path);
       }
     }
     if (undeletable.isNotEmpty) rethrow;
   }
+  try {
+    delete(root);
+  } on FileSystemException {
+    await deleteAfterExit(root);
+  }
 }
+
+void _deleteRecursively(FileSystemEntity entity) =>
+    entity.deleteSync(recursive: true);
+
+/// Starts a detached Windows PowerShell that deletes [root] after this
+/// process exits and releases the files it holds open.
+Future<void> deleteAfterProcessExit(Directory root) => Process.start(
+  'powershell.exe',
+  suiteRootReaperArguments(root.path, pid),
+  mode: ProcessStartMode.detached,
+);
+
+/// PowerShell arguments that wait for [processId] to exit, then delete
+/// [rootPath].
+List<String> suiteRootReaperArguments(String rootPath, int processId) => [
+  '-NoProfile',
+  '-NonInteractive',
+  '-Command',
+  'Wait-Process -Id $processId -ErrorAction SilentlyContinue; '
+      "Remove-Item -LiteralPath '${rootPath.replaceAll("'", "''")}' "
+      '-Recurse -Force',
+];
 
 Set<String> _fileNames(Directory dir) {
   if (!dir.existsSync()) return <String>{};

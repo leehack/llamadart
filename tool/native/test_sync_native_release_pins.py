@@ -677,9 +677,16 @@ def _run_dart_inventory_checks(
     generated.parent.mkdir(parents=True, exist_ok=True)
     if checks is None:
         projection = _v019_inventory_projection()
+        pinned_tag = pins.current_litert_lm_release_tag(
+            (Path(__file__).resolve().parents[2] / pins.DEFAULT_NATIVE_RELEASE_PINS).read_text(
+                encoding="utf-8"
+            )
+        )
         manifest = {
             "upstream": {"compatibilityTag": projection["compatibilityTag"]},
             "platforms": projection["platforms"],
+            # The pinned release decides which owner files its hosts load.
+            "release": {"tag": pinned_tag},
         }
         bundles = pins.litert_schema2_runtime_required_libraries(
             pins.litert_schema2_bundle_required_libraries(manifest)
@@ -3030,6 +3037,33 @@ class SyncNativeReleasePinsTest(unittest.TestCase):
         manifest["platforms"][0]["artifactPaths"] = paths[::2]
         with self.assertRaisesRegex(ReleaseError, "no matching DLL"):
             litert_schema2_bundle_required_libraries(manifest)
+
+    def test_schema_2_linked_desktop_hosts_do_not_require_prebuilt_litert(self) -> None:
+        def manifest(tag: str | None) -> dict:
+            value: dict = {"platforms": [
+                {"platform": platform, "arch": arch, "artifactPaths": [
+                    f"bin/{platform}/{arch}/{name}" for name in names]}
+                for platform, arch, names in (
+                    ("linux", "x64", ["libLiteRt.so", "libLiteRtLm.so"]),
+                    ("windows", "x64", ["LiteRtLm.dll", "libLiteRt.dll"]),
+                    ("macos", "arm64", ["libLiteRt.dylib", "libLiteRtLm.dylib"]),
+                )]}
+            if tag is not None:
+                value["release"] = {"tag": tag}
+            return value
+
+        for tag in ("v0.19.1-1", "v0.19.1-2", "v0.19.2", "v0.20.0"):
+            with self.subTest(tag=tag):
+                self.assertEqual(litert_schema2_bundle_required_libraries(manifest(tag)), {
+                    "linux-x64": ("libLiteRtLm.so",),
+                    "windows-x64": ("LiteRtLm.dll",),
+                    "macos-arm64": ("libLiteRt.dylib", "libLiteRtLm.dylib"),
+                })
+        for tag in (None, "v0.19.0", "v0.19.1", "v0.18.1-4", "v0.16.0-native.2", "g83ce6067f2e2"):
+            with self.subTest(tag=tag):
+                bundles = litert_schema2_bundle_required_libraries(manifest(tag))
+                self.assertIn("libLiteRt.so", bundles["linux-x64"])
+                self.assertIn("libLiteRt.dll", bundles["windows-x64"])
 
     def test_schema_2_hook_inventory_rejects_unsafe_library_names(self) -> None:
         fixture_root = Path(__file__).resolve().parent / "fixtures"

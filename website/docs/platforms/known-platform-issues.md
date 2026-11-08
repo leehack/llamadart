@@ -71,9 +71,12 @@ feature. For which runtime supports which feature, see the
   ([#1367](https://github.com/leehack/llamadart/issues/1367)), and `v0.19.0`
   and `v0.19.1` explicit GPU generation crashes at the first decode on Linux
   x64 and Windows x64 ([#1795](https://github.com/leehack/llamadart/issues/1795)).
-  Legacy `v0.18.x` runtimes are refused for embeddings before any native call;
+  Legacy `v0.18.x` runtimes are refused for embeddings before any native call,
+  though `checkLoad`, which opens no runtime, reports them as supported;
   `v0.19.0` and `v0.19.1` expose the same C API 1.0 as `v0.19.1-1`, so the
-  load gate cannot tell them apart.
+  load gate cannot tell them apart. On Windows, a `v0.19.0` or `v0.19.1`
+  runtime no longer loads: its `LiteRtLm.dll` imports `libLiteRt.dll`, which
+  llamadart stopped opening once `v0.19.1-1` linked LiteRT in.
 - Linux x64 LiteRT-LM GPU needs a hardware Vulkan driver. On Mesa llvmpipe
   alone it answers a few prompts, then crashes the process; use `cpu` on such
   hosts ([#572](https://github.com/leehack/llamadart/issues/572)).

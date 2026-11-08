@@ -464,6 +464,10 @@ class LlamaEngine implements LlamadartEngine<LlamaEngineCapabilities> {
   /// [capabilities] keeps describing the loaded model only. A supported
   /// report is not proof the load succeeds: the file, its memory and the
   /// runtime's native library or browser assets are checked by the load.
+  /// LiteRT-LM is judged by platform, since no runtime library is opened: a
+  /// legacy (v0.18.x) `LLAMADART_LITERT_LM_LIB_DIR` runtime on Linux or
+  /// Windows reports embeddings as supported, then throws
+  /// [LlamaUnsupportedException] when it creates the embedding engine.
   /// [setModel]'s rejections of a `ModelLoadOptions`, such as
   /// [ModelLoadOptions.sha256] with a projector, credentials sent to more
   /// than one host, or download options a URL-loading backend does not
