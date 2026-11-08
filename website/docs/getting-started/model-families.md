@@ -38,7 +38,7 @@ To see what a model will receive, render the prompt with
 
 | Family | Artifacts | Detected format | Evidence | Example repo |
 | --- | --- | --- | --- | --- |
-| Qwen3.5 | GGUF, `.litertlm` | Qwen3-Coder XML (GGUF); Qwen3 template (`.litertlm`) | Validated: GGUF on CPU, Metal, CUDA, Vulkan and WebGPU; LiteRT-LM on CPU and GPU | `ggml-org/Qwen3.5-0.8B-GGUF`, `litert-community/Qwen3.5-0.8B` |
+| Qwen3.5 | GGUF, `.litertlm` | Qwen3-Coder XML (GGUF); bundle's own template (`.litertlm`) | Validated: GGUF on CPU, Metal, CUDA, Vulkan and WebGPU; LiteRT-LM on CPU and GPU (no thinking, see below) | `ggml-org/Qwen3.5-0.8B-GGUF`, `litert-community/Qwen3.5-0.8B` |
 | Gemma 4 | GGUF, `.litertlm` | Gemma 4 | Validated: GGUF and LiteRT-LM | `unsloth/gemma-4-E2B-it-GGUF`, `litert-community/gemma-4-E2B-it-litert-lm` |
 | Qwen3 | GGUF, `.litertlm` | Hermes | Validated: LiteRT-LM. Template-tested: GGUF | `litert-community/Qwen3-0.6B` |
 | Gemma 3, 3n, 2 | GGUF, `.litertlm` | Gemma (generic JSON tool calls) | Validated: LiteRT-LM. Template-tested: GGUF | `litert-community/Gemma3-1B-IT` |
@@ -75,6 +75,14 @@ Where a format defines reasoning markers, such as `<think>`, Gemma 4's
 thought channel or Mistral's `[THINK]`, the parser returns reasoning
 separately from the reply. See
 [Text generation and streaming](../guides/generation-and-streaming).
+
+Qwen3.5 `.litertlm` bundles render their own embedded chat template
+([#1134](https://github.com/leehack/llamadart/issues/1134)), so
+`ModelParams.chatTemplate` is ignored for these files. The current
+`litert-community/Qwen3.5-0.8B` bundles always close an empty `<think>` block
+in the generation prompt and never read `enable_thinking`, so
+`enableThinking: true` produces no reasoning there. Use the GGUF for Qwen3.5
+thinking; Qwen3 and Gemma 4 `.litertlm` bundles support it.
 
 ## Vision and audio
 

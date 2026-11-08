@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:llamadart/backend.dart';
 import 'package:llamadart/llamadart.dart';
+import 'package:llamadart/src/backends/litert_lm/litert_lm_bundle_template.dart';
 
 import 'audio_chat_smoke_support.dart';
 import 'litert_lm_tokenizer_fixture.dart';
@@ -83,6 +84,9 @@ Future<void> main(List<String> args) async {
     );
     final toolLoopCutoff = await _runToolLoopCutoffScenario(engine);
 
+    final thinkingSupport = thinkingSupportForTemplate(
+      readLiteRtLmBundleChatTemplate(modelPath),
+    );
     final thinking = await _runScenario(
       engine: engine,
       messages: const [
@@ -229,7 +233,13 @@ Future<void> main(List<String> args) async {
       'plain': plain.toJson(),
       'cutoff': cutoff.toJson(),
       'toolLoopCutoff': toolLoopCutoff,
-      'thinking': thinking.toJson(),
+      'thinking': {
+        if (!thinkingSupport.canProduceThinking) ...{
+          'status': 'not_applicable',
+          'reason': thinkingSupport.reason,
+        },
+        ...thinking.toJson(),
+      },
       'textHistory': textHistory.toJson(),
       'sessionStructuredOutput': sessionStructuredOutput,
       'toolCall': toolCall.toJson(),
@@ -254,6 +264,7 @@ Future<void> main(List<String> args) async {
       plain: plain,
       cutoff: cutoff,
       thinking: thinking,
+      thinkingSupport: thinkingSupport,
       textHistory: textHistory,
       toolCall: toolCall,
       requiredUnsupportedExpected: requiredUnsupportedExpected,
@@ -331,10 +342,44 @@ Future<Map<String, Object?>> runSessionStructuredOutputScenario(
   return result;
 }
 
+/// Whether the chat template a loaded bundle renders can produce thinking.
+class ThinkingSupport {
+  const ThinkingSupport.supported() : canProduceThinking = true, reason = null;
+
+  const ThinkingSupport.unsupported(String this.reason)
+    : canProduceThinking = false;
+
+  final bool canProduceThinking;
+  final String? reason;
+}
+
+final RegExp _closedThinkBlock = RegExp(r'<think>\s*</think>');
+
+/// Judges [template], the chat template embedded in a loaded bundle.
+///
+/// A template that never reads `enable_thinking` and closes the think block in
+/// its generation prompt cannot produce thinking whatever the request asks. An
+/// unreadable or other template keeps the thinking assertion.
+ThinkingSupport thinkingSupportForTemplate(String? template) {
+  final generationStart = template?.lastIndexOf('add_generation_prompt') ?? -1;
+  if (template == null ||
+      generationStart < 0 ||
+      template.contains('enable_thinking') ||
+      !_closedThinkBlock.hasMatch(template.substring(generationStart))) {
+    return const ThinkingSupport.supported();
+  }
+  return const ThinkingSupport.unsupported(
+    'the bundle chat template never reads enable_thinking and its generation '
+    'prompt always closes an empty <think></think> block, so it cannot '
+    'produce thinking',
+  );
+}
+
 void _verifyResult({
   required _ScenarioResult plain,
   required _ScenarioResult cutoff,
   required _ScenarioResult thinking,
+  required ThinkingSupport thinkingSupport,
   required _ScenarioResult textHistory,
   required _RequiredToolScenarioResult toolCall,
   required bool requiredUnsupportedExpected,
@@ -365,11 +410,21 @@ void _verifyResult({
       '${cutoff.finishReason}, not length.',
     );
   }
-  if (thinking.thinking.trim().isEmpty) {
-    throw StateError('LiteRT-LM thinking scenario produced no thinking delta.');
-  }
-  if (thinking.content.trim().isEmpty) {
-    throw StateError('LiteRT-LM thinking scenario produced no visible answer.');
+  if (thinkingSupport.canProduceThinking) {
+    if (thinking.thinking.trim().isEmpty) {
+      throw StateError(
+        'LiteRT-LM thinking scenario produced no thinking delta.',
+      );
+    }
+    if (thinking.content.trim().isEmpty) {
+      throw StateError(
+        'LiteRT-LM thinking scenario produced no visible answer.',
+      );
+    }
+  } else {
+    stdout.writeln(
+      'N/A litert_lm_chat_features thinking: ${thinkingSupport.reason}',
+    );
   }
   if (!textHistory.content.contains('PINE') ||
       textHistory.thinking.isNotEmpty ||

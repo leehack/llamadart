@@ -762,7 +762,10 @@ files stay in its suite-owned temporary directory.
 Record source revision, runtime artifact identity and device with the result.
 This row qualifies image wiring, history and lifecycle for this model and CPU;
 it does not qualify audio, thinking, GPU or perceptual quality generally. The
-independent `litert-lm-chat-features-smoke` retains its thinking oracle.
+independent `litert-lm-chat-features-smoke` retains its thinking oracle. It
+records the thinking row as `not_applicable` (with the reason) when the loaded
+bundle's chat template never reads `enable_thinking` and always closes the
+think block, as both Qwen3.5 `.litertlm` bundles do.
 
 ### LiteRT-LM lifecycle regression
 
