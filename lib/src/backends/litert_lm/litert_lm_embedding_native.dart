@@ -66,7 +66,7 @@ extension _LegacyLiteRtLmEmbeddingRuntime on _LegacyLiteRtLmRuntimeClient {
     required int maxInputLength,
     required int numberOfThreads,
   }) async {
-    liteRtLmEnsureNativeEmbeddingsQualified();
+    liteRtLmEnsureLegacyNativeEmbeddingsQualified();
     ensureLiteRtLmNativeEmbeddingBackend(backend);
     _ensureLibrariesLoaded();
     final file = File(modelPath).openSync();

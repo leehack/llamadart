@@ -118,6 +118,36 @@ void liteRtLmEnsureNativeEmbeddingsQualified() {
   );
 }
 
+/// Returns whether a legacy LiteRT-LM runtime, one without the C API 1
+/// version export, may create native embedding engines on [abi].
+///
+/// Legacy v0.18.x desktop runtimes crash creating embedding engines (#1367);
+/// Linux and Windows embeddings are qualified only on C API 1 runtimes from
+/// litert-lm-native v0.19.1-1.
+bool liteRtLmLegacyNativeEmbeddingsQualifiedForAbi(Abi abi) {
+  return liteRtLmNativeEmbeddingsQualifiedForAbi(abi) &&
+      abi != Abi.linuxArm64 &&
+      abi != Abi.linuxX64 &&
+      abi != Abi.windowsX64;
+}
+
+/// Throws a [LlamaUnsupportedException] when a legacy LiteRT-LM runtime
+/// cannot create native embedding engines on this target.
+///
+/// Runs before any native embedding call on the legacy client.
+void liteRtLmEnsureLegacyNativeEmbeddingsQualified() {
+  liteRtLmEnsureNativeEmbeddingsQualified();
+  final abi = liteRtLmGateAbi();
+  if (liteRtLmLegacyNativeEmbeddingsQualifiedForAbi(abi)) return;
+  throw LlamaUnsupportedException(
+    'LiteRT-LM native embeddings on $abi require a C API 1 runtime from '
+    'litert-lm-native v0.19.1-1 or newer. The loaded runtime is a legacy one '
+    'without litert_lm_get_api_version, such as a v0.18.x custom runtime, '
+    'whose desktop embedding engine crashes (#1367). Use the bundled runtime '
+    'or a v0.19.1-1 or newer custom runtime, or the llama.cpp backend.',
+  );
+}
+
 /// Returns whether a Linux or Windows ABI exposes the explicit GPU backend.
 ///
 /// Backend availability does not establish model or hardware qualification.

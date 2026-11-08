@@ -21,7 +21,6 @@ validate against the exact release tag notes.
 - Move Web LiteRT-LM to `@litert-lm/core@0.19.0`; WebGPU loads keep the runtime's default backend, so standard `.litertlm` bundles can load there. Web embeddings, tool loops, media and custom templates stay unsupported.
 - Update the default LiteRT-LM native runtime to `leehack/litert-lm-native@v0.19.1-1` (upstream LiteRT-LM `v0.19.1`); the C API is unchanged. Flutter Apple apps get it from `llamadart_litert_lm_flutter` `0.19.0`, released with this core.
 - Support LiteRT-LM native CPU embeddings on Linux x64, Linux arm64 and Windows x64 ([#1367](https://github.com/leehack/llamadart/issues/1367)), and fix the crash at the first LiteRT-LM GPU decode on Linux x64 and Windows x64 ([#1795](https://github.com/leehack/llamadart/issues/1795)).
-- Update the default LiteRT-LM native runtime to `leehack/litert-lm-native@v0.19.1` (upstream LiteRT-LM `v0.19.1`); the C API is unchanged. Flutter Apple apps get it from `llamadart_litert_lm_flutter` `0.19.0`, released with this core.
 - Native Qwen3.5 on Android Vulkan now supports `microBatchSize` above 8, media (with the image encoder on the CPU), speculation and embeddings with the bundled runtime; llama.cpp runtimes older than ggml `0.28.0` (llamadart-native `v0.8.0`) keep the text-only restriction ([#948](https://github.com/leehack/llamadart/issues/948)).
 
 ## 0.18.0

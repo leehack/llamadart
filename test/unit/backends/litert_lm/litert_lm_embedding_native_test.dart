@@ -664,14 +664,42 @@ void main() {
       expect(chat, isPositive);
     });
   }
-  for (final abi in [
-    Abi.macosArm64,
-    Abi.iosArm64,
-    Abi.androidArm64,
-    Abi.linuxArm64,
-    Abi.linuxX64,
-    Abi.windowsX64,
-  ]) {
+  for (final abi in [Abi.linuxArm64, Abi.linuxX64, Abi.windowsX64]) {
+    test('$abi rejects embeddings on a legacy runtime before any native '
+        'call', () async {
+      debugLiteRtLmAbiOverride = abi;
+      final matcher = throwsA(
+        isA<LlamaUnsupportedException>().having(
+          (e) => e.message,
+          'capability, legacy runtime condition and required runtime',
+          allOf(
+            contains('LiteRT-LM native embeddings on $abi'),
+            contains('C API 1 runtime from litert-lm-native v0.19.1-1'),
+            contains('legacy one without litert_lm_get_api_version'),
+            contains('v0.18.x'),
+          ),
+        ),
+      );
+      await expectLater(create(), matcher);
+
+      final port = ReceivePort();
+      final service = LiteRtLmService(
+        clientFactory: () => LiteRtLmRuntimeClient(libraryPath: library),
+      );
+      runLiteRtLmWorkerForTesting(port.sendPort, service, exitOnDispose: false);
+      final backend = LiteRtLmBackend(
+        initialSendPort: await port.first as SendPort,
+      );
+      port.close();
+      addTearDown(backend.dispose);
+      final handle = await backend.modelLoad(model, embeddingParams);
+      final context = await backend.contextCreate(handle, embeddingParams);
+      await expectLater(backend.getEmbeddingCapabilities(context), matcher);
+      expect(settingsCreates(), 0);
+      expect(allocations(), 0);
+    });
+  }
+  for (final abi in [Abi.macosArm64, Abi.iosArm64, Abi.androidArm64]) {
     test('$abi creates the embedding engine', () async {
       debugLiteRtLmAbiOverride = abi;
       final session = await create();

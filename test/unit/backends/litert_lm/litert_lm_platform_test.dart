@@ -84,6 +84,14 @@ void main() {
     });
   });
 
+  test('legacy runtimes keep native embeddings off Linux and Windows '
+      '(#1367)', () {
+    expect(
+      Abi.values.where(liteRtLmLegacyNativeEmbeddingsQualifiedForAbi).toSet(),
+      {Abi.macosArm64, Abi.iosArm64, Abi.androidArm64},
+    );
+  });
+
   test('normalizes native backend overrides', () {
     expect(normalizeLiteRtLmNativeBackendOverride(null), isNull);
     expect(normalizeLiteRtLmNativeBackendOverride(''), isNull);

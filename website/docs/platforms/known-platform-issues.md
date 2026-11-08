@@ -68,10 +68,12 @@ feature. For which runtime supports which feature, see the
   Windows must be litert-lm-native `v0.19.1-1` or later. Earlier desktop
   runtimes link a prebuilt LiteRT built with a different C++ runtime: CPU
   embedding engine creation fails on Linux and crashes on Windows x64
-  ([#1367](https://github.com/leehack/llamadart/issues/1367)), and `v0.19.1`
-  explicit GPU generation crashes at the first decode on Linux x64 and
-  Windows x64 ([#1795](https://github.com/leehack/llamadart/issues/1795)).
-  The load gate cannot detect such a runtime.
+  ([#1367](https://github.com/leehack/llamadart/issues/1367)), and `v0.19.0`
+  and `v0.19.1` explicit GPU generation crashes at the first decode on Linux
+  x64 and Windows x64 ([#1795](https://github.com/leehack/llamadart/issues/1795)).
+  Legacy `v0.18.x` runtimes are refused for embeddings before any native call;
+  `v0.19.0` and `v0.19.1` expose the same C API 1.0 as `v0.19.1-1`, so the
+  load gate cannot tell them apart.
 - Linux x64 LiteRT-LM GPU needs a hardware Vulkan driver. On Mesa llvmpipe
   alone it answers a few prompts, then crashes the process; use `cpu` on such
   hosts ([#572](https://github.com/leehack/llamadart/issues/572)).

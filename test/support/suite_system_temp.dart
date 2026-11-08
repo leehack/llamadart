@@ -54,7 +54,10 @@ void _deleteSuiteRoot(Directory root) {
   } on FileSystemException {
     if (!Platform.isWindows) rethrow;
     final undeletable = <String>[];
-    for (final file in root.listSync(recursive: true).whereType<File>()) {
+    for (final file
+        in root
+            .listSync(recursive: true, followLinks: false)
+            .whereType<File>()) {
       if (file.path.endsWith('.xnnpack_cache')) continue;
       try {
         file.deleteSync();
