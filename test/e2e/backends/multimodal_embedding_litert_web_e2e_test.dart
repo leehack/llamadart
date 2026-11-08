@@ -47,7 +47,7 @@ void main() {
       ..type = 'module'
       ..text =
           '''
-import {EmbeddingEngine} from 'https://cdn.jsdelivr.net/npm/@litert-lm/core@0.18.0/+esm';
+import {EmbeddingEngine} from 'https://cdn.jsdelivr.net/npm/@litert-lm/core@0.19.0/+esm';
 window.__llamadartEmbeddingReference = EmbeddingEngine;
 window.$callback();
 ''';

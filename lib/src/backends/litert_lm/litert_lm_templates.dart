@@ -9,7 +9,7 @@ import 'litert_lm_chat_templates.dart';
 /// a native runtime without the conversation-template setter throws
 /// `LlamaUnsupportedException`.
 ///
-/// Web `@litert-lm/core@0.18.0` cannot replace its conversation template and
+/// Web `@litert-lm/core@0.19.0` cannot replace its conversation template and
 /// rejects this override with `LlamaUnsupportedException` at model load.
 /// This does not select Qwen3.5, add media support, or identify bundle contents.
 ///

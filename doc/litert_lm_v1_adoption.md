@@ -18,7 +18,7 @@ embedding/signature checks for all three Apple companions. Final integration,
 renewed exact-head evidence and approval to publish core plus the three companions
 remain gates for draft [#1746](https://github.com/leehack/llamadart/pull/1746)
 and [#1677](https://github.com/leehack/llamadart/issues/1677).
-Web remains `@litert-lm/core@0.18.0`. The internal
+Web uses `@litert-lm/core@0.19.0`. The internal
 `createLiteRtLmSelectedRuntimeClient(allowV1: true)` entry point exercises that
 same facade with admitted C API 1.0.x fixtures, retaining selected core and
 companion handles and paths. `LiteRtLmV1RuntimeClient` also remains injectable. Its fixtures prove ABI,

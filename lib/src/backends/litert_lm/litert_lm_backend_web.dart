@@ -35,7 +35,7 @@ import 'litert_lm_templates.dart';
 /// This backend wraps the official `@litert-lm/core` browser API. Apps can
 /// preload the package and expose `window.LiteRtLmEngine = module.Engine`, or
 /// set `window.__llamadartLiteRtLmModuleUrl` to a module URL such as
-/// `https://cdn.jsdelivr.net/npm/@litert-lm/core@0.18.0/+esm`.
+/// `https://cdn.jsdelivr.net/npm/@litert-lm/core@0.19.0/+esm`.
 ///
 /// [LiteRtLmBackend.withTextHistory] opts into ordered system/user/assistant
 /// text through a probed conversation preface. The original constructor retains
@@ -92,6 +92,7 @@ class LiteRtLmBackend
   String? _modelSource;
   String? _modelCacheState;
   String? _activeBackend;
+  int? _engineBackendValue;
   String? _chatTemplate;
 
   /// Creates a web LiteRT-LM backend.
@@ -135,7 +136,7 @@ class LiteRtLmBackend
 
   @override
   String? get generationLimitUnsupportedReason =>
-      'LiteRT-LM Web @litert-lm/core@0.18.0 does not expose a reliable generation termination reason. '
+      'LiteRT-LM Web @litert-lm/core@0.19.0 does not expose a reliable generation termination reason. '
       'Automatic tool loops require a qualified Web runtime with token-limit reporting; '
       'use ChatSession.create or LlamaEngine.create for manual completion.';
 
@@ -240,6 +241,8 @@ class LiteRtLmBackend
     final consoleGuard = _installScopedConsoleGuard();
     try {
       _engine = await constructor.create(settings).toDart;
+      _engineBackendValue =
+          _reportedBackendValue(_engine!) ?? _backendValueFor(backend);
       _supportsTextHistory =
           _textHistoryEnabled && await _probeTextHistory(_engine!);
       _modelHandle = _nextModelHandle++;
@@ -257,6 +260,7 @@ class LiteRtLmBackend
       _modelParams = null;
       _chatTemplate = null;
       _activeBackend = null;
+      _engineBackendValue = null;
       throw StateError('LiteRT-LM web engine creation failed: $error');
     } finally {
       consoleGuard?.restore();
@@ -751,7 +755,13 @@ class LiteRtLmBackend
   }) {
     final settings = JSObject();
     settings.setProperty('model'.toJS, model);
-    settings.setProperty('backend'.toJS, _backendValueFor(backend).toJS);
+    // GPU loads keep the runtime's default backend. @litert-lm/core@0.19.0
+    // resolves it to GPU_ARTISAN for Web bundles and GPU for other bundles;
+    // 0.18.0, which apps may still preload, defaults to GPU_ARTISAN and fails
+    // Web bundles on GPU. No single explicit value loads on both.
+    if (backend == 'cpu') {
+      settings.setProperty('backend'.toJS, _backendValueFor(backend).toJS);
+    }
 
     final executorSettings = JSObject();
     executorSettings.setProperty('maxNumTokens'.toJS, params.contextSize.toJS);
@@ -780,7 +790,7 @@ class LiteRtLmBackend
     sessionConfig.setProperty('samplerParams'.toJS, samplerParams);
     sessionConfig.setProperty(
       'samplerBackend'.toJS,
-      _backendValueFor(_activeBackend ?? 'gpu').toJS,
+      (_engineBackendValue ?? _backendValueFor(_activeBackend ?? 'gpu')).toJS,
     );
 
     final config = JSObject();
@@ -862,7 +872,7 @@ class LiteRtLmBackend
         try {
           result = await reader.read().toDart;
         } catch (error) {
-          // @litert-lm/core@0.18.0 forwards the cancelled status message as a
+          // @litert-lm/core@0.19.0 forwards the cancelled status message as a
           // plain Error. Other failures racing cancellation must still surface.
           if (_cancelRequested && _isCancellationError(error)) break;
           rethrow;
@@ -1094,6 +1104,7 @@ class LiteRtLmBackend
     _modelParams = null;
     _chatTemplate = null;
     _activeBackend = null;
+    _engineBackendValue = null;
     if (engine != null) {
       final result = engine.deleteEngine();
       if (result != null) {
@@ -1290,7 +1301,7 @@ class LiteRtLmBackend
         false) {
       throw LlamaUnsupportedException(
         'Qwen3 chatTemplate overrides require a conversation-template setter, '
-        'which LiteRT-LM Web @litert-lm/core@0.18.0 does not expose. '
+        'which LiteRT-LM Web @litert-lm/core@0.19.0 does not expose. '
         'Use native LiteRT-LM with liteRtLmQwen3ChatTemplate to control '
         'enableThinking on renamed Qwen3 text bundles.',
       );
@@ -1298,7 +1309,7 @@ class LiteRtLmBackend
 
     if (_textHistoryEnabled && params.chatTemplate != null) {
       throw LlamaUnsupportedException(
-        'LiteRT-LM Web @litert-lm/core@0.18.0 has no custom chat-template '
+        'LiteRT-LM Web @litert-lm/core@0.19.0 has no custom chat-template '
         'setter. Use the model-provided template or native LiteRT-LM.',
       );
     }
@@ -1415,11 +1426,26 @@ class LiteRtLmBackend
     }
     return switch (backend) {
       'cpu' => _backendCpu,
-      // @litert-lm/core web bundles default to GPU_ARTISAN for streaming
-      // browser execution. The Gemma 4 web bundle only loads through that path.
+      // Only for an engine that reports no backend: GPU_ARTISAN was the GPU
+      // default before @litert-lm/core@0.19.0.
       'gpu' => _backendGpuArtisan,
       _ => _backendGpuArtisan,
     };
+  }
+
+  /// The backend [engine] runs on, as its `settings.backend` reports it once
+  /// the runtime has resolved its default.
+  int? _reportedBackendValue(_LiteRtLmWebEngine engine) {
+    try {
+      final settings = engine.getProperty<JSAny?>('settings'.toJS);
+      if (settings == null || !settings.isA<JSObject>()) return null;
+      final value = (settings as JSObject).getProperty<JSAny?>('backend'.toJS);
+      return value != null && value.isA<JSNumber>()
+          ? (value as JSNumber).toDartInt
+          : null;
+    } catch (_) {
+      return null;
+    }
   }
 
   int? _backendValueFromGlobalEnum(String backend) {
@@ -1519,7 +1545,7 @@ final class _TextHistoryLiteRtLmBackend extends LiteRtLmBackend
   }
 
   List<Map<String, String>> _textMessages(List<LlamaChatMessage> messages) {
-    const runtime = 'LiteRT-LM Web @litert-lm/core@0.18.0';
+    const runtime = 'LiteRT-LM Web @litert-lm/core@0.19.0';
     if (messages.isEmpty) {
       throw LlamaUnsupportedException(
         '$runtime needs a final user text message.',
@@ -1551,7 +1577,7 @@ final class _TextHistoryLiteRtLmBackend extends LiteRtLmBackend
       throw LlamaUnsupportedException(
         'The loaded LiteRT-LM Web runtime did not consume preface.messages '
         'or expose getHistory. Text history and system prompts require '
-        'the published @litert-lm/core@0.18.0 conversation APIs.',
+        'the published @litert-lm/core@0.19.0 conversation APIs.',
       );
     }
     return history;
@@ -1571,7 +1597,7 @@ final class _TextHistoryLiteRtLmBackend extends LiteRtLmBackend
     String? targetLangCode,
     DateTime? templateNow,
   }) async* {
-    const runtime = 'LiteRT-LM Web @litert-lm/core@0.18.0';
+    const runtime = 'LiteRT-LM Web @litert-lm/core@0.19.0';
     if ((tools?.isNotEmpty ?? false) ||
         toolChoice == ToolChoice.required ||
         parallelToolCalls) {
@@ -1660,15 +1686,15 @@ extension type _LiteRtLmStreamReadResult._(JSObject _) implements JSObject {
 
 /// Throws [LlamaUnsupportedException] for what a LiteRT-LM Web load rejects
 /// from [params] alone, before it fetches the model: an NPU, and the
-/// embedding engine, which `@litert-lm/core@0.18.0` does not provide.
+/// embedding engine, unqualified on `@litert-lm/core@0.19.0`.
 /// [preferredBackend] is the backend's deprecated preferred backend.
 void liteRtLmWebCheckLoad(ModelParams params, {String? preferredBackend}) {
   if (params.liteRtLmEmbeddingEngine) {
     throw LlamaUnsupportedException(
       liteRtLmWebBackendName(params, preferredBackend: preferredBackend) ==
               'cpu'
-          ? 'LiteRT-LM Web CPU embeddings are unavailable in @litert-lm/core@0.18.0: upstream streams text-encoder weights only for WebGPU (Failed to get external weight).'
-          : 'LiteRT-LM WebGPU embeddings are unavailable in @litert-lm/core@0.18.0: EmbeddingGemma-2 qualification missed native CPU parity (cosine >= 0.9998 and relative L2 < 2%). A qualified runtime is required.',
+          ? 'LiteRT-LM Web CPU embeddings are unavailable in @litert-lm/core@0.19.0: upstream streams text-encoder weights only for WebGPU (Failed to get external weight).'
+          : 'LiteRT-LM WebGPU embeddings are unavailable in @litert-lm/core@0.19.0: EmbeddingGemma-2 qualification missed native CPU parity (cosine >= 0.9998 and relative L2 < 2%). A qualified runtime is required.',
     );
   }
   _liteRtLmWebDeviceBackendName(params, preferredBackend);
