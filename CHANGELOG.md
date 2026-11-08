@@ -1,6 +1,7 @@
 ## Unreleased
 
 - Adopt llama.cpp `v0.9.0`, which accumulates F16 matrix products in F32 on ARM CPUs so they no longer overflow, and applies a GGUF's suppress tokens when sampling Qwen3-TTS codes.
+- Add LFM3-Audio and Soprano speech output on native llama.cpp (`Lfm3AudioTtsAdapter`, `SopranoTtsAdapter`) and predefined voice selection (`TextToSpeechRequest.voice`, `TextToSpeechCapabilities.voices`); runtimes before llamadart-native v0.8.0 refuse them with `LlamaUnsupportedException` ([#1615](https://github.com/leehack/llamadart/issues/1615)).
 
 ## 0.18.0
 

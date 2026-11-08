@@ -72,6 +72,7 @@ class NativeAutoBackend
         BackendPromptPenaltyGeneration,
         BackendDeferredEngineCreation,
         BackendTextToSpeech,
+        BackendTextToSpeechModelSupport,
         BackendDecision,
         BackendGenerationCapabilitiesSupport,
         BackendVideoRuntimeSupport,
@@ -627,6 +628,20 @@ class NativeAutoBackend
       );
     }
     return Future<bool?>.value();
+  }
+
+  @override
+  Future<String?> textToSpeechModelUnsupportedReason(
+    BackendTextToSpeechModel model,
+  ) async {
+    // Text-to-speech models are GGUF, which the llama.cpp delegate loads.
+    final delegate = _delegateKind == LlamaRuntime.llamaCpp
+        ? _delegate!
+        : await _ensureDiagnosticDelegate();
+    return delegate is BackendTextToSpeechModelSupport
+        ? (delegate as BackendTextToSpeechModelSupport)
+              .textToSpeechModelUnsupportedReason(model)
+        : null;
   }
 
   @override

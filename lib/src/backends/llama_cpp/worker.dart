@@ -339,6 +339,13 @@ void runLlamaWorkerForTesting(
             activeGenerate = generateFuture;
             await generateFuture;
 
+          case TextToSpeechModelSupportRequest():
+            message.sendPort.send(
+              TextToSpeechModelSupportResponse(
+                service.textToSpeechModelUnsupportedReason(message.model),
+              ),
+            );
+
           case TextToSpeechCapabilitiesRequest():
             final capabilities = service.textToSpeechCapabilities(
               message.contextHandle,

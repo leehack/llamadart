@@ -17,6 +17,17 @@ class _TtsApi {
   final _TtsSetCancelFlagDart? setCancelFlag;
   final ggml_backend_sched_eval_callback evalCallback;
 
+  // Model-type opt-in (llamadart-native v0.8.0). Older wrappers lack it and
+  // drive Qwen3-TTS only through the legacy calls.
+  final _TtsSupportedModelTypesDart? supportedModelTypes;
+  final _TtsGetInfoExtDart? getInfoExt;
+  final _TtsInitExtDart? initExt;
+  final _TtsStartWithVoiceDart? startWithVoice;
+
+  // Predefined-voice listing (llamadart-native v0.9.0).
+  final _TtsGetVoiceCountDart? getVoiceCount;
+  final _TtsGetVoiceNameDart? getVoiceName;
+
   const _TtsApi({
     required this.apiVersion,
     required this.requestDefault,
@@ -33,12 +44,35 @@ class _TtsApi {
     required this.lastError,
     required this.setCancelFlag,
     required this.evalCallback,
+    required this.supportedModelTypes,
+    required this.getInfoExt,
+    required this.initExt,
+    required this.startWithVoice,
+    required this.getVoiceCount,
+    required this.getVoiceName,
   });
+
+  /// Whether the runtime has the whole model-type opt-in.
+  bool get hasModelTypeOptIn =>
+      supportedModelTypes != null &&
+      getInfoExt != null &&
+      initExt != null &&
+      startWithVoice != null;
+
+  /// Whether the runtime lists predefined voices.
+  bool get listsVoices => getVoiceCount != null && getVoiceName != null;
 
   static _TtsApi? tryLoad(DynamicLibrary library) {
     try {
       const setCancelFlagSymbol = 'llama_dart_tts_set_cancel_flag';
       const evalCallbackSymbol = 'llama_dart_tts_eval_callback';
+      bool has(String symbol) => library.providesSymbol(symbol);
+      const supportedModelTypesSymbol = 'llama_dart_tts_supported_model_types';
+      const getInfoExtSymbol = 'llama_dart_tts_get_info_ext';
+      const initExtSymbol = 'llama_dart_tts_init_ext';
+      const startWithVoiceSymbol = 'llama_dart_tts_start_with_voice';
+      const getVoiceCountSymbol = 'llama_dart_tts_get_voice_count';
+      const getVoiceNameSymbol = 'llama_dart_tts_get_voice_name';
       return _TtsApi(
         apiVersion: library
             .lookupFunction<_TtsApiVersionNative, _TtsApiVersionDart>(
@@ -92,6 +126,40 @@ class _TtsApi {
                 NativeFunction<ggml_backend_sched_eval_callbackFunction>
               >(evalCallbackSymbol)
             : nullptr,
+        supportedModelTypes: has(supportedModelTypesSymbol)
+            ? library.lookupFunction<
+                _TtsSupportedModelTypesNative,
+                _TtsSupportedModelTypesDart
+              >(supportedModelTypesSymbol)
+            : null,
+        getInfoExt: has(getInfoExtSymbol)
+            ? library.lookupFunction<_TtsGetInfoExtNative, _TtsGetInfoExtDart>(
+                getInfoExtSymbol,
+              )
+            : null,
+        initExt: has(initExtSymbol)
+            ? library.lookupFunction<_TtsInitExtNative, _TtsInitExtDart>(
+                initExtSymbol,
+              )
+            : null,
+        startWithVoice: has(startWithVoiceSymbol)
+            ? library.lookupFunction<
+                _TtsStartWithVoiceNative,
+                _TtsStartWithVoiceDart
+              >(startWithVoiceSymbol)
+            : null,
+        getVoiceCount: has(getVoiceCountSymbol)
+            ? library.lookupFunction<
+                _TtsGetVoiceCountNative,
+                _TtsGetVoiceCountDart
+              >(getVoiceCountSymbol)
+            : null,
+        getVoiceName: has(getVoiceNameSymbol)
+            ? library
+                  .lookupFunction<_TtsGetVoiceNameNative, _TtsGetVoiceNameDart>(
+                    getVoiceNameSymbol,
+                  )
+            : null,
       );
     } catch (_) {
       return null;
