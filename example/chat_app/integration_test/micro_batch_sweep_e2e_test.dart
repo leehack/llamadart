@@ -18,11 +18,10 @@
 /// the sweep when a default attempt did not pass. On Android Vulkan the
 /// default is the capped path wherever the library applies the cap.
 ///
-/// Every other size is a recorded control. Restricted Qwen3.5 Android Vulkan
-/// paths now refuse explicit sizes above 8 before context creation, recording
-/// typed unsupported rather than a successful generation. Historically the
-/// uncapped Pixel 9 Pro/Mali-G715 subgroup-16 control repeated `8`; the original
-/// CPU `Cedar17` failed exact `cedar17`. Neither becomes a passing result.
+/// Every other size is a recorded control. On a llama.cpp runtime older than
+/// ggml 0.28.0, restricted Qwen3.5 Android Vulkan paths refuse explicit sizes
+/// above 8 before context creation, recording typed unsupported rather than a
+/// successful generation.
 ///
 /// Every repeat of the default size runs first, then the controls repeat by
 /// repeat, and a control sends the tool requests only in its last repeat: a

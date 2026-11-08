@@ -131,10 +131,9 @@ instead of silently degrading.
 llama.cpp uses Metal on Apple platforms, Vulkan on Linux and Windows, and
 WebGPU in the browser. Android Vulkan is experimental and opt-in.
 
-On Android Vulkan, Qwen3.5 with unsafe/unproven small-matmul subgroup facts
-accepts ordinary text with `microBatchSize` unset or `1..8`; larger explicit
-sizes, media, speculation and embeddings throw `LlamaUnsupportedException`.
-Use CPU for those features; see the [scope and qualification limits](website/docs/platforms/known-platform-issues.md#android).
+A llama.cpp runtime older than ggml `0.28.0` (llamadart-native `v0.8.0`)
+limits native Qwen3.5 on Android Vulkan to ordinary text on some GPUs; the
+bundled runtime does not. See [Android Vulkan](website/docs/platforms/known-platform-issues.md#android).
 
 LiteRT-LM can also use GPU and, on compatible Android deployments, NPU.
 Android 12+ apps targeting API 31+ must request the optional vendor OpenCL

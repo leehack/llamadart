@@ -286,6 +286,7 @@ class LlamaCppService {
     Allocator contextBatchAllocator = malloc,
     String? Function()? buildIdentity,
     String? Function(Pointer<llama_model> model)? modelArchitecture,
+    String? Function()? ggmlVersion,
   }) : _backendInit = backendInit ?? (() => llama_backend_init()),
        _abi = abi ?? Abi.current(),
        _isWindows = isWindows ?? Platform.isWindows,
@@ -309,7 +310,8 @@ class LlamaCppService {
        _modelLoadAllocator = modelLoadAllocator,
        _contextBatchAllocator = contextBatchAllocator,
        _readBuildIdentity = buildIdentity,
-       _modelArchitectureOverride = modelArchitecture;
+       _modelArchitectureOverride = modelArchitecture,
+       _readGgmlVersion = ggmlVersion;
 
   NativeWorkerOwner? _nativeOwner;
 
@@ -423,6 +425,17 @@ class LlamaCppService {
   late final String? _buildIdentity =
       (_readBuildIdentity ??
       () => readNativeBuildIdentity(isWindows: _isWindows))();
+  final String? Function()? _readGgmlVersion;
+  late final bool _ggmlHasSmallMatmulTileFix = () {
+    final version = (_readGgmlVersion ?? readGgmlVersion)();
+    final fixed = ggmlHasSmallMatmulTileFix(version);
+    LlamaLogger.instance.debug(
+      'llama_cpp_service: ggml ${version ?? '(no ggml_version)'} '
+      '${fixed ? 'has' : 'lacks'} the Vulkan small matmul tile fix '
+      '(ggml $smallMatmulTileFixGgmlVersion)',
+    );
+    return fixed;
+  }();
 
   // Reading the facts loads the system's GPU drivers into the process, so
   // they are read once, and only for a load that selects a registered
@@ -741,11 +754,11 @@ class LlamaCppService {
     bool isAndroid = false,
     bool Function()? hasSmallMatmulTileDefect,
   }) {
-    // ggml-vulkan's small matmul tile gives wrong results for a micro-batch of
-    // more than 32 tokens on GPUs whose subgroup size it mis-tiles
-    // (https://github.com/ggml-org/llama.cpp/issues/28637). The cap is 8
-    // rather than 32 because 8-token calls evaluated a prompt about three
-    // times faster on the affected device (Pixel 9 Pro, Mali-G715).
+    // A speed default: on a Pixel 9 Pro (Mali-G715, subgroup 16), 8-token
+    // calls evaluated a prompt at about 44 tok/s against 27-29 for 32 or 512
+    // on ggml 0.29. Before ggml 0.28 it also keeps prompts out of the small
+    // matmul tile defect above 32 tokens
+    // (https://github.com/ggml-org/llama.cpp/issues/28637).
     // `n_ubatch` is left alone: a non-causal image decode and a one-pass
     // embedding need their whole input in one micro-batch.
     if (modelParams.microBatchSize > 0 ||
@@ -779,10 +792,13 @@ class LlamaCppService {
   }
 
   static const String _qwen35VulkanRestriction =
-      'Qwen3.5 on Android/Vulkan with unsafe or unproven small-matmul '
-      'subgroup facts supports ordinary text only, with microBatchSize unset '
-      'or 1..8 (https://github.com/leehack/llamadart/issues/948). '
-      'Use ComputeDevice.cpu for larger batches, media, speculation or embeddings.';
+      'Qwen3.5 on Android/Vulkan with a llama.cpp runtime older than ggml '
+      '$smallMatmulTileFixGgmlVersion (llamadart-native v0.8.0) and unsafe or '
+      'unproven small-matmul subgroup facts supports ordinary text only, with '
+      'microBatchSize unset or 1..8 '
+      '(https://github.com/leehack/llamadart/issues/948). Use the bundled '
+      'runtime, or ComputeDevice.cpu for larger batches, media, speculation or '
+      'embeddings.';
 
   // Context preferences cannot move tensors already loaded onto Vulkan.
   bool _modelUsesAndroidVulkan(int modelHandle) =>
@@ -791,28 +807,55 @@ class LlamaCppService {
       (_modelResolvedGpuLayers[modelHandle] ?? 0) > 0 &&
       !_modelsOnNoGpu.contains(modelHandle);
 
-  bool _requiresQwen35VulkanRestriction(int modelHandle) {
+  bool _requiresQwen35VulkanRestriction(int modelHandle) =>
+      !_ggmlHasSmallMatmulTileFix &&
+      _isQwen35OnSmallTileAndroidVulkan(modelHandle);
+
+  /// The native architecture of [modelHandle] when it is placed on an
+  /// Android Vulkan device with unsafe or unproven small-matmul subgroup
+  /// facts, judged by the actual placement rather than the context's
+  /// preferences; `null` when it is not, and empty when it is unreadable.
+  String? _smallTileAndroidVulkanArchitecture(int modelHandle) {
     if (!_modelUsesAndroidVulkan(modelHandle) ||
         !_androidVulkanHasSmallMatmulTileDefect()) {
-      return false;
+      return null;
     }
-    String? architecture;
     try {
-      architecture = _modelArchitecture(modelHandle);
+      return _modelArchitecture(modelHandle)?.trim() ?? '';
     } on Object {
-      // Missing runtime metadata cannot establish admission for this GPU path.
-      architecture = null;
+      return '';
     }
-    if (architecture == null || architecture.trim().isEmpty) {
+  }
+
+  static bool _isQwen35Architecture(String architecture) =>
+      architecture.toLowerCase().replaceAll(RegExp('[^a-z0-9]'), '') ==
+      'qwen35';
+
+  /// Whether [modelHandle] is Qwen3.5 on small-tile Android Vulkan.
+  bool _isQwen35OnSmallTileAndroidVulkan(int modelHandle) {
+    final architecture = _smallTileAndroidVulkanArchitecture(modelHandle);
+    if (architecture == null) return false;
+    if (architecture.isEmpty) {
+      // Missing runtime metadata cannot establish admission for this GPU path.
+      if (_ggmlHasSmallMatmulTileFix) return false;
       throw LlamaUnsupportedException(
-        'Cannot establish required model safety for Android/Vulkan with unsafe '
-        'or unproven small-matmul subgroup facts: native general.architecture '
-        'is unavailable (https://github.com/leehack/llamadart/issues/948). '
-        'Use ComputeDevice.cpu.',
+        'Cannot establish required model safety for Android/Vulkan with a '
+        'llama.cpp runtime older than ggml $smallMatmulTileFixGgmlVersion '
+        '(llamadart-native v0.8.0) and unsafe or unproven small-matmul '
+        'subgroup facts: native general.architecture is unavailable '
+        '(https://github.com/leehack/llamadart/issues/948). Use the bundled '
+        'runtime or ComputeDevice.cpu.',
       );
     }
-    return architecture.toLowerCase().replaceAll(RegExp('[^a-z0-9]'), '') ==
-        'qwen35';
+    return _isQwen35Architecture(architecture);
+  }
+
+  // The Qwen3.5 image encoder on these GPUs is unvalidated on every runtime,
+  // so it stays on the CPU; an unreadable architecture counts as Qwen3.5.
+  bool _keepsProjectorOnCpu(int modelHandle) {
+    final architecture = _smallTileAndroidVulkanArchitecture(modelHandle);
+    return architecture != null &&
+        (architecture.isEmpty || _isQwen35Architecture(architecture));
   }
 
   String? _modelArchitecture(int modelHandle) =>
@@ -3866,9 +3909,11 @@ class LlamaCppService {
       isMacosX64: _isMacosX64,
       platform: Platform.operatingSystem,
     );
-    final qwen35VulkanRestricted = _requiresQwen35VulkanRestriction(
+    final qwen35OnSmallTileVulkan = _isQwen35OnSmallTileAndroidVulkan(
       modelHandle,
     );
+    final qwen35VulkanRestricted =
+        qwen35OnSmallTileVulkan && !_ggmlHasSmallMatmulTileFix;
     if (qwen35VulkanRestricted &&
         params.microBatchSize > androidVulkanPromptMicroBatchSize) {
       throw LlamaUnsupportedException(
@@ -3916,7 +3961,7 @@ class LlamaCppService {
     final resolvedModelGpuLayers = _modelsOnNoGpu.contains(modelHandle)
         ? 0
         : _modelResolvedGpuLayers[modelHandle];
-    if (qwen35VulkanRestricted) {
+    if (qwen35OnSmallTileVulkan) {
       _applyConservativeAndroidVulkanContextConfig(ctxParams, modelHandle);
     } else if (shouldDisableContextGpuOffload(
       params,
@@ -3971,7 +4016,9 @@ class LlamaCppService {
       model,
       _calls,
       qwen35VulkanRestricted: qwen35VulkanRestricted,
-      promptMicroBatchLimit: qwen35VulkanRestricted
+      promptMicroBatchLimit:
+          qwen35VulkanRestricted ||
+              qwen35OnSmallTileVulkan && params.microBatchSize <= 0
           ? androidVulkanPromptMicroBatchSize
           : resolvePromptMicroBatchLimit(
               params,
@@ -8246,6 +8293,13 @@ class LlamaCppService {
   mtmd_context_params _mtmdContextParamsFor(int modelHandle) {
     final ctxParams = _mtmdContextParamsDefault();
     ctxParams.use_gpu = _modelToMtmdUseGpu[modelHandle] ?? true;
+    if (ctxParams.use_gpu && _keepsProjectorOnCpu(modelHandle)) {
+      LlamaLogger.instance.debug(
+        'llama_cpp_service: keeping the Qwen3.5 projector on the CPU on '
+        'Android Vulkan',
+      );
+      ctxParams.use_gpu = false;
+    }
     // Without a device mtmd takes the first GPU of any backend, which a
     // gpuDevices list may exclude.
     if (ctxParams.use_gpu && _modelPlacements[modelHandle] != null) {

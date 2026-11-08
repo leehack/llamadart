@@ -43,7 +43,7 @@
       "profiles": [
         "assets/profiles/embedding-gguf-cpu.json"
       ],
-      "notes": "Model-free recording tests cover the conservative native qwen35 Android Vulkan #948 restriction: unsafe/unproven subgroup facts admit bounded ordinary text only; larger explicit micro-batches, media, speculation and embeddings are typed unsupported before evaluation. This does not qualify final artifacts or GPU output. https://github.com/leehack/llamadart/issues/948"
+      "notes": "Model-free recording tests cover the native qwen35 Android Vulkan #948 restriction, which applies only to llama.cpp runtimes older than ggml 0.28.0 (bundled runtimes lift it), and the lift on newer runtimes. Device evidence for the lift is recorded on the issue, not by a pack. https://github.com/leehack/llamadart/issues/948"
     },
     {
       "id": "history",
@@ -368,7 +368,7 @@
       ],
       "exemption": {
         "id": "multimodal-chat",
-        "reason": "Chat image/audio and projector lifecycle need a dedicated multimodal-chat pack. Embedding media packs are a separate contract. Public API VM/Chrome regressions cover early typed refusal of tool-role image/audio and valid separate user-media routing (#1445); they do not qualify model media transport or tool-result media support (#1008). Model-free recording tests cover the conservative native qwen35 Android Vulkan #948 restriction: unsafe/unproven subgroup facts admit bounded ordinary text only; larger explicit micro-batches, media, speculation and embeddings are typed unsupported before evaluation. This does not qualify final artifacts or GPU output. https://github.com/leehack/llamadart/issues/948",
+        "reason": "Chat image/audio and projector lifecycle need a dedicated multimodal-chat pack. Embedding media packs are a separate contract. Public API VM/Chrome regressions cover early typed refusal of tool-role image/audio and valid separate user-media routing (#1445); they do not qualify model media transport or tool-result media support (#1008). Model-free recording tests cover the native qwen35 Android Vulkan #948 restriction, which applies only to llama.cpp runtimes older than ggml 0.28.0 (bundled runtimes lift it), and the lift on newer runtimes. Device evidence for the lift is recorded on the issue, not by a pack. https://github.com/leehack/llamadart/issues/948",
         "issue": "https://github.com/leehack/llamadart/issues/1196"
       }
     },
@@ -411,7 +411,7 @@
       ],
       "exemption": {
         "id": "speculative-decoding",
-        "reason": "Draft/MTP/ngram strategies need a dedicated pack with target/draft output and memory controls; ordinary text generation is insufficient. Model-free recording tests cover the conservative native qwen35 Android Vulkan #948 restriction: unsafe/unproven subgroup facts admit bounded ordinary text only; larger explicit micro-batches, media, speculation and embeddings are typed unsupported before evaluation. This does not qualify final artifacts or GPU output. https://github.com/leehack/llamadart/issues/948",
+        "reason": "Draft/MTP/ngram strategies need a dedicated pack with target/draft output and memory controls; ordinary text generation is insufficient. Model-free recording tests cover the native qwen35 Android Vulkan #948 restriction, which applies only to llama.cpp runtimes older than ggml 0.28.0 (bundled runtimes lift it), and the lift on newer runtimes. Device evidence for the lift is recorded on the issue, not by a pack. https://github.com/leehack/llamadart/issues/948",
         "issue": "https://github.com/leehack/llamadart/issues/1196"
       }
     },

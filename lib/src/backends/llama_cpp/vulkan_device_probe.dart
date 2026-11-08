@@ -74,15 +74,17 @@ final class VulkanDeviceFacts {
   bool get meetsVulkan12 =>
       instanceApiVersion >= vulkan12 && apiVersion >= vulkan12;
 
-  /// Whether ggml-vulkan's small matmul tile gives wrong results on the
-  /// device (https://github.com/ggml-org/llama.cpp/issues/28637).
+  /// Whether ggml-vulkan before [smallMatmulTileFixGgmlVersion] gives wrong
+  /// results from its small matmul tile on the device
+  /// (https://github.com/ggml-org/llama.cpp/issues/28637).
   ///
   /// The small tiles split a 32-row block between `max(size, 32) /
-  /// max(size, 8)` warps, but llama.cpp v0.6.0 gives each warp 8 rows only
+  /// max(size, 8)` warps, but those versions give each warp 8 rows only
   /// for a subgroup size of exactly 8 and all 32 rows otherwise
   /// (`s_warptile_wm` in `ggml_vk_load_shaders`). That is one warp too many
   /// at 16, where it was found, and at every size below 8. An unknown size
-  /// counts as affected.
+  /// counts as affected. Use [ggmlHasSmallMatmulTileFix] to tell whether the
+  /// loaded runtime still has the defect.
   bool get hasSmallMatmulTileDefect => subgroupSize != 8 && subgroupSize < 32;
 
   /// `major.minor` of an encoded Vulkan [version].
@@ -93,6 +95,47 @@ final class VulkanDeviceFacts {
   String toString() =>
       '"$name" (API ${formatApiVersion(apiVersion)}, loader '
       '${formatApiVersion(instanceApiVersion)}, subgroup size $subgroupSize)';
+}
+
+/// The first ggml version, as `ggml_version()` reports it, whose ggml-vulkan
+/// small matmul tiles give each warp its own rows at every subgroup size
+/// (https://github.com/ggml-org/llama.cpp/pull/30106).
+///
+/// llamadart-native v0.8.0 is the first release that bundles it. Some
+/// llama.cpp commits with the fix still report 0.27.0; they count as unfixed.
+const String smallMatmulTileFixGgmlVersion = '0.28.0';
+
+/// Whether ggml [version] has the small matmul tile fix: at least
+/// [smallMatmulTileFixGgmlVersion]. A `null` or unparsable version does not.
+bool ggmlHasSmallMatmulTileFix(String? version) {
+  final loaded = _majorMinor(version);
+  final fixed = _majorMinor(smallMatmulTileFixGgmlVersion)!;
+  return loaded != null &&
+      (loaded.major > fixed.major ||
+          loaded.major == fixed.major && loaded.minor >= fixed.minor);
+}
+
+({int major, int minor})? _majorMinor(String? version) {
+  final match = RegExp(r'^(\d+)\.(\d+)\.\d+').firstMatch(version ?? '');
+  return match == null
+      ? null
+      : (major: int.parse(match[1]!), minor: int.parse(match[2]!));
+}
+
+/// The version the loaded ggml reports, or `null` when it does not export
+/// `ggml_version` through the default asset, as Windows bundles do not.
+///
+/// The string is a constant of the library, so the call needs no
+/// exit-teardown guard. [call] replaces the native function and, like a
+/// runtime without the symbol, throws [ArgumentError] to report it missing.
+String? readGgmlVersion({Pointer<Char> Function()? call}) {
+  final Pointer<Char> version;
+  try {
+    version = (call ?? ggml_version)();
+  } on ArgumentError {
+    return null;
+  }
+  return version == nullptr ? null : version.cast<Utf8>().toDartString();
 }
 
 /// What libllamadart reports about the Vulkan devices ggml-vulkan registers.
