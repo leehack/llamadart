@@ -101,7 +101,7 @@ hooks:
   ABI checks and requires macOS 14+ before loading even an explicit path or
   legacy library; public selection admits C API 1.0.x while unknown/future
   versions remain unsupported. The source pin and companion source assets now
-  use published native `v0.19.0`; final default-discovery consumers and Apple
+  use published native `v0.19.1`; final default-discovery consumers and Apple
   embedding/signature checks remain [#1677](https://github.com/leehack/llamadart/issues/1677)
   gates before coordinated package release.
 - An empty or all-unknown selection falls back to `llama_cpp` and
@@ -425,10 +425,11 @@ hooks:
 
 Overrides do not regenerate the Dart FFI bindings, so the binary must stay ABI-
 and symbol-compatible with the pinned release; the hook logs a warning when an
-override is active. This core requires the pinned `v0.8.0-3` runtime's
-speculative rollback and model-creation ownership fixes, as well as compatible
-struct layouts and symbols. Older binaries are not qualified by symbol presence
-alone. Use core `0.13.x` for its v0.6.0 runtime and companions. Do not point a core before
+override is active. This core is qualified on the pinned `v0.9.0` runtime. It
+requires the speculative rollback and model-creation ownership fixes from
+`v0.8.0-3`, as well as compatible struct layouts and symbols, and an older
+binary also lacks the `v0.9.0` ARM F16 accumulation fix. Older binaries are not
+qualified by symbol presence alone. Use core `0.13.x` for its v0.6.0 runtime and companions. Do not point a core before
 `0.17.1` at native `v0.8.0` or later: its bindings give
 `mtmd_helper_init_opt` 24 bytes, and `v0.8.0` writes past them.
 

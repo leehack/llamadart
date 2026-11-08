@@ -164,6 +164,26 @@ void main() {
             'text': afterCancellation,
           }),
         );
+        final textOnly = await engine
+            .create(
+              const [
+                LlamaChatMessage.fromText(
+                  role: LlamaChatRole.user,
+                  text: 'What is 2 + 3? Answer with one digit.',
+                ),
+              ],
+              enableThinking: false,
+              params: _params,
+            )
+            .collect()
+            .timeout(_operationTimeout);
+        expect(textOnly.text, contains('5'));
+        print(
+          jsonEncode({
+            'case': 'text_only_after_image',
+            'text': textOnly.text.trim(),
+          }),
+        );
         await engine.dispose().timeout(_operationTimeout);
         engine = LlamaEngine(LlamaBackend());
         await load();

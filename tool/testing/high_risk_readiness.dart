@@ -843,7 +843,11 @@ class HighRiskReadinessEvaluator {
       );
     }
     final auditor = audit['auditor_identity'] as String;
-    if (auditor.toLowerCase() == context.author.toLowerCase()) {
+    final authorLogin = context.author.toLowerCase().replaceFirst(
+      RegExp(r'\[bot\]$'),
+      '',
+    );
+    if (auditor.toLowerCase() == authorLogin) {
       return reject(
         ReadinessFailureClassification.selfApprovalProhibited,
         'The independent auditor cannot be the PR author.',

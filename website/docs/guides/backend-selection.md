@@ -69,7 +69,7 @@ on LiteRT-LM, and GGUF files run on llama.cpp. The `LlamaEngine` API is the
 same for both, including `ChatSession` on native.
 
 On LiteRT-LM Web, keep handling `LlamaInferenceException` after
-`cancelGeneration()`. Only the pinned `@litert-lm/core@0.18.0` runtime's exact
+`cancelGeneration()`. Only the pinned `@litert-lm/core@0.19.0` runtime's exact
 `Task cancelled` error following a cancel request ends normally. Other errors,
 including abort errors, still surface; `Task cancelled` without a cancel request
 also remains a failure.
@@ -317,8 +317,13 @@ returns this accounting serialization on the opted-in path. It does not replace
 the model's JS template or the original structured messages sent for generation.
 Stored assistant reasoning is omitted from replay/accounting; visible text,
 including an empty assistant reply, is preserved.
-Use a browser-compatible bundle; the JS package documents Gemma 4 E2B/E4B
-`-web.litertlm` files. A native `.litertlm` file is not interchangeable.
+Use a browser-compatible bundle; the JS package documents its
+[Web LLM Models](https://huggingface.co/collections/litert-community/web-llm-models)
+collection, such as Gemma 4 E2B/E4B `-web.litertlm` files. A WebGPU load keeps
+the runtime's default backend: `@litert-lm/core@0.19.0` runs `-web.litertlm`
+bundles on its GPU_ARTISAN path and can also load standard bundles on GPU
+(Qwen3 0.6B matched direct JS but is otherwise unqualified there). WASM CPU
+runs Qwen3 0.6B; the Gemma 4 bundles do not load on CPU.
 
 LiteRT-LM Web rejects tool declarations/results, media and user/system thinking parts, a final
 assistant/system message, custom templates (including an empty override),

@@ -2668,6 +2668,16 @@ final segment = '${Object()}ImageEditingRequest${Object()}';
           ),
           ReadinessFailureClassification.schemaViolation,
         );
+        final botLogin = backendEvidence()
+          ..['pr_author'] = 'github-actions[bot]';
+        botLogin['independent_audit']['auditor_identity'] = 'GitHub-Actions';
+        expectFailure(
+          await evaluatorFor(backendChanges).evaluate(
+            evidence: botLogin,
+            context: authorContext('github-actions[bot]'),
+          ),
+          ReadinessFailureClassification.selfApprovalProhibited,
+        );
       },
     );
   });

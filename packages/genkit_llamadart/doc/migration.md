@@ -6,8 +6,9 @@ The current plugin requires llamadart `^0.18.0`. Genkit 1.0, Schemantic 1.0,
 the Dart 3.12 minimum and the plugin API are unchanged. Flutter iOS and macOS
 apps must use matching `^0.18.0` runtime companions.
 
-Native LiteRT-LM now uses runtime v0.19.0 and refuses macOS older than 14 on
-Apple silicon; initial text LoRA adapters remain unsupported there. See
+Native LiteRT-LM now uses runtime v0.19.0 and refuses macOS older than 14 (or
+a version it cannot verify) on Apple silicon; initial text LoRA adapters remain
+unsupported there. See
 [llamadart's 0.18 migration notes](https://github.com/leehack/llamadart/blob/main/MIGRATION.md).
 
 ## Upgrading to llamadart 0.17

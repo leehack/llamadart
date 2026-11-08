@@ -1,7 +1,10 @@
 ## Unreleased
 
-- Adopt llama.cpp `v0.9.0`, which accumulates F16 matrix products in F32 on ARM CPUs so they no longer overflow, and applies a GGUF's suppress tokens when sampling Qwen3-TTS codes.
 - Add LFM3-Audio and Soprano speech output on native llama.cpp (`Lfm3AudioTtsAdapter`, `SopranoTtsAdapter`) and predefined voice selection (`TextToSpeechRequest.voice`, `TextToSpeechCapabilities.voices`); runtimes before llamadart-native v0.8.0 refuse them with `LlamaUnsupportedException` ([#1615](https://github.com/leehack/llamadart/issues/1615)).
+- Update the default llama.cpp native runtime to `leehack/llamadart-native@v0.9.0` (llama.cpp `v0.9.0`). On ARM64 CPUs, F16 dot products of large values no longer overflow to inf or NaN ([llamadart-native#174](https://github.com/leehack/llamadart-native/issues/174)), and Qwen3-TTS sampling applies the GGUF's suppress tokens. Flutter Apple apps get it from `llamadart_llama_cpp_flutter` `0.19.0`, released with this core. Web keeps llama.cpp `v0.8.0` until a later bridge repin.
+- Fix LiteRT-LM text-only or audio-only turns that failed with "Image history requires a vision encoder." after an image turn on the same engine ([#1781](https://github.com/leehack/llamadart/issues/1781)).
+- Move Web LiteRT-LM to `@litert-lm/core@0.19.0`; WebGPU loads keep the runtime's default backend, so standard `.litertlm` bundles can load there. Web embeddings, tool loops, media and custom templates stay unsupported.
+- Update the default LiteRT-LM native runtime to `leehack/litert-lm-native@v0.19.1` (upstream LiteRT-LM `v0.19.1`); the C API is unchanged. Flutter Apple apps get it from `llamadart_litert_lm_flutter` `0.19.0`, released with this core.
 
 ## 0.18.0
 

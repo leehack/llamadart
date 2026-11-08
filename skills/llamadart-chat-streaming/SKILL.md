@@ -154,7 +154,7 @@ This restriction does not qualify GPU output or other architectures.
   `ModelParams(chatTemplate: liteRtLmQwen3ChatTemplate)` override. Import it
   from `package:llamadart/llamadart.dart`; get the string from this accessor
   when constructing parameters, rather than copying or persisting Jinja across
-  upgrades. Web `@litert-lm/core@0.18.0` has no template setter and rejects
+  upgrades. Web `@litert-lm/core@0.19.0` has no template setter and rejects
   this canonical override with `LlamaUnsupportedException` at load; use native
   LiteRT-LM for this contract. Otherwise disabled thinking
   can still return empty content after renaming. Generic thinking markers are

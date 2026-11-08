@@ -74,7 +74,7 @@ def prepare(dart, native_archive, profile, output):
                "consumer_pubspec_sha256": sha(consumer),
                "hook_sha256": sha(ROOT / "hook/build.dart"),
                "selector_sha256": sha(ROOT / "lib/src/hook/native_bundle_config.dart"),
-               "native_tag": "v0.8.0-3", "native_archive_sha256": ARCHIVE_SHA,
+               "native_tag": "v0.9.0", "native_archive_sha256": ARCHIVE_SHA,
                "archive_libraries": inventory,
                "libraries": {name: inventory[name] for name in request["packaging_selection"]["packaged"]},
                "packaging_selection": request["packaging_selection"]}

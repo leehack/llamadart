@@ -827,11 +827,13 @@ class LiteRtRuntimeInventoryDispatchTest(unittest.TestCase):
     def test_compatibility_tag_selects_lane_even_for_development_release(self) -> None:
         self.manifest["release"] = {"tag": "g83ce6067f2e2"}
         self.assertTrue(pins._litert_lm_runtime_inventory_is_v1(self.manifest))
+        self.manifest["upstream"]["compatibilityTag"] = "v0.19.1"
+        self.assertTrue(pins._litert_lm_runtime_inventory_is_v1(self.manifest))
         self.manifest["upstream"]["compatibilityTag"] = "v0.18.1"
         self.assertFalse(pins._litert_lm_runtime_inventory_is_v1(self.manifest))
 
     def test_unknown_or_malformed_api_mapping_refuses(self) -> None:
-        for version in ("v0.19.1", "v0.20.0", "v1.0.0", "g83ce6067f2e2", "", None):
+        for version in ("v0.19.2", "v0.20.0", "v1.0.0", "g83ce6067f2e2", "", None):
             with self.subTest(version=version):
                 self.manifest["upstream"]["compatibilityTag"] = version
                 with self.assertRaises(ReleaseError):
@@ -1181,10 +1183,21 @@ class LiteRtV019SamplerTransitionTest(unittest.TestCase):
         self.macos["artifactPaths"].remove("bin/macos/arm64/libLiteRtWebGpuAccelerator.dylib")
         with self.assertRaisesRegex(ReleaseError, "owner inventory"):
             self.prepare(self.original)
-        self.setUp()
-        self.manifest["upstream"]["compatibilityTag"] = "v0.20.0"
-        with self.assertRaisesRegex(ReleaseError, "owner inventory"):
-            self.prepare(self.original)
+        for unreviewed in ("v0.19.2", "v0.20.0"):
+            with self.subTest(version=unreviewed):
+                self.setUp()
+                self.manifest["upstream"]["compatibilityTag"] = unreviewed
+                with self.assertRaisesRegex(ReleaseError, "owner inventory"):
+                    self.prepare(self.original)
+
+    def test_v0191_reuses_the_reviewed_sampler_free_topology(self) -> None:
+        reviewed = self.prepare(self.original)
+        self.manifest["upstream"]["compatibilityTag"] = "v0.19.1"
+        self.assertEqual(self.prepare(self.original), reviewed)
+        self.assertEqual(self.prepare(reviewed), reviewed)
+        self.assertFalse(any("TopK" in path for path in pins.required_litert_manifest_paths(
+            "v0.19.1", self.tag, official_assets=False,
+        )))
 
     def test_malformed_or_ambiguous_topology_refuses(self) -> None:
         for sampler in self.samplers:
@@ -1440,21 +1453,25 @@ class LiteRtCallbackAbiAdmissionTest(unittest.TestCase):
                 with self.assertRaisesRegex(ReleaseError, "callback ABI"):
                     self._validate(manifest, release)
 
-    def test_pre_v015_callback2_is_rejected(self) -> None:
-        manifest, release = _schema2_fixture_payloads()
-        tag = manifest["release"]["tag"]
-        manifest = json.loads(json.dumps(manifest).replace(tag, "v0.14.0"))
-        release = json.loads(json.dumps(release).replace(tag, "v0.14.0"))
-        manifest["upstream"].update(
-            tag="v0.14.0", compatibilityTag="v0.14.0", prebuiltOverrides=[]
-        )
-        manifest["release"].update(
-            kind="upstream", rebuild=0, githubPrerelease=False
-        )
-        release["prerelease"] = False
-        manifest["abi"]["streamProxyCallback"] = 2
-        with self.assertRaisesRegex(ReleaseError, "callback ABI 2 for v0.14.0"):
-            self._validate(manifest, release)
+    def test_callback2_is_rejected_below_v015(self) -> None:
+        for version in ("v0.14.0", "v0.14.9"):
+            with self.subTest(version=version):
+                manifest, release = _schema2_fixture_payloads()
+                tag = manifest["release"]["tag"]
+                manifest = json.loads(json.dumps(manifest).replace(tag, version))
+                release = json.loads(json.dumps(release).replace(tag, version))
+                manifest["upstream"].update(
+                    tag=version, compatibilityTag=version, prebuiltOverrides=[]
+                )
+                manifest["release"].update(
+                    kind="upstream", rebuild=0, githubPrerelease=False
+                )
+                release["prerelease"] = False
+                manifest["abi"]["streamProxyCallback"] = 2
+                with self.assertRaisesRegex(
+                    ReleaseError, f"callback ABI 2 for {version}"
+                ):
+                    self._validate(manifest, release)
 
     def test_callback2_preserves_other_abi_and_capability_checks(self) -> None:
         for section, field, value in (
@@ -1516,20 +1533,55 @@ class LiteRtV019PrebuiltOverridesTest(unittest.TestCase):
         )
 
     def test_published_owner_bytes_pass_full_manifest_validation(self) -> None:
-        self.assertEqual(
-            hashlib.sha256(self.manifest_bytes).hexdigest(),
-            "bd6f67c047bbd853fd962d363e0507c043be0658c00502b4e486b02c27107871",
+        self.assert_published_owner_bytes_validate(
+            fixture_prefix="litert_lm_v019_owner",
+            tag="v0.19.0",
+            manifest_sha256="bd6f67c047bbd853fd962d363e0507c043be0658c00502b4e486b02c27107871",
+            native_commit="f173fe9b18a30fdc23cc896be27a36bf85657921",
+            upstream_commit="83ce6067f2e2a3fb697556928f93936693ded971",
+            checksum_sha256="735f30d786f1f2bac9d145396370139c69c54643c931a239cdb0f96eeb48cc28",
+        )
+
+    def test_published_v0191_owner_bytes_pass_full_manifest_validation(self) -> None:
+        self.assert_published_owner_bytes_validate(
+            fixture_prefix="litert_lm_v0191_owner",
+            tag="v0.19.1",
+            manifest_sha256="6ee1528a37f7e473c23def3dacfcdad1d9631cf7ed54d9891264e346e1d17e2e",
+            native_commit="1fa4d43705fe07ba5e4d962e41cf32b8a2ac6116",
+            upstream_commit="7a03724cece417f1724c923b3d527b4319730841",
+            checksum_sha256="2555c3a556071dceebc8b4baddee4c0c6d03427f07f2d4380ddbe874422fb34a",
+        )
+
+    def assert_published_owner_bytes_validate(
+        self,
+        *,
+        fixture_prefix: str,
+        tag: str,
+        manifest_sha256: str,
+        native_commit: str,
+        upstream_commit: str,
+        checksum_sha256: str,
+    ) -> None:
+        self.tag = tag
+        self.manifest_bytes = (
+            self.fixtures / f"{fixture_prefix}_manifest.json"
+        ).read_bytes()
+        self.manifest = json.loads(self.manifest_bytes)
+        self.release = json.loads(
+            (self.fixtures / f"{fixture_prefix}_release.json").read_text()
         )
         self.assertEqual(
-            self.manifest["native"]["commit"],
-            "f173fe9b18a30fdc23cc896be27a36bf85657921",
+            hashlib.sha256(self.manifest_bytes).hexdigest(), manifest_sha256,
         )
+        self.assertEqual(self.manifest["release"]["tag"], tag)
+        self.assertEqual(self.manifest["native"]["commit"], native_commit)
+        self.assertEqual(self.manifest["upstream"]["commit"], upstream_commit)
+        self.assertEqual(self.release["target_commitish"], native_commit)
         checksum_bytes = (
-            self.fixtures / "litert_lm_v019_owner_SHA256SUMS"
+            self.fixtures / f"{fixture_prefix}_SHA256SUMS"
         ).read_bytes()
         self.assertEqual(
-            hashlib.sha256(checksum_bytes).hexdigest(),
-            "735f30d786f1f2bac9d145396370139c69c54643c931a239cdb0f96eeb48cc28",
+            hashlib.sha256(checksum_bytes).hexdigest(), checksum_sha256,
         )
         published_digests = {
             asset["name"]: asset["digest"] for asset in self.release["assets"]
@@ -1555,7 +1607,7 @@ class LiteRtV019PrebuiltOverridesTest(unittest.TestCase):
             with patch.object(pins, "LITERT_PREBUILT_OVERRIDES", stale_table):
                 with self.assertRaisesRegex(
                     ReleaseError,
-                    "LITERT_PREBUILT_OVERRIDES has no entry for upstream v0.19.0",
+                    f"LITERT_PREBUILT_OVERRIDES has no entry for upstream {tag}",
                 ):
                     self.validate(root)
 
@@ -3679,6 +3731,22 @@ class NativeReleaseTagGrammarCorpusTest(unittest.TestCase):
                     pins.normalize_release_tag(tag)
 
 
+class CoreChangelogNativePinTest(unittest.TestCase):
+    repo = "leehack/llamadart-native"
+
+    def test_writes_a_dash_bullet_and_replaces_a_legacy_star_entry(self) -> None:
+        legacy = (
+            "## Unreleased\n\n* Updated the default llama.cpp native runtime pin to\n"
+            "  `leehack/llamadart-native@b1`, old.\n\n- Kept.\n\n## 1.0.0\n"
+        )
+        updated = pins.update_core_changelog_native_pin(legacy, self.repo, "b2")
+        self.assertIn("\n- Updated the default llama.cpp native runtime pin to\n", updated)
+        self.assertIn("`leehack/llamadart-native@b2`", updated)
+        self.assertNotIn("b1", updated)
+        self.assertNotIn("\n* ", updated)
+        self.assertIn("- Kept.", updated)
+
+
 class CompanionChangelogUnreleasedTest(unittest.TestCase):
     repo = "leehack/litert-lm-native"
     entry = "* Updated Apple SwiftPM native pin to `leehack/litert-lm-native@v2`."
@@ -4111,7 +4179,7 @@ class StableDiffusionPinSyncTest(unittest.TestCase):
             (companion / "CHANGELOG.md")
             .read_text(encoding="utf-8")
             .startswith(
-                "## Unreleased\n\n* Updated Apple SwiftPM native pin to "
+                "## Unreleased\n\n- Updated Apple SwiftPM native pin to "
                 "`leehack/stable-diffusion-native@v0.3.0`."
             )
         )

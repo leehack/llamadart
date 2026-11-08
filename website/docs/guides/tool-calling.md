@@ -433,7 +433,7 @@ limit, when a schema exceeds one:
 
 The bound limit is llama.cpp's grammar repetition limit
 (`MAX_REPETITION_THRESHOLD`, 2000): the grammar parser of the llama.cpp release
-the native runtime ships (upstream `v0.8.0`) rejects a repetition count above
+the native runtime ships (upstream `v0.9.0`) rejects a repetition count above
 2000 and silently drops a larger upper bound. The schema factory rejects bounds
 above 2000 so those constraints cannot be lost.
 
@@ -443,7 +443,7 @@ would refuse to load it: a repeated group whose symbols times its repetition
 count exceed 2000. Hermes, for example, puts every schema tool inside one
 repeated group, so about 2000 schema tools exceed it.
 
-The llama.cpp `v0.8.0` grammar parser also refuses a grammar nested or chained
+Since `v0.8.0`, the llama.cpp grammar parser also refuses a grammar nested or chained
 more than 256 levels deep. Generated schema grammars keep a list of up to 1023
 optional properties under that, but a `$ref` alias chain of 255 or more
 levels, or an object with more than about 7000 optional properties, still
@@ -605,7 +605,7 @@ context stops the loop as `truncated` without running its calls. Native
 LiteRT-LM reports why a reply ended on runtimes whose
 `stream_proxy_finish_reason_abi_version` export returns 1: litert-lm-native
 `v0.18.0-3` and later, including the default pin. Older native runtimes, and
-Web `@litert-lm/core@0.18.0`, which reports no cause
+Web `@litert-lm/core@0.19.0`, which reports no cause
 ([#919](https://github.com/leehack/llamadart/issues/919)), throw
 `LlamaUnsupportedException` before starting the loop or modifying its history, including when resuming a turn or
 passing an empty tools list. Plain `ChatSession.create` and

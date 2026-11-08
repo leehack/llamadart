@@ -37,7 +37,7 @@ unchecked. See [scope and limits](./diagnose-setup#isolated-native-check).
 | macOS (arm64, x86_64) | CPU, Metal; on x86_64, Rosetta included, `auto` uses the CPU because Metal returns garbled output on Intel Macs with AMD GPUs ([#1597](https://github.com/leehack/llamadart/issues/1597)) | arm64: CPU, GPU; x86_64: none ([litert-lm-native#72](https://github.com/leehack/litert-lm-native/issues/72)) | macOS 14.0 (Flutter) | Qwen3-ASR (GGUF); LiteRT-LM ASR | Qwen3-TTS; LFM3-Audio, Soprano | Validated on Metal and CPU | Metal, macOS 13.3; validated on arm64 | Supported |
 | Linux (arm64, x64) | CPU, Vulkan; BLAS opt-in; x64: CUDA, HIP opt-in | arm64: CPU; x64: CPU, explicit GPU | Not set by llamadart | Qwen3-ASR (GGUF); LiteRT-LM ASR | Qwen3-TTS; LFM3-Audio, Soprano | Untested | CPU or Vulkan; x64 needs AVX2; validated on x64 (CPU, NVIDIA L4) | Supported |
 | Windows (arm64, x64) | CPU, Vulkan; BLAS opt-in; x64: CUDA opt-in | x64: CPU, explicit GPU ([Qwen unqualified](./known-platform-issues#linux-and-windows)); arm64: none | Not set by llamadart | Qwen3-ASR (GGUF); LiteRT-LM ASR on x64 | Qwen3-TTS; LFM3-Audio, Soprano | Untested | x64 CPU or Vulkan, needs AVX2 and the Visual C++ runtime; validated on Windows Server 2022 (CPU, NVIDIA L4) | Supported |
-| Web | WebGPU, WebAssembly CPU | CPU, GPU through `@litert-lm/core` | Chrome 128, Firefox 129, Safari 17.4 (LiteRT-LM GPU checked in Safari 27 on Apple silicon, [#1025](https://github.com/leehack/llamadart/issues/1025)) | Qwen3-ASR, WAV, MP3 or FLAC bytes | Qwen3-TTS, memory64 | Checked in headless Chromium on macOS | Not yet ([#969](https://github.com/leehack/llamadart/issues/969)) | Experimental |
+| Web | WebGPU, WebAssembly CPU | CPU, GPU through `@litert-lm/core` | Chrome 128, Firefox 129, Safari 17.4 (LiteRT-LM GPU checked in Safari 27 on Apple silicon with `@litert-lm/core@0.18.0`, not yet rechecked on 0.19.0, [#1025](https://github.com/leehack/llamadart/issues/1025)) | Qwen3-ASR, WAV, MP3 or FLAC bytes | Qwen3-TTS, memory64 | Checked in headless Chromium on macOS | Not yet ([#969](https://github.com/leehack/llamadart/issues/969)) | Experimental |
 
 On Windows, the llama.cpp and LiteRT-LM bundles ship the Visual C++ runtime
 DLLs they need, so they need no Visual C++ Redistributable. The opt-in
@@ -151,7 +151,7 @@ native and web. Model architecture support depends on the pinned runtime; see
 | LoRA | `ModelParams.loras` at load and `setLoraSource` at runtime, stacked and scaled; aLoRA rejected | Same, with bridge assets whose `getLoraAdapterCapabilities()` reports support ([llama-web-bridge#142](https://github.com/leehack/llama-web-bridge/pull/142)); otherwise rejected | Unsupported by the current advanced engine; see [owner #99](https://github.com/leehack/litert-lm-native/issues/99) | No |
 | GPU device list and split (`gpuDevices`, `tensorSplit`) | Devices of one backend by `listGpuDevices` index, with proportions; validated on one Metal GPU and a Vulkan Tesla T4 (two-device paths with Mesa lavapipe as the second device); two-GPU hardware has no evidence ([#1528](https://github.com/leehack/llamadart/issues/1528)) and CUDA is not hardware-qualified | No | No | No |
 | Row split (`ModelSplitMode.row`) | Needs llama.cpp split buffer types, which no bundled backend provides; a load on a bundled GPU backend whose module loads (Metal, CUDA, HIP, Vulkan, OpenCL), with `GpuBackend.blas` or `GpuBackend.cpu`, with `auto` on Android, the iOS simulator and macOS x86_64 (which runs on the CPU), or that falls back to the CPU because the requested backend is missing or Vulkan is refused, throws `LlamaUnsupportedException` before the model loads, so use `ModelSplitMode.layer`; a bundled module that fails to load or finds no device loads row on the CPU instead ([#1576](https://github.com/leehack/llamadart/issues/1576)) | No | No | No |
-| Renamed legacy Qwen3 thinking switch | N/A: GGUF metadata | N/A: GGUF metadata | `chatTemplate: liteRtLmQwen3ChatTemplate`; requires native template setter | Canonical override throws at load: no template setter in `@litert-lm/core@0.18.0` |
+| Renamed legacy Qwen3 thinking switch | N/A: GGUF metadata | N/A: GGUF metadata | `chatTemplate: liteRtLmQwen3ChatTemplate`; requires native template setter | Canonical override throws at load: no template setter in `@litert-lm/core@0.19.0` |
 | Thinking budget | Text-only, without speculative decoding, when the native reasoning-budget export resolves | Text-only, with bridge assets whose `getCompletionCapabilities()` reports `thinkingBudget` ([llama-web-bridge#144](https://github.com/leehack/llama-web-bridge/pull/144)); otherwise rejected | Native chat, without speculative decoding, on bundles whose first response channel is a thinking channel (Gemma 4); bounds that channel only; `0` and `forcedMessage` rejected | No |
 | Strict `responseFormat` | Yes | Yes, without tools | macOS arm64 CPU, admitted canonical Qwen3 text model; scalar object schema subset, thinking disabled, no tools/media/speculation/caller stops | No |
 | Lazy grammar | Yes | Yes when the loaded bridge reports `lazyGrammar`; otherwise first-token `root` only | No GBNF grammar | No GBNF grammar |
@@ -170,7 +170,7 @@ native and web. Model architecture support depends on the pinned runtime; see
 | Generation-limit reporting | `length` for output or context limits | `length` with the bridge usage probe; cap cause unspecified | `length` for output or context limits | No |
 | Per-request usage | `usage` on the final `create` chunk | Yes | No | No ([#725](https://github.com/leehack/llamadart/issues/725)) |
 | Operation observers | Yes; after a load, `runtime` is `llamaCpp` | Yes; after a load, `runtime` is `llamaCpp` | Yes; after a load, `runtime` is `liteRtLm` | Yes; after a load, `runtime` is `liteRtLm` |
-| Multi-turn `ChatSession` | Yes | Yes | Yes | `LlamaBackend.withTextHistory()` or `LiteRtLmBackend.withTextHistory()` (existing defaults retain single-user-text): system/user/assistant text when the loaded runtime consumes `preface` and exposes `getHistory()` (`@litert-lm/core@0.18.0`); final user message required; model/browser qualification is separate |
+| Multi-turn `ChatSession` | Yes | Yes | Yes | `LlamaBackend.withTextHistory()` or `LiteRtLmBackend.withTextHistory()` (existing defaults retain single-user-text): system/user/assistant text when the loaded runtime consumes `preface` and exposes `getHistory()` (`@litert-lm/core@0.19.0`); final user message required; model/browser qualification is separate |
 | Deterministic session template time | `TemplateTimeChatSession`, Dart-rendered templates | Same Dart template path | Dart-side rendering only; runtime-owned template clock unchanged | No: runtime-owned clock; explicit template time rejected |
 | Tool calling | Yes | Yes | Yes, through the `LlamaEngine` parser; LiteRT-native constrained tool execution is not wired | No: tool declarations and tool messages throw |
 | Incomplete tool diagnostics | LFM raw `partialToolCalls` at reported length limits | Same parser when the runtime reports a length limit | Same Dart parser at reported length limits | No reliable terminal cause; unchanged #919 restriction |
@@ -212,25 +212,25 @@ web are on [Known platform issues](./known-platform-issues).
 
 | Runtime | Pinned release |
 | --- | --- |
-| llama.cpp native | `leehack/llamadart-native@v0.8.0-3` |
-| LiteRT-LM native | `leehack/litert-lm-native@v0.19.0` |
+| llama.cpp native | `leehack/llamadart-native@v0.9.0` |
+| LiteRT-LM native | `leehack/litert-lm-native@v0.19.1` |
 | stable-diffusion.cpp native (opt-in, Preview) | `leehack/stable-diffusion-native@v0.3.0-3`, for [image generation](../guides/image-generation); see [Opt-in stable_diffusion runtime](./native-build-hooks#opt-in-stable_diffusion-runtime-experimental). Flutter iOS/macOS apps link its XCFramework through `llamadart_stable_diffusion_flutter` |
 | WebGPU bridge assets | `leehack/llama-web-bridge-assets`; see [Pinned bridge assets](./webgpu-bridge#pinned-bridge-assets) |
 
 The native-assets hook currently pins `llamadart-native` tag
-`v0.8.0-3` and
-`litert-lm-native` release `v0.19.0` (`lib/src/hook/native_release_pins.dart`).
+`v0.9.0` and
+`litert-lm-native` release `v0.19.1` (`lib/src/hook/native_release_pins.dart`).
 
 The direct native client, service probes and speech worker share ABI-aware
 discovery. Public selection admits legacy runtimes and C API 1.0.x; unknown
 or future versions are refused before engine calls. The source pin adopts
 published native
-[v0.19.0](https://github.com/leehack/litert-lm-native/releases/tag/v0.19.0)
-(owner `f173fe9b`, upstream `83ce6067`). The selected loader requires macOS 14+
+[v0.19.1](https://github.com/leehack/litert-lm-native/releases/tag/v0.19.1)
+(owner `1fa4d437`, upstream `7a03724c`). The selected loader requires macOS 14+
 before loading any core or companion library, including legacy libraries and
 custom paths. Final default-discovery and Apple embedding/signature checks remain
 in [#1677](https://github.com/leehack/llamadart/issues/1677); the source pin does
-not publish core or companion packages. Web stays `@litert-lm/core@0.18.0`.
+not publish core or companion packages. Web uses `@litert-lm/core@0.19.0`.
 The Flutter companion's iOS 16.4 floor remains separate.
 Apps can override the llama.cpp release with `llamadart_native_tag`; accepted
 tag forms, keys, backend modules and local bundles:

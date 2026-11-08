@@ -140,6 +140,26 @@ Web qualification test calls the upstream package directly.
 The gate is cosine **>= 0.9998** and relative L2 **< 2% per input**. Web stays
 unsupported. These observations do not establish the cause of the numerical gap.
 
+### Web comparison on `@litert-lm/core@0.19.0`
+
+Chrome 157.0.8103.38 on macOS arm64 (M4 Max), same flags and adapter (`apple`,
+`metal-3`), the same `Backend.GPU=4` engine with CPU vision/audio processors,
+against native CPU vectors regenerated with native `v0.19.0` (identical to the
+v0.19 preservation reference). The gate still fails for every input; audio is
+further from native than on `0.18.0`:
+
+| Input | WebGPU vs `v0.19.0` native CPU cosine | Relative L2 |
+| --- | ---: | ---: |
+| `hello world` | 0.9981415258 | 6.09668% |
+| Black PNG | 0.9985068591 | 5.46469% |
+| Checkerboard PNG | 0.9981208848 | 6.13044% |
+| One-second 16 kHz silence | 0.9952921358 | 9.70347% |
+| One-second 440 Hz tone | 0.9965292499 | 8.33156% |
+| Interleaved text/image/audio | 0.9973914612 | 7.22293% |
+
+`Backend.CPU=3` engine creation still fails with the same `Failed to get
+external weight for buffer id 2147483863 (tensor 1451)`.
+
 ## Unsupported paths and upstream gaps
 
 - **Native platforms other than macOS, iOS and Android arm64:** fail at load,
@@ -168,7 +188,7 @@ unsupported. These observations do not establish the cause of the numerical gap.
   weights only for WebGPU ([upstream lines 794–818](https://github.com/google-ai-edge/LiteRT-LM/blob/b2f686e2ed4718fb84ec398a61dd59ca0f0aff27/runtime/core/embedding_engine_impl.cc#L794-L818)).
   The upstream-only CPU creation error is `Failed to get external weight for
   buffer id 2147483863 (tensor 1451)`.
-- **WebGPU:** fail before I/O because the table above misses the parity gate.
+- **WebGPU:** fail before I/O because the tables above miss the parity gate.
   No modality is advertised, including text, despite successful vector production.
 - **Token-count API:** the [C API](https://github.com/google-ai-edge/LiteRT-LM/blob/b2f686e2ed4718fb84ec398a61dd59ca0f0aff27/c/embedding_engine.h)
   and pinned Web API expose compute but no embedding token-count preflight.

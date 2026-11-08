@@ -1287,7 +1287,7 @@ The outer dry-run prints the command with placeholders when inputs are absent;
 it produces no qualification result. Before real local execution set all four:
 
 - `LLAMADART_DEFAULT_AOT_EXPECTED_SHA`: reviewed full lowercase checkout commit.
-- `LLAMADART_DEFAULT_AOT_EXPECTED_NATIVE_TAG`: `v0.8.0-2` or `v0.8.0-3`, which must
+- `LLAMADART_DEFAULT_AOT_EXPECTED_NATIVE_TAG`: `v0.8.0-2`, `v0.8.0-3` or `v0.9.0`, which must
   match the source pin. This verifies identity and never overrides the pin.
 - `LLAMADART_DEFAULT_AOT_MODEL_PATH`: the admitted local Qwen2.5-1.5B Instruct
   Q4_K_M fixture; local execution downloads nothing through the dispatcher.
