@@ -2343,6 +2343,29 @@ Future<void> main(List<String> args) async {
       );
     });
 
+    test(
+      'dry-runs the text-to-speech model families from the environment',
+      () async {
+        final result = await runLocalE2e(
+          const ['--scenario', 'text-to-speech-models-smoke', '--dry-run'],
+          projectRoot: '/repo',
+          displayShell: LocalE2eDisplayShell.posix,
+        );
+
+        expect(result.exitCode, 0);
+        expect(
+          result.stdout,
+          contains(
+            'LLAMADART_TTS_OUTPUT_DIR=/repo/build/text-to-speech-models',
+          ),
+        );
+        expect(
+          result.stdout,
+          contains('test/e2e/backends/text_to_speech_models_e2e_test.dart'),
+        );
+      },
+    );
+
     test('requires a model and projector for text-to-speech', () async {
       final result = await runLocalE2e(
         const [

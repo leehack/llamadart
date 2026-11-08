@@ -462,6 +462,164 @@ void main() {
       expect(backend.lastRequest, isNull);
     });
 
+    group('voices', () {
+      setUp(() {
+        backend.capabilities = const BackendTextToSpeechCapabilities(
+          isSupported: true,
+          model: BackendTextToSpeechModel.lfm3Audio,
+          sampleRateHz: 24000,
+          channelCount: 1,
+          supportsLanguage: true,
+          supportsCancellation: true,
+          supportsVoice: true,
+          voices: <String>['female', 'male'],
+        );
+        speechEngine = TextToSpeechEngine.attach(
+          llamaEngine,
+          adapter: const Lfm3AudioTtsAdapter(),
+        );
+      });
+
+      test('reports the listed voices and passes the selected one', () async {
+        await _loadTextToSpeechModel(llamaEngine);
+
+        final capabilities = await speechEngine.capabilities;
+        expect(capabilities.supportsVoice, isTrue);
+        expect(capabilities.voices, <String>['female', 'male']);
+        expect(capabilities.supportsSpeakerReference, isFalse);
+        expect(capabilities.supportedLanguages, isEmpty);
+
+        await speechEngine.synthesizeOnce(
+          const TextToSpeechRequest(
+            text: 'Hello.',
+            voice: 'MALE',
+            language: 'English',
+          ),
+        );
+        expect(backend.lastRequest?.voice, 'MALE');
+        expect(backend.lastRequest?.language, 'English');
+
+        await speechEngine.synthesizeOnce(
+          const TextToSpeechRequest(text: 'Hello.'),
+        );
+        expect(backend.lastRequest?.voice, isNull);
+      });
+
+      test('rejects an unlisted voice without starting', () async {
+        await _loadTextToSpeechModel(llamaEngine);
+
+        await expectLater(
+          speechEngine.synthesize(
+            const TextToSpeechRequest(text: 'Hello.', voice: 'alto'),
+          ),
+          throwsA(
+            isA<LlamaTextToSpeechException>().having(
+              (error) => error.message,
+              'message',
+              'Unknown LFM3-Audio voice `alto`. Use one of: female, male.',
+            ),
+          ),
+        );
+        expect(backend.lastRequest, isNull);
+      });
+
+      test(
+        'leaves an unlisted voice to a runtime that cannot list voices',
+        () async {
+          backend.capabilities = const BackendTextToSpeechCapabilities(
+            isSupported: true,
+            model: BackendTextToSpeechModel.lfm3Audio,
+            sampleRateHz: 24000,
+            channelCount: 1,
+            supportsVoice: true,
+          );
+          await _loadTextToSpeechModel(llamaEngine);
+
+          await speechEngine.synthesizeOnce(
+            const TextToSpeechRequest(text: 'Hello.', voice: 'alto'),
+          );
+          expect(backend.lastRequest?.voice, 'alto');
+        },
+      );
+
+      test('rejects a voice for a model without voices', () async {
+        backend.capabilities = const BackendTextToSpeechCapabilities(
+          isSupported: true,
+          model: BackendTextToSpeechModel.soprano,
+          sampleRateHz: 32000,
+          channelCount: 1,
+          supportsCancellation: true,
+          voices: <String>['ignored'],
+        );
+        speechEngine = TextToSpeechEngine.attach(
+          llamaEngine,
+          adapter: const SopranoTtsAdapter(),
+        );
+        await _loadTextToSpeechModel(llamaEngine);
+
+        final capabilities = await speechEngine.capabilities;
+        expect(capabilities.supportsVoice, isFalse);
+        expect(capabilities.voices, isEmpty);
+        await expectLater(
+          speechEngine.synthesize(
+            const TextToSpeechRequest(text: 'Hello.', voice: 'ignored'),
+          ),
+          throwsA(isA<LlamaUnsupportedException>()),
+        );
+        await expectLater(
+          speechEngine.synthesize(
+            const TextToSpeechRequest(text: 'Hello.', language: 'en'),
+          ),
+          throwsA(isA<LlamaUnsupportedException>()),
+        );
+        expect(backend.lastRequest, isNull);
+      });
+
+      test('rejects a blank voice and a voice with a speaker reference '
+          'before the capability lookup', () async {
+        await _loadTextToSpeechModel(llamaEngine);
+
+        await expectLater(
+          speechEngine.synthesize(
+            const TextToSpeechRequest(text: 'Hello.', voice: '  '),
+          ),
+          throwsA(isA<LlamaTextToSpeechException>()),
+        );
+        await expectLater(
+          speechEngine.synthesize(
+            TextToSpeechRequest(
+              text: 'Hello.',
+              voice: 'female',
+              speakerReference: SpeechAudioBytesInput(
+                Uint8List.fromList(<int>[1]),
+              ),
+            ),
+          ),
+          throwsA(
+            isA<LlamaTextToSpeechException>().having(
+              (error) => error.message,
+              'message',
+              'A voice and a speaker reference cannot be combined.',
+            ),
+          ),
+        );
+        expect(backend.lastCapabilitiesContextHandle, isNull);
+      });
+
+      test('a Qwen3-TTS adapter refuses an LFM3-Audio projector', () async {
+        speechEngine = TextToSpeechEngine.attach(
+          llamaEngine,
+          adapter: const Qwen3TtsAdapter(),
+        );
+        await _loadTextToSpeechModel(llamaEngine);
+
+        expect(
+          (await speechEngine.capabilities).unsupportedReason,
+          'The loaded projector is not a supported Qwen3-TTS projector.',
+        );
+      });
+    });
+
     test('returns typed task failure and releases the lease', () async {
       backend.synthesisError = StateError('codec failed');
       await _loadTextToSpeechModel(llamaEngine);
@@ -636,6 +794,40 @@ void main() {
       },
     );
 
+    test('refuses an adapter whose models the runtime cannot drive before '
+        'loading anything', () async {
+      backend.modelRefusals = {
+        BackendTextToSpeechModel.lfm3Audio: 'needs llamadart-native v0.8.0',
+      };
+      await expectLater(
+        TextToSpeechEngine.load(
+          model(adapter: const Lfm3AudioTtsAdapter()),
+          backend: backend,
+        ),
+        throwsA(
+          isA<LlamaUnsupportedException>().having(
+            (error) => error.message,
+            'message',
+            'needs llamadart-native v0.8.0',
+          ),
+        ),
+      );
+      expect(backend.lastModelParams, isNull);
+      expect(backend.disposeCalls, 1);
+    });
+
+    test('loads when the runtime drives a model the adapter accepts', () async {
+      backend.modelRefusals = {
+        BackendTextToSpeechModel.lfm3Audio: 'needs llamadart-native v0.8.0',
+      };
+      final synthesizer = await TextToSpeechEngine.load(
+        model(),
+        backend: backend,
+      );
+      await synthesizer.dispose();
+      expect(backend.lastModelParams, isNotNull);
+    });
+
     test('a runtime without text-to-speech leaves nothing loaded', () async {
       backend.capabilities = const BackendTextToSpeechCapabilities(
         isSupported: false,
@@ -769,8 +961,19 @@ Future<void> _loadTextToSpeechModel(LlamaEngine engine) async {
 }
 
 class _TextToSpeechBackend
-    implements LlamaBackend, BackendMultimodalSupport, BackendTextToSpeech {
+    implements
+        LlamaBackend,
+        BackendMultimodalSupport,
+        BackendTextToSpeech,
+        BackendTextToSpeechModelSupport {
   bool _ready = false;
+  Map<BackendTextToSpeechModel, String> modelRefusals = const {};
+
+  @override
+  Future<String?> textToSpeechModelUnsupportedReason(
+    BackendTextToSpeechModel model,
+  ) async => modelRefusals[model];
+
   BackendTextToSpeechCapabilities capabilities =
       const BackendTextToSpeechCapabilities(
         isSupported: true,

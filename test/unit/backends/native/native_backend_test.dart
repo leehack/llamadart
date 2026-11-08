@@ -1654,6 +1654,49 @@ void main() {
     }
   });
 
+  test('asks the llama.cpp runtime which text-to-speech models it drives '
+      'before a load and keeps that runtime for the load', () async {
+    var created = 0;
+    final llama = _TextToSpeechFakeBackend(handle: 11);
+    final backend = NativeAutoBackend(
+      llamaCppFactory: () {
+        created++;
+        return llama;
+      },
+      liteRtLmFactory: () => _FakeBackend(handle: 22),
+    );
+
+    try {
+      expect(
+        await backend.textToSpeechModelUnsupportedReason(
+          BackendTextToSpeechModel.soprano,
+        ),
+        'no soprano',
+      );
+      expect(
+        await backend.textToSpeechModelUnsupportedReason(
+          BackendTextToSpeechModel.lfm3Audio,
+        ),
+        isNull,
+      );
+      await backend.modelLoad('/models/lfm3.gguf', const ModelParams());
+      expect(
+        await backend.textToSpeechModelUnsupportedReason(
+          BackendTextToSpeechModel.lfm3Audio,
+        ),
+        isNull,
+      );
+      expect(llama.probedModels, [
+        BackendTextToSpeechModel.soprano,
+        BackendTextToSpeechModel.lfm3Audio,
+        BackendTextToSpeechModel.lfm3Audio,
+      ]);
+      expect(created, 1);
+    } finally {
+      await backend.dispose();
+    }
+  });
+
   test('rejects decision calls before a model load', () async {
     final llama = _DecisionFakeBackend(handle: 11);
     final backend = NativeAutoBackend(
@@ -2758,11 +2801,20 @@ class _ToolResultMediaFakeBackend extends _FakeBackend
 }
 
 class _TextToSpeechFakeBackend extends _FakeBackend
-    implements BackendTextToSpeech {
+    implements BackendTextToSpeech, BackendTextToSpeechModelSupport {
   _TextToSpeechFakeBackend({required super.handle});
 
   (int, int)? capabilityHandles;
   (int, int)? synthesisHandles;
+  final List<BackendTextToSpeechModel> probedModels = [];
+
+  @override
+  Future<String?> textToSpeechModelUnsupportedReason(
+    BackendTextToSpeechModel model,
+  ) async {
+    probedModels.add(model);
+    return model == BackendTextToSpeechModel.soprano ? 'no soprano' : null;
+  }
 
   @override
   Future<BackendTextToSpeechCapabilities> textToSpeechCapabilities(

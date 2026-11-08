@@ -50,6 +50,7 @@ class NativeLlamaBackend
         BackendStatePersistence,
         BackendStateIdentity,
         BackendTextToSpeech,
+        BackendTextToSpeechModelSupport,
         BackendDecision,
         BackendGenerationCapabilitiesSupport,
         BackendVideoRuntimeSupport,
@@ -1483,6 +1484,25 @@ class NativeLlamaBackend
     final res = await _receiveResponse(rp);
     if (res is ErrorResponse) throw _workerError(res);
     return res as bool;
+  }
+
+  @override
+  Future<String?> textToSpeechModelUnsupportedReason(
+    BackendTextToSpeechModel model,
+  ) async {
+    await _ensureIsolate();
+    final rp = _openResponsePort();
+    _dispatchRequest(rp, TextToSpeechModelSupportRequest(model, rp.sendPort));
+    final response = await _receiveResponse(rp);
+    if (response is TextToSpeechModelSupportResponse) {
+      return response.unsupportedReason;
+    }
+    if (response is ErrorResponse) {
+      throw _workerError(response);
+    }
+    throw LlamaTextToSpeechException(
+      'Unexpected native text-to-speech model support response.',
+    );
   }
 
   @override
