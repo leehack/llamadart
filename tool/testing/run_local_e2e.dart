@@ -2766,7 +2766,7 @@ Future<LocalE2eResult> runLocalE2e(
     if (sha.length != 40 ||
         !RegExp(r'^[0-9a-f]{40}$').hasMatch(sha) ||
         sha == '0000000000000000000000000000000000000000' ||
-        !const {'v0.8.0-2', 'v0.8.0-3'}.contains(tag) ||
+        !const {'v0.8.0-2', 'v0.8.0-3', 'v0.9.0'}.contains(tag) ||
         (env['LLAMADART_DEFAULT_AOT_MODEL_PATH'] ?? '').trim().isEmpty ||
         (env['LLAMADART_DEFAULT_AOT_OUTPUT_ROOT'] ?? '').trim().isEmpty) {
       return const LocalE2eResult(
@@ -2774,7 +2774,7 @@ Future<LocalE2eResult> runLocalE2e(
         stderr:
             'native-default-consumer-aot requires '
             'LLAMADART_DEFAULT_AOT_EXPECTED_SHA (full lowercase commit), '
-            'LLAMADART_DEFAULT_AOT_EXPECTED_NATIVE_TAG (v0.8.0-2 or v0.8.0-3), '
+            'LLAMADART_DEFAULT_AOT_EXPECTED_NATIVE_TAG (v0.8.0-2, v0.8.0-3 or v0.9.0), '
             'LLAMADART_DEFAULT_AOT_MODEL_PATH and '
             'LLAMADART_DEFAULT_AOT_OUTPUT_ROOT (fresh output). '
             'Expected tag is verification only; native2 is pipeline-only.\n',

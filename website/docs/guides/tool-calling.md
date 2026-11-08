@@ -433,7 +433,7 @@ limit, when a schema exceeds one:
 
 The bound limit is llama.cpp's grammar repetition limit
 (`MAX_REPETITION_THRESHOLD`, 2000): the grammar parser of the llama.cpp release
-the native runtime ships (upstream `v0.8.0`) rejects a repetition count above
+the native runtime ships (upstream `v0.9.0`) rejects a repetition count above
 2000 and silently drops a larger upper bound. The schema factory rejects bounds
 above 2000 so those constraints cannot be lost.
 
@@ -443,7 +443,7 @@ would refuse to load it: a repeated group whose symbols times its repetition
 count exceed 2000. Hermes, for example, puts every schema tool inside one
 repeated group, so about 2000 schema tools exceed it.
 
-The llama.cpp `v0.8.0` grammar parser also refuses a grammar nested or chained
+Since `v0.8.0`, the llama.cpp grammar parser also refuses a grammar nested or chained
 more than 256 levels deep. Generated schema grammars keep a list of up to 1023
 optional properties under that, but a `$ref` alias chain of 255 or more
 levels, or an object with more than about 7000 optional properties, still

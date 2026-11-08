@@ -47,6 +47,7 @@ void main() {
       expect(inputs['expected_native_tag']['options'], [
         'v0.8.0-2',
         'v0.8.0-3',
+        'v0.9.0',
       ]);
       final guard = qualification()['if'] as String;
       expect(guard, startsWith(r'${{'));

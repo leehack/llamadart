@@ -25,7 +25,7 @@ class AndroidConsumerProfilePlan {
   /// Exact consumer hook defines: default backend policy, no path override.
   Map<String, Object?> get hookDefines => {
     'llamadart_native_runtimes': 'llama_cpp',
-    'llamadart_native_tag': 'v0.8.0-3',
+    'llamadart_native_tag': 'v0.9.0',
     'llamadart_native_backends': {
       'platforms': {
         'android-arm64': {'cpu_profile': profile},

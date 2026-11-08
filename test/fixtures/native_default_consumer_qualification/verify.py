@@ -16,7 +16,7 @@ MODEL_SHA256 = '6a1a2eb6d15622bf3c96857206351ba97e1af16c30d7a74ee38970e434e9407e
 PROMPT = 'Repeat and continue this sequence exactly:\n' + '\n'.join(
     ['alpha beta gamma delta epsilon zeta eta theta'] * 5)
 PROMPT_SHA256 = hashlib.sha256(PROMPT.encode()).hexdigest()
-TAGS = ('v0.8.0-2', 'v0.8.0-3')
+TAGS = ('v0.8.0-2', 'v0.8.0-3', 'v0.9.0')
 NATIVE_NAME = re.compile(r'^(?:lib)?(?:llama(?:dart)?|ggml|mtmd)(?:[-_.].*)?\.(?:dll|dylib)$', re.I)
 
 
@@ -375,7 +375,7 @@ def bind_providers(modules, members, platform, allowed_root):
 
 def scope(tag, complete):
     return {'expectedNativeTag': tag, 'pipelineOnly': tag == TAGS[0],
-            'finalNative3Qualified': tag == TAGS[1] and complete,
+            'finalNative3Qualified': tag in TAGS[1:] and complete,
             'independentAcceptance': 'required separately', 'platformScopeOnly': True,
             'gpuQualification': False}
 
@@ -390,6 +390,6 @@ def verify_seal(output):
     require(manifest.get('terminalSha256') == sha256(output / 'terminal.json'), 'terminal seal mismatch')
     terminal = json.loads((output / 'terminal.json').read_text(encoding='utf-8'))
     require(terminal.get('finalNative3Qualified') is
-            (terminal.get('expectedNativeTag') == TAGS[1] and terminal.get('completed') is True),
+            (terminal.get('expectedNativeTag') in TAGS[1:] and terminal.get('completed') is True),
             'terminal native3 scope contradicts completion')
     return terminal

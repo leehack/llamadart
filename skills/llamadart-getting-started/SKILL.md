@@ -80,7 +80,7 @@ interface does not establish backend/model support; read `await engine.capabilit
   token they receive, even though disposal no longer waits for their work.
 - Await `dispose()` before host shutdown. Killing a worker is not cooperative
   cancellation. Reclaiming models/contexts created during a forced kill needs
-  owner API v1, supplied by the pinned `v0.8.0-3` runtime. Custom runtimes
+  owner API v1, supplied by the pinned `v0.9.0` runtime. Custom runtimes
   without it retain that gap. Other raw allocations have separate limits.
 - `LlamaBackend()` routes by model format: LiteRT-LM bundles run on LiteRT-LM
   and GGUF on llama.cpp. Native targets read the file header, so extensionless

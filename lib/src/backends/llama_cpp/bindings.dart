@@ -1053,6 +1053,19 @@ external void ggml_backend_tensor_copy_async(
 
 @ffi.Native<
   ffi.Void Function(
+    ffi.Pointer<ffi.Pointer<ggml_tensor>>,
+    ffi.Pointer<ffi.Pointer<ggml_tensor>>,
+    ffi.Size,
+  )
+>()
+external void ggml_backend_tensor_copy_n(
+  ffi.Pointer<ffi.Pointer<ggml_tensor>> srcs,
+  ffi.Pointer<ffi.Pointer<ggml_tensor>> dsts,
+  int n_tensors,
+);
+
+@ffi.Native<
+  ffi.Void Function(
     ffi.Pointer<ggml_tensor>,
     ffi.Pointer<ffi.Void>,
     ffi.Size,
@@ -1125,6 +1138,25 @@ external void ggml_backend_tensor_get_async(
   ffi.Pointer<ffi.Void> data,
   int offset,
   int size,
+);
+
+@ffi.Native<
+  ffi.Void Function(
+    ffi.Pointer<ffi.Pointer<ggml_tensor>>,
+    ffi.Pointer<ffi.Void>,
+    ffi.Pointer<ffi.Size>,
+    ffi.Pointer<ffi.Size>,
+    ffi.Pointer<ffi.Size>,
+    ffi.Size,
+  )
+>()
+external void ggml_backend_tensor_get_n(
+  ffi.Pointer<ffi.Pointer<ggml_tensor>> tensors,
+  ffi.Pointer<ffi.Void> data,
+  ffi.Pointer<ffi.Size> offsets,
+  ffi.Pointer<ffi.Size> sizes,
+  ffi.Pointer<ffi.Size> data_offsets,
+  int n_tensors,
 );
 
 @ffi.Native<
@@ -1211,6 +1243,25 @@ external void ggml_backend_tensor_set_async(
   ffi.Pointer<ffi.Void> data,
   int offset,
   int size,
+);
+
+@ffi.Native<
+  ffi.Void Function(
+    ffi.Pointer<ffi.Pointer<ggml_tensor>>,
+    ffi.Pointer<ffi.Void>,
+    ffi.Pointer<ffi.Size>,
+    ffi.Pointer<ffi.Size>,
+    ffi.Pointer<ffi.Size>,
+    ffi.Size,
+  )
+>()
+external void ggml_backend_tensor_set_n(
+  ffi.Pointer<ffi.Pointer<ggml_tensor>> tensors,
+  ffi.Pointer<ffi.Void> data,
+  ffi.Pointer<ffi.Size> offsets,
+  ffi.Pointer<ffi.Size> sizes,
+  ffi.Pointer<ffi.Size> data_offsets,
+  int n_tensors,
 );
 
 @ffi.Native<ffi.Void Function(ggml_backend_reg_t)>()
@@ -2291,6 +2342,31 @@ external int _ggml_flash_attn_ext_get_prec(ffi.Pointer<ggml_tensor> a);
 ggml_prec ggml_flash_attn_ext_get_prec(ffi.Pointer<ggml_tensor> a) {
   return ggml_prec.fromValue(_ggml_flash_attn_ext_get_prec(a));
 }
+
+@ffi.Native<
+  ffi.Pointer<ggml_tensor> Function(
+    ffi.Pointer<ggml_context>,
+    ffi.Pointer<ggml_tensor>,
+    ffi.Pointer<ggml_tensor>,
+    ffi.Pointer<ggml_tensor>,
+    ffi.Pointer<ggml_tensor>,
+    ffi.Pointer<ggml_tensor>,
+    ffi.Float,
+    ffi.Float,
+    ffi.Float,
+  )
+>()
+external ffi.Pointer<ggml_tensor> ggml_flash_attn_ext_rows(
+  ffi.Pointer<ggml_context> ctx,
+  ffi.Pointer<ggml_tensor> q,
+  ffi.Pointer<ggml_tensor> k,
+  ffi.Pointer<ggml_tensor> v,
+  ffi.Pointer<ggml_tensor> mask,
+  ffi.Pointer<ggml_tensor> kv_rows,
+  double scale,
+  double max_bias,
+  double logit_softcap,
+);
 
 @ffi.Native<ffi.Void Function(ffi.Pointer<ggml_tensor>, ffi.Int32)>()
 external void ggml_flash_attn_ext_set_n_kv_max(
@@ -7021,6 +7097,68 @@ llama_dart_tts_status llama_dart_tts_get_output_info(
 }
 
 @ffi.Native<
+  ffi.Int Function(
+    ffi.Pointer<mtmd_context>,
+    ffi.Uint32,
+    ffi.Pointer<ffi.Int32>,
+  )
+>(symbol: 'llama_dart_tts_get_voice_count')
+external int _llama_dart_tts_get_voice_count(
+  ffi.Pointer<mtmd_context> mtmd,
+  int accepted_model_types,
+  ffi.Pointer<ffi.Int32> out_count,
+);
+
+llama_dart_tts_status llama_dart_tts_get_voice_count(
+  ffi.Pointer<mtmd_context> mtmd,
+  int accepted_model_types,
+  ffi.Pointer<ffi.Int32> out_count,
+) {
+  return llama_dart_tts_status.fromValue(
+    _llama_dart_tts_get_voice_count(mtmd, accepted_model_types, out_count),
+  );
+}
+
+@ffi.Native<
+  ffi.Int Function(
+    ffi.Pointer<mtmd_context>,
+    ffi.Uint32,
+    ffi.Int32,
+    ffi.Pointer<ffi.Char>,
+    ffi.Size,
+    ffi.Pointer<ffi.Size>,
+  )
+>(symbol: 'llama_dart_tts_get_voice_name')
+external int _llama_dart_tts_get_voice_name(
+  ffi.Pointer<mtmd_context> mtmd,
+  int accepted_model_types,
+  int index,
+  ffi.Pointer<ffi.Char> out_name,
+  int out_capacity,
+  ffi.Pointer<ffi.Size> out_length,
+);
+
+llama_dart_tts_status llama_dart_tts_get_voice_name(
+  ffi.Pointer<mtmd_context> mtmd,
+  int accepted_model_types,
+  int index,
+  ffi.Pointer<ffi.Char> out_name,
+  int out_capacity,
+  ffi.Pointer<ffi.Size> out_length,
+) {
+  return llama_dart_tts_status.fromValue(
+    _llama_dart_tts_get_voice_name(
+      mtmd,
+      accepted_model_types,
+      index,
+      out_name,
+      out_capacity,
+      out_length,
+    ),
+  );
+}
+
+@ffi.Native<
   ffi.Pointer<llama_dart_tts> Function(
     ffi.Pointer<llama_context>,
     ffi.Pointer<mtmd_context>,
@@ -9003,6 +9141,9 @@ external ffi.Pointer<mtmd_bitmap> mtmd_bitmap_init_lazy(
 @ffi.Native<ffi.Bool Function(ffi.Pointer<mtmd_bitmap>)>()
 external bool mtmd_bitmap_is_audio(ffi.Pointer<mtmd_bitmap> bitmap);
 
+@ffi.Native<ffi.Bool Function(ffi.Pointer<mtmd_bitmap>)>()
+external bool mtmd_bitmap_is_voice(ffi.Pointer<mtmd_bitmap> bitmap);
+
 @ffi.Native<
   ffi.Void Function(ffi.Pointer<mtmd_bitmap>, ffi.Pointer<ffi.Char>)
 >()
@@ -9066,6 +9207,17 @@ external mtmd_gen_audio_info mtmd_gen_audio_get_info(
 );
 
 @ffi.Native<
+  ffi.Pointer<mtmd_bitmap> Function(
+    ffi.Pointer<mtmd_context>,
+    ffi.Pointer<ffi.Char>,
+  )
+>()
+external ffi.Pointer<mtmd_bitmap> mtmd_gen_audio_get_voice(
+  ffi.Pointer<mtmd_context> ctx,
+  ffi.Pointer<ffi.Char> name,
+);
+
+@ffi.Native<
   ffi.Int32 Function(
     ffi.Pointer<mtmd_context>,
     ffi.Pointer<mtmd_gen_state>,
@@ -9078,6 +9230,29 @@ external int mtmd_gen_audio_process(
   ffi.Pointer<mtmd_gen_state> state,
   ffi.Pointer<mtmd_gen_inp> inp,
   ffi.Pointer<mtmd_gen_out> out,
+);
+
+@ffi.Native<
+  ffi.Size Function(
+    ffi.Pointer<mtmd_context>,
+    ffi.Pointer<ffi.Char>,
+    ffi.Pointer<ffi.Float>,
+    ffi.Size,
+  )
+>()
+external int mtmd_gen_audio_read_tensor(
+  ffi.Pointer<mtmd_context> ctx,
+  ffi.Pointer<ffi.Char> name,
+  ffi.Pointer<ffi.Float> out,
+  int n_max,
+);
+
+@ffi.Native<
+  ffi.Pointer<ffi.Char> Function(ffi.Pointer<mtmd_context>, ffi.Int32)
+>()
+external ffi.Pointer<ffi.Char> mtmd_gen_audio_voice_name(
+  ffi.Pointer<mtmd_context> ctx,
+  int idx,
 );
 
 @ffi.Native<mtmd_gen_inp Function(ffi.Pointer<mtmd_context>)>()
@@ -9102,6 +9277,14 @@ external mtmd_gen_state_params mtmd_gen_state_params_default();
 
 @ffi.Native<ffi.Void Function(ffi.Pointer<mtmd_gen_state>)>()
 external void mtmd_gen_state_reset(ffi.Pointer<mtmd_gen_state> state);
+
+@ffi.Native<
+  ffi.Int32 Function(ffi.Pointer<mtmd_context>, ffi.Pointer<mtmd_gen_state>)
+>()
+external int mtmd_gen_state_set_ref(
+  ffi.Pointer<mtmd_context> ctx,
+  ffi.Pointer<mtmd_gen_state> state,
+);
 
 @ffi.Native<ffi.Int Function(ffi.Pointer<mtmd_context>)>()
 external int mtmd_get_audio_sample_rate(ffi.Pointer<mtmd_context> ctx);
@@ -9852,12 +10035,48 @@ typedef Dartggml_backend_comm_allreduce_tensor_tFunction =
       ffi.Pointer<ffi.Void> comm_ctx,
       ffi.Pointer<ffi.Pointer<ggml_tensor>> tensors,
     );
+typedef ggml_backend_comm_bootstrap_callback =
+    ffi.Pointer<
+      ffi.NativeFunction<ggml_backend_comm_bootstrap_callbackFunction>
+    >;
+typedef ggml_backend_comm_bootstrap_callbackFunction =
+    ffi.Bool Function(
+      ffi.Pointer<ffi.Void> user_data,
+      ffi.Pointer<ffi.Void> send_buf,
+      ffi.Pointer<ffi.Void> recv_buf,
+      ffi.Size size,
+    );
+typedef Dartggml_backend_comm_bootstrap_callbackFunction =
+    bool Function(
+      ffi.Pointer<ffi.Void> user_data,
+      ffi.Pointer<ffi.Void> send_buf,
+      ffi.Pointer<ffi.Void> recv_buf,
+      int size,
+    );
 typedef ggml_backend_comm_free_t =
     ffi.Pointer<ffi.NativeFunction<ggml_backend_comm_free_tFunction>>;
 typedef ggml_backend_comm_free_tFunction =
     ffi.Void Function(ffi.Pointer<ffi.Void> comm_ctx);
 typedef Dartggml_backend_comm_free_tFunction =
     void Function(ffi.Pointer<ffi.Void> comm_ctx);
+typedef ggml_backend_comm_init_rank_t =
+    ffi.Pointer<ffi.NativeFunction<ggml_backend_comm_init_rank_tFunction>>;
+typedef ggml_backend_comm_init_rank_tFunction =
+    ffi.Pointer<ffi.Void> Function(
+      ggml_backend_t backend,
+      ffi.Int rank,
+      ffi.Int world_size,
+      ggml_backend_comm_bootstrap_callback bootstrap_callback,
+      ffi.Pointer<ffi.Void> bootstrap_callback_data,
+    );
+typedef Dartggml_backend_comm_init_rank_tFunction =
+    ffi.Pointer<ffi.Void> Function(
+      ggml_backend_t backend,
+      int rank,
+      int world_size,
+      ggml_backend_comm_bootstrap_callback bootstrap_callback,
+      ffi.Pointer<ffi.Void> bootstrap_callback_data,
+    );
 typedef ggml_backend_comm_init_t =
     ffi.Pointer<ffi.NativeFunction<ggml_backend_comm_init_tFunction>>;
 typedef ggml_backend_comm_init_tFunction =
@@ -10257,6 +10476,17 @@ typedef Dartggml_custom_op_tFunction =
     );
 typedef ggml_fp16_t = ffi.Uint16;
 typedef Dartggml_fp16_t = int;
+
+final class ggml_fp8_e4m3_t extends ffi.Struct {
+  @ffi.Uint8()
+  external int bits;
+
+  static ffi.Pointer<ggml_fp8_e4m3_t> $allocate(
+    ffi.Allocator $allocator, {
+    required int bits,
+  }) => $allocator<ggml_fp8_e4m3_t>()..ref.bits = bits;
+}
+
 typedef ggml_from_float_t =
     ffi.Pointer<ffi.NativeFunction<ggml_from_float_tFunction>>;
 typedef ggml_from_float_tFunction =
@@ -10296,7 +10526,8 @@ enum ggml_ftype {
   GGML_FTYPE_MOSTLY_MXFP4(25),
   GGML_FTYPE_MOSTLY_NVFP4(26),
   GGML_FTYPE_MOSTLY_Q1_0(27),
-  GGML_FTYPE_MOSTLY_Q2_0(28);
+  GGML_FTYPE_MOSTLY_Q2_0(28),
+  GGML_FTYPE_MOSTLY_F8_E4M3(29);
 
   final int value;
   const ggml_ftype(this.value);
@@ -10330,6 +10561,7 @@ enum ggml_ftype {
     26 => GGML_FTYPE_MOSTLY_NVFP4,
     27 => GGML_FTYPE_MOSTLY_Q1_0,
     28 => GGML_FTYPE_MOSTLY_Q2_0,
+    29 => GGML_FTYPE_MOSTLY_F8_E4M3,
     _ => throw ArgumentError('Unknown value for ggml_ftype: $value'),
   };
 }
@@ -11039,7 +11271,8 @@ enum ggml_type {
   GGML_TYPE_NVFP4(40),
   GGML_TYPE_Q1_0(41),
   GGML_TYPE_Q2_0(42),
-  GGML_TYPE_COUNT(43);
+  GGML_TYPE_F8_E4M3(43),
+  GGML_TYPE_COUNT(44);
 
   final int value;
   const ggml_type(this.value);
@@ -11080,7 +11313,8 @@ enum ggml_type {
     40 => GGML_TYPE_NVFP4,
     41 => GGML_TYPE_Q1_0,
     42 => GGML_TYPE_Q2_0,
-    43 => GGML_TYPE_COUNT,
+    43 => GGML_TYPE_F8_E4M3,
+    44 => GGML_TYPE_COUNT,
     _ => throw ArgumentError('Unknown value for ggml_type: $value'),
   };
 }
@@ -11704,6 +11938,8 @@ enum llama_dart_tts_model_type {
   LLAMA_DART_TTS_MODEL_TYPE_QWEN3(1),
   LLAMA_DART_TTS_MODEL_TYPE_LFM3_AUDIO(2),
   LLAMA_DART_TTS_MODEL_TYPE_SOPRANO(3),
+  LLAMA_DART_TTS_MODEL_TYPE_CHATTERBOX(4),
+  LLAMA_DART_TTS_MODEL_TYPE_POCKET_TTS(5),
   LLAMA_DART_TTS_MODEL_TYPE_UNKNOWN(255);
 
   final int value;
@@ -11714,6 +11950,8 @@ enum llama_dart_tts_model_type {
     1 => LLAMA_DART_TTS_MODEL_TYPE_QWEN3,
     2 => LLAMA_DART_TTS_MODEL_TYPE_LFM3_AUDIO,
     3 => LLAMA_DART_TTS_MODEL_TYPE_SOPRANO,
+    4 => LLAMA_DART_TTS_MODEL_TYPE_CHATTERBOX,
+    5 => LLAMA_DART_TTS_MODEL_TYPE_POCKET_TTS,
     255 => LLAMA_DART_TTS_MODEL_TYPE_UNKNOWN,
     _ => throw ArgumentError(
       'Unknown value for llama_dart_tts_model_type: $value',
@@ -12026,6 +12264,7 @@ enum llama_ftype {
   LLAMA_FTYPE_MOSTLY_NVFP4(39),
   LLAMA_FTYPE_MOSTLY_Q1_0(40),
   LLAMA_FTYPE_MOSTLY_Q2_0(41),
+  LLAMA_FTYPE_MOSTLY_F8_E4M3(42),
   LLAMA_FTYPE_GUESSED(1024);
 
   final int value;
@@ -12068,6 +12307,7 @@ enum llama_ftype {
     39 => LLAMA_FTYPE_MOSTLY_NVFP4,
     40 => LLAMA_FTYPE_MOSTLY_Q1_0,
     41 => LLAMA_FTYPE_MOSTLY_Q2_0,
+    42 => LLAMA_FTYPE_MOSTLY_F8_E4M3,
     1024 => LLAMA_FTYPE_GUESSED,
     _ => throw ArgumentError('Unknown value for llama_ftype: $value'),
   };
@@ -13270,15 +13510,20 @@ final class mtmd_gen_audio_info extends ffi.Struct {
 
   external ffi.Pointer<ffi.Char> model_variant;
 
+  @ffi.Int32()
+  external int n_voices;
+
   static ffi.Pointer<mtmd_gen_audio_info> $allocate(
     ffi.Allocator $allocator, {
     required mtmd_gen_audio_type type,
     required int sample_rate,
     required ffi.Pointer<ffi.Char> model_variant,
+    required int n_voices,
   }) => $allocator<mtmd_gen_audio_info>()
     ..ref.type = type
     ..ref.sample_rate = sample_rate
-    ..ref.model_variant = model_variant;
+    ..ref.model_variant = model_variant
+    ..ref.n_voices = n_voices;
 }
 
 /// //////////////////////////////////////
@@ -13287,7 +13532,8 @@ enum mtmd_gen_audio_type {
   MTMD_GEN_AUDIO_TYPE_QWEN3TTS(1),
   MTMD_GEN_AUDIO_TYPE_POCKETTTS(2),
   MTMD_GEN_AUDIO_TYPE_SOPRANO(3),
-  MTMD_GEN_AUDIO_TYPE_LFM3A(4);
+  MTMD_GEN_AUDIO_TYPE_LFM3A(4),
+  MTMD_GEN_AUDIO_TYPE_CHATTERBOX(5);
 
   final int value;
   const mtmd_gen_audio_type(this.value);
@@ -13298,6 +13544,7 @@ enum mtmd_gen_audio_type {
     2 => MTMD_GEN_AUDIO_TYPE_POCKETTTS,
     3 => MTMD_GEN_AUDIO_TYPE_SOPRANO,
     4 => MTMD_GEN_AUDIO_TYPE_LFM3A,
+    5 => MTMD_GEN_AUDIO_TYPE_CHATTERBOX,
     _ => throw ArgumentError('Unknown value for mtmd_gen_audio_type: $value'),
   };
 }
@@ -13559,8 +13806,6 @@ final class mtmd_helper_gen_audio_inp extends ffi.Struct {
 
   external ffi.Pointer<ffi.Char> lang;
 
-  external ffi.Pointer<ffi.Char> voice;
-
   @ffi.Int32()
   external int top_k;
 
@@ -13588,7 +13833,6 @@ final class mtmd_helper_gen_audio_inp extends ffi.Struct {
     required mtmd_helper_gen_audio_out_mode out_mode,
     required ffi.Pointer<mtmd_bitmap> speaker_ref,
     required ffi.Pointer<ffi.Char> lang,
-    required ffi.Pointer<ffi.Char> voice,
     required int top_k,
     required double top_p,
     required int seed,
@@ -13602,7 +13846,6 @@ final class mtmd_helper_gen_audio_inp extends ffi.Struct {
     ..ref.out_mode = out_mode
     ..ref.speaker_ref = speaker_ref
     ..ref.lang = lang
-    ..ref.voice = voice
     ..ref.top_k = top_k
     ..ref.top_p = top_p
     ..ref.seed = seed
@@ -13822,7 +14065,8 @@ final class mtmd_video_config extends ffi.Struct {
 enum mtmd_video_template {
   MTMD_VIDEO_TEMPLATE_DEFAULT(0),
   MTMD_VIDEO_TEMPLATE_LFM3(1),
-  MTMD_VIDEO_TEMPLATE_LFM3_OMNI(2);
+  MTMD_VIDEO_TEMPLATE_LFM3_OMNI(2),
+  MTMD_VIDEO_TEMPLATE_QWEN3VL(3);
 
   final int value;
   const mtmd_video_template(this.value);
@@ -13831,6 +14075,7 @@ enum mtmd_video_template {
     0 => MTMD_VIDEO_TEMPLATE_DEFAULT,
     1 => MTMD_VIDEO_TEMPLATE_LFM3,
     2 => MTMD_VIDEO_TEMPLATE_LFM3_OMNI,
+    3 => MTMD_VIDEO_TEMPLATE_QWEN3VL,
     _ => throw ArgumentError('Unknown value for mtmd_video_template: $value'),
   };
 }
