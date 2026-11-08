@@ -4740,7 +4740,7 @@ def update_core_changelog_native_pin(
     if native_version.wrapper_revision > 0:
         base_tag = native_version.upstream_tag
         entry = (
-            "* Updated the default llama.cpp native runtime pin to\n"
+            "- Updated the default llama.cpp native runtime pin to\n"
             f"  `{repo}@{tag}`, keeping the `{base_tag}` llama.cpp\n"
             "  ABI/bindings while picking up wrapper-only native fixes. Refreshed\n"
             "  the `llamadart_llama_cpp_flutter` Apple SwiftPM checksum and\n"
@@ -4748,7 +4748,7 @@ def update_core_changelog_native_pin(
         )
     else:
         entry = (
-            "* Updated the default llama.cpp native runtime pin to\n"
+            "- Updated the default llama.cpp native runtime pin to\n"
             f"  `{repo}@{tag}`, regenerated matching Dart FFI bindings, refreshed\n"
             "  the `llamadart_llama_cpp_flutter` Apple SwiftPM checksum, and\n"
             "  aligned current README/website native override docs."
@@ -4764,7 +4764,7 @@ def update_core_changelog_native_pin(
     )
     body = changelog_text[body_start:body_end]
     old_entry_pattern = re.compile(
-        r"^\* Updated the default llama\.cpp native runtime pin to(?:\n  .*)*\n?",
+        r"^[-*] Updated the default llama\.cpp native runtime pin to(?:\n  .*)*\n?",
         re.MULTILINE,
     )
     existing_entry = old_entry_pattern.search(body)
