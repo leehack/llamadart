@@ -297,7 +297,7 @@ void main() {
 
       expect(
         File('example/chat_app/web/index.html').readAsStringSync(),
-        contains('@litert-lm/core@0.18.0/+esm'),
+        contains('@litert-lm/core@0.19.0/+esm'),
       );
       expect(
         File(nativeLlamaCppTagPath).readAsStringSync(),

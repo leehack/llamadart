@@ -754,7 +754,7 @@ void main() {
                 'message',
                 allOf(
                   contains('Qwen3'),
-                  contains('@litert-lm/core@0.18.0'),
+                  contains('@litert-lm/core@0.19.0'),
                   contains('native'),
                 ),
               ),
@@ -809,7 +809,7 @@ void main() {
             isA<api.LlamaUnsupportedException>().having(
               (error) => error.message,
               'diagnostic',
-              contains('@0.18.0'),
+              contains('@0.19.0'),
             ),
           ),
         );
@@ -856,6 +856,7 @@ void main() {
         lastPrompt = prompt;
       },
       chunks: <JSAny?>[_messageChunk('Hello'), _messageChunk(' world')],
+      reportedBackend: 2,
     );
 
     final backend = LiteRtLmBackend();
@@ -875,7 +876,7 @@ void main() {
       (settings.getProperty('model'.toJS) as JSString).toDart,
       'https://example.com/gemma-4-E2B-it-web.litertlm?download=1',
     );
-    expect((settings.getProperty('backend'.toJS) as JSNumber).toDartInt, 2);
+    expect(settings.has('backend'), isFalse);
     final executor =
         settings.getProperty('mainExecutorSettings'.toJS) as JSObject;
     expect(
@@ -923,6 +924,54 @@ void main() {
     );
     expect((sampler.getProperty('seed'.toJS) as JSNumber).toDartInt, 42);
   });
+
+  // GPU loads keep the runtime's default backend: @litert-lm/core 0.19.0
+  // reports GPU for standard bundles and GPU_ARTISAN for Web bundles, 0.18.0
+  // reports GPU_ARTISAN, and an engine without settings keeps GPU_ARTISAN.
+  for (final (device, reported, sent, sampler) in const [
+    (ComputeDevice.gpu, 4, null, 4),
+    (ComputeDevice.gpu, 2, null, 2),
+    (ComputeDevice.gpu, null, null, 2),
+    (ComputeDevice.cpu, 3, 3, 3),
+    (ComputeDevice.cpu, null, 3, 3),
+  ]) {
+    test('a ${device.name} load sends backend $sent and samples on $sampler '
+        'when the engine reports $reported', () async {
+      addTearDown(fakeNavigatorGpu(FakeWebGpu.adapter));
+      Object? sentBackend = 'unset';
+      JSObject? conversationConfig;
+      _installFakeEngine(
+        onCreate: (settings) => sentBackend = settings.has('backend')
+            ? (settings.getProperty('backend'.toJS) as JSNumber).toDartInt
+            : null,
+        onCreateConversation: (config) => conversationConfig = config,
+        chunks: <JSAny?>[_messageChunk('ok')],
+        reportedBackend: reported,
+      );
+      final params = ModelParams(device: device);
+      final backend = LiteRtLmBackend();
+      final contextHandle = await backend.contextCreate(
+        await backend.modelLoadFromUrl(
+          'https://example.com/model.litertlm',
+          params,
+        ),
+        params,
+      );
+
+      await backend
+          .generate(contextHandle, 'Hi', const GenerationParams(maxTokens: 4))
+          .drain<void>();
+
+      expect(sentBackend, sent);
+      final sessionConfig =
+          conversationConfig!.getProperty('sessionConfig'.toJS) as JSObject;
+      expect(
+        (sessionConfig.getProperty('samplerBackend'.toJS) as JSNumber)
+            .toDartInt,
+        sampler,
+      );
+    });
+  }
 
   test('loads an extensionless URL only when declared LiteRT-LM', () async {
     const url = 'https://example.com/download?id=42';
@@ -1944,10 +1993,11 @@ void main() {
             backend: settings.backend,
             maxNumTokens: settings.mainExecutorSettings?.maxNumTokens,
           };
-          if (settings.backend !== 2) {
+          if ('backend' in settings) {
             throw new Error(`Unexpected backend: \${settings.backend}`);
           }
           return {
+            settings: { backend: 4 },
             async createConversation(config) {
               globalThis.__llamadartLiteRtLmModuleConversationConfig = config;
               return {
@@ -2004,7 +2054,19 @@ void main() {
       (settings.getProperty('model'.toJS) as JSString).toDart,
       'https://example.com/module-model.litertlm',
     );
-    expect((settings.getProperty('backend'.toJS) as JSNumber).toDartInt, 2);
+    expect(settings.getProperty<JSAny?>('backend'.toJS), isNull);
+    final conversationConfig =
+        globalContext.getProperty(
+              '__llamadartLiteRtLmModuleConversationConfig'.toJS,
+            )
+            as JSObject;
+    expect(
+      ((conversationConfig.getProperty('sessionConfig'.toJS) as JSObject)
+                  .getProperty('samplerBackend'.toJS)
+              as JSNumber)
+          .toDartInt,
+      4,
+    );
     expect(
       (settings.getProperty('maxNumTokens'.toJS) as JSNumber).toDartInt,
       1024,
@@ -2053,7 +2115,7 @@ void main() {
   });
 
   group('a cancelGeneration during a streamed reply', () {
-    // Mirrors @litert-lm/core 0.18.0: Conversation.cancel() stops the native
+    // Mirrors @litert-lm/core 0.19.0: Conversation.cancel() stops the native
     // run, whose cancelled status errors the stream and rejects the pending
     // read. [error] errors the stream without a cancel instead.
     String moduleUrl({
@@ -2950,13 +3012,14 @@ void main() {
 
   group('ModelParams.device', () {
     const url = 'https://example.com/gemma-4-E2B-it-web.litertlm';
-    late List<int> createdBackends;
+    late List<int?> createdBackends;
 
     setUp(() {
-      createdBackends = <int>[];
+      createdBackends = <int?>[];
       _installFakeEngine(
         onCreate: (settings) => createdBackends.add(
-          (settings.getProperty('backend'.toJS) as JSNumber).toDartInt,
+          (settings.getProperty<JSAny?>('backend'.toJS) as JSNumber?)
+              ?.toDartInt,
         ),
         chunks: const <JSAny?>[],
       );
@@ -2970,7 +3033,7 @@ void main() {
         const ModelParams(device: ComputeDevice.gpu),
       );
 
-      expect(createdBackends, [2]);
+      expect(createdBackends, [null]);
     });
 
     for (final gpu in [FakeWebGpu.missing, FakeWebGpu.noAdapter]) {
@@ -3000,16 +3063,16 @@ void main() {
 
       await LiteRtLmBackend().modelLoadFromUrl(url, const ModelParams());
 
-      expect(createdBackends, [2]);
+      expect(createdBackends, [null]);
     });
 
     for (final (gpuLayers, backend) in const [
-      (-1, 2),
-      (-2, 2),
-      (ModelParams.maxGpuLayers, 2),
+      (-1, null),
+      (-2, null),
+      (ModelParams.maxGpuLayers, null),
       (0, 3),
     ]) {
-      test('auto with gpuLayers $gpuLayers creates backend $backend', () async {
+      test('auto with gpuLayers $gpuLayers sends backend $backend', () async {
         addTearDown(fakeNavigatorGpu(FakeWebGpu.missing));
 
         await LiteRtLmBackend().modelLoadFromUrl(
@@ -3118,6 +3181,7 @@ void _installFakeEngine({
   required List<JSAny?> chunks,
   bool textHistory = false,
   bool historyApi = true,
+  int? reportedBackend,
 }) {
   final engineClass = JSObject();
   engineClass.setProperty(
@@ -3125,6 +3189,12 @@ void _installFakeEngine({
     ((JSObject settings) {
       onCreate?.call(settings);
       final engine = JSObject();
+      if (reportedBackend != null) {
+        engine.setProperty(
+          'settings'.toJS,
+          JSObject()..setProperty('backend'.toJS, reportedBackend.toJS),
+        );
+      }
       engine.setProperty(
         'createConversation'.toJS,
         ((JSObject config) {
@@ -3332,7 +3402,7 @@ final class _QueueFakeEngine {
   Future<void>? delayNextConversation;
   int allConversationsDeleted = 0;
 
-  /// Whether `cancel()` rejects the held read, as `@litert-lm/core` 0.18.0
+  /// Whether `cancel()` rejects the held read, as `@litert-lm/core` 0.19.0
   /// does with its cancelled status.
   final bool rejectOnCancel;
   final List<_QueueFakeRun> runs = <_QueueFakeRun>[];

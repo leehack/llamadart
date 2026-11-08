@@ -31,7 +31,7 @@ interface does not establish backend/model support; read `await engine.capabilit
   upstream `83ce6067`); final core/Apple consumers and package release remain
   [#1677](https://github.com/leehack/llamadart/issues/1677) gates. The selected
   loader requires macOS 14+ even for legacy libraries and custom paths. Web
-  remains `@litert-lm/core@0.18.0`.
+  uses `@litert-lm/core@0.19.0`.
 
 - For a model-free macOS/Linux/Windows setup snapshot, use
   `dart run llamadart:doctor [--json]` or

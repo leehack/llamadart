@@ -1,5 +1,7 @@
 ## Unreleased
 
+- Move Web LiteRT-LM to `@litert-lm/core@0.19.0`; WebGPU loads keep the runtime's default backend, so standard `.litertlm` bundles can load there. Web embeddings, tool loops, media and custom templates stay unsupported.
+
 ## 0.18.0
 
 - Fix synthesized speech playback in the macOS chat example.
