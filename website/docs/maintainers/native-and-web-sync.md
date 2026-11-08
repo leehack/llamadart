@@ -587,8 +587,11 @@ process image; iOS wrapper/process discovery is unchanged. From `v0.19.1-1`,
 `sync_native_release_pins.py` leaves the Linux and Windows prebuilt
 `libLiteRt` out of the required inventory: those hosts link LiteRT in
 ([litert-lm-native#112](https://github.com/leehack/litert-lm-native/pull/112)),
-so the hook neither ships nor opens it. Syncing an earlier release keeps it,
-and legacy (`v0.18.x`) overrides still require and open it.
+so the hook neither ships nor opens it. Syncing an earlier release keeps it.
+An explicit `LLAMADART_LITERT_LM_LIB_DIR` opens it before the primary
+library whenever the directory holds it, because older hosts (`v0.18.x`,
+`v0.19.0`, `v0.19.1`) import it and Windows does not search a DLL's own
+directory for imports; legacy inventories also still require it.
 
 `LLAMADART_LITERT_LM_LIB_DIR` takes precedence over packaged and cached desktop
 runtimes. An incomplete directory or an unloadable explicit library now fails

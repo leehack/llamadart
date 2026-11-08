@@ -562,6 +562,39 @@ List<String> liteRtLmCompanionLibrariesForAbi(Abi abi, {bool cApiV1 = false}) {
   ];
 }
 
+/// The prebuilt LiteRT that Linux and Windows hosts before v0.19.1-1 import
+/// (v0.18.x, v0.19.0 and v0.19.1). Hosts from v0.19.1-1 link LiteRT in, so
+/// neither inventory requires it.
+List<String> liteRtLmOptionalCompanionLibrariesForAbi(Abi abi) {
+  return switch (abi) {
+    Abi.linuxArm64 || Abi.linuxX64 => const <String>['libLiteRt.so'],
+    Abi.windowsX64 => const <String>['libLiteRt.dll'],
+    _ => const <String>[],
+  };
+}
+
+/// Companion paths the runtime opens from an explicit
+/// `LLAMADART_LITERT_LM_LIB_DIR` [directory] before its primary library:
+/// [liteRtLmCompanionLibrariesForAbi], then each
+/// [liteRtLmOptionalCompanionLibrariesForAbi] library the directory holds.
+///
+/// Windows does not search a DLL's own directory for its imports, so an older
+/// custom host loads only if its `libLiteRt.dll` is already open.
+List<String> liteRtLmExplicitDirectoryCompanionPathsForAbi(
+  Abi abi,
+  Directory directory, {
+  bool cApiV1 = false,
+}) {
+  final companions = liteRtLmCompanionLibrariesForAbi(abi, cApiV1: cApiV1);
+  return <String>[
+    for (final library in companions) '${directory.path}/$library',
+    for (final library in liteRtLmOptionalCompanionLibrariesForAbi(abi))
+      if (!companions.contains(library) &&
+          File('${directory.path}/$library').existsSync())
+        '${directory.path}/$library',
+  ];
+}
+
 /// Internal helper used by the LiteRT-LM runtime to locate this package's
 /// source root from an app's `.dart_tool/package_config.json`.
 List<String> liteRtLmPackageRootsFromPackageConfig(
@@ -2123,7 +2156,11 @@ class _LegacyLiteRtLmRuntimeClient extends LiteRtLmRuntimeClient {
         liteRtLmCandidates: [
           path.join(directory.path, liteRtLmPrimaryLibraryForAbi(abi)!),
         ],
-        companions: _companionLibrariesForAbi(abi, directory),
+        companions: liteRtLmExplicitDirectoryCompanionPathsForAbi(
+          abi,
+          directory,
+          cApiV1: _allowV1Inventory,
+        ),
         directCallbackSupported: true,
       );
     }

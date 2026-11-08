@@ -1,6 +1,6 @@
 ## Unreleased
 
-- Stop bundling and loading the unused prebuilt `libLiteRt` (about 7 to 9 MB) in Linux and Windows LiteRT-LM apps; the `v0.19.1-1` runtime links LiteRT in. On Windows, an `LLAMADART_LITERT_LM_LIB_DIR` runtime older than `v0.19.1-1` now fails to load with `LlamaUnsupportedException` ([#1815](https://github.com/leehack/llamadart/issues/1815)).
+- Stop bundling and loading the unused prebuilt `libLiteRt` (about 7 to 9 MB) in Linux and Windows LiteRT-LM apps; the `v0.19.1-1` runtime links LiteRT in. An older `LLAMADART_LITERT_LM_LIB_DIR` runtime still loads the `libLiteRt` it ships with ([#1815](https://github.com/leehack/llamadart/issues/1815)).
 
 ## 0.19.0
 
