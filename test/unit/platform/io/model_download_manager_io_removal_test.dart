@@ -7,6 +7,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:llamadart/src/core/models/model_source.dart';
+import 'package:llamadart/src/platform/io/model_cache_entry_lock.dart';
 import 'package:llamadart/src/platform/io/model_download_manager_io.dart';
 import 'package:path/path.dart' as path;
 import 'package:test/test.dart';
@@ -111,41 +112,55 @@ void main() {
     }
   });
 
-  test('overlapping removals skip an entry that another program keeps pending '
-      'delete', () async {
-    for (var round = 0; round < 5; round += 1) {
-      await populate(1);
-      final entry = root
-          .listSync()
-          .whereType<Directory>()
-          .singleWhere((directory) => path.basename(directory.path) != '.locks')
-          .path;
-      final closeHandle = openSharedWindowsDirectoryHandle(entry);
-      addTearDown(closeHandle);
-
-      await Future.wait<Object?>(<Future<Object?>>[
-        manager.clear(),
-        manager.clear(),
-        manager.prune(maxAge: Duration.zero),
-      ]);
-
-      expect(
-        FileSystemEntity.typeSync(entry, followLinks: false),
-        FileSystemEntityType.notFound,
+  test('clear skips an entry that another remover left pending delete while '
+      'this one waited for the removal lock', () async {
+    await populate(1);
+    final entry = root.listSync().whereType<Directory>().singleWhere(
+      (directory) => path.basename(directory.path) != '.locks',
+    );
+    final waiting = Completer<void>();
+    final proceed = Completer<void>();
+    modelCacheEntryLocker = (lockPath, {required throwIfCancelled}) async {
+      if (path.basename(lockPath) == '.removal.lock' && !waiting.isCompleted) {
+        waiting.complete();
+        await proceed.future;
+      }
+      return acquireModelCacheEntryLock(
+        lockPath,
+        throwIfCancelled: throwIfCancelled,
       );
-      expect(
-        () => Directory(entry).resolveSymbolicLinksSync(),
-        throwsA(
-          isA<FileSystemException>().having(
-            (error) => error.osError?.errorCode,
-            'errorCode',
-            5,
-          ),
-        ),
-      );
-      closeHandle();
-      expect(await manager.list(), isEmpty);
+    };
+    addTearDown(() => modelCacheEntryLocker = acquireModelCacheEntryLock);
+
+    final clearing = manager.clear();
+    await waiting.future;
+    for (final file in entry.listSync().whereType<File>()) {
+      file.deleteSync();
     }
+    final finishDelete = markWindowsDirectoryDeletePending(entry.path);
+    addTearDown(finishDelete);
+    expect(
+      FileSystemEntity.typeSync(entry.path, followLinks: false),
+      FileSystemEntityType.notFound,
+    );
+    expect(
+      entry.resolveSymbolicLinksSync,
+      throwsA(
+        isA<FileSystemException>().having(
+          (error) => error.osError?.errorCode,
+          'errorCode',
+          5,
+        ),
+      ),
+    );
+    proceed.complete();
+
+    await clearing;
+    finishDelete();
+    expect(
+      root.listSync().map((entity) => path.basename(entity.path)),
+      <String>['.locks'],
+    );
   }, testOn: 'windows');
 
   test('clear removes a stray .removal directory instead of reporting it in '
