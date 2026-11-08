@@ -1,6 +1,8 @@
-## Unreleased
+## 0.19.0
 
-- Updated Apple SwiftPM native pin to `leehack/llamadart-native@v0.9.0`.
+- Pair with core `>=0.19.0 <0.20.0`; update Apple SwiftPM to
+  `leehack/llamadart-native@v0.9.0` for the ARM64 F16 overflow fix and the
+  Chatterbox and Pocket TTS runtime.
 
 ## 0.18.0
 
