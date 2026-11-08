@@ -99,10 +99,10 @@ class SupervisorTest(unittest.TestCase):
 
     def browser_then(self, done, browser_seconds, then):
         """A CLI that reports `done`, runs a process named `chrome`, then runs `then`."""
+        # A script's comm is its own file name; multicall coreutils reject a renamed sleep.
         browser = Path(self.temp.name) / 'chrome'
-        if not browser.exists():
-            browser.symlink_to(subprocess.run(['which', 'sleep'], capture_output=True,
-                                              text=True, check=True).stdout.strip())
+        browser.write_text(f'#!{sys.executable}\nimport sys,time; time.sleep(float(sys.argv[1]))\n')
+        browser.chmod(0o755)
         events = [{'type': 'testDone', 'hidden': False}] * 2 + [done]
         lines = ''.join(json.dumps(event) + '\n' for event in events)
         return (f"import pathlib,subprocess\n"
