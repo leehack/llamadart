@@ -13,6 +13,8 @@ validate against the exact release tag notes.
 
 ## Unreleased
 
+- Update the default LiteRT-LM native runtime to `leehack/litert-lm-native@v0.19.1` (upstream LiteRT-LM `v0.19.1`); the C API is unchanged. Flutter Apple apps get it from `llamadart_litert_lm_flutter` `0.19.0`, released with this core.
+
 ## 0.18.0
 
 - Fix synthesized speech playback in the macOS chat example.

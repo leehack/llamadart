@@ -163,7 +163,7 @@ Current default runtime pins:
 | Runtime | Pin |
 | --- | --- |
 | Native llama.cpp / GGUF | `leehack/llamadart-native@v0.8.0-3` |
-| Native LiteRT-LM / `.litertlm` | `leehack/litert-lm-native@v0.19.0` |
+| Native LiteRT-LM / `.litertlm` | `leehack/litert-lm-native@v0.19.1` |
 | Web llama.cpp / GGUF | `leehack/llama-web-bridge-assets@v0.1.82` |
 | Web LiteRT-LM / `.litertlm` | `@litert-lm/core@0.18.0` |
 
@@ -171,8 +171,8 @@ Native LiteRT-LM uses a lazy ABI-aware client for direct calls, services and
 speech. The public selector admits legacy runtimes and C API 1.0.x; unknown or
 future versions are refused before engine calls. The source pin now uses
 published native
-[v0.19.0](https://github.com/leehack/litert-lm-native/releases/tag/v0.19.0),
-owner source `f173fe9b` / upstream `83ce6067`. The selected loader requires
+[v0.19.1](https://github.com/leehack/litert-lm-native/releases/tag/v0.19.1),
+owner source `1fa4d437` / upstream `7a03724c`. The selected loader requires
 macOS 14+ before owned library loads, including legacy libraries and custom
 paths. Final core/Apple consumer checks and package release remain separate
 [#1677](https://github.com/leehack/llamadart/issues/1677) gates; Web LiteRT-LM
