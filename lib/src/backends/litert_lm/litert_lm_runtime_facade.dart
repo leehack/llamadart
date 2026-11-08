@@ -83,7 +83,12 @@ class LiteRtLmRuntimeClient {
     if (version != null && _allowV1) {
       final unsupported = liteRtLmUnsupportedAbiException(liteRtLmGateAbi());
       if (unsupported != null) throw unsupported;
-      client = LiteRtLmV1RuntimeClient(selected.library);
+      client = LiteRtLmV1RuntimeClient(
+        selected.library,
+        inProcessLiteRtAbiVersion: readLiteRtLmInProcessLiteRtAbiVersion(
+          selected.library,
+        ),
+      );
     } else {
       requireLiteRtLmLegacyCApi(selected.library);
       client = LiteRtLmLegacyServiceClient(owner);

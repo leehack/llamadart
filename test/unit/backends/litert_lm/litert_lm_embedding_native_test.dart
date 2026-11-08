@@ -674,7 +674,7 @@ void main() {
           'capability, legacy runtime condition and required runtime',
           allOf(
             contains('LiteRT-LM native embeddings on $abi'),
-            contains('C API 1 runtime from litert-lm-native v0.19.1-1'),
+            contains('C API 1 runtime from litert-lm-native v0.19.1-2'),
             contains('legacy one without litert_lm_get_api_version'),
             contains('v0.18.x'),
           ),

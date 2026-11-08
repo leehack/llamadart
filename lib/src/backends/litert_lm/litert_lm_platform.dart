@@ -122,8 +122,8 @@ void liteRtLmEnsureNativeEmbeddingsQualified() {
 /// version export, may create native embedding engines on [abi].
 ///
 /// Legacy v0.18.x desktop runtimes crash creating embedding engines (#1367);
-/// Linux and Windows embeddings are qualified only on C API 1 runtimes from
-/// litert-lm-native v0.19.1-1.
+/// Linux and Windows embeddings are qualified only on C API 1 runtimes that
+/// report in-process LiteRT, from litert-lm-native v0.19.1-2.
 bool liteRtLmLegacyNativeEmbeddingsQualifiedForAbi(Abi abi) {
   return liteRtLmNativeEmbeddingsQualifiedForAbi(abi) &&
       abi != Abi.linuxArm64 &&
@@ -141,10 +141,42 @@ void liteRtLmEnsureLegacyNativeEmbeddingsQualified() {
   if (liteRtLmLegacyNativeEmbeddingsQualifiedForAbi(abi)) return;
   throw LlamaUnsupportedException(
     'LiteRT-LM native embeddings on $abi require a C API 1 runtime from '
-    'litert-lm-native v0.19.1-1 or newer. The loaded runtime is a legacy one '
+    'litert-lm-native v0.19.1-2 or newer. The loaded runtime is a legacy one '
     'without litert_lm_get_api_version, such as a v0.18.x custom runtime, '
     'whose desktop embedding engine crashes (#1367). Use the bundled runtime '
-    'or a v0.19.1-1 or newer custom runtime, or the llama.cpp backend.',
+    'or a v0.19.1-2 or newer custom runtime, or the llama.cpp backend.',
+  );
+}
+
+/// The `litert_lm_native_in_process_litert_abi_version` value that admits
+/// Linux and Windows native embeddings.
+const int liteRtLmInProcessLiteRtAbiVersion = 1;
+
+/// Throws a [LlamaUnsupportedException] when a C API 1 runtime on Linux or
+/// Windows does not report [liteRtLmInProcessLiteRtAbiVersion].
+///
+/// [abiVersion] is the runtime's in-process LiteRT marker, null when not
+/// exported. Custom v0.19.0 and v0.19.1 desktop runtimes report the same C API
+/// version but load a separate `libLiteRt` and crash creating embedding
+/// engines (#1367); only the marker tells them apart. Unknown values carry
+/// guarantees this package does not know, so they are refused too. Apple and
+/// Android runtimes are unaffected. Runs before any native embedding call.
+void liteRtLmEnsureInProcessLiteRtForNativeEmbeddings(int? abiVersion) {
+  final abi = liteRtLmGateAbi();
+  if (abi != Abi.linuxArm64 && abi != Abi.linuxX64 && abi != Abi.windowsX64) {
+    return;
+  }
+  if (abiVersion == liteRtLmInProcessLiteRtAbiVersion) return;
+  final reported = abiVersion == null
+      ? 'does not export litert_lm_native_in_process_litert_abi_version'
+      : 'reports litert_lm_native_in_process_litert_abi_version $abiVersion';
+  throw LlamaUnsupportedException(
+    'LiteRT-LM native embeddings on $abi need LiteRT compiled into the '
+    'runtime (in-process LiteRT ABI $liteRtLmInProcessLiteRtAbiVersion), and '
+    'the loaded runtime $reported. Custom v0.19.0 and v0.19.1 desktop '
+    'runtimes load a separate libLiteRt and crash creating embedding engines '
+    '(#1367). Use the bundled runtime or a custom runtime from '
+    'litert-lm-native v0.19.1-2 or newer, or the llama.cpp backend.',
   );
 }
 

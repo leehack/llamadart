@@ -23,6 +23,9 @@ void main() {
       'futureMinor': ['-DAPI_MINOR=1'],
       'negativePatch': ['-DAPI_PATCH=-1'],
       'incomplete': ['-DOMIT_PATCH_WRITE'],
+      'inProcess0': ['-DIN_PROCESS_LITERT_ABI=0'],
+      'inProcess1': ['-DIN_PROCESS_LITERT_ABI=1'],
+      'inProcess2': ['-DIN_PROCESS_LITERT_ABI=2'],
     }.entries) {
       final output =
           '${directory.path}/${entry.key}.${Platform.isMacOS ? 'dylib' : 'so'}';
@@ -63,6 +66,18 @@ void main() {
         throwsA(isA<LlamaUnsupportedException>()),
       );
     }
+  });
+
+  test('in-process LiteRT probe reports the export value or null', () {
+    int? read(String name) => readLiteRtLmInProcessLiteRtAbiVersion(
+      DynamicLibrary.open(libraries[name]!),
+    );
+    expect(read('v1'), isNull);
+    expect(read('legacy'), isNull);
+    expect(
+      [read('inProcess0'), read('inProcess1'), read('inProcess2')],
+      [0, 1, 2],
+    );
   });
 
   test('legacy runtime continues to existing capability checks', () {

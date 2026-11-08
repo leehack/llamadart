@@ -37,6 +37,19 @@ typedef _GetApiVersionDart =
   }
 }
 
+/// Reads litert-lm-native's `litert_lm_native_in_process_litert_abi_version`
+/// marker, or returns null when the runtime predates the export.
+///
+/// The caller interprets the value: 1 means LiteRT is compiled into the
+/// runtime with no separate `libLiteRt` import, 0 or a missing export means
+/// that is not established, and later values carry guarantees this package
+/// does not know. It never establishes GPU qualification.
+int? readLiteRtLmInProcessLiteRtAbiVersion(DynamicLibrary library) {
+  const symbol = 'litert_lm_native_in_process_litert_abi_version';
+  if (!library.providesSymbol(symbol)) return null;
+  return library.lookupFunction<Int32 Function(), int Function()>(symbol)();
+}
+
 /// Refuses versioned C APIs before using the pre-1.0 LiteRT-LM bindings.
 ///
 /// LiteRT-LM 0.19 introduces `litert_lm_get_api_version` alongside status-return

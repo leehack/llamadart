@@ -4,12 +4,18 @@ part of 'litert_lm_v1_runtime.dart';
 /// Runtime selection does not qualify an artifact, model or backend.
 final class LiteRtLmV1RuntimeClient implements LiteRtLmRuntimeClientContract {
   /// Admits an explicitly supplied library; never discovers a different runtime.
+  ///
+  /// [inProcessLiteRtAbiVersion] is the library's
+  /// `litert_lm_native_in_process_litert_abi_version`, null when not exported.
   LiteRtLmV1RuntimeClient(
     DynamicLibrary library, {
     LiteRtLmV1CreateRunner? createRunner,
-  }) : _runtime = LiteRtLmV1Runtime(library, createRunner: createRunner);
+    int? inProcessLiteRtAbiVersion,
+  }) : _runtime = LiteRtLmV1Runtime(library, createRunner: createRunner),
+       _inProcessLiteRtAbiVersion = inProcessLiteRtAbiVersion;
 
   final LiteRtLmV1Runtime _runtime;
+  final int? _inProcessLiteRtAbiVersion;
   LiteRtLmV1Conversation? _conversation;
   _V1EmbeddingSession? _embedding;
   LiteRtLmNativeSettlement _embeddingCreation =
@@ -159,6 +165,9 @@ final class LiteRtLmV1RuntimeClient implements LiteRtLmRuntimeClientContract {
       );
     }
     liteRtLmEnsureNativeEmbeddingsQualified();
+    liteRtLmEnsureInProcessLiteRtForNativeEmbeddings(
+      _inProcessLiteRtAbiVersion,
+    );
     ensureLiteRtLmNativeEmbeddingBackend(backend);
     if (maxInputLength <= 0 ||
         maxInputLength > 0x7fffffff ||

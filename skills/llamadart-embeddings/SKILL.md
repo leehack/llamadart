@@ -92,7 +92,9 @@ modalities and speculative strategies before offering them.
   embedding-engine selector. Select `ComputeDevice.cpu` on macOS, iOS or
   Android arm64, Linux x64 or arm64, or Windows x64. Native GPU, Android x86_64
   and all LiteRT-LM Web paths throw typed unsupported errors at load, whatever
-  runtime library is loaded; use llama.cpp embeddings there. Keep the
+  runtime library is loaded; use llama.cpp embeddings there. On Linux and
+  Windows a custom runtime older than litert-lm-native v0.19.1-2 is refused
+  the same way. Keep the
   default false for existing users; llama.cpp GGUF loaders reject true and use
   their existing per-call embedding mode.
 - Load a dedicated embedding GGUF (for example
