@@ -62,7 +62,7 @@ an earlier `<script>`:
 | `__llamadartBridgeEnableMem64` | `true` sets `__llamadartBridgePreferMemory64`; default off |
 | `__llamadartBridgeThreadPoolSize` | Thread hint; default 1 without cross-origin isolation, else `hardwareConcurrency` clamped to 2..4 |
 | `__llamadartBridgeSpeechToTextSupported` | Defaults to `true` only for the official repository at `v0.1.30` or newer |
-| `__llamadartLiteRtLmModuleUrl` | `@litert-lm/core` module; default `@litert-lm/core@0.18.0` from jsDelivr |
+| `__llamadartLiteRtLmModuleUrl` | `@litert-lm/core` module; default `@litert-lm/core@0.19.0` from jsDelivr |
 | `__llamadartBridgeBootstrapVerbose` | `true` enables bootstrap `console.*` logs |
 
 ## Pinned assets
@@ -94,13 +94,16 @@ the chat app, set the bootstrap globals before the bootstrap runs:
 </script>
 ```
 
-That release embeds llama.cpp `v0.8.0`, matching the `hook/build.dart` native pin
-(`v0.8.0-3`, both built from upstream llama.cpp `v0.8.0@8642541b255bfb5dc39cd351a178be09013a55d6`)
+That release embeds llama.cpp `v0.8.0`, behind the `hook/build.dart` native pin
+(`v0.9.0`; the bridge is built from upstream llama.cpp `v0.8.0@8642541b255bfb5dc39cd351a178be09013a55d6`)
 even though the bridge asset tag `v0.1.82` differs from the native runtime tag
-`v0.8.0-3`. Provenance for this immutable consumer artifact: release `432258348`,
+`v0.9.0`. Provenance for this immutable consumer artifact: release `432258348`,
 tag commit `33c782f2acdae78860ad1197344240f60290cecb`, bridge source
 `e57b9f68fb38d1471af7b94443229993f777df97`, and manifest SHA-256
-`fda19e047aba5a511020854437cc89e2f53e2f67f5f6cf5fec336faef3a6c362`.
+`fda19e047aba5a511020854437cc89e2f53e2f67f5f6cf5fec336faef3a6c362`. The bridge
+manifest records native `v0.8.0-1`. Web and native share no ABI, so this skew
+is supported, but changes new in llama.cpp `v0.9.0` reach Web only with a
+later bridge repin.
 They expose the API-version-1 media embedding contract. State and extraction
 qualification covers wasm32 and memory64 through direct and worker runtimes. Existing decision,
 scoring, sampling, LoRA, speculative decoding and speech APIs remain available.

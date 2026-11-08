@@ -190,7 +190,7 @@ still produce empty content. Keep `Qwen3` in the filename, or set
 it follows the installed template across upgrades, so copied Jinja is unnecessary.
 Native text conversations honor `enableThinking: false`.
 
-Web `@litert-lm/core@0.18.0` has no conversation-template setter and rejects this
+Web `@litert-lm/core@0.19.0` has no conversation-template setter and rejects this
 canonical Qwen3 override at model load with `LlamaUnsupportedException`.
 Use native LiteRT-LM for this contract. Generic Web overrides and loads without
 an override retain their existing behavior.
@@ -233,7 +233,7 @@ so the bundle answers as it was built to. A template that already
 reads parts is left alone. If `llamadart` cannot adapt a template it logs one
 warning, and a request that then fails names the template. That is the case
 for a template written in the runtime's single-turn `is_appending_to_prefill`
-form. Web LiteRT-LM (`@litert-lm/core` `0.18.0`) has no such adapter: use a
+form. Web LiteRT-LM (`@litert-lm/core` `0.19.0`) has no such adapter: use a
 bundle whose template reads content parts.
 
 ## Custom template overrides

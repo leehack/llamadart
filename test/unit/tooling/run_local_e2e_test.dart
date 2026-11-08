@@ -746,6 +746,10 @@ Future<void> main(List<String> args) async {
           environment: identity,
         );
         expect(gpu.exitCode, 64);
+        expect(
+          gpu.stderr,
+          contains('--backend cpu is required for litert-lm-v1-asr-smoke'),
+        );
         final missing = await runLocalE2e(
           const ['--scenario', 'litert-lm-v1-asr-smoke', '--dry-run'],
           projectRoot: '/repo',

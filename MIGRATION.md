@@ -33,8 +33,9 @@ Behavior to recheck with a C API 1 runtime:
   restart; an ended request does not prove native cleanup completed.
 
 The native hook and Apple companion source now pin published
-[LiteRT-LM v0.19.0](https://github.com/leehack/litert-lm-native/releases/tag/v0.19.0)
-(owner `f173fe9b`, upstream `83ce6067`). This source adoption does not publish
+[LiteRT-LM v0.19.1](https://github.com/leehack/litert-lm-native/releases/tag/v0.19.1)
+(owner `1fa4d437`, upstream `7a03724c`), which keeps the C API 1.0.0 exports of
+v0.19.0. This source adoption does not publish
 core or Apple packages: final default-discovery consumers, Apple embedding and
 signatures, integration CI/audit and coordinated release preparation remain
 separate gates. Web LiteRT-LM remains `@litert-lm/core@0.18.0`.

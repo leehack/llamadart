@@ -502,7 +502,7 @@ paths=(
     expect(
       llamaChangelog,
       contains(
-        '* Updated Apple SwiftPM native pin to '
+        '- Updated Apple SwiftPM native pin to '
         '`leehack/llamadart-native@$llamaTag`.',
       ),
     );
@@ -604,7 +604,7 @@ paths=(
     expect(
       litertChangelog,
       contains(
-        '* Updated Apple SwiftPM native pin to '
+        '- Updated Apple SwiftPM native pin to '
         '`leehack/litert-lm-native@$litertTag`.',
       ),
     );
@@ -712,7 +712,7 @@ paths=(
     expect(
       _occurrences(
         rerunCoreChangelog,
-        '* Updated the default llama.cpp native runtime pin to',
+        '- Updated the default llama.cpp native runtime pin to',
       ),
       1,
     );
@@ -731,7 +731,7 @@ paths=(
     expect(
       _occurrences(
         rerunLlamaChangelog,
-        '* Updated Apple SwiftPM native pin to',
+        '- Updated Apple SwiftPM native pin to',
       ),
       1,
     );
@@ -750,7 +750,7 @@ paths=(
     expect(
       _occurrences(
         rerunLitertChangelog,
-        '* Updated Apple SwiftPM native pin to',
+        '- Updated Apple SwiftPM native pin to',
       ),
       1,
     );
@@ -812,7 +812,7 @@ paths=(
     expect(
       _occurrences(
         releasePrepChangelog,
-        '* Updated Apple SwiftPM native pin to',
+        '- Updated Apple SwiftPM native pin to',
       ),
       1,
     );
@@ -1602,7 +1602,7 @@ printf '%s\\n' '{"tag_name":"v0.2.0-1","assets":[]}'
 
   test('keeps LiteRT release identity separate from cache version', () {
     final pins = File(_pinsPath).readAsStringSync();
-    expect(pins, contains("const liteRtLmReleaseTag = 'v0.19.0';"));
+    expect(pins, contains("const liteRtLmReleaseTag = 'v0.19.1';"));
     final hook = File('hook/build.dart').readAsStringSync();
     expect(hook, contains(r"'$liteRtLmReleaseTag'"));
     expect(hook, isNot(contains(r"v$liteRtLmVersion")));

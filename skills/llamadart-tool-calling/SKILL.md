@@ -209,7 +209,7 @@ description: >-
   reports why generation stopped; a reply cut off at `maxTokens` returns
   `LlamaToolLoopStopReason.truncated` and runs no tools. Native LiteRT-LM
   reports it from litert-lm-native `v0.18.0-3` (the default pin does). Older
-  native runtimes and Web `@litert-lm/core@0.18.0` throw
+  native runtimes and Web `@litert-lm/core@0.19.0` throw
   `LlamaUnsupportedException` before generation or history mutation; manual
   `ChatSession.create`/`LlamaEngine.create` still work there, but their `stop`
   does not prove EOS. Do not infer truncation from output length or run tool

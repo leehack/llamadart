@@ -15,8 +15,8 @@ import 'package:test/test.dart';
 void main() {
   final sha256Pattern = RegExp(r'^[0-9a-f]{64}$');
 
-  test('llama.cpp pins the approved v0.8.0-3 release', () {
-    expect(llamaCppTag, 'v0.8.0-3');
+  test('llama.cpp pins the approved v0.9.0 release', () {
+    expect(llamaCppTag, 'v0.9.0');
   });
 
   test('llama.cpp tag follows the native release tag grammar', () {
@@ -24,12 +24,12 @@ void main() {
   });
 
   test('Apple llama.cpp requires the matching repaired runtime', () {
-    // Older artifacts do not include this release's speculative rollback and
-    // model-creation ownership fixes, even when their exported ABI is usable.
+    // Older artifacts lack this release's ARM F16 accumulation fix, even when
+    // their exported ABI is usable.
     expect(llamaCppCompatibleAppleCompanionTags, isEmpty);
     expect(llamaCppCompatibleAppleCompanionChecksums, {
       llamaCppTag:
-          '6f069871b33ccab82f70b4dfe6a7f358e593961748ba9496e7b9101410ee3cd2',
+          'b0005b1da364f9ea4345218b8d53d78d6de888f301c6defb44b08321e136ac2e',
     });
     final manifest = File(
       'packages/llamadart_llama_cpp_flutter/darwin/'
@@ -39,7 +39,7 @@ void main() {
     expect(
       manifest,
       contains(
-        'checksum: "6f069871b33ccab82f70b4dfe6a7f358e593961748ba9496e7b9101410ee3cd2"',
+        'checksum: "b0005b1da364f9ea4345218b8d53d78d6de888f301c6defb44b08321e136ac2e"',
       ),
     );
   });

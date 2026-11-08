@@ -95,10 +95,26 @@ class SupervisorTest(unittest.TestCase):
         self.assert_clean(result)
         self.assertEqual((self.output / 'stdout.log').read_bytes(), b'2 tests passed.\n')
         self.assertEqual((self.output / 'stderr.log').read_bytes(), b'diagnostic\n')
+        self.assertEqual(child.stdout, b'2 tests passed.\n')
+        self.assertEqual(child.stderr, b'diagnostic\n')
         kinds = [event['event'] for event in self.events()]
         for kind in ['command_started', 'reporter_summary_observed', 'cli_exit',
                      'output_eof', 'owned_children_exited', 'supervisor_exit']:
             self.assertIn(kind, kinds)
+
+    def test_mixed_pass_fail_summary_is_observed_and_stays_failure(self):
+        child, result = self.run_fixture(
+            "print('1 test passed, 1 failed.'); raise SystemExit(1)")
+        self.assertEqual(child.returncode, 1, child.stderr)
+        self.assertFalse(result['passed'])
+        self.assertIn('reporter_summary_observed', [event['event'] for event in self.events()])
+        self.assertEqual(child.stdout, b'1 test passed, 1 failed.\n')
+
+    def test_caller_pipe_stays_blocking_after_the_supervisor_exits(self):
+        script = (f"import os,subprocess,sys; subprocess.run({self.command('print(1)')!r}, "
+                  "stdout=sys.stdout); print(os.get_blocking(1))")
+        done = subprocess.run([sys.executable, '-c', script], capture_output=True, timeout=8)
+        self.assertEqual(done.stdout.split()[-1], b'True', done.stderr)
 
     def test_reporter_success_does_not_override_a_failing_exit(self):
         child, result = self.run_fixture("print('All tests passed!'); raise SystemExit(7)")
@@ -127,7 +143,7 @@ class SupervisorTest(unittest.TestCase):
                                  stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         try:
             # wait(), unlike communicate(), leaves both downstream pipes unread.
-            # A forwarding write blocks here once it exceeds the pipe capacity.
+            # Echo must drop output past the pipe capacity instead of blocking.
             child.wait(timeout=3)
             self.assertEqual(child.returncode, 124)
             result = json.loads((self.output / 'result.json').read_text())
@@ -136,8 +152,11 @@ class SupervisorTest(unittest.TestCase):
             self.assertFalse(result['passed'])
             self.assertEqual((self.output / f'{stream}.log').read_bytes(), payload)
             self.assert_clean(result)
-            forwarded = child.communicate(timeout=2)
-            self.assertEqual(forwarded, (b'', b''))
+            forwarded = dict(zip(('stdout', 'stderr'), child.communicate(timeout=2)))
+            other = 'stderr' if stream == 'stdout' else 'stdout'
+            self.assertEqual(forwarded[other], b'')
+            self.assertTrue(payload.startswith(forwarded[stream]))
+            self.assertLess(len(forwarded[stream]), len(payload))
         finally:
             if child.poll() is None:
                 child.kill()

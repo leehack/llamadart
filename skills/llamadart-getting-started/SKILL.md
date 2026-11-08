@@ -24,14 +24,14 @@ interface does not establish backend/model support; read `await engine.capabilit
 
 ## Guidelines
 
-- Use the pinned native LiteRT-LM v0.19.0 runtime. Direct calls, service
+- Use the pinned native LiteRT-LM v0.19.1 runtime. Direct calls, service
   probes and speech share ABI-aware discovery. Public selection admits legacy
   runtimes and C API 1.0.x; unknown/future versions are refused before engine
-  calls. The source pin adopts published native v0.19.0 (owner `f173fe9b`,
-  upstream `83ce6067`); final core/Apple consumers and package release remain
+  calls. The source pin adopts published native v0.19.1 (owner `1fa4d437`,
+  upstream `7a03724c`); final core/Apple consumers and package release remain
   [#1677](https://github.com/leehack/llamadart/issues/1677) gates. The selected
   loader requires macOS 14+ even for legacy libraries and custom paths. Web
-  remains `@litert-lm/core@0.18.0`.
+  uses `@litert-lm/core@0.19.0`.
 
 - For a model-free macOS/Linux/Windows setup snapshot, use
   `dart run llamadart:doctor [--json]` or
@@ -80,7 +80,7 @@ interface does not establish backend/model support; read `await engine.capabilit
   token they receive, even though disposal no longer waits for their work.
 - Await `dispose()` before host shutdown. Killing a worker is not cooperative
   cancellation. Reclaiming models/contexts created during a forced kill needs
-  owner API v1, supplied by the pinned `v0.8.0-3` runtime. Custom runtimes
+  owner API v1, supplied by the pinned `v0.9.0` runtime. Custom runtimes
   without it retain that gap. Other raw allocations have separate limits.
 - `LlamaBackend()` routes by model format: LiteRT-LM bundles run on LiteRT-LM
   and GGUF on llama.cpp. Native targets read the file header, so extensionless

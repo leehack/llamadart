@@ -198,6 +198,8 @@ LITERT_PREBUILT_OVERRIDES = {
     "v0.18.1": LITERT_ANDROID_DAWN_OVERRIDES,
     # v0.19 rebuilds Dawn; the owner retains the correction pending Pixel/Mali evidence.
     "v0.19.0": LITERT_ANDROID_DAWN_OVERRIDES,
+    # v0.19.1 ships the same prebuilt Dawn and accelerator payloads as v0.19.0.
+    "v0.19.1": LITERT_ANDROID_DAWN_OVERRIDES,
 }
 LITERT_REQUIRED_RUNTIME_PATHS = {
     "bin/android/arm64/libLiteRtLm.so",
@@ -404,6 +406,18 @@ def _litert_compatibility_version(compatibility_tag: str) -> tuple[int, ...]:
     return tuple(int(part) for part in compatibility_tag[1:].split("."))
 
 
+# Upstream versions reviewed to export C API 1.0 and link both TopK samplers
+# from source. Add a version only after comparing its C API exports.
+LITERT_V1_COMPATIBILITY_VERSIONS = {(0, 19, 0), (0, 19, 1)}
+
+
+def _litert_is_v1_compatibility_tag(compatibility_tag: str) -> bool:
+    return (
+        _litert_compatibility_version(compatibility_tag)
+        in LITERT_V1_COMPATIBILITY_VERSIONS
+    )
+
+
 def litert_spm_asset_patterns(
     compatibility_tag: str,
     *,
@@ -415,7 +429,7 @@ def litert_spm_asset_patterns(
         patterns.extend(LITERT_V0_16_SPM_ASSET_PATTERNS)
         if allowed:
             patterns.extend(LITERT_V0_16_ALLOWED_SPM_COMPANION_ASSET_PATTERNS)
-        if version == (0, 19, 0):
+        if version in LITERT_V1_COMPATIBILITY_VERSIONS:
             # The reviewed v0.19 owner links both TopK samplers from source.
             obsolete = {
                 "litert-lm-native-apple-LiteRtTopKMetalSampler-xcframework-{tag}.zip",
@@ -542,7 +556,8 @@ def required_litert_manifest_paths(
     if version >= (0, 16, 0):
         required.update(
             path for path in LITERT_V0_16_IOS_GPU_PATHS
-            if version != (0, 19, 0) or "TopKMetalSampler" not in path
+            if version not in LITERT_V1_COMPATIBILITY_VERSIONS
+            or "TopKMetalSampler" not in path
         )
     if official_assets and version >= (0, 14, 0):
         required.update(
@@ -636,14 +651,14 @@ def litert_schema2_apple_targets(
     # Optional release assets alone do not imply a dependency. Include the
     # provider only when an iOS runtime bundle actually requires its binary.
     bundles = litert_schema2_bundle_required_libraries(manifest)
-    if compatibility_tag == "v0.19.0" and any(
+    if _litert_is_v1_compatibility_tag(compatibility_tag) and any(
         "TopKMetalSampler" in library or "TopKWebGpuSampler" in library
         for bundle, libraries in bundles.items()
         if bundle.startswith(("ios-", "macos-"))
         for library in libraries
     ):
         raise ReleaseError(
-            "LiteRT-LM v0.19.0 owner inventory unexpectedly requires a prebuilt TopK sampler"
+            f"LiteRT-LM {compatibility_tag} owner inventory unexpectedly requires a prebuilt TopK sampler"
         )
     if any(
         "GemmaModelConstraintProvider" in libraries
@@ -3852,12 +3867,12 @@ def _litert_lm_runtime_inventory_is_v1(manifest: dict[str, Any]) -> bool:
         "runtime inventory upstream compatibilityTag",
     )
     version = _litert_compatibility_version(compatibility_tag)
-    if version > (0, 19, 0):
+    if version > max(LITERT_V1_COMPATIBILITY_VERSIONS):
         raise ReleaseError(
             "LiteRT-LM runtime inventory has no reviewed API mapping for "
             + compatibility_tag
         )
-    return version == (0, 19, 0)
+    return version in LITERT_V1_COMPATIBILITY_VERSIONS
 
 
 def replace_litert_lm_runtime_required_libraries(
@@ -4220,7 +4235,7 @@ def prepare_litert_lm_package_swift(
             "LiteRt", "LiteRtWebGpuAccelerator", "WebgpuDawn",
         }
         if (
-            manifest["upstream"]["compatibilityTag"] == "v0.19.0"
+            _litert_is_v1_compatibility_tag(manifest["upstream"]["compatibilityTag"])
             and expected_targets == sampler_free_targets
             and current_targets == expected_targets | obsolete_samplers
         ):
@@ -4229,7 +4244,7 @@ def prepare_litert_lm_package_swift(
             )
             current_targets -= obsolete_samplers
         if (
-            manifest["upstream"]["compatibilityTag"] == "v0.19.0"
+            _litert_is_v1_compatibility_tag(manifest["upstream"]["compatibilityTag"])
             and expected_targets == sampler_free_targets
             and current_targets == expected_targets
         ):
@@ -4358,7 +4373,9 @@ def prepare_litert_lm_package_swift(
                 "LiteRT-LM Package.swift binary targets do not match the legacy "
                 "or schema-2 owner inventory"
             )
-        if manifest["upstream"]["compatibilityTag"] == "v0.19.0" and any(
+        if _litert_is_v1_compatibility_tag(
+            manifest["upstream"]["compatibilityTag"]
+        ) and any(
             sampler in swift_text for sampler in obsolete_samplers
         ):
             raise ReleaseError(
@@ -4594,14 +4611,14 @@ def update_companion_package_metadata(
         pending_writes[changelog_path] = prepend_companion_changelog_release(
             changelog_text,
             next_version,
-            f"* Updated Apple SwiftPM native pin to `{repo}@{tag}`.",
+            f"- Updated Apple SwiftPM native pin to `{repo}@{tag}`.",
             repo,
         )
     else:
         changelog_text = changelog_path.read_text(encoding="utf-8")
         pending_writes[changelog_path] = update_companion_changelog_unreleased(
             changelog_text,
-            f"* Updated Apple SwiftPM native pin to `{repo}@{tag}`.",
+            f"- Updated Apple SwiftPM native pin to `{repo}@{tag}`.",
             repo,
         )
 
@@ -4723,7 +4740,7 @@ def update_core_changelog_native_pin(
     if native_version.wrapper_revision > 0:
         base_tag = native_version.upstream_tag
         entry = (
-            "* Updated the default llama.cpp native runtime pin to\n"
+            "- Updated the default llama.cpp native runtime pin to\n"
             f"  `{repo}@{tag}`, keeping the `{base_tag}` llama.cpp\n"
             "  ABI/bindings while picking up wrapper-only native fixes. Refreshed\n"
             "  the `llamadart_llama_cpp_flutter` Apple SwiftPM checksum and\n"
@@ -4731,7 +4748,7 @@ def update_core_changelog_native_pin(
         )
     else:
         entry = (
-            "* Updated the default llama.cpp native runtime pin to\n"
+            "- Updated the default llama.cpp native runtime pin to\n"
             f"  `{repo}@{tag}`, regenerated matching Dart FFI bindings, refreshed\n"
             "  the `llamadart_llama_cpp_flutter` Apple SwiftPM checksum, and\n"
             "  aligned current README/website native override docs."
@@ -4747,7 +4764,7 @@ def update_core_changelog_native_pin(
     )
     body = changelog_text[body_start:body_end]
     old_entry_pattern = re.compile(
-        r"^\* Updated the default llama\.cpp native runtime pin to(?:\n  .*)*\n?",
+        r"^[-*] Updated the default llama\.cpp native runtime pin to(?:\n  .*)*\n?",
         re.MULTILINE,
     )
     existing_entry = old_entry_pattern.search(body)
@@ -4828,7 +4845,7 @@ def prepend_companion_changelog_release(
     repo: str,
 ) -> str:
     old_entry_pattern = re.compile(
-        rf"^\* Updated Apple SwiftPM native pin to\s+`{re.escape(repo)}@[^`]+`\.\n?",
+        rf"^[*-] Updated Apple SwiftPM native pin to\s+`{re.escape(repo)}@[^`]+`\.\n?",
         re.MULTILINE,
     )
     unreleased_match = re.search(r"(?m)^## Unreleased\s*\n+", changelog_text)
@@ -4899,11 +4916,11 @@ def update_companion_changelog_unreleased(
     is dropped.
     """
     old_entry_pattern = re.compile(
-        rf"^\* Updated Apple SwiftPM native pin to\s+`{re.escape(repo)}@[^`]+`\.\n?",
+        rf"^[*-] Updated Apple SwiftPM native pin to\s+`{re.escape(repo)}@[^`]+`\.\n?",
         re.MULTILINE,
     )
     pin_pattern = re.compile(
-        rf"\* Updated Apple SwiftPM native pin to[^`]*`{re.escape(repo)}@([^`]+)`"
+        rf"[*-] Updated Apple SwiftPM native pin to[^`]*`{re.escape(repo)}@([^`]+)`"
     )
     unreleased = _changelog_section_span(changelog_text, "Unreleased")
     released_text = (

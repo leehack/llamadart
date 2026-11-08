@@ -327,6 +327,7 @@ void main() => test('renders', () {});
         'test/unit/core/engine/engine_set_model_io_test.dart',
         'test/unit/tooling/bounded_process_test.dart',
         'test/unit/tooling/sync_native_release_pins_script_test.dart',
+        'test/unit/tooling/prepare_workspace_test.dart',
       ]) {
         expect(macos, contains(file));
       }
