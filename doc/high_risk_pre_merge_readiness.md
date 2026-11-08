@@ -354,6 +354,21 @@ and any path or name containing `chat`, `template`, `jinja`, `render`,
 may reach an added name. Parts, nonlocal exports, cycles and unknown
 declaration shapes on any route the check inspects keep the requirement.
 
+The declaration itself must be the only top-level declaration of that name and
+a class, enum or mixin; typedefs, class aliases, functions, getters, variables
+and extensions can rebind or extend existing names and keep the requirement, as
+does any name that `dart:core`, `dart:async` or `dart:convert` (read from the
+running SDK) declares. The declaring library may add no import of a structured
+path or another package. Every identifier token in the declaration, from its
+annotations to its member bodies, is looked up among the library's own
+declarations and every import that admits it, and each declaration found is
+checked the same way, transitively. Reaching a structured-output library, or an
+import the evaluator cannot follow (another package or an uncertain export
+graph), keeps the requirement. Matching tokens by name over-approximates
+references, so a member or parameter name equal to a structured export also
+keeps it; an existing structured import that provides none of the tokens, such
+as `tool_definition.dart` beside #1791's export, does not.
+
 The `families` list retains unique `tested`/`unavailable` entries, relevant tests
 and a rationale. Missing weights require named unavailable families and primary
 upstream emissions plus fixtures; unrelated model evidence remains pipeline-only.

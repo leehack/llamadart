@@ -530,10 +530,15 @@ class HighRiskReadinessEvaluator {
   const HighRiskReadinessEvaluator({
     this.repositoryState = const GitRepositoryStateReader(),
     this.clock = _defaultClock,
+    this.dartSdkPath,
   });
 
   final RepositoryStateReader repositoryState;
   final DateTime Function() clock;
+
+  /// SDK whose `dart:core`, `dart:async` and `dart:convert` names an exported
+  /// class must not shadow; defaults to the running SDK.
+  final String? dartSdkPath;
 
   static DateTime _defaultClock() => DateTime.now();
   static const _zeroSha = '0000000000000000000000000000000000000000';
@@ -1403,13 +1408,14 @@ class HighRiskReadinessEvaluator {
     return null;
   }
 
-  // Adding names to `show` exports cannot change runtime behavior, so the
-  // entrypoint itself may contribute no minimum impacts. Every other line must
-  // match the base byte for byte. Each added name must resolve, through head
-  // blobs, to a declaration whose whole export chain already exists at base
-  // and stays outside structured-output areas, and no other export route of
-  // the entrypoint may reach that name. Anything unproven retains the ordinary
-  // minima; the changed declaring files still contribute their own impacts.
+  // An entrypoint whose diff only adds names to `show` exports may contribute
+  // no minimum impacts when each added name is an existing class, enum or
+  // mixin that shadows no SDK name and names nothing from a structured-output
+  // library, directly or transitively. Every other line must match the base
+  // byte for byte, the whole export chain must already exist at base and stay
+  // outside structured-output areas, and no other export route may reach the
+  // name. Anything unproven retains the ordinary minima; the changed
+  // declaring files still contribute their own impacts.
   Future<bool> _isExportOnlyEntrypointChange(
     String entrypoint,
     PullRequestContext context,
@@ -1477,12 +1483,14 @@ class HighRiskReadinessEvaluator {
           : unit;
     });
 
-    // Whether [path] exports [name]; `null` when its export graph is
-    // uncertain or, for an added name, leaves the reviewed bounds.
+    // Whether [path] exports [name], collecting the declaring libraries;
+    // `null` when its export graph is uncertain or, for an added name, leaves
+    // the reviewed bounds.
     Future<bool?> declares(
       String path,
       String name, {
       required bool addedName,
+      Set<String>? declaringFiles,
       Set<String> chain = const {},
     }) async {
       if (chain.contains(path)) return null;
@@ -1493,17 +1501,21 @@ class HighRiskReadinessEvaluator {
       }
       final unit = await headUnit(path);
       if (unit == null) return null;
-      if (_declaredNames(unit)!.contains(name)) return true;
+      if (_declaredNames(unit)!.contains(name)) {
+        declaringFiles?.add(path);
+        return true;
+      }
       var found = false;
       for (final directive in unit.directives.whereType<ExportDirective>()) {
-        if (!_exportAdmits(directive, name)) continue;
-        for (final uri in _exportUris(directive)) {
+        if (!_namespaceAdmits(directive, name)) continue;
+        for (final uri in _namespaceUris(directive)) {
           final child = _localExportPath(path, uri);
           if (child == null) return null;
           final result = await declares(
             child,
             name,
             addedName: addedName,
+            declaringFiles: declaringFiles,
             chain: {...chain, path},
           );
           if (result == null) return null;
@@ -1513,23 +1525,187 @@ class HighRiskReadinessEvaluator {
       return found;
     }
 
+    // Whether the declarations of [name] in [path], and everything they name
+    // transitively, stay outside structured-output libraries. Identifier
+    // tokens over-approximate references: each one is looked up among the
+    // library's own declarations and every import that admits it, so a member
+    // or parameter name that matches a structured export also fails closed.
+    final verdicts = <(String, String), bool>{};
+    final visiting = <(String, String)>{};
+    Future<bool> inert(String path, String name) async {
+      final key = (path, name);
+      if (verdicts[key] case final verdict?) return verdict;
+      // A reference cycle adds nothing; the outer visit decides.
+      if (!visiting.add(key)) return true;
+      final verdict = await () async {
+        if (isStructuredOutputExport(path, '')) return false;
+        final unit = await headUnit(path);
+        if (unit == null) return false;
+        final local = _declaredNames(unit)!;
+        final declarations = [
+          for (final declaration in unit.declarations)
+            if (_declarationNames(declaration)!.contains(name)) declaration,
+        ];
+        if (declarations.isEmpty) return false;
+        for (final reference in {
+          for (final declaration in declarations)
+            ..._identifierTokens(declaration),
+        }) {
+          if (local.contains(reference) && !await inert(path, reference)) {
+            return false;
+          }
+          for (final directive
+              in unit.directives.whereType<ImportDirective>()) {
+            if (!_namespaceAdmits(directive, reference)) continue;
+            for (final uri in _namespaceUris(directive)) {
+              if (uri != null && uri.startsWith('dart:')) continue;
+              final target = _importPath(path, uri);
+              final declaring = <String>{};
+              if (target == null ||
+                  await declares(
+                        target,
+                        reference,
+                        addedName: false,
+                        declaringFiles: declaring,
+                      ) ==
+                      null) {
+                return false;
+              }
+              for (final file in declaring) {
+                if (!await inert(file, reference)) return false;
+              }
+            }
+          }
+        }
+        return true;
+      }();
+      visiting.remove(key);
+      return verdicts[key] = verdict;
+    }
+
+    // An exported class, enum or mixin adds no behavior to existing code
+    // unless it shadows an SDK name or carries structured-output code with it.
+    // Other declaration kinds (aliases, functions, variables, extensions) can
+    // rebind or extend existing names, so they keep the full requirement.
+    Future<bool> exportable(String path, String name) async {
+      final unit = await headUnit(path);
+      final sdkNames = _sdkExportNames(
+        dartSdkPath ?? File(Platform.resolvedExecutable).parent.parent.path,
+      );
+      final declarations = unit?.declarations.where(
+        (declaration) => _declarationNames(declaration)!.contains(name),
+      );
+      if (sdkNames == null ||
+          sdkNames.contains(name) ||
+          declarations == null ||
+          declarations.length != 1 ||
+          !(declarations.single is ClassDeclaration ||
+              declarations.single is EnumDeclaration ||
+              declarations.single is MixinDeclaration)) {
+        return false;
+      }
+      final base = await read(context.baseSha, path);
+      final baseUnit = base?.mode == '100644'
+          ? _parseExact(base!.contents)
+          : null;
+      if (baseUnit == null) return false;
+      Set<String?> imports(CompilationUnit source) => {
+        for (final directive in source.directives.whereType<ImportDirective>())
+          ..._namespaceUris(directive),
+      };
+      for (final uri in imports(unit!).difference(imports(baseUnit))) {
+        if (uri != null && uri.startsWith('dart:')) continue;
+        final target = _importPath(path, uri);
+        if (target == null || isStructuredOutputExport(target, '')) {
+          return false;
+        }
+      }
+      return inert(path, name);
+    }
+
     for (final MapEntry(key: adding, value: names) in added.entries) {
       for (final name in names) {
         if (headExports.declared.contains(name)) return false;
         for (final directive in headExports.byTarget.values) {
-          if (!_exportAdmits(directive, name)) continue;
-          for (final uri in _exportUris(directive)) {
+          if (!_namespaceAdmits(directive, name)) continue;
+          for (final uri in _namespaceUris(directive)) {
             final target = _localExportPath(entrypoint, uri);
             final isAdding = identical(directive, adding);
+            final declaring = <String>{};
             if (target == null ||
-                await declares(target, name, addedName: isAdding) != isAdding) {
+                await declares(
+                      target,
+                      name,
+                      addedName: isAdding,
+                      declaringFiles: declaring,
+                    ) !=
+                    isAdding) {
               return false;
+            }
+            for (final file in declaring) {
+              if (!await exportable(file, name)) return false;
             }
           }
         }
       }
     }
     return true;
+  }
+
+  /// Public top-level names of `dart:core`, `dart:async` and `dart:convert`
+  /// from the [sdk] sources, or `null` when they cannot be read.
+  static Set<String>? _sdkExportNames(String sdk) =>
+      _sdkExportNamesCache.putIfAbsent(sdk, () {
+        try {
+          final names = <String>{};
+          for (final library in const ['core', 'async', 'convert']) {
+            final directory = Directory('$sdk/lib/$library');
+            final sources = directory.listSync().whereType<File>().where(
+              (file) => file.path.endsWith('.dart'),
+            );
+            for (final source in sources) {
+              final unit = parseString(
+                content: source.readAsStringSync(),
+                throwIfDiagnostics: false,
+              ).unit;
+              for (final declaration in unit.declarations) {
+                // Built-in identifiers such as `Function` cannot be redeclared.
+                final declared = _declarationNames(declaration) ?? const [];
+                names.addAll(declared.where((name) => !name.startsWith('_')));
+              }
+            }
+          }
+          return names.contains('Future') &&
+                  names.contains('jsonEncode') &&
+                  names.contains('StreamController')
+              ? names
+              : null;
+        } on FileSystemException {
+          return null;
+        }
+      });
+  static final _sdkExportNamesCache = <String, Set<String>?>{};
+
+  /// Every identifier token of [declaration], its annotations included.
+  static Set<String> _identifierTokens(CompilationUnitMember declaration) {
+    final names = <String>{};
+    var token = declaration.metadata.isEmpty
+        ? declaration.firstTokenAfterCommentAndMetadata
+        : declaration.metadata.first.beginToken;
+    while (true) {
+      if (token.type == TokenType.IDENTIFIER) names.add(token.lexeme);
+      if (token == declaration.endToken || token.isEof) return names;
+      token = token.next!;
+    }
+  }
+
+  /// The repository path an import [value] in [source] names, or `null` for
+  /// another package or an unsupported form.
+  static String? _importPath(String source, String? value) {
+    const self = 'package:llamadart/';
+    return value != null && value.startsWith(self)
+        ? _localExportPath('lib/llamadart.dart', value.substring(self.length))
+        : _localExportPath(source, value);
   }
 
   static CompilationUnit? _parseExact(String source) {
@@ -1561,8 +1737,7 @@ class HighRiskReadinessEvaluator {
         directive.uri.stringValue,
         for (final branch in directive.configurations) branch.toSource(),
       ].join('\n');
-      if (start < kept ||
-          directive.metadata.isNotEmpty ||
+      if (directive.metadata.isNotEmpty ||
           directive.uri.stringValue == null ||
           source.substring(start, directive.offset).trim().isNotEmpty ||
           source.substring(directive.end, end).trim().isNotEmpty ||
@@ -1591,7 +1766,7 @@ class HighRiskReadinessEvaluator {
     return names.length == combinator.shownNames.length ? names : null;
   }
 
-  static bool _exportAdmits(ExportDirective directive, String name) {
+  static bool _namespaceAdmits(NamespaceDirective directive, String name) {
     for (final combinator in directive.combinators) {
       if (combinator is ShowCombinator &&
           !combinator.shownNames.any((shown) => shown.name == name)) {
@@ -1605,7 +1780,7 @@ class HighRiskReadinessEvaluator {
     return true;
   }
 
-  static List<String?> _exportUris(ExportDirective directive) => [
+  static List<String?> _namespaceUris(NamespaceDirective directive) => [
     directive.uri.stringValue,
     for (final branch in directive.configurations) branch.uri.stringValue,
   ];
@@ -1837,6 +2012,18 @@ class HighRiskReadinessEvaluator {
   /// guessed header boundary: record and function return types can contain
   /// braces before the name.
   static Set<String>? _declaredNames(CompilationUnit unit) {
+    final names = <String>{};
+    for (final declaration in unit.declarations) {
+      final declared = _declarationNames(declaration);
+      if (declared == null) return null;
+      names.addAll(declared);
+    }
+    return names;
+  }
+
+  /// Names [declaration] declares, or `null` for an unknown node or name
+  /// shape.
+  static List<String>? _declarationNames(CompilationUnitMember declaration) {
     Token? nameAfter(Token keyword, {bool optionalConst = false}) {
       var token = keyword.next;
       if (optionalConst && token != null && token.lexeme == 'const') {
@@ -1845,39 +2032,34 @@ class HighRiskReadinessEvaluator {
       return token?.type == TokenType.IDENTIFIER ? token : null;
     }
 
-    final names = <String>{};
-    for (final declaration in unit.declarations) {
-      final declared = switch (declaration) {
-        // Keyword-anchored name tokens span analyzer 8 through 14. The newer
-        // namePart API is absent, nullable or gated in allowed older versions.
-        ClassDeclaration() => [nameAfter(declaration.classKeyword)],
-        ClassTypeAlias() => [declaration.name],
-        EnumDeclaration() => [nameAfter(declaration.enumKeyword)],
-        MixinDeclaration() => [declaration.name],
-        ExtensionDeclaration() => [
-          if (declaration.name != null) declaration.name!,
-        ],
-        ExtensionTypeDeclaration() => [
-          nameAfter(declaration.typeKeyword, optionalConst: true),
-        ],
-        FunctionDeclaration() => [declaration.name],
-        FunctionTypeAlias() => [declaration.name],
-        GenericTypeAlias() => [declaration.name],
-        TopLevelVariableDeclaration() => [
-          for (final variable in declaration.variables.variables) variable.name,
-        ],
-        _ => null,
-      };
-      if (declared == null ||
-          declared.any(
-            (token) =>
-                token == null || token.isSynthetic || token.lexeme.isEmpty,
-          )) {
-        return null;
-      }
-      names.addAll(declared.map((token) => token!.lexeme));
+    final declared = switch (declaration) {
+      // Keyword-anchored name tokens span analyzer 8 through 14. The newer
+      // namePart API is absent, nullable or gated in allowed older versions.
+      ClassDeclaration() => [nameAfter(declaration.classKeyword)],
+      ClassTypeAlias() => [declaration.name],
+      EnumDeclaration() => [nameAfter(declaration.enumKeyword)],
+      MixinDeclaration() => [declaration.name],
+      ExtensionDeclaration() => [
+        if (declaration.name != null) declaration.name!,
+      ],
+      ExtensionTypeDeclaration() => [
+        nameAfter(declaration.typeKeyword, optionalConst: true),
+      ],
+      FunctionDeclaration() => [declaration.name],
+      FunctionTypeAlias() => [declaration.name],
+      GenericTypeAlias() => [declaration.name],
+      TopLevelVariableDeclaration() => [
+        for (final variable in declaration.variables.variables) variable.name,
+      ],
+      _ => null,
+    };
+    if (declared == null ||
+        declared.any(
+          (token) => token == null || token.isSynthetic || token.lexeme.isEmpty,
+        )) {
+      return null;
     }
-    return names;
+    return [for (final token in declared) token!.lexeme];
   }
 
   Future<(ReadinessFailureClassification, String)?> _validateEvidencePath(

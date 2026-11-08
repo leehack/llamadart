@@ -94,6 +94,11 @@ void main() {
       ('lib/src/core/engine/engine.dart', 'LlamaEngineCompletionExtension'),
       ('lib/src/core/engine/engine.dart', 'ParseResult'),
       ('lib/src/core/engine/engine.dart', 'TokenStream'),
+      ('lib/src/backends/backend.dart', 'JinjaEnvironment'),
+      ('lib/src/backends/backend.dart', 'RenderOptions'),
+      ('lib/src/backends/backend.dart', 'GbnfRule'),
+      ('lib/src/backends/backend.dart', 'SchemaNode'),
+      ('lib/src/backends/backend.dart', 'StructuredReply'),
     ]) {
       expect(
         isStructuredOutputExport(path, symbol),

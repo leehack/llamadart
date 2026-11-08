@@ -1808,6 +1808,16 @@ final segment = '${Object()}ImageEditingRequest${Object()}';
         (s) => "${s}export 'llamadart.dart' show SpeechVoice;\n",
         {'lib/llamadart.dart': 'class SpeechVoice {}\n'},
       ),
+      'a symbol re-exported through a structured intermediate library': (
+        (s) => "${s}export 'src/core/speech/speech.dart' show SpeechVoice;\n",
+        {
+          'lib/src/core/speech/speech.dart':
+              "export '../template/voices.dart';\n",
+          'lib/src/core/template/voices.dart':
+              "export '../speech/voices.dart';\n",
+          'lib/src/core/speech/voices.dart': 'class SpeechVoice {}\n',
+        },
+      ),
       'a symbol no library declares': (
         (s) => "${s}export 'src/core/speech/voices.dart' show Missing;\n",
         {'lib/src/core/speech/voices.dart': 'class SpeechVoice {}\n'},
@@ -1850,6 +1860,32 @@ final segment = '${Object()}ImageEditingRequest${Object()}';
         {},
       ),
       'invalid syntax': ((s) => '${s}export', {}),
+      'two exports on one line': (
+        (s) =>
+            "${s}export 'src/core/speech/voices.dart' show SpeechVoice; "
+            "export 'src/core/speech/speakers.dart' show Speaker;\n",
+        {
+          'lib/src/core/speech/voices.dart': 'class SpeechVoice {}\n',
+          'lib/src/core/speech/speakers.dart': 'class Speaker {}\n',
+        },
+      ),
+      'a symbol from a part-of library': (
+        (s) => "${s}export 'src/core/speech/voices.dart' show SpeechVoice;\n",
+        {
+          'lib/src/core/speech/voices.dart':
+              "part of 'speech.dart';\nclass SpeechVoice {}\n",
+        },
+      ),
+      'a symbol re-exported through a conditional structured branch': (
+        (s) => "${s}export 'src/core/speech/speech.dart' show SpeechVoice;\n",
+        {
+          'lib/src/core/speech/speech.dart':
+              "export 'voices.dart' if (dart.library.io) "
+              "'../template/io_voices.dart';\n",
+          'lib/src/core/speech/voices.dart': 'class SpeechVoice {}\n',
+          'lib/src/core/template/io_voices.dart': 'class SpeechVoice {}\n',
+        },
+      ),
       'an import sharing a line with a new export': (
         (s) =>
             "${s}import 'dart:async'; export 'src/core/speech/voices.dart' "
@@ -1903,6 +1939,16 @@ final segment = '${Object()}ImageEditingRequest${Object()}';
       'an uncertain nonlocal re-export': (
         "export 'src/core/speech/speech.dart';\n",
         {'lib/src/core/speech/speech.dart': "export 'package:other/a.dart';\n"},
+      ),
+      'another export reaching the added name before an unrelated one': (
+        "export 'src/core/speech/speech.dart';\n",
+        {
+          'lib/src/core/speech/speech.dart':
+              "export 'voices.dart';\nexport 'empty.dart';\n",
+          'lib/src/core/speech/voices.dart':
+              'class BackendTextToSpeechModelSupport {}\n',
+          'lib/src/core/speech/empty.dart': 'class Empty {}\n',
+        },
       ),
       'an export cycle': (
         "export 'src/core/speech/a.dart';\n",
@@ -2011,6 +2057,302 @@ final segment = '${Object()}ImageEditingRequest${Object()}';
       }
       final result = await evaluateExport(files: files);
       expect(result.decision, ReadinessDecision.unverifiedPrerequisites);
+    });
+
+    for (final (revision, mode) in [(baseSha, '120000'), (headSha, '120000')]) {
+      test('a declaring library with mode $mode at '
+          '${revision == baseSha ? 'base' : 'head'} keeps the full '
+          'requirement', () async {
+        const voices = 'lib/src/core/speech/voices.dart';
+        final files = exportFiles(
+          head:
+              "${oldEntrypoint}export 'src/core/speech/voices.dart' show "
+              'SpeechVoice;\n',
+          extra: {voices: 'class SpeechVoice {}\n'},
+        );
+        files[revision]![voices] = (
+          mode: mode,
+          contents: 'class SpeechVoice {}\n',
+        );
+        await expectFullRequirement(evaluateExport(files: files));
+      });
+    }
+
+    test(
+      'an intermediate library absent at base keeps the full requirement',
+      () async {
+        final files = exportFiles(
+          head:
+              "${oldEntrypoint}export 'src/core/speech/speech.dart' show "
+              'SpeechVoice;\n',
+          extra: {'lib/src/core/speech/voices.dart': 'class SpeechVoice {}\n'},
+        );
+        files[headSha]!['lib/src/core/speech/speech.dart'] = (
+          mode: '100644',
+          contents: "export 'voices.dart';\n",
+        );
+        files[baseSha]!['lib/src/core/speech/speech.dart'] = (
+          mode: '120000',
+          contents: "export 'voices.dart';\n",
+        );
+        await expectFullRequirement(evaluateExport(files: files));
+      },
+    );
+
+    test('a changed conditional branch keeps the full requirement', () async {
+      const directive =
+          "export 'src/backends/speech_stub.dart'\n"
+          "    if (dart.library.io) 'src/backends/speech_io.dart'\n"
+          '    show Voice;\n';
+      final files = exportFiles(
+        extra: {
+          'lib/src/backends/speech_stub.dart': 'class Voice {}\n',
+          'lib/src/backends/speech_io.dart': 'class Voice {}\n',
+          'lib/src/backends/speech_ffi.dart': 'class Voice {}\n',
+        },
+      );
+      files[baseSha]![entrypoint] = (
+        mode: '100644',
+        contents: '$oldEntrypoint$directive',
+      );
+      files[headSha]![entrypoint] = (
+        mode: '100644',
+        contents:
+            newEntrypoint +
+            directive.replaceFirst('speech_io.dart', 'speech_ffi.dart'),
+      );
+      await expectFullRequirement(evaluateExport(files: files));
+    });
+
+    group('exported declarations', () {
+      const parser = 'lib/src/core/template/peg_chat_parser.dart';
+      const parserImport = "import '../core/template/peg_chat_parser.dart';\n";
+      const parserSource =
+          'class PegChatParser {}\n'
+          'const parserMarker = Object();\n';
+      Future<HighRiskReadinessResult> evaluateDeclaration(
+        String name,
+        String declaration, {
+        String headImports = '',
+        String baseImports = '',
+        Map<String, String> extra = const {},
+      }) {
+        final files = exportFiles(
+          head: oldEntrypoint.replaceFirst(
+            '        BackendToolResultMedia;',
+            '        $name,\n        BackendToolResultMedia;',
+          ),
+          extra: {parser: parserSource, ...extra},
+        );
+        files[baseSha]![spi] = (
+          mode: '100644',
+          contents: '$baseImports$oldSpi',
+        );
+        files[headSha]![spi] = (
+          mode: '100644',
+          contents: '$baseImports$headImports$oldSpi$declaration',
+        );
+        return evaluateExport(files: files);
+      }
+
+      final bypasses = <String, (String, String, String, String)>{
+        // name, declaration, imports added at head, imports at base
+        'an alias of a structured parser': (
+          'BackendReplyReader',
+          'typedef BackendReplyReader = PegChatParser;\n',
+          parserImport,
+          '',
+        ),
+        'a subclass of a structured parser': (
+          'ReplyReader',
+          'class ReplyReader extends PegChatParser {}\n',
+          parserImport,
+          '',
+        ),
+        'a variable bound to a structured parser': (
+          'replyReader',
+          'final replyReader = PegChatParser.new;\n',
+          parserImport,
+          '',
+        ),
+        'a function shadowing dart:convert': (
+          'jsonEncode',
+          "String jsonEncode(Object? value) => '{}';\n",
+          '',
+          '',
+        ),
+        'a named extension': (
+          'Hijack',
+          "extension Hijack on Object { String toJson() => '{}'; }\n",
+          '',
+          '',
+        ),
+        'a class shadowing dart:core': (
+          'Duration',
+          'class Duration {}\n',
+          '',
+          '',
+        ),
+        'a class shadowing dart:async': (
+          'StreamController',
+          'class StreamController {}\n',
+          '',
+          '',
+        ),
+        'a class alias': (
+          'BackendMixed',
+          'mixin BackendMixin {}\nclass BackendMixed = Object with BackendMixin;\n',
+          '',
+          '',
+        ),
+        'a getter': (
+          'backendVersion',
+          'int get backendVersion => 1;\n',
+          '',
+          '',
+        ),
+        'a member signature naming an existing structured import': (
+          'BackendReplySupport',
+          'abstract class BackendReplySupport { PegChatParser reader(); }\n',
+          '',
+          parserImport,
+        ),
+        'a member body naming an existing structured import': (
+          'BackendReplySupport',
+          'class BackendReplySupport { Object read() => PegChatParser(); }\n',
+          '',
+          parserImport,
+        ),
+        'an annotation naming an existing structured import': (
+          'BackendReplySupport',
+          '@parserMarker\nabstract class BackendReplySupport {}\n',
+          '',
+          parserImport,
+        ),
+        'a local alias of a structured parser': (
+          'BackendReplySupport',
+          'typedef _Reader = PegChatParser;\n'
+              'abstract class BackendReplySupport { _Reader reader(); }\n',
+          '',
+          parserImport,
+        ),
+        'a supertype that extends a structured parser elsewhere': (
+          'BackendReplySupport',
+          'abstract class BackendReplySupport extends Reader {}\n',
+          '',
+          "import '../core/speech/reader.dart';\n",
+        ),
+        'an unrelated class beside an added structured import': (
+          'BackendVoiceSupport',
+          'abstract class BackendVoiceSupport {}\n',
+          parserImport,
+          '',
+        ),
+        'a class beside an added import of another package': (
+          'BackendVoiceSupport',
+          'abstract class BackendVoiceSupport {}\n',
+          "import 'package:dinja/dinja.dart';\n",
+          '',
+        ),
+        'a class beside an added filtered import of another package': (
+          'BackendVoiceSupport',
+          'abstract class BackendVoiceSupport {}\n',
+          "import 'package:dinja/dinja.dart' show Template;\n",
+          '',
+        ),
+        'a reference a structured conditional import branch provides': (
+          'BackendVoiceSupport',
+          'abstract class BackendVoiceSupport { Reader reader(); }\n',
+          '',
+          "import '../core/speech/voices.dart'\n"
+              "    if (dart.library.io) '../core/speech/reader.dart';\n",
+        ),
+        'a name declared twice': (
+          'BackendVoiceSupport',
+          'abstract class BackendVoiceSupport {}\n'
+              'abstract class BackendVoiceSupport {}\n',
+          '',
+          '',
+        ),
+        'a reference an uncertain import may provide': (
+          'BackendVoiceSupport',
+          'abstract class BackendVoiceSupport { Voice voice(); }\n',
+          '',
+          "import 'package:other/voices.dart';\n",
+        ),
+      };
+      for (final entry in bypasses.entries) {
+        test('${entry.key} keeps the full requirement', () async {
+          final (name, declaration, headImports, baseImports) = entry.value;
+          await expectFullRequirement(
+            evaluateDeclaration(
+              name,
+              declaration,
+              headImports: headImports,
+              baseImports: baseImports,
+              extra: {
+                'lib/src/core/speech/reader.dart':
+                    "import '../template/peg_chat_parser.dart';\n"
+                    'abstract class Reader extends PegChatParser {}\n',
+                'lib/src/core/speech/voices.dart': 'class SpeechVoice {}\n',
+              },
+            ),
+          );
+        });
+      }
+
+      test('an unreadable SDK keeps the full requirement', () async {
+        final files = exportFiles();
+        final result = await HighRiskReadinessEvaluator(
+          repositoryState: FakeRepositoryState(
+            changes: exportChanges,
+            existingPaths: files[headSha]!.keys.toSet(),
+            files: files,
+          ),
+          dartSdkPath: '${Directory.systemTemp.path}/missing-dart-sdk',
+        ).evaluate(evidence: exportEvidence(const {}), context: context);
+        expectFailure(
+          result,
+          ReadinessFailureClassification.missingStructuredOutputEvidence,
+        );
+        expect(result.message, contains('cannot be excluded'));
+      });
+
+      final allowed = <String, (String, String, String)>{
+        'an enum': ('BackendVoiceKind', 'enum BackendVoiceKind { male }\n', ''),
+        'a mixin': ('BackendVoiceMixin', 'mixin BackendVoiceMixin {}\n', ''),
+        'an abstract interface class': (
+          'BackendVoiceSupport',
+          'abstract interface class BackendVoiceSupport {}\n',
+          '',
+        ),
+        'a class beside an unrelated existing structured import': (
+          'BackendVoiceSupport',
+          'abstract class BackendVoiceSupport {\n'
+              '  Future<String?> reason(int handle, List<int> voices);\n'
+              '}\n',
+          parserImport,
+        ),
+        'a class naming a non-structured library': (
+          'BackendVoiceSupport',
+          'abstract class BackendVoiceSupport { SpeechVoice voice(); }\n',
+          "import '../core/speech/voices.dart';\n",
+        ),
+      };
+      for (final entry in allowed.entries) {
+        test('${entry.key} may be marked not applicable', () async {
+          final (name, declaration, baseImports) = entry.value;
+          final result = await evaluateDeclaration(
+            name,
+            declaration,
+            baseImports: baseImports,
+            extra: {
+              'lib/src/core/speech/voices.dart': 'class SpeechVoice {}\n',
+            },
+          );
+          expect(result.decision, ReadinessDecision.unverifiedPrerequisites);
+        });
+      }
     });
 
     test('a wildcard base export changed to show keeps the full '
