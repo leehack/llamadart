@@ -495,6 +495,22 @@ Future<void> main(List<String> args) async {
       expect(chatApp.exitCode, 0);
       expect(chatApp.stdout, contains('--response-timeout-ms 600000'));
       expect(chatApp.stdout, isNot(contains('--browser')));
+      final history = await runLocalE2e(
+        [
+          '--scenario',
+          'litert-lm-web-text-history',
+          '--model-path',
+          'models/existing.litertlm',
+          '--backend',
+          'gpu',
+          '--dry-run',
+        ],
+        projectRoot: '/repo',
+        displayShell: LocalE2eDisplayShell.posix,
+      );
+      expect(history.exitCode, 0);
+      expect(history.stdout, contains('litert_text_history_web_e2e.py'));
+      expect(history.stdout, isNot(contains('--browser')));
     },
   );
 

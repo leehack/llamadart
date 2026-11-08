@@ -2,6 +2,14 @@
 
 This document covers the major breaking upgrade paths.
 
+## `0.18.x` -> `0.19.0`: LiteRT-LM native `v0.19.1-1` and Web `0.19.0`
+
+Core `0.19.0` and `llamadart_litert_lm_flutter` `0.19.0` move to published
+[LiteRT-LM v0.19.1-1](https://github.com/leehack/litert-lm-native/releases/tag/v0.19.1-1)
+(owner `82d4ae1c`, upstream `7a03724c`), which keeps the C API 1.0.0 exports of
+v0.19.0, so the `0.18.0` ABI selection below
+applies unchanged. Web LiteRT-LM moves to `@litert-lm/core@0.19.0` in `0.19.0`.
+
 ## `0.17.x` -> `0.18.0`: native LiteRT-LM ABI selection
 
 The public `LiteRtLmRuntimeClient`, default services and speech worker now share
@@ -32,11 +40,6 @@ Behavior to recheck with a C API 1 runtime:
   worker and its native/model/cache owners. That backend requires a process
   restart; an ended request does not prove native cleanup completed.
 
-Core `0.19.0` and `llamadart_litert_lm_flutter` `0.19.0` move to published
-[LiteRT-LM v0.19.1-1](https://github.com/leehack/litert-lm-native/releases/tag/v0.19.1-1)
-(owner `82d4ae1c`, upstream `7a03724c`), which keeps the C API 1.0.0 exports of
-v0.19.0, so this selection applies unchanged. Web LiteRT-LM moves to
-`@litert-lm/core@0.19.0` in `0.19.0`.
 See [the adoption checklist](doc/litert_lm_v1_adoption.md) for per-feature coverage.
 
 ## `0.17.0` -> `0.17.1`: llama.cpp native runtime `v0.8.0-1`
