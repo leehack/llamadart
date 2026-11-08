@@ -3997,6 +3997,126 @@ void main() {
     },
   );
 
+  group('a turn after an image turn', () {
+    late List<_FakeLiteRtLmRuntimeClient> clients;
+    late LiteRtLmService service;
+    late int modelHandle;
+    late int contextHandle;
+    late LlamaChatMessage imageTurn;
+
+    setUp(() async {
+      clients = [];
+      service = LiteRtLmService(
+        clientFactory: () {
+          final client = _FakeLiteRtLmRuntimeClient();
+          clients.add(client);
+          return client;
+        },
+      );
+      final imageFile = File('${tempDir.path}/history-image.png');
+      await imageFile.writeAsBytes(const <int>[
+        0x89,
+        0x50,
+        0x4e,
+        0x47,
+        0x0d,
+        0x0a,
+        0x1a,
+        0x0a,
+      ]);
+      imageTurn = LlamaChatMessage.withContent(
+        role: LlamaChatRole.user,
+        content: [
+          const LlamaTextContent('Describe this image.'),
+          LlamaImageContent(path: imageFile.path),
+        ],
+      );
+      const params = ModelParams(preferredBackend: GpuBackend.cpu);
+      modelHandle = await service.loadModel(modelFile.path, params);
+      contextHandle = service.createContext(modelHandle, params);
+    });
+
+    tearDown(() => service.dispose());
+
+    Future<void> chat(List<LlamaChatMessage> messages) async {
+      int generations() =>
+          clients.fold(0, (count, client) => count + client.generateCount);
+      final previousGenerations = generations();
+      final chunks = service
+          .generateChat(
+            contextHandle,
+            messages,
+            const GenerationParams(maxTokens: 8),
+          )
+          .toList();
+      while (generations() == previousGenerations) {
+        await Future<void>.delayed(Duration.zero);
+      }
+      final client = clients.last;
+      client.generated.add('ok');
+      await client.generated.close();
+      expect(await chunks, [utf8.encode('ok')]);
+      client.generated = StreamController<String>();
+    }
+
+    test('keeps the vision engine while the history holds the image', () async {
+      await chat([imageTurn]);
+      await chat([
+        imageTurn,
+        LlamaChatMessage.fromText(
+          role: LlamaChatRole.assistant,
+          text: 'A cat.',
+        ),
+        LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'Its color?'),
+      ]);
+
+      expect(clients, hasLength(1));
+      expect(clients.single.lastVisionBackend, 'cpu');
+      expect(clients.single.lastMaxNumImages, 1);
+      expect(clients.single.generateCount, 2);
+    });
+
+    test('a rebuild that names no media keeps the image count', () async {
+      await chat([imageTurn]);
+      service.cancelGeneration();
+      await service.tokenize(modelHandle, 'Hello', false);
+
+      expect(clients, hasLength(2));
+      expect(clients.last.lastVisionBackend, 'cpu');
+      expect(clients.last.lastMaxNumImages, 1);
+    });
+
+    test('drops the image count for a fresh text-only conversation', () async {
+      await chat([imageTurn]);
+      await chat([
+        LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'Hello'),
+      ]);
+
+      expect(clients, hasLength(2));
+      expect(clients.first.disposeCount, 1);
+      expect(clients.last.lastVisionBackend, isNull);
+      expect(clients.last.lastMaxNumImages, isNull);
+    });
+
+    test('drops the image count for a fresh audio-only conversation', () async {
+      await chat([imageTurn]);
+      await chat([
+        LlamaChatMessage.withContent(
+          role: LlamaChatRole.user,
+          content: [
+            LlamaAudioContent(bytes: Uint8List.fromList(const <int>[1, 2, 3])),
+            const LlamaTextContent('Transcribe this.'),
+          ],
+        ),
+      ]);
+
+      expect(clients, hasLength(2));
+      expect(clients.last.lastVisionBackend, isNull);
+      expect(clients.last.lastAudioBackend, 'cpu');
+      expect(clients.last.lastMaxNumImages, isNull);
+    });
+  });
+
   test(
     'routes encoded image bytes and audio file paths through message JSON',
     () async {
