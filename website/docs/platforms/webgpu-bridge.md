@@ -397,12 +397,10 @@ first model load, for diagnosis or controlled deployments:
 
 ## Pinned bridge assets
 
-This llamadart version pins bridge assets `v0.1.82`, which include the
+This llamadart version pins bridge assets `v0.1.83`, which include the
 API-version-1 media embedding contract.
 
-- The pinned `v0.1.82` bridge assets embed llama.cpp `v0.8.0`, behind the native runtime.
-  Native pins `v0.9.0`; Web and native share no ABI, so the skew is supported,
-  and llama.cpp `v0.9.0` changes reach Web with a later bridge repin.
+- The pinned `v0.1.83` bridge assets embed llama.cpp `v0.9.0`, matching the native runtime.
 
 Provenance and the pinned manifest digest are in
 [`doc/webgpu_bridge.md`](https://github.com/leehack/llamadart/blob/main/doc/webgpu_bridge.md).
@@ -410,7 +408,7 @@ Provenance and the pinned manifest digest are in
 In a llamadart checkout, vendor the pinned assets into the chat app with:
 
 ```bash
-WEBGPU_BRIDGE_ASSETS_TAG=v0.1.82 ./scripts/fetch_webgpu_bridge_assets.sh
+WEBGPU_BRIDGE_ASSETS_TAG=v0.1.83 ./scripts/fetch_webgpu_bridge_assets.sh
 ```
 
 The chat app bootstrap takes its CDN source from these globals:
@@ -418,7 +416,7 @@ The chat app bootstrap takes its CDN source from these globals:
 ```html
 <script>
   window.__llamadartBridgeAssetsRepo = 'leehack/llama-web-bridge-assets';
-  window.__llamadartBridgeAssetsTag = 'v0.1.82';
+  window.__llamadartBridgeAssetsTag = 'v0.1.83';
 </script>
 ```
 
