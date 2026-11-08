@@ -33,8 +33,8 @@ export 'litert_lm_native_settlement.dart';
 part 'litert_lm_embedding_native.dart';
 part 'litert_lm_runtime_facade.dart';
 
-const _litertLmReleaseTag = 'v0.19.0';
-const _litertLmVersion = '0.19.0';
+const _litertLmReleaseTag = 'v0.19.1';
+const _litertLmVersion = '0.19.1';
 const _litertLmLibDirEnv = 'LLAMADART_LITERT_LM_LIB_DIR';
 const _liteRtLmIosNativeAsset = 'package:llamadart/litert_lm_LiteRtLm';
 const _processLibraryCandidate = '<process>';
@@ -1345,7 +1345,7 @@ class _LegacyLiteRtLmRuntimeClient extends LiteRtLmRuntimeClient {
       throw LlamaUnsupportedException(
         'Native JSON Schema chat requires the complete LiteRT-LM constraint-provider and thinking API. '
         'Use the default LiteRtLmRuntimeClient or LiteRtLmService with the packaged '
-        'litert-lm-native v0.19.0 runtime; legacy overrides must provide this complete API '
+        'litert-lm-native v0.19.1 runtime; legacy overrides must provide this complete API '
         'and meet the JSON Schema qualification limits.',
       );
     }

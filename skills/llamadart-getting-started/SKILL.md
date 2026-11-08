@@ -24,11 +24,11 @@ interface does not establish backend/model support; read `await engine.capabilit
 
 ## Guidelines
 
-- Use the pinned native LiteRT-LM v0.19.0 runtime. Direct calls, service
+- Use the pinned native LiteRT-LM v0.19.1 runtime. Direct calls, service
   probes and speech share ABI-aware discovery. Public selection admits legacy
   runtimes and C API 1.0.x; unknown/future versions are refused before engine
-  calls. The source pin adopts published native v0.19.0 (owner `f173fe9b`,
-  upstream `83ce6067`); final core/Apple consumers and package release remain
+  calls. The source pin adopts published native v0.19.1 (owner `1fa4d437`,
+  upstream `7a03724c`); final core/Apple consumers and package release remain
   [#1677](https://github.com/leehack/llamadart/issues/1677) gates. The selected
   loader requires macOS 14+ even for legacy libraries and custom paths. Web
   uses `@litert-lm/core@0.19.0`.
