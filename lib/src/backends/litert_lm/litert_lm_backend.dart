@@ -92,10 +92,12 @@ class LiteRtLmBackend
   /// [workerEntryPoint] substitutes the worker only for lifecycle tests.
   /// [workerStartupTimeout] bounds the worker handshake.
   /// [freeTimeout] bounds how long context and model frees and [dispose] wait
-  /// for earlier native work to settle so that native teardown can start; on
-  /// expiry the worker is detached and native settlement is reported as
-  /// unverified. Started native teardown is awaited to completion: releasing a
-  /// freshly written CPU weight cache can block on disk writeback for seconds.
+  /// for the worker to start native teardown after earlier work; on expiry the
+  /// worker is detached and native settlement is reported as unverified.
+  /// Started native teardown is awaited without a bound, as the llama.cpp
+  /// backend's frees are: releasing a freshly written CPU weight cache can block
+  /// on disk writeback for seconds, and a stalled native engine delete blocks
+  /// the free or [dispose].
   /// [cancelAcknowledgementTimeout] bounds the wait for the worker to
   /// acknowledge a cancellation, which is best-effort.
   LiteRtLmBackend({

@@ -1299,6 +1299,25 @@ void main() {
     );
   }
 
+  test('dispose reports unsettled cleanup when the worker never starts '
+      'native teardown', () async {
+    // The worker never dequeues anything, as when earlier native work hangs.
+    final port = ReceivePort();
+    final backend = LiteRtLmBackend(
+      initialSendPort: port.sendPort,
+      freeTimeout: const Duration(milliseconds: 50),
+      cancelAcknowledgementTimeout: const Duration(milliseconds: 50),
+    );
+    try {
+      await expectLater(
+        backend.dispose().timeout(const Duration(seconds: 2)),
+        throwsA(isA<LlamaStateException>()),
+      );
+    } finally {
+      port.close();
+    }
+  });
+
   test('concurrent disposal waits for the same cleanup result', () async {
     final port = ReceivePort();
     final received = Completer<LiteRtLmDisposeRequest>();

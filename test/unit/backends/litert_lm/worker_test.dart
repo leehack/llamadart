@@ -82,8 +82,13 @@ void main() {
       final done = Completer<void>();
       teardownPort.listen((response) {
         responses.add(response);
-        if (response is! LiteRtLmNativeTeardownStarted) done.complete();
+        if (response is LiteRtLmDoneResponse ||
+            response is LiteRtLmErrorResponse) {
+          done.complete();
+        }
       });
+      // Port order shows whether the notice preceded the native call.
+      service.teardownObserver = teardownPort.sendPort;
       try {
         final active = _sendRequest(
           worker.sendPort,
@@ -104,6 +109,7 @@ void main() {
         await done.future.timeout(const Duration(seconds: 2));
         expect(responses, [
           isA<LiteRtLmNativeTeardownStarted>(),
+          'native $operation',
           isA<LiteRtLmDoneResponse>(),
         ]);
         expect(service.teardowns, [operation]);
@@ -1147,15 +1153,21 @@ class _BlockingLiteRtLmService extends LiteRtLmService {
 
 class _TeardownLiteRtLmService extends _BlockingLiteRtLmService {
   final List<String> teardowns = [];
+  SendPort? teardownObserver;
+
+  void _record(String operation) {
+    teardowns.add(operation);
+    teardownObserver?.send('native $operation');
+  }
 
   @override
-  void freeContext(int contextHandle) => teardowns.add('contextFree');
+  void freeContext(int contextHandle) => _record('contextFree');
 
   @override
-  void freeModel(int modelHandle) => teardowns.add('modelFree');
+  void freeModel(int modelHandle) => _record('modelFree');
 
   @override
-  void dispose() => teardowns.add('dispose');
+  void dispose() => _record('dispose');
 }
 
 class _DetokenizeLiteRtLmService extends LiteRtLmService {
