@@ -208,7 +208,8 @@ or shipping runtimes the app does not use.
   prompt calls were faster on the Mali GPU measured. With a llama.cpp runtime
   older than ggml `0.28.0` (llamadart-native `v0.8.0`), native `qwen35`
   (Qwen3.5) on such GPUs accepts only unset or `1..8`, and media,
-  speculation and embeddings throw `LlamaUnsupportedException` (#948).
+  speculation and embeddings throw `LlamaUnsupportedException` (#948). On
+  any runtime, a Qwen3.5 image encoder stays on the CPU on those GPUs.
   LiteRT-LM attempts GPU on Android under `ComputeDevice.auto`. On Android
   12+ with target API 31+, add `<uses-native-library
   android:name="libOpenCL.so" android:required="false"/>` inside the app's

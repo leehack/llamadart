@@ -13,7 +13,8 @@ With a llama.cpp runtime older than ggml `0.28.0` (llamadart-native
 `v0.8.0`), native Qwen3.5 loaded with Vulkan GPU layers on Android is limited
 to ordinary text on some GPUs; check loaded-model capabilities and see
 [Android Vulkan](../platforms/known-platform-issues#android). The bundled
-runtime has no such limit.
+runtime has no such limit, but keeps the Qwen3.5 image encoder on the CPU on
+those GPUs.
 
 ## GGUF projector flow
 

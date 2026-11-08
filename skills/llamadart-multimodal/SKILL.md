@@ -15,8 +15,9 @@ With a llama.cpp runtime older than ggml `0.28.0` (llamadart-native
 `v0.8.0`), native Android Vulkan Qwen3.5 (`general.architecture=qwen35`) on a
 GPU with a subgroup size below 32 other than 8 permits only ordinary text with
 `microBatchSize` unset or `1..8`; media, speculation and embeddings are typed
-unsupported (#948). The bundled runtime lifts this. Probe loaded-model
-modalities and speculative strategies before offering them.
+unsupported (#948). The bundled runtime lifts this, but the Qwen3.5 image
+encoder stays on the CPU on those GPUs. Probe loaded-model modalities and
+speculative strategies before offering them.
 
 ## Guidelines
 

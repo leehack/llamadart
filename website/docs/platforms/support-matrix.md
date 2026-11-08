@@ -76,7 +76,8 @@ discard an already-dispatched answer after the backend finishes; they do not
 add native interruption or support on LiteRT-LM.
 
 Native Android Vulkan Qwen3.5 supports the same features as other models with
-the bundled runtime. A llama.cpp runtime older than ggml `0.28.0`
+the bundled runtime; on GPUs with a subgroup size below 32 other than 8 its
+image encoder runs on the CPU. A llama.cpp runtime older than ggml `0.28.0`
 (llamadart-native `v0.8.0`) restricts it to ordinary text on GPUs with a
 subgroup size below 32 other than 8. See
 [the exact predicate and evidence](./known-platform-issues#android).

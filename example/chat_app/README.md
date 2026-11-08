@@ -718,8 +718,8 @@ await prefs.setInt('preferred_backend', backendIndex);
 - Runtime details include native llama.cpp timing breakdowns: `p_eval`, `eval`,
   `sample`, and `reuse`.
 - Android text-only chat is stable even when `mmproj` is loaded.
-- Android keeps the Qwen3.5 `0.8B` image encoder on the CPU even when the
-  model runs on `Vulkan`.
+- Android keeps the Qwen3.5 image encoder on the CPU even when the model runs
+  on `Vulkan`.
 
 ### Hugging Face static deployment (CI)
 

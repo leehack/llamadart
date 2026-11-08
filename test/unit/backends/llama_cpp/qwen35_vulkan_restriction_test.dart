@@ -605,6 +605,37 @@ void main() {
     );
   }
 
+  group('projector placement', () {
+    for (final version in [_unfixedGgml, '0.29.0']) {
+      test('keeps a Qwen3.5 projector on the CPU on ggml $version', () {
+        final h = load(ggmlVersion: version);
+        expect(_projectorUsesGpu(h.service, h.model), isFalse);
+      });
+    }
+    test('keeps the projector on the CPU without an architecture', () {
+      for (final unreadable in [false, true]) {
+        final h = load(
+          ggmlVersion: '0.29.0',
+          architecture: null,
+          unreadableArchitecture: unreadable,
+        );
+        expect(_projectorUsesGpu(h.service, h.model), isFalse);
+      }
+    });
+    test('leaves other architectures on the GPU', () {
+      final h = load(ggmlVersion: '0.29.0', architecture: 'llama');
+      expect(_projectorUsesGpu(h.service, h.model), isTrue);
+    });
+    test('leaves Qwen3.5 on the GPU with safe subgroup facts', () {
+      final h = load(ggmlVersion: '0.29.0', subgroup: 32);
+      expect(_projectorUsesGpu(h.service, h.model), isTrue);
+    });
+    test('leaves Qwen3.5 on the GPU outside Android', () {
+      final h = load(ggmlVersion: '0.29.0', android: false);
+      expect(_projectorUsesGpu(h.service, h.model), isTrue);
+    });
+  });
+
   group('runtime with the small matmul tile fix', () {
     for (final version in ['0.28.0', '0.29.0']) {
       test('admits Qwen3.5 batches above 8 on ggml $version', () async {
@@ -746,6 +777,17 @@ void main() {
       expect(reads, 1);
     });
   });
+}
+
+bool _projectorUsesGpu(LlamaCppService service, int model) {
+  final owner = reflectClass(LlamaCppService).owner as LibraryMirror;
+  final params =
+      reflect(service).invoke(
+            MirrorSystem.getSymbol('_mtmdContextParamsFor', owner),
+            [model],
+          ).reflectee
+          as mtmd_context_params;
+  return params.use_gpu;
 }
 
 /// The last ggml version some llama.cpp commits without the small matmul tile

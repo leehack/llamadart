@@ -124,9 +124,11 @@ feature. For which runtime supports which feature, see the
   micro-batch 32 and 512, grammar and tool calls, image prompts, speculative
   verify batches above 32 tokens, embeddings, and cancel, reuse and reload.
   Other GPUs and other Qwen3.5 sizes or quantizations were not measured, and
-  Vulkan was slower than the CPU on all three phones. Android runs the image
-  encoder of Qwen3.5-0.8B on the CPU even when the model is on Vulkan; that
-  encoder on Vulkan is not validated.
+  Vulkan was slower than the CPU on all three phones. On those GPUs (subgroup
+  size below 32 other than 8, or unknown facts), a Qwen3.5 projector, or one
+  whose model architecture is unreadable, runs its image encoder on the CPU
+  while the model stays on Vulkan: the encoder on Vulkan is not validated.
+  Qwen3.5-0.8B files keep their projector on the CPU on every Android GPU.
 
   With `microBatchSize` unset, Android Vulkan evaluates text prompts eight
   tokens per call when the GPU reports a subgroup size below 32 other than 8,

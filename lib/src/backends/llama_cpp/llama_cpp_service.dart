@@ -811,22 +811,32 @@ class LlamaCppService {
       !_ggmlHasSmallMatmulTileFix &&
       _isQwen35OnSmallTileAndroidVulkan(modelHandle);
 
-  /// Whether [modelHandle] is Qwen3.5 placed on an Android Vulkan device with
-  /// unsafe or unproven small-matmul subgroup facts, judged by the actual
-  /// placement rather than the context's preferences.
-  bool _isQwen35OnSmallTileAndroidVulkan(int modelHandle) {
+  /// The native architecture of [modelHandle] when it is placed on an
+  /// Android Vulkan device with unsafe or unproven small-matmul subgroup
+  /// facts, judged by the actual placement rather than the context's
+  /// preferences; `null` when it is not, and empty when it is unreadable.
+  String? _smallTileAndroidVulkanArchitecture(int modelHandle) {
     if (!_modelUsesAndroidVulkan(modelHandle) ||
         !_androidVulkanHasSmallMatmulTileDefect()) {
-      return false;
+      return null;
     }
-    String? architecture;
     try {
-      architecture = _modelArchitecture(modelHandle);
+      return _modelArchitecture(modelHandle)?.trim() ?? '';
     } on Object {
-      // Missing runtime metadata cannot establish admission for this GPU path.
-      architecture = null;
+      return '';
     }
-    if (architecture == null || architecture.trim().isEmpty) {
+  }
+
+  static bool _isQwen35Architecture(String architecture) =>
+      architecture.toLowerCase().replaceAll(RegExp('[^a-z0-9]'), '') ==
+      'qwen35';
+
+  /// Whether [modelHandle] is Qwen3.5 on small-tile Android Vulkan.
+  bool _isQwen35OnSmallTileAndroidVulkan(int modelHandle) {
+    final architecture = _smallTileAndroidVulkanArchitecture(modelHandle);
+    if (architecture == null) return false;
+    if (architecture.isEmpty) {
+      // Missing runtime metadata cannot establish admission for this GPU path.
       if (_ggmlHasSmallMatmulTileFix) return false;
       throw LlamaUnsupportedException(
         'Cannot establish required model safety for Android/Vulkan with a '
@@ -837,8 +847,15 @@ class LlamaCppService {
         'runtime or ComputeDevice.cpu.',
       );
     }
-    return architecture.toLowerCase().replaceAll(RegExp('[^a-z0-9]'), '') ==
-        'qwen35';
+    return _isQwen35Architecture(architecture);
+  }
+
+  // The Qwen3.5 image encoder on these GPUs is unvalidated on every runtime,
+  // so it stays on the CPU; an unreadable architecture counts as Qwen3.5.
+  bool _keepsProjectorOnCpu(int modelHandle) {
+    final architecture = _smallTileAndroidVulkanArchitecture(modelHandle);
+    return architecture != null &&
+        (architecture.isEmpty || _isQwen35Architecture(architecture));
   }
 
   String? _modelArchitecture(int modelHandle) =>
@@ -8276,6 +8293,13 @@ class LlamaCppService {
   mtmd_context_params _mtmdContextParamsFor(int modelHandle) {
     final ctxParams = _mtmdContextParamsDefault();
     ctxParams.use_gpu = _modelToMtmdUseGpu[modelHandle] ?? true;
+    if (ctxParams.use_gpu && _keepsProjectorOnCpu(modelHandle)) {
+      LlamaLogger.instance.debug(
+        'llama_cpp_service: keeping the Qwen3.5 projector on the CPU on '
+        'Android Vulkan',
+      );
+      ctxParams.use_gpu = false;
+    }
     // Without a device mtmd takes the first GPU of any backend, which a
     // gpuDevices list may exclude.
     if (ctxParams.use_gpu && _modelPlacements[modelHandle] != null) {
