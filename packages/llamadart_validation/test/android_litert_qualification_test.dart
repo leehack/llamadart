@@ -30,7 +30,7 @@ Map<String, dynamic> binding() {
       'template_sha256',
     ])
       key: repeated('d', 64),
-    'runtime_tag': 'v0.19.0',
+    'runtime_tag': 'v0.19.1',
     'abi': 'android-arm64',
     'test_class': 'com.example.llamadart_chat_example.S24LiteRtPublicTest',
     'max_minutes': 20,
@@ -107,6 +107,7 @@ void main() {
         (value) =>
             value['owner_commit'] = '7ea10d0cce10dfddbae273bb69e253d9ea97e1d2',
         (value) => value['source_dirty'] = true,
+        (value) => value['runtime_tag'] = 'v0.19.0',
         (value) => value.remove('shared_budget_receipt_sha256'),
         (value) => value['shared_cap_usd'] = '25.00',
         (value) => value['execution_count'] = 2,

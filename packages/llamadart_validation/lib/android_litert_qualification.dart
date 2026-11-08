@@ -111,7 +111,7 @@ void requireS24LiteRtBinding(Map<String, dynamic> value) {
   _require(
     value['schema'] == 1 &&
         value['source_dirty'] == false &&
-        value['runtime_tag'] == 'v0.19.0' &&
+        value['runtime_tag'] == 'v0.19.1' &&
         value['abi'] == 'android-arm64' &&
         value['test_class'] ==
             'com.example.llamadart_chat_example.S24LiteRtPublicTest' &&
