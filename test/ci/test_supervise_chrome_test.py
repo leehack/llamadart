@@ -110,16 +110,6 @@ class SupervisorTest(unittest.TestCase):
         self.assertIn('reporter_summary_observed', [event['event'] for event in self.events()])
         self.assertEqual(child.stdout, b'1 test passed, 1 failed.\n')
 
-    def test_stalled_job_log_cannot_block_deadline_or_cleanup(self):
-        program = ('import sys,time; sys.stdout.buffer.write(b"x" * (4 * 1024 * 1024)); '
-                   'sys.stdout.flush(); time.sleep(5)')
-        supervisor = subprocess.Popen(self.command(program, timeout=0.5),
-                                      stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
-        self.addCleanup(supervisor.stdout.close)
-        self.assertEqual(supervisor.wait(timeout=8), 124)
-        self.assertEqual(json.loads((self.output / 'result.json').read_text())['failure_reason'],
-                         'command_timeout')
-
     def test_reporter_success_does_not_override_a_failing_exit(self):
         child, result = self.run_fixture("print('All tests passed!'); raise SystemExit(7)")
         self.assertEqual(child.returncode, 7, child.stderr)
@@ -147,7 +137,7 @@ class SupervisorTest(unittest.TestCase):
                                  stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         try:
             # wait(), unlike communicate(), leaves both downstream pipes unread.
-            # A forwarding write blocks here once it exceeds the pipe capacity.
+            # Echo must drop output past the pipe capacity instead of blocking.
             child.wait(timeout=3)
             self.assertEqual(child.returncode, 124)
             result = json.loads((self.output / 'result.json').read_text())
@@ -156,8 +146,11 @@ class SupervisorTest(unittest.TestCase):
             self.assertFalse(result['passed'])
             self.assertEqual((self.output / f'{stream}.log').read_bytes(), payload)
             self.assert_clean(result)
-            forwarded = child.communicate(timeout=2)
-            self.assertEqual(forwarded, (b'', b''))
+            forwarded = dict(zip(('stdout', 'stderr'), child.communicate(timeout=2)))
+            other = 'stderr' if stream == 'stdout' else 'stdout'
+            self.assertEqual(forwarded[other], b'')
+            self.assertTrue(payload.startswith(forwarded[stream]))
+            self.assertLess(len(forwarded[stream]), len(payload))
         finally:
             if child.poll() is None:
                 child.kill()
