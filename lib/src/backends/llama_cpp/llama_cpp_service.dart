@@ -9875,54 +9875,211 @@ class LlamaCppService {
       );
     }
 
+    final mtmd = _mtmdContexts[mmContextHandle]!;
+    final acceptedTypes = _ttsAcceptedModelTypes(api);
     final info = malloc<llama_dart_tts_info>();
     try {
       info.ref.struct_size = sizeOf<llama_dart_tts_info>();
+      final getInfoExt = api.hasModelTypeOptIn ? api.getInfoExt : null;
       final status = llama_dart_tts_status.fromValue(
-        api.getInfo(_mtmdContexts[mmContextHandle]!, info),
+        getInfoExt != null
+            ? getInfoExt(mtmd, acceptedTypes, info)
+            : api.getInfo(mtmd, info),
       );
       if (status == llama_dart_tts_status.LLAMA_DART_TTS_STATUS_UNSUPPORTED) {
-        return const BackendTextToSpeechCapabilities(
+        return BackendTextToSpeechCapabilities(
           isSupported: false,
-          unsupportedReason:
-              'The loaded projector does not expose supported audio generation.',
+          unsupportedReason: _ttsUnsupportedProjectorMessage(
+            api,
+            acceptedTypes,
+          ),
         );
       }
       _throwForTtsStatus(
         status,
         operation: 'Text-to-speech capability probe',
-        barrierCall: 'llama_dart_tts_get_info',
+        barrierCall: getInfoExt != null
+            ? 'llama_dart_tts_get_info_ext'
+            : 'llama_dart_tts_get_info',
       );
-      if (info.ref.model_type !=
-          llama_dart_tts_model_type.LLAMA_DART_TTS_MODEL_TYPE_QWEN3.value) {
+      final model = _backendTtsModels[info.ref.model_type];
+      if (model == null || acceptedTypes & (1 << info.ref.model_type) == 0) {
+        return BackendTextToSpeechCapabilities(
+          isSupported: false,
+          unsupportedReason: _ttsUnsupportedProjectorMessage(
+            api,
+            acceptedTypes,
+          ),
+        );
+      }
+      if (model == BackendTextToSpeechModel.lfm3Audio &&
+          !_modelHasTtsTemplate(contextHandle)) {
         return const BackendTextToSpeechCapabilities(
           isSupported: false,
           unsupportedReason:
-              'Only Qwen3-TTS projectors are supported by this runtime.',
+              'The loaded model has no `tts` chat template, which LFM3-Audio '
+              'speech output needs. Load the LFM3-Audio or LFM3-Omni model '
+              'that matches this projector.',
         );
       }
       final flags = info.ref.capabilities;
+      bool has(llama_dart_tts_capability capability) =>
+          flags & capability.value != 0;
+      final supportsVoice = has(
+        llama_dart_tts_capability.LLAMA_DART_TTS_CAPABILITY_VOICE,
+      );
       return BackendTextToSpeechCapabilities(
         isSupported: true,
-        model: BackendTextToSpeechModel.qwen3Tts,
+        model: model,
         sampleRateHz: info.ref.sample_rate,
         channelCount: info.ref.channels,
-        supportsLanguage:
-            flags &
-                llama_dart_tts_capability
-                    .LLAMA_DART_TTS_CAPABILITY_LANGUAGE
-                    .value !=
-            0,
-        supportsSpeakerReference:
-            flags &
-                llama_dart_tts_capability
-                    .LLAMA_DART_TTS_CAPABILITY_SPEAKER_REFERENCE
-                    .value !=
-            0,
+        supportsLanguage: has(
+          llama_dart_tts_capability.LLAMA_DART_TTS_CAPABILITY_LANGUAGE,
+        ),
+        supportsSpeakerReference: has(
+          llama_dart_tts_capability.LLAMA_DART_TTS_CAPABILITY_SPEAKER_REFERENCE,
+        ),
         supportsCancellation: true,
+        supportsVoice: supportsVoice && api.hasModelTypeOptIn,
+        voices: supportsVoice && api.hasModelTypeOptIn
+            ? _ttsVoices(api, mtmd, acceptedTypes)
+            : const <String>[],
       );
     } finally {
       malloc.free(info);
+    }
+  }
+
+  /// Why this runtime cannot drive [model], or null when it can; reads the
+  /// runtime's exports only.
+  String? textToSpeechModelUnsupportedReason(BackendTextToSpeechModel model) {
+    final _TtsApi api;
+    try {
+      api = _resolveTtsApi();
+    } on LlamaUnsupportedException catch (error) {
+      return error.message;
+    }
+    if (model == BackendTextToSpeechModel.qwen3Tts) return null;
+    final name = _ttsModelName(model);
+    if (!api.hasModelTypeOptIn) {
+      return '$name speech output needs the model-type opt-in '
+          '(`llama_dart_tts_init_ext`) of llamadart-native v0.8.0 or later; '
+          'this llama.cpp runtime predates it.';
+    }
+    final type = _backendTtsModels.entries
+        .firstWhere((entry) => entry.value == model)
+        .key;
+    if (_ttsAcceptedModelTypes(api) & (1 << type) != 0) return null;
+    return 'This llama.cpp runtime was built without $name speech output '
+        '(`llama_dart_tts_supported_model_types`); it needs a '
+        'llamadart-native v0.8.0 or later bundle that includes it.';
+  }
+
+  static const Map<int, BackendTextToSpeechModel> _backendTtsModels = {
+    1: BackendTextToSpeechModel.qwen3Tts,
+    2: BackendTextToSpeechModel.lfm3Audio,
+    3: BackendTextToSpeechModel.soprano,
+  };
+
+  /// The `_ext` mask of model types this core drives and the runtime can
+  /// create; Qwen3-TTS alone on a runtime without the opt-in.
+  int _ttsAcceptedModelTypes(_TtsApi api) {
+    const qwen3 = 1 << 1;
+    final supportedModelTypes = api.supportedModelTypes;
+    if (!api.hasModelTypeOptIn || supportedModelTypes == null) return qwen3;
+    var known = 0;
+    for (final type in _backendTtsModels.keys) {
+      known |= 1 << type;
+    }
+    return (supportedModelTypes() & known) | qwen3;
+  }
+
+  String _ttsUnsupportedProjectorMessage(_TtsApi api, int acceptedTypes) {
+    const base =
+        'The loaded projector does not expose supported audio generation.';
+    if (!api.hasModelTypeOptIn) {
+      return '$base This runtime drives Qwen3-TTS only: LFM3-Audio and '
+          'Soprano speech output need the model-type opt-in '
+          '(`llama_dart_tts_init_ext`) of llamadart-native v0.8.0 or later.';
+    }
+    final missing = [
+      for (final MapEntry(key: type, value: model) in _backendTtsModels.entries)
+        if (acceptedTypes & (1 << type) == 0) _ttsModelName(model),
+    ];
+    if (missing.isEmpty) return base;
+    return '$base This runtime was built without ${missing.join(' and ')} '
+        'speech output (`llama_dart_tts_supported_model_types`); use a '
+        'llamadart-native v0.8.0 or later bundle that includes it.';
+  }
+
+  static String _ttsModelName(BackendTextToSpeechModel model) =>
+      switch (model) {
+        BackendTextToSpeechModel.qwen3Tts => 'Qwen3-TTS',
+        BackendTextToSpeechModel.lfm3Audio => 'LFM3-Audio',
+        BackendTextToSpeechModel.soprano => 'Soprano',
+      };
+
+  bool _modelHasTtsTemplate(int contextHandle) {
+    final model = _models[_contextToModel[contextHandle]];
+    if (model == null) return false;
+    final name = 'tts'.toNativeUtf8();
+    try {
+      return llama_model_chat_template(model.pointer, name.cast()) != nullptr;
+    } finally {
+      malloc.free(name);
+    }
+  }
+
+  /// The projector's predefined voices in upstream order, or none when the
+  /// runtime cannot list them (llamadart-native before v0.9.0).
+  List<String> _ttsVoices(
+    _TtsApi api,
+    Pointer<mtmd_context> mtmd,
+    int acceptedTypes,
+  ) {
+    final getVoiceCount = api.getVoiceCount;
+    final getVoiceName = api.getVoiceName;
+    if (getVoiceCount == null || getVoiceName == null) {
+      return const <String>[];
+    }
+    final count = malloc<Int32>();
+    final length = malloc<Size>();
+    try {
+      _throwForTtsStatus(
+        llama_dart_tts_status.fromValue(
+          getVoiceCount(mtmd, acceptedTypes, count),
+        ),
+        operation: 'Text-to-speech voice listing',
+        barrierCall: 'llama_dart_tts_get_voice_count',
+      );
+      final voices = <String>[];
+      for (var index = 0; index < count.value; index++) {
+        _throwForTtsStatus(
+          llama_dart_tts_status.fromValue(
+            getVoiceName(mtmd, acceptedTypes, index, nullptr, 0, length),
+          ),
+          operation: 'Text-to-speech voice listing',
+          barrierCall: 'llama_dart_tts_get_voice_name',
+        );
+        final capacity = length.value + 1;
+        final name = malloc<Char>(capacity);
+        try {
+          _throwForTtsStatus(
+            llama_dart_tts_status.fromValue(
+              getVoiceName(mtmd, acceptedTypes, index, name, capacity, length),
+            ),
+            operation: 'Text-to-speech voice listing',
+            barrierCall: 'llama_dart_tts_get_voice_name',
+          );
+          voices.add(name.cast<Utf8>().toDartString(length: length.value));
+        } finally {
+          malloc.free(name);
+        }
+      }
+      return List<String>.unmodifiable(voices);
+    } finally {
+      malloc.free(count);
+      malloc.free(length);
     }
   }
 
@@ -10005,6 +10162,20 @@ class LlamaCppService {
     if (trimmedLanguage != null && trimmedLanguage.isNotEmpty) {
       language = trimmedLanguage.toNativeUtf8();
     }
+    final voiceName = request.voice;
+    final startWithVoice = api.hasModelTypeOptIn ? api.startWithVoice : null;
+    if (voiceName != null && startWithVoice == null) {
+      malloc.free(text);
+      if (language != nullptr) malloc.free(language);
+      throw LlamaUnsupportedException(
+        'Selecting a text-to-speech voice needs the model-type opt-in '
+        '(`llama_dart_tts_start_with_voice`) of llamadart-native v0.8.0 or '
+        'later; this runtime lacks it.',
+      );
+    }
+    final Pointer<Utf8> voice = voiceName == null
+        ? nullptr
+        : voiceName.toNativeUtf8();
 
     Pointer<UnsignedChar> speakerAudio = nullptr;
     Uint8List? speakerBytes = request.speakerAudioBytes;
@@ -10015,6 +10186,7 @@ class LlamaCppService {
       } catch (error) {
         malloc.free(text);
         if (language != nullptr) malloc.free(language);
+        if (voice != nullptr) malloc.free(voice);
         throw LlamaAudioFormatException(
           'Unable to read speaker reference audio.',
           error,
@@ -10049,7 +10221,15 @@ class LlamaCppService {
       }
       _calls.synchronize(context.pointer);
       _resetRequestPerformance(contextHandle, context);
-      task = api.init(context.pointer, mtmd, initStatus);
+      final initExt = api.hasModelTypeOptIn ? api.initExt : null;
+      task = initExt != null
+          ? initExt(
+              context.pointer,
+              mtmd,
+              _ttsAcceptedModelTypes(api),
+              initStatus,
+            )
+          : api.init(context.pointer, mtmd, initStatus);
       IsolateShutdownReleases.current.hold(
         ShutdownStage.session,
         api.freeAddress,
@@ -10059,7 +10239,9 @@ class LlamaCppService {
         _throwForTtsStatus(
           llama_dart_tts_status.fromValue(initStatus.value),
           operation: 'Text-to-speech initialization',
-          barrierCall: 'llama_dart_tts_init',
+          barrierCall: initExt != null
+              ? 'llama_dart_tts_init_ext'
+              : 'llama_dart_tts_init',
           context: context.pointer,
         );
         throw LlamaTextToSpeechException(
@@ -10088,11 +10270,17 @@ class LlamaCppService {
       requestPointer.ref.seed = request.seed;
 
       _throwForTtsStatus(
-        llama_dart_tts_status.fromValue(api.start(task, requestPointer)),
+        llama_dart_tts_status.fromValue(
+          voice == nullptr
+              ? api.start(task, requestPointer)
+              : startWithVoice!(task, requestPointer, voice.cast()),
+        ),
         operation: 'Text-to-speech startup',
         api: api,
         task: task,
-        barrierCall: 'llama_dart_tts_start',
+        barrierCall: voice == nullptr
+            ? 'llama_dart_tts_start'
+            : 'llama_dart_tts_start_with_voice',
         context: context.pointer,
       );
       api.setCancelFlag?.call(task, cancelFlag);
@@ -10209,6 +10397,7 @@ class LlamaCppService {
       malloc.free(progress);
       malloc.free(text);
       if (language != nullptr) malloc.free(language);
+      if (voice != nullptr) malloc.free(voice);
       if (speakerAudio != nullptr) malloc.free(speakerAudio);
     }
   }

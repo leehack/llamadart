@@ -47,6 +47,7 @@ class WebAutoBackend
         BackendLazyGrammarSupport,
         BackendDeferredEngineCreation,
         BackendTextToSpeech,
+        BackendTextToSpeechModelSupport,
         BackendDecision,
         BackendGenerationCapabilitiesSupport,
         BackendGenerationUsageReporting,
@@ -345,6 +346,11 @@ class WebAutoBackend
     _embeddingCancelEpoch++;
     _delegate?.cancelGeneration();
   }
+
+  @override
+  Future<String?> textToSpeechModelUnsupportedReason(
+    BackendTextToSpeechModel model,
+  ) async => webTextToSpeechModelUnsupportedReason(model);
 
   @override
   Future<BackendTextToSpeechCapabilities> textToSpeechCapabilities(

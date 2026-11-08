@@ -226,6 +226,8 @@ void main() {
             'test stops before speech model execution',
           );
         };
+    // Keep the legacy init this fake replaces on runtimes with the opt-in.
+    fields[#initExt] = null;
     mirror.setField(
       symbol('_ttsApi'),
       original.type.newInstance(Symbol.empty, [], fields).reflectee,

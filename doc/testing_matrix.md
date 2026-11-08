@@ -171,7 +171,7 @@ Pick targeted rows based on the touched surface:
 | Android Vulkan prompt cap, Vulkan device facts or the Vulkan 1.2 load refusal on a device | `chat-app-micro-batch-sweep` |
 | Isolate shutdown releases, exit teardown, a Flutter pin bump, or app-exit guidance | `chat-app-macos-quit` |
 | Speech-to-text API or adapter | `speech-to-text-smoke`, `web-speech-to-text-smoke`, plus `litert-lm-asr-smoke` and `litert-lm-asr-preservation` for the dedicated LiteRT-LM streaming engine |
-| Text-to-speech API or adapter | `text-to-speech-smoke`, plus `web-text-to-speech-smoke` for browser synthesis/playback/export |
+| Text-to-speech API or adapter | `text-to-speech-smoke`, `text-to-speech-models-smoke` for LFM3-Audio and Soprano, plus `web-text-to-speech-smoke` for browser synthesis/playback/export |
 | Decision engine, decision head, or safetensors reader | `decision-model-smoke`, plus `decision-model-web-smoke` for the Web decision head or bridge pin |
 | Image generation API or `stable_diffusion` runtime | `image-generation-smoke`, `native-hook-bundles` |
 | Complete image checkpoint formats or explicit role transport | `image-container-formats` (local hashed inputs and independent CPU references) |
@@ -446,6 +446,18 @@ dart run tool/testing/run_local_e2e.dart --scenario text-to-speech-smoke \
 dart run tool/testing/run_local_e2e.dart \
   --scenario chat-app-web-text-to-speech-smoke \
   [--audio-path /path/to/speaker-reference.wav]
+
+# Each model whose two variables are set runs; the Qwen3-ASR pair checks that
+# the speech transcribes back to its text. Soprano has no published GGUF:
+# convert it as the text-to-speech guide describes. WAVs go to
+# build/text-to-speech-models.
+LLAMADART_TTS_LFM3_MODEL_PATH=/path/to/LFM3-Audio-2B-Q4_K_M.gguf \
+LLAMADART_TTS_LFM3_MMPROJ_PATH=/path/to/mmproj-LFM3-Audio-2B-Q8_0.gguf \
+LLAMADART_TTS_SOPRANO_MODEL_PATH=/path/to/soprano.gguf \
+LLAMADART_TTS_SOPRANO_MMPROJ_PATH=/path/to/mmproj-soprano.gguf \
+LLAMADART_STT_MODEL_PATH=/path/to/Qwen3-ASR-0.6B-Q8_0.gguf \
+LLAMADART_STT_MMPROJ_PATH=/path/to/mmproj-Qwen3-ASR-0.6B-Q8_0.gguf \
+dart run tool/testing/run_local_e2e.dart --scenario text-to-speech-models-smoke
 
 # Runs in example/basic_app, which opts into the stable_diffusion runtime, and
 # writes PNGs to build/image-generation-smoke. Export LLAMADART_SD_TURBO_MODEL
@@ -842,6 +854,10 @@ Every run must report its requested backend and `EXIT_PROBE_HOST_SHUTDOWN_COMPLE
 Raw C exit with live isolates remains a separately invocable diagnostic and
 is excluded from Linux qualification. These subprocess checks do not prove
 Flutter engine shutdown ordering.
+
+On macOS, `EXIT_TEARDOWN_TTS_MODEL`, `EXIT_TEARDOWN_TTS_MMPROJ` and
+`EXIT_TEARDOWN_TTS_ADAPTER` (`qwen3-tts`, `lfm3-audio` or `soprano`) add
+`quit-speaking`, which calls C `exit` once synthesis has generated a frame.
 
 On macOS, the row runs `test/fixtures/llama_cpp_exit_probe.dart` as a
 child process and ends it while llama.cpp objects are alive on Metal: C `exit`

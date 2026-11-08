@@ -1,7 +1,7 @@
 ---
 title: On-device text to speech
 sidebar_label: Text to speech
-description: Generate complete PCM and WAV audio with the experimental typed llama.cpp Qwen3-TTS API on native and WebGPU runtimes.
+description: Generate complete PCM and WAV audio with the experimental typed llama.cpp text-to-speech API (Qwen3-TTS, LFM3-Audio, Soprano) on native and WebGPU runtimes.
 ---
 
 `TextToSpeechEngine` is the typed API for speech synthesis. It is separate from
@@ -9,19 +9,84 @@ description: Generate complete PCM and WAV audio with the experimental typed lla
 progress, cancellation, and output buffering are not chat-token semantics.
 
 Text to speech is experimental and deliberately narrow. It supports
-Qwen3-TTS through native llama.cpp or WebGPU (pinned bridge assets) with the
-matching audio-generation projector. It reports prompt/frame progress, then
-returns one complete 24 kHz mono float32 PCM buffer. It does not stream playable
-audio chunks yet.
+Qwen3-TTS through native llama.cpp or WebGPU (pinned bridge assets), and
+LFM3-Audio and Soprano through native llama.cpp, each with the matching
+audio-generation projector. It reports prompt/frame progress, then returns one
+complete mono float32 PCM buffer. It does not stream playable audio chunks yet.
 
 ## Current support matrix
 
 | Runtime | Typed `TextToSpeechEngine` | Output |
 | --- | --- | --- |
-| Native llama.cpp / GGUF | Experimental Qwen3-TTS adapter | Complete float32 PCM; WAV helper |
+| Native llama.cpp / GGUF | Experimental Qwen3-TTS, LFM3-Audio and Soprano adapters | Complete float32 PCM; WAV helper |
 | WebGPU / GGUF | Experimental Qwen3-TTS adapter (pinned bridge assets) | Complete float32 PCM; WAV helper |
 | Native LiteRT-LM / `.litertlm` | Unsupported by the pinned native artifact | None |
 | LiteRT-LM Web | Unsupported | None |
+
+## Models
+
+Pick the adapter for the model; `capabilities` reports what the loaded pair
+takes, and a request that asks for anything else throws before synthesis.
+
+| Model | Adapter | Output | Language | Voices | Speaker reference | Sampling |
+| --- | --- | --- | --- | --- | --- | --- |
+| Qwen3-TTS | `Qwen3TtsAdapter` | 24 kHz | 10 codes, see below | None | Yes | Request settings |
+| LFM3-Audio, LFM3-Omni | `Lfm3AudioTtsAdapter` | 24 kHz | Any, not validated | `female` (default), `male` | No | The GGUF's own; request settings are validated, unused |
+| Soprano | `SopranoTtsAdapter` | 32 kHz | No | None | No | Request settings |
+
+LFM3-Audio and Soprano need native llama.cpp from llamadart-native v0.8.0, the
+release that added the model-type opt-in (`llama_dart_tts_init_ext`). An older
+runtime, such as an older Apple companion lock, keeps Qwen3-TTS working:
+`load` asks it which models it drives and throws `LlamaUnsupportedException`
+naming the required release before loading any file, and `capabilities` on an
+attached engine reports the same in `unsupportedReason`. Web drives Qwen3-TTS
+only.
+
+On Android, GPU work stays off on the Adreno 750 driver that llama.cpp Vulkan
+miscomputes on ([llamadart-native#79](https://github.com/leehack/llamadart-native/issues/79)):
+there Soprano returns the same non-speech audio for every input and LFM3-Audio
+fails to create its pipelines. On that driver automatic device selection
+falls back to the CPU with a warning, and `ComputeDevice.gpu` throws.
+
+### LFM3-Audio
+
+Load the LFM3-Audio (or LFM3-Omni) model with its projector, for example
+`LFM3-Audio-2B-Q4_K_M.gguf` and `mmproj-LFM3-Audio-2B-Q8_0.gguf` from
+[`LiquidAI/LFM3-Audio-2B-GGUF`](https://huggingface.co/LiquidAI/LFM3-Audio-2B-GGUF).
+It speaks through the model's `tts` chat template; a model without one is
+reported unsupported. `language` is rendered into that template as given (a
+code such as `en` or a language name) and is not validated, so check it
+against the model card; without one the template's default, English, applies.
+The model samples audio codes with its own GGUF settings, so `topK`, `topP`,
+`minP` and `temperature` are validated but unused; `seed` still makes a
+synthesis repeatable.
+
+### Soprano
+
+Soprano takes no language, voice or speaker reference. It samples with the
+request's settings; the default temperature is 0.8, while upstream's example
+decodes greedily, so pass `temperature: 0` to match it. Fewer than two
+generated frames fail the synthesis.
+
+No llama.cpp-format Soprano GGUF is published. Convert
+[`ekwek/Soprano-1.1-80M`](https://huggingface.co/ekwek/Soprano-1.1-80M) (or
+Soprano-80M) with `convert_hf_to_gguf.py` from the llama.cpp revision the
+runtime pins, both files from the same model directory, including
+`decoder.pth`:
+
+```sh
+python convert_hf_to_gguf.py path/to/Soprano-1.1-80M --outtype f16 --outfile soprano.gguf
+python convert_hf_to_gguf.py path/to/Soprano-1.1-80M --mmproj --outtype f16 --outfile mmproj-soprano.gguf
+```
+
+Upstream's README converts the backbone as `f32`; an `f16` backbone also
+passes the ASR round trip at half the size. With torch 2.10 and later the
+projector conversion can fail with `Soprano requires a periodic Hann window`:
+the published decoder's ISTFT window differs from `torch.hann_window` by one
+float32 ulp (about 6e-8), and the converter compares them exactly. Replace
+that `torch.equal` in `conversion/soprano.py` with
+`torch.allclose(..., atol=1e-6)` for the conversion; the window itself is not
+stored, since the runtime builds its own.
 
 ## Load Qwen3-TTS
 
@@ -103,7 +168,8 @@ unsupported with that reason and `synthesize` throws `LlamaStateException`: crea
 
 The runtime generates the audio itself and reports which audio-generation
 model it loaded, so an adapter can target only a model the runtime supports.
-`Qwen3TtsAdapter` accepts Qwen3-TTS and maps request languages to its codes.
+`Qwen3TtsAdapter` accepts Qwen3-TTS and maps request languages to its codes;
+`Lfm3AudioTtsAdapter` and `SopranoTtsAdapter` accept their models.
 `TextToSpeechAdapter` is open for another family once a runtime reports it:
 `supportsModel` accepts the `BackendTextToSpeechModel` it drives,
 `supportedLanguages` lists its codes, and `normalizeLanguage` maps a request
@@ -166,6 +232,29 @@ Native applications may alternatively use
 `SpeechAudioFileInput('/recordings/reference.wav')`. Browser runtimes cannot
 read arbitrary local filesystem paths.
 
+## Voices
+
+A model with predefined voices reports `supportsVoice`, and `voices` lists
+them in the model's order; the first one speaks when a request names none.
+Select one by name:
+
+```dart
+final capabilities = await synthesizer.capabilities;
+if (capabilities.voices.contains('male')) {
+  final result = await synthesizer.synthesizeOnce(
+    const TextToSpeechRequest(text: 'Hello from llamadart.', voice: 'male'),
+  );
+}
+```
+
+A name matches in any case. One the model does not list throws
+`LlamaTextToSpeechException` before synthesis, never falling back to the
+default; a voice together with a speaker reference does too, and a voice for a
+model without voices throws `LlamaUnsupportedException`. Runtimes before
+llamadart-native v0.9.0 can select a voice but not list them: `voices` is then
+empty while `supportsVoice` is true, and the runtime checks the name when
+synthesis starts.
+
 For Qwen3-TTS, the canonical language codes are `zh`, `en`, `ja`, `ko`, `de`,
 `fr`, `ru`, `pt`, `es`, and `it`. Common English names are normalized to those
 codes, so `language: 'English'` is equivalent to `language: 'en'`. Other values
@@ -209,9 +298,11 @@ The [chat app](../examples/chat-app) has a Qwen3-TTS mode built on this API.
 
 ## Known limits
 
-- Output is complete 24 kHz mono output only; no incremental
-  audio chunks, timestamps, or output backpressure are available.
-- Qwen3-TTS and llama.cpp audio generation are experimental. Voice quality,
+- Output is complete mono PCM at the model's rate (`sampleRateHz`); no
+  incremental audio chunks, timestamps, or output backpressure are available.
+- Qwen3-TTS, LFM3-Audio, Soprano and llama.cpp audio generation are
+  experimental. LFM3-Audio and Soprano were checked on macOS arm64 (CPU) with
+  an ASR round trip; other hosts are unqualified. Voice quality,
   latency, supported reference formats, and accelerator behavior remain
   model/device dependent.
 - Web requires the pinned bridge assets, WebAssembly memory64 for the

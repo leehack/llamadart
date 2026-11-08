@@ -321,6 +321,7 @@ class _Harness {
     fields[#free] = (Pointer<llama_dart_tts> task) {};
     fields[#cancel] = (Pointer<llama_dart_tts> task) {};
     fields[#setCancelFlag] = null;
+    fields[#initExt] = null;
     mirror.setField(
       symbol('_ttsApi'),
       original.type.newInstance(Symbol.empty, [], fields).reflectee,

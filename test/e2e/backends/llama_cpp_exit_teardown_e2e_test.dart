@@ -17,13 +17,18 @@ import 'package:test/test.dart';
 /// repeats each scenario (default 3). `EXIT_TEARDOWN_MMPROJ`, that model's
 /// projector, adds the projector scenario; `EXIT_TEARDOWN_DECISION_MODEL` and
 /// `EXIT_TEARDOWN_DECISION_HEAD`, an encoder GGUF and its decision head, add
-/// the decision scenario.
+/// the decision scenario; `EXIT_TEARDOWN_TTS_MODEL`, `EXIT_TEARDOWN_TTS_MMPROJ`
+/// and `EXIT_TEARDOWN_TTS_ADAPTER` (`qwen3-tts`, `lfm3-audio` or `soprano`)
+/// add the scenario that exits during synthesis.
 void main() {
   final environment = Platform.environment;
   final model = environment['EXIT_TEARDOWN_MODEL'];
   final projector = environment['EXIT_TEARDOWN_MMPROJ'];
   final decisionModel = environment['EXIT_TEARDOWN_DECISION_MODEL'];
   final decisionHead = environment['EXIT_TEARDOWN_DECISION_HEAD'];
+  final ttsModel = environment['EXIT_TEARDOWN_TTS_MODEL'];
+  final ttsProjector = environment['EXIT_TEARDOWN_TTS_MMPROJ'];
+  final ttsAdapter = environment['EXIT_TEARDOWN_TTS_ADAPTER'];
   final runs = int.parse(environment['EXIT_TEARDOWN_RUNS'] ?? '3');
 
   // A scenario of test/fixtures/llama_cpp_exit_probe.dart with its remaining
@@ -57,6 +62,7 @@ void main() {
           ('quit-projector', [model, projector], 0, 'Metal'),
           ('quit-disposing', [model, projector], 0, null),
           ('quit-decision', [decisionModel, decisionHead], 0, 'MTL'),
+          ('quit-speaking', [ttsModel, ttsProjector, ttsAdapter], 0, null),
           ('throw-generating', [model], 255, 'Metal'),
           ('throw-loading', [model], 255, null),
           ('kill-loading', [model], 0, null),

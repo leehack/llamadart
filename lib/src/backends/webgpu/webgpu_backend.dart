@@ -49,6 +49,13 @@ typedef _WebGpuCompletionCapabilities = ({
   Set<SpeculativeDecodingStrategy> speculativeDecoding,
 });
 
+/// Why Web text-to-speech cannot drive [model], or null for Qwen3-TTS.
+String? webTextToSpeechModelUnsupportedReason(BackendTextToSpeechModel model) =>
+    model == BackendTextToSpeechModel.qwen3Tts
+    ? null
+    : 'Web text-to-speech drives Qwen3-TTS only; load this model with a '
+          'native llama.cpp runtime.';
+
 /// Web backend backed by the llama.cpp bridge runtime.
 class WebGpuLlamaBackend
     implements
@@ -61,6 +68,7 @@ class WebGpuLlamaBackend
         BackendMultimodalEmbeddings,
         BackendPromptSpeechToTextSupport,
         BackendTextToSpeech,
+        BackendTextToSpeechModelSupport,
         BackendDecision,
         BackendGenerationCapabilitiesSupport,
         BackendGenerationUsageReporting,
@@ -2367,6 +2375,11 @@ class WebGpuLlamaBackend
       _generationLimits[generation];
 
   @override
+  Future<String?> textToSpeechModelUnsupportedReason(
+    BackendTextToSpeechModel model,
+  ) async => webTextToSpeechModelUnsupportedReason(model);
+
+  @override
   Future<BackendTextToSpeechCapabilities> textToSpeechCapabilities(
     int contextHandle,
     int mmContextHandle,
@@ -2420,7 +2433,7 @@ class WebGpuLlamaBackend
           isSupported: false,
           unsupportedReason:
               'The loaded Web projector is not a supported Qwen3-TTS '
-              'projector.',
+              'projector. Web text-to-speech drives Qwen3-TTS only.',
         );
       }
       final sampleRate = _jsIntProperty(value, 'sampleRate');

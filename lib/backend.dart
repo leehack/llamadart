@@ -73,6 +73,7 @@ export 'src/backends/backend.dart'
         BackendTextToSpeech,
         BackendTextToSpeechCapabilities,
         BackendTextToSpeechModel,
+        BackendTextToSpeechModelSupport,
         BackendTextToSpeechPhase,
         BackendTextToSpeechProgress,
         BackendTextToSpeechRequest,

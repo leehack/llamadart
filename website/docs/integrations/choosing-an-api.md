@@ -22,7 +22,7 @@ Checked on 2026-10-30:
 | Route | Available combination | Qualification boundary |
 | --- | --- | --- |
 | Direct | Published `llamadart 0.18.x`; matching `0.18.x` Apple companions for each selected runtime | See the [runtime support matrix](../platforms/support-matrix); devices, models and backends have separate limits. |
-| Genkit | Published `genkit_llamadart 3.6.0`, `genkit 1.0.0`, `llamadart 0.17.0`; Dart 3.12+ | Adapter fake/browser guards and selected native model tests cover specific paths. They do not qualify every Genkit Web deployment. |
+| Genkit | Published `genkit_llamadart 3.7.0`, `genkit 1.0.0`, `llamadart 0.18.0`; Dart 3.12+ | Adapter fake/browser guards and selected native model tests cover specific paths. They do not qualify every Genkit Web deployment. |
 | Flutter Edge AI | Published `flutter_edge_ai_llama 0.0.4` with `flutter_edge_ai ^2.5.0`; it requires `llamadart` 0.15.1 exactly | Not resolvable with `llamadart 0.18.x`. See the [Flutter Edge AI page](./flutter-edge-ai). |
 
 The Genkit package now lives under `packages/genkit_llamadart` in this repository.

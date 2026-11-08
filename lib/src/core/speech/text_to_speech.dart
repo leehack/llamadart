@@ -56,7 +56,17 @@ class TextToSpeechRequest {
   /// Optional encoded speaker-reference audio.
   ///
   /// Native backends accept files and bytes. Web accepts encoded bytes only.
+  /// It cannot be combined with [voice].
   final SpeechAudioInput? speakerReference;
+
+  /// Optional predefined voice of the loaded model, such as `male` for
+  /// LFM3-Audio, or null for the model's default voice.
+  ///
+  /// Needs [TextToSpeechCapabilities.supportsVoice]. A name matches in any
+  /// case; one the model does not list throws [LlamaTextToSpeechException]
+  /// instead of falling back to the default. It cannot be combined with
+  /// [speakerReference].
+  final String? voice;
 
   /// Maximum number of audio-codec frames to generate.
   final int maxFrames;
@@ -74,6 +84,9 @@ class TextToSpeechRequest {
   final double minP;
 
   /// Sampling temperature.
+  ///
+  /// Some models sample with their own settings and only validate [topK],
+  /// [topP], [minP] and this value; see their adapter.
   final double temperature;
 
   /// Random seed. `0xffffffff` requests the runtime's random default.
@@ -84,6 +97,7 @@ class TextToSpeechRequest {
     required this.text,
     this.language,
     this.speakerReference,
+    this.voice,
     this.maxFrames = 512,
     this.promptBatchSize = 512,
     this.topK = 40,
@@ -130,6 +144,17 @@ class TextToSpeechCapabilities implements EngineCapabilities {
   /// Whether speaker-reference audio can be supplied.
   final bool supportsSpeakerReference;
 
+  /// Whether [TextToSpeechRequest.voice] can name a predefined voice.
+  final bool supportsVoice;
+
+  /// The model's predefined voices in its own order; the first one speaks
+  /// when a request names none.
+  ///
+  /// Empty when the model has no voices, or when [supportsVoice] is true but
+  /// the runtime cannot list them (llamadart-native before v0.9.0); the
+  /// runtime then checks the name when synthesis starts.
+  final List<String> voices;
+
   /// Whether PCM can be emitted while synthesis is still running.
   final bool supportsIncrementalAudio;
 
@@ -154,6 +179,8 @@ class TextToSpeechCapabilities implements EngineCapabilities {
     this.supportsLanguage = false,
     this.supportedLanguages = const <String>{},
     this.supportsSpeakerReference = false,
+    this.supportsVoice = false,
+    this.voices = const <String>[],
     this.supportsIncrementalAudio = false,
     this.supportsCancellation = false,
     this.supportsOutputBackpressure = false,
@@ -490,8 +517,11 @@ class TextToSpeechEngine implements LlamadartEngine<TextToSpeechCapabilities> {
   /// Throws:
   /// - [LlamaArgumentException] when [download] would send credentials to
   ///   more than one host.
-  /// - [LlamaUnsupportedException] when the loaded model cannot synthesize
-  ///   speech with [TextToSpeechModel.adapter] (see [capabilities]), and when
+  /// - [LlamaUnsupportedException] before any file loads when the runtime
+  ///   drives none of the models [TextToSpeechModel.adapter] accepts, such as
+  ///   LFM3-Audio on a llama.cpp runtime older than llamadart-native v0.8.0;
+  ///   when the loaded model cannot synthesize speech with the adapter (see
+  ///   [capabilities]); and when
   ///   [download] sets [ModelLoadOptions.sha256] for a model with a
   ///   projector.
   /// - [LlamaStateException] when [download]'s cancel token cancels the load.
@@ -505,13 +535,25 @@ class TextToSpeechEngine implements LlamadartEngine<TextToSpeechCapabilities> {
     ModelFileStore? store,
     LlamaBackend? backend,
   }) async {
+    final runtime = backend ?? LlamaBackend();
+    final String? refusal;
+    try {
+      refusal = await _runtimeRefusal(runtime, model.adapter);
+    } catch (_) {
+      await runtime.dispose();
+      rethrow;
+    }
+    if (refusal != null) {
+      await runtime.dispose();
+      throw LlamaUnsupportedException(refusal);
+    }
     final (engine, _) = await loadLlamaEngine(
       LlamaModel(model.source, projector: model.projector),
       params: params,
       download: download,
       onProgress: onProgress,
       store: store,
-      backend: backend,
+      backend: runtime,
       operation: 'TextToSpeechEngine model loading',
     );
     try {
@@ -536,6 +578,24 @@ class TextToSpeechEngine implements LlamadartEngine<TextToSpeechCapabilities> {
       }
       rethrow;
     }
+  }
+
+  /// Why [runtime] drives none of the models [adapter] accepts, or null when
+  /// it drives one or cannot tell before a model loads.
+  static Future<String?> _runtimeRefusal(
+    LlamaBackend runtime,
+    TextToSpeechAdapter adapter,
+  ) async {
+    if (runtime is! BackendTextToSpeechModelSupport) return null;
+    final probe = runtime as BackendTextToSpeechModelSupport;
+    String? refusal;
+    for (final candidate in BackendTextToSpeechModel.values) {
+      if (!adapter.supportsModel(candidate)) continue;
+      final reason = await probe.textToSpeechModelUnsupportedReason(candidate);
+      if (reason == null) return null;
+      refusal ??= reason;
+    }
+    return refusal;
   }
 
   /// Runs [adapter] on [engine], which the caller loaded and keeps owning.
@@ -635,6 +695,10 @@ class TextToSpeechEngine implements LlamadartEngine<TextToSpeechCapabilities> {
           ? adapter.supportedLanguages
           : const <String>{},
       supportsSpeakerReference: backendCapabilities.supportsSpeakerReference,
+      supportsVoice: backendCapabilities.supportsVoice,
+      voices: backendCapabilities.supportsVoice
+          ? backendCapabilities.voices
+          : const <String>[],
       supportsIncrementalAudio: false,
       supportsCancellation: backendCapabilities.supportsCancellation,
       supportsOutputBackpressure: false,
@@ -692,6 +756,23 @@ class TextToSpeechEngine implements LlamadartEngine<TextToSpeechCapabilities> {
           'The active text-to-speech model does not accept speaker reference '
           'audio.',
         );
+      }
+      final voice = request.voice;
+      if (voice != null) {
+        if (!currentCapabilities.supportsVoice) {
+          throw LlamaUnsupportedException(
+            'The active text-to-speech model has no predefined voices.',
+          );
+        }
+        final voices = currentCapabilities.voices;
+        final lowerVoice = voice.toLowerCase();
+        if (voices.isNotEmpty &&
+            !voices.any((name) => name.toLowerCase() == lowerVoice)) {
+          throw LlamaTextToSpeechException(
+            'Unknown ${adapter.name} voice `$voice`. Use one of: '
+            '${voices.join(', ')}.',
+          );
+        }
       }
 
       final task = TextToSpeechTask._(
@@ -779,6 +860,17 @@ class TextToSpeechEngine implements LlamadartEngine<TextToSpeechCapabilities> {
         'Invalid text-to-speech sampling parameters.',
       );
     }
+    final voice = request.voice;
+    if (voice != null) {
+      if (voice.trim().isEmpty) {
+        throw LlamaTextToSpeechException('voice must not be empty.');
+      }
+      if (request.speakerReference != null) {
+        throw LlamaTextToSpeechException(
+          'A voice and a speaker reference cannot be combined.',
+        );
+      }
+    }
     switch (request.speakerReference) {
       case SpeechAudioFileInput(:final path):
         if (path.trim().isEmpty) {
@@ -832,6 +924,7 @@ class TextToSpeechEngine implements LlamadartEngine<TextToSpeechCapabilities> {
             SpeechAudioBytesInput(:final bytes) => bytes,
             _ => null,
           },
+          voice: request.voice,
           maxFrames: request.maxFrames,
           promptBatchSize: request.promptBatchSize,
           topK: request.topK,
