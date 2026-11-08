@@ -401,6 +401,8 @@ void main() {
   group(
     'Safari chat run against a scripted safaridriver',
     testOn: '!windows',
+    // Two cold Python processes: the helper and the stand-in driver it starts.
+    timeout: Timeout(_processTimeout * 2 + const Duration(seconds: 10)),
     () {
       Future<({ProcessResult result, List<Map<String, dynamic>> commands})>
       runSafari({required String visibility, required int frames}) async {
@@ -408,7 +410,7 @@ void main() {
           ..writeAsStringSync(_fakeSafariDriver);
         await Process.run('chmod', ['+x', driver.path]);
         final logPath = p.join(tempDir.path, 'safari_commands.jsonl');
-        final result = await _runProcess(
+        final result = await runBoundedProcess(
           'python3',
           [
             '-c',
@@ -436,6 +438,7 @@ void main() {
               'frames': frames,
             }),
           },
+          timeout: _processTimeout * 2,
         );
         final log = File(logPath);
         return (

@@ -12,6 +12,8 @@ import urllib.request
 from typing import Any
 
 SAFARIDRIVER = "/usr/bin/safaridriver"
+# Generous: a cold Python stand-in driver on a busy CI runner can take this long.
+_DRIVER_START_TIMEOUT_S = 60
 _ELEMENT_KEY = "element-6066-11e4-a52e-4f735466cecf"
 
 
@@ -57,7 +59,7 @@ class SafariSession:
             raise
 
     def _wait_for_driver(self) -> None:
-        deadline = time.monotonic() + 15
+        deadline = time.monotonic() + _DRIVER_START_TIMEOUT_S
         while time.monotonic() < deadline:
             if self._driver.poll() is not None:
                 stderr = self._driver.stderr.read().decode(errors="replace")
@@ -67,7 +69,9 @@ class SafariSession:
                 return
             except (OSError, WebDriverError):
                 time.sleep(0.2)
-        raise WebDriverError("safaridriver did not start within 15 s")
+        raise WebDriverError(
+            f"safaridriver did not start within {_DRIVER_START_TIMEOUT_S} s"
+        )
 
     def _request(self, method: str, path: str, body: Any = None) -> Any:
         data = None if body is None else json.dumps(body).encode()
