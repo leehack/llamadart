@@ -3,8 +3,8 @@ name: llamadart-speech
 description: >-
   Use when adding speech to a llamadart app: transcribing audio files with
   Qwen3-ASR through SpeechToTextEngine, streaming live PCM dictation with
-  LiteRT-LM ASR, synthesizing speech with Qwen3-TTS, LFM3-Audio or Soprano
-  through TextToSpeechEngine, selecting predefined voices, saving WAV output, handling LlamaAudioFormatException or
+  LiteRT-LM ASR, synthesizing speech with Qwen3-TTS, LFM3-Audio, Soprano,
+  Chatterbox or Pocket TTS through TextToSpeechEngine, selecting predefined voices, saving WAV output, handling LlamaAudioFormatException or
   LlamaSpeechTranscriptTruncatedException, or checking speech support on
   native and Web runtimes.
 ---
@@ -86,10 +86,20 @@ description: >-
   - Soprano: `SopranoTtsAdapter`; no language, voice or speaker reference;
     default `temperature` 0.8, pass 0 to match upstream's greedy example.
     32 kHz. No published llama.cpp GGUF: convert it (text-to-speech guide).
-  - LFM3-Audio and Soprano are native llama.cpp only and need
-    llamadart-native v0.8.0 or later. On an older runtime (or Apple companion
-    lock) `load` throws `LlamaUnsupportedException` naming the release before
-    loading any file. Web drives Qwen3-TTS only.
+  - Chatterbox Turbo / Multilingual: `ChatterboxTtsAdapter`; voice
+    `default` or a speaker reference (about 10 s; not both); request sampling
+    settings apply. Turbo takes no language. Multilingual takes a code such as
+    `fr` (unvalidated) and needs `ModelParams(maxParallelSequences: 2)`, else
+    it is reported unsupported. 24 kHz.
+  - Pocket TTS: `PocketTtsAdapter`; the projector's voices (25 in the Kyutai
+    English pack, first is the default); no language; speaker reference only
+    with a voice-encoder projector; request sampling validated but unused.
+    24 kHz.
+  - All but Qwen3-TTS are native llama.cpp only. LFM3-Audio and Soprano need
+    llamadart-native v0.8.0 or later, Chatterbox and Pocket TTS v0.9.0. On an
+    older runtime (or Apple companion lock) `load` throws
+    `LlamaUnsupportedException` naming the release before loading any file.
+    Web drives Qwen3-TTS only.
 - After `attach`, `await recognizer.capabilities` /
   `synthesizer.capabilities` and gate on `isSupported`, showing
   `unsupportedReason`. A loaded projector does not prove audio support or a
@@ -174,9 +184,9 @@ description: >-
   engine share a lease. Do not start chat generation on an attached engine
   until `task.done` completes. A LiteRT-LM recognizer allows one task per instance.
 - TTS returns one complete buffer of interleaved float32 PCM (24 kHz mono for
-  Qwen3-TTS and LFM3-Audio, 32 kHz for Soprano; read `result.sampleRateHz`
-  and `channelCount` rather than hard-coding). There are no playable chunks
-  (`supportsIncrementalAudio` is false).
+  Qwen3-TTS, LFM3-Audio, Chatterbox and Pocket TTS, 32 kHz for Soprano; read
+  `result.sampleRateHz` and `channelCount` rather than hard-coding). There are
+  no playable chunks (`supportsIncrementalAudio` is false).
   - `TextToSpeechProgressEvent` (`phase`, `promptTokensRemaining`,
     `framesGenerated`) is for status UI only.
   - `result.truncated` is true when generation hit `maxFrames` (default

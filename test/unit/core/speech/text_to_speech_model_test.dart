@@ -65,6 +65,27 @@ void main() {
     expect(lfm3.supportedLanguages, isEmpty);
   });
 
+  test('the Chatterbox and Pocket TTS adapters drive their models only', () {
+    const chatterbox = ChatterboxTtsAdapter();
+    const pocket = PocketTtsAdapter();
+
+    expect(chatterbox.name, 'Chatterbox');
+    expect(pocket.name, 'Pocket TTS');
+    for (final model in BackendTextToSpeechModel.values) {
+      expect(
+        chatterbox.supportsModel(model),
+        model == BackendTextToSpeechModel.chatterbox,
+      );
+      expect(
+        pocket.supportsModel(model),
+        model == BackendTextToSpeechModel.pocketTts,
+      );
+    }
+    expect(chatterbox.supportsModel(null), isFalse);
+    expect(chatterbox.normalizeLanguage('FR'), 'fr');
+    expect(pocket.supportedLanguages, isEmpty);
+  });
+
   test('a minimal adapter lowercases languages and lists none', () {
     const adapter = _MinimalAdapter();
 

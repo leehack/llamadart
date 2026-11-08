@@ -661,6 +661,52 @@ void main() {
       expect(WebGpuLlamaBackend().runtime, LlamaRuntime.llamaCpp);
     });
 
+    test(
+      'drives Qwen3-TTS only and refuses other models before loading',
+      () async {
+        for (final model in BackendTextToSpeechModel.values) {
+          final reason = await backend.textToSpeechModelUnsupportedReason(
+            model,
+          );
+          if (model == BackendTextToSpeechModel.qwen3Tts) {
+            expect(reason, isNull);
+          } else {
+            expect(
+              reason,
+              contains('Web text-to-speech drives Qwen3-TTS only'),
+            );
+          }
+        }
+
+        var bridgesCreated = 0;
+        await expectLater(
+          TextToSpeechEngine.load(
+            TextToSpeechModel(
+              ModelSource.url(Uri.parse('https://example.com/soprano.gguf')),
+              projector: ModelSource.url(
+                Uri.parse('https://example.com/mmproj.gguf'),
+              ),
+              adapter: const SopranoTtsAdapter(),
+            ),
+            backend: WebGpuLlamaBackend(
+              bridgeFactory: ([config]) {
+                bridgesCreated++;
+                return bridge as LlamaWebGpuBridge;
+              },
+            ),
+          ),
+          throwsA(
+            isA<LlamaUnsupportedException>().having(
+              (error) => error.message,
+              'message',
+              contains('Qwen3-TTS only'),
+            ),
+          ),
+        );
+        expect(bridgesCreated, 0);
+      },
+    );
+
     test('rejects bridge calls before a model loads', () async {
       await expectLater(
         backend.getContextSize(1),
