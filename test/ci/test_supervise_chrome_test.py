@@ -110,11 +110,13 @@ class SupervisorTest(unittest.TestCase):
         self.assertIn('reporter_summary_observed', [event['event'] for event in self.events()])
         self.assertEqual(child.stdout, b'1 test passed, 1 failed.\n')
 
-    def test_caller_pipe_stays_blocking_after_the_supervisor_exits(self):
-        script = (f"import os,subprocess,sys; subprocess.run({self.command('print(1)')!r}, "
-                  "stdout=sys.stdout); print(os.get_blocking(1))")
+    def test_caller_pipes_keep_their_blocking_mode_after_the_supervisor_exits(self):
+        script = ("import os,subprocess,sys\n"
+                  "os.set_blocking(2, False)\n"
+                  f"subprocess.run({self.command('print(1)')!r}, stdout=sys.stdout, stderr=sys.stderr)\n"
+                  "print(os.get_blocking(1), os.get_blocking(2))")
         done = subprocess.run([sys.executable, '-c', script], capture_output=True, timeout=8)
-        self.assertEqual(done.stdout.split()[-1], b'True', done.stderr)
+        self.assertEqual(done.stdout.split()[-2:], [b'True', b'False'], done.stderr)
 
     def test_reporter_success_does_not_override_a_failing_exit(self):
         child, result = self.run_fixture("print('All tests passed!'); raise SystemExit(7)")

@@ -207,6 +207,38 @@ sys.argv[0] = 'tool/testing/playwright_chat_app_real_model_smoke.py'
 runpy.run_path(sys.argv[0], run_name='__main__')
 ''';
 
+const _safariStartFailureProbe = r'''
+import sys
+import tempfile
+
+sys.path.insert(0, 'tool/testing')
+import safari_webdriver
+
+opened = []
+real = tempfile.TemporaryFile
+safari_webdriver.tempfile.TemporaryFile = lambda *a, **k: opened.append(real(*a, **k)) or opened[-1]
+safari_webdriver.SAFARIDRIVER = sys.argv[1]
+try:
+    safari_webdriver.SafariSession()
+except OSError:
+    pass
+print(f'closed={opened[0].closed}')
+''';
+
+const _safariStartTimeoutProbe = r'''
+import sys
+
+sys.path.insert(0, 'tool/testing')
+import safari_webdriver
+
+safari_webdriver.SAFARIDRIVER = sys.argv[1]
+safari_webdriver._DRIVER_START_TIMEOUT_S = 1
+try:
+    safari_webdriver.SafariSession()
+except safari_webdriver.WebDriverError as error:
+    print(error)
+''';
+
 // Runs the recorded page scripts against a stand-in `@litert-lm/core` module,
 // loading the wrapped module the way `LiteRtLmBackend` does on the Web.
 const _pageScriptHarness = r'''
@@ -531,6 +563,37 @@ void main() {
         );
 
         expect(run.result.exitCode, 0, reason: '${run.result.stderr}');
+      });
+
+      test('closes the stderr file when the driver cannot start', () async {
+        final result = await runBoundedProcess('python3', [
+          '-c',
+          _safariStartFailureProbe,
+          p.join(tempDir.path, 'missing'),
+        ], timeout: _processTimeout);
+
+        expect(result.exitCode, 0, reason: '${result.stderr}');
+        expect(result.stdout, contains('closed=True'));
+      });
+
+      test('shows driver stderr when it never answers', () async {
+        final driver = File(p.join(tempDir.path, 'silent_safaridriver'))
+          ..writeAsStringSync(
+            '#!/usr/bin/env python3\n'
+            'import sys, time\n'
+            'sys.stderr.write("driver says no\\n"); sys.stderr.flush()\n'
+            'time.sleep(30)\n',
+          );
+        await Process.run('chmod', ['+x', driver.path]);
+        final result = await runBoundedProcess('python3', [
+          '-c',
+          _safariStartTimeoutProbe,
+          driver.path,
+        ], timeout: _processTimeout);
+
+        expect(result.exitCode, 0, reason: '${result.stderr}');
+        expect(result.stdout, contains('did not start within'));
+        expect(result.stdout, contains('driver says no'));
       });
     },
   );

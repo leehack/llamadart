@@ -226,7 +226,10 @@ if (check.status == LlamaLoadCheckStatus.unsupported) {
 exactly when the load would fail before downloading. A `supported` report is
 not proof the load succeeds: like `dart run llamadart:doctor`, it reports
 policy, and the native library or browser assets, LoRA adapter limits, the
-file and its memory are checked by the load. `checkLoad` takes no
+file and its memory are checked by the load. For LiteRT-LM it opens no runtime
+library, so a legacy (`v0.18.x`) `LLAMADART_LITERT_LM_LIB_DIR` runtime on Linux
+or Windows reports embeddings as `supported`, then throws
+`LlamaUnsupportedException` when it creates the embedding engine. `checkLoad` takes no
 `ModelLoadOptions`, so `setModel`'s download-option rejections (a `sha256`
 with a projector, credentials across hosts, options a URL-loading backend does
 not take) are not reported. `engine.capabilities` keeps describing the loaded model
