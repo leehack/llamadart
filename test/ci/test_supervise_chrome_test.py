@@ -95,10 +95,30 @@ class SupervisorTest(unittest.TestCase):
         self.assert_clean(result)
         self.assertEqual((self.output / 'stdout.log').read_bytes(), b'2 tests passed.\n')
         self.assertEqual((self.output / 'stderr.log').read_bytes(), b'diagnostic\n')
+        self.assertEqual(child.stdout, b'2 tests passed.\n')
+        self.assertEqual(child.stderr, b'diagnostic\n')
         kinds = [event['event'] for event in self.events()]
         for kind in ['command_started', 'reporter_summary_observed', 'cli_exit',
                      'output_eof', 'owned_children_exited', 'supervisor_exit']:
             self.assertIn(kind, kinds)
+
+    def test_mixed_pass_fail_summary_is_observed_and_stays_failure(self):
+        child, result = self.run_fixture(
+            "print('1 test passed, 1 failed.'); raise SystemExit(1)")
+        self.assertEqual(child.returncode, 1, child.stderr)
+        self.assertFalse(result['passed'])
+        self.assertIn('reporter_summary_observed', [event['event'] for event in self.events()])
+        self.assertEqual(child.stdout, b'1 test passed, 1 failed.\n')
+
+    def test_stalled_job_log_cannot_block_deadline_or_cleanup(self):
+        program = ('import sys,time; sys.stdout.buffer.write(b"x" * (4 * 1024 * 1024)); '
+                   'sys.stdout.flush(); time.sleep(5)')
+        supervisor = subprocess.Popen(self.command(program, timeout=0.5),
+                                      stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+        self.addCleanup(supervisor.stdout.close)
+        self.assertEqual(supervisor.wait(timeout=8), 124)
+        self.assertEqual(json.loads((self.output / 'result.json').read_text())['failure_reason'],
+                         'command_timeout')
 
     def test_reporter_success_does_not_override_a_failing_exit(self):
         child, result = self.run_fixture("print('All tests passed!'); raise SystemExit(7)")
