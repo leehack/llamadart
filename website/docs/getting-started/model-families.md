@@ -92,6 +92,9 @@ examples use. `.litertlm` bundles process media themselves. See
 | Text to speech | Qwen3-TTS 1.7B | Validated | `ggml-org/Qwen3-TTS-12Hz-1.7B-Base-GGUF` |
 | Text to speech | LFM3-Audio 2B | Checked on macOS arm64 | `LiquidAI/LFM3-Audio-2B-GGUF` |
 | Text to speech | Soprano 1.1 80M | Checked on macOS arm64 | Convert `ekwek/Soprano-1.1-80M` ([guide](../guides/text-to-speech#soprano)) |
+| Text to speech | Chatterbox Turbo | Checked on macOS arm64 | `ggml-org/chatterbox-turbo-GGUF` |
+| Text to speech | Chatterbox Multilingual | Checked on macOS arm64 | `ggml-org/chatterbox-GGUF` |
+| Text to speech | Pocket TTS (English) | Checked on macOS arm64 | `macolomb/pocket-tts-without-voice-cloning` |
 | Embeddings | EmbeddingGemma 300M | Used by the basic example | `ggml-org/embeddinggemma-300M-GGUF` |
 | Decision models | Laya (ModernBERT) | Validated | `fr0stbit3/laya-gguf` |
 

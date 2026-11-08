@@ -24,6 +24,8 @@ const _params = ModelParams(
 const _qwen3 = 1;
 const _lfm3 = 2;
 const _soprano = 3;
+const _chatterbox = 4;
+const _pocketTts = 5;
 const _voiceCapability = 4;
 const _languageCapability = 1;
 
@@ -41,7 +43,7 @@ void main() {
 
       expect(capabilities.isSupported, isTrue);
       expect(capabilities.model, BackendTextToSpeechModel.soprano);
-      expect(h.acceptedMasks.toSet(), {0xe});
+      expect(h.acceptedMasks.toSet(), {0x3e});
       expect(capabilities.supportsVoice, isFalse);
       expect(capabilities.voices, isEmpty);
       expect(h.legacyInfoCalls, 0);
@@ -85,8 +87,9 @@ void main() {
       expect(capabilities.reason, contains('no `tts` chat template'));
     });
 
-    test('names the generators a runtime was built without', () {
-      h.runtimeTypes = 0x2;
+    test('names the generators a runtime cannot drive with the release '
+        'that adds them', () {
+      h.runtimeTypes = 0xe;
       h.reportedType = 0;
       h.infoStatus =
           llama_dart_tts_status.LLAMA_DART_TTS_STATUS_UNSUPPORTED.value;
@@ -94,11 +97,56 @@ void main() {
       final capabilities = h.capabilities();
 
       expect(capabilities.isSupported, isFalse);
-      expect(h.acceptedMasks.toSet(), {0x2});
+      expect(h.acceptedMasks.toSet(), {0xe});
       expect(
         capabilities.reason,
-        contains('built without LFM3-Audio and Soprano speech output'),
+        contains(
+          'cannot drive Chatterbox (llamadart-native v0.9.0), '
+          'Pocket TTS (llamadart-native v0.9.0)',
+        ),
       );
+    });
+
+    test('refuses Chatterbox Multilingual on a one-sequence context', () {
+      h.reportedType = _chatterbox;
+      h.reportedCapabilities = _languageCapability | _voiceCapability;
+      h.voices = ['default'];
+
+      final capabilities = h.capabilities();
+
+      expect(capabilities.isSupported, isFalse);
+      expect(
+        capabilities.reason,
+        allOf(
+          contains('maxParallelSequences of at least 2'),
+          contains('this context has 1'),
+        ),
+      );
+    });
+
+    test('accepts Chatterbox Multilingual with its guidance sequence', () {
+      h.reportedType = _chatterbox;
+      h.reportedCapabilities = _languageCapability | _voiceCapability;
+      h.voices = ['default'];
+      h.sequences = 2;
+
+      final capabilities = h.capabilities();
+
+      expect(capabilities.isSupported, isTrue, reason: capabilities.reason);
+      expect(capabilities.model, BackendTextToSpeechModel.chatterbox);
+      expect(capabilities.supportsLanguage, isTrue);
+      expect(capabilities.voices, ['default']);
+    });
+
+    test('accepts Chatterbox Turbo and Pocket TTS on one sequence', () {
+      h.reportedType = _chatterbox;
+      h.reportedCapabilities = _voiceCapability;
+      expect(h.capabilities().isSupported, isTrue);
+
+      h.reportedType = _pocketTts;
+      final pocket = h.capabilities();
+      expect(pocket.isSupported, isTrue);
+      expect(pocket.model, BackendTextToSpeechModel.pocketTts);
     });
 
     test('tells which models it drives without a loaded model', () {
@@ -112,9 +160,20 @@ void main() {
       expect(
         reason(BackendTextToSpeechModel.soprano),
         allOf(
-          contains('built without Soprano speech output'),
+          contains('cannot drive Soprano speech output'),
           contains('llamadart-native v0.8.0'),
         ),
+      );
+      expect(
+        reason(BackendTextToSpeechModel.chatterbox),
+        allOf(
+          contains('cannot drive Chatterbox speech output'),
+          contains('llamadart-native v0.9.0'),
+        ),
+      );
+      expect(
+        reason(BackendTextToSpeechModel.pocketTts),
+        contains('llamadart-native v0.9.0'),
       );
     });
 
@@ -124,7 +183,7 @@ void main() {
 
       await h.synthesize(voice: 'male');
 
-      expect(h.initMasks, [0xe]);
+      expect(h.initMasks, [0x3e]);
       expect(h.startedVoices, ['male']);
       expect(h.legacyInitCalls, 0);
       expect(h.legacyStartCalls, 0);
@@ -133,7 +192,7 @@ void main() {
     test('starts without a voice through the plain start', () async {
       await h.synthesize();
 
-      expect(h.initMasks, [0xe]);
+      expect(h.initMasks, [0x3e]);
       expect(h.legacyStartCalls, 1);
       expect(h.startedVoices, isEmpty);
     });
@@ -168,6 +227,7 @@ void main() {
           contains('Qwen3-TTS only'),
           contains('llama_dart_tts_init_ext'),
           contains('llamadart-native v0.8.0'),
+          contains('Chatterbox and Pocket TTS: v0.9.0'),
         ),
       );
     });
@@ -227,7 +287,8 @@ class _Harness {
   late final Map modelProjectors;
 
   bool withoutOptIn = false;
-  int runtimeTypes = 0x0f;
+  int runtimeTypes = 0x3f;
+  int sequences = 1;
   int reportedType = _qwen3;
   int reportedCapabilities = 0;
   int infoStatus = 0;
@@ -259,7 +320,10 @@ class _Harness {
   }
 
   int _context() => contexts.putIfAbsent(model, () {
-    final context = service.createContext(model, _params);
+    final context = service.createContext(
+      model,
+      _params.copyWith(maxParallelSequences: sequences),
+    );
     projectors[900 + model] = Pointer<mtmd_context>.fromAddress(1);
     modelProjectors[model] = 900 + model;
     return context;

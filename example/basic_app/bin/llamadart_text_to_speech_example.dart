@@ -8,6 +8,8 @@ const Map<String, TextToSpeechAdapter> _adapters = {
   'qwen3-tts': Qwen3TtsAdapter(),
   'lfm3-audio': Lfm3AudioTtsAdapter(),
   'soprano': SopranoTtsAdapter(),
+  'chatterbox': ChatterboxTtsAdapter(),
+  'pocket-tts': PocketTtsAdapter(),
 };
 
 Future<void> main(List<String> arguments) async {
@@ -24,6 +26,15 @@ Future<void> main(List<String> arguments) async {
     ..addOption('text', abbr: 't', defaultsTo: 'Hello from llamadart.')
     ..addOption('voice', help: 'Predefined voice; see the listed voices.')
     ..addOption('language', help: 'Language, for models that take one.')
+    ..addOption(
+      'speaker',
+      help: 'Speaker-reference WAV, for models that clone one.',
+    )
+    ..addOption(
+      'sequences',
+      defaultsTo: '1',
+      help: 'Context sequences; Chatterbox Multilingual needs 2.',
+    )
     ..addOption('temperature', help: 'Sampling temperature.')
     ..addOption('out', abbr: 'o', defaultsTo: 'speech.wav')
     ..addFlag('help', abbr: 'h', negatable: false);
@@ -46,6 +57,9 @@ Future<void> main(List<String> arguments) async {
         projector: ModelSource.parse(projector),
         adapter: _adapters[options['adapter']]!,
       ),
+      params: ModelParams(
+        maxParallelSequences: int.parse(options['sequences'] as String),
+      ),
     );
   } on LlamaUnsupportedException catch (error) {
     stderr.writeln('Unsupported: ${error.message}');
@@ -64,6 +78,10 @@ Future<void> main(List<String> arguments) async {
       TextToSpeechRequest(
         text: options['text'] as String,
         voice: options['voice'] as String?,
+        speakerReference: switch (options['speaker'] as String?) {
+          final String path => SpeechAudioFileInput(path),
+          null => null,
+        },
         language: options['language'] as String?,
         temperature: temperature == null ? 0.8 : double.parse(temperature),
         maxFrames: 1024,
