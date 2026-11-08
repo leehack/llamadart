@@ -106,44 +106,47 @@ feature. For which runtime supports which feature, see the
 - Android llama.cpp Vulkan is experimental and device-dependent. `auto` runs
   llama.cpp on the CPU there; Vulkan runs only when the app asks for
   `ComputeDevice.gpu` or `GpuBackend.vulkan`. Previously observed runtime
-  failures: on a Pixel 9 Pro (Mali-G715), a prompt longer than about 32 tokens
-  evaluated in one batch returns wrong text, and a request with a grammar or
-  tool call can then abort the process, confirmed so far with one model
-  (Qwen3.5-0.8B Q4_0) on that one device
-  ([#948](https://github.com/leehack/llamadart/issues/948)); a Galaxy A35
-  (Mali-G68) is reported to time out in `llama_decode`
+  failures: a Galaxy A35 (Mali-G68) is reported to time out in `llama_decode`
   ([#1092](https://github.com/leehack/llamadart/issues/1092)); a Galaxy S24
   (Adreno 750) crashes on the first generation
   ([llamadart-native#79](https://github.com/leehack/llamadart-native/issues/79)).
-  The first failure is associated with llama.cpp's subgroup-16 small-matmul
-  tile ([llama.cpp#28637](https://github.com/ggml-org/llama.cpp/issues/28637)).
-  The pinned native `v0.9.0` includes upstream
-  [#30106](https://github.com/ggml-org/llama.cpp/pull/30106), but matched
-  final-artifact Pixel/Qwen correctness remains unqualified. The historical
-  GPU history failure repeated `8`; the original CPU result `Cedar17` also
-  failed the exact expected `cedar17`. Neither observation is normalized away.
 
-  For a model actually loaded with Vulkan GPU layers on Android, native
-  architecture `qwen35` (Qwen3.5) is restricted when device facts report subgroup
-  16, below 8, or are unavailable, empty or inconsistent with the registry.
-  Ordinary text retains the eight-token prompt cap with `microBatchSize`
-  unset; explicit `1..8` is accepted. Values above `8` throw
-  `LlamaUnsupportedException` before context creation. Media (image/audio),
-  every speculative strategy and embeddings throw before evaluation; vision,
-  audio and embedding modality probes report unavailable, and generation
-  capabilities report no speculative strategies. A refused generation leaves
-  the text context reusable. Load with `ComputeDevice.cpu` for these features.
-  Missing native architecture metadata on this otherwise restricted GPU path
-  also throws because required safety cannot be established.
+  Before ggml `0.28.0` (llamadart-native `v0.8.0`), llama.cpp's Vulkan
+  small-matmul tile gave wrong results for micro-batches above 32 tokens on
+  GPUs with a subgroup size below 32 other than 8
+  ([llama.cpp#28637](https://github.com/ggml-org/llama.cpp/issues/28637),
+  fixed by [#30106](https://github.com/ggml-org/llama.cpp/pull/30106)). On a
+  Pixel 9 Pro (Mali-G715), Qwen3.5-0.8B Q4_0 answered long prompts with
+  repeated `8`, and a grammar or tool request could abort the process
+  ([#948](https://github.com/leehack/llamadart/issues/948)). With the bundled
+  runtime, the same model on Vulkan matched the CPU output byte for byte on a
+  Pixel 9 Pro, a Pixel 9 (Mali-G715) and a Pixel 7 (Mali-G710): text at
+  micro-batch 32 and 512, grammar and tool calls, image prompts, speculative
+  verify batches above 32 tokens, embeddings, and cancel, reuse and reload.
+  Other GPUs and other Qwen3.5 sizes or quantizations were not measured, and
+  Vulkan was slower than the CPU on all three phones. Android runs the image
+  encoder of Qwen3.5-0.8B on the CPU even when the model is on Vulkan; that
+  encoder on Vulkan is not validated.
 
-  The family-wide rule and refusal of sizes `9..32` are conservative admission
-  limits, not reproduced failures for every Qwen3.5 artifact or batch size.
-  `qwen35moe` and other known architectures are outside this rule. CPU and
-  zero-GPU-layer loads, non-Android/non-Vulkan backends, and complete subgroup
-  `8` or `>=32` facts retain their behavior; these exemptions do not constitute
-  new hardware qualification. Other architectures retain the existing default
-  text-only cap on unsafe/unproven subgroup facts; that cap is not protection
-  for media, speculative verification, embeddings, decision models or TTS.
+  With `microBatchSize` unset, Android Vulkan evaluates text prompts eight
+  tokens per call when the GPU reports a subgroup size below 32 other than 8,
+  or its facts are unavailable, empty or inconsistent with the registry. This
+  is a speed default: on the Pixel 9 Pro, prompt evaluation ran at about 44
+  tokens/s capped and 27-29 tokens/s at 32 or 512. Set `microBatchSize` to
+  lift it.
+
+  A llama.cpp runtime older than ggml `0.28.0`, from a native release
+  override or a custom build, keeps the earlier restriction. llamadart reads
+  the version from `ggml_version()`; a runtime that does not export it counts
+  as older. For a model actually loaded with Vulkan GPU layers on such a GPU
+  whose native architecture is `qwen35`, `microBatchSize` above `8` throws
+  `LlamaUnsupportedException` before context creation, and media, speculation
+  and embeddings throw before evaluation. Vision, audio and embedding probes
+  report them unavailable, generation capabilities report no speculative
+  strategies, and missing architecture metadata also throws. Other models
+  keep only the prompt cap there, which does not protect media, speculative
+  verification, embeddings, decision models or TTS. Use the bundled runtime
+  or `ComputeDevice.cpu`.
   llama.cpp's Vulkan backend also needs Vulkan 1.2 from the Vulkan loader and
   the GPU driver. When the Vulkan GPU a load would run on reports an older
   version, `ComputeDevice.gpu` throws `LlamaUnsupportedException` naming the

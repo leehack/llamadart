@@ -417,16 +417,18 @@ class ModelParams {
   /// the resolved logical batch size for compatibility. Other backends may
   /// preserve the same architecture-agnostic fallback.
   ///
-  /// Android Vulkan keeps an eight-token text-prompt cap when this is unset
-  /// and small-matmul subgroup facts are unsafe or unproven. For native
-  /// `general.architecture=qwen35` (Qwen3.5), an explicit value above 8 throws
-  /// `LlamaUnsupportedException` before context creation; unset and 1..8
-  /// retain bounded ordinary text. Media, speculation and embeddings throw
-  /// before evaluation on that model/device path. Use [ComputeDevice.cpu]
-  /// for those features. This conservative restriction includes unqualified
-  /// sizes 9..32; it does not establish failures at those sizes or qualify
-  /// other model/device combinations
-  /// ([#948](https://github.com/leehack/llamadart/issues/948)).
+  /// When this is unset, Android Vulkan evaluates text prompts eight tokens
+  /// per call on GPUs with a subgroup size below 32 other than 8, or an
+  /// unknown one: on the Mali-G715 measured, that was faster than larger
+  /// batches. Set it to lift that cap.
+  ///
+  /// With a llama.cpp runtime older than ggml 0.28.0 (llamadart-native
+  /// v0.8.0), native Qwen3.5 (`general.architecture=qwen35`) on those GPUs is
+  /// restricted to ordinary text: a value above 8 throws
+  /// `LlamaUnsupportedException` before context creation, and media,
+  /// speculation and embeddings throw before evaluation
+  /// ([#948](https://github.com/leehack/llamadart/issues/948)). The bundled
+  /// runtime has no such restriction.
   ///
   /// Native encoder-only models and models whose context has no KV cache,
   /// such as BERT and ModernBERT, embed each input in one micro-batch, so a

@@ -204,12 +204,11 @@ or shipping runtimes the app does not use.
   driver `2150604839` is excluded: an explicit GPU request throws; automatic
   selection with a Vulkan preference falls back to CPU with a warning.
   A shader-compiler workaround alone does not qualify quantized output. Leave
-  `ModelParams.microBatchSize` unset on Android Vulkan for bounded text calls.
-  Native `qwen35` (Qwen3.5) with unsafe/unproven small-matmul subgroup facts
-  accepts only unset or `1..8`; larger explicit values, media, speculation
-  and embeddings throw `LlamaUnsupportedException` (#948). Use CPU for those
-  features. The family-wide rule is conservative; it does not qualify final
-  GPU output or assert that every Qwen artifact or size 9..32 fails.
+  `ModelParams.microBatchSize` unset on Android Vulkan: its eight-token
+  prompt calls were faster on the Mali GPU measured. With a llama.cpp runtime
+  older than ggml `0.28.0` (llamadart-native `v0.8.0`), native `qwen35`
+  (Qwen3.5) on such GPUs accepts only unset or `1..8`, and media,
+  speculation and embeddings throw `LlamaUnsupportedException` (#948).
   LiteRT-LM attempts GPU on Android under `ComputeDevice.auto`. On Android
   12+ with target API 31+, add `<uses-native-library
   android:name="libOpenCL.so" android:required="false"/>` inside the app's

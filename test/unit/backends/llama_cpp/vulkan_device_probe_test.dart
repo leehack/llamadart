@@ -78,7 +78,7 @@ void main() {
 
     test('has the small matmul tile defect at every subgroup size '
         'ggml-vulkan mis-tiles', () {
-      // llama.cpp v0.6.0 gives a warp 8 rows of the 32-row block only at a
+      // ggml before 0.28.0 gives a warp 8 rows of the 32-row block only at a
       // subgroup size of exactly 8, where the block has max(size, 32) /
       // max(size, 8) warps.
       bool tiled(int size) {
@@ -110,6 +110,51 @@ void main() {
         ).toString(),
         '"Mali-G715" (API 1.1, loader 1.3, subgroup size 16)',
       );
+    });
+  });
+
+  group('ggmlHasSmallMatmulTileFix', () {
+    test('needs ggml 0.28.0 or newer', () {
+      for (final version in ['0.28.0', '0.28.3', '0.29.0', '1.0.0', '1.2.3']) {
+        expect(ggmlHasSmallMatmulTileFix(version), isTrue, reason: version);
+      }
+      // 0.27.0 spans llama.cpp commits from before and after the fix.
+      for (final version in ['0.27.0', '0.27.9', '0.9.4', '0.0.0']) {
+        expect(ggmlHasSmallMatmulTileFix(version), isFalse, reason: version);
+      }
+    });
+
+    test('treats a missing or unparsable version as unfixed', () {
+      for (final version in [
+        null,
+        '',
+        'unknown',
+        '0.28',
+        'v0.28.0',
+        ' 0.28.0',
+      ]) {
+        expect(ggmlHasSmallMatmulTileFix(version), isFalse, reason: version);
+      }
+    });
+  });
+
+  group('readGgmlVersion', () {
+    test('is null for a runtime without ggml_version', () {
+      expect(
+        readGgmlVersion(call: () => throw ArgumentError('not exported')),
+        isNull,
+      );
+      expect(readGgmlVersion(call: () => nullptr), isNull);
+    });
+
+    // Runs the real llama.cpp runtime.
+    test('the pinned runtime has the small matmul tile fix', () {
+      LlamaCppService().initializeBackend();
+
+      final version = readGgmlVersion();
+
+      expect(version, isNotNull);
+      expect(ggmlHasSmallMatmulTileFix(version), isTrue, reason: version);
     });
   });
 
