@@ -820,7 +820,8 @@ class DefaultModelDownloadManager implements ModelDownloadManager {
               error.osError?.errorCode == 20 ||
               (Platform.isWindows &&
                   (error.osError?.errorCode == 3 ||
-                      error.osError?.errorCode == 267));
+                      error.osError?.errorCode == 267)) ||
+              _mayBeWindowsDeletePending(error);
           // A new cache root must keep its identity after it is created.
           // Resolve its existing ancestor instead of using alias spelling.
           if (!missingPath ||
@@ -1671,7 +1672,8 @@ class DefaultModelDownloadManager implements ModelDownloadManager {
       // Another remover can delete a listed entry before we take its lock.
       // A dangling/replaced link is unsafe, rather than an already-gone entry.
       if ((error.osError?.errorCode == 2 ||
-              (Platform.isWindows && error.osError?.errorCode == 3)) &&
+              (Platform.isWindows && error.osError?.errorCode == 3) ||
+              _mayBeWindowsDeletePending(error)) &&
           await FileSystemEntity.type(directoryPath, followLinks: false) ==
               FileSystemEntityType.notFound) {
         return null;
@@ -1851,6 +1853,15 @@ class DefaultModelDownloadManager implements ModelDownloadManager {
 }
 
 enum _Removal { removed, inUse, skipped }
+
+/// Whether [error] may come from opening a path that is pending delete: on
+/// Windows, a deleted directory that any process, such as another remover or
+/// a virus scanner, still has open. Opening it fails with
+/// `ERROR_ACCESS_DENIED` until the last handle closes, while attribute
+/// queries, and so [FileSystemEntity.type], already report it missing; the
+/// callers tell it from a real denial by that type.
+bool _mayBeWindowsDeletePending(FileSystemException error) =>
+    Platform.isWindows && error.osError?.errorCode == 5;
 
 /// Thrown from a lock wait to give up instead of waiting.
 final class _EntryBusy implements Exception {

@@ -12,6 +12,7 @@ import 'package:path/path.dart' as path;
 import 'package:test/test.dart';
 
 import '../../../support/dart_script_snapshot.dart';
+import '../../../support/windows_directory_handle.dart';
 
 void main() {
   late String childSnapshot;
@@ -66,7 +67,10 @@ void main() {
           root.path,
           go,
         ]);
-        addTearDown(child.kill);
+        addTearDown(() async {
+          child.kill();
+          await child.exitCode;
+        });
         children.add(child);
         lines.add(
           StreamIterator(
@@ -106,6 +110,43 @@ void main() {
       expect(await manager.list(), isEmpty);
     }
   });
+
+  test('overlapping removals skip an entry that another program keeps pending '
+      'delete', () async {
+    for (var round = 0; round < 5; round += 1) {
+      await populate(1);
+      final entry = root
+          .listSync()
+          .whereType<Directory>()
+          .singleWhere((directory) => path.basename(directory.path) != '.locks')
+          .path;
+      final closeHandle = openSharedWindowsDirectoryHandle(entry);
+      addTearDown(closeHandle);
+
+      await Future.wait<Object?>(<Future<Object?>>[
+        manager.clear(),
+        manager.clear(),
+        manager.prune(maxAge: Duration.zero),
+      ]);
+
+      expect(
+        FileSystemEntity.typeSync(entry, followLinks: false),
+        FileSystemEntityType.notFound,
+      );
+      expect(
+        () => Directory(entry).resolveSymbolicLinksSync(),
+        throwsA(
+          isA<FileSystemException>().having(
+            (error) => error.osError?.errorCode,
+            'errorCode',
+            5,
+          ),
+        ),
+      );
+      closeHandle();
+      expect(await manager.list(), isEmpty);
+    }
+  }, testOn: 'windows');
 
   test('clear removes a stray .removal directory instead of reporting it in '
       'use', () async {
