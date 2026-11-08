@@ -119,8 +119,10 @@ void main() {
 
   for (final (tag, abi) in [
     ('v0.19.1-1', Abi.linuxX64),
+    ('v0.19.1-1', Abi.macosArm64),
     ('v0.19.1-1', Abi.windowsX64),
     ('v0.18.1-4', Abi.linuxX64),
+    ('v0.18.1-4', Abi.macosArm64),
     ('v0.18.1-4', Abi.windowsX64),
   ]) {
     final cApiV1 = liteRtLmSmokeUsesCApiV1(tag);
