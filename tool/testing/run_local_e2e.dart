@@ -3188,7 +3188,7 @@ Future<LocalE2eResult> runLocalE2e(
         return LocalE2eResult(
           64,
           stderr:
-              '$name is required for litert-lm-v1-service (SHA256 inputs require 64 hexadecimal digits).\n',
+              '$name is required for ${scenario.name} (SHA256 inputs require 64 hexadecimal digits).\n',
         );
       }
     }

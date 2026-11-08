@@ -42,11 +42,15 @@ class SafariSession:
         # A file, not a pipe: nothing reads stderr while the driver runs, and a
         # chatty driver would block on a full pipe.
         self._stderr = tempfile.TemporaryFile()
-        self._driver = subprocess.Popen(
-            [SAFARIDRIVER, "-p", str(self._port)],
-            stdout=subprocess.DEVNULL,
-            stderr=self._stderr,
-        )
+        try:
+            self._driver = subprocess.Popen(
+                [SAFARIDRIVER, "-p", str(self._port)],
+                stdout=subprocess.DEVNULL,
+                stderr=self._stderr,
+            )
+        except BaseException:
+            self._stderr.close()
+            raise
         self._base = f"http://127.0.0.1:{self._port}"
         self.session_id: str | None = None
         try:
@@ -66,17 +70,21 @@ class SafariSession:
         deadline = time.monotonic() + _DRIVER_START_TIMEOUT_S
         while time.monotonic() < deadline:
             if self._driver.poll() is not None:
-                self._stderr.seek(0)
-                stderr = self._stderr.read().decode(errors="replace")
-                raise WebDriverError(f"safaridriver exited: {stderr.strip()}")
+                raise WebDriverError(f"safaridriver exited: {self._driver_stderr()}")
             try:
                 self._request("GET", "/status")
                 return
             except (OSError, WebDriverError):
                 time.sleep(0.2)
+        detail = self._driver_stderr()
         raise WebDriverError(
             f"safaridriver did not start within {_DRIVER_START_TIMEOUT_S} s"
+            + (f": {detail}" if detail else "")
         )
+
+    def _driver_stderr(self) -> str:
+        self._stderr.seek(0)
+        return self._stderr.read().decode(errors="replace").strip()
 
     def _request(self, method: str, path: str, body: Any = None) -> Any:
         data = None if body is None else json.dumps(body).encode()

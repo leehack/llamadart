@@ -330,6 +330,11 @@ void main() => test('renders', () {});
         'test/unit/tooling/prepare_workspace_test.dart',
       ]) {
         expect(macos, contains(file));
+        expect(
+          [...tooling, ...runtime],
+          contains(file),
+          reason: '$file must run on a Windows lane',
+        );
       }
       for (final file in [
         'test/unit/core/template/chat_format_registry_test.dart',
