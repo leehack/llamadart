@@ -721,8 +721,8 @@ await prefs.setInt('preferred_backend', backendIndex);
 - Android text-only chat is stable even when `mmproj` is loaded.
 - Android keeps the Qwen3.5 image encoder on the CPU when the model runs on a
   `Vulkan` GPU with a subgroup size below 32 other than 8 or unknown device
-  facts, and keeps Qwen3.5 `0.8B` projector files (matched by file name) on
-  the CPU on every Android GPU.
+  facts, and keeps the projector of a Qwen3.5 `0.8B` model (matched by the model file
+  name) on the CPU on every Android GPU.
 
 ### Hugging Face static deployment (CI)
 
