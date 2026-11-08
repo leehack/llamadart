@@ -1507,12 +1507,12 @@ Future<void> _emitLiteRtLmAssets({
     );
     return;
   }
+  // Owner archives also carry libraries no host loads, such as the prebuilt
+  // libLiteRt beside Linux and Windows hosts that link LiteRT in.
   final libraryPaths = _collectDynamicLibraryPaths(
     bundleDir,
     additionalFileNames: bundleSpec.requiredLibraries,
-    onlyFileNames: code.targetOS == OS.iOS
-        ? bundleSpec.requiredLibraries
-        : null,
+    onlyFileNames: bundleSpec.requiredLibraries,
   );
   if (libraryPaths.isEmpty) {
     log.warning('LiteRT-LM bundle had no dynamic libraries.');

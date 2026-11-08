@@ -16,34 +16,43 @@ void main() {
     Abi.linuxX64,
     Abi.windowsX64,
   ];
+  // Linux and Windows hosts from v0.19.1-1 link LiteRT in and never load
+  // the prebuilt libLiteRt their owner archive still carries.
+  const linkedInLiteRt = {
+    Abi.linuxArm64: 'libLiteRt.so',
+    Abi.linuxX64: 'libLiteRt.so',
+    Abi.windowsX64: 'libLiteRt.dll',
+  };
   for (final abi in desktopAbis) {
-    test(
-      '$abi v1 keeps all owner companions except retired TopK libraries',
-      () {
-        final legacy = liteRtLmRequiredLibrariesForAbi(abi);
-        final modern = liteRtLmRequiredLibrariesForAbi(abi, cApiV1: true);
-        expect(modern.length, switch (abi) {
-          Abi.macosArm64 => 7,
-          Abi.windowsX64 => 12,
-          _ => 5,
-        });
-        expect(
-          legacy.toSet().difference(modern.toSet()),
-          everyElement(contains('TopK')),
-        );
-        expect(modern, containsAll(liteRtLmNonPreloadedLibrariesForAbi(abi)));
-        expect(
-          liteRtLmCompanionLibrariesForAbi(abi, cApiV1: true),
-          unorderedEquals(
-            modern.where(
-              (file) =>
-                  file != liteRtLmPrimaryLibraryForAbi(abi) &&
-                  !liteRtLmNonPreloadedLibrariesForAbi(abi).contains(file),
-            ),
+    test('$abi v1 keeps all owner companions except retired TopK libraries '
+        'and a linked-in LiteRT', () {
+      final legacy = liteRtLmRequiredLibrariesForAbi(abi);
+      final modern = liteRtLmRequiredLibrariesForAbi(abi, cApiV1: true);
+      expect(modern.length, switch (abi) {
+        Abi.macosArm64 => 7,
+        Abi.windowsX64 => 11,
+        _ => 4,
+      });
+      final retired = legacy.toSet().difference(modern.toSet());
+      expect(
+        retired.where((file) => file != linkedInLiteRt[abi]),
+        everyElement(contains('TopK')),
+      );
+      if (linkedInLiteRt[abi] case final liteRt?) {
+        expect(retired, contains(liteRt));
+      }
+      expect(modern, containsAll(liteRtLmNonPreloadedLibrariesForAbi(abi)));
+      expect(
+        liteRtLmCompanionLibrariesForAbi(abi, cApiV1: true),
+        unorderedEquals(
+          modern.where(
+            (file) =>
+                file != liteRtLmPrimaryLibraryForAbi(abi) &&
+                !liteRtLmNonPreloadedLibrariesForAbi(abi).contains(file),
           ),
-        );
-      },
-    );
+        ),
+      );
+    });
   }
 
   test('v1 discovery matches the frozen owner 0.19 desktop inventory', () {
@@ -67,19 +76,57 @@ void main() {
             item['platform'] == entry.value.$1 &&
             item['arch'] == entry.value.$2,
       );
-      final expected =
+      final owner =
           (platform['artifactPaths'] as List<dynamic>)
               .cast<String>()
               .where((file) => !file.endsWith('.lib'))
               .map(path.basename)
               .toList()
             ..sort();
+      final linked = linkedInLiteRt[entry.key];
+      if (linked != null) expect(owner, contains(linked));
+      final expected = owner.where((file) => file != linked).toList();
       expect(
         liteRtLmRequiredLibrariesForAbi(entry.key, cApiV1: true),
         expected,
         reason: '${entry.key} owner inventory',
       );
     }
+  });
+
+  for (final abi in linkedInLiteRt.keys) {
+    test('$abi explicit directories open a present libLiteRt for older '
+        'hosts', () {
+      final liteRt = linkedInLiteRt[abi]!;
+      final directory = Directory.systemTemp.createTempSync('litert_optional_');
+      addTearDown(() => directory.deleteSync(recursive: true));
+      List<String> names({required bool cApiV1}) =>
+          liteRtLmExplicitDirectoryCompanionPathsForAbi(
+            abi,
+            directory,
+            cApiV1: cApiV1,
+          ).map((file) => file.split('/').last).toList();
+
+      expect(liteRtLmOptionalCompanionLibrariesForAbi(abi), [liteRt]);
+      expect(
+        names(cApiV1: true),
+        liteRtLmCompanionLibrariesForAbi(abi, cApiV1: true),
+        reason: 'a v0.19.1-1 directory without it is unchanged',
+      );
+      File(path.join(directory.path, liteRt)).writeAsStringSync('');
+      expect(names(cApiV1: true), [
+        ...liteRtLmCompanionLibrariesForAbi(abi, cApiV1: true),
+        liteRt,
+      ]);
+      expect(
+        names(cApiV1: false).where((file) => file == liteRt),
+        hasLength(1),
+        reason: 'legacy inventories already require it',
+      );
+    });
+  }
+  test('macOS explicit directories open no optional companion', () {
+    expect(liteRtLmOptionalCompanionLibrariesForAbi(Abi.macosArm64), isEmpty);
   });
 
   test('v1 Windows still loads CRT and Dawn before their importers', () {
@@ -277,6 +324,39 @@ void _compiledFixtures() {
       }
     },
   );
+
+  if (Platform.isLinux) {
+    test('an older host importing libLiteRt loads from an explicit directory '
+        'only when its libLiteRt is present', () async {
+      for (final version in ['v1', 'legacy']) {
+        final directory = populate(
+          'imports-litert-$version',
+          version,
+          legacyFiles: version == 'legacy',
+        );
+        // No RUNPATH: like Windows, the import resolves only to a module
+        // that is already open.
+        await compile(
+          'test/fixtures/litert_lm/discovery_companion.c',
+          path.join(directory.path, 'libLiteRt.so'),
+          ['-Wl,-soname,libLiteRt.so'],
+        );
+        await compile(
+          'test/fixtures/litert_lm/${version == 'v1' ? 'c_api_v1_asr.c' : 'c_api_legacy_service.c'}',
+          path.join(directory.path, libraryName),
+          ['-L${directory.path}', '-Wl,--no-as-needed', '-lLiteRt'],
+        );
+        succeeds(await probe(directory: directory.path));
+        if (version == 'v1') {
+          File(path.join(directory.path, 'libLiteRt.so')).deleteSync();
+          refuses(
+            await probe(directory: directory.path),
+            'explicitly selected',
+          );
+        }
+      }
+    });
+  }
 
   test('flag-off retains legacy inventory and refuses v1', () async {
     final legacy = populate('flag-off-legacy', 'legacy', legacyFiles: true);

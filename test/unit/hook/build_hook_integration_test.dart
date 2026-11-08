@@ -50,7 +50,12 @@ void main() {
       'cublaslt64_12.dll',
     ]);
     await markExtractedBundle(bundleDir);
-    await _writeBundleLibraries(litertBundleDir, _windowsLiteRtLibraries);
+    // The owner archive also carries the prebuilt libLiteRt.dll that the
+    // Windows host links in instead of loading.
+    await _writeBundleLibraries(litertBundleDir, [
+      ..._windowsLiteRtLibraries,
+      'libLiteRt.dll',
+    ]);
   });
 
   tearDownAll(project.delete);
@@ -161,6 +166,7 @@ void main() {
           for (final assetName in _windowsLiteRtAssetNames) {
             expect(codeAssetIds, contains('package:llamadart/$assetName'));
           }
+          expect(emittedNames, isNot(contains('libLiteRt.dll')));
           expect(emittedNames, isNot(contains('ggml-cuda-windows-x64.dll')));
           expect(emittedNames, isNot(contains('cudart64_12.dll')));
           expect(emittedNames, isNot(contains('cublas64_12.dll')));
@@ -954,10 +960,8 @@ const List<String> _windowsLiteRtLibraries = [
   'dxcompiler.dll',
   'dxil.dll',
   'libGemmaModelConstraintProvider.dll',
-  'libLiteRt.dll',
   'libwebgpu_dawn.dll',
   'webgpu_dawn.dll',
-  'libLiteRtTopKWebGpuSampler.dll',
   'libLiteRtWebGpuAccelerator.dll',
   'msvcp140.dll',
   'vcruntime140.dll',
@@ -968,9 +972,7 @@ const List<String> _windowsLiteRtLibraries = [
 const List<String> _windowsLiteRtAssetNames = [
   'litert_lm_LiteRtLm',
   'litert_lm_GemmaModelConstraintProvider',
-  'litert_lm_LiteRt',
   'litert_lm_webgpu_dawn',
-  'litert_lm_LiteRtTopKWebGpuSampler',
   'litert_lm_LiteRtWebGpuAccelerator',
 ];
 

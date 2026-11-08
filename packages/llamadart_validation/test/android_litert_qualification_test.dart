@@ -1,6 +1,9 @@
 import 'dart:convert';
 import 'dart:io';
 
+// The binding must admit the runtime the hook pins.
+// ignore: implementation_imports
+import 'package:llamadart/src/hook/native_release_pins.dart';
 import 'package:llamadart_validation/android_litert_qualification.dart';
 import 'package:llamadart_validation/android_litert_qualification_io.dart';
 import 'package:test/test.dart';
@@ -121,6 +124,33 @@ void main() {
       }
     },
   );
+  test('binding admits only the listed runtime tags, including the pin', () {
+    expect(
+      s24LiteRtRuntimeTags,
+      contains(liteRtLmReleaseTag),
+      reason:
+          'Requalify S24 on $liteRtLmReleaseTag, or admit it only if its '
+          'Android arm64 binaries match an admitted tag.',
+    );
+    for (final tag in s24LiteRtRuntimeTags) {
+      requireS24LiteRtBinding(binding()..['runtime_tag'] = tag);
+    }
+    for (final tag in <Object?>[
+      'v0.19.0',
+      'v0.19.1-2',
+      'v0.19.2',
+      'v0.20.0',
+      '0.19.1-1',
+      'v0.19.1 ',
+      null,
+    ]) {
+      expect(
+        () => requireS24LiteRtBinding(binding()..['runtime_tag'] = tag),
+        throwsFormatException,
+        reason: '$tag',
+      );
+    }
+  });
   test('raw capture preserves invalid UTF8 and NUL without interpretation', () {
     final raw = [0, 0xc3, 0x8a, 0xff];
     final captured = captureS24LiteRtBytes(raw);

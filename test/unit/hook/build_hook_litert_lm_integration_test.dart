@@ -77,7 +77,12 @@ void main() {
       'libggml-base.so',
       'libggml-cpu.so',
     ]);
-    await _writeBundleLibraries(litertBundleDir, _linuxLiteRtLibraries);
+    // The owner archive also carries the prebuilt libLiteRt.so that the
+    // Linux host links in instead of loading.
+    await _writeBundleLibraries(litertBundleDir, [
+      ..._linuxLiteRtLibraries,
+      'libLiteRt.so',
+    ]);
     await _writeBundleLibraries(macosArm64NativeBundleDir, const [
       'libllamadart.dylib',
     ]);
@@ -185,6 +190,11 @@ void main() {
           for (final assetName in _linuxLiteRtAssetNames) {
             expect(codeAssetIds, contains('package:llamadart/$assetName'));
           }
+          expect(emittedNames, isNot(contains('libLiteRt.so')));
+          expect(
+            codeAssetIds,
+            isNot(contains('package:llamadart/litert_lm_LiteRt')),
+          );
         },
       );
     },
@@ -2775,7 +2785,6 @@ const List<String> _macosArm64LiteRtLibraries = [
 
 const List<String> _linuxLiteRtLibraries = [
   'libGemmaModelConstraintProvider.so',
-  'libLiteRt.so',
   'libLiteRtLm.so',
   'libwebgpu_dawn.so',
   'libLiteRtWebGpuAccelerator.so',
@@ -2783,7 +2792,6 @@ const List<String> _linuxLiteRtLibraries = [
 
 const List<String> _linuxLiteRtAssetNames = [
   'litert_lm_GemmaModelConstraintProvider',
-  'litert_lm_LiteRt',
   'litert_lm_LiteRtLm',
   'litert_lm_webgpu_dawn',
   'litert_lm_LiteRtWebGpuAccelerator',
@@ -2794,7 +2802,6 @@ const List<String> _windowsLiteRtLibraries = [
   'dxcompiler.dll',
   'dxil.dll',
   'libGemmaModelConstraintProvider.dll',
-  'libLiteRt.dll',
   'libwebgpu_dawn.dll',
   'webgpu_dawn.dll',
   'libLiteRtWebGpuAccelerator.dll',

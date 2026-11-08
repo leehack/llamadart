@@ -403,7 +403,9 @@ List<String> liteRtLmIosLibraryCandidates(
 }
 
 /// Required desktop runtime files. The default preserves legacy discovery;
-/// [cApiV1] describes the owner 0.19 inventory after C API admission.
+/// [cApiV1] describes the owner 0.19 inventory after C API admission, less
+/// the prebuilt `libLiteRt` that Linux and Windows hosts from v0.19.1-1 link
+/// in instead of loading (litert-lm-native#112).
 List<String> liteRtLmRequiredLibrariesForAbi(Abi abi, {bool cApiV1 = false}) {
   return cApiV1
       ? _liteRtLmV1RequiredLibrariesForAbi(abi)
@@ -471,14 +473,12 @@ List<String> _liteRtLmV1RequiredLibrariesForAbi(Abi abi) {
     ],
     Abi.linuxArm64 => const <String>[
       'libGemmaModelConstraintProvider.so',
-      'libLiteRt.so',
       'libLiteRtLm.so',
       'libLiteRtWebGpuAccelerator.so',
       'libwebgpu_dawn.so',
     ],
     Abi.linuxX64 => const <String>[
       'libGemmaModelConstraintProvider.so',
-      'libLiteRt.so',
       'libLiteRtLm.so',
       'libLiteRtWebGpuAccelerator.so',
       'libwebgpu_dawn.so',
@@ -488,7 +488,6 @@ List<String> _liteRtLmV1RequiredLibrariesForAbi(Abi abi) {
       'dxcompiler.dll',
       'dxil.dll',
       'libGemmaModelConstraintProvider.dll',
-      'libLiteRt.dll',
       'libLiteRtWebGpuAccelerator.dll',
       'libwebgpu_dawn.dll',
       'msvcp140.dll',
@@ -560,6 +559,39 @@ List<String> liteRtLmCompanionLibrariesForAbi(Abi abi, {bool cApiV1 = false}) {
   return <String>[
     ...dependencies,
     ...companions.where((library) => !dependencies.contains(library)),
+  ];
+}
+
+/// The prebuilt LiteRT that Linux and Windows hosts before v0.19.1-1 import
+/// (v0.18.x, v0.19.0 and v0.19.1). Hosts from v0.19.1-1 link LiteRT in, so
+/// neither inventory requires it.
+List<String> liteRtLmOptionalCompanionLibrariesForAbi(Abi abi) {
+  return switch (abi) {
+    Abi.linuxArm64 || Abi.linuxX64 => const <String>['libLiteRt.so'],
+    Abi.windowsX64 => const <String>['libLiteRt.dll'],
+    _ => const <String>[],
+  };
+}
+
+/// Companion paths the runtime opens from an explicit
+/// `LLAMADART_LITERT_LM_LIB_DIR` [directory] before its primary library:
+/// [liteRtLmCompanionLibrariesForAbi], then each
+/// [liteRtLmOptionalCompanionLibrariesForAbi] library the directory holds.
+///
+/// Windows does not search a DLL's own directory for its imports, so an older
+/// custom host loads only if its `libLiteRt.dll` is already open.
+List<String> liteRtLmExplicitDirectoryCompanionPathsForAbi(
+  Abi abi,
+  Directory directory, {
+  bool cApiV1 = false,
+}) {
+  final companions = liteRtLmCompanionLibrariesForAbi(abi, cApiV1: cApiV1);
+  return <String>[
+    for (final library in companions) '${directory.path}/$library',
+    for (final library in liteRtLmOptionalCompanionLibrariesForAbi(abi))
+      if (!companions.contains(library) &&
+          File('${directory.path}/$library').existsSync())
+        '${directory.path}/$library',
   ];
 }
 
@@ -2124,7 +2156,11 @@ class _LegacyLiteRtLmRuntimeClient extends LiteRtLmRuntimeClient {
         liteRtLmCandidates: [
           path.join(directory.path, liteRtLmPrimaryLibraryForAbi(abi)!),
         ],
-        companions: _companionLibrariesForAbi(abi, directory),
+        companions: liteRtLmExplicitDirectoryCompanionPathsForAbi(
+          abi,
+          directory,
+          cApiV1: _allowV1Inventory,
+        ),
         directCallbackSupported: true,
       );
     }

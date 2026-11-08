@@ -40,34 +40,43 @@ Directory Function() useSuiteSystemTemp() {
       isEmpty,
       reason: 'files deleted from ${realCacheRoot.path}',
     );
-    _deleteSuiteRoot(root);
+    deleteSuiteRoot(root);
   });
 
   return () => root;
 }
 
 /// Deletes [root], except on Windows the XNNPack caches that LiteRT-LM keeps
-/// open after its engines are disposed, until the process exits.
-void _deleteSuiteRoot(Directory root) {
+/// open after its engines are disposed, until the process exits: those and
+/// [root] are left behind. Any other undeletable file throws.
+///
+/// [isWindows] and [delete] replace the host checks in tests.
+void deleteSuiteRoot(
+  Directory root, {
+  bool? isWindows,
+  void Function(FileSystemEntity entity) delete = _deleteRecursively,
+}) {
   try {
-    root.deleteSync(recursive: true);
+    delete(root);
   } on FileSystemException {
-    if (!Platform.isWindows) rethrow;
+    if (!(isWindows ?? Platform.isWindows)) rethrow;
     final undeletable = <String>[];
     for (final file
         in root
             .listSync(recursive: true, followLinks: false)
             .whereType<File>()) {
-      if (file.path.endsWith('.xnnpack_cache')) continue;
       try {
-        file.deleteSync();
+        delete(file);
       } on FileSystemException {
-        undeletable.add(file.path);
+        if (!file.path.endsWith('.xnnpack_cache')) undeletable.add(file.path);
       }
     }
     if (undeletable.isNotEmpty) rethrow;
   }
 }
+
+void _deleteRecursively(FileSystemEntity entity) =>
+    entity.deleteSync(recursive: true);
 
 Set<String> _fileNames(Directory dir) {
   if (!dir.existsSync()) return <String>{};

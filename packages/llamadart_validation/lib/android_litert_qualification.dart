@@ -24,6 +24,11 @@ const s24LiteRtNativeLibraries = {
   'libwebgpu_dawn.so',
 };
 
+/// Owner runtime tags the S24 binding admits. `v0.19.1-1` rebuilt only the
+/// Linux and Windows hosts; its Android binaries are byte-identical to
+/// `v0.19.1` (#1808).
+const s24LiteRtRuntimeTags = {'v0.19.1', 'v0.19.1-1'};
+
 /// Fixed prospective stage caps sum to 1,050s; FTL still caps the run at 1,200s.
 const s24LiteRtStageSeconds = {
   'staging-and-identity': 120,
@@ -111,7 +116,7 @@ void requireS24LiteRtBinding(Map<String, dynamic> value) {
   _require(
     value['schema'] == 1 &&
         value['source_dirty'] == false &&
-        value['runtime_tag'] == 'v0.19.1' &&
+        s24LiteRtRuntimeTags.contains(value['runtime_tag']) &&
         value['abi'] == 'android-arm64' &&
         value['test_class'] ==
             'com.example.llamadart_chat_example.S24LiteRtPublicTest' &&

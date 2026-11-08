@@ -59,7 +59,12 @@ void main() {
       'libggml-vulkan.so',
     ]);
     await markExtractedBundle(historicalBundleDir);
-    await _writeBundleLibraries(litertBundleDir, _linuxLiteRtLibraries);
+    // The owner archive also carries the prebuilt libLiteRt.so that the
+    // Linux host links in instead of loading.
+    await _writeBundleLibraries(litertBundleDir, [
+      ..._linuxLiteRtLibraries,
+      'libLiteRt.so',
+    ]);
   });
 
   tearDownAll(project.delete);
@@ -102,6 +107,7 @@ void main() {
           for (final assetName in _linuxLiteRtAssetNames) {
             expect(codeAssetIds, contains('package:llamadart/$assetName'));
           }
+          expect(emittedNames, isNot(contains('libLiteRt.so')));
         },
       );
     },
@@ -547,19 +553,15 @@ String _readHookLiteRtLmVersion() {
 
 const List<String> _linuxLiteRtLibraries = [
   'libGemmaModelConstraintProvider.so',
-  'libLiteRt.so',
   'libLiteRtLm.so',
   'libwebgpu_dawn.so',
-  'libLiteRtTopKWebGpuSampler.so',
   'libLiteRtWebGpuAccelerator.so',
 ];
 
 const List<String> _linuxLiteRtAssetNames = [
   'litert_lm_GemmaModelConstraintProvider',
-  'litert_lm_LiteRt',
   'litert_lm_LiteRtLm',
   'litert_lm_webgpu_dawn',
-  'litert_lm_LiteRtTopKWebGpuSampler',
   'litert_lm_LiteRtWebGpuAccelerator',
 ];
 
