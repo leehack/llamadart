@@ -26,6 +26,9 @@ matching companion; see [installation](../getting-started/installation).
 iOS requires 16.4+ and macOS 14.0+. On Windows install the matching Microsoft
 Visual C++ runtime. CPU is the baseline; GPU placement needs its own qualification.
 
+The next `genkit_llamadart` release is planned to target llamadart 0.19; it is
+not published yet.
+
 ## Generate, then stream
 
 Save as `bin/main.dart` and run `dart run bin/main.dart /path/to/chat.gguf` with

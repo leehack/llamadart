@@ -1107,7 +1107,7 @@ for event,flag,native,cancel,good,main in itertools.product(('push','pull_reques
           contains('crypto@3.0.7'),
           contains('genkit@1.0.0'),
           contains('http@1.6.0'),
-          contains('llamadart@0.18.0'),
+          contains('llamadart@0.19.0'),
           contains('schemantic@1.0.0'),
         ),
       );
