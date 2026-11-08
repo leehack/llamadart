@@ -4764,7 +4764,8 @@ def update_core_changelog_native_pin(
     )
     body = changelog_text[body_start:body_end]
     old_entry_pattern = re.compile(
-        r"^[-*] Updated the default llama\.cpp native runtime pin to(?:\n  .*)*\n?",
+        r"^[-*] Updated the default llama\.cpp native runtime pin to[^\n]*"
+        r"(?:\n(?![-*] |#)[^\S\n]*\S[^\n]*)*\n?(?:[^\S\n]*\n)*",
         re.MULTILINE,
     )
     existing_entry = old_entry_pattern.search(body)
