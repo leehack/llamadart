@@ -12,7 +12,7 @@ Future<void> main(List<String> args) async {
   final engine = LlamaEngine(LlamaBackend());
   final params = ModelParams(
     contextSize: 1024,
-    numberOfThreads: 4,
+    numberOfThreads: backend == LiteRtLmBackendPreference.cpu ? 2 : 0,
     liteRtLmBackend: backend,
   );
   void event(String stage, [Map<String, Object?> values = const {}]) {

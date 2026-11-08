@@ -3113,9 +3113,9 @@ Future<LocalE2eResult> runLocalE2e(
       scenario.name == 'litert-lm-v1-json-schema' ||
       scenario.name == 'litert-lm-v1-asr-smoke') {
     if (parsed.backend != 'cpu') {
-      return const LocalE2eResult(
+      return LocalE2eResult(
         64,
-        stderr: '--backend cpu is required for litert-lm-v1-service.\n',
+        stderr: '--backend cpu is required for ${scenario.name}.\n',
       );
     }
     final env = environment ?? Platform.environment;

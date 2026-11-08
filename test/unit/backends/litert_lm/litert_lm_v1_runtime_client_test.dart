@@ -602,7 +602,7 @@ void main() {
             (error) => error.message,
             'runtime restriction',
             allOf(
-              contains('v0.19.0'),
+              contains('pinned native LiteRT-LM runtime'),
               contains('advanced engine'),
               contains('litert-lm-native#99'),
               isNot(contains('/private/')),
