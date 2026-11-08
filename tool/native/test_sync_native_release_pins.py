@@ -3746,6 +3746,21 @@ class CoreChangelogNativePinTest(unittest.TestCase):
         self.assertNotIn("\n* ", updated)
         self.assertIn("- Kept.", updated)
 
+    def test_replaces_a_hand_written_entry_with_unindented_continuation_lines(
+        self,
+    ) -> None:
+        handwritten = (
+            "## Unreleased\n\n- Updated the default llama.cpp native runtime pin to\n"
+            "`leehack/llamadart-native@b1`, hand written\n"
+            "continuation.\n\n\n- Kept.\n\n## 1.0.0\n\n- Released.\n"
+        )
+        updated = pins.update_core_changelog_native_pin(handwritten, self.repo, "b2")
+        self.assertNotIn("b1", updated)
+        self.assertNotIn("continuation", updated)
+        self.assertIn("`leehack/llamadart-native@b2`", updated)
+        self.assertTrue(updated.endswith("- Kept.\n\n## 1.0.0\n\n- Released.\n"))
+        self.assertEqual(updated.count("- Updated the default llama.cpp"), 1)
+
 
 class CompanionChangelogUnreleasedTest(unittest.TestCase):
     repo = "leehack/litert-lm-native"

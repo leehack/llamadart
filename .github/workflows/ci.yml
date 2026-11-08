@@ -224,7 +224,8 @@ jobs:
             echo "::error::The model store lane modified tracked or untracked files."
             exit 1
           fi
-      # llamadart 0.17 is not on pub.dev yet, so resolve it from this checkout.
+      # Resolve llamadart from this checkout so the dry-run validates the package
+      # against the unreleased core.
       - name: Publish dry-run
         working-directory: packages/llamadart_model_store
         run: |
