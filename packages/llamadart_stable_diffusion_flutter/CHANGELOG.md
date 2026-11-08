@@ -1,3 +1,8 @@
+## 0.19.0
+
+- Pair with core `>=0.19.0 <0.20.0`; Apple SwiftPM stays pinned to
+  `leehack/stable-diffusion-native@v0.3.0-3`.
+
 ## 0.18.0
 
 - Pair with core `>=0.18.0 <0.19.0`; update Apple SwiftPM to

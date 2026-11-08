@@ -224,14 +224,12 @@ The native-assets hook currently pins `llamadart-native` tag
 
 The direct native client, service probes and speech worker share ABI-aware
 discovery. Public selection admits legacy runtimes and C API 1.0.x; unknown
-or future versions are refused before engine calls. The source pin adopts
+or future versions are refused before engine calls. The pinned runtime is
 published native
 [v0.19.1-1](https://github.com/leehack/litert-lm-native/releases/tag/v0.19.1-1)
 (owner `82d4ae1c`, upstream `7a03724c`). The selected loader requires macOS 14+
 before loading any core or companion library, including legacy libraries and
-custom paths. Final default-discovery and Apple embedding/signature checks remain
-in [#1677](https://github.com/leehack/llamadart/issues/1677); the source pin does
-not publish core or companion packages. Web uses `@litert-lm/core@0.19.0`.
+custom paths. Web uses `@litert-lm/core@0.19.0`.
 The Flutter companion's iOS 16.4 floor remains separate.
 Apps can override the llama.cpp release with `llamadart_native_tag`; accepted
 tag forms, keys, backend modules and local bundles:

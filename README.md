@@ -34,7 +34,7 @@ LFM2 replies cut off at a reported length limit expose raw `partialToolCalls` di
 
 ```yaml
 dependencies:
-  llamadart: ^0.18.0
+  llamadart: ^0.19.0
 ```
 
 ```bash
@@ -55,10 +55,10 @@ companion shares its core's `MAJOR.MINOR` and constrains `llamadart` to it.
 
 ```yaml
 dependencies:
-  llamadart: ^0.18.0
-  llamadart_llama_cpp_flutter: ^0.18.0 # GGUF / llama.cpp
-  llamadart_litert_lm_flutter: ^0.18.0 # Apple .litertlm / LiteRT-LM targets
-  llamadart_stable_diffusion_flutter: ^0.18.0 # Apple image generation, opt-in
+  llamadart: ^0.19.0
+  llamadart_llama_cpp_flutter: ^0.19.0 # GGUF / llama.cpp
+  llamadart_litert_lm_flutter: ^0.19.0 # Apple .litertlm / LiteRT-LM targets
+  llamadart_stable_diffusion_flutter: ^0.19.0 # Apple image generation, opt-in
 ```
 
 Pairing rules, the SwiftPM bootstrap and the privacy manifest are in
@@ -168,14 +168,12 @@ Current default runtime pins:
 
 Native LiteRT-LM uses a lazy ABI-aware client for direct calls, services and
 speech. The public selector admits legacy runtimes and C API 1.0.x; unknown or
-future versions are refused before engine calls. The source pin now uses
+future versions are refused before engine calls. The pinned runtime is
 published native
 [v0.19.1-1](https://github.com/leehack/litert-lm-native/releases/tag/v0.19.1-1),
 owner source `82d4ae1c` / upstream `7a03724c`. The selected loader requires
 macOS 14+ before owned library loads, including legacy libraries and custom
-paths. Final core/Apple consumer checks and package release remain separate
-[#1677](https://github.com/leehack/llamadart/issues/1677) gates; Web LiteRT-LM
-uses `@litert-lm/core@0.19.0`.
+paths. Web LiteRT-LM uses `@litert-lm/core@0.19.0`.
 
 Native overrides accept stable `vMAJOR.MINOR.PATCH` releases and explicit
 historical or nightly `bNNNN` artifacts. New nightly wrapper rebuilds use

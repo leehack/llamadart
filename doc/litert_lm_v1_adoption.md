@@ -14,10 +14,9 @@ at `42585e838`; maintained ASR preservation merged in
 [#1748](https://github.com/leehack/llamadart/pull/1748) at `21dd`, after passing
 CI and independent review of the equivalent `457` tree. Historical release head
 `a47e6ff2` passed default-discovery consumer, SwiftPM and macOS Release app
-embedding/signature checks for all three Apple companions. Final integration,
-renewed exact-head evidence and approval to publish core plus the three companions
-remain gates for draft [#1746](https://github.com/leehack/llamadart/pull/1746)
-and [#1677](https://github.com/leehack/llamadart/issues/1677).
+embedding/signature checks for all three Apple companions. Core and the three
+companions shipped C API 1 in `0.18.0`
+([#1677](https://github.com/leehack/llamadart/issues/1677)).
 Web uses `@litert-lm/core@0.19.0`. The internal
 `createLiteRtLmSelectedRuntimeClient(allowV1: true)` entry point exercises that
 same facade with admitted C API 1.0.x fixtures, retaining selected core and
