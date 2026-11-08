@@ -133,6 +133,14 @@ SCENARIO = json.loads(os.environ['LLAMADART_FAKE_SAFARI_SCENARIO'])
 ELEMENT = {'element-6066-11e4-a52e-4f735466cecf': 'node-1'}
 
 
+if SCENARIO.get('stderrBytes'):
+    sys.stderr.write('x' * SCENARIO['stderrBytes'])
+    sys.stderr.flush()
+
+with open(SCENARIO['logPath'] + '.pid', 'w', encoding='utf-8') as out:
+    out.write(str(os.getpid()))
+
+
 def log(entry):
     with open(SCENARIO['logPath'], 'a', encoding='utf-8') as out:
         out.write(json.dumps(entry) + '\n')
@@ -405,7 +413,11 @@ void main() {
     timeout: Timeout(_processTimeout * 2 + const Duration(seconds: 10)),
     () {
       Future<({ProcessResult result, List<Map<String, dynamic>> commands})>
-      runSafari({required String visibility, required int frames}) async {
+      runSafari({
+        required String visibility,
+        required int frames,
+        int stderrBytes = 0,
+      }) async {
         final driver = File(p.join(tempDir.path, 'fake_safaridriver'))
           ..writeAsStringSync(_fakeSafariDriver);
         await Process.run('chmod', ['+x', driver.path]);
@@ -436,6 +448,7 @@ void main() {
               'logPath': logPath,
               'visibility': visibility,
               'frames': frames,
+              'stderrBytes': stderrBytes,
             }),
           },
           timeout: _processTimeout * 2,
@@ -483,13 +496,41 @@ void main() {
         expect(run.commands.last['method'], 'DELETE');
       });
 
-      test('fails before loading when the page is hidden', () async {
-        final run = await runSafari(visibility: 'hidden', frames: 0);
+      for (final (name, visibility, frames) in [
+        ('is hidden', 'hidden', 60),
+        ('renders no frames', 'visible', 0),
+      ]) {
+        test('fails before loading when the page $name', () async {
+          final run = await runSafari(visibility: visibility, frames: frames);
 
-        expect(run.result.exitCode, isNot(0));
-        expect(run.result.stderr, contains('Safari page is not visible'));
-        expect(run.commands.where((c) => c['command'] == 'click'), isEmpty);
-        expect(run.commands.last['method'], 'DELETE');
+          expect(run.result.exitCode, isNot(0));
+          expect(run.result.stderr, contains('Safari page is not visible'));
+          expect(run.commands.where((c) => c['command'] == 'click'), isEmpty);
+          expect(run.commands.last['method'], 'DELETE');
+        });
+      }
+
+      test('stops the driver process on close', () async {
+        await runSafari(visibility: 'visible', frames: 60);
+
+        final pid = File(
+          p.join(tempDir.path, 'safari_commands.jsonl.pid'),
+        ).readAsStringSync();
+        final probe = await Process.run('kill', ['-0', pid]);
+        if (probe.exitCode == 0) {
+          await Process.run('kill', ['-9', pid]);
+        }
+        expect(probe.exitCode, isNot(0), reason: 'driver $pid still running');
+      });
+
+      test('does not stall on a driver that fills its stderr', () async {
+        final run = await runSafari(
+          visibility: 'visible',
+          frames: 60,
+          stderrBytes: 1 << 20,
+        );
+
+        expect(run.result.exitCode, 0, reason: '${run.result.stderr}');
       });
     },
   );
