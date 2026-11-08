@@ -99,8 +99,14 @@ void main() {
     expect(arguments.take(3), ['-NoProfile', '-NonInteractive', '-Command']);
     expect(
       arguments.last,
-      'Wait-Process -Id 42 -ErrorAction SilentlyContinue; '
-      r"Remove-Item -LiteralPath 'C:\Temp\it''s $HOME' -Recurse -Force",
+      startsWith(
+        'Wait-Process -Id 42 -ErrorAction SilentlyContinue; '
+        r"$root = 'C:\Temp\it''s $HOME'; ",
+      ),
+    );
+    expect(
+      arguments.last,
+      contains(r'Remove-Item -LiteralPath $root -Recurse -Force'),
     );
   });
 
@@ -142,7 +148,18 @@ Future<void> main(List<String> args) async {
       while (root.existsSync() && DateTime.now().isBefore(deadline)) {
         await Future<void>.delayed(const Duration(milliseconds: 250));
       }
-      expect(root.existsSync(), isFalse, reason: 'the reaper removes the root');
+      if (root.existsSync()) {
+        // Rerun the reaper in the foreground to report why it failed.
+        final rerun = await Process.run(
+          'powershell.exe',
+          suiteRootReaperArguments(root.path, pid + 1000000),
+        );
+        fail(
+          'The reaper left ${root.path}. Foreground rerun exit '
+          '${rerun.exitCode}: ${rerun.stdout}${rerun.stderr}; root now '
+          '${root.existsSync() ? 'exists' : 'deleted'}.',
+        );
+      }
     },
     // The child compiles the support file, then the reaper outlives it.
     timeout: const Timeout(Duration(minutes: 3)),

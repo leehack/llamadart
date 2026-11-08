@@ -96,14 +96,18 @@ Future<void> deleteAfterProcessExit(Directory root) => Process.start(
 );
 
 /// PowerShell arguments that wait for [processId] to exit, then delete
-/// [rootPath].
+/// [rootPath], retrying for a minute while scanners briefly hold its files.
 List<String> suiteRootReaperArguments(String rootPath, int processId) => [
   '-NoProfile',
   '-NonInteractive',
   '-Command',
   'Wait-Process -Id $processId -ErrorAction SilentlyContinue; '
-      "Remove-Item -LiteralPath '${rootPath.replaceAll("'", "''")}' "
-      '-Recurse -Force',
+      "\$root = '${rootPath.replaceAll("'", "''")}'; "
+      'foreach (\$attempt in 1..60) { '
+      'try { Remove-Item -LiteralPath \$root -Recurse -Force -ErrorAction Stop; '
+      'exit 0 } catch { if (-not (Test-Path -LiteralPath \$root)) { exit 0 }; '
+      '\$failure = \$_; Start-Sleep -Seconds 1 } }; '
+      'Write-Error \$failure; exit 1',
 ];
 
 Set<String> _fileNames(Directory dir) {
