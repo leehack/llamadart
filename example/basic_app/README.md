@@ -17,6 +17,12 @@ For model-free lifecycle ownership across text and attached speech engines, run
 capabilities and closes dependants before their underlying engine. No weights
 are loaded; normal Dart build hooks can still prepare native assets.
 
+To synthesize a WAV file with Qwen3-TTS, LFM3-Audio, Soprano, Chatterbox or
+Pocket TTS, run `dart run bin/llamadart_text_to_speech_example.dart -m
+<model.gguf> -p <mmproj.gguf> -a pocket-tts --voice vera`. It prints the
+listed voices; `--speaker` clones a WAV, and Chatterbox Multilingual needs
+`--sequences 2`. Ctrl-C cancels the synthesis.
+
 ## Features
 
 - **Interactive Mode**: Have a back-and-forth conversation with an LLM in your terminal.

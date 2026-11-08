@@ -119,3 +119,117 @@ class Qwen3TtsAdapter extends TextToSpeechAdapter {
     return code;
   }
 }
+
+/// LFM3-Audio and LFM3-Omni speech output on llama.cpp, with the model's
+/// audio projector.
+///
+/// The model speaks through its `tts` chat template, so load the LFM3 model
+/// that matches the projector; one without that template is unsupported.
+/// Output is 24 kHz mono PCM.
+///
+/// - [TextToSpeechRequest.voice] selects `female` (the default) or `male`.
+/// - [TextToSpeechRequest.language] is rendered into the template as given,
+///   as a code such as `en` or a language name; nothing validates it, so
+///   check it against the model card. Without one the template's default,
+///   English, applies.
+/// - Speaker references are unsupported.
+/// - Audio codes are sampled with the model's own GGUF settings:
+///   [TextToSpeechRequest.topK], `topP`, `minP` and `temperature` are
+///   validated but unused. [TextToSpeechRequest.seed] seeds the generation.
+///
+/// Needs llamadart-native v0.8.0 or later; earlier runtimes report the
+/// projector as unsupported.
+class Lfm3AudioTtsAdapter extends TextToSpeechAdapter {
+  /// Creates the LFM3-Audio adapter.
+  const Lfm3AudioTtsAdapter();
+
+  @override
+  String get name => 'LFM3-Audio';
+
+  @override
+  bool supportsModel(BackendTextToSpeechModel? model) =>
+      model == BackendTextToSpeechModel.lfm3Audio;
+
+  @override
+  String normalizeLanguage(String language) => language;
+}
+
+/// Soprano on llama.cpp, with its Vocos-decoder projector.
+///
+/// Soprano takes no language, voice or speaker reference; requests with any
+/// of them are unsupported. It samples with the request's settings, whose
+/// default temperature is 0.8; upstream's example decodes greedily, so pass
+/// `temperature: 0` to match it. Output is 32 kHz mono PCM, decoded on the
+/// last generation step. Fewer than two generated frames fail the synthesis.
+///
+/// No llama.cpp-format Soprano GGUF is published; see the text-to-speech
+/// guide for converting one. Needs llamadart-native v0.8.0 or later.
+class SopranoTtsAdapter extends TextToSpeechAdapter {
+  /// Creates the Soprano adapter.
+  const SopranoTtsAdapter();
+
+  @override
+  String get name => 'Soprano';
+
+  @override
+  bool supportsModel(BackendTextToSpeechModel? model) =>
+      model == BackendTextToSpeechModel.soprano;
+}
+
+/// Chatterbox Turbo and Chatterbox Multilingual on llama.cpp, with the
+/// model's audio projector.
+///
+/// Both speak with a predefined voice of the projector (the ggml-org
+/// conversions list one, `default`) or clone a speaker reference; a voice and
+/// a reference together are refused. A speaker clip of about 10 seconds works
+/// best: a short one can make the model run on to `maxFrames`. Requests
+/// sample with their own settings; the GGUFs store upstream's defaults
+/// (Turbo `topK` 1000, `topP` 0.95, `minP` 0; Multilingual `topP` 1, `minP`
+/// 0.05; both `temperature` 0.8), which callers may pass to match upstream
+/// `llama-tts`.
+///
+/// - Turbo takes no language; a request with one is unsupported.
+/// - Multilingual reports `supportsLanguage`: [TextToSpeechRequest.language]
+///   is a code such as `fr`, lower-cased and not validated, so check it
+///   against the model card. It decodes a second sequence for
+///   classifier-free guidance, so load it with
+///   `ModelParams(maxParallelSequences: 2)`; with fewer the projector is
+///   reported unsupported.
+///
+/// Output is 24 kHz mono PCM, decoded on the last generation step. Needs
+/// llamadart-native v0.9.0 or later.
+class ChatterboxTtsAdapter extends TextToSpeechAdapter {
+  /// Creates the Chatterbox adapter.
+  const ChatterboxTtsAdapter();
+
+  @override
+  String get name => 'Chatterbox';
+
+  @override
+  bool supportsModel(BackendTextToSpeechModel? model) =>
+      model == BackendTextToSpeechModel.chatterbox;
+}
+
+/// Pocket TTS on llama.cpp, with the model's audio projector.
+///
+/// It speaks with a predefined voice of the projector, the first one when a
+/// request names none (the Kyutai English pack lists 25, starting with
+/// `alba`), or unconditioned when the projector has none. A speaker
+/// reference needs a projector with a voice encoder, which the Kyutai packs
+/// lack; `capabilities` reports it. The language is that of the weights, so a
+/// request language is unsupported. It samples with the weights' own
+/// settings: [TextToSpeechRequest.topK], `topP`, `minP` and `temperature` are
+/// validated but unused, and `seed` seeds the flow decoder. Long text is
+/// split into chunks that all count towards `maxFrames`. Output is 24 kHz
+/// mono PCM. Needs llamadart-native v0.9.0 or later.
+class PocketTtsAdapter extends TextToSpeechAdapter {
+  /// Creates the Pocket TTS adapter.
+  const PocketTtsAdapter();
+
+  @override
+  String get name => 'Pocket TTS';
+
+  @override
+  bool supportsModel(BackendTextToSpeechModel? model) =>
+      model == BackendTextToSpeechModel.pocketTts;
+}

@@ -50,8 +50,9 @@ supervisor records a printed test summary only as an observation; timeout,
 forced cleanup, surviving children or incomplete output capture fails the
 step. The unchanged-package and publish checks still require a passing test.
 
-Command output is retained in the artifact instead of forwarded to CI output
-pipes, so an unread downstream pipe cannot block the watchdog. The artifact
+Command output is kept in full in the artifact and echoed to the job log on a
+best-effort, non-blocking basis, dropping output a stalled pipe cannot take,
+so an unread downstream pipe cannot block the watchdog. The artifact
 also contains allowlisted process fields, without command arguments or
 environment variables. A CLI exit before output
 EOF indicates an inherited pipe may still be open; live children after EOF

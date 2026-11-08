@@ -651,6 +651,28 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
         'chat-app synthesis changes.',
   ),
   TestMatrixRow(
+    id: 'text-to-speech-models-smoke',
+    tier: 'targeted',
+    mode: 'local-only',
+    covers:
+        'real native LFM3-Audio, Soprano, Chatterbox Turbo/Multilingual and '
+        'Pocket TTS capabilities, listed voices, default-voice identity, '
+        'speaker cloning, Multilingual language and guidance-sequence '
+        'refusal, voice/language/speaker-reference refusals, seed repeat '
+        'after a cancel, and a Qwen3-ASR round trip of the synthesized speech',
+    command:
+        'LLAMADART_TTS_LFM3_MODEL_PATH=<model.gguf> '
+        'LLAMADART_TTS_LFM3_MMPROJ_PATH=<mmproj.gguf> '
+        'LLAMADART_STT_MODEL_PATH=<asr.gguf> '
+        'LLAMADART_STT_MMPROJ_PATH=<asr-mmproj.gguf> '
+        'dart run tool/testing/run_local_e2e.dart --scenario '
+        'text-to-speech-models-smoke',
+    useWhen:
+        'Text-to-speech model-type opt-in, voices, any adapter other than '
+        'Qwen3-TTS, or llama.cpp pin changes. Set the other models\' '
+        'variables (doc/testing_matrix.md) too.',
+  ),
+  TestMatrixRow(
     id: 'image-generation-smoke',
     tier: 'targeted',
     mode: 'local-only',

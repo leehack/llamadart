@@ -159,11 +159,11 @@ const params = LlamaCppModelParams(
   decoder/generative models use `min(n_batch, 512)` when this is `0`, while
   encoder-only models retain the resolved logical batch. WebGPU follows its
   resolved logical batch unless a safety preset applies. Android Vulkan can
-  keep `n_ubatch` while decoding text in smaller calls. Native Qwen3.5 on
-  unsafe or unproven small-matmul subgroup facts accepts only unset or `1..8`;
-  a larger explicit request throws `LlamaUnsupportedException` before context
-  creation. Media, speculation and embeddings are unavailable on this path;
-  use CPU ([Android llama.cpp Vulkan](../platforms/known-platform-issues#android)).
+  keep `n_ubatch` while decoding text in smaller calls, a speed default that
+  an explicit value lifts. With a llama.cpp runtime older than ggml `0.28.0`,
+  native Qwen3.5 there accepts only unset or `1..8` and throws
+  `LlamaUnsupportedException` for larger values, media, speculation and
+  embeddings ([Android llama.cpp Vulkan](../platforms/known-platform-issues#android)).
   Other paths preserve explicit positive values within
   `n_ubatch <= n_batch <= n_ctx`. Native
   encoder-only models, models without a KV cache (such as BERT and ModernBERT),

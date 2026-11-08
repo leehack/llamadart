@@ -588,6 +588,18 @@ abstract class BackendGenerationUsageReporting {
 enum BackendTextToSpeechModel {
   /// Qwen3-TTS audio generation through llama.cpp mtmd.
   qwen3Tts,
+
+  /// LFM3-Audio and LFM3-Omni speech output through llama.cpp mtmd.
+  lfm3Audio,
+
+  /// Soprano speech output through llama.cpp mtmd.
+  soprano,
+
+  /// Chatterbox Turbo and Chatterbox Multilingual through llama.cpp mtmd.
+  chatterbox,
+
+  /// Pocket TTS through llama.cpp mtmd.
+  pocketTts,
 }
 
 /// Phase reported while a backend synthesizes speech.
@@ -625,6 +637,15 @@ class BackendTextToSpeechCapabilities {
   /// Whether an active synthesis can be cancelled cooperatively.
   final bool supportsCancellation;
 
+  /// Whether a predefined voice can be selected by name.
+  final bool supportsVoice;
+
+  /// The predefined voices, in the model's order; the first one speaks when
+  /// a request names none.
+  ///
+  /// Empty when the model has no voices or the backend cannot list them.
+  final List<String> voices;
+
   /// Creates a backend capability snapshot.
   const BackendTextToSpeechCapabilities({
     required this.isSupported,
@@ -635,6 +656,8 @@ class BackendTextToSpeechCapabilities {
     this.supportsLanguage = false,
     this.supportsSpeakerReference = false,
     this.supportsCancellation = false,
+    this.supportsVoice = false,
+    this.voices = const <String>[],
   });
 }
 
@@ -651,6 +674,9 @@ class BackendTextToSpeechRequest {
 
   /// Optional encoded reference-audio bytes.
   final Uint8List? speakerAudioBytes;
+
+  /// Optional predefined voice name, or null for the model's default.
+  final String? voice;
 
   /// Maximum number of audio-codec frames to generate.
   final int maxFrames;
@@ -679,6 +705,7 @@ class BackendTextToSpeechRequest {
     this.language,
     this.speakerAudioPath,
     this.speakerAudioBytes,
+    this.voice,
     this.maxFrames = 512,
     this.promptBatchSize = 512,
     this.topK = 40,
@@ -737,6 +764,20 @@ class BackendTextToSpeechResult {
     required this.framesGenerated,
     required this.truncated,
   });
+}
+
+/// Optional backend probe for the text-to-speech models its runtime drives,
+/// answered before a model loads.
+///
+/// `TextToSpeechEngine.load` asks it for the models its adapter accepts and
+/// refuses the load when the runtime drives none of them, before downloading
+/// or loading any file.
+abstract class BackendTextToSpeechModelSupport {
+  /// Why the runtime cannot drive [model], or null when it can or cannot tell
+  /// without a loaded model. Must not load a model.
+  Future<String?> textToSpeechModelUnsupportedReason(
+    BackendTextToSpeechModel model,
+  );
 }
 
 /// Optional backend capability for dedicated text-to-speech synthesis.

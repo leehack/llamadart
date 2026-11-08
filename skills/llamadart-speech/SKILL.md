@@ -3,8 +3,8 @@ name: llamadart-speech
 description: >-
   Use when adding speech to a llamadart app: transcribing audio files with
   Qwen3-ASR through SpeechToTextEngine, streaming live PCM dictation with
-  LiteRT-LM ASR, synthesizing speech with Qwen3-TTS through
-  TextToSpeechEngine, saving WAV output, handling LlamaAudioFormatException or
+  LiteRT-LM ASR, synthesizing speech with Qwen3-TTS, LFM3-Audio, Soprano,
+  Chatterbox or Pocket TTS through TextToSpeechEngine, selecting predefined voices, saving WAV output, handling LlamaAudioFormatException or
   LlamaSpeechTranscriptTruncatedException, or checking speech support on
   native and Web runtimes.
 ---
@@ -78,6 +78,28 @@ description: >-
     bridge assets). LiteRT-LM (native and Web) has no TTS. Synthesis is
     runtime-native, so a custom `TextToSpeechAdapter` can target only a model
     the runtime reports as a `BackendTextToSpeechModel`.
+  - LFM3-Audio / LFM3-Omni: `Lfm3AudioTtsAdapter` with the LFM3 model that has
+    the `tts` chat template and its mmproj; voices `female` (default) and
+    `male`; `language` is passed through unvalidated; request sampling
+    settings are validated but unused (the GGUF's own apply); no speaker
+    reference. 24 kHz.
+  - Soprano: `SopranoTtsAdapter`; no language, voice or speaker reference;
+    default `temperature` 0.8, pass 0 to match upstream's greedy example.
+    32 kHz. No published llama.cpp GGUF: convert it (text-to-speech guide).
+  - Chatterbox Turbo / Multilingual: `ChatterboxTtsAdapter`; voice
+    `default` or a speaker reference (about 10 s; not both); request sampling
+    settings apply. Turbo takes no language. Multilingual takes a code such as
+    `fr` (unvalidated) and needs `ModelParams(maxParallelSequences: 2)`, else
+    it is reported unsupported. 24 kHz.
+  - Pocket TTS: `PocketTtsAdapter`; the projector's voices (25 in the Kyutai
+    English pack, first is the default); no language; speaker reference only
+    with a voice-encoder projector; request sampling validated but unused.
+    24 kHz.
+  - All but Qwen3-TTS are native llama.cpp only. LFM3-Audio and Soprano need
+    llamadart-native v0.8.0 or later, Chatterbox and Pocket TTS v0.9.0. On an
+    older runtime (or Apple companion lock) `load` throws
+    `LlamaUnsupportedException` naming the release before loading any file.
+    Web drives Qwen3-TTS only.
 - After `attach`, `await recognizer.capabilities` /
   `synthesizer.capabilities` and gate on `isSupported`, showing
   `unsupportedReason`. A loaded projector does not prove audio support or a
@@ -89,7 +111,7 @@ description: >-
 - Use the capability fields instead of assuming: `inputKinds`,
   `encodedAudioFormats`, `supportsPartialResults`, `supportsStreamingInput`
   (STT); `sampleRateHz`, `supportedLanguages`, `supportsSpeakerReference`,
-  `speakerReferenceInputKinds` (TTS).
+  `speakerReferenceInputKinds`, `supportsVoice`, `voices` (TTS).
 - Audio input types are `SpeechAudioFileInput(path)`,
   `SpeechAudioBytesInput(bytes)` and `SpeechAudioPcmInput(Float32List)`, each
   with optional `SpeechAudioFormat(sampleRateHz, channelCount, encoding,
@@ -162,9 +184,9 @@ description: >-
   engine share a lease. Do not start chat generation on an attached engine
   until `task.done` completes. A LiteRT-LM recognizer allows one task per instance.
 - TTS returns one complete buffer of interleaved float32 PCM (24 kHz mono for
-  Qwen3-TTS; read `result.sampleRateHz` and `channelCount` rather than
-  hard-coding). There are no playable chunks (`supportsIncrementalAudio` is
-  false).
+  Qwen3-TTS, LFM3-Audio, Chatterbox and Pocket TTS, 32 kHz for Soprano; read
+  `result.sampleRateHz` and `channelCount` rather than hard-coding). There are
+  no playable chunks (`supportsIncrementalAudio` is false).
   - `TextToSpeechProgressEvent` (`phase`, `promptTokensRemaining`,
     `framesGenerated`) is for status UI only.
   - `result.truncated` is true when generation hit `maxFrames` (default
@@ -175,6 +197,12 @@ description: >-
   `ko`, `de`, `fr`, `ru`, `pt`, `es`, `it`) or their English names
   (`'English'` becomes `en`). Anything else, empty text, or bad sampling values
   throw `LlamaTextToSpeechException` before the task starts.
+- `TextToSpeechRequest.voice` names one of `capabilities.voices` (any case;
+  null speaks the first). An unlisted name, or a voice with a speaker
+  reference, throws `LlamaTextToSpeechException`; a voice for a model without
+  `supportsVoice` throws `LlamaUnsupportedException`. Runtimes before
+  llamadart-native v0.9.0 report `supportsVoice` with empty `voices` and check
+  the name at startup.
 - Speaker references must be encoded audio (`SpeechAudioBytesInput` is
   portable; file paths are native only; PCM throws). Treat them as sensitive
   user data.
@@ -349,6 +377,37 @@ Future<void> speak(
     print('Wrote ${result.duration} at ${result.sampleRateHz} Hz');
   } on LlamaException catch (error) {
     print('Synthesis failed or was cancelled: $error');
+  } finally {
+    await synthesizer.dispose();
+  }
+}
+```
+
+Speak with an LFM3-Audio voice (native llama.cpp, llamadart-native v0.8.0 or
+later):
+
+```dart
+import 'package:llamadart/llamadart.dart';
+
+Future<TextToSpeechResult> speakAsMale(
+  ModelSource model,
+  ModelSource projector,
+  String text,
+) async {
+  final TextToSpeechEngine synthesizer = await TextToSpeechEngine.load(
+    TextToSpeechModel(
+      model,
+      projector: projector,
+      adapter: const Lfm3AudioTtsAdapter(),
+    ),
+  );
+  try {
+    final TextToSpeechCapabilities capabilities =
+        await synthesizer.capabilities;
+    final String? voice = capabilities.voices.contains('male') ? 'male' : null;
+    return await synthesizer.synthesizeOnce(
+      TextToSpeechRequest(text: text, voice: voice),
+    );
   } finally {
     await synthesizer.dispose();
   }

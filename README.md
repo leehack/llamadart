@@ -12,7 +12,7 @@ experimental. Native targets need no network once the model is on the device.
 - Streaming chat and text generation, with structured JSON output and cancellable task handles.
 - Tool calling driven by the model's chat template.
 - Embeddings, reranking, and image and audio input with multimodal models.
-- Speech to text, text to speech, and decision models with cooperative task cancellation.
+- Speech to text, text to speech (Qwen3-TTS; LFM3-Audio, Soprano, Chatterbox and Pocket TTS on native), and decision models with cooperative task cancellation.
 - Image generation from text prompts on native platforms (Preview).
 - Runtime LoRA adapters for llama.cpp, observability hooks and typed capability checks.
 
@@ -131,10 +131,9 @@ instead of silently degrading.
 llama.cpp uses Metal on Apple platforms, Vulkan on Linux and Windows, and
 WebGPU in the browser. Android Vulkan is experimental and opt-in.
 
-On Android Vulkan, Qwen3.5 with unsafe/unproven small-matmul subgroup facts
-accepts ordinary text with `microBatchSize` unset or `1..8`; larger explicit
-sizes, media, speculation and embeddings throw `LlamaUnsupportedException`.
-Use CPU for those features; see the [scope and qualification limits](website/docs/platforms/known-platform-issues.md#android).
+A llama.cpp runtime older than ggml `0.28.0` (llamadart-native `v0.8.0`)
+limits native Qwen3.5 on Android Vulkan to ordinary text on some GPUs; the
+bundled runtime does not. See [Android Vulkan](website/docs/platforms/known-platform-issues.md#android).
 
 LiteRT-LM can also use GPU and, on compatible Android deployments, NPU.
 Android 12+ apps targeting API 31+ must request the optional vendor OpenCL
@@ -164,7 +163,7 @@ Current default runtime pins:
 | --- | --- |
 | Native llama.cpp / GGUF | `leehack/llamadart-native@v0.9.0` |
 | Native LiteRT-LM / `.litertlm` | `leehack/litert-lm-native@v0.19.1-1` |
-| Web llama.cpp / GGUF | `leehack/llama-web-bridge-assets@v0.1.82` |
+| Web llama.cpp / GGUF | `leehack/llama-web-bridge-assets@v0.1.83` |
 | Web LiteRT-LM / `.litertlm` | `@litert-lm/core@0.19.0` |
 
 Native LiteRT-LM uses a lazy ABI-aware client for direct calls, services and

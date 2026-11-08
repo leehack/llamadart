@@ -712,7 +712,7 @@ paths=(
     expect(
       _occurrences(
         rerunCoreChangelog,
-        '* Updated the default llama.cpp native runtime pin to',
+        '- Updated the default llama.cpp native runtime pin to',
       ),
       1,
     );

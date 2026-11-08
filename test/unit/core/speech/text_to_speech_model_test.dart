@@ -44,6 +44,48 @@ void main() {
     });
   });
 
+  test('the LFM3-Audio and Soprano adapters drive their models only', () {
+    const lfm3 = Lfm3AudioTtsAdapter();
+    const soprano = SopranoTtsAdapter();
+
+    expect(lfm3.name, 'LFM3-Audio');
+    expect(soprano.name, 'Soprano');
+    for (final model in BackendTextToSpeechModel.values) {
+      expect(
+        lfm3.supportsModel(model),
+        model == BackendTextToSpeechModel.lfm3Audio,
+      );
+      expect(
+        soprano.supportsModel(model),
+        model == BackendTextToSpeechModel.soprano,
+      );
+    }
+    expect(lfm3.supportsModel(null), isFalse);
+    expect(lfm3.normalizeLanguage('English'), 'English');
+    expect(lfm3.supportedLanguages, isEmpty);
+  });
+
+  test('the Chatterbox and Pocket TTS adapters drive their models only', () {
+    const chatterbox = ChatterboxTtsAdapter();
+    const pocket = PocketTtsAdapter();
+
+    expect(chatterbox.name, 'Chatterbox');
+    expect(pocket.name, 'Pocket TTS');
+    for (final model in BackendTextToSpeechModel.values) {
+      expect(
+        chatterbox.supportsModel(model),
+        model == BackendTextToSpeechModel.chatterbox,
+      );
+      expect(
+        pocket.supportsModel(model),
+        model == BackendTextToSpeechModel.pocketTts,
+      );
+    }
+    expect(chatterbox.supportsModel(null), isFalse);
+    expect(chatterbox.normalizeLanguage('FR'), 'fr');
+    expect(pocket.supportedLanguages, isEmpty);
+  });
+
   test('a minimal adapter lowercases languages and lists none', () {
     const adapter = _MinimalAdapter();
 

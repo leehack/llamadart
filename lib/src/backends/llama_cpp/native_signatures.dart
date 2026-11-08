@@ -66,6 +66,60 @@ typedef _TtsReadPcmDart =
     );
 typedef _TtsLastErrorNative = Pointer<Char> Function(Pointer<llama_dart_tts>);
 typedef _TtsLastErrorDart = Pointer<Char> Function(Pointer<llama_dart_tts>);
+typedef _TtsSupportedModelTypesNative = Uint32 Function();
+typedef _TtsSupportedModelTypesDart = int Function();
+typedef _TtsGetInfoExtNative =
+    Int32 Function(Pointer<mtmd_context>, Uint32, Pointer<llama_dart_tts_info>);
+typedef _TtsGetInfoExtDart =
+    int Function(Pointer<mtmd_context>, int, Pointer<llama_dart_tts_info>);
+typedef _TtsInitExtNative =
+    Pointer<llama_dart_tts> Function(
+      Pointer<llama_context>,
+      Pointer<mtmd_context>,
+      Uint32,
+      Pointer<Int32>,
+    );
+typedef _TtsInitExtDart =
+    Pointer<llama_dart_tts> Function(
+      Pointer<llama_context>,
+      Pointer<mtmd_context>,
+      int,
+      Pointer<Int32>,
+    );
+typedef _TtsStartWithVoiceNative =
+    Int32 Function(
+      Pointer<llama_dart_tts>,
+      Pointer<llama_dart_tts_request>,
+      Pointer<Char>,
+    );
+typedef _TtsStartWithVoiceDart =
+    int Function(
+      Pointer<llama_dart_tts>,
+      Pointer<llama_dart_tts_request>,
+      Pointer<Char>,
+    );
+typedef _TtsGetVoiceCountNative =
+    Int32 Function(Pointer<mtmd_context>, Uint32, Pointer<Int32>);
+typedef _TtsGetVoiceCountDart =
+    int Function(Pointer<mtmd_context>, int, Pointer<Int32>);
+typedef _TtsGetVoiceNameNative =
+    Int32 Function(
+      Pointer<mtmd_context>,
+      Uint32,
+      Int32,
+      Pointer<Char>,
+      Size,
+      Pointer<Size>,
+    );
+typedef _TtsGetVoiceNameDart =
+    int Function(
+      Pointer<mtmd_context>,
+      int,
+      int,
+      Pointer<Char>,
+      int,
+      Pointer<Size>,
+    );
 typedef _GgmlBackendInitNative = ggml_backend_reg_t Function();
 typedef _GgmlBackendInitDart = ggml_backend_reg_t Function();
 typedef _GgmlBackendLoadAllNative = Void Function();

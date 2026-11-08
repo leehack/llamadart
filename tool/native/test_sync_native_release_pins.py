@@ -1453,21 +1453,25 @@ class LiteRtCallbackAbiAdmissionTest(unittest.TestCase):
                 with self.assertRaisesRegex(ReleaseError, "callback ABI"):
                     self._validate(manifest, release)
 
-    def test_pre_v015_callback2_is_rejected(self) -> None:
-        manifest, release = _schema2_fixture_payloads()
-        tag = manifest["release"]["tag"]
-        manifest = json.loads(json.dumps(manifest).replace(tag, "v0.14.0"))
-        release = json.loads(json.dumps(release).replace(tag, "v0.14.0"))
-        manifest["upstream"].update(
-            tag="v0.14.0", compatibilityTag="v0.14.0", prebuiltOverrides=[]
-        )
-        manifest["release"].update(
-            kind="upstream", rebuild=0, githubPrerelease=False
-        )
-        release["prerelease"] = False
-        manifest["abi"]["streamProxyCallback"] = 2
-        with self.assertRaisesRegex(ReleaseError, "callback ABI 2 for v0.14.0"):
-            self._validate(manifest, release)
+    def test_callback2_is_rejected_below_v015(self) -> None:
+        for version in ("v0.14.0", "v0.14.9"):
+            with self.subTest(version=version):
+                manifest, release = _schema2_fixture_payloads()
+                tag = manifest["release"]["tag"]
+                manifest = json.loads(json.dumps(manifest).replace(tag, version))
+                release = json.loads(json.dumps(release).replace(tag, version))
+                manifest["upstream"].update(
+                    tag=version, compatibilityTag=version, prebuiltOverrides=[]
+                )
+                manifest["release"].update(
+                    kind="upstream", rebuild=0, githubPrerelease=False
+                )
+                release["prerelease"] = False
+                manifest["abi"]["streamProxyCallback"] = 2
+                with self.assertRaisesRegex(
+                    ReleaseError, f"callback ABI 2 for {version}"
+                ):
+                    self._validate(manifest, release)
 
     def test_callback2_preserves_other_abi_and_capability_checks(self) -> None:
         for section, field, value in (
@@ -3725,6 +3729,22 @@ class NativeReleaseTagGrammarCorpusTest(unittest.TestCase):
                     pins.parse_native_release_tag(tag)
                 with self.assertRaises(ReleaseError):
                     pins.normalize_release_tag(tag)
+
+
+class CoreChangelogNativePinTest(unittest.TestCase):
+    repo = "leehack/llamadart-native"
+
+    def test_writes_a_dash_bullet_and_replaces_a_legacy_star_entry(self) -> None:
+        legacy = (
+            "## Unreleased\n\n* Updated the default llama.cpp native runtime pin to\n"
+            "  `leehack/llamadart-native@b1`, old.\n\n- Kept.\n\n## 1.0.0\n"
+        )
+        updated = pins.update_core_changelog_native_pin(legacy, self.repo, "b2")
+        self.assertIn("\n- Updated the default llama.cpp native runtime pin to\n", updated)
+        self.assertIn("`leehack/llamadart-native@b2`", updated)
+        self.assertNotIn("b1", updated)
+        self.assertNotIn("\n* ", updated)
+        self.assertIn("- Kept.", updated)
 
 
 class CompanionChangelogUnreleasedTest(unittest.TestCase):

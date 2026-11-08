@@ -52,6 +52,8 @@ void main() {
     bool cpuFallback = false,
     bool unreadableArchitecture = false,
     void Function()? onArchitectureRead,
+    String? ggmlVersion = _unfixedGgml,
+    void Function()? onGgmlVersionRead,
   }) {
     final real = ExitTeardownApi.tryResolve(isWindows: Platform.isWindows)!;
     final calls = RecordingExitTeardown(real);
@@ -86,6 +88,10 @@ void main() {
         ),
       ],
       backendDevices: (_) => null,
+      ggmlVersion: () {
+        onGgmlVersionRead?.call();
+        return ggmlVersion;
+      },
       vulkanDeviceProbe: () => unknownFacts
           ? const VulkanDeviceProbe.unavailable('unavailable')
           : VulkanDeviceProbe.devices([
@@ -579,7 +585,268 @@ void main() {
     final h = load(android: false);
     expect(h.service.createContext(h.model, contextParams(64)), greaterThan(0));
   });
+
+  for (final version in [null, '', 'unknown', '0.9.4']) {
+    test(
+      'runtime without a fixed ggml version ($version) keeps restriction',
+      () {
+        final h = load(ggmlVersion: version);
+        expect(
+          () => h.service.createContext(h.model, contextParams(9)),
+          refusal,
+        );
+        expect(
+          h.service
+              .generationCapabilities(h.model)
+              .speculativeDecodingStrategies,
+          isEmpty,
+        );
+      },
+    );
+  }
+
+  test('older-runtime refusals name the fix version, runtime and issue', () async {
+    const restriction =
+        'Qwen3.5 on Android/Vulkan with a llama.cpp runtime older than ggml '
+        '0.28.0 (llamadart-native v0.8.0) and unsafe or unproven small-matmul '
+        'subgroup facts supports ordinary text only, with microBatchSize unset '
+        'or 1..8 (https://github.com/leehack/llamadart/issues/948). Use the '
+        'bundled runtime, or ComputeDevice.cpu for larger batches, media, '
+        'speculation or embeddings.';
+    Matcher message(String text) => throwsA(
+      isA<LlamaUnsupportedException>().having(
+        (e) => e.message,
+        'message',
+        text,
+      ),
+    );
+    final h = load();
+    expect(
+      () => h.service.createContext(h.model, contextParams(9)),
+      message('microBatchSize=9 is unavailable. $restriction'),
+    );
+    final context = h.service.createContext(h.model, contextParams());
+    expect(
+      () => h.service.embed(context, 'a'),
+      message('Embeddings are unavailable. $restriction'),
+    );
+    final cancel = calloc<Int8>();
+    addTearDown(() => calloc.free(cancel));
+    await expectLater(
+      h.service
+          .generate(
+            context,
+            'hello',
+            const GenerationParams(speculativeDecoding: true),
+            cancel.address,
+          )
+          .drain<void>(),
+      message(restriction),
+    );
+    final missing = load(architecture: null);
+    expect(
+      () => missing.service.createContext(missing.model, contextParams()),
+      message(
+        'Cannot establish required model safety for Android/Vulkan with a '
+        'llama.cpp runtime older than ggml 0.28.0 (llamadart-native v0.8.0) '
+        'and unsafe or unproven small-matmul subgroup facts: native '
+        'general.architecture is unavailable '
+        '(https://github.com/leehack/llamadart/issues/948). Use the bundled '
+        'runtime or ComputeDevice.cpu.',
+      ),
+    );
+  });
+
+  group('projector placement', () {
+    for (final version in [_unfixedGgml, '0.29.0']) {
+      test('keeps a Qwen3.5 projector on the CPU on ggml $version', () {
+        final h = load(ggmlVersion: version);
+        expect(_projectorUsesGpu(h.service, h.model), isFalse);
+      });
+    }
+    test('keeps the projector on the CPU without an architecture', () {
+      for (final unreadable in [false, true]) {
+        final h = load(
+          ggmlVersion: '0.29.0',
+          architecture: null,
+          unreadableArchitecture: unreadable,
+        );
+        expect(_projectorUsesGpu(h.service, h.model), isFalse);
+      }
+    });
+    for (final architecture in ['llama', 'qwen3', 'qwen35moe']) {
+      test('leaves $architecture projectors on the GPU', () {
+        final h = load(ggmlVersion: '0.29.0', architecture: architecture);
+        expect(_projectorUsesGpu(h.service, h.model), isTrue);
+      });
+    }
+    test('leaves Qwen3.5 on the GPU with safe subgroup facts', () {
+      final h = load(ggmlVersion: '0.29.0', subgroup: 32);
+      expect(_projectorUsesGpu(h.service, h.model), isTrue);
+    });
+    test('leaves Qwen3.5 on the GPU outside Android', () {
+      final h = load(ggmlVersion: '0.29.0', android: false);
+      expect(_projectorUsesGpu(h.service, h.model), isTrue);
+    });
+  });
+
+  group('runtime with the small matmul tile fix', () {
+    for (final version in ['0.28.0', '0.29.0']) {
+      test('admits Qwen3.5 batches above 8 on ggml $version', () async {
+        final h = load(ggmlVersion: version);
+        for (final size in [9, 32, 33, 64, 512]) {
+          final context = h.service.createContext(h.model, contextParams(size));
+          expect(
+            h.calls.contextOffload.last.offloadKqv,
+            isTrue,
+            reason: 'Qwen3.5 keeps KQV on Vulkan',
+          );
+          expect(h.calls.contextOffload.last.opOffload, isFalse);
+          expect(
+            reflect(
+              _private<Map>(h.service, '_contexts')[context],
+            ).getField(#promptMicroBatchLimit).reflectee,
+            isNull,
+          );
+          h.service.freeContext(context);
+        }
+        final context = h.service.createContext(h.model, contextParams(64));
+        final cancel = calloc<Int8>();
+        addTearDown(() => calloc.free(cancel));
+        h.calls.clearCalls();
+        await h.service
+            .generate(
+              context,
+              'a' * 96,
+              GenerationParams(maxTokens: 1, temp: 0, seed: 1),
+              cancel.address,
+            )
+            .drain<void>();
+        expect(h.calls.decodedTokens.first, greaterThan(8));
+      });
+    }
+
+    test('keeps the 8-token prompt cap as the unset default', () async {
+      final h = load(ggmlVersion: '0.29.0');
+      final context = h.service.createContext(h.model, contextParams());
+      expect(
+        reflect(
+          _private<Map>(h.service, '_contexts')[context],
+        ).getField(#promptMicroBatchLimit).reflectee,
+        8,
+      );
+      final cancel = calloc<Int8>();
+      addTearDown(() => calloc.free(cancel));
+      h.calls.clearCalls();
+      await h.service
+          .generate(
+            context,
+            'a' * 96,
+            GenerationParams(maxTokens: 1, temp: 0, seed: 1),
+            cancel.address,
+          )
+          .drain<void>();
+      expect(h.calls.decodedTokens.length, greaterThan(1));
+      expect(h.calls.decodedTokens.every((n) => n <= 8), isTrue);
+    });
+
+    test('admits speculation, embeddings and media projectors', () async {
+      final h = load(ggmlVersion: '0.29.0');
+      final context = h.service.createContext(h.model, contextParams(64));
+      expect(
+        h.service.generationCapabilities(h.model).speculativeDecodingStrategies,
+        containsAll(SpeculativeDecodingStrategy.values),
+      );
+      expect(h.service.getEmbeddingCapabilities(context).text, isTrue);
+      expect(h.service.embed(context, 'a'), isNotEmpty);
+      expect(h.service.embedBatch(context, ['a', 'b']), hasLength(2));
+      _private<Map>(h.service, '_modelToMtmd')[h.model] = 1000;
+      addTearDown(() => _private<Map>(h.service, '_modelToMtmd').clear());
+      final owner = reflectClass(LlamaCppService).owner as LibraryMirror;
+      expect(
+        reflect(h.service).invoke(
+          MirrorSystem.getSymbol('_projectorHasQwen35VulkanRestriction', owner),
+          [1000],
+        ).reflectee,
+        isFalse,
+      );
+      final cancel = calloc<Int8>();
+      addTearDown(() => calloc.free(cancel));
+      h.calls.clearCalls();
+      await h.service
+          .generate(
+            context,
+            'a' * 96,
+            GenerationParams(
+              maxTokens: 2,
+              temp: 0,
+              seed: 1,
+              speculativeDecodingConfig:
+                  const SpeculativeDecodingConfig.ngramSimple(),
+            ),
+            cancel.address,
+          )
+          .drain<void>();
+      expect(h.calls.decodedTokens, isNotEmpty);
+    });
+
+    test('a CPU context preference still keeps KQV on the Vulkan model', () {
+      final h = load(ggmlVersion: '0.29.0');
+      final context = h.service.createContext(
+        h.model,
+        const ModelParams(
+          device: ComputeDevice.cpu,
+          contextSize: 128,
+          numberOfThreads: 2,
+          numberOfThreadsBatch: 2,
+          microBatchSize: 64,
+        ),
+      );
+      expect(h.calls.contextOffload.single.offloadKqv, isTrue);
+      expect(h.calls.contextOffload.single.opOffload, isFalse);
+      expect(
+        reflect(
+          _private<Map>(h.service, '_contexts')[context],
+        ).getField(#promptMicroBatchLimit).reflectee,
+        isNull,
+      );
+    });
+
+    test('does not need the model architecture', () {
+      final h = load(ggmlVersion: '0.28.0', architecture: null);
+      final context = h.service.createContext(h.model, contextParams(64));
+      expect(h.service.getEmbeddingCapabilities(context).text, isTrue);
+      expect(
+        h.service.generationCapabilities(h.model).speculativeDecodingStrategies,
+        isNotEmpty,
+      );
+    });
+
+    test('reads the ggml version once per service', () {
+      var reads = 0;
+      final h = load(ggmlVersion: '0.29.0', onGgmlVersionRead: () => reads++);
+      h.service.createContext(h.model, contextParams(64));
+      h.service.createContext(h.model, contextParams(64));
+      h.service.generationCapabilities(h.model);
+      expect(reads, 1);
+    });
+  });
 }
+
+bool _projectorUsesGpu(LlamaCppService service, int model) {
+  final owner = reflectClass(LlamaCppService).owner as LibraryMirror;
+  final params =
+      reflect(service).invoke(
+            MirrorSystem.getSymbol('_mtmdContextParamsFor', owner),
+            [model],
+          ).reflectee
+          as mtmd_context_params;
+  return params.use_gpu;
+}
+
+/// The last ggml version some llama.cpp commits without the small matmul tile
+/// fix report: the restriction applies on this runtime.
+const _unfixedGgml = '0.27.0';
 
 T _private<T>(Object target, String name) {
   final owner = reflectClass(LlamaCppService).owner as LibraryMirror;
@@ -596,6 +863,7 @@ class _VulkanService extends LlamaCppService {
     super.registeredDevices,
     super.backendDevices,
     super.vulkanDeviceProbe,
+    super.ggmlVersion,
   });
   @override
   List<String> getBackendInfo() => const ['CPU', 'Vulkan (injected registry)'];
@@ -629,6 +897,7 @@ void _restrictedWorker(SendPort initialSendPort) {
         ),
       ],
       backendDevices: (_) => null,
+      ggmlVersion: () => _unfixedGgml,
       vulkanDeviceProbe: () =>
           const VulkanDeviceProbe.unavailable('not probed'),
     ),

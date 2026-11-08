@@ -32,11 +32,11 @@ unchecked. See [scope and limits](./diagnose-setup#isolated-native-check).
 
 | Platform | GGUF backends | LiteRT-LM backends | Minimum OS | Speech to text | Text to speech | Decision models | Image generation (Preview) | Status |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| Android (arm64, x64) | CPU; Vulkan experimental, device-dependent; OpenCL opt-in | CPU, GPU, NPU | Not set by llamadart | Qwen3-ASR (GGUF); LiteRT-LM ASR | Qwen3-TTS | Untested | arm64 CPU; validated on Pixel 9 Pro, Galaxy S24 and A53 | Supported |
-| iOS (arm64, arm64 simulator, x86_64 simulator) | CPU, Metal; on a simulator Metal returns incorrect output and `auto` uses the CPU ([#950](https://github.com/leehack/llamadart/issues/950)) | CPU, GPU; none on the x86_64 simulator | iOS 16.4 deployment target; LiteRT-LM run on a device only on iOS 18.3.2 | Qwen3-ASR (GGUF); LiteRT-LM ASR | Qwen3-TTS | Untested | Metal, iOS 16.4; validated on iPhone 16 Pro and SE 3; `vaeDirectConvolution: true` throws on Metal ([#1044](https://github.com/leehack/llamadart/issues/1044)) | Supported |
-| macOS (arm64, x86_64) | CPU, Metal; on x86_64, Rosetta included, `auto` uses the CPU because Metal returns garbled output on Intel Macs with AMD GPUs ([#1597](https://github.com/leehack/llamadart/issues/1597)) | arm64: CPU, GPU; x86_64: none ([litert-lm-native#72](https://github.com/leehack/litert-lm-native/issues/72)) | macOS 14.0 (Flutter) | Qwen3-ASR (GGUF); LiteRT-LM ASR | Qwen3-TTS | Validated on Metal and CPU | Metal, macOS 13.3; validated on arm64 | Supported |
-| Linux (arm64, x64) | CPU, Vulkan; BLAS opt-in; x64: CUDA, HIP opt-in | arm64: CPU; x64: CPU, explicit GPU | Not set by llamadart | Qwen3-ASR (GGUF); LiteRT-LM ASR | Qwen3-TTS | Untested | CPU or Vulkan; x64 needs AVX2; validated on x64 (CPU, NVIDIA L4) | Supported |
-| Windows (arm64, x64) | CPU, Vulkan; BLAS opt-in; x64: CUDA opt-in | x64: CPU, explicit GPU ([Qwen unqualified](./known-platform-issues#linux-and-windows)); arm64: none | Not set by llamadart | Qwen3-ASR (GGUF); LiteRT-LM ASR on x64 | Qwen3-TTS | Untested | x64 CPU or Vulkan, needs AVX2 and the Visual C++ runtime; validated on Windows Server 2022 (CPU, NVIDIA L4) | Supported |
+| Android (arm64, x64) | CPU; Vulkan experimental, device-dependent; OpenCL opt-in | CPU, GPU, NPU | Not set by llamadart | Qwen3-ASR (GGUF); LiteRT-LM ASR | Qwen3-TTS; LFM3-Audio, Soprano, Chatterbox, Pocket TTS | Untested | arm64 CPU; validated on Pixel 9 Pro, Galaxy S24 and A53 | Supported |
+| iOS (arm64, arm64 simulator, x86_64 simulator) | CPU, Metal; on a simulator Metal returns incorrect output and `auto` uses the CPU ([#950](https://github.com/leehack/llamadart/issues/950)) | CPU, GPU; none on the x86_64 simulator | iOS 16.4 deployment target; LiteRT-LM run on a device only on iOS 18.3.2 | Qwen3-ASR (GGUF); LiteRT-LM ASR | Qwen3-TTS; LFM3-Audio, Soprano, Chatterbox, Pocket TTS | Untested | Metal, iOS 16.4; validated on iPhone 16 Pro and SE 3; `vaeDirectConvolution: true` throws on Metal ([#1044](https://github.com/leehack/llamadart/issues/1044)) | Supported |
+| macOS (arm64, x86_64) | CPU, Metal; on x86_64, Rosetta included, `auto` uses the CPU because Metal returns garbled output on Intel Macs with AMD GPUs ([#1597](https://github.com/leehack/llamadart/issues/1597)) | arm64: CPU, GPU; x86_64: none ([litert-lm-native#72](https://github.com/leehack/litert-lm-native/issues/72)) | macOS 14.0 (Flutter) | Qwen3-ASR (GGUF); LiteRT-LM ASR | Qwen3-TTS; LFM3-Audio, Soprano, Chatterbox, Pocket TTS | Validated on Metal and CPU | Metal, macOS 13.3; validated on arm64 | Supported |
+| Linux (arm64, x64) | CPU, Vulkan; BLAS opt-in; x64: CUDA, HIP opt-in | arm64: CPU; x64: CPU, explicit GPU | Not set by llamadart | Qwen3-ASR (GGUF); LiteRT-LM ASR | Qwen3-TTS; LFM3-Audio, Soprano, Chatterbox, Pocket TTS | Untested | CPU or Vulkan; x64 needs AVX2; validated on x64 (CPU, NVIDIA L4) | Supported |
+| Windows (arm64, x64) | CPU, Vulkan; BLAS opt-in; x64: CUDA opt-in | x64: CPU, explicit GPU ([Qwen unqualified](./known-platform-issues#linux-and-windows)); arm64: none | Not set by llamadart | Qwen3-ASR (GGUF); LiteRT-LM ASR on x64 | Qwen3-TTS; LFM3-Audio, Soprano, Chatterbox, Pocket TTS | Untested | x64 CPU or Vulkan, needs AVX2 and the Visual C++ runtime; validated on Windows Server 2022 (CPU, NVIDIA L4) | Supported |
 | Web | WebGPU, WebAssembly CPU | CPU, GPU through `@litert-lm/core` | Chrome 128, Firefox 129, Safari 17.4 (LiteRT-LM GPU checked in Safari 27 on Apple silicon with `@litert-lm/core@0.18.0`, not yet rechecked on 0.19.0, [#1025](https://github.com/leehack/llamadart/issues/1025)) | Qwen3-ASR, WAV, MP3 or FLAC bytes | Qwen3-TTS, memory64 | Checked in headless Chromium on macOS | Not yet ([#969](https://github.com/leehack/llamadart/issues/969)) | Experimental |
 
 On Windows, the llama.cpp and LiteRT-LM bundles ship the Visual C++ runtime
@@ -75,11 +75,12 @@ recognition. Decision models run on llama.cpp and WebGPU only; on LiteRT-LM
 discard an already-dispatched answer after the backend finishes; they do not
 add native interruption or support on LiteRT-LM.
 
-Native Android Vulkan Qwen3.5 permits bounded ordinary text only
-on unsafe/unproven small-matmul subgroup facts: `microBatchSize` unset or
-`1..8`; larger explicit values, media, speculation and embeddings are typed
-unsupported. CPU and complete safe-subgroup facts are exempt. See
-[the exact predicate and qualification limits](./known-platform-issues#android).
+Native Android Vulkan Qwen3.5 supports the same features as other models with
+the bundled runtime; on GPUs with a subgroup size below 32 other than 8 its
+image encoder runs on the CPU. A llama.cpp runtime older than ggml `0.28.0`
+(llamadart-native `v0.8.0`) restricts it to ordinary text on GPUs with a
+subgroup size below 32 other than 8. See
+[the exact predicate and evidence](./known-platform-issues#android).
 
 ## Compute device
 

@@ -43,7 +43,7 @@
       "profiles": [
         "assets/profiles/embedding-gguf-cpu.json"
       ],
-      "notes": "LiteRT-LM native CPU embeddings are qualified by the local-only litert-lm-multimodal-embedding scenario, not by this pack's profiles; Linux x64, Linux arm64 and Windows x64 joined macOS, iOS and Android arm64 with litert-lm-native v0.19.1-1 (https://github.com/leehack/llamadart/issues/1367). Model-free recording tests cover the conservative native qwen35 Android Vulkan #948 restriction: unsafe/unproven subgroup facts admit bounded ordinary text only; larger explicit micro-batches, media, speculation and embeddings are typed unsupported before evaluation. This does not qualify final artifacts or GPU output. https://github.com/leehack/llamadart/issues/948"
+      "notes": "LiteRT-LM native CPU embeddings are qualified by the local-only litert-lm-multimodal-embedding scenario, not by this pack's profiles; Linux x64, Linux arm64 and Windows x64 joined macOS, iOS and Android arm64 with litert-lm-native v0.19.1-1 (https://github.com/leehack/llamadart/issues/1367). Model-free recording tests cover the native qwen35 Android Vulkan #948 restriction, which applies only to llama.cpp runtimes older than ggml 0.28.0 (bundled runtimes lift it), and the lift on newer runtimes. Device evidence for the lift is recorded on the issue, not by a pack. https://github.com/leehack/llamadart/issues/948"
     },
     {
       "id": "history",
@@ -368,7 +368,7 @@
       ],
       "exemption": {
         "id": "multimodal-chat",
-        "reason": "Chat image/audio and projector lifecycle need a dedicated multimodal-chat pack. Embedding media packs are a separate contract. Public API VM/Chrome regressions cover early typed refusal of tool-role image/audio and valid separate user-media routing (#1445); they do not qualify model media transport or tool-result media support (#1008). Model-free recording tests cover the conservative native qwen35 Android Vulkan #948 restriction: unsafe/unproven subgroup facts admit bounded ordinary text only; larger explicit micro-batches, media, speculation and embeddings are typed unsupported before evaluation. This does not qualify final artifacts or GPU output. https://github.com/leehack/llamadart/issues/948",
+        "reason": "Chat image/audio and projector lifecycle need a dedicated multimodal-chat pack. Embedding media packs are a separate contract. Public API VM/Chrome regressions cover early typed refusal of tool-role image/audio and valid separate user-media routing (#1445); they do not qualify model media transport or tool-result media support (#1008). Model-free recording tests cover the native qwen35 Android Vulkan #948 restriction, which applies only to llama.cpp runtimes older than ggml 0.28.0 (bundled runtimes lift it), and the lift on newer runtimes. Device evidence for the lift is recorded on the issue, not by a pack. https://github.com/leehack/llamadart/issues/948",
         "issue": "https://github.com/leehack/llamadart/issues/1196"
       }
     },
@@ -411,7 +411,7 @@
       ],
       "exemption": {
         "id": "speculative-decoding",
-        "reason": "Draft/MTP/ngram strategies need a dedicated pack with target/draft output and memory controls; ordinary text generation is insufficient. Model-free recording tests cover the conservative native qwen35 Android Vulkan #948 restriction: unsafe/unproven subgroup facts admit bounded ordinary text only; larger explicit micro-batches, media, speculation and embeddings are typed unsupported before evaluation. This does not qualify final artifacts or GPU output. https://github.com/leehack/llamadart/issues/948",
+        "reason": "Draft/MTP/ngram strategies need a dedicated pack with target/draft output and memory controls; ordinary text generation is insufficient. Model-free recording tests cover the native qwen35 Android Vulkan #948 restriction, which applies only to llama.cpp runtimes older than ggml 0.28.0 (bundled runtimes lift it), and the lift on newer runtimes. Device evidence for the lift is recorded on the issue, not by a pack. https://github.com/leehack/llamadart/issues/948",
         "issue": "https://github.com/leehack/llamadart/issues/1196"
       }
     },
@@ -449,11 +449,13 @@
         "capability:TextToSpeechCapabilities.supportsLanguage",
         "capability:TextToSpeechCapabilities.supportsOutputBackpressure",
         "capability:TextToSpeechCapabilities.supportsSpeakerReference",
-        "capability:TextToSpeechCapabilities.unsupportedReason"
+        "capability:TextToSpeechCapabilities.supportsVoice",
+        "capability:TextToSpeechCapabilities.unsupportedReason",
+        "capability:TextToSpeechCapabilities.voices"
       ],
       "exemption": {
         "id": "speech-capabilities",
-        "reason": "Dedicated speech profiles/runners exist, but their reported capability fields are not yet bound to versioned validation feature/case IDs. The web-speech-task-cancel local E2E separately covers direct/worker task isolation and bounded reuse with explicit TTS batch 512/micro-batch 256 (#1371); it does not bind these capability fields or qualify every speech flag or negative path.",
+        "reason": "Dedicated speech profiles/runners exist, but their reported capability fields are not yet bound to versioned validation feature/case IDs. The web-speech-task-cancel local E2E separately covers direct/worker task isolation and bounded reuse with explicit TTS batch 512/micro-batch 256 (#1371); it does not bind these capability fields or qualify every speech flag or negative path. The local-only text-to-speech-models-smoke checks LFM3-Audio and Soprano voices, refusals and an ASR round trip (#1615) without binding these fields to a locked pack.",
         "issue": "https://github.com/leehack/llamadart/issues/1196"
       }
     },

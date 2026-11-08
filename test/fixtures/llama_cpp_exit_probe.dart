@@ -1,7 +1,10 @@
 // Subprocess fixture: ends the process in one way while llama.cpp objects are
 // alive. Arguments: the scenario and a GGUF chat model; `quit-projector` and
 // `quit-disposing` also take that model's projector, and `quit-decision`
-// takes an encoder GGUF and its decision head instead. `quit-disposing` exits
+// takes an encoder GGUF and its decision head instead; `quit-speaking` takes
+// a text-to-speech GGUF, its projector and an adapter name (`qwen3-tts`,
+// `lfm3-audio`, `soprano`, `chatterbox`, `pocket-tts`) and exits during
+// synthesis. `quit-disposing` exits
 // `EXIT_PROBE_DISPOSE_DELAY_US` microseconds (default 1000) after the owning
 // isolate starts to dispose.
 //
@@ -70,6 +73,39 @@ Future<void> main(List<String> args) async {
       // A timer is too coarse for the few milliseconds the frees take.
       while (delay.elapsedMicroseconds < micros) {}
       _cExit();
+    case 'quit-speaking':
+      final [projectorPath, adapter] = extra;
+      final synthesizer = await TextToSpeechEngine.load(
+        TextToSpeechModel(
+          ModelSource.path(modelPath),
+          projector: ModelSource.path(projectorPath),
+          adapter: switch (adapter) {
+            'qwen3-tts' => const Qwen3TtsAdapter(),
+            'lfm3-audio' => const Lfm3AudioTtsAdapter(),
+            'soprano' => const SopranoTtsAdapter(),
+            'chatterbox' => const ChatterboxTtsAdapter(),
+            'pocket-tts' => const PocketTtsAdapter(),
+            _ => throw ArgumentError.value(adapter, 'adapter'),
+          },
+        ),
+        params: const ModelParams(contextSize: 2048, maxParallelSequences: 2),
+      );
+      final frame = Completer<void>();
+      final task = await synthesizer.synthesize(
+        const TextToSpeechRequest(
+          text: 'Count from one to twenty, slowly and clearly.',
+          maxFrames: 2048,
+        ),
+      );
+      task.events.listen((event) {
+        if (event is TextToSpeechProgressEvent &&
+            event.framesGenerated > 0 &&
+            !frame.isCompleted) {
+          frame.complete();
+        }
+      });
+      await frame.future;
+      _quit(scenario);
     case 'quit-decision':
       final decisions = await DecisionEngine.load(
         DecisionModel(

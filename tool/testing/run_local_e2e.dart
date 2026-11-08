@@ -949,6 +949,38 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
       ],
     ),
     LocalE2eScenario(
+      name: 'text-to-speech-models-smoke',
+      group: LocalE2eScenarioGroup.dartLocalOnly,
+      description:
+          'Run typed native LFM3-Audio, Soprano, Chatterbox and Pocket TTS '
+          'synthesis with voices, speaker references, languages, '
+          'refusals, seed repeats and an ASR round trip, for each model whose '
+          'LLAMADART_TTS_<MODEL>_MODEL_PATH and _MMPROJ_PATH are set.',
+      requiresDevice: false,
+      stepsBuilder: (context) => [
+        LocalE2eCommandStep(
+          workingDirectory: context.projectRoot,
+          executable: 'dart',
+          arguments: const [
+            'test',
+            '-p',
+            'vm',
+            '-j',
+            '1',
+            '--run-skipped',
+            '-t',
+            'local-only',
+            'test/e2e/backends/text_to_speech_models_e2e_test.dart',
+          ],
+          environment: {
+            'LLAMADART_TTS_OUTPUT_DIR':
+                '${context.projectRoot}/build/text-to-speech-models',
+          },
+          description: 'Typed text-to-speech model family smoke',
+        ),
+      ],
+    ),
+    LocalE2eScenario(
       name: 'image-generation-smoke',
       group: LocalE2eScenarioGroup.dartLocalOnly,
       description:
@@ -3113,9 +3145,9 @@ Future<LocalE2eResult> runLocalE2e(
       scenario.name == 'litert-lm-v1-json-schema' ||
       scenario.name == 'litert-lm-v1-asr-smoke') {
     if (parsed.backend != 'cpu') {
-      return const LocalE2eResult(
+      return LocalE2eResult(
         64,
-        stderr: '--backend cpu is required for litert-lm-v1-service.\n',
+        stderr: '--backend cpu is required for ${scenario.name}.\n',
       );
     }
     final env = environment ?? Platform.environment;

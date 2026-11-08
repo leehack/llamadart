@@ -14,6 +14,19 @@ import sys
 import time
 
 
+SUMMARY_PATTERN = rb'All tests passed!|\d+ tests? passed[.,]'
+ECHO_DESCRIPTORS = {'stdout': 1, 'stderr': 2}
+
+
+def echo(name, chunk):
+    # The job log is best effort: a stalled log pipe must not delay deadlines.
+    try:
+        os.set_blocking(ECHO_DESCRIPTORS[name], False)
+        os.write(ECHO_DESCRIPTORS[name], chunk)
+    except OSError:
+        pass
+
+
 def process_table():
     """Read identity/ancestry and wait state, never argv, environment or paths."""
     table = {}
@@ -100,6 +113,12 @@ def supervise(command, output, timeout, shutdown, cleanup, snapshot_interval):
     started = time.monotonic()
     stopped = []
     previous = {}
+    echo_blocking = {}
+    for descriptor in ECHO_DESCRIPTORS.values():
+        try:
+            echo_blocking[descriptor] = os.get_blocking(descriptor)
+        except OSError:
+            pass
     for number in (signal.SIGINT, signal.SIGTERM):
         previous[number] = signal.signal(number, lambda number, frame: stopped.append(number))
     child = None
@@ -216,8 +235,9 @@ def supervise(command, output, timeout, shutdown, cleanup, snapshot_interval):
                         continue
                     sink.write(chunk)
                     sink.flush()
+                    echo(name, chunk)
                     tails[name] = (tails[name] + chunk)[-1024:]
-                    if not reported and re.search(rb'All tests passed!|\d+ tests passed\.', tails[name]):
+                    if not reported and re.search(SUMMARY_PATTERN, tails[name]):
                         reported = True
                         record('reporter_summary_observed', stream=name)
                         snapshot('reporter_summary_observed')
@@ -255,6 +275,12 @@ def supervise(command, output, timeout, shutdown, cleanup, snapshot_interval):
                 child.stderr.close()
             for number, handler in previous.items():
                 signal.signal(number, handler)
+            # O_NONBLOCK lives on the open file description shared with the caller.
+            for descriptor, blocking in echo_blocking.items():
+                try:
+                    os.set_blocking(descriptor, blocking)
+                except OSError:
+                    pass
         survivors = [row['pid'] for row in remaining.values() if row['state'] != 'Z']
         if stopped:
             exit_code = 128 + stopped[0]
