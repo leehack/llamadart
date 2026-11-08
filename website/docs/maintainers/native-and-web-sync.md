@@ -426,6 +426,12 @@ bounded to the failed backend; disposal never reports successful cleanup in this
 state. Do not kill the retained isolate or release its lease to make teardown
 appear complete.
 
+Free and dispose time out only while earlier native work settles. Once the
+worker reports that native teardown started, the backend waits for it to
+finish: on Linux ext4, releasing a freshly written CPU XNNPACK weight cache
+flushes it to disk, about 4 s for Qwen3 0.6B's 600 MB cache on CI disks
+([#1814](https://github.com/leehack/llamadart/issues/1814)).
+
 Public ABI-aware selection and the v0.19.1-1 source pin are enabled; remaining
 consumer, feature and platform gates are recorded in
 `doc/litert_lm_v1_adoption.md`. This transport contract alone does not qualify a

@@ -1225,6 +1225,80 @@ void main() {
     );
   }
 
+  for (final operation in ['dispose', 'contextFree', 'modelFree']) {
+    test(
+      '$operation waits past freeTimeout for started native teardown',
+      () async {
+        final port = ReceivePort();
+        final teardown = Completer<LiteRtLmWorkerRequest>();
+        port.listen((message) {
+          if (message is! LiteRtLmWorkerRequest) return;
+          final isTeardown =
+              message is LiteRtLmContextFreeRequest ||
+              message is LiteRtLmModelFreeRequest ||
+              message is LiteRtLmDisposeRequest;
+          if (isTeardown && !teardown.isCompleted) {
+            message.sendPort.send(const LiteRtLmNativeTeardownStarted());
+            teardown.complete(message);
+          } else {
+            message.sendPort.send(LiteRtLmDoneResponse());
+          }
+        });
+        final backend = LiteRtLmBackend(
+          initialSendPort: port.sendPort,
+          freeTimeout: const Duration(milliseconds: 50),
+        );
+        try {
+          var settled = false;
+          final pending = switch (operation) {
+            'contextFree' => backend.contextFree(1),
+            'modelFree' => backend.modelFree(1),
+            _ => backend.dispose(),
+          }.whenComplete(() => settled = true);
+          final request = await teardown.future.timeout(
+            const Duration(seconds: 2),
+          );
+          await Future<void>.delayed(const Duration(milliseconds: 150));
+          expect(settled, isFalse, reason: 'teardown has not finished');
+
+          request.sendPort.send(LiteRtLmDoneResponse());
+          await pending.timeout(const Duration(seconds: 2));
+          if (operation != 'dispose') {
+            await backend.dispose();
+          }
+        } finally {
+          port.close();
+        }
+      },
+    );
+  }
+
+  for (final operation in ['dispose', 'contextFree', 'modelFree']) {
+    test(
+      '$operation reports a worker that exits during native teardown',
+      () async {
+        final backend = LiteRtLmBackend(
+          workerEntryPoint: _exitDuringTeardownWorker,
+        );
+        await backend.modelLoad('fake.litertlm', const ModelParams());
+        await expectLater(
+          switch (operation) {
+            'contextFree' => backend.contextFree(1),
+            'modelFree' => backend.modelFree(1),
+            _ => backend.dispose(),
+          }.timeout(const Duration(seconds: 2)),
+          throwsA(isA<LlamaStateException>()),
+        );
+        if (operation != 'dispose') {
+          await expectLater(
+            backend.dispose(),
+            throwsA(isA<LlamaStateException>()),
+          );
+        }
+      },
+    );
+  }
+
   test('concurrent disposal waits for the same cleanup result', () async {
     final port = ReceivePort();
     final received = Completer<LiteRtLmDisposeRequest>();
@@ -3559,6 +3633,25 @@ void _exitOnCancelWorker(SendPort port) {
       );
     } else if (message is LiteRtLmCancelGenerationRequest) {
       Isolate.exit();
+    }
+  });
+}
+
+void _exitDuringTeardownWorker(SendPort port) {
+  final receive = ReceivePort();
+  port.send(receive.sendPort);
+  receive.listen((message) {
+    if (message is LiteRtLmModelLoadRequest) {
+      message.sendPort.send(LiteRtLmHandleResponse(1));
+    } else if (message is LiteRtLmContextFreeRequest ||
+        message is LiteRtLmModelFreeRequest ||
+        message is LiteRtLmDisposeRequest) {
+      (message as LiteRtLmWorkerRequest).sendPort.send(
+        const LiteRtLmNativeTeardownStarted(),
+      );
+      Isolate.exit();
+    } else if (message is LiteRtLmWorkerRequest) {
+      message.sendPort.send(LiteRtLmDoneResponse());
     }
   });
 }

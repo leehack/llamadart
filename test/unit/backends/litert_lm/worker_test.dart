@@ -72,6 +72,80 @@ void main() {
     }, testOn: 'mac-os || linux');
   }
 
+  for (final operation in ['contextFree', 'modelFree', 'dispose']) {
+    test('$operation announces native teardown only after earlier native '
+        'work settles', () async {
+      final service = _TeardownLiteRtLmService();
+      final worker = await _startWorkerInCurrentIsolate(service);
+      final teardownPort = ReceivePort();
+      final responses = <Object?>[];
+      final done = Completer<void>();
+      teardownPort.listen((response) {
+        responses.add(response);
+        if (response is! LiteRtLmNativeTeardownStarted) done.complete();
+      });
+      try {
+        final active = _sendRequest(
+          worker.sendPort,
+          (port) => LiteRtLmTokenizeRequest(1, 'held', false, port),
+        );
+        await service.tokenizeStarted.future;
+        worker.sendPort.send(switch (operation) {
+          'contextFree' => LiteRtLmContextFreeRequest(1, teardownPort.sendPort),
+          'modelFree' => LiteRtLmModelFreeRequest(1, teardownPort.sendPort),
+          _ => LiteRtLmDisposeRequest(teardownPort.sendPort),
+        });
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+        expect(responses, isEmpty);
+        expect(service.teardowns, isEmpty);
+
+        service.releaseTokenize();
+        await active;
+        await done.future.timeout(const Duration(seconds: 2));
+        expect(responses, [
+          isA<LiteRtLmNativeTeardownStarted>(),
+          isA<LiteRtLmDoneResponse>(),
+        ]);
+        expect(service.teardowns, [operation]);
+      } finally {
+        service.releaseTokenize();
+        teardownPort.close();
+        if (operation != 'dispose') await _disposeWorker(worker);
+      }
+    });
+  }
+
+  test('dispose never announces teardown for unsettled native work', () async {
+    final service = _TeardownLiteRtLmService();
+    final worker = await _startWorkerInCurrentIsolate(
+      service,
+      disposeTimeout: const Duration(milliseconds: 20),
+    );
+    final disposePort = ReceivePort();
+    try {
+      unawaited(
+        _sendRequest(
+          worker.sendPort,
+          (port) => LiteRtLmTokenizeRequest(1, 'held', false, port),
+        ),
+      );
+      await service.tokenizeStarted.future;
+      worker.sendPort.send(LiteRtLmDisposeRequest(disposePort.sendPort));
+      expect(
+        await disposePort.first.timeout(const Duration(seconds: 2)),
+        isA<LiteRtLmErrorResponse>().having(
+          (response) => response.nativeSettlement,
+          'nativeSettlement',
+          LiteRtLmNativeSettlement.quarantined,
+        ),
+      );
+      expect(service.teardowns, isEmpty);
+    } finally {
+      service.releaseTokenize();
+      disposePort.close();
+    }
+  });
+
   test(
     'a queued embedding deadline preserves the active call and other requests',
     () async {
@@ -895,7 +969,11 @@ void main() {
 
         final disposePort = ReceivePort();
         worker.sendPort.send(LiteRtLmDisposeRequest(disposePort.sendPort));
-        await disposePort.first.timeout(const Duration(seconds: 2));
+        await disposePort
+            .firstWhere(
+              (response) => response is! LiteRtLmNativeTeardownStarted,
+            )
+            .timeout(const Duration(seconds: 2));
         disposePort.close();
 
         expect(service.disposeCalled, isTrue);
@@ -979,7 +1057,9 @@ Future<dynamic> _sendRequest(
 ) async {
   final responsePort = ReceivePort();
   workerSendPort.send(buildRequest(responsePort.sendPort));
-  final response = await responsePort.first;
+  final response = await responsePort.firstWhere(
+    (response) => response is! LiteRtLmNativeTeardownStarted,
+  );
   responsePort.close();
   return response;
 }
@@ -1005,7 +1085,9 @@ Future<void> _disposeWorker(
 ) async {
   final responsePort = ReceivePort();
   worker.sendPort.send(LiteRtLmDisposeRequest(responsePort.sendPort));
-  await responsePort.first;
+  await responsePort.firstWhere(
+    (response) => response is! LiteRtLmNativeTeardownStarted,
+  );
   responsePort.close();
   worker.isolate?.kill(priority: Isolate.immediate);
 }
@@ -1061,6 +1143,19 @@ class _BlockingLiteRtLmService extends LiteRtLmService {
   void cancelGeneration() {
     cancelCount += 1;
   }
+}
+
+class _TeardownLiteRtLmService extends _BlockingLiteRtLmService {
+  final List<String> teardowns = [];
+
+  @override
+  void freeContext(int contextHandle) => teardowns.add('contextFree');
+
+  @override
+  void freeModel(int modelHandle) => teardowns.add('modelFree');
+
+  @override
+  void dispose() => teardowns.add('dispose');
 }
 
 class _DetokenizeLiteRtLmService extends LiteRtLmService {

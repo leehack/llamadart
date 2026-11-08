@@ -582,6 +582,13 @@ class LiteRtLmDoneResponse {
   final LiteRtLmNativeSettlement nativeSettlement;
 }
 
+/// Sent before the final response of a free or dispose request, once earlier
+/// native work has settled and native teardown begins.
+class LiteRtLmNativeTeardownStarted {
+  /// Creates a teardown-started notice.
+  const LiteRtLmNativeTeardownStarted();
+}
+
 /// Handshake message sent from the backend to the worker.
 class LiteRtLmWorkerHandshake {
   /// Initial log level.

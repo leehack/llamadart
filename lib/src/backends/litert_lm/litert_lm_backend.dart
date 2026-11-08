@@ -53,6 +53,7 @@ class LiteRtLmBackend
   SendPort? _sendPort;
   Future<void>? _isolateStart;
   Future<void>? _disposeFuture;
+  Completer<Object?>? _disposeResponse;
   int _workerGeneration = 0;
   void Function([Object? error])? _activeGenerationCleanup;
   _WorkerGeneration? _runningGeneration;
@@ -90,8 +91,11 @@ class LiteRtLmBackend
   /// Explicit cancellation, context/model teardown and disposal cancel all embeds.
   /// [workerEntryPoint] substitutes the worker only for lifecycle tests.
   /// [workerStartupTimeout] bounds the worker handshake.
-  /// [freeTimeout] bounds native context and model frees; on expiry the worker
-  /// is killed and native settlement is reported as unverified.
+  /// [freeTimeout] bounds how long context and model frees and [dispose] wait
+  /// for earlier native work to settle so that native teardown can start; on
+  /// expiry the worker is detached and native settlement is reported as
+  /// unverified. Started native teardown is awaited to completion: releasing a
+  /// freshly written CPU weight cache can block on disk writeback for seconds.
   /// [cancelAcknowledgementTimeout] bounds the wait for the worker to
   /// acknowledge a cancellation, which is best-effort.
   LiteRtLmBackend({
@@ -293,7 +297,7 @@ class LiteRtLmBackend
     try {
       await _sendRequest(
         (sendPort) => LiteRtLmModelFreeRequest(modelHandle, sendPort),
-        timeout: _freeTimeout,
+        teardownStartTimeout: _freeTimeout,
       );
     } on TimeoutException {
       _nativeSettlementUnverified = true;
@@ -339,7 +343,7 @@ class LiteRtLmBackend
     try {
       await _sendRequest(
         (sendPort) => LiteRtLmContextFreeRequest(contextHandle, sendPort),
-        timeout: _freeTimeout,
+        teardownStartTimeout: _freeTimeout,
       );
       _embeddingContext = null;
       _stalePerformanceContexts.remove(contextHandle);
@@ -821,20 +825,32 @@ class LiteRtLmBackend
     final sendPort = _sendPort;
     if (sendPort != null) {
       final responsePort = ReceivePort();
+      final teardownStarted = Completer<void>();
+      final completion = _disposeResponse = Completer<Object?>();
+      responsePort.listen((response) {
+        if (response is LiteRtLmNativeTeardownStarted) {
+          if (!teardownStarted.isCompleted) teardownStarted.complete();
+        } else if (!completion.isCompleted) {
+          completion.complete(response);
+        }
+      });
       try {
         sendPort.send(LiteRtLmDisposeRequest(responsePort.sendPort));
-        final response = await responsePort.first.timeout(
-          const Duration(seconds: 5),
-        );
+        await Future.any([
+          teardownStarted.future,
+          completion.future,
+        ]).timeout(_freeTimeout);
+        final response = await completion.future;
         if (response is! LiteRtLmDoneResponse ||
             response.nativeSettlement != LiteRtLmNativeSettlement.settled) {
           _nativeSettlementUnverified = true;
         }
       } catch (_) {
-        // Native LiteRT-LM teardown can stall on some accelerator paths. The
-        // caller ports are closed below; this does not prove native settlement.
+        // The worker did not reach native teardown in time, so earlier native
+        // work may still be running; this does not prove native settlement.
         _nativeSettlementUnverified = true;
       } finally {
+        _disposeResponse = null;
         responsePort.close();
       }
     }
@@ -950,6 +966,13 @@ class LiteRtLmBackend
     _workerLogPort = logPort;
     lifecyclePort.listen((_) {
       if (_disposed || generation != _workerGeneration) {
+        // A worker that dies during disposal never sends its final response.
+        final disposeResponse = _disposeResponse;
+        if (generation == _workerGeneration &&
+            disposeResponse != null &&
+            !disposeResponse.isCompleted) {
+          disposeResponse.complete(null);
+        }
         return;
       }
       _nativeSettlementUnverified = true;
@@ -1024,10 +1047,13 @@ class LiteRtLmBackend
     }
   }
 
+  /// [teardownStartTimeout] bounds only the wait for the worker to start
+  /// native teardown or answer; started teardown runs to completion.
   Future<Object?> _sendRequest(
     LiteRtLmWorkerRequest Function(SendPort sendPort) buildRequest, {
     bool ensureIsolate = true,
     Duration? timeout,
+    Duration? teardownStartTimeout,
   }) async {
     if (ensureIsolate) {
       await _ensureIsolate();
@@ -1039,14 +1065,23 @@ class LiteRtLmBackend
 
     final responsePort = ReceivePort();
     final completion = Completer<Object?>();
+    final teardownStarted = Completer<void>();
     _pendingRequests[responsePort] = completion;
     responsePort.listen((response) {
-      if (!completion.isCompleted) {
+      if (response is LiteRtLmNativeTeardownStarted) {
+        if (!teardownStarted.isCompleted) teardownStarted.complete();
+      } else if (!completion.isCompleted) {
         completion.complete(response);
       }
     });
     try {
       sendPort.send(buildRequest(responsePort.sendPort));
+      if (teardownStartTimeout != null) {
+        await Future.any([
+          teardownStarted.future,
+          completion.future,
+        ]).timeout(teardownStartTimeout);
+      }
       final response = timeout == null
           ? await completion.future
           : await completion.future.timeout(timeout);
