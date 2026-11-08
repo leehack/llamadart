@@ -101,7 +101,7 @@ hooks:
   ABI checks and requires macOS 14+ before loading even an explicit path or
   legacy library; public selection admits C API 1.0.x while unknown/future
   versions remain unsupported. The source pin and companion source assets now
-  use published native `v0.19.1`; final default-discovery consumers and Apple
+  use published native `v0.19.1-1`; final default-discovery consumers and Apple
   embedding/signature checks remain [#1677](https://github.com/leehack/llamadart/issues/1677)
   gates before coordinated package release.
 - An empty or all-unknown selection falls back to `llama_cpp` and

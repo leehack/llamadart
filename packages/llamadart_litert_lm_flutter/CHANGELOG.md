@@ -1,6 +1,6 @@
 ## Unreleased
 
-- Updated Apple SwiftPM native pin to `leehack/litert-lm-native@v0.19.1`.
+- Updated Apple SwiftPM native pin to `leehack/litert-lm-native@v0.19.1-1`.
 
 ## 0.18.0
 
