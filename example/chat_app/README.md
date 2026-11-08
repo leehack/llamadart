@@ -694,7 +694,8 @@ await prefs.setInt('preferred_backend', backendIndex);
   `dart run tool/testing/run_local_e2e.dart --scenario chat-app-web-litert-gemma4-smoke`.
   This builds the Flutter web app, serves it with COOP/COEP headers, loads the
   `gemma-4-E2B-it-web.litertlm` bundle through `@litert-lm/core`, and captures
-  streamed single-turn LiteRT-LM text output in Playwright. That smoke does
+  streamed single-turn LiteRT-LM text output in Playwright; add
+  `--browser safari` to drive the Safari app through safaridriver. That smoke does
   not qualify ordered history or system forwarding. Use the maintained
   `litert-lm-web-text-history` local scenario with an existing compatible model
   for matched direct-JS history/system and cancellation controls; dry-run it

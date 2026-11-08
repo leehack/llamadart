@@ -146,6 +146,7 @@ class LocalE2eRunContext {
     required this.benchmarkWarmups,
     required this.draftTokenMaxList,
     required this.ngramSize,
+    required this.browser,
     required this.ngramSizeM,
     required this.ngramTokenMax,
     required this.ngramCacheStaticPath,
@@ -183,6 +184,7 @@ class LocalE2eRunContext {
   final String benchmarkWarmups;
   final String draftTokenMaxList;
   final String? ngramSize;
+  final String? browser;
   final String? ngramSizeM;
   final String? ngramTokenMax;
   final String? ngramCacheStaticPath;
@@ -1741,6 +1743,7 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
             context.modelPath!,
             '--backend',
             context.backend,
+            if (context.browser case final browser?) ...['--browser', browser],
           ],
           description:
               'LiteRT Web text history, direct-runtime controls, reset and cancellation (local port 5198)',
@@ -2632,6 +2635,7 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
               '${40 * 60 * 1000}',
               '--response-timeout-ms',
               '${10 * 60 * 1000}',
+              if (context.browser == 'safari') ...['--browser', 'safari'],
             ],
             description: 'Run Playwright Gemma 4 LiteRT-LM web smoke',
           ),
@@ -2812,6 +2816,19 @@ Future<LocalE2eResult> runLocalE2e(
             'Expected tag is verification only; native2 is pipeline-only.\n',
       );
     }
+  }
+  if (parsed.browser case final browser?
+      when !const [
+            'litert-lm-web-text-history',
+            'chat-app-web-litert-gemma4-smoke',
+          ].contains(scenario.name) ||
+          !const ['chrome', 'safari'].contains(browser)) {
+    return const LocalE2eResult(
+      64,
+      stderr:
+          '--browser chrome or safari applies only to litert-lm-web-text-history '
+          'and chat-app-web-litert-gemma4-smoke.\n',
+    );
   }
   if (scenario.name == 'litert-lm-web-text-history' &&
       !const ['cpu', 'gpu'].contains(parsed.backend)) {
@@ -3270,6 +3287,7 @@ Future<LocalE2eResult> runLocalE2e(
     benchmarkWarmups: parsed.benchmarkWarmups,
     draftTokenMaxList: parsed.draftTokenMaxList,
     ngramSize: parsed.ngramSize,
+    browser: parsed.browser,
     ngramSizeM: parsed.ngramSizeM,
     ngramTokenMax: parsed.ngramTokenMax,
     ngramCacheStaticPath: parsed.ngramCacheStaticPath,
@@ -3481,6 +3499,7 @@ Options:
   --model-url <url>              Model URL for real-model web smoke.
   --mmproj-url <url>             Projector URL for real-model web smoke.
   --backend <name>               Backend for local model scenarios (default: auto; decision-model-smoke: cpu).
+  --browser <name>               LiteRT-LM Web history and Gemma 4 smoke browser: chrome (default) or safari (safaridriver).
   --speculative-cases <list>     Benchmark cases for llama.cpp speculative benchmark.
   --benchmark-gpu-layers <n>     GPU layers for benchmark scenarios (default: 0).
   --benchmark-max-tokens <n>     Max tokens for benchmark scenarios (default: 128).
@@ -3608,6 +3627,7 @@ class _ParsedArgs {
     this.modelUrl,
     this.mmprojUrl,
     this.ngramSize,
+    this.browser,
     this.ngramSizeM,
     this.ngramTokenMax,
     this.ngramCacheStaticPath,
@@ -3644,6 +3664,7 @@ class _ParsedArgs {
   final String benchmarkWarmups;
   final String draftTokenMaxList;
   final String? ngramSize;
+  final String? browser;
   final String? ngramSizeM;
   final String? ngramTokenMax;
   final String? ngramCacheStaticPath;
@@ -3689,6 +3710,7 @@ class _ParsedArgs {
     String? modelUrl;
     String? mmprojUrl;
     String? ngramSize;
+    String? browser;
     String? ngramSizeM;
     String? ngramTokenMax;
     String? ngramCacheStaticPath;
@@ -3757,6 +3779,8 @@ class _ParsedArgs {
           draftTokenMaxList = _readValue(args, ++index, arg);
         case '--ngram-size':
           ngramSize = _readValue(args, ++index, arg);
+        case '--browser':
+          browser = _readValue(args, ++index, arg);
         case '--ngram-size-m':
           ngramSizeM = _readValue(args, ++index, arg);
         case '--ngram-token-max':
@@ -3806,6 +3830,7 @@ class _ParsedArgs {
       benchmarkWarmups: benchmarkWarmups,
       draftTokenMaxList: draftTokenMaxList,
       ngramSize: ngramSize,
+      browser: browser,
       ngramSizeM: ngramSizeM,
       ngramTokenMax: ngramTokenMax,
       ngramCacheStaticPath: ngramCacheStaticPath,

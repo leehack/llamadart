@@ -1163,7 +1163,13 @@ dart tool/ci/test_shards.dart weights macos /tmp/timing/*/test_timing.json
 
 `litert-lm-web-text-history` serves an existing local model on loopback port
 5198 and runs Chrome with the `chrome-webgpu` test configuration. It downloads
-no model. List scenarios and dry-run before execution:
+no model. `--browser safari` runs the same test in the Safari app through
+`dart test -p safari` (safaridriver), and runs
+`chat-app-web-litert-gemma4-smoke` through `tool/testing/safari_webdriver.py`.
+Enable Settings > Developer > Allow Remote Automation first, and run with the
+screen unlocked: a locked screen hides the page, which then renders no Flutter
+frames and can be terminated while a large model loads. The chat-app smoke
+checks this and fails early. List scenarios and dry-run before execution:
 
 ```bash
 dart run tool/testing/run_local_e2e.dart --scenario litert-lm-web-text-history \

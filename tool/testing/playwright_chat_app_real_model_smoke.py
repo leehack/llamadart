@@ -21,6 +21,7 @@ from playwright_chat_app_utils import (
     local_storage_init_script,
     safe_body_text,
 )
+from safari_webdriver import SafariSession, element_id
 
 
 def wait_for_text(page, needle: str, timeout_ms: int, label: str) -> str:
@@ -190,6 +191,273 @@ WEATHER_TOOL_DECLARATIONS = json.dumps(
 )
 
 
+class _SafariBody:
+    def __init__(self, session: SafariSession) -> None:
+        self._session = session
+
+    def inner_text(self, **_: Any) -> str:
+        return str(self._session.execute("return document.body.innerText"))
+
+
+class _SafariPage:
+    """The subset of a Playwright page that the shared wait helpers use."""
+
+    def __init__(self, session: SafariSession) -> None:
+        self._session = session
+
+    def evaluate(self, function_source: str, *args: Any) -> Any:
+        # Unlike Playwright, WebDriver rejects cyclic values such as the
+        # captured LiteRT-LM conversation config.
+        return self._session.execute(
+            f"""return Promise.resolve(({function_source})(...arguments))
+              .then(value => {{
+                const seen = new WeakSet();
+                return JSON.parse(JSON.stringify(value ?? null, (_, item) => {{
+                  if (typeof item !== 'object' || item === null) return item;
+                  if (seen.has(item)) return '[Circular]';
+                  seen.add(item);
+                  return item;
+                }}));
+              }});""",
+            *args,
+        )
+
+    def locator(self, selector: str) -> _SafariBody:
+        assert selector == "body", selector
+        return _SafariBody(self._session)
+
+
+def _find_semantics(
+    session: SafariSession, selector: str, label: str, timeout_s: float
+) -> str:
+    deadline = time.monotonic() + timeout_s
+    while time.monotonic() < deadline:
+        element = session.execute(
+            """const [selector, label] = arguments;
+            const nodes = [...document.querySelectorAll(selector)].filter(node =>
+              (node.getAttribute('aria-label') ?? node.textContent ?? '')
+                .toLowerCase().includes(label.toLowerCase()));
+            return nodes.at(-1) ?? null;""",
+            selector,
+            label,
+        )
+        if element:
+            return element_id(element)
+        time.sleep(0.5)
+    raise TimeoutError(f"Timed out waiting for {selector} {label!r}")
+
+
+def _require_visible_page(session: SafariSession) -> None:
+    state = session.execute(
+        """return new Promise(resolve => {
+          let frames = 0;
+          const tick = () => { frames++; requestAnimationFrame(tick); };
+          requestAnimationFrame(tick);
+          setTimeout(() => resolve({visibility: document.visibilityState, frames}), 1000);
+        });"""
+    )
+    emit("safari_page_state", **state)
+    # A hidden page (locked screen, minimized or covered window) renders no
+    # Flutter frames, and Safari can terminate it while a large model loads.
+    if state["visibility"] != "visible" or state["frames"] == 0:
+        raise RuntimeError(
+            "Safari page is not visible; unlock the screen and keep the "
+            f"automation window in front: {state}"
+        )
+
+
+def run_safari(
+    args, init_script: str, *, started_at: float, remote_fetch_mode: str
+) -> int:
+    with SafariSession() as session:
+        page = _SafariPage(session)
+        emit("safari_session", version=session.capabilities.get("browserVersion"))
+        session.set_window_size(1440, 1100)
+        emit("goto", app_url=args.app_url)
+        # WebDriver has no init script: seed settings, reload so the app reads
+        # them, then install the capture globals before the model loads.
+        session.navigate(args.app_url)
+        session.execute(init_script)
+        session.navigate(args.app_url)
+        session.execute(init_script)
+        _require_visible_page(session)
+
+        _find_semantics(session, "flt-semantics-placeholder", "", 120)
+        # The placeholder is a 1px off-screen node that WebDriver will not click.
+        session.execute("document.querySelector('flt-semantics-placeholder').click()")
+        load_button = _find_semantics(session, '[role="button"]', "Load Model", 120)
+        emit("load_click", model_url=args.model_url, mmproj_url=args.mmproj_url)
+        session.click(load_button)
+        body_after_load = wait_for_text(
+            page,
+            "Model loaded successfully! Ready to chat.",
+            args.load_timeout_ms,
+            "model load",
+        )
+        emit(
+            "loaded",
+            elapsed_seconds=round(time.monotonic() - started_at, 1),
+            body_tail=body_after_load[-500:],
+        )
+
+        session.click(_find_semantics(session, "textarea, input", "", 30))
+        session.type_text(args.prompt)
+        send_button = _find_semantics(
+            session, '[role="button"]:not([aria-disabled="true"])', "Send message", 30
+        )
+        session.click(send_button)
+
+        bridge_response, body_after_response = wait_for_bridge_response(
+            page,
+            args.expect,
+            args.response_timeout_ms,
+            args.allow_any_response,
+            args.response_source,
+        )
+        litert_lm_runtime_requests = session.execute(
+            """return [...new Set(performance.getEntriesByType('resource')
+              .map(entry => entry.name)
+              .filter(name => name.includes('/@litert-lm/core@')))];"""
+        )
+        for url in litert_lm_runtime_requests:
+            emit("litert_lm_runtime_request", url=url)
+        finish_run(
+            page,
+            args,
+            started_at=started_at,
+            remote_fetch_mode=remote_fetch_mode,
+            bridge_response=bridge_response,
+            microphone_bridge_response=None,
+            body_after_response=body_after_response,
+            mmproj_requests=[],
+            litert_lm_runtime_requests=litert_lm_runtime_requests,
+            console_logs=[],
+            page_errors=[],
+            request_failures=[],
+        )
+    return 0
+
+
+def finish_run(
+    page,
+    args,
+    *,
+    started_at: float,
+    remote_fetch_mode: str,
+    bridge_response: str,
+    microphone_bridge_response: str | None,
+    body_after_response: str,
+    mmproj_requests: list[str],
+    litert_lm_runtime_requests: list[str],
+    console_logs: list[dict[str, str]],
+    page_errors: list[str],
+    request_failures: list[str],
+) -> None:
+    completion_check = page.evaluate(
+        """() => ({
+          capabilities: window.__llamadartRealBridgeCompletionCapabilities,
+          options: window.__llamadartRealBridgeLastOptions,
+        })"""
+    )
+    bridge_globals = page.evaluate(
+        """() => ({
+          crossOriginIsolated: window.crossOriginIsolated,
+          assetSource: window.__llamadartBridgeAssetSource ?? null,
+          coreModuleUrl: window.__llamadartBridgeCoreModuleUrl ?? null,
+          coreModuleUrlMem64: window.__llamadartBridgeCoreModuleUrlMem64 ?? null,
+          wasmUrl: window.__llamadartBridgeWasmUrl ?? null,
+          wasmUrlMem64: window.__llamadartBridgeWasmUrlMem64 ?? null,
+          workerUrl: window.__llamadartBridgeWorkerUrl ?? null,
+          preferMemory64: window.__llamadartBridgePreferMemory64 ?? null,
+          workerFallbackReason: window.__llamadartBridgeWorkerFallbackReason ?? null,
+          loadError: window.__llamadartBridgeLoadError ?? null,
+          threadPoolSize: window.__llamadartBridgeThreadPoolSize ?? null,
+          allowAutoRemoteFetchBackend:
+            window.__llamadartBridgeAllowAutoRemoteFetchBackend ?? null,
+          forceRemoteFetchBackend:
+            window.__llamadartBridgeForceRemoteFetchBackend ?? null,
+          liteRtLmModuleUrl: window.__llamadartLiteRtLmModuleUrl ?? null,
+          liteRtLmOriginalModuleUrl:
+            window.__llamadartLiteRtLmOriginalModuleUrl ?? null,
+          promptSpeechToTextSupported:
+            window.__llamadartBridgeSpeechToTextSupported ?? null,
+        })"""
+    )
+    if args.expect_lazy_grammar:
+        capabilities = completion_check["capabilities"] or {}
+        options = completion_check["options"] or {}
+        if capabilities.get("lazyGrammar") is not True:
+            raise RuntimeError(
+                f"Bridge did not report lazyGrammar: true: {capabilities!r}"
+            )
+        if (
+            not options.get("hasGrammar")
+            or options.get("grammarLazy") is not True
+            or options.get("grammarTriggerCount", 0) < 1
+        ):
+            raise RuntimeError(
+                f"Completion did not carry a lazy grammar with triggers: {options!r}"
+            )
+
+    if args.expect_penalty_prompt_tokens_probe:
+        capabilities = completion_check["capabilities"] or {}
+        if capabilities.get("penaltyPromptTokens") is not True:
+            raise RuntimeError(
+                "getCompletionCapabilities() did not report "
+                f"penaltyPromptTokens: true: {capabilities!r}"
+            )
+    if args.expect_penalty_prompt_tokens_option:
+        options = completion_check["options"] or {}
+        expected = (
+            "<absent>"
+            if args.expect_penalty_prompt_tokens_option == "absent"
+            else False
+        )
+        if options.get("penaltyPromptTokens") != expected:
+            raise RuntimeError(
+                "Completion call carried penaltyPromptTokens "
+                f"{options.get('penaltyPromptTokens')!r}, expected "
+                f"{expected!r}: {options!r}"
+            )
+    if args.expect_mmproj_cache_hit and len(mmproj_requests) != 1:
+        raise RuntimeError(
+            "Expected one mmproj network request from CacheStorage prefetch, "
+            f"but saw {len(mmproj_requests)} requests: {mmproj_requests}"
+        )
+    emit(
+        "result",
+        ok=True,
+        elapsedSeconds=round(time.monotonic() - started_at, 1),
+        modelUrl=args.model_url,
+        mmprojUrl=args.mmproj_url,
+        expectedText=args.expect,
+        variant=(
+            "speechToTextWithMicrophone"
+            if args.speech_microphone
+            else ("speechToText" if args.speech_audio_path else "chat")
+        ),
+        speechAudio=(
+            {
+                "filename": Path(args.speech_audio_path).name,
+                "encodedByteLength": Path(args.speech_audio_path).stat().st_size,
+            }
+            if args.speech_audio_path
+            else None
+        ),
+        bridgeResponse=bridge_response,
+        microphoneBridgeResponse=microphone_bridge_response,
+        remoteFetchMode=remote_fetch_mode,
+        mmprojRequestCount=len(mmproj_requests),
+        liteRtLmRuntimeRequests=litert_lm_runtime_requests,
+        bridgeGlobals=bridge_globals,
+        completionCheck=completion_check,
+        bodyTail=body_after_response[-1200:],
+        consoleTail=console_logs[-30:],
+        pageErrors=page_errors[-10:],
+        requestFailures=request_failures[-10:],
+    )
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("app_url")
@@ -282,7 +550,20 @@ def main() -> int:
         default="auto",
     )
     parser.add_argument("--headed", action="store_true")
+    parser.add_argument(
+        "--browser",
+        choices=["chromium", "safari"],
+        default="chromium",
+        help="safari drives the Safari app through safaridriver (plain chat only).",
+    )
     args = parser.parse_args()
+    if args.browser == "safari" and (
+        args.speech_audio_path or args.prefetch_mmproj_cache
+    ):
+        parser.error(
+            "--browser safari supports plain chat only, without speech input "
+            "or mmproj prefetch"
+        )
     if args.expect_mmproj_cache_hit and not args.prefetch_mmproj_cache:
         parser.error("--expect-mmproj-cache-hit requires --prefetch-mmproj-cache")
     if args.speech_audio_path:
@@ -596,6 +877,14 @@ def main() -> int:
         )}
     """
 
+    if args.browser == "safari":
+        return run_safari(
+            args,
+            init_script,
+            started_at=started_at,
+            remote_fetch_mode=remote_fetch_mode,
+        )
+
     with tempfile.TemporaryDirectory(
         prefix="llamadart-fake-microphone-"
     ) as microphone_tmp_dir, sync_playwright() as playwright:
@@ -848,108 +1137,19 @@ def main() -> int:
                 ),
             )
             body_after_response = safe_body_text(page)
-        completion_check = page.evaluate(
-            """() => ({
-              capabilities: window.__llamadartRealBridgeCompletionCapabilities,
-              options: window.__llamadartRealBridgeLastOptions,
-            })"""
-        )
-        bridge_globals = page.evaluate(
-            """() => ({
-              crossOriginIsolated: window.crossOriginIsolated,
-              assetSource: window.__llamadartBridgeAssetSource ?? null,
-              coreModuleUrl: window.__llamadartBridgeCoreModuleUrl ?? null,
-              coreModuleUrlMem64: window.__llamadartBridgeCoreModuleUrlMem64 ?? null,
-              wasmUrl: window.__llamadartBridgeWasmUrl ?? null,
-              wasmUrlMem64: window.__llamadartBridgeWasmUrlMem64 ?? null,
-              workerUrl: window.__llamadartBridgeWorkerUrl ?? null,
-              preferMemory64: window.__llamadartBridgePreferMemory64 ?? null,
-              workerFallbackReason: window.__llamadartBridgeWorkerFallbackReason ?? null,
-              loadError: window.__llamadartBridgeLoadError ?? null,
-              threadPoolSize: window.__llamadartBridgeThreadPoolSize ?? null,
-              allowAutoRemoteFetchBackend:
-                window.__llamadartBridgeAllowAutoRemoteFetchBackend ?? null,
-              forceRemoteFetchBackend:
-                window.__llamadartBridgeForceRemoteFetchBackend ?? null,
-              liteRtLmModuleUrl: window.__llamadartLiteRtLmModuleUrl ?? null,
-              liteRtLmOriginalModuleUrl:
-                window.__llamadartLiteRtLmOriginalModuleUrl ?? null,
-              promptSpeechToTextSupported:
-                window.__llamadartBridgeSpeechToTextSupported ?? null,
-            })"""
-        )
-        if args.expect_lazy_grammar:
-            capabilities = completion_check["capabilities"] or {}
-            options = completion_check["options"] or {}
-            if capabilities.get("lazyGrammar") is not True:
-                raise RuntimeError(
-                    f"Bridge did not report lazyGrammar: true: {capabilities!r}"
-                )
-            if (
-                not options.get("hasGrammar")
-                or options.get("grammarLazy") is not True
-                or options.get("grammarTriggerCount", 0) < 1
-            ):
-                raise RuntimeError(
-                    f"Completion did not carry a lazy grammar with triggers: {options!r}"
-                )
-
-        if args.expect_penalty_prompt_tokens_probe:
-            capabilities = completion_check["capabilities"] or {}
-            if capabilities.get("penaltyPromptTokens") is not True:
-                raise RuntimeError(
-                    "getCompletionCapabilities() did not report "
-                    f"penaltyPromptTokens: true: {capabilities!r}"
-                )
-        if args.expect_penalty_prompt_tokens_option:
-            options = completion_check["options"] or {}
-            expected = (
-                "<absent>"
-                if args.expect_penalty_prompt_tokens_option == "absent"
-                else False
-            )
-            if options.get("penaltyPromptTokens") != expected:
-                raise RuntimeError(
-                    "Completion call carried penaltyPromptTokens "
-                    f"{options.get('penaltyPromptTokens')!r}, expected "
-                    f"{expected!r}: {options!r}"
-                )
-        if args.expect_mmproj_cache_hit and len(mmproj_requests) != 1:
-            raise RuntimeError(
-                "Expected one mmproj network request from CacheStorage prefetch, "
-                f"but saw {len(mmproj_requests)} requests: {mmproj_requests}"
-            )
-        emit(
-            "result",
-            ok=True,
-            elapsedSeconds=round(time.monotonic() - started_at, 1),
-            modelUrl=args.model_url,
-            mmprojUrl=args.mmproj_url,
-            expectedText=args.expect,
-            variant=(
-                "speechToTextWithMicrophone"
-                if args.speech_microphone
-                else ("speechToText" if args.speech_audio_path else "chat")
-            ),
-            speechAudio=(
-                {
-                    "filename": Path(args.speech_audio_path).name,
-                    "encodedByteLength": Path(args.speech_audio_path).stat().st_size,
-                }
-                if args.speech_audio_path
-                else None
-            ),
-            bridgeResponse=bridge_response,
-            microphoneBridgeResponse=microphone_bridge_response,
-            remoteFetchMode=remote_fetch_mode,
-            mmprojRequestCount=len(mmproj_requests),
-            liteRtLmRuntimeRequests=litert_lm_runtime_requests,
-            bridgeGlobals=bridge_globals,
-            completionCheck=completion_check,
-            bodyTail=body_after_response[-1200:],
-            consoleTail=console_logs[-30:],
-            pageErrors=page_errors[-10:],
-            requestFailures=request_failures[-10:],
+        finish_run(
+            page,
+            args,
+            started_at=started_at,
+            remote_fetch_mode=remote_fetch_mode,
+            bridge_response=bridge_response,
+            microphone_bridge_response=microphone_bridge_response,
+            body_after_response=body_after_response,
+            mmproj_requests=mmproj_requests,
+            litert_lm_runtime_requests=litert_lm_runtime_requests,
+            console_logs=console_logs,
+            page_errors=page_errors,
+            request_failures=request_failures,
         )
         browser.close()
 

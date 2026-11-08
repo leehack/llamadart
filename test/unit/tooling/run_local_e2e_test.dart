@@ -479,6 +479,55 @@ Future<void> main(List<String> args) async {
     },
   );
 
+  test('LiteRT Web scenarios forward only a supported --browser', () async {
+    const history = [
+      '--scenario',
+      'litert-lm-web-text-history',
+      '--model-path',
+      'models/existing.litertlm',
+      '--backend',
+      'gpu',
+      '--dry-run',
+    ];
+    final safari = await runLocalE2e(
+      [...history, '--browser', 'safari'],
+      projectRoot: '/repo',
+      displayShell: LocalE2eDisplayShell.posix,
+    );
+    expect(safari.exitCode, 0);
+    expect(
+      safari.stdout,
+      contains(
+        'litert_text_history_web_e2e.py --model-path models/existing.litertlm --backend gpu --browser safari',
+      ),
+    );
+    final chatApp = await runLocalE2e(
+      [
+        '--scenario',
+        'chat-app-web-litert-gemma4-smoke',
+        '--skip-build',
+        '--browser',
+        'safari',
+        '--dry-run',
+      ],
+      projectRoot: '/repo',
+      displayShell: LocalE2eDisplayShell.posix,
+    );
+    expect(chatApp.exitCode, 0);
+    expect(
+      chatApp.stdout,
+      contains('--response-timeout-ms 600000 --browser safari'),
+    );
+    for (final args in [
+      [...history, '--browser', 'firefox'],
+      ['--scenario', 'chat-app-web-mock-smoke', '--browser', 'safari'],
+    ]) {
+      final result = await runLocalE2e(args, projectRoot: '/repo');
+      expect(result.exitCode, 64);
+      expect(result.stderr, contains('--browser chrome or safari'));
+    }
+  });
+
   test(
     'Qwen scenario preserves UTF-8 stdout from the real child process',
     () async {

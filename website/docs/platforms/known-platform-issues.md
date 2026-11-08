@@ -185,3 +185,9 @@ feature. For which runtime supports which feature, see the
   memory limit. Loading Gemma 4 E2B through LiteRT-LM Web peaks near 7 GB, so
   keep the tab visible until the model finishes loading
   ([#1025](https://github.com/leehack/llamadart/issues/1025)).
+- Browsers without WebAssembly relaxed SIMD, including Safari 27, run
+  LiteRT-LM Web on CPU through the runtime's compat build, which can generate
+  different tokens from Chrome's. With Qwen3 0.6B and default thinking, a
+  multi-turn reply can spend the whole `maxTokens` budget thinking and return
+  no text where Chrome answers
+  ([#1802](https://github.com/leehack/llamadart/issues/1802)).
