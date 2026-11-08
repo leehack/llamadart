@@ -9882,6 +9882,25 @@ class LlamaCppService {
           ),
         );
       }
+      final flags = info.ref.capabilities;
+      bool has(llama_dart_tts_capability capability) =>
+          flags & capability.value != 0;
+      final supportsLanguage = has(
+        llama_dart_tts_capability.LLAMA_DART_TTS_CAPABILITY_LANGUAGE,
+      );
+      if (model == BackendTextToSpeechModel.chatterbox && supportsLanguage) {
+        final sequences = llama_n_seq_max(_contexts[contextHandle]!.pointer);
+        if (sequences < 2) {
+          return BackendTextToSpeechCapabilities(
+            isSupported: false,
+            unsupportedReason:
+                'Chatterbox Multilingual decodes a second sequence for '
+                'classifier-free guidance, so its context needs '
+                'ModelParams.maxParallelSequences of at least 2; this '
+                'context has $sequences.',
+          );
+        }
+      }
       if (model == BackendTextToSpeechModel.lfm3Audio &&
           !_modelHasTtsTemplate(contextHandle)) {
         return const BackendTextToSpeechCapabilities(
@@ -9892,9 +9911,6 @@ class LlamaCppService {
               'that matches this projector.',
         );
       }
-      final flags = info.ref.capabilities;
-      bool has(llama_dart_tts_capability capability) =>
-          flags & capability.value != 0;
       final supportsVoice = has(
         llama_dart_tts_capability.LLAMA_DART_TTS_CAPABILITY_VOICE,
       );
@@ -9903,9 +9919,7 @@ class LlamaCppService {
         model: model,
         sampleRateHz: info.ref.sample_rate,
         channelCount: info.ref.channels,
-        supportsLanguage: has(
-          llama_dart_tts_capability.LLAMA_DART_TTS_CAPABILITY_LANGUAGE,
-        ),
+        supportsLanguage: supportsLanguage,
         supportsSpeakerReference: has(
           llama_dart_tts_capability.LLAMA_DART_TTS_CAPABILITY_SPEAKER_REFERENCE,
         ),
@@ -9931,24 +9945,27 @@ class LlamaCppService {
     }
     if (model == BackendTextToSpeechModel.qwen3Tts) return null;
     final name = _ttsModelName(model);
+    final version = _ttsOptInNativeVersions[model]!;
     if (!api.hasModelTypeOptIn) {
       return '$name speech output needs the model-type opt-in '
-          '(`llama_dart_tts_init_ext`) of llamadart-native v0.8.0 or later; '
+          '(`llama_dart_tts_init_ext`) of llamadart-native $version or later; '
           'this llama.cpp runtime predates it.';
     }
     final type = _backendTtsModels.entries
         .firstWhere((entry) => entry.value == model)
         .key;
     if (_ttsAcceptedModelTypes(api) & (1 << type) != 0) return null;
-    return 'This llama.cpp runtime was built without $name speech output '
-        '(`llama_dart_tts_supported_model_types`); it needs a '
-        'llamadart-native v0.8.0 or later bundle that includes it.';
+    return 'This llama.cpp runtime cannot drive $name speech output '
+        '(`llama_dart_tts_supported_model_types`); it needs '
+        'llamadart-native $version or later.';
   }
 
   static const Map<int, BackendTextToSpeechModel> _backendTtsModels = {
     1: BackendTextToSpeechModel.qwen3Tts,
     2: BackendTextToSpeechModel.lfm3Audio,
     3: BackendTextToSpeechModel.soprano,
+    4: BackendTextToSpeechModel.chatterbox,
+    5: BackendTextToSpeechModel.pocketTts,
   };
 
   /// The `_ext` mask of model types this core drives and the runtime can
@@ -9968,25 +9985,38 @@ class LlamaCppService {
     const base =
         'The loaded projector does not expose supported audio generation.';
     if (!api.hasModelTypeOptIn) {
-      return '$base This runtime drives Qwen3-TTS only: LFM3-Audio and '
-          'Soprano speech output need the model-type opt-in '
-          '(`llama_dart_tts_init_ext`) of llamadart-native v0.8.0 or later.';
+      return '$base This runtime drives Qwen3-TTS only: other models need '
+          'the model-type opt-in (`llama_dart_tts_init_ext`) of '
+          'llamadart-native v0.8.0 or later (Chatterbox and Pocket TTS: '
+          'v0.9.0).';
     }
     final missing = [
       for (final MapEntry(key: type, value: model) in _backendTtsModels.entries)
-        if (acceptedTypes & (1 << type) == 0) _ttsModelName(model),
+        if (acceptedTypes & (1 << type) == 0)
+          '${_ttsModelName(model)} (llamadart-native '
+              '${_ttsOptInNativeVersions[model]})',
     ];
     if (missing.isEmpty) return base;
-    return '$base This runtime was built without ${missing.join(' and ')} '
-        'speech output (`llama_dart_tts_supported_model_types`); use a '
-        'llamadart-native v0.8.0 or later bundle that includes it.';
+    return '$base This runtime cannot drive ${missing.join(', ')} '
+        '(`llama_dart_tts_supported_model_types`).';
   }
+
+  /// The first llamadart-native release that drives each model type behind
+  /// the model-type opt-in; Qwen3-TTS predates it.
+  static const Map<BackendTextToSpeechModel, String> _ttsOptInNativeVersions = {
+    BackendTextToSpeechModel.lfm3Audio: 'v0.8.0',
+    BackendTextToSpeechModel.soprano: 'v0.8.0',
+    BackendTextToSpeechModel.chatterbox: 'v0.9.0',
+    BackendTextToSpeechModel.pocketTts: 'v0.9.0',
+  };
 
   static String _ttsModelName(BackendTextToSpeechModel model) =>
       switch (model) {
         BackendTextToSpeechModel.qwen3Tts => 'Qwen3-TTS',
         BackendTextToSpeechModel.lfm3Audio => 'LFM3-Audio',
         BackendTextToSpeechModel.soprano => 'Soprano',
+        BackendTextToSpeechModel.chatterbox => 'Chatterbox',
+        BackendTextToSpeechModel.pocketTts => 'Pocket TTS',
       };
 
   bool _modelHasTtsTemplate(int contextHandle) {

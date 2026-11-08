@@ -29,6 +29,8 @@ import 'package:llamadart/src/core/models/inference/tool_choice.dart';
 import 'package:llamadart/src/core/models/model_format.dart';
 import 'package:llamadart/src/core/models/model_resolver.dart';
 import 'package:llamadart/src/core/models/model_source.dart';
+import 'package:llamadart/src/core/speech/text_to_speech.dart';
+import 'package:llamadart/src/core/speech/text_to_speech_model.dart';
 import 'package:llamadart/src/core/models/inference/embedding.dart';
 import 'package:llamadart/src/backends/litert_lm/litert_lm_backend_web.dart';
 import 'package:llamadart/src/backends/webgpu/webgpu_backend.dart';
@@ -590,6 +592,43 @@ void main() {
     },
   );
 
+  test(
+    'WebAutoBackend drives Qwen3-TTS only and refuses others before loading',
+    () async {
+      final backend = WebAutoBackend(webBackend: _NoStateBackend());
+      for (final model in BackendTextToSpeechModel.values) {
+        final reason = await backend.textToSpeechModelUnsupportedReason(model);
+        if (model == BackendTextToSpeechModel.qwen3Tts) {
+          expect(reason, isNull);
+        } else {
+          expect(reason, contains('Web text-to-speech drives Qwen3-TTS only'));
+        }
+      }
+
+      final delegate = _LoadRecordingBackend();
+      await expectLater(
+        TextToSpeechEngine.load(
+          TextToSpeechModel(
+            ModelSource.url(Uri.parse('https://example.com/lfm3.gguf')),
+            projector: ModelSource.url(
+              Uri.parse('https://example.com/mmproj.gguf'),
+            ),
+            adapter: const Lfm3AudioTtsAdapter(),
+          ),
+          backend: WebAutoBackend(webBackend: delegate),
+        ),
+        throwsA(
+          isA<LlamaUnsupportedException>().having(
+            (error) => error.message,
+            'message',
+            contains('Qwen3-TTS only'),
+          ),
+        ),
+      );
+      expect(delegate.loadedUrls, isEmpty);
+    },
+  );
+
   test('WebAutoBackend throws typed unsupported TTS errors', () {
     final backend = WebAutoBackend(webBackend: _NoStateBackend());
 
@@ -1095,6 +1134,26 @@ class _RecordingResolver implements ModelResolver {
   ) {
     resolved.add(source.cacheKey);
     return const DefaultModelResolver().resolve(source, request);
+  }
+}
+
+class _LoadRecordingBackend extends _NoStateBackend {
+  final List<String> loadedUrls = <String>[];
+
+  @override
+  Future<int> modelLoadFromUrl(
+    String url,
+    ModelParams params, {
+    void Function(double progress)? onProgress,
+  }) async {
+    loadedUrls.add(url);
+    return 1;
+  }
+
+  @override
+  Future<int> modelLoad(String path, ModelParams params) async {
+    loadedUrls.add(path);
+    return 1;
   }
 }
 

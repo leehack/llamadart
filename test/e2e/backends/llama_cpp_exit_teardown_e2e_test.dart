@@ -18,7 +18,8 @@ import 'package:test/test.dart';
 /// projector, adds the projector scenario; `EXIT_TEARDOWN_DECISION_MODEL` and
 /// `EXIT_TEARDOWN_DECISION_HEAD`, an encoder GGUF and its decision head, add
 /// the decision scenario; `EXIT_TEARDOWN_TTS_MODEL`, `EXIT_TEARDOWN_TTS_MMPROJ`
-/// and `EXIT_TEARDOWN_TTS_ADAPTER` (`qwen3-tts`, `lfm3-audio` or `soprano`)
+/// and `EXIT_TEARDOWN_TTS_ADAPTER` (`qwen3-tts`, `lfm3-audio`, `soprano`,
+/// `chatterbox` or `pocket-tts`)
 /// add the scenario that exits during synthesis.
 void main() {
   final environment = Platform.environment;

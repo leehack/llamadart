@@ -1,7 +1,7 @@
 ---
 title: On-device text to speech
 sidebar_label: Text to speech
-description: Generate complete PCM and WAV audio with the experimental typed llama.cpp text-to-speech API (Qwen3-TTS, LFM3-Audio, Soprano) on native and WebGPU runtimes.
+description: Generate complete PCM and WAV audio with the experimental typed llama.cpp text-to-speech API (Qwen3-TTS, LFM3-Audio, Soprano, Chatterbox, Pocket TTS) on native and WebGPU runtimes.
 ---
 
 `TextToSpeechEngine` is the typed API for speech synthesis. It is separate from
@@ -10,7 +10,8 @@ progress, cancellation, and output buffering are not chat-token semantics.
 
 Text to speech is experimental and deliberately narrow. It supports
 Qwen3-TTS through native llama.cpp or WebGPU (pinned bridge assets), and
-LFM3-Audio and Soprano through native llama.cpp, each with the matching
+LFM3-Audio, Soprano, Chatterbox Turbo, Chatterbox Multilingual and Pocket TTS
+through native llama.cpp, each with the matching
 audio-generation projector. It reports prompt/frame progress, then returns one
 complete mono float32 PCM buffer. It does not stream playable audio chunks yet.
 
@@ -18,7 +19,7 @@ complete mono float32 PCM buffer. It does not stream playable audio chunks yet.
 
 | Runtime | Typed `TextToSpeechEngine` | Output |
 | --- | --- | --- |
-| Native llama.cpp / GGUF | Experimental Qwen3-TTS, LFM3-Audio and Soprano adapters | Complete float32 PCM; WAV helper |
+| Native llama.cpp / GGUF | Experimental Qwen3-TTS, LFM3-Audio, Soprano, Chatterbox and Pocket TTS adapters | Complete float32 PCM; WAV helper |
 | WebGPU / GGUF | Experimental Qwen3-TTS adapter (pinned bridge assets) | Complete float32 PCM; WAV helper |
 | Native LiteRT-LM / `.litertlm` | Unsupported by the pinned native artifact | None |
 | LiteRT-LM Web | Unsupported | None |
@@ -33,19 +34,23 @@ takes, and a request that asks for anything else throws before synthesis.
 | Qwen3-TTS | `Qwen3TtsAdapter` | 24 kHz | 10 codes, see below | None | Yes | Request settings |
 | LFM3-Audio, LFM3-Omni | `Lfm3AudioTtsAdapter` | 24 kHz | Any, not validated | `female` (default), `male` | No | The GGUF's own; request settings are validated, unused |
 | Soprano | `SopranoTtsAdapter` | 32 kHz | No | None | No | Request settings |
+| Chatterbox Turbo | `ChatterboxTtsAdapter` | 24 kHz | No | `default` | Yes | Request settings |
+| Chatterbox Multilingual | `ChatterboxTtsAdapter` | 24 kHz | Code such as `fr`, not validated | `default` | Yes | Request settings |
+| Pocket TTS | `PocketTtsAdapter` | 24 kHz | No (the weights' language) | The projector's, such as 25 in the Kyutai English pack | Only with a voice encoder | The weights' own; request settings are validated, unused |
 
 LFM3-Audio and Soprano need native llama.cpp from llamadart-native v0.8.0, the
-release that added the model-type opt-in (`llama_dart_tts_init_ext`). An older
-runtime, such as an older Apple companion lock, keeps Qwen3-TTS working:
-`load` asks it which models it drives and throws `LlamaUnsupportedException`
-naming the required release before loading any file, and `capabilities` on an
-attached engine reports the same in `unsupportedReason`. Web drives Qwen3-TTS
-only.
+release that added the model-type opt-in (`llama_dart_tts_init_ext`);
+Chatterbox and Pocket TTS need v0.9.0. An older runtime, such as an older
+Apple companion lock, keeps Qwen3-TTS working: `load` asks it which models it
+drives and throws `LlamaUnsupportedException` naming the required release
+before loading any file, and `capabilities` on an attached engine reports the
+same in `unsupportedReason`. Web drives Qwen3-TTS only.
 
 On Android, GPU work stays off on the Adreno 750 driver that llama.cpp Vulkan
 miscomputes on ([llamadart-native#79](https://github.com/leehack/llamadart-native/issues/79)):
 there Soprano returns the same non-speech audio for every input and LFM3-Audio
-fails to create its pipelines. On that driver automatic device selection
+fails to create its pipelines, and Chatterbox and Pocket TTS are unqualified
+on it. On that driver automatic device selection
 falls back to the CPU with a warning, and `ComputeDevice.gpu` throws.
 
 ### LFM3-Audio
@@ -169,11 +174,63 @@ unsupported with that reason and `synthesize` throws `LlamaStateException`: crea
 The runtime generates the audio itself and reports which audio-generation
 model it loaded, so an adapter can target only a model the runtime supports.
 `Qwen3TtsAdapter` accepts Qwen3-TTS and maps request languages to its codes;
-`Lfm3AudioTtsAdapter` and `SopranoTtsAdapter` accept their models.
+`Lfm3AudioTtsAdapter`, `SopranoTtsAdapter`, `ChatterboxTtsAdapter` and
+`PocketTtsAdapter` accept their models.
 `TextToSpeechAdapter` is open for another family once a runtime reports it:
 `supportsModel` accepts the `BackendTextToSpeechModel` it drives,
 `supportedLanguages` lists its codes, and `normalizeLanguage` maps a request
 language to one of them.
+
+### Chatterbox
+
+`ChatterboxTtsAdapter` drives Chatterbox Turbo and Chatterbox Multilingual,
+for example the Q8_0 model and F16 projector from
+[`ggml-org/chatterbox-turbo-GGUF`](https://huggingface.co/ggml-org/chatterbox-turbo-GGUF)
+or [`ggml-org/chatterbox-GGUF`](https://huggingface.co/ggml-org/chatterbox-GGUF).
+Both speak with the projector's predefined voice (`default` in these
+conversions) or clone a speaker reference of about 10 seconds; a short clip
+can make the model run on to `maxFrames`. They sample with the request's
+settings; the GGUFs store upstream's defaults (Turbo `topK: 1000`,
+`topP: 0.95`, `minP: 0`; Multilingual `topP: 1`, `minP: 0.05`; both
+`temperature: 0.8`), which you can pass to match upstream `llama-tts`.
+
+Turbo takes no language. Multilingual reports `supportsLanguage`: pass a code
+such as `fr`, which is lower-cased and not validated (check it against the
+model card; upstream does not yet normalize text, so some diacritics drop).
+Multilingual decodes a second sequence for classifier-free guidance, so load
+it with two sequences, or it is reported unsupported:
+
+```dart
+final synthesizer = await TextToSpeechEngine.load(
+  TextToSpeechModel(
+    ModelSource.parse('hf://ggml-org/chatterbox-GGUF/chatterbox-Q8_0.gguf'),
+    projector: ModelSource.parse(
+      'hf://ggml-org/chatterbox-GGUF/mmproj-chatterbox-F16.gguf',
+    ),
+    adapter: const ChatterboxTtsAdapter(),
+  ),
+  params: const ModelParams(maxParallelSequences: 2),
+);
+final result = await synthesizer.synthesizeOnce(
+  const TextToSpeechRequest(
+    text: "Bonjour, comment allez-vous aujourd'hui?",
+    language: 'fr',
+  ),
+);
+```
+
+### Pocket TTS
+
+`PocketTtsAdapter` drives Pocket TTS, for example
+`english/pocket-tts-english.gguf` and its projector from
+[`macolomb/pocket-tts-without-voice-cloning`](https://huggingface.co/macolomb/pocket-tts-without-voice-cloning).
+It speaks with a predefined voice (that pack lists 25, from `alba` to `vera`),
+the first one when a request names none, and speaks unconditioned when the
+projector has none. A speaker reference needs a projector with a voice
+encoder, which that pack lacks. The language is that of the weights. It
+samples with the weights' own settings, so `topK`, `topP`, `minP` and
+`temperature` are validated but unused; `seed` seeds the decoder. Long text is
+split into chunks that all count towards `maxFrames`.
 
 ## Synthesize and save WAV
 
@@ -250,10 +307,12 @@ if (capabilities.voices.contains('male')) {
 A name matches in any case. One the model does not list throws
 `LlamaTextToSpeechException` before synthesis, never falling back to the
 default; a voice together with a speaker reference does too, and a voice for a
-model without voices throws `LlamaUnsupportedException`. Runtimes before
-llamadart-native v0.9.0 can select a voice but not list them: `voices` is then
-empty while `supportsVoice` is true, and the runtime checks the name when
-synthesis starts.
+model without voices throws `LlamaUnsupportedException`. For Chatterbox and
+Pocket TTS, a request without a voice or reference gives the same audio as
+one naming the first voice. Runtimes before llamadart-native v0.9.0 can select
+an LFM3-Audio voice but not list it: `voices` is then empty while
+`supportsVoice` is true, and the runtime checks the name when synthesis
+starts.
 
 For Qwen3-TTS, the canonical language codes are `zh`, `en`, `ja`, `ko`, `de`,
 `fr`, `ru`, `pt`, `es`, and `it`. Common English names are normalized to those
@@ -300,9 +359,10 @@ The [chat app](../examples/chat-app) has a Qwen3-TTS mode built on this API.
 
 - Output is complete mono PCM at the model's rate (`sampleRateHz`); no
   incremental audio chunks, timestamps, or output backpressure are available.
-- Qwen3-TTS, LFM3-Audio, Soprano and llama.cpp audio generation are
-  experimental. LFM3-Audio and Soprano were checked on macOS arm64 (CPU) with
-  an ASR round trip; other hosts are unqualified. Voice quality,
+- Qwen3-TTS, LFM3-Audio, Soprano, Chatterbox, Pocket TTS and llama.cpp audio
+  generation are experimental. The models other than Qwen3-TTS were checked on
+  macOS arm64 (CPU) with an ASR round trip; other hosts are unqualified. Voice
+  quality,
   latency, supported reference formats, and accelerator behavior remain
   model/device dependent.
 - Web requires the pinned bridge assets, WebAssembly memory64 for the
