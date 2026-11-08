@@ -1155,7 +1155,11 @@ dart tool/ci/test_shards.dart weights macos /tmp/timing/*/test_timing.json
 
 `litert-lm-web-text-history` serves an existing local model on loopback port
 5198 and runs Chrome with the `chrome-webgpu` test configuration. It downloads
-no model. List scenarios and dry-run before execution:
+no model. `--browser safari` runs the same test in the Safari app through
+`dart test -p safari` (safaridriver). Enable Settings > Developer > Allow
+Remote Automation first, and run with the screen unlocked: a locked screen
+hides the page, and Safari can terminate a hidden page that loads a large
+model. List scenarios and dry-run before execution:
 
 ```bash
 dart run tool/testing/run_local_e2e.dart --scenario litert-lm-web-text-history \
