@@ -43,7 +43,7 @@
       "profiles": [
         "assets/profiles/embedding-gguf-cpu.json"
       ],
-      "notes": "Model-free recording tests cover the native qwen35 Android Vulkan #948 restriction, which applies only to llama.cpp runtimes older than ggml 0.28.0 (bundled runtimes lift it), and the lift on newer runtimes. Device evidence for the lift is recorded on the issue, not by a pack. https://github.com/leehack/llamadart/issues/948"
+      "notes": "LiteRT-LM native CPU embeddings are qualified by the local-only litert-lm-multimodal-embedding scenario, not by this pack's profiles; Linux x64, Linux arm64 and Windows x64 joined macOS, iOS and Android arm64 with litert-lm-native v0.19.1-1 (https://github.com/leehack/llamadart/issues/1367). Model-free recording tests cover the native qwen35 Android Vulkan #948 restriction, which applies only to llama.cpp runtimes older than ggml 0.28.0 (bundled runtimes lift it), and the lift on newer runtimes. Device evidence for the lift is recorded on the issue, not by a pack. https://github.com/leehack/llamadart/issues/948"
     },
     {
       "id": "history",

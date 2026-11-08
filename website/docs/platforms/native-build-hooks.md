@@ -100,10 +100,8 @@ hooks:
   does for the legacy runtime. The ABI-aware selector keeps unsupported
   ABI checks and requires macOS 14+ before loading even an explicit path or
   legacy library; public selection admits C API 1.0.x while unknown/future
-  versions remain unsupported. The source pin and companion source assets now
-  use published native `v0.19.1`; final default-discovery consumers and Apple
-  embedding/signature checks remain [#1677](https://github.com/leehack/llamadart/issues/1677)
-  gates before coordinated package release.
+  versions remain unsupported. The hook and Apple companion pin published
+  native `v0.19.1-1`.
 - An empty or all-unknown selection falls back to `llama_cpp` and
   `litert_lm`; one that leaves no runtime, such as `none`, fails the build.
 

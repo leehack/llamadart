@@ -90,9 +90,9 @@ modalities and speculative strategies before offering them.
   Video and chat-only parts are unsupported. Content observers retain only part kinds/counts.
 - `LiteRtLmModelParams(embeddingEngine: true)` is the explicit LiteRT-LM
   embedding-engine selector. Select `ComputeDevice.cpu` on macOS, iOS or
-  Android arm64. Native GPU, Linux, Windows, Android x86_64 and all LiteRT-LM
-  Web paths throw typed unsupported errors at load, whatever runtime library is
-  loaded; use llama.cpp embeddings there. Keep the
+  Android arm64, Linux x64 or arm64, or Windows x64. Native GPU, Android x86_64
+  and all LiteRT-LM Web paths throw typed unsupported errors at load, whatever
+  runtime library is loaded; use llama.cpp embeddings there. Keep the
   default false for existing users; llama.cpp GGUF loaders reject true and use
   their existing per-call embedding mode.
 - Load a dedicated embedding GGUF (for example
@@ -107,8 +107,9 @@ modalities and speculative strategies before offering them.
   conversation mode has no embeddings. Probe `await engine.embeddingCapabilities`
   before offering media. Use PNG/JPEG bytes, mono 16 kHz Float32 samples or
   mono 16 kHz PCM16/Float32 WAV bytes; paths/URLs and video are unsupported.
-  Native CPU qualification covers macOS arm64 and iOS arm64; Android arm64 is
-  verified on a Galaxy S24 without SME and on arm64 emulators. Concurrent embeds queue;
+  Native CPU qualification covers macOS arm64, iOS arm64, Linux x64 and arm64,
+  and Windows x64; Android arm64 is verified on a Galaxy S24 without SME and on
+  arm64 emulators. Concurrent embeds queue;
   cancellation/unload/dispose settle the current item and discard all active and
   queued batches. A timeout discards only its own batch; other queued callers
   retain their own deadlines.

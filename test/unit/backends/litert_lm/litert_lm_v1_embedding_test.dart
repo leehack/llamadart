@@ -21,6 +21,7 @@ void main() {
   final suite = useSuiteSystemTemp();
   late DynamicLibrary library;
   late DynamicLibrary missing;
+  late String libraryPath;
   late String model;
   int count(String name) =>
       library.lookupFunction<Int Function(), int Function()>(
@@ -67,6 +68,7 @@ void main() {
       if (omit) {
         missing = DynamicLibrary.open(path);
       } else {
+        libraryPath = path;
         library = DynamicLibrary.open(path);
       }
     }
@@ -283,6 +285,24 @@ void main() {
       expect(await session.compute(input(), normalize: false), [3, 4, 0]);
     });
   }
+  for (final abi in [Abi.linuxArm64, Abi.linuxX64, Abi.windowsX64]) {
+    test('$abi creates the embedding engine on the selected C API 1 '
+        'runtime', () async {
+      debugLiteRtLmAbiOverride = abi;
+      final selected = LiteRtLmRuntimeClient(libraryPath: libraryPath);
+      addTearDown(selected.dispose);
+      final session = await selected.createEmbeddingSession(
+        modelPath: model,
+        backend: 'cpu',
+        cacheDir: '/secret/cache',
+        maxInputLength: 1024,
+        numberOfThreads: 2,
+      );
+      expect(await session.compute(input(), normalize: false), [3, 4, 0]);
+      session.dispose();
+      expect(count('count'), 0);
+    });
+  }
   test(
     'missing export, unsupported target/backend and invalid bundle allocate nothing',
     () async {
@@ -296,7 +316,7 @@ void main() {
         create(value, backend: 'gpu'),
         throwsA(isA<LlamaUnsupportedException>()),
       );
-      debugLiteRtLmAbiOverride = Abi.linuxX64;
+      debugLiteRtLmAbiOverride = Abi.androidX64;
       await expectLater(
         create(value),
         throwsA(isA<LlamaUnsupportedException>()),
