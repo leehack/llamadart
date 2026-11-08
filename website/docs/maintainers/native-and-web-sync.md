@@ -635,6 +635,13 @@ exists. A `0.18.x` patch from `main` would accept only `v0.19.1`, while the
 published `0.18.0` companion it resolves beside pins `v0.19.0`; release prep
 rejects that pair, so `main` can no longer ship a `0.18.x` patch.
 
+The llama.cpp pin moved to `v0.9.0` in the same cycle, and the llama.cpp
+companion `0.19.0` pins it. No older Apple llama.cpp runtime is admitted:
+earlier frameworks lack the ARM F16 accumulation fix
+([llamadart-native#174](https://github.com/leehack/llamadart-native/issues/174)).
+Web stays on llama.cpp `v0.8.0` until a later bridge repin
+(`bridgeApprovedNativeUpstreamAhead` in `tool/testing/check_webgpu_bridge_tag.dart`).
+
 Core `0.17.1` preparation pairs all three Apple companions at `0.17.1`, with
 SwiftPM pins `v0.8.0-1`, `v0.18.1-4` and `v0.3.0-1`. The llama.cpp companion
 requires `llamadart: '>=0.17.1 <0.18.0'`. The LiteRT-LM and SD companions keep

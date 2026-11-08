@@ -97,6 +97,8 @@ class QualificationControls(unittest.TestCase):
         self.assertTrue(v.scope('v0.8.0-2', True)['pipelineOnly'])
         self.assertFalse(v.scope('v0.8.0-3', False)['finalNative3Qualified'])
         self.assertTrue(v.scope('v0.8.0-3', True)['finalNative3Qualified'])
+        self.assertFalse(v.scope('v0.9.0', False)['finalNative3Qualified'])
+        self.assertTrue(v.scope('v0.9.0', True)['finalNative3Qualified'])
 
     def test_tag_is_verification_only_and_mismatch_refused(self):
         for tag in v.TAGS:
