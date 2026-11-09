@@ -744,6 +744,37 @@ void main() {
       });
     }
 
+    for (final (name, nativeError) in [
+      ('legacy', StateError.new),
+      ('C API 1.0', LlamaModelException.new),
+    ]) {
+      test('adapts a template the $name runtime fails to render', () async {
+        final concatenating = liteRtLmStringContentTemplates['concatenating']!;
+        client.onRenderMessage = (template) => template == null
+            ? throw nativeError(
+                'render_message_to_string failed: tried to use + operator '
+                'on unsupported types string and sequence',
+              )
+            : renderLiteRtLmContent(template, probeParts);
+        final adapter = liteRtLmTextContentAdapter(concatenating);
+        final service = serviceReading(concatenating);
+        try {
+          final model = await service.loadModel(modelFile.path, params);
+          final context = service.createContext(model, params);
+
+          await chat(service, context);
+          expect(client.conversations, [
+            (template: null, seeded: false),
+            (template: adapter, seeded: false),
+            (template: adapter, seeded: true),
+          ]);
+          expect(records, isEmpty);
+        } finally {
+          service.dispose();
+        }
+      });
+    }
+
     test('keeps a template that reads content parts', () async {
       renderLikeTheRuntime(liteRtLmPartsContentTemplate);
       final service = serviceReading(liteRtLmPartsContentTemplate);
@@ -790,6 +821,11 @@ void main() {
 
     final interpolating = liteRtLmStringContentTemplates['interpolating']!;
     final concatenating = liteRtLmStringContentTemplates['concatenating']!;
+    // How each runtime client reports a failed native call.
+    final nativeErrors = <(String, Object Function(String))>[
+      ('legacy', StateError.new),
+      ('C API 1.0', LlamaModelException.new),
+    ];
     for (final (name, template, configure) in [
       (
         'a bundle whose template it cannot read',
@@ -811,25 +847,27 @@ void main() {
         (_FakeLiteRtLmRuntimeClient client) =>
             client.onRenderMessage = (_) => '<|im_start|>\n<|im_end|>\n',
       ),
-      (
-        'a template that fails to render with the adapter too',
-        concatenating,
-        (_FakeLiteRtLmRuntimeClient client) =>
-            client.onRenderMessage = (_) =>
-                renderLiteRtLmContent(concatenating, probeParts),
-      ),
-      (
-        'an adapted template the runtime rejects',
-        interpolating,
-        (_FakeLiteRtLmRuntimeClient client) {
-          client.onRenderMessage = (_) => '';
-          client.onCreateConversation = () {
-            if (client.lastPromptTemplate != null) {
-              throw StateError('litert_lm_conversation_create returned null');
-            }
-          };
-        },
-      ),
+      for (final (client, nativeError) in nativeErrors) ...[
+        (
+          'a template that fails to render with the adapter too ($client)',
+          concatenating,
+          (_FakeLiteRtLmRuntimeClient client) =>
+              client.onRenderMessage = (_) =>
+                  throw nativeError('render_message_to_string failed'),
+        ),
+        (
+          'an adapted template the $client runtime rejects',
+          interpolating,
+          (_FakeLiteRtLmRuntimeClient client) {
+            client.onRenderMessage = (_) => '';
+            client.onCreateConversation = () {
+              if (client.lastPromptTemplate != null) {
+                throw nativeError('litert_lm_conversation_create failed');
+              }
+            };
+          },
+        ),
+      ],
       (
         'a runtime that takes no conversation template',
         interpolating,
@@ -1034,6 +1072,30 @@ void main() {
         );
 
         client.onCreateConversation = null;
+        await chat(service, context);
+        expect(client.conversations.last, (template: adapter, seeded: true));
+      } finally {
+        service.dispose();
+      }
+    });
+
+    test('does not decide when the probe render fails for another '
+        'reason', () async {
+      final disposed = LlamaStateException('C API 1.0 adapter is disposed.');
+      final adapter = liteRtLmTextContentAdapter(interpolating);
+      client.onRenderMessage = (_) => throw disposed;
+      final service = serviceReading(interpolating);
+      try {
+        final model = await service.loadModel(modelFile.path, params);
+        final context = service.createContext(model, params);
+
+        await expectLater(chat(service, context), throwsA(same(disposed)));
+        expect(
+          records.where((record) => record.message.contains('adapt')),
+          isEmpty,
+        );
+
+        renderLikeTheRuntime(interpolating);
         await chat(service, context);
         expect(client.conversations.last, (template: adapter, seeded: true));
       } finally {

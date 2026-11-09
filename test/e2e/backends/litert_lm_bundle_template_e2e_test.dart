@@ -54,17 +54,18 @@ const _partsContentTemplate =
     "{{ '<|im_end|>\\n' }}{%- endfor -%}"
     '$_generationPrompt';
 
-/// Writes every key the service or a caller can put on a message.
+/// Writes every key the service can put on a message.
 const _messageKeysTemplate =
     '{%- for message in messages -%}<{{ message.role }}'
-    '|name={{ message.name }}|id={{ message.tool_call_id }}'
     '|reasoning={{ message.reasoning_content }}'
-    '|custom={%- if message.custom -%}{{ message.custom.a }}{%- endif -%}'
     '|calls={%- for call in message.tool_calls or [] -%}'
     '{{ call.function.name }}({{ call.function.arguments.city }})'
     '{%- endfor -%}'
     '|content={%- if message.content is string -%}{{ message.content }}'
-    '{%- else -%}{%- for part in message.content -%}{{ part.text }}'
+    '{%- else -%}{%- for part in message.content -%}'
+    "{%- if part.type == 'tool_response' -%}"
+    '{{ part.name }}={{ part.response }}'
+    '{%- else -%}{{ part.text }}{%- endif -%}'
     '{%- endfor -%}{%- endif -%}>\n'
     '{% endfor -%}';
 
@@ -152,7 +153,7 @@ class _RecordingClient extends LiteRtLmRuntimeClient {
       sentPrompts.add(
         renderMessageToString(jsonDecode(messageJson) as Map<String, dynamic>),
       );
-    } on StateError catch (error) {
+    } on LlamaModelException catch (error) {
       sentPrompts.add('render failed: ${error.message}');
     }
     return super.generateMessageJson(
@@ -205,6 +206,10 @@ String _bundleWithTemplate(
   if (!Platform.isMacOS ||
       Process.runSync('cp', ['-c', model, path]).exitCode != 0) {
     File(model).copySync(path);
+  }
+  // Both copies keep the mode of a read-only cached model.
+  if (!Platform.isWindows) {
+    expect(Process.runSync('chmod', ['u+w', path]).exitCode, 0);
   }
   final copy = File(path).openSync(mode: FileMode.append);
   try {
@@ -280,9 +285,16 @@ void main() {
         messages: history,
       );
 
-      // A template that reads content parts renders the same prompt either
-      // way; one that interpolates a string differs only in each serialized
-      // part list.
+      if (liteRtLmRendersProbeText(rendered) &&
+          !liteRtLmRendersProbeText(adapted)) {
+        // A template that reads content only as parts, such as Qwen3's, loses
+        // the text the adapter gives it as a string. The service adapts only a
+        // template that does not render the text, so it keeps this one.
+        return;
+      }
+      // A template that reads content parts and strings renders the same
+      // prompt either way; one that interpolates a string differs only in
+      // each serialized part list.
       expect(liteRtLmRendersProbeText(adapted), isTrue);
       expect(
         adapted,
@@ -300,7 +312,7 @@ void main() {
         bool rendersText() {
           try {
             return liteRtLmRendersProbeText(render(template));
-          } on StateError {
+          } on LlamaModelException {
             return false;
           }
         }
@@ -348,8 +360,10 @@ void main() {
     });
 
     test('keeps every other message key through the adapter', () {
+      // The message keys and tool result parts the service sends, the only
+      // ones the C API 1.0 client accepts.
       const messages = [
-        {'role': 'user', 'content': 'Weather?', 'name': 'bob'},
+        {'role': 'user', 'content': 'Weather?'},
         {
           'role': 'assistant',
           'content': 'Checking.',
@@ -366,16 +380,16 @@ void main() {
         },
         {
           'role': 'tool',
-          'content': 'sunny',
-          'name': 'get_weather',
-          'tool_call_id': 'call_1',
+          'content': [
+            {
+              'type': 'tool_response',
+              'name': 'get_weather',
+              'response': 'sunny',
+            },
+          ],
         },
       ];
-      const message = {
-        'role': 'user',
-        'content': 'Thanks',
-        'custom': {'a': 'kept'},
-      };
+      const message = {'role': 'user', 'content': 'Thanks'};
       final rendered = render(
         _messageKeysTemplate,
         messages: messages,
@@ -383,12 +397,10 @@ void main() {
       );
 
       for (final value in [
-        '<user|name=bob|',
         '|reasoning=needs a tool|',
         '|calls=get_weather(Paris)|content=Checking.>',
-        '<tool|name=get_weather|id=call_1|',
-        '|content=sunny>',
-        '|custom=kept|calls=|content=Thanks>',
+        '|content=get_weather=sunny>',
+        '|content=Thanks>',
       ]) {
         expect(rendered, contains(value));
       }
@@ -559,11 +571,20 @@ void main() {
         final service = LiteRtLmService(clientFactory: () => client);
         final params = ModelParams(
           contextSize: 1024,
+          numberOfThreads: 2,
           liteRtLmBackend: LiteRtLmBackendPreference.cpu,
           liteRtLmCacheDir: cache.path,
         );
         try {
           final handle = await service.loadModel(path, params);
+          if (service.getMetadata(handle)['tokenizer.chat_template'] !=
+              embedded) {
+            // Such as Qwen3, whose text chats render a built-in template.
+            markTestSkipped(
+              'Text chats on this bundle use a built-in template.',
+            );
+            return;
+          }
           final context = service.createContext(handle, params);
           for (var request = 0; request < 2; request++) {
             await service
