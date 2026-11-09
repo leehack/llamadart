@@ -70,8 +70,18 @@ completion was present, and the unchanged decoder accepted the journal plus 15
 sidecars extracted from its lossless envelopes. Native GPU and both public
 corrected-auto lifetimes initialized OpenCL with full `LITERT_CL` delegation
 (1306/1306 decode, 1358/1358 prefill) and no CPU fallback. The four legacy
-semantic failures are unchanged. The qualifier binding now admits only
-`v0.19.1`.
+semantic failures are unchanged.
+
+It passed again on v0.19.1-2 (matrix `matrix-wmalbq6nz437a`, run
+`pr1830-litert0191-2-s24-20261108`, source `3dd5356d`, 2026-11-08). That
+Android arm64 bundle (`1b72d7f6`) differs from v0.19.1 only in
+`libLiteRtLm.so` (`bdab4d4a` to `9a56e701`), which adds the exported in-process
+LiteRT marker. The APK packaged the archive libraries byte-identically. The
+results match v0.19.1: 20/20 PASS, six lifetimes closed, completion present,
+the unchanged decoder accepted journal `a71fb3b3` plus 15 extracted sidecars,
+full `LITERT_CL` delegation with no CPU fallback, and the same four legacy
+semantic failures. The qualifier binding admits `v0.19.1`, `v0.19.1-1` (same
+Android binaries) and `v0.19.1-2`.
 
 ## Required coverage
 

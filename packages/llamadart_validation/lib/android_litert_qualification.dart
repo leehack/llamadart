@@ -26,8 +26,9 @@ const s24LiteRtNativeLibraries = {
 
 /// Owner runtime tags the S24 binding admits. `v0.19.1-1` rebuilt only the
 /// Linux and Windows hosts; its Android binaries are byte-identical to
-/// `v0.19.1` (#1808). `v0.19.1-2` changes the Android `libLiteRtLm.so` and
-/// was requalified on S24 (#1830).
+/// `v0.19.1` (#1808). `v0.19.1-2` changes only the Android `libLiteRtLm.so`
+/// and passed the full S24 graph again (Test Lab `matrix-wmalbq6nz437a`,
+/// #1830).
 const s24LiteRtRuntimeTags = {'v0.19.1', 'v0.19.1-1', 'v0.19.1-2'};
 
 /// Fixed prospective stage caps sum to 1,050s; FTL still caps the run at 1,200s.
