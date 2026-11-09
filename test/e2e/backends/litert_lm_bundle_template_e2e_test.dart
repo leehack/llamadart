@@ -11,6 +11,7 @@ import 'package:llamadart/src/backends/litert_lm/litert_lm_bundle_template.dart'
 import 'package:llamadart/src/backends/litert_lm/litert_lm_cache.dart';
 import 'package:llamadart/src/backends/litert_lm/litert_lm_runtime.dart';
 import 'package:llamadart/src/backends/litert_lm/litert_lm_service.dart';
+import 'package:llamadart/src/core/exceptions.dart';
 import 'package:llamadart/src/core/llama_logger.dart';
 import 'package:llamadart/src/core/models/chat/chat_message.dart';
 import 'package:llamadart/src/core/models/chat/chat_role.dart';
@@ -18,6 +19,8 @@ import 'package:llamadart/src/core/models/config/log_level.dart';
 import 'package:llamadart/src/core/models/inference/generation_params.dart';
 import 'package:llamadart/src/core/models/inference/model_params.dart';
 import 'package:test/test.dart';
+
+import '../../support/suite_system_temp.dart';
 
 const _generationPrompt =
     "{%- if add_generation_prompt -%}{{ '<|im_start|>assistant\\n' }}"
@@ -66,6 +69,13 @@ const _messageKeysTemplate =
     '{% endfor -%}';
 
 const _userTurn = '<|im_start|>user\n';
+
+/// Raw prompts, one already rendered as a ChatML turn.
+const _rawPrompts = [
+  'hi',
+  '\n  The capital of France is',
+  '<|im_start|>user\nhi<|im_end|>\n<|im_start|>assistant\n',
+];
 const _assistantTurn = '<|im_end|>\n<|im_start|>assistant\n';
 
 /// Records what the service asks of the real runtime.
@@ -101,6 +111,29 @@ class _RecordingClient extends LiteRtLmRuntimeClient {
       seed: seed,
       npuBackend: npuBackend,
       loraPath: loraPath,
+    );
+  }
+
+  @override
+  Stream<String> generate(
+    String prompt, {
+    int? maxOutputTokens,
+    double? repetitionPenalty,
+    double? presencePenalty,
+  }) {
+    sentPrompts.add(
+      renderMessageToString({
+        'role': 'user',
+        'content': [
+          {'type': 'text', 'text': prompt},
+        ],
+      }),
+    );
+    return super.generate(
+      prompt,
+      maxOutputTokens: maxOutputTokens,
+      repetitionPenalty: repetitionPenalty,
+      presencePenalty: presencePenalty,
     );
   }
 
@@ -185,6 +218,7 @@ String _bundleWithTemplate(
 }
 
 void main() {
+  useSuiteSystemTemp();
   final model = Platform.environment['LITERT_LM_MODEL'];
 
   setUpAll(() {
@@ -368,6 +402,23 @@ void main() {
       );
     });
 
+    test('renders a raw prompt unchanged through the raw prompt template', () {
+      for (final prompt in _rawPrompts) {
+        expect(
+          render(
+            liteRtLmRawPromptTemplate,
+            message: {
+              'role': 'user',
+              'content': [
+                {'type': 'text', 'text': prompt},
+              ],
+            },
+          ),
+          prompt,
+        );
+      }
+    });
+
     test('keeps how a template handles the whitespace it starts with', () {
       for (final template in [
         '\n  start',
@@ -401,6 +452,91 @@ void main() {
       LlamaLogger.instance.setLevel(LlamaLogLevel.none);
       LlamaLogger.instance.setHandler(null);
       directory.deleteSync(recursive: true);
+    });
+
+    test('sends a raw prompt that starts with the start token with one start '
+        'token', () async {
+      final cache = Directory('${directory.path}/cache')..createSync();
+      final client = _RecordingClient();
+      final service = LiteRtLmService(clientFactory: () => client);
+      final params = ModelParams(
+        contextSize: 1024,
+        numberOfThreads: 2,
+        liteRtLmBackend: LiteRtLmBackendPreference.cpu,
+        liteRtLmCacheDir: cache.path,
+      );
+      try {
+        final handle = await service.loadModel(model!, params);
+        final context = service.createContext(handle, params);
+        final start = await service.tokenize(handle, '', true);
+        if (start.isEmpty) {
+          markTestSkipped('The runtime adds no start token for this bundle.');
+          return;
+        }
+        final startText = client.detokenize(start);
+        await service
+            .generate(
+              context,
+              '${startText}hi',
+              const GenerationParams(maxTokens: 1, temp: 0, seed: 1),
+            )
+            .drain<void>();
+
+        expect(client.sentPrompts, ['hi']);
+        expect(
+          service.getPerformanceContext(context)?.promptEvalTokens,
+          (await service.tokenize(handle, 'hi', true)).length,
+        );
+        await expectLater(
+          service
+              .generate(
+                context,
+                startText,
+                const GenerationParams(maxTokens: 1, temp: 0, seed: 1),
+              )
+              .drain<void>(),
+          throwsA(isA<LlamaArgumentException>()),
+        );
+      } finally {
+        service.dispose();
+      }
+    });
+
+    test('sends a raw prompt to the model unchanged', () async {
+      final cache = Directory('${directory.path}/cache')..createSync();
+      final client = _RecordingClient();
+      final service = LiteRtLmService(clientFactory: () => client);
+      final params = ModelParams(
+        contextSize: 1024,
+        numberOfThreads: 2,
+        liteRtLmBackend: LiteRtLmBackendPreference.cpu,
+        liteRtLmCacheDir: cache.path,
+      );
+      try {
+        final handle = await service.loadModel(model!, params);
+        final context = service.createContext(handle, params);
+        for (final prompt in _rawPrompts) {
+          await service
+              .generate(
+                context,
+                prompt,
+                const GenerationParams(maxTokens: 1, temp: 0, seed: 1),
+              )
+              .drain<void>();
+          final tokens = await service.tokenize(handle, prompt, true);
+          expect(
+            service.getPerformanceContext(context)?.promptEvalTokens,
+            tokens.length,
+            reason: prompt,
+          );
+        }
+        expect(client.promptTemplates, [
+          for (final _ in _rawPrompts) liteRtLmRawPromptTemplate,
+        ]);
+        expect(client.sentPrompts, _rawPrompts);
+      } finally {
+        service.dispose();
+      }
     });
 
     for (final MapEntry(key: shape, value: template)

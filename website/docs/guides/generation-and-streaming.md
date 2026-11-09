@@ -19,6 +19,15 @@ description: Stream tokens with generate, create and ChatSession; use structured
 | `engine.create(messages)` | Yes | No | You have the complete `List<LlamaChatMessage>` for each request, such as an OpenAI-compatible server, a one-shot completion, or an app that owns its transcript. |
 | `ChatSession.create(parts)` | Yes | Yes | You are building a multi-turn chat UI/CLI and want the SDK to append user/assistant turns, apply the system prompt, and trim history as the context grows. |
 
+`engine.generate(prompt)` sends the prompt without a chat template, on
+native LiteRT-LM too. Where the model uses a BOS (start) token, the backend
+adds one, and only one: a prompt that already starts with it, such as a
+`chatTemplate()` prompt beginning with Gemma's `<bos>`, does not get a second.
+Native LiteRT-LM throws `LlamaArgumentException` for an empty prompt.
+LiteRT-LM Web is the exception: it sends the prompt as one user turn through
+the bundle's chat template, because `@litert-lm/core` cannot replace that
+template ([#1863](https://github.com/leehack/llamadart/issues/1863)).
+
 For one-shot instructions, prefer `engine.create(...)`: it applies the chat
 template without session state, and a follow-up turn sees only the messages you
 pass again. For chat apps, prefer `ChatSession` unless your app already stores
