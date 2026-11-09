@@ -14,6 +14,7 @@ import 'package:llamadart/src/backends/litert_lm/litert_lm_service.dart';
 import 'package:llamadart/src/backends/litert_lm/litert_lm_v1_runtime.dart';
 import 'package:test/test.dart';
 
+import '../../../support/dart_script_snapshot.dart';
 import '../../../support/suite_system_temp.dart';
 import 'litert_lm_embedding_test.dart' as fixtures;
 
@@ -380,6 +381,69 @@ void main() {
       expect(count('call_count'), before);
     });
   }
+  group('LLAMADART_LITERT_LM_LIB_DIR route', () {
+    late String script;
+    setUpAll(
+      () async => script = await compileDartScript(
+        'test/fixtures/litert_lm_v1_env_dir_embedding.dart',
+      ),
+    );
+
+    Future<String> createFromEnvironmentDirectory(
+      String runtimePath,
+      Abi abi,
+    ) async {
+      final runtime = Directory(
+        '${suite().path}/env-dir-${runtimePath.hashCode}',
+      )..createSync();
+      final primary = liteRtLmPrimaryLibraryForAbi(Abi.current())!;
+      File(runtimePath).copySync('${runtime.path}/$primary');
+      final stub = File('${runtime.path}/stub.c')
+        ..writeAsStringSync('int fixture_companion_stub(void) { return 1; }\n');
+      final stubLibrary = '${runtime.path}/stub.bin';
+      final built = await Process.run('cc', [
+        '-shared',
+        '-fPIC',
+        stub.path,
+        '-o',
+        stubLibrary,
+      ]);
+      expect(built.exitCode, 0, reason: '${built.stderr}');
+      for (final name in liteRtLmRequiredLibrariesForAbi(
+        Abi.current(),
+      ).where((name) => name != primary)) {
+        File(stubLibrary).copySync('${runtime.path}/$name');
+      }
+      final result = await Process.run(
+        Platform.resolvedExecutable,
+        [script, '$abi', model, '${runtime.path}/cache'],
+        environment: {
+          'LLAMADART_LITERT_LM_LIB_DIR': runtime.path,
+          'TMPDIR': suite().path,
+        },
+      );
+      expect(result.exitCode, 0, reason: '${result.stdout}\n${result.stderr}');
+      return '${result.stdout}';
+    }
+
+    for (final abi in [Abi.linuxArm64, Abi.linuxX64, Abi.windowsX64]) {
+      test('$abi refuses an unmarked runtime selected by the environment '
+          'directory', () async {
+        final output = await createFromEnvironmentDirectory(unmarkedPath, abi);
+        expect(output, contains('LlamaUnsupportedException'));
+        expect(output, contains('native embeddings on $abi'));
+        expect(output, contains('does not export'));
+      });
+    }
+
+    test('linux_x64 admits a marked runtime selected by the environment '
+        'directory', () async {
+      expect(
+        await createFromEnvironmentDirectory(libraryPath, Abi.linuxX64),
+        contains('ENV_DIR_EMBEDDING created'),
+      );
+    });
+  });
   for (final abi in [Abi.macosArm64, Abi.iosArm64, Abi.androidArm64]) {
     test(
       '$abi creates embeddings without the in-process LiteRT marker',

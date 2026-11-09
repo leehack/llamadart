@@ -3595,6 +3595,7 @@ void main() {
                 (error) => error.message,
                 'message',
                 allOf(
+                  contains('LiteRT-LM GPU on ${liteRtLmGateAbi()} needs'),
                   contains('needs a hardware Vulkan device'),
                   contains('"llvmpipe (LLVM 20.1.2, 256 bits)"'),
                   contains('VK_PHYSICAL_DEVICE_TYPE_CPU'),

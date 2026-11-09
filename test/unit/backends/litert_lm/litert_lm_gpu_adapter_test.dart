@@ -88,6 +88,20 @@ void main() {
       expect(vulkan.destroyedInstances, 1);
     });
 
+    test('reads the count the second call rewrites', () {
+      vulkan.devices = [('llvmpipe', 4), ('NVIDIA L4', 2), ('gone', 2)];
+      vulkan.writtenDevices = 2;
+
+      final adapters = vulkan.loader.listAdapters();
+
+      expect(adapters.unavailableReason, isNull);
+      expect(
+        [for (final device in adapters.devices!) device.name],
+        ['llvmpipe', 'NVIDIA L4'],
+      );
+      expect(vulkan.destroyedInstances, 1);
+    });
+
     test('lists no device when the loader reports none', () {
       final adapters = vulkan.loader.listAdapters();
 
@@ -156,6 +170,10 @@ final class _FakeVulkan {
   /// The count the first call reports when it is below [devices], as when a
   /// device appears between the two calls.
   int? countedDevices;
+
+  /// The devices the second call writes and reports with `VK_SUCCESS` when
+  /// fewer than the first count, as when a device disappears between calls.
+  int? writtenDevices;
   int? createInfoStructureType;
   int destroyedInstances = 0;
 
@@ -172,18 +190,20 @@ final class _FakeVulkan {
         count.value = countedDevices ?? devices.length;
         return 0;
       }
-      final written = count.value < devices.length
-          ? count.value
-          : devices.length;
+      final available = writtenDevices ?? devices.length;
+      final written = count.value < available ? count.value : available;
       for (var index = 0; index < written; index++) {
         final handle = calloc<Uint8>()..value = index;
         _handles.add(handle);
         handles[index] = handle.cast();
       }
       count.value = written;
-      return written < devices.length ? 5 : 0;
+      return written < available ? 5 : 0;
     },
     getPhysicalDeviceProperties: (device, properties) {
+      if (device == nullptr) {
+        throw StateError('Read an unwritten device handle.');
+      }
       final (name, type) = devices[device.cast<Uint8>().value];
       final bytes = properties.cast<Uint8>();
       (bytes + 16).cast<Int32>().value = type;
