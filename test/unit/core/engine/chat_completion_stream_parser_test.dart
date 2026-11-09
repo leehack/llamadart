@@ -2037,6 +2037,47 @@ void main() {
           ('_call>\n{"name', 'If a < b, use {x}.\nLet me check.'),
         ]);
       });
+
+      test('keeps an end tag before any start tag as content after a prompt '
+          'that opens no thought', () async {
+        // After a prompt that opens no thought, llama.cpp takes a thought
+        // only from the start of the reply (#1858).
+        for (final format in const [
+          ChatFormat.hermes,
+          ChatFormat.qwen3CoderXml,
+          ChatFormat.deepseekV3,
+        ]) {
+          final tags = ChatTemplateEngine.thinkingTagsFor(format.index);
+          final s = tags.startTag;
+          final e = tags.endTag;
+          for (final output in [
+            'Plan.${e}Answer.',
+            'Plan\n$e\n\nAnswer.',
+            '${e}Text $e more.',
+            'Plan.${e}A${e}B${s}X${e}C',
+            'Plan.${e}Use 3 <',
+          ]) {
+            for (final tools in const [true, false]) {
+              final parsed = parseRenderedOutput(
+                format.index,
+                output,
+                parseToolCalls: tools,
+                thoughtClosedForThinkingOff: false,
+                tools: tools ? [_weatherTool] : null,
+              );
+              expect(parsed.content, output, reason: '${format.name} $output');
+              expect(parsed.reasoningContent, isNull, reason: output);
+              await _expectStreamMatchesParse(
+                format,
+                output,
+                tools: tools,
+                openings: [e],
+                everySplit: true,
+              );
+            }
+          }
+        }
+      });
     });
 
     group('text-first tool calls match the final parse', () {
@@ -2415,20 +2456,19 @@ void main() {
         }
 
         test('ends a thought at a stray end tag after a start tag', () async {
-          // The parse ends a thought at an end tag that follows a start tag
-          // and keeps one as content otherwise. A stream can match only when
-          // the tag arrives with the text before it.
-          for (final (output, forcedOpen) in const [
-            ('<think>\nPlan.</think>\nMore.</think> Sure.', true),
-            ('Plan.</think>A<think>B</think>C</think>D', true),
-            ('Plan.</think>A</think>B<think>X</think>C', true),
-            ('Plan.</think>A</think>B<think>X</think>C', false),
-            ('</think>Text </think> more.', false),
+          // After a forced-open prompt the parse ends a thought at an end tag
+          // that follows a start tag and keeps one as content otherwise. A
+          // stream can match only when the tag arrives with the text before
+          // it.
+          for (final output in const [
+            '<think>\nPlan.</think>\nMore.</think> Sure.',
+            'Plan.</think>A<think>B</think>C</think>D',
+            'Plan.</think>A</think>B<think>X</think>C',
           ]) {
             final parsed = ChatTemplateEngine.parse(
               ChatFormat.hermes.index,
               output,
-              thinkingForcedOpen: forcedOpen,
+              thinkingForcedOpen: true,
               tools: [_weatherTool],
             );
             final chunks = await ChatCompletionStreamParser.parse(
@@ -2436,7 +2476,7 @@ void main() {
               templateResult: LlamaChatTemplateResult(
                 prompt: 'prompt',
                 format: ChatFormat.hermes.index,
-                thinkingForcedOpen: forcedOpen,
+                thinkingForcedOpen: true,
               ),
               parseToolCallsEnabled: true,
               enableThinking: true,

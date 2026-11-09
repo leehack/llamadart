@@ -680,7 +680,9 @@ class ChatTemplateEngine {
   /// render left the prompt's thought, which a copy of the result loses.
   /// The reply then parses as llama.cpp parses it after that prompt, which
   /// [parse] cannot tell: thinking tags after the template's own empty thought
-  /// are content for DeepSeek V3, Hermes and Qwen3-Coder XML; a Seed-OSS reply
+  /// are content for DeepSeek V3, Hermes and Qwen3-Coder XML, as they are
+  /// after a prompt that opens no thought in a reply with an end tag before
+  /// any start tag, which [parse] takes as ending a thought; a Seed-OSS reply
   /// to a prompt that opens no thought has one only when it starts with
   /// `<seed:think>`; and a Seed-OSS or Cohere2 MoE thought closed because
   /// thinking is off still ends at a thinking tag or, for Cohere2 MoE, at the
@@ -737,6 +739,7 @@ class ChatTemplateEngine {
     required bool parseToolCalls,
     required bool thinkingForcedOpen,
     required bool thinkingForcedClosed,
+    bool promptOpensNoThought = false,
     String? parser,
     List<ToolDefinition>? tools,
   }) {
@@ -750,6 +753,7 @@ class ChatTemplateEngine {
         parseToolCalls: parseToolCalls,
         thinkingForcedOpen: thinkingForcedOpen,
         thinkingForcedClosed: thinkingForcedClosed,
+        promptOpensNoThought: promptOpensNoThought,
         parser: parser,
         tools: tools,
       );
@@ -792,13 +796,24 @@ class ChatTemplateEngine {
     required bool parseToolCalls,
     required bool thinkingForcedOpen,
     required bool thinkingForcedClosed,
+    required bool promptOpensNoThought,
     String? parser,
     List<ToolDefinition>? tools,
   }) {
     final resolved = _resolveHandlerForParse(formatIndex: formatIndex);
     final handler = resolved.handler;
     final format = resolved.format;
-    final thoughtTagsAreText = thinkingForcedClosed && !thinkingForcedOpen;
+    // llama.cpp takes a thought only where the prompt opened one or at the
+    // start of the reply, so an end tag before any start tag is text there.
+    final thoughtTagsAreText =
+        !thinkingForcedOpen &&
+        (thinkingForcedClosed ||
+            (promptOpensNoThought &&
+                endsUnopenedThought(
+                  output,
+                  startTag: handler.thinkingStartTag,
+                  endTag: handler.thinkingEndTag,
+                )));
 
     final pegFormat = pegParseFormat(format, parser);
     final ChatParseResult result;
@@ -1093,7 +1108,9 @@ List<String> closedThoughtMarkers(int formatIndex) {
 /// for thinking off ([thoughtClosedForThinkingOff]), so a reply that shows one
 /// of [closedThoughtMarkers] parses as after a forced-open prompt. Without it
 /// or [thinkingForcedOpen] the prompt opened no thought, so a Seed-OSS end tag
-/// in a reply that does not start with a thought is content.
+/// in a reply that does not start with a thought is content, and a DeepSeek
+/// V3, Hermes or Qwen3-Coder XML reply with an end tag before any start tag
+/// keeps its thinking tags as content.
 ChatParseResult parseRenderedOutput(
   int formatIndex,
   String output, {
@@ -1118,6 +1135,7 @@ ChatParseResult parseRenderedOutput(
               formatIndex == ChatFormat.cohere2Moe.index) &&
           closedThoughtMarkers(formatIndex).any(output.contains)),
   thinkingForcedClosed: thinkingForcedClosed,
+  promptOpensNoThought: !thoughtClosedForThinkingOff,
   parser: parser,
   tools: tools,
 );

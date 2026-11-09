@@ -527,14 +527,19 @@ void main() {
   // These renders leave no thought open: Seed-OSS's template never opens one,
   // and Cohere2 MoE's closes its own with `reasoning_effort: none`. llama.cpp
   // then takes a Seed-OSS thought only from the start of the reply, and keeps
-  // thinking tags in a Cohere2 MoE text as text.
+  // thinking tags in a Cohere2 MoE text as text. Nor do the Hermes 2 Pro and
+  // Qwen3-Coder templates, or Qwen3's with thinking on, where an end tag
+  // before any start tag is text, as is every thinking tag after it (#1858).
+  // An entry's `enable_thinking` limits it to the flag it was recorded with.
   for (final entry
       in (_fixture['no_thought_templates'] as List)
           .cast<Map<String, dynamic>>()) {
     final templatePath = entry['template'] as String;
     final kwargs = (entry['chat_template_kwargs'] as Map)
         .cast<String, dynamic>();
-    for (final enableThinking in const [false, true]) {
+    final thinkingFlag = entry['enable_thinking'] as bool?;
+    for (final enableThinking
+        in thinkingFlag == null ? const [false, true] : [thinkingFlag]) {
       group('${templatePath.split('/').last}, thinking: $enableThinking', () {
         late LlamaChatTemplateResult rendered;
 

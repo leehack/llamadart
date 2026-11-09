@@ -139,7 +139,9 @@ void main() {
       final templatePath = entry['template'] as String;
       final kwargs = (entry['chat_template_kwargs'] as Map?)
           ?.cast<String, dynamic>();
-      for (final enableThinking in thinkingSettings) {
+      final thinkingFlag = entry['enable_thinking'] as bool?;
+      for (final enableThinking
+          in thinkingFlag == null ? thinkingSettings : [thinkingFlag]) {
         test(
           '$group ${templatePath.split('/').last}, thinking: $enableThinking '
           'parses as llama.cpp and the engine',

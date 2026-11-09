@@ -56,8 +56,8 @@ class _ThinkingSplitResult {
   final bool isThinking;
   final List<_ThinkingSplitEmission> emissions;
 
-  /// Whether a body opening outside a thought started content in which
-  /// thinking tags are text.
+  /// Whether a body opening, or an end tag that ends no thought, started
+  /// content in which thinking tags are text.
   final bool bodyStarted;
 }
 
@@ -207,6 +207,13 @@ class ChatCompletionStreamParser {
         !templateResult.thinkingForcedOpen &&
         !thoughtClosedForThinkingOff;
     final verbatimThought = verbatimForcedThought || leadingThoughtOnly;
+    // After a prompt that opens no thought, the parse keeps an end tag before
+    // any start tag as content, with every thinking tag after it.
+    final unopenedEndTagIsContent =
+        traits.closedThoughtKeepsTagsAsContent &&
+        !_usesPegParser(templateResult) &&
+        !templateResult.thinkingForcedOpen &&
+        !thoughtClosedForThinkingOff;
     // Thinking tags in a Cohere2 MoE text or action are text.
     final bodyOpenings =
         templateResult.format == ChatFormat.cohere2Moe.index &&
@@ -404,6 +411,7 @@ class ChatCompletionStreamParser {
                 endsAtFirstEndTag: verbatimThought,
                 thoughtContentOpenings: verbatimThoughtOpenings,
                 bodyOpenings: bodyOpenings,
+                unopenedEndTagIsContent: unopenedEndTagIsContent,
               );
         if (split.bodyStarted ||
             (verbatimThought &&
@@ -1183,6 +1191,7 @@ class ChatCompletionStreamParser {
     bool endsAtFirstEndTag = false,
     List<String> thoughtContentOpenings = const [],
     List<String> bodyOpenings = const [],
+    bool unopenedEndTagIsContent = false,
   }) {
     final emissions = <_ThinkingSplitEmission>[];
     var localPendingBuffer = pendingBuffer;
@@ -1195,6 +1204,17 @@ class ChatCompletionStreamParser {
         var endIdx = localPendingBuffer.indexOf(endTag);
         if (endIdx != -1 && tagState.endTagIsContent && !(startIdx > endIdx)) {
           endIdx = -1;
+        }
+        if (unopenedEndTagIsContent &&
+            !tagState.sawStartTag &&
+            endIdx != -1 &&
+            (startIdx == -1 || endIdx < startIdx)) {
+          emissions.add(
+            _ThinkingSplitEmission(text: localPendingBuffer, isThinking: false),
+          );
+          localPendingBuffer = '';
+          bodyStarted = true;
+          break;
         }
         var bodyIdx = -1;
         for (final opening in bodyOpenings) {

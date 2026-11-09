@@ -194,6 +194,19 @@ ThinkingExtraction _extractThinking(
   );
 }
 
+/// Whether [text] has an [endTag] before any [startTag], so it ends a thought
+/// it did not open.
+bool endsUnopenedThought(
+  String text, {
+  String startTag = '<think>',
+  String endTag = '</think>',
+}) {
+  final end = text.indexOf(endTag);
+  if (end == -1) return false;
+  final start = text.indexOf(startTag);
+  return start == -1 || end < start;
+}
+
 /// Checks if the prompt ends with a thinking start tag, allowing for trailing
 /// whitespace.
 ///
