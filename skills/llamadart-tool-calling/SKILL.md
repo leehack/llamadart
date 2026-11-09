@@ -190,7 +190,9 @@ description: >-
   LiteRT-LM Qwen 3 text bundle the runtime renders that template, and from
   `v0.18.0` hands it each message's `content` as a list of
   `{"type": "text", "text": ...}` parts, so read both the string and the
-  list shape.
+  list shape. Other native `.litertlm` requests render the bundle's embedded
+  template, so `engine.chatTemplate(...)` shows only the file-name template
+  that drives parsing, not the exact prompt.
 - Gemma 2/3/3n and legacy Mistral templates retry a failed tool-result render
   with consecutive results as one user turn. A user message immediately after
   those results is appended with a newline on that retry. Stored history and
