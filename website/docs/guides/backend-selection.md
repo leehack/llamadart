@@ -174,8 +174,11 @@ message names both causes. Under `auto`, a GPU engine that fails to start is
 retried on the CPU with a `LlamaLogLevel.warn` record, and
 `getBackendName()` then reports `LiteRT-LM cpu`; if the CPU engine fails too,
 the GPU error is thrown, as `LlamaModelException` when the runtime reports no
-engine. The retry applies only when neither `device` nor the deprecated
-`liteRtLmBackend` or `LiteRtLmBackend(preferredBackend:)` names a device.
+engine. Neither failure is remembered: the next call that needs an engine tries
+the GPU and then the CPU again, with another warning, so a cause such as an
+unwritable cache directory can be fixed without reloading the model. The
+retry applies only when neither `device` nor the deprecated `liteRtLmBackend`
+or `LiteRtLmBackend(preferredBackend:)` names a device.
 After a successful CPU fallback, backend-SPI callers can free and recreate the
 context with the same automatic backend hints; the new context stays on the
 CPU. Explicit GPU or NPU context requests still require reloading the model.
