@@ -3818,6 +3818,29 @@ class CoreChangelogNativePinTest(unittest.TestCase):
         updated = self._update_with_following("### Adjacent heading")
         self.assertIn("\n### Adjacent heading\n", updated)
 
+    def test_keeps_an_adjacent_h2_heading(self) -> None:
+        updated = self._update_with_following("## Adjacent heading")
+        self.assertIn("\n## Adjacent heading\n", updated)
+
+    def test_keeps_an_adjacent_empty_heading(self) -> None:
+        updated = self._update_with_following("#")
+        self.assertIn("\n#\n", updated)
+
+    def test_consumes_a_continuation_line_starting_with_an_issue_reference(
+        self,
+    ) -> None:
+        updated = self._update_with_following("#1234 follow-up")
+        self.assertNotIn("#1234", updated)
+        self.assertNotIn("follow-up", updated)
+
+    def test_consumes_a_continuation_line_starting_with_a_hashtag(self) -> None:
+        updated = self._update_with_following("#hashtag")
+        self.assertNotIn("#hashtag", updated)
+
+    def test_consumes_a_continuation_line_with_seven_hashes(self) -> None:
+        updated = self._update_with_following("####### not a heading")
+        self.assertNotIn("not a heading", updated)
+
     def test_consumes_trailing_blank_lines_but_keeps_the_next_paragraph(self) -> None:
         handwritten = (
             "## Unreleased\n\n- Prior.\n\n"
