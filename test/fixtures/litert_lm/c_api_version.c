@@ -24,6 +24,12 @@ int litert_lm_get_api_version(int *major, int *minor, int *patch) {
 }
 #endif
 
+#ifdef IN_PROCESS_LITERT_ABI
+int litert_lm_native_in_process_litert_abi_version(void) {
+  return IN_PROCESS_LITERT_ABI;
+}
+#endif
+
 // A missing gate must fail the test process before an incompatible call can
 // accidentally look like a supported engine initialization.
 void *litert_lm_engine_settings_create(void) { abort(); }

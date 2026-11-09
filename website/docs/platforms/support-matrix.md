@@ -165,7 +165,7 @@ native and web. Model architecture support depends on the pinned runtime; see
 | MoE expert placement and cache | `cpuMoeLayers` keeps experts in host memory; `moeCacheBytes` caches them on Metal and CUDA GPUs (qualified on Metal with OLMoE; CUDA has no hardware evidence); only `moeCacheBytes` throws `LlamaUnsupportedException` on Vulkan, other backends and tensor split, while `cpuMoeLayers` alone runs there | No | No | No |
 | State persistence | Yes | Yes; WASMFS paths, lost on page reload | No | No |
 | State identity (`stateIdentity`) | `llamadart-native` `v0.7.0-3+` | No: the bridge reports no build identity | No | No |
-| Embeddings | Yes; one-pass attention and MEAN/CLS inputs must fit the physical micro-batch | Yes; rejects rerankers and over-long one-pass input as native does | CPU, explicit embedding engine; macOS arm64, iOS arm64, Linux x64 and arm64, and Windows x64 qualified; Android arm64 verified on a Galaxy S24 without SME and on arm64 emulators; Android x86_64 throws `LlamaUnsupportedException` at load | Unsupported (parity gate) |
+| Embeddings | Yes; one-pass attention and MEAN/CLS inputs must fit the physical micro-batch | Yes; rejects rerankers and over-long one-pass input as native does | CPU, explicit embedding engine; macOS arm64, iOS arm64, Linux x64 and arm64, and Windows x64 qualified (Linux and Windows need litert-lm-native `v0.19.1-2` or later, older custom runtimes are refused); Android arm64 verified on a Galaxy S24 without SME and on arm64 emulators; Android x86_64 throws `LlamaUnsupportedException` at load | Unsupported (parity gate) |
 | Reranking | Rank-pooled GGUF only; explicit loaded-context probe, complete-pair limits and independent sequence batching | No | No | No |
 | Text task helpers and Matryoshka | Opt-in EG2 text profile; CPU BF16 retrieval reference | Same Dart helpers on an available embedding engine; no new Web qualification | Same Dart helpers on an available CPU embedding engine; bundle requires independent retrieval qualification | Unsupported with the underlying embedding engine |
 | Image/audio embeddings (`embedContent`) | EmbeddingGemma-2 + compatible projector, native v0.7.0-1; one complete micro-batch (BF16 qualified on CPU on macOS arm64, Linux x64, Windows x64, Android and iOS, and on macOS Metal; other GPU backends unqualified) | Explicit API-version-1 modality probe + compatible projector; EmbeddingGemma-2 qualified Chrome CPU wasm memory64 vs native CPU/Metal; repeated media batches qualified only on memory64 (wasm32 unqualified); hardware WebGPU unqualified | CPU; bundle processors on macOS arm64, iOS arm64, Android arm64 (Galaxy S24 and emulators), Linux x64 and arm64, and Windows x64 | Unsupported (parity gate) |
@@ -216,20 +216,20 @@ web are on [Known platform issues](./known-platform-issues).
 | Runtime | Pinned release |
 | --- | --- |
 | llama.cpp native | `leehack/llamadart-native@v0.9.0` |
-| LiteRT-LM native | `leehack/litert-lm-native@v0.19.1-1` |
+| LiteRT-LM native | `leehack/litert-lm-native@v0.19.1-2` |
 | stable-diffusion.cpp native (opt-in, Preview) | `leehack/stable-diffusion-native@v0.3.0-3`, for [image generation](../guides/image-generation); see [Opt-in stable_diffusion runtime](./native-build-hooks#opt-in-stable_diffusion-runtime-experimental). Flutter iOS/macOS apps link its XCFramework through `llamadart_stable_diffusion_flutter` |
 | WebGPU bridge assets | `leehack/llama-web-bridge-assets`; see [Pinned bridge assets](./webgpu-bridge#pinned-bridge-assets) |
 
 The native-assets hook currently pins `llamadart-native` tag
 `v0.9.0` and
-`litert-lm-native` release `v0.19.1-1` (`lib/src/hook/native_release_pins.dart`).
+`litert-lm-native` release `v0.19.1-2` (`lib/src/hook/native_release_pins.dart`).
 
 The direct native client, service probes and speech worker share ABI-aware
 discovery. Public selection admits legacy runtimes and C API 1.0.x; unknown
 or future versions are refused before engine calls. The pinned runtime is
 published native
-[v0.19.1-1](https://github.com/leehack/litert-lm-native/releases/tag/v0.19.1-1)
-(owner `82d4ae1c`, upstream `7a03724c`). The selected loader requires macOS 14+
+[v0.19.1-2](https://github.com/leehack/litert-lm-native/releases/tag/v0.19.1-2)
+(owner `0b15fb34`, upstream `7a03724c`). The selected loader requires macOS 14+
 before loading any core or companion library, including legacy libraries and
 custom paths. Web uses `@litert-lm/core@0.19.0`.
 The Flutter companion's iOS 16.4 floor remains separate.

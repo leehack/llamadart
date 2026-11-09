@@ -40,6 +40,14 @@ int fixture_embedding_audio(void) { return embedding_audio; }
 int fixture_embedding_types(void) { return embedding_types; }
 size_t fixture_embedding_byte_count(void) { return embedding_byte_count; }
 
+#ifndef OMIT_IN_PROCESS_LITERT_MARKER
+static int32_t embedding_in_process_litert = 1;
+void fixture_embedding_in_process_litert(int value) { embedding_in_process_litert = value; }
+int32_t litert_lm_native_in_process_litert_abi_version(void) {
+  return embedding_in_process_litert;
+}
+#endif
+
 static int embedding_status(int stage) {
   ++embedding_calls;
   if (embedding_fault != stage) return 0;

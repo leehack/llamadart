@@ -22,9 +22,10 @@ void main() {
   late DynamicLibrary library;
   late DynamicLibrary missing;
   late String libraryPath;
+  late String unmarkedPath;
   late String model;
-  int count(String name) =>
-      library.lookupFunction<Int Function(), int Function()>(
+  int count(String name, [DynamicLibrary? from]) =>
+      (from ?? library).lookupFunction<Int Function(), int Function()>(
         'fixture_embedding_$name',
       )();
   void set(String name, int value) =>
@@ -72,6 +73,18 @@ void main() {
         library = DynamicLibrary.open(path);
       }
     }
+    unmarkedPath =
+        '${suite().path}/unmarked.${Platform.isMacOS ? 'dylib' : 'so'}';
+    final unmarked = await Process.run('cc', [
+      '-shared',
+      '-fPIC',
+      '-pthread',
+      '-DOMIT_IN_PROCESS_LITERT_MARKER',
+      'test/fixtures/litert_lm/c_api_v1_embedding.c',
+      '-o',
+      unmarkedPath,
+    ]);
+    expect(unmarked.exitCode, 0, reason: '${unmarked.stderr}');
     model = '${suite().path}/model.litertlm';
     File(model).writeAsBytesSync(fixtures.embeddingBundleHeader());
   });
@@ -79,6 +92,7 @@ void main() {
     debugLiteRtLmAbiOverride = Abi.macosArm64;
     set('fault', 0);
     set('delay', 0);
+    set('in_process_litert', 1);
     expect(count('count'), 0);
     addTearDown(() => debugLiteRtLmAbiOverride = null);
   });
@@ -302,6 +316,87 @@ void main() {
       session.dispose();
       expect(count('count'), 0);
     });
+  }
+  Future<LiteRtLmEmbeddingRuntimeSession> createSelected(String path) {
+    final selected = LiteRtLmRuntimeClient(libraryPath: path);
+    addTearDown(selected.dispose);
+    return selected.createEmbeddingSession(
+      modelPath: model,
+      backend: 'cpu',
+      cacheDir: '/secret/cache',
+      maxInputLength: 1024,
+      numberOfThreads: 2,
+    );
+  }
+
+  for (final abi in [Abi.linuxArm64, Abi.linuxX64, Abi.windowsX64]) {
+    for (final marker in <int?>[null, 0, 2, -1]) {
+      test('$abi refuses in-process LiteRT marker $marker before any native '
+          'embedding call', () async {
+        debugLiteRtLmAbiOverride = abi;
+        if (marker != null) set('in_process_litert', marker);
+        final runtime = DynamicLibrary.open(
+          marker == null ? unmarkedPath : libraryPath,
+        );
+        final before = count('call_count', runtime);
+        await expectLater(
+          createSelected(marker == null ? unmarkedPath : libraryPath),
+          throwsA(
+            isA<LlamaUnsupportedException>().having(
+              (error) => error.message,
+              'message',
+              allOf(
+                contains('native embeddings on $abi'),
+                contains('LiteRT compiled into the runtime'),
+                contains('litert-lm-native v0.19.1-2'),
+                contains(
+                  marker == null
+                      ? 'does not export'
+                      : 'reports litert_lm_native_in_process_litert_abi_version '
+                            '$marker',
+                ),
+              ),
+            ),
+          ),
+        );
+        expect(
+          [
+            count('call_count', runtime),
+            count('entered', runtime),
+            count('count', runtime),
+          ],
+          [before, 0, 0],
+        );
+      });
+    }
+    test('$abi refuses a directly constructed client without a marker '
+        'value', () async {
+      debugLiteRtLmAbiOverride = abi;
+      final before = count('call_count');
+      await expectLater(
+        create(client()),
+        throwsA(isA<LlamaUnsupportedException>()),
+      );
+      expect(count('call_count'), before);
+    });
+  }
+  for (final abi in [Abi.macosArm64, Abi.iosArm64, Abi.androidArm64]) {
+    test(
+      '$abi creates embeddings without the in-process LiteRT marker',
+      () async {
+        debugLiteRtLmAbiOverride = abi;
+        final runtime = DynamicLibrary.open(unmarkedPath);
+        final unmarked = await createSelected(unmarkedPath);
+        expect(await unmarked.compute(input(), normalize: false), [3, 4, 0]);
+        unmarked.dispose();
+        expect(count('count', runtime), 0);
+        set('in_process_litert', 0);
+        final reportsZero = await createSelected(libraryPath);
+        expect(await reportsZero.compute(input(), normalize: false), [3, 4, 0]);
+        reportsZero.dispose();
+        expect(count('count'), 0);
+      },
+    );
   }
   test(
     'missing export, unsupported target/backend and invalid bundle allocate nothing',

@@ -112,7 +112,9 @@ arm64 (verified on a Galaxy S24 without SME and on arm64 emulators), Linux x64
 and arm64, or Windows x64. Native GPU, Android x86_64 and all LiteRT-LM Web
 paths throw `LlamaUnsupportedException` at load, before native engine creation,
 whatever runtime library is loaded. On Linux and Windows, a custom runtime
-older than litert-lm-native `v0.19.1-1` cannot create the embedding engine
+older than litert-lm-native `v0.19.1-2` throws `LlamaUnsupportedException`
+before native engine creation, because older desktop runtimes crash creating
+the embedding engine
 ([#1367](https://github.com/leehack/llamadart/issues/1367)). This flag is
 LiteRT-LM-only: llama.cpp GGUF loaders reject true; the default false preserves
 existing loading. The qualified bundle is EmbeddingGemma-2 740M; probe it rather

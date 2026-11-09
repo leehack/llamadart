@@ -12,6 +12,7 @@ import 'dart:math' as math;
 import 'package:crypto/crypto.dart';
 import 'package:llamadart/llamadart.dart';
 import 'package:llamadart/src/backends/litert_lm/litert_lm_backend.dart';
+import 'package:llamadart/src/backends/litert_lm/litert_lm_c_api_version.dart';
 import 'package:llamadart/src/backends/litert_lm/litert_lm_service.dart';
 import 'package:llamadart/src/backends/litert_lm/litert_lm_v1_runtime.dart';
 import 'package:llamadart/src/backends/litert_lm/worker.dart';
@@ -49,8 +50,15 @@ void main() {
       runLiteRtLmWorkerForTesting(
         port.sendPort,
         LiteRtLmService(
-          runtimeClientFactory: () =>
-              LiteRtLmV1RuntimeClient(DynamicLibrary.open(candidate)),
+          runtimeClientFactory: () {
+            final library = DynamicLibrary.open(candidate);
+            return LiteRtLmV1RuntimeClient(
+              library,
+              inProcessLiteRtAbiVersion: readLiteRtLmInProcessLiteRtAbiVersion(
+                library,
+              ),
+            );
+          },
         ),
         exitOnDispose: false,
       );
