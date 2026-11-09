@@ -560,6 +560,20 @@ void main() {
       },
     );
 
+    test('documents the LiteRT-LM chat smoke thinking N/A', () {
+      final row = testMatrixRows.singleWhere(
+        (row) => row.id == 'litert-lm-chat-features-smoke',
+      );
+
+      expect(
+        row.covers.replaceAll(RegExp(r'\s+'), ' '),
+        contains(
+          'not_applicable with a reason when the bundle template always '
+          'closes the think block, as for the Qwen3.5 int8 bundles',
+        ),
+      );
+    });
+
     test('includes targeted local model smoke rows', () {
       final ids = testMatrixRows.map((row) => row.id).toSet();
 
