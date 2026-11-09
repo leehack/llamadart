@@ -1472,13 +1472,60 @@ Future<void> main(List<String> args) async {
         expect(
           result.stdout,
           contains(
-            'cd /repo/example/chat_app && flutter test --run-skipped '
+            'cd /repo/example/chat_app && '
+            '/repo/tool/testing/without_app_nap.sh '
+            'com.example.llamaDartChatExample flutter test --run-skipped '
             '-t local-only integration_test/model_cache_mmproj_e2e_test.dart '
             '-d macos',
           ),
         );
       },
     );
+
+    test('runs macOS device scenarios with App Nap disabled', () async {
+      final deviceScenarios = buildLocalE2eScenarios(projectRoot: '/repo')
+          .where(
+            (scenario) =>
+                scenario.group == LocalE2eScenarioGroup.flutterDevice &&
+                scenario.requiresDevice,
+          )
+          .map((scenario) => scenario.name)
+          .toList();
+      expect(deviceScenarios, contains('chat-app-text-image-coexistence'));
+
+      for (final name in deviceScenarios) {
+        Future<String> dryRun(String device) async {
+          final result = await runLocalE2e(
+            ['--scenario', name, '--device', device, '--dry-run'],
+            projectRoot: '/repo',
+            displayShell: LocalE2eDisplayShell.posix,
+          );
+          expect(result.exitCode, 0, reason: '$name: ${result.stderr}');
+          return result.stdout;
+        }
+
+        final macos = await dryRun('macos');
+        expect(
+          macos,
+          contains(
+            'cd /repo/example/chat_app && '
+            '/repo/tool/testing/without_app_nap.sh '
+            'com.example.llamaDartChatExample flutter test ',
+          ),
+          reason: name,
+        );
+        expect(
+          macos,
+          isNot(contains('&& flutter test')),
+          reason: '$name runs Flutter without the App Nap guard',
+        );
+        expect(
+          await dryRun('ios'),
+          isNot(contains('without_app_nap')),
+          reason: name,
+        );
+      }
+    });
 
     test('dry-runs the LiteRT-LM reload memory device scenario', () async {
       final result = await runLocalE2e(
@@ -1499,7 +1546,9 @@ Future<void> main(List<String> args) async {
       expect(
         result.stdout,
         contains(
-          'cd /repo/example/chat_app && flutter test --run-skipped '
+          'cd /repo/example/chat_app && '
+          '/repo/tool/testing/without_app_nap.sh '
+          'com.example.llamaDartChatExample flutter test --run-skipped '
           '-t local-only '
           'integration_test/litert_lm_reload_memory_e2e_test.dart '
           '-d macos '
@@ -1571,7 +1620,9 @@ Future<void> main(List<String> args) async {
       expect(
         result.stdout,
         contains(
-          'cd /repo/example/chat_app && flutter test --run-skipped '
+          'cd /repo/example/chat_app && '
+          '/repo/tool/testing/without_app_nap.sh '
+          'com.example.llamaDartChatExample flutter test --run-skipped '
           '-t local-only '
           'integration_test/litert_lm_read_only_bundle_e2e_test.dart '
           '-d macos '

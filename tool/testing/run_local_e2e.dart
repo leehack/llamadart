@@ -235,9 +235,38 @@ class LocalE2eScenario {
   final List<LocalE2eCommandStep> Function(LocalE2eRunContext context)
   stepsBuilder;
 
-  List<LocalE2eCommandStep> steps(LocalE2eRunContext context) =>
-      stepsBuilder(context);
+  List<LocalE2eCommandStep> steps(LocalE2eRunContext context) {
+    final steps = stepsBuilder(context);
+    if (group != LocalE2eScenarioGroup.flutterDevice ||
+        !requiresDevice ||
+        context.device != 'macos') {
+      return steps;
+    }
+    return [
+      for (final step in steps)
+        step.executable == 'flutter' ? _withoutAppNap(step, context) : step,
+    ];
+  }
 }
+
+const String _chatAppMacOsBundleId = 'com.example.llamaDartChatExample';
+
+/// Runs [step] with App Nap disabled for the chat app: the test app is often
+/// not foregrounded, and a napped app on a busy host can miss startup
+/// deadlines (#1674).
+LocalE2eCommandStep _withoutAppNap(
+  LocalE2eCommandStep step,
+  LocalE2eRunContext context,
+) => LocalE2eCommandStep(
+  workingDirectory: step.workingDirectory,
+  executable: '${context.projectRoot}/tool/testing/without_app_nap.sh',
+  arguments: [_chatAppMacOsBundleId, step.executable, ...step.arguments],
+  environment: step.environment,
+  description: step.description,
+  background: step.background,
+  waitForPort: step.waitForPort,
+  foregroundStdoutEncoding: step.foregroundStdoutEncoding,
+);
 
 LocalE2eCommandStep _prepareValidationPackage(LocalE2eRunContext context) =>
     LocalE2eCommandStep(
