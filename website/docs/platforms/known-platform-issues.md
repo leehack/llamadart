@@ -75,9 +75,13 @@ feature. For which runtime supports which feature, see the
   though `checkLoad`, which opens no runtime, reports them as supported;
   `v0.19.0` and `v0.19.1` expose the same C API 1.0 as `v0.19.1-1`, so the
   load gate cannot tell them apart.
-- Linux x64 LiteRT-LM GPU needs a hardware Vulkan driver. On Mesa llvmpipe
-  alone it answers a few prompts, then crashes the process; use `cpu` on such
-  hosts ([#572](https://github.com/leehack/llamadart/issues/572)).
+- Linux x64 LiteRT-LM GPU needs a hardware Vulkan driver. When every Vulkan
+  device is a software rasterizer (Mesa llvmpipe/lavapipe, SwiftShader), an
+  explicit GPU load throws `LlamaUnsupportedException` and a GPU hint under
+  `auto` runs on the CPU with a warning, because small models can run there
+  and return wrong text. `checkLoad`, which opens no driver, still reports
+  such a GPU load as supported, and if the system Vulkan loader cannot be
+  queried the load proceeds ([#572](https://github.com/leehack/llamadart/issues/572)).
 - Windows x64 LiteRT-LM GPU needs `dxil.dll` and `dxcompiler.dll`, which the
   pinned runtime bundles. Its GPU accelerator and sampler load
   `webgpu_dawn.dll`, which the hook bundles. Windows Qwen3 0.6B GPU execution

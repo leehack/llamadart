@@ -178,13 +178,15 @@ They disable the cooperative-matrix Vulkan paths for that process and can
 reduce Vulkan performance; use them only when the driver crashes or reports
 device loss there.
 
-### LiteRT-LM GPU crashes on Linux without a hardware Vulkan driver
+### LiteRT-LM GPU is refused on Linux without a hardware Vulkan driver
 
-With only Mesa llvmpipe (the runtime logs `Selected adapter: llvmpipe ...
-adapterType=CPU / Software`), LiteRT-LM can load the model and answer
-the first prompts, then segfault in `libvulkan_lvp.so` and take the process
-down. There is no load error to fall back from, so hosts with Mesa but no
-vendor ICD must use `device: ComputeDevice.cpu`
+When the only Vulkan devices are software rasterizers such as Mesa llvmpipe
+(the runtime would log `Selected adapter: llvmpipe ... adapterType=CPU /
+Software`), `ComputeDevice.gpu` throws `LlamaUnsupportedException` at load
+and a GPU `preferredBackend` under `auto` runs on the CPU with a warning.
+On such an adapter LiteRT-LM fails for larger models and can return wrong
+text for small ones. Install the GPU vendor's Vulkan driver to use the GPU,
+or load with `device: ComputeDevice.cpu`
 ([#572](https://github.com/leehack/llamadart/issues/572)).
 
 ## Wrong or garbled GPU output

@@ -154,6 +154,8 @@ interface does not establish backend/model support; read `await engine.capabilit
   to start on the CPU with a warning (`getBackendName()` then reports
   `LiteRT-LM cpu`) and throws the GPU error if the CPU fails too. If `auto`
   already selects CPU, an engine-create failure has no second attempt.
+  On Linux, when every Vulkan device is software (llvmpipe, SwiftShader),
+  LiteRT-LM GPU throws at load and a GPU hint under `auto` loads on the CPU.
   Backend-SPI context recreation preserves a successful CPU fallback when
   reusing the load's automatic GPU hints. Leave `device` at `auto` for each
   runtime's default.
