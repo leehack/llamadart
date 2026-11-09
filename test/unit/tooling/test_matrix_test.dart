@@ -542,6 +542,17 @@ void main() {
       expect(ids, contains('coverage-lib'));
     });
 
+    test('coverage-lib excludes local-only suites that write empty coverage', () {
+      final row = testMatrixRows.singleWhere((row) => row.id == 'coverage-lib');
+
+      expect(
+        row.command,
+        startsWith(
+          'dart test -p vm -j 1 --exclude-tags local-only --coverage=coverage;',
+        ),
+      );
+    });
+
     test(
       'keeps workspace preparation ahead of unscoped format and analyze',
       () {

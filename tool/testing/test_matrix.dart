@@ -224,7 +224,7 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
         '>=70% line coverage for maintainable lib/ code; CI enforces it '
         'after merge only',
     command:
-        'dart test -p vm --coverage=coverage; '
+        'dart test -p vm -j 1 --exclude-tags local-only --coverage=coverage; '
         'dart run tool/testing/format_lcov.dart --lcov '
         '--in=coverage/test --out=coverage/lcov.info --report-on=lib '
         '--check-ignore; '
