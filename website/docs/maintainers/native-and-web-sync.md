@@ -393,9 +393,11 @@ parameters. The public lazy facade, service metadata/finish probes and speech
 worker share discovery and ABI selection. `_liteRtLmV1ProductionSelection` in
 `litert_lm_runtime_facade.dart` enables public C API 1.0.x dispatch. The native
 hook and Apple companion source now pin published
-[v0.19.1-1](https://github.com/leehack/litert-lm-native/releases/tag/v0.19.1-1),
-owner `82d4ae1c` / upstream `7a03724c`, which keeps C API 1.0.0 and the
-`v0.19.0` exports. The `-1` rebuild links LiteRT into the Linux and Windows
+[v0.19.1-2](https://github.com/leehack/litert-lm-native/releases/tag/v0.19.1-2),
+owner `0b15fb34` / upstream `7a03724c`, which keeps C API 1.0.0 and the
+`v0.19.0` exports and adds the in-process LiteRT marker
+`litert_lm_native_in_process_litert_abi_version` (1 on every platform). The
+earlier `-1` rebuild links LiteRT into the Linux and Windows
 `libLiteRtLm` ([litert-lm-native#112](https://github.com/leehack/litert-lm-native/pull/112));
 its Apple and Android binaries are identical to `v0.19.1`. Upstream
 `v0.19.1`'s only runtime change makes the main executor default
@@ -434,7 +436,7 @@ blocks unload and dispose. On Linux ext4, releasing a freshly written CPU
 XNNPACK weight cache flushes it to disk, about 4 s for Qwen3 0.6B's 600 MB
 cache on CI disks ([#1814](https://github.com/leehack/llamadart/issues/1814)).
 
-Public ABI-aware selection and the v0.19.1-1 source pin are enabled; remaining
+Public ABI-aware selection and the v0.19.1-2 source pin are enabled; remaining
 consumer, feature and platform gates are recorded in
 `doc/litert_lm_v1_adoption.md`. This transport contract alone does not qualify a
 model or device. The owner proxy's

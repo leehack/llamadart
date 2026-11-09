@@ -3,7 +3,7 @@
 The public lazy client, default services and speech worker now select legacy
 runtimes or admitted C API 1.0.x through shared discovery. Unknown, malformed or
 future C API versions are refused before engine calls. Owner pins and the
-companion select published v0.19.1-1; C API 1 first shipped in core and
+companion select published v0.19.1-2; C API 1 first shipped in core and
 companions `0.18.0` (#1677).
 [Current adoption coverage and gates](litert_lm_v1_adoption.md) describe the
 selected implementation; [the migration guide](../MIGRATION.md) covers upgrades.
