@@ -211,9 +211,9 @@ void main() {
       if (skip != null) return;
       fixtures = Directory.systemTemp.createTempSync('litert_marker_');
       for (final (name, defines) in [
-        ('absent', <String>[]),
-        ('zero', ['-DIN_PROCESS_LITERT_ABI=0']),
-        ('one', ['-DIN_PROCESS_LITERT_ABI=1']),
+        ('absent', ['-DSMOKE_SYMBOLS']),
+        ('zero', ['-DSMOKE_SYMBOLS', '-DIN_PROCESS_LITERT_ABI=0']),
+        ('one', ['-DSMOKE_SYMBOLS', '-DIN_PROCESS_LITERT_ABI=1']),
       ]) {
         final output = path.join(
           fixtures.path,
@@ -252,6 +252,27 @@ void main() {
           );
         }
       }
+    }, skip: skip);
+
+    Map<String, Object?> runSmoke(String fixture, Abi abi) =>
+        runLiteRtLmLibrarySmoke(
+          abi: abi,
+          directory: null,
+          releaseTag: 'v0.19.1-2',
+          openLibrary: (_) => libraries[fixture]!,
+        );
+
+    test('the smoke run enforces the marker and reports its value', () {
+      for (final abi in [Abi.linuxX64, Abi.windowsX64]) {
+        expect(runSmoke('one', abi)['inProcessLiteRtAbi'], 1);
+        for (final name in ['absent', 'zero']) {
+          expect(() => runSmoke(name, abi), throwsStateError);
+        }
+      }
+    }, skip: skip);
+
+    test('the smoke run reports no marker where it is not required', () {
+      expect(runSmoke('absent', Abi.macosArm64)['inProcessLiteRtAbi'], isNull);
     }, skip: skip);
 
     test('Apple and Android runtimes are not required to export it', () {

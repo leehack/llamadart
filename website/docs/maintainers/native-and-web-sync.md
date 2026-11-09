@@ -398,8 +398,10 @@ owner `0b15fb34` / upstream `7a03724c`, which keeps C API 1.0.0 and the
 `v0.19.0` exports and adds the in-process LiteRT marker
 `litert_lm_native_in_process_litert_abi_version` (1 on every platform); the
 `LiteRT-LM Smoke` library step fails when the bundled Linux x64 or Windows
-x64 runtime lacks the export or does not report 1; Linux arm64 has no CI
-runner for it. The
+x64 runtime lacks the export or does not report 1, and prints the value as
+`inProcessLiteRtAbi`; Linux arm64 has no CI runner for it. Rolling the pin back
+to a pre-marker tag (`v0.18.1-4`, `v0.19.0`, `v0.19.1`, `v0.19.1-1`) therefore
+fails the smoke on Linux and Windows by design. The
 earlier `-1` rebuild links LiteRT into the Linux and Windows
 `libLiteRtLm` ([litert-lm-native#112](https://github.com/leehack/litert-lm-native/pull/112));
 its Apple and Android binaries are identical to `v0.19.1`. Upstream
