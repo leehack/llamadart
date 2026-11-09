@@ -114,6 +114,34 @@ void main() {
     );
   });
 
+  test(
+    'reads the package config only as a bounded regular file',
+    () async {
+      await populate(_v1Libraries);
+      final valid = await packageConfig.readAsString();
+      expect(
+        nativeDiagnosticLiteRtLmHookCacheTarget(packageConfig, 'macos_arm64'),
+        isNotNull,
+      );
+
+      await packageConfig.writeAsString(valid.padRight(256 * 1024 + 1));
+      expect(
+        nativeDiagnosticLiteRtLmHookCacheTarget(packageConfig, 'macos_arm64'),
+        isNull,
+      );
+
+      final real = File(path.join(scratch.path, 'real_package_config.json'));
+      await real.writeAsString(valid);
+      await packageConfig.delete();
+      await Link(packageConfig.path).create(real.path);
+      expect(
+        nativeDiagnosticLiteRtLmHookCacheTarget(packageConfig, 'macos_arm64'),
+        isNull,
+      );
+    },
+    skip: Platform.isWindows ? 'File links need elevation on Windows.' : false,
+  );
+
   test('ignores hook caches outside macOS arm64', () async {
     await populate(_v1Libraries);
     for (final abi in ['macos_x64', 'linux_x64', 'windows_x64']) {

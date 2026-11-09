@@ -46,17 +46,10 @@ Future<void> main(List<String> arguments) async {
     stdout.writeln(
       json
           ? jsonEncode(report)
-          : [
-              'llamadart isolated native check (runtime/model not verified)',
-              '${probe['runtime']}: ${probe['code']} (${probe['phase']})',
-              probe['target_source'] == 'build_hook_cache'
-                  ? 'Source: build hook cache; direct file loading only.'
-                  : 'Source: local manifest declaration; direct file loading only.',
-              'Loaded release: unknown; production loader, GPU, model and inference: not_checked.',
-              probe['remediation'],
-              if (setup.overrides.values.any((set) => set))
-                'OVERRIDES_MAY_DIFFER: Native overrides are set; their values and production resolution are not checked.',
-            ].join('\n'),
+          : nativeDiagnosticTextReport(
+              probe,
+              overridesSet: setup.overrides.values.any((set) => set),
+            ),
     );
   } catch (_) {
     stderr.writeln(

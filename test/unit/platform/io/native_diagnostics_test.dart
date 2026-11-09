@@ -206,6 +206,33 @@ void main() {
       );
     },
   );
+  test('text report names the checked target source', () {
+    final manifestReport = nativeDiagnosticTextReport(
+      nativeDiagnosticObservation('litert_lm', 'ASSET_NOT_DECLARED'),
+      overridesSet: false,
+    );
+    expect(
+      manifestReport,
+      contains('Source: local manifest declaration; direct file loading only.'),
+    );
+    expect(manifestReport, isNot(contains('OVERRIDES_MAY_DIFFER')));
+    final cacheReport = nativeDiagnosticTextReport(
+      nativeDiagnosticObservation(
+        'litert_lm',
+        'SURFACE_OBSERVED',
+        phase: 'complete',
+        marker: 'callback_v2_finish_v1',
+        source: 'build_hook_cache',
+      ),
+      overridesSet: true,
+    );
+    expect(
+      cacheReport,
+      contains('Source: build hook cache; direct file loading only.'),
+    );
+    expect(cacheReport, isNot(contains('local manifest')));
+    expect(cacheReport, contains('OVERRIDES_MAY_DIFFER'));
+  });
   test(
     'bounded regular reads reject overflow and arbitrary IPC input',
     () async {
@@ -275,6 +302,12 @@ void main() {
         }
       },
     );
+    test('rejects a hook-cache source on a declaration-phase result', () async {
+      final control = await run('undeclared', runtime: 'litert_lm');
+      expect(control['code'], 'ASSET_NOT_DECLARED');
+      final result = await run('undeclared-hook-cache', runtime: 'litert_lm');
+      expect(result['code'], 'CHILD_PROTOCOL_INVALID');
+    });
     test('reports a macOS LiteRT-LM hook-cache target as its source', () async {
       final result = await run('hook-cache', runtime: 'litert_lm');
       expect(result['code'], 'SURFACE_OBSERVED');

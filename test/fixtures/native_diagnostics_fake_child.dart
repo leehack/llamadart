@@ -71,6 +71,15 @@ Future<void> main(List<String> arguments) async {
         stdout.writeln(secret);
         stderr.writeln(secret);
       }
+    case 'undeclared':
+    case 'undeclared-hook-cache':
+      payload
+        ..['code'] = 'ASSET_NOT_DECLARED'
+        ..['phase'] = 'declaration'
+        ..['marker'] = 'not_checked';
+      if (mode == 'undeclared-hook-cache') {
+        payload['source'] = 'build_hook_cache';
+      }
     case 'hook-cache':
       payload['source'] = 'build_hook_cache';
       if (request['runtime'] == 'litert_lm') {

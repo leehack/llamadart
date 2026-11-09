@@ -101,6 +101,22 @@ Map<String, Object> nativeDiagnosticObservation(
   });
 }
 
+/// The human-readable `doctor_native` report for [probe].
+String nativeDiagnosticTextReport(
+  Map<String, Object> probe, {
+  required bool overridesSet,
+}) => [
+  'llamadart isolated native check (runtime/model not verified)',
+  '${probe['runtime']}: ${probe['code']} (${probe['phase']})',
+  probe['target_source'] == 'build_hook_cache'
+      ? 'Source: build hook cache; direct file loading only.'
+      : 'Source: local manifest declaration; direct file loading only.',
+  'Loaded release: unknown; production loader, GPU, model and inference: not_checked.',
+  probe['remediation'],
+  if (overridesSet)
+    'OVERRIDES_MAY_DIFFER: Native overrides are set; their values and production resolution are not checked.',
+].join('\n');
+
 /// Canonical JSON prevents duplicate keys and ignored trailing data in IPC.
 Object? decodeNativeDiagnosticJson(String source) {
   final decoded = jsonDecode(source);

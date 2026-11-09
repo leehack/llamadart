@@ -81,17 +81,11 @@ Future<void> main() async {
       }
       if (target == null && request['runtime'] == 'litert_lm') {
         // The macOS hook keeps LiteRT-LM in its cache instead of declaring it.
-        final packageConfig = File(
-          path.join(path.dirname(manifest.path), 'package_config.json'),
+        target = nativeDiagnosticLiteRtLmHookCacheTarget(
+          File(path.join(path.dirname(manifest.path), 'package_config.json')),
+          request['abi'] as String,
         );
-        if (FileSystemEntity.typeSync(packageConfig.path, followLinks: false) ==
-            FileSystemEntityType.file) {
-          target = nativeDiagnosticLiteRtLmHookCacheTarget(
-            packageConfig,
-            request['abi'] as String,
-          );
-          if (target != null) source = 'build_hook_cache';
-        }
+        if (target != null) source = 'build_hook_cache';
       }
       if (target == null) {
         return nativeDiagnosticObservation(

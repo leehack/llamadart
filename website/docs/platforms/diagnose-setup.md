@@ -94,7 +94,13 @@ loads it from there. When the descriptor declares no LiteRT-LM runtime, the
 command finds that cache with the runtime's own cache lookup, without
 `LLAMADART_LITERT_LM_LIB_DIR`, and checks it like a declaration, reporting
 `target_source: build_hook_cache` and `loader_strategy: direct_hook_cache_files`
-instead of `local_manifest_declaration` and `direct_declared_files`.
+instead of `local_manifest_declaration` and `direct_declared_files`. It searches
+only from the `llamadart` root in the active package config, where the hook
+writes. An app searches its working directory, script directory and executable
+directory (and their ancestors) first, so a stray cache there can win at run
+time. The cache can also outlive the runtime selection: after `litert_lm` is
+deselected, an earlier cache still reports `SURFACE_OBSERVED`, and the runtime
+would load it too.
 
 Each invocation starts one bounded child process, opens declared files, resolves
 a small fixed symbol group, and reads compile-time llama.cpp/LiteRT ABI markers.

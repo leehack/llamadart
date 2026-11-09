@@ -98,7 +98,10 @@ void main() {
           ],
         }),
       );
-      Future<Map<Object?, Object?>> check(String runtime) async {
+      Future<Map<Object?, Object?>> check(
+        String runtime, {
+        Map<String, String>? environment,
+      }) async {
         final output = File('${directory.path}/result.json');
         if (await output.exists()) await output.delete();
         final process = await Process.start(Platform.resolvedExecutable, [
@@ -107,7 +110,7 @@ void main() {
           File(
             'lib/src/platform/io/native_diagnostics_child.dart',
           ).absolute.path,
-        ]);
+        ], environment: environment);
         final out = process.stdout.transform(utf8.decoder).join();
         final err = process.stderr.transform(utf8.decoder).join();
         process.stdin.write(
@@ -149,6 +152,15 @@ void main() {
       expect(cached['source'], 'build_hook_cache');
       expect(cached['phase'], 'open');
       expect(cached['code'], isNot('ASSET_NOT_DECLARED'));
+
+      // The documented choice: the target is the hook cache, never the
+      // directory override, which the runtime would refuse here as incomplete.
+      final overridden = await check(
+        'litert_lm',
+        environment: {'LLAMADART_LITERT_LM_LIB_DIR': directory.path},
+      );
+      expect(overridden['source'], 'build_hook_cache');
+      expect(overridden['phase'], 'open');
 
       final otherRuntime = await check('llama_cpp');
       expect(otherRuntime['code'], 'ASSET_NOT_DECLARED');

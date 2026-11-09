@@ -597,13 +597,17 @@ List<String> liteRtLmExplicitDirectoryCompanionPathsForAbi(
 
 /// Internal helper used by the LiteRT-LM runtime to locate this package's
 /// source root from an app's `.dart_tool/package_config.json`.
+///
+/// A caller that has already read the file passes its [contents]; relative
+/// roots still resolve against [packageConfig].
 List<String> liteRtLmPackageRootsFromPackageConfig(
   File packageConfig, {
   String packageName = 'llamadart',
+  String? contents,
 }) {
   Object? decoded;
   try {
-    decoded = jsonDecode(packageConfig.readAsStringSync());
+    decoded = jsonDecode(contents ?? packageConfig.readAsStringSync());
   } on Object {
     return const <String>[];
   }
