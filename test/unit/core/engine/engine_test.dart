@@ -4050,7 +4050,8 @@ void main() {
         final toolChunk = chunks.last;
         final toolCalls = toolChunk.choices.first.delta.toolCalls;
 
-        expect(streamedContent, isEmpty);
+        // The prompt opens no thought, so the end tag is content (#1858).
+        expect(streamedContent, '</think>');
         expect(toolChunk.choices.first.finishReason, equals('tool_calls'));
         expect(toolCalls, hasLength(1));
         expect(toolCalls!.first.function?.name, equals('get_weather'));

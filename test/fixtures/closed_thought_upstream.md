@@ -46,3 +46,15 @@ thought. The same probe, run without the tool too, parses the reply's leading
 thought as reasoning. Cases the probe rejects without the tool (`does not match
 the expected peg-native format`) have no `upstream_without_tools`. Each entry's
 `closed_prompt_suffix` is how llamadart's thinking-off prompt ends.
+
+For issue #1858, `no_thought_templates` also holds the vendored Hermes 2 Pro,
+Qwen3-Coder and Qwen3 4B templates, recorded with the same probe at
+`cd959bae9`. None opens a thought (Qwen3 4B with `enable_thinking = true`, the
+entry's `enable_thinking`; the other two render the same prompt with either
+flag, which the probe confirmed). Their cases end a thought the reply did not
+open: llama.cpp keeps that end tag and every thinking tag after it as content.
+Feeding the output one byte at a time and calling `finish` alone gave the same
+result for every case. `upstream_partial` is again `common_chat_peg_parse` with
+`is_partial = true`. The Hermes 2 Pro and Qwen3-Coder templates have no
+`thought` case: with no reasoning in the template, llama.cpp keeps even a
+leading thought as content, which llamadart does not.

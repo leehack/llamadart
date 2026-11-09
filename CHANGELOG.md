@@ -5,6 +5,7 @@
 - Native `.litertlm` `getMetadata()['tokenizer.chat_template']` and `engine.chatTemplate(...)` now show the template the LiteRT-LM runtime renders, such as the embedded Qwen3.5 or Gemma bundle template; format detection and parsing keep the file-name template, now reported as `llamadart.chat_template.parsing`, so code that detects the format from `tokenizer.chat_template` should read that key first. Native JSON Schema chat now refuses bundles whose text chats the runtime renders with their own template, matching generation ([#1836](https://github.com/leehack/llamadart/issues/1836)).
 - Fix native LiteRT-LM chat failing with "Failed to apply template" on a bundle whose chat template concatenates message content as a string: llamadart now adapts such a template on the bundled C API 1.0 runtime too, as documented ([#1867](https://github.com/leehack/llamadart/issues/1867)).
 - Keep the start of a tag that a finished reply ends in, such as `</thi` when generation stops mid-tag, in an unended thought's reasoning, as llama.cpp `v0.9.0` does; it used to be dropped ([#1531](https://github.com/leehack/llamadart/issues/1531)).
+- Keep a `</think>` that comes before any `<think>` in a Hermes, Qwen3-Coder XML or DeepSeek V3 reply as content, with every thinking tag after it, when the prompt opened no thought (such as Qwen3 with thinking on), as llama.cpp does. The stream used to depend on how the reply was chunked and could repeat the text before the tag as both content and reasoning ([#1858](https://github.com/leehack/llamadart/issues/1858)).
 
 ## 0.19.1
 
