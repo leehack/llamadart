@@ -3402,6 +3402,53 @@ void main() {
       });
     }
 
+    // A failed GPU and CPU pair is not remembered, so a cause the caller can
+    // clear, such as an unwritable cache directory, needs no reload (#1458).
+    test('the next call after a failed CPU retry tries the GPU and the CPU '
+        'again', () async {
+      if (skipWithoutGpu()) return;
+      final gpuError = LiteRtLmEngineCreateError('no gpu.');
+      final retryGpuError = LiteRtLmEngineCreateError('still no gpu.');
+      final clients = [
+        _FakeLiteRtLmRuntimeClient(initializeError: gpuError),
+        _FakeLiteRtLmRuntimeClient(
+          initializeError: LiteRtLmEngineCreateError('no cpu.'),
+        ),
+        _FakeLiteRtLmRuntimeClient(initializeError: retryGpuError),
+        _FakeLiteRtLmRuntimeClient()..tokenizeResult = const [7],
+      ];
+      var nextClient = 0;
+      final service = LiteRtLmService(
+        clientFactory: () => clients[nextClient++],
+        useTempCacheDir: false,
+      );
+      try {
+        const params = ModelParams(preferredBackend: GpuBackend.metal);
+        final model = await service.loadModel(modelFile.path, params);
+        service.createContext(model, params);
+
+        await expectLater(
+          service.tokenize(model, 'hi', true),
+          throwsA(isA<LlamaModelException>()),
+        );
+        expect(await service.tokenize(model, 'again', true), [7]);
+        expect(nextClient, 4);
+        expect(clients.map((client) => client.lastBackend), [
+          'gpu',
+          'cpu',
+          'gpu',
+          'cpu',
+        ]);
+        expect(service.getActiveBackendName(), 'LiteRT-LM cpu');
+        expect(records.map((record) => record.error), [
+          same(gpuError),
+          same(retryGpuError),
+        ]);
+      } finally {
+        service.dispose();
+      }
+    });
+
     for (final (name, loadParams, contextParams, backendOverride, matcher)
         in <(String, ModelParams, ModelParams, String?, Matcher)>[
           (
