@@ -524,6 +524,45 @@ void main() {
     );
 
     test(
+      'loadModel detects tool support from the LiteRT-LM parsing template',
+      () async {
+        final initialSettings = const ChatSettings(
+          modelPath: 'https://example.com/Qwen3.5-0.8B_int8.litertlm',
+          toolsEnabled: true,
+        );
+        final settingsService = MockSettingsService()
+          ..settings = initialSettings;
+        final provider = ChatProvider(
+          chatService: MockChatService(
+            engine:
+                _MetadataEngine(const {
+                    'general.architecture': 'litert-lm',
+                    'tokenizer.chat_template':
+                        '{% for message in messages %}{{ message["content"] }}{% endfor %}',
+                    'llamadart.chat_template.parsing':
+                        '<tool_call>{% for message in messages %}{{ message["content"] }}{% endfor %}',
+                  })
+                  ..loadedCapabilities = const LlamaEngineCapabilities(
+                    isSupported: true,
+                    runtime: LlamaRuntime.liteRtLm,
+                    supportsMultiTurnChat: true,
+                    supportsToolCalling: true,
+                  ),
+          ),
+          settingsService: settingsService,
+          enableWebModelPrefetch: false,
+          initialSettings: initialSettings,
+        );
+        addTearDown(provider.dispose);
+
+        await provider.loadModel();
+
+        expect(provider.templateSupportsTools, isTrue);
+        expect(provider.settings.toolsEnabled, isTrue);
+      },
+    );
+
+    test(
       'web remote load prefetches model before runtime load and shows download stage',
       () async {
         final webEngine = MockLlamaEngine();

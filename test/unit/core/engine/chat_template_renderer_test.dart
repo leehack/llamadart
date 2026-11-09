@@ -1,8 +1,15 @@
+import 'dart:typed_data';
+
 import 'package:llamadart/src/core/engine/chat_template_renderer.dart';
 import 'package:llamadart/src/core/exceptions.dart';
+import 'package:llamadart/src/core/llama_logger.dart';
 import 'package:llamadart/src/core/models/chat/chat_message.dart';
 import 'package:llamadart/src/core/models/chat/chat_role.dart';
+import 'package:llamadart/src/core/models/chat/chat_template_result.dart';
+import 'package:llamadart/src/core/models/chat/content_part.dart';
+import 'package:llamadart/src/core/models/config/log_level.dart';
 import 'package:llamadart/src/core/models/tools/tool_definition.dart';
+import 'package:llamadart/src/core/template/chat_format.dart';
 import 'package:test/test.dart';
 
 void main() {
@@ -220,6 +227,196 @@ void main() {
         ),
         'ModelParams.chatTemplate',
       );
+    });
+
+    group('with a parsing template', () {
+      const parsing =
+          '{# <tool_call> #}{% for m in messages %}PARSE:{{ m["content"] }}'
+          '{% endfor %}';
+      const runtime =
+          '{% for m in messages %}RUNTIME:{{ m["content"] }}{% endfor %}'
+          '{% if tools %} TOOLS{% endif %}'
+          '{% if enable_thinking %} THINK{% endif %}';
+      const metadata = {
+        'tokenizer.chat_template': runtime,
+        parsingChatTemplateMetadataKey: parsing,
+      };
+      final tools = [
+        ToolDefinition(
+          name: 'noop',
+          description: 'Does nothing',
+          parameters: const [],
+          handler: (_) async => null,
+        ),
+      ];
+
+      Future<LlamaChatTemplateResult> render({
+        Map<String, String> metadata = metadata,
+        bool runtimePrompt = false,
+        String? modelTemplate,
+        String? customTemplate,
+        List<ToolDefinition>? tools,
+        List<LlamaChatMessage> messages = const [
+          LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'hello'),
+        ],
+      }) => ChatTemplateRenderer.render(
+        loadMetadata: () async => metadata,
+        tokenize: (text, {bool addSpecial = true}) async =>
+            List.filled(text.length, 0),
+        messages: messages,
+        tools: tools,
+        modelTemplate: modelTemplate,
+        customTemplate: customTemplate,
+        renderRuntimePrompt: runtimePrompt,
+      );
+
+      test(
+        'parses and renders with it instead of tokenizer.chat_template',
+        () async {
+          final result = await render(tools: tools);
+          final reference = await render(
+            metadata: const {'tokenizer.chat_template': parsing},
+            tools: tools,
+          );
+
+          expect(result.prompt, 'PARSE:hello');
+          expect(result.format, ChatFormat.hermes.index);
+          expect(result.prompt, reference.prompt);
+          expect(result.grammar, reference.grammar);
+          expect(result.parser, reference.parser);
+        },
+      );
+
+      test('yields to ModelParams.chatTemplate and customTemplate', () async {
+        const model = 'MODEL:{{ messages[0]["content"] }}';
+        const custom = 'CUSTOM:{{ messages[0]["content"] }}';
+
+        expect((await render(modelTemplate: model)).prompt, 'MODEL:hello');
+        expect(
+          (await render(modelTemplate: model, customTemplate: custom)).prompt,
+          'CUSTOM:hello',
+        );
+        expect(
+          (await render(
+            modelTemplate: model,
+            customTemplate: custom,
+            runtimePrompt: true,
+          )).prompt,
+          'CUSTOM:hello',
+        );
+      });
+
+      test(
+        'shows the runtime template prompt and token count on request',
+        () async {
+          final parsed = await render(tools: tools);
+          final shown = await render(tools: tools, runtimePrompt: true);
+
+          expect(shown.prompt, 'RUNTIME:hello TOOLS THINK');
+          expect(shown.tokenCount, shown.prompt.length);
+          expect(shown.format, parsed.format);
+          expect(shown.grammar, parsed.grammar);
+          expect(shown.parser, parsed.parser);
+          expect(shown.additionalStops, parsed.additionalStops);
+        },
+      );
+
+      test('shows the runtime prompt with ModelParams.chatTemplate', () async {
+        final shown = await render(
+          modelTemplate: 'MODEL:{{ messages[0]["content"] }}',
+          runtimePrompt: true,
+        );
+
+        expect(shown.prompt, 'RUNTIME:hello THINK');
+        expect(shown.format, ChatFormat.contentOnly.index);
+      });
+
+      test(
+        'ignores the runtime prompt request without a parsing template',
+        () async {
+          final shown = await render(
+            metadata: const {'tokenizer.chat_template': runtime},
+            runtimePrompt: true,
+          );
+
+          expect(shown.prompt, 'RUNTIME:hello THINK');
+          expect(shown.format, ChatFormat.contentOnly.index);
+        },
+      );
+
+      test('places media markers in the runtime prompt', () async {
+        final shown = await render(
+          runtimePrompt: true,
+          messages: [
+            LlamaChatMessage.withContent(
+              role: LlamaChatRole.user,
+              content: [
+                const LlamaTextContent('look '),
+                LlamaImageContent(bytes: Uint8List.fromList([1, 2, 3])),
+              ],
+            ),
+          ],
+        );
+
+        expect(shown.prompt, 'RUNTIME:look <__media__> THINK');
+      });
+
+      test('keeps the parsing prompt and warns when the runtime template '
+          'cannot render', () async {
+        final records = <LlamaLogRecord>[];
+        final logger = LlamaLogger.instance;
+        final level = logger.level;
+        logger
+          ..setLevel(LlamaLogLevel.warn)
+          ..setHandler(records.add);
+        addTearDown(() {
+          logger
+            ..setLevel(level)
+            ..setHandler(null);
+        });
+        final shown = await render(
+          metadata: const {
+            'tokenizer.chat_template': '{% if %}',
+            parsingChatTemplateMetadataKey: parsing,
+          },
+          runtimePrompt: true,
+        );
+
+        expect(shown.prompt, 'PARSE:hello');
+        expect(shown.tokenCount, 'PARSE:hello'.length);
+        expect(records.where((record) => record.level == LlamaLogLevel.warn), [
+          isA<LlamaLogRecord>().having(
+            (record) => record.message,
+            'message',
+            contains('runtime template did not render'),
+          ),
+        ]);
+      });
+
+      test('names the parsing template in render failures', () {
+        expect(
+          ChatTemplateRenderer.templateSourceName(
+            metadataTemplate: 'm',
+            parsingTemplate: 'p',
+          ),
+          "the model's $parsingChatTemplateMetadataKey",
+        );
+        expect(
+          () => render(
+            metadata: const {
+              'tokenizer.chat_template': runtime,
+              parsingChatTemplateMetadataKey: '{% if %}',
+            },
+          ),
+          throwsA(
+            isA<LlamaInferenceException>().having(
+              (error) => error.message,
+              'message',
+              contains(parsingChatTemplateMetadataKey),
+            ),
+          ),
+        );
+      });
     });
 
     test('modelTemplate renders when metadata cannot be read', () async {

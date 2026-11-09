@@ -6229,6 +6229,76 @@ void main() {
     });
   });
 
+  group('LlamaEngine parsing chat template', () {
+    const runtimeTemplate =
+        '{% for message in messages %}RUNTIME:{{ message["content"] }}'
+        '{% endfor %}';
+    const hermesTemplate =
+        '{%- if tools %}<tools>{{ tools[0] | tojson }}</tools>'
+        '<tool_call>{"name": <function-name>, "arguments": <args-json-object>}</tool_call>{% endif %}'
+        '{% for message in messages %}<|im_start|>{{ message["role"] }}\n{{ message["content"] }}<|im_end|>\n{% endfor %}'
+        '{% if add_generation_prompt %}<|im_start|>assistant\n{% endif %}';
+    const messages = [
+      LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'hi'),
+    ];
+    final weatherTool = ToolDefinition(
+      name: 'get_weather',
+      description: 'Get weather',
+      parameters: [ToolParam.string('location')],
+      handler: (_) async => 'ok',
+    );
+
+    MockLlamaBackend backend() => MockLlamaBackend(
+      modelMetadataResponse: const {
+        'llm.context_length': '4096',
+        'tokenizer.chat_template': runtimeTemplate,
+        'llamadart.chat_template.parsing': hermesTemplate,
+      },
+    );
+
+    test('create renders and parses with the parsing template', () async {
+      final mock = backend()
+        ..generationChunks = const [
+          '<tool_call>',
+          '{"name":"get_weather","arguments":{"location":"Seoul"}}',
+          '</tool_call>',
+        ];
+      final engine = LlamaEngine(mock);
+      addTearDown(engine.dispose);
+      await engine.loadModel('model.litertlm');
+
+      final chunks = await engine
+          .create(
+            messages,
+            tools: [weatherTool],
+            toolChoice: ToolChoice.required,
+          )
+          .toList();
+
+      expect(mock.lastGenerationPrompt, contains('<|im_start|>user\nhi'));
+      expect(mock.lastGenerationPrompt, isNot(contains('RUNTIME:')));
+      final toolCalls = chunks.last.choices.first.delta.toolCalls;
+      expect(toolCalls, hasLength(1));
+      expect(toolCalls!.first.function?.name, 'get_weather');
+    });
+
+    test('chatTemplate shows the runtime template prompt in the parsing '
+        'format', () async {
+      final engine = LlamaEngine(backend());
+      addTearDown(engine.dispose);
+      await engine.loadModel('model.litertlm');
+
+      final result = await engine.chatTemplate(messages, tools: [weatherTool]);
+
+      expect(result.prompt, 'RUNTIME:hi');
+      expect(result.format, ChatFormat.hermes.index);
+      expect(
+        (await engine.getMetadata())['tokenizer.chat_template'],
+        runtimeTemplate,
+      );
+    });
+  });
+
   group('Qwen tool cancellation history', () {
     for (final choice in [ToolChoice.auto, ToolChoice.required]) {
       test(

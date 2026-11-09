@@ -1,5 +1,7 @@
 ## Unreleased
 
+- Native `.litertlm` `getMetadata()['tokenizer.chat_template']` and `engine.chatTemplate(...)` now show the template the LiteRT-LM runtime renders, such as the embedded Qwen3.5 or Gemma bundle template; format detection and parsing keep the file-name template, now reported as `llamadart.chat_template.parsing`, so code that detects the format from `tokenizer.chat_template` should read that key first ([#1836](https://github.com/leehack/llamadart/issues/1836)).
+
 ## 0.19.1
 
 - Keep the default WebGPU bridge assets at `v0.1.83` (unchanged from 0.19.0).

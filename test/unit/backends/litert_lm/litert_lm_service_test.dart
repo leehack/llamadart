@@ -17,6 +17,7 @@ import 'package:llamadart/src/backends/litert_lm/litert_lm_gpu_adapter.dart';
 import 'package:llamadart/src/backends/litert_lm/litert_lm_platform.dart';
 import 'package:llamadart/src/backends/litert_lm/litert_lm_service.dart';
 import 'package:llamadart/src/backends/litert_lm/litert_lm_runtime.dart';
+import 'package:llamadart/src/core/engine/chat_template_renderer.dart';
 import 'package:llamadart/src/core/exceptions.dart';
 import 'package:llamadart/src/core/llama_logger.dart';
 import 'package:llamadart/src/core/models/chat/chat_message.dart';
@@ -1194,14 +1195,111 @@ void main() {
           adapted,
         );
         expect(client.renderMessageCount, 2);
-        expect(
-          service.getMetadata(model)['tokenizer.chat_template'],
-          'user override',
-        );
+        expect(service.getMetadata(model), {
+          'general.architecture': 'litert-lm',
+          'general.file_type': 'litertlm',
+          'general.name': 'model.litertlm',
+          'llm.context_length': '${params.contextSize}',
+          'tokenizer.chat_template': embedded,
+          parsingChatTemplateMetadataKey: 'user override',
+        });
       } finally {
         service.dispose();
       }
     });
+
+    group('reports the template the runtime renders', () {
+      const embedded = '{{ messages[0].content }} EMBEDDED';
+      final cases = <(String, String?, String?)>[
+        // (bundle file, ModelParams.chatTemplate, embedded template)
+        ('Qwen3.5-0.8B_int8.litertlm', null, embedded),
+        ('Qwen3.5-0.8B-VL_int8.litertlm', null, embedded),
+        ('gemma-4-E2B-it.litertlm', null, embedded),
+        ('Qwen2.5-1.5B-Instruct.litertlm', null, embedded),
+        ('gemma-4-E2B-it.litertlm', 'user override', embedded),
+        ('Phi-4-mini.litertlm', 'user override', embedded),
+        ('Qwen3-0.6B.litertlm', null, embedded),
+        ('Qwen3-0.6B.litertlm', 'user override', embedded),
+        ('Qwen3.5-0.8B_int8.litertlm', null, null),
+        ('Phi-4-mini.litertlm', null, embedded),
+      ];
+      for (final (name, override, bundleTemplate) in cases) {
+        test(
+          '$name override=$override embedded=${bundleTemplate != null}',
+          () async {
+            final file = File('${tempDir.path}/$name');
+            await file.writeAsBytes(_thinkingBundle(modelType: 1));
+            final service = LiteRtLmService(
+              clientFactory: _FakeLiteRtLmRuntimeClient.new,
+              readBundleChatTemplate: (_) => bundleTemplate,
+            );
+            try {
+              final model = await service.loadModel(
+                file.path,
+                ModelParams(
+                  liteRtLmBackend: LiteRtLmBackendPreference.cpu,
+                  chatTemplate: override,
+                ),
+              );
+              final family = kLiteRtLmChatTemplates
+                  .where(
+                    (template) => template.matches(
+                      name.toLowerCase().replaceAll('_', '-'),
+                    ),
+                  )
+                  .firstOrNull;
+              final parsing = override ?? family?.template;
+              final rendersParsingTemplate = name.startsWith('Qwen3-');
+              final runtime = parsing == null || rendersParsingTemplate
+                  ? parsing
+                  : bundleTemplate ?? parsing;
+              final metadata = service.getMetadata(model);
+              expect(metadata['tokenizer.chat_template'], runtime);
+              expect(
+                metadata[parsingChatTemplateMetadataKey],
+                runtime == parsing ? isNull : parsing,
+              );
+              expect(metadata['tokenizer.ggml.eos_token'], family?.eosToken);
+            } finally {
+              service.dispose();
+            }
+          },
+        );
+      }
+    });
+
+    test(
+      'JSON Schema chat follows the Qwen3 text routing of generation',
+      () async {
+        final file = File('${tempDir.path}/Qwen3.5-0.8B_int8.litertlm');
+        await file.writeAsBytes(
+          _thinkingBundle(modelType: 5, template: qwen3.template),
+        );
+        final client = _FakeLiteRtLmRuntimeClient();
+        final service = LiteRtLmService(
+          clientFactory: () => client,
+          jsonSchemaPlatformSupported: () => true,
+        );
+        try {
+          await service.loadModel(
+            file.path,
+            const ModelParams(liteRtLmBackend: LiteRtLmBackendPreference.cpu),
+          );
+          await expectLater(
+            service.prepareJsonSchemaChat(),
+            throwsA(
+              isA<LlamaUnsupportedException>().having(
+                (error) => error.message,
+                'message',
+                contains('canonical Qwen3 text template'),
+              ),
+            ),
+          );
+        } finally {
+          service.dispose();
+        }
+      },
+    );
 
     test('detected Qwen3 reports a missing native template setter', () async {
       await modelFile.writeAsBytes(_thinkingBundle(modelType: 5));
@@ -1837,8 +1935,9 @@ void main() {
     }
   });
 
-  test('applies chat templates through the Dart template engine', () async {
-    final service = LiteRtLmService();
+  test('applies the parsing template in Dart', () async {
+    const embedded = 'EMBEDDED {{ messages[0].content }}';
+    final service = LiteRtLmService(readBundleChatTemplate: (_) => embedded);
     final gemmaModelFile = File('${tempDir.path}/gemma-4-E2B-it.litertlm');
     await gemmaModelFile.writeAsString('fake model');
 
@@ -1846,6 +1945,10 @@ void main() {
       final modelHandle = await service.loadModel(
         gemmaModelFile.path,
         const ModelParams(contextSize: 2048),
+      );
+      expect(
+        service.getMetadata(modelHandle),
+        containsPair('tokenizer.chat_template', embedded),
       );
 
       final rendered = service.applyChatTemplate(modelHandle, const [

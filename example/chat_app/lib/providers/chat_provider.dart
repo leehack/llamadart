@@ -4463,7 +4463,10 @@ class ChatProvider extends ChangeNotifier {
     }
 
     final toolTemplate = metadata['tokenizer.chat_template.tool_use'];
-    final defaultTemplate = metadata['tokenizer.chat_template'];
+    // LiteRT-LM parses with this template when its runtime renders another.
+    final defaultTemplate =
+        metadata['llamadart.chat_template.parsing'] ??
+        metadata['tokenizer.chat_template'];
 
     final effectiveTemplate =
         (toolTemplate != null && toolTemplate.trim().isNotEmpty)

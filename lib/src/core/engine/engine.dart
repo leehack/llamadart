@@ -355,9 +355,15 @@ class LlamaEngine implements LlamadartEngine<LlamaEngineCapabilities> {
     final supported = _toolResultMediaSupport(media);
     if (supported.isEmpty) return supported;
     final modelTemplate = _modelChatTemplate;
-    final template = modelTemplate != null && modelTemplate.isNotEmpty
-        ? modelTemplate
-        : (await _getCachedMetadata())['tokenizer.chat_template'];
+    final String? template;
+    if (modelTemplate != null && modelTemplate.isNotEmpty) {
+      template = modelTemplate;
+    } else {
+      final metadata = await _getCachedMetadata();
+      template =
+          metadata[parsingChatTemplateMetadataKey] ??
+          metadata['tokenizer.chat_template'];
+    }
     final format = detectChatFormat(template);
     return chatFormatRegistration(format).traits.rendersToolResultContent
         ? supported
@@ -2144,6 +2150,15 @@ class LlamaEngine implements LlamadartEngine<LlamaEngineCapabilities> {
   /// If both [responseFormat] and [jsonSchema] are provided, [responseFormat]
   /// wins.
   ///
+  /// On native LiteRT-LM, without [customTemplate], the prompt and its token
+  /// count come from the template the runtime renders,
+  /// `tokenizer.chat_template` in [getMetadata], rendered by Dart: it can
+  /// differ from the runtime's exact bytes, for example in how content parts,
+  /// tool definitions and BOS reach the template. Every other field comes
+  /// from the template [create] parses with. If that template does not render
+  /// in Dart, the prompt of the parsing template is returned and a warning
+  /// logged.
+  ///
   /// LiteRT-LM Web text-history factories return full-transcript JSON for
   /// session budget estimation here, not the runtime's rendered model template.
   /// Exact JS tokenization is unavailable; generation uses the original messages.
@@ -2197,6 +2212,7 @@ class LlamaEngine implements LlamadartEngine<LlamaEngineCapabilities> {
         targetLangCode: targetLangCode,
       ),
       templateNow: templateNow,
+      renderRuntimePrompt: true,
     );
   }
 
@@ -2214,6 +2230,7 @@ class LlamaEngine implements LlamadartEngine<LlamaEngineCapabilities> {
     Map<String, dynamic>? chatTemplateKwargs,
     DateTime? templateNow,
     bool keepChatMarker = false,
+    bool renderRuntimePrompt = false,
   }) async {
     _ensureReady(requireContext: false);
     _rejectUnsupportedToolMedia(messages);
@@ -2235,6 +2252,7 @@ class LlamaEngine implements LlamadartEngine<LlamaEngineCapabilities> {
       chatTemplateKwargs: chatTemplateKwargs,
       templateNow: templateNow,
       keepChatMarker: keepChatMarker,
+      renderRuntimePrompt: renderRuntimePrompt,
     );
   }
 
@@ -3248,6 +3266,13 @@ class LlamaEngine implements LlamadartEngine<LlamaEngineCapabilities> {
   // ============================================================
 
   /// Retrieves all available metadata from the loaded model.
+  ///
+  /// On native LiteRT-LM, `tokenizer.chat_template` is the template the
+  /// runtime renders for text-only chats: the bundle's embedded template, or
+  /// the built-in or [ModelParams.chatTemplate] template for Qwen3 text
+  /// bundles. When llamadart detects the chat format and parses output with
+  /// another template, that one is `llamadart.chat_template.parsing`; read it
+  /// first to detect the format the way [create] does.
   Future<Map<String, String>> getMetadata() async {
     if (!_isReady || _modelHandle == null) {
       return <String, String>{};
