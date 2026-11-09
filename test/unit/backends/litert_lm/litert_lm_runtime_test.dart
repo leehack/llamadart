@@ -1,6 +1,7 @@
 @TestOn('vm')
 library;
 
+import 'dart:convert';
 import 'dart:ffi';
 import 'dart:io';
 
@@ -448,6 +449,30 @@ void main() {
     expect(liteRtLmPackageRootsFromPackageConfig(packageConfig), [
       path.normalize(packageRoot.absolute.path),
     ]);
+  });
+
+  test('LiteRT-LM package config lookup parses supplied contents', () {
+    final packageConfig = File(
+      path.join('consumer', '.dart_tool', 'package_config.json'),
+    );
+    expect(packageConfig.existsSync(), isFalse);
+
+    expect(
+      liteRtLmPackageRootsFromPackageConfig(
+        packageConfig,
+        contents: jsonEncode({
+          'configVersion': 2,
+          'packages': [
+            {'name': 'llamadart', 'rootUri': '../../llamadart'},
+          ],
+        }),
+      ),
+      [path.normalize(File('llamadart').absolute.path)],
+    );
+    expect(
+      liteRtLmPackageRootsFromPackageConfig(packageConfig, contents: '{'),
+      isEmpty,
+    );
   });
 
   test('LiteRT-LM iOS fallback identifiers include process and frameworks', () {
