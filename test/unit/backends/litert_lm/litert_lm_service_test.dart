@@ -3669,6 +3669,78 @@ void main() {
       });
     }
 
+    group('default probe selection', () {
+      var systemProbes = 0;
+
+      setUp(() {
+        systemProbes = 0;
+        debugLiteRtLmSystemVulkanAdaptersOverride = () {
+          systemProbes++;
+          return softwareOnly;
+        };
+      });
+
+      tearDown(() {
+        debugLiteRtLmSystemVulkanAdaptersOverride = null;
+        debugLiteRtLmAbiOverride = null;
+      });
+
+      test('a Linux service with the production client probes the system '
+          'loader', () async {
+        debugLiteRtLmAbiOverride = Abi.linuxX64;
+        final service = LiteRtLmService(useTempCacheDir: false);
+        try {
+          await expectLater(
+            service.loadModel(
+              modelFile.path,
+              const ModelParams(device: ComputeDevice.gpu),
+            ),
+            throwsA(isA<LlamaUnsupportedException>()),
+          );
+          expect(systemProbes, 1);
+        } finally {
+          service.dispose();
+        }
+      });
+
+      for (final (name, abi, injected) in [
+        ('a macOS service', Abi.macosArm64, null),
+        ('a Windows service', Abi.windowsX64, null),
+        ('a Linux service with a client factory', Abi.linuxX64, 'legacy'),
+        (
+          'a Linux service with a runtime client factory',
+          Abi.linuxX64,
+          'runtime',
+        ),
+      ]) {
+        test('$name does not probe the system loader', () async {
+          debugLiteRtLmAbiOverride = abi;
+          final service = switch (injected) {
+            'legacy' => LiteRtLmService(
+              clientFactory: _FakeLiteRtLmRuntimeClient.new,
+              useTempCacheDir: false,
+            ),
+            'runtime' => LiteRtLmService(
+              runtimeClientFactory: () =>
+                  throw StateError('this test creates no engine'),
+              useTempCacheDir: false,
+            ),
+            _ => LiteRtLmService(useTempCacheDir: false),
+          };
+          try {
+            await service.loadModel(
+              modelFile.path,
+              const ModelParams(device: ComputeDevice.gpu),
+            );
+            expect(service.getActiveBackendName(), 'LiteRT-LM gpu');
+            expect(systemProbes, 0);
+          } finally {
+            service.dispose();
+          }
+        });
+      }
+    });
+
     test('a CPU load does not probe the adapters', () async {
       final client = _FakeLiteRtLmRuntimeClient();
       final service = serviceWith(client, softwareOnly);

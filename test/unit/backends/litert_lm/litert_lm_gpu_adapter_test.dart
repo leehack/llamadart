@@ -74,6 +74,23 @@ void main() {
       expect(vulkan.destroyedInstances, 1);
     });
 
+    test('keeps the devices written when the loader reports '
+        'VK_INCOMPLETE', () {
+      vulkan.devices = [('NVIDIA L4', 2), ('llvmpipe', 4)];
+      vulkan.listedCount = 1;
+
+      final adapters = vulkan.loader.listAdapters();
+
+      expect(adapters.unavailableReason, isNull);
+      expect(
+        [
+          for (final device in adapters.devices!)
+            (device.name, device.deviceType),
+        ],
+        [('NVIDIA L4', 2)],
+      );
+    });
+
     test('lists no device when the loader reports none', () {
       final adapters = vulkan.loader.listAdapters();
 
@@ -138,6 +155,9 @@ final class _FakeVulkan {
   List<(String, int)> devices = [];
   int createResult = 0;
   int enumerateResult = 0;
+
+  /// Fewer devices than the first count reported, written with VK_INCOMPLETE.
+  int? listedCount;
   int? createInfoStructureType;
   int destroyedInstances = 0;
 
@@ -154,12 +174,14 @@ final class _FakeVulkan {
         count.value = devices.length;
         return 0;
       }
-      for (var index = 0; index < count.value; index++) {
+      final written = listedCount ?? count.value;
+      for (var index = 0; index < written; index++) {
         final handle = calloc<Uint8>()..value = index;
         _handles.add(handle);
         handles[index] = handle.cast();
       }
-      return 0;
+      count.value = written;
+      return listedCount == null ? 0 : 5;
     },
     getPhysicalDeviceProperties: (device, properties) {
       final (name, type) = devices[device.cast<Uint8>().value];

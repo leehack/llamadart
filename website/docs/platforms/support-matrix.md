@@ -114,7 +114,7 @@ Metal, CUDA, OpenCL or HIP) selects the LiteRT-LM GPU backend. On Linux x64
 and Windows x64, the LiteRT-LM GPU backend is not CUDA. On Linux x64 it needs
 a hardware Vulkan driver: with only software Vulkan devices (llvmpipe,
 lavapipe, SwiftShader) explicit `gpu` throws `LlamaUnsupportedException` and
-`auto` runs on the CPU. Windows arm64 has no LiteRT-LM
+a GPU hint under `auto` runs on the CPU. Windows arm64 has no LiteRT-LM
 runtime. The deprecated `liteRtLmBackend` selector works until 1.0; an
 unavailable choice there throws `LlamaModelException`.
 

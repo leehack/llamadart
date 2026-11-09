@@ -44,6 +44,15 @@ const int _gemma4DefaultVisualTokenBudget = 280;
 // instance, and the installed drivers do not change while the process runs.
 final LiteRtLmVulkanAdapters _systemVulkanAdapters =
     probeLiteRtLmVulkanAdapters();
+
+/// Test-only replacement for the system Vulkan loader probe that a Linux
+/// service without injected clients runs before a GPU load.
+LiteRtLmVulkanAdapters Function()? debugLiteRtLmSystemVulkanAdaptersOverride;
+
+LiteRtLmVulkanAdapters _systemVulkanAdaptersProbe() =>
+    debugLiteRtLmSystemVulkanAdaptersOverride?.call() ?? _systemVulkanAdapters;
+
+bool _isLinuxAbi(Abi abi) => abi == Abi.linuxX64 || abi == Abi.linuxArm64;
 const String _liteRtLmVideoUnsupportedMessage =
     'LiteRT-LM video input is not supported through llamadart. '
     'Extract and send image frames instead.';
@@ -126,10 +135,10 @@ class LiteRtLmService {
     LiteRtLmVulkanAdapters Function()? probeGpuAdapters,
   }) : _probeGpuAdapters =
            probeGpuAdapters ??
-           (Platform.isLinux &&
+           (_isLinuxAbi(liteRtLmGateAbi()) &&
                    clientFactory == null &&
                    runtimeClientFactory == null
-               ? (() => _systemVulkanAdapters)
+               ? _systemVulkanAdaptersProbe
                : null),
        _jsonSchemaPlatformSupported =
            jsonSchemaPlatformSupported ??
