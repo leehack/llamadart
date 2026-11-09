@@ -10,6 +10,10 @@ import '../template/media_placeholders.dart';
 import '../template/template_internal_metadata.dart';
 import '../template/thinking_utils.dart';
 
+/// Metadata key of the template llamadart parses with when a runtime
+/// renders another one, which `tokenizer.chat_template` then holds.
+const String parsingChatTemplateMetadataKey = 'llamadart.chat_template.parsing';
+
 /// Loads model metadata for chat-template rendering.
 typedef ChatTemplateMetadataLoader = Future<Map<String, String>> Function();
 
@@ -33,14 +37,20 @@ class ChatTemplateRenderer {
   /// `customTemplate` applies, for render-failure messages.
   ///
   /// A non-empty [modelTemplate] is `ModelParams.chatTemplate`; otherwise
-  /// a non-empty [metadataTemplate] is the model's `tokenizer.chat_template`.
-  /// Otherwise the built-in ChatML fallback is used.
+  /// a non-null [parsingTemplate] is the model's
+  /// [parsingChatTemplateMetadataKey], and a non-empty [metadataTemplate] its
+  /// `tokenizer.chat_template`. Otherwise the built-in ChatML fallback is
+  /// used.
   static String templateSourceName({
     String? modelTemplate,
     String? metadataTemplate,
+    String? parsingTemplate,
   }) {
     if (modelTemplate != null && modelTemplate.isNotEmpty) {
       return 'ModelParams.chatTemplate';
+    }
+    if (parsingTemplate != null) {
+      return "the model's $parsingChatTemplateMetadataKey";
     }
     if (metadataTemplate != null && metadataTemplate.isNotEmpty) {
       return "the model's tokenizer.chat_template";
@@ -52,7 +62,16 @@ class ChatTemplateRenderer {
   ///
   /// A non-empty [modelTemplate] replaces the model's `tokenizer.chat_template`
   /// and its `tool_use` variant, as llama.cpp's `--chat-template` does;
-  /// [customTemplate] still takes precedence over both.
+  /// [customTemplate] still takes precedence over both. Without either, a
+  /// [parsingChatTemplateMetadataKey] in the metadata comes before
+  /// `tokenizer.chat_template`.
+  ///
+  /// With [renderRuntimePrompt] and no [customTemplate], a model whose
+  /// metadata has a [parsingChatTemplateMetadataKey] gets the prompt and
+  /// token count of its `tokenizer.chat_template`, the template its runtime
+  /// renders, rendered as plain Jinja; every other field still comes from
+  /// the parsing template. When that render fails, the parsing render's
+  /// prompt is kept and a warning logged.
   ///
   /// A request that carries media is rendered with [chatPromptMediaMarker]
   /// where each part was. With [keepChatMarker] the prompt keeps it, for a
@@ -77,6 +96,7 @@ class ChatTemplateRenderer {
     Map<String, dynamic>? chatTemplateKwargs,
     DateTime? templateNow,
     bool keepChatMarker = false,
+    bool renderRuntimePrompt = false,
   }) async {
     Map<String, String> metadata = {};
     try {
@@ -84,16 +104,21 @@ class ChatTemplateRenderer {
     } catch (error) {
       LlamaLogger.instance.warning('Failed to read metadata: $error');
     }
+    final parsingTemplate = metadata[parsingChatTemplateMetadataKey];
+    final runtimeTemplate = parsingTemplate == null
+        ? null
+        : metadata['tokenizer.chat_template'];
     final String? templateSource;
     if (modelTemplate != null && modelTemplate.isNotEmpty) {
       templateSource = modelTemplate;
       metadata.remove('tokenizer.chat_template.tool_use');
     } else {
-      templateSource = metadata['tokenizer.chat_template'];
+      templateSource = parsingTemplate ?? metadata['tokenizer.chat_template'];
     }
     metadata[internalTemplateSourceNameMetadataKey] = templateSourceName(
       modelTemplate: modelTemplate,
       metadataTemplate: metadata['tokenizer.chat_template'],
+      parsingTemplate: parsingTemplate,
     );
 
     final effectiveResponseFormat =
@@ -121,12 +146,28 @@ class ChatTemplateRenderer {
       now: templateNow,
       mediaMarker: hasMedia ? chatPromptMediaMarker : mtmdMediaMarker,
     );
+    final renderedPrompt =
+        renderRuntimePrompt && customTemplate == null && runtimeTemplate != null
+        ? _runtimePrompt(
+                runtimeTemplate,
+                messages: messages,
+                metadata: metadata,
+                addAssistant: addAssistant,
+                tools: tools,
+                toolChoice: toolChoice,
+                enableThinking: enableThinking,
+                chatTemplateKwargs: chatTemplateKwargs,
+                templateNow: templateNow,
+                mediaMarker: hasMedia ? chatPromptMediaMarker : mtmdMediaMarker,
+              ) ??
+              result.prompt
+        : result.prompt;
     final prompt = hasMedia && !keepChatMarker
         ? chatPromptAsCallerPrompt(
-            result.prompt,
+            renderedPrompt,
             chatMarker: chatPromptMediaMarker,
           )
-        : result.prompt;
+        : renderedPrompt;
 
     int? tokenCount;
     if (includeTokenCount) {
@@ -159,5 +200,42 @@ class ChatTemplateRenderer {
       tokenCount: tokenCount,
     );
     return withThoughtMarksOf(copy, result);
+  }
+
+  static String? _runtimePrompt(
+    String template, {
+    required List<LlamaChatMessage> messages,
+    required Map<String, String> metadata,
+    required bool addAssistant,
+    required List<ToolDefinition>? tools,
+    required ToolChoice toolChoice,
+    required bool enableThinking,
+    required Map<String, dynamic>? chatTemplateKwargs,
+    required DateTime? templateNow,
+    required String mediaMarker,
+  }) {
+    // Templates also raise Errors, such as UnsupportedError for integer
+    // division by zero; showing a prompt must not fail on either.
+    try {
+      return renderPlainChatTemplatePrompt(
+        templateSource: template,
+        templateName: "the model's tokenizer.chat_template",
+        messages: messages,
+        metadata: metadata,
+        addAssistant: addAssistant,
+        tools: tools,
+        toolChoice: toolChoice,
+        enableThinking: enableThinking,
+        chatTemplateKwargs: chatTemplateKwargs,
+        now: templateNow,
+        mediaMarker: mediaMarker,
+      );
+    } on Object catch (error) {
+      LlamaLogger.instance.warning(
+        'Showing the prompt of the parsing chat template: the model '
+        'runtime template did not render in Dart: $error',
+      );
+      return null;
+    }
   }
 }

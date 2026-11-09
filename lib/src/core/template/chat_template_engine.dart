@@ -109,6 +109,38 @@ class ChatTemplateEngine {
     Map<String, dynamic>? chatTemplateKwargs,
     DateTime? now,
     String mediaMarker = mtmdMediaMarker,
+  }) => _render(
+    templateSource: templateSource,
+    messages: messages,
+    metadata: metadata,
+    addAssistant: addAssistant,
+    tools: tools,
+    toolChoice: toolChoice,
+    parallelToolCalls: parallelToolCalls,
+    enableThinking: enableThinking,
+    responseFormat: responseFormat,
+    customTemplate: customTemplate,
+    chatTemplateKwargs: chatTemplateKwargs,
+    now: now,
+    mediaMarker: mediaMarker,
+    plainTemplate: false,
+  );
+
+  static LlamaChatTemplateResult _render({
+    required String? templateSource,
+    required List<LlamaChatMessage> messages,
+    required Map<String, String> metadata,
+    required bool addAssistant,
+    required List<ToolDefinition>? tools,
+    required ToolChoice toolChoice,
+    required bool parallelToolCalls,
+    required bool enableThinking,
+    required Map<String, dynamic>? responseFormat,
+    required String? customTemplate,
+    required Map<String, dynamic>? chatTemplateKwargs,
+    required DateTime? now,
+    required String mediaMarker,
+    required bool plainTemplate,
   }) {
     enableThinking = effectiveEnableThinking(
       enableThinking,
@@ -124,7 +156,8 @@ class ChatTemplateEngine {
     var templateName =
         metadata[internalTemplateSourceNameMetadataKey] ?? 'templateSource';
 
-    if (allowToolCalls &&
+    if (!plainTemplate &&
+        allowToolCalls &&
         metadata.containsKey('tokenizer.chat_template.tool_use')) {
       metadataTemplate = metadata['tokenizer.chat_template.tool_use'];
       templateName = "the model's tokenizer.chat_template.tool_use";
@@ -145,7 +178,9 @@ class ChatTemplateEngine {
 
     final hasSchemaResponseFormat = responseSchema != null;
 
-    final format = detectFormat(effectiveTemplate);
+    final format = plainTemplate
+        ? ChatFormat.contentOnly
+        : detectFormat(effectiveTemplate);
     LlamaLogger.instance.debug(
       'ChatTemplateEngine: Detected format=$format from template',
     );
@@ -154,7 +189,9 @@ class ChatTemplateEngine {
     ChatFormat effectiveFormat;
     // Match llama.cpp schema-aware routing: tools + schema falls back to
     // generic routing, and some format handlers are disabled with schema.
-    if (allowToolCalls && hasSchemaResponseFormat) {
+    if (plainTemplate) {
+      effectiveFormat = ChatFormat.contentOnly;
+    } else if (allowToolCalls && hasSchemaResponseFormat) {
       effectiveFormat = ChatFormat.generic;
     } else if (hasTools &&
         toolChoice == ToolChoice.none &&
@@ -174,12 +211,13 @@ class ChatTemplateEngine {
 
     // Use generic handler fallback when template is missing, or when tool
     // calling is requested for an unknown/unclassified template.
-    if (effectiveFormat == ChatFormat.contentOnly &&
+    if (!plainTemplate &&
+        effectiveFormat == ChatFormat.contentOnly &&
         (effectiveTemplate == null || allowToolCalls)) {
       effectiveFormat = ChatFormat.generic;
     }
 
-    if (effectiveTools?.any(toolUsesJsonSchema) ?? false) {
+    if (!plainTemplate && (effectiveTools?.any(toolUsesJsonSchema) ?? false)) {
       if (!chatFormatRegistration(
         effectiveFormat,
       ).traits.qualifiesJsonSchemaTools) {
@@ -191,9 +229,10 @@ class ChatTemplateEngine {
 
     if (carriesToolResultContent(messages)) {
       validateToolResultContent(messages);
-      if (!chatFormatRegistration(
-        effectiveFormat,
-      ).traits.rendersToolResultContent) {
+      if (!plainTemplate &&
+          !chatFormatRegistration(
+            effectiveFormat,
+          ).traits.rendersToolResultContent) {
         throw LlamaUnsupportedException(
           'LlamaToolResultContent.content is not qualified for '
           '$effectiveFormat chat templates. Only Hermes-style <tool_call> '
@@ -327,6 +366,7 @@ class ChatTemplateEngine {
         expected: toolResultMediaCount,
         templateName: templateName,
       );
+      if (plainTemplate) return rendered;
 
       final withGrammar = _applyGrammar(
         rendered,
@@ -392,6 +432,7 @@ class ChatTemplateEngine {
       expected: toolResultMediaCount,
       templateName: templateName,
     );
+    if (plainTemplate) return baseResult;
 
     // Apply grammar constraints for tool calls or response format
     final withGrammar = _applyGrammar(
@@ -1121,3 +1162,38 @@ ChatParseResult parseRenderedOutput(
   parser: parser,
   tools: tools,
 );
+
+/// The prompt [templateSource] renders as Jinja alone, as a runtime that
+/// applies the template itself does: [tools] reach the template as `tools`,
+/// with no format detection, tool-call instruction, format gates or grammar.
+///
+/// Media parts and tool-result media become [mediaMarker] as in
+/// [ChatTemplateEngine.render]. Template failures throw as there.
+String renderPlainChatTemplatePrompt({
+  required String templateSource,
+  required String templateName,
+  required List<LlamaChatMessage> messages,
+  required Map<String, String> metadata,
+  bool addAssistant = true,
+  List<ToolDefinition>? tools,
+  ToolChoice toolChoice = ToolChoice.auto,
+  bool enableThinking = true,
+  Map<String, dynamic>? chatTemplateKwargs,
+  DateTime? now,
+  String mediaMarker = mtmdMediaMarker,
+}) => ChatTemplateEngine._render(
+  templateSource: templateSource,
+  messages: messages,
+  metadata: {...metadata, internalTemplateSourceNameMetadataKey: templateName},
+  addAssistant: addAssistant,
+  tools: tools,
+  toolChoice: toolChoice,
+  parallelToolCalls: false,
+  enableThinking: enableThinking,
+  responseFormat: null,
+  customTemplate: null,
+  chatTemplateKwargs: chatTemplateKwargs,
+  now: now,
+  mediaMarker: mediaMarker,
+  plainTemplate: true,
+).prompt;
