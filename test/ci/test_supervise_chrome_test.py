@@ -85,10 +85,11 @@ class SupervisorTest(unittest.TestCase):
         self.addCleanup(self.temp.cleanup)
         self.output = Path(self.temp.name) / 'diagnostics'
 
-    def command(self, program, timeout=3, shutdown=0.25, reporter=False):
-        options = (['--reporter-file', str(self.reporter), '--post-done-seconds', '0.3']
+    def command(self, program, timeout=3, shutdown=0.25, reporter=False, post_done=0.3,
+                script=SCRIPT):
+        options = (['--reporter-file', str(self.reporter), '--post-done-seconds', str(post_done)]
                    if reporter else [])
-        return [sys.executable, str(SCRIPT), '--output-dir', str(self.output),
+        return [sys.executable, str(script), '--output-dir', str(self.output),
                 '--timeout-seconds', str(timeout), '--shutdown-seconds', str(shutdown),
                 '--cleanup-seconds', '0.5', '--snapshot-seconds', '0.1', *options, '--',
                 sys.executable, '-c', program]
@@ -111,8 +112,20 @@ class SupervisorTest(unittest.TestCase):
                 f"subprocess.Popen([{str(browser)!r}, '{browser_seconds}'])\n"
                 f"{then}\n")
 
-    def run_fixture(self, program, **options):
-        result = subprocess.run(self.command(program, **options),
+    def patched_supervisor(self, patch):
+        """A launcher that runs the production supervisor with `patch(module)` applied."""
+        launcher = Path(self.temp.name) / 'launcher.py'
+        launcher.write_text(
+            'import importlib.util, sys\n'
+            f'spec = importlib.util.spec_from_file_location("supervisor", {str(SCRIPT)!r})\n'
+            'module = importlib.util.module_from_spec(spec)\n'
+            'spec.loader.exec_module(module)\n'
+            f'{patch}\n'
+            'sys.exit(module.main())\n')
+        return launcher
+
+    def run_fixture(self, program, script=SCRIPT, **options):
+        result = subprocess.run(self.command(program, script=script, **options),
                                 capture_output=True, timeout=8)
         return result, json.loads((self.output / 'result.json').read_text())
 
@@ -164,6 +177,44 @@ class SupervisorTest(unittest.TestCase):
                   "print(os.get_blocking(1), os.get_blocking(2))")
         done = subprocess.run([sys.executable, '-c', script], capture_output=True, timeout=8)
         self.assertEqual(done.stdout.split()[-2:], [b'True', b'False'], done.stderr)
+
+    def test_stale_reporter_error_keeps_the_caller_stderr_blocking(self):
+        self.reporter.write_text('{"type":"done","success":true}\n')
+        script = ("import os,subprocess,sys\n"
+                  f"subprocess.run({self.command('pass', reporter=True)!r}, stdout=sys.stdout, stderr=sys.stderr)\n"
+                  "print(os.get_blocking(2))")
+        done = subprocess.run([sys.executable, '-c', script], capture_output=True, timeout=8)
+        self.assertEqual(done.stdout.split()[-1:], [b'True'], done.stderr)
+
+    def test_stale_reporter_error_cannot_delay_or_change_the_exit(self):
+        self.reporter.write_text('{"type":"done","success":true}\n')
+        full_read, full_write = os.pipe()
+        os.set_blocking(full_write, False)
+        try:
+            while True:
+                os.write(full_write, b'x' * 65536)
+        except BlockingIOError:
+            pass
+        os.set_blocking(full_write, True)
+        broken_read, broken_write = os.pipe()
+        os.close(broken_read)
+        try:
+            for name, stderr in [('full pipe', full_write), ('broken pipe', broken_write)]:
+                with self.subTest(name):
+                    child = subprocess.run(self.command('pass', reporter=True),
+                                           stdout=subprocess.DEVNULL, stderr=stderr, timeout=3)
+                    self.assertEqual(child.returncode, 125)
+        finally:
+            for descriptor in (full_read, full_write, broken_write):
+                os.close(descriptor)
+
+    def test_stale_reporter_error_survives_a_non_utf8_path(self):
+        self.reporter.parent.joinpath(os.fsdecode(b'bad\xff.jsonl')).write_text('{}\n')
+        command = self.command('pass', reporter=True)
+        command[command.index('--reporter-file') + 1] = str(self.reporter.parent / os.fsdecode(b'bad\xff.jsonl'))
+        child = subprocess.run(command, capture_output=True, timeout=3)
+        self.assertEqual(child.returncode, 125, child.stderr)
+        self.assertIn(b'bad\\udcff.jsonl', child.stderr)
 
     def test_closed_stdout_cannot_redirect_the_echo_into_events(self):
         child = subprocess.run(
@@ -273,11 +324,70 @@ class SupervisorTest(unittest.TestCase):
         self.assertTrue(result['reporter_success'])
         self.assert_clean(result)
 
+    def test_the_supervisor_waits_post_done_seconds_before_recovering(self):
+        child, result = self.run_fixture(self.browser_then(
+            {'type': 'done', 'success': True}, 0.05, 'import time; time.sleep(.5); raise SystemExit(7)'),
+            reporter=True, post_done=2, shutdown=1)
+        self.assertEqual(child.returncode, 7, child.stderr)
+        self.assertEqual(result['cli_exit_code'], 7)
+        self.assertFalse(result['browser_close_stall'])
+        self.assert_clean(result)
+
+    def test_recovery_happens_no_earlier_than_post_done_seconds_after_done(self):
+        child, result = self.run_fixture(self.browser_then(
+            {'type': 'done', 'success': True}, 0.05, 'import time; time.sleep(5)'),
+            reporter=True, post_done=0.6)
+        self.assertEqual(child.returncode, 0, child.stderr)
+        self.assertTrue(result['browser_close_stall'])
+        at = {event['event']: event['elapsed_seconds'] for event in self.events()}
+        self.assertGreaterEqual(at['browser_close_stall'] - at['reporter_done'], 0.6)
+
+    def test_leftover_owned_processes_after_a_recovered_stall_exit_125(self):
+        launcher = self.patched_supervisor('module.deliver = lambda row, number: False')
+        child, result = self.run_fixture(self.browser_then(
+            {'type': 'done', 'success': True}, 0.05, 'import time; time.sleep(2)'),
+            reporter=True, script=launcher)
+        self.assertEqual(child.returncode, 125, child.stderr)
+        self.assertTrue(result['browser_close_stall'])
+        self.assertNotEqual(result['owned_processes_remaining'], [])
+        self.assertFalse(result['passed'])
+
+    def test_a_surviving_process_alone_fails_a_recovered_stall(self):
+        launcher = self.patched_supervisor('module.deliver = lambda row, number: False')
+        child, result = self.run_fixture(self.browser_then(
+            {'type': 'done', 'success': True}, 0.05,
+            'import os,time; os.close(1); os.close(2); time.sleep(2)'),
+            reporter=True, script=launcher)
+        self.assertEqual(child.returncode, 125, child.stderr)
+        self.assertTrue(result['browser_close_stall'])
+        self.assertTrue(result['stdout_eof'] and result['stderr_eof'])
+        self.assertNotEqual(result['owned_processes_remaining'], [])
+
+    def test_missing_output_eof_after_a_recovered_stall_exits_125(self):
+        lingerer = Path(self.temp.name) / 'lingerer'
+        lingerer.write_text(f'#!{sys.executable}\nimport sys,time; time.sleep(2)\n')
+        lingerer.chmod(0o755)
+        launcher = self.patched_supervisor(
+            'table = module.process_table\n'
+            'module.process_table = lambda: {pid: row for pid, row in table().items()\n'
+            "                                 if row['comm'] != 'lingerer'}")
+        child, result = self.run_fixture(self.browser_then(
+            {'type': 'done', 'success': True}, 0.05,
+            f"subprocess.Popen([{str(lingerer)!r}]); import time; time.sleep(2)"),
+            reporter=True, script=launcher)
+        self.assertEqual(child.returncode, 125, child.stderr)
+        self.assertTrue(result['browser_close_stall'])
+        self.assertEqual(result['owned_processes_remaining'], [])
+        self.assertFalse(result['stdout_eof'] and result['stderr_eof'])
+        self.assertFalse(result['passed'])
+
     def test_a_stale_reporter_file_does_not_start_the_command(self):
         self.reporter.write_text('{"type":"done","success":true}\n')
         child = subprocess.run(self.command('raise SystemExit(0)', reporter=True),
                                capture_output=True, timeout=3)
         self.assertEqual(child.returncode, 125)
+        self.assertIn(str(self.reporter).encode(), child.stderr)
+        self.assertIn(b'Stale reporter file', child.stderr)
         self.assertFalse(self.output.exists())
 
     def test_cli_exit_is_distinct_from_inherited_pipe_eof(self):
@@ -402,6 +512,13 @@ class SupervisorTest(unittest.TestCase):
 
 
 class WorkflowTest(unittest.TestCase):
+    def test_post_done_default_stays_thirty_seconds_for_every_workflow_caller(self):
+        source = SCRIPT.read_text()
+        self.assertIn("'--post-done-seconds', type=positive_seconds, default=30)", source)
+        self.assertIn('reporter_file=None, post_done=30)', source)
+        for workflow in (ROOT / '.github/workflows').glob('*.yml'):
+            self.assertNotIn('--post-done-seconds', workflow.read_text(), workflow.name)
+
     def test_model_store_keeps_failure_gates_and_uploads_before_job_cancellation(self):
         workflow = (ROOT / '.github/workflows/ci.yml').read_text()
         lane = workflow.split('\n  model-store:\n', 1)[1].split('\n  analyze:\n', 1)[0]
@@ -432,6 +549,7 @@ class WorkflowTest(unittest.TestCase):
         step = lane[chrome:upload]
         self.assertIn('python3 ../../tool/ci/supervise_chrome_test.py', step)
         self.assertIn('--timeout-seconds 600 --', step)
+        self.assertNotIn('--post-done-seconds', step)
         report = '$RUNNER_TEMP/chat-app-chrome/reporter.jsonl'
         self.assertIn(f'--reporter-file "{report}"', step)
         self.assertIn(f'--file-reporter "json:{report}"', step)
