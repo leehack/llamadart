@@ -168,9 +168,18 @@ void main() {
         release();
         await clearing.then<void>((_) {}, onError: (Object _) {});
       });
-      await waiting.future;
+      await waiting.future.timeout(
+        const Duration(seconds: 10),
+        onTimeout: () => throw StateError(
+          'clear never reached the .removal.lock: it no longer takes the '
+          'lock this test holds it at.',
+        ),
+      );
       return (clearing: clearing, proceed: release);
     }
+
+    Future<T> withOverrides<T>(Future<T> Function() body) =>
+        IOOverrides.runWithIOOverrides(body, overrides);
 
     void expectOnlyLocksLeftOnceDeleted(void Function() finishDelete) {
       finishDelete();
@@ -210,6 +219,31 @@ void main() {
 
       await held.clearing;
       expectOnlyLocksLeftOnceDeleted(finishDelete);
+    });
+
+    test('is skipped by remove when the deletion starts after it finds the '
+        'entry', () async {
+      final cacheKey = (await manager.list()).single.cacheKey;
+      void Function()? finishDelete;
+      overrides.afterFirstCheck = () async =>
+          finishDelete = markPendingDelete();
+
+      await withOverrides(() => manager.remove(cacheKey));
+
+      expect(finishDelete, isNotNull);
+      expectOnlyLocksLeftOnceDeleted(finishDelete!);
+    });
+
+    test('is skipped by prune when the deletion starts after it finds the '
+        'entry', () async {
+      void Function()? finishDelete;
+      overrides.afterFirstCheck = () async =>
+          finishDelete = markPendingDelete();
+
+      await withOverrides(() => manager.prune(maxAge: Duration.zero));
+
+      expect(finishDelete, isNotNull);
+      expectOnlyLocksLeftOnceDeleted(finishDelete!);
     });
 
     test('is not skipped when the entry still reads as a directory: clear '

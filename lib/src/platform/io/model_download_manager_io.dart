@@ -798,6 +798,9 @@ class DefaultModelDownloadManager implements ModelDownloadManager {
     }
   }
 
+  // A path whose resolution is denied (errno 5) and whose type also reads as
+  // `notFound` is walked past like a missing one, so a parent ACL denial
+  // surfaces from the later operation instead of as `LlamaStateException`.
   String _cacheLockKey(Directory cacheDirectory) {
     var ancestor = path.normalize(path.absolute(cacheDirectory.path));
     final missing = <String>[];
@@ -1861,7 +1864,9 @@ enum _Removal { removed, inUse, skipped }
 /// with `ERROR_ACCESS_DENIED`, and so does the attribute query behind
 /// [FileSystemEntity.type], which reports that failure as
 /// [FileSystemEntityType.notFound]; callers tell it from a real denial by
-/// that type.
+/// that type. A different ACL denial (for example on the entry's parent) can
+/// read as `notFound` too; callers then treat the path as missing and the
+/// operation still fails later, with a different error type than the denial.
 bool _mayBeWindowsDeletePending(FileSystemException error) =>
     Platform.isWindows && error.osError?.errorCode == 5;
 

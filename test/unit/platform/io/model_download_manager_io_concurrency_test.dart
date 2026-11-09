@@ -35,7 +35,10 @@ void main() {
   });
 
   setUp(() async {
-    root = await Directory.systemTemp.createTemp('llamadart_cache_lock_');
+    final created = await Directory.systemTemp.createTemp(
+      'llamadart_cache_lock_',
+    );
+    root = Directory(await created.resolveSymbolicLinks());
     addTearDown(() => root.delete(recursive: true));
     server = await _HoldingServer.start();
     addTearDown(server.close);
