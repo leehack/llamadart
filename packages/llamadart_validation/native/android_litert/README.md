@@ -220,9 +220,9 @@ needed for this Dart/diagnostic-only change.
 ## Source and APK admission still required
 
 Freeze clean source and independent review before preparing an APK. The final
-binding must contain exact source commit/tree/inventory, runtime tag `v0.19.1`
-or `v0.19.1-1` (same Android binaries) and its owner commit, runtime archive
-and manifest hashes, complete owner archive libraries, complete installed APK
+binding must contain exact source commit/tree/inventory, runtime tag `v0.19.1`,
+`v0.19.1-1` (same Android binaries) or `v0.19.1-2` (requalified on S24) and its
+owner commit, runtime archive and manifest hashes, complete owner archive libraries, complete installed APK
 libraries, child executable and canonical Qwen template hashes, both unchanged
 profiles, run id and the existing shared budget receipt hash. Owner `7ea10d0` is explicitly rejected as the aborted
 candidate. No final owner payload is selected by these source files.
