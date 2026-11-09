@@ -330,13 +330,16 @@ List<RepositoryChange> parseGitNameStatus(String output) {
 /// Both revisions must parse without diagnostics and scan to identical tokens
 /// (type and lexeme, so string contents, directives and annotations count).
 /// Whitespace may change only where the comments between two tokens change,
-/// and never moves those tokens onto or off a shared line. A comment added,
+/// and the later token must start its line in both revisions. A comment added,
 /// removed or moved must not be a language-version, analyzer, coverage,
 /// formatter, Dartdoc-directive, doc-import, suppression or excerpt marker,
 /// nor contain control, invisible or bidirectional characters. Generated
-/// sources never qualify. Callers bind both texts to exact Git blobs.
+/// sources and [rawTextConsumedSources] never qualify. Callers bind both texts
+/// to exact Git blobs.
 bool isCommentOnlyDartChange(String path, String base, String head) {
-  if (!path.endsWith('.dart') || _generatedDartPath.hasMatch(path)) {
+  if (!path.endsWith('.dart') ||
+      _generatedDartPath.hasMatch(path) ||
+      rawTextConsumedSources.contains(path)) {
     return false;
   }
   final baseUnit = _parseCleanly(base);
@@ -355,7 +358,9 @@ bool isCommentOnlyDartChange(String path, String base, String head) {
     }
     final leftComments = _commentsBefore(left);
     final rightComments = _commentsBefore(right);
-    if ([...leftComments, ...rightComments].any(_generatedMarker.hasMatch)) {
+    final comments = [...leftComments, ...rightComments];
+    if (comments.any(_generatedMarker.hasMatch) ||
+        (leftEnd == 0 && comments.any(_generatedHeader.hasMatch))) {
       return false;
     }
     final leftGap = base.substring(leftEnd, left.offset);
@@ -372,12 +377,27 @@ bool isCommentOnlyDartChange(String path, String base, String head) {
   }
 }
 
+/// Production Dart sources whose raw text, comments included, repository
+/// tooling reads with regular expressions (release pins, bridge tags,
+/// template hashes). A comment there can change what a CI gate or sync
+/// script sees, so these never use the comment-only route.
+const rawTextConsumedSources = <String>{
+  'hook/build.dart',
+  'lib/src/backends/litert_lm/litert_lm_runtime.dart',
+  'lib/src/hook/native_release_pins.dart',
+  'lib/src/web_setup/web_bridge_setup.dart',
+};
+
 final _generatedDartPath = RegExp(
   r'\.(g|gr|freezed|mocks|pb|pbenum|pbgrpc|pbjson|pbserver)\.dart$',
 );
 final _generatedMarker = RegExp(
   r'^(//+|/\*+)\s*(auto[- ]?generated|generated\s+(file|code|by)|'
   r'code\s+generated|do\s+not\s+(edit|modify))',
+  caseSensitive: false,
+);
+final _generatedHeader = RegExp(
+  r'generated|do\s+not\s+(hand[- ])?(edit|modify)',
   caseSensitive: false,
 );
 // Comments that tools read: language version, doc imports and Dartdoc
@@ -433,8 +453,14 @@ bool _isInertCommentEdit(
       Iterable<int>.generate(left.length).every((i) => left[i] == right[i])) {
     return false;
   }
-  if (_lineBreak.hasMatch(leftGap) != _lineBreak.hasMatch(rightGap)) {
-    return false;
+  // Edited comments must end their line, so the next token still starts its
+  // line in both revisions. Line-oriented source scanners then see the same
+  // code at every line start, and no token joins or leaves another's line.
+  for (final gap in [leftGap, rightGap]) {
+    final lineStart = gap.lastIndexOf(_lineBreak) + 1;
+    if (lineStart == 0 || gap.substring(lineStart).trim().isNotEmpty) {
+      return false;
+    }
   }
   var prefix = 0;
   while (prefix < left.length &&
