@@ -482,8 +482,9 @@ class ChatCompletionStreamParser {
           tools: tools,
         );
 
-        // A partial parse keeps a thought tag that is still arriving as
-        // reasoning text; the final parse drops the whole tag.
+        // A partial parse may keep a thought tag that is still arriving as
+        // reasoning text; the final parse drops the tag once it completes and
+        // keeps the start of one that the output ends in.
         var partialReasoning = withoutTrailingTagPrefix(
           partialParsed.reasoningContent ?? '',
           [startTag, endTag],
@@ -564,7 +565,7 @@ class ChatCompletionStreamParser {
     }
 
     // A verbatim thought that has not ended holds only the start of a tag that
-    // would end it, which its parse drops; a PEG parse keeps it.
+    // would end it; the final parse, which keeps it, supplies it.
     if (verbatimThought && isThinking && !pegParsedWithoutTools) {
       pendingBuffer = '';
     }

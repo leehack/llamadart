@@ -1,5 +1,5 @@
 {
-  "upstream_commit": "620d2225cc436ab0b001e3200e590e3b286ef9ab",
+  "upstream_commit": "cd959bae99ff4bed22bef2604f45241c09bbb8c8",
   "user_prompt": "Weather in Paris?",
   "tool": {
     "name": "weather",
@@ -172,7 +172,7 @@
           "output": "Plan it </thi",
           "upstream": {
             "content": "",
-            "reasoning_content": "Plan it ",
+            "reasoning_content": "Plan it </thi",
             "tool_calls": []
           }
         }
@@ -234,7 +234,7 @@
           "output": "Plan it </thin",
           "upstream": {
             "content": "",
-            "reasoning_content": "Plan it ",
+            "reasoning_content": "Plan it </thin",
             "tool_calls": []
           }
         },
@@ -280,7 +280,7 @@
           "output": "Plan <tool",
           "upstream": {
             "content": "",
-            "reasoning_content": "Plan ",
+            "reasoning_content": "Plan <tool",
             "tool_calls": []
           }
         },
@@ -360,7 +360,7 @@
           "output": "Plan it </thin",
           "upstream": {
             "content": "",
-            "reasoning_content": "\nPlan it ",
+            "reasoning_content": "\nPlan it </thin",
             "tool_calls": []
           }
         },
@@ -473,7 +473,7 @@
           "output": "Plan it <|END_THI",
           "upstream": {
             "content": "",
-            "reasoning_content": "Plan it ",
+            "reasoning_content": "Plan it <|END_THI",
             "tool_calls": []
           }
         },
@@ -482,7 +482,7 @@
           "output": "Plan it <|START_TE",
           "upstream": {
             "content": "",
-            "reasoning_content": "Plan it ",
+            "reasoning_content": "Plan it <|START_TE",
             "tool_calls": []
           }
         },

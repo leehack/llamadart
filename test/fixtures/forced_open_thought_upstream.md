@@ -16,6 +16,11 @@ on the template, built a `common_chat_session` from one user message, the
 (format `peg-native`), and called `finish` on the whole output. Feeding the
 output one byte at a time before `finish` gave the same result for every case.
 
+For issue #1531 the same probe, rebuilt from llama.cpp
+`cd959bae99ff4bed22bef2604f45241c09bbb8c8` (native `v0.9.0`), reproduced every
+case but the six `partial-*` ones: since `a71c00f0b` a finished output keeps the
+start of a tag it ends in, so those now record the newer result.
+
 The DeepSeek V3.1 cases from `escaped-newline-in-ended-thought` on were added
 for issue #750 with the same probe; `feed` and `finish` on the whole output
 gave the same result as one byte at a time. A forced-open thought is the text
@@ -27,7 +32,7 @@ and the DeepSeek V3.1 `partial-end-tag-at-end` case, were added for issue #750
 with the same probe and `enable_thinking = true` alone. Both templates end
 their generation prompt with `<think>\n`. As with DeepSeek V3.1, a forced-open
 thought is the text before the first `</think>`; with Qwen3.5 a `<tool_call>`
-ends it first and starts the content. A thought that has not ended drops a
+ends it first and starts the content. A thought that has not ended keeps a
 trailing partial end tag. llama.cpp's Qwen3.5 required-call grammar allows a
 thought and text before the call; llamadart's grammar starts the call at once,
 which ends the thought, so that entry sets `required_grammar_start`. Its
