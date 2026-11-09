@@ -823,8 +823,7 @@ class DefaultModelDownloadManager implements ModelDownloadManager {
               error.osError?.errorCode == 20 ||
               (Platform.isWindows &&
                   (error.osError?.errorCode == 3 ||
-                      error.osError?.errorCode == 267)) ||
-              _mayBeWindowsDeletePending(error);
+                      error.osError?.errorCode == 267));
           // A new cache root must keep its identity after it is created.
           // Resolve its existing ancestor instead of using alias spelling.
           if (!missingPath ||
