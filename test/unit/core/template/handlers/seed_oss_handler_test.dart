@@ -146,6 +146,26 @@ void main() {
       expect(parsed.toolCalls, hasLength(calls), reason: output);
     }
   });
+
+  // Same rule as the model-opened thought pinned against llama.cpp
+  // `cd959bae9` in closed_thought_upstream.json (`unfinished-end-tag`).
+  test(
+    'SeedOssHandler keeps a trailing partial end tag only once finished',
+    () {
+      const output = 'Plan</seed:thi';
+      final handler = SeedOssHandler();
+      expect(
+        handler.parse(output, thinkingForcedOpen: true).reasoningContent,
+        'Plan</seed:thi',
+      );
+      expect(
+        handler
+            .parse(output, thinkingForcedOpen: true, isPartial: true)
+            .reasoningContent,
+        'Plan',
+      );
+    },
+  );
 }
 
 Future<Object?> _noop(_) async {

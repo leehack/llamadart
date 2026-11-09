@@ -518,8 +518,9 @@ void main() {
     });
   }
 
-  // llama.cpp 620d2225 returns no call for either Qwen3-Coder output. Seed-OSS
-  // differs there: a scope without a line break is text to llama.cpp.
+  // llama.cpp 620d2225 returns no call for either Qwen3-Coder output, and
+  // empty content where this scan keeps the output as text. Seed-OSS differs
+  // there: a scope without a line break is text to llama.cpp.
   test('an empty first Qwen3-Coder scope starts no later calls', () {
     const call =
         '<tool_call>\n<function=weather>\n<parameter=city>\nParis\n'

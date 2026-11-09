@@ -152,7 +152,7 @@ class DeepseekV3Handler extends ChatTemplateHandler {
     final ThinkingExtraction thinking = thoughtTagsAreText
         ? (content: output.trim(), reasoning: null)
         : thinkingForcedOpen
-        ? extractForcedOpenThoughtVerbatim(output)
+        ? extractForcedOpenThoughtVerbatim(output, isPartial: isPartial)
         : extractThinking(output);
     return _parseContentAndToolCalls(
       thinking.content,

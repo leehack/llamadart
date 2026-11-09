@@ -124,9 +124,13 @@ void main() {
       ));
     });
 
-    test('drops the start of an end tag that ends an unended thought', () {
+    test('keeps the start of an end tag that a finished output ends in', () {
+      expect(
+        extractForcedOpenThoughtVerbatim('Plan it </thi', isPartial: true),
+        (reasoning: 'Plan it', content: ''),
+      );
       expect(extractForcedOpenThoughtVerbatim('Plan it </thi'), (
-        reasoning: 'Plan it',
+        reasoning: 'Plan it </thi',
         content: '',
       ));
       expect(extractForcedOpenThoughtVerbatim('Plan.</think>Ans </thi'), (
@@ -155,6 +159,14 @@ void main() {
         extractForcedOpenThoughtVerbatim(
           'Plan <tool',
           contentOpenings: openings,
+        ),
+        (reasoning: 'Plan <tool', content: ''),
+      );
+      expect(
+        extractForcedOpenThoughtVerbatim(
+          'Plan <tool',
+          contentOpenings: openings,
+          isPartial: true,
         ),
         (reasoning: 'Plan', content: ''),
       );

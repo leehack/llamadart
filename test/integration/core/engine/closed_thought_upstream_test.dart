@@ -565,6 +565,29 @@ void main() {
 
         for (final c in (entry['cases'] as List).cast<Map<String, dynamic>>()) {
           final output = c['output'] as String;
+          final upstreamPartial =
+              c['upstream_partial'] as Map<String, dynamic>?;
+          if (upstreamPartial != null) {
+            // While output may still follow, llama.cpp drops the start of a
+            // tag that it may complete.
+            test('${c['name']} parses as llama.cpp while partial', () {
+              final parsed = ChatTemplateEngine.parseRendered(
+                rendered,
+                output,
+                isPartial: true,
+                tools: [_weatherTool],
+              );
+              expect(
+                parsed.content.trim(),
+                (upstreamPartial['content'] as String).trim(),
+              );
+              expect(
+                parsed.reasoningContent?.trim() ?? '',
+                (upstreamPartial['reasoning_content'] as String).trim(),
+              );
+              expect(parsed.toolCalls, isEmpty);
+            });
+          }
           test('${c['name']} parses and streams as llama.cpp parses', () async {
             for (final withTools in const [true, false]) {
               final upstream =
