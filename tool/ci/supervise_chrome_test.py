@@ -119,6 +119,10 @@ def observe_exit(pid):
             else 128 + result.si_status)
 
 
+class StaleReporterError(RuntimeError):
+    pass
+
+
 class ReporterEvents:
     """Incrementally reads a package:test JSON file reporter (`--file-reporter json:`)."""
 
@@ -177,7 +181,8 @@ def supervise(command, output, timeout, shutdown, cleanup, snapshot_interval,
         raise RuntimeError('Cannot establish child subreaper')
     reserve_standard_descriptors()
     if reporter_file is not None and reporter_file.exists():
-        raise RuntimeError('A stale reporter file would settle the result early')
+        raise StaleReporterError(
+            f'Stale reporter file {reporter_file} would settle the result early; remove it')
     output.mkdir(parents=True, exist_ok=False)
     started = time.monotonic()
     stopped = []
@@ -419,6 +424,9 @@ def main():
         return supervise(command, args.output_dir, args.timeout_seconds,
                          args.shutdown_seconds, args.cleanup_seconds, args.snapshot_seconds,
                          args.reporter_file, args.post_done_seconds)
+    except StaleReporterError as error:
+        print(f'::error::{error}', file=sys.stderr)
+        return 125
     except Exception:
         # A stalled CI output pipe must not delay failure or process retirement.
         return 125
