@@ -13,6 +13,8 @@ validate against the exact release tag notes.
 
 ## Unreleased
 
+- Fix `dart run llamadart:doctor_native --runtime litert_lm` on macOS reporting `ASSET_NOT_DECLARED` for a working runtime: it now checks the LiteRT-LM runtime the build hook keeps in its cache and reports `target_source: build_hook_cache` ([#1855](https://github.com/leehack/llamadart/issues/1855)).
+
 ## 0.19.1
 
 - Keep default WebGPU bridge assets at `v0.1.83` (unchanged from 0.19.0).

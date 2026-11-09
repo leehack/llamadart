@@ -45,7 +45,9 @@ interface does not establish backend/model support; read `await engine.capabilit
 - For an opt-in native artifact check, use
   `dart run llamadart:doctor_native --runtime llama_cpp --json`, or explicitly
   choose `litert_lm` / `stable_diffusion`. It opens local manifest declarations
-  in an isolated child and checks selected symbols/static ABI markers. Native
+  (or, for undeclared macOS LiteRT-LM, the build hook cache the runtime loads,
+  reported as `target_source: build_hook_cache`) in an isolated child and
+  checks selected symbols/static ABI markers. Native
   constructors can run; no engine/model/device probe is started. Result codes
   are fixed and raw child output is discarded. Exit 0 means a report, including
   failed checks. Keep loaded release identity, emitted app assets, production

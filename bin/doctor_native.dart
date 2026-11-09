@@ -8,7 +8,8 @@ const _usage = '''
 Usage: dart run llamadart:doctor_native --runtime <llama_cpp|litert_lm|stable_diffusion> [--json]
        dart run llamadart:doctor_native --help
 
-Opt-in desktop Dart source check of one locally declared native artifact.
+Opt-in desktop Dart source check of one locally declared native artifact, or,
+for undeclared macOS LiteRT-LM, the runtime the build hook keeps in its cache.
 Loads files in an isolated process; checks selected symbols/static ABI markers.
 No engine, model, GPU/device probe or inference is started. Native constructors
 can run when libraries open. Production app loading and loaded release identity
@@ -45,15 +46,10 @@ Future<void> main(List<String> arguments) async {
     stdout.writeln(
       json
           ? jsonEncode(report)
-          : [
-              'llamadart isolated native check (runtime/model not verified)',
-              '${probe['runtime']}: ${probe['code']} (${probe['phase']})',
-              'Source: local manifest declaration; direct file loading only.',
-              'Loaded release: unknown; production loader, GPU, model and inference: not_checked.',
-              probe['remediation'],
-              if (setup.overrides.values.any((set) => set))
-                'OVERRIDES_MAY_DIFFER: Native overrides are set; their values and production resolution are not checked.',
-            ].join('\n'),
+          : nativeDiagnosticTextReport(
+              probe,
+              overridesSet: setup.overrides.values.any((set) => set),
+            ),
     );
   } catch (_) {
     stderr.writeln(

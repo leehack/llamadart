@@ -7,6 +7,7 @@ import 'dart:ffi';
 import 'dart:io';
 import 'dart:isolate';
 
+import 'package:llamadart/src/hook/native_release_pins.dart';
 import 'package:llamadart/src/platform/io/native_diagnostics.dart';
 import 'package:test/test.dart';
 
@@ -189,7 +190,7 @@ void main() {
     _ => null,
   };
   final liteRtFile = File(
-    '.dart_tool/llamadart/litert_lm/0.18.1-4/$liteRtRelative',
+    '.dart_tool/llamadart/litert_lm/$liteRtLmVersion/$liteRtRelative',
   ).absolute;
   test(
     'real child opens current cached LiteRT artifact via a test declaration',
@@ -205,5 +206,31 @@ void main() {
     skip: liteRtRelative != null && liteRtFile.existsSync()
         ? false
         : 'No matching current cached LiteRT artifact; no download performed.',
+  );
+
+  final hookCache = Directory(
+    '.dart_tool/llamadart/litert_lm/$liteRtLmVersion/macos/arm64',
+  );
+  test(
+    'documented dart run command checks the macOS LiteRT-LM hook cache',
+    () async {
+      final result = await Process.run(Platform.resolvedExecutable, [
+        'run',
+        'llamadart:doctor_native',
+        '--runtime',
+        'litert_lm',
+        '--json',
+      ]);
+      expect(result.exitCode, 0);
+      final probe =
+          (jsonDecode(result.stdout as String) as Map)['native_probe'];
+      expect(probe['code'], 'SURFACE_OBSERVED');
+      expect(probe['abi_marker'], 'callback_v2_finish_v1');
+      expect(probe['target_source'], 'build_hook_cache');
+      expect(result.stdout, isNot(contains(hookCache.absolute.path)));
+    },
+    skip: Abi.current() == Abi.macosArm64 && hookCache.existsSync()
+        ? false
+        : 'No macOS arm64 LiteRT-LM hook cache; no download performed.',
   );
 }
