@@ -9,7 +9,6 @@ const int vulkanPhysicalDeviceTypeCpu = 4;
 
 const int _vkStructureTypeInstanceCreateInfo = 1;
 const int _vkSuccess = 0;
-const int _vkIncomplete = 5;
 
 // sizeof(VkPhysicalDeviceProperties) is 824 on LP64; the extra room keeps a
 // driver that writes a larger struct from overrunning the buffer.
@@ -202,7 +201,9 @@ final class LiteRtLmVulkanLoader {
     final properties = calloc<Uint8>(_physicalDevicePropertiesBytes);
     try {
       final listed = enumeratePhysicalDevices(instance, count, handles);
-      if (listed != _vkSuccess && listed != _vkIncomplete) {
+      // VK_INCOMPLETE means more devices exist than were written; a partial
+      // list could look software-only, so it counts as unavailable.
+      if (listed != _vkSuccess) {
         return LiteRtLmVulkanAdapters.unavailable(
           'vkEnumeratePhysicalDevices returned $listed',
         );

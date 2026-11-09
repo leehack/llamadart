@@ -74,21 +74,18 @@ void main() {
       expect(vulkan.destroyedInstances, 1);
     });
 
-    test('keeps the devices written when the loader reports '
-        'VK_INCOMPLETE', () {
-      vulkan.devices = [('NVIDIA L4', 2), ('llvmpipe', 4)];
-      vulkan.listedCount = 1;
+    test('is unavailable when the loader reports VK_INCOMPLETE', () {
+      vulkan.devices = [('llvmpipe', 4), ('NVIDIA L4', 2)];
+      vulkan.countedDevices = 1;
 
       final adapters = vulkan.loader.listAdapters();
 
-      expect(adapters.unavailableReason, isNull);
+      expect(adapters.devices, isNull);
       expect(
-        [
-          for (final device in adapters.devices!)
-            (device.name, device.deviceType),
-        ],
-        [('NVIDIA L4', 2)],
+        adapters.unavailableReason,
+        'vkEnumeratePhysicalDevices returned 5',
       );
+      expect(vulkan.destroyedInstances, 1);
     });
 
     test('lists no device when the loader reports none', () {
@@ -156,8 +153,9 @@ final class _FakeVulkan {
   int createResult = 0;
   int enumerateResult = 0;
 
-  /// Fewer devices than the first count reported, written with VK_INCOMPLETE.
-  int? listedCount;
+  /// The count the first call reports when it is below [devices], as when a
+  /// device appears between the two calls.
+  int? countedDevices;
   int? createInfoStructureType;
   int destroyedInstances = 0;
 
@@ -171,17 +169,19 @@ final class _FakeVulkan {
       expect(instance, _instance.cast<Void>());
       if (enumerateResult != 0) return enumerateResult;
       if (handles == nullptr) {
-        count.value = devices.length;
+        count.value = countedDevices ?? devices.length;
         return 0;
       }
-      final written = listedCount ?? count.value;
+      final written = count.value < devices.length
+          ? count.value
+          : devices.length;
       for (var index = 0; index < written; index++) {
         final handle = calloc<Uint8>()..value = index;
         _handles.add(handle);
         handles[index] = handle.cast();
       }
       count.value = written;
-      return listedCount == null ? 0 : 5;
+      return written < devices.length ? 5 : 0;
     },
     getPhysicalDeviceProperties: (device, properties) {
       final (name, type) = devices[device.cast<Uint8>().value];

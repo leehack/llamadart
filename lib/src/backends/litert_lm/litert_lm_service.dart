@@ -1803,7 +1803,7 @@ class LiteRtLmService {
       return liteRtLmCpuBackend;
     }
     throw LlamaUnsupportedException(
-      'LiteRT-LM GPU on ${Platform.operatingSystem} needs a hardware Vulkan '
+      'LiteRT-LM GPU on ${liteRtLmGateAbi()} needs a hardware Vulkan '
       'device, but every Vulkan device here is a software rasterizer '
       '(VK_PHYSICAL_DEVICE_TYPE_CPU: $names), on which the GPU backend can '
       'return wrong text. Install the GPU vendor\'s Vulkan driver, or load '
