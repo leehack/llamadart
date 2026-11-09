@@ -17,7 +17,7 @@ void main() {
         'test/ci',
         '-p',
         'test_supervise_chrome_test.py',
-      ], timeout: const Duration(seconds: 20));
+      ], timeout: const Duration(seconds: 60));
       expect(result.exitCode, 0, reason: '${result.stdout}\n${result.stderr}');
     },
   );

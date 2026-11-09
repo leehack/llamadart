@@ -314,6 +314,17 @@ class SupervisorTest(unittest.TestCase):
         self.assertNotEqual(result['owned_processes_remaining'], [])
         self.assertFalse(result['passed'])
 
+    def test_a_surviving_process_alone_fails_a_recovered_stall(self):
+        launcher = self.patched_supervisor('module.deliver = lambda row, number: False')
+        child, result = self.run_fixture(self.browser_then(
+            {'type': 'done', 'success': True}, 0.05,
+            'import os,time; os.close(1); os.close(2); time.sleep(2)'),
+            reporter=True, script=launcher)
+        self.assertEqual(child.returncode, 125, child.stderr)
+        self.assertTrue(result['browser_close_stall'])
+        self.assertTrue(result['stdout_eof'] and result['stderr_eof'])
+        self.assertNotEqual(result['owned_processes_remaining'], [])
+
     def test_missing_output_eof_after_a_recovered_stall_exits_125(self):
         lingerer = Path(self.temp.name) / 'lingerer'
         lingerer.write_text(f'#!{sys.executable}\nimport sys,time; time.sleep(2)\n')

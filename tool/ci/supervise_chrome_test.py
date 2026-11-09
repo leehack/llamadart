@@ -425,7 +425,7 @@ def main():
                          args.shutdown_seconds, args.cleanup_seconds, args.snapshot_seconds,
                          args.reporter_file, args.post_done_seconds)
     except StaleReporterError as error:
-        print(f'::error::{error}', file=sys.stderr)
+        echo('stderr', f'::error::{error}\n'.encode())
         return 125
     except Exception:
         # A stalled CI output pipe must not delay failure or process retirement.
