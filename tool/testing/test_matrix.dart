@@ -1285,8 +1285,9 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
     covers:
         'real .litertlm chat, stop and maxTokens length finish reasons, an '
         'automatic tool loop cut off at maxTokens, thinking channel '
-        'reassembly (reported not_applicable when the bundle template cannot '
-        'think, as for Qwen3.5), streaming tool calls, and optional byte-backed audio '
+        'reassembly (reported not_applicable with a reason when the bundle '
+        'template always closes the think block, as for the Qwen3.5 int8 '
+        'bundles), streaming tool calls, and optional byte-backed audio '
         'question answering with an exact expected answer',
     command:
         'dart run tool/testing/run_local_e2e.dart --scenario '
