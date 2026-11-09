@@ -2,6 +2,17 @@
 
 This document covers the major breaking upgrade paths.
 
+## `0.19.0` -> `0.19.1`: desktop LiteRT-LM embeddings need native `v0.19.1-2`
+
+Core `0.19.1` bundles
+[LiteRT-LM v0.19.1-2](https://github.com/leehack/litert-lm-native/releases/tag/v0.19.1-2),
+so apps on the bundled runtime are unaffected. Linux and Windows native
+embeddings now require that runtime's in-process LiteRT marker: a custom
+`LLAMADART_LITERT_LM_LIB_DIR` runtime older than `v0.19.1-2`, including
+`v0.19.1-1`, throws `LlamaUnsupportedException` before any native embedding
+call. Point the override at `v0.19.1-2` or later
+([#1367](https://github.com/leehack/llamadart/issues/1367)).
+
 ## `0.18.x` -> `0.19.0`: LiteRT-LM native `v0.19.1-1` and Web `0.19.0`
 
 Core `0.19.0` and `llamadart_litert_lm_flutter` `0.19.0` move to published
