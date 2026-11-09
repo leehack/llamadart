@@ -305,6 +305,13 @@ web backend load options).
 - Multimodal projector loads are direct bridge fetches and do not use the
   model cache.
 - Cache availability depends on browser storage quota and private-mode policy.
+  Chromium keeps Cache Storage in memory in Incognito windows and other
+  off-the-record profiles, including Playwright's `browser.new_context()`, and
+  rejects any entry of 256 MiB or more with `Failed to execute 'put' on
+  'Cache': Unexpected internal error.` The bridge then logs `Model was not
+  cached`, reports `model_cache_state` `store_failed` and still loads the
+  model; the next load fetches it again
+  ([#1675](https://github.com/leehack/llamadart/issues/1675)).
 
 ## Hosting headers
 

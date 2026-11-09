@@ -326,6 +326,10 @@ The feature-by-runtime table is in the
   loaded. An uncached model's progress follows its download, and a
   cancelled or failed load leaves nothing in Cache Storage
   ([llama-web-bridge#195](https://github.com/leehack/llama-web-bridge/pull/195)).
+  Chromium Incognito windows and other off-the-record profiles keep Cache
+  Storage in memory and reject entries of 256 MiB or more, so a larger model
+  still loads but logs `Model was not cached` and is fetched again on every
+  load.
 - `LlamaEngine.scoreNextToken(...)` needs assets that support it; others
   report `supportsNextTokenScoring == false`.
 
