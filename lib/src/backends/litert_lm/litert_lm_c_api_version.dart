@@ -26,7 +26,7 @@ typedef _GetApiVersionDart =
     if (status != 0 || parts[0] != 1 || parts[1] != 0 || parts[2] < 0) {
       throw LlamaUnsupportedException(
         'LiteRT-LM rejects C API ${parts[0]}.${parts[1]}.${parts[2]} (version probe status $status). '
-        'Use the packaged litert-lm-native v0.19.1-1 runtime with supported C API 1.0.x. '
+        'Use the packaged litert-lm-native v0.19.1-2 runtime with supported C API 1.0.x. '
         'See https://github.com/leehack/llamadart/issues/1677 for the admitted ABI contract. '
         'No legacy engine call was attempted.',
       );
@@ -35,6 +35,19 @@ typedef _GetApiVersionDart =
   } finally {
     calloc.free(parts);
   }
+}
+
+/// Reads litert-lm-native's `litert_lm_native_in_process_litert_abi_version`
+/// marker, or returns null when the runtime predates the export.
+///
+/// The caller interprets the value: 1 means LiteRT is compiled into the
+/// runtime with no separate `libLiteRt` import, 0 or a missing export means
+/// that is not established, and later values carry guarantees this package
+/// does not know. It never establishes GPU qualification.
+int? readLiteRtLmInProcessLiteRtAbiVersion(DynamicLibrary library) {
+  const symbol = 'litert_lm_native_in_process_litert_abi_version';
+  if (!library.providesSymbol(symbol)) return null;
+  return library.lookupFunction<Int32 Function(), int Function()>(symbol)();
 }
 
 /// Refuses versioned C APIs before using the pre-1.0 LiteRT-LM bindings.
@@ -61,7 +74,7 @@ void requireLiteRtLmLegacyCApi(DynamicLibrary library) {
     throw LlamaUnsupportedException(
       'Native LiteRT-LM C API $version is incompatible with the pre-1.0 bindings. '
       'Use the default LiteRtLmRuntimeClient or LiteRtLmService to select the '
-      'admitted C API 1.0.x route for the packaged litert-lm-native v0.19.1-1 '
+      'admitted C API 1.0.x route for the packaged litert-lm-native v0.19.1-2 '
       'runtime, or select a compatible legacy runtime override for these bindings. '
       'See https://github.com/leehack/llamadart/issues/1677 for the admitted ABI contract. '
       'No legacy engine call was attempted.',

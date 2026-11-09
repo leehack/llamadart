@@ -65,16 +65,20 @@ feature. For which runtime supports which feature, see the
 ## Linux and Windows
 
 - A custom LiteRT-LM runtime (`LLAMADART_LITERT_LM_LIB_DIR`) on Linux or
-  Windows must be litert-lm-native `v0.19.1-1` or later. Earlier desktop
-  runtimes link a prebuilt LiteRT built with a different C++ runtime: CPU
-  embedding engine creation fails on Linux and crashes on Windows x64
+  Windows must be litert-lm-native `v0.19.1-1` or later, and `v0.19.1-2` or
+  later for embeddings. Earlier desktop runtimes link a prebuilt LiteRT built
+  with a different C++ runtime: CPU embedding engine creation fails on Linux
+  and crashes on Windows x64
   ([#1367](https://github.com/leehack/llamadart/issues/1367)), and `v0.19.0`
   and `v0.19.1` explicit GPU generation crashes at the first decode on Linux
   x64 and Windows x64 ([#1795](https://github.com/leehack/llamadart/issues/1795)).
-  Legacy `v0.18.x` runtimes are refused for embeddings before any native call,
-  though `checkLoad`, which opens no runtime, reports them as supported;
-  `v0.19.0` and `v0.19.1` expose the same C API 1.0 as `v0.19.1-1`, so the
-  load gate cannot tell them apart.
+  Embeddings need a runtime whose
+  `litert_lm_native_in_process_litert_abi_version` export reports 1, first
+  shipped in `v0.19.1-2`; any other runtime, including `v0.18.x`, `v0.19.0`,
+  `v0.19.1` and `v0.19.1-1`, is refused before any native embedding call,
+  though `checkLoad`, which opens no runtime, reports it as supported. GPU
+  generation is not gated: the marker does not establish GPU support, and
+  `v0.19.0` and `v0.19.1` expose the same C API 1.0 as later runtimes.
 - Linux x64 LiteRT-LM GPU needs a hardware Vulkan driver. When every Vulkan
   device is a software rasterizer (Mesa llvmpipe/lavapipe, SwiftShader), an
   explicit GPU load throws `LlamaUnsupportedException` and a GPU hint under

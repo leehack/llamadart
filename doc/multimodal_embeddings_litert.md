@@ -174,10 +174,11 @@ external weight for buffer id 2147483863 (tensor 1451)`.
   on Linux and crashes the process on Windows x64
   ([#1367](https://github.com/leehack/llamadart/issues/1367),
   [litert-lm-native#111](https://github.com/leehack/litert-lm-native/issues/111)).
-  A legacy runtime without `litert_lm_get_api_version` (`v0.18.x`) is
-  refused before any native embedding call. C API 1.0 runtimes older than
-  `v0.19.1-1` (`v0.19.0`, `v0.19.1`) look the same as `v0.19.1-1`, so a
-  custom `LLAMADART_LITERT_LM_LIB_DIR` must be `v0.19.1-1` or later.
+  C API 1.0 runtimes `v0.19.0` and `v0.19.1` look the same as `v0.19.1-1`, so
+  Linux and Windows embeddings require
+  `litert_lm_native_in_process_litert_abi_version` to report 1, first shipped
+  in `v0.19.1-2`. Any other runtime, including `v0.18.x` and `v0.19.1-1`, is
+  refused with `LlamaUnsupportedException` before any native embedding call.
 - **Native GPU:** fail before native engine creation. `v0.18.0-3` has a
   WebGPU accelerator/absl ABI mismatch that crashed the upstream-only reference
   as well as the prototype. The upstream repair is
