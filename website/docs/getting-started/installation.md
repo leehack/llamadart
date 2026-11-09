@@ -10,7 +10,7 @@ For Genkit or Flutter Edge AI integration setup, see
 ## Requirements
 
 - Dart SDK `>= 3.10.7`
-- Flutter SDK `>= 3.38.0` (if you build Flutter apps)
+- Flutter SDK `>= 3.38.6` (if you build Flutter apps)
 - Flutter iOS apps: deployment target `16.4` or newer
 - Flutter macOS apps: deployment target `14.0` or newer
 - Windows: nothing extra for llama.cpp and LiteRT-LM, which bundle the

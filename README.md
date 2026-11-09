@@ -43,7 +43,7 @@ dart pub get
 flutter pub get
 ```
 
-Requirements: Dart SDK `>=3.10.7`; for Flutter apps, Flutter SDK `>=3.38.0`,
+Requirements: Dart SDK `>=3.10.7`; for Flutter apps, Flutter SDK `>=3.38.6`,
 iOS deployment target `16.4` and macOS deployment target `14.0` or newer.
 Consumers need no local C++ toolchain: the package build hook resolves native
 runtime archives on first build or run. Windows and other per-platform notes:
