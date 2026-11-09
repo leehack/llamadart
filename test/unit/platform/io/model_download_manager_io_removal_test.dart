@@ -136,13 +136,15 @@ void main() {
       return finishDelete;
     }
 
-    Future<void> clear() =>
-        IOOverrides.runWithIOOverrides(manager.clear, overrides);
+    Future<T> withOverrides<T>(Future<T> Function() body) =>
+        IOOverrides.runWithIOOverrides(body, overrides);
 
-    /// Starts [clear] and holds it at the removal lock, after it has checked
-    /// the entry, until the returned function runs.
+    Future<void> clear() => withOverrides(manager.clear);
+
+    /// Starts [operation] and holds it at the removal lock, after it has
+    /// checked the entry, until the returned function runs.
     Future<({Future<void> clearing, void Function() proceed})>
-    clearHeldAtRemovalLock() async {
+    heldAtRemovalLock(Future<void> Function() operation) async {
       final waiting = Completer<void>();
       final proceed = Completer<void>();
       modelCacheEntryLocker = (lockPath, {required throwIfCancelled}) async {
@@ -163,7 +165,7 @@ void main() {
         }
       }
 
-      final clearing = clear();
+      final clearing = withOverrides(operation);
       addTearDown(() async {
         release();
         await clearing.then<void>((_) {}, onError: (Object _) {});
@@ -171,15 +173,15 @@ void main() {
       await waiting.future.timeout(
         const Duration(seconds: 10),
         onTimeout: () => throw StateError(
-          'clear never reached the .removal.lock: it no longer takes the '
-          'lock this test holds it at.',
+          'The operation never reached the .removal.lock: it no longer takes '
+          'the lock this test holds it at.',
         ),
       );
       return (clearing: clearing, proceed: release);
     }
 
-    Future<T> withOverrides<T>(Future<T> Function() body) =>
-        IOOverrides.runWithIOOverrides(body, overrides);
+    Future<({Future<void> clearing, void Function() proceed})>
+    clearHeldAtRemovalLock() => heldAtRemovalLock(manager.clear);
 
     void expectOnlyLocksLeftOnceDeleted(void Function() finishDelete) {
       finishDelete();
@@ -221,29 +223,27 @@ void main() {
       expectOnlyLocksLeftOnceDeleted(finishDelete);
     });
 
-    test('is skipped by remove when the deletion starts after it finds the '
-        'entry', () async {
+    test('is skipped by remove when the deletion happens while it waits for '
+        'the removal lock', () async {
       final cacheKey = (await manager.list()).single.cacheKey;
-      void Function()? finishDelete;
-      overrides.afterFirstCheck = () async =>
-          finishDelete = markPendingDelete();
+      final held = await heldAtRemovalLock(() => manager.remove(cacheKey));
+      final finishDelete = markPendingDelete();
+      held.proceed();
 
-      await withOverrides(() => manager.remove(cacheKey));
-
-      expect(finishDelete, isNotNull);
-      expectOnlyLocksLeftOnceDeleted(finishDelete!);
+      await held.clearing;
+      expectOnlyLocksLeftOnceDeleted(finishDelete);
     });
 
-    test('is skipped by prune when the deletion starts after it finds the '
-        'entry', () async {
-      void Function()? finishDelete;
-      overrides.afterFirstCheck = () async =>
-          finishDelete = markPendingDelete();
+    test('is skipped by prune when the deletion happens while it waits for '
+        'the removal lock', () async {
+      final held = await heldAtRemovalLock(
+        () => manager.prune(maxAge: Duration.zero),
+      );
+      final finishDelete = markPendingDelete();
+      held.proceed();
 
-      await withOverrides(() => manager.prune(maxAge: Duration.zero));
-
-      expect(finishDelete, isNotNull);
-      expectOnlyLocksLeftOnceDeleted(finishDelete!);
+      await held.clearing;
+      expectOnlyLocksLeftOnceDeleted(finishDelete);
     });
 
     test('is not skipped when the entry still reads as a directory: clear '
