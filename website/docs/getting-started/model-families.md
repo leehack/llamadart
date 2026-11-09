@@ -15,9 +15,10 @@ model's chat template.
   (`tokenizer.chat_template`, or `tokenizer.chat_template.tool_use` when tools
   are passed) and detects its format from marker strings, in llama.cpp's
   priority order. It does not look at the model name or architecture.
-- **`.litertlm`:** bundles do not expose their template, so llamadart picks
-  one from the file name: `gemma-4`, `gemma-3n`, `gemma-3`/`gemma-2`, `qwen3`
-  or `qwen2.5`. Set `ModelParams.chatTemplate` to override it.
+- **`.litertlm`:** the native runtime does not expose the bundle's template,
+  so llamadart picks one from the file name (`gemma-4`, `gemma-3n`,
+  `gemma-3`/`gemma-2`, `qwen3` or `qwen2.5`) for format detection and output
+  parsing. Set `ModelParams.chatTemplate` to override it.
 - **No match:** the template renders as-is, with no tool-call or reasoning
   parsing. If you pass tools, llamadart adds a generic JSON tool-call
   instruction instead.
@@ -25,6 +26,10 @@ model's chat template.
 To see what a model will receive, render the prompt with
 `engine.chatTemplate(...)`; see
 [Chat templates and output parsing](../guides/chat-template-and-parsing).
+For native `.litertlm` this shows the file-name template, which the runtime
+renders only for text-only requests to Qwen3 bundles. Every other request,
+including Qwen3.5, Gemma and any request with media, renders the bundle's
+embedded template, so the native prompt can differ.
 
 ## Evidence levels
 
