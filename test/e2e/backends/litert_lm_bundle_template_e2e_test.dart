@@ -11,6 +11,7 @@ import 'package:llamadart/src/backends/litert_lm/litert_lm_bundle_template.dart'
 import 'package:llamadart/src/backends/litert_lm/litert_lm_cache.dart';
 import 'package:llamadart/src/backends/litert_lm/litert_lm_runtime.dart';
 import 'package:llamadart/src/backends/litert_lm/litert_lm_service.dart';
+import 'package:llamadart/src/core/exceptions.dart';
 import 'package:llamadart/src/core/llama_logger.dart';
 import 'package:llamadart/src/core/models/chat/chat_message.dart';
 import 'package:llamadart/src/core/models/chat/chat_role.dart';
@@ -451,6 +452,54 @@ void main() {
       LlamaLogger.instance.setLevel(LlamaLogLevel.none);
       LlamaLogger.instance.setHandler(null);
       directory.deleteSync(recursive: true);
+    });
+
+    test('sends a raw prompt that starts with the start token with one start '
+        'token', () async {
+      final cache = Directory('${directory.path}/cache')..createSync();
+      final client = _RecordingClient();
+      final service = LiteRtLmService(clientFactory: () => client);
+      final params = ModelParams(
+        contextSize: 1024,
+        numberOfThreads: 2,
+        liteRtLmBackend: LiteRtLmBackendPreference.cpu,
+        liteRtLmCacheDir: cache.path,
+      );
+      try {
+        final handle = await service.loadModel(model!, params);
+        final context = service.createContext(handle, params);
+        final start = await service.tokenize(handle, '', true);
+        if (start.isEmpty) {
+          markTestSkipped('The runtime adds no start token for this bundle.');
+          return;
+        }
+        final startText = client.detokenize(start);
+        await service
+            .generate(
+              context,
+              '${startText}hi',
+              const GenerationParams(maxTokens: 1, temp: 0, seed: 1),
+            )
+            .drain<void>();
+
+        expect(client.sentPrompts, ['hi']);
+        expect(
+          service.getPerformanceContext(context)?.promptEvalTokens,
+          (await service.tokenize(handle, 'hi', true)).length,
+        );
+        await expectLater(
+          service
+              .generate(
+                context,
+                startText,
+                const GenerationParams(maxTokens: 1, temp: 0, seed: 1),
+              )
+              .drain<void>(),
+          throwsA(isA<LlamaArgumentException>()),
+        );
+      } finally {
+        service.dispose();
+      }
     });
 
     test('sends a raw prompt to the model unchanged', () async {

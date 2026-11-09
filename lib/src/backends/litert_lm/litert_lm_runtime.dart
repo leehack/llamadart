@@ -1389,9 +1389,11 @@ class _LegacyLiteRtLmRuntimeClient extends LiteRtLmRuntimeClient {
         )) {
       throw LlamaUnsupportedException(
         'This LiteRT-LM runtime lacks '
-        'litert_lm_conversation_config_set_prompt_template, which raw prompt '
-        'generation and ModelParams.chatTemplate need. Use the packaged '
-        'litert-lm-native $_litertLmReleaseTag runtime or a newer one.',
+        'litert_lm_conversation_config_set_prompt_template, so llamadart '
+        'cannot set a conversation template: raw prompt generation, '
+        'ModelParams.chatTemplate and the built-in family templates, such as '
+        'Qwen3 text chat, need one. Use the packaged litert-lm-native '
+        '$_litertLmReleaseTag runtime or a newer one.',
       );
     }
     final sessionConfig = bindings.sessionConfigCreate();

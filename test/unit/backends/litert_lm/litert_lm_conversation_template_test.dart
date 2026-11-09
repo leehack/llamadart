@@ -48,6 +48,7 @@ void main() {
                 'message',
                 allOf(
                   contains('litert_lm_conversation_config_set_prompt_template'),
+                  contains('cannot set a conversation template'),
                   contains('raw prompt generation'),
                   contains('litert-lm-native $liteRtLmReleaseTag'),
                 ),

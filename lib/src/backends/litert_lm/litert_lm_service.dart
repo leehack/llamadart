@@ -243,6 +243,7 @@ class LiteRtLmService {
   bool _bundleTemplateProbed = false;
   String? _bundleTemplateAdapter;
   bool _bundleTemplateMisreadsContent = false;
+  ({List<int> tokens, String text, bool plainText})? _startToken;
   ({bool penalties, bool thinkingBudget})? _runtimeGenerationControls;
   bool? _runtimeFinishReasons;
   BackendGenerationLimit? _lastGenerationLimit;
@@ -319,6 +320,7 @@ class LiteRtLmService {
     _bundleTemplateProbed = false;
     _bundleTemplateAdapter = null;
     _bundleTemplateMisreadsContent = false;
+    _startToken = null;
     _bundleDeclaresThinkingChannel = null;
     _modelHandle = _nextModelHandle++;
     _contextHandle = null;
@@ -346,6 +348,7 @@ class LiteRtLmService {
     _bundleTemplateProbed = false;
     _bundleTemplateAdapter = null;
     _bundleTemplateMisreadsContent = false;
+    _startToken = null;
     _bundleDeclaresThinkingChannel = null;
     _modelHandle = null;
     _contextHandle = null;
@@ -539,6 +542,16 @@ class LiteRtLmService {
     if (_cancelRequested) {
       return;
     }
+    final rawPrompt = _withoutLeadingStartToken(client, prompt);
+    if (rawPrompt.isEmpty) {
+      throw LlamaArgumentException(
+        'LiteRtLmBackend raw prompt generation needs prompt text: the '
+        'LiteRT-LM runtime cannot prefill an empty prompt or one that holds '
+        "only the model's start token.",
+        name: 'prompt',
+        invalidValue: prompt,
+      );
+    }
     final backend =
         _activeBackend ?? _backendNameFor(_modelParams ?? const ModelParams());
     final loraPath = _activeTextLoraPath();
@@ -565,7 +578,7 @@ class LiteRtLmService {
     try {
       final stream = _applyStopSequences(
         client.generate(
-          prompt,
+          rawPrompt,
           maxOutputTokens: params.maxTokens,
           repetitionPenalty: controls.repetitionPenalty,
           presencePenalty: controls.presencePenalty,
@@ -590,6 +603,51 @@ class LiteRtLmService {
         _lastMetrics = null;
       }
     }
+  }
+
+  /// Returns [prompt] without a leading start token, which the runtime adds
+  /// before every prompt, so that a prompt holding one does not get two. As
+  /// llama.cpp does, this compares tokens: ordinary text that tokenizes to the
+  /// start token is removed only when the rest of the prompt keeps its tokens.
+  /// Special-token text, such as Gemma's `<bos>`, which the runtime reads as
+  /// the token but [LiteRtLmRuntimeClientContract.tokenize] does not, is
+  /// removed as text.
+  String _withoutLeadingStartToken(
+    LiteRtLmRuntimeClientContract client,
+    String prompt,
+  ) {
+    final start = _startToken ??= () {
+      final tokens = client.tokenize('', addSpecial: true);
+      final text = tokens.isEmpty ? '' : client.detokenize(tokens);
+      return (
+        tokens: tokens,
+        text: text,
+        plainText: _sameTokens(
+          client.tokenize(text, addSpecial: false),
+          tokens,
+        ),
+      );
+    }();
+    if (start.text.isEmpty || !prompt.startsWith(start.text)) {
+      return prompt;
+    }
+    final rest = prompt.substring(start.text.length);
+    if (!start.plainText) {
+      return rest;
+    }
+    final keepsTokens = _sameTokens(
+      client.tokenize(prompt, addSpecial: false),
+      [...start.tokens, ...client.tokenize(rest, addSpecial: false)],
+    );
+    return keepsTokens ? rest : prompt;
+  }
+
+  static bool _sameTokens(List<int> a, List<int> b) {
+    if (a.length != b.length) return false;
+    for (var i = 0; i < a.length; i++) {
+      if (a[i] != b[i]) return false;
+    }
+    return true;
   }
 
   /// Admits the actual native provider, rather than relying on setter exports.

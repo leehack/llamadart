@@ -384,16 +384,7 @@ class _LiteRtLmBenchmarkAppState extends State<LiteRtLmBenchmarkApp> {
       );
 
       for (var i = 0; i < _warmups; i++) {
-        await engine
-            .generate(
-              _promptController.text,
-              params: GenerationParams(
-                maxTokens: _outputTokens,
-                seed: 1,
-                speculativeDecoding: _speculative,
-              ),
-            )
-            .drain<void>();
+        await _liteRtChat(engine).drain<void>();
       }
 
       var lastText = '';
@@ -403,14 +394,7 @@ class _LiteRtLmBenchmarkAppState extends State<LiteRtLmBenchmarkApp> {
       for (var i = 0; i < _runs; i++) {
         final buffer = StringBuffer();
         final sw = Stopwatch()..start();
-        await for (final chunk in engine.generate(
-          _promptController.text,
-          params: GenerationParams(
-            maxTokens: _outputTokens,
-            seed: 1,
-            speculativeDecoding: _speculative,
-          ),
-        )) {
+        await for (final chunk in _liteRtChat(engine)) {
           buffer.write(chunk);
         }
         sw.stop();
@@ -500,6 +484,27 @@ class _LiteRtLmBenchmarkAppState extends State<LiteRtLmBenchmarkApp> {
       _ => ComputeDevice.auto,
     };
   }
+
+  // LiteRT-LM generate() sends the prompt raw, so the benchmark sends it as a
+  // user turn, which the bundle template renders as in a chat app.
+  Stream<String> _liteRtChat(LlamaEngine engine) => engine
+      .create(
+        [
+          LlamaChatMessage.fromText(
+            role: LlamaChatRole.user,
+            text: _promptController.text,
+          ),
+        ],
+        params: GenerationParams(
+          maxTokens: _outputTokens,
+          seed: 1,
+          speculativeDecoding: _speculative,
+        ),
+      )
+      .map((chunk) {
+        final delta = chunk.choices.first.delta;
+        return '${delta.thinking ?? ''}${delta.content ?? ''}';
+      });
 
   Future<void> _runLlamaDartBenchmark(
     String modelPath, {

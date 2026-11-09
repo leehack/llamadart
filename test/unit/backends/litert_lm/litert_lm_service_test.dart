@@ -535,6 +535,102 @@ void main() {
     });
   });
 
+  group('raw prompt start token', () {
+    const params = ModelParams(liteRtLmBackend: LiteRtLmBackendPreference.cpu);
+    late _FakeLiteRtLmRuntimeClient client;
+
+    setUp(() => client = _FakeLiteRtLmRuntimeClient());
+
+    /// A tokenizer that puts [start] (the text of token 1) before every
+    /// prompt and reads [vocabulary] words, longest first, one token each.
+    void tokenizer(String start, Map<String, int> vocabulary) {
+      client.onTokenize = (text, addSpecial) {
+        final tokens = <int>[if (addSpecial && start.isNotEmpty) 1];
+        var rest = text;
+        while (rest.isNotEmpty) {
+          final word = vocabulary.keys
+              .where(rest.startsWith)
+              .fold('', (a, b) => b.length > a.length ? b : a);
+          if (word.isEmpty) {
+            tokens.add(rest.codeUnitAt(0) + 1000);
+            rest = rest.substring(1);
+          } else {
+            tokens.add(vocabulary[word]!);
+            rest = rest.substring(word.length);
+          }
+        }
+        return tokens;
+      };
+      client.onDetokenize = (tokens) =>
+          tokens.length == 1 && tokens.single == 1 ? start : '';
+    }
+
+    LiteRtLmService? service;
+    int? context;
+
+    tearDown(() {
+      service?.dispose();
+      service = null;
+    });
+
+    Future<String?> send(String prompt) async {
+      if (service == null) {
+        service = LiteRtLmService(clientFactory: () => client);
+        final model = await service!.loadModel(modelFile.path, params);
+        context = service!.createContext(model, params);
+      }
+      client.generated = StreamController<String>()..add('ok');
+      unawaited(client.generated.close());
+      await service!
+          .generate(context!, prompt, const GenerationParams(maxTokens: 8))
+          .drain<void>();
+      return client.lastPrompt;
+    }
+
+    test('drops special start-token text the runtime would read as a second '
+        'start token', () async {
+      tokenizer('<bos>', const {'hi': 50});
+      expect(await send('<bos>hi'), 'hi');
+      expect(await send('hi<bos>'), 'hi<bos>');
+      expect(await send('hi'), 'hi');
+    });
+
+    test('drops plain start-token text only when the rest keeps its '
+        'tokens', () async {
+      tokenizer('None', const {'None': 1, 'hi': 50, 'Nonet': 60, 'he': 61});
+      expect(await send('Nonehi'), 'hi');
+      expect(await send('Nonethe'), 'Nonethe');
+    });
+
+    test('keeps a prompt when the runtime adds no start token', () async {
+      tokenizer('', const {'hi': 50});
+      expect(await send('<bos>hi'), '<bos>hi');
+    });
+
+    for (final (name, start, prompt) in [
+      ('an empty prompt', '', ''),
+      ('a prompt that is only the start token', '<bos>', '<bos>'),
+    ]) {
+      test('refuses $name before native work', () async {
+        tokenizer(start, const {});
+        await expectLater(
+          send(prompt),
+          throwsA(
+            isA<LlamaArgumentException>()
+                .having((error) => error.name, 'name', 'prompt')
+                .having(
+                  (error) => error.message,
+                  'message',
+                  contains('needs prompt text'),
+                ),
+          ),
+        );
+        expect(client.createConversationCount, 0);
+        expect(client.generateCount, 0);
+      });
+    }
+  });
+
   group('bundle template content shape', () {
     const params = ModelParams(liteRtLmBackend: LiteRtLmBackendPreference.cpu);
     const probeParts = [
@@ -8318,6 +8414,8 @@ class _FakeLiteRtLmRuntimeClient extends LiteRtLmRuntimeClient {
   bool thinkingBudget = true;
   LiteRtLmFinishReason? finishReason;
   List<int> tokenizeResult = const <int>[];
+  List<int>? Function(String text, bool addSpecial)? onTokenize;
+  String? Function(List<int> tokens)? onDetokenize;
   String detokenizeResult = '';
   LiteRtLmRuntimeMetrics? metrics;
   Object? metricsError;
@@ -8459,14 +8557,14 @@ class _FakeLiteRtLmRuntimeClient extends LiteRtLmRuntimeClient {
     _checkNotDisposed();
     lastTokenizeText = text;
     lastTokenizeAddSpecial = addSpecial;
-    return tokenizeResult;
+    return onTokenize?.call(text, addSpecial) ?? tokenizeResult;
   }
 
   @override
   String detokenize(List<int> tokens) {
     _checkNotDisposed();
     lastDetokenizeTokens = List<int>.from(tokens);
-    return detokenizeResult;
+    return onDetokenize?.call(tokens) ?? detokenizeResult;
   }
 
   @override
