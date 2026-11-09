@@ -397,8 +397,9 @@ hook and Apple companion source now pin published
 owner `0b15fb34` / upstream `7a03724c`, which keeps C API 1.0.0 and the
 `v0.19.0` exports and adds the in-process LiteRT marker
 `litert_lm_native_in_process_litert_abi_version` (1 on every platform); the
-`LiteRT-LM Smoke` library step fails when the bundled Linux x64/arm64 or
-Windows x64 runtime lacks the export or does not report 1. The
+`LiteRT-LM Smoke` library step fails when the bundled Linux x64 or Windows
+x64 runtime lacks the export or does not report 1; Linux arm64 has no CI
+runner for it. The
 earlier `-1` rebuild links LiteRT into the Linux and Windows
 `libLiteRtLm` ([litert-lm-native#112](https://github.com/leehack/litert-lm-native/pull/112));
 its Apple and Android binaries are identical to `v0.19.1`. Upstream
