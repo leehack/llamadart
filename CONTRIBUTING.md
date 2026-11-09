@@ -201,8 +201,8 @@ canary cache there.
 To collect and view coverage reports:
 
 ```bash
-# 1. Run VM tests with coverage
-dart test -p vm --coverage=coverage
+# 1. Run VM tests with coverage (local-only suites write empty coverage)
+dart test -p vm -j 1 --exclude-tags local-only --coverage=coverage
 
 # 2. Format into LCOV (respects // coverage:ignore-file)
 dart run tool/testing/format_lcov.dart --lcov --in=coverage/test --out=coverage/lcov.info --report-on=lib --check-ignore

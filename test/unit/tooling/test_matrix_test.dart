@@ -551,6 +551,18 @@ void main() {
           'dart test -p vm -j 1 --exclude-tags local-only --coverage=coverage;',
         ),
       );
+      expect(
+        row.command,
+        allOf(
+          contains('dart run tool/testing/format_lcov.dart --lcov '),
+          contains('--in=coverage/test --out=coverage/lcov.info '),
+          contains('--report-on=lib --check-ignore;'),
+          endsWith(
+            'dart run tool/testing/check_lcov_threshold.dart '
+            'coverage/lcov.info 70',
+          ),
+        ),
+      );
     });
 
     test(
