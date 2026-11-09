@@ -325,6 +325,162 @@ List<RepositoryChange> parseGitNameStatus(String output) {
   return changes;
 }
 
+/// Whether a Dart source edit from [base] to [head] is provably comment-only.
+///
+/// Both revisions must parse without diagnostics and scan to identical tokens
+/// (type and lexeme, so string contents, directives and annotations count).
+/// Whitespace may change only where the comments between two tokens change,
+/// and the later token must start its line in both revisions. A comment added,
+/// removed or moved must not be a language-version, analyzer, coverage,
+/// formatter, Dartdoc-directive, doc-import, suppression or excerpt marker,
+/// nor contain control, invisible or bidirectional characters. Generated
+/// sources and [rawTextConsumedSources] never qualify. Callers bind both texts
+/// to exact Git blobs.
+bool isCommentOnlyDartChange(String path, String base, String head) {
+  if (!path.endsWith('.dart') ||
+      _generatedDartPath.hasMatch(path) ||
+      rawTextConsumedSources.contains(path)) {
+    return false;
+  }
+  final baseUnit = _parseCleanly(base);
+  final headUnit = _parseCleanly(head);
+  if (baseUnit == null || headUnit == null) return false;
+  var left = baseUnit.beginToken;
+  var right = headUnit.beginToken;
+  var leftEnd = 0;
+  var rightEnd = 0;
+  while (true) {
+    if (left.type != right.type ||
+        left.lexeme != right.lexeme ||
+        left.offset < leftEnd ||
+        right.offset < rightEnd) {
+      return false;
+    }
+    final leftComments = _commentsBefore(left);
+    final rightComments = _commentsBefore(right);
+    final comments = [...leftComments, ...rightComments];
+    if (comments.any(_generatedMarker.hasMatch) ||
+        (leftEnd == 0 && comments.any(_generatedHeader.hasMatch))) {
+      return false;
+    }
+    final leftGap = base.substring(leftEnd, left.offset);
+    final rightGap = head.substring(rightEnd, right.offset);
+    if (leftGap != rightGap &&
+        !_isInertCommentEdit(leftComments, rightComments, leftGap, rightGap)) {
+      return false;
+    }
+    if (left.isEof) return true;
+    leftEnd = left.end;
+    rightEnd = right.end;
+    left = left.next!;
+    right = right.next!;
+  }
+}
+
+/// Production Dart sources whose raw text, comments included, repository
+/// tooling reads with regular expressions (release pins, bridge tags,
+/// template hashes). A comment there can change what a CI gate or sync
+/// script sees, so these never use the comment-only route.
+const rawTextConsumedSources = <String>{
+  'hook/build.dart',
+  'lib/src/backends/litert_lm/litert_lm_runtime.dart',
+  'lib/src/hook/native_release_pins.dart',
+  'lib/src/web_setup/web_bridge_setup.dart',
+};
+
+final _generatedDartPath = RegExp(
+  r'\.(g|gr|freezed|mocks|pb|pbenum|pbgrpc|pbjson|pbserver)\.dart$',
+);
+final _generatedMarker = RegExp(
+  r'^(//+|/\*+)\s*(auto[- ]?generated|generated\s+(file|code|by)|'
+  r'code\s+generated|do\s+not\s+(edit|modify))',
+  caseSensitive: false,
+);
+final _generatedHeader = RegExp(
+  r'generated|do\s+not\s+(hand[- ])?(edit|modify)',
+  caseSensitive: false,
+);
+// Comments that tools read: language version, doc imports and Dartdoc
+// directives, analyzer/coverage/formatter/security suppressions, excerpts.
+final _activeComment = RegExp(
+  r'@[a-z]|\bignore(_for_file)?\s*:|\bcoverage\s*:|\bdart\s+format\b|#[a-z]|'
+  r'\b(nosemgrep|nosec|nosonar|lgtm|codeql|noqa|nolint|expect_lint|eslint|'
+  r'istanbul|c8|pragma)\b',
+  caseSensitive: false,
+);
+// These apply to the whole file wherever they sit, so an unchanged one may
+// precede an edited comment at the same token.
+final _fileScopedDirective = RegExp(
+  r'^//\s*(ignore_for_file\s*:|coverage:ignore-file\b|@dart\s*=)',
+  caseSensitive: false,
+);
+final _unsafeCommentCharacter = RegExp(
+  '[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F\u0085\u061C'
+  '\u200B-\u200F\u2028\u2029\u202A-\u202E\u2060-\u2069\uFEFF]',
+);
+final _lineBreak = RegExp(r'[\r\n]');
+
+CompilationUnit? _parseCleanly(String source) {
+  try {
+    final parsed = parseString(content: source, throwIfDiagnostics: false);
+    return parsed.errors.isEmpty ? parsed.unit : null;
+  } on Object {
+    return null;
+  }
+}
+
+List<String> _commentsBefore(Token token) {
+  final comments = <String>[];
+  for (
+    Token? comment = token.precedingComments;
+    comment != null &&
+        (comment.type == TokenType.SINGLE_LINE_COMMENT ||
+            comment.type == TokenType.MULTI_LINE_COMMENT);
+    comment = comment.next
+  ) {
+    comments.add(comment.lexeme);
+  }
+  return comments;
+}
+
+bool _isInertCommentEdit(
+  List<String> left,
+  List<String> right,
+  String leftGap,
+  String rightGap,
+) {
+  if (left.length == right.length &&
+      Iterable<int>.generate(left.length).every((i) => left[i] == right[i])) {
+    return false;
+  }
+  // Edited comments must end their line, so the next token still starts its
+  // line in both revisions. Line-oriented source scanners then see the same
+  // code at every line start, and no token joins or leaves another's line.
+  for (final gap in [leftGap, rightGap]) {
+    final lineStart = gap.lastIndexOf(_lineBreak) + 1;
+    if (lineStart == 0 || gap.substring(lineStart).trim().isNotEmpty) {
+      return false;
+    }
+  }
+  var prefix = 0;
+  while (prefix < left.length &&
+      prefix < right.length &&
+      left[prefix] == right[prefix]) {
+    prefix++;
+  }
+  for (final comments in [left, right]) {
+    for (var i = 0; i < comments.length; i++) {
+      final comment = comments[i];
+      if (_unsafeCommentCharacter.hasMatch(comment) ||
+          (_activeComment.hasMatch(comment) &&
+              !(i < prefix && _fileScopedDirective.hasMatch(comment)))) {
+        return false;
+      }
+    }
+  }
+  return true;
+}
+
 /// Strictly decodes a JSON object, rejecting duplicate object keys.
 Map<String, dynamic> decodeStrictJsonObject(String source) {
   _DuplicateKeyScanner(source).scan();
@@ -906,6 +1062,17 @@ class HighRiskReadinessEvaluator {
     };
     final affectedPaths = (evidence['affected_test_paths'] as List<dynamic>)
         .cast<String>();
+    final commentOnlyProduction = metadataClaim
+        ? const <String>{}
+        : await _commentOnlyProductionPaths(
+            context,
+            changedFiles,
+            workingDirectory,
+          );
+    final changedProduction = {
+      for (final path in classificationPaths)
+        if (_isProductionPath(path)) path,
+    };
     if (metadataClaim) {
       if (actualSurfaces.length != 1 ||
           !actualSurfaces.contains(HighRiskSurface.artifactConsumer.name) ||
@@ -990,7 +1157,9 @@ class HighRiskReadinessEvaluator {
           changedFiles: changedFiles,
         );
       }
-    } else if (affectedPaths.isEmpty) {
+    } else if (affectedPaths.isEmpty &&
+        (changedProduction.isEmpty ||
+            !commentOnlyProduction.containsAll(changedProduction))) {
       return reject(
         ReadinessFailureClassification.missingTestPath,
         'High-risk evidence must cite at least one relevant production test.',
@@ -1029,6 +1198,7 @@ class HighRiskReadinessEvaluator {
         context,
         changedByPath,
         metadataClaim,
+        commentOnlyProduction,
         workingDirectory,
       );
       if (error != null) {
@@ -1242,6 +1412,7 @@ class HighRiskReadinessEvaluator {
     PullRequestContext context,
     Map<String, RepositoryChange> changes,
     bool metadataClaim,
+    Set<String> commentOnlyProduction,
     String? workingDirectory,
   ) async {
     final tests = evidence['test_evidence'] as Map<String, dynamic>;
@@ -1264,6 +1435,9 @@ class HighRiskReadinessEvaluator {
     };
     final inspectedPaths = {...changes.keys, ...renamedSources};
     final changedProduction = inspectedPaths.where(_isProductionPath).toSet();
+    final testedProduction = changedProduction.difference(
+      commentOnlyProduction,
+    );
     Future<bool> refsExist(List<dynamic> refs) async {
       for (final ref in refs.cast<Map<String, dynamic>>()) {
         final path = ref['path'] as String;
@@ -1344,7 +1518,7 @@ class HighRiskReadinessEvaluator {
       }
       coveredProduction.addAll(referenced);
     }
-    if (!coveredProduction.containsAll(changedProduction)) {
+    if (!coveredProduction.containsAll(testedProduction)) {
       return 'Some changed production paths lack reviewed test reachability.';
     }
     final structured =
@@ -1392,6 +1566,48 @@ class HighRiskReadinessEvaluator {
       }
     }
     return null;
+  }
+
+  // Only in-place edits of regular Dart blobs qualify. An unreadable blob
+  // keeps the ordinary causal-test route instead of failing the evaluation.
+  Future<Set<String>> _commentOnlyProductionPaths(
+    PullRequestContext context,
+    List<RepositoryChange> changes,
+    String? workingDirectory,
+  ) async {
+    final proven = <String>{};
+    for (final change in changes) {
+      if (change.kind != RepositoryChangeKind.modified ||
+          change.previousPath != null ||
+          !_isProductionPath(change.path) ||
+          !change.path.endsWith('.dart')) {
+        continue;
+      }
+      try {
+        final base = await repositoryState.fileAt(
+          context.baseSha,
+          change.path,
+          workingDirectory: workingDirectory,
+        );
+        final head = await repositoryState.fileAt(
+          context.headSha,
+          change.path,
+          workingDirectory: workingDirectory,
+        );
+        if (base?.mode == '100644' &&
+            head?.mode == '100644' &&
+            isCommentOnlyDartChange(
+              change.path,
+              base!.contents,
+              head!.contents,
+            )) {
+          proven.add(change.path);
+        }
+      } on Object {
+        continue;
+      }
+    }
+    return proven;
   }
 
   // This recognizes one reviewed export shape, not arbitrary "image paths".
