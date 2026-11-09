@@ -11,15 +11,17 @@ For upgrade planning, combine this page with the
 [Upgrade Checklist](../migration/upgrade-checklist). For breaking changes,
 validate against the exact release tag notes.
 
-## Unreleased
+## 0.19.1
 
+- Keep default WebGPU bridge assets at `v0.1.83` (unchanged from 0.19.0).
+- Adopt native LiteRT-LM `v0.19.1-2`, which reports LiteRT linked in process; the C API is unchanged. Linux and Windows native embeddings now require that report and refuse an older runtime, such as a custom `v0.19.0` or `v0.19.1`, with `LlamaUnsupportedException` instead of crashing when creating the embedding engine ([#1367](https://github.com/leehack/llamadart/issues/1367)).
+- Stop bundling and loading the unused prebuilt `libLiteRt` (about 7 to 9 MB) in Linux and Windows LiteRT-LM apps, whose runtime links LiteRT in; an older `LLAMADART_LITERT_LM_LIB_DIR` runtime still loads the `libLiteRt` it ships with ([#1815](https://github.com/leehack/llamadart/issues/1815)).
+- Refuse LiteRT-LM GPU on Linux when every Vulkan device is a software rasterizer such as Mesa llvmpipe, where small models could return wrong text: `ComputeDevice.gpu` throws `LlamaUnsupportedException` at load, and a GPU hint under `ComputeDevice.auto` runs on the CPU with a warning ([#572](https://github.com/leehack/llamadart/issues/572)).
 - Fix native LiteRT-LM `dispose` failing with "worker stopped before native cleanup was confirmed" when cleanup outlasts 5 s, such as releasing a freshly written CPU weight cache on Linux ext4; `freeTimeout` now bounds only the wait for native teardown to start ([#1814](https://github.com/leehack/llamadart/issues/1814)).
-- Stop bundling and loading the unused prebuilt `libLiteRt` (about 7 to 9 MB) in Linux and Windows LiteRT-LM apps; the `v0.19.1-1` runtime links LiteRT in. An older `LLAMADART_LITERT_LM_LIB_DIR` runtime still loads the `libLiteRt` it ships with ([#1815](https://github.com/leehack/llamadart/issues/1815)).
-- Refuse LiteRT-LM GPU on Linux when every Vulkan device is a software rasterizer such as Mesa llvmpipe, where small models could return wrong text: `ComputeDevice.gpu` throws `LlamaUnsupportedException` at load and a GPU hint under `ComputeDevice.auto` runs on the CPU with a warning ([#572](https://github.com/leehack/llamadart/issues/572)).
-- Refuse LiteRT-LM native embeddings on Linux and Windows with `LlamaUnsupportedException` unless the runtime reports LiteRT linked in process (litert-lm-native `v0.19.1-2` or later), so a custom `v0.19.0` or `v0.19.1` runtime no longer crashes creating the embedding engine ([#1367](https://github.com/leehack/llamadart/issues/1367)).
-- Adopt native LiteRT-LM `v0.19.1-2`, which reports LiteRT linked in process; the C API is unchanged.
 - Fix model cache `clear`, `remove` and `prune` on Windows failing with "Access is denied" when another process or isolate was deleting the same entry at that moment ([#1821](https://github.com/leehack/llamadart/issues/1821)).
-- Raise the Apple companion packages' Flutter floor to `>=3.38.6`, the first Flutter whose Dart (3.10.7) satisfies their `sdk: ^3.10.7`; Flutter 3.38.0 to 3.38.5 could not resolve ([#1834](https://github.com/leehack/llamadart/issues/1834)).
+- Release all three Apple runtime companions at `0.19.1` with a Flutter floor of `>=3.38.6`, the first Flutter whose Dart (3.10.7) satisfies their `sdk: ^3.10.7`; Flutter 3.38.0 to 3.38.5 could not resolve them ([#1834](https://github.com/leehack/llamadart/issues/1834)). The LiteRT-LM companion pins `v0.19.1-2` and requires core `0.19.1`.
+
+Runtime baseline: native llama.cpp `v0.9.0` and Web use upstream `v0.9.0@cd959bae99ff4bed22bef2604f45241c09bbb8c8`; native LiteRT-LM uses `v0.19.1-2` and stable-diffusion uses `v0.3.0-3`. Web LiteRT-LM uses `@litert-lm/core@0.19.0`. Manifest SHA-256: `ae6f488408672f9ba28d8f9e664a2b85f4e12048f290e259e18dd0b750c038e5`.
 
 ## 0.19.0
 

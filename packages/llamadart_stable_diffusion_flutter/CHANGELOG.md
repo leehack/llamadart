@@ -1,3 +1,10 @@
+## 0.19.1
+
+- Raise the Flutter floor to `>=3.38.6`, the first Flutter whose Dart (3.10.7)
+  satisfies `sdk: ^3.10.7`
+  ([#1834](https://github.com/leehack/llamadart/issues/1834)); Apple SwiftPM stays
+  pinned to `leehack/stable-diffusion-native@v0.3.0-3`.
+
 ## 0.19.0
 
 - Pair with core `>=0.19.0 <0.20.0`; Apple SwiftPM stays pinned to

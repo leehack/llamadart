@@ -648,6 +648,16 @@ Use this checklist in native sync PRs:
 
 ## Companion package release handoff
 
+Core `0.19.1` preparation moves LiteRT-LM to `v0.19.1-2`, which adds the
+in-process LiteRT marker, and pairs all three Apple companions at `0.19.1`
+with a Flutter floor of `>=3.38.6`. `llamadart_litert_lm_flutter` `0.19.1`
+requires `llamadart: '>=0.19.1 <0.20.0'`: core `0.19.0` treats a companion
+pinning `v0.19.1-2` as a later build and keeps macOS LiteRT-LM in the hook
+cache. Core `0.19.1` accepts the published `0.19.0` companion (pinning
+`v0.19.1-1`) with an upgrade warning. The llama.cpp and SD companions keep
+`llamadart: '>=0.19.0 <0.20.0'`; their pins are unchanged, so core `0.19.0`
+still accepts them.
+
 After core `0.18.0`, the LiteRT-LM pin moved to `v0.19.1-1`. It ships in core
 `0.19.0`, which re-releases all three Apple companions at `0.19.0` with
 `llamadart: '>=0.19.0 <0.20.0'`; the LiteRT-LM companion pins `v0.19.1-1`. Pub
