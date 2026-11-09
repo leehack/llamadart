@@ -178,6 +178,44 @@ class SupervisorTest(unittest.TestCase):
         done = subprocess.run([sys.executable, '-c', script], capture_output=True, timeout=8)
         self.assertEqual(done.stdout.split()[-2:], [b'True', b'False'], done.stderr)
 
+    def test_stale_reporter_error_keeps_the_caller_stderr_blocking(self):
+        self.reporter.write_text('{"type":"done","success":true}\n')
+        script = ("import os,subprocess,sys\n"
+                  f"subprocess.run({self.command('pass', reporter=True)!r}, stdout=sys.stdout, stderr=sys.stderr)\n"
+                  "print(os.get_blocking(2))")
+        done = subprocess.run([sys.executable, '-c', script], capture_output=True, timeout=8)
+        self.assertEqual(done.stdout.split()[-1:], [b'True'], done.stderr)
+
+    def test_stale_reporter_error_cannot_delay_or_change_the_exit(self):
+        self.reporter.write_text('{"type":"done","success":true}\n')
+        full_read, full_write = os.pipe()
+        os.set_blocking(full_write, False)
+        try:
+            while True:
+                os.write(full_write, b'x' * 65536)
+        except BlockingIOError:
+            pass
+        os.set_blocking(full_write, True)
+        broken_read, broken_write = os.pipe()
+        os.close(broken_read)
+        try:
+            for name, stderr in [('full pipe', full_write), ('broken pipe', broken_write)]:
+                with self.subTest(name):
+                    child = subprocess.run(self.command('pass', reporter=True),
+                                           stdout=subprocess.DEVNULL, stderr=stderr, timeout=3)
+                    self.assertEqual(child.returncode, 125)
+        finally:
+            for descriptor in (full_read, full_write, broken_write):
+                os.close(descriptor)
+
+    def test_stale_reporter_error_survives_a_non_utf8_path(self):
+        self.reporter.parent.joinpath(os.fsdecode(b'bad\xff.jsonl')).write_text('{}\n')
+        command = self.command('pass', reporter=True)
+        command[command.index('--reporter-file') + 1] = str(self.reporter.parent / os.fsdecode(b'bad\xff.jsonl'))
+        child = subprocess.run(command, capture_output=True, timeout=3)
+        self.assertEqual(child.returncode, 125, child.stderr)
+        self.assertIn(b'bad\\udcff.jsonl', child.stderr)
+
     def test_closed_stdout_cannot_redirect_the_echo_into_events(self):
         child = subprocess.run(
             self.command("print('echoed output')"),

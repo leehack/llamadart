@@ -20,5 +20,6 @@ void main() {
       ], timeout: const Duration(seconds: 60));
       expect(result.exitCode, 0, reason: '${result.stdout}\n${result.stderr}');
     },
+    timeout: const Timeout(Duration(seconds: 90)),
   );
 }
