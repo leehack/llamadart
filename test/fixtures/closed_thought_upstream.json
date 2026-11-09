@@ -837,6 +837,11 @@
             "content": "",
             "reasoning_content": "Plan",
             "tool_calls": []
+          },
+          "upstream_partial": {
+            "content": "",
+            "reasoning_content": "Plan",
+            "tool_calls": []
           }
         },
         {
@@ -850,6 +855,11 @@
           "upstream_without_tools": {
             "content": "",
             "reasoning_content": "Plan</seed:thi",
+            "tool_calls": []
+          },
+          "upstream_partial": {
+            "content": "",
+            "reasoning_content": "Plan",
             "tool_calls": []
           }
         },

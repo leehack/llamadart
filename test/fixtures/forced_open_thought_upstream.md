@@ -19,7 +19,10 @@ output one byte at a time before `finish` gave the same result for every case.
 For issue #1531 the same probe, rebuilt from llama.cpp
 `cd959bae99ff4bed22bef2604f45241c09bbb8c8` (native `v0.9.0`), reproduced every
 case but the six `partial-*` ones: since `a71c00f0b` a finished output keeps the
-start of a tag it ends in, so those now record the newer result.
+start of a tag it ends in, so those now record the newer result. Their
+`upstream_partial` is the same probe's `common_chat_peg_parse` with
+`is_partial = true`, which still drops that start, as a partial
+`ChatTemplateEngine.parseRendered` must.
 
 The DeepSeek V3.1 cases from `escaped-newline-in-ended-thought` on were added
 for issue #750 with the same probe; `feed` and `finish` on the whole output

@@ -57,13 +57,15 @@ String trimLeftAsciiSpace(String text) {
 /// The reasoning before it keeps escapes and a repeated start tag, and the
 /// rest is content, where thinking tags are text. The first of
 /// [contentOpenings] also ends the thought when it comes first, and starts the
-/// content. Without either, all of [text] is reasoning, including a trailing
-/// prefix of [endTag] or of an opening, which llama.cpp keeps in a finished
-/// output (`a71c00f0b`). Only the ends of each part are trimmed.
+/// content. Without either, all of [text] is reasoning. A trailing prefix of
+/// [endTag] or of an opening stays in a finished output, as llama.cpp
+/// (`a71c00f0b`) keeps it, and is dropped while [isPartial], since it may
+/// still complete the tag. Only the ends of each part are trimmed.
 ThinkingExtraction extractForcedOpenThoughtVerbatim(
   String text, {
   String endTag = '</think>',
   List<String> contentOpenings = const [],
+  bool isPartial = false,
 }) {
   var thoughtEnd = text.indexOf(endTag);
   var contentStart = thoughtEnd == -1 ? -1 : thoughtEnd + endTag.length;
@@ -74,8 +76,13 @@ ThinkingExtraction extractForcedOpenThoughtVerbatim(
       contentStart = at;
     }
   }
-  final reasoning = (thoughtEnd == -1 ? text : text.substring(0, thoughtEnd))
-      .trim();
+  final reasoning =
+      (thoughtEnd != -1
+              ? text.substring(0, thoughtEnd)
+              : isPartial
+              ? withoutTrailingTagPrefix(text, [endTag, ...contentOpenings])
+              : text)
+          .trim();
   return (
     content: contentStart == -1 ? '' : text.substring(contentStart).trim(),
     reasoning: reasoning.isEmpty ? null : reasoning,

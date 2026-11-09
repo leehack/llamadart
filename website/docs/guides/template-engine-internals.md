@@ -235,9 +235,10 @@ escaped `\n`, and the rest is content, in which thinking tags are text. With
 Qwen3-Coder XML, a `<tool_call>` before the first `</think>` ends the thought
 too, with or without tools, and starts the content; with Cohere2 MoE, a
 `<|START_TEXT|>` or `<|START_ACTION|>` before `<|END_THINKING|>` does. A
-thought that has not ended at the end of the output drops a trailing partial
-end tag or marker, such as the `</thi` of `Plan it </thi`. Their stream does
-the same.
+thought that has not ended keeps a trailing partial end tag or marker, such as
+the `</thi` of `Plan it </thi`, when the output is finished, as llama.cpp
+`v0.9.0` (`a71c00f0b`) does, and drops it from a partial parse, where it may
+still complete. Their stream ends with the finished result.
 
 Streamed reasoning equals the parse too. The parse trims each thought;
 upstream llama.cpp (`7fe450e1`) keeps the whitespace before `</think>`, so

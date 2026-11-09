@@ -1,6 +1,7 @@
 ## Unreleased
 
 - Keep the start of a tag that a finished reply ends in, such as `</thi` when generation stops mid-tag, in an unended thought's reasoning, as llama.cpp `v0.9.0` does; it used to be dropped ([#1531](https://github.com/leehack/llamadart/issues/1531)).
+
 ## 0.19.1
 
 - Keep the default WebGPU bridge assets at `v0.1.83` (unchanged from 0.19.0).

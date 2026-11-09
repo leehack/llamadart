@@ -125,6 +125,10 @@ void main() {
     });
 
     test('keeps the start of an end tag that a finished output ends in', () {
+      expect(
+        extractForcedOpenThoughtVerbatim('Plan it </thi', isPartial: true),
+        (reasoning: 'Plan it', content: ''),
+      );
       expect(extractForcedOpenThoughtVerbatim('Plan it </thi'), (
         reasoning: 'Plan it </thi',
         content: '',
@@ -157,6 +161,14 @@ void main() {
           contentOpenings: openings,
         ),
         (reasoning: 'Plan <tool', content: ''),
+      );
+      expect(
+        extractForcedOpenThoughtVerbatim(
+          'Plan <tool',
+          contentOpenings: openings,
+          isPartial: true,
+        ),
+        (reasoning: 'Plan', content: ''),
       );
     });
   });

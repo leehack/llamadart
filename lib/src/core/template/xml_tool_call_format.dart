@@ -374,6 +374,7 @@ ChatParseResult parseXmlToolCalls(
       contentOpenings: [
         format.scopeStart.isEmpty ? format.toolStart : format.scopeStart,
       ],
+      isPartial: isPartial,
     );
     reasoning = thought.reasoning;
     content = thought.content;

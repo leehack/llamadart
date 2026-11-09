@@ -23,7 +23,10 @@ case but the StepFun thoughts, whose trailing whitespace it now trims, and the
 Seed-OSS `unfinished-end-tag`: since `a71c00f0b` a finished output keeps the
 start of a tag it ends in. Those record the newer result, and the
 `partial-tag-at-end` and `partial-call-opening-at-end` cases were added with
-it: content that ends in the start of a tag keeps it.
+it: content that ends in the start of a tag keeps it. The Seed-OSS
+`unfinished-*` cases' `upstream_partial` is the same probe's
+`common_chat_peg_parse` with `is_partial = true`, which still drops the start
+of an end tag.
 
 With the Bielik 11B v3 or Spark 2.5 templates, whose prompts end without an
 empty thought when thinking is off, the same probe still parses a leading
