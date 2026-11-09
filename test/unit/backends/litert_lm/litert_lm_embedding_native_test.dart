@@ -114,8 +114,11 @@ void main() {
   test(
     'embedding deadline throws a typed error and cancels native work before reuse',
     () async {
+      // The deadline also bounds the reuse call, which must not race it on a
+      // loaded host.
+      const deadline = Duration(seconds: 1);
       final (backend, _, context) = await backendForTest(
-        embeddingTimeout: const Duration(milliseconds: 100),
+        embeddingTimeout: deadline,
       );
       mode(11);
       final timedOut = expectLater(
