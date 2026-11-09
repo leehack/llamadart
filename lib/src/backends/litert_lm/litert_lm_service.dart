@@ -1010,12 +1010,16 @@ class LiteRtLmService {
     if (!client.supportsMessageRendering) {
       return;
     }
+    // A failed native render is a StateError from the legacy client and a
+    // LlamaModelException from the C API 1.0 client.
     bool rendersProbeText() {
       try {
         return liteRtLmRendersProbeText(
           client.renderMessageToString(liteRtLmContentShapeProbeMessage),
         );
       } on StateError {
+        return false;
+      } on LlamaModelException {
         return false;
       }
     }
@@ -1034,7 +1038,9 @@ class LiteRtLmService {
           return;
         }
       } on StateError {
-        // The runtime rejected the adapted template.
+        // The legacy runtime rejected the adapted template.
+      } on LlamaModelException {
+        // The C API 1.0 runtime rejected the adapted template.
       } on LlamaUnsupportedException {
         // The runtime takes no conversation template.
       }

@@ -7,6 +7,7 @@ import 'dart:typed_data';
 
 import 'package:dinja/dinja.dart';
 import 'package:llamadart/src/backends/litert_lm/litert_lm_bundle_template.dart';
+import 'package:llamadart/src/core/exceptions.dart';
 import 'package:test/test.dart';
 
 import '../../../support/litert_lm_content_templates.dart';
@@ -456,7 +457,7 @@ void main() {
         return liteRtLmRendersProbeText(
           renderLiteRtLmContent(template, probeParts),
         );
-      } on StateError {
+      } on LlamaModelException {
         return false;
       }
     }
