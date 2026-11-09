@@ -99,6 +99,31 @@ class FakeRepositoryState implements RepositoryStateReader {
   }
 }
 
+class _UnreadableBlobState extends FakeRepositoryState {
+  _UnreadableBlobState({
+    required this.sha,
+    required this.path,
+    required super.changes,
+    super.existingPaths,
+    super.files,
+  });
+
+  final String sha;
+  final String path;
+
+  @override
+  Future<ReadinessFile?> fileAt(
+    String sha,
+    String path, {
+    String? workingDirectory,
+  }) {
+    if (sha == this.sha && path == this.path) {
+      throw const FormatException('Invalid UTF-8 blob.');
+    }
+    return super.fileAt(sha, path, workingDirectory: workingDirectory);
+  }
+}
+
 const structuredSource = 'lib/src/core/template/chat_template_handler.dart';
 const backendSource = 'lib/src/backends/example_backend.dart';
 List<Map<String, dynamic>> productionRefs(String path) => [
@@ -1474,6 +1499,679 @@ final segment = '${Object()}ImageEditingRequest${Object()}';
     });
   });
 
+  test('raw-text-consumed sources all exist in the repository', () {
+    for (final path in rawTextConsumedSources) {
+      expect(File(path).existsSync(), isTrue, reason: path);
+    }
+  });
+
+  group('Git-proven comment-only production changes', () {
+    const realSource = 'lib/src/backends/other_backend.dart';
+    const commentBase =
+        '/// Backend entry point.\n'
+        'bool productionCall() => false; // Keep the default.\n'
+        "const label = 'a // b /* c */';\n";
+    const commentHead =
+        '/// Backend entry point, documented further.\n'
+        '///\n'
+        '/// ```dart\n'
+        '/// productionCall(); // returns true?\n'
+        '/// ```\n'
+        '/* Block comment\n   spanning lines. */\n'
+        'bool productionCall() => false; // Keep the default value.\n'
+        "const label = 'a // b /* c */';\n";
+
+    Map<String, dynamic> commentEvidence(List<RepositoryChange> changes) {
+      final evidence = backendEvidence()
+        ..['affected_test_paths'] = <String>[]
+        ..['test_evidence'] = <String, dynamic>{};
+      final surfaces = assessHighRiskFiles([
+        for (final change in changes) ...[
+          change.path,
+          if (change.previousPath != null) change.previousPath!,
+        ],
+      ]).surfaces;
+      evidence['surfaces'] = [for (final surface in surfaces) surface.name];
+      return evidence;
+    }
+
+    Future<HighRiskReadinessResult> evaluateComment({
+      String? base = commentBase,
+      String? head = commentHead,
+      String path = backendSource,
+      String baseMode = '100644',
+      String headMode = '100644',
+      List<RepositoryChange>? changes,
+      Map<String, dynamic>? evidence,
+      Map<String, ReadinessFile> extraHead = const {},
+    }) {
+      final inventory =
+          changes ??
+          [RepositoryChange(path: path, kind: RepositoryChangeKind.modified)];
+      final testFile = (
+        mode: '100644',
+        contents: "test('regression case', () { productionCall(); });",
+      );
+      final files = {
+        baseSha: <String, ReadinessFile>{
+          if (base != null) path: (mode: baseMode, contents: base),
+        },
+        headSha: <String, ReadinessFile>{
+          if (head != null) path: (mode: headMode, contents: head),
+          backendTest: testFile,
+          ...extraHead,
+        },
+      };
+      return HighRiskReadinessEvaluator(
+        repositoryState: FakeRepositoryState(
+          changes: inventory,
+          existingPaths: files[headSha]!.keys.toSet(),
+          files: files,
+        ),
+      ).evaluate(
+        evidence: evidence ?? commentEvidence(inventory),
+        context: context,
+      );
+    }
+
+    void expectAdmitted(HighRiskReadinessResult result) {
+      expect(result.decision, ReadinessDecision.unverifiedPrerequisites);
+      expect(
+        result.failureClassification,
+        ReadinessFailureClassification.externalPrerequisitesUnavailable,
+      );
+      expect(result.isReady, isFalse);
+    }
+
+    test(
+      'needs no causal test record but keeps high-risk audit gates',
+      () async {
+        final result = await evaluateComment();
+        expectAdmitted(result);
+        expect(result.changedFiles.single.path, backendSource);
+        for (final mutate in <void Function(Map<String, dynamic>)>[
+          (evidence) => evidence['independent_audit'] = null,
+          (evidence) =>
+              evidence['independent_audit']['audit_head_sha'] = otherSha,
+          (evidence) => evidence['independent_audit']['auditor_identity'] =
+              context.author,
+          (evidence) =>
+              evidence['independent_audit']['known_pr_caused_p1_regressions'] =
+                  1,
+          (evidence) =>
+              evidence['independent_audit']['unresolved_review_threads'] = 1,
+          (evidence) => evidence['classification'] = 'standard',
+        ]) {
+          final evidence = commentEvidence([
+            const RepositoryChange(
+              path: backendSource,
+              kind: RepositoryChangeKind.modified,
+            ),
+          ]);
+          mutate(evidence);
+          expect(
+            (await evaluateComment(evidence: evidence)).decision,
+            ReadinessDecision.rejected,
+          );
+        }
+      },
+    );
+
+    test(
+      'an optional record for the comment-only path is still checked',
+      () async {
+        final evidence =
+            commentEvidence([
+                const RepositoryChange(
+                  path: backendSource,
+                  kind: RepositoryChangeKind.modified,
+                ),
+              ])
+              ..['affected_test_paths'] = [backendTest]
+              ..['test_evidence'] = {backendTest: testProof(backendSource)};
+        expectAdmitted(await evaluateComment(evidence: evidence));
+        evidence['test_evidence'][backendTest]['production_refs'] =
+            productionRefs(realSource);
+        expectFailure(
+          await evaluateComment(
+            evidence: evidence,
+            extraHead: {
+              realSource: (
+                mode: '100644',
+                contents: 'void run() { productionCall(); }\n',
+              ),
+            },
+          ),
+          ReadinessFailureClassification.missingStructuredOutputEvidence,
+        );
+      },
+    );
+
+    test('tool and hook Dart sources use the same proof', () async {
+      for (final path in [
+        'tool/testing/high_risk_readiness.dart',
+        'hook/link.dart',
+      ]) {
+        expectAdmitted(await evaluateComment(path: path));
+        expectFailure(
+          await evaluateComment(
+            path: path,
+            head: commentHead.replaceFirst('=> false', '=> true'),
+          ),
+          ReadinessFailureClassification.missingTestPath,
+        );
+      }
+    });
+
+    final executableChanges = <String, String>{
+      'executable token': commentHead.replaceFirst('=> false', '=> true'),
+      'string contents resembling a line comment': commentHead.replaceFirst(
+        'a // b',
+        'a // x',
+      ),
+      'string contents resembling a block comment': commentHead.replaceFirst(
+        '/* c */',
+        '/* x */',
+      ),
+      'comment turned into code':
+          '${commentHead.replaceFirst('/// productionCall(); // returns true?\n', '')}'
+          'final called = productionCall();\n',
+      'block comment closed early': commentHead.replaceFirst(
+        '/* Block comment\n   spanning lines. */\n',
+        '/* Block comment */ void spanning() {}\n',
+      ),
+      'added import': "import 'dart:async';\n$commentHead",
+      'added annotation': commentHead.replaceFirst(
+        'bool productionCall',
+        "@pragma('vm:prefer-inline')\nbool productionCall",
+      ),
+      'layout change without a comment change': commentHead.replaceFirst(
+        '=> false;',
+        '=>   false;',
+      ),
+      'tokens regrouped onto one line': commentBase.replaceFirst(
+        'bool productionCall() => false; // Keep the default.\n'
+            "const label",
+        'bool productionCall() => false; const label',
+      ),
+      'malformed head': '$commentHead\nclass',
+    };
+    for (final change in executableChanges.entries) {
+      test('${change.key} still demands a causal test record', () async {
+        expectFailure(
+          await evaluateComment(head: change.value),
+          ReadinessFailureClassification.missingTestPath,
+        );
+      });
+    }
+
+    test('malformed source at both revisions fails closed', () async {
+      expectFailure(
+        await evaluateComment(
+          base: 'bool productionCall( => false; // a\n',
+          head: 'bool productionCall( => false; // b\n',
+        ),
+        ReadinessFailureClassification.missingTestPath,
+      );
+    });
+
+    final activeComments = <String, String>{
+      'language version': '// @dart=2.19\n',
+      'analyzer suppression': '// ignore: unused_element\n',
+      'file analyzer suppression': '// ignore_for_file: avoid_print\n',
+      'coverage directive': '// coverage:ignore-line\n',
+      'formatter directive': '// dart format off\n',
+      'doc import': "/// @docImport 'dart:async';\n",
+      'Dartdoc directive': '/// {@template backend.entry}\n',
+      'Dartdoc nodoc': '/// @nodoc\n',
+      'security suppression': '// nosemgrep: dart.lang.security\n',
+      'doc excerpt region': '// #docregion backend\n',
+      'bidirectional control': '// Note \u202Eevil\u202C text.\n',
+      'control character': '// Bell \u0007 text.\n',
+      'upper-case suppression': '// NOSONAR\n',
+      'upper-case formatter directive': '// DART FORMAT OFF\n',
+    };
+    for (final comment in activeComments.entries) {
+      test('${comment.key} comments are rejected when added, removed or '
+          'moved', () async {
+        final added = commentHead.replaceFirst(
+          'bool productionCall',
+          '${comment.value}bool productionCall',
+        );
+        for (final pair in [
+          (commentBase, added),
+          (added, commentBase),
+          (
+            added,
+            commentHead.replaceFirst(
+              "const label",
+              '${comment.value}const label',
+            ),
+          ),
+        ]) {
+          expectFailure(
+            await evaluateComment(base: pair.$1, head: pair.$2),
+            ReadinessFailureClassification.missingTestPath,
+          );
+        }
+      });
+    }
+
+    test('unchanged active comments do not block a prose edit', () async {
+      const header =
+          '// ignore_for_file: avoid_print\n// coverage:ignore-file\n';
+      expectAdmitted(
+        await evaluateComment(
+          base: '$header$commentBase',
+          head: '$header$commentHead',
+        ),
+      );
+    });
+
+    test('generated sources never qualify', () async {
+      for (final header in [
+        '// AUTO GENERATED FILE, DO NOT EDIT.\n',
+        '// @generated\n',
+        '// Copyright 2026.\n// This file is generated by tool/gen.dart.\n',
+        '/* Produced by a script; do not hand-edit. */\n',
+        '// Do not modify by hand.\n',
+      ]) {
+        expectFailure(
+          await evaluateComment(
+            base: '$header$commentBase',
+            head: '$header$commentHead',
+          ),
+          ReadinessFailureClassification.missingTestPath,
+        );
+      }
+      expectAdmitted(
+        await evaluateComment(
+          base: '$commentBase// Explains the generated grammar.\n',
+          head: '$commentHead// Explains the generated grammar.\n',
+        ),
+      );
+      expectFailure(
+        await evaluateComment(path: 'lib/src/backends/example_backend.g.dart'),
+        ReadinessFailureClassification.missingTestPath,
+      );
+    });
+
+    test('sources whose raw text tooling reads never qualify', () async {
+      for (final path in rawTextConsumedSources) {
+        expect(
+          isCommentOnlyDartChange(path, commentBase, commentHead),
+          isFalse,
+          reason: path,
+        );
+        if (assessHighRiskFiles([path]).isHighRisk) {
+          expectFailure(
+            await evaluateComment(path: path),
+            ReadinessFailureClassification.missingTestPath,
+          );
+        }
+      }
+      const pins = 'lib/src/hook/native_release_pins.dart';
+      const pinsBase = "const llamaCppTag = 'v0.9.0';\n";
+      expectFailure(
+        await evaluateComment(
+          path: pins,
+          base: pinsBase,
+          head: "// const llamaCppTag = 'v0.8.0';\n$pinsBase",
+        ),
+        ReadinessFailureClassification.missingTestPath,
+      );
+      // Split so the bridge tag gate does not read this fixture as a pin.
+      const bridgePin =
+          'webBridge'
+          "AssetsTag = 'v9.9.9'";
+      expect(
+        isCommentOnlyDartChange(
+          'lib/src/web_setup/web_bridge_setup.dart',
+          pinsBase,
+          '/* const String $bridgePin; */\n$pinsBase',
+        ),
+        isFalse,
+      );
+    });
+
+    test('an unreadable blob keeps the causal-test route', () async {
+      const changes = [
+        RepositoryChange(
+          path: backendSource,
+          kind: RepositoryChangeKind.modified,
+        ),
+      ];
+      for (final sha in [baseSha, headSha]) {
+        final result = await HighRiskReadinessEvaluator(
+          repositoryState: _UnreadableBlobState(
+            sha: sha,
+            path: backendSource,
+            changes: changes,
+            existingPaths: {backendSource, backendTest},
+            files: {
+              baseSha: {backendSource: (mode: '100644', contents: commentBase)},
+              headSha: {backendSource: (mode: '100644', contents: commentHead)},
+            },
+          ),
+        ).evaluate(evidence: commentEvidence(changes), context: context);
+        expectFailure(result, ReadinessFailureClassification.missingTestPath);
+      }
+    });
+
+    test('non-Dart production paths never qualify', () async {
+      expectFailure(
+        await evaluateComment(
+          path: '.github/workflows/ci.yml',
+          base: '# Run CI.\non: push\n',
+          head: '# Run CI on every push.\non: push\n',
+        ),
+        ReadinessFailureClassification.missingTestPath,
+      );
+    });
+
+    for (final mode in [('100755', '100644'), ('100644', '100755')]) {
+      test('mode ${mode.$1} to ${mode.$2} fails closed', () async {
+        expectFailure(
+          await evaluateComment(baseMode: mode.$1, headMode: mode.$2),
+          ReadinessFailureClassification.missingTestPath,
+        );
+      });
+    }
+
+    test('unavailable base or head blobs fail closed', () async {
+      for (final pair in [(null, commentHead), (commentBase, null)]) {
+        expectFailure(
+          await evaluateComment(base: pair.$1, head: pair.$2),
+          ReadinessFailureClassification.missingTestPath,
+        );
+      }
+    });
+
+    for (final change in const [
+      RepositoryChange(path: backendSource, kind: RepositoryChangeKind.added),
+      RepositoryChange(path: backendSource, kind: RepositoryChangeKind.deleted),
+      RepositoryChange(
+        path: backendSource,
+        kind: RepositoryChangeKind.typeChanged,
+      ),
+      RepositoryChange(
+        path: backendSource,
+        previousPath: realSource,
+        kind: RepositoryChangeKind.renamed,
+      ),
+      RepositoryChange(
+        path: backendSource,
+        previousPath: realSource,
+        kind: RepositoryChangeKind.copied,
+      ),
+    ]) {
+      test('${change.kind.name} comment-only content fails closed', () async {
+        expectFailure(
+          await evaluateComment(changes: [change]),
+          ReadinessFailureClassification.missingTestPath,
+        );
+      });
+    }
+
+    group('mixed with an executable change', () {
+      const changes = [
+        RepositoryChange(
+          path: backendSource,
+          kind: RepositoryChangeKind.modified,
+        ),
+        RepositoryChange(path: realSource, kind: RepositoryChangeKind.modified),
+      ];
+      final realFiles = <String, ReadinessFile>{
+        realSource: (
+          mode: '100644',
+          contents: 'void run() { productionCall(); }\n',
+        ),
+      };
+      Future<HighRiskReadinessResult> evaluateMixed(String refPath) {
+        final evidence = commentEvidence(changes)
+          ..['affected_test_paths'] = [backendTest]
+          ..['test_evidence'] = {backendTest: testProof(refPath)};
+        return evaluateComment(
+          changes: changes,
+          evidence: evidence,
+          extraHead: realFiles,
+        );
+      }
+
+      test('the executable path alone needs coverage', () async {
+        expectAdmitted(await evaluateMixed(realSource));
+      });
+
+      test('evidence for only the comment-only path leaves the executable path '
+          'uncovered', () async {
+        final result = await evaluateMixed(backendSource);
+        expectFailure(
+          result,
+          ReadinessFailureClassification.missingStructuredOutputEvidence,
+        );
+        expect(result.message, contains('lack reviewed test reachability'));
+      });
+
+      test('no test record at all is rejected', () async {
+        expectFailure(
+          await evaluateComment(changes: changes, extraHead: realFiles),
+          ReadinessFailureClassification.missingTestPath,
+        );
+      });
+    });
+
+    test('changes without a production path stay conservative', () async {
+      const doc = 'doc/high_risk_pre_merge_readiness.md';
+      expectFailure(
+        await evaluateComment(
+          path: doc,
+          base: '# Contract\n',
+          head: '# Contract\n\nClarified.\n',
+        ),
+        ReadinessFailureClassification.missingTestPath,
+      );
+    });
+
+    test('structured-output impacts and coverage keep their minima', () async {
+      const changes = [
+        RepositoryChange(
+          path: structuredSource,
+          kind: RepositoryChangeKind.modified,
+        ),
+      ];
+      final files = {
+        baseSha: <String, ReadinessFile>{
+          structuredSource: (mode: '100644', contents: commentBase),
+        },
+        headSha: <String, ReadinessFile>{
+          structuredSource: (mode: '100644', contents: commentHead),
+          compiledTest: (
+            mode: '100644',
+            contents: "test('regression case', () { productionCall(); });",
+          ),
+          realSource: (
+            mode: '100644',
+            contents: 'void run() { productionCall(); }\n',
+          ),
+        },
+      };
+      Future<HighRiskReadinessResult> evaluate(Map<String, dynamic> evidence) =>
+          HighRiskReadinessEvaluator(
+            repositoryState: FakeRepositoryState(
+              changes: changes,
+              existingPaths: files[headSha]!.keys.toSet(),
+              files: files,
+            ),
+          ).evaluate(evidence: evidence, context: context);
+
+      expectAdmitted(await evaluate(structuredEvidence()));
+      final excluded = structuredEvidence();
+      excluded['structured_output_evidence']['impacts']['grammarSchema']['applicable'] =
+          false;
+      final result = await evaluate(excluded);
+      expectFailure(
+        result,
+        ReadinessFailureClassification.missingStructuredOutputEvidence,
+      );
+      expect(result.message, contains('cannot be excluded'));
+      final unreviewed = structuredEvidence();
+      for (final impact in StructuredImpact.values) {
+        unreviewed['structured_output_evidence']['impacts'][impact
+            .name]['production_refs'] = productionRefs(
+          realSource,
+        );
+      }
+      expectFailure(
+        await evaluate(unreviewed),
+        ReadinessFailureClassification.missingStructuredOutputEvidence,
+      );
+    });
+
+    test('token proof edge cases', () {
+      bool proven(String base, String head) =>
+          isCommentOnlyDartChange('lib/a.dart', base, head);
+      for (final pair in [
+        ('/** Old. */\nvoid f() {}\n', '/** New\n * prose. */\nvoid f() {}\n'),
+        (
+          '/* a /* nested */ b */\nvoid f() {}\n',
+          '/* a /* x */ b */\nvoid f() {}\n',
+        ),
+        ('void f() {}\r\n// a\r\n', 'void f() {}\r\n// b\r\n'),
+        (
+          '#!/usr/bin/env dart\n// a\nvoid main() {}\n',
+          '#!/usr/bin/env dart\n// b\nvoid main() {}\n',
+        ),
+        (
+          '// ignore_for_file: x\n// a\nvoid f() {}\n',
+          '// ignore_for_file: x\n// b\nvoid f() {}\n',
+        ),
+        ('void f() {} // a\n', 'void f() {}\n'),
+        ('void f() {}', 'void f() {}'),
+        ('void f() {}\r// a\r', 'void f() {}\r// b\r'),
+      ]) {
+        expect(proven(pair.$1, pair.$2), isTrue, reason: pair.$2);
+      }
+      for (final pair in [
+        ("var s = r'// a';", "var s = r'// b';"),
+        ("var s = '''\n// a\n''';", "var s = '''\n// b\n''';"),
+        ("var s = 'a' '// b';", "var s = 'a' '// c';"),
+        (r"var s = '${1 /* a */}';", r"var s = '${2 /* a */}';"),
+        (
+          '#!/usr/bin/env dart\nvoid main() {}\n',
+          '#!/usr/bin/env -S dart\nvoid main() {}\n',
+        ),
+        (
+          '// ignore: x\n// a\nvoid f() {}\n',
+          '// ignore: x\n// b\nvoid f() {}\n',
+        ),
+        ('// a\nvoid f() {}\n', '// GENERATED CODE - b\nvoid f() {}\n'),
+        ('void f() {}\n', 'void f() {}\n// @dart=2.19\n'),
+        ('void f() {}\n// a\n', 'void f() {}\n// a\u200B\n'),
+        ('/* a */\nvoid f() {}\n', '/* a\nvoid f() {}\n'),
+        ('void f() {}\n', '// a\nvoid f() { }\n'),
+        ('void f() {} // a\rvoid g() {}\r', 'void f() {} void g() {}\r'),
+        (r"var s = '${1 /* a */}';", r"var s = '${1 /* b */}';"),
+        ("import 'dart:io';\n", "/* a */ import 'dart:io';\n"),
+        (
+          "import 'a.dart';\nimport 'b.dart';\n",
+          "import 'a.dart';\n/* a */ import 'b.dart';\n",
+        ),
+        (
+          'void f() {}\n// GENERATED CODE below.\n// a\nvoid g() {}\n',
+          'void f() {}\n// GENERATED CODE below.\n// b\nvoid g() {}\n',
+        ),
+        ("import 'dart:io';\n", "import /* a */ 'dart:io';\n"),
+        ('void f() {}', 'void f() {} // a'),
+      ]) {
+        expect(proven(pair.$1, pair.$2), isFalse, reason: pair.$2);
+      }
+      expect(isCommentOnlyDartChange('lib/a.sh', '# a\n', '# b\n'), isFalse);
+      // Deep unary nesting overflows the analyzer parser's stack.
+      final overflowing = 'var x = ${'-' * 200000}1;';
+      expect(proven(overflowing, overflowing), isFalse);
+    });
+
+    test('reads exact Git blobs, not the working tree', () async {
+      final repo = Directory.systemTemp.createTempSync('comment-only-git-');
+      addTearDown(() => repo.deleteSync(recursive: true));
+      String git(List<String> args) {
+        final result = Process.runSync(
+          'git',
+          args,
+          workingDirectory: repo.path,
+        );
+        expect(result.exitCode, 0, reason: '${result.stderr}');
+        return (result.stdout as String).trim();
+      }
+
+      final sourceFile = File('${repo.path}/$backendSource');
+      String commit(String contents, String message) {
+        sourceFile.writeAsStringSync(contents);
+        git(['add', '.']);
+        git(['commit', '--quiet', '-m', message]);
+        return git(['rev-parse', 'HEAD']);
+      }
+
+      git(['init', '--quiet']);
+      git(['config', 'user.name', 'Comment-only policy test']);
+      git(['config', 'user.email', 'comment-only@example.invalid']);
+      sourceFile.parent.createSync(recursive: true);
+      final base = commit(commentBase, 'base');
+      final commentOnly = commit(commentHead, 'comment-only');
+      final executable = commit(
+        commentHead.replaceFirst('=> false', '=> true'),
+        'executable',
+      );
+      git(['checkout', '--quiet', base]);
+      sourceFile.writeAsBytesSync([
+        ...utf8.encode(commentHead),
+        ...utf8.encode('// invalid '),
+        0xff,
+        0x0a,
+      ]);
+      git(['commit', '--quiet', '-am', 'invalid UTF-8 comment']);
+      final invalidUtf8 = git(['rev-parse', 'HEAD']);
+      Future<HighRiskReadinessResult> evaluate(String head) {
+        final evidence =
+            commentEvidence(const [
+                RepositoryChange(
+                  path: backendSource,
+                  kind: RepositoryChangeKind.modified,
+                ),
+              ])
+              ..['expected_pr_head_sha'] = head
+              ..['current_base_sha'] = base;
+        evidence['independent_audit']['audit_head_sha'] = head;
+        evidence['independent_audit']['audit_base_sha'] = base;
+        return const HighRiskReadinessEvaluator().evaluate(
+          evidence: evidence,
+          context: PullRequestContext(
+            repository: context.repository,
+            prNumber: context.prNumber,
+            headSha: head,
+            baseSha: base,
+            author: context.author,
+          ),
+          workingDirectory: repo.path,
+        );
+      }
+
+      sourceFile.writeAsStringSync(
+        commentHead.replaceFirst('=> false', '=> true'),
+      );
+      expectAdmitted(await evaluate(commentOnly));
+      sourceFile.writeAsStringSync(commentHead);
+      expectFailure(
+        await evaluate(executable),
+        ReadinessFailureClassification.missingTestPath,
+      );
+      expectFailure(
+        await evaluate(invalidUtf8),
+        ReadinessFailureClassification.missingTestPath,
+      );
+    });
+  });
+
   test(
     'readiness AST supports explicitly requested allowed analyzer versions',
     () async {
@@ -1555,8 +2253,9 @@ final segment = '${Object()}ImageEditingRequest${Object()}';
           '-j',
           '1',
           paths.last,
-          '--plain-name',
-          'Git-bound additive image export impacts',
+          '--name',
+          'Git-bound additive image export impacts|'
+              'Git-proven comment-only production changes',
           '--exclude-tags',
           'local-only',
           '--reporter',
@@ -1570,7 +2269,7 @@ final segment = '${Object()}ImageEditingRequest${Object()}';
         );
         expect(probe.stdout, contains('All tests passed!'));
         print(
-          'Qualified analyzer $version: full root offline resolution, CLI help, namespace cases passed.',
+          'Qualified analyzer $version: full root offline resolution, CLI help, namespace and comment-only cases passed.',
         );
       }
     },
