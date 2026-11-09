@@ -585,7 +585,7 @@ await prefs.setInt('preferred_backend', backendIndex);
 **App crashes on startup:**
 - Check console output for error messages
 - Verify llamadart dependency is correctly configured
-- Ensure Flutter version >= 3.38.0
+- Ensure Flutter version >= 3.38.6
 
 **macOS warning: "Stale file ... located outside of the allowed root paths":**
 - This is usually a stale Flutter/Xcode build cache path after moving or renaming directories.
