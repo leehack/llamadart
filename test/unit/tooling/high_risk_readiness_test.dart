@@ -1499,6 +1499,12 @@ final segment = '${Object()}ImageEditingRequest${Object()}';
     });
   });
 
+  test('raw-text-consumed sources all exist in the repository', () {
+    for (final path in rawTextConsumedSources) {
+      expect(File(path).existsSync(), isTrue, reason: path);
+    }
+  });
+
   group('Git-proven comment-only production changes', () {
     const realSource = 'lib/src/backends/other_backend.dart';
     const commentBase =
@@ -1792,7 +1798,6 @@ final segment = '${Object()}ImageEditingRequest${Object()}';
 
     test('sources whose raw text tooling reads never qualify', () async {
       for (final path in rawTextConsumedSources) {
-        expect(File(path).existsSync(), isTrue, reason: path);
         expect(
           isCommentOnlyDartChange(path, commentBase, commentHead),
           isFalse,
