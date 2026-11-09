@@ -3,6 +3,7 @@ import importlib.util
 import json
 import os
 from pathlib import Path
+import shutil
 import signal
 import subprocess
 import sys
@@ -51,6 +52,32 @@ class ProcessTableTest(unittest.TestCase):
         self.assertEqual(table[102]['start_ticks'], 4242)
 
 
+class ReporterEventsTest(unittest.TestCase):
+    def test_reads_split_lines_and_counts_only_visible_tests(self):
+        supervisor = load_supervisor()
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp) / 'events.jsonl'
+            reporter = supervisor.ReporterEvents(path)
+            self.assertFalse(reporter.poll())
+            path.write_bytes(b'{"type":"testDone","hidden":true}\nnot json\n[]\n'
+                             b'{"type":"testDone","hidden":false}\n{"type":"do')
+            self.assertFalse(reporter.poll())
+            self.assertIsNone(reporter.verdict())
+            with path.open('ab') as events:
+                events.write(b'ne","success":true}\n')
+            self.assertTrue(reporter.poll())
+            self.assertFalse(reporter.poll())
+        self.assertEqual((reporter.tests, reporter.success, reporter.verdict()), (1, True, 0))
+
+    def test_verdict_needs_a_settled_result_with_tests(self):
+        supervisor = load_supervisor()
+        for tests, success, verdict in [(2, True, 0), (2, False, 1), (0, False, 1),
+                                        (0, True, None), (2, None, None)]:
+            reporter = supervisor.ReporterEvents(None)
+            reporter.tests, reporter.success = tests, success
+            self.assertEqual(reporter.verdict(), verdict, (tests, success))
+
+
 @unittest.skipUnless(sys.platform == 'linux', 'Requires Linux /proc and pidfds')
 class SupervisorTest(unittest.TestCase):
     def setUp(self):
@@ -58,11 +85,31 @@ class SupervisorTest(unittest.TestCase):
         self.addCleanup(self.temp.cleanup)
         self.output = Path(self.temp.name) / 'diagnostics'
 
-    def command(self, program, timeout=3, shutdown=0.25):
+    def command(self, program, timeout=3, shutdown=0.25, reporter=False):
+        options = (['--reporter-file', str(self.reporter), '--post-done-seconds', '0.3']
+                   if reporter else [])
         return [sys.executable, str(SCRIPT), '--output-dir', str(self.output),
                 '--timeout-seconds', str(timeout), '--shutdown-seconds', str(shutdown),
-                '--cleanup-seconds', '0.5', '--snapshot-seconds', '0.1', '--',
+                '--cleanup-seconds', '0.5', '--snapshot-seconds', '0.1', *options, '--',
                 sys.executable, '-c', program]
+
+    @property
+    def reporter(self):
+        return Path(self.temp.name) / 'reporter.jsonl'
+
+    def browser_then(self, done, browser_seconds, then):
+        """A CLI that reports `done`, runs a process named `chrome`, then runs `then`."""
+        # A script's comm is its own file name; multicall coreutils reject a renamed sleep.
+        browser = Path(self.temp.name) / 'chrome'
+        browser.write_text(f'#!{sys.executable}\nimport sys,time; time.sleep(float(sys.argv[1]))\n')
+        browser.chmod(0o755)
+        events = [{'type': 'testDone', 'hidden': False}] * 2 + [done]
+        lines = ''.join(json.dumps(event) + '\n' for event in events)
+        return (f"import pathlib,subprocess\n"
+                f"pathlib.Path({str(self.reporter)!r}).write_text({lines!r})\n"
+                f"print('All tests passed!', flush=True)\n"
+                f"subprocess.Popen([{str(browser)!r}, '{browser_seconds}'])\n"
+                f"{then}\n")
 
     def run_fixture(self, program, **options):
         result = subprocess.run(self.command(program, **options),
@@ -118,6 +165,15 @@ class SupervisorTest(unittest.TestCase):
         done = subprocess.run([sys.executable, '-c', script], capture_output=True, timeout=8)
         self.assertEqual(done.stdout.split()[-2:], [b'True', b'False'], done.stderr)
 
+    def test_closed_stdout_cannot_redirect_the_echo_into_events(self):
+        child = subprocess.run(
+            self.command("print('echoed output')"),
+            stdin=subprocess.DEVNULL, stderr=subprocess.PIPE, timeout=8,
+            preexec_fn=lambda: os.close(1))
+        self.assertEqual(child.returncode, 0, child.stderr)
+        self.assertEqual((self.output / 'stdout.log').read_bytes(), b'echoed output\n')
+        self.assertIn('supervisor_exit', [event['event'] for event in self.events()])
+
     def test_reporter_success_does_not_override_a_failing_exit(self):
         child, result = self.run_fixture("print('All tests passed!'); raise SystemExit(7)")
         self.assertEqual(child.returncode, 7, child.stderr)
@@ -169,6 +225,60 @@ class SupervisorTest(unittest.TestCase):
 
     def test_unread_downstream_stderr_cannot_block_deadline_or_cleanup(self):
         self.unread_consumer('stderr')
+
+    def test_cli_stalled_after_its_browser_exits_takes_the_reporter_result(self):
+        for success, expected in [(True, 0), (False, 1)]:
+            with self.subTest(success=success):
+                shutil.rmtree(self.output, ignore_errors=True)
+                self.reporter.unlink(missing_ok=True)
+                child, result = self.run_fixture(self.browser_then(
+                    {'type': 'done', 'success': success}, 0.05, 'import time; time.sleep(5)'),
+                    reporter=True)
+                self.assertEqual(child.returncode, expected, child.stderr)
+                self.assertTrue(result['browser_close_stall'])
+                self.assertEqual(result['reporter_tests'], 2)
+                self.assertIsNone(result['failure_reason'])
+                self.assertEqual(result['cli_exit_code'], 128 + signal.SIGTERM)
+                self.assertIn(b'::warning::', child.stderr)
+                self.assert_clean(result)
+                kinds = [event['event'] for event in self.events()]
+                self.assertLess(kinds.index('reporter_done'), kinds.index('browser_close_stall'))
+
+    def test_cli_stall_keeps_failing_while_its_browser_runs(self):
+        child, result = self.run_fixture(self.browser_then(
+            {'type': 'done', 'success': True}, 5, 'import time; time.sleep(5)'),
+            timeout=1.5, reporter=True)
+        self.assertEqual(child.returncode, 124, child.stderr)
+        self.assertEqual(result['failure_reason'], 'command_timeout')
+        self.assertFalse(result['browser_close_stall'])
+        self.assert_clean(result)
+
+    def test_cli_stall_without_a_settled_reporter_result_keeps_failing(self):
+        for done in [{'type': 'done', 'success': None}, {'type': 'start'}]:
+            with self.subTest(done=done):
+                shutil.rmtree(self.output, ignore_errors=True)
+                self.reporter.unlink(missing_ok=True)
+                child, result = self.run_fixture(self.browser_then(
+                    done, 0.05, 'import time; time.sleep(5)'), timeout=1.5, reporter=True)
+                self.assertEqual(child.returncode, 124, child.stderr)
+                self.assertFalse(result['browser_close_stall'])
+                self.assert_clean(result)
+
+    def test_reporter_result_never_replaces_a_real_cli_exit(self):
+        child, result = self.run_fixture(self.browser_then(
+            {'type': 'done', 'success': True}, 0.05, 'import time; time.sleep(.1); raise SystemExit(7)'),
+            reporter=True, shutdown=1)
+        self.assertEqual(child.returncode, 7, child.stderr)
+        self.assertEqual(result['cli_exit_code'], 7)
+        self.assertTrue(result['reporter_success'])
+        self.assert_clean(result)
+
+    def test_a_stale_reporter_file_does_not_start_the_command(self):
+        self.reporter.write_text('{"type":"done","success":true}\n')
+        child = subprocess.run(self.command('raise SystemExit(0)', reporter=True),
+                               capture_output=True, timeout=3)
+        self.assertEqual(child.returncode, 125)
+        self.assertFalse(self.output.exists())
 
     def test_cli_exit_is_distinct_from_inherited_pipe_eof(self):
         child, result = self.run_fixture(
@@ -307,6 +417,30 @@ class WorkflowTest(unittest.TestCase):
         self.assertNotIn('flutter test --platform chrome', lane)
         self.assertIn('timeout-minutes: 20', lane)
         self.assertIn('flutter-version: 3.47.1', lane)
+        self.assertNotIn('continue-on-error', lane)
+        self.assertNotIn('|| true', lane)
+
+    def test_web_chat_chrome_tests_take_only_their_own_reporter_result(self):
+        workflow = (ROOT / '.github/workflows/ci.yml').read_text()
+        lane = workflow.split('\n  web-chat-contract:\n', 1)[1].split('\n  deploy-chat-app:\n', 1)[0]
+        chrome = lane.index('name: Run chat app Chrome tests with bounded shutdown')
+        upload = lane.index('name: Upload chat app Chrome diagnostics')
+        restore = lane.index('name: Restore the chat app pubspec')
+        self.assertLess(lane.index('run: flutter test test test_vm'), chrome)
+        self.assertLess(chrome, upload)
+        self.assertLess(upload, restore)
+        step = lane[chrome:upload]
+        self.assertIn('python3 ../../tool/ci/supervise_chrome_test.py', step)
+        self.assertIn('--timeout-seconds 600 --', step)
+        report = '$RUNNER_TEMP/chat-app-chrome/reporter.jsonl'
+        self.assertIn(f'--reporter-file "{report}"', step)
+        self.assertIn(f'--file-reporter "json:{report}"', step)
+        self.assertLess(step.index('--reporter-file'), step.index(' --\n'))
+        self.assertGreater(step.index('--file-reporter'), step.index('flutter test --platform chrome'))
+        self.assertEqual(lane.count('flutter test --platform chrome'), 1)
+        self.assertIn('if: always()', lane[upload:restore])
+        self.assertIn('actions/upload-artifact@v7', lane[upload:restore])
+        self.assertIn('path: ${{ runner.temp }}/chat-app-chrome', lane[upload:restore])
         self.assertNotIn('continue-on-error', lane)
         self.assertNotIn('|| true', lane)
 
