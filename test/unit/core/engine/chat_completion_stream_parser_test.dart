@@ -2456,19 +2456,22 @@ void main() {
         }
 
         test('ends a thought at a stray end tag after a start tag', () async {
-          // After a forced-open prompt the parse ends a thought at an end tag
-          // that follows a start tag and keeps one as content otherwise. A
-          // stream can match only when the tag arrives with the text before
-          // it.
-          for (final output in const [
-            '<think>\nPlan.</think>\nMore.</think> Sure.',
-            'Plan.</think>A<think>B</think>C</think>D',
-            'Plan.</think>A</think>B<think>X</think>C',
+          // The parse ends a thought at an end tag that follows a start tag
+          // and keeps one as content otherwise. A stream can match only when
+          // the tag arrives with the text before it.
+          for (final (output, forcedOpen) in const [
+            ('<think>\nPlan.</think>\nMore.</think> Sure.', true),
+            ('Plan.</think>A<think>B</think>C</think>D', true),
+            ('Plan.</think>A</think>B<think>X</think>C', true),
+            ('<think>\nPlan.</think>\nMore.</think> Sure.', false),
+            ('Plan.</think>A</think>B<think>X</think>C', false),
+            ('</think>Text </think> more.', false),
           ]) {
-            final parsed = ChatTemplateEngine.parse(
+            final parsed = parseRenderedOutput(
               ChatFormat.hermes.index,
               output,
-              thinkingForcedOpen: true,
+              thinkingForcedOpen: forcedOpen,
+              thoughtClosedForThinkingOff: false,
               tools: [_weatherTool],
             );
             final chunks = await ChatCompletionStreamParser.parse(
@@ -2476,7 +2479,7 @@ void main() {
               templateResult: LlamaChatTemplateResult(
                 prompt: 'prompt',
                 format: ChatFormat.hermes.index,
-                thinkingForcedOpen: true,
+                thinkingForcedOpen: forcedOpen,
               ),
               parseToolCallsEnabled: true,
               enableThinking: true,

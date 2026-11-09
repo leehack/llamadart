@@ -211,7 +211,6 @@ class ChatCompletionStreamParser {
     // any start tag as content, with every thinking tag after it.
     final unopenedEndTagIsContent =
         traits.closedThoughtKeepsTagsAsContent &&
-        !_usesPegParser(templateResult) &&
         !templateResult.thinkingForcedOpen &&
         !thoughtClosedForThinkingOff;
     // Thinking tags in a Cohere2 MoE text or action are text.
