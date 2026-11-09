@@ -97,6 +97,7 @@ void runLiteRtLmWorkerForTesting(
         // this isolate could close a NativeCallable still used by native code.
         return;
       }
+      message.sendPort.send(const LiteRtLmNativeTeardownStarted());
       try {
         service.dispose();
       } catch (error) {
@@ -265,6 +266,7 @@ void runLiteRtLmWorkerForTesting(
             message.sendPort.send(LiteRtLmDoneResponse());
 
           case LiteRtLmModelFreeRequest():
+            message.sendPort.send(const LiteRtLmNativeTeardownStarted());
             service.freeModel(message.modelHandle);
             message.sendPort.send(LiteRtLmDoneResponse());
 
@@ -276,6 +278,7 @@ void runLiteRtLmWorkerForTesting(
             message.sendPort.send(LiteRtLmHandleResponse(handle));
 
           case LiteRtLmContextFreeRequest():
+            message.sendPort.send(const LiteRtLmNativeTeardownStarted());
             service.freeContext(message.contextHandle);
             message.sendPort.send(LiteRtLmDoneResponse());
 

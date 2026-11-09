@@ -36,7 +36,9 @@ Future<Object?> request(
   final port = ReceivePort();
   try {
     worker.send(create(port.sendPort));
-    return await port.first.timeout(const Duration(seconds: 2));
+    return await port
+        .firstWhere((response) => response is! LiteRtLmNativeTeardownStarted)
+        .timeout(const Duration(seconds: 2));
   } finally {
     port.close();
   }
