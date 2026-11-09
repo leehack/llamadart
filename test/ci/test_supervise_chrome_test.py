@@ -186,6 +186,15 @@ class SupervisorTest(unittest.TestCase):
         done = subprocess.run([sys.executable, '-c', script], capture_output=True, timeout=8)
         self.assertEqual(done.stdout.split()[-1:], [b'True'], done.stderr)
 
+    def test_stale_reporter_error_keeps_a_non_blocking_caller_stderr_non_blocking(self):
+        self.reporter.write_text('{"type":"done","success":true}\n')
+        script = ("import os,subprocess,sys\n"
+                  "os.set_blocking(2, False)\n"
+                  f"subprocess.run({self.command('pass', reporter=True)!r}, stdout=sys.stdout, stderr=sys.stderr)\n"
+                  "print(os.get_blocking(2))")
+        done = subprocess.run([sys.executable, '-c', script], capture_output=True, timeout=8)
+        self.assertEqual(done.stdout.split()[-1:], [b'False'], done.stderr)
+
     def test_stale_reporter_error_cannot_delay_or_change_the_exit(self):
         self.reporter.write_text('{"type":"done","success":true}\n')
         full_read, full_write = os.pipe()
