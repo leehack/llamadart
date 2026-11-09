@@ -9,7 +9,7 @@ Before you begin, ensure you have the following installed:
 -   **Dart SDK**: >= 3.10.7
 -   **Flutter SDK**: the version pinned in `.flutter-version` (`3.47.1`) for
     repository-wide quality gates and Flutter examples (runtime support starts
-    at 3.38.0; root-package-only Dart work can use the Dart SDK alone). CI
+    at 3.38.6; root-package-only Dart work can use the Dart SDK alone). CI
     installs that exact version, so it defines the canonical formatter; any
     other SDK can produce different source layouts.
 -   **CMake**: >= 3.10
@@ -201,8 +201,8 @@ canary cache there.
 To collect and view coverage reports:
 
 ```bash
-# 1. Run VM tests with coverage
-dart test -p vm --coverage=coverage
+# 1. Run VM tests with coverage (local-only suites write empty coverage)
+dart test -p vm -j 1 --exclude-tags local-only --coverage=coverage
 
 # 2. Format into LCOV (respects // coverage:ignore-file)
 dart run tool/testing/format_lcov.dart --lcov --in=coverage/test --out=coverage/lcov.info --report-on=lib --check-ignore
