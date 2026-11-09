@@ -79,6 +79,7 @@ class NativeAutoBackend
         BackendGenerationLimitReporting,
         BackendGenerationLimitSupport,
         BackendGenerationUsageReporting,
+        BackendRuntimePromptTokenization,
         BackendDartLogLevel {
   final LlamaBackend Function() _llamaCppFactory;
   final LlamaBackend Function() _liteRtLmFactory;
@@ -420,6 +421,15 @@ class NativeAutoBackend
       text,
       addSpecial: addSpecial,
     );
+  }
+
+  @override
+  Future<List<int>> tokenizeRuntimePrompt(int modelHandle, String prompt) {
+    final delegate = _requireDelegate();
+    return runtimePromptTokenizerOf(
+          delegate,
+        )?.tokenizeRuntimePrompt(modelHandle, prompt) ??
+        delegate.tokenize(modelHandle, prompt, addSpecial: false);
   }
 
   @override

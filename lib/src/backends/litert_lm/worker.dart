@@ -377,11 +377,16 @@ void runLiteRtLmWorkerForTesting(
             }
 
           case LiteRtLmTokenizeRequest():
-            final tokens = await service.tokenize(
-              message.modelHandle,
-              message.text,
-              message.addSpecial,
-            );
+            final tokens = message.runtimePrompt
+                ? await service.tokenizeRuntimePrompt(
+                    message.modelHandle,
+                    message.text,
+                  )
+                : await service.tokenize(
+                    message.modelHandle,
+                    message.text,
+                    message.addSpecial,
+                  );
             message.sendPort.send(LiteRtLmTokenizeResponse(tokens));
 
           case LiteRtLmDetokenizeRequest():

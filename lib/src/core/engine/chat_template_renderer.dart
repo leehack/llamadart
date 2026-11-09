@@ -21,6 +21,10 @@ typedef ChatTemplateMetadataLoader = Future<Map<String, String>> Function();
 typedef ChatTemplateTokenizer =
     Future<List<int>> Function(String text, {bool addSpecial});
 
+/// Tokenizes a prompt as the runtime that renders it prefills it.
+typedef ChatTemplateRuntimePromptTokenizer =
+    Future<List<int>> Function(String prompt);
+
 /// Renders model chat templates for [LlamaEngine].
 ///
 /// The public API stays on [LlamaEngine], while this helper owns metadata
@@ -71,7 +75,9 @@ class ChatTemplateRenderer {
   /// token count of its `tokenizer.chat_template`, the template its runtime
   /// renders, rendered as plain Jinja; every other field still comes from
   /// the parsing template. When that render fails, the parsing render's
-  /// prompt is kept and a warning logged.
+  /// prompt is kept and a warning logged. A runtime prompt is counted with
+  /// [tokenizeRuntimePrompt] when given, every other prompt with [tokenize]
+  /// and no special tokens added.
   ///
   /// A request that carries media is rendered with [chatPromptMediaMarker]
   /// where each part was. With [keepChatMarker] the prompt keeps it, for a
@@ -82,6 +88,7 @@ class ChatTemplateRenderer {
   static Future<LlamaChatTemplateResult> render({
     required ChatTemplateMetadataLoader loadMetadata,
     required ChatTemplateTokenizer tokenize,
+    ChatTemplateRuntimePromptTokenizer? tokenizeRuntimePrompt,
     required List<LlamaChatMessage> messages,
     bool addAssistant = true,
     Map<String, dynamic>? jsonSchema,
@@ -146,22 +153,22 @@ class ChatTemplateRenderer {
       now: templateNow,
       mediaMarker: hasMedia ? chatPromptMediaMarker : mtmdMediaMarker,
     );
-    final renderedPrompt =
+    final runtimePrompt =
         renderRuntimePrompt && customTemplate == null && runtimeTemplate != null
         ? _runtimePrompt(
-                runtimeTemplate,
-                messages: messages,
-                metadata: metadata,
-                addAssistant: addAssistant,
-                tools: tools,
-                toolChoice: toolChoice,
-                enableThinking: enableThinking,
-                chatTemplateKwargs: chatTemplateKwargs,
-                templateNow: templateNow,
-                mediaMarker: hasMedia ? chatPromptMediaMarker : mtmdMediaMarker,
-              ) ??
-              result.prompt
-        : result.prompt;
+            runtimeTemplate,
+            messages: messages,
+            metadata: metadata,
+            addAssistant: addAssistant,
+            tools: tools,
+            toolChoice: toolChoice,
+            enableThinking: enableThinking,
+            chatTemplateKwargs: chatTemplateKwargs,
+            templateNow: templateNow,
+            mediaMarker: hasMedia ? chatPromptMediaMarker : mtmdMediaMarker,
+          )
+        : null;
+    final renderedPrompt = runtimePrompt ?? result.prompt;
     final prompt = hasMedia && !keepChatMarker
         ? chatPromptAsCallerPrompt(
             renderedPrompt,
@@ -172,7 +179,9 @@ class ChatTemplateRenderer {
     int? tokenCount;
     if (includeTokenCount) {
       try {
-        final tokens = await tokenize(prompt, addSpecial: false);
+        final tokens = runtimePrompt != null && tokenizeRuntimePrompt != null
+            ? await tokenizeRuntimePrompt(prompt)
+            : await tokenize(prompt, addSpecial: false);
         tokenCount = tokens.length;
       } on UnsupportedError catch (error) {
         LlamaLogger.instance.debug(

@@ -1598,6 +1598,7 @@ void main() {
       expect(tokenizeRequest.modelHandle, 42);
       expect(tokenizeRequest.text, 'hello');
       expect(tokenizeRequest.addSpecial, isFalse);
+      expect(tokenizeRequest.runtimePrompt, isFalse);
 
       final detokenizeRequest = worker.requests
           .whereType<LiteRtLmDetokenizeRequest>()
@@ -1605,6 +1606,35 @@ void main() {
       expect(detokenizeRequest.modelHandle, 42);
       expect(detokenizeRequest.tokens, [10, 11]);
       expect(detokenizeRequest.special, isTrue);
+    } finally {
+      await backend.dispose();
+      worker.close();
+    }
+  });
+
+  test('routes runtime prompt tokenization through the LiteRT-LM worker '
+      'without exposing it in the backend type', () async {
+    final worker = _FakeLiteRtLmWorker(
+      tokenizeResponse: const <int>[2, 10],
+      detokenizeResponse: '',
+    );
+    final backend = LiteRtLmBackend(initialSendPort: worker.sendPort);
+
+    try {
+      expect(backend, isNot(isA<BackendRuntimePromptTokenization>()));
+      expect(
+        await runtimePromptTokenizerOf(
+          backend,
+        )!.tokenizeRuntimePrompt(42, '<bos>hi'),
+        [2, 10],
+      );
+
+      final request = worker.requests
+          .whereType<LiteRtLmTokenizeRequest>()
+          .single;
+      expect(request.modelHandle, 42);
+      expect(request.text, '<bos>hi');
+      expect(request.runtimePrompt, isTrue);
     } finally {
       await backend.dispose();
       worker.close();
