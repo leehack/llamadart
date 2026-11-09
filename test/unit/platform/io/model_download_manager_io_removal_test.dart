@@ -6,6 +6,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:llamadart/src/core/exceptions.dart';
 import 'package:llamadart/src/core/models/model_source.dart';
 import 'package:llamadart/src/platform/io/model_cache_entry_lock.dart';
 import 'package:llamadart/src/platform/io/model_download_manager_io.dart';
@@ -112,55 +113,122 @@ void main() {
     }
   });
 
-  test('clear skips an entry that another remover left pending delete while '
-      'this one waited for the removal lock', () async {
-    await populate(1);
-    final entry = root.listSync().whereType<Directory>().singleWhere(
-      (directory) => path.basename(directory.path) != '.locks',
-    );
-    final waiting = Completer<void>();
-    final proceed = Completer<void>();
-    modelCacheEntryLocker = (lockPath, {required throwIfCancelled}) async {
-      if (path.basename(lockPath) == '.removal.lock' && !waiting.isCompleted) {
-        waiting.complete();
-        await proceed.future;
-      }
-      return acquireModelCacheEntryLock(
-        lockPath,
-        throwIfCancelled: throwIfCancelled,
+  group('on Windows, an entry another remover is deleting', () {
+    late Directory entry;
+    late _EntryTypeOverrides overrides;
+
+    setUp(() async {
+      await populate(1);
+      entry = root.listSync().whereType<Directory>().singleWhere(
+        (directory) => path.basename(directory.path) != '.locks',
       );
-    };
-    addTearDown(() => modelCacheEntryLocker = acquireModelCacheEntryLock);
+      overrides = _EntryTypeOverrides(entry.path);
+    });
 
-    final clearing = manager.clear();
-    await waiting.future;
-    for (final file in entry.listSync().whereType<File>()) {
-      file.deleteSync();
+    /// Empties the entry and holds it pending delete until the returned
+    /// function finishes deleting it.
+    void Function() markPendingDelete() {
+      for (final file in entry.listSync().whereType<File>()) {
+        file.deleteSync();
+      }
+      final finishDelete = markWindowsDirectoryDeletePending(entry.path);
+      addTearDown(finishDelete);
+      return finishDelete;
     }
-    final finishDelete = markWindowsDirectoryDeletePending(entry.path);
-    addTearDown(finishDelete);
-    expect(
-      FileSystemEntity.typeSync(entry.path, followLinks: false),
-      FileSystemEntityType.notFound,
-    );
-    expect(
-      entry.resolveSymbolicLinksSync,
-      throwsA(
-        isA<FileSystemException>().having(
-          (error) => error.osError?.errorCode,
-          'errorCode',
-          5,
-        ),
-      ),
-    );
-    proceed.complete();
 
-    await clearing;
-    finishDelete();
-    expect(
-      root.listSync().map((entity) => path.basename(entity.path)),
-      <String>['.locks'],
-    );
+    Future<void> clear() =>
+        IOOverrides.runWithIOOverrides(manager.clear, overrides);
+
+    /// Starts [clear] and holds it at the removal lock, after it has checked
+    /// the entry, until the returned function runs.
+    Future<({Future<void> clearing, void Function() proceed})>
+    clearHeldAtRemovalLock() async {
+      final waiting = Completer<void>();
+      final proceed = Completer<void>();
+      modelCacheEntryLocker = (lockPath, {required throwIfCancelled}) async {
+        if (path.basename(lockPath) == '.removal.lock' &&
+            !waiting.isCompleted) {
+          waiting.complete();
+          await proceed.future;
+        }
+        return acquireModelCacheEntryLock(
+          lockPath,
+          throwIfCancelled: throwIfCancelled,
+        );
+      };
+      addTearDown(() => modelCacheEntryLocker = acquireModelCacheEntryLock);
+      void release() {
+        if (!proceed.isCompleted) {
+          proceed.complete();
+        }
+      }
+
+      final clearing = clear();
+      addTearDown(() async {
+        release();
+        await clearing.then<void>((_) {}, onError: (Object _) {});
+      });
+      await waiting.future;
+      return (clearing: clearing, proceed: release);
+    }
+
+    void expectOnlyLocksLeftOnceDeleted(void Function() finishDelete) {
+      finishDelete();
+      expect(
+        root.listSync().map((entity) => path.basename(entity.path)),
+        <String>['.locks'],
+      );
+    }
+
+    test('reads as missing and fails to open with access denied', () {
+      markPendingDelete();
+
+      expect(
+        FileSystemEntity.typeSync(entry.path, followLinks: false),
+        FileSystemEntityType.notFound,
+      );
+      expect(entry.resolveSymbolicLinksSync, throwsA(_accessDenied));
+    });
+
+    test('is skipped when the deletion starts after clear finds the entry '
+        'and before it resolves it', () async {
+      void Function()? finishDelete;
+      overrides.afterFirstCheck = () async =>
+          finishDelete = markPendingDelete();
+
+      await clear();
+
+      expect(finishDelete, isNotNull);
+      expectOnlyLocksLeftOnceDeleted(finishDelete!);
+    });
+
+    test('is skipped when the deletion happens while clear waits for the '
+        'removal lock', () async {
+      final held = await clearHeldAtRemovalLock();
+      final finishDelete = markPendingDelete();
+      held.proceed();
+
+      await held.clearing;
+      expectOnlyLocksLeftOnceDeleted(finishDelete);
+    });
+
+    test('is not skipped when the entry still reads as a directory: clear '
+        'reports the access denial', () async {
+      markPendingDelete();
+      overrides.reportAsDirectory = true;
+
+      await expectLater(clear(), throwsA(_accessDenied));
+    });
+
+    test('is not skipped when the entry still reads as a directory under the '
+        'removal lock: clear cannot lock it', () async {
+      final held = await clearHeldAtRemovalLock();
+      markPendingDelete();
+      overrides.reportAsDirectory = true;
+      held.proceed();
+
+      await expectLater(held.clearing, throwsA(isA<LlamaStateException>()));
+    });
   }, testOn: 'windows');
 
   test('clear removes a stray .removal directory instead of reporting it in '
@@ -231,4 +299,49 @@ void main() {
     expect(removed, hasLength(1));
     expect(await manager.list(), hasLength(2));
   });
+}
+
+final Matcher _accessDenied = isA<FileSystemException>().having(
+  (error) => error.osError?.errorCode,
+  'errorCode',
+  5,
+);
+
+/// Reports [entryPath]'s type as the file system does, but can run
+/// [afterFirstCheck] once right after its first check, or report it as a
+/// directory.
+final class _EntryTypeOverrides extends IOOverrides {
+  _EntryTypeOverrides(this.entryPath);
+
+  final String entryPath;
+  Future<void> Function()? afterFirstCheck;
+  bool reportAsDirectory = false;
+
+  bool _isEntry(String candidate) => path.equals(
+    path.normalize(path.absolute(candidate)),
+    path.normalize(path.absolute(entryPath)),
+  );
+
+  @override
+  Future<FileSystemEntityType> fseGetType(
+    String candidate,
+    bool followLinks,
+  ) async {
+    final type = await super.fseGetType(candidate, followLinks);
+    if (!_isEntry(candidate)) {
+      return type;
+    }
+    final hook = afterFirstCheck;
+    afterFirstCheck = null;
+    await hook?.call();
+    return reportAsDirectory ? FileSystemEntityType.directory : type;
+  }
+
+  @override
+  FileSystemEntityType fseGetTypeSync(String candidate, bool followLinks) {
+    final type = super.fseGetTypeSync(candidate, followLinks);
+    return reportAsDirectory && _isEntry(candidate)
+        ? FileSystemEntityType.directory
+        : type;
+  }
 }

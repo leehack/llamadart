@@ -9,8 +9,8 @@ import 'package:ffi/ffi.dart';
 /// This is the state a directory is in while another process deletes it:
 /// between setting the delete disposition and closing its handle, opening the
 /// directory fails with `ERROR_ACCESS_DENIED`. A handle opened without delete
-/// access does not cause it: Windows deletes with POSIX semantics, so the
-/// name disappears at once.
+/// access does not cause it where Windows deletes with POSIX semantics, as on
+/// NTFS since Windows 10: the name disappears at once.
 void Function() markWindowsDirectoryDeletePending(String directoryPath) {
   final kernel32 = DynamicLibrary.open('kernel32.dll');
   final createFile = kernel32

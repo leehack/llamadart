@@ -15,7 +15,7 @@ validate against the exact release tag notes.
 
 - Fix native LiteRT-LM `dispose` failing with "worker stopped before native cleanup was confirmed" when cleanup outlasts 5 s, such as releasing a freshly written CPU weight cache on Linux ext4; `freeTimeout` now bounds only the wait for native teardown to start ([#1814](https://github.com/leehack/llamadart/issues/1814)).
 - Stop bundling and loading the unused prebuilt `libLiteRt` (about 7 to 9 MB) in Linux and Windows LiteRT-LM apps; the `v0.19.1-1` runtime links LiteRT in. An older `LLAMADART_LITERT_LM_LIB_DIR` runtime still loads the `libLiteRt` it ships with ([#1815](https://github.com/leehack/llamadart/issues/1815)).
-- Fix model cache `clear`, `remove` and `prune` on Windows failing with "Access is denied" when another process or isolate, or a virus scanner, still had an entry directory open while it was deleted ([#1821](https://github.com/leehack/llamadart/issues/1821)).
+- Fix model cache `clear`, `remove` and `prune` on Windows failing with "Access is denied" when another process or isolate was deleting the same entry at that moment ([#1821](https://github.com/leehack/llamadart/issues/1821)).
 
 ## 0.19.0
 

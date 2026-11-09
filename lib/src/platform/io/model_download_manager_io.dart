@@ -1854,12 +1854,14 @@ class DefaultModelDownloadManager implements ModelDownloadManager {
 
 enum _Removal { removed, inUse, skipped }
 
-/// Whether [error] may come from opening a path that is pending delete: on
-/// Windows, a deleted directory that any process, such as another remover or
-/// a virus scanner, still has open. Opening it fails with
-/// `ERROR_ACCESS_DENIED` until the last handle closes, while attribute
-/// queries, and so [FileSystemEntity.type], already report it missing; the
-/// callers tell it from a real denial by that type.
+/// Whether [error] may come from opening a directory that is pending delete
+/// on Windows: one that another process or isolate is deleting, between
+/// setting its delete disposition and closing that handle, or, without POSIX
+/// delete semantics, until every handle to it closes. Opening it then fails
+/// with `ERROR_ACCESS_DENIED`, and so does the attribute query behind
+/// [FileSystemEntity.type], which reports that failure as
+/// [FileSystemEntityType.notFound]; callers tell it from a real denial by
+/// that type.
 bool _mayBeWindowsDeletePending(FileSystemException error) =>
     Platform.isWindows && error.osError?.errorCode == 5;
 
