@@ -214,6 +214,8 @@ class ChatTemplateRenderer {
     required DateTime? templateNow,
     required String mediaMarker,
   }) {
+    // Templates also raise Errors, such as UnsupportedError for integer
+    // division by zero; showing a prompt must not fail on either.
     try {
       return renderPlainChatTemplatePrompt(
         templateSource: template,
@@ -228,7 +230,7 @@ class ChatTemplateRenderer {
         now: templateNow,
         mediaMarker: mediaMarker,
       );
-    } on Exception catch (error) {
+    } on Object catch (error) {
       LlamaLogger.instance.warning(
         'Showing the prompt of the parsing chat template: the model '
         'runtime template did not render in Dart: $error',

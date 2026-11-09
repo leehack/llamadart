@@ -3272,7 +3272,9 @@ class LlamaEngine implements LlamadartEngine<LlamaEngineCapabilities> {
   /// the built-in or [ModelParams.chatTemplate] template for Qwen3 text
   /// bundles. When llamadart detects the chat format and parses output with
   /// another template, that one is `llamadart.chat_template.parsing`; read it
-  /// first to detect the format the way [create] does.
+  /// first to detect the format the way [create] does. A bundle whose family
+  /// has no built-in template, loaded without [ModelParams.chatTemplate],
+  /// reports no template.
   Future<Map<String, String>> getMetadata() async {
     if (!_isReady || _modelHandle == null) {
       return <String, String>{};

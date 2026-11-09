@@ -259,6 +259,9 @@ void main() {
         List<LlamaChatMessage> messages = const [
           LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'hello'),
         ],
+        bool enableThinking = true,
+        Map<String, dynamic>? chatTemplateKwargs,
+        DateTime? templateNow,
       }) => ChatTemplateRenderer.render(
         loadMetadata: () async => metadata,
         tokenize: (text, {bool addSpecial = true}) async =>
@@ -268,7 +271,110 @@ void main() {
         modelTemplate: modelTemplate,
         customTemplate: customTemplate,
         renderRuntimePrompt: runtimePrompt,
+        enableThinking: enableThinking,
+        chatTemplateKwargs: chatTemplateKwargs,
+        templateNow: templateNow,
       );
+
+      Future<String> runtimePromptOf(
+        String runtimeTemplate, {
+        List<ToolDefinition>? tools,
+        List<LlamaChatMessage> messages = const [
+          LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'hello'),
+        ],
+        bool enableThinking = true,
+        Map<String, dynamic>? chatTemplateKwargs,
+        DateTime? templateNow,
+      }) async => (await render(
+        metadata: {
+          'tokenizer.chat_template': runtimeTemplate,
+          parsingChatTemplateMetadataKey: parsing,
+        },
+        runtimePrompt: true,
+        tools: tools,
+        messages: messages,
+        enableThinking: enableThinking,
+        chatTemplateKwargs: chatTemplateKwargs,
+        templateNow: templateNow,
+      )).prompt;
+
+      test('renders the runtime prompt with the request thinking, kwargs '
+          'and time', () async {
+        expect(
+          await runtimePromptOf(runtime, enableThinking: false),
+          'RUNTIME:hello',
+        );
+        expect(
+          await runtimePromptOf(
+            '{{ greeting }}',
+            chatTemplateKwargs: {'greeting': 'KWARG'},
+          ),
+          'KWARG',
+        );
+        expect(
+          await runtimePromptOf(
+            "{{ strftime_now('%Y') }}",
+            templateNow: DateTime.utc(2001, 2, 3),
+          ),
+          '2001',
+        );
+      });
+
+      test('renders the runtime prompt without a tool_use variant', () async {
+        final shown = await render(
+          metadata: const {
+            'tokenizer.chat_template': runtime,
+            'tokenizer.chat_template.tool_use': 'TOOL_USE',
+            parsingChatTemplateMetadataKey: parsing,
+          },
+          runtimePrompt: true,
+          tools: tools,
+        );
+
+        expect(shown.prompt, 'RUNTIME:hello TOOLS THINK');
+      });
+
+      test('renders the runtime prompt for requests the parsing format '
+          'qualifies and plain rendering does not', () async {
+        expect(
+          await runtimePromptOf(
+            runtime,
+            tools: [
+              ToolDefinition.fromJsonSchema(
+                name: 'lookup',
+                description: 'Looks up a city.',
+                schema: const {
+                  'type': 'object',
+                  'properties': {
+                    'city': {'type': 'string'},
+                  },
+                },
+              ),
+            ],
+          ),
+          'RUNTIME:hello TOOLS THINK',
+        );
+        expect(
+          await runtimePromptOf(
+            '{% for m in messages %}RUNTIME:{{ m["role"] }} {% endfor %}',
+            messages: const [
+              LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'look'),
+              LlamaChatMessage.withContent(
+                role: LlamaChatRole.tool,
+                content: [
+                  LlamaToolResultContent(
+                    id: 'call_0',
+                    name: 'lookup',
+                    result: null,
+                    content: [LlamaTextContent('sunny')],
+                  ),
+                ],
+              ),
+            ],
+          ),
+          'RUNTIME:user RUNTIME:tool ',
+        );
+      });
 
       test(
         'parses and renders with it instead of tokenizer.chat_template',
@@ -393,7 +499,22 @@ void main() {
         ]);
       });
 
+      for (final expression in ['10 // 0', '10 % 0']) {
+        test('keeps the parsing prompt when the runtime template raises an '
+            'Error ($expression)', () async {
+          expect(await runtimePromptOf('{{ $expression }}'), 'PARSE:hello');
+        });
+      }
+
       test('names the parsing template in render failures', () {
+        expect(
+          ChatTemplateRenderer.templateSourceName(
+            modelTemplate: 'o',
+            metadataTemplate: 'm',
+            parsingTemplate: 'p',
+          ),
+          'ModelParams.chatTemplate',
+        );
         expect(
           ChatTemplateRenderer.templateSourceName(
             metadataTemplate: 'm',

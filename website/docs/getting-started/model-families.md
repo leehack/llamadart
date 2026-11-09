@@ -20,7 +20,8 @@ model's chat template.
   and output parsing. Set `ModelParams.chatTemplate` to override it. On
   native LiteRT-LM, `getMetadata()` reports the template the runtime renders
   as `tokenizer.chat_template`, and the parsing template, when it differs, as
-  `llamadart.chat_template.parsing`.
+  `llamadart.chat_template.parsing`. A bundle with no matching family and no
+  override reports no template.
 - **No match:** the template renders as-is, with no tool-call or reasoning
   parsing. If you pass tools, llamadart adds a generic JSON tool-call
   instruction instead.
