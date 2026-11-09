@@ -991,6 +991,42 @@ void main() {
       }
     });
 
+    test(
+      'LFM2 raw inner quotes stream like the final parse at every split',
+      () async {
+        for (final (raw, city) in [
+          ('print(f"hi {name}")', 'print(f"hi {name}")'),
+          ('it"s fine', 'it"s fine'),
+          (r'say \"hi\" from C:\\temp', r'say "hi" from C:\temp'),
+          ('{"a": 1, "b": "two"}', '{"a": 1, "b": "two"}'),
+          ('Montréal "🌧" 東京', 'Montréal "🌧" 東京'),
+          (r'it"s \u00e9 \\"q"', r'it"s é \"q"'),
+        ]) {
+          final output =
+              '<|tool_call_start|>[{"name":"weather",'
+              '"arguments":{"city":"$raw"}}]<|tool_call_end|>';
+          final parsed = ChatTemplateEngine.parse(
+            ChatFormat.lfm2.index,
+            output,
+            tools: [_weatherTool],
+          );
+          expect(jsonDecode(parsed.toolCalls.single.function!.arguments!), {
+            'city': city,
+          }, reason: output);
+          for (final ending in ['natural', 'length', 'cancel']) {
+            await _expectStreamMatchesParse(
+              ChatFormat.lfm2,
+              output,
+              everySplit: true,
+              atLimit: ending == 'length',
+              cancelled: ending == 'cancel',
+              openings: ['<|tool_call_start|>', '<|tool_call_end|>'],
+            );
+          }
+        }
+      },
+    );
+
     test('unclosed forced thoughts keep reasoning after a held call', () async {
       for (final (format, call) in [
         (

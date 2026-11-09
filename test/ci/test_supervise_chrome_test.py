@@ -118,6 +118,15 @@ class SupervisorTest(unittest.TestCase):
         done = subprocess.run([sys.executable, '-c', script], capture_output=True, timeout=8)
         self.assertEqual(done.stdout.split()[-2:], [b'True', b'False'], done.stderr)
 
+    def test_closed_stdout_cannot_redirect_the_echo_into_events(self):
+        child = subprocess.run(
+            self.command("print('echoed output')"),
+            stdin=subprocess.DEVNULL, stderr=subprocess.PIPE, timeout=8,
+            preexec_fn=lambda: os.close(1))
+        self.assertEqual(child.returncode, 0, child.stderr)
+        self.assertEqual((self.output / 'stdout.log').read_bytes(), b'echoed output\n')
+        self.assertIn('supervisor_exit', [event['event'] for event in self.events()])
+
     def test_reporter_success_does_not_override_a_failing_exit(self):
         child, result = self.run_fixture("print('All tests passed!'); raise SystemExit(7)")
         self.assertEqual(child.returncode, 7, child.stderr)

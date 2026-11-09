@@ -35,6 +35,12 @@ TMPDIR="$(mktemp -d)" flutter test
 dart test -p chrome test/model_store_web_test.dart
 ```
 
+Its Flutter floor is 3.38.6, the first release whose Dart (3.10.7) satisfies
+`sdk: ^3.10.7`; 3.38.0 ships Dart 3.10.0 and cannot resolve. That Flutter pins
+`test_api` 0.7.7, so the `test:` floor is 1.26.3, the first `test` that
+accepts it. Re-check both floors on Flutter 3.38.6 with `flutter pub get`,
+`flutter pub downgrade` and `flutter test` when changing them.
+
 The `model-store` CI job runs these and a publish dry-run against checkout
 core. The selector runs it for package and guide changes, and for every core
 or shared change, which selects the full graph. Package-only changes select

@@ -27,6 +27,19 @@ def echo(name, chunk):
         pass
 
 
+def reserve_standard_descriptors():
+    # A closed standard descriptor would be reused by the next open(), sending
+    # echo() output into a diagnostics file.
+    for descriptor in (0, 1, 2):
+        try:
+            os.fstat(descriptor)
+        except OSError:
+            opened = os.open(os.devnull, os.O_RDWR)
+            if opened != descriptor:
+                os.dup2(opened, descriptor)
+                os.close(opened)
+
+
 def process_table():
     """Read identity/ancestry and wait state, never argv, environment or paths."""
     table = {}
@@ -109,6 +122,7 @@ def supervise(command, output, timeout, shutdown, cleanup, snapshot_interval):
     # cannot prove that those children exited after the launcher exits.
     if ctypes.CDLL(None, use_errno=True).prctl(36, 1, 0, 0, 0) != 0:
         raise RuntimeError('Cannot establish child subreaper')
+    reserve_standard_descriptors()
     output.mkdir(parents=True, exist_ok=False)
     started = time.monotonic()
     stopped = []
