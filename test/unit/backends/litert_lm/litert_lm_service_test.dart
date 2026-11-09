@@ -535,6 +535,102 @@ void main() {
     });
   });
 
+  group('raw prompt start token', () {
+    const params = ModelParams(liteRtLmBackend: LiteRtLmBackendPreference.cpu);
+    late _FakeLiteRtLmRuntimeClient client;
+
+    setUp(() => client = _FakeLiteRtLmRuntimeClient());
+
+    /// A tokenizer that puts [start] (the text of token 1) before every
+    /// prompt and reads [vocabulary] words, longest first, one token each.
+    void tokenizer(String start, Map<String, int> vocabulary) {
+      client.onTokenize = (text, addSpecial) {
+        final tokens = <int>[if (addSpecial && start.isNotEmpty) 1];
+        var rest = text;
+        while (rest.isNotEmpty) {
+          final word = vocabulary.keys
+              .where(rest.startsWith)
+              .fold('', (a, b) => b.length > a.length ? b : a);
+          if (word.isEmpty) {
+            tokens.add(rest.codeUnitAt(0) + 1000);
+            rest = rest.substring(1);
+          } else {
+            tokens.add(vocabulary[word]!);
+            rest = rest.substring(word.length);
+          }
+        }
+        return tokens;
+      };
+      client.onDetokenize = (tokens) =>
+          tokens.length == 1 && tokens.single == 1 ? start : '';
+    }
+
+    LiteRtLmService? service;
+    int? context;
+
+    tearDown(() {
+      service?.dispose();
+      service = null;
+    });
+
+    Future<String?> send(String prompt) async {
+      if (service == null) {
+        service = LiteRtLmService(clientFactory: () => client);
+        final model = await service!.loadModel(modelFile.path, params);
+        context = service!.createContext(model, params);
+      }
+      client.generated = StreamController<String>()..add('ok');
+      unawaited(client.generated.close());
+      await service!
+          .generate(context!, prompt, const GenerationParams(maxTokens: 8))
+          .drain<void>();
+      return client.lastPrompt;
+    }
+
+    test('drops special start-token text the runtime would read as a second '
+        'start token', () async {
+      tokenizer('<bos>', const {'hi': 50});
+      expect(await send('<bos>hi'), 'hi');
+      expect(await send('hi<bos>'), 'hi<bos>');
+      expect(await send('hi'), 'hi');
+    });
+
+    test('drops plain start-token text only when the rest keeps its '
+        'tokens', () async {
+      tokenizer('None', const {'None': 1, 'hi': 50, 'Nonet': 60, 'he': 61});
+      expect(await send('Nonehi'), 'hi');
+      expect(await send('Nonethe'), 'Nonethe');
+    });
+
+    test('keeps a prompt when the runtime adds no start token', () async {
+      tokenizer('', const {'hi': 50});
+      expect(await send('<bos>hi'), '<bos>hi');
+    });
+
+    for (final (name, start, prompt) in [
+      ('an empty prompt', '', ''),
+      ('a prompt that is only the start token', '<bos>', '<bos>'),
+    ]) {
+      test('refuses $name before native work', () async {
+        tokenizer(start, const {});
+        await expectLater(
+          send(prompt),
+          throwsA(
+            isA<LlamaArgumentException>()
+                .having((error) => error.name, 'name', 'prompt')
+                .having(
+                  (error) => error.message,
+                  'message',
+                  contains('needs prompt text'),
+                ),
+          ),
+        );
+        expect(client.createConversationCount, 0);
+        expect(client.generateCount, 0);
+      });
+    }
+  });
+
   group('bundle template content shape', () {
     const params = ModelParams(liteRtLmBackend: LiteRtLmBackendPreference.cpu);
     const probeParts = [
@@ -635,10 +731,8 @@ void main() {
           ]);
           expect(readPaths, [modelFile.path]);
 
-          await raw(service, context);
           await chat(service, context);
           expect(client.conversations.skip(3), [
-            (template: adapter, seeded: false),
             (template: adapter, seeded: true),
           ]);
           expect(client.renderMessageCount, 2);
@@ -657,11 +751,11 @@ void main() {
         final model = await service.loadModel(modelFile.path, params);
         final context = service.createContext(model, params);
 
-        await raw(service, context);
+        await chat(service, context);
         await chat(service, context);
         expect(client.conversations, [
           (template: null, seeded: false),
-          (template: null, seeded: false),
+          (template: null, seeded: true),
           (template: null, seeded: true),
         ]);
         expect(client.renderMessageCount, 1);
@@ -765,10 +859,8 @@ void main() {
           final created = client.conversations.length;
           final rendered = client.renderMessageCount;
           await chat(service, context);
-          await raw(service, context);
           expect(client.conversations.skip(created), [
             (template: null, seeded: true),
-            (template: null, seeded: false),
           ]);
           expect(client.renderMessageCount, rendered);
           expect(records, hasLength(1));
@@ -778,35 +870,111 @@ void main() {
       });
     }
 
-    for (final (name, send) in [('chat', chat), ('raw', raw)]) {
-      test('a failed $name send names a bundle template it could not '
-          'adapt', () async {
-        client.onRenderMessage = (_) => throw StateError('render failed');
-        final service = serviceReading(null);
-        final failure = StateError('send_message_stream rc=13');
-        try {
-          final model = await service.loadModel(modelFile.path, params);
-          final context = service.createContext(model, params);
+    test('a failed chat send names a bundle template it could not '
+        'adapt', () async {
+      client.onRenderMessage = (_) => throw StateError('render failed');
+      final service = serviceReading(null);
+      final failure = StateError('send_message_stream rc=13');
+      try {
+        final model = await service.loadModel(modelFile.path, params);
+        final context = service.createContext(model, params);
 
-          await expectLater(
-            send(service, context, sendError: failure),
-            throwsA(
-              isA<StateError>().having(
-                (error) => error.message,
-                'message',
-                allOf(
-                  startsWith('send_message_stream rc=13 '),
-                  contains('chat template of this bundle'),
-                  contains('list of {"type": "text", "text": ...} parts'),
-                ),
+        await expectLater(
+          chat(service, context, sendError: failure),
+          throwsA(
+            isA<StateError>().having(
+              (error) => error.message,
+              'message',
+              allOf(
+                startsWith('send_message_stream rc=13 '),
+                contains('chat template of this bundle'),
+                contains('list of {"type": "text", "text": ...} parts'),
               ),
             ),
-          );
-        } finally {
-          service.dispose();
-        }
-      });
+          ),
+        );
+      } finally {
+        service.dispose();
+      }
+    });
 
+    test('a failed raw send does not name a bundle template it does not '
+        'use', () async {
+      client.onRenderMessage = (_) => throw StateError('render failed');
+      final service = serviceReading(null);
+      final failure = StateError('send_message_stream rc=13');
+      try {
+        final model = await service.loadModel(modelFile.path, params);
+        final context = service.createContext(model, params);
+        await chat(service, context);
+        expect(records.single.message, contains('could not adapt'));
+
+        await expectLater(
+          raw(service, context, sendError: failure),
+          throwsA(same(failure)),
+        );
+      } finally {
+        service.dispose();
+      }
+    });
+
+    test('raw generation sends the prompt unchanged, without the bundle '
+        'template or its probe', () async {
+      renderLikeTheRuntime(interpolating);
+      final service = serviceReading(interpolating);
+      try {
+        final model = await service.loadModel(modelFile.path, params);
+        final context = service.createContext(model, params);
+        const prompt =
+            '<|im_start|>user\nHello<|im_end|>\n<|im_start|>assistant\n';
+        client.generated = StreamController<String>()..add('Hi');
+        unawaited(client.generated.close());
+
+        await service
+            .generate(context, prompt, const GenerationParams(maxTokens: 8))
+            .drain<void>();
+
+        expect(client.conversations, [
+          (template: liteRtLmRawPromptTemplate, seeded: false),
+        ]);
+        expect(client.lastPrompt, prompt);
+        expect(client.renderMessageCount, 0);
+        expect(readPaths, isEmpty);
+
+        await chat(service, context);
+        expect(client.conversations.skip(1), [
+          (template: null, seeded: false),
+          (template: liteRtLmTextContentAdapter(interpolating), seeded: false),
+          (template: liteRtLmTextContentAdapter(interpolating), seeded: true),
+        ]);
+      } finally {
+        service.dispose();
+      }
+    });
+
+    test('raw generation keeps a runtime refusal of its template', () async {
+      final refusal = LlamaUnsupportedException('no template setter');
+      client.onCreateConversation = () {
+        if (client.lastPromptTemplate != null) throw refusal;
+      };
+      final service = serviceReading(null);
+      try {
+        final model = await service.loadModel(modelFile.path, params);
+        final context = service.createContext(model, params);
+
+        await expectLater(
+          service
+              .generate(context, 'Hello', const GenerationParams(maxTokens: 8))
+              .drain<void>(),
+          throwsA(same(refusal)),
+        );
+        expect(client.generateCount, 0);
+      } finally {
+        service.dispose();
+      }
+    });
+
+    for (final (name, send) in [('chat', chat), ('raw', raw)]) {
       test('a failed $name send stays as it is for a template that reads '
           'content', () async {
         final service = serviceReading(liteRtLmPartsContentTemplate);
@@ -8294,12 +8462,15 @@ class _FakeLiteRtLmRuntimeClient extends LiteRtLmRuntimeClient {
   bool thinkingBudget = true;
   LiteRtLmFinishReason? finishReason;
   List<int> tokenizeResult = const <int>[];
+  List<int>? Function(String text, bool addSpecial)? onTokenize;
+  String? Function(List<int> tokens)? onDetokenize;
   String detokenizeResult = '';
   LiteRtLmRuntimeMetrics? metrics;
   Object? metricsError;
   void Function()? onCreateConversation;
   void Function()? onInitialize;
   String? lastPromptTemplate;
+  String? lastPrompt;
   final List<({String? template, bool seeded})> conversations = [];
   String Function(String? promptTemplate)? onRenderMessage;
 
@@ -8434,14 +8605,14 @@ class _FakeLiteRtLmRuntimeClient extends LiteRtLmRuntimeClient {
     _checkNotDisposed();
     lastTokenizeText = text;
     lastTokenizeAddSpecial = addSpecial;
-    return tokenizeResult;
+    return onTokenize?.call(text, addSpecial) ?? tokenizeResult;
   }
 
   @override
   String detokenize(List<int> tokens) {
     _checkNotDisposed();
     lastDetokenizeTokens = List<int>.from(tokens);
-    return detokenizeResult;
+    return onDetokenize?.call(tokens) ?? detokenizeResult;
   }
 
   @override
@@ -8461,6 +8632,7 @@ class _FakeLiteRtLmRuntimeClient extends LiteRtLmRuntimeClient {
     double? presencePenalty,
   }) {
     _checkNotDisposed();
+    lastPrompt = prompt;
     lastMaxOutputTokens = maxOutputTokens;
     lastRepetitionPenalty = repetitionPenalty;
     lastPresencePenalty = presencePenalty;

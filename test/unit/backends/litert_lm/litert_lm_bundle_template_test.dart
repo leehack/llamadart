@@ -410,6 +410,42 @@ void main() {
     });
   });
 
+  group('liteRtLmRawPromptTemplate', () {
+    const prompts = [
+      'hi',
+      '\n  The capital of France is',
+      '<|im_start|>user\nhi<|im_end|>\n<|im_start|>assistant\n',
+      '{{ messages }} {% if x %}literal{% endif %}\n\n',
+      '안녕 \t trailing whitespace  \n',
+    ];
+
+    for (final prompt in prompts) {
+      test('renders ${jsonEncode(prompt)} unchanged', () {
+        expect(
+          renderLiteRtLmContent(liteRtLmRawPromptTemplate, [
+            {'type': 'text', 'text': prompt},
+          ]),
+          prompt,
+        );
+        expect(
+          renderLiteRtLmContent(liteRtLmRawPromptTemplate, prompt),
+          prompt,
+        );
+      });
+    }
+
+    test('renders only the text parts of a message', () {
+      expect(
+        renderLiteRtLmContent(liteRtLmRawPromptTemplate, [
+          {'type': 'text', 'text': 'a'},
+          {'type': 'image'},
+          {'type': 'text', 'text': 'b'},
+        ]),
+        'ab',
+      );
+    });
+  });
+
   group('liteRtLmTextContentAdapter', () {
     const probeParts = [
       {'type': 'text', 'text': liteRtLmContentShapeProbeText},
