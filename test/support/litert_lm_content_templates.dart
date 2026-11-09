@@ -1,4 +1,5 @@
 import 'package:dinja/dinja.dart';
+import 'package:llamadart/src/core/exceptions.dart';
 
 /// Bundle templates that read message content as a string, as bundles built
 /// for LiteRT-LM runtimes before v0.18 do, keyed by how they read it.
@@ -39,8 +40,9 @@ const String liteRtLmPartsContentTemplate =
     '{% endfor -%}';
 
 /// Renders [template] for one message with [content], as a LiteRT-LM runtime
-/// renders the single message of a conversation. Throws a [StateError] when
-/// the template fails, as the runtime client does.
+/// renders the single message of a conversation. Throws a
+/// [LlamaModelException] when the template fails, as the C API 1.0 runtime
+/// client does.
 String renderLiteRtLmContent(String template, Object? content) {
   try {
     return Template(template).render({
@@ -49,6 +51,6 @@ String renderLiteRtLmContent(String template, Object? content) {
       ],
     });
   } on Exception catch (error) {
-    throw StateError('template failed: $error');
+    throw LlamaModelException('template failed: $error');
   }
 }
