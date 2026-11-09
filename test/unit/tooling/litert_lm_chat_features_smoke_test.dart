@@ -196,6 +196,52 @@ void main() {
     },
   );
 
+  group('thinkingSupportForTemplate', () {
+    const closedAlways =
+        '{%- if m.role == "assistant" %}<think>\n\n</think>\n\n{% endif -%}'
+        '{%- if add_generation_prompt %}<|im_start|>assistant\n'
+        '<think>\n\n</think>\n\n{% endif -%}';
+    const honoursSwitch =
+        '{%- if add_generation_prompt %}<|im_start|>assistant\n'
+        '{%- if enable_thinking is defined and enable_thinking is false %}'
+        '<think>\n\n</think>\n\n{%- else %}<think>\n{%- endif %}'
+        '{% endif -%}';
+
+    test('reports a template that always closes the think block as N/A', () {
+      final support = smoke.thinkingSupportForTemplate(closedAlways);
+      expect(support.canProduceThinking, isFalse);
+      expect(support.reason, contains('enable_thinking'));
+    });
+
+    test('keeps the assertion for a template that reads enable_thinking', () {
+      expect(
+        smoke.thinkingSupportForTemplate(honoursSwitch).canProduceThinking,
+        isTrue,
+      );
+    });
+
+    test('keeps the assertion when only history closes the think block', () {
+      const openInPrompt =
+          '{%- if m.role == "assistant" %}<think>\n\n</think>\n\n{% endif -%}'
+          '{%- if add_generation_prompt %}<|im_start|>assistant\n<think>\n'
+          '{% endif -%}';
+      expect(
+        smoke.thinkingSupportForTemplate(openInPrompt).canProduceThinking,
+        isTrue,
+      );
+    });
+
+    test('keeps the assertion without a readable or closed-think template', () {
+      expect(smoke.thinkingSupportForTemplate(null).canProduceThinking, isTrue);
+      expect(
+        smoke
+            .thinkingSupportForTemplate('<|im_start|>assistant\n<think>\n')
+            .canProduceThinking,
+        isTrue,
+      );
+    });
+  });
+
   test('prints usage and exits 64 without a model path', () async {
     final smoke = await compileDartScript(
       'tool/litert_lm_chat_features_smoke.dart',
