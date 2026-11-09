@@ -116,6 +116,7 @@ class LiteRtLmBackend
        _preferredBackend = preferredBackend,
        _workerEntryPoint = workerEntryPoint ?? liteRtLmWorkerEntry {
     registerGenerationLimitReporter(this, _generationLimits);
+    registerRuntimePromptTokenizer(this, _RuntimePromptTokenizer(this));
     if (initialSendPort != null) {
       _sendPort = initialSendPort;
       _isReady = true;
@@ -654,6 +655,22 @@ class LiteRtLmBackend
     final response = await _sendRequest(
       (sendPort) =>
           LiteRtLmTokenizeRequest(modelHandle, text, addSpecial, sendPort),
+    );
+    return _expect<LiteRtLmTokenizeResponse>(response, 'tokenization').tokens;
+  }
+
+  Future<List<int>> _tokenizeRuntimePrompt(
+    int modelHandle,
+    String prompt,
+  ) async {
+    final response = await _sendRequest(
+      (sendPort) => LiteRtLmTokenizeRequest(
+        modelHandle,
+        prompt,
+        true,
+        sendPort,
+        runtimePrompt: true,
+      ),
     );
     return _expect<LiteRtLmTokenizeResponse>(response, 'tokenization').tokens;
   }
@@ -1272,6 +1289,17 @@ final class _LiteRtLmGenerationLimits
   @override
   BackendGenerationLimit? generationLimitOf(Stream<List<int>> generation) =>
       limits[generation];
+}
+
+final class _RuntimePromptTokenizer
+    implements BackendRuntimePromptTokenization {
+  _RuntimePromptTokenizer(this.backend);
+
+  final LiteRtLmBackend backend;
+
+  @override
+  Future<List<int>> tokenizeRuntimePrompt(int modelHandle, String prompt) =>
+      backend._tokenizeRuntimePrompt(modelHandle, prompt);
 }
 
 /// A generation sent to the worker, tracked until its terminal response even

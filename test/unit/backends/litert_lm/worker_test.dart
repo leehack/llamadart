@@ -615,6 +615,39 @@ void main() {
       }
     });
 
+    test('routes runtime prompt tokenize requests to the service', () async {
+      final worker = await _startWorkerInCurrentIsolate(
+        _RuntimePromptLiteRtLmService(),
+      );
+
+      try {
+        for (final (runtimePrompt, tokens) in [
+          (false, [10]),
+          (true, [20]),
+        ]) {
+          expect(
+            await _sendRequest(
+              worker.sendPort,
+              (sendPort) => LiteRtLmTokenizeRequest(
+                1,
+                '<bos>hi',
+                false,
+                sendPort,
+                runtimePrompt: runtimePrompt,
+              ),
+            ),
+            isA<LiteRtLmTokenizeResponse>().having(
+              (response) => response.tokens,
+              'tokens',
+              tokens,
+            ),
+          );
+        }
+      } finally {
+        await _disposeWorker(worker);
+      }
+    });
+
     test(
       'serializes regular requests while a service call is pending',
       () async {
@@ -1179,6 +1212,21 @@ class _DetokenizeLiteRtLmService extends LiteRtLmService {
   ) async {
     return 'decoded text';
   }
+}
+
+class _RuntimePromptLiteRtLmService extends LiteRtLmService {
+  @override
+  Future<List<int>> tokenize(
+    int modelHandle,
+    String text,
+    bool addSpecial,
+  ) async => const [10];
+
+  @override
+  Future<List<int>> tokenizeRuntimePrompt(
+    int modelHandle,
+    String prompt,
+  ) async => const [20];
 }
 
 class _NoPerfLiteRtLmService extends LiteRtLmService {

@@ -1079,6 +1079,20 @@ class LiteRtLmService {
     return client.tokenize(text, addSpecial: addSpecial);
   }
 
+  /// Tokenizes [prompt] as native prefill reads it: without a leading start
+  /// token, which the runtime then adds once.
+  Future<List<int>> tokenizeRuntimePrompt(
+    int modelHandle,
+    String prompt,
+  ) async {
+    _checkModelHandle(modelHandle);
+    final client = await _ensureClientForRuntime();
+    return client.tokenize(
+      _withoutLeadingStartToken(client, prompt),
+      addSpecial: true,
+    );
+  }
+
   /// Detokenizes token IDs with the loaded LiteRT-LM model tokenizer.
   Future<String> detokenize(
     int modelHandle,

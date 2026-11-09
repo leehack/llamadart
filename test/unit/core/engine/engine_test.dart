@@ -12,7 +12,9 @@ import 'package:llamadart/src/backends/backend.dart'
         BackendGenerationLimit,
         BackendGenerationLimitReporting,
         BackendGenerationUsageReporting,
-        BackendVideoRuntimeSupport;
+        BackendRuntimePromptTokenization,
+        BackendVideoRuntimeSupport,
+        registerRuntimePromptTokenizer;
 import 'package:llamadart/src/core/engine/engine.dart'
     show completionGenerationLimit;
 import 'package:llamadart/src/core/grammar/json_schema_converter.dart';
@@ -6298,6 +6300,33 @@ void main() {
         runtimeTemplate,
       );
     });
+
+    test('chatTemplate counts the runtime template prompt with the backend '
+        'runtime prompt tokenizer', () async {
+      final mock = backend();
+      final tokenizer = _RecordingRuntimePromptTokenizer();
+      registerRuntimePromptTokenizer(mock, tokenizer);
+      final engine = LlamaEngine(mock);
+      addTearDown(engine.dispose);
+      await engine.loadModel('model.litertlm');
+
+      final result = await engine.chatTemplate(messages);
+
+      expect(result.tokenCount, 2);
+      expect(tokenizer.prompts, ['RUNTIME:hi']);
+      expect(mock.tokenizeCalls, 0);
+    });
+
+    test('chatTemplate counts a runtime template prompt as text without a '
+        'runtime prompt tokenizer', () async {
+      final mock = backend();
+      final engine = LlamaEngine(mock);
+      addTearDown(engine.dispose);
+      await engine.loadModel('model.litertlm');
+
+      expect((await engine.chatTemplate(messages)).tokenCount, 3);
+      expect(mock.tokenizeCalls, 1);
+    });
   });
 
   group('Qwen tool cancellation history', () {
@@ -7077,5 +7106,19 @@ class _GatedVisionProbeBackend extends MockLlamaBackend {
   Future<bool> supportsVision(int mmContextHandle) async {
     await visionGate?.future;
     return true;
+  }
+}
+
+class _RecordingRuntimePromptTokenizer
+    implements BackendRuntimePromptTokenization {
+  final List<String> prompts = <String>[];
+
+  @override
+  Future<List<int>> tokenizeRuntimePrompt(
+    int modelHandle,
+    String prompt,
+  ) async {
+    prompts.add(prompt);
+    return const [7, 8];
   }
 }
