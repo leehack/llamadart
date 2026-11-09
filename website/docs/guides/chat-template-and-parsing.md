@@ -56,7 +56,7 @@ print(result.format);
   `enableThinking: false`: llamadart still closes a thought the kwarg opens
   (Hy3 `high`, MiniMax M3 `enabled`, Cohere2 MoE `reasoning: true`), which
   llama-server leaves open, and Cohere2 MoE still drops earlier thoughts
-  unless `skip_thinking` is set too. Hy3 accepts only `no_think`, `low` and
+  unless `skip_thinking` is set to `false`. Hy3 accepts only `no_think`, `low` and
   `high`; any other `reasoning_effort`, such as `none` or `medium`, makes the
   template throw `LlamaInferenceException`, as llama.cpp's render fails.
 - `templateNow`: deterministic time injection, including `strftime_now` and

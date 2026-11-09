@@ -210,6 +210,7 @@ class CommandR7BHandler extends ChatTemplateHandler {
         output,
         endTag: thinkingEndTag,
         contentOpenings: openings,
+        isPartial: isPartial,
       );
       text = thinking.content;
     } else {

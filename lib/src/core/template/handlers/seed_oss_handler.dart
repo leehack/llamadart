@@ -121,11 +121,16 @@ class SeedOssHandler extends ChatTemplateHandler {
     // reply starts with the start tag. Later thinking tags are content.
     final reply = trimLeftAsciiSpace(output);
     final thought = thinkingForcedOpen
-        ? extractForcedOpenThoughtVerbatim(output, endTag: thinkingEndTag)
+        ? extractForcedOpenThoughtVerbatim(
+            output,
+            endTag: thinkingEndTag,
+            isPartial: isPartial,
+          )
         : reply.startsWith(thinkingStartTag)
         ? extractForcedOpenThoughtVerbatim(
             reply.substring(thinkingStartTag.length),
             endTag: thinkingEndTag,
+            isPartial: isPartial,
           )
         : null;
     final parsed = parseXmlToolCalls(
