@@ -35,6 +35,7 @@ const _phases = {
   'abi',
   'complete',
 };
+const _sources = {'local_manifest_declaration', 'build_hook_cache'};
 const _markers = {
   'not_checked',
   'not_available',
@@ -49,11 +50,13 @@ Map<String, Object> nativeDiagnosticObservation(
   String code, {
   String phase = 'not_started',
   String marker = 'not_checked',
+  String source = 'local_manifest_declaration',
 }) {
   if (!nativeDiagnosticRuntimes.contains(runtime) ||
       !_codes.contains(code) ||
       !_phases.contains(phase) ||
-      !_markers.contains(marker)) {
+      !_markers.contains(marker) ||
+      !_sources.contains(source)) {
     throw const FormatException('Invalid native diagnostic observation');
   }
   return Map.unmodifiable({
@@ -61,8 +64,10 @@ Map<String, Object> nativeDiagnosticObservation(
     'code': code,
     'phase': phase,
     'abi_marker': marker,
-    'target_source': 'local_manifest_declaration',
-    'loader_strategy': 'direct_declared_files',
+    'target_source': source,
+    'loader_strategy': source == 'build_hook_cache'
+        ? 'direct_hook_cache_files'
+        : 'direct_declared_files',
     'loaded_release': 'unknown',
     'emitted_app_libraries': 'not_checked',
     'production_loader': 'not_checked',
@@ -73,9 +78,9 @@ Map<String, Object> nativeDiagnosticObservation(
     'inference': 'not_checked',
     'remediation': switch (code) {
       'SURFACE_OBSERVED' =>
-        'Only the declared files and checked symbols/markers were observed; validate the intended app/model/backend separately.',
+        'Only the checked files and symbols/markers were observed; validate the intended app/model/backend separately.',
       'ASSET_NOT_DECLARED' =>
-        'The local manifest does not declare this runtime. Check the intended build runtime selection and rebuild; publication policy and overrides can differ.',
+        'The local manifest does not declare this runtime, and for macOS LiteRT-LM the build hook cache holds no complete runtime. Check the intended build runtime selection and rebuild; publication policy and overrides can differ.',
       'ARTIFACT_MISSING' =>
         'A declared file is unavailable. Regenerate the intended build assets; do not infer runtime publication from this observation.',
       'BINARY_INCOMPATIBLE' =>
@@ -439,12 +444,14 @@ Future<Map<String, Object>> runNativeDiagnostic(
     );
     remaining();
     if (payload is! Map ||
-        payload.keys.join(',') != 'runtime,nonce,code,phase,marker' ||
+        payload.keys.join(',') != 'runtime,nonce,code,phase,marker,source' ||
         payload['runtime'] != runtime ||
         payload['nonce'] != nonce ||
         !_codes.contains(payload['code']) ||
         !_phases.contains(payload['phase']) ||
-        !_markers.contains(payload['marker'])) {
+        !_markers.contains(payload['marker']) ||
+        !_sources.contains(payload['source']) ||
+        (payload['source'] == 'build_hook_cache' && runtime != 'litert_lm')) {
       return result('CHILD_PROTOCOL_INVALID');
     }
     if (const {
@@ -453,7 +460,8 @@ Future<Map<String, Object>> runNativeDiagnostic(
       'ASSET_NOT_DECLARED',
     }.contains(payload['code'])) {
       if (payload['phase'] != 'declaration' ||
-          payload['marker'] != 'not_checked') {
+          payload['marker'] != 'not_checked' ||
+          payload['source'] != 'local_manifest_declaration') {
         return result('CHILD_PROTOCOL_INVALID');
       }
     } else if (!const {
@@ -482,6 +490,7 @@ Future<Map<String, Object>> runNativeDiagnostic(
       payload['code'] as String,
       phase: payload['phase'] as String,
       marker: payload['marker'] as String,
+      source: payload['source'] as String,
     );
   }
 

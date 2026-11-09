@@ -13,6 +13,7 @@ Future<void> main(List<String> arguments) async {
     'code': 'SURFACE_OBSERVED',
     'phase': 'complete',
     'marker': 'tts_v1',
+    'source': 'local_manifest_declaration',
   };
   const secret =
       'PRIVATE_DIAGNOSTIC_TOKEN /Users/private-user/key https://private.invalid/?token=SECRET \u001b[31m';
@@ -63,10 +64,17 @@ Future<void> main(List<String> arguments) async {
       payload['runtime'] = 'litert_lm';
     case 'inconsistent':
       payload['phase'] = 'open';
+    case 'unknown-source':
+      payload['source'] = secret;
     case 'flood':
       for (var i = 0; i < 3000; i++) {
         stdout.writeln(secret);
         stderr.writeln(secret);
+      }
+    case 'hook-cache':
+      payload['source'] = 'build_hook_cache';
+      if (request['runtime'] == 'litert_lm') {
+        payload['marker'] = 'callback_v2_finish_v1';
       }
     case 'success':
       break;

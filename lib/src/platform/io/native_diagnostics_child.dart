@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:path/path.dart' as path;
 
 import 'native_diagnostics.dart';
+import 'native_diagnostics_hook_cache.dart';
 import 'native_diagnostics_probe.dart';
 
 /// Private source entry point. Native stdout/stderr are discarded by its owner.
@@ -54,6 +55,7 @@ Future<void> main() async {
       return;
     }
     phase.writeAsStringSync('declaration', flush: true);
+    var source = 'local_manifest_declaration';
     Map<String, Object> observeDeclaration() {
       final type = FileSystemEntity.typeSync(manifest.path, followLinks: false);
       if (type == FileSystemEntityType.notFound) {
@@ -77,6 +79,20 @@ Future<void> main() async {
           phase: 'declaration',
         );
       }
+      if (target == null && request['runtime'] == 'litert_lm') {
+        // The macOS hook keeps LiteRT-LM in its cache instead of declaring it.
+        final packageConfig = File(
+          path.join(path.dirname(manifest.path), 'package_config.json'),
+        );
+        if (FileSystemEntity.typeSync(packageConfig.path, followLinks: false) ==
+            FileSystemEntityType.file) {
+          target = nativeDiagnosticLiteRtLmHookCacheTarget(
+            packageConfig,
+            request['abi'] as String,
+          );
+          if (target != null) source = 'build_hook_cache';
+        }
+      }
       if (target == null) {
         return nativeDiagnosticObservation(
           request['runtime'] as String,
@@ -99,6 +115,7 @@ Future<void> main() async {
         'code': observation['code'],
         'phase': observation['phase'],
         'marker': observation['abi_marker'],
+        'source': source,
       }),
       flush: true,
     );

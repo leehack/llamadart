@@ -241,11 +241,12 @@ void main() {
     tearDown(() => dir.delete(recursive: true));
     Future<Map<String, Object>> run(
       String mode, {
+      String runtime = 'llama_cpp',
       Duration timeout = const Duration(seconds: 10),
     }) async {
       final activeConfig = (await Isolate.packageConfig)!;
       return runNativeDiagnostic(
-        'llama_cpp',
+        runtime,
         packageConfig: config,
         childScript: childScript,
         abi: 'macos_arm64',
@@ -268,10 +269,21 @@ void main() {
           expect(result['loaded_release'], 'unknown');
           expect(result['production_loader'], 'not_checked');
           expect(result['gpu_usability'], 'not_checked');
+          expect(result['target_source'], 'local_manifest_declaration');
+          expect(result['loader_strategy'], 'direct_declared_files');
           expect(jsonEncode(result), isNot(contains('PRIVATE')));
         }
       },
     );
+    test('reports a macOS LiteRT-LM hook-cache target as its source', () async {
+      final result = await run('hook-cache', runtime: 'litert_lm');
+      expect(result['code'], 'SURFACE_OBSERVED');
+      expect(result['abi_marker'], 'callback_v2_finish_v1');
+      expect(result['target_source'], 'build_hook_cache');
+      expect(result['loader_strategy'], 'direct_hook_cache_files');
+      expect(result['loaded_release'], 'unknown');
+      expect(result['production_loader'], 'not_checked');
+    });
     for (final mode in [
       'stdout-only',
       'malformed',
@@ -281,6 +293,8 @@ void main() {
       'wrong-nonce',
       'wrong-runtime',
       'inconsistent',
+      'unknown-source',
+      'hook-cache',
     ]) {
       test('rejects $mode without exposing child-controlled strings', () async {
         final result = await run(mode);

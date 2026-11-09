@@ -88,6 +88,14 @@ hashes or expected publication policy, or searches neighboring caches after a
 declared target fails. Overrides are reported only as set/unset and can differ
 from the checked declaration.
 
+On macOS the build hook does not declare LiteRT-LM as code assets: it keeps the
+runtime in its own cache under the `llamadart` package root, and the runtime
+loads it from there. When the descriptor declares no LiteRT-LM runtime, the
+command finds that cache with the runtime's own cache lookup, without
+`LLAMADART_LITERT_LM_LIB_DIR`, and checks it like a declaration, reporting
+`target_source: build_hook_cache` and `loader_strategy: direct_hook_cache_files`
+instead of `local_manifest_declaration` and `direct_declared_files`.
+
 Each invocation starts one bounded child process, opens declared files, resolves
 a small fixed symbol group, and reads compile-time llama.cpp/LiteRT ABI markers.
 Stable Diffusion checks symbols only. No engine, model, device enumeration, GPU
@@ -118,7 +126,8 @@ its failure is not proof the backend is unavailable. `production_loader`,
 `loaded_release` remains unknown. Native Windows/Linux execution is not
 qualified by the macOS artifact checks.
 
-`ASSET_NOT_DECLARED` means this local descriptor has no selected runtime; check
+`ASSET_NOT_DECLARED` means this local descriptor has no selected runtime and,
+for macOS LiteRT-LM, the build hook cache holds no complete runtime either; check
 the intended build selection. Missing/invalid descriptors, missing files,
 loader failures, missing symbols, unknown ABI markers, child failures and
 timeouts have separate fixed codes. A timeout or child failure has no hardware
