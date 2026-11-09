@@ -89,20 +89,28 @@ esac
         expect(stored(), previous);
       });
     }
+  }, skip: Platform.isWindows ? 'requires a POSIX Bash runtime' : false);
 
-    test('names the chat app bundle that macOS scenarios run', () {
-      final appInfo = File(
-        path.join(
-          'example',
-          'chat_app',
-          'macos',
-          'Runner',
-          'Configs',
-          'AppInfo.xcconfig',
+  test('names the chat app bundle that macOS scenarios run', () {
+    final appInfo = File(
+      path.join(
+        'example',
+        'chat_app',
+        'macos',
+        'Runner',
+        'Configs',
+        'AppInfo.xcconfig',
+      ),
+    ).readAsStringSync();
+
+    expect(
+      appInfo,
+      matches(
+        RegExp(
+          '^PRODUCT_BUNDLE_IDENTIFIER = ${RegExp.escape(_bundleId)}\\r?\$',
+          multiLine: true,
         ),
-      ).readAsStringSync();
-
-      expect(appInfo, contains('PRODUCT_BUNDLE_IDENTIFIER = $_bundleId\n'));
-    });
+      ),
+    );
   });
 }
