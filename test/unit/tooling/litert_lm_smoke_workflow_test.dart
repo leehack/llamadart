@@ -28,6 +28,34 @@ void main() {
   final bash = Platform.isWindows ? null : Process.runSync('which', ['bash']);
   final skip = bash == null || bash.exitCode != 0 ? 'requires bash' : null;
 
+  test('library smoke covers every bundled desktop runtime', () {
+    final jobs = _workflow()['jobs'] as YamlMap;
+    final include =
+        (((jobs['native-smoke'] as YamlMap)['strategy'] as YamlMap)['matrix']
+                as YamlMap)['include']
+            as YamlList;
+    final subdirs = include
+        .cast<YamlMap>()
+        .map((entry) => entry['litert_lib_subdir'])
+        .toSet();
+    expect(subdirs, {'linux/x64', 'linux/arm64', 'windows/x64'});
+
+    for (final entry in include.cast<YamlMap>()) {
+      if (entry['litert_lib_subdir'] == 'linux/arm64') {
+        expect(entry['library_only'], isTrue);
+      }
+    }
+    for (final name in [
+      'Cache tiny LiteRT-LM model',
+      'Download tiny LiteRT-LM model',
+      'Run LiteRT-LM engine and chat smoke',
+      'Note skipped LiteRT-LM model smokes',
+    ]) {
+      expect(_step(name)['if'], contains('!matrix.library_only'));
+    }
+    expect(_step('Run LiteRT-LM library smoke')['if'], isNull);
+  });
+
   test(
     'cache key and download URL derive from the pinned revision and sha',
     () {

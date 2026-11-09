@@ -2,6 +2,8 @@ import 'dart:convert';
 import 'dart:ffi';
 import 'dart:io';
 
+import 'package:llamadart/src/backends/litert_lm/litert_lm_c_api_version.dart';
+import 'package:llamadart/src/backends/litert_lm/litert_lm_platform.dart';
 import 'package:llamadart/src/backends/litert_lm/litert_lm_runtime.dart'
     as runtime;
 import 'package:llamadart/src/hook/native_release_pins.dart';
@@ -36,9 +38,30 @@ void main() {
     library.lookup<NativeFunction<Void Function()>>(symbol);
   }
 
+  requireInProcessLiteRtMarker(library, Abi.current());
+
   print(
     'RESULT litert_lm_library ${jsonEncode({'abi': Abi.current().toString(), 'library': opened.path, 'symbols': _requiredSymbols})}',
   );
+}
+
+/// Fails when a bundled Linux or Windows runtime does not report in-process
+/// LiteRT, which gates native embeddings there; a repin that drops the
+/// `litert_lm_native_in_process_litert_abi_version` export would otherwise
+/// surface only on hardware.
+void requireInProcessLiteRtMarker(DynamicLibrary library, Abi abi) {
+  if (abi != Abi.linuxX64 && abi != Abi.linuxArm64 && abi != Abi.windowsX64) {
+    return;
+  }
+  final reported = readLiteRtLmInProcessLiteRtAbiVersion(library);
+  if (reported != liteRtLmInProcessLiteRtAbiVersion) {
+    throw StateError(
+      'The $abi LiteRT-LM runtime reports '
+      'litert_lm_native_in_process_litert_abi_version '
+      '${reported ?? '(not exported)'}, expected '
+      '$liteRtLmInProcessLiteRtAbiVersion.',
+    );
+  }
 }
 
 bool _isSupportedHost() {
