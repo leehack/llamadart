@@ -9,6 +9,7 @@ import 'package:ffi/ffi.dart';
 
 import 'package:llamadart/src/backends/litert_lm/litert_lm_runtime.dart';
 import 'package:llamadart/src/core/exceptions.dart';
+import 'package:llamadart/src/hook/native_release_pins.dart';
 import 'package:test/test.dart';
 
 Future<String> _compileFixture(Directory dir, List<String> defines) async {
@@ -41,7 +42,17 @@ void main() {
               promptTemplate: 'required',
               npuBackend: true,
             ),
-            throwsA(isA<LlamaUnsupportedException>()),
+            throwsA(
+              isA<LlamaUnsupportedException>().having(
+                (error) => error.message,
+                'message',
+                allOf(
+                  contains('litert_lm_conversation_config_set_prompt_template'),
+                  contains('raw prompt generation'),
+                  contains('litert-lm-native $liteRtLmReleaseTag'),
+                ),
+              ),
+            ),
           );
           // A runtime without this optional setter still supports requests
           // which preserve its native model template.

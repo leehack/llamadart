@@ -15,6 +15,24 @@ const int _jinjaPromptTemplateField = 7;
 // `LlmMetadata.channels` in `runtime/proto/llm_metadata.proto`.
 const int _channelsField = 8;
 
+/// A conversation template that renders the text of each message unchanged,
+/// so a raw prompt sent as one user message reaches the model as it is,
+/// instead of inside the bundle's chat turn.
+///
+/// It reads content both as a string and as a list of parts, the form
+/// LiteRT-LM v0.18 and later pass. All of its literal whitespace sits inside
+/// tags, so the runtime's block trimming cannot change the prompt.
+const String liteRtLmRawPromptTemplate =
+    '{%- for message in messages -%}'
+    '{%- if message.content is string -%}'
+    '{{ message.content }}'
+    '{%- else -%}'
+    '{%- for part in message.content -%}'
+    "{%- if part.type == 'text' -%}{{ part.text }}{%- endif -%}"
+    '{%- endfor -%}'
+    '{%- endif -%}'
+    '{%- endfor -%}';
+
 /// The text of [liteRtLmContentShapeProbeMessage].
 const String liteRtLmContentShapeProbeText = 'llamadart-content-shape-probe';
 

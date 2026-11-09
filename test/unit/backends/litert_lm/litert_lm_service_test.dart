@@ -635,10 +635,8 @@ void main() {
           ]);
           expect(readPaths, [modelFile.path]);
 
-          await raw(service, context);
           await chat(service, context);
           expect(client.conversations.skip(3), [
-            (template: adapter, seeded: false),
             (template: adapter, seeded: true),
           ]);
           expect(client.renderMessageCount, 2);
@@ -657,11 +655,11 @@ void main() {
         final model = await service.loadModel(modelFile.path, params);
         final context = service.createContext(model, params);
 
-        await raw(service, context);
+        await chat(service, context);
         await chat(service, context);
         expect(client.conversations, [
           (template: null, seeded: false),
-          (template: null, seeded: false),
+          (template: null, seeded: true),
           (template: null, seeded: true),
         ]);
         expect(client.renderMessageCount, 1);
@@ -765,10 +763,8 @@ void main() {
           final created = client.conversations.length;
           final rendered = client.renderMessageCount;
           await chat(service, context);
-          await raw(service, context);
           expect(client.conversations.skip(created), [
             (template: null, seeded: true),
-            (template: null, seeded: false),
           ]);
           expect(client.renderMessageCount, rendered);
           expect(records, hasLength(1));
@@ -778,35 +774,111 @@ void main() {
       });
     }
 
-    for (final (name, send) in [('chat', chat), ('raw', raw)]) {
-      test('a failed $name send names a bundle template it could not '
-          'adapt', () async {
-        client.onRenderMessage = (_) => throw StateError('render failed');
-        final service = serviceReading(null);
-        final failure = StateError('send_message_stream rc=13');
-        try {
-          final model = await service.loadModel(modelFile.path, params);
-          final context = service.createContext(model, params);
+    test('a failed chat send names a bundle template it could not '
+        'adapt', () async {
+      client.onRenderMessage = (_) => throw StateError('render failed');
+      final service = serviceReading(null);
+      final failure = StateError('send_message_stream rc=13');
+      try {
+        final model = await service.loadModel(modelFile.path, params);
+        final context = service.createContext(model, params);
 
-          await expectLater(
-            send(service, context, sendError: failure),
-            throwsA(
-              isA<StateError>().having(
-                (error) => error.message,
-                'message',
-                allOf(
-                  startsWith('send_message_stream rc=13 '),
-                  contains('chat template of this bundle'),
-                  contains('list of {"type": "text", "text": ...} parts'),
-                ),
+        await expectLater(
+          chat(service, context, sendError: failure),
+          throwsA(
+            isA<StateError>().having(
+              (error) => error.message,
+              'message',
+              allOf(
+                startsWith('send_message_stream rc=13 '),
+                contains('chat template of this bundle'),
+                contains('list of {"type": "text", "text": ...} parts'),
               ),
             ),
-          );
-        } finally {
-          service.dispose();
-        }
-      });
+          ),
+        );
+      } finally {
+        service.dispose();
+      }
+    });
 
+    test('a failed raw send does not name a bundle template it does not '
+        'use', () async {
+      client.onRenderMessage = (_) => throw StateError('render failed');
+      final service = serviceReading(null);
+      final failure = StateError('send_message_stream rc=13');
+      try {
+        final model = await service.loadModel(modelFile.path, params);
+        final context = service.createContext(model, params);
+        await chat(service, context);
+        expect(records.single.message, contains('could not adapt'));
+
+        await expectLater(
+          raw(service, context, sendError: failure),
+          throwsA(same(failure)),
+        );
+      } finally {
+        service.dispose();
+      }
+    });
+
+    test('raw generation sends the prompt unchanged, without the bundle '
+        'template or its probe', () async {
+      renderLikeTheRuntime(interpolating);
+      final service = serviceReading(interpolating);
+      try {
+        final model = await service.loadModel(modelFile.path, params);
+        final context = service.createContext(model, params);
+        const prompt =
+            '<|im_start|>user\nHello<|im_end|>\n<|im_start|>assistant\n';
+        client.generated = StreamController<String>()..add('Hi');
+        unawaited(client.generated.close());
+
+        await service
+            .generate(context, prompt, const GenerationParams(maxTokens: 8))
+            .drain<void>();
+
+        expect(client.conversations, [
+          (template: liteRtLmRawPromptTemplate, seeded: false),
+        ]);
+        expect(client.lastPrompt, prompt);
+        expect(client.renderMessageCount, 0);
+        expect(readPaths, isEmpty);
+
+        await chat(service, context);
+        expect(client.conversations.skip(1), [
+          (template: null, seeded: false),
+          (template: liteRtLmTextContentAdapter(interpolating), seeded: false),
+          (template: liteRtLmTextContentAdapter(interpolating), seeded: true),
+        ]);
+      } finally {
+        service.dispose();
+      }
+    });
+
+    test('raw generation keeps a runtime refusal of its template', () async {
+      final refusal = LlamaUnsupportedException('no template setter');
+      client.onCreateConversation = () {
+        if (client.lastPromptTemplate != null) throw refusal;
+      };
+      final service = serviceReading(null);
+      try {
+        final model = await service.loadModel(modelFile.path, params);
+        final context = service.createContext(model, params);
+
+        await expectLater(
+          service
+              .generate(context, 'Hello', const GenerationParams(maxTokens: 8))
+              .drain<void>(),
+          throwsA(same(refusal)),
+        );
+        expect(client.generateCount, 0);
+      } finally {
+        service.dispose();
+      }
+    });
+
+    for (final (name, send) in [('chat', chat), ('raw', raw)]) {
       test('a failed $name send stays as it is for a template that reads '
           'content', () async {
         final service = serviceReading(liteRtLmPartsContentTemplate);
@@ -8252,6 +8324,7 @@ class _FakeLiteRtLmRuntimeClient extends LiteRtLmRuntimeClient {
   void Function()? onCreateConversation;
   void Function()? onInitialize;
   String? lastPromptTemplate;
+  String? lastPrompt;
   final List<({String? template, bool seeded})> conversations = [];
   String Function(String? promptTemplate)? onRenderMessage;
 
@@ -8413,6 +8486,7 @@ class _FakeLiteRtLmRuntimeClient extends LiteRtLmRuntimeClient {
     double? presencePenalty,
   }) {
     _checkNotDisposed();
+    lastPrompt = prompt;
     lastMaxOutputTokens = maxOutputTokens;
     lastRepetitionPenalty = repetitionPenalty;
     lastPresencePenalty = presencePenalty;

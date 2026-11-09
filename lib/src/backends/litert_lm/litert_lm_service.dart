@@ -552,11 +552,7 @@ class LiteRtLmService {
       npuBackend: backend == 'npu',
       loraPath: loraPath,
     );
-    _createBundleTemplateConversation(
-      client,
-      create: createConversation,
-      createProbe: createConversation,
-    );
+    createConversation(liteRtLmRawPromptTemplate);
     if (_cancelRequested) {
       client.cancel();
       return;
@@ -566,20 +562,14 @@ class LiteRtLmService {
         .where((sequence) => sequence.isNotEmpty)
         .toList(growable: false);
     final sw = Stopwatch()..start();
-    var outputStarted = false;
     try {
       final stream = _applyStopSequences(
-        client
-            .generate(
-              prompt,
-              maxOutputTokens: params.maxTokens,
-              repetitionPenalty: controls.repetitionPenalty,
-              presencePenalty: controls.presencePenalty,
-            )
-            .map((chunk) {
-              outputStarted = true;
-              return chunk;
-            }),
+        client.generate(
+          prompt,
+          maxOutputTokens: params.maxTokens,
+          repetitionPenalty: controls.repetitionPenalty,
+          presencePenalty: controls.presencePenalty,
+        ),
         stopSequences,
         onStop: cancelGeneration,
       );
@@ -590,8 +580,6 @@ class LiteRtLmService {
         yield chunk;
       }
       _lastGenerationLimit = _generationLimitOf(client);
-    } on StateError catch (error, stackTrace) {
-      _throwSendFailure(error, stackTrace, outputStarted: outputStarted);
     } finally {
       sw.stop();
       try {
