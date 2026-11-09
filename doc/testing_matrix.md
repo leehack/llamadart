@@ -765,7 +765,8 @@ it does not qualify audio, thinking, GPU or perceptual quality generally. The
 independent `litert-lm-chat-features-smoke` retains its thinking oracle. It
 records the thinking row as `not_applicable` (with the reason) when the loaded
 bundle's chat template never reads `enable_thinking` and always closes the
-think block, as both Qwen3.5 `.litertlm` bundles do.
+think block, as the Qwen3.5 `_int8`, `-VL_int8` and `_int8_gpu_composite_v0190`
+bundles do.
 
 ### LiteRT-LM lifecycle regression
 

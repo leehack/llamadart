@@ -220,6 +220,17 @@ void main() {
       );
     });
 
+    test('keeps the assertion when only history closes the think block', () {
+      const openInPrompt =
+          '{%- if m.role == "assistant" %}<think>\n\n</think>\n\n{% endif -%}'
+          '{%- if add_generation_prompt %}<|im_start|>assistant\n<think>\n'
+          '{% endif -%}';
+      expect(
+        smoke.thinkingSupportForTemplate(openInPrompt).canProduceThinking,
+        isTrue,
+      );
+    });
+
     test('keeps the assertion without a readable or closed-think template', () {
       expect(smoke.thinkingSupportForTemplate(null).canProduceThinking, isTrue);
       expect(

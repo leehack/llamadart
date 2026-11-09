@@ -78,11 +78,14 @@ separately from the reply. See
 
 Qwen3.5 `.litertlm` bundles render their own embedded chat template
 ([#1134](https://github.com/leehack/llamadart/issues/1134)), so
-`ModelParams.chatTemplate` is ignored for these files. The current
-`litert-community/Qwen3.5-0.8B` bundles always close an empty `<think>` block
-in the generation prompt and never read `enable_thinking`, so
-`enableThinking: true` produces no reasoning there. Use the GGUF for Qwen3.5
-thinking; Qwen3 and Gemma 4 `.litertlm` bundles support it.
+`ModelParams.chatTemplate` is ignored for these files. The
+`Qwen3.5-0.8B_int8`, `Qwen3.5-0.8B-VL_int8` and
+`Qwen3.5-0.8B_int8_gpu_composite_v0190` bundles (LiteRT-LM 0.19 and earlier)
+close an empty `<think>` block in the generation prompt and never read
+`enable_thinking`, so `enableThinking: true` produces no reasoning there. The
+`Qwen3.5-0.8B_dynamic_wi8_afp32` bundle reads `enable_thinking` but needs
+LiteRT-LM 0.20.0 or later, so it fails on the pinned 0.19.1 runtime. Use the
+GGUF for Qwen3.5 thinking; Qwen3 and Gemma 4 `.litertlm` bundles support it.
 
 ## Vision and audio
 

@@ -357,9 +357,10 @@ final RegExp _closedThinkBlock = RegExp(r'<think>\s*</think>');
 
 /// Judges [template], the chat template embedded in a loaded bundle.
 ///
-/// A template that never reads `enable_thinking` and closes the think block in
-/// its generation prompt cannot produce thinking whatever the request asks. An
-/// unreadable or other template keeps the thinking assertion.
+/// A heuristic for the known always-closed shape: a template that never
+/// mentions `enable_thinking` and closes an empty think block in its generation
+/// prompt is treated as unable to think. Any other template, or an unreadable
+/// one, keeps the thinking assertion.
 ThinkingSupport thinkingSupportForTemplate(String? template) {
   final generationStart = template?.lastIndexOf('add_generation_prompt') ?? -1;
   if (template == null ||
@@ -422,6 +423,17 @@ void _verifyResult({
       );
     }
   } else {
+    if (thinking.thinking.trim().isNotEmpty) {
+      throw StateError(
+        'LiteRT-LM thinking scenario produced a thinking delta although its '
+        'template cannot think.',
+      );
+    }
+    if (thinking.content.trim().isEmpty) {
+      throw StateError(
+        'LiteRT-LM thinking scenario produced no visible answer.',
+      );
+    }
     stdout.writeln(
       'N/A litert_lm_chat_features thinking: ${thinkingSupport.reason}',
     );
