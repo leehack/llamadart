@@ -347,7 +347,7 @@ example/
 ## Requirements
 
 - Dart SDK 3.10.7 or higher
-- For chat_app, laya_tetris and laya_command_bar: Flutter 3.38.0 or higher
+- For chat_app, laya_tetris and laya_command_bar: Flutter 3.38.6 or higher
 - Flutter Apple builds require deployment targets of iOS 16.4 or newer and
   macOS 14.0 or newer
 - Internet connection (for first run - downloads selected native runtime
