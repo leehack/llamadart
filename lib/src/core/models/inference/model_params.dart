@@ -362,9 +362,9 @@ class ModelParams {
   /// reports the GGUF template.
   ///
   /// On LiteRT-LM it replaces the built-in template chosen for the bundle,
-  /// including an empty string, and drives `LlamaEngine.chatTemplate`, output
-  /// parsing, and prompt rendering on LiteRT-LM web and for requests that
-  /// cannot use the native Conversation API. Native `LlamaEngine.create`
+  /// including an empty string, and drives output parsing and prompt
+  /// rendering on LiteRT-LM web and for requests that cannot use the native
+  /// Conversation API. Native `LlamaEngine.create`
   /// sends eligible chats, including images and audio, through that API,
   /// where the template shapes the prompt only for text-only requests to
   /// filename-matched or positively identified Qwen3 bundles. Unnamed Qwen3
@@ -376,8 +376,12 @@ class ModelParams {
   /// bytes across package upgrades. Web `@litert-lm/core@0.19.0` cannot set a
   /// conversation template and rejects this Qwen3 override at model load with
   /// [LlamaUnsupportedException]; use native LiteRT-LM for this contract.
-  /// Other families keep their native bundle template and content adapter.
-  /// A native override receives `enable_thinking` and must implement it.
+  /// Other families keep their native bundle template and content adapter;
+  /// for those, native `LlamaEngine.getMetadata` reports the bundle template
+  /// as `tokenizer.chat_template` and this one as
+  /// `llamadart.chat_template.parsing`, and the `LlamaEngine.chatTemplate`
+  /// prompt shows the bundle template. A native override receives
+  /// `enable_thinking` and must implement it.
   ///
   /// A per-call `customTemplate` takes precedence on every runtime.
   final String? chatTemplate;

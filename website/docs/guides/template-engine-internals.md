@@ -87,8 +87,8 @@ sequenceDiagram
 - A template that fails to render, by raising or through invalid syntax,
   throws `LlamaInferenceException` with the template's message. The message
   names the template: the model's `tokenizer.chat_template` or its
-  `tool_use` variant, `ModelParams.chatTemplate`, or a per-call
-  `customTemplate`. With no template or an empty `tokenizer.chat_template`,
+  `tool_use` variant, the model's `llamadart.chat_template.parsing`,
+  `ModelParams.chatTemplate`, or a per-call `customTemplate`. With no template or an empty `tokenizer.chat_template`,
   it names `the built-in ChatML fallback template`.
 - Routing workarounds mirror llama.cpp behavior for schema mode, tool-choice
   behavior, and system-message adaptation.

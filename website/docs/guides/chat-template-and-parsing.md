@@ -157,16 +157,23 @@ stream rules of each format.
 ### LiteRT-LM template registry
 
 GGUF models expose `tokenizer.chat_template` metadata directly through the
-llama.cpp backend. Native `.litertlm` bundles do not currently expose their
-embedded template through the LiteRT-LM FFI, so `llamadart` uses a
-filename-keyed registry for supported Gemma and Qwen LiteRT-LM families.
+llama.cpp backend. For `.litertlm` bundles, `llamadart` detects the format and
+parses output with a filename-keyed registry of supported Gemma and Qwen
+LiteRT-LM templates, or with `ModelParams.chatTemplate`.
 
 Native LiteRT-LM `engine.create(...)` uses LiteRT-LM's Conversation APIs for
 eligible chat requests, including images and audio, so system messages,
 history, tools, media, and extra context stay structured inside the runtime.
-The Dart template registry is still used for template metadata, streamed output
-parsing, `engine.chatTemplate(...)`, web LiteRT-LM, and fallback prompt
-rendering when a request cannot use the native conversation path.
+The runtime renders the bundle's embedded template, except for text-only
+chats to Qwen3 bundles, which render the registry template or the override.
+`engine.getMetadata()` reports the template the runtime renders as
+`tokenizer.chat_template`, and, when it differs, the parsing template as
+`llamadart.chat_template.parsing`. A bundle whose family has no registry entry
+and no override reports no template. `engine.chatTemplate(...)` shows a Dart
+render of the runtime template, not its exact bytes, with every field other
+than the prompt and token count taken from the parsing template. The parsing
+template still drives streamed output parsing, web LiteRT-LM, and fallback
+prompt rendering when a request cannot use the native conversation path.
 
 For native CPU Qwen3-0.6B, use the updated
 [LiteRT-LM bundle](https://huggingface.co/litert-community/Qwen3-0.6B/resolve/e6687177e00897731e7716267eebd4eba0dde7c2/Qwen3-0.6B.litertlm)
@@ -248,6 +255,10 @@ the model's template; on LiteRT-LM, an empty string also replaces the built-in
 template. The value is Jinja source: unlike llama.cpp's `--chat-template`, a
 name such as `chatml` is not mapped to a built-in template.
 `engine.getMetadata()` still reports the GGUF `tokenizer.chat_template`.
+On native LiteRT-LM bundles other than Qwen3 text bundles, the runtime keeps
+rendering the bundle template: the override drives parsing and is reported as
+`llamadart.chat_template.parsing`, while the `engine.chatTemplate` prompt
+shows the bundle template.
 
 Jinja string literals in embedded and custom templates accept `\xHH`
 hexadecimal escapes, with exactly two hexadecimal digits. For example,

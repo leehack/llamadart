@@ -15,10 +15,13 @@ model's chat template.
   (`tokenizer.chat_template`, or `tokenizer.chat_template.tool_use` when tools
   are passed) and detects its format from marker strings, in llama.cpp's
   priority order. It does not look at the model name or architecture.
-- **`.litertlm`:** the native runtime does not expose the bundle's template,
-  so llamadart picks one from the file name (`gemma-4`, `gemma-3n`,
-  `gemma-3`/`gemma-2`, `qwen3` or `qwen2.5`) for format detection and output
-  parsing. Set `ModelParams.chatTemplate` to override it.
+- **`.litertlm`:** llamadart picks a template from the file name (`gemma-4`,
+  `gemma-3n`, `gemma-3`/`gemma-2`, `qwen3` or `qwen2.5`) for format detection
+  and output parsing. Set `ModelParams.chatTemplate` to override it. On
+  native LiteRT-LM, `getMetadata()` reports the template the runtime renders
+  as `tokenizer.chat_template`, and the parsing template, when it differs, as
+  `llamadart.chat_template.parsing`. A bundle with no matching family and no
+  override reports no template.
 - **No match:** the template renders as-is, with no tool-call or reasoning
   parsing. If you pass tools, llamadart adds a generic JSON tool-call
   instruction instead.
@@ -26,10 +29,12 @@ model's chat template.
 To see what a model will receive, render the prompt with
 `engine.chatTemplate(...)`; see
 [Chat templates and output parsing](../guides/chat-template-and-parsing).
-For native `.litertlm` this shows the file-name template, which the runtime
-renders only for text-only requests to Qwen3 bundles. Every other request,
-including Qwen3.5, Gemma and any request with media, renders the bundle's
-embedded template, so the native prompt can differ.
+For native `.litertlm` the prompt comes from the template the runtime renders
+for text-only requests: the file-name template for Qwen3 bundles, and the
+bundle's embedded template for the others, such as Qwen3.5 and Gemma. Dart
+renders it, so it shows what that template produces, not the runtime's exact
+bytes; requests with media always use the embedded template. The other result
+fields, such as `format`, still come from the parsing template.
 
 ## Evidence levels
 

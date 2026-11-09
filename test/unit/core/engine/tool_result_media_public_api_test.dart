@@ -99,6 +99,28 @@ void main() {
       });
     });
 
+    for (final (parsing, runtime, reported) in [
+      (Qwen3VlToolMediaFixture.template, '{{ messages }}', true),
+      ('{{ messages }}', Qwen3VlToolMediaFixture.template, false),
+    ]) {
+      test('follows the parsing template, not the runtime one '
+          '(reported: $reported)', () async {
+        final engine = LlamaEngine(
+          _MetadataToolMediaBackend({
+            'tokenizer.chat_template': runtime,
+            'llamadart.chat_template.parsing': parsing,
+          }),
+        );
+        addTearDown(engine.dispose);
+        await engine.loadModel('model.gguf');
+        await engine.loadMultimodalProjector('mmproj.gguf');
+        expect(
+          (await engine.capabilities).toolResultMedia,
+          reported ? {LlamaToolResultMedia.image} : isEmpty,
+        );
+      });
+    }
+
     test('is empty before a model loads', () async {
       final engine = LlamaEngine(_ToolMediaBackend());
       addTearDown(engine.dispose);
@@ -430,6 +452,15 @@ class _ToolMediaBackend extends _CaptureBackend
   Set<LlamaToolResultMedia> get toolResultMedia => const {
     LlamaToolResultMedia.image,
   };
+}
+
+class _MetadataToolMediaBackend extends _ToolMediaBackend {
+  _MetadataToolMediaBackend(this.metadata);
+
+  final Map<String, String> metadata;
+
+  @override
+  Future<Map<String, String>> modelMetadata(int modelHandle) async => metadata;
 }
 
 class _AudioToolMediaBackend extends _CaptureBackend

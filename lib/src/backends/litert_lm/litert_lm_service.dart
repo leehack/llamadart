@@ -5,6 +5,7 @@ import 'dart:io';
 
 import 'package:path/path.dart' as p;
 
+import '../../core/engine/chat_template_renderer.dart';
 import '../../core/engine/engine_observer.dart';
 import '../../core/engine/json_schema_chat_request.dart';
 import '../../core/exceptions.dart';
@@ -615,10 +616,8 @@ class LiteRtLmService {
         'Native JSON Schema chat is qualified only on macOS arm64 CPU. Select ComputeDevice.cpu; GPU, NPU and other platforms are unsupported.',
       );
     }
-    final name = p.basename(_modelPath!).toLowerCase().replaceAll('_', '-');
-    final template = RegExp(r'qwen-?3(?:[^.\d]|$)').hasMatch(name)
-        ? _resolveBuiltinTemplate(name)
-        : _resolveUnnamedQwen3Template();
+    final routing = _templateRouting();
+    final template = routing.rendersFamilyText ? routing.family : null;
     if (template == null ||
         (_modelParams?.chatTemplate != null &&
             _modelParams!.chatTemplate != template.template)) {
@@ -789,24 +788,10 @@ class LiteRtLmService {
       templateNow: templateNow,
       enableThinking: enableThinking,
     );
-    // Older Qwen bundles use a native ChatML template that ignores
-    // enable_thinking. Match the text template used by the Dart parser so
-    // disabled thinking closes the reasoning prefix before generation.
-    // Media remains owned by the native model-specific processor.
-    final modelName = File(
-      _modelPath!,
-    ).uri.pathSegments.last.toLowerCase().replaceAll('_', '-');
-    final filenameTemplate = _resolveBuiltinTemplate(modelName);
-    final unnamedTemplate = filenameTemplate == null
-        ? _resolveUnnamedQwen3Template()
-        : null;
-    final useTextTemplate =
-        RegExp(r'qwen-?3(?:[^.\d]|$)').hasMatch(modelName) ||
-        unnamedTemplate != null;
-    final builtinTemplate = filenameTemplate ?? unnamedTemplate;
+    final routing = _templateRouting();
     final promptTemplate =
-        maxNumImages == null && !enableAudio && useTextTemplate
-        ? _modelParams?.chatTemplate ?? builtinTemplate?.template
+        maxNumImages == null && !enableAudio && routing.rendersFamilyText
+        ? _modelParams?.chatTemplate ?? routing.family?.template
         : null;
     void createConversation(String? template, {bool seeded = true}) =>
         client.createConversation(
@@ -1152,18 +1137,51 @@ class LiteRtLmService {
     if (_modelParams case final params?) {
       metadata['llm.context_length'] = params.contextSize.toString();
     }
-    final builtinTemplate = modelName == null
-        ? null
-        : _resolveBuiltinTemplate(modelName) ?? _resolveUnnamedQwen3Template();
-    if (builtinTemplate != null) {
-      metadata['tokenizer.chat_template'] = builtinTemplate.template;
-      metadata['tokenizer.ggml.bos_token'] = builtinTemplate.bosToken;
-      metadata['tokenizer.ggml.eos_token'] = builtinTemplate.eosToken;
+    if (modelPath == null) {
+      return metadata;
     }
-    if (_modelParams?.chatTemplate case final customTemplate?) {
-      metadata['tokenizer.chat_template'] = customTemplate;
+    final routing = _templateRouting();
+    if (routing.family case final family?) {
+      metadata['tokenizer.ggml.bos_token'] = family.bosToken;
+      metadata['tokenizer.ggml.eos_token'] = family.eosToken;
+    }
+    final parsingTemplate =
+        _modelParams?.chatTemplate ?? routing.family?.template;
+    if (parsingTemplate == null) {
+      return metadata;
+    }
+    final runtimeTemplate = routing.rendersFamilyText
+        ? parsingTemplate
+        : _readBundleChatTemplate(modelPath) ?? parsingTemplate;
+    metadata['tokenizer.chat_template'] = runtimeTemplate;
+    if (runtimeTemplate != parsingTemplate) {
+      metadata[parsingChatTemplateMetadataKey] = parsingTemplate;
     }
     return metadata;
+  }
+
+  /// The built-in template Dart parses the loaded bundle with, and whether
+  /// the runtime renders it, or [ModelParams.chatTemplate], for text-only
+  /// chats instead of the bundle's own template.
+  ///
+  /// Older Qwen3 bundles use a native ChatML template that ignores
+  /// enable_thinking, so text-only chats render the template the Dart parser
+  /// uses, which closes the reasoning prefix when thinking is off. Media and
+  /// every other family keep the native model-specific processor.
+  ({LiteRtLmChatTemplate? family, bool rendersFamilyText}) _templateRouting() {
+    final modelName = File(
+      _modelPath!,
+    ).uri.pathSegments.last.toLowerCase().replaceAll('_', '-');
+    final filenameTemplate = _resolveBuiltinTemplate(modelName);
+    final unnamedTemplate = filenameTemplate == null
+        ? _resolveUnnamedQwen3Template()
+        : null;
+    return (
+      family: filenameTemplate ?? unnamedTemplate,
+      rendersFamilyText:
+          RegExp(r'qwen-?3(?:[^.\d]|$)').hasMatch(modelName) ||
+          unnamedTemplate != null,
+    );
   }
 
   /// Resolves the built-in chat template for [modelName], if any.
@@ -1268,7 +1286,9 @@ class LiteRtLmService {
     _requireConversationEngine();
     final metadata = getMetadata(modelHandle);
     final result = ChatTemplateEngine.render(
-      templateSource: metadata['tokenizer.chat_template'],
+      templateSource:
+          metadata[parsingChatTemplateMetadataKey] ??
+          metadata['tokenizer.chat_template'],
       messages: messages.map(_messageFromTemplateMap).toList(growable: false),
       metadata: metadata,
       addAssistant: addAssistant,
