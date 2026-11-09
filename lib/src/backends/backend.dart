@@ -442,6 +442,40 @@ BackendGenerationLimitReporting? generationLimitReporterOf(Object? backend) =>
     ? backend
     : _generationLimitReporters[backend];
 
+/// Internal backend probe for the tokens a runtime prefills for a prompt it
+/// renders from its own chat template.
+abstract class BackendRuntimePromptTokenization {
+  /// The tokens the runtime prefills for [prompt]. Unlike
+  /// `tokenize(prompt, addSpecial: false)`, a start token the runtime adds
+  /// before every prompt is counted once, also when [prompt] begins with its
+  /// text.
+  Future<List<int>> tokenizeRuntimePrompt(int modelHandle, String prompt);
+}
+
+final Expando<BackendRuntimePromptTokenization> _runtimePromptTokenizers =
+    Expando<BackendRuntimePromptTokenization>();
+
+/// Makes [tokenizer] tokenize the runtime prompts of [backend].
+///
+/// For an exported backend class, which must not expose the internal
+/// [BackendRuntimePromptTokenization] in its type.
+void registerRuntimePromptTokenizer(
+  Object backend,
+  BackendRuntimePromptTokenization tokenizer,
+) {
+  _runtimePromptTokenizers[backend] = tokenizer;
+}
+
+/// The runtime prompt tokenizer of [backend]: the backend itself when it
+/// implements [BackendRuntimePromptTokenization], otherwise one registered
+/// with [registerRuntimePromptTokenizer], or null.
+BackendRuntimePromptTokenization? runtimePromptTokenizerOf(Object? backend) =>
+    backend == null
+    ? null
+    : backend is BackendRuntimePromptTokenization
+    ? backend
+    : _runtimePromptTokenizers[backend];
+
 /// Optional backend capability for naming the runtime that runs the loaded
 /// model.
 ///

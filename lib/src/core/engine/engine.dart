@@ -2154,10 +2154,11 @@ class LlamaEngine implements LlamadartEngine<LlamaEngineCapabilities> {
   /// count come from the template the runtime renders,
   /// `tokenizer.chat_template` in [getMetadata], rendered by Dart: it can
   /// differ from the runtime's exact bytes, for example in how content parts,
-  /// tool definitions and BOS reach the template. Every other field comes
-  /// from the template [create] parses with. If that template does not render
-  /// in Dart, the prompt of the parsing template is returned and a warning
-  /// logged.
+  /// tool definitions and BOS reach the template. The token count reads that
+  /// prompt as native prefill does, with the runtime's start token once.
+  /// Every other field comes from the template [create] parses with. If that
+  /// template does not render in Dart, the prompt of the parsing template is
+  /// returned and a warning logged.
   ///
   /// LiteRT-LM Web text-history factories return full-transcript JSON for
   /// session budget estimation here, not the runtime's rendered model template.
@@ -2235,9 +2236,16 @@ class LlamaEngine implements LlamadartEngine<LlamaEngineCapabilities> {
     _ensureReady(requireContext: false);
     _rejectUnsupportedToolMedia(messages);
     await _rejectUnsupportedToolResultMedia(messages);
+    final runtimePromptTokenizer = runtimePromptTokenizerOf(backend);
     return ChatTemplateRenderer.render(
       loadMetadata: _getCachedMetadata,
       tokenize: tokenize,
+      tokenizeRuntimePrompt: runtimePromptTokenizer == null
+          ? null
+          : (prompt) => runtimePromptTokenizer.tokenizeRuntimePrompt(
+              _modelHandle!,
+              prompt,
+            ),
       messages: messages,
       addAssistant: addAssistant,
       jsonSchema: jsonSchema,

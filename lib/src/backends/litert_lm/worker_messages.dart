@@ -170,13 +170,18 @@ class LiteRtLmTokenizeRequest extends LiteRtLmWorkerRequest {
   /// Whether to add special tokens.
   final bool addSpecial;
 
+  /// Whether [text] is a prompt to tokenize as native prefill reads it, which
+  /// ignores [addSpecial].
+  final bool runtimePrompt;
+
   /// Creates a tokenize request.
   LiteRtLmTokenizeRequest(
     this.modelHandle,
     this.text,
     this.addSpecial,
-    super.sendPort,
-  );
+    super.sendPort, {
+    this.runtimePrompt = false,
+  });
 }
 
 /// Request to detokenize token IDs.

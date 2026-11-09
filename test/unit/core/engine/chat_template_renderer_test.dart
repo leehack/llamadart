@@ -427,6 +427,41 @@ void main() {
         },
       );
 
+      test('counts only a runtime prompt with the runtime prompt '
+          'tokenizer', () async {
+        final counted = <String>[];
+        Future<LlamaChatTemplateResult> show({
+          Map<String, String> metadata = metadata,
+          bool runtimePrompt = true,
+        }) => ChatTemplateRenderer.render(
+          loadMetadata: () async => metadata,
+          tokenize: (text, {bool addSpecial = true}) async =>
+              List.filled(text.length, 0),
+          tokenizeRuntimePrompt: (prompt) async {
+            counted.add(prompt);
+            return const [1, 2];
+          },
+          messages: const [
+            LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'hello'),
+          ],
+          renderRuntimePrompt: runtimePrompt,
+        );
+
+        expect((await show()).tokenCount, 2);
+        expect(counted, ['RUNTIME:hello THINK']);
+        expect((await show(runtimePrompt: false)).tokenCount, 11);
+        expect(
+          (await show(
+            metadata: const {
+              'tokenizer.chat_template': '{% if %}',
+              parsingChatTemplateMetadataKey: parsing,
+            },
+          )).tokenCount,
+          11,
+        );
+        expect(counted, hasLength(1));
+      });
+
       test('shows the runtime prompt with ModelParams.chatTemplate', () async {
         final shown = await render(
           modelTemplate: 'MODEL:{{ messages[0]["content"] }}',

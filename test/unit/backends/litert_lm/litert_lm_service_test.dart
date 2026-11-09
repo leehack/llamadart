@@ -573,12 +573,22 @@ void main() {
       service = null;
     });
 
+    int? model;
+
+    Future<void> load() async {
+      if (service != null) return;
+      service = LiteRtLmService(clientFactory: () => client);
+      model = await service!.loadModel(modelFile.path, params);
+      context = service!.createContext(model!, params);
+    }
+
+    Future<List<int>> tokenizeRuntimePrompt(String prompt) async {
+      await load();
+      return service!.tokenizeRuntimePrompt(model!, prompt);
+    }
+
     Future<String?> send(String prompt) async {
-      if (service == null) {
-        service = LiteRtLmService(clientFactory: () => client);
-        final model = await service!.loadModel(modelFile.path, params);
-        context = service!.createContext(model, params);
-      }
+      await load();
       client.generated = StreamController<String>()..add('ok');
       unawaited(client.generated.close());
       await service!
@@ -605,6 +615,41 @@ void main() {
     test('keeps a prompt when the runtime adds no start token', () async {
       tokenizer('', const {'hi': 50});
       expect(await send('<bos>hi'), '<bos>hi');
+    });
+
+    // As Gemma's tokenizer does, read `<bos>` text as three plain tokens.
+    const bosText = {'<': 236820, 'bos': 46757, '>': 236813};
+
+    test('counts special start-token text of a runtime prompt as the one '
+        'start token prefill adds', () async {
+      tokenizer('<bos>', const {...bosText, 'hi': 50});
+      expect(await tokenizeRuntimePrompt('<bos>hi'), [1, 50]);
+      expect(await tokenizeRuntimePrompt('hi'), [1, 50]);
+      expect(await tokenizeRuntimePrompt('hi<bos>'), [
+        1,
+        50,
+        236820,
+        46757,
+        236813,
+      ]);
+    });
+
+    test('counts plain start-token text of a runtime prompt once only when '
+        'prefill drops it', () async {
+      tokenizer('None', const {'None': 1, 'hi': 50, 'Nonet': 60, 'he': 61});
+      expect(await tokenizeRuntimePrompt('Nonehi'), [1, 50]);
+      expect(await tokenizeRuntimePrompt('Nonethe'), [1, 60, 61]);
+    });
+
+    test('counts a runtime prompt as text when the runtime adds no start '
+        'token', () async {
+      tokenizer('', const {...bosText, 'hi': 50});
+      expect(await tokenizeRuntimePrompt('<bos>hi'), [
+        236820,
+        46757,
+        236813,
+        50,
+      ]);
     });
 
     for (final (name, start, prompt) in [

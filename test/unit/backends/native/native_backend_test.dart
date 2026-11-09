@@ -1308,6 +1308,32 @@ void main() {
     }
   });
 
+  test('tokenizes runtime prompts with the delegate runtime prompt '
+      'tokenizer, else as text', () async {
+    final llama = _FakeBackend(handle: 11)..tokenizeResult = const [1, 2, 3];
+    final liteRt = _FakeBackend(handle: 22);
+    registerRuntimePromptTokenizer(liteRt, _FixedRuntimePromptTokenizer());
+    final backend = NativeAutoBackend(
+      llamaCppFactory: () => llama,
+      liteRtLmFactory: () => liteRt,
+    );
+
+    try {
+      await backend.modelLoad('/models/model.gguf', const ModelParams());
+      expect(await backend.tokenizeRuntimePrompt(11, '<bos>hi'), [1, 2, 3]);
+      expect(llama.lastTokenizeText, '<bos>hi');
+      expect(llama.lastTokenizeAddSpecial, isFalse);
+
+      await backend.modelLoad(
+        '/models/gemma-4-E2B-it.litertlm',
+        const ModelParams(),
+      );
+      expect(await backend.tokenizeRuntimePrompt(22, '<bos>hi'), [22, 7]);
+    } finally {
+      await backend.dispose();
+    }
+  });
+
   test('forwards generation usage from a reporting delegate only', () async {
     final llama = _UsageReportingFakeBackend(handle: 11);
     final backend = NativeAutoBackend(
@@ -2321,6 +2347,14 @@ class _RuntimeFakeBackend extends _FakeBackend
 
   @override
   final LlamaRuntime runtime;
+}
+
+class _FixedRuntimePromptTokenizer implements BackendRuntimePromptTokenization {
+  @override
+  Future<List<int>> tokenizeRuntimePrompt(
+    int modelHandle,
+    String prompt,
+  ) async => [modelHandle, prompt.length];
 }
 
 class _UsageReportingFakeBackend extends _FakeBackend
