@@ -44,6 +44,7 @@ void main() {
 bool _isSupportedHost() {
   final abi = Abi.current();
   return (Platform.isLinux && (abi == Abi.linuxX64 || abi == Abi.linuxArm64)) ||
+      (Platform.isMacOS && abi == Abi.macosArm64) ||
       (Platform.isWindows && abi == Abi.windowsX64);
 }
 
@@ -110,6 +111,7 @@ openLiteRtLmSmokeLibrary({
 String? _primaryLibraryFileName(Abi abi) {
   return switch (abi) {
     Abi.linuxArm64 || Abi.linuxX64 => 'libLiteRtLm.so',
+    Abi.macosArm64 => 'libLiteRtLm.dylib',
     Abi.windowsX64 => 'LiteRtLm.dll',
     _ => null,
   };
