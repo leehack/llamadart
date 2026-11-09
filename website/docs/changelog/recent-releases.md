@@ -14,6 +14,7 @@ validate against the exact release tag notes.
 ## Unreleased
 
 - Keep the start of a tag that a finished reply ends in, such as `</thi` when generation stops mid-tag, in an unended thought's reasoning, as llama.cpp `v0.9.0` does; it used to be dropped ([#1531](https://github.com/leehack/llamadart/issues/1531)).
+- Keep a `</think>` that comes before any `<think>` in a Hermes, Qwen3-Coder XML or DeepSeek V3 reply as content, with every thinking tag after it, when the prompt opened no thought (such as Qwen3 with thinking on), as llama.cpp does. The stream used to depend on how the reply was chunked and could repeat the text before the tag as both content and reasoning ([#1858](https://github.com/leehack/llamadart/issues/1858)).
 
 ## 0.19.1
 
