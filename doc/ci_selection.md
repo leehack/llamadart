@@ -227,6 +227,20 @@ faster runtime tests. Measure hosted wall time, queue delay and summed job time
 separately after approved PR execution; do not report docs-only results as a
 full-code speedup or local measurements as GitHub-hosted results.
 
+## Flutter Chrome test shutdown
+
+Flutter 3.47.1's `flutter test --platform chrome` waits with no timeout for
+Chrome's reply to DevTools `Browser.close`, so it hangs after reporting results
+when Chrome exits before the reply arrives (#1702). Web Chat Contract therefore
+runs its Chrome tests under `tool/ci/supervise_chrome_test.py` with a 10-minute
+deadline and uploads `chat-app-chrome-diagnostics`. If the command is still
+running 30 seconds after its JSON file reporter's `done` event and no browser
+process remains, the supervisor stops it, logs a warning, records
+`browser_close_stall` in `result.json` and exits with the reporter's result: 0
+only when the run succeeded with at least one test, 1 when a test failed. Any
+other stall still fails at the deadline. Browser tests that need no Flutter API
+use `dart test -p chrome`, which stops Chrome with a signal (Model Store).
+
 ## Tested Web deployment and previews
 
 On canonical-repository main pushes and manual main runs, Web Chat Contract

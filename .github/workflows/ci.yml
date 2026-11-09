@@ -782,10 +782,30 @@ jobs:
 
       - name: Run chat app tests
         working-directory: example/chat_app
-        run: |
-          flutter test test test_vm
-          flutter test --platform chrome test/chat_generation_service_test.dart test/image_generation_screen_test.dart \
-            test/unit_test.dart test/conversation_state_service_test.dart
+        run: flutter test test test_vm
+
+      # flutter_tools can wait forever for Chrome's Browser.close reply (#1702);
+      # the supervisor then takes the JSON reporter result.
+      - name: Run chat app Chrome tests with bounded shutdown
+        working-directory: example/chat_app
+        run: >-
+          python3 ../../tool/ci/supervise_chrome_test.py
+          --output-dir "$RUNNER_TEMP/chat-app-chrome"
+          --reporter-file "$RUNNER_TEMP/chat-app-chrome/reporter.jsonl"
+          --timeout-seconds 600 --
+          flutter test --platform chrome
+          --file-reporter "json:$RUNNER_TEMP/chat-app-chrome/reporter.jsonl"
+          test/chat_generation_service_test.dart test/image_generation_screen_test.dart
+          test/unit_test.dart test/conversation_state_service_test.dart
+
+      - name: Upload chat app Chrome diagnostics
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: chat-app-chrome-diagnostics
+          path: ${{ runner.temp }}/chat-app-chrome
+          if-no-files-found: ignore
+          retention-days: 7
 
       - name: Restore the chat app pubspec
         run: git checkout -- example/chat_app/pubspec.yaml
