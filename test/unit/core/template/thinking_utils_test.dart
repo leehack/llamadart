@@ -198,6 +198,30 @@ void main() {
     });
   });
 
+  group('endsUnopenedThought', () {
+    test('is true for an end tag before any start tag', () {
+      expect(endsUnopenedThought('Plan.</think>Answer.'), isTrue);
+      expect(endsUnopenedThought('</think>'), isTrue);
+      expect(endsUnopenedThought('A</think>B<think>X</think>C'), isTrue);
+      expect(
+        endsUnopenedThought(
+          'Plan</seed:think>Sunny.',
+          startTag: '<seed:think>',
+          endTag: '</seed:think>',
+        ),
+        isTrue,
+      );
+    });
+
+    test('is false without an end tag or after a start tag', () {
+      expect(endsUnopenedThought('Plan. Answer.'), isFalse);
+      expect(endsUnopenedThought('Plan </thin'), isFalse);
+      expect(endsUnopenedThought('<think>Plan.</think>A</think>'), isFalse);
+      expect(endsUnopenedThought('A <think>X</think> B'), isFalse);
+      expect(endsUnopenedThought(''), isFalse);
+    });
+  });
+
   group('isThinkingForcedClosed', () {
     test('is true for a prompt that ends with an empty thought', () {
       for (final prompt in [

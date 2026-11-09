@@ -165,7 +165,12 @@ sequenceDiagram
   render it is given, so it parses as the engine does. The public
   `ChatTemplateEngine.parse` cannot see them, so it also ends a thought at an
   end tag in a reply that does not start with the start tag, as after a
-  template that opens one. Outside a thought, a Cohere2 MoE
+  template that opens one. The same holds for a Hermes, Qwen3-Coder XML or
+  DeepSeek V3 reply with an end tag before any start tag: after a prompt that
+  opens no thought, llama.cpp keeps that end tag and every thinking tag after
+  it as content, and the stream streams them as content from that tag on, so
+  every chunking ends as the parse does. `ChatTemplateEngine.parse` ends a
+  thought at that end tag instead. Outside a thought, a Cohere2 MoE
   `<|START_TEXT|>` or `<|START_ACTION|>` starts content in which thinking tags
   are text.
 

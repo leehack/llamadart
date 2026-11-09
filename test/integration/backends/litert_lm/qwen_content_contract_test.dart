@@ -24,7 +24,7 @@ void main() {
               : litertQwenEnvelope;
           final chunks = await ChatCompletionStreamParser.parse(
             tokenStream: Stream.fromIterable([
-              if (thinking) 'Check values.</think>',
+              if (thinking) '<think>Check values.</think>',
               ...output.split(''),
             ]),
             templateResult: history.rendered,
