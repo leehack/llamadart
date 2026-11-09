@@ -2,6 +2,8 @@ import 'dart:convert';
 import 'dart:ffi';
 import 'dart:io';
 
+import 'package:llamadart/src/backends/litert_lm/litert_lm_c_api_version.dart';
+import 'package:llamadart/src/backends/litert_lm/litert_lm_platform.dart';
 import 'package:llamadart/src/backends/litert_lm/litert_lm_runtime.dart'
     as runtime;
 import 'package:llamadart/src/hook/native_release_pins.dart';
@@ -26,19 +28,57 @@ void main() {
     return;
   }
 
+  print(
+    'RESULT litert_lm_library ${jsonEncode(runLiteRtLmLibrarySmoke(abi: Abi.current(), directory: Platform.environment[_litertLmLibDirEnv], releaseTag: liteRtLmReleaseTag))}',
+  );
+}
+
+/// Opens the runtime, checks its symbols and in-process LiteRT marker, and
+/// returns the RESULT payload.
+Map<String, Object?> runLiteRtLmLibrarySmoke({
+  required Abi abi,
+  required String? directory,
+  required String releaseTag,
+  DynamicLibrary Function(String)? openLibrary,
+}) {
   final opened = openLiteRtLmSmokeLibrary(
-    directory: Platform.environment[_litertLmLibDirEnv],
-    abi: Abi.current(),
-    cApiV1: liteRtLmSmokeUsesCApiV1(liteRtLmReleaseTag),
+    directory: directory,
+    abi: abi,
+    cApiV1: liteRtLmSmokeUsesCApiV1(releaseTag),
+    openLibrary: openLibrary,
   );
   final library = opened.library;
   for (final symbol in _requiredSymbols) {
     library.lookup<NativeFunction<Void Function()>>(symbol);
   }
 
-  print(
-    'RESULT litert_lm_library ${jsonEncode({'abi': Abi.current().toString(), 'library': opened.path, 'symbols': _requiredSymbols})}',
-  );
+  return {
+    'abi': abi.toString(),
+    'library': opened.path,
+    'symbols': _requiredSymbols,
+    'inProcessLiteRtAbi': requireInProcessLiteRtMarker(library, abi),
+  };
+}
+
+/// Fails when a bundled Linux or Windows runtime does not report in-process
+/// LiteRT, which gates native embeddings there; a repin that drops the
+/// `litert_lm_native_in_process_litert_abi_version` export would otherwise
+/// surface only on hardware. Returns the reported value, or null where the
+/// marker is not required.
+int? requireInProcessLiteRtMarker(DynamicLibrary library, Abi abi) {
+  if (abi != Abi.linuxX64 && abi != Abi.linuxArm64 && abi != Abi.windowsX64) {
+    return null;
+  }
+  final reported = readLiteRtLmInProcessLiteRtAbiVersion(library);
+  if (reported != liteRtLmInProcessLiteRtAbiVersion) {
+    throw StateError(
+      'The $abi LiteRT-LM runtime reports '
+      'litert_lm_native_in_process_litert_abi_version '
+      '${reported ?? '(not exported)'}, expected '
+      '$liteRtLmInProcessLiteRtAbiVersion.',
+    );
+  }
+  return reported;
 }
 
 bool _isSupportedHost() {
