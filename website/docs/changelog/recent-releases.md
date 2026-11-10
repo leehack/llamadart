@@ -14,6 +14,7 @@ validate against the exact release tag notes.
 ## Unreleased
 
 - Name the unadaptable bundle template or `ModelParams.chatTemplate` in a failed native LiteRT-LM chat send on the C API 1.0 runtime too, as the legacy runtime already does ([#1868](https://github.com/leehack/llamadart/issues/1868)).
+- Document that LiteRT-LM Web `generate()` wraps the prompt in one user turn of the bundle's chat template, because `@litert-lm/core@0.19.0` has no raw streaming route ([#1863](https://github.com/leehack/llamadart/issues/1863)).
 
 ## 0.19.3
 

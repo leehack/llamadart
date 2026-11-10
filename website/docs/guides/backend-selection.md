@@ -334,8 +334,9 @@ LiteRT-LM Web rejects tool declarations/results, media and user/system thinking 
 assistant/system message, custom templates (including an empty override),
 `enableThinking: false`, template kwargs, explicit template clocks and native-only
 `liteRtLm*` controls. Default thinking remains the model's behavior; no template
-replacement or thinking-budget support is implied. Raw `generate` sends one user
-text. Low-level `backend.applyChatTemplate` accepts one user message only; use
+replacement or thinking-budget support is implied. Raw `generate` wraps the
+prompt in one user turn of the bundle's template
+([#1863](https://github.com/leehack/llamadart/issues/1863)). Low-level `backend.applyChatTemplate` accepts one user message only; use
 `engine.create` for structured history. Automatic tool loops remain unavailable.
 The remaining #1152 scope is tracked in
 [the runtime gap](https://github.com/leehack/llamadart/issues/1152).
