@@ -13,6 +13,8 @@ validate against the exact release tag notes.
 
 ## Unreleased
 
+- Parse a MiniMax M3 reply to a forced-open thought as llama.cpp does: the thought ends at the first `</mm:think>` and any later `<mm:think>` or `</mm:think>` is content, so a reply such as `</mm:think></mm:think><mm:think>` streams the same whole or split by character, with `ToolChoice.none` too ([#1905](https://github.com/leehack/llamadart/issues/1905)).
+
 ## 0.19.4
 
 - Keep default WebGPU bridge assets at `v0.1.83` (unchanged from 0.19.3).

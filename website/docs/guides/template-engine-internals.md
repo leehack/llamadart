@@ -177,7 +177,9 @@ sequenceDiagram
   does. With `thoughtStartsReplyExactly` (MiniMax M3), the thought must start
   the reply with no whitespace before it, and an end tag that starts the reply
   is dropped, as llama.cpp's MiniMax M3 parser does; the stream waits at the
-  reply start for either tag. A DeepSeek V3 reply with an end tag before any
+  reply start for either tag. After a forced-open prompt, MiniMax M3 keeps the
+  thought as generated up to the first end tag, and every thinking tag after it
+  is content. A DeepSeek V3 reply with an end tag before any
   start tag keeps that end tag and every thinking tag after it as content.
   `ChatTemplateEngine.parse` ends a thought at such an end tag and takes
   thoughts from anywhere in the reply instead. Outside a thought, a Cohere2
