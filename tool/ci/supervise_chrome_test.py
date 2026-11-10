@@ -260,8 +260,8 @@ def supervise(command, output, timeout, shutdown, cleanup, snapshot_interval,
                             pass
                 live = [row for row in remaining.values() if row['state'] != 'Z']
                 if reporter.poll():
-                    done_at = now
                     record('reporter_done', success=reporter.success, tests=reporter.tests)
+                    done_at = time.monotonic()
                     remaining = snapshot('reporter_done')
                 if now >= next_snapshot:
                     remaining = snapshot('periodic')
