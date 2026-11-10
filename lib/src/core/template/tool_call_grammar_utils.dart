@@ -129,64 +129,92 @@ class ToolCallGrammarUtils {
                 ? 'root ::= think-body ${_literal(endTag)} think-space '
                       '(${line.substring('root ::= '.length)})'
                 : line,
-          ..._excludingRules('think-body', endTag),
+          ...excludingRules('think-body', [endTag]),
           r'think-space ::= | " " | "\n"{1,2} [ \t]{0,20}',
         ].join('\n');
 
-  /// Rules for [name] matching text without [delimiter], as llama.cpp's
-  /// `gbnf_excluding_grammar` emits them. State `i` has matched the first `i`
-  /// characters of [delimiter]; a character that would complete it has no
-  /// transition.
+  /// Rules for [name] matching text without any of [delimiters], as
+  /// llama.cpp's `gbnf_excluding_grammar` emits them. Each state is the
+  /// longest suffix of the text that starts a delimiter; a character that
+  /// would complete one has no transition.
   ///
   /// Unlike llama.cpp, where every state may end the text, a state may end it
-  /// only if the [delimiter] that follows first occurs there: when its prefix
-  /// is also its suffix, as in `abab`, text ending `ab` would let the
-  /// delimiter start inside it.
-  static List<String> _excludingRules(String name, String delimiter) {
+  /// only if no delimiter that follows can start inside it: when a
+  /// delimiter's prefix is also its suffix, as in `abab`, text ending `ab`
+  /// would let the delimiter start inside it.
+  static List<String> excludingRules(String name, List<String> delimiters) {
     String state(int i) => i == 0 ? name : '$name-$i';
     String chars(String value) =>
         value.replaceAllMapped(RegExp(r'[\\\]\[^-]'), (m) => '\\${m[0]}');
-    final failure = List<int>.filled(delimiter.length, 0);
-    for (var i = 1, k = 0; i < delimiter.length; i++) {
-      while (k > 0 && delimiter[i] != delimiter[k]) {
-        k = failure[k - 1];
+    final children = <Map<String, int>>[{}];
+    final ends = <int>[0];
+    for (final delimiter in delimiters) {
+      var node = 0;
+      for (final char in delimiter.split('')) {
+        node = children[node][char] ??= () {
+          children.add({});
+          ends.add(0);
+          return children.length - 1;
+        }();
       }
-      if (delimiter[i] == delimiter[k]) k++;
-      failure[i] = k;
+      ends[node] = delimiter.length;
     }
-    int next(int matched, String char) {
-      while (matched > 0 && delimiter[matched] != char) {
-        matched = failure[matched - 1];
+    // Aho-Corasick failure links, in breadth-first order so that a node's
+    // link is done before its children's.
+    final failure = List<int>.filled(children.length, 0);
+    final queue = [...children[0].values];
+    for (var i = 0; i < queue.length; i++) {
+      final node = queue[i];
+      for (final MapEntry(key: char, value: child) in children[node].entries) {
+        var link = failure[node];
+        while (link > 0 && !children[link].containsKey(char)) {
+          link = failure[link];
+        }
+        failure[child] = children[link][char] ?? 0;
+        queue.add(child);
       }
-      return delimiter[matched] == char ? matched + 1 : 0;
+      // The longest delimiter that ends here.
+      if (ends[node] == 0) ends[node] = ends[failure[node]];
+    }
+    int next(int node, String char) {
+      while (node > 0 && !children[node].containsKey(char)) {
+        node = failure[node];
+      }
+      return children[node][char] ?? 0;
     }
 
-    bool mayEnd(int matched) {
-      for (var i = 0; i < delimiter.length - 1; i++) {
-        matched = next(matched, delimiter[i]);
-        if (matched == delimiter.length) return false;
+    bool mayEnd(int node) {
+      for (final delimiter in delimiters) {
+        var at = node;
+        for (var i = 0; i < delimiter.length - 1; i++) {
+          at = next(at, delimiter[i]);
+          if (ends[at] > i + 1) return false;
+        }
       }
       return true;
     }
 
-    final alphabet = delimiter.split('').toSet();
-    String rule(int matched) {
+    final alphabet = {
+      for (final delimiter in delimiters) ...delimiter.split(''),
+    };
+    String rule(int node) {
       final moves = [
         for (final char in alphabet)
-          if (next(matched, char) case final to when to > 0)
-            (char: char, to: to),
+          if (next(node, char) case final to when to > 0) (char: char, to: to),
       ]..sort((a, b) => b.to.compareTo(a.to));
       final alternatives = [
         for (final move in moves)
-          if (move.to < delimiter.length)
-            '[${chars(move.char)}] ${state(move.to)}',
+          if (ends[move.to] == 0) '[${chars(move.char)}] ${state(move.to)}',
         '[^${moves.map((move) => chars(move.char)).join()}] $name',
       ];
-      return '${state(matched)} ::= ${mayEnd(matched) ? '| ' : ''}'
+      return '${state(node)} ::= ${mayEnd(node) ? '| ' : ''}'
           '${alternatives.join(' | ')}';
     }
 
-    return [for (var i = 0; i < delimiter.length; i++) rule(i)];
+    return [
+      for (var node = 0; node < children.length; node++)
+        if (ends[node] == 0) rule(node),
+    ];
   }
 
   static Map<String, dynamic> _buildToolArraySchema(

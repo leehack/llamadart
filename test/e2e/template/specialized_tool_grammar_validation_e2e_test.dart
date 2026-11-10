@@ -40,6 +40,7 @@ import '../../support/forced_open_required_calls.dart';
 import '../../support/litert_qwen_content_fixture.dart';
 import '../../support/llama_cpp_grammar_load.dart';
 import '../../support/pydantic_audit_schemas.dart';
+import '../../support/qwen3_coder_required_calls.dart';
 import '../../support/upstream_integer_bound_grammars.dart';
 import '../../support/qwen35_tool_result_fixture.dart' as typed;
 import '../../support/qwen_tool_schema_fixture.dart';
@@ -596,6 +597,7 @@ void main() {
               [
                 call('Paris'),
                 compact,
+                call('Paris').replaceFirst('<$scope>\n', ''),
               ].where((output) => output.startsWith(trigger.value)),
               isNotEmpty,
               reason: '$template ${trigger.value}',
@@ -627,6 +629,29 @@ void main() {
       }
     },
   );
+
+  test('Qwen3-Coder XML required grammars compile and take text, a thought '
+      'and a bare first call as llama.cpp does', () {
+    for (final (:template, :enableThinking, :bareFirstCall)
+        in qwen3CoderRequiredTemplates) {
+      for (final parallel in [false, true]) {
+        final replies = qwen3CoderRequiredReplies(
+          parallelToolCalls: parallel,
+          bareFirstCall: bareFirstCall,
+        );
+        _expectGrammar(
+          validator,
+          renderQwen3CoderRequiredCall(
+            template,
+            enableThinking: enableThinking,
+            parallelToolCalls: parallel,
+          ).grammar!,
+          valid: replies.valid,
+          invalid: replies.invalid,
+        );
+      }
+    }
+  });
 
   test('Qwen typed result history preserves compiled follow-up grammar', () {
     for (final thinking in [true, false]) {

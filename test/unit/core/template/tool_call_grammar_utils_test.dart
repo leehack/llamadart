@@ -159,6 +159,44 @@ void main() {
     });
   });
 
+  test('excludingRules match text without any delimiter that may end where '
+      'none can start inside it', () {
+    for (final delimiters in [
+      ['<t>', '<f=g>'],
+      ['ab', 'xaby'],
+      ['abab', 'ba'],
+      ['aa', 'ab', 'b'],
+    ]) {
+      final body = _ExcludingRules(
+        ToolCallGrammarUtils.excludingRules('t', delimiters),
+        't',
+      );
+      final alphabet = {...delimiters.join().split(''), 'z'}.toList();
+      var texts = [''];
+      for (var length = 0; length <= 5; length++) {
+        for (final text in texts) {
+          bool startsBefore(String delimiter) {
+            final joined = text + delimiter.substring(0, delimiter.length - 1);
+            return [
+              for (var at = 0; at < text.length; at++)
+                for (final d in delimiters) joined.startsWith(d, at),
+            ].any((match) => match);
+          }
+
+          expect(
+            body.matches(text),
+            !delimiters.any(text.contains) && !delimiters.any(startsBefore),
+            reason: '$delimiters "$text"',
+          );
+        }
+        texts = [
+          for (final text in texts)
+            for (final char in alphabet) '$text$char',
+        ];
+      }
+    }
+  });
+
   test('afterForcedOpenThought leaves a grammar that takes the thought', () {
     final once = ToolCallGrammarUtils.afterForcedOpenThought(
       'root ::= call\ncall ::= "x"\n',

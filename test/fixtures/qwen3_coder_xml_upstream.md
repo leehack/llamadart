@@ -17,6 +17,11 @@ required string `location`, `tool_choice` auto, the entry's
 whole output first gave the same result. `upstream_partial` is
 `common_chat_peg_parse` with `is_partial` on the same output.
 
+The cases from `bare-call` on, added for issue #1531 with the same probe, hold
+a `<function=…>` opening without `<tool_call>`. llama.cpp takes one that names
+a declared tool as the first call, for the Qwen3-Coder template only, as it
+has no thought.
+
 Left out:
 
 - `upstream_partial` of a call whose scope end is missing: llama.cpp takes the
@@ -26,8 +31,10 @@ Left out:
 - Calls whose tags lack llama.cpp's exact line breaks, such as
   `<tool_call><function=`: llama.cpp takes no call or cuts the argument at the
   next `\n</parameter>\n`, while llamadart takes the call.
-- A Qwen3-Coder `<function=…>` call without `<tool_call>`, which llama.cpp
-  takes for that template only.
+- The `bare-call` and `text-then-bare-call` cases with StepFun3.5-Flash and
+  thinking off: llama.cpp keeps the thought its prompt opened, so a reply with
+  no thinking tag or `<tool_call>` is reasoning, while llamadart closed the
+  thought and returns content.
 
 Fed one byte at a time, llama.cpp's session keeps the first call of a scope
 that holds two (`two-functions-in-one-scope*`), because the final parse returns

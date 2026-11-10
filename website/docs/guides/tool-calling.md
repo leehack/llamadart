@@ -490,6 +490,12 @@ When a Hermes template forces reasoning open (such as QwQ), the
 `ToolChoice.required` grammar accepts reasoning closed by `</think>` before the
 calls, for schema and `ToolParam` tools.
 
+With Qwen3-Coder XML templates (Qwen3-Coder, Qwen3.5, StepFun3.5-Flash), the
+`ToolChoice.required` grammar accepts a thought and any text without
+`<tool_call>` before the calls, as in llama-server. The Qwen3-Coder template has
+no thinking, so its first call may also leave out `<tool_call>` and start at
+`<function=name>` for a declared tool.
+
 `required` may name a property that `properties` does not declare: the
 grammar requires that key, with a value matching `additionalProperties` (any
 JSON value when it is `true`). In a closed object (`additionalProperties:

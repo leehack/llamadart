@@ -214,6 +214,88 @@ void main() {
         }
       },
     );
+
+    test('a required Qwen3.5 call compiles in the native sampler and may '
+        'follow a thought', () async {
+      if (modelPath.isEmpty) {
+        return;
+      }
+
+      final engine = LlamaEngine(LlamaBackend());
+      final tools = [
+        ToolDefinition(
+          name: 'get_weather',
+          description: 'Get the current weather for a city.',
+          parameters: [ToolParam.string('city', required: true)],
+          handler: (_) async => 'sunny',
+        ),
+      ];
+      const messages = [
+        LlamaChatMessage.fromText(
+          role: LlamaChatRole.user,
+          text: 'What is the weather in Seoul?',
+        ),
+      ];
+      try {
+        await LlamaLogging.configure(nativeLevel: LlamaLogLevel.warn);
+        await engine.loadModel(
+          modelPath,
+          modelParams: const ModelParams(
+            contextSize: 2048,
+            preferredBackend: GpuBackend.cpu,
+            gpuLayers: 0,
+            numberOfThreads: 2,
+            numberOfThreadsBatch: 2,
+          ),
+        );
+        for (final enableThinking in [true, false]) {
+          final rendered = await engine.chatTemplate(
+            messages,
+            tools: tools,
+            toolChoice: ToolChoice.required,
+            enableThinking: enableThinking,
+          );
+          expect(rendered.format, ChatFormat.qwen3CoderXml.index);
+          expect(rendered.grammarLazy, isFalse);
+          expect(rendered.grammar, startsWith('root ::= text-before-calls '));
+
+          final chunks = await engine
+              .create(
+                messages,
+                params: const GenerationParams(
+                  maxTokens: 768,
+                  temp: 0,
+                  seed: 1,
+                ),
+                tools: tools,
+                toolChoice: ToolChoice.required,
+                enableThinking: enableThinking,
+              )
+              .toList();
+          final deltas = chunks.map((chunk) => chunk.choices.first.delta);
+          final toolCalls = deltas
+              .expand((delta) => delta.toolCalls ?? const [])
+              .toList();
+          final reason = 'thinking $enableThinking';
+          expect(
+            chunks.last.choices.first.finishReason,
+            'tool_calls',
+            reason: reason,
+          );
+          expect(toolCalls, hasLength(1), reason: reason);
+          expect(toolCalls.single.function?.name, 'get_weather');
+          if (enableThinking) {
+            expect(
+              deltas.map((delta) => delta.thinking ?? '').join().trim(),
+              isNotEmpty,
+              reason: reason,
+            );
+          }
+        }
+      } finally {
+        await engine.dispose();
+      }
+    });
   });
 }
 
