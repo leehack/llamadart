@@ -414,17 +414,21 @@ final class LiteRtLmV1Turn {
         throw LlamaStateException('C API 1.0 stream proxy allocation failed.');
       }
       // Read the thread-local error on this same thread before any other call.
-      _conversation._runtime._check(
-        _conversation._send(
-          _conversation._handle,
-          _message,
-          _extraContext,
-          args,
-          out.value,
-          _proxy,
-        ),
-        'conversation_send_message_stream',
-      );
+      try {
+        _conversation._runtime._check(
+          _conversation._send(
+            _conversation._handle,
+            _message,
+            _extraContext,
+            args,
+            out.value,
+            _proxy,
+          ),
+          'conversation_send_message_stream',
+        );
+      } on LlamaModelException catch (error) {
+        throw LiteRtLmSendFailureException(error.message, error.details);
+      }
     } on Object {
       _cleanup();
       rethrow;

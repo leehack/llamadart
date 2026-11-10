@@ -17,6 +17,7 @@ import 'package:llamadart/src/backends/litert_lm/litert_lm_gpu_adapter.dart';
 import 'package:llamadart/src/backends/litert_lm/litert_lm_platform.dart';
 import 'package:llamadart/src/backends/litert_lm/litert_lm_service.dart';
 import 'package:llamadart/src/backends/litert_lm/litert_lm_runtime.dart';
+import 'package:llamadart/src/backends/litert_lm/litert_lm_runtime_client_contract.dart';
 import 'package:llamadart/src/core/engine/chat_template_renderer.dart';
 import 'package:llamadart/src/core/exceptions.dart';
 import 'package:llamadart/src/core/llama_logger.dart';
@@ -956,7 +957,11 @@ void main() {
     for (final (clientName, nativeError, typeMatcher)
         in <(String, Object Function(String), Matcher)>[
           ('legacy', StateError.new, isA<StateError>()),
-          ('v1', LlamaModelException.new, isA<LlamaModelException>()),
+          (
+            'v1',
+            LiteRtLmSendFailureException.new,
+            isA<LiteRtLmSendFailureException>(),
+          ),
         ]) {
       test('a failed $clientName chat send names a bundle template it could '
           'not adapt', () async {
@@ -989,6 +994,55 @@ void main() {
         }
       });
     }
+
+    test('a v1 send failure keeps its details when it gets the note', () async {
+      client.onRenderMessage = (_) => throw StateError('render failed');
+      final service = serviceReading(null);
+      const details = {'status': 13};
+      try {
+        final model = await service.loadModel(modelFile.path, params);
+        final context = service.createContext(model, params);
+
+        await expectLater(
+          chat(
+            service,
+            context,
+            sendError: LiteRtLmSendFailureException('send failed', details),
+          ),
+          throwsA(
+            isA<LiteRtLmSendFailureException>()
+                .having((e) => e.details, 'details', details)
+                .having(
+                  (e) => e.message,
+                  'message',
+                  contains('chat template of this bundle'),
+                ),
+          ),
+        );
+      } finally {
+        service.dispose();
+      }
+    });
+
+    test('a v1 stream failure before output gets no template note', () async {
+      client.onRenderMessage = (_) => throw StateError('render failed');
+      final service = serviceReading(null);
+      final failure = LlamaModelException(
+        'C API 1.0 stream failed: INVALID_ARGUMENT: Input token ids are too '
+        'long',
+      );
+      try {
+        final model = await service.loadModel(modelFile.path, params);
+        final context = service.createContext(model, params);
+
+        await expectLater(
+          chat(service, context, sendError: failure),
+          throwsA(same(failure)),
+        );
+      } finally {
+        service.dispose();
+      }
+    });
 
     test('a chat send failing with another Llama exception stays as it '
         'is', () async {
@@ -1901,7 +1955,11 @@ void main() {
   for (final (clientName, nativeError, typeMatcher)
       in <(String, Object Function(String), Matcher)>[
         ('legacy', StateError.new, isA<StateError>()),
-        ('v1', LlamaModelException.new, isA<LlamaModelException>()),
+        (
+          'v1',
+          LiteRtLmSendFailureException.new,
+          isA<LiteRtLmSendFailureException>(),
+        ),
       ]) {
     for (final custom in [true, false]) {
       test('a failed $clientName native send '
@@ -1954,6 +2012,37 @@ void main() {
       });
     }
   }
+
+  test(
+    'a v1 stream failure before output gets no custom-template note',
+    () async {
+      final file = File('${tempDir.path}/Qwen3-0.6B.litertlm');
+      await file.writeAsString('fake model');
+      final client = _FakeLiteRtLmRuntimeClient();
+      final service = LiteRtLmService(clientFactory: () => client);
+      const params = ModelParams(
+        liteRtLmBackend: LiteRtLmBackendPreference.cpu,
+        chatTemplate: '{{ messages[0].content }}',
+      );
+      final failure = LlamaModelException(
+        'C API 1.0 stream failed: INVALID_ARGUMENT: Input token ids are too long',
+      );
+      try {
+        final model = await service.loadModel(file.path, params);
+        final context = service.createContext(model, params);
+        final pending = service.generateChat(context, const [
+          LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'Hi'),
+        ], const GenerationParams(maxTokens: 8)).toList();
+        final result = expectLater(pending, throwsA(same(failure)));
+        await client.generateStarted.future;
+        client.generated.addError(failure);
+        await client.generated.close();
+        await result;
+      } finally {
+        service.dispose();
+      }
+    },
+  );
 
   test('a native failure after output started does not name the '
       'content-parts change', () async {

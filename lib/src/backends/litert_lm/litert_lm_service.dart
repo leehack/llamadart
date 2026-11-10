@@ -917,14 +917,15 @@ class LiteRtLmService {
         promptTemplate: promptTemplate,
         withNote: StateError.new,
       );
-    } on LlamaModelException catch (error, stackTrace) {
+    } on LiteRtLmSendFailureException catch (error, stackTrace) {
       _throwSendFailure(
         error,
         error.message,
         stackTrace,
         outputStarted: outputStarted,
         promptTemplate: promptTemplate,
-        withNote: (message) => LlamaModelException(message, error.details),
+        withNote: (message) =>
+            LiteRtLmSendFailureException(message, error.details),
       );
     } finally {
       sw.stop();
