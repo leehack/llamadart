@@ -202,6 +202,7 @@ void main() {
     ThinkingExtraction leading(
       String text, {
       bool thinkingForcedOpen = false,
+      bool exact = false,
       String startTag = '<think>',
       String endTag = '</think>',
     }) => withThoughtOnlyAtReplyStart(
@@ -211,6 +212,7 @@ void main() {
         startTag: startTag,
         endTag: endTag,
       ),
+      exact: exact,
     );
 
     test('takes only a thought that starts the text', () {
@@ -237,6 +239,38 @@ void main() {
         expect(result.content, content, reason: text);
         expect(result.reasoning, reasoning, reason: text);
       }
+    });
+
+    test('with exact, takes no thought after whitespace and drops a leading '
+        'end tag', () {
+      for (final (text, content, reasoning) in const [
+        (
+          '<think>Plan.</think>A<think>X</think>C',
+          'A<think>X</think>C',
+          'Plan.',
+        ),
+        ('<think>Plan', '', 'Plan'),
+        (' <think>Plan.</think>A', '<think>Plan.</think>A', null),
+        ('\n<think>Plan.</think>A', '<think>Plan.</think>A', null),
+        ('</think>', '', null),
+        ('</think>Answer.', 'Answer.', null),
+        ('</think><think>X</think>A', '<think>X</think>A', null),
+        (' </think> Answer.', '</think> Answer.', null),
+        ('Plan.</think>Answer.', 'Plan.</think>Answer.', null),
+        ('Answer <think>X</think>', 'Answer <think>X</think>', null),
+      ]) {
+        final result = leading(text, exact: true);
+        expect(result.content, content, reason: text);
+        expect(result.reasoning, reasoning, reason: text);
+      }
+      expect(
+        leading(
+          '</think>Plan.</think>A',
+          exact: true,
+          thinkingForcedOpen: true,
+        ),
+        leading('</think>Plan.</think>A', thinkingForcedOpen: true),
+      );
     });
 
     test('unescapes the thought and uses the given tags', () {

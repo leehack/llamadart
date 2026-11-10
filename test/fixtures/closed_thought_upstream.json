@@ -5185,6 +5185,58 @@
             "reasoning_content": "",
             "tool_calls": []
           }
+        },
+        {
+          "name": "end-tag-only",
+          "output": "</mm:think>",
+          "upstream": {
+            "content": "",
+            "reasoning_content": "",
+            "tool_calls": []
+          },
+          "upstream_without_tools": {
+            "content": "",
+            "reasoning_content": "",
+            "tool_calls": []
+          }
+        },
+        {
+          "name": "unfinished-thought-after-space-then-call",
+          "output": " <mm:think>Plan.]<]minimax[>[<tool_call>\n]<]minimax[>[<invoke name=\"weather\">\n]<]minimax[>[<city>Paris]<]minimax[>[</city>\n]<]minimax[>[</invoke>\n]<]minimax[>[</tool_call>",
+          "upstream": {
+            "content": " <mm:think>Plan.",
+            "reasoning_content": "",
+            "tool_calls": [
+              {
+                "name": "weather",
+                "arguments": "{\"city\":\"Paris\"}"
+              }
+            ]
+          },
+          "upstream_without_tools": {
+            "content": " <mm:think>Plan.]<]minimax[>[<tool_call>\n]<]minimax[>[<invoke name=\"weather\">\n]<]minimax[>[<city>Paris]<]minimax[>[</city>\n]<]minimax[>[</invoke>\n]<]minimax[>[</tool_call>",
+            "reasoning_content": "",
+            "tool_calls": []
+          }
+        },
+        {
+          "name": "unfinished-thought-after-end-tag-then-call",
+          "output": "</mm:think><mm:think>Plan.]<]minimax[>[<tool_call>\n]<]minimax[>[<invoke name=\"weather\">\n]<]minimax[>[<city>Paris]<]minimax[>[</city>\n]<]minimax[>[</invoke>\n]<]minimax[>[</tool_call>",
+          "upstream": {
+            "content": "<mm:think>Plan.",
+            "reasoning_content": "",
+            "tool_calls": [
+              {
+                "name": "weather",
+                "arguments": "{\"city\":\"Paris\"}"
+              }
+            ]
+          },
+          "upstream_without_tools": {
+            "content": "<mm:think>Plan.]<]minimax[>[<tool_call>\n]<]minimax[>[<invoke name=\"weather\">\n]<]minimax[>[<city>Paris]<]minimax[>[</city>\n]<]minimax[>[</invoke>\n]<]minimax[>[</tool_call>",
+            "reasoning_content": "",
+            "tool_calls": []
+          }
         }
       ],
       "dropped_thought_cases": [
@@ -5561,6 +5613,58 @@
           },
           "upstream_without_tools": {
             "content": "\n<mm:think>\nPlan.\n</mm:think>\n\nA</mm:think> B",
+            "reasoning_content": "",
+            "tool_calls": []
+          }
+        },
+        {
+          "name": "end-tag-only",
+          "output": "</mm:think>",
+          "upstream": {
+            "content": "",
+            "reasoning_content": "",
+            "tool_calls": []
+          },
+          "upstream_without_tools": {
+            "content": "",
+            "reasoning_content": "",
+            "tool_calls": []
+          }
+        },
+        {
+          "name": "unfinished-thought-after-space-then-call",
+          "output": " <mm:think>Plan.]<]minimax[>[<tool_call>\n]<]minimax[>[<invoke name=\"weather\">\n]<]minimax[>[<city>Paris]<]minimax[>[</city>\n]<]minimax[>[</invoke>\n]<]minimax[>[</tool_call>",
+          "upstream": {
+            "content": " <mm:think>Plan.",
+            "reasoning_content": "",
+            "tool_calls": [
+              {
+                "name": "weather",
+                "arguments": "{\"city\":\"Paris\"}"
+              }
+            ]
+          },
+          "upstream_without_tools": {
+            "content": " <mm:think>Plan.]<]minimax[>[<tool_call>\n]<]minimax[>[<invoke name=\"weather\">\n]<]minimax[>[<city>Paris]<]minimax[>[</city>\n]<]minimax[>[</invoke>\n]<]minimax[>[</tool_call>",
+            "reasoning_content": "",
+            "tool_calls": []
+          }
+        },
+        {
+          "name": "unfinished-thought-after-end-tag-then-call",
+          "output": "</mm:think><mm:think>Plan.]<]minimax[>[<tool_call>\n]<]minimax[>[<invoke name=\"weather\">\n]<]minimax[>[<city>Paris]<]minimax[>[</city>\n]<]minimax[>[</invoke>\n]<]minimax[>[</tool_call>",
+          "upstream": {
+            "content": "<mm:think>Plan.",
+            "reasoning_content": "",
+            "tool_calls": [
+              {
+                "name": "weather",
+                "arguments": "{\"city\":\"Paris\"}"
+              }
+            ]
+          },
+          "upstream_without_tools": {
+            "content": "<mm:think>Plan.]<]minimax[>[<tool_call>\n]<]minimax[>[<invoke name=\"weather\">\n]<]minimax[>[<city>Paris]<]minimax[>[</city>\n]<]minimax[>[</invoke>\n]<]minimax[>[</tool_call>",
             "reasoning_content": "",
             "tool_calls": []
           }
