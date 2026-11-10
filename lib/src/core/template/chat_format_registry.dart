@@ -89,6 +89,7 @@ final class ChatFormatTraits {
     this.keepsForcedThoughtVerbatim = false,
     this.closedThoughtKeepsTagsAsContent = false,
     this.takesThoughtOnlyAtReplyStart = false,
+    this.thoughtStartsReplyExactly = false,
     this.reopensThoughtClosedForThinkingOff = false,
     this.forcedThoughtContentOpenings = const [],
     this.mayEmbedToolEnvelopeAfterContent = false,
@@ -131,6 +132,11 @@ final class ChatFormatTraits {
   /// Whether, after a prompt that opens no thought, the parse takes a thought
   /// only at the start of the reply, so other thinking tags are content.
   final bool takesThoughtOnlyAtReplyStart;
+
+  /// Whether, with [takesThoughtOnlyAtReplyStart], the thought must start the
+  /// reply with no whitespace before it, and an end tag that starts the reply
+  /// is dropped as an empty thought.
+  final bool thoughtStartsReplyExactly;
 
   /// Whether llama.cpp keeps open the thought the handler closed for thinking
   /// off, so a reply that shows a thinking tag or one of
@@ -213,6 +219,8 @@ chatFormatRegistrations = List.unmodifiable(<ChatFormatRegistration>[
         _hasAll(s, const [']<]minimax[>[', '<tool_call>', '<invoke name=']),
     traits: ChatFormatTraits(
       qualifiesJsonSchemaTools: false,
+      takesThoughtOnlyAtReplyStart: true,
+      thoughtStartsReplyExactly: true,
       mayEmbedToolEnvelopeAfterContent: true,
     ),
   ),

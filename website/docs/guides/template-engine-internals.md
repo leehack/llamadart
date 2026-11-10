@@ -174,12 +174,15 @@ sequenceDiagram
   `extractThinking`, which the parse switches to that rule for the whole parse
   (`withThoughtOnlyAtReplyStart`), and the stream ends the thought at its first
   end tag and streams the rest as content, so every chunking ends as the parse
-  does. A DeepSeek V3 reply with an end tag before any start tag keeps that
-  end tag and every thinking tag after it as content. `ChatTemplateEngine.parse`
-  ends a thought at such an end tag and takes thoughts from anywhere in the
-  reply instead. Outside a thought, a Cohere2 MoE
-  `<|START_TEXT|>` or `<|START_ACTION|>` starts content in which thinking tags
-  are text.
+  does. With `thoughtStartsReplyExactly` (MiniMax M3), the thought must start
+  the reply with no whitespace before it, and an end tag that starts the reply
+  is dropped, as llama.cpp's MiniMax M3 parser does; the stream waits at the
+  reply start for either tag. A DeepSeek V3 reply with an end tag before any
+  start tag keeps that end tag and every thinking tag after it as content.
+  `ChatTemplateEngine.parse` ends a thought at such an end tag and takes
+  thoughts from anywhere in the reply instead. Outside a thought, a Cohere2
+  MoE `<|START_TEXT|>` or `<|START_ACTION|>` starts content in which thinking
+  tags are text.
 
 ## Tool-call parsing
 

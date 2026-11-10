@@ -690,6 +690,79 @@ void main() {
             }
           });
         }
+
+        // llama.cpp drops these leading thoughts with thinking off; the
+        // engine drops reasoning then, while parseRendered still returns it.
+        for (final c
+            in (entry['dropped_thought_cases'] as List? ?? const [])
+                .cast<Map<String, dynamic>>()) {
+          test('${c['name']} streams as llama.cpp parses', () async {
+            final output = c['output'] as String;
+            for (final withTools in const [true, false]) {
+              final upstream =
+                  c[withTools ? 'upstream' : 'upstream_without_tools']
+                      as Map<String, dynamic>;
+              expect(upstream['reasoning_content'], isEmpty);
+              final upstreamCalls = _calls([
+                for (final call
+                    in (upstream['tool_calls'] as List)
+                        .cast<Map<String, dynamic>>())
+                  (
+                    name: call['name'] as String,
+                    arguments: call['arguments'] as String,
+                  ),
+              ]);
+              final render = withTools ? rendered : renderedWithoutTools;
+              final reason = 'tools: $withTools';
+              final parsed = ChatTemplateEngine.parseRendered(
+                render,
+                output,
+                parseToolCalls: withTools,
+                tools: withTools ? [_weatherTool] : null,
+              );
+              expect(
+                parsed.content.trim(),
+                (upstream['content'] as String).trim(),
+                reason: reason,
+              );
+              expect(parsed.reasoningContent, 'Plan.', reason: reason);
+              for (final tokens in _chunkings(output)) {
+                final deltas = (await ChatCompletionStreamParser.parse(
+                  tokenStream: Stream.fromIterable(tokens),
+                  templateResult: render,
+                  parseToolCallsEnabled: withTools,
+                  enableThinking: false,
+                  modelName: 'test-model',
+                  completionId: 'dropped-thought-upstream',
+                  tools: withTools ? [_weatherTool] : null,
+                ).toList()).map((chunk) => chunk.choices.single.delta);
+                final streamReason = '$tokens, $reason';
+                expect(
+                  deltas.map((delta) => delta.content ?? '').join().trim(),
+                  (upstream['content'] as String).trim(),
+                  reason: streamReason,
+                );
+                expect(
+                  deltas.map((delta) => delta.thinking ?? '').join(),
+                  isEmpty,
+                  reason: streamReason,
+                );
+                expect(
+                  _calls([
+                    for (final delta in deltas)
+                      for (final call in delta.toolCalls ?? const [])
+                        (
+                          name: call.function?.name,
+                          arguments: call.function?.arguments,
+                        ),
+                  ]),
+                  upstreamCalls,
+                  reason: streamReason,
+                );
+              }
+            }
+          });
+        }
       });
     }
   }

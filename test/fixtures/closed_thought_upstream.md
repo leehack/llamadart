@@ -74,3 +74,17 @@ parses; with the others it keeps even a leading thought as content, which
 llamadart does not. Two differences outside #1865 are left out: Kimi K2 with
 the tool takes no thought after leading whitespace, and LFM2's partial parse
 drops a trailing partial end tag after content.
+
+For issue #1887, `no_thought_templates` adds the vendored MiniMax M3 template
+twice, recorded with the same probe at `cd959bae9`: with thinking off and no
+kwargs, as llamadart renders it by default, and with thinking on and
+`thinking_mode: adaptive`. Neither prompt opens a thought in llama.cpp
+(`]~b]ai\n`) or llamadart, which also ends its thinking-off prompt with
+`</mm:think>`; the probe parsed the thinking-off cases the same with
+`thinking_mode: disabled`. llama.cpp takes a thought only where `<mm:think>`
+starts the reply with no whitespace before it, drops a `</mm:think>` there, and
+keeps every other thinking tag as content. With thinking off it drops a leading
+thought instead of returning it as reasoning: those cases are in
+`dropped_thought_cases`, where the engine streams no reasoning and
+`parseRendered` still returns it. Partial parses with a trailing partial
+thinking tag after content are left out: MiniMax M3's partial parse drops it.

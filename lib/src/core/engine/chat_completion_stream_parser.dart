@@ -223,6 +223,7 @@ class ChatCompletionStreamParser {
     final leadingThoughtOnly =
         verbatimLeadingThought ||
         (promptOpensNoThought && traits.takesThoughtOnlyAtReplyStart);
+    final exactReplyStart = traits.thoughtStartsReplyExactly;
     final verbatimThought = verbatimForcedThought || verbatimLeadingThought;
     final endsAtFirstEndTag = verbatimThought || leadingThoughtOnly;
     // After a prompt that opens no thought, the parse keeps an end tag before
@@ -395,8 +396,13 @@ class ChatCompletionStreamParser {
           }
         }
         if (atReplyStart) {
-          final rest = trimLeftAsciiSpace(pendingBuffer);
-          if (rest.length < startTag.length && startTag.startsWith(rest)) {
+          final rest = exactReplyStart
+              ? pendingBuffer
+              : trimLeftAsciiSpace(pendingBuffer);
+          if ((rest.length < startTag.length && startTag.startsWith(rest)) ||
+              (exactReplyStart &&
+                  rest.length < endTag.length &&
+                  endTag.startsWith(rest))) {
             continue;
           }
           atReplyStart = false;
@@ -404,6 +410,9 @@ class ChatCompletionStreamParser {
             pendingBuffer = rest.substring(startTag.length);
             isThinking = true;
           } else {
+            if (exactReplyStart && rest.startsWith(endTag)) {
+              pendingBuffer = rest.substring(endTag.length);
+            }
             verbatimThoughtEnded = true;
           }
         }
