@@ -163,6 +163,18 @@ void main() {
       });
     }
 
+    for (final MapEntry(key: name, value: path) in _packages.entries.skip(1)) {
+      test('fails an oversized $name README', () {
+        write('$path/README.md', pubContentLimitBytes + 1);
+        final result = verify(releasePrep: false);
+        expect(result.exitCode, 1);
+        expect(
+          result.stderr,
+          contains('- $path/README.md is 262145 bytes; pub.dev rejects $name'),
+        );
+      });
+    }
+
     test('passes a changelog under the limit', () {
       write('CHANGELOG.md', pubContentLimitBytes);
       final result = verify(releasePrep: false);
