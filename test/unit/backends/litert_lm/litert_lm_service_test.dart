@@ -685,9 +685,20 @@ void main() {
       ]);
     });
 
-    for (final (name, start, prompt) in [
-      ('an empty prompt', '', ''),
-      ('a prompt that is only the start token', '<bos>', '<bos>'),
+    for (final (name, start, prompt, reason) in [
+      ('an empty prompt', '', '', contains('is empty')),
+      (
+        'an empty prompt for a runtime with a start token',
+        '<bos>',
+        '',
+        allOf(contains('is empty'), isNot(contains('start token'))),
+      ),
+      (
+        'a prompt that is only the start token',
+        '<bos>',
+        '<bos>',
+        contains("holds only the model's start token"),
+      ),
     ]) {
       test('refuses $name before native work', () async {
         tokenizer(start, const {});
@@ -699,7 +710,7 @@ void main() {
                 .having(
                   (error) => error.message,
                   'message',
-                  contains('needs prompt text'),
+                  allOf(contains('needs prompt text'), reason),
                 ),
           ),
         );

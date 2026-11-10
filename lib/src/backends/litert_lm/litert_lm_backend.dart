@@ -1235,7 +1235,10 @@ class LiteRtLmBackend
       case 'llamaUnsupported':
         return LlamaUnsupportedException(response.message);
       case 'llamaArgument':
-        return LlamaArgumentException(response.message);
+        return LlamaArgumentException(
+          response.message,
+          name: response.argumentName,
+        );
       case 'llamaModel':
         return LlamaModelException(response.message);
       case 'llamaContext':

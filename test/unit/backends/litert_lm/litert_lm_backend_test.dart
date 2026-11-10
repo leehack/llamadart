@@ -1827,6 +1827,63 @@ void main() {
     });
   }
 
+  test('keeps the argument name of a worker llamaArgument error', () async {
+    final worker = _FakeLiteRtLmWorker(
+      tokenizeResponse: const <int>[],
+      detokenizeResponse: '',
+      generationErrorResponse: LiteRtLmErrorResponse(
+        'needs prompt text',
+        kind: 'llamaArgument',
+        argumentName: 'prompt',
+      ),
+    );
+    final backend = LiteRtLmBackend(initialSendPort: worker.sendPort);
+
+    try {
+      await expectLater(
+        backend.generate(7, 'prompt', const GenerationParams()).drain<void>(),
+        throwsA(
+          isA<LlamaArgumentException>().having(
+            (error) => error.name,
+            'name',
+            'prompt',
+          ),
+        ),
+      );
+    } finally {
+      await backend.dispose();
+      worker.close();
+    }
+  });
+
+  test('keeps an unnamed worker llamaArgument error unnamed', () async {
+    final worker = _FakeLiteRtLmWorker(
+      tokenizeResponse: const <int>[],
+      detokenizeResponse: '',
+      generationErrorResponse: LiteRtLmErrorResponse(
+        'bad combination',
+        kind: 'llamaArgument',
+      ),
+    );
+    final backend = LiteRtLmBackend(initialSendPort: worker.sendPort);
+
+    try {
+      await expectLater(
+        backend.generate(7, 'prompt', const GenerationParams()).drain<void>(),
+        throwsA(
+          isA<LlamaArgumentException>().having(
+            (error) => error.name,
+            'name',
+            isNull,
+          ),
+        ),
+      );
+    } finally {
+      await backend.dispose();
+      worker.close();
+    }
+  });
+
   test('maps unknown worker generation errors to generic exceptions', () async {
     final worker = _FakeLiteRtLmWorker(
       tokenizeResponse: const <int>[],

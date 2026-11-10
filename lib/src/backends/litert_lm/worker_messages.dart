@@ -421,8 +421,12 @@ class LiteRtLmErrorResponse {
   LiteRtLmErrorResponse(
     this.message, {
     this.kind = 'exception',
+    this.argumentName,
     this.nativeSettlement = LiteRtLmNativeSettlement.settled,
   });
+
+  /// [LlamaArgumentException.name] of the rejected argument, when known.
+  final String? argumentName;
 
   /// Native lifetime, independent of the request's error kind.
   final LiteRtLmNativeSettlement nativeSettlement;
@@ -437,6 +441,7 @@ class LiteRtLmErrorResponse {
     return LiteRtLmErrorResponse(
       response.message,
       kind: response.kind,
+      argumentName: response.argumentName,
       nativeSettlement: nativeSettlement,
     );
   }
@@ -459,6 +464,7 @@ class LiteRtLmErrorResponse {
         return LiteRtLmErrorResponse(
           details == null ? error.message : '${error.message} ($details)',
           kind: kind,
+          argumentName: error is LlamaArgumentException ? error.name : null,
         );
       }
     }
