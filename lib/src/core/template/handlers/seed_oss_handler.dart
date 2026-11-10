@@ -97,8 +97,8 @@ class SeedOssHandler extends ChatTemplateHandler {
         enableThinking: enableThinking,
       ),
       preservedTokens: hasTools ? preservedTokens : const [],
-      // llama.cpp starts only on the line-broken scope; the grammar and the
-      // parse also take one without the line break.
+      // llama.cpp starts only on the line-broken scope; the grammar also takes
+      // one without the line break.
       grammarTriggers: hasTools
           ? const [
               GrammarTrigger(type: 0, value: '<seed:tool_call>\n'),
@@ -133,10 +133,11 @@ class SeedOssHandler extends ChatTemplateHandler {
             isPartial: isPartial,
           )
         : null;
+    final body = thought?.content ?? output;
     final parsed = parseXmlToolCalls(
-      thought?.content ?? output,
+      body,
       XmlToolCallFormat.seedOss,
-      parseToolCalls: parseToolCalls,
+      parseToolCalls: parseToolCalls && _firstScopeBreaksLine(body),
       extractsThought: false,
     );
     return ChatParseResult(
@@ -144,6 +145,16 @@ class SeedOssHandler extends ChatTemplateHandler {
       reasoningContent: thought?.reasoning,
       toolCalls: parsed.toolCalls,
     );
+  }
+
+  // llama.cpp (`cd959bae9`) keeps the whole reply as content unless the first
+  // scope's start tag is followed by a line break; an end of output may still
+  // get one.
+  static bool _firstScopeBreaksLine(String body) {
+    const scopeStart = '<seed:tool_call>';
+    final start = body.indexOf(scopeStart);
+    final next = start + scopeStart.length;
+    return start < 0 || next >= body.length || body[next] == '\n';
   }
 
   @override

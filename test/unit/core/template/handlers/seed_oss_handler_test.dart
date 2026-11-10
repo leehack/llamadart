@@ -38,7 +38,7 @@ void main() {
     expect(rendered.grammarTriggers.first.value, contains('<seed:tool_call>'));
 
     final parsed = handler.parse(
-      '<seed:tool_call><function=get_weather><parameter=city>"Seoul"</parameter></function></seed:tool_call>tail',
+      '<seed:tool_call>\n<function=get_weather><parameter=city>"Seoul"</parameter></function></seed:tool_call>tail',
     );
     expect(parsed.content, equals('tail'));
     expect(parsed.toolCalls, hasLength(1));
@@ -132,9 +132,9 @@ void main() {
     );
   });
 
-  // Intentional divergences from llama.cpp, which fails the whole reply for
-  // each of these shapes (#1542, #1531): llamadart keeps parsing what it can.
-  group('SeedOssHandler stays lenient where llama.cpp errors', () {
+  // llama.cpp (`cd959bae9`) keeps the reply as content unless the first
+  // `<seed:tool_call>` is followed by a line break (#1542).
+  group('SeedOssHandler first scope start tag', () {
     String call(String city, {String scopeStart = '<seed:tool_call>\n'}) =>
         '$scopeStart<function=get_weather>\n'
         '<parameter=location>\n$city\n</parameter>\n'
@@ -144,15 +144,53 @@ void main() {
         (jsonDecode(call.function!.arguments!) as Map)['location'],
     ];
 
-    test('whitespace other than one line break after <seed:tool_call>', () {
-      for (final whitespace in ['', ' ', '\n\n', '\t', '\r\n']) {
+    test('without a line break keeps the reply as content', () {
+      for (final whitespace in ['', ' ', '\t', '\r\n', ' \n', '\t\n', '  ']) {
         final output = call('Paris', scopeStart: '<seed:tool_call>$whitespace');
-        final parsed = SeedOssHandler().parse(output);
+        for (final forcedOpen in [false, true]) {
+          final parsed = SeedOssHandler().parse(
+            forcedOpen ? 'Plan</seed:think>\n$output' : output,
+            thinkingForcedOpen: forcedOpen,
+          );
 
-        expect(cities(parsed), ['\nParis\n'], reason: whitespace);
-        expect(parsed.content, isEmpty, reason: whitespace);
+          expect(parsed.toolCalls, isEmpty, reason: jsonEncode(whitespace));
+          expect(parsed.content, output, reason: jsonEncode(whitespace));
+        }
       }
     });
+
+    test('at the end of the output waits for a line break', () {
+      for (final isPartial in [false, true]) {
+        final parsed = SeedOssHandler().parse(
+          'Checking <seed:tool_call>',
+          isPartial: isPartial,
+        );
+
+        expect(parsed.toolCalls, isEmpty);
+        expect(parsed.content, startsWith('Checking'));
+      }
+    });
+
+    test('with a leading line break parses a call, as llama.cpp does', () {
+      for (final whitespace in ['\n\n', '\n ', '\n\t', '\n\r\n']) {
+        final parsed = SeedOssHandler().parse(
+          call('Paris', scopeStart: '<seed:tool_call>$whitespace'),
+        );
+
+        expect(cities(parsed), ['\nParis\n'], reason: jsonEncode(whitespace));
+        expect(parsed.content, isEmpty, reason: jsonEncode(whitespace));
+      }
+    });
+  });
+
+  // Unlike llama.cpp, which fails the reply, the handler takes no tool
+  // schemas, so it returns these as calls (#1542, #1531). The engine and the
+  // stream parser reject them for `ToolDefinition.fromJsonSchema` tools.
+  group('SeedOssHandler stays lenient where llama.cpp errors', () {
+    String call(String city) =>
+        '<seed:tool_call>\n<function=get_weather>\n'
+        '<parameter=location>\n$city\n</parameter>\n'
+        '</function>\n</seed:tool_call>';
 
     test('an unknown tool in a later scope is returned as a call', () {
       final output =
@@ -183,7 +221,7 @@ void main() {
 
   test('SeedOssHandler returns a forced-open thought as reasoning', () {
     const call =
-        '<seed:tool_call><function=weather><parameter=city>Paris'
+        '<seed:tool_call>\n<function=weather><parameter=city>Paris'
         '</parameter></function></seed:tool_call>';
     for (final (output, reasoning, calls) in [
       ('Plan.', 'Plan.', 0),

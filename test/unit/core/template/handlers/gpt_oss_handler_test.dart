@@ -102,7 +102,7 @@ void main() {
     test('parses Seed-OSS reasoning and XML tool call', () {
       const output =
           '<seed:think>reasoning</seed:think>'
-          '<seed:tool_call><function=weather><parameter=city>"Seoul"</parameter></function></seed:tool_call>';
+          '<seed:tool_call>\n<function=weather><parameter=city>"Seoul"</parameter></function></seed:tool_call>';
 
       final result = ChatTemplateEngine.parse(ChatFormat.seedOss.index, output);
 

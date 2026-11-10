@@ -13,6 +13,8 @@ validate against the exact release tag notes.
 
 ## Unreleased
 
+- Keep a Seed-OSS reply as content, with no tool call, when its first `<seed:tool_call>` is not followed by a line break (such as `<seed:tool_call><function=`), as llama.cpp does; it used to parse as a call. An unknown tool or a missing required argument still parses as a call unless the tools came from `ToolDefinition.fromJsonSchema` ([#1542](https://github.com/leehack/llamadart/pull/1542#issuecomment-6758592134)).
+
 ## 0.19.3
 
 - Ship the 0.19.2 changes below, which never reached pub.dev: pub.dev rejected the 0.19.2 `CHANGELOG.md` as larger than 256 KiB, so notes for releases before 0.10.0 moved to the [changelog archive](https://github.com/leehack/llamadart/blob/main/doc/changelog_archive.md).

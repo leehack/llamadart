@@ -17,14 +17,18 @@ reasoning.
 
 ## Intentional divergences
 
-llama.cpp fails the whole reply with a parse error on the shapes below.
-llamadart deliberately keeps parsing (maintainer decision on
-[#1542](https://github.com/leehack/llamadart/issues/1542), tracked in
-[#1531](https://github.com/leehack/llamadart/issues/1531)), so none of them
-are recorded as cases here. `seed_oss_handler_test.dart` pins each:
+Where llama.cpp (`cd959bae9`) fails the reply with an error, llamadart
+deliberately keeps the call (maintainer decision,
+[#1542](https://github.com/leehack/llamadart/pull/1542#issuecomment-6758592134);
+tracker [#1531](https://github.com/leehack/llamadart/issues/1531)). These are
+not cases here; `seed_oss_handler_test.dart` pins them:
 
-- Whitespace after `<seed:tool_call>` other than exactly one line break parses
-  as a call; the scoped grammar's `xml-space` admits it.
-- An unknown tool name in a later scope is returned as a call, because
-  `SeedOssHandler.parse` passes no tool schemas.
-- A call missing a required argument is returned with the arguments present.
+- An unknown tool name is returned as a call: `SeedOssHandler.parse` takes no
+  tool schemas. The engine and stream parser reject it for
+  `ToolDefinition.fromJsonSchema` tools.
+- A call missing a required argument is returned with the arguments present,
+  with the same schema caveat.
+
+A first `<seed:tool_call>` not followed by a line break is not a divergence:
+both keep the reply as content with no call. One followed by `\n` and more
+whitespace (`\n\n`) parses as a call in both.

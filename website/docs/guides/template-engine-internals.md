@@ -194,18 +194,21 @@ otherwise its text stays in content. This deliberately differs from upstream
 llama.cpp (`7fe450e1`), which fails to parse this output and returns no tool
 call.
 
-Seed-OSS tool calls are parsed more leniently than upstream llama.cpp
-(`620d2225`), which fails the whole reply with a parse error on three shapes.
-llamadart keeps the calls it can read instead
-([#1542](https://github.com/leehack/llamadart/issues/1542)):
+Seed-OSS tool calls follow llama.cpp (`cd959bae9`) on the scope start tag: a
+reply whose first `<seed:tool_call>` is not followed by a line break (as in
+`<seed:tool_call><function=`, or a space or tab after the tag) stays content
+with no call, streamed or not. Two shapes make upstream fail the whole reply
+with an error, and llamadart deliberately keeps the call
+([#1542](https://github.com/leehack/llamadart/pull/1542#issuecomment-6758592134)):
 
-- Whitespace other than exactly one line break after `<seed:tool_call>`
-  (`<seed:tool_call><function=`, a space, a blank line) parses as a call,
-  where llama.cpp keeps the text as content. The grammar admits these forms.
-- An unknown tool name, in a later scope or the first, is returned as a call.
-  The Seed-OSS parse takes no tool schemas, so validate the name before
-  running it.
+- An unknown tool name is returned as a call.
 - A call missing a required argument is returned with the arguments it has.
+
+Both are rejected when the request's tools came from
+`ToolDefinition.fromJsonSchema` ("The model returned an undeclared tool call."
+or "Tool arguments do not match the input schema for ..."). With `ToolParam`
+tools, or without tools, the Seed-OSS parse has no schemas and returns the
+call, so validate the name and arguments before running it.
 
 Streamed content and reasoning start and end with the whitespace the final
 parse keeps, with or without tools, apart from the cases below. The parse
