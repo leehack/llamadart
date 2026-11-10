@@ -8,6 +8,7 @@ import 'package:llamadart/src/core/engine/chat_completion_stream_parser.dart';
 import 'package:llamadart/src/core/models/chat/chat_message.dart';
 import 'package:llamadart/src/core/models/chat/chat_role.dart';
 import 'package:llamadart/src/core/models/chat/chat_template_result.dart';
+import 'package:llamadart/src/core/models/inference/tool_choice.dart';
 import 'package:llamadart/src/core/models/tools/tool_definition.dart';
 import 'package:llamadart/src/core/models/tools/tool_param.dart';
 import 'package:llamadart/src/core/template/chat_format.dart';
@@ -104,8 +105,11 @@ void main() {
     final templatePath = entry['template'] as String;
     final enableThinking = entry['enable_thinking'] as bool;
     final parallelToolCalls = entry['parallel_tool_calls'] as bool;
+    final toolChoice = ToolChoice.values.byName(
+      entry['tool_choice'] as String? ?? 'auto',
+    );
     group('${templatePath.split('/').last}, thinking $enableThinking, '
-        'parallel $parallelToolCalls', () {
+        'parallel $parallelToolCalls, ${toolChoice.name}', () {
       late LlamaChatTemplateResult rendered;
 
       setUpAll(
@@ -119,6 +123,7 @@ void main() {
           ],
           metadata: const {},
           tools: [_tool],
+          toolChoice: toolChoice,
           parallelToolCalls: parallelToolCalls,
           enableThinking: enableThinking,
         ),

@@ -346,8 +346,8 @@ void main() {
                 ],
               )
               .toList();
-          // Without a lazy trigger at that tag, the sampler does not force a
-          // call there. The parse ends the content at it, as llama.cpp's does.
+          // Without a required call, the tag is text: the sampler does not
+          // start the grammar there, and the parse keeps the whole answer.
           final deltas = chunks.map((chunk) => chunk.choices.first.delta);
           expect(
             deltas.expand((delta) => delta.toolCalls ?? const []),
@@ -356,6 +356,14 @@ void main() {
           expect(
             chunks.last.choices.first.finishReason,
             isIn(['stop', 'length']),
+          );
+          final content = deltas.map((delta) => delta.content ?? '').join();
+          const tag = '<function=get_weather>';
+          expect(content, contains(tag));
+          expect(
+            content.substring(content.indexOf(tag) + tag.length).trim(),
+            isNotEmpty,
+            reason: content,
           );
         } finally {
           await engine.dispose();

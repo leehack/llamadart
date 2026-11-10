@@ -3,6 +3,7 @@ library;
 
 import 'dart:io';
 
+import 'package:llamadart/src/core/engine/chat_completion_stream_parser.dart';
 import 'package:llamadart/src/core/models/chat/chat_message.dart';
 import 'package:llamadart/src/core/models/chat/chat_role.dart';
 import 'package:llamadart/src/core/template/chat_format.dart';
@@ -13,9 +14,10 @@ import '../../../support/gbnf_recognizer.dart';
 import '../../../support/qwen3_coder_required_calls.dart';
 
 void main() {
-  // llama.cpp also starts it at `<function=get_weather>` for the Qwen3-Coder
-  // template, which fails a reply that writes that tag as text.
-  test('a lazy grammar starts only at `<tool_call>`', () {
+  // For the Qwen3-Coder template, llama.cpp also starts the lazy grammar at
+  // `<function=get_weather>` and ends the content there, which loses a reply
+  // that writes that tag as text.
+  test('without a required call, a bare call is text', () async {
     for (final (:template, :enableThinking, :bareFirstCall)
         in qwen3CoderRequiredTemplates) {
       final rendered = ChatTemplateEngine.render(
@@ -36,17 +38,40 @@ void main() {
           '<function=get_weather>\n<parameter=location>\nParis\n'
           '</parameter>\n</function>\n</tool_call>';
       expect(grammar.accepts(bareCall), isFalse, reason: template);
-      // The parse still takes a bare first call, as llama.cpp's does.
-      expect(
-        ChatTemplateEngine.parseRendered(
-          rendered,
-          'Text.\n$bareCall',
-          tools: [qwen3CoderRequiredTool],
-        ).toolCalls,
-        hasLength(bareFirstCall ? 1 : 0),
-        reason: template,
-      );
       expect(grammar.accepts('<tool_call>\n$bareCall'), isTrue);
+      if (!bareFirstCall) continue;
+
+      const reply =
+          'The literal text <function=get_weather> opens a call. $bareCall '
+          'That is all.';
+      final parsed = ChatTemplateEngine.parseRendered(
+        rendered,
+        reply,
+        tools: [qwen3CoderRequiredTool],
+      );
+      expect(parsed.toolCalls, isEmpty);
+      expect(parsed.content, reply);
+      for (var split = 0; split <= reply.length; split++) {
+        final chunks = await ChatCompletionStreamParser.parse(
+          tokenStream: Stream.fromIterable([
+            reply.substring(0, split),
+            reply.substring(split),
+          ]),
+          templateResult: rendered,
+          parseToolCallsEnabled: true,
+          enableThinking: true,
+          modelName: 'test-model',
+          completionId: 'bare-call-text',
+          tools: [qwen3CoderRequiredTool],
+        ).toList();
+        final deltas = chunks.map((chunk) => chunk.choices.single.delta);
+        expect(
+          deltas.map((delta) => delta.content ?? '').join(),
+          reply,
+          reason: 'split $split',
+        );
+        expect(deltas.expand((delta) => delta.toolCalls ?? const []), isEmpty);
+      }
     }
   });
 

@@ -102,9 +102,9 @@ bool singleToolCallOf(LlamaChatTemplateResult result) =>
 
 final Expando<bool> _bareFirstCall = Expando<bool>('llamadart.bareFirstCall');
 
-/// Returns [result], marked when [bare] as a Qwen3-Coder render whose first
-/// tool call may leave out `<tool_call>`, as llama.cpp allows for a template
-/// without a thought.
+/// Returns [result], marked when [bare] as a Qwen3-Coder render of a required
+/// call whose first tool call may leave out `<tool_call>`, as llama.cpp allows
+/// for a template without a thought.
 ///
 /// The Qwen3-Coder XML parse then also ends the content at a declared tool's
 /// `<function=…>` and takes the call that starts there. Internal engine
