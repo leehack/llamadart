@@ -37,7 +37,8 @@ modalities and speculative strategies before offering them.
     every call and append the assistant reply yourself.
   - `engine.generate(prompt)` only for an already-rendered raw prompt; it skips
     the chat template, except on LiteRT-LM Web, which sends the prompt as one
-    user turn through the bundle's template.
+    user turn through the bundle's template (`@litert-lm/core@0.19.0` has no
+    raw streaming route), so never pass it a `chatTemplate()`-rendered prompt.
 - Opt in with the portable `LlamaBackend.withTextHistory()` factory, or the
   direct Web `LiteRtLmBackend.withTextHistory()` factory, for ordered
   system/user/assistant text through

@@ -189,6 +189,8 @@ video and URL-only images throw `LlamaUnsupportedException`, as do tool-role
 image/audio parts and media alongside `LlamaToolResultContent` under any role
 ([tool-result media](../guides/tool-calling#tool-result-media)).
 
+LiteRT-LM Web `generate(prompt)` wraps the prompt in one user turn of the bundle's chat template (native LiteRT-LM and the other backends send it unchanged). `@litert-lm/core@0.19.0` cannot replace that template, and its `Session` API decodes a whole reply per call, with no streaming or stop cause. `create()` and `ChatSession` are unaffected ([#1863](https://github.com/leehack/llamadart/issues/1863)).
+
 `LlamaEngine.supportsVideo` returns `false` on every runtime, and passing
 `LlamaVideoContent` throws `LlamaUnsupportedException`. Web state paths point
 into the bridge's WASMFS virtual filesystem; to keep state across reloads,

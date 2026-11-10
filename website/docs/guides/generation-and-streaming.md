@@ -26,7 +26,12 @@ adds one, and only one: a prompt that already starts with it, such as a
 Native LiteRT-LM throws `LlamaArgumentException` for an empty prompt.
 LiteRT-LM Web is the exception: it sends the prompt as one user turn through
 the bundle's chat template, because `@litert-lm/core` cannot replace that
-template ([#1863](https://github.com/leehack/llamadart/issues/1863)).
+template. Its `Session` API skips the template, but it decodes a whole reply
+per call, with no streaming or stop cause, so `generate()` does not use it
+([#1863](https://github.com/leehack/llamadart/issues/1863)). `create()` and
+`ChatSession` are unaffected. Do not pass a prompt you rendered with
+`chatTemplate()` to Web LiteRT-LM `generate()`: the bundle would template it
+again.
 
 For one-shot instructions, prefer `engine.create(...)`: it applies the chat
 template without session state, and a follow-up turn sees only the messages you
