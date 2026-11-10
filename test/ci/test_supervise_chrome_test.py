@@ -349,7 +349,8 @@ class SupervisorTest(unittest.TestCase):
         self.assertEqual(child.returncode, 0, child.stderr)
         self.assertTrue(result['browser_close_stall'])
         at = {event['event']: event['elapsed_seconds'] for event in self.events()}
-        self.assertGreaterEqual(at['browser_close_stall'] - at['reporter_done'], 0.6)
+        # Events are rounded to milliseconds, so compare at that precision.
+        self.assertGreaterEqual(round(at['browser_close_stall'] - at['reporter_done'], 3), 0.6)
 
     def test_leftover_owned_processes_after_a_recovered_stall_exit_125(self):
         launcher = self.patched_supervisor('module.deliver = lambda row, number: False')
