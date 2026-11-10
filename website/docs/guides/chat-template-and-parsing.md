@@ -143,8 +143,12 @@ generic, Llama 3, GLM 4.5, Kimi K2, LFM2, Granite, Mistral Nemo, the DeepSeek
 R1, V3.2 and V4 families and others) take a thought only when the reply
 starts with `<think>`: a `</think>` before any `<think>`, a `<think>` after
 the start of the reply and every thinking tag after the first thought are
-content. A DeepSeek V3 reply keeps a `</think>` before any `<think>` as content,
-as are the thinking tags after it.
+content. MiniMax M3 does the same with `<mm:think>`, which must start the
+reply with no whitespace before it; a `</mm:think>` that starts the reply is
+dropped. With thinking off, llama-server also drops a leading thought, and the
+engine streams no reasoning, while `parseRendered` still returns it. A
+DeepSeek V3 reply keeps a `</think>` before any `<think>` as content, as are
+the thinking tags after it.
 To parse a reply as the engine does, pass
 the render to `ChatTemplateEngine.parseRendered(rendered, output)`, where
 `rendered` is the unchanged result of `ChatTemplateEngine.render` or

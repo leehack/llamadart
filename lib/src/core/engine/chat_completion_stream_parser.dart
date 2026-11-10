@@ -230,6 +230,8 @@ class ChatCompletionStreamParser {
     final leadingThoughtOnly =
         verbatimLeadingThought ||
         (promptOpensNoThought && traits.takesThoughtOnlyAtReplyStart);
+    final exactReplyStart =
+        leadingThoughtOnly && traits.thoughtStartsReplyExactly;
     final verbatimThought = verbatimForcedThought || verbatimLeadingThought;
     final endsAtFirstEndTag = verbatimThought || leadingThoughtOnly;
     // After a prompt that opens no thought, the parse keeps an end tag before
@@ -402,8 +404,13 @@ class ChatCompletionStreamParser {
           }
         }
         if (atReplyStart) {
-          final rest = trimLeftAsciiSpace(pendingBuffer);
-          if (rest.length < startTag.length && startTag.startsWith(rest)) {
+          final rest = exactReplyStart
+              ? pendingBuffer
+              : trimLeftAsciiSpace(pendingBuffer);
+          if ((rest.length < startTag.length && startTag.startsWith(rest)) ||
+              (exactReplyStart &&
+                  rest.length < endTag.length &&
+                  endTag.startsWith(rest))) {
             continue;
           }
           atReplyStart = false;
@@ -411,6 +418,9 @@ class ChatCompletionStreamParser {
             pendingBuffer = rest.substring(startTag.length);
             isThinking = true;
           } else {
+            if (exactReplyStart && rest.startsWith(endTag)) {
+              pendingBuffer = rest.substring(endTag.length);
+            }
             verbatimThoughtEnded = true;
           }
         }
@@ -549,6 +559,7 @@ class ChatCompletionStreamParser {
               startTag: startTag,
               endTag: endTag,
               thinkingForcedOpen: templateResult.thinkingForcedOpen,
+              exactReplyStart: exactReplyStart,
             ) &&
             !partialParsed.hasToolCalls;
         if (!suppressToolEnvelopeContent &&
@@ -704,6 +715,7 @@ class ChatCompletionStreamParser {
           startTag: startTag,
           endTag: endTag,
           thinkingForcedOpen: templateResult.thinkingForcedOpen,
+          exactReplyStart: exactReplyStart,
         );
     final contentDelta = suppressFinalToolEnvelopeContent
         ? null
@@ -931,11 +943,28 @@ class ChatCompletionStreamParser {
     return mode;
   }
 
+  /// [value] without the thoughts that start it, or null while one may still
+  /// be arriving. With [exactReplyStart], only a thought or an end tag that
+  /// starts [value], with no whitespace before it, is stripped, as the parse
+  /// takes it.
   static String? _stripLeadingThinkingForToolDecision(
     String value, {
     required String startTag,
     required String endTag,
+    bool exactReplyStart = false,
   }) {
+    if (exactReplyStart) {
+      if (startTag.startsWith(value) || endTag.startsWith(value)) {
+        return null;
+      }
+      if (value.startsWith(endTag)) return value.substring(endTag.length);
+      if (!value.startsWith(startTag)) return value;
+      final afterStart = value.substring(startTag.length);
+      final endIndex = afterStart.indexOf(endTag);
+      return endIndex < 0
+          ? null
+          : afterStart.substring(endIndex + endTag.length);
+    }
     var remaining = value;
     while (true) {
       final start = _firstNonWhitespaceIndex(remaining);
@@ -1020,6 +1049,7 @@ class ChatCompletionStreamParser {
     required String startTag,
     required String endTag,
     required bool thinkingForcedOpen,
+    bool exactReplyStart = false,
   }) {
     if (thinkingForcedOpen &&
         _containsForcedOpenXmlToolEnvelope(text, endTag: endTag)) {
@@ -1030,6 +1060,7 @@ class ChatCompletionStreamParser {
       text,
       startTag: startTag,
       endTag: endTag,
+      exactReplyStart: exactReplyStart,
     );
     if (decisionText == null) {
       return true;
