@@ -1704,8 +1704,17 @@ Future<void> main(List<String> args) async {
         ['--backend', 'cpu'],
         ['--model-path', '/m.litertlm'],
         ['--model-path', '/m.litertlm', '--backend', 'npu'],
+        for (final secret in [
+          'https://user:token@example.com/m.litertlm',
+          'https://example.com/m.litertlm?X-Amz-Signature=abc',
+          'https://example.com/m.litertlm#token',
+        ])
+          ['--model-path', secret, '--backend', 'cpu'],
       ]) {
-        expect((await dryRun(invalid)).exitCode, 64, reason: '$invalid');
+        final rejected = await dryRun(invalid);
+        expect(rejected.exitCode, 64, reason: '$invalid');
+        expect(rejected.stdout, isNot(contains('token')));
+        expect(rejected.stderr, isNot(contains('token')));
       }
       final path = await dryRun([
         '--model-path',

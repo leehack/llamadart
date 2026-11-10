@@ -2993,6 +2993,22 @@ Future<LocalE2eResult> runLocalE2e(
       stderr: '--model-path is required for ${scenario.name}.\n',
     );
   }
+  // The URL is printed and compiled into the app, so it must carry no secret.
+  final modelUrl = scenario.name == 'chat-app-litert-json-schema'
+      ? Uri.tryParse(parsed.modelPath!)
+      : null;
+  if (modelUrl != null &&
+      modelUrl.hasScheme &&
+      (modelUrl.userInfo.isNotEmpty ||
+          modelUrl.hasQuery ||
+          modelUrl.hasFragment)) {
+    return LocalE2eResult(
+      64,
+      stderr:
+          '${scenario.name} accepts a model URL without credentials, query or '
+          'fragment; serve the bundle from a plain URL.\n',
+    );
+  }
   if ((scenario.name == 'litert-lm-json-schema' ||
           scenario.name == 'chat-app-litert-json-schema') &&
       (!parsed.backendProvided ||

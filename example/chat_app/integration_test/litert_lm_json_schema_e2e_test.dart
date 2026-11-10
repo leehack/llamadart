@@ -3,7 +3,8 @@
 /// Device qualification of native LiteRT-LM JSON Schema output.
 ///
 /// Run through `run_local_e2e.dart --scenario chat-app-litert-json-schema`,
-/// which serves the model to the device and passes these defines.
+/// which passes the model path or URL and the backend as defines; serving a
+/// URL is up to the caller.
 library;
 
 import 'dart:convert';

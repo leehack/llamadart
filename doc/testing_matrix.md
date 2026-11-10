@@ -1248,9 +1248,11 @@ Qwen3 is refused), system/history, before/after-content cancellation and a
 backend; `--list` and `--dry-run` first. Each host platform needs its own run.
 `chat-app-litert-json-schema` runs the same checks in the chat app on an
 Android or iOS device, simulator or emulator. `--model-path` is a path the app
-can read (a host path works on the iOS simulator and macOS) or an `http(s)`
-URL the app downloads into its support directory; for an Android emulator,
-serve the bundle on the host and use `http://10.0.2.2:<port>/<bundle>`.
+can read (a host path works on the iOS simulator; the sandboxed macOS app
+reads only its own container) or a plain `http(s)` URL the app downloads
+into its support directory; for an Android emulator, serve the bundle on the
+host and use `http://10.0.2.2:<port>/<bundle>`. URLs with credentials, a query
+or a fragment are refused, since the URL is printed and compiled into the app.
 
 
 ### Complete image checkpoint containers

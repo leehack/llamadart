@@ -14,7 +14,7 @@ validate against the exact release tag notes.
 ## Unreleased
 
 - Widen native LiteRT-LM strict `responseFormat` to Gemma 4 (bundle template) and the macOS arm64 GPU, and to the JSON Schema subset that both llama.cpp's GBNF converter and LiteRT-LM's LLGuidance enforce (nested objects, arrays, `$ref`, `anyOf`, anchored patterns, `uuid`/`date` formats, bounds); other schemas, including `oneOf`, throw `LlamaUnsupportedException` naming the schema path before generation. Gemma 4 can think before its constrained reply; Qwen3 with thinking is refused. A reply cut off inside the JSON reports finish reason `length` ([#174](https://github.com/leehack/llamadart/issues/174)).
-- Lift native LiteRT-LM strict `responseFormat` beyond macOS to iOS arm64 CPU and GPU and the Android arm64, Linux x64/arm64 and Windows x64 CPU, the hosts with passing real-model runs; GPUs on Android, Linux and Windows still throw `LlamaUnsupportedException` ([#174](https://github.com/leehack/llamadart/issues/174)).
+- Lift native LiteRT-LM strict `responseFormat` beyond macOS to iOS arm64 CPU and GPU and the Android arm64, Linux x64/arm64 and Windows x64 CPU, the hosts with passing real-model runs; other hosts, GPUs on Android, Linux and Windows, and NPU throw `LlamaUnsupportedException` ([#174](https://github.com/leehack/llamadart/issues/174)).
 
 ## 0.19.4
 

@@ -670,16 +670,14 @@ class LiteRtLmService {
     if (_jsonSchemaAdmitted) return;
     _requireConversationEngine();
     final qualified = _jsonSchemaQualifiedBackends();
-    final requested = _backendNameFor(_modelParams ?? const ModelParams());
-    // An auto GPU request can only fall back to the CPU, which every
-    // qualified host admits, so the requested backend decides.
-    if (!qualified.contains(requested)) {
-      throw LlamaUnsupportedException(
-        'Native JSON Schema chat is not qualified for the LiteRT-LM $requested '
-        'backend on ${liteRtLmGateAbi()}'
-        '${qualified.isEmpty ? '' : '; select ${qualified.join(' or ')}'}.',
-      );
-    }
+    Never refuseBackend(String backend) => throw LlamaUnsupportedException(
+      'Native JSON Schema chat is not qualified for the LiteRT-LM $backend '
+      'backend on ${liteRtLmGateAbi()}'
+      '${qualified.isEmpty ? '' : '; load with ${qualified.map((b) => 'ComputeDevice.$b').join(' or ')}'}.',
+    );
+    // The loaded backend includes the deprecated preferredBackend override.
+    final loaded = _loadedBackend!;
+    if (!qualified.contains(loaded)) refuseBackend(loaded);
     final routing = _templateRouting();
     final family = routing.family;
     final customTemplate = _modelParams?.chatTemplate;
@@ -701,6 +699,8 @@ class LiteRtLmService {
     }
     _cancelRequested = false;
     final client = await _ensureClientForGeneration(const GenerationParams());
+    // An automatic GPU load can run on the CPU instead.
+    if (!qualified.contains(_activeBackend)) refuseBackend(_activeBackend!);
     if (!client.supportsJsonSchemaConstraints) {
       throw LlamaUnsupportedException(
         'Native JSON Schema chat requires all constraint-provider and thinking-config symbols. '
