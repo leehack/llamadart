@@ -19,6 +19,11 @@ const int pubContentWarningBytes = pubContentLimitBytes * 9 ~/ 10;
 /// The content files of package [name] at [packagePath], relative to the
 /// repository root, that pub.dev reads: `README.md`, `CHANGELOG.md`, `LICENSE`
 /// and the first example file its Example tab would show.
+///
+/// Candidates are chosen by existence on disk. `.pubignore` is not consulted
+/// (it is gitignore syntax, and no candidate is ignored today), so a
+/// pub-ignored higher-priority example would make this check size a file that
+/// pub.dev never shows.
 List<String> pubContentFiles(
   Directory repoRoot,
   String packagePath,
