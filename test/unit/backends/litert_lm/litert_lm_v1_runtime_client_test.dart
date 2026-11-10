@@ -468,6 +468,36 @@ void main() {
       expect(result.stdout, contains('$mode client lifetime controls passed'));
     });
   }
+  Future<void> cancelFirstGeneration(LiteRtLmV1RuntimeClient adapter) async {
+    await initialize(adapter);
+    adapter.createConversation();
+    final subscription = adapter.generate('cancel').listen((_) {});
+    final cancellation = subscription.cancel();
+    emit(null, finalChunk: true, reason: 4);
+    await cancellation;
+    expect(adapter.lastFinishReason, LiteRtLmFinishReason.cancelled);
+  }
+
+  test('a cancelled generation keeps its performance counters', () async {
+    final adapter = client();
+    await cancelFirstGeneration(adapter);
+    final metrics = adapter.readMetrics(wallMilliseconds: 123);
+    expect(metrics.inputTokens, 21);
+    expect(metrics.wallMilliseconds, 123);
+  });
+
+  test(
+    'a cancelled generation without readable counters reports them unavailable',
+    () async {
+      set('metadata_fail', 7);
+      final adapter = client();
+      await cancelFirstGeneration(adapter);
+      expect(
+        () => adapter.readMetrics(wallMilliseconds: 123),
+        throwsA(isA<LlamaStateException>()),
+      );
+    },
+  );
   test(
     'subscription cancellation waits for final and allows a fresh child',
     () async {

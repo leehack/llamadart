@@ -158,10 +158,37 @@ extension LiteRtLmV1ConversationMetadata on LiteRtLmV1Conversation {
   /// Sums all prefill/decode turns and uses the last throughput per phase,
   /// preserving the legacy client's aggregation. Native zero timing is retained.
   legacy.LiteRtLmRuntimeMetrics readMetrics({required int wallMilliseconds}) {
-    _requireMetadataReady();
     if (wallMilliseconds < 0) {
       throw LlamaArgumentException('Wall milliseconds must be nonnegative.');
     }
+    final released = _releasedMetrics;
+    if (_handle == nullptr && released != null) {
+      _runtime._requireLive();
+      return legacy.LiteRtLmRuntimeMetrics(
+        inputTokens: released.inputTokens,
+        outputTokens: released.outputTokens,
+        prefillTokensPerSecond: released.prefillTokensPerSecond,
+        decodeTokensPerSecond: released.decodeTokensPerSecond,
+        timeToFirstTokenSeconds: released.timeToFirstTokenSeconds,
+        initSeconds: released.initSeconds,
+        wallMilliseconds: wallMilliseconds,
+      );
+    }
+    return _readBenchmark(wallMilliseconds);
+  }
+
+  /// Reads the counters of a cancelled turn before its conversation is
+  /// released; a failed read leaves them unavailable.
+  void _captureMetricsBeforeRelease() {
+    try {
+      _releasedMetrics = _readBenchmark(0);
+    } on Object {
+      _releasedMetrics = null;
+    }
+  }
+
+  legacy.LiteRtLmRuntimeMetrics _readBenchmark(int wallMilliseconds) {
+    _requireMetadataReady();
     const prefix = 'litert_lm_benchmark_info_';
     const symbols = [
       'litert_lm_conversation_get_benchmark_info',
