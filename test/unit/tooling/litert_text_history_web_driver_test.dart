@@ -64,6 +64,11 @@ void main() {
       'test/e2e/backends/litert_lm_tool_calling_web_e2e_test.dart',
       'LITERT_TOOLS_INPUT ',
     ),
+    (
+      'truncation',
+      'test/e2e/backends/litert_lm_truncation_web_e2e_test.dart',
+      'LITERT_TRUNCATION_INPUT ',
+    ),
   ]) {
     test('Web LiteRT driver runs the ${suite ?? 'default'} suite', () async {
       final result =

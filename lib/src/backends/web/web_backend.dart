@@ -661,14 +661,8 @@ class WebAutoBackend
   }
 
   @override
-  BackendGenerationLimit? generationLimitOf(Stream<List<int>> generation) {
-    final delegate = _delegate;
-    return delegate is BackendGenerationLimitReporting
-        ? (delegate as BackendGenerationLimitReporting).generationLimitOf(
-            generation,
-          )
-        : null;
-  }
+  BackendGenerationLimit? generationLimitOf(Stream<List<int>> generation) =>
+      generationLimitReporterOf(_delegate)?.generationLimitOf(generation);
 
   @override
   List<LlamaCompletionChunkToolCall>? runtimeToolCallsOf(

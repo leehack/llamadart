@@ -7,6 +7,7 @@ Releases before 0.10.0 are in the
 - Document that LiteRT-LM Web `generate()` wraps the prompt in one user turn of the bundle's chat template, because `@litert-lm/core@0.19.0` has no raw streaming route ([#1863](https://github.com/leehack/llamadart/issues/1863)).
 - Keep `LlamaArgumentException.name` when native LiteRT-LM reports an argument error from its worker isolate, and say in the native LiteRT-LM raw-prompt refusal whether the prompt is empty or holds only the model's start token ([#1861](https://github.com/leehack/llamadart/issues/1861)).
 - Add manual tool calling to LiteRT-LM Web through `LlamaBackend.withTextHistory()` on `@litert-lm/core@0.19.0`: tools reach the model, `create` returns its tool calls, and tool results go back in the next request. `supportsToolCalling` reports whether the loaded runtime reads tool declarations; automatic tool loops, `ToolChoice.required` and `parallelToolCalls` still throw `LlamaUnsupportedException` ([#1790](https://github.com/leehack/llamadart/issues/1790)).
+- Report LiteRT-LM Web replies cut off at `maxTokens` or the context size as finish reason `length`, and run automatic tool loops (`sendWithTools`, `completeWithTools`) there, through `LlamaBackend.withTextHistory()` on `@litert-lm/core@0.19.0`. A load probe checks that the runtime reports per-turn token counts; a reply that ends exactly at `maxTokens` is also reported as `length` ([#919](https://github.com/leehack/llamadart/issues/919)).
 
 ## 0.19.3
 
