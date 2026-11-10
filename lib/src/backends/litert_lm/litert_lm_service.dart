@@ -545,9 +545,12 @@ class LiteRtLmService {
     final rawPrompt = _withoutLeadingStartToken(client, prompt);
     if (rawPrompt.isEmpty) {
       throw LlamaArgumentException(
-        'LiteRtLmBackend raw prompt generation needs prompt text: the '
-        'LiteRT-LM runtime cannot prefill an empty prompt or one that holds '
-        "only the model's start token.",
+        prompt.isEmpty
+            ? 'LiteRtLmBackend raw prompt generation needs prompt text: the '
+                  'prompt is empty.'
+            : 'LiteRtLmBackend raw prompt generation needs prompt text: the '
+                  "prompt holds only the model's start token, which the "
+                  'LiteRT-LM runtime adds itself.',
         name: 'prompt',
         invalidValue: prompt,
       );
