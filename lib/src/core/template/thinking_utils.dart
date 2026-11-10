@@ -16,7 +16,8 @@ typedef ThinkingExtraction = ({String content, String? reasoning});
 ///
 /// Inside [withThoughtOnlyAtReplyStart] and without [thinkingForcedOpen],
 /// only a thought that starts [text] is reasoning, and the rest is content in
-/// which thinking tags are text.
+/// which thinking tags are text. With its `exact` rule, whitespace before the
+/// thought makes it content, and an [endTag] that starts [text] is dropped.
 ///
 /// Escaped `\n` and `\r` in reasoning become a newline and a carriage return
 /// unless [unescape] is false. The content keeps the whitespace at its ends
@@ -29,13 +30,14 @@ ThinkingExtraction extractThinking(
   bool unescape = true,
   bool trimContent = true,
 }) {
-  final result =
-      !thinkingForcedOpen && Zone.current[_thoughtOnlyAtReplyStart] == true
+  final leadingRule = Zone.current[_thoughtOnlyAtReplyStart];
+  final result = !thinkingForcedOpen && leadingRule is _LeadingThoughtRule
       ? _extractLeadingThought(
           text,
           startTag: startTag,
           endTag: endTag,
           unescape: unescape,
+          exact: leadingRule == _LeadingThoughtRule.exact,
         )
       : _extractThinking(
           text,
@@ -124,23 +126,41 @@ String withoutTrailingTagPrefix(String text, Iterable<String> tags) {
 
 final Object _thoughtOnlyAtReplyStart = Object();
 
+enum _LeadingThoughtRule { afterSpace, exact }
+
 /// Runs [parse] with [extractThinking] taking a thought only where it starts
 /// the text, as llama.cpp parses a reply to a prompt that opens no thought.
 ///
+/// With [exact], as llama.cpp's MiniMax M3 parser does, the thought must start
+/// the text with no whitespace before it, and an end tag that starts the text
+/// is dropped.
+///
 /// Handlers extract thinking in many places and shapes, so the parse sets
 /// this once around them instead of threading it through each one.
-T withThoughtOnlyAtReplyStart<T>(T Function() parse) =>
-    runZoned(parse, zoneValues: {_thoughtOnlyAtReplyStart: true});
+T withThoughtOnlyAtReplyStart<T>(T Function() parse, {bool exact = false}) =>
+    runZoned(
+      parse,
+      zoneValues: {
+        _thoughtOnlyAtReplyStart: exact
+            ? _LeadingThoughtRule.exact
+            : _LeadingThoughtRule.afterSpace,
+      },
+    );
 
-/// Splits off the thought that starts [text], after ASCII whitespace, up to
-/// the first [endTag], or to the end when none follows.
+/// Splits off the thought that starts [text], after ASCII whitespace unless
+/// [exact], up to the first [endTag], or to the end when none follows. With
+/// [exact], an [endTag] that starts [text] is dropped.
 ThinkingExtraction _extractLeadingThought(
   String text, {
   required String startTag,
   required String endTag,
   required bool unescape,
+  required bool exact,
 }) {
-  final rest = trimLeftAsciiSpace(text);
+  final rest = exact ? text : trimLeftAsciiSpace(text);
+  if (exact && rest.startsWith(endTag)) {
+    return (content: rest.substring(endTag.length), reasoning: null);
+  }
   if (!rest.startsWith(startTag)) return (content: text, reasoning: null);
   final thought = rest.substring(startTag.length);
   final end = thought.indexOf(endTag);

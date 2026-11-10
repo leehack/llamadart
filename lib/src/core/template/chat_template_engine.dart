@@ -809,7 +809,10 @@ class ChatTemplateEngine {
           promptOpensNoThought &&
               !thinkingForcedOpen &&
               takesThoughtOnlyAtReplyStart(formatIndex)
-          ? withThoughtOnlyAtReplyStart(parse)
+          ? withThoughtOnlyAtReplyStart(
+              parse,
+              exact: _traitsOf(formatIndex).thoughtStartsReplyExactly,
+            )
           : parse();
     } on StackOverflowError catch (_, stackTrace) {
       // PEG rules recurse once per nesting level of model-controlled output.
