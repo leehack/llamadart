@@ -71,7 +71,7 @@ void main() {
         ..finishReason = LiteRtLmFinishReason.stop;
       service = LiteRtLmService(
         clientFactory: () => client,
-        jsonSchemaPlatformSupported: () => true,
+        jsonSchemaQualifiedBackends: () => {'cpu', 'gpu'},
       );
       await service.loadModel(
         (await modelFile.copy('${tempDir.path}/Qwen3-0.6B.litertlm')).path,
@@ -121,7 +121,7 @@ void main() {
         service.dispose();
         service = LiteRtLmService(
           clientFactory: () => client,
-          jsonSchemaPlatformSupported: () => true,
+          jsonSchemaQualifiedBackends: () => {'cpu', 'gpu'},
         );
         await service.loadModel(
           '${tempDir.path}/Qwen3-0.6B.litertlm',
@@ -137,7 +137,8 @@ void main() {
         service.dispose();
         service = LiteRtLmService(
           clientFactory: () => client,
-          jsonSchemaPlatformSupported: () => excluded != 'host',
+          jsonSchemaQualifiedBackends: () =>
+              excluded == 'host' ? const {} : {'cpu', 'gpu'},
         );
         final selected = excluded == 'template'
             ? const ModelParams(
@@ -256,7 +257,7 @@ void main() {
         ..finishReason = LiteRtLmFinishReason.stop;
       service = LiteRtLmService(
         clientFactory: () => client,
-        jsonSchemaPlatformSupported: () => true,
+        jsonSchemaQualifiedBackends: () => {'cpu', 'gpu'},
         readBundleFirstChannel: (_) =>
             reasoningChannel ? (name: 'thought', isReasoning: true) : null,
       );
@@ -1963,7 +1964,7 @@ void main() {
         final client = _FakeLiteRtLmRuntimeClient();
         final service = LiteRtLmService(
           clientFactory: () => client,
-          jsonSchemaPlatformSupported: () => true,
+          jsonSchemaQualifiedBackends: () => {'cpu', 'gpu'},
         );
         try {
           await service.loadModel(
