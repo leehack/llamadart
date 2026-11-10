@@ -13,6 +13,8 @@ validate against the exact release tag notes.
 
 ## Unreleased
 
+- Keep `LlamaArgumentException.name` when native LiteRT-LM reports an argument error from its worker isolate, and describe the empty raw-prompt refusal as the runtime adding the start token itself ([#1861](https://github.com/leehack/llamadart/issues/1861)).
+
 ## 0.19.2
 
 - Keep default WebGPU bridge assets at `v0.1.83` (unchanged from 0.19.1).

@@ -57,6 +57,12 @@ void main() {
         'bad model (detail)',
       );
 
+      final named = LiteRtLmErrorResponse.from(
+        LlamaArgumentException('bad value', name: 'prompt'),
+      );
+      expect(named.argumentName, 'prompt');
+      expect(LiteRtLmErrorResponse.from(StateError('x')).argumentName, isNull);
+
       final generic = LiteRtLmErrorResponse.from(Exception('native failed'));
       expect(generic.kind, 'exception');
       expect(generic.message, contains('native failed'));
