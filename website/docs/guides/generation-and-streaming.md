@@ -484,9 +484,10 @@ classes/ranges and groups, with group alternation and repetition counts up to
 1024; unsupported regex constructs are rejected. Backends without
 grammar constraints still fail early for strict output unless they expose a
 separate admitted JSON Schema provider. Native LiteRT-LM has that path on
-macOS arm64 and iOS arm64 CPU and GPU and on the Android arm64 CPU, with Qwen3
-(canonical text template) and Gemma 4 (bundle template) models. Linux, Windows,
-Android GPU and LiteRT-LM Web refuse it.
+macOS arm64 and iOS arm64 CPU and GPU and on the Android arm64, Linux x64/arm64
+and Windows x64 CPU, with Qwen3 (canonical text template) and Gemma 4 (bundle
+template) models. GPUs on Android, Linux and Windows, and LiteRT-LM Web, refuse
+it.
 
 Native LiteRT-LM accepts only schemas that both the GBNF converter above and
 LiteRT-LM's LLGuidance provider enforce alike, so every schema it accepts is

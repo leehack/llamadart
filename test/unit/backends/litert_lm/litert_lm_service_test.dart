@@ -167,9 +167,9 @@ void main() {
         Abi.iosArm64: {'cpu', 'gpu'},
         Abi.androidArm64: {'cpu'},
         Abi.androidX64: {},
-        Abi.linuxX64: {},
-        Abi.linuxArm64: {},
-        Abi.windowsX64: {},
+        Abi.linuxX64: {'cpu'},
+        Abi.linuxArm64: {'cpu'},
+        Abi.windowsX64: {'cpu'},
         Abi.macosX64: {},
       };
       for (final MapEntry(key: abi, value: backends) in expected.entries) {
