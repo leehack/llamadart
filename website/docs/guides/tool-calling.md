@@ -492,9 +492,12 @@ calls, for schema and `ToolParam` tools.
 
 With Qwen3-Coder XML templates (Qwen3-Coder, Qwen3.5, StepFun3.5-Flash), the
 `ToolChoice.required` grammar accepts a thought and any text without
-`<tool_call>` before the calls, as in llama-server. The Qwen3-Coder template has
-no thinking, so its first call may also leave out `<tool_call>` and start at
-`<function=name>` for a declared tool.
+`<tool_call>` before the calls, as in llama-server, so leave room in
+`maxTokens`: a reply that spends it first ends with `length` and no call. The
+Qwen3-Coder template has no thinking, so its first required call may also leave
+out `<tool_call>` and start at `<function=name>` for a declared tool. Unlike
+llama-server, the `ToolChoice.auto` grammar starts only at `<tool_call>`, not
+at `<function=name>`, so a reply can write that tag as text.
 
 `required` may name a property that `properties` does not declare: the
 grammar requires that key, with a value matching `additionalProperties` (any
@@ -582,7 +585,10 @@ user messages retain the template's usual validation.
 
 - `ToolChoice.none`: disable tool calls for that request.
 - `ToolChoice.auto`: model decides whether to call tools.
-- `ToolChoice.required`: model must emit tool calls.
+- `ToolChoice.required`: model must emit tool calls. Where the format lets a
+  thought or text precede them (Qwen3-Coder XML, Hermes after a forced-open
+  thought), a reply that uses up `maxTokens` first ends with `length` and no
+  call, as in llama-server.
 
 ### WebGPU
 

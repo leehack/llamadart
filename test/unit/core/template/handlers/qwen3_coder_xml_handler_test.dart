@@ -283,7 +283,6 @@ void main() {
       ),
     ];
     const qwenTemplate = '{{ messages[0]["content"] }}';
-    const qwenThinkingTemplate = '{{ messages[0]["content"] }}<think>';
     const nemotronTemplate =
         '{% set truncate_history_thinking = true %}'
         '<tool_call><function><parameters><think>';
@@ -312,15 +311,9 @@ void main() {
     expect(rootFor(nemotronTemplate, const {}), equals(single));
     expect(rootFor(nemotronTemplate, parallelOff), equals(single));
     expect(rootFor(nemotronTemplate, parallelOn), equals(repeated));
-    expect(rootFor(qwenThinkingTemplate, const {}), equals(single));
-    expect(rootFor(qwenThinkingTemplate, parallelOff), equals(single));
-    expect(rootFor(qwenThinkingTemplate, parallelOn), equals(repeated));
-    // Without a thought, the first call may leave out `<tool_call>`.
-    const bareSingle = 'root ::= first-tool-call-scope';
-    const bareRepeated = 'root ::= first-tool-call-scope tool-call-scope*';
-    expect(rootFor(qwenTemplate, const {}), equals(bareSingle));
-    expect(rootFor(qwenTemplate, parallelOff), equals(bareSingle));
-    expect(rootFor(qwenTemplate, parallelOn), equals(bareRepeated));
+    expect(rootFor(qwenTemplate, const {}), equals(single));
+    expect(rootFor(qwenTemplate, parallelOff), equals(single));
+    expect(rootFor(qwenTemplate, parallelOn), equals(repeated));
     expect(rootOf(handler.buildGrammar(tools)!), equals(repeated));
   });
 }

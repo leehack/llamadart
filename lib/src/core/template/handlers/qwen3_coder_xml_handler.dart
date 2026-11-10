@@ -111,12 +111,15 @@ class Qwen3CoderXmlHandler extends ChatTemplateHandler
     final resultFormat = isNemotronV3
         ? ChatFormat.pegConstructed.index
         : format.index;
+    // The lazy grammar starts only at `<tool_call>`: llama.cpp also starts it
+    // at a declared tool's `<function=name>`, which then fails a reply that
+    // writes that tag as text.
     final grammar = buildXmlToolCallGrammar(
       tools,
       XmlToolCallFormat.qwen3Coder,
       parallelToolCalls: parallelToolCalls,
       textBeforeCalls: toolChoiceRequired && !isNemotronV3,
-      bareFirstCall: bareFirstCall,
+      bareFirstCall: bareFirstCall && toolChoiceRequired,
     );
 
     final rendered = LlamaChatTemplateResult(
@@ -148,14 +151,6 @@ class Qwen3CoderXmlHandler extends ChatTemplateHandler
                 type: 0,
                 value: isNemotronV3 ? '<tool_call>' : '<tool_call>\n<function=',
               ),
-              if (bareFirstCall)
-                for (final tool in tools)
-                  GrammarTrigger(
-                    type: 0,
-                    value: XmlToolCallFormat.qwen3Coder.bareCallOpening(
-                      tool.name,
-                    ),
-                  ),
             ]
           : const [],
       parser: parser,

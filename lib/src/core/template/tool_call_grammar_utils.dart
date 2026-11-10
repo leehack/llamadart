@@ -144,8 +144,12 @@ class ToolCallGrammarUtils {
   /// would let the delimiter start inside it.
   static List<String> excludingRules(String name, List<String> delimiters) {
     String state(int i) => i == 0 ? name : '$name-$i';
-    String chars(String value) =>
-        value.replaceAllMapped(RegExp(r'[\\\]\[^-]'), (m) => '\\${m[0]}');
+    // llama.cpp's GBNF parser has no `\^` escape, and a leading `^` would
+    // negate the class.
+    String chars(String value) => value.replaceAllMapped(
+      RegExp(r'[\\\]\[^-]'),
+      (m) => m[0] == '^' ? r'\x5E' : '\\${m[0]}',
+    );
     final children = <Map<String, int>>[{}];
     final ends = <int>[0];
     for (final delimiter in delimiters) {

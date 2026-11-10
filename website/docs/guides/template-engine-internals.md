@@ -197,7 +197,9 @@ scope with two calls and text after the calls. A finished reply may end a
 valid call without `</tool_call>`. For a template without a thought, as
 Qwen3-Coder's, a declared tool's `<function=name>` before any `<tool_call>`
 also ends the content and starts the first call, as llama.cpp (`cd959bae9`)
-allows; the lazy grammar also starts there. Tool calls are emitted after final
+allows. The lazy grammar starts only at `<tool_call>`: llama.cpp also starts
+it at `<function=name>`, which then fails a reply that writes that tag as
+text. Tool calls are emitted after final
 validation. Direct schema-free template parsing does not validate arguments,
 so pass tool definitions when validating calls.
 

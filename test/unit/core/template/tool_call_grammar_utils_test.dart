@@ -166,11 +166,12 @@ void main() {
       ['ab', 'xaby'],
       ['abab', 'ba'],
       ['aa', 'ab', 'b'],
+      ['^a', 'a^]', '-\\['],
     ]) {
-      final body = _ExcludingRules(
-        ToolCallGrammarUtils.excludingRules('t', delimiters),
-        't',
-      );
+      final rules = ToolCallGrammarUtils.excludingRules('t', delimiters);
+      // llama.cpp's GBNF parser rejects `\^`.
+      expect(rules.join('\n'), isNot(contains(r'\^')), reason: '$delimiters');
+      final body = _ExcludingRules(rules, 't');
       final alphabet = {...delimiters.join().split(''), 'z'}.toList();
       var texts = [''];
       for (var length = 0; length <= 5; length++) {
@@ -388,7 +389,10 @@ class _ExcludingRules {
         for (final m in alternative.allMatches(rule[3]!))
           (
             negated: m[1] == '^',
-            chars: m[2]!.replaceAllMapped(RegExp(r'\\(.)'), (e) => e[1]!),
+            chars: m[2]!.replaceAllMapped(
+              RegExp(r'\\x([0-9A-Fa-f]{2})|\\(.)'),
+              (e) => e[2] ?? String.fromCharCode(int.parse(e[1]!, radix: 16)),
+            ),
             next: m[3]!,
           ),
       ];
