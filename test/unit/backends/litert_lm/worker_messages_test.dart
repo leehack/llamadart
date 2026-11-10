@@ -62,6 +62,10 @@ void main() {
       );
       expect(named.argumentName, 'prompt');
       expect(LiteRtLmErrorResponse.from(StateError('x')).argumentName, isNull);
+      expect(
+        LiteRtLmErrorResponse.from(LlamaArgumentException('bad')).argumentName,
+        isNull,
+      );
 
       final generic = LiteRtLmErrorResponse.from(Exception('native failed'));
       expect(generic.kind, 'exception');

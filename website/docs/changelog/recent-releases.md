@@ -13,7 +13,7 @@ validate against the exact release tag notes.
 
 ## Unreleased
 
-- Keep `LlamaArgumentException.name` when native LiteRT-LM reports an argument error from its worker isolate, and describe the empty raw-prompt refusal as the runtime adding the start token itself ([#1861](https://github.com/leehack/llamadart/issues/1861)).
+- Keep `LlamaArgumentException.name` when native LiteRT-LM reports an argument error from its worker isolate, and say in the native LiteRT-LM raw-prompt refusal whether the prompt is empty or holds only the model's start token ([#1861](https://github.com/leehack/llamadart/issues/1861)).
 
 ## 0.19.2
 
