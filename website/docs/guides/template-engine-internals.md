@@ -215,6 +215,26 @@ otherwise its text stays in content. This deliberately differs from upstream
 llama.cpp (`7fe450e1`), which fails to parse this output and returns no tool
 call.
 
+Seed-OSS tool calls follow llama.cpp (`cd959bae9`) on the scope start tag:
+calls start at the first `<seed:tool_call>` followed by a line break, and the
+text before it, including a `<seed:tool_call>` followed by anything else (as
+in `<seed:tool_call><function=`, or a space or tab after the tag), is content,
+streamed or not. The tool-call grammar and its lazy trigger also start a scope
+only at `<seed:tool_call>\n`. Where upstream fails the whole reply with an
+error, llamadart deliberately stays lenient
+([#1542](https://github.com/leehack/llamadart/pull/1542#issuecomment-6758592134)):
+
+- An unknown tool name is returned as a call.
+- A call missing a required argument is returned with the arguments it has.
+- A later scope without a line break after its tag, and any text after the
+  last call, stay content after the calls before them.
+
+The first two are rejected when the request's tools came from
+`ToolDefinition.fromJsonSchema` ("The model returned an undeclared tool call."
+or "Tool arguments do not match the input schema for ..."). With `ToolParam`
+tools, or without tools, the Seed-OSS parse has no schemas and returns the
+call, so validate the name and arguments before running it.
+
 Streamed content and reasoning start and end with the whitespace the final
 parse keeps, with or without tools, apart from the cases below. The parse
 trims content, except that content at the end of the output keeps the

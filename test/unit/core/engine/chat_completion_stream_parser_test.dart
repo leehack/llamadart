@@ -2176,7 +2176,7 @@ void main() {
         ChatFormat.apertus:
             '<|tools_prefix|>[{"weather":{"city":"Paris"}}]<|tools_suffix|>',
         ChatFormat.seedOss:
-            '<seed:tool_call><function=weather><parameter=city>Paris'
+            '<seed:tool_call>\n<function=weather><parameter=city>Paris'
             '</parameter></function></seed:tool_call>',
         ChatFormat.minimaxM2:
             '<minimax:tool_call>\n<invoke name="weather">\n'
@@ -2825,6 +2825,64 @@ void main() {
           }
         });
       }
+
+      test('seedOss streams a scope without a line break as content', () async {
+        const call =
+            '<seed:tool_call><function=weather><parameter=city>Paris'
+            '</parameter></function></seed:tool_call>';
+        for (final output in [call, 'Let me check.\n$call']) {
+          final parsed = parseRenderedOutput(
+            ChatFormat.seedOss.index,
+            output,
+            thoughtClosedForThinkingOff: true,
+            tools: [_weatherTool],
+          );
+          expect(parsed.toolCalls, isEmpty, reason: output);
+          expect(parsed.content, output, reason: output);
+          for (final enableThinking in const [false, true]) {
+            await _expectStreamMatchesParse(
+              ChatFormat.seedOss,
+              output,
+              thoughtClosed: true,
+              tools: true,
+              enableThinking: enableThinking,
+              everySplit: true,
+            );
+          }
+        }
+      });
+
+      test('seedOss starts calls at the first line-broken scope', () async {
+        String call(String city, [String scopeStart = '<seed:tool_call>\n']) =>
+            '$scopeStart<function=weather>\n<parameter=city>\n$city\n'
+            '</parameter>\n</function>\n</seed:tool_call>';
+        for (final output in [
+          'Checking <seed:tool_call>',
+          'Checking ${call('Paris')}',
+          '${call('Paris', '<seed:tool_call>')}\n${call('Rome')}',
+          'Use the <seed:tool_call> tag.\n${call('Rome')}',
+          '${call('Paris')}\n${call('Rome', '<seed:tool_call>')}',
+        ]) {
+          await _expectStreamMatchesParse(
+            ChatFormat.seedOss,
+            output,
+            thoughtClosed: true,
+            everySplit: true,
+          );
+        }
+      });
+
+      test('seedOss holds a scope start tag until a line break', () async {
+        await _expectStreamedAfterEachToken(ChatFormat.seedOss, [
+          ('Checking <seed:tool_call>', '', 'Checking'),
+          ('<function=x>', '', 'Checking <seed:tool_call><function=x>'),
+          (
+            ' and <seed:tool_call>',
+            '',
+            'Checking <seed:tool_call><function=x> and',
+          ),
+        ]);
+      });
 
       test('content after the end tag streams as it arrives', () async {
         await _expectStreamedAfterEachToken(

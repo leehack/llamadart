@@ -97,13 +97,8 @@ class SeedOssHandler extends ChatTemplateHandler {
         enableThinking: enableThinking,
       ),
       preservedTokens: hasTools ? preservedTokens : const [],
-      // llama.cpp starts only on the line-broken scope; the grammar and the
-      // parse also take one without the line break.
       grammarTriggers: hasTools
-          ? const [
-              GrammarTrigger(type: 0, value: '<seed:tool_call>\n'),
-              GrammarTrigger(type: 0, value: '<seed:tool_call><function='),
-            ]
+          ? const [GrammarTrigger(type: 0, value: '<seed:tool_call>\n')]
           : const [],
     );
     return withThoughtClosedForThinkingOff(rendered, closed: thoughtClosed);

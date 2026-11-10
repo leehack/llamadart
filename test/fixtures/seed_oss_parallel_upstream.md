@@ -14,3 +14,23 @@ left out: text after the last call, which llama.cpp rejects and llamadart keeps
 as content, a `</seed:think>` without its opening tag, which llama.cpp keeps as
 content, and a thought with thinking off, which llamadart does not stream as
 reasoning.
+
+## Intentional divergences
+
+Where llama.cpp (`cd959bae9`) fails the reply with an error, llamadart
+deliberately keeps the call (maintainer decision,
+[#1542](https://github.com/leehack/llamadart/pull/1542#issuecomment-6758592134);
+tracker [#1531](https://github.com/leehack/llamadart/issues/1531)). These are
+not cases here; `seed_oss_handler_test.dart` pins them:
+
+- An unknown tool name is returned as a call: `SeedOssHandler.parse` takes no
+  tool schemas. The engine and stream parser reject it for
+  `ToolDefinition.fromJsonSchema` tools.
+- A call missing a required argument is returned with the arguments present,
+  with the same schema caveat.
+- A later scope whose `<seed:tool_call>` is not followed by a line break stays
+  content after the calls before it.
+
+Both start calls at the first `<seed:tool_call>` followed by a line break
+(`\n\n` included) and keep the text before it as content, including a
+`<seed:tool_call>` followed by anything else.
