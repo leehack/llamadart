@@ -228,7 +228,12 @@ calls start at the first `<seed:tool_call>` followed by a line break, and the
 text before it, including a `<seed:tool_call>` followed by anything else (as
 in `<seed:tool_call><function=`, or a space or tab after the tag), is content,
 streamed or not. The tool-call grammar and its lazy trigger also start a scope
-only at `<seed:tool_call>\n`. Where upstream fails the whole reply with an
+only at `<seed:tool_call>\n`, and with `ToolChoice.required` the grammar lets a
+thought and text without that tag come first when the prompt opened no thought.
+A finished reply whose last scope is never closed keeps a call complete through
+`</function>` and its line break, and drops a scope that ends before its call
+does. An argument the tool declares as a string keeps its value as generated,
+even one that looks like JSON. Where upstream fails the whole reply with an
 error, llamadart deliberately stays lenient
 ([#1542](https://github.com/leehack/llamadart/pull/1542#issuecomment-6758592134)):
 
