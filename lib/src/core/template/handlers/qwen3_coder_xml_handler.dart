@@ -150,6 +150,12 @@ class Qwen3CoderXmlHandler extends ChatTemplateHandler
     final literal = ToolCallGrammarUtils.literal;
     final converter = JsonSchemaConverter();
     final rules = <String>[];
+    final valuesAtEnd = <String>{};
+    String atValueEnd(String rule) {
+      valuesAtEnd.add(rule);
+      return '$rule$_atValueEnd';
+    }
+
     String? stringValue;
     final toolRules = <String>[];
     for (var toolIndex = 0; toolIndex < tools.length; toolIndex++) {
@@ -164,7 +170,7 @@ class Qwen3CoderXmlHandler extends ChatTemplateHandler
         final argumentRule = 'tool-$toolIndex-arg-${argumentIndex++}';
         final valueRule = _mayBeString(value)
             ? stringValue ??= addThroughRules(rules, 'xml-arg-string', valueEnd)
-            : '${converter.visit(value, '$argumentRule-schema')} '
+            : '${atValueEnd(converter.visit(value, '$argumentRule-schema'))} '
                   '${literal(valueEnd)}';
         rules.add(
           '$argumentRule ::= ${literal('<parameter=$key>\n')} $valueRule',
@@ -209,20 +215,38 @@ class Qwen3CoderXmlHandler extends ChatTemplateHandler
     }
     buffer.writeln(r'tool-call-space ::= | " " | "\n"{1,2} [ \t]{0,20}');
     rules.forEach(buffer.writeln);
-    // llama.cpp's JSON value ends where its text does, so `\n</parameter>\n`
-    // follows it directly, as the parser requires.
     final jsonRules = converter.rules.entries.toList(growable: false)
       ..sort((a, b) => a.key.compareTo(b.key));
     for (final MapEntry(:key, :value) in jsonRules) {
-      buffer.writeln(
-        '$key ::= ${key == 'space' ? value : _withoutTrailingSpace(value)}',
-      );
+      buffer.writeln('$key ::= $value');
     }
+    // llama.cpp's argument value ends where its JSON does, so
+    // `\n</parameter>\n` follows it directly, as the parser requires. Values
+    // nested inside it keep the converter's whitespace.
+    final written = <String>{};
+    void writeAtEnd(String rule) {
+      if (!written.add(rule)) return;
+      final body = _withoutTrailingSpace(converter.rules[rule]!, (last) {
+        if (!converter.rules.containsKey(last) || last == 'space') return null;
+        writeAtEnd(last);
+        return '$last$_atValueEnd';
+      });
+      buffer.writeln('$rule$_atValueEnd ::= $body');
+    }
+
+    valuesAtEnd.forEach(writeAtEnd);
     return buffer.toString();
   }
 
-  /// [body] with the `space` that ends each of its alternatives removed.
-  static String _withoutTrailingSpace(String body) {
+  static const _atValueEnd = '-at-value-end';
+
+  /// [body] with the `space` that ends each of its alternatives removed, and
+  /// an alternative's last rule reference replaced by what [atEnd] returns for
+  /// it, unless null.
+  static String _withoutTrailingSpace(
+    String body,
+    String? Function(String rule) atEnd,
+  ) {
     final alternatives = <String>[];
     var depth = 0;
     var start = 0;
@@ -245,9 +269,15 @@ class Qwen3CoderXmlHandler extends ChatTemplateHandler
     return alternatives
         .map((alternative) {
           final trimmed = alternative.trim();
-          return trimmed.endsWith(' space')
-              ? trimmed.substring(0, trimmed.length - ' space'.length)
-              : trimmed;
+          if (trimmed.endsWith(' space')) {
+            return trimmed.substring(0, trimmed.length - ' space'.length);
+          }
+          final last = RegExp(r'[A-Za-z0-9-]+$').stringMatch(trimmed);
+          final replacement = last == null ? null : atEnd(last);
+          return replacement == null
+              ? trimmed
+              : '${trimmed.substring(0, trimmed.length - last!.length)}'
+                    '$replacement';
         })
         .join(' | ');
   }

@@ -335,7 +335,8 @@ void _stringOrIntegerValueTests() {
 }
 
 // llama.cpp (`cd959bae9`) takes up to six required arguments in any order,
-// and more only in declaration order, in its parser and its grammar.
+// and more only in declaration order, in its parser and its grammar. A
+// repeated required argument drops the call.
 void _requiredArgumentOrderTests() {
   ToolDefinition requiredStrings(String name, int count) => ToolDefinition(
     name: name,
@@ -365,6 +366,8 @@ void _requiredArgumentOrderTests() {
       (call('two', [1, 0]), true),
       (call('two', [0, 1]), true),
       (call('two', [0, 0, 1]), false),
+      (call('two', [0, 1, 0]), false),
+      (call('two', [1, 0, 0]), false),
       (call('seven', [0, 1, 2, 3, 4, 5, 6]), true),
       (call('seven', [1, 0, 2, 3, 4, 5, 6]), false),
       (call('seven', [6, 5, 4, 3, 2, 1, 0]), false),
