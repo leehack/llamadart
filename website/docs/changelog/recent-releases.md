@@ -13,6 +13,8 @@ validate against the exact release tag notes.
 
 ## Unreleased
 
+- Document that LiteRT-LM Web `generate()` wraps the prompt in one user turn of the bundle's chat template, because `@litert-lm/core@0.19.0` has no raw streaming route ([#1863](https://github.com/leehack/llamadart/issues/1863)).
+
 ## 0.19.2
 
 - Keep default WebGPU bridge assets at `v0.1.83` (unchanged from 0.19.1).
