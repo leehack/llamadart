@@ -911,9 +911,21 @@ class LiteRtLmService {
     } on StateError catch (error, stackTrace) {
       _throwSendFailure(
         error,
+        error.message,
         stackTrace,
         outputStarted: outputStarted,
         promptTemplate: promptTemplate,
+        withNote: StateError.new,
+      );
+    } on LiteRtLmSendFailureException catch (error, stackTrace) {
+      _throwSendFailure(
+        error,
+        error.message,
+        stackTrace,
+        outputStarted: outputStarted,
+        promptTemplate: promptTemplate,
+        withNote: (message) =>
+            LiteRtLmSendFailureException(message, error.details),
       );
     } finally {
       sw.stop();
@@ -943,9 +955,11 @@ class LiteRtLmService {
   /// The runtime reports a template that fails to render only as a failed
   /// send, and from v0.18 it renders with content as a list of parts.
   Never _throwSendFailure(
-    StateError error,
+    Object error,
+    String message,
     StackTrace stackTrace, {
     required bool outputStarted,
+    required Object Function(String message) withNote,
     String? promptTemplate,
   }) {
     final String? note;
@@ -970,7 +984,7 @@ class LiteRtLmService {
     if (note == null) {
       Error.throwWithStackTrace(error, stackTrace);
     }
-    Error.throwWithStackTrace(StateError('${error.message} $note'), stackTrace);
+    Error.throwWithStackTrace(withNote('$message $note'), stackTrace);
   }
 
   /// Creates a conversation that renders with the bundle's own template.

@@ -8,6 +8,7 @@ import 'dart:io';
 import 'package:llamadart/llamadart.dart';
 import 'package:llamadart/src/backends/litert_lm/litert_lm_finish_reason.dart';
 import 'package:llamadart/src/backends/litert_lm/litert_lm_native_settlement.dart';
+import 'package:llamadart/src/backends/litert_lm/litert_lm_runtime_client_contract.dart';
 import 'package:llamadart/src/backends/litert_lm/litert_lm_v1_runtime.dart';
 import 'package:test/test.dart';
 
@@ -283,7 +284,11 @@ void main() {
         call('fail', stage);
         expect(
           () => conversation.sendText('failure'),
-          throwsA(isA<LlamaException>()),
+          throwsA(
+            stage == 17
+                ? isA<LiteRtLmSendFailureException>()
+                : isNot(isA<LiteRtLmSendFailureException>()),
+          ),
         );
         expect(count('live'), 1);
         expect(count('proxies'), 0);
@@ -378,7 +383,12 @@ void main() {
       final turn = conversation.sendText('nonfinal failure');
       final failure = expectLater(
         turn.done,
-        throwsA(isA<LlamaModelException>()),
+        throwsA(
+          allOf(
+            isA<LlamaModelException>(),
+            isNot(isA<LiteRtLmSendFailureException>()),
+          ),
+        ),
       );
       call('emit', 1);
       call('emit', 2);

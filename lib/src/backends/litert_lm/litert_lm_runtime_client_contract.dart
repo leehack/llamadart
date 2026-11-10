@@ -1,9 +1,19 @@
+import '../../core/exceptions.dart';
 import '../../core/models/inference/model_params.dart';
 import 'litert_lm_asr_types.dart';
 import 'litert_lm_embedding.dart';
 import 'litert_lm_finish_reason.dart';
 import 'litert_lm_native_settlement.dart';
 import 'litert_lm_runtime.dart' as legacy;
+
+/// A native send call that failed before any stream began, so the runtime
+/// rejected the request itself (a chat template that fails to render shows up
+/// here), as opposed to a failure the stream reports later, such as an input
+/// that exceeds the context.
+final class LiteRtLmSendFailureException extends LlamaModelException {
+  /// Creates a send failure with [message].
+  LiteRtLmSendFailureException(super.message, [super.details]);
+}
 
 /// Internal service boundary; each native ABI implements every operation rather
 /// than inheriting calls that may have a different arity or ownership contract.
