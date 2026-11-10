@@ -483,21 +483,38 @@ Patterns must be anchored `^...$` sequences of safe literals, positive character
 classes/ranges and groups, with group alternation and repetition counts up to
 1024; unsupported regex constructs are rejected. Backends without
 grammar constraints still fail early for strict output unless they expose a
-separate admitted JSON Schema provider. Native LiteRT-LM has that bounded path
-on macOS arm64 CPU with canonical Qwen3 text models; LiteRT-LM Web does not.
+separate admitted JSON Schema provider. Native LiteRT-LM has that path on
+macOS arm64 CPU and GPU with Qwen3 (canonical text template) and Gemma 4
+(bundle template) models; LiteRT-LM Web does not.
 
-For native LiteRT-LM, pass `enableThinking: false`. The native subset accepts
-`json_object` and object schemas with scalar properties, `required`, scalar
-`enum`/`const`, and boolean `additionalProperties`. Nested schemas, arrays,
-references, unions, patterns, formats and bounds are rejected before generation,
-as are tools, media, custom templates, speculation and caller stop sequences.
+Native LiteRT-LM accepts only schemas that both the GBNF converter above and
+LiteRT-LM's LLGuidance provider enforce alike, so every schema it accepts is
+also accepted by llama.cpp. On top of the GBNF subset it refuses,
+before generation and naming the schema path: `oneOf` (use `anyOf`),
+`uniqueItems`, formats other than `uuid` and `date`, open tuples (`prefixItems`
+needs `minItems` and `maxItems` equal to its length), pattern classes with
+nested classes or set operations (`&&`, `--`, `~~`), counted repetitions that
+multiply past 100000, integer `const`/`enum` values beyond 2^53, `allOf` enum
+intersections past 20000 combinations, more than 400 optional properties at
+one value, `$ref` pointers with `~` escapes or a reference cycle with no value
+between its steps, a `$schema` other than draft 2020-12, a nested `$schema` or
+`$id`, `$dynamicAnchor`, `$recursiveAnchor` and `x-guidance`. Where the schema
+omits `additionalProperties`, LiteRT-LM may emit undeclared keys, which the
+schema allows; llama.cpp closes the object.
+
+Gemma 4 may think before its reply: the constraint applies after the
+reasoning channel closes. Other families need `enableThinking: false`, and a
+thinking budget is refused with a schema. Tools, media, custom templates,
+speculation and caller stop sequences are refused before generation.
 `await engine.capabilities` admits the actual provider and may initialize the
 loaded model; it reports structured output independently of GBNF support.
-Model-backed qualification covers the corrected Qwen3-0.6B CPU artifact (SHA-256
-`c5f39b4191926786c3e6668b62af4d6eb15248dfc7a5348252a9b406f33f2108`); other
-canonical Qwen3 models still need their own qualification.
-A token/context cutoff can still leave partial JSON; final helper validation
-remains necessary.
+Model-backed qualification covers Qwen3-0.6B (SHA-256
+`c5f39b4191926786c3e6668b62af4d6eb15248dfc7a5348252a9b406f33f2108`) and
+Gemma 4 E2B (SHA-256
+`181938105e0eefd105961417e8da75903eacda102c4fce9ce90f50b97139a63c`) on CPU and
+GPU; other models in those families still need their own qualification.
+A reply cut off by `maxTokens` reports `LlamaFinishReason.length` and can hold
+partial JSON; final helper validation remains necessary.
 
 `ChatSession` takes the same `responseFormat` on `session.create(...)` and has
 `session.createStructuredJson(parts, output: output)` for multi-turn structured

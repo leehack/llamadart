@@ -54,6 +54,10 @@ final class LiteRtLmV1Conversation {
       _runtime._validateMediaMessages(jsonDecode(history) as List);
     }
     _schemaEnabled = options.jsonSchemaConstraints;
+    _schemaThinking =
+        _schemaEnabled &&
+        _thinkingExtraContext != null &&
+        (jsonDecode(_thinkingExtraContext) as Map)['enable_thinking'] == true;
     if (_schemaEnabled) _V1JsonSchema(_runtime).requireSupport();
     final library = _runtime._library;
     for (final symbol in _symbols) {
@@ -148,7 +152,9 @@ final class LiteRtLmV1Conversation {
         )(config, false),
         'set_enable_constrained_decoding',
       );
-      if (_schemaEnabled) _V1JsonSchema(_runtime).configure(config);
+      if (_schemaEnabled) {
+        _V1JsonSchema(_runtime).configure(config, thinking: _schemaThinking);
+      }
       _handle = _runtime._create(
         'conversation_create',
         (out) => _createConversation(_runtime._engine, config, out),
@@ -193,6 +199,7 @@ final class LiteRtLmV1Conversation {
   LiteRtLmV1Turn? _turn;
   bool _quarantined = false;
   late final bool _schemaEnabled;
+  late final bool _schemaThinking;
 
   /// Only a final callback followed by successful native drain settles a turn.
   LiteRtLmNativeSettlement get nativeSettlement => _quarantined

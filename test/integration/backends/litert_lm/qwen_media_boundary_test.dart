@@ -337,6 +337,9 @@ class _RuntimeClient implements LiteRtLmRuntimeClientContract {
   bool get supportsJsonSchemaConstraints => false;
 
   @override
+  bool get supportsJsonSchemaThinking => false;
+
+  @override
   bool get supportsMessageRendering => rendersMessages;
 
   @override

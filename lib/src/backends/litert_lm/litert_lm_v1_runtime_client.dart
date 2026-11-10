@@ -95,6 +95,9 @@ final class LiteRtLmV1RuntimeClient implements LiteRtLmRuntimeClientContract {
       _callbacksAdmitted && _hasSymbols(_V1JsonSchema.symbols);
 
   @override
+  bool get supportsJsonSchemaThinking => supportsJsonSchemaConstraints;
+
+  @override
   bool get supportsMessageRendering =>
       _hasSymbols(const ['litert_lm_conversation_render_message_to_string']);
 

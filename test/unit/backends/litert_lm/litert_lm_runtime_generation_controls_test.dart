@@ -93,6 +93,13 @@ void main() {
 
   const message = '{"role":"user","content":[{"type":"text","text":"Hello"}]}';
 
+  // The pre-1.0 C API schema group always disables thinking, so native schema
+  // chat must not admit a reasoning channel on it.
+  test('a legacy runtime never advertises schema thinking', () async {
+    final client = await open(blocking);
+    expect(client.supportsJsonSchemaThinking, isFalse);
+  });
+
   for (final (name, library) in [
     ('blocking', () => blocking),
     ('streaming', () => streaming),

@@ -33,7 +33,7 @@ void main() {
       final backend = _SessionSmokeBackend()..admitted = true;
       final engine = await engineFor(backend);
       final negative = await smoke.runSessionStructuredOutputScenario(engine);
-      expect(negative['unsupportedRequest'], 'object_with_array_property');
+      expect(negative['unsupportedRequest'], 'object_with_oneOf_property');
       expect(negative['historyAfterRejection'], 0);
       expect(negative['reportedMessages'], 0);
       expect(backend.schemaSends, 0);
@@ -77,7 +77,7 @@ void main() {
       final backend = _SessionSmokeBackend();
       final engine = await engineFor(backend);
       final result = await smoke.runSessionStructuredOutputScenario(engine);
-      expect(result['unsupportedRequest'], 'object_with_array_property');
+      expect(result['unsupportedRequest'], 'object_with_oneOf_property');
       expect(
         result['rejection'],
         isA<String>().having(

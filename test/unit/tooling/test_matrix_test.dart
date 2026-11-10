@@ -258,6 +258,18 @@ void main() {
           )
           .toList();
       expect(args, containsAllInOrder(['--backend', 'cpu']));
+      for (final backend in ['cpu', 'gpu']) {
+        expect(row.mode, contains(backend.toUpperCase()));
+        final other = [...args];
+        other[other.indexOf('--backend') + 1] = backend;
+        final dryRun = await runLocalE2e(
+          [...other, '--dry-run'],
+          projectRoot: '/repo',
+          displayShell: LocalE2eDisplayShell.posix,
+        );
+        expect(dryRun.exitCode, 0, reason: dryRun.stderr);
+        expect(dryRun.stdout, contains('LITERT_LM_BACKEND=$backend'));
+      }
       final result = await runLocalE2e(
         [...args, '--dry-run'],
         projectRoot: '/repo',

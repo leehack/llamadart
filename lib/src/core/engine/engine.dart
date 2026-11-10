@@ -1899,7 +1899,10 @@ class LlamaEngine implements LlamadartEngine<LlamaEngineCapabilities> {
             hasTools: effectiveTools?.isNotEmpty ?? false,
             requiredTools: effectiveToolChoice == ToolChoice.required,
             parallelToolCalls: parallelToolCalls,
-            enableThinking: enableThinking,
+            // A thinking-capable backend decides per model after admission.
+            enableThinking:
+                enableThinking &&
+                backend is! BackendJsonSchemaThinkingChatGeneration,
           );
         }
         if (responseFormatSchema(responseFormat) != null &&
@@ -2544,7 +2547,17 @@ class LlamaEngine implements LlamadartEngine<LlamaEngineCapabilities> {
       try {
         reachedBackend = true;
         _beginContextCall(requestContext, requestEpoch);
-        final stream = jsonSchema != null
+        final stream = jsonSchema != null && enableThinking
+            ? (nativeBackend as BackendJsonSchemaThinkingChatGeneration)
+                  .generateChatWithJsonSchemaAndThinking(
+                    _contextHandle!,
+                    messages,
+                    resolvedParams,
+                    jsonSchema: jsonSchema,
+                    chatTemplateKwargs: chatTemplateKwargs,
+                    templateNow: templateNow,
+                  )
+            : jsonSchema != null
             ? (nativeBackend as BackendJsonSchemaChatGeneration)
                   .generateChatWithJsonSchema(
                     _contextHandle!,

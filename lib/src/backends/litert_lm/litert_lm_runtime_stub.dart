@@ -98,6 +98,9 @@ class LiteRtLmRuntimeClient {
   /// JSON Schema constraints require the native runtime.
   bool get supportsJsonSchemaConstraints => false;
 
+  /// JSON Schema constraints require the native runtime.
+  bool get supportsJsonSchemaThinking => false;
+
   /// Finish reasons are unavailable without `dart:ffi`.
   bool get supportsFinishReasons => false;
 

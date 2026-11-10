@@ -1235,12 +1235,16 @@ the `@litert-lm/core` pin changes.
 
 ### Native LiteRT-LM JSON Schema
 
-`litert-lm-json-schema` runs the public native macOS arm64 CPU path against the
-corrected Qwen3-0.6B artifact. It compares adversarial unconstrained/constrained
-output, schema A/B/ordinary reset, invalid-schema recovery, system/history,
-before/after-content cancellation and a true length cutoff. Run `--list` and
-`--scenario litert-lm-json-schema --model-path <existing-model> --backend cpu
---dry-run` before execution. This does not qualify other delegates/platforms.
+`litert-lm-json-schema` runs the public native path with `--backend cpu` or
+`--backend gpu` against a fixed Qwen3-0.6B (SHA-256 `c5f39b41…`) or Gemma 4
+E2B (SHA-256 `18193810…`) bundle. It compares adversarial
+unconstrained/constrained output, sentinel and scalar schemas, a nested
+object/array/`$ref`/`anyOf`/pattern/format/tuple schema checked by the Dart
+validator, a Unicode enum and length, a typed contract refusal (`oneOf`) and
+recovery, thinking (Gemma 4 reasons and still returns the constrained reply;
+Qwen3 is refused), system/history, before/after-content cancellation and a
+`length` finish cut off inside a constrained string. Run it per model and
+backend; `--list` and `--dry-run` first. Each host platform needs its own run.
 
 
 ### Complete image checkpoint containers

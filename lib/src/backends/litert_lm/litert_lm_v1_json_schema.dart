@@ -27,7 +27,7 @@ final class _V1JsonSchema {
     }
   }
 
-  void _withoutThinking(Pointer<Void> target, String setter) {
+  void _setThinking(Pointer<Void> target, String setter, bool enabled) {
     final library = runtime._library;
     final thinking = runtime._create(
       'thinking_config_create',
@@ -39,7 +39,7 @@ final class _V1JsonSchema {
       runtime._check(
         library.lookupFunction<_SetBoolN, _SetBoolD>(
           'litert_lm_thinking_config_set_enable_thinking',
-        )(thinking, false),
+        )(thinking, enabled),
         'thinking_config_set_enable_thinking',
       );
       runtime._check(
@@ -56,7 +56,9 @@ final class _V1JsonSchema {
     }
   }
 
-  void configure(Pointer<Void> config) {
+  /// Thinking keeps an enabled reasoning channel unconstrained; the native
+  /// thinking config suspends the schema until that channel closes.
+  void configure(Pointer<Void> config, {required bool thinking}) {
     requireSupport();
     runtime._check(
       runtime._library.lookupFunction<_SetIntN, _SetIntD>(
@@ -64,13 +66,14 @@ final class _V1JsonSchema {
       )(config, 1),
       'conversation_config_set_constraint_provider',
     );
-    _withoutThinking(
+    _setThinking(
       config,
       'litert_lm_conversation_config_set_thinking_config',
+      thinking,
     );
   }
 
-  void constrain(Pointer<Void> args, String schema) {
+  void constrain(Pointer<Void> args, String schema, {required bool thinking}) {
     requireSupport();
     final text = schema.toNativeUtf8(allocator: calloc);
     try {
@@ -83,9 +86,10 @@ final class _V1JsonSchema {
     } finally {
       calloc.free(text);
     }
-    _withoutThinking(
+    _setThinking(
       args,
       'litert_lm_conversation_optional_args_set_thinking_config',
+      thinking,
     );
   }
 }
