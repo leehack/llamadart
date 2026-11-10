@@ -14,6 +14,7 @@ validate against the exact release tag notes.
 ## Unreleased
 
 - Parse Qwen3-Coder XML tool calls as llama.cpp does: a call needs a line break after each tag and around each value (a CRLF or compact `<tool_call><function=` call is dropped), its required arguments come before its optional ones, and a string value keeps its whitespace and any `</parameter>` not followed by a line break. Nemotron 3 Nano now parses as Qwen3-Coder XML, so a `<tool_call>` also ends its thought, and the tool-call grammar of these templates now requires that shape and starts at `<tool_call>` ([#1898](https://github.com/leehack/llamadart/issues/1898)).
+- Parse Seed-OSS tool calls closer to llama.cpp: a finished reply whose last `<seed:tool_call>` scope is never closed keeps a call complete through `</function>` and drops one cut off before it, an argument declared as a string keeps its value as generated instead of being read as JSON (`\n42\n` stays a string), and with `ToolChoice.required` the grammar lets a thought and text come before the calls ([#1898](https://github.com/leehack/llamadart/issues/1898)).
 
 ## 0.19.4
 

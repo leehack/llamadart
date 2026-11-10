@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:llamadart/src/core/models/chat/chat_message.dart';
 import 'package:llamadart/src/core/models/chat/chat_role.dart';
+import 'package:llamadart/src/core/models/inference/tool_choice.dart';
 import 'package:llamadart/src/core/models/tools/tool_definition.dart';
 import 'package:llamadart/src/core/models/tools/tool_param.dart';
 import 'package:llamadart/src/core/template/chat_format.dart';
@@ -9,6 +10,8 @@ import 'package:llamadart/src/core/template/chat_parse_result.dart';
 import 'package:llamadart/src/core/template/handlers/seed_oss_handler.dart';
 import 'package:llamadart/src/core/template/template_internal_metadata.dart';
 import 'package:test/test.dart';
+
+import '../../../../support/gbnf_recognizer.dart';
 
 void main() {
   test('SeedOssHandler renders XML grammar and parses seed tool call', () {
@@ -253,6 +256,147 @@ void main() {
       expect(jsonDecode(parsed.toolCalls.single.function!.arguments!), isEmpty);
       expect(parsed.content, isEmpty);
     });
+  });
+
+  // llama.cpp `cd959bae9`; the replies are in seed_oss_tool_call_upstream.json.
+  group('SeedOssHandler.parseWithTools', () {
+    final tools = [
+      ToolDefinition(
+        name: 'get_weather',
+        description: 'w',
+        parameters: [
+          ToolParam.string('location', required: true),
+          ToolParam.integer('days'),
+        ],
+      ),
+    ];
+    String call(String location, {String days = ''}) =>
+        '<seed:tool_call>\n<function=get_weather>\n'
+        '<parameter=location>\n$location\n</parameter>\n'
+        '$days</function>\n';
+    Map<String, Object?> arguments(ChatParseResult parsed) =>
+        jsonDecode(parsed.toolCalls.single.function!.arguments!)
+            as Map<String, Object?>;
+
+    test('keeps a string argument that looks like JSON as text', () {
+      final output =
+          '${call('42', days: '<parameter=days>\n3\n</parameter>\n')}'
+          '</seed:tool_call>';
+
+      expect(arguments(SeedOssHandler().parseWithTools(output, tools: tools)), {
+        'location': '\n42\n',
+        'days': 3,
+      });
+      expect(arguments(SeedOssHandler().parse(output)), {
+        'location': 42,
+        'days': 3,
+      });
+    });
+
+    test('ends a last scope whose call is complete', () {
+      for (final rest in ['', '\n', ' </seed:tool', '\n</seed:tool_call']) {
+        final parsed = SeedOssHandler().parseWithTools(
+          'Checking.\n${call('Paris')}$rest',
+          tools: tools,
+        );
+
+        expect(arguments(parsed), {'location': '\nParis\n'}, reason: rest);
+        expect(parsed.content, 'Checking.', reason: rest);
+      }
+    });
+
+    test('drops a last scope that ends before its call does', () {
+      final complete = call('Paris');
+      for (final cut in [
+        '<seed:tool_call>\n',
+        '<seed:tool_call>\n<func',
+        '<seed:tool_call>\n<function=get_weather',
+        '<seed:tool_call>\n<function=get_weather>\n<parameter=location>\nPa',
+        complete.substring(0, complete.length - 1),
+      ]) {
+        final parsed = SeedOssHandler().parseWithTools(
+          'Checking.\n$cut',
+          tools: tools,
+        );
+
+        expect(parsed.toolCalls, isEmpty, reason: cut);
+        expect(parsed.content, 'Checking.', reason: cut);
+      }
+    });
+
+    // llama.cpp fails these replies.
+    test('keeps a last scope that holds no call as content', () {
+      final complete = call('Paris');
+      for (final output in [
+        '<seed:tool_call>\nmore',
+        '<seed:tool_call>\n<function=get_weather>\nmore',
+        '${complete}tail',
+        '${complete.substring(0, complete.length - 1)}tail',
+        '${complete.substring(0, complete.length - 1)} </seed:tool',
+      ]) {
+        final parsed = SeedOssHandler().parseWithTools(output, tools: tools);
+
+        expect(parsed.toolCalls, isEmpty, reason: output);
+        expect(parsed.content, output, reason: output);
+      }
+    });
+
+    test('leaves a partial reply to the stream', () {
+      final parsed = SeedOssHandler().parseWithTools(
+        call('Paris'),
+        tools: tools,
+        isPartial: true,
+      );
+
+      expect(parsed.toolCalls, isEmpty);
+    });
+  });
+
+  // Verdicts of llama.cpp's (`cd959bae9`) required-call grammar for the same
+  // tool, from `test-gbnf-validator`.
+  test('SeedOssHandler required grammar takes text and a thought first', () {
+    const scope =
+        '<seed:tool_call>\n<function=get_weather>\n'
+        '<parameter=location>\nParis\n</parameter>\n'
+        '</function>\n</seed:tool_call>';
+    final tools = [
+      ToolDefinition(
+        name: 'get_weather',
+        description: 'w',
+        parameters: [ToolParam.string('location', required: true)],
+      ),
+    ];
+    final grammar = GbnfRecognizer(
+      SeedOssHandler()
+          .render(
+            templateSource: '{{ messages[0]["content"] }}',
+            messages: const [
+              LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'hi'),
+            ],
+            metadata: {internalToolChoiceMetadataKey: ToolChoice.required.name},
+            tools: tools,
+          )
+          .grammar!,
+    );
+
+    for (final (reply, accepted) in [
+      (scope, true),
+      ('Checking.\n$scope', true),
+      ('<seed:think>Plan</seed:think>\n$scope', true),
+      ('\n<seed:think>Plan</seed:think>Checking. $scope', true),
+      (
+        '<seed:think>Plan</seed:think><seed:think>Again</seed:think>$scope',
+        true,
+      ),
+      ('<seed:think>Plan', false),
+      ('Checking.', false),
+      ('Use <seed:tool_call>\n then. $scope', false),
+      ('$scope\n', true),
+      ('Use <seed:tool_call> then.\n$scope', true),
+      ('<seed:think>a <seed:tool_call>\n b</seed:think>$scope', true),
+    ]) {
+      expect(grammar.accepts(reply), accepted, reason: reply);
+    }
   });
 
   test('SeedOssHandler returns a forced-open thought as reasoning', () {
