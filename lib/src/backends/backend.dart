@@ -35,7 +35,8 @@ abstract class LlamaBackend {
   /// Web requires a runtime with the published conversation/preface APIs;
   /// tools need one that reads `preface.tools`, which
   /// `LlamaEngineCapabilities.supportsToolCalling` reports. Automatic tool
-  /// loops, unsupported thinking, media and template controls throw
+  /// loops also need the load-time token-count probes to succeed; otherwise
+  /// they throw. Unsupported thinking, media and template controls throw
   /// explicitly.
   /// Native selection and behavior are the same as [LlamaBackend.new].
   /// The original default factory retains its existing Web behavior.

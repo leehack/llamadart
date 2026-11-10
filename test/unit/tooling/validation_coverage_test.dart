@@ -94,6 +94,20 @@ void main() {
     );
   });
 
+  test('exemption ids are unique', () {
+    final data = registry();
+    final exemptions = (data['mappings'] as List)
+        .cast<Map>()
+        .where((entry) => entry['exemption'] != null)
+        .map((entry) => entry['exemption'] as Map)
+        .toList();
+    exemptions[1]['id'] = exemptions[0]['id'];
+    expect(
+      coverageErrors(root, data, validationSurfaces(root)),
+      contains('Duplicate exemption id: ${exemptions[0]['id']}'),
+    );
+  });
+
   test('a pack and exemption cannot both claim the same mapping', () {
     final data = registry();
     final mapping = (data['mappings'] as List).cast<Map>().firstWhere(

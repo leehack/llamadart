@@ -93,9 +93,10 @@ class LlamaEngineCapabilities implements EngineCapabilities {
   ///
   /// On LiteRT-LM Web, true only for explicit `withTextHistory` factories
   /// whose loaded runtime reads `preface.tools` (`@litert-lm/core@0.19.0`);
-  /// calls come from the runtime's `tool_calls`. Automatic tool loops still
-  /// throw there, and `ToolChoice.required` and `parallelToolCalls` are
-  /// rejected. Original constructors report false.
+  /// calls come from the runtime's `tool_calls`. Automatic tool loops run
+  /// there only when the load-time token-count probes succeed, and
+  /// `ToolChoice.required` and `parallelToolCalls` are rejected. Original
+  /// constructors report false and refuse automatic tool loops.
   /// How well other models call tools still depends on their chat template. `ToolChoice.required` also
   /// needs [supportsGrammar] for Hermes-style templates, and
   /// [supportsLazyGrammar] for templates whose tool-call grammar waits for a
