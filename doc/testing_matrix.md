@@ -166,6 +166,7 @@ Pick targeted rows based on the touched surface:
 | Large WebGPU GGUF / wasm64 selection | `gemma4-webgpu-mem64` |
 | LiteRT-LM web / Gemma 4 web bundle | `gemma4-litert-web` |
 | Chat app model cache/download/projector | `chat-app-device-cache` |
+| LiteRT-LM native JSON Schema on a device | `chat-app-litert-json-schema` |
 | LiteRT-LM engine reload memory on a device | `chat-app-litert-reload-memory` |
 | LiteRT-LM bundle in a read-only directory on a device | `chat-app-litert-read-only-bundle` |
 | Android Vulkan prompt cap, Vulkan device facts or the Vulkan 1.2 load refusal on a device | `chat-app-micro-batch-sweep` |
@@ -1245,6 +1246,13 @@ recovery, thinking (Gemma 4 reasons and still returns the constrained reply;
 Qwen3 is refused), system/history, before/after-content cancellation and a
 `length` finish cut off inside a constrained string. Run it per model and
 backend; `--list` and `--dry-run` first. Each host platform needs its own run.
+`chat-app-litert-json-schema` runs the same checks in the chat app on an
+Android or iOS device, simulator or emulator. `--model-path` is a path the app
+can read (a host path works on the iOS simulator; the sandboxed macOS app
+reads only its own container) or a plain `http(s)` URL the app downloads
+into its support directory; for an Android emulator, serve the bundle on the
+host and use `http://10.0.2.2:<port>/<bundle>`. URLs with credentials, a query
+or a fragment are refused, since the URL is printed and compiled into the app.
 
 
 ### Complete image checkpoint containers

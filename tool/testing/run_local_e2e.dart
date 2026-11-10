@@ -2238,6 +2238,38 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
       ],
     ),
     LocalE2eScenario(
+      name: 'chat-app-litert-json-schema',
+      group: LocalE2eScenarioGroup.flutterDevice,
+      description:
+          'Qualify native LiteRT-LM JSON Schema output on a device with a '
+          'fixed Qwen3 or Gemma 4 model; --model-path is a path the app can '
+          'read or an http(s) URL it downloads.',
+      requiresDevice: true,
+      stepsBuilder: (context) {
+        final model = context.modelPath!;
+        final remote =
+            model.startsWith('http://') || model.startsWith('https://');
+        return [
+          LocalE2eCommandStep(
+            workingDirectory: context.chatAppDir,
+            executable: 'flutter',
+            arguments: [
+              'test',
+              '--run-skipped',
+              '-t',
+              'local-only',
+              'integration_test/litert_lm_json_schema_e2e_test.dart',
+              '-d',
+              context.device,
+              '--dart-define=${remote ? 'LITERT_LM_MODEL_URL' : 'LITERT_LM_MODEL'}=$model',
+              '--dart-define=LITERT_LM_BACKEND=${context.backend}',
+            ],
+            description: 'Flutter chat app native JSON Schema E2E',
+          ),
+        ];
+      },
+    ),
+    LocalE2eScenario(
       name: 'chat-app-litert-read-only-bundle',
       group: LocalE2eScenarioGroup.flutterDevice,
       description:
@@ -2953,12 +2985,37 @@ Future<LocalE2eResult> runLocalE2e(
           '--model-path and --head-path are required for decision-model-smoke.\n',
     );
   }
-  if (scenario.name == 'litert-lm-json-schema' &&
+  if ((scenario.name == 'litert-lm-json-schema' ||
+          scenario.name == 'chat-app-litert-json-schema') &&
+      parsed.modelPath == null) {
+    return LocalE2eResult(
+      64,
+      stderr: '--model-path is required for ${scenario.name}.\n',
+    );
+  }
+  // The URL is printed and compiled into the app, so it must carry no secret.
+  final modelUrl = scenario.name == 'chat-app-litert-json-schema'
+      ? Uri.tryParse(parsed.modelPath!)
+      : null;
+  if (modelUrl != null &&
+      modelUrl.hasScheme &&
+      (modelUrl.userInfo.isNotEmpty ||
+          modelUrl.hasQuery ||
+          modelUrl.hasFragment)) {
+    return LocalE2eResult(
+      64,
+      stderr:
+          '${scenario.name} accepts a model URL without credentials, query or '
+          'fragment; serve the bundle from a plain URL.\n',
+    );
+  }
+  if ((scenario.name == 'litert-lm-json-schema' ||
+          scenario.name == 'chat-app-litert-json-schema') &&
       (!parsed.backendProvided ||
           (parsed.backend != 'cpu' && parsed.backend != 'gpu'))) {
-    return const LocalE2eResult(
+    return LocalE2eResult(
       64,
-      stderr: 'litert-lm-json-schema requires --backend cpu or gpu.\n',
+      stderr: '${scenario.name} requires --backend cpu or gpu.\n',
     );
   }
   if ((scenario.name == 'qwen3-litert-cpu-unicode' ||

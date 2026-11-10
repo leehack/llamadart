@@ -71,7 +71,7 @@ void main() {
         ..finishReason = LiteRtLmFinishReason.stop;
       service = LiteRtLmService(
         clientFactory: () => client,
-        jsonSchemaPlatformSupported: () => true,
+        jsonSchemaQualifiedBackends: () => {'cpu', 'gpu'},
       );
       await service.loadModel(
         (await modelFile.copy('${tempDir.path}/Qwen3-0.6B.litertlm')).path,
@@ -121,7 +121,7 @@ void main() {
         service.dispose();
         service = LiteRtLmService(
           clientFactory: () => client,
-          jsonSchemaPlatformSupported: () => true,
+          jsonSchemaQualifiedBackends: () => {'cpu', 'gpu'},
         );
         await service.loadModel(
           '${tempDir.path}/Qwen3-0.6B.litertlm',
@@ -137,7 +137,8 @@ void main() {
         service.dispose();
         service = LiteRtLmService(
           clientFactory: () => client,
-          jsonSchemaPlatformSupported: () => excluded != 'host',
+          jsonSchemaQualifiedBackends: () =>
+              excluded == 'host' ? const {} : {'cpu', 'gpu'},
         );
         final selected = excluded == 'template'
             ? const ModelParams(
@@ -159,6 +160,132 @@ void main() {
         expect(client.generateCount, 0);
       });
     }
+    group('default qualification table', () {
+      tearDown(() => debugLiteRtLmAbiOverride = null);
+      const hardwareGpu = LiteRtLmVulkanAdapters.devices([
+        LiteRtLmVulkanAdapter(name: 'GPU', deviceType: 2),
+      ]);
+      LiteRtLmService tableService({
+        LiteRtLmVulkanAdapters adapters = hardwareGpu,
+        Set<String> Function()? qualified,
+      }) => LiteRtLmService(
+        clientFactory: () => client,
+        probeGpuAdapters: () => adapters,
+        jsonSchemaQualifiedBackends: qualified,
+      );
+      Future<void> expectRefused(
+        String backend, {
+        bool beforeEngine = true,
+      }) async {
+        await expectLater(
+          service.prepareJsonSchemaChat(),
+          throwsA(
+            isA<LlamaUnsupportedException>().having(
+              (e) => e.message,
+              'message',
+              contains('not qualified for the LiteRT-LM $backend'),
+            ),
+          ),
+        );
+        expect(client.createConversationCount, 0);
+        if (beforeEngine) expect(client.lastBackend, isNull);
+      }
+
+      const expected = <Abi, Set<String>>{
+        Abi.macosArm64: {'cpu', 'gpu'},
+        Abi.iosArm64: {'cpu', 'gpu'},
+        Abi.androidArm64: {'cpu'},
+        Abi.androidX64: {},
+        Abi.linuxX64: {'cpu'},
+        Abi.linuxArm64: {'cpu'},
+        Abi.windowsX64: {'cpu'},
+        Abi.macosX64: {},
+      };
+      for (final MapEntry(key: abi, value: backends) in expected.entries) {
+        for (final backend in ['cpu', 'gpu']) {
+          final admitted = backends.contains(backend);
+          test(
+            '${admitted ? 'admits' : 'refuses'} $backend on $abi',
+            skip: backend == 'gpu' && !hostHasGpu
+                ? 'needs a host with a LiteRT-LM GPU backend'
+                : null,
+            () async {
+              service.dispose();
+              service = tableService();
+              await service.loadModel(
+                '${tempDir.path}/Qwen3-0.6B.litertlm',
+                backend == 'cpu'
+                    ? params
+                    : const ModelParams(
+                        liteRtLmBackend: LiteRtLmBackendPreference.gpu,
+                      ),
+              );
+              debugLiteRtLmAbiOverride = abi;
+              if (admitted) {
+                await service.prepareJsonSchemaChat();
+                expect(client.lastBackend, backend);
+                expect(client.lastJsonSchemaConfig, isTrue);
+              } else {
+                await expectRefused(backend);
+              }
+            },
+          );
+        }
+      }
+      for (final abi in [Abi.linuxX64, Abi.windowsX64, Abi.androidArm64]) {
+        test(
+          'refuses the deprecated gpu backend override on $abi',
+          skip: hostHasGpu ? null : 'needs a host with a LiteRT-LM GPU backend',
+          () async {
+            service.dispose();
+            service = tableService();
+            await service.loadModel(
+              '${tempDir.path}/Qwen3-0.6B.litertlm',
+              const ModelParams(),
+              backendOverride: 'gpu',
+            );
+            debugLiteRtLmAbiOverride = abi;
+            await expectRefused('gpu');
+          },
+        );
+      }
+      test(
+        'refuses an automatic GPU load that runs on an unqualified CPU',
+        skip: liteRtLmDefaultNativeBackendForCurrentPlatform() == 'gpu'
+            ? null
+            : 'needs a host whose automatic LiteRT-LM backend is the GPU',
+        () async {
+          service.dispose();
+          service = tableService(
+            adapters: const LiteRtLmVulkanAdapters.devices([
+              LiteRtLmVulkanAdapter(
+                name: 'llvmpipe',
+                deviceType: vulkanPhysicalDeviceTypeCpu,
+              ),
+            ]),
+            qualified: () => {'gpu'},
+          );
+          await service.loadModel(
+            '${tempDir.path}/Qwen3-0.6B.litertlm',
+            const ModelParams(),
+          );
+          await expectRefused('cpu', beforeEngine: false);
+          expect(client.lastBackend, 'cpu');
+        },
+      );
+      test('a reload repeats admission', () async {
+        service.dispose();
+        service = tableService();
+        final model = '${tempDir.path}/Qwen3-0.6B.litertlm';
+        await service.loadModel(model, params);
+        debugLiteRtLmAbiOverride = Abi.linuxX64;
+        await service.prepareJsonSchemaChat();
+        await service.loadModel(model, params);
+        debugLiteRtLmAbiOverride = Abi.macosX64;
+        client.createConversationCount = 0;
+        await expectRefused('cpu', beforeEngine: false);
+      });
+    });
     test('missing optional API never admits or starts generation', () async {
       client.jsonSchemaSupport = false;
       await expectLater(
@@ -256,7 +383,7 @@ void main() {
         ..finishReason = LiteRtLmFinishReason.stop;
       service = LiteRtLmService(
         clientFactory: () => client,
-        jsonSchemaPlatformSupported: () => true,
+        jsonSchemaQualifiedBackends: () => {'cpu', 'gpu'},
         readBundleFirstChannel: (_) =>
             reasoningChannel ? (name: 'thought', isReasoning: true) : null,
       );
@@ -2015,7 +2142,7 @@ void main() {
         final client = _FakeLiteRtLmRuntimeClient();
         final service = LiteRtLmService(
           clientFactory: () => client,
-          jsonSchemaPlatformSupported: () => true,
+          jsonSchemaQualifiedBackends: () => {'cpu', 'gpu'},
         );
         try {
           await service.loadModel(
