@@ -337,6 +337,12 @@ String _literal(String value) {
 /// content and tool calls. With [verbatimForcedThought], a forced-open
 /// thought is the text before the first [endThink] or tool-call scope, kept as
 /// generated, and the rest is content.
+///
+/// With [endsAtLastCall], for a [XmlToolCallFormat.repeatsScope] format, the
+/// reply ends at its last tool call, as in llama.cpp's Qwen3-Coder parser: the
+/// content is the text before the first scope, the calls are those of the
+/// consecutive scopes after it that each hold one valid call, up to
+/// [maxToolCalls], and the rest is dropped.
 ChatParseResult parseXmlToolCalls(
   String input,
   XmlToolCallFormat format, {
@@ -348,6 +354,8 @@ ChatParseResult parseXmlToolCalls(
   bool unescapeReasoning = true,
   bool extractsThought = true,
   bool verbatimForcedThought = false,
+  bool endsAtLastCall = false,
+  int? maxToolCalls,
   Map<String, Map<String, dynamic>>? schemas,
 }) {
   String? reasoning;
@@ -412,6 +420,16 @@ ChatParseResult parseXmlToolCalls(
     return ChatParseResult(
       content: content.trim(),
       reasoningContent: reasoning,
+    );
+  }
+  if (endsAtLastCall) {
+    return _parseCallsEndingReply(
+      content,
+      format,
+      reasoning: reasoning,
+      schemas: schemas,
+      maxToolCalls: maxToolCalls,
+      isPartial: isPartial,
     );
   }
 
@@ -537,6 +555,61 @@ ChatParseResult parseXmlToolCalls(
 
   return ChatParseResult(
     content: remainingContent.trim(),
+    reasoningContent: reasoning,
+    toolCalls: toolCalls,
+  );
+}
+
+/// Parses the scopes that end [content] for [parseXmlToolCalls] with
+/// `endsAtLastCall`.
+///
+/// A finished reply may end a valid call without its scope end, or with only
+/// the start of one, and the call counts, as llama.cpp takes it at the end of
+/// the input.
+ChatParseResult _parseCallsEndingReply(
+  String content,
+  XmlToolCallFormat format, {
+  required String? reasoning,
+  required Map<String, Map<String, dynamic>>? schemas,
+  required int? maxToolCalls,
+  required bool isPartial,
+}) {
+  final scopeIdx = content.indexOf(format.scopeStart);
+  if (scopeIdx == -1) {
+    return ChatParseResult(
+      content: content.trim(),
+      reasoningContent: reasoning,
+    );
+  }
+  final toolCalls = <LlamaCompletionChunkToolCall>[];
+  var pos = scopeIdx;
+  while ((maxToolCalls == null || toolCalls.length < maxToolCalls) &&
+      content.startsWith(format.scopeStart, pos)) {
+    final toolIdx = _consumeXmlWhitespace(
+      content,
+      pos + format.scopeStart.length,
+    );
+    if (!content.startsWith(format.toolStart, toolIdx)) break;
+    final call = _parseXmlToolCall(content, toolIdx, format, schemas);
+    if (call == null) break;
+    final closed = content.startsWith(format.scopeEnd, call.nextPos);
+    if (!closed &&
+        (isPartial ||
+            !format.scopeEnd.startsWith(content.substring(call.nextPos)))) {
+      break;
+    }
+    toolCalls.add(
+      ToolCallParsingUtils.createFunctionToolCall(
+        index: toolCalls.length,
+        name: call.name,
+        arguments: call.arguments,
+      ),
+    );
+    if (!closed) break;
+    pos = _consumeXmlWhitespace(content, call.nextPos + format.scopeEnd.length);
+  }
+  return ChatParseResult(
+    content: content.substring(0, scopeIdx).trim(),
     reasoningContent: reasoning,
     toolCalls: toolCalls,
   );

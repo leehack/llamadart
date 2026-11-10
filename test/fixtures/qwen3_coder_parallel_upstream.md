@@ -19,7 +19,7 @@ the whole output; `upstream` holds its content, reasoning and tool calls.
 Feeding the output one byte at a time gave the same result for every case.
 Every case returned one `get_weather` call per city, in order.
 
-Cases where llamadart already differs from that probe for a single call are
-left out: text after the last call, which llama.cpp drops and llamadart keeps
-as content, a thought in the Qwen3-Coder template, which has no thinking, and
-a StepFun3.5-Flash thought with thinking off.
+Cases where llamadart differed from that probe for a single call were left
+out: text after the last call, a thought in the Qwen3-Coder template, which has
+no thinking, and a StepFun3.5-Flash thought with thinking off.
+`qwen3_coder_xml_upstream.json` now records them (#1531).

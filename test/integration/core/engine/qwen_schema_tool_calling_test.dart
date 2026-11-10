@@ -52,9 +52,7 @@ void main() {
           jsonDecode(expected['arguments'] as String),
         );
       }
-      // Upstream drops undeclared output; Dart preserves raw content for its
-      // established rollback contract, while neither exposes a callable tool.
-      if (expectedCalls.isEmpty) expect(parsed.content, entry['emission']);
+      expect(parsed.content, upstream['content'], reason: entry['name']);
     }
   });
 
@@ -139,7 +137,7 @@ void main() {
           .map((c) => c.choices.single.delta.content ?? '')
           .where((c) => c.isNotEmpty)
           .toList(),
-      [invalid],
+      isEmpty,
     );
     backend.queueResponse(['OK']);
     final recovery = await engine.create([

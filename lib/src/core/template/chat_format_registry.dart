@@ -89,6 +89,7 @@ final class ChatFormatTraits {
     this.keepsForcedThoughtVerbatim = false,
     this.closedThoughtKeepsTagsAsContent = false,
     this.takesThoughtOnlyAtReplyStart = false,
+    this.reopensThoughtClosedForThinkingOff = false,
     this.forcedThoughtContentOpenings = const [],
     this.mayEmbedToolEnvelopeAfterContent = false,
     this.hasRepeatedContentChannels = false,
@@ -130,6 +131,11 @@ final class ChatFormatTraits {
   /// Whether, after a prompt that opens no thought, the parse takes a thought
   /// only at the start of the reply, so other thinking tags are content.
   final bool takesThoughtOnlyAtReplyStart;
+
+  /// Whether llama.cpp keeps open the thought the handler closed for thinking
+  /// off, so a reply that shows a thinking tag or one of
+  /// [forcedThoughtContentOpenings] parses as after a forced-open prompt.
+  final bool reopensThoughtClosedForThinkingOff;
 
   /// Markers that, with [keepsForcedThoughtVerbatim], also end a forced-open
   /// thought when they come before its end tag, and start the content.
@@ -300,6 +306,7 @@ chatFormatRegistrations = List.unmodifiable(<ChatFormatRegistration>[
       qualifiesJsonSchemaTools: false,
       toolCallOpening: CommandR7BHandler.toolCallOpening,
       keepsForcedThoughtVerbatim: true,
+      reopensThoughtClosedForThinkingOff: true,
       forcedThoughtContentOpenings:
           Cohere2MoeHandler.forcedThoughtContentOpenings,
       disabledByResponseSchema: true,
@@ -384,6 +391,7 @@ chatFormatRegistrations = List.unmodifiable(<ChatFormatRegistration>[
       toolCallOpening: XmlToolCallFormat.qwen3Coder.toolCallOpening,
       closedThoughtKeepsTagsAsContent: true,
       keepsForcedThoughtVerbatim: true,
+      reopensThoughtClosedForThinkingOff: true,
       forcedThoughtContentOpenings: [XmlToolCallFormat.qwen3CoderScopeStart],
     ),
   ),
@@ -448,6 +456,7 @@ chatFormatRegistrations = List.unmodifiable(<ChatFormatRegistration>[
       qualifiesJsonSchemaTools: false,
       toolCallOpening: XmlToolCallFormat.seedOss.toolCallOpening,
       keepsForcedThoughtVerbatim: true,
+      reopensThoughtClosedForThinkingOff: true,
     ),
   ),
   ChatFormatRegistration(

@@ -79,3 +79,23 @@ LlamaChatTemplateResult withLfm2AutoGrammarOf(
       copy.grammar == source.grammar &&
       copy.grammarLazy == source.grammarLazy,
 );
+
+final Expando<bool> _singleToolCall = Expando<bool>('llamadart.singleToolCall');
+
+/// Returns [result], marked when [single] as a render whose request allows at
+/// most one tool call.
+///
+/// The Qwen3-Coder XML parse then takes only the first call, as llama.cpp's
+/// parser does without parallel tool calls. Internal engine plumbing, not part
+/// of the public API.
+LlamaChatTemplateResult withSingleToolCall(
+  LlamaChatTemplateResult result, {
+  required bool single,
+}) {
+  if (single) _singleToolCall[result] = true;
+  return result;
+}
+
+/// Whether [withSingleToolCall] marked [result].
+bool singleToolCallOf(LlamaChatTemplateResult result) =>
+    _singleToolCall[result] ?? false;

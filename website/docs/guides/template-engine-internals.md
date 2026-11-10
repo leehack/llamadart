@@ -184,10 +184,14 @@ sequenceDiagram
 Qwen XML tool calls are validated against the tools supplied to `engine.create`.
 Schema-declared strings such as `"123"` retain their type. Unknown functions,
 unknown or duplicate parameters, missing required values, and invalid value
-types remain response content instead of producing callable tool deltas.
-Tool calls are emitted after final validation; malformed output is preserved
-through the existing rollback behavior. Direct schema-free template parsing
-retains its legacy behavior, so pass tool definitions when validating calls.
+types never produce callable tool deltas. As in llama-server, the content ends
+at the first `<tool_call>`, the calls are those of the `<tool_call>` scopes
+after it that each hold one valid call, only the first without
+`parallelToolCalls`, and the rest of the reply is dropped: an invalid call, a
+scope with two calls and text after the calls. A finished reply may end a
+valid call without `</tool_call>`. Tool calls are emitted after final
+validation. Direct schema-free template parsing does not validate arguments,
+so pass tool definitions when validating calls.
 
 Without a tool-call grammar, as with `ToolChoice.auto` on WebGPU, Qwen2.5 can
 copy the double braces its GGUF template prints in the tool prompt:

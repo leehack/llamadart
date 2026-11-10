@@ -50,6 +50,16 @@ void main() {
     },
   );
 
+  test('withSingleToolCall marks a result, and copies keep the mark', () {
+    LlamaChatTemplateResult result() => LlamaChatTemplateResult(prompt: 'p');
+    final single = withSingleToolCall(result(), single: true);
+    final unmarked = withSingleToolCall(result(), single: false);
+    expect(singleToolCallOf(single), isTrue);
+    expect(singleToolCallOf(unmarked), isFalse);
+    expect(singleToolCallOf(withThoughtMarksOf(result(), single)), isTrue);
+    expect(singleToolCallOf(withThoughtMarksOf(result(), unmarked)), isFalse);
+  });
+
   group('chatTemplateKwargsFromMetadata', () {
     test('decodes the stored kwargs object', () {
       expect(
