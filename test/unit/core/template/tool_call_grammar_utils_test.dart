@@ -159,6 +159,45 @@ void main() {
     });
   });
 
+  test('excludingRules match text without any delimiter that may end where '
+      'none can start inside it', () {
+    for (final delimiters in [
+      ['<t>', '<f=g>'],
+      ['ab', 'xaby'],
+      ['abab', 'ba'],
+      ['aa', 'ab', 'b'],
+      ['^a', 'a^]', '-\\['],
+    ]) {
+      final rules = ToolCallGrammarUtils.excludingRules('t', delimiters);
+      // llama.cpp's GBNF parser rejects `\^`.
+      expect(rules.join('\n'), isNot(contains(r'\^')), reason: '$delimiters');
+      final body = _ExcludingRules(rules, 't');
+      final alphabet = {...delimiters.join().split(''), 'z'}.toList();
+      var texts = [''];
+      for (var length = 0; length <= 5; length++) {
+        for (final text in texts) {
+          bool startsBefore(String delimiter) {
+            final joined = text + delimiter.substring(0, delimiter.length - 1);
+            return [
+              for (var at = 0; at < text.length; at++)
+                for (final d in delimiters) joined.startsWith(d, at),
+            ].any((match) => match);
+          }
+
+          expect(
+            body.matches(text),
+            !delimiters.any(text.contains) && !delimiters.any(startsBefore),
+            reason: '$delimiters "$text"',
+          );
+        }
+        texts = [
+          for (final text in texts)
+            for (final char in alphabet) '$text$char',
+        ];
+      }
+    }
+  });
+
   test('afterForcedOpenThought leaves a grammar that takes the thought', () {
     final once = ToolCallGrammarUtils.afterForcedOpenThought(
       'root ::= call\ncall ::= "x"\n',
@@ -350,7 +389,10 @@ class _ExcludingRules {
         for (final m in alternative.allMatches(rule[3]!))
           (
             negated: m[1] == '^',
-            chars: m[2]!.replaceAllMapped(RegExp(r'\\(.)'), (e) => e[1]!),
+            chars: m[2]!.replaceAllMapped(
+              RegExp(r'\\x([0-9A-Fa-f]{2})|\\(.)'),
+              (e) => e[2] ?? String.fromCharCode(int.parse(e[1]!, radix: 16)),
+            ),
             next: m[3]!,
           ),
       ];

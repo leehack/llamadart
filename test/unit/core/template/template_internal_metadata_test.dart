@@ -60,6 +60,16 @@ void main() {
     expect(singleToolCallOf(withThoughtMarksOf(result(), unmarked)), isFalse);
   });
 
+  test('withBareFirstCall marks a result, and copies keep the mark', () {
+    LlamaChatTemplateResult result() => LlamaChatTemplateResult(prompt: 'p');
+    final bare = withBareFirstCall(result(), bare: true);
+    final unmarked = withBareFirstCall(result(), bare: false);
+    expect(bareFirstCallOf(bare), isTrue);
+    expect(bareFirstCallOf(unmarked), isFalse);
+    expect(bareFirstCallOf(withThoughtMarksOf(result(), bare)), isTrue);
+    expect(bareFirstCallOf(withThoughtMarksOf(result(), unmarked)), isFalse);
+  });
+
   group('chatTemplateKwargsFromMetadata', () {
     test('decodes the stored kwargs object', () {
       expect(

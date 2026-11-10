@@ -36,9 +36,9 @@ with the same probe and `enable_thinking = true` alone. Both templates end
 their generation prompt with `<think>\n`. As with DeepSeek V3.1, a forced-open
 thought is the text before the first `</think>`; with Qwen3.5 a `<tool_call>`
 ends it first and starts the content. A thought that has not ended keeps a
-trailing partial end tag. llama.cpp's Qwen3.5 required-call grammar allows a
-thought and text before the call; llamadart's grammar starts the call at once,
-which ends the thought, so that entry sets `required_grammar_start`. Its
+trailing partial end tag. The Qwen3.5 required-call grammar, as llama.cpp's
+(`cd959bae9`), takes any text without `<tool_call>`, the thought included,
+before the calls, so that entry sets `required_grammar_start`. Its
 `two-calls-end-unended-thought` case, added for issue #1531, sets
 `parallel_tool_calls`: the probe and the test pass parallel tool calls.
 

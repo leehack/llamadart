@@ -2,6 +2,7 @@ import '../models/tools/tool_definition.dart';
 import '../models/chat/completion_chunk.dart';
 import 'chat_parse_result.dart';
 import 'thinking_utils.dart';
+import 'tool_call_grammar_utils.dart';
 import 'tool_call_parsing_utils.dart';
 import 'tool_schema_utils.dart';
 
@@ -109,6 +110,10 @@ class XmlToolCallFormat {
   /// The tool-call scope opening of [qwen3Coder].
   static const qwen3CoderScopeStart = '<tool_call>';
 
+  /// The opening of a call to [name] outside a scope, such as
+  /// `<function=get_weather>`.
+  String bareCallOpening(String name) => '$toolStart$name$toolSep';
+
   /// Kimi K2 format.
   static const kimiK2 = XmlToolCallFormat(
     scopeStart: '<|tool_calls_section_begin|>',
@@ -206,12 +211,18 @@ class XmlToolCallFormat {
 ///
 /// The root of a format that [XmlToolCallFormat.repeatsScope] admits one tool
 /// call per scope, in consecutive scopes, as llama.cpp's grammar does; when
-/// [parallelToolCalls] is false, exactly one. Other formats ignore
-/// [parallelToolCalls].
+/// [parallelToolCalls] is false, exactly one. With [textBeforeCalls], text
+/// without a call opening may precede them, as in llama.cpp's grammar for a
+/// required call. With [bareFirstCall], the first call may leave out the
+/// scope start, and a declared tool's opening, such as
+/// `<function=get_weather>`, is a call opening. Other formats ignore these
+/// options.
 String? buildXmlToolCallGrammar(
   List<ToolDefinition>? tools,
   XmlToolCallFormat format, {
   bool parallelToolCalls = true,
+  bool textBeforeCalls = false,
+  bool bareFirstCall = false,
 }) {
   if (tools == null || tools.isEmpty) {
     return null;
@@ -256,11 +267,29 @@ obj ::= "{" space (string ":" space value ("," space string ":" space value)*)? 
     // activation replays that exact trigger text, so whitespace must be valid
     // in the grammar rather than relying on eager constrained decoding to
     // remove it.
-    final scopes = parallelToolCalls ? 'tool-call-scope+' : 'tool-call-scope';
+    final scope = 'xml-space tool-call ${_literal(format.scopeEnd)} xml-space';
+    final firstScope = bareFirstCall
+        ? 'first-tool-call-scope'
+        : 'tool-call-scope';
+    final scopes = !parallelToolCalls
+        ? firstScope
+        : bareFirstCall
+        ? '$firstScope tool-call-scope*'
+        : 'tool-call-scope+';
+    final extraRules = [
+      if (bareFirstCall)
+        'first-tool-call-scope ::= ${_literal(format.scopeStart)}? $scope',
+      if (textBeforeCalls)
+        ...ToolCallGrammarUtils.excludingRules('text-before-calls', [
+          format.scopeStart,
+          if (bareFirstCall)
+            for (final name in toolNames) format.bareCallOpening(name),
+        ]),
+    ].map((rule) => '$rule\n').join();
     return '''
-root ::= $scopes
-tool-call-scope ::= ${_literal(format.scopeStart)} xml-space tool-call ${_literal(format.scopeEnd)} xml-space
-tool-call ::= ${_literal(format.toolStart)} tool-name ${_literal(format.toolSep)} xml-space param* ${_literal(format.toolEnd)} xml-space
+root ::= ${textBeforeCalls ? 'text-before-calls ' : ''}$scopes
+tool-call-scope ::= ${_literal(format.scopeStart)} $scope
+${extraRules}tool-call ::= ${_literal(format.toolStart)} tool-name ${_literal(format.toolSep)} xml-space param* ${_literal(format.toolEnd)} xml-space
 param ::= ${_literal(format.keyStart)} param-name ${_literal(format.keyValSep)} xml-value ${_literal(format.valEnd)} xml-space
 tool-name ::= $toolNameRule
 param-name ::= $paramNameRule
