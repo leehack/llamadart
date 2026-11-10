@@ -88,6 +88,7 @@ final class ChatFormatTraits {
     this.parsesCallsInsideThoughts = false,
     this.keepsForcedThoughtVerbatim = false,
     this.closedThoughtKeepsTagsAsContent = false,
+    this.takesThoughtOnlyAtReplyStart = false,
     this.forcedThoughtContentOpenings = const [],
     this.mayEmbedToolEnvelopeAfterContent = false,
     this.hasRepeatedContentChannels = false,
@@ -125,6 +126,10 @@ final class ChatFormatTraits {
   /// Whether, after a prompt that ends with a closed thought, the parse
   /// extracts no reasoning, so thinking tags are content.
   final bool closedThoughtKeepsTagsAsContent;
+
+  /// Whether, after a prompt that opens no thought, the parse takes a thought
+  /// only at the start of the reply, so other thinking tags are content.
+  final bool takesThoughtOnlyAtReplyStart;
 
   /// Markers that, with [keepsForcedThoughtVerbatim], also end a forced-open
   /// thought when they come before its end tag, and start the content.
@@ -213,6 +218,7 @@ chatFormatRegistrations = List.unmodifiable(<ChatFormatRegistration>[
     detect: (s) => _hasAll(s, const ['dsml_token', 'DSML', 'function_calls']),
     traits: ChatFormatTraits(
       qualifiesJsonSchemaTools: false,
+      takesThoughtOnlyAtReplyStart: true,
       mayEmbedToolEnvelopeAfterContent: true,
     ),
   ),
@@ -222,6 +228,7 @@ chatFormatRegistrations = List.unmodifiable(<ChatFormatRegistration>[
     detect: (s) => _hasAll(s, const ['dsml_token', 'DSML', 'tool_calls']),
     traits: ChatFormatTraits(
       qualifiesJsonSchemaTools: false,
+      takesThoughtOnlyAtReplyStart: true,
       mayEmbedToolEnvelopeAfterContent: true,
     ),
   ),
@@ -253,6 +260,7 @@ chatFormatRegistrations = List.unmodifiable(<ChatFormatRegistration>[
     ]),
     traits: ChatFormatTraits(
       qualifiesJsonSchemaTools: true,
+      takesThoughtOnlyAtReplyStart: true,
       mayEmbedToolEnvelopeAfterContent: true,
       leavesIncompleteToolCall: _contentContainsAny(const ['<tool_call>']),
     ),
@@ -277,6 +285,7 @@ chatFormatRegistrations = List.unmodifiable(<ChatFormatRegistration>[
     detect: (s) => s.contains('<｜tool▁calls▁begin｜>'),
     traits: ChatFormatTraits(
       qualifiesJsonSchemaTools: false,
+      takesThoughtOnlyAtReplyStart: true,
       toolCallOpening: DeepseekR1Handler.toolCallOpening,
       disabledByResponseSchema: true,
     ),
@@ -306,6 +315,7 @@ chatFormatRegistrations = List.unmodifiable(<ChatFormatRegistration>[
     ]),
     traits: ChatFormatTraits(
       qualifiesJsonSchemaTools: false,
+      takesThoughtOnlyAtReplyStart: true,
       toolCallOpening: XmlToolCallFormat.minicpm5.toolCallOpening,
     ),
   ),
@@ -325,6 +335,7 @@ chatFormatRegistrations = List.unmodifiable(<ChatFormatRegistration>[
     detect: (s) => _hasAll(s, const ['elif thinking', '<|tool_call|>']),
     traits: ChatFormatTraits(
       qualifiesJsonSchemaTools: false,
+      takesThoughtOnlyAtReplyStart: true,
       toolCallOpening: GraniteHandler.toolCallOpening,
     ),
   ),
@@ -335,6 +346,7 @@ chatFormatRegistrations = List.unmodifiable(<ChatFormatRegistration>[
         _hasAll(s, const ['[gMASK]<sop>', '<arg_key>', '<arg_value>']),
     traits: ChatFormatTraits(
       qualifiesJsonSchemaTools: true,
+      takesThoughtOnlyAtReplyStart: true,
       mayEmbedToolEnvelopeAfterContent: true,
       disabledByResponseSchema: true,
       leavesIncompleteToolCall: _contentContainsAny(const ['<tool_call>']),
@@ -347,6 +359,7 @@ chatFormatRegistrations = List.unmodifiable(<ChatFormatRegistration>[
         _hasAll(s, const ['<｜hy_User{}｜>', '<tool_sep{}>', '<arg_key{}>']),
     traits: ChatFormatTraits(
       qualifiesJsonSchemaTools: true,
+      takesThoughtOnlyAtReplyStart: true,
       toolCallOpening: HunyuanV3Handler.toolCallOpening,
       leavesIncompleteToolCall: _contentContainsAny(const [
         '<tool_call:opensource>',
@@ -367,6 +380,7 @@ chatFormatRegistrations = List.unmodifiable(<ChatFormatRegistration>[
             s.contains('Function calls MUST follow the specified format')),
     traits: ChatFormatTraits(
       qualifiesJsonSchemaTools: false,
+      takesThoughtOnlyAtReplyStart: true,
       toolCallOpening: XmlToolCallFormat.qwen3Coder.toolCallOpening,
       closedThoughtKeepsTagsAsContent: true,
       keepsForcedThoughtVerbatim: true,
@@ -407,6 +421,7 @@ chatFormatRegistrations = List.unmodifiable(<ChatFormatRegistration>[
     detect: (s) => s.contains('<tool_call>'),
     traits: ChatFormatTraits(
       qualifiesJsonSchemaTools: true,
+      takesThoughtOnlyAtReplyStart: true,
       toolCallOpening: HermesHandler.toolCallOpening,
       keepsForcedThoughtVerbatim: true,
       disabledByResponseSchema: true,
@@ -451,6 +466,7 @@ chatFormatRegistrations = List.unmodifiable(<ChatFormatRegistration>[
     detect: (s) => _hasAll(s, const ['<|system_start|>', '<|tools_prefix|>']),
     traits: ChatFormatTraits(
       qualifiesJsonSchemaTools: false,
+      takesThoughtOnlyAtReplyStart: true,
       toolCallOpening: ApertusHandler.toolCallOpening,
       requiredKeepsLazyGrammar: true,
     ),
@@ -465,6 +481,7 @@ chatFormatRegistrations = List.unmodifiable(<ChatFormatRegistration>[
         (s.contains('List of tools: [') && !s.contains('<|tool_list_start|>')),
     traits: ChatFormatTraits(
       qualifiesJsonSchemaTools: false,
+      takesThoughtOnlyAtReplyStart: true,
       toolCallOpening: Lfm2Handler.toolCallOpening,
       requiredKeepsLazyGrammar: true,
     ),
@@ -488,6 +505,7 @@ chatFormatRegistrations = List.unmodifiable(<ChatFormatRegistration>[
     ]),
     traits: ChatFormatTraits(
       qualifiesJsonSchemaTools: false,
+      takesThoughtOnlyAtReplyStart: true,
       toolCallOpening: KimiK2Handler.toolCallOpening,
       parsesCallsInsideThoughts: true,
     ),
@@ -576,7 +594,10 @@ chatFormatRegistrations = List.unmodifiable(<ChatFormatRegistration>[
     ChatFormat.llama3,
     Llama3Handler.new,
     detect: (s) => s.contains('<|start_header_id|>ipython<|end_header_id|>'),
-    traits: ChatFormatTraits(qualifiesJsonSchemaTools: false),
+    traits: ChatFormatTraits(
+      qualifiesJsonSchemaTools: false,
+      takesThoughtOnlyAtReplyStart: true,
+    ),
   ),
   // Ministral templates also carry [THINK] and [TOOL_CALLS], so Ministral
   // precedes Magistral and Mistral Nemo.
@@ -602,6 +623,7 @@ chatFormatRegistrations = List.unmodifiable(<ChatFormatRegistration>[
     detect: (s) => s.contains('[TOOL_CALLS]'),
     traits: ChatFormatTraits(
       qualifiesJsonSchemaTools: true,
+      takesThoughtOnlyAtReplyStart: true,
       toolCallOpening: MistralHandler.toolCallOpening,
       toolChoiceNoneRendersContentOnly: true,
       leavesIncompleteToolCall: _contentContainsAny(const ['[TOOL_CALLS]']),
@@ -652,6 +674,7 @@ chatFormatRegistrations = List.unmodifiable(<ChatFormatRegistration>[
     GenericHandler.new,
     traits: ChatFormatTraits(
       qualifiesJsonSchemaTools: true,
+      takesThoughtOnlyAtReplyStart: true,
       toolChoiceNoneRendersContentOnly: true,
       leavesIncompleteToolCall: _genericLeavesIncompleteToolCall,
     ),
@@ -661,6 +684,7 @@ chatFormatRegistrations = List.unmodifiable(<ChatFormatRegistration>[
     () => _withoutTemplateToolCalls(ChatFormat.contentOnly),
     traits: ChatFormatTraits(
       qualifiesJsonSchemaTools: false,
+      takesThoughtOnlyAtReplyStart: true,
       toolChoiceNoneRendersContentOnly: true,
     ),
   ),
