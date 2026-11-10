@@ -1348,6 +1348,9 @@ void main() {
         );
         expect(fake.prompts, textHistory ? ['Hi'] : isEmpty);
         expect(fake.budgets, textHistory ? [1] : isEmpty);
+        // The executor-limit probe's prompt exceeds four tokens per
+        // resolved context token.
+        expect(fake.rejectedLengths, textHistory ? [4096 * 4 + 64] : isEmpty);
         expect(fake.deleted, fake.created);
         expect(
           support.generationLimitUnsupportedReason,
@@ -1400,6 +1403,47 @@ void main() {
       (
         'a failing count',
         () => _installCountingFakeEngine(counts: (_, _) => null),
+      ),
+      (
+        'a failing one-token turn',
+        () => _installCountingFakeEngine(
+          counts: (_, budget) => (decoded: budget, total: 20),
+          reject: (prompt) =>
+              prompt == 'Hi' ? 'Internal error' : _inputTooLong(prompt, 4096),
+        ),
+      ),
+      (
+        'an over-long prompt the runtime accepts',
+        () => _installCountingFakeEngine(
+          counts: (_, budget) => (decoded: budget, total: 20),
+          reject: (_) => null,
+        ),
+      ),
+      (
+        'a limit error in another format',
+        () => _installCountingFakeEngine(
+          counts: (_, budget) => (decoded: budget, total: 20),
+          reject: (prompt) => prompt.length > 100
+              ? 'Input token ids are too long: ${prompt.length} >= 4096'
+              : null,
+        ),
+      ),
+      (
+        'a named limit above the rejected input',
+        () => _installCountingFakeEngine(
+          counts: (_, budget) => (decoded: budget, total: 20),
+          reject: (prompt) => prompt.length > 100
+              ? 'Input token ids are too long. Exceeding the maximum number '
+                    'of tokens allowed: 10 >= 4096'
+              : null,
+        ),
+      ),
+      (
+        'a probe turn that fills the executor context',
+        () => _installCountingFakeEngine(
+          counts: (_, _) => (decoded: 1, total: 20),
+          executorTokens: 20,
+        ),
       ),
     ]) {
       test('a runtime with $name keeps automatic tool loops refused and '
@@ -1518,6 +1562,39 @@ void main() {
         completionGenerationLimit(last),
         internal.BackendGenerationLimit.contextSize,
       );
+    });
+
+    test('the limit comes from the executor when its fixed KV cache holds '
+        'fewer tokens than the settings report', () async {
+      for (final (counts, limit)
+          in <(_TurnCounts, internal.BackendGenerationLimit?)>[
+            (
+              (decoded: 4066, total: 4096),
+              internal.BackendGenerationLimit.contextSize,
+            ),
+            ((decoded: 100, total: 4095), null),
+          ]) {
+        final fake = _installCountingFakeEngine(
+          counts: (turn, budget) =>
+              turn == 0 ? (decoded: budget, total: 20) : counts,
+          maxNumTokens: 65536,
+          executorTokens: 4096,
+        );
+        final engine = LlamaEngine(spi.LlamaBackend.withTextHistory());
+        await engine.loadModelFromUrl(
+          'model.litertlm',
+          modelParams: const ModelParams(contextSize: 65536),
+        );
+        expect(fake.rejectedLengths, [65536 * 4 + 64]);
+        final last = await engine.create(const [
+          api.LlamaChatMessage.fromText(
+            role: api.LlamaChatRole.user,
+            text: 'hi',
+          ),
+        ], params: const api.GenerationParams(maxTokens: 8192)).last;
+        expect(completionGenerationLimit(last), limit);
+        await engine.dispose();
+      }
     });
 
     test('an automatic tool loop runs a call from a finished reply and '
@@ -4251,13 +4328,18 @@ typedef _TurnCounts = ({int decoded, int total});
 
 /// A `@litert-lm/core@0.19.0`-shaped runtime with text history, tool
 /// declarations and per-turn token counts. Turn 0 is the first message sent,
-/// the generation-limit probe on a text-history load.
+/// the one-token probe on a text-history load. Rejected messages, such as the
+/// over-long prompt of the executor-limit probe, take no turn.
 final class _CountingFake {
-  _CountingFake(this.counts, this.chunks);
+  _CountingFake(this.counts, this.chunks, this.reject);
 
   /// The counts of [turn] at its `maxOutputTokens`, or null to fail the read.
   _TurnCounts? Function(int turn, int budget) counts;
   final List<JSAny?> Function(int turn) chunks;
+
+  /// The error the runtime streams instead of a reply to [prompt], or null.
+  final String? Function(String prompt) reject;
+  final List<int> rejectedLengths = [];
   final List<Map<String, Object?>> settings = [];
   final List<String> prompts = [];
   final List<int> budgets = [];
@@ -4272,8 +4354,17 @@ _CountingFake _installCountingFakeEngine({
   List<JSAny?> Function(int turn)? chunks,
   bool countsApi = true,
   int? maxNumTokens = 4096,
+  int? executorTokens,
+  String? Function(String prompt)? reject,
 }) {
-  final fake = _CountingFake(counts, chunks ?? (_) => [_messageChunk('reply')]);
+  // Each character is one token; the executor enforces [executorTokens],
+  // which a fixed KV cache can hold below the [maxNumTokens] settings report.
+  final limit = executorTokens ?? maxNumTokens ?? 4096;
+  final fake = _CountingFake(
+    counts,
+    chunks ?? (_) => [_messageChunk('reply')],
+    reject ?? (prompt) => _inputTooLong(prompt, limit),
+  );
   final engineClass = JSObject()
     ..setProperty(
       'create'.toJS,
@@ -4331,6 +4422,22 @@ _CountingFake _installCountingFakeEngine({
                       return Future<JSAny?>.value(null).toJS;
                     }).toJS,
                   );
+            final send = conversation.getProperty<JSFunction>(
+              'sendMessageStreaming'.toJS,
+            );
+            conversation.setProperty(
+              'sendMessageStreaming'.toJS,
+              ((JSAny message) {
+                final error = message.isA<JSString>()
+                    ? fake.reject((message as JSString).toDart)
+                    : null;
+                if (error == null) {
+                  return send.callAsFunction(conversation, message);
+                }
+                fake.rejectedLengths.add((message as JSString).toDart.length);
+                return _rejectingReadableStream(error);
+              }).toJS,
+            );
             Future<_TurnCounts> read() async {
               await fake.beforeCounts?.call();
               final counts = fake.counts(turn ?? -1, budget);
@@ -4368,6 +4475,30 @@ _CountingFake _installCountingFakeEngine({
     );
   globalContext.setProperty('LiteRtLmEngine'.toJS, engineClass);
   return fake;
+}
+
+String? _inputTooLong(String prompt, int limit) => prompt.length >= limit
+    ? 'Input token ids are too long. Exceeding the maximum number of tokens '
+          'allowed: ${prompt.length} >= $limit'
+    : null;
+
+/// A stream whose first read rejects with a JS `Error` of [message], as
+/// `@litert-lm/core@0.19.0` reports a failed turn.
+JSObject _rejectingReadableStream(String message) {
+  final error = globalContext
+      .getProperty<JSFunction>('Error'.toJS)
+      .callAsConstructor<JSObject>(message.toJS);
+  final reader = JSObject()
+    ..setProperty(
+      'read'.toJS,
+      (() => globalContext
+              .getProperty<JSObject>('Promise'.toJS)
+              .callMethod<JSAny?>('reject'.toJS, error))
+          .toJS,
+    )
+    ..setProperty('cancel'.toJS, (() => Future<JSAny?>.value(null).toJS).toJS)
+    ..setProperty('releaseLock'.toJS, (() {}).toJS);
+  return JSObject()..setProperty('getReader'.toJS, (() => reader).toJS);
 }
 
 JSObject _fakeConversation({

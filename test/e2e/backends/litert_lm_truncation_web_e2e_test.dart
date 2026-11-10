@@ -351,6 +351,137 @@ void main() {
     expect(toolRuns, completedRuns);
     expect(truncated.rolledBack, isTrue);
     expect(truncatedSession.history, isEmpty);
+
+    // A context above a fixed KV cache: the executor clamps its own limit
+    // while engine.settings repeats the request, and decoding stops at the
+    // executor's limit.
+    await engine.dispose();
+    const largeContext = 65536;
+    const largeBudget = 8192;
+    final large = await constructor
+        .callMethod<JSPromise<JSObject>>(
+          'create'.toJS,
+          <String, Object>{
+            'model': model,
+            if (device == ComputeDevice.cpu) 'backend': 3,
+            'benchmarkEnabled': true,
+            'mainExecutorSettings': {'maxNumTokens': largeContext},
+          }.jsify(),
+        )
+        .toDart;
+    final largeSettings = large
+        .getProperty<JSObject>('settings'.toJS)
+        .getProperty<JSObject>('mainExecutorSettings'.toJS)
+        .getProperty<JSNumber>('maxNumTokens'.toJS)
+        .toDartInt;
+    // The executor names its limit when it rejects an over-long input.
+    final overLong = await large
+        .callMethod<JSPromise<JSObject>>(
+          'createConversation'.toJS,
+          <String, Object>{
+            'sessionConfig': {'maxOutputTokens': 1},
+          }.jsify(),
+        )
+        .toDart;
+    String? rejection;
+    try {
+      final reader = overLong
+          .callMethod<JSObject>(
+            'sendMessageStreaming'.toJS,
+            List.filled(largeContext * 4, '7').join().toJS,
+          )
+          .callMethod<JSObject>('getReader'.toJS);
+      while (!(await reader.callMethod<JSPromise<JSObject>>('read'.toJS).toDart)
+          .getProperty<JSBoolean>('done'.toJS)
+          .toDart) {}
+    } catch (e) {
+      rejection = '$e';
+    } finally {
+      await overLong.callMethod<JSPromise<JSAny?>>('delete'.toJS).toDart;
+    }
+    final executorContext = int.parse(
+      RegExp(r'>= (\d+)$').firstMatch(rejection ?? '')![1]!,
+    );
+    final directLarge = await (() async {
+      final conversation = await large
+          .callMethod<JSPromise<JSObject>>(
+            'createConversation'.toJS,
+            <String, Object>{
+              'sessionConfig': {
+                'maxOutputTokens': largeBudget,
+                'samplerBackend': directBackend,
+                'samplerParams': {'k': 1, 'p': 1, 'temperature': 0, 'seed': 42},
+              },
+            }.jsify(),
+          )
+          .toDart;
+      try {
+        final reader = conversation
+            .callMethod<JSObject>('sendMessageStreaming'.toJS, longPrompt.toJS)
+            .callMethod<JSObject>('getReader'.toJS);
+        while (!(await reader
+                .callMethod<JSPromise<JSObject>>('read'.toJS)
+                .toDart)
+            .getProperty<JSBoolean>('done'.toJS)
+            .toDart) {}
+        final info = await conversation
+            .callMethod<JSPromise<JSObject>>('getBenchmarkInfo'.toJS)
+            .toDart;
+        final total = await conversation
+            .callMethod<JSPromise<JSNumber>>('getTokenCount'.toJS)
+            .toDart;
+        return (
+          decoded: info
+              .getProperty<JSNumber>('lastDecodeTokenCount'.toJS)
+              .toDartInt,
+          total: total.toDartInt,
+        );
+      } finally {
+        await conversation.callMethod<JSPromise<JSAny?>>('delete'.toJS).toDart;
+      }
+    })();
+    await large.callMethod<JSPromise<JSAny?>>('delete'.toJS).toDart;
+
+    final largeBackend = LiteRtLmBackend.withTextHistory(moduleUrl: moduleUrl);
+    final largeEngine = LlamaEngine(largeBackend);
+    addTearDown(largeEngine.dispose);
+    await largeEngine.loadModelFromUrl(
+      model,
+      modelParams: ModelParams(contextSize: largeContext, device: device),
+    );
+    final largeReason = (largeBackend as spi.BackendGenerationLimitSupport)
+        .generationLimitUnsupportedReason;
+    final largeChunks = await largeEngine.create(const [
+      LlamaChatMessage.fromText(role: LlamaChatRole.user, text: longPrompt),
+    ], params: greedy(largeBudget)).toList();
+    final largeLast = largeChunks.last;
+    print(
+      'LITERT_TRUNCATION_LARGE_CONTEXT ${jsonEncode({
+        'requested': largeContext,
+        'settings': largeSettings,
+        'executor': executorContext,
+        'direct': {'decoded': directLarge.decoded, 'total': directLarge.total},
+        'adapterReason': largeReason,
+        'finishReason': largeLast.choices.single.finishReason,
+        'limit': completionGenerationLimit(largeLast)?.name,
+      })}',
+    );
+    expect(largeSettings, largeContext);
+    expect(executorContext, lessThanOrEqualTo(largeContext));
+    // The turn ended at a budget: the executor's context or maxTokens.
+    expect(
+      directLarge.total >= executorContext ||
+          directLarge.decoded >= largeBudget,
+      isTrue,
+    );
+    expect(largeReason, isNull);
+    expect(largeLast.choices.single.finishReason, 'length');
+    expect(
+      completionGenerationLimit(largeLast),
+      directLarge.total >= executorContext
+          ? internal.BackendGenerationLimit.contextSize
+          : internal.BackendGenerationLimit.maxTokens,
+    );
     print('LITERT_TRUNCATION_RESULT PASS');
   });
 }

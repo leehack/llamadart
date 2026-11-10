@@ -89,8 +89,8 @@ class LiteRtLmBackend
   bool _isReady = false;
   bool _supportsTextHistory = false;
   bool _supportsToolDeclarations = false;
-  // The loaded engine's resolved context size, once the load probe showed
-  // its runtime reports per-turn decode and context token counts.
+  // The context size the loaded engine's executor enforces, once the load
+  // probe showed its runtime reports per-turn decode and context token counts.
   int? _reportedContextTokens;
   bool _hasContext = false;
   bool _cancelRequested = false;
@@ -169,10 +169,11 @@ class LiteRtLmBackend
       ? null
       : 'The loaded LiteRT-LM Web runtime did not report the decode and '
             'context token counts of a turn (benchmarkEnabled, '
-            'getBenchmarkInfo and getTokenCount), so a reply cut off at '
-            'maxTokens or the context size cannot be told from a finished '
-            'one. @litert-lm/core@0.19.0 reports them. Use ChatSession.create '
-            'or LlamaEngine.create for manual completion.';
+            'getBenchmarkInfo and getTokenCount) and the context size its '
+            'executor enforces, so a reply cut off at maxTokens or the '
+            'context size cannot be told from a finished one. '
+            '@litert-lm/core@0.19.0 reports them. Use ChatSession.create or '
+            'LlamaEngine.create for manual completion.';
 
   @override
   bool get isReady => _isReady;
@@ -968,14 +969,26 @@ class LiteRtLmBackend
     }
   }
 
-  /// The resolved context size of [engine] when its runtime reports the
-  /// decode and context token counts of a turn, else null.
+  /// The context size [engine]'s executor enforces, when its runtime reports
+  /// the decode and context token counts of a turn and names that size; else
+  /// null.
+  Future<int?> _probeGenerationLimits(_LiteRtLmWebEngine engine) async {
+    final resolved = _resolvedContextTokens(engine);
+    if (resolved == null) return null;
+    final total = await _probeOneTokenTurn(engine);
+    if (total == null) return null;
+    final contextTokens = await _probeExecutorContextTokens(engine, resolved);
+    return contextTokens != null && total < contextTokens
+        ? contextTokens
+        : null;
+  }
+
+  /// The tokens a one-token turn leaves in its conversation, or null when the
+  /// runtime does not count that turn.
   ///
   /// At `maxOutputTokens` 1 a turn decodes exactly one token, so a runtime
   /// that keeps no benchmark record or counts another turn fails.
-  Future<int?> _probeGenerationLimits(_LiteRtLmWebEngine engine) async {
-    final contextTokens = _resolvedContextTokens(engine);
-    if (contextTokens == null) return null;
+  Future<int?> _probeOneTokenTurn(_LiteRtLmWebEngine engine) async {
     _LiteRtLmWebConversation? conversation;
     try {
       conversation = await engine
@@ -990,11 +1003,7 @@ class LiteRtLmBackend
       final reader = conversation.sendMessageStreaming('Hi'.toJS).getReader();
       while (!(await reader.read().toDart).done) {}
       final counts = await _tokenCounts(conversation);
-      return counts != null &&
-              counts.decoded == 1 &&
-              counts.total < contextTokens
-          ? contextTokens
-          : null;
+      return counts != null && counts.decoded == 1 ? counts.total : null;
     } catch (_) {
       return null;
     } finally {
@@ -1002,8 +1011,69 @@ class LiteRtLmBackend
     }
   }
 
-  /// The `maxNumTokens` [engine] resolved at creation, which bounds its
-  /// conversations' tokens.
+  static final RegExp _inputTooLong = RegExp(
+    r'^Input token ids are too long\. Exceeding the maximum number of '
+    r'tokens allowed: (\d+) >= (\d+)$',
+  );
+
+  /// The `maxNumTokens` [engine]'s executor enforces, from its rejection of a
+  /// prompt longer than [resolved] tokens, or null.
+  ///
+  /// `engine.settings` repeats the requested size, but an executor with a
+  /// fixed KV cache clamps its own copy to the cache, and decoding stops at
+  /// that copy. Prefill rejects an input of at least that many tokens before
+  /// running the model and names the limit. Tokenizers give digits a token
+  /// each or per three (Gemma, Qwen, Llama 3); one that merges more lets the
+  /// prompt through, which costs a long prefill and fails the probe.
+  Future<int?> _probeExecutorContextTokens(
+    _LiteRtLmWebEngine engine,
+    int resolved,
+  ) async {
+    _LiteRtLmWebConversation? conversation;
+    try {
+      conversation = await engine
+          .createConversation(
+            _createConversationConfig(const GenerationParams(maxTokens: 1)),
+          )
+          .toDart;
+      // Varied digits, which tokenizers merge least.
+      final digits = StringBuffer();
+      var seed = 1;
+      for (var i = 0; i < resolved * 4 + 64; i++) {
+        seed = (seed * 1103515245 + 12345) & 0x7fffffff;
+        digits.write(seed % 10);
+      }
+      final reader = conversation
+          .sendMessageStreaming(digits.toString().toJS)
+          .getReader();
+      try {
+        while (!(await reader.read().toDart).done) {}
+      } catch (error) {
+        final match = _inputTooLong.firstMatch(_errorMessage(error) ?? '');
+        if (match == null) return null;
+        final input = int.parse(match[1]!);
+        final limit = int.parse(match[2]!);
+        return limit > 1 && input >= limit ? limit : null;
+      }
+      return null;
+    } catch (_) {
+      return null;
+    } finally {
+      if (conversation != null) await _deleteConversation(conversation);
+    }
+  }
+
+  static String? _errorMessage(Object error) {
+    try {
+      final message = (error as JSObject).getProperty<JSAny?>('message'.toJS);
+      return message.isA<JSString>() ? (message as JSString).toDart : null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// The `maxNumTokens` [engine] resolved at creation: the requested size,
+  /// which bounds the executor's.
   int? _resolvedContextTokens(_LiteRtLmWebEngine engine) {
     try {
       final settings = engine.getProperty<JSAny?>('settings'.toJS);
@@ -1024,10 +1094,11 @@ class LiteRtLmBackend
   ///
   /// `@litert-lm/core@0.19.0` ends a turn at a stop token, once its decode
   /// steps reach `maxOutputTokens`, or once the conversation's tokens reach
-  /// `maxNumTokens`, and reports none of these causes. Fewer decode steps than
-  /// [maxTokens] and fewer tokens than [contextTokens] rule both budgets out,
-  /// so only then is the turn finished. A turn at a budget is cut off even if
-  /// its last token was a stop token: the counts cannot tell the two apart.
+  /// the executor's `maxNumTokens` ([contextTokens]), and reports none of
+  /// these causes. Fewer decode steps than [maxTokens] and fewer tokens than
+  /// [contextTokens] rule both budgets out, so only then is the turn
+  /// finished. A turn at a budget is cut off even if its last token was a
+  /// stop token: the counts cannot tell the two apart.
   Future<BackendGenerationLimit?> _generationLimitOf(
     _LiteRtLmWebConversation conversation, {
     required int maxTokens,
