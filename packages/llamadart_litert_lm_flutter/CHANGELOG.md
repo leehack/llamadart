@@ -1,3 +1,7 @@
+## Unreleased
+
+- Pin `leehack/litert-lm-native@v0.19.1-3` and drop the unused `LiteRtMetalAccelerator` target, which saves 8.1 MB per iOS app ([#1798](https://github.com/leehack/llamadart/issues/1798)).
+
 ## 0.19.4
 
 - Refresh README installation guidance for core `0.19.4`; Apple SwiftPM stays pinned to `leehack/litert-lm-native@v0.19.1-2`.

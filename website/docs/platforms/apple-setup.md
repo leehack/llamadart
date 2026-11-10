@@ -30,9 +30,9 @@ Add the companions you need next to `llamadart`; the dependency snippet is in
 
 - `llamadart_llama_cpp_flutter` links the llama.cpp XCFrameworks (GGUF).
 - `llamadart_litert_lm_flutter` links the LiteRT-LM iOS and macOS
-  XCFrameworks (`.litertlm` models), including the macOS WebGPU accelerator,
-  sampler and Dawn. The Metal accelerator and sampler stay iOS-only; the macOS
-  GPU path uses WebGPU.
+  XCFrameworks (`.litertlm` models), including the macOS WebGPU accelerator
+  and Dawn. `LiteRtLm` has its GPU accelerator built in (Metal on iOS, WebGPU
+  on macOS), so the companion links no separate Metal accelerator.
 - `llamadart_stable_diffusion_flutter` links the stable-diffusion.cpp
   XCFramework for [image generation](../guides/image-generation). It is opt-in:
   adding it opts iOS and macOS builds into the image generation runtime (about
@@ -197,10 +197,9 @@ Apple's requirement covers iOS, iPadOS, tvOS, visionOS and watchOS apps. The
 app-level declaration is a workaround for a runtime without its own manifest;
 llamadart has not verified it with an App Store Connect upload.
 
-The LiteRT-LM iOS frameworks reference required-reason API in three
-categories: File Timestamp (`stat`, `fstat`, `lstat`), System Boot Time
-(`mach_absolute_time`) and User Defaults (`NSUserDefaults`, in the Metal
-accelerator and sampler). Each framework
+The LiteRT-LM iOS frameworks reference required-reason API in two
+categories: File Timestamp (`stat`, `fstat`, `lstat`) and System Boot Time
+(`mach_absolute_time`). Each framework
 the companion links on iOS carries a manifest for what that framework
 references:
 
@@ -208,18 +207,19 @@ references:
 | --- | --- | --- |
 | `LiteRtLm` | `NSPrivacyAccessedAPICategoryFileTimestamp` | `C617.1`, `3B52.1` |
 | `LiteRtLm` | `NSPrivacyAccessedAPICategorySystemBootTime` | `35F9.1` |
-| `LiteRtMetalAccelerator` | `NSPrivacyAccessedAPICategoryFileTimestamp` | `C617.1`, `3B52.1` |
-| `LiteRtMetalAccelerator` | `NSPrivacyAccessedAPICategoryUserDefaults` | `CA92.1` |
-| `LiteRtTopKMetalSampler` | `NSPrivacyAccessedAPICategoryUserDefaults` | `CA92.1` |
 | `CLiteRTLM` | None: its manifest declares no API | |
 
-An app declares those three categories, with the same reasons, in its own
+LiteRT-LM runtimes up to `v0.19.1-2` also ship a `LiteRtMetalAccelerator`
+framework that declares File Timestamp and User Defaults (`CA92.1`); apps that
+pin one of them declare User Defaults too.
+
+An app declares those categories, with the same reasons, in its own
 `PrivacyInfo.xcprivacy` when it runs LiteRT-LM on the hook path, or when the
 built app has no `PrivacyInfo.xcprivacy` inside the embedded LiteRT-LM
 frameworks. On macOS, which Apple's requirement does not cover, the
 companion's `LiteRtLm.framework` carries a File Timestamp manifest, while its
 flat dylibs
-(`libCLiteRTLM_mac`, `libLiteRt`, the WebGPU accelerator and sampler, and
+(`libCLiteRTLM_mac`, `libLiteRt`, the WebGPU accelerator and
 `libwebgpu_dawn`) and the hook-managed runtime dylibs are bare libraries
 without one. The reasons come from the runtime owner's
 [audit of the binaries](https://github.com/leehack/litert-lm-native/blob/v0.17.0-8/docs/apple_privacy_manifest.md)

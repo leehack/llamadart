@@ -225,8 +225,11 @@ LITERT_SPM_ASSET_PATTERNS = (
     "litert-lm-native-apple-CLiteRTLMMac-xcframework-{tag}.zip",
     "litert-lm-native-apple-LiteRtLm-xcframework-{tag}.zip",
 )
+LITERT_METAL_ACCELERATOR_SPM_ASSET_PATTERN = (
+    "litert-lm-native-apple-LiteRtMetalAccelerator-xcframework-{tag}.zip"
+)
 LITERT_V0_16_SPM_ASSET_PATTERNS = (
-    "litert-lm-native-apple-LiteRtMetalAccelerator-xcframework-{tag}.zip",
+    LITERT_METAL_ACCELERATOR_SPM_ASSET_PATTERN,
     "litert-lm-native-apple-LiteRtTopKMetalSampler-xcframework-{tag}.zip",
 )
 LITERT_V0_16_ALLOWED_SPM_COMPANION_ASSET_PATTERNS = (
@@ -435,6 +438,10 @@ def litert_spm_asset_patterns(
                 "litert-lm-native-apple-LiteRtTopKMetalSampler-xcframework-{tag}.zip",
                 "litert-lm-native-apple-LiteRtTopKWebGpuSampler-xcframework-{tag}.zip",
             }
+            if not allowed:
+                # v0.19 Apple runtimes link their GPU accelerator, so owner
+                # releases after v0.19.1-2 drop the unused Metal one (#1798).
+                obsolete.add(LITERT_METAL_ACCELERATOR_SPM_ASSET_PATTERN)
             patterns = [pattern for pattern in patterns if pattern not in obsolete]
     return tuple(patterns)
 
@@ -557,7 +564,6 @@ def required_litert_manifest_paths(
         required.update(
             path for path in LITERT_V0_16_IOS_GPU_PATHS
             if version not in LITERT_V1_COMPATIBILITY_VERSIONS
-            or "TopKMetalSampler" not in path
         )
     if official_assets and version >= (0, 14, 0):
         required.update(
@@ -665,6 +671,18 @@ def litert_schema2_apple_targets(
         for bundle, libraries in bundles.items() if bundle.startswith("ios-")
     ):
         targets.add("GemmaModelConstraintProvider")
+    if _litert_is_v1_compatibility_tag(compatibility_tag):
+        ios_metal = {
+            "LiteRtMetalAccelerator" in libraries
+            for bundle, libraries in bundles.items() if bundle.startswith("ios-")
+        }
+        if ios_metal == {True}:
+            targets.add("LiteRtMetalAccelerator")
+        elif ios_metal != {False}:
+            raise ReleaseError(
+                f"LiteRT-LM {compatibility_tag} owner inventory ships the iOS "
+                "Metal accelerator for only some iOS bundles"
+            )
     allowed_asset_names = {
         Path(path).name
         for path in litert_spm_artifact_paths(
@@ -4137,6 +4155,7 @@ def replace_swift_binary_target_checksum(
 
 def _validate_litert_lm_v019_swift_topology(
     swift_text: str, *, current_tag: str, include_obsolete_samplers: bool,
+    include_metal_accelerator: bool = True,
 ) -> dict[str, str]:
     platforms = {
         "LiteRtLm": ".iOS, .macOS",
@@ -4152,6 +4171,8 @@ def _validate_litert_lm_v019_swift_topology(
     if not include_obsolete_samplers:
         platforms.pop("LiteRtTopKMetalSampler")
         platforms.pop("LiteRtTopKWebGpuSampler")
+    if not include_metal_accelerator:
+        platforms.pop("LiteRtMetalAccelerator")
     label = "LiteRT-LM v0.19 Swift topology"
     assets = swift_native_repo_binary_targets(
         swift_text, tag_variable="liteRtLmTag", current_tag=current_tag,
@@ -4231,6 +4252,26 @@ def _remove_litert_lm_obsolete_topk_samplers(
     return swift_text
 
 
+def _remove_litert_lm_unused_metal_accelerator(
+    swift_text: str, *, current_tag: str,
+) -> str:
+    blocks = _validate_litert_lm_v019_swift_topology(
+        swift_text, current_tag=current_tag, include_obsolete_samplers=False,
+    )
+    if swift_text.count("LiteRtMetalAccelerator") != 3:
+        raise ReleaseError(
+            "LiteRT-LM v0.19 removal has ambiguous Metal accelerator references"
+        )
+    swift_text = swift_text.replace(blocks["LiteRtMetalAccelerator"], "", 1)
+    return replace_one(
+        swift_text,
+        r'(?m)^[ \t]*\.target\(name: "LiteRtMetalAccelerator", '
+        r'condition: \.when\(platforms: \[\.iOS\]\)\),\n',
+        "",
+        "LiteRT-LM unused Metal accelerator must have exactly one iOS dependency",
+    )
+
+
 def prepare_litert_lm_package_swift(
     original_swift_text: str,
     *,
@@ -4263,23 +4304,29 @@ def prepare_litert_lm_package_swift(
             "LiteRtLm", "CLiteRTLM", "CLiteRTLMMac", "LiteRtMetalAccelerator",
             "LiteRt", "LiteRtWebGpuAccelerator", "WebgpuDawn",
         }
-        if (
-            _litert_is_v1_compatibility_tag(manifest["upstream"]["compatibilityTag"])
-            and expected_targets == sampler_free_targets
-            and current_targets == expected_targets | obsolete_samplers
+        metal = "LiteRtMetalAccelerator"
+        if _litert_is_v1_compatibility_tag(
+            manifest["upstream"]["compatibilityTag"]
+        ) and expected_targets in (
+            sampler_free_targets, sampler_free_targets - {metal},
         ):
-            swift_text = _remove_litert_lm_obsolete_topk_samplers(
-                swift_text, current_tag=original_tag,
-            )
-            current_targets -= obsolete_samplers
-        if (
-            _litert_is_v1_compatibility_tag(manifest["upstream"]["compatibilityTag"])
-            and expected_targets == sampler_free_targets
-            and current_targets == expected_targets
-        ):
-            _validate_litert_lm_v019_swift_topology(
-                swift_text, current_tag=original_tag, include_obsolete_samplers=False,
-            )
+            if current_targets == expected_targets | {metal} | obsolete_samplers:
+                swift_text = _remove_litert_lm_obsolete_topk_samplers(
+                    swift_text, current_tag=original_tag,
+                )
+                current_targets -= obsolete_samplers
+            if metal not in expected_targets and current_targets == sampler_free_targets:
+                swift_text = _remove_litert_lm_unused_metal_accelerator(
+                    swift_text, current_tag=original_tag,
+                )
+                current_targets.discard(metal)
+            if current_targets == expected_targets:
+                _validate_litert_lm_v019_swift_topology(
+                    swift_text,
+                    current_tag=original_tag,
+                    include_obsolete_samplers=False,
+                    include_metal_accelerator=metal in expected_targets,
+                )
         if current_targets == legacy_targets:
             if swift_text.count("GemmaModelConstraintProvider") != 3:
                 raise ReleaseError(

@@ -143,18 +143,14 @@ void main() {
     );
   });
 
-  test('iOS inventory excludes the provider and retains CAPI and Metal', () {
+  test('iOS inventory excludes the provider and the Metal accelerator', () {
     for (final bundle in const ['ios-arm64', 'ios-arm64-sim']) {
       final spec = liteRtLmBundleSpecs.singleWhere(
         (spec) => spec.bundle == bundle,
       );
       expect(
         spec.requiredLibraries,
-        unorderedEquals(const [
-          'CLiteRTLM',
-          'LiteRtLm',
-          'LiteRtMetalAccelerator',
-        ]),
+        unorderedEquals(const ['CLiteRTLM', 'LiteRtLm']),
         reason: bundle,
       );
     }
@@ -186,35 +182,43 @@ void main() {
     }
   });
 
-  test('legacy overrides retain their prebuilt sampler requirements', () {
-    const samplers = {
-      Abi.macosArm64: [
-        'libLiteRtTopKMetalSampler.dylib',
-        'libLiteRtTopKWebGpuSampler.dylib',
-      ],
-      Abi.linuxArm64: ['libLiteRtTopKWebGpuSampler.so'],
-      Abi.linuxX64: ['libLiteRtTopKWebGpuSampler.so'],
-      Abi.windowsX64: ['libLiteRtTopKWebGpuSampler.dll'],
-    };
-    // v0.18.x Linux and Windows hosts import the prebuilt libLiteRt that
-    // C API 1 hosts from v0.19.1-1 link in.
-    const liteRt = {
-      Abi.linuxArm64: ['libLiteRt.so'],
-      Abi.linuxX64: ['libLiteRt.so'],
-      Abi.windowsX64: ['libLiteRt.dll'],
-    };
-    for (final entry in samplers.entries) {
-      final modern = liteRtLmRequiredLibrariesForAbi(entry.key, cApiV1: true);
-      expect(
-        liteRtLmRequiredLibrariesForAbi(entry.key),
-        unorderedEquals([...modern, ...entry.value, ...?liteRt[entry.key]]),
-        reason: entry.key.toString(),
-      );
-      for (final sampler in entry.value) {
-        expect(modern, isNot(contains(sampler)), reason: entry.key.toString());
+  test(
+    'legacy overrides retain their prebuilt accelerator and sampler requirements',
+    () {
+      const samplers = {
+        Abi.macosArm64: [
+          'libLiteRtMetalAccelerator.dylib',
+          'libLiteRtTopKMetalSampler.dylib',
+          'libLiteRtTopKWebGpuSampler.dylib',
+        ],
+        Abi.linuxArm64: ['libLiteRtTopKWebGpuSampler.so'],
+        Abi.linuxX64: ['libLiteRtTopKWebGpuSampler.so'],
+        Abi.windowsX64: ['libLiteRtTopKWebGpuSampler.dll'],
+      };
+      // v0.18.x Linux and Windows hosts import the prebuilt libLiteRt that
+      // C API 1 hosts from v0.19.1-1 link in.
+      const liteRt = {
+        Abi.linuxArm64: ['libLiteRt.so'],
+        Abi.linuxX64: ['libLiteRt.so'],
+        Abi.windowsX64: ['libLiteRt.dll'],
+      };
+      for (final entry in samplers.entries) {
+        final modern = liteRtLmRequiredLibrariesForAbi(entry.key, cApiV1: true);
+        expect(
+          liteRtLmRequiredLibrariesForAbi(entry.key),
+          unorderedEquals([...modern, ...entry.value, ...?liteRt[entry.key]]),
+          reason: entry.key.toString(),
+        );
+        for (final sampler in entry.value) {
+          expect(
+            modern,
+            isNot(contains(sampler)),
+            reason: entry.key.toString(),
+          );
+        }
       }
-    }
-  });
+    },
+  );
 
   test('stable_diffusion pins the qualified v0.3.0-3 release artifacts', () {
     // Exact published owner manifest, independently checked against GitHub

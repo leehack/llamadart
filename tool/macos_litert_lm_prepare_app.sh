@@ -47,7 +47,6 @@ required_libraries() {
         "libGemmaModelConstraintProvider.dylib" \
         "libLiteRt.dylib" \
         "libLiteRtLm.dylib" \
-        "libLiteRtMetalAccelerator.dylib" \
         "libLiteRtWebGpuAccelerator.dylib" \
         "libwebgpu_dawn.dylib"
       ;;
@@ -112,8 +111,8 @@ resolve_litert_dir() {
   fi
 
   local candidates=(
-    "$ROOT_DIR/.dart_tool/llamadart/litert_lm/0.19.1-2/macos_$LITERT_ARCH"
-    "$ROOT_DIR/.dart_tool/llamadart/litert_lm/0.19.1-2/macos/$LITERT_ARCH"
+    "$ROOT_DIR/.dart_tool/llamadart/litert_lm/0.19.1-3/macos_$LITERT_ARCH"
+    "$ROOT_DIR/.dart_tool/llamadart/litert_lm/0.19.1-3/macos/$LITERT_ARCH"
   )
   local candidate
   for candidate in "${candidates[@]}"; do

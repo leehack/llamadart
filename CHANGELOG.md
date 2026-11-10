@@ -3,6 +3,8 @@ Releases before 0.10.0 are in the
 
 ## Unreleased
 
+- Stop shipping the unused LiteRT-LM Metal accelerator on iOS and macOS: native LiteRT-LM moves to `v0.19.1-3`, whose `LiteRtLm` has its GPU accelerator built in, so GPU generation is unchanged while the macOS hook bundle drops 8.7 MB and iOS apps 8.1 MB, and the iOS LiteRT-LM frameworks no longer use the User Defaults required-reason API ([#1798](https://github.com/leehack/llamadart/issues/1798)).
+
 ## 0.19.4
 
 - Keep the default WebGPU bridge assets at `v0.1.83` (unchanged from 0.19.3).
