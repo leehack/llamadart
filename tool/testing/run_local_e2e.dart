@@ -1804,6 +1804,30 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
       ],
     ),
     LocalE2eScenario(
+      name: 'litert-lm-web-truncation',
+      group: LocalE2eScenarioGroup.webSmoke,
+      description:
+          'Compare Web token-limit reports and automatic tool loops with the pinned JS runtime token counts using an existing local model.',
+      requiresDevice: false,
+      stepsBuilder: (context) => [
+        LocalE2eCommandStep(
+          workingDirectory: context.projectRoot,
+          executable: context.python,
+          arguments: [
+            'tool/testing/litert_text_history_web_e2e.py',
+            '--model-path',
+            context.modelPath!,
+            '--backend',
+            context.backend,
+            '--suite',
+            'truncation',
+          ],
+          description:
+              'LiteRT Web maxTokens boundary, context fill and automatic tool loops against direct-runtime token counts (local port 5198)',
+        ),
+      ],
+    ),
+    LocalE2eScenario(
       name: 'litert-lm-multimodal-embedding',
       group: LocalE2eScenarioGroup.dartLocalOnly,
       description:
@@ -2886,6 +2910,7 @@ Future<LocalE2eResult> runLocalE2e(
   if (const [
         'litert-lm-web-text-history',
         'litert-lm-web-tool-calling',
+        'litert-lm-web-truncation',
       ].contains(scenario.name) &&
       !const ['cpu', 'gpu'].contains(parsed.backend)) {
     return LocalE2eResult(
@@ -3165,6 +3190,7 @@ Future<LocalE2eResult> runLocalE2e(
           scenario.name == 'litert-lm-multimodal-embedding' ||
           scenario.name == 'litert-lm-web-text-history' ||
           scenario.name == 'litert-lm-web-tool-calling' ||
+          scenario.name == 'litert-lm-web-truncation' ||
           scenario.name == 'litert-lm-chat-features-smoke' ||
           scenario.name == 'qwen3-litert-cpu-unicode' ||
           scenario.name == 'native-prompt-cancel' ||

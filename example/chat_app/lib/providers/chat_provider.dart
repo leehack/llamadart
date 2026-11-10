@@ -6,6 +6,7 @@ import 'dart:ui' as ui;
 import 'package:dio/dio.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
+import 'package:llamadart/backend.dart';
 import 'package:llamadart/llamadart.dart';
 import 'package:path/path.dart' as p;
 
@@ -2062,6 +2063,7 @@ class ChatProvider extends ChangeNotifier {
     var hasAudioPartsInTurn = false;
     var isCpuMultimodalTurn = false;
     var pendingToolCalls = const <LlamaToolCallContent>[];
+    var toolCallsCutOff = false;
     var accountingApplied = false;
 
     try {
@@ -2261,7 +2263,12 @@ class ChatProvider extends ChangeNotifier {
           if (allowToolExecution &&
               toolsForTurn != null &&
               toolCalls.isNotEmpty) {
-            pendingToolCalls = toolCalls;
+            // A reply cut off at a token limit may hold only some of its calls.
+            if (generationResult.reachedTokenLimit) {
+              toolCallsCutOff = true;
+            } else {
+              pendingToolCalls = toolCalls;
+            }
           }
         }
       }
@@ -2284,6 +2291,11 @@ class ChatProvider extends ChangeNotifier {
       }
 
       _removeEmptyAssistantPlaceholder();
+      if (toolCallsCutOff) {
+        _addInfoMessage(
+          'The reply reached the token limit, so its tool calls were not run. Raise Max generated tokens and send it again.',
+        );
+      }
     } catch (e) {
       if (!_generationContextMatches(context)) {
         return;
@@ -4449,10 +4461,17 @@ class ChatProvider extends ChangeNotifier {
   }
 
   void _updateToolTemplateSupport(Map<String, String> metadata) {
-    // This app runs the model's calls automatically, which needs the
-    // truncation report LiteRT-LM Web lacks (#919).
+    // This app runs the model's calls itself, so it needs a reply cut off at
+    // a token limit reported; LiteRT-LM Web reports it only on runtimes that
+    // pass its load probe (#919).
+    final backend = _chatService.engine.backend;
     final unreportedTruncation =
-        kIsWeb && _engineCapabilities.runtime == LlamaRuntime.liteRtLm;
+        kIsWeb &&
+        _engineCapabilities.runtime == LlamaRuntime.liteRtLm &&
+        (backend is! BackendGenerationLimitSupport ||
+            (backend as BackendGenerationLimitSupport)
+                    .generationLimitUnsupportedReason !=
+                null);
     if (!_engineCapabilities.supportsToolCalling || unreportedTruncation) {
       _detectedChatFormat = ChatFormat.contentOnly;
       _templateSupportsTools = false;

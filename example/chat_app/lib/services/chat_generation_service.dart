@@ -26,6 +26,9 @@ class GenerationStreamResult {
   final int elapsedMs;
   final int decodeElapsedMs;
 
+  /// Whether the reply ended at a token limit (finish reason `length`).
+  final bool reachedTokenLimit;
+
   const GenerationStreamResult({
     required this.fullResponse,
     required this.fullThinking,
@@ -33,6 +36,7 @@ class GenerationStreamResult {
     required this.firstTokenLatencyMs,
     required this.elapsedMs,
     required this.decodeElapsedMs,
+    this.reachedTokenLimit = false,
   });
 }
 
@@ -113,6 +117,7 @@ class ChatGenerationService {
     var cleanTarget = '';
     var generatedTokens = 0;
     var sawFirstToken = false;
+    var reachedTokenLimit = false;
     int? firstTokenLatencyMs;
 
     final effectiveNotifyIntervalMs = uiNotifyIntervalMs <= 0
@@ -252,6 +257,9 @@ class ChatGenerationService {
 
         final content = chunk.text;
         final thinking = thinkingEnabled ? chunk.thinking : '';
+        if (chunk.choices.firstOrNull?.finishReason == 'length') {
+          reachedTokenLimit = true;
+        }
 
         if (!sawFirstToken &&
             (content.isNotEmpty ||
@@ -344,6 +352,7 @@ class ChatGenerationService {
       firstTokenLatencyMs: firstTokenLatencyMs,
       elapsedMs: streamElapsedMs,
       decodeElapsedMs: decodeElapsedMs,
+      reachedTokenLimit: reachedTokenLimit,
     );
   }
 

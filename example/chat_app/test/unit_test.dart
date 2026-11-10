@@ -523,8 +523,8 @@ void main() {
       },
     );
 
-    test('loadModel keeps tools off for LiteRT-LM Web tool calling, which '
-        'reports no truncation', () async {
+    test('loadModel turns tools on for LiteRT-LM Web tool calling once its '
+        'runtime reports truncation', () async {
       final initialSettings = const ChatSettings(
         modelPath: 'https://example.com/gemma-4-web.litertlm',
         toolsEnabled: true,
@@ -534,9 +534,9 @@ void main() {
           engine:
               _MetadataEngine(const {
                   'general.architecture': 'litert-lm',
-                  'tokenizer.chat_template':
-                      '{% for message in messages %}{% if loop.last %}{{ message["content"] }}{% endif %}{% endfor %}',
-                })
+                  'llamadart.chat_template.parsing':
+                      '<tool_call>{% for message in messages %}{{ message["content"] }}{% endfor %}',
+                }, backend: _LimitReportingBackend(null))
                 ..loadedCapabilities = const LlamaEngineCapabilities(
                   isSupported: true,
                   runtime: LlamaRuntime.liteRtLm,
@@ -552,17 +552,54 @@ void main() {
 
       await provider.loadModel();
 
-      expect(provider.templateSupportsTools, isFalse);
-      expect(provider.settings.toolsEnabled, isFalse);
-      expect(
-        provider.messages.map((message) => message.text),
-        contains(
-          kIsWeb
-              ? contains('runs tool calls automatically')
-              : contains('template is content-only'),
-        ),
-      );
+      expect(provider.templateSupportsTools, isTrue);
+      expect(provider.settings.toolsEnabled, isTrue);
     });
+
+    for (final (name, backend) in [
+      ('has no truncation report', MockLlamaBackend()),
+      ('reports no truncation', _LimitReportingBackend('No token counts.')),
+    ]) {
+      test('loadModel keeps tools off on the Web for LiteRT-LM tool calling '
+          'whose runtime $name', () async {
+        final initialSettings = const ChatSettings(
+          modelPath: 'https://example.com/gemma-4-web.litertlm',
+          toolsEnabled: true,
+        );
+        final provider = ChatProvider(
+          chatService: MockChatService(
+            engine:
+                _MetadataEngine(const {
+                    'general.architecture': 'litert-lm',
+                    'llamadart.chat_template.parsing':
+                        '<tool_call>{% for message in messages %}{{ message["content"] }}{% endfor %}',
+                  }, backend: backend)
+                  ..loadedCapabilities = const LlamaEngineCapabilities(
+                    isSupported: true,
+                    runtime: LlamaRuntime.liteRtLm,
+                    supportsMultiTurnChat: true,
+                    supportsToolCalling: true,
+                  ),
+          ),
+          settingsService: MockSettingsService()..settings = initialSettings,
+          enableWebModelPrefetch: false,
+          initialSettings: initialSettings,
+        );
+        addTearDown(provider.dispose);
+
+        await provider.loadModel();
+
+        // Native LiteRT-LM keeps tools on.
+        expect(provider.templateSupportsTools, !kIsWeb);
+        expect(provider.settings.toolsEnabled, !kIsWeb);
+        if (kIsWeb) {
+          expect(
+            provider.messages.map((message) => message.text),
+            contains(contains('runs tool calls automatically')),
+          );
+        }
+      });
+    }
 
     test(
       'loadModel detects tool support from the LiteRT-LM parsing template',
@@ -601,7 +638,7 @@ void main() {
         expect(provider.templateSupportsTools, isTrue);
         expect(provider.settings.toolsEnabled, isTrue);
       },
-      // Native LiteRT-LM: on the Web the app keeps tools off (#919).
+      // On the Web the app needs the runtime's truncation report (#919).
       testOn: 'vm',
     );
 
@@ -1622,6 +1659,34 @@ void main() {
         equals(1),
       );
       expect(singlePassProvider.messages.last.text, 'It is sunny in Seoul.');
+    });
+
+    test('does not run the tool calls of a reply cut off at the token '
+        'limit', () async {
+      final engine = _SinglePassToolCallEngine(callFinishReason: 'length');
+      final cutOffProvider = ChatProvider(
+        chatService: MockChatService(engine: engine),
+        settingsService: mockSettingsService,
+        initialSettings: const ChatSettings(modelPath: 'test_model.gguf'),
+      );
+
+      await cutOffProvider.loadModel();
+      cutOffProvider.updateToolsEnabled(true);
+      cutOffProvider.resetToolDeclarations();
+
+      await cutOffProvider.sendMessage('what time is it?');
+
+      expect(engine.createCallCount, 1);
+      expect(
+        cutOffProvider.messages.expand(
+          (m) => m.parts?.whereType<LlamaToolResultContent>() ?? const [],
+        ),
+        isEmpty,
+      );
+      expect(
+        cutOffProvider.messages.last.text,
+        contains('reached the token limit, so its tool calls were not run'),
+      );
     });
 
     test(
@@ -2676,7 +2741,7 @@ void main() {
 class _MetadataEngine extends MockLlamaEngine {
   final Map<String, String> metadata;
 
-  _MetadataEngine(this.metadata);
+  _MetadataEngine(this.metadata, {super.backend});
 
   @override
   Future<Map<String, String>> getMetadata() async => metadata;
@@ -2818,6 +2883,10 @@ class _ToolCaptureEngine extends MockLlamaEngine {
 }
 
 class _SinglePassToolCallEngine extends MockLlamaEngine {
+  _SinglePassToolCallEngine({this.callFinishReason});
+
+  /// The finish reason of the reply that carries the call.
+  final String? callFinishReason;
   int createCallCount = 0;
 
   @override
@@ -2872,10 +2941,20 @@ class _SinglePassToolCallEngine extends MockLlamaEngine {
               ),
             ],
           ),
+          finishReason: callFinishReason,
         ),
       ],
     );
   }
+}
+
+/// A backend whose runtime reports, or cannot report, token-limit truncation.
+class _LimitReportingBackend extends MockLlamaBackend
+    implements BackendGenerationLimitSupport {
+  _LimitReportingBackend(this.generationLimitUnsupportedReason);
+
+  @override
+  final String? generationLimitUnsupportedReason;
 }
 
 class _ThinkingControlCaptureEngine extends MockLlamaEngine {
