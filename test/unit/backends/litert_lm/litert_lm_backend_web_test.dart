@@ -1616,6 +1616,29 @@ void main() {
       }
     });
 
+    test('the context size is the executor limit its probe found, else the '
+        'requested size', () async {
+      for (final (executorTokens, expected) in <(int?, int)>[
+        (4096, 4096),
+        (null, 65536),
+      ]) {
+        _installCountingFakeEngine(
+          counts: (turn, budget) => turn == 0
+              ? (decoded: budget, total: 20)
+              : (decoded: 100, total: 200),
+          maxNumTokens: 65536,
+          executorTokens: executorTokens,
+        );
+        final engine = LlamaEngine(spi.LlamaBackend.withTextHistory());
+        await engine.loadModelFromUrl(
+          'model.litertlm',
+          modelParams: const ModelParams(contextSize: 65536),
+        );
+        expect(await engine.getContextSize(), expected);
+        await engine.dispose();
+      }
+    });
+
     test('an automatic tool loop runs a call from a finished reply and '
         'answers from its result', () async {
       final ran = <Object?>[];

@@ -3,6 +3,8 @@ Releases before 0.10.0 are in the
 
 ## Unreleased
 
+- `engine.getContextSize()` on LiteRT-LM Web `withTextHistory()` loads returns the context size the runtime's executor enforces when its load probe finds one below the requested size, such as Qwen3 0.6B's 4096 on WASM CPU, instead of the requested `ModelParams.contextSize` ([#1861](https://github.com/leehack/llamadart/issues/1861)).
+
 ## 0.19.4
 
 - Keep the default WebGPU bridge assets at `v0.1.83` (unchanged from 0.19.3).
