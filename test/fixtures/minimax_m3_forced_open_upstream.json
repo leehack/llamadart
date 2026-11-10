@@ -228,6 +228,82 @@
       }
     },
     {
+      "name": "end-then-start-then-call",
+      "output": "</mm:think><mm:think>]<]minimax[>[<tool_call>\n]<]minimax[>[<invoke name=\"weather\">]<]minimax[>[<city>Paris]<]minimax[>[</city>]<]minimax[>[</invoke>\n]<]minimax[>[</tool_call>",
+      "auto": {
+        "content": "<mm:think>",
+        "reasoning_content": "",
+        "tool_calls": [
+          {
+            "name": "weather",
+            "arguments": "{\"city\":\"Paris\"}"
+          }
+        ]
+      },
+      "none": {
+        "content": "<mm:think>]<]minimax[>[<tool_call>\n]<]minimax[>[<invoke name=\"weather\">]<]minimax[>[<city>Paris]<]minimax[>[</city>]<]minimax[>[</invoke>\n]<]minimax[>[</tool_call>",
+        "reasoning_content": "",
+        "tool_calls": []
+      }
+    },
+    {
+      "name": "thought-end-start-then-call",
+      "output": "a</mm:think><mm:think>]<]minimax[>[<tool_call>\n]<]minimax[>[<invoke name=\"weather\">]<]minimax[>[<city>Paris]<]minimax[>[</city>]<]minimax[>[</invoke>\n]<]minimax[>[</tool_call>",
+      "auto": {
+        "content": "<mm:think>",
+        "reasoning_content": "a",
+        "tool_calls": [
+          {
+            "name": "weather",
+            "arguments": "{\"city\":\"Paris\"}"
+          }
+        ]
+      },
+      "none": {
+        "content": "<mm:think>]<]minimax[>[<tool_call>\n]<]minimax[>[<invoke name=\"weather\">]<]minimax[>[<city>Paris]<]minimax[>[</city>]<]minimax[>[</invoke>\n]<]minimax[>[</tool_call>",
+        "reasoning_content": "a",
+        "tool_calls": []
+      }
+    },
+    {
+      "name": "repeated-end-then-call",
+      "output": "</mm:think></mm:think>]<]minimax[>[<tool_call>\n]<]minimax[>[<invoke name=\"weather\">]<]minimax[>[<city>Paris]<]minimax[>[</city>]<]minimax[>[</invoke>\n]<]minimax[>[</tool_call>",
+      "auto": {
+        "content": "</mm:think>",
+        "reasoning_content": "",
+        "tool_calls": [
+          {
+            "name": "weather",
+            "arguments": "{\"city\":\"Paris\"}"
+          }
+        ]
+      },
+      "none": {
+        "content": "</mm:think>]<]minimax[>[<tool_call>\n]<]minimax[>[<invoke name=\"weather\">]<]minimax[>[<city>Paris]<]minimax[>[</city>]<]minimax[>[</invoke>\n]<]minimax[>[</tool_call>",
+        "reasoning_content": "",
+        "tool_calls": []
+      }
+    },
+    {
+      "name": "thought-text-start-then-call",
+      "output": "a</mm:think>x<mm:think>]<]minimax[>[<tool_call>\n]<]minimax[>[<invoke name=\"weather\">]<]minimax[>[<city>Paris]<]minimax[>[</city>]<]minimax[>[</invoke>\n]<]minimax[>[</tool_call>",
+      "auto": {
+        "content": "x<mm:think>",
+        "reasoning_content": "a",
+        "tool_calls": [
+          {
+            "name": "weather",
+            "arguments": "{\"city\":\"Paris\"}"
+          }
+        ]
+      },
+      "none": {
+        "content": "x<mm:think>]<]minimax[>[<tool_call>\n]<]minimax[>[<invoke name=\"weather\">]<]minimax[>[<city>Paris]<]minimax[>[</city>]<]minimax[>[</invoke>\n]<]minimax[>[</tool_call>",
+        "reasoning_content": "a",
+        "tool_calls": []
+      }
+    },
+    {
       "name": "partial-unended-thought-tag-prefix",
       "output": "a</mm:th",
       "partial": true,
@@ -238,6 +314,36 @@
       },
       "none": {
         "content": "",
+        "reasoning_content": "a",
+        "tool_calls": []
+      }
+    },
+    {
+      "name": "partial-content-start-prefix",
+      "output": "a</mm:think>x<mm:th",
+      "partial": true,
+      "auto": {
+        "content": "x<mm:th",
+        "reasoning_content": "a",
+        "tool_calls": []
+      },
+      "none": {
+        "content": "x<mm:th",
+        "reasoning_content": "a",
+        "tool_calls": []
+      }
+    },
+    {
+      "name": "partial-content-end-prefix",
+      "output": "a</mm:think>x</mm:th",
+      "partial": true,
+      "auto": {
+        "content": "x</mm:th",
+        "reasoning_content": "a",
+        "tool_calls": []
+      },
+      "none": {
+        "content": "x</mm:th",
         "reasoning_content": "a",
         "tool_calls": []
       }
