@@ -1283,7 +1283,7 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
     tier: 'targeted',
     mode: 'local-only',
     covers:
-        'Web finish reason length at and below the maxTokens boundary and for a filled context, matching pinned JS runtime token counts; stop above the boundary; automatic tool loop completed and truncated without running the tool',
+        'Web finish reason length at and below the maxTokens boundary and for a filled context, including a requested context above a fixed KV cache, matching pinned JS runtime token counts; stop above the boundary; automatic tool loop completed and truncated without running the tool',
     command:
         'dart run tool/testing/run_local_e2e.dart --scenario litert-lm-web-truncation --model-path <existing-model.litertlm> --backend cpu',
     useWhen:

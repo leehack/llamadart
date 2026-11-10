@@ -1218,7 +1218,11 @@ natural reply's decode steps `n` and replays it at budgets `n + 1`, `n`,
 `n - 1` and `n - 2`, then fills a 1024-token context. The adapter must report
 `stop` above `n`, `length`/`maxTokens` at and below it, `length`/`contextSize`
 for the filled context, complete an automatic `get_weather` loop, and stop a
-3-token loop as `truncated` without running the tool. Dry-run before
+3-token loop as `truncated` without running the tool. A last phase requests a
+65536-token context, above a fixed KV cache such as Qwen3 0.6B's 4096 on WASM
+CPU: the runtime's own over-long-prompt rejection names the executor's limit,
+and the adapter must report the long reply as `length` at that limit or at
+`maxTokens` 8192. Dry-run before
 execution:
 
 ```bash

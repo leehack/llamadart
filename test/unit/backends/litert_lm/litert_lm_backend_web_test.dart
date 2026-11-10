@@ -1439,6 +1439,13 @@ void main() {
         ),
       ),
       (
+        'a limit probe whose send throws',
+        () => _installCountingFakeEngine(
+          counts: (_, budget) => (decoded: budget, total: 20),
+          throwOnSend: (prompt) => prompt.length > 100,
+        ),
+      ),
+      (
         'a probe turn that fills the executor context',
         () => _installCountingFakeEngine(
           counts: (_, _) => (decoded: 1, total: 20),
@@ -1481,6 +1488,18 @@ void main() {
         expect(fake.prompts.length, turns + 1);
       });
     }
+
+    test('a runtime without the count API gets no probe turn', () async {
+      final fake = _installCountingFakeEngine(
+        counts: (_, budget) => (decoded: budget, total: 20),
+        countsApi: false,
+      );
+      final backend = LiteRtLmBackend.withTextHistory();
+      addTearDown(backend.dispose);
+      await backend.modelLoadFromUrl('model.litertlm', const ModelParams());
+      expect(fake.prompts, isEmpty);
+      expect(fake.rejectedLengths, isEmpty);
+    });
 
     for (final (name, factory) in [
       ('LlamaBackend.withTextHistory()', spi.LlamaBackend.withTextHistory),
@@ -4356,6 +4375,7 @@ _CountingFake _installCountingFakeEngine({
   int? maxNumTokens = 4096,
   int? executorTokens,
   String? Function(String prompt)? reject,
+  bool Function(String prompt)? throwOnSend,
 }) {
   // Each character is one token; the executor enforces [executorTokens],
   // which a fixed KV cache can hold below the [maxNumTokens] settings report.
@@ -4428,6 +4448,11 @@ _CountingFake _installCountingFakeEngine({
             conversation.setProperty(
               'sendMessageStreaming'.toJS,
               ((JSAny message) {
+                if (message.isA<JSString>() &&
+                    (throwOnSend?.call((message as JSString).toDart) ??
+                        false)) {
+                  throw StateError('send failed');
+                }
                 final error = message.isA<JSString>()
                     ? fake.reject((message as JSString).toDart)
                     : null;

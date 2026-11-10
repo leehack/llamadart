@@ -609,11 +609,14 @@ LiteRT-LM Web `@litert-lm/core@0.19.0` reports no cause, so
 `LlamaBackend.withTextHistory()` (or `LiteRtLmBackend.withTextHistory()`)
 reads the runtime's token counts instead
 ([#919](https://github.com/leehack/llamadart/issues/919)). The load enables
-the runtime's benchmark record and probes it with a one-token turn. The
-runtime ends a turn at an end-of-turn token, when its decode steps reach
-`maxTokens`, or when the conversation fills the context, so a turn with fewer
-decode steps than `maxTokens` and fewer tokens than the context size ended
-normally; any other turn ends with `length`. The end-of-turn token counts as a
+the runtime's benchmark record, probes it with a one-token turn, and reads
+the context size the runtime enforces from its rejection of an over-long
+prompt: a model with a fixed KV cache can hold fewer tokens than
+`contextSize`, which the runtime does not report otherwise. The runtime ends
+a turn at an end-of-turn token, when its decode steps reach `maxTokens`, or
+when the conversation fills that context, so a turn with fewer decode steps
+than `maxTokens` and fewer tokens than that context ended normally; any other
+turn ends with `length`. The end-of-turn token counts as a
 decode step, so a reply whose last token lands exactly on `maxTokens` is also
 reported as `length` and stops an automatic loop as `truncated`: give replies
 headroom.
