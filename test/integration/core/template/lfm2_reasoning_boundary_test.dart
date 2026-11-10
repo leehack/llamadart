@@ -143,13 +143,15 @@ void main() {
       cities: <String>[],
     ),
     (
-      name: 'several thoughts and outside siblings',
+      // After a prompt that opens no thought, llama.cpp takes a thought only
+      // at the start of the reply; the calls in these stay inert text.
+      name: 'thoughts after the reply start and outside siblings',
       raw:
           'Before$_outer<think>A $_inner</think> '
           '<think>B $_inner</think>$_outer After',
       forced: false,
-      content: 'Before  After',
-      reasoning: 'A $_inner\nB $_inner',
+      content: 'Before<think>A $_inner</think> <think>B $_inner</think> After',
+      reasoning: null,
       cities: ['Rome', 'Rome'],
     ),
     (
@@ -203,7 +205,7 @@ void main() {
             cancelled: () => ending == 'cancel',
           ).collect();
           expect(completion.text, scenario.content, reason: '$ending/$tokens');
-          expect(completion.thinking, scenario.reasoning);
+          expect(completion.thinking, scenario.reasoning ?? '');
           expect(
             completion.toolCalls.map((call) => call.arguments['city']),
             ending == 'length' ? isEmpty : scenario.cities,

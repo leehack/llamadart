@@ -64,6 +64,15 @@ const Map<String, String> _pinnedCaps = <String, String>{
   'test/fixtures/llama_cpp_templates/NousResearch-Hermes-2-Pro-Llama-3-8B-tool_use.jinja':
       '11111001',
   'test/fixtures/llama_cpp_templates/Qwen-QwQ-32B.jinja': '11111011',
+  // The #1865 templates are pinned from Dart detection, without a server probe.
+  'test/fixtures/llama_cpp_templates/deepseek-ai-DeepSeek-V3.2.jinja':
+      '11111011',
+  'test/fixtures/llama_cpp_templates/deepseek-ai-DeepSeek-V4.jinja': '11111011',
+  'test/fixtures/llama_cpp_templates/ibm-granite-granite-3.3-2B-Instruct.jinja':
+      '10101010',
+  'test/fixtures/llama_cpp_templates/mistralai-Mistral-Nemo-Instruct-2407.jinja':
+      '11111001',
+  'test/fixtures/llama_cpp_templates/poolside-Laguna-XS.2.jinja': '11111011',
   'test/fixtures/llama_cpp_templates/deepseek-ai-DeepSeek-R1-Distill-Qwen-32B.jinja':
       '11011011',
   'test/fixtures/llama_cpp_templates/deepseek-ai-DeepSeek-V3.1.jinja':

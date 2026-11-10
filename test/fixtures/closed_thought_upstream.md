@@ -58,3 +58,19 @@ result for every case. `upstream_partial` is again `common_chat_peg_parse` with
 `is_partial = true`. The Hermes 2 Pro and Qwen3-Coder templates have no
 `thought` case: with no reasoning in the template, llama.cpp keeps even a
 leading thought as content, which llamadart does not.
+
+For issue #1865, `no_thought_templates` adds one vendored template per format
+that takes a thought only at the start of the reply after a prompt that opens
+no thought, recorded with the same probe at `cd959bae9`: Gemma 2 and SmolLM3
+(generic), Llama 3.2, GLM-4.6, Laguna XS.2, LFM2-8B-A1B, Kimi K2, DeepSeek R1
+Distill Qwen 32B, V3.2 and V4, Granite 3.3, MiniCPM5, Mistral Nemo, Apertus and
+Hunyuan V3 (`tencent-Hy3`), with thinking flags under which llamadart opens no
+thought. It also adds cases to the #1858 entries. Besides a thought that the
+reply did not open, the cases put a start tag after text and tags after a
+leading thought: llama.cpp takes a thought only where the reply starts with the
+start tag and keeps every other thinking tag as content. The `thought`,
+`*-after-thought*` cases appear only for templates whose reasoning llama.cpp
+parses; with the others it keeps even a leading thought as content, which
+llamadart does not. Two differences outside #1865 are left out: Kimi K2 with
+the tool takes no thought after leading whitespace, and LFM2's partial parse
+drops a trailing partial end tag after content.

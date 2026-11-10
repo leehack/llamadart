@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import '../models/chat/chat_template_result.dart';
 import 'template_internal_metadata.dart';
 
@@ -12,6 +14,10 @@ typedef ThinkingExtraction = ({String content, String? reasoning});
 /// If [startTag] is found without a matching [endTag], all text after
 /// [startTag] is treated as reasoning (model may still be thinking).
 ///
+/// Inside [withThoughtOnlyAtReplyStart] and without [thinkingForcedOpen],
+/// only a thought that starts [text] is reasoning, and the rest is content in
+/// which thinking tags are text.
+///
 /// Escaped `\n` and `\r` in reasoning become a newline and a carriage return
 /// unless [unescape] is false. The content keeps the whitespace at its ends
 /// unless [trimContent] is true.
@@ -23,13 +29,21 @@ ThinkingExtraction extractThinking(
   bool unescape = true,
   bool trimContent = true,
 }) {
-  final result = _extractThinking(
-    text,
-    startTag: startTag,
-    endTag: endTag,
-    thinkingForcedOpen: thinkingForcedOpen,
-    unescape: unescape,
-  );
+  final result =
+      !thinkingForcedOpen && Zone.current[_thoughtOnlyAtReplyStart] == true
+      ? _extractLeadingThought(
+          text,
+          startTag: startTag,
+          endTag: endTag,
+          unescape: unescape,
+        )
+      : _extractThinking(
+          text,
+          startTag: startTag,
+          endTag: endTag,
+          thinkingForcedOpen: thinkingForcedOpen,
+          unescape: unescape,
+        );
   // Trim only the overall content ends here, once. The recursion keeps content
   // raw so whitespace between stripped thinking blocks (e.g. the space in
   // "Hello<think>x</think> world<think>y</think>!") is preserved.
@@ -106,6 +120,39 @@ String withoutTrailingTagPrefix(String text, Iterable<String> tags) {
     }
   }
   return text.substring(0, text.length - cut);
+}
+
+final Object _thoughtOnlyAtReplyStart = Object();
+
+/// Runs [parse] with [extractThinking] taking a thought only where it starts
+/// the text, as llama.cpp parses a reply to a prompt that opens no thought.
+///
+/// Handlers extract thinking in many places and shapes, so the parse sets
+/// this once around them instead of threading it through each one.
+T withThoughtOnlyAtReplyStart<T>(T Function() parse) =>
+    runZoned(parse, zoneValues: {_thoughtOnlyAtReplyStart: true});
+
+/// Splits off the thought that starts [text], after ASCII whitespace, up to
+/// the first [endTag], or to the end when none follows.
+ThinkingExtraction _extractLeadingThought(
+  String text, {
+  required String startTag,
+  required String endTag,
+  required bool unescape,
+}) {
+  final rest = trimLeftAsciiSpace(text);
+  if (!rest.startsWith(startTag)) return (content: text, reasoning: null);
+  final thought = rest.substring(startTag.length);
+  final end = thought.indexOf(endTag);
+  var reasoning = end == -1 ? thought : thought.substring(0, end);
+  if (unescape) {
+    reasoning = reasoning.replaceAll(r'\n', '\n').replaceAll(r'\r', '\r');
+  }
+  reasoning = reasoning.trim();
+  return (
+    content: end == -1 ? '' : thought.substring(end + endTag.length),
+    reasoning: reasoning.isEmpty ? null : reasoning,
+  );
 }
 
 ThinkingExtraction _extractThinking(

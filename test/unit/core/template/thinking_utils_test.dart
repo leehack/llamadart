@@ -198,6 +198,69 @@ void main() {
     });
   });
 
+  group('withThoughtOnlyAtReplyStart', () {
+    ThinkingExtraction leading(
+      String text, {
+      bool thinkingForcedOpen = false,
+      String startTag = '<think>',
+      String endTag = '</think>',
+    }) => withThoughtOnlyAtReplyStart(
+      () => extractThinking(
+        text,
+        thinkingForcedOpen: thinkingForcedOpen,
+        startTag: startTag,
+        endTag: endTag,
+      ),
+    );
+
+    test('takes only a thought that starts the text', () {
+      for (final (text, content, reasoning) in const [
+        ('<think>Plan.</think>Answer.', 'Answer.', 'Plan.'),
+        (' \n<think> Plan. </think> A</think>B', 'A</think>B', 'Plan.'),
+        (
+          '<think>Plan.</think>A<think>X</think>C',
+          'A<think>X</think>C',
+          'Plan.',
+        ),
+        ('<think>Plan </thi', '', 'Plan </thi'),
+        ('<think></think>A</think>B', 'A</think>B', null),
+        ('Plan.</think>Answer.', 'Plan.</think>Answer.', null),
+        (
+          'Answer <think>X</think> more.',
+          'Answer <think>X</think> more.',
+          null,
+        ),
+        ('Answer <think>X', 'Answer <think>X', null),
+        ('\u00a0<think>X</think>Y', '<think>X</think>Y', null),
+      ]) {
+        final result = leading(text);
+        expect(result.content, content, reason: text);
+        expect(result.reasoning, reasoning, reason: text);
+      }
+    });
+
+    test('unescapes the thought and uses the given tags', () {
+      final result = leading(
+        r'<|inner_prefix|>a\nb<|inner_suffix|>c<|inner_suffix|>',
+        startTag: '<|inner_prefix|>',
+        endTag: '<|inner_suffix|>',
+      );
+      expect(result.reasoning, 'a\nb');
+      expect(result.content, 'c<|inner_suffix|>');
+    });
+
+    test('leaves a forced-open thought and other parses as they were', () {
+      expect(
+        leading('Plan.</think>A<think>X</think>C', thinkingForcedOpen: true),
+        (content: 'AC', reasoning: 'Plan.\nX'),
+      );
+      expect(extractThinking('Answer <think>X</think> more.'), (
+        content: 'Answer  more.',
+        reasoning: 'X',
+      ));
+    });
+  });
+
   group('endsUnopenedThought', () {
     test('is true for an end tag before any start tag', () {
       expect(endsUnopenedThought('Plan.</think>Answer.'), isTrue);

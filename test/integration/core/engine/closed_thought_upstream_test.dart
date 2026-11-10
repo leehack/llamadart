@@ -542,30 +542,43 @@ void main() {
         in thinkingFlag == null ? const [false, true] : [thinkingFlag]) {
       group('${templatePath.split('/').last}, thinking: $enableThinking', () {
         late LlamaChatTemplateResult rendered;
+        // Without tools, as `upstream_without_tools` was recorded, so a
+        // generic template renders content-only. Hermes 2 Pro needs tools to
+        // render, and keeps its render with them.
+        late LlamaChatTemplateResult renderedWithoutTools;
 
-        setUpAll(
-          () => rendered = ChatTemplateEngine.render(
-            templateSource: File(templatePath).readAsStringSync(),
-            messages: [
-              LlamaChatMessage.fromText(
-                role: LlamaChatRole.user,
-                text: _fixture['user_prompt'] as String,
-              ),
-            ],
-            metadata: const {},
-            tools: [_weatherTool],
-            chatTemplateKwargs: kwargs,
-            enableThinking: enableThinking,
-          ),
-        );
+        setUpAll(() {
+          LlamaChatTemplateResult render(List<ToolDefinition>? tools) =>
+              ChatTemplateEngine.render(
+                templateSource: File(templatePath).readAsStringSync(),
+                messages: [
+                  LlamaChatMessage.fromText(
+                    role: LlamaChatRole.user,
+                    text: _fixture['user_prompt'] as String,
+                  ),
+                ],
+                metadata: const {},
+                tools: tools,
+                chatTemplateKwargs: kwargs,
+                enableThinking: enableThinking,
+              );
+          rendered = render([_weatherTool]);
+          try {
+            renderedWithoutTools = render(null);
+          } on LlamaException {
+            renderedWithoutTools = rendered;
+          }
+        });
 
         test('leaves no thought open', () {
           expect(
             rendered.format,
             ChatFormat.values.byName(entry['format'] as String).index,
           );
-          expect(rendered.thinkingForcedOpen, isFalse);
-          expect(thoughtClosedForThinkingOffOf(rendered), isFalse);
+          for (final result in [rendered, renderedWithoutTools]) {
+            expect(result.thinkingForcedOpen, isFalse);
+            expect(thoughtClosedForThinkingOffOf(result), isFalse);
+          }
         });
 
         for (final c in (entry['cases'] as List).cast<Map<String, dynamic>>()) {
@@ -609,8 +622,9 @@ void main() {
               ]);
               final upstreamReasoning =
                   (upstream['reasoning_content'] as String).trim();
+              final render = withTools ? rendered : renderedWithoutTools;
               final parsed = parseRenderedOutput(
-                rendered.format,
+                render.format,
                 output,
                 parseToolCalls: withTools,
                 thoughtClosedForThinkingOff: false,
@@ -642,7 +656,7 @@ void main() {
               for (final tokens in _chunkings(output)) {
                 final deltas = (await ChatCompletionStreamParser.parse(
                   tokenStream: Stream.fromIterable(tokens),
-                  templateResult: rendered,
+                  templateResult: render,
                   parseToolCallsEnabled: withTools,
                   enableThinking: enableThinking,
                   modelName: 'test-model',
@@ -709,6 +723,59 @@ void main() {
       );
     }
   });
+
+  test(
+    'only formats with the trait take a thought only at the reply start',
+    () {
+      for (final registration in chatFormatRegistrations) {
+        final name = registration.format.name;
+        final index = registration.format.index;
+        final tags = ChatTemplateEngine.thinkingTagsFor(index);
+        final output = 'Answer ${tags.startTag}X${tags.endTag} more.';
+        final takesLeadingOnly =
+            registration.traits.takesThoughtOnlyAtReplyStart;
+        final ChatParseResult public;
+        try {
+          public = ChatTemplateEngine.parse(
+            index,
+            output,
+            parseToolCalls: false,
+          );
+        } on StateError {
+          // PEG formats parse only with the parser their render returns.
+          expect(takesLeadingOnly, isFalse, reason: name);
+          continue;
+        }
+        ChatParseResult rendered({bool thinkingForcedOpen = false}) =>
+            parseRenderedOutput(
+              index,
+              output,
+              parseToolCalls: false,
+              thinkingForcedOpen: thinkingForcedOpen,
+              thoughtClosedForThinkingOff: false,
+            );
+        if (takesLeadingOnly) {
+          expect(public.reasoningContent, 'X', reason: name);
+          expect(rendered().reasoningContent, isNull, reason: name);
+          expect(rendered().content, output, reason: name);
+        } else if (registration.format != ChatFormat.seedOss) {
+          expect(rendered().content, public.content, reason: name);
+          expect(rendered().reasoningContent, public.reasoningContent);
+        }
+        final forced = ChatTemplateEngine.parse(
+          index,
+          output,
+          parseToolCalls: false,
+          thinkingForcedOpen: true,
+        );
+        expect(
+          rendered(thinkingForcedOpen: true).reasoningContent,
+          forced.reasoningContent,
+          reason: name,
+        );
+      }
+    },
+  );
 
   // With thinking off, a handler closes a thought its template opened. The
   // stream then holds a reply's leading text where the parse may still end
