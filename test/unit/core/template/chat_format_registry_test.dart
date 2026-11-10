@@ -409,7 +409,7 @@ final Map<(String, String), String> _policyExceptions = {
   ): 'Gemma4 and KimiK3 channel frames require their parser even with tools disabled.',
   _exception(
     _stream,
-    'toolCallOpening == null && templateResult.format != ChatFormat.gemma4.index && templateResult.format != ChatFormat.minimaxM1.index && parsed.hasToolCalls && _isToolCallEnvelopeBuffer(fullOutput, startTag: startTag, endTag: endTag, thinkingForcedOpen: templateResult.thinkingForcedOpen, exactReplyStart: exactReplyStart)',
+    'toolCallOpening == null && templateResult.format != ChatFormat.gemma4.index && templateResult.format != ChatFormat.minimaxM1.index && parsed.hasToolCalls && _isToolCallEnvelopeBuffer(fullOutput, startTag: startTag, endTag: endTag, thinkingForcedOpen: templateResult.thinkingForcedOpen, exactReplyStart: exactReplyStart, thinkingTagsAreContent: verbatimForcedThought)',
   ): 'These two parsers own envelope handling; the shared fallback must not reinterpret it.',
   _exception(
     _peg,

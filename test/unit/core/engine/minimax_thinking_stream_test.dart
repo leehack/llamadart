@@ -180,6 +180,32 @@ void main() {
       });
     }
 
+    // Results recorded from llama.cpp cd959bae9 for a forced-open thought
+    // (test/fixtures/minimax_m3_forced_open_upstream.json).
+    for (final toolChoice in [ToolChoice.none, ToolChoice.auto]) {
+      for (final shape in const [
+        ('$_end$_end<mm:think>', '', '$_end<mm:think>'),
+        ('a$_end$_end<mm:think>b', 'a', '$_end<mm:think>b'),
+        ('a$_end<mm:think>b$_end', 'a', '<mm:think>b$_end'),
+      ]) {
+        test('a forced-open reply ${shape.$1} streams as llama.cpp parses it '
+            'at every split ($toolChoice)', () async {
+          final output = shape.$1;
+          final partitions = [
+            [output],
+            output.split(''),
+            for (var at = 1; at < output.length; at++)
+              [output.substring(0, at), output.substring(at)],
+          ];
+          for (final tokens in partitions) {
+            final chunks = await _parse(tokens, toolChoice: toolChoice);
+            expect(_thinking(chunks), shape.$2, reason: '$tokens');
+            expect(_content(chunks), shape.$3, reason: '$tokens');
+          }
+        });
+      }
+    }
+
     for (final toolChoice in [ToolChoice.auto, ToolChoice.required]) {
       test('an empty leading thought leaves a later unfinished thought as '
           'content before a call ($toolChoice)', () async {

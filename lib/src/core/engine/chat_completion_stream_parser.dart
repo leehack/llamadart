@@ -716,6 +716,7 @@ class ChatCompletionStreamParser {
           endTag: endTag,
           thinkingForcedOpen: templateResult.thinkingForcedOpen,
           exactReplyStart: exactReplyStart,
+          thinkingTagsAreContent: verbatimForcedThought,
         );
     final contentDelta = suppressFinalToolEnvelopeContent
         ? null
@@ -1050,18 +1051,24 @@ class ChatCompletionStreamParser {
     required String endTag,
     required bool thinkingForcedOpen,
     bool exactReplyStart = false,
+    bool thinkingTagsAreContent = false,
   }) {
     if (thinkingForcedOpen &&
         _containsForcedOpenXmlToolEnvelope(text, endTag: endTag)) {
       return true;
     }
 
-    final decisionText = _stripLeadingThinkingForToolDecision(
-      text,
-      startTag: startTag,
-      endTag: endTag,
-      exactReplyStart: exactReplyStart,
-    );
+    // The parse ends a verbatim forced-open thought at the first end tag and
+    // keeps every later thinking tag as content.
+    final thoughtEnd = thinkingTagsAreContent ? text.indexOf(endTag) : -1;
+    final decisionText = thoughtEnd >= 0
+        ? text.substring(thoughtEnd + endTag.length)
+        : _stripLeadingThinkingForToolDecision(
+            text,
+            startTag: startTag,
+            endTag: endTag,
+            exactReplyStart: exactReplyStart,
+          );
     if (decisionText == null) {
       return true;
     }
