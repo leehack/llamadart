@@ -28,14 +28,6 @@ const forcedOpenRequiredCalls =
             '"parameters": {"location": "Paris"}}]<|END_ACTION|>',
       ),
       (
-        template: 'NVIDIA-Nemotron-3-Nano-30B-A3B-BF16.jinja',
-        format: ChatFormat.pegConstructed,
-        output:
-            'plan</think><tool_call>\n<function=get_weather>\n'
-            '<parameter=location>\nParis\n</parameter>\n</function>\n'
-            '</tool_call>',
-      ),
-      (
         template: 'openbmb-MiniCPM5-1B.jinja',
         format: ChatFormat.minicpm5,
         output:

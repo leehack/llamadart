@@ -576,8 +576,8 @@ void main() {
         final compact =
             '<$scope><function=get_weather><parameter=location>Paris'
             '</parameter></function></$scope>';
-        // As in llama.cpp, a Seed-OSS scope starts with a line break.
-        final isSeed = scope == 'seed:tool_call';
+        // As in llama.cpp, a scope starts with a line break, and a
+        // Qwen3-Coder call keeps the line breaks between its tags.
         for (final parallel in [true, false]) {
           final rendered = ChatTemplateEngine.render(
             templateSource: File(template).readAsStringSync(),
@@ -616,15 +616,12 @@ void main() {
             valid: [
               call('Paris'),
               '${call('Paris')}\n',
-              if (!isSeed) compact,
               if (parallel) ...repeated,
             ],
             invalid: [
-              if (isSeed) ...[
-                compact,
-                call('Paris').replaceFirst('>\n', '> '),
-                '${call('Paris')}\n${call('Rome').replaceFirst('>\n', '>')}',
-              ],
+              compact,
+              call('Paris').replaceFirst('>\n', '> '),
+              '${call('Paris')}\n${call('Rome').replaceFirst('>\n', '>')}',
               if (!parallel) ...repeated,
               '${call('Paris')}\nThen ${call('Rome')}',
               '${call('Paris')}\n${call('Rome', name: 'unknown')}',

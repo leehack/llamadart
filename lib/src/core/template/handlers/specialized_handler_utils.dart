@@ -235,6 +235,42 @@ String addUntilRules(List<String> rules, String name, String delimiter) {
   return name;
 }
 
+/// Adds rules accepting content up to and including the first [delimiter],
+/// as llama.cpp's `p.ac` emits them.
+String addThroughRules(List<String> rules, String name, String delimiter) {
+  final pattern = delimiter.runes
+      .map(String.fromCharCode)
+      .toList(growable: false);
+  final alphabet = <String>[];
+  for (final character in pattern) {
+    if (!alphabet.contains(character)) {
+      alphabet.add(character);
+    }
+  }
+  final fallback = '[^${alphabet.map(_escapeGbnfCharClass).join()}]';
+  String state(int index) => '$name-$index';
+
+  for (var index = 0; index < pattern.length; index++) {
+    final alternatives = <String>[];
+    for (final character in alphabet) {
+      final candidate = <String>[...pattern.take(index), character];
+      var next = candidate.length;
+      while (next > 0 &&
+          !_endsWithCharacters(candidate, pattern.take(next).toList())) {
+        next--;
+      }
+      final literal = ToolCallGrammarUtils.literal(character);
+      alternatives.add(
+        next == pattern.length ? literal : '$literal ${state(next)}',
+      );
+    }
+    alternatives.add('$fallback ${state(0)}');
+    rules.add('${state(index)} ::= ${alternatives.join(' | ')}');
+  }
+  rules.add('$name ::= ${state(0)}');
+  return name;
+}
+
 bool _endsWithCharacters(List<String> value, List<String> suffix) {
   if (suffix.length > value.length) {
     return false;
