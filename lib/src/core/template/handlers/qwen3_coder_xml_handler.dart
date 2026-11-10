@@ -1,5 +1,7 @@
 import 'package:dinja/dinja.dart';
 
+import '../../grammar/json_schema_converter.dart';
+
 import '../../models/chat/chat_message.dart';
 import '../../models/chat/chat_template_result.dart';
 import '../../models/inference/tool_choice.dart';
@@ -7,10 +9,10 @@ import '../../models/tools/tool_definition.dart';
 import '../chat_format.dart';
 import '../chat_parse_result.dart';
 import '../chat_template_handler.dart';
-import '../peg_parser_builder.dart';
+import '../tool_call_grammar_utils.dart';
+import 'specialized_handler_utils.dart';
 import '../template_internal_metadata.dart';
 import '../thinking_utils.dart';
-import '../tool_call_parsing_utils.dart';
 import '../tool_schema_utils.dart';
 import '../xml_tool_call_format.dart';
 
@@ -28,13 +30,6 @@ class Qwen3CoderXmlHandler extends ChatTemplateHandler
     '</function>',
     '<parameter=',
     '</parameter>',
-  ];
-
-  static const List<String> _nemotronV3PreservedTokens = <String>[
-    '<think>',
-    '</think>',
-    '<tool_call>',
-    '</tool_call>',
   ];
 
   @override
@@ -73,11 +68,9 @@ class Qwen3CoderXmlHandler extends ChatTemplateHandler
       },
     );
 
-    final isNemotronV3 = _isNemotronV3Template(templateSource);
     final toolChoice = metadata[internalToolChoiceMetadataKey];
     final parallelToolCalls =
         metadata[internalParallelToolCallsMetadataKey] == 'true';
-    final toolChoiceNone = toolChoice == ToolChoice.none.name;
     final toolChoiceRequired = toolChoice == ToolChoice.required.name;
     // llama.cpp takes no thought from a reply to a template without one, and
     // its first call may then leave out `<tool_call>`, as Qwen3-Coder does.
@@ -99,62 +92,26 @@ class Qwen3CoderXmlHandler extends ChatTemplateHandler
     }
 
     final hasTools = tools != null && tools.isNotEmpty;
-    final nemotronAllowToolCalls = isNemotronV3 && hasTools && !toolChoiceNone;
-    final bareFirstCall =
-        hasTools && toolChoiceRequired && !isNemotronV3 && !templateHasThought;
-    final parser = isNemotronV3
-        ? _buildNemotronV3Parser(
-            tools,
-            enableThinking: enableThinking,
-            thinkingForcedOpen: thinkingForcedOpen,
-            allowToolCalls: nemotronAllowToolCalls,
-            minToolCalls: toolChoiceRequired ? 1 : 0,
-            maxToolCalls: parallelToolCalls ? -1 : 1,
-          )
-        : null;
-    final resultFormat = isNemotronV3
-        ? ChatFormat.pegConstructed.index
-        : format.index;
-    final grammar = buildXmlToolCallGrammar(
-      tools,
-      XmlToolCallFormat.qwen3Coder,
-      parallelToolCalls: parallelToolCalls,
-      textBeforeCalls: toolChoiceRequired && !isNemotronV3,
-      bareFirstCall: bareFirstCall,
-    );
-
+    final bareFirstCall = hasTools && toolChoiceRequired && !templateHasThought;
     final rendered = LlamaChatTemplateResult(
       prompt: prompt,
-      format: resultFormat,
-      grammar: isNemotronV3
-          ? (nemotronAllowToolCalls
-                ? requiredGrammarAfterThought(
-                    grammar,
-                    metadata: metadata,
-                    thinkingForcedOpen: thinkingForcedOpen,
-                  )
-                : null)
-          : grammar,
-      grammarLazy: isNemotronV3
-          ? (nemotronAllowToolCalls && !toolChoiceRequired)
-          : hasTools,
+      format: format.index,
+      grammar: _callGrammar(
+        tools,
+        parallelToolCalls: parallelToolCalls,
+        textBeforeCalls: toolChoiceRequired,
+        bareFirstCall: bareFirstCall,
+      ),
+      grammarLazy: hasTools,
       thinkingForcedOpen: thinkingForcedOpen,
       additionalStops: getStops(
         hasTools: hasTools,
         enableThinking: enableThinking,
       ),
-      preservedTokens: isNemotronV3
-          ? _nemotronV3PreservedTokens
-          : preservedTokens,
-      grammarTriggers: (isNemotronV3 ? nemotronAllowToolCalls : hasTools)
-          ? [
-              GrammarTrigger(
-                type: 0,
-                value: isNemotronV3 ? '<tool_call>' : '<tool_call>\n<function=',
-              ),
-            ]
+      preservedTokens: preservedTokens,
+      grammarTriggers: hasTools
+          ? const [GrammarTrigger(type: 0, value: '<tool_call>')]
           : const [],
-      parser: parser,
     );
     return withBareFirstCall(
       withSingleToolCall(
@@ -168,143 +125,225 @@ class Qwen3CoderXmlHandler extends ChatTemplateHandler
     );
   }
 
-  bool _isNemotronV3Template(String templateSource) {
-    return templateSource.contains('truncate_history_thinking') &&
-        templateSource.contains('<tool_call>') &&
-        templateSource.contains('<function>') &&
-        templateSource.contains('<parameters>') &&
-        templateSource.contains('<think>');
-  }
-
-  String _buildNemotronV3Parser(
+  /// llama.cpp's Qwen3-Coder call grammar for [tools].
+  ///
+  /// Each call is in its own `<tool_call>` scope, only one without
+  /// [parallelToolCalls], and framed by line breaks as the parser reads it:
+  /// the required arguments first, in any order up to six of them, then the
+  /// optional ones, in any order and possibly repeated. A value that may be a
+  /// string is any text up to the first `\n</parameter>\n`; any other is
+  /// JSON for its schema. With [textBeforeCalls], text without a call opening
+  /// precedes the calls, and with [bareFirstCall], the first call may leave
+  /// out `<tool_call>\n` and a declared tool's `<function=…>` is a call
+  /// opening.
+  static String? _callGrammar(
     List<ToolDefinition>? tools, {
-    required bool enableThinking,
-    required bool thinkingForcedOpen,
-    required bool allowToolCalls,
-    required int minToolCalls,
-    required int maxToolCalls,
+    required bool parallelToolCalls,
+    bool textBeforeCalls = false,
+    bool bareFirstCall = false,
   }) {
-    final p = ChatPegConstructedBuilder();
-    final hasTools = tools != null && tools.isNotEmpty;
-
-    PegParser reasoning = p.eps();
-    if (enableThinking) {
-      final reasoningContent =
-          p.reasoning(p.until('</think>')) + (p.literal('</think>') | p.end());
-      if (thinkingForcedOpen) {
-        reasoning = reasoningContent;
-      }
+    if (tools == null || tools.isEmpty) {
+      return null;
+    }
+    const format = XmlToolCallFormat.qwen3Coder;
+    const valueEnd = '\n</parameter>\n';
+    final literal = ToolCallGrammarUtils.literal;
+    final converter = JsonSchemaConverter();
+    final rules = <String>[];
+    final valuesAtEnd = <String>{};
+    String atValueEnd(String rule) {
+      valuesAtEnd.add(rule);
+      return '$rule$_atValueEnd';
     }
 
-    if (!hasTools || !allowToolCalls) {
-      p.setRoot(reasoning + p.content(p.rest()));
-      return p.save();
-    }
-
-    PegParser toolChoice = p.choice(<PegParser>[]);
-    for (final tool in tools) {
-      final name = tool.name;
+    String? stringValue;
+    final toolRules = <String>[];
+    for (var toolIndex = 0; toolIndex < tools.length; toolIndex++) {
+      final tool = tools[toolIndex];
       final schema = tool.toJsonSchema();
-      final requiredParameters = _requiredParameters(schema);
-      final properties = _schemaProperties(schema);
-
-      PegParser args = p.eps();
-      for (final entry in properties.entries) {
-        final paramName = entry.key;
-        final paramSchema = entry.value;
-        final isRequired = requiredParameters.contains(paramName);
-        final ruleName = 'tool-$name-arg-$paramName';
-
-        final argOpen = p.toolArgOpen(
-          p.literal('<parameter=') +
-              p.toolArgName(p.literal(paramName)) +
-              p.literal('>\n'),
+      converter.resolveRefs(schema, schema);
+      final requiredNames = schemaRequired(schema);
+      final requiredRules = <String>[];
+      final optionalRules = <String>[];
+      var argumentIndex = 0;
+      for (final MapEntry(:key, :value) in schemaProperties(schema).entries) {
+        final argumentRule = 'tool-$toolIndex-arg-${argumentIndex++}';
+        final valueRule = _mayBeString(value)
+            ? stringValue ??= addThroughRules(rules, 'xml-arg-string', valueEnd)
+            : '${atValueEnd(converter.visit(value, '$argumentRule-schema'))} '
+                  '${literal(valueEnd)}';
+        rules.add(
+          '$argumentRule ::= ${literal('<parameter=$key>\n')} $valueRule',
         );
-        final argClose = p.toolArgClose(p.literal('</parameter>\n'));
-
-        final argValue = _resolvesToString(paramSchema)
-            ? p.toolArgStringValue(
-                    p.untilOneOf(<String>[
-                      '\n</parameter>',
-                      '\n<parameter=',
-                      '\n</function>',
-                    ]),
-                  ) +
-                  p.literal('\n')
-            : p.toolArgJsonValue(
-                p.schema(p.json(), '$ruleName-schema', paramSchema),
-              );
-
-        final argRule = p.rule(
-          ruleName,
-          argOpen + argValue + p.optional(argClose),
+        (requiredNames.contains(key) ? requiredRules : optionalRules).add(
+          argumentRule,
         );
-        args += p.repeat(argRule, isRequired ? 1 : 0, 1);
       }
-
-      final toolRule = p.rule(
-        'tool-$name',
-        p.toolOpen(
-              p.literal('<function=') +
-                  p.toolName(p.literal(name)) +
-                  p.literal('>\n'),
-            ) +
-            args +
-            p.toolClose(p.literal('</function>\n')),
+      final arguments = [
+        if (requiredRules.isNotEmpty)
+          _permuted(rules, 'tool-$toolIndex-args', requiredRules),
+        if (optionalRules.isNotEmpty) '(${optionalRules.join(' | ')})*',
+      ];
+      final toolRule = 'tool-$toolIndex';
+      rules.add(
+        '$toolRule ::= ${literal('<function=${tool.name}>\n')} '
+        '${arguments.isEmpty ? '' : '${arguments.join(' ')} '}'
+        '${literal('</function>\n')}',
       );
-      toolChoice |= toolRule;
+      toolRules.add(toolRule);
     }
 
-    final toolCall = p.rule(
-      'tool-call',
-      p.literal('<tool_call>\n') +
-          toolChoice +
-          p.literal('</tool_call>') +
-          p.space(),
-    );
-    final toolCalls = p.triggerRule(
-      'tool-call-root',
-      p.repeat(toolCall, minToolCalls, maxToolCalls),
-    );
-
-    p.setRoot(reasoning + p.content(p.until('<tool_call>')) + toolCalls);
-    return p.save();
-  }
-
-  Set<String> _requiredParameters(Map<String, dynamic> schema) {
-    final required = schema['required'];
-    if (required is! List) {
-      return const <String>{};
+    final body =
+        '(${toolRules.join(' | ')}) ${literal(format.scopeEnd)} tool-call-space';
+    final scopeStart = literal('${format.scopeStart}\n');
+    final firstCall = bareFirstCall ? 'tool-call-first' : 'tool-call';
+    final buffer = StringBuffer()
+      ..writeln(
+        'root ::= ${textBeforeCalls ? 'text-before-calls ' : ''}$firstCall'
+        '${parallelToolCalls ? ' tool-call*' : ''}',
+      )
+      ..writeln('tool-call ::= $scopeStart $body');
+    if (bareFirstCall) {
+      buffer.writeln('tool-call-first ::= $scopeStart? $body');
     }
-    return required.map((item) => item.toString()).toSet();
+    if (textBeforeCalls) {
+      ToolCallGrammarUtils.excludingRules('text-before-calls', [
+        format.scopeStart,
+        if (bareFirstCall)
+          for (final tool in tools) format.bareCallOpening(tool.name),
+      ]).forEach(buffer.writeln);
+    }
+    buffer.writeln(r'tool-call-space ::= | " " | "\n"{1,2} [ \t]{0,20}');
+    rules.forEach(buffer.writeln);
+    final jsonRules = converter.rules.entries.toList(growable: false)
+      ..sort((a, b) => a.key.compareTo(b.key));
+    for (final MapEntry(:key, :value) in jsonRules) {
+      buffer.writeln('$key ::= $value');
+    }
+    // llama.cpp's argument value ends where its JSON does, so
+    // `\n</parameter>\n` follows it directly, as the parser requires. Values
+    // nested inside it keep the converter's whitespace.
+    final written = <String>{};
+    void writeAtEnd(String rule) {
+      if (!written.add(rule)) return;
+      final body = _withoutTrailingSpace(converter.rules[rule]!, (last) {
+        if (!converter.rules.containsKey(last) || last == 'space') return null;
+        writeAtEnd(last);
+        return '$last$_atValueEnd';
+      });
+      buffer.writeln('$rule$_atValueEnd ::= $body');
+    }
+
+    valuesAtEnd.forEach(writeAtEnd);
+    return buffer.toString();
   }
 
-  Map<String, Map<String, dynamic>> _schemaProperties(
-    Map<String, dynamic> schema,
+  static const _atValueEnd = '-at-value-end';
+
+  /// [body] with the `space` that ends each of its alternatives removed, and
+  /// an alternative's last rule reference replaced by what [atEnd] returns for
+  /// it, unless null.
+  static String _withoutTrailingSpace(
+    String body,
+    String? Function(String rule) atEnd,
   ) {
-    final propertiesRaw = schema['properties'];
-    if (propertiesRaw is! Map) {
-      return const <String, Map<String, dynamic>>{};
-    }
-    final result = <String, Map<String, dynamic>>{};
-    for (final entry in propertiesRaw.entries) {
-      final value = ToolCallParsingUtils.coerceMap(entry.value);
-      if (value != null) {
-        result[entry.key.toString()] = value;
+    final alternatives = <String>[];
+    var depth = 0;
+    var start = 0;
+    for (var i = 0; i < body.length; i++) {
+      switch (body[i]) {
+        case '"':
+          i = _closing(body, i, '"');
+        case '[':
+          i = _closing(body, i, ']');
+        case '(':
+          depth++;
+        case ')':
+          depth--;
+        case '|' when depth == 0:
+          alternatives.add(body.substring(start, i));
+          start = i + 1;
       }
     }
-    return result;
+    alternatives.add(body.substring(start));
+    return alternatives
+        .map((alternative) {
+          final trimmed = alternative.trim();
+          if (trimmed.endsWith(' space')) {
+            return trimmed.substring(0, trimmed.length - ' space'.length);
+          }
+          final last = RegExp(r'[A-Za-z0-9-]+$').stringMatch(trimmed);
+          final replacement = last == null ? null : atEnd(last);
+          return replacement == null
+              ? trimmed
+              : '${trimmed.substring(0, trimmed.length - last!.length)}'
+                    '$replacement';
+        })
+        .join(' | ');
   }
 
-  bool _resolvesToString(Map<String, dynamic> schema) {
+  /// The index of the unescaped [close] that ends the literal or class
+  /// opening at [open] in [body].
+  static int _closing(String body, int open, String close) {
+    var i = open + 1;
+    while (i < body.length && body[i] != close) {
+      i += body[i] == r'\' ? 2 : 1;
+    }
+    return i;
+  }
+
+  /// [arguments] in any order, as llama.cpp's `permute`, which keeps the
+  /// declaration order beyond six of them.
+  static String _permuted(
+    List<String> rules,
+    String prefix,
+    List<String> arguments,
+  ) {
+    if (arguments.length == 1 || arguments.length > 6) {
+      return arguments.join(' ');
+    }
+    String remaining(int mask) {
+      final name = '$prefix-$mask';
+      if (rules.any((rule) => rule.startsWith('$name ::= '))) return name;
+      final alternatives = <String>[
+        for (var index = 0; index < arguments.length; index++)
+          if (mask & (1 << index) != 0)
+            mask == 1 << index
+                ? arguments[index]
+                : '${arguments[index]} ${remaining(mask & ~(1 << index))}',
+      ];
+      rules.add('$name ::= ${alternatives.join(' | ')}');
+      return name;
+    }
+
+    return remaining((1 << arguments.length) - 1);
+  }
+
+  /// Whether a value of [schema] may be a string, which llama.cpp's grammar
+  /// then takes as any text.
+  static bool _mayBeString(Map<String, dynamic> schema) {
     final type = schema['type'];
-    if (type is String) {
-      return type == 'string';
+    if (type is String) return type == 'string';
+    if (type is List) return type.contains('string');
+    if (schema.containsKey('const')) return schema['const'] is String;
+    final values = schema['enum'];
+    if (values is List) return values.any((value) => value is String);
+    for (final key in const ['anyOf', 'oneOf']) {
+      final children = schema[key];
+      if (children is List) {
+        return children.any(
+          (child) =>
+              child is! Map || _mayBeString(child.cast<String, dynamic>()),
+        );
+      }
     }
-    if (type is List) {
-      return type.length == 1 && type.first == 'string';
+    final children = schema['allOf'];
+    if (children is List) {
+      return children.every(
+        (child) => child is! Map || _mayBeString(child.cast<String, dynamic>()),
+      );
     }
-    return false;
+    return true;
   }
 
   @override
@@ -390,6 +429,6 @@ class Qwen3CoderXmlHandler extends ChatTemplateHandler
 
   @override
   String? buildGrammar(List<ToolDefinition>? tools) {
-    return buildXmlToolCallGrammar(tools, XmlToolCallFormat.qwen3Coder);
+    return _callGrammar(tools, parallelToolCalls: true);
   }
 }

@@ -1724,157 +1724,48 @@ void main() {
       expect(maxCallsFromParser(requiredSingle.parser!), equals(1));
     });
 
-    test('routes Nemotron v3 templates to PEG-constructed parser path', () {
+    // llama.cpp (`cd959bae9`) parses Nemotron-3-Nano with its Qwen3-Coder
+    // parser, where `<tool_call>` also ends a forced-open thought.
+    test('routes Nemotron v3 templates to the Qwen3-Coder XML parser', () {
       const template =
-          '{% set truncate_history_thinking = true %}'
-          '<tool_call><function><function=get_weather><parameters>'
-          '<parameter=city><think>';
-
-      final result = ChatTemplateEngine.render(
-        templateSource: template,
-        messages: grammarMessages,
-        metadata: const {},
-        tools: tools,
-        toolChoice: ToolChoice.auto,
-      );
-
-      expect(result.format, equals(ChatFormat.pegConstructed.index));
-      expect(result.parser, isNotNull);
-      expect(result.parser, isNotEmpty);
-      expect(result.grammarTriggers, hasLength(1));
-      expect(result.grammarTriggers.first.value, equals('<tool_call>'));
-
-      final parsed = ChatTemplateEngine.parse(
-        result.format,
-        'I am thinking\n'
-        '</think>\n'
-        '<tool_call>\n'
-        '<function=get_weather>\n'
-        '<parameter=city>\n'
-        'Seoul\n'
-        '</parameter>\n'
-        '</function>\n'
-        '</tool_call>',
-        parser: result.parser,
-        thinkingForcedOpen: result.thinkingForcedOpen,
-      );
-
-      expect(parsed.reasoningContent, equals('I am thinking'));
-      expect(parsed.toolCalls, hasLength(1));
-      expect(parsed.toolCalls.first.function?.name, equals('get_weather'));
-      expect(
-        parsed.toolCalls.first.function?.arguments,
-        equals('{"city":"Seoul"}'),
-      );
-    });
-
-    test('Nemotron v3 tool_choice none uses content-only parser behavior', () {
-      const template =
-          '{% set truncate_history_thinking = true %}'
-          '<tool_call><function><function=get_weather><parameters>'
-          '<parameter=city><think>';
-
-      final result = ChatTemplateEngine.render(
-        templateSource: template,
-        messages: grammarMessages,
-        metadata: const {},
-        tools: tools,
-        toolChoice: ToolChoice.none,
-      );
-
-      expect(result.format, equals(ChatFormat.pegConstructed.index));
-      expect(result.parser, isNotNull);
-      expect(result.parser, isNotEmpty);
-      expect(result.grammar, isNull);
-      expect(result.grammarLazy, isFalse);
-      expect(result.grammarTriggers, isEmpty);
-
-      final parsed = ChatTemplateEngine.parse(
-        result.format,
-        'I am thinking\n'
-        '</think>\n'
-        '<tool_call>\n'
-        '<function=get_weather>\n'
-        '<parameter=city>\n'
-        'Seoul\n'
-        '</parameter>\n'
-        '</function>\n'
-        '</tool_call>',
-        parser: result.parser,
-        thinkingForcedOpen: result.thinkingForcedOpen,
-      );
-
-      expect(parsed.reasoningContent, equals('I am thinking'));
-      expect(parsed.toolCalls, isEmpty);
-      expect(parsed.content, contains('<tool_call>'));
-      expect(parsed.content, contains('<function=get_weather>'));
-    });
-
-    test('Nemotron v3 parser respects required/parallel tool call bounds', () {
-      const template =
-          '{% set truncate_history_thinking = true %}'
-          '<tool_call><function><function=get_weather><parameters>'
-          '<parameter=city><think>';
-      const templateParallel =
           '{% set truncate_history_thinking = true %}'
           '<tool_call><function><function=get_weather><parameters>'
           '<parameter=city><think>'
-          '{% if tools %}{% for tool in tools %}'
-          '{{ tool["function"]["name"] }}'
-          '{% endfor %}{% endif %}';
+          '{% if add_generation_prompt %}<think>\n{% endif %}';
 
-      int maxCallsFromParser(String parser) {
-        final decoded = jsonDecode(parser) as Map<String, dynamic>;
-        final parsers = (decoded['parsers'] as List<dynamic>)
-            .cast<Map<String, dynamic>>();
-        final toolCallRoot = parsers.firstWhere(
-          (node) => node['type'] == 'rule' && node['name'] == 'tool-call-root',
+      for (final toolChoice in [ToolChoice.auto, ToolChoice.required]) {
+        final result = ChatTemplateEngine.render(
+          templateSource: template,
+          messages: grammarMessages,
+          metadata: const {},
+          tools: tools,
+          toolChoice: toolChoice,
         );
-        final repetition = parsers[(toolCallRoot['child'] as num).toInt()];
-        return (repetition['max_count'] as num).toInt();
-      }
 
-      int minCallsFromParser(String parser) {
-        final decoded = jsonDecode(parser) as Map<String, dynamic>;
-        final parsers = (decoded['parsers'] as List<dynamic>)
-            .cast<Map<String, dynamic>>();
-        final toolCallRoot = parsers.firstWhere(
-          (node) => node['type'] == 'rule' && node['name'] == 'tool-call-root',
+        expect(result.format, equals(ChatFormat.qwen3CoderXml.index));
+        expect(result.parser, isNull);
+        expect(result.thinkingForcedOpen, isTrue);
+        final parsed = ChatTemplateEngine.parseRendered(
+          result,
+          'I am thinking\n'
+          '<tool_call>\n'
+          '<function=get_weather>\n'
+          '<parameter=city>\n'
+          'Seoul\n'
+          '</parameter>\n'
+          '</function>\n'
+          '</tool_call>',
+          tools: tools,
         );
-        final repetition = parsers[(toolCallRoot['child'] as num).toInt()];
-        return (repetition['min_count'] as num).toInt();
+
+        expect(parsed.reasoningContent, equals('I am thinking'));
+        expect(parsed.toolCalls, hasLength(1));
+        expect(parsed.toolCalls.first.function?.name, equals('get_weather'));
+        expect(
+          parsed.toolCalls.first.function?.arguments,
+          equals('{"city":"Seoul"}'),
+        );
       }
-
-      final autoSingle = ChatTemplateEngine.render(
-        templateSource: template,
-        messages: grammarMessages,
-        metadata: const {},
-        tools: tools,
-        toolChoice: ToolChoice.auto,
-      );
-      expect(minCallsFromParser(autoSingle.parser!), equals(0));
-      expect(maxCallsFromParser(autoSingle.parser!), equals(1));
-
-      final autoParallel = ChatTemplateEngine.render(
-        templateSource: templateParallel,
-        messages: grammarMessages,
-        metadata: const {},
-        tools: tools,
-        toolChoice: ToolChoice.auto,
-        parallelToolCalls: true,
-      );
-      expect(minCallsFromParser(autoParallel.parser!), equals(0));
-      expect(maxCallsFromParser(autoParallel.parser!), equals(-1));
-
-      final requiredSingle = ChatTemplateEngine.render(
-        templateSource: template,
-        messages: grammarMessages,
-        metadata: const {},
-        tools: tools,
-        toolChoice: ToolChoice.required,
-      );
-      expect(minCallsFromParser(requiredSingle.parser!), equals(1));
-      expect(maxCallsFromParser(requiredSingle.parser!), equals(1));
     });
 
     test('keeps Ministral handler but strips grammar for tool_choice none', () {

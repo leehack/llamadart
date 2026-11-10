@@ -45,6 +45,20 @@ const qwen3CoderRequiredTemplates =
         enableThinking: false,
         bareFirstCall: false,
       ),
+      (
+        template:
+            'test/fixtures/llama_cpp_templates/'
+            'NVIDIA-Nemotron-3-Nano-30B-A3B-BF16.jinja',
+        enableThinking: true,
+        bareFirstCall: false,
+      ),
+      (
+        template:
+            'test/fixtures/llama_cpp_templates/'
+            'NVIDIA-Nemotron-3-Nano-30B-A3B-BF16.jinja',
+        enableThinking: false,
+        bareFirstCall: false,
+      ),
     ];
 
 /// Renders [template] for a required [qwen3CoderRequiredTool] call.

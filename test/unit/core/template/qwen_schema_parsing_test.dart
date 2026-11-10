@@ -150,7 +150,7 @@ void main() {
     );
     final parsed = ChatTemplateEngine.parse(
       renderQwenResultHistory().format,
-      '<tool_call><function=ping></function></tool_call>',
+      '<tool_call>\n<function=ping>\n</function>\n</tool_call>',
       tools: [tool],
     );
     expect(

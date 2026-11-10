@@ -29,16 +29,14 @@ Left out:
   call while the reply is partial, and llamadart only once it finishes.
 - A reply cut off inside a call, which llama.cpp returns as a call with
   unterminated JSON arguments, and llamadart drops.
-- Calls whose tags lack llama.cpp's exact line breaks, such as
-  `<tool_call><function=`: llama.cpp takes no call or cuts the argument at the
-  next `\n</parameter>\n`, while llamadart takes the call.
 - The `bare-call`, `text-then-bare-call` and `bare-call-then-call` cases with
   Qwen3-Coder and tool choice auto: llamadart takes such a call only for a
   required call, so the tag and what follows it stay content.
 - The `bare-call` and `text-then-bare-call` cases with StepFun3.5-Flash and
   thinking off: llama.cpp keeps the thought its prompt opened, so a reply with
   no thinking tag or `<tool_call>` is reasoning, while llamadart closed the
-  thought and returns content.
+  thought and returns content. This is deliberate (maintainer decision on
+  #1898).
 
 Fed one byte at a time, llama.cpp's session keeps the first call of a scope
 that holds two (`two-functions-in-one-scope*`), because the final parse returns
