@@ -667,13 +667,16 @@ class LiteRtLmService {
     if (_jsonSchemaAdmitted) return;
     _requireConversationEngine();
     final qualified = _jsonSchemaQualifiedBackends();
-    Never refuseBackend(String backend) => throw LlamaUnsupportedException(
-      'Native JSON Schema chat is not qualified for the LiteRT-LM $backend '
-      'backend on ${liteRtLmGateAbi()}'
-      '${qualified.isEmpty ? '' : '; select ${qualified.join(' or ')}'}.',
-    );
     final requested = _backendNameFor(_modelParams ?? const ModelParams());
-    if (!qualified.contains(requested)) refuseBackend(requested);
+    // An auto GPU request can only fall back to the CPU, which every
+    // qualified host admits, so the requested backend decides.
+    if (!qualified.contains(requested)) {
+      throw LlamaUnsupportedException(
+        'Native JSON Schema chat is not qualified for the LiteRT-LM $requested '
+        'backend on ${liteRtLmGateAbi()}'
+        '${qualified.isEmpty ? '' : '; select ${qualified.join(' or ')}'}.',
+      );
+    }
     final routing = _templateRouting();
     final family = routing.family;
     final customTemplate = _modelParams?.chatTemplate;
@@ -695,9 +698,6 @@ class LiteRtLmService {
     }
     _cancelRequested = false;
     final client = await _ensureClientForGeneration(const GenerationParams());
-    if (!qualified.contains(_activeBackend)) {
-      refuseBackend(_activeBackend ?? requested);
-    }
     if (!client.supportsJsonSchemaConstraints) {
       throw LlamaUnsupportedException(
         'Native JSON Schema chat requires all constraint-provider and thinking-config symbols. '
@@ -778,8 +778,8 @@ class LiteRtLmService {
       // the provider reports one only as an INTERNAL send failure.
       if (!outputStarted && '$error'.contains('INTERNAL (13)')) {
         throw LlamaUnsupportedException(
-          'The native LiteRT-LM JSON Schema provider rejected the schema '
-          'before generation.',
+          'The native LiteRT-LM runtime refused the JSON Schema request '
+          'before generation (INTERNAL).',
         );
       }
       // Native diagnostics can echo the schema or model paths.
@@ -787,7 +787,9 @@ class LiteRtLmService {
         'Native JSON Schema chat failed during constrained decoding.',
       );
     }
-    if (!_cancelRequested &&
+    // maxTokens <= 0 generates nothing, so no finish reason is reported.
+    if (params.maxTokens > 0 &&
+        !_cancelRequested &&
         _lastGenerationLimit == null &&
         _client?.lastFinishReason != LiteRtLmFinishReason.stop) {
       throw LlamaInferenceException(

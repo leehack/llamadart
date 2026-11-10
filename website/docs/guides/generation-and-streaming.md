@@ -488,9 +488,9 @@ macOS arm64 and iOS arm64 CPU and GPU and on the Android arm64 CPU, with Qwen3
 (canonical text template) and Gemma 4 (bundle template) models. Linux, Windows,
 Android GPU and LiteRT-LM Web refuse it.
 
-Native LiteRT-LM accepts the schemas that both the GBNF converter above and
-LiteRT-LM's LLGuidance provider enforce alike, so a request is accepted or
-refused the same way on both backends. On top of the GBNF subset it refuses,
+Native LiteRT-LM accepts only schemas that both the GBNF converter above and
+LiteRT-LM's LLGuidance provider enforce alike, so every schema it accepts is
+also accepted by llama.cpp. On top of the GBNF subset it refuses,
 before generation and naming the schema path: `oneOf` (use `anyOf`),
 `uniqueItems`, formats other than `uuid` and `date`, open tuples (`prefixItems`
 needs `minItems` and `maxItems` equal to its length), pattern classes with

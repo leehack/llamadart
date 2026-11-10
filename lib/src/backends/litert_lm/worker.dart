@@ -335,9 +335,9 @@ void runLiteRtLmWorkerForTesting(
                   hasTools: message.tools?.isNotEmpty ?? false,
                   requiredTools: message.toolChoice == ToolChoice.required,
                   parallelToolCalls: message.parallelToolCalls,
-                  enableThinking:
-                      message.enableThinking &&
-                      !service.supportsJsonSchemaChatThinking,
+                  // Thinking is checked by the service after it re-admits the
+                  // model; a recreated client clears the earlier admission.
+                  enableThinking: false,
                 );
               }
               final stream = message.jsonSchema != null
