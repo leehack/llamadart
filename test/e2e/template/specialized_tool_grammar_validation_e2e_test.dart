@@ -575,6 +575,8 @@ void main() {
         final compact =
             '<$scope><function=get_weather><parameter=location>Paris'
             '</parameter></function></$scope>';
+        // As in llama.cpp, a Seed-OSS scope starts with a line break.
+        final isSeed = scope == 'seed:tool_call';
         for (final parallel in [true, false]) {
           final rendered = ChatTemplateEngine.render(
             templateSource: File(template).readAsStringSync(),
@@ -613,10 +615,15 @@ void main() {
             valid: [
               call('Paris'),
               '${call('Paris')}\n',
-              compact,
+              if (!isSeed) compact,
               if (parallel) ...repeated,
             ],
             invalid: [
+              if (isSeed) ...[
+                compact,
+                call('Paris').replaceFirst('>\n', '> '),
+                '${call('Paris')}\n${call('Rome').replaceFirst('>\n', '>')}',
+              ],
               if (!parallel) ...repeated,
               '${call('Paris')}\nThen ${call('Rome')}',
               '${call('Paris')}\n${call('Rome', name: 'unknown')}',
@@ -1520,7 +1527,7 @@ void main() {
       ),
       (
         ChatFormat.seedOss,
-        '<seed:tool_call><function=weather><parameter=city>Seoul'
+        '<seed:tool_call>\n<function=weather><parameter=city>Seoul'
             '</parameter></function></seed:tool_call>',
       ),
       (
@@ -1557,7 +1564,15 @@ void main() {
           '$end$call',
           'Plan <${end.substring(0, end.length - 1)}.$end\n\n$call',
         ],
-        invalid: ['Plan.$end\nNo tool', 'Plan.', 'Plan.$end more $end$call'],
+        invalid: [
+          'Plan.$end\nNo tool',
+          'Plan.',
+          'Plan.$end more $end$call',
+          if (format == ChatFormat.seedOss) ...[
+            '$end${call.replaceFirst('>\n', '>')}',
+            '$end${call.replaceFirst('>\n', '> ')}',
+          ],
+        ],
       );
     }
   });

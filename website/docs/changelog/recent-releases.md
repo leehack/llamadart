@@ -13,7 +13,7 @@ validate against the exact release tag notes.
 
 ## Unreleased
 
-- Keep a Seed-OSS reply as content, with no tool call, when its first `<seed:tool_call>` is not followed by a line break (such as `<seed:tool_call><function=`), as llama.cpp does; it used to parse as a call. An unknown tool or a missing required argument still parses as a call unless the tools came from `ToolDefinition.fromJsonSchema` ([#1542](https://github.com/leehack/llamadart/pull/1542#issuecomment-6758592134)).
+- Start Seed-OSS tool calls only at a `<seed:tool_call>` followed by a line break, as llama.cpp does, in the parse and the tool-call grammar; a scope such as `<seed:tool_call><function=` is now content, and a call after it is found. An unknown tool or a missing required argument still parses as a call unless the tools came from `ToolDefinition.fromJsonSchema` ([#1542](https://github.com/leehack/llamadart/pull/1542#issuecomment-6758592134)).
 
 ## 0.19.3
 

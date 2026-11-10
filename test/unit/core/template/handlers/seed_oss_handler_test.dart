@@ -76,11 +76,9 @@ void main() {
               : 'root ::= tool-call-scope\n',
         ),
       );
-      // The grammar admits the scope with or without a line break, and so
-      // does the parse.
+      // As in llama.cpp, a call starts only at the line-broken scope.
       expect(rendered.grammarTriggers.map((trigger) => trigger.value), [
         '<seed:tool_call>\n',
-        '<seed:tool_call><function=',
       ]);
       expect(
         rendered.grammarTriggers.map((trigger) => trigger.type),
@@ -132,9 +130,9 @@ void main() {
     );
   });
 
-  // llama.cpp (`cd959bae9`) keeps the reply as content unless the first
-  // `<seed:tool_call>` is followed by a line break (#1542).
-  group('SeedOssHandler first scope start tag', () {
+  // llama.cpp (`cd959bae9`) starts calls at the first `<seed:tool_call>`
+  // followed by a line break; text before it is content (#1542).
+  group('SeedOssHandler scope start tag', () {
     String call(String city, {String scopeStart = '<seed:tool_call>\n'}) =>
         '$scopeStart<function=get_weather>\n'
         '<parameter=location>\n$city\n</parameter>\n'
@@ -159,16 +157,54 @@ void main() {
       }
     });
 
-    test('at the end of the output waits for a line break', () {
-      for (final isPartial in [false, true]) {
+    test('calls start at the first scope with a line break', () {
+      final compact = call('Paris', scopeStart: '<seed:tool_call>');
+      for (final (output, content) in [
+        ('$compact\n${call('Rome')}', compact),
+        (
+          'Use the <seed:tool_call> tag.\n${call('Rome')}',
+          'Use the <seed:tool_call> tag.',
+        ),
+      ]) {
+        final parsed = SeedOssHandler().parse(output);
+
+        expect(cities(parsed), ['\nRome\n'], reason: output);
+        expect(parsed.content, content, reason: output);
+      }
+    });
+
+    test('a scope start tag in the thought does not decide the calls', () {
+      for (final (output, forcedOpen) in [
+        ('try <seed:tool_call><function=x></seed:think>', true),
+        ('<seed:think>try <seed:tool_call><function=x></seed:think>', false),
+      ]) {
         final parsed = SeedOssHandler().parse(
-          'Checking <seed:tool_call>',
-          isPartial: isPartial,
+          '$output${call('Paris')}',
+          thinkingForcedOpen: forcedOpen,
         );
 
-        expect(parsed.toolCalls, isEmpty);
-        expect(parsed.content, startsWith('Checking'));
+        expect(parsed.reasoningContent, 'try <seed:tool_call><function=x>');
+        expect(cities(parsed), ['\nParis\n'], reason: output);
+        expect(parsed.content, isEmpty, reason: output);
       }
+    });
+
+    // llama.cpp fails the reply instead.
+    test('a later scope without a line break stays content', () {
+      for (final whitespace in ['', ' ']) {
+        final later = call('Rome', scopeStart: '<seed:tool_call>$whitespace');
+        final parsed = SeedOssHandler().parse('${call('Paris')}\n$later');
+
+        expect(cities(parsed), ['\nParis\n'], reason: jsonEncode(whitespace));
+        expect(parsed.content, later, reason: jsonEncode(whitespace));
+      }
+    });
+
+    test('at the end of the output is content', () {
+      final parsed = SeedOssHandler().parse('Checking <seed:tool_call>');
+
+      expect(parsed.toolCalls, isEmpty);
+      expect(parsed.content, 'Checking <seed:tool_call>');
     });
 
     test('with a leading line break parses a call, as llama.cpp does', () {

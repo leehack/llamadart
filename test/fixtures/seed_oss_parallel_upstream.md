@@ -28,7 +28,9 @@ not cases here; `seed_oss_handler_test.dart` pins them:
   `ToolDefinition.fromJsonSchema` tools.
 - A call missing a required argument is returned with the arguments present,
   with the same schema caveat.
+- A later scope whose `<seed:tool_call>` is not followed by a line break stays
+  content after the calls before it.
 
-A first `<seed:tool_call>` not followed by a line break is not a divergence:
-both keep the reply as content with no call. One followed by `\n` and more
-whitespace (`\n\n`) parses as a call in both.
+Both start calls at the first `<seed:tool_call>` followed by a line break
+(`\n\n` included) and keep the text before it as content, including a
+`<seed:tool_call>` followed by anything else.

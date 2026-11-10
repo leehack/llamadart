@@ -148,8 +148,10 @@ class XmlToolCallFormat {
   );
 
   /// Seed-OSS format.
+  ///
+  /// As in llama.cpp, a scope starts only with a line break after its tag.
   static const seedOss = XmlToolCallFormat(
-    scopeStart: '<seed:tool_call>',
+    scopeStart: '<seed:tool_call>\n',
     toolStart: '<function=',
     toolSep: '>',
     keyStart: '<parameter=',

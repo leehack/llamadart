@@ -367,7 +367,8 @@ void main() {
       expect(
         repeated,
         contains(
-          'tool-call-scope ::= "${format.scopeStart}" xml-space tool-call '
+          'tool-call-scope ::= "${format.scopeStart.replaceAll('\n', r'\n')}" '
+          'xml-space tool-call '
           '"${format.scopeEnd}" xml-space',
         ),
       );
