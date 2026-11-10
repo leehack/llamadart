@@ -105,7 +105,8 @@ class ChatCompletionRequestPlanner {
         hasTools: tools?.isNotEmpty ?? false,
         requiredTools: toolChoice == ToolChoice.required,
         parallelToolCalls: parallelToolCalls,
-        enableThinking: enableThinking,
+        enableThinking:
+            enableThinking && !supportsJsonSchemaChatThinking(backend),
       );
       if (templateResult.thinkingForcedOpen) {
         throw LlamaUnsupportedException(
@@ -351,6 +352,13 @@ class ChatCompletionRequestPlanner {
     }
     return true;
   }
+
+  /// Whether [backend] admitted its loaded model to reason before a
+  /// schema-constrained reply.
+  static bool supportsJsonSchemaChatThinking(LlamaBackend backend) =>
+      backend is BackendJsonSchemaThinkingChatGeneration &&
+      (backend as BackendJsonSchemaThinkingChatGeneration)
+          .supportsJsonSchemaChatThinking;
 
   /// Whether [backend] applies grammar constraints; true unless it reports
   /// otherwise.

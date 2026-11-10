@@ -72,7 +72,8 @@ print(result.format);
 - `responseFormat`: structured-output constraint; unrecognised shapes and
   schemas the grammar converter cannot represent throw
   `LlamaUnsupportedException`. Native LiteRT-LM uses a separate admitted JSON
-  Schema provider for its bounded scalar-object subset; it never consumes GBNF.
+  Schema provider for the schema subset LLGuidance and GBNF enforce alike; it
+  never consumes GBNF.
 
 Structured output (`responseFormat`, `LlamaStructuredOutput`,
 `parseStructuredJson`) is covered in

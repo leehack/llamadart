@@ -3,6 +3,8 @@ Releases before 0.10.0 are in the
 
 ## Unreleased
 
+- Widen native LiteRT-LM strict `responseFormat` to Gemma 4 (bundle template) and the macOS arm64 GPU, and to the JSON Schema subset that both llama.cpp's GBNF converter and LiteRT-LM's LLGuidance enforce (nested objects, arrays, `$ref`, `anyOf`, anchored patterns, `uuid`/`date` formats, bounds); other schemas, including `oneOf`, throw `LlamaUnsupportedException` naming the schema path before generation. Gemma 4 can think before its constrained reply; Qwen3 with thinking is refused. A reply cut off inside the JSON reports finish reason `length` ([#174](https://github.com/leehack/llamadart/issues/174)).
+
 ## 0.19.4
 
 - Keep the default WebGPU bridge assets at `v0.1.83` (unchanged from 0.19.3).

@@ -1292,13 +1292,13 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
   TestMatrixRow(
     id: 'litert-lm-json-schema',
     tier: 'high-risk',
-    mode: 'local-only; macOS arm64 CPU',
+    mode: 'local-only; native host CPU or GPU',
     covers:
-        'Adversarial native JSON Schema enforcement, separate GBNF capability, scalar object subset, per-request reset, history/system, cancellation and length cutoff',
+        'Adversarial native JSON Schema enforcement, separate GBNF capability, nested/array/ref/pattern/Unicode contract, typed contract refusal, Gemma 4 thinking or Qwen3 thinking refusal, per-request reset, history/system, cancellation and a length cutoff inside a constrained string',
     command:
-        'dart run tool/testing/run_local_e2e.dart --scenario litert-lm-json-schema --model-path <corrected-Qwen3-0.6B.litertlm> --backend cpu',
+        'dart run tool/testing/run_local_e2e.dart --scenario litert-lm-json-schema --model-path <Qwen3-0.6B-or-gemma-4-E2B-it.litertlm> --backend cpu',
     useWhen:
-        'Changing native schema constraints, provider admission or request transport. Fixed corrected Qwen3 artifact; no GPU, Web or other-platform qualification.',
+        'Changing native schema constraints, the schema contract, provider admission or request transport. Run once per fixed model (Qwen3-0.6B, Gemma 4 E2B) and per qualified backend (cpu, gpu); no Web qualification.',
   ),
   TestMatrixRow(
     id: 'litert-lm-chat-features-smoke',

@@ -1,6 +1,6 @@
 part of 'litert_lm_v1_runtime.dart';
 
-/// Per-send status/out budget transport, separate from schema's thinking=false.
+/// Per-send status/out budget transport; schema chat never applies a budget.
 final class _V1ThinkingBudget {
   const _V1ThinkingBudget(this.runtime);
   final LiteRtLmV1Runtime runtime;

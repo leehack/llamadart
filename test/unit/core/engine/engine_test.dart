@@ -1106,6 +1106,28 @@ class JsonSchemaMockBackend extends NativeChatMockBackend
   }
 }
 
+class JsonSchemaThinkingMockBackend extends JsonSchemaMockBackend
+    implements BackendJsonSchemaThinkingChatGeneration {
+  bool admitsThinking = false;
+  int thinkingCalls = 0;
+  @override
+  bool get supportsJsonSchemaChatThinking => admitted && admitsThinking;
+
+  @override
+  Stream<List<int>> generateChatWithJsonSchemaAndThinking(
+    int contextHandle,
+    List<LlamaChatMessage> messages,
+    GenerationParams params, {
+    required Map<String, dynamic> jsonSchema,
+    Map<String, dynamic>? chatTemplateKwargs,
+    DateTime? templateNow,
+  }) async* {
+    thinkingCalls++;
+    schema = jsonSchema;
+    yield utf8.encode('{"verdict":"A"}');
+  }
+}
+
 void main() {
   late MockLlamaBackend backend;
   late LlamaEngine engine;
@@ -1167,6 +1189,62 @@ void main() {
       expect(runtime.schemaCalls, 0);
       expect(runtime.nativeGenerateChatCalls, 0);
     });
+    for (final admitsThinking in [false, true]) {
+      test(
+        'thinking routes by the admitted model (admitted: $admitsThinking)',
+        () async {
+          final thinking = JsonSchemaThinkingMockBackend()
+            ..admitsThinking = admitsThinking;
+          final thinkingEngine = LlamaEngine(thinking);
+          addTearDown(thinkingEngine.dispose);
+          await thinkingEngine.loadModel('model.litertlm');
+          final request = thinkingEngine
+              .create(messages, responseFormat: format)
+              .collect();
+          if (admitsThinking) {
+            expect((await request).text, '{"verdict":"A"}');
+          } else {
+            await expectLater(
+              request,
+              throwsA(
+                isA<LlamaUnsupportedException>().having(
+                  (e) => e.message,
+                  'message',
+                  contains('Gemma 4'),
+                ),
+              ),
+            );
+          }
+          expect(thinking.providerAdmissions, 1);
+          expect(thinking.thinkingCalls, admitsThinking ? 1 : 0);
+          expect(thinking.schemaCalls, 0);
+          await expectLater(
+            thinkingEngine
+                .create(
+                  messages,
+                  params: const GenerationParams(
+                    thinkingBudget: ThinkingBudget(maxTokens: 4),
+                  ),
+                  responseFormat: format,
+                )
+                .drain<void>(),
+            throwsA(isA<LlamaUnsupportedException>()),
+          );
+          expect(
+            (await thinkingEngine
+                    .create(
+                      messages,
+                      enableThinking: false,
+                      responseFormat: format,
+                    )
+                    .collect())
+                .text,
+            '{"verdict":"A"}',
+          );
+          expect(thinking.schemaCalls, 1);
+        },
+      );
+    }
     test('a boolean thinking kwarg decides schema admission', () async {
       final completion = await schemaEngine
           .create(
@@ -1254,7 +1332,7 @@ void main() {
               responseFormat: const {
                 'type': 'json_schema',
                 'json_schema': {
-                  'schema': {'type': 'array'},
+                  'schema': {'type': 'array', 'uniqueItems': false},
                 },
               },
             )

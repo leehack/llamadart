@@ -67,7 +67,7 @@ class NativeAutoBackend
         BackendStateIdentity,
         BackendGrammarConstraintsSupport,
         BackendNativeChatGeneration,
-        BackendJsonSchemaChatGeneration,
+        BackendJsonSchemaThinkingChatGeneration,
         BackendChatPromptGeneration,
         BackendPromptPenaltyGeneration,
         BackendDeferredEngineCreation,
@@ -137,6 +137,14 @@ class NativeAutoBackend
   }
 
   @override
+  bool get supportsJsonSchemaChatThinking {
+    final delegate = _delegate;
+    return delegate is BackendJsonSchemaThinkingChatGeneration &&
+        (delegate as BackendJsonSchemaThinkingChatGeneration)
+            .supportsJsonSchemaChatThinking;
+  }
+
+  @override
   Future<void> prepareJsonSchemaChat() async {
     final delegate = _requireDelegate();
     if (delegate is! BackendJsonSchemaChatGeneration) {
@@ -170,6 +178,32 @@ class NativeAutoBackend
     }
     throw LlamaUnsupportedException(
       'The selected backend has no native JSON Schema chat provider.',
+    );
+  }
+
+  @override
+  Stream<List<int>> generateChatWithJsonSchemaAndThinking(
+    int contextHandle,
+    List<LlamaChatMessage> messages,
+    GenerationParams params, {
+    required Map<String, dynamic> jsonSchema,
+    Map<String, dynamic>? chatTemplateKwargs,
+    DateTime? templateNow,
+  }) {
+    final delegate = _requireDelegate();
+    if (delegate is BackendJsonSchemaThinkingChatGeneration) {
+      return (delegate as BackendJsonSchemaThinkingChatGeneration)
+          .generateChatWithJsonSchemaAndThinking(
+            contextHandle,
+            messages,
+            params,
+            jsonSchema: jsonSchema,
+            chatTemplateKwargs: chatTemplateKwargs,
+            templateNow: templateNow,
+          );
+    }
+    throw LlamaUnsupportedException(
+      'The selected backend cannot reason before a native JSON Schema reply.',
     );
   }
 

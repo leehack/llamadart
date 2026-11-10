@@ -3,11 +3,12 @@ import 'dart:io';
 
 import 'package:llamadart/llamadart.dart';
 
-/// Uses an existing canonical Qwen3 `.litertlm` bundle on macOS arm64 CPU.
+/// Uses an existing Qwen3 or Gemma 4 `.litertlm` bundle on macOS arm64.
 Future<void> main(List<String> arguments) async {
   if (arguments.length != 1) {
     stderr.writeln(
-      'Usage: dart run bin/llamadart_litert_json_example.dart <Qwen3.litertlm>',
+      'Usage: dart run bin/llamadart_litert_json_example.dart '
+      '<Qwen3-or-gemma-4.litertlm>',
     );
     exitCode = 64;
     return;
@@ -31,8 +32,14 @@ Future<void> main(List<String> arguments) async {
             'type': 'string',
             'enum': ['low', 'high'],
           },
+          'actions': {
+            'type': 'array',
+            'items': {'type': 'string', 'maxLength': 40},
+            'minItems': 1,
+            'maxItems': 3,
+          },
         },
-        'required': ['priority'],
+        'required': ['priority', 'actions'],
         'additionalProperties': false,
       },
       decoder: (json) => json,
@@ -46,7 +53,7 @@ Future<void> main(List<String> arguments) async {
       ],
       output: output,
       enableThinking: false,
-      params: const GenerationParams(maxTokens: 64, temp: 0, topK: 1),
+      params: const GenerationParams(maxTokens: 128, temp: 0, topK: 1),
     );
     stdout.writeln(jsonEncode(result));
   } finally {

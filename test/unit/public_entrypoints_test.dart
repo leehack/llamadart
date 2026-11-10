@@ -368,6 +368,7 @@ void main() {
       'BackendGpuEnumeration',
       'BackendGrammarConstraintsSupport',
       'BackendJsonSchemaChatGeneration',
+      'BackendJsonSchemaThinkingChatGeneration',
       'BackendLazyGrammarSupport',
       'BackendPromptPenaltyGeneration',
       'BackendLoadCheck',

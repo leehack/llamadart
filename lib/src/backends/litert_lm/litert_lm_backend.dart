@@ -41,7 +41,7 @@ class LiteRtLmBackend
         BackendMultimodalEmbeddings,
         BackendStatePersistenceSupport,
         BackendNativeChatGeneration,
-        BackendJsonSchemaChatGeneration,
+        BackendJsonSchemaThinkingChatGeneration,
         BackendDartLogLevel {
   // Native callbacks can outlive a failed Dart request. Retained workers keep
   // their NativeCallable, native family, model link and cache lease until exit.
@@ -75,6 +75,7 @@ class LiteRtLmBackend
   bool _nativeSettlementUnverified = false;
   bool _reportsFinishReasons = false;
   bool _jsonSchemaAdmitted = false;
+  bool _jsonSchemaThinking = false;
   int _jsonSchemaEpoch = 0;
   final _LiteRtLmGenerationLimits _generationLimits =
       _LiteRtLmGenerationLimits();
@@ -429,6 +430,10 @@ class LiteRtLmBackend
   bool get supportsJsonSchemaChatGeneration => _isReady && _jsonSchemaAdmitted;
 
   @override
+  bool get supportsJsonSchemaChatThinking =>
+      supportsJsonSchemaChatGeneration && _jsonSchemaThinking;
+
+  @override
   Future<void> prepareJsonSchemaChat() async {
     if (supportsJsonSchemaChatGeneration) return;
     if (!_isReady || _embeddingEngine) {
@@ -437,12 +442,16 @@ class LiteRtLmBackend
       );
     }
     final generation = _jsonSchemaEpoch;
-    await _sendRequest(LiteRtLmJsonSchemaPrepareRequest.new);
+    final admission = _expect<LiteRtLmJsonSchemaAdmissionResponse>(
+      await _sendRequest(LiteRtLmJsonSchemaPrepareRequest.new),
+      'JSON Schema admission',
+    );
     if (generation != _jsonSchemaEpoch || !_isReady) {
       throw LlamaStateException(
         'The model changed during JSON Schema admission.',
       );
     }
+    _jsonSchemaThinking = admission.thinking;
     _jsonSchemaAdmitted = true;
   }
 
@@ -454,8 +463,48 @@ class LiteRtLmBackend
     required Map<String, dynamic> jsonSchema,
     Map<String, dynamic>? chatTemplateKwargs,
     DateTime? templateNow,
+  }) => _generateJsonSchemaChat(
+    contextHandle,
+    messages,
+    params,
+    jsonSchema: jsonSchema,
+    enableThinking: false,
+    chatTemplateKwargs: chatTemplateKwargs,
+    templateNow: templateNow,
+  );
+
+  @override
+  Stream<List<int>> generateChatWithJsonSchemaAndThinking(
+    int contextHandle,
+    List<LlamaChatMessage> messages,
+    GenerationParams params, {
+    required Map<String, dynamic> jsonSchema,
+    Map<String, dynamic>? chatTemplateKwargs,
+    DateTime? templateNow,
+  }) => _generateJsonSchemaChat(
+    contextHandle,
+    messages,
+    params,
+    jsonSchema: jsonSchema,
+    enableThinking: true,
+    chatTemplateKwargs: chatTemplateKwargs,
+    templateNow: templateNow,
+  );
+
+  Stream<List<int>> _generateJsonSchemaChat(
+    int contextHandle,
+    List<LlamaChatMessage> messages,
+    GenerationParams params, {
+    required Map<String, dynamic> jsonSchema,
+    required bool enableThinking,
+    Map<String, dynamic>? chatTemplateKwargs,
+    DateTime? templateNow,
   }) {
-    validateJsonSchemaChatRequest(messages, params);
+    validateJsonSchemaChatRequest(
+      messages,
+      params,
+      enableThinking: enableThinking && !supportsJsonSchemaChatThinking,
+    );
     final payload = jsonSchemaChatPayload(jsonSchema);
     if (!supportsJsonSchemaChatGeneration) {
       throw LlamaUnsupportedException(
@@ -470,7 +519,7 @@ class LiteRtLmBackend
         params,
         port,
         jsonSchema: payload,
-        enableThinking: false,
+        enableThinking: enableThinking,
         toolChoice: ToolChoice.none,
         chatTemplateKwargs: chatTemplateKwargs,
         templateNow: templateNow,
