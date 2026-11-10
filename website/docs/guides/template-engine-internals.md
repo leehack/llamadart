@@ -194,6 +194,19 @@ otherwise its text stays in content. This deliberately differs from upstream
 llama.cpp (`7fe450e1`), which fails to parse this output and returns no tool
 call.
 
+Seed-OSS tool calls are parsed more leniently than upstream llama.cpp
+(`620d2225`), which fails the whole reply with a parse error on three shapes.
+llamadart keeps the calls it can read instead
+([#1542](https://github.com/leehack/llamadart/issues/1542)):
+
+- Whitespace other than exactly one line break after `<seed:tool_call>`
+  (`<seed:tool_call><function=`, a space, a blank line) parses as a call,
+  where llama.cpp keeps the text as content. The grammar admits these forms.
+- An unknown tool name, in a later scope or the first, is returned as a call.
+  The Seed-OSS parse takes no tool schemas, so validate the name before
+  running it.
+- A call missing a required argument is returned with the arguments it has.
+
 Streamed content and reasoning start and end with the whitespace the final
 parse keeps, with or without tools, apart from the cases below. The parse
 trims content, except that content at the end of the output keeps the

@@ -5,6 +5,7 @@ import 'package:llamadart/src/core/models/chat/chat_role.dart';
 import 'package:llamadart/src/core/models/tools/tool_definition.dart';
 import 'package:llamadart/src/core/models/tools/tool_param.dart';
 import 'package:llamadart/src/core/template/chat_format.dart';
+import 'package:llamadart/src/core/template/chat_parse_result.dart';
 import 'package:llamadart/src/core/template/handlers/seed_oss_handler.dart';
 import 'package:llamadart/src/core/template/template_internal_metadata.dart';
 import 'package:test/test.dart';
@@ -129,6 +130,55 @@ void main() {
       ],
       ['\nParis\n', '\nRome\n', '\nTokyo\n'],
     );
+  });
+
+  // Intentional divergences from llama.cpp, which fails the whole reply for
+  // each of these shapes (#1542, #1531): llamadart keeps parsing what it can.
+  group('SeedOssHandler stays lenient where llama.cpp errors', () {
+    String call(String city, {String scopeStart = '<seed:tool_call>\n'}) =>
+        '$scopeStart<function=get_weather>\n'
+        '<parameter=location>\n$city\n</parameter>\n'
+        '</function>\n</seed:tool_call>';
+    List<Object?> cities(ChatParseResult parsed) => [
+      for (final call in parsed.toolCalls)
+        (jsonDecode(call.function!.arguments!) as Map)['location'],
+    ];
+
+    test('whitespace other than one line break after <seed:tool_call>', () {
+      for (final whitespace in ['', ' ', '\n\n', '\t', '\r\n']) {
+        final output = call('Paris', scopeStart: '<seed:tool_call>$whitespace');
+        final parsed = SeedOssHandler().parse(output);
+
+        expect(cities(parsed), ['\nParis\n'], reason: whitespace);
+        expect(parsed.content, isEmpty, reason: whitespace);
+      }
+    });
+
+    test('an unknown tool in a later scope is returned as a call', () {
+      final output =
+          '${call('Paris')}\n'
+          '${call('Rome').replaceFirst('get_weather', 'not_a_tool')}';
+      final parsed = SeedOssHandler().parse(output);
+
+      expect(parsed.toolCalls.map((call) => call.function!.name), [
+        'get_weather',
+        'not_a_tool',
+      ]);
+      expect(parsed.content, isEmpty);
+    });
+
+    test('a call missing a required argument is returned as a call', () {
+      final parsed = SeedOssHandler().parse(
+        '<seed:tool_call>\n<function=get_weather>\n</function>\n'
+        '</seed:tool_call>',
+      );
+
+      expect(parsed.toolCalls.map((call) => call.function!.name), [
+        'get_weather',
+      ]);
+      expect(jsonDecode(parsed.toolCalls.single.function!.arguments!), isEmpty);
+      expect(parsed.content, isEmpty);
+    });
   });
 
   test('SeedOssHandler returns a forced-open thought as reasoning', () {
