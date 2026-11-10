@@ -58,15 +58,12 @@ const String _liteRtLmVideoUnsupportedMessage =
     'LiteRT-LM video input is not supported through llamadart. '
     'Extract and send image frames instead.';
 
-// Hosts and accelerators where real-model JSON Schema runs passed.
+// Hosts and accelerators where real-model JSON Schema runs passed; the others
+// stay refused until a run on that host passes.
 const _jsonSchemaQualifiedBackendsByAbi = <Abi, Set<String>>{
   Abi.macosArm64: {'cpu', 'gpu'},
-  Abi.linuxX64: {'cpu', 'gpu'},
-  Abi.linuxArm64: {'cpu'},
-  Abi.windowsX64: {'cpu', 'gpu'},
-  Abi.androidArm64: {'cpu', 'gpu'},
-  Abi.androidX64: {'cpu'},
   Abi.iosArm64: {'cpu', 'gpu'},
+  Abi.androidArm64: {'cpu'},
 };
 
 /// Reads what the `.litertlm` bundle at a path declares, as

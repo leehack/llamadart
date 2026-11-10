@@ -157,7 +157,18 @@ void main() {
           numberOfThreads: backend == 'gpu' ? 0 : 2,
         ),
       );
-      expect((await engine.capabilities).supportsStructuredOutput, isTrue);
+      if (!(await engine.capabilities).supportsStructuredOutput) {
+        // The engine loads lazily, so the capability probe hides why admission
+        // failed; a strict request rethrows the admission error.
+        await engine
+            .create(
+              _messages,
+              params: _params,
+              responseFormat: _format(_sentinel),
+            )
+            .drain<void>();
+        fail('Native JSON Schema output is unsupported on this device.');
+      }
       expect((await run('unconstrained')).text.trim(), isNot(startsWith('{')));
       final sentinel = await run('sentinel', schema: _sentinel);
       expect(jsonDecode(sentinel.text), {'verdict': 'CEDAR_174'});

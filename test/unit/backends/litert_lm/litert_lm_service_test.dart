@@ -160,6 +160,56 @@ void main() {
         expect(client.generateCount, 0);
       });
     }
+    group('default qualification table', () {
+      tearDown(() => debugLiteRtLmAbiOverride = null);
+      const expected = <Abi, Set<String>>{
+        Abi.macosArm64: {'cpu', 'gpu'},
+        Abi.iosArm64: {'cpu', 'gpu'},
+        Abi.androidArm64: {'cpu'},
+        Abi.androidX64: {},
+        Abi.linuxX64: {},
+        Abi.linuxArm64: {},
+        Abi.windowsX64: {},
+        Abi.macosX64: {},
+      };
+      for (final MapEntry(key: abi, value: backends) in expected.entries) {
+        for (final backend in ['cpu', 'gpu']) {
+          final admitted = backends.contains(backend);
+          // Admitting the GPU also needs a host GPU; 'admits the GPU delegate'
+          // covers it.
+          if (admitted && backend == 'gpu') continue;
+          test('${admitted ? 'admits' : 'refuses'} $backend on $abi', () async {
+            service.dispose();
+            service = LiteRtLmService(clientFactory: () => client);
+            await service.loadModel(
+              '${tempDir.path}/Qwen3-0.6B.litertlm',
+              backend == 'cpu'
+                  ? params
+                  : const ModelParams(
+                      liteRtLmBackend: LiteRtLmBackendPreference.gpu,
+                    ),
+            );
+            debugLiteRtLmAbiOverride = abi;
+            if (admitted) {
+              await service.prepareJsonSchemaChat();
+              expect(client.lastJsonSchemaConfig, isTrue);
+            } else {
+              await expectLater(
+                service.prepareJsonSchemaChat(),
+                throwsA(
+                  isA<LlamaUnsupportedException>().having(
+                    (e) => e.message,
+                    'message',
+                    contains('not qualified for the LiteRT-LM $backend'),
+                  ),
+                ),
+              );
+              expect(client.createConversationCount, 0);
+            }
+          });
+        }
+      }
+    });
     test('missing optional API never admits or starts generation', () async {
       client.jsonSchemaSupport = false;
       await expectLater(
