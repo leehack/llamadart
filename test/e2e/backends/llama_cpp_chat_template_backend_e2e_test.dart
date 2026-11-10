@@ -296,6 +296,72 @@ void main() {
         await engine.dispose();
       }
     });
+
+    test(
+      'a Qwen3-Coder auto reply may write a declared tool tag as text',
+      () async {
+        if (modelPath.isEmpty) {
+          return;
+        }
+
+        final engine = LlamaEngine(LlamaBackend());
+        try {
+          await LlamaLogging.configure(nativeLevel: LlamaLogLevel.warn);
+          await engine.loadModel(
+            modelPath,
+            modelParams: ModelParams(
+              contextSize: 4096,
+              preferredBackend: GpuBackend.cpu,
+              gpuLayers: 0,
+              numberOfThreads: 2,
+              numberOfThreadsBatch: 2,
+              chatTemplate: File(
+                'test/fixtures/llama_cpp_templates/Qwen3-Coder.jinja',
+              ).readAsStringSync(),
+            ),
+          );
+          final chunks = await engine
+              .create(
+                const [
+                  LlamaChatMessage.fromText(
+                    role: LlamaChatRole.user,
+                    text:
+                        'In one sentence, explain what the literal text '
+                        '<function=get_weather> means in your tool format. '
+                        'Do not call any tool.',
+                  ),
+                ],
+                params: const GenerationParams(
+                  maxTokens: 384,
+                  temp: 0,
+                  seed: 1,
+                ),
+                tools: [
+                  ToolDefinition(
+                    name: 'get_weather',
+                    description: 'Get the current weather for a city.',
+                    parameters: [ToolParam.string('city', required: true)],
+                    handler: (_) async => 'sunny',
+                  ),
+                ],
+              )
+              .toList();
+          // Without a lazy trigger at that tag, the sampler does not force a
+          // call there. The parse ends the content at it, as llama.cpp's does.
+          final deltas = chunks.map((chunk) => chunk.choices.first.delta);
+          expect(
+            deltas.expand((delta) => delta.toolCalls ?? const []),
+            isEmpty,
+          );
+          expect(
+            chunks.last.choices.first.finishReason,
+            isIn(['stop', 'length']),
+          );
+        } finally {
+          await engine.dispose();
+        }
+      },
+    );
   });
 }
 

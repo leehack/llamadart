@@ -597,7 +597,6 @@ void main() {
               [
                 call('Paris'),
                 compact,
-                call('Paris').replaceFirst('<$scope>\n', ''),
               ].where((output) => output.startsWith(trigger.value)),
               isNotEmpty,
               reason: '$template ${trigger.value}',
@@ -650,6 +649,38 @@ void main() {
           invalid: replies.invalid,
         );
       }
+    }
+  });
+
+  test('a Qwen3-Coder required grammar compiles for a tool name that holds '
+      'class metacharacters', () {
+    for (final name in ['get^weather', '^weather', 'get]-weather']) {
+      final rendered = ChatTemplateEngine.render(
+        templateSource: File(
+          'test/fixtures/llama_cpp_templates/Qwen3-Coder.jinja',
+        ).readAsStringSync(),
+        messages: const [
+          LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'Hi'),
+        ],
+        metadata: const {},
+        tools: [
+          ToolDefinition(
+            name: name,
+            description: 'w',
+            parameters: [ToolParam.string('location', required: true)],
+          ),
+        ],
+        toolChoice: ToolChoice.required,
+      );
+      final call =
+          '<function=$name>\n<parameter=location>\nParis\n</parameter>\n'
+          '</function>\n</tool_call>';
+      _expectGrammar(
+        validator,
+        rendered.grammar!,
+        valid: ['Text $call', 'Text <tool_call>\n$call', 'a^b] $call'],
+        invalid: ['<function=$name> is a tool. <tool_call>\n$call'],
+      );
     }
   });
 
