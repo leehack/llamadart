@@ -1596,7 +1596,19 @@ Future<void> main(List<String> args) async {
       for (final name in deviceScenarios) {
         Future<String> dryRun(String device) async {
           final result = await runLocalE2e(
-            ['--scenario', name, '--device', device, '--dry-run'],
+            [
+              '--scenario',
+              name,
+              '--device',
+              device,
+              if (name == 'chat-app-litert-json-schema') ...[
+                '--model-path',
+                '/m.litertlm',
+                '--backend',
+                'cpu',
+              ],
+              '--dry-run',
+            ],
             projectRoot: '/repo',
             displayShell: LocalE2eDisplayShell.posix,
           );
@@ -1673,6 +1685,65 @@ Future<void> main(List<String> args) async {
       expect(result.exitCode, 0);
       expect(result.stdout, contains('-d android'));
       expect(result.stdout, isNot(contains('LITERT_RELOAD_MODEL')));
+    });
+
+    test('dry-runs the native JSON Schema device scenario', () async {
+      Future<LocalE2eResult> dryRun(List<String> extra) => runLocalE2e(
+        [
+          '--scenario',
+          'chat-app-litert-json-schema',
+          '--device',
+          'android',
+          ...extra,
+          '--dry-run',
+        ],
+        projectRoot: '/repo',
+        displayShell: LocalE2eDisplayShell.posix,
+      );
+      for (final invalid in [
+        ['--backend', 'cpu'],
+        ['--model-path', '/m.litertlm'],
+        ['--model-path', '/m.litertlm', '--backend', 'npu'],
+        for (final secret in [
+          'https://user:token@example.com/m.litertlm',
+          'https://example.com/m.litertlm?X-Amz-Signature=abc',
+          'https://example.com/m.litertlm#token',
+        ])
+          ['--model-path', secret, '--backend', 'cpu'],
+      ]) {
+        final rejected = await dryRun(invalid);
+        expect(rejected.exitCode, 64, reason: '$invalid');
+        expect(rejected.stdout, isNot(contains('token')));
+        expect(rejected.stderr, isNot(contains('token')));
+      }
+      final path = await dryRun([
+        '--model-path',
+        '/data/local/tmp/Qwen3-0.6B.litertlm',
+        '--backend',
+        'gpu',
+      ]);
+      expect(path.exitCode, 0);
+      expect(
+        path.stdout,
+        contains(
+          'integration_test/litert_lm_json_schema_e2e_test.dart -d android '
+          '--dart-define=LITERT_LM_MODEL=/data/local/tmp/Qwen3-0.6B.litertlm '
+          '--dart-define=LITERT_LM_BACKEND=gpu',
+        ),
+      );
+      final url = await dryRun([
+        '--model-path',
+        'http://10.0.2.2:8765/gemma-4-E2B-it.litertlm',
+        '--backend',
+        'cpu',
+      ]);
+      expect(
+        url.stdout,
+        contains(
+          '--dart-define=LITERT_LM_MODEL_URL='
+          'http://10.0.2.2:8765/gemma-4-E2B-it.litertlm',
+        ),
+      );
     });
 
     test('dry-runs the LiteRT-LM read-only bundle device scenario', () async {

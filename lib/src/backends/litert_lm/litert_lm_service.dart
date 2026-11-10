@@ -58,6 +58,17 @@ const String _liteRtLmVideoUnsupportedMessage =
     'LiteRT-LM video input is not supported through llamadart. '
     'Extract and send image frames instead.';
 
+// Hosts and accelerators where real-model JSON Schema runs passed; the others
+// stay refused until a run on that host passes.
+const _jsonSchemaQualifiedBackendsByAbi = <Abi, Set<String>>{
+  Abi.macosArm64: {'cpu', 'gpu'},
+  Abi.iosArm64: {'cpu', 'gpu'},
+  Abi.androidArm64: {'cpu'},
+  Abi.linuxX64: {'cpu'},
+  Abi.linuxArm64: {'cpu'},
+  Abi.windowsX64: {'cpu'},
+};
+
 /// Reads what the `.litertlm` bundle at a path declares, as
 /// [LiteRtLmRuntimeClient.bundleCapabilities] does.
 typedef LiteRtLmBundleCapabilitiesReader =
@@ -132,7 +143,7 @@ class LiteRtLmService {
     LiteRtLmBundleChatTemplateReader? readBundleChatTemplate,
     LiteRtLmBundleFirstChannelReader? readBundleFirstChannel,
     String? finishReasonProbeLibraryPath,
-    bool Function()? jsonSchemaPlatformSupported,
+    Set<String> Function()? jsonSchemaQualifiedBackends,
     LiteRtLmVulkanAdapters Function()? probeGpuAdapters,
   }) : _probeGpuAdapters =
            probeGpuAdapters ??
@@ -141,9 +152,9 @@ class LiteRtLmService {
                    runtimeClientFactory == null
                ? _systemVulkanAdaptersProbe
                : null),
-       _jsonSchemaPlatformSupported =
-           jsonSchemaPlatformSupported ??
-           (() => Platform.isMacOS && Abi.current() == Abi.macosArm64),
+       _jsonSchemaQualifiedBackends =
+           jsonSchemaQualifiedBackends ??
+           (() => _jsonSchemaQualifiedBackendsByAbi[liteRtLmGateAbi()] ?? {}),
        _clientFactory =
            runtimeClientFactory ??
            (() => clientFactory == null
@@ -219,7 +230,7 @@ class LiteRtLmService {
 
   bool _jsonSchemaAdmitted = false;
   bool _jsonSchemaThinking = false;
-  final bool Function() _jsonSchemaPlatformSupported;
+  final Set<String> Function() _jsonSchemaQualifiedBackends;
   LiteRtLmEmbeddingRuntimeSession? _embedding;
   LiteRtLmCacheLease? _cacheLease;
   ModelParams? _modelParams;
@@ -658,13 +669,15 @@ class LiteRtLmService {
   Future<void> prepareJsonSchemaChat() async {
     if (_jsonSchemaAdmitted) return;
     _requireConversationEngine();
-    const platformRefusal =
-        'Native JSON Schema chat is qualified only on macOS arm64 CPU and GPU; '
-        'NPU and other platforms are unsupported.';
-    if (!_jsonSchemaPlatformSupported() ||
-        _backendNameFor(_modelParams ?? const ModelParams()) == 'npu') {
-      throw LlamaUnsupportedException(platformRefusal);
-    }
+    final qualified = _jsonSchemaQualifiedBackends();
+    Never refuseBackend(String backend) => throw LlamaUnsupportedException(
+      'Native JSON Schema chat is not qualified for the LiteRT-LM $backend '
+      'backend on ${liteRtLmGateAbi()}'
+      '${qualified.isEmpty ? '' : '; load with ${qualified.map((b) => 'ComputeDevice.$b').join(' or ')}'}.',
+    );
+    // The loaded backend includes the deprecated preferredBackend override.
+    final loaded = _loadedBackend!;
+    if (!qualified.contains(loaded)) refuseBackend(loaded);
     final routing = _templateRouting();
     final family = routing.family;
     final customTemplate = _modelParams?.chatTemplate;
@@ -686,6 +699,8 @@ class LiteRtLmService {
     }
     _cancelRequested = false;
     final client = await _ensureClientForGeneration(const GenerationParams());
+    // An automatic GPU load can run on the CPU instead.
+    if (!qualified.contains(_activeBackend)) refuseBackend(_activeBackend!);
     if (!client.supportsJsonSchemaConstraints) {
       throw LlamaUnsupportedException(
         'Native JSON Schema chat requires all constraint-provider and thinking-config symbols. '

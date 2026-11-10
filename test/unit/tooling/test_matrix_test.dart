@@ -236,6 +236,36 @@ void main() {
       isFalse,
     );
   });
+  test('the device JSON Schema matrix command dry-runs its scenario', () async {
+    final row = testMatrixRows.singleWhere(
+      (row) => row.id == 'chat-app-litert-json-schema',
+    );
+    expect(row.tier, 'high-risk');
+    final args = row.command
+        .split(' ')
+        .skip(3)
+        .map(
+          (arg) => switch (arg) {
+            '<android|ios|macos>' => 'android',
+            '<device-path-or-http-url>' => '/data/local/tmp/m.litertlm',
+            _ => arg,
+          },
+        )
+        .toList();
+    expect(args[args.indexOf('--scenario') + 1], row.id);
+    final result = await runLocalE2e(
+      [...args, '--dry-run'],
+      projectRoot: '/repo',
+      displayShell: LocalE2eDisplayShell.posix,
+    );
+    expect(result.exitCode, 0, reason: result.stderr);
+    expect(
+      result.stdout,
+      contains(
+        'integration_test/litert_lm_json_schema_e2e_test.dart -d android',
+      ),
+    );
+  });
   test(
     'native JSON Schema matrix command reaches its maintained local-only scenario',
     () async {

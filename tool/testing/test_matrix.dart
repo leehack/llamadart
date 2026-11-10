@@ -1333,6 +1333,24 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
         'Chat app model lifecycle, cache, projector, or device UI changes.',
   ),
   TestMatrixRow(
+    id: 'chat-app-litert-json-schema',
+    tier: 'high-risk',
+    mode: 'local-only; device',
+    covers:
+        'Native JSON Schema enforcement on a device: adversarial control, '
+        'nested/array/ref/anyOf/pattern contract, typed contract refusal, '
+        'Gemma 4 thinking or Qwen3 thinking refusal and a length cutoff '
+        'inside a constrained string',
+    command:
+        'dart run tool/testing/run_local_e2e.dart --scenario '
+        'chat-app-litert-json-schema --device <android|ios|macos> '
+        '--model-path <device-path-or-http-url> --backend cpu',
+    useWhen:
+        'Qualifying native schema output on Android or iOS, or changing the '
+        'platform gate. Run per fixed model (Qwen3-0.6B, Gemma 4 E2B) and '
+        'per backend (cpu, gpu).',
+  ),
+  TestMatrixRow(
     id: 'chat-app-litert-reload-memory',
     tier: 'targeted',
     mode: 'local-only',

@@ -483,9 +483,17 @@ Patterns must be anchored `^...$` sequences of safe literals, positive character
 classes/ranges and groups, with group alternation and repetition counts up to
 1024; unsupported regex constructs are rejected. Backends without
 grammar constraints still fail early for strict output unless they expose a
-separate admitted JSON Schema provider. Native LiteRT-LM has that path on
-macOS arm64 CPU and GPU with Qwen3 (canonical text template) and Gemma 4
-(bundle template) models; LiteRT-LM Web does not.
+separate admitted JSON Schema provider. Native LiteRT-LM has that path for
+Qwen3 (canonical text template) and Gemma 4 (bundle template) models on the
+hosts below; every other host or accelerator, including NPU, Android x64,
+macOS x64 and LiteRT-LM Web, refuses it before loading an engine.
+
+| Host | Admitted | Real-model runs that passed |
+| --- | --- | --- |
+| macOS arm64 | CPU, GPU | Qwen3 and Gemma 4, CPU and GPU |
+| iOS arm64 | CPU, GPU | Simulator only: Qwen3 CPU and GPU, Gemma 4 CPU; Gemma 4 cannot create a GPU engine there |
+| Android arm64 | CPU | Emulator only: Qwen3 CPU; Gemma 4 not yet run |
+| Linux x64, Linux arm64, Windows x64 | CPU | Qwen3 and Gemma 4, CPU |
 
 Native LiteRT-LM accepts only schemas that both the GBNF converter above and
 LiteRT-LM's LLGuidance provider enforce alike, so every schema it accepts is
