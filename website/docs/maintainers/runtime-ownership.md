@@ -60,12 +60,22 @@ report why a conversation stream turn ended, and llamadart reads it
   `generationLimitUnsupportedReason` is null only after a load on a reporting
   runtime.
 
-Web `@litert-lm/core@0.19.0` exposes no cause, so LiteRT-LM Web keeps
-rejecting automatic tool loops. It needs a terminal cause from a qualified
-`@litert-lm/core` release (or an owned bridge package) that distinguishes EOS,
-output and context budgets and cancellation, a capability probe for it in
-`litert_lm_backend_web.dart`, and `BackendGenerationLimitReporting` there.
-Plain completion stays available; its `stop` remains unverified.
+Web `@litert-lm/core@0.19.0` exposes no cause, but its counts bound one.
+`withTextHistory()` loads set `benchmarkEnabled`, and after each turn
+`litert_lm_backend_web.dart` reads `getBenchmarkInfo().lastDecodeTokenCount`
+(the turn's decode steps, end-of-turn token included) and `getTokenCount()`
+(the conversation's tokens). Upstream `ShouldStop` stops on a stop token, at
+`current_step >= max_num_tokens` or at `num_decoded_steps >=
+max_output_tokens`, so fewer steps than `maxOutputTokens` and fewer tokens
+than the engine's resolved `maxNumTokens` prove a stop-token end; anything
+else reports `contextSize` or `maxTokens`, and unreadable counts report
+`runtime`. A stop exactly at the budget is indistinguishable and reports
+`maxTokens`. Cancellation and Dart stop sequences win. The load probe runs a
+one-token turn and requires a decode count of 1, a context count above it
+and a resolved `maxNumTokens`; otherwise `generationLimitUnsupportedReason`
+stays set. Requalify with `litert-lm-web-truncation` whenever the
+`@litert-lm/core` pin changes: a new stop condition in `ShouldStop` breaks
+the inference.
 
 Why the cause needs the owner patch, from upstream `v0.18.0`:
 

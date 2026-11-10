@@ -1206,9 +1206,28 @@ dart run tool/testing/run_local_e2e.dart --scenario litert-lm-web-tool-calling \
   --model-path /path/to/Qwen3-0.6B.litertlm --backend cpu --dry-run
 ```
 
-Use `--backend gpu` with a `-web.litertlm` bundle for WebGPU. Automatic tool
-loops stay out of scope until the runtime reports truncation
-([#919](https://github.com/leehack/llamadart/issues/919)).
+Use `--backend gpu` with a `-web.litertlm` bundle for WebGPU.
+
+### LiteRT-LM Web truncation
+
+`litert-lm-web-truncation` runs the same local server and Chrome
+configuration with `test/e2e/backends/litert_lm_truncation_web_e2e_test.dart`
+([#919](https://github.com/leehack/llamadart/issues/919)). It downloads no
+model. The published runtime alone, with `benchmarkEnabled`, measures a
+natural reply's decode steps `n` and replays it at budgets `n + 1`, `n`,
+`n - 1` and `n - 2`, then fills a 1024-token context. The adapter must report
+`stop` above `n`, `length`/`maxTokens` at and below it, `length`/`contextSize`
+for the filled context, complete an automatic `get_weather` loop, and stop a
+3-token loop as `truncated` without running the tool. Dry-run before
+execution:
+
+```bash
+dart run tool/testing/run_local_e2e.dart --scenario litert-lm-web-truncation \
+  --model-path /path/to/Qwen3-0.6B.litertlm --backend cpu --dry-run
+```
+
+Use `--backend gpu` with a `-web.litertlm` bundle for WebGPU. Rerun it when
+the `@litert-lm/core` pin changes.
 
 ### Native LiteRT-LM JSON Schema
 

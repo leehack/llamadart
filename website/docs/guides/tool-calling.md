@@ -282,8 +282,7 @@ them as tool calls to history. `completion.message`, `ChatSession` history and
 automatic tool loops exclude them. Natural EOF and cancellation retain their
 existing parsing behavior and expose no `partialToolCalls`; diagnostics never
 establish why generation ended. `ToolChoice.none` and parsing-disabled output
-stay literal. In particular, LiteRT-LM Web still has the unknown-finish-cause
-restriction tracked by [#919](https://github.com/leehack/llamadart/issues/919).
+stay literal.
 
 ```dart
 final reply = await engine.complete(messages, tools: tools);
@@ -604,15 +603,28 @@ runtime termination reporting, so that a reply cut off at `maxTokens` or the
 context stops the loop as `truncated` without running its calls. Native
 LiteRT-LM reports why a reply ended on runtimes whose
 `stream_proxy_finish_reason_abi_version` export returns 1: litert-lm-native
-`v0.18.0-3` and later, including the default pin. Older native runtimes, and
-Web `@litert-lm/core@0.19.0`, which reports no cause
-([#919](https://github.com/leehack/llamadart/issues/919)), throw
-`LlamaUnsupportedException` before starting the loop or modifying its history, including when resuming a turn or
-passing an empty tools list. Plain `ChatSession.create` and
-`LlamaEngine.create` remain available there for manually managed completion;
-their LiteRT-LM `stop` finish reason does not prove the model reached EOS. Do
-not execute calls automatically based on that value or infer truncation from
-output length.
+`v0.18.0-3` and later, including the default pin.
+
+LiteRT-LM Web `@litert-lm/core@0.19.0` reports no cause, so
+`LlamaBackend.withTextHistory()` (or `LiteRtLmBackend.withTextHistory()`)
+reads the runtime's token counts instead
+([#919](https://github.com/leehack/llamadart/issues/919)). The load enables
+the runtime's benchmark record and probes it with a one-token turn. The
+runtime ends a turn at an end-of-turn token, when its decode steps reach
+`maxTokens`, or when the conversation fills the context, so a turn with fewer
+decode steps than `maxTokens` and fewer tokens than the context size ended
+normally; any other turn ends with `length`. The end-of-turn token counts as a
+decode step, so a reply whose last token lands exactly on `maxTokens` is also
+reported as `length` and stops an automatic loop as `truncated`: give replies
+headroom.
+
+Older native runtimes, Web runtimes that fail the probe and the default Web
+constructors throw `LlamaUnsupportedException` before starting the loop or
+modifying its history, including when resuming a turn or passing an empty
+tools list. Plain `ChatSession.create` and `LlamaEngine.create` remain
+available there for manually managed completion; their LiteRT-LM `stop`
+finish reason does not prove the model reached EOS. Do not execute calls
+automatically based on that value or infer truncation from output length.
 
 LiteRT-LM Web runs manual tool calling through `LlamaBackend.withTextHistory()`
 (or `LiteRtLmBackend.withTextHistory()`) on `@litert-lm/core@0.19.0`, when the
@@ -624,8 +636,8 @@ content. Add one `LlamaToolResultContent` message per call, as in the
 manual loop above; assistant calls and results reach the runtime in the shape
 native LiteRT-LM sends. `ToolChoice.none` declares no tools, while
 `ToolChoice.required`, `parallelToolCalls`, tool-result `content` and media
-throw `LlamaUnsupportedException`. Because the reply's stop reason is unknown,
-check a reply before running its calls ([#919](https://github.com/leehack/llamadart/issues/919)).
+throw `LlamaUnsupportedException`. Automatic loops run there when the load's
+token-count probe passes, as described above.
 
 GPT-OSS channel and assistant frames wait for final parsing, including headers
 continued from the model's prompt, with or without tools. Ordinary prose streams

@@ -20,8 +20,7 @@ description: >-
   or append it to history. `completion.message`, sessions and automatic loops
   exclude diagnostics. All executable calls remain withheld at length.
   Natural EOF/cancellation expose no diagnostics and retain existing policy;
-  none/parsing-disabled output stays literal. This does not resolve LiteRT-LM
-  Web's unknown finish cause (#919).
+  none/parsing-disabled output stays literal.
 
 - Prefer `session.sendWithTools(text, tools: ..., maxRounds: ...)`: it runs
   each call's `ToolDefinition.handler` (concurrently for parallel calls),
@@ -212,16 +211,20 @@ description: >-
 - Automatic `sendWithTools` and `completeWithTools` loops need a runtime that
   reports why generation stopped; a reply cut off at `maxTokens` returns
   `LlamaToolLoopStopReason.truncated` and runs no tools. Native LiteRT-LM
-  reports it from litert-lm-native `v0.18.0-3` (the default pin does). Older
-  native runtimes and Web `@litert-lm/core@0.19.0` throw
-  `LlamaUnsupportedException` before generation or history mutation; manual
+  reports it from litert-lm-native `v0.18.0-3` (the default pin does).
+  LiteRT-LM Web infers it from `@litert-lm/core@0.19.0` token counts through
+  `LlamaBackend.withTextHistory()` once a load probe passes; a reply ending
+  exactly at `maxTokens` also counts as truncated, so leave headroom. Older
+  native runtimes, Web runtimes that fail the probe and the default Web
+  constructors throw `LlamaUnsupportedException` before generation or history
+  mutation; manual
   `ChatSession.create`/`LlamaEngine.create` still work there, but their `stop`
   does not prove EOS. Do not infer truncation from output length or run tool
   handlers automatically from an unverified terminal result.
 - Runtime limits: LiteRT-LM has no grammar enforcement, LiteRT-LM on web
-  forwards tools only through `LlamaBackend.withTextHistory()` (manual
-  `create` calls; `ToolChoice.required`, `parallelToolCalls` and tool-result
-  `content` throw), and WebGPU `ToolChoice.auto` parses calls best-effort.
+  forwards tools only through `LlamaBackend.withTextHistory()`
+  (`ToolChoice.required`, `parallelToolCalls` and tool-result `content`
+  throw), and WebGPU `ToolChoice.auto` parses calls best-effort.
   `(await engine.capabilities).supportsToolCalling`,
   `supportsStructuredOutput` and `supportsLazyGrammar` report these per
   loaded model. Test tool flows on every target runtime.

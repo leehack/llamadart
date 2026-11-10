@@ -154,9 +154,11 @@ in the llamadart-getting-started and llamadart-chat-streaming skills.
   text and manual tool calling: `create` returns the runtime's tool calls, and
   you add a tool result message per call before the next `create`.
   `supportsMultiTurnChat` and `supportsToolCalling` report what the loaded
-  runtime forwards. Automatic tool loops (`sendWithTools`), `ToolChoice.required`
-  and `parallelToolCalls` still throw, because the runtime reports no
-  truncation.
+  runtime forwards. A reply cut off at `maxTokens` or the context ends with
+  `length` (inferred from the runtime's token counts, after a load probe), so
+  `sendWithTools` runs and returns `truncated` for a cut-off reply; a reply
+  ending exactly at `maxTokens` also counts as cut off. `ToolChoice.required`
+  and `parallelToolCalls` still throw.
   It rejects media parts, grammar, `penalty`, `minP`, `presencePenalty`,
   `thinkingBudget` and speculative decoding; generation honors only
   `maxTokens`, `temp`, `topK`, `topP`, `seed` and `stopSequences`. It has no

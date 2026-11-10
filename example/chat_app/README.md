@@ -280,10 +280,11 @@ flutter test --run-skipped -t local-only \
      ordered system/user/assistant text through the probed LiteRT-LM Web
      conversation API. The runtime still applies its own model template.
      Function Calling and Thinking controls remain unavailable: the app uses
-     model-default thinking without changing saved preferences. The library
-     supports manual LiteRT-LM Web tool calls, but this app runs tool calls
-     automatically, which needs the truncation report the runtime lacks
-     ([#919](https://github.com/leehack/llamadart/issues/919)). Media and
+     model-default thinking without changing saved preferences. Function
+     Calling runs when the loaded runtime reports replies cut off at a token
+     limit (`@litert-lm/core@0.19.0`,
+     [#919](https://github.com/leehack/llamadart/issues/919)); the app runs no
+     tool calls from a reply cut off at a token limit. Media and
      template/thinking controls are outside this slice.
      Existing core default backends and the Genkit adapter do not opt in
      automatically.
