@@ -333,11 +333,13 @@ void main() {
         '${complete}tail',
         '${complete.substring(0, complete.length - 1)}tail',
         '${complete.substring(0, complete.length - 1)} </seed:tool',
+        '$complete$complete',
+        'Checking.\n$complete$complete',
       ]) {
         final parsed = SeedOssHandler().parseWithTools(output, tools: tools);
 
         expect(parsed.toolCalls, isEmpty, reason: output);
-        expect(parsed.content, output, reason: output);
+        expect(parsed.content, output.trim(), reason: output);
       }
     });
 

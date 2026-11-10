@@ -178,21 +178,28 @@ class SeedOssHandler extends ChatTemplateHandler
           )
         : null;
     final body = thought?.content ?? output;
-    final parsed = parseXmlToolCalls(
-      isPartial || !parseToolCalls ? body : _withLastScopeEnded(body),
+    final stringArguments = {
+      for (final tool in tools ?? const <ToolDefinition>[])
+        tool.name: {
+          for (final MapEntry(:key, :value) in schemaProperties(
+            tool.toJsonSchema(),
+          ).entries)
+            if (schemaResolvesToString(value)) key,
+        },
+    };
+    ChatParseResult parseBody(String text) => parseXmlToolCalls(
+      text,
       XmlToolCallFormat.seedOss,
       parseToolCalls: parseToolCalls,
       extractsThought: false,
-      stringArguments: {
-        for (final tool in tools ?? const <ToolDefinition>[])
-          tool.name: {
-            for (final MapEntry(:key, :value) in schemaProperties(
-              tool.toJsonSchema(),
-            ).entries)
-              if (schemaResolvesToString(value)) key,
-          },
-      },
+      stringArguments: stringArguments,
     );
+    final ended = isPartial || !parseToolCalls
+        ? (text: body, endAdded: false)
+        : _withLastScopeEnded(body);
+    var parsed = parseBody(ended.text);
+    // When the calls still fail, the added scope end would show in content.
+    if (ended.endAdded && parsed.toolCalls.isEmpty) parsed = parseBody(body);
     return ChatParseResult(
       content: parsed.content.trim(),
       reasoningContent: thought?.reasoning,
@@ -205,17 +212,22 @@ class SeedOssHandler extends ChatTemplateHandler
   /// a scope that ends before its call does.
   ///
   /// A last scope whose text could not start a call is left as it is.
-  static String _withLastScopeEnded(String reply) {
+  /// [endAdded] tells whether the scope end was added.
+  static ({String text, bool endAdded}) _withLastScopeEnded(String reply) {
     const format = XmlToolCallFormat.seedOss;
+    final unchanged = (text: reply, endAdded: false);
     final start = reply.lastIndexOf(format.scopeStart);
-    if (start < 0 || reply.contains(format.scopeEnd, start)) return reply;
+    if (start < 0 || reply.contains(format.scopeEnd, start)) return unchanged;
     final callEnd = _unendedCallEnd(reply, start + format.scopeStart.length);
-    if (callEnd == null) return reply;
-    if (callEnd < 0) return reply.substring(0, start);
+    if (callEnd == null) return unchanged;
+    if (callEnd < 0) return (text: reply.substring(0, start), endAdded: false);
     final rest = reply.substring(callEnd).trimLeft();
     return format.scopeEnd.startsWith(rest)
-        ? '${reply.substring(0, callEnd)}${format.scopeEnd}'
-        : reply;
+        ? (
+            text: '${reply.substring(0, callEnd)}${format.scopeEnd}',
+            endAdded: true,
+          )
+        : unchanged;
   }
 
   /// Where the call that the scope opening before [from] in [reply] holds
