@@ -1,6 +1,10 @@
+## 0.19.3
+
+- Refresh README installation guidance for core `0.19.3`; Apple SwiftPM stays pinned to `leehack/stable-diffusion-native@v0.3.0-3`.
+
 ## 0.19.2
 
-- Refresh README installation guidance for core `0.19.2`; Apple SwiftPM stays pinned to `leehack/stable-diffusion-native@v0.3.0-3`.
+- Not published: pub.dev rejected the core 0.19.2 upload, so this companion release did not run. 0.19.3 ships its README refresh.
 
 ## 0.19.1
 

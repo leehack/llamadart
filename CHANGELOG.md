@@ -1,10 +1,9 @@
 Releases before 0.10.0 are in the
 [changelog archive](https://github.com/leehack/llamadart/blob/main/doc/changelog_archive.md).
 
-## Unreleased
+## 0.19.3
 
-## 0.19.2
-
+- Ship the 0.19.2 changes below, which never reached pub.dev: pub.dev rejected the 0.19.2 `CHANGELOG.md` as larger than 256 KiB, so notes for releases before 0.10.0 moved to the [changelog archive](https://github.com/leehack/llamadart/blob/main/doc/changelog_archive.md).
 - Keep the default WebGPU bridge assets at `v0.1.83` (unchanged from 0.19.1).
 - Fix `dart run llamadart:doctor_native --runtime litert_lm` on macOS reporting `ASSET_NOT_DECLARED` for a working runtime: it now checks the runtime the build hook keeps in its cache and reports `target_source: build_hook_cache` ([#1855](https://github.com/leehack/llamadart/issues/1855)).
 - Send the prompt unchanged from native LiteRT-LM `generate()`, like other backends, instead of wrapping it in the bundle's chat turn, so `create()` requests that fall back to a rendered prompt are no longer templated twice. A prompt that already starts with the model's start token, such as Gemma's `<bos>`, no longer gets a second one; an empty prompt throws `LlamaArgumentException`; and pre-1.0 runtime overrides without the conversation template setter refuse raw `generate()` with `LlamaUnsupportedException` ([#1853](https://github.com/leehack/llamadart/issues/1853)).
@@ -14,6 +13,10 @@ Releases before 0.10.0 are in the
 - Keep a `</think>` that comes before any `<think>` in a Hermes, Qwen3-Coder XML or DeepSeek V3 reply as content, with every thinking tag after it, when the prompt opened no thought (such as Qwen3 with thinking on), as llama.cpp does. The result used to depend on how the stream was chunked and could repeat the text before the tag as both content and reasoning ([#1858](https://github.com/leehack/llamadart/issues/1858)).
 
 Runtime baseline: native llama.cpp `v0.9.0` and Web use upstream `v0.9.0@cd959bae99ff4bed22bef2604f45241c09bbb8c8`; native LiteRT-LM uses `v0.19.1-2` and stable-diffusion uses `v0.3.0-3`. Web LiteRT-LM uses `@litert-lm/core@0.19.0`. Manifest SHA-256: `ae6f488408672f9ba28d8f9e664a2b85f4e12048f290e259e18dd0b750c038e5`.
+
+## 0.19.2
+
+Not published: pub.dev rejected the upload because `CHANGELOG.md` exceeded its 256 KiB limit. Its changes ship in 0.19.3.
 
 ## 0.19.1
 
