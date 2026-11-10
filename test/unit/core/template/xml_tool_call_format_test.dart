@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:llamadart/src/core/models/chat/completion_chunk.dart';
 import 'package:llamadart/src/core/models/tools/tool_definition.dart';
 import 'package:llamadart/src/core/models/tools/tool_param.dart';
+import 'package:llamadart/src/core/template/chat_parse_result.dart';
 import 'package:llamadart/src/core/template/xml_tool_call_format.dart';
 import 'package:test/test.dart';
 
@@ -519,8 +520,9 @@ void main() {
   }
 
   // llama.cpp 620d2225 returns no call for either Qwen3-Coder output, and
-  // empty content where this scan keeps the output as text. Seed-OSS differs
-  // there: a scope without a line break is text to llama.cpp.
+  // empty content where this scan keeps the output as text (the Qwen3-Coder
+  // handler parses with endsAtLastCall, below). Seed-OSS differs there: a
+  // scope without a line break is text to llama.cpp.
   test('an empty first Qwen3-Coder scope starts no later calls', () {
     const call =
         '<tool_call>\n<function=weather>\n<parameter=city>\nParis\n'
@@ -535,5 +537,72 @@ void main() {
       expect(parsed.toolCalls, isEmpty, reason: output);
       expect(parsed.content, output);
     }
+  });
+
+  group('endsAtLastCall', () {
+    String call(String city) =>
+        '<tool_call>\n<function=weather>\n<parameter=city>\n$city\n'
+        '</parameter>\n</function>\n</tool_call>';
+    List<String> cities(ChatParseResult parsed) => [
+      for (final call in parsed.toolCalls)
+        (jsonDecode(call.function!.arguments!) as Map)['city'] as String,
+    ];
+    ChatParseResult parse(
+      String output, {
+      int? maxToolCalls,
+      bool isPartial = false,
+    }) => parseXmlToolCalls(
+      output,
+      XmlToolCallFormat.qwen3Coder,
+      endsAtLastCall: true,
+      maxToolCalls: maxToolCalls,
+      isPartial: isPartial,
+    );
+
+    test('keeps the text before the first scope and drops the rest', () {
+      final parsed = parse('Checking.\n${call('Paris')}\nDone.');
+
+      expect(parsed.content, 'Checking.');
+      expect(cities(parsed), ['Paris']);
+    });
+
+    test('takes consecutive scopes up to maxToolCalls', () {
+      final output = '${call('Paris')}\n${call('Rome')}';
+
+      expect(cities(parse(output)), ['Paris', 'Rome']);
+      expect(cities(parse(output, maxToolCalls: 1)), ['Paris']);
+    });
+
+    test('stops at a scope that is empty or holds two calls', () {
+      const twoCalls =
+          '<tool_call>\n<function=weather>\n<parameter=city>\nRome\n'
+          '</parameter>\n</function>\n<function=weather>\n'
+          '<parameter=city>\nOslo\n</parameter>\n</function>\n</tool_call>';
+      for (final (output, expected) in [
+        ('<tool_call>\n</tool_call>\n${call('Paris')}', <String>[]),
+        ('$twoCalls\n${call('Paris')}', <String>[]),
+        ('${call('Paris')}\n$twoCalls', ['Paris']),
+      ]) {
+        final parsed = parse('Hi $output');
+
+        expect(cities(parsed), expected, reason: output);
+        expect(parsed.content, 'Hi', reason: output);
+      }
+    });
+
+    test('takes a call that ends a finished reply without its scope end', () {
+      for (final cut in ['</tool_call>', 'tool_call>', '>']) {
+        final output = '${call('Paris')}\n${call('Rome')}';
+        final truncated = output.substring(0, output.length - cut.length);
+
+        expect(cities(parse(truncated)), ['Paris', 'Rome'], reason: cut);
+        expect(cities(parse(truncated, isPartial: true)), ['Paris']);
+      }
+      final cutInValue = '${call('Paris')}\n${call('Rome')}'.substring(
+        0,
+        call('Paris').length + 40,
+      );
+      expect(cities(parse(cutInValue)), ['Paris']);
+    });
   });
 }

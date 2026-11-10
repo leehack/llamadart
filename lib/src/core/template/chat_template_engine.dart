@@ -759,6 +759,7 @@ class ChatTemplateEngine {
     parseToolCalls: parseToolCalls,
     thinkingForcedOpen: rendered.thinkingForcedOpen,
     thinkingForcedClosed: thinkingForcedClosedOf(rendered),
+    singleToolCall: singleToolCallOf(rendered),
     parser: rendered.parser,
     tools: tools,
   );
@@ -782,6 +783,7 @@ class ChatTemplateEngine {
     required bool thinkingForcedOpen,
     required bool thinkingForcedClosed,
     bool promptOpensNoThought = false,
+    bool singleToolCall = false,
     String? parser,
     List<ToolDefinition>? tools,
   }) {
@@ -794,6 +796,7 @@ class ChatTemplateEngine {
       thinkingForcedOpen: thinkingForcedOpen,
       thinkingForcedClosed: thinkingForcedClosed,
       promptOpensNoThought: promptOpensNoThought,
+      singleToolCall: singleToolCall,
       parser: parser,
       tools: tools,
     );
@@ -845,6 +848,7 @@ class ChatTemplateEngine {
     required bool thinkingForcedOpen,
     required bool thinkingForcedClosed,
     required bool promptOpensNoThought,
+    required bool singleToolCall,
     String? parser,
     List<ToolDefinition>? tools,
   }) {
@@ -910,6 +914,7 @@ class ChatTemplateEngine {
         parseToolCalls: parseToolCalls,
         thinkingForcedOpen: thinkingForcedOpen,
         thoughtTagsAreText: thoughtTagsAreText,
+        singleToolCall: singleToolCall,
       );
     } else if (handler is DeepseekV3Handler) {
       result = handler.parse(
@@ -1146,29 +1151,42 @@ bool takesThoughtOnlyAtReplyStart(int formatIndex) =>
     ).traits.takesThoughtOnlyAtReplyStart;
 
 /// The markers that show where a reply ends a thought that a handler closed
-/// for thinking off: the format's thinking tags and, for Cohere2 MoE, where
-/// its text or action starts, as llama.cpp ends the thought it keeps open.
+/// for thinking off: the format's thinking tags and its
+/// [ChatFormatTraits.forcedThoughtContentOpenings], such as where a Cohere2
+/// MoE text or action starts, as llama.cpp ends the thought it keeps open.
 List<String> closedThoughtMarkers(int formatIndex) {
   final tags = ChatTemplateEngine.thinkingTagsFor(formatIndex);
   return [
     tags.startTag,
     tags.endTag,
-    if (formatIndex == ChatFormat.cohere2Moe.index)
-      ...Cohere2MoeHandler.forcedThoughtContentOpenings,
+    ..._traitsOf(formatIndex).forcedThoughtContentOpenings,
   ];
 }
+
+/// Whether llama.cpp keeps open the thought that a [formatIndex] handler
+/// closed for thinking off, so that a reply showing one of
+/// [closedThoughtMarkers] parses as after a forced-open prompt.
+bool reopensClosedThought(int formatIndex) =>
+    _traitsOf(formatIndex).reopensThoughtClosedForThinkingOff;
+
+ChatFormatTraits _traitsOf(int formatIndex) =>
+    formatIndex < ChatFormat.values.length
+    ? chatFormatRegistration(ChatFormat.values[formatIndex]).traits
+    : ChatFormatTraits.none;
 
 /// Parses [output] of a render of this engine, whose internal thought mark
 /// [ChatTemplateEngine.parse] cannot see.
 ///
-/// llama.cpp keeps open the thought a Seed-OSS or Cohere2 MoE handler closed
-/// for thinking off ([thoughtClosedForThinkingOff]), so a reply that shows one
-/// of [closedThoughtMarkers] parses as after a forced-open prompt. Without it
+/// llama.cpp keeps open the thought a Seed-OSS, Cohere2 MoE or Qwen3-Coder XML
+/// handler closed for thinking off ([thoughtClosedForThinkingOff]), so a reply
+/// that shows one of [closedThoughtMarkers] parses as after a forced-open
+/// prompt. Without it
 /// or [thinkingForcedOpen] the prompt opened no thought, so a Seed-OSS end tag
 /// in a reply that does not start with a thought is content, a format with
 /// [ChatFormatTraits.takesThoughtOnlyAtReplyStart] takes a thought only at the
 /// start of the reply, and a DeepSeek V3 reply with an end tag before any
-/// start tag keeps its thinking tags as content.
+/// start tag keeps its thinking tags as content. With [singleToolCall], a
+/// Qwen3-Coder XML reply has at most one tool call.
 ChatParseResult parseRenderedOutput(
   int formatIndex,
   String output, {
@@ -1178,6 +1196,7 @@ ChatParseResult parseRenderedOutput(
   bool parseToolCalls = true,
   bool thinkingForcedOpen = false,
   bool thinkingForcedClosed = false,
+  bool singleToolCall = false,
   String? parser,
   List<ToolDefinition>? tools,
 }) => ChatTemplateEngine._parseOutput(
@@ -1189,11 +1208,11 @@ ChatParseResult parseRenderedOutput(
   thinkingForcedOpen:
       thinkingForcedOpen ||
       (thoughtClosedForThinkingOff &&
-          (formatIndex == ChatFormat.seedOss.index ||
-              formatIndex == ChatFormat.cohere2Moe.index) &&
+          reopensClosedThought(formatIndex) &&
           closedThoughtMarkers(formatIndex).any(output.contains)),
   thinkingForcedClosed: thinkingForcedClosed,
   promptOpensNoThought: !thoughtClosedForThinkingOff,
+  singleToolCall: singleToolCall,
   parser: parser,
   tools: tools,
 );

@@ -100,12 +100,12 @@ void main() {
       '>\n{}\n</parameter>',
       '>\n{"extra":1}\n</parameter>',
     ),
-    'truncated envelope': qwenResultEnvelope.replaceFirst('</tool_call>', ''),
     'malformed later call': qwenResultEnvelope.replaceFirst(
       '</tool_call>',
       '<function=unknown></function>\n</tool_call>',
     ),
   };
+  // As in llama.cpp, the reply ends before an invalid call.
   for (final entry in invalid.entries) {
     test('production parser atomically rejects ${entry.key}', () {
       final parsed = ChatTemplateEngine.parse(
@@ -114,9 +114,22 @@ void main() {
         tools: [qwenResultTool],
       );
       expect(parsed.toolCalls, isEmpty);
-      expect(parsed.content, entry.value);
+      expect(parsed.content, isEmpty);
     });
   }
+
+  test('a call whose reply ends before its scope end counts', () {
+    final parsed = ChatTemplateEngine.parse(
+      renderQwenResultHistory().format,
+      qwenResultEnvelope.replaceFirst('</tool_call>', ''),
+      tools: [qwenResultTool],
+    );
+    expect(parsed.toolCalls, hasLength(1));
+    expect(
+      jsonDecode(parsed.toolCalls.single.function!.arguments!),
+      qwenResultPayload,
+    );
+  });
 
   test('explicit empty tools cannot create an undeclared call', () {
     final parsed = ChatTemplateEngine.parse(
@@ -125,7 +138,7 @@ void main() {
       tools: [],
     );
     expect(parsed.toolCalls, isEmpty);
-    expect(parsed.content, qwenResultEnvelope);
+    expect(parsed.content, isEmpty);
   });
 
   test('zero-argument and optional schemas remain valid', () {
@@ -201,10 +214,13 @@ void main() {
                 .map((c) => c.choices.single.delta.thinking ?? '')
                 .join();
             expect(reasoning.trim(), thinking ? 'reason' : '');
-            if (malformed || choice == ToolChoice.none) {
+            if (choice == ToolChoice.none) {
               expect(calls, isEmpty);
               expect(content.join().trim(), body);
-              if (choice != ToolChoice.none) expect(content, [body]);
+              expect(chunks.last.choices.single.finishReason, 'stop');
+            } else if (malformed) {
+              expect(calls, isEmpty);
+              expect(content, isEmpty);
               expect(chunks.last.choices.single.finishReason, 'stop');
             } else {
               expect(content, isEmpty);

@@ -79,7 +79,9 @@ class Qwen3CoderXmlHandler extends ChatTemplateHandler
         metadata[internalParallelToolCallsMetadataKey] == 'true';
     final toolChoiceNone = toolChoice == ToolChoice.none.name;
     final toolChoiceRequired = toolChoice == ToolChoice.required.name;
-    final thinkingForcedClosed = isThinkingForcedClosed(prompt);
+    // llama.cpp takes no thought from a reply to a template without one.
+    final thinkingForcedClosed =
+        isThinkingForcedClosed(prompt) || !templateSource.contains('<think>');
     var thinkingForcedOpen = false;
     var thoughtClosed = false;
     if (isThinkingForcedOpen(prompt, startTag: '<think>')) {
@@ -145,9 +147,12 @@ class Qwen3CoderXmlHandler extends ChatTemplateHandler
           : const [],
       parser: parser,
     );
-    return withThoughtClosedForThinkingOff(
-      withThinkingForcedClosed(rendered, closed: thinkingForcedClosed),
-      closed: thoughtClosed,
+    return withSingleToolCall(
+      withThoughtClosedForThinkingOff(
+        withThinkingForcedClosed(rendered, closed: thinkingForcedClosed),
+        closed: thoughtClosed,
+      ),
+      single: hasTools && !parallelToolCalls,
     );
   }
 
@@ -306,8 +311,12 @@ class Qwen3CoderXmlHandler extends ChatTemplateHandler
   }
 
   /// Parses Qwen XML using declared tool schemas when [tools] is supplied.
-  /// Invalid calls remain content and cannot become executable tool deltas.
-  /// With [thoughtTagsAreText], all of [output] is content and tool calls.
+  ///
+  /// As in llama.cpp, the content ends at the first `<tool_call>`, the calls
+  /// are those of the valid scopes that follow it, only the first with
+  /// [singleToolCall], and the rest of the reply is dropped, so an invalid
+  /// call never becomes an executable tool delta. With [thoughtTagsAreText],
+  /// all of [output] is content and tool calls.
   @override
   ChatParseResult parseWithTools(
     String output, {
@@ -316,6 +325,7 @@ class Qwen3CoderXmlHandler extends ChatTemplateHandler
     bool parseToolCalls = true,
     bool thinkingForcedOpen = false,
     bool thoughtTagsAreText = false,
+    bool singleToolCall = false,
   }) {
     final result = parseXmlToolCalls(
       output,
@@ -329,6 +339,8 @@ class Qwen3CoderXmlHandler extends ChatTemplateHandler
       // (`620d2225`) a forced-open thought as generated.
       unescapeReasoning: false,
       verbatimForcedThought: true,
+      endsAtLastCall: true,
+      maxToolCalls: singleToolCall ? 1 : null,
     );
     return ChatParseResult(
       content: result.content.trim(),

@@ -51,15 +51,15 @@ void main() {
     expect(noTool.content, equals('plain'));
   });
 
-  test('Qwen3CoderXmlHandler keeps malformed XML tool scope as content', () {
+  test('Qwen3CoderXmlHandler drops a malformed XML tool scope', () {
     final handler = Qwen3CoderXmlHandler();
     const input =
-        '<tool_call>\n<function=get_weather>\n<parameter=city>\n"Seoul"\n</tool_call>';
+        'Checking.\n<tool_call>\n<function=get_weather>\n<parameter=city>\n"Seoul"\n</tool_call>';
 
     final parsed = handler.parse(input);
 
     expect(parsed.toolCalls, isEmpty);
-    expect(parsed.content, equals(input));
+    expect(parsed.content, 'Checking.');
   });
 
   test('Qwen3CoderXmlHandler emits PEG-constructed parser for Nemotron v3', () {

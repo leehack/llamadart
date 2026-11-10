@@ -136,8 +136,9 @@ void main() {
                 .toList();
             expect(reasoning.trim(), thinking ? 'reason' : '');
             if (malformed) {
+              // As in llama.cpp, the reply ends before the invalid call.
               expect(calls, isEmpty);
-              expect(contentChunks, [body]);
+              expect(contentChunks, isEmpty);
               expect(chunks.last.choices.single.finishReason, 'stop');
             } else {
               expect(contentChunks, isEmpty);

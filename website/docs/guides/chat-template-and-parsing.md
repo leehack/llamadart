@@ -121,13 +121,17 @@ for final answer content.
 With thinking off, DeepSeek V3.1, Qwen3, QwQ and Qwen3.5 templates close the
 thought in the prompt, and the reply is parsed as content, as in llama-server:
 a `<think>` block the model still writes stays in `chunk.text` and the
-message content.
+message content. The Qwen3-Coder template has no thinking, so its replies are
+parsed as content in the same way.
 
 Templates such as StepFun3.5-Flash, DeepSeek R1 distills, MiniMax M2 and
 Nemotron Nano v2 open the thought even with thinking off. llamadart closes it
 in the prompt, but a thought the model still writes before `</think>` is
 reasoning, as in llama-server. So that it never streams as `chunk.text`, the
 reply's text is held until `</think>` or `<think>` arrives, or the reply ends.
+For StepFun3.5-Flash, a `<tool_call>` also ends the wait, and the thought is
+the text before the first `</think>` or `<tool_call>` as the model wrote it,
+`<think>` included; the rest is content, thinking tags included.
 Cohere2 MoE templates open it unless `reasoning` is false, which llamadart
 sets from `enableThinking`; their reply is held until a thinking tag,
 `<|START_TEXT|>` or `<|START_ACTION|>`, where llama-server ends the thought,
