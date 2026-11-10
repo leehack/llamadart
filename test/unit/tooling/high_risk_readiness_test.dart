@@ -1506,9 +1506,23 @@ final segment = '${Object()}ImageEditingRequest${Object()}';
     }
   });
 
-  test('raw-text-consumed sources include every Dart file tooling reads', () {
+  test('raw-text-consumed sources include the Dart files the pin tooling '
+      'reads', () {
+    final syncScript = File(
+      'tool/native/sync_native_release_pins.py',
+    ).readAsStringSync();
+    final syncedDartPaths = RegExp(
+      r'^DEFAULT_\w+ = \(?\s*"((?:hook|lib)/[^"]+\.dart)"',
+      multiLine: true,
+    ).allMatches(syncScript).map((match) => match[1]!).toSet();
+    expect(syncedDartPaths, contains('hook/build.dart'));
+    expect(
+      syncedDartPaths,
+      contains('lib/src/backends/litert_lm/litert_lm_runtime.dart'),
+    );
+
     final readByTooling = {
-      'hook/build.dart',
+      ...syncedDartPaths,
       nativeLlamaCppTagPath,
       for (final pin in [
         ...bridgeTagPins,
