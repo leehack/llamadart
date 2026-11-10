@@ -1,5 +1,7 @@
 ## Unreleased
 
+- Add manual tool calling to LiteRT-LM Web through `LlamaBackend.withTextHistory()` on `@litert-lm/core@0.19.0`: tools reach the model, `create` returns its tool calls, and tool results go back in the next request. `supportsToolCalling` reports whether the loaded runtime reads tool declarations; automatic tool loops, `ToolChoice.required` and `parallelToolCalls` still throw `LlamaUnsupportedException` ([#1790](https://github.com/leehack/llamadart/issues/1790)).
+
 ## 0.19.2
 
 - Keep the default WebGPU bridge assets at `v0.1.83` (unchanged from 0.19.1).

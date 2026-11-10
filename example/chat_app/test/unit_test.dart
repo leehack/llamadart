@@ -523,6 +523,47 @@ void main() {
       },
     );
 
+    test('loadModel keeps tools off for LiteRT-LM Web tool calling, which '
+        'reports no truncation', () async {
+      final initialSettings = const ChatSettings(
+        modelPath: 'https://example.com/gemma-4-web.litertlm',
+        toolsEnabled: true,
+      );
+      final provider = ChatProvider(
+        chatService: MockChatService(
+          engine:
+              _MetadataEngine(const {
+                  'general.architecture': 'litert-lm',
+                  'tokenizer.chat_template':
+                      '{% for message in messages %}{% if loop.last %}{{ message["content"] }}{% endif %}{% endfor %}',
+                })
+                ..loadedCapabilities = const LlamaEngineCapabilities(
+                  isSupported: true,
+                  runtime: LlamaRuntime.liteRtLm,
+                  supportsMultiTurnChat: true,
+                  supportsToolCalling: true,
+                ),
+        ),
+        settingsService: MockSettingsService()..settings = initialSettings,
+        enableWebModelPrefetch: false,
+        initialSettings: initialSettings,
+      );
+      addTearDown(provider.dispose);
+
+      await provider.loadModel();
+
+      expect(provider.templateSupportsTools, isFalse);
+      expect(provider.settings.toolsEnabled, isFalse);
+      expect(
+        provider.messages.map((message) => message.text),
+        contains(
+          kIsWeb
+              ? contains('runs tool calls automatically')
+              : contains('template is content-only'),
+        ),
+      );
+    });
+
     test(
       'loadModel detects tool support from the LiteRT-LM parsing template',
       () async {
@@ -560,6 +601,8 @@ void main() {
         expect(provider.templateSupportsTools, isTrue);
         expect(provider.settings.toolsEnabled, isTrue);
       },
+      // Native LiteRT-LM: on the Web the app keeps tools off (#919).
+      testOn: 'vm',
     );
 
     test(

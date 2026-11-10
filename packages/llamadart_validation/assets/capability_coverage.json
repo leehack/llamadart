@@ -534,8 +534,8 @@
         "matrix:Multi-turn ChatSession"
       ],
       "exemption": {
-        "issue": "https://github.com/leehack/llamadart/issues/1152",
-        "reason": "The existing C06.history pack covers native GGUF profiles, not the new LiteRT-LM Web preface/system path. Production-path Chrome tests cover ordered text, old/missing APIs, typed rejection and reset/cancellation isolation; the maintained litert-lm-web-text-history local runner compares a pinned JS reference and preface-bypass controls on an identified browser/model. A dedicated versioned Web validation profile and broader tool/media/template parity remain open in #1152. No model qualification is inferred from these inventory bindings.",
+        "issue": "https://github.com/leehack/llamadart/issues/1196",
+        "reason": "The existing C06.history and tools packs cover native profiles, not the LiteRT-LM Web preface path that carries history, system prompts and manual tool calls (#1790). Production-path Chrome tests cover ordered text, tool declaration/call/result wire shapes, old/missing APIs and the preface.tools probe, typed rejection and reset/cancellation isolation; the maintained litert-lm-web-text-history and litert-lm-web-tool-calling local runners compare a pinned JS reference with bypass and no-tools controls on an identified browser/model. No versioned Web validation profile exists yet (#1196); media/template parity and automatic tool loops (#919) stay out of scope. No model qualification is inferred from these inventory bindings.",
         "id": "litert-web-text-history-profile"
       }
     },

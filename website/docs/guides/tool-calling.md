@@ -614,6 +614,18 @@ their LiteRT-LM `stop` finish reason does not prove the model reached EOS. Do
 not execute calls automatically based on that value or infer truncation from
 output length.
 
+LiteRT-LM Web runs manual tool calling through `LlamaBackend.withTextHistory()`
+(or `LiteRtLmBackend.withTextHistory()`) on `@litert-lm/core@0.19.0`, when the
+loaded runtime reads `preface.tools`; `supportsToolCalling` reports it, and the
+default constructors report `false`. Tools go to the runtime's own template, the
+runtime parses the model's calls into `tool_calls`, and `create` returns them as
+`toolCalls`. Add one `LlamaToolResultContent` message per call, as in the
+manual loop above; assistant calls and results reach the runtime in the shape
+native LiteRT-LM sends. `ToolChoice.none` declares no tools, while
+`ToolChoice.required`, `parallelToolCalls`, tool-result `content` and media
+throw `LlamaUnsupportedException`. Because the reply's stop reason is unknown,
+check a reply before running its calls ([#919](https://github.com/leehack/llamadart/issues/919)).
+
 GPT-OSS channel and assistant frames wait for final parsing, including headers
 continued from the model's prompt, with or without tools. Ordinary prose streams
 normally, and `ToolChoice.auto` allows text without a call.

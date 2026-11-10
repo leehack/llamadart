@@ -650,6 +650,454 @@ void main() {
     },
   );
 
+  group('manual tool calling', () {
+    final weather = api.ToolDefinition(
+      name: 'get_weather',
+      description: 'Weather for a city',
+      parameters: [api.ToolParam.string('city', required: true)],
+    );
+    final weatherJson = {
+      'type': 'function',
+      'function': {
+        'name': 'get_weather',
+        'description': 'Weather for a city',
+        'parameters': {
+          'type': 'object',
+          'properties': {
+            'city': {'type': 'string'},
+          },
+          'required': ['city'],
+        },
+      },
+    };
+
+    test('maps declarations, calls and results to the 0.19.0 shapes and '
+        'exposes the runtime calls in order', () async {
+      final prefaces = <Object?>[];
+      final prompts = <String>[];
+      _installFakeEngine(
+        textHistory: true,
+        toolDeclarations: true,
+        chunks: const [],
+        chunksForRun: (run) => [
+          if (run == 0) ...[
+            _messageChunk('<think>need data</think>'),
+            _toolCallChunk([
+              ('get_weather', {'city': 'Paris'}),
+              ('get_weather', {'city': 'Oslo'}),
+            ]),
+          ] else
+            _messageChunk('Sunny in Paris, snow in Oslo.'),
+        ],
+        onPrompt: prompts.add,
+        onCreateConversation: (config) =>
+            prefaces.add(config.getProperty<JSAny?>('preface'.toJS)?.dartify()),
+      );
+      final engine = LlamaEngine(spi.LlamaBackend.withTextHistory());
+      addTearDown(engine.dispose);
+      await engine.loadModelFromUrl('model.litertlm');
+      final capabilities = await engine.capabilities;
+      expect(capabilities.supportsToolCalling, isTrue);
+      expect(capabilities.supportsMultiTurnChat, isTrue);
+
+      final session = api.ChatSession(
+        engine,
+        maxContextTokens: 0,
+        systemPrompt: 'Use tools.',
+      );
+      final reply = await session
+          .create(
+            const [LlamaTextContent('Weather in Paris and Oslo?')],
+            tools: [weather],
+          )
+          .collect();
+      expect(reply.text, isEmpty);
+      expect(reply.thinking, 'need data');
+      expect(reply.finishReason, api.LlamaFinishReason.toolCalls);
+      expect(reply.toolCalls.map((call) => call.name), [
+        'get_weather',
+        'get_weather',
+      ]);
+      expect(reply.toolCalls.map((call) => call.arguments), [
+        {'city': 'Paris'},
+        {'city': 'Oslo'},
+      ]);
+      for (final (call, result) in [
+        (reply.toolCalls[0], {'sky': 'sunny'}),
+        (reply.toolCalls[1], 'snow'),
+      ]) {
+        session.addMessage(
+          LlamaChatMessage.withContent(
+            role: LlamaChatRole.tool,
+            content: [
+              LlamaToolResultContent(
+                id: call.id,
+                name: call.name,
+                result: result,
+              ),
+            ],
+          ),
+        );
+      }
+      final answer = await session.create(const [], tools: [weather]).collect();
+      expect(answer.text, 'Sunny in Paris, snow in Oslo.');
+      expect(answer.toolCalls, isEmpty);
+
+      expect(prompts, [
+        'Weather in Paris and Oslo?',
+        jsonEncode({
+          'role': 'tool',
+          'content': [
+            {
+              'type': 'tool_response',
+              'name': 'get_weather',
+              'response': 'snow',
+            },
+          ],
+        }),
+      ]);
+      expect(prefaces, [
+        {
+          'messages': [
+            {'role': 'system', 'content': 'Use tools.'},
+          ],
+          'tools': [weatherJson],
+        },
+        {
+          'messages': [
+            {'role': 'system', 'content': 'Use tools.'},
+            {'role': 'user', 'content': 'Weather in Paris and Oslo?'},
+            {
+              'role': 'assistant',
+              'content': '',
+              'reasoning_content': 'need data',
+              'tool_calls': [
+                for (final city in ['Paris', 'Oslo'])
+                  {
+                    'type': 'function',
+                    'function': {
+                      'name': 'get_weather',
+                      'arguments': {'city': city},
+                    },
+                  },
+              ],
+            },
+            {
+              'role': 'tool',
+              'content': [
+                {
+                  'type': 'tool_response',
+                  'name': 'get_weather',
+                  'response': {'sky': 'sunny'},
+                },
+              ],
+            },
+          ],
+          'tools': [weatherJson],
+        },
+      ]);
+    });
+
+    test('ToolChoice.none declares no tools', () async {
+      final prefaces = <Object?>[];
+      _installFakeEngine(
+        textHistory: true,
+        toolDeclarations: true,
+        chunks: [_messageChunk('plain')],
+        onCreateConversation: (config) =>
+            prefaces.add(config.getProperty<JSAny?>('preface'.toJS)?.dartify()),
+      );
+      final engine = LlamaEngine(spi.LlamaBackend.withTextHistory());
+      addTearDown(engine.dispose);
+      await engine.loadModelFromUrl('model.litertlm');
+      final reply = await engine
+          .create(
+            const [
+              LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'hi'),
+            ],
+            tools: [weather],
+            toolChoice: api.ToolChoice.none,
+          )
+          .collect();
+      expect(reply.text, 'plain');
+      expect(prefaces, [null]);
+    });
+
+    test('a runtime that ignores preface.tools reports no tool calling and '
+        'rejects tools and tool history before inference', () async {
+      var prompts = 0;
+      _installFakeEngine(
+        textHistory: true,
+        chunks: [_messageChunk('ok')],
+        onPrompt: (_) => prompts++,
+      );
+      final engine = LlamaEngine(spi.LlamaBackend.withTextHistory());
+      addTearDown(engine.dispose);
+      await engine.loadModelFromUrl('model.litertlm');
+      final capabilities = await engine.capabilities;
+      expect(capabilities.supportsMultiTurnChat, isTrue);
+      expect(capabilities.supportsToolCalling, isFalse);
+      const user = LlamaChatMessage.fromText(
+        role: LlamaChatRole.user,
+        text: 'hi',
+      );
+      final toolTurn = [
+        user,
+        const LlamaChatMessage.withContent(
+          role: LlamaChatRole.assistant,
+          content: [
+            LlamaToolCallContent(
+              name: 'get_weather',
+              arguments: {'city': 'Paris'},
+              rawJson: '{"city":"Paris"}',
+            ),
+          ],
+        ),
+        const LlamaChatMessage.withContent(
+          role: LlamaChatRole.tool,
+          content: [LlamaToolResultContent(name: 'get_weather', result: 'x')],
+        ),
+      ];
+      for (final request in [
+        () => engine.create(const [user], tools: [weather]).toList(),
+        () => engine.create(toolTurn).toList(),
+      ]) {
+        await expectLater(
+          request(),
+          throwsA(
+            isA<LlamaUnsupportedException>().having(
+              (e) => e.message,
+              'message',
+              allOf(contains('preface.tools'), contains('@0.19.0')),
+            ),
+          ),
+        );
+      }
+      expect(prompts, 0);
+      expect(
+        (await engine.create(const [user]).toList()).map((c) => c.text).join(),
+        'ok',
+      );
+    });
+
+    test('rejects required, parallel and unrepresentable tool turns before '
+        'inference, then recovers', () async {
+      var prompts = 0;
+      _installFakeEngine(
+        textHistory: true,
+        toolDeclarations: true,
+        chunks: [_messageChunk('ok')],
+        onPrompt: (_) => prompts++,
+      );
+      final engine = LlamaEngine(spi.LlamaBackend.withTextHistory());
+      addTearDown(engine.dispose);
+      await engine.loadModelFromUrl('model.litertlm');
+      const user = LlamaChatMessage.fromText(
+        role: LlamaChatRole.user,
+        text: 'hi',
+      );
+      const call = LlamaChatMessage.withContent(
+        role: LlamaChatRole.assistant,
+        content: [
+          LlamaToolCallContent(
+            name: 'get_weather',
+            arguments: {'city': 'Paris'},
+            rawJson: '{"city":"Paris"}',
+          ),
+        ],
+      );
+      for (final request in <Future<Object?> Function()>[
+        () => engine
+            .create(
+              const [user],
+              tools: [weather],
+              toolChoice: api.ToolChoice.required,
+            )
+            .toList(),
+        () => engine
+            .create(const [user], tools: [weather], parallelToolCalls: true)
+            .toList(),
+        // Tool-result content, text in a tool message, a tool message
+        // without a result and a final assistant call.
+        () => engine.create([
+          user,
+          call,
+          const LlamaChatMessage.withContent(
+            role: LlamaChatRole.tool,
+            content: [
+              LlamaToolResultContent(
+                name: 'get_weather',
+                result: 'x',
+                content: [LlamaTextContent('more')],
+              ),
+            ],
+          ),
+        ]).toList(),
+        () => engine.create([
+          user,
+          call,
+          const LlamaChatMessage.withContent(
+            role: LlamaChatRole.tool,
+            content: [
+              LlamaToolResultContent(name: 'get_weather', result: 'x'),
+              LlamaTextContent('note'),
+            ],
+          ),
+        ]).toList(),
+        () => engine.create([
+          user,
+          call,
+          const LlamaChatMessage.fromText(role: LlamaChatRole.tool, text: 'x'),
+        ]).toList(),
+        () => engine.create([user, call]).toList(),
+      ]) {
+        await expectLater(request(), throwsA(isA<LlamaUnsupportedException>()));
+      }
+      expect(prompts, 0);
+      expect(
+        (await engine.create(const [user]).toList()).map((c) => c.text).join(),
+        'ok',
+      );
+    });
+
+    test('the backend SPI rejects tool-result content', () async {
+      var prompts = 0;
+      _installFakeEngine(
+        textHistory: true,
+        toolDeclarations: true,
+        chunks: [_messageChunk('ok')],
+        onPrompt: (_) => prompts++,
+      );
+      final backend = LiteRtLmBackend.withTextHistory();
+      addTearDown(backend.dispose);
+      final model = await backend.modelLoadFromUrl(
+        'model.litertlm',
+        const ModelParams(),
+      );
+      final context = await backend.contextCreate(model, const ModelParams());
+      await expectLater(
+        (backend as spi.BackendNativeChatGeneration).generateChat(
+          context,
+          const [
+            LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'hi'),
+            LlamaChatMessage.withContent(
+              role: LlamaChatRole.assistant,
+              content: [
+                LlamaToolCallContent(
+                  name: 'get_weather',
+                  arguments: {'city': 'Paris'},
+                  rawJson: '{"city":"Paris"}',
+                ),
+              ],
+            ),
+            LlamaChatMessage.withContent(
+              role: LlamaChatRole.tool,
+              content: [
+                LlamaToolResultContent(
+                  name: 'get_weather',
+                  result: 'x',
+                  content: [LlamaTextContent('more')],
+                ),
+              ],
+            ),
+          ],
+          const GenerationParams(),
+        ).toList(),
+        throwsA(
+          isA<LlamaUnsupportedException>().having(
+            (e) => e.message,
+            'message',
+            contains('LlamaToolResultContent.content'),
+          ),
+        ),
+      );
+      expect(prompts, 0);
+    });
+
+    test(
+      'automatic tool loops stay refused while tools are supported',
+      () async {
+        var prompts = 0;
+        var toolRuns = 0;
+        _installFakeEngine(
+          textHistory: true,
+          toolDeclarations: true,
+          chunks: [
+            _toolCallChunk([
+              ('get_weather', {'city': 'Paris'}),
+            ]),
+          ],
+          onPrompt: (_) => prompts++,
+        );
+        final engine = LlamaEngine(spi.LlamaBackend.withTextHistory());
+        addTearDown(engine.dispose);
+        await engine.loadModelFromUrl('model.litertlm');
+        expect((await engine.capabilities).supportsToolCalling, isTrue);
+        final session = api.ChatSession(engine, maxContextTokens: 0);
+        final handled = api.ToolDefinition(
+          name: 'get_weather',
+          description: 'Weather for a city',
+          parameters: [api.ToolParam.string('city', required: true)],
+          handler: (_) async {
+            toolRuns++;
+            return 'sunny';
+          },
+        );
+        await expectLater(
+          session.sendWithTools('Weather in Paris?', tools: [handled]),
+          throwsA(
+            isA<api.LlamaUnsupportedException>().having(
+              (error) => error.message,
+              'diagnostic',
+              contains('@0.19.0'),
+            ),
+          ),
+        );
+        expect(prompts, 0);
+        expect(toolRuns, 0);
+        expect(session.history, isEmpty);
+      },
+    );
+
+    test('a cancelled tool request ends cleanly and the next request on a '
+        'reset session declares tools again', () async {
+      final fake = _installQueueFakeEngine(
+        textHistory: true,
+        toolDeclarations: true,
+      );
+      final engine = LlamaEngine(spi.LlamaBackend.withTextHistory());
+      addTearDown(() async {
+        fake.finishAll();
+        await engine.dispose();
+      });
+      await engine.loadModelFromUrl('model.litertlm');
+      final session = api.ChatSession(engine, maxContextTokens: 0);
+      final done = Completer<void>();
+      final subscription = session
+          .create(const [LlamaTextContent('first')], tools: [weather])
+          .listen((_) {}, onDone: done.complete, onError: (Object _) {});
+      await (await fake.started(0)).holding;
+      engine.cancelGeneration();
+      (await fake.started(0)).finish();
+      await done.future.timeout(const Duration(seconds: 2));
+      await subscription.cancel();
+      session.reset();
+      final request = session
+          .create(const [LlamaTextContent('second')], tools: [weather])
+          .collect();
+      (await fake.started(1)).finish();
+      expect((await request).text, 'second;');
+      expect(fake.prefaces, [
+        {
+          'tools': [weatherJson],
+        },
+        {
+          'tools': [weatherJson],
+        },
+      ]);
+    });
+  });
+
   test(
     'unknown legacy roles are typed errors before template rendering',
     () async {
@@ -3181,8 +3629,11 @@ void _installFakeEngine({
   required List<JSAny?> chunks,
   bool textHistory = false,
   bool historyApi = true,
+  bool toolDeclarations = false,
+  List<JSAny?> Function(int run)? chunksForRun,
   int? reportedBackend,
 }) {
+  var runs = 0;
   final engineClass = JSObject();
   engineClass.setProperty(
     'create'.toJS,
@@ -3201,9 +3652,18 @@ void _installFakeEngine({
           final preface = textHistory
               ? config.getProperty<JSAny?>('preface'.toJS)
               : null;
+          // @litert-lm/core@0.19.0 serializes the whole preface.
+          if (toolDeclarations && preface != null) {
+            globalContext
+                .getProperty<JSObject>('JSON'.toJS)
+                .callMethod<JSAny?>('stringify'.toJS, preface);
+          }
           if (preface == null) onCreateConversation?.call(config);
           final conversation = _fakeConversation(
             chunks: chunks,
+            chunksForRun: chunksForRun == null
+                ? null
+                : () => chunksForRun(runs++),
             onPrompt: onPrompt,
             onCancel: onCancel,
             onReaderCancel: onReaderCancel,
@@ -3214,11 +3674,7 @@ void _installFakeEngine({
               (() => Future<JSAny?>.value(<JSAny?>[].toJS).toJS).toJS,
             );
           }
-          if (preface != null &&
-              (preface as JSObject)
-                  .getProperty<JSArray>('messages'.toJS)
-                  .toDart
-                  .isNotEmpty) {
+          if (preface != null && !_isProbePreface(preface as JSObject)) {
             onCreateConversation?.call(config);
           }
           return Future<JSObject>.value(conversation).toJS;
@@ -3236,6 +3692,7 @@ void _installFakeEngine({
 
 JSObject _fakeConversation({
   required List<JSAny?> chunks,
+  List<JSAny?> Function()? chunksForRun,
   _PromptHook? onPrompt,
   void Function()? onCancel,
   void Function()? onReaderCancel,
@@ -3243,9 +3700,17 @@ JSObject _fakeConversation({
   final conversation = JSObject();
   conversation.setProperty(
     'sendMessageStreaming'.toJS,
-    ((String prompt) {
-      onPrompt?.call(prompt);
-      return _fakeReadableStream(chunks, onReaderCancel: onReaderCancel);
+    ((JSAny message) {
+      // A `Message` object is reported as its JSON.
+      onPrompt?.call(
+        message.isA<JSString>()
+            ? (message as JSString).toDart
+            : jsonEncode(message.dartify()),
+      );
+      return _fakeReadableStream(
+        chunksForRun?.call() ?? chunks,
+        onReaderCancel: onReaderCancel,
+      );
     }).toJS,
   );
   conversation.setProperty(
@@ -3301,6 +3766,34 @@ JSObject _fakeReadableStream(
   );
   return stream;
 }
+
+/// Whether [preface] is one of the load-time capability probes, which send
+/// no messages.
+bool _isProbePreface(JSObject preface) {
+  final messages = preface.getProperty<JSArray?>('messages'.toJS);
+  return messages != null && messages.toDart.isEmpty;
+}
+
+/// A chunk with the runtime's parsed tool calls, after optional [text].
+JSObject _toolCallChunk(
+  List<(String, Map<String, Object?>)> calls, {
+  String? text,
+}) =>
+    <String, Object?>{
+          'role': 'assistant',
+          if (text != null)
+            'content': [
+              {'type': 'text', 'text': text},
+            ],
+          'tool_calls': [
+            for (final (name, arguments) in calls)
+              {
+                'type': 'function',
+                'function': {'name': name, 'arguments': arguments},
+              },
+          ],
+        }.jsify()!
+        as JSObject;
 
 JSObject _messageChunk(String text) {
   final chunk = JSObject();
@@ -3395,9 +3888,16 @@ final class _QueueFakeRun {
 }
 
 final class _QueueFakeEngine {
-  _QueueFakeEngine({required this.rejectOnCancel, this.textHistory = false});
+  _QueueFakeEngine({
+    required this.rejectOnCancel,
+    this.textHistory = false,
+    this.toolDeclarations = false,
+  });
 
   final bool textHistory;
+
+  /// Whether conversation creation serializes the preface, reading its tools.
+  final bool toolDeclarations;
   final List<Object?> prefaces = [];
   Future<void>? delayNextConversation;
   int allConversationsDeleted = 0;
@@ -3434,9 +3934,13 @@ final class _QueueFakeEngine {
     final delay = delayNextConversation;
     delayNextConversation = null;
     await delay;
-    final preface = textHistory
-        ? config.getProperty<JSAny?>('preface'.toJS)?.dartify()
-        : null;
+    final rawPreface = config.getProperty<JSAny?>('preface'.toJS);
+    if (toolDeclarations && rawPreface != null) {
+      globalContext
+          .getProperty<JSObject>('JSON'.toJS)
+          .callMethod<JSAny?>('stringify'.toJS, rawPreface);
+    }
+    final preface = textHistory ? rawPreface?.dartify() : null;
     final gate = failNextConversation;
     failNextConversation = null;
     if (gate != null) {
@@ -3457,8 +3961,8 @@ final class _QueueFakeEngine {
     }
     conversation.setProperty(
       'sendMessageStreaming'.toJS,
-      ((String prompt) {
-        final current = run = _QueueFakeRun(prompt);
+      ((JSString prompt) {
+        final current = run = _QueueFakeRun(prompt.toDart);
         prefaces.add(preface);
         runs.add(current);
         _started[runs.length - 1].complete(current);
@@ -3535,10 +4039,12 @@ final class _QueueFakeEngine {
 _QueueFakeEngine _installQueueFakeEngine({
   bool rejectOnCancel = false,
   bool textHistory = false,
+  bool toolDeclarations = false,
 }) {
   final fake = _QueueFakeEngine(
     rejectOnCancel: rejectOnCancel,
     textHistory: textHistory,
+    toolDeclarations: toolDeclarations,
   );
   final engineClass = JSObject();
   engineClass.setProperty(

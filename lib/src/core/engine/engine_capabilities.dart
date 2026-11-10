@@ -82,16 +82,20 @@ class LlamaEngineCapabilities implements EngineCapabilities {
   /// Explicit `withTextHistory` factories support
   /// LiteRT-LM system/user/assistant text only when their loaded
   /// runtime consumes a conversation preface and exposes a working history API.
-  /// It requires a final user message. Tools/media and user/system thinking
-  /// parts are rejected; stored assistant reasoning is omitted from replay.
+  /// It requires a final user or tool result message. Media and user/system
+  /// thinking parts are rejected; stored assistant reasoning is replayed only
+  /// with an assistant tool call, as native LiteRT-LM does.
   /// The probe does not qualify a particular model's behavior.
   final bool supportsMultiTurnChat;
 
   /// Whether tools passed to `LlamaEngine.create` reach the model and its
   /// output is parsed for tool calls.
   ///
-  /// False on LiteRT-LM Web. Explicit text-history factories reject tool
-  /// declarations and messages; original constructors retain legacy behavior.
+  /// On LiteRT-LM Web, true only for explicit `withTextHistory` factories
+  /// whose loaded runtime reads `preface.tools` (`@litert-lm/core@0.19.0`);
+  /// calls come from the runtime's `tool_calls`. Automatic tool loops still
+  /// throw there, and `ToolChoice.required` and `parallelToolCalls` are
+  /// rejected. Original constructors report false.
   /// How well other models call tools still depends on their chat template. `ToolChoice.required` also
   /// needs [supportsGrammar] for Hermes-style templates, and
   /// [supportsLazyGrammar] for templates whose tool-call grammar waits for a

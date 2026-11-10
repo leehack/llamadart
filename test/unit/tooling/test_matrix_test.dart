@@ -405,6 +405,20 @@ void main() {
     expect(row.command, contains('--scenario image-editing'));
   });
 
+  test('LiteRT Web tool-calling matrix selects its local scenario', () {
+    final row = testMatrixRows.singleWhere(
+      (row) => row.id == 'litert-lm-web-tool-calling',
+    );
+    expect(row.mode, 'local-only');
+    expect(row.covers, contains('no-tools control'));
+    expect(row.command, contains('--scenario litert-lm-web-tool-calling'));
+    final scenario = buildLocalE2eScenarios().singleWhere(
+      (scenario) => scenario.name == row.id,
+    );
+    expect(scenario.requiresDevice, isFalse);
+    expect(scenario.description, contains('existing local model'));
+  });
+
   test(
     'LiteRT Web history matrix selects the direct-runtime control scenario',
     () {

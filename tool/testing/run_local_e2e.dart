@@ -1780,6 +1780,30 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
       ],
     ),
     LocalE2eScenario(
+      name: 'litert-lm-web-tool-calling',
+      group: LocalE2eScenarioGroup.webSmoke,
+      description:
+          'Compare Web manual tool calls and tool results with pinned JS and a no-tools control using an existing local model.',
+      requiresDevice: false,
+      stepsBuilder: (context) => [
+        LocalE2eCommandStep(
+          workingDirectory: context.projectRoot,
+          executable: context.python,
+          arguments: [
+            'tool/testing/litert_text_history_web_e2e.py',
+            '--model-path',
+            context.modelPath!,
+            '--backend',
+            context.backend,
+            '--suite',
+            'tool-calling',
+          ],
+          description:
+              'LiteRT Web manual tool calls, results, direct-runtime controls, cancellation and reset (local port 5198)',
+        ),
+      ],
+    ),
+    LocalE2eScenario(
       name: 'litert-lm-multimodal-embedding',
       group: LocalE2eScenarioGroup.dartLocalOnly,
       description:
@@ -2859,12 +2883,14 @@ Future<LocalE2eResult> runLocalE2e(
           'and chat-app-web-litert-gemma4-smoke.\n',
     );
   }
-  if (scenario.name == 'litert-lm-web-text-history' &&
+  if (const [
+        'litert-lm-web-text-history',
+        'litert-lm-web-tool-calling',
+      ].contains(scenario.name) &&
       !const ['cpu', 'gpu'].contains(parsed.backend)) {
-    return const LocalE2eResult(
+    return LocalE2eResult(
       64,
-      stderr:
-          '--backend cpu or gpu is required for litert-lm-web-text-history.\n',
+      stderr: '--backend cpu or gpu is required for ${scenario.name}.\n',
     );
   }
   if (parsed.mmprojPath != null && parsed.modelPath == null) {
@@ -3138,6 +3164,7 @@ Future<LocalE2eResult> runLocalE2e(
           scenario.name == 'litert-lm-json-schema' ||
           scenario.name == 'litert-lm-multimodal-embedding' ||
           scenario.name == 'litert-lm-web-text-history' ||
+          scenario.name == 'litert-lm-web-tool-calling' ||
           scenario.name == 'litert-lm-chat-features-smoke' ||
           scenario.name == 'qwen3-litert-cpu-unicode' ||
           scenario.name == 'native-prompt-cancel' ||
