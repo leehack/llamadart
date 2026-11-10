@@ -98,6 +98,7 @@ LlamaChatTemplateResult renderQwen3CoderRequiredCall(
       '<think>\nplan\n</think>\n\nI will look it up.\n$paris',
       'plan</think>A</think>B $paris',
       'Use <function=unknown> here.\n$paris',
+      'Use <function=get_weathers> now.\n$paris',
       if (parallelToolCalls) ...[
         '$paris\n$rome',
         'Text.\n$paris$rome',

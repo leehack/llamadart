@@ -354,78 +354,6 @@
           }
         },
         {
-          "name": "bare-call",
-          "output": "<function=get_weather>\n<parameter=location>\nParis\n</parameter>\n</function>\n</tool_call>",
-          "upstream": {
-            "content": "",
-            "reasoning_content": "",
-            "tool_calls": [
-              {
-                "name": "get_weather",
-                "arguments": "{\"location\":\"Paris\"}"
-              }
-            ]
-          },
-          "upstream_partial": {
-            "content": "",
-            "reasoning_content": "",
-            "tool_calls": [
-              {
-                "name": "get_weather",
-                "arguments": "{\"location\":\"Paris\"}"
-              }
-            ]
-          }
-        },
-        {
-          "name": "text-then-bare-call",
-          "output": "Let me check.\n<function=get_weather>\n<parameter=location>\nParis\n</parameter>\n</function>\n</tool_call>",
-          "upstream": {
-            "content": "Let me check.",
-            "reasoning_content": "",
-            "tool_calls": [
-              {
-                "name": "get_weather",
-                "arguments": "{\"location\":\"Paris\"}"
-              }
-            ]
-          },
-          "upstream_partial": {
-            "content": "Let me check.",
-            "reasoning_content": "",
-            "tool_calls": [
-              {
-                "name": "get_weather",
-                "arguments": "{\"location\":\"Paris\"}"
-              }
-            ]
-          }
-        },
-        {
-          "name": "bare-call-then-call",
-          "output": "<function=get_weather>\n<parameter=location>\nParis\n</parameter>\n</function>\n</tool_call>\n<tool_call>\n<function=get_weather>\n<parameter=location>\nRome\n</parameter>\n</function>\n</tool_call>",
-          "upstream": {
-            "content": "",
-            "reasoning_content": "",
-            "tool_calls": [
-              {
-                "name": "get_weather",
-                "arguments": "{\"location\":\"Paris\"}"
-              }
-            ]
-          },
-          "upstream_partial": {
-            "content": "",
-            "reasoning_content": "",
-            "tool_calls": [
-              {
-                "name": "get_weather",
-                "arguments": "{\"location\":\"Paris\"}"
-              }
-            ]
-          }
-        },
-        {
           "name": "call-then-bare-call",
           "output": "<tool_call>\n<function=get_weather>\n<parameter=location>\nParis\n</parameter>\n</function>\n</tool_call>\n<function=get_weather>\n<parameter=location>\nRome\n</parameter>\n</function>\n</tool_call>",
           "upstream": {
@@ -464,6 +392,30 @@
           },
           "upstream_partial": {
             "content": "Use <function=unknown> here.",
+            "reasoning_content": "",
+            "tool_calls": [
+              {
+                "name": "get_weather",
+                "arguments": "{\"location\":\"Paris\"}"
+              }
+            ]
+          }
+        },
+        {
+          "name": "longer-bare-function-in-text",
+          "output": "Use <function=get_weathers> now.\n<tool_call>\n<function=get_weather>\n<parameter=location>\nParis\n</parameter>\n</function>\n</tool_call>",
+          "upstream": {
+            "content": "Use <function=get_weathers> now.",
+            "reasoning_content": "",
+            "tool_calls": [
+              {
+                "name": "get_weather",
+                "arguments": "{\"location\":\"Paris\"}"
+              }
+            ]
+          },
+          "upstream_partial": {
+            "content": "Use <function=get_weathers> now.",
             "reasoning_content": "",
             "tool_calls": [
               {
@@ -847,6 +799,334 @@
           }
         },
         {
+          "name": "call-then-bare-call",
+          "output": "<tool_call>\n<function=get_weather>\n<parameter=location>\nParis\n</parameter>\n</function>\n</tool_call>\n<function=get_weather>\n<parameter=location>\nRome\n</parameter>\n</function>\n</tool_call>",
+          "upstream": {
+            "content": "",
+            "reasoning_content": "",
+            "tool_calls": [
+              {
+                "name": "get_weather",
+                "arguments": "{\"location\":\"Paris\"}"
+              }
+            ]
+          },
+          "upstream_partial": {
+            "content": "",
+            "reasoning_content": "",
+            "tool_calls": [
+              {
+                "name": "get_weather",
+                "arguments": "{\"location\":\"Paris\"}"
+              }
+            ]
+          }
+        },
+        {
+          "name": "unknown-bare-function-in-text",
+          "output": "Use <function=unknown> here.\n<tool_call>\n<function=get_weather>\n<parameter=location>\nParis\n</parameter>\n</function>\n</tool_call>",
+          "upstream": {
+            "content": "Use <function=unknown> here.",
+            "reasoning_content": "",
+            "tool_calls": [
+              {
+                "name": "get_weather",
+                "arguments": "{\"location\":\"Paris\"}"
+              }
+            ]
+          },
+          "upstream_partial": {
+            "content": "Use <function=unknown> here.",
+            "reasoning_content": "",
+            "tool_calls": [
+              {
+                "name": "get_weather",
+                "arguments": "{\"location\":\"Paris\"}"
+              }
+            ]
+          }
+        },
+        {
+          "name": "longer-bare-function-in-text",
+          "output": "Use <function=get_weathers> now.\n<tool_call>\n<function=get_weather>\n<parameter=location>\nParis\n</parameter>\n</function>\n</tool_call>",
+          "upstream": {
+            "content": "Use <function=get_weathers> now.",
+            "reasoning_content": "",
+            "tool_calls": [
+              {
+                "name": "get_weather",
+                "arguments": "{\"location\":\"Paris\"}"
+              }
+            ]
+          },
+          "upstream_partial": {
+            "content": "Use <function=get_weathers> now.",
+            "reasoning_content": "",
+            "tool_calls": [
+              {
+                "name": "get_weather",
+                "arguments": "{\"location\":\"Paris\"}"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "template": "test/fixtures/llama_cpp_templates/Qwen3-Coder.jinja",
+      "enable_thinking": true,
+      "parallel_tool_calls": false,
+      "tool_choice": "required",
+      "cases": [
+        {
+          "name": "call",
+          "output": "<tool_call>\n<function=get_weather>\n<parameter=location>\nParis\n</parameter>\n</function>\n</tool_call>",
+          "upstream": {
+            "content": "",
+            "reasoning_content": "",
+            "tool_calls": [
+              {
+                "name": "get_weather",
+                "arguments": "{\"location\":\"Paris\"}"
+              }
+            ]
+          },
+          "upstream_partial": {
+            "content": "",
+            "reasoning_content": "",
+            "tool_calls": [
+              {
+                "name": "get_weather",
+                "arguments": "{\"location\":\"Paris\"}"
+              }
+            ]
+          }
+        },
+        {
+          "name": "text-then-call",
+          "output": "Let me check.\n<tool_call>\n<function=get_weather>\n<parameter=location>\nParis\n</parameter>\n</function>\n</tool_call>",
+          "upstream": {
+            "content": "Let me check.",
+            "reasoning_content": "",
+            "tool_calls": [
+              {
+                "name": "get_weather",
+                "arguments": "{\"location\":\"Paris\"}"
+              }
+            ]
+          },
+          "upstream_partial": {
+            "content": "Let me check.",
+            "reasoning_content": "",
+            "tool_calls": [
+              {
+                "name": "get_weather",
+                "arguments": "{\"location\":\"Paris\"}"
+              }
+            ]
+          }
+        },
+        {
+          "name": "bare-call",
+          "output": "<function=get_weather>\n<parameter=location>\nParis\n</parameter>\n</function>\n</tool_call>",
+          "upstream": {
+            "content": "",
+            "reasoning_content": "",
+            "tool_calls": [
+              {
+                "name": "get_weather",
+                "arguments": "{\"location\":\"Paris\"}"
+              }
+            ]
+          },
+          "upstream_partial": {
+            "content": "",
+            "reasoning_content": "",
+            "tool_calls": [
+              {
+                "name": "get_weather",
+                "arguments": "{\"location\":\"Paris\"}"
+              }
+            ]
+          }
+        },
+        {
+          "name": "text-then-bare-call",
+          "output": "Let me check.\n<function=get_weather>\n<parameter=location>\nParis\n</parameter>\n</function>\n</tool_call>",
+          "upstream": {
+            "content": "Let me check.",
+            "reasoning_content": "",
+            "tool_calls": [
+              {
+                "name": "get_weather",
+                "arguments": "{\"location\":\"Paris\"}"
+              }
+            ]
+          },
+          "upstream_partial": {
+            "content": "Let me check.",
+            "reasoning_content": "",
+            "tool_calls": [
+              {
+                "name": "get_weather",
+                "arguments": "{\"location\":\"Paris\"}"
+              }
+            ]
+          }
+        },
+        {
+          "name": "bare-call-then-call",
+          "output": "<function=get_weather>\n<parameter=location>\nParis\n</parameter>\n</function>\n</tool_call>\n<tool_call>\n<function=get_weather>\n<parameter=location>\nRome\n</parameter>\n</function>\n</tool_call>",
+          "upstream": {
+            "content": "",
+            "reasoning_content": "",
+            "tool_calls": [
+              {
+                "name": "get_weather",
+                "arguments": "{\"location\":\"Paris\"}"
+              }
+            ]
+          },
+          "upstream_partial": {
+            "content": "",
+            "reasoning_content": "",
+            "tool_calls": [
+              {
+                "name": "get_weather",
+                "arguments": "{\"location\":\"Paris\"}"
+              }
+            ]
+          }
+        },
+        {
+          "name": "call-then-bare-call",
+          "output": "<tool_call>\n<function=get_weather>\n<parameter=location>\nParis\n</parameter>\n</function>\n</tool_call>\n<function=get_weather>\n<parameter=location>\nRome\n</parameter>\n</function>\n</tool_call>",
+          "upstream": {
+            "content": "",
+            "reasoning_content": "",
+            "tool_calls": [
+              {
+                "name": "get_weather",
+                "arguments": "{\"location\":\"Paris\"}"
+              }
+            ]
+          },
+          "upstream_partial": {
+            "content": "",
+            "reasoning_content": "",
+            "tool_calls": [
+              {
+                "name": "get_weather",
+                "arguments": "{\"location\":\"Paris\"}"
+              }
+            ]
+          }
+        },
+        {
+          "name": "unknown-bare-function-in-text",
+          "output": "Use <function=unknown> here.\n<tool_call>\n<function=get_weather>\n<parameter=location>\nParis\n</parameter>\n</function>\n</tool_call>",
+          "upstream": {
+            "content": "Use <function=unknown> here.",
+            "reasoning_content": "",
+            "tool_calls": [
+              {
+                "name": "get_weather",
+                "arguments": "{\"location\":\"Paris\"}"
+              }
+            ]
+          },
+          "upstream_partial": {
+            "content": "Use <function=unknown> here.",
+            "reasoning_content": "",
+            "tool_calls": [
+              {
+                "name": "get_weather",
+                "arguments": "{\"location\":\"Paris\"}"
+              }
+            ]
+          }
+        },
+        {
+          "name": "longer-bare-function-in-text",
+          "output": "Use <function=get_weathers> now.\n<tool_call>\n<function=get_weather>\n<parameter=location>\nParis\n</parameter>\n</function>\n</tool_call>",
+          "upstream": {
+            "content": "Use <function=get_weathers> now.",
+            "reasoning_content": "",
+            "tool_calls": [
+              {
+                "name": "get_weather",
+                "arguments": "{\"location\":\"Paris\"}"
+              }
+            ]
+          },
+          "upstream_partial": {
+            "content": "Use <function=get_weathers> now.",
+            "reasoning_content": "",
+            "tool_calls": [
+              {
+                "name": "get_weather",
+                "arguments": "{\"location\":\"Paris\"}"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "template": "test/fixtures/llama_cpp_templates/Qwen3-Coder.jinja",
+      "enable_thinking": true,
+      "parallel_tool_calls": true,
+      "tool_choice": "required",
+      "cases": [
+        {
+          "name": "call",
+          "output": "<tool_call>\n<function=get_weather>\n<parameter=location>\nParis\n</parameter>\n</function>\n</tool_call>",
+          "upstream": {
+            "content": "",
+            "reasoning_content": "",
+            "tool_calls": [
+              {
+                "name": "get_weather",
+                "arguments": "{\"location\":\"Paris\"}"
+              }
+            ]
+          },
+          "upstream_partial": {
+            "content": "",
+            "reasoning_content": "",
+            "tool_calls": [
+              {
+                "name": "get_weather",
+                "arguments": "{\"location\":\"Paris\"}"
+              }
+            ]
+          }
+        },
+        {
+          "name": "text-then-call",
+          "output": "Let me check.\n<tool_call>\n<function=get_weather>\n<parameter=location>\nParis\n</parameter>\n</function>\n</tool_call>",
+          "upstream": {
+            "content": "Let me check.",
+            "reasoning_content": "",
+            "tool_calls": [
+              {
+                "name": "get_weather",
+                "arguments": "{\"location\":\"Paris\"}"
+              }
+            ]
+          },
+          "upstream_partial": {
+            "content": "Let me check.",
+            "reasoning_content": "",
+            "tool_calls": [
+              {
+                "name": "get_weather",
+                "arguments": "{\"location\":\"Paris\"}"
+              }
+            ]
+          }
+        },
+        {
           "name": "bare-call",
           "output": "<function=get_weather>\n<parameter=location>\nParis\n</parameter>\n</function>\n</tool_call>",
           "upstream": {
@@ -965,6 +1245,30 @@
           },
           "upstream_partial": {
             "content": "Use <function=unknown> here.",
+            "reasoning_content": "",
+            "tool_calls": [
+              {
+                "name": "get_weather",
+                "arguments": "{\"location\":\"Paris\"}"
+              }
+            ]
+          }
+        },
+        {
+          "name": "longer-bare-function-in-text",
+          "output": "Use <function=get_weathers> now.\n<tool_call>\n<function=get_weather>\n<parameter=location>\nParis\n</parameter>\n</function>\n</tool_call>",
+          "upstream": {
+            "content": "Use <function=get_weathers> now.",
+            "reasoning_content": "",
+            "tool_calls": [
+              {
+                "name": "get_weather",
+                "arguments": "{\"location\":\"Paris\"}"
+              }
+            ]
+          },
+          "upstream_partial": {
+            "content": "Use <function=get_weathers> now.",
             "reasoning_content": "",
             "tool_calls": [
               {
@@ -1415,6 +1719,30 @@
           "upstream_partial": {
             "content": "",
             "reasoning_content": "Use <function=unknown> here.\n",
+            "tool_calls": [
+              {
+                "name": "get_weather",
+                "arguments": "{\"location\":\"Paris\"}"
+              }
+            ]
+          }
+        },
+        {
+          "name": "longer-bare-function-in-text",
+          "output": "Use <function=get_weathers> now.\n<tool_call>\n<function=get_weather>\n<parameter=location>\nParis\n</parameter>\n</function>\n</tool_call>",
+          "upstream": {
+            "content": "",
+            "reasoning_content": "Use <function=get_weathers> now.\n",
+            "tool_calls": [
+              {
+                "name": "get_weather",
+                "arguments": "{\"location\":\"Paris\"}"
+              }
+            ]
+          },
+          "upstream_partial": {
+            "content": "",
+            "reasoning_content": "Use <function=get_weathers> now.\n",
             "tool_calls": [
               {
                 "name": "get_weather",
@@ -1895,6 +2223,30 @@
               }
             ]
           }
+        },
+        {
+          "name": "longer-bare-function-in-text",
+          "output": "Use <function=get_weathers> now.\n<tool_call>\n<function=get_weather>\n<parameter=location>\nParis\n</parameter>\n</function>\n</tool_call>",
+          "upstream": {
+            "content": "",
+            "reasoning_content": "Use <function=get_weathers> now.\n",
+            "tool_calls": [
+              {
+                "name": "get_weather",
+                "arguments": "{\"location\":\"Paris\"}"
+              }
+            ]
+          },
+          "upstream_partial": {
+            "content": "",
+            "reasoning_content": "Use <function=get_weathers> now.\n",
+            "tool_calls": [
+              {
+                "name": "get_weather",
+                "arguments": "{\"location\":\"Paris\"}"
+              }
+            ]
+          }
         }
       ]
     },
@@ -2336,6 +2688,30 @@
           },
           "upstream_partial": {
             "content": "Use <function=unknown> here.",
+            "reasoning_content": "",
+            "tool_calls": [
+              {
+                "name": "get_weather",
+                "arguments": "{\"location\":\"Paris\"}"
+              }
+            ]
+          }
+        },
+        {
+          "name": "longer-bare-function-in-text",
+          "output": "Use <function=get_weathers> now.\n<tool_call>\n<function=get_weather>\n<parameter=location>\nParis\n</parameter>\n</function>\n</tool_call>",
+          "upstream": {
+            "content": "Use <function=get_weathers> now.",
+            "reasoning_content": "",
+            "tool_calls": [
+              {
+                "name": "get_weather",
+                "arguments": "{\"location\":\"Paris\"}"
+              }
+            ]
+          },
+          "upstream_partial": {
+            "content": "Use <function=get_weathers> now.",
             "reasoning_content": "",
             "tool_calls": [
               {
@@ -2809,6 +3185,30 @@
           },
           "upstream_partial": {
             "content": "Use <function=unknown> here.",
+            "reasoning_content": "",
+            "tool_calls": [
+              {
+                "name": "get_weather",
+                "arguments": "{\"location\":\"Paris\"}"
+              }
+            ]
+          }
+        },
+        {
+          "name": "longer-bare-function-in-text",
+          "output": "Use <function=get_weathers> now.\n<tool_call>\n<function=get_weather>\n<parameter=location>\nParis\n</parameter>\n</function>\n</tool_call>",
+          "upstream": {
+            "content": "Use <function=get_weathers> now.",
+            "reasoning_content": "",
+            "tool_calls": [
+              {
+                "name": "get_weather",
+                "arguments": "{\"location\":\"Paris\"}"
+              }
+            ]
+          },
+          "upstream_partial": {
+            "content": "Use <function=get_weathers> now.",
             "reasoning_content": "",
             "tool_calls": [
               {
@@ -3266,6 +3666,30 @@
               }
             ]
           }
+        },
+        {
+          "name": "longer-bare-function-in-text",
+          "output": "Use <function=get_weathers> now.\n<tool_call>\n<function=get_weather>\n<parameter=location>\nParis\n</parameter>\n</function>\n</tool_call>",
+          "upstream": {
+            "content": "",
+            "reasoning_content": "Use <function=get_weathers> now.\n",
+            "tool_calls": [
+              {
+                "name": "get_weather",
+                "arguments": "{\"location\":\"Paris\"}"
+              }
+            ]
+          },
+          "upstream_partial": {
+            "content": "",
+            "reasoning_content": "Use <function=get_weathers> now.\n",
+            "tool_calls": [
+              {
+                "name": "get_weather",
+                "arguments": "{\"location\":\"Paris\"}"
+              }
+            ]
+          }
         }
       ]
     },
@@ -3739,6 +4163,30 @@
               }
             ]
           }
+        },
+        {
+          "name": "longer-bare-function-in-text",
+          "output": "Use <function=get_weathers> now.\n<tool_call>\n<function=get_weather>\n<parameter=location>\nParis\n</parameter>\n</function>\n</tool_call>",
+          "upstream": {
+            "content": "",
+            "reasoning_content": "Use <function=get_weathers> now.\n",
+            "tool_calls": [
+              {
+                "name": "get_weather",
+                "arguments": "{\"location\":\"Paris\"}"
+              }
+            ]
+          },
+          "upstream_partial": {
+            "content": "",
+            "reasoning_content": "Use <function=get_weathers> now.\n",
+            "tool_calls": [
+              {
+                "name": "get_weather",
+                "arguments": "{\"location\":\"Paris\"}"
+              }
+            ]
+          }
         }
       ]
     },
@@ -4153,6 +4601,30 @@
           "upstream_partial": {
             "content": "",
             "reasoning_content": "Use <function=unknown> here.\n",
+            "tool_calls": [
+              {
+                "name": "get_weather",
+                "arguments": "{\"location\":\"Paris\"}"
+              }
+            ]
+          }
+        },
+        {
+          "name": "longer-bare-function-in-text",
+          "output": "Use <function=get_weathers> now.\n<tool_call>\n<function=get_weather>\n<parameter=location>\nParis\n</parameter>\n</function>\n</tool_call>",
+          "upstream": {
+            "content": "",
+            "reasoning_content": "Use <function=get_weathers> now.\n",
+            "tool_calls": [
+              {
+                "name": "get_weather",
+                "arguments": "{\"location\":\"Paris\"}"
+              }
+            ]
+          },
+          "upstream_partial": {
+            "content": "",
+            "reasoning_content": "Use <function=get_weathers> now.\n",
             "tool_calls": [
               {
                 "name": "get_weather",
@@ -4598,6 +5070,30 @@
           "upstream_partial": {
             "content": "",
             "reasoning_content": "Use <function=unknown> here.\n",
+            "tool_calls": [
+              {
+                "name": "get_weather",
+                "arguments": "{\"location\":\"Paris\"}"
+              }
+            ]
+          }
+        },
+        {
+          "name": "longer-bare-function-in-text",
+          "output": "Use <function=get_weathers> now.\n<tool_call>\n<function=get_weather>\n<parameter=location>\nParis\n</parameter>\n</function>\n</tool_call>",
+          "upstream": {
+            "content": "",
+            "reasoning_content": "Use <function=get_weathers> now.\n",
+            "tool_calls": [
+              {
+                "name": "get_weather",
+                "arguments": "{\"location\":\"Paris\"}"
+              }
+            ]
+          },
+          "upstream_partial": {
+            "content": "",
+            "reasoning_content": "Use <function=get_weathers> now.\n",
             "tool_calls": [
               {
                 "name": "get_weather",

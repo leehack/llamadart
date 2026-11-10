@@ -175,9 +175,9 @@ description: >-
   llama-server: content ends at the first `<tool_call>`, only the first call
   counts without `parallelToolCalls`, and an invalid call or text after the
   calls is dropped, not returned as content. With `ToolChoice.required`, a
-  thought and text may precede the calls, so leave room in `maxTokens`. The
-  Qwen3-Coder template's first call may leave out `<tool_call>` and start at
-  `<function=name>`.
+  thought and text may precede the calls, so leave room in `maxTokens`, and
+  the Qwen3-Coder template's first call may leave out `<tool_call>` and start
+  at `<function=name>`. With `ToolChoice.auto` that tag is text.
 - Consume all parsed Solar Open content-channel segments, preserving the
   whitespace between them. Parsed and streamed completions remove channel
   framing while retaining the accepted content.

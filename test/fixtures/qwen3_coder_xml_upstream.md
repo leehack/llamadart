@@ -20,7 +20,8 @@ whole output first gave the same result. `upstream_partial` is
 The cases from `bare-call` on, added for issue #1531 with the same probe, hold
 a `<function=…>` opening without `<tool_call>`. llama.cpp takes one that names
 a declared tool as the first call, for the Qwen3-Coder template only, as it
-has no thought.
+has no thought. The two Qwen3-Coder entries with `"tool_choice": "required"`
+hold those cases; the other entries pass `tool_choice` auto.
 
 Left out:
 
@@ -31,6 +32,9 @@ Left out:
 - Calls whose tags lack llama.cpp's exact line breaks, such as
   `<tool_call><function=`: llama.cpp takes no call or cuts the argument at the
   next `\n</parameter>\n`, while llamadart takes the call.
+- The `bare-call`, `text-then-bare-call` and `bare-call-then-call` cases with
+  Qwen3-Coder and tool choice auto: llamadart takes such a call only for a
+  required call, so the tag and what follows it stay content.
 - The `bare-call` and `text-then-bare-call` cases with StepFun3.5-Flash and
   thinking off: llama.cpp keeps the thought its prompt opened, so a reply with
   no thinking tag or `<tool_call>` is reasoning, while llamadart closed the

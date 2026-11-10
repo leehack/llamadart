@@ -81,6 +81,9 @@ class Qwen3CoderXmlHandler extends ChatTemplateHandler
     final toolChoiceRequired = toolChoice == ToolChoice.required.name;
     // llama.cpp takes no thought from a reply to a template without one, and
     // its first call may then leave out `<tool_call>`, as Qwen3-Coder does.
+    // llamadart takes such a call only for a required call, so that another
+    // reply may write a declared `<function=name>` as text: llama.cpp ends the
+    // content there and its lazy grammar starts there.
     final templateHasThought = templateSource.contains('<think>');
     final thinkingForcedClosed =
         isThinkingForcedClosed(prompt) || !templateHasThought;
@@ -97,7 +100,8 @@ class Qwen3CoderXmlHandler extends ChatTemplateHandler
 
     final hasTools = tools != null && tools.isNotEmpty;
     final nemotronAllowToolCalls = isNemotronV3 && hasTools && !toolChoiceNone;
-    final bareFirstCall = hasTools && !isNemotronV3 && !templateHasThought;
+    final bareFirstCall =
+        hasTools && toolChoiceRequired && !isNemotronV3 && !templateHasThought;
     final parser = isNemotronV3
         ? _buildNemotronV3Parser(
             tools,
@@ -111,15 +115,12 @@ class Qwen3CoderXmlHandler extends ChatTemplateHandler
     final resultFormat = isNemotronV3
         ? ChatFormat.pegConstructed.index
         : format.index;
-    // The lazy grammar starts only at `<tool_call>`: llama.cpp also starts it
-    // at a declared tool's `<function=name>`, which then fails a reply that
-    // writes that tag as text.
     final grammar = buildXmlToolCallGrammar(
       tools,
       XmlToolCallFormat.qwen3Coder,
       parallelToolCalls: parallelToolCalls,
       textBeforeCalls: toolChoiceRequired && !isNemotronV3,
-      bareFirstCall: bareFirstCall && toolChoiceRequired,
+      bareFirstCall: bareFirstCall,
     );
 
     final rendered = LlamaChatTemplateResult(

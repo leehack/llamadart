@@ -495,9 +495,10 @@ With Qwen3-Coder XML templates (Qwen3-Coder, Qwen3.5, StepFun3.5-Flash), the
 `<tool_call>` before the calls, as in llama-server, so leave room in
 `maxTokens`: a reply that spends it first ends with `length` and no call. The
 Qwen3-Coder template has no thinking, so its first required call may also leave
-out `<tool_call>` and start at `<function=name>` for a declared tool. Unlike
-llama-server, the `ToolChoice.auto` grammar starts only at `<tool_call>`, not
-at `<function=name>`, so a reply can write that tag as text.
+out `<tool_call>` and start at `<function=name>` for a declared tool. Only a
+required call does: with `ToolChoice.auto`, a declared `<function=name>` is
+text, and the reply keeps it and everything after it. llama-server instead
+starts its grammar there and ends the content at it.
 
 `required` may name a property that `properties` does not declare: the
 grammar requires that key, with a value matching `additionalProperties` (any

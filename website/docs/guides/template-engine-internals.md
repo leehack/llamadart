@@ -191,12 +191,14 @@ at the first `<tool_call>`, the calls are those of the `<tool_call>` scopes
 after it that each hold one valid call, only the first without
 `parallelToolCalls`, and the rest of the reply is dropped: an invalid call, a
 scope with two calls and text after the calls. A finished reply may end a
-valid call without `</tool_call>`. For a template without a thought, as
-Qwen3-Coder's, a declared tool's `<function=name>` before any `<tool_call>`
-also ends the content and starts the first call, as llama.cpp (`cd959bae9`)
-allows. The lazy grammar starts only at `<tool_call>`: llama.cpp also starts
-it at `<function=name>`, which then fails a reply that writes that tag as
-text. Tool calls are emitted after final
+valid call without `</tool_call>`. For a required call with a template
+without a thought, as Qwen3-Coder's, a declared tool's `<function=name>`
+before any `<tool_call>` also ends the content and starts the first call, as
+llama.cpp (`cd959bae9`) allows. Otherwise that tag is text, in the parse, the
+stream and the lazy grammar, which starts only at `<tool_call>`: llama.cpp
+also ends the content there and starts its grammar there, so a reply that
+writes the tag as text loses the rest of its answer or fails in the sampler.
+Tool calls are emitted after final
 validation. Direct schema-free template parsing does not validate arguments,
 so pass tool definitions when validating calls.
 
