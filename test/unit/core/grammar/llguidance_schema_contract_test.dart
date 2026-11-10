@@ -293,14 +293,14 @@ void main() {
       r'$.properties.v.pattern',
     ),
     'integer const beyond 2^53': (
-      _property({'const': 9007199254740993}),
+      _property({'const': 18014398509481984}),
       r'$.properties.v.const',
     ),
     'integer in nested enum value beyond 2^53': (
       _property({
         'enum': [
           {
-            'n': [9007199254740993],
+            'n': [18014398509481984],
           },
         ],
       }),
