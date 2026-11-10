@@ -110,7 +110,9 @@ sequenceDiagram
 - A grammar that applies from the first token after a forced-open thought (a
   `responseFormat` schema, the generic tool grammar, or a required-call
   grammar) first takes the rest of the thought and its end tag, as
-  llama.cpp's reasoning parser does.
+  llama.cpp's reasoning parser does. The Qwen3-Coder XML required-call grammar
+  instead takes any text without a call opening before the calls, the thought
+  included, as llama.cpp (`cd959bae9`) does.
 
 ### 4. Parse stage
 
@@ -189,7 +191,14 @@ at the first `<tool_call>`, the calls are those of the `<tool_call>` scopes
 after it that each hold one valid call, only the first without
 `parallelToolCalls`, and the rest of the reply is dropped: an invalid call, a
 scope with two calls and text after the calls. A finished reply may end a
-valid call without `</tool_call>`. Tool calls are emitted after final
+valid call without `</tool_call>`. For a required call with a template
+without a thought, as Qwen3-Coder's, a declared tool's `<function=name>`
+before any `<tool_call>` also ends the content and starts the first call, as
+llama.cpp (`cd959bae9`) allows. Otherwise that tag is text, in the parse, the
+stream and the lazy grammar, which starts only at `<tool_call>`: llama.cpp
+also ends the content there and starts its grammar there, so a reply that
+writes the tag as text loses the rest of its answer or fails in the sampler.
+Tool calls are emitted after final
 validation. Direct schema-free template parsing does not validate arguments,
 so pass tool definitions when validating calls.
 

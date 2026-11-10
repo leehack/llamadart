@@ -40,6 +40,7 @@ import '../../support/forced_open_required_calls.dart';
 import '../../support/litert_qwen_content_fixture.dart';
 import '../../support/llama_cpp_grammar_load.dart';
 import '../../support/pydantic_audit_schemas.dart';
+import '../../support/qwen3_coder_required_calls.dart';
 import '../../support/upstream_integer_bound_grammars.dart';
 import '../../support/qwen35_tool_result_fixture.dart' as typed;
 import '../../support/qwen_tool_schema_fixture.dart';
@@ -627,6 +628,61 @@ void main() {
       }
     },
   );
+
+  test('Qwen3-Coder XML required grammars compile and take text, a thought '
+      'and a bare first call as llama.cpp does', () {
+    for (final (:template, :enableThinking, :bareFirstCall)
+        in qwen3CoderRequiredTemplates) {
+      for (final parallel in [false, true]) {
+        final replies = qwen3CoderRequiredReplies(
+          parallelToolCalls: parallel,
+          bareFirstCall: bareFirstCall,
+        );
+        _expectGrammar(
+          validator,
+          renderQwen3CoderRequiredCall(
+            template,
+            enableThinking: enableThinking,
+            parallelToolCalls: parallel,
+          ).grammar!,
+          valid: replies.valid,
+          invalid: replies.invalid,
+        );
+      }
+    }
+  });
+
+  test('a Qwen3-Coder required grammar compiles for a tool name that holds '
+      'class metacharacters', () {
+    for (final name in ['get^weather', '^weather', 'get]-weather']) {
+      final rendered = ChatTemplateEngine.render(
+        templateSource: File(
+          'test/fixtures/llama_cpp_templates/Qwen3-Coder.jinja',
+        ).readAsStringSync(),
+        messages: const [
+          LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'Hi'),
+        ],
+        metadata: const {},
+        tools: [
+          ToolDefinition(
+            name: name,
+            description: 'w',
+            parameters: [ToolParam.string('location', required: true)],
+          ),
+        ],
+        toolChoice: ToolChoice.required,
+      );
+      final call =
+          '<function=$name>\n<parameter=location>\nParis\n</parameter>\n'
+          '</function>\n</tool_call>';
+      _expectGrammar(
+        validator,
+        rendered.grammar!,
+        valid: ['Text $call', 'Text <tool_call>\n$call', 'a^b] $call'],
+        invalid: ['<function=$name> is a tool. <tool_call>\n$call'],
+      );
+    }
+  });
 
   test('Qwen typed result history preserves compiled follow-up grammar', () {
     for (final thinking in [true, false]) {

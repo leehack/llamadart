@@ -760,6 +760,7 @@ class ChatTemplateEngine {
     thinkingForcedOpen: rendered.thinkingForcedOpen,
     thinkingForcedClosed: thinkingForcedClosedOf(rendered),
     singleToolCall: singleToolCallOf(rendered),
+    bareFirstCall: bareFirstCallOf(rendered),
     parser: rendered.parser,
     tools: tools,
   );
@@ -784,6 +785,7 @@ class ChatTemplateEngine {
     required bool thinkingForcedClosed,
     bool promptOpensNoThought = false,
     bool singleToolCall = false,
+    bool bareFirstCall = false,
     String? parser,
     List<ToolDefinition>? tools,
   }) {
@@ -797,6 +799,7 @@ class ChatTemplateEngine {
       thinkingForcedClosed: thinkingForcedClosed,
       promptOpensNoThought: promptOpensNoThought,
       singleToolCall: singleToolCall,
+      bareFirstCall: bareFirstCall,
       parser: parser,
       tools: tools,
     );
@@ -849,6 +852,7 @@ class ChatTemplateEngine {
     required bool thinkingForcedClosed,
     required bool promptOpensNoThought,
     required bool singleToolCall,
+    required bool bareFirstCall,
     String? parser,
     List<ToolDefinition>? tools,
   }) {
@@ -915,6 +919,7 @@ class ChatTemplateEngine {
         thinkingForcedOpen: thinkingForcedOpen,
         thoughtTagsAreText: thoughtTagsAreText,
         singleToolCall: singleToolCall,
+        bareFirstCall: bareFirstCall,
       );
     } else if (handler is DeepseekV3Handler) {
       result = handler.parse(
@@ -1186,7 +1191,8 @@ ChatFormatTraits _traitsOf(int formatIndex) =>
 /// [ChatFormatTraits.takesThoughtOnlyAtReplyStart] takes a thought only at the
 /// start of the reply, and a DeepSeek V3 reply with an end tag before any
 /// start tag keeps its thinking tags as content. With [singleToolCall], a
-/// Qwen3-Coder XML reply has at most one tool call.
+/// Qwen3-Coder XML reply has at most one tool call, and with [bareFirstCall]
+/// its first call may leave out `<tool_call>`.
 ChatParseResult parseRenderedOutput(
   int formatIndex,
   String output, {
@@ -1197,6 +1203,7 @@ ChatParseResult parseRenderedOutput(
   bool thinkingForcedOpen = false,
   bool thinkingForcedClosed = false,
   bool singleToolCall = false,
+  bool bareFirstCall = false,
   String? parser,
   List<ToolDefinition>? tools,
 }) => ChatTemplateEngine._parseOutput(
@@ -1213,6 +1220,7 @@ ChatParseResult parseRenderedOutput(
   thinkingForcedClosed: thinkingForcedClosed,
   promptOpensNoThought: !thoughtClosedForThinkingOff,
   singleToolCall: singleToolCall,
+  bareFirstCall: bareFirstCall,
   parser: parser,
   tools: tools,
 );

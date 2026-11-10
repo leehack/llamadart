@@ -173,13 +173,17 @@ description: >-
 - Qwen3-Coder XML replies (Qwen3-Coder, Qwen3.5, StepFun3.5-Flash) parse as in
   llama-server: content ends at the first `<tool_call>`, only the first call
   counts without `parallelToolCalls`, and an invalid call or text after the
-  calls is dropped, not returned as content.
+  calls is dropped, not returned as content. With `ToolChoice.required`, a
+  thought and text may precede the calls, so leave room in `maxTokens`, and
+  the Qwen3-Coder template's first call may leave out `<tool_call>` and start
+  at `<function=name>`. With `ToolChoice.auto` that tag is text.
 - Consume all parsed Solar Open content-channel segments, preserving the
   whitespace between them. Parsed and streamed completions remove channel
   framing while retaining the accepted content.
 - Always cap the number of tool rounds (`maxRounds`, default 5); a model can
   call tools forever.
 - `ToolChoice.auto` lets the model decide, `ToolChoice.required` forces a call
+  (unless `maxTokens` runs out first, where a thought or text may precede it)
   and `ToolChoice.none` disables tools for one request. With Hermes templates
   that open reasoning in the prompt (such as QwQ), a required call follows the
   model's closed `</think>` reasoning, which streams as `chunk.thinking`.

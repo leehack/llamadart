@@ -16,6 +16,8 @@ import '../template/handlers/llama3_handler.dart';
 import '../template/peg_chat_parser.dart';
 import '../template/template_internal_metadata.dart';
 import '../template/thinking_utils.dart';
+import '../template/tool_call_parsing_utils.dart';
+import '../template/xml_tool_call_format.dart';
 
 enum _ToolStreamingMode { undecided, raw, parsed }
 
@@ -163,9 +165,19 @@ class ChatCompletionStreamParser {
     var lastPartialParseAtMs = 0;
     final partialParseStopwatch = Stopwatch()..start();
     final traits = _traitsOf(templateResult);
+    final bareCallOpenings = [
+      if (bareFirstCallOf(templateResult))
+        for (final tool in tools ?? const <ToolDefinition>[])
+          XmlToolCallFormat.qwen3Coder.bareCallOpening(tool.name),
+    ];
     final gatedOpening = _usesPegParser(templateResult)
         ? null
-        : traits.toolCallOpening;
+        : bareCallOpenings.isEmpty
+        ? traits.toolCallOpening
+        : (String text, int from) => ToolCallParsingUtils.literalOpening(text, [
+            XmlToolCallFormat.qwen3CoderScopeStart,
+            ...bareCallOpenings,
+          ], from);
     final toolCallOpening = parseToolCallsEnabled ? gatedOpening : null;
     final isGptOss = templateResult.format == ChatFormat.gptOss.index;
     final isFunctionaryV32 =
@@ -624,6 +636,7 @@ class ChatCompletionStreamParser {
           thoughtClosedForThinkingOff: thoughtClosedForThinkingOff,
           thinkingForcedClosed: thinkingForcedClosed,
           singleToolCall: singleToolCallOf(templateResult),
+          bareFirstCall: bareFirstCallOf(templateResult),
           parser: templateResult.parser,
           tools: tools,
         );

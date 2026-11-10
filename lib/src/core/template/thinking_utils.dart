@@ -338,12 +338,15 @@ LlamaChatTemplateResult withThoughtMarksOf(
   LlamaChatTemplateResult copy,
   LlamaChatTemplateResult source,
 ) => withLfm2AutoGrammarOf(
-  withSingleToolCall(
-    withThoughtClosedForThinkingOff(
-      withThinkingForcedClosed(copy, closed: thinkingForcedClosedOf(source)),
-      closed: thoughtClosedForThinkingOffOf(source),
+  withBareFirstCall(
+    withSingleToolCall(
+      withThoughtClosedForThinkingOff(
+        withThinkingForcedClosed(copy, closed: thinkingForcedClosedOf(source)),
+        closed: thoughtClosedForThinkingOffOf(source),
+      ),
+      single: singleToolCallOf(source),
     ),
-    single: singleToolCallOf(source),
+    bare: bareFirstCallOf(source),
   ),
   source,
 );

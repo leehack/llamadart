@@ -79,9 +79,14 @@ class Qwen3CoderXmlHandler extends ChatTemplateHandler
         metadata[internalParallelToolCallsMetadataKey] == 'true';
     final toolChoiceNone = toolChoice == ToolChoice.none.name;
     final toolChoiceRequired = toolChoice == ToolChoice.required.name;
-    // llama.cpp takes no thought from a reply to a template without one.
+    // llama.cpp takes no thought from a reply to a template without one, and
+    // its first call may then leave out `<tool_call>`, as Qwen3-Coder does.
+    // llamadart takes such a call only for a required call, so that another
+    // reply may write a declared `<function=name>` as text: llama.cpp ends the
+    // content there and its lazy grammar starts there.
+    final templateHasThought = templateSource.contains('<think>');
     final thinkingForcedClosed =
-        isThinkingForcedClosed(prompt) || !templateSource.contains('<think>');
+        isThinkingForcedClosed(prompt) || !templateHasThought;
     var thinkingForcedOpen = false;
     var thoughtClosed = false;
     if (isThinkingForcedOpen(prompt, startTag: '<think>')) {
@@ -95,6 +100,8 @@ class Qwen3CoderXmlHandler extends ChatTemplateHandler
 
     final hasTools = tools != null && tools.isNotEmpty;
     final nemotronAllowToolCalls = isNemotronV3 && hasTools && !toolChoiceNone;
+    final bareFirstCall =
+        hasTools && toolChoiceRequired && !isNemotronV3 && !templateHasThought;
     final parser = isNemotronV3
         ? _buildNemotronV3Parser(
             tools,
@@ -112,6 +119,8 @@ class Qwen3CoderXmlHandler extends ChatTemplateHandler
       tools,
       XmlToolCallFormat.qwen3Coder,
       parallelToolCalls: parallelToolCalls,
+      textBeforeCalls: toolChoiceRequired && !isNemotronV3,
+      bareFirstCall: bareFirstCall,
     );
 
     final rendered = LlamaChatTemplateResult(
@@ -147,12 +156,15 @@ class Qwen3CoderXmlHandler extends ChatTemplateHandler
           : const [],
       parser: parser,
     );
-    return withSingleToolCall(
-      withThoughtClosedForThinkingOff(
-        withThinkingForcedClosed(rendered, closed: thinkingForcedClosed),
-        closed: thoughtClosed,
+    return withBareFirstCall(
+      withSingleToolCall(
+        withThoughtClosedForThinkingOff(
+          withThinkingForcedClosed(rendered, closed: thinkingForcedClosed),
+          closed: thoughtClosed,
+        ),
+        single: hasTools && !parallelToolCalls,
       ),
-      single: hasTools && !parallelToolCalls,
+      bare: bareFirstCall,
     );
   }
 
@@ -316,7 +328,9 @@ class Qwen3CoderXmlHandler extends ChatTemplateHandler
   /// are those of the valid scopes that follow it, only the first with
   /// [singleToolCall], and the rest of the reply is dropped, so an invalid
   /// call never becomes an executable tool delta. With [thoughtTagsAreText],
-  /// all of [output] is content and tool calls.
+  /// all of [output] is content and tool calls. With [bareFirstCall], a
+  /// declared tool's `<function=…>` also ends the content and starts the
+  /// first call, as `<tool_call>` would.
   @override
   ChatParseResult parseWithTools(
     String output, {
@@ -326,9 +340,12 @@ class Qwen3CoderXmlHandler extends ChatTemplateHandler
     bool thinkingForcedOpen = false,
     bool thoughtTagsAreText = false,
     bool singleToolCall = false,
+    bool bareFirstCall = false,
   }) {
     final result = parseXmlToolCalls(
-      output,
+      bareFirstCall && parseToolCalls && tools != null
+          ? _withFirstScopeStart(output, tools)
+          : output,
       XmlToolCallFormat.qwen3Coder,
       schemas: tools == null ? null : toolSchemas(tools),
       isPartial: isPartial,
@@ -347,6 +364,28 @@ class Qwen3CoderXmlHandler extends ChatTemplateHandler
       reasoningContent: result.reasoningContent,
       toolCalls: result.toolCalls,
     );
+  }
+
+  /// [output] with `<tool_call>\n` before its first call opening when that is
+  /// a declared tool's `<function=…>`.
+  static String _withFirstScopeStart(
+    String output,
+    List<ToolDefinition> tools,
+  ) {
+    const format = XmlToolCallFormat.qwen3Coder;
+    var first = output.indexOf(format.scopeStart);
+    var bare = false;
+    for (final tool in tools) {
+      final index = output.indexOf(format.bareCallOpening(tool.name));
+      if (index >= 0 && (first < 0 || index < first)) {
+        first = index;
+        bare = true;
+      }
+    }
+    return bare
+        ? '${output.substring(0, first)}${format.scopeStart}\n'
+              '${output.substring(first)}'
+        : output;
   }
 
   @override
