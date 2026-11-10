@@ -426,8 +426,11 @@ final class LiteRtLmV1Turn {
           ),
           'conversation_send_message_stream',
         );
-      } on LlamaModelException catch (error) {
-        throw LiteRtLmSendFailureException(error.message, error.details);
+      } on LlamaModelException catch (error, stackTrace) {
+        Error.throwWithStackTrace(
+          LiteRtLmSendFailureException(error.message, error.details),
+          stackTrace,
+        );
       }
     } on Object {
       _cleanup();
