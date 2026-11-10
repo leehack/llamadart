@@ -277,7 +277,7 @@
       ],
       "exemption": {
         "id": "automatic-tool-loops",
-        "reason": "Reliable runtime termination and automatic-loop rollback, including native LiteRT-LM finish reasons, need their own validation contract; the litert-lm-chat-features-smoke local check covers the LiteRT-LM cutoff. Ordinary best-effort tool-call cases are insufficient.",
+        "reason": "Reliable runtime termination and automatic-loop rollback, including native LiteRT-LM finish reasons and LiteRT-LM Web limits inferred from @litert-lm/core@0.19.0 token counts, need their own validation contract; the litert-lm-chat-features-smoke local check covers the native LiteRT-LM cutoff, and production-path Chrome tests plus the litert-lm-web-truncation local runner (direct-runtime token counts at the maxTokens boundary and a filled context, completed and truncated loops) cover LiteRT-LM Web. Ordinary best-effort tool-call cases are insufficient.",
         "issue": "https://github.com/leehack/llamadart/issues/919"
       }
     },
@@ -594,7 +594,7 @@
       ],
       "exemption": {
         "issue": "https://github.com/leehack/llamadart/issues/1196",
-        "reason": "The row's native and WebGPU columns are the tools pack's routes (bound through capability:supportsToolCalling); its LiteRT-LM Web column has no versioned Web validation profile. That column (manual tool calling, #1790) is covered by production-path Chrome tests of the preface.tools probe, declaration/call/result wire shapes, runtime tool_calls carried beside text in either order, typed refusals and cancel/reset, and by the maintained litert-lm-web-tool-calling local runner, which compares a pinned @litert-lm/core@0.19.0 reference and a no-tools control on an identified browser/model. Automatic loops stay out of scope (#919). No model qualification is inferred.",
+        "reason": "The row's native and WebGPU columns are the tools pack's routes (bound through capability:supportsToolCalling); its LiteRT-LM Web column has no versioned Web validation profile. That column (manual tool calling, #1790) is covered by production-path Chrome tests of the preface.tools probe, declaration/call/result wire shapes, runtime tool_calls carried beside text in either order, typed refusals and cancel/reset, and by the maintained litert-lm-web-tool-calling local runner, which compares a pinned @litert-lm/core@0.19.0 reference and a no-tools control on an identified browser/model. Automatic loops and truncation are covered by the automatic-tool-loops exemption (#919). No model qualification is inferred.",
         "id": "litert-web-tool-calling-profile"
       }
     },

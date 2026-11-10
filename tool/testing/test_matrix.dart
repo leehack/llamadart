@@ -1276,7 +1276,18 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
     command:
         'dart run tool/testing/run_local_e2e.dart --scenario litert-lm-web-tool-calling --model-path <existing-model.litertlm> --backend cpu',
     useWhen:
-        'LiteRT-LM Web tool declarations, tool-call/result serialization, the preface.tools probe or tool-call parsing. Repeat with the affected model/backend; automatic tool loops stay out of scope (#919).',
+        'LiteRT-LM Web tool declarations, tool-call/result serialization, the preface.tools probe or tool-call parsing. Repeat with the affected model/backend; litert-lm-web-truncation covers automatic tool loops.',
+  ),
+  TestMatrixRow(
+    id: 'litert-lm-web-truncation',
+    tier: 'targeted',
+    mode: 'local-only',
+    covers:
+        'Web finish reason length at and below the maxTokens boundary and for a filled context, including a requested context above a fixed KV cache, matching pinned JS runtime token counts; stop above the boundary; automatic tool loop completed and truncated without running the tool',
+    command:
+        'dart run tool/testing/run_local_e2e.dart --scenario litert-lm-web-truncation --model-path <existing-model.litertlm> --backend cpu',
+    useWhen:
+        'LiteRT-LM Web generation-limit reporting, the token-count load probe, automatic tool loops or a @litert-lm/core pin change. Repeat with the affected model/backend.',
   ),
   TestMatrixRow(
     id: 'litert-lm-json-schema',

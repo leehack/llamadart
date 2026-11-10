@@ -331,10 +331,11 @@ Assistant calls and `LlamaToolResultContent` results are replayed in the
 `@litert-lm/core@0.19.0` message shape, and a final tool result message is
 sent as the request's message. Check `supportsToolCalling`: the adapter probes
 that `createConversation` reads `preface.tools`, and a runtime that does not
-rejects tools and tool messages with `LlamaUnsupportedException`. Automatic
-tool loops stay unavailable until the runtime reports truncation
-([#919](https://github.com/leehack/llamadart/issues/919)); see
-[Tool calling](./tool-calling#runtime-notes).
+rejects tools and tool messages with `LlamaUnsupportedException`. A reply cut
+off at `maxTokens` or the context size ends with `length`, inferred from the
+runtime's token counts, and automatic tool loops run when the load probe for
+those counts passes ([#919](https://github.com/leehack/llamadart/issues/919));
+see [Tool calling](./tool-calling#runtime-notes).
 Use a browser-compatible bundle; the JS package documents its
 [Web LLM Models](https://huggingface.co/collections/litert-community/web-llm-models)
 collection, such as Gemma 4 E2B/E4B `-web.litertlm` files. A WebGPU load keeps
@@ -351,8 +352,8 @@ assistant/system message, custom templates (including an empty override),
 replacement or thinking-budget support is implied. Raw `generate` wraps the
 prompt in one user turn of the bundle's template
 ([#1863](https://github.com/leehack/llamadart/issues/1863)). Low-level `backend.applyChatTemplate` accepts one user message only; use
-`engine.create` for structured history. Automatic tool loops remain unavailable
-([#919](https://github.com/leehack/llamadart/issues/919)).
+`engine.create` for structured history. The default constructors report no
+token-limit truncation and refuse automatic tool loops.
 
 ## Measure before choosing
 

@@ -279,11 +279,11 @@ flutter test --run-skipped -t local-only \
    - The chat app explicitly uses `LlamaBackend.withTextHistory()` to forward
      ordered system/user/assistant text through the probed LiteRT-LM Web
      conversation API. The runtime still applies its own model template.
-     Function Calling and Thinking controls remain unavailable: the app uses
-     model-default thinking without changing saved preferences. The library
-     supports manual LiteRT-LM Web tool calls, but this app runs tool calls
-     automatically, which needs the truncation report the runtime lacks
-     ([#919](https://github.com/leehack/llamadart/issues/919)). Media and
+     Thinking controls remain unavailable: the app uses model-default
+     thinking without changing saved preferences. Function Calling runs when
+     the loaded runtime reports replies cut off at a token limit
+     (`@litert-lm/core@0.19.0`,
+     [#919](https://github.com/leehack/llamadart/issues/919)). Media and
      template/thinking controls are outside this slice.
      Existing core default backends and the Genkit adapter do not opt in
      automatically.
@@ -372,6 +372,9 @@ layouts) opens a separate screen for the experimental `ImageGenerationEngine`
      offload when it fits. Choosing a lower layer count makes it a fixed manual
      setting. Reload the model to apply changes.
 3. Optionally enable **Function Calling** and edit tool declarations depending on model/template support.
+   The app runs the model's tool calls itself, on every runtime, and runs
+   none from a reply that ended at the token limit (finish reason `length`):
+   it shows a notice instead. Raise **Max generated tokens** and send again.
 4. Tap **Load Model** to apply changes.
 
 

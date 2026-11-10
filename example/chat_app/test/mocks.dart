@@ -235,9 +235,9 @@ class MockLlamaEngine extends LlamaEngine {
     supportsStreamBatching: true,
   );
 
-  MockLlamaEngine()
+  MockLlamaEngine({MockLlamaBackend? backend})
     : super(
-        MockLlamaBackend(),
+        backend ?? MockLlamaBackend(),
         modelDownloadManager: FakeModelDownloadManager(),
       );
 

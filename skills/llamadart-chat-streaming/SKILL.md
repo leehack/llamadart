@@ -25,8 +25,7 @@ modalities and speculative strategies before offering them.
   or append it to history. `completion.message`, sessions and automatic loops
   exclude diagnostics. All executable calls remain withheld at length.
   Natural EOF/cancellation expose no diagnostics and retain existing policy;
-  none/parsing-disabled output stays literal. This does not resolve LiteRT-LM
-  Web's unknown finish cause (#919).
+  none/parsing-disabled output stays literal.
 
 - Pick the entry point by who owns history:
   - `ChatSession.create(parts)` for multi-turn chat. It applies the system
