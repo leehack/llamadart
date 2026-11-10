@@ -187,11 +187,15 @@ modalities and speculative strategies before offering them.
   model metadata.
 - For strict JSON, use `LlamaStructuredOutput` with
   `engine.createStructuredJson`; it constrains decoding and validates the
-  final output. Native LiteRT-LM supports canonical Qwen3 text on
-  macOS arm64 CPU after provider admission, with `enableThinking: false` and an
-  object schema limited to scalar properties, required, enum/const and boolean
-  additionalProperties. Only the corrected Qwen3-0.6B artifact above has model-backed qualification.
-  It rejects tools/media/custom templates/speculation/caller stops and broader schemas; GBNF remains unsupported. Web LiteRT-LM
+  final output. Native LiteRT-LM supports Qwen3 (canonical text template) and
+  Gemma 4 (bundle template) on macOS arm64 CPU and GPU after provider
+  admission, for schemas that both the GBNF converter and LiteRT-LM's
+  LLGuidance enforce (nested objects, arrays, `$ref`, `anyOf`, anchored
+  patterns, `uuid`/`date` formats, bounds); `oneOf`, other formats, open tuples
+  and the other differences listed in the structured-output guide throw
+  `LlamaUnsupportedException` naming the schema path. Gemma 4 may think first;
+  other families need `enableThinking: false`. Qwen3-0.6B and Gemma 4 E2B have
+  model-backed qualification. It rejects tools/media/custom templates/speculation/caller stops; GBNF remains unsupported. Web LiteRT-LM
   rejects strict schemas. `session.createStructuredJson(parts, output:)`
   does the same within a `ChatSession`. Runtimes without either enforcement path throw `LlamaUnsupportedException` before generating. A raw
   `responseFormat` map must be `{'type': 'json_object'}`,

@@ -263,7 +263,11 @@ void runLiteRtLmWorkerForTesting(
 
           case LiteRtLmJsonSchemaPrepareRequest():
             await service.prepareJsonSchemaChat();
-            message.sendPort.send(LiteRtLmDoneResponse());
+            message.sendPort.send(
+              LiteRtLmJsonSchemaAdmissionResponse(
+                thinking: service.supportsJsonSchemaChatThinking,
+              ),
+            );
 
           case LiteRtLmModelFreeRequest():
             message.sendPort.send(const LiteRtLmNativeTeardownStarted());
@@ -331,7 +335,9 @@ void runLiteRtLmWorkerForTesting(
                   hasTools: message.tools?.isNotEmpty ?? false,
                   requiredTools: message.toolChoice == ToolChoice.required,
                   parallelToolCalls: message.parallelToolCalls,
-                  enableThinking: message.enableThinking,
+                  // Thinking is checked by the service after it re-admits the
+                  // model; a recreated client clears the earlier admission.
+                  enableThinking: false,
                 );
               }
               final stream = message.jsonSchema != null
@@ -340,6 +346,7 @@ void runLiteRtLmWorkerForTesting(
                       message.messages,
                       message.params,
                       jsonSchema: message.jsonSchema!,
+                      enableThinking: message.enableThinking,
                       chatTemplateKwargs: message.chatTemplateKwargs,
                       templateNow: message.templateNow,
                     )

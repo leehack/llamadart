@@ -1115,6 +1115,10 @@ class _LegacyLiteRtLmRuntimeClient extends LiteRtLmRuntimeClient {
     return _bindings!.jsonSchemaApi != null;
   }
 
+  /// The pre-1.0 C API schema group always disables thinking.
+  @override
+  bool get supportsJsonSchemaThinking => false;
+
   /// Creates a synchronous dedicated-ASR runtime session.
   ///
   /// The current bridge accepts mono 16 kHz float PCM. Inference calls block;

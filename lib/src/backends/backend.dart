@@ -267,9 +267,12 @@ bool isPromptExcludedFromPenalties(GenerationParams params) =>
 /// Optional, bounded JSON-Schema text-chat capability, separate from GBNF.
 ///
 /// Admission may initialize the loaded model and must construct its provider;
-/// symbol presence alone is not model support. The route accepts object schemas
-/// with scalar properties, required, enum, const and additionalProperties.
-/// Tools, media, thinking, caller stops and speculative decoding are excluded.
+/// symbol presence alone is not model support. The route accepts the JSON
+/// Schema subset that both the llama.cpp GBNF converter and the native
+/// provider enforce, and refuses anything else before generation. Tools,
+/// media, caller stops and speculative decoding are excluded; thinking is
+/// excluded unless the backend also implements
+/// [BackendJsonSchemaThinkingChatGeneration] and admits it for the model.
 abstract class BackendJsonSchemaChatGeneration {
   /// True only after successful provider admission for the loaded model.
   bool get supportsJsonSchemaChatGeneration;
@@ -279,6 +282,29 @@ abstract class BackendJsonSchemaChatGeneration {
 
   /// Streams schema-constrained text chat with thinking explicitly disabled.
   Stream<List<int>> generateChatWithJsonSchema(
+    int contextHandle,
+    List<LlamaChatMessage> messages,
+    GenerationParams params, {
+    required Map<String, dynamic> jsonSchema,
+    Map<String, dynamic>? chatTemplateKwargs,
+    DateTime? templateNow,
+  });
+}
+
+/// Optional [BackendJsonSchemaChatGeneration] extension for models qualified
+/// to reason before their schema-constrained reply.
+///
+/// The constraint applies after the reasoning channel closes. A model whose
+/// family is not qualified keeps [supportsJsonSchemaChatThinking] false, and
+/// a request with thinking is refused before generation.
+abstract class BackendJsonSchemaThinkingChatGeneration
+    implements BackendJsonSchemaChatGeneration {
+  /// True only after [prepareJsonSchemaChat] admitted a model qualified to
+  /// reason before its schema-constrained reply.
+  bool get supportsJsonSchemaChatThinking;
+
+  /// Streams the model's reasoning, then its schema-constrained reply.
+  Stream<List<int>> generateChatWithJsonSchemaAndThinking(
     int contextHandle,
     List<LlamaChatMessage> messages,
     GenerationParams params, {

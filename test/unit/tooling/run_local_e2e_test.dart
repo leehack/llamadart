@@ -345,7 +345,7 @@ Future<void> main(List<String> args) async {
   });
 
   test(
-    'native JSON Schema scenario consumes the maintained CPU test and local model',
+    'native JSON Schema scenario consumes the maintained test, local model and backend',
     () async {
       const scenario = 'litert-lm-json-schema';
       const model = '/local/corrected-Qwen3.litertlm';
@@ -361,7 +361,8 @@ Future<void> main(List<String> args) async {
 
       for (final invalid in [
         ['--scenario', scenario],
-        for (final backend in ['auto', 'gpu', 'npu'])
+        ['--scenario', scenario, '--model-path', model],
+        for (final backend in ['auto', 'npu'])
           ['--scenario', scenario, '--model-path', model, '--backend', backend],
       ]) {
         final result = await runLocalE2e(
@@ -415,7 +416,18 @@ Future<void> main(List<String> args) async {
         'local-only',
         target,
       ]);
-      expect(step.environment, {'LITERT_LM_MODEL': model});
+      expect(step.environment, {
+        'LITERT_LM_MODEL': model,
+        'LITERT_LM_BACKEND': 'cpu',
+      });
+      steps.clear();
+      final gpu = await runLocalE2e(
+        [...args.take(4), '--backend', 'gpu'],
+        projectRoot: '/repo',
+        foregroundStepRun: capture,
+      );
+      expect(gpu.exitCode, 0);
+      expect(steps.single.environment['LITERT_LM_BACKEND'], 'gpu');
       expect(step.background, isFalse);
       expect(File(target).existsSync(), isTrue);
     },

@@ -383,6 +383,15 @@ class LiteRtLmGetContextSizeResponse {
   LiteRtLmGetContextSizeResponse(this.size);
 }
 
+/// Response to a successful native JSON Schema admission.
+class LiteRtLmJsonSchemaAdmissionResponse {
+  /// Whether the admitted model may reason before its constrained reply.
+  final bool thinking;
+
+  /// Creates an admission response.
+  LiteRtLmJsonSchemaAdmissionResponse({required this.thinking});
+}
+
 /// Response containing what the loaded bundle declares, or nothing when no
 /// model is loaded or the runtime cannot read the declaration.
 class LiteRtLmBundleCapabilitiesResponse {

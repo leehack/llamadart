@@ -218,6 +218,7 @@ class LiteRtLmService {
   }
 
   bool _jsonSchemaAdmitted = false;
+  bool _jsonSchemaThinking = false;
   final bool Function() _jsonSchemaPlatformSupported;
   LiteRtLmEmbeddingRuntimeSession? _embedding;
   LiteRtLmCacheLease? _cacheLease;
@@ -657,21 +658,30 @@ class LiteRtLmService {
   Future<void> prepareJsonSchemaChat() async {
     if (_jsonSchemaAdmitted) return;
     _requireConversationEngine();
+    const platformRefusal =
+        'Native JSON Schema chat is qualified only on macOS arm64 CPU and GPU; '
+        'NPU and other platforms are unsupported.';
     if (!_jsonSchemaPlatformSupported() ||
-        (_activeBackend ??
-                _backendNameFor(_modelParams ?? const ModelParams())) !=
-            'cpu') {
-      throw LlamaUnsupportedException(
-        'Native JSON Schema chat is qualified only on macOS arm64 CPU. Select ComputeDevice.cpu; GPU, NPU and other platforms are unsupported.',
-      );
+        _backendNameFor(_modelParams ?? const ModelParams()) == 'npu') {
+      throw LlamaUnsupportedException(platformRefusal);
     }
     final routing = _templateRouting();
-    final template = routing.rendersFamilyText ? routing.family : null;
-    if (template == null ||
-        (_modelParams?.chatTemplate != null &&
-            _modelParams!.chatTemplate != template.template)) {
+    final family = routing.family;
+    final customTemplate = _modelParams?.chatTemplate;
+    final String? promptTemplate;
+    if (family?.id == 'qwen3' &&
+        routing.rendersFamilyText &&
+        (customTemplate == null || customTemplate == family!.template)) {
+      promptTemplate = family!.template;
+    } else if (family?.id == 'gemma4' &&
+        !routing.rendersFamilyText &&
+        customTemplate == null) {
+      promptTemplate = null;
+    } else {
       throw LlamaUnsupportedException(
-        'Native JSON Schema chat currently requires the canonical Qwen3 text template; custom templates and other model families are unqualified.',
+        'Native JSON Schema chat is qualified only for Qwen3 with its canonical '
+        'text template and Gemma 4 with its bundle template; custom templates '
+        'and other model families are unqualified.',
       );
     }
     _cancelRequested = false;
@@ -683,9 +693,16 @@ class LiteRtLmService {
         'model and platform qualification still applies.',
       );
     }
+    if (!client.supportsFinishReasons) {
+      throw LlamaUnsupportedException(
+        'Native JSON Schema chat requires a runtime that reports finish '
+        'reasons, so that a reply cut off by maxTokens reports length instead '
+        'of success.',
+      );
+    }
     try {
       client.createConversation(
-        promptTemplate: template.template,
+        promptTemplate: promptTemplate,
         temperature: 0,
         topK: 1,
         topP: 1,
@@ -697,8 +714,18 @@ class LiteRtLmService {
         'The loaded LiteRT-LM model cannot construct its JSON Schema provider; the model tokenizer or EOS may be incompatible.',
       );
     }
+    // Only Gemma 4 kept the constraint after its reasoning channel on real
+    // models; Qwen3 with thinking produced unconstrained text.
+    _jsonSchemaThinking =
+        family!.id == 'gemma4' &&
+        client.supportsJsonSchemaThinking &&
+        _bundleBoundsThinking();
     _jsonSchemaAdmitted = true;
   }
+
+  /// Whether the admitted model may reason before its schema-constrained reply.
+  bool get supportsJsonSchemaChatThinking =>
+      _jsonSchemaAdmitted && _jsonSchemaThinking;
 
   /// Shares the normal chat lifecycle, with a validated per-request schema.
   Stream<List<int>> generateJsonSchemaChat(
@@ -706,30 +733,56 @@ class LiteRtLmService {
     List<LlamaChatMessage> messages,
     GenerationParams params, {
     required String jsonSchema,
+    bool enableThinking = false,
     Map<String, dynamic>? chatTemplateKwargs,
     DateTime? templateNow,
   }) async* {
     validateJsonSchemaChatRequest(messages, params);
     jsonSchemaChatPayload(jsonDecode(jsonSchema) as Map<String, dynamic>);
     await prepareJsonSchemaChat();
+    validateJsonSchemaChatRequest(
+      messages,
+      params,
+      enableThinking: enableThinking && !_jsonSchemaThinking,
+    );
+    var outputStarted = false;
     try {
       await for (final chunk in _generateChat(
         contextHandle,
         messages,
         params,
         toolChoice: ToolChoice.none,
-        enableThinking: false,
+        enableThinking: enableThinking,
         chatTemplateKwargs: chatTemplateKwargs,
         templateNow: templateNow,
         jsonSchema: jsonSchema,
       )) {
+        outputStarted = true;
         yield chunk;
       }
     } catch (error) {
       if (error is! StateError && error is! LlamaModelException) rethrow;
+      // The pre-check should refuse every schema the provider cannot compile;
+      // the provider reports one only as an INTERNAL send failure.
+      if (!outputStarted && '$error'.contains('INTERNAL (13)')) {
+        throw LlamaUnsupportedException(
+          'The native LiteRT-LM runtime refused the JSON Schema request '
+          'before generation (INTERNAL).',
+        );
+      }
       // Native diagnostics can echo the schema or model paths.
       throw LlamaInferenceException(
         'Native JSON Schema chat failed during constrained decoding.',
+      );
+    }
+    // maxTokens <= 0 generates nothing, so no finish reason is reported.
+    if (params.maxTokens > 0 &&
+        !_cancelRequested &&
+        _lastGenerationLimit == null &&
+        _client?.lastFinishReason != LiteRtLmFinishReason.stop) {
+      throw LlamaInferenceException(
+        'Native JSON Schema chat ended without a stop or length finish '
+        'reason, so the reply may be incomplete.',
       );
     }
   }

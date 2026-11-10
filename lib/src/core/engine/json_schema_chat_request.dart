@@ -1,60 +1,15 @@
 import 'dart:convert';
 
 import '../exceptions.dart';
-import '../grammar/response_schema_validation.dart';
+import '../grammar/llguidance_schema_contract.dart';
 import '../models/chat/chat_message.dart';
 import '../models/chat/chat_role.dart';
 import '../models/chat/content_part.dart';
 import '../models/inference/generation_params.dart';
 
-/// Validates the bounded schema-chat SPI and snapshots its JSON payload.
+/// Validates the schema-chat SPI contract and snapshots its JSON payload.
 String jsonSchemaChatPayload(Map<String, dynamic> schema) {
-  validateResponseSchema(schema);
-  const scalars = {'string', 'integer', 'number', 'boolean', 'null'};
-  const rootKeys = {
-    'type',
-    'properties',
-    'required',
-    'additionalProperties',
-    'title',
-    'description',
-    r'$schema',
-    r'$id',
-    r'$comment',
-  };
-  const leafKeys = {'type', 'enum', 'const', 'title', 'description'};
-  Never unsupported(String path) => throw LlamaUnsupportedException(
-    'Native JSON Schema chat supports object schemas with scalar properties, '
-    'required, enum, const and additionalProperties only; unsupported $path.',
-  );
-  if (schema['type'] != 'object') unsupported(r'$.type');
-  for (final key in schema.keys) {
-    if (!rootKeys.contains(key)) unsupported('\$.$key');
-  }
-  final properties = schema['properties'];
-  if (properties != null) {
-    if (properties is! Map<String, dynamic>) unsupported(r'$.properties');
-    for (final entry in properties.entries) {
-      final leaf = entry.value;
-      final path = '\$.properties.${entry.key}';
-      if (leaf is! Map<String, dynamic> || !scalars.contains(leaf['type'])) {
-        unsupported('$path.type');
-      }
-      for (final key in leaf.keys) {
-        if (!leafKeys.contains(key)) unsupported('$path.$key');
-      }
-      for (final value in [
-        if (leaf.containsKey('const')) leaf['const'],
-        ...?leaf['enum'] as List?,
-      ]) {
-        if (value is Map || value is List) unsupported(path);
-      }
-    }
-  }
-  if (schema.containsKey('additionalProperties') &&
-      schema['additionalProperties'] is! bool) {
-    unsupported(r'$.additionalProperties');
-  }
+  validateLlguidanceResponseSchema(schema);
   return jsonEncode(schema);
 }
 
@@ -70,10 +25,14 @@ void validateJsonSchemaChatRequest(
   String? reason;
   if (hasTools || requiredTools || parallelToolCalls) {
     reason = 'tools and parallel tool calls';
-  } else if (enableThinking || params.thinkingBudget != null) {
+  } else if (enableThinking) {
     reason =
-        'thinking; pass enableThinking: false, set no enable_thinking or '
-        'thinking chat template kwarg to true, and set no thinking budget';
+        'thinking with the loaded model; only model families qualified to '
+        'reason before a constrained reply (Gemma 4 on LiteRT-LM) accept it. '
+        'Pass enableThinking: false and set no enable_thinking or thinking '
+        'chat template kwarg to true';
+  } else if (params.thinkingBudget != null) {
+    reason = 'thinking budgets';
   } else if (params.isSpeculativeDecodingEnabled) {
     reason = 'speculative decoding';
   } else if (params.stopSequences.isNotEmpty) {

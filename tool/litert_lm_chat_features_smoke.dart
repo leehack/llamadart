@@ -279,7 +279,7 @@ Future<void> main(List<String> args) async {
   }
 }
 
-/// Checks refusal of an array-property schema outside LiteRT-LM's scalar subset.
+/// Checks refusal of a `oneOf` schema outside LiteRT-LM's schema contract.
 /// Even an admitted provider must refuse before edits and leave the next turn usable.
 Future<Map<String, Object?>> runSessionStructuredOutputScenario(
   LlamaEngine engine,
@@ -289,14 +289,16 @@ Future<Map<String, Object?>> runSessionStructuredOutputScenario(
   String? rejection;
   try {
     await session.createStructuredJson(
-      [const LlamaTextContent('Reply with {"values": ["ok"]}.')],
+      [const LlamaTextContent('Reply with {"values": "ok"}.')],
       output: LlamaStructuredOutput.jsonSchema(
         schema: const {
           'type': 'object',
           'properties': {
             'values': {
-              'type': 'array',
-              'items': {'type': 'string'},
+              'oneOf': [
+                {'type': 'string'},
+                {'type': 'integer'},
+              ],
             },
           },
           'required': ['values'],
@@ -321,7 +323,7 @@ Future<Map<String, Object?>> runSessionStructuredOutputScenario(
   }
   final roles = [for (final message in session.history) message.role.name];
   final result = <String, Object?>{
-    'unsupportedRequest': 'object_with_array_property',
+    'unsupportedRequest': 'object_with_oneOf_property',
     'rejection': rejection,
     'historyAfterRejection': historyAfterRejection,
     'reportedMessages': reported.length,

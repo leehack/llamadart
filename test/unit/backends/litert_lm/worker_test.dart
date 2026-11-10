@@ -224,7 +224,11 @@ void main() {
           worker.sendPort,
           LiteRtLmJsonSchemaPrepareRequest.new,
         ),
-        isA<LiteRtLmDoneResponse>(),
+        isA<LiteRtLmJsonSchemaAdmissionResponse>().having(
+          (r) => r.thinking,
+          'thinking',
+          isFalse,
+        ),
       );
       expect(service.admissions, 1);
       final responses = await _collectGenerationResponses(
@@ -248,7 +252,9 @@ void main() {
       );
       expect(responses.last, isA<LiteRtLmDoneResponse>());
       expect(service.ordinaryCalls, 0);
-      final rejected = await _sendRequest(
+      // A recreated client clears the admission, so the service, not the
+      // worker's stale view, decides whether thinking is allowed.
+      final readmitted = await _collectGenerationResponses(
         worker.sendPort,
         (port) => LiteRtLmGenerateChatRequest(
           7,
@@ -261,15 +267,38 @@ void main() {
           enableThinking: true,
         ),
       );
+      expect(readmitted.last, isA<LiteRtLmDoneResponse>());
+      expect(service.schemaCalls, 2);
+      expect(service.schemaThinking, isTrue);
+      service.schemaThinking = null;
+      service.admitsThinking = true;
       expect(
-        rejected,
-        isA<LiteRtLmErrorResponse>().having(
-          (e) => e.kind,
-          'kind',
-          'llamaUnsupported',
+        await _sendRequest(
+          worker.sendPort,
+          LiteRtLmJsonSchemaPrepareRequest.new,
+        ),
+        isA<LiteRtLmJsonSchemaAdmissionResponse>().having(
+          (r) => r.thinking,
+          'thinking',
+          isTrue,
         ),
       );
-      expect(service.schemaCalls, 1);
+      final thinking = await _collectGenerationResponses(
+        worker.sendPort,
+        (port) => LiteRtLmGenerateChatRequest(
+          7,
+          const [
+            LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'p'),
+          ],
+          const GenerationParams(),
+          port,
+          jsonSchema: '{"type":"object"}',
+          enableThinking: true,
+        ),
+      );
+      expect(thinking.last, isA<LiteRtLmDoneResponse>());
+      expect(service.schemaCalls, 3);
+      expect(service.schemaThinking, isTrue);
       service.rejectAdmission = true;
       expect(
         await _sendRequest(
@@ -1383,7 +1412,9 @@ class _SchemaService extends LiteRtLmService {
   int ordinaryCalls = 0;
   int? context;
   String? schema;
+  bool? schemaThinking;
   bool rejectAdmission = false;
+  bool admitsThinking = false;
 
   @override
   Future<void> prepareJsonSchemaChat() async {
@@ -1394,17 +1425,22 @@ class _SchemaService extends LiteRtLmService {
   }
 
   @override
+  bool get supportsJsonSchemaChatThinking => admitsThinking;
+
+  @override
   Stream<List<int>> generateJsonSchemaChat(
     int contextHandle,
     List<LlamaChatMessage> messages,
     GenerationParams params, {
     required String jsonSchema,
+    bool enableThinking = false,
     Map<String, dynamic>? chatTemplateKwargs,
     DateTime? templateNow,
   }) async* {
     schemaCalls++;
     context = contextHandle;
     schema = jsonSchema;
+    schemaThinking = enableThinking;
     yield [123, 125];
   }
 

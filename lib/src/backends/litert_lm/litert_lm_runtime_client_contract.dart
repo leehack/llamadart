@@ -39,6 +39,10 @@ abstract interface class LiteRtLmRuntimeClientContract {
   /// Whether the admitted runtime can enforce native chat schemas.
   bool get supportsJsonSchemaConstraints;
 
+  /// Whether schema constraints can follow an enabled reasoning channel,
+  /// rather than forcing thinking off.
+  bool get supportsJsonSchemaThinking;
+
   /// Whether native message rendering is available on the selected runtime.
   bool get supportsMessageRendering;
 
