@@ -205,6 +205,146 @@ void main() {
     );
   });
 
+  group('archivedSectionChange', () {
+    const base =
+        '## Unreleased\n\n$_released\n## 0.9.0\n\n- Older.\n\n'
+        '## 0.8.0\n\n- Oldest.\n';
+    const archiveIntro = '# Changelog archive\n\nOlder releases.\n\n';
+    const archivePath = 'doc/changelog_archive.md';
+
+    String? change(
+      String head, {
+      String? baseArchive,
+      String? headArchive,
+      String from = base,
+    }) => archivedSectionChange(
+      'CHANGELOG.md',
+      archivePath,
+      base: from,
+      head: head,
+      baseArchive: baseArchive,
+      headArchive: headArchive,
+    );
+
+    test('accepts moving the oldest sections verbatim to a new archive', () {
+      for (final (head, archive) in [
+        (
+          'Older releases: archive.\n\n## Unreleased\n\n$_released',
+          '$archiveIntro## 0.9.0\n\n- Older.\n\n## 0.8.0\n\n- Oldest.\n',
+        ),
+        (
+          '## Unreleased\n\n$_released\n## 0.9.0\n\n- Older.\n\n',
+          '$archiveIntro## 0.8.0\n\n- Oldest.\n',
+        ),
+      ]) {
+        expect(change(head, headArchive: archive), isNull, reason: head);
+      }
+    });
+
+    test('accepts a later move to the start of the archive releases', () {
+      const archive = '$archiveIntro## 0.8.0\n\n- Oldest.\n';
+      expect(
+        change(
+          '## Unreleased\n\n$_released',
+          from: '## Unreleased\n\n$_released\n## 0.9.0\n\n- Older.\n',
+          baseArchive: archive,
+          headArchive:
+              '$archiveIntro## 0.9.0\n\n- Older.\n\n## 0.8.0\n\n- Oldest.\n',
+        ),
+        isNull,
+      );
+    });
+
+    test('accepts editing the archive introduction only', () {
+      const archived = '## 0.8.0\n\n- Oldest.\n';
+      expect(
+        change(
+          '## Unreleased\n\n$_released\n## 0.9.0\n\n- Older.\n',
+          from: '## Unreleased\n\n$_released\n## 0.9.0\n\n- Older.\n',
+          baseArchive: '$archiveIntro$archived',
+          headArchive: '# Archive\n\n$archived',
+        ),
+        isNull,
+      );
+    });
+
+    test('names the line of a section edited while it moves', () {
+      expect(
+        change(
+          '## Unreleased\n\n$_released',
+          headArchive:
+              '$archiveIntro## 0.9.0\n\n- Edited.\n\n## 0.8.0\n\n- Oldest.\n',
+        ),
+        startsWith(
+          '$archivePath:7 changes a released section: the base has '
+          '`- Older.`, this PR has `- Edited.`.',
+        ),
+      );
+    });
+
+    test('rejects a section dropped, reordered or cut in half', () {
+      for (final archive in [
+        '$archiveIntro## 0.9.0\n\n- Older.\n',
+        '$archiveIntro## 0.8.0\n\n- Oldest.\n\n## 0.9.0\n\n- Older.\n',
+        '$archiveIntro- Older.\n\n## 0.8.0\n\n- Oldest.\n',
+        archiveIntro,
+      ]) {
+        expect(
+          change('## Unreleased\n\n$_released', headArchive: archive),
+          contains('changes a released section'),
+          reason: archive,
+        );
+      }
+      expect(
+        change(
+          '## Unreleased\n\n$_released\n## 0.9.0\n',
+          headArchive: '$archiveIntro- Older.\n\n## 0.8.0\n\n- Oldest.\n',
+        ),
+        contains('changes a released section'),
+      );
+    });
+
+    test('rejects a new section or an edit in the archive', () {
+      const from = '## Unreleased\n\n$_released';
+      const archive = '$archiveIntro## 0.9.0\n\n- Older.\n';
+      for (final headArchive in [
+        '$archiveIntro## 0.9.5\n\n- New.\n\n## 0.9.0\n\n- Older.\n',
+        '$archiveIntro## 0.9.0\n\n- Older.\n- Extra.\n',
+        null,
+      ]) {
+        expect(
+          change(
+            from,
+            from: from,
+            baseArchive: archive,
+            headArchive: headArchive,
+          ),
+          contains('changes a released section'),
+          reason: headArchive,
+        );
+      }
+    });
+
+    test('rejects moving every release out of the changelog', () {
+      expect(
+        change(
+          '## Unreleased\n',
+          headArchive:
+              '$archiveIntro$_released\n## 0.9.0\n\n- Older.\n\n'
+              '## 0.8.0\n\n- Oldest.\n',
+        ),
+        'CHANGELOG.md no longer has the released section `## 1.1.0`.',
+      );
+    });
+
+    test('keeps the plain check while the archive is unchanged', () {
+      expect(
+        change('## Unreleased\n\n$_released'),
+        contains('CHANGELOG.md:10 changes a released section'),
+      );
+    });
+  });
+
   group('isCoreReleasePrep', () {
     bool prep({
       List<String> labels = const [],
@@ -352,6 +492,57 @@ void main() {
       final result = run();
       expect(result.exitCode, 1, reason: '${result.stderr}');
       expect(result.stderr, contains('changes a released section'));
+    });
+
+    test('passes moving the oldest section verbatim to the archive', () {
+      repo.commit({
+        'CHANGELOG.md': '## Unreleased\n\n- Pending.\n\n## 1.1.0\n\n- New.\n',
+        'doc/changelog_archive.md': '# Archive\n\n## 1.0.0\n\n- Old.\n',
+      });
+
+      final result = run();
+      expect(result.exitCode, 0, reason: '${result.stderr}');
+    });
+
+    test('passes an archive introduction edit and fails a release edit', () {
+      repo.git(['checkout', '-q', 'main']);
+      repo.commit({
+        'CHANGELOG.md': '## Unreleased\n\n- Pending.\n\n## 1.1.0\n\n- New.\n',
+        'doc/changelog_archive.md': '# Archive\n\n## 1.0.0\n\n- Old.\n',
+      });
+      repo.git(['update-ref', 'refs/remotes/origin/main', 'main']);
+      repo.git(['checkout', '-q', '-B', 'feature']);
+      repo.commit({
+        'doc/changelog_archive.md': '# Old\n\n## 1.0.0\n\n- Old.\n',
+      });
+      expect(run().exitCode, 0);
+
+      repo.commit({
+        'doc/changelog_archive.md': '# Old\n\n## 1.0.0\n\n- Odd.\n',
+      });
+      final result = run();
+      expect(result.exitCode, 1);
+      expect(
+        result.stderr,
+        contains('doc/changelog_archive.md:5 changes a released section'),
+      );
+    });
+
+    test('fails a section edited while it moves to the archive', () {
+      repo.commit({
+        'CHANGELOG.md': '## Unreleased\n\n- Pending.\n\n## 1.1.0\n\n- New.\n',
+        'doc/changelog_archive.md': '# Archive\n\n## 1.0.0\n\n- Edited.\n',
+      });
+
+      final result = run();
+      expect(result.exitCode, 1);
+      expect(
+        result.stderr,
+        contains(
+          'doc/changelog_archive.md:5 changes a released section: the base '
+          'has `- Old.`, this PR has `- Edited.`.',
+        ),
+      );
     });
 
     test('compares against the merge base, not the base branch tip', () {

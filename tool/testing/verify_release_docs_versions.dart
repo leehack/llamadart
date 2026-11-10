@@ -11,6 +11,7 @@ import 'package:llamadart/src/hook/native_release_pins.dart';
 import 'package:pub_semver/pub_semver.dart';
 import 'package:yaml/yaml.dart';
 
+import '../release/pub_content_limits.dart';
 import 'check_released_changelog_sections.dart';
 
 // Keep these maps in sync when adding companion packages or moving the current
@@ -985,6 +986,15 @@ void main(List<String> arguments) {
     if (version != null) {
       versions[entry.key] = version;
     }
+  }
+
+  final contentLimits = checkPubContentLimits(Directory.current, {
+    for (final MapEntry(key: name, value: pubspec) in _packagePubspecs.entries)
+      name: File(pubspec).parent.path,
+  });
+  errors.addAll(contentLimits.errors);
+  for (final warning in contentLimits.warnings) {
+    stdout.writeln('Warning: $warning');
   }
 
   final docVersions = installDocVersions(

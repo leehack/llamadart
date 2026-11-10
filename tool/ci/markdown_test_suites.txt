@@ -11,6 +11,7 @@ test/unit/tooling/high_risk_review_policy_test.dart
 test/unit/tooling/macos_swiftpm_bootstrap_docs_test.dart
 test/unit/tooling/markdown_test_suites_test.dart
 test/unit/tooling/package_skills_test.dart
+test/unit/tooling/pub_content_limits_test.dart
 test/unit/tooling/pubignore_test.dart
 test/unit/tooling/release_install_snippets_test.dart
 test/unit/tooling/release_prep_heading_test.dart
