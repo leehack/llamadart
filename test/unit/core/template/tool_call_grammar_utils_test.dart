@@ -167,10 +167,12 @@ void main() {
       ['abab', 'ba'],
       ['aa', 'ab', 'b'],
       ['^a', 'a^]', '-\\['],
+      ['<s>\n', '\t\r'],
     ]) {
       final rules = ToolCallGrammarUtils.excludingRules('t', delimiters);
       // llama.cpp's GBNF parser rejects `\^`.
       expect(rules.join('\n'), isNot(contains(r'\^')), reason: '$delimiters');
+      expect(rules, everyElement(isNot(contains('\n'))), reason: '$delimiters');
       final body = _ExcludingRules(rules, 't');
       final alphabet = {...delimiters.join().split(''), 'z'}.toList();
       var texts = [''];

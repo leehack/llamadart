@@ -348,6 +348,9 @@ String _literal(String value) {
 /// content is the text before the first scope, the calls are those of the
 /// consecutive scopes after it that each hold one valid call, up to
 /// [maxToolCalls], and the rest is dropped.
+///
+/// Without [schemas], the arguments that [stringArguments] lists for a tool
+/// keep their text as generated instead of being read as JSON.
 ChatParseResult parseXmlToolCalls(
   String input,
   XmlToolCallFormat format, {
@@ -362,6 +365,7 @@ ChatParseResult parseXmlToolCalls(
   bool endsAtLastCall = false,
   int? maxToolCalls,
   Map<String, Map<String, dynamic>>? schemas,
+  Map<String, Set<String>>? stringArguments,
 }) {
   String? reasoning;
   var content = input;
@@ -480,7 +484,13 @@ ChatParseResult parseXmlToolCalls(
       final toolIdx = _nextScopeToolStart(content, pos, format);
       final nextCall = toolIdx == null
           ? null
-          : _parseXmlToolCall(content, toolIdx, format, schemas);
+          : _parseXmlToolCall(
+              content,
+              toolIdx,
+              format,
+              schemas,
+              stringArguments,
+            );
       if (nextCall == null) break;
       repeatedScope = (scopeEnd: pos, calls: toolCalls.length);
       toolCall = nextCall;
@@ -507,7 +517,13 @@ ChatParseResult parseXmlToolCalls(
         parsedContent.write(content.substring(pos, toolIdx));
       }
 
-      toolCall = _parseXmlToolCall(content, toolIdx, format, schemas);
+      toolCall = _parseXmlToolCall(
+        content,
+        toolIdx,
+        format,
+        schemas,
+        stringArguments,
+      );
       if (toolCall == null) {
         if (format.scopeStart.isNotEmpty) {
           parseFailed = true;
@@ -788,8 +804,9 @@ _ParsedXmlToolCall? _parseXmlToolCall(
   String content,
   int toolIdx,
   XmlToolCallFormat format,
-  Map<String, Map<String, dynamic>>? schemas,
-) {
+  Map<String, Map<String, dynamic>>? schemas, [
+  Map<String, Set<String>>? stringArguments,
+]) {
   final nameStart = toolIdx + format.toolStart.length;
   final sepIdx = content.indexOf(format.toolSep, nameStart);
   if (sepIdx == -1) {
@@ -806,6 +823,7 @@ _ParsedXmlToolCall? _parseXmlToolCall(
     sepIdx + format.toolSep.length,
     format,
     schemas?[name],
+    stringArguments?[name] ?? const {},
   );
   if (arguments == null) {
     return null;
@@ -823,6 +841,7 @@ _ParsedXmlArguments? _parseXmlArguments(
   int start,
   XmlToolCallFormat format,
   Map<String, dynamic>? schema,
+  Set<String> stringArguments,
 ) {
   final properties = schema == null ? null : schemaProperties(schema);
   final strictScope = format.scopeStart.isNotEmpty;
@@ -870,6 +889,7 @@ _ParsedXmlArguments? _parseXmlArguments(
       pos,
       format,
       schema: properties?[key],
+      keepsText: stringArguments.contains(key),
     );
     if (argumentValue == null) {
       return null;
@@ -990,6 +1010,7 @@ _ParsedXmlArgumentValue? _parseXmlArgumentValue(
   int start,
   XmlToolCallFormat format, {
   Map<String, dynamic>? schema,
+  bool keepsText = false,
 }) {
   if (schema != null) {
     final cdata = _parseCdataValue(content, start, format);
@@ -1039,7 +1060,7 @@ _ParsedXmlArgumentValue? _parseXmlArgumentValue(
     value = value.trim();
   }
   return _ParsedXmlArgumentValue(
-    value: format.rawArgval == true
+    value: format.rawArgval == true || keepsText
         ? value
         : ToolCallParsingUtils.decodeJsonValueOrString(value),
     nextPos: valueEnd.nextPos,
