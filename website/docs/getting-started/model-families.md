@@ -67,8 +67,8 @@ fields, such as `format`, still come from the parsing template.
 Other families whose published templates are template-tested with their own
 format: GPT-OSS, Seed-OSS, Nemotron Nano v2, Apertus,
 Kimi K2 and K3, MiniMax M1, M2 and M3, Command R7B, Cohere2 MoE, MiniCPM5,
-Hunyuan Hy3, Solar Open, Poolside Laguna, Muse Glimmer, Functionary v3.1
-and v3.2, and FireFunction v2. Nemotron 3 Nano and StepFun 3.5 Flash use the
+Hunyuan Hy3, Solar Open, Poolside Laguna, Ling 3.0 (Bailing V3), Muse Glimmer,
+Functionary v3.1 and v3.2, and FireFunction v2. Nemotron 3 Nano and StepFun 3.5 Flash use the
 Qwen3-Coder XML format; Hermes 2 Pro, Hermes 3, Bielik, Reka Edge, MiMo-VL
 and Apriel 1.5 use the Hermes format.
 

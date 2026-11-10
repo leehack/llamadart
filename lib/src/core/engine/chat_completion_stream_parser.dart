@@ -282,6 +282,7 @@ class ChatCompletionStreamParser {
     final rawWithoutTools =
         !parseToolCallsEnabled &&
         !traits.hasRepeatedContentChannels &&
+        !traits.endsThoughtAtToolCallOpening &&
         templateResult.format != ChatFormat.gemma4.index &&
         templateResult.format != ChatFormat.kimiK3.index;
     // A forced-open thought can transition straight into a tool envelope
@@ -520,6 +521,7 @@ class ChatCompletionStreamParser {
           parseToolCalls: parseToolCallsEnabled,
           thinkingForcedOpen: templateResult.thinkingForcedOpen,
           thoughtClosedForThinkingOff: thoughtClosedForThinkingOff,
+          singleToolCall: singleToolCallOf(templateResult),
           parser: templateResult.parser,
           tools: tools,
         );
@@ -709,6 +711,7 @@ class ChatCompletionStreamParser {
         // post-call text.
         templateResult.format != ChatFormat.gemma4.index &&
         templateResult.format != ChatFormat.minimaxM1.index &&
+        !traits.retainsTextAroundToolCalls &&
         parsed.hasToolCalls &&
         _isToolCallEnvelopeBuffer(
           fullOutput,

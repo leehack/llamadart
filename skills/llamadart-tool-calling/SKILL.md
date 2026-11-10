@@ -179,6 +179,11 @@ description: >-
   thought and text may precede the calls, so leave room in `maxTokens`, and
   the Qwen3-Coder template's first call may leave out `<tool_call>` and start
   at `<function=name>`. With `ToolChoice.auto` that tag is text.
+- Ling 3.0 (Bailing V3) replies parse as in llama-server: a `<tool_call>` ends
+  a forced-open thought, a call is `<tool_call>name` with `<arg_key>` and
+  `<arg_value>` pairs (a string value up to `</arg_value>`, any other JSON), and
+  a Hermes JSON call stays content. With `ToolChoice.required`, a thought and
+  text may precede the calls, so leave room in `maxTokens`.
 - Consume all parsed Solar Open content-channel segments, preserving the
   whitespace between them. Parsed and streamed completions remove channel
   framing while retaining the accepted content.

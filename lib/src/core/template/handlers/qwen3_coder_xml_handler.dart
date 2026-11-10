@@ -11,6 +11,7 @@ import '../chat_parse_result.dart';
 import '../chat_template_handler.dart';
 import '../tool_call_grammar_utils.dart';
 import 'specialized_handler_utils.dart';
+import 'xml_argument_grammar.dart';
 import '../template_internal_metadata.dart';
 import '../thinking_utils.dart';
 import '../tool_schema_utils.dart';
@@ -150,12 +151,7 @@ class Qwen3CoderXmlHandler extends ChatTemplateHandler
     final literal = ToolCallGrammarUtils.literal;
     final converter = JsonSchemaConverter();
     final rules = <String>[];
-    final valuesAtEnd = <String>{};
-    String atValueEnd(String rule) {
-      valuesAtEnd.add(rule);
-      return '$rule$_atValueEnd';
-    }
-
+    final valueEnds = ValueEndRules(converter);
     String? stringValue;
     final toolRules = <String>[];
     for (var toolIndex = 0; toolIndex < tools.length; toolIndex++) {
@@ -168,9 +164,9 @@ class Qwen3CoderXmlHandler extends ChatTemplateHandler
       var argumentIndex = 0;
       for (final MapEntry(:key, :value) in schemaProperties(schema).entries) {
         final argumentRule = 'tool-$toolIndex-arg-${argumentIndex++}';
-        final valueRule = _mayBeString(value)
+        final valueRule = mayBeString(value)
             ? stringValue ??= addThroughRules(rules, 'xml-arg-string', valueEnd)
-            : '${atValueEnd(converter.visit(value, '$argumentRule-schema'))} '
+            : '${valueEnds.visit(value, '$argumentRule-schema')} '
                   '${literal(valueEnd)}';
         rules.add(
           '$argumentRule ::= ${literal('<parameter=$key>\n')} $valueRule',
@@ -181,7 +177,7 @@ class Qwen3CoderXmlHandler extends ChatTemplateHandler
       }
       final arguments = [
         if (requiredRules.isNotEmpty)
-          _permuted(rules, 'tool-$toolIndex-args', requiredRules),
+          permutedArguments(rules, 'tool-$toolIndex-args', requiredRules),
         if (optionalRules.isNotEmpty) '(${optionalRules.join(' | ')})*',
       ];
       final toolRule = 'tool-$toolIndex';
@@ -215,135 +211,8 @@ class Qwen3CoderXmlHandler extends ChatTemplateHandler
     }
     buffer.writeln(r'tool-call-space ::= | " " | "\n"{1,2} [ \t]{0,20}');
     rules.forEach(buffer.writeln);
-    final jsonRules = converter.rules.entries.toList(growable: false)
-      ..sort((a, b) => a.key.compareTo(b.key));
-    for (final MapEntry(:key, :value) in jsonRules) {
-      buffer.writeln('$key ::= $value');
-    }
-    // llama.cpp's argument value ends where its JSON does, so
-    // `\n</parameter>\n` follows it directly, as the parser requires. Values
-    // nested inside it keep the converter's whitespace.
-    final written = <String>{};
-    void writeAtEnd(String rule) {
-      if (!written.add(rule)) return;
-      final body = _withoutTrailingSpace(converter.rules[rule]!, (last) {
-        if (!converter.rules.containsKey(last) || last == 'space') return null;
-        writeAtEnd(last);
-        return '$last$_atValueEnd';
-      });
-      buffer.writeln('$rule$_atValueEnd ::= $body');
-    }
-
-    valuesAtEnd.forEach(writeAtEnd);
+    valueEnds.writeTo(buffer);
     return buffer.toString();
-  }
-
-  static const _atValueEnd = '-at-value-end';
-
-  /// [body] with the `space` that ends each of its alternatives removed, and
-  /// an alternative's last rule reference replaced by what [atEnd] returns for
-  /// it, unless null.
-  static String _withoutTrailingSpace(
-    String body,
-    String? Function(String rule) atEnd,
-  ) {
-    final alternatives = <String>[];
-    var depth = 0;
-    var start = 0;
-    for (var i = 0; i < body.length; i++) {
-      switch (body[i]) {
-        case '"':
-          i = _closing(body, i, '"');
-        case '[':
-          i = _closing(body, i, ']');
-        case '(':
-          depth++;
-        case ')':
-          depth--;
-        case '|' when depth == 0:
-          alternatives.add(body.substring(start, i));
-          start = i + 1;
-      }
-    }
-    alternatives.add(body.substring(start));
-    return alternatives
-        .map((alternative) {
-          final trimmed = alternative.trim();
-          if (trimmed.endsWith(' space')) {
-            return trimmed.substring(0, trimmed.length - ' space'.length);
-          }
-          final last = RegExp(r'[A-Za-z0-9-]+$').stringMatch(trimmed);
-          final replacement = last == null ? null : atEnd(last);
-          return replacement == null
-              ? trimmed
-              : '${trimmed.substring(0, trimmed.length - last!.length)}'
-                    '$replacement';
-        })
-        .join(' | ');
-  }
-
-  /// The index of the unescaped [close] that ends the literal or class
-  /// opening at [open] in [body].
-  static int _closing(String body, int open, String close) {
-    var i = open + 1;
-    while (i < body.length && body[i] != close) {
-      i += body[i] == r'\' ? 2 : 1;
-    }
-    return i;
-  }
-
-  /// [arguments] in any order, as llama.cpp's `permute`, which keeps the
-  /// declaration order beyond six of them.
-  static String _permuted(
-    List<String> rules,
-    String prefix,
-    List<String> arguments,
-  ) {
-    if (arguments.length == 1 || arguments.length > 6) {
-      return arguments.join(' ');
-    }
-    String remaining(int mask) {
-      final name = '$prefix-$mask';
-      if (rules.any((rule) => rule.startsWith('$name ::= '))) return name;
-      final alternatives = <String>[
-        for (var index = 0; index < arguments.length; index++)
-          if (mask & (1 << index) != 0)
-            mask == 1 << index
-                ? arguments[index]
-                : '${arguments[index]} ${remaining(mask & ~(1 << index))}',
-      ];
-      rules.add('$name ::= ${alternatives.join(' | ')}');
-      return name;
-    }
-
-    return remaining((1 << arguments.length) - 1);
-  }
-
-  /// Whether a value of [schema] may be a string, which llama.cpp's grammar
-  /// then takes as any text.
-  static bool _mayBeString(Map<String, dynamic> schema) {
-    final type = schema['type'];
-    if (type is String) return type == 'string';
-    if (type is List) return type.contains('string');
-    if (schema.containsKey('const')) return schema['const'] is String;
-    final values = schema['enum'];
-    if (values is List) return values.any((value) => value is String);
-    for (final key in const ['anyOf', 'oneOf']) {
-      final children = schema[key];
-      if (children is List) {
-        return children.any(
-          (child) =>
-              child is! Map || _mayBeString(child.cast<String, dynamic>()),
-        );
-      }
-    }
-    final children = schema['allOf'];
-    if (children is List) {
-      return children.every(
-        (child) => child is! Map || _mayBeString(child.cast<String, dynamic>()),
-      );
-    }
-    return true;
   }
 
   @override

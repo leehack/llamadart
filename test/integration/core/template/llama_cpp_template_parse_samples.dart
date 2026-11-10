@@ -84,6 +84,11 @@ const Map<ChatFormat, String> _sampleOutputsByFormat = <ChatFormat, String>{
       '<arg_key>location</arg_key>\n'
       '<arg_value>Seoul</arg_value>\n'
       '</tool_call>',
+  ChatFormat.ling3:
+      '</think><tool_call>get_weather\n'
+      '<arg_key>location</arg_key>\n'
+      '<arg_value>Seoul</arg_value>\n'
+      '</tool_call>',
 };
 
 String sampleOutputForFormat(ChatFormat format) {

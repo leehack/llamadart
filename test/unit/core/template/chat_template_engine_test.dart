@@ -456,6 +456,7 @@ void main() {
         ChatFormat.deepseekV32: TemplateToolCallSerialization.normalizeOnly,
         ChatFormat.museGlimmer: TemplateToolCallSerialization.normalizeOnly,
         ChatFormat.laguna: TemplateToolCallSerialization.normalizeOnly,
+        ChatFormat.ling3: TemplateToolCallSerialization.normalizeOnly,
         ChatFormat.gemma4: TemplateToolCallSerialization.normalizeOnly,
       };
 

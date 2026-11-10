@@ -52,6 +52,7 @@ const Set<ChatFormat> _takesTextBeforeCalls = {
   ChatFormat.deepseekV4,
   ChatFormat.kimiK3,
   ChatFormat.laguna,
+  ChatFormat.ling3,
   ChatFormat.minimaxM3,
 };
 

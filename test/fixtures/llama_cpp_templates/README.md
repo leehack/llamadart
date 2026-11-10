@@ -13,9 +13,15 @@ that `test/unit/core/template/handlers/firefunction_v2_handler_test.dart`,
 `test/unit/core/template/cohere_control_markers_test.dart`,
 `test/e2e/template/specialized_tool_grammar_validation_e2e_test.dart`,
 `test/integration/core/engine/forced_open_thought_upstream_test.dart`,
-`test/integration/core/engine/closed_thought_upstream_test.dart` and
+`test/integration/core/engine/closed_thought_upstream_test.dart`,
+`test/integration/core/engine/ling3_tool_call_upstream_test.dart`,
+`test/integration/core/template/ling3_call_grammar_test.dart` and
 `test/integration/core/engine/xml_parallel_tool_calls_upstream_test.dart` read live
 here, so those tests run on a clean checkout with no network.
+
+`inclusionai-ling-3.0-flash.jinja` is copied from llama.cpp `v0.9.0`
+(`cd959bae9`), the native pin, because the ref above predates it; it is not in
+the release tarball the detection test downloads.
 
 `test/integration/core/template/llama_cpp_template_detection_integration_test.dart`
 needs the full set and only reads it from `LLAMA_CPP_TEMPLATES_DIR`, defaulting to
