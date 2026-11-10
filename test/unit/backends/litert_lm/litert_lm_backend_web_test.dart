@@ -700,11 +700,7 @@ void main() {
       expect(capabilities.supportsToolCalling, isTrue);
       expect(capabilities.supportsMultiTurnChat, isTrue);
 
-      final session = api.ChatSession(
-        engine,
-        maxContextTokens: 0,
-        systemPrompt: 'Use tools.',
-      );
+      final session = api.ChatSession(engine, systemPrompt: 'Use tools.');
       final reply = await session
           .create(
             const [LlamaTextContent('Weather in Paris and Oslo?')],
