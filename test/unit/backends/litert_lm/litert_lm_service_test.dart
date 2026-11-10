@@ -612,6 +612,38 @@ void main() {
       expect(await send('Nonethe'), 'Nonethe');
     });
 
+    test('reads the start token again after loading another model', () async {
+      tokenizer('None', const {'None': 1, 'hi': 50});
+      final second = _FakeLiteRtLmRuntimeClient()
+        ..onTokenize = client.onTokenize
+        ..onDetokenize = (tokens) => '<bos>';
+      final clients = [client, second];
+      final service = LiteRtLmService(clientFactory: () => clients.removeAt(0));
+      addTearDown(service.dispose);
+
+      Future<String?> sendTo(
+        _FakeLiteRtLmRuntimeClient fake,
+        int context,
+        String prompt,
+      ) async {
+        fake.generated = StreamController<String>()..add('ok');
+        unawaited(fake.generated.close());
+        await service
+            .generate(context, prompt, const GenerationParams(maxTokens: 8))
+            .drain<void>();
+        return fake.lastPrompt;
+      }
+
+      var model = await service.loadModel(modelFile.path, params);
+      var context = service.createContext(model, params);
+      expect(await sendTo(client, context, 'Nonehi'), 'hi');
+
+      model = await service.loadModel(modelFile.path, params);
+      context = service.createContext(model, params);
+      expect(await sendTo(second, context, 'Nonehi'), 'Nonehi');
+      expect(await sendTo(second, context, '<bos>hi'), 'hi');
+    });
+
     test('keeps a prompt when the runtime adds no start token', () async {
       tokenizer('', const {'hi': 50});
       expect(await send('<bos>hi'), '<bos>hi');
@@ -1030,6 +1062,28 @@ void main() {
           (template: liteRtLmTextContentAdapter(interpolating), seeded: false),
           (template: liteRtLmTextContentAdapter(interpolating), seeded: true),
         ]);
+      } finally {
+        service.dispose();
+      }
+    });
+
+    test('a state failure creating the adapted template propagates without '
+        'a cannot-adapt warning', () async {
+      final failure = LlamaStateException('engine is not ready');
+      client.onRenderMessage = (_) => '';
+      client.onCreateConversation = () {
+        if (client.lastPromptTemplate != null) throw failure;
+      };
+      final service = serviceReading(interpolating);
+      try {
+        final model = await service.loadModel(modelFile.path, params);
+        final context = service.createContext(model, params);
+
+        await expectLater(chat(service, context), throwsA(same(failure)));
+        expect(
+          records.where((record) => record.message.contains('could not adapt')),
+          isEmpty,
+        );
       } finally {
         service.dispose();
       }

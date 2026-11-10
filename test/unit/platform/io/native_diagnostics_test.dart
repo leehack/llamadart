@@ -207,8 +207,12 @@ void main() {
     },
   );
   test('text report names the checked target source', () {
+    final manifestProbe = nativeDiagnosticObservation(
+      'litert_lm',
+      'ASSET_NOT_DECLARED',
+    );
     final manifestReport = nativeDiagnosticTextReport(
-      nativeDiagnosticObservation('litert_lm', 'ASSET_NOT_DECLARED'),
+      manifestProbe,
       overridesSet: false,
     );
     expect(
@@ -216,6 +220,7 @@ void main() {
       contains('Source: local manifest declaration; direct file loading only.'),
     );
     expect(manifestReport, isNot(contains('OVERRIDES_MAY_DIFFER')));
+    expect(manifestReport, contains(manifestProbe['remediation'] as String));
     final cacheReport = nativeDiagnosticTextReport(
       nativeDiagnosticObservation(
         'litert_lm',
@@ -343,24 +348,16 @@ void main() {
       expect(result['phase'], 'open');
     });
     test('kills, reaps and cleans up a child that never answers', () async {
-      final before = Directory.systemTemp
-          .listSync()
-          .whereType<Directory>()
-          .where((d) => d.path.contains('llamadart_native_diagnostic_'))
-          .map((d) => d.path)
-          .toSet();
-      final result = await run(
-        'hang',
-        timeout: const Duration(milliseconds: 350),
+      final privateTemp = Directory.systemTemp.createTempSync(
+        'diagnostic_cleanup_',
+      );
+      addTearDown(() => privateTemp.deleteSync(recursive: true));
+      final result = await IOOverrides.runZoned(
+        () => run('hang', timeout: const Duration(milliseconds: 350)),
+        getSystemTempDirectory: () => privateTemp,
       );
       expect(result['code'], 'PROBE_TIMEOUT');
-      final after = Directory.systemTemp
-          .listSync()
-          .whereType<Directory>()
-          .where((d) => d.path.contains('llamadart_native_diagnostic_'))
-          .map((d) => d.path)
-          .toSet();
-      expect(after.difference(before), isEmpty);
+      expect(privateTemp.listSync(), isEmpty);
     });
     test(
       'absence is metadata-only; regular declarations are parsed in the child',
