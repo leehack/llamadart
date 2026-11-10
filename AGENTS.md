@@ -166,13 +166,18 @@ analyze and the relevant tests before the final commit.
 - When release prep moves `Unreleased` into a version, compact it in both
   files: merge related or follow-up bullets, drop duplicates and items users
   cannot observe, and tighten wording. Released sections stay as published.
-- `CHANGELOG.md` keeps every release. The docs changelog
+- Every release stays recorded: `CHANGELOG.md` from 0.10.0 on, older ones
+  verbatim in `doc/changelog_archive.md`. pub.dev rejects a `CHANGELOG.md`,
+  `README.md`, `LICENSE` or example file over 256 KiB, and
+  `verify_release_docs_versions.dart` fails first; to make room, move the
+  oldest `CHANGELOG.md` sections unchanged to the top of the archive's
+  releases. The docs changelog
   (`website/docs/changelog/recent-releases.md`) keeps only `Unreleased` and the
   current and previous minor, and links `CHANGELOG.md` for older ones: when
   release prep opens a new minor, delete the minor two back from it (`0.18.0`
   keeps `0.18.x` and `0.17.x`). `verify_release_docs_versions.dart` fails on
-  older sections, and the released-section check lets only that page lose whole
-  sections from its tail.
+  older sections. The released-section check lets only that page lose whole
+  sections from its tail, and `CHANGELOG.md` only move them to the archive.
 - Before release prep or a change to current install snippets, run
   `dart run tool/testing/verify_release_docs_versions.dart`, then again with
   `--release-prep`; resolve pending companion bumps in the release-prep PR.

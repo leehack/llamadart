@@ -1050,6 +1050,7 @@ const List<String> _selfPaths = <String>[
 /// tag is correct. Current release-notes claims remain [releaseNotesPins].
 const List<String> tagHistoryFiles = <String>[
   'CHANGELOG.md',
+  'doc/changelog_archive.md',
   'website/docs/changelog/recent-releases.md',
   'test/fixtures/lfm2_quoted_tool_delimiter.md',
   'packages/llamadart_validation/test/fixtures/windows_native_log/chat.events.jsonl',

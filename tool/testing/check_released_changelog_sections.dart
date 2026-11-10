@@ -13,7 +13,11 @@
 /// The docs changelog keeps only the current and previous minor, so it may
 /// also lose its oldest sections: its tail may be cut at a `## <version>`
 /// heading, provided only releases older than the retained two minor series
-/// are removed and every section that remains is unchanged.
+/// are removed and every section that remains is unchanged. `CHANGELOG.md`
+/// may instead move its oldest sections to the start of the releases in
+/// `doc/changelog_archive.md`, keeping the published file under pub.dev's
+/// content limit: read together, both files' released sections must stay
+/// byte-for-byte unchanged.
 ///
 /// CI runs it on `pull_request` events from a full-history checkout:
 ///
@@ -31,10 +35,15 @@ const releasedChangelogs = <String>[
   'website/docs/changelog/recent-releases.md',
 ];
 
-/// Changelogs that may lose their oldest released sections. `CHANGELOG.md`
-/// keeps every release.
+/// Changelogs that may lose their oldest released sections.
 const truncatableChangelogs = <String>{
   'website/docs/changelog/recent-releases.md',
+};
+
+/// Changelogs whose oldest released sections may move, verbatim, to the start
+/// of the releases in an archive.
+const changelogArchives = <String, String>{
+  'CHANGELOG.md': 'doc/changelog_archive.md',
 };
 
 final RegExp _versionHeading = RegExp(r'^## [0-9]+\.[0-9]+\.[0-9]+\S*\s*$');
@@ -128,6 +137,72 @@ String? releasedSectionChange(String path, String base, String head) {
       'them (see website/docs/maintainers/release-workflow.md).';
 }
 
+/// Why [head] and [headArchive] change the released sections of [base] and
+/// [baseArchive], or null when they do not. A null archive is absent.
+///
+/// Whole sections may move from the end of [path] to the start of
+/// [archivePath]'s releases, which follow its first `## <version>` heading.
+/// The changelog's releases followed by the archive's, ignoring blank lines
+/// where they join, must match the base byte-for-byte.
+String? archivedSectionChange(
+  String path,
+  String archivePath, {
+  required String base,
+  required String head,
+  String? baseArchive,
+  String? headArchive,
+}) {
+  if (baseArchive == headArchive) {
+    return releasedSectionChange(path, base, head);
+  }
+  final headLines = const LineSplitter().convert(head);
+  final headStart = headLines.indexWhere(_versionHeading.hasMatch);
+  if (headStart < 0) return releasedSectionChange(path, base, head);
+  final kept = _withoutTrailingBlankLines(headLines.sublist(headStart));
+  final archiveLines = const LineSplitter().convert(headArchive ?? '');
+  final archiveStart = archiveLines.indexWhere(_versionHeading.hasMatch);
+  final released = _joinedReleases(base, baseArchive);
+  final candidate = _joinedReleases(head, headArchive);
+  final length = released.length < candidate.length
+      ? released.length
+      : candidate.length;
+  var index = 0;
+  while (index < length && released[index] == candidate[index]) {
+    index++;
+  }
+  if (index == length && released.length == candidate.length) return null;
+  final location = index < kept.length
+      ? '$path:${headStart + index + 1}'
+      : archiveStart < 0
+      ? archivePath
+      : '$archivePath:${archiveStart + index - kept.length}';
+  String quote(List<String> lines) =>
+      index < lines.length ? '`${lines[index]}`' : 'the end of the releases';
+  return '$location changes a released section: the base has '
+      '${quote(released)}, this PR has ${quote(candidate)}. Released sections '
+      'may only move, unchanged, from the end of $path to the start of the '
+      'releases in $archivePath; keep new bullets under `## Unreleased` (see '
+      'website/docs/maintainers/release-workflow.md).';
+}
+
+/// The released lines of [changelog] followed by those of [archive], with
+/// one blank line where they join.
+List<String> _joinedReleases(String changelog, String? archive) {
+  List<String> releases(String text) {
+    final lines = const LineSplitter().convert(text);
+    final start = lines.indexWhere(_versionHeading.hasMatch);
+    return start < 0
+        ? const []
+        : _withoutTrailingBlankLines(lines.sublist(start));
+  }
+
+  final archived = releases(archive ?? '');
+  return [
+    ...releases(changelog),
+    if (archived.isNotEmpty) ...['', ...archived],
+  ];
+}
+
 /// Whether [candidate] is [released] with whole sections cut from the end:
 /// what remains is an exact prefix and the first removed line is a version
 /// heading. Trailing blank lines are ignored so an editor may trim the file.
@@ -210,22 +285,44 @@ List<String> checkReleasedChangelogSections(
       'branch and its history are available.',
     );
   }
+  String? baseFile(String path) {
+    if (_git(repoRoot, ['cat-file', '-e', '$mergeBase:$path']) == null) {
+      return null;
+    }
+    final contents = _git(repoRoot, ['show', '$mergeBase:$path']);
+    if (contents == null) {
+      throw StateError('Could not read $path at merge base $mergeBase.');
+    }
+    return contents;
+  }
+
+  String? headFile(String path) {
+    final file = File('${repoRoot.path}/$path');
+    return file.existsSync() ? file.readAsStringSync() : null;
+  }
+
   final problems = <String>[];
   for (final path in releasedChangelogs) {
-    final baseContents = _git(repoRoot, ['show', '$mergeBase:$path']);
+    final baseContents = baseFile(path);
     if (baseContents == null) {
       throw StateError('Could not read $path at merge base $mergeBase.');
     }
-    final file = File('${repoRoot.path}/$path');
-    if (!file.existsSync()) {
+    final headContents = headFile(path);
+    if (headContents == null) {
       problems.add('$path is missing; released sections cannot be removed.');
       continue;
     }
-    final change = releasedSectionChange(
-      path,
-      baseContents,
-      file.readAsStringSync(),
-    );
+    final archivePath = changelogArchives[path];
+    final change = archivePath == null
+        ? releasedSectionChange(path, baseContents, headContents)
+        : archivedSectionChange(
+            path,
+            archivePath,
+            base: baseContents,
+            head: headContents,
+            baseArchive: baseFile(archivePath),
+            headArchive: headFile(archivePath),
+          );
     if (change != null) problems.add(change);
   }
   return problems;

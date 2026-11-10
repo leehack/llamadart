@@ -154,7 +154,8 @@ version alignment:
   `website/docs/changelog/recent-releases.md` to the new current and previous
   minor by deleting the sections older than that, so `0.18.0` keeps `0.18.x`
   and `0.17.x` and drops `0.16.x`. Patch releases trim nothing, and
-  `CHANGELOG.md` keeps every release. The trim is a manual step:
+  `CHANGELOG.md` trims nothing (see [Changelog size](#changelog-size)). The
+  trim is a manual step:
   `verify_release_docs_versions.dart` fails, with or without `--release-prep`,
   when the page omits any current or previous published minor patch listed
   in `CHANGELOG.md`, or keeps older sections. For a new major at minor zero,
@@ -464,7 +465,14 @@ changelog may lose its oldest sections. It passes when what remains is an
 exact prefix of the base's released sections and the first removed line is a
 `## <version>` heading, and every removed section is older than the current
 and previous published minor. A trim cannot cut a section in half, drop a retained patch
-or edit one that stays. `CHANGELOG.md` has no such allowance.
+or edit one that stays.
+
+`CHANGELOG.md` may instead move its oldest sections to
+`doc/changelog_archive.md` (see [Changelog size](#changelog-size)). It passes
+when the changelog's released sections followed by the archive's, ignoring
+blank lines where they join, match the base byte-for-byte, so a section can
+move only whole and unchanged, from the end of the changelog to the start of
+the archive's releases, and the changelog keeps at least one release.
 
 Turn union off for release prep, which renames `## Unreleased` and rewrites
 its bullets, and for any rebase across a release-prep commit whose result you
@@ -482,6 +490,24 @@ printf '%s\n' '/CHANGELOG.md merge=text' \
 `verify_release_docs_versions.dart` fails when `## Unreleased` appears twice
 or below a released section, and with `--release-prep` whenever it remains,
 which catches the stray headings union can leave.
+
+## Changelog size
+
+pub.dev rejects an upload whose `CHANGELOG.md`, `README.md`, `LICENSE` or
+Example-tab file is over 256 KiB (262,144 bytes, `maxContentLength` in
+pub-dev's `pub_package_reader`), and it does so only after the release tag is
+pushed: `v0.19.2` was tagged but never published for this reason.
+`verify_release_docs_versions.dart` checks those files in the core and every
+Apple companion, in PR CI and in `release_on_prep_merge.yml` before any tag. It
+fails a file over the limit and warns above 90% of it.
+
+`CHANGELOG.md` keeps every release from 0.10.0 on; older ones are in
+`doc/changelog_archive.md`, which pub does not package (`/doc/` is in
+`.pubignore`) and `CHANGELOG.md` links by absolute URL. When the warning
+appears, move the oldest `## <version>` sections of `CHANGELOG.md`, unchanged,
+to the start of the archive's releases, and update the release named in both
+files' introductions. Any PR may do this; the released-section check verifies
+that nothing changed in the move.
 
 ## Published README compatibility
 
