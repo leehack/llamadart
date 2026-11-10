@@ -1,3 +1,7 @@
+## 0.19.2
+
+- Refresh README installation guidance for core `0.19.2`; Apple SwiftPM stays pinned to `leehack/stable-diffusion-native@v0.3.0-3`.
+
 ## 0.19.1
 
 - Raise the Flutter floor to `>=3.38.6`, the first Flutter whose Dart (3.10.7)
