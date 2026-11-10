@@ -169,7 +169,6 @@ class ChatCompletionStreamParser {
     final thoughtClosedForThinkingOff = thoughtClosedForThinkingOffOf(
       templateResult,
     );
-    final singleToolCall = singleToolCallOf(templateResult);
     final pegParsedWithoutTools =
         !parseToolCallsEnabled && _usesPegParser(templateResult);
     // Functionary v3.2, MiniMax M1 and Muse Glimmer stream through their
@@ -492,7 +491,6 @@ class ChatCompletionStreamParser {
           parseToolCalls: parseToolCallsEnabled,
           thinkingForcedOpen: templateResult.thinkingForcedOpen,
           thoughtClosedForThinkingOff: thoughtClosedForThinkingOff,
-          singleToolCall: singleToolCall,
           parser: templateResult.parser,
           tools: tools,
         );
@@ -618,7 +616,7 @@ class ChatCompletionStreamParser {
           thinkingForcedOpen: templateResult.thinkingForcedOpen,
           thoughtClosedForThinkingOff: thoughtClosedForThinkingOff,
           thinkingForcedClosed: thinkingForcedClosed,
-          singleToolCall: singleToolCall,
+          singleToolCall: singleToolCallOf(templateResult),
           parser: templateResult.parser,
           tools: tools,
         );
