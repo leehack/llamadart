@@ -1439,6 +1439,26 @@ void main() {
         ),
       ),
       (
+        'a limit error with text before it',
+        () => _installCountingFakeEngine(
+          counts: (_, budget) => (decoded: budget, total: 20),
+          reject: (prompt) {
+            final message = _inputTooLong(prompt, 4096);
+            return message == null ? null : 'Wrapped: $message';
+          },
+        ),
+      ),
+      (
+        'a limit error with text after it',
+        () => _installCountingFakeEngine(
+          counts: (_, budget) => (decoded: budget, total: 20),
+          reject: (prompt) {
+            final message = _inputTooLong(prompt, 4096);
+            return message == null ? null : '$message (retry)';
+          },
+        ),
+      ),
+      (
         'a limit probe whose send throws',
         () => _installCountingFakeEngine(
           counts: (_, budget) => (decoded: budget, total: 20),
