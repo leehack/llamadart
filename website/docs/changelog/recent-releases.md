@@ -13,6 +13,8 @@ validate against the exact release tag notes.
 
 ## Unreleased
 
+- When the prompt opened no thought, take a thought only at the start of the reply, as llama.cpp does: any other thinking tag, such as a `</think>` before any `<think>`, a `<think>` later in the reply or a second `</think>`, is now content in generic, Llama 3, GLM 4.5, Kimi K2, LFM2, Laguna, Granite, MiniCPM5, Mistral Nemo, Apertus, Hunyuan V3 and DeepSeek R1, V3.2 and V4 replies, and after the start of a Hermes or Qwen3-Coder XML reply. The stream used to depend on how the reply was chunked and could repeat text as both content and reasoning ([#1865](https://github.com/leehack/llamadart/issues/1865)).
+
 ## 0.19.2
 
 - Keep default WebGPU bridge assets at `v0.1.83` (unchanged from 0.19.1).

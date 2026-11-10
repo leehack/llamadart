@@ -48,7 +48,10 @@ const Set<ChatFormat> _closesThoughtItself = {
 // Required-call grammars that take any text before the calls, so a thought and
 // its end tag as well.
 const Set<ChatFormat> _takesTextBeforeCalls = {
+  ChatFormat.deepseekV32,
+  ChatFormat.deepseekV4,
   ChatFormat.kimiK3,
+  ChatFormat.laguna,
   ChatFormat.minimaxM3,
 };
 

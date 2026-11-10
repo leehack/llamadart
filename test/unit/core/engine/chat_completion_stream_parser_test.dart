@@ -2960,7 +2960,7 @@ void main() {
           ('Sunny.', '', 'Sunny.'),
           (' </', '', 'Sunny. </'),
           ('think>', '', 'Sunny. </think>'),
-        ]);
+        ], forcedOpen: true);
       });
 
       test('every format streams a split end tag as its parse takes it '

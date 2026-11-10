@@ -199,14 +199,20 @@ class ChatCompletionStreamParser {
     final verbatimThoughtOpenings = verbatimForcedThought
         ? traits.forcedThoughtContentOpenings
         : const <String>[];
-    // After a prompt that opens no thought, a Seed-OSS or PEG-parsed reply
-    // has one only at its start, kept as generated, as the parse takes it.
-    final leadingThoughtOnly =
+    final promptOpensNoThought =
+        !templateResult.thinkingForcedOpen && !thoughtClosedForThinkingOff;
+    // After a prompt that opens no thought, a reply has a thought only at its
+    // start in these formats. A Seed-OSS or PEG-parsed reply keeps it as
+    // generated, as the parse takes it.
+    final verbatimLeadingThought =
         (templateResult.format == ChatFormat.seedOss.index ||
             pegParsedWithoutTools) &&
-        !templateResult.thinkingForcedOpen &&
-        !thoughtClosedForThinkingOff;
-    final verbatimThought = verbatimForcedThought || leadingThoughtOnly;
+        promptOpensNoThought;
+    final leadingThoughtOnly =
+        verbatimLeadingThought ||
+        (promptOpensNoThought && traits.takesThoughtOnlyAtReplyStart);
+    final verbatimThought = verbatimForcedThought || verbatimLeadingThought;
+    final endsAtFirstEndTag = verbatimThought || leadingThoughtOnly;
     // After a prompt that opens no thought, the parse keeps an end tag before
     // any start tag as content, with every thinking tag after it.
     final unopenedEndTagIsContent =
@@ -407,13 +413,13 @@ class ChatCompletionStreamParser {
                 startTag: startTag,
                 endTag: endTag,
                 tagState: thoughtTags,
-                endsAtFirstEndTag: verbatimThought,
+                endsAtFirstEndTag: endsAtFirstEndTag,
                 thoughtContentOpenings: verbatimThoughtOpenings,
                 bodyOpenings: bodyOpenings,
                 unopenedEndTagIsContent: unopenedEndTagIsContent,
               );
         if (split.bodyStarted ||
-            (verbatimThought &&
+            (endsAtFirstEndTag &&
                 split.emissions.any((emission) => emission.endsThinking))) {
           verbatimThoughtEnded = true;
         }

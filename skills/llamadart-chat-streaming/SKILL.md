@@ -141,7 +141,10 @@ modalities and speculative strategies before offering them.
   Nano v2) stream no `chunk.text` until `</think>` or `<think>` arrives or the
   reply ends, so a thought the model still writes never reaches it; Cohere2
   MoE waits likewise for a thinking tag, `<|START_TEXT|>` or
-  `<|START_ACTION|>`. A boolean `enable_thinking` or `thinking` in
+  `<|START_ACTION|>`. When the prompt opens no thought, most formats stream
+  only a thought that starts the reply as `chunk.thinking`; a `</think>`
+  before any `<think>` and thinking tags later in the reply stay in
+  `chunk.text`, as in llama-server. A boolean `enable_thinking` or `thinking` in
   `chatTemplateKwargs` overrides it, as in llama-server, and every chat
   template receives the result as `enable_thinking`. A template's own
   setting in `chatTemplateKwargs`, such as `reasoning_effort` (Hy3, Cohere2
