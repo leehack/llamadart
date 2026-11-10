@@ -320,8 +320,21 @@ exact JS tokenizer/template accounting is unavailable, and the JS runtime still
 applies its own template and context limits. `engine.chatTemplate`
 returns this accounting serialization on the opted-in path. It does not replace
 the model's JS template or the original structured messages sent for generation.
-Stored assistant reasoning is omitted from replay/accounting; visible text,
-including an empty assistant reply, is preserved.
+Stored assistant reasoning is omitted from replay/accounting, except as
+`reasoning_content` of an assistant tool call, as native LiteRT-LM sends it;
+visible text, including an empty assistant reply, is preserved.
+
+The same factories run manual tool calling. Tools are sent as
+`preface.tools`, the runtime renders them with its own template and parses
+the model's calls into `tool_calls`, and `create` returns them as `toolCalls`.
+Assistant calls and `LlamaToolResultContent` results are replayed in the
+`@litert-lm/core@0.19.0` message shape, and a final tool result message is
+sent as the request's message. Check `supportsToolCalling`: the adapter probes
+that `createConversation` reads `preface.tools`, and a runtime that does not
+rejects tools and tool messages with `LlamaUnsupportedException`. Automatic
+tool loops stay unavailable until the runtime reports truncation
+([#919](https://github.com/leehack/llamadart/issues/919)); see
+[Tool calling](./tool-calling#runtime-notes).
 Use a browser-compatible bundle; the JS package documents its
 [Web LLM Models](https://huggingface.co/collections/litert-community/web-llm-models)
 collection, such as Gemma 4 E2B/E4B `-web.litertlm` files. A WebGPU load keeps
@@ -330,16 +343,16 @@ bundles on its GPU_ARTISAN path and can also load standard bundles on GPU
 (Qwen3 0.6B matched direct JS but is otherwise unqualified there). WASM CPU
 runs Qwen3 0.6B; the Gemma 4 bundles do not load on CPU.
 
-LiteRT-LM Web rejects tool declarations/results, media and user/system thinking parts, a final
+LiteRT-LM Web rejects `ToolChoice.required`, `parallelToolCalls`, tool-result
+`content`, media and user/system thinking parts, a final
 assistant/system message, custom templates (including an empty override),
 `enableThinking: false`, template kwargs, explicit template clocks and native-only
 `liteRtLm*` controls. Default thinking remains the model's behavior; no template
 replacement or thinking-budget support is implied. Raw `generate` wraps the
 prompt in one user turn of the bundle's template
 ([#1863](https://github.com/leehack/llamadart/issues/1863)). Low-level `backend.applyChatTemplate` accepts one user message only; use
-`engine.create` for structured history. Automatic tool loops remain unavailable.
-The remaining #1152 scope is tracked in
-[the runtime gap](https://github.com/leehack/llamadart/issues/1152).
+`engine.create` for structured history. Automatic tool loops remain unavailable
+([#919](https://github.com/leehack/llamadart/issues/919)).
 
 ## Measure before choosing
 

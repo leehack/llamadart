@@ -9,9 +9,11 @@ import 'dart:math' as math;
 
 import 'package:web/web.dart';
 
+import '../../core/engine/chat_template_renderer.dart';
 import '../../core/engine/engine_observer.dart';
 import '../../core/models/chat/content_part.dart';
 import '../../core/models/chat/chat_message.dart';
+import '../../core/models/chat/completion_chunk.dart';
 import '../../core/models/inference/tool_choice.dart';
 import '../../core/models/tools/tool_definition.dart';
 import '../../core/cache_policy.dart';
@@ -38,10 +40,11 @@ import 'litert_lm_templates.dart';
 /// `https://cdn.jsdelivr.net/npm/@litert-lm/core@0.19.0/+esm`.
 ///
 /// [LiteRtLmBackend.withTextHistory] opts into ordered system/user/assistant
-/// text through a probed conversation preface. The original constructor retains
-/// single-user-text dispatch and existing subclass generation overrides.
-/// Tools, media, custom templates and explicit thinking/template controls are
-/// unavailable. Raw [generate] sends one user text.
+/// text and manual tool calling through a probed conversation preface. The
+/// original constructor retains single-user-text dispatch and existing
+/// subclass generation overrides. Media, custom templates and explicit
+/// thinking/template controls are unavailable. Raw [generate] sends one user
+/// text.
 class LiteRtLmBackend
     implements
         BackendRuntimeIdentity,
@@ -78,9 +81,12 @@ class LiteRtLmBackend
   _LiteRtLmWebRun? _activeRun;
   _LiteRtLmWebRun? _queuedRun;
   final Expando<Future<void>> _conversationDeletes = Expando<Future<void>>();
+  final _LiteRtLmWebRuntimeToolCalls _runtimeToolCalls =
+      _LiteRtLmWebRuntimeToolCalls();
   LlamaLogLevel _logLevel = LlamaLogLevel.warn;
   bool _isReady = false;
   bool _supportsTextHistory = false;
+  bool _supportsToolDeclarations = false;
   bool _hasContext = false;
   bool _cancelRequested = false;
   int _nextModelHandle = 1;
@@ -110,13 +116,20 @@ class LiteRtLmBackend
     Duration? readyTimeout,
   }) : _moduleUrl = moduleUrl,
        _readyTimeout = readyTimeout ?? _engineReadyTimeout,
-       _preferredBackend = _normalizeBackendOverride(preferredBackend);
+       _preferredBackend = _normalizeBackendOverride(preferredBackend) {
+    registerRuntimeToolCallReporter(this, _runtimeToolCalls);
+  }
 
   /// Creates a backend with ordered system/user/assistant text history.
   ///
   /// Requires the loaded runtime to consume `preface` and expose `getHistory`.
-  /// The final message must be user text. Tools, media and template/thinking
-  /// controls throw [LlamaUnsupportedException]. The original constructor's
+  /// The final message must be user text or tool results. Tools are declared
+  /// through `preface.tools` when the loaded runtime reads it, which
+  /// `supportsToolCalling` reports; the model's calls come back as
+  /// [LlamaToolCallContent]. Automatic tool loops stay unavailable because
+  /// the runtime reports no termination cause. `ToolChoice.required`, parallel
+  /// tool calls, media and template/thinking controls throw
+  /// [LlamaUnsupportedException]. The original constructor's
   /// subclass dispatch contract remains unchanged. Session budgets use a
   /// full-transcript UTF-8 estimate; exact JS tokenization is unavailable.
   factory LiteRtLmBackend.withTextHistory({
@@ -161,6 +174,9 @@ class LiteRtLmBackend
   @override
   bool get supportsMultiTurnChat => false;
 
+  /// False for this legacy single-user-text constructor.
+  /// [LiteRtLmBackend.withTextHistory] probes whether the loaded runtime reads
+  /// `preface.tools`.
   @override
   bool get supportsToolCalling => false;
 
@@ -245,6 +261,8 @@ class LiteRtLmBackend
           _reportedBackendValue(_engine!) ?? _backendValueFor(backend);
       _supportsTextHistory =
           _textHistoryEnabled && await _probeTextHistory(_engine!);
+      _supportsToolDeclarations =
+          _supportsTextHistory && await _probeToolDeclarations(_engine!);
       _modelHandle = _nextModelHandle++;
       _isReady = true;
       onProgress?.call(1);
@@ -252,6 +270,7 @@ class LiteRtLmBackend
     } catch (error) {
       _isReady = false;
       _supportsTextHistory = false;
+      _supportsToolDeclarations = false;
       _modelHandle = null;
       _contextHandle = null;
       _modelUrl = null;
@@ -309,17 +328,24 @@ class LiteRtLmBackend
     String prompt,
     GenerationParams params, {
     List<LlamaContentPart>? parts,
-  }) => _generateWithHistory(contextHandle, prompt, params, parts: parts);
+  }) => _generateWithHistory(contextHandle, prompt.toJS, params, parts: parts);
 
+  /// Streams one reply to [message], a user text string or a `Message`
+  /// object, after the [history] and [tools] preface.
   Stream<List<int>> _generateWithHistory(
     int contextHandle,
-    String prompt,
+    JSAny message,
     GenerationParams params, {
     List<LlamaContentPart>? parts,
-    List<Map<String, String>> history = const [],
+    List<Map<String, Object?>> history = const [],
+    List<Map<String, dynamic>> tools = const [],
   }) {
-    final run = _LiteRtLmWebRun();
+    // Calls to declared tools go to the engine beside the text; any other
+    // runtime call stays literal JSON text.
+    final run = _LiteRtLmWebRun(reportsToolCalls: tools.isNotEmpty);
     late final StreamController<List<int>> controller;
+    // The engine looks calls up by the identity of the stream it was given.
+    late final Stream<List<int>> stream = controller.stream;
     StreamSubscription<List<int>>? subscription;
     controller = StreamController<List<int>>(
       onListen: () {
@@ -342,14 +368,20 @@ class LiteRtLmBackend
             _generateRun(
               run,
               contextHandle,
-              prompt,
+              message,
               params,
               parts,
               history,
+              tools,
             ).listen(
               controller.add,
               onError: controller.addError,
               onDone: () {
+                if (run.toolCalls.isNotEmpty) {
+                  _runtimeToolCalls.calls[stream] = List.unmodifiable(
+                    run.toolCalls,
+                  );
+                }
                 _finishRun(run);
                 unawaited(controller.close());
               },
@@ -373,7 +405,7 @@ class LiteRtLmBackend
             .whenComplete(() => _finishRun(run));
       },
     );
-    return controller.stream;
+    return stream;
   }
 
   /// Runs one generation for [generate].
@@ -382,10 +414,11 @@ class LiteRtLmBackend
   Stream<List<int>> _generateRun(
     _LiteRtLmWebRun run,
     int contextHandle,
-    String prompt,
+    JSAny message,
     GenerationParams params,
     List<LlamaContentPart>? parts,
-    List<Map<String, String>> history,
+    List<Map<String, Object?>> history,
+    List<Map<String, dynamic>> tools,
   ) async* {
     final engine = _requireContextHandle(contextHandle);
     if (parts?.any((part) => part is LlamaVideoContent) ?? false) {
@@ -408,7 +441,9 @@ class LiteRtLmBackend
     }
 
     final conversation = await engine
-        .createConversation(_createConversationConfig(params, history: history))
+        .createConversation(
+          _createConversationConfig(params, history: history, tools: tools),
+        )
         .toDart;
     _activeConversation = conversation;
 
@@ -423,7 +458,7 @@ class LiteRtLmBackend
         return;
       }
       final stream = _withScopedConsoleGuardedStream(
-        _streamConversation(conversation, prompt),
+        _streamConversation(conversation, message, run),
       );
       await for (final chunk in _applyStopSequences(
         stream,
@@ -771,7 +806,8 @@ class LiteRtLmBackend
 
   JSObject _createConversationConfig(
     GenerationParams params, {
-    List<Map<String, String>> history = const [],
+    List<Map<String, Object?>> history = const [],
+    List<Map<String, dynamic>> tools = const [],
   }) {
     final samplerParams = JSObject();
     samplerParams.setProperty(
@@ -795,8 +831,14 @@ class LiteRtLmBackend
 
     final config = JSObject();
     config.setProperty('sessionConfig'.toJS, sessionConfig);
-    if (history.isNotEmpty) {
-      config.setProperty('preface'.toJS, {'messages': history}.jsify());
+    if (history.isNotEmpty || tools.isNotEmpty) {
+      config.setProperty(
+        'preface'.toJS,
+        {
+          if (history.isNotEmpty) 'messages': history,
+          if (tools.isNotEmpty) 'tools': tools,
+        }.jsify(),
+      );
     }
     return config;
   }
@@ -837,6 +879,55 @@ class LiteRtLmBackend
     }
   }
 
+  /// Whether creating a conversation reads `preface.tools`, so tool
+  /// declarations reach the runtime rather than being dropped.
+  Future<bool> _probeToolDeclarations(_LiteRtLmWebEngine engine) async {
+    _LiteRtLmWebConversation? conversation;
+    var consumedTools = false;
+    try {
+      final tools = <Object>[
+        <String, Object>{
+          'type': 'function',
+          'function': <String, Object>{
+            'name': 'llamadart_probe',
+            'description': '',
+            'parameters': <String, Object>{
+              'type': 'object',
+              'properties': <String, Object>{},
+            },
+          },
+        },
+      ].jsify();
+      final preface = <String, Object>{'messages': <Object>[]}.jsify()!;
+      // Enumerable, so a runtime that serializes the preface reads it.
+      final descriptor = JSObject()
+        ..setProperty('enumerable'.toJS, true.toJS)
+        ..setProperty(
+          'get'.toJS,
+          (() {
+            consumedTools = true;
+            return tools;
+          }).toJS,
+        );
+      globalContext
+          .getProperty<JSObject>('Object'.toJS)
+          .callMethod<JSAny?>(
+            'defineProperty'.toJS,
+            preface,
+            'tools'.toJS,
+            descriptor,
+          );
+      final config = _createConversationConfig(const GenerationParams())
+        ..setProperty('preface'.toJS, preface);
+      conversation = await engine.createConversation(config).toDart;
+      return consumedTools;
+    } catch (_) {
+      return false;
+    } finally {
+      if (conversation != null) await _deleteConversation(conversation);
+    }
+  }
+
   _LiteRtLmWebEngine _requireEngine() {
     final engine = _engine;
     if (engine == null || !_isReady) {
@@ -863,9 +954,10 @@ class LiteRtLmBackend
 
   Stream<String> _streamConversation(
     _LiteRtLmWebConversation conversation,
-    String prompt,
+    JSAny message,
+    _LiteRtLmWebRun run,
   ) async* {
-    final reader = conversation.sendMessageStreaming(prompt).getReader();
+    final reader = conversation.sendMessageStreaming(message).getReader();
     try {
       while (!_cancelRequested) {
         final _LiteRtLmStreamReadResult result;
@@ -881,7 +973,7 @@ class LiteRtLmBackend
           break;
         }
 
-        final text = _extractTextChunk(result.value);
+        final text = _extractTextChunk(result.value, run);
         if (text.isNotEmpty) {
           yield text;
         }
@@ -973,7 +1065,9 @@ class LiteRtLmBackend
     return stopIndex;
   }
 
-  String _extractTextChunk(JSAny? value) {
+  /// The text of the streamed message [value]. Its runtime-parsed tool calls
+  /// go to [run] when it reports them, otherwise into the text as JSON.
+  String _extractTextChunk(JSAny? value, _LiteRtLmWebRun run) {
     if (value == null) {
       return '';
     }
@@ -990,24 +1084,53 @@ class LiteRtLmBackend
       return (directText as JSString).toDart;
     }
 
-    final content = obj.getProperty('content'.toJS);
-    if (content == null || !content.isA<JSArray>()) {
-      return '';
-    }
-
     final buffer = StringBuffer();
-    final items = content as JSArray;
-    for (var i = 0; i < items.length; i += 1) {
-      final item = items.getProperty(i.toJS);
-      if (item == null || !item.isA<JSObject>()) {
-        continue;
+    final content = obj.getProperty('content'.toJS);
+    if (content != null && content.isA<JSArray>()) {
+      final items = content as JSArray;
+      for (var i = 0; i < items.length; i += 1) {
+        final item = items.getProperty(i.toJS);
+        if (item == null || !item.isA<JSObject>()) {
+          continue;
+        }
+        final text = (item as JSObject).getProperty('text'.toJS);
+        if (text != null && text.isA<JSString>()) {
+          buffer.write((text as JSString).toDart);
+        }
       }
-      final text = (item as JSObject).getProperty('text'.toJS);
-      if (text != null && text.isA<JSString>()) {
-        buffer.write((text as JSString).toDart);
+    }
+    final toolCalls = obj.getProperty<JSAny?>('tool_calls'.toJS);
+    if (toolCalls != null &&
+        toolCalls.isA<JSArray>() &&
+        (toolCalls as JSArray).toDart.isNotEmpty) {
+      final calls = toolCalls.dartify()! as List<Object?>;
+      if (run.reportsToolCalls) {
+        for (final call in calls) {
+          run.toolCalls.add(_runtimeToolCall(call, run.toolCalls.length));
+        }
+      } else {
+        buffer.write(jsonEncode({'tool_calls': calls}));
       }
     }
     return buffer.toString();
+  }
+
+  /// [call], a runtime `ToolCall`, as the [index]th call of a reply.
+  LlamaCompletionChunkToolCall _runtimeToolCall(Object? call, int index) {
+    final map = call is Map ? call : const {};
+    final function = map['function'] is Map ? map['function'] as Map : const {};
+    final arguments = function['arguments'];
+    return LlamaCompletionChunkToolCall(
+      index: index,
+      id: map['id'] is String ? map['id'] as String : null,
+      type: 'function',
+      function: LlamaCompletionChunkFunction(
+        name: function['name'] is String ? function['name'] as String : null,
+        arguments: arguments is String
+            ? arguments
+            : jsonEncode(arguments ?? const {}),
+      ),
+    );
   }
 
   bool _hasMediaParts(List<LlamaContentPart>? parts) {
@@ -1095,6 +1218,7 @@ class LiteRtLmBackend
     _engine = null;
     _isReady = false;
     _supportsTextHistory = false;
+    _supportsToolDeclarations = false;
     _hasContext = false;
     _modelHandle = null;
     _contextHandle = null;
@@ -1511,17 +1635,40 @@ final class _TextHistoryLiteRtLmBackend extends LiteRtLmBackend
 
   // The runtime owns its tokenizer/template. Dart's budget fallback must see
   // every turn, while generation still receives the original structured input.
+  // The engine parses with the text-only form and counts the session budget
+  // from the plain render of the full form, which adds what the preface
+  // carries for tools: their declarations and each assistant call.
   static const String _accountingTemplate =
       '[{% for message in messages %}'
       '{"role":{{ message["role"] | tojson }},'
       '"content":{{ (message["content"] or "") | tojson }}}'
       '{% if not loop.last %},{% endif %}'
       '{% endfor %}]';
+  static const String _toolAccountingTemplate =
+      '[{% if tools %}{"tools":{{ tools | tojson }}},{% endif %}'
+      '{% for message in messages %}'
+      '{"role":{{ message["role"] | tojson }},'
+      '"content":{{ (message["content"] or "") | tojson }}'
+      '{% if message["tool_calls"] %}'
+      '{% if message["reasoning_content"] %}'
+      ',"reasoning_content":{{ message["reasoning_content"] | tojson }}'
+      '{% endif %}'
+      ',"tool_calls":{{ message["tool_calls"] | tojson }}'
+      '{% endif %}'
+      '{% if message["name"] %},"name":{{ message["name"] | tojson }}{% endif %}'
+      '}'
+      '{% if not loop.last %},{% endif %}'
+      '{% endfor %}]';
 
   @override
   Future<Map<String, String>> modelMetadata(int modelHandle) async {
     final metadata = await super.modelMetadata(modelHandle);
-    metadata['tokenizer.chat_template'] = _accountingTemplate;
+    metadata[parsingChatTemplateMetadataKey] = _accountingTemplate;
+    metadata['tokenizer.chat_template'] = _toolAccountingTemplate;
+    if (supportsToolCalling) {
+      metadata['llamadart.litert_lm_web.chat_scope'] =
+          'system-user-assistant-text-and-tools';
+    }
     metadata['llamadart.litert_lm_web.prompt_accounting'] =
         'utf8-byte-estimate';
     return metadata;
@@ -1536,52 +1683,126 @@ final class _TextHistoryLiteRtLmBackend extends LiteRtLmBackend
   @override
   bool get supportsNativeChatGeneration => isReady;
 
+  /// True once the loaded runtime has passed the history probe and reads
+  /// `preface.tools` when it creates a conversation.
+  @override
+  bool get supportsToolCalling => _isReady && _supportsToolDeclarations;
+
   @override
   bool get requiresStructuredChatInput => true;
 
   @override
   void validateChatMessages(List<LlamaChatMessage> messages) {
-    _textMessages(messages);
+    _wireMessages(messages);
   }
 
-  List<Map<String, String>> _textMessages(List<LlamaChatMessage> messages) {
-    const runtime = 'LiteRT-LM Web @litert-lm/core@0.19.0';
+  static const String _runtime = 'LiteRT-LM Web @litert-lm/core@0.19.0';
+
+  /// [messages] as `@litert-lm/core@0.19.0` `Message` objects, in the shape
+  /// native LiteRT-LM sends: assistant calls in `tool_calls`, results as
+  /// `tool_response` parts of one `tool` message.
+  List<Map<String, Object?>> _wireMessages(List<LlamaChatMessage> messages) {
     if (messages.isEmpty) {
       throw LlamaUnsupportedException(
-        '$runtime needs a final user text message.',
+        '$_runtime needs a final user text or tool result message.',
       );
     }
-    final history = <Map<String, String>>[];
+    final wire = <Map<String, Object?>>[];
+    var carriesTools = false;
     for (final message in messages) {
       final role = message.roleEnum?.name ?? message.roleString;
-      if (!const ['system', 'user', 'assistant'].contains(role) ||
-          message.parts.any(
-            (part) =>
-                part is! LlamaTextContent &&
-                !(role == 'assistant' && part is LlamaThinkingContent),
-          )) {
+      bool allowed(LlamaContentPart part) => switch (role) {
+        'system' || 'user' => part is LlamaTextContent,
+        'assistant' =>
+          part is LlamaTextContent ||
+              part is LlamaThinkingContent ||
+              part is LlamaToolCallContent,
+        'tool' => part is LlamaToolResultContent,
+        _ => false,
+      };
+      if (!const ['system', 'user', 'assistant', 'tool'].contains(role) ||
+          !message.parts.every(allowed)) {
         throw LlamaUnsupportedException(
-          '$runtime supports only system/user/assistant text; '
-          'tools, media and user/system thinking content are unavailable.',
+          '$_runtime supports system/user/assistant text, assistant tool '
+          'calls and tool results; media, user/system thinking content and '
+          'text in a tool message are unavailable.',
         );
       }
-      history.add({'role': role!, 'content': message.content});
+      final calls = message.parts.whereType<LlamaToolCallContent>();
+      if (role == 'tool') {
+        final results = message.parts.cast<LlamaToolResultContent>();
+        if (results.isEmpty) {
+          throw LlamaUnsupportedException(
+            '$_runtime needs a LlamaToolResultContent in a tool message.',
+          );
+        }
+        if (results.any((result) => result.content.isNotEmpty)) {
+          throw LlamaUnsupportedException(
+            '$_runtime does not take LlamaToolResultContent.content. Return '
+            'the tool output as its result.',
+          );
+        }
+        carriesTools = true;
+        wire.add({
+          'role': 'tool',
+          'content': [
+            for (final result in results)
+              {
+                'type': 'tool_response',
+                'name': result.name,
+                'response': result.result,
+              },
+          ],
+        });
+      } else if (calls.isNotEmpty) {
+        carriesTools = true;
+        final thinking = message.parts.whereType<LlamaThinkingContent>();
+        wire.add({
+          'role': 'assistant',
+          // Text only: `content` would repeat each call's raw JSON.
+          'content': message.parts
+              .whereType<LlamaTextContent>()
+              .map((part) => part.text)
+              .join(),
+          if (thinking.isNotEmpty)
+            'reasoning_content': thinking
+                .map((part) => part.thinking)
+                .join('\n'),
+          'tool_calls': [
+            for (final call in calls)
+              {
+                'type': 'function',
+                'function': {'name': call.name, 'arguments': call.arguments},
+              },
+          ],
+        });
+      } else {
+        wire.add({'role': role, 'content': message.content});
+      }
     }
-    if (history.last['role'] != 'user') {
+    if (!const ['user', 'tool'].contains(wire.last['role'])) {
       throw LlamaUnsupportedException(
-        '$runtime text history needs a final user message; assistant '
+        '$_runtime chat needs a final user or tool result message; assistant '
         'continuation and system-only generation are unavailable.',
       );
     }
-    if (history.length > 1 && !supportsMultiTurnChat) {
+    if (wire.length > 1 && !supportsMultiTurnChat) {
       throw LlamaUnsupportedException(
         'The loaded LiteRT-LM Web runtime did not consume preface.messages '
         'or expose getHistory. Text history and system prompts require '
         'the published @litert-lm/core@0.19.0 conversation APIs.',
       );
     }
-    return history;
+    if (carriesTools && !supportsToolCalling) throw _toolsUnavailable();
+    return wire;
   }
+
+  LlamaUnsupportedException _toolsUnavailable() => LlamaUnsupportedException(
+    'The loaded LiteRT-LM Web runtime did not read preface.tools when it '
+    'created a conversation, so tool calling is unavailable. It requires '
+    'the published @litert-lm/core@0.19.0 conversation tools and a backend '
+    'from LlamaBackend.withTextHistory().',
+  );
 
   @override
   Stream<List<int>> generateChat(
@@ -1596,41 +1817,78 @@ final class _TextHistoryLiteRtLmBackend extends LiteRtLmBackend
     String? sourceLangCode,
     String? targetLangCode,
     DateTime? templateNow,
-  }) async* {
-    const runtime = 'LiteRT-LM Web @litert-lm/core@0.19.0';
-    if ((tools?.isNotEmpty ?? false) ||
-        toolChoice == ToolChoice.required ||
-        parallelToolCalls) {
-      throw LlamaUnsupportedException(
-        '$runtime supports text history only; tool declarations, required '
-        'tools and parallel tool calls are unavailable (see #1152 and #919).',
-      );
+  }) {
+    final List<Map<String, Object?>> wire;
+    final List<Map<String, dynamic>> declarations;
+    try {
+      if (toolChoice == ToolChoice.required || parallelToolCalls) {
+        throw LlamaUnsupportedException(
+          '$_runtime exposes neither ToolChoice.required enforcement nor a '
+          'parallel tool-call switch. Use ToolChoice.auto with '
+          'parallelToolCalls false, or a grammar-capable runtime such as '
+          'llama.cpp.',
+        );
+      }
+      if (!enableThinking ||
+          (chatTemplateKwargs?.isNotEmpty ?? false) ||
+          sourceLangCode != null ||
+          targetLangCode != null ||
+          templateNow != null) {
+        throw LlamaUnsupportedException(
+          '$_runtime chat does not expose thinking, template kwargs, '
+          'language or template-clock controls. Use the model defaults.',
+        );
+      }
+      // As on native LiteRT-LM, ToolChoice.none declares no tools.
+      declarations = toolChoice == ToolChoice.none
+          ? const []
+          : [
+              for (final tool in tools ?? const <ToolDefinition>[])
+                tool.toJson(),
+            ];
+      if (declarations.isNotEmpty && !supportsToolCalling) {
+        throw _toolsUnavailable();
+      }
+      wire = _wireMessages(messages);
+    } on LlamaException catch (error, stackTrace) {
+      return Stream.error(error, stackTrace);
     }
-    if (!enableThinking ||
-        (chatTemplateKwargs?.isNotEmpty ?? false) ||
-        sourceLangCode != null ||
-        targetLangCode != null ||
-        templateNow != null) {
-      throw LlamaUnsupportedException(
-        '$runtime text history does not expose thinking, template kwargs, '
-        'language or template-clock controls. Use the model defaults.',
-      );
-    }
-    final history = _textMessages(messages);
-    yield* _generateWithHistory(
+    final last = wire.last;
+    return _generateWithHistory(
       contextHandle,
-      history.last['content']!,
+      last['role'] == 'user' ? (last['content'] as String).toJS : last.jsify()!,
       params,
-      history: history.sublist(0, history.length - 1),
+      history: wire.sublist(0, wire.length - 1),
+      tools: declarations,
     );
   }
 }
 
 /// One [LiteRtLmBackend.generate] call.
 final class _LiteRtLmWebRun {
+  _LiteRtLmWebRun({this.reportsToolCalls = false});
+
+  /// Whether runtime-parsed tool calls go to [toolCalls] rather than into the
+  /// text.
+  final bool reportsToolCalls;
+
+  /// The runtime-parsed tool calls so far, in order.
+  final List<LlamaCompletionChunkToolCall> toolCalls = [];
+
   /// Completes with true when a queued run may start, or false when it ends
   /// without starting.
   final Completer<bool> admission = Completer<bool>();
+}
+
+/// The runtime-parsed tool calls of each finished generation stream.
+final class _LiteRtLmWebRuntimeToolCalls implements BackendRuntimeToolCalls {
+  final Expando<List<LlamaCompletionChunkToolCall>> calls =
+      Expando<List<LlamaCompletionChunkToolCall>>();
+
+  @override
+  List<LlamaCompletionChunkToolCall>? runtimeToolCallsOf(
+    Stream<List<int>> generation,
+  ) => calls[generation];
 }
 
 @JS()
@@ -1655,7 +1913,7 @@ extension type _LiteRtLmWebEngine._(JSObject _) implements JSObject {
 
 @JS()
 extension type _LiteRtLmWebConversation._(JSObject _) implements JSObject {
-  external _LiteRtLmReadableStream sendMessageStreaming(String message);
+  external _LiteRtLmReadableStream sendMessageStreaming(JSAny message);
 
   external void cancel();
 

@@ -1,11 +1,19 @@
 #!/usr/bin/env python3
-"""Run local-only LiteRT Web history and matching published-runtime controls."""
+"""Run a local-only LiteRT Web suite against matching published-runtime controls."""
 import argparse
 import hashlib
 import json
 import pathlib
 import subprocess
 import threading
+
+# Suite name: (test file, marker of the served model identity).
+SUITES = {
+    'text-history': ('test/e2e/backends/litert_lm_text_history_web_e2e_test.dart',
+                     'LITERT_TEXT_HISTORY_INPUT'),
+    'tool-calling': ('test/e2e/backends/litert_lm_tool_calling_web_e2e_test.dart',
+                     'LITERT_TOOLS_INPUT'),
+}
 
 from serve_static_with_headers import CoiStaticHandler, ThreadingTcpServer
 
@@ -16,6 +24,7 @@ def main():
     parser.add_argument('--backend', choices=['cpu', 'gpu'], default='cpu')
     # `dart test -p safari` drives the Safari app through safaridriver.
     parser.add_argument('--browser', choices=['chrome', 'safari'], default='chrome')
+    parser.add_argument('--suite', choices=sorted(SUITES), default='text-history')
     args = parser.parse_args()
     model = pathlib.Path(args.model_path).resolve(strict=True)
     with model.open('rb') as source:
@@ -58,13 +67,14 @@ def main():
         thread = threading.Thread(target=server.serve_forever, daemon=True)
         thread.start()
         try:
-            print('LITERT_TEXT_HISTORY_INPUT ' + json.dumps(manifest), flush=True)
+            test_file, marker = SUITES[args.suite]
+            print(marker + ' ' + json.dumps(manifest), flush=True)
             return subprocess.call([
                 'dart', 'test', '-p',
                 'safari' if args.browser == 'safari' else 'chrome-webgpu',
                 '--run-skipped',
                 '-t', 'local-only',
-                'test/e2e/backends/litert_lm_text_history_web_e2e_test.dart',
+                test_file,
             ])
         finally:
             server.shutdown()

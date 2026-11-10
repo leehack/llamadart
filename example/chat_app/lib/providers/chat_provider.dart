@@ -4449,7 +4449,11 @@ class ChatProvider extends ChangeNotifier {
   }
 
   void _updateToolTemplateSupport(Map<String, String> metadata) {
-    if (!_engineCapabilities.supportsToolCalling) {
+    // This app runs the model's calls automatically, which needs the
+    // truncation report LiteRT-LM Web lacks (#919).
+    final unreportedTruncation =
+        kIsWeb && _engineCapabilities.runtime == LlamaRuntime.liteRtLm;
+    if (!_engineCapabilities.supportsToolCalling || unreportedTruncation) {
       _detectedChatFormat = ChatFormat.contentOnly;
       _templateSupportsTools = false;
       if (_settings.toolsEnabled) {
@@ -4457,7 +4461,9 @@ class ChatProvider extends ChangeNotifier {
         unawaited(_saveSettingsNow());
       }
       _addInfoMessage(
-        'Tool calling disabled for this runtime: it does not pass tools to the model. Use GGUF/WebGPU or a native LiteRT-LM target for structured tool calls.',
+        _engineCapabilities.supportsToolCalling
+            ? 'Tool calling disabled for LiteRT-LM Web in this app: it runs tool calls automatically, and this runtime does not report a reply cut off at the token limit. Use GGUF/WebGPU or a native LiteRT-LM target.'
+            : 'Tool calling disabled for this runtime: it does not pass tools to the model. Use GGUF/WebGPU or a native LiteRT-LM target for structured tool calls.',
       );
       return;
     }

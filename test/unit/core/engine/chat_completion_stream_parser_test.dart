@@ -89,6 +89,64 @@ void main() {
       );
     }
 
+    LlamaCompletionChunkToolCall runtimeCall(String city) =>
+        LlamaCompletionChunkToolCall(
+          index: 0,
+          type: 'function',
+          function: LlamaCompletionChunkFunction(
+            name: 'weather',
+            arguments: jsonEncode({'city': city}),
+          ),
+        );
+
+    test('runtime tool calls follow the calls parsed from the text', () async {
+      final rendered = ChatTemplateEngine.render(
+        templateSource:
+            '{{ messages | tojson }}{{ tools | tojson }}<tool_call>',
+        messages: const [
+          LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'Hi'),
+        ],
+        metadata: const {},
+        tools: [_weatherTool],
+      );
+      final completion = await ChatCompletionStreamParser.parse(
+        tokenStream: Stream.fromIterable([
+          'Before ',
+          '<tool_call>{"name":"weather","arguments":{"city":"Paris"}}',
+          '</tool_call>',
+        ]),
+        templateResult: rendered,
+        parseToolCallsEnabled: true,
+        enableThinking: true,
+        modelName: 'runtime',
+        completionId: 'runtime-calls',
+        tools: [_weatherTool],
+        runtimeToolCalls: () => [runtimeCall('Oslo')],
+      ).collect();
+      expect(completion.text.trim(), 'Before');
+      expect(completion.finishReason, LlamaFinishReason.toolCalls);
+      expect(completion.toolCalls.map((call) => call.arguments['city']), [
+        'Paris',
+        'Oslo',
+      ]);
+      expect(completion.toolCalls.map((call) => call.id), ['call_0', 'call_1']);
+    });
+
+    test('runtime tool calls are ignored when tool parsing is off', () async {
+      final completion = await ChatCompletionStreamParser.parse(
+        tokenStream: Stream.fromIterable(['plain']),
+        templateResult: const LlamaChatTemplateResult(prompt: 'prompt'),
+        parseToolCallsEnabled: false,
+        enableThinking: true,
+        modelName: 'runtime',
+        completionId: 'runtime-calls-off',
+        runtimeToolCalls: () => [runtimeCall('Oslo')],
+      ).collect();
+      expect(completion.text, 'plain');
+      expect(completion.toolCalls, isEmpty);
+      expect(completion.finishReason, LlamaFinishReason.stop);
+    });
+
     test('streams plain content chunks and a final stop chunk', () async {
       final chunks = await ChatCompletionStreamParser.parse(
         tokenStream: Stream.fromIterable(['hel', 'lo']),

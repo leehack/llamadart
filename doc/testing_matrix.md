@@ -1189,8 +1189,26 @@ no-system controls that fail if the preface is bypassed. Session reset and
 cancel/reuse must pass. A load failure on either route leaves semantic paths
 unqualified; a browser adapter alone establishes no model GPU execution.
 The model-free Chrome suite separately checks routing, API skew and typed
-unsupported roles/options. Remaining tool/media/template work stays in
-[#1152](https://github.com/leehack/llamadart/issues/1152).
+unsupported roles/options.
+
+### LiteRT-LM Web tool calling
+
+`litert-lm-web-tool-calling` runs the same local server and Chrome
+configuration with `test/e2e/backends/litert_lm_tool_calling_web_e2e_test.dart`.
+It downloads no model. The published runtime alone must parse a `get_weather`
+call into `tool_calls`, emit none without tools, and answer from a 0.19.0 tool
+message; the adapter must then return that call from `ChatSession.create`,
+answer from the `LlamaToolResultContent`, and pass cancel-after-first-chunk,
+reset and reuse. Dry-run before execution:
+
+```bash
+dart run tool/testing/run_local_e2e.dart --scenario litert-lm-web-tool-calling \
+  --model-path /path/to/Qwen3-0.6B.litertlm --backend cpu --dry-run
+```
+
+Use `--backend gpu` with a `-web.litertlm` bundle for WebGPU. Automatic tool
+loops stay out of scope until the runtime reports truncation
+([#919](https://github.com/leehack/llamadart/issues/919)).
 
 ### Native LiteRT-LM JSON Schema
 

@@ -96,9 +96,9 @@ in the llamadart-getting-started and llamadart-chat-streaming skills.
     `supportsMinP`, `supportsThinkingBudget` and
     `speculativeDecodingStrategies` (WebGPU rejects
     `SpeculativeDecodingConfig.draftMicroBatchSize`), and for what
-    LiteRT-LM web lacks: `supportsToolCalling`, `supportsPenalty` and
-    `supportsGrammar` are false there, and `supportsMultiTurnChat` is false
-    unless `withTextHistory()` is used and the loaded runtime supports it. Unreported
+    LiteRT-LM web lacks: `supportsPenalty` and `supportsGrammar` are false
+    there, and `supportsMultiTurnChat` and `supportsToolCalling` are false
+    unless `withTextHistory()` is used and the loaded runtime supports them. Unreported
     controls throw `LlamaUnsupportedException`; `engine.runtime` names the
     runtime, so never sniff the `.litertlm` extension after loading.
   - `engine.supportsNextTokenScoring` and
@@ -151,8 +151,12 @@ in the llamadart-getting-started and llamadart-chat-streaming skills.
   message's text, so `ChatSession` history, system prompts and tools are not
   forwarded. `LlamaBackend.withTextHistory()` (or
   `LiteRtLmBackend.withTextHistory()`) opts into ordered system/user/assistant
-  text; tools are still rejected, and `supportsMultiTurnChat` reports whether
-  history is forwarded.
+  text and manual tool calling: `create` returns the runtime's tool calls, and
+  you add a tool result message per call before the next `create`.
+  `supportsMultiTurnChat` and `supportsToolCalling` report what the loaded
+  runtime forwards. Automatic tool loops (`sendWithTools`), `ToolChoice.required`
+  and `parallelToolCalls` still throw, because the runtime reports no
+  truncation.
   It rejects media parts, grammar, `penalty`, `minP`, `presencePenalty`,
   `thinkingBudget` and speculative decoding; generation honors only
   `maxTokens`, `temp`, `topK`, `topP`, `seed` and `stopSequences`. It has no

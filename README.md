@@ -173,7 +173,9 @@ published native
 [v0.19.1-2](https://github.com/leehack/litert-lm-native/releases/tag/v0.19.1-2),
 owner source `0b15fb34` / upstream `7a03724c`. The selected loader requires
 macOS 14+ before owned library loads, including legacy libraries and custom
-paths. Web LiteRT-LM uses `@litert-lm/core@0.19.0`.
+paths. Web LiteRT-LM uses `@litert-lm/core@0.19.0`; through
+`LlamaBackend.withTextHistory()` it forwards chat history and supports manual
+tool calling.
 
 Native overrides accept stable `vMAJOR.MINOR.PATCH` releases and explicit
 historical or nightly `bNNNN` artifacts. New nightly wrapper rebuilds use

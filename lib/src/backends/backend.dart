@@ -13,6 +13,7 @@ import '../core/models/inference/next_token_scores.dart';
 import '../core/models/inference/state_identity.dart';
 import '../core/models/inference/tool_choice.dart';
 import '../core/models/chat/chat_message.dart';
+import '../core/models/chat/completion_chunk.dart';
 import '../core/models/chat/content_part.dart';
 import '../core/models/config/gpu_backend.dart';
 import '../core/models/config/gpu_device_info.dart';
@@ -28,10 +29,14 @@ abstract class LlamaBackend {
   /// Factory to create the appropriate backend for the current platform.
   factory LlamaBackend() => createBackend();
 
-  /// Opts into ordered LiteRT-LM Web text history and system prompts.
+  /// Opts into ordered LiteRT-LM Web text history, system prompts and manual
+  /// tool calling.
   ///
   /// Web requires a runtime with the published conversation/preface APIs;
-  /// unsupported thinking, tools, media and template controls throw explicitly.
+  /// tools need one that reads `preface.tools`, which
+  /// `LlamaEngineCapabilities.supportsToolCalling` reports. Automatic tool
+  /// loops, unsupported thinking, media and template controls throw
+  /// explicitly.
   /// Native selection and behavior are the same as [LlamaBackend.new].
   /// The original default factory retains its existing Web behavior.
   factory LlamaBackend.withTextHistory() => createTextHistoryBackend();
@@ -441,6 +446,44 @@ BackendGenerationLimitReporting? generationLimitReporterOf(Object? backend) =>
     : backend is BackendGenerationLimitReporting
     ? backend
     : _generationLimitReporters[backend];
+
+/// Internal backend probe for tool calls a runtime parsed itself.
+///
+/// The calls reach the engine beside the stream rather than as text, so the
+/// reply text around them stays content and no output parser can drop them.
+abstract class BackendRuntimeToolCalls {
+  /// The calls the runtime parsed while it produced [generation], a stream
+  /// this backend returned from `generateChat`, in order.
+  ///
+  /// Null while [generation] is open, or when the runtime parsed none.
+  List<LlamaCompletionChunkToolCall>? runtimeToolCallsOf(
+    Stream<List<int>> generation,
+  );
+}
+
+final Expando<BackendRuntimeToolCalls> _runtimeToolCallReporters =
+    Expando<BackendRuntimeToolCalls>();
+
+/// Makes [reporter] report the runtime-parsed tool calls of [backend].
+///
+/// For an exported backend class, which must not expose the internal
+/// [BackendRuntimeToolCalls] in its type.
+void registerRuntimeToolCallReporter(
+  Object backend,
+  BackendRuntimeToolCalls reporter,
+) {
+  _runtimeToolCallReporters[backend] = reporter;
+}
+
+/// The runtime tool-call reporter of [backend]: the backend itself when it
+/// implements [BackendRuntimeToolCalls], otherwise one registered with
+/// [registerRuntimeToolCallReporter], or null.
+BackendRuntimeToolCalls? runtimeToolCallReporterOf(Object? backend) =>
+    backend == null
+    ? null
+    : backend is BackendRuntimeToolCalls
+    ? backend
+    : _runtimeToolCallReporters[backend];
 
 /// Internal backend probe for the tokens a runtime prefills for a prompt it
 /// renders from its own chat template.

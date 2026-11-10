@@ -479,6 +479,50 @@ Future<void> main(List<String> args) async {
     },
   );
 
+  test('LiteRT Web tool calling requires a backend and local model and runs the '
+      'tool-calling suite', () async {
+    for (final args in [
+      ['--scenario', 'litert-lm-web-tool-calling', '--dry-run'],
+      [
+        '--scenario',
+        'litert-lm-web-tool-calling',
+        '--model-path',
+        'model.litertlm',
+        '--dry-run',
+      ],
+      [
+        '--scenario',
+        'litert-lm-web-tool-calling',
+        '--backend',
+        'cpu',
+        '--dry-run',
+      ],
+    ]) {
+      expect((await runLocalE2e(args, projectRoot: '/repo')).exitCode, 64);
+    }
+    final result = await runLocalE2e(
+      [
+        '--scenario',
+        'litert-lm-web-tool-calling',
+        '--model-path',
+        'models/existing.litertlm',
+        '--backend',
+        'cpu',
+        '--dry-run',
+      ],
+      projectRoot: '/repo',
+      displayShell: LocalE2eDisplayShell.posix,
+    );
+    expect(result.exitCode, 0);
+    expect(
+      result.stdout,
+      contains(
+        'python3 tool/testing/litert_text_history_web_e2e.py --model-path models/existing.litertlm --backend cpu --suite tool-calling',
+      ),
+    );
+    expect(result.stdout, isNot(contains('download')));
+  });
+
   test(
     'LiteRT Web scenarios leave the browser to the Chrome default',
     () async {

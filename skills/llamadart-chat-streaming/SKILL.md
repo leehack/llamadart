@@ -45,18 +45,21 @@ modalities and speculative strategies before offering them.
   `engine.create` and `ChatSession` when the loaded runtime's preface/history
   API probe passes; check `supportsMultiTurnChat` after loading. Each request
   owns a new conversation and supplies its visible transcript once. Stored
-  assistant reasoning stays in app history and is omitted from replay/accounting. Use a Web-compatible
+  assistant reasoning stays in app history and is omitted from replay/accounting
+  (except with an assistant tool call). Use a Web-compatible
   `.litertlm` bundle. Existing default/direct constructors keep legacy LiteRT
   Web single-user-text
   routing and subclass hooks. Native selection is unchanged; Genkit adoption is
-  separate. On this Web path, tools, tool/media and user/system thinking parts, a final assistant/system
+  separate. On this Web path, `ToolChoice.required`, `parallelToolCalls`,
+  tool-result `content`, media and user/system thinking parts, a final assistant/system
   message, custom templates, `enableThinking: false`, template kwargs and explicit
   template clocks throw `LlamaUnsupportedException`. Model-default thinking stays
   unchanged. Old runtimes reject history/system input and retain one-user-text
   completion. Budget trimming uses a full-transcript UTF-8 estimate because
   the JS tokenizer/template count is unavailable; accounting JSON is not sent
-  as a replacement model prompt. This text slice leaves tools/media/template work in
-  [#1152](https://github.com/leehack/llamadart/issues/1152).
+  as a replacement model prompt. Manual tool calling uses the same path when
+  `supportsToolCalling` is true (see the `llamadart-tool-calling` skill);
+  media and template controls stay unavailable.
 - For reproducible Dart-rendered template dates, use
   `TemplateTimeChatSession(engine, templateNow: DateTime.utc(2026, 1, 2))`.
   Each listened request snapshots the value before budget rendering and
