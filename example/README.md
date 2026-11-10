@@ -91,9 +91,9 @@ single-user-text routing for LiteRT Web models, reporting multi-turn support
 false; custom/GGUF delegate capabilities remain unchanged.
 
 This Web path forwards system/user/assistant text, and tools when the loaded
-runtime reads `preface.tools` (`supportsToolCalling`). Keep media and custom
-template/thinking controls out of the request, and `ToolChoice.required` and
-`parallelToolCalls` off tools; they raise `LlamaUnsupportedException`
+runtime reads `preface.tools` (`supportsToolCalling`). Keep media, custom
+template/thinking controls, tool-result `content`, `ToolChoice.required` and
+`parallelToolCalls` out of the request; they raise `LlamaUnsupportedException`
 ([#1152](https://github.com/leehack/llamadart/issues/1152)). Automatic tool
 loops run only when the load-time token-count probes pass; see
 [Tool calling](https://llamadart.leehack.com/docs/guides/tool-calling#runtime-notes).

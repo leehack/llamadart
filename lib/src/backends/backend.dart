@@ -29,8 +29,8 @@ abstract class LlamaBackend {
   /// Factory to create the appropriate backend for the current platform.
   factory LlamaBackend() => createBackend();
 
-  /// Opts into ordered LiteRT-LM Web text history, system prompts and manual
-  /// tool calling.
+  /// Opts into ordered LiteRT-LM Web text history, system prompts and tool
+  /// calling.
   ///
   /// Web requires a runtime with the published conversation/preface APIs;
   /// tools need one that reads `preface.tools`, which
