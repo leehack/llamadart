@@ -686,9 +686,6 @@ class LiteRtLmService {
     }
     _cancelRequested = false;
     final client = await _ensureClientForGeneration(const GenerationParams());
-    if (_activeBackend != 'cpu' && _activeBackend != 'gpu') {
-      throw LlamaUnsupportedException(platformRefusal);
-    }
     if (!client.supportsJsonSchemaConstraints) {
       throw LlamaUnsupportedException(
         'Native JSON Schema chat requires all constraint-provider and thinking-config symbols. '
@@ -769,8 +766,8 @@ class LiteRtLmService {
       // the provider reports one only as an INTERNAL send failure.
       if (!outputStarted && '$error'.contains('INTERNAL (13)')) {
         throw LlamaUnsupportedException(
-          'The native LiteRT-LM JSON Schema provider rejected the schema '
-          'before generation.',
+          'The native LiteRT-LM runtime refused the JSON Schema request '
+          'before generation (INTERNAL).',
         );
       }
       // Native diagnostics can echo the schema or model paths.
@@ -778,7 +775,9 @@ class LiteRtLmService {
         'Native JSON Schema chat failed during constrained decoding.',
       );
     }
-    if (!_cancelRequested &&
+    // maxTokens <= 0 generates nothing, so no finish reason is reported.
+    if (params.maxTokens > 0 &&
+        !_cancelRequested &&
         _lastGenerationLimit == null &&
         _client?.lastFinishReason != LiteRtLmFinishReason.stop) {
       throw LlamaInferenceException(

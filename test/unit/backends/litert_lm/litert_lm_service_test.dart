@@ -315,6 +315,58 @@ void main() {
       expect(client.lastExtraContext?['enable_thinking'], isTrue);
     });
 
+    test('Gemma 4 thinking is re-admitted after an image turn recreates the '
+        'client', () async {
+      final context = await load('gemma-4-E2B-it.litertlm');
+      await service.prepareJsonSchemaChat();
+      _FakeLiteRtLmRuntimeClient fresh() =>
+          client = _FakeLiteRtLmRuntimeClient()
+            ..jsonSchemaSupport = true
+            ..jsonSchemaThinking = true
+            ..finishReason = LiteRtLmFinishReason.stop;
+      final imageClient = fresh();
+      final image = service.generateChat(context, [
+        LlamaChatMessage.withContent(
+          role: LlamaChatRole.user,
+          content: [
+            const LlamaTextContent('Describe'),
+            LlamaImageContent(bytes: Uint8List.fromList([1, 2, 3])),
+          ],
+        ),
+      ], const GenerationParams(maxTokens: 8)).toList();
+      await imageClient.generateStarted.future;
+      imageClient.generated.add('A');
+      await imageClient.generated.close();
+      await image;
+      expect(service.supportsJsonSchemaChatThinking, isFalse);
+      fresh();
+      await generate(
+        context,
+        enableThinking: true,
+        whileRunning: () => client.generated.add('{}'),
+      );
+      expect(service.supportsJsonSchemaChatThinking, isTrue);
+      expect(client.lastExtraContext?['enable_thinking'], isTrue);
+    });
+
+    test('maxTokens 0 ignores a stale finish reason', () async {
+      final context = await load('gemma-4-E2B-it.litertlm');
+      await service.prepareJsonSchemaChat();
+      client.finishReason = LiteRtLmFinishReason.unknown;
+      expect(
+        await service
+            .generateJsonSchemaChat(
+              context,
+              user,
+              const GenerationParams(maxTokens: 0),
+              jsonSchema: '{"type":"object"}',
+            )
+            .toList(),
+        isEmpty,
+      );
+      expect(client.generateCount, 0);
+    });
+
     test('Gemma 4 thinking needs a declared reasoning channel', () async {
       final context = await load(
         'gemma-4-E2B-it.litertlm',

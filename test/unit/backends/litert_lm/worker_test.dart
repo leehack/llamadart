@@ -252,7 +252,9 @@ void main() {
       );
       expect(responses.last, isA<LiteRtLmDoneResponse>());
       expect(service.ordinaryCalls, 0);
-      final rejected = await _sendRequest(
+      // A recreated client clears the admission, so the service, not the
+      // worker's stale view, decides whether thinking is allowed.
+      final readmitted = await _collectGenerationResponses(
         worker.sendPort,
         (port) => LiteRtLmGenerateChatRequest(
           7,
@@ -265,15 +267,10 @@ void main() {
           enableThinking: true,
         ),
       );
-      expect(
-        rejected,
-        isA<LiteRtLmErrorResponse>().having(
-          (e) => e.kind,
-          'kind',
-          'llamaUnsupported',
-        ),
-      );
-      expect(service.schemaCalls, 1);
+      expect(readmitted.last, isA<LiteRtLmDoneResponse>());
+      expect(service.schemaCalls, 2);
+      expect(service.schemaThinking, isTrue);
+      service.schemaThinking = null;
       service.admitsThinking = true;
       expect(
         await _sendRequest(
@@ -300,7 +297,7 @@ void main() {
         ),
       );
       expect(thinking.last, isA<LiteRtLmDoneResponse>());
-      expect(service.schemaCalls, 2);
+      expect(service.schemaCalls, 3);
       expect(service.schemaThinking, isTrue);
       service.rejectAdmission = true;
       expect(
