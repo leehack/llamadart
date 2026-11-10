@@ -218,8 +218,10 @@ description: >-
   `ChatSession.create`/`LlamaEngine.create` still work there, but their `stop`
   does not prove EOS. Do not infer truncation from output length or run tool
   handlers automatically from an unverified terminal result.
-- Runtime limits: LiteRT-LM has no grammar enforcement, LiteRT-LM on web does
-  not forward tools, and WebGPU `ToolChoice.auto` parses calls best-effort.
+- Runtime limits: LiteRT-LM has no grammar enforcement, LiteRT-LM on web
+  forwards tools only through `LlamaBackend.withTextHistory()` (manual
+  `create` calls; `ToolChoice.required`, `parallelToolCalls` and tool-result
+  `content` throw), and WebGPU `ToolChoice.auto` parses calls best-effort.
   `(await engine.capabilities).supportsToolCalling`,
   `supportsStructuredOutput` and `supportsLazyGrammar` report these per
   loaded model. Test tool flows on every target runtime.

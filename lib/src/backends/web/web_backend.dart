@@ -2,6 +2,7 @@ import '../../core/engine/engine_observer.dart';
 import '../../core/exceptions.dart';
 import '../../core/models/chat/content_part.dart';
 import '../../core/models/chat/chat_message.dart';
+import '../../core/models/chat/completion_chunk.dart';
 import '../../core/models/inference/tool_choice.dart';
 import '../../core/models/tools/tool_definition.dart';
 import '../../core/models/config/log_level.dart';
@@ -53,6 +54,7 @@ class WebAutoBackend
         BackendGenerationUsageReporting,
         BackendGenerationLimitReporting,
         BackendGenerationLimitSupport,
+        BackendRuntimeToolCalls,
         BackendChatPromptGeneration,
         BackendNextTokenScoring,
         BackendNextTokenScoringSupport,
@@ -667,6 +669,11 @@ class WebAutoBackend
           )
         : null;
   }
+
+  @override
+  List<LlamaCompletionChunkToolCall>? runtimeToolCallsOf(
+    Stream<List<int>> generation,
+  ) => runtimeToolCallReporterOf(_delegate)?.runtimeToolCallsOf(generation);
 
   @override
   LlamaGenerationUsage? generationUsageOf(Stream<List<int>> generation) {

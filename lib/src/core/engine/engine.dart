@@ -1954,6 +1954,7 @@ class LlamaEngine implements LlamadartEngine<LlamaEngineCapabilities> {
             generationLimit = limit;
         LlamaGenerationUsage? generationUsage;
         void recordUsage(LlamaGenerationUsage usage) => generationUsage = usage;
+        List<LlamaCompletionChunkToolCall>? runtimeToolCalls;
 
         final tokenStream = plan.usesNativeChatGeneration
             ? _generateNativeChat(
@@ -1969,6 +1970,7 @@ class LlamaEngine implements LlamadartEngine<LlamaEngineCapabilities> {
                 templateNow: templateNow,
                 onLimit: recordLimit,
                 onUsage: recordUsage,
+                onToolCalls: (calls) => runtimeToolCalls = calls,
                 request: request,
               )
             : _generate(
@@ -1995,6 +1997,7 @@ class LlamaEngine implements LlamadartEngine<LlamaEngineCapabilities> {
           stoppedAtLimit: () => generationLimit != null,
           cancelled: request.isCancelled,
           usage: () => generationUsage,
+          runtimeToolCalls: () => runtimeToolCalls,
         ).map((chunk) {
           final limit = generationLimit;
           if (limit != null &&
@@ -2525,6 +2528,7 @@ class LlamaEngine implements LlamadartEngine<LlamaEngineCapabilities> {
     DateTime? templateNow,
     void Function(BackendGenerationLimit limit)? onLimit,
     void Function(LlamaGenerationUsage usage)? onUsage,
+    void Function(List<LlamaCompletionChunkToolCall> calls)? onToolCalls,
     required GenerationRequest request,
   }) async* {
     _ensureReady();
@@ -2570,6 +2574,10 @@ class LlamaEngine implements LlamadartEngine<LlamaEngineCapabilities> {
           yield token;
         }
         _reportGenerationOutcome(stream, onLimit, onUsage);
+        final calls = runtimeToolCallReporterOf(
+          backend,
+        )?.runtimeToolCallsOf(stream);
+        if (calls != null && calls.isNotEmpty) onToolCalls?.call(calls);
       } catch (error, stackTrace) {
         Error.throwWithStackTrace(
           _generationFailure('Native chat generation', error),

@@ -83,6 +83,10 @@ class ChatCompletionStreamParser {
   /// `ToolChoice.required`. When the parse of the whole reply fails, it is
   /// parsed as partial output instead and its tool calls are withheld. Any
   /// other reply that does not parse throws [LlamaInferenceException].
+  ///
+  /// Calls [runtimeToolCalls] returns after [tokenStream] ends, which the
+  /// runtime parsed itself and never wrote into the text, follow the calls
+  /// parsed from the text when tool-call parsing is enabled.
   static Stream<LlamaCompletionChunk> parse({
     required Stream<String> tokenStream,
     required LlamaChatTemplateResult templateResult,
@@ -94,6 +98,7 @@ class ChatCompletionStreamParser {
     bool Function()? stoppedAtLimit,
     bool Function()? cancelled,
     LlamaGenerationUsage? Function()? usage,
+    List<LlamaCompletionChunkToolCall>? Function()? runtimeToolCalls,
   }) async* {
     var result = templateResult;
     var tokens = tokenStream;
@@ -128,6 +133,7 @@ class ChatCompletionStreamParser {
       stoppedAtLimit: stoppedAtLimit,
       cancelled: cancelled,
       usage: usage,
+      runtimeToolCalls: runtimeToolCalls,
     );
   }
 
@@ -142,6 +148,7 @@ class ChatCompletionStreamParser {
     bool Function()? stoppedAtLimit,
     bool Function()? cancelled,
     LlamaGenerationUsage? Function()? usage,
+    List<LlamaCompletionChunkToolCall>? Function()? runtimeToolCalls,
   }) async* {
     final buffer = StringBuffer();
     var streamedContent = '';
@@ -627,6 +634,26 @@ class ChatCompletionStreamParser {
     if (endedAtLimit && !wasCancelled && parsesLfmToolChannels) {
       final partial = parseOutput(isPartial: true);
       if (partial.partialToolCalls.isNotEmpty) parsed = partial;
+    }
+    final runtimeCalls = parseToolCallsEnabled
+        ? runtimeToolCalls?.call() ?? const <LlamaCompletionChunkToolCall>[]
+        : const <LlamaCompletionChunkToolCall>[];
+    if (runtimeCalls.isNotEmpty) {
+      final calls = [...parsed.toolCalls, ...runtimeCalls];
+      parsed = ChatParseResult(
+        content: parsed.content,
+        reasoningContent: parsed.reasoningContent,
+        toolCalls: [
+          for (var i = 0; i < calls.length; i++)
+            LlamaCompletionChunkToolCall(
+              index: i,
+              id: calls[i].id,
+              type: calls[i].type,
+              function: calls[i].function,
+            ),
+        ],
+        partialToolCalls: parsed.partialToolCalls,
+      );
     }
 
     final finalReasoning = parsesLfmToolChannels

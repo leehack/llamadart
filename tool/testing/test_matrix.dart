@@ -1268,6 +1268,17 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
         'LiteRT-LM Web conversation serialization, runtime capability probe, ChatSession history or system prompts. Repeat with the affected model/backend; no other browser/backend or tool/media/template support is implied.',
   ),
   TestMatrixRow(
+    id: 'litert-lm-web-tool-calling',
+    tier: 'targeted',
+    mode: 'local-only',
+    covers:
+        'Web manual tool calls from the runtime tool_calls, tool results used in the answer, matching pinned JS reference, no-tools control, cancellation/reuse and reset',
+    command:
+        'dart run tool/testing/run_local_e2e.dart --scenario litert-lm-web-tool-calling --model-path <existing-model.litertlm> --backend cpu',
+    useWhen:
+        'LiteRT-LM Web tool declarations, tool-call/result serialization, the preface.tools probe or tool-call parsing. Repeat with the affected model/backend; automatic tool loops stay out of scope (#919).',
+  ),
+  TestMatrixRow(
     id: 'litert-lm-json-schema',
     tier: 'high-risk',
     mode: 'local-only; macOS arm64 CPU',
