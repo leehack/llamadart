@@ -535,7 +535,7 @@
       ],
       "exemption": {
         "issue": "https://github.com/leehack/llamadart/issues/1196",
-        "reason": "The existing C06.history and tools packs cover native profiles, not the LiteRT-LM Web preface path that carries history, system prompts and manual tool calls (#1790). Production-path Chrome tests cover ordered text, tool declaration/call/result wire shapes, old/missing APIs and the preface.tools probe, typed rejection and reset/cancellation isolation; the maintained litert-lm-web-text-history and litert-lm-web-tool-calling local runners compare a pinned JS reference with bypass and no-tools controls on an identified browser/model. No versioned Web validation profile exists yet (#1196); media/template parity and automatic tool loops (#919) stay out of scope. No model qualification is inferred from these inventory bindings.",
+        "reason": "The existing C06.history pack covers native GGUF profiles, not the LiteRT-LM Web preface path that carries history and system prompts (and the tool turns of litert-web-tool-calling-profile). Production-path Chrome tests cover ordered text, old/missing APIs, typed rejection and reset/cancellation isolation; the maintained litert-lm-web-text-history local runner compares a pinned JS reference and preface-bypass controls on an identified browser/model. No versioned Web validation profile exists yet (#1196); media/template parity stays out of scope. No model qualification is inferred from these inventory bindings.",
         "id": "litert-web-text-history-profile"
       }
     },
@@ -584,10 +584,19 @@
     },
     {
       "surfaces": [
-        "capability:LlamaEngineCapabilities.supportsToolCalling",
-        "matrix:Tool calling"
+        "capability:LlamaEngineCapabilities.supportsToolCalling"
       ],
       "pack": "tools"
+    },
+    {
+      "surfaces": [
+        "matrix:Tool calling"
+      ],
+      "exemption": {
+        "issue": "https://github.com/leehack/llamadart/issues/1196",
+        "reason": "The row's native and WebGPU columns are the tools pack's routes (bound through capability:supportsToolCalling); its LiteRT-LM Web column has no versioned Web validation profile. That column (manual tool calling, #1790) is covered by production-path Chrome tests of the preface.tools probe, declaration/call/result wire shapes, runtime tool_calls carried beside text in either order, typed refusals and cancel/reset, and by the maintained litert-lm-web-tool-calling local runner, which compares a pinned @litert-lm/core@0.19.0 reference and a no-tools control on an identified browser/model. Automatic loops stay out of scope (#919). No model qualification is inferred.",
+        "id": "litert-web-tool-calling-profile"
+      }
     },
     {
       "surfaces": [

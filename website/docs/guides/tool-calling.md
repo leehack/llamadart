@@ -619,7 +619,8 @@ LiteRT-LM Web runs manual tool calling through `LlamaBackend.withTextHistory()`
 loaded runtime reads `preface.tools`; `supportsToolCalling` reports it, and the
 default constructors report `false`. Tools go to the runtime's own template, the
 runtime parses the model's calls into `tool_calls`, and `create` returns them as
-`toolCalls`. Add one `LlamaToolResultContent` message per call, as in the
+`toolCalls`; text the model writes before or after a call stays the reply's
+content. Add one `LlamaToolResultContent` message per call, as in the
 manual loop above; assistant calls and results reach the runtime in the shape
 native LiteRT-LM sends. `ToolChoice.none` declares no tools, while
 `ToolChoice.required`, `parallelToolCalls`, tool-result `content` and media

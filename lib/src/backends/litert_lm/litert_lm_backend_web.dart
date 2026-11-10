@@ -9,9 +9,11 @@ import 'dart:math' as math;
 
 import 'package:web/web.dart';
 
+import '../../core/engine/chat_template_renderer.dart';
 import '../../core/engine/engine_observer.dart';
 import '../../core/models/chat/content_part.dart';
 import '../../core/models/chat/chat_message.dart';
+import '../../core/models/chat/completion_chunk.dart';
 import '../../core/models/inference/tool_choice.dart';
 import '../../core/models/tools/tool_definition.dart';
 import '../../core/cache_policy.dart';
@@ -79,6 +81,8 @@ class LiteRtLmBackend
   _LiteRtLmWebRun? _activeRun;
   _LiteRtLmWebRun? _queuedRun;
   final Expando<Future<void>> _conversationDeletes = Expando<Future<void>>();
+  final _LiteRtLmWebRuntimeToolCalls _runtimeToolCalls =
+      _LiteRtLmWebRuntimeToolCalls();
   LlamaLogLevel _logLevel = LlamaLogLevel.warn;
   bool _isReady = false;
   bool _supportsTextHistory = false;
@@ -112,7 +116,9 @@ class LiteRtLmBackend
     Duration? readyTimeout,
   }) : _moduleUrl = moduleUrl,
        _readyTimeout = readyTimeout ?? _engineReadyTimeout,
-       _preferredBackend = _normalizeBackendOverride(preferredBackend);
+       _preferredBackend = _normalizeBackendOverride(preferredBackend) {
+    registerRuntimeToolCallReporter(this, _runtimeToolCalls);
+  }
 
   /// Creates a backend with ordered system/user/assistant text history.
   ///
@@ -334,8 +340,12 @@ class LiteRtLmBackend
     List<Map<String, Object?>> history = const [],
     List<Map<String, dynamic>> tools = const [],
   }) {
-    final run = _LiteRtLmWebRun();
+    // Calls to declared tools go to the engine beside the text; any other
+    // runtime call stays literal JSON text.
+    final run = _LiteRtLmWebRun(reportsToolCalls: tools.isNotEmpty);
     late final StreamController<List<int>> controller;
+    // The engine looks calls up by the identity of the stream it was given.
+    late final Stream<List<int>> stream = controller.stream;
     StreamSubscription<List<int>>? subscription;
     controller = StreamController<List<int>>(
       onListen: () {
@@ -367,6 +377,11 @@ class LiteRtLmBackend
               controller.add,
               onError: controller.addError,
               onDone: () {
+                if (run.toolCalls.isNotEmpty) {
+                  _runtimeToolCalls.calls[stream] = List.unmodifiable(
+                    run.toolCalls,
+                  );
+                }
                 _finishRun(run);
                 unawaited(controller.close());
               },
@@ -390,7 +405,7 @@ class LiteRtLmBackend
             .whenComplete(() => _finishRun(run));
       },
     );
-    return controller.stream;
+    return stream;
   }
 
   /// Runs one generation for [generate].
@@ -443,7 +458,7 @@ class LiteRtLmBackend
         return;
       }
       final stream = _withScopedConsoleGuardedStream(
-        _streamConversation(conversation, message),
+        _streamConversation(conversation, message, run),
       );
       await for (final chunk in _applyStopSequences(
         stream,
@@ -940,6 +955,7 @@ class LiteRtLmBackend
   Stream<String> _streamConversation(
     _LiteRtLmWebConversation conversation,
     JSAny message,
+    _LiteRtLmWebRun run,
   ) async* {
     final reader = conversation.sendMessageStreaming(message).getReader();
     try {
@@ -957,7 +973,7 @@ class LiteRtLmBackend
           break;
         }
 
-        final text = _extractTextChunk(result.value);
+        final text = _extractTextChunk(result.value, run);
         if (text.isNotEmpty) {
           yield text;
         }
@@ -1049,7 +1065,9 @@ class LiteRtLmBackend
     return stopIndex;
   }
 
-  String _extractTextChunk(JSAny? value) {
+  /// The text of the streamed message [value]. Its runtime-parsed tool calls
+  /// go to [run] when it reports them, otherwise into the text as JSON.
+  String _extractTextChunk(JSAny? value, _LiteRtLmWebRun run) {
     if (value == null) {
       return '';
     }
@@ -1081,15 +1099,38 @@ class LiteRtLmBackend
         }
       }
     }
-    // The runtime parses the model's calls into `tool_calls`; the generic
-    // JSON envelope hands them to the Dart parser, as native LiteRT-LM does.
     final toolCalls = obj.getProperty<JSAny?>('tool_calls'.toJS);
     if (toolCalls != null &&
         toolCalls.isA<JSArray>() &&
         (toolCalls as JSArray).toDart.isNotEmpty) {
-      buffer.write(jsonEncode({'tool_calls': toolCalls.dartify()}));
+      final calls = toolCalls.dartify()! as List<Object?>;
+      if (run.reportsToolCalls) {
+        for (final call in calls) {
+          run.toolCalls.add(_runtimeToolCall(call, run.toolCalls.length));
+        }
+      } else {
+        buffer.write(jsonEncode({'tool_calls': calls}));
+      }
     }
     return buffer.toString();
+  }
+
+  /// [call], a runtime `ToolCall`, as the [index]th call of a reply.
+  LlamaCompletionChunkToolCall _runtimeToolCall(Object? call, int index) {
+    final map = call is Map ? call : const {};
+    final function = map['function'] is Map ? map['function'] as Map : const {};
+    final arguments = function['arguments'];
+    return LlamaCompletionChunkToolCall(
+      index: index,
+      id: map['id'] is String ? map['id'] as String : null,
+      type: 'function',
+      function: LlamaCompletionChunkFunction(
+        name: function['name'] is String ? function['name'] as String : null,
+        arguments: arguments is String
+            ? arguments
+            : jsonEncode(arguments ?? const {}),
+      ),
+    );
   }
 
   bool _hasMediaParts(List<LlamaContentPart>? parts) {
@@ -1594,17 +1635,40 @@ final class _TextHistoryLiteRtLmBackend extends LiteRtLmBackend
 
   // The runtime owns its tokenizer/template. Dart's budget fallback must see
   // every turn, while generation still receives the original structured input.
+  // The engine parses with the text-only form and counts the session budget
+  // from the plain render of the full form, which adds what the preface
+  // carries for tools: their declarations and each assistant call.
   static const String _accountingTemplate =
       '[{% for message in messages %}'
       '{"role":{{ message["role"] | tojson }},'
       '"content":{{ (message["content"] or "") | tojson }}}'
       '{% if not loop.last %},{% endif %}'
       '{% endfor %}]';
+  static const String _toolAccountingTemplate =
+      '[{% if tools %}{"tools":{{ tools | tojson }}},{% endif %}'
+      '{% for message in messages %}'
+      '{"role":{{ message["role"] | tojson }},'
+      '"content":{{ (message["content"] or "") | tojson }}'
+      '{% if message["tool_calls"] %}'
+      '{% if message["reasoning_content"] %}'
+      ',"reasoning_content":{{ message["reasoning_content"] | tojson }}'
+      '{% endif %}'
+      ',"tool_calls":{{ message["tool_calls"] | tojson }}'
+      '{% endif %}'
+      '{% if message["name"] %},"name":{{ message["name"] | tojson }}{% endif %}'
+      '}'
+      '{% if not loop.last %},{% endif %}'
+      '{% endfor %}]';
 
   @override
   Future<Map<String, String>> modelMetadata(int modelHandle) async {
     final metadata = await super.modelMetadata(modelHandle);
-    metadata['tokenizer.chat_template'] = _accountingTemplate;
+    metadata[parsingChatTemplateMetadataKey] = _accountingTemplate;
+    metadata['tokenizer.chat_template'] = _toolAccountingTemplate;
+    if (supportsToolCalling) {
+      metadata['llamadart.litert_lm_web.chat_scope'] =
+          'system-user-assistant-text-and-tools';
+    }
     metadata['llamadart.litert_lm_web.prompt_accounting'] =
         'utf8-byte-estimate';
     return metadata;
@@ -1802,9 +1866,29 @@ final class _TextHistoryLiteRtLmBackend extends LiteRtLmBackend
 
 /// One [LiteRtLmBackend.generate] call.
 final class _LiteRtLmWebRun {
+  _LiteRtLmWebRun({this.reportsToolCalls = false});
+
+  /// Whether runtime-parsed tool calls go to [toolCalls] rather than into the
+  /// text.
+  final bool reportsToolCalls;
+
+  /// The runtime-parsed tool calls so far, in order.
+  final List<LlamaCompletionChunkToolCall> toolCalls = [];
+
   /// Completes with true when a queued run may start, or false when it ends
   /// without starting.
   final Completer<bool> admission = Completer<bool>();
+}
+
+/// The runtime-parsed tool calls of each finished generation stream.
+final class _LiteRtLmWebRuntimeToolCalls implements BackendRuntimeToolCalls {
+  final Expando<List<LlamaCompletionChunkToolCall>> calls =
+      Expando<List<LlamaCompletionChunkToolCall>>();
+
+  @override
+  List<LlamaCompletionChunkToolCall>? runtimeToolCallsOf(
+    Stream<List<int>> generation,
+  ) => calls[generation];
 }
 
 @JS()

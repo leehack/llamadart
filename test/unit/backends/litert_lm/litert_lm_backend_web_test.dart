@@ -699,6 +699,13 @@ void main() {
       final capabilities = await engine.capabilities;
       expect(capabilities.supportsToolCalling, isTrue);
       expect(capabilities.supportsMultiTurnChat, isTrue);
+      expect(
+        await engine.getMetadata(),
+        containsPair(
+          'llamadart.litert_lm_web.chat_scope',
+          'system-user-assistant-text-and-tools',
+        ),
+      );
 
       final session = api.ChatSession(engine, systemPrompt: 'Use tools.');
       final reply = await session
@@ -794,12 +801,117 @@ void main() {
       ]);
     });
 
-    test('ToolChoice.none declares no tools', () async {
+    for (final (name, spi.LlamaBackend Function() factory, history, probes) in [
+      ('the legacy constructor', LiteRtLmBackend.new, true, 0),
+      (
+        'a runtime without text history',
+        LiteRtLmBackend.withTextHistory,
+        false,
+        1,
+      ),
+      ('a runtime with text history', LiteRtLmBackend.withTextHistory, true, 2),
+    ]) {
+      test('$name runs $probes load probes', () async {
+        final fake = _installQueueFakeEngine(
+          textHistory: history,
+          toolDeclarations: true,
+        );
+        final backend = factory();
+        addTearDown(backend.dispose);
+        await backend.modelLoadFromUrl('model.litertlm', const ModelParams());
+        expect(fake.conversationsCreated, probes);
+        expect(
+          (backend as spi.BackendChatScope).supportsToolCalling,
+          probes == 2,
+        );
+      });
+    }
+
+    test('the session budget counts tool declarations and calls', () async {
       final prefaces = <Object?>[];
       _installFakeEngine(
         textHistory: true,
         toolDeclarations: true,
-        chunks: [_messageChunk('plain')],
+        chunks: [_messageChunk('ok')],
+        onCreateConversation: (config) =>
+            prefaces.add(config.getProperty<JSAny?>('preface'.toJS)?.dartify()),
+      );
+      final engine = LlamaEngine(spi.LlamaBackend.withTextHistory());
+      addTearDown(engine.dispose);
+      await engine.loadModelFromUrl(
+        'model.litertlm',
+        modelParams: const ModelParams(contextSize: 256),
+      );
+      final bulky = 'x' * 1200;
+      final call = LlamaChatMessage.withContent(
+        role: LlamaChatRole.assistant,
+        content: [
+          const LlamaThinkingContent('plan'),
+          LlamaToolCallContent(
+            name: 'get_weather',
+            arguments: {'city': bulky},
+            rawJson: jsonEncode({'city': bulky}),
+          ),
+        ],
+      );
+      const result = LlamaChatMessage.withContent(
+        role: LlamaChatRole.tool,
+        content: [LlamaToolResultContent(name: 'get_weather', result: 'ok')],
+      );
+      const user = LlamaChatMessage.fromText(
+        role: LlamaChatRole.user,
+        text: 'Weather?',
+      );
+      final accounting = await engine.chatTemplate(
+        [user, call, result],
+        tools: [weather],
+      );
+      final serialized = jsonDecode(accounting.prompt) as List;
+      expect(serialized.first, {
+        'tools': [weatherJson],
+      });
+      expect((serialized[2] as Map)['reasoning_content'], 'plan');
+      expect(
+        (((serialized[2] as Map)['tool_calls'] as List).single
+            as Map)['function']['arguments'],
+        {'city': bulky},
+      );
+      expect((serialized[3] as Map)['name'], 'get_weather');
+
+      final session = api.ChatSession(engine);
+      session.addMessage(user);
+      session.addMessage(call);
+      session.addMessage(result);
+      session.addMessage(
+        const LlamaChatMessage.fromText(
+          role: LlamaChatRole.assistant,
+          text: 'Sunny.',
+        ),
+      );
+      await session
+          .create(
+            const [LlamaTextContent('And tomorrow?')],
+            tools: [weather],
+            params: const GenerationParams(maxTokens: 1),
+          )
+          .collect();
+      expect(prefaces.single, {
+        'tools': [weatherJson],
+      }, reason: 'The completed tool turn exceeds the budget once counted.');
+    });
+
+    test('ToolChoice.none declares no tools and keeps a runtime call as '
+        'literal text', () async {
+      final prefaces = <Object?>[];
+      _installFakeEngine(
+        textHistory: true,
+        toolDeclarations: true,
+        chunks: [
+          _messageChunk('plain '),
+          _toolCallChunk([
+            ('get_weather', {'city': 'Paris'}),
+          ]),
+        ],
         onCreateConversation: (config) =>
             prefaces.add(config.getProperty<JSAny?>('preface'.toJS)?.dartify()),
       );
@@ -815,9 +927,126 @@ void main() {
             toolChoice: api.ToolChoice.none,
           )
           .collect();
-      expect(reply.text, 'plain');
+      expect(reply.toolCalls, isEmpty);
+      expect(
+        reply.text,
+        'plain ${jsonEncode({
+          'tool_calls': [
+            {
+              'type': 'function',
+              'function': {
+                'name': 'get_weather',
+                'arguments': {'city': 'Paris'},
+              },
+            },
+          ],
+        })}',
+      );
       expect(prefaces, [null]);
     });
+
+    for (final (name, chunks, text) in <(String, List<JSAny?>, String)>[
+      (
+        'text before the call',
+        [
+          _messageChunk('Let me check.'),
+          _toolCallChunk([
+            ('get_weather', {'city': 'Paris'}),
+          ]),
+        ],
+        'Let me check.',
+      ),
+      (
+        'text after the call',
+        [
+          _toolCallChunk([
+            ('get_weather', {'city': 'Paris'}),
+          ]),
+          _messageChunk('Checking now.'),
+        ],
+        'Checking now.',
+      ),
+      (
+        'calls and text split across chunks',
+        [
+          _messageChunk('First '),
+          _toolCallChunk([
+            ('get_weather', {'city': 'Paris'}),
+          ], text: 'Paris, '),
+          _messageChunk('then '),
+          _toolCallChunk([
+            ('get_weather', {'city': 'Oslo'}),
+          ]),
+          _messageChunk('Oslo.'),
+        ],
+        'First Paris, then Oslo.',
+      ),
+    ]) {
+      for (final (route, spi.LlamaBackend Function() factory) in [
+        ('router', spi.LlamaBackend.withTextHistory),
+        ('direct backend', LiteRtLmBackend.withTextHistory),
+      ]) {
+        test('keeps runtime tool calls and the reply text with $name '
+            '($route)', () async {
+          final prefaces = <Object?>[];
+          _installFakeEngine(
+            textHistory: true,
+            toolDeclarations: true,
+            chunks: const [],
+            chunksForRun: (run) => run == 0 ? chunks : [_messageChunk('Done.')],
+            onCreateConversation: (config) => prefaces.add(
+              config.getProperty<JSAny?>('preface'.toJS)?.dartify(),
+            ),
+          );
+          final engine = LlamaEngine(factory());
+          addTearDown(engine.dispose);
+          await engine.loadModelFromUrl('model.litertlm');
+          final session = api.ChatSession(engine);
+          final reply = await session
+              .create(const [LlamaTextContent('Weather?')], tools: [weather])
+              .collect();
+          final cities = name.startsWith('calls')
+              ? ['Paris', 'Oslo']
+              : ['Paris'];
+          expect(reply.text, text);
+          expect(reply.finishReason, api.LlamaFinishReason.toolCalls);
+          expect(reply.toolCalls.map((call) => call.name), [
+            for (final _ in cities) 'get_weather',
+          ]);
+          expect(reply.toolCalls.map((call) => call.arguments), [
+            for (final city in cities) {'city': city},
+          ]);
+          for (final call in reply.toolCalls) {
+            session.addMessage(
+              LlamaChatMessage.withContent(
+                role: LlamaChatRole.tool,
+                content: [
+                  LlamaToolResultContent(
+                    id: call.id,
+                    name: call.name,
+                    result: 'ok',
+                  ),
+                ],
+              ),
+            );
+          }
+          await session.create(const [], tools: [weather]).collect();
+          final replayed =
+              ((prefaces.last! as Map)['messages'] as List)[1] as Map;
+          expect(replayed['content'], text);
+          expect(replayed['tool_calls'], [
+            for (final city in cities)
+              {
+                'type': 'function',
+                'function': {
+                  'name': 'get_weather',
+                  'arguments': {'city': city},
+                },
+              },
+          ]);
+        });
+      }
+    }
 
     test('a runtime that ignores preface.tools reports no tool calling and '
         'rejects tools and tool history before inference', () async {

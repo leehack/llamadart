@@ -7,9 +7,12 @@ import pathlib
 import subprocess
 import threading
 
+# Suite name: (test file, marker of the served model identity).
 SUITES = {
-    'text-history': 'test/e2e/backends/litert_lm_text_history_web_e2e_test.dart',
-    'tool-calling': 'test/e2e/backends/litert_lm_tool_calling_web_e2e_test.dart',
+    'text-history': ('test/e2e/backends/litert_lm_text_history_web_e2e_test.dart',
+                     'LITERT_TEXT_HISTORY_INPUT'),
+    'tool-calling': ('test/e2e/backends/litert_lm_tool_calling_web_e2e_test.dart',
+                     'LITERT_TOOLS_INPUT'),
 }
 
 from serve_static_with_headers import CoiStaticHandler, ThreadingTcpServer
@@ -64,13 +67,14 @@ def main():
         thread = threading.Thread(target=server.serve_forever, daemon=True)
         thread.start()
         try:
-            print('LITERT_TEXT_HISTORY_INPUT ' + json.dumps(manifest), flush=True)
+            test_file, marker = SUITES[args.suite]
+            print(marker + ' ' + json.dumps(manifest), flush=True)
             return subprocess.call([
                 'dart', 'test', '-p',
                 'safari' if args.browser == 'safari' else 'chrome-webgpu',
                 '--run-skipped',
                 '-t', 'local-only',
-                SUITES[args.suite],
+                test_file,
             ])
         finally:
             server.shutdown()

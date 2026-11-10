@@ -88,7 +88,7 @@ void main() {
       'module': moduleUrl,
       'browser': window.navigator.userAgent,
     };
-    print('LITERT_TOOLS_INPUT ${jsonEncode(identity)}');
+    print('LITERT_TOOLS_IDENTITY ${jsonEncode(identity)}');
 
     // The published runtime alone: its conversation parses the model's call
     // into `tool_calls` and answers from a 0.19.0 tool message.
@@ -163,6 +163,17 @@ void main() {
     ];
 
     const directSystem = {'role': 'system', 'content': system};
+    // Asks for text before the call, so the reply can carry both.
+    const preambleSystem =
+        'You are a weather assistant. Start every reply with the sentence '
+        '"One moment, checking." and then call get_weather.';
+    final directPreamble = await reference(
+      [
+        {'role': 'system', 'content': preambleSystem},
+      ],
+      question,
+      tools: true,
+    );
     final directCall = await reference([directSystem], question, tools: true);
     final directCalls = callsOf(directCall);
     final directNoTools = await reference(
@@ -209,6 +220,8 @@ void main() {
         'noToolsCalls': callsOf(directNoTools),
         'noToolsText': textOf(directNoTools),
         'answer': textOf(directAnswer),
+        'preambleText': textOf(directPreamble),
+        'preambleCalls': callsOf(directPreamble),
       })}',
     );
     expect(
@@ -295,6 +308,32 @@ void main() {
     ], params: params).collect();
     expect(plain.toolCalls, isEmpty);
 
+    final preamble = await engine
+        .create(
+          const [
+            LlamaChatMessage.fromText(
+              role: LlamaChatRole.system,
+              text: preambleSystem,
+            ),
+            LlamaChatMessage.fromText(role: LlamaChatRole.user, text: question),
+          ],
+          tools: [weather],
+          params: params,
+        )
+        .collect();
+    // Whatever text the runtime streams around its calls stays content and
+    // no call is lost, as in the direct reference.
+    expect(preamble.toolCalls.map((c) => c.name), [
+      for (final c in callsOf(directPreamble))
+        ((c! as Map)['function'] as Map)['name'],
+    ]);
+    expect(
+      preamble.text.trim(),
+      textOf(
+        directPreamble,
+      ).replaceAll(RegExp(r'<think>[\s\S]*?</think>'), '').trim(),
+    );
+
     // Cancel a tool request after its first chunk, then reuse the engine.
     session.reset();
     final cancelled = Completer<void>();
@@ -330,6 +369,10 @@ void main() {
         'callThinkingChars': call.thinking.length,
         'answer': used.text,
         'noToolsText': plain.text,
+        'preambleText': preamble.text,
+        'preambleCalls': [
+          for (final c in preamble.toolCalls) {'name': c.name, 'arguments': c.arguments},
+        ],
         'cancelChunks': cancelChunks,
         'reuseCall': [
           for (final c in reused.toolCalls) {'name': c.name, 'arguments': c.arguments},
