@@ -8,6 +8,7 @@ import 'dart:js_interop_unsafe';
 
 import 'package:llamadart/llamadart.dart' as api;
 import 'package:llamadart/backend.dart' as spi;
+import 'package:llamadart/src/backends/backend.dart' as internal;
 import 'package:llamadart/src/backends/litert_lm/litert_lm_backend_web.dart';
 import 'package:llamadart/src/backends/web/web_backend.dart';
 import 'package:llamadart/src/core/engine/engine.dart';
@@ -1239,50 +1240,48 @@ void main() {
       expect(prompts, 0);
     });
 
-    test(
-      'automatic tool loops stay refused while tools are supported',
-      () async {
-        var prompts = 0;
-        var toolRuns = 0;
-        _installFakeEngine(
-          textHistory: true,
-          toolDeclarations: true,
-          chunks: [
-            _toolCallChunk([
-              ('get_weather', {'city': 'Paris'}),
-            ]),
-          ],
-          onPrompt: (_) => prompts++,
-        );
-        final engine = LlamaEngine(spi.LlamaBackend.withTextHistory());
-        addTearDown(engine.dispose);
-        await engine.loadModelFromUrl('model.litertlm');
-        expect((await engine.capabilities).supportsToolCalling, isTrue);
-        final session = api.ChatSession(engine, maxContextTokens: 0);
-        final handled = api.ToolDefinition(
-          name: 'get_weather',
-          description: 'Weather for a city',
-          parameters: [api.ToolParam.string('city', required: true)],
-          handler: (_) async {
-            toolRuns++;
-            return 'sunny';
-          },
-        );
-        await expectLater(
-          session.sendWithTools('Weather in Paris?', tools: [handled]),
-          throwsA(
-            isA<api.LlamaUnsupportedException>().having(
-              (error) => error.message,
-              'diagnostic',
-              contains('@0.19.0'),
-            ),
+    test('automatic tool loops stay refused while tools are supported but the '
+        'runtime reports no token counts', () async {
+      var prompts = 0;
+      var toolRuns = 0;
+      _installFakeEngine(
+        textHistory: true,
+        toolDeclarations: true,
+        chunks: [
+          _toolCallChunk([
+            ('get_weather', {'city': 'Paris'}),
+          ]),
+        ],
+        onPrompt: (_) => prompts++,
+      );
+      final engine = LlamaEngine(spi.LlamaBackend.withTextHistory());
+      addTearDown(engine.dispose);
+      await engine.loadModelFromUrl('model.litertlm');
+      expect((await engine.capabilities).supportsToolCalling, isTrue);
+      final session = api.ChatSession(engine, maxContextTokens: 0);
+      final handled = api.ToolDefinition(
+        name: 'get_weather',
+        description: 'Weather for a city',
+        parameters: [api.ToolParam.string('city', required: true)],
+        handler: (_) async {
+          toolRuns++;
+          return 'sunny';
+        },
+      );
+      await expectLater(
+        session.sendWithTools('Weather in Paris?', tools: [handled]),
+        throwsA(
+          isA<api.LlamaUnsupportedException>().having(
+            (error) => error.message,
+            'diagnostic',
+            contains('@0.19.0'),
           ),
-        );
-        expect(prompts, 0);
-        expect(toolRuns, 0);
-        expect(session.history, isEmpty);
-      },
-    );
+        ),
+      );
+      expect(prompts, 0);
+      expect(toolRuns, 0);
+      expect(session.history, isEmpty);
+    });
 
     test('a cancelled tool request ends cleanly and the next request on a '
         'reset session declares tools again', () async {
@@ -1320,6 +1319,339 @@ void main() {
           'tools': [weatherJson],
         },
       ]);
+    });
+  });
+
+  group('token-limit reporting', () {
+    const params = api.GenerationParams(maxTokens: 8);
+    final weather = api.ToolDefinition(
+      name: 'get_weather',
+      description: 'Weather for a city',
+      parameters: [api.ToolParam.string('city', required: true)],
+    );
+
+    test('a text-history load enables the benchmark record and probes one '
+        'decoded token; the legacy constructor does neither', () async {
+      for (final textHistory in [false, true]) {
+        final fake = _installCountingFakeEngine(
+          counts: (_, budget) => (decoded: budget, total: 20),
+        );
+        final backend = textHistory
+            ? LiteRtLmBackend.withTextHistory()
+            : LiteRtLmBackend();
+        final support = backend as internal.BackendGenerationLimitSupport;
+        expect(support.generationLimitUnsupportedReason, isNotNull);
+        await backend.modelLoadFromUrl('model.litertlm', const ModelParams());
+        expect(
+          fake.settings.single['benchmarkEnabled'],
+          textHistory ? isTrue : isNull,
+        );
+        expect(fake.prompts, textHistory ? ['Hi'] : isEmpty);
+        expect(fake.budgets, textHistory ? [1] : isEmpty);
+        expect(fake.deleted, fake.created);
+        expect(
+          support.generationLimitUnsupportedReason,
+          textHistory ? isNull : contains('withTextHistory()'),
+        );
+        await backend.dispose();
+        expect(support.generationLimitUnsupportedReason, isNotNull);
+      }
+    });
+
+    for (final (name, configure) in <(String, _CountingFake Function())>[
+      (
+        'no token-count API',
+        () => _installCountingFakeEngine(
+          counts: (_, budget) => (decoded: budget, total: 20),
+          countsApi: false,
+        ),
+      ),
+      (
+        'no benchmark record',
+        () => _installCountingFakeEngine(
+          counts: (_, _) => (decoded: 0, total: 20),
+        ),
+      ),
+      (
+        'a decode count of more than the probe turn',
+        () => _installCountingFakeEngine(
+          counts: (turn, _) => (decoded: turn == 0 ? 2 : 1, total: 20),
+        ),
+      ),
+      (
+        'a context count without the prefill',
+        () => _installCountingFakeEngine(
+          counts: (_, _) => (decoded: 1, total: 1),
+        ),
+      ),
+      (
+        'a probe that fills the context',
+        () => _installCountingFakeEngine(
+          counts: (_, _) => (decoded: 1, total: 4096),
+        ),
+      ),
+      (
+        'no resolved context size',
+        () => _installCountingFakeEngine(
+          counts: (_, budget) => (decoded: budget, total: 20),
+          maxNumTokens: null,
+        ),
+      ),
+      (
+        'a failing count',
+        () => _installCountingFakeEngine(counts: (_, _) => null),
+      ),
+    ]) {
+      test('a runtime with $name keeps automatic tool loops refused and '
+          'reports no limit', () async {
+        final fake = configure();
+        final engine = LlamaEngine(spi.LlamaBackend.withTextHistory());
+        addTearDown(engine.dispose);
+        await engine.loadModelFromUrl('model.litertlm');
+        expect((await engine.capabilities).supportsToolCalling, isTrue);
+        final session = api.ChatSession(engine, maxContextTokens: 0);
+        await expectLater(
+          session.completeWithTools(
+            const [api.LlamaTextContent('Weather?')],
+            tools: [weather],
+            params: params,
+          ),
+          throwsA(
+            isA<api.LlamaUnsupportedException>().having(
+              (error) => error.message,
+              'diagnostic',
+              allOf(contains('getTokenCount'), contains('@0.19.0')),
+            ),
+          ),
+        );
+        final turns = fake.prompts.length;
+        // A reply at the budget is not reported without a passed probe.
+        fake.counts = (_, _) => (decoded: 8, total: 20);
+        final chunks = await engine.create(const [
+          api.LlamaChatMessage.fromText(
+            role: api.LlamaChatRole.user,
+            text: 'hi',
+          ),
+        ], params: params).toList();
+        expect(chunks.last.choices.single.finishReason, 'stop');
+        expect(fake.prompts.length, turns + 1);
+      });
+    }
+
+    for (final (name, factory) in [
+      ('LlamaBackend.withTextHistory()', spi.LlamaBackend.withTextHistory),
+      ('LiteRtLmBackend.withTextHistory()', LiteRtLmBackend.withTextHistory),
+    ]) {
+      for (final (counts, limit)
+          in <(_TurnCounts?, internal.BackendGenerationLimit?)>[
+            ((decoded: 7, total: 4095), null),
+            (
+              (decoded: 8, total: 100),
+              internal.BackendGenerationLimit.maxTokens,
+            ),
+            (
+              (decoded: 9, total: 100),
+              internal.BackendGenerationLimit.maxTokens,
+            ),
+            (
+              (decoded: 7, total: 4096),
+              internal.BackendGenerationLimit.contextSize,
+            ),
+            (
+              (decoded: 8, total: 4097),
+              internal.BackendGenerationLimit.contextSize,
+            ),
+            ((decoded: 7, total: 7), internal.BackendGenerationLimit.runtime),
+            ((decoded: 0, total: 100), internal.BackendGenerationLimit.runtime),
+            (null, internal.BackendGenerationLimit.runtime),
+          ]) {
+        test('$name reports $counts at maxTokens 8 and context 4096 as '
+            '${limit?.name ?? 'finished'}', () async {
+          _installCountingFakeEngine(
+            counts: (turn, budget) =>
+                turn == 0 ? (decoded: budget, total: 20) : counts,
+          );
+          final engine = LlamaEngine(factory());
+          addTearDown(engine.dispose);
+          await engine.loadModelFromUrl(
+            'model.litertlm',
+            modelParams: const ModelParams(contextSize: 4096),
+          );
+          final chunks = await engine.create(const [
+            api.LlamaChatMessage.fromText(
+              role: api.LlamaChatRole.user,
+              text: 'hi',
+            ),
+          ], params: params).toList();
+          expect(chunks.map((chunk) => chunk.text).join(), 'reply');
+          final last = chunks.last;
+          expect(
+            last.choices.single.finishReason,
+            limit == null ? 'stop' : 'length',
+          );
+          expect(completionGenerationLimit(last), limit);
+
+          final raw = engine.generate('hi', params: params);
+          expect(await raw.join(), 'reply');
+          expect(rawGenerationLimit(raw), limit);
+        });
+      }
+    }
+
+    test('the limit comes from the engine-resolved context size', () async {
+      _installCountingFakeEngine(
+        counts: (turn, budget) => turn == 0
+            ? (decoded: budget, total: 20)
+            : (decoded: 2, total: 1024),
+        maxNumTokens: 1024,
+      );
+      final engine = LlamaEngine(spi.LlamaBackend.withTextHistory());
+      addTearDown(engine.dispose);
+      await engine.loadModelFromUrl(
+        'model.litertlm',
+        modelParams: const ModelParams(contextSize: 4096),
+      );
+      final last = await engine.create(const [
+        api.LlamaChatMessage.fromText(role: api.LlamaChatRole.user, text: 'hi'),
+      ], params: params).last;
+      expect(
+        completionGenerationLimit(last),
+        internal.BackendGenerationLimit.contextSize,
+      );
+    });
+
+    test('an automatic tool loop runs a call from a finished reply and '
+        'answers from its result', () async {
+      final ran = <Object?>[];
+      final fake = _installCountingFakeEngine(
+        chunks: (turn) => [
+          if (turn == 1)
+            _toolCallChunk([
+              ('get_weather', {'city': 'Paris'}),
+            ])
+          else
+            _messageChunk('Sunny.'),
+        ],
+        counts: (turn, budget) =>
+            turn == 0 ? (decoded: budget, total: 20) : (decoded: 7, total: 90),
+      );
+      final engine = LlamaEngine(spi.LlamaBackend.withTextHistory());
+      addTearDown(engine.dispose);
+      await engine.loadModelFromUrl('model.litertlm');
+      final session = api.ChatSession(engine, maxContextTokens: 0);
+      final result = await session.completeWithTools(
+        const [api.LlamaTextContent('Weather in Paris?')],
+        tools: [
+          api.ToolDefinition(
+            name: 'get_weather',
+            description: 'Weather for a city',
+            parameters: [api.ToolParam.string('city', required: true)],
+            handler: (call) async {
+              ran.add(call.raw);
+              return 'sunny';
+            },
+          ),
+        ],
+        params: params,
+      );
+      expect(result.stopReason, api.LlamaToolLoopStopReason.completed);
+      expect(result.completion.text, 'Sunny.');
+      expect(ran, [
+        {'city': 'Paris'},
+      ]);
+      expect(fake.prompts.skip(1).first, 'Weather in Paris?');
+      expect(fake.prompts.length, 3);
+    });
+
+    for (final (name, counts) in [
+      ('at maxTokens', (decoded: 8, total: 90)),
+      ('at the context size', (decoded: 3, total: 4096)),
+    ]) {
+      test('an automatic tool loop stops a reply $name as truncated without '
+          'running its call', () async {
+        var ran = 0;
+        final fake = _installCountingFakeEngine(
+          chunks: (_) => [
+            _toolCallChunk([
+              ('get_weather', {'city': 'Paris'}),
+            ]),
+          ],
+          counts: (turn, budget) =>
+              turn == 0 ? (decoded: budget, total: 20) : counts,
+        );
+        final engine = LlamaEngine(spi.LlamaBackend.withTextHistory());
+        addTearDown(engine.dispose);
+        await engine.loadModelFromUrl(
+          'model.litertlm',
+          modelParams: const ModelParams(contextSize: 4096),
+        );
+        final session = api.ChatSession(engine, maxContextTokens: 0);
+        final result = await session.completeWithTools(
+          const [api.LlamaTextContent('Weather in Paris?')],
+          tools: [
+            api.ToolDefinition(
+              name: 'get_weather',
+              description: 'Weather for a city',
+              parameters: [api.ToolParam.string('city', required: true)],
+              handler: (_) async {
+                ran++;
+                return 'sunny';
+              },
+            ),
+          ],
+          params: params,
+        );
+        expect(result.stopReason, api.LlamaToolLoopStopReason.truncated);
+        expect(result.completion.finishReason, api.LlamaFinishReason.length);
+        expect(ran, 0);
+        expect(result.rolledBack, isTrue);
+        expect(session.history, isEmpty);
+        expect(fake.prompts.length, 2);
+      });
+    }
+
+    test('a stop sequence wins over a budget the turn also reached', () async {
+      final fake = _installCountingFakeEngine(
+        chunks: (_) => [_messageChunk('Hello STOP more')],
+        counts: (turn, budget) =>
+            turn == 0 ? (decoded: budget, total: 20) : (decoded: 8, total: 90),
+      );
+      final engine = LlamaEngine(spi.LlamaBackend.withTextHistory());
+      addTearDown(engine.dispose);
+      await engine.loadModelFromUrl('model.litertlm');
+      final chunks = await engine.create(const [
+        api.LlamaChatMessage.fromText(role: api.LlamaChatRole.user, text: 'hi'),
+      ], params: params.copyWith(stopSequences: ['STOP'])).toList();
+      expect(chunks.map((chunk) => chunk.text).join(), 'Hello ');
+      expect(chunks.last.choices.single.finishReason, 'stop');
+      expect(completionGenerationLimit(chunks.last), isNull);
+      expect(fake.countReads, 1);
+    });
+
+    test('a cancel while the counts are read wins over the budget they '
+        'report', () async {
+      final read = Completer<void>();
+      final release = Completer<void>();
+      final fake = _installCountingFakeEngine(
+        counts: (turn, budget) =>
+            turn == 0 ? (decoded: budget, total: 20) : (decoded: 8, total: 90),
+      );
+      final engine = LlamaEngine(spi.LlamaBackend.withTextHistory());
+      addTearDown(engine.dispose);
+      await engine.loadModelFromUrl('model.litertlm');
+      fake.beforeCounts = () {
+        read.complete();
+        return release.future;
+      };
+      final last = engine.create(const [
+        api.LlamaChatMessage.fromText(role: api.LlamaChatRole.user, text: 'hi'),
+      ], params: params).last;
+      await read.future.timeout(const Duration(seconds: 2));
+      engine.cancelGeneration();
+      release.complete();
+      final chunk = await last;
+      expect(chunk.choices.single.finishReason, 'stop');
+      expect(completionGenerationLimit(chunk), isNull);
     });
   });
 
@@ -1482,7 +1814,7 @@ void main() {
             isA<api.LlamaUnsupportedException>().having(
               (error) => error.message,
               'diagnostic',
-              contains('@0.19.0'),
+              contains('withTextHistory()'),
             ),
           ),
         );
@@ -3913,6 +4245,129 @@ void _installFakeEngine({
     }).toJS,
   );
   globalContext.setProperty('LiteRtLmEngine'.toJS, engineClass);
+}
+
+typedef _TurnCounts = ({int decoded, int total});
+
+/// A `@litert-lm/core@0.19.0`-shaped runtime with text history, tool
+/// declarations and per-turn token counts. Turn 0 is the first message sent,
+/// the generation-limit probe on a text-history load.
+final class _CountingFake {
+  _CountingFake(this.counts, this.chunks);
+
+  /// The counts of [turn] at its `maxOutputTokens`, or null to fail the read.
+  _TurnCounts? Function(int turn, int budget) counts;
+  final List<JSAny?> Function(int turn) chunks;
+  final List<Map<String, Object?>> settings = [];
+  final List<String> prompts = [];
+  final List<int> budgets = [];
+  Future<void> Function()? beforeCounts;
+  int created = 0;
+  int deleted = 0;
+  int countReads = 0;
+}
+
+_CountingFake _installCountingFakeEngine({
+  required _TurnCounts? Function(int turn, int budget) counts,
+  List<JSAny?> Function(int turn)? chunks,
+  bool countsApi = true,
+  int? maxNumTokens = 4096,
+}) {
+  final fake = _CountingFake(counts, chunks ?? (_) => [_messageChunk('reply')]);
+  final engineClass = JSObject()
+    ..setProperty(
+      'create'.toJS,
+      ((JSObject settings) {
+        fake.settings.add(
+          (settings.dartify()! as Map<Object?, Object?>)
+              .cast<String, Object?>(),
+        );
+        final engine = JSObject()
+          ..setProperty(
+            'settings'.toJS,
+            {
+              'backend': 3,
+              'mainExecutorSettings': {'maxNumTokens': ?maxNumTokens},
+            }.jsify(),
+          )
+          ..setProperty(
+            'delete'.toJS,
+            (() => Future<JSAny?>.value(null).toJS).toJS,
+          );
+        engine.setProperty(
+          'createConversation'.toJS,
+          ((JSObject config) {
+            fake.created++;
+            final preface = config.getProperty<JSAny?>('preface'.toJS);
+            // @litert-lm/core@0.19.0 serializes the whole preface.
+            if (preface != null) {
+              globalContext
+                  .getProperty<JSObject>('JSON'.toJS)
+                  .callMethod<JSAny?>('stringify'.toJS, preface);
+            }
+            final budget = config
+                .getProperty<JSObject>('sessionConfig'.toJS)
+                .getProperty<JSNumber>('maxOutputTokens'.toJS)
+                .toDartInt;
+            int? turn;
+            final conversation =
+                _fakeConversation(
+                    chunks: const [],
+                    chunksForRun: () {
+                      turn = fake.prompts.length - 1;
+                      fake.budgets.add(budget);
+                      return fake.chunks(turn!);
+                    },
+                    onPrompt: fake.prompts.add,
+                  )
+                  ..setProperty(
+                    'getHistory'.toJS,
+                    (() => Future<JSAny?>.value(<JSAny?>[].toJS).toJS).toJS,
+                  )
+                  ..setProperty(
+                    'delete'.toJS,
+                    (() {
+                      fake.deleted++;
+                      return Future<JSAny?>.value(null).toJS;
+                    }).toJS,
+                  );
+            Future<_TurnCounts> read() async {
+              await fake.beforeCounts?.call();
+              final counts = fake.counts(turn ?? -1, budget);
+              if (counts == null) throw StateError('no counts');
+              return counts;
+            }
+
+            if (countsApi) {
+              conversation
+                ..setProperty(
+                  'getBenchmarkInfo'.toJS,
+                  (() {
+                    fake.countReads++;
+                    return read().then((counts) {
+                      return <String, Object>{
+                        'lastDecodeTokenCount': counts.decoded,
+                        'lastPrefillTokenCount': counts.total - counts.decoded,
+                      }.jsify();
+                    }).toJS;
+                  }).toJS,
+                )
+                ..setProperty(
+                  'getTokenCount'.toJS,
+                  (() => read()
+                          .then<JSAny?>((counts) => counts.total.toJS)
+                          .toJS)
+                      .toJS,
+                );
+            }
+            return Future<JSObject>.value(conversation).toJS;
+          }).toJS,
+        );
+        return Future<JSObject>.value(engine).toJS;
+      }).toJS,
+    );
+  globalContext.setProperty('LiteRtLmEngine'.toJS, engineClass);
+  return fake;
 }
 
 JSObject _fakeConversation({

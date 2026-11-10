@@ -83,10 +83,15 @@ class LiteRtLmBackend
   final Expando<Future<void>> _conversationDeletes = Expando<Future<void>>();
   final _LiteRtLmWebRuntimeToolCalls _runtimeToolCalls =
       _LiteRtLmWebRuntimeToolCalls();
+  final _LiteRtLmWebGenerationLimits _generationLimits =
+      _LiteRtLmWebGenerationLimits();
   LlamaLogLevel _logLevel = LlamaLogLevel.warn;
   bool _isReady = false;
   bool _supportsTextHistory = false;
   bool _supportsToolDeclarations = false;
+  // The loaded engine's resolved context size, once the load probe showed
+  // its runtime reports per-turn decode and context token counts.
+  int? _reportedContextTokens;
   bool _hasContext = false;
   bool _cancelRequested = false;
   int _nextModelHandle = 1;
@@ -118,6 +123,7 @@ class LiteRtLmBackend
        _readyTimeout = readyTimeout ?? _engineReadyTimeout,
        _preferredBackend = _normalizeBackendOverride(preferredBackend) {
     registerRuntimeToolCallReporter(this, _runtimeToolCalls);
+    registerGenerationLimitReporter(this, _generationLimits);
   }
 
   /// Creates a backend with ordered system/user/assistant text history.
@@ -126,9 +132,13 @@ class LiteRtLmBackend
   /// The final message must be user text or tool results. Tools are declared
   /// through `preface.tools` when the loaded runtime reads it, which
   /// `supportsToolCalling` reports; the model's calls come back as
-  /// [LlamaToolCallContent]. Automatic tool loops stay unavailable because
-  /// the runtime reports no termination cause. `ToolChoice.required`, parallel
-  /// tool calls, media and template/thinking controls throw
+  /// [LlamaToolCallContent]. A load probe checks that the runtime reports
+  /// each turn's decode and context token counts; a reply that reaches
+  /// `maxTokens` or fills the context then ends with finish reason `length`,
+  /// and automatic tool loops run. A reply whose end-of-turn token is its
+  /// `maxTokens`-th token also ends with `length`: the runtime does not say
+  /// which of the two ended it. `ToolChoice.required`, parallel tool calls,
+  /// media and template/thinking controls throw
   /// [LlamaUnsupportedException]. The original constructor's
   /// subclass dispatch contract remains unchanged. Session budgets use a
   /// full-transcript UTF-8 estimate; exact JS tokenization is unavailable.
@@ -147,11 +157,22 @@ class LiteRtLmBackend
 
   bool get _textHistoryEnabled => false;
 
+  /// Null once a [LiteRtLmBackend.withTextHistory] load has shown that its
+  /// runtime reports each turn's decode and context token counts; otherwise,
+  /// and before a load, why automatic tool loops cannot run.
   @override
-  String? get generationLimitUnsupportedReason =>
-      'LiteRT-LM Web @litert-lm/core@0.19.0 does not expose a reliable generation termination reason. '
-      'Automatic tool loops require a qualified Web runtime with token-limit reporting; '
-      'use ChatSession.create or LlamaEngine.create for manual completion.';
+  String? get generationLimitUnsupportedReason => !_textHistoryEnabled
+      ? 'LiteRT-LM Web reports token-limit truncation only through '
+            'LlamaBackend.withTextHistory() or LiteRtLmBackend.withTextHistory(). '
+            'Use ChatSession.create or LlamaEngine.create for manual completion.'
+      : _isReady && _reportedContextTokens != null
+      ? null
+      : 'The loaded LiteRT-LM Web runtime did not report the decode and '
+            'context token counts of a turn (benchmarkEnabled, '
+            'getBenchmarkInfo and getTokenCount), so a reply cut off at '
+            'maxTokens or the context size cannot be told from a finished '
+            'one. @litert-lm/core@0.19.0 reports them. Use ChatSession.create '
+            'or LlamaEngine.create for manual completion.';
 
   @override
   bool get isReady => _isReady;
@@ -263,6 +284,9 @@ class LiteRtLmBackend
           _textHistoryEnabled && await _probeTextHistory(_engine!);
       _supportsToolDeclarations =
           _supportsTextHistory && await _probeToolDeclarations(_engine!);
+      _reportedContextTokens = _supportsTextHistory
+          ? await _probeGenerationLimits(_engine!)
+          : null;
       _modelHandle = _nextModelHandle++;
       _isReady = true;
       onProgress?.call(1);
@@ -271,6 +295,7 @@ class LiteRtLmBackend
       _isReady = false;
       _supportsTextHistory = false;
       _supportsToolDeclarations = false;
+      _reportedContextTokens = null;
       _modelHandle = null;
       _contextHandle = null;
       _modelUrl = null;
@@ -382,6 +407,7 @@ class LiteRtLmBackend
                     run.toolCalls,
                   );
                 }
+                _generationLimits.limits[stream] = run.limit;
                 _finishRun(run);
                 unawaited(controller.close());
               },
@@ -469,6 +495,16 @@ class LiteRtLmBackend
           break;
         }
         yield chunk;
+      }
+      final contextTokens = _reportedContextTokens;
+      if (!_cancelRequested && contextTokens != null) {
+        final limit = await _generationLimitOf(
+          conversation,
+          maxTokens: params.maxTokens,
+          contextTokens: contextTokens,
+        );
+        // A cancel or stop sequence wins over a limit reached meanwhile.
+        if (!_cancelRequested) run.limit = limit;
       }
     } finally {
       if (identical(_activeConversation, conversation)) {
@@ -801,6 +837,10 @@ class LiteRtLmBackend
     final executorSettings = JSObject();
     executorSettings.setProperty('maxNumTokens'.toJS, params.contextSize.toJS);
     settings.setProperty('mainExecutorSettings'.toJS, executorSettings);
+    // Per-turn decode token counts come only from the benchmark record.
+    if (_textHistoryEnabled) {
+      settings.setProperty('benchmarkEnabled'.toJS, true.toJS);
+    }
     return settings;
   }
 
@@ -926,6 +966,112 @@ class LiteRtLmBackend
     } finally {
       if (conversation != null) await _deleteConversation(conversation);
     }
+  }
+
+  /// The resolved context size of [engine] when its runtime reports the
+  /// decode and context token counts of a turn, else null.
+  ///
+  /// At `maxOutputTokens` 1 a turn decodes exactly one token, so a runtime
+  /// that keeps no benchmark record or counts another turn fails.
+  Future<int?> _probeGenerationLimits(_LiteRtLmWebEngine engine) async {
+    final contextTokens = _resolvedContextTokens(engine);
+    if (contextTokens == null) return null;
+    _LiteRtLmWebConversation? conversation;
+    try {
+      conversation = await engine
+          .createConversation(
+            _createConversationConfig(const GenerationParams(maxTokens: 1)),
+          )
+          .toDart;
+      if (!conversation.has('getBenchmarkInfo') ||
+          !conversation.has('getTokenCount')) {
+        return null;
+      }
+      final reader = conversation.sendMessageStreaming('Hi'.toJS).getReader();
+      while (!(await reader.read().toDart).done) {}
+      final counts = await _tokenCounts(conversation);
+      return counts != null &&
+              counts.decoded == 1 &&
+              counts.total < contextTokens
+          ? contextTokens
+          : null;
+    } catch (_) {
+      return null;
+    } finally {
+      if (conversation != null) await _deleteConversation(conversation);
+    }
+  }
+
+  /// The `maxNumTokens` [engine] resolved at creation, which bounds its
+  /// conversations' tokens.
+  int? _resolvedContextTokens(_LiteRtLmWebEngine engine) {
+    try {
+      final settings = engine.getProperty<JSAny?>('settings'.toJS);
+      if (settings == null || !settings.isA<JSObject>()) return null;
+      final executor = (settings as JSObject).getProperty<JSAny?>(
+        'mainExecutorSettings'.toJS,
+      );
+      if (executor == null || !executor.isA<JSObject>()) return null;
+      return _positiveInt(
+        (executor as JSObject).getProperty<JSAny?>('maxNumTokens'.toJS),
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Why the turn [conversation] just finished ended, from its token counts.
+  ///
+  /// `@litert-lm/core@0.19.0` ends a turn at a stop token, once its decode
+  /// steps reach `maxOutputTokens`, or once the conversation's tokens reach
+  /// `maxNumTokens`, and reports none of these causes. Fewer decode steps than
+  /// [maxTokens] and fewer tokens than [contextTokens] rule both budgets out,
+  /// so only then is the turn finished. A turn at a budget is cut off even if
+  /// its last token was a stop token: the counts cannot tell the two apart.
+  Future<BackendGenerationLimit?> _generationLimitOf(
+    _LiteRtLmWebConversation conversation, {
+    required int maxTokens,
+    required int contextTokens,
+  }) async {
+    final counts = await _tokenCounts(conversation);
+    return counts == null
+        ? BackendGenerationLimit.runtime
+        : counts.total >= contextTokens
+        ? BackendGenerationLimit.contextSize
+        : counts.decoded >= maxTokens
+        ? BackendGenerationLimit.maxTokens
+        : null;
+  }
+
+  /// The tokens [conversation]'s last turn decoded and the tokens it holds,
+  /// or null when the runtime does not report them consistently.
+  Future<({int decoded, int total})?> _tokenCounts(
+    _LiteRtLmWebConversation conversation,
+  ) async {
+    try {
+      final info = await conversation.getBenchmarkInfo().toDart;
+      final decoded = info != null && info.isA<JSObject>()
+          ? _positiveInt(
+              (info as JSObject).getProperty<JSAny?>(
+                'lastDecodeTokenCount'.toJS,
+              ),
+            )
+          : null;
+      final total = _positiveInt(await conversation.getTokenCount().toDart);
+      // A turn prefills at least one token before it decodes.
+      if (decoded == null || total == null || total <= decoded) return null;
+      return (decoded: decoded, total: total);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  static int? _positiveInt(JSAny? value) {
+    if (value == null || !value.isA<JSNumber>()) return null;
+    final number = (value as JSNumber).toDartDouble;
+    return number.isFinite && number >= 1 && number == number.truncate()
+        ? number.toInt()
+        : null;
   }
 
   _LiteRtLmWebEngine _requireEngine() {
@@ -1219,6 +1365,7 @@ class LiteRtLmBackend
     _isReady = false;
     _supportsTextHistory = false;
     _supportsToolDeclarations = false;
+    _reportedContextTokens = null;
     _hasContext = false;
     _modelHandle = null;
     _contextHandle = null;
@@ -1875,6 +2022,10 @@ final class _LiteRtLmWebRun {
   /// The runtime-parsed tool calls so far, in order.
   final List<LlamaCompletionChunkToolCall> toolCalls = [];
 
+  /// The budget that ended this run, or null when it finished, was cancelled
+  /// or stopped at a stop sequence.
+  BackendGenerationLimit? limit;
+
   /// Completes with true when a queued run may start, or false when it ends
   /// without starting.
   final Completer<bool> admission = Completer<bool>();
@@ -1889,6 +2040,17 @@ final class _LiteRtLmWebRuntimeToolCalls implements BackendRuntimeToolCalls {
   List<LlamaCompletionChunkToolCall>? runtimeToolCallsOf(
     Stream<List<int>> generation,
   ) => calls[generation];
+}
+
+/// The token budget that ended each finished generation stream.
+final class _LiteRtLmWebGenerationLimits
+    implements BackendGenerationLimitReporting {
+  final Expando<BackendGenerationLimit> limits =
+      Expando<BackendGenerationLimit>();
+
+  @override
+  BackendGenerationLimit? generationLimitOf(Stream<List<int>> generation) =>
+      limits[generation];
 }
 
 @JS()
@@ -1916,6 +2078,10 @@ extension type _LiteRtLmWebConversation._(JSObject _) implements JSObject {
   external _LiteRtLmReadableStream sendMessageStreaming(JSAny message);
 
   external void cancel();
+
+  external JSPromise<JSAny?> getBenchmarkInfo();
+
+  external JSPromise<JSAny?> getTokenCount();
 
   @JS('delete')
   external JSPromise<JSAny?>? deleteConversation();
