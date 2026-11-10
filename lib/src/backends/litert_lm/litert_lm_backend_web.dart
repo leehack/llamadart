@@ -345,7 +345,7 @@ class LiteRtLmBackend
   @override
   Future<int> getContextSize(int contextHandle) async {
     _requireContextHandle(contextHandle);
-    return _modelParams?.contextSize ?? 0;
+    return _reportedContextTokens ?? _modelParams?.contextSize ?? 0;
   }
 
   @override

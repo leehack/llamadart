@@ -7,6 +7,7 @@ import 'dart:io';
 import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
 
+import '../../../tool/testing/test_matrix.dart';
 import 'support/validation_coverage.dart';
 
 const registryPath =
@@ -17,6 +18,24 @@ Map<String, dynamic> registry() =>
 
 void main() {
   final root = Directory.current;
+
+  test('the registry note names the models and backends the native JSON '
+      'Schema scenario qualifies', () {
+    final row = testMatrixRows.singleWhere(
+      (row) => row.id == 'litert-lm-json-schema',
+    );
+    List<String> listed(String label) => RegExp(
+      '$label \\(([^)]*)\\)',
+    ).firstMatch(row.useWhen)!.group(1)!.split(', ');
+    final description = registry()['description'] as String;
+    expect(description, contains(row.id));
+    for (final model in listed('per fixed model')) {
+      expect(description, contains(model));
+    }
+    for (final backend in listed('per qualified backend')) {
+      expect(description, contains(backend.toUpperCase()));
+    }
+  });
 
   test(
     'every exported API, capability report and runtime row is accounted for',

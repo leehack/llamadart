@@ -2150,8 +2150,9 @@ from the journal identity and load diagnostics; altered identities or a forced
 capability/admission cannot establish PASS. Catalogs 1–9 remain unchanged.
 
 This case checks capability reporting, not schema enforcement. The maintained
-`litert-lm-json-schema` local scenario separately qualifies the bounded native
-CPU scalar-object path, adversarial control, request reset, system/history,
+`litert-lm-json-schema` local scenario separately qualifies native schema
+enforcement per model and CPU/GPU backend: adversarial control, the shared
+GBNF/LLGuidance contract, Gemma 4 thinking, request reset, system/history,
 cancellation/reuse and length cutoff. See [the matrix](testing_matrix.md).
 
 

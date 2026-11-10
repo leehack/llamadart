@@ -58,6 +58,17 @@ const String _liteRtLmVideoUnsupportedMessage =
     'LiteRT-LM video input is not supported through llamadart. '
     'Extract and send image frames instead.';
 
+// Hosts and accelerators where real-model JSON Schema runs passed; the others
+// stay refused until a run on that host passes.
+const _jsonSchemaQualifiedBackendsByAbi = <Abi, Set<String>>{
+  Abi.macosArm64: {'cpu', 'gpu'},
+  Abi.iosArm64: {'cpu', 'gpu'},
+  Abi.androidArm64: {'cpu'},
+  Abi.linuxX64: {'cpu'},
+  Abi.linuxArm64: {'cpu'},
+  Abi.windowsX64: {'cpu'},
+};
+
 /// Reads what the `.litertlm` bundle at a path declares, as
 /// [LiteRtLmRuntimeClient.bundleCapabilities] does.
 typedef LiteRtLmBundleCapabilitiesReader =
@@ -132,7 +143,7 @@ class LiteRtLmService {
     LiteRtLmBundleChatTemplateReader? readBundleChatTemplate,
     LiteRtLmBundleFirstChannelReader? readBundleFirstChannel,
     String? finishReasonProbeLibraryPath,
-    bool Function()? jsonSchemaPlatformSupported,
+    Set<String> Function()? jsonSchemaQualifiedBackends,
     LiteRtLmVulkanAdapters Function()? probeGpuAdapters,
   }) : _probeGpuAdapters =
            probeGpuAdapters ??
@@ -141,9 +152,9 @@ class LiteRtLmService {
                    runtimeClientFactory == null
                ? _systemVulkanAdaptersProbe
                : null),
-       _jsonSchemaPlatformSupported =
-           jsonSchemaPlatformSupported ??
-           (() => Platform.isMacOS && Abi.current() == Abi.macosArm64),
+       _jsonSchemaQualifiedBackends =
+           jsonSchemaQualifiedBackends ??
+           (() => _jsonSchemaQualifiedBackendsByAbi[liteRtLmGateAbi()] ?? {}),
        _clientFactory =
            runtimeClientFactory ??
            (() => clientFactory == null
@@ -218,7 +229,8 @@ class LiteRtLmService {
   }
 
   bool _jsonSchemaAdmitted = false;
-  final bool Function() _jsonSchemaPlatformSupported;
+  bool _jsonSchemaThinking = false;
+  final Set<String> Function() _jsonSchemaQualifiedBackends;
   LiteRtLmEmbeddingRuntimeSession? _embedding;
   LiteRtLmCacheLease? _cacheLease;
   ModelParams? _modelParams;
@@ -657,25 +669,38 @@ class LiteRtLmService {
   Future<void> prepareJsonSchemaChat() async {
     if (_jsonSchemaAdmitted) return;
     _requireConversationEngine();
-    if (!_jsonSchemaPlatformSupported() ||
-        (_activeBackend ??
-                _backendNameFor(_modelParams ?? const ModelParams())) !=
-            'cpu') {
-      throw LlamaUnsupportedException(
-        'Native JSON Schema chat is qualified only on macOS arm64 CPU. Select ComputeDevice.cpu; GPU, NPU and other platforms are unsupported.',
-      );
-    }
+    final qualified = _jsonSchemaQualifiedBackends();
+    Never refuseBackend(String backend) => throw LlamaUnsupportedException(
+      'Native JSON Schema chat is not qualified for the LiteRT-LM $backend '
+      'backend on ${liteRtLmGateAbi()}'
+      '${qualified.isEmpty ? '' : '; load with ${qualified.map((b) => 'ComputeDevice.$b').join(' or ')}'}.',
+    );
+    // The loaded backend includes the deprecated preferredBackend override.
+    final loaded = _loadedBackend!;
+    if (!qualified.contains(loaded)) refuseBackend(loaded);
     final routing = _templateRouting();
-    final template = routing.rendersFamilyText ? routing.family : null;
-    if (template == null ||
-        (_modelParams?.chatTemplate != null &&
-            _modelParams!.chatTemplate != template.template)) {
+    final family = routing.family;
+    final customTemplate = _modelParams?.chatTemplate;
+    final String? promptTemplate;
+    if (family?.id == 'qwen3' &&
+        routing.rendersFamilyText &&
+        (customTemplate == null || customTemplate == family!.template)) {
+      promptTemplate = family!.template;
+    } else if (family?.id == 'gemma4' &&
+        !routing.rendersFamilyText &&
+        customTemplate == null) {
+      promptTemplate = null;
+    } else {
       throw LlamaUnsupportedException(
-        'Native JSON Schema chat currently requires the canonical Qwen3 text template; custom templates and other model families are unqualified.',
+        'Native JSON Schema chat is qualified only for Qwen3 with its canonical '
+        'text template and Gemma 4 with its bundle template; custom templates '
+        'and other model families are unqualified.',
       );
     }
     _cancelRequested = false;
     final client = await _ensureClientForGeneration(const GenerationParams());
+    // An automatic GPU load can run on the CPU instead.
+    if (!qualified.contains(_activeBackend)) refuseBackend(_activeBackend!);
     if (!client.supportsJsonSchemaConstraints) {
       throw LlamaUnsupportedException(
         'Native JSON Schema chat requires all constraint-provider and thinking-config symbols. '
@@ -683,9 +708,16 @@ class LiteRtLmService {
         'model and platform qualification still applies.',
       );
     }
+    if (!client.supportsFinishReasons) {
+      throw LlamaUnsupportedException(
+        'Native JSON Schema chat requires a runtime that reports finish '
+        'reasons, so that a reply cut off by maxTokens reports length instead '
+        'of success.',
+      );
+    }
     try {
       client.createConversation(
-        promptTemplate: template.template,
+        promptTemplate: promptTemplate,
         temperature: 0,
         topK: 1,
         topP: 1,
@@ -697,8 +729,18 @@ class LiteRtLmService {
         'The loaded LiteRT-LM model cannot construct its JSON Schema provider; the model tokenizer or EOS may be incompatible.',
       );
     }
+    // Only Gemma 4 kept the constraint after its reasoning channel on real
+    // models; Qwen3 with thinking produced unconstrained text.
+    _jsonSchemaThinking =
+        family!.id == 'gemma4' &&
+        client.supportsJsonSchemaThinking &&
+        _bundleBoundsThinking();
     _jsonSchemaAdmitted = true;
   }
+
+  /// Whether the admitted model may reason before its schema-constrained reply.
+  bool get supportsJsonSchemaChatThinking =>
+      _jsonSchemaAdmitted && _jsonSchemaThinking;
 
   /// Shares the normal chat lifecycle, with a validated per-request schema.
   Stream<List<int>> generateJsonSchemaChat(
@@ -706,30 +748,56 @@ class LiteRtLmService {
     List<LlamaChatMessage> messages,
     GenerationParams params, {
     required String jsonSchema,
+    bool enableThinking = false,
     Map<String, dynamic>? chatTemplateKwargs,
     DateTime? templateNow,
   }) async* {
     validateJsonSchemaChatRequest(messages, params);
     jsonSchemaChatPayload(jsonDecode(jsonSchema) as Map<String, dynamic>);
     await prepareJsonSchemaChat();
+    validateJsonSchemaChatRequest(
+      messages,
+      params,
+      enableThinking: enableThinking && !_jsonSchemaThinking,
+    );
+    var outputStarted = false;
     try {
       await for (final chunk in _generateChat(
         contextHandle,
         messages,
         params,
         toolChoice: ToolChoice.none,
-        enableThinking: false,
+        enableThinking: enableThinking,
         chatTemplateKwargs: chatTemplateKwargs,
         templateNow: templateNow,
         jsonSchema: jsonSchema,
       )) {
+        outputStarted = true;
         yield chunk;
       }
     } catch (error) {
       if (error is! StateError && error is! LlamaModelException) rethrow;
+      // The pre-check should refuse every schema the provider cannot compile;
+      // the provider reports one only as an INTERNAL send failure.
+      if (!outputStarted && '$error'.contains('INTERNAL (13)')) {
+        throw LlamaUnsupportedException(
+          'The native LiteRT-LM runtime refused the JSON Schema request '
+          'before generation (INTERNAL).',
+        );
+      }
       // Native diagnostics can echo the schema or model paths.
       throw LlamaInferenceException(
         'Native JSON Schema chat failed during constrained decoding.',
+      );
+    }
+    // maxTokens <= 0 generates nothing, so no finish reason is reported.
+    if (params.maxTokens > 0 &&
+        !_cancelRequested &&
+        _lastGenerationLimit == null &&
+        _client?.lastFinishReason != LiteRtLmFinishReason.stop) {
+      throw LlamaInferenceException(
+        'Native JSON Schema chat ended without a stop or length finish '
+        'reason, so the reply may be incomplete.',
       );
     }
   }

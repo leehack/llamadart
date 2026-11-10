@@ -26,29 +26,45 @@ void main() {
     expect(jsonDecode(payload)['properties']['verdict']['enum'], ['A', 'B']);
     expect(jsonSchemaChatPayload({'type': 'object'}), '{"type":"object"}');
   });
+  test('accepts the shared nested, array, ref and pattern contract', () {
+    final schema = <String, dynamic>{
+      'type': 'object',
+      'properties': {
+        'items': {
+          'type': 'array',
+          'items': {r'$ref': r'#/$defs/item'},
+          'maxItems': 2,
+        },
+        'code': {'type': 'string', 'pattern': r'^[A-Z]{2}$'},
+      },
+      'required': ['items', 'code'],
+      r'$defs': {
+        'item': {
+          'anyOf': [
+            {'type': 'integer', 'minimum': 0},
+            {'type': 'null'},
+          ],
+        },
+      },
+    };
+    expect(jsonDecode(jsonSchemaChatPayload(schema)), schema);
+  });
   for (final schema in <Map<String, dynamic>>[
-    {'type': 'array'},
     {
       'type': 'object',
       'properties': {
-        'x': {'type': 'object'},
+        'x': {
+          'oneOf': [
+            {'type': 'string'},
+          ],
+        },
       },
     },
     {
       'type': 'object',
       'properties': {
-        'x': {'type': 'string', 'pattern': r'^a$'},
+        'x': {'type': 'string', 'format': 'time'},
       },
-    },
-    {
-      'type': 'object',
-      'additionalProperties': {'type': 'string'},
-    },
-    {
-      'type': 'object',
-      'allOf': [
-        {'type': 'object'},
-      ],
     },
     {'type': 'object', 'minProperties': 1},
   ]) {
@@ -89,6 +105,35 @@ void main() {
       );
     });
   }
+  test('names the qualified thinking family and thinking budgets', () {
+    expect(
+      () => validateJsonSchemaChatRequest(
+        messages,
+        const GenerationParams(),
+        enableThinking: true,
+      ),
+      throwsA(
+        isA<LlamaUnsupportedException>().having(
+          (e) => e.message,
+          'message',
+          allOf(contains('Gemma 4'), contains('enableThinking: false')),
+        ),
+      ),
+    );
+    expect(
+      () => validateJsonSchemaChatRequest(
+        messages,
+        const GenerationParams(thinkingBudget: ThinkingBudget(maxTokens: 3)),
+      ),
+      throwsA(
+        isA<LlamaUnsupportedException>().having(
+          (e) => e.message,
+          'message',
+          contains('thinking budgets'),
+        ),
+      ),
+    );
+  });
   test('rejects thinking and tools without changing their defaults', () {
     for (final validate in [
       () => validateJsonSchemaChatRequest(

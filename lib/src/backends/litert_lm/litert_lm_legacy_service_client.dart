@@ -34,6 +34,8 @@ final class LiteRtLmLegacyServiceClient
   bool get supportsJsonSchemaConstraints =>
       _client.supportsJsonSchemaConstraints;
   @override
+  bool get supportsJsonSchemaThinking => _client.supportsJsonSchemaThinking;
+  @override
   bool get supportsMessageRendering => _client.supportsMessageRendering;
   @override
   int? resolveDefaultVisualTokenBudget(int preferredBudget) =>

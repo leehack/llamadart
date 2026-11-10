@@ -172,6 +172,10 @@ class LiteRtLmRuntimeClient {
   bool get supportsJsonSchemaConstraints =>
       _runtime.supportsJsonSchemaConstraints;
 
+  /// Whether a schema constraint can follow an enabled reasoning channel,
+  /// rather than the runtime forcing thinking off for constrained chat.
+  bool get supportsJsonSchemaThinking => _runtime.supportsJsonSchemaThinking;
+
   /// Whether a runtime is loaded and provides the entry point of
   /// [renderMessageToString].
   bool get supportsMessageRendering => _runtime.supportsMessageRendering;

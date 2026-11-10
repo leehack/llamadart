@@ -99,11 +99,40 @@ void main() {
       runtime.dispose();
     },
   );
+  for (final enabled in [true, false]) {
+    test(
+      'schema thinking follows the conversation context: $enabled',
+      () async {
+        final runtime = loaded();
+        final conversation = runtime.openConfiguredConversation(
+          LiteRtLmV1ConversationSettings(
+            jsonSchemaConstraints: true,
+            extraContext: {'enable_thinking': enabled},
+          ),
+        );
+        expect(count('config_thinking'), enabled ? 1 : 0);
+        final turn = conversation.sendText(
+          'reply',
+          settings: const LiteRtLmV1TurnSettings(
+            jsonSchema: '{"type":"object"}',
+          ),
+        );
+        final chunks = turn.chunks.toList();
+        expect(count('args_thinking'), enabled ? 1 : 0);
+        call('emit', 2);
+        await turn.done;
+        await chunks;
+        conversation.close();
+        runtime.dispose();
+      },
+    );
+  }
   test(
     'client forwards schemas and stops advertising capability after disposal',
     () async {
       final client = LiteRtLmV1RuntimeClient(library);
       expect(client.supportsJsonSchemaConstraints, isTrue);
+      expect(client.supportsJsonSchemaThinking, isTrue);
       await client.initialize(
         modelPath: '/secret/model.litertlm',
         backend: 'cpu',
@@ -131,6 +160,7 @@ void main() {
       expect((await output).join(), '{}');
       client.dispose();
       expect(client.supportsJsonSchemaConstraints, isFalse);
+      expect(client.supportsJsonSchemaThinking, isFalse);
     },
   );
   for (final stage in [90, 91, 92, 93, 96]) {

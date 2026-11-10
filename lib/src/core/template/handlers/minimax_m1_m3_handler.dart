@@ -190,12 +190,17 @@ class MinimaxM3Handler extends DirectJinjaHandler
             thinkingStartTag,
           )
         : output;
-    final thinking = extractThinking(
-      thinkingInput,
-      startTag: thinkingStartTag,
-      endTag: thinkingEndTag,
-      thinkingForcedOpen: thinkingForcedOpen,
-    );
+    final thinking = thinkingForcedOpen
+        ? extractForcedOpenThoughtVerbatim(
+            output,
+            endTag: thinkingEndTag,
+            isPartial: isPartial,
+          )
+        : extractThinking(
+            thinkingInput,
+            startTag: thinkingStartTag,
+            endTag: thinkingEndTag,
+          );
     if (!parseToolCalls) {
       return ChatParseResult(
         content: thinking.content,

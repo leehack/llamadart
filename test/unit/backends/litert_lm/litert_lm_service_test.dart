@@ -66,10 +66,12 @@ void main() {
     late _FakeLiteRtLmRuntimeClient client;
     late LiteRtLmService service;
     setUp(() async {
-      client = _FakeLiteRtLmRuntimeClient()..jsonSchemaSupport = true;
+      client = _FakeLiteRtLmRuntimeClient()
+        ..jsonSchemaSupport = true
+        ..finishReason = LiteRtLmFinishReason.stop;
       service = LiteRtLmService(
         clientFactory: () => client,
-        jsonSchemaPlatformSupported: () => true,
+        jsonSchemaQualifiedBackends: () => {'cpu', 'gpu'},
       );
       await service.loadModel(
         (await modelFile.copy('${tempDir.path}/Qwen3-0.6B.litertlm')).path,
@@ -110,43 +112,180 @@ void main() {
     );
     final hostHasGpu = liteRtLmAvailableNativeBackendsForCurrentPlatform()
         .contains('gpu');
-    for (final excluded in ['host', 'delegate', 'family', 'template']) {
+    test(
+      'admits the GPU delegate',
+      skip: hostHasGpu
+          ? null
+          : 'needs a host with a LiteRT-LM GPU backend to select the delegate',
+      () async {
+        service.dispose();
+        service = LiteRtLmService(
+          clientFactory: () => client,
+          jsonSchemaQualifiedBackends: () => {'cpu', 'gpu'},
+        );
+        await service.loadModel(
+          '${tempDir.path}/Qwen3-0.6B.litertlm',
+          const ModelParams(liteRtLmBackend: LiteRtLmBackendPreference.gpu),
+        );
+        await service.prepareJsonSchemaChat();
+        expect(client.lastBackend, 'gpu');
+        expect(client.lastJsonSchemaConfig, isTrue);
+      },
+    );
+    for (final excluded in ['host', 'family', 'template']) {
+      test('rejects unqualified $excluded before native admission', () async {
+        service.dispose();
+        service = LiteRtLmService(
+          clientFactory: () => client,
+          jsonSchemaQualifiedBackends: () =>
+              excluded == 'host' ? const {} : {'cpu', 'gpu'},
+        );
+        final selected = excluded == 'template'
+            ? const ModelParams(
+                liteRtLmBackend: LiteRtLmBackendPreference.cpu,
+                chatTemplate: '{{ messages }}',
+              )
+            : params;
+        await service.loadModel(
+          excluded == 'family'
+              ? modelFile.path
+              : '${tempDir.path}/Qwen3-0.6B.litertlm',
+          selected,
+        );
+        await expectLater(
+          service.prepareJsonSchemaChat(),
+          throwsA(isA<LlamaUnsupportedException>()),
+        );
+        expect(client.createConversationCount, 0);
+        expect(client.generateCount, 0);
+      });
+    }
+    group('default qualification table', () {
+      tearDown(() => debugLiteRtLmAbiOverride = null);
+      const hardwareGpu = LiteRtLmVulkanAdapters.devices([
+        LiteRtLmVulkanAdapter(name: 'GPU', deviceType: 2),
+      ]);
+      LiteRtLmService tableService({
+        LiteRtLmVulkanAdapters adapters = hardwareGpu,
+        Set<String> Function()? qualified,
+      }) => LiteRtLmService(
+        clientFactory: () => client,
+        probeGpuAdapters: () => adapters,
+        jsonSchemaQualifiedBackends: qualified,
+      );
+      Future<void> expectRefused(
+        String backend, {
+        bool beforeEngine = true,
+      }) async {
+        await expectLater(
+          service.prepareJsonSchemaChat(),
+          throwsA(
+            isA<LlamaUnsupportedException>().having(
+              (e) => e.message,
+              'message',
+              contains('not qualified for the LiteRT-LM $backend'),
+            ),
+          ),
+        );
+        expect(client.createConversationCount, 0);
+        if (beforeEngine) expect(client.lastBackend, isNull);
+      }
+
+      const expected = <Abi, Set<String>>{
+        Abi.macosArm64: {'cpu', 'gpu'},
+        Abi.iosArm64: {'cpu', 'gpu'},
+        Abi.androidArm64: {'cpu'},
+        Abi.androidX64: {},
+        Abi.linuxX64: {'cpu'},
+        Abi.linuxArm64: {'cpu'},
+        Abi.windowsX64: {'cpu'},
+        Abi.macosX64: {},
+      };
+      for (final MapEntry(key: abi, value: backends) in expected.entries) {
+        for (final backend in ['cpu', 'gpu']) {
+          final admitted = backends.contains(backend);
+          test(
+            '${admitted ? 'admits' : 'refuses'} $backend on $abi',
+            skip: backend == 'gpu' && !hostHasGpu
+                ? 'needs a host with a LiteRT-LM GPU backend'
+                : null,
+            () async {
+              service.dispose();
+              service = tableService();
+              await service.loadModel(
+                '${tempDir.path}/Qwen3-0.6B.litertlm',
+                backend == 'cpu'
+                    ? params
+                    : const ModelParams(
+                        liteRtLmBackend: LiteRtLmBackendPreference.gpu,
+                      ),
+              );
+              debugLiteRtLmAbiOverride = abi;
+              if (admitted) {
+                await service.prepareJsonSchemaChat();
+                expect(client.lastBackend, backend);
+                expect(client.lastJsonSchemaConfig, isTrue);
+              } else {
+                await expectRefused(backend);
+              }
+            },
+          );
+        }
+      }
+      for (final abi in [Abi.linuxX64, Abi.windowsX64, Abi.androidArm64]) {
+        test(
+          'refuses the deprecated gpu backend override on $abi',
+          skip: hostHasGpu ? null : 'needs a host with a LiteRT-LM GPU backend',
+          () async {
+            service.dispose();
+            service = tableService();
+            await service.loadModel(
+              '${tempDir.path}/Qwen3-0.6B.litertlm',
+              const ModelParams(),
+              backendOverride: 'gpu',
+            );
+            debugLiteRtLmAbiOverride = abi;
+            await expectRefused('gpu');
+          },
+        );
+      }
       test(
-        'rejects unqualified $excluded before native admission',
-        skip: excluded == 'delegate' && !hostHasGpu
-            ? 'needs a host with a LiteRT-LM GPU backend to select the delegate'
-            : null,
+        'refuses an automatic GPU load that runs on an unqualified CPU',
+        skip: liteRtLmDefaultNativeBackendForCurrentPlatform() == 'gpu'
+            ? null
+            : 'needs a host whose automatic LiteRT-LM backend is the GPU',
         () async {
           service.dispose();
-          service = LiteRtLmService(
-            clientFactory: () => client,
-            jsonSchemaPlatformSupported: () => excluded != 'host',
+          service = tableService(
+            adapters: const LiteRtLmVulkanAdapters.devices([
+              LiteRtLmVulkanAdapter(
+                name: 'llvmpipe',
+                deviceType: vulkanPhysicalDeviceTypeCpu,
+              ),
+            ]),
+            qualified: () => {'gpu'},
           );
-          final selected = excluded == 'delegate'
-              ? const ModelParams(
-                  liteRtLmBackend: LiteRtLmBackendPreference.gpu,
-                )
-              : excluded == 'template'
-              ? const ModelParams(
-                  liteRtLmBackend: LiteRtLmBackendPreference.cpu,
-                  chatTemplate: '{{ messages }}',
-                )
-              : params;
           await service.loadModel(
-            excluded == 'family'
-                ? modelFile.path
-                : '${tempDir.path}/Qwen3-0.6B.litertlm',
-            selected,
+            '${tempDir.path}/Qwen3-0.6B.litertlm',
+            const ModelParams(),
           );
-          await expectLater(
-            service.prepareJsonSchemaChat(),
-            throwsA(isA<LlamaUnsupportedException>()),
-          );
-          expect(client.createConversationCount, 0);
-          expect(client.generateCount, 0);
+          await expectRefused('cpu', beforeEngine: false);
+          expect(client.lastBackend, 'cpu');
         },
       );
-    }
+      test('a reload repeats admission', () async {
+        service.dispose();
+        service = tableService();
+        final model = '${tempDir.path}/Qwen3-0.6B.litertlm';
+        await service.loadModel(model, params);
+        debugLiteRtLmAbiOverride = Abi.linuxX64;
+        await service.prepareJsonSchemaChat();
+        await service.loadModel(model, params);
+        debugLiteRtLmAbiOverride = Abi.macosX64;
+        client.createConversationCount = 0;
+        await expectRefused('cpu', beforeEngine: false);
+      });
+    });
     test('missing optional API never admits or starts generation', () async {
       client.jsonSchemaSupport = false;
       await expectLater(
@@ -224,6 +363,310 @@ void main() {
         },
       );
     }
+  });
+
+  group('native JSON Schema families, thinking and finish', () {
+    const params = ModelParams(liteRtLmBackend: LiteRtLmBackendPreference.cpu);
+    const user = [
+      LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'p'),
+    ];
+    late _FakeLiteRtLmRuntimeClient client;
+    late LiteRtLmService service;
+    Future<int> load(
+      String name, {
+      ModelParams modelParams = params,
+      bool reasoningChannel = true,
+    }) async {
+      client = _FakeLiteRtLmRuntimeClient()
+        ..jsonSchemaSupport = true
+        ..jsonSchemaThinking = true
+        ..finishReason = LiteRtLmFinishReason.stop;
+      service = LiteRtLmService(
+        clientFactory: () => client,
+        jsonSchemaQualifiedBackends: () => {'cpu', 'gpu'},
+        readBundleFirstChannel: (_) =>
+            reasoningChannel ? (name: 'thought', isReasoning: true) : null,
+      );
+      await service.loadModel(
+        (await modelFile.copy('${tempDir.path}/$name')).path,
+        modelParams,
+      );
+      return service.createContext(1, modelParams);
+    }
+
+    Future<List<List<int>>> generate(
+      int context, {
+      bool enableThinking = false,
+      void Function()? whileRunning,
+    }) async {
+      final stream = service
+          .generateJsonSchemaChat(
+            context,
+            user,
+            const GenerationParams(),
+            jsonSchema: '{"type":"object"}',
+            enableThinking: enableThinking,
+          )
+          .toList();
+      // The failure cases complete the stream before the caller awaits it.
+      stream.ignore();
+      await client.generateStarted.future;
+      whileRunning?.call();
+      await client.generated.close();
+      return stream;
+    }
+
+    tearDown(() async {
+      if (!client.generated.isClosed) {
+        final unused = client.generateCount == 0
+            ? client.generated.stream.drain<void>()
+            : null;
+        await client.generated.close();
+        await unused;
+      }
+      service.dispose();
+    });
+
+    test('Gemma 4 renders its bundle template and may think', () async {
+      final context = await load('gemma-4-E2B-it.litertlm');
+      await service.prepareJsonSchemaChat();
+      expect(client.lastPromptTemplate, isNull);
+      expect(client.lastJsonSchemaConfig, isTrue);
+      expect(service.supportsJsonSchemaChatThinking, isTrue);
+      await generate(
+        context,
+        enableThinking: true,
+        whileRunning: () => client.generated.add('{}'),
+      );
+      expect(client.lastJsonSchema, '{"type":"object"}');
+      expect(client.lastExtraContext?['enable_thinking'], isTrue);
+    });
+
+    test('Gemma 4 thinking is re-admitted after an image turn recreates the '
+        'client', () async {
+      final context = await load('gemma-4-E2B-it.litertlm');
+      await service.prepareJsonSchemaChat();
+      _FakeLiteRtLmRuntimeClient fresh() =>
+          client = _FakeLiteRtLmRuntimeClient()
+            ..jsonSchemaSupport = true
+            ..jsonSchemaThinking = true
+            ..finishReason = LiteRtLmFinishReason.stop;
+      final imageClient = fresh();
+      final image = service.generateChat(context, [
+        LlamaChatMessage.withContent(
+          role: LlamaChatRole.user,
+          content: [
+            const LlamaTextContent('Describe'),
+            LlamaImageContent(bytes: Uint8List.fromList([1, 2, 3])),
+          ],
+        ),
+      ], const GenerationParams(maxTokens: 8)).toList();
+      await imageClient.generateStarted.future;
+      imageClient.generated.add('A');
+      await imageClient.generated.close();
+      await image;
+      expect(service.supportsJsonSchemaChatThinking, isFalse);
+      fresh();
+      await generate(
+        context,
+        enableThinking: true,
+        whileRunning: () => client.generated.add('{}'),
+      );
+      expect(service.supportsJsonSchemaChatThinking, isTrue);
+      expect(client.lastExtraContext?['enable_thinking'], isTrue);
+    });
+
+    test('maxTokens 0 ignores a stale finish reason', () async {
+      final context = await load('gemma-4-E2B-it.litertlm');
+      await service.prepareJsonSchemaChat();
+      client.finishReason = LiteRtLmFinishReason.unknown;
+      expect(
+        await service
+            .generateJsonSchemaChat(
+              context,
+              user,
+              const GenerationParams(maxTokens: 0),
+              jsonSchema: '{"type":"object"}',
+            )
+            .toList(),
+        isEmpty,
+      );
+      expect(client.generateCount, 0);
+    });
+
+    test('Gemma 4 thinking needs a declared reasoning channel', () async {
+      final context = await load(
+        'gemma-4-E2B-it.litertlm',
+        reasoningChannel: false,
+      );
+      await service.prepareJsonSchemaChat();
+      expect(service.supportsJsonSchemaChatThinking, isFalse);
+      await expectLater(
+        service
+            .generateJsonSchemaChat(
+              context,
+              user,
+              const GenerationParams(),
+              jsonSchema: '{"type":"object"}',
+              enableThinking: true,
+            )
+            .toList(),
+        throwsA(isA<LlamaUnsupportedException>()),
+      );
+      expect(client.generateCount, 0);
+    });
+
+    test('a runtime that forces thinking off cannot think', () async {
+      await load('gemma-4-E2B-it.litertlm');
+      client.jsonSchemaThinking = false;
+      await service.prepareJsonSchemaChat();
+      expect(service.supportsJsonSchemaChatThinking, isFalse);
+    });
+
+    test('Qwen3 is admitted without thinking', () async {
+      final context = await load('Qwen3-0.6B.litertlm');
+      await service.prepareJsonSchemaChat();
+      expect(client.lastPromptTemplate, isNotNull);
+      expect(service.supportsJsonSchemaChatThinking, isFalse);
+      await expectLater(
+        service
+            .generateJsonSchemaChat(
+              context,
+              user,
+              const GenerationParams(),
+              jsonSchema: '{"type":"object"}',
+              enableThinking: true,
+            )
+            .toList(),
+        throwsA(
+          isA<LlamaUnsupportedException>().having(
+            (e) => e.message,
+            'message',
+            contains('Gemma 4'),
+          ),
+        ),
+      );
+      expect(client.generateCount, 0);
+    });
+
+    for (final name in ['gemma-4-E2B-it.litertlm', 'gemma-3n-E2B.litertlm']) {
+      test('refuses $name with an unqualified template', () async {
+        await load(
+          name,
+          modelParams: name.startsWith('gemma-4')
+              ? const ModelParams(
+                  liteRtLmBackend: LiteRtLmBackendPreference.cpu,
+                  chatTemplate: '{{ messages }}',
+                )
+              : params,
+        );
+        await expectLater(
+          service.prepareJsonSchemaChat(),
+          throwsA(
+            isA<LlamaUnsupportedException>().having(
+              (e) => e.message,
+              'message',
+              contains('Gemma 4 with its bundle template'),
+            ),
+          ),
+        );
+        expect(client.createConversationCount, 0);
+      });
+    }
+
+    test('refuses a runtime without finish reasons', () async {
+      await load('Qwen3-0.6B.litertlm');
+      client.finishReasons = false;
+      await expectLater(
+        service.prepareJsonSchemaChat(),
+        throwsA(
+          isA<LlamaUnsupportedException>().having(
+            (e) => e.message,
+            'message',
+            contains('reports length instead of success'),
+          ),
+        ),
+      );
+      expect(client.createConversationCount, 0);
+    });
+
+    test('a reply cut off at maxTokens reports the token limit', () async {
+      final context = await load('Qwen3-0.6B.litertlm');
+      client.finishReason = LiteRtLmFinishReason.length;
+      expect(
+        await generate(
+          context,
+          whileRunning: () => client.generated.add('{"v": "ab'),
+        ),
+        [utf8.encode('{"v": "ab')],
+      );
+      expect(service.lastGenerationLimit, BackendGenerationLimit.maxTokens);
+    });
+
+    for (final reason in [
+      LiteRtLmFinishReason.unknown,
+      LiteRtLmFinishReason.error,
+      null,
+    ]) {
+      test('an unclassified $reason finish is never success', () async {
+        final context = await load('Qwen3-0.6B.litertlm');
+        client.finishReason = reason;
+        await expectLater(
+          generate(context, whileRunning: () => client.generated.add('{')),
+          throwsA(
+            isA<LlamaInferenceException>().having(
+              (e) => e.message,
+              'message',
+              contains('may be incomplete'),
+            ),
+          ),
+        );
+      });
+    }
+
+    for (final (status, expected) in [
+      ('INTERNAL (13)', isA<LlamaUnsupportedException>()),
+      ('INVALID_ARGUMENT (3)', isA<LlamaInferenceException>()),
+    ]) {
+      test('a send failure with $status before output is typed', () async {
+        final context = await load('Qwen3-0.6B.litertlm');
+        await expectLater(
+          generate(
+            context,
+            whileRunning: () => client.generated.addError(
+              LiteRtLmSendFailureException(
+                'conversation_send_message_stream failed: LiteRT-LM '
+                'reported $status: Failed to create LLGuidance constraint: '
+                'secret-schema',
+              ),
+            ),
+          ),
+          throwsA(
+            allOf(
+              expected,
+              isA<LlamaException>().having(
+                (e) => e.message,
+                'message',
+                isNot(contains('secret-schema')),
+              ),
+            ),
+          ),
+        );
+      });
+    }
+
+    test('an INTERNAL failure after output is an inference failure', () async {
+      final context = await load('Qwen3-0.6B.litertlm');
+      await expectLater(
+        generate(
+          context,
+          whileRunning: () => client.generated
+            ..add('{')
+            ..addError(LlamaModelException('INTERNAL (13)')),
+        ),
+        throwsA(isA<LlamaInferenceException>()),
+      );
+    });
   });
 
   group('bundleCapabilities', () {
@@ -1699,7 +2142,7 @@ void main() {
         final client = _FakeLiteRtLmRuntimeClient();
         final service = LiteRtLmService(
           clientFactory: () => client,
-          jsonSchemaPlatformSupported: () => true,
+          jsonSchemaQualifiedBackends: () => {'cpu', 'gpu'},
         );
         try {
           await service.loadModel(
@@ -1712,7 +2155,7 @@ void main() {
               isA<LlamaUnsupportedException>().having(
                 (error) => error.message,
                 'message',
-                contains('canonical Qwen3 text template'),
+                contains('Qwen3 with its canonical text template'),
               ),
             ),
           );
@@ -8757,6 +9200,12 @@ class _FakeLiteRtLmRuntimeClient extends LiteRtLmRuntimeClient {
   String? lastJsonSchema;
   @override
   bool get supportsJsonSchemaConstraints => jsonSchemaSupport;
+  bool jsonSchemaThinking = false;
+  @override
+  bool get supportsJsonSchemaThinking => jsonSchemaThinking;
+  bool finishReasons = true;
+  @override
+  bool get supportsFinishReasons => finishReasons;
 
   bool samplingPenalties = true;
   bool thinkingBudget = true;

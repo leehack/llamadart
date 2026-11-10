@@ -366,10 +366,13 @@ backend, not the registry:
   than dropping its required-call constraint. Gemma 4 keeps its existing,
   real-model-tested rendered-prompt compatibility path, but its handler grammar
   is still not applied by LiteRT-LM and must not be reported as grammar support.
-- **Native JSON Schema uses its own provider.** Canonical Qwen3 text chat on
-  macOS arm64 CPU can pass a bounded object schema directly to LLGuidance after
-  constructing the model's provider. Thinking must be disabled; tools, media,
-  custom templates, speculation, caller stops and wider schemas fail explicitly.
+- **Native JSON Schema uses its own provider.** Canonical Qwen3 text chat and
+  Gemma 4 chat with its bundle template, on macOS/iOS arm64 CPU and GPU and
+  the Android arm64, Linux x64/arm64 and Windows x64 CPU, pass the
+  schema directly to LLGuidance after constructing the model's provider. The
+  schema must sit in the subset both LLGuidance and the GBNF converter enforce.
+  Gemma 4 may think first; Qwen3 must disable thinking. Tools, media, custom
+  templates, speculation, caller stops and wider schemas fail explicitly.
   Automatic model/tool constraints stay disabled and GBNF support stays false.
 - **Native media parts use LiteRT-LM's conversation message JSON.** When
   `LlamaImageContent` or `LlamaAudioContent` reaches the native LiteRT-LM

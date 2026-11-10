@@ -219,6 +219,7 @@ chatFormatRegistrations = List.unmodifiable(<ChatFormatRegistration>[
         _hasAll(s, const [']<]minimax[>[', '<tool_call>', '<invoke name=']),
     traits: ChatFormatTraits(
       qualifiesJsonSchemaTools: false,
+      keepsForcedThoughtVerbatim: true,
       takesThoughtOnlyAtReplyStart: true,
       thoughtStartsReplyExactly: true,
       mayEmbedToolEnvelopeAfterContent: true,

@@ -18,11 +18,12 @@ import 'package:llamadart/src/core/template/chat_format.dart';
 import 'package:llamadart/src/core/template/chat_template_engine.dart';
 import 'package:llamadart/src/core/template/chat_template_handler.dart';
 import 'package:llamadart/src/core/template/handlers/ministral_handler.dart';
-import 'package:llamadart/src/core/template/handlers/qwen3_coder_xml_handler.dart';
 import 'package:llamadart/src/core/template/handlers/solar_open_handler.dart';
 import 'package:llamadart/src/core/template/template_internal_metadata.dart';
 import 'package:llamadart/src/core/template/thinking_utils.dart';
 import 'package:test/test.dart';
+
+import '../../../support/peg_constructed_qwen_xml_parser.dart';
 
 void main() {
   group('ChatCompletionStreamParser', () {
@@ -2388,21 +2389,14 @@ void main() {
               .parser!;
         }
 
-        const nemotronV3Template =
-            '{% set truncate_history_thinking = true %}'
-            '<tool_call><function><function=weather><parameters>'
-            '<parameter=city><think>';
-
-        test('Qwen3-Coder XML with a Nemotron V3 parser', () async {
+        test('Qwen3-Coder XML with a PEG-constructed parser', () async {
           for (final format in const [
             ChatFormat.qwen3CoderXml,
             ChatFormat.pegConstructed,
           ]) {
-            final withoutThinking = parser(
-              Qwen3CoderXmlHandler(),
-              templateSource: nemotronV3Template,
-              enableThinking: false,
-            );
+            final withoutThinking = pegConstructedQwenXmlParser([
+              _weatherTool,
+            ], thinkingForcedOpen: false);
             for (final output in outputs(format, qwenXmlCall).take(6)) {
               await _expectStreamMatchesParse(
                 format,
@@ -2415,10 +2409,9 @@ void main() {
               format,
               'Plan.\n</think>\nLet me check.\n$qwenXmlCall',
               forcedOpen: true,
-              parser: parser(
-                Qwen3CoderXmlHandler(),
-                templateSource: '$nemotronV3Template\n',
-              ),
+              parser: pegConstructedQwenXmlParser([
+                _weatherTool,
+              ], thinkingForcedOpen: true),
               openings: const ['<tool_call>', '</think>'],
             );
           }
@@ -2426,11 +2419,9 @@ void main() {
 
         test('a PEG parse with tools and a closed thought streams its call, '
             'not the envelope', () async {
-          final withoutThinking = parser(
-            Qwen3CoderXmlHandler(),
-            templateSource: nemotronV3Template,
-            enableThinking: false,
-          );
+          final withoutThinking = pegConstructedQwenXmlParser([
+            _weatherTool,
+          ], thinkingForcedOpen: false);
           for (final output in [
             'Let me check.\n$qwenXmlCall',
             ' \n Let me check.\n$qwenXmlCall',
@@ -3073,11 +3064,6 @@ void main() {
             .parser!;
       }
 
-      const nemotronV3Template =
-          '{% set truncate_history_thinking = true %}'
-          '<tool_call><function><function=weather><parameters>'
-          '<parameter=city><think>';
-
       test('the DeepSeek R1 chunk from #754', () async {
         final chunks = await ChatCompletionStreamParser.parse(
           tokenStream: Stream.value('<think>\nPlan.\n</think>\n\nSure.'),
@@ -3351,15 +3337,12 @@ void main() {
         'keeps leading whitespace a PEG parse keeps without tools',
         () async {
           final ministral = pegParser(MinistralHandler());
-          final qwen = pegParser(
-            Qwen3CoderXmlHandler(),
-            templateSource: nemotronV3Template,
-            enableThinking: false,
-          );
-          final qwenThinking = pegParser(
-            Qwen3CoderXmlHandler(),
-            templateSource: '$nemotronV3Template\n',
-          );
+          final qwen = pegConstructedQwenXmlParser([
+            _weatherTool,
+          ], thinkingForcedOpen: false);
+          final qwenThinking = pegConstructedQwenXmlParser([
+            _weatherTool,
+          ], thinkingForcedOpen: true);
           for (final (format, parser, forced) in [
             (ChatFormat.ministral, ministral, false),
             (ChatFormat.pegNative, ministral, false),

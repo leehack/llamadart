@@ -145,7 +145,10 @@ sequenceDiagram
   parse thoughts; with thinking off, the stream drops that reasoning.
   StepFun3.5-Flash leaves it open even with thinking off: llamadart closes
   it in the prompt, but still parses a leading thought, as llama.cpp does
-  with the open one. The handler marks such a result (internal
+  with the open one. A reply with no thinking tag or `<tool_call>` is
+  content, where llama.cpp (`cd959bae9`) returns it all as reasoning: a
+  deliberate divergence, so that thinking off leaves the reply visible
+  ([#1898](https://github.com/leehack/llamadart/issues/1898)). The handler marks such a result (internal
   `thoughtClosedForThinkingOffOf`), as do the other handlers that close an
   open thought where their render's parse still takes text before the end
   tag as a thought, such as DeepSeek R1 distills, MiniMax M2, Nemotron Nano
@@ -177,7 +180,9 @@ sequenceDiagram
   does. With `thoughtStartsReplyExactly` (MiniMax M3), the thought must start
   the reply with no whitespace before it, and an end tag that starts the reply
   is dropped, as llama.cpp's MiniMax M3 parser does; the stream waits at the
-  reply start for either tag. A DeepSeek V3 reply with an end tag before any
+  reply start for either tag. After a forced-open prompt, MiniMax M3 keeps the
+  thought as generated up to the first end tag, and every thinking tag after it
+  is content. A DeepSeek V3 reply with an end tag before any
   start tag keeps that end tag and every thinking tag after it as content.
   `ChatTemplateEngine.parse` ends a thought at such an end tag and takes
   thoughts from anywhere in the reply instead. Outside a thought, a Cohere2
@@ -188,13 +193,18 @@ sequenceDiagram
 
 Qwen XML tool calls are validated against the tools supplied to `engine.create`.
 Schema-declared strings such as `"123"` retain their type. Unknown functions,
-unknown or duplicate parameters, missing required values, and invalid value
-types never produce callable tool deltas. As in llama-server, the content ends
+unknown parameters, a repeated required parameter, missing required values,
+and invalid value types never produce callable tool deltas. As in llama-server, the content ends
 at the first `<tool_call>`, the calls are those of the `<tool_call>` scopes
 after it that each hold one valid call, only the first without
 `parallelToolCalls`, and the rest of the reply is dropped: an invalid call, a
 scope with two calls and text after the calls. A finished reply may end a
-valid call without `</tool_call>`. For a required call with a template
+valid call without `</tool_call>`. A valid call has llama.cpp's line breaks
+after each tag and around each value, its required arguments first, each
+once, then its optional ones, which may repeat (the last value counts); a
+string value is the text up to the first `\n</parameter>\n`, untrimmed, and
+any other is JSON with no whitespace around it. Nemotron-3-Nano parses the
+same way. For a required call with a template
 without a thought, as Qwen3-Coder's, a declared tool's `<function=name>`
 before any `<tool_call>` also ends the content and starts the first call, as
 llama.cpp (`cd959bae9`) allows. Otherwise that tag is text, in the parse, the
@@ -220,7 +230,12 @@ calls start at the first `<seed:tool_call>` followed by a line break, and the
 text before it, including a `<seed:tool_call>` followed by anything else (as
 in `<seed:tool_call><function=`, or a space or tab after the tag), is content,
 streamed or not. The tool-call grammar and its lazy trigger also start a scope
-only at `<seed:tool_call>\n`. Where upstream fails the whole reply with an
+only at `<seed:tool_call>\n`, and with `ToolChoice.required` the grammar lets a
+thought and text without that tag come first when the prompt opened no thought.
+A finished reply whose last scope is never closed keeps a call complete through
+`</function>` and its line break, and drops a scope that ends before its call
+does. An argument the tool declares as a string keeps its value as generated,
+even one that looks like JSON. Where upstream fails the whole reply with an
 error, llamadart deliberately stays lenient
 ([#1542](https://github.com/leehack/llamadart/pull/1542#issuecomment-6758592134)):
 
@@ -307,8 +322,8 @@ parses return a forced-open thought that never closes as reasoning, including
 any tool-call envelope inside it, as llama.cpp (`620d2225c`) does with the
 QwQ, MiniMax-M2 and DeepSeek V3.1 templates.
 
-Output parsed with a PEG parser (Ministral, Solar Open, Nemotron V3, or
-Qwen3-Coder XML given a parser) streams the content and reasoning of partial
+Output parsed with a PEG parser (Ministral, Solar Open, or Qwen3-Coder XML
+given a parser) streams the content and reasoning of partial
 PEG parses when tool calls are parsed. Those parses hold back a possible
 opening themselves. A Ministral thought cut off by the token limit therefore
 streams as reasoning, although the final parse returns it, with its `[THINK]`

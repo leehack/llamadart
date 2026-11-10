@@ -44,7 +44,7 @@ void main() {
 // legitimate stub instance can execute these members; their bodies have no
 // runtime coverage claim.
 bool schemaCapabilityContract(LiteRtLmRuntimeClient client) =>
-    client.supportsJsonSchemaConstraints;
+    client.supportsJsonSchemaConstraints && client.supportsJsonSchemaThinking;
 
 void schemaConversationContract(LiteRtLmRuntimeClient client) =>
     client.createConversation(jsonSchemaConstraints: true);

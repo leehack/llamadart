@@ -95,6 +95,48 @@ void main() {
         expect(request.enableThinking, isFalse);
         expect(request.params.grammar, isNull);
         expect(worker.requests.whereType<LiteRtLmGenerateRequest>(), isEmpty);
+        expect(backend.supportsJsonSchemaChatThinking, isFalse);
+        expect(
+          () => backend.generateChatWithJsonSchemaAndThinking(
+            1,
+            const [
+              LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'p'),
+            ],
+            const GenerationParams(),
+            jsonSchema: {'type': 'object'},
+          ),
+          throwsA(
+            isA<LlamaUnsupportedException>().having(
+              (e) => e.message,
+              'message',
+              contains('Gemma 4'),
+            ),
+          ),
+        );
+        await backend.contextCreate(
+          1,
+          const ModelParams(device: api.ComputeDevice.cpu),
+        );
+        worker.schemaAdmitsThinking = true;
+        await backend.prepareJsonSchemaChat();
+        expect(backend.supportsJsonSchemaChatThinking, isTrue);
+        await backend
+            .generateChatWithJsonSchemaAndThinking(
+              1,
+              const [
+                LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'p'),
+              ],
+              const GenerationParams(),
+              jsonSchema: {'type': 'object'},
+            )
+            .drain<void>();
+        expect(
+          worker.requests.whereType<LiteRtLmGenerateChatRequest>().last,
+          isA<LiteRtLmGenerateChatRequest>()
+              .having((r) => r.enableThinking, 'enableThinking', isTrue)
+              .having((r) => r.jsonSchema, 'jsonSchema', '{"type":"object"}'),
+        );
+        worker.schemaAdmitsThinking = false;
         await backend.contextCreate(
           1,
           const ModelParams(device: api.ComputeDevice.cpu),
@@ -3519,6 +3561,7 @@ class _FakeLiteRtLmWorker {
   final BackendGenerationLimit? generationLimit;
   LiteRtLmErrorResponse? modelLoadErrorResponse;
   LiteRtLmErrorResponse? schemaAdmissionError;
+  bool schemaAdmitsThinking = false;
   Completer<void>? schemaAdmissionStarted;
   Completer<void>? schemaAdmissionGate;
   final ReceivePort _receivePort = ReceivePort();
@@ -3590,15 +3633,14 @@ class _FakeLiteRtLmWorker {
       case LiteRtLmJsonSchemaPrepareRequest():
         schemaAdmissionStarted?.complete();
         final gate = schemaAdmissionGate;
+        Object admission() =>
+            schemaAdmissionError ??
+            LiteRtLmJsonSchemaAdmissionResponse(thinking: schemaAdmitsThinking);
         if (gate == null) {
-          message.sendPort.send(schemaAdmissionError ?? LiteRtLmDoneResponse());
+          message.sendPort.send(admission());
         } else {
           unawaited(
-            gate.future.then(
-              (_) => message.sendPort.send(
-                schemaAdmissionError ?? LiteRtLmDoneResponse(),
-              ),
-            ),
+            gate.future.then((_) => message.sendPort.send(admission())),
           );
         }
       case LiteRtLmModelLoadRequest():

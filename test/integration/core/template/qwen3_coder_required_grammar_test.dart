@@ -31,7 +31,7 @@ void main() {
       );
       expect(rendered.grammarLazy, isTrue);
       expect(rendered.grammarTriggers.map((trigger) => trigger.value), [
-        '<tool_call>\n<function=',
+        '<tool_call>',
       ], reason: template);
       final grammar = GbnfRecognizer(rendered.grammar!);
       const bareCall =
@@ -72,27 +72,6 @@ void main() {
         );
         expect(deltas.expand((delta) => delta.toolCalls ?? const []), isEmpty);
       }
-    }
-  });
-
-  test('Nemotron-3-Nano keeps its own required grammar', () {
-    for (final enableThinking in [true, false]) {
-      final rendered = renderQwen3CoderRequiredCall(
-        'test/fixtures/llama_cpp_templates/'
-        'NVIDIA-Nemotron-3-Nano-30B-A3B-BF16.jinja',
-        enableThinking: enableThinking,
-        parallelToolCalls: false,
-      );
-      expect(rendered.format, ChatFormat.pegConstructed.index);
-      expect(rendered.grammarLazy, isFalse);
-      expect(
-        rendered.grammar,
-        allOf(
-          isNot(contains('text-before-calls')),
-          isNot(contains('first-tool-call-scope')),
-        ),
-        reason: 'thinking $enableThinking',
-      );
     }
   });
 

@@ -70,7 +70,7 @@ final class LiteRtLmV1TurnSettings {
       }
       if (jsonSchema != null || runtime._conversation?._schemaEnabled == true) {
         throw LlamaUnsupportedException(
-          'C API 1.0 schema chat disables thinking and cannot also enforce a thinking budget.',
+          'C API 1.0 schema chat cannot also enforce a thinking budget.',
         );
       }
       if (runtime._engineSpeculativeDecoding) {
@@ -212,7 +212,11 @@ final class LiteRtLmV1TurnSettings {
         }
       }
       if (jsonSchema case final schema?) {
-        _V1JsonSchema(runtime).constrain(args, schema);
+        _V1JsonSchema(runtime).constrain(
+          args,
+          schema,
+          thinking: runtime._conversation?._schemaThinking ?? false,
+        );
       }
       if (thinkingTokenBudget case final budget?) {
         _V1ThinkingBudget(runtime).apply(args, budget);
