@@ -287,7 +287,10 @@ void main() {
           throwsA(
             stage == 17
                 ? isA<LiteRtLmSendFailureException>()
-                : isNot(isA<LiteRtLmSendFailureException>()),
+                : allOf(
+                    isA<LlamaException>(),
+                    isNot(isA<LiteRtLmSendFailureException>()),
+                  ),
           ),
         );
         expect(count('live'), 1);
@@ -298,6 +301,29 @@ void main() {
       },
     );
   }
+  test('send failure keeps the native message text and the native stack', () {
+    final runtime = loaded();
+    final conversation = runtime.openConversation();
+    call('fail', 17);
+    Object? error;
+    StackTrace? trace;
+    try {
+      conversation.sendText('failure');
+    } on Object catch (caught, stackTrace) {
+      error = caught;
+      trace = stackTrace;
+    }
+    expect(error, isA<LiteRtLmSendFailureException>());
+    expect(
+      (error! as LiteRtLmSendFailureException).message,
+      'conversation_send_message_stream failed: LiteRT-LM reported INTERNAL '
+      '(13): stage17 m.litertlm cache secret/dispatch.',
+    );
+    expect(trace.toString(), contains('LiteRtLmV1Runtime._check'));
+    call('fail', 0);
+    conversation.close();
+    runtime.dispose();
+  });
   test(
     'cancellation status failure still prevents reuse and retains callback until final',
     () async {
