@@ -953,28 +953,55 @@ void main() {
       });
     }
 
-    test('a failed chat send names a bundle template it could not '
-        'adapt', () async {
+    for (final (clientName, nativeError, typeMatcher)
+        in <(String, Object Function(String), Matcher)>[
+          ('legacy', StateError.new, isA<StateError>()),
+          ('v1', LlamaModelException.new, isA<LlamaModelException>()),
+        ]) {
+      test('a failed $clientName chat send names a bundle template it could '
+          'not adapt', () async {
+        client.onRenderMessage = (_) => throw StateError('render failed');
+        final service = serviceReading(null);
+        final failure = nativeError('send_message_stream rc=13');
+        try {
+          final model = await service.loadModel(modelFile.path, params);
+          final context = service.createContext(model, params);
+
+          await expectLater(
+            chat(service, context, sendError: failure),
+            throwsA(
+              allOf(
+                typeMatcher,
+                isA<Object>().having(
+                  _nativeMessage,
+                  'message',
+                  allOf(
+                    startsWith('send_message_stream rc=13 '),
+                    contains('chat template of this bundle'),
+                    contains('list of {"type": "text", "text": ...} parts'),
+                  ),
+                ),
+              ),
+            ),
+          );
+        } finally {
+          service.dispose();
+        }
+      });
+    }
+
+    test('a chat send failing with another Llama exception stays as it '
+        'is', () async {
       client.onRenderMessage = (_) => throw StateError('render failed');
       final service = serviceReading(null);
-      final failure = StateError('send_message_stream rc=13');
+      final failure = LlamaStateException('engine disposed');
       try {
         final model = await service.loadModel(modelFile.path, params);
         final context = service.createContext(model, params);
 
         await expectLater(
           chat(service, context, sendError: failure),
-          throwsA(
-            isA<StateError>().having(
-              (error) => error.message,
-              'message',
-              allOf(
-                startsWith('send_message_stream rc=13 '),
-                contains('chat template of this bundle'),
-                contains('list of {"type": "text", "text": ...} parts'),
-              ),
-            ),
-          ),
+          throwsA(same(failure)),
         );
       } finally {
         service.dispose();
@@ -1871,49 +1898,61 @@ void main() {
     }
   }
 
-  for (final custom in [true, false]) {
-    test('a failed native send ${custom ? 'names' : 'does not name'} the '
-        'content-parts change ${custom ? 'with' : 'without'} a custom '
-        'template', () async {
-      final file = File('${tempDir.path}/Qwen3-0.6B.litertlm');
-      await file.writeAsString('fake model');
-      final client = _FakeLiteRtLmRuntimeClient();
-      final service = LiteRtLmService(clientFactory: () => client);
-      final params = ModelParams(
-        liteRtLmBackend: LiteRtLmBackendPreference.cpu,
-        chatTemplate: custom ? "{{ 'x' + messages[0]['content'] }}" : null,
-      );
-      try {
-        final model = await service.loadModel(file.path, params);
-        final context = service.createContext(model, params);
-        final pending = service.generateChat(context, const [
-          LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'Hi'),
-        ], const GenerationParams(maxTokens: 8)).toList();
-        const nativeFailure =
-            'litert_lm_conversation_send_message_stream rc=13';
-        final failure = expectLater(
-          pending,
-          throwsA(
-            isA<StateError>().having(
-              (error) => error.message,
-              'message',
-              custom
-                  ? allOf(
-                      startsWith('$nativeFailure ModelParams.chatTemplate'),
-                      contains('list of {"type": "text", "text": ...} parts'),
-                    )
-                  : nativeFailure,
-            ),
-          ),
+  for (final (clientName, nativeError, typeMatcher)
+      in <(String, Object Function(String), Matcher)>[
+        ('legacy', StateError.new, isA<StateError>()),
+        ('v1', LlamaModelException.new, isA<LlamaModelException>()),
+      ]) {
+    for (final custom in [true, false]) {
+      test('a failed $clientName native send '
+          '${custom ? 'names' : 'does not name'} the '
+          'content-parts change ${custom ? 'with' : 'without'} a custom '
+          'template', () async {
+        final file = File('${tempDir.path}/Qwen3-0.6B.litertlm');
+        await file.writeAsString('fake model');
+        final client = _FakeLiteRtLmRuntimeClient();
+        final service = LiteRtLmService(clientFactory: () => client);
+        final params = ModelParams(
+          liteRtLmBackend: LiteRtLmBackendPreference.cpu,
+          chatTemplate: custom ? "{{ 'x' + messages[0]['content'] }}" : null,
         );
-        await client.generateStarted.future;
-        client.generated.addError(StateError(nativeFailure));
-        await client.generated.close();
-        await failure;
-      } finally {
-        service.dispose();
-      }
-    });
+        try {
+          final model = await service.loadModel(file.path, params);
+          final context = service.createContext(model, params);
+          final pending = service.generateChat(context, const [
+            LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'Hi'),
+          ], const GenerationParams(maxTokens: 8)).toList();
+          const nativeFailure =
+              'litert_lm_conversation_send_message_stream rc=13';
+          final failure = expectLater(
+            pending,
+            throwsA(
+              allOf(
+                typeMatcher,
+                isA<Object>().having(
+                  _nativeMessage,
+                  'message',
+                  custom
+                      ? allOf(
+                          startsWith('$nativeFailure ModelParams.chatTemplate'),
+                          contains(
+                            'list of {"type": "text", "text": ...} parts',
+                          ),
+                        )
+                      : nativeFailure,
+                ),
+              ),
+            ),
+          );
+          await client.generateStarted.future;
+          client.generated.addError(nativeError(nativeFailure));
+          await client.generated.close();
+          await failure;
+        } finally {
+          service.dispose();
+        }
+      });
+    }
   }
 
   test('a native failure after output started does not name the '
@@ -8893,3 +8932,6 @@ Uint8List _thinkingBundle({required int modelType, String? template}) {
   bytes.setAll(136, metadata);
   return bytes;
 }
+
+String _nativeMessage(Object error) =>
+    error is LlamaException ? error.message : (error as StateError).message;

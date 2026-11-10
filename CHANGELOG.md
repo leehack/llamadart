@@ -1,5 +1,7 @@
 ## Unreleased
 
+- Name the unadaptable bundle template or `ModelParams.chatTemplate` in a failed native LiteRT-LM chat send on the C API 1.0 runtime too, as the legacy runtime already does ([#1868](https://github.com/leehack/llamadart/issues/1868)).
+
 ## 0.19.2
 
 - Keep the default WebGPU bridge assets at `v0.1.83` (unchanged from 0.19.1).
