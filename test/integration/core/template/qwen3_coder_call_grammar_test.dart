@@ -8,6 +8,7 @@ import 'package:llamadart/src/core/models/chat/chat_role.dart';
 import 'package:llamadart/src/core/models/tools/tool_definition.dart';
 import 'package:llamadart/src/core/models/tools/tool_param.dart';
 import 'package:llamadart/src/core/template/chat_template_engine.dart';
+import 'package:llamadart/src/core/template/handlers/qwen3_coder_xml_handler.dart';
 import 'package:test/test.dart';
 
 import '../../../support/gbnf_recognizer.dart';
@@ -41,6 +42,46 @@ String _weather(String location) =>
     _call('get_weather', [('location', location)]);
 
 String _time(List<(String, String)> arguments) => _call('get_time', arguments);
+
+// Reaches the handler only: requests refuse `ToolDefinition.fromJsonSchema`
+// tools for Qwen3-Coder XML.
+final ToolDefinition _setTags = ToolDefinition.fromJsonSchema(
+  name: 'set_tags',
+  description: 's',
+  schema: {
+    'type': 'object',
+    'properties': {
+      'tags': {
+        'type': 'array',
+        'items': {'type': 'string'},
+      },
+      'opts': {
+        'type': 'object',
+        'properties': {
+          'k': {'type': 'string'},
+        },
+      },
+      'level': {
+        'enum': [1, 2],
+      },
+      'mode': {
+        'enum': ['a', 1],
+      },
+      'count': {
+        'anyOf': [
+          {'type': 'integer'},
+          {
+            'type': 'array',
+            'items': {'type': 'integer'},
+          },
+        ],
+      },
+    },
+    'required': ['tags'],
+  },
+);
+
+String _tags(List<(String, String)> arguments) => _call('set_tags', arguments);
 
 /// Replies after the lazy grammar's `<tool_call>` trigger, each with whether
 /// llama.cpp's (`cd959bae9`) Qwen3.5 grammar takes it without and with
@@ -122,7 +163,51 @@ final List<(String, bool, bool)> _replies = [
   (_weather('Paris').substring(0, _weather('Paris').length - 3), false, false),
 ];
 
+/// Replies of the `set_tags` tool, with whether llama.cpp's (`cd959bae9`)
+/// parallel-call grammar takes them, as `test-gbnf-validator` reported.
+final List<(String, bool)> _schemaReplies = [
+  (_tags([('tags', '["a","b"]')]), true),
+  (_tags([('tags', '[\n  "a",\n  "b"\n]')]), true),
+  (_tags([('tags', '["a" ]')]), true),
+  (_tags([('tags', '[ "a"]')]), true),
+  (_tags([('tags', '[]')]), true),
+  (_tags([('tags', '[\n]')]), true),
+  (_tags([('tags', ' ["a"]')]), false),
+  (_tags([('tags', '["a"] ')]), false),
+  (_tags([('tags', '["a"]\n')]), false),
+  (_tags([('tags', '"a"')]), false),
+  (_tags([('tags', '[1]')]), false),
+  (_tags([('tags', '[]'), ('opts', '{"k": "v"}')]), true),
+  (_tags([('tags', '[]'), ('opts', '{\n  "k": "v"\n}')]), true),
+  (_tags([('tags', '[]'), ('opts', '{ }')]), true),
+  (_tags([('tags', '[]'), ('opts', '{"k": "v"} ')]), false),
+  (_tags([('tags', '[]'), ('opts', '{"k": 1}')]), false),
+  (_tags([('tags', '[]'), ('level', '1')]), true),
+  (_tags([('tags', '[]'), ('level', '2')]), true),
+  (_tags([('tags', '[]'), ('level', '3')]), false),
+  (_tags([('tags', '[]'), ('level', '"1"')]), false),
+  (_tags([('tags', '[]'), ('level', ' 1')]), false),
+  (_tags([('tags', '[]'), ('mode', 'a')]), true),
+  (_tags([('tags', '[]'), ('mode', '1')]), true),
+  (_tags([('tags', '[]'), ('mode', 'xyz')]), true),
+  (_tags([('tags', '[]'), ('mode', ' a ')]), true),
+  (_tags([('tags', '[]'), ('count', '3')]), true),
+  (_tags([('tags', '[]'), ('count', '3 ')]), false),
+  (_tags([('tags', '[]'), ('count', '[1, 2]')]), true),
+  (_tags([('tags', '[]'), ('count', '[1] ')]), false),
+  (_tags([('tags', '[]'), ('count', '[\n  1\n]')]), true),
+];
+
 void main() {
+  test('the call grammar takes the JSON values llama.cpp takes', () {
+    final grammar = GbnfRecognizer(
+      Qwen3CoderXmlHandler().buildGrammar([..._tools, _setTags])!,
+    );
+    for (final (output, accepted) in _schemaReplies) {
+      expect(grammar.accepts(output), accepted, reason: output);
+    }
+  });
+
   for (final (:template, :enableThinking, bareFirstCall: _)
       in qwen3CoderRequiredTemplates) {
     for (final parallel in [false, true]) {

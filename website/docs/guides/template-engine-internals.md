@@ -145,7 +145,10 @@ sequenceDiagram
   parse thoughts; with thinking off, the stream drops that reasoning.
   StepFun3.5-Flash leaves it open even with thinking off: llamadart closes
   it in the prompt, but still parses a leading thought, as llama.cpp does
-  with the open one. The handler marks such a result (internal
+  with the open one. A reply with no thinking tag or `<tool_call>` is
+  content, where llama.cpp (`cd959bae9`) returns it all as reasoning: a
+  deliberate divergence, so that thinking off leaves the reply visible
+  ([#1898](https://github.com/leehack/llamadart/issues/1898)). The handler marks such a result (internal
   `thoughtClosedForThinkingOffOf`), as do the other handlers that close an
   open thought where their render's parse still takes text before the end
   tag as a thought, such as DeepSeek R1 distills, MiniMax M2, Nemotron Nano

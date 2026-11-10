@@ -35,7 +35,8 @@ Left out:
 - The `bare-call` and `text-then-bare-call` cases with StepFun3.5-Flash and
   thinking off: llama.cpp keeps the thought its prompt opened, so a reply with
   no thinking tag or `<tool_call>` is reasoning, while llamadart closed the
-  thought and returns content.
+  thought and returns content. This is deliberate (maintainer decision on
+  #1898).
 
 Fed one byte at a time, llama.cpp's session keeps the first call of a scope
 that holds two (`two-functions-in-one-scope*`), because the final parse returns
