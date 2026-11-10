@@ -2293,7 +2293,7 @@ class ChatProvider extends ChangeNotifier {
       _removeEmptyAssistantPlaceholder();
       if (toolCallsCutOff) {
         _addInfoMessage(
-          'The reply reached the token limit, so its tool calls were not run. Raise Max generated tokens and send it again.',
+          'The reply reached the token limit, so its tool calls were not run. Raise Max generated tokens, or start a new chat if the context is full, and send it again.',
         );
       }
     } catch (e) {

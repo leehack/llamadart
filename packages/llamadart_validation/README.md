@@ -133,6 +133,9 @@ A LiteRT profile with `backend: auto` passes `ComputeDevice.auto` and
 `GpuBackend.auto`, allowing the runtime's platform default and GPU-to-CPU
 fallback. It does not force CPU placement or prove accelerator execution;
 explicit `cpu`, `gpu` and `npu` profiles retain their device requests.
+`chat-litert-auto` is `chat-litert-gpu` under `auto`, for the Galaxy S24 GPU
+engine failure and CPU retry
+([#1458](https://github.com/leehack/llamadart/issues/1458)).
 
 `lib/llamadart_validation.dart` is the platform-neutral suite; conditional native
 adapters and `lib/io.dart` handle filesystem/runtime checks. `bin/run.dart` and `bin/report.dart` are the

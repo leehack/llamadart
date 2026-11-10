@@ -229,11 +229,10 @@ error, llamadart deliberately stays lenient
 - A later scope without a line break after its tag, and any text after the
   last call, stay content after the calls before them.
 
-The first two are rejected when the request's tools came from
-`ToolDefinition.fromJsonSchema` ("The model returned an undeclared tool call."
-or "Tool arguments do not match the input schema for ..."). With `ToolParam`
-tools, or without tools, the Seed-OSS parse has no schemas and returns the
-call, so validate the name and arguments before running it.
+A Seed-OSS request refuses `ToolDefinition.fromJsonSchema` tools at render
+(`LlamaUnsupportedException`), so the parse never sees their schemas and
+returns the call either way. Validate the tool name and arguments before
+running it.
 
 Streamed content and reasoning start and end with the whitespace the final
 parse keeps, with or without tools, apart from the cases below. The parse

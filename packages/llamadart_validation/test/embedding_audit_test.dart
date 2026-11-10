@@ -65,6 +65,8 @@ const oldHashes = <String, String>{
       "13a9473f86eff341bb5329f35fa147c4e411fc22d16beabb589ce3006f238b97",
   "chat-litert-gpu.json":
       "4630631b440cdbb5b8b5f2c18c61123314b225ee4025c364d43fd2cc8d60661d",
+  "chat-litert-auto.json":
+      "5a06890562ba8a950c3c09ab61331d380f02236c014888e031dd6f7da498737b",
   "gemma4-litert-gpu.json":
       "4630631b440cdbb5b8b5f2c18c61123314b225ee4025c364d43fd2cc8d60661d",
   "tokenization-gguf-cpu.json":

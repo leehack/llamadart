@@ -1685,7 +1685,11 @@ void main() {
       );
       expect(
         cutOffProvider.messages.last.text,
-        contains('reached the token limit, so its tool calls were not run'),
+        allOf(
+          contains('reached the token limit, so its tool calls were not run'),
+          contains('Raise Max generated tokens'),
+          contains('start a new chat if the context is full'),
+        ),
       );
     });
 

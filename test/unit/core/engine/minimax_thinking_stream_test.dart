@@ -155,5 +155,53 @@ void main() {
         expect(chunks.last.choices.single.finishReason, 'stop');
       },
     );
+
+    for (final output in [
+      '$_end$_end<mm:think>',
+      '$_end<mm:think>a$_end$_envelope',
+    ]) {
+      test('a forced-open reply streams the same split by character: '
+          '$output', () async {
+        final whole = await _parse([output], toolChoice: ToolChoice.auto);
+        final split = await _parse(
+          output.split(''),
+          toolChoice: ToolChoice.auto,
+        );
+        expect(_thinking(split), _thinking(whole));
+        expect(_content(split), _content(whole));
+        expect(
+          split.expand((c) => c.choices.single.delta.toolCalls ?? const []),
+          hasLength(
+            whole
+                .expand((c) => c.choices.single.delta.toolCalls ?? const [])
+                .length,
+          ),
+        );
+      });
+    }
+
+    for (final toolChoice in [ToolChoice.auto, ToolChoice.required]) {
+      test('an empty leading thought leaves a later unfinished thought as '
+          'content before a call ($toolChoice)', () async {
+        final output = '<mm:think>$_end<mm:think>unfinished$_envelope';
+        for (final tokens in [
+          [output],
+          output.split(''),
+        ]) {
+          final chunks = await _parse(
+            tokens,
+            forcedOpen: false,
+            toolChoice: toolChoice,
+          );
+          expect(_thinking(chunks), isEmpty);
+          expect(_content(chunks), '<mm:think>unfinished');
+          final call = chunks
+              .expand((c) => c.choices.single.delta.toolCalls ?? const [])
+              .single;
+          expect(call.function?.arguments, '{"city":"Seoul"}');
+          expect(chunks.last.choices.single.finishReason, 'tool_calls');
+        }
+      });
+    }
   });
 }

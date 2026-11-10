@@ -82,8 +82,8 @@ benchmark's `max_num_tokens`, so the load reads the executor's limit from
 ids are too long. Exceeding the maximum number of tokens allowed: N >= M`.
 The probe sends `4 × requested + 64` pseudo-random digits, which Gemma, Qwen
 and Llama 3 tokenize at one to three digits per token, and is rejected before
-any model work (about 20-100 ms at 65536). It also runs a one-token turn that
-must report a decode count of 1 and a context count below `M`. Any other
+any model work (about 20-125 ms at 65536 on Qwen3 0.6B CPU). It also runs a
+one-token turn that must report a decode count of 1 and a context count below `M`. Any other
 outcome, including an accepted prompt or another error text, leaves
 `generationLimitUnsupportedReason` set. Requalify with `litert-lm-web-truncation` whenever the
 `@litert-lm/core` pin changes: a new stop condition in `ShouldStop` breaks

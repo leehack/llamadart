@@ -126,6 +126,14 @@ void main() {
       'LICENSE',
       'example/README.md',
     ]);
+    for (final MapEntry(key: name, value: path) in _packages.entries.skip(1)) {
+      expect(pubContentFiles(Directory.current, path, name), [
+        '$path/README.md',
+        '$path/CHANGELOG.md',
+        '$path/LICENSE',
+        '$path/example/README.md',
+      ]);
+    }
   });
 
   group('verify_release_docs_versions.dart', () {

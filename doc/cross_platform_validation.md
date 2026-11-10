@@ -107,9 +107,12 @@ GPU uses the LiteRT-LM GPU backend, not CUDA.
     or process death in logcat.
     `test/integration/backends/litert_lm/engine_create_failure_test.dart`
     pins the `gpu` failure and the 0.17.0 `auto` CPU retry with a runtime
-    client that returns no engine; the retry is not yet re-run on the
-    device. Qwen3 0.6B on the
+    client that returns no engine. Qwen3 0.6B on the
     CPU and Gemma 4 E2B on this GPU pass on the same device.
+  - `v0.19.1-2`: the runtime refuses the GPU engine for this exact model
+    file on this driver with `FAILED_PRECONDITION` ("Android GPU safety
+    restriction ... Use CPU"), and `auto` retries it on the CPU
+    ([2026-11-10 run](#litert-lm-auto-cpu-retry-on-galaxy-s24-2026-11-10)).
   - The runtime keeps its own Android Dawn build: upstream's `v0.17`
     `libwebgpu_dawn.so` is reported to crash in the Qualcomm shader compiler
     on this device
@@ -1573,6 +1576,30 @@ application crash.
 Not run: a Flutter Windows desktop app, Linux GPU, Linux without a Vulkan ICD
 ([#572](https://github.com/leehack/llamadart/issues/572)), Android x64 and
 iOS 16.
+
+## LiteRT-LM `auto` CPU retry on Galaxy S24 (2026-11-10)
+
+`chat-litert-auto` on a Galaxy S24 (`SC-51E`, API 36, Adreno 750) under
+Firebase Test Lab: source `3f6338b50` (clean), LiteRT-LM `0.19.1-2`, Android
+Debug, legacy Qwen3 0.6B artifact `555579ff…`, matrix `matrix-1da3zj25gmeu1`
+([#1458](https://github.com/leehack/llamadart/issues/1458)).
+
+- Each of the three engine creations (first use, `C09.reload`,
+  `C12.recovery`) tried the GPU first. The runtime refused it with
+  `FAILED_PRECONDITION`: an "Android GPU safety restriction" naming this
+  driver's 134217728-byte `maxStorageBufferRange` and the model's
+  155582464-byte constant. llamadart logged one
+  `LiteRT-LM could not create a GPU engine under ComputeDevice.auto; retrying
+  on the CPU` warning per engine and created a CPU engine. The warning came
+  0.5-0.9 s after the load.
+- `C01.load` reports `LiteRT-LM gpu` because engine creation is deferred; after
+  the retry the model reports `LiteRT-LM cpu` with 0 GPU layers.
+- 16 PASS and 1 NOT_RUN of 17 cases, with no crash or process death in logcat.
+  Throughput about 8 tokens/s wall for 32-token outputs. `C08.cancel` is NOT_RUN because the cancelled request has no
+  native counters; macOS CPU at this pin shows the same, so the CPU retry does
+  not cause it ([#1903](https://github.com/leehack/llamadart/issues/1903)).
+- An earlier attempt (`matrix-1tcmnx5y9bnqv`) stopped at the 10-minute model
+  download deadline with 260777210 of 614236160 bytes, before any case.
 
 ## Planned platform/backend coverage
 
