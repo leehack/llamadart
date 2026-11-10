@@ -30,7 +30,6 @@ void main() {
   for (final (template, format) in const [
     ('mistralai-Ministral-3-14B-Reasoning-2512.jinja', ChatFormat.ministral),
     ('unsloth-mistral-Devstral-Small-2507.jinja', ChatFormat.ministral),
-    ('NVIDIA-Nemotron-3-Nano-30B-A3B-BF16.jinja', ChatFormat.pegConstructed),
   ]) {
     for (final enableThinking in const [true, false]) {
       test('$template with thinking $enableThinking streams thinking tags as '

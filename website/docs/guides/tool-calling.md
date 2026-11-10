@@ -489,7 +489,11 @@ When a Hermes template forces reasoning open (such as QwQ), the
 `ToolChoice.required` grammar accepts reasoning closed by `</think>` before the
 calls, for schema and `ToolParam` tools.
 
-With Qwen3-Coder XML templates (Qwen3-Coder, Qwen3.5, StepFun3.5-Flash), the
+With Qwen3-Coder XML templates (Qwen3-Coder, Qwen3.5, StepFun3.5-Flash,
+Nemotron 3 Nano), a call counts, as in llama-server, only with a line break
+after each tag and around each value, and with its required arguments before
+its optional ones; a string value is kept as generated, up to the first
+`\n</parameter>\n`. The tool-call grammar enforces the same shape. The
 `ToolChoice.required` grammar accepts a thought and any text without
 `<tool_call>` before the calls, as in llama-server, so leave room in
 `maxTokens`: a reply that spends it first ends with `length` and no call. The

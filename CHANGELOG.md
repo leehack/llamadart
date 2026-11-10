@@ -3,6 +3,8 @@ Releases before 0.10.0 are in the
 
 ## Unreleased
 
+- Parse Qwen3-Coder XML tool calls as llama.cpp does: a call needs a line break after each tag and around each value (a CRLF or compact `<tool_call><function=` call is dropped), its required arguments come before its optional ones, and a string value keeps its whitespace and any `</parameter>` not followed by a line break. Nemotron 3 Nano now parses as Qwen3-Coder XML, so a `<tool_call>` also ends its thought, and the tool-call grammar of these templates now requires that shape and starts at `<tool_call>` ([#1898](https://github.com/leehack/llamadart/issues/1898)).
+
 ## 0.19.4
 
 - Keep the default WebGPU bridge assets at `v0.1.83` (unchanged from 0.19.3).

@@ -2,7 +2,6 @@ import '../models/tools/tool_definition.dart';
 import '../models/chat/completion_chunk.dart';
 import 'chat_parse_result.dart';
 import 'thinking_utils.dart';
-import 'tool_call_grammar_utils.dart';
 import 'tool_call_parsing_utils.dart';
 import 'tool_schema_utils.dart';
 
@@ -213,18 +212,11 @@ class XmlToolCallFormat {
 ///
 /// The root of a format that [XmlToolCallFormat.repeatsScope] admits one tool
 /// call per scope, in consecutive scopes, as llama.cpp's grammar does; when
-/// [parallelToolCalls] is false, exactly one. With [textBeforeCalls], text
-/// without a call opening may precede them, as in llama.cpp's grammar for a
-/// required call. With [bareFirstCall], the first call may leave out the
-/// scope start, and a declared tool's opening, such as
-/// `<function=get_weather>`, is a call opening. Other formats ignore these
-/// options.
+/// [parallelToolCalls] is false, exactly one. Other formats ignore it.
 String? buildXmlToolCallGrammar(
   List<ToolDefinition>? tools,
   XmlToolCallFormat format, {
   bool parallelToolCalls = true,
-  bool textBeforeCalls = false,
-  bool bareFirstCall = false,
 }) {
   if (tools == null || tools.isEmpty) {
     return null;
@@ -265,33 +257,15 @@ obj ::= "{" space (string ":" space value ("," space string ":" space value)*)? 
 ''';
 
   if (format.repeatsScope) {
-    // Qwen and Seed-OSS emit the XML envelope with line breaks between tags. Lazy grammar
+    // Seed-OSS emits the XML envelope with line breaks between tags. Lazy grammar
     // activation replays that exact trigger text, so whitespace must be valid
     // in the grammar rather than relying on eager constrained decoding to
     // remove it.
     final scope = 'xml-space tool-call ${_literal(format.scopeEnd)} xml-space';
-    final firstScope = bareFirstCall
-        ? 'first-tool-call-scope'
-        : 'tool-call-scope';
-    final scopes = !parallelToolCalls
-        ? firstScope
-        : bareFirstCall
-        ? '$firstScope tool-call-scope*'
-        : 'tool-call-scope+';
-    final extraRules = [
-      if (bareFirstCall)
-        'first-tool-call-scope ::= ${_literal(format.scopeStart)}? $scope',
-      if (textBeforeCalls)
-        ...ToolCallGrammarUtils.excludingRules('text-before-calls', [
-          format.scopeStart,
-          if (bareFirstCall)
-            for (final name in toolNames) format.bareCallOpening(name),
-        ]),
-    ].map((rule) => '$rule\n').join();
     return '''
-root ::= ${textBeforeCalls ? 'text-before-calls ' : ''}$scopes
+root ::= ${parallelToolCalls ? 'tool-call-scope+' : 'tool-call-scope'}
 tool-call-scope ::= ${_literal(format.scopeStart)} $scope
-${extraRules}tool-call ::= ${_literal(format.toolStart)} tool-name ${_literal(format.toolSep)} xml-space param* ${_literal(format.toolEnd)} xml-space
+tool-call ::= ${_literal(format.toolStart)} tool-name ${_literal(format.toolSep)} xml-space param* ${_literal(format.toolEnd)} xml-space
 param ::= ${_literal(format.keyStart)} param-name ${_literal(format.keyValSep)} xml-value ${_literal(format.valEnd)} xml-space
 tool-name ::= $toolNameRule
 param-name ::= $paramNameRule
@@ -594,9 +568,13 @@ ChatParseResult parseXmlToolCalls(
 /// Parses the scopes that end [content] for [parseXmlToolCalls] with
 /// `endsAtLastCall`.
 ///
-/// A finished reply may end a valid call without its scope end, or with only
-/// the start of one, and the call counts, as llama.cpp takes it at the end of
-/// the input.
+/// Each scope holds one call framed by line breaks as in llama.cpp's
+/// Qwen3-Coder parser: `<tool_call>\n<function=NAME>\n`, then each argument
+/// as `<parameter=KEY>\n` and its value up to the first
+/// `\n</parameter>\n`, then `</function>\n</tool_call>`. A finished reply
+/// may end a valid call without its scope end, or with only the start of one,
+/// and the call counts, as llama.cpp takes it at the end of the input. A
+/// partial reply holds back the start of a scope it may still complete.
 ChatParseResult _parseCallsEndingReply(
   String content,
   XmlToolCallFormat format, {
@@ -607,21 +585,23 @@ ChatParseResult _parseCallsEndingReply(
 }) {
   final scopeIdx = content.indexOf(format.scopeStart);
   if (scopeIdx == -1) {
+    final held = isPartial
+        ? _trailingPrefixLength(content, format.scopeStart)
+        : 0;
     return ChatParseResult(
-      content: content.trim(),
+      content: content.substring(0, content.length - held).trim(),
       reasoningContent: reasoning,
     );
   }
   final toolCalls = <LlamaCompletionChunkToolCall>[];
   var pos = scopeIdx;
   while ((maxToolCalls == null || toolCalls.length < maxToolCalls) &&
-      content.startsWith(format.scopeStart, pos)) {
-    final toolIdx = _consumeXmlWhitespace(
+      content.startsWith('${format.scopeStart}\n', pos)) {
+    final call = _parseLineFramedCall(
       content,
-      pos + format.scopeStart.length,
+      pos + format.scopeStart.length + 1,
+      schemas,
     );
-    if (!content.startsWith(format.toolStart, toolIdx)) break;
-    final call = _parseXmlToolCall(content, toolIdx, format, schemas);
     if (call == null) break;
     final closed = content.startsWith(format.scopeEnd, call.nextPos);
     if (!closed &&
@@ -644,6 +624,133 @@ ChatParseResult _parseCallsEndingReply(
     reasoningContent: reasoning,
     toolCalls: toolCalls,
   );
+}
+
+/// llama.cpp takes the required arguments of a call in any order only up to
+/// this many, and in declaration order beyond it.
+const _maxPermutedRequiredArguments = 6;
+
+/// Parses the Qwen3-Coder call that opens at [start] with `<function=`.
+///
+/// With [schemas], as llama.cpp's grammar-derived parser does, the call names
+/// a declared tool, its required arguments come first, each once, and its
+/// optional ones follow, in any order and possibly repeated, the last value
+/// winning. A string value is kept as generated; any other value is JSON with
+/// nothing around it, or a string the schema allows.
+_ParsedXmlToolCall? _parseLineFramedCall(
+  String content,
+  int start,
+  Map<String, Map<String, dynamic>>? schemas,
+) {
+  const functionOpen = '<function=';
+  const functionClose = '</function>';
+  if (!content.startsWith(functionOpen, start)) return null;
+  final nameStart = start + functionOpen.length;
+  final nameEnd = content.indexOf('>\n', nameStart);
+  if (nameEnd == -1) return null;
+  final name = content.substring(nameStart, nameEnd);
+  final schema = schemas?[name];
+  if (name.isEmpty ||
+      name.contains('\n') ||
+      (schemas != null && schema == null)) {
+    return null;
+  }
+  final properties = schema == null ? null : schemaProperties(schema);
+  final requiredNames = schema == null
+      ? const <String>{}
+      : schemaRequired(schema);
+  final requiredOrder = [
+    for (final key in properties?.keys ?? const <String>[])
+      if (requiredNames.contains(key)) key,
+  ];
+  final args = <String, dynamic>{};
+  var pos = nameEnd + 2;
+  var requiredSeen = 0;
+  while (true) {
+    final argument = _parseLineFramedArgument(content, pos, properties);
+    final key = argument?.key;
+    if (requiredSeen < requiredOrder.length) {
+      final expected = requiredOrder.length > _maxPermutedRequiredArguments
+          ? {requiredOrder[requiredSeen]}
+          : requiredOrder.where((name) => !args.containsKey(name)).toSet();
+      if (argument == null || !expected.contains(key)) return null;
+      requiredSeen++;
+    } else if (argument == null ||
+        (properties != null && requiredNames.contains(key))) {
+      break;
+    }
+    args[key!] = argument.value;
+    pos = argument.nextPos;
+  }
+  if (!content.startsWith(functionClose, pos)) return null;
+  pos += functionClose.length;
+  if (pos < content.length) {
+    if (content.codeUnitAt(pos) != 0x0A) return null;
+    pos++;
+  }
+  return _ParsedXmlToolCall(name: name, arguments: args, nextPos: pos);
+}
+
+/// Parses the argument that opens at [start] with `<parameter=`, or returns
+/// null when there is none or its value is invalid for [properties].
+({String key, Object? value, int nextPos})? _parseLineFramedArgument(
+  String content,
+  int start,
+  Map<String, Map<String, dynamic>>? properties,
+) {
+  const parameterOpen = '<parameter=';
+  const valueEnd = '\n</parameter>\n';
+  if (!content.startsWith(parameterOpen, start)) return null;
+  final keyStart = start + parameterOpen.length;
+  final keyEnd = content.indexOf('>\n', keyStart);
+  if (keyEnd == -1) return null;
+  final key = content.substring(keyStart, keyEnd);
+  final schema = properties?[key];
+  if (key.isEmpty ||
+      key.contains('\n') ||
+      (properties != null && schema == null)) {
+    return null;
+  }
+  final valueStart = keyEnd + 2;
+  final valueEndIdx = content.indexOf(valueEnd, valueStart);
+  if (valueEndIdx == -1) return null;
+  final raw = content.substring(valueStart, valueEndIdx);
+  final Object? value;
+  if (schema == null) {
+    value = ToolCallParsingUtils.decodeJsonValueOrString(raw);
+  } else {
+    final decoded = _decodeLineFramedValue(raw, schema);
+    if (!decoded.valid) return null;
+    value = decoded.value;
+  }
+  return (key: key, value: value, nextPos: valueEndIdx + valueEnd.length);
+}
+
+/// Decodes the raw value [raw] of an argument with [schema].
+///
+/// As llama.cpp does, a value that may be a string is JSON only when it is a
+/// JSON value other than a string, and otherwise the text as generated.
+ToolSchemaValueResult _decodeLineFramedValue(
+  String raw,
+  Map<String, dynamic> schema,
+) {
+  if (schemaResolvesToString(schema)) {
+    return validateToolSchemaValue(raw, schema);
+  }
+  // llama.cpp's JSON value has no whitespace around it.
+  if (raw.isNotEmpty && raw.trim() == raw) {
+    final decoded = raw == 'null'
+        ? (value: null)
+        : switch (ToolCallParsingUtils.decodeJsonValue(raw)) {
+            null => null,
+            final Object value => (value: value),
+          };
+    if (decoded != null && decoded.value is! String) {
+      final result = validateToolSchemaValue(decoded.value, schema);
+      if (result.valid) return result;
+    }
+  }
+  return validateToolSchemaValue(raw, schema);
 }
 
 /// Returns where the tool call of a scope that follows the scope end at
