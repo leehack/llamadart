@@ -2782,12 +2782,14 @@ void main() {
         );
       });
 
-      test('content after a start tag streams as it arrives', () async {
+      // llama.cpp keeps the StepFun3.5-Flash thought open, so a reply with no
+      // end tag is that thought, start tag included.
+      test('a reply with a start tag streams as the thought', () async {
         await _expectStreamedAfterEachToken(
           ChatFormat.qwen3CoderXml,
           thoughtClosed: true,
           tools: false,
-          const [('Hi', '', ''), (' <think>Plan', 'Plan', 'Hi')],
+          const [('Hi', '', ''), (' <think>Plan', 'Hi <think>Plan', '')],
         );
       });
 

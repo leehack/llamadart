@@ -14,6 +14,7 @@ import '../template/handlers/cohere2_moe_handler.dart';
 import '../template/handlers/command_r7b_handler.dart';
 import '../template/handlers/llama3_handler.dart';
 import '../template/peg_chat_parser.dart';
+import '../template/template_internal_metadata.dart';
 import '../template/thinking_utils.dart';
 
 enum _ToolStreamingMode { undecided, raw, parsed }
@@ -105,10 +106,9 @@ class ChatCompletionStreamParser {
       final markers = closedThoughtMarkers(templateResult.format);
       final held = StreamIterator(_heldUntilAny(tokenStream, markers));
       if (await held.moveNext()) {
-        // A Cohere2 MoE or Seed-OSS reply that reaches a marker then parses as
-        // after the forced-open prompt llama.cpp renders.
-        if ((templateResult.format == ChatFormat.cohere2Moe.index ||
-                templateResult.format == ChatFormat.seedOss.index) &&
+        // Such a reply that reaches a marker then parses as after the
+        // forced-open prompt llama.cpp renders.
+        if (reopensClosedThought(templateResult.format) &&
             markers.any(held.current.contains)) {
           result = _withForcedOpenThought(templateResult);
         }
@@ -169,6 +169,7 @@ class ChatCompletionStreamParser {
     final thoughtClosedForThinkingOff = thoughtClosedForThinkingOffOf(
       templateResult,
     );
+    final singleToolCall = singleToolCallOf(templateResult);
     final pegParsedWithoutTools =
         !parseToolCallsEnabled && _usesPegParser(templateResult);
     // Functionary v3.2, MiniMax M1 and Muse Glimmer stream through their
@@ -491,6 +492,7 @@ class ChatCompletionStreamParser {
           parseToolCalls: parseToolCallsEnabled,
           thinkingForcedOpen: templateResult.thinkingForcedOpen,
           thoughtClosedForThinkingOff: thoughtClosedForThinkingOff,
+          singleToolCall: singleToolCall,
           parser: templateResult.parser,
           tools: tools,
         );
@@ -616,6 +618,7 @@ class ChatCompletionStreamParser {
           thinkingForcedOpen: templateResult.thinkingForcedOpen,
           thoughtClosedForThinkingOff: thoughtClosedForThinkingOff,
           thinkingForcedClosed: thinkingForcedClosed,
+          singleToolCall: singleToolCall,
           parser: templateResult.parser,
           tools: tools,
         );
@@ -797,20 +800,23 @@ class ChatCompletionStreamParser {
   /// [result] with its prompt's thought forced open.
   static LlamaChatTemplateResult _withForcedOpenThought(
     LlamaChatTemplateResult result,
-  ) => withThinkingForcedClosed(
-    LlamaChatTemplateResult(
-      prompt: result.prompt,
-      format: result.format,
-      grammar: result.grammar,
-      grammarLazy: result.grammarLazy,
-      additionalStops: result.additionalStops,
-      preservedTokens: result.preservedTokens,
-      grammarTriggers: result.grammarTriggers,
-      thinkingForcedOpen: true,
-      parser: result.parser,
-      tokenCount: result.tokenCount,
+  ) => withSingleToolCall(
+    withThinkingForcedClosed(
+      LlamaChatTemplateResult(
+        prompt: result.prompt,
+        format: result.format,
+        grammar: result.grammar,
+        grammarLazy: result.grammarLazy,
+        additionalStops: result.additionalStops,
+        preservedTokens: result.preservedTokens,
+        grammarTriggers: result.grammarTriggers,
+        thinkingForcedOpen: true,
+        parser: result.parser,
+        tokenCount: result.tokenCount,
+      ),
+      closed: thinkingForcedClosedOf(result),
     ),
-    closed: thinkingForcedClosedOf(result),
+    single: singleToolCallOf(result),
   );
 
   /// [tokens] with their text held until it contains one of [markers], or

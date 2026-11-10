@@ -290,7 +290,8 @@ final Expando<bool> _thinkingForcedClosed = Expando<bool>(
 );
 
 /// Returns [result], marked when [closed] as rendered by a template that ended
-/// the prompt with an empty thought.
+/// the prompt with an empty thought or, for Qwen3-Coder XML, that has no
+/// thinking tags.
 ///
 /// Only the template's own render counts, not a thought a handler closes
 /// because thinking is off. The DeepSeek V3, Hermes and Qwen3-Coder XML
@@ -331,14 +332,18 @@ LlamaChatTemplateResult withThoughtClosedForThinkingOff(
 bool thoughtClosedForThinkingOffOf(LlamaChatTemplateResult result) =>
     _thoughtClosedForThinkingOff[result] ?? false;
 
-/// Returns [copy] with the thought marks of [source], which it copies.
+/// Returns [copy] with the thought and tool-call marks of [source], which it
+/// copies.
 LlamaChatTemplateResult withThoughtMarksOf(
   LlamaChatTemplateResult copy,
   LlamaChatTemplateResult source,
 ) => withLfm2AutoGrammarOf(
-  withThoughtClosedForThinkingOff(
-    withThinkingForcedClosed(copy, closed: thinkingForcedClosedOf(source)),
-    closed: thoughtClosedForThinkingOffOf(source),
+  withSingleToolCall(
+    withThoughtClosedForThinkingOff(
+      withThinkingForcedClosed(copy, closed: thinkingForcedClosedOf(source)),
+      closed: thoughtClosedForThinkingOffOf(source),
+    ),
+    single: singleToolCallOf(source),
   ),
   source,
 );

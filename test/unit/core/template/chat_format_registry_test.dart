@@ -392,14 +392,6 @@ final Map<(String, String), String> _policyExceptions = {
     'resultFormat == ChatFormat.generic || resultFormat == ChatFormat.contentOnly',
   ): 'Only the two fallback routes generate generic tool grammar; handlers own their grammar.',
   _exception(
-    _engine,
-    'formatIndex == ChatFormat.seedOss.index || formatIndex == ChatFormat.cohere2Moe.index',
-  ): 'These forced-open prompt formats restore a thought only after their closing marker.',
-  _exception(
-    _stream,
-    'templateResult.format == ChatFormat.cohere2Moe.index || templateResult.format == ChatFormat.seedOss.index',
-  ): 'The initial stream probe restores the forced-open thought used by these prompts.',
-  _exception(
     _stream,
     'isFunctionaryV32 || templateResult.format == ChatFormat.minimaxM1.index || templateResult.format == ChatFormat.museGlimmer.index',
   ): 'These partial parsers preserve thought tags as content when tool parsing is disabled.',

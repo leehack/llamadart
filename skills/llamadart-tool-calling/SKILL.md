@@ -171,6 +171,10 @@ description: >-
   grammar. Template capability reports describe history rendering and do not
   silently override that explicit request; the flag cannot add a protocol the
   format or backend does not implement.
+- Qwen3-Coder XML replies (Qwen3-Coder, Qwen3.5, StepFun3.5-Flash) parse as in
+  llama-server: content ends at the first `<tool_call>`, only the first call
+  counts without `parallelToolCalls`, and an invalid call or text after the
+  calls is dropped, not returned as content.
 - Consume all parsed Solar Open content-channel segments, preserving the
   whitespace between them. Parsed and streamed completions remove channel
   framing while retaining the accepted content.

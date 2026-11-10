@@ -139,9 +139,9 @@ modalities and speculative strategies before offering them.
   `chunk.text`, as in llama-server. Templates that open the thought even with
   thinking off (StepFun3.5-Flash, DeepSeek R1 distills, MiniMax M2, Nemotron
   Nano v2) stream no `chunk.text` until `</think>` or `<think>` arrives or the
-  reply ends, so a thought the model still writes never reaches it; Cohere2
-  MoE waits likewise for a thinking tag, `<|START_TEXT|>` or
-  `<|START_ACTION|>`. When the prompt opens no thought, most formats stream
+  reply ends, so a thought the model still writes never reaches it; StepFun
+  also stops waiting at `<tool_call>`, and Cohere2 MoE waits likewise for a
+  thinking tag, `<|START_TEXT|>` or `<|START_ACTION|>`. When the prompt opens no thought, most formats stream
   only a thought that starts the reply as `chunk.thinking`; a `</think>`
   before any `<think>` and thinking tags later in the reply stay in
   `chunk.text`, as in llama-server. A boolean `enable_thinking` or `thinking` in
