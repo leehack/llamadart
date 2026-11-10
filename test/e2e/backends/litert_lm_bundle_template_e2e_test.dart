@@ -290,6 +290,7 @@ void main() {
         // A template that reads content only as parts, such as Qwen3's, loses
         // the text the adapter gives it as a string. The service adapts only a
         // template that does not render the text, so it keeps this one.
+        markTestSkipped('The bundle template reads content only as parts.');
         return;
       }
       // A template that reads content parts and strings renders the same
