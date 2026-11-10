@@ -116,7 +116,7 @@ class SupervisorTest(unittest.TestCase):
         """A launcher that runs the production supervisor with `patch(module)` applied."""
         launcher = Path(self.temp.name) / 'launcher.py'
         launcher.write_text(
-            'import importlib.util, sys\n'
+            'import importlib.util, sys, time\n'
             f'spec = importlib.util.spec_from_file_location("supervisor", {str(SCRIPT)!r})\n'
             'module = importlib.util.module_from_spec(spec)\n'
             'spec.loader.exec_module(module)\n'
@@ -350,6 +350,23 @@ class SupervisorTest(unittest.TestCase):
         self.assertTrue(result['browser_close_stall'])
         at = {event['event']: event['elapsed_seconds'] for event in self.events()}
         # Events are rounded to milliseconds, so compare at that precision.
+        self.assertGreaterEqual(round(at['browser_close_stall'] - at['reporter_done'], 3), 0.6)
+
+    def test_post_done_window_starts_after_a_slow_reporter_poll(self):
+        launcher = self.patched_supervisor(
+            'poll = module.ReporterEvents.poll\n'
+            'def slow_poll(self):\n'
+            '    done = poll(self)\n'
+            '    if done:\n'
+            '        time.sleep(0.2)\n'
+            '    return done\n'
+            'module.ReporterEvents.poll = slow_poll')
+        child, result = self.run_fixture(self.browser_then(
+            {'type': 'done', 'success': True}, 0.05, 'import time; time.sleep(5)'),
+            reporter=True, post_done=0.6, script=launcher)
+        self.assertEqual(child.returncode, 0, child.stderr)
+        self.assertTrue(result['browser_close_stall'])
+        at = {event['event']: event['elapsed_seconds'] for event in self.events()}
         self.assertGreaterEqual(round(at['browser_close_stall'] - at['reporter_done'], 3), 0.6)
 
     def test_leftover_owned_processes_after_a_recovered_stall_exit_125(self):

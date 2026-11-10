@@ -132,6 +132,60 @@ void main() {
       expect(completion.toolCalls.map((call) => call.id), ['call_0', 'call_1']);
     });
 
+    LlamaChatTemplateResult toolTemplate() => ChatTemplateEngine.render(
+      templateSource: '{{ messages | tojson }}{{ tools | tojson }}<tool_call>',
+      messages: const [
+        LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'Hi'),
+      ],
+      metadata: const {},
+      tools: [_weatherTool],
+    );
+
+    test('a runtime tool call keeps its own id', () async {
+      final completion = await ChatCompletionStreamParser.parse(
+        tokenStream: Stream.fromIterable([
+          '<tool_call>{"name":"weather","arguments":{"city":"Paris"}}',
+          '</tool_call>',
+        ]),
+        templateResult: toolTemplate(),
+        parseToolCallsEnabled: true,
+        enableThinking: true,
+        modelName: 'runtime',
+        completionId: 'runtime-call-id',
+        tools: [_weatherTool],
+        runtimeToolCalls: () => [
+          LlamaCompletionChunkToolCall(
+            index: 0,
+            id: 'runtime-7',
+            type: 'function',
+            function: LlamaCompletionChunkFunction(
+              name: 'weather',
+              arguments: jsonEncode({'city': 'Oslo'}),
+            ),
+          ),
+        ],
+      ).collect();
+      expect(completion.toolCalls.map((call) => call.id), [
+        'call_0',
+        'runtime-7',
+      ]);
+    });
+
+    test('runtime tool calls keep content the stream withheld', () async {
+      final completion = await ChatCompletionStreamParser.parse(
+        tokenStream: Stream.fromIterable(['Answer <tool_ca']),
+        templateResult: toolTemplate(),
+        parseToolCallsEnabled: true,
+        enableThinking: true,
+        modelName: 'runtime',
+        completionId: 'runtime-call-content',
+        tools: [_weatherTool],
+        runtimeToolCalls: () => [runtimeCall('Oslo')],
+      ).collect();
+      expect(completion.text, 'Answer <tool_ca');
+      expect(completion.toolCalls, hasLength(1));
+    });
+
     test('runtime tool calls are ignored when tool parsing is off', () async {
       final completion = await ChatCompletionStreamParser.parse(
         tokenStream: Stream.fromIterable(['plain']),

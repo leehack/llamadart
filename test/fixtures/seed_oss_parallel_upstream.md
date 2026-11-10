@@ -24,10 +24,10 @@ tracker [#1531](https://github.com/leehack/llamadart/issues/1531)). These are
 not cases here; `seed_oss_handler_test.dart` pins them:
 
 - An unknown tool name is returned as a call: `SeedOssHandler.parse` takes no
-  tool schemas. The engine and stream parser reject it for
-  `ToolDefinition.fromJsonSchema` tools.
-- A call missing a required argument is returned with the arguments present,
-  with the same schema caveat.
+  tool schemas, and Seed-OSS requests refuse `ToolDefinition.fromJsonSchema`
+  tools at render, so validate the name before running the call.
+- A call missing a required argument is returned with the arguments present;
+  validate the arguments before running it.
 - A later scope whose `<seed:tool_call>` is not followed by a line break stays
   content after the calls before it.
 
