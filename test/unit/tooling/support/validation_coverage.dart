@@ -270,6 +270,7 @@ List<String> coverageErrors(
     }
   }
   final mapped = <String>{};
+  final exemptionIds = <String>{};
   for (final raw in registry['mappings'] as List) {
     final mapping = raw as Map;
     final keys = mapping['surfaces'] as List;
@@ -288,6 +289,8 @@ List<String> coverageErrors(
           r'^https://github\.com/[\w.-]+/[\w.-]+/issues/[1-9][0-9]*$',
         ).hasMatch('${exemption['issue']}')) {
       errors.add('Exemption requires an id, concrete reason and issue URL');
+    } else if (!exemptionIds.add('${exemption['id']}')) {
+      errors.add('Duplicate exemption id: ${exemption['id']}');
     }
     for (final key in keys.cast<String>()) {
       if (!mapped.add(key)) errors.add('Duplicate mapping: $key');
