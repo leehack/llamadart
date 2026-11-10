@@ -583,7 +583,6 @@ const List<String> _arm64Libraries = [
   'libGemmaModelConstraintProvider.dylib',
   'libLiteRt.dylib',
   'libLiteRtLm.dylib',
-  'libLiteRtMetalAccelerator.dylib',
   'libLiteRtWebGpuAccelerator.dylib',
   'libwebgpu_dawn.dylib',
 ];

@@ -15,7 +15,7 @@ void main() {
 
     expect(manifest, contains('name: "llamadart-litert-lm-flutter"'));
     expect(manifest, isNot(contains('GemmaModelConstraintProvider')));
-    expect(manifest, contains('name: "LiteRtMetalAccelerator"'));
+    expect(manifest, isNot(contains('LiteRtMetalAccelerator')));
     expect(
       manifest,
       isNot(
@@ -39,13 +39,6 @@ void main() {
       manifest,
       contains('name: "CLiteRTLM", condition: .when(platforms: [.iOS])'),
     );
-    // macOS uses WebGPU; the Metal accelerator remains iOS-only.
-    expect(
-      manifest,
-      contains(
-        'name: "LiteRtMetalAccelerator", condition: .when(platforms: [.iOS])',
-      ),
-    );
   });
 
   test('links the complete macOS arm64 runtime', () {
@@ -68,7 +61,7 @@ void main() {
     }
   });
 
-  test('declares the seven published v0.19 runtime targets', () {
+  test('declares the six published v0.19 runtime targets', () {
     final manifest = File(
       'darwin/llamadart_litert_lm_flutter/Package.swift',
     ).readAsStringSync();
@@ -82,7 +75,6 @@ void main() {
         'LiteRtLm',
         'CLiteRTLM',
         'CLiteRTLMMac',
-        'LiteRtMetalAccelerator',
         'LiteRt',
         'LiteRtWebGpuAccelerator',
         'WebgpuDawn',

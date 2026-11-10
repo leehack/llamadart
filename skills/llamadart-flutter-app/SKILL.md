@@ -160,8 +160,8 @@ or shipping runtimes the app does not use.
   the app's own `PrivacyInfo.xcprivacy` with reason `C617.1`, plus `3B52.1`
   only when it ships stable_diffusion. When LiteRT-LM runs on the hook path, or
   its embedded frameworks have no `PrivacyInfo.xcprivacy`, add File Timestamp
-  (`C617.1`, `3B52.1`), System Boot Time (`35F9.1`) and User Defaults
-  (`CA92.1`) to the app's own manifest.
+  (`C617.1`, `3B52.1`) and System Boot Time (`35F9.1`) to the app's own
+  manifest.
 - When the llama.cpp or LiteRT-LM companion is present, the installed
   companions pick those Apple runtime families and `llamadart_native_runtimes`
   is otherwise ignored with a warning; the tag, repository, path and backend

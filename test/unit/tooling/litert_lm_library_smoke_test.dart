@@ -103,6 +103,7 @@ void main() {
     expect(liteRtLmSmokeUsesCApiV1('v0.19.1'), isTrue);
     expect(liteRtLmSmokeUsesCApiV1('v0.19.1-1'), isTrue);
     expect(liteRtLmSmokeUsesCApiV1('v0.19.1-2'), isTrue);
+    expect(liteRtLmSmokeUsesCApiV1('v0.19.1-3'), isTrue);
     expect(liteRtLmSmokeUsesCApiV1('v0.18.1-4'), isFalse);
     for (final tag in ['v0.19.0-1', 'v0.19.2', 'v0.20.0', 'g0123456789ab']) {
       expect(
@@ -122,6 +123,7 @@ void main() {
     ('v0.19.1-2', Abi.linuxX64),
     ('v0.19.1-2', Abi.macosArm64),
     ('v0.19.1-2', Abi.windowsX64),
+    ('v0.19.1-3', Abi.macosArm64),
     ('v0.18.1-4', Abi.linuxX64),
     ('v0.18.1-4', Abi.macosArm64),
     ('v0.18.1-4', Abi.windowsX64),
@@ -258,7 +260,7 @@ void main() {
         runLiteRtLmLibrarySmoke(
           abi: abi,
           directory: null,
-          releaseTag: 'v0.19.1-2',
+          releaseTag: 'v0.19.1-3',
           openLibrary: (_) => libraries[fixture]!,
         );
 

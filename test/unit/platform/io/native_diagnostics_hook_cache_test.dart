@@ -14,7 +14,6 @@ const _v1Libraries = [
   'libGemmaModelConstraintProvider.dylib',
   'libLiteRt.dylib',
   'libLiteRtLm.dylib',
-  'libLiteRtMetalAccelerator.dylib',
   'libLiteRtWebGpuAccelerator.dylib',
   'libwebgpu_dawn.dylib',
 ];

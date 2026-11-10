@@ -28,8 +28,9 @@ const s24LiteRtNativeLibraries = {
 /// Linux and Windows hosts; its Android binaries are byte-identical to
 /// `v0.19.1` (#1808). `v0.19.1-2` changes only the Android `libLiteRtLm.so`
 /// and passed the full S24 graph again (Test Lab `matrix-wmalbq6nz437a`,
-/// #1830).
-const s24LiteRtRuntimeTags = {'v0.19.1', 'v0.19.1-1', 'v0.19.1-2'};
+/// #1830). `v0.19.1-3` changes only the Apple bundles; its Android arm64
+/// archive is byte-identical to `v0.19.1-2` (#1798).
+const s24LiteRtRuntimeTags = {'v0.19.1', 'v0.19.1-1', 'v0.19.1-2', 'v0.19.1-3'};
 
 /// Fixed prospective stage caps sum to 1,050s; FTL still caps the run at 1,200s.
 const s24LiteRtStageSeconds = {

@@ -140,7 +140,6 @@ void main() {
         'libGemmaModelConstraintProvider.dylib',
         'libLiteRt.dylib',
         'libLiteRtLm.dylib',
-        'libLiteRtMetalAccelerator.dylib',
         'libLiteRtWebGpuAccelerator.dylib',
         'libwebgpu_dawn.dylib',
       ]) {

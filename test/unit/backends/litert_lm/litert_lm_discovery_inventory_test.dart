@@ -23,19 +23,25 @@ void main() {
     Abi.linuxX64: 'libLiteRt.so',
     Abi.windowsX64: 'libLiteRt.dll',
   };
+  // v0.19.1-3 stopped shipping the Metal accelerator that the linked-in GPU
+  // accelerator makes unreachable.
+  const unusedMetalAccelerator = 'libLiteRtMetalAccelerator.dylib';
   for (final abi in desktopAbis) {
-    test('$abi v1 keeps all owner companions except retired TopK libraries '
-        'and a linked-in LiteRT', () {
+    test('$abi v1 keeps all owner companions except retired TopK libraries, '
+        'the unused Metal accelerator and a linked-in LiteRT', () {
       final legacy = liteRtLmRequiredLibrariesForAbi(abi);
       final modern = liteRtLmRequiredLibrariesForAbi(abi, cApiV1: true);
       expect(modern.length, switch (abi) {
-        Abi.macosArm64 => 7,
+        Abi.macosArm64 => 6,
         Abi.windowsX64 => 11,
         _ => 4,
       });
       final retired = legacy.toSet().difference(modern.toSet());
       expect(
-        retired.where((file) => file != linkedInLiteRt[abi]),
+        retired.where(
+          (file) =>
+              file != linkedInLiteRt[abi] && file != unusedMetalAccelerator,
+        ),
         everyElement(contains('TopK')),
       );
       if (linkedInLiteRt[abi] case final liteRt?) {
@@ -85,7 +91,9 @@ void main() {
             ..sort();
       final linked = linkedInLiteRt[entry.key];
       if (linked != null) expect(owner, contains(linked));
-      final expected = owner.where((file) => file != linked).toList();
+      final expected = owner
+          .where((file) => file != linked && file != unusedMetalAccelerator)
+          .toList();
       expect(
         liteRtLmRequiredLibrariesForAbi(entry.key, cApiV1: true),
         expected,

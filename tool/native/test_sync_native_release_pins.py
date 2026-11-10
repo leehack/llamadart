@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import hashlib
 import http.client
 import io
@@ -682,9 +683,18 @@ def _run_dart_inventory_checks(
                 encoding="utf-8"
             )
         )
+        platforms = copy.deepcopy(projection["platforms"])
+        for platform in platforms:
+            if platform["platform"] == "macos":
+                # The v0.19.0 projection predates the pin that stopped shipping it.
+                platform["artifactPaths"] = [
+                    path
+                    for path in platform["artifactPaths"]
+                    if "LiteRtMetalAccelerator" not in path
+                ]
         manifest = {
             "upstream": {"compatibilityTag": projection["compatibilityTag"]},
-            "platforms": projection["platforms"],
+            "platforms": platforms,
             # The pinned release decides which owner files its hosts load.
             "release": {"tag": pinned_tag},
         }
@@ -1205,6 +1215,68 @@ class LiteRtV019SamplerTransitionTest(unittest.TestCase):
         self.assertFalse(any("TopK" in path for path in pins.required_litert_manifest_paths(
             "v0.19.1", self.tag, official_assets=False,
         )))
+
+    def drop_metal_accelerator(self, *bundles: str) -> None:
+        for item in self.manifest["platforms"]:
+            if f'{item["platform"]}-{item["arch"]}' in bundles:
+                item["artifactPaths"] = [
+                    path for path in item["artifactPaths"] if "MetalAccelerator" not in path
+                ]
+        self.release["assets"] = [item for item in self.release["assets"]
+            if item["name"] != self.asset("LiteRtMetalAccelerator")["name"]]
+
+    def test_metal_free_owner_removes_the_metal_target_and_is_idempotent(self) -> None:
+        with_metal = self.prepare(self.original)
+        self.drop_metal_accelerator("ios-arm64", "ios-arm64-sim", "macos-arm64")
+        for label, source in (("nine-target", self.original), ("seven-target", with_metal)):
+            with self.subTest(source=label):
+                prepared = self.prepare(source)
+                self.assertNotIn("LiteRtMetalAccelerator", prepared)
+                self.assertNotIn("TopK", prepared)
+                self.assertEqual({name for name, _ in pins.swift_native_repo_binary_targets(
+                    prepared, tag_variable="liteRtLmTag", current_tag=self.tag,
+                )}, self.targets - {"LiteRtMetalAccelerator"})
+                block = re.search(
+                    r'(?m)^[ \t]*nativeRepoBinaryTarget\(\s*name: "LiteRtMetalAccelerator",.*?^[ \t]*\),\n',
+                    with_metal, re.DOTALL,
+                ).group()
+                self.assertEqual(prepared, with_metal.replace(block, "").replace(
+                    '                .target(name: "LiteRtMetalAccelerator", '
+                    'condition: .when(platforms: [.iOS])),\n', ""))
+                self.assertEqual(self.prepare(prepared), prepared)
+
+    def test_metal_accelerator_is_optional_from_v019(self) -> None:
+        for compatibility in ("v0.19.0", "v0.19.1"):
+            with self.subTest(version=compatibility):
+                self.assertFalse(any("Metal" in path for path in pins.required_litert_manifest_paths(
+                    compatibility, self.tag, official_assets=False,
+                )))
+                spm = {item["path"] for item in self.projection["spmArtifacts"]}
+                for paths in (spm, {path for path in spm if "MetalAccelerator" not in path}):
+                    pins.validate_litert_spm_artifact_inventory(
+                        paths, compatibility_tag=compatibility, release_tag=self.tag,
+                    )
+        required = pins.required_litert_manifest_paths("v0.18.1", self.tag, official_assets=False)
+        self.assertIn("bin/ios/arm64/LiteRtMetalAccelerator.framework/LiteRtMetalAccelerator", required)
+        self.assertIn(f"dist/spm/{self.tag}/" + self.asset("LiteRtMetalAccelerator")["name"], required)
+
+    def test_metal_accelerator_on_only_some_ios_bundles_refuses(self) -> None:
+        self.drop_metal_accelerator("ios-arm64-sim")
+        with self.assertRaisesRegex(ReleaseError, "only some iOS bundles"):
+            self.prepare(self.original)
+
+    def test_metal_removal_refuses_ambiguous_metal_references(self) -> None:
+        with_metal = self.prepare(self.original)
+        self.drop_metal_accelerator("ios-arm64", "ios-arm64-sim", "macos-arm64")
+        dependency = '.target(name: "LiteRtMetalAccelerator", condition: .when(platforms: [.iOS])),'
+        for label, source in (
+            ("extra-reference", with_metal + "\n// LiteRtMetalAccelerator"),
+            ("duplicate-dependency", with_metal.replace(dependency, dependency * 2)),
+            ("missing-dependency", with_metal.replace(dependency, "")),
+            ("wrong-platform", with_metal.replace(dependency, dependency.replace(".iOS", ".macOS"))),
+        ):
+            with self.subTest(source=label), self.assertRaises(ReleaseError):
+                self.prepare(source)
 
     def test_malformed_or_ambiguous_topology_refuses(self) -> None:
         for sampler in self.samplers:

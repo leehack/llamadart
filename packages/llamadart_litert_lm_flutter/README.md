@@ -7,12 +7,12 @@ support.
 Add the package to a Flutter iOS or macOS app so it links the prebuilt
 LiteRT-LM Apple XCFrameworks through SwiftPM instead of relying on the core
 package's native-assets fallback. On macOS it also links the `LiteRt`, WebGPU
-accelerator and sampler, and Dawn XCFrameworks, so the app bundle holds the
+accelerator and Dawn XCFrameworks, so the app bundle holds the
 complete runtime and a sandboxed or distributed app loads LiteRT-LM on CPU and
 GPU. Every macOS XCFramework is arm64 only; a universal build prints an
 `ignoring file ... required architecture 'x86_64'` linker warning for each.
-The Metal accelerator and sampler are iOS-only; the macOS GPU path uses the
-WebGPU accelerator.
+`LiteRtLm` has its GPU accelerator built in (Metal on iOS, WebGPU on macOS), so
+the package links no separate Metal accelerator.
 
 LiteRT-LM is not available on x86_64 macOS: `litert-lm-native` publishes
 arm64-only macOS runtimes. A universal app still launches on an Intel Mac or
@@ -34,7 +34,7 @@ dependencies:
 This package has no runtime Dart API of its own. Import `package:llamadart`
 normally from the core package and use `LlamaBackend()` / `LlamaEngine` there.
 
-The Apple SwiftPM manifest pins `leehack/litert-lm-native@v0.19.1-2`.
+The Apple SwiftPM manifest pins `leehack/litert-lm-native@v0.19.1-3`.
 That runtime loads dedicated ASR `.litertlm` containers such as Whisper tiny.
 
 Use the companion that shares the core's `MAJOR.MINOR`: companion `0.19.x` pairs
@@ -60,11 +60,9 @@ its iOS frameworks carry Apple privacy manifests for the
 [required-reason API](https://developer.apple.com/documentation/bundleresources/describing-use-of-required-reason-api)
 they reference, and the dylibs the core package's native-assets fallback
 bundles carry none. `LiteRtLm` declares File Timestamp (`C617.1`, `3B52.1`)
-and System Boot Time (`35F9.1`), `LiteRtMetalAccelerator` File Timestamp
-(`C617.1`, `3B52.1`) and User Defaults (`CA92.1`), `LiteRtTopKMetalSampler`
-User Defaults (`CA92.1`), and `CLiteRTLM` no API. If the embedded LiteRT-LM
-frameworks in the built app have no `PrivacyInfo.xcprivacy`, or the app uses
-the fallback, declare those three categories and reasons in the app's own
+and System Boot Time (`35F9.1`), and `CLiteRTLM` no API. If the embedded
+LiteRT-LM frameworks in the built app have no `PrivacyInfo.xcprivacy`, or the
+app uses the fallback, declare those two categories and reasons in the app's own
 `PrivacyInfo.xcprivacy`. The reasons come from the runtime owner's audit
 ([litert-lm-native#65](https://github.com/leehack/litert-lm-native/issues/65))
 and have not been verified with an App Store Connect upload. See

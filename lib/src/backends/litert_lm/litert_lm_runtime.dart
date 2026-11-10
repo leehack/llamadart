@@ -33,8 +33,8 @@ export 'litert_lm_native_settlement.dart';
 part 'litert_lm_embedding_native.dart';
 part 'litert_lm_runtime_facade.dart';
 
-const _litertLmReleaseTag = 'v0.19.1-2';
-const _litertLmVersion = '0.19.1-2';
+const _litertLmReleaseTag = 'v0.19.1-3';
+const _litertLmVersion = '0.19.1-3';
 const _litertLmLibDirEnv = 'LLAMADART_LITERT_LM_LIB_DIR';
 const _liteRtLmIosNativeAsset = 'package:llamadart/litert_lm_LiteRtLm';
 const _processLibraryCandidate = '<process>';
@@ -467,7 +467,6 @@ List<String> _liteRtLmV1RequiredLibrariesForAbi(Abi abi) {
       'libGemmaModelConstraintProvider.dylib',
       'libLiteRt.dylib',
       'libLiteRtLm.dylib',
-      'libLiteRtMetalAccelerator.dylib',
       'libLiteRtWebGpuAccelerator.dylib',
       'libwebgpu_dawn.dylib',
     ],
@@ -690,7 +689,6 @@ List<String> _liteRtLmV1MacOsRequiredFrameworksForAbi(Abi abi) {
       'GemmaModelConstraintProvider.framework/Versions/A/GemmaModelConstraintProvider',
       'LiteRt.framework/Versions/A/LiteRt',
       'LiteRtLm.framework/Versions/A/LiteRtLm',
-      'LiteRtMetalAccelerator.framework/Versions/A/LiteRtMetalAccelerator',
       'LiteRtWebGpuAccelerator.framework/Versions/A/LiteRtWebGpuAccelerator',
       'webgpu_dawn.framework/Versions/A/webgpu_dawn',
     ],
