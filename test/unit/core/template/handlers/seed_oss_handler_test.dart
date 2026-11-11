@@ -343,6 +343,17 @@ void main() {
       }
     });
 
+    test('keeps the added scope end out of content after a valid call', () {
+      final open = call('Paris');
+      final parsed = SeedOssHandler().parseWithTools(
+        '${call('Rome')}</seed:tool_call>\n$open$open',
+        tools: tools,
+      );
+
+      expect(arguments(parsed), {'location': '\nRome\n'});
+      expect(parsed.content, '$open$open'.trim());
+    });
+
     test('leaves a partial reply to the stream', () {
       final parsed = SeedOssHandler().parseWithTools(
         call('Paris'),

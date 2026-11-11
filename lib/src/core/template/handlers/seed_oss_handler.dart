@@ -198,10 +198,22 @@ class SeedOssHandler extends ChatTemplateHandler
         ? (text: body, endAdded: false)
         : _withLastScopeEnded(body);
     var parsed = parseBody(ended.text);
-    // When the calls still fail, the added scope end would show in content.
-    if (ended.endAdded && parsed.toolCalls.isEmpty) parsed = parseBody(body);
+    var content = parsed.content;
+    // When the calls still fail, or an earlier call leaves the added scope end
+    // in content, the end would show in the reply.
+    if (ended.endAdded) {
+      final addedEndShows = content.trimRight().endsWith(
+        XmlToolCallFormat.seedOss.scopeEnd,
+      );
+      if (parsed.toolCalls.isEmpty) {
+        parsed = parseBody(body);
+        content = parsed.content;
+      } else if (addedEndShows) {
+        content = parseBody(body).content;
+      }
+    }
     return ChatParseResult(
-      content: parsed.content.trim(),
+      content: content.trim(),
       reasoningContent: thought?.reasoning,
       toolCalls: parsed.toolCalls,
     );

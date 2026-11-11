@@ -3,6 +3,9 @@ Releases before 0.10.0 are in the
 
 ## Unreleased
 
+- Qwen3-Coder and Ling 3 tool-call grammars no longer define a rule twice, which rejected valid calls, when a nested argument property is named `at-value-end` ([#1861](https://github.com/leehack/llamadart/issues/1861)).
+- Seed-OSS replies with a closed call followed by unclosed `<seed:tool_call>` scopes no longer end their content with an added `</seed:tool_call>` ([#1861](https://github.com/leehack/llamadart/issues/1861)).
+
 ## 0.19.5
 
 - Keep the default WebGPU bridge assets at `v0.1.83` (unchanged from 0.19.4).
