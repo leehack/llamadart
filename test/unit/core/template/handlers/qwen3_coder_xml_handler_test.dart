@@ -16,6 +16,7 @@ import '../../../../support/gbnf_recognizer.dart';
 void main() {
   _requiredArgumentOrderTests();
   _stringOrIntegerValueTests();
+  _valueEndCollisionTests();
 
   test('Qwen3CoderXmlHandler parses qwen XML tool calls', () {
     final handler = Qwen3CoderXmlHandler();
@@ -381,6 +382,72 @@ void _requiredArgumentOrderTests() {
       expect(grammar.accepts(output), valid, reason: output);
     }
   });
+}
+
+void _valueEndCollisionTests() {
+  test(
+    'grammar accepts a call whose nested property is named at-value-end',
+    () {
+      final tools = [
+        ToolDefinition.fromJsonSchema(
+          name: 'configure',
+          description: 'configure',
+          schema: {
+            'type': 'object',
+            'properties': {
+              'plain': {
+                'type': 'object',
+                'properties': {
+                  'at-value-end': {
+                    'type': 'object',
+                    'properties': {
+                      'n': {'type': 'integer'},
+                    },
+                    'required': ['n'],
+                  },
+                },
+                'required': ['at-value-end'],
+              },
+              'opts': {
+                'anyOf': [
+                  {'type': 'integer'},
+                  {
+                    'type': 'object',
+                    'properties': {
+                      'at-value-end': {
+                        'type': 'object',
+                        'properties': {
+                          'n': {'type': 'integer'},
+                        },
+                        'required': ['n'],
+                      },
+                    },
+                    'required': ['at-value-end'],
+                  },
+                ],
+              },
+            },
+            'required': ['plain', 'opts'],
+          },
+          handler: _noop,
+        ),
+      ];
+      final rendered = Qwen3CoderXmlHandler().render(
+        templateSource: '{{ messages[0]["content"] }}',
+        messages: const [
+          LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'hello'),
+        ],
+        metadata: const {},
+        tools: tools,
+      );
+      const output =
+          '<tool_call>\n<function=configure>\n'
+          '<parameter=plain>\n{"at-value-end": {"n": 1}}\n</parameter>\n'
+          '<parameter=opts>\n{"at-value-end": {"n": 1}}\n</parameter>\n'
+          '</function>\n</tool_call>';
+      expect(GbnfRecognizer(rendered.grammar!).accepts(output), isTrue);
+    },
+  );
 }
 
 Future<Object?> _noop(_) async {

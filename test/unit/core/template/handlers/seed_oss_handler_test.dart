@@ -354,6 +354,19 @@ void main() {
       expect(parsed.content, '$open$open'.trim());
     });
 
+    // llama.cpp keeps a stray scope end before the call as content.
+    test('keeps a stray scope end before an unclosed call in content', () {
+      for (final lead in ['Hi', '']) {
+        final parsed = SeedOssHandler().parseWithTools(
+          '$lead</seed:tool_call>\n${call('Paris')}',
+          tools: tools,
+        );
+
+        expect(arguments(parsed), {'location': '\nParis\n'}, reason: lead);
+        expect(parsed.content, '$lead</seed:tool_call>', reason: lead);
+      }
+    });
+
     test('leaves a partial reply to the stream', () {
       final parsed = SeedOssHandler().parseWithTools(
         call('Paris'),

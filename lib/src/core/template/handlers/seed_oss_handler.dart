@@ -208,7 +208,8 @@ class SeedOssHandler extends ChatTemplateHandler
       if (parsed.toolCalls.isEmpty) {
         parsed = parseBody(body);
         content = parsed.content;
-      } else if (addedEndShows) {
+      } else if (addedEndShows &&
+          parseBody(body).toolCalls.length == parsed.toolCalls.length) {
         content = parseBody(body).content;
       }
     }
