@@ -3,6 +3,7 @@ import 'dart:ffi';
 import 'package:ffi/ffi.dart';
 
 import '../../core/exceptions.dart';
+import '../../hook/native_release_pins.dart';
 
 typedef _GetApiVersionNative =
     Int Function(Pointer<Int>, Pointer<Int>, Pointer<Int>);
@@ -26,7 +27,7 @@ typedef _GetApiVersionDart =
     if (status != 0 || parts[0] != 1 || parts[1] != 0 || parts[2] < 0) {
       throw LlamaUnsupportedException(
         'LiteRT-LM rejects C API ${parts[0]}.${parts[1]}.${parts[2]} (version probe status $status). '
-        'Use the packaged litert-lm-native v0.19.1-2 runtime with supported C API 1.0.x. '
+        'Use the packaged litert-lm-native $liteRtLmReleaseTag runtime with supported C API 1.0.x. '
         'See https://github.com/leehack/llamadart/issues/1677 for the admitted ABI contract. '
         'No legacy engine call was attempted.',
       );
@@ -74,7 +75,7 @@ void requireLiteRtLmLegacyCApi(DynamicLibrary library) {
     throw LlamaUnsupportedException(
       'Native LiteRT-LM C API $version is incompatible with the pre-1.0 bindings. '
       'Use the default LiteRtLmRuntimeClient or LiteRtLmService to select the '
-      'admitted C API 1.0.x route for the packaged litert-lm-native v0.19.1-2 '
+      'admitted C API 1.0.x route for the packaged litert-lm-native $liteRtLmReleaseTag '
       'runtime, or select a compatible legacy runtime override for these bindings. '
       'See https://github.com/leehack/llamadart/issues/1677 for the admitted ABI contract. '
       'No legacy engine call was attempted.',

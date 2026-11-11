@@ -1383,7 +1383,7 @@ class _LegacyLiteRtLmRuntimeClient extends LiteRtLmRuntimeClient {
       throw LlamaUnsupportedException(
         'Native JSON Schema chat requires the complete LiteRT-LM constraint-provider and thinking API. '
         'Use the default LiteRtLmRuntimeClient or LiteRtLmService with the packaged '
-        'litert-lm-native v0.19.1-2 runtime; legacy overrides must provide this complete API '
+        'litert-lm-native $_litertLmReleaseTag runtime; legacy overrides must provide this complete API '
         'and meet the JSON Schema qualification limits.',
       );
     }
