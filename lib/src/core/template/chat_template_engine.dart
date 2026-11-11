@@ -8,6 +8,7 @@ import '../models/chat/chat_role.dart';
 import '../models/chat/chat_template_result.dart';
 import '../models/chat/content_part.dart';
 import '../models/chat/tool_result_parts.dart';
+import '../models/inference/generation_params.dart';
 import '../models/inference/tool_choice.dart';
 import '../models/tools/tool_definition.dart';
 import 'chat_format.dart';
@@ -1006,6 +1007,35 @@ class ChatTemplateEngine {
     return (
       startTag: resolved.handler.thinkingStartTag,
       endTag: resolved.handler.thinkingEndTag,
+    );
+  }
+
+  /// Fills the tags and close prefix that [budget] omits for [formatIndex].
+  ///
+  /// An omitted [ThinkingBudget.startTag] or [ThinkingBudget.endTag] takes
+  /// the [thinkingTagsFor] value. With [ThinkingBudget.endTag] omitted, a
+  /// format whose template closes a thought with a line break, such as
+  /// Qwen3-Coder XML, appends that prefix to [ThinkingBudget.forcedMessage],
+  /// as llama.cpp does. A caller-set end tag is left as given.
+  ///
+  /// Set [rendersPrompt] to false for a backend that takes chat messages and
+  /// closes the thought itself, which rejects a forced message.
+  static ThinkingBudget resolveThinkingBudget(
+    int formatIndex,
+    ThinkingBudget budget, {
+    bool rendersPrompt = true,
+  }) {
+    final tags = thinkingTagsFor(formatIndex);
+    final closePrefix = rendersPrompt && budget.endTag == null
+        ? budgetThoughtClosePrefix(formatIndex)
+        : '';
+    return ThinkingBudget(
+      maxTokens: budget.maxTokens,
+      startTag: budget.startTag ?? tags.startTag,
+      endTag: budget.endTag ?? tags.endTag,
+      forcedMessage: closePrefix.isEmpty
+          ? budget.forcedMessage
+          : '${budget.forcedMessage ?? ''}$closePrefix',
     );
   }
 

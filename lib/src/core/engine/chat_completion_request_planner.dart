@@ -306,19 +306,10 @@ class ChatCompletionRequestPlanner {
     LlamaChatTemplateResult templateResult, {
     required bool rendersPrompt,
   }) {
-    final tags = ChatTemplateEngine.thinkingTagsFor(templateResult.format);
-    // A backend that takes chat messages closes the thought itself and
-    // rejects a forced message.
-    final closePrefix = rendersPrompt && budget.endTag == null
-        ? budgetThoughtClosePrefix(templateResult.format)
-        : '';
-    return ThinkingBudget(
-      maxTokens: budget.maxTokens,
-      startTag: budget.startTag ?? tags.startTag,
-      endTag: budget.endTag ?? tags.endTag,
-      forcedMessage: closePrefix.isEmpty
-          ? budget.forcedMessage
-          : '${budget.forcedMessage ?? ''}$closePrefix',
+    return ChatTemplateEngine.resolveThinkingBudget(
+      templateResult.format,
+      budget,
+      rendersPrompt: rendersPrompt,
     );
   }
 
