@@ -1,6 +1,7 @@
-## Unreleased
+## 0.19.6
 
-- Pin `leehack/litert-lm-native@v0.19.1-4` and drop the unused `LiteRt` and `LiteRtWebGpuAccelerator` targets: `LiteRtLm` embeds both, so macOS apps no longer embed two dylibs (about 16.9 MB) or download 6.2 MB of XCFrameworks ([#1911](https://github.com/leehack/llamadart/issues/1911)).
+- Refresh README installation guidance for core `0.19.6`.
+- Pair with core `>=0.19.6 <0.20.0`; pin `leehack/litert-lm-native@v0.19.1-4` and drop the unused `LiteRt` and `LiteRtWebGpuAccelerator` targets: `LiteRtLm` embeds both, so macOS apps no longer embed two dylibs (about 16.9 MB) or download 6.2 MB of XCFrameworks ([#1911](https://github.com/leehack/llamadart/issues/1911)).
 
 ## 0.19.5
 
