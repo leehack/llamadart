@@ -59,6 +59,15 @@ void main() {
       expect(detectChatFormat(templateSource), ChatFormat.ling3);
     });
 
+    test('a <role> template without argument tags is not Ling 3', () {
+      expect(
+        detectChatFormat(
+          '<role>ASSISTANT</role>{{ messages[0]["content"] }}<|role_end|>',
+        ),
+        isNot(ChatFormat.ling3),
+      );
+    });
+
     for (final enableThinking in [true, false]) {
       test('renders thinking $enableThinking', () {
         final rendered = ChatTemplateEngine.render(
