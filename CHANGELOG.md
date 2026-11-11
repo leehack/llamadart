@@ -3,6 +3,8 @@ Releases before 0.10.0 are in the
 
 ## Unreleased
 
+- Add `ChatTemplateEngine.resolveThinkingBudget`, which fills a `ThinkingBudget`'s omitted tags and the Qwen3-Coder XML line break before `</think>` as `LlamaEngine` does, so integrations that render the prompt themselves can match ([#1929](https://github.com/leehack/llamadart/issues/1929)).
+
 ## 0.19.6
 
 - Keep the default WebGPU bridge assets at `v0.1.83` (unchanged from 0.19.5).
