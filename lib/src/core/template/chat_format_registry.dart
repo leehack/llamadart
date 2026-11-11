@@ -93,6 +93,7 @@ final class ChatFormatTraits {
     this.thoughtStartsReplyExactly = false,
     this.reopensThoughtClosedForThinkingOff = false,
     this.forcedThoughtContentOpenings = const [],
+    this.budgetThoughtClosePrefix = '',
     this.mayEmbedToolEnvelopeAfterContent = false,
     this.retainsTextAroundToolCalls = false,
     this.endsThoughtAtToolCallOpening = false,
@@ -149,6 +150,10 @@ final class ChatFormatTraits {
   /// Markers that, with [keepsForcedThoughtVerbatim], also end a forced-open
   /// thought when they come before its end tag, and start the content.
   final List<String> forcedThoughtContentOpenings;
+
+  /// Text a thinking budget forces before the end tag when it closes a
+  /// thought, as llama.cpp forces the first of the format's end sequences.
+  final String budgetThoughtClosePrefix;
 
   /// Whether a tool envelope may follow content, so a stream with tools
   /// parses from its first token instead of deciding from how output starts.
@@ -427,6 +432,7 @@ chatFormatRegistrations = List.unmodifiable(<ChatFormatRegistration>[
       keepsForcedThoughtVerbatim: true,
       reopensThoughtClosedForThinkingOff: true,
       forcedThoughtContentOpenings: [XmlToolCallFormat.qwen3CoderScopeStart],
+      budgetThoughtClosePrefix: '\n',
     ),
   ),
   ChatFormatRegistration(

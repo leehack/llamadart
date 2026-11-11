@@ -704,6 +704,72 @@ void main() {
       expect(plan.generationParams.thinkingBudget?.endTag, '</think>');
     });
 
+    group('thinking-budget thought close', () {
+      ThinkingBudget? resolvedBudget(
+        ChatFormat format,
+        ThinkingBudget budget, {
+        LlamaBackend? backend,
+      }) {
+        final plan = ChatCompletionRequestPlanner.build(
+          backend: backend ?? _PromptBackend(),
+          templateResult: LlamaChatTemplateResult(
+            prompt: 'prompt',
+            format: format.index,
+          ),
+          messages: const [
+            LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'hello'),
+          ],
+          params: GenerationParams(thinkingBudget: budget),
+          toolChoice: ToolChoice.auto,
+          parallelToolCalls: false,
+        );
+        return plan.generationParams.thinkingBudget;
+      }
+
+      test('Qwen3-Coder XML closes the thought on a new line', () {
+        final budget = resolvedBudget(
+          ChatFormat.qwen3CoderXml,
+          const ThinkingBudget(maxTokens: 4),
+        );
+        expect(budget?.endTag, '</think>');
+        expect(budget?.forcedMessage, '\n');
+      });
+
+      test('appends the line break to a caller forced message', () {
+        final budget = resolvedBudget(
+          ChatFormat.qwen3CoderXml,
+          const ThinkingBudget(maxTokens: 4, forcedMessage: 'Done.'),
+        );
+        expect(budget?.forcedMessage, 'Done.\n');
+      });
+
+      test('keeps the forced message when the caller sets the end tag', () {
+        final budget = resolvedBudget(
+          ChatFormat.qwen3CoderXml,
+          const ThinkingBudget(maxTokens: 4, endTag: '</think>'),
+        );
+        expect(budget?.forcedMessage, isNull);
+      });
+
+      test('leaves other formats without a forced message', () {
+        final budget = resolvedBudget(
+          ChatFormat.hermes,
+          const ThinkingBudget(maxTokens: 4),
+        );
+        expect(budget?.endTag, '</think>');
+        expect(budget?.forcedMessage, isNull);
+      });
+
+      test('sends no forced message to a native-chat backend', () {
+        final budget = resolvedBudget(
+          ChatFormat.qwen3CoderXml,
+          const ThinkingBudget(maxTokens: 4),
+          backend: _NativeChatBackend(),
+        );
+        expect(budget?.forcedMessage, isNull);
+      });
+    });
+
     test(
       'falls back to rendered prompt when native chat cannot satisfy policy',
       () {
@@ -742,6 +808,12 @@ class _EagerGrammarBackend extends _BaseBackend
     implements BackendLazyGrammarSupport {
   @override
   bool get supportsLazyGrammar => false;
+}
+
+class _PromptBackend extends _BaseBackend
+    implements BackendGrammarConstraintsSupport {
+  @override
+  bool get supportsGrammarConstraints => true;
 }
 
 class _NativeChatBackend extends _BaseBackend

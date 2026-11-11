@@ -1187,6 +1187,10 @@ List<String> closedThoughtMarkers(int formatIndex) {
 bool reopensClosedThought(int formatIndex) =>
     _traitsOf(formatIndex).reopensThoughtClosedForThinkingOff;
 
+/// The text a thinking budget forces before the [formatIndex] end tag.
+String budgetThoughtClosePrefix(int formatIndex) =>
+    _traitsOf(formatIndex).budgetThoughtClosePrefix;
+
 ChatFormatTraits _traitsOf(int formatIndex) =>
     formatIndex < ChatFormat.values.length
     ? chatFormatRegistration(ChatFormat.values[formatIndex]).traits
