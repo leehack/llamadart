@@ -58,6 +58,38 @@ def verify_preview_artifact(metadata, *, artifact_id, digest, run_id,
         raise ValueError('Preview artifact run/source/digest mismatch')
 
 
+class OperationFailed(Exception):
+    """A provider operation failed; carries only a safe name and HTTP status."""
+
+    def __init__(self, operation, status):
+        super().__init__(operation, status)
+        self.operation, self.status = operation, status
+
+    def __str__(self):
+        status = f'HTTP {self.status}' if isinstance(self.status, int) else 'no HTTP status'
+        return f'Preview operation {self.operation} failed ({status}); no further writes attempted.'
+
+
+def run_operation(operation, call, budget, before=None):
+    in_provider_call = False
+
+    def attempt():
+        nonlocal in_provider_call
+        in_provider_call = False
+        if before:
+            before()
+        in_provider_call = True
+        return call()
+
+    try:
+        return with_retry(operation, budget=budget, call=attempt)
+    except Exception as error:
+        if not in_provider_call:
+            raise
+        status = status_of(error)
+        raise OperationFailed(operation, status if isinstance(status, int) else None) from None
+
+
 class Preview:
     def __init__(self, event, read=gh_json):
         self.event, self.read = event, read
@@ -112,15 +144,25 @@ class Preview:
     def mutate(self, action, api, space, folder):
         if action == 'build':
             budget = Budget()
-            def write(call):
-                # Each rate-limit retry rechecks state, including the upload after create.
-                self.guard(action)
-                return call()
-            with_retry('create_repo', budget=budget, call=lambda: write(lambda: api.create_repo(
-                repo_id=space, repo_type='space', space_sdk='static', exist_ok=True, private=False)))
-            with_retry('upload_folder', budget=budget, call=lambda: write(lambda: api.upload_folder(
+            # Each rate-limit retry rechecks state, including the upload after create.
+            recheck = lambda: self.guard(action)
+            try:
+                info = run_operation('repo_info', lambda: api.repo_info(
+                    repo_id=space, repo_type='space'), budget)
+            except OperationFailed as error:
+                if error.status != 404:
+                    raise
+                info = None
+            if info is None:
+                run_operation('create_repo', lambda: api.create_repo(
+                    repo_id=space, repo_type='space', space_sdk='static', exist_ok=True,
+                    private=False), budget, before=recheck)
+            elif getattr(info, 'sdk', None) != 'static':
+                raise OperationFailed('repo_info_sdk', None)
+            run_operation('upload_folder', lambda: api.upload_folder(
                 repo_id=space, repo_type='space', folder_path=str(folder), revision='main',
-                delete_patterns=['*', '**/*'], commit_message=f'deploy PR #{self.number} {self.sha[:7]}')))
+                delete_patterns=['*', '**/*'],
+                commit_message=f'deploy PR #{self.number} {self.sha[:7]}'), budget, before=recheck)
         else:
             self.guard(action)
             try:
@@ -181,6 +223,8 @@ if __name__ == '__main__':
         main()
     except Superseded:
         print('Preview event superseded by live PR state; remaining writes skipped.')
+    except OperationFailed as error:
+        raise SystemExit(str(error)) from None
     except Exception:
         # Provider exceptions may carry tokens or signed URLs; do not serialize them.
         raise SystemExit('Preview operation failed; no further writes attempted.') from None

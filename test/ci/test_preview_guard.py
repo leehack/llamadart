@@ -127,9 +127,21 @@ class PreviewGuardTest(unittest.TestCase):
         live = Mock(return_value=copy.deepcopy(self.pr))
         return guard.Preview(self.event, read=live), live
 
+    @staticmethod
+    def http_error(status, headers=None):
+        error = RuntimeError('secret-token https://signed.example/?sig=abc')
+        error.response = Mock(status_code=status, headers=headers or {})
+        return error
+
+    def build(self, preview, api):
+        with patch.object(guard.subprocess, 'check_call'), patch.object(
+                guard.subprocess, 'check_output', return_value=b'M\0lib/llamadart.dart\0'):
+            preview.mutate('build', api, 'owner/space', 'folder')
+
     def test_create_then_upload_each_recheck_live_state(self):
         preview, read = self.preview()
         api = Mock()
+        api.repo_info.side_effect = self.http_error(404)
         calls = []
         api.create_repo.side_effect = lambda **kw: calls.append('create')
         api.upload_folder.side_effect = lambda **kw: calls.append('upload')
@@ -155,10 +167,11 @@ class PreviewGuardTest(unittest.TestCase):
         preview, read = self.preview()
         read.side_effect = RuntimeError('API unavailable')
         api = Mock()
+        api.repo_info.return_value = Mock(sdk='static')
         with self.assertRaises(RuntimeError):
             preview.mutate('build', api, 'owner/space', 'folder')
-        api.assert_not_called()
         api.create_repo.assert_not_called()
+        api.upload_folder.assert_not_called()
         self.event['action'] = 'closed'
         self.event['pull_request']['closed_at'] = 'original-close'
         preview, read = self.preview()
@@ -175,6 +188,7 @@ class PreviewGuardTest(unittest.TestCase):
         error.response = Mock(status_code=429, headers={'Retry-After': '0'})
         api = Mock()
         api.create_repo.side_effect = error
+        api.repo_info.side_effect = self.http_error(404)
         with patch.object(guard.subprocess, 'check_call'), patch.object(
                 guard.subprocess, 'check_output', return_value=b'M\0lib/llamadart.dart\0'), patch.object(
                 guard, 'with_retry', side_effect=lambda *a, **kw: with_retry(
@@ -183,6 +197,61 @@ class PreviewGuardTest(unittest.TestCase):
                 preview.mutate('build', api, 'owner/space', 'folder')
         api.create_repo.assert_called_once()
         api.upload_folder.assert_not_called()
+
+    def test_existing_static_space_is_reused_without_create(self):
+        preview, read = self.preview()
+        api = Mock()
+        api.repo_info.return_value = Mock(sdk='static')
+        self.build(preview, api)
+        api.create_repo.assert_not_called()
+        api.upload_folder.assert_called_once()
+        self.assertEqual(read.call_count, 2)
+
+    def test_existing_non_static_space_is_refused_before_any_write(self):
+        preview, _ = self.preview()
+        api = Mock()
+        api.repo_info.return_value = Mock(sdk='gradio')
+        with self.assertRaises(guard.OperationFailed):
+            self.build(preview, api)
+        api.create_repo.assert_not_called()
+        api.upload_folder.assert_not_called()
+
+    def test_only_404_probe_creates_and_auth_failures_are_preserved(self):
+        for status in (401, 403, 500):
+            preview, _ = self.preview()
+            api = Mock()
+            api.repo_info.side_effect = self.http_error(status)
+            with self.assertRaises(guard.OperationFailed) as caught:
+                self.build(preview, api)
+            self.assertEqual((caught.exception.operation, caught.exception.status),
+                             ('repo_info', status))
+            api.create_repo.assert_not_called()
+            api.upload_folder.assert_not_called()
+
+    def test_failure_names_operation_and_status_without_provider_text(self):
+        preview, _ = self.preview()
+        api = Mock()
+        api.repo_info.side_effect = self.http_error(404)
+        api.create_repo.side_effect = self.http_error(403)
+        with self.assertRaises(guard.OperationFailed) as caught:
+            self.build(preview, api)
+        message = str(caught.exception)
+        self.assertEqual(message, 'Preview operation create_repo failed (HTTP 403); '
+                                  'no further writes attempted.')
+        self.assertNotIn('secret-token', message)
+        self.assertIsNone(caught.exception.__cause__)
+        self.assertTrue(caught.exception.__suppress_context__)
+        api.upload_folder.assert_not_called()
+
+    def test_non_http_failure_has_no_status_and_no_exception_text(self):
+        preview, _ = self.preview()
+        api = Mock()
+        api.repo_info.return_value = Mock(sdk='static')
+        api.upload_folder.side_effect = ValueError('secret-token')
+        with self.assertRaises(guard.OperationFailed) as caught:
+            self.build(preview, api)
+        self.assertEqual(str(caught.exception), 'Preview operation upload_folder failed '
+                         '(no HTTP status); no further writes attempted.')
 
     def test_comment_rechecks_after_comment_listing(self):
         preview, read = self.preview()
