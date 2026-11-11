@@ -188,8 +188,9 @@ modalities and speculative strategies before offering them.
 - For strict JSON, use `LlamaStructuredOutput` with
   `engine.createStructuredJson`; it constrains decoding and validates the
   final output. Native LiteRT-LM supports Qwen3 (canonical text template) and
-  Gemma 4 (bundle template) on macOS/iOS arm64 CPU and GPU and the Android
-  arm64, Linux x64/arm64 and Windows x64 CPU after provider admission (other
+  Gemma 4 (bundle template) on macOS/iOS arm64 CPU and GPU (Gemma 4 cannot
+  create an iOS GPU engine; on Android load with `ComputeDevice.cpu`) and the
+  Android arm64, Linux x64/arm64 and Windows x64 CPU after provider admission (other
   hosts, accelerators and NPU throw; per-host model evidence is in the
   structured-output guide), for schemas that both the GBNF converter and LiteRT-LM's
   LLGuidance enforce (nested objects, arrays, `$ref`, `anyOf`, anchored

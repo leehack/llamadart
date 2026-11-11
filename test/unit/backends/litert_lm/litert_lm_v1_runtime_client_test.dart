@@ -499,6 +499,84 @@ void main() {
     },
   );
   test(
+    'a cancelled generation that ends in error reports no counters',
+    () async {
+      final adapter = client();
+      await initialize(adapter);
+      adapter.createConversation();
+      final subscription = adapter.generate('cancel').listen((_) {});
+      final cancellation = subscription.cancel();
+      emit(null, finalChunk: true, reason: 5);
+      await cancellation;
+      expect(adapter.lastFinishReason, LiteRtLmFinishReason.error);
+      expect(
+        () => adapter.readMetrics(wallMilliseconds: 123),
+        throwsA(isA<LlamaStateException>()),
+      );
+    },
+  );
+  test('a cancelled turn with lost copies reports no counters', () async {
+    final adapter = client();
+    await initialize(adapter);
+    adapter.createConversation();
+    set('fail_copies', 1);
+    final subscription = adapter.generate('cancel').listen((_) {});
+    emit('{"role":"assistant","content":"lost"}');
+    final cancellation = subscription.cancel();
+    emit(null, finalChunk: true, reason: 4);
+    await cancellation;
+    set('fail_copies', 0);
+    expect(
+      () => adapter.readMetrics(wallMilliseconds: 123),
+      throwsA(isA<LlamaStateException>()),
+    );
+  });
+  test('a cancel racing natural completion keeps its counters', () async {
+    final adapter = client();
+    await initialize(adapter);
+    adapter.createConversation();
+    final subscription = adapter.generate('race').listen((_) {});
+    final cancellation = subscription.cancel();
+    emit(null, finalChunk: true, reason: 1);
+    await cancellation;
+    expect(adapter.lastFinishReason, LiteRtLmFinishReason.stop);
+    expect(adapter.readMetrics(wallMilliseconds: 9).inputTokens, 21);
+  });
+  test('a disposed adapter does not serve a cancelled snapshot', () async {
+    final adapter = LiteRtLmV1RuntimeClient(library);
+    await initialize(adapter);
+    adapter.createConversation();
+    final subscription = adapter.generate('cancel').listen((_) {});
+    final cancellation = subscription.cancel();
+    emit(null, finalChunk: true, reason: 4);
+    await cancellation;
+    expect(adapter.readMetrics(wallMilliseconds: 1).inputTokens, 21);
+    adapter.dispose();
+    expect(
+      () => adapter.readMetrics(wallMilliseconds: 1),
+      throwsA(isA<LlamaStateException>()),
+    );
+  });
+  test(
+    'a fresh conversation after a cancelled one reads its own counters',
+    () async {
+      final adapter = client();
+      await initialize(adapter);
+      adapter.createConversation();
+      final subscription = adapter.generate('cancel').listen((_) {});
+      final cancellation = subscription.cancel();
+      emit(null, finalChunk: true, reason: 4);
+      await cancellation;
+      set('metadata_fail', 7);
+      adapter.createConversation();
+      expect(
+        () => adapter.readMetrics(wallMilliseconds: 1),
+        throwsA(isA<LlamaModelException>()),
+      );
+      set('metadata_fail', 0);
+    },
+  );
+  test(
     'subscription cancellation waits for final and allows a fresh child',
     () async {
       final adapter = client();

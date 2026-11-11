@@ -304,6 +304,25 @@
       }
     },
     {
+      "name": "thought-text-end-then-tool-call-tag-and-call",
+      "output": "a</mm:think>x</mm:think><tool_call>]<]minimax[>[<tool_call>\n]<]minimax[>[<invoke name=\"weather\">]<]minimax[>[<city>Paris]<]minimax[>[</city>]<]minimax[>[</invoke>\n]<]minimax[>[</tool_call>",
+      "auto": {
+        "content": "x</mm:think><tool_call>",
+        "reasoning_content": "a",
+        "tool_calls": [
+          {
+            "name": "weather",
+            "arguments": "{\"city\":\"Paris\"}"
+          }
+        ]
+      },
+      "none": {
+        "content": "x</mm:think><tool_call>]<]minimax[>[<tool_call>\n]<]minimax[>[<invoke name=\"weather\">]<]minimax[>[<city>Paris]<]minimax[>[</city>]<]minimax[>[</invoke>\n]<]minimax[>[</tool_call>",
+        "reasoning_content": "a",
+        "tool_calls": []
+      }
+    },
+    {
       "name": "partial-unended-thought-tag-prefix",
       "output": "a</mm:th",
       "partial": true,
