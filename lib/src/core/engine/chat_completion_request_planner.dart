@@ -239,10 +239,22 @@ class ChatCompletionRequestPlanner {
         ...templateResult.preservedTokens,
       ...?params?.preservedTokens,
     }.toList(growable: false);
+    final nativeChatBackend = schemaTools || requiresLfmAutoGrammar
+        ? null
+        : _nativeChatBackendFor(
+            backend,
+            messages,
+            toolChoice: toolChoice,
+            parallelToolCalls: parallelToolCalls,
+          );
     final requestedThinkingBudget = params?.thinkingBudget;
     final effectiveThinkingBudget = requestedThinkingBudget == null
         ? null
-        : _resolveThinkingBudgetTags(requestedThinkingBudget, templateResult);
+        : _resolveThinkingBudgetTags(
+            requestedThinkingBudget,
+            templateResult,
+            rendersPrompt: nativeChatBackend == null && schemaBackend == null,
+          );
 
     final generationParams = (params ?? const GenerationParams()).copyWith(
       stopSequences: stops,
@@ -253,14 +265,6 @@ class ChatCompletionRequestPlanner {
       preservedTokens: effectivePreservedTokens,
     );
 
-    final nativeChatBackend = schemaTools || requiresLfmAutoGrammar
-        ? null
-        : _nativeChatBackendFor(
-            backend,
-            messages,
-            toolChoice: toolChoice,
-            parallelToolCalls: parallelToolCalls,
-          );
     final parseToolCallsEnabled =
         tools != null && tools.isNotEmpty && toolChoice != ToolChoice.none;
 
@@ -299,14 +303,22 @@ class ChatCompletionRequestPlanner {
 
   static ThinkingBudget _resolveThinkingBudgetTags(
     ThinkingBudget budget,
-    LlamaChatTemplateResult templateResult,
-  ) {
+    LlamaChatTemplateResult templateResult, {
+    required bool rendersPrompt,
+  }) {
     final tags = ChatTemplateEngine.thinkingTagsFor(templateResult.format);
+    // A backend that takes chat messages closes the thought itself and
+    // rejects a forced message.
+    final closePrefix = rendersPrompt && budget.endTag == null
+        ? budgetThoughtClosePrefix(templateResult.format)
+        : '';
     return ThinkingBudget(
       maxTokens: budget.maxTokens,
       startTag: budget.startTag ?? tags.startTag,
       endTag: budget.endTag ?? tags.endTag,
-      forcedMessage: budget.forcedMessage,
+      forcedMessage: closePrefix.isEmpty
+          ? budget.forcedMessage
+          : '${budget.forcedMessage ?? ''}$closePrefix',
     );
   }
 

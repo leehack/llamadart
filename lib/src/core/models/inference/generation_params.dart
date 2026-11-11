@@ -860,6 +860,9 @@ class ThinkingBudget {
   final String? endTag;
 
   /// Optional text forced immediately before [endTag] after exhaustion.
+  ///
+  /// With [endTag] omitted, Qwen3-Coder XML templates append a line break to
+  /// it, as llama.cpp does.
   final String? forcedMessage;
 }
 

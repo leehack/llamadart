@@ -412,7 +412,9 @@ Important fields:
   reasoning-budget API exported, or WebGPU with bridge assets whose `getCompletionCapabilities()` reports `thinkingBudget`.
   Use `ThinkingBudget(maxTokens: ...)` with `engine.create(...)` to use
   template delimiters automatically, or specify `startTag` and `endTag` for
-  raw generation. `0` forces the end delimiter immediately. Any `thinkingBudget`
+  raw generation. `0` forces the end delimiter immediately; on Qwen3-Coder XML
+  templates the forced text is a line break before it, appended to any
+  `forcedMessage`, as llama.cpp does. Any `thinkingBudget`
   is incompatible with speculative decoding, and unsupported backends reject
   it explicitly. Native LiteRT-LM applies it to native chat generation on
   bundles whose first response channel is a thinking channel, such as Gemma
