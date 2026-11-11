@@ -840,9 +840,10 @@ jobs:
 
       - name: Install Playwright Chromium
         run: |
+          # Hosted images already ship Chromium's libraries; system package installs let mirror outages fail this required job.
           python -m venv .dart_tool/playwright-python
           .dart_tool/playwright-python/bin/pip install "playwright==1.61.0"
-          .dart_tool/playwright-python/bin/python -m playwright install --with-deps chromium
+          .dart_tool/playwright-python/bin/python -m playwright install chromium
 
       - name: Smoke-test the production Web artifact
         run: |
