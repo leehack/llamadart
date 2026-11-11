@@ -95,7 +95,7 @@ each runtime's default; `cpu`, `gpu` and `npu` run there or throw
 | WebGPU (llama.cpp) | WebGPU when available, else the WebAssembly CPU runtime | Needs a WebGPU adapter and GPU layers after load; no CPU retry | Throws |
 | Native LiteRT-LM | GPU on Android, iOS and macOS; CPU on Linux and Windows; a GPU engine that fails to start retries on the CPU with a warning | GPU backend on Android, iOS, macOS arm64, Linux x64 (Vulkan) and Windows x64 (Direct3D 12); a delegate that fails to start throws on first use | Android only |
 | LiteRT-LM Web | WebGPU, without a probe | Needs a WebGPU adapter | Throws |
-| Image generation | First GPU reported, else CPU | Needs a GPU; Android and the CPU builds have none | Throws |
+| Image generation | First GPU reported, else CPU; CPU on macOS x86_64 | Needs a GPU; Android and the CPU builds have none | Throws |
 | LiteRT-LM ASR | CPU | Not selectable | Not selectable |
 
 The WebGPU bridge ignores negative `mainGpu` values, including with

@@ -216,7 +216,7 @@ final engine = await ImageGenerationEngine.load(
 | `textEncoderOnCpu` | Text encoders compute on the CPU, weights in system memory | 359 MB of weights left the GPU; pixels changed by at most 40, mean 0.23 of 255 |
 | `vaeOnCpu` | VAE or tiny autoencoder computes on the CPU, weights and decode memory in system memory | 160 MB of weights and the 1.6 GiB decode buffer left the GPU; image 8.9 s instead of 2.1 to 2.6 s; pixels at most 1 of 255 apart |
 | `maxGpuMemoryGiB` | Per-GPU budget, in whole GiB, for weights plus the room the fit reserves to compute (2 GiB beside the diffusion model and the text encoders, 1 GiB beside the VAE), so weights can move to system memory, another GPU or disk even when they alone fit; moved weights stream in | 1 GiB: all 1.9 GB of weights in system memory, and the decode, above the budget, retried in tiles (at most 85, mean 2.5 of 255 apart); 8 GiB: identical pixels |
-| `autoFit: false` | No automatic fit: weights are allocated on the device their module computes on, and `ComputeDevice.auto` uses the first GPU; a load the device cannot allocate fails with `LlamaModelException` instead of spilling | Identical pixels |
+| `autoFit: false` | No automatic fit: weights are allocated on the device their module computes on, and `ComputeDevice.auto` uses the first GPU (the CPU on macOS x86_64); a load the device cannot allocate fails with `LlamaModelException` instead of spilling | Identical pixels |
 
 `maxGpuMemoryGiB` must be 1 to `ImageModelPlacement.largestGpuMemoryGiB`;
 other values throw `LlamaImageGenerationException`. It takes whole GiB

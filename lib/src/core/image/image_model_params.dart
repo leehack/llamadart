@@ -6,7 +6,8 @@ import 'image_generation_model.dart';
 class ImageModelParams {
   /// Device to run on: [ComputeDevice.auto] picks the first GPU the runtime
   /// reports (Metal on Apple, Vulkan on the Linux and Windows Vulkan build),
-  /// otherwise the CPU. [ComputeDevice.gpu] without a GPU, as on Android and
+  /// otherwise the CPU; on macOS x86_64, Rosetta included, it picks the CPU
+  /// and only [ComputeDevice.gpu] uses Metal. [ComputeDevice.gpu] without a GPU, as on Android and
   /// the Linux and Windows CPU builds, and [ComputeDevice.npu] throw
   /// `LlamaUnsupportedException`.
   final ComputeDevice device;

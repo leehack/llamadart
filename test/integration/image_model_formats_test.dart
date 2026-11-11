@@ -271,6 +271,9 @@ final class _RecordingDriver implements ImageGenerationDriver {
       operatingSystemOverride ?? Platform.operatingSystem;
 
   @override
+  bool get isMacosX64 => false;
+
+  @override
   Future<StableDiffusionRuntimeStatus> probeInBackground() async =>
       StableDiffusionRuntimeStatus.available(
         version: 'recording-runtime',

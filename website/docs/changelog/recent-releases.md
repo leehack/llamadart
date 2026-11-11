@@ -13,6 +13,8 @@ validate against the exact release tag notes.
 
 ## Unreleased
 
+- On macOS x86_64 (Intel Macs and Rosetta), image generation with `ComputeDevice.auto` now runs on the CPU instead of Metal, matching `GpuBackend.auto` for llama.cpp; an explicit `ComputeDevice.gpu` still loads on Metal and logs a warning ([#1600](https://github.com/leehack/llamadart/issues/1600)).
+
 ## 0.19.6
 
 - Keep default WebGPU bridge assets at `v0.1.83` (unchanged from 0.19.5).
