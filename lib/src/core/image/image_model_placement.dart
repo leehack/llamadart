@@ -70,7 +70,8 @@ final class ImageModelPlacement {
   /// order: a model larger than the GPU loads and generates more slowly.
   ///
   /// When off, every module's weights are allocated at load on the device it
-  /// computes on, and `ComputeDevice.auto` uses the first GPU. Where the
+  /// computes on, and `ComputeDevice.auto` uses the first GPU (the CPU on macOS x86_64, where
+  /// only `ComputeDevice.gpu` places on Metal). Where the
   /// device cannot allocate them, the load fails with `LlamaModelException`
   /// instead of moving them; Metal shares system memory and can page past
   /// its working set instead. A model that fits loads and generates the same

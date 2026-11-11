@@ -1792,6 +1792,24 @@ void main() {
       );
     });
 
+    test('placement under auto asks for an explicit GPU', () async {
+      await expectLater(
+        load(_sdxs(), placement: const ImageModelPlacement(vaeOnCpu: true)),
+        throwsA(
+          isA<LlamaUnsupportedException>().having(
+            (e) => e.message,
+            'message',
+            allOf(
+              contains('ComputeDevice.auto runs on the CPU on macOS x86_64'),
+              contains('ComputeDevice.gpu'),
+              isNot(contains('reports no GPU')),
+            ),
+          ),
+        ),
+      );
+      expect(driver.started, isEmpty);
+    });
+
     test('an explicit CPU stays on the CPU', () async {
       await load(
         _sdxs(),
@@ -1799,6 +1817,26 @@ void main() {
       );
       expect(driver.started.single.backend, 'cpu');
     });
+  });
+
+  test('an explicit GPU on another host does not warn', () async {
+    final records = <LlamaLogRecord>[];
+    final logger = LlamaLogger.instance;
+    final level = logger.level;
+    logger
+      ..setLevel(LlamaLogLevel.debug)
+      ..setHandler(records.add);
+    addTearDown(() {
+      logger
+        ..setLevel(level)
+        ..setHandler(null);
+    });
+    await load(
+      _sdxs(),
+      params: const ImageModelParams(device: ComputeDevice.gpu),
+    );
+    expect(driver.started.single.backend, 'gpu');
+    expect(records.where((r) => r.level == LlamaLogLevel.warn), isEmpty);
   });
 
   group('checkRuntime', () {

@@ -9,6 +9,7 @@ void main() {
     final driver = createImageGenerationDriver();
 
     expect(driver.operatingSystem, 'web');
+    expect(driver.isMacosX64, isFalse);
     final status = await driver.probeInBackground();
     expect(status.isAvailable, isFalse);
     expect(

@@ -21,7 +21,8 @@ enum ComputeDevice {
   /// - LiteRT-LM native: the GPU on Android, iOS and macOS, and the CPU on
   ///   Linux and Windows.
   /// - LiteRT-LM on the Web: WebGPU.
-  /// - Image generation: the first GPU the runtime reports, otherwise the CPU.
+  /// - Image generation: the first GPU the runtime reports, otherwise the CPU;
+  ///   the CPU on macOS x86_64.
   ///
   /// Under [auto], `ModelParams.preferredBackend` and `ModelParams.gpuLayers`
   /// still narrow the choice, as before.

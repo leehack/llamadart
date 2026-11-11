@@ -515,7 +515,13 @@ class ImageGenerationEngine
         params.threads,
       );
     }
-    _checkPlacement(placement, params.device, backendName, runtime.devices);
+    _checkPlacement(
+      placement,
+      params.device,
+      backendName,
+      runtime.devices,
+      isMacosX64: driver.isMacosX64,
+    );
     List<StableDiffusionGpuMemory>? gpus;
     var readGpus = false;
     if (placement.maxGpuMemoryGiB != null && !_isMetal(backendName)) {
@@ -1343,8 +1349,9 @@ class ImageGenerationEngine
     ImageModelPlacement placement,
     ComputeDevice device,
     String backendName,
-    List<StableDiffusionDevice> devices,
-  ) {
+    List<StableDiffusionDevice> devices, {
+    required bool isMacosX64,
+  }) {
     final gib = placement.maxGpuMemoryGiB;
     if (gib != null &&
         (gib < 1 || gib > ImageModelPlacement.largestGpuMemoryGiB)) {
@@ -1376,6 +1383,9 @@ class ImageGenerationEngine
     }
     final why = device == ComputeDevice.cpu
         ? 'ComputeDevice.cpu was requested'
+        : isMacosX64 && devices.any((d) => _isGpu(d.name))
+        ? 'ComputeDevice.auto runs on the CPU on macOS x86_64; pass '
+              'ComputeDevice.gpu to place on Metal'
         : 'the stable_diffusion runtime reports no GPU, only '
               '${devices.map((d) => d.name).join(', ')}';
     throw LlamaUnsupportedException(

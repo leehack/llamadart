@@ -64,7 +64,10 @@ feature. For which runtime supports which feature, see the
 - macOS x86_64 image generation: stable-diffusion.cpp also runs on ggml-metal,
   so in an x86_64 process, Rosetta included, `ComputeDevice.auto` loads image
   models on the CPU ([#1600](https://github.com/leehack/llamadart/issues/1600)).
-  `ComputeDevice.gpu` still loads on Metal and logs a warning. Whether Metal
+  `ComputeDevice.gpu` still loads on Metal and logs a warning. Placement
+  options (`textEncoderOnCpu`, `vaeOnCpu`, `maxGpuMemoryGiB`,
+  `autoFit: false`) need an explicit `ComputeDevice.gpu` there, and reference
+  images for editing run on the CPU under `auto`. Whether Metal
   output is correct for stable-diffusion.cpp on Intel Macs with AMD GPUs is
   unchecked for lack of hardware.
 
