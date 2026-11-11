@@ -189,6 +189,12 @@ file is written. Dry-run prints the prospective hash. This keeps the known
 v0.19 seven-target transition on the macOS app-bundle path without relaxing the
 manifest contract or changing the currently pinned runtime.
 
+The hook also keeps the previous companion release's template hash
+(`_previousLiteRtLmCompanionManifestTemplateSha256`), accepted only for a pin
+that is an earlier rebuild of the core's LiteRT-LM release, so such a companion
+gets the earlier-build warning. The sync script does not rotate it: when a
+release changes the template, move the old hash there by hand.
+
 Changing between stable and development channels requires
 `--allow-litert-channel-transition`; changing between two distinct `g<sha>`
 lines requires `--allow-litert-development-line-transition`. Both flags default

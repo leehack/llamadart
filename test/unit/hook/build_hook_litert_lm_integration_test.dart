@@ -1038,6 +1038,76 @@ dependency_overrides: {llamadart_llama_cpp_flutter: {path: resolved companion}}
         'let liteRtLmTag = "$pin"',
       );
 
+  test('build hook reports an earlier rebuild for the previous macOS-complete '
+      'manifest template', () async {
+    final stderrLines = await _capturingStderr(
+      () async => project.testCodeBuildHook(
+        mainMethod: build_hook.main,
+        targetOS: OS.macOS,
+        targetArchitecture: Architecture.arm64,
+        userDefines: await _flutterLiteRtLmOnlyUserDefines(
+          liteRtLmManifest: File(
+            'test/fixtures/litert_lm/'
+            'llamadart_litert_lm_flutter_0.19.1-3_Package.swift',
+          ).readAsStringSync(),
+        ),
+        check: (input, output) {
+          expect(output.assets.encodedAssets, isEmpty);
+          expect(
+            Directory(
+              path.join(input.outputDirectory.toFilePath(), 'llamadart_bin'),
+            ).existsSync(),
+            isTrue,
+          );
+        },
+      ),
+    );
+    final warnings = stderrLines
+        .where((line) => line.startsWith('warning: llamadart:'))
+        .toList(growable: false);
+    expect(warnings, [
+      'warning: llamadart: The resolved llamadart_litert_lm_flutter pins '
+          'leehack/litert-lm-native@v0.19.1-3, an earlier build of this '
+          'core\'s LiteRT-LM release $coreLiteRtLmTag. It still embeds its '
+          'complete macOS LiteRT-LM runtime, which the app loads from its '
+          'bundle. Upgrade llamadart_litert_lm_flutter to the release '
+          'pinning $coreLiteRtLmTag.',
+    ]);
+  });
+
+  test('build hook keeps the incomplete-manifest warning for the previous '
+      'template pinning a tag that is not an earlier rebuild', () async {
+    final stderrLines = await _capturingStderr(
+      () async => project.testCodeBuildHook(
+        mainMethod: build_hook.main,
+        targetOS: OS.macOS,
+        targetArchitecture: Architecture.arm64,
+        userDefines: await _flutterLiteRtLmOnlyUserDefines(
+          liteRtLmManifest:
+              File(
+                'test/fixtures/litert_lm/'
+                'llamadart_litert_lm_flutter_0.19.1-3_Package.swift',
+              ).readAsStringSync().replaceFirst(
+                'let liteRtLmTag = "v0.19.1-3"',
+                'let liteRtLmTag = "$newerUpstream"',
+              ),
+        ),
+        check: (input, output) {
+          expect(output.assets.encodedAssets, isEmpty);
+        },
+      ),
+    );
+    expect(
+      stderrLines,
+      contains(
+        contains(
+          'does not link the complete macOS LiteRT-LM runtime (its '
+          'Package.swift is not the macOS-complete manifest)',
+        ),
+      ),
+    );
+  });
+
   for (final pin in ['v0.18.0', coreLiteRtLmTag]) {
     test('build hook rejects the published 0.0.15 manifest topology '
         'even when it declares $pin', () async {
