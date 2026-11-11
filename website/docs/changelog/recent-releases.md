@@ -14,6 +14,8 @@ validate against the exact release tag notes.
 ## Unreleased
 
 - LiteRT-LM unsupported-runtime errors name the pinned runtime tag (`v0.19.1-3`) instead of `v0.19.1-2` ([#1861](https://github.com/leehack/llamadart/issues/1861)).
+- Qwen3-Coder and Ling 3 tool-call grammars no longer define a rule twice, which rejected valid calls, when a nested argument property is named `at-value-end` ([#1861](https://github.com/leehack/llamadart/issues/1861)).
+- Seed-OSS replies with a closed call followed by unclosed `<seed:tool_call>` scopes no longer end their content with an added `</seed:tool_call>` ([#1861](https://github.com/leehack/llamadart/issues/1861)).
 
 ## 0.19.5
 
