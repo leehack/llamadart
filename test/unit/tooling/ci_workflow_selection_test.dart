@@ -1518,6 +1518,15 @@ for event,flag,native,cancel,good,main in itertools.product(('push','pull_reques
     }
   });
 
+  test('Web Chat Contract installs no system packages', () {
+    final steps =
+        readWorkflow('ci')['jobs']['web-chat-contract']['steps'] as List;
+    final forbidden = RegExp(r'--with-deps|install-deps|apt-get');
+    for (final step in steps) {
+      expect(forbidden.hasMatch('${step['run']}'), isFalse, reason: '$step');
+    }
+  });
+
   test('Web Chat Contract opts the chat app out of stable_diffusion', () {
     final steps =
         readWorkflow('ci')['jobs']['web-chat-contract']['steps'] as List;

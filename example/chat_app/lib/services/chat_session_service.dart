@@ -12,18 +12,30 @@ class ChatSessionService {
   ChatSession createSession({
     required LlamaEngine engine,
     required int contextSize,
+    int enforcedContextSize = 0,
     String? systemPrompt,
   }) {
     return ChatSession(
       engine,
-      maxContextTokens: contextSize > 0 ? contextSize : null,
+      maxContextTokens: _trimBudget(contextSize, enforcedContextSize),
       systemPrompt: systemPrompt,
     );
+  }
+
+  /// Trimming must budget for the context the runtime enforces, which can be
+  /// smaller than the requested size (for example LiteRT-LM Web executors).
+  static int? _trimBudget(int contextSize, int enforcedContextSize) {
+    if (enforcedContextSize > 0 &&
+        (contextSize <= 0 || contextSize > enforcedContextSize)) {
+      return enforcedContextSize;
+    }
+    return contextSize > 0 ? contextSize : null;
   }
 
   ChatSession rebuildFromMessages({
     required LlamaEngine engine,
     required int contextSize,
+    int enforcedContextSize = 0,
     String? systemPrompt,
     required Iterable<ChatMessage> messages,
     bool acceptsImages = true,
@@ -32,6 +44,7 @@ class ChatSessionService {
     final session = createSession(
       engine: engine,
       contextSize: contextSize,
+      enforcedContextSize: enforcedContextSize,
       systemPrompt: systemPrompt,
     );
 

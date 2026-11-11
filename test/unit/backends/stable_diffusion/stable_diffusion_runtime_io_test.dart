@@ -19,6 +19,10 @@ const _dotProductCpuInfo =
 const _haswellCpuInfo = 'flags\t\t: fpu sse4_2 avx f16c fma avx2 bmi2\n';
 
 void main() {
+  test('stableDiffusionHostIsMacosX64 follows the process ABI', () {
+    expect(stableDiffusionHostIsMacosX64(), Abi.current() == Abi.macosX64);
+  });
+
   group('probeStableDiffusionRuntime', () {
     test('reports version, commit and devices from a loaded runtime', () {
       final status = probeStableDiffusionRuntime(

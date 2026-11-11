@@ -4,6 +4,7 @@ Releases before 0.10.0 are in the
 ## Unreleased
 
 - Add `ChatTemplateEngine.resolveThinkingBudget`, which fills a `ThinkingBudget`'s omitted tags and the Qwen3-Coder XML line break before `</think>` as `LlamaEngine` does, so integrations that render the prompt themselves can match ([#1929](https://github.com/leehack/llamadart/issues/1929)).
+- On macOS x86_64 (Intel Macs and Rosetta), image generation with `ComputeDevice.auto` now runs on the CPU instead of Metal, matching `GpuBackend.auto` for llama.cpp; an explicit `ComputeDevice.gpu` still loads on Metal and logs a warning ([#1600](https://github.com/leehack/llamadart/issues/1600)).
 
 ## 0.19.6
 

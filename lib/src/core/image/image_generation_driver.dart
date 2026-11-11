@@ -310,6 +310,9 @@ abstract interface class ImageGenerationDriver {
   /// names it (`ios`, `macos`, `android`, ...), or `web`.
   String get operatingSystem;
 
+  /// Whether the process is a macOS x86_64 process, Rosetta included.
+  bool get isMacosX64;
+
   /// Probes the stable_diffusion runtime without loading a model or blocking
   /// the calling isolate: on native platforms it runs in a short-lived
   /// isolate, because the first probe in a process can compile GPU shaders

@@ -129,7 +129,7 @@ the default, keeps each runtime's own default:
 | llama.cpp Web | The bridge's default: WebGPU when the browser has it, otherwise the WebAssembly CPU runtime. |
 | LiteRT-LM native | GPU on Android, iOS and macOS; CPU on Linux and Windows. |
 | LiteRT-LM Web | WebGPU, without a probe. |
-| Image generation | The first GPU the stable-diffusion runtime reports, otherwise the CPU. |
+| Image generation | The first GPU the stable-diffusion runtime reports, otherwise the CPU; the CPU on macOS x86_64, Rosetta included ([#1600](https://github.com/leehack/llamadart/issues/1600)). |
 | Decision models | As llama.cpp, through the encoder's `ModelParams`. |
 
 Under `auto`, `preferredBackend` and `gpuLayers` still narrow the choice, as

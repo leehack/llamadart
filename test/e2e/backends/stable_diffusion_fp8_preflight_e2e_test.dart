@@ -88,6 +88,9 @@ final class _Driver implements ImageGenerationDriver {
   int starts = 0;
   @override
   String get operatingSystem => 'macos';
+
+  @override
+  bool get isMacosX64 => false;
   @override
   Future<StableDiffusionRuntimeStatus> probeInBackground() async =>
       StableDiffusionRuntimeStatus.available(

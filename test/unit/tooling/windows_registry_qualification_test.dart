@@ -11,7 +11,25 @@ import 'package:test/test.dart';
 import '../../fixtures/windows_ggml_registry_qualification/payload/passive_modules.dart';
 import 'support/bounded_process.dart';
 
+bool _canRun(String executable) {
+  try {
+    return Process.runSync(executable, [
+          '-NoLogo',
+          '-Command',
+          'exit 0',
+        ]).exitCode ==
+        0;
+  } on ProcessException {
+    return false;
+  }
+}
+
 void main() {
+  final shell = Platform.environment['LLAMADART_TEST_PWSH'] ?? 'pwsh';
+  final pwshSkip = _canRun(shell)
+      ? null
+      : '$shell not found; install PowerShell or set LLAMADART_TEST_PWSH.';
+
   test(
     'maintained integration reporter proves execution without skips',
     () async {
@@ -106,29 +124,26 @@ ${variant == 'multiple' ? "test('extra test', () {});" : ''}
           expect('${result.stdout}', isNot(contains('All tests passed!')));
         }
       }
-      final result = await runBoundedProcess(
-        Platform.environment['LLAMADART_TEST_PWSH'] ?? 'pwsh',
-        [
-          '-NoLogo',
-          '-NoProfile',
-          '-NonInteractive',
-          '-File',
-          'test/unit/tooling/support/windows_registry/check_registry_report.ps1',
-          '-BundleRoot',
-          Directory(
-            'test/fixtures/windows_ggml_registry_qualification',
-          ).absolute.path,
-          '-ReportsRoot',
-          root,
-          '-OutputPath',
-          '$root/receipt.json',
-        ],
-        timeout: const Duration(seconds: 30),
-      );
+      final result = await runBoundedProcess(shell, [
+        '-NoLogo',
+        '-NoProfile',
+        '-NonInteractive',
+        '-File',
+        'test/unit/tooling/support/windows_registry/check_registry_report.ps1',
+        '-BundleRoot',
+        Directory(
+          'test/fixtures/windows_ggml_registry_qualification',
+        ).absolute.path,
+        '-ReportsRoot',
+        root,
+        '-OutputPath',
+        '$root/receipt.json',
+      ], timeout: const Duration(seconds: 30));
       expect(result.exitCode, 0, reason: '${result.stdout}\n${result.stderr}');
     },
     // The 405 s child budgets leave time for forced termination and reaping.
     timeout: const Timeout(Duration(minutes: 8)),
+    skip: pwshSkip,
   );
 
   test('observer flushes complete before the next piped snapshot', () async {
@@ -227,7 +242,6 @@ ${variant == 'multiple' ? "test('extra test', () {});" : ''}
     },
   );
 
-  final shell = Platform.environment['LLAMADART_TEST_PWSH'] ?? 'pwsh';
   for (final name in [
     'protocol',
     'path',
@@ -235,63 +249,74 @@ ${variant == 'multiple' ? "test('extra test', () {});" : ''}
     'aot_distribution',
     'matrix_workflow',
   ]) {
-    test('real qualification $name controls', () async {
-      final scratch = await Directory.systemTemp.createTemp(
-        'registry-controls-',
-      );
-      addTearDown(() => scratch.delete(recursive: true));
-      final result = await Process.run(shell, [
-        '-NoLogo',
-        '-NoProfile',
-        '-NonInteractive',
-        '-File',
-        'test/unit/tooling/support/windows_registry/check_$name.ps1',
-        '-BundleRoot',
-        Directory(
-          'test/fixtures/windows_ggml_registry_qualification',
-        ).absolute.path,
-        '-OutputPath',
-        '${scratch.resolveSymbolicLinksSync()}/receipt.json',
-      ]);
-      expect(result.exitCode, 0, reason: '${result.stdout}\n${result.stderr}');
-      expect(
-        File('${scratch.resolveSymbolicLinksSync()}/receipt.json').existsSync(),
-        isTrue,
-      );
-      if (name == 'protocol') {
-        final verifier = [
-          'test/fixtures/windows_ggml_registry_qualification/verify_evidence.py',
-          '${scratch.resolveSymbolicLinksSync()}/protocol/evidence.zip',
-          '--head',
-          List.filled(40, 'a').join(),
-          '--run-id',
-          '12',
-          '--run-attempt',
-          '1',
-        ];
-        final integrity = await Process.run(
-          Platform.isWindows ? 'python' : 'python3',
-          [...verifier, '--inventory-only'],
+    test(
+      'real qualification $name controls',
+      () async {
+        final scratch = await Directory.systemTemp.createTemp(
+          'registry-controls-',
         );
+        addTearDown(() => scratch.delete(recursive: true));
+        final result = await Process.run(shell, [
+          '-NoLogo',
+          '-NoProfile',
+          '-NonInteractive',
+          '-File',
+          'test/unit/tooling/support/windows_registry/check_$name.ps1',
+          '-BundleRoot',
+          Directory(
+            'test/fixtures/windows_ggml_registry_qualification',
+          ).absolute.path,
+          '-OutputPath',
+          '${scratch.resolveSymbolicLinksSync()}/receipt.json',
+        ]);
         expect(
-          integrity.exitCode,
+          result.exitCode,
           0,
-          reason: '${integrity.stdout}\n${integrity.stderr}',
+          reason: '${result.stdout}\n${result.stderr}',
         );
         expect(
-          '${integrity.stdout}',
-          contains('"qualificationVerified": false'),
+          File(
+            '${scratch.resolveSymbolicLinksSync()}/receipt.json',
+          ).existsSync(),
+          isTrue,
         );
-        final qualification = await Process.run(
-          Platform.isWindows ? 'python' : 'python3',
-          verifier,
-        );
-        expect(
-          qualification.exitCode,
-          isNot(0),
-          reason: 'Complete failed-run evidence cannot become a pass.',
-        );
-      }
-    }, timeout: const Timeout(Duration(minutes: 3)));
+        if (name == 'protocol') {
+          final verifier = [
+            'test/fixtures/windows_ggml_registry_qualification/verify_evidence.py',
+            '${scratch.resolveSymbolicLinksSync()}/protocol/evidence.zip',
+            '--head',
+            List.filled(40, 'a').join(),
+            '--run-id',
+            '12',
+            '--run-attempt',
+            '1',
+          ];
+          final integrity = await Process.run(
+            Platform.isWindows ? 'python' : 'python3',
+            [...verifier, '--inventory-only'],
+          );
+          expect(
+            integrity.exitCode,
+            0,
+            reason: '${integrity.stdout}\n${integrity.stderr}',
+          );
+          expect(
+            '${integrity.stdout}',
+            contains('"qualificationVerified": false'),
+          );
+          final qualification = await Process.run(
+            Platform.isWindows ? 'python' : 'python3',
+            verifier,
+          );
+          expect(
+            qualification.exitCode,
+            isNot(0),
+            reason: 'Complete failed-run evidence cannot become a pass.',
+          );
+        }
+      },
+      timeout: const Timeout(Duration(minutes: 3)),
+      skip: pwshSkip,
+    );
   }
 }

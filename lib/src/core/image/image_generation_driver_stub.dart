@@ -16,6 +16,9 @@ class _UnsupportedImageGenerationDriver implements ImageGenerationDriver {
   String get operatingSystem => 'web';
 
   @override
+  bool get isMacosX64 => false;
+
+  @override
   Future<StableDiffusionRuntimeStatus> probeInBackground() async =>
       probeStableDiffusionRuntime();
 

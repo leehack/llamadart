@@ -30,6 +30,7 @@ already executed by full Linux coverage are not duplicated in a separate job.
 The consumer job is omitted entirely only when both root coverage and Web Chat
 (which runs all Flutter app tests) substitute its assertions. Mixed validation
 and root-test changes still run the Flutter consumer assertions.
+Web Chat Contract installs no system packages, so an Ubuntu mirror outage cannot fail the required job.
 The private harness also checks APK integrity. Its separate consumer job runs
 root provider/NPU/workspace tests and the Flutter validation controller/app tests.
 

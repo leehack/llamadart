@@ -1140,6 +1140,30 @@ void main() {
       },
     );
 
+    // Pins current behavior; llama.cpp has no oracle for this shape (#1933).
+    test('LFM2 takes a thought after a call envelope as reasoning', () async {
+      const call =
+          '<|tool_call_start|>[{"name":"weather",'
+          '"arguments":{"city":"Paris"}}]<|tool_call_end|>';
+      for (final separator in ['', '\n']) {
+        final output = '$call$separator<think>After.</think>Done.';
+        final parsed = ChatTemplateEngine.parse(
+          ChatFormat.lfm2.index,
+          output,
+          tools: [_weatherTool],
+        );
+        expect(parsed.toolCalls.single.function!.name, 'weather');
+        expect(parsed.reasoningContent, 'After.');
+        expect(parsed.content, 'Done.');
+        await _expectStreamMatchesParse(
+          ChatFormat.lfm2,
+          output,
+          everySplit: true,
+          openings: ['<|tool_call_start|>', '</think>'],
+        );
+      }
+    });
+
     test('unclosed forced thoughts keep reasoning after a held call', () async {
       for (final (format, call) in [
         (

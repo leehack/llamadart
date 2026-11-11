@@ -41,6 +41,9 @@ abstract interface class StableDiffusionNativeApi {
 /// The host operating system, as `Platform.operatingSystem` reports it.
 String stableDiffusionHostOperatingSystem() => Platform.operatingSystem;
 
+/// Whether this is a macOS x86_64 process, Rosetta included.
+bool stableDiffusionHostIsMacosX64() => Abi.current() == Abi.macosX64;
+
 /// ABIs stable-diffusion-native publishes a runtime for. `Abi.iosArm64` covers
 /// both the device and the arm64 simulator archive; `Abi.iosX64` is the x86_64
 /// simulator.

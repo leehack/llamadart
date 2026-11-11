@@ -272,7 +272,7 @@ core and `llamadart_stable_diffusion_flutter` together.
   and is usually refused on 6 GB ones; offer SDXS there.
 - `ImageModelParams(device: ComputeDevice.auto | cpu | gpu, threads: 0)`.
   `gpu` without a GPU (Android, CPU builds) and `npu` throw
-  `LlamaUnsupportedException`.
+  `LlamaUnsupportedException`. `auto` uses the CPU on macOS x86_64.
   `flashAttention` and `vaeDirectConvolution` default to `null`, which picks
   per device: flash attention on for the CPU and Metal, off on Vulkan; direct
   VAE convolutions on except on Metal (about 7 times slower there) and when

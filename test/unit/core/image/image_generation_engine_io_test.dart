@@ -63,6 +63,9 @@ final class _ProbeOnlyDriver implements ImageGenerationDriver {
   String get operatingSystem => 'linux';
 
   @override
+  bool get isMacosX64 => false;
+
+  @override
   Future<StableDiffusionRuntimeStatus> probeInBackground() async =>
       StableDiffusionRuntimeStatus.available(
         version: 'master-929',

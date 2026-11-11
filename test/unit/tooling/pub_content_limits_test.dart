@@ -16,6 +16,10 @@ const _packages = <String, String>{
       'packages/llamadart_stable_diffusion_flutter',
 };
 
+const _genkitPackages = <String, String>{
+  'genkit_llamadart': 'packages/genkit_llamadart',
+};
+
 void main() {
   late Directory root;
   setUp(() => root = Directory.systemTemp.createTempSync('pub-content-'));
@@ -134,6 +138,43 @@ void main() {
         '$path/example/README.md',
       ]);
     }
+  });
+
+  test('archive cut matches the CHANGELOG note', () {
+    final changelog = File('CHANGELOG.md').readAsStringSync();
+    final archive = File('doc/changelog_archive.md').readAsStringSync();
+    final headings = RegExp(r'^## (\d+\.\d+\.\d+)', multiLine: true);
+    final oldest = headings.allMatches(changelog).last.group(1)!;
+    final newest = headings.allMatches(archive).first.group(1)!;
+
+    expect(changelog, startsWith('Releases before $oldest are in the'));
+    expect(
+      archive,
+      contains('Releases of `llamadart` before $oldest, moved verbatim'),
+    );
+    expect(
+      int.parse(newest.split('.')[1]),
+      lessThan(int.parse(oldest.split('.')[1])),
+    );
+  });
+
+  test('keeps the genkit_llamadart content files under the limit', () {
+    final result = checkPubContentLimits(Directory.current, _genkitPackages);
+    expect(result.errors, isEmpty);
+    expect(result.warnings, isEmpty);
+    expect(
+      pubContentFiles(
+        Directory.current,
+        'packages/genkit_llamadart',
+        'genkit_llamadart',
+      ),
+      [
+        'packages/genkit_llamadart/README.md',
+        'packages/genkit_llamadart/CHANGELOG.md',
+        'packages/genkit_llamadart/LICENSE',
+        'packages/genkit_llamadart/example/genkit_llamadart_example.dart',
+      ],
+    );
   });
 
   group('verify_release_docs_versions.dart', () {

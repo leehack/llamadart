@@ -1,6 +1,7 @@
 @TestOn('vm')
 library;
 
+import 'dart:ffi';
 import 'dart:io';
 
 import 'package:test/test.dart';
@@ -80,6 +81,10 @@ void main() {
     expect(
       createImageGenerationDriver().operatingSystem,
       Platform.operatingSystem,
+    );
+    expect(
+      createImageGenerationDriver().isMacosX64,
+      Abi.current() == Abi.macosX64,
     );
   });
 
