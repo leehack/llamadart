@@ -73,6 +73,60 @@ void main() {
       expect(serialized, isNull);
     });
 
+    test(
+      'trims to the enforced engine limit below the requested size',
+      () async {
+        final engine = _SmallContextEngine(4096)..initialized = true;
+        final enforced = await engine.getContextSize();
+
+        final created = service.createSession(
+          engine: engine,
+          contextSize: 65536,
+          enforcedContextSize: enforced,
+        );
+        final rebuilt = service.rebuildFromMessages(
+          engine: engine,
+          contextSize: 65536,
+          enforcedContextSize: enforced,
+          messages: const <ChatMessage>[],
+        );
+
+        expect(created.maxContextTokens, 4096);
+        expect(rebuilt.maxContextTokens, 4096);
+      },
+    );
+
+    test('keeps a requested size within the enforced limit', () {
+      final engine = MockLlamaEngine()..initialized = true;
+
+      expect(
+        service
+            .createSession(
+              engine: engine,
+              contextSize: 2048,
+              enforcedContextSize: 4096,
+            )
+            .maxContextTokens,
+        2048,
+      );
+      expect(
+        service
+            .createSession(engine: engine, contextSize: 2048)
+            .maxContextTokens,
+        2048,
+      );
+      expect(
+        service
+            .createSession(
+              engine: engine,
+              contextSize: 0,
+              enforcedContextSize: 4096,
+            )
+            .maxContextTokens,
+        4096,
+      );
+    });
+
     test('rebuilds session from conversation messages', () {
       final engine = MockLlamaEngine()..initialized = true;
       final session = service.rebuildFromMessages(
@@ -127,4 +181,13 @@ void main() {
       );
     });
   });
+}
+
+class _SmallContextEngine extends MockLlamaEngine {
+  _SmallContextEngine(this.limit);
+
+  final int limit;
+
+  @override
+  Future<int> getContextSize() async => limit;
 }

@@ -692,6 +692,7 @@ class ChatProvider extends ChangeNotifier {
     return _chatSessionService.rebuildFromMessages(
       engine: _chatService.engine,
       contextSize: _settings.contextSize,
+      enforcedContextSize: _contextLimit,
       systemPrompt: _sessionSystemPrompt(),
       messages: history,
       acceptsImages: projectorReady && _supportsVision,
@@ -738,6 +739,7 @@ class ChatProvider extends ChangeNotifier {
       _session = _chatSessionService.createSession(
         engine: _chatService.engine,
         contextSize: _settings.contextSize,
+        enforcedContextSize: _contextLimit,
         systemPrompt: _sessionSystemPrompt(),
       );
     } else {
@@ -1453,9 +1455,11 @@ class ChatProvider extends ChangeNotifier {
         throw Exception('Engine initialization did not complete.');
       }
 
+      _contextLimit = await _chatService.engine.getContextSize();
       _session = _chatSessionService.createSession(
         engine: _chatService.engine,
         contextSize: _settings.contextSize,
+        enforcedContextSize: _contextLimit,
         systemPrompt: _sessionSystemPrompt(),
       );
       updateLoadingUi(0.8);
@@ -1482,7 +1486,6 @@ class ChatProvider extends ChangeNotifier {
             : _settings.preferredBackend.name.toUpperCase();
       }
 
-      _contextLimit = await _chatService.engine.getContextSize();
       _mmprojLoaded =
           eagerLoadMmproj && (_settings.mmprojPath?.trim().isNotEmpty ?? false);
       final metadata = await _chatService.engine.getMetadata();
@@ -1638,6 +1641,7 @@ class ChatProvider extends ChangeNotifier {
         ? _chatSessionService.createSession(
             engine: _chatService.engine,
             contextSize: _settings.contextSize,
+            enforcedContextSize: _contextLimit,
             systemPrompt: _sessionSystemPrompt(),
           )
         : null;
