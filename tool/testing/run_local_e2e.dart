@@ -2247,8 +2247,7 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
       requiresDevice: true,
       stepsBuilder: (context) {
         final model = context.modelPath!;
-        final remote =
-            model.startsWith('http://') || model.startsWith('https://');
+        final remote = _isRemoteModel(model);
         return [
           LocalE2eCommandStep(
             workingDirectory: context.chatAppDir,
@@ -2993,21 +2992,22 @@ Future<LocalE2eResult> runLocalE2e(
       stderr: '--model-path is required for ${scenario.name}.\n',
     );
   }
-  // The URL is printed and compiled into the app, so it must carry no secret.
-  final modelUrl = scenario.name == 'chat-app-litert-json-schema'
-      ? Uri.tryParse(parsed.modelPath!)
-      : null;
-  if (modelUrl != null &&
-      modelUrl.hasScheme &&
-      (modelUrl.userInfo.isNotEmpty ||
-          modelUrl.hasQuery ||
-          modelUrl.hasFragment)) {
-    return LocalE2eResult(
-      64,
-      stderr:
-          '${scenario.name} accepts a model URL without credentials, query or '
-          'fragment; serve the bundle from a plain URL.\n',
-    );
+  // The URL is printed and compiled into the app, so it must carry no secret;
+  // a URL that does not parse cannot be checked, so it is refused too.
+  if (scenario.name == 'chat-app-litert-json-schema' &&
+      _isRemoteModel(parsed.modelPath!)) {
+    final modelUrl = Uri.tryParse(parsed.modelPath!);
+    if (modelUrl == null ||
+        modelUrl.userInfo.isNotEmpty ||
+        modelUrl.hasQuery ||
+        modelUrl.hasFragment) {
+      return LocalE2eResult(
+        64,
+        stderr:
+            '${scenario.name} accepts a model URL without credentials, query or '
+            'fragment; serve the bundle from a plain URL.\n',
+      );
+    }
   }
   if ((scenario.name == 'litert-lm-json-schema' ||
           scenario.name == 'chat-app-litert-json-schema') &&
@@ -4021,3 +4021,6 @@ Future<void> main(List<String> args) async {
   await stderr.flush();
   exit(result.exitCode);
 }
+
+bool _isRemoteModel(String model) =>
+    RegExp(r'^https?://', caseSensitive: false).hasMatch(model);
