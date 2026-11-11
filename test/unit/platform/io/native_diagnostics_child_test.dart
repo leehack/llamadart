@@ -138,9 +138,7 @@ void main() {
       for (final library in [
         'libCLiteRTLM_mac.dylib',
         'libGemmaModelConstraintProvider.dylib',
-        'libLiteRt.dylib',
         'libLiteRtLm.dylib',
-        'libLiteRtWebGpuAccelerator.dylib',
         'libwebgpu_dawn.dylib',
       ]) {
         await File('${cache.path}/$library').writeAsString('');

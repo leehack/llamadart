@@ -30,9 +30,9 @@ Add the companions you need next to `llamadart`; the dependency snippet is in
 
 - `llamadart_llama_cpp_flutter` links the llama.cpp XCFrameworks (GGUF).
 - `llamadart_litert_lm_flutter` links the LiteRT-LM iOS and macOS
-  XCFrameworks (`.litertlm` models), including the macOS WebGPU accelerator
-  and Dawn. `LiteRtLm` has its GPU accelerator built in (Metal on iOS, WebGPU
-  on macOS), so the companion links no separate Metal accelerator.
+  XCFrameworks (`.litertlm` models), including macOS Dawn. `LiteRtLm` embeds
+  LiteRT and its GPU accelerator (Metal on iOS, WebGPU on macOS), so the
+  companion links no separate `LiteRt`, WebGPU or Metal accelerator.
 - `llamadart_stable_diffusion_flutter` links the stable-diffusion.cpp
   XCFramework for [image generation](../guides/image-generation). It is opt-in:
   adding it opts iOS and macOS builds into the image generation runtime (about
@@ -219,9 +219,8 @@ built app has no `PrivacyInfo.xcprivacy` inside the embedded LiteRT-LM
 frameworks. On macOS, which Apple's requirement does not cover, the
 companion's `LiteRtLm.framework` carries a File Timestamp manifest, while its
 flat dylibs
-(`libCLiteRTLM_mac`, `libLiteRt`, the WebGPU accelerator and
-`libwebgpu_dawn`) and the hook-managed runtime dylibs are bare libraries
-without one. The reasons come from the runtime owner's
+(`libCLiteRTLM_mac` and `libwebgpu_dawn`) and the hook-managed runtime
+dylibs are bare libraries without one. The reasons come from the runtime owner's
 [audit of the binaries](https://github.com/leehack/litert-lm-native/blob/v0.17.0-8/docs/apple_privacy_manifest.md)
 ([litert-lm-native#65](https://github.com/leehack/litert-lm-native/issues/65));
 llamadart has not verified them, or an app-level declaration, with an App

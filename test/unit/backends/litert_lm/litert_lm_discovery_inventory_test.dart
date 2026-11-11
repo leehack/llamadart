@@ -26,39 +26,51 @@ void main() {
   // v0.19.1-3 stopped shipping the Metal accelerator that the linked-in GPU
   // accelerator makes unreachable.
   const unusedMetalAccelerator = 'libLiteRtMetalAccelerator.dylib';
+  // v0.19.1-4 stopped shipping the macOS LiteRT and WebGPU accelerator
+  // dylibs; the LiteRT and accelerator embedded in LiteRtLm never open them.
+  const unusedMacOsLiteRtCompanions = {
+    'libLiteRt.dylib',
+    'libLiteRtWebGpuAccelerator.dylib',
+  };
+  bool isRetiredByOwner(Abi abi, String file) =>
+      file == unusedMetalAccelerator ||
+      (abi == Abi.macosArm64 && unusedMacOsLiteRtCompanions.contains(file));
   for (final abi in desktopAbis) {
-    test('$abi v1 keeps all owner companions except retired TopK libraries, '
-        'the unused Metal accelerator and a linked-in LiteRT', () {
-      final legacy = liteRtLmRequiredLibrariesForAbi(abi);
-      final modern = liteRtLmRequiredLibrariesForAbi(abi, cApiV1: true);
-      expect(modern.length, switch (abi) {
-        Abi.macosArm64 => 6,
-        Abi.windowsX64 => 11,
-        _ => 4,
-      });
-      final retired = legacy.toSet().difference(modern.toSet());
-      expect(
-        retired.where(
-          (file) =>
-              file != linkedInLiteRt[abi] && file != unusedMetalAccelerator,
-        ),
-        everyElement(contains('TopK')),
-      );
-      if (linkedInLiteRt[abi] case final liteRt?) {
-        expect(retired, contains(liteRt));
-      }
-      expect(modern, containsAll(liteRtLmNonPreloadedLibrariesForAbi(abi)));
-      expect(
-        liteRtLmCompanionLibrariesForAbi(abi, cApiV1: true),
-        unorderedEquals(
-          modern.where(
+    test(
+      '$abi v1 keeps all owner companions except retired TopK libraries, '
+      'the unused Metal and macOS LiteRT companions and a linked-in LiteRT',
+      () {
+        final legacy = liteRtLmRequiredLibrariesForAbi(abi);
+        final modern = liteRtLmRequiredLibrariesForAbi(abi, cApiV1: true);
+        expect(modern.length, switch (abi) {
+          Abi.macosArm64 => 4,
+          Abi.windowsX64 => 11,
+          _ => 4,
+        });
+        final retired = legacy.toSet().difference(modern.toSet());
+        expect(
+          retired.where(
             (file) =>
-                file != liteRtLmPrimaryLibraryForAbi(abi) &&
-                !liteRtLmNonPreloadedLibrariesForAbi(abi).contains(file),
+                file != linkedInLiteRt[abi] && !isRetiredByOwner(abi, file),
           ),
-        ),
-      );
-    });
+          everyElement(contains('TopK')),
+        );
+        if (linkedInLiteRt[abi] case final liteRt?) {
+          expect(retired, contains(liteRt));
+        }
+        expect(modern, containsAll(liteRtLmNonPreloadedLibrariesForAbi(abi)));
+        expect(
+          liteRtLmCompanionLibrariesForAbi(abi, cApiV1: true),
+          unorderedEquals(
+            modern.where(
+              (file) =>
+                  file != liteRtLmPrimaryLibraryForAbi(abi) &&
+                  !liteRtLmNonPreloadedLibrariesForAbi(abi).contains(file),
+            ),
+          ),
+        );
+      },
+    );
   }
 
   test('v1 discovery matches the frozen owner 0.19 desktop inventory', () {
@@ -92,7 +104,7 @@ void main() {
       final linked = linkedInLiteRt[entry.key];
       if (linked != null) expect(owner, contains(linked));
       final expected = owner
-          .where((file) => file != linked && file != unusedMetalAccelerator)
+          .where((file) => file != linked && !isRetiredByOwner(entry.key, file))
           .toList();
       expect(
         liteRtLmRequiredLibrariesForAbi(entry.key, cApiV1: true),

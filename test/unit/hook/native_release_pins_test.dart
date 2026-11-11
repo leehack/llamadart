@@ -187,9 +187,11 @@ void main() {
     () {
       const samplers = {
         Abi.macosArm64: [
+          'libLiteRt.dylib',
           'libLiteRtMetalAccelerator.dylib',
           'libLiteRtTopKMetalSampler.dylib',
           'libLiteRtTopKWebGpuSampler.dylib',
+          'libLiteRtWebGpuAccelerator.dylib',
         ],
         Abi.linuxArm64: ['libLiteRtTopKWebGpuSampler.so'],
         Abi.linuxX64: ['libLiteRtTopKWebGpuSampler.so'],

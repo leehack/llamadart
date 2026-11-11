@@ -174,6 +174,14 @@ iOS bundles decide: sync keeps the `LiteRtMetalAccelerator` target while every
 iOS bundle ships it, removes it from the seven-target layout once none does,
 and refuses a release that ships it for only some iOS bundles.
 
+Owner releases after `v0.19.1-3` also stop shipping the macOS `libLiteRt` and
+WebGPU accelerator and the iOS loose `libLiteRt`, because `LiteRtLm` embeds
+LiteRT ([#1911](https://github.com/leehack/llamadart/issues/1911)). Sync drops
+the `LiteRt` and `LiteRtWebGpuAccelerator` targets (four binary targets
+remain) once the manifest ships neither, refuses a release that drops only
+one, and matches the targets by exact `name: "LiteRt"` because that is a
+substring of other target names.
+
 LiteRT-LM sync also stages the hook's accepted full-manifest template hash from
 the same rendered `Package.swift`. The original manifest must already match the
 hook's reviewed template; a stale hash or a hand-edited manifest fails before any
@@ -400,8 +408,8 @@ parameters. The public lazy facade, service metadata/finish probes and speech
 worker share discovery and ABI selection. `_liteRtLmV1ProductionSelection` in
 `litert_lm_runtime_facade.dart` enables public C API 1.0.x dispatch. The native
 hook and Apple companion source now pin published
-[v0.19.1-3](https://github.com/leehack/litert-lm-native/releases/tag/v0.19.1-3),
-owner `ed8ffe33` / upstream `7a03724c`, which keeps C API 1.0.0 and the
+[v0.19.1-4](https://github.com/leehack/litert-lm-native/releases/tag/v0.19.1-4),
+owner `5da99205` / upstream `7a03724c`, which keeps C API 1.0.0 and the
 `v0.19.0` exports and adds the in-process LiteRT marker
 `litert_lm_native_in_process_litert_abi_version` (1 on every platform); the
 `LiteRT-LM Smoke` library step fails when the bundled Linux x64 or Windows
@@ -448,7 +456,7 @@ blocks unload and dispose. On Linux ext4, releasing a freshly written CPU
 XNNPACK weight cache flushes it to disk, about 4 s for Qwen3 0.6B's 600 MB
 cache on CI disks ([#1814](https://github.com/leehack/llamadart/issues/1814)).
 
-Public ABI-aware selection and the v0.19.1-3 source pin are enabled; remaining
+Public ABI-aware selection and the v0.19.1-4 source pin are enabled; remaining
 consumer, feature and platform gates are recorded in
 `doc/litert_lm_v1_adoption.md`. This transport contract alone does not qualify a
 model or device. The owner proxy's

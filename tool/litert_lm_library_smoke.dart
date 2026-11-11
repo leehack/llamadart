@@ -91,7 +91,12 @@ bool _isSupportedHost() {
 /// Selects only a reviewed release's required smoke inventory.
 bool liteRtLmSmokeUsesCApiV1(String releaseTag) {
   return switch (releaseTag) {
-    'v0.19.0' || 'v0.19.1' || 'v0.19.1-1' || 'v0.19.1-2' || 'v0.19.1-3' => true,
+    'v0.19.0' ||
+    'v0.19.1' ||
+    'v0.19.1-1' ||
+    'v0.19.1-2' ||
+    'v0.19.1-3' ||
+    'v0.19.1-4' => true,
     'v0.18.1-4' => false,
     _ => throw UnsupportedError(
       'LiteRT-LM library smoke has no reviewed C API inventory for $releaseTag.',

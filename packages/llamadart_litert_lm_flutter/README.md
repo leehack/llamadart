@@ -6,13 +6,13 @@ support.
 
 Add the package to a Flutter iOS or macOS app so it links the prebuilt
 LiteRT-LM Apple XCFrameworks through SwiftPM instead of relying on the core
-package's native-assets fallback. On macOS it also links the `LiteRt`, WebGPU
-accelerator and Dawn XCFrameworks, so the app bundle holds the
-complete runtime and a sandboxed or distributed app loads LiteRT-LM on CPU and
-GPU. Every macOS XCFramework is arm64 only; a universal build prints an
+package's native-assets fallback. On macOS it also links the Dawn XCFramework,
+so the app bundle holds the complete runtime and a sandboxed or distributed app
+loads LiteRT-LM on CPU and GPU. Every macOS XCFramework is arm64 only; a universal build prints an
 `ignoring file ... required architecture 'x86_64'` linker warning for each.
-`LiteRtLm` has its GPU accelerator built in (Metal on iOS, WebGPU on macOS), so
-the package links no separate Metal accelerator.
+`LiteRtLm` embeds LiteRT and its GPU accelerator (Metal on iOS, WebGPU on
+macOS), so the package links no separate `LiteRt`, WebGPU accelerator or Metal
+accelerator.
 
 LiteRT-LM is not available on x86_64 macOS: `litert-lm-native` publishes
 arm64-only macOS runtimes. A universal app still launches on an Intel Mac or
@@ -34,7 +34,7 @@ dependencies:
 This package has no runtime Dart API of its own. Import `package:llamadart`
 normally from the core package and use `LlamaBackend()` / `LlamaEngine` there.
 
-The Apple SwiftPM manifest pins `leehack/litert-lm-native@v0.19.1-3`.
+The Apple SwiftPM manifest pins `leehack/litert-lm-native@v0.19.1-4`.
 That runtime loads dedicated ASR `.litertlm` containers such as Whisper tiny.
 
 Use the companion that shares the core's `MAJOR.MINOR`: companion `0.19.x` pairs

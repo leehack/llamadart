@@ -12,9 +12,7 @@ import 'package:test/test.dart';
 const _v1Libraries = [
   'libCLiteRTLM_mac.dylib',
   'libGemmaModelConstraintProvider.dylib',
-  'libLiteRt.dylib',
   'libLiteRtLm.dylib',
-  'libLiteRtWebGpuAccelerator.dylib',
   'libwebgpu_dawn.dylib',
 ];
 
@@ -90,7 +88,9 @@ void main() {
       nativeDiagnosticLiteRtLmHookCacheTarget(packageConfig, 'macos_arm64'),
       isNull,
     );
-    await populate(_v1Libraries.where((name) => name != 'libLiteRt.dylib'));
+    await populate(
+      _v1Libraries.where((name) => name != 'libwebgpu_dawn.dylib'),
+    );
     expect(
       nativeDiagnosticLiteRtLmHookCacheTarget(packageConfig, 'macos_arm64'),
       isNull,

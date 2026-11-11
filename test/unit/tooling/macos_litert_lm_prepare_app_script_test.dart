@@ -581,9 +581,7 @@ Future<ProcessResult> _runPrepareApp(
 const List<String> _arm64Libraries = [
   'libCLiteRTLM_mac.dylib',
   'libGemmaModelConstraintProvider.dylib',
-  'libLiteRt.dylib',
   'libLiteRtLm.dylib',
-  'libLiteRtWebGpuAccelerator.dylib',
   'libwebgpu_dawn.dylib',
 ];
 
@@ -597,8 +595,6 @@ const List<String> _arm64SwiftPmFiles = [
   'LiteRtLm.framework/Versions/A/LiteRtLm',
   'libCLiteRTLM_mac.dylib',
   'LiteRtLm.framework/Versions/A/Dependencies/libGemmaModelConstraintProvider.dylib',
-  'libLiteRt.dylib',
-  'libLiteRtWebGpuAccelerator.dylib',
   'libwebgpu_dawn.dylib',
 ];
 

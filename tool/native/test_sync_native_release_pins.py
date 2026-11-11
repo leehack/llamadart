@@ -686,11 +686,17 @@ def _run_dart_inventory_checks(
         platforms = copy.deepcopy(projection["platforms"])
         for platform in platforms:
             if platform["platform"] == "macos":
-                # The v0.19.0 projection predates the pin that stopped shipping it.
+                # The v0.19.0 projection predates the pins that stopped shipping
+                # the Metal accelerator and the embedded LiteRT companions.
                 platform["artifactPaths"] = [
                     path
                     for path in platform["artifactPaths"]
-                    if "LiteRtMetalAccelerator" not in path
+                    if Path(path).name
+                    not in {
+                        "libLiteRtMetalAccelerator.dylib",
+                        "libLiteRt.dylib",
+                        "libLiteRtWebGpuAccelerator.dylib",
+                    }
                 ]
         manifest = {
             "upstream": {"compatibilityTag": projection["compatibilityTag"]},
@@ -1282,6 +1288,71 @@ class LiteRtV019SamplerTransitionTest(unittest.TestCase):
             ("duplicate-dependency", with_metal.replace(dependency, dependency * 2)),
             ("missing-dependency", with_metal.replace(dependency, "")),
             ("wrong-platform", with_metal.replace(dependency, dependency.replace(".iOS", ".macOS"))),
+        ):
+            with self.subTest(source=label), self.assertRaises(ReleaseError):
+                self.prepare(source)
+
+    LITERT_COMPANIONS = ("LiteRt", "LiteRtWebGpuAccelerator")
+
+    def drop_litert_companions(self, *targets: str) -> None:
+        self.drop_metal_accelerator("ios-arm64", "ios-arm64-sim", "macos-arm64")
+        names = {f"lib{target}.dylib" for target in targets}
+        for item in self.manifest["platforms"]:
+            item["artifactPaths"] = [
+                path for path in item["artifactPaths"] if Path(path).name not in names
+            ]
+        gone = {self.asset(target)["name"] for target in targets}
+        self.release["assets"] = [
+            item for item in self.release["assets"] if item["name"] not in gone
+        ]
+
+    def metal_free_package(self) -> str:
+        self.drop_metal_accelerator("ios-arm64", "ios-arm64-sim", "macos-arm64")
+        prepared = self.prepare(self.original)
+        self.setUp()
+        return prepared
+
+    def test_litert_free_owner_keeps_four_targets_and_libraries(self) -> None:
+        metal_free = self.metal_free_package()
+        self.drop_litert_companions(*self.LITERT_COMPANIONS)
+        keep = {"LiteRtLm", "CLiteRTLM", "CLiteRTLMMac", "WebgpuDawn"}
+        self.assertEqual(pins.litert_schema2_apple_targets(self.manifest, self.tag), keep)
+        self.assertEqual(
+            pins.litert_schema2_bundle_required_libraries(self.manifest)["macos-arm64"],
+            (
+                "libCLiteRTLM_mac.dylib", "libGemmaModelConstraintProvider.dylib",
+                "libLiteRtLm.dylib", "libwebgpu_dawn.dylib",
+            ),
+        )
+        for label, source in (("nine-target", self.original), ("six-target", metal_free)):
+            with self.subTest(source=label):
+                prepared = self.prepare(source)
+                self.assertEqual({name for name, _ in pins.swift_native_repo_binary_targets(
+                    prepared, tag_variable="liteRtLmTag", current_tag=self.tag,
+                )}, keep)
+                for target in self.LITERT_COMPANIONS:
+                    self.assertNotIn(f'name: "{target}"', prepared)
+                for target in keep:
+                    self.assertIn(f'name: "{target}"', prepared)
+                self.assertEqual(self.prepare(prepared), prepared)
+
+    def test_litert_removal_requires_both_companions_to_leave(self) -> None:
+        for gone in (("LiteRt",), ("LiteRtWebGpuAccelerator",)):
+            with self.subTest(gone=gone):
+                self.setUp()
+                self.drop_litert_companions(*gone)
+                with self.assertRaises(ReleaseError):
+                    self.prepare(self.original)
+
+    def test_litert_removal_refuses_ambiguous_references(self) -> None:
+        with_litert = self.metal_free_package()
+        dependency = '.target(name: "LiteRt", condition: .when(platforms: [.macOS])),'
+        self.assertIn(dependency, with_litert)
+        self.drop_litert_companions(*self.LITERT_COMPANIONS)
+        for label, source in (
+            ("duplicate-dependency", with_litert.replace(dependency, dependency * 2)),
+            ("missing-dependency", with_litert.replace(dependency, "")),
+            ("wrong-platform", with_litert.replace(dependency, dependency.replace(".macOS", ".iOS"))),
         ):
             with self.subTest(source=label), self.assertRaises(ReleaseError):
                 self.prepare(source)

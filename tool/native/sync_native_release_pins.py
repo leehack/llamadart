@@ -412,6 +412,9 @@ def _litert_compatibility_version(compatibility_tag: str) -> tuple[int, ...]:
 # Upstream versions reviewed to export C API 1.0 and link both TopK samplers
 # from source. Add a version only after comparing its C API exports.
 LITERT_V1_COMPATIBILITY_VERSIONS = {(0, 19, 0), (0, 19, 1)}
+# v0.19 LiteRtLm embeds LiteRT, so owner releases after v0.19.1-3 drop the
+# macOS libLiteRt and WebGPU accelerator it never opens (#1911).
+LITERT_UNUSED_APPLE_COMPANION_TARGETS = ("LiteRt", "LiteRtWebGpuAccelerator")
 
 
 def _litert_is_v1_compatibility_tag(compatibility_tag: str) -> bool:
@@ -4156,6 +4159,7 @@ def replace_swift_binary_target_checksum(
 def _validate_litert_lm_v019_swift_topology(
     swift_text: str, *, current_tag: str, include_obsolete_samplers: bool,
     include_metal_accelerator: bool = True,
+    include_litert_companions: bool = True,
 ) -> dict[str, str]:
     platforms = {
         "LiteRtLm": ".iOS, .macOS",
@@ -4173,6 +4177,9 @@ def _validate_litert_lm_v019_swift_topology(
         platforms.pop("LiteRtTopKWebGpuSampler")
     if not include_metal_accelerator:
         platforms.pop("LiteRtMetalAccelerator")
+    if not include_litert_companions:
+        for target in LITERT_UNUSED_APPLE_COMPANION_TARGETS:
+            platforms.pop(target)
     label = "LiteRT-LM v0.19 Swift topology"
     assets = swift_native_repo_binary_targets(
         swift_text, tag_variable="liteRtLmTag", current_tag=current_tag,
@@ -4272,6 +4279,32 @@ def _remove_litert_lm_unused_metal_accelerator(
     )
 
 
+def _remove_litert_lm_unused_litert_companions(
+    swift_text: str, *, current_tag: str,
+) -> str:
+    blocks = _validate_litert_lm_v019_swift_topology(
+        swift_text,
+        current_tag=current_tag,
+        include_obsolete_samplers=False,
+        include_metal_accelerator=False,
+    )
+    for target in LITERT_UNUSED_APPLE_COMPANION_TARGETS:
+        # Exact quoted match: "LiteRt" is a substring of other target names.
+        if swift_text.count(f'name: "{target}"') != 2:
+            raise ReleaseError(
+                f"LiteRT-LM v0.19 removal has ambiguous {target} references"
+            )
+        swift_text = swift_text.replace(blocks[target], "", 1)
+        swift_text = replace_one(
+            swift_text,
+            rf'(?m)^[ \t]*\.target\(name: "{target}", '
+            r'condition: \.when\(platforms: \[\.macOS\]\)\),\n',
+            "",
+            f"LiteRT-LM unused {target} must have exactly one macOS dependency",
+        )
+    return swift_text
+
+
 def prepare_litert_lm_package_swift(
     original_swift_text: str,
     *,
@@ -4305,12 +4338,15 @@ def prepare_litert_lm_package_swift(
             "LiteRt", "LiteRtWebGpuAccelerator", "WebgpuDawn",
         }
         metal = "LiteRtMetalAccelerator"
+        litert_companions = set(LITERT_UNUSED_APPLE_COMPANION_TARGETS)
         if _litert_is_v1_compatibility_tag(
             manifest["upstream"]["compatibilityTag"]
         ) and expected_targets in (
-            sampler_free_targets, sampler_free_targets - {metal},
+            sampler_free_targets,
+            sampler_free_targets - {metal},
+            sampler_free_targets - {metal} - litert_companions,
         ):
-            if current_targets == expected_targets | {metal} | obsolete_samplers:
+            if current_targets == sampler_free_targets | obsolete_samplers:
                 swift_text = _remove_litert_lm_obsolete_topk_samplers(
                     swift_text, current_tag=original_tag,
                 )
@@ -4320,12 +4356,21 @@ def prepare_litert_lm_package_swift(
                     swift_text, current_tag=original_tag,
                 )
                 current_targets.discard(metal)
+            if (
+                not litert_companions & expected_targets
+                and current_targets == sampler_free_targets - {metal}
+            ):
+                swift_text = _remove_litert_lm_unused_litert_companions(
+                    swift_text, current_tag=original_tag,
+                )
+                current_targets -= litert_companions
             if current_targets == expected_targets:
                 _validate_litert_lm_v019_swift_topology(
                     swift_text,
                     current_tag=original_tag,
                     include_obsolete_samplers=False,
                     include_metal_accelerator=metal in expected_targets,
+                    include_litert_companions=litert_companions <= expected_targets,
                 )
         if current_targets == legacy_targets:
             if swift_text.count("GemmaModelConstraintProvider") != 3:
