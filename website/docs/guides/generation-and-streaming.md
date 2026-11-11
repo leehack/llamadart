@@ -495,6 +495,9 @@ macOS x64 and LiteRT-LM Web, refuses it before loading an engine.
 | Android arm64 | CPU | Emulator only: Qwen3 CPU; Gemma 4 not yet run |
 | Linux x64, Linux arm64, Windows x64 | CPU | Qwen3 and Gemma 4, CPU |
 
+On Android, `ComputeDevice.auto` resolves to the GPU, which strict output
+refuses; load with `ComputeDevice.cpu` there.
+
 Native LiteRT-LM accepts only schemas that both the GBNF converter above and
 LiteRT-LM's LLGuidance provider enforce alike, so every schema it accepts is
 also accepted by llama.cpp. On top of the GBNF subset it refuses,
