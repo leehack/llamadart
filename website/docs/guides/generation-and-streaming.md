@@ -348,9 +348,14 @@ await for (final chunk in engine.create(
 
 `engine.create(...)` fills the start and end delimiters from recognized chat
 templates. Raw `engine.generate(...)` calls must provide both delimiters in
-`ThinkingBudget`. A budget of `0` immediately forces the end delimiter. This
-is supported by native llama.cpp text generation only; LiteRT-LM and WebGPU
-reject it explicitly, and it cannot be combined with speculative decoding.
+`ThinkingBudget`. A budget of `0` immediately forces the end delimiter. On
+Qwen3-Coder XML templates (Qwen3.5, Nemotron 3 Nano, StepFun 3.5 Flash) the
+forced text is a line break before the end delimiter, as llama.cpp forces it.
+Native llama.cpp, WebGPU bridges that report `thinkingBudget` and native
+LiteRT-LM chat generation on bundles with a thinking channel support a budget
+(see [Runtime parameters](../configuration/runtime-parameters)); other
+backends reject it explicitly, and it cannot be combined with speculative
+decoding.
 
 ## Structured JSON output
 

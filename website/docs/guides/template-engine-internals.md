@@ -112,7 +112,9 @@ sequenceDiagram
   grammar) first takes the rest of the thought and its end tag, as
   llama.cpp's reasoning parser does. The Qwen3-Coder XML required-call grammar
   instead takes any text without a call opening before the calls, the thought
-  included, as llama.cpp (`cd959bae9`) does.
+  included, as llama.cpp (`cd959bae9`) does. A thinking budget on that format
+  forces a line break before `</think>`, as llama.cpp does, so the reply after
+  it does not continue the thought.
 
 ### 4. Parse stage
 

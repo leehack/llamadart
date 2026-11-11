@@ -13,6 +13,8 @@ validate against the exact release tag notes.
 
 ## Unreleased
 
+- A thinking budget on Qwen3-Coder XML templates (Qwen3.5, Nemotron 3 Nano, StepFun 3.5 Flash) now closes the thought with a line break before `</think>`, as llama.cpp does, so the reply no longer continues the thought or the raw tool call as content ([#1914](https://github.com/leehack/llamadart/issues/1914)).
+
 ## 0.19.5
 
 - Keep default WebGPU bridge assets at `v0.1.83` (unchanged from 0.19.4).
