@@ -281,11 +281,15 @@ class ImageGenerationEngine
   /// this isolate, including [load], share a probe that is still running,
   /// and all of them get its result or its error.
   static Future<ImageGenerationCapabilities> checkRuntime() async =>
-      _capabilitiesOf(await _probeRuntime(_driver));
+      _capabilitiesOf(
+        await _probeRuntime(_driver),
+        isMacosX64: _driver.isMacosX64,
+      );
 
   static ImageGenerationCapabilities _capabilitiesOf(
-    StableDiffusionRuntimeStatus status,
-  ) {
+    StableDiffusionRuntimeStatus status, {
+    required bool isMacosX64,
+  }) {
     final reason = status.unavailableReason;
     if (reason != null) {
       return ImageGenerationCapabilities(
@@ -295,7 +299,11 @@ class ImageGenerationEngine
     }
     return ImageGenerationCapabilities(
       isSupported: true,
-      backendName: _backendNameFor(ComputeDevice.auto, status.devices),
+      backendName: _backendNameFor(
+        ComputeDevice.auto,
+        status.devices,
+        isMacosX64: isMacosX64,
+      ),
       deviceNames: [for (final device in status.devices) device.name],
       runtimeVersion: status.version,
       supportsCancellation: true,
@@ -461,7 +469,22 @@ class ImageGenerationEngine
     final driver = _driver;
     final runtime = await _probeRuntime(driver)
       ..throwIfUnavailable();
-    final backendName = _backendNameFor(params.device, runtime.devices);
+    final backendName = _backendNameFor(
+      params.device,
+      runtime.devices,
+      isMacosX64: driver.isMacosX64,
+    );
+    if (driver.isMacosX64 &&
+        params.device == ComputeDevice.gpu &&
+        _isMetal(backendName)) {
+      LlamaLogger.instance.warning(
+        'ComputeDevice.gpu runs image generation on Metal ($backendName) on '
+        'macOS x86_64, where upstream ggml-metal can produce garbled output '
+        'on Intel Macs with AMD GPUs '
+        '(https://github.com/leehack/llamadart-native/issues/116). '
+        'ComputeDevice.auto uses the CPU there.',
+      );
+    }
     if (params.vaeDirectConvolution == true &&
         driver.operatingSystem == 'ios' &&
         _isMetal(backendName)) {
@@ -1380,14 +1403,18 @@ class ImageGenerationEngine
 
   static String _backendNameFor(
     ComputeDevice device,
-    List<StableDiffusionDevice> devices,
-  ) {
+    List<StableDiffusionDevice> devices, {
+    required bool isMacosX64,
+  }) {
     final gpu = devices.map((d) => d.name).where(_isGpu).firstOrNull;
     final cpu = devices
         .where((d) => d.name.toUpperCase() == 'CPU')
         .firstOrNull
         ?.name;
     return switch (device) {
+      // An x86_64 process cannot tell an Intel Mac from Rosetta, so both use
+      // the CPU unless the caller asks for the GPU.
+      ComputeDevice.auto when isMacosX64 => cpu ?? 'CPU',
       ComputeDevice.auto => gpu ?? cpu ?? 'CPU',
       ComputeDevice.cpu => cpu ?? 'CPU',
       ComputeDevice.gpu =>

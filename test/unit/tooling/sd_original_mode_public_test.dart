@@ -99,6 +99,9 @@ final class _RecordingDriver implements ImageGenerationDriver {
   final List<ImageGenerationSessionConfig> started = [];
   @override
   String get operatingSystem => 'macos';
+
+  @override
+  bool get isMacosX64 => false;
   @override
   Future<StableDiffusionRuntimeStatus> probeInBackground() async =>
       const StableDiffusionRuntimeStatus.available(

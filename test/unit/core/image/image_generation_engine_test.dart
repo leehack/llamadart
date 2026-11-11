@@ -1740,6 +1740,67 @@ void main() {
     );
   });
 
+  group('on macOS x86_64', () {
+    late List<LlamaLogRecord> records;
+
+    setUp(() {
+      driver
+        ..isMacosX64 = true
+        ..status = _available(
+          'MTL0\tAMD Radeon Pro 5500M\nBLAS\tAccelerate\nCPU\tIntel\n',
+        );
+      records = [];
+      final logger = LlamaLogger.instance;
+      final level = logger.level;
+      logger
+        ..setLevel(LlamaLogLevel.debug)
+        ..setHandler(records.add);
+      addTearDown(() {
+        logger
+          ..setLevel(level)
+          ..setHandler(null);
+      });
+    });
+
+    test('auto loads on the CPU', () async {
+      await load(_sdxs());
+      expect(driver.started.single.backend, 'cpu');
+      expect(driver.budgetDevices, [ImageGenerationComputeDevice.cpu]);
+      expect(records.where((r) => r.level == LlamaLogLevel.warn), isEmpty);
+    });
+
+    test('checkRuntime reports the CPU as the device auto picks', () async {
+      final capabilities = await ImageGenerationEngine.checkRuntime();
+      expect(capabilities.backendName, 'CPU');
+      expect(capabilities.deviceNames, contains('MTL0'));
+    });
+
+    test('an explicit GPU still loads on Metal and warns', () async {
+      await load(
+        _sdxs(),
+        params: const ImageModelParams(device: ComputeDevice.gpu),
+      );
+      expect(driver.started.single.backend, 'gpu');
+      expect(driver.budgetDevices, [ImageGenerationComputeDevice.metal]);
+      expect(
+        records.where(
+          (r) =>
+              r.level == LlamaLogLevel.warn &&
+              r.message.contains('macOS x86_64'),
+        ),
+        hasLength(1),
+      );
+    });
+
+    test('an explicit CPU stays on the CPU', () async {
+      await load(
+        _sdxs(),
+        params: const ImageModelParams(device: ComputeDevice.cpu),
+      );
+      expect(driver.started.single.backend, 'cpu');
+    });
+  });
+
   group('checkRuntime', () {
     test('reports the devices and the device auto would pick, probing in '
         'the background', () async {
@@ -4207,6 +4268,8 @@ StableDiffusionRuntimeStatus _available(
 final class _FakeDriver implements ImageGenerationDriver {
   @override
   String operatingSystem = 'macos';
+  @override
+  bool isMacosX64 = false;
 
   StableDiffusionRuntimeStatus status = _available(
     'MTL0\tApple M4\nBLAS\tAccelerate\nCPU\tApple M4\n',

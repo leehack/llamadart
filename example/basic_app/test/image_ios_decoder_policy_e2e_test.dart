@@ -150,6 +150,8 @@ final class _IosDriver implements ImageGenerationDriver {
   int starts = 0;
   ImageGenerationSessionConfig? config;
   @override
+  bool get isMacosX64 => real.isMacosX64;
+  @override
   String get operatingSystem => 'ios';
   @override
   Future<StableDiffusionRuntimeStatus> probeInBackground() =>

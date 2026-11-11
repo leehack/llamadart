@@ -663,6 +663,9 @@ class _RecordingSetDriver implements ImageGenerationDriver {
   int memoryChecks = 0;
   @override
   String get operatingSystem => 'macos';
+
+  @override
+  bool get isMacosX64 => false;
   @override
   Future<StableDiffusionRuntimeStatus> probeInBackground() async =>
       StableDiffusionRuntimeStatus.available(

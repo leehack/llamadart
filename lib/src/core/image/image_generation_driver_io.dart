@@ -49,6 +49,9 @@ class _NativeImageGenerationDriver implements ImageGenerationDriver {
   String get operatingSystem => stableDiffusionHostOperatingSystem();
 
   @override
+  bool get isMacosX64 => stableDiffusionHostIsMacosX64();
+
+  @override
   Future<StableDiffusionRuntimeStatus> probeInBackground() {
     final probe = _probe;
     final logLevel = imageRuntimeLogLevel();
