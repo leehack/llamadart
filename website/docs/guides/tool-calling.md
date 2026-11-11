@@ -582,6 +582,14 @@ tool(result) → user("And Rome?")` becomes `user → assistant →
 user(result JSON + "\nAnd Rome?")`. Only the render input changes; the app's
 history stays intact. This follow-up case also fails in llama.cpp's `b10549`
 template set ([#1118](https://github.com/leehack/llamadart/issues/1118)).
+With Ling 3.0 (Bailing V3) templates, a call is `<tool_call>name` followed by
+`<arg_key>`/`<arg_value>` pairs, as in llama-server: a string argument is kept
+as generated, up to the first `</arg_value>`, any other must be JSON, and a
+Hermes JSON call stays content. A `<tool_call>` ends the thought, and the
+`ToolChoice.required` grammar accepts a thought and any text before the calls,
+so leave room in `maxTokens`. Canonical JSON Schema tools are not qualified for
+this format.
+
 A later assistant turn still separates tool rounds, and unrelated consecutive
 user messages retain the template's usual validation.
 
@@ -590,8 +598,8 @@ user messages retain the template's usual validation.
 - `ToolChoice.none`: disable tool calls for that request.
 - `ToolChoice.auto`: model decides whether to call tools.
 - `ToolChoice.required`: model must emit tool calls. Where the format lets a
-  thought or text precede them (Qwen3-Coder XML, Hermes after a forced-open
-  thought), a reply that uses up `maxTokens` first ends with `length` and no
+  thought or text precede them (Qwen3-Coder XML, Ling 3.0, Hermes after a
+  forced-open thought), a reply that uses up `maxTokens` first ends with `length` and no
   call, as in llama-server.
 
 ### WebGPU
