@@ -1708,6 +1708,9 @@ Future<void> main(List<String> args) async {
           'https://user:token@example.com/m.litertlm',
           'https://example.com/m.litertlm?X-Amz-Signature=abc',
           'https://example.com/m.litertlm#token',
+          'https://[bad/token?x=1',
+          'https://h:port/m?token=S',
+          'HTTPS://user:token@example.com/m.litertlm',
         ])
           ['--model-path', secret, '--backend', 'cpu'],
       ]) {
@@ -1729,6 +1732,19 @@ Future<void> main(List<String> args) async {
           'integration_test/litert_lm_json_schema_e2e_test.dart -d android '
           '--dart-define=LITERT_LM_MODEL=/data/local/tmp/Qwen3-0.6B.litertlm '
           '--dart-define=LITERT_LM_BACKEND=gpu',
+        ),
+      );
+      final upper = await dryRun([
+        '--model-path',
+        'HTTPS://example.com/Qwen3-0.6B.litertlm',
+        '--backend',
+        'cpu',
+      ]);
+      expect(
+        upper.stdout,
+        contains(
+          '--dart-define=LITERT_LM_MODEL_URL='
+          'HTTPS://example.com/Qwen3-0.6B.litertlm',
         ),
       );
       final url = await dryRun([
