@@ -291,8 +291,9 @@ chatFormatRegistrations = List.unmodifiable(<ChatFormatRegistration>[
       leavesIncompleteToolCall: _contentContainsAny(const ['<tool_call>']),
     ),
   ),
-  // Before Hermes: the call envelope is a literal <tool_call> with GLM-style
-  // argument tags, and the <role> turns are unique among those templates.
+  // Right after Laguna, which shares the GLM-style argument tags: the <role>
+  // turns tell them apart. Above Hermes because the call envelope is a
+  // literal <tool_call>.
   ChatFormatRegistration(
     ChatFormat.ling3,
     Ling3Handler.new,

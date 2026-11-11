@@ -15,6 +15,7 @@ import '../../../../support/gbnf_recognizer.dart';
 
 void main() {
   _requiredArgumentOrderTests();
+  _enumGrammarTests();
   _stringOrIntegerValueTests();
 
   test('Qwen3CoderXmlHandler parses qwen XML tool calls', () {
@@ -380,6 +381,41 @@ void _requiredArgumentOrderTests() {
       expect(parsed.toolCalls, hasLength(valid ? 1 : 0), reason: output);
       expect(grammar.accepts(output), valid, reason: output);
     }
+  });
+}
+
+// llama.cpp (`cd959bae9`) takes a string-typed value, enum or not, as any text
+// in its grammar.
+void _enumGrammarTests() {
+  test('grammar takes a string enum value as any text', () {
+    final tools = [
+      ToolDefinition(
+        name: 'set_unit',
+        description: 'set_unit',
+        parameters: [
+          ToolParam.enumType(
+            'unit',
+            values: const ['celsius', 'fahrenheit'],
+            required: true,
+          ),
+        ],
+        handler: _noop,
+      ),
+    ];
+    final rendered = Qwen3CoderXmlHandler().render(
+      templateSource: '{{ messages[0]["content"] }}',
+      messages: const [
+        LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'hello'),
+      ],
+      metadata: const {},
+      tools: tools,
+    );
+    final grammar = GbnfRecognizer(rendered.grammar!);
+    String call(String value) =>
+        '<tool_call>\n<function=set_unit>\n'
+        '<parameter=unit>\n$value\n</parameter>\n</function>\n</tool_call>';
+    expect(grammar.accepts(call('celsius')), isTrue);
+    expect(grammar.accepts(call('kelvin')), isTrue);
   });
 }
 

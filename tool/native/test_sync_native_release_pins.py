@@ -1265,6 +1265,14 @@ class LiteRtV019SamplerTransitionTest(unittest.TestCase):
         with self.assertRaisesRegex(ReleaseError, "only some iOS bundles"):
             self.prepare(self.original)
 
+    def test_pre_v019_apple_targets_do_not_derive_the_ios_metal_target(self) -> None:
+        self.manifest["upstream"]["compatibilityTag"] = "v0.18.1"
+        self.drop_metal_accelerator("ios-arm64-sim")
+        self.assertIn(
+            "LiteRtMetalAccelerator",
+            pins.litert_schema2_apple_targets(self.manifest, self.tag),
+        )
+
     def test_metal_removal_refuses_ambiguous_metal_references(self) -> None:
         with_metal = self.prepare(self.original)
         self.drop_metal_accelerator("ios-arm64", "ios-arm64-sim", "macos-arm64")
