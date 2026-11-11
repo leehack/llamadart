@@ -28,7 +28,7 @@ const s24LiteRtNativeLibraries = {
 /// Linux and Windows hosts; its Android binaries are byte-identical to
 /// `v0.19.1` (#1808). `v0.19.1-2` changes only the Android `libLiteRtLm.so`
 /// and passed the full S24 graph again (Test Lab `matrix-wmalbq6nz437a`,
-/// #1830). `v0.19.1-3` and `v0.19.1-4` change only the Apple bundles; their
+/// #1830). `v0.19.1-3` and `v0.19.1-4` leave Android unchanged: their
 /// Android arm64 archives hold the same libraries as `v0.19.1-2` (#1798, #1911).
 const s24LiteRtRuntimeTags = {
   'v0.19.1',
