@@ -113,5 +113,29 @@ void main() {
       expect(integer!.group(1), isNot(endsWith(' space')));
       expect(text, contains('integer ::= '));
     });
+
+    test('names a copy apart from a rule a property already holds', () {
+      final converter = JsonSchemaConverter();
+      final rules = ValueEndRules(converter);
+      rules.visit({
+        'type': 'object',
+        'properties': {
+          'k': {'type': 'string'},
+          'at-value-end': {
+            'type': 'object',
+            'properties': {
+              'y': {'type': 'integer'},
+            },
+          },
+        },
+      }, 'schema');
+      final sink = StringBuffer();
+      rules.writeTo(sink);
+      final names = [
+        for (final line in sink.toString().split('\n'))
+          if (line.contains(' ::= ')) line.split(' ::= ').first,
+      ];
+      expect(names.toSet(), hasLength(names.length));
+    });
   });
 }

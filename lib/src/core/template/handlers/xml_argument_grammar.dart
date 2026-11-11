@@ -16,13 +16,31 @@ final class ValueEndRules {
   final JsonSchemaConverter converter;
 
   final Set<String> _visited = {};
+  final Map<String, String> _copyNames = {};
+
+  // A nested property can name a converter rule `<rule>-at-value-end`, so the
+  // copy takes a name no converter rule or other copy has.
+  String _copyName(String rule) {
+    final existing = _copyNames[rule];
+    if (existing != null) return existing;
+    final taken = _copyNames.values.toSet();
+    var name = '$rule$_suffix';
+    for (
+      var n = 2;
+      converter.rules.containsKey(name) || taken.contains(name);
+      n++
+    ) {
+      name = '$rule$_suffix-$n';
+    }
+    return _copyNames[rule] = name;
+  }
 
   /// The rule for a value of [schema], named from [name], that ends where its
   /// JSON does.
   String visit(Map<String, dynamic> schema, String name) {
     final rule = converter.visit(schema, name);
     _visited.add(rule);
-    return '$rule$_suffix';
+    return _copyName(rule);
   }
 
   /// Writes the converter's rules, then the value-end variants of the visited
@@ -39,9 +57,9 @@ final class ValueEndRules {
       final body = _withoutTrailingSpace(converter.rules[rule]!, (last) {
         if (!converter.rules.containsKey(last) || last == 'space') return null;
         writeAtEnd(last);
-        return '$last$_suffix';
+        return _copyName(last);
       });
-      sink.writeln('$rule$_suffix ::= $body');
+      sink.writeln('${_copyName(rule)} ::= $body');
     }
 
     _visited.forEach(writeAtEnd);
