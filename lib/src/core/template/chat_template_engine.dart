@@ -1002,6 +1002,9 @@ class ChatTemplateEngine {
   }
 
   /// Returns the thinking tags used by the selected parser handler.
+  ///
+  /// A [formatIndex] past the end of [ChatFormat] takes the generic handler's
+  /// `<think>` and `</think>`, and a negative one throws [RangeError].
   static ({String startTag, String endTag}) thinkingTagsFor(int formatIndex) {
     final resolved = _resolveHandlerForParse(formatIndex: formatIndex);
     return (
@@ -1019,7 +1022,9 @@ class ChatTemplateEngine {
   /// as llama.cpp does. A caller-set end tag is left as given.
   ///
   /// Set [rendersPrompt] to false for a backend that takes chat messages and
-  /// closes the thought itself, which rejects a forced message.
+  /// closes the thought itself, which rejects a forced message: only the
+  /// line-break prefix is skipped, and a [ThinkingBudget.forcedMessage] you
+  /// set is kept as given. [formatIndex] follows the [thinkingTagsFor] rules.
   static ThinkingBudget resolveThinkingBudget(
     int formatIndex,
     ThinkingBudget budget, {
