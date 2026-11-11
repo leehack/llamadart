@@ -35,7 +35,7 @@ LFM2 replies cut off at a reported length limit expose raw `partialToolCalls` di
 
 ```yaml
 dependencies:
-  llamadart: ^0.19.4
+  llamadart: ^0.19.5
 ```
 
 ```bash
@@ -56,10 +56,10 @@ companion shares its core's `MAJOR.MINOR` and constrains `llamadart` to it.
 
 ```yaml
 dependencies:
-  llamadart: ^0.19.4
-  llamadart_llama_cpp_flutter: ^0.19.4 # GGUF / llama.cpp
-  llamadart_litert_lm_flutter: ^0.19.4 # Apple .litertlm / LiteRT-LM targets
-  llamadart_stable_diffusion_flutter: ^0.19.4 # Apple image generation, opt-in
+  llamadart: ^0.19.5
+  llamadart_llama_cpp_flutter: ^0.19.5 # GGUF / llama.cpp
+  llamadart_litert_lm_flutter: ^0.19.5 # Apple .litertlm / LiteRT-LM targets
+  llamadart_stable_diffusion_flutter: ^0.19.5 # Apple image generation, opt-in
 ```
 
 Pairing rules, the SwiftPM bootstrap and the privacy manifest are in

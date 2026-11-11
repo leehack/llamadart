@@ -1,6 +1,7 @@
-## Unreleased
+## 0.19.5
 
-- Pin `leehack/litert-lm-native@v0.19.1-3` and drop the unused `LiteRtMetalAccelerator` target, which saves 8.1 MB per iOS app ([#1798](https://github.com/leehack/llamadart/issues/1798)).
+- Refresh README installation guidance for core `0.19.5`.
+- Pair with core `>=0.19.5 <0.20.0`; pin `leehack/litert-lm-native@v0.19.1-3` and drop the unused `LiteRtMetalAccelerator` target, which saves 8.1 MB per iOS app ([#1798](https://github.com/leehack/llamadart/issues/1798)).
 
 ## 0.19.4
 
