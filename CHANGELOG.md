@@ -3,6 +3,8 @@ Releases before 0.10.0 are in the
 
 ## Unreleased
 
+- LiteRT-LM unsupported-runtime errors name the pinned runtime tag (`v0.19.1-3`) instead of `v0.19.1-2` ([#1861](https://github.com/leehack/llamadart/issues/1861)).
+
 ## 0.19.5
 
 - Keep the default WebGPU bridge assets at `v0.1.83` (unchanged from 0.19.4).

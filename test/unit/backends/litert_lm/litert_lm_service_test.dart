@@ -9,6 +9,7 @@ import 'dart:typed_data';
 
 import 'package:dinja/dinja.dart';
 import 'package:llamadart/llamadart.dart' as api;
+import 'package:llamadart/src/hook/native_release_pins.dart';
 import 'package:llamadart/src/backends/backend.dart';
 import 'package:llamadart/src/backends/litert_lm/litert_lm_bundle_template.dart';
 import 'package:llamadart/src/backends/litert_lm/litert_lm_cache.dart';
@@ -295,7 +296,7 @@ void main() {
               .having(
                 (error) => error.message,
                 'current runtime',
-                contains('packaged LiteRT-LM v0.19.1-2 runtime'),
+                contains('packaged LiteRT-LM $liteRtLmReleaseTag runtime'),
               )
               .having(
                 (error) => error.message,
