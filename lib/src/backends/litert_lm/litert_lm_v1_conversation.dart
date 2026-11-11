@@ -198,6 +198,7 @@ final class LiteRtLmV1Conversation {
   Pointer<Void> _handle = nullptr;
   LiteRtLmV1Turn? _turn;
   bool _quarantined = false;
+  legacy.LiteRtLmRuntimeMetrics? _releasedMetrics;
   late final bool _schemaEnabled;
   late final bool _schemaThinking;
 
@@ -539,6 +540,9 @@ final class LiteRtLmV1Turn {
     }
     _cleanup();
     _conversation._turn = null;
+    if (_cancelled && _error == null) {
+      _conversation._captureMetricsBeforeRelease();
+    }
     if (_cancelled ||
         _error != null ||
         reason == LiteRtLmFinishReason.cancelled ||
