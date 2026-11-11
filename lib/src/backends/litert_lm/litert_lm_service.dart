@@ -24,6 +24,7 @@ import '../../core/models/inference/model_params_runtime_support.dart';
 import '../../core/models/inference/tool_choice.dart';
 import '../../core/models/model_format.dart';
 import '../../core/template/chat_template_engine.dart';
+import '../../hook/native_release_pins.dart';
 import '../backend.dart';
 import '../native/model_format_probe.dart';
 import 'litert_lm_bundle_template.dart';
@@ -704,7 +705,7 @@ class LiteRtLmService {
     if (!client.supportsJsonSchemaConstraints) {
       throw LlamaUnsupportedException(
         'Native JSON Schema chat requires all constraint-provider and thinking-config symbols. '
-        'Use the packaged LiteRT-LM v0.19.1-2 runtime through the default ABI-selecting client; '
+        'Use the packaged LiteRT-LM $liteRtLmReleaseTag runtime through the default ABI-selecting client; '
         'model and platform qualification still applies.',
       );
     }

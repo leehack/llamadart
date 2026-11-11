@@ -4,6 +4,7 @@ library;
 import 'dart:ffi';
 import 'dart:io';
 
+import 'package:llamadart/src/hook/native_release_pins.dart';
 import 'package:llamadart/src/backends/litert_lm/litert_lm_c_api_version.dart';
 import 'package:llamadart/src/backends/litert_lm/litert_lm_runtime.dart';
 import 'package:llamadart/llamadart.dart';
@@ -119,7 +120,7 @@ void main() {
                       .having(
                         (error) => error.message,
                         'repair',
-                        contains('litert-lm-native v0.19.1-2'),
+                        contains('litert-lm-native $liteRtLmReleaseTag'),
                       )
                       .having(
                         (error) => error.message,
