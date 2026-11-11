@@ -45,7 +45,10 @@ const Map<String, String> _pinnedCaps = <String, String>{
       '11111011',
   'test/fixtures/llama_cpp_templates/openbmb-MiniCPM5-1B.jinja': '11111011',
   'test/fixtures/llama_cpp_templates/tencent-Hy3.jinja': '11111101',
-  // Command R+ and Hermes are pinned from Dart detection, without a server probe.
+  // Command R+, Hermes and Ling 3.0 are pinned from Dart detection, without a
+  // server probe.
+  'test/fixtures/llama_cpp_templates/inclusionai-ling-3.0-flash.jinja':
+      '11111011',
   'test/fixtures/llama_cpp_templates/CohereForAI-c4ai-command-r-plus-tool_use.jinja':
       '11111001',
   'test/fixtures/llama_cpp_templates/GLM-4.6.jinja': '11111111',

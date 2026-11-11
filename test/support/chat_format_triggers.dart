@@ -33,6 +33,10 @@ const Map<String, ChatFormatTrigger> chatFormatTriggers = {
     format: ChatFormat.laguna,
     source: '<assistant></assistant><tool_response><arg_key><arg_value>',
   ),
+  'ling3': (
+    format: ChatFormat.ling3,
+    source: '<role>ASSISTANT</role><arg_key>',
+  ),
   'deepseekV3': (
     format: ChatFormat.deepseekV3,
     source: "message['prefix'] is defined and message['prefix'] and thinking",

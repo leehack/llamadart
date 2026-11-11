@@ -25,6 +25,7 @@ import 'handlers/kimi_k2_handler.dart';
 import 'handlers/kimi_k3_handler.dart';
 import 'handlers/laguna_handler.dart';
 import 'handlers/lfm2_handler.dart';
+import 'handlers/ling3_handler.dart';
 import 'handlers/llama3_handler.dart';
 import 'handlers/magistral_handler.dart';
 import 'handlers/minicpm5_handler.dart';
@@ -93,6 +94,8 @@ final class ChatFormatTraits {
     this.reopensThoughtClosedForThinkingOff = false,
     this.forcedThoughtContentOpenings = const [],
     this.mayEmbedToolEnvelopeAfterContent = false,
+    this.retainsTextAroundToolCalls = false,
+    this.endsThoughtAtToolCallOpening = false,
     this.hasRepeatedContentChannels = false,
     this.disabledByResponseSchema = false,
     this.requiredKeepsLazyGrammar = false,
@@ -150,6 +153,14 @@ final class ChatFormatTraits {
   /// Whether a tool envelope may follow content, so a stream with tools
   /// parses from its first token instead of deciding from how output starts.
   final bool mayEmbedToolEnvelopeAfterContent;
+
+  /// Whether the parse keeps the text around tool calls as content, so a
+  /// reply that starts with a call still streams the content it returns.
+  final bool retainsTextAroundToolCalls;
+
+  /// Whether the parse ends a forced-open thought at a tool-call opening even
+  /// when tool calls are not parsed, so the stream needs the parse then too.
+  final bool endsThoughtAtToolCallOpening;
 
   /// Whether accepted replies can repeat content channels whose fragments must
   /// be joined and whose framing must be parsed even without tool calling.
@@ -278,6 +289,19 @@ chatFormatRegistrations = List.unmodifiable(<ChatFormatRegistration>[
       takesThoughtOnlyAtReplyStart: true,
       mayEmbedToolEnvelopeAfterContent: true,
       leavesIncompleteToolCall: _contentContainsAny(const ['<tool_call>']),
+    ),
+  ),
+  // Before Hermes: the call envelope is a literal <tool_call> with GLM-style
+  // argument tags, and the <role> turns are unique among those templates.
+  ChatFormatRegistration(
+    ChatFormat.ling3,
+    Ling3Handler.new,
+    detect: (s) => _hasAll(s, const ['<role>ASSISTANT</role>', '<arg_key>']),
+    traits: ChatFormatTraits(
+      qualifiesJsonSchemaTools: false,
+      mayEmbedToolEnvelopeAfterContent: true,
+      retainsTextAroundToolCalls: true,
+      endsThoughtAtToolCallOpening: true,
     ),
   ),
   ChatFormatRegistration(

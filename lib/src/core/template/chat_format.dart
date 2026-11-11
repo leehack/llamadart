@@ -151,6 +151,10 @@ enum ChatFormat {
   ///
   /// Appended to preserve the serialized indices of existing formats.
   deepseekV32,
+
+  /// Ling 3.0 (Bailing V3) — `<role>` turns with `<tool_call>name` and
+  /// `<arg_key>`/`<arg_value>` tool calls.
+  ling3,
 }
 
 /// Detects the [ChatFormat] by scanning a Jinja template source string

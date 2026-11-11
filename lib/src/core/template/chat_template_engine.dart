@@ -19,6 +19,7 @@ import 'media_placeholders.dart';
 import 'handlers/cohere2_moe_handler.dart';
 import 'handlers/generic_handler.dart';
 import 'handlers/deepseek_v3_handler.dart';
+import 'handlers/ling3_handler.dart';
 import 'handlers/hermes_handler.dart';
 import 'handlers/qwen3_coder_xml_handler.dart';
 import 'response_format.dart';
@@ -923,6 +924,15 @@ class ChatTemplateEngine {
         thoughtTagsAreText: thoughtTagsAreText,
         singleToolCall: singleToolCall,
         bareFirstCall: bareFirstCall,
+      );
+    } else if (handler is Ling3Handler) {
+      result = handler.parseWithTools(
+        output,
+        tools: tools,
+        isPartial: isPartial,
+        parseToolCalls: parseToolCalls,
+        thinkingForcedOpen: thinkingForcedOpen,
+        singleToolCall: singleToolCall,
       );
     } else if (handler is DeepseekV3Handler) {
       result = handler.parse(

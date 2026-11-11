@@ -405,11 +405,11 @@ final Map<(String, String), String> _policyExceptions = {
   ): 'Text-only streams strip the shared Command R response markers.',
   _exception(
     _stream,
-    '!parseToolCallsEnabled && !traits.hasRepeatedContentChannels && templateResult.format != ChatFormat.gemma4.index && templateResult.format != ChatFormat.kimiK3.index',
+    '!parseToolCallsEnabled && !traits.hasRepeatedContentChannels && !traits.endsThoughtAtToolCallOpening && templateResult.format != ChatFormat.gemma4.index && templateResult.format != ChatFormat.kimiK3.index',
   ): 'Gemma4 and KimiK3 channel frames require their parser even with tools disabled.',
   _exception(
     _stream,
-    'toolCallOpening == null && templateResult.format != ChatFormat.gemma4.index && templateResult.format != ChatFormat.minimaxM1.index && parsed.hasToolCalls && _isToolCallEnvelopeBuffer(fullOutput, startTag: startTag, endTag: endTag, thinkingForcedOpen: templateResult.thinkingForcedOpen, exactReplyStart: exactReplyStart, thinkingTagsAreContent: verbatimForcedThought)',
+    'toolCallOpening == null && templateResult.format != ChatFormat.gemma4.index && templateResult.format != ChatFormat.minimaxM1.index && !traits.retainsTextAroundToolCalls && parsed.hasToolCalls && _isToolCallEnvelopeBuffer(fullOutput, startTag: startTag, endTag: endTag, thinkingForcedOpen: templateResult.thinkingForcedOpen, exactReplyStart: exactReplyStart, thinkingTagsAreContent: verbatimForcedThought)',
   ): 'These two parsers own envelope handling; the shared fallback must not reinterpret it.',
   _exception(
     _peg,

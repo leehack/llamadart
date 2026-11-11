@@ -249,6 +249,25 @@ A Seed-OSS request refuses `ToolDefinition.fromJsonSchema` tools at render
 returns the call either way. Validate the tool name and arguments before
 running it.
 
+Ling 3.0 (Bailing V3) templates, which wrap each turn in `<role>` tags,
+follow llama.cpp (`cd959bae9`, `ling3`): the prompt opens the thought with
+thinking on and closes it with thinking off, and a forced-open thought ends at
+`</think>` or at the first `<tool_call>`. A call is `<tool_call>name`, then
+`<arg_key>k</arg_key>` and `<arg_value>v</arg_value>` pairs, then
+`</tool_call>`, with whitespace allowed between tags. A string value is the
+raw text up to the first `</arg_value>`, and any other is JSON with no
+whitespace around it, so a Hermes JSON call is content. The required
+arguments come first, in any order up to six of them, then the optional ones,
+which may repeat (the last value counts). Text after the calls up to
+`<|role_end|>`, which is a stop string and is consumed, is content, as is a
+second call without `parallelToolCalls`. A `<tool_call>` that is not a valid
+call of a declared tool stays content. Where llama.cpp returns a call whose
+JSON arguments never end, as for a finished reply cut off inside its first
+call, llamadart drops that call, and where it fails the reply with an error,
+as for a required call that does not parse, llamadart stays lenient. A Ling 3.0
+request refuses `ToolDefinition.fromJsonSchema` tools at render, and a response
+schema keeps the generic response-schema grammar.
+
 Streamed content and reasoning start and end with the whitespace the final
 parse keeps, with or without tools, apart from the cases below. The parse
 trims content, except that content at the end of the output keeps the
@@ -333,7 +352,7 @@ whitespace, so the stream keeps it.
 Streams built from partial parses hold back trailing whitespace until more
 text arrives. They are used for Gemma 4 output, and, when tool calls are
 parsed, for PEG output, Kimi K3, MiniMax M1 and M3, DeepSeek V3.2 and V4,
-Muse Glimmer, GLM 4.5 and Laguna output, and output of other formats not
+Muse Glimmer, GLM 4.5, Laguna and Ling 3.0 output, and output of other formats not
 listed above that starts with a forced-open thought or a tool call. A partial
 parse taken before `</think>` arrives can stream leading whitespace of a
 forced-open thought that the final parse trims.
