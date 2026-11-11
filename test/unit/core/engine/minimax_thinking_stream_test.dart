@@ -206,6 +206,28 @@ void main() {
       }
     }
 
+    // Only a forced-open prompt keeps later thinking tags as content when the
+    // call is decided, so a call envelope followed by an end tag and JSON is
+    // not suppressed as an envelope after an unforced prompt.
+    test(
+      'an unforced reply keeps text after a call envelope at every split',
+      () async {
+        const json = '{"tool_calls":[]}';
+        const output = '$_envelope$_end$json';
+        final partitions = [
+          [output],
+          output.split(''),
+          for (var at = 1; at < output.length; at++)
+            [output.substring(0, at), output.substring(at)],
+        ];
+        for (final tokens in partitions) {
+          final chunks = await _parse(tokens, forcedOpen: false);
+          expect(_thinking(chunks), '', reason: '$tokens');
+          expect(_content(chunks), '$_end$json', reason: '$tokens');
+        }
+      },
+    );
+
     for (final toolChoice in [ToolChoice.auto, ToolChoice.required]) {
       test('an empty leading thought leaves a later unfinished thought as '
           'content before a call ($toolChoice)', () async {
