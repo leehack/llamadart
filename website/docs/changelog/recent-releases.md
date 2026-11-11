@@ -17,6 +17,7 @@ validate against the exact release tag notes.
 - Qwen3-Coder and Ling 3 tool-call grammars no longer define a rule twice, which rejected valid calls, when a nested argument property is named `at-value-end` ([#1861](https://github.com/leehack/llamadart/issues/1861)).
 - Seed-OSS replies with a closed call followed by unclosed `<seed:tool_call>` scopes no longer end their content with an added `</seed:tool_call>` ([#1861](https://github.com/leehack/llamadart/issues/1861)).
 - A thinking budget on Qwen3-Coder XML templates (Qwen3.5, Nemotron 3 Nano, StepFun 3.5 Flash) now closes the thought with a line break before `</think>`, as llama.cpp does, so the reply no longer continues the thought or the raw tool call as content ([#1914](https://github.com/leehack/llamadart/issues/1914)).
+- Stop shipping the unused LiteRT-LM `LiteRt` and WebGPU accelerator libraries on macOS, and the unused loose `libLiteRt` on iOS: native LiteRT-LM moves to `v0.19.1-4`, whose `LiteRtLm` embeds LiteRT and its GPU accelerator, so generation on CPU and GPU is unchanged while the macOS hook bundle drops 6.2 MB of download (16.9 MB installed), macOS apps using `llamadart_litert_lm_flutter` drop the same two libraries and 6.2 MB of XCFramework downloads, and the iOS hook download drops 2.7 MB ([#1911](https://github.com/leehack/llamadart/issues/1911)).
 
 ## 0.19.5
 

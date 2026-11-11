@@ -2771,9 +2771,7 @@ const List<String> _iosLiteRtAssetNames = [
 const List<String> _macosArm64LiteRtLibraries = [
   'libCLiteRTLM_mac.dylib',
   'libGemmaModelConstraintProvider.dylib',
-  'libLiteRt.dylib',
   'libLiteRtLm.dylib',
-  'libLiteRtWebGpuAccelerator.dylib',
   'libwebgpu_dawn.dylib',
 ];
 

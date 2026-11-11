@@ -41,12 +41,14 @@ void main() {
     );
   });
 
-  test('links the complete macOS arm64 runtime', () {
-    final manifest = File(
-      'darwin/llamadart_litert_lm_flutter/Package.swift',
-    ).readAsStringSync();
+  test(
+    'links the complete macOS arm64 runtime without the embedded LiteRT',
+    () {
+      final manifest = File(
+        'darwin/llamadart_litert_lm_flutter/Package.swift',
+      ).readAsStringSync();
 
-    for (final target in ['LiteRt', 'LiteRtWebGpuAccelerator', 'WebgpuDawn']) {
+      const target = 'WebgpuDawn';
       expect(
         manifest,
         contains(
@@ -58,10 +60,15 @@ void main() {
         manifest,
         contains('name: "$target", condition: .when(platforms: [.macOS])'),
       );
-    }
-  });
+      // LiteRtLm embeds LiteRT and its GPU accelerator (#1911). Match the
+      // quoted names: "LiteRt" is a prefix of other target names.
+      for (final target in ['LiteRt', 'LiteRtWebGpuAccelerator']) {
+        expect(manifest, isNot(contains('name: "$target"')));
+      }
+    },
+  );
 
-  test('declares the six published v0.19 runtime targets', () {
+  test('declares the four published v0.19 runtime targets', () {
     final manifest = File(
       'darwin/llamadart_litert_lm_flutter/Package.swift',
     ).readAsStringSync();
@@ -71,14 +78,7 @@ void main() {
 
     expect(
       targets,
-      unorderedEquals([
-        'LiteRtLm',
-        'CLiteRTLM',
-        'CLiteRTLMMac',
-        'LiteRt',
-        'LiteRtWebGpuAccelerator',
-        'WebgpuDawn',
-      ]),
+      unorderedEquals(['LiteRtLm', 'CLiteRTLM', 'CLiteRTLMMac', 'WebgpuDawn']),
     );
     expect(manifest, isNot(contains('LiteRtTopKMetalSampler')));
     expect(manifest, isNot(contains('LiteRtTopKWebGpuSampler')));

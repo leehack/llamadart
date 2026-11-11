@@ -45,9 +45,7 @@ required_libraries() {
 ' \
         "libCLiteRTLM_mac.dylib" \
         "libGemmaModelConstraintProvider.dylib" \
-        "libLiteRt.dylib" \
         "libLiteRtLm.dylib" \
-        "libLiteRtWebGpuAccelerator.dylib" \
         "libwebgpu_dawn.dylib"
       ;;
   esac
@@ -87,8 +85,6 @@ required_native_spm_files() {
         "LiteRtLm.framework/Versions/A/LiteRtLm" \
         "libCLiteRTLM_mac.dylib" \
         "LiteRtLm.framework/Versions/A/Dependencies/libGemmaModelConstraintProvider.dylib" \
-        "libLiteRt.dylib" \
-        "libLiteRtWebGpuAccelerator.dylib" \
         "libwebgpu_dawn.dylib"
       ;;
   esac
@@ -111,8 +107,8 @@ resolve_litert_dir() {
   fi
 
   local candidates=(
-    "$ROOT_DIR/.dart_tool/llamadart/litert_lm/0.19.1-3/macos_$LITERT_ARCH"
-    "$ROOT_DIR/.dart_tool/llamadart/litert_lm/0.19.1-3/macos/$LITERT_ARCH"
+    "$ROOT_DIR/.dart_tool/llamadart/litert_lm/0.19.1-4/macos_$LITERT_ARCH"
+    "$ROOT_DIR/.dart_tool/llamadart/litert_lm/0.19.1-4/macos/$LITERT_ARCH"
   )
   local candidate
   for candidate in "${candidates[@]}"; do
