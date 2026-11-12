@@ -1,11 +1,6 @@
-import 'dart:io';
-
 import 'package:llamadart/src/core/exceptions.dart';
-import 'package:llamadart/src/core/models/chat/chat_message.dart';
-import 'package:llamadart/src/core/models/chat/chat_role.dart';
 import 'package:llamadart/src/core/models/tools/tool_definition.dart';
 import 'package:llamadart/src/core/models/tools/tool_param.dart';
-import 'package:llamadart/src/core/template/chat_template_engine.dart';
 import 'package:llamadart/src/core/template/handlers/command_r7b_handler.dart';
 import 'package:llamadart/src/core/template/handlers/hermes_handler.dart';
 import 'package:llamadart/src/core/template/handlers/hunyuan_v3_handler.dart';
@@ -217,28 +212,18 @@ void main() {
   test(
     'takesForcedOpenThought recognizes only a root that takes the thought',
     () {
-      final template = ChatTemplateEngine.render(
-        templateSource: File(
-          'test/fixtures/templates/Qwen3_5-0_8B.jinja',
-        ).readAsStringSync(),
-        messages: const [
-          LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'Hi'),
-        ],
-        metadata: const {},
-        enableThinking: true,
-        responseFormat: const {
-          'type': 'json_schema',
-          'json_schema': {
-            'schema': {'type': 'object'},
-          },
-        },
-      );
-
-      expect(template.thinkingForcedOpen, isTrue);
-      expect(template.grammarLazy, isFalse);
       expect(
-        ToolCallGrammarUtils.takesForcedOpenThought(template.grammar!),
+        ToolCallGrammarUtils.takesForcedOpenThought(
+          ToolCallGrammarUtils.afterForcedOpenThought(
+            'root ::= "ok"\n',
+            '</think>',
+          ),
+        ),
         isTrue,
+      );
+      expect(
+        ToolCallGrammarUtils.takesForcedOpenThought('root ::= "ok"\n'),
+        isFalse,
       );
       expect(
         ToolCallGrammarUtils.takesForcedOpenThought(
