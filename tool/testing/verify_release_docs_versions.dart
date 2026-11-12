@@ -32,6 +32,14 @@ const Map<String, String> _packagePubspecs = <String, String>{
       'packages/llamadart_stable_diffusion_flutter/pubspec.yaml',
 };
 
+// Adds `genkit_llamadart` to the pub.dev size checks only. It keeps its own
+// version and release routing (`website/docs/maintainers/genkit-package.md`),
+// so it stays out of [_packagePubspecs] and every version check built on it.
+const Map<String, String> _pubSizeCheckedPubspecs = <String, String>{
+  ..._packagePubspecs,
+  'genkit_llamadart': 'packages/genkit_llamadart/pubspec.yaml',
+};
+
 const Map<String, List<String>> _currentDocDependencies =
     <String, List<String>>{
       'README.md': <String>[
@@ -989,7 +997,8 @@ void main(List<String> arguments) {
   }
 
   final contentLimits = checkPubContentLimits(Directory.current, {
-    for (final MapEntry(key: name, value: pubspec) in _packagePubspecs.entries)
+    for (final MapEntry(key: name, value: pubspec)
+        in _pubSizeCheckedPubspecs.entries)
       name: File(pubspec).parent.path,
   });
   errors.addAll(contentLimits.errors);

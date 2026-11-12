@@ -1357,6 +1357,43 @@ class LiteRtV019SamplerTransitionTest(unittest.TestCase):
             with self.subTest(source=label), self.assertRaises(ReleaseError):
                 self.prepare(source)
 
+    def test_litert_remover_guards_hold_without_the_topology_validator(self) -> None:
+        # The topology validator runs first and rejects these sources itself,
+        # so stub it to pin the remover's own count and platform checks.
+        with_litert = self.metal_free_package()
+        blocks = pins._validate_litert_lm_v019_swift_topology(
+            with_litert, current_tag=self.tag,
+            include_obsolete_samplers=False, include_metal_accelerator=False,
+        )
+        self.assertEqual(
+            pins._remove_litert_lm_unused_litert_companions(
+                with_litert, current_tag=self.tag,
+            ).count('name: "LiteRt"'), 0,
+        )
+        dependency = '.target(name: "LiteRt", condition: .when(platforms: [.macOS])),'
+        accelerator = '.target(name: "LiteRtWebGpuAccelerator", condition: .when(platforms: [.macOS])),'
+        unrelated = with_litert + '\n// see "LiteRt" and "LiteRtWebGpuAccelerator"'
+        self.assertEqual(
+            pins._remove_litert_lm_unused_litert_companions(
+                unrelated, current_tag=self.tag,
+            ).count('name: "LiteRt"'), 0,
+        )
+        for label, source, message in (
+            ("stray-reference", with_litert + '\n// name: "LiteRt"', "ambiguous LiteRt references"),
+            ("stray-accelerator-reference", with_litert + '\n// name: "LiteRtWebGpuAccelerator"', "ambiguous LiteRtWebGpuAccelerator references"),
+            ("duplicate-dependency", with_litert.replace(dependency, dependency * 2), "ambiguous LiteRt references"),
+            ("missing-dependency", with_litert.replace(dependency, ""), "ambiguous LiteRt references"),
+            ("wrong-platform", with_litert.replace(dependency, dependency.replace(".macOS", ".iOS")), "LiteRt must have exactly one macOS dependency"),
+            ("wrong-accelerator-platform", with_litert.replace(accelerator, accelerator.replace(".macOS", ".iOS")), "LiteRtWebGpuAccelerator must have exactly one macOS dependency"),
+        ):
+            with self.subTest(source=label), patch.object(
+                pins, "_validate_litert_lm_v019_swift_topology", return_value=blocks,
+            ), self.assertRaisesRegex(ReleaseError, message):
+                self.assertNotEqual(source, with_litert)
+                pins._remove_litert_lm_unused_litert_companions(
+                    source, current_tag=self.tag,
+                )
+
     def test_malformed_or_ambiguous_topology_refuses(self) -> None:
         for sampler in self.samplers:
             block, dependency = self.binary_block(sampler), self.dependency(sampler)
