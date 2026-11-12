@@ -2,13 +2,16 @@ import 'dart:convert';
 
 import 'package:llamadart/src/core/models/chat/chat_message.dart';
 import 'package:llamadart/src/core/models/chat/chat_role.dart';
+import 'package:llamadart/src/core/models/inference/generation_params.dart';
 import 'package:llamadart/src/core/models/inference/tool_choice.dart';
 import 'package:llamadart/src/core/models/tools/tool_definition.dart';
 import 'package:llamadart/src/core/models/tools/tool_param.dart';
 import 'package:llamadart/src/core/template/chat_format.dart';
+import 'package:llamadart/src/core/template/chat_template_engine.dart';
 import 'package:llamadart/src/core/template/chat_parse_result.dart';
 import 'package:llamadart/src/core/template/handlers/seed_oss_handler.dart';
 import 'package:llamadart/src/core/template/template_internal_metadata.dart';
+import 'package:llamadart/src/core/template/tool_call_grammar_utils.dart';
 import 'package:test/test.dart';
 
 import '../../../../support/gbnf_recognizer.dart';
@@ -423,6 +426,52 @@ void main() {
     ]) {
       expect(grammar.accepts(reply), accepted, reason: reply);
     }
+  });
+
+  test('SeedOssHandler required grammar stays applied through a budgeted '
+      'thought and takes its forced close', () {
+    const scope =
+        '<seed:tool_call>\n<function=get_weather>\n'
+        '<parameter=location>\nParis\n</parameter>\n'
+        '</function>\n</seed:tool_call>';
+    final rendered = SeedOssHandler().render(
+      templateSource: '{{ messages[0]["content"] }}',
+      messages: const [
+        LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'hi'),
+      ],
+      metadata: {internalToolChoiceMetadataKey: ToolChoice.required.name},
+      tools: [
+        ToolDefinition(
+          name: 'get_weather',
+          description: 'w',
+          parameters: [ToolParam.string('location', required: true)],
+        ),
+      ],
+    );
+    final budget = ChatTemplateEngine.resolveThinkingBudget(
+      ChatFormat.seedOss.index,
+      const ThinkingBudget(maxTokens: 0),
+    );
+    final grammar = GbnfRecognizer(rendered.grammar!);
+
+    expect(rendered.thinkingForcedOpen, isFalse);
+    expect(
+      ToolCallGrammarUtils.keepsAppliedThroughThought(rendered.grammar!),
+      isTrue,
+    );
+    expect(
+      grammar.accepts(
+        '<seed:think>Plan ${budget.forcedMessage}${budget.endTag}$scope',
+      ),
+      isTrue,
+    );
+    expect(
+      grammar.accepts(
+        '<seed:think>Plan ${budget.forcedMessage}${budget.endTag}'
+        'free text',
+      ),
+      isFalse,
+    );
   });
 
   test('SeedOssHandler returns a forced-open thought as reasoning', () {
