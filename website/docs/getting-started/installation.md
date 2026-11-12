@@ -23,7 +23,7 @@ For Genkit or Flutter Edge AI integration setup, see
 
 ```yaml
 dependencies:
-  llamadart: ^0.19.7
+  llamadart: ^0.19.8
 ```
 
 Then resolve packages:
@@ -42,10 +42,10 @@ Apple XCFrameworks:
 
 ```yaml
 dependencies:
-  llamadart: ^0.19.7
-  llamadart_llama_cpp_flutter: ^0.19.7 # GGUF / llama.cpp
-  llamadart_litert_lm_flutter: ^0.19.7 # Apple .litertlm / LiteRT-LM targets
-  llamadart_stable_diffusion_flutter: ^0.19.7 # Apple image generation, opt-in
+  llamadart: ^0.19.8
+  llamadart_llama_cpp_flutter: ^0.19.8 # GGUF / llama.cpp
+  llamadart_litert_lm_flutter: ^0.19.8 # Apple .litertlm / LiteRT-LM targets
+  llamadart_stable_diffusion_flutter: ^0.19.8 # Apple image generation, opt-in
 ```
 
 Companions use the core's `MAJOR.MINOR`; pub refuses a mismatched pair.

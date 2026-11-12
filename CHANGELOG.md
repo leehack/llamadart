@@ -1,11 +1,12 @@
 Releases before 0.10.0 are in the
 [changelog archive](https://github.com/leehack/llamadart/blob/main/doc/changelog_archive.md).
 
-## Unreleased
+## 0.19.8
 
-- Fixed constrained JSON (`responseFormat`) ignoring the grammar after a `ThinkingBudget` closes a template-opened thought on native llama.cpp (Qwen3.5 and similar), and the same for required tool calls on templates whose grammar takes that thought.
-- Fixed a required tool call on Seed-OSS being unconstrained after a `ThinkingBudget` closes a thought the model opened, on native llama.cpp ([#1958](https://github.com/leehack/llamadart/issues/1958)).
-- Aligned the default WebGPU bridge assets to `v0.1.84`: constrained JSON (`responseFormat`) and required tool calls that take the thought stay constrained after a `ThinkingBudget` closes it on WebGPU, and older assets throw `LlamaUnsupportedException` for that combination ([#1954](https://github.com/leehack/llamadart/issues/1954)). Web keeps native llama.cpp `v0.9.0` parity (upstream `v0.9.0@cd959bae99ff4bed22bef2604f45241c09bbb8c8`) and `@litert-lm/core@0.19.0`. Manifest SHA-256: `55abeb377597148156059a8ee5400f2314c6254ad91b57db65b709e304c0dea0`.
+- Aligned the default WebGPU bridge assets to `v0.1.84`, so the same constrained JSON and required tool calls stay applied through a budgeted thought on WebGPU; older assets throw `LlamaUnsupportedException` for that combination, so WebGPU needs `v0.1.84` or later ([#1954](https://github.com/leehack/llamadart/issues/1954)).
+- Fixed constrained JSON (`responseFormat`) and required tool calls losing their grammar after a `ThinkingBudget` closes a thought on native llama.cpp: an eager grammar that takes the forced-open thought (Qwen3.5 and similar, and Seed-OSS required calls) now stays applied, and every other grammar pauses until reasoning ends ([#1953](https://github.com/leehack/llamadart/issues/1953), [#1958](https://github.com/leehack/llamadart/issues/1958)).
+
+Runtime baseline: native llama.cpp `v0.9.0` and Web use upstream `v0.9.0@cd959bae99ff4bed22bef2604f45241c09bbb8c8`; native LiteRT-LM uses `v0.19.1-4` and stable-diffusion uses `v0.3.0-3`. Web LiteRT-LM uses `@litert-lm/core@0.19.0`. Manifest SHA-256: `55abeb377597148156059a8ee5400f2314c6254ad91b57db65b709e304c0dea0`.
 
 ## 0.19.7
 
