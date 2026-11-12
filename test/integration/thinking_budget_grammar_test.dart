@@ -81,4 +81,43 @@ void main() {
       matches(RegExp(r'^.+ </think>ok$', dotAll: true)),
     );
   });
+
+  // The `<s>` token is the one start tag this vocabulary produces under a
+  // grammar exactly as the budget sampler tokenizes it, as the model opens the
+  // thought itself.
+  test('a grammar that models the thought it opens stays applied through a '
+      'spent thinking budget', () async {
+    const grammar = r'''
+root ::= seed-thought "ok"
+seed-thought ::= "<s>" thought-text " done"
+thought-text ::= [^d]*
+''';
+
+    for (final budget in [1, 3]) {
+      final chunks = await backend
+          .generate(
+            context,
+            'Once upon a time',
+            GenerationParams(
+              maxTokens: 48,
+              temp: 0,
+              seed: 1,
+              penalty: 1,
+              grammar: grammar,
+              thinkingBudget: ThinkingBudget(
+                maxTokens: budget,
+                startTag: '<s>',
+                endTag: ' done',
+              ),
+            ),
+          )
+          .toList();
+
+      expect(
+        utf8.decode(chunks.expand((chunk) => chunk).toList()),
+        endsWith(' doneok'),
+        reason: 'budget $budget',
+      );
+    }
+  });
 }

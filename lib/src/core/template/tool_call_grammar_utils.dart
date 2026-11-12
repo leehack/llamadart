@@ -140,6 +140,17 @@ class ToolCallGrammarUtils {
   static bool takesForcedOpenThought(String grammar) =>
       grammar.contains(RegExp(r'^root ::= think-body ', multiLine: true));
 
+  /// Whether a thinking budget must leave [grammar] applied while the model
+  /// reasons: it takes a forced-open thought ([takesForcedOpenThought]) or
+  /// models the thought it opens itself, as Seed-OSS's `seed-thought` does.
+  /// Paused, such a grammar would resume inside the thought and no longer
+  /// constrain the reply after the budget closes it.
+  static bool keepsAppliedThroughThought(String grammar) =>
+      takesForcedOpenThought(grammar) ||
+      grammar.contains(
+        RegExp(r'^root ::= seed-thought\??[ \n]', multiLine: true),
+      );
+
   /// Rules for [name] matching text without any of [delimiters], as
   /// llama.cpp's `gbnf_excluding_grammar` emits them. Each state is the
   /// longest suffix of the text that starts a delimiter; a character that
