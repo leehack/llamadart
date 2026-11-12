@@ -1452,6 +1452,13 @@ prompt token, verifies unchanged ordinary grammar defaults, and verifies that
 explicit prompt penalties change the pick without activating a prompt-matching
 lazy trigger. Keep both memory64 assets beside the wasm32 files.
 
+The thinking-budget control adds `"reasoningModel"` (Qwen3.5-0.8B Q4_K_M) and,
+for the version-skew control, `"legacyAssets"` (an earlier bridge directory
+without `thinkingBudgetPauseGrammar`, such as `v0.1.83`) to the config. Qwen3.5
+`responseFormat` with a `ThinkingBudget` of 0, 1 and 16 tokens must still return
+the schema's JSON in both modes, and the legacy assets must throw
+`LlamaUnsupportedException` for a budget.
+
 This qualifies the Web grammar plumbing on the selected weights, not hardware
 WebGPU or LFM2 auto accuracy/enforcement (#1715). The latter still needs its
 separate template contract and false-probe restriction.

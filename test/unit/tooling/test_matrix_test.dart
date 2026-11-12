@@ -352,6 +352,7 @@ void main() {
       'local-only',
       'test/e2e/webgpu/lazy_grammar_e2e_test.dart',
       'test/e2e/webgpu/prompt_penalty_grammar_e2e_test.dart',
+      'test/e2e/webgpu/thinking_budget_grammar_e2e_test.dart',
     ]);
     for (final step in steps) {
       expect(step.workingDirectory, '/repo');

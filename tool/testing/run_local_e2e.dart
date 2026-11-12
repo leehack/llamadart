@@ -1394,8 +1394,9 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
       name: 'web-lazy-grammar',
       group: LocalE2eScenarioGroup.webSmoke,
       description:
-          'Check pinned-asset lazy grammar activation, custom roots and '
-          'typed rejection/reuse in direct and worker CPU Wasm runtimes.',
+          'Check pinned-asset lazy grammar activation, custom roots, '
+          'thinking-budget grammar and typed rejection/reuse in direct and '
+          'worker CPU Wasm runtimes.',
       requiresDevice: false,
       stepsBuilder: (context) => [
         LocalE2eCommandStep(
@@ -1420,8 +1421,11 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
             'local-only',
             'test/e2e/webgpu/lazy_grammar_e2e_test.dart',
             'test/e2e/webgpu/prompt_penalty_grammar_e2e_test.dart',
+            'test/e2e/webgpu/thinking_budget_grammar_e2e_test.dart',
           ],
-          description: 'Web lazy grammar, prompt penalties and error recovery',
+          description:
+              'Web lazy grammar, prompt penalties, thinking-budget grammar '
+              'and error recovery',
         ),
       ],
     ),
