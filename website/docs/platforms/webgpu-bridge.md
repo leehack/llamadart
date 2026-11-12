@@ -287,7 +287,12 @@ The feature-by-runtime table is in the
   probe reports `penaltyPromptTokens`), as native llama.cpp does. `ToolChoice.auto` requests that skip the lazy tool-call
   grammar keep the prompt out, as native does under that grammar
   ([llama-web-bridge#187](https://github.com/leehack/llama-web-bridge/pull/187)).
-  A thinking budget is text-only. A LoRA adapter is a `ModelSource` whose URL the bridge downloads once
+  A thinking budget is text-only. As on native llama.cpp, a thinking budget keeps a
+  grammar applied through the thought when that grammar takes it (constrained JSON
+  on Qwen3.5, required tool calls on Seed-OSS) and pauses every other grammar until
+  reasoning ends; the former needs assets whose probe reports
+  `thinkingBudgetPauseGrammar` (`v0.1.84+`) and throws `LlamaUnsupportedException`
+  without it. A LoRA adapter is a `ModelSource` whose URL the bridge downloads once
   per model load (a `ModelSource.path` is a URL relative to the document, or a `blob:` URL), through Cache Storage unless the URL carries credentials; reload
   adapters after loading another model. An aLoRA adapter throws
   `LlamaUnsupportedException`, and an adapter the bridge cannot load, such as
@@ -401,10 +406,10 @@ first model load, for diagnosis or controlled deployments:
 
 ## Pinned bridge assets
 
-This llamadart version pins bridge assets `v0.1.83`, which include the
+This llamadart version pins bridge assets `v0.1.84`, which include the
 API-version-1 media embedding contract.
 
-- The pinned `v0.1.83` bridge assets embed llama.cpp `v0.9.0`, matching the native runtime.
+- The pinned `v0.1.84` bridge assets embed llama.cpp `v0.9.0`, matching the native runtime.
 
 Provenance and the pinned manifest digest are in
 [`doc/webgpu_bridge.md`](https://github.com/leehack/llamadart/blob/main/doc/webgpu_bridge.md).
@@ -412,7 +417,7 @@ Provenance and the pinned manifest digest are in
 In a llamadart checkout, vendor the pinned assets into the chat app with:
 
 ```bash
-WEBGPU_BRIDGE_ASSETS_TAG=v0.1.83 ./scripts/fetch_webgpu_bridge_assets.sh
+WEBGPU_BRIDGE_ASSETS_TAG=v0.1.84 ./scripts/fetch_webgpu_bridge_assets.sh
 ```
 
 The chat app bootstrap takes its CDN source from these globals:
@@ -420,7 +425,7 @@ The chat app bootstrap takes its CDN source from these globals:
 ```html
 <script>
   window.__llamadartBridgeAssetsRepo = 'leehack/llama-web-bridge-assets';
-  window.__llamadartBridgeAssetsTag = 'v0.1.83';
+  window.__llamadartBridgeAssetsTag = 'v0.1.84';
 </script>
 ```
 
@@ -459,3 +464,4 @@ probe, not the tag.
 | `v0.1.75` | A draft context that does not fit throws `LlamaUnsupportedException` and the target stays usable | The draft leaks until the runtime aborts |
 | `v0.1.76` | The projector copy behind the repeated wasm32 media batch abort is freed (wasm32 stays unqualified) | Repeated media batches can abort on wasm32 |
 | `v0.1.79+` | A worker image or audio `embed` gets 10 minutes per input | Two minutes per request |
+| `v0.1.84+` | A thinking budget keeps a grammar that takes the thought applied (`thinkingBudgetPauseGrammar`) | That combination throws `LlamaUnsupportedException` |

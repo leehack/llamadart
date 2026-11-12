@@ -67,11 +67,11 @@ an earlier `<script>`:
 
 ## Pinned assets
 
-Default pinned tag in the example is `v0.1.83`.
+Default pinned tag in the example is `v0.1.84`.
 Vendor the pinned assets into the chat app with:
 
 ```bash
-WEBGPU_BRIDGE_ASSETS_TAG=v0.1.83 ./scripts/fetch_webgpu_bridge_assets.sh
+WEBGPU_BRIDGE_ASSETS_TAG=v0.1.84 ./scripts/fetch_webgpu_bridge_assets.sh
 ```
 
 `WEBGPU_BRIDGE_OUT_DIR` changes the destination. The script verifies
@@ -90,17 +90,17 @@ the chat app, set the bootstrap globals before the bootstrap runs:
 ```html
 <script>
   window.__llamadartBridgeAssetsRepo = 'leehack/llama-web-bridge-assets';
-  window.__llamadartBridgeAssetsTag = 'v0.1.83';
+  window.__llamadartBridgeAssetsTag = 'v0.1.84';
 </script>
 ```
 
 That release embeds llama.cpp `v0.9.0`, matching the `hook/build.dart` native pin
 (`v0.9.0`, both built from upstream llama.cpp `v0.9.0@cd959bae99ff4bed22bef2604f45241c09bbb8c8`)
-even though the bridge asset tag `v0.1.83` differs from the native runtime tag
-`v0.9.0`. Provenance for this immutable consumer artifact: release `438242670`,
-tag commit `44aa84a8a51701dc9c4f82c21e6ee3e774919c20`, bridge source
-`cb6383fbe7e903764a89f5c80c7f81c219f99769`, and manifest SHA-256
-`ae6f488408672f9ba28d8f9e664a2b85f4e12048f290e259e18dd0b750c038e5`.
+even though the bridge asset tag `v0.1.84` differs from the native runtime tag
+`v0.9.0`. Provenance for this immutable consumer artifact: release `443341300`,
+tag commit `0a3c45f24fd6293050e1772bed4a425b2b5a8493`, bridge source
+`dc359398bc6445ec15878ddb873555295f957f85`, and manifest SHA-256
+`55abeb377597148156059a8ee5400f2314c6254ad91b57db65b709e304c0dea0`.
 They expose the API-version-1 media embedding contract. State and extraction
 qualification covers wasm32 and memory64 through direct and worker runtimes. Existing decision,
 scoring, sampling, LoRA, speculative decoding and speech APIs remain available.
@@ -205,6 +205,15 @@ physical playback, intelligibility or speaker-reference fidelity.
   suppress tokens, so Qwen3-TTS no longer fails with `code out of range` when it
   samples a codec control token
   ([llama-web-bridge#211](https://github.com/leehack/llama-web-bridge/pull/211)).
+- `v0.1.84+`: `getCompletionCapabilities()` reports
+  `thinkingBudgetPauseGrammar`, and `thinkingBudget.pauseGrammar: false` keeps a
+  grammar applied while the model reasons
+  ([llama-web-bridge#213](https://github.com/leehack/llama-web-bridge/pull/213)).
+  llamadart sends it, as native does, only when `grammarLazy` is off and the
+  grammar takes the thought (`ToolCallGrammarUtils.keepsAppliedThroughThought`:
+  constrained JSON on Qwen3.5, required tool calls on Seed-OSS), and throws
+  `LlamaUnsupportedException` for that combination on assets without the flag.
+  Every other request omits `pauseGrammar` and is unchanged.
 
 ### Media embeddings
 

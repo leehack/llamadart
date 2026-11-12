@@ -878,7 +878,9 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
         'lazy word/pattern/pattern-full/token activation after visible text, '
         'custom roots, grammar prompt penalties and typed rejection/reuse through '
         'pinned assets in direct and worker CPU Wasm runtimes; prompt penalties '
-        'cover wasm32 and memory64; no tool accuracy or GPU claim',
+        'cover wasm32 and memory64; a Qwen3.5 response-format grammar stays '
+        'applied through a budgeted thought, and assets without '
+        'thinkingBudgetPauseGrammar reject it; no tool accuracy or GPU claim',
     command:
         'dart run tool/testing/run_local_e2e.dart --scenario web-lazy-grammar',
     useWhen:

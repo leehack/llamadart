@@ -15,6 +15,7 @@ validate against the exact release tag notes.
 
 - Fixed constrained JSON (`responseFormat`) ignoring the grammar after a `ThinkingBudget` closes a template-opened thought on native llama.cpp (Qwen3.5 and similar), and the same for required tool calls on templates whose grammar takes that thought.
 - Fixed a required tool call on Seed-OSS being unconstrained after a `ThinkingBudget` closes a thought the model opened, on native llama.cpp ([#1958](https://github.com/leehack/llamadart/issues/1958)).
+- Aligned default WebGPU bridge assets to `v0.1.84`: constrained JSON (`responseFormat`) and Seed-OSS required tool calls stay constrained after a `ThinkingBudget` closes a thought on WebGPU, and older assets throw `LlamaUnsupportedException` for that combination ([#1954](https://github.com/leehack/llamadart/issues/1954)). Web keeps native llama.cpp `v0.9.0` parity (upstream `v0.9.0@cd959bae99ff4bed22bef2604f45241c09bbb8c8`) and `@litert-lm/core@0.19.0`. Manifest SHA-256: `55abeb377597148156059a8ee5400f2314c6254ad91b57db65b709e304c0dea0`.
 
 ## 0.19.7
 

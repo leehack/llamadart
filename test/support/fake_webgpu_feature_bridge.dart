@@ -236,6 +236,7 @@ class FakeFeatureBridge {
           'presencePenalty',
           'minP',
           'thinkingBudget',
+          'thinkingBudgetPauseGrammar',
           'penaltyPromptTokens',
           'penaltyPromptTokensWithGrammar',
           'lazyGrammar',

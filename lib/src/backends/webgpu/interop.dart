@@ -299,6 +299,11 @@ extension type WebGpuThinkingBudgetOptions._(JSObject _) implements JSObject {
     @JS('endTag') required String endTag,
     @JS('forcedMessage') required String forcedMessage,
   });
+
+  /// `false` keeps the grammar applied inside a reasoning block; set only
+  /// when the loaded core reports `thinkingBudgetPauseGrammar`.
+  @JS('pauseGrammar')
+  external set pauseGrammar(bool value);
 }
 
 /// Completion options reported by `getCompletionCapabilities`.
@@ -316,6 +321,10 @@ extension type WebGpuCompletionCapabilities._(JSObject _) implements JSObject {
   /// Whether the loaded core applies `thinkingBudget`.
   @JS('thinkingBudget')
   external JSAny? get thinkingBudget;
+
+  /// Whether the loaded core applies `thinkingBudget.pauseGrammar`.
+  @JS('thinkingBudgetPauseGrammar')
+  external JSAny? get thinkingBudgetPauseGrammar;
 
   /// Whether the loaded core counts the prompt in its penalty window and
   /// applies `penaltyPromptTokens`.

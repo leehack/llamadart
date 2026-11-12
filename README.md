@@ -164,7 +164,7 @@ Current default runtime pins:
 | --- | --- |
 | Native llama.cpp / GGUF | `leehack/llamadart-native@v0.9.0` |
 | Native LiteRT-LM / `.litertlm` | `leehack/litert-lm-native@v0.19.1-4` |
-| Web llama.cpp / GGUF | `leehack/llama-web-bridge-assets@v0.1.83` |
+| Web llama.cpp / GGUF | `leehack/llama-web-bridge-assets@v0.1.84` |
 | Web LiteRT-LM / `.litertlm` | `@litert-lm/core@0.19.0` |
 
 Native LiteRT-LM uses a lazy ABI-aware client for direct calls, services and

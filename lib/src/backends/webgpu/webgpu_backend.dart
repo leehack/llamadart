@@ -23,6 +23,7 @@ import '../../core/models/inference/model_params.dart';
 import '../../core/models/inference/model_params_runtime_support.dart';
 import '../../core/models/inference/next_token_scores.dart';
 import '../../core/template/media_placeholders.dart';
+import '../../core/template/tool_call_grammar_utils.dart';
 import '../backend.dart';
 import '../model_params_loras.dart';
 import '../web/webgpu_adapter_probe.dart';
@@ -43,6 +44,7 @@ typedef _WebGpuCompletionCapabilities = ({
   bool presencePenalty,
   bool minP,
   bool thinkingBudget,
+  bool thinkingBudgetPauseGrammar,
   bool penaltyPromptTokens,
   bool penaltyPromptTokensWithGrammar,
   bool lazyGrammar,
@@ -99,6 +101,7 @@ class WebGpuLlamaBackend
     presencePenalty: false,
     minP: false,
     thinkingBudget: false,
+    thinkingBudgetPauseGrammar: false,
     penaltyPromptTokens: false,
     penaltyPromptTokensWithGrammar: false,
     lazyGrammar: false,
@@ -1087,6 +1090,9 @@ class WebGpuLlamaBackend
         presencePenalty: reported(capabilities.presencePenalty),
         minP: reported(capabilities.minP),
         thinkingBudget: reported(capabilities.thinkingBudget),
+        thinkingBudgetPauseGrammar: reported(
+          capabilities.thinkingBudgetPauseGrammar,
+        ),
         penaltyPromptTokens: reported(capabilities.penaltyPromptTokens),
         penaltyPromptTokensWithGrammar: reported(
           capabilities.penaltyPromptTokensWithGrammar,
@@ -1941,6 +1947,22 @@ class WebGpuLlamaBackend
         'assets do not.',
       );
     }
+    final grammar = params.grammar;
+    final keepGrammarApplied =
+        thinkingBudget != null &&
+        grammar != null &&
+        !params.grammarLazy &&
+        ToolCallGrammarUtils.keepsAppliedThroughThought(grammar);
+    if (keepGrammarApplied && !capabilities.thinkingBudgetPauseGrammar) {
+      throw LlamaUnsupportedException(
+        'WebGPU thinking-budget control with a grammar that stays applied '
+        'through the thought (responseFormat on Qwen3.5, required tool calls '
+        'on Seed-OSS) needs bridge assets v0.1.84+ whose '
+        'getCompletionCapabilities() reports thinkingBudgetPauseGrammar; '
+        'the loaded core pauses every grammar while the model reasons, so '
+        'the reply would not be constrained.',
+      );
+    }
     final speculativeConfig = params.resolvedSpeculativeDecodingConfig;
     if (speculativeConfig != null) {
       requireWebGpuSpeculativeSupport(
@@ -1992,6 +2014,7 @@ class WebGpuLlamaBackend
         : _bridgeThinkingBudget(
             thinkingBudget,
             hasMediaParts: mediaParts != null,
+            pauseGrammar: !keepGrammarApplied,
           );
     final speculative = resolveWebGpuSpeculativeRequest(
       params,
@@ -2319,6 +2342,7 @@ class WebGpuLlamaBackend
   WebGpuThinkingBudgetOptions _bridgeThinkingBudget(
     ThinkingBudget budget, {
     required bool hasMediaParts,
+    required bool pauseGrammar,
   }) {
     if (budget.maxTokens < 0 || budget.maxTokens > _maxThinkingBudgetTokens) {
       throw RangeError.range(
@@ -2347,12 +2371,16 @@ class WebGpuLlamaBackend
         'selected chat template automatically.',
       );
     }
-    return WebGpuThinkingBudgetOptions(
+    final options = WebGpuThinkingBudgetOptions(
       maxTokens: budget.maxTokens,
       startTag: startTag,
       endTag: endTag,
       forcedMessage: budget.forcedMessage ?? '',
     );
+    // Sent only to keep a grammar applied, so every other request is
+    // unchanged on the wire.
+    if (!pauseGrammar) options.pauseGrammar = false;
+    return options;
   }
 
   @override

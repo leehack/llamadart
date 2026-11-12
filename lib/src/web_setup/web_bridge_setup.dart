@@ -15,14 +15,14 @@ import '../core/exceptions.dart';
 const String webBridgeAssetsRepository = 'leehack/llama-web-bridge-assets';
 
 /// The bridge asset release this llamadart version is qualified against.
-const String webBridgeAssetsTag = 'v0.1.83';
+const String webBridgeAssetsTag = 'v0.1.84';
 
 /// SHA-256 of the exact approved `manifest.json` of [webBridgeAssetsTag].
 ///
 /// The manifest lists the SHA-256 and size of every asset, so pinning its
 /// bytes pins every file the tool writes.
 const String webBridgeManifestSha256 =
-    'ae6f488408672f9ba28d8f9e664a2b85f4e12048f290e259e18dd0b750c038e5';
+    '55abeb377597148156059a8ee5400f2314c6254ad91b57db65b709e304c0dea0';
 
 /// Directory under the app's `web/` directory that receives the assets.
 const String webBridgeAssetsDirName = 'webgpu_bridge';
