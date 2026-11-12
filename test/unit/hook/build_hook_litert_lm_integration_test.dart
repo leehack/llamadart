@@ -1109,9 +1109,9 @@ dependency_overrides: {llamadart_llama_cpp_flutter: {path: resolved companion}}
     ).firstMatch(hookSource)!.group(1);
     expect(sha256.convert(utf8.encode(template)).toString(), expected);
 
-    if (previousFixtureOnCoreLine) {
+    if (previousFixtureRebuild != null) {
       expect(
-        previousFixtureRebuild! < coreRebuild,
+        previousFixtureRebuild < coreRebuild,
         isTrue,
         reason:
             'the fixture pins $previousFixturePin, not an earlier build of '
