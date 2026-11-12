@@ -1,6 +1,8 @@
 import 'package:llamadart/llamadart.dart';
 import 'package:test/test.dart';
 
+import '../../../support/raw_tool_schema_fixture.dart';
+
 void main() {
   final qwenXml = ChatFormat.qwen3CoderXml.index;
   final noPrefix = ChatFormat.hermes.index;
@@ -96,6 +98,29 @@ void main() {
         throwsRangeError,
       );
       expect(() => ChatTemplateEngine.thinkingTagsFor(-1), throwsRangeError);
+    });
+  });
+
+  group('ChatTemplateEngine.parse', () {
+    test('parses past the end of ChatFormat with the generic handler', () {
+      const incompleteCall = '{"tool_call": {"name": "inspect"';
+
+      expect(
+        () => ChatTemplateEngine.parse(
+          ChatFormat.generic.index,
+          incompleteCall,
+          tools: [rawSchemaTool()],
+        ),
+        throwsA(isA<LlamaInferenceException>()),
+      );
+      expect(
+        () => ChatTemplateEngine.parse(
+          ChatFormat.values.length,
+          incompleteCall,
+          tools: [rawSchemaTool()],
+        ),
+        throwsA(isA<LlamaInferenceException>()),
+      );
     });
   });
 }

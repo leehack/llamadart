@@ -959,6 +959,8 @@ class GenerationParams {
   /// reasoning has ended. Native LiteRT-LM applies it to chat generation on
   /// bundles with a thinking channel, which it closes with the bundle's own
   /// end marker; it rejects a zero budget and [ThinkingBudget.forcedMessage].
+  /// WebGPU bridges that report `thinkingBudget` support it and pause every
+  /// grammar during reasoning.
   /// Other backends reject this setting rather than silently ignoring it.
   final ThinkingBudget? thinkingBudget;
 
