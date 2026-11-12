@@ -3,6 +3,8 @@ Releases before 0.10.0 are in the
 
 ## Unreleased
 
+- WebGPU now throws `LlamaUnsupportedException`, not `UnsupportedError`, when `GenerationParams.thinkingBudget` is set and the loaded bridge assets lack `thinkingBudget` support (assets v0.1.54+ have it).
+
 ## 0.19.8
 
 - Fixed constrained JSON (`responseFormat`) and required tool calls losing their grammar after a `ThinkingBudget` closes a thought on native llama.cpp: an eager grammar that takes the forced-open thought (Qwen3.5 and similar, and Seed-OSS required calls) now stays applied, and every other grammar pauses until reasoning ends ([#1953](https://github.com/leehack/llamadart/issues/1953), [#1958](https://github.com/leehack/llamadart/issues/1958)).

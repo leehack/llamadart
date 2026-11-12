@@ -855,6 +855,101 @@ void main() {
     expect(problems, contains(contains('README.md: could not be read:')));
   }, skip: Platform.isWindows ? 'requires POSIX file permissions' : false);
 
+  group('runtime baseline paragraph', () {
+    const commit = bridgeLlamaCppCommit;
+    String paragraph({
+      String llama = 'v0.9.0',
+      String liteRt = 'v0.19.1-4',
+      String sd = 'v0.3.0-3',
+      String upstream = '$bridgeLlamaCppTag@$commit',
+      String liteRtVerb = 'uses',
+    }) =>
+        'Runtime baseline: native llama.cpp `$llama` and Web use upstream '
+        '`$upstream`; native LiteRT-LM $liteRtVerb `$liteRt` and '
+        'stable-diffusion uses `$sd`. Web LiteRT-LM uses '
+        '`@litert-lm/core@0.19.0`.\n';
+
+    Directory baselineRepo({
+      String changelog = '',
+      String docs = '',
+      String heading = '1.2.3',
+    }) => _fakeRepo(
+      'v9.9.9',
+      files: <String, String>{
+        nativeLlamaCppTagPath:
+            "const llamaCppTag = 'v0.9.0';\n"
+            "const liteRtLmReleaseTag = 'v0.19.1-4';\n"
+            "const stableDiffusionReleaseTag = 'v0.3.0-3';\n",
+        'CHANGELOG.md': '## $heading\n\n- Fix.\n\n$changelog',
+        'website/docs/changelog/recent-releases.md':
+            '## $heading\n\n- Fix.\n\n$docs',
+      },
+    );
+
+    test('accepts a paragraph that matches the pins', () {
+      final root = baselineRepo(
+        changelog: paragraph(),
+        docs: paragraph(liteRtVerb: 'stays'),
+      );
+      expect(findRuntimeBaselineDrift(root), isEmpty);
+    });
+
+    test('a section without the paragraph is skipped', () {
+      expect(findRuntimeBaselineDrift(baselineRepo()), isEmpty);
+    });
+
+    for (final (name, mutated, label) in <(String, String, String)>[
+      ('llama.cpp', paragraph(llama: 'v0.9.1'), 'native llama.cpp v0.9.1'),
+      (
+        'LiteRT-LM',
+        paragraph(liteRt: 'v0.19.1-3'),
+        'native LiteRT-LM v0.19.1-3',
+      ),
+      (
+        'stable-diffusion',
+        paragraph(sd: 'v0.3.0-2'),
+        'stable-diffusion v0.3.0-2',
+      ),
+      (
+        'Web upstream',
+        paragraph(upstream: 'v0.9.1@$commit'),
+        'Web upstream llama.cpp v0.9.1@$commit',
+      ),
+    ]) {
+      test('a mutated $name tag fails', () {
+        final root = baselineRepo(changelog: mutated, docs: paragraph());
+        expect(
+          findRuntimeBaselineDrift(root),
+          [
+            contains('CHANGELOG.md'),
+          ].map((m) => allOf(m, contains(label))).toList(),
+        );
+      });
+    }
+
+    test('a reworded paragraph fails instead of passing silently', () {
+      final root = baselineRepo(
+        changelog: 'Runtime baseline: everything is current.\n',
+        docs: paragraph(),
+      );
+      expect(findRuntimeBaselineDrift(root), hasLength(4));
+    });
+
+    test('frozen sections keep their own tags', () {
+      final root = baselineRepo(
+        changelog: '## 1.0.0\n\n${paragraph(liteRt: 'v0.18.0', sd: 'v0.2.0')}',
+        docs: paragraph(),
+      );
+      expect(findRuntimeBaselineDrift(root), isEmpty);
+    });
+
+    test('a missing native pin file fails', () {
+      final root = baselineRepo(changelog: paragraph(), docs: paragraph());
+      File('${root.path}/$nativeLlamaCppTagPath').deleteSync();
+      expect(findRuntimeBaselineDrift(root), hasLength(1));
+    });
+  });
+
   group('Web/native llama.cpp relationship', () {
     test('the checked-in repo agrees on the Web/native relationship', () {
       expect(

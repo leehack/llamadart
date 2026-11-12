@@ -955,7 +955,8 @@ class GenerationParams {
   /// thought (`think-body` or `seed-thought`, as in response-format and
   /// required tool-call grammars on templates that open or model a thought)
   /// applied while budgeted reasoning is active. It pauses every lazy grammar,
-  /// whatever its root, and every other grammar until reasoning has ended. Native LiteRT-LM applies it to chat generation on
+  /// whatever its root, and every other grammar until reasoning has ended.
+  /// Native LiteRT-LM applies it to chat generation on
   /// bundles with a thinking channel, which it closes with the bundle's own
   /// end marker; it rejects a zero budget and [ThinkingBudget.forcedMessage].
   /// WebGPU bridges that report `thinkingBudget` support it and treat grammars

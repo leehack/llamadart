@@ -11,6 +11,7 @@ import 'package:llamadart/src/backends/litert_lm/litert_lm_bundle_template.dart'
 import 'package:llamadart/src/backends/litert_lm/litert_lm_cache.dart';
 import 'package:llamadart/src/backends/litert_lm/litert_lm_runtime.dart';
 import 'package:llamadart/src/backends/litert_lm/litert_lm_service.dart';
+import 'package:llamadart/src/backends/litert_lm/litert_lm_templates.dart';
 import 'package:llamadart/src/core/exceptions.dart';
 import 'package:llamadart/src/core/llama_logger.dart';
 import 'package:llamadart/src/core/models/chat/chat_message.dart';
@@ -220,6 +221,21 @@ String _bundleWithTemplate(
   }
   expect(readLiteRtLmBundleChatTemplate(path), padded);
   return path;
+}
+
+/// Whether text chats on the bundle at [path] render llamadart's Qwen3
+/// template instead of the bundle's own, by file name or by declared family,
+/// the way the service routes them.
+bool _rendersBuiltInQwen3Template(String path) {
+  final name = File(
+    path,
+  ).uri.pathSegments.last.toLowerCase().replaceAll('_', '-');
+  if (RegExp(r'qwen-?3(?:[^.\d]|$)').hasMatch(name)) return true;
+  final bundle = readLiteRtLmBundleMetadata(path);
+  final template = bundle?.chatTemplate;
+  return bundle?.isQwen3 == true ||
+      (template != null &&
+          template.trimLeft().startsWith(liteRtLmQwen3ChatTemplate.trim()));
 }
 
 void main() {
@@ -578,14 +594,16 @@ void main() {
         );
         try {
           final handle = await service.loadModel(path, params);
-          if (service.getMetadata(handle)['tokenizer.chat_template'] !=
-              embedded) {
-            // Such as Qwen3, whose text chats render a built-in template.
+          if (_rendersBuiltInQwen3Template(path)) {
             markTestSkipped(
-              'Text chats on this bundle use a built-in template.',
+              'Text chats on Qwen3 bundles render a built-in template.',
             );
             return;
           }
+          expect(
+            service.getMetadata(handle)['tokenizer.chat_template'],
+            embedded,
+          );
           final context = service.createContext(handle, params);
           for (var request = 0; request < 2; request++) {
             await service
