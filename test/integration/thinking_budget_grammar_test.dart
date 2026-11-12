@@ -120,4 +120,49 @@ thought-text ::= [^d]*
       );
     }
   });
+
+  // A lazy grammar is dormant until its trigger, so a budget that leaves it
+  // applied through the thought would lock the reasoning onto its root.
+  test('a lazy grammar stays paused through a spent thinking budget even when '
+      'its root takes the thought', () async {
+    for (final root in ['think-body', 'seed-thought']) {
+      final grammar =
+          'root ::= $root "ok"\n'
+          '$root ::= [^<]* "</think>"\n';
+
+      for (final budget in [1, 3]) {
+        final chunks = await backend
+            .generate(
+              context,
+              prompt,
+              GenerationParams(
+                maxTokens: 48,
+                temp: 0,
+                seed: 1,
+                penalty: 1,
+                grammar: grammar,
+                grammarLazy: true,
+                grammarTriggers: const [
+                  GenerationGrammarTrigger.typed(
+                    type: GrammarTriggerType.word,
+                    value: ' a',
+                  ),
+                ],
+                thinkingBudget: ThinkingBudget(
+                  maxTokens: budget,
+                  startTag: '<think>',
+                  endTag: '</think>',
+                ),
+              ),
+            )
+            .toList();
+
+        expect(
+          utf8.decode(chunks.expand((chunk) => chunk).toList()),
+          isNot(endsWith('</think>ok')),
+          reason: '$root, budget $budget',
+        );
+      }
+    }
+  });
 }

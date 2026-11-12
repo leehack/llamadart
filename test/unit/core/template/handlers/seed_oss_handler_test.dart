@@ -483,7 +483,9 @@ void main() {
     expect(
       grammar.accepts(
         '<seed:think>Plan ${budget.forcedMessage}${budget.endTag}'
-        '<seed:tool_call>\n<function=get_weather>\n</function>',
+        '<seed:tool_call>\n<function=get_time>\n'
+        '<parameter=location>\nParis\n</parameter>\n'
+        '</function>\n</seed:tool_call>',
       ),
       isFalse,
     );
