@@ -193,7 +193,10 @@ The hook also keeps the previous companion release's template hash
 (`_previousLiteRtLmCompanionManifestTemplateSha256`), accepted only for a pin
 that is an earlier rebuild of the core's LiteRT-LM release, so such a companion
 gets the earlier-build warning. The sync script does not rotate it: when a
-release changes the template, move the old hash there by hand.
+release changes the template, move the old hash there by hand and replace
+`test/fixtures/litert_lm/llamadart_litert_lm_flutter_0.19.1-3_Package.swift`
+with the then-previous companion's `Package.swift`. A hook test ties the
+fixture to the hash and to the core's release line.
 
 Changing between stable and development channels requires
 `--allow-litert-channel-transition`; changing between two distinct `g<sha>`

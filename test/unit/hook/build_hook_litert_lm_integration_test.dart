@@ -5,6 +5,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:code_assets/code_assets.dart';
+import 'package:crypto/crypto.dart';
 import 'package:hooks/hooks.dart';
 import 'package:llamadart/src/hook/apple_companion_constraint.dart';
 import 'package:llamadart/src/hook/native_release_pins.dart';
@@ -1038,18 +1039,22 @@ dependency_overrides: {llamadart_llama_cpp_flutter: {path: resolved companion}}
         'let liteRtLmTag = "$pin"',
       );
 
-  test('build hook reports an earlier rebuild for the previous macOS-complete '
-      'manifest template', () async {
+  const previousTemplateFixture =
+      'test/fixtures/litert_lm/'
+      'llamadart_litert_lm_flutter_0.19.1-3_Package.swift';
+  String previousTemplateManifest(String pin) =>
+      File(previousTemplateFixture).readAsStringSync().replaceFirst(
+        RegExp(r'let liteRtLmTag = "[^"\n]+"'),
+        'let liteRtLmTag = "$pin"',
+      );
+  Future<List<String>> previousTemplateWarnings(String pin) async {
     final stderrLines = await _capturingStderr(
       () async => project.testCodeBuildHook(
         mainMethod: build_hook.main,
         targetOS: OS.macOS,
         targetArchitecture: Architecture.arm64,
         userDefines: await _flutterLiteRtLmOnlyUserDefines(
-          liteRtLmManifest: File(
-            'test/fixtures/litert_lm/'
-            'llamadart_litert_lm_flutter_0.19.1-3_Package.swift',
-          ).readAsStringSync(),
+          liteRtLmManifest: previousTemplateManifest(pin),
         ),
         check: (input, output) {
           expect(output.assets.encodedAssets, isEmpty);
@@ -1062,51 +1067,74 @@ dependency_overrides: {llamadart_llama_cpp_flutter: {path: resolved companion}}
         },
       ),
     );
-    final warnings = stderrLines
+    return stderrLines
         .where((line) => line.startsWith('warning: llamadart:'))
         .toList(growable: false);
-    expect(warnings, [
-      'warning: llamadart: The resolved llamadart_litert_lm_flutter pins '
-          'leehack/litert-lm-native@v0.19.1-3, an earlier build of this '
-          'core\'s LiteRT-LM release $coreLiteRtLmTag. It still embeds its '
-          'complete macOS LiteRT-LM runtime, which the app loads from its '
-          'bundle. Upgrade llamadart_litert_lm_flutter to the release '
-          'pinning $coreLiteRtLmTag.',
-    ]);
+  }
+
+  test('previous companion template fixture matches the hook hash and is an '
+      'earlier rebuild of the core release', () {
+    final template = previousTemplateManifest(
+      'PIN',
+    ).replaceAll(RegExp(r'checksum: "[0-9a-f]{64}"'), 'checksum: "CHECKSUM"');
+    final hookSource = File('hook/build.dart').readAsStringSync();
+    final expected = RegExp(
+      r"_previousLiteRtLmCompanionManifestTemplateSha256 =\s*'([0-9a-f]{64})'",
+    ).firstMatch(hookSource)!.group(1);
+    expect(sha256.convert(utf8.encode(template)).toString(), expected);
+
+    final fixturePin = RegExp(
+      r'let liteRtLmTag = "([^"\n]+)"',
+    ).firstMatch(File(previousTemplateFixture).readAsStringSync())!.group(1)!;
+    expect(
+      fixturePin.startsWith('$coreUpstream-') &&
+          int.parse(fixturePin.substring(coreUpstream.length + 1)) <
+              coreRebuild,
+      isTrue,
+      reason:
+          'rotate the fixture and the previous hash when the core moves '
+          'to a new LiteRT-LM release line',
+    );
   });
 
-  test('build hook keeps the incomplete-manifest warning for the previous '
-      'template pinning a tag that is not an earlier rebuild', () async {
-    final stderrLines = await _capturingStderr(
-      () async => project.testCodeBuildHook(
-        mainMethod: build_hook.main,
-        targetOS: OS.macOS,
-        targetArchitecture: Architecture.arm64,
-        userDefines: await _flutterLiteRtLmOnlyUserDefines(
-          liteRtLmManifest:
-              File(
-                'test/fixtures/litert_lm/'
-                'llamadart_litert_lm_flutter_0.19.1-3_Package.swift',
-              ).readAsStringSync().replaceFirst(
-                'let liteRtLmTag = "v0.19.1-3"',
-                'let liteRtLmTag = "$newerUpstream"',
-              ),
-        ),
-        check: (input, output) {
-          expect(output.assets.encodedAssets, isEmpty);
-        },
-      ),
-    );
-    expect(
-      stderrLines,
-      contains(
+  test(
+    'build hook reports an earlier rebuild for the previous macOS-complete '
+    'manifest template',
+    () async {
+      final pin = coreRebuild > 1
+          ? '$coreUpstream-${coreRebuild - 1}'
+          : coreUpstream;
+      expect(await previousTemplateWarnings(pin), [
+        'warning: llamadart: The resolved llamadart_litert_lm_flutter pins '
+            'leehack/litert-lm-native@$pin, an earlier build of this '
+            'core\'s LiteRT-LM release $coreLiteRtLmTag. It still embeds its '
+            'complete macOS LiteRT-LM runtime, which the app loads from its '
+            'bundle. Upgrade llamadart_litert_lm_flutter to the release '
+            'pinning $coreLiteRtLmTag.',
+      ]);
+    },
+    skip: coreRebuild == 0
+        ? 'the core pins a bare release: no earlier build'
+        : null,
+  );
+
+  for (final (scenario, pin) in [
+    ('the core tag', coreLiteRtLmTag),
+    ('a newer release', newerUpstream),
+  ]) {
+    test('build hook keeps the incomplete-manifest warning for the previous '
+        'template pinning $scenario', () async {
+      expect(
+        await previousTemplateWarnings(pin),
         contains(
-          'does not link the complete macOS LiteRT-LM runtime (its '
-          'Package.swift is not the macOS-complete manifest)',
+          contains(
+            'does not link the complete macOS LiteRT-LM runtime (its '
+            'Package.swift is not the macOS-complete manifest)',
+          ),
         ),
-      ),
-    );
-  });
+      );
+    });
+  }
 
   for (final pin in ['v0.18.0', coreLiteRtLmTag]) {
     test('build hook rejects the published 0.0.15 manifest topology '
