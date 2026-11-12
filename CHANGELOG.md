@@ -1,11 +1,15 @@
 Releases before 0.10.0 are in the
 [changelog archive](https://github.com/leehack/llamadart/blob/main/doc/changelog_archive.md).
 
-## Unreleased
+## 0.19.7
 
+- Keep the default WebGPU bridge assets at `v0.1.83` (unchanged from 0.19.6).
 - Add `ChatTemplateEngine.resolveThinkingBudget`, which fills a `ThinkingBudget`'s omitted tags and the Qwen3-Coder XML line break before `</think>` as `LlamaEngine` does, so integrations that render the prompt themselves can match ([#1929](https://github.com/leehack/llamadart/issues/1929)).
 - On macOS x86_64 (Intel Macs and Rosetta), image generation with `ComputeDevice.auto` now runs on the CPU instead of Metal, matching `GpuBackend.auto` for llama.cpp; an explicit `ComputeDevice.gpu` still loads on Metal and logs a warning, while `textEncoderOnCpu`, `vaeOnCpu`, `maxGpuMemoryGiB` or `autoFit: false` under `ComputeDevice.auto` now throw `LlamaUnsupportedException` ([#1600](https://github.com/leehack/llamadart/issues/1600), [#1936](https://github.com/leehack/llamadart/pull/1936)).
 - A macOS app with `llamadart_litert_lm_flutter` 0.19.5 (pinned to LiteRT-LM `v0.19.1-3`) next to a core on a later `v0.19.1` build now gets the earlier-build warning instead of "does not link the complete macOS LiteRT-LM runtime"; 0.19.0 to 0.19.4 still get the latter ([#1934](https://github.com/leehack/llamadart/issues/1934)).
+- Custom backends can implement the `BackendJsonSchemaThinkingChatGeneration` interface, exported from `lib/backend.dart`, to run schema-constrained chat after a reasoning channel ([#1907](https://github.com/leehack/llamadart/pull/1907)).
+
+Runtime baseline: native llama.cpp `v0.9.0` and Web use upstream `v0.9.0@cd959bae99ff4bed22bef2604f45241c09bbb8c8`; native LiteRT-LM uses `v0.19.1-4` and stable-diffusion uses `v0.3.0-3`. Web LiteRT-LM uses `@litert-lm/core@0.19.0`. Manifest SHA-256: `ae6f488408672f9ba28d8f9e664a2b85f4e12048f290e259e18dd0b750c038e5`.
 
 ## 0.19.6
 
