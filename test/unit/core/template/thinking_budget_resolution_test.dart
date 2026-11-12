@@ -71,5 +71,31 @@ void main() {
 
       expect(resolved.forcedMessage, isNull);
     });
+
+    test('takes the generic tags for an index past the end of ChatFormat', () {
+      final resolved = ChatTemplateEngine.resolveThinkingBudget(
+        ChatFormat.values.length,
+        const ThinkingBudget(maxTokens: 8),
+      );
+
+      expect(resolved.startTag, '<think>');
+      expect(resolved.endTag, '</think>');
+      expect(resolved.forcedMessage, isNull);
+      expect(ChatTemplateEngine.thinkingTagsFor(ChatFormat.values.length), (
+        startTag: '<think>',
+        endTag: '</think>',
+      ));
+    });
+
+    test('throws RangeError for a negative index', () {
+      expect(
+        () => ChatTemplateEngine.resolveThinkingBudget(
+          -1,
+          const ThinkingBudget(maxTokens: 8),
+        ),
+        throwsRangeError,
+      );
+      expect(() => ChatTemplateEngine.thinkingTagsFor(-1), throwsRangeError);
+    });
   });
 }

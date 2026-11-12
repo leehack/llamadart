@@ -35,6 +35,46 @@ void main() {
     expect(pubContentLimitBytes, 262144);
   });
 
+  test('matches the pubspec limit pub.dev enforces', () {
+    expect(pubPubspecLimitBytes, 131072);
+  });
+
+  test('limits pubspec.yaml to 128 KiB, not the content limit', () {
+    write('pubspec.yaml', pubPubspecLimitBytes);
+    write(
+      'packages/llamadart_litert_lm_flutter/pubspec.yaml',
+      1 + pubPubspecLimitBytes,
+    );
+    write('packages/genkit_llamadart/pubspec.yaml', 1 + pubPubspecLimitBytes);
+
+    final result = checkPubContentLimits(root, {
+      ..._packages,
+      ..._genkitPackages,
+    });
+    expect(result.errors, [
+      'packages/llamadart_litert_lm_flutter/pubspec.yaml is 131073 bytes; '
+          'pub.dev rejects llamadart_litert_lm_flutter when it exceeds '
+          '131072 bytes. Shorten it before publishing.',
+      'packages/genkit_llamadart/pubspec.yaml is 131073 bytes; pub.dev '
+          'rejects genkit_llamadart when it exceeds 131072 bytes. Shorten it '
+          'before publishing.',
+    ]);
+    expect(result.warnings, [
+      'pubspec.yaml is 131072 bytes, within 10% of the 131072-byte limit '
+          'pub.dev applies when publishing llamadart.',
+    ]);
+  });
+
+  test('warns on pubspec.yaml only above 90% of its limit', () {
+    write('pubspec.yaml', pubPubspecLimitBytes * 9 ~/ 10);
+    expect(checkPubContentLimits(root, {'llamadart': '.'}).warnings, isEmpty);
+
+    write('pubspec.yaml', pubPubspecLimitBytes * 9 ~/ 10 + 1);
+    final result = checkPubContentLimits(root, {'llamadart': '.'});
+    expect(result.errors, isEmpty);
+    expect(result.warnings, [startsWith('pubspec.yaml is 117965 bytes')]);
+  });
+
   test('accepts a file at the limit and fails one byte over', () {
     write('CHANGELOG.md', pubContentLimitBytes);
     write(
@@ -188,7 +228,9 @@ void main() {
 
     ProcessResult verify({required bool releasePrep}) {
       for (final MapEntry(key: name, value: path) in _packages.entries) {
-        File('${root.path}/$path/pubspec.yaml')
+        final pubspec = File('${root.path}/$path/pubspec.yaml');
+        if (pubspec.existsSync()) continue;
+        pubspec
           ..parent.createSync(recursive: true)
           ..writeAsStringSync('name: $name\nversion: 0.14.0\n');
       }
@@ -223,6 +265,40 @@ void main() {
         );
       });
     }
+
+    test('fails an oversized genkit_llamadart pubspec and README', () {
+      write('packages/genkit_llamadart/pubspec.yaml', pubPubspecLimitBytes + 1);
+      write('packages/genkit_llamadart/README.md', pubContentLimitBytes + 1);
+      final result = verify(releasePrep: false);
+      expect(result.exitCode, 1);
+      expect(
+        result.stderr,
+        allOf(
+          contains(
+            '- packages/genkit_llamadart/pubspec.yaml is 131073 bytes; '
+            'pub.dev rejects genkit_llamadart',
+          ),
+          contains(
+            '- packages/genkit_llamadart/README.md is 262145 bytes; '
+            'pub.dev rejects genkit_llamadart',
+          ),
+        ),
+      );
+    });
+
+    test('fails an oversized companion pubspec', () {
+      write(
+        'packages/llamadart_llama_cpp_flutter/pubspec.yaml',
+        pubPubspecLimitBytes + 1,
+      );
+      final result = verify(releasePrep: false);
+      expect(result.stderr, contains('pubspec.yaml is 131073 bytes'));
+    });
+
+    test('does not require genkit_llamadart to exist or share versions', () {
+      final result = verify(releasePrep: false);
+      expect(result.stderr, isNot(contains('genkit_llamadart')));
+    });
 
     test('passes a changelog under the limit', () {
       write('CHANGELOG.md', pubContentLimitBytes);

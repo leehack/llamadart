@@ -2,9 +2,10 @@
 /// pub.dev accepts.
 ///
 /// pub.dev rejects an upload whose README, CHANGELOG, LICENSE or displayed
-/// example file is larger than [pubContentLimitBytes], after the release tag is
-/// pushed. `verify_release_docs_versions.dart` runs this check in PR CI and
-/// before release automation pushes any tag.
+/// example file is larger than [pubContentLimitBytes], or whose `pubspec.yaml`
+/// is larger than [pubPubspecLimitBytes], after the release tag is pushed.
+/// `verify_release_docs_versions.dart` runs this check in PR CI and before
+/// release automation pushes any tag.
 library;
 
 import 'dart:io';
@@ -12,6 +13,10 @@ import 'dart:io';
 /// The byte limit pub.dev applies to each rendered content file
 /// (`maxContentLength` in pub-dev's `pub_package_reader`).
 const int pubContentLimitBytes = 256 * 1024;
+
+/// The byte limit pub.dev applies to `pubspec.yaml` (`maxPubspecLength` in
+/// pub-dev's `pub_package_reader`).
+const int pubPubspecLimitBytes = 128 * 1024;
 
 /// Content files larger than this are reported as close to the limit.
 const int pubContentWarningBytes = pubContentLimitBytes * 9 ~/ 10;
@@ -52,8 +57,9 @@ List<String> pubContentFiles(
 }
 
 /// Size problems in the content files of [packages], a map from package name
-/// to its directory relative to [repoRoot]. Files over [pubContentLimitBytes]
-/// are errors; files over [pubContentWarningBytes] are warnings.
+/// to its directory relative to [repoRoot]. Content files over
+/// [pubContentLimitBytes] and a `pubspec.yaml` over [pubPubspecLimitBytes] are
+/// errors; files over 90% of their limit are warnings.
 ({List<String> errors, List<String> warnings}) checkPubContentLimits(
   Directory repoRoot,
   Map<String, String> packages,
@@ -61,18 +67,25 @@ List<String> pubContentFiles(
   final errors = <String>[];
   final warnings = <String>[];
   for (final MapEntry(key: name, value: packagePath) in packages.entries) {
-    for (final path in pubContentFiles(repoRoot, packagePath, name)) {
+    final pubspec = packagePath == '.'
+        ? 'pubspec.yaml'
+        : '$packagePath/pubspec.yaml';
+    final files = <String, int>{
+      for (final path in pubContentFiles(repoRoot, packagePath, name))
+        path: pubContentLimitBytes,
+      if (File('${repoRoot.path}/$pubspec').existsSync())
+        pubspec: pubPubspecLimitBytes,
+    };
+    for (final MapEntry(key: path, value: limit) in files.entries) {
       final size = File('${repoRoot.path}/$path').lengthSync();
-      if (size > pubContentLimitBytes) {
+      if (size > limit) {
         errors.add(
           '$path is $size bytes; pub.dev rejects $name when it exceeds '
-          '$pubContentLimitBytes bytes. Shorten it before publishing (the core '
-          'CHANGELOG.md moves its oldest releases, verbatim, to '
-          'doc/changelog_archive.md).',
+          '$limit bytes. Shorten it before publishing${_shortenHint(path)}.',
         );
-      } else if (size > pubContentWarningBytes) {
+      } else if (size > limit * 9 ~/ 10) {
         warnings.add(
-          '$path is $size bytes, within 10% of the $pubContentLimitBytes-byte '
+          '$path is $size bytes, within 10% of the $limit-byte '
           'limit pub.dev applies when publishing $name.',
         );
       }
@@ -80,3 +93,8 @@ List<String> pubContentFiles(
   }
   return (errors: errors, warnings: warnings);
 }
+
+String _shortenHint(String path) => path.endsWith('pubspec.yaml')
+    ? ''
+    : ' (the core CHANGELOG.md moves its oldest releases, verbatim, to '
+          'doc/changelog_archive.md)';
