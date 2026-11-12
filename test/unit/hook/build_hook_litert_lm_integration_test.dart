@@ -1081,9 +1081,19 @@ dependency_overrides: {llamadart_llama_cpp_flutter: {path: resolved companion}}
   final previousTemplateIsCurrent =
       hookTemplateHash('_previousLiteRtLmCompanionManifestTemplateSha256') ==
       hookTemplateHash('_liteRtLmCompanionManifestTemplateSha256');
-  final previousFixtureOnCoreLine = previousFixturePin.startsWith(
-    '$coreUpstream-',
+  final previousFixtureRebuild = _rebuildOnLine(
+    previousFixturePin,
+    coreUpstream,
   );
+  final previousFixtureOnCoreLine = previousFixtureRebuild != null;
+
+  test('a bare tag is rebuild 0 of its own release line only', () {
+    expect(_rebuildOnLine('v0.20.0', 'v0.20.0'), 0);
+    expect(_rebuildOnLine('v0.20.0-3', 'v0.20.0'), 3);
+    expect(_rebuildOnLine('v0.20.1', 'v0.20.0'), isNull);
+    expect(_rebuildOnLine('v0.20.10', 'v0.20.1'), isNull);
+    expect(_rebuildOnLine('v0.20.1-2', 'v0.20.0'), isNull);
+  });
 
   test('previous companion template fixture matches the hook hash and, on the '
       'core release line, is an earlier rebuild', () {
@@ -1099,10 +1109,9 @@ dependency_overrides: {llamadart_llama_cpp_flutter: {path: resolved companion}}
     ).firstMatch(hookSource)!.group(1);
     expect(sha256.convert(utf8.encode(template)).toString(), expected);
 
-    if (previousFixtureOnCoreLine) {
+    if (previousFixtureRebuild != null) {
       expect(
-        int.parse(previousFixturePin.substring(coreUpstream.length + 1)) <
-            coreRebuild,
+        previousFixtureRebuild < coreRebuild,
         isTrue,
         reason:
             'the fixture pins $previousFixturePin, not an earlier build of '
@@ -2935,4 +2944,10 @@ Future<void> _writeBundleLibraries(
   for (final name in fileNames) {
     await File(path.join(bundleDir.path, name)).writeAsString('fake-$name');
   }
+}
+
+int? _rebuildOnLine(String pin, String upstream) {
+  if (pin == upstream) return 0;
+  if (!pin.startsWith('$upstream-')) return null;
+  return int.tryParse(pin.substring(upstream.length + 1));
 }

@@ -1536,13 +1536,42 @@ for event,flag,native,cancel,good,main in itertools.product(('push','pull_reques
       {'run': 'npx playwright install-deps'},
       {'uses': 'awalsh128/cache-apt-pkgs-action@v1'},
       {'uses': 'ConorMacBride/install-linux-deps@v1'},
+      {
+        'uses': 'ConorMacBride/install-package@v1',
+        'with': {'apt': 'libfoo'},
+      },
+      {
+        'uses': 'some/setup@v1',
+        'with': {'pre-script': 'sudo apt-get update'},
+      },
     ]) {
       expect(_installsSystemPackages(step), isTrue, reason: '$step');
     }
+    final root = Directory.systemTemp.createTempSync('apt_action_');
+    addTearDown(() => root.deleteSync(recursive: true));
+    Directory('${root.path}/local').createSync();
+    File('${root.path}/local/action.yml').writeAsStringSync('''
+runs:
+  using: composite
+  steps:
+    - run: echo ok
+    - run: sudo apt-get install -y libfoo
+      shell: bash
+''');
+    expect(
+      _installsSystemPackages({'uses': './local'}, root: root.path),
+      isTrue,
+    );
     for (final step in <Map>[
       {'run': 'npx playwright install chromium'},
       {'uses': 'actions/checkout@v7'},
       {'uses': 'subosito/flutter-action@v2'},
+      {'uses': 'actions/setup-captain@v1'},
+      {
+        'uses': 'actions/checkout@v7',
+        'with': {'path': 'notes'},
+      },
+      {'uses': './.github/actions/companion-package'},
     ]) {
       expect(_installsSystemPackages(step), isFalse, reason: '$step');
     }
@@ -1889,8 +1918,37 @@ for event,flag,native,cancel,good,main in itertools.product(('push','pull_reques
 /// against.
 const _pinnedCoverageVersion = '1.16.0';
 
-bool _installsSystemPackages(Map step) =>
-    RegExp(
-      r'\bapt(-get)?\b|dpkg|install-deps|--with-deps',
-    ).hasMatch('${step['run']}') ||
-    RegExp(r'apt|dpkg|install-.*deps').hasMatch('${step['uses']}');
+final _systemPackageCommand = RegExp(
+  r'\bapt(-get)?\b|\bdpkg\b|install-deps|--with-deps',
+);
+final _systemPackageAction = RegExp(
+  r'(^|[/@_-])(apt|apt-get|dpkg)([/@_-]|$)|install-.*deps',
+);
+
+/// Whether [step] installs system packages through a command, an action name,
+/// an `apt`-style `with:` input or a local composite action.
+bool _installsSystemPackages(Map step, {String root = '.'}) {
+  if (_systemPackageCommand.hasMatch('${step['run']}')) return true;
+  final uses = '${step['uses'] ?? ''}';
+  if (_systemPackageAction.hasMatch(uses)) return true;
+  final inputs = step['with'];
+  if (inputs is Map) {
+    for (final entry in inputs.entries) {
+      if (_systemPackageAction.hasMatch('${entry.key}') ||
+          _systemPackageCommand.hasMatch('${entry.value}')) {
+        return true;
+      }
+    }
+  }
+  if (uses.startsWith('./')) {
+    final action = File('$root/$uses/action.yml');
+    if (!action.existsSync()) return false;
+    final steps =
+        (loadYaml(action.readAsStringSync()) as Map)['runs']?['steps'];
+    return steps is List &&
+        steps.any(
+          (nested) => _installsSystemPackages(nested as Map, root: root),
+        );
+  }
+  return false;
+}

@@ -497,13 +497,15 @@ pub.dev rejects an upload whose `CHANGELOG.md`, `README.md`, `LICENSE` or
 Example-tab file is over 256 KiB (262,144 bytes, `maxContentLength` in
 pub-dev's `pub_package_reader`), and it does so only after the release tag is
 pushed: `v0.19.2` was tagged but never published for this reason. It likewise
-rejects a `pubspec.yaml` over 128 KiB (131,072 bytes, `maxPubspecLength`).
+rejects a `pubspec.yaml` over 128 KiB (131,072 bytes, an inline `128 * 1024`
+in the same reader).
 `verify_release_docs_versions.dart` checks those files in the core, every
 Apple companion and `genkit_llamadart`, in PR CI and in
 `release_on_prep_merge.yml` before any tag. It fails a file over the limit and
 warns above 90% of it. Genkit joins only this size check: its version and
-release routing stay independent
-([Genkit package](./genkit-package.md)).
+release routing stay independent ([Genkit package](./genkit-package.md)). A
+genkit-only PR and a genkit release do not run it, so check the
+`genkit_llamadart` sizes by hand when preparing its release.
 
 `CHANGELOG.md` keeps every release from 0.10.0 on; older ones are in
 `doc/changelog_archive.md`, which pub does not package (`/doc/` is in
