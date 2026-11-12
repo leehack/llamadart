@@ -41,12 +41,16 @@ void main() {
     );
   });
 
-  test('ignores Unreleased and sections only the core keeps', () {
+  test('ignores Unreleased and sections only one file has', () {
     expect(
       docsChangelogDriftProblems(
         {'Unreleased': '- A.\n', '0.1.0': '- Old.\n'},
         {'Unreleased': '- B.\n'},
       ),
+      isEmpty,
+    );
+    expect(
+      docsChangelogDriftProblems({'0.1.0': '- Old.\n'}, {'0.2.0': '- New.\n'}),
       isEmpty,
     );
   });
