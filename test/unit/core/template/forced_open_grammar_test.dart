@@ -254,4 +254,25 @@ void main() {
       expect(result.grammar, isNot(contains('think-body')));
     });
   }
+
+  test('the Qwen3.5 response-format grammar takes the forced-open thought', () {
+    final result = ChatTemplateEngine.render(
+      templateSource: File(
+        'test/fixtures/templates/Qwen3_5-0_8B.jinja',
+      ).readAsStringSync(),
+      messages: const [
+        LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'Hi'),
+      ],
+      metadata: const {},
+      enableThinking: true,
+      responseFormat: _schema,
+    );
+
+    expect(result.thinkingForcedOpen, isTrue);
+    expect(result.grammarLazy, isFalse);
+    expect(
+      ToolCallGrammarUtils.takesForcedOpenThought(result.grammar!),
+      isTrue,
+    );
+  });
 }

@@ -209,6 +209,31 @@ void main() {
     expect(ToolCallGrammarUtils.afterForcedOpenThought(once, '</think>'), once);
   });
 
+  test(
+    'takesForcedOpenThought recognizes only a root that takes the thought',
+    () {
+      expect(
+        ToolCallGrammarUtils.takesForcedOpenThought(
+          ToolCallGrammarUtils.afterForcedOpenThought(
+            'root ::= "ok"\n',
+            '</think>',
+          ),
+        ),
+        isTrue,
+      );
+      expect(
+        ToolCallGrammarUtils.takesForcedOpenThought('root ::= "ok"\n'),
+        isFalse,
+      );
+      expect(
+        ToolCallGrammarUtils.takesForcedOpenThought(
+          'root ::= answer\nanswer ::= think-body "</think>"\nthink-body ::= [a-z]*\n',
+        ),
+        isFalse,
+      );
+    },
+  );
+
   test('wrapRootGrammar wraps root rule with literals', () {
     const grammar = 'root ::= obj\nobj ::= "{}"\n';
 
