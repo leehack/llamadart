@@ -1072,8 +1072,21 @@ dependency_overrides: {llamadart_llama_cpp_flutter: {path: resolved companion}}
         .toList(growable: false);
   }
 
-  test('previous companion template fixture matches the hook hash and is an '
-      'earlier rebuild of the core release', () {
+  final previousFixturePin = RegExp(
+    r'let liteRtLmTag = "([^"\n]+)"',
+  ).firstMatch(File(previousTemplateFixture).readAsStringSync())!.group(1)!;
+  String hookTemplateHash(String name) => RegExp(
+    '$name =\\s*\'([0-9a-f]{64})\'',
+  ).firstMatch(File('hook/build.dart').readAsStringSync())!.group(1)!;
+  final previousTemplateIsCurrent =
+      hookTemplateHash('_previousLiteRtLmCompanionManifestTemplateSha256') ==
+      hookTemplateHash('_liteRtLmCompanionManifestTemplateSha256');
+  final previousFixtureOnCoreLine = previousFixturePin.startsWith(
+    '$coreUpstream-',
+  );
+
+  test('previous companion template fixture matches the hook hash and, on the '
+      'core release line, is an earlier rebuild', () {
     final template = previousTemplateManifest('PIN')
         .replaceAll('\r\n', '\n')
         .replaceAll(
@@ -1086,18 +1099,16 @@ dependency_overrides: {llamadart_llama_cpp_flutter: {path: resolved companion}}
     ).firstMatch(hookSource)!.group(1);
     expect(sha256.convert(utf8.encode(template)).toString(), expected);
 
-    final fixturePin = RegExp(
-      r'let liteRtLmTag = "([^"\n]+)"',
-    ).firstMatch(File(previousTemplateFixture).readAsStringSync())!.group(1)!;
-    expect(
-      fixturePin.startsWith('$coreUpstream-') &&
-          int.parse(fixturePin.substring(coreUpstream.length + 1)) <
-              coreRebuild,
-      isTrue,
-      reason:
-          'rotate the fixture and the previous hash when the core moves '
-          'to a new LiteRT-LM release line',
-    );
+    if (previousFixtureOnCoreLine) {
+      expect(
+        int.parse(previousFixturePin.substring(coreUpstream.length + 1)) <
+            coreRebuild,
+        isTrue,
+        reason:
+            'the fixture pins $previousFixturePin, not an earlier build of '
+            '$coreLiteRtLmTag: rotate the fixture and the previous hash',
+      );
+    }
   });
 
   test(
@@ -1118,6 +1129,9 @@ dependency_overrides: {llamadart_llama_cpp_flutter: {path: resolved companion}}
     },
     skip: coreRebuild == 0
         ? 'the core pins a bare release: no earlier build'
+        : !previousFixtureOnCoreLine
+        ? 'the previous companion pins $previousFixturePin on another release '
+              'line than $coreLiteRtLmTag, so its template is never accepted'
         : null,
   );
 
@@ -1125,18 +1139,24 @@ dependency_overrides: {llamadart_llama_cpp_flutter: {path: resolved companion}}
     ('the core tag', coreLiteRtLmTag),
     ('a newer release', newerUpstream),
   ]) {
-    test('build hook keeps the incomplete-manifest warning for the previous '
-        'template pinning $scenario', () async {
-      expect(
-        await previousTemplateWarnings(pin),
-        contains(
+    test(
+      'build hook keeps the incomplete-manifest warning for the previous '
+      'template pinning $scenario',
+      () async {
+        expect(
+          await previousTemplateWarnings(pin),
           contains(
-            'does not link the complete macOS LiteRT-LM runtime (its '
-            'Package.swift is not the macOS-complete manifest)',
+            contains(
+              'does not link the complete macOS LiteRT-LM runtime (its '
+              'Package.swift is not the macOS-complete manifest)',
+            ),
           ),
-        ),
-      );
-    });
+        );
+      },
+      skip: previousTemplateIsCurrent
+          ? 'the previous template is the current one, which any pin may use'
+          : null,
+    );
   }
 
   for (final pin in ['v0.18.0', coreLiteRtLmTag]) {

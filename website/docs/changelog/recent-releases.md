@@ -15,7 +15,7 @@ validate against the exact release tag notes.
 
 - Add `ChatTemplateEngine.resolveThinkingBudget`, which fills a `ThinkingBudget`'s omitted tags and the Qwen3-Coder XML line break before `</think>` as `LlamaEngine` does, so integrations that render the prompt themselves can match ([#1929](https://github.com/leehack/llamadart/issues/1929)).
 - On macOS x86_64 (Intel Macs and Rosetta), image generation with `ComputeDevice.auto` now runs on the CPU instead of Metal, matching `GpuBackend.auto` for llama.cpp; an explicit `ComputeDevice.gpu` still loads on Metal and logs a warning, while `textEncoderOnCpu`, `vaeOnCpu`, `maxGpuMemoryGiB` or `autoFit: false` under `ComputeDevice.auto` now throw `LlamaUnsupportedException` ([#1600](https://github.com/leehack/llamadart/issues/1600), [#1936](https://github.com/leehack/llamadart/pull/1936)).
-- A macOS app with `llamadart_litert_lm_flutter` 0.19.5 (pinned to LiteRT-LM `v0.19.1-3`) next to a core on a later `v0.19.1` build now gets the earlier-build warning instead of "does not link the complete macOS LiteRT-LM runtime"; 0.19.3 and 0.19.4 still get the latter ([#1934](https://github.com/leehack/llamadart/issues/1934)).
+- A macOS app with `llamadart_litert_lm_flutter` 0.19.5 (pinned to LiteRT-LM `v0.19.1-3`) next to a core on a later `v0.19.1` build now gets the earlier-build warning instead of "does not link the complete macOS LiteRT-LM runtime"; 0.19.0 to 0.19.4 still get the latter ([#1934](https://github.com/leehack/llamadart/issues/1934)).
 
 ## 0.19.6
 
