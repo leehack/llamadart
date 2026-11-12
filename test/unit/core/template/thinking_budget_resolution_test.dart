@@ -89,6 +89,19 @@ void main() {
       ));
     });
 
+    test('throws RangeError for a negative index', () {
+      expect(
+        () => ChatTemplateEngine.resolveThinkingBudget(
+          -1,
+          const ThinkingBudget(maxTokens: 8),
+        ),
+        throwsRangeError,
+      );
+      expect(() => ChatTemplateEngine.thinkingTagsFor(-1), throwsRangeError);
+    });
+  });
+
+  group('ChatTemplateEngine.parse', () {
     test('parses past the end of ChatFormat with the generic handler', () {
       const incompleteCall = '{"tool_call": {"name": "inspect"';
 
@@ -108,17 +121,6 @@ void main() {
         ),
         throwsA(isA<LlamaInferenceException>()),
       );
-    });
-
-    test('throws RangeError for a negative index', () {
-      expect(
-        () => ChatTemplateEngine.resolveThinkingBudget(
-          -1,
-          const ThinkingBudget(maxTokens: 8),
-        ),
-        throwsRangeError,
-      );
-      expect(() => ChatTemplateEngine.thinkingTagsFor(-1), throwsRangeError);
     });
   });
 }

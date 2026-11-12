@@ -163,13 +163,14 @@ version alignment:
   ever published, retain that series alone. The gate derives actual headings
   from the full changelog rather than inventing missing patch numbers.
   The same gate fails when a retained release's bullets differ between the two
-  files, apart from the WebGPU bridge line above.
+  files. Only the bullet marker (`*` or `-`) and "the" on the WebGPU bridge line
+  below are exempt.
 - Each current core release section must state the pinned WebGPU bridge tag.
   If it is unchanged, use an explicit baseline instead of repeating the old
   release's fixes. In `CHANGELOG.md`, use:
 
   ```markdown
-  * Keep the default WebGPU bridge assets at `vX.Y.Z` (unchanged from A.B.C).
+  - Keep the default WebGPU bridge assets at `vX.Y.Z` (unchanged from A.B.C).
   ```
 
   In `website/docs/changelog/recent-releases.md`, use:

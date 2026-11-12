@@ -973,9 +973,24 @@ List<String> docsChangelogRetentionProblems(
   ];
 }
 
-/// The WebGPU bridge bullet reads "the default" in `CHANGELOG.md` and
-/// "default" in the docs changelog (`release-workflow.md`).
-final RegExp _bridgeBulletArticle = RegExp(r'\bthe default WebGPU\b');
+/// The WebGPU bridge bullet reads "the default" and may use a `*` marker in
+/// `CHANGELOG.md`, and "default" with a `-` marker in the docs changelog
+/// (`release-workflow.md`).
+final RegExp _bridgeBulletLine = RegExp(
+  r'^[*-] .*\bdefault WebGPU bridge assets\b',
+);
+
+String _normalizedBridgeLines(String body) => body
+    .split('\n')
+    .map(
+      (line) => _bridgeBulletLine.hasMatch(line)
+          ? line
+                .replaceFirst(RegExp(r'^\* '), '- ')
+                .replaceFirst('the default WebGPU', 'default WebGPU')
+          : line,
+    )
+    .join('\n')
+    .trimRight();
 
 /// Released sections that [docs] keeps from [core] but words differently.
 ///
@@ -985,16 +1000,15 @@ List<String> docsChangelogDriftProblems(
   Map<String, String> core,
   Map<String, String> docs,
 ) {
-  String normalized(String body) =>
-      body.replaceAll(_bridgeBulletArticle, 'default WebGPU').trimRight();
+  final normalized = _normalizedBridgeLines;
   return [
     for (final MapEntry(key: heading, value: body) in docs.entries)
       if (heading != 'Unreleased' &&
           core.containsKey(heading) &&
           normalized(core[heading]!) != normalized(body))
         '$_docsChangelog `## $heading` differs from CHANGELOG.md; keep the '
-            'bullets of every retained release identical (apart from the '
-            'WebGPU bridge line).',
+            'bullets of every retained release identical (apart from the bullet '
+            'marker and "the" on the WebGPU bridge line).',
   ];
 }
 

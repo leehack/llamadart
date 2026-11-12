@@ -54,4 +54,41 @@ void main() {
       isEmpty,
     );
   });
+
+  test('accepts a `*` bridge bullet in the core changelog', () {
+    expect(
+      docsChangelogDriftProblems(
+        {'0.2.0': '* ${bridgeCore.substring(2)}'},
+        {'0.2.0': bridgeDocs},
+      ),
+      isEmpty,
+    );
+  });
+
+  test('strips "the" and the marker only on the bridge line', () {
+    expect(
+      docsChangelogDriftProblems(
+        {'0.2.0': '* Fix the default WebGPU path.\n'},
+        {'0.2.0': '- Fix default WebGPU path.\n'},
+      ),
+      hasLength(1),
+    );
+    expect(
+      docsChangelogDriftProblems(
+        {'0.2.0': '- Fix a.\n* Other.\n'},
+        {'0.2.0': '- Fix a.\n- Other.\n'},
+      ),
+      hasLength(1),
+    );
+  });
+
+  test('ignores trailing whitespace and blank lines', () {
+    expect(
+      docsChangelogDriftProblems(
+        {'0.2.0': '- Fix a.\n\n\n'},
+        {'0.2.0': '- Fix a.'},
+      ),
+      isEmpty,
+    );
+  });
 }
