@@ -18,7 +18,7 @@ embedding model. See [runtime support](https://github.com/leehack/llamadart/blob
 
 ## Install
 
-Requires Dart 3.12 or newer, Genkit 1.x and llamadart 0.19.x.
+Requires Dart 3.12 or newer, Genkit 1.x and llamadart 0.19.7 or newer 0.19.x.
 
 ```bash
 dart pub add genkit genkit_llamadart
