@@ -951,15 +951,14 @@ class GenerationParams {
   /// Optional llama.cpp-style limit for tokens generated inside a reasoning
   /// block.
   ///
-  /// The native llama.cpp backend keeps a grammar that takes the
-  /// template-opened thought itself (a root starting with `think-body`) or
-  /// models the thought the model opens (Seed-OSS's required-call root,
-  /// starting with `seed-thought`) applied while budgeted reasoning is
-  /// active. It pauses every other grammar, lazy grammars included, until
-  /// reasoning has ended. Native LiteRT-LM applies it to chat generation on
+  /// The native llama.cpp backend keeps an eager grammar whose root takes the
+  /// thought (`think-body` or `seed-thought`, as in response-format and
+  /// required tool-call grammars on templates that open or model a thought)
+  /// applied while budgeted reasoning is active. It pauses every lazy grammar,
+  /// whatever its root, and every other grammar until reasoning has ended. Native LiteRT-LM applies it to chat generation on
   /// bundles with a thinking channel, which it closes with the bundle's own
   /// end marker; it rejects a zero budget and [ThinkingBudget.forcedMessage].
-  /// WebGPU bridges that report `thinkingBudget` support it and pause grammars
+  /// WebGPU bridges that report `thinkingBudget` support it and treat grammars
   /// the same way as native llama.cpp; keeping a grammar applied through the
   /// thought needs assets that report `thinkingBudgetPauseGrammar` (v0.1.84+),
   /// and older assets reject that combination.

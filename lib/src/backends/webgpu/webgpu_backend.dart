@@ -1955,9 +1955,9 @@ class WebGpuLlamaBackend
         ToolCallGrammarUtils.keepsAppliedThroughThought(grammar);
     if (keepGrammarApplied && !capabilities.thinkingBudgetPauseGrammar) {
       throw LlamaUnsupportedException(
-        'WebGPU thinking-budget control with a grammar that stays applied '
-        'through the thought (responseFormat on Qwen3.5, required tool calls '
-        'on Seed-OSS) needs bridge assets v0.1.84+ whose '
+        'WebGPU thinking-budget control with an eager grammar that takes the '
+        'thought (responseFormat or required tool calls on templates that '
+        'open or model one) needs bridge assets v0.1.84+ whose '
         'getCompletionCapabilities() reports thinkingBudgetPauseGrammar; '
         'the loaded core pauses every grammar while the model reasons, so '
         'the reply would not be constrained.',

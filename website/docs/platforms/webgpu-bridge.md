@@ -287,10 +287,10 @@ The feature-by-runtime table is in the
   probe reports `penaltyPromptTokens`), as native llama.cpp does. `ToolChoice.auto` requests that skip the lazy tool-call
   grammar keep the prompt out, as native does under that grammar
   ([llama-web-bridge#187](https://github.com/leehack/llama-web-bridge/pull/187)).
-  A thinking budget is text-only. As on native llama.cpp, a thinking budget keeps a
-  grammar applied through the thought when that grammar takes it (constrained JSON
-  on Qwen3.5, required tool calls on Seed-OSS) and pauses every other grammar until
-  reasoning ends; the former needs assets whose probe reports
+  A thinking budget is text-only. As on native llama.cpp, a thinking budget keeps an
+  eager grammar applied through the thought when its root takes it (`think-body`
+  or `seed-thought`, as in `responseFormat` and required tool calls) and pauses
+  every lazy and every other grammar until reasoning ends; the former needs assets whose probe reports
   `thinkingBudgetPauseGrammar` (`v0.1.84+`) and throws `LlamaUnsupportedException`
   without it. A LoRA adapter is a `ModelSource` whose URL the bridge downloads once
   per model load (a `ModelSource.path` is a URL relative to the document, or a `blob:` URL), through Cache Storage unless the URL carries credentials; reload

@@ -16,6 +16,14 @@ void main() {
         isA<LlamaUnsupportedException>(),
       ),
       (
+        'The loaded WebGPU core does not support CompletionOptions.thinkingBudget.',
+        isA<LlamaUnsupportedException>(),
+      ),
+      (
+        'The loaded WebGPU core does not support CompletionOptions.thinkingBudget.pauseGrammar.',
+        isA<LlamaUnsupportedException>(),
+      ),
+      (
         'The loaded WebGPU core does not support CompletionOptions.grammarLazy.',
         isA<LlamaUnsupportedException>(),
       ),
