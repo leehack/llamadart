@@ -101,9 +101,9 @@ in the llamadart-getting-started and llamadart-chat-streaming skills.
     unless `withTextHistory()` is used and the loaded runtime supports them. Unreported
     controls throw `LlamaUnsupportedException`; `engine.runtime` names the
     runtime, so never sniff the `.litertlm` extension after loading.
-  - A `ThinkingBudget` with a grammar that stays applied through the thought
-    (`responseFormat` on Qwen3.5, required calls on Seed-OSS) needs assets that
-    report `thinkingBudgetPauseGrammar`; older assets throw
+  - A `ThinkingBudget` with an eager grammar that takes the thought
+    (`responseFormat` or required tool calls on templates that open or model
+    one) needs assets that report `thinkingBudgetPauseGrammar`; older assets throw
     `LlamaUnsupportedException`.
   - `engine.supportsNextTokenScoring` and
     `engine.supportsStatePersistence`.

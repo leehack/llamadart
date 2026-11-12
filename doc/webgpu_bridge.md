@@ -211,7 +211,8 @@ physical playback, intelligibility or speaker-reference fidelity.
   ([llama-web-bridge#213](https://github.com/leehack/llama-web-bridge/pull/213)).
   llamadart sends it, as native does, only when `grammarLazy` is off and the
   grammar takes the thought (`ToolCallGrammarUtils.keepsAppliedThroughThought`:
-  constrained JSON on Qwen3.5, required tool calls on Seed-OSS), and throws
+  a `think-body` or `seed-thought` root, as in `responseFormat` and required
+  tool calls), and throws
   `LlamaUnsupportedException` for that combination on assets without the flag.
   Every other request omits `pauseGrammar` and is unchanged.
 

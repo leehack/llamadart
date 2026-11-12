@@ -165,4 +165,40 @@ thought-text ::= [^d]*
       }
     }
   });
+
+  test('a lazy grammar constrains the reply once the thought closes', () async {
+    for (final budget in [0, 3]) {
+      final chunks = await backend
+          .generate(
+            context,
+            prompt,
+            GenerationParams(
+              maxTokens: 48,
+              temp: 0,
+              seed: 1,
+              penalty: 1,
+              grammar: 'root ::= " a" [a-z ]*\n',
+              grammarLazy: true,
+              grammarTriggers: const [
+                GenerationGrammarTrigger.typed(
+                  type: GrammarTriggerType.word,
+                  value: ' a',
+                ),
+              ],
+              thinkingBudget: ThinkingBudget(
+                maxTokens: budget,
+                startTag: '<think>',
+                endTag: '</think>',
+              ),
+            ),
+          )
+          .toList();
+
+      expect(
+        utf8.decode(chunks.expand((chunk) => chunk).toList()),
+        matches(RegExp(r'</think>.* a[a-z ]*$', dotAll: true)),
+        reason: 'budget $budget',
+      );
+    }
+  });
 }

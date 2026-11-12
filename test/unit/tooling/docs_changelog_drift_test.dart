@@ -91,4 +91,45 @@ void main() {
       isEmpty,
     );
   });
+
+  test('names the first differing line and a whitespace-only difference', () {
+    final problems = docsChangelogDriftProblems(
+      {'0.2.0': '- Fix a.\n- Fix  b.\n'},
+      {'0.2.0': '- Fix a.\n- Fix b.\n'},
+    );
+
+    expect(problems, hasLength(1));
+    expect(
+      problems.single,
+      allOf(
+        contains('only in whitespace'),
+        contains('first differing line 2'),
+        contains('`- Fix  b.`'),
+      ),
+    );
+    expect(
+      docsChangelogDriftProblems(
+        {'0.2.0': '- Fix a.\n'},
+        {'0.2.0': '- Fix c.\n'},
+      ).single,
+      allOf(contains('in content'), contains('first differing line 1')),
+    );
+  });
+
+  test('requires the prescribed bridge wording on the docs page', () {
+    for (final docsLine in [
+      '* Keep default WebGPU bridge assets at `v1` (unchanged from 0.1.0).\n',
+      bridgeCore,
+    ]) {
+      final problems = docsChangelogDriftProblems(
+        {'0.2.0': bridgeCore},
+        {'0.2.0': docsLine},
+      );
+
+      expect(problems, hasLength(1), reason: docsLine);
+      expect(problems.single, contains('bridge line must read'));
+    }
+    expect(docsChangelogDriftProblems({}, {'0.2.0': bridgeCore}), hasLength(1));
+    expect(docsChangelogDriftProblems({}, {'Unreleased': bridgeCore}), isEmpty);
+  });
 }
