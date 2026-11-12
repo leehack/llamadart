@@ -1252,9 +1252,10 @@ can read (a host path works on the iOS simulator; the sandboxed macOS app
 reads only its own container,
 `~/Library/Containers/com.example.llamaDartChatExample/Data/...`; a model
 under `/opt` fails with EPERM, so copy it into the container first) or a plain
-`http(s)` URL the app downloads into its support directory; for an Android emulator, serve the bundle on the
-host and use `http://10.0.2.2:<port>/<bundle>`. URLs with credentials, a query
-or a fragment are refused, since the URL is printed and compiled into the app.
+`http(s)` URL the app downloads into its support directory; for an Android
+emulator, serve the bundle on the host and use
+`http://10.0.2.2:<port>/<bundle>`. URLs with credentials, a query or a
+fragment are refused, since the URL is printed and compiled into the app.
 
 
 ### Complete image checkpoint containers

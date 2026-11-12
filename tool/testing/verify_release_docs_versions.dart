@@ -973,6 +973,31 @@ List<String> docsChangelogRetentionProblems(
   ];
 }
 
+/// The WebGPU bridge bullet reads "the default" in `CHANGELOG.md` and
+/// "default" in the docs changelog (`release-workflow.md`).
+final RegExp _bridgeBulletArticle = RegExp(r'\bthe default WebGPU\b');
+
+/// Released sections that [docs] keeps from [core] but words differently.
+///
+/// Both changelogs are edited by hand and union-merge, so nothing else keeps
+/// a retained release's bullets identical.
+List<String> docsChangelogDriftProblems(
+  Map<String, String> core,
+  Map<String, String> docs,
+) {
+  String normalized(String body) =>
+      body.replaceAll(_bridgeBulletArticle, 'default WebGPU').trimRight();
+  return [
+    for (final MapEntry(key: heading, value: body) in docs.entries)
+      if (heading != 'Unreleased' &&
+          core.containsKey(heading) &&
+          normalized(core[heading]!) != normalized(body))
+        '$_docsChangelog `## $heading` differs from CHANGELOG.md; keep the '
+            'bullets of every retained release identical (apart from the '
+            'WebGPU bridge line).',
+  ];
+}
+
 void main(List<String> arguments) {
   final releasePrep = arguments.contains('--release-prep');
   final unknown = arguments.where((argument) => argument != '--release-prep');
@@ -1075,6 +1100,19 @@ void main(List<String> arguments) {
             );
           } on FormatException {
             // `_parseCoreVersion` below reports a version that is not semver.
+          }
+          final core = _changelogSections(
+            Directory.current,
+            'CHANGELOG.md',
+            <String>[],
+          );
+          final docs = _changelogSections(
+            Directory.current,
+            changelog,
+            <String>[],
+          );
+          if (core != null && docs != null) {
+            errors.addAll(docsChangelogDriftProblems(core, docs));
           }
         }
       }

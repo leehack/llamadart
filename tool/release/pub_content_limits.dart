@@ -14,7 +14,7 @@ import 'dart:io';
 /// (`maxContentLength` in pub-dev's `pub_package_reader`).
 const int pubContentLimitBytes = 256 * 1024;
 
-/// The byte limit pub.dev applies to `pubspec.yaml` (`maxPubspecLength` in
+/// The byte limit pub.dev applies to `pubspec.yaml` (an inline `128 * 1024` in
 /// pub-dev's `pub_package_reader`).
 const int pubPubspecLimitBytes = 128 * 1024;
 

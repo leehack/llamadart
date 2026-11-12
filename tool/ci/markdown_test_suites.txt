@@ -3,6 +3,8 @@ test/unit/tooling/check_released_changelog_sections_test.dart
 test/unit/tooling/check_webgpu_bridge_tag_test.dart
 test/unit/tooling/companion_inventory_test.dart
 test/unit/tooling/companion_release_workflow_scripts_test.dart
+test/unit/tooling/docs_changelog_drift_test.dart
+test/unit/tooling/genkit_doc_floor_test.dart
 test/unit/tooling/genkit_package_staging_test.dart
 test/unit/tooling/genkit_release_routing_test.dart
 test/unit/tooling/hf_space_deploy_test.dart
