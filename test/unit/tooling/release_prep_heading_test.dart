@@ -86,6 +86,29 @@ void main() {
     });
   }
 
+  group('docs changelog drift', () {
+    const drift = 'differs from CHANGELOG.md';
+
+    test('the verifier rejects a retained release that differs', () {
+      final result = verify(
+        '## 0.14.0\n\n- A.\n',
+        docsChangelog: '## 0.14.0\n\n- B.\n',
+        releasePrep: false,
+      );
+      expect(result.stderr, contains(drift));
+    });
+
+    test('the verifier accepts the prescribed bridge bullet forms', () {
+      final result = verify(
+        '## 0.14.0\n\n* Keep the default WebGPU bridge assets at `v1`.\n',
+        docsChangelog:
+            '## 0.14.0\n\n- Keep default WebGPU bridge assets at `v1`.\n',
+        releasePrep: false,
+      );
+      expect(result.stderr, isNot(contains(drift)));
+    });
+  });
+
   test('the exact version heading passes the heading gate', () {
     final result = verify(
       '# Changelog\n\n## 0.14.0\n\n## 0.13.2\n',
