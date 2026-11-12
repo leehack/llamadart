@@ -354,8 +354,8 @@ forced text is a line break before the end delimiter, as llama.cpp forces it.
 On native llama.cpp, a grammar that takes the template-opened thought itself
 (its root starts with `think-body`, as for `responseFormat` on Qwen3.5) stays
 applied while the model reasons, so it also constrains the reply after a spent
-budget. Any other grammar, including a caller `grammar` or a lazy grammar,
-waits until the thought closes. WebGPU still pauses every grammar during
+budget. Other grammars, such as a typical caller `grammar` or a lazy grammar,
+wait until the thought closes. WebGPU still pauses every grammar during
 budgeted reasoning
 ([#1954](https://github.com/leehack/llamadart/issues/1954)).
 Native llama.cpp, WebGPU bridges that report `thinkingBudget` and native

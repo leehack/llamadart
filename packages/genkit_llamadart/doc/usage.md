@@ -426,8 +426,10 @@ block; zero closes the block immediately. Enable thinking separately with
 `startTag`/`endTag` from the selected template; custom delimiters and
 `forcedMessage` pass through unchanged, except that on Qwen3-Coder XML
 templates (Qwen3.5) with no `endTag` set, a `\n` is appended to `forcedMessage`
-before `</think>`. Budgets need runtime support and cannot
-be combined with media or speculative decoding.
+before `</think>`; an unset `forcedMessage` becomes a lone `\n`. Backends that
+take chat messages, such as LiteRT-LM, close the thought themselves and get no
+`\n`. Budgets need runtime support and cannot be combined with media or
+speculative decoding.
 
 `reusePromptPrefix: false` disables native llama.cpp prefix reuse. It does not
 create an isolated conversation: always pass the complete history. The adapter

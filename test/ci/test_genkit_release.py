@@ -188,6 +188,14 @@ class ReleaseAutomationTests(unittest.TestCase):
             (self.root / "packages/genkit_llamadart/CHANGELOG.md").write_text(heading + "\n")
             self.run_step("Validate release state", success=False)
 
+    def test_changelog_date_must_be_iso(self):
+        self.env.update(GITHUB_REF_TYPE="tag", GITHUB_REF_NAME="genkit_llamadart-v1.5.0", GITHUB_REF="refs/tags/genkit_llamadart-v1.5.0")
+        changelog = self.root / "packages/genkit_llamadart/CHANGELOG.md"
+        for heading in ["## 1.5.0 - 2026-9-28", "## 1.5.0 - soon", "## 1.5.0 - 2026-09-28T00:00", "## 1.5.0 - 2026-09-28 extra"]:
+            changelog.write_text(heading + "\n")
+            self.run_step("Validate release state", success=False)
+            self.run_step("Verify package-specific stable tag", success=False, workflow="publish_genkit_pubdev.yml")
+
     def test_published_version_requires_tag_and_skips_dispatch(self):
         self.scenario["pub_http"] = "200"
         self.run_step("Validate release state", success=False)
