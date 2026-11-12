@@ -189,6 +189,17 @@ file is written. Dry-run prints the prospective hash. This keeps the known
 v0.19 seven-target transition on the macOS app-bundle path without relaxing the
 manifest contract or changing the currently pinned runtime.
 
+The hook also keeps the previous companion release's template hash
+(`_previousLiteRtLmCompanionManifestTemplateSha256`), accepted only for a pin
+that is an earlier rebuild of the core's LiteRT-LM release, so such a companion
+gets the earlier-build warning. The sync script does not rotate it: when a
+release changes the template, move the old hash there by hand and replace
+`test/fixtures/litert_lm/llamadart_litert_lm_flutter_0.19.1-3_Package.swift`
+with the then-previous companion's `Package.swift`. A hook test ties the
+fixture to the hash, and on the core's release line requires its pin to be an
+earlier rebuild. After a release-line change the previous companion pins the
+old line, so that hash is never accepted and the earlier-rebuild test skips.
+
 Changing between stable and development channels requires
 `--allow-litert-channel-transition`; changing between two distinct `g<sha>`
 lines requires `--allow-litert-development-line-transition`. Both flags default

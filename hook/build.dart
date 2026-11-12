@@ -44,6 +44,10 @@ const _liteRtLmFlutterPackageName = 'llamadart_litert_lm_flutter';
 // resolved companion keeps macOS LiteRT-LM on the hook cache.
 const _liteRtLmCompanionManifestTemplateSha256 =
     '98061435e1b7e7726a96ae6191ff2041ad53d9d8fda1e8555f87464f4ab88b66';
+// The template of the previous companion release. It is also macOS-complete, so
+// a companion pinning an earlier rebuild gets that message, not a gap warning.
+const _previousLiteRtLmCompanionManifestTemplateSha256 =
+    '3d1654fa98dd747c4c9f0e642f3fa27d7657f7e8e25cdab4591e5eacd0de9b17';
 const _stableDiffusionFlutterPackageName = 'llamadart_stable_diffusion_flutter';
 const _stableDiffusionCompanionManifestTemplateSha256 =
     '829188afd63eec24b16259b05c0d884725818558fed30b41fae40fa39eeef66c';
@@ -1293,11 +1297,13 @@ String? _liteRtLmMacOsCompanionWarning(
           RegExp(r'checksum: "[0-9a-f]{64}"'),
           'checksum: "CHECKSUM"',
         );
-    if (sha256.convert(utf8.encode(template)).toString() !=
-        _liteRtLmCompanionManifestTemplateSha256) {
+    final pin = pins.single.group(1)!;
+    final templateSha256 = sha256.convert(utf8.encode(template)).toString();
+    if (templateSha256 != _liteRtLmCompanionManifestTemplateSha256 &&
+        !(templateSha256 == _previousLiteRtLmCompanionManifestTemplateSha256 &&
+            _isEarlierLiteRtLmRebuild(pin))) {
       gap('its Package.swift is not the macOS-complete manifest');
     }
-    final pin = pins.single.group(1)!;
     if (pin == liteRtLmReleaseTag) return null;
     if (_isEarlierLiteRtLmRebuild(pin)) {
       return 'The resolved $_liteRtLmFlutterPackageName pins '
