@@ -956,13 +956,13 @@ class GenerationParams {
   /// models the thought the model opens (Seed-OSS's required-call root,
   /// starting with `seed-thought`) applied while budgeted reasoning is
   /// active. It pauses every other grammar, lazy grammars included, until
-  /// reasoning has ended. WebGPU does the same on bridge assets that report
-  /// `thinkingBudgetPauseGrammar` (v0.1.84+) and rejects the keep-applied
-  /// grammars on older assets. Native LiteRT-LM applies it to chat generation on
+  /// reasoning has ended. Native LiteRT-LM applies it to chat generation on
   /// bundles with a thinking channel, which it closes with the bundle's own
   /// end marker; it rejects a zero budget and [ThinkingBudget.forcedMessage].
-  /// WebGPU bridges that report `thinkingBudget` support it and pause every
-  /// grammar during reasoning.
+  /// WebGPU bridges that report `thinkingBudget` support it and pause grammars
+  /// the same way as native llama.cpp; keeping a grammar applied through the
+  /// thought needs assets that report `thinkingBudgetPauseGrammar` (v0.1.84+),
+  /// and older assets reject that combination.
   /// Other backends reject this setting rather than silently ignoring it.
   final ThinkingBudget? thinkingBudget;
 
