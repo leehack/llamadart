@@ -13,8 +13,8 @@ validate against the exact release tag notes.
 
 ## 0.19.8
 
-- Aligned default WebGPU bridge assets to `v0.1.84`, so the same constrained JSON and required tool calls stay applied through a budgeted thought on WebGPU; older assets throw `LlamaUnsupportedException` for that combination, so WebGPU needs `v0.1.84` or later ([#1954](https://github.com/leehack/llamadart/issues/1954)).
 - Fixed constrained JSON (`responseFormat`) and required tool calls losing their grammar after a `ThinkingBudget` closes a thought on native llama.cpp: an eager grammar that takes the forced-open thought (Qwen3.5 and similar, and Seed-OSS required calls) now stays applied, and every other grammar pauses until reasoning ends ([#1953](https://github.com/leehack/llamadart/issues/1953), [#1958](https://github.com/leehack/llamadart/issues/1958)).
+- Aligned default WebGPU bridge assets to `v0.1.84`, so WebGPU keeps those grammars applied too; older assets throw `LlamaUnsupportedException` for that combination ([#1954](https://github.com/leehack/llamadart/issues/1954)).
 
 Runtime baseline: native llama.cpp `v0.9.0` and Web use upstream `v0.9.0@cd959bae99ff4bed22bef2604f45241c09bbb8c8`; native LiteRT-LM uses `v0.19.1-4` and stable-diffusion uses `v0.3.0-3`. Web LiteRT-LM uses `@litert-lm/core@0.19.0`. Manifest SHA-256: `55abeb377597148156059a8ee5400f2314c6254ad91b57db65b709e304c0dea0`.
 
