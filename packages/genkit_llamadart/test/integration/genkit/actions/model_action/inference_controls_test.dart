@@ -156,6 +156,46 @@ void main() {
     },
   );
 
+  group('Qwen3-Coder XML thinking budget', () {
+    Future<llama.ThinkingBudget> budgetFor(ThinkingBudget budget) async {
+      runtime.templateResult = llama.LlamaChatTemplateResult(
+        prompt: 'prompt',
+        format: llama.ChatFormat.qwen3CoderXml.index,
+        grammar: 'root ::= "{}"',
+      );
+      await generate(
+        LlamaDartGenerationConfig(thinkingBudget: budget),
+        structured: true,
+      );
+      return runtime.lastGenerationParams!.thinkingBudget!;
+    }
+
+    test('appends the line break to the caller forced message', () async {
+      final budget = await budgetFor(
+        const ThinkingBudget(maxTokens: 8, forcedMessage: 'wrap up'),
+      );
+      expect(budget.forcedMessage, 'wrap up\n');
+      expect(budget.endTag, '</think>');
+    });
+
+    test('forces the line break alone without a forced message', () async {
+      final budget = await budgetFor(const ThinkingBudget(maxTokens: 8));
+      expect(budget.forcedMessage, '\n');
+    });
+
+    test('adds no line break when the caller sets an end tag', () async {
+      final budget = await budgetFor(
+        const ThinkingBudget(
+          maxTokens: 8,
+          endTag: '</custom>',
+          forcedMessage: 'wrap up',
+        ),
+      );
+      expect(budget.endTag, '</custom>');
+      expect(budget.forcedMessage, 'wrap up');
+    });
+  });
+
   test(
     'typed speculation takes precedence over disabled default flag',
     () async {
