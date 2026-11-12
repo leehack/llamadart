@@ -2,6 +2,21 @@
 
 This document covers the major breaking upgrade paths.
 
+## `0.19.6` -> `0.19.7`: image generation `ComputeDevice.auto` on macOS x86_64
+
+No Dart API changes. On macOS x86_64 (Intel Macs and Rosetta), image generation
+with `ComputeDevice.auto` now runs on the CPU, as `GpuBackend.auto` does for
+llama.cpp, because upstream ggml-metal can produce garbled output on Intel Macs
+with AMD GPUs. An explicit `ComputeDevice.gpu` still loads on Metal and logs a
+warning.
+
+Behavior to recheck after upgrading:
+
+- `ImageModelPlacement(textEncoderOnCpu: true)`, `vaeOnCpu: true`,
+  `maxGpuMemoryGiB` or `autoFit: false` under `ComputeDevice.auto` now throw
+  `LlamaUnsupportedException`, because they need an engine on a GPU. Pass
+  `ComputeDevice.gpu` to place the work on Metal, or drop the options.
+
 ## `0.19.0` -> `0.19.1`: desktop LiteRT-LM embeddings need native `v0.19.1-2`
 
 Core `0.19.1` bundles

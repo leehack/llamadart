@@ -1,3 +1,7 @@
+## 0.19.7
+
+- Refresh README installation guidance for core `0.19.7`; Apple SwiftPM stays pinned to `leehack/stable-diffusion-native@v0.3.0-3`.
+
 ## 0.19.6
 
 - Refresh README installation guidance for core `0.19.6`; Apple SwiftPM stays pinned to `leehack/stable-diffusion-native@v0.3.0-3`.
