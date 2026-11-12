@@ -1074,9 +1074,12 @@ dependency_overrides: {llamadart_llama_cpp_flutter: {path: resolved companion}}
 
   test('previous companion template fixture matches the hook hash and is an '
       'earlier rebuild of the core release', () {
-    final template = previousTemplateManifest(
-      'PIN',
-    ).replaceAll(RegExp(r'checksum: "[0-9a-f]{64}"'), 'checksum: "CHECKSUM"');
+    final template = previousTemplateManifest('PIN')
+        .replaceAll('\r\n', '\n')
+        .replaceAll(
+          RegExp(r'checksum: "[0-9a-f]{64}"'),
+          'checksum: "CHECKSUM"',
+        );
     final hookSource = File('hook/build.dart').readAsStringSync();
     final expected = RegExp(
       r"_previousLiteRtLmCompanionManifestTemplateSha256 =\s*'([0-9a-f]{64})'",
