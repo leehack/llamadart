@@ -31,6 +31,7 @@ import '../../core/models/inference/reranking.dart';
 import '../../core/models/inference/next_token_scores.dart';
 import '../../core/models/inference/state_identity.dart';
 import '../../core/template/chat_template_engine.dart';
+import '../../core/template/tool_call_grammar_utils.dart';
 import '../../hook/native_release_pins.dart';
 import '../../platform/io/ios_simulator.dart';
 import 'build_identity.dart';
@@ -6666,7 +6667,10 @@ class LlamaCppService {
       final budgetSampler = api.initSampler(
         vocab: vocab,
         config: thinkingBudgetConfig,
-        pauseGrammarDuringReasoning: grammarSampler != nullptr,
+        pauseGrammarDuringReasoning:
+            grammarSampler != nullptr &&
+            (useLazyGrammar ||
+                !ToolCallGrammarUtils.takesForcedOpenThought(params.grammar!)),
         grammarSampler: grammarSampler,
         promptTokens: tokensPtr,
         promptTokenCount: promptTokenCount,

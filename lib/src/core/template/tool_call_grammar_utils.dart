@@ -121,7 +121,7 @@ class ToolCallGrammarUtils {
   /// required because forced-open parsing treats unclosed output as
   /// reasoning. A grammar that already takes the thought is returned as is.
   static String afterForcedOpenThought(String grammar, String endTag) =>
-      grammar.contains(RegExp(r'^root ::= think-body ', multiLine: true))
+      takesForcedOpenThought(grammar)
       ? grammar
       : [
           for (final line in grammar.trimRight().split('\n'))
@@ -132,6 +132,13 @@ class ToolCallGrammarUtils {
           ...excludingRules('think-body', [endTag]),
           r'think-space ::= | " " | "\n"{1,2} [ \t]{0,20}',
         ].join('\n');
+
+  /// Whether [grammar] takes a forced-open thought itself, as
+  /// [afterForcedOpenThought] returns it. A thinking budget must leave such a
+  /// grammar applied while the model reasons: paused, it would resume in the
+  /// thought and take the answer as reasoning.
+  static bool takesForcedOpenThought(String grammar) =>
+      grammar.contains(RegExp(r'^root ::= think-body ', multiLine: true));
 
   /// Rules for [name] matching text without any of [delimiters], as
   /// llama.cpp's `gbnf_excluding_grammar` emits them. Each state is the

@@ -13,6 +13,8 @@ validate against the exact release tag notes.
 
 ## Unreleased
 
+- Fixed constrained JSON (`responseFormat`) and required tool calls ignoring the grammar after a `ThinkingBudget` closes a template-opened thought on llama.cpp (Qwen3.5 and other forced-open thinking templates).
+
 ## 0.19.7
 
 - Keep default WebGPU bridge assets at `v0.1.83` (unchanged from 0.19.6).
