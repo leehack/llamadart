@@ -1810,6 +1810,24 @@ void main() {
       expect(driver.started, isEmpty);
     });
 
+    test('placement with no GPU listed still reports no GPU', () async {
+      driver.status = _available('BLAS\tAccelerate\nCPU\tIntel\n');
+      await expectLater(
+        load(_sdxs(), placement: const ImageModelPlacement(vaeOnCpu: true)),
+        throwsA(
+          isA<LlamaUnsupportedException>().having(
+            (e) => e.message,
+            'message',
+            allOf(
+              contains('reports no GPU, only BLAS, CPU'),
+              isNot(contains('ComputeDevice.auto runs on the CPU')),
+            ),
+          ),
+        ),
+      );
+      expect(driver.started, isEmpty);
+    });
+
     test('an explicit CPU stays on the CPU', () async {
       await load(
         _sdxs(),

@@ -1521,9 +1521,30 @@ for event,flag,native,cancel,good,main in itertools.product(('push','pull_reques
   test('Web Chat Contract installs no system packages', () {
     final steps =
         readWorkflow('ci')['jobs']['web-chat-contract']['steps'] as List;
-    final forbidden = RegExp(r'--with-deps|install-deps|apt-get');
     for (final step in steps) {
-      expect(forbidden.hasMatch('${step['run']}'), isFalse, reason: '$step');
+      expect(_installsSystemPackages(step as Map), isFalse, reason: '$step');
+    }
+  });
+
+  test('the system-package check catches apt, dpkg and apt actions', () {
+    for (final step in <Map>[
+      {'run': 'sudo apt-get install -y libfoo'},
+      {'run': 'sudo apt install libfoo'},
+      {'run': 'sudo apt -y install libfoo'},
+      {'run': 'sudo dpkg -i foo.deb'},
+      {'run': 'npx playwright install --with-deps chromium'},
+      {'run': 'npx playwright install-deps'},
+      {'uses': 'awalsh128/cache-apt-pkgs-action@v1'},
+      {'uses': 'ConorMacBride/install-linux-deps@v1'},
+    ]) {
+      expect(_installsSystemPackages(step), isTrue, reason: '$step');
+    }
+    for (final step in <Map>[
+      {'run': 'npx playwright install chromium'},
+      {'uses': 'actions/checkout@v7'},
+      {'uses': 'subosito/flutter-action@v2'},
+    ]) {
+      expect(_installsSystemPackages(step), isFalse, reason: '$step');
     }
   });
 
@@ -1867,3 +1888,9 @@ for event,flag,native,cancel,good,main in itertools.product(('push','pull_reques
 /// `coverage` version `pubspec.yaml` pins and the LCOV formatter was verified
 /// against.
 const _pinnedCoverageVersion = '1.16.0';
+
+bool _installsSystemPackages(Map step) =>
+    RegExp(
+      r'\bapt(-get)?\b|dpkg|install-deps|--with-deps',
+    ).hasMatch('${step['run']}') ||
+    RegExp(r'apt|dpkg|install-.*deps').hasMatch('${step['uses']}');
