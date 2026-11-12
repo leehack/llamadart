@@ -424,7 +424,9 @@ for model guidance and qualification limits.
 block; zero closes the block immediately. Enable thinking separately with
 `enableThinking: true`. Chat and constrained JSON both resolve omitted
 `startTag`/`endTag` from the selected template; custom delimiters and
-`forcedMessage` pass through unchanged. Budgets need runtime support and cannot
+`forcedMessage` pass through unchanged, except that on Qwen3-Coder XML
+templates (Qwen3.5) with no `endTag` set, a `\n` is appended to `forcedMessage`
+before `</think>`. Budgets need runtime support and cannot
 be combined with media or speculative decoding.
 
 `reusePromptPrefix: false` disables native llama.cpp prefix reuse. It does not

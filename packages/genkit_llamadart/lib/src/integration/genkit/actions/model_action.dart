@@ -343,17 +343,9 @@ Future<genkit.ModelResponse> _runStructuredModel({
   }
 
   final budget = params.thinkingBudget;
-  final tags = budget == null
-      ? null
-      : llama.ChatTemplateEngine.thinkingTagsFor(template.format);
   final resolvedBudget = budget == null
       ? null
-      : llama.ThinkingBudget(
-          maxTokens: budget.maxTokens,
-          startTag: budget.startTag ?? tags!.startTag,
-          endTag: budget.endTag ?? tags!.endTag,
-          forcedMessage: budget.forcedMessage,
-        );
+      : llama.ChatTemplateEngine.resolveThinkingBudget(template.format, budget);
   final rawOutput = StringBuffer();
   await for (final token in runtime.generate(
     template.prompt,

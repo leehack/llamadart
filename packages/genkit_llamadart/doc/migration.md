@@ -2,7 +2,7 @@
 
 ## Upgrading to llamadart 0.19
 
-The current plugin requires llamadart `^0.19.0`. Genkit 1.0, Schemantic 1.0,
+The current plugin requires llamadart `^0.19.7`. Genkit 1.0, Schemantic 1.0,
 the Dart 3.12 minimum and the plugin API are unchanged. Flutter iOS and macOS
 apps must use matching `^0.19.0` runtime companions. See
 [llamadart's migration guide](https://github.com/leehack/llamadart/blob/main/MIGRATION.md).
