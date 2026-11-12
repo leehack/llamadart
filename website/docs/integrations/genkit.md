@@ -11,17 +11,17 @@ and its guides are canonical for adapter behavior.
 
 ## Install the published combination
 
-This example targets published **genkit_llamadart 3.8.0**, **Genkit 1.0.0** and
-**llamadart 0.19.0**, on Dart **3.12+**. The adapter remains independently
+This example targets published **genkit_llamadart 3.9.0**, **Genkit 1.0.0** and
+**llamadart 0.19.7**, on Dart **3.12+**. The adapter remains independently
 versioned after its source moves into this repository. Core's Dart floor remains
 3.10.7; installing this optional adapter raises the application requirement.
 
 ```bash
-dart pub add 'genkit:1.0.0' 'genkit_llamadart:3.8.0' 'llamadart:0.19.0'
+dart pub add 'genkit:1.0.0' 'genkit_llamadart:3.9.0' 'llamadart:0.19.7'
 ```
 
 For a Flutter app use `flutter pub add`. Apple SwiftPM apps using GGUF also add
-`llamadart_llama_cpp_flutter:0.19.0` directly. A LiteRT-LM app instead needs its
+`llamadart_llama_cpp_flutter:0.19.7` directly. A LiteRT-LM app instead needs its
 matching companion; see [installation](../getting-started/installation).
 iOS requires 16.4+ and macOS 14.0+. On Windows install the matching Microsoft
 Visual C++ runtime. CPU is the baseline; GPU placement needs its own qualification.
