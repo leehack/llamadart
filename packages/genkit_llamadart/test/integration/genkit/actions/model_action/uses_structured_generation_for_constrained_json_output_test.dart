@@ -13,6 +13,7 @@ void main() {
         ..templateResult = const llama.LlamaChatTemplateResult(
           prompt: 'prompt',
           format: 0,
+          grammar: 'root ::= "answer"',
           grammarTriggers: [
             llama.GrammarTrigger(type: 0, value: '<json>'),
             llama.GrammarTrigger(type: 1, value: '42', token: 42),
@@ -47,6 +48,7 @@ void main() {
 
       expect(runtime.chatTemplateCallCount, 1);
       expect(runtime.generateCallCount, 1);
+      expect(runtime.lastGenerationParams!.grammar, 'root ::= "answer"');
       expect(
         runtime.lastGenerationParams!.grammarTriggers.map(
           (trigger) => trigger.triggerType,

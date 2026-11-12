@@ -455,6 +455,14 @@ void main() {
     final grammar = GbnfRecognizer(rendered.grammar!);
 
     expect(rendered.thinkingForcedOpen, isFalse);
+    expect(budget.endTag, '</seed:think>');
+    expect(
+      grammar.accepts(
+        '<seed:think>Plan ${budget.forcedMessage}${budget.endTag}',
+        rule: 'seed-thought',
+      ),
+      isTrue,
+    );
     expect(
       ToolCallGrammarUtils.keepsAppliedThroughThought(rendered.grammar!),
       isTrue,
@@ -469,6 +477,13 @@ void main() {
       grammar.accepts(
         '<seed:think>Plan ${budget.forcedMessage}${budget.endTag}'
         'free text',
+      ),
+      isFalse,
+    );
+    expect(
+      grammar.accepts(
+        '<seed:think>Plan ${budget.forcedMessage}${budget.endTag}'
+        '<seed:tool_call>\n<function=get_weather>\n</function>',
       ),
       isFalse,
     );
