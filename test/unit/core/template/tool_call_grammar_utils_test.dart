@@ -234,6 +234,27 @@ void main() {
     },
   );
 
+  test(
+    'keepsAppliedThroughThought also takes a root that models the thought',
+    () {
+      for (final (grammar, kept) in [
+        ('root ::= think-body "</think>" think-space "x"\n', true),
+        ('root ::= seed-thought? text-before-calls (call)\n', true),
+        ('root ::= seed-thought call\n', true),
+        ('root ::= text-before-calls seed-thought call\n', false),
+        ('root ::= seed-thoughts call\n', false),
+        ('root ::= ling3-thought "</think>"? call\n', false),
+        ('root ::= "ok"\n', false),
+      ]) {
+        expect(
+          ToolCallGrammarUtils.keepsAppliedThroughThought(grammar),
+          kept,
+          reason: grammar,
+        );
+      }
+    },
+  );
+
   test('wrapRootGrammar wraps root rule with literals', () {
     const grammar = 'root ::= obj\nobj ::= "{}"\n';
 

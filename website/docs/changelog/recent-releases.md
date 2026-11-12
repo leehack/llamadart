@@ -14,6 +14,7 @@ validate against the exact release tag notes.
 ## Unreleased
 
 - Fixed constrained JSON (`responseFormat`) ignoring the grammar after a `ThinkingBudget` closes a template-opened thought on native llama.cpp (Qwen3.5 and similar), and the same for required tool calls on templates whose grammar takes that thought.
+- Fixed a required tool call on Seed-OSS being unconstrained after a `ThinkingBudget` closes a thought the model opened, on native llama.cpp ([#1958](https://github.com/leehack/llamadart/issues/1958)).
 
 ## 0.19.7
 

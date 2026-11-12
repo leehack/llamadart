@@ -6670,7 +6670,9 @@ class LlamaCppService {
         pauseGrammarDuringReasoning:
             grammarSampler != nullptr &&
             (useLazyGrammar ||
-                !ToolCallGrammarUtils.takesForcedOpenThought(params.grammar!)),
+                !ToolCallGrammarUtils.keepsAppliedThroughThought(
+                  params.grammar!,
+                )),
         grammarSampler: grammarSampler,
         promptTokens: tokensPtr,
         promptTokenCount: promptTokenCount,
