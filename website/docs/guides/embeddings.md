@@ -104,6 +104,10 @@ GGUF embeddings reuse the existing model and its `LlamaModel.projector` or
 explicit opt-in text operations described below. LiteRT-LM uses a separate
 engine, described in [LiteRT-LM embedding engine](#litert-lm-embedding-engine).
 
+A GPU is not automatically faster for small embedding models; measure on the
+target device. On a Pixel 8a, EmbeddingGemma 2 Q8_0 was slower on Vulkan than
+on the CPU ([measurements](../platforms/known-platform-issues#android)).
+
 ## LiteRT-LM embedding engine
 
 `LiteRtLmModelParams(embeddingEngine: true)` selects the separate LiteRT-LM
