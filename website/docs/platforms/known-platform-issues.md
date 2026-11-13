@@ -200,6 +200,16 @@ feature. For which runtime supports which feature, see the
   driver.
   See [native issue #79](https://github.com/leehack/llamadart-native/issues/79).
 
+  Embeddings on a Pixel 8a (Tensor G3, Mali-G715, Android 14) with native
+  `v0.9.0` (llama.cpp `cd959bae9`) and EmbeddingGemma 2 Q8_0 were slower on
+  Vulkan than on the CPU, and the vectors matched the CPU. Warm medians for 9 /
+  46 tokens were 50.8 / 145.7 ms on the CPU and 1251 / 1571 ms with llamadart's
+  settings (24.6x / 10.8x the CPU). llama.cpp's own context defaults (KQV and
+  op offload on, flash attention auto) were also slower, at 903 / 1119 ms
+  (17.8x / 7.7x), so the cause is upstream, not llamadart's policy: Q8_0
+  `MUL_MAT` took 89.9% of attributed GPU time. This is one device, model and
+  quantization ([#1304](https://github.com/leehack/llamadart/issues/1304)).
+
   Keep `auto` or `cpu` on Android unless the app has validated Vulkan on its
   target devices.
 

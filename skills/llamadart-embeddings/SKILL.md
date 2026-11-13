@@ -104,6 +104,7 @@ modalities and speculative strategies before offering them.
   embedding mode per call. Loading and disposal work as in the
   llamadart-getting-started skill.
 - Native v0.7.0 supports EmbeddingGemma-2 text embeddings with 768-dimensional output.
+- A GPU is not automatically faster for small embedding models: a Pixel 8a ran EmbeddingGemma 2 Q8_0 slower on Vulkan than on the CPU, so leave Android embeddings on `auto`/`cpu` unless you measured the target device.
 - Give the embedding model and the chat model separate `LlamaEngine`s. An
   engine holds one model, and switching models per query reloads weights.
 - LiteRT-LM requires an embedding bundle and the explicit selector above;
