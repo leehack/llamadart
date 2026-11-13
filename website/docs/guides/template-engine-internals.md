@@ -115,6 +115,9 @@ sequenceDiagram
   included, as llama.cpp (`cd959bae9`) does. A thinking budget on that format
   forces a line break before `</think>`, as llama.cpp does, so the reply after
   it does not continue the thought.
+- Under a thinking budget these required-call grammars wait through the
+  thought and restart on the reply after its end tag: Qwen3-Coder XML, Ling 3,
+  DeepSeek R1/V3.2/V4, Laguna, Kimi K3, MiniMax M3 and Granite 3.3.
 
 ### 4. Parse stage
 
