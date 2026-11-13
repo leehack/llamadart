@@ -1316,6 +1316,7 @@ Future<void> main(List<String> args) async {
       expect(result.stdout, contains('chat-app-model-cache'));
       expect(result.stdout, contains('chat-app-web-real-model-smoke'));
       expect(result.stdout, contains('chat-app-web-tool-penalty-smoke'));
+      expect(result.stdout, contains('web-tool-choice-grammar'));
       expect(result.stdout, contains('chat-app-web-speech-to-text-smoke'));
       expect(result.stdout, contains('chat-app-web-text-to-speech-smoke'));
       expect(result.stdout, contains('chat-app-web-mock-smoke'));
@@ -2186,7 +2187,7 @@ Future<void> main(List<String> args) async {
       expect(missing.exitCode, 64);
       expect(missing.stderr, contains('--model-url'));
 
-      final result = await runLocalE2e(
+      final anyResponse = await runLocalE2e(
         const [
           '--scenario',
           'chat-app-web-tool-penalty-smoke',
@@ -2198,11 +2199,31 @@ Future<void> main(List<String> args) async {
         projectRoot: '/repo',
         displayShell: LocalE2eDisplayShell.posix,
       );
-      expect(result.exitCode, 0);
+      expect(anyResponse.exitCode, 64);
+      expect(anyResponse.stderr, contains('--allow-any-response'));
+
+      final result = await runLocalE2e(
+        const [
+          '--scenario',
+          'chat-app-web-tool-penalty-smoke',
+          '--model-url',
+          'http://127.0.0.1:7358/models/tools.gguf',
+          '--dry-run',
+        ],
+        projectRoot: '/repo',
+        displayShell: LocalE2eDisplayShell.posix,
+      );
+      expect(result.exitCode, 0, reason: result.stderr);
+      expect(result.stdout, isNot(contains('--allow-any-response')));
+      expect(result.stdout, contains('--expect 12'));
       expect(
         result.stdout,
         contains(
-          '--tools --expect-penalty-prompt-tokens-probe '
+          "--tools --prompt 'What is the weather in Paris right now?' "
+          '--max-tokens 128 --context-size 2048 '
+          '--expect-tool-call getWeather --expect-tool-argument city=Paris '
+          '--expect-tool-result thunderstorms '
+          '--expect-penalty-prompt-tokens-probe '
           '--expect-penalty-prompt-tokens-option absent --expect-lazy-grammar',
         ),
       );
@@ -3556,6 +3577,42 @@ dev_dependencies:
       ).readAsStringSync();
       expect(e2e, contains("@Tags(['local-only', 'e2e'])"));
       expect(e2e, contains("'../../../build/decision_web_e2e/'"));
+    });
+
+    test('dry-runs the Web tool-choice suite with pinned and legacy assets '
+        'before the WebGPU Chrome test', () async {
+      final result = await runLocalE2e(
+        const ['--scenario', 'web-tool-choice-grammar', '--dry-run'],
+        projectRoot: '/repo',
+        displayShell: LocalE2eDisplayShell.posix,
+      );
+
+      expect(result.exitCode, 0, reason: result.stderr);
+      final lines = result.stdout.split('\n');
+      final pinned = lines.indexWhere(
+        (line) => line.contains(
+          'WEBGPU_BRIDGE_OUT_DIR=/repo/build/web_tool_choice_grammar/bridge '
+          'bash scripts/fetch_webgpu_bridge_assets.sh',
+        ),
+      );
+      final legacy = lines.indexWhere(
+        (line) =>
+            RegExp(r'ASSETS_TAG=v0\.1\.81 ').hasMatch(line) &&
+            line.contains(
+              'WEBGPU_BRIDGE_OUT_DIR='
+              '/repo/build/web_tool_choice_grammar/bridge_legacy',
+            ) &&
+            line.contains('bash scripts/fetch_webgpu_bridge_assets.sh'),
+      );
+      final test = lines.indexWhere(
+        (line) => line.contains(
+          'dart test -p chrome-webgpu --run-skipped -t local-only '
+          'test/e2e/webgpu/tool_choice_grammar_e2e_test.dart',
+        ),
+      );
+      expect(pinned, isNonNegative, reason: result.stdout);
+      expect(legacy, greaterThan(pinned), reason: result.stdout);
+      expect(test, greaterThan(legacy), reason: result.stdout);
     });
 
     test('dry-runs Web speech cancellation with pinned assets and '
