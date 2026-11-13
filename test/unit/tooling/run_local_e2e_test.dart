@@ -734,6 +734,42 @@ Future<void> main(List<String> args) async {
   );
 
   test(
+    'WebGPU multimodal embedding qualification requires gpuLayers above 0',
+    () async {
+      final project = await Directory.systemTemp.createTemp(
+        'local-e2e-webgpu-',
+      );
+      addTearDown(() => project.delete(recursive: true));
+      final configFile = File(
+        '${project.path}/build/webgpu_embeddings_e2e/config.json',
+      )..createSync(recursive: true);
+
+      final missing = await runLocalE2e([
+        '--scenario',
+        'web-multimodal-embeddings-webgpu',
+      ], projectRoot: '${project.path}/absent');
+      expect(missing.exitCode, 64);
+
+      for (final contents in ['not json', '{}', '{"gpuLayers": 0}']) {
+        configFile.writeAsStringSync(contents);
+        final result = await runLocalE2e([
+          '--scenario',
+          'web-multimodal-embeddings-webgpu',
+        ], projectRoot: project.path);
+        expect(result.exitCode, 64, reason: contents);
+        expect(result.stderr, contains('gpuLayers above 0'));
+      }
+
+      final dryRun = await runLocalE2e([
+        '--scenario',
+        'web-multimodal-embeddings-webgpu',
+        '--dry-run',
+      ], projectRoot: project.path);
+      expect(dryRun.exitCode, 0);
+    },
+  );
+
+  test(
     'native multimodal embedding qualification requires local weights and references',
     () async {
       const environment = {

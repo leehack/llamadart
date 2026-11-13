@@ -1588,6 +1588,30 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
       ],
     ),
     LocalE2eScenario(
+      name: 'web-multimodal-embeddings-webgpu',
+      group: LocalE2eScenarioGroup.dartLocalOnly,
+      description:
+          'Qualify direct/worker Web media embeddings on a WebGPU runtime (config gpuLayers above 0) against local native reference vectors; no downloads. See doc/multimodal_embeddings_web.md.',
+      requiresDevice: false,
+      stepsBuilder: (context) => [
+        LocalE2eCommandStep(
+          workingDirectory: context.projectRoot,
+          executable: 'dart',
+          arguments: const [
+            'test',
+            '-p',
+            'chrome-webgpu',
+            '--run-skipped',
+            '--tags',
+            'local-only',
+            'test/e2e/backends/multimodal_embedding_web_e2e_test.dart',
+          ],
+          description:
+              'Web media embedding WebGPU qualification (local assets/weights required)',
+        ),
+      ],
+    ),
+    LocalE2eScenario(
       name: 'native-multimodal-embeddings',
       group: LocalE2eScenarioGroup.dartLocalOnly,
       description:
@@ -3381,6 +3405,27 @@ Future<LocalE2eResult> runLocalE2e(
               '$name is required for text-embedding-retrieval; see doc/embedding_text_helpers.md.\n',
         );
       }
+    }
+  }
+
+  if (scenario.name == 'web-multimodal-embeddings-webgpu' && !parsed.dryRun) {
+    final configFile = File('$root/build/webgpu_embeddings_e2e/config.json');
+    Object? gpuLayers;
+    if (configFile.existsSync()) {
+      try {
+        final decoded = jsonDecode(configFile.readAsStringSync());
+        if (decoded is Map) gpuLayers = decoded['gpuLayers'];
+      } on FormatException {
+        // Reported below as a missing gpuLayers.
+      }
+    }
+    if (gpuLayers is! int || gpuLayers <= 0) {
+      return const LocalE2eResult(
+        64,
+        stderr:
+            'web-multimodal-embeddings-webgpu requires build/webgpu_embeddings_e2e/config.json '
+            'with gpuLayers above 0; gpuLayers 0 runs on CPU. See doc/multimodal_embeddings_web.md.\n',
+      );
     }
   }
 
