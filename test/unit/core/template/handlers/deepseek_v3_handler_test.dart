@@ -45,7 +45,7 @@ void main() {
     });
   });
 
-  test('DeepseekV3Handler supports system prepend and tool_call parsing', () {
+  test('DeepseekV3Handler renders the system message without a BOS prepend', () {
     final handler = DeepseekV3Handler();
     final tools = [
       ToolDefinition(
@@ -68,7 +68,8 @@ void main() {
       enableThinking: false,
     );
 
-    expect(rendered.prompt, contains('<BOS>sys|hello'));
+    expect(rendered.prompt, contains('sys|hello'));
+    expect(rendered.prompt, isNot(contains('<BOS>')));
     expect(rendered.prompt, endsWith('</think>\n'));
     expect(rendered.grammar, contains('<｜tool▁calls▁begin｜>'));
     expect(rendered.grammar, contains('city'));

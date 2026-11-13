@@ -71,7 +71,9 @@ File writeSyntheticModernBertGguf(
 /// [eosTokenId] overrides the tokenizer default for special-token compatibility
 /// tests. [architecture] also accepts `llada`, whose tensors share this layout and
 /// whose runtime forces non-causal attention even with a true metadata value.
-/// [uint32Metadata] adds keys the architecture loader ignores.
+/// [uint32Metadata] adds keys the architecture loader ignores. [bosText]
+/// replaces the text of the `<s>` token. [tokenizerModel] replaces the
+/// default `llama` vocabulary type.
 File writeSyntheticLlamaGguf(
   String path, {
   String architecture = 'llama',
@@ -80,6 +82,8 @@ File writeSyntheticLlamaGguf(
   int? eosTokenId,
   int? poolingType,
   bool? causalAttention,
+  String? bosText,
+  String tokenizerModel = 'llama',
   int contextLength = 1024,
   int seed = 0,
 }) {
@@ -88,6 +92,11 @@ File writeSyntheticLlamaGguf(
   return _writeGguf(
     path,
     arch: arch,
+    tokenizerModel: tokenizerModel,
+    tokens: [
+      for (final (i, t) in _tokens.indexed)
+        if (i == 1 && bosText != null) bosText else t,
+    ],
     metadata: {
       if (eosTokenId != null)
         'tokenizer.ggml.eos_token_id': _GgufValue.uint32(eosTokenId),
@@ -243,14 +252,17 @@ File _writeGguf(
   required String arch,
   required Map<String, _GgufValue> metadata,
   required Map<String, (List<int>, List<double>)> tensors,
+  List<String>? tokens,
+  String tokenizerModel = 'llama',
 }) {
+  tokens ??= _tokens;
   final allMetadata = <String, _GgufValue>{
     'general.architecture': _GgufValue.string(arch),
     ...metadata,
-    'tokenizer.ggml.model': _GgufValue.string('llama'),
-    'tokenizer.ggml.tokens': _GgufValue.strings(_tokens),
+    'tokenizer.ggml.model': _GgufValue.string(tokenizerModel),
+    'tokenizer.ggml.tokens': _GgufValue.strings(tokens),
     'tokenizer.ggml.scores': _GgufValue.float32s(
-      List<double>.filled(_tokens.length, 0),
+      List<double>.filled(tokens.length, 0),
     ),
     'tokenizer.ggml.token_type': _GgufValue.int32s([
       2,

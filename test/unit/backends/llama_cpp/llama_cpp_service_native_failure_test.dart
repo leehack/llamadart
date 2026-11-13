@@ -302,6 +302,24 @@ void main() {
         BackendGenerationLimit.maxTokens,
       );
     });
+
+    test('getMetadata omits the vocabulary BOS and EOS text of a free-only '
+        'model ($isWindows)', () {
+      start(isWindows: isWindows);
+      expect(service.getMetadata(model)['tokenizer.ggml.bos_token'], '<s>');
+      barrier.throwing.add('llama_dart_tokenize');
+      barrier.message = 'boom';
+      expect(
+        () => service.tokenize(model, 'ab', true),
+        throwsA(_caught<LlamaInferenceException>('llama_tokenize')),
+      );
+      barrier.throwing.clear();
+
+      final metadata = service.getMetadata(model);
+      expect(metadata, contains('general.architecture'));
+      expect(metadata.containsKey('tokenizer.ggml.bos_token'), !isWindows);
+      expect(metadata.containsKey('tokenizer.ggml.eos_token'), !isWindows);
+    });
   }
 
   test('a token outside the vocabulary is a typed error from detokenize, '

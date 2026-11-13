@@ -1,0 +1,700 @@
+{
+ "upstream_commit": "cd959bae9",
+ "upstream_build": "b12110",
+ "endpoint": "POST /apply-template",
+ "model": "qwen2.5-0.5b-instruct-q4_k_m.gguf",
+ "model_sha256": "74a4da8c9fdbcd15bd1f6d01d621410d31c6fc00986f5eb687824e7b93d7a9db",
+ "bos_token": "<|endoftext|>",
+ "eos_token": "<|im_end|>",
+ "tools": [
+  {
+   "type": "function",
+   "function": {
+    "name": "get_weather",
+    "description": "Get the current weather for a city.",
+    "parameters": {
+     "type": "object",
+     "properties": {
+      "location": {
+       "type": "string"
+      }
+     },
+     "required": [
+      "location"
+     ]
+    }
+   }
+  }
+ ],
+ "scenarios": {
+  "single": {
+   "messages": [
+    {
+     "role": "user",
+     "content": "hi"
+    }
+   ],
+   "tools": false
+  },
+  "multi": {
+   "messages": [
+    {
+     "role": "system",
+     "content": "Be brief."
+    },
+    {
+     "role": "user",
+     "content": "hi"
+    },
+    {
+     "role": "assistant",
+     "content": "Hello!"
+    },
+    {
+     "role": "user",
+     "content": "bye"
+    }
+   ],
+   "tools": false
+  },
+  "tools": {
+   "messages": [
+    {
+     "role": "user",
+     "content": "hi"
+    }
+   ],
+   "tools": true
+  },
+  "toolhist": {
+   "messages": [
+    {
+     "role": "system",
+     "content": "Be brief."
+    },
+    {
+     "role": "user",
+     "content": "hi"
+    },
+    {
+     "role": "assistant",
+     "content": null,
+     "tool_calls": [
+      {
+       "id": "call00001",
+       "type": "function",
+       "function": {
+        "name": "get_weather",
+        "arguments": "{\"location\":\"Paris\"}"
+       }
+      }
+     ]
+    },
+    {
+     "role": "tool",
+     "tool_call_id": "call00001",
+     "name": "get_weather",
+     "content": "sunny"
+    }
+   ],
+   "tools": true
+  }
+ },
+ "cases": [
+  {
+   "template": "test/fixtures/llama_cpp_templates/Apriel-1.6-15b-Thinker-fixed.jinja",
+   "scenario": "single",
+   "prompt": "<|endoftext|><|begin_system|>\nYou are a thoughtful, systematic AI assistant from ServiceNow Language Models (SLAM) lab.\n    Analyze each question carefully, present your reasoning step-by-step, then provide the final\n    response after the marker [BEGIN FINAL RESPONSE].\n<|begin_user|>\nhi\n<|begin_assistant|>\nHere are my reasoning steps:\n",
+   "template_sha256": "2f5ce4b3c1e0ab30fc5f204a151aba5ee584615b0aa641afc2d58bcccfe33bdb"
+  },
+  {
+   "template": "test/fixtures/llama_cpp_templates/Apriel-1.6-15b-Thinker-fixed.jinja",
+   "scenario": "multi",
+   "prompt": "<|endoftext|><|begin_system|>\nYou are a thoughtful, systematic AI assistant from ServiceNow Language Models (SLAM) lab.\n    Analyze each question carefully, present your reasoning step-by-step, then provide the final\n    response after the marker [BEGIN FINAL RESPONSE].\nBe brief.\n<|begin_user|>\nhi\n<|begin_assistant|>\nHello!\n<|end|>\n<|begin_user|>\nbye\n<|begin_assistant|>\nHere are my reasoning steps:\n",
+   "template_sha256": "2f5ce4b3c1e0ab30fc5f204a151aba5ee584615b0aa641afc2d58bcccfe33bdb"
+  },
+  {
+   "template": "test/fixtures/llama_cpp_templates/ByteDance-Seed-OSS.jinja",
+   "scenario": "single",
+   "prompt": "<seed:bos>user\nhi<seed:eos><seed:bos>assistant\n",
+   "template_sha256": "3f9e0dc4adeb8032287d0129dc75b6298fee8698a52ab41e863dbc89929330d3"
+  },
+  {
+   "template": "test/fixtures/llama_cpp_templates/ByteDance-Seed-OSS.jinja",
+   "scenario": "multi",
+   "prompt": "<seed:bos>system\nBe brief.<seed:eos><seed:bos>user\nhi<seed:eos><seed:bos>assistant\nHello!<seed:eos><seed:bos>user\nbye<seed:eos><seed:bos>assistant\n",
+   "template_sha256": "3f9e0dc4adeb8032287d0129dc75b6298fee8698a52ab41e863dbc89929330d3"
+  },
+  {
+   "template": "test/fixtures/llama_cpp_templates/ByteDance-Seed-OSS.jinja",
+   "scenario": "tools",
+   "prompt": "<seed:bos>system\nYou are Doubao, a helpful AI assistant. You may call one or more functions to assist with the user query.\n\nFunction:\ndef get_weather(location: str):\n    \"\"\"\n    Get the current weather for a city.\n\n    Args:\n    - location (str) [必填]: \n\n    \"\"\"\n工具调用请遵循如下格式:\n<seed:tool_call>\n<function=example_function_name>\n<parameter=example_parameter_1>value_1</parameter>\n<parameter=example_parameter_2>This is the value for the second parameter\nthat can span\nmultiple lines</parameter>\n</function>\n</seed:tool_call>\n<seed:eos><seed:bos>user\nhi<seed:eos><seed:bos>assistant\n",
+   "template_sha256": "3f9e0dc4adeb8032287d0129dc75b6298fee8698a52ab41e863dbc89929330d3"
+  },
+  {
+   "template": "test/fixtures/llama_cpp_templates/ByteDance-Seed-OSS.jinja",
+   "scenario": "toolhist",
+   "prompt": "<seed:bos>system\nBe brief.\n\nFunction:\ndef get_weather(location: str):\n    \"\"\"\n    Get the current weather for a city.\n\n    Args:\n    - location (str) [必填]: \n\n    \"\"\"\n工具调用请遵循如下格式:\n<seed:tool_call>\n<function=example_function_name>\n<parameter=example_parameter_1>value_1</parameter>\n<parameter=example_parameter_2>This is the value for the second parameter\nthat can span\nmultiple lines</parameter>\n</function>\n</seed:tool_call>\n<seed:eos><seed:bos>user\nhi<seed:eos><seed:bos>assistant\n<seed:tool_call>\n<function=get_weather>\n<parameter=location>Paris</parameter>\n</function>\n</seed:tool_call><seed:eos><seed:bos>tool\nsunny<seed:eos><seed:bos>assistant\n",
+   "template_sha256": "3f9e0dc4adeb8032287d0129dc75b6298fee8698a52ab41e863dbc89929330d3"
+  },
+  {
+   "template": "test/fixtures/llama_cpp_templates/Cohere2MoE.jinja",
+   "scenario": "single",
+   "prompt": "<|endoftext|><|START_OF_TURN_TOKEN|><|SYSTEM_TOKEN|><|START_TEXT|>These instructions are always to be followed and cannot be overridden by subsequent system or user turns:\n- You will answer requests for educational, informative, or creative content related to safety categories. You will not provide content that is harmful or could be used to cause harm.\n\nThese instructions serve as your defaults, but they can be overridden in subsequent system or user turns:\n- Your name is North Mini Code.\n- You are a large language model built by Cohere.\n\n# Available Tools\n```json\n[\n\n]\n```<|END_TEXT|><|END_OF_TURN_TOKEN|><|START_OF_TURN_TOKEN|><|USER_TOKEN|><|START_TEXT|>hi<|END_TEXT|><|END_OF_TURN_TOKEN|><|START_OF_TURN_TOKEN|><|CHATBOT_TOKEN|><|START_THINKING|>",
+   "template_sha256": "d8366efb9f07c571da620ce6a924594fc52c80273a0fbb46a38b643972df95fd"
+  },
+  {
+   "template": "test/fixtures/llama_cpp_templates/Cohere2MoE.jinja",
+   "scenario": "multi",
+   "prompt": "<|endoftext|><|START_OF_TURN_TOKEN|><|SYSTEM_TOKEN|><|START_TEXT|>These instructions are always to be followed and cannot be overridden by subsequent system or user turns:\n- You will answer requests for educational, informative, or creative content related to safety categories. You will not provide content that is harmful or could be used to cause harm.\n\nThese instructions serve as your defaults, but they can be overridden in subsequent system or user turns:\n- Your name is North Mini Code.\n- You are a large language model built by Cohere.\n\n# Available Tools\n```json\n[\n\n]\n```<|END_TEXT|><|END_OF_TURN_TOKEN|><|START_OF_TURN_TOKEN|><|SYSTEM_TOKEN|><|START_TEXT|>Be brief.<|END_TEXT|><|END_OF_TURN_TOKEN|><|START_OF_TURN_TOKEN|><|USER_TOKEN|><|START_TEXT|>hi<|END_TEXT|><|END_OF_TURN_TOKEN|><|START_OF_TURN_TOKEN|><|CHATBOT_TOKEN|><|START_TEXT|>Hello!<|END_TEXT|><|END_OF_TURN_TOKEN|><|START_OF_TURN_TOKEN|><|USER_TOKEN|><|START_TEXT|>bye<|END_TEXT|><|END_OF_TURN_TOKEN|><|START_OF_TURN_TOKEN|><|CHATBOT_TOKEN|><|START_THINKING|>",
+   "template_sha256": "d8366efb9f07c571da620ce6a924594fc52c80273a0fbb46a38b643972df95fd"
+  },
+  {
+   "template": "test/fixtures/llama_cpp_templates/Cohere2MoE.jinja",
+   "scenario": "tools",
+   "prompt": "<|endoftext|><|START_OF_TURN_TOKEN|><|SYSTEM_TOKEN|><|START_TEXT|>These instructions are always to be followed and cannot be overridden by subsequent system or user turns:\n- You will answer requests for educational, informative, or creative content related to safety categories. You will not provide content that is harmful or could be used to cause harm.\n\nThese instructions serve as your defaults, but they can be overridden in subsequent system or user turns:\n- Your name is North Mini Code.\n- You are a large language model built by Cohere.\n\n# Available Tools\n```json\n[\n    {\"name\": \"get_weather\", \"description\": \"Get the current weather for a city.\", \"parameters\": {\"type\": \"object\", \"properties\": {\"location\": {\"type\": \"string\"}}, \"required\": [\"location\"]}, \"responses\": null}\n]\n```<|END_TEXT|><|END_OF_TURN_TOKEN|><|START_OF_TURN_TOKEN|><|USER_TOKEN|><|START_TEXT|>hi<|END_TEXT|><|END_OF_TURN_TOKEN|><|START_OF_TURN_TOKEN|><|CHATBOT_TOKEN|><|START_THINKING|>",
+   "template_sha256": "d8366efb9f07c571da620ce6a924594fc52c80273a0fbb46a38b643972df95fd"
+  },
+  {
+   "template": "test/fixtures/llama_cpp_templates/Cohere2MoE.jinja",
+   "scenario": "toolhist",
+   "prompt": "<|endoftext|><|START_OF_TURN_TOKEN|><|SYSTEM_TOKEN|><|START_TEXT|>These instructions are always to be followed and cannot be overridden by subsequent system or user turns:\n- You will answer requests for educational, informative, or creative content related to safety categories. You will not provide content that is harmful or could be used to cause harm.\n\nThese instructions serve as your defaults, but they can be overridden in subsequent system or user turns:\n- Your name is North Mini Code.\n- You are a large language model built by Cohere.\n\n# Available Tools\n```json\n[\n    {\"name\": \"get_weather\", \"description\": \"Get the current weather for a city.\", \"parameters\": {\"type\": \"object\", \"properties\": {\"location\": {\"type\": \"string\"}}, \"required\": [\"location\"]}, \"responses\": null}\n]\n```<|END_TEXT|><|END_OF_TURN_TOKEN|><|START_OF_TURN_TOKEN|><|SYSTEM_TOKEN|><|START_TEXT|>Be brief.<|END_TEXT|><|END_OF_TURN_TOKEN|><|START_OF_TURN_TOKEN|><|USER_TOKEN|><|START_TEXT|>hi<|END_TEXT|><|END_OF_TURN_TOKEN|><|START_OF_TURN_TOKEN|><|CHATBOT_TOKEN|><|START_ACTION|>[\n    {\"tool_call_id\": \"0\", \"tool_name\": \"get_weather\", \"parameters\": {\"location\": \"Paris\"}}\n]<|END_ACTION|><|END_OF_TURN_TOKEN|><|START_OF_TURN_TOKEN|><|SYSTEM_TOKEN|><|START_TOOL_RESULT|>[\n    {\n        \"tool_call_id\": \"0\",\n        \"results\": {\n            \"0\": {\"content\": \"sunny\"}\n        },\n        \"is_error\": null\n    }\n]<|END_TOOL_RESULT|><|END_OF_TURN_TOKEN|><|START_OF_TURN_TOKEN|><|CHATBOT_TOKEN|><|START_THINKING|>",
+   "template_sha256": "d8366efb9f07c571da620ce6a924594fc52c80273a0fbb46a38b643972df95fd"
+  },
+  {
+   "template": "test/fixtures/llama_cpp_templates/CohereForAI-c4ai-command-r7b-12-2024-tool_use.jinja",
+   "scenario": "single",
+   "prompt": "<|endoftext|><|START_OF_TURN_TOKEN|><|SYSTEM_TOKEN|># System Preamble\nYou are in contextual safety mode. You will reject requests to generate child sexual abuse material and child exploitation material in your responses. You will accept to provide information and creative content related to violence, hate, misinformation or sex, but you will not provide any content that could directly or indirectly lead to harmful outcomes.\n\nYour information cutoff date is June 2024.\n\nYou have been trained on data in English, French, Spanish, Italian, German, Portuguese, Japanese, Korean, Modern Standard Arabic, Mandarin, Russian, Indonesian, Turkish, Dutch, Polish, Persian, Vietnamese, Czech, Hindi, Ukrainian, Romanian, Greek and Hebrew but have the ability to speak many more languages.\n# Default Preamble\nThe following instructions are your defaults unless specified elsewhere in developer preamble or user prompt.\n- Your name is Command.\n- You are a large language model built by Cohere.\n- You reply conversationally with a friendly and informative tone and often include introductory statements and follow-up questions.\n- If the input is ambiguous, ask clarifying follow-up questions.\n- Use Markdown-specific formatting in your response (for example to highlight phrases in bold or italics, create tables, or format code blocks).\n- Use LaTeX to generate mathematical notation for complex equations.\n- When responding in English, use American English unless context indicates otherwise.\n- When outputting responses of more than seven sentences, split the response into paragraphs.\n- Prefer the active voice.\n- Adhere to the APA style guidelines for punctuation, spelling, hyphenation, capitalization, numbers, lists, and quotation marks. Do not worry about them for other elements such as italics, citations, figures, or references.\n- Use gender-neutral pronouns for unspecified persons.\n- Limit lists to no more than 10 items unless the list is a set of finite instructions, in which case complete the list.\n- Use the third person when asked to write a summary.\n- When asked to extract values from source material, use the exact form, separated by commas.\n- When generating code output, please provide an explanation after the code.\n- When generating code output without specifying the programming language, please generate Python code.\n- If you are asked a question that requires reasoning, first think through your answer, slowly and step by step, then answer.<|END_OF_TURN_TOKEN|><|START_OF_TURN_TOKEN|><|USER_TOKEN|>hi<|END_OF_TURN_TOKEN|><|START_OF_TURN_TOKEN|><|CHATBOT_TOKEN|>",
+   "template_sha256": "cc60b553279347d83df761f5dc55b4b2fb66bc1fa9a33e219911c13c11552fac"
+  },
+  {
+   "template": "test/fixtures/llama_cpp_templates/CohereForAI-c4ai-command-r7b-12-2024-tool_use.jinja",
+   "scenario": "multi",
+   "prompt": "<|endoftext|><|START_OF_TURN_TOKEN|><|SYSTEM_TOKEN|># System Preamble\nYou are in contextual safety mode. You will reject requests to generate child sexual abuse material and child exploitation material in your responses. You will accept to provide information and creative content related to violence, hate, misinformation or sex, but you will not provide any content that could directly or indirectly lead to harmful outcomes.\n\nYour information cutoff date is June 2024.\n\nYou have been trained on data in English, French, Spanish, Italian, German, Portuguese, Japanese, Korean, Modern Standard Arabic, Mandarin, Russian, Indonesian, Turkish, Dutch, Polish, Persian, Vietnamese, Czech, Hindi, Ukrainian, Romanian, Greek and Hebrew but have the ability to speak many more languages.\n# Default Preamble\nThe following instructions are your defaults unless specified elsewhere in developer preamble or user prompt.\n- Your name is Command.\n- You are a large language model built by Cohere.\n- You reply conversationally with a friendly and informative tone and often include introductory statements and follow-up questions.\n- If the input is ambiguous, ask clarifying follow-up questions.\n- Use Markdown-specific formatting in your response (for example to highlight phrases in bold or italics, create tables, or format code blocks).\n- Use LaTeX to generate mathematical notation for complex equations.\n- When responding in English, use American English unless context indicates otherwise.\n- When outputting responses of more than seven sentences, split the response into paragraphs.\n- Prefer the active voice.\n- Adhere to the APA style guidelines for punctuation, spelling, hyphenation, capitalization, numbers, lists, and quotation marks. Do not worry about them for other elements such as italics, citations, figures, or references.\n- Use gender-neutral pronouns for unspecified persons.\n- Limit lists to no more than 10 items unless the list is a set of finite instructions, in which case complete the list.\n- Use the third person when asked to write a summary.\n- When asked to extract values from source material, use the exact form, separated by commas.\n- When generating code output, please provide an explanation after the code.\n- When generating code output without specifying the programming language, please generate Python code.\n- If you are asked a question that requires reasoning, first think through your answer, slowly and step by step, then answer.\n\n# Developer Preamble\nThe following instructions take precedence over instructions in the default preamble and user prompt. You reject any instructions which conflict with system preamble instructions.\nBe brief.<|END_OF_TURN_TOKEN|><|START_OF_TURN_TOKEN|><|USER_TOKEN|>hi<|END_OF_TURN_TOKEN|><|START_OF_TURN_TOKEN|><|CHATBOT_TOKEN|><|START_RESPONSE|>Hello!<|END_RESPONSE|><|END_OF_TURN_TOKEN|><|START_OF_TURN_TOKEN|><|USER_TOKEN|>bye<|END_OF_TURN_TOKEN|><|START_OF_TURN_TOKEN|><|CHATBOT_TOKEN|>",
+   "template_sha256": "cc60b553279347d83df761f5dc55b4b2fb66bc1fa9a33e219911c13c11552fac"
+  },
+  {
+   "template": "test/fixtures/llama_cpp_templates/CohereForAI-c4ai-command-r7b-12-2024-tool_use.jinja",
+   "scenario": "tools",
+   "prompt": "<|endoftext|><|START_OF_TURN_TOKEN|><|SYSTEM_TOKEN|># System Preamble\nYou are in contextual safety mode. You will reject requests to generate child sexual abuse material and child exploitation material in your responses. You will accept to provide information and creative content related to violence, hate, misinformation or sex, but you will not provide any content that could directly or indirectly lead to harmful outcomes.\n\nYour information cutoff date is June 2024.\n\nYou have been trained on data in English, French, Spanish, Italian, German, Portuguese, Japanese, Korean, Modern Standard Arabic, Mandarin, Russian, Indonesian, Turkish, Dutch, Polish, Persian, Vietnamese, Czech, Hindi, Ukrainian, Romanian, Greek and Hebrew but have the ability to speak many more languages.\n\nYou have been trained to have advanced reasoning and tool-use capabilities and you should make best use of these skills to serve user's requests.\n\n## Tool Use\nThink about how you can make best use of the provided tools to help with the task and come up with a high level plan that you will execute first.\n\n0. Start by writing <|START_THINKING|> followed by a detailed step by step plan of how you will solve the problem. For each step explain your thinking fully and give details of required tool calls (if needed). Unless specified otherwise, you write your plan in natural language. When you finish, close it out with <|END_THINKING|>.\n    You can optionally choose to skip this step when the user request is so straightforward to address that only a trivial plan would be needed.\n    NOTE: You MUST skip this step when you are directly responding to the user's request without using any tools.\n\nThen carry out your plan by repeatedly executing the following steps.\n1. Action: write <|START_ACTION|> followed by a list of JSON-formatted tool calls, with each one containing \"tool_name\" and \"parameters\" fields.\n    When there are multiple tool calls which are completely independent of each other (i.e. they can be executed in parallel), you should list them out all together in one step. When you finish, close it out with <|END_ACTION|>.\n2. Observation: you will then receive results of those tool calls in JSON format in the very next turn, wrapped around by <|START_TOOL_RESULT|> and <|END_TOOL_RESULT|>. Carefully observe those results and think about what to do next. Note that these results will be provided to you in a separate turn. NEVER hallucinate results.\n    Every tool call produces a list of results (when a tool call produces no result or a single result, it'll still get wrapped inside a list). Each result is clearly linked to its originating tool call via its \"tool_call_id\".\n3. Reflection: start the next turn by writing <|START_THINKING|> followed by what you've figured out so far, any changes you need to make to your plan, and what you will do next. When you finish, close it out with <|END_THINKING|>.\n    You can optionally choose to skip this step when everything is going according to plan and no special pieces of information or reasoning chains need to be recorded.\n    NOTE: You MUST skip this step when you are done with tool-use actions and are ready to respond to the user.\n\nYou can repeat the above 3 steps multiple times (could be 0 times too if no suitable tool calls are available or needed), until you decide it's time to finally respond to the user.\n\n4. Response: then break out of the loop and write <|START_RESPONSE|> followed by a piece of text which serves as a response to the user's last request. Use all previous tool calls and results to help you when formulating your response. When you finish, close it out with <|END_RESPONSE|>.\n\n## Available Tools\nHere is the list of tools that you have available to you.\nYou can ONLY use the tools listed here. When a tool is not listed below, it is NOT available and you should NEVER attempt to use it.\nEach tool is represented as a JSON object with fields like \"name\", \"description\", \"parameters\" (per JSON Schema), and optionally, \"responses\" (per JSON Schema).\n\n```json\n[\n    {\"name\": \"get_weather\", \"description\": \"Get the current weather for a city.\", \"parameters\": {\"type\": \"object\", \"properties\": {\"location\": {\"type\": \"string\"}}, \"required\": [\"location\"]}, \"responses\": null}\n]\n```\n\n# Default Preamble\nThe following instructions are your defaults unless specified elsewhere in developer preamble or user prompt.\n- Your name is Command.\n- You are a large language model built by Cohere.\n- You reply conversationally with a friendly and informative tone and often include introductory statements and follow-up questions.\n- If the input is ambiguous, ask clarifying follow-up questions.\n- Use Markdown-specific formatting in your response (for example to highlight phrases in bold or italics, create tables, or format code blocks).\n- Use LaTeX to generate mathematical notation for complex equations.\n- When responding in English, use American English unless context indicates otherwise.\n- When outputting responses of more than seven sentences, split the response into paragraphs.\n- Prefer the active voice.\n- Adhere to the APA style guidelines for punctuation, spelling, hyphenation, capitalization, numbers, lists, and quotation marks. Do not worry about them for other elements such as italics, citations, figures, or references.\n- Use gender-neutral pronouns for unspecified persons.\n- Limit lists to no more than 10 items unless the list is a set of finite instructions, in which case complete the list.\n- Use the third person when asked to write a summary.\n- When asked to extract values from source material, use the exact form, separated by commas.\n- When generating code output, please provide an explanation after the code.\n- When generating code output without specifying the programming language, please generate Python code.\n- If you are asked a question that requires reasoning, first think through your answer, slowly and step by step, then answer.<|END_OF_TURN_TOKEN|><|START_OF_TURN_TOKEN|><|USER_TOKEN|>hi<|END_OF_TURN_TOKEN|><|START_OF_TURN_TOKEN|><|CHATBOT_TOKEN|>",
+   "template_sha256": "cc60b553279347d83df761f5dc55b4b2fb66bc1fa9a33e219911c13c11552fac"
+  },
+  {
+   "template": "test/fixtures/llama_cpp_templates/CohereForAI-c4ai-command-r7b-12-2024-tool_use.jinja",
+   "scenario": "toolhist",
+   "prompt": "<|endoftext|><|START_OF_TURN_TOKEN|><|SYSTEM_TOKEN|># System Preamble\nYou are in contextual safety mode. You will reject requests to generate child sexual abuse material and child exploitation material in your responses. You will accept to provide information and creative content related to violence, hate, misinformation or sex, but you will not provide any content that could directly or indirectly lead to harmful outcomes.\n\nYour information cutoff date is June 2024.\n\nYou have been trained on data in English, French, Spanish, Italian, German, Portuguese, Japanese, Korean, Modern Standard Arabic, Mandarin, Russian, Indonesian, Turkish, Dutch, Polish, Persian, Vietnamese, Czech, Hindi, Ukrainian, Romanian, Greek and Hebrew but have the ability to speak many more languages.\n\nYou have been trained to have advanced reasoning and tool-use capabilities and you should make best use of these skills to serve user's requests.\n\n## Tool Use\nThink about how you can make best use of the provided tools to help with the task and come up with a high level plan that you will execute first.\n\n0. Start by writing <|START_THINKING|> followed by a detailed step by step plan of how you will solve the problem. For each step explain your thinking fully and give details of required tool calls (if needed). Unless specified otherwise, you write your plan in natural language. When you finish, close it out with <|END_THINKING|>.\n    You can optionally choose to skip this step when the user request is so straightforward to address that only a trivial plan would be needed.\n    NOTE: You MUST skip this step when you are directly responding to the user's request without using any tools.\n\nThen carry out your plan by repeatedly executing the following steps.\n1. Action: write <|START_ACTION|> followed by a list of JSON-formatted tool calls, with each one containing \"tool_name\" and \"parameters\" fields.\n    When there are multiple tool calls which are completely independent of each other (i.e. they can be executed in parallel), you should list them out all together in one step. When you finish, close it out with <|END_ACTION|>.\n2. Observation: you will then receive results of those tool calls in JSON format in the very next turn, wrapped around by <|START_TOOL_RESULT|> and <|END_TOOL_RESULT|>. Carefully observe those results and think about what to do next. Note that these results will be provided to you in a separate turn. NEVER hallucinate results.\n    Every tool call produces a list of results (when a tool call produces no result or a single result, it'll still get wrapped inside a list). Each result is clearly linked to its originating tool call via its \"tool_call_id\".\n3. Reflection: start the next turn by writing <|START_THINKING|> followed by what you've figured out so far, any changes you need to make to your plan, and what you will do next. When you finish, close it out with <|END_THINKING|>.\n    You can optionally choose to skip this step when everything is going according to plan and no special pieces of information or reasoning chains need to be recorded.\n    NOTE: You MUST skip this step when you are done with tool-use actions and are ready to respond to the user.\n\nYou can repeat the above 3 steps multiple times (could be 0 times too if no suitable tool calls are available or needed), until you decide it's time to finally respond to the user.\n\n4. Response: then break out of the loop and write <|START_RESPONSE|> followed by a piece of text which serves as a response to the user's last request. Use all previous tool calls and results to help you when formulating your response. When you finish, close it out with <|END_RESPONSE|>.\n\n## Available Tools\nHere is the list of tools that you have available to you.\nYou can ONLY use the tools listed here. When a tool is not listed below, it is NOT available and you should NEVER attempt to use it.\nEach tool is represented as a JSON object with fields like \"name\", \"description\", \"parameters\" (per JSON Schema), and optionally, \"responses\" (per JSON Schema).\n\n```json\n[\n    {\"name\": \"get_weather\", \"description\": \"Get the current weather for a city.\", \"parameters\": {\"type\": \"object\", \"properties\": {\"location\": {\"type\": \"string\"}}, \"required\": [\"location\"]}, \"responses\": null}\n]\n```\n\n# Default Preamble\nThe following instructions are your defaults unless specified elsewhere in developer preamble or user prompt.\n- Your name is Command.\n- You are a large language model built by Cohere.\n- You reply conversationally with a friendly and informative tone and often include introductory statements and follow-up questions.\n- If the input is ambiguous, ask clarifying follow-up questions.\n- Use Markdown-specific formatting in your response (for example to highlight phrases in bold or italics, create tables, or format code blocks).\n- Use LaTeX to generate mathematical notation for complex equations.\n- When responding in English, use American English unless context indicates otherwise.\n- When outputting responses of more than seven sentences, split the response into paragraphs.\n- Prefer the active voice.\n- Adhere to the APA style guidelines for punctuation, spelling, hyphenation, capitalization, numbers, lists, and quotation marks. Do not worry about them for other elements such as italics, citations, figures, or references.\n- Use gender-neutral pronouns for unspecified persons.\n- Limit lists to no more than 10 items unless the list is a set of finite instructions, in which case complete the list.\n- Use the third person when asked to write a summary.\n- When asked to extract values from source material, use the exact form, separated by commas.\n- When generating code output, please provide an explanation after the code.\n- When generating code output without specifying the programming language, please generate Python code.\n- If you are asked a question that requires reasoning, first think through your answer, slowly and step by step, then answer.\n\n# Developer Preamble\nThe following instructions take precedence over instructions in the default preamble and user prompt. You reject any instructions which conflict with system preamble instructions.\nBe brief.<|END_OF_TURN_TOKEN|><|START_OF_TURN_TOKEN|><|USER_TOKEN|>hi<|END_OF_TURN_TOKEN|><|START_OF_TURN_TOKEN|><|CHATBOT_TOKEN|><|START_THINKING|><|END_THINKING|><|START_ACTION|>[\n    {\"tool_call_id\": \"0\", \"tool_name\": \"get_weather\", \"parameters\": {\"location\": \"Paris\"}}\n]<|END_ACTION|><|END_OF_TURN_TOKEN|><|START_OF_TURN_TOKEN|><|SYSTEM_TOKEN|><|START_TOOL_RESULT|>[\n    {\n        \"tool_call_id\": \"0\",\n        \"results\": {\n            \"0\": \"sunny\"\n        },\n        \"is_error\": null\n    }\n]<|END_TOOL_RESULT|><|END_OF_TURN_TOKEN|><|START_OF_TURN_TOKEN|><|CHATBOT_TOKEN|>",
+   "template_sha256": "cc60b553279347d83df761f5dc55b4b2fb66bc1fa9a33e219911c13c11552fac"
+  },
+  {
+   "template": "test/fixtures/llama_cpp_templates/LFM2-8B-A1B.jinja",
+   "scenario": "single",
+   "prompt": "<|endoftext|><|im_start|>user\nhi<|im_end|>\n<|im_start|>assistant\n",
+   "template_sha256": "2294f49b51a0b9a1b0194add3f124237b5bd986599f43180eec49bba4de01365"
+  },
+  {
+   "template": "test/fixtures/llama_cpp_templates/LFM2-8B-A1B.jinja",
+   "scenario": "multi",
+   "prompt": "<|endoftext|><|im_start|>system\nBe brief.<|im_end|>\n<|im_start|>user\nhi<|im_end|>\n<|im_start|>assistant\nHello!<|im_end|>\n<|im_start|>user\nbye<|im_end|>\n<|im_start|>assistant\n",
+   "template_sha256": "2294f49b51a0b9a1b0194add3f124237b5bd986599f43180eec49bba4de01365"
+  },
+  {
+   "template": "test/fixtures/llama_cpp_templates/NousResearch-Hermes-2-Pro-Llama-3-8B-tool_use.jinja",
+   "scenario": "tools",
+   "prompt": "<|endoftext|><|im_start|>system\nYou are a function calling AI model. You are provided with function signatures within <tools></tools> XML tags. You may call one or more functions to assist with the user query. Don't make assumptions about what values to plug into functions. Here are the available tools: <tools> {\"type\": \"function\", \"function\": {\"name\": \"get_weather\", \"description\": \"get_weather(location: str) - Get the current weather for a city.\n\n    Args:\n        location(str): \", \"parameters\": {\"type\": \"object\", \"properties\": {\"location\": {\"type\": \"string\"}}, \"required\": [\"location\"]}} </tools>Use the following pydantic model json schema for each tool call you will make: {\"properties\": {\"name\": {\"title\": \"Name\", \"type\": \"string\"}, \"arguments\": {\"title\": \"Arguments\", \"type\": \"object\"}}, \"required\": [\"name\", \"arguments\"], \"title\": \"FunctionCall\", \"type\": \"object\"}}\nFor each function call return a json object with function name and arguments within <tool_call></tool_call> XML tags as follows:\n<tool_call>\n{\"name\": <function-name>, \"arguments\": <args-dict>}\n</tool_call><|im_end|>\n<|im_start|>user\nhi<|im_end|>\n<|im_start|>assistant\n",
+   "template_sha256": "7ce09d55d3690e06c70b5c07228cc7e8c99c43a23cdc027762be4011efcdea6c"
+  },
+  {
+   "template": "test/fixtures/llama_cpp_templates/NousResearch-Hermes-2-Pro-Llama-3-8B-tool_use.jinja",
+   "scenario": "toolhist",
+   "prompt": "<|endoftext|><|im_start|>system\nYou are a function calling AI model. You are provided with function signatures within <tools></tools> XML tags. You may call one or more functions to assist with the user query. Don't make assumptions about what values to plug into functions. Here are the available tools: <tools> {\"type\": \"function\", \"function\": {\"name\": \"get_weather\", \"description\": \"get_weather(location: str) - Get the current weather for a city.\n\n    Args:\n        location(str): \", \"parameters\": {\"type\": \"object\", \"properties\": {\"location\": {\"type\": \"string\"}}, \"required\": [\"location\"]}} </tools>Use the following pydantic model json schema for each tool call you will make: {\"properties\": {\"name\": {\"title\": \"Name\", \"type\": \"string\"}, \"arguments\": {\"title\": \"Arguments\", \"type\": \"object\"}}, \"required\": [\"name\", \"arguments\"], \"title\": \"FunctionCall\", \"type\": \"object\"}}\nFor each function call return a json object with function name and arguments within <tool_call></tool_call> XML tags as follows:\n<tool_call>\n{\"name\": <function-name>, \"arguments\": <args-dict>}\n</tool_call><|im_end|>\n<|im_start|>system\nBe brief.<|im_end|>\n<|im_start|>user\nhi<|im_end|>\n<|im_start|>assistant\n<tool_call>\n{\"name\": \"get_weather\", \"arguments\": {\"location\": \"Paris\"}}\n</tool_call><|im_end|>\n<|im_start|>tool\n<tool_response>\nsunny\n</tool_response><|im_end|><|im_start|>assistant\n",
+   "template_sha256": "7ce09d55d3690e06c70b5c07228cc7e8c99c43a23cdc027762be4011efcdea6c"
+  },
+  {
+   "template": "test/fixtures/llama_cpp_templates/StepFun3.5-Flash.jinja",
+   "scenario": "single",
+   "prompt": "<|endoftext|><|im_start|>user\nhi<|im_end|>\n<|im_start|>assistant\n<think>\n",
+   "template_sha256": "b18b99dff7261214c43e0402cba9f573e3240be6f9bb7ccaa54bb8df97e49dca"
+  },
+  {
+   "template": "test/fixtures/llama_cpp_templates/StepFun3.5-Flash.jinja",
+   "scenario": "multi",
+   "prompt": "<|endoftext|><|im_start|>system\nBe brief.<|im_end|>\n<|im_start|>user\nhi<|im_end|>\n<|im_start|>assistant\nHello!<|im_end|>\n<|im_start|>user\nbye<|im_end|>\n<|im_start|>assistant\n<think>\n",
+   "template_sha256": "b18b99dff7261214c43e0402cba9f573e3240be6f9bb7ccaa54bb8df97e49dca"
+  },
+  {
+   "template": "test/fixtures/llama_cpp_templates/StepFun3.5-Flash.jinja",
+   "scenario": "tools",
+   "prompt": "<|endoftext|><|im_start|>system\n# Tools\n\nYou have access to the following functions in JSONSchema format:\n\n<tools>\n{\"type\": \"function\", \"function\": {\"name\": \"get_weather\", \"description\": \"Get the current weather for a city.\", \"parameters\": {\"type\": \"object\", \"properties\": {\"location\": {\"type\": \"string\"}}, \"required\": [\"location\"]}}}\n</tools>\n\nIf you choose to call a function ONLY reply in the following format with NO suffix:\n\n<tool_call>\n<function=example_function_name>\n<parameter=example_parameter_1>\nvalue_1\n</parameter>\n<parameter=example_parameter_2>\nThis is the value for the second parameter\nthat can span\nmultiple lines\n</parameter>\n</function>\n</tool_call>\n\n<IMPORTANT>\nReminder:\n- Function calls MUST follow the specified format: an inner <function=...>\n...\n</function> block must be nested within <tool_call>\n...\n</tool_call> XML tags\n- Required parameters MUST be specified\n</IMPORTANT><|im_end|>\n<|im_start|>user\nhi<|im_end|>\n<|im_start|>assistant\n<think>\n",
+   "template_sha256": "b18b99dff7261214c43e0402cba9f573e3240be6f9bb7ccaa54bb8df97e49dca"
+  },
+  {
+   "template": "test/fixtures/llama_cpp_templates/StepFun3.5-Flash.jinja",
+   "scenario": "toolhist",
+   "prompt": "<|endoftext|><|im_start|>system\nBe brief.\n\n# Tools\n\nYou have access to the following functions in JSONSchema format:\n\n<tools>\n{\"type\": \"function\", \"function\": {\"name\": \"get_weather\", \"description\": \"Get the current weather for a city.\", \"parameters\": {\"type\": \"object\", \"properties\": {\"location\": {\"type\": \"string\"}}, \"required\": [\"location\"]}}}\n</tools>\n\nIf you choose to call a function ONLY reply in the following format with NO suffix:\n\n<tool_call>\n<function=example_function_name>\n<parameter=example_parameter_1>\nvalue_1\n</parameter>\n<parameter=example_parameter_2>\nThis is the value for the second parameter\nthat can span\nmultiple lines\n</parameter>\n</function>\n</tool_call>\n\n<IMPORTANT>\nReminder:\n- Function calls MUST follow the specified format: an inner <function=...>\n...\n</function> block must be nested within <tool_call>\n...\n</tool_call> XML tags\n- Required parameters MUST be specified\n</IMPORTANT><|im_end|>\n<|im_start|>user\nhi<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n<tool_call>\n<function=get_weather>\n<parameter=location>\nParis\n</parameter>\n</function>\n</tool_call><|im_end|>\n<|im_start|>tool_response\n<tool_response>sunny</tool_response><|im_end|>\n<|im_start|>assistant\n<think>\n",
+   "template_sha256": "b18b99dff7261214c43e0402cba9f573e3240be6f9bb7ccaa54bb8df97e49dca"
+  },
+  {
+   "template": "test/fixtures/llama_cpp_templates/deepseek-ai-DeepSeek-R1-Distill-Qwen-32B.jinja",
+   "scenario": "single",
+   "prompt": "<|endoftext|><｜User｜>hi<｜Assistant｜><think>\n",
+   "template_sha256": "bbe594884b44d740667ee65a70bc8d333a565eab3d63ea59f291ea73ada84ba6"
+  },
+  {
+   "template": "test/fixtures/llama_cpp_templates/deepseek-ai-DeepSeek-R1-Distill-Qwen-32B.jinja",
+   "scenario": "multi",
+   "prompt": "<|endoftext|>Be brief.<｜User｜>hi<｜Assistant｜>Hello!<｜end▁of▁sentence｜><｜User｜>bye<｜Assistant｜><think>\n",
+   "template_sha256": "bbe594884b44d740667ee65a70bc8d333a565eab3d63ea59f291ea73ada84ba6"
+  },
+  {
+   "template": "test/fixtures/llama_cpp_templates/deepseek-ai-DeepSeek-R1-Distill-Qwen-32B.jinja",
+   "scenario": "tools",
+   "prompt": "<|endoftext|><｜User｜>hi<｜Assistant｜><think>\n",
+   "template_sha256": "bbe594884b44d740667ee65a70bc8d333a565eab3d63ea59f291ea73ada84ba6"
+  },
+  {
+   "template": "test/fixtures/llama_cpp_templates/deepseek-ai-DeepSeek-R1-Distill-Qwen-32B.jinja",
+   "scenario": "toolhist",
+   "prompt": "<|endoftext|>Be brief.<｜User｜>hi<｜Assistant｜><｜tool▁calls▁begin｜><｜tool▁call▁begin｜>function<｜tool▁sep｜>get_weather\n```json\n{\"location\": \"Paris\"}\n```<｜tool▁call▁end｜><｜tool▁calls▁end｜><｜end▁of▁sentence｜><｜Assistant｜><｜end▁of▁sentence｜><｜tool▁outputs▁begin｜><｜tool▁output▁begin｜>sunny<｜tool▁output▁end｜><｜tool▁outputs▁end｜>",
+   "template_sha256": "bbe594884b44d740667ee65a70bc8d333a565eab3d63ea59f291ea73ada84ba6"
+  },
+  {
+   "template": "test/fixtures/llama_cpp_templates/deepseek-ai-DeepSeek-V3.1.jinja",
+   "scenario": "single",
+   "prompt": "<|endoftext|><｜User｜>hi<｜Assistant｜><think>",
+   "template_sha256": "d9f5f351b276cf9e81d009db08830db7d38e94927aecd09a7beb43e2aafee94e"
+  },
+  {
+   "template": "test/fixtures/llama_cpp_templates/deepseek-ai-DeepSeek-V3.1.jinja",
+   "scenario": "multi",
+   "prompt": "<|endoftext|>Be brief.<｜User｜>hi<｜Assistant｜><think></think>Hello!<｜end▁of▁sentence｜><｜User｜>bye<｜Assistant｜><think>",
+   "template_sha256": "d9f5f351b276cf9e81d009db08830db7d38e94927aecd09a7beb43e2aafee94e"
+  },
+  {
+   "template": "test/fixtures/llama_cpp_templates/deepseek-ai-DeepSeek-V3.1.jinja",
+   "scenario": "tools",
+   "prompt": "<|endoftext|><｜User｜>hi<｜Assistant｜><think>",
+   "template_sha256": "d9f5f351b276cf9e81d009db08830db7d38e94927aecd09a7beb43e2aafee94e"
+  },
+  {
+   "template": "test/fixtures/llama_cpp_templates/deepseek-ai-DeepSeek-V3.1.jinja",
+   "scenario": "toolhist",
+   "prompt": "<|endoftext|>Be brief.<｜User｜>hi<｜Assistant｜><think></think><｜tool▁calls▁begin｜><｜tool▁call▁begin｜>get_weather<｜tool▁sep｜>{\"location\": \"Paris\"}<｜tool▁call▁end｜><｜tool▁calls▁end｜><｜end▁of▁sentence｜><｜tool▁output▁begin｜>sunny<｜tool▁output▁end｜>",
+   "template_sha256": "d9f5f351b276cf9e81d009db08830db7d38e94927aecd09a7beb43e2aafee94e"
+  },
+  {
+   "template": "test/fixtures/llama_cpp_templates/deepseek-ai-DeepSeek-V3.2.jinja",
+   "scenario": "single",
+   "prompt": "<|endoftext|><｜User｜>hi<｜Assistant｜><think>",
+   "template_sha256": "8e5a13fcc4bdd4d943311fc59064b805770fdeddfccbd7f1c252cc16e8acaf3d"
+  },
+  {
+   "template": "test/fixtures/llama_cpp_templates/deepseek-ai-DeepSeek-V3.2.jinja",
+   "scenario": "multi",
+   "prompt": "<|endoftext|>Be brief.<｜User｜>hi<｜Assistant｜></think>Hello!<｜end▁of▁sentence｜><｜User｜>bye<｜Assistant｜><think>",
+   "template_sha256": "8e5a13fcc4bdd4d943311fc59064b805770fdeddfccbd7f1c252cc16e8acaf3d"
+  },
+  {
+   "template": "test/fixtures/llama_cpp_templates/deepseek-ai-DeepSeek-V3.2.jinja",
+   "scenario": "tools",
+   "prompt": "<|endoftext|>## Tools\n\nYou have access to a set of tools you can use to answer the user's question.\nYou can invoke functions by writing a \"<｜DSML｜function_calls>\" block like the following as part of your reply to the user:\n<｜DSML｜function_calls>\n<｜DSML｜invoke name=\"$FUNCTION_NAME\">\n<｜DSML｜parameter name=\"$PARAMETER_NAME\" string=\"true|false\">$PARAMETER_VALUE</｜DSML｜parameter>\n...\n</｜DSML｜invoke>\n<｜DSML｜invoke name=\"$FUNCTION_NAME2\">\n...\n</｜DSML｜invoke>\n</｜DSML｜function_calls>\n\nString and scalar parameters should be specified as is without any escaping or quotes, while lists and objects should use JSON format. The \"string\" attribute should be set to \"true\" for string type parameters and \"false\" for other types (numbers, booleans, arrays, objects).\n\nIf the thinking_mode is enabled, then after function results you should strongly consider outputting a thinking block. Here is an example:\n\n<｜DSML｜function_calls>\n...\n</｜DSML｜function_calls>\n\n<function_results>\n...\n</function_results>\n\n<think>...thinking about results</think>\n\nHere are the functions available in JSONSchema format:\n<functions>\n{\"name\": \"get_weather\", \"description\": \"Get the current weather for a city.\", \"parameters\": {\"type\": \"object\", \"properties\": {\"location\": {\"type\": \"string\"}}, \"required\": [\"location\"]}}\n</functions>\n<｜User｜>hi<｜Assistant｜><think>",
+   "template_sha256": "8e5a13fcc4bdd4d943311fc59064b805770fdeddfccbd7f1c252cc16e8acaf3d"
+  },
+  {
+   "template": "test/fixtures/llama_cpp_templates/deepseek-ai-DeepSeek-V3.2.jinja",
+   "scenario": "toolhist",
+   "prompt": "<|endoftext|>Be brief.\n\n## Tools\n\nYou have access to a set of tools you can use to answer the user's question.\nYou can invoke functions by writing a \"<｜DSML｜function_calls>\" block like the following as part of your reply to the user:\n<｜DSML｜function_calls>\n<｜DSML｜invoke name=\"$FUNCTION_NAME\">\n<｜DSML｜parameter name=\"$PARAMETER_NAME\" string=\"true|false\">$PARAMETER_VALUE</｜DSML｜parameter>\n...\n</｜DSML｜invoke>\n<｜DSML｜invoke name=\"$FUNCTION_NAME2\">\n...\n</｜DSML｜invoke>\n</｜DSML｜function_calls>\n\nString and scalar parameters should be specified as is without any escaping or quotes, while lists and objects should use JSON format. The \"string\" attribute should be set to \"true\" for string type parameters and \"false\" for other types (numbers, booleans, arrays, objects).\n\nIf the thinking_mode is enabled, then after function results you should strongly consider outputting a thinking block. Here is an example:\n\n<｜DSML｜function_calls>\n...\n</｜DSML｜function_calls>\n\n<function_results>\n...\n</function_results>\n\n<think>...thinking about results</think>\n\nHere are the functions available in JSONSchema format:\n<functions>\n{\"name\": \"get_weather\", \"description\": \"Get the current weather for a city.\", \"parameters\": {\"type\": \"object\", \"properties\": {\"location\": {\"type\": \"string\"}}, \"required\": [\"location\"]}}\n</functions>\n<｜User｜>hi<｜Assistant｜><think></think>\n\n<｜DSML｜function_calls>\n<｜DSML｜invoke name=\"get_weather\">\n<｜DSML｜parameter name=\"location\" string=\"true\">Paris</｜DSML｜parameter>\n</｜DSML｜invoke>\n</｜DSML｜function_calls><｜end▁of▁sentence｜>\n\n<function_results>\n<result>sunny</result>\n</function_results>\n\n<think>",
+   "template_sha256": "8e5a13fcc4bdd4d943311fc59064b805770fdeddfccbd7f1c252cc16e8acaf3d"
+  },
+  {
+   "template": "test/fixtures/llama_cpp_templates/deepseek-ai-DeepSeek-V4.jinja",
+   "scenario": "single",
+   "prompt": "<|endoftext|><｜User｜>hi<｜Assistant｜><think>",
+   "template_sha256": "7bd4fbdf0c06cd7398ddb6913de6e4a5839b9d06569e74e5b2ec246b375ca9c9"
+  },
+  {
+   "template": "test/fixtures/llama_cpp_templates/deepseek-ai-DeepSeek-V4.jinja",
+   "scenario": "tools",
+   "prompt": "<|endoftext|>## Tools\n\nYou have access to a set of tools to help answer the user's question. You can invoke tools by writing a \"<｜DSML｜tool_calls>\" block like the following:\n\n<｜DSML｜tool_calls>\n<｜DSML｜invoke name=\"$TOOL_NAME\">\n<｜DSML｜parameter name=\"$PARAMETER_NAME\" string=\"true|false\">$PARAMETER_VALUE</｜DSML｜parameter>\n...\n</｜DSML｜invoke>\n<｜DSML｜invoke name=\"$TOOL_NAME2\">\n...\n</｜DSML｜invoke>\n</｜DSML｜tool_calls>\n\nString parameters should be specified as is and set `string=\"true\"`. For all other types (numbers, booleans, arrays, objects), pass the value in JSON format and set `string=\"false\"`.\n\nIf thinking_mode is enabled (triggered by <think>), you MUST output your complete reasoning inside <think>...</think> BEFORE any tool calls or final response.\n\nOtherwise, output directly after </think> with tool calls or final response.\n\n### Available Tool Schemas\n\n{\"name\": \"get_weather\", \"description\": \"Get the current weather for a city.\", \"parameters\": {\"type\": \"object\", \"properties\": {\"location\": {\"type\": \"string\"}}, \"required\": [\"location\"]}}\n\nYou MUST strictly follow the above defined tool name and parameter schemas to invoke tool calls.\n<｜User｜>hi<｜Assistant｜><think>",
+   "template_sha256": "7bd4fbdf0c06cd7398ddb6913de6e4a5839b9d06569e74e5b2ec246b375ca9c9"
+  },
+  {
+   "template": "test/fixtures/llama_cpp_templates/deepseek-ai-DeepSeek-V4.jinja",
+   "scenario": "toolhist",
+   "prompt": "<|endoftext|>Be brief.\n\n## Tools\n\nYou have access to a set of tools to help answer the user's question. You can invoke tools by writing a \"<｜DSML｜tool_calls>\" block like the following:\n\n<｜DSML｜tool_calls>\n<｜DSML｜invoke name=\"$TOOL_NAME\">\n<｜DSML｜parameter name=\"$PARAMETER_NAME\" string=\"true|false\">$PARAMETER_VALUE</｜DSML｜parameter>\n...\n</｜DSML｜invoke>\n<｜DSML｜invoke name=\"$TOOL_NAME2\">\n...\n</｜DSML｜invoke>\n</｜DSML｜tool_calls>\n\nString parameters should be specified as is and set `string=\"true\"`. For all other types (numbers, booleans, arrays, objects), pass the value in JSON format and set `string=\"false\"`.\n\nIf thinking_mode is enabled (triggered by <think>), you MUST output your complete reasoning inside <think>...</think> BEFORE any tool calls or final response.\n\nOtherwise, output directly after </think> with tool calls or final response.\n\n### Available Tool Schemas\n\n{\"name\": \"get_weather\", \"description\": \"Get the current weather for a city.\", \"parameters\": {\"type\": \"object\", \"properties\": {\"location\": {\"type\": \"string\"}}, \"required\": [\"location\"]}}\n\nYou MUST strictly follow the above defined tool name and parameter schemas to invoke tool calls.\n<｜User｜>hi<｜Assistant｜><think></think>\n\n<｜DSML｜tool_calls>\n<｜DSML｜invoke name=\"get_weather\">\n<｜DSML｜parameter name=\"location\" string=\"true\">Paris</｜DSML｜parameter>\n</｜DSML｜invoke>\n</｜DSML｜tool_calls><｜end▁of▁sentence｜><｜User｜><tool_result>sunny</tool_result><｜Assistant｜><think>",
+   "template_sha256": "7bd4fbdf0c06cd7398ddb6913de6e4a5839b9d06569e74e5b2ec246b375ca9c9"
+  },
+  {
+   "template": "test/fixtures/llama_cpp_templates/google-gemma-2-2b-it.jinja",
+   "scenario": "single",
+   "prompt": "<|endoftext|><start_of_turn>user\nhi<end_of_turn>\n<start_of_turn>model\n",
+   "template_sha256": "ecd6ae513fe103f0eb62e8ab5bfa8d0fe45c1074fa398b089c93a7e70c15cfd6"
+  },
+  {
+   "template": "test/fixtures/llama_cpp_templates/google-gemma-2-2b-it.jinja",
+   "scenario": "multi",
+   "prompt": "<|endoftext|><start_of_turn>user\nBe brief.\nhi<end_of_turn>\n<start_of_turn>model\nHello!<end_of_turn>\n<start_of_turn>user\nbye<end_of_turn>\n<start_of_turn>model\n",
+   "template_sha256": "ecd6ae513fe103f0eb62e8ab5bfa8d0fe45c1074fa398b089c93a7e70c15cfd6"
+  },
+  {
+   "template": "test/fixtures/llama_cpp_templates/google-gemma-4-31B-it-interleaved.jinja",
+   "scenario": "single",
+   "prompt": "<|endoftext|><|turn>system\n<|think|>\n<turn|>\n<|turn>user\nhi<turn|>\n<|turn>model\n",
+   "template_sha256": "65f93a25708c952457106a30e185ba7beffddd726121c8d7e3f3e08b23c16c67"
+  },
+  {
+   "template": "test/fixtures/llama_cpp_templates/google-gemma-4-31B-it-interleaved.jinja",
+   "scenario": "multi",
+   "prompt": "<|endoftext|><|turn>system\n<|think|>\nBe brief.<turn|>\n<|turn>user\nhi<turn|>\n<|turn>model\nHello!<turn|>\n<|turn>user\nbye<turn|>\n<|turn>model\n",
+   "template_sha256": "65f93a25708c952457106a30e185ba7beffddd726121c8d7e3f3e08b23c16c67"
+  },
+  {
+   "template": "test/fixtures/llama_cpp_templates/google-gemma-4-31B-it-interleaved.jinja",
+   "scenario": "tools",
+   "prompt": "<|endoftext|><|turn>system\n<|think|>\n<|tool>declaration:get_weather{description:<|\"|>Get the current weather for a city.<|\"|>,parameters:{properties:{location:{type:<|\"|>STRING<|\"|>}},required:[<|\"|>location<|\"|>],type:<|\"|>OBJECT<|\"|>}}<tool|><turn|>\n<|turn>user\nhi<turn|>\n<|turn>model\n",
+   "template_sha256": "65f93a25708c952457106a30e185ba7beffddd726121c8d7e3f3e08b23c16c67"
+  },
+  {
+   "template": "test/fixtures/llama_cpp_templates/google-gemma-4-31B-it-interleaved.jinja",
+   "scenario": "toolhist",
+   "prompt": "<|endoftext|><|turn>system\n<|think|>\nBe brief.<|tool>declaration:get_weather{description:<|\"|>Get the current weather for a city.<|\"|>,parameters:{properties:{location:{type:<|\"|>STRING<|\"|>}},required:[<|\"|>location<|\"|>],type:<|\"|>OBJECT<|\"|>}}<tool|><turn|>\n<|turn>user\nhi<turn|>\n<|turn>model\n<|tool_call>call:get_weather{location:<|\"|>Paris<|\"|>}<tool_call|><|tool_response>response:get_weather{value:<|\"|>sunny<|\"|>}<tool_response|>",
+   "template_sha256": "65f93a25708c952457106a30e185ba7beffddd726121c8d7e3f3e08b23c16c67"
+  },
+  {
+   "template": "test/fixtures/llama_cpp_templates/llama-cpp-deepseek-r1.jinja",
+   "scenario": "single",
+   "prompt": "<|endoftext|><｜User｜>hi<｜end▁of▁sentence｜><｜Assistant｜><think>\n",
+   "template_sha256": "0d11fd8d7cf3f212733d73dfe09ead89a14a18816661dc30ea1fb3147428fba1"
+  },
+  {
+   "template": "test/fixtures/llama_cpp_templates/llama-cpp-deepseek-r1.jinja",
+   "scenario": "multi",
+   "prompt": "<|endoftext|>Be brief.<｜User｜>hi<｜end▁of▁sentence｜><｜Assistant｜>Hello!<｜end▁of▁sentence｜><｜User｜>bye<｜end▁of▁sentence｜><｜Assistant｜><think>\n",
+   "template_sha256": "0d11fd8d7cf3f212733d73dfe09ead89a14a18816661dc30ea1fb3147428fba1"
+  },
+  {
+   "template": "test/fixtures/llama_cpp_templates/llama-cpp-deepseek-r1.jinja",
+   "scenario": "tools",
+   "prompt": "<|endoftext|>You can call any of the following function tools to satisfy the user's requests: [\n  {\n    \"name\": \"get_weather\",\n    \"description\": \"Get the current weather for a city.\",\n    \"parameters\": {\n      \"type\": \"object\",\n      \"properties\": {\n        \"location\": {\n          \"type\": \"string\"\n        }\n      },\n      \"required\": [\n        \"location\"\n      ]\n    }\n  }\n]\n\nExample function tool call syntax:\n\n<｜tool▁calls▁begin｜><｜tool▁call▁begin｜>function<｜tool▁sep｜>example_function_name\n```json\n{\n  \"arg1\": \"some_value\"\n  ...\n}\n```\n<｜tool▁call▁end｜><｜tool▁calls▁end｜>\n\n<｜User｜>hi<｜end▁of▁sentence｜><｜Assistant｜><think>\n",
+   "template_sha256": "0d11fd8d7cf3f212733d73dfe09ead89a14a18816661dc30ea1fb3147428fba1"
+  },
+  {
+   "template": "test/fixtures/llama_cpp_templates/llama-cpp-deepseek-r1.jinja",
+   "scenario": "toolhist",
+   "prompt": "<|endoftext|>You can call any of the following function tools to satisfy the user's requests: [\n  {\n    \"name\": \"get_weather\",\n    \"description\": \"Get the current weather for a city.\",\n    \"parameters\": {\n      \"type\": \"object\",\n      \"properties\": {\n        \"location\": {\n          \"type\": \"string\"\n        }\n      },\n      \"required\": [\n        \"location\"\n      ]\n    }\n  }\n]\n\nExample function tool call syntax:\n\n<｜tool▁calls▁begin｜><｜tool▁call▁begin｜>function<｜tool▁sep｜>example_function_name\n```json\n{\n  \"arg1\": \"some_value\"\n  ...\n}\n```\n<｜tool▁call▁end｜><｜tool▁calls▁end｜>\n\nBe brief.<｜User｜>hi<｜end▁of▁sentence｜><｜Assistant｜><｜tool▁calls▁begin｜><｜tool▁call▁begin｜>function<｜tool▁sep｜>get_weather\n```json\n{\"location\": \"Paris\"}\n```<｜tool▁call▁end｜><｜tool▁calls▁end｜><｜end▁of▁sentence｜><｜tool▁outputs▁begin｜>\n<｜tool▁output▁begin｜>sunny<｜tool▁output▁end｜><｜tool▁outputs▁end｜><｜end▁of▁sentence｜><｜Assistant｜><think>\n",
+   "template_sha256": "0d11fd8d7cf3f212733d73dfe09ead89a14a18816661dc30ea1fb3147428fba1"
+  },
+  {
+   "template": "test/fixtures/llama_cpp_templates/llama-cpp-rwkv-world.jinja",
+   "scenario": "single",
+   "prompt": "<|endoftext|>User: hi\n\nAssistant: <think>",
+   "template_sha256": "e70723034f0928096207d99b2ec4678950361f290f5341c017d957f88b196935"
+  },
+  {
+   "template": "test/fixtures/llama_cpp_templates/llama-cpp-rwkv-world.jinja",
+   "scenario": "multi",
+   "prompt": "<|endoftext|>System: Be brief.\n\nUser: hi\n\nAssistant: Hello!\n\nUser: bye\n\nAssistant: <think>",
+   "template_sha256": "e70723034f0928096207d99b2ec4678950361f290f5341c017d957f88b196935"
+  },
+  {
+   "template": "test/fixtures/llama_cpp_templates/meetkai-functionary-medium-v3.1.jinja",
+   "scenario": "single",
+   "prompt": "<|endoftext|><|start_header_id|>system<|end_header_id|>\n\n\nCutting Knowledge Date: December 2023\n\n<|eot_id|><|start_header_id|>user<|end_header_id|>\n\nhi<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n",
+   "template_sha256": "2fc9dbfaea552f864b4b8cdf9d17401e9a49cbda199498531f137eb0ec5ae1d8"
+  },
+  {
+   "template": "test/fixtures/llama_cpp_templates/meetkai-functionary-medium-v3.1.jinja",
+   "scenario": "multi",
+   "prompt": "<|endoftext|><|start_header_id|>system<|end_header_id|>\n\n\nCutting Knowledge Date: December 2023\n\n<|eot_id|><|start_header_id|>system<|end_header_id|>\n\nBe brief.<|eot_id|><|start_header_id|>user<|end_header_id|>\n\nhi<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\nHello!<|eot_id|><|start_header_id|>user<|end_header_id|>\n\nbye<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n",
+   "template_sha256": "2fc9dbfaea552f864b4b8cdf9d17401e9a49cbda199498531f137eb0ec5ae1d8"
+  },
+  {
+   "template": "test/fixtures/llama_cpp_templates/meetkai-functionary-medium-v3.1.jinja",
+   "scenario": "tools",
+   "prompt": "<|endoftext|><|start_header_id|>system<|end_header_id|>\n\n\nCutting Knowledge Date: December 2023\n\n\nYou have access to the following functions:\n\nUse the function 'get_weather' to 'Get the current weather for a city.'\n{\"name\": \"get_weather\", \"description\": \"Get the current weather for a city.\", \"parameters\": {\"type\": \"object\", \"properties\": {\"location\": {\"type\": \"string\"}}, \"required\": [\"location\"]}}\n\n\nThink very carefully before calling functions.\nIf a you choose to call a function ONLY reply in the following format:\n<{start_tag}={function_name}>{parameters}{end_tag}\nwhere\n\nstart_tag => `<function`\nparameters => a JSON dict with the function argument name as key and function argument value as value.\nend_tag => `</function>`\n\nHere is an example,\n<function=example_function_name>{\"example_name\": \"example_value\"}</function>\n\nReminder:\n- If looking for real time information use relevant functions before falling back to brave_search\n- Function calls MUST follow the specified format, start with <function= and end with </function>\n- Required parameters MUST be specified\n- Only call one function at a time\n- Put the entire function call reply on one line\n\n<|eot_id|><|start_header_id|>user<|end_header_id|>\n\nhi<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n",
+   "template_sha256": "2fc9dbfaea552f864b4b8cdf9d17401e9a49cbda199498531f137eb0ec5ae1d8"
+  },
+  {
+   "template": "test/fixtures/llama_cpp_templates/meetkai-functionary-medium-v3.1.jinja",
+   "scenario": "toolhist",
+   "prompt": "<|endoftext|><|start_header_id|>system<|end_header_id|>\n\n\nCutting Knowledge Date: December 2023\n\n\nYou have access to the following functions:\n\nUse the function 'get_weather' to 'Get the current weather for a city.'\n{\"name\": \"get_weather\", \"description\": \"Get the current weather for a city.\", \"parameters\": {\"type\": \"object\", \"properties\": {\"location\": {\"type\": \"string\"}}, \"required\": [\"location\"]}}\n\n\nThink very carefully before calling functions.\nIf a you choose to call a function ONLY reply in the following format:\n<{start_tag}={function_name}>{parameters}{end_tag}\nwhere\n\nstart_tag => `<function`\nparameters => a JSON dict with the function argument name as key and function argument value as value.\nend_tag => `</function>`\n\nHere is an example,\n<function=example_function_name>{\"example_name\": \"example_value\"}</function>\n\nReminder:\n- If looking for real time information use relevant functions before falling back to brave_search\n- Function calls MUST follow the specified format, start with <function= and end with </function>\n- Required parameters MUST be specified\n- Only call one function at a time\n- Put the entire function call reply on one line\n\n<|eot_id|><|start_header_id|>system<|end_header_id|>\n\nBe brief.<|eot_id|><|start_header_id|>user<|end_header_id|>\n\nhi<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n<function=get_weather>{\"location\": \"Paris\"}</function><|eom_id|><|start_header_id|>ipython<|end_header_id|>\n\nsunny<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n",
+   "template_sha256": "2fc9dbfaea552f864b4b8cdf9d17401e9a49cbda199498531f137eb0ec5ae1d8"
+  },
+  {
+   "template": "test/fixtures/llama_cpp_templates/meetkai-functionary-medium-v3.2.jinja",
+   "scenario": "single",
+   "prompt": "<|endoftext|><|start_header_id|>system<|end_header_id|>\n\nYou are capable of executing available function(s) if required.\nOnly execute function(s) when absolutely necessary.\nAsk for the required input to:recipient==all\nUse JSON for function arguments.\nRespond in this format:\n>>>${recipient}\n${content}\nAvailable functions:\n// Supported function definitions that should be called when necessary.\nnamespace functions {\n\n} // namespace functions<|eot_id|><|start_header_id|>user<|end_header_id|>\n\nhi<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n>>>",
+   "template_sha256": "5c7c96c27cfecf3418411d1ebd0d11d691ab6bd2155bb38dacc62250fe47c3c8"
+  },
+  {
+   "template": "test/fixtures/llama_cpp_templates/meetkai-functionary-medium-v3.2.jinja",
+   "scenario": "multi",
+   "prompt": "<|endoftext|><|start_header_id|>system<|end_header_id|>\n\nYou are capable of executing available function(s) if required.\nOnly execute function(s) when absolutely necessary.\nAsk for the required input to:recipient==all\nUse JSON for function arguments.\nRespond in this format:\n>>>${recipient}\n${content}\nAvailable functions:\n// Supported function definitions that should be called when necessary.\nnamespace functions {\n\n} // namespace functions<|eot_id|><|start_header_id|>system<|end_header_id|>\n\nBe brief.<|eot_id|><|start_header_id|>user<|end_header_id|>\n\nhi<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n>>>all\nHello!<|eot_id|><|start_header_id|>user<|end_header_id|>\n\nbye<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n>>>",
+   "template_sha256": "5c7c96c27cfecf3418411d1ebd0d11d691ab6bd2155bb38dacc62250fe47c3c8"
+  },
+  {
+   "template": "test/fixtures/llama_cpp_templates/meetkai-functionary-medium-v3.2.jinja",
+   "scenario": "tools",
+   "prompt": "<|endoftext|><|start_header_id|>system<|end_header_id|>\n\nYou are capable of executing available function(s) if required.\nOnly execute function(s) when absolutely necessary.\nAsk for the required input to:recipient==all\nUse JSON for function arguments.\nRespond in this format:\n>>>${recipient}\n${content}\nAvailable functions:\n// Supported function definitions that should be called when necessary.\nnamespace functions {\n\n// Get the current weather for a city.\ntype get_weather = (_: {\nlocation: string,\n}) => any;\n\n} // namespace functions<|eot_id|><|start_header_id|>user<|end_header_id|>\n\nhi<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n>>>",
+   "template_sha256": "5c7c96c27cfecf3418411d1ebd0d11d691ab6bd2155bb38dacc62250fe47c3c8"
+  },
+  {
+   "template": "test/fixtures/llama_cpp_templates/meetkai-functionary-medium-v3.2.jinja",
+   "scenario": "toolhist",
+   "prompt": "<|endoftext|><|start_header_id|>system<|end_header_id|>\n\nYou are capable of executing available function(s) if required.\nOnly execute function(s) when absolutely necessary.\nAsk for the required input to:recipient==all\nUse JSON for function arguments.\nRespond in this format:\n>>>${recipient}\n${content}\nAvailable functions:\n// Supported function definitions that should be called when necessary.\nnamespace functions {\n\n// Get the current weather for a city.\ntype get_weather = (_: {\nlocation: string,\n}) => any;\n\n} // namespace functions<|eot_id|><|start_header_id|>system<|end_header_id|>\n\nBe brief.<|eot_id|><|start_header_id|>user<|end_header_id|>\n\nhi<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n>>>get_weather\n{\"location\":\"Paris\"}<|eot_id|><|start_header_id|>tool<|end_header_id|>\n\nsunny<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n>>>",
+   "template_sha256": "5c7c96c27cfecf3418411d1ebd0d11d691ab6bd2155bb38dacc62250fe47c3c8"
+  },
+  {
+   "template": "test/fixtures/llama_cpp_templates/mistralai-Ministral-3-14B-Reasoning-2512.jinja",
+   "scenario": "single",
+   "prompt": "<|endoftext|>[SYSTEM_PROMPT]# HOW YOU SHOULD THINK AND ANSWER\n\nFirst draft your thinking process (inner monologue) until you arrive at a response. Format your response using Markdown, and use LaTeX for any mathematical equations. Write both your thoughts and the response in the same language as the input.\n\nYour thinking process must follow the template below:[THINK]Your thoughts or/and draft, like working through an exercise on scratch paper. Be as casual and as long as you want until you are confident to generate the response to the user.[/THINK]Here, provide a self-contained response.[/SYSTEM_PROMPT][INST]hi[/INST]",
+   "template_sha256": "39f03c383413f531fd302c06c7e982ad98c83f0657a8339ae25478ccb81fdcda"
+  },
+  {
+   "template": "test/fixtures/llama_cpp_templates/mistralai-Ministral-3-14B-Reasoning-2512.jinja",
+   "scenario": "multi",
+   "prompt": "<|endoftext|>[SYSTEM_PROMPT]Be brief.[/SYSTEM_PROMPT][INST]hi[/INST]Hello!<|im_end|>[INST]bye[/INST]",
+   "template_sha256": "39f03c383413f531fd302c06c7e982ad98c83f0657a8339ae25478ccb81fdcda"
+  },
+  {
+   "template": "test/fixtures/llama_cpp_templates/mistralai-Ministral-3-14B-Reasoning-2512.jinja",
+   "scenario": "tools",
+   "prompt": "<|endoftext|>[SYSTEM_PROMPT]# HOW YOU SHOULD THINK AND ANSWER\n\nFirst draft your thinking process (inner monologue) until you arrive at a response. Format your response using Markdown, and use LaTeX for any mathematical equations. Write both your thoughts and the response in the same language as the input.\n\nYour thinking process must follow the template below:[THINK]Your thoughts or/and draft, like working through an exercise on scratch paper. Be as casual and as long as you want until you are confident to generate the response to the user.[/THINK]Here, provide a self-contained response.[/SYSTEM_PROMPT][AVAILABLE_TOOLS][{\"type\": \"function\", \"function\": {\"name\": \"get_weather\", \"description\": \"Get the current weather for a city.\", \"parameters\": {\"type\": \"object\", \"properties\": {\"location\": {\"type\": \"string\"}}, \"required\": [\"location\"]}}}][/AVAILABLE_TOOLS][INST]hi[/INST]",
+   "template_sha256": "39f03c383413f531fd302c06c7e982ad98c83f0657a8339ae25478ccb81fdcda"
+  },
+  {
+   "template": "test/fixtures/llama_cpp_templates/mistralai-Ministral-3-14B-Reasoning-2512.jinja",
+   "scenario": "toolhist",
+   "prompt": "<|endoftext|>[SYSTEM_PROMPT]Be brief.[/SYSTEM_PROMPT][AVAILABLE_TOOLS][{\"type\": \"function\", \"function\": {\"name\": \"get_weather\", \"description\": \"Get the current weather for a city.\", \"parameters\": {\"type\": \"object\", \"properties\": {\"location\": {\"type\": \"string\"}}, \"required\": [\"location\"]}}}][/AVAILABLE_TOOLS][INST]hi[/INST][TOOL_CALLS]get_weather[ARGS]{\"location\": \"Paris\"}<|im_end|>[TOOL_RESULTS]sunny[/TOOL_RESULTS]",
+   "template_sha256": "39f03c383413f531fd302c06c7e982ad98c83f0657a8339ae25478ccb81fdcda"
+  },
+  {
+   "template": "test/fixtures/llama_cpp_templates/mistralai-Mistral-Nemo-Instruct-2407.jinja",
+   "scenario": "single",
+   "prompt": "<|endoftext|>[INST]hi[/INST]",
+   "template_sha256": "e4676cb56dffea7782fd3e2b577cfaf1e123537e6ef49b3ec7caa6c095c62272"
+  },
+  {
+   "template": "test/fixtures/llama_cpp_templates/mistralai-Mistral-Nemo-Instruct-2407.jinja",
+   "scenario": "multi",
+   "prompt": "<|endoftext|>[INST]hi[/INST]Hello!<|im_end|>[INST]Be brief.\n\nbye[/INST]",
+   "template_sha256": "e4676cb56dffea7782fd3e2b577cfaf1e123537e6ef49b3ec7caa6c095c62272"
+  },
+  {
+   "template": "test/fixtures/llama_cpp_templates/mistralai-Mistral-Nemo-Instruct-2407.jinja",
+   "scenario": "tools",
+   "prompt": "<|endoftext|>[AVAILABLE_TOOLS][{\"type\": \"function\", \"function\": {\"name\": \"get_weather\", \"description\": \"Get the current weather for a city.\", \"parameters\": {\"type\": \"object\", \"properties\": {\"location\": {\"type\": \"string\"}}, \"required\": [\"location\"]}}}][/AVAILABLE_TOOLS][INST]hi[/INST]",
+   "template_sha256": "e4676cb56dffea7782fd3e2b577cfaf1e123537e6ef49b3ec7caa6c095c62272"
+  },
+  {
+   "template": "test/fixtures/llama_cpp_templates/mistralai-Mistral-Nemo-Instruct-2407.jinja",
+   "scenario": "toolhist",
+   "prompt": "<|endoftext|>[AVAILABLE_TOOLS][{\"type\": \"function\", \"function\": {\"name\": \"get_weather\", \"description\": \"Get the current weather for a city.\", \"parameters\": {\"type\": \"object\", \"properties\": {\"location\": {\"type\": \"string\"}}, \"required\": [\"location\"]}}}][/AVAILABLE_TOOLS][INST]hi[/INST][TOOL_CALLS][{\"name\": \"get_weather\", \"arguments\": {\"location\": \"Paris\"}, \"id\": \"call00001\"}]<|im_end|>[TOOL_RESULTS]{\"content\": sunny, \"call_id\": \"call00001\"}[/TOOL_RESULTS]",
+   "template_sha256": "e4676cb56dffea7782fd3e2b577cfaf1e123537e6ef49b3ec7caa6c095c62272"
+  },
+  {
+   "template": "test/fixtures/llama_cpp_templates/openbmb-MiniCPM5-1B.jinja",
+   "scenario": "single",
+   "prompt": "<|endoftext|><|im_start|>user\nhi<|im_end|>\n<|im_start|>assistant\n<think>\n",
+   "template_sha256": "7451a05cf1e28a79d97d7c0bc951028c0b1915119bf9046acd06a0e3d931f47c"
+  },
+  {
+   "template": "test/fixtures/llama_cpp_templates/openbmb-MiniCPM5-1B.jinja",
+   "scenario": "multi",
+   "prompt": "<|endoftext|><|im_start|>system\nBe brief.<|im_end|>\n<|im_start|>user\nhi<|im_end|>\n<|im_start|>assistant\nHello!<|im_end|>\n<|im_start|>user\nbye<|im_end|>\n<|im_start|>assistant\n<think>\n",
+   "template_sha256": "7451a05cf1e28a79d97d7c0bc951028c0b1915119bf9046acd06a0e3d931f47c"
+  },
+  {
+   "template": "test/fixtures/llama_cpp_templates/openbmb-MiniCPM5-1B.jinja",
+   "scenario": "tools",
+   "prompt": "<|endoftext|><|im_start|>system\n# Tools\n\nYou are provided with function signatures within <tools></tools> XML tags:\n<tools>\n{\"type\": \"function\", \"function\": {\"name\": \"get_weather\", \"description\": \"Get the current weather for a city.\", \"parameters\": {\"type\": \"object\", \"properties\": {\"location\": {\"type\": \"string\"}}, \"required\": [\"location\"]}}}\n</tools>\n\nTool usage guidelines:\n- You may call zero or more functions. If no function calls are needed, just answer normally and do not include any <function ... </function>.\n- When calling a function, return an XML object within <function ... </function> using:\n<function name=\"function-name\"><param name=\"param-name\">param-value</param></function>\n- param-value may be multi-line. If it contains <, & or newline characters, wrap it in a CDATA block: <param name=\"param-name\"><![CDATA[...multi-line value...]]></param><|im_end|>\n<|im_start|>user\nhi<|im_end|>\n<|im_start|>assistant\n<think>\n",
+   "template_sha256": "7451a05cf1e28a79d97d7c0bc951028c0b1915119bf9046acd06a0e3d931f47c"
+  },
+  {
+   "template": "test/fixtures/llama_cpp_templates/openbmb-MiniCPM5-1B.jinja",
+   "scenario": "toolhist",
+   "prompt": "<|endoftext|><|im_start|>system\nBe brief.\n\n# Tools\n\nYou are provided with function signatures within <tools></tools> XML tags:\n<tools>\n{\"type\": \"function\", \"function\": {\"name\": \"get_weather\", \"description\": \"Get the current weather for a city.\", \"parameters\": {\"type\": \"object\", \"properties\": {\"location\": {\"type\": \"string\"}}, \"required\": [\"location\"]}}}\n</tools>\n\nTool usage guidelines:\n- You may call zero or more functions. If no function calls are needed, just answer normally and do not include any <function ... </function>.\n- When calling a function, return an XML object within <function ... </function> using:\n<function name=\"function-name\"><param name=\"param-name\">param-value</param></function>\n- param-value may be multi-line. If it contains <, & or newline characters, wrap it in a CDATA block: <param name=\"param-name\"><![CDATA[...multi-line value...]]></param><|im_end|>\n<|im_start|>user\nhi<|im_end|>\n<|im_start|>assistant\n<function name=\"get_weather\"><param name=\"location\">Paris</param></function><|im_end|>\n<|im_start|>user\n<tool_response>\nsunny\n</tool_response><|im_end|>\n<|im_start|>assistant\n<think>\n",
+   "template_sha256": "7451a05cf1e28a79d97d7c0bc951028c0b1915119bf9046acd06a0e3d931f47c"
+  },
+  {
+   "template": "test/fixtures/llama_cpp_templates/unsloth-mistral-Devstral-Small-2507.jinja",
+   "scenario": "single",
+   "prompt": "<|endoftext|>[SYSTEM_PROMPT]You are Devstral, a helpful agentic model trained by Mistral AI and using the OpenHands scaffold. You can interact with a computer to solve tasks.\n\n<ROLE>\nYour primary role is to assist users by executing commands, modifying code, and solving technical problems effectively. You should be thorough, methodical, and prioritize quality over speed.\n* If the user asks a question, like \"why is X happening\", don't try to fix the problem. Just give an answer to the question.\n</ROLE>\n\n<EFFICIENCY>\n* Each action you take is somewhat expensive. Wherever possible, combine multiple actions into a single action, e.g. combine multiple bash commands into one, using sed and grep to edit/view multiple files at once.\n* When exploring the codebase, use efficient tools like find, grep, and git commands with appropriate filters to minimize unnecessary operations.\n</EFFICIENCY>\n\n<FILE_SYSTEM_GUIDELINES>\n* When a user provides a file path, do NOT assume it's relative to the current working directory. First explore the file system to locate the file before working on it.\n* If asked to edit a file, edit the file directly, rather than creating a new file with a different filename.\n* For global search-and-replace operations, consider using `sed` instead of opening file editors multiple times.\n</FILE_SYSTEM_GUIDELINES>\n\n<CODE_QUALITY>\n* Write clean, efficient code with minimal comments. Avoid redundancy in comments: Do not repeat information that can be easily inferred from the code itself.\n* When implementing solutions, focus on making the minimal changes needed to solve the problem.\n* Before implementing any changes, first thoroughly understand the codebase through exploration.\n* If you are adding a lot of code to a function or file, consider splitting the function or file into smaller pieces when appropriate.\n</CODE_QUALITY>\n\n<VERSION_CONTROL>\n* When configuring git credentials, use \"openhands\" as the user.name and \"openhands@all-hands.dev\" as the user.email by default, unless explicitly instructed otherwise.\n* Exercise caution with git operations. Do NOT make potentially dangerous changes (e.g., pushing to main, deleting repositories) unless explicitly asked to do so.\n* When committing changes, use `git status` to see all modified files, and stage all files necessary for the commit. Use `git commit -a` whenever possible.\n* Do NOT commit files that typically shouldn't go into version control (e.g., node_modules/, .env files, build directories, cache files, large binaries) unless explicitly instructed by the user.\n* If unsure about committing certain files, check for the presence of .gitignore files or ask the user for clarification.\n</VERSION_CONTROL>\n\n<PULL_REQUESTS>\n* When creating pull requests, create only ONE per session/issue unless explicitly instructed otherwise.\n* When working with an existing PR, update it with new commits rather than creating additional PRs for the same issue.\n* When updating a PR, preserve the original PR title and purpose, updating description only when necessary.\n</PULL_REQUESTS>\n\n<PROBLEM_SOLVING_WORKFLOW>\n1. EXPLORATION: Thoroughly explore relevant files and understand the context before proposing solutions\n2. ANALYSIS: Consider multiple approaches and select the most promising one\n3. TESTING:\n   * For bug fixes: Create tests to verify issues before implementing fixes\n   * For new features: Consider test-driven development when appropriate\n   * If the repository lacks testing infrastructure and implementing tests would require extensive setup, consult with the user before investing time in building testing infrastructure\n   * If the environment is not set up to run tests, consult with the user first before investing time to install all dependencies\n4. IMPLEMENTATION: Make focused, minimal changes to address the problem\n5. VERIFICATION: If the environment is set up to run tests, test your implementation thoroughly, including edge cases. If the environment is not set up to run tests, consult with the user first before investing time to run tests.\n</PROBLEM_SOLVING_WORKFLOW>\n\n<SECURITY>\n* Only use GITHUB_TOKEN and other credentials in ways the user has explicitly requested and would expect.\n* Use APIs to work with GitHub or other platforms, unless the user asks otherwise or your task requires browsing.\n</SECURITY>\n\n<ENVIRONMENT_SETUP>\n* When user asks you to run an application, don't stop if the application is not installed. Instead, please install the application and run the command again.\n* If you encounter missing dependencies:\n  1. First, look around in the repository for existing dependency files (requirements.txt, pyproject.toml, package.json, Gemfile, etc.)\n  2. If dependency files exist, use them to install all dependencies at once (e.g., `pip install -r requirements.txt`, `npm install`, etc.)\n  3. Only install individual packages directly if no dependency files are found or if only specific packages are needed\n* Similarly, if you encounter missing dependencies for essential tools requested by the user, install them when possible.\n</ENVIRONMENT_SETUP>\n\n<TROUBLESHOOTING>\n* If you've made repeated attempts to solve a problem but tests still fail or the user reports it's still broken:\n  1. Step back and reflect on 5-7 different possible sources of the problem\n  2. Assess the likelihood of each possible cause\n  3. Methodically address the most likely causes, starting with the highest probability\n  4. Document your reasoning process\n* When you run into any major issue while executing a plan from the user, please don't try to directly work around it. Instead, propose a new plan and confirm with the user before proceeding.\n</TROUBLESHOOTING>[/SYSTEM_PROMPT][INST]hi[/INST]",
+   "template_sha256": "039a4710e2aabaa79e85a233fa3daa4fbc030a4a8dc218cb7f34fb0c4b8c13b1"
+  },
+  {
+   "template": "test/fixtures/llama_cpp_templates/unsloth-mistral-Devstral-Small-2507.jinja",
+   "scenario": "multi",
+   "prompt": "<|endoftext|>[SYSTEM_PROMPT]Be brief.[/SYSTEM_PROMPT][INST]hi[/INST]Hello!<|im_end|>[INST]bye[/INST]",
+   "template_sha256": "039a4710e2aabaa79e85a233fa3daa4fbc030a4a8dc218cb7f34fb0c4b8c13b1"
+  },
+  {
+   "template": "test/fixtures/llama_cpp_templates/unsloth-mistral-Devstral-Small-2507.jinja",
+   "scenario": "tools",
+   "prompt": "<|endoftext|>[SYSTEM_PROMPT]You are Devstral, a helpful agentic model trained by Mistral AI and using the OpenHands scaffold. You can interact with a computer to solve tasks.\n\n<ROLE>\nYour primary role is to assist users by executing commands, modifying code, and solving technical problems effectively. You should be thorough, methodical, and prioritize quality over speed.\n* If the user asks a question, like \"why is X happening\", don't try to fix the problem. Just give an answer to the question.\n</ROLE>\n\n<EFFICIENCY>\n* Each action you take is somewhat expensive. Wherever possible, combine multiple actions into a single action, e.g. combine multiple bash commands into one, using sed and grep to edit/view multiple files at once.\n* When exploring the codebase, use efficient tools like find, grep, and git commands with appropriate filters to minimize unnecessary operations.\n</EFFICIENCY>\n\n<FILE_SYSTEM_GUIDELINES>\n* When a user provides a file path, do NOT assume it's relative to the current working directory. First explore the file system to locate the file before working on it.\n* If asked to edit a file, edit the file directly, rather than creating a new file with a different filename.\n* For global search-and-replace operations, consider using `sed` instead of opening file editors multiple times.\n</FILE_SYSTEM_GUIDELINES>\n\n<CODE_QUALITY>\n* Write clean, efficient code with minimal comments. Avoid redundancy in comments: Do not repeat information that can be easily inferred from the code itself.\n* When implementing solutions, focus on making the minimal changes needed to solve the problem.\n* Before implementing any changes, first thoroughly understand the codebase through exploration.\n* If you are adding a lot of code to a function or file, consider splitting the function or file into smaller pieces when appropriate.\n</CODE_QUALITY>\n\n<VERSION_CONTROL>\n* When configuring git credentials, use \"openhands\" as the user.name and \"openhands@all-hands.dev\" as the user.email by default, unless explicitly instructed otherwise.\n* Exercise caution with git operations. Do NOT make potentially dangerous changes (e.g., pushing to main, deleting repositories) unless explicitly asked to do so.\n* When committing changes, use `git status` to see all modified files, and stage all files necessary for the commit. Use `git commit -a` whenever possible.\n* Do NOT commit files that typically shouldn't go into version control (e.g., node_modules/, .env files, build directories, cache files, large binaries) unless explicitly instructed by the user.\n* If unsure about committing certain files, check for the presence of .gitignore files or ask the user for clarification.\n</VERSION_CONTROL>\n\n<PULL_REQUESTS>\n* When creating pull requests, create only ONE per session/issue unless explicitly instructed otherwise.\n* When working with an existing PR, update it with new commits rather than creating additional PRs for the same issue.\n* When updating a PR, preserve the original PR title and purpose, updating description only when necessary.\n</PULL_REQUESTS>\n\n<PROBLEM_SOLVING_WORKFLOW>\n1. EXPLORATION: Thoroughly explore relevant files and understand the context before proposing solutions\n2. ANALYSIS: Consider multiple approaches and select the most promising one\n3. TESTING:\n   * For bug fixes: Create tests to verify issues before implementing fixes\n   * For new features: Consider test-driven development when appropriate\n   * If the repository lacks testing infrastructure and implementing tests would require extensive setup, consult with the user before investing time in building testing infrastructure\n   * If the environment is not set up to run tests, consult with the user first before investing time to install all dependencies\n4. IMPLEMENTATION: Make focused, minimal changes to address the problem\n5. VERIFICATION: If the environment is set up to run tests, test your implementation thoroughly, including edge cases. If the environment is not set up to run tests, consult with the user first before investing time to run tests.\n</PROBLEM_SOLVING_WORKFLOW>\n\n<SECURITY>\n* Only use GITHUB_TOKEN and other credentials in ways the user has explicitly requested and would expect.\n* Use APIs to work with GitHub or other platforms, unless the user asks otherwise or your task requires browsing.\n</SECURITY>\n\n<ENVIRONMENT_SETUP>\n* When user asks you to run an application, don't stop if the application is not installed. Instead, please install the application and run the command again.\n* If you encounter missing dependencies:\n  1. First, look around in the repository for existing dependency files (requirements.txt, pyproject.toml, package.json, Gemfile, etc.)\n  2. If dependency files exist, use them to install all dependencies at once (e.g., `pip install -r requirements.txt`, `npm install`, etc.)\n  3. Only install individual packages directly if no dependency files are found or if only specific packages are needed\n* Similarly, if you encounter missing dependencies for essential tools requested by the user, install them when possible.\n</ENVIRONMENT_SETUP>\n\n<TROUBLESHOOTING>\n* If you've made repeated attempts to solve a problem but tests still fail or the user reports it's still broken:\n  1. Step back and reflect on 5-7 different possible sources of the problem\n  2. Assess the likelihood of each possible cause\n  3. Methodically address the most likely causes, starting with the highest probability\n  4. Document your reasoning process\n* When you run into any major issue while executing a plan from the user, please don't try to directly work around it. Instead, propose a new plan and confirm with the user before proceeding.\n</TROUBLESHOOTING>[/SYSTEM_PROMPT][AVAILABLE_TOOLS][{\"type\": \"function\", \"function\": {\"name\": \"get_weather\", \"description\": \"Get the current weather for a city.\", \"parameters\": {\"type\": \"object\", \"properties\": {\"location\": {\"type\": \"string\"}}, \"required\": [\"location\"]}}}][/AVAILABLE_TOOLS][INST]hi[/INST]",
+   "template_sha256": "039a4710e2aabaa79e85a233fa3daa4fbc030a4a8dc218cb7f34fb0c4b8c13b1"
+  },
+  {
+   "template": "test/fixtures/llama_cpp_templates/unsloth-mistral-Devstral-Small-2507.jinja",
+   "scenario": "toolhist",
+   "prompt": "<|endoftext|>[SYSTEM_PROMPT]Be brief.[/SYSTEM_PROMPT][AVAILABLE_TOOLS][{\"type\": \"function\", \"function\": {\"name\": \"get_weather\", \"description\": \"Get the current weather for a city.\", \"parameters\": {\"type\": \"object\", \"properties\": {\"location\": {\"type\": \"string\"}}, \"required\": [\"location\"]}}}][/AVAILABLE_TOOLS][INST]hi[/INST][TOOL_CALLS]get_weather[ARGS]{\"location\": \"Paris\"}<|im_end|>[TOOL_RESULTS]sunny[/TOOL_RESULTS]",
+   "template_sha256": "039a4710e2aabaa79e85a233fa3daa4fbc030a4a8dc218cb7f34fb0c4b8c13b1"
+  }
+ ],
+ "excluded": [
+  {
+   "template": "test/fixtures/llama_cpp_templates/Apertus-8B-Instruct.jinja",
+   "scenario": "single",
+   "reason": "prompt differs outside BOS/EOS (format apertus)"
+  },
+  {
+   "template": "test/fixtures/llama_cpp_templates/Apertus-8B-Instruct.jinja",
+   "scenario": "multi",
+   "reason": "prompt differs outside BOS/EOS (format apertus)"
+  },
+  {
+   "template": "test/fixtures/llama_cpp_templates/Apertus-8B-Instruct.jinja",
+   "scenario": "tools",
+   "reason": "prompt differs outside BOS/EOS (format apertus)"
+  },
+  {
+   "template": "test/fixtures/llama_cpp_templates/Apertus-8B-Instruct.jinja",
+   "scenario": "toolhist",
+   "reason": "prompt differs outside BOS/EOS (format apertus)"
+  },
+  {
+   "template": "test/fixtures/llama_cpp_templates/Apriel-1.6-15b-Thinker-fixed.jinja",
+   "scenario": "tools",
+   "reason": "prompt differs outside BOS/EOS (format generic)"
+  },
+  {
+   "template": "test/fixtures/llama_cpp_templates/Apriel-1.6-15b-Thinker-fixed.jinja",
+   "scenario": "toolhist",
+   "reason": "prompt differs outside BOS/EOS (format generic)"
+  },
+  {
+   "template": "test/fixtures/llama_cpp_templates/CohereForAI-c4ai-command-r-plus-tool_use.jinja",
+   "scenario": "single",
+   "reason": "llamadart does not render (pre-existing)"
+  },
+  {
+   "template": "test/fixtures/llama_cpp_templates/CohereForAI-c4ai-command-r-plus-tool_use.jinja",
+   "scenario": "multi",
+   "reason": "llamadart does not render (pre-existing)"
+  },
+  {
+   "template": "test/fixtures/llama_cpp_templates/CohereForAI-c4ai-command-r-plus-tool_use.jinja",
+   "scenario": "tools",
+   "reason": "prompt differs outside BOS/EOS (format generic)"
+  },
+  {
+   "template": "test/fixtures/llama_cpp_templates/CohereForAI-c4ai-command-r-plus-tool_use.jinja",
+   "scenario": "toolhist",
+   "reason": "prompt differs outside BOS/EOS (format generic)"
+  },
+  {
+   "template": "test/fixtures/llama_cpp_templates/LFM2-8B-A1B.jinja",
+   "scenario": "tools",
+   "reason": "prompt differs outside BOS/EOS (format lfm2)"
+  },
+  {
+   "template": "test/fixtures/llama_cpp_templates/LFM2-8B-A1B.jinja",
+   "scenario": "toolhist",
+   "reason": "prompt differs outside BOS/EOS (format lfm2)"
+  },
+  {
+   "template": "test/fixtures/llama_cpp_templates/MiniMax-M3.jinja",
+   "scenario": "single",
+   "reason": "prompt differs outside BOS/EOS (format minimaxM3)"
+  },
+  {
+   "template": "test/fixtures/llama_cpp_templates/MiniMax-M3.jinja",
+   "scenario": "multi",
+   "reason": "prompt differs outside BOS/EOS (format minimaxM3)"
+  },
+  {
+   "template": "test/fixtures/llama_cpp_templates/MiniMax-M3.jinja",
+   "scenario": "tools",
+   "reason": "prompt differs outside BOS/EOS (format minimaxM3)"
+  },
+  {
+   "template": "test/fixtures/llama_cpp_templates/MiniMax-M3.jinja",
+   "scenario": "toolhist",
+   "reason": "prompt differs outside BOS/EOS (format minimaxM3)"
+  },
+  {
+   "template": "test/fixtures/llama_cpp_templates/NousResearch-Hermes-2-Pro-Llama-3-8B-tool_use.jinja",
+   "scenario": "single",
+   "reason": "llamadart does not render (pre-existing)"
+  },
+  {
+   "template": "test/fixtures/llama_cpp_templates/NousResearch-Hermes-2-Pro-Llama-3-8B-tool_use.jinja",
+   "scenario": "multi",
+   "reason": "llamadart does not render (pre-existing)"
+  },
+  {
+   "template": "test/fixtures/llama_cpp_templates/deepseek-ai-DeepSeek-V4.jinja",
+   "scenario": "multi",
+   "reason": "prompt differs outside BOS/EOS (format deepseekV4)"
+  },
+  {
+   "template": "test/fixtures/llama_cpp_templates/fireworks-ai-llama-3-firefunction-v2.jinja",
+   "scenario": "single",
+   "reason": "prompt differs outside BOS/EOS (format contentOnly)"
+  },
+  {
+   "template": "test/fixtures/llama_cpp_templates/fireworks-ai-llama-3-firefunction-v2.jinja",
+   "scenario": "multi",
+   "reason": "prompt differs outside BOS/EOS (format contentOnly)"
+  },
+  {
+   "template": "test/fixtures/llama_cpp_templates/fireworks-ai-llama-3-firefunction-v2.jinja",
+   "scenario": "tools",
+   "reason": "prompt differs outside BOS/EOS (format firefunctionV2)"
+  },
+  {
+   "template": "test/fixtures/llama_cpp_templates/fireworks-ai-llama-3-firefunction-v2.jinja",
+   "scenario": "toolhist",
+   "reason": "prompt differs outside BOS/EOS (format firefunctionV2)"
+  },
+  {
+   "template": "test/fixtures/llama_cpp_templates/google-gemma-2-2b-it.jinja",
+   "scenario": "tools",
+   "reason": "prompt differs outside BOS/EOS (format generic)"
+  },
+  {
+   "template": "test/fixtures/llama_cpp_templates/google-gemma-2-2b-it.jinja",
+   "scenario": "toolhist",
+   "reason": "upstream does not render"
+  },
+  {
+   "template": "test/fixtures/llama_cpp_templates/llama-cpp-rwkv-world.jinja",
+   "scenario": "tools",
+   "reason": "prompt differs outside BOS/EOS (format generic)"
+  },
+  {
+   "template": "test/fixtures/llama_cpp_templates/llama-cpp-rwkv-world.jinja",
+   "scenario": "toolhist",
+   "reason": "prompt differs outside BOS/EOS (format generic)"
+  },
+  {
+   "template": "test/fixtures/llama_cpp_templates/tencent-Hy3.jinja",
+   "scenario": "single",
+   "reason": "prompt differs outside BOS/EOS (format hunyuanV3)"
+  },
+  {
+   "template": "test/fixtures/llama_cpp_templates/tencent-Hy3.jinja",
+   "scenario": "multi",
+   "reason": "prompt differs outside BOS/EOS (format hunyuanV3)"
+  },
+  {
+   "template": "test/fixtures/llama_cpp_templates/tencent-Hy3.jinja",
+   "scenario": "tools",
+   "reason": "prompt differs outside BOS/EOS (format hunyuanV3)"
+  },
+  {
+   "template": "test/fixtures/llama_cpp_templates/tencent-Hy3.jinja",
+   "scenario": "toolhist",
+   "reason": "prompt differs outside BOS/EOS (format hunyuanV3)"
+  }
+ ]
+}
