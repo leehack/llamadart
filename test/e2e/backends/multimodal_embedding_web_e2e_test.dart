@@ -20,6 +20,8 @@ import '../../support/embedding_contract.dart';
 
 // Local assets/reference only; setup and recorded qualification are documented in
 // doc/multimodal_embeddings_web.md. No default model or network download.
+// config.json may set `coreVariant` ("wasm64" by default or "wasm32") and
+// `gpuLayers` (above 0 loads on WebGPU and requires a WebGPU backend).
 void main() {
   test('scenario contract compares vector elements in reverse order', () {
     _expectOrderedVectors(
@@ -61,7 +63,7 @@ void main() {
     }
   });
   test('scenario contract configures memory64 with the bridge API keys', () {
-    final config = _bridgeConfig(true, (key) => key);
+    final config = _bridgeConfig(true, 'wasm64', (key) => key);
     expect(
       config.getProperty<JSString>('coreModuleUrlMem64'.toJS).toDart,
       'coreMem64',
@@ -72,6 +74,18 @@ void main() {
     );
     expect(config.getProperty<JSBoolean>('preferMemory64'.toJS).toDart, isTrue);
     expect(config.has('workerRequestTimeoutMs'), isFalse);
+  });
+  test('scenario contract prefers memory64 only for the wasm64 variant', () {
+    for (final variant in ['wasm64', 'wasm32']) {
+      expect(
+        _bridgeConfig(
+          true,
+          variant,
+          (key) => key,
+        ).getProperty<JSBoolean>('preferMemory64'.toJS).toDart,
+        variant == 'wasm64',
+      );
+    }
   });
   for (final isPending in [true, false]) {
     test(
@@ -145,7 +159,9 @@ void main() {
         final constructor = module.getProperty<JSFunction>(
           'LlamaWebGpuBridge'.toJS,
         );
-        final bridgeConfig = _bridgeConfig(worker, url);
+        final coreVariant = (config['coreVariant'] as String?) ?? 'wasm64';
+        final gpuLayers = (config['gpuLayers'] as int?) ?? 0;
+        final bridgeConfig = _bridgeConfig(worker, coreVariant, url);
         final bridge = constructor.callAsConstructor<LlamaWebGpuBridge>(
           bridgeConfig,
         );
@@ -155,20 +171,24 @@ void main() {
         addTearDown(engine.dispose);
         await engine.loadModelFromUrl(
           url('model'),
-          modelParams: const ModelParams(
+          modelParams: ModelParams(
             contextSize: 4096,
             batchSize: 4096,
             microBatchSize: 4096,
-            gpuLayers: 0,
+            gpuLayers: gpuLayers,
+            device: gpuLayers > 0 ? ComputeDevice.gpu : ComputeDevice.auto,
           ),
         );
+        if (gpuLayers > 0) {
+          expect(await engine.getBackendName(), contains('WebGPU'));
+        }
         final core = (await engine
             .getMetadata())['llamadart.webgpu.core_variant'];
         print('${worker ? 'worker' : 'direct'} embedding core: $core');
         expect(
           core,
-          'wasm64',
-          reason: 'Repeated media batches are qualified only on memory64.',
+          coreVariant,
+          reason: 'The loaded core must match the configured coreVariant.',
         );
         await engine.loadMultimodalProjector(url('projector'));
         expect(
@@ -400,7 +420,7 @@ void main() {
             [true, true, true],
           );
           final metadata = await engine.getMetadata();
-          expect(metadata['llamadart.webgpu.core_variant'], 'wasm64');
+          expect(metadata['llamadart.webgpu.core_variant'], coreVariant);
           expect(metadata['llamadart.webgpu.n_batch'], '4096');
           expect(metadata['llamadart.webgpu.n_ubatch'], '4096');
           print(
@@ -498,7 +518,11 @@ Future<void> _interruptWorkerEmbedding(
   return fired.future;
 }
 
-JSObject _bridgeConfig(bool worker, String Function(String) url) {
+JSObject _bridgeConfig(
+  bool worker,
+  String coreVariant,
+  String Function(String) url,
+) {
   return JSObject()
     ..setProperty('disableWorker'.toJS, (!worker).toJS)
     ..setProperty('workerUrl'.toJS, url('worker').toJS)
@@ -506,7 +530,7 @@ JSObject _bridgeConfig(bool worker, String Function(String) url) {
     ..setProperty('wasmUrl'.toJS, url('wasm').toJS)
     ..setProperty('coreModuleUrlMem64'.toJS, url('coreMem64').toJS)
     ..setProperty('wasmUrlMem64'.toJS, url('wasmMem64').toJS)
-    ..setProperty('preferMemory64'.toJS, true.toJS);
+    ..setProperty('preferMemory64'.toJS, (coreVariant == 'wasm64').toJS);
 }
 
 void _expectOrderedVectors(

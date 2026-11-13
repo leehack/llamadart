@@ -238,9 +238,15 @@ included. Cancellation forwards to `cancel()` and disposal awaits `dispose()`;
 the bridge owns settling queued/active operations before freeing its runtime.
 Await cancelled embedding futures before reuse.
 
-Chrome CPU wasm memory64 media vectors were qualified against native CPU/Metal;
-hardware WebGPU was not exercised. Repeated media batches are qualified only on
-memory64; `v0.1.76+` removes the projector copy behind the wasm32 abort (unqualified). See
+Media vectors were qualified against native CPU/Metal on Chrome CPU wasm memory64
+and on WebGPU (Apple GPU, Chrome, Metal); other GPUs are unqualified.
+`WebGpuLlamaBackend` skips its generation warmup for a projector whose
+embedding capabilities report image or audio: the warmup's `mtmd` completion
+leaves causal attention enabled, which the bridge reports as media embeddings
+being unsupported ([#1971](https://github.com/leehack/llamadart/issues/1971)).
+Repeated media batches are also qualified on wasm32 from `v0.1.76`, which
+removes the projector copy behind the earlier abort (measured on the pinned assets);
+memory64 stays recommended for headroom. See
 [multimodal embedding qualification](multimodal_embeddings_web.md).
 
 ### Per-request cancellation

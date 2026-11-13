@@ -434,6 +434,17 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
         'Web embedding bridge changes; requires local assets v0.1.64+, EmbeddingGemma-2/projector and reference vectors per doc/multimodal_embeddings_web.md. Numerically unqualified until run.',
   ),
   TestMatrixRow(
+    id: 'web-multimodal-embeddings-webgpu',
+    tier: 'targeted',
+    mode: 'local-only, WebGPU browser',
+    covers:
+        'Direct/worker Web text/image/audio/mixed vectors on a WebGPU runtime (gpuLayers above 0) against local native references, including the projector load that must keep media embedding capabilities',
+    command:
+        'dart run tool/testing/run_local_e2e.dart --scenario web-multimodal-embeddings-webgpu',
+    useWhen:
+        'WebGPU multimodal projector load, warmup or embedding changes; same local assets as web-multimodal-embeddings with gpuLayers above 0 in config.json and a WebGPU-capable Chrome per doc/multimodal_embeddings_web.md.',
+  ),
+  TestMatrixRow(
     id: 'native-multimodal-embeddings',
     tier: 'targeted',
     mode: 'local-only',

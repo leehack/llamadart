@@ -18,6 +18,7 @@ validate against the exact release tag notes.
 - Fixed LFM2 required JSON tool calls losing a last string argument that the model left unclosed: the call now ends at exactly `}}]<|tool_call_end|>` and the grammar admits that ending ([#1609](https://github.com/leehack/llamadart/issues/1609)).
 - Fixed DeepSeek R1, V3.2 and V4, Nemotron V2, MiniMax M2, GLM 4.5, Laguna, MiniCPM5, Hunyuan V3 and Kimi K3 replies after a prompt that opens the thought: as in llama.cpp, the reasoning is now the text before the first end tag as generated (a repeated start tag and escaped `\n` included), and the rest is content, and structured-output replies on thinking templates keep the thought as generated too ([#1881](https://github.com/leehack/llamadart/issues/1881)).
 - Fixed `LlamaEngine(LlamaBackend())` on Web refusing LFM2/LFM2.5 `ToolChoice.auto` with tools even on bridge assets that report both required capabilities; the default Web backend now forwards prompt-penalty generation ([#1979](https://github.com/leehack/llamadart/issues/1979)).
+- Fixed image and audio embeddings reporting unsupported on a WebGPU runtime after loading an embedding model's projector; they now work there, qualified on an Apple GPU in Chrome, and repeated media batches are qualified on wasm32 from assets `v0.1.76` (measured on the pinned assets) ([#1971](https://github.com/leehack/llamadart/issues/1971)).
 
 ## 0.19.8
 
