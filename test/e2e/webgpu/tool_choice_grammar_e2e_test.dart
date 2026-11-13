@@ -3,9 +3,9 @@
 ///
 /// Stage build/web_tool_choice_grammar/config.json with {"assets":"bridge/",
 /// "legacyAssets":"bridge_legacy/","model":"models/LFM2.5-1.2B-Instruct-Q4_K_M.gguf"}
-/// and an optional "modelSha256", then run the web-tool-choice-grammar
-/// scenario. Anything that stops a case from proving its claim prints a
-/// `NOT_RUN:` line and skips instead of passing.
+/// then run the web-tool-choice-grammar
+/// scenario. Anything that stops a case from proving its claim fails the case
+/// with a `NOT_RUN:` message, so a missing fixture never reads as a pass.
 ///
 /// Assertions use parsed tool calls and the loose raw shape (the tool-call
 /// markers and the tool name), never grammar text: the LFM2 grammar text
@@ -208,12 +208,10 @@ void main() {
   String asset(String key, String name) =>
       fixture(key).resolve(name).toString();
 
-  bool skipIfNotRun([String? routeReason]) {
+  void failIfNotRun([String? routeReason]) {
     final reason = notRunReason ?? routeReason;
-    if (reason == null) return false;
-    print('NOT_RUN: $reason');
-    markTestSkipped('NOT_RUN: $reason');
-    return true;
+    if (reason == null) return;
+    fail('NOT_RUN: $reason');
   }
 
   Future<String> sha256(JSArrayBuffer bytes) async {
@@ -251,6 +249,8 @@ void main() {
       'llama_webgpu_bridge_worker.js',
       'llama_webgpu_core.js',
       'llama_webgpu_core.wasm',
+      'llama_webgpu_core_mem64.js',
+      'llama_webgpu_core_mem64.wasm',
     ]) {
       final expected = (artifacts[name] as Map?)?['sha256'];
       final bytes = await fetchBytes(asset(key, name));
@@ -270,7 +270,8 @@ void main() {
       'assetsTag': manifest['bridge_assets_tag'],
       'bridgeCommit': manifest['bridge_commit'],
       'bridgeJsSha256': shas['llama_webgpu_bridge.js'],
-      'coreWasmSha256': shas['llama_webgpu_core.wasm'],
+      'coreWasm32Sha256': shas['llama_webgpu_core.wasm'],
+      'coreWasm64Sha256': shas['llama_webgpu_core_mem64.wasm'],
     };
   }
 
@@ -292,10 +293,10 @@ void main() {
       notRunReason = 'missing model ${fixture('model')}';
       return;
     }
-    final expectedSha = config!['modelSha256'] ?? _pinnedModelSha256;
     final actualSha = await sha256(modelBytes);
-    if (actualSha != expectedSha) {
-      notRunReason = 'model sha mismatch: $actualSha, expected $expectedSha';
+    if (actualSha != _pinnedModelSha256) {
+      notRunReason =
+          'model sha mismatch: $actualSha, expected $_pinnedModelSha256';
       return;
     }
     modelFacts['modelSha256'] = actualSha;
@@ -433,14 +434,28 @@ void main() {
           await close?.call();
         }
         if (notRunReason != null || routeNotRun != null) return;
-        print(
-          'WEB_TOOL_CHOICE_RECEIPT ${jsonEncode({'route': route.name, 'results': results, 'binding': binding, ...?assetFacts[assets], ...modelFacts, 'penalty': recorder.calls.isEmpty ? null : recorder.calls.first.penalty, 'userAgent': window.navigator.userAgent})}',
-        );
+        final facts = assetFacts[assets];
+        final coreKey = binding['coreVariant'] == 'wasm64'
+            ? 'coreWasm64Sha256'
+            : 'coreWasm32Sha256';
+        final receipt = {
+          'route': route.name,
+          'results': results,
+          'binding': binding,
+          ...?facts,
+          'coreWasmSha256': facts?[coreKey],
+          ...modelFacts,
+          'penalty': recorder.calls.isEmpty
+              ? null
+              : recorder.calls.first.penalty,
+          'userAgent': window.navigator.userAgent,
+        };
+        print('WEB_TOOL_CHOICE_RECEIPT ${jsonEncode(receipt)}');
       });
 
       void caseTest(String name, Future<Object?> Function() body) {
         test(name, () async {
-          if (skipIfNotRun(routeNotRun)) return;
+          failIfNotRun(routeNotRun);
           results[name] = 'FAIL';
           results[name] = await body() ?? 'PASS';
         });
@@ -464,13 +479,18 @@ void main() {
           strip: true,
         );
         expect(control.calls.single.stripped, isTrue);
+        final controlCall = control.calls.single;
+        if (controlCall.error != null || (controlCall.raw ?? '').isEmpty) {
+          fail(
+            'NOT_RUN: control on ${route.name} did not generate: '
+            '${controlCall.error ?? 'empty output'}',
+          );
+        }
         if (control.toolCalls.isNotEmpty || control.raw.contains(_callStart)) {
-          print(
+          fail(
             'NOT_RUN: indecisive control on ${route.name}: the model called '
             'the tool without the grammar',
           );
-          markTestSkipped('NOT_RUN: indecisive control');
-          return 'NOT_RUN';
         }
         return null;
       }

@@ -1476,8 +1476,7 @@ weights. Stage the existing read-only model under
 {"assets":"bridge/","legacyAssets":"bridge_legacy/","model":"models/LFM2.5-1.2B-Instruct-Q4_K_M.gguf"}
 ```
 
-An optional `"modelSha256"` overrides the pinned LFM2.5 Q4_K_M digest
-(`b1b3de11...`). Run `dart run tool/testing/run_local_e2e.dart --scenario
+The model must match the pinned LFM2.5 Q4_K_M digest (`b1b3de11...`). Run `dart run tool/testing/run_local_e2e.dart --scenario
 web-tool-choice-grammar --dry-run` first, then omit `--dry-run`. The runner
 fetches the pinned assets into `bridge/` and `v0.1.81` into `bridge_legacy/`,
 then runs the suite on `chrome-webgpu` with CPU Wasm (`gpuLayers: 0`).
@@ -1506,14 +1505,16 @@ Assertions use parsed calls and the loose raw shape (the `<|tool_call_start|>`
 marker and the tool name), never grammar text, because the LFM2 grammar text
 changes with the template contract. Each route prints one
 `WEB_TOOL_CHOICE_RECEIPT` JSON line with the asset tag, bridge commit, bridge
-JS and Wasm SHA-256, model SHA-256, execution mode, core variant, browser and
+JS SHA-256, the SHA-256 of the Wasm core the route used (`wasm32` or `wasm64`;
+both cores are verified against `manifest.json`), model SHA-256, execution mode, core variant, browser and
 per-case results.
 
-A case that cannot prove its claim prints `NOT_RUN: <reason>` and is skipped,
-never passed: a missing config or model, a model digest differing from the
-pin, a bridge file whose digest differs from `manifest.json`, a worker request
-that fell back to the main thread, and a control where the model called the
-tool even without the grammar. A skipped run is not qualification.
+A case that cannot prove its claim fails with `NOT_RUN: <reason>`, so the
+scenario exits non-zero: a missing config or model, a model digest differing
+from the pin, a bridge file whose digest differs from `manifest.json`, a worker
+request that fell back to the main thread, a control that errored or produced
+no output, and a control where the model called the tool even without the
+grammar.
 
 The chat-app side is `chat-app-web-tool-penalty-smoke`: it asks for the weather
 in Paris and requires `--expect-tool-call getWeather`, `--expect-tool-argument

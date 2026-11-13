@@ -411,6 +411,29 @@ void main() {
     );
   });
 
+  test('rejects tool-call expectations in Safari', () async {
+    final result = await _runProcess(
+      Platform.isWindows ? 'python' : 'python3',
+      [
+        _script,
+        'http://127.0.0.1:1/',
+        '--model-url',
+        'http://127.0.0.1:1/model.gguf',
+        '--expect-tool-call',
+        'getWeather',
+        '--browser',
+        'safari',
+      ],
+      environment: {'PYTHONPATH': tempDir.path},
+    );
+
+    expect(result.exitCode, 2);
+    expect(
+      result.stderr,
+      contains('--browser safari does not record tool-call completions'),
+    );
+  });
+
   test('rejects speech input in Safari', () async {
     final audio = File(p.join(tempDir.path, 'speech.wav'))
       ..writeAsBytesSync(const <int>[0]);
@@ -840,6 +863,17 @@ void main() {
               {
                 ...call,
                 'response': '<function=getWeather><parameter=city>Rome',
+              },
+              followUp,
+            ],
+            'city=Paris',
+          ),
+          (
+            'the value under another key',
+            [
+              {
+                ...call,
+                'response': '<function=getWeather><parameter=town>Paris',
               },
               followUp,
             ],
