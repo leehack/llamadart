@@ -1763,6 +1763,43 @@ void main() {
     );
   });
 
+  testWidgets('an interrupted recording transcribes the partial take', (
+    tester,
+  ) async {
+    final engine = _SpeechMockLlamaEngine()
+      ..createChunkContents = const <String>[
+        'language English<asr_text>Partial recording.',
+      ];
+    final recorder = _FakeAudioRecordingService();
+    final provider = ChatProvider(
+      chatService: MockChatService(engine: engine),
+      audioRecordingService: recorder,
+      settingsService: MockSettingsService(),
+      initialSettings: const ChatSettings(
+        modelPath: 'Qwen3-ASR-0.6B-Q8_0.gguf',
+        mmprojPath: 'mmproj-Qwen3-ASR-0.6B-Q8_0.gguf',
+        modelSupportsSpeechToText: true,
+      ),
+    );
+    addTearDown(provider.dispose);
+    await provider.loadModel();
+    await provider.startAudioRecording();
+
+    recorder.interruptionController.add(null);
+    await tester.pumpAndSettle();
+    await tester.pump(const Duration(seconds: 1));
+
+    expect(recorder.stopCalls, 1);
+    expect(engine.createCalls, 1);
+    expect(provider.audioRecordingState, ChatAudioRecordingState.idle);
+    expect(
+      provider.messages.map((message) => message.text),
+      contains(
+        'Microphone input was interrupted. Using the audio recorded so far.',
+      ),
+    );
+  });
+
   testWidgets('voice recording automatically asks at 30 seconds', (
     tester,
   ) async {
@@ -3000,6 +3037,9 @@ class _FakeAudioRecordingService implements AudioRecordingService {
   ]);
   final Uint8List? untrimmedRecordedBytes;
 
+  final StreamController<void> interruptionController =
+      StreamController<void>.broadcast();
+
   int startCalls = 0;
   int stopCalls = 0;
   int readCalls = 0;
@@ -3022,6 +3062,9 @@ class _FakeAudioRecordingService implements AudioRecordingService {
 
   @override
   bool get isSupported => supported;
+
+  @override
+  Stream<void> get interruptions => interruptionController.stream;
 
   @override
   Future<void> start() async {
@@ -3087,6 +3130,7 @@ class _FakeAudioRecordingService implements AudioRecordingService {
   @override
   Future<void> dispose() async {
     disposeCalls += 1;
+    await interruptionController.close();
   }
 }
 

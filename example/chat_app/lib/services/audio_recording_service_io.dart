@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -9,7 +10,10 @@ import 'audio_recording_service.dart';
 import 'wav_audio_file_validator_io.dart';
 
 class _IoAudioRecordingService implements AudioRecordingService {
+  final StreamController<void> _interruptions =
+      StreamController<void>.broadcast();
   AudioRecorder? _recorder;
+  StreamSubscription<RecordStop>? _stopSubscription;
   String? _activePath;
   bool _isRecording = false;
   bool _isDisposed = false;
@@ -20,6 +24,9 @@ class _IoAudioRecordingService implements AudioRecordingService {
       Platform.isIOS ||
       Platform.isMacOS ||
       Platform.isWindows;
+
+  @override
+  Stream<void> get interruptions => _interruptions.stream;
 
   @override
   Future<void> start() async {
@@ -36,7 +43,7 @@ class _IoAudioRecordingService implements AudioRecordingService {
       );
     }
 
-    final recorder = _recorder ??= AudioRecorder();
+    final recorder = _recorder ??= _createRecorder();
     String? path;
     try {
       final hasPermission = await recorder.hasPermission();
@@ -66,6 +73,7 @@ class _IoAudioRecordingService implements AudioRecordingService {
           sampleRate: 16000,
           numChannels: 1,
           androidConfig: AndroidRecordConfig(manageBluetooth: false),
+          audioRouteChange: AudioRouteChangeMode.stop,
         ),
         path: path,
       );
@@ -88,6 +96,18 @@ class _IoAudioRecordingService implements AudioRecordingService {
         _startFailureMessage,
       );
     }
+  }
+
+  AudioRecorder _createRecorder() {
+    final recorder = AudioRecorder();
+    _stopSubscription = recorder.onStopped().listen((stop) {
+      if (stop.reason != RecordStopReason.stop &&
+          _isRecording &&
+          !_interruptions.isClosed) {
+        _interruptions.add(null);
+      }
+    });
+    return recorder;
   }
 
   @override
@@ -190,7 +210,10 @@ class _IoAudioRecordingService implements AudioRecordingService {
     await cancel();
     final recorder = _recorder;
     _recorder = null;
+    await _stopSubscription?.cancel();
+    _stopSubscription = null;
     await recorder?.dispose();
+    await _interruptions.close();
   }
 
   Future<void> _deleteFile(String path) async {

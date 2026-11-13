@@ -1,6 +1,8 @@
+import 'dart:async';
 import 'dart:js_interop';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:record/record.dart';
 import 'package:web/web.dart' as web;
 
@@ -20,7 +22,10 @@ class _WebAudioRecordingService implements AudioRecordingService {
   // ambient capture does not reach the ASR model and return an empty result.
   static const double _minimumRmsAmplitude = 256;
 
+  final StreamController<void> _interruptions =
+      StreamController<void>.broadcast();
   AudioRecorder? _recorder;
+  StreamSubscription<RecordStop>? _stopSubscription;
   String? _completedRecordingUrl;
   Uint8List? _completedRecordingBytes;
   Uint8List? _completedUntrimmedRecordingBytes;
@@ -29,6 +34,9 @@ class _WebAudioRecordingService implements AudioRecordingService {
 
   @override
   bool get isSupported => web.window.isSecureContext;
+
+  @override
+  Stream<void> get interruptions => _interruptions.stream;
 
   @override
   Future<void> start() async {
@@ -46,15 +54,8 @@ class _WebAudioRecordingService implements AudioRecordingService {
       );
     }
 
-    final recorder = _recorder ??= AudioRecorder();
+    final recorder = _recorder ??= _createRecorder();
     try {
-      if (!await recorder.hasPermission()) {
-        throw const AudioRecordingException(
-          AudioRecordingFailure.permissionDenied,
-          'Microphone permission was denied. Allow microphone access in the '
-          'browser site settings and try again.',
-        );
-      }
       if (!await recorder.isEncoderSupported(AudioEncoder.wav)) {
         throw const AudioRecordingException(
           AudioRecordingFailure.unsupported,
@@ -75,6 +76,7 @@ class _WebAudioRecordingService implements AudioRecordingService {
           autoGain: true,
           echoCancel: false,
           noiseSuppress: true,
+          audioRouteChange: AudioRouteChangeMode.stop,
         ),
         path: '',
       );
@@ -86,20 +88,47 @@ class _WebAudioRecordingService implements AudioRecordingService {
       await Future<void>.delayed(_captureWarmup);
     } on AudioRecordingException {
       rethrow;
-    } catch (_) {
+    } catch (error) {
       _isRecording = false;
       try {
         await recorder.cancel();
       } catch (_) {
         // Preserve the actionable recorder failure below.
       }
-      throw const AudioRecordingException(
-        AudioRecordingFailure.startFailed,
-        'Could not start browser microphone recording. Check the selected '
-        'input device and site permission.',
-      );
+      throw switch (_browserErrorName(error)) {
+        'NotAllowedError' || 'SecurityError' => const AudioRecordingException(
+          AudioRecordingFailure.permissionDenied,
+          'Microphone permission was denied. Allow microphone access in the '
+          'browser site settings and try again.',
+        ),
+        'NotFoundError' => const AudioRecordingException(
+          AudioRecordingFailure.noInputDevice,
+          'No microphone was found. Connect an input device and try again.',
+        ),
+        _ => const AudioRecordingException(
+          AudioRecordingFailure.startFailed,
+          'Could not start browser microphone recording. Check the selected '
+          'input device and site permission.',
+        ),
+      };
     }
   }
+
+  AudioRecorder _createRecorder() {
+    final recorder = AudioRecorder();
+    _stopSubscription = recorder.onStopped().listen((stop) {
+      if (stop.reason != RecordStopReason.stop &&
+          _isRecording &&
+          !_interruptions.isClosed) {
+        _interruptions.add(null);
+      }
+    });
+    return recorder;
+  }
+
+  // record_web wraps the browser's DOMException as "<name>: <message>".
+  static String? _browserErrorName(Object error) =>
+      error is PlatformException ? error.message?.split(':').first : null;
 
   @override
   Future<String> stop() async {
@@ -276,7 +305,10 @@ class _WebAudioRecordingService implements AudioRecordingService {
     _revokeCompletedRecording();
     final recorder = _recorder;
     _recorder = null;
+    await _stopSubscription?.cancel();
+    _stopSubscription = null;
     await recorder?.dispose();
+    await _interruptions.close();
   }
 
   Future<Uint8List> _readBlobUrl(String url) async {
