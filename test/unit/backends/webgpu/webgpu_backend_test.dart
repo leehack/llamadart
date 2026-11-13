@@ -5653,32 +5653,77 @@ void main() {
       expect(warmupCallCount, 2);
     });
 
-    test('skips the generation warmup for a media-embedding model', () async {
+    void setEmbeddingProbe({required bool image, required bool audio}) {
       bridge.setProperty(
         'getEmbeddingCapabilities'.toJS,
         (() {
           final capabilities = JSObject()
             ..setProperty('apiVersion'.toJS, 1.toJS)
             ..setProperty('text'.toJS, true.toJS)
-            ..setProperty('image'.toJS, true.toJS)
-            ..setProperty('audio'.toJS, true.toJS);
+            ..setProperty('image'.toJS, image.toJS)
+            ..setProperty('audio'.toJS, audio.toJS);
           return Future<JSAny?>.value(capabilities).toJS;
         }).toJS,
       );
+    }
+
+    Future<void> loadWithProjector() async {
       await backend.modelLoadFromUrl(
         'https://example.com/model.gguf',
         const ModelParams(),
       );
-
       final handle = await backend.multimodalContextCreate(
         1,
         'https://example.com/mmproj.gguf',
       );
-
       expect(handle, isNotNull);
+    }
+
+    for (final (image, audio) in [(true, true), (true, false), (false, true)]) {
+      test('skips the generation warmup for a media-embedding model '
+          '(image: $image, audio: $audio)', () async {
+        setEmbeddingProbe(image: image, audio: audio);
+        await loadWithProjector();
+
+        expect(warmupCallCount, 0);
+        final capabilities = await backend.getEmbeddingCapabilities(1);
+        expect([capabilities.image, capabilities.audio], [image, audio]);
+      });
+    }
+
+    test('keeps the generation warmup for a chat VLM without media '
+        'embedding support', () async {
+      setEmbeddingProbe(image: false, audio: false);
+      await loadWithProjector();
+
+      expect(warmupCallCount, 1);
+    });
+
+    test('keeps the generation warmup on assets without the capability '
+        'probe', () async {
+      await loadWithProjector();
+
+      expect(warmupCallCount, 1);
+    });
+
+    test('runs the warmup before the first generation after a skipped load '
+        'warmup', () async {
+      setEmbeddingProbe(image: true, audio: true);
+      await loadWithProjector();
       expect(warmupCallCount, 0);
-      final capabilities = await backend.getEmbeddingCapabilities(1);
-      expect([capabilities.image, capabilities.audio], [true, true]);
+
+      await backend
+          .generate(
+            1,
+            'Describe',
+            const GenerationParams(maxTokens: 8),
+            parts: <LlamaContentPart>[
+              LlamaImageContent(bytes: Uint8List.fromList(<int>[1, 2, 3])),
+            ],
+          )
+          .toList();
+
+      expect(warmupCallCount, 1);
     });
 
     test(

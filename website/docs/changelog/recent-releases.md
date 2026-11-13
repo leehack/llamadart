@@ -13,7 +13,7 @@ validate against the exact release tag notes.
 
 ## Unreleased
 
-- Fixed image and audio embeddings reporting unsupported on a WebGPU runtime after loading an embedding model's projector; they now work there, qualified on an Apple GPU in Chrome, and repeated media batches are qualified on wasm32 from assets `v0.1.76` ([#1971](https://github.com/leehack/llamadart/issues/1971)).
+- Fixed image and audio embeddings reporting unsupported on a WebGPU runtime after loading an embedding model's projector; they now work there, qualified on an Apple GPU in Chrome, and repeated media batches are qualified on wasm32 from assets `v0.1.76` (measured on the pinned assets) ([#1971](https://github.com/leehack/llamadart/issues/1971)).
 
 ## 0.19.8
 

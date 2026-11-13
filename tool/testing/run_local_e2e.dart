@@ -3408,6 +3408,27 @@ Future<LocalE2eResult> runLocalE2e(
     }
   }
 
+  if (scenario.name == 'web-multimodal-embeddings-webgpu' && !parsed.dryRun) {
+    final configFile = File('$root/build/webgpu_embeddings_e2e/config.json');
+    Object? gpuLayers;
+    if (configFile.existsSync()) {
+      try {
+        final decoded = jsonDecode(configFile.readAsStringSync());
+        if (decoded is Map) gpuLayers = decoded['gpuLayers'];
+      } on FormatException {
+        // Reported below as a missing gpuLayers.
+      }
+    }
+    if (gpuLayers is! int || gpuLayers <= 0) {
+      return const LocalE2eResult(
+        64,
+        stderr:
+            'web-multimodal-embeddings-webgpu requires build/webgpu_embeddings_e2e/config.json '
+            'with gpuLayers above 0; gpuLayers 0 runs on CPU. See doc/multimodal_embeddings_web.md.\n',
+      );
+    }
+  }
+
   if (scenario.name == 'native-multimodal-embeddings') {
     for (final name in const [
       'LLAMADART_EMBEDDING_MODELS_DIR',
