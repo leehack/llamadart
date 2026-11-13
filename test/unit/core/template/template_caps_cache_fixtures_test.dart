@@ -85,6 +85,10 @@ const Map<String, String> _pinnedCaps = <String, String>{
   'test/fixtures/llama_cpp_templates/google-gemma-2-2b-it.jinja': '00001000',
   'test/fixtures/llama_cpp_templates/google-gemma-4-31B-it-interleaved.jinja':
       '11111111',
+  // The #1881 thinking-off templates are pinned from Dart detection, without a
+  // server probe.
+  'test/fixtures/llama_cpp_templates/llama-cpp-deepseek-r1.jinja': '11111011',
+  'test/fixtures/llama_cpp_templates/NVIDIA-Nemotron-Nano-v2.jinja': '11111011',
   'test/fixtures/llama_cpp_templates/llama-cpp-rwkv-world.jinja': '10001010',
   'test/fixtures/llama_cpp_templates/meetkai-functionary-medium-v3.1.jinja':
       '11111001',

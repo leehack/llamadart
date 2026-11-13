@@ -295,6 +295,82 @@ void main() {
     });
   });
 
+  group('withForcedThoughtVerbatim', () {
+    ThinkingExtraction verbatim(
+      String text, {
+      bool thinkingForcedOpen = true,
+      bool isPartial = false,
+      bool trimContent = true,
+    }) => withForcedThoughtVerbatim(
+      () => extractThinking(
+        text,
+        thinkingForcedOpen: thinkingForcedOpen,
+        trimContent: trimContent,
+      ),
+      isPartial: isPartial,
+    );
+
+    test('ends the thought at the first end tag and keeps it as generated', () {
+      for (final (text, content, reasoning) in const [
+        ('Plan.</think>Answer.', 'Answer.', 'Plan.'),
+        (r'Plan \n x.</think>Answer.', 'Answer.', r'Plan \n x.'),
+        ('<think>Plan.</think>Answer.', 'Answer.', '<think>Plan.'),
+        (
+          'Plan.</think>A</think>B<think>X</think>C',
+          'A</think>B<think>X</think>C',
+          'Plan.',
+        ),
+        ('A<think>X</think>B', 'B', 'A<think>X'),
+        ('</think>A<think>X</think>B', 'A<think>X</think>B', null),
+        ('Plan.</think></think>A', '</think>A', 'Plan.'),
+        ('Plan', '', 'Plan'),
+        ('', '', null),
+      ]) {
+        final result = verbatim(text);
+        expect(result.content, content, reason: text);
+        expect(result.reasoning, reasoning, reason: text);
+      }
+    });
+
+    test('keeps a trailing end-tag prefix when finished, drops it when '
+        'partial', () {
+      expect(verbatim('Plan </thi').reasoning, 'Plan </thi');
+      expect(verbatim('Plan </thi', isPartial: true).reasoning, 'Plan');
+      expect(verbatim('Plan </think', isPartial: true).reasoning, 'Plan');
+      expect(verbatim('x <', isPartial: true).reasoning, 'x');
+      expect(verbatim('Plan.</think>A </thi', isPartial: true), (
+        content: 'A </thi',
+        reasoning: 'Plan.',
+      ));
+    });
+
+    test('keeps the content whitespace unless it is trimmed', () {
+      expect(
+        verbatim('Plan.</think>\n\nA\n', trimContent: false).content,
+        '\n\nA\n',
+      );
+      expect(verbatim('Plan.</think>\n\nA\n').content, 'A');
+    });
+
+    test('applies only to a forced-open thought', () {
+      expect(
+        verbatim(
+          '<think>Plan.</think>A<think>X</think>B',
+          thinkingForcedOpen: false,
+        ),
+        extractThinking('<think>Plan.</think>A<think>X</think>B'),
+      );
+    });
+
+    test('is scoped to the parse it wraps', () {
+      withForcedThoughtVerbatim(() => 0, isPartial: false);
+      expect(
+        extractThinking('<think>Plan.</think>A', thinkingForcedOpen: true),
+        (content: 'A', reasoning: 'Plan.'),
+      );
+    });
+  });
+
   group('endsUnopenedThought', () {
     test('is true for an end tag before any start tag', () {
       expect(endsUnopenedThought('Plan.</think>Answer.'), isTrue);
