@@ -244,7 +244,7 @@ ThinkingExtraction _extractDsmlThinking(
       );
     }
     if (isPartial) {
-      if (thinkEndIndex >= 0 || output.contains('<think>')) {
+      if (thinkEndIndex >= 0) {
         final thinking = extractThinking(
           output,
           thinkingForcedOpen: thinkingForcedOpen,
@@ -260,13 +260,10 @@ ThinkingExtraction _extractDsmlThinking(
           reasoning: thinking.reasoning,
         );
       }
-      final pendingMarkerLength = _matchingDelimiterPrefixSuffixLength(
-        output,
+      final reasoning = withoutTrailingTagPrefix(output, [
+        '</think>',
         callsStart,
-      );
-      final reasoning = output
-          .substring(0, output.length - pendingMarkerLength)
-          .trim();
+      ]).trim();
       return (content: '', reasoning: reasoning.isEmpty ? null : reasoning);
     }
   }

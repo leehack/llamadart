@@ -56,6 +56,56 @@
               }
             ]
           }
+        },
+        {
+          "name": "end-tag-then-thought",
+          "output": "</think>Sunny.<think>Plan.</think>Done.",
+          "upstream": {
+            "content": "Sunny.<think>Plan.</think>Done.",
+            "reasoning_content": "",
+            "tool_calls": []
+          }
+        },
+        {
+          "name": "thought-after-text",
+          "output": "Sunny.<think>Plan.</think>Done.",
+          "upstream": {
+            "content": "Done.",
+            "reasoning_content": "Sunny.<think>Plan.",
+            "tool_calls": []
+          }
+        },
+        {
+          "name": "repeated-end-tag",
+          "output": "Plan.</think></think>Sunny.",
+          "upstream": {
+            "content": "</think>Sunny.",
+            "reasoning_content": "Plan.",
+            "tool_calls": []
+          }
+        },
+        {
+          "name": "repeated-start-tag",
+          "output": "<think>Plan.</think>Sunny.",
+          "upstream": {
+            "content": "Sunny.",
+            "reasoning_content": "<think>Plan.",
+            "tool_calls": []
+          }
+        },
+        {
+          "name": "partial-end-tag-at-end",
+          "output": "Plan it </thi",
+          "upstream": {
+            "content": "",
+            "reasoning_content": "Plan it </thi",
+            "tool_calls": []
+          },
+          "upstream_partial": {
+            "content": "",
+            "reasoning_content": "Plan it ",
+            "tool_calls": []
+          }
         }
       ]
     },
@@ -522,6 +572,545 @@
           "upstream": {
             "content": "A",
             "reasoning_content": "Plan <|START_THINKING|>x",
+            "tool_calls": []
+          }
+        }
+      ]
+    },
+    {
+      "template": "test/fixtures/llama_cpp_templates/GLM-4.7-Flash.jinja",
+      "format": "glm45",
+      "generation_prompt": "<|assistant|><think>",
+      "required_grammar_start": "root ::= think-body \"</think>\" think-space (tool-call+)",
+      "cases": [
+        {
+          "name": "unended-thought",
+          "output": "Plan it.\n",
+          "upstream": {
+            "content": "",
+            "reasoning_content": "Plan it.\n",
+            "tool_calls": []
+          }
+        },
+        {
+          "name": "ended-thought",
+          "output": "Plan.\n</think>\n\nSunny.",
+          "upstream": {
+            "content": "\n\nSunny.",
+            "reasoning_content": "Plan.\n",
+            "tool_calls": []
+          }
+        },
+        {
+          "name": "escaped-newline-in-ended-thought",
+          "output": "Plan \\n x.</think>Sunny.",
+          "upstream": {
+            "content": "Sunny.",
+            "reasoning_content": "Plan \\n x.",
+            "tool_calls": []
+          }
+        },
+        {
+          "name": "repeated-start-tag",
+          "output": "<think>Plan.</think>Sunny.",
+          "upstream": {
+            "content": "Sunny.",
+            "reasoning_content": "<think>Plan.",
+            "tool_calls": []
+          }
+        },
+        {
+          "name": "tags-after-first-end-tag",
+          "output": "Plan.</think>A</think>B<think>X</think>C",
+          "upstream": {
+            "content": "A</think>B<think>X</think>C",
+            "reasoning_content": "Plan.",
+            "tool_calls": []
+          }
+        },
+        {
+          "name": "partial-end-tag-at-end",
+          "output": "Plan it </thi",
+          "upstream": {
+            "content": "",
+            "reasoning_content": "Plan it </thi",
+            "tool_calls": []
+          },
+          "upstream_partial": {
+            "content": "",
+            "reasoning_content": "Plan it ",
+            "tool_calls": []
+          }
+        }
+      ]
+    },
+    {
+      "template": "test/fixtures/llama_cpp_templates/poolside-Laguna-XS.2.jinja",
+      "format": "laguna",
+      "generation_prompt": "<assistant>\n<think>",
+      "required_grammar_start": "root ::= laguna-required-prefix required-tool-section",
+      "cases": [
+        {
+          "name": "unended-thought",
+          "output": "Plan it.\n",
+          "upstream": {
+            "content": "",
+            "reasoning_content": "Plan it.\n",
+            "tool_calls": []
+          }
+        },
+        {
+          "name": "ended-thought",
+          "output": "Plan.\n</think>\n\nSunny.",
+          "upstream": {
+            "content": "\n\nSunny.",
+            "reasoning_content": "Plan.\n",
+            "tool_calls": []
+          }
+        },
+        {
+          "name": "escaped-newline-in-ended-thought",
+          "output": "Plan \\n x.</think>Sunny.",
+          "upstream": {
+            "content": "Sunny.",
+            "reasoning_content": "Plan \\n x.",
+            "tool_calls": []
+          }
+        },
+        {
+          "name": "repeated-start-tag",
+          "output": "<think>Plan.</think>Sunny.",
+          "upstream": {
+            "content": "Sunny.",
+            "reasoning_content": "<think>Plan.",
+            "tool_calls": []
+          }
+        },
+        {
+          "name": "tags-after-first-end-tag",
+          "output": "Plan.</think>A</think>B<think>X</think>C",
+          "upstream": {
+            "content": "A</think>B<think>X</think>C",
+            "reasoning_content": "Plan.",
+            "tool_calls": []
+          }
+        },
+        {
+          "name": "partial-end-tag-at-end",
+          "output": "Plan it </thi",
+          "upstream": {
+            "content": "",
+            "reasoning_content": "Plan it </thi",
+            "tool_calls": []
+          },
+          "upstream_partial": {
+            "content": "",
+            "reasoning_content": "Plan it ",
+            "tool_calls": []
+          }
+        }
+      ]
+    },
+    {
+      "template": "test/fixtures/llama_cpp_templates/deepseek-ai-DeepSeek-R1-Distill-Qwen-32B.jinja",
+      "format": "deepseekR1",
+      "generation_prompt": "<｜Assistant｜><think>\n",
+      "required_grammar_start": "root ::= ( \"</think>\" space )? tool-calls",
+      "cases": [
+        {
+          "name": "unended-thought",
+          "output": "Plan it.\n",
+          "upstream": {
+            "content": "",
+            "reasoning_content": "\nPlan it.\n",
+            "tool_calls": []
+          }
+        },
+        {
+          "name": "ended-thought",
+          "output": "Plan.\n</think>\n\nSunny.",
+          "upstream": {
+            "content": "\n\nSunny.",
+            "reasoning_content": "\nPlan.\n",
+            "tool_calls": []
+          }
+        },
+        {
+          "name": "escaped-newline-in-ended-thought",
+          "output": "Plan \\n x.</think>Sunny.",
+          "upstream": {
+            "content": "Sunny.",
+            "reasoning_content": "\nPlan \\n x.",
+            "tool_calls": []
+          }
+        },
+        {
+          "name": "repeated-start-tag",
+          "output": "<think>Plan.</think>Sunny.",
+          "upstream": {
+            "content": "Sunny.",
+            "reasoning_content": "\n<think>Plan.",
+            "tool_calls": []
+          }
+        },
+        {
+          "name": "tags-after-first-end-tag",
+          "output": "Plan.</think>A</think>B<think>X</think>C",
+          "upstream": {
+            "content": "A</think>B<think>X</think>C",
+            "reasoning_content": "\nPlan.",
+            "tool_calls": []
+          }
+        },
+        {
+          "name": "partial-end-tag-at-end",
+          "output": "Plan it </thi",
+          "upstream": {
+            "content": "",
+            "reasoning_content": "\nPlan it </thi",
+            "tool_calls": []
+          },
+          "upstream_partial": {
+            "content": "",
+            "reasoning_content": "\nPlan it ",
+            "tool_calls": []
+          }
+        }
+      ]
+    },
+    {
+      "template": "test/fixtures/llama_cpp_templates/deepseek-ai-DeepSeek-V3.2.jinja",
+      "format": "deepseekV32",
+      "generation_prompt": "<｜Assistant｜><think>",
+      "required_grammar_start": "root ::= dsml-required-prefix required-tool-section",
+      "cases": [
+        {
+          "name": "unended-thought",
+          "output": "Plan it.\n",
+          "upstream": {
+            "content": "",
+            "reasoning_content": "Plan it.\n",
+            "tool_calls": []
+          }
+        },
+        {
+          "name": "ended-thought",
+          "output": "Plan.\n</think>\n\nSunny.",
+          "upstream": {
+            "content": "\n\nSunny.",
+            "reasoning_content": "Plan.\n",
+            "tool_calls": []
+          }
+        },
+        {
+          "name": "escaped-newline-in-ended-thought",
+          "output": "Plan \\n x.</think>Sunny.",
+          "upstream": {
+            "content": "Sunny.",
+            "reasoning_content": "Plan \\n x.",
+            "tool_calls": []
+          }
+        },
+        {
+          "name": "repeated-start-tag",
+          "output": "<think>Plan.</think>Sunny.",
+          "upstream": {
+            "content": "Sunny.",
+            "reasoning_content": "<think>Plan.",
+            "tool_calls": []
+          }
+        },
+        {
+          "name": "tags-after-first-end-tag",
+          "output": "Plan.</think>A</think>B<think>X</think>C",
+          "upstream": {
+            "content": "A</think>B<think>X</think>C",
+            "reasoning_content": "Plan.",
+            "tool_calls": []
+          }
+        },
+        {
+          "name": "partial-end-tag-at-end",
+          "output": "Plan it </thi",
+          "upstream": {
+            "content": "",
+            "reasoning_content": "Plan it </thi",
+            "tool_calls": []
+          },
+          "upstream_partial": {
+            "content": "",
+            "reasoning_content": "Plan it ",
+            "tool_calls": []
+          }
+        }
+      ]
+    },
+    {
+      "template": "test/fixtures/llama_cpp_templates/deepseek-ai-DeepSeek-V4.jinja",
+      "format": "deepseekV4",
+      "generation_prompt": "<｜Assistant｜><think>",
+      "required_grammar_start": "root ::= dsml-required-prefix required-tool-section",
+      "cases": [
+        {
+          "name": "unended-thought",
+          "output": "Plan it.\n",
+          "upstream": {
+            "content": "",
+            "reasoning_content": "Plan it.\n",
+            "tool_calls": []
+          }
+        },
+        {
+          "name": "ended-thought",
+          "output": "Plan.\n</think>\n\nSunny.",
+          "upstream": {
+            "content": "\n\nSunny.",
+            "reasoning_content": "Plan.\n",
+            "tool_calls": []
+          }
+        },
+        {
+          "name": "escaped-newline-in-ended-thought",
+          "output": "Plan \\n x.</think>Sunny.",
+          "upstream": {
+            "content": "Sunny.",
+            "reasoning_content": "Plan \\n x.",
+            "tool_calls": []
+          }
+        },
+        {
+          "name": "repeated-start-tag",
+          "output": "<think>Plan.</think>Sunny.",
+          "upstream": {
+            "content": "Sunny.",
+            "reasoning_content": "<think>Plan.",
+            "tool_calls": []
+          }
+        },
+        {
+          "name": "tags-after-first-end-tag",
+          "output": "Plan.</think>A</think>B<think>X</think>C",
+          "upstream": {
+            "content": "A</think>B<think>X</think>C",
+            "reasoning_content": "Plan.",
+            "tool_calls": []
+          }
+        },
+        {
+          "name": "partial-end-tag-at-end",
+          "output": "Plan it </thi",
+          "upstream": {
+            "content": "",
+            "reasoning_content": "Plan it </thi",
+            "tool_calls": []
+          },
+          "upstream_partial": {
+            "content": "",
+            "reasoning_content": "Plan it ",
+            "tool_calls": []
+          }
+        }
+      ]
+    },
+    {
+      "template": "test/fixtures/llama_cpp_templates/openbmb-MiniCPM5-1B.jinja",
+      "format": "minicpm5",
+      "generation_prompt": "<|im_start|>assistant\n<think>\n",
+      "required_grammar_start": "root ::= think-body \"</think>\" think-space (tool-call+)",
+      "cases": [
+        {
+          "name": "unended-thought",
+          "output": "Plan it.\n",
+          "upstream": {
+            "content": "",
+            "reasoning_content": "Plan it.\n",
+            "tool_calls": []
+          }
+        },
+        {
+          "name": "ended-thought",
+          "output": "Plan.\n</think>\n\nSunny.",
+          "upstream": {
+            "content": "Sunny.",
+            "reasoning_content": "Plan.\n",
+            "tool_calls": []
+          }
+        },
+        {
+          "name": "escaped-newline-in-ended-thought",
+          "output": "Plan \\n x.</think>Sunny.",
+          "upstream": {
+            "content": "Sunny.",
+            "reasoning_content": "Plan \\n x.",
+            "tool_calls": []
+          }
+        },
+        {
+          "name": "repeated-start-tag",
+          "output": "<think>Plan.</think>Sunny.",
+          "upstream": {
+            "content": "Sunny.",
+            "reasoning_content": "<think>Plan.",
+            "tool_calls": []
+          }
+        },
+        {
+          "name": "tags-after-first-end-tag",
+          "output": "Plan.</think>A</think>B<think>X</think>C",
+          "upstream": {
+            "content": "A</think>B<think>X</think>C",
+            "reasoning_content": "Plan.",
+            "tool_calls": []
+          }
+        },
+        {
+          "name": "partial-end-tag-at-end",
+          "output": "Plan it </thi",
+          "upstream": {
+            "content": "",
+            "reasoning_content": "Plan it </thi",
+            "tool_calls": []
+          },
+          "upstream_partial": {
+            "content": "",
+            "reasoning_content": "Plan it ",
+            "tool_calls": []
+          }
+        }
+      ]
+    },
+    {
+      "template": "test/fixtures/llama_cpp_templates/tencent-Hy3.jinja",
+      "format": "hunyuanV3",
+      "chat_template_kwargs": {
+        "reasoning_effort": "high"
+      },
+      "generation_prompt": "<｜hy_Assistant:opensource｜><think:opensource>",
+      "required_grammar_start": "root ::= think-body \"</think:opensource>\" think-space (\"<tool_calls:opensource>\\n\" tool-call+ \"</tool_calls:opensource>\")",
+      "cases": [
+        {
+          "name": "unended-thought",
+          "output": "Plan it.\n",
+          "upstream": {
+            "content": "",
+            "reasoning_content": "Plan it.\n",
+            "tool_calls": []
+          }
+        },
+        {
+          "name": "ended-thought",
+          "output": "Plan.\n</think:opensource>\n\nSunny.",
+          "upstream": {
+            "content": "\n\nSunny.",
+            "reasoning_content": "Plan.\n",
+            "tool_calls": []
+          }
+        },
+        {
+          "name": "escaped-newline-in-ended-thought",
+          "output": "Plan \\n x.</think:opensource>Sunny.",
+          "upstream": {
+            "content": "Sunny.",
+            "reasoning_content": "Plan \\n x.",
+            "tool_calls": []
+          }
+        },
+        {
+          "name": "repeated-start-tag",
+          "output": "<think:opensource>Plan.</think:opensource>Sunny.",
+          "upstream": {
+            "content": "Sunny.",
+            "reasoning_content": "<think:opensource>Plan.",
+            "tool_calls": []
+          }
+        },
+        {
+          "name": "tags-after-first-end-tag",
+          "output": "Plan.</think:opensource>A</think:opensource>B<think:opensource>X</think:opensource>C",
+          "upstream": {
+            "content": "A</think:opensource>B<think:opensource>X</think:opensource>C",
+            "reasoning_content": "Plan.",
+            "tool_calls": []
+          }
+        },
+        {
+          "name": "partial-end-tag-at-end",
+          "output": "Plan it </thi",
+          "upstream": {
+            "content": "",
+            "reasoning_content": "Plan it </thi",
+            "tool_calls": []
+          },
+          "upstream_partial": {
+            "content": "",
+            "reasoning_content": "Plan it ",
+            "tool_calls": []
+          }
+        }
+      ]
+    },
+    {
+      "template": "test/fixtures/llama_cpp_templates/Kimi-K3.jinja",
+      "format": "kimiK3",
+      "generation_prompt": "<|open|>message role=\"assistant\"<|sep|><|open|>think<|sep|>",
+      "required_grammar_start": "root ::= kimi-required-prefix required-tool-section",
+      "cases": [
+        {
+          "name": "unended-thought",
+          "output": "Plan it.\n",
+          "upstream": {
+            "content": "",
+            "reasoning_content": "Plan it.\n",
+            "tool_calls": []
+          }
+        },
+        {
+          "name": "ended-thought",
+          "output": "Plan.\n<|close|>think<|sep|><|open|>response<|sep|>Sunny.<|close|>response<|sep|>",
+          "upstream": {
+            "content": "Sunny.",
+            "reasoning_content": "Plan.\n",
+            "tool_calls": []
+          }
+        },
+        {
+          "name": "escaped-newline-in-ended-thought",
+          "output": "Plan \\n x.<|close|>think<|sep|><|open|>response<|sep|>Sunny.<|close|>response<|sep|>",
+          "upstream": {
+            "content": "Sunny.",
+            "reasoning_content": "Plan \\n x.",
+            "tool_calls": []
+          }
+        },
+        {
+          "name": "repeated-start-tag",
+          "output": "<|open|>think<|sep|>Plan.<|close|>think<|sep|><|open|>response<|sep|>Sunny.<|close|>response<|sep|>",
+          "upstream": {
+            "content": "Sunny.",
+            "reasoning_content": "<|open|>think<|sep|>Plan.",
+            "tool_calls": []
+          }
+        },
+        {
+          "name": "tags-after-first-end-tag",
+          "output": "Plan.<|close|>think<|sep|><|open|>response<|sep|>A<|close|>think<|sep|>B<|open|>think<|sep|>X<|close|>think<|sep|>C<|close|>response<|sep|>",
+          "upstream": {
+            "content": "A<|close|>think<|sep|>B<|open|>think<|sep|>X<|close|>think<|sep|>C",
+            "reasoning_content": "Plan.",
+            "tool_calls": []
+          }
+        },
+        {
+          "name": "partial-end-tag-at-end",
+          "output": "Plan it <|close|>thi",
+          "upstream": {
+            "content": "",
+            "reasoning_content": "Plan it <|close|>thi",
+            "tool_calls": []
+          },
+          "upstream_partial": {
+            "content": "",
+            "reasoning_content": "Plan it ",
             "tool_calls": []
           }
         }

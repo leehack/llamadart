@@ -1941,8 +1941,8 @@ class WebGpuLlamaBackend
     }
     final thinkingBudget = params.thinkingBudget;
     if (thinkingBudget != null && !capabilities.thinkingBudget) {
-      throw UnsupportedError(
-        'WebGPU thinking-budget control needs bridge assets whose '
+      throw LlamaUnsupportedException(
+        'WebGPU thinking-budget control needs bridge assets v0.1.54+ whose '
         'getCompletionCapabilities() reports thinkingBudget; the loaded '
         'assets do not.',
       );

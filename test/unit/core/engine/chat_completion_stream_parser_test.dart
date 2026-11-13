@@ -1734,7 +1734,7 @@ void main() {
     for (final (name, format, forced, content, thinking) in [
       ('gpt-oss', ChatFormat.gptOss, false, '<think>a</thi', ''),
       ('GLM-4.7-Flash', ChatFormat.glm45, true, '', '<think>a</thi'),
-      ('MiniMax-M2', ChatFormat.minimaxM2, true, '', 'a</thi'),
+      ('MiniMax-M2', ChatFormat.minimaxM2, true, '', '<think>a</thi'),
     ]) {
       for (final tokens in [
         ['<think>a</thi'],
@@ -2629,10 +2629,10 @@ void main() {
         });
 
         test('the issue chunks stream the parsed reasoning', () async {
-          // Qwen3-Coder XML and Hermes keep a repeated start tag, as
-          // llama.cpp (`620d2225`) does.
+          // DeepSeek R1, Qwen3-Coder XML and Hermes keep a repeated start tag,
+          // as llama.cpp (`cd959bae9`) does.
           for (final (format, reasoning) in const [
-            (ChatFormat.deepseekR1, 'Plan.'),
+            (ChatFormat.deepseekR1, '<think>\nPlan.'),
             (ChatFormat.qwen3CoderXml, '<think>\nPlan.'),
             (ChatFormat.hermes, '<think>\nPlan.'),
           ]) {

@@ -193,6 +193,21 @@ void main() {
       expect(parsed.toolCalls, isEmpty);
     });
 
+    test('drops a call-opening prefix after a thought that starts with a tag '
+        'while streaming', () {
+      for (final format in [ChatFormat.deepseekV32, ChatFormat.deepseekV4]) {
+        final parsed = ChatTemplateEngine.parse(
+          format.index,
+          '<think>Plan <｜DS',
+          isPartial: true,
+          thinkingForcedOpen: true,
+          tools: [attributeTool],
+        );
+        expect(parsed.reasoningContent, '<think>Plan', reason: '$format');
+        expect(parsed.content, isEmpty, reason: '$format');
+      }
+    });
+
     test('keeps completed calls before a partial second invoke', () {
       const output =
           '<｜DSML｜function_calls>\n'

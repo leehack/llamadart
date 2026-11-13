@@ -667,6 +667,297 @@
           }
         }
       ]
+    },
+    {
+      "template": "test/fixtures/llama_cpp_templates/llama-cpp-deepseek-r1.jinja",
+      "format": "deepseekR1",
+      "generation_prompt": "<｜Assistant｜><think>\n",
+      "closed_prompt_suffix": "</think>\n",
+      "cases": [
+        {
+          "name": "thought",
+          "output": "Plan\n</think>\n\nSunny.",
+          "upstream": {
+            "content": "\n\nSunny.",
+            "reasoning_content": "\nPlan\n",
+            "tool_calls": []
+          },
+          "upstream_without_tools": {
+            "content": "\n\nSunny.",
+            "reasoning_content": "\nPlan\n",
+            "tool_calls": []
+          }
+        },
+        {
+          "name": "repeated-start-tag",
+          "output": "<think>Plan</think>Sunny.",
+          "upstream": {
+            "content": "Sunny.",
+            "reasoning_content": "\n<think>Plan",
+            "tool_calls": []
+          },
+          "upstream_without_tools": {
+            "content": "Sunny.",
+            "reasoning_content": "\n<think>Plan",
+            "tool_calls": []
+          }
+        },
+        {
+          "name": "start-tag-unended",
+          "output": "<think>Plan",
+          "upstream": {
+            "content": "",
+            "reasoning_content": "\n<think>Plan",
+            "tool_calls": []
+          },
+          "upstream_without_tools": {
+            "content": "",
+            "reasoning_content": "\n<think>Plan",
+            "tool_calls": []
+          }
+        },
+        {
+          "name": "tags-after-first-end-tag",
+          "output": "Plan</think>A</think>B<think>X</think>C",
+          "upstream": {
+            "content": "A</think>B<think>X</think>C",
+            "reasoning_content": "\nPlan",
+            "tool_calls": []
+          },
+          "upstream_without_tools": {
+            "content": "A</think>B<think>X</think>C",
+            "reasoning_content": "\nPlan",
+            "tool_calls": []
+          }
+        },
+        {
+          "name": "escaped-newline",
+          "output": "Plan \\n x</think>Sunny \\n there.",
+          "upstream": {
+            "content": "Sunny \\n there.",
+            "reasoning_content": "\nPlan \\n x",
+            "tool_calls": []
+          },
+          "upstream_without_tools": {
+            "content": "Sunny \\n there.",
+            "reasoning_content": "\nPlan \\n x",
+            "tool_calls": []
+          }
+        },
+        {
+          "name": "thought-then-call",
+          "output": "Plan</think><｜tool▁calls▁begin｜><｜tool▁call▁begin｜>function<｜tool▁sep｜>weather\n```json\n{\"city\": \"Paris\"}\n```<｜tool▁call▁end｜><｜tool▁calls▁end｜>",
+          "upstream": {
+            "content": "",
+            "reasoning_content": "\nPlan",
+            "tool_calls": [
+              {
+                "name": "weather",
+                "arguments": "{\"city\": \"Paris\"}"
+              }
+            ]
+          },
+          "upstream_without_tools": {
+            "content": "<｜tool▁calls▁begin｜><｜tool▁call▁begin｜>function<｜tool▁sep｜>weather\n```json\n{\"city\": \"Paris\"}\n```<｜tool▁call▁end｜><｜tool▁calls▁end｜>",
+            "reasoning_content": "\nPlan",
+            "tool_calls": []
+          }
+        }
+      ]
+    },
+    {
+      "template": "test/fixtures/llama_cpp_templates/NVIDIA-Nemotron-Nano-v2.jinja",
+      "format": "nemotronV2",
+      "generation_prompt": "<SPECIAL_11>Assistant\n<think>\n",
+      "closed_prompt_suffix": "</think>",
+      "cases": [
+        {
+          "name": "thought",
+          "output": "Plan\n</think>\n\nSunny.",
+          "upstream": {
+            "content": "\n\nSunny.",
+            "reasoning_content": "Plan\n",
+            "tool_calls": []
+          },
+          "upstream_without_tools": {
+            "content": "\n\nSunny.",
+            "reasoning_content": "Plan\n",
+            "tool_calls": []
+          }
+        },
+        {
+          "name": "repeated-start-tag",
+          "output": "<think>Plan</think>Sunny.",
+          "upstream": {
+            "content": "Sunny.",
+            "reasoning_content": "<think>Plan",
+            "tool_calls": []
+          },
+          "upstream_without_tools": {
+            "content": "Sunny.",
+            "reasoning_content": "<think>Plan",
+            "tool_calls": []
+          }
+        },
+        {
+          "name": "start-tag-unended",
+          "output": "<think>Plan",
+          "upstream": {
+            "content": "",
+            "reasoning_content": "<think>Plan",
+            "tool_calls": []
+          },
+          "upstream_without_tools": {
+            "content": "",
+            "reasoning_content": "<think>Plan",
+            "tool_calls": []
+          }
+        },
+        {
+          "name": "tags-after-first-end-tag",
+          "output": "Plan</think>A</think>B<think>X</think>C",
+          "upstream": {
+            "content": "A</think>B<think>X</think>C",
+            "reasoning_content": "Plan",
+            "tool_calls": []
+          },
+          "upstream_without_tools": {
+            "content": "A</think>B<think>X</think>C",
+            "reasoning_content": "Plan",
+            "tool_calls": []
+          }
+        },
+        {
+          "name": "escaped-newline",
+          "output": "Plan \\n x</think>Sunny \\n there.",
+          "upstream": {
+            "content": "Sunny \\n there.",
+            "reasoning_content": "Plan \\n x",
+            "tool_calls": []
+          },
+          "upstream_without_tools": {
+            "content": "Sunny \\n there.",
+            "reasoning_content": "Plan \\n x",
+            "tool_calls": []
+          }
+        },
+        {
+          "name": "thought-then-call",
+          "output": "Plan</think><TOOLCALL>[{\"name\": \"weather\", \"arguments\": {\"city\": \"Paris\"}}]</TOOLCALL>",
+          "upstream": {
+            "content": "",
+            "reasoning_content": "Plan",
+            "tool_calls": [
+              {
+                "name": "weather",
+                "arguments": "{\"city\": \"Paris\"}"
+              }
+            ]
+          },
+          "upstream_without_tools": {
+            "content": "<TOOLCALL>[{\"name\": \"weather\", \"arguments\": {\"city\": \"Paris\"}}]</TOOLCALL>",
+            "reasoning_content": "Plan",
+            "tool_calls": []
+          }
+        }
+      ]
+    },
+    {
+      "template": "test/fixtures/llama_cpp_templates/MiniMax-M2.jinja",
+      "format": "minimaxM2",
+      "generation_prompt": "]~b]ai\n<think>\n",
+      "closed_prompt_suffix": "\n</think>\n\n",
+      "cases": [
+        {
+          "name": "thought",
+          "output": "Plan\n</think>\n\nSunny.",
+          "upstream": {
+            "content": "Sunny.",
+            "reasoning_content": "Plan\n",
+            "tool_calls": []
+          },
+          "upstream_without_tools": {
+            "content": "Sunny.",
+            "reasoning_content": "Plan\n",
+            "tool_calls": []
+          }
+        },
+        {
+          "name": "repeated-start-tag",
+          "output": "<think>Plan</think>Sunny.",
+          "upstream": {
+            "content": "Sunny.",
+            "reasoning_content": "<think>Plan",
+            "tool_calls": []
+          },
+          "upstream_without_tools": {
+            "content": "Sunny.",
+            "reasoning_content": "<think>Plan",
+            "tool_calls": []
+          }
+        },
+        {
+          "name": "start-tag-unended",
+          "output": "<think>Plan",
+          "upstream": {
+            "content": "",
+            "reasoning_content": "<think>Plan",
+            "tool_calls": []
+          },
+          "upstream_without_tools": {
+            "content": "",
+            "reasoning_content": "<think>Plan",
+            "tool_calls": []
+          }
+        },
+        {
+          "name": "tags-after-first-end-tag",
+          "output": "Plan</think>A</think>B<think>X</think>C",
+          "upstream": {
+            "content": "A</think>B<think>X</think>C",
+            "reasoning_content": "Plan",
+            "tool_calls": []
+          },
+          "upstream_without_tools": {
+            "content": "A</think>B<think>X</think>C",
+            "reasoning_content": "Plan",
+            "tool_calls": []
+          }
+        },
+        {
+          "name": "escaped-newline",
+          "output": "Plan \\n x</think>Sunny \\n there.",
+          "upstream": {
+            "content": "Sunny \\n there.",
+            "reasoning_content": "Plan \\n x",
+            "tool_calls": []
+          },
+          "upstream_without_tools": {
+            "content": "Sunny \\n there.",
+            "reasoning_content": "Plan \\n x",
+            "tool_calls": []
+          }
+        },
+        {
+          "name": "thought-then-call",
+          "output": "Plan</think><minimax:tool_call>\n<invoke name=\"weather\">\n<parameter name=\"city\">Paris</parameter>\n</invoke>\n</minimax:tool_call>",
+          "upstream": {
+            "content": "",
+            "reasoning_content": "Plan",
+            "tool_calls": [
+              {
+                "name": "weather",
+                "arguments": "{\"city\":\"Paris\"}"
+              }
+            ]
+          },
+          "upstream_without_tools": {
+            "content": "<minimax:tool_call>\n<invoke name=\"weather\">\n<parameter name=\"city\">Paris</parameter>\n</invoke>\n</minimax:tool_call>",
+            "reasoning_content": "Plan",
+            "tool_calls": []
+          }
+        }
+      ]
     }
   ],
   "no_thought_templates": [
