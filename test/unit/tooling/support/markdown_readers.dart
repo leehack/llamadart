@@ -345,9 +345,13 @@ Map<String, String> workspacePackageRoots(
 }
 
 final RegExp _tagsAnnotation = RegExp(r'@Tags\(\s*\[([^\]]*)\]');
+final RegExp _blockComment = RegExp(r'/\*[\s\S]*?\*/');
 
 bool _declaresTag(String root, String suite, String tag) {
-  final source = File(p.join(root, suite)).readAsStringSync();
+  final source = File(p.join(root, suite))
+      .readAsStringSync()
+      .replaceAll(_blockComment, '')
+      .replaceAll(_commentLine, '');
   final tags = _tagsAnnotation.firstMatch(source)?.group(1) ?? '';
   return RegExp('[\'"]${RegExp.escape(tag)}[\'"]').hasMatch(tags);
 }

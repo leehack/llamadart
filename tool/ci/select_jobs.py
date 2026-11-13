@@ -60,6 +60,13 @@ VALIDATION_BUNDLED_ASSETS = (
     'packages/llamadart_validation/assets/embeddings/v1/',
 )
 
+# Files whose recorded Markdown-reader evidence the guard test pins. Several sit
+# in lanes that run no root test, so a change there must still run the guard.
+MARKDOWN_READER_FILES = frozenset(
+    line for line in (Path(__file__).with_name('markdown_reader_files.txt')
+                      .read_text(encoding='utf-8').splitlines()) if line)
+
+
 def inventory(raw):
     """Return both endpoints of renames/copies and deleted paths; reject truncation."""
     parts = raw.decode('utf-8', errors='strict').split('\0')
@@ -178,7 +185,8 @@ def select(paths, force_full=False, pull_request=False):
         # can start reading Markdown without changing its root test suite.
         if (path.endswith('.md') or path.startswith(('tool/docs/',
                                                    'tool/testing/validation/'))
-                or path == 'tool/testing/validation.dart'):
+                or path == 'tool/testing/validation.dart'
+                or path in MARKDOWN_READER_FILES):
             jobs.add('markdown-tests')
     if 'analyze' in jobs:
         jobs.discard('docs-versions')  # Already included in root static validation.

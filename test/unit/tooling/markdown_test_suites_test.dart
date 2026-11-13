@@ -147,6 +147,20 @@ void main() {
     }
   });
 
+  test('the selector list names every file the exemptions record', () {
+    final recorded = {
+      for (final e in [...suiteExemptions.values, ...helperExemptions.values])
+        ...e.evidence.keys,
+    }.toList()..sort();
+    expect(
+      File('tool/ci/markdown_reader_files.txt').readAsLinesSync(),
+      orderedEquals(recorded),
+      reason:
+          'tool/ci/select_jobs.py runs this guard when one of these files '
+          'changes; regenerate the list from the exemptions.',
+    );
+  });
+
   test('the reader inventory, engine and exemptions have CODEOWNERS', () {
     expect(
       File('.github/CODEOWNERS').readAsLinesSync(),
@@ -507,6 +521,20 @@ void main() {
         ..write(suite, "import '../lib/walk.dart';\nvoid main() {}")
         ..write('lib/walk.dart', 'void w() { Directory.current.listSync(); }');
 
+      test('report a helper exemption with no reason', () {
+        final tree = walkTree();
+        expect(
+          tree.problems(
+            helpers: {
+              'lib/walk.dart': _exempt({
+                'lib/walk.dart': 'listSync',
+              }, reason: ' '),
+            },
+          ),
+          [contains('helper lib/walk.dart: exemption has no reason')],
+        );
+      });
+
       test('stop a helper counting as evidence while its tokens hold', () {
         final tree = walkTree();
         expect(tree.problems(), [contains(suite)]);
@@ -583,6 +611,29 @@ void main() {
         ),
         isEmpty,
       );
+    });
+
+    test('reports a gate named only in a commented-out annotation', () {
+      final tree = readerTree();
+      for (final annotation in [
+        "// @Tags(['local-only'])",
+        "/* @Tags(['local-only']) */",
+      ]) {
+        tree.write(
+          suite,
+          "$annotation\nlibrary;\nimport '../tool/reader.dart';\n"
+          'void main() {}',
+        );
+        expect(
+          tree.problems(
+            suites: {
+              suite: _exempt({helper: '.md'}, gate: 'local-only'),
+            },
+          ),
+          [contains('local-only tag')],
+          reason: annotation,
+        );
+      }
     });
 
     test('reports an exemption with no evidence or no reason', () {

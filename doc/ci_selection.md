@@ -53,7 +53,11 @@ This is executable job accounting, not a new repository protection setting.
 coverage. It carries no coverage, so a Markdown-only commit uploads none to
 Codecov. Changes to `tool/docs/`, `tool/testing/validation/` or
 `tool/testing/validation.dart` also select it, since those helpers can
-introduce a reader without editing a test. Because Linux coverage can no longer
+introduce a reader without editing a test. So does a change to any file in
+`tool/ci/markdown_reader_files.txt`: the files an exemption records evidence
+for, some of which (the website, validation and Genkit packages) sit in lanes
+that run no root test. The guard test fails until that list equals the recorded
+evidence files. Because Linux coverage can no longer
 stand in for `validation-integration` on a Markdown path, that job stays
 selected there.
 
@@ -85,16 +89,21 @@ file that mentions `git`. A walk of a temp directory is not evidence.
 **Limits.** Discovery reads source text. It cannot see a path assembled at
 runtime, a script chosen by an environment variable or a lookup table, a temp
 tree repointed at the checkout without a token, or a callee dispatched by name
-across a process boundary. It over-approximates reach, so every exemption holds
-the evidence found today, not proof of absence. The runtime check behind it is
-a run with every tracked Markdown file outside `test/` removed; that run and any
-runtime tracing of exempt suites stay a manual audit step
-([#1670](https://github.com/leehack/llamadart/issues/1670)).
+across a process boundary. Three shapes found by audit also pass: a walk root
+handed to a helper in another file, since the root and the walk token must share
+a file; `Directory.fromUri(Uri.base)`, since `Uri.base` is not a root token; and
+a script directory held in a variable rather than a literal. Evidence records
+token types per file, so a new walk that reuses a token type already recorded
+for an exempt file is not detected. Discovery over-approximates reach, so every
+exemption holds the evidence found today, not proof of absence. The runtime
+check behind it is a run with every tracked Markdown file outside `test/`
+removed; that run and any runtime tracing of exempt suites stay a manual audit
+step ([#1670](https://github.com/leehack/llamadart/issues/1670)).
 
 **Exemption contract.** Each entry is `({reason, evidence, gate})`.
 
 - `evidence` maps every reached file with a token to its sorted tokens joined
-  by ` | `. The check compares it exactly, so a new file, a new token, a renamed
+  by ` | `. The check compares it exactly, so a new file, a new token type, a renamed
   or deleted file, or a helper that gains a `README` read fails until someone
   re-reads the walk root or git call and updates the entry. Evidence is never
   inferred from emptiness.
