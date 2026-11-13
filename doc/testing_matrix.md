@@ -1492,13 +1492,9 @@ Routes: a bridge factory in direct and worker mode, and the default
 | `required`, Paris | the parsed `city` is `Paris` |
 | `required`, `maxTokens: 6` | `length` finish, no parsed call, no end marker |
 | `required`, forced malformed call | no parsed call |
-| `auto`: tool prompt, text prompt, tool-result follow-up | a call, plain text, and a text reply; direct and worker only |
+| `auto`: tool prompt, text prompt, tool-result follow-up | a call, plain text, and a text reply |
 
-Default-route `auto` waits for [#1982](https://github.com/leehack/llamadart/pull/1982)
-(fixes [#1979](https://github.com/leehack/llamadart/issues/1979)): `WebAutoBackend`
-drops the prompt-penalty capability before it, so LFM2 auto refuses there. Set
-`includeAuto: true` on the `default` route in the test once it lands. The
-`v0.1.81` group expects the typed `LlamaUnsupportedException` for `auto` with
+The `v0.1.81` group expects the typed `LlamaUnsupportedException` for `auto` with
 zero bridge calls, and `required` still enforcing with its own control.
 
 Assertions use parsed calls and the loose raw shape (the `<|tool_call_start|>`
@@ -1520,8 +1516,7 @@ The chat-app side is `chat-app-web-tool-penalty-smoke`: it asks for the weather
 in Paris and requires `--expect-tool-call getWeather`, `--expect-tool-argument
 city=Paris` and `--expect-tool-result thunderstorms` (the app's simulated
 result must reach a later completion prompt), so a plain-text reply fails. It
-conflicts with `--allow-any-response`. Run it with Qwen3.5-0.8B; LFM2 auto is
-blocked in the chat app by #1979 until #1982 lands.
+conflicts with `--allow-any-response`. Run it with Qwen3.5-0.8B.
 
 This is CPU Wasm on the staged weights: no GPU claim, and no accuracy claim
 beyond the fixed prompts.

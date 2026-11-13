@@ -184,10 +184,6 @@ class _Route {
   const _Route(this.name, {required this.includeAuto});
 
   final String name;
-
-  /// Default-route auto stays out until #1982 (fixing #1979) lands: before
-  /// it, `WebAutoBackend` drops the prompt-penalty capability and auto
-  /// refuses. Turning it on is the one-line change `includeAuto: true`.
   final bool includeAuto;
 }
 
@@ -653,7 +649,7 @@ void main() {
   }
 
   defineRoute(
-    const _Route('default', includeAuto: false),
+    const _Route('default', includeAuto: true),
     'assets',
     open: () async {
       final recorder = _Recorder();

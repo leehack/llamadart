@@ -895,8 +895,8 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
         'LFM2.5 ToolChoice text, none, required (no-call prompt with a '
         'grammar-strip control, Paris, incomplete and malformed output) and '
         'auto (tool prompt, text prompt, tool-result follow-up) through the '
-        'pinned bridge direct and worker routes; the default LlamaBackend() '
-        'route covers everything but auto until #1982; legacy v0.1.81 assets '
+        'pinned bridge direct and worker routes and the default '
+        'LlamaBackend() route; legacy v0.1.81 assets '
         'refuse auto with zero bridge calls and still enforce required; '
         'parsed calls and the loose raw shape, never grammar text; a '
         'receipt per route; missing inputs, hash mismatches, worker fallback '
@@ -1586,7 +1586,7 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
         'chat-app-web-tool-penalty-smoke --model-url <tool-capable-gguf-url>',
     useWhen:
         'Web penalty, tool-call grammar, or bridge completion option changes. '
-        'Use Qwen3.5-0.8B: LFM2 auto is blocked in the chat app by #1979.',
+        'Use Qwen3.5-0.8B.',
   ),
   TestMatrixRow(
     id: 'web-speech-to-text-smoke',
