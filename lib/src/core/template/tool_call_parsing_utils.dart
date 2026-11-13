@@ -233,6 +233,41 @@ class ToolCallParsingUtils {
     return decodeJsonValue(out.toString());
   }
 
+  /// Decodes [payload], a JSON list of calls whose last call ends inside its
+  /// last string argument, as the unclosed alternative of
+  /// `ToolCallGrammarUtils.buildWrappedArrayGrammar` admits it, or returns
+  /// null.
+  ///
+  /// [payload] must end with `}}]` and the model never wrote the closing
+  /// quote. The string holds no `<|` and does not end with a raw `"`, or a raw
+  /// `"` and `}`, which the grammar reads as part of an inner-quote run.
+  static List<Object?>? decodeJsonCallListWithUnclosedLastString(
+    String payload,
+  ) {
+    const closers = '}}]';
+    if (!payload.startsWith('[') || !payload.endsWith(closers)) return null;
+    final head = payload.substring(0, payload.length - closers.length);
+    final repaired = '$head"$closers';
+    final out = StringBuffer();
+    final innerQuotes = <int>[];
+    _scanInnerQuoteJson(repaired, 0, out, innerQuotes);
+    final decoded = decodeJsonValue(out.toString());
+    if (decoded is! List || decoded.isEmpty) return null;
+    final call = decoded.last;
+    if (call is! Map || call['arguments'] is! Map) return null;
+    final arguments = call['arguments'] as Map;
+    if (arguments.isEmpty) return null;
+    final last = arguments.values.last;
+    if (last is! String || last.contains('<|')) return null;
+    // A raw quote needs a character after it that the string can go on with.
+    final lastInnerQuote = innerQuotes.isEmpty ? -1 : innerQuotes.last;
+    if (lastInnerQuote == head.length - 1 ||
+        lastInnerQuote == head.length - 2 && head.endsWith('}')) {
+      return null;
+    }
+    return decoded;
+  }
+
   /// The end offset of the JSON object or array at [start], read as
   /// [decodeJsonValueWithInnerQuotes] reads it, or null when it is unclosed.
   static int? innerQuoteJsonContainerEnd(String text, int start) =>
@@ -243,7 +278,14 @@ class ToolCallParsingUtils {
   /// With [out], copies [text] from [start] with inner quotes escaped and
   /// returns null; without it, returns the offset after the container that
   /// opens at [start], or null when that container is unclosed.
-  static int? _scanInnerQuoteJson(String text, int start, StringBuffer? out) {
+  ///
+  /// [innerQuotes] collects the offset of every quote read as text.
+  static int? _scanInnerQuoteJson(
+    String text,
+    int start,
+    StringBuffer? out, [
+    List<int>? innerQuotes,
+  ]) {
     final objects = <bool>[];
     var key = false;
     for (var i = start; i < text.length; i++) {
@@ -274,6 +316,7 @@ class ToolCallParsingUtils {
           out?.write(inner);
           if (++i < text.length) out?.write(text[i]);
         } else if (inner == '"' && !key && _isInnerQuote(text, i)) {
+          innerQuotes?.add(i);
           out?.write(r'\"');
         } else {
           out?.write(inner);

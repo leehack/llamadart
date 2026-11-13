@@ -2,6 +2,10 @@ import 'dart:convert';
 import 'dart:math';
 
 import 'package:llamadart/src/core/grammar/json_schema_converter.dart';
+import 'package:llamadart/src/core/models/tools/tool_definition.dart';
+import 'package:llamadart/src/core/models/tools/tool_param.dart';
+import 'package:llamadart/src/core/template/handlers/lfm2_handler.dart';
+import 'package:llamadart/src/core/template/tool_call_grammar_utils.dart';
 import 'package:llamadart/src/core/template/tool_call_parsing_utils.dart';
 import 'package:test/test.dart';
 
@@ -77,6 +81,95 @@ void main() {
           reason: json,
         );
       }
+    });
+  });
+
+  group('ToolCallParsingUtils.decodeJsonCallListWithUnclosedLastString', () {
+    final tool = ToolDefinition(
+      name: 'run',
+      description: '',
+      parameters: [ToolParam.string('code', required: true)],
+      handler: (_) async => null,
+    );
+    String grammar({required bool unclosed}) =>
+        ToolCallGrammarUtils.buildWrappedArrayGrammar(
+          tools: [tool],
+          prefix: '<|tool_call_start|>',
+          suffix: '<|tool_call_end|>',
+          allowParallelToolCalls: false,
+          innerQuoteStrings: true,
+          allowUnclosedLastString: unclosed,
+        )!;
+
+    test('reads exactly what the unclosed grammar alternative adds', () {
+      final closed = GbnfRecognizer(grammar(unclosed: false));
+      final open = GbnfRecognizer(grammar(unclosed: true));
+      final random = Random(1609);
+      const alphabet = 'a" }],:<|{\\n';
+      const tails = [
+        '"}}]', '}}]', '}}]', '}}]', '"}}', '}]', '" }}]', '}} ]', '}}]\n', //
+        '"}}]}}]', '',
+      ];
+      var added = 0;
+      for (var i = 0; i < 6000; i++) {
+        final content = String.fromCharCodes([
+          for (var n = random.nextInt(9); n > 0; n--)
+            alphabet.codeUnitAt(random.nextInt(alphabet.length)),
+        ]);
+        final tail = tails[random.nextInt(tails.length)];
+        const start = '<|tool_call_start|>[{"name": "run", "arguments": ';
+        final output = '$start{"code": "$content$tail<|tool_call_end|>';
+        final payload = output.substring(
+          '<|tool_call_start|>'.length,
+          output.length - '<|tool_call_end|>'.length,
+        );
+        final read =
+            ToolCallParsingUtils.decodeJsonCallListWithUnclosedLastString(
+              payload,
+            );
+        final inClosed = closed.accepts(output);
+        final inOpen = open.accepts(output);
+
+        if (inClosed) expect(inOpen, isTrue, reason: output);
+        // The decoder does not check keys against a schema, so a key built
+        // from the content is outside what the grammar can say.
+        final arguments = read == null
+            ? null
+            : (read.last as Map)['arguments'] as Map;
+        final inSchema =
+            arguments != null &&
+            arguments.keys.length == 1 &&
+            arguments.keys.first == 'code';
+        if (inSchema) expect(inOpen, isTrue, reason: output);
+        if (!inOpen || inClosed) continue;
+        added++;
+        expect(
+          closed.accepts('$output"}}]<|tool_call_end|>'),
+          isTrue,
+          reason: output,
+        );
+        expect(inSchema, isTrue, reason: output);
+        final whole = '$content$tail';
+        expect(whole.endsWith('}}]'), isTrue, reason: output);
+        final raw = whole.substring(0, whole.length - 3);
+        final escaped = StringBuffer();
+        for (var at = 0; at < raw.length; at++) {
+          if (raw[at] == r'\' && at + 1 < raw.length) {
+            escaped
+              ..write(raw[at])
+              ..write(raw[++at]);
+          } else {
+            escaped.write(raw[at] == '"' ? r'\"' : raw[at]);
+          }
+        }
+        expect(arguments, {'code': jsonDecode('"$escaped"')}, reason: output);
+        expect(
+          Lfm2Handler().parseWithTools(output, tools: [tool]).toolCalls,
+          hasLength(1),
+          reason: output,
+        );
+      }
+      expect(added, greaterThan(100));
     });
   });
 

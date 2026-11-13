@@ -39,6 +39,7 @@ class ToolCallGrammarUtils {
     String? idPattern,
     bool allowParallelToolCalls = true,
     bool innerQuoteStrings = false,
+    bool allowUnclosedLastString = false,
   }) {
     if (tools == null || tools.isEmpty) {
       return null;
@@ -53,10 +54,18 @@ class ToolCallGrammarUtils {
       allowParallelToolCalls: allowParallelToolCalls,
     );
 
-    final grammar = JsonSchemaConverter.convert(
+    var grammar = JsonSchemaConverter.convert(
       schema,
       innerQuoteStrings: innerQuoteStrings,
     );
+    if (allowUnclosedLastString && innerQuoteStrings && idKey == null) {
+      grammar = _withUnclosedLastString(
+        grammar,
+        toolCount: tools.length,
+        argumentsKey: argumentsKey,
+        allowParallelToolCalls: allowParallelToolCalls,
+      );
+    }
     return wrapRootGrammar(grammar, prefix: prefix, suffix: suffix);
   }
 
@@ -91,6 +100,100 @@ class ToolCallGrammarUtils {
         : <String, dynamic>{'anyOf': itemSchemas};
     final grammar = JsonSchemaConverter.convert(schema);
     return wrapRootGrammar(grammar, prefix: prefix, suffix: suffix);
+  }
+
+  /// Adds a root alternative for a call list that ends inside the last string
+  /// argument of a tool whose last required property is a plain string.
+  ///
+  /// The string stays open until `}}]`, so text that closes the call is
+  /// the only way to end it. The closers take no whitespace: every token
+  /// before them is one the closed string already admits. The text holds no
+  /// `<|`, so it cannot hold an end marker.
+  static String _withUnclosedLastString(
+    String grammar, {
+    required int toolCount,
+    required String argumentsKey,
+    required bool allowParallelToolCalls,
+  }) {
+    final lines = grammar.trimRight().split('\n');
+    final rules = <String, String>{
+      for (final line in lines)
+        if (line.indexOf(' ::= ') case final at when at > 0)
+          line.substring(0, at): line.substring(at + ' ::= '.length),
+    };
+    final rootIndex = lines.indexWhere((line) => line.startsWith('root ::= '));
+    if (rootIndex == -1) {
+      return grammar;
+    }
+
+    final openItems = <String>[
+      for (var i = 0; i < toolCount; i++)
+        ?_openItem(
+          rules,
+          toolCount == 1 ? 'root-item' : 'root-item-$i',
+          argumentsKey,
+        ),
+    ];
+    if (openItems.isEmpty) {
+      return grammar;
+    }
+
+    final openRule = openItems.length == 1
+        ? openItems.single
+        : openItems.join(' | ');
+    final repeated = allowParallelToolCalls ? '(root-item "," space)* ' : '';
+    lines[rootIndex] =
+        '${lines[rootIndex]} | "[" space $repeated'
+        'root-item-open';
+    final openRules = [
+      'root-item-open ::= $openRule',
+      r'open-0 ::= "}}]" | open-c open-0 | "<" open-1 | open-iq',
+      r'open-1 ::= "}}]" | open-d open-0 | "<" open-1 | open-iq',
+      r'open-c ::= [^"\\<\x7F\x00-\x1F] | open-esc',
+      r'open-d ::= [^"\\<|\x7F\x00-\x1F] | open-esc',
+      r'open-esc ::= [\\] (["\\bfnrt] | "u" [0-9a-fA-F]{4})',
+      r'open-iq ::= inner-quote-run* "\"" " "* ( [^"\\<\x7F\x00-\x1F ,}\]] open-0 | "<" open-1 | open-esc open-0 )',
+    ];
+    return '${[...lines, ...openRules].join('\n')}\n';
+  }
+
+  /// The item that opens [itemRule]'s last required string, or null when that
+  /// property is not a plain inner-quote string.
+  static String? _openItem(
+    Map<String, String> rules,
+    String itemRule,
+    String argumentsKey,
+  ) {
+    final item = RegExp(
+      r'^"\{" space ([\w-]+) "," space ([\w-]+) "\}" space$',
+    ).firstMatch(rules[itemRule] ?? '');
+    final argumentsKv = item == null ? null : _splitKv(rules[item[2]!]);
+    if (item == null ||
+        argumentsKv == null ||
+        argumentsKv.head !=
+            '${_literal(_literal(argumentsKey))} space ":" space') {
+      return null;
+    }
+    final properties = RegExp(
+      r'^"\{" space ([\w-]+(?: "," space [\w-]+)*)(?: \(.*\)\?)? "\}" space$',
+    ).firstMatch(rules[argumentsKv.value] ?? '');
+    if (properties == null) return null;
+    final required = properties[1]!.split(' "," space ');
+    final last = _splitKv(rules[required.last]);
+    if (last == null || rules[last.value] != 'inner-quote-string') {
+      return null;
+    }
+    return '"{" space ${item[1]} "," space ${argumentsKv.head} "{" space '
+        '${[...required.take(required.length - 1), ''].join(' "," space ')}'
+        '${last.head} "\\"" open-0';
+  }
+
+  /// Splits a `"key" space ":" space value` rule body into its head and value.
+  static ({String head, String value})? _splitKv(String? body) {
+    final at = body?.lastIndexOf(' ') ?? -1;
+    return at < 0
+        ? null
+        : (head: body!.substring(0, at), value: body.substring(at + 1));
   }
 
   /// Rewrites the grammar `root` rule with wrapper literals.
