@@ -7747,7 +7747,57 @@ class LlamaCppService {
     }
     malloc.free(keyBuf);
     malloc.free(valBuf);
+    _addSpecialTokenText(model, metadata);
     return metadata;
+  }
+
+  // llama.cpp gives a chat template the vocabulary's BOS and EOS text
+  // (common_chat_templates_init); GGUF metadata holds only their ids.
+  void _addSpecialTokenText(
+    _LlamaModelWrapper model,
+    Map<String, String> metadata,
+  ) {
+    try {
+      _ensureModelUsable(model);
+    } on LlamaStateException {
+      return;
+    }
+    final vocab = llama_model_get_vocab(model.pointer);
+    metadata['tokenizer.ggml.bos_token'] = _specialTokenText(
+      vocab,
+      llama_vocab_bos(vocab),
+    );
+    metadata['tokenizer.ggml.eos_token'] = _specialTokenText(
+      vocab,
+      llama_vocab_eos(vocab),
+    );
+  }
+
+  String _specialTokenText(Pointer<llama_vocab> vocab, int token) {
+    if (token < 0) return '';
+    var capacity = 256;
+    var buffer = malloc<Uint8>(capacity);
+    try {
+      var n = _calls.tokenToPiece(
+        vocab,
+        token,
+        buffer.cast(),
+        capacity,
+        0,
+        true,
+      );
+      if (n < 0) {
+        malloc.free(buffer);
+        capacity = -n;
+        buffer = malloc<Uint8>(capacity);
+        n = _calls.tokenToPiece(vocab, token, buffer.cast(), capacity, 0, true);
+      }
+      return n > 0
+          ? utf8.decode(buffer.asTypedList(n), allowMalformed: true)
+          : '';
+    } finally {
+      malloc.free(buffer);
+    }
   }
 
   /// Returns model file type or quantization metadata for [modelHandle].

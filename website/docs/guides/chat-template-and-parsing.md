@@ -172,6 +172,14 @@ are text.
 See [Template engine internals](./template-engine-internals) for the parse and
 stream rules of each format.
 
+### BOS and EOS in native llama.cpp templates
+
+On native llama.cpp, `engine.getMetadata()` reports the vocabulary's BOS and
+EOS text as `tokenizer.ggml.bos_token` and `tokenizer.ggml.eos_token` (empty
+when the model has none), and templates render them as `bos_token` and
+`eos_token`, as llama.cpp does. GGUF files store only the token ids, so
+before this the generic handler rendered a literal `<s>` for `bos_token`.
+
 ### LiteRT-LM template registry
 
 GGUF models expose `tokenizer.chat_template` metadata directly through the

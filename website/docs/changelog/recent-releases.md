@@ -18,6 +18,7 @@ validate against the exact release tag notes.
 - Fixed LFM2 required JSON tool calls losing a last string argument that the model left unclosed: the call now ends at exactly `}}]<|tool_call_end|>` and the grammar admits that ending ([#1609](https://github.com/leehack/llamadart/issues/1609)).
 - Fixed DeepSeek R1, V3.2 and V4, Nemotron V2, MiniMax M2, GLM 4.5, Laguna, MiniCPM5, Hunyuan V3 and Kimi K3 replies after a prompt that opens the thought: as in llama.cpp, the reasoning is now the text before the first end tag as generated (a repeated start tag and escaped `\n` included), and the rest is content, and structured-output replies on thinking templates keep the thought as generated too ([#1881](https://github.com/leehack/llamadart/issues/1881)).
 - Fixed `LlamaEngine(LlamaBackend())` on Web refusing LFM2/LFM2.5 `ToolChoice.auto` with tools even on bridge assets that report both required capabilities; the default Web backend now forwards prompt-penalty generation ([#1979](https://github.com/leehack/llamadart/issues/1979)).
+- Fixed chat templates on native llama.cpp rendering a literal `<s>` (generic handler) or no BOS and EOS text for `bos_token` and `eos_token`: `getMetadata()` now reports the vocabulary's BOS and EOS text under `tokenizer.ggml.bos_token` and `tokenizer.ggml.eos_token`, and DeepSeek V3 no longer adds a second BOS to the system message ([#1972](https://github.com/leehack/llamadart/issues/1972)).
 
 ## 0.19.8
 
