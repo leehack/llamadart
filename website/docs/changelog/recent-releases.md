@@ -13,6 +13,7 @@ validate against the exact release tag notes.
 
 ## Unreleased
 
+- Fixed `LlamaEngine(LlamaBackend())` on Web refusing LFM2/LFM2.5 `ToolChoice.auto` with tools even on bridge assets that report both required capabilities; the default Web backend now forwards prompt-penalty generation ([#1979](https://github.com/leehack/llamadart/issues/1979)).
 - Documented that EmbeddingGemma 2 Q8_0 embeddings ran slower on Vulkan than on the CPU on a Pixel 8a with native `v0.9.0`, including with llama.cpp's own context defaults, with vectors matching the CPU; the default stays CPU on Android ([#1304](https://github.com/leehack/llamadart/issues/1304)).
 
 ## 0.19.8

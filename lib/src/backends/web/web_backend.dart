@@ -56,6 +56,7 @@ class WebAutoBackend
         BackendGenerationLimitSupport,
         BackendRuntimeToolCalls,
         BackendChatPromptGeneration,
+        BackendPromptPenaltyGeneration,
         BackendNextTokenScoring,
         BackendNextTokenScoringSupport,
         BackendStatePersistence,
@@ -341,6 +342,42 @@ class WebAutoBackend
       params,
       parts: parts,
     );
+  }
+
+  @override
+  bool get supportsPromptPenaltiesWithGrammar {
+    final delegate = _delegate;
+    return delegate is BackendPromptPenaltyGeneration &&
+        (delegate as BackendPromptPenaltyGeneration)
+            .supportsPromptPenaltiesWithGrammar;
+  }
+
+  @override
+  Stream<List<int>> generateWithPromptPenalties(
+    int contextHandle,
+    String prompt,
+    GenerationParams params, {
+    String? mediaMarker,
+    List<LlamaContentPart>? parts,
+  }) {
+    final delegate = _requireDelegate();
+    if (delegate is! BackendPromptPenaltyGeneration ||
+        !(delegate as BackendPromptPenaltyGeneration)
+            .supportsPromptPenaltiesWithGrammar) {
+      throw LlamaUnsupportedException(
+        'The selected Web runtime cannot preserve prompt penalties with a '
+        'grammar. WebGPU needs bridge assets v0.1.82+ whose loaded core '
+        'reports penaltyPromptTokensWithGrammar.',
+      );
+    }
+    return (delegate as BackendPromptPenaltyGeneration)
+        .generateWithPromptPenalties(
+          contextHandle,
+          prompt,
+          params,
+          mediaMarker: mediaMarker,
+          parts: parts,
+        );
   }
 
   @override
