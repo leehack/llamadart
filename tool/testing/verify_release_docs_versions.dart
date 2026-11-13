@@ -1011,7 +1011,7 @@ String _firstDifference(String core, String docs) {
       core.replaceAll(RegExp(r'\s+'), '') ==
       docs.replaceAll(RegExp(r'\s+'), '');
   String line(List<String> lines) =>
-      index < lines.length ? '`${lines[index]}`' : '(missing)';
+      index < lines.length ? jsonEncode(lines[index]) : '(missing)';
   return '${whitespaceOnly ? 'only in whitespace' : 'in content'}; first '
       'differing line ${index + 1}: CHANGELOG.md ${line(coreLines)}, docs '
       'page ${line(docsLines)}';
@@ -1035,12 +1035,12 @@ List<String> docsChangelogDriftProblems(
           if (_bridgeBulletLine.hasMatch(line) &&
               (line.startsWith('* ') ||
                   line.contains('the default WebGPU bridge assets')))
-            '$_docsChangelog `## $heading` bridge line must read "- ... '
-                'default WebGPU bridge assets ..." (a `-` marker, no "the"): '
-                '`$line`',
+            '$_docsChangelog section "## $heading": bridge line must read '
+                '"- ... default WebGPU bridge assets ..." (a "-" marker, no '
+                '"the"); got ${jsonEncode(line)}',
         if (core.containsKey(heading) &&
             normalized(core[heading]!) != normalized(body))
-          '$_docsChangelog `## $heading` differs from CHANGELOG.md '
+          '$_docsChangelog section "## $heading" differs from CHANGELOG.md '
               '${_firstDifference(normalized(core[heading]!), normalized(body))}'
               '; keep the bullets of every retained release identical (apart '
               'from the bullet marker and "the" on the WebGPU bridge line).',
