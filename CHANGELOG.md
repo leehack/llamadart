@@ -5,6 +5,7 @@ Releases before 0.10.0 are in the
 
 - Documented that EmbeddingGemma 2 Q8_0 embeddings ran slower on Vulkan than on the CPU on a Pixel 8a with native `v0.9.0`, including with llama.cpp's own context defaults, with vectors matching the CPU; the default stays CPU on Android ([#1304](https://github.com/leehack/llamadart/issues/1304)).
 - Fixed Granite 3.3's required tool call after a forced-open thought (a template that appends `<think>`) with a `ThinkingBudget` on native llama.cpp: the grammar now takes the thought and stays applied through the budget, so the reply no longer repeats `</think>`; the no-tools Granite grammar is dropped ([#1966](https://github.com/leehack/llamadart/issues/1966)).
+- Fixed LFM2 required JSON tool calls losing a last string argument that the model left unclosed: the call now ends at exactly `}}]<|tool_call_end|>` and the grammar admits that ending ([#1609](https://github.com/leehack/llamadart/issues/1609)).
 
 ## 0.19.8
 

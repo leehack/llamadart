@@ -3,7 +3,13 @@ import 'package:llamadart/src/core/models/tools/tool_definition.dart';
 import 'package:llamadart/src/core/models/tools/tool_param.dart';
 import 'package:llamadart/src/core/template/handlers/command_r7b_handler.dart';
 import 'package:llamadart/src/core/template/handlers/hermes_handler.dart';
+import 'package:llamadart/src/core/template/handlers/firefunction_v2_handler.dart';
+import 'package:llamadart/src/core/template/handlers/granite_handler.dart';
 import 'package:llamadart/src/core/template/handlers/hunyuan_v3_handler.dart';
+import 'package:llamadart/src/core/template/handlers/lfm2_handler.dart';
+import 'package:llamadart/src/core/template/handlers/magistral_handler.dart';
+import 'package:llamadart/src/core/template/handlers/mistral_handler.dart';
+import 'package:llamadart/src/core/template/handlers/nemotron_v2_handler.dart';
 import 'package:llamadart/src/core/template/tool_call_grammar_utils.dart';
 import 'package:test/test.dart';
 
@@ -410,6 +416,232 @@ void main() {
     expect(grammar, contains('search'));
     expect(grammar, contains('function'));
     expect(grammar, contains('params'));
+  });
+
+  group('allowUnclosedLastString', () {
+    ToolDefinition tool(String name, List<ToolParam> parameters) =>
+        ToolDefinition(
+          name: name,
+          description: '',
+          parameters: parameters,
+          handler: _noop,
+        );
+    String? build(
+      List<ToolDefinition> tools, {
+      bool unclosed = true,
+      bool parallel = false,
+    }) => ToolCallGrammarUtils.buildWrappedArrayGrammar(
+      tools: tools,
+      prefix: '<s>',
+      suffix: '</s>',
+      allowParallelToolCalls: parallel,
+      innerQuoteStrings: true,
+      allowUnclosedLastString: unclosed,
+    );
+    const openRules = r'''
+open-0 ::= "}}]" | open-c open-0 | "<" open-1 | open-iq
+open-1 ::= "}}]" | open-d open-0 | "<" open-1 | open-iq
+open-c ::= [^"\\<\x7F\x00-\x1F] | open-esc
+open-d ::= [^"\\<|\x7F\x00-\x1F] | open-esc
+open-esc ::= [\\] (["\\bfnrt] | "u" [0-9a-fA-F]{4})
+open-iq ::= inner-quote-run* "\"" " "* ( [^"\\<\x7F\x00-\x1F ,}\]] open-0 | "<" open-1 | open-esc open-0 )
+''';
+    // Today's grammar with its root widened and the open rules appended.
+    String expected(
+      List<ToolDefinition> tools, {
+      required String open,
+      bool parallel = false,
+    }) {
+      final closed = build(tools, unclosed: false, parallel: parallel)!;
+      final list = parallel
+          ? '"[" space root-item ("," space root-item)* "]" space'
+          : '"[" space root-item  "]" space';
+      final openList = parallel
+          ? '"[" space (root-item "," space)* root-item-open'
+          : '"[" space root-item-open';
+      expect(closed, contains('root ::= "<s>" ($list) "</s>"'));
+      return '${closed.replaceFirst('($list)', '($list | $openList)')}'
+          'root-item-open ::= $open\n$openRules';
+    }
+
+    const name = r'root-item-name-kv "," space "\"arguments\"" space ":" space';
+
+    test('is off by default and changes nothing', () {
+      final tools = [
+        tool('f', [ToolParam.string('a', required: true)]),
+      ];
+      final plain = ToolCallGrammarUtils.buildWrappedArrayGrammar(
+        tools: tools,
+        prefix: '<s>',
+        suffix: '</s>',
+        allowParallelToolCalls: false,
+        innerQuoteStrings: true,
+      );
+      expect(build(tools, unclosed: false), plain);
+      expect(plain, isNot(contains('open-0')));
+    });
+
+    test('opens the only required string', () {
+      final tools = [
+        tool('f', [ToolParam.string('a', required: true)]),
+      ];
+      expect(
+        build(tools),
+        expected(
+          tools,
+          open:
+              '"{" space $name "{" space "\\"a\\"" space ":" space "\\"" open-0',
+        ),
+      );
+    });
+
+    test('opens the last of two required strings after the first', () {
+      final tools = [
+        tool('f', [
+          ToolParam.string('a', required: true),
+          ToolParam.string('b', required: true),
+        ]),
+      ];
+      expect(
+        build(tools),
+        expected(
+          tools,
+          open:
+              '"{" space $name "{" space root-item-arguments-a-kv "," space '
+              '"\\"b\\"" space ":" space "\\"" open-0',
+        ),
+      );
+    });
+
+    test('opens the last required string and skips optional ones', () {
+      final tools = [
+        tool('f', [
+          ToolParam.string('a', required: true),
+          ToolParam.string('b'),
+        ]),
+      ];
+      expect(
+        build(tools),
+        expected(
+          tools,
+          open:
+              '"{" space $name "{" space "\\"a\\"" space ":" space "\\"" open-0',
+        ),
+      );
+    });
+
+    test('changes nothing when the last required property is not a string', () {
+      for (final last in [
+        ToolParam.enumType('b', values: ['x', 'y'], required: true),
+        ToolParam.integer('b', required: true),
+      ]) {
+        final tools = [
+          tool('f', [ToolParam.string('a', required: true), last]),
+        ];
+        expect(build(tools), build(tools, unclosed: false));
+      }
+      for (final tools in [
+        [tool('f', const [])],
+        [
+          tool('f', [ToolParam.string('a')]),
+        ],
+      ]) {
+        expect(build(tools), build(tools, unclosed: false));
+      }
+    });
+
+    test('opens only the tools that end in a required string', () {
+      final tools = [
+        tool('f', [ToolParam.string('a', required: true)]),
+        tool('g', [ToolParam.integer('n', required: true)]),
+        tool('h', [ToolParam.string('q', required: true)]),
+      ];
+      final closed = build(tools, unclosed: false)!;
+      const list = '"[" space root-item  "]" space';
+      expect(
+        build(tools),
+        '${closed.replaceFirst('($list)', '($list | "[" space root-item-open)')}'
+        'root-item-open ::= '
+        r'"{" space root-item-0-name-kv "," space "\"arguments\"" space ":" space '
+        r'"{" space "\"a\"" space ":" space "\"" open-0 | '
+        r'"{" space root-item-2-name-kv "," space "\"arguments\"" space ":" space '
+        r'"{" space "\"q\"" space ":" space "\"" open-0'
+        '\n$openRules',
+      );
+    });
+
+    test('puts the open item after any closed ones for parallel calls', () {
+      final tools = [
+        tool('f', [ToolParam.string('a', required: true)]),
+      ];
+      expect(
+        build(tools, parallel: true),
+        expected(
+          tools,
+          parallel: true,
+          open:
+              '"{" space $name "{" space "\\"a\\"" space ":" space "\\"" open-0',
+        ),
+      );
+    });
+
+    test('is opted into by the LFM2 handler alone', () {
+      final tools = [
+        tool('f', [ToolParam.string('a', required: true)]),
+      ];
+      expect(Lfm2Handler().buildGrammar(tools), contains('root-item-open'));
+      for (final handler in [
+        FirefunctionV2Handler(),
+        GraniteHandler(),
+        MagistralHandler(),
+        MistralHandler(),
+        NemotronV2Handler(),
+      ]) {
+        final grammar = handler.buildGrammar(tools);
+        expect(grammar, isNotNull, reason: '${handler.runtimeType}');
+        expect(
+          grammar,
+          isNot(contains('open-0')),
+          reason: '${handler.runtimeType}',
+        );
+      }
+    });
+
+    test('changes nothing with an id or without inner-quote strings', () {
+      final tools = [
+        tool('f', [ToolParam.string('a', required: true)]),
+      ];
+      expect(
+        ToolCallGrammarUtils.buildWrappedArrayGrammar(
+          tools: tools,
+          prefix: '<s>',
+          suffix: '</s>',
+          idKey: 'id',
+          innerQuoteStrings: true,
+          allowUnclosedLastString: true,
+        ),
+        ToolCallGrammarUtils.buildWrappedArrayGrammar(
+          tools: tools,
+          prefix: '<s>',
+          suffix: '</s>',
+          idKey: 'id',
+          innerQuoteStrings: true,
+        ),
+      );
+      expect(
+        ToolCallGrammarUtils.buildWrappedArrayGrammar(
+          tools: tools,
+          prefix: '<s>',
+          suffix: '</s>',
+          allowUnclosedLastString: true,
+        ),
+        ToolCallGrammarUtils.buildWrappedArrayGrammar(
+          tools: tools,
+          prefix: '<s>',
+          suffix: '</s>',
+        ),
+      );
+    });
   });
 }
 

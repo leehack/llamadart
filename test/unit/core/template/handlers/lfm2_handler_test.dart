@@ -371,6 +371,64 @@ void main() {
       }
     });
 
+    test('a string left open ends at the closers and the end marker', () {
+      const output =
+          '<|tool_call_start|>[{"name": "search", "arguments": '
+          '{"query": "print(f"hi {name}")}}]<|tool_call_end|>';
+      final grammar = GbnfRecognizer(render([search]).grammar!);
+      expect(grammar.accepts(output), isTrue);
+      for (final parsed in [
+        Lfm2Handler().parse(output),
+        Lfm2Handler().parseWithTools(output, tools: [search]),
+      ]) {
+        expect(parsed.content, isEmpty);
+        expect(jsonDecode(parsed.toolCalls.single.function!.arguments!), {
+          'query': 'print(f"hi {name}")',
+        });
+      }
+      final partial = Lfm2Handler().parse(output, isPartial: true);
+      expect(partial.toolCalls, isEmpty);
+
+      String open(String tail) =>
+          '<|tool_call_start|>[{"name": "search", "arguments": '
+          '{"query": "$tail<|tool_call_end|>';
+      for (final tail in ['x}} ]', 'x}}\n]', 'a <|b}}]']) {
+        expect(grammar.accepts(open(tail)), isFalse, reason: tail);
+      }
+      expect(Lfm2Handler().parse(open('x}} ]')).toolCalls, isEmpty);
+      expect(Lfm2Handler().parse(open('x}}]\n')).toolCalls, isEmpty);
+    });
+
+    test('parser robustness: an open string reads only at the very end', () {
+      const open =
+          '<|tool_call_start|>[{"name": "search", "arguments": '
+          '{"query": "x}}]<|tool_call_end|>';
+      expect(
+        jsonDecode(
+          Lfm2Handler().parse(open).toolCalls.single.function!.arguments!,
+        ),
+        {'query': 'x'},
+      );
+
+      final trailing = Lfm2Handler().parse('$open prose');
+      expect(trailing.toolCalls, isEmpty);
+      expect(trailing.content, 'prose');
+    });
+
+    test('parser robustness: an open string adds no call after a call', () {
+      const call =
+          '<|tool_call_start|>[{"name": "search", "arguments": '
+          '{"query": "a"}}]<|tool_call_end|>';
+      const open =
+          '<|tool_call_start|>[{"name": "search", "arguments": '
+          '{"query": "x}}]<|tool_call_end|>';
+      final parsed = Lfm2Handler().parse('$call$open');
+      expect(parsed.toolCalls, hasLength(1));
+      expect(jsonDecode(parsed.toolCalls.single.function!.arguments!), {
+        'query': 'a',
+      });
+    });
+
     test('an end marker inside a raw-quoted string is argument text', () {
       const call =
           '<|tool_call_start|>[{"name": "search", "arguments": '
