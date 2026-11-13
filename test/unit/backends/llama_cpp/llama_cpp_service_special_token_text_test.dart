@@ -86,4 +86,28 @@ void main() {
     expect(service.getMetadata(model)['tokenizer.ggml.bos_token'], '<s>');
     expect(prompt(model), '<s>hi</s>');
   });
+
+  test('reports empty text for a vocabulary with no BOS or EOS', () {
+    final model = service.loadModel(
+      writeSyntheticLlamaGguf(
+        '${dir.path}/model.gguf',
+        tokenizerModel: 'rwkv',
+      ).path,
+      _params,
+    );
+
+    final metadata = service.getMetadata(model);
+    expect(metadata['tokenizer.ggml.bos_token'], '');
+    expect(metadata['tokenizer.ggml.eos_token'], '');
+  });
+
+  test('reads a token piece longer than the initial buffer in full', () {
+    final bos = '<${'b' * 600}>';
+    final model = service.loadModel(
+      writeSyntheticLlamaGguf('${dir.path}/model.gguf', bosText: bos).path,
+      _params,
+    );
+
+    expect(service.getMetadata(model)['tokenizer.ggml.bos_token'], bos);
+  });
 }
