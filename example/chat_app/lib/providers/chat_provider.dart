@@ -220,6 +220,7 @@ class ChatProvider extends ChangeNotifier {
   Completer<void>? _activeRecordingTransitionDone;
   Completer<void>? _activeRecordingCancellationDone;
   Timer? _audioRecordingTimer;
+  StreamSubscription<void>? _audioRecordingInterruptions;
   Duration _audioRecordingElapsed = Duration.zero;
   ChatAudioRecordingPurpose? _audioRecordingPurpose;
   int _voiceQuestionOperationSequence = 0;
@@ -3168,6 +3169,8 @@ class ChatProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
+      _audioRecordingInterruptions = _audioRecordingService.interruptions
+          .listen((_) => _stopInterruptedAudioRecording(revision));
       await _audioRecordingService.start();
       if (revision != _audioRecordingRevision || _isDisposed) {
         return;
@@ -3600,9 +3603,29 @@ class ChatProvider extends ChangeNotifier {
     });
   }
 
+  void _stopInterruptedAudioRecording(int revision) {
+    if (revision != _audioRecordingRevision ||
+        _audioRecordingState != ChatAudioRecordingState.recording) {
+      return;
+    }
+    _addInfoMessage(
+      'Microphone input was interrupted. Using the audio recorded so far.',
+    );
+    switch (_audioRecordingPurpose) {
+      case ChatAudioRecordingPurpose.voiceQuestion:
+        unawaited(stopAudioRecordingAndAsk());
+      case ChatAudioRecordingPurpose.speakerReference:
+        unawaited(stopAudioRecordingForSpeakerReference());
+      case ChatAudioRecordingPurpose.transcription || null:
+        unawaited(stopAudioRecordingAndTranscribe());
+    }
+  }
+
   void _resetAudioRecordingState() {
     _audioRecordingTimer?.cancel();
     _audioRecordingTimer = null;
+    unawaited(_audioRecordingInterruptions?.cancel());
+    _audioRecordingInterruptions = null;
     _audioRecordingState = ChatAudioRecordingState.idle;
     _audioRecordingElapsed = Duration.zero;
     _audioRecordingPurpose = null;
@@ -4687,6 +4710,8 @@ class ChatProvider extends ChangeNotifier {
   @override
   void dispose() {
     _isDisposed = true;
+    unawaited(_audioRecordingInterruptions?.cancel());
+    _audioRecordingInterruptions = null;
     _settingsSaveDebounce?.cancel();
     _settingsSaveDebounce = null;
     unawaited(_settingsService.saveSettings(_settings));

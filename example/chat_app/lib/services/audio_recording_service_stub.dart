@@ -7,6 +7,9 @@ class _UnsupportedAudioRecordingService implements AudioRecordingService {
   bool get isSupported => false;
 
   @override
+  Stream<void> get interruptions => const Stream<void>.empty();
+
+  @override
   Future<void> start() async {
     throw const AudioRecordingException(
       AudioRecordingFailure.unsupported,

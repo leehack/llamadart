@@ -2261,6 +2261,7 @@ SpeechE2ERowStatus classifySpeechRowFailure(Object error) {
   if (error is AudioRecordingException) {
     switch (error.failure) {
       case AudioRecordingFailure.permissionDenied:
+      case AudioRecordingFailure.noInputDevice:
       case AudioRecordingFailure.unsupported:
         return SpeechE2ERowStatus.unavailable;
       case AudioRecordingFailure.startFailed:
@@ -2278,6 +2279,7 @@ String? speechRowFailureMarker(Object error) {
     switch (error.failure) {
       case AudioRecordingFailure.permissionDenied:
         return microphonePermissionActionMarker;
+      case AudioRecordingFailure.noInputDevice:
       case AudioRecordingFailure.unsupported:
         return microphoneUnavailableActionMarker;
       case AudioRecordingFailure.startFailed:

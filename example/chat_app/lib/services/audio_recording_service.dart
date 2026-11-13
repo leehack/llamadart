@@ -12,6 +12,9 @@ enum AudioRecordingFailure {
   /// The user did not grant microphone access.
   permissionDenied,
 
+  /// No microphone input device is available.
+  noInputDevice,
+
   /// The recorder could not begin capturing audio.
   startFailed,
 
@@ -44,6 +47,12 @@ abstract class AudioRecordingService {
 
   /// Whether this runtime has a microphone recorder implementation.
   bool get isSupported;
+
+  /// Emits when the platform ends the active recording on its own, such as
+  /// when the input device disconnects.
+  ///
+  /// The audio captured so far stays available through [stop].
+  Stream<void> get interruptions;
 
   /// Starts a new temporary recording.
   Future<void> start();

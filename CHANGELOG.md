@@ -3,6 +3,8 @@ Releases before 0.10.0 are in the
 
 ## Unreleased
 
+- Chat app microphone: a microphone that disconnects mid-recording now transcribes the audio captured so far with a warning, a missing input device on Web is reported as such instead of as a permission denial, and a failed Web start releases the microphone ([#329](https://github.com/leehack/llamadart/issues/329)).
+
 ## 0.19.9
 
 - Keep the default WebGPU bridge assets at `v0.1.84` (unchanged from 0.19.8).

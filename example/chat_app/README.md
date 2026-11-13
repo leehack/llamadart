@@ -177,8 +177,10 @@ flutter test --run-skipped -t local-only \
      Capture is foreground-only and cancelling discards the temporary
      recording. The recorder requests 16 kHz mono WAV, but the hardware or
      browser may pick another valid rate; the decoder reads the WAV metadata.
-     Browser startup checks microphone permission and WAV encoder support
-     before recording. Real-model checks cover WAV input of at most 33 seconds
+     Browser startup checks WAV encoder support and reports a denied
+     permission or a missing input device before recording. If the input
+     device disconnects mid-recording, the app transcribes what was captured
+     so far and says so. Real-model checks cover WAV input of at most 33 seconds
      and 11-second MP3 and FLAC files.
      On native, a selected file long enough to fill the preset's 4,096-token
      context fails with an error instead of returning a truncated transcript
