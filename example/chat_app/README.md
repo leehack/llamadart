@@ -817,6 +817,24 @@ prevent the app from reading files installed there by Test Lab. A staging or
 checksum failure is a harness failure, not evidence that a runtime backend passed
 or failed inference.
 
+The runner stages the file as `firebase-model.gguf` unless
+`--environment-variables=stageModel=true,stageModelName=<file-name>` names it.
+Pass the model's real file name for a `.litertlm` bundle: the engine rejects a
+`.litertlm` file declared as `.gguf`, and the LiteRT-LM tests read the model
+family from the name. The name must match `[A-Za-z0-9][A-Za-z0-9._-]{0,127}`,
+and the app's `LLAMADART_*_MODEL` path must end in the same name.
+
+The staged file lives in the app cache, which Android purges when it exceeds
+the app's cache quota (64 MiB on the emulator; `installd` logged the purge of
+a 586 MiB staged model). A purged model fails the run before inference, so
+treat it as a harness failure and restage.
+
+To check that an accelerator is correctly refused, build
+`integration_test/litert_lm_json_schema_e2e_test.dart` with
+`--dart-define=LITERT_LM_EXPECT_UNQUALIFIED=true` and the accelerator in
+`LITERT_LM_BACKEND`. The run passes only on the typed gate refusal and fails
+with "The backend was admitted" if the backend is admitted.
+
 #### LiteRT-LM reload memory
 
 `integration_test/litert_lm_reload_memory_e2e_test.dart` creates a LiteRT-LM

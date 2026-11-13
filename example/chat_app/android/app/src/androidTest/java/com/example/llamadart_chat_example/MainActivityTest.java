@@ -30,15 +30,21 @@ public class MainActivityTest {
     public MainActivityTest() throws IOException {
         Bundle arguments = InstrumentationRegistry.getArguments();
         Instrumentation instrumentation = InstrumentationRegistry.getInstrumentation();
-        if ("true".equals(arguments.getString("stageModel"))) stageModel(instrumentation);
+        if ("true".equals(arguments.getString("stageModel"))) stageModel(arguments, instrumentation);
         forwardReloadMemoryArguments(arguments, instrumentation);
         forwardMicroBatchSweepArguments(arguments, instrumentation);
         forwardAndroidQualificationArguments(arguments, instrumentation);
         forwardPixelQwen35GuardArguments(arguments, instrumentation);
     }
 
-    private static void stageModel(Instrumentation instrumentation) throws IOException {
-        File destination = new File(instrumentation.getTargetContext().getCacheDir(), "firebase-model.gguf");
+    private static void stageModel(Bundle arguments, Instrumentation instrumentation) throws IOException {
+        // A LiteRT-LM bundle needs its own file name: the engine refuses a
+        // .litertlm file named .gguf and reads the model family from the name.
+        String name = arguments.getString("stageModelName", "firebase-model.gguf");
+        if (!name.matches("[A-Za-z0-9][A-Za-z0-9._-]{0,127}")) {
+            throw new IOException("Invalid stageModelName");
+        }
+        File destination = new File(instrumentation.getTargetContext().getCacheDir(), name);
         File temporary = new File(destination.getPath() + ".tmp");
         boolean copied = false;
         try {

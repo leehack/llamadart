@@ -110,6 +110,11 @@ void main() {
     'LITERT_LM_BACKEND',
     defaultValue: 'cpu',
   );
+  // Set for an accelerator the host does not admit: the run then passes only
+  // on the typed refusal, before any engine is created.
+  const expectUnqualified = bool.fromEnvironment(
+    'LITERT_LM_EXPECT_UNQUALIFIED',
+  );
 
   testWidgets('native JSON Schema enforcement, contract, thinking and cutoff', (
     tester,
@@ -161,15 +166,31 @@ void main() {
       if (!(await engine.capabilities).supportsStructuredOutput) {
         // The engine loads lazily, so the capability probe hides why admission
         // failed; a strict request rethrows the admission error.
-        await engine
+        final strict = engine
             .create(
               _messages,
               params: _params,
               responseFormat: _format(_sentinel),
             )
             .drain<void>();
+        if (expectUnqualified) {
+          String? refusal;
+          try {
+            await strict;
+          } on LlamaUnsupportedException catch (error) {
+            refusal = error.message;
+          }
+          expect(
+            refusal,
+            contains('not qualified for the LiteRT-LM $backend backend'),
+          );
+          records.add({'case': 'unqualified_backend_refused', 'text': refusal});
+          return;
+        }
+        await strict;
         fail('Native JSON Schema output is unsupported on this device.');
       }
+      expect(expectUnqualified, isFalse, reason: 'The backend was admitted.');
       expect((await run('unconstrained')).text.trim(), isNot(startsWith('{')));
       final sentinel = await run('sentinel', schema: _sentinel);
       expect(jsonDecode(sentinel.text), {'verdict': 'CEDAR_174'});
