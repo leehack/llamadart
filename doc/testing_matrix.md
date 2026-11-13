@@ -157,11 +157,11 @@ Pick targeted rows based on the touched surface:
 | Speculative decoding, bundled MTP, or n-gram drafting | `llama-cpp-speculative-benchmark`, `gemma4-mtp-smoke` |
 | Embedding API, `embedBatch`, or embedding throughput | `native-embedding-benchmark`, `native-embedding-sweep` |
 | Text embedding profiles, task/document titles or output dimensions | `text-embedding-retrieval` |
-| Chat template, parser, tools, thinking extraction | `template-parity`, `llama-cpp-chat-template-smoke`, `gguf-chat-features-smoke`, `litert-lm-chat-features-smoke` |
+| Chat template, parser, tools, thinking extraction | `template-parity`, `llama-cpp-chat-template-smoke`, `gguf-chat-features-smoke`, `litert-lm-chat-features-smoke`, `web-tool-choice-grammar` (Web LFM2) |
 | Tool-result media (`LlamaToolResultContent.content`, `LlamaToolOutput`) | `root-vm`, `tool-result-image-smoke`, validation `qwen3vl-gguf-cpu` / `-metal` (`M01`) |
 | LiteRT-LM embedding engine | `litert-lm-multimodal-embedding`; includes the documented local-only upstream WebGPU parity diagnostic |
 | LiteRT-LM native backend | `litert-lm-lifecycle`, `litert-lm-engine-smoke`, `litert-lm-chat-features-smoke`, `litert-lm-json-schema`, `litert-lm-asr-smoke`, `litert-lm-asr-preservation`, `litert-lm-media-preservation`, `litert-lm-utility-preservation` |
-| Web bridge bootstrap or interop | `web-bridge-smoke`, `web-mock-chat-smoke`, `web-real-model-smoke`, `web-tool-penalty-smoke`, `web-lazy-grammar` |
+| Web bridge bootstrap or interop | `web-bridge-smoke`, `web-mock-chat-smoke`, `web-real-model-smoke`, `web-tool-penalty-smoke`, `web-lazy-grammar`, `web-tool-choice-grammar` |
 | WebGPU multimodal | `webgpu-multimodal-regression`, `web-speech-task-cancel`, plus `web-speech-to-text-smoke` for typed Qwen3-ASR and `web-text-to-speech-smoke` for typed Qwen3-TTS |
 | Large WebGPU GGUF / wasm64 selection | `gemma4-webgpu-mem64` |
 | LiteRT-LM web / Gemma 4 web bundle | `gemma4-litert-web` |
@@ -232,7 +232,7 @@ The matrix is designed to cover these essential axes:
 | Axis | Covered by |
 | --- | --- |
 | llama.cpp native GGUF | `root-vm`, `native-prompt-reuse-parity`, `native-inference-benchmark`, `gguf-chat-features-smoke`, `gguf-audio-chat-smoke`, `decision-model-smoke` |
-| llama.cpp WebGPU GGUF | `web-bridge-smoke`, `web-mock-chat-smoke`, `web-real-model-smoke`, `web-tool-penalty-smoke`, `web-lazy-grammar`, `webgpu-multimodal-regression`, `web-speech-to-text-smoke`, `web-text-to-speech-smoke`, `web-speech-task-cancel`, `gemma4-webgpu-mem64`, `decision-model-web-smoke` |
+| llama.cpp WebGPU GGUF | `web-bridge-smoke`, `web-mock-chat-smoke`, `web-real-model-smoke`, `web-tool-penalty-smoke`, `web-lazy-grammar`, `web-tool-choice-grammar`, `webgpu-multimodal-regression`, `web-speech-to-text-smoke`, `web-text-to-speech-smoke`, `web-speech-task-cancel`, `gemma4-webgpu-mem64`, `decision-model-web-smoke` |
 | LiteRT-LM native `.litertlm` | `litert-lm-engine-smoke`, `litert-lm-chat-features-smoke`, `native-hook-bundles` |
 | LiteRT-LM web `.litertlm` | `gemma4-litert-web` |
 | Model families | Qwen 2.5 prompt reuse, Qwen 3/3.5 chat/multimodal, Gemma 4 tool/thinking/mem64/LiteRT-LM/audio, Laya ModernBERT decision encoder and head |
@@ -1463,6 +1463,63 @@ the schema's JSON in both modes, and the legacy assets must throw
 This qualifies the Web grammar plumbing on the selected weights, not hardware
 WebGPU or LFM2 auto accuracy/enforcement (#1715). The latter still needs its
 separate template contract and false-probe restriction.
+
+## Web tool-choice grammar
+
+`web-tool-choice-grammar` ([#1673](https://github.com/leehack/llamadart/issues/1673))
+proves that `ToolChoice` reaches and shapes the bridge on LFM2.5 with real
+weights. Stage the existing read-only model under
+`build/web_tool_choice_grammar/models/` and write
+`build/web_tool_choice_grammar/config.json`:
+
+```json
+{"assets":"bridge/","legacyAssets":"bridge_legacy/","model":"models/LFM2.5-1.2B-Instruct-Q4_K_M.gguf"}
+```
+
+The model must match the pinned LFM2.5 Q4_K_M digest (`b1b3de11...`). Run `dart run tool/testing/run_local_e2e.dart --scenario
+web-tool-choice-grammar --dry-run` first, then omit `--dry-run`. The runner
+fetches the pinned assets into `bridge/` and `v0.1.81` into `bridge_legacy/`,
+then runs the suite on `chrome-webgpu` with CPU Wasm (`gpuLayers: 0`).
+
+Routes: a bridge factory in direct and worker mode, and the default
+`LlamaEngine(LlamaBackend())`. Every route runs these cases:
+
+| Case | Proves |
+| --- | --- |
+| text, no tools | no grammar reaches the bridge |
+| `none`, tool prompt | no call, no grammar |
+| `required`, no-call prompt | a parsed `get_weather` call, plus a causal control: stripping the grammar in transit yields no call |
+| `required`, Paris | the parsed `city` is `Paris` |
+| `required`, `maxTokens: 6` | `length` finish, no parsed call, no end marker |
+| `required`, forced malformed call | no parsed call |
+| `auto`: tool prompt, text prompt, tool-result follow-up | a call, plain text, and a text reply |
+
+The `v0.1.81` group expects the typed `LlamaUnsupportedException` for `auto` with
+zero bridge calls, and `required` still enforcing with its own control.
+
+Assertions use parsed calls and the loose raw shape (the `<|tool_call_start|>`
+marker and the tool name), never grammar text, because the LFM2 grammar text
+changes with the template contract. Each route prints one
+`WEB_TOOL_CHOICE_RECEIPT` JSON line with the asset tag, bridge commit, bridge
+JS SHA-256, the SHA-256 of the Wasm core the route used (`wasm32` or `wasm64`;
+both cores are verified against `manifest.json`), model SHA-256, execution mode, core variant, browser and
+per-case results.
+
+A case that cannot prove its claim fails with `NOT_RUN: <reason>`, so the
+scenario exits non-zero: a missing config or model, a model digest differing
+from the pin, a bridge file whose digest differs from `manifest.json`, a worker
+request that fell back to the main thread, a control that errored or produced
+no output, and a control where the model called the tool even without the
+grammar.
+
+The chat-app side is `chat-app-web-tool-penalty-smoke`: it asks for the weather
+in Paris and requires `--expect-tool-call getWeather`, `--expect-tool-argument
+city=Paris` and `--expect-tool-result thunderstorms` (the app's simulated
+result must reach a later completion prompt), so a plain-text reply fails. It
+conflicts with `--allow-any-response`. Run it with Qwen3.5-0.8B.
+
+This is CPU Wasm on the staged weights: no GPU claim, and no accuracy claim
+beyond the fixed prompts.
 
 ### Internal LiteRT C API1 JSON Schema candidate
 

@@ -278,8 +278,9 @@ LocalE2eCommandStep _prepareValidationPackage(LocalE2eRunContext context) =>
 
 List<LocalE2eCommandStep> _webRealModelSmokeSteps(
   LocalE2eRunContext context,
-  List<String> extraSmokeArguments,
-) {
+  List<String> extraSmokeArguments, {
+  String? defaultExpect,
+}) {
   return [
     _prepareChatAppWebBuild(context),
     LocalE2eCommandStep(
@@ -305,7 +306,9 @@ List<LocalE2eCommandStep> _webRealModelSmokeSteps(
         '--model-url',
         context.modelUrl ?? context.defaultModelUrl,
         '--expect',
-        context.expect,
+        context.expectProvided
+            ? context.expect
+            : defaultExpect ?? context.expect,
         if (context.allowAnyResponse) '--allow-any-response',
         ...extraSmokeArguments,
       ],
@@ -1426,6 +1429,54 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
           description:
               'Web lazy grammar, prompt penalties, thinking-budget grammar '
               'and error recovery',
+        ),
+      ],
+    ),
+    LocalE2eScenario(
+      name: 'web-tool-choice-grammar',
+      group: LocalE2eScenarioGroup.webSmoke,
+      description:
+          'Check LFM2.5 ToolChoice text, none, required (with a grammar-strip '
+          'control), incomplete and malformed output, plus auto, through the '
+          'pinned bridge direct, worker and default routes, and the '
+          'v0.1.81 assets refusing auto.',
+      requiresDevice: false,
+      stepsBuilder: (context) => [
+        LocalE2eCommandStep(
+          workingDirectory: context.projectRoot,
+          executable: 'bash',
+          arguments: const ['scripts/fetch_webgpu_bridge_assets.sh'],
+          environment: {
+            'WEBGPU_BRIDGE_OUT_DIR':
+                '${context.projectRoot}/build/web_tool_choice_grammar/bridge',
+          },
+          description: 'Fetch pinned WebGPU bridge assets for the test server',
+        ),
+        LocalE2eCommandStep(
+          workingDirectory: context.projectRoot,
+          executable: 'bash',
+          arguments: const ['scripts/fetch_webgpu_bridge_assets.sh'],
+          environment: {
+            'WEBGPU_BRIDGE_ASSETS_TAG': 'v0.1.81',
+            'WEBGPU_BRIDGE_OUT_DIR':
+                '${context.projectRoot}/build/web_tool_choice_grammar/bridge_legacy',
+          },
+          description:
+              'Fetch the v0.1.81 bridge assets for the version-skew control',
+        ),
+        LocalE2eCommandStep(
+          workingDirectory: context.projectRoot,
+          executable: 'dart',
+          arguments: const [
+            'test',
+            '-p',
+            'chrome-webgpu',
+            '--run-skipped',
+            '-t',
+            'local-only',
+            'test/e2e/webgpu/tool_choice_grammar_e2e_test.dart',
+          ],
+          description: 'Web ToolChoice grammar enforcement on LFM2.5',
         ),
       ],
     ),
@@ -2568,17 +2619,30 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
       name: 'chat-app-web-tool-penalty-smoke',
       group: LocalE2eScenarioGroup.webSmoke,
       description:
-          'Build chat_app web and run a ToolChoice.auto chat on a '
-          'tool-capable --model-url; the completion must carry a lazy '
-          'grammar and omit penaltyPromptTokens.',
+          'Build chat_app web and run a ToolChoice.auto weather chat on a '
+          'tool-capable --model-url; the app must call getWeather for Paris '
+          'and return the result to the model, and the completion must carry '
+          'a lazy grammar and omit penaltyPromptTokens.',
       requiresDevice: false,
       stepsBuilder: (context) => _webRealModelSmokeSteps(context, const [
         '--tools',
+        '--prompt',
+        'What is the weather in Paris right now?',
+        '--max-tokens',
+        '128',
+        '--context-size',
+        '2048',
+        '--expect-tool-call',
+        'getWeather',
+        '--expect-tool-argument',
+        'city=Paris',
+        '--expect-tool-result',
+        'thunderstorms',
         '--expect-penalty-prompt-tokens-probe',
         '--expect-penalty-prompt-tokens-option',
         'absent',
         '--expect-lazy-grammar',
-      ]),
+      ], defaultExpect: '12'),
     ),
     LocalE2eScenario(
       name: 'chat-app-web-speech-to-text-smoke',
@@ -3134,6 +3198,15 @@ Future<LocalE2eResult> runLocalE2e(
       stderr:
           '--model-path, --tokenizer-path, --audio-path, and a nonempty '
           '--expect are required for litert-lm-asr-smoke.\n',
+    );
+  }
+  if (scenario.name == 'chat-app-web-tool-penalty-smoke' &&
+      parsed.allowAnyResponse) {
+    return const LocalE2eResult(
+      64,
+      stderr:
+          '--allow-any-response is not supported by '
+          'chat-app-web-tool-penalty-smoke: it must observe the tool call.\n',
     );
   }
   if (scenario.name == 'chat-app-web-tool-penalty-smoke' &&
