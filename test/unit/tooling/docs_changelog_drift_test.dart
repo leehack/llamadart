@@ -1,6 +1,8 @@
 @TestOn('vm')
 library;
 
+import 'dart:convert';
+
 import 'package:test/test.dart';
 
 import '../../../tool/testing/verify_release_docs_versions.dart';
@@ -28,7 +30,10 @@ void main() {
     );
 
     expect(problems, hasLength(1));
-    expect(problems.single, contains('`## 0.2.0` differs from CHANGELOG.md'));
+    expect(
+      problems.single,
+      contains('section "## 0.2.0" differs from CHANGELOG.md'),
+    );
   });
 
   test('flags a differing bridge line that is not the article change', () {
@@ -104,7 +109,7 @@ void main() {
       allOf(
         contains('only in whitespace'),
         contains('first differing line 2'),
-        contains('`- Fix  b.`'),
+        contains('"- Fix  b."'),
       ),
     );
     expect(
@@ -114,6 +119,20 @@ void main() {
       ).single,
       allOf(contains('in content'), contains('first differing line 1')),
     );
+  });
+
+  test('quotes changelog lines that contain backticks unambiguously', () {
+    final problems = docsChangelogDriftProblems(
+      {'0.2.0': bridgeCore},
+      {'0.2.0': bridgeCore},
+    );
+
+    expect(problems, hasLength(1));
+    expect(
+      problems.single,
+      endsWith('got ${jsonEncode(bridgeCore.trimRight())}'),
+    );
+    expect(problems.single, isNot(contains('`-')));
   });
 
   test('requires the prescribed bridge wording on the docs page', () {

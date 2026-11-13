@@ -48,6 +48,18 @@ with the same probe, ends its generation prompt with `<|START_THINKING|>`. A
 thought and starts the content. Its required-call grammar ends the thought at
 `<|END_THINKING|>`, so that entry sets `required_grammar_start` too.
 
+For issue #1881 the same probe at `cd959bae9` recorded the vendored GLM-4.7-Flash,
+Laguna XS.2, DeepSeek R1 Distill Qwen 32B, DeepSeek V3.2, DeepSeek V4, MiniCPM5 1B,
+Hy3 (with `reasoning_effort: high`, which opens its thought) and Kimi K3
+templates, and more MiniMax M2 cases. Each case's `upstream` is `finish` on the
+whole output, equal to `feed` on the whole output and byte by byte; the values
+are untrimmed. A forced-open thought is again the text before the first end
+tag, with a repeated start tag kept and everything after it content; Kimi K3's
+end tag is `<|close|>think<|sep|>`. `partial-end-tag-at-end` records the
+partial parse as `upstream_partial`. Each entry sets `required_grammar_start`
+to how llamadart's required-call grammar begins, since llama.cpp's grammar
+root also encodes the generation prompt.
+
 A thought that never closes is reasoning, including a tool-call envelope inside
 it. llamadart trims some of the whitespace llama.cpp keeps around reasoning and
 content, so the test compares trimmed text.

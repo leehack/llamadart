@@ -2,6 +2,8 @@
 library;
 
 import 'dart:async';
+import 'dart:js_interop';
+import 'dart:js_interop_unsafe';
 import 'dart:typed_data';
 
 import 'package:llamadart/src/backends/backend.dart';
@@ -26,6 +28,7 @@ import 'package:llamadart/src/core/models/inference/generation_usage.dart';
 import 'package:llamadart/src/core/models/inference/model_params.dart';
 import 'package:llamadart/src/core/models/inference/next_token_scores.dart';
 import 'package:llamadart/src/core/models/inference/tool_choice.dart';
+import 'package:llamadart/src/core/models/tools/tool_definition.dart';
 import 'package:llamadart/src/core/models/model_format.dart';
 import 'package:llamadart/src/core/models/model_resolver.dart';
 import 'package:llamadart/src/core/models/model_source.dart';
@@ -36,6 +39,7 @@ import 'package:llamadart/src/backends/litert_lm/litert_lm_backend_web.dart';
 import 'package:llamadart/src/backends/webgpu/webgpu_backend.dart';
 import 'package:test/test.dart';
 
+import '../../../support/fake_webgpu_feature_bridge.dart';
 import '../../../support/load_check_agreement.dart';
 import '../../core/engine/engine_test.dart';
 import '../../core/engine/multimodal_embeddings_test.dart';
@@ -1083,6 +1087,177 @@ void main() {
       },
     );
   });
+
+  group('WebAutoBackend LFM auto prompt penalties', () {
+    const metadata = {
+      'llm.context_length': '4096',
+      'tokenizer.chat_template':
+          '{# <|tool_list_start|> <|tool_list_end|> #}'
+          '{% for m in messages %}{{ m["content"] }}{% endfor %}<think>',
+    };
+    const messages = [
+      LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'Call clock.'),
+    ];
+    final tools = [
+      ToolDefinition(
+        name: 'clock',
+        description: 'Time',
+        parameters: [],
+        handler: (_) async => '',
+      ),
+    ];
+
+    test('forwards the delegate capability and generation', () async {
+      final inner = _PenaltyDelegate();
+      final LlamaBackend router = WebAutoBackend(webBackend: inner);
+
+      expect(router, isA<BackendPromptPenaltyGeneration>());
+      final backend = router as BackendPromptPenaltyGeneration;
+      expect(backend.supportsPromptPenaltiesWithGrammar, isTrue);
+      await backend
+          .generateWithPromptPenalties(
+            1,
+            'Hello',
+            const GenerationParams(grammar: 'root ::= "a"'),
+            mediaMarker: '<m>',
+          )
+          .drain<void>();
+      expect(inner.penaltyPrompts, ['Hello']);
+      expect(inner.mediaMarkers, ['<m>']);
+    });
+
+    for (final (label, create)
+        in <(String, WebAutoBackend Function(_PenaltyDelegate))>[
+          ('router', (inner) => WebAutoBackend(webBackend: inner)),
+          (
+            'text-history router',
+            (inner) => WebAutoBackend.withTextHistory(webBackend: inner),
+          ),
+        ]) {
+      test('LFM auto reaches the delegate through the $label', () async {
+        final inner = _PenaltyDelegate();
+        final engine = LlamaEngine(create(inner));
+        addTearDown(engine.dispose);
+        await engine.loadModel('fake.gguf');
+        await engine.create(messages, tools: tools).drain<void>();
+        expect(inner.penaltyPrompts, hasLength(1));
+      });
+    }
+
+    test('refuses typed when the delegate lacks the capability', () async {
+      for (final inner in <LlamaBackend>[
+        _PenaltyDelegate(supported: false),
+        _LazyOnlyDelegate(),
+      ]) {
+        final LlamaBackend backend = WebAutoBackend(webBackend: inner);
+        final penalty = backend as BackendPromptPenaltyGeneration;
+        expect(penalty.supportsPromptPenaltiesWithGrammar, isFalse);
+        expect(
+          () => penalty.generateWithPromptPenalties(
+            1,
+            'Hello',
+            const GenerationParams(),
+          ),
+          throwsA(isA<LlamaUnsupportedException>()),
+        );
+        final engine = LlamaEngine(backend);
+        addTearDown(engine.dispose);
+        await engine.loadModel('fake.gguf');
+        await expectLater(
+          engine.create(messages, tools: tools).drain<void>(),
+          throwsA(isA<LlamaUnsupportedException>()),
+        );
+      }
+    });
+
+    for (final (reported, expected) in [(true, true), (false, false)]) {
+      test('bridge assets reporting penaltyPromptTokensWithGrammar=$reported '
+          '${expected ? 'reach' : 'are refused before'} the bridge', () async {
+        final fake = FakeFeatureBridge()
+          ..completionCapabilities = {
+            'lazyGrammar': true,
+            'penaltyPromptTokensWithGrammar': reported,
+          };
+        fake.object.setProperty(
+          'getModelMetadata'.toJS,
+          (() => metadata.jsify()).toJS,
+        );
+        final engine = LlamaEngine(
+          WebAutoBackend(
+            webGpuFactory: () =>
+                WebGpuLlamaBackend(bridgeFactory: ([_]) => fake.bridge),
+          ),
+        );
+        addTearDown(engine.dispose);
+        await engine.loadModelFromUrl('https://example.com/lfm.gguf');
+        final generation = engine.create(messages, tools: tools).drain<void>();
+        if (!expected) {
+          await expectLater(
+            generation,
+            throwsA(isA<LlamaUnsupportedException>()),
+          );
+          expect(fake.completionCalls, 0);
+          return;
+        }
+        await generation;
+        expect(fake.completionCalls, 1);
+        expect(fake.completionOption('penaltyPromptTokensWithGrammar'), isTrue);
+        expect(fake.completionOption('grammarLazy'), isTrue);
+      });
+    }
+  });
+}
+
+class _PenaltyDelegate extends MockLlamaBackend
+    implements BackendPromptPenaltyGeneration, BackendLazyGrammarSupport {
+  _PenaltyDelegate({this.supported = true})
+    : super(
+        modelMetadataResponse: const {
+          'llm.context_length': '4096',
+          'tokenizer.chat_template':
+              '{# <|tool_list_start|> <|tool_list_end|> #}'
+              '{% for m in messages %}{{ m["content"] }}{% endfor %}<think>',
+        },
+      );
+
+  final bool supported;
+  final penaltyPrompts = <String>[];
+  final mediaMarkers = <String?>[];
+
+  @override
+  bool get supportsLazyGrammar => true;
+
+  @override
+  bool get supportsPromptPenaltiesWithGrammar => supported;
+
+  @override
+  Stream<List<int>> generateWithPromptPenalties(
+    int contextHandle,
+    String prompt,
+    GenerationParams params, {
+    String? mediaMarker,
+    List<LlamaContentPart>? parts,
+  }) {
+    penaltyPrompts.add(prompt);
+    mediaMarkers.add(mediaMarker);
+    return const Stream<List<int>>.empty();
+  }
+}
+
+class _LazyOnlyDelegate extends MockLlamaBackend
+    implements BackendLazyGrammarSupport {
+  _LazyOnlyDelegate()
+    : super(
+        modelMetadataResponse: const {
+          'llm.context_length': '4096',
+          'tokenizer.chat_template':
+              '{# <|tool_list_start|> <|tool_list_end|> #}'
+              '{% for m in messages %}{{ m["content"] }}{% endfor %}<think>',
+        },
+      );
+
+  @override
+  bool get supportsLazyGrammar => true;
 }
 
 class _FormatRecordingBackend extends _RecordingBackend

@@ -83,7 +83,7 @@ class KimiK3Handler extends DirectJinjaHandler
     var remaining = output.trimLeft();
     String? reasoning;
     var inThought = thinkingForcedOpen;
-    if (remaining.startsWith(thinkingStartTag)) {
+    if (!thinkingForcedOpen && remaining.startsWith(thinkingStartTag)) {
       remaining = remaining.substring(thinkingStartTag.length);
       inThought = true;
     } else if (isPartial && _isMarkerPrefix(remaining)) {

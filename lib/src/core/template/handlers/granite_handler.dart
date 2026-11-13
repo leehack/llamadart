@@ -95,13 +95,11 @@ class GraniteHandler extends ChatTemplateHandler {
     final rendered = LlamaChatTemplateResult(
       prompt: prompt,
       format: format.index,
-      grammar: hasTools
-          ? _buildGraniteToolGrammar(
-              tools,
-              thinkingForcedOpen: thinkingForcedOpen,
-              parallelToolCalls: parallelToolCalls,
-            )
-          : (thinkingForcedOpen ? _buildThinkingOnlyGrammar() : null),
+      grammar: requiredGrammarAfterThought(
+        _buildGraniteToolGrammar(tools, parallelToolCalls: parallelToolCalls),
+        metadata: metadata,
+        thinkingForcedOpen: thinkingForcedOpen,
+      ),
       grammarLazy: hasTools && !toolChoiceRequired,
       thinkingForcedOpen: thinkingForcedOpen,
       additionalStops: getStops(
@@ -192,58 +190,18 @@ class GraniteHandler extends ChatTemplateHandler {
 
   @override
   String? buildGrammar(List<ToolDefinition>? tools) {
-    return _buildGraniteToolGrammar(
-      tools,
-      thinkingForcedOpen: false,
-      parallelToolCalls: true,
-    );
+    return _buildGraniteToolGrammar(tools, parallelToolCalls: true);
   }
 
   String? _buildGraniteToolGrammar(
     List<ToolDefinition>? tools, {
-    required bool thinkingForcedOpen,
     required bool parallelToolCalls,
-  }) {
-    final base = ToolCallGrammarUtils.buildWrappedArrayGrammar(
-      tools: tools,
-      prefix: '<|tool_call|>',
-      suffix: '',
-      nameKey: 'name',
-      argumentsKey: 'arguments',
-      allowParallelToolCalls: parallelToolCalls,
-    );
-    if (base == null) {
-      return null;
-    }
-    if (!thinkingForcedOpen) {
-      return base;
-    }
-    return _rewriteRootForThinkingPrelude(base);
-  }
-
-  String _rewriteRootForThinkingPrelude(String grammar) {
-    final lines = grammar.trimRight().split('\n');
-    final rootIndex = lines.indexWhere((line) => line.startsWith('root ::= '));
-    if (rootIndex == -1) {
-      return grammar;
-    }
-    final rootExpr = lines[rootIndex].substring('root ::= '.length).trim();
-    lines[rootIndex] =
-        'root ::= "</think>" space "<response>" space response-body "</response>" space $rootExpr';
-    final hasResponseRule = lines.any(
-      (line) => line.startsWith('response-body ::= '),
-    );
-    if (!hasResponseRule) {
-      lines.add('response-body ::= [^<]*');
-    }
-    return '${lines.join('\n')}\n';
-  }
-
-  String _buildThinkingOnlyGrammar() {
-    return '''
-root ::= "</think>" space "<response>" space response-body "</response>" space
-response-body ::= [^<]*
-space ::= "" | " " | "\\n"{1,2} [ \\t]{0,20}
-''';
-  }
+  }) => ToolCallGrammarUtils.buildWrappedArrayGrammar(
+    tools: tools,
+    prefix: '<|tool_call|>',
+    suffix: '',
+    nameKey: 'name',
+    argumentsKey: 'arguments',
+    allowParallelToolCalls: parallelToolCalls,
+  );
 }

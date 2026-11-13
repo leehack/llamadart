@@ -6663,10 +6663,14 @@ void main() {
       ),
     );
     final rejectsThinkingBudget = throwsA(
-      isA<UnsupportedError>().having(
-        (error) => '${error.message}',
+      isA<LlamaUnsupportedException>().having(
+        (error) => error.message,
         'message',
-        allOf(contains('thinking-budget control'), contains('thinkingBudget')),
+        allOf(
+          contains('thinking-budget control'),
+          contains('thinkingBudget'),
+          contains('v0.1.54+'),
+        ),
       ),
     );
 

@@ -57,6 +57,22 @@ void main() {
     }
   });
 
+  test('does not classify unsupported-option messages with trailing text', () {
+    const message =
+        'The loaded WebGPU core does not support '
+        'CompletionOptions.thinkingBudget.';
+    for (final suffix in [' Retry later.', ' or something else.', '\n']) {
+      final error = JSObject()
+        ..setProperty('name'.toJS, 'Error'.toJS)
+        ..setProperty('message'.toJS, '$message$suffix'.toJS);
+      expect(
+        webGpuBridgeRequestError(error),
+        isNull,
+        reason: 'suffix: $suffix',
+      );
+    }
+  });
+
   test('preserves typed unsupported errors', () {
     final error = LlamaUnsupportedException('unsupported model');
     expect(webGpuBridgeRequestError(error), same(error));

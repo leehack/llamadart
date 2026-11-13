@@ -272,6 +272,48 @@ void main() {
     );
   });
 
+  test('generic and content-only formats keep a forced-open thought as '
+      'generated', () {
+    for (final format in [ChatFormat.generic, ChatFormat.contentOnly]) {
+      final parsed = ChatTemplateEngine.parse(
+        format.index,
+        r'<think>Plan \n x.</think>A</think>B<think>X</think>C',
+        thinkingForcedOpen: true,
+      );
+      expect(parsed.reasoningContent, r'<think>Plan \n x.', reason: '$format');
+      expect(parsed.content, 'A</think>B<think>X</think>C', reason: '$format');
+    }
+  });
+
+  test('a structured-output reply on a thinking template keeps the thought as '
+      'generated', () {
+    final rendered = ChatTemplateEngine.render(
+      templateSource: File(
+        'test/fixtures/llama_cpp_templates/GLM-4.7-Flash.jinja',
+      ).readAsStringSync(),
+      messages: [
+        LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'Hi'),
+      ],
+      metadata: const {},
+      enableThinking: true,
+      responseFormat: const {
+        'type': 'json_schema',
+        'json_schema': {
+          'schema': {'type': 'object'},
+        },
+      },
+    );
+    expect(rendered.format, ChatFormat.contentOnly.index);
+    expect(rendered.thinkingForcedOpen, isTrue);
+
+    final parsed = ChatTemplateEngine.parseRendered(
+      rendered,
+      '<think>Plan.</think>{"a":1}',
+    );
+    expect(parsed.reasoningContent, '<think>Plan.');
+    expect(parsed.content, '{"a":1}');
+  });
+
   test('only Hermes renders tool-result content', () {
     expect(
       [
