@@ -128,27 +128,35 @@ void main() {
       }
     });
 
-    test('holds no <| but takes a lone <', () {
+    test('holds no end marker but takes <| and its prefixes', () {
       for (final raw in [
-        'a<|b',
-        '<|',
-        'a"<|b',
-        'a" <|b',
-        'a"}"<|b',
-        'a<<|b',
-        'x<|tool_call_end|>',
+        'a<|tool_call_end|>',
+        '<|tool_call_end|>',
+        'a"<|tool_call_end|>',
+        'a" <|tool_call_end|>',
+        'a"}"<|tool_call_end|>',
+        'a<<|tool_call_end|>',
+        'a<|tool_call_end|>b',
+        'x<|<|tool_call_end|>',
       ]) {
         expect(grammar.accepts(text(raw)), isFalse, reason: raw);
       }
       for (final raw in [
-        'a<b',
-        '<',
+        'main = text <| String.fromInt (1 + 2)',
+        'a<|b',
+        '<|',
+        'a<|tool_call',
+        '<|tool_call_end',
+        'a<|tool_call_end|',
+        'a<|tool_call_end>',
+        'a<|tool_call_end |>',
+        'a<|tool_call_end|b>',
+        'a<<|tool_call',
         'a<',
-        'a<<b',
+        'a<b',
         'a<"',
-        'a"<b',
-        'a" <b',
-        'a"<"',
+        'a"<|b',
+        'a" <|b',
         r'a<\\|b',
         r'a<\u007cb',
         'a|b',

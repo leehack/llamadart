@@ -263,9 +263,10 @@ model left unescaped when no closing quote could stand there, so
 (except `}"`) still ends the string. When the model never writes the closing
 quote of the last string argument, the call still ends at exactly
 `}}]<|tool_call_end|>`; no whitespace may sit between those closers, and the
-text must not end in a raw `"` or `"}`
-([#1609](https://github.com/leehack/llamadart/issues/1609)). These strings never
-hold `<|`, closed or not, so the grammar ends the output at that marker
+text must hold no `<|` and not end in a raw `"` or `"}`
+([#1609](https://github.com/leehack/llamadart/issues/1609)). A closed string
+argument may hold `<|` (`text <| f x`) but not the literal
+`<|tool_call_end|>`, so the grammar ends the output at that marker
 ([#1987](https://github.com/leehack/llamadart/issues/1987)).
 
 When a backend reports a length cutoff inside an LFM tool envelope,
