@@ -351,12 +351,12 @@ templates. Raw `engine.generate(...)` calls must provide both delimiters in
 `ThinkingBudget`. A budget of `0` immediately forces the end delimiter. On
 Qwen3-Coder XML templates (Qwen3.5, Nemotron 3 Nano, StepFun 3.5 Flash) the
 forced text is a line break before the end delimiter, as llama.cpp forces it.
-On native llama.cpp and WebGPU, an eager grammar whose root takes the thought
-(`think-body` or `seed-thought`, as in `responseFormat` and required tool-call
-grammars on templates that open or model a thought) stays applied while the
-model reasons, so it also constrains the reply after a spent budget. Every lazy
-grammar, whatever its root, and every other grammar, such as a typical caller
-`grammar`, waits until the thought closes.
+On native llama.cpp and WebGPU, a grammar stays applied while the model
+reasons only when its root takes the forced-open thought (`think-body` or
+`seed-thought`), so it also constrains the reply after a spent budget. Every
+other grammar waits and restarts after the thought: lazy grammars, a typical
+caller `grammar`, and the required-call grammars of Qwen3-Coder XML, Ling 3,
+DeepSeek R1/V3.2/V4, Laguna, Kimi K3 and MiniMax M3.
 Native llama.cpp, WebGPU bridges that report `thinkingBudget` and native
 LiteRT-LM chat generation on bundles with a thinking channel support a budget
 (see [Runtime parameters](../configuration/runtime-parameters)); other
