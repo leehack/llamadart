@@ -795,6 +795,7 @@ jobs:
           --timeout-seconds 600 --
           flutter test --platform chrome
           --file-reporter "json:$RUNNER_TEMP/chat-app-chrome/reporter.jsonl"
+          test/audio_recording_service_web_test.dart
           test/chat_generation_service_test.dart test/image_generation_screen_test.dart
           test/unit_test.dart test/conversation_state_service_test.dart
 

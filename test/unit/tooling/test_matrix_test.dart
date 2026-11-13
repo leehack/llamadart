@@ -901,6 +901,54 @@ void main() {
       expect(web.covers, contains('microphone transcription for a WAV'));
     });
 
+    test('Web speech rows name their scenarios and the WER gate', () {
+      final scenarios = buildLocalE2eScenarios().map((s) => s.name).toSet();
+      final web = testMatrixRows.singleWhere(
+        (row) => row.id == 'web-speech-to-text-smoke',
+      );
+      expect(web.covers, contains('word error rate'));
+      expect(web.covers, contains('isGpuActive()'));
+      expect(web.command, contains('-webgpu-smoke'));
+      expect(web.command, contains('-mem64-smoke'));
+      expect(web.command, contains('-webgpu-mem64-smoke'));
+      expect(web.command, isNot(contains('exact-transcript')));
+      for (final scenario in [
+        'chat-app-web-speech-to-text-webgpu-smoke',
+        'chat-app-web-speech-to-text-mem64-smoke',
+        'chat-app-web-speech-to-text-webgpu-mem64-smoke',
+      ]) {
+        expect(scenarios, contains(scenario));
+      }
+
+      final lifecycle = testMatrixRows.singleWhere(
+        (row) => row.id == 'web-microphone-lifecycle',
+      );
+      expect(lifecycle.mode, 'local-only');
+      expect(
+        lifecycle.command,
+        contains('--scenario chat-app-web-microphone-lifecycle'),
+      );
+      expect(scenarios, contains('chat-app-web-microphone-lifecycle'));
+      for (final phrase in ['denied', 'discard', 'too-short', 'ends']) {
+        expect(lifecycle.covers, contains(phrase));
+      }
+
+      final device = testMatrixRows.singleWhere(
+        (row) => row.id == 'chat-app-web-microphone-device-smoke',
+      );
+      expect(device.mode, 'manual/device');
+      expect(device.covers, contains('real microphone hardware'));
+      expect(device.command, contains('unplug'));
+
+      final doc = File('doc/testing_matrix.md').readAsStringSync();
+      for (final id in [
+        'web-microphone-lifecycle',
+        'chat-app-web-microphone-device-smoke',
+      ]) {
+        expect(doc, contains('`$id`'));
+      }
+    });
+
     test('includes targeted physical iOS speech E2E row', () {
       final row = testMatrixRows.singleWhere(
         (row) => row.id == 'physical-ios-speech-e2e',

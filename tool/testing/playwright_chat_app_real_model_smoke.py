@@ -18,8 +18,10 @@ from playwright_chat_app_utils import (
     emit,
     enable_flutter_semantics,
     enter_chat_prompt,
+    contains_words,
     local_storage_init_script,
     safe_body_text,
+    word_error_rate,
 )
 from safari_webdriver import SafariSession, element_id
 
@@ -79,7 +81,6 @@ def wait_for_bridge_response(
 ) -> tuple[str, str]:
     deadline = time.monotonic() + (timeout_ms / 1000)
     last_status = 0.0
-    lower_expected = expected.lower()
     while time.monotonic() < deadline:
         state = page.evaluate(
             """() => ({
@@ -130,7 +131,7 @@ def wait_for_bridge_response(
         if response_source in ("litert", "auto") and litert_error:
             raise RuntimeError(f"LiteRT-LM generation failed: {litert_error}")
         for source, candidate in responses:
-            if lower_expected in candidate.lower():
+            if contains_words(candidate, expected):
                 emit(
                     "response_observed",
                     source=source,
@@ -374,6 +375,52 @@ def check_tool_expectations(args, completions: list[dict[str, Any]]) -> None:
             )
 
 
+RUNTIME_PROBE_SCRIPT = """async () => {
+  const bridge = window.__llamadartRealBridge;
+  if (!bridge) return {available: false};
+  const call = async (name) =>
+    typeof bridge[name] === 'function' ? await bridge[name]() : null;
+  const metadata = (await call('getModelMetadata')) ?? {};
+  return {
+    available: true,
+    isGpuActive: await call('isGpuActive'),
+    backendName: await call('getBackendName'),
+    metadata: Object.fromEntries(
+      Object.entries(metadata).filter(([key]) => key.startsWith('llamadart.')),
+    ),
+  };
+}"""
+
+
+def probe_runtime(page) -> dict[str, Any]:
+    try:
+        return page.evaluate(RUNTIME_PROBE_SCRIPT) or {"available": False}
+    except Exception as error:  # noqa: BLE001
+        return {"available": False, "error": str(error)}
+
+
+def check_runtime_expectations(args, probe: dict[str, Any]) -> None:
+    if args.expect_gpu_active is None and args.expect_core_variant is None:
+        return
+    if not probe.get("available"):
+        raise RuntimeError(f"Bridge runtime probe was unavailable: {probe!r}")
+    if args.expect_gpu_active is not None:
+        expected = args.expect_gpu_active == "true"
+        if probe.get("isGpuActive") is not expected:
+            raise RuntimeError(
+                f"isGpuActive() was {probe.get('isGpuActive')!r}, expected "
+                f"{expected} (backend {probe.get('backendName')!r}, "
+                f"requested GPU layers {args.gpu_layers})"
+            )
+    if args.expect_core_variant is not None:
+        variant = (probe.get("metadata") or {}).get("llamadart.webgpu.core_variant")
+        if variant != args.expect_core_variant:
+            raise RuntimeError(
+                f"llamadart.webgpu.core_variant was {variant!r}, expected "
+                f"{args.expect_core_variant!r}"
+            )
+
+
 def finish_run(
     page,
     args,
@@ -389,6 +436,8 @@ def finish_run(
     page_errors: list[str],
     request_failures: list[str],
 ) -> None:
+    runtime_probe = probe_runtime(page)
+    check_runtime_expectations(args, runtime_probe)
     completion_check = page.evaluate(
         """() => ({
           capabilities: window.__llamadartRealBridgeCompletionCapabilities,
@@ -491,6 +540,7 @@ def finish_run(
         mmprojRequestCount=len(mmproj_requests),
         liteRtLmRuntimeRequests=litert_lm_runtime_requests,
         bridgeGlobals=bridge_globals,
+        runtimeProbe=runtime_probe,
         completionCheck=completion_check,
         bodyTail=body_after_response[-1200:],
         consoleTail=console_logs[-30:],
@@ -520,12 +570,29 @@ def main() -> int:
         ),
     )
     parser.add_argument(
-        "--microphone-allow-any-response",
-        action="store_true",
+        "--microphone-max-wer",
+        type=float,
+        metavar="RATE",
         help=(
-            "Require a non-empty fake-microphone transcript instead of an exact "
-            "match. The selected-file transcript remains exact."
+            "Accept the fake-microphone transcript when its word error rate "
+            "against --microphone-reference is at most RATE, ignoring case "
+            "and punctuation, instead of requiring --expect as a substring. "
+            "The selected-file transcript still has to contain --expect."
         ),
+    )
+    parser.add_argument(
+        "--microphone-reference",
+        help="Reference transcript for --microphone-max-wer (default: --expect).",
+    )
+    parser.add_argument(
+        "--expect-gpu-active",
+        choices=("true", "false"),
+        help="Require the bridge's isGpuActive() to report this value.",
+    )
+    parser.add_argument(
+        "--expect-core-variant",
+        choices=("wasm32", "wasm64"),
+        help="Require the llamadart.webgpu.core_variant model metadata.",
     )
     parser.add_argument("--prefetch-mmproj-cache", action="store_true")
     parser.add_argument("--expect-mmproj-cache-hit", action="store_true")
@@ -655,9 +722,20 @@ def main() -> int:
         and Path(args.speech_audio_path).suffix.lower() != ".wav"
     ):
         parser.error("--speech-microphone requires a WAV --speech-audio-path")
-    if args.microphone_allow_any_response and not args.speech_microphone:
+    if args.microphone_max_wer is not None and not args.speech_microphone:
+        parser.error("--microphone-max-wer requires --speech-microphone")
+    if args.microphone_max_wer is not None and not (
+        0 <= args.microphone_max_wer < 1
+    ):
+        parser.error("--microphone-max-wer must be at least 0 and below 1")
+    if args.microphone_reference is not None and args.microphone_max_wer is None:
+        parser.error("--microphone-reference requires --microphone-max-wer")
+    if args.browser == "safari" and (
+        args.expect_gpu_active or args.expect_core_variant
+    ):
         parser.error(
-            "--microphone-allow-any-response requires --speech-microphone"
+            "--browser safari does not support --expect-gpu-active or "
+            "--expect-core-variant"
         )
 
     remote_fetch_mode = "default"
@@ -727,6 +805,7 @@ def main() -> int:
         window.__llamadartBridgeEnableMem64 = {str(args.mem64).lower()};
         window.__llamadartBridgePreferMemory64 = {str(args.mem64).lower()};
         {remote_fetch_init}
+        window.__llamadartRealBridge = null;
         window.__llamadartRealBridgeLastResponse = null;
         window.__llamadartRealBridgeLastError = null;
         window.__llamadartRealBridgeLastPrompt = null;
@@ -760,6 +839,7 @@ def main() -> int:
             window.__llamadartRealBridgeLastResponse = null;
             window.__llamadartRealBridgeLastError = null;
             window.__llamadartRealBridgeLastPrompt = String(prompt ?? '');
+            window.__llamadartRealBridge = this;
             const completionRecord = {{
               prompt: String(prompt ?? ''),
               response: null,
@@ -988,7 +1068,9 @@ def main() -> int:
                 [
                     "--use-fake-ui-for-media-stream",
                     "--use-fake-device-for-media-stream",
-                    f"--use-file-for-fake-audio-capture={fake_microphone_path}",
+                    # Without %noloop Chromium repeats the clip, so a long
+                    # recording would transcribe it twice.
+                    f"--use-file-for-fake-audio-capture={fake_microphone_path}%noloop",
                 ]
             )
         browser = playwright.chromium.launch(
@@ -1133,7 +1215,7 @@ def main() -> int:
                 page,
                 min(args.response_timeout_ms, 30000),
             )
-            if args.expect.lower() not in copied_response.lower():
+            if not contains_words(copied_response, args.expect):
                 raise RuntimeError(
                     "Copied speech transcript did not contain expected text: "
                     f"{copied_response!r}"
@@ -1184,26 +1266,31 @@ def main() -> int:
                 page,
                 args.expect,
                 args.response_timeout_ms,
-                args.microphone_allow_any_response,
+                args.microphone_max_wer is not None,
                 args.response_source,
             )
             copied_microphone_response = copy_last_assistant_response(
                 page,
                 min(args.response_timeout_ms, 30000),
             )
-            if (
-                not args.microphone_allow_any_response
-                and args.expect.lower() not in copied_microphone_response.lower()
-            ):
-                raise RuntimeError(
-                    "Copied microphone transcript did not contain expected text: "
-                    f"{copied_microphone_response!r}"
+            microphone_reference = args.microphone_reference or args.expect
+            if args.microphone_max_wer is None:
+                microphone_wer = None
+                if not contains_words(copied_microphone_response, args.expect):
+                    raise RuntimeError(
+                        "Copied microphone transcript did not contain expected "
+                        f"text: {copied_microphone_response!r}"
+                    )
+            else:
+                microphone_wer = word_error_rate(
+                    microphone_reference, copied_microphone_response
                 )
-            if (
-                args.microphone_allow_any_response
-                and not copied_microphone_response.strip()
-            ):
-                raise RuntimeError("Copied microphone transcript was empty")
+                if microphone_wer > args.microphone_max_wer:
+                    raise RuntimeError(
+                        f"Microphone transcript word error rate {microphone_wer:.3f} "
+                        f"exceeds {args.microphone_max_wer}: "
+                        f"{copied_microphone_response!r} vs {microphone_reference!r}"
+                    )
             if "<asr_text>" in copied_microphone_response:
                 raise RuntimeError(
                     "Raw Qwen3-ASR control markers leaked from microphone transcription"
@@ -1214,9 +1301,7 @@ def main() -> int:
                 method="copy-response",
                 character_count=len(copied_microphone_response),
                 capture_seconds=round(capture_seconds, 3),
-                exact_match=(
-                    args.expect.lower() in copied_microphone_response.lower()
-                ),
+                word_error_rate=microphone_wer,
             )
             body_after_response = safe_body_text(page)
         finish_run(

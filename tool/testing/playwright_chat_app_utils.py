@@ -1,5 +1,6 @@
 import json
 import platform
+import re
 import time
 from typing import Any, Callable
 
@@ -119,3 +120,42 @@ def wait_for_send_enabled(
             pass
         time.sleep(0.05)
     raise TimeoutError(f"Timed out waiting for {button_name} button to enable")
+
+
+def normalized_words(text: str) -> list[str]:
+    return re.findall(r"[\w']+", text.lower().replace("\u2019", "'"))
+
+
+def word_error_rate(reference: str, hypothesis: str) -> float:
+    """Word-level edit distance over the reference length, ignoring case and
+    punctuation."""
+    reference_words = normalized_words(reference)
+    hypothesis_words = normalized_words(hypothesis)
+    if not reference_words:
+        return 0.0 if not hypothesis_words else 1.0
+    previous = list(range(len(hypothesis_words) + 1))
+    for i, expected in enumerate(reference_words, 1):
+        current = [i]
+        for j, actual in enumerate(hypothesis_words, 1):
+            current.append(
+                min(
+                    previous[j] + 1,
+                    current[j - 1] + 1,
+                    previous[j - 1] + (expected != actual),
+                )
+            )
+        previous = current
+    return previous[-1] / len(reference_words)
+
+
+def contains_words(text: str, expected: str) -> bool:
+    """Whether `expected` occurs in `text`, as a substring or as a run of
+    words that differ only in case and punctuation."""
+    if expected.lower() in text.lower():
+        return True
+    needle = normalized_words(expected)
+    haystack = normalized_words(text)
+    return bool(needle) and any(
+        haystack[start : start + len(needle)] == needle
+        for start in range(len(haystack) - len(needle) + 1)
+    )
