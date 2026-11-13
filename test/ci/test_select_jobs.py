@@ -69,6 +69,26 @@ class SelectionTest(unittest.TestCase):
                 self.assertFalse(plan['jobs']['test-web'])
                 self.assertFalse(plan['jobs']['test-other-os'])
 
+    def test_files_with_recorded_reader_evidence_run_the_guard(self):
+        listed = (ROOT / 'tool/ci/markdown_reader_files.txt').read_text().splitlines()
+        self.assertEqual(listed, sorted(set(listed)))
+        for path in ('website/lib/src/site/site_model.dart',
+                     'website/lib/src/site/sidebar.dart',
+                     'packages/llamadart_validation/bin/run.dart',
+                     'packages/llamadart_validation/lib/src/manifest.dart',
+                     'packages/genkit_llamadart/.github/check_docs.py'):
+            self.assertIn(path, listed)
+        for path in listed:
+            with self.subTest(path=path):
+                jobs = ci.select([path])['jobs']
+                self.assertTrue(jobs['markdown-tests'] or jobs['test-linux-coverage'])
+        for path in ('website/lib/src/site/site_model.dart',
+                     'packages/genkit_llamadart/.github/check_docs.py'):
+            for pull_request in (True, False):
+                plan = ci.select([path], pull_request=pull_request)
+                self.assertTrue(plan['jobs']['markdown-tests'])
+                self.assertFalse(plan['jobs']['test-linux-coverage'])
+
     def test_unrelated_paths_do_not_select_markdown_tests(self):
         for path in ('website/sidebars.json', 'doc/images/a.png',
                      'LICENSE', 'packages/genkit_llamadart/lib/a.dart',
@@ -120,7 +140,7 @@ class SelectionTest(unittest.TestCase):
                      '.github/check_docs.py', 'test/contract_test.dart'):
             plan = ci.select(['packages/genkit_llamadart/' + path])
             expected = {'genkit'}
-            if path.endswith('.md'):
+            if path.endswith(('.md', 'check_docs.py')):
                 expected.add('markdown-tests')
             self.assertEqual({j for j, v in plan['jobs'].items() if v}, expected)
             self.assertEqual(plan['companions'], [])

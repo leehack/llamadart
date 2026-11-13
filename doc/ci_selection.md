@@ -51,17 +51,83 @@ This is executable job accounting, not a new repository protection setting.
 `Markdown Tests` runs only the root suites listed in
 `tool/ci/markdown_test_suites.txt`, for a change that selects no full Linux
 coverage. It carries no coverage, so a Markdown-only commit uploads none to
-Codecov. `markdown_test_suites_test.dart` fails when a root test names Markdown,
-directly or through a local helper or tool, and is neither listed nor explained
-in that test: list a suite that reads a tracked `.md`, or a tool that does. That
-check runs in `Markdown Tests` itself as well as the full graph. Changes to
-`tool/docs/`, `tool/testing/validation/` or `tool/testing/validation.dart` also
-select it, since those helpers can introduce a reader without editing a test.
-The exemption map's test has an explicit CODEOWNERS assignment; requiring owner
-approval still depends on repository protection settings. The source scan is
-heuristic and does not prove the absence of every possible Markdown reader.
-Because Linux coverage can no longer stand in for
-`validation-integration` on a Markdown path, that job stays selected there.
+Codecov. Changes to `tool/docs/`, `tool/testing/validation/` or
+`tool/testing/validation.dart` also select it, since those helpers can
+introduce a reader without editing a test. So does a change to any file in
+`tool/ci/markdown_reader_files.txt`: the files an exemption records evidence
+for, some of which (the website, validation and Genkit packages) sit in lanes
+that run no root test. The guard test fails until that list equals the recorded
+evidence files. Because Linux coverage can no longer
+stand in for `validation-integration` on a Markdown path, that job stays
+selected there.
+
+`markdown_test_suites_test.dart` keeps the inventory complete. Every root suite
+whose static reach shows Markdown evidence must be listed in the inventory or
+be an exemption in `test/unit/tooling/support/markdown_reader_exemptions.dart`;
+the engine is `support/markdown_readers.dart`. The check runs in `Markdown
+Tests` itself as well as the full graph.
+
+**What discovery follows.** From each suite it follows every import, export and
+part URI, including every branch of a conditional directive; `package:` URIs of
+a `pubspec.yaml` in the checkout, mapped to that package's `lib`; script paths
+named in the source, including literals joined with `p.join`, commas or `+` and
+interpolated prefixes; a directory literal beside a script name or glob (and
+`unittest discover`); and Python imports. Comments are ignored. A URI that
+resolves to no file becomes an `unresolved` token, so a missing or generated
+dependency fails closed. The file universe is
+`git ls-files --cached --others --exclude-standard`, so ignored and generated
+paths, and links that point nowhere, are not followed.
+
+**What counts as evidence.** A file's tokens are names of Markdown or of a
+Markdown directory (`.md`, `README`, `doc/`, `website/`, `skills/`, ...),
+`ls-files`, directory walks (`listSync`, `os.walk`, `glob`, `find`, ...) in a
+file that also names a checkout-rooted directory (the working directory, the
+script's own, or a relative literal), and `git` commands that read tracked
+content (`show`, `diff`, `ls-tree`, `cat-file`, `archive`, `clone`, ...) in a
+file that mentions `git`. A walk of a temp directory is not evidence.
+
+**Limits.** Discovery reads source text. It cannot see a path assembled at
+runtime, a script chosen by an environment variable or a lookup table, a temp
+tree repointed at the checkout without a token, or a callee dispatched by name
+across a process boundary. Three shapes found by audit also pass: a walk root
+handed to a helper in another file, since the root and the walk token must share
+a file; `Directory.fromUri(Uri.base)`, since `Uri.base` is not a root token; and
+a script directory held in a variable rather than a literal. Evidence records
+token types per file, so a new walk that reuses a token type already recorded
+for an exempt file is not detected. Discovery over-approximates reach, so every
+exemption holds the evidence found today, not proof of absence. The runtime
+check behind it is a run with every tracked Markdown file outside `test/`
+removed; that run and any runtime tracing of exempt suites stay a manual audit
+step ([#1670](https://github.com/leehack/llamadart/issues/1670)).
+
+**Exemption contract.** Each entry is `({reason, evidence, gate})`.
+
+- `evidence` maps every reached file with a token to its sorted tokens joined
+  by ` | `. The check compares it exactly, so a new file, a new token type, a renamed
+  or deleted file, or a helper that gains a `README` read fails until someone
+  re-reads the walk root or git call and updates the entry. Evidence is never
+  inferred from emptiness.
+- A suite exemption needs a `reason` and evidence; one with none is stale. A
+  suite cannot be both exempt and listed.
+- `gate: 'local-only'` additionally requires the suite to declare that
+  `@Tags`, because the job excludes the tag; otherwise it is `null`.
+- A helper exemption (`helperExemptions`) removes one non-suite file's tokens
+  from every suite's evidence, so claim only what holds for every caller. The
+  file must exist, be reached by some suite, and still carry exactly the
+  recorded tokens.
+- An unresolved import, an unreadable file, or an unclassified suite with
+  evidence is a problem. Nothing is skipped silently.
+
+The three files have explicit CODEOWNERS assignments, but requiring owner
+approval still depends on repository protection settings.
+
+**Branch protection, as of 2026-11-12.** `main` has no branch protection rule.
+Its only ruleset, "Copilot review for default branch" (active), blocks deletion
+and non-fast-forward pushes and requests Copilot review; it has no
+`pull_request` rule and no required status checks. So neither a required review
+by a code owner nor a required CI check, `Markdown Tests` included, gates a
+merge. Enabling them is an owner action on repository settings and is not part
+of this change.
 
 Root tests run as file shards: Linux VM (3), Chrome (3), macOS `Test Native`
 (3) and Windows `Test Native` (1 `windows-tooling`, 2 `windows-runtime`).
