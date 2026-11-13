@@ -462,6 +462,6 @@ probe, not the tag.
 | `v0.1.73` | `embed` on a rank-pooled reranker and over-long one-pass input throw typed errors | An invalid vector, partial embedding or runtime abort |
 | `v0.1.74` | Load progress follows the download; a cancelled load caches nothing | Progress arrives once the file is cached |
 | `v0.1.75` | A draft context that does not fit throws `LlamaUnsupportedException` and the target stays usable | The draft leaks until the runtime aborts |
-| `v0.1.76` | The projector copy behind the repeated wasm32 media batch abort is freed (wasm32 stays unqualified) | Repeated media batches can abort on wasm32 |
+| `v0.1.76` | The projector copy behind the repeated wasm32 media batch abort is freed (repeated batches qualified on wasm32, measured on the pinned assets; memory64 recommended for headroom) | Repeated media batches can abort on wasm32 |
 | `v0.1.79+` | A worker image or audio `embed` gets 10 minutes per input | Two minutes per request |
 | `v0.1.84+` | A thinking budget keeps a grammar that takes the thought applied (`thinkingBudgetPauseGrammar`) | That combination throws `LlamaUnsupportedException` |

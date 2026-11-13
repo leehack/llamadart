@@ -113,8 +113,10 @@ in the llamadart-getting-started and llamadart-chat-streaming skills.
     capability probe and a compatible embedding model/projector. Use encoded
     image/audio bytes or mono 16 kHz Float32 audio PCM; paths and image URLs
     throw `LlamaUnsupportedException`. EmbeddingGemma-2 is qualified on Chrome
-    CPU wasm memory64 against native CPU/Metal; repeated media batches are
-    qualified only on memory64 (wasm32 is unqualified). Hardware WebGPU is unqualified; default assets include
+    CPU wasm memory64 and on WebGPU (Apple GPU, Chrome, Metal) against native
+    CPU/Metal; other GPUs are unqualified. Repeated media batches are also
+    qualified on wasm32 from assets v0.1.76; memory64 stays recommended for
+    headroom. Default assets include
     the API. Text content preserves legacy unpooled support. Image bytes are
     encoded; embedding calls ignore width/height. Cancelled content calls discard
     late successful bridge results with `LlamaInferenceException`; await the

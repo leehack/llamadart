@@ -71,8 +71,10 @@ and on macOS Metal; other GPU backends unqualified); without a projector it
 reports text only. Web llama.cpp probes image/audio embeddings through the
 bridge's embedding API and a compatible model/projector; the pinned assets
 include it. EmbeddingGemma-2 vectors are qualified on Chrome CPU wasm memory64
-against native CPU/Metal. Repeated media batches are qualified only on memory64
-(wasm32 is unqualified); hardware WebGPU is unqualified. Image bytes are encoded
+and on WebGPU (Apple GPU, Chrome, Metal) against native CPU/Metal; other GPUs
+are unqualified. Repeated media batches are also qualified on wasm32 from assets
+v0.1.76 (measured on the pinned assets); memory64 stays recommended for headroom. Image
+bytes are encoded
 data; embedding calls ignore width/height. LiteRT-LM embedding engines probe
 text/image/audio processors on native CPU. Native and Web text-only content
 follows `embed`, including causal unpooled models; media gates do not restrict

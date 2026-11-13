@@ -3500,7 +3500,8 @@ class WebGpuLlamaBackend
       }
       _mmContextActive = true;
       _resetWebGpuMultimodalWarmupState();
-      if (bridge.supportsVision() ?? false) {
+      if ((bridge.supportsVision() ?? false) &&
+          !await _projectorEmbedsMedia()) {
         await _ensureWebGpuMultimodalWarmup(
           bridge,
           isCpuMultimodalRuntime: _isCpuRuntimeForMultimodal(bridge),
@@ -3520,6 +3521,17 @@ class WebGpuLlamaBackend
       if (cachedBlobUrl != null && !retainedCachedBlobUrl) {
         URL.revokeObjectURL(cachedBlobUrl);
       }
+    }
+  }
+
+  // The warmup completion leaves llama.cpp's causal attention enabled, which
+  // the bridge reports as media embeddings being unsupported (#1971).
+  Future<bool> _projectorEmbedsMedia() async {
+    try {
+      final capabilities = await getEmbeddingCapabilities(1);
+      return capabilities.image || capabilities.audio;
+    } catch (_) {
+      return false;
     }
   }
 

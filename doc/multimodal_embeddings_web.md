@@ -40,7 +40,8 @@ restore and structured-clone ownership; those are bridge responsibilities.
 
 Qualification target: EmbeddingGemma-2 BF16 with its matching
 mmproj and pinned assets `v0.1.84` on Chrome CPU wasm memory64
-(`gpuLayers: 0`). The scenario below checks the bridge's production worker
+(`gpuLayers: 0`), Chrome CPU wasm32 and Chrome WebGPU on an Apple GPU (Metal
+backend, `gpuLayers: 99`, memory64 core). The scenario below checks the bridge's production worker
 budget against references from the matching native `v0.9.0`.
 The table below retains the original `v0.1.66` lineage
 ([PR 1205](https://github.com/leehack/llamadart/pull/1205)); qualification of the
@@ -51,8 +52,7 @@ The independent PR audit qualified the same model and projector with the
 then-pinned `v0.1.65` assets on Chrome CPU wasm memory64 (`gpuLayers: 0`).
 Direct and worker-configured runs returned identical vectors. Those historical
 runs did not assert worker retention after each batch, so they establish
-CPU/WASM numerical parity rather than sustained worker execution. WebGPU
-hardware was not exercised.
+CPU/WASM numerical parity rather than sustained worker execution.
 
 | Input | Cosine versus native CPU |
 | --- | --- |
@@ -74,9 +74,22 @@ This revision records the auditor's measurements; it did not rerun weights.
 The wasm32 core aborted on a second media batch until assets `v0.1.76+`,
 which free the loaded projector GGUF
 ([llama-web-bridge#200](https://github.com/leehack/llama-web-bridge/pull/200)),
-but repeated wasm32 media batches are not yet qualified here
+and the full scenario then passes on wasm32 with `coreVariant: "wasm32"`
+(direct and worker, cosine at least 0.9999 versus native CPU; measured on
+the pinned assets, about 35 minutes). Projector load leaves about 1.5 GiB of heap
+headroom on wasm32 against about 11 GiB on memory64, so **memory64 stays
+recommended for headroom**
 ([#1189](https://github.com/leehack/llamadart/issues/1189)).
-**Memory64 remains the qualified setup for repeated media batches.** The scenario below adds
+
+On a WebGPU runtime, `WebGpuLlamaBackend` skips its one-token generation warmup
+when the projector's embedding capabilities report image or audio. The warmup
+runs through `mtmd_helper_eval_chunks`, which leaves causal attention enabled,
+and the bridge then reports media embeddings as unsupported
+([#1971](https://github.com/leehack/llamadart/issues/1971)). The
+`web-multimodal-embeddings-webgpu` scenario (`gpuLayers: 99`) qualifies
+direct and worker image/audio/mixed vectors on Chrome with the Metal backend on
+an Apple M4 Max, cosine at least 0.9999 versus native CPU and Metal. NVIDIA and
+Linux WebGPU are unqualified. The scenario below adds
 consumer model-backed checks for cancellation of a pending worker RPC,
 projector reload, CPU worker restoration and capacity rejection. Hardware
 WebGPU, device-loss recovery and mobile browser resource limits require
@@ -124,12 +137,16 @@ this format before comparing its payload with the public PCM input route.
 As with the existing browser scenario, configure `CHROME_EXECUTABLE` with a
 wrapper allowing SharedArrayBuffer for the test server:
 `--enable-features=SharedArrayBuffer,SharedArrayBufferUnrestrictedAccessAllowed`.
-The scenario uses CPU/WASM (`gpuLayers: 0`), direct and worker paths. Select the
+The scenario uses CPU/WASM (`gpuLayers: 0` by default), direct and worker
+paths. `config.json` may set `gpuLayers` above 0 to load with
+`ComputeDevice.gpu` and require a WebGPU backend, and `coreVariant` (`wasm64`
+by default, or `wasm32`). Select the
 memory64 files through `coreMem64` and `wasmMem64` in `config.json`. The
 scenario maps these to the bridge constructor's `coreModuleUrlMem64` and
-`wasmUrlMem64` and sets `preferMemory64: true`; the wasm32 `core`/`wasm` keys
-alone do not select memory64. It reports `llamadart.webgpu.core_variant` from
-runtime metadata and requires `wasm64`, so a wasm32 fallback fails qualification.
+`wasmUrlMem64` and sets `preferMemory64` for `coreVariant: "wasm64"`; the wasm32
+`core`/`wasm` keys alone do not select memory64. It reports
+`llamadart.webgpu.core_variant` from runtime metadata and requires it to equal
+`coreVariant`, so a fallback to the other core fails qualification.
 The constructor sets no `workerRequestTimeoutMs`, so the scenario runs on the
 bridge's production budget, on the pinned assets 10 minutes per input for a
 media request ([llama-web-bridge#165](https://github.com/leehack/llama-web-bridge/issues/165)).
@@ -141,6 +158,15 @@ returning valid vectors.
 ```bash
 dart run tool/testing/run_local_e2e.dart --scenario web-multimodal-embeddings --dry-run
 dart run tool/testing/run_local_e2e.dart --scenario web-multimodal-embeddings
+```
+
+For WebGPU set `"gpuLayers": 99` in `config.json` and use a Chrome with a
+hardware adapter (on macOS a wrapper running
+`exec "<Chrome>" --use-angle=metal "$@"` as `CHROME_EXECUTABLE`):
+
+```bash
+dart run tool/testing/run_local_e2e.dart --scenario web-multimodal-embeddings-webgpu --dry-run
+dart run tool/testing/run_local_e2e.dart --scenario web-multimodal-embeddings-webgpu
 ```
 
 The cosine gate is 0.999 with unit-norm tolerance 1e-5, below the measured
@@ -156,5 +182,5 @@ cooperative; the test does not establish interruption at a particular native
 kernel instruction. `EMBEDDING_METRIC` records per-input cosine, maximum
 component difference, norm and width; `EMBEDDING_VECTORS` permits an exact
 direct/worker comparison. Keep model/projector/media hashes, manifest
-provenance and native references with each rerun. No hardware WebGPU support
-is implied by CPU/WASM results.
+provenance and native references with each rerun. CPU/WASM results imply no
+WebGPU support; the WebGPU scenario covers only the adapter it ran on.

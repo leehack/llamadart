@@ -13,6 +13,8 @@ validate against the exact release tag notes.
 
 ## Unreleased
 
+- Fixed image and audio embeddings reporting unsupported on a WebGPU runtime after loading an embedding model's projector; they now work there, qualified on an Apple GPU in Chrome, and repeated media batches are qualified on wasm32 from assets `v0.1.76` ([#1971](https://github.com/leehack/llamadart/issues/1971)).
+
 ## 0.19.8
 
 - Fixed constrained JSON (`responseFormat`) and required tool calls losing their grammar after a `ThinkingBudget` closes a thought on native llama.cpp: an eager grammar that takes the forced-open thought (Qwen3.5 and similar, and Seed-OSS required calls) now stays applied, and every other grammar pauses until reasoning ends ([#1953](https://github.com/leehack/llamadart/issues/1953), [#1958](https://github.com/leehack/llamadart/issues/1958)).

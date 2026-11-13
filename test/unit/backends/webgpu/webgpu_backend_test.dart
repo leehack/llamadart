@@ -5653,6 +5653,58 @@ void main() {
       expect(warmupCallCount, 2);
     });
 
+    test('skips the generation warmup for a media-embedding model', () async {
+      bridge.setProperty(
+        'getEmbeddingCapabilities'.toJS,
+        (() {
+          final capabilities = JSObject()
+            ..setProperty('apiVersion'.toJS, 1.toJS)
+            ..setProperty('text'.toJS, true.toJS)
+            ..setProperty('image'.toJS, true.toJS)
+            ..setProperty('audio'.toJS, true.toJS);
+          return Future<JSAny?>.value(capabilities).toJS;
+        }).toJS,
+      );
+      await backend.modelLoadFromUrl(
+        'https://example.com/model.gguf',
+        const ModelParams(),
+      );
+
+      final handle = await backend.multimodalContextCreate(
+        1,
+        'https://example.com/mmproj.gguf',
+      );
+
+      expect(handle, isNotNull);
+      expect(warmupCallCount, 0);
+      final capabilities = await backend.getEmbeddingCapabilities(1);
+      expect([capabilities.image, capabilities.audio], [true, true]);
+    });
+
+    test(
+      'keeps the generation warmup when the capability probe fails',
+      () async {
+        bridge.setProperty(
+          'getEmbeddingCapabilities'.toJS,
+          (() {
+            return Future<JSAny?>.error(StateError('probe failed')).toJS;
+          }).toJS,
+        );
+        await backend.modelLoadFromUrl(
+          'https://example.com/model.gguf',
+          const ModelParams(),
+        );
+
+        final handle = await backend.multimodalContextCreate(
+          1,
+          'https://example.com/mmproj.gguf',
+        );
+
+        expect(handle, isNotNull);
+        expect(warmupCallCount, 1);
+      },
+    );
+
     test('applies adaptive CPU multimodal caps for 4-thread runtime', () async {
       runtimeGpuLayers = 0;
       runtimeGpuActive = false;
