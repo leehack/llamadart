@@ -132,7 +132,9 @@ description: >-
   LFM2. In LFM2 JSON tool calls (`ToolChoice.required` or a
   `Force JSON schema.` prompt), string arguments keep a double quote
   the model left unescaped where no closing quote could stand; a quote before
-  `,`, `}` or `]` still ends the string. Auto grammar preserves copied
+  `,`, `}` or `]` still ends the string. A last string argument whose closing
+  quote the model never wrote ends at exactly `}}]<|tool_call_end|>`, with no
+  whitespace between the closers. Auto grammar preserves copied
   bare text and balanced object/list spellings as strings only for one required
   plain string argument. Copied path-like values may retain a trailing backslash
   or an unmatched opening quote, in a singleton list without a terminal comma.

@@ -248,6 +248,7 @@ chatFormatRegistrations = List.unmodifiable(<ChatFormatRegistration>[
     DeepseekV32Handler.new,
     detect: (s) => _hasAll(s, const ['dsml_token', 'DSML', 'function_calls']),
     traits: ChatFormatTraits(
+      keepsForcedThoughtVerbatim: true,
       qualifiesJsonSchemaTools: false,
       takesThoughtOnlyAtReplyStart: true,
       mayEmbedToolEnvelopeAfterContent: true,
@@ -258,6 +259,7 @@ chatFormatRegistrations = List.unmodifiable(<ChatFormatRegistration>[
     DeepseekV4Handler.new,
     detect: (s) => _hasAll(s, const ['dsml_token', 'DSML', 'tool_calls']),
     traits: ChatFormatTraits(
+      keepsForcedThoughtVerbatim: true,
       qualifiesJsonSchemaTools: false,
       takesThoughtOnlyAtReplyStart: true,
       mayEmbedToolEnvelopeAfterContent: true,
@@ -290,6 +292,7 @@ chatFormatRegistrations = List.unmodifiable(<ChatFormatRegistration>[
       '<arg_value>',
     ]),
     traits: ChatFormatTraits(
+      keepsForcedThoughtVerbatim: true,
       qualifiesJsonSchemaTools: true,
       takesThoughtOnlyAtReplyStart: true,
       mayEmbedToolEnvelopeAfterContent: true,
@@ -329,6 +332,8 @@ chatFormatRegistrations = List.unmodifiable(<ChatFormatRegistration>[
     DeepseekR1Handler.new,
     detect: (s) => s.contains('<｜tool▁calls▁begin｜>'),
     traits: ChatFormatTraits(
+      keepsForcedThoughtVerbatim: true,
+      reopensThoughtClosedForThinkingOff: true,
       qualifiesJsonSchemaTools: false,
       takesThoughtOnlyAtReplyStart: true,
       toolCallOpening: DeepseekR1Handler.toolCallOpening,
@@ -360,6 +365,7 @@ chatFormatRegistrations = List.unmodifiable(<ChatFormatRegistration>[
       '<param name="',
     ]),
     traits: ChatFormatTraits(
+      keepsForcedThoughtVerbatim: true,
       qualifiesJsonSchemaTools: false,
       takesThoughtOnlyAtReplyStart: true,
       toolCallOpening: XmlToolCallFormat.minicpm5.toolCallOpening,
@@ -391,6 +397,7 @@ chatFormatRegistrations = List.unmodifiable(<ChatFormatRegistration>[
     detect: (s) =>
         _hasAll(s, const ['[gMASK]<sop>', '<arg_key>', '<arg_value>']),
     traits: ChatFormatTraits(
+      keepsForcedThoughtVerbatim: true,
       qualifiesJsonSchemaTools: true,
       takesThoughtOnlyAtReplyStart: true,
       mayEmbedToolEnvelopeAfterContent: true,
@@ -404,6 +411,7 @@ chatFormatRegistrations = List.unmodifiable(<ChatFormatRegistration>[
     detect: (s) =>
         _hasAll(s, const ['<｜hy_User{}｜>', '<tool_sep{}>', '<arg_key{}>']),
     traits: ChatFormatTraits(
+      keepsForcedThoughtVerbatim: true,
       qualifiesJsonSchemaTools: true,
       takesThoughtOnlyAtReplyStart: true,
       toolCallOpening: HunyuanV3Handler.toolCallOpening,
@@ -504,6 +512,8 @@ chatFormatRegistrations = List.unmodifiable(<ChatFormatRegistration>[
     NemotronV2Handler.new,
     detect: (s) => s.contains('<SPECIAL_10>'),
     traits: ChatFormatTraits(
+      keepsForcedThoughtVerbatim: true,
+      reopensThoughtClosedForThinkingOff: true,
       qualifiesJsonSchemaTools: false,
       toolCallOpening: NemotronV2Handler.toolCallOpening,
       requiredKeepsLazyGrammar: true,
@@ -540,6 +550,8 @@ chatFormatRegistrations = List.unmodifiable(<ChatFormatRegistration>[
     MinimaxM2Handler.new,
     detect: (s) => _hasAll(s, const [']~!b[', ']~b]']),
     traits: ChatFormatTraits(
+      keepsForcedThoughtVerbatim: true,
+      reopensThoughtClosedForThinkingOff: true,
       qualifiesJsonSchemaTools: false,
       toolCallOpening: XmlToolCallFormat.minimaxM2.toolCallOpening,
     ),
@@ -718,10 +730,15 @@ chatFormatRegistrations = List.unmodifiable(<ChatFormatRegistration>[
     () => _withoutTemplateToolCalls(ChatFormat.pegConstructed),
     traits: ChatFormatTraits(qualifiesJsonSchemaTools: false),
   ),
+  // The generic and content-only formats keep a forced-open thought verbatim
+  // like the formats above: structured output routes a thinking template
+  // (GLM-4.7, R1, QwQ, V3.1) here with its thought still forced open, and
+  // llama.cpp parses that thought as generated.
   ChatFormatRegistration(
     ChatFormat.generic,
     GenericHandler.new,
     traits: ChatFormatTraits(
+      keepsForcedThoughtVerbatim: true,
       qualifiesJsonSchemaTools: true,
       takesThoughtOnlyAtReplyStart: true,
       toolChoiceNoneRendersContentOnly: true,
@@ -732,6 +749,7 @@ chatFormatRegistrations = List.unmodifiable(<ChatFormatRegistration>[
     ChatFormat.contentOnly,
     () => _withoutTemplateToolCalls(ChatFormat.contentOnly),
     traits: ChatFormatTraits(
+      keepsForcedThoughtVerbatim: true,
       qualifiesJsonSchemaTools: false,
       takesThoughtOnlyAtReplyStart: true,
       toolChoiceNoneRendersContentOnly: true,

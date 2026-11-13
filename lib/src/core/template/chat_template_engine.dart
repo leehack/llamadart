@@ -815,6 +815,9 @@ class ChatTemplateEngine {
               parse,
               exact: _traitsOf(formatIndex).thoughtStartsReplyExactly,
             )
+          : thinkingForcedOpen &&
+                _traitsOf(formatIndex).keepsForcedThoughtVerbatim
+          ? withForcedThoughtVerbatim(parse, isPartial: isPartial)
           : parse();
     } on StackOverflowError catch (_, stackTrace) {
       // PEG rules recurse once per nesting level of model-controlled output.

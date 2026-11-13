@@ -23,6 +23,10 @@ here, so those tests run on a clean checkout with no network.
 (`cd959bae9`), the native pin, because the ref above predates it; it is not in
 the release tarball the detection test downloads.
 
+`llama-cpp-deepseek-r1.jinja` and `NVIDIA-Nemotron-Nano-v2.jinja` are copied from
+llama.cpp `v0.9.0` (`cd959bae9`) too, for `closed_thought_upstream_test.dart`:
+both open the thought whatever the thinking flag.
+
 `test/integration/core/template/llama_cpp_template_detection_integration_test.dart`
 needs the full set and only reads it from `LLAMA_CPP_TEMPLATES_DIR`, defaulting to
 `.dart_tool/llama_cpp/models/templates`. Nothing in the test provisions that

@@ -475,6 +475,131 @@ Map<String, String> get bridgeProvenanceValues => <String, String>{
   'manifestSha256': bridgeManifestSha256,
 };
 
+final RegExp _runtimeBaselineParagraph = RegExp(
+  r'^Runtime baseline[^\n]*$',
+  multiLine: true,
+);
+
+/// The runtime tags a `Runtime baseline:` paragraph states, each read from the
+/// source that pins it. A missing group fails, so a reworded paragraph cannot
+/// disable the check.
+final List<({String label, RegExp claim, RegExp source})>
+_runtimeBaselineClaims = <({String label, RegExp claim, RegExp source})>[
+  (
+    label: 'native llama.cpp',
+    claim: RegExp(r'native llama\.cpp `([^`]+)`'),
+    source: _nativeLlamaCppTag,
+  ),
+  (
+    label: 'native LiteRT-LM',
+    claim: RegExp(r'native LiteRT-LM (?:uses|stays) `([^`]+)`'),
+    source: RegExp(r"const liteRtLmReleaseTag = '([^']+)';"),
+  ),
+  (
+    label: 'stable-diffusion',
+    claim: RegExp(r'stable-diffusion (?:uses|stays) `([^`]+)`'),
+    source: RegExp(r"const stableDiffusionReleaseTag = '([^']+)';"),
+  ),
+];
+
+/// Returns one message per runtime tag in the current release notes'
+/// `Runtime baseline:` paragraph that differs from the pinned runtime.
+///
+/// Only the top section is read: `## Unreleased` or the `## $releaseVersion`
+/// that release prep promotes it to. A released section that
+/// [currentReleaseNotesSection] falls back to is frozen and keeps the tags it
+/// shipped with, so a mid-cycle pin bump must not fail against it. A top
+/// section without the paragraph is skipped: Unreleased carries it only once
+/// release prep has written it.
+List<String> findRuntimeBaselineDrift(Directory repoRoot) {
+  final String releaseVersion;
+  try {
+    releaseVersion = readRootPackageVersion(repoRoot);
+  } on FormatException catch (error) {
+    return <String>[error.message];
+  }
+  final problems = <String>[];
+  final pinsFile = File('${repoRoot.path}/$nativeLlamaCppTagPath');
+  if (!pinsFile.existsSync()) {
+    return <String>['$nativeLlamaCppTagPath: file is missing'];
+  }
+  final pins = _readGateFile(pinsFile, nativeLlamaCppTagPath, problems);
+  if (pins == null) return problems;
+  final expected = <String, String>{};
+  for (final claim in _runtimeBaselineClaims) {
+    final matches = claim.source.allMatches(pins).toList();
+    if (matches.length != 1) {
+      problems.add(
+        '$nativeLlamaCppTagPath: found ${matches.length} ${claim.label} tag '
+        'constants, expected exactly 1; the runtime baseline gate cannot run',
+      );
+      continue;
+    }
+    expected[claim.label] = matches.single.group(1)!;
+  }
+  if (problems.isNotEmpty) return problems;
+
+  for (final path in <String>[
+    'CHANGELOG.md',
+    'website/docs/changelog/recent-releases.md',
+  ]) {
+    final file = File('${repoRoot.path}/$path');
+    if (!file.existsSync()) {
+      problems.add('$path: file is missing');
+      continue;
+    }
+    final contents = _readGateFile(file, path, problems);
+    if (contents == null) continue;
+    final top = _topReleaseNotesSection.firstMatch(contents);
+    final heading = top?.namedGroup('heading');
+    if (top == null || (heading != 'Unreleased' && heading != releaseVersion)) {
+      continue;
+    }
+    final section = top.namedGroup('body')!;
+    final paragraphs = _runtimeBaselineParagraph.allMatches(section).toList();
+    if (paragraphs.isEmpty) continue;
+    if (paragraphs.length != 1) {
+      problems.add(
+        '$path: ${paragraphs.length} Runtime baseline paragraphs in the '
+        'current release-notes section, expected 1',
+      );
+      continue;
+    }
+    final paragraph = paragraphs.single.group(0)!;
+    for (final claim in _runtimeBaselineClaims) {
+      final found = claim.claim.firstMatch(paragraph)?.group(1);
+      if (found == null) {
+        problems.add(
+          '$path: the Runtime baseline paragraph no longer states the '
+          '${claim.label} tag in the expected wording',
+        );
+      } else if (found != expected[claim.label]) {
+        problems.add(
+          '$path: Runtime baseline names ${claim.label} $found, but '
+          '$nativeLlamaCppTagPath pins ${expected[claim.label]}',
+        );
+      }
+    }
+    final upstream = RegExp(
+      r'upstream `([^@`]+)@([0-9a-f]{40})`',
+    ).firstMatch(paragraph);
+    if (upstream == null) {
+      problems.add(
+        '$path: the Runtime baseline paragraph no longer states the Web '
+        'upstream llama.cpp tag@commit in the expected wording',
+      );
+    } else if (upstream.group(1) != bridgeLlamaCppTag ||
+        upstream.group(2) != bridgeLlamaCppCommit) {
+      problems.add(
+        '$path: Runtime baseline names Web upstream llama.cpp '
+        '${upstream.group(1)}@${upstream.group(2)}, but the pinned bridge '
+        'assets embed $bridgeLlamaCppTag@$bridgeLlamaCppCommit',
+      );
+    }
+  }
+  return problems;
+}
+
 /// Returns one message per problem with the Web/native llama.cpp relationship.
 ///
 /// `lib/src/hook/native_release_pins.dart` and the bridge manifest move in different
@@ -1175,6 +1300,7 @@ Future<List<String>> findBridgeProblems(
   ...findBridgeTagDrift(repoRoot, expectedTag),
   ...findUnregisteredTagSites(repoRoot, expectedTag),
   ...findBridgeRuntimeDrift(repoRoot, bridgeLlamaCppTag),
+  ...findRuntimeBaselineDrift(repoRoot),
   ...findBridgeProvenanceDrift(repoRoot),
   if (verifyPublishedManifest)
     ...await verifyPublishedRelease(

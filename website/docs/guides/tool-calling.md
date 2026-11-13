@@ -260,7 +260,10 @@ In LFM2/LFM2.5 JSON tool calls (`ToolChoice.required`, or a prompt carrying
 LFM2's `Force JSON schema.` marker), string arguments keep a double quote the
 model left unescaped when no closing quote could stand there, so
 `print(f"hi {name}")` arrives whole. A quote followed by `,`, `}` or `]`
-(except `}"`) still ends the string
+(except `}"`) still ends the string. When the model never writes the closing
+quote of the last string argument, the call still ends at exactly
+`}}]<|tool_call_end|>`; no whitespace may sit between those closers, and the
+text must hold no `<|` and not end in a raw `"` or `"}`
 ([#1609](https://github.com/leehack/llamadart/issues/1609)).
 
 When a backend reports a length cutoff inside an LFM tool envelope,
@@ -538,6 +541,10 @@ actual model file determines routing; a model family name alone does not.
 A valid JSON shape does not establish that a model chose the correct tool or
 arguments. Generic calling depends on instruction following and should be
 validated with the exact model and task.
+
+The generic grammar keeps JSON strings strict: a raw `"` ends the string, and
+a string left open is not read as a call. The LFM2 readings above do not apply
+to it.
 
 Tool definitions are passed to the template, but a template that ignores its
 `tools` variable can omit names, descriptions and parameter documentation

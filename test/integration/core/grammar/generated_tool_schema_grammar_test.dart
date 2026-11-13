@@ -281,6 +281,55 @@ void main() {
     }
   });
 
+  test('compiled LFM2 required grammar ends a string left open', () {
+    final lfm2Grammar = Lfm2Handler()
+        .render(
+          templateSource: 'assistant',
+          messages: const [],
+          metadata: {internalToolChoiceMetadataKey: 'required'},
+          tools: [
+            ToolDefinition(
+              name: 'run',
+              description: '',
+              parameters: [ToolParam.string('code', required: true)],
+            ),
+          ],
+        )
+        .grammar!;
+    String open(String code) =>
+        '<|tool_call_start|>[{"name": "run", "arguments": '
+        '{"code": "$code<|tool_call_end|>';
+
+    for (final code in [
+      'print(f"hi {name}")}}]',
+      '{"a": 1, "b": 2}}}]',
+      r'say \"hi\"}}]',
+      'a < b}}]',
+      '${'x' * 8000}}}]',
+      'print(f"${'y' * 8000}")}}]',
+    ]) {
+      expect(
+        _compiledGrammarAccepts(nativeModel!, lfm2Grammar, open(code)),
+        isTrue,
+        reason: code.length > 100 ? '${code.length} characters' : code,
+      );
+    }
+    for (final code in [
+      'x}} ]',
+      'x}}\n]',
+      'a <|b}}]',
+      'x"}}}]',
+      '{"a": "two"}}}]',
+      'x}}',
+    ]) {
+      expect(
+        _compiledGrammarAccepts(nativeModel!, lfm2Grammar, open(code)),
+        isFalse,
+        reason: code,
+      );
+    }
+  });
+
   test(
     'backends without lazy grammar get a compiled required grammar only',
     () {

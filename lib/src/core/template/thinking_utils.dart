@@ -30,6 +30,22 @@ ThinkingExtraction extractThinking(
   bool unescape = true,
   bool trimContent = true,
 }) {
+  final verbatimPartial = Zone.current[_forcedThoughtVerbatim];
+  if (thinkingForcedOpen && verbatimPartial is bool) {
+    final end = text.indexOf(endTag);
+    final reasoning =
+        (end != -1
+                ? text.substring(0, end)
+                : verbatimPartial
+                ? withoutTrailingTagPrefix(text, [endTag])
+                : text)
+            .trim();
+    final content = end == -1 ? '' : text.substring(end + endTag.length);
+    return (
+      content: trimContent ? content.trim() : content,
+      reasoning: reasoning.isEmpty ? null : reasoning,
+    );
+  }
   final leadingRule = Zone.current[_thoughtOnlyAtReplyStart];
   final result = !thinkingForcedOpen && leadingRule is _LeadingThoughtRule
       ? _extractLeadingThought(
@@ -125,6 +141,19 @@ String withoutTrailingTagPrefix(String text, Iterable<String> tags) {
 }
 
 final Object _thoughtOnlyAtReplyStart = Object();
+final Object _forcedThoughtVerbatim = Object();
+
+/// Runs [parse] with [extractThinking] splitting a forced-open thought at the
+/// first end tag as llama.cpp's PEG parser does: the thought is the text
+/// before it, kept as generated (escapes and a repeated start tag included),
+/// and the rest is content in which thinking tags are text.
+///
+/// While [isPartial], a trailing prefix of the end tag is dropped from a
+/// thought that has not ended, since it may still complete the tag; a
+/// finished output keeps it. The analogue of [withThoughtOnlyAtReplyStart] for
+/// prompts that open the thought.
+T withForcedThoughtVerbatim<T>(T Function() parse, {required bool isPartial}) =>
+    runZoned(parse, zoneValues: {_forcedThoughtVerbatim: isPartial});
 
 enum _LeadingThoughtRule { afterSpace, exact }
 
