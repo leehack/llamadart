@@ -311,8 +311,13 @@ class Lfm2Handler extends ChatTemplateHandler
       );
       content.write(prefix);
       final after = envelope.end + closing.length;
-      if (envelope.calls != null) {
-        toolCalls.addAll(envelope.calls!);
+      final calls =
+          envelope.calls ??
+          (!isPartial && toolCalls.isEmpty && after == output.length
+              ? _parseUnclosedCallList(output.substring(payloadStart, firstEnd))
+              : null);
+      if (calls != null) {
+        toolCalls.addAll(calls);
       }
       from = after;
     }
@@ -618,7 +623,28 @@ class Lfm2Handler extends ChatTemplateHandler
     allowParallelToolCalls: parallelToolCalls,
     // LFM2 models copy quotes into JSON strings without escaping them.
     innerQuoteStrings: true,
+    allowUnclosedLastString: true,
   );
+
+  // The grammar's last alternative ends the output inside a string argument.
+  List<LlamaCompletionChunkToolCall>? _parseUnclosedCallList(String payload) {
+    final decoded =
+        ToolCallParsingUtils.decodeJsonCallListWithUnclosedLastString(payload);
+    if (decoded == null) return null;
+    try {
+      final calls = ToolCallParsingUtils.parseToolCallArray(
+        decoded,
+        startIndex: 0,
+        failOnInvalidItem: false,
+        assignFallbackIds: true,
+      );
+      return calls == null || calls.isEmpty ? null : calls;
+    } on LlamaInferenceException {
+      return null;
+    } on StackOverflowError {
+      return null;
+    }
+  }
 
   List<LlamaCompletionChunkToolCall>? _parseCallList(
     String payload, {
