@@ -88,3 +88,14 @@ thought instead of returning it as reasoning: those cases are in
 `dropped_thought_cases`, where the engine streams no reasoning and
 `parseRendered` still returns it. Partial parses with a trailing partial
 thinking tag after content are left out: MiniMax M3's partial parse drops it.
+
+For issue #1881, `open_thought_templates` adds the vendored `llama-cpp-deepseek-r1`,
+Nemotron Nano v2 and MiniMax M2 templates, recorded with the same probe at
+`cd959bae9` and `enable_thinking = false`, with and without the tool. Their
+generation prompts end with `<think>\n` (`<think>` for Nemotron) whatever the
+flag, so llama.cpp parses the reply as after a forced-open prompt: the thought
+is the text before the first `</think>`, a repeated `<think>` stays in it, and
+the rest is content. llamadart closes the thought in the prompt and parses the
+reply as llama.cpp does once it shows a thinking tag. Replies with no thinking
+tag are left out: llamadart keeps those as content, where llama.cpp has an
+unended thought.

@@ -296,8 +296,8 @@ output. Text from where the format's parse may find a tool-call opening,
 and trailing whitespace, is held until later output rules the opening out or
 generation ends, as llama.cpp (`7fe450e1`) PEG `until` stops content before a
 whole delimiter or a partial one at the end of the input. For these formats
-other than Hermes, Qwen3-Coder XML, DeepSeek V3 and Cohere2 MoE, with or
-without tools, a
+other than Hermes, Qwen3-Coder XML, DeepSeek R1 and V3, Cohere2 MoE, Nemotron
+V2, MiniCPM5, Hunyuan V3 and MiniMax M2, with or without tools, a
 start tag the model repeats at the start of a forced-open thought is dropped,
 as in the parse, and when the output has no start tag, an end tag after the
 first one is content. A later start tag makes the parse end a thought at each
@@ -312,10 +312,14 @@ as their parse drops them. These markers are control tokens in converted
 GGUFs, which the chat template result preserves as llama.cpp does, so they
 reach the parser instead of decoding as empty text.
 
-Hermes, Qwen3-Coder XML, DeepSeek V3 and Cohere2 MoE parse a forced-open
-thought as llama.cpp (`620d2225`) does: the thought is the text before the
-first end tag, kept as generated, including a repeated start tag and any
-escaped `\n`, and the rest is content, in which thinking tags are text. With
+Hermes, Qwen3-Coder XML, DeepSeek R1, V3, V3.2 and V4, Cohere2 MoE, Nemotron
+V2, MiniMax M2, GLM 4.5, Laguna, MiniCPM5, Hunyuan V3 and Kimi K3 parse a
+forced-open thought as llama.cpp (`cd959bae9`) does: the thought is the text
+before the first end tag, kept as generated, including a repeated start tag
+and any escaped `\n`, and the rest is content, in which thinking tags are
+text. The generic and content-only formats do the same: structured output
+(`responseFormat`) routes a thinking template there, such as GLM-4.7, R1, QwQ
+and V3.1, with its thought still forced open. With
 Qwen3-Coder XML, a `<tool_call>` before the first `</think>` ends the thought
 too, with or without tools, and starts the content; with Cohere2 MoE, a
 `<|START_TEXT|>` or `<|START_ACTION|>` before `<|END_THINKING|>` does. A
@@ -327,14 +331,14 @@ still complete. Their stream ends with the finished result.
 Streamed reasoning equals the parse too. The parse trims each thought;
 upstream llama.cpp (`7fe450e1`) keeps the whitespace before `</think>`, so
 with the Qwen3 template it returns `"Plan it.\n"` for
-`<think>\nPlan it.\n</think>`. Except for Qwen3-Coder XML and a Hermes or
-DeepSeek V3 forced-open thought, the parse also
+`<think>\nPlan it.\n</think>`. Except for Qwen3-Coder XML and a forced-open
+thought of the formats above, the parse also
 replaces an escaped `\n` or `\r` in reasoning with a newline or a carriage
 return; the Qwen3-Coder XML parse keeps them, as llama.cpp (`7fe450e1`) does
 with the Qwen3.5 template. When tool calls are parsed, the stream of the
 formats above replaces them too, holding back a trailing `\` until the next
 token; otherwise it keeps them as generated. One exception, outside the
-four formats above that keep a forced-open thought as generated, is a
+formats above that keep a forced-open thought as generated, is a
 forced-open thought that never closes and starts with whitespace, with or
 without tools. The parse keeps it untrimmed,
 but the stream drops the leading whitespace before it can know the thought
