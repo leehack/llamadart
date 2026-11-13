@@ -3,7 +3,7 @@ Releases before 0.10.0 are in the
 
 ## Unreleased
 
-- Fixed Granite 3.3's required tool call after a forced-open thought (a template that appends `<think>`) with a `ThinkingBudget` on native llama.cpp: the grammar now waits through the thought and restarts after its end tag, so the reply no longer repeats `</think>`; the no-tools Granite grammar is dropped ([#1966](https://github.com/leehack/llamadart/issues/1966)).
+- Fixed Granite 3.3's required tool call after a forced-open thought (a template that appends `<think>`) with a `ThinkingBudget` on native llama.cpp: the grammar now takes the thought and stays applied through the budget, so the reply no longer repeats `</think>`; the no-tools Granite grammar is dropped ([#1966](https://github.com/leehack/llamadart/issues/1966)).
 
 ## 0.19.8
 

@@ -109,7 +109,7 @@ sequenceDiagram
   thought of a generation prompt as reasoning.
 - A grammar that applies from the first token after a forced-open thought (a
   `responseFormat` schema, the generic tool grammar, or a required-call
-  grammar) first takes the rest of the thought and its end tag, as
+  grammar such as Granite 3.3's) first takes the rest of the thought and its end tag, as
   llama.cpp's reasoning parser does. The Qwen3-Coder XML required-call grammar
   instead takes any text without a call opening before the calls, the thought
   included, as llama.cpp (`cd959bae9`) does. A thinking budget on that format
@@ -117,7 +117,7 @@ sequenceDiagram
   it does not continue the thought.
 - Under a thinking budget these required-call grammars wait through the
   thought and restart on the reply after its end tag: Qwen3-Coder XML, Ling 3,
-  DeepSeek R1/V3.2/V4, Laguna, Kimi K3, MiniMax M3 and Granite 3.3.
+  DeepSeek R1/V3.2/V4, Laguna, Kimi K3 and MiniMax M3.
 
 ### 4. Parse stage
 
