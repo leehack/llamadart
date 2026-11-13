@@ -11,8 +11,24 @@ class _BuiltinRule {
 /// Whitespace rule matching llama.cpp's SPACE_RULE.
 const _spaceRule = '| " " | "\\n"{1,2} [ \\t]{0,20}';
 
+/// End marker that LFM2 string arguments cannot contain.
+const _lfm2EndMarker = '<|tool_call_end|>';
+
+const _innerQuoteEscape = r'[\\] (["\\bfnrt] | "u" [0-9a-fA-F]{4})';
+
+/// Body of the inner-quote rule that follows [matched] marker characters.
+String _innerQuoteState(int matched) {
+  final next = matched == 0 ? '' : _lfm2EndMarker[matched];
+  final advance = matched == 0 || matched + 1 == _lfm2EndMarker.length
+      ? ''
+      : '"$next" inner-quote-${matched + 1} | ';
+  return 'inner-quote-end | "<" inner-quote-1 | $advance'
+      '[^"\\\\<$next\\x7F\\x00-\\x1F] inner-quote-0 | '
+      '$_innerQuoteEscape inner-quote-0 | inner-quote-q';
+}
+
 /// Primitive GBNF rules matching llama.cpp's PRIMITIVE_RULES.
-const _primitiveRules = <String, _BuiltinRule>{
+final _primitiveRules = <String, _BuiltinRule>{
   'boolean': _BuiltinRule('("true" | "false") space', []),
   'decimal-part': _BuiltinRule('[0-9]{1,16}', []),
   'integral-part': _BuiltinRule('[0] | [1-9] [0-9]{0,15}', []),
@@ -45,14 +61,23 @@ const _primitiveRules = <String, _BuiltinRule>{
   // closing quote, or when `"` or `}"` follows it. Closers before other text
   // still end the string, so a model that miscounts closers is corrected
   // rather than left inside the string.
-  'inner-quote-string': _BuiltinRule(
-    r'"\"" ( char | inner-quote | inner-quote-run+ inner-quote )* inner-quote-run* "\"" space',
-    ['char', 'inner-quote', 'inner-quote-run'],
-  ),
-  'inner-quote': _BuiltinRule(
-    r'"\"" " "* ( [^"\\\x7F\x00-\x1F ,}\]] | [\\] (["\\bfnrt] | "u" [0-9a-fA-F]{4}) )',
+  //
+  // The text never holds [_lfm2EndMarker]: a string that could contain it
+  // would keep the grammar live after the marker. Rule `inner-quote-k` follows
+  // k matched marker characters; a quote starts over because it is not one.
+  'inner-quote-string': _BuiltinRule(r'"\"" inner-quote-0', [
+    for (var k = 0; k < _lfm2EndMarker.length; k++) 'inner-quote-$k',
+    'inner-quote-q',
+    'inner-quote-end',
+    'inner-quote-run',
+  ]),
+  for (var k = 0; k < _lfm2EndMarker.length; k++)
+    'inner-quote-$k': _BuiltinRule(_innerQuoteState(k), []),
+  'inner-quote-q': _BuiltinRule(
+    r'inner-quote-run* "\"" " "* ( [^"\\<\x7F\x00-\x1F ,}\]] inner-quote-0 | "<" inner-quote-1 | [\\] (["\\bfnrt] | "u" [0-9a-fA-F]{4}) inner-quote-0 )',
     [],
   ),
+  'inner-quote-end': _BuiltinRule(r'inner-quote-run* "\"" space', []),
   'inner-quote-run': _BuiltinRule(r'"\"" "}"?', []),
   'null': _BuiltinRule('"null" space', []),
 };

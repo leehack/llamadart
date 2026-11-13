@@ -143,8 +143,13 @@ void main() {
         if (inSchema) expect(inOpen, isTrue, reason: output);
         if (!inOpen || inClosed) continue;
         added++;
+        // The closed string holds no `<|`, so the end marker is the one part
+        // of the output that is not a prefix of a closed-string output.
         expect(
-          closed.accepts('$output"}}]<|tool_call_end|>'),
+          closed.accepts(
+            '${output.substring(0, output.length - '<|tool_call_end|>'.length)}'
+            '"}}]<|tool_call_end|>',
+          ),
           isTrue,
           reason: output,
         );
