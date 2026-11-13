@@ -209,7 +209,7 @@ def run_too_short(page, context, args, baseline: str) -> list[str]:
     stop_button(page).click()
     wait_until(
         lambda: TOO_SHORT_MESSAGE in new_markers(safe_body_text(page), baseline),
-        30,
+        args.message_timeout_ms / 1000,
         f"{TOO_SHORT_MESSAGE!r}",
     )
     wait_until(lambda: is_idle(page), 30, "the composer to go idle")
@@ -236,7 +236,7 @@ def run_track_ended(page, context, args, baseline: str) -> list[str]:
     grant_permissions(context, args, microphone=True)
     wait_until(
         lambda: INTERRUPTED_MESSAGE in safe_body_text(page),
-        30,
+        args.message_timeout_ms / 1000,
         f"{INTERRUPTED_MESSAGE!r}",
     )
     wait_until(
@@ -274,7 +274,7 @@ def run_denied(page, context, args, baseline: str) -> list[str]:
     record_button(page).click()
     wait_until(
         lambda: DENIED_MESSAGE in new_markers(safe_body_text(page), baseline),
-        30,
+        args.message_timeout_ms / 1000,
         f"{DENIED_MESSAGE!r}",
     )
     if stop_button(page).is_visible():
@@ -305,8 +305,14 @@ def run_case(name: str, page, context, args) -> dict:
                 result["problems"].append(
                     "the browser never rejected getUserMedia with NotAllowedError"
                 )
-        elif not snapshot["tracks"]:
-            result["problems"].append("the app never opened a microphone stream")
+        else:
+            for key, what in (
+                ("tracks", "a microphone stream"),
+                ("contexts", "an AudioContext"),
+                ("blobsRevoked", "a recording blob URL"),
+            ):
+                if not snapshot[key]:
+                    result["problems"].append(f"the app never opened {what}")
         result["problems"].extend(release_problems(snapshot))
     except CaseFailure as error:
         result["problems"].append(str(error))
@@ -423,6 +429,7 @@ def main() -> int:
         default=",".join(CASES),
         help=f"Comma-separated subset of: {', '.join(CASES)}.",
     )
+    parser.add_argument("--message-timeout-ms", type=int, default=30000)
     parser.add_argument("--load-timeout-ms", type=int, default=20 * 60 * 1000)
     parser.add_argument("--response-timeout-ms", type=int, default=5 * 60 * 1000)
     parser.add_argument(

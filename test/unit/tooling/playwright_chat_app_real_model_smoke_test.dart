@@ -1417,6 +1417,62 @@ process.exit(0);
       );
     });
 
+    test('the threshold separates two wrong words from three', () async {
+      // 21 reference words: 2 errors is 0.095, 3 errors is 0.143.
+      const twoWrong =
+          'And so my fellow Americans ask not what your country can do for '
+          'you ask what you can do for my house';
+      const threeWrong =
+          'And so my fellow Americans ask not what your country can do for '
+          'you ask what you can pay for my house';
+      final passed = await run(
+        'wer_two',
+        micFlags(0.1),
+        microphoneClipboard: twoWrong,
+      );
+      expect(passed.result.exitCode, 0, reason: '${passed.result.stderr}');
+
+      final failed = await run(
+        'wer_three',
+        micFlags(0.1),
+        microphoneClipboard: threeWrong,
+      );
+      expect(failed.result.exitCode, isNot(0));
+      expect(failed.result.stderr, contains('word error rate'));
+    });
+
+    for (final emptyReference in ['', ' ', '...']) {
+      test(
+        'rejects the empty microphone reference "$emptyReference"',
+        () async {
+          final result = await run('empty_ref', [
+            '--speech-microphone',
+            '--expect',
+            reference,
+            '--microphone-reference',
+            emptyReference,
+            '--microphone-max-wer',
+            '0.1',
+          ]);
+
+          expect(result.result.exitCode, 2);
+          expect(result.result.stderr, contains('at least one word'));
+        },
+      );
+    }
+
+    test('the runtime probe bounds its own wait', () async {
+      final passed = await run('probe_timeout', const [
+        '--expect',
+        'fellow Americans',
+      ]);
+
+      final probe = (passed.capture['evaluateScripts'] as List<dynamic>)
+          .cast<String>()
+          .singleWhere((script) => script.contains('getModelMetadata'));
+      expect(probe, contains('probe timed out'));
+    });
+
     test('no longer accepts any microphone response', () async {
       final result = await run('mic_allow_any', [
         '--speech-microphone',

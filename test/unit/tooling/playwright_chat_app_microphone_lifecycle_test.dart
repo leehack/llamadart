@@ -241,6 +241,8 @@ void main() {
         'And so my fellow Americans ask not what your country can do',
         '--cases',
         casesFlag,
+        '--message-timeout-ms',
+        '1000',
         '--load-timeout-ms',
         '4000',
         '--response-timeout-ms',
@@ -385,6 +387,75 @@ void main() {
     expect(failed.result.exitCode, isNot(0));
     expect(failed.result.stderr, contains('Empty or unrelated'));
   });
+
+  test('fails without the interruption warning', () async {
+    final failed = await run(
+      withCase('track-ended', {
+        'body': {'before': 'Ready', 'after': 'Ready'},
+      }),
+      casesFlag: 'track-ended',
+    );
+
+    expect(failed.result.exitCode, isNot(0));
+    expect(failed.result.stderr, contains('Microphone input was interrupted'));
+  });
+
+  test('fails without the too-short message', () async {
+    final failed = await run(
+      withCase('too-short', {
+        'body': {'before': 'Ready', 'after': 'Ready'},
+      }),
+      casesFlag: 'too-short',
+    );
+
+    expect(failed.result.exitCode, isNot(0));
+    expect(failed.result.stderr, contains('recording was too short'));
+  });
+
+  test('fails without the denied message', () async {
+    final failed = await run(
+      withCase('denied', {
+        'body': {'before': 'Ready', 'after': 'Ready'},
+      }),
+      casesFlag: 'denied',
+    );
+
+    expect(failed.result.exitCode, isNot(0));
+    expect(failed.result.stderr, contains('permission was denied'));
+  });
+
+  test('discard fails when it shows a failure message', () async {
+    final failed = await run(
+      withCase('discard', {
+        'body': {
+          'before': 'Ready',
+          'after': 'The microphone recording was too short.',
+        },
+      }),
+      casesFlag: 'discard',
+    );
+
+    expect(failed.result.exitCode, isNot(0));
+    expect(failed.result.stderr, contains('Discarding showed a message'));
+  });
+
+  for (final (name, change, expected) in [
+    ('contexts', {'contexts': <String>[]}, 'never opened an AudioContext'),
+    ('blobs', {'blobsRevoked': <bool>[]}, 'never opened a recording blob'),
+  ]) {
+    test('a recording with no observed $name fails', () async {
+      final base = _snapshot();
+      final failed = await run(
+        withCase('discard', {
+          'snapshot': {...base, ...change},
+        }),
+        casesFlag: 'discard',
+      );
+
+      expect(failed.result.exitCode, isNot(0));
+      expect(failed.result.stderr, contains(expected));
+    });
+  }
 
   test('rejects an unknown case', () async {
     final audio = File(p.join(tempDir.path, 'speech.wav'))

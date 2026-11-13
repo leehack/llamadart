@@ -20,6 +20,7 @@ from playwright_chat_app_utils import (
     enter_chat_prompt,
     contains_words,
     local_storage_init_script,
+    normalized_words,
     safe_body_text,
     word_error_rate,
 )
@@ -380,15 +381,20 @@ RUNTIME_PROBE_SCRIPT = """async () => {
   if (!bridge) return {available: false};
   const call = async (name) =>
     typeof bridge[name] === 'function' ? await bridge[name]() : null;
-  const metadata = (await call('getModelMetadata')) ?? {};
-  return {
-    available: true,
-    isGpuActive: await call('isGpuActive'),
-    backendName: await call('getBackendName'),
-    metadata: Object.fromEntries(
-      Object.entries(metadata).filter(([key]) => key.startsWith('llamadart.')),
-    ),
+  const probe = async () => {
+    const metadata = (await call('getModelMetadata')) ?? {};
+    return {
+      available: true,
+      isGpuActive: await call('isGpuActive'),
+      backendName: await call('getBackendName'),
+      metadata: Object.fromEntries(
+        Object.entries(metadata).filter(([key]) => key.startsWith('llamadart.')),
+      ),
+    };
   };
+  const timeout = new Promise((resolve) =>
+    setTimeout(() => resolve({available: false, error: 'probe timed out'}), 15000));
+  return Promise.race([probe(), timeout]);
 }"""
 
 
@@ -730,6 +736,13 @@ def main() -> int:
         parser.error("--microphone-max-wer must be at least 0 and below 1")
     if args.microphone_reference is not None and args.microphone_max_wer is None:
         parser.error("--microphone-reference requires --microphone-max-wer")
+    if args.microphone_max_wer is not None and not normalized_words(
+        args.expect if args.microphone_reference is None
+        else args.microphone_reference
+    ):
+        parser.error(
+            "--microphone-max-wer needs a reference with at least one word"
+        )
     if args.browser == "safari" and (
         args.expect_gpu_active or args.expect_core_variant
     ):
@@ -1273,7 +1286,11 @@ def main() -> int:
                 page,
                 min(args.response_timeout_ms, 30000),
             )
-            microphone_reference = args.microphone_reference or args.expect
+            microphone_reference = (
+                args.expect
+                if args.microphone_reference is None
+                else args.microphone_reference
+            )
             if args.microphone_max_wer is None:
                 microphone_wer = None
                 if not contains_words(copied_microphone_response, args.expect):
