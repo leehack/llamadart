@@ -682,6 +682,8 @@ void main() {
         List<String> flags, {
         required Object? capabilities,
         required Object? options,
+        Object? completions,
+        bool allowAnyResponse = true,
       }) async {
         final capturePath = p.join(tempDir.path, '$name.json');
         final result = await _runProcess(
@@ -691,7 +693,12 @@ void main() {
             'http://127.0.0.1:1/',
             '--model-url',
             modelUrl,
-            '--allow-any-response',
+            if (allowAnyResponse)
+              '--allow-any-response'
+            else ...[
+              '--expect',
+              'ok',
+            ],
             '--load-timeout-ms',
             '4000',
             ...flags,
@@ -705,6 +712,7 @@ void main() {
                 'bridgeResponse': 'ok',
                 'capabilities': capabilities,
                 'options': options,
+                'completions': completions,
               },
               'requests': [modelUrl],
             }),
@@ -712,9 +720,10 @@ void main() {
         );
         return (
           result: result,
-          capture:
-              jsonDecode(File(capturePath).readAsStringSync())
-                  as Map<String, dynamic>,
+          capture: File(capturePath).existsSync()
+              ? jsonDecode(File(capturePath).readAsStringSync())
+                    as Map<String, dynamic>
+              : <String, dynamic>{},
         );
       }
 
@@ -763,6 +772,123 @@ void main() {
           );
         },
       );
+
+      group('tool call checks', () {
+        const toolFlags = [
+          '--expect-tool-call',
+          'getWeather',
+          '--expect-tool-argument',
+          'city=Paris',
+          '--expect-tool-result',
+          'thunderstorms',
+        ];
+        const call = {
+          'prompt': 'What is the weather in Paris right now?',
+          'response':
+              '<tool_call>\n<function=getWeather>\n<parameter=city>\nParis\n'
+              '</parameter>\n</function>\n</tool_call>',
+        };
+        const followUp = {
+          'prompt':
+              '<tool_response>{"condition":"thunderstorms"}</tool_response>',
+          'response': 'It is 12 degrees.',
+        };
+
+        Future<({ProcessResult result, Map<String, dynamic> capture})> run(
+          String name,
+          List<String> flags,
+          Object? completions,
+        ) => runPenaltyCheck(
+          name,
+          flags,
+          capabilities: null,
+          options: {},
+          completions: completions,
+          allowAnyResponse: false,
+        );
+
+        test(
+          'pass when the call, argument and result are all recorded',
+          () async {
+            final passed = await run('tool_ok', toolFlags, [call, followUp]);
+            expect(
+              passed.result.exitCode,
+              0,
+              reason: '${passed.result.stderr}',
+            );
+            final recorded = passed.capture['evaluateScripts'] as List;
+            expect(
+              recorded.join('\n'),
+              contains('__llamadartRealBridgeCompletions'),
+            );
+          },
+        );
+
+        for (final scenario in <(String, List<Object?>, String)>[
+          ('no completion', [], 'No completion called getWeather'),
+          (
+            'a prose answer',
+            [
+              {'prompt': 'p', 'response': 'It is sunny in Paris.'},
+              followUp,
+            ],
+            'No completion called getWeather',
+          ),
+          (
+            'the wrong argument',
+            [
+              {
+                ...call,
+                'response': '<function=getWeather><parameter=city>Rome',
+              },
+              followUp,
+            ],
+            'city=Paris',
+          ),
+          (
+            'a result that never reached the model',
+            [
+              call,
+              {'prompt': 'no result here', 'response': 'x'},
+            ],
+            'thunderstorms',
+          ),
+          (
+            'a result only the call completion carries',
+            [
+              {...call, 'prompt': 'thunderstorms'},
+            ],
+            'thunderstorms',
+          ),
+        ]) {
+          test('fail on ${scenario.$1}', () async {
+            final failed = await run('tool_fail', toolFlags, scenario.$2);
+            expect(
+              failed.result.exitCode,
+              1,
+              reason: '${failed.result.stderr}',
+            );
+            expect(failed.result.stderr, contains(scenario.$3));
+          });
+        }
+
+        test('fail when the page records no completions', () async {
+          final failed = await run('tool_missing', toolFlags, null);
+          expect(failed.result.exitCode, 1, reason: '${failed.result.stderr}');
+          expect(failed.result.stderr, contains('No completion called'));
+        });
+
+        test('conflict with --allow-any-response and need a call', () async {
+          for (final flags in [
+            const ['--expect-tool-call', 'getWeather', '--allow-any-response'],
+            const ['--expect-tool-argument', 'city=Paris'],
+            const ['--expect-tool-result', 'thunderstorms'],
+          ]) {
+            final failed = await run('tool_conflict', flags, [call, followUp]);
+            expect(failed.result.exitCode, 2, reason: '$flags');
+          }
+        });
+      });
 
       group('penaltyPromptTokens checks', () {
         const probe = '--expect-penalty-prompt-tokens-probe';
@@ -909,6 +1035,53 @@ process.exit(0);
               'trueValue': true,
               'capabilities': {'penaltyPromptTokens': true},
             });
+          },
+        );
+
+        test(
+          'the patched bridge records each prompt, response and failure',
+          testOn: '!windows',
+          () async {
+            final initScript =
+                (await runPenaltyCheck(
+                      'node_completions',
+                      const [],
+                      capabilities: null,
+                      options: {},
+                    )).capture['initScript']
+                    as String;
+            final scriptFile = File(p.join(tempDir.path, 'completions.js'))
+              ..writeAsStringSync(initScript);
+            final harness = File(p.join(tempDir.path, 'completions.mjs'))
+              ..writeAsStringSync(r"""
+import fs from 'node:fs';
+globalThis.window = globalThis;
+globalThis.localStorage = { setItem() {}, removeItem() {} };
+class LlamaWebGpuBridge {
+  async createCompletion(prompt) {
+    if (prompt === 'bad') throw new Error('boom');
+    return `reply to ${prompt}`;
+  }
+}
+globalThis.LlamaWebGpuBridge = LlamaWebGpuBridge;
+(0, eval)(fs.readFileSync(process.argv[2], 'utf8'));
+await new Promise(resolve => setTimeout(resolve, 100));
+const bridge = new LlamaWebGpuBridge();
+await bridge.createCompletion('first');
+await bridge.createCompletion('bad').catch(() => {});
+console.log(JSON.stringify(window.__llamadartRealBridgeCompletions));
+process.exit(0);
+""");
+            final node = await _runProcess('node', [
+              harness.path,
+              scriptFile.path,
+            ]);
+
+            expect(node.exitCode, 0, reason: '${node.stderr}');
+            expect(jsonDecode((node.stdout as String).trim()), [
+              {'prompt': 'first', 'response': 'reply to first', 'error': null},
+              {'prompt': 'bad', 'response': null, 'error': 'Error: boom'},
+            ]);
           },
         );
 

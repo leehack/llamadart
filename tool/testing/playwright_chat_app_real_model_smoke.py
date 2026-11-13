@@ -338,6 +338,42 @@ def run_safari(
     return 0
 
 
+def check_tool_expectations(args, completions: list[dict[str, Any]]) -> None:
+    name = args.expect_tool_call.lower()
+    call_index = next(
+        (
+            index
+            for index, completion in enumerate(completions)
+            if name in str(completion.get("response") or "").lower()
+        ),
+        None,
+    )
+    if call_index is None:
+        raise RuntimeError(
+            f"No completion called {args.expect_tool_call}; "
+            f"responses: {[c.get('response') for c in completions]!r}"
+        )
+    response = str(completions[call_index]["response"]).lower()
+    if args.expect_tool_argument:
+        key, _, value = args.expect_tool_argument.partition("=")
+        if key.lower() not in response or value.lower() not in response:
+            raise RuntimeError(
+                f"Tool call to {args.expect_tool_call} did not carry "
+                f"{args.expect_tool_argument!r}: {completions[call_index]!r}"
+            )
+    if args.expect_tool_result:
+        expected = args.expect_tool_result.lower()
+        if not any(
+            expected in str(completion.get("prompt") or "").lower()
+            for completion in completions[call_index + 1 :]
+        ):
+            raise RuntimeError(
+                f"No completion after the {args.expect_tool_call} call "
+                f"carried the tool result {args.expect_tool_result!r}: "
+                f"{[c.get('prompt', '')[-300:] for c in completions]!r}"
+            )
+
+
 def finish_run(
     page,
     args,
@@ -357,8 +393,13 @@ def finish_run(
         """() => ({
           capabilities: window.__llamadartRealBridgeCompletionCapabilities,
           options: window.__llamadartRealBridgeLastOptions,
+          completions: window.__llamadartRealBridgeCompletions,
         })"""
     )
+    if args.expect_tool_call:
+        check_tool_expectations(
+            args, (completion_check or {}).get("completions") or []
+        )
     bridge_globals = page.evaluate(
         """() => ({
           crossOriginIsolated: window.crossOriginIsolated,
@@ -518,6 +559,24 @@ def main() -> int:
         action="store_true",
         help="Require the lazyGrammar probe and a non-empty lazy grammar with triggers.",
     )
+    parser.add_argument(
+        "--expect-tool-call",
+        metavar="NAME",
+        help="Require a completion whose raw response calls this tool.",
+    )
+    parser.add_argument(
+        "--expect-tool-argument",
+        metavar="KEY=VALUE",
+        help="Require the tool-call completion to carry this argument "
+        "(case-insensitive). Needs --expect-tool-call.",
+    )
+    parser.add_argument(
+        "--expect-tool-result",
+        metavar="TEXT",
+        help="Require a later completion prompt to carry the tool result "
+        "TEXT, proving the app executed the call and returned it to the "
+        "model. Needs --expect-tool-call.",
+    )
     parser.add_argument("--threads", type=int, default=2)
     parser.add_argument("--thread-pool-size", type=int, default=2)
     parser.add_argument("--load-timeout-ms", type=int, default=20 * 60 * 1000)
@@ -566,6 +625,20 @@ def main() -> int:
         )
     if args.expect_mmproj_cache_hit and not args.prefetch_mmproj_cache:
         parser.error("--expect-mmproj-cache-hit requires --prefetch-mmproj-cache")
+    if (
+        args.expect_tool_argument or args.expect_tool_result
+    ) and not args.expect_tool_call:
+        parser.error(
+            "--expect-tool-argument and --expect-tool-result require "
+            "--expect-tool-call"
+        )
+    if args.expect_tool_call and args.allow_any_response:
+        parser.error(
+            "--expect-tool-call, --expect-tool-argument and "
+            "--expect-tool-result conflict with --allow-any-response"
+        )
+    if args.expect_tool_call and args.browser == "safari":
+        parser.error("--browser safari does not record tool-call completions")
     if args.speech_audio_path:
         audio_path = Path(args.speech_audio_path).resolve()
         if not audio_path.is_file():
@@ -659,6 +732,7 @@ def main() -> int:
         window.__llamadartRealBridgeLastPrompt = null;
         window.__llamadartRealBridgeLastOptions = null;
         window.__llamadartRealBridgeCompletionCapabilities = null;
+        window.__llamadartRealBridgeCompletions = [];
         window.__llamadartRealBridgeTokenEvents = 0;
         window.__llamadartRealBridgeTokenBytes = 0;
         window.__llamadartRealBridgeLastPieceType = null;
@@ -686,6 +760,12 @@ def main() -> int:
             window.__llamadartRealBridgeLastResponse = null;
             window.__llamadartRealBridgeLastError = null;
             window.__llamadartRealBridgeLastPrompt = String(prompt ?? '');
+            const completionRecord = {{
+              prompt: String(prompt ?? ''),
+              response: null,
+              error: null,
+            }};
+            window.__llamadartRealBridgeCompletions.push(completionRecord);
             window.__llamadartRealBridgeLastOptions = {{
               nPredict: options?.nPredict ?? null,
               temp: options?.temp ?? null,
@@ -723,9 +803,11 @@ def main() -> int:
             try {{
               const result = await original.call(this, prompt, options);
               window.__llamadartRealBridgeLastResponse = String(result ?? '');
+              completionRecord.response = String(result ?? '');
               return result;
             }} catch (error) {{
               window.__llamadartRealBridgeLastError = String(error);
+              completionRecord.error = String(error);
               throw error;
             }}
           }};

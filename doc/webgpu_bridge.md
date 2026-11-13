@@ -365,9 +365,13 @@ with the URL path.
 The real-model smoke also requires `getCompletionCapabilities()` to report
 `penaltyPromptTokens: true` and a plain chat call to carry no
 `penaltyPromptTokens` option. `chat-app-web-tool-penalty-smoke` runs a
-`ToolChoice.auto` chat on a tool-capable `--model-url` and requires the
-`lazyGrammar` probe, a lazy grammar with triggers and no `penaltyPromptTokens`
-override on the completion.
+`ToolChoice.auto` weather chat on a tool-capable `--model-url` (use
+Qwen3.5-0.8B) and requires the `lazyGrammar` probe, a lazy grammar with
+triggers, no `penaltyPromptTokens` override on the completion, a `getWeather`
+call for Paris and its result in a later prompt. It conflicts with
+`--allow-any-response`. `web-tool-choice-grammar` covers `ToolChoice`
+enforcement on LFM2.5 through the public API; see
+[the test matrix](testing_matrix.md#web-tool-choice-grammar).
 
 On macOS headless Chromium, keep the smoke script's default
 `--browser-angle auto` or pass `--browser-angle metal`. Without Metal ANGLE the
