@@ -285,6 +285,35 @@ void main() {
     }
   });
 
+  test('a structured-output reply on a thinking template keeps the thought as '
+      'generated', () {
+    final rendered = ChatTemplateEngine.render(
+      templateSource: File(
+        'test/fixtures/llama_cpp_templates/GLM-4.7-Flash.jinja',
+      ).readAsStringSync(),
+      messages: [
+        LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'Hi'),
+      ],
+      metadata: const {},
+      enableThinking: true,
+      responseFormat: const {
+        'type': 'json_schema',
+        'json_schema': {
+          'schema': {'type': 'object'},
+        },
+      },
+    );
+    expect(rendered.format, ChatFormat.contentOnly.index);
+    expect(rendered.thinkingForcedOpen, isTrue);
+
+    final parsed = ChatTemplateEngine.parseRendered(
+      rendered,
+      '<think>Plan.</think>{"a":1}',
+    );
+    expect(parsed.reasoningContent, '<think>Plan.');
+    expect(parsed.content, '{"a":1}');
+  });
+
   test('only Hermes renders tool-result content', () {
     expect(
       [

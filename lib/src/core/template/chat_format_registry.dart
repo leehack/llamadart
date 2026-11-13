@@ -731,8 +731,9 @@ chatFormatRegistrations = List.unmodifiable(<ChatFormatRegistration>[
     traits: ChatFormatTraits(qualifiesJsonSchemaTools: false),
   ),
   // The generic and content-only formats keep a forced-open thought verbatim
-  // like the formats above. llama.cpp has no such prompt to compare: its
-  // rwkv-world template opens no thought and takes only a leading one.
+  // like the formats above: structured output routes a thinking template
+  // (GLM-4.7, R1, QwQ, V3.1) here with its thought still forced open, and
+  // llama.cpp parses that thought as generated.
   ChatFormatRegistration(
     ChatFormat.generic,
     GenericHandler.new,

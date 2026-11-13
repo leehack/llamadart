@@ -13,7 +13,7 @@ validate against the exact release tag notes.
 
 ## Unreleased
 
-- Fixed DeepSeek R1, V3.2 and V4, Nemotron V2, MiniMax M2, GLM 4.5, Laguna, MiniCPM5, Hunyuan V3 and Kimi K3 replies after a prompt that opens the thought: as in llama.cpp, the reasoning is now the text before the first end tag as generated (a repeated start tag and escaped `\n` included), and the rest is content ([#1881](https://github.com/leehack/llamadart/issues/1881)).
+- Fixed DeepSeek R1, V3.2 and V4, Nemotron V2, MiniMax M2, GLM 4.5, Laguna, MiniCPM5, Hunyuan V3 and Kimi K3 replies after a prompt that opens the thought: as in llama.cpp, the reasoning is now the text before the first end tag as generated (a repeated start tag and escaped `\n` included), and the rest is content, and structured-output replies on thinking templates keep the thought as generated too ([#1881](https://github.com/leehack/llamadart/issues/1881)).
 
 ## 0.19.8
 

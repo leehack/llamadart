@@ -314,9 +314,9 @@ V2, MiniMax M2, GLM 4.5, Laguna, MiniCPM5, Hunyuan V3 and Kimi K3 parse a
 forced-open thought as llama.cpp (`cd959bae9`) does: the thought is the text
 before the first end tag, kept as generated, including a repeated start tag
 and any escaped `\n`, and the rest is content, in which thinking tags are
-text. The generic and content-only formats do the same for a template that
-opens a thought; llama.cpp has none to compare, since its rwkv-world template
-opens none and its parse takes only a thought that starts the reply. With
+text. The generic and content-only formats do the same: structured output
+(`responseFormat`) routes a thinking template there, such as GLM-4.7, R1, QwQ
+and V3.1, with its thought still forced open. With
 Qwen3-Coder XML, a `<tool_call>` before the first `</think>` ends the thought
 too, with or without tools, and starts the content; with Cohere2 MoE, a
 `<|START_TEXT|>` or `<|START_ACTION|>` before `<|END_THINKING|>` does. A
