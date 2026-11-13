@@ -927,6 +927,99 @@ void main() {
       });
     }
 
+    test('a mutated paragraph in the docs changelog fails', () {
+      final root = baselineRepo(
+        changelog: paragraph(),
+        docs: paragraph(sd: 'v0.3.0-2'),
+      );
+      expect(findRuntimeBaselineDrift(root), [
+        allOf(
+          contains('website/docs/changelog/recent-releases.md'),
+          contains('stable-diffusion v0.3.0-2'),
+        ),
+      ]);
+    });
+
+    test('a mutated Web upstream commit fails', () {
+      final other = 'a' * 40;
+      final root = baselineRepo(
+        changelog: paragraph(upstream: '$bridgeLlamaCppTag@$other'),
+        docs: paragraph(),
+      );
+      expect(findRuntimeBaselineDrift(root), [
+        contains('$bridgeLlamaCppTag@$other'),
+      ]);
+    });
+
+    test('a duplicated paragraph fails', () {
+      final root = baselineRepo(
+        changelog: paragraph() + paragraph(),
+        docs: paragraph(),
+      );
+      expect(findRuntimeBaselineDrift(root), [
+        allOf(contains('CHANGELOG.md'), contains('2 Runtime baseline')),
+      ]);
+    });
+
+    test('the aggregate gate runs the baseline check', () async {
+      final root = baselineRepo(
+        changelog: paragraph(sd: 'v0.3.0-2'),
+        docs: paragraph(),
+      );
+      expect(
+        await findBridgeProblems(root, 'v9.9.9'),
+        contains(contains('Runtime baseline names stable-diffusion')),
+      );
+    });
+
+    group('with a released section below Unreleased', () {
+      Directory cycleRepo({
+        String unreleased = '',
+        String liteRtPin = 'v0.19.1-5',
+        String released = '',
+      }) {
+        final changelog =
+            '## Unreleased\n\n$unreleased\n## 1.2.3\n\n- Fix.\n\n$released';
+        return _fakeRepo(
+          'v9.9.9',
+          files: <String, String>{
+            nativeLlamaCppTagPath:
+                "const llamaCppTag = 'v0.9.0';\n"
+                "const liteRtLmReleaseTag = '$liteRtPin';\n"
+                "const stableDiffusionReleaseTag = 'v0.3.0-3';\n",
+            'CHANGELOG.md': changelog,
+            'website/docs/changelog/recent-releases.md': changelog,
+          },
+        );
+      }
+
+      test('a mid-cycle pin bump does not fail the frozen baseline', () {
+        final root = cycleRepo(
+          unreleased: '- Adopt native LiteRT-LM `v0.19.1-5`.\n',
+          released: paragraph(),
+        );
+        expect(findRuntimeBaselineDrift(root), isEmpty);
+      });
+
+      test('after the docs cut the frozen baseline is not checked', () {
+        final root = cycleRepo(released: paragraph());
+        expect(findRuntimeBaselineDrift(root), isEmpty);
+      });
+
+      test('an Unreleased baseline paragraph is checked', () {
+        final root = cycleRepo(
+          unreleased:
+              '- Keep the default WebGPU bridge assets at `v9.9.9`.\n'
+              '\n${paragraph()}',
+          released: paragraph(liteRt: 'v0.19.1-5'),
+        );
+        expect(findRuntimeBaselineDrift(root), [
+          allOf(contains('CHANGELOG.md'), contains('v0.19.1-4')),
+          allOf(contains('recent-releases.md'), contains('v0.19.1-4')),
+        ]);
+      });
+    });
+
     test('a reworded paragraph fails instead of passing silently', () {
       final root = baselineRepo(
         changelog: 'Runtime baseline: everything is current.\n',

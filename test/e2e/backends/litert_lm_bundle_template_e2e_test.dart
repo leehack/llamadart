@@ -9,6 +9,7 @@ import 'dart:typed_data';
 
 import 'package:llamadart/src/backends/litert_lm/litert_lm_bundle_template.dart';
 import 'package:llamadart/src/backends/litert_lm/litert_lm_cache.dart';
+import 'package:llamadart/src/backends/litert_lm/litert_lm_chat_templates.dart';
 import 'package:llamadart/src/backends/litert_lm/litert_lm_runtime.dart';
 import 'package:llamadart/src/backends/litert_lm/litert_lm_service.dart';
 import 'package:llamadart/src/backends/litert_lm/litert_lm_templates.dart';
@@ -223,19 +224,28 @@ String _bundleWithTemplate(
   return path;
 }
 
-/// Whether text chats on the bundle at [path] render llamadart's Qwen3
-/// template instead of the bundle's own, by file name or by declared family,
-/// the way the service routes them.
-bool _rendersBuiltInQwen3Template(String path) {
+/// Why the service reports no bundle template as `tokenizer.chat_template` for
+/// the bundle at [path], or null where it does. The service routes by file
+/// name and, for Qwen3, by declared family or the canonical template.
+String? _noBundleTemplateMetadataReason(String path) {
   final name = File(
     path,
   ).uri.pathSegments.last.toLowerCase().replaceAll('_', '-');
-  if (RegExp(r'qwen-?3(?:[^.\d]|$)').hasMatch(name)) return true;
+  if (RegExp(r'qwen-?3(?:[^.\d]|$)').hasMatch(name)) {
+    return 'Text chats on Qwen3 bundles render a built-in template.';
+  }
+  if (kLiteRtLmChatTemplates.any((family) => family.matches(name))) {
+    return null;
+  }
   final bundle = readLiteRtLmBundleMetadata(path);
   final template = bundle?.chatTemplate;
-  return bundle?.isQwen3 == true ||
+  if (bundle?.isQwen3 == true ||
       (template != null &&
-          template.trimLeft().startsWith(liteRtLmQwen3ChatTemplate.trim()));
+          template.trimLeft().startsWith(liteRtLmQwen3ChatTemplate.trim()))) {
+    return 'Text chats on Qwen3 bundles render a built-in template.';
+  }
+  return 'The service reports no chat template for a bundle of an unknown '
+      'family.';
 }
 
 void main() {
@@ -594,10 +604,9 @@ void main() {
         );
         try {
           final handle = await service.loadModel(path, params);
-          if (_rendersBuiltInQwen3Template(path)) {
-            markTestSkipped(
-              'Text chats on Qwen3 bundles render a built-in template.',
-            );
+          final skipReason = _noBundleTemplateMetadataReason(path);
+          if (skipReason != null) {
+            markTestSkipped(skipReason);
             return;
           }
           expect(

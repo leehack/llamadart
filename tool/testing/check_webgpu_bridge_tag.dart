@@ -505,8 +505,12 @@ _runtimeBaselineClaims = <({String label, RegExp claim, RegExp source})>[
 /// Returns one message per runtime tag in the current release notes'
 /// `Runtime baseline:` paragraph that differs from the pinned runtime.
 ///
-/// A current section without the paragraph is skipped: Unreleased carries it
-/// only once release prep has written it.
+/// Only the top section is read: `## Unreleased` or the `## $releaseVersion`
+/// that release prep promotes it to. A released section that
+/// [currentReleaseNotesSection] falls back to is frozen and keeps the tags it
+/// shipped with, so a mid-cycle pin bump must not fail against it. A top
+/// section without the paragraph is skipped: Unreleased carries it only once
+/// release prep has written it.
 List<String> findRuntimeBaselineDrift(Directory repoRoot) {
   final String releaseVersion;
   try {
@@ -546,8 +550,12 @@ List<String> findRuntimeBaselineDrift(Directory repoRoot) {
     }
     final contents = _readGateFile(file, path, problems);
     if (contents == null) continue;
-    final section = currentReleaseNotesSection(contents, releaseVersion);
-    if (section == null) continue;
+    final top = _topReleaseNotesSection.firstMatch(contents);
+    final heading = top?.namedGroup('heading');
+    if (top == null || (heading != 'Unreleased' && heading != releaseVersion)) {
+      continue;
+    }
+    final section = top.namedGroup('body')!;
     final paragraphs = _runtimeBaselineParagraph.allMatches(section).toList();
     if (paragraphs.isEmpty) continue;
     if (paragraphs.length != 1) {
