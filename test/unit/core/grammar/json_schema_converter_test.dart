@@ -128,6 +128,43 @@ void main() {
       }
     });
 
+    test('holds no end marker but takes <| and its prefixes', () {
+      for (final raw in [
+        'a<|tool_call_end|>',
+        '<|tool_call_end|>',
+        'a"<|tool_call_end|>',
+        'a" <|tool_call_end|>',
+        'a"}"<|tool_call_end|>',
+        'a<<|tool_call_end|>',
+        'a<|tool_call_end|>b',
+        'x<|<|tool_call_end|>',
+      ]) {
+        expect(grammar.accepts(text(raw)), isFalse, reason: raw);
+      }
+      for (final raw in [
+        'main = text <| String.fromInt (1 + 2)',
+        'a<|b',
+        '<|',
+        'a<|tool_call',
+        '<|tool_call_end',
+        'a<|tool_call_end|',
+        'a<|tool_call_end>',
+        'a<|tool_call_end |>',
+        'a<|tool_call_end|b>',
+        'a<<|tool_call',
+        'a<',
+        'a<b',
+        'a<"',
+        'a"<|b',
+        'a" <|b',
+        r'a<\\|b',
+        r'a<\u007cb',
+        'a|b',
+      ]) {
+        expect(grammar.accepts(text(raw)), isTrue, reason: raw);
+      }
+    });
+
     test('keeps keys and constrained strings strict', () {
       expect(grammar.accepts('{"x"y": "v"}'), isFalse);
       expect(grammar.accepts('{"x": "v"w"}'), isTrue);

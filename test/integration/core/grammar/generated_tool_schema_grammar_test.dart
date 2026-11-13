@@ -265,6 +265,9 @@ void main() {
       'print(f"hi {name}")',
       '{"a": 1, "b": "two"}',
       r'say \"hi\"',
+      'a<|b',
+      'main = text <| String.fromInt (1 + 2)',
+      'a<|tool_call',
     ]) {
       expect(
         _compiledGrammarAccepts(nativeModel!, lfm2Grammar, call(code)),
@@ -272,7 +275,7 @@ void main() {
         reason: code,
       );
     }
-    for (final code in ['a", "b', 'a"}]] b']) {
+    for (final code in ['a", "b', 'a"}]] b', 'a<|tool_call_end|>b']) {
       expect(
         _compiledGrammarAccepts(nativeModel!, lfm2Grammar, call(code)),
         isFalse,
