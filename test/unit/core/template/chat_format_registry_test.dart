@@ -272,6 +272,19 @@ void main() {
     );
   });
 
+  test('generic and content-only formats keep a forced-open thought as '
+      'generated', () {
+    for (final format in [ChatFormat.generic, ChatFormat.contentOnly]) {
+      final parsed = ChatTemplateEngine.parse(
+        format.index,
+        r'<think>Plan \n x.</think>A</think>B<think>X</think>C',
+        thinkingForcedOpen: true,
+      );
+      expect(parsed.reasoningContent, r'<think>Plan \n x.', reason: '$format');
+      expect(parsed.content, 'A</think>B<think>X</think>C', reason: '$format');
+    }
+  });
+
   test('only Hermes renders tool-result content', () {
     expect(
       [

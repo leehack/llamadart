@@ -130,9 +130,9 @@ Nemotron Nano v2 open the thought even with thinking off. llamadart closes it
 in the prompt, but a thought the model still writes before `</think>` is
 reasoning, as in llama-server. So that it never streams as `chunk.text`, the
 reply's text is held until `</think>` or `<think>` arrives, or the reply ends.
-For StepFun3.5-Flash, a `<tool_call>` also ends the wait, and the thought is
-the text before the first `</think>` or `<tool_call>` as the model wrote it,
-`<think>` included; the rest is content, thinking tags included.
+The thought is then the text before the first `</think>` as the model wrote
+it, `<think>` included; the rest is content, thinking tags included. For
+StepFun3.5-Flash, a `<tool_call>` also ends the wait and the thought.
 Cohere2 MoE templates open it unless `reasoning` is false, which llamadart
 sets from `enableThinking`; their reply is held until a thinking tag,
 `<|START_TEXT|>` or `<|START_ACTION|>`, where llama-server ends the thought,
