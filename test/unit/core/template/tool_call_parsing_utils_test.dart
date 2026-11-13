@@ -171,6 +171,28 @@ void main() {
       }
       expect(added, greaterThan(100));
     });
+
+    test('parser robustness: non-map arguments read as no call', () {
+      for (final arguments in ['[1]', '"text"', 'null', '3']) {
+        final payload =
+            '[{"name": "run", "arguments": $arguments, '
+            '"extra": {"code": "x}}]';
+        expect(
+          ToolCallParsingUtils.decodeJsonCallListWithUnclosedLastString(
+            payload,
+          ),
+          isNull,
+          reason: arguments,
+        );
+        expect(
+          Lfm2Handler()
+              .parse('<|tool_call_start|>$payload<|tool_call_end|>')
+              .toolCalls,
+          isEmpty,
+          reason: arguments,
+        );
+      }
+    });
   });
 
   group('ToolCallParsingUtils.literalOpening', () {

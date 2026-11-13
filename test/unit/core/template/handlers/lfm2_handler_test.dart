@@ -399,6 +399,36 @@ void main() {
       expect(Lfm2Handler().parse(open('x}}]\n')).toolCalls, isEmpty);
     });
 
+    test('parser robustness: an open string reads only at the very end', () {
+      const open =
+          '<|tool_call_start|>[{"name": "search", "arguments": '
+          '{"query": "x}}]<|tool_call_end|>';
+      expect(
+        jsonDecode(
+          Lfm2Handler().parse(open).toolCalls.single.function!.arguments!,
+        ),
+        {'query': 'x'},
+      );
+
+      final trailing = Lfm2Handler().parse('$open prose');
+      expect(trailing.toolCalls, isEmpty);
+      expect(trailing.content, 'prose');
+    });
+
+    test('parser robustness: an open string adds no call after a call', () {
+      const call =
+          '<|tool_call_start|>[{"name": "search", "arguments": '
+          '{"query": "a"}}]<|tool_call_end|>';
+      const open =
+          '<|tool_call_start|>[{"name": "search", "arguments": '
+          '{"query": "x}}]<|tool_call_end|>';
+      final parsed = Lfm2Handler().parse('$call$open');
+      expect(parsed.toolCalls, hasLength(1));
+      expect(jsonDecode(parsed.toolCalls.single.function!.arguments!), {
+        'query': 'a',
+      });
+    });
+
     test('an end marker inside a raw-quoted string is argument text', () {
       const call =
           '<|tool_call_start|>[{"name": "search", "arguments": '
