@@ -55,7 +55,9 @@ const modelParams = LlamaCppModelParams(
 
 - `preferredBackend`: the biggest choice. Small models on mobile can be faster
   on `cpu` than on `vulkan` or WebGPU; larger models and longer responses
-  favor the GPU. Always measure both.
+  favor the GPU. Always measure both. A GPU is not automatically faster for
+  small embedding models either; see
+  [Android llama.cpp Vulkan](../platforms/known-platform-issues#android).
 - `gpuLayers`: start with the default and lower it if stability or latency is
   worse than on CPU.
 - `contextSize`: keep it only as large as the use case needs. Oversized

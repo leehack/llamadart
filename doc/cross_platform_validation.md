@@ -2332,3 +2332,12 @@ records, the importer requires the G02, G03 and G04 greedy baselines to agree.
 G05 passes explicit tags to raw generation; tags derived from a chat template,
 WebGPU bridge capability skew and the LiteRT-LM Qwen3 thinking switch remain
 unqualified, as do accelerators, other models and physical devices.
+
+## Android Vulkan embedding performance (#1304)
+
+| Evidence | Device | Runtime | Model | Result |
+| --- | --- | --- | --- | --- |
+| Firebase Test Lab `matrix-301ijrtnk21g2` | Pixel 8a (Tensor G3, Mali-G715, Android 14) | native v0.9.0, llama.cpp `cd959bae9` | EmbeddingGemma 2 Q8_0 | Verdict UPSTREAM: warm medians for 9 / 46 tokens were CPU 50.8 / 145.7 ms, llamadart policy 1251 / 1571 ms, llama.cpp defaults 903 / 1119 ms (at least 7.7x CPU); Q8_0 `MUL_MAT` took 89.9% of attributed GPU time; vectors matched the CPU. |
+
+This covers one device, model and quantization and qualifies no other GPU.
+See [Known platform issues](../website/docs/platforms/known-platform-issues.md).
