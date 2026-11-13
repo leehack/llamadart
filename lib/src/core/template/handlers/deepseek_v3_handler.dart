@@ -1,7 +1,6 @@
 import 'package:dinja/dinja.dart';
 
 import '../../grammar/json_schema_converter.dart';
-import '../../models/chat/chat_role.dart';
 import '../../models/chat/chat_message.dart';
 import '../../models/chat/chat_template_result.dart';
 import '../../models/chat/completion_chunk.dart';
@@ -71,22 +70,11 @@ class DeepseekV3Handler extends ChatTemplateHandler {
     final eosToken =
         metadata['tokenizer.ggml.eos_token'] ?? '<|end_of_sentence|>';
 
-    // Prepend bos_token to the first system message if it exists
-    final modifiedMessages = messages.map((m) {
-      if (m.role == LlamaChatRole.system && m == messages.first) {
-        return m.copyWith(content: '$bosToken${m.content}');
-      }
-      return m;
-    }).toList();
-
     var prompt = renderTemplate(
       template,
       metadata: metadata,
       context: {
-        'messages': templateMessages(
-          modifiedMessages,
-          templateSource: templateSource,
-        ),
+        'messages': templateMessages(messages, templateSource: templateSource),
         'add_generation_prompt': addAssistant,
         'tools': tools?.map((t) => t.toJson()).toList(),
         'enable_thinking': enableThinking,

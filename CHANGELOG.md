@@ -10,6 +10,7 @@ Releases before 0.10.0 are in the
 - Fixed `LlamaEngine(LlamaBackend())` on Web refusing LFM2/LFM2.5 `ToolChoice.auto` with tools even on bridge assets that report both required capabilities; the default Web backend now forwards prompt-penalty generation ([#1979](https://github.com/leehack/llamadart/issues/1979)).
 - Fixed image and audio embeddings reporting unsupported on a WebGPU runtime after loading an embedding model's projector; they now work there, qualified on an Apple GPU in Chrome, and repeated media batches are qualified on wasm32 from assets `v0.1.76` (measured on the pinned assets) ([#1971](https://github.com/leehack/llamadart/issues/1971)).
 - Fixed LFM2 required JSON tool calls that kept generating after `}}]<|tool_call_end|>` ended an unclosed last string argument and lost the call: a string argument can no longer contain the literal `<|tool_call_end|>`, so the grammar ends the output there ([#1987](https://github.com/leehack/llamadart/issues/1987)).
+- Fixed chat templates on native llama.cpp rendering a literal `<s>` (generic handler) or no BOS and EOS text for `bos_token` and `eos_token`: `getMetadata()` now reports the vocabulary's BOS and EOS text under `tokenizer.ggml.bos_token` and `tokenizer.ggml.eos_token`, and DeepSeek V3 no longer adds a second BOS to the system message ([#1972](https://github.com/leehack/llamadart/issues/1972)).
 
 ## 0.19.8
 
