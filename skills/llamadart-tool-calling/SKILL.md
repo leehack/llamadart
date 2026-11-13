@@ -134,8 +134,8 @@ description: >-
   the model left unescaped where no closing quote could stand; a quote before
   `,`, `}` or `]` still ends the string. A last string argument whose closing
   quote the model never wrote ends at exactly `}}]<|tool_call_end|>`, with no
-  whitespace between the closers. Auto grammar preserves copied
-  bare text and balanced object/list spellings as strings only for one required
+  whitespace between the closers. These strings never hold `<|`. Auto grammar
+  preserves copied bare text and balanced object/list spellings as strings only for one required
   plain string argument. Copied path-like values may retain a trailing backslash
   or an unmatched opening quote, in a singleton list without a terminal comma.
   Ambiguous spellings stay non-executable; other declarations retain their types

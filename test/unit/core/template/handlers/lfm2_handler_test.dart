@@ -429,12 +429,22 @@ void main() {
       });
     });
 
+    test('the grammar holds no end marker inside a raw-quoted string', () {
+      const call =
+          '<|tool_call_start|>[{"name": "search", "arguments": '
+          '{"query": "f("x)}}]<|tool_call_end|> it"s."}}]';
+      const output = '$call<|tool_call_end|>';
+      expect(
+        GbnfRecognizer(render([search]).grammar!).accepts(output),
+        isFalse,
+      );
+    });
+
     test('an end marker inside a raw-quoted string is argument text', () {
       const call =
           '<|tool_call_start|>[{"name": "search", "arguments": '
           '{"query": "f("x)}}]<|tool_call_end|> it"s."}}]';
       const output = '$call<|tool_call_end|>';
-      expect(GbnfRecognizer(render([search]).grammar!).accepts(output), isTrue);
       expect(Lfm2Handler().parse(call, isPartial: true).toolCalls, isEmpty);
       for (final parsed in [
         Lfm2Handler().parse(output),

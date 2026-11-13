@@ -128,6 +128,35 @@ void main() {
       }
     });
 
+    test('holds no <| but takes a lone <', () {
+      for (final raw in [
+        'a<|b',
+        '<|',
+        'a"<|b',
+        'a" <|b',
+        'a"}"<|b',
+        'a<<|b',
+        'x<|tool_call_end|>',
+      ]) {
+        expect(grammar.accepts(text(raw)), isFalse, reason: raw);
+      }
+      for (final raw in [
+        'a<b',
+        '<',
+        'a<',
+        'a<<b',
+        'a<"',
+        'a"<b',
+        'a" <b',
+        'a"<"',
+        r'a<\\|b',
+        r'a<\u007cb',
+        'a|b',
+      ]) {
+        expect(grammar.accepts(text(raw)), isTrue, reason: raw);
+      }
+    });
+
     test('keeps keys and constrained strings strict', () {
       expect(grammar.accepts('{"x"y": "v"}'), isFalse);
       expect(grammar.accepts('{"x": "v"w"}'), isTrue);

@@ -45,14 +45,40 @@ const _primitiveRules = <String, _BuiltinRule>{
   // closing quote, or when `"` or `}"` follows it. Closers before other text
   // still end the string, so a model that miscounts closers is corrected
   // rather than left inside the string.
-  'inner-quote-string': _BuiltinRule(
-    r'"\"" ( char | inner-quote | inner-quote-run+ inner-quote )* inner-quote-run* "\"" space',
-    ['char', 'inner-quote', 'inner-quote-run'],
-  ),
-  'inner-quote': _BuiltinRule(
-    r'"\"" " "* ( [^"\\\x7F\x00-\x1F ,}\]] | [\\] (["\\bfnrt] | "u" [0-9a-fA-F]{4}) )',
+  //
+  // The text holds no `<|`: LFM2 end markers start with it, and a string that
+  // could contain one would keep the grammar live after the marker. State 1
+  // follows a `<`; a quote starts over because it is not one.
+  'inner-quote-string': _BuiltinRule(r'"\"" inner-quote-0', [
+    'inner-quote-0',
+    'inner-quote-1',
+    'inner-quote-c',
+    'inner-quote-d',
+    'inner-quote-q',
+    'inner-quote-end',
+    'inner-quote-run',
+  ]),
+  'inner-quote-0': _BuiltinRule(
+    r'inner-quote-end | inner-quote-c inner-quote-0 | "<" inner-quote-1 | inner-quote-q',
     [],
   ),
+  'inner-quote-1': _BuiltinRule(
+    r'inner-quote-end | inner-quote-d inner-quote-0 | "<" inner-quote-1 | inner-quote-q',
+    [],
+  ),
+  'inner-quote-c': _BuiltinRule(
+    r'[^"\\<\x7F\x00-\x1F] | [\\] (["\\bfnrt] | "u" [0-9a-fA-F]{4})',
+    [],
+  ),
+  'inner-quote-d': _BuiltinRule(
+    r'[^"\\<|\x7F\x00-\x1F] | [\\] (["\\bfnrt] | "u" [0-9a-fA-F]{4})',
+    [],
+  ),
+  'inner-quote-q': _BuiltinRule(
+    r'inner-quote-run* "\"" " "* ( [^"\\<\x7F\x00-\x1F ,}\]] inner-quote-0 | "<" inner-quote-1 | [\\] (["\\bfnrt] | "u" [0-9a-fA-F]{4}) inner-quote-0 )',
+    [],
+  ),
+  'inner-quote-end': _BuiltinRule(r'inner-quote-run* "\"" space', []),
   'inner-quote-run': _BuiltinRule(r'"\"" "}"?', []),
   'null': _BuiltinRule('"null" space', []),
 };

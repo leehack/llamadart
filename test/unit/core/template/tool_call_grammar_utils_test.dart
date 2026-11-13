@@ -13,6 +13,8 @@ import 'package:llamadart/src/core/template/handlers/nemotron_v2_handler.dart';
 import 'package:llamadart/src/core/template/tool_call_grammar_utils.dart';
 import 'package:test/test.dart';
 
+import '../../../support/gbnf_recognizer.dart';
+
 void main() {
   test('ruleName preserves safe names and distinguishes escaped runes', () {
     expect(ToolCallGrammarUtils.ruleName('code'), 'code');
@@ -583,6 +585,51 @@ open-iq ::= inner-quote-run* "\"" " "* ( [^"\\<\x7F\x00-\x1F ,}\]] open-0 | "<" 
               '"{" space $name "{" space "\\"a\\"" space ":" space "\\"" open-0',
         ),
       );
+    });
+
+    test('leaves only the end of output after a call and its end marker', () {
+      final tools = [
+        tool('run_python', [ToolParam.string('code', required: true)]),
+      ];
+      final grammar = GbnfRecognizer(
+        ToolCallGrammarUtils.buildWrappedArrayGrammar(
+          tools: tools,
+          prefix: '<|tool_call_start|>',
+          suffix: '<|tool_call_end|>',
+          allowParallelToolCalls: false,
+          innerQuoteStrings: true,
+          allowUnclosedLastString: true,
+        )!,
+      );
+      const start =
+          '<|tool_call_start|>[{"name": "run_python", "arguments": {"code": "';
+      for (final code in [
+        "print('x={}'\".format(x))",
+        'x',
+        'a<b',
+        'a<<',
+        'a<',
+      ]) {
+        final ended = '$start$code}}]<|tool_call_end|>';
+        expect(grammar.accepts(ended), isTrue, reason: ended);
+        for (final tail in [
+          '"}}]<|tool_call_end|>',
+          'x"}}]<|tool_call_end|>',
+          'I will run it."}}]<|tool_call_end|>',
+          '"}}]',
+          '<|tool_call_end|>',
+          '<|',
+          'x',
+          ' ',
+          '"',
+        ]) {
+          expect(
+            grammar.accepts('$ended$tail'),
+            isFalse,
+            reason: '$ended$tail',
+          );
+        }
+      }
     });
 
     test('is opted into by the LFM2 handler alone', () {
