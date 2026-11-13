@@ -1,6 +1,8 @@
 Releases before 0.10.0 are in the
 [changelog archive](https://github.com/leehack/llamadart/blob/main/doc/changelog_archive.md).
 
+## Unreleased
+
 ## 0.19.9
 
 - Keep the default WebGPU bridge assets at `v0.1.84` (unchanged from 0.19.8).

@@ -11,6 +11,8 @@ For upgrade planning, combine this page with the
 [Upgrade Checklist](../migration/upgrade-checklist). For breaking changes,
 validate against the exact release tag notes.
 
+## Unreleased
+
 ## 0.19.9
 
 - Keep default WebGPU bridge assets at `v0.1.84` (unchanged from 0.19.8).
