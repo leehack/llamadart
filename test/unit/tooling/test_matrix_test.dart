@@ -1,6 +1,7 @@
 @TestOn('vm')
 library;
 
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:test/test.dart';
@@ -363,6 +364,76 @@ void main() {
     )) {
       expect(File(target).existsSync(), isTrue, reason: target);
     }
+  });
+
+  test('Web tool-choice matrix row fetches pinned and legacy assets then runs '
+      'the suite', () async {
+    final row = testMatrixRows.singleWhere(
+      (row) => row.id == 'web-tool-choice-grammar',
+    );
+    expect(row.mode, 'local-only');
+    expect(row.covers, contains('legacy'));
+    final command = row.command.split(' ');
+    expect(command.take(3), ['dart', 'run', 'tool/testing/run_local_e2e.dart']);
+    final steps = <LocalE2eCommandStep>[];
+    final result = await runLocalE2e(
+      command.skip(3).toList(),
+      projectRoot: '/repo',
+      foregroundStepRun: (step) async {
+        steps.add(step);
+        return ProcessResult(0, 0, '', '');
+      },
+    );
+    expect(result.exitCode, 0, reason: result.stderr);
+    expect(steps, hasLength(3));
+    for (final fetch in steps.take(2)) {
+      expect(fetch.executable, 'bash');
+      expect(fetch.arguments, ['scripts/fetch_webgpu_bridge_assets.sh']);
+    }
+    expect(steps[0].environment, {
+      'WEBGPU_BRIDGE_OUT_DIR': '/repo/build/web_tool_choice_grammar/bridge',
+    });
+    expect(steps[1].environment, {
+      'WEBGPU_BRIDGE_ASSETS_TAG': 'v0.1.81',
+      'WEBGPU_BRIDGE_OUT_DIR':
+          '/repo/build/web_tool_choice_grammar/bridge_legacy',
+    });
+    expect(steps[2].executable, 'dart');
+    expect(steps[2].arguments, [
+      'test',
+      '-p',
+      'chrome-webgpu',
+      '--run-skipped',
+      '-t',
+      'local-only',
+      'test/e2e/webgpu/tool_choice_grammar_e2e_test.dart',
+    ]);
+    for (final step in steps) {
+      expect(step.workingDirectory, '/repo');
+      expect(step.background, isFalse);
+    }
+    expect(File(steps[2].arguments.last).existsSync(), isTrue);
+    final doc = File('doc/testing_matrix.md').readAsStringSync();
+    expect(doc, contains('`web-tool-choice-grammar`'));
+    expect(doc, contains('## Web tool-choice grammar'));
+    final weights =
+        jsonDecode(File('tool/ci/test_shard_weights.json').readAsStringSync())
+            as Map<String, dynamic>;
+    for (final shard in weights.values) {
+      expect(
+        (shard as Map<String, dynamic>)[steps[2].arguments.last],
+        0,
+        reason: 'weight 0 in every shard',
+      );
+    }
+  });
+
+  test('the Web tool penalty row asserts the call and drops any-response', () {
+    final row = testMatrixRows.singleWhere(
+      (row) => row.id == 'web-tool-penalty-smoke',
+    );
+    expect(row.command, isNot(contains('--allow-any-response')));
+    expect(row.covers, contains('tool call'));
   });
 
   test('tool-result image matrix row reaches its local-only scenario and '

@@ -899,6 +899,29 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
         'Stage build/web_lazy_grammar/config.json as doc/testing_matrix.md describes.',
   ),
   TestMatrixRow(
+    id: 'web-tool-choice-grammar',
+    tier: 'targeted',
+    mode: 'local-only',
+    covers:
+        'LFM2.5 ToolChoice text, none, required (no-call prompt with a '
+        'grammar-strip control, Paris, incomplete and malformed output) and '
+        'auto (tool prompt, text prompt, tool-result follow-up) through the '
+        'pinned bridge direct and worker routes and the default '
+        'LlamaBackend() route; legacy v0.1.81 assets '
+        'refuse auto with zero bridge calls and still enforce required; '
+        'parsed calls and the loose raw shape, never grammar text; a '
+        'receipt per route; missing inputs, hash mismatches, worker fallback '
+        'and an indecisive control stay NOT_RUN; CPU Wasm, no GPU claim',
+    command:
+        'dart run tool/testing/run_local_e2e.dart --scenario '
+        'web-tool-choice-grammar',
+    useWhen:
+        'Tool-choice grammar, LFM2 tool-call parsing, Web grammar transport '
+        'or bridge pin changes. Stage '
+        'build/web_tool_choice_grammar/config.json as doc/testing_matrix.md '
+        'describes.',
+  ),
+  TestMatrixRow(
     id: 'web-speech-task-cancel',
     tier: 'targeted',
     mode: 'local-only',
@@ -1565,14 +1588,16 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
     tier: 'targeted',
     mode: 'local-only',
     covers:
-        'built Flutter web chat app tool chat on a tool-capable GGUF: '
-        'ToolChoice.auto sends a lazy grammar and no penaltyPromptTokens option',
+        'built Flutter web chat app weather chat on a tool-capable GGUF: the '
+        'app calls getWeather for Paris, the tool result reaches the model '
+        'and the final reply names it, ToolChoice.auto sends a lazy grammar '
+        'and no penaltyPromptTokens option; a missing tool call fails',
     command:
         'dart run tool/testing/run_local_e2e.dart --scenario '
-        'chat-app-web-tool-penalty-smoke --model-url <tool-capable-gguf-url> '
-        '--allow-any-response',
+        'chat-app-web-tool-penalty-smoke --model-url <tool-capable-gguf-url>',
     useWhen:
-        'Web penalty, tool-call grammar, or bridge completion option changes.',
+        'Web penalty, tool-call grammar, or bridge completion option changes. '
+        'Use Qwen3.5-0.8B.',
   ),
   TestMatrixRow(
     id: 'web-speech-to-text-smoke',
