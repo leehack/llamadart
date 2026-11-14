@@ -4297,8 +4297,9 @@ class StableDiffusionAppleCompatibilitySyncTest(unittest.TestCase):
         self.assertIn("const stableDiffusionCompatibleAppleCompanionTags = <String, String>{};", result)
         block = re.search(r"const stableDiffusionAppleCompanionChecksums = <String, String>\{(.*?)\};", result, re.S).group(1)
         self.assertIn("'v0.2.0-5': '" + "a" * 64 + "'", block)
-        self.assertNotIn("v0.2.0-3", block)
-        self.assertNotIn("v0.2.0-4", block)
+        self.assertEqual(re.findall(r"'([^']+)':", block), ["v0.2.0-5"])
+        self.assertNotIn("v0.3.0-3", block)
+        self.assertNotIn(self.current, block)
 
 
 class StableDiffusionPinSyncTest(unittest.TestCase):
