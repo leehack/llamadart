@@ -83,8 +83,11 @@ evidence. The iPhone full-VAE arm has not been measured, because its decode
 trips the GPU watchdog ([#1047](https://github.com/leehack/llamadart/issues/1047)).
 On iOS, a full-VAE Metal decode can outlast the GPU watchdog. The pinned
 stable-diffusion-native `v0.3.0-4` splits the graph into several command
-buffers (`sd_dart_graph_split_threshold`, 2^26 elements), so full-VAE and
-external-decoder recipes decode on Metal there.
+buffers (`sd_dart_graph_split_threshold`, 2^26 elements). Device-qualified:
+SD-Turbo with its embedded full VAE at 512x512 on an iPhone 16 Pro and an
+iPhone 17 Pro. External VAE/TAESD components, SDXL-size VAEs, larger
+resolutions and SDXS through `sd_dart_new_sd_ctx` are admitted but not
+device-qualified. A Metal command-buffer failure surfaces as an error.
 
 A runtime without the split refuses them. Its Metal decoding requires the
 intrinsic tiny-decoder v1 native context policy, which preserves an intrinsic

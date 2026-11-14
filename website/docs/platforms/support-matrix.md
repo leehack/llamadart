@@ -56,9 +56,12 @@ models, memory figures and the bounded recipes for tiling, editing, ControlNet,
 hires fix, reference editing, seamless textures, module placement, the
 conditioning cache, FP8 weights and local checkpoint sets are in
 [Image generation](../guides/image-generation#support). On iOS, the pinned
-`v0.3.0-4` runtime splits Metal graphs, so full-VAE decoding stays under the GPU
-watchdog (qualified on an iPhone 16 Pro and an iPhone 17 Pro,
-[#1047](https://github.com/leehack/llamadart/issues/1047)). A runtime without
+`v0.3.0-4` runtime splits Metal graphs, so full-VAE decoding is admitted;
+only SD-Turbo with its embedded full VAE at 512x512 is qualified, on an iPhone
+16 Pro and an iPhone 17 Pro ([#1047](https://github.com/leehack/llamadart/issues/1047)).
+External VAE/TAESD components, SDXL-size VAEs, larger resolutions and SDXS
+through `sd_dart_new_sd_ctx` are not device-qualified, and a Metal
+command-buffer failure surfaces as an error. A runtime without
 the split refuses full-VAE Metal decoding; it then needs an intrinsic SDXS tiny
 decoder and the intrinsic tiny-decoder v1 context policy, or
 `ImageModelPlacement(vaeOnCpu: true)` or `ComputeDevice.cpu`. On iOS 26 the

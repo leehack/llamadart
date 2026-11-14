@@ -62,6 +62,7 @@ Future<void> main(List<String> args) async {
         ...StableDiffusionCalls.wrapperSymbols,
         ...StableDiffusionCalls.logSymbols,
         ...StableDiffusionCalls.deviceMemorySymbols,
+        ...StableDiffusionCalls.graphSplitSymbols,
       ]) {
         if (StableDiffusionCalls.symbolAddress(name) !=
             DynamicLibrary.process().lookup(name)) {

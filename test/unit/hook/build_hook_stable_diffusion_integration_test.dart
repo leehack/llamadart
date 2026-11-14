@@ -815,6 +815,32 @@ dependencies:
     );
   }
 
+  test('accepts a locked companion pinning the earlier v0.3.0-3 XCFramework '
+      'with an upgrade warning', () async {
+    final defines = await _flutterAppleApp(
+      companions: const [_stableDiffusionCompanionName],
+      editManifest: (manifest) => manifest
+          .replaceFirst(
+            'let stableDiffusionTag = "$stableDiffusionReleaseTag"',
+            'let stableDiffusionTag = "v0.3.0-3"',
+          )
+          .replaceFirst(
+            stableDiffusionAppleCompanionChecksums[stableDiffusionReleaseTag]!,
+            stableDiffusionAppleCompanionChecksums['v0.3.0-3']!,
+          ),
+    );
+    var emitted = false;
+    await project.testCodeBuildHook(
+      mainMethod: build_hook.main,
+      targetOS: OS.iOS,
+      targetArchitecture: Architecture.arm64,
+      targetIOSSdk: IOSSdk.iPhoneOS,
+      userDefines: defines,
+      check: (_, _) => emitted = true,
+    );
+    expect(emitted, isTrue);
+  });
+
   // v0.3.0 grew sd_ctx_params_t: the bindings would overrun the
   // allocation of a v0.2.0-4 runtime. The v0.3.0 runtime aborts on FP8
   // weights on Metal, which the image preflight admits on the pinned runtime.

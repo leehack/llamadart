@@ -2367,5 +2367,17 @@ the iPhone 17 Pro (iOS 26.5.1) the second engine dispose kept about 2 GB
 resident and later loads failed the memory check; the iPhone 16 Pro returned to
 its baseline. Whether it is a leak or delayed reclaim is undecided.
 
-Final qualification of the public API at the PR head and the published pin is a
-separate DDP run (`r1047-final`).
+Final qualification of the public API at PR head `6109c8d1e` with the published
+`v0.3.0-4` pin: DDP session `session-954952c8-39c6-4878-9f17-ca2c6efed56b`,
+bundle SHA-256 `d102c07aac8577e1ca730438650829d34644450fa501cd6af2c51be88ab0ff9c`.
+Both devices loaded SD-Turbo with its embedded full VAE on `MTL0` at 512x512
+through `ImageGenerationEngine`, with no bypass.
+
+| Device | Result |
+| --- | --- |
+| iPhone 16 Pro, iOS 18.3.2 | 6 of 6 decodes, one image hash, about 7.0 to 8.3 s each |
+| iPhone 17 Pro, iOS 26.5.1 | 6 of 6 decodes, one image hash, about 4.4 to 4.7 s each |
+
+Only that recipe is device-qualified. External VAE/TAESD components, SDXL-size
+VAEs, larger resolutions and SDXS through `sd_dart_new_sd_ctx` are admitted but
+not qualified on iOS Metal.

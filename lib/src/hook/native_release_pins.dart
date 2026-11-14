@@ -228,10 +228,18 @@ const stableDiffusionAppleCompanionVersion = '0.19.10';
 /// code. The Dart worker rejects recorded Metal backend failures even when
 /// native generation returns images; the newer native guard remains preferred.
 /// Clear and requalify this map whenever [stableDiffusionReleaseTag] changes.
-const stableDiffusionCompatibleAppleCompanionTags = <String, String>{};
+///
+/// `v0.3.0-3` has the same upstream as `v0.3.0-4` and lacks only the
+/// `sd_dart_graph_split_*` exports, which the bindings load as an optional
+/// group, so an older framework keeps the iOS full-VAE refusal.
+const stableDiffusionCompatibleAppleCompanionTags = <String, String>{
+  'v0.3.0-3': 'the sd_dart_graph_split_* exports (iOS full-VAE decoding)',
+};
 
 /// Checksums of the exact published XCFrameworks accepted by the SD hook.
 const stableDiffusionAppleCompanionChecksums = <String, String>{
+  'v0.3.0-3':
+      '8f35c67f72d1d4bf86d31f20f3437d04baaf3b6ac7389908000fd166e387783f',
   'v0.3.0-4':
       '0d022638f54be80aa75fd8e73a94d139ad8887f4f3c73084501369ca5e7ac354',
 };

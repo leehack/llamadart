@@ -279,8 +279,21 @@ void main() {
     final apple = (manifest['artifacts'] as List)
         .cast<Map<String, dynamic>>()
         .singleWhere((artifact) => artifact['kind'] == 'xcframework');
-    expect(stableDiffusionCompatibleAppleCompanionTags, isEmpty);
+    final previous =
+        (jsonDecode(
+                  File(
+                    'test/fixtures/native/'
+                    'stable_diffusion_v0_3_0_3_manifest.json',
+                  ).readAsStringSync(),
+                )
+                as Map<String, dynamic>)['artifacts']
+            as List;
+    final previousApple = previous.cast<Map<String, dynamic>>().singleWhere(
+      (artifact) => artifact['kind'] == 'xcframework',
+    );
+    expect(stableDiffusionCompatibleAppleCompanionTags.keys, ['v0.3.0-3']);
     expect(stableDiffusionAppleCompanionChecksums, {
+      'v0.3.0-3': previousApple['sha256'],
       stableDiffusionReleaseTag: apple['sha256'],
     });
   });

@@ -12,6 +12,7 @@ For upgrade planning, combine this page with the
 validate against the exact release tag notes.
 
 ## Unreleased
+
 - Adopt stable-diffusion `v0.3.0-4`: on iOS Metal the runtime splits graphs, so a full VAE decodes without tripping the GPU watchdog and `ImageGenerationEngine.load` no longer refuses it there; a runtime without the split keeps the refusal. Run on an iPhone 16 Pro and an iPhone 17 Pro (30 of 30 soak decodes). On iOS 26 the second engine dispose can leave about 2 GB resident ([#1047](https://github.com/leehack/llamadart/issues/1047), [#2004](https://github.com/leehack/llamadart/issues/2004)).
 
 - Chat app microphone: a microphone that disconnects mid-recording now transcribes the audio captured so far with a warning, a missing input device on Web is reported as such instead of as a permission denial, and a failed Web start releases the microphone ([#329](https://github.com/leehack/llamadart/issues/329)).

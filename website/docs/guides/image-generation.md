@@ -190,9 +190,12 @@ quantization/mmap option. Weights load eagerly; see the
 [memory check](./image-generation-memory-and-limits#memory-check) before substituting larger unquantized files.
 
 On iOS, the pinned `v0.3.0-4` runtime splits Metal graphs, so full-VAE
-recipes decode on the GPU without tripping the watchdog
-([#1047](https://github.com/leehack/llamadart/issues/1047)); it was run on an
-iPhone 16 Pro and an iPhone 17 Pro. A runtime without the split refuses full VAE
+recipes are admitted. Device-qualified is SD-Turbo with its embedded full VAE at
+512x512 on an iPhone 16 Pro and an iPhone 17 Pro, which decoded without
+tripping the watchdog ([#1047](https://github.com/leehack/llamadart/issues/1047)).
+External VAE/TAESD components, SDXL-size VAEs, larger resolutions and SDXS
+through `sd_dart_new_sd_ctx` are not device-qualified, and a Metal
+command-buffer failure surfaces as an error. A runtime without the split refuses full VAE
 and external-decoder recipes: use `ImageModelPlacement(vaeOnCpu: true)` for
 Metal diffusion, or `ComputeDevice.cpu`. Its intrinsic tiny-decoder v1 context
 policy still serves SDXS Metal decoding.

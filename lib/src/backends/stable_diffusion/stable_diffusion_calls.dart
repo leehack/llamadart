@@ -161,8 +161,9 @@ final class StableDiffusionCalls {
   ];
 
   /// Resolves the calls from the bundled runtime, or returns `null` when it
-  /// does not export every one of [wrapperSymbols]. [log] and [gpu] are
-  /// `null` when it does not export theirs.
+  /// does not export every one of [wrapperSymbols]. [log], [gpu] and
+  /// [graphSplit] are `null` when it does not export theirs
+  /// ([logSymbols], [deviceMemorySymbols], [graphSplitSymbols]).
   ///
   /// [symbol] replaces the lookup: it returns the address of the function
   /// exported under a name, and throws [ArgumentError] when there is none.
@@ -184,8 +185,8 @@ final class StableDiffusionCalls {
   }
 
   /// The address of the function the bundled runtime exports as [name], one
-  /// of [wrapperSymbols], [logSymbols], [deviceMemorySymbols] or
-  /// [fp8MetalSymbols]; throws [ArgumentError] when it exports none.
+  /// of [wrapperSymbols], [logSymbols], [deviceMemorySymbols],
+  /// [graphSplitSymbols] or [fp8MetalSymbols]; throws [ArgumentError] when it exports none.
   static Pointer<NativeType> symbolAddress(String name) => switch (name) {
     'sd_dart_progress_enable' =>
       Native.addressOf<NativeFunction<_ProgressEnableNative>>(

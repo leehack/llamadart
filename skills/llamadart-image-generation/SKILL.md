@@ -283,10 +283,10 @@ core and `llamadart_stable_diffusion_flutter` together.
   true` on iOS Metal throws `LlamaUnsupportedException` at load: every decode
   tripped the GPU watchdog and returned a corrupt image
   ([#1044](https://github.com/leehack/llamadart/issues/1044)). Full-VAE Metal
-  decoding on iOS is refused only on a runtime without the graph split; the
-  pinned `v0.3.0-4` has it (#1047). An older runtime needs an intrinsic SDXS
-  decoder, `ImageModelPlacement(vaeOnCpu: true)` or `ComputeDevice.cpu`. On
-  iOS 26 the second engine dispose can leave about 2 GB resident (#2004).
+  decoding on iOS is refused only without the graph split (pinned `v0.3.0-4`
+  has it, #1047); only SD-Turbo's embedded VAE at 512x512 is qualified, and a
+  Metal command-buffer failure is an error. An older runtime needs an SDXS
+  intrinsic decoder, `vaeOnCpu: true` or CPU. iOS 26: 2 GB may stay resident (#2004).
 - `ImageConditioningCacheParams(capacity: ...)`: ordinary `ImageModelParams`
   preserve the native default of 4 prompt-conditioning entries. `0` disables
   reuse; positive values set an LRU entry limit up to `2147483647` (the signed 32-bit ABI
