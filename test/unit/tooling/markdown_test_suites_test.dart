@@ -147,20 +147,6 @@ void main() {
     }
   });
 
-  test('the selector list names every file the exemptions record', () {
-    final recorded = {
-      for (final e in [...suiteExemptions.values, ...helperExemptions.values])
-        ...e.evidence.keys,
-    }.toList()..sort();
-    expect(
-      File('tool/ci/markdown_reader_files.txt').readAsLinesSync(),
-      orderedEquals(recorded),
-      reason:
-          'tool/ci/select_jobs.py runs this guard when one of these files '
-          'changes; regenerate the list from the exemptions.',
-    );
-  });
-
   test('the reader inventory, engine and exemptions have CODEOWNERS', () {
     expect(
       File('.github/CODEOWNERS').readAsLinesSync(),

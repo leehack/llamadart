@@ -26,6 +26,15 @@ void main() {
     });
 
     for (final docs in _installationDocs) {
+      // Only macOS can run the documented script, so its text may change only
+      // together with this fixture, which selects the macOS tests.
+      test('$docs build phase is the reviewed script', () {
+        expect(
+          _documentedBuildPhase(docs),
+          File(_reviewedBuildPhase).readAsStringSync(),
+        );
+      }, skip: Platform.isWindows ? 'requires an LF checkout' : false);
+
       test('$docs build phase runs the resolved package script', () async {
         final script = _documentedBuildPhase(docs);
         final root = await Directory.systemTemp.createTemp(
@@ -497,6 +506,8 @@ const _installationDocs = [
   'website/docs/platforms/apple-setup.md',
   'website/versioned_docs/version-0.12.0/getting-started/installation.md',
 ];
+
+const _reviewedBuildPhase = 'test/fixtures/macos_litert_lm_build_phase.sh';
 
 /// The `bash` block of the Flutter macOS LiteRT-LM build phase section.
 String _documentedBuildPhase(String docsPath) {

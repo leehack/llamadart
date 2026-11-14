@@ -9,30 +9,32 @@ PR. A path filter must not prevent a required workflow from reporting.
 | Changed inputs | Core checks | Portable builds |
 |---|---|---|
 | Documentation, website, docs tooling | Docs build/tool tests plus version and bridge-pin checks | None |
-| Any `*.md` path | Adds `Markdown Tests`, unless full Linux coverage is selected | None |
-| `tool/docs/`, `tool/testing/validation/`, or `tool/testing/validation.dart` | Adds the Markdown reader inventory guard through `Markdown Tests`; retains the path's other checks | Existing path selection |
+| Any path | Adds `Markdown Tests`, unless the Linux VM tests are selected | None |
 | One companion package | Root static checks, affected package's Flutter/SwiftPM/publish checks, root Linux coverage and full macOS/Windows VM checks, Web Chat consumer | Android, Web, iOS inputs |
-| Validation package tests/schemas or unbundled assets | Root static checks, private suite and provider/workspace/Flutter consumer contracts | None |
+| Validation package tests/schemas or unbundled assets | Root static checks, Linux VM tests, private suite and Flutter consumer contracts | None |
 | Validation assets the chat app bundles (`flutter.assets`, such as profiles) | Same validation checks and Web Chat | None |
 | Validation implementation/dependencies | Same validation checks and Web Chat | All desktop and app targets |
 | Validation provider/build helpers | Same validation checks | All desktop and app targets |
-| Android/iOS/Web chat packaging | Root static checks; Web Chat for Web inputs | Affected app target |
-| Other chat app implementation/dependencies | Static, private harness, Web Chat | All app targets |
-| Chat app unit tests | Static and Web Chat | None |
+| Android/iOS/Web chat packaging | Root static checks and Linux VM tests; Web Chat for Web inputs | Affected app target |
+| Other chat app implementation/dependencies | Static, Linux VM tests, private harness, Web Chat | All app targets |
+| Chat app unit tests | Static, Linux VM tests and Web Chat | None |
 | Root tests/fixtures | Static, all Linux VM tests, Chrome and macOS/Windows host tests | None |
 | Root runtime/hooks/dependencies, other example packages, shared or unknown paths | Full behavioral graph | All targets; a PR defers macOS desktop and Android unless it changes their build inputs |
 | Workflow/selector changes | Full graph including synthetic artifact transport | All targets; a PR defers macOS desktop and Android unless it changes the bundle workflow or selector |
 | Missing, empty or invalid diff; explicit manual bundle run | Full fallback | All targets |
 
 Selections combine for mixed changes. Version checks already executed by the
-root static job are not duplicated in the docs-only job. Provider root tests
-already executed by full Linux coverage are not duplicated in a separate job.
-The consumer job is omitted entirely only when both root coverage and Web Chat
-(which runs all Flutter app tests) substitute its assertions. Mixed validation
-and root-test changes still run the Flutter consumer assertions.
+root static job are not duplicated in the docs-only job. Root suites import,
+copy and read files throughout `example/chat_app/`,
+`packages/llamadart_validation/` and `tool/testing/validation*`, so every
+change there runs the Linux VM tests: no list of files or suites stands in for
+them. `test_select_jobs.py` fails when a root suite imports a file whose change
+would not run them. They run on Linux only; a change there adds no macOS or
+Windows `Test Native`. The consumer job runs the Flutter validation
+controller/app tests and is omitted when Web Chat, which runs all Flutter app
+tests, is selected.
 Web Chat Contract installs no system packages, so an Ubuntu mirror outage cannot fail the required job.
-The private harness also checks APK integrity. Its separate consumer job runs
-root provider/NPU/workspace tests and the Flutter validation controller/app tests.
+The private harness also checks APK integrity.
 
 PR diffs use the merge base of the immutable base/head revisions; push diffs use
 the event's before/after revisions. Checkout fetches history. Renames include
@@ -49,17 +51,11 @@ jobs may be skipped. The bundle result applies the same rule to target matrices.
 This is executable job accounting, not a new repository protection setting.
 
 `Markdown Tests` runs only the root suites listed in
-`tool/ci/markdown_test_suites.txt`, for a change that selects no full Linux
-coverage. It carries no coverage, so a Markdown-only commit uploads none to
-Codecov. Changes to `tool/docs/`, `tool/testing/validation/` or
-`tool/testing/validation.dart` also select it, since those helpers can
-introduce a reader without editing a test. So does a change to any file in
-`tool/ci/markdown_reader_files.txt`: the files an exemption records evidence
-for, some of which (the website, validation and Genkit packages) sit in lanes
-that run no root test. The guard test fails until that list equals the recorded
-evidence files. Because Linux coverage can no longer
-stand in for `validation-integration` on a Markdown path, that job stays
-selected there.
+`tool/ci/markdown_test_suites.txt`, for every change that selects no Linux VM
+tests. It carries no coverage, so a Markdown-only commit uploads none to
+Codecov. Every path selects it, not only Markdown: any file a root suite
+reaches can start reading Markdown without a test changing, and the website,
+Genkit and Model Store lanes run no other root test.
 
 `markdown_test_suites_test.dart` keeps the inventory complete. Every root suite
 whose static reach shows Markdown evidence must be listed in the inventory or
@@ -117,6 +113,10 @@ step ([#1670](https://github.com/leehack/llamadart/issues/1670)).
   recorded tokens.
 - An unresolved import, an unreadable file, or an unclassified suite with
   evidence is a problem. Nothing is skipped silently.
+- A host OS is no gate: the job runs on Linux only. A suite that can use
+  Markdown on one OS alone compares that text with a fixture on every OS and
+  is listed, so the text changes only with the fixture, which selects the
+  host tests (`macos_litert_lm_prepare_app_script_test.dart`).
 
 The three files have explicit CODEOWNERS assignments, but requiring owner
 approval still depends on repository protection settings.
