@@ -163,6 +163,8 @@ feature. For which runtime supports which feature, see the
   ([#1092](https://github.com/leehack/llamadart/issues/1092)); a Galaxy S24
   (Adreno 750) crashes on the first generation
   ([llamadart-native#79](https://github.com/leehack/llamadart-native/issues/79)).
+  A request for another GPU backend with no device of its own can land on an
+  already registered Vulkan device, and it gets the same settings.
 
   Before ggml `0.28.0` (llamadart-native `v0.8.0`), llama.cpp's Vulkan
   small-matmul tile gave wrong results for micro-batches above 32 tokens on
