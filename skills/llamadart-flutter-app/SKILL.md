@@ -198,7 +198,11 @@ or shipping runtimes the app does not use.
   LiteRT-LM runtime, such as the iOS x86_64 simulator. Apps that include
   LiteRT-LM must exclude that simulator architecture.
 - Android: llama.cpp ships `cpu` and `vulkan` by default; `opencl` is opt-in
-  through `llamadart_native_backends`. llama.cpp `ComputeDevice.auto` stays
+  through `llamadart_native_backends` and needs the `libOpenCL.so`
+  `<uses-native-library>` declaration below (target API 31+); without it the
+  module cannot load, `auto` runs elsewhere and `ComputeDevice.gpu` with
+  `GpuBackend.opencl` throws. ggml-opencl admits only Adreno (and Intel) GPUs,
+  not Mali. llama.cpp `ComputeDevice.auto` stays
   on the CPU there; Vulkan is experimental and device-dependent, so request
   `ComputeDevice.gpu` only on devices the app has validated. Adreno 750
   driver `2150604839` is excluded: an explicit GPU request throws; automatic

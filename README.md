@@ -139,6 +139,10 @@ bundled runtime does not. See [Android Vulkan](website/docs/platforms/known-plat
 LiteRT-LM can also use GPU and, on compatible Android deployments, NPU.
 Android 12+ apps targeting API 31+ must request the optional vendor OpenCL
 library in their manifest; see [Android LiteRT-LM setup](website/docs/getting-started/installation.md#android-litert-lm-setup).
+The opt-in llama.cpp `opencl` module on Android needs the same declaration;
+without it the module cannot load, `ComputeDevice.auto` runs elsewhere and
+`ComputeDevice.gpu` with `GpuBackend.opencl` throws. ggml-opencl admits only
+Adreno (and Intel) GPUs.
 GPU support still depends on the device, driver and model. If GPU engine
 creation fails, `ComputeDevice.auto` retries on the CPU with a warning;
 `ComputeDevice.gpu` fails instead.

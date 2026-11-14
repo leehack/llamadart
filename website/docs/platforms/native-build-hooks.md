@@ -246,6 +246,14 @@ Modules in the pinned bundles:
 | `windows-x64` | `cpu`, `vulkan`, `blas`, `cuda` |
 | `ios-*`, `macos-*` | One consolidated CPU and Metal runtime; not configurable |
 
+On Android, the `opencl` module needs
+`<uses-native-library android:name="libOpenCL.so" android:required="false"/>`
+in the app manifest ([setup](../getting-started/installation#android-litert-lm-setup)).
+Without it the module cannot load: `ComputeDevice.auto` runs on the CPU or
+another GPU backend, and `ComputeDevice.gpu` with `GpuBackend.opencl` throws.
+ggml-opencl admits only Adreno (and Intel) GPUs; Mali is dropped at
+registration.
+
 Aliases: `vk` for `vulkan`; `ocl` and `open-cl` for `opencl`.
 `GpuBackend.metal` still selects Metal at runtime on Apple targets.
 
