@@ -505,7 +505,8 @@ macOS x64 and LiteRT-LM Web, refuses it before loading an engine.
 | iOS arm64 | CPU, GPU | Simulator only: Qwen3 CPU and GPU, Gemma 4 CPU; Gemma 4 cannot create a GPU engine there |
 | Android arm64 | CPU, GPU | Galaxy S24 and Pixel 9 Pro: Qwen3 and Gemma 4, CPU and GPU (OpenCL); Gemma 4 GPU also on the S24's WebGPU route |
 | Linux x64 | CPU, GPU | NVIDIA L4 over Vulkan, driver 615.71: Qwen3 and Gemma 4, CPU and GPU |
-| Linux arm64, Windows x64 | CPU | Qwen3 and Gemma 4, CPU; their GPUs are not qualified |
+| Windows x64 | CPU, GPU | NVIDIA L4 over Direct3D 12, GRID driver 596.86: Qwen3 and Gemma 4, CPU and GPU |
+| Linux arm64 | CPU | Qwen3 and Gemma 4, CPU; its GPU is not qualified |
 
 On Android, `ComputeDevice.auto` resolves to the GPU, which strict output
 now admits. An engine that fails to start on the GPU retries on the CPU, which

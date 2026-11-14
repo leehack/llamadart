@@ -3,6 +3,8 @@ Releases before 0.10.0 are in the
 
 ## Unreleased
 
+- Native LiteRT-LM strict `responseFormat` now also runs on the Windows x64 GPU (NVIDIA L4 over Direct3D 12, GRID driver 596.86, Qwen3 and Gemma 4); `ComputeDevice.gpu` there no longer needs `ComputeDevice.cpu`. Other drivers are untested and the Linux arm64 GPU stays unqualified ([#174](https://github.com/leehack/llamadart/issues/174)).
+
 ## 0.19.10
 
 - Adopt stable-diffusion `v0.3.0-4`: on iOS Metal the runtime splits graphs, so `ImageGenerationEngine.load` no longer refuses a full VAE there; a runtime without the split keeps the refusal. Qualified on an iPhone 16 Pro and an iPhone 17 Pro with SD-Turbo's embedded full VAE at 512x512; external VAE/TAESD components, SDXL-size VAEs, larger resolutions and SDXS through `sd_dart_new_sd_ctx` are admitted but not device-qualified. On iOS 26 the second engine dispose can leave about 2 GB resident ([#1047](https://github.com/leehack/llamadart/issues/1047), [#2004](https://github.com/leehack/llamadart/issues/2004)).
