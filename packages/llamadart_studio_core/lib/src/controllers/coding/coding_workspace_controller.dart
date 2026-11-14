@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:llamadart/llamadart.dart';
 import 'package:meta/meta.dart';
+import 'package:path/path.dart' as p;
 
 import '../../adapters/curated_studio_model_catalog.dart';
 import '../../domain/curated_model_catalog.dart';
@@ -62,6 +63,8 @@ class CodingWorkspaceController {
   static const Duration _streamPublishInterval = Duration(milliseconds: 40);
 
   int _idCounter = 0;
+  int _workspaceEpoch = 0;
+  int _workspaceSelection = 0;
   Timer? _streamFlushTimer;
   ActiveTurnStreamState? _pendingStreamState;
   DateTime? _lastStreamEmitAt;
@@ -124,18 +127,29 @@ class CodingWorkspaceController {
   /// Sets the sandboxed workspace root folder and refreshes files, `AGENTS.md`,
   /// project skills (`.agents/skills`), and project MCP configs (`.agents/mcp.json`).
   Future<void> setWorkspaceRoot(String path) async {
-    final trimmed = path.trim();
-    if (trimmed.isEmpty) {
+    if (path.trim().isEmpty) {
       return;
     }
+    final trimmed = p.canonicalize(path.trim());
+    final selection = ++_workspaceSelection;
     try {
       final entries = await CodingWorkspaceFs.listFiles(trimmed);
       final agentsContext = await discoverProjectAgentsContext(trimmed);
+      if (selection != _workspaceSelection) return;
       await _kv.writeString(_workspaceRootKey, trimmed);
+      if (selection != _workspaceSelection) return;
+      final changed = _store.state.workspaceRoot != trimmed;
+      if (changed) {
+        _workspaceEpoch++;
+        cancelGeneration();
+        _resetStreamThrottle();
+      }
       _store.update(
         (CodingWorkspaceState s) => s.copyWith(
           workspaceRoot: trimmed,
           currentSubdir: '',
+          recentChanges: changed ? const <CodingFileChange>[] : null,
+          messages: changed ? const <StudioMessage>[] : null,
           files: entries,
           agentsContext: agentsContext,
           clearSelectedFile: true,
@@ -150,6 +164,7 @@ class CodingWorkspaceController {
         ),
       ]);
     } catch (error) {
+      if (selection != _workspaceSelection) return;
       _store.update(
         (CodingWorkspaceState s) =>
             s.copyWith(lastError: humanizeStudioError(error)),
@@ -169,12 +184,14 @@ class CodingWorkspaceController {
 
   /// Navigates into [subdir] relative to the workspace root.
   Future<void> openDirectory(String subdir) async {
+    final epoch = _workspaceEpoch;
     final root = _store.state.workspaceRoot;
     if (root == null) {
       return;
     }
     try {
       final entries = await CodingWorkspaceFs.listFiles(root, subdir: subdir);
+      if (epoch != _workspaceEpoch) return;
       _store.update(
         (CodingWorkspaceState s) => s.copyWith(
           currentSubdir: subdir,
@@ -183,6 +200,7 @@ class CodingWorkspaceController {
         ),
       );
     } catch (error) {
+      if (epoch != _workspaceEpoch) return;
       _store.update(
         (CodingWorkspaceState s) =>
             s.copyWith(lastError: humanizeStudioError(error)),
@@ -192,6 +210,7 @@ class CodingWorkspaceController {
 
   /// Opens a workspace-relative file in the code viewer.
   Future<void> openFile(String relativePath) async {
+    final epoch = _workspaceEpoch;
     final root = _store.state.workspaceRoot;
     if (root == null) {
       return;
@@ -202,6 +221,7 @@ class CodingWorkspaceController {
         relativePath,
         maxLines: 300,
       );
+      if (epoch != _workspaceEpoch) return;
       _store.update(
         (CodingWorkspaceState s) => s.copyWith(
           selectedFilePath: slice.relativePath,
@@ -210,6 +230,7 @@ class CodingWorkspaceController {
         ),
       );
     } catch (error) {
+      if (epoch != _workspaceEpoch) return;
       _store.update(
         (CodingWorkspaceState s) =>
             s.copyWith(lastError: humanizeStudioError(error)),
@@ -219,6 +240,7 @@ class CodingWorkspaceController {
 
   /// Refreshes the current directory listing and active open file preview.
   Future<void> refreshExplorer() async {
+    final epoch = _workspaceEpoch;
     final root = _store.state.workspaceRoot;
     if (root == null) {
       return;
@@ -239,6 +261,7 @@ class CodingWorkspaceController {
           );
         } catch (_) {}
       }
+      if (epoch != _workspaceEpoch) return;
       _store.update(
         (CodingWorkspaceState s) => s.copyWith(
           files: entries,
@@ -247,6 +270,7 @@ class CodingWorkspaceController {
         ),
       );
     } catch (error) {
+      if (epoch != _workspaceEpoch) return;
       _store.update(
         (CodingWorkspaceState s) =>
             s.copyWith(lastError: humanizeStudioError(error)),
@@ -301,6 +325,7 @@ class CodingWorkspaceController {
   /// Reverts an agent-produced [CodingFileChange] by restoring its prior
   /// content or deleting newly created files.
   Future<bool> revertChange(String changeId) async {
+    final epoch = _workspaceEpoch;
     final root = _store.state.workspaceRoot;
     if (root == null) {
       return false;
@@ -325,8 +350,13 @@ class CodingWorkspaceController {
         return false;
       }
 
+      if (epoch != _workspaceEpoch) return false;
       final updated = List<CodingFileChange>.of(_store.state.recentChanges);
-      updated[idx] = target.copyWith(reverted: true);
+      final currentIndex = updated.indexWhere(
+        (change) => change.id == target.id,
+      );
+      if (currentIndex < 0) return false;
+      updated[currentIndex] = target.copyWith(reverted: true);
       _store.update(
         (CodingWorkspaceState s) => s.copyWith(
           recentChanges: List<CodingFileChange>.unmodifiable(updated),
@@ -339,6 +369,7 @@ class CodingWorkspaceController {
       await refreshExplorer();
       return true;
     } catch (error) {
+      if (epoch != _workspaceEpoch) return false;
       _store.update(
         (CodingWorkspaceState s) =>
             s.copyWith(lastError: humanizeStudioError(error)),
@@ -376,6 +407,7 @@ class CodingWorkspaceController {
       return;
     }
 
+    final epoch = _workspaceEpoch;
     final userMsg = StudioMessage(
       id: _nextId('code_usr'),
       role: StudioRole.user,
@@ -409,6 +441,7 @@ class CodingWorkspaceController {
     try {
       if (needsAutoLoad) {
         await _ensureModelReady();
+        if (epoch != _workspaceEpoch) return;
         _activeStreamStore.set(
           ActiveTurnStreamState(
             isGenerating: true,
@@ -469,6 +502,7 @@ class CodingWorkspaceController {
       late final StreamSubscription<StudioTurnEvent> streamSub;
       streamSub = stream.listen(
         (StudioTurnEvent event) {
+          if (epoch != _workspaceEpoch) return;
           switch (event) {
             case StudioTextDeltaEvent(:final delta):
               textBuf.write(delta);
@@ -536,6 +570,7 @@ class CodingWorkspaceController {
         }
       }
 
+      if (epoch != _workspaceEpoch) return;
       turnWatch.stop();
       final assistantMsg = StudioMessage(
         id: _nextId('code_ast'),
@@ -564,6 +599,7 @@ class CodingWorkspaceController {
         await refreshExplorer();
       }
     } catch (error) {
+      if (epoch != _workspaceEpoch) return;
       turnWatch.stop();
       final partial = textBuf.toString();
       final errText = humanizeStudioError(error);
@@ -674,7 +710,16 @@ class CodingWorkspaceController {
     _lastStreamEmitAt = null;
   }
 
-  void _recordChange(CodingFileChange change) {
+  void _ensureWorkspaceScope(int epoch) {
+    if (epoch != _workspaceEpoch) {
+      throw LlamaStateException(
+        'The active workspace changed. Request fresh tools before continuing.',
+      );
+    }
+  }
+
+  void _recordChange(CodingFileChange change, {required int workspaceEpoch}) {
+    _ensureWorkspaceScope(workspaceEpoch);
     _store.update(
       (CodingWorkspaceState s) => s.copyWith(
         recentChanges: <CodingFileChange>[change, ...s.recentChanges],

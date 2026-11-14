@@ -1,6 +1,7 @@
 @Tags(<String>['local-only'])
 library;
 
+import 'dart:convert';
 import 'dart:io';
 
 // Keep Material types compatible with flutter_markdown (see README).
@@ -94,9 +95,6 @@ void main() {
           requestedContextSize: 4096,
           numberOfThreads: 2,
           numberOfThreadsBatch: 2,
-          maxTokens: 192,
-          temperature: 0,
-          thinkingEnabled: false,
           toolsEnabled: false,
           enabledBuiltInTools: const [],
         ),
@@ -122,7 +120,36 @@ void main() {
           await tester.pump(const Duration(milliseconds: 100));
           await Future<void>.delayed(const Duration(milliseconds: 20));
         }
-        expect(done(), isTrue, reason: phase);
+        final completed = done();
+        if (!completed) {
+          final coding = deps.codingController.activeStreamStore.state;
+          final diagnostic = <String, Object?>{
+            'phase': phase,
+            'runtimeReady': inference.runtimeStore.state.isReady,
+            'chatGenerating':
+                deps.chatController.activeStreamStore.state.isGenerating,
+            'codingGenerating': coding.isGenerating,
+            'codingTokens': coding.tokensGenerated,
+            'codingTextLength': coding.text.length,
+            'codingThinkingLength': coding.thinkingText.length,
+            'codingToolCount': coding.toolInvocations.length,
+            'codingReadCalls': coding.toolInvocations
+                .where((t) => t.name == 'read')
+                .length,
+            'codingRunningTools': coding.toolInvocations
+                .where((t) => t.isRunning)
+                .length,
+            'codingFailedTools': coding.toolInvocations
+                .where((t) => t.isError)
+                .length,
+            'codingHasError': deps.codingController.state.lastError != null,
+            'thinkingEnabled':
+                deps.shellController.currentSettings.thinkingEnabled,
+            'maxTokens': deps.shellController.currentSettings.maxTokens,
+          };
+          debugPrint('UI_ACCEPTANCE_TIMEOUT ${jsonEncode(diagnostic)}');
+        }
+        expect(completed, isTrue, reason: phase);
         await tester.pump(const Duration(milliseconds: 300));
         expect(tester.takeException(), isNull, reason: phase);
         debugPrint('UI_ACCEPTANCE $phase passed');
@@ -136,6 +163,17 @@ void main() {
       await tester.pumpAndSettle();
       await tap('activate_model_qwen3.5-0.8b-q4-k-m');
       await waitFor(() => inference.runtimeStore.state.isReady, 'model load');
+      // Model Hub applies the model preset; select the acceptance tuning after it.
+      await deps.shellController.updateSettings(
+        (s) => s.copyWith(
+          maxTokens: 192,
+          temperature: 0,
+          topK: 40,
+          topP: 0.9,
+          penalty: 1.1,
+          thinkingEnabled: false,
+        ),
+      );
       await Future<void>.delayed(const Duration(seconds: 5));
       await tester.pump();
       await tester.pumpAndSettle();

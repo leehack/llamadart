@@ -326,6 +326,7 @@ class DirectLlamaInferencePort
     }
 
     _acquireBusySlot('Chat / Agent generation');
+    _cancelRequested = false;
     try {
       yield* _streamTurnBody(request);
     } finally {
@@ -334,7 +335,6 @@ class DirectLlamaInferencePort
   }
 
   Stream<StudioTurnEvent> _streamTurnBody(StudioTurnRequest request) async* {
-    _cancelRequested = false;
     final snapshot = _runtimeStore.state;
     final capabilities = snapshot.capabilities ?? await _engine.capabilities;
     final baseGenParams = request.settings.toGenerationParams(
@@ -456,7 +456,7 @@ class DirectLlamaInferencePort
     var currentParts = latestParts;
     var round = 0;
 
-    while (true) {
+    while (!_cancelRequested) {
       final roundToolCalls = <LlamaCompletionChunkToolCall>[];
       final roundText = StringBuffer();
 
@@ -473,10 +473,13 @@ class DirectLlamaInferencePort
       var retriedWithoutSpeculative = false;
       var retriedWithoutNativeBudget = false;
       var retriedWithLegacyTools = false;
-      while (true) {
+      while (!_cancelRequested) {
         var roundGeneratedTokens = 0;
         try {
           await for (final chunk in openRoundStream()) {
+            if (_cancelRequested) {
+              break;
+            }
             final thinkingDelta = chunk.thinking;
             if (thinkingDelta.isNotEmpty) {
               firstTokenMs ??= stopwatch.elapsedMilliseconds;
@@ -486,6 +489,9 @@ class DirectLlamaInferencePort
               roundGeneratedTokens++;
               thinkingBuffer.write(thinkingDelta);
               yield StudioThinkingDeltaEvent(thinkingDelta);
+              if (_cancelRequested) {
+                break;
+              }
             }
 
             final textDelta = chunk.text;
@@ -496,6 +502,9 @@ class DirectLlamaInferencePort
               roundText.write(textDelta);
               textBuffer.write(textDelta);
               yield StudioTextDeltaEvent(textDelta);
+              if (_cancelRequested) {
+                break;
+              }
             }
 
             if (chunk.toolCalls.isNotEmpty) {
@@ -515,6 +524,9 @@ class DirectLlamaInferencePort
           }
           break;
         } on LlamaUnsupportedException catch (error) {
+          if (_cancelRequested) {
+            break;
+          }
           if (roundGeneratedTokens == 0 &&
               roundToolCalls.isEmpty &&
               !retriedWithoutSpeculative &&
@@ -552,6 +564,9 @@ class DirectLlamaInferencePort
           }
           rethrow;
         } on LlamaException catch (error) {
+          if (_cancelRequested) {
+            break;
+          }
           if (roundGeneratedTokens == 0 &&
               roundToolCalls.isEmpty &&
               rawTools.isNotEmpty &&
@@ -568,14 +583,15 @@ class DirectLlamaInferencePort
         }
       }
 
-      if (roundToolCalls.isEmpty ||
+      if (_cancelRequested ||
+          roundToolCalls.isEmpty ||
           rawTools.isEmpty ||
           round >= request.maxToolRounds) {
         break;
       }
 
       round++;
-      for (var i = 0; i < roundToolCalls.length; i++) {
+      for (var i = 0; i < roundToolCalls.length && !_cancelRequested; i++) {
         final call = roundToolCalls[i];
         final callName = call.function?.name ?? 'tool';
         final rawArgsText = call.function?.arguments ?? '{}';
@@ -590,6 +606,18 @@ class DirectLlamaInferencePort
         );
         invocations.add(record);
         yield StudioToolInvocationEvent(record);
+        // Yielding lets the consumer stop before this handler is dispatched.
+        if (_cancelRequested) {
+          record = record.copyWith(
+            isRunning: false,
+            isError: true,
+            resultJson:
+                '{"error":"Tool invocation cancelled before execution."}',
+          );
+          invocations[invocations.length - 1] = record;
+          yield StudioToolInvocationEvent(record);
+          break;
+        }
 
         final callWatch = Stopwatch()..start();
         Object? toolResult;
@@ -675,6 +703,9 @@ class DirectLlamaInferencePort
         },
         responseFormat: responseFormat,
       )) {
+        if (_cancelRequested) {
+          break;
+        }
         final textDelta = chunk.text;
         if (textDelta.isNotEmpty) {
           firstTokenMs ??= stopwatch.elapsedMilliseconds;

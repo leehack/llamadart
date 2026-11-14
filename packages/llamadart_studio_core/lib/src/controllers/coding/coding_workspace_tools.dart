@@ -3,6 +3,7 @@ part of 'coding_workspace_controller.dart';
 extension _CodingWorkspaceTools on CodingWorkspaceController {
   List<ToolDefinition> _buildCodingToolsImpl() {
     final root = _store.state.workspaceRoot;
+    final workspaceEpoch = _workspaceEpoch;
     final tools = <ToolDefinition>[];
     if (root != null) {
       tools.addAll(<ToolDefinition>[
@@ -26,6 +27,7 @@ extension _CodingWorkspaceTools on CodingWorkspaceController {
             ),
           ],
           handler: (ToolParams params) async {
+            _ensureWorkspaceScope(workspaceEpoch);
             final path = params.getString('path') ?? '';
             final slice = await CodingWorkspaceFs.readFile(
               root,
@@ -33,6 +35,7 @@ extension _CodingWorkspaceTools on CodingWorkspaceController {
               startLine: params.getInt('startLine') ?? 1,
               maxLines: (params.getInt('maxLines') ?? 200).clamp(1, 400),
             );
+            _ensureWorkspaceScope(workspaceEpoch);
             return <String, Object?>{
               'path': slice.relativePath,
               'totalLines': slice.totalLines,
@@ -60,12 +63,13 @@ extension _CodingWorkspaceTools on CodingWorkspaceController {
             ),
           ],
           handler: (ToolParams params) async {
+            _ensureWorkspaceScope(workspaceEpoch);
             final change = await CodingWorkspaceFs.writeFile(
               root,
               params.getString('path') ?? '',
               params.getString('content') ?? '',
             );
-            _recordChange(change);
+            _recordChange(change, workspaceEpoch: workspaceEpoch);
             return <String, Object?>{
               'status': change.kind.name,
               'path': change.relativePath,
@@ -99,6 +103,7 @@ extension _CodingWorkspaceTools on CodingWorkspaceController {
             ),
           ],
           handler: (ToolParams params) async {
+            _ensureWorkspaceScope(workspaceEpoch);
             final change = await CodingWorkspaceFs.patchFile(
               root,
               params.getString('path') ?? '',
@@ -106,7 +111,7 @@ extension _CodingWorkspaceTools on CodingWorkspaceController {
               replaceText: params.getString('replaceText') ?? '',
               replaceAll: params.getBool('replaceAll') ?? false,
             );
-            _recordChange(change);
+            _recordChange(change, workspaceEpoch: workspaceEpoch);
             return <String, Object?>{
               'status': 'patched',
               'path': change.relativePath,
@@ -130,11 +135,13 @@ extension _CodingWorkspaceTools on CodingWorkspaceController {
             ),
           ],
           handler: (ToolParams params) async {
+            _ensureWorkspaceScope(workspaceEpoch);
             final matches = await CodingWorkspaceFs.searchCode(
               root,
               params.getString('query') ?? '',
               fileExtension: params.getString('extension'),
             );
+            _ensureWorkspaceScope(workspaceEpoch);
             return <String, Object?>{
               'matchCount': matches.length,
               'matches': matches
@@ -165,12 +172,14 @@ extension _CodingWorkspaceTools on CodingWorkspaceController {
             ),
           ],
           handler: (ToolParams params) async {
+            _ensureWorkspaceScope(workspaceEpoch);
             final entries = await CodingWorkspaceFs.listFiles(
               root,
               subdir: params.getString('subdir') ?? '',
               recursive: params.getBool('recursive') ?? false,
               maxEntries: 150,
             );
+            _ensureWorkspaceScope(workspaceEpoch);
             return <String, Object?>{
               'root': root,
               'count': entries.length,
@@ -202,6 +211,7 @@ extension _CodingWorkspaceTools on CodingWorkspaceController {
               ),
             ],
             handler: (ToolParams params) async {
+              _ensureWorkspaceScope(workspaceEpoch);
               final command = params.getString('command') ?? '';
               if (_store.state.confirmShellCommands) {
                 final approved = await _requestShellApproval(root, command);
@@ -215,7 +225,9 @@ extension _CodingWorkspaceTools on CodingWorkspaceController {
                   };
                 }
               }
+              _ensureWorkspaceScope(workspaceEpoch);
               final output = await CodingWorkspaceFs.runCommand(root, command);
+              _ensureWorkspaceScope(workspaceEpoch);
               return <String, Object?>{
                 'exitCode': output.exitCode,
                 'elapsedMs': output.elapsedMs,

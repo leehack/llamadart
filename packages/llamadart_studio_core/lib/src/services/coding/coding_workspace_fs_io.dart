@@ -72,7 +72,11 @@ String _resolveSafePath(String rootPath, String relativePath) {
         }
       } on ArgumentError {
         rethrow;
-      } catch (_) {}
+      } on FileSystemException {
+        throw ArgumentError(
+          'Path access rejected: an existing ancestor cannot be resolved safely.',
+        );
+      }
       break;
     }
     probe = p.dirname(probe);
