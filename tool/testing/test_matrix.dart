@@ -1605,17 +1605,64 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
     mode: 'local-only',
     covers:
         'published WebGPU bridge, public typed STT API, Qwen3-ASR catalog, '
-        'exact browser-selected WAV, MP3 or FLAC transcription, non-empty '
-        'fake-device microphone transcription for a WAV, and rendered '
-        'transcripts',
+        'browser-selected WAV, MP3 or FLAC transcription, fake-device '
+        'microphone transcription for a WAV scored by word error rate '
+        '(at most 0.1, ignoring case and punctuation) against the expected '
+        'transcript, rendered transcripts, and on the WebGPU and mem64 '
+        'variants the bridge-reported isGpuActive() and core variant',
     command:
         'dart run tool/testing/run_local_e2e.dart --scenario '
         'chat-app-web-speech-to-text-smoke '
         '--audio-path <speech.wav|.mp3|.flac> '
-        '--expect <exact-transcript>',
+        '--expect <full-transcript>; add -webgpu-smoke, -mem64-smoke or '
+        '-webgpu-mem64-smoke to the scenario name for the WebGPU, wasm64 or '
+        'combined runtime',
     useWhen:
         'Web bridge pins, prompt speech capability gating, Qwen3-ASR Web, '
-        'or browser transcription UI changes.',
+        'WebGPU or mem64 core selection, or browser transcription UI changes.',
+  ),
+  TestMatrixRow(
+    id: 'web-microphone-lifecycle',
+    tier: 'targeted',
+    mode: 'local-only',
+    covers:
+        'Web chat-app microphone recorder failure paths in Chromium: denied '
+        'permission, discard, a too-short take and a track the browser ends '
+        'mid-capture (warning plus a transcript of the partial take); each '
+        'must show its message and leave no live track, open AudioContext '
+        'or unrevoked recording blob',
+    command:
+        'dart run tool/testing/run_local_e2e.dart --scenario '
+        'chat-app-web-microphone-lifecycle --audio-path <speech.wav> '
+        '--expect <full-transcript>',
+    useWhen:
+        'Chat-app Web recording service, the record package, microphone '
+        'permission or interruption handling changes.',
+  ),
+  TestMatrixRow(
+    id: 'chat-app-web-microphone-device-smoke',
+    tier: 'targeted',
+    mode: 'manual/device',
+    covers:
+        'real microphone hardware in desktop Chrome: clear-speech '
+        'transcription, input unplugged or Bluetooth disconnected mid-take, '
+        'permission revoked from the site settings mid-take, a blocked '
+        'permission, and microphone release in the browser tab indicator',
+    command:
+        'Serve a built example/chat_app with '
+        'tool/testing/serve_static_with_headers.py, load Qwen3-ASR with its '
+        'projector in Chrome, then: (1) Record, read a full sentence aloud, '
+        'Stop & transcribe, and compare the transcript; (2) Record, unplug '
+        'or disconnect the microphone after a few seconds, expect the '
+        'interruption warning and a transcript of the audio so far; (3) '
+        'Record, revoke microphone access from the site settings, expect the '
+        'same; (4) Block the permission, press Record, expect the denial '
+        'message; (5) after each, confirm the tab no longer shows the '
+        'recording indicator. Record browser version, OS, input device, '
+        'WebGPU/CPU backend, transcript and each result.',
+    useWhen:
+        'Web microphone capture, record package bumps, or browser '
+        'interruption handling changes that need real-hardware evidence.',
   ),
   TestMatrixRow(
     id: 'webgpu-multimodal-regression',

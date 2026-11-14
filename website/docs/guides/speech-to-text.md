@@ -383,5 +383,19 @@ needs enough memory for the roughly 1.02 GB Qwen3-ASR
   diarization. Incremental audio and partial text are LiteRT-LM-only.
 - Inference backend correctness and performance remain device dependent;
   establish a CPU baseline before claiming GPU support for a deployment.
+- On the Web, Qwen3-ASR 0.6B Q8_0 returned the exact transcript of an
+  11-second clip on every backend and core combination below, measured in
+  Chromium 149 and 157 on an Apple-silicon Mac. Other browsers and GPUs can
+  differ.
+
+  | Core | CPU | WebGPU (`gpuLayers: 99`) |
+  | --- | --- | --- |
+  | wasm32 | about 17 s | offloads, about 3.4 s |
+  | wasm64 (memory64) | about 17 s | offloads, about 3.4 s |
+
+  Times are for selecting the file, not the model load. Without WebGPU the
+  bridge runs on CPU while `isGpuActive()` reports `false`, and without the
+  memory64 core file it loads the wasm32 core; check
+  `llamadart.webgpu.core_variant` rather than assuming the requested core.
 - The [chat app](../examples/chat-app) shows file transcription, microphone
   capture, and live dictation built on this API.

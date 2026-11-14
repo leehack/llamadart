@@ -8,6 +8,7 @@ import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
 
 import 'support/bounded_process.dart';
+import 'support/silent_wav.dart';
 
 const _script = 'tool/testing/playwright_chat_app_real_model_smoke.py';
 const _playwrightReached = 'fake playwright reached';
@@ -34,7 +35,7 @@ import json
 import os
 
 _SCENARIO = json.loads(os.environ["LLAMADART_FAKE_PLAYWRIGHT_SCENARIO"])
-_CAPTURE = {"initScript": None, "evaluateScripts": []}
+_CAPTURE = {"initScript": None, "evaluateScripts": [], "launchArgs": []}
 
 
 def _save():
@@ -52,6 +53,9 @@ class _Anything:
 
     def __call__(self, *args, **kwargs):
         return _Anything()
+
+    def __getitem__(self, key):
+        return 1
 
     def __enter__(self):
         return self
@@ -95,6 +99,12 @@ class _Page(_Anything):
     def evaluate(self, script, *args):
         _CAPTURE["evaluateScripts"].append(script)
         _save()
+        for marker, result in _SCENARIO.get("scriptResults", {}).items():
+            if marker in script:
+                if isinstance(result, dict) and "sequence" in result:
+                    sequence = result["sequence"]
+                    return sequence.pop(0) if len(sequence) > 1 else sequence[0]
+                return result
         return _SCENARIO["pageState"]
 
 
@@ -110,6 +120,8 @@ class _Browser(_Anything):
 
 class _Chromium:
     def launch(self, **kwargs):
+        _CAPTURE["launchArgs"] = kwargs.get("args", [])
+        _save()
         return _Browser()
 
 
@@ -1272,4 +1284,375 @@ process.exit(0);
       );
     },
   );
+
+  group('speech runtime checks against a scripted page', () {
+    const reference =
+        'And so my fellow Americans ask not what your country can do for you '
+        'ask what you can do for your country';
+    const transcript =
+        'And so, my fellow Americans, ask not what your country can do for '
+        'you; ask what you can do for your country.';
+
+    setUp(() async {
+      await File(
+        p.join(tempDir.path, 'playwright', 'sync_api.py'),
+      ).writeAsString(_scriptedPlaywright);
+    });
+
+    Future<({ProcessResult result, Map<String, dynamic> capture})> run(
+      String name,
+      List<String> flags, {
+      String clipboard = transcript,
+      String? microphoneClipboard,
+      Object? runtimeProbe,
+    }) async {
+      final audio = File(p.join(tempDir.path, '$name.wav'))
+        ..writeAsBytesSync(silentWav());
+      final capturePath = p.join(tempDir.path, '$name.json');
+      final result = await _runProcess(
+        Platform.isWindows ? 'python' : 'python3',
+        [
+          _script,
+          'http://127.0.0.1:1/',
+          '--model-url',
+          'http://127.0.0.1:1/model.gguf',
+          '--mmproj-url',
+          'http://127.0.0.1:1/mmproj.gguf',
+          '--speech-audio-path',
+          audio.path,
+          '--load-timeout-ms',
+          '4000',
+          '--response-timeout-ms',
+          '4000',
+          ...flags,
+        ],
+        environment: {
+          'PYTHONPATH': tempDir.path,
+          'LLAMADART_FAKE_PLAYWRIGHT_SCENARIO': jsonEncode({
+            'capturePath': capturePath,
+            'body': 'Model loaded successfully! Ready to chat.',
+            'pageState': {'bridgeResponse': transcript},
+            'scriptResults': {
+              'readText': {
+                'sequence': [clipboard, microphoneClipboard ?? clipboard],
+              },
+              'getModelMetadata': ?runtimeProbe,
+            },
+            'requests': <String>[],
+          }),
+        },
+      );
+      return (
+        result: result,
+        capture: File(capturePath).existsSync()
+            ? jsonDecode(File(capturePath).readAsStringSync())
+                  as Map<String, dynamic>
+            : <String, dynamic>{},
+      );
+    }
+
+    Map<String, Object?> probe({
+      bool isGpuActive = false,
+      String variant = 'wasm32',
+    }) => {
+      'available': true,
+      'isGpuActive': isGpuActive,
+      'backendName': isGpuActive ? 'WebGPU, CPU' : 'CPU',
+      'metadata': {
+        'llamadart.webgpu.core_variant': variant,
+        'llamadart.webgpu.n_gpu_layers': '99',
+      },
+    };
+
+    List<String> micFlags(double maxWer) => [
+      '--speech-microphone',
+      '--expect',
+      reference,
+      '--microphone-max-wer',
+      '$maxWer',
+    ];
+
+    test('accepts a transcript that differs only in punctuation', () async {
+      final passed = await run('mic_punctuation', micFlags(0));
+
+      expect(passed.result.exitCode, 0, reason: '${passed.result.stderr}');
+    });
+
+    test('rejects a truncated microphone transcript', () async {
+      final failed = await run(
+        'mic_truncated',
+        micFlags(0.1),
+        microphoneClipboard: 'And so, my fellow Americans, ask.',
+      );
+
+      expect(failed.result.exitCode, isNot(0));
+      expect(failed.result.stderr, contains('word error rate'));
+    });
+
+    test('scores the microphone against its own reference', () async {
+      final passed = await run('mic_reference', [
+        '--speech-microphone',
+        '--expect',
+        'ask not what your country',
+        '--microphone-reference',
+        reference,
+        '--microphone-max-wer',
+        '0',
+      ]);
+
+      expect(passed.result.exitCode, 0, reason: '${passed.result.stderr}');
+    });
+
+    test('keeps requiring --expect without a WER threshold', () async {
+      final failed = await run('mic_substring', [
+        '--speech-microphone',
+        '--expect',
+        reference,
+      ], microphoneClipboard: 'And so, my fellow Americans, ask.');
+
+      expect(failed.result.exitCode, isNot(0));
+      expect(
+        failed.result.stderr,
+        contains('Copied microphone transcript did not contain expected text'),
+      );
+    });
+
+    test('the threshold separates two wrong words from three', () async {
+      // 21 reference words: 2 errors is 0.095, 3 errors is 0.143.
+      const twoWrong =
+          'And so my fellow Americans ask not what your country can do for '
+          'you ask what you can do for my house';
+      const threeWrong =
+          'And so my fellow Americans ask not what your country can do for '
+          'you ask what you can pay for my house';
+      final passed = await run(
+        'wer_two',
+        micFlags(0.1),
+        microphoneClipboard: twoWrong,
+      );
+      expect(passed.result.exitCode, 0, reason: '${passed.result.stderr}');
+
+      final failed = await run(
+        'wer_three',
+        micFlags(0.1),
+        microphoneClipboard: threeWrong,
+      );
+      expect(failed.result.exitCode, isNot(0));
+      expect(failed.result.stderr, contains('word error rate'));
+    });
+
+    for (final emptyReference in ['', ' ', '...']) {
+      test(
+        'rejects the empty microphone reference "$emptyReference"',
+        () async {
+          final result = await run('empty_ref', [
+            '--speech-microphone',
+            '--expect',
+            reference,
+            '--microphone-reference',
+            emptyReference,
+            '--microphone-max-wer',
+            '0.1',
+          ]);
+
+          expect(result.result.exitCode, 2);
+          expect(result.result.stderr, contains('at least one word'));
+        },
+      );
+    }
+
+    test(
+      'the runtime probe gives up on a bridge that never answers',
+      testOn: '!windows',
+      () async {
+        final passed = await run('probe_timeout', const [
+          '--expect',
+          'fellow Americans',
+        ]);
+        final probe = (passed.capture['evaluateScripts'] as List<dynamic>)
+            .cast<String>()
+            .singleWhere((script) => script.contains('getModelMetadata'));
+        final limit = RegExp(
+          r'setTimeout\([^;]*?,\s*(\d+)\)',
+        ).firstMatch(probe)?.group(1);
+        expect(limit, isNotNull, reason: 'the probe must set a timeout');
+        expect(int.parse(limit!), lessThanOrEqualTo(60000));
+
+        // Runs the recorded script against a bridge whose metadata call never
+        // settles, with the real limit shortened so the test stays fast.
+        final harness = File(p.join(tempDir.path, 'probe_harness.mjs'))
+          ..writeAsStringSync(r"""
+import { readFileSync } from 'node:fs';
+const [path, limit] = process.argv.slice(2);
+const source = readFileSync(path, 'utf8').replace(limit, '200');
+globalThis.window = globalThis;
+window.__llamadartRealBridge = {
+  getModelMetadata: () => new Promise(() => {}),
+  isGpuActive: () => true,
+  getBackendName: () => 'WebGPU',
+};
+const hung = Symbol('hung');
+const result = await Promise.race([
+  (0, eval)(`(${source})`)(),
+  new Promise((resolve) => setTimeout(() => resolve(hung), 5000)),
+]);
+console.log(JSON.stringify(result === hung ? 'hung' : result));
+process.exit(0);
+""");
+        final script = File(p.join(tempDir.path, 'probe_script.js'))
+          ..writeAsStringSync(probe);
+        final node = await _runProcess('node', [
+          harness.path,
+          script.path,
+          limit,
+        ]);
+
+        expect(node.exitCode, 0, reason: '${node.stderr}');
+        expect(jsonDecode((node.stdout as String).trim()), {
+          'available': false,
+          'error': 'probe timed out',
+        });
+      },
+    );
+
+    test('no longer accepts any microphone response', () async {
+      final result = await run('mic_allow_any', [
+        '--speech-microphone',
+        '--expect',
+        reference,
+        '--microphone-allow-any-response',
+      ]);
+
+      expect(result.result.exitCode, 2);
+      expect(result.result.stderr, contains('unrecognized arguments'));
+    });
+
+    test('rejects a WER threshold without the microphone', () async {
+      final result = await run('wer_without_mic', [
+        '--expect',
+        reference,
+        '--microphone-max-wer',
+        '0.1',
+      ]);
+
+      expect(result.result.exitCode, 2);
+      expect(
+        result.result.stderr,
+        contains('--microphone-max-wer requires --speech-microphone'),
+      );
+    });
+
+    test('plays the fake microphone clip once', () async {
+      final passed = await run('mic_noloop', micFlags(0));
+
+      final args = (passed.capture['launchArgs'] as List<dynamic>)
+          .cast<String>();
+      expect(
+        args.where((a) => a.startsWith('--use-file-for-fake-audio-capture=')),
+        everyElement(endsWith('.wav%noloop')),
+      );
+      expect(
+        args.where((a) => a.startsWith('--use-file-for-fake-audio-capture=')),
+        isNotEmpty,
+      );
+    });
+
+    test('captures the bridge for the runtime probe', () async {
+      final passed = await run('probe_hook', const [
+        '--expect',
+        'fellow Americans',
+      ]);
+
+      expect(
+        passed.capture['initScript'],
+        contains('window.__llamadartRealBridge = this;'),
+      );
+    });
+
+    group('runtime expectations', () {
+      test('require the GPU state the bridge reports', () async {
+        final active = await run(
+          'gpu_active',
+          const ['--expect', 'fellow Americans', '--expect-gpu-active', 'true'],
+          clipboard: 'fellow Americans',
+          runtimeProbe: probe(isGpuActive: true),
+        );
+        expect(active.result.exitCode, 0, reason: '${active.result.stderr}');
+        expect(active.result.stdout, contains('"runtimeProbe"'));
+
+        final inactive = await run(
+          'gpu_inactive',
+          const ['--expect', 'fellow Americans', '--expect-gpu-active', 'true'],
+          clipboard: 'fellow Americans',
+          runtimeProbe: probe(),
+        );
+        expect(inactive.result.exitCode, isNot(0));
+        expect(inactive.result.stderr, contains('isGpuActive() was False'));
+
+        final cpuOnly = await run(
+          'gpu_false',
+          const [
+            '--expect',
+            'fellow Americans',
+            '--expect-gpu-active',
+            'false',
+          ],
+          clipboard: 'fellow Americans',
+          runtimeProbe: probe(),
+        );
+        expect(cpuOnly.result.exitCode, 0, reason: '${cpuOnly.result.stderr}');
+      });
+
+      test('require the core variant in the model metadata', () async {
+        final matching = await run(
+          'variant_match',
+          const [
+            '--expect',
+            'fellow Americans',
+            '--expect-core-variant',
+            'wasm64',
+          ],
+          clipboard: 'fellow Americans',
+          runtimeProbe: probe(variant: 'wasm64'),
+        );
+        expect(
+          matching.result.exitCode,
+          0,
+          reason: '${matching.result.stderr}',
+        );
+
+        final fallback = await run(
+          'variant_fallback',
+          const [
+            '--expect',
+            'fellow Americans',
+            '--expect-core-variant',
+            'wasm64',
+          ],
+          clipboard: 'fellow Americans',
+          runtimeProbe: probe(),
+        );
+        expect(fallback.result.exitCode, isNot(0));
+        expect(
+          fallback.result.stderr,
+          contains("core_variant was 'wasm32', expected 'wasm64'"),
+        );
+      });
+
+      test('fail when the bridge was never captured', () async {
+        final missing = await run(
+          'probe_missing',
+          const ['--expect', 'fellow Americans', '--expect-gpu-active', 'true'],
+          clipboard: 'fellow Americans',
+          runtimeProbe: {'available': false},
+        );
+
+        expect(missing.result.exitCode, isNot(0));
+        expect(
+          missing.result.stderr,
+          contains('runtime probe was unavailable'),
+        );
+      });
+    });
+  });
 }

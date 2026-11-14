@@ -317,6 +317,63 @@ List<LocalE2eCommandStep> _webRealModelSmokeSteps(
   ];
 }
 
+LocalE2eCommandStep _serveRepoRoot(LocalE2eRunContext context) =>
+    LocalE2eCommandStep(
+      workingDirectory: context.projectRoot,
+      executable: context.python,
+      arguments: [
+        'tool/testing/serve_static_with_headers.py',
+        '--directory',
+        '.',
+        '--port',
+        '${context.port}',
+      ],
+      description: 'Serve repo root with COOP/COEP headers',
+      background: true,
+      waitForPort: context.port,
+    );
+
+/// The Qwen3-ASR Web speech smoke. A WAV `--expect` is the whole transcript:
+/// the fake microphone is scored against it by word error rate.
+List<LocalE2eCommandStep> _webSpeechToTextSteps(
+  LocalE2eRunContext context,
+  List<String> runtimeArguments,
+) => [
+  _prepareChatAppWebBuild(context),
+  _serveRepoRoot(context),
+  LocalE2eCommandStep(
+    workingDirectory: context.projectRoot,
+    executable: context.python,
+    arguments: [
+      'tool/testing/playwright_chat_app_real_model_smoke.py',
+      context.webBuildUrl,
+      '--model-url',
+      context.modelUrl ?? context.defaultQwen3AsrWebModelUrl,
+      '--mmproj-url',
+      context.mmprojUrl ?? context.defaultQwen3AsrWebMmprojUrl,
+      '--speech-audio-path',
+      context.audioPath!,
+      if (context.audioPath!.toLowerCase().endsWith('.wav')) ...[
+        '--speech-microphone',
+        '--microphone-max-wer',
+        '0.1',
+      ],
+      '--expect',
+      context.expect,
+      ...runtimeArguments,
+      '--context-size',
+      '4096',
+      '--max-tokens',
+      '512',
+      '--load-timeout-ms',
+      '${40 * 60 * 1000}',
+      '--response-timeout-ms',
+      '${10 * 60 * 1000}',
+    ],
+    description: 'Run Playwright Qwen3-ASR Web speech smoke',
+  ),
+];
+
 LocalE2eCommandStep _prepareChatAppWebBuild(LocalE2eRunContext context) =>
     LocalE2eCommandStep(
       workingDirectory: context.projectRoot,
@@ -333,6 +390,16 @@ LocalE2eCommandStep _prepareChatAppWebBuild(LocalE2eRunContext context) =>
           ? 'Validate existing Flutter web chat app build'
           : 'Build and validate Flutter web chat app',
     );
+
+/// Scenarios that run the Qwen3-ASR Web speech smoke and need its fixture and
+/// transcript.
+const Set<String> _webSpeechToTextScenarios = {
+  'chat-app-web-speech-to-text-smoke',
+  'chat-app-web-speech-to-text-webgpu-smoke',
+  'chat-app-web-speech-to-text-mem64-smoke',
+  'chat-app-web-speech-to-text-webgpu-mem64-smoke',
+  'chat-app-web-microphone-lifecycle',
+};
 
 /// The FLUX.1 Kontext component paths `image-reference-editing` reads.
 const List<String> _referenceEditComponentVariables = [
@@ -2651,57 +2718,94 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
           'Build chat_app web and transcribe a selected WAV, MP3 or FLAC with '
           'Qwen3-ASR; a WAV also drives the fake microphone.',
       requiresDevice: false,
-      stepsBuilder: (context) {
-        final steps = <LocalE2eCommandStep>[_prepareChatAppWebBuild(context)];
-        steps.addAll([
-          LocalE2eCommandStep(
-            workingDirectory: context.projectRoot,
-            executable: context.python,
-            arguments: [
-              'tool/testing/serve_static_with_headers.py',
-              '--directory',
-              '.',
-              '--port',
-              '${context.port}',
-            ],
-            description: 'Serve repo root with COOP/COEP headers',
-            background: true,
-            waitForPort: context.port,
-          ),
-          LocalE2eCommandStep(
-            workingDirectory: context.projectRoot,
-            executable: context.python,
-            arguments: [
-              'tool/testing/playwright_chat_app_real_model_smoke.py',
-              context.webBuildUrl,
-              '--model-url',
-              context.modelUrl ?? context.defaultQwen3AsrWebModelUrl,
-              '--mmproj-url',
-              context.mmprojUrl ?? context.defaultQwen3AsrWebMmprojUrl,
-              '--speech-audio-path',
-              context.audioPath!,
-              if (context.audioPath!.toLowerCase().endsWith('.wav')) ...[
-                '--speech-microphone',
-                '--microphone-allow-any-response',
-              ],
-              '--expect',
-              context.expect,
-              '--gpu-layers',
-              '0',
-              '--context-size',
-              '4096',
-              '--max-tokens',
-              '512',
-              '--load-timeout-ms',
-              '${40 * 60 * 1000}',
-              '--response-timeout-ms',
-              '${10 * 60 * 1000}',
-            ],
-            description: 'Run Playwright Qwen3-ASR Web speech smoke',
-          ),
-        ]);
-        return steps;
-      },
+      stepsBuilder: (context) =>
+          _webSpeechToTextSteps(context, const ['--gpu-layers', '0']),
+    ),
+    LocalE2eScenario(
+      name: 'chat-app-web-speech-to-text-webgpu-smoke',
+      group: LocalE2eScenarioGroup.webSmoke,
+      description:
+          'Transcribe with Qwen3-ASR on the WebGPU backend; isGpuActive() '
+          'must report true.',
+      requiresDevice: false,
+      stepsBuilder: (context) => _webSpeechToTextSteps(context, const [
+        '--backend-index',
+        '0',
+        '--gpu-layers',
+        '99',
+        '--expect-gpu-active',
+        'true',
+      ]),
+    ),
+    LocalE2eScenario(
+      name: 'chat-app-web-speech-to-text-mem64-smoke',
+      group: LocalE2eScenarioGroup.webSmoke,
+      description:
+          'Transcribe with Qwen3-ASR on the CPU backend and the mem64 core; '
+          'the loaded core must be wasm64.',
+      requiresDevice: false,
+      stepsBuilder: (context) => _webSpeechToTextSteps(context, const [
+        '--gpu-layers',
+        '0',
+        '--mem64',
+        '--expect-gpu-active',
+        'false',
+        '--expect-core-variant',
+        'wasm64',
+      ]),
+    ),
+    LocalE2eScenario(
+      name: 'chat-app-web-speech-to-text-webgpu-mem64-smoke',
+      group: LocalE2eScenarioGroup.webSmoke,
+      description:
+          'Transcribe with Qwen3-ASR on the WebGPU backend and the mem64 '
+          'core; isGpuActive() must report true and the core wasm64.',
+      requiresDevice: false,
+      stepsBuilder: (context) => _webSpeechToTextSteps(context, const [
+        '--backend-index',
+        '0',
+        '--gpu-layers',
+        '99',
+        '--mem64',
+        '--expect-gpu-active',
+        'true',
+        '--expect-core-variant',
+        'wasm64',
+      ]),
+    ),
+    LocalE2eScenario(
+      name: 'chat-app-web-microphone-lifecycle',
+      group: LocalE2eScenarioGroup.webSmoke,
+      description:
+          'Drive the Web microphone recorder through a denied permission, '
+          'discard, a too-short take and an ended track; each case must show '
+          'its message and release the microphone.',
+      requiresDevice: false,
+      stepsBuilder: (context) => [
+        _prepareChatAppWebBuild(context),
+        _serveRepoRoot(context),
+        LocalE2eCommandStep(
+          workingDirectory: context.projectRoot,
+          executable: context.python,
+          arguments: [
+            'tool/testing/playwright_chat_app_microphone_lifecycle.py',
+            context.webBuildUrl,
+            '--model-url',
+            context.modelUrl ?? context.defaultQwen3AsrWebModelUrl,
+            '--mmproj-url',
+            context.mmprojUrl ?? context.defaultQwen3AsrWebMmprojUrl,
+            '--speech-audio-path',
+            context.audioPath!,
+            '--reference',
+            context.expect,
+            '--load-timeout-ms',
+            '${40 * 60 * 1000}',
+            '--response-timeout-ms',
+            '${10 * 60 * 1000}',
+          ],
+          description: 'Run Playwright Web microphone lifecycle checks',
+        ),
+      ],
     ),
     LocalE2eScenario(
       name: 'chat-app-web-text-to-speech-smoke',
@@ -3134,7 +3238,7 @@ Future<LocalE2eResult> runLocalE2e(
     'litert-lm-asr-preservation',
     'litert-lm-v1-asr-smoke',
     'litert-lm-chat-features-smoke',
-    'chat-app-web-speech-to-text-smoke',
+    ..._webSpeechToTextScenarios,
     'chat-app-web-text-to-speech-smoke',
   };
   if (parsed.audioPath != null && !audioPathScenarios.contains(scenario.name)) {
@@ -3156,15 +3260,23 @@ Future<LocalE2eResult> runLocalE2e(
           'are required for speech-to-text-smoke.\n',
     );
   }
-  if (scenario.name == 'chat-app-web-speech-to-text-smoke' &&
+  if (_webSpeechToTextScenarios.contains(scenario.name) &&
       (parsed.audioPath == null ||
           !parsed.expectProvided ||
           parsed.expect.trim().isEmpty)) {
-    return const LocalE2eResult(
+    return LocalE2eResult(
       64,
       stderr:
           '--audio-path and a nonempty --expect are required for '
-          'chat-app-web-speech-to-text-smoke.\n',
+          '${scenario.name}.\n',
+    );
+  }
+  if (scenario.name == 'chat-app-web-microphone-lifecycle' &&
+      !(parsed.audioPath?.toLowerCase().endsWith('.wav') ?? false)) {
+    return const LocalE2eResult(
+      64,
+      stderr:
+          'chat-app-web-microphone-lifecycle requires a WAV --audio-path.\n',
     );
   }
   if (scenario.name == 'litert-lm-asr-preservation' &&

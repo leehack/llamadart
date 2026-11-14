@@ -384,6 +384,15 @@ On macOS headless Chromium, keep the smoke script's default
 adapter can lack `shader-f16`, and llama.cpp may abort in `ggml-webgpu` even on
 `gpuLayers = 0` runs.
 
+The speech smokes read the loaded runtime from the bridge, not from the
+request. `chat-app-web-speech-to-text-webgpu-smoke` requires `isGpuActive()` to
+be `true`, `-mem64-smoke` requires `llamadart.webgpu.core_variant` to be
+`wasm64` on the CPU backend, and `-webgpu-mem64-smoke` requires both. In
+`getModelMetadata()`, `llamadart.webgpu.n_gpu_layers` is the requested
+`nGpuLayers`, not the layers offloaded: a 99-layer request on a browser without
+WebGPU still reports `99` while `isGpuActive()` is `false`. When the mem64 core
+cannot load, the bridge falls back to wasm32 and reports `wasm32`.
+
 ## Expected global
 
 ```js

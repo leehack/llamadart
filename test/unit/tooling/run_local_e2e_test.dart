@@ -1971,8 +1971,115 @@ Future<void> main(List<String> args) async {
         contains('--speech-audio-path test/fixtures/speech.wav'),
       );
       expect(result.stdout, contains('--speech-microphone'));
-      expect(result.stdout, contains('--microphone-allow-any-response'));
+      expect(result.stdout, contains('--microphone-max-wer 0.1'));
+      expect(result.stdout, isNot(contains('--microphone-allow-any-response')));
       expect(result.stdout, contains("--expect 'Known transcript.'"));
+      expect(result.stdout, contains('--gpu-layers 0'));
+      expect(result.stdout, isNot(contains('--expect-gpu-active')));
+      expect(result.stdout, isNot(contains('--expect-core-variant')));
+    });
+
+    for (final (scenario, flags) in [
+      (
+        'chat-app-web-speech-to-text-webgpu-smoke',
+        '--backend-index 0 --gpu-layers 99 --expect-gpu-active true',
+      ),
+      (
+        'chat-app-web-speech-to-text-mem64-smoke',
+        '--gpu-layers 0 --mem64 --expect-gpu-active false '
+            '--expect-core-variant wasm64',
+      ),
+      (
+        'chat-app-web-speech-to-text-webgpu-mem64-smoke',
+        '--backend-index 0 --gpu-layers 99 --mem64 --expect-gpu-active true '
+            '--expect-core-variant wasm64',
+      ),
+    ]) {
+      test('dry-runs $scenario with its runtime expectations', () async {
+        final result = await runLocalE2e(
+          [
+            '--scenario',
+            scenario,
+            '--audio-path',
+            'test/fixtures/speech.wav',
+            '--expect',
+            'Known transcript.',
+            '--skip-build',
+            '--dry-run',
+          ],
+          projectRoot: '/repo',
+          displayShell: LocalE2eDisplayShell.posix,
+        );
+
+        expect(result.exitCode, 0, reason: result.stderr);
+        expect(result.stdout, contains(flags));
+        expect(result.stdout, contains('--speech-microphone'));
+        expect(result.stdout, contains('--microphone-max-wer 0.1'));
+        expect(
+          result.stdout,
+          contains('playwright_chat_app_real_model_smoke.py'),
+        );
+      });
+
+      test('$scenario requires a fixture and expected text', () async {
+        final result = await runLocalE2e(
+          ['--scenario', scenario, '--dry-run'],
+          projectRoot: '/repo',
+          displayShell: LocalE2eDisplayShell.posix,
+        );
+
+        expect(result.exitCode, 64);
+        expect(result.stderr, contains('--audio-path'));
+        expect(result.stderr, contains(scenario));
+      });
+    }
+
+    test('dry-runs the Web microphone lifecycle on a WAV transcript', () async {
+      final result = await runLocalE2e(
+        const [
+          '--scenario',
+          'chat-app-web-microphone-lifecycle',
+          '--audio-path',
+          'test/fixtures/speech.wav',
+          '--expect',
+          'Known transcript.',
+          '--skip-build',
+          '--dry-run',
+        ],
+        projectRoot: '/repo',
+        displayShell: LocalE2eDisplayShell.posix,
+      );
+
+      expect(result.exitCode, 0, reason: result.stderr);
+      expect(
+        result.stdout,
+        contains('playwright_chat_app_microphone_lifecycle.py'),
+      );
+      expect(
+        result.stdout,
+        contains('--speech-audio-path test/fixtures/speech.wav'),
+      );
+      expect(result.stdout, contains("--reference 'Known transcript.'"));
+      expect(result.stdout, contains('--mmproj-url'));
+    });
+
+    test('the Web microphone lifecycle rejects a non-WAV fixture', () async {
+      final result = await runLocalE2e(
+        const [
+          '--scenario',
+          'chat-app-web-microphone-lifecycle',
+          '--audio-path',
+          'test/fixtures/speech.mp3',
+          '--expect',
+          'Known transcript.',
+          '--dry-run',
+        ],
+        projectRoot: '/repo',
+        displayShell: LocalE2eDisplayShell.posix,
+      );
+
+      expect(result.exitCode, 64);
+      expect(result.stderr, contains('requires a WAV --audio-path'));
     });
 
     for (final fixture in ['speech.mp3', 'speech.FLAC']) {
@@ -1998,10 +2105,7 @@ Future<void> main(List<String> args) async {
           contains('--speech-audio-path test/fixtures/$fixture'),
         );
         expect(result.stdout, isNot(contains('--speech-microphone')));
-        expect(
-          result.stdout,
-          isNot(contains('--microphone-allow-any-response')),
-        );
+        expect(result.stdout, isNot(contains('--microphone-max-wer')));
       });
     }
 
