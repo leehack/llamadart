@@ -106,6 +106,81 @@ void main() {
     }
   });
 
+  group('final parse validation covers schema tools only', () {
+    final paramTool = ToolDefinition(
+      name: 'get_weather',
+      description: 'Weather',
+      parameters: [ToolParam.string('city', required: true)],
+    );
+    final schemaTool = ToolDefinition.fromJsonSchema(
+      name: 'lookup',
+      description: 'Lookup',
+      schema: {
+        'type': 'object',
+        'properties': {
+          'id': {'type': 'integer'},
+        },
+        'required': ['id'],
+        'additionalProperties': false,
+      },
+    );
+    String envelope(ChatFormat format, String name, Map<String, Object?> args) {
+      final call = jsonEncode({'name': name, 'arguments': args});
+      return switch (format) {
+        ChatFormat.hermes => '<tool_call>$call</tool_call>',
+        _ => '{"tool_call":$call}',
+      };
+    }
+
+    for (final format in [ChatFormat.generic, ChatFormat.hermes]) {
+      ChatParseResult parse(String output, List<ToolDefinition> tools) =>
+          ChatTemplateEngine.parse(format.index, output, tools: tools);
+
+      test('$format returns ToolParam calls as parsed', () {
+        for (final (name, args) in [
+          ('drop_tables', {'city': 'Paris'}),
+          ('get_weather', {'city': 7}),
+        ]) {
+          final call = parse(envelope(format, name, args), [
+            paramTool,
+          ]).toolCalls.single.function!;
+          expect(call.name, name);
+          expect(jsonDecode(call.arguments!), args);
+        }
+      });
+
+      test('$format with a schema tool checks names, and arguments of schema '
+          'tools only', () {
+        final tools = [paramTool, schemaTool];
+        expect(
+          parse(envelope(format, 'get_weather', {'city': 7}), tools).toolCalls,
+          hasLength(1),
+        );
+        expect(
+          () =>
+              parse(envelope(format, 'drop_tables', {'city': 'Paris'}), tools),
+          throwsA(
+            isA<LlamaInferenceException>().having(
+              (error) => error.message,
+              'message',
+              contains('undeclared tool call'),
+            ),
+          ),
+        );
+        expect(
+          () => parse(envelope(format, 'lookup', {'id': 'x'}), tools),
+          throwsA(
+            isA<LlamaInferenceException>().having(
+              (error) => error.message,
+              'message',
+              contains('do not match the input schema'),
+            ),
+          ),
+        );
+      });
+    }
+  });
+
   group('Hermes schema tools in auto mode', () {
     ChatParseResult parse(
       String text, {

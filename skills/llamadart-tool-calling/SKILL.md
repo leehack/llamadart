@@ -68,7 +68,8 @@ description: >-
   `toolChoice` applies only to the first request.
 - `ChatSession.create` and `engine.create` only return calls in
   `chunk.toolCalls`; use them by hand to stream replies or to run tools
-  outside the loop.
+  outside the loop. Check `call.name` before invoking: calls to `ToolParam`
+  tools come back as the model wrote them.
 - Tool calls arrive complete, with JSON-encoded `arguments`, in the final
   chunk; its `chunk.finishReason` is `LlamaFinishReason.toolCalls`. With
   Hermes-detected templates (Hermes 2 Pro/3, Qwen2.5, Qwen3 and QwQ),
@@ -269,7 +270,7 @@ Other formats and runtimes without an active tool grammar are rejected.
 WebGPU lazy auto grammars require `supportsLazyGrammar` from the loaded
 bridge core. On older cores, use a supported non-lazy required-tool
 format. LiteRT-LM is unsupported. Final parsed calls and direct invocation
-are validated. Schemas past the guide's size limits (for example 32 nesting
+are validated, but the final parse validates schema tools only. Schemas past the guide's size limits (for example 32 nesting
 levels, 64 `anyOf` alternatives, or length/item bounds above 2000) throw
 `LlamaUnsupportedException`. See the guide's "Import a JSON Schema" section
 for an example.
