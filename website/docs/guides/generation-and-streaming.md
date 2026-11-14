@@ -503,11 +503,12 @@ macOS x64 and LiteRT-LM Web, refuses it before loading an engine.
 | --- | --- | --- |
 | macOS arm64 | CPU, GPU | Qwen3 and Gemma 4, CPU and GPU |
 | iOS arm64 | CPU, GPU | Simulator only: Qwen3 CPU and GPU, Gemma 4 CPU; Gemma 4 cannot create a GPU engine there |
-| Android arm64 | CPU | Emulator only: Qwen3 CPU; Gemma 4 not yet run |
+| Android arm64 | CPU, GPU | Galaxy S24 and Pixel 9 Pro: Qwen3 and Gemma 4, CPU and GPU (OpenCL); Gemma 4 GPU also on the S24's WebGPU route |
 | Linux x64, Linux arm64, Windows x64 | CPU | Qwen3 and Gemma 4, CPU |
 
 On Android, `ComputeDevice.auto` resolves to the GPU, which strict output
-refuses; load with `ComputeDevice.cpu` there.
+now admits. An engine that fails to start on the GPU retries on the CPU, which
+it also admits.
 
 Native LiteRT-LM accepts only schemas that both the GBNF converter above and
 LiteRT-LM's LLGuidance provider enforce alike, so every schema it accepts is

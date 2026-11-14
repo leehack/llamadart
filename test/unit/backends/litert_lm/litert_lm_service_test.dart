@@ -195,7 +195,7 @@ void main() {
       const expected = <Abi, Set<String>>{
         Abi.macosArm64: {'cpu', 'gpu'},
         Abi.iosArm64: {'cpu', 'gpu'},
-        Abi.androidArm64: {'cpu'},
+        Abi.androidArm64: {'cpu', 'gpu'},
         Abi.androidX64: {},
         Abi.linuxX64: {'cpu'},
         Abi.linuxArm64: {'cpu'},
@@ -233,7 +233,7 @@ void main() {
           );
         }
       }
-      for (final abi in [Abi.linuxX64, Abi.windowsX64, Abi.androidArm64]) {
+      for (final abi in [Abi.linuxX64, Abi.windowsX64]) {
         test(
           'refuses the deprecated gpu backend override on $abi',
           skip: hostHasGpu ? null : 'needs a host with a LiteRT-LM GPU backend',

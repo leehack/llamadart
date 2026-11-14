@@ -1601,6 +1601,60 @@ Debug, legacy Qwen3 0.6B artifact `555579ff…`, matrix `matrix-1da3zj25gmeu1`
 - An earlier attempt (`matrix-1tcmnx5y9bnqv`) stopped at the 10-minute model
   download deadline with 260777210 of 614236160 bytes, before any case.
 
+## Android arm64 strict JSON Schema on CPU and GPU (2026-11-13)
+
+`chat-app-litert-json-schema` (`integration_test/litert_lm_json_schema_e2e_test.dart`)
+on Firebase Test Lab physical devices: Galaxy S24 (`SC-51E`, API 36, Adreno 750)
+and Pixel 9 Pro (`caiman`, API 35, Mali-G715), Android Debug, LiteRT-LM
+`v0.19.1-4`, Qwen3-0.6B (`c5f39b41…`) and Gemma 4 E2B (`18193810…`)
+([#174](https://github.com/leehack/llamadart/issues/174)). Every run is graded
+by `plan-174-verify-run-v2.py`: adversarial control, sentinel, wide contract,
+thinking (Gemma 4 reasons then returns the schema reply; Qwen3 is refused),
+`length` cutoff, and a placement rule. A matrix SUCCESS is not a verdict.
+
+CPU, built from clean `8b02e858` (six runtime library hashes equal across
+bundles). Every verdict passes, and a CPU run logs no GPU placement record:
+
+| Run | Device | Model | Matrix | Verdict |
+| --- | --- | --- | --- | --- |
+| Q1 | S24 | Gemma 4 E2B | `matrix-4cw1locmczjwa` | pass |
+| Q2 | Pixel 9 Pro | Gemma 4 E2B | `matrix-3reobpfs0m0kb` | pass |
+| Q3 | S24 | Qwen3-0.6B | `matrix-2nx5z8imv2k0n` | pass |
+| Q4 | Pixel 9 Pro | Qwen3-0.6B | `matrix-2zvjhqdr0de42` | pass |
+| Q5 | Pixel 9 Pro | Qwen3-0.6B, GPU | `matrix-31tdpnpwt4e1v` | pass (expected refusal) |
+
+Q5 pinned the gate this change lifts: `ComputeDevice.gpu` on `android_arm64`
+threw `Native JSON Schema chat is not qualified for the LiteRT-LM gpu backend
+on android_arm64; load with ComputeDevice.cpu.` and created no engine.
+
+GPU, through OpenCL (the chat app declares `libOpenCL.so`), from a diagnostic
+export of `e9e9b7ec` with only that gate lifted. The proof of GPU execution is
+the process's `Loaded OpenCL library with dlopen.` record, written by the
+OpenCL top-k sampler on the first sampled step (absent on CPU runs), with no
+GPU failure marker. The runtime has no CPU fallback for an explicit GPU load.
+
+| Run | Device | Model | Matrix | Verdict |
+| --- | --- | --- | --- | --- |
+| P1 | S24 | Gemma 4 E2B | `matrix-2ookix0pxweon` | pass |
+| P2 | Pixel 9 Pro | Gemma 4 E2B | `matrix-268m3krw5mqvq` | pass |
+| P3 | Pixel 9 Pro | Qwen3-0.6B | `matrix-1sr0irhj7bn7z` | pass |
+| P5 | S24 | Qwen3-0.6B | `matrix-37dakitvwn7l2` | pass |
+
+P4 (S24, Gemma 4 CPU, `matrix-17qqq5s25xjpv`) passed with no GPU record. The
+earlier S24 refusal of a Qwen3-0.6B GPU engine was measured on the WebGPU
+route (Dawn's 128 MiB storage binding); on the OpenCL route P5 passed.
+
+WebGPU route (app without the `libOpenCL.so` declaration), S24 with Gemma 4:
+one hardware `Selected adapter:` Vulkan record, no OpenCL record, passed with
+the `v0.19.1-5` Android runtime prepared in
+[#1998](https://github.com/leehack/llamadart/issues/1998). Before `v0.19.1-5`
+that route created the engine and failed the first generation.
+
+Limits: the OpenCL record appears once per process, so it proves one sampled
+step rather than each request; the shipped binary is not attested against the
+sources read; the Pixel has no system-side GPU telemetry and no WebGPU run.
+The runs cover one schema contract and two models, not every model or driver.
+
 ## Planned platform/backend coverage
 
 Inspect the model/use-case coverage catalog without downloading models or
