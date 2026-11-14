@@ -65,7 +65,7 @@ const _jsonSchemaQualifiedBackendsByAbi = <Abi, Set<String>>{
   Abi.macosArm64: {'cpu', 'gpu'},
   Abi.iosArm64: {'cpu', 'gpu'},
   Abi.androidArm64: {'cpu', 'gpu'},
-  Abi.linuxX64: {'cpu'},
+  Abi.linuxX64: {'cpu', 'gpu'},
   Abi.linuxArm64: {'cpu'},
   Abi.windowsX64: {'cpu'},
 };

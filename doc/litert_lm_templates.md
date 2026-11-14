@@ -367,8 +367,8 @@ backend, not the registry:
   real-model-tested rendered-prompt compatibility path, but its handler grammar
   is still not applied by LiteRT-LM and must not be reported as grammar support.
 - **Native JSON Schema uses its own provider.** Canonical Qwen3 text chat and
-  Gemma 4 chat with its bundle template, on macOS/iOS and Android arm64 CPU and GPU and
-  the Linux x64/arm64 and Windows x64 CPU, pass the
+  Gemma 4 chat with its bundle template, on macOS/iOS and Android arm64 CPU and GPU, Linux x64 CPU and GPU, and
+  the Linux arm64 and Windows x64 CPU, pass the
   schema directly to LLGuidance after constructing the model's provider. The
   schema must sit in the subset both LLGuidance and the GBNF converter enforce.
   Gemma 4 may think first; Qwen3 must disable thinking. Tools, media, custom
