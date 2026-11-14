@@ -2481,7 +2481,17 @@ On the iPhone 17 Pro (iOS 26.5.1) the second engine dispose kept about 2 GB
 resident and later loads failed the memory check; the iPhone 16 Pro returned to
 its baseline ([#2004](https://github.com/leehack/llamadart/issues/2004)).
 Runtime `v0.3.0-5` carries the ggml `vm_allocate` host-buffer fix for it (fixed
-in runtime `v0.3.0-5`, device check pending).
+in runtime `v0.3.0-5`).
+
+Repin soak of runtime `v0.3.0-5` (source `f7dcae3bb`): DDP session
+`session-790c4db5-300b-4c86-aeb0-2e74585a34a2`, record `R1047`, SD-Turbo q8_0 +
+TAESD, 4 load/dispose cycles per device. Both jobs passed with no `load_failed`
+and stable decode hashes.
+
+| Device | Peak per load | After dispose |
+| --- | --- | --- |
+| iPhone 17 Pro, iOS 26.5.1 | about 2.4 GB | 163 to 190 MB (148 MB baseline); the old runtime kept about 2 GB |
+| iPhone 16 Pro, iOS 18.3.2 | about 2.4 GB | about 370 MB, flat across cycles (125 MB first-cycle baseline) |
 
 Final qualification of the public API at PR head `6109c8d1e` with the published
 `v0.3.0-4` pin: DDP session `session-954952c8-39c6-4878-9f17-ca2c6efed56b`,

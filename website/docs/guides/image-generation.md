@@ -202,8 +202,8 @@ policy still serves SDXS Metal decoding.
 
 On iOS 26, `v0.3.0-5` returns an image model's memory when you dispose it, so a
 later load no longer fails the memory check; earlier runtimes could keep about
-2 GB resident after the second dispose (fixed in runtime `v0.3.0-5`, device
-check pending, [#2004](https://github.com/leehack/llamadart/issues/2004)).
+2 GB resident after the second dispose (fixed in runtime `v0.3.0-5`, device-qualified
+on iPhone 16 Pro and 17 Pro, [#2004](https://github.com/leehack/llamadart/issues/2004)).
 
 #### Pinned-runtime format checks
 

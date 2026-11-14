@@ -286,7 +286,7 @@ core and `llamadart_stable_diffusion_flutter` together.
   decoding on iOS is refused only without the graph split (pinned `v0.3.0-5`
   has it, #1047); only SD-Turbo's embedded VAE at 512x512 is qualified, and a
   Metal command-buffer failure is an error. An older runtime needs an SDXS
-  intrinsic decoder, `vaeOnCpu: true` or CPU. iOS 26: fixed in runtime `v0.3.0-5` (device check pending, #2004).
+  intrinsic decoder, `vaeOnCpu: true` or CPU. iOS 26: fixed in runtime `v0.3.0-5` (device-qualified on iPhone 16 Pro and 17 Pro, #2004).
 - `ImageConditioningCacheParams(capacity: ...)`: ordinary `ImageModelParams`
   preserve the native default of 4 prompt-conditioning entries. `0` disables
   reuse; positive values set an LRU entry limit up to `2147483647` (the signed 32-bit ABI

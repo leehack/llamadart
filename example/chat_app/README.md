@@ -306,7 +306,7 @@ layouts) opens a separate screen for the experimental `ImageGenerationEngine`
   runtime…** meanwhile. With an empty Metal shader cache the first check
   compiles ggml's Metal library, about 16 s on an M4 Max; with the cache warm
   it takes under 0.5 s.
-- On iOS, the pinned SD runtime (`v0.3.0-5`) splits Metal graphs, so full-VAE recipes decode on the GPU; the app has no iOS-specific gating. A runtime without the split refuses them and needs CPU VAE placement or CPU generation. On iOS 26 the second engine dispose can leave about 2 GB resident ([#2004](https://github.com/leehack/llamadart/issues/2004)).
+- On iOS, the pinned SD runtime (`v0.3.0-5`) splits Metal graphs, so full-VAE recipes decode on the GPU; the app has no iOS-specific gating. A runtime without the split refuses them and needs CPU VAE placement or CPU generation. On iOS 26 the runtime returns an image model's memory on dispose; earlier runtimes could leave about 2 GB resident ([#2004](https://github.com/leehack/llamadart/issues/2004)).
 - Models: **SDXS-512** (683 MB, recommended, fits most phones) and
   **SD-Turbo + TAESD** (2.0 GB). Both download into the app's model cache
   from pinned Hugging Face revisions with exact sizes and SHA-256 checks; an

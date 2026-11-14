@@ -67,7 +67,7 @@ decoder and the intrinsic tiny-decoder v1 context policy, or
 `ImageModelPlacement(vaeOnCpu: true)` or `ComputeDevice.cpu`. On iOS 26,
 disposing an image model returns its memory at once with `v0.3.0-5`; earlier
 runtimes could keep about 2 GB resident, so a later load failed the memory check
-(fixed in runtime `v0.3.0-5`, device check pending,
+(fixed in runtime `v0.3.0-5`, device-qualified on iPhone 16 Pro and 17 Pro,
 [#2004](https://github.com/leehack/llamadart/issues/2004)).
 
 GGUF Qwen3-ASR accepts WAV, MP3 and FLAC; real-model checks cover all three on
