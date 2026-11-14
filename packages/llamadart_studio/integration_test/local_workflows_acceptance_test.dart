@@ -100,6 +100,10 @@ void main() {
         ),
       );
       await deps.codingController.setWorkspaceRoot(scratch.path);
+      // Isolate the baseline model prompt from optional skill instructions.
+      for (final skill in deps.skillRegistry.state.activeSkills) {
+        await deps.skillRegistry.setSkillEnabled(skill.id, false);
+      }
       await tester.pumpWidget(LlamadartStudioApp(dependencies: deps));
       await tester.pumpAndSettle();
       Future<void> tap(String key) async {
