@@ -106,14 +106,18 @@ feature. For which runtime supports which feature, see the
   create the engine throws; `auto` on Windows runs on the CPU.
 - Windows x64 LiteRT-LM GPU needs `dxil.dll` and `dxcompiler.dll`, which the
   pinned runtime bundles. Its GPU accelerator and sampler load
-  `webgpu_dawn.dll`, which the hook bundles. Windows Qwen3 0.6B GPU execution
-  remains unqualified: the retained Windows Server 2022 / NVIDIA L4-vWS run
-  on `v0.17.0-7` emitted 24 Dawn validation errors despite passing all 15
-  functional checks. Conflicting storage usages and invalid command submissions
-  remain unresolved; a new runtime regression has not been established
-  ([litert-lm-native#64](https://github.com/leehack/litert-lm-native/issues/64)).
-  Use `ComputeDevice.cpu` to avoid this GPU path. A Flutter Windows app has not
-  been run with it. The strict JSON Schema run above used `v0.19.1-5`.
+  `webgpu_dawn.dll`, which the hook bundles. History: the retained Windows
+  Server 2022 / NVIDIA L4-vWS run on `v0.17.0-7` emitted 24 Dawn validation
+  errors for Qwen3 0.6B despite passing all 15 functional checks (conflicting
+  storage usages and invalid command submissions;
+  [litert-lm-native#64](https://github.com/leehack/litert-lm-native/issues/64)).
+  On `v0.19.1-5` Qwen3-0.6B and Gemma 4 E2B generate on the Windows L4 GPU
+  (Direct3D 12, GRID 596.86) and pass the strict JSON Schema scenario
+  ([#174](https://github.com/leehack/llamadart/issues/174#issuecomment-6881250581)).
+  The retained logs of that run show no Dawn validation errors, but they were
+  not collected to check for them, so the older problem is untested rather than
+  confirmed resolved. Use `ComputeDevice.cpu` to avoid the GPU path. A Flutter
+  Windows app has not been run with it.
 
 ## Android
 
