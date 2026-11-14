@@ -4211,7 +4211,7 @@ class StableDiffusionAppleCompatibilitySyncTest(unittest.TestCase):
                        "lib/src/hook/native_release_pins.dart").read_text()
         self.current = pins.current_stable_diffusion_release_tag(self.source)
         self.checksum = re.search(
-            r"const stableDiffusionAppleCompanionChecksums = <String, String>\{\s*"
+            r"const stableDiffusionAppleCompanionChecksums = <String, String>\{[^}]*?"
             r"'" + re.escape(self.current) + r"':\s*'([0-9a-f]{64})'",
             self.source,
         ).group(1)
