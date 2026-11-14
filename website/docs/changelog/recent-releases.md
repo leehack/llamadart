@@ -11,6 +11,8 @@ For upgrade planning, combine this page with the
 [Upgrade Checklist](../migration/upgrade-checklist). For breaking changes,
 validate against the exact release tag notes.
 
+## Unreleased
+
 ## 0.19.10
 
 - Adopt stable-diffusion `v0.3.0-4`: on iOS Metal the runtime splits graphs, so `ImageGenerationEngine.load` no longer refuses a full VAE there; a runtime without the split keeps the refusal. Qualified on an iPhone 16 Pro and an iPhone 17 Pro with SD-Turbo's embedded full VAE at 512x512; external VAE/TAESD components, SDXL-size VAEs, larger resolutions and SDXS through `sd_dart_new_sd_ctx` are admitted but not device-qualified. On iOS 26 the second engine dispose can leave about 2 GB resident ([#1047](https://github.com/leehack/llamadart/issues/1047), [#2004](https://github.com/leehack/llamadart/issues/2004)).
