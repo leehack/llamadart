@@ -13,13 +13,15 @@ validate against the exact release tag notes.
 
 ## Unreleased
 
+- Adopt stable-diffusion `v0.3.0-4`: on iOS Metal the runtime splits graphs, so `ImageGenerationEngine.load` no longer refuses a full VAE there; a runtime without the split keeps the refusal. Device-qualified: SD-Turbo with its embedded full VAE at 512x512 on an iPhone 16 Pro and an iPhone 17 Pro (30 of 30 soak decodes, 6 of 6 public-API decodes each); external VAE/TAESD components, SDXL-size VAEs, larger resolutions and SDXS through `sd_dart_new_sd_ctx` are admitted but not device-qualified. On iOS 26 the second engine dispose can leave about 2 GB resident ([#1047](https://github.com/leehack/llamadart/issues/1047), [#2004](https://github.com/leehack/llamadart/issues/2004)).
+
 - Chat app microphone: a microphone that disconnects mid-recording now transcribes the audio captured so far with a warning, a missing input device on Web is reported as such instead of as a permission denial, and a failed Web start releases the microphone ([#329](https://github.com/leehack/llamadart/issues/329)).
 - Fixed Android LiteRT-LM GPU generation failing with "Can not find OpenCL library on this device" when the app does not declare `libOpenCL.so` or the device has no loadable OpenCL: the runtime (`v0.19.1-5`) links the WebGPU sampler again. Affects 0.18.0 through 0.19.9 on Android ([#1998](https://github.com/leehack/llamadart/issues/1998)).
 - Aligned default WebGPU bridge assets to `v0.1.85`: a page without cross-origin isolation now fails at once with a `LlamaUnsupportedException` naming COOP/COEP `require-corp` instead of waiting minutes for a generic init timeout, and Firefox CPU runs (`gpuLayers: 0`) no longer create the WebGPU backend (stories15M, 32 tokens: 640 to 762 tok/s against 10 before) ([#1025](https://github.com/leehack/llamadart/issues/1025)).
 - `ComputeDevice.gpu` on Web now names why WebGPU was not used (for example `adapter_missing_shader_f16`: Chrome on Linux with NVIDIA needs driver 615.71 or newer); documented the measured Safari 27, Firefox 160 and NVIDIA L4 results ([#1025](https://github.com/leehack/llamadart/issues/1025)).
 - Native LiteRT-LM strict `responseFormat` now also runs on the Android arm64 GPU, through OpenCL on a Galaxy S24 and a Pixel 9 Pro with Qwen3 and Gemma 4; `ComputeDevice.auto` on Android no longer needs `ComputeDevice.cpu` for it ([#174](https://github.com/leehack/llamadart/issues/174)).
 
-Runtime baseline: native llama.cpp `v0.9.0` and Web use upstream `v0.9.0@cd959bae99ff4bed22bef2604f45241c09bbb8c8`; native LiteRT-LM uses `v0.19.1-5` and stable-diffusion uses `v0.3.0-3`. Web LiteRT-LM uses `@litert-lm/core@0.19.0`. Manifest SHA-256: `6767783edd85e14853a8a79cd6ce53d53f4eb2d99aeb62601014bd68c1b6b7b3`.
+Runtime baseline: native llama.cpp `v0.9.0` and Web use upstream `v0.9.0@cd959bae99ff4bed22bef2604f45241c09bbb8c8`; native LiteRT-LM uses `v0.19.1-5` and stable-diffusion uses `v0.3.0-4`. Web LiteRT-LM uses `@litert-lm/core@0.19.0`. Manifest SHA-256: `6767783edd85e14853a8a79cd6ce53d53f4eb2d99aeb62601014bd68c1b6b7b3`.
 
 ## 0.19.9
 

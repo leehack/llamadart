@@ -919,9 +919,11 @@ a follow-up. Do not insert requested bundle metadata as observed runtime evidenc
 checks: `image-sdxs-cpu` (Android, CPU) and `image-sdxs-metal` (iOS, Metal).
 The stable-diffusion-native `v0.3.0-2` pin provides the intrinsic tiny-decoder
 v1 context policy required by the iOS Metal SDXS profile. Its physical-device
-qualification must still use this exact runtime and consumer build. Full-VAE
-and external-decoder Metal paths remain refused; use CPU VAE placement for
-those models ([#1047](https://github.com/leehack/llamadart/issues/1047)).
+qualification must still use this exact runtime and consumer build. The
+`v0.3.0-4` graph split lifts the full-VAE refusal on iOS Metal (see
+[iOS full-VAE graph split](#ios-full-vae-graph-split-1047-2026-11-13)); a
+runtime without it still refuses, and needs CPU VAE placement
+([#1047](https://github.com/leehack/llamadart/issues/1047)).
 
 They run the chat-app test `integration_test/image_generation_e2e_test.dart`
 (SDXS download through the image screen, one seeded 512x512 image, and a
@@ -2412,3 +2414,41 @@ unqualified, as do accelerators, other models and physical devices.
 
 This covers one device, model and quantization and qualifies no other GPU.
 See [Known platform issues](../website/docs/platforms/known-platform-issues.md).
+
+## iOS full-VAE graph split (#1047, 2026-11-13)
+
+stable-diffusion-native `v0.3.0-4` (native commit `4a84ac24`, manifest SHA-256
+`86c674911194b5b59f2e78f1906052af2df899ca60de56881690efcf0a6833a1`) splits
+Metal graphs on iOS through upstream's eval callback at 2^26 elements and
+exports `sd_dart_graph_split_set_threshold`, `sd_dart_graph_split_threshold`
+and `sd_dart_graph_split_cuts`. The core lifts its full-VAE iOS Metal refusal
+when the threshold getter exists and returns above 0.
+
+DDP ran the XCFramework (zip SHA-256 `0d022638f54be80aa75fd8e73a94d139ad8887f4f3c73084501369ca5e7ac354`)
+with the SD-Turbo full-VAE harness:
+
+| Run | Devices | Result |
+| --- | --- | --- |
+| C1, split arms | iPhone 16 Pro, iOS 18.3 | every arm passed 3 of 3 decodes |
+| C1, split off | iPhone 16 Pro, iOS 18.3 | third decode failed with the GPU command-buffer error (watchdog) |
+| C2b soak | iPhone 16 Pro, iPhone 17 Pro | 30 of 30 decodes passed, one image hash, flat footprint |
+
+Known limit ([#2004](https://github.com/leehack/llamadart/issues/2004)): on
+the iPhone 17 Pro (iOS 26.5.1) the second engine dispose kept about 2 GB
+resident and later loads failed the memory check; the iPhone 16 Pro returned to
+its baseline. Whether it is a leak or delayed reclaim is undecided.
+
+Final qualification of the public API at PR head `6109c8d1e` with the published
+`v0.3.0-4` pin: DDP session `session-954952c8-39c6-4878-9f17-ca2c6efed56b`,
+bundle SHA-256 `d102c07aac8577e1ca730438650829d34644450fa501cd6af2c51be88ab0ff9c`.
+Both devices loaded SD-Turbo with its embedded full VAE on `MTL0` at 512x512
+through `ImageGenerationEngine`, with no bypass.
+
+| Device | Result |
+| --- | --- |
+| iPhone 16 Pro, iOS 18.3.2 | 6 of 6 decodes, one image hash, about 7.0 to 8.3 s each |
+| iPhone 17 Pro, iOS 26.5.1 | 6 of 6 decodes, one image hash, about 4.4 to 4.7 s each |
+
+Only that recipe is device-qualified. External VAE/TAESD components, SDXL-size
+VAEs, larger resolutions and SDXS through `sd_dart_new_sd_ctx` are admitted but
+not qualified on iOS Metal.

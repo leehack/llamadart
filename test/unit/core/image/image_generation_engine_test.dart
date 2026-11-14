@@ -2243,6 +2243,55 @@ void main() {
           }
         });
 
+        test('a runtime that splits graphs loads a full VAE on Metal without '
+            'the intrinsic tiny-decoder policy', () async {
+          driver.status = _available(iphone, splitsGraphsOnMetal: true);
+          for (final device in [ComputeDevice.auto, ComputeDevice.gpu]) {
+            driver.started.clear();
+            await load(checkpoint, params: ImageModelParams(device: device));
+            final config = driver.started.single;
+            expect(config.requiresIntrinsicTinyDecoderV1, isFalse);
+            expect(config.backend, isNot(contains('vae=cpu')));
+          }
+        });
+
+        test('a runtime without the graph split refuses a full VAE and names '
+            'the release that adds it', () async {
+          driver.status = _available(
+            iphone,
+            supportsIntrinsicTinyDecoderV1: true,
+          );
+          await expectLater(
+            load(checkpoint),
+            throwsA(
+              isA<LlamaUnsupportedException>().having(
+                (error) => error.message,
+                'message',
+                contains('v0.3.0-4'),
+              ),
+            ),
+          );
+          expect(driver.started, isEmpty);
+        });
+
+        test('splitting graphs does not lift the direct VAE convolution '
+            'refusal', () async {
+          driver.status = _available(iphone, splitsGraphsOnMetal: true);
+          await expectLater(
+            load(
+              checkpoint,
+              params: const ImageModelParams(vaeDirectConvolution: true),
+            ),
+            throwsA(
+              isA<LlamaUnsupportedException>().having(
+                (error) => error.message,
+                'message',
+                contains('/issues/1044'),
+              ),
+            ),
+          );
+        });
+
         test('a full VAE can explicitly compute on the CPU while diffusion '
             'uses Metal', () async {
           driver.status = _available(iphone);
@@ -4313,12 +4362,14 @@ StableDiffusionRuntimeStatus _available(
   String devices, {
   bool loadsFp8AsF16OnMetal = false,
   bool supportsIntrinsicTinyDecoderV1 = true,
+  bool splitsGraphsOnMetal = false,
 }) => StableDiffusionRuntimeStatus.available(
   version: 'master-929',
   commit: 'be48649',
   devices: parseStableDiffusionDeviceList(devices),
   loadsFp8AsF16OnMetal: loadsFp8AsF16OnMetal,
   supportsIntrinsicTinyDecoderV1: supportsIntrinsicTinyDecoderV1,
+  splitsGraphsOnMetal: splitsGraphsOnMetal,
 );
 
 final class _FakeDriver implements ImageGenerationDriver {

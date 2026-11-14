@@ -131,6 +131,34 @@ void main() {
       expect(absent.supportsIntrinsicTinyDecoderV1(), isFalse);
     });
 
+    test('reports whether the runtime splits graphs on Metal', () {
+      for (final splits in [false, true]) {
+        final status = probeStableDiffusionRuntime(
+          abi: Abi.macosArm64,
+          api: _FakeApi(graphSplit: splits),
+        );
+        expect(status.splitsGraphsOnMetal, splits);
+      }
+      expect(
+        BundledStableDiffusionApi(
+          resolveCalls: () => null,
+        ).splitsGraphsOnMetal(),
+        isFalse,
+      );
+      for (final (graphSplit, expected) in [
+        (null, false),
+        (const StableDiffusionGraphSplitCalls(threshold: _noSplit), false),
+        (const StableDiffusionGraphSplitCalls(threshold: _split), true),
+      ]) {
+        expect(
+          BundledStableDiffusionApi(
+            resolveCalls: () => _callsWith(graphSplit),
+          ).splitsGraphsOnMetal(),
+          expected,
+        );
+      }
+    });
+
     test('reports whether the runtime loads FP8 weights as F16 on Metal', () {
       for (final fp8Metal in [true, false]) {
         final status = probeStableDiffusionRuntime(
@@ -715,6 +743,27 @@ void main() {
   });
 }
 
+int _noSplit() => 0;
+int _split() => 1 << 26;
+
+StableDiffusionCalls _callsWith(StableDiffusionGraphSplitCalls? graphSplit) =>
+    StableDiffusionCalls(
+      progressEnable: () {},
+      progressRead: (after, reports, capacity, latest) => 0,
+      newContext: (params) => nullptr,
+      generateImage: (context, params, result, failure) => false,
+      cancelGeneration: (context) {},
+      exitFree: (context) {},
+      exitFreeAddress: nullptr,
+      contextParamsInit: (params) {},
+      supportsImageGeneration: (context) => true,
+      hasControlNet: (context) => false,
+      modelVersionName: (context) => nullptr,
+      imageGenerationParamsInit: (params) {},
+      freeImages: (images, count) {},
+      graphSplit: graphSplit,
+    );
+
 final class _FakeApi implements StableDiffusionNativeApi {
   _FakeApi({
     this.devices = 'CPU\tHost CPU\n',
@@ -722,6 +771,7 @@ final class _FakeApi implements StableDiffusionNativeApi {
     this.wrapperCalls = true,
     this.fp8Metal = false,
     this.intrinsicTinyV1 = false,
+    this.graphSplit = false,
   });
 
   final String devices;
@@ -729,6 +779,7 @@ final class _FakeApi implements StableDiffusionNativeApi {
   final bool wrapperCalls;
   final bool fp8Metal;
   final bool intrinsicTinyV1;
+  final bool graphSplit;
   int calls = 0;
   final List<String> order = [];
 
@@ -764,6 +815,9 @@ final class _FakeApi implements StableDiffusionNativeApi {
 
   @override
   bool loadsFp8AsF16OnMetal() => _call(fp8Metal);
+
+  @override
+  bool splitsGraphsOnMetal() => _call(graphSplit);
 
   @override
   bool supportsIntrinsicTinyDecoderV1() => _call(intrinsicTinyV1);

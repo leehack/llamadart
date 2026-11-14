@@ -55,15 +55,18 @@ the opt-in `stable_diffusion` runtime. Per-platform requirements, validated
 models, memory figures and the bounded recipes for tiling, editing, ControlNet,
 hires fix, reference editing, seamless textures, module placement, the
 conditioning cache, FP8 weights and local checkpoint sets are in
-[Image generation](../guides/image-generation#support). On iOS, Metal VAE
-decoding requires an intrinsic SDXS tiny decoder and a selected runtime with
-the intrinsic tiny-decoder v1 context policy, which keeps automatic model
-refresh from selecting a full VAE. The pinned `v0.3.0-3` runtime provides this
-policy. Full VAE and external-decoder Metal decoding remain refused; use
-`ImageModelPlacement(vaeOnCpu: true)` for Metal diffusion or `ComputeDevice.cpu`
-for other recipes. Tiling does not bypass this restriction; iPhone full-VAE
-watchdog avoidance remains unqualified
-([#1047](https://github.com/leehack/llamadart/issues/1047)).
+[Image generation](../guides/image-generation#support). On iOS, the pinned
+`v0.3.0-4` runtime splits Metal graphs, so full-VAE decoding is admitted;
+only SD-Turbo with its embedded full VAE at 512x512 is qualified, on an iPhone
+16 Pro and an iPhone 17 Pro ([#1047](https://github.com/leehack/llamadart/issues/1047)).
+External VAE/TAESD components, SDXL-size VAEs, larger resolutions and SDXS
+through `sd_dart_new_sd_ctx` are not device-qualified, and a Metal
+command-buffer failure surfaces as an error. A runtime without
+the split refuses full-VAE Metal decoding; it then needs an intrinsic SDXS tiny
+decoder and the intrinsic tiny-decoder v1 context policy, or
+`ImageModelPlacement(vaeOnCpu: true)` or `ComputeDevice.cpu`. On iOS 26 the
+second engine dispose can leave about 2 GB resident, so later loads may fail the
+memory check ([#2004](https://github.com/leehack/llamadart/issues/2004)).
 
 GGUF Qwen3-ASR accepts WAV, MP3 and FLAC; real-model checks cover all three on
 native macOS and in headless Chromium. LiteRT-LM ASR is CPU-only streaming
@@ -219,7 +222,7 @@ web are on [Known platform issues](./known-platform-issues).
 | --- | --- |
 | llama.cpp native | `leehack/llamadart-native@v0.9.0` |
 | LiteRT-LM native | `leehack/litert-lm-native@v0.19.1-5` |
-| stable-diffusion.cpp native (opt-in, Preview) | `leehack/stable-diffusion-native@v0.3.0-3`, for [image generation](../guides/image-generation); see [Opt-in stable_diffusion runtime](./native-build-hooks#opt-in-stable_diffusion-runtime-experimental). Flutter iOS/macOS apps link its XCFramework through `llamadart_stable_diffusion_flutter` |
+| stable-diffusion.cpp native (opt-in, Preview) | `leehack/stable-diffusion-native@v0.3.0-4`, for [image generation](../guides/image-generation); see [Opt-in stable_diffusion runtime](./native-build-hooks#opt-in-stable_diffusion-runtime-experimental). Flutter iOS/macOS apps link its XCFramework through `llamadart_stable_diffusion_flutter` |
 | WebGPU bridge assets | `leehack/llama-web-bridge-assets`; see [Pinned bridge assets](./webgpu-bridge#pinned-bridge-assets) |
 
 The native-assets hook currently pins `llamadart-native` tag

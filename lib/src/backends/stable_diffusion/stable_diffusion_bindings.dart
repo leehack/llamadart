@@ -358,6 +358,15 @@ external int sd_dart_gpu_device_memory(
   ffi.Pointer<sd_dart_gpu_device_memory_t> out,
 );
 
+@ffi.Native<ffi.Uint64 Function()>()
+external int sd_dart_graph_split_cuts();
+
+@ffi.Native<ffi.Void Function(ffi.Uint64)>()
+external void sd_dart_graph_split_set_threshold(int elements);
+
+@ffi.Native<ffi.Uint64 Function()>()
+external int sd_dart_graph_split_threshold();
+
 @ffi.Native<ffi.Size Function(ffi.Pointer<ffi.Char>, ffi.Size)>()
 external int sd_dart_last_error(ffi.Pointer<ffi.Char> text, int capacity);
 

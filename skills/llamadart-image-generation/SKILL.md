@@ -53,7 +53,7 @@ description: >-
   `xcodebuild` show both. Use the companion with the core's `MAJOR.MINOR`. Adding it
   opts the app into the runtime (about 37 MB per Apple target).
 The core accepts only an Apple SD companion pinning its own runtime
-(`v0.3.0-3`): runtimes before `v0.3.0-1` abort on FP8 weights on Metal, and those before
+(`v0.3.0-4`): runtimes before `v0.3.0-1` abort on FP8 weights on Metal, and those before
 `v0.3.0` have a smaller `sd_ctx_params_t`. Upgrade the
 core and `llamadart_stable_diffusion_flutter` together.
 
@@ -283,10 +283,10 @@ core and `llamadart_stable_diffusion_flutter` together.
   true` on iOS Metal throws `LlamaUnsupportedException` at load: every decode
   tripped the GPU watchdog and returned a corrupt image
   ([#1044](https://github.com/leehack/llamadart/issues/1044)). Full-VAE Metal
-  decoding on iOS is also refused, even with direct convolutions off or tiling.
-  GPU decoding needs the intrinsic tiny-decoder v1 policy across refresh.
-  The pinned `v0.3.0-3` provides that policy for intrinsic SDXS tiny decoders; other recipes require `ImageModelPlacement(vaeOnCpu: true)` or `ComputeDevice.cpu`. Desktop checks do not add physical-iOS qualification.
-  External TAESD can fall back to a full VAE; no iPhone full-VAE fix is claimed (#1047).
+  decoding on iOS is refused only without the graph split (pinned `v0.3.0-4`
+  has it, #1047); only SD-Turbo's embedded VAE at 512x512 is qualified, and a
+  Metal command-buffer failure is an error. An older runtime needs an SDXS
+  intrinsic decoder, `vaeOnCpu: true` or CPU. iOS 26: 2 GB may stay resident (#2004).
 - `ImageConditioningCacheParams(capacity: ...)`: ordinary `ImageModelParams`
   preserve the native default of 4 prompt-conditioning entries. `0` disables
   reuse; positive values set an LRU entry limit up to `2147483647` (the signed 32-bit ABI

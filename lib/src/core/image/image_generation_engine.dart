@@ -417,8 +417,9 @@ class ImageGenerationEngine
   ///   unused here. Also when
   ///   [ImageModelParams.vaeDirectConvolution] is `true` on iOS with the
   ///   Metal backend, before any file is resolved or loaded. Full-VAE Metal
-  ///   decoding on iOS is also refused. Known full-VAEs are rejected before
-  ///   native creation; tiny candidates require a native context policy that
+  ///   decoding on iOS is also refused unless the runtime splits graphs
+  ///   (stable-diffusion-native v0.3.0-4 or later). Known full-VAEs are
+  ///   rejected before native creation; tiny candidates require a native context policy that
   ///   preserves the intrinsic decoder through automatic source refreshes. Use
   ///   [ImageModelPlacement.vaeOnCpu] or [ComputeDevice.cpu] for other recipes,
   ///   including external tiny decoders. Tiling does not bypass this restriction.
@@ -645,12 +646,15 @@ class ImageGenerationEngine
     final requiresIosTinyDecoder =
         driver.operatingSystem == 'ios' &&
         _isMetal(backendName) &&
-        !placement.vaeOnCpu;
+        !placement.vaeOnCpu &&
+        !runtime.splitsGraphsOnMetal;
     LlamaUnsupportedException
     unsupportedIosDecoder() => LlamaUnsupportedException(
       'Full-VAE decoding on iOS with the Metal backend ($backendName) is '
-      'not supported: repeated decodes can trip the GPU watchdog '
-      '(https://github.com/leehack/llamadart/issues/1047). GPU decoding '
+      'not supported on this runtime: repeated decodes can trip the GPU '
+      'watchdog (https://github.com/leehack/llamadart/issues/1047). '
+      'stable-diffusion-native v0.3.0-4 or later splits the graph and '
+      'decodes a full VAE; this runtime does not. Otherwise GPU decoding '
       'requires an intrinsic SDXS tiny decoder and a selected runtime with '
       'the intrinsic tiny-decoder v1 context policy, so model refresh cannot '
       'switch to a full VAE. External tiny decoders can '
