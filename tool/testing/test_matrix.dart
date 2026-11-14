@@ -899,6 +899,24 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
         'Stage build/web_lazy_grammar/config.json as doc/testing_matrix.md describes.',
   ),
   TestMatrixRow(
+    id: 'web-webgpu-generation',
+    tier: 'targeted',
+    mode: 'local-only, WebGPU browser',
+    covers:
+        'pinned-asset text generation at full WebGPU offload (99 layers) '
+        'against the CPU Wasm runtime in direct and worker runtimes: the '
+        'WebGPU backend and layer count are reported, the first eight greedy '
+        'tokens equal the CPU text and no output holds a replacement '
+        'character; later divergence is recorded, not failed; Chrome only',
+    command:
+        'dart run tool/testing/run_local_e2e.dart --scenario '
+        'web-webgpu-generation',
+    useWhen:
+        'WebGPU generation, layer offload or bridge pin changes on a machine '
+        'with a WebGPU adapter. Stage build/webgpu_generation_e2e/config.json '
+        'as doc/testing_matrix.md describes.',
+  ),
+  TestMatrixRow(
     id: 'web-tool-choice-grammar',
     tier: 'targeted',
     mode: 'local-only',
@@ -1582,6 +1600,44 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
         '--allow-any-response',
     useWhen:
         'Web chat app, web model loading, or WebGPU bridge runtime changes.',
+  ),
+  TestMatrixRow(
+    id: 'web-real-model-smoke-safari',
+    tier: 'targeted',
+    mode: 'local-only, macOS Safari',
+    covers:
+        'built Flutter web chat app with a real GGUF in Safari through '
+        'safaridriver, served cross-origin isolated (require-corp); plain '
+        'chat, CPU Wasm or WebGPU (--backend webgpu requests 99 layers and '
+        'requires isGpuActive(); models llamadart caps, such as Qwen3.5-0.8B at '
+        '2 layers, are partial offload); needs an '
+        'unlocked screen and Allow Remote Automation; no tool, speech or '
+        'mmproj coverage',
+    command:
+        'dart run tool/testing/run_local_e2e.dart --scenario '
+        'chat-app-web-real-model-smoke --browser safari --model-url '
+        '<model-url> [--backend webgpu]',
+    useWhen:
+        'Safari support claims, WebGPU bridge pin or web model loading '
+        'changes. Run CPU and WebGPU separately and record the Safari version.',
+  ),
+  TestMatrixRow(
+    id: 'web-real-model-smoke-firefox',
+    tier: 'targeted',
+    mode: 'local-only, Firefox',
+    covers:
+        'built Flutter web chat app with a real GGUF in Firefox through '
+        'geckodriver (binary from FIREFOX_EXECUTABLE), served cross-origin '
+        'isolated (require-corp); plain chat, CPU Wasm or WebGPU '
+        '(--backend webgpu requests 99 layers and requires isGpuActive()); no '
+        'tool, speech or mmproj coverage; UNQUALIFIED, not yet run in Firefox',
+    command:
+        'FIREFOX_EXECUTABLE=<firefox> dart run tool/testing/run_local_e2e.dart '
+        '--scenario chat-app-web-real-model-smoke --browser firefox '
+        '--model-url <model-url> [--backend webgpu]',
+    useWhen:
+        'Firefox support claims, WebGPU bridge pin or web model loading '
+        'changes. geckodriver must be on PATH or in GECKODRIVER.',
   ),
   TestMatrixRow(
     id: 'web-tool-penalty-smoke',

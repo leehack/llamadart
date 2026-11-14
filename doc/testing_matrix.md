@@ -161,7 +161,7 @@ Pick targeted rows based on the touched surface:
 | Tool-result media (`LlamaToolResultContent.content`, `LlamaToolOutput`) | `root-vm`, `tool-result-image-smoke`, validation `qwen3vl-gguf-cpu` / `-metal` (`M01`) |
 | LiteRT-LM embedding engine | `litert-lm-multimodal-embedding`; includes the documented local-only upstream WebGPU parity diagnostic |
 | LiteRT-LM native backend | `litert-lm-lifecycle`, `litert-lm-engine-smoke`, `litert-lm-chat-features-smoke`, `litert-lm-json-schema`, `litert-lm-asr-smoke`, `litert-lm-asr-preservation`, `litert-lm-media-preservation`, `litert-lm-utility-preservation` |
-| Web bridge bootstrap or interop | `web-bridge-smoke`, `web-mock-chat-smoke`, `web-real-model-smoke`, `web-tool-penalty-smoke`, `web-lazy-grammar`, `web-tool-choice-grammar` |
+| Web bridge bootstrap or interop | `web-bridge-smoke`, `web-mock-chat-smoke`, `web-real-model-smoke`, `web-real-model-smoke-safari`, `web-real-model-smoke-firefox`, `web-tool-penalty-smoke`, `web-lazy-grammar`, `web-webgpu-generation`, `web-tool-choice-grammar` |
 | WebGPU multimodal | `webgpu-multimodal-regression`, `web-speech-task-cancel`, plus `web-speech-to-text-smoke` for typed Qwen3-ASR and `web-text-to-speech-smoke` for typed Qwen3-TTS |
 | Web microphone recorder (`record` bump, permission or interruption handling) | `web-microphone-lifecycle`, `chat-app-web-microphone-device-smoke` for real hardware |
 | Large WebGPU GGUF / wasm64 selection | `gemma4-webgpu-mem64` |
@@ -233,7 +233,7 @@ The matrix is designed to cover these essential axes:
 | Axis | Covered by |
 | --- | --- |
 | llama.cpp native GGUF | `root-vm`, `native-prompt-reuse-parity`, `native-inference-benchmark`, `gguf-chat-features-smoke`, `gguf-audio-chat-smoke`, `decision-model-smoke` |
-| llama.cpp WebGPU GGUF | `web-bridge-smoke`, `web-mock-chat-smoke`, `web-real-model-smoke`, `web-tool-penalty-smoke`, `web-lazy-grammar`, `web-tool-choice-grammar`, `webgpu-multimodal-regression`, `web-speech-to-text-smoke`, `web-microphone-lifecycle`, `web-text-to-speech-smoke`, `web-speech-task-cancel`, `gemma4-webgpu-mem64`, `decision-model-web-smoke` |
+| llama.cpp WebGPU GGUF | `web-bridge-smoke`, `web-mock-chat-smoke`, `web-real-model-smoke`, `web-real-model-smoke-safari`, `web-real-model-smoke-firefox`, `web-tool-penalty-smoke`, `web-lazy-grammar`, `web-webgpu-generation`, `web-tool-choice-grammar`, `webgpu-multimodal-regression`, `web-speech-to-text-smoke`, `web-microphone-lifecycle`, `web-text-to-speech-smoke`, `web-speech-task-cancel`, `gemma4-webgpu-mem64`, `decision-model-web-smoke` |
 | LiteRT-LM native `.litertlm` | `litert-lm-engine-smoke`, `litert-lm-chat-features-smoke`, `native-hook-bundles` |
 | LiteRT-LM web `.litertlm` | `gemma4-litert-web` |
 | Model families | Qwen 2.5 prompt reuse, Qwen 3/3.5 chat/multimodal, Gemma 4 tool/thinking/mem64/LiteRT-LM/audio, Laya ModernBERT decision encoder and head |
@@ -1479,6 +1479,46 @@ the schema's JSON in both modes, and the legacy assets must throw
 This qualifies the Web grammar plumbing on the selected weights, not hardware
 WebGPU or LFM2 auto accuracy/enforcement (#1715). The latter still needs its
 separate template contract and false-probe restriction.
+
+## Safari and Firefox chat-app smoke
+
+`web-real-model-smoke-safari` and `web-real-model-smoke-firefox` run
+`chat-app-web-real-model-smoke --browser safari|firefox` through
+`tool/testing/safari_webdriver.py`. The runner serves the repo with
+`--coep require-corp`, because both browsers expose `SharedArrayBuffer` only to
+cross-origin isolated pages. `--backend webgpu` adds `--backend-index 0
+--gpu-layers 99 --expect-gpu-active true`, so a silent CPU fallback fails; the
+default stays CPU Wasm. It requests 99 layers, but llamadart caps some models
+(Qwen3.5-0.8B at 2 layers): use an uncapped model such as stories15M with
+`--allow-any-response` to claim full offload. Run each with `--dry-run` first.
+
+- Safari needs Settings > Developer > Allow Remote Automation and an unlocked
+  screen; a hidden page fails before the model loads.
+- Firefox runs the binary in `FIREFOX_EXECUTABLE` through the geckodriver in
+  `GECKODRIVER` (default: `PATH`). geckodriver's script sandbox sees page
+  objects through wrappers, so the helper installs its capture hooks and runs
+  its page-state reads as page `<script>` elements. `web-real-model-smoke-firefox`
+  is unqualified until a real Firefox run passes.
+- Both cover plain chat only: no tool-call, speech or mmproj checks.
+- The Dart web scenarios (`web-lazy-grammar`, `web-webgpu-generation` and the
+  other `dart test -p chrome*` scenarios) reject `--browser safari|firefox`:
+  `package:test` pages are never cross-origin isolated.
+
+## Web WebGPU generation
+
+`web-webgpu-generation` loads one GGUF at `gpuLayers: 99` and at `gpuLayers: 0`
+through the pinned bridge in direct and worker runtimes, and requires the first
+eight greedy tokens to match with no replacement characters. Later divergence is
+printed as `WEBGPU_GENERATION_MATCH`, not failed. Use a small model that
+llamadart does not cap on WebGPU (not Qwen3.5-0.8B). Stage
+`build/webgpu_generation_e2e/config.json`:
+
+```json
+{"assets":"bridge/","model":"models/stories15M.gguf"}
+```
+
+Copy the model beside it; the runner fetches the pinned assets into `bridge/`
+and uses `chrome-webgpu`. Without a WebGPU adapter the suite fails.
 
 ## Web tool-choice grammar
 

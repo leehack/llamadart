@@ -663,6 +663,160 @@ Future<void> main(List<String> args) async {
     }
   });
 
+  group('chat-app Web real-model smoke in Safari and Firefox', () {
+    Future<LocalE2eResult> dryRun(List<String> extra) => runLocalE2e(
+      [
+        '--scenario',
+        'chat-app-web-real-model-smoke',
+        '--skip-build',
+        '--dry-run',
+        ...extra,
+      ],
+      projectRoot: '/repo',
+      displayShell: LocalE2eDisplayShell.posix,
+    );
+
+    for (final browser in ['safari', 'firefox']) {
+      test('$browser serves require-corp and forwards the browser', () async {
+        final result = await dryRun(['--browser', browser]);
+
+        expect(result.exitCode, 0, reason: result.stderr);
+        expect(
+          result.stdout,
+          contains('--port 7358 --coep require-corp'),
+          reason: 'the page must be cross-origin isolated',
+        );
+        expect(result.stdout, contains('--browser $browser'));
+        expect(result.stdout, isNot(contains('--backend-index')));
+      });
+    }
+
+    test('chrome keeps the default COEP and omits --browser', () async {
+      final result = await dryRun(['--browser', 'chrome']);
+
+      expect(result.exitCode, 0, reason: result.stderr);
+      expect(result.stdout, isNot(contains('--coep')));
+      expect(result.stdout, isNot(contains('--browser')));
+    });
+
+    test('--backend webgpu requests 99 layers on the auto backend', () async {
+      final result = await dryRun([
+        '--browser',
+        'safari',
+        '--backend',
+        'webgpu',
+      ]);
+
+      expect(result.exitCode, 0, reason: result.stderr);
+      expect(
+        result.stdout,
+        contains('--backend-index 0 --gpu-layers 99 --expect-gpu-active true'),
+        reason: 'a silent CPU fallback must fail the run',
+      );
+      expect(result.stdout, contains('--browser safari'));
+    });
+
+    test('--backend cpu keeps the CPU runtime', () async {
+      final result = await dryRun(['--backend', 'cpu']);
+
+      expect(result.exitCode, 0, reason: result.stderr);
+      expect(result.stdout, isNot(contains('--gpu-layers')));
+    });
+
+    test('rejects other backends and other scenarios', () async {
+      final backend = await dryRun(['--backend', 'vulkan']);
+      expect(backend.exitCode, 64);
+      expect(backend.stderr, contains('--backend cpu or webgpu'));
+      final scenario = await runLocalE2e([
+        '--scenario',
+        'chat-app-web-tool-penalty-smoke',
+        '--backend',
+        'webgpu',
+      ], projectRoot: '/repo');
+      expect(scenario.exitCode, 64);
+      expect(scenario.stderr, contains('--backend webgpu applies only'));
+    });
+
+    test(
+      'Dart web scenarios reject Safari and Firefox for isolation',
+      () async {
+        for (final name in [
+          'web-lazy-grammar',
+          'web-webgpu-generation',
+          'web-multimodal-embeddings-webgpu',
+        ]) {
+          for (final browser in ['safari', 'firefox']) {
+            final result = await runLocalE2e([
+              '--scenario',
+              name,
+              '--browser',
+              browser,
+              '--dry-run',
+            ], projectRoot: '/repo');
+            expect(result.exitCode, 64, reason: '$name $browser');
+            expect(result.stderr, contains('never cross-origin isolated'));
+            expect(result.stderr, contains(name));
+          }
+        }
+      },
+    );
+
+    test('Firefox stays rejected outside the chat-app smoke', () async {
+      final result = await runLocalE2e([
+        '--scenario',
+        'chat-app-web-litert-gemma4-smoke',
+        '--browser',
+        'firefox',
+        '--dry-run',
+      ], projectRoot: '/repo');
+      expect(result.exitCode, 64);
+      expect(result.stderr, contains('--browser chrome or safari'));
+    });
+  });
+
+  group('web-webgpu-generation', () {
+    test(
+      'dry-run fetches pinned assets and runs the WebGPU platform',
+      () async {
+        final result = await runLocalE2e(
+          ['--scenario', 'web-webgpu-generation', '--dry-run'],
+          projectRoot: '/repo',
+          displayShell: LocalE2eDisplayShell.posix,
+        );
+
+        expect(result.exitCode, 0, reason: result.stderr);
+        expect(
+          result.stdout,
+          contains(
+            'WEBGPU_BRIDGE_OUT_DIR=/repo/build/webgpu_generation_e2e/bridge',
+          ),
+        );
+        expect(
+          result.stdout,
+          contains(
+            'dart test -p chrome-webgpu --run-skipped -t local-only '
+            'test/e2e/webgpu/webgpu_generation_e2e_test.dart',
+          ),
+        );
+      },
+    );
+
+    test('a real run requires the staged config', () async {
+      final root = await Directory.systemTemp.createTemp('lane-1025h-config-');
+      addTearDown(() => root.delete(recursive: true));
+      final result = await runLocalE2e([
+        '--scenario',
+        'web-webgpu-generation',
+      ], projectRoot: root.path);
+
+      expect(result.exitCode, 64);
+      expect(
+        result.stderr,
+        contains('build/webgpu_generation_e2e/config.json'),
+      );
+    });
+  });
+
   test(
     'Qwen scenario preserves UTF-8 stdout from the real child process',
     () async {

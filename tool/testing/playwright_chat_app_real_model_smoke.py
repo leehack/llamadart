@@ -4,6 +4,7 @@ import json
 import re
 import tempfile
 import time
+import uuid
 import wave
 from pathlib import Path
 from typing import Any
@@ -210,19 +211,61 @@ class _SafariPage:
     def evaluate(self, function_source: str, *args: Any) -> Any:
         # Unlike Playwright, WebDriver rejects cyclic values such as the
         # captured LiteRT-LM conversation config.
+        serialize = """(value) => {
+          const seen = new WeakSet();
+          return JSON.parse(JSON.stringify(value ?? null, (_, item) => {
+            if (typeof item !== 'object' || item === null) return item;
+            if (seen.has(item)) return '[Circular]';
+            seen.add(item);
+            return item;
+          }));
+        }"""
+        if self._session.browser == "firefox":
+            return self._evaluate_in_page(function_source, serialize, args)
         return self._session.execute(
             f"""return Promise.resolve(({function_source})(...arguments))
-              .then(value => {{
-                const seen = new WeakSet();
-                return JSON.parse(JSON.stringify(value ?? null, (_, item) => {{
-                  if (typeof item !== 'object' || item === null) return item;
-                  if (seen.has(item)) return '[Circular]';
-                  seen.add(item);
-                  return item;
-                }}));
-              }});""",
+              .then({serialize});""",
             *args,
         )
+
+    def _evaluate_in_page(
+        self, function_source: str, serialize: str, args: tuple[Any, ...]
+    ) -> Any:
+        """Runs [function_source] in the page world, as the capture hooks do.
+
+        geckodriver's execute sandbox sees page objects through Xray wrappers,
+        so the result crosses back as a JSON string in a DOM attribute.
+        """
+        attribute = f"data-llamadart-eval-{uuid.uuid4().hex}"
+        self._session.run_in_page(
+            f"""(async () => {{
+              let out;
+              try {{
+                const value = await ({function_source})(...{json.dumps(list(args))});
+                out = {{value: ({serialize})(value)}};
+              }} catch (error) {{
+                out = {{error: String(error)}};
+              }}
+              document.documentElement.setAttribute({json.dumps(attribute)}, JSON.stringify(out));
+            }})();"""
+        )
+        deadline = time.monotonic() + 300
+        while time.monotonic() < deadline:
+            raw = self._session.execute(
+                "return document.documentElement.getAttribute(arguments[0]);",
+                attribute,
+            )
+            if raw is not None:
+                self._session.execute(
+                    "document.documentElement.removeAttribute(arguments[0]);",
+                    attribute,
+                )
+                result = json.loads(raw)
+                if "error" in result:
+                    raise RuntimeError(result["error"])
+                return result["value"]
+            time.sleep(0.1)
+        raise TimeoutError("Timed out waiting for the page-world evaluation")
 
     def locator(self, selector: str) -> _SafariBody:
         assert selector == "body", selector
@@ -263,15 +306,15 @@ def _require_visible_page(session: SafariSession) -> None:
     # Flutter frames, and Safari can terminate it while a large model loads.
     if state["visibility"] != "visible" or state["frames"] == 0:
         raise RuntimeError(
-            "Safari page is not visible; unlock the screen and keep the "
-            f"automation window in front: {state}"
+            f"{session.browser.capitalize()} page is not visible; unlock the "
+            f"screen and keep the automation window in front: {state}"
         )
 
 
-def run_safari(
+def run_webdriver(
     args, init_script: str, *, started_at: float, remote_fetch_mode: str
 ) -> int:
-    with SafariSession() as session:
+    with SafariSession(browser=args.browser) as session:
         page = _SafariPage(session)
         emit("safari_session", version=session.capabilities.get("browserVersion"))
         session.set_window_size(1440, 1100)
@@ -279,9 +322,9 @@ def run_safari(
         # WebDriver has no init script: seed settings, reload so the app reads
         # them, then install the capture globals before the model loads.
         session.navigate(args.app_url)
-        session.execute(init_script)
+        session.run_in_page(init_script)
         session.navigate(args.app_url)
-        session.execute(init_script)
+        session.run_in_page(init_script)
         _require_visible_page(session)
 
         _find_semantics(session, "flt-semantics-placeholder", "", 120)
@@ -684,17 +727,20 @@ def main() -> int:
     parser.add_argument("--headed", action="store_true")
     parser.add_argument(
         "--browser",
-        choices=["chromium", "safari"],
+        choices=["chromium", "safari", "firefox"],
         default="chromium",
-        help="safari drives the Safari app through safaridriver (plain chat only).",
+        help=(
+            "safari drives the Safari app through safaridriver; firefox drives "
+            "FIREFOX_EXECUTABLE through geckodriver (plain chat only)."
+        ),
     )
     args = parser.parse_args()
-    if args.browser == "safari" and (
+    if args.browser != "chromium" and (
         args.speech_audio_path or args.prefetch_mmproj_cache
     ):
         parser.error(
-            "--browser safari supports plain chat only, without speech input "
-            "or mmproj prefetch"
+            f"--browser {args.browser} supports plain chat only, without speech "
+            "input or mmproj prefetch"
         )
     if args.expect_mmproj_cache_hit and not args.prefetch_mmproj_cache:
         parser.error("--expect-mmproj-cache-hit requires --prefetch-mmproj-cache")
@@ -710,8 +756,10 @@ def main() -> int:
             "--expect-tool-call, --expect-tool-argument and "
             "--expect-tool-result conflict with --allow-any-response"
         )
-    if args.expect_tool_call and args.browser == "safari":
-        parser.error("--browser safari does not record tool-call completions")
+    if args.expect_tool_call and args.browser != "chromium":
+        parser.error(
+            f"--browser {args.browser} does not record tool-call completions"
+        )
     if args.speech_audio_path:
         audio_path = Path(args.speech_audio_path).resolve()
         if not audio_path.is_file():
@@ -742,13 +790,6 @@ def main() -> int:
     ):
         parser.error(
             "--microphone-max-wer needs a reference with at least one word"
-        )
-    if args.browser == "safari" and (
-        args.expect_gpu_active or args.expect_core_variant
-    ):
-        parser.error(
-            "--browser safari does not support --expect-gpu-active or "
-            "--expect-core-variant"
         )
 
     remote_fetch_mode = "default"
@@ -1052,8 +1093,8 @@ def main() -> int:
         )}
     """
 
-    if args.browser == "safari":
-        return run_safari(
+    if args.browser != "chromium":
+        return run_webdriver(
             args,
             init_script,
             started_at=started_at,
