@@ -448,15 +448,6 @@ const Map<String, Exemption> suiteExemptions = {
     evidence: {..._ciToolFiles},
     gate: null,
   ),
-  'test/unit/tooling/macos_litert_lm_prepare_app_script_test.dart': (
-    reason:
-        'Reads the installation docs only on macOS; this job runs on Linux.',
-    evidence: {
-      'test/unit/tooling/macos_litert_lm_prepare_app_script_test.dart':
-          '.md | website/',
-    },
-    gate: null,
-  ),
   'test/unit/tooling/native_default_consumer_qualification_test.dart': (
     reason:
         'Runs the qualification driver against a fixture core in a temp directory with git faked.',
