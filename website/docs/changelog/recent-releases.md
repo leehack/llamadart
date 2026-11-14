@@ -14,6 +14,7 @@ validate against the exact release tag notes.
 ## Unreleased
 
 - Fixed the generic JSON tool fallback replacing your system message with its JSON instruction when tools are passed with `ToolChoice.auto` or `required`; the instruction now follows the system message ([#1973](https://github.com/leehack/llamadart/issues/1973)).
+- Native LiteRT-LM strict `responseFormat` now also runs on the Windows x64 GPU (NVIDIA L4 over Direct3D 12, GRID driver 596.86, Qwen3 and Gemma 4); `ComputeDevice.gpu` there no longer needs `ComputeDevice.cpu`. Other drivers are untested and the Linux arm64 GPU stays unqualified ([#174](https://github.com/leehack/llamadart/issues/174)).
 
 ## 0.19.10
 
