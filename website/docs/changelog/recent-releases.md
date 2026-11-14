@@ -14,6 +14,10 @@ validate against the exact release tag notes.
 ## Unreleased
 
 - Chat app microphone: a microphone that disconnects mid-recording now transcribes the audio captured so far with a warning, a missing input device on Web is reported as such instead of as a permission denial, and a failed Web start releases the microphone ([#329](https://github.com/leehack/llamadart/issues/329)).
+- Aligned default WebGPU bridge assets to `v0.1.85`: a page without cross-origin isolation now fails at once with a `LlamaUnsupportedException` naming COOP/COEP `require-corp` instead of hanging for about 90 s, and Firefox CPU runs (`gpuLayers: 0`) are about 25 times faster ([#1025](https://github.com/leehack/llamadart/issues/1025)).
+- `ComputeDevice.gpu` on Web now names why WebGPU was not used (for example `adapter_missing_shader_f16`: Chrome on Linux with NVIDIA needs driver 615.71 or newer); documented the measured Safari 27, Firefox 160 and NVIDIA L4 results ([#1025](https://github.com/leehack/llamadart/issues/1025)).
+
+Runtime baseline: native llama.cpp `v0.9.0` and Web use upstream `v0.9.0@cd959bae99ff4bed22bef2604f45241c09bbb8c8`; native LiteRT-LM uses `v0.19.1-4` and stable-diffusion uses `v0.3.0-3`. Web LiteRT-LM uses `@litert-lm/core@0.19.0`. Manifest SHA-256: `6767783edd85e14853a8a79cd6ce53d53f4eb2d99aeb62601014bd68c1b6b7b3`.
 
 ## 0.19.9
 

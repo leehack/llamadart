@@ -1332,9 +1332,18 @@ class WebGpuLlamaBackend
           await loadPromise.toDart;
         }
         if (setup.requireGpu && bridge.isGpuActive() != true) {
+          var gpuDetail = '';
+          try {
+            gpuDetail = webGpuUnavailableDetail(
+              _collectBridgeRuntimeHints(
+                    bridge,
+                  )['llamadart.webgpu.runtime_notes'] ??
+                  '',
+            );
+          } catch (_) {}
           throw gpuInactive = LlamaUnsupportedException(
             'ComputeDevice.gpu needs WebGPU for llama.cpp on the Web, but the '
-            'runtime loaded the model without GPU layers. Use '
+            'runtime loaded the model without GPU layers.$gpuDetail Use '
             'ComputeDevice.auto or cpu.',
           );
         }
@@ -1359,6 +1368,11 @@ class WebGpuLlamaBackend
         if (identical(e, gpuInactive)) {
           await _safeDisposeBridge();
           rethrow;
+        }
+        final isolationError = webGpuCrossOriginIsolationError(e);
+        if (isolationError != null) {
+          await _safeDisposeBridge();
+          throw isolationError;
         }
         lastError = e;
         Map<String, String> runtimeHints = const <String, String>{};

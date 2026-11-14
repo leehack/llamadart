@@ -54,16 +54,18 @@ in the llamadart-getting-started and llamadart-chat-streaming skills.
 - Serve from a secure context (`https://`, `http://localhost` or
   `http://127.0.0.1`) and send `Cross-Origin-Opener-Policy: same-origin` with
   `Cross-Origin-Embedder-Policy: require-corp` (`credentialless` isolates only
-  in Chromium-based browsers). Without
-  isolation (`window.crossOriginIsolated == false`) the bridge caps inference
-  at one thread (`threads_capped_no_coi` in its notes) and large single-file
-  GGUF loads become unreliable.
+  in Chromium-based browsers; it does not isolate Safari). Without
+  isolation (`window.crossOriginIsolated == false`) assets `v0.1.85+`
+  reject the load at once and llamadart throws `LlamaUnsupportedException`
+  naming COOP/COEP; earlier assets hang or fail with thread errors.
 - Treat WebGPU as a runtime capability. A supported browser (Chrome/Edge 128+,
   Firefox 129+, Safari 17.4+) can still lack an adapter, features or memory.
   Prove a first load with a small quantized GGUF, `contextSize: 2048` or less
   and `gpuLayers: 0`, then raise GPU offload.
 - `device: ComputeDevice.gpu` requires a WebGPU adapter and active GPU layers
-  after load. The bridge ignores negative `mainGpu` values, including with
+  after load; with assets `v0.1.85+` the error names the bridge's
+  `gpu_unavailable:*` reason (for example `adapter_missing_shader_f16`: Chrome
+  on Linux with NVIDIA needs driver 615.71 or newer). The bridge ignores negative `mainGpu` values, including with
   `splitMode: ModelSplitMode.none`; use `device: ComputeDevice.cpu` to select
   WebAssembly CPU execution.
 - Expect automatic fallback: a failed GPU load retries on CPU, then at smaller

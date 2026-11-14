@@ -1671,6 +1671,59 @@ void main() {
         expect(backend.isReady, isFalse);
       });
 
+      for (final (reason, expected) in <(String, String)>[
+        ('adapter_missing_shader_f16', 'driver 615.71 or newer'),
+        ('no_adapter', 'granted no WebGPU adapter'),
+        ('no_webgpu', 'exposes no WebGPU'),
+        ('unknown', 'gpu_unavailable:unknown'),
+      ]) {
+        test('gpu names the bridge reason $reason when the runtime runs '
+            'without GPU layers', () async {
+          addTearDown(fakeNavigatorGpu(FakeWebGpu.adapter));
+          runtimeGpuActive = false;
+          bridgeRuntimeHints['llamadart.webgpu.runtime_notes'] =
+              'core_wasm32_active;gpu_unavailable:$reason;threads_batch:1';
+
+          await expectLater(
+            backend.modelLoadFromUrl(
+              url,
+              const ModelParams(device: ComputeDevice.gpu),
+            ),
+            throwsA(
+              isA<LlamaUnsupportedException>().having(
+                (e) => e.message,
+                'message',
+                allOf(contains('without GPU layers'), contains(expected)),
+              ),
+            ),
+          );
+        });
+      }
+
+      test('gpu without a reason note keeps the plain message', () async {
+        addTearDown(fakeNavigatorGpu(FakeWebGpu.adapter));
+        runtimeGpuActive = false;
+        bridgeRuntimeHints['llamadart.webgpu.runtime_notes'] =
+            'core_wasm32_active';
+
+        await expectLater(
+          backend.modelLoadFromUrl(
+            url,
+            const ModelParams(device: ComputeDevice.gpu),
+          ),
+          throwsA(
+            isA<LlamaUnsupportedException>().having(
+              (e) => e.message,
+              'message',
+              allOf(
+                contains('without GPU layers. Use ComputeDevice.auto or cpu.'),
+                isNot(contains('gpu_unavailable')),
+              ),
+            ),
+          ),
+        );
+      });
+
       test('auto keeps loading without WebGPU', () async {
         addTearDown(fakeNavigatorGpu(FakeWebGpu.missing));
         runtimeGpuActive = false;
@@ -2090,7 +2143,7 @@ void main() {
         bridgeRuntimeHints['llamadart.webgpu.core_variant'] = 'wasm64';
         bridgeRuntimeHints['llamadart.webgpu.runtime_notes'] =
             'core_mem64_attempt;core_mem64_active;core_pthreads:1;'
-            'thread_pool_size:4;threads_capped_no_coi;threads_batch:1;'
+            'thread_pool_size:4;threads_batch:1;'
             'model_network_stream;model_response_stream;'
             'model_fs_write_loaded:0;model_fs_write_arraybuffer_oom';
         failLoads(message: 'Array buffer allocation failed', firstAttempts: 1);
@@ -2114,10 +2167,90 @@ void main() {
       },
     );
 
+    group('cross-origin isolation error', () {
+      JSPromise<JSAny?> rejectIsolation({String? name, String? code}) {
+        final error = JSObject();
+        error.setProperty('message'.toJS, 'bridge isolation text'.toJS);
+        if (name != null) error.setProperty('name'.toJS, name.toJS);
+        if (code != null) error.setProperty('code'.toJS, code.toJS);
+        return _rejectPromise(error);
+      }
+
+      for (final (label, name, code) in <(String, String?, String?)>[
+        (
+          'direct path',
+          'CrossOriginIsolationError',
+          'CROSS_ORIGIN_ISOLATION_REQUIRED',
+        ),
+        (
+          'worker path with the code only',
+          null,
+          'CROSS_ORIGIN_ISOLATION_REQUIRED',
+        ),
+        ('worker path with the name only', 'CrossOriginIsolationError', null),
+      ]) {
+        test('maps to LlamaUnsupportedException on the $label', () async {
+          var loadCalls = 0;
+          bridge.setProperty(
+            'loadModelFromUrl'.toJS,
+            ((String url, JSObject? config) {
+              loadCalls += 1;
+              return rejectIsolation(name: name, code: code);
+            }).toJS,
+          );
+
+          await expectLater(
+            backend.modelLoadFromUrl(
+              'https://example.com/no-coi.gguf',
+              const ModelParams(contextSize: 4096, gpuLayers: 99),
+            ),
+            throwsA(
+              isA<LlamaUnsupportedException>().having(
+                (e) => e.message,
+                'message',
+                allOf(
+                  contains('cross-origin isolation'),
+                  contains('COOP/COEP'),
+                  contains('require-corp'),
+                  contains('"credentialless" does not isolate Safari'),
+                ),
+              ),
+            ),
+          );
+          expect(loadCalls, 1);
+          expect(backend.isReady, isFalse);
+        });
+      }
+
+      test('does not remap an unrelated error carrying another code', () async {
+        bridge.setProperty(
+          'loadModelFromUrl'.toJS,
+          ((String url, JSObject? config) => rejectIsolation(
+            name: 'Error',
+            code: 'OTHER',
+          )).toJS,
+        );
+
+        await expectLater(
+          backend.modelLoadFromUrl(
+            'https://example.com/other.gguf',
+            const ModelParams(contextSize: 4096, gpuLayers: 0),
+          ),
+          throwsA(
+            isA<LlamaModelException>().having(
+              (e) => '${e.details}',
+              'details',
+              contains('bridge isolation text'),
+            ),
+          ),
+        );
+      });
+    });
+
     group('on a page without cross-origin isolation', () {
       const noCoiNotes =
           'core_wasm32_active;core_pthreads:1;thread_pool_size:4;'
-          'threads_capped_no_coi;threads_batch:1;model_network_stream';
+          'threads_batch:1;model_network_stream';
 
       test('reports an ordinary load failure as a model error', () async {
         bridgeRuntimeHints['llamadart.webgpu.core_variant'] = 'wasm32';
