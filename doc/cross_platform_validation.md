@@ -1608,11 +1608,13 @@ on Firebase Test Lab physical devices: Galaxy S24 (`SC-51E`, API 36, Adreno 750)
 and Pixel 9 Pro (`caiman`, API 35, Mali-G715), Android Debug, LiteRT-LM
 `v0.19.1-4`, Qwen3-0.6B (`c5f39b41…`) and Gemma 4 E2B (`18193810…`)
 ([#174](https://github.com/leehack/llamadart/issues/174)). Every run is graded
-by `plan-174-verify-run-v2.py`: adversarial control, sentinel, wide contract,
+by the placement-aware verifier `plan-174-verify-run-v2.py` (kept with the
+lane's evidence, not in this repository): adversarial control, sentinel, wide contract,
 thinking (Gemma 4 reasons then returns the schema reply; Qwen3 is refused),
 `length` cutoff, and a placement rule. A matrix SUCCESS is not a verdict.
 
-CPU, built from clean `8b02e858` (six runtime library hashes equal across
+CPU (Set A), built from clean `8b02e858` on LiteRT-LM `v0.19.1-4`; these
+runs were not repeated on `v0.19.1-5` (six runtime library hashes equal across
 bundles). Every verdict passes, and a CPU run logs no GPU placement record:
 
 | Run | Device | Model | Matrix | Verdict |
@@ -1650,10 +1652,25 @@ the `v0.19.1-5` Android runtime prepared in
 [#1998](https://github.com/leehack/llamadart/issues/1998). Before `v0.19.1-5`
 that route created the engine and failed the first generation.
 
+Set B, on the PR head `a9c83d50` ([#2006](https://github.com/leehack/llamadart/pull/2006),
+clean bundles, LiteRT-LM `v0.19.1-5`, `libLiteRtLm.so` `9926197b…`), graded with
+the same verifier. Each OpenCL run logs one `Loaded OpenCL library with dlopen.`
+record in the test process; W2c's app omits the `libOpenCL.so` declaration (a
+diagnostic build with two local patches) and logs one Mali-G715 Vulkan
+`Selected adapter:` record and no OpenCL record:
+
+| Run | Device | Model | Route | Matrix | Verdict |
+| --- | --- | --- | --- | --- | --- |
+| G1 | S24 | Gemma 4 E2B | OpenCL | `matrix-1pazpgoveixfn` | pass |
+| G2 | Pixel 9 Pro | Gemma 4 E2B | OpenCL | `matrix-3s1bjvwl8zpab` | pass |
+| G3 | Pixel 9 Pro | Qwen3-0.6B | OpenCL | `matrix-156uu35j2hqqq` | pass |
+| G4 | S24 | Qwen3-0.6B | OpenCL | `matrix-2lsagjnnx8p85` | pass |
+| W2c | Pixel 9 Pro | Gemma 4 E2B | WebGPU | `matrix-1jad235n0mlpa` | pass |
+
 Limits: the OpenCL record appears once per process, so it proves one sampled
 step rather than each request; the shipped binary is not attested against the
-sources read; the Pixel has no system-side GPU telemetry and no WebGPU run.
-The runs cover one schema contract and two models, not every model or driver.
+sources read; the Pixel has no system-side GPU telemetry; Set B ran on a Debug app and the
+CPU runs on `v0.19.1-4`. The runs cover one schema contract and two models, not every model or driver.
 
 ## Planned platform/backend coverage
 
