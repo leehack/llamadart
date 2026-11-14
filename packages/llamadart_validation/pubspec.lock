@@ -215,7 +215,7 @@ packages:
       path: "../.."
       relative: true
     source: path
-    version: "0.19.9"
+    version: "0.19.10"
   logging:
     dependency: transitive
     description:
