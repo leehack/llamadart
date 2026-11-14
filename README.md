@@ -146,10 +146,9 @@ creation fails, `ComputeDevice.auto` retries on the CPU with a warning;
 Image generation
 is not available on the web. On iOS, use
 `ImageModelPlacement(vaeOnCpu: true)` to keep diffusion on Metal, or CPU
-generation. Metal VAE decoding needs a native context policy that preserves
-an intrinsic SDXS tiny decoder through model refresh. The pinned
-`v0.3.0-3` runtime provides that policy; full VAE and external-decoder
-Metal decoding remain refused on iOS. This is not new physical-device qualification.
+generation. The pinned `v0.3.0-4` runtime splits Metal graphs, so a full VAE
+decodes on iOS Metal; a runtime without the split keeps the intrinsic SDXS
+tiny-decoder policy and refuses full-VAE Metal decoding.
 Per-target support, device limitations and runtime options:
 
 - [Platform and backend support matrix](https://llamadart.leehack.com/docs/platforms/support-matrix), including

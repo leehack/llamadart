@@ -115,9 +115,21 @@ on Android, where Test Lab refused the `VmHWM` reset on all three phones. The
 Galaxy A53's memory check refused SD-Turbo (about 2.9 GiB needed, 2.5 GiB
 available), so it has no SD-Turbo figures, and its SDXS figures come from a run
 that does not verify because of that refusal: they are an observation, not
-verified evidence. The iPhone full-VAE arm has not been measured, because its
-decode trips the GPU watchdog
+verified evidence. The iPhone full-VAE arm was not measured in those runs because the
+`v0.3.0-3` decode trips the GPU watchdog; the `v0.3.0-4` graph split is
+qualified separately below
 ([#1047](https://github.com/leehack/llamadart/issues/1047)).
+
+### iOS full-VAE graph split
+
+The `v0.3.0-4` XCFramework splits Metal graphs through upstream's eval callback
+at 2^26 elements. On 2026-11-13, DDP ran these exact bytes on an iPhone 16 Pro
+(iOS 18.3) and an iPhone 17 Pro. Every split arm passed 3 of 3 decodes, the
+unsplit control failed its third decode with the GPU command-buffer error (the
+watchdog), and a 30-decode soak passed 30 of 30 with one image hash and a flat
+footprint. The iPhone 17 Pro (iOS 26.5) showed the dispose limit in
+[#2004](https://github.com/leehack/llamadart/issues/2004). The dated record is in
+[cross-platform validation](https://github.com/leehack/llamadart/blob/main/doc/cross_platform_validation.md#ios-full-vae-graph-split-1047-2026-11-13).
 
 ### Full-checkpoint container checks
 

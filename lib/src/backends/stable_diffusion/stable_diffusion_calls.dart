@@ -27,6 +27,7 @@ typedef _CancelGenerationNative =
     Void Function(Pointer<sd.sd_ctx_t>, UnsignedInt);
 typedef _ExitFreeNative = Void Function(Pointer<Void>);
 typedef _GpuDeviceCountNative = Int32 Function();
+typedef _GraphSplitThresholdNative = Uint64 Function();
 typedef _GpuDeviceMemoryNative =
     Int32 Function(Int32, Pointer<sd.sd_dart_gpu_device_memory_t>);
 typedef _LogEnableNative = Void Function();
@@ -65,7 +66,8 @@ typedef _FreeImageGenerationResultNative =
 /// added. Each group is bound only when the runtime exports all of it, and is
 /// `null` otherwise: a runtime between the two releases still generates
 /// images, without the runtime's log and its reason for a failed load, and
-/// without the memory check of a Vulkan GPU.
+/// without the memory check of a Vulkan GPU. [graphSplit] is the same for
+/// [graphSplitNativeRelease]'s Metal graph splitting.
 ///
 /// `sd_dart_exit_teardown`, `sd_dart_exit_call_begin`,
 /// `sd_dart_exit_call_end`, `sd_dart_exit_track` and `sd_dart_exit_untrack`
@@ -94,6 +96,7 @@ final class StableDiffusionCalls {
     required this.freeImages,
     this.log,
     this.gpu,
+    this.graphSplit,
     this.loadsFp8AsF16OnMetal = false,
     this.newContextIntrinsicTinyV1,
   });
@@ -129,6 +132,16 @@ final class StableDiffusionCalls {
   static const List<String> deviceMemorySymbols = [
     'sd_dart_gpu_device_count',
     'sd_dart_gpu_device_memory',
+  ];
+
+  /// The `stable-diffusion-native` release that added [graphSplitSymbols].
+  static const String graphSplitNativeRelease = 'v0.3.0-4';
+
+  /// The `sd_dart_` functions of [graphSplit] that [tryResolve] binds. The
+  /// release also exports `sd_dart_graph_split_set_threshold` and
+  /// `sd_dart_graph_split_cuts`, which Dart does not call.
+  static const List<String> graphSplitSymbols = [
+    'sd_dart_graph_split_threshold',
   ];
 
   /// The first `stable-diffusion-native` release that loads FP8 weights a
@@ -225,6 +238,10 @@ final class StableDiffusionCalls {
       Native.addressOf<NativeFunction<_GpuDeviceMemoryNative>>(
         sd.sd_dart_gpu_device_memory,
       ),
+    'sd_dart_graph_split_threshold' =>
+      Native.addressOf<NativeFunction<_GraphSplitThresholdNative>>(
+        sd.sd_dart_graph_split_threshold,
+      ),
     'free_sd_image_generation_result' =>
       Native.addressOf<NativeFunction<_FreeImageGenerationResultNative>>(
         sd.free_sd_image_generation_result,
@@ -304,6 +321,13 @@ final class StableDiffusionCalls {
           ).asFunction(),
           deviceMemory: function<_GpuDeviceMemoryNative>(
             'sd_dart_gpu_device_memory',
+          ).asFunction(),
+        ),
+      ),
+      graphSplit: optional(
+        () => StableDiffusionGraphSplitCalls(
+          threshold: function<_GraphSplitThresholdNative>(
+            'sd_dart_graph_split_threshold',
           ).asFunction(),
         ),
       ),
@@ -398,6 +422,10 @@ final class StableDiffusionCalls {
   /// [optionalNativeRelease].
   final StableDiffusionGpuCalls? gpu;
 
+  /// The runtime's Metal graph-split query, or `null` on a runtime older than
+  /// [graphSplitNativeRelease].
+  final StableDiffusionGraphSplitCalls? graphSplit;
+
   /// Whether the runtime loads FP8 weights a Metal backend computes with as
   /// F16, so FP8 weights can reach a Metal context without aborting the
   /// process.
@@ -433,6 +461,22 @@ final class StableDiffusionGpuCalls {
     Pointer<sd.sd_dart_gpu_device_memory_t> out,
   )
   deviceMemory;
+}
+
+/// The Metal graph-split query of the stable_diffusion runtime.
+///
+/// On iOS Metal the runtime commits a graph in several command buffers, so
+/// that no single one of a full-VAE decode outlasts the GPU watchdog.
+final class StableDiffusionGraphSplitCalls {
+  /// Creates the calls from functions.
+  const StableDiffusionGraphSplitCalls({required this.threshold});
+
+  /// `sd_dart_graph_split_threshold`: the number of tensor elements after
+  /// which a graph is split, or 0 when it is not split. Returns at once.
+  final int Function() threshold;
+
+  /// Whether the runtime splits graphs.
+  bool get isActive => threshold() > 0;
 }
 
 /// The log recorder of the stable_diffusion runtime: the library copies each

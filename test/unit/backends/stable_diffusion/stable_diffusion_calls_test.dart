@@ -39,6 +39,9 @@ const _deviceMemorySymbols = [
 // Upstream master-1017's, which v0.3.0-1 first ships.
 const _fp8MetalSymbols = ['free_sd_image_generation_result'];
 
+// v0.3.0-4's Metal graph split; Dart reads only the threshold.
+const _graphSplitSymbols = ['sd_dart_graph_split_threshold'];
+
 // The root package does not bundle the stable_diffusion runtime, so these
 // tests resolve the functions from stand-ins. That each name resolves to the
 // runtime's own export is checked against the real runtime by
@@ -60,6 +63,7 @@ void main() {
         ..._logSymbols,
         ..._deviceMemorySymbols,
         ..._fp8MetalSymbols,
+        ..._graphSplitSymbols,
         'sd_dart_new_sd_ctx_intrinsic_tiny_v1',
       ]),
     );
@@ -135,6 +139,36 @@ void main() {
       expect(present!.newContextIntrinsicTinyV1, isNotNull);
     },
   );
+
+  test('the graph split query is bound only when the runtime exports it, and '
+      'is active only above a zero threshold', () {
+    expect(
+      StableDiffusionCalls.graphSplitSymbols,
+      unorderedEquals(_graphSplitSymbols),
+    );
+    expect(StableDiffusionCalls.graphSplitNativeRelease, 'v0.3.0-4');
+    final absent = StableDiffusionCalls.tryResolve(
+      symbol: (name) => _graphSplitSymbols.contains(name)
+          ? throw ArgumentError("Couldn't resolve native function '$name'")
+          : Pointer.fromAddress(0x1000),
+    );
+    expect(absent, isNotNull);
+    expect(absent!.graphSplit, isNull);
+    expect(
+      StableDiffusionCalls.tryResolve(
+        symbol: (_) => Pointer.fromAddress(0x1000),
+      )!.graphSplit,
+      isNotNull,
+    );
+    expect(
+      StableDiffusionGraphSplitCalls(threshold: () => 0).isActive,
+      isFalse,
+    );
+    expect(
+      StableDiffusionGraphSplitCalls(threshold: () => 1 << 26).isActive,
+      isTrue,
+    );
+  });
 
   group('loadsFp8AsF16OnMetal', () {
     StableDiffusionCalls resolve({

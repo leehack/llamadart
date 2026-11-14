@@ -189,14 +189,17 @@ Use trusted model files. There is no public conversion API or load-time
 quantization/mmap option. Weights load eagerly; see the
 [memory check](./image-generation-memory-and-limits#memory-check) before substituting larger unquantized files.
 
-On iOS, full VAE and external-decoder recipes require
-`ImageModelPlacement(vaeOnCpu: true)` for Metal diffusion, or
-`ComputeDevice.cpu`. The pinned `v0.3.0-3` runtime provides the intrinsic
-tiny-decoder v1 context policy for SDXS Metal decoding: it rejects any
-refreshed model that could select a full VAE before runner probes and
-decoding. This restriction is tested on desktop; it does not establish new
-physical-iOS qualification or repair the full-VAE watchdog failure
-([#1047](https://github.com/leehack/llamadart/issues/1047)).
+On iOS, the pinned `v0.3.0-4` runtime splits Metal graphs, so full-VAE
+recipes decode on the GPU without tripping the watchdog
+([#1047](https://github.com/leehack/llamadart/issues/1047)); it was run on an
+iPhone 16 Pro and an iPhone 17 Pro. A runtime without the split refuses full VAE
+and external-decoder recipes: use `ImageModelPlacement(vaeOnCpu: true)` for
+Metal diffusion, or `ComputeDevice.cpu`. Its intrinsic tiny-decoder v1 context
+policy still serves SDXS Metal decoding.
+
+Known limit: on iOS 26 the second `ImageGenerationEngine` dispose can leave
+about 2 GB resident, so later loads may fail the memory check
+([#2004](https://github.com/leehack/llamadart/issues/2004)).
 
 #### Pinned-runtime format checks
 

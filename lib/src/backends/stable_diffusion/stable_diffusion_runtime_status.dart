@@ -31,6 +31,11 @@ final class StableDiffusionRuntimeStatus {
   /// weights abort the process when a Metal context is created.
   final bool loadsFp8AsF16OnMetal;
 
+  /// Whether the runtime splits large graphs on Metal, as
+  /// `StableDiffusionCalls.graphSplit` reports: a full-VAE decode then stays
+  /// under the iOS GPU watchdog.
+  final bool splitsGraphsOnMetal;
+
   /// Whether a native context can enforce the intrinsic tiny-decoder v1
   /// policy through every automatic model refresh.
   final bool supportsIntrinsicTinyDecoderV1;
@@ -41,6 +46,7 @@ final class StableDiffusionRuntimeStatus {
     required String this.commit,
     required this.devices,
     this.loadsFp8AsF16OnMetal = false,
+    this.splitsGraphsOnMetal = false,
     this.supportsIntrinsicTinyDecoderV1 = false,
   }) : unavailableReason = null;
 
@@ -52,6 +58,7 @@ final class StableDiffusionRuntimeStatus {
       commit = null,
       devices = const [],
       loadsFp8AsF16OnMetal = false,
+      splitsGraphsOnMetal = false,
       supportsIntrinsicTinyDecoderV1 = false;
 
   /// Whether the runtime loaded and answered the probe.
