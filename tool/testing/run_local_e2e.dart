@@ -197,6 +197,9 @@ class LocalE2eRunContext {
   final bool skipBuild;
   final Map<String, String>? _environment;
 
+  /// Whether `--backend webgpu` asked the Web smoke for full WebGPU offload.
+  bool get webgpuRequested => backendProvided && backend == 'webgpu';
+
   /// The process environment scenarios read, or what a test injected.
   Map<String, String> get environment => _environment ?? Platform.environment;
 
@@ -281,6 +284,8 @@ List<LocalE2eCommandStep> _webRealModelSmokeSteps(
   List<String> extraSmokeArguments, {
   String? defaultExpect,
 }) {
+  // Safari and Firefox are cross-origin isolated only under require-corp.
+  final webDriverBrowser = _isWebDriverBrowser(context.browser);
   return [
     _prepareChatAppWebBuild(context),
     LocalE2eCommandStep(
@@ -292,6 +297,7 @@ List<LocalE2eCommandStep> _webRealModelSmokeSteps(
         '.',
         '--port',
         '${context.port}',
+        if (webDriverBrowser) ...['--coep', 'require-corp'],
       ],
       description: 'Serve repo root with COOP/COEP headers',
       background: true,
@@ -311,6 +317,13 @@ List<LocalE2eCommandStep> _webRealModelSmokeSteps(
             : defaultExpect ?? context.expect,
         if (context.allowAnyResponse) '--allow-any-response',
         ...extraSmokeArguments,
+        if (context.webgpuRequested) ...[
+          '--backend-index',
+          '0',
+          '--gpu-layers',
+          '99',
+        ],
+        if (webDriverBrowser) ...['--browser', context.browser!],
       ],
       description: 'Run Playwright real-model chat app smoke',
     ),
@@ -374,6 +387,9 @@ List<LocalE2eCommandStep> _webSpeechToTextSteps(
   ),
 ];
 
+bool _isWebDriverBrowser(String? browser) =>
+    browser == 'safari' || browser == 'firefox';
+
 LocalE2eCommandStep _prepareChatAppWebBuild(LocalE2eRunContext context) =>
     LocalE2eCommandStep(
       workingDirectory: context.projectRoot,
@@ -407,6 +423,19 @@ const List<String> _referenceEditComponentVariables = [
   'LLAMADART_REFERENCE_EDIT_CLIP_L',
   'LLAMADART_REFERENCE_EDIT_T5XXL',
 ];
+
+/// Scenarios that run `dart test -p chrome*`; their pages are not served with
+/// COOP/COEP headers.
+const Set<String> _dartWebE2eScenarios = {
+  'decision-model-web-smoke',
+  'web-lazy-grammar',
+  'web-tool-choice-grammar',
+  'web-speech-task-cancel',
+  'web-multimodal-embeddings',
+  'web-multimodal-embeddings-webgpu',
+  'web-webgpu-generation',
+  'webgpu-multimodal-regression',
+};
 
 List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
   return [
@@ -1496,6 +1525,41 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
           description:
               'Web lazy grammar, prompt penalties, thinking-budget grammar '
               'and error recovery',
+        ),
+      ],
+    ),
+    LocalE2eScenario(
+      name: 'web-webgpu-generation',
+      group: LocalE2eScenarioGroup.webSmoke,
+      description:
+          'Check pinned-asset text generation at full WebGPU offload against '
+          'the CPU Wasm runtime in direct and worker runtimes; needs a WebGPU '
+          'adapter and a staged build/webgpu_generation_e2e/config.json.',
+      requiresDevice: false,
+      stepsBuilder: (context) => [
+        LocalE2eCommandStep(
+          workingDirectory: context.projectRoot,
+          executable: 'bash',
+          arguments: const ['scripts/fetch_webgpu_bridge_assets.sh'],
+          environment: {
+            'WEBGPU_BRIDGE_OUT_DIR':
+                '${context.projectRoot}/build/webgpu_generation_e2e/bridge',
+          },
+          description: 'Fetch pinned WebGPU bridge assets for the test server',
+        ),
+        LocalE2eCommandStep(
+          workingDirectory: context.projectRoot,
+          executable: 'dart',
+          arguments: const [
+            'test',
+            '-p',
+            'chrome-webgpu',
+            '--run-skipped',
+            '-t',
+            'local-only',
+            'test/e2e/webgpu/webgpu_generation_e2e_test.dart',
+          ],
+          description: 'Web full-offload WebGPU generation',
         ),
       ],
     ),
@@ -3124,17 +3188,52 @@ Future<LocalE2eResult> runLocalE2e(
       );
     }
   }
+  if (parsed.browser case final browser? when _isWebDriverBrowser(browser)) {
+    if (_dartWebE2eScenarios.contains(scenario.name)) {
+      return LocalE2eResult(
+        64,
+        stderr:
+            '--browser $browser is not supported by ${scenario.name}: '
+            'package:test pages are never cross-origin isolated, so the '
+            'WebGPU bridge cannot load its pthread core in $browser. Use '
+            'chat-app-web-real-model-smoke, which serves '
+            'Cross-Origin-Embedder-Policy: require-corp.\n',
+      );
+    }
+  }
   if (parsed.browser case final browser?
       when !const [
             'litert-lm-web-text-history',
             'chat-app-web-litert-gemma4-smoke',
+            'chat-app-web-real-model-smoke',
           ].contains(scenario.name) ||
-          !const ['chrome', 'safari'].contains(browser)) {
+          !const ['chrome', 'safari', 'firefox'].contains(browser) ||
+          (browser == 'firefox' &&
+              scenario.name != 'chat-app-web-real-model-smoke')) {
     return const LocalE2eResult(
       64,
       stderr:
           '--browser chrome or safari applies only to litert-lm-web-text-history '
-          'and chat-app-web-litert-gemma4-smoke.\n',
+          'and chat-app-web-litert-gemma4-smoke; chat-app-web-real-model-smoke '
+          'also accepts firefox.\n',
+    );
+  }
+  if (scenario.name == 'chat-app-web-real-model-smoke' &&
+      parsed.backendProvided &&
+      !const ['cpu', 'webgpu'].contains(parsed.backend)) {
+    return const LocalE2eResult(
+      64,
+      stderr:
+          'chat-app-web-real-model-smoke requires --backend cpu or webgpu.\n',
+    );
+  }
+  if (scenario.name != 'chat-app-web-real-model-smoke' &&
+      parsed.backend == 'webgpu') {
+    return LocalE2eResult(
+      64,
+      stderr:
+          '--backend webgpu applies only to chat-app-web-real-model-smoke; '
+          '${scenario.name} does not accept it.\n',
     );
   }
   if (const [
@@ -3593,6 +3692,19 @@ Future<LocalE2eResult> runLocalE2e(
     }
   }
 
+  if (scenario.name == 'web-webgpu-generation' &&
+      !parsed.dryRun &&
+      !File('$root/build/webgpu_generation_e2e/config.json').existsSync()) {
+    return const LocalE2eResult(
+      64,
+      stderr:
+          'web-webgpu-generation requires build/webgpu_generation_e2e/config.json '
+          'with {"assets":"bridge/","model":"models/<gguf>"} beside a model '
+          'that WebGPU does not cap (not Qwen3.5-0.8B); see '
+          'test/e2e/webgpu/webgpu_generation_e2e_test.dart.\n',
+    );
+  }
+
   if (scenario.name == 'web-multimodal-embeddings-webgpu' && !parsed.dryRun) {
     final configFile = File('$root/build/webgpu_embeddings_e2e/config.json');
     Object? gpuLayers;
@@ -3881,8 +3993,10 @@ Options:
   --config-path <path>           Optional decision head config JSON for head files without laya.config metadata.
   --model-url <url>              Model URL for real-model web smoke.
   --mmproj-url <url>             Projector URL for real-model web smoke.
-  --backend <name>               Backend for local model scenarios (default: auto; decision-model-smoke: cpu).
-  --browser <name>               LiteRT-LM Web history and Gemma 4 smoke browser: chrome (default) or safari (safaridriver).
+  --backend <name>               Backend for local model scenarios (default: auto; decision-model-smoke: cpu;
+                                 chat-app-web-real-model-smoke: cpu or webgpu for full WebGPU offload).
+  --browser <name>               LiteRT-LM Web history and Gemma 4 smoke browser: chrome (default) or safari (safaridriver);
+                                 chat-app-web-real-model-smoke also accepts firefox (geckodriver, binary from FIREFOX_EXECUTABLE).
   --speculative-cases <list>     Benchmark cases for llama.cpp speculative benchmark.
   --benchmark-gpu-layers <n>     GPU layers for benchmark scenarios (default: 0).
   --benchmark-max-tokens <n>     Max tokens for benchmark scenarios (default: 128).
