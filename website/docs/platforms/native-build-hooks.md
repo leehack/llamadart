@@ -101,7 +101,7 @@ hooks:
   ABI checks and requires macOS 14+ before loading even an explicit path or
   legacy library; public selection admits C API 1.0.x while unknown/future
   versions remain unsupported. The hook and Apple companion pin published
-  native `v0.19.1-4`.
+  native `v0.19.1-5`.
 - An empty or all-unknown selection falls back to `llama_cpp` and
   `litert_lm`; one that leaves no runtime, such as `none`, fails the build.
 

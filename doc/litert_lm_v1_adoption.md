@@ -80,8 +80,21 @@ LiteRT marker. The APK packaged the archive libraries byte-identically. The
 results match v0.19.1: 20/20 PASS, six lifetimes closed, completion present,
 the unchanged decoder accepted journal `a71fb3b3` plus 15 extracted sidecars,
 full `LITERT_CL` delegation with no CPU fallback, and the same four legacy
-semantic failures. The qualifier binding admits `v0.19.1`, `v0.19.1-1` (same
-Android binaries) and `v0.19.1-2`.
+semantic failures.
+
+It passed again on v0.19.1-5 (Test Lab matrix `8700956042671373601`, run
+`pr2003-litert0191-5-s24-20261114`, source `73b2a2fe`, 2026-11-14). That Android
+arm64 bundle (`09da4ead`) differs from v0.19.1-2 only in `libLiteRtLm.so`
+(`9a56e701` to `cc8de93e`), which links the WebGPU top-k sampler
+([#1998](https://github.com/leehack/llamadart/issues/1998)). The APK packaged
+the archive libraries byte-identically (binding `15ea9e6a`). The results match
+v0.19.1: 20/20 PASS, six lifetimes closed, completion present, the unchanged
+decoder accepted journal `5adffed6` plus 15 extracted sidecars, full
+`LITERT_CL` delegation (1306/1306 decode, 1358/1358 prefill) with no CPU
+fallback, and the same four legacy semantic failures. The OpenCL route is the
+qualified one here; the WebGPU route is covered by the W1c run (Gemma 4 E2B, not
+this graph). The qualifier binding admits `v0.19.1`, `v0.19.1-1` (same Android
+binaries), `v0.19.1-2` and `v0.19.1-5`.
 
 ## Required coverage
 
