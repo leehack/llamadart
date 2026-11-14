@@ -180,9 +180,9 @@ if (reply.toolCalls.isNotEmpty) {
 - With `engine.create`, append the collected `completion.message` (a
   `LlamaToolCallContent` per call) and the tool messages to your own list
   before the next call.
-- Check `call.name` against your tools before invoking: calls to `ToolParam`
-  tools come back as the model wrote them, even with an undeclared name or
-  mistyped arguments.
+- Check `call.name` against your tools before invoking: when no tool uses
+  `ToolDefinition.fromJsonSchema`, calls come back as the model wrote them,
+  even with an undeclared name, and `ToolParam` arguments are never checked.
 - Cap the rounds: a model can keep calling tools.
 
 For LFM2/LFM2.5, a quoted `<|tool_call_end|>` inside an argument is literal

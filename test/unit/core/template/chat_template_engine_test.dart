@@ -125,6 +125,30 @@ void main() {
       );
     });
 
+    test('replaces a whitespace-only system message', () {
+      expect(
+        render(
+          const LlamaChatMessage.fromText(
+            role: LlamaChatRole.system,
+            text: '  \n',
+          ),
+        ),
+        '${system(instruction)}$tail',
+      );
+    });
+
+    test('replaces a system message with no parts', () {
+      expect(
+        render(
+          LlamaChatMessage.withContent(
+            role: LlamaChatRole.system,
+            content: const [],
+          ),
+        ),
+        '${system(instruction)}$tail',
+      );
+    });
+
     test('becomes the system message when the caller gives none', () {
       expect(render(null), '${system(instruction)}$tail');
     });

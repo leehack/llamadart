@@ -693,8 +693,9 @@ class ChatTemplateEngine {
   /// parse, throws [LlamaInferenceException].
   ///
   /// When [tools] has a `ToolDefinition.fromJsonSchema` tool, a final parse also
-  /// throws [LlamaInferenceException] for a call to an undeclared name and for
-  /// arguments of a schema tool that do not match its schema. Calls to
+  /// throws [LlamaInferenceException] for a call to an undeclared name, for a
+  /// malformed or incomplete call, and for arguments of a schema tool that do
+  /// not match its schema. Calls to
   /// `ToolParam` tools are returned as parsed, as is every call when no tool has
   /// a schema, so check the name before invoking one.
   static ChatParseResult parse(
