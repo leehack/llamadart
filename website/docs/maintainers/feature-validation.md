@@ -69,6 +69,11 @@ Web adoption still need separate validation
 coverage, smoke commands and contribution notes for LiteRT-LM chat templates
 are in `doc/litert_lm_templates.md`.
 
+Native strict JSON Schema output is qualified on Android arm64 CPU and GPU by
+the `chat-app-litert-json-schema` scenario on a Galaxy S24 and a Pixel 9 Pro;
+the run record is in
+[`doc/cross_platform_validation.md`](https://github.com/leehack/llamadart/blob/main/doc/cross_platform_validation.md#android-arm64-strict-json-schema-on-cpu-and-gpu-2026-11-13).
+
 ## Speech to text
 
 Qwen3-ASR 0.6B Q8_0 was validated on WAV up to 33 s, and on MP3 and FLAC

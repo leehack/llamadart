@@ -177,15 +177,22 @@ void main() {
       Future<void> expectRefused(
         String backend, {
         bool beforeEngine = true,
+        String? hint,
       }) async {
         await expectLater(
           service.prepareJsonSchemaChat(),
           throwsA(
-            isA<LlamaUnsupportedException>().having(
-              (e) => e.message,
-              'message',
-              contains('not qualified for the LiteRT-LM $backend'),
-            ),
+            isA<LlamaUnsupportedException>()
+                .having(
+                  (e) => e.message,
+                  'message',
+                  contains('not qualified for the LiteRT-LM $backend'),
+                )
+                .having(
+                  (e) => e.message,
+                  'hint',
+                  hint == null ? anything : contains(hint),
+                ),
           ),
         );
         expect(client.createConversationCount, 0);
@@ -195,7 +202,7 @@ void main() {
       const expected = <Abi, Set<String>>{
         Abi.macosArm64: {'cpu', 'gpu'},
         Abi.iosArm64: {'cpu', 'gpu'},
-        Abi.androidArm64: {'cpu'},
+        Abi.androidArm64: {'cpu', 'gpu'},
         Abi.androidX64: {},
         Abi.linuxX64: {'cpu'},
         Abi.linuxArm64: {'cpu'},
@@ -233,7 +240,7 @@ void main() {
           );
         }
       }
-      for (final abi in [Abi.linuxX64, Abi.windowsX64, Abi.androidArm64]) {
+      for (final abi in [Abi.linuxX64, Abi.windowsX64]) {
         test(
           'refuses the deprecated gpu backend override on $abi',
           skip: hostHasGpu ? null : 'needs a host with a LiteRT-LM GPU backend',
@@ -272,6 +279,59 @@ void main() {
           );
           await expectRefused('cpu', beforeEngine: false);
           expect(client.lastBackend, 'cpu');
+        },
+      );
+      for (final fallsBack in [false, true]) {
+        test(
+          'admits an automatic load on androidArm64 that '
+          '${fallsBack ? 'falls back to the CPU' : 'runs on the GPU'}',
+          skip: liteRtLmDefaultNativeBackendForCurrentPlatform() == 'gpu'
+              ? null
+              : 'needs a host whose automatic LiteRT-LM backend is the GPU',
+          () async {
+            final gpu = _FakeLiteRtLmRuntimeClient(
+              initializeError: fallsBack
+                  ? LiteRtLmEngineCreateError('delegate init failed.')
+                  : null,
+            )..jsonSchemaSupport = true;
+            final cpu = _FakeLiteRtLmRuntimeClient()..jsonSchemaSupport = true;
+            final clients = [gpu, if (fallsBack) cpu];
+            var next = 0;
+            service.dispose();
+            service = LiteRtLmService(
+              clientFactory: () => clients[next++],
+              probeGpuAdapters: () => hardwareGpu,
+              useTempCacheDir: false,
+            );
+            await service.loadModel(
+              '${tempDir.path}/Qwen3-0.6B.litertlm',
+              const ModelParams(),
+            );
+            debugLiteRtLmAbiOverride = Abi.androidArm64;
+            await service.prepareJsonSchemaChat();
+            final active = fallsBack ? cpu : gpu;
+            expect(active.lastBackend, fallsBack ? 'cpu' : 'gpu');
+            expect(active.lastJsonSchemaConfig, isTrue);
+            for (final c in clients) {
+              final unused = c.generated.stream.drain<void>();
+              await c.generated.close();
+              await unused;
+            }
+          },
+        );
+      }
+      test(
+        'names the qualified devices in a refusal',
+        skip: hostHasGpu ? null : 'needs a host with a LiteRT-LM GPU backend',
+        () async {
+          service.dispose();
+          service = tableService();
+          await service.loadModel(
+            '${tempDir.path}/Qwen3-0.6B.litertlm',
+            const ModelParams(liteRtLmBackend: LiteRtLmBackendPreference.gpu),
+          );
+          debugLiteRtLmAbiOverride = Abi.linuxX64;
+          await expectRefused('gpu', hint: '; load with ComputeDevice.cpu.');
         },
       );
       test('a reload repeats admission', () async {

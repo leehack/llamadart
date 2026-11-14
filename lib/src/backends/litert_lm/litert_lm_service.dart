@@ -64,7 +64,7 @@ const String _liteRtLmVideoUnsupportedMessage =
 const _jsonSchemaQualifiedBackendsByAbi = <Abi, Set<String>>{
   Abi.macosArm64: {'cpu', 'gpu'},
   Abi.iosArm64: {'cpu', 'gpu'},
-  Abi.androidArm64: {'cpu'},
+  Abi.androidArm64: {'cpu', 'gpu'},
   Abi.linuxX64: {'cpu'},
   Abi.linuxArm64: {'cpu'},
   Abi.windowsX64: {'cpu'},

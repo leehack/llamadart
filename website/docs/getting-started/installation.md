@@ -74,7 +74,8 @@ This enables library discovery, not model/device qualification. A GPU engine
 can still fail because of driver or buffer limits. `ComputeDevice.auto`
 retries on the CPU with a warning; `ComputeDevice.gpu` fails instead. Check
 the active backend and [Android limitations](../platforms/known-platform-issues#android)
-before reporting GPU acceleration.
+before reporting GPU acceleration. Strict `responseFormat` is admitted on the
+Android arm64 GPU as well as the CPU.
 
 ## Web
 

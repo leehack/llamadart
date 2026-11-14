@@ -134,6 +134,12 @@ feature. For which runtime supports which feature, see the
   [#1677](https://github.com/leehack/llamadart/issues/1677).
   `ModelParams(device: ComputeDevice.cpu)` skips the GPU attempt. Gemma 4
   E2B has separate GPU evidence; it does not qualify Qwen3.
+- Strict `responseFormat` on the Android arm64 GPU passed on a Galaxy S24
+  (Adreno 750) and a Pixel 9 Pro (Mali-G715) with Gemma 4 E2B and Qwen3-0.6B
+  through the OpenCL route the manifest request above enables, and on the S24
+  with Gemma 4 through WebGPU. It inherits the limits above: a device whose
+  GPU engine cannot start fails under `ComputeDevice.gpu` and runs on the CPU
+  under `auto`.
 - Android NPU depends on the device SoC, the `.litertlm` bundle and the LiteRT
   dispatch libraries (`LiteRtLmModelParams.dispatchLibDir`). If native
   LiteRT-LM cannot create an NPU engine, use `cpu` or `gpu`.
