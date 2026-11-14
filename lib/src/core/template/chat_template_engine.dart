@@ -1158,12 +1158,29 @@ class ChatTemplateEngine {
     if (supportsSystemRole) {
       if (messages.isNotEmpty && messages.first.role == LlamaChatRole.system) {
         final first = messages.first;
-        if (first.content.trim() == instruction.trim()) {
+        if (first.content.contains(instruction)) {
           return messages;
         }
+        final parts = first.parts;
+        if (parts.every(
+          (part) => part is LlamaTextContent && part.text.trim().isEmpty,
+        )) {
+          return <LlamaChatMessage>[
+            first.copyWith(content: instruction),
+            ...messages.skip(1),
+          ];
+        }
 
+        final last = parts.last;
         return <LlamaChatMessage>[
-          first.copyWith(content: instruction),
+          first.copyWith(
+            parts: last is LlamaTextContent
+                ? [
+                    ...parts.take(parts.length - 1),
+                    LlamaTextContent('${last.text}\n\n$instruction'),
+                  ]
+                : [...parts, LlamaTextContent('\n\n$instruction')],
+          ),
           ...messages.skip(1),
         ];
       }

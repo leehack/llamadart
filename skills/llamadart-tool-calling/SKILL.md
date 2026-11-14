@@ -199,7 +199,8 @@ description: >-
   model's closed `</think>` reasoning, which streams as `chunk.thinking`.
 - Tool quality depends on the model and its template. Templates without a
   native tool format use a generic JSON fallback that constrains the output
-  shape but does not guarantee the right tool or arguments. If calls look
+  shape but does not guarantee the right tool or arguments; the fallback
+  appends its instruction to your system prompt. If calls look
   wrong, inspect `engine.chatTemplate(...)` to see whether tool definitions
   reach the prompt, and describe the tools in the system prompt if not. To
   replace a broken GGUF template, load with `ModelParams(chatTemplate: ...)`;

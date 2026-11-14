@@ -520,7 +520,9 @@ properties.
 
 For templates without a recognized tool-call format, and for Gemma 2/3/3n,
 llamadart keeps its generic JSON fallback when tools are passed with
-`ToolChoice.auto` or `ToolChoice.required`. It adds a JSON instruction,
+`ToolChoice.auto` or `ToolChoice.required`. It adds a JSON instruction
+after your system message (it becomes the system message when you give none,
+and goes before the first message for templates without a system role),
 builds a grammar from the supplied tools for runtimes that support it, and
 parses output such as:
 

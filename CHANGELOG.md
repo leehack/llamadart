@@ -3,6 +3,8 @@ Releases before 0.10.0 are in the
 
 ## Unreleased
 
+- Fixed the generic JSON tool fallback replacing your system message with its JSON instruction when tools are passed with `ToolChoice.auto` or `required`; the instruction now follows the system message ([#1973](https://github.com/leehack/llamadart/issues/1973)).
+
 ## 0.19.10
 
 - Adopt stable-diffusion `v0.3.0-4`: on iOS Metal the runtime splits graphs, so `ImageGenerationEngine.load` no longer refuses a full VAE there; a runtime without the split keeps the refusal. Qualified on an iPhone 16 Pro and an iPhone 17 Pro with SD-Turbo's embedded full VAE at 512x512; external VAE/TAESD components, SDXL-size VAEs, larger resolutions and SDXS through `sd_dart_new_sd_ctx` are admitted but not device-qualified. On iOS 26 the second engine dispose can leave about 2 GB resident ([#1047](https://github.com/leehack/llamadart/issues/1047), [#2004](https://github.com/leehack/llamadart/issues/2004)).
