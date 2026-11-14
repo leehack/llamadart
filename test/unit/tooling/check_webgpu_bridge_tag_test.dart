@@ -313,7 +313,7 @@ void main() {
       );
       expect(
         File(nativeLlamaCppTagPath).readAsStringSync(),
-        contains("const liteRtLmReleaseTag = 'v0.19.1-4';"),
+        contains("const liteRtLmReleaseTag = 'v0.19.1-5';"),
       );
     },
   );
@@ -859,7 +859,7 @@ void main() {
     const commit = bridgeLlamaCppCommit;
     String paragraph({
       String llama = 'v0.9.0',
-      String liteRt = 'v0.19.1-4',
+      String liteRt = 'v0.19.1-5',
       String sd = 'v0.3.0-3',
       String upstream = '$bridgeLlamaCppTag@$commit',
       String liteRtVerb = 'uses',
@@ -878,7 +878,7 @@ void main() {
       files: <String, String>{
         nativeLlamaCppTagPath:
             "const llamaCppTag = 'v0.9.0';\n"
-            "const liteRtLmReleaseTag = 'v0.19.1-4';\n"
+            "const liteRtLmReleaseTag = 'v0.19.1-5';\n"
             "const stableDiffusionReleaseTag = 'v0.3.0-3';\n",
         'CHANGELOG.md': '## $heading\n\n- Fix.\n\n$changelog',
         'website/docs/changelog/recent-releases.md':
@@ -975,7 +975,7 @@ void main() {
     group('with a released section below Unreleased', () {
       Directory cycleRepo({
         String unreleased = '',
-        String liteRtPin = 'v0.19.1-5',
+        String liteRtPin = 'v0.19.1-6',
         String released = '',
       }) {
         final changelog =
@@ -995,7 +995,7 @@ void main() {
 
       test('a mid-cycle pin bump does not fail the frozen baseline', () {
         final root = cycleRepo(
-          unreleased: '- Adopt native LiteRT-LM `v0.19.1-5`.\n',
+          unreleased: '- Adopt native LiteRT-LM `v0.19.1-6`.\n',
           released: paragraph(),
         );
         expect(findRuntimeBaselineDrift(root), isEmpty);
@@ -1011,11 +1011,11 @@ void main() {
           unreleased:
               '- Keep the default WebGPU bridge assets at `v9.9.9`.\n'
               '\n${paragraph()}',
-          released: paragraph(liteRt: 'v0.19.1-5'),
+          released: paragraph(liteRt: 'v0.19.1-6'),
         );
         expect(findRuntimeBaselineDrift(root), [
-          allOf(contains('CHANGELOG.md'), contains('v0.19.1-4')),
-          allOf(contains('recent-releases.md'), contains('v0.19.1-4')),
+          allOf(contains('CHANGELOG.md'), contains('v0.19.1-5')),
+          allOf(contains('recent-releases.md'), contains('v0.19.1-5')),
         ]);
       });
     });

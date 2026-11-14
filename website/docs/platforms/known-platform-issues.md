@@ -110,7 +110,12 @@ feature. For which runtime supports which feature, see the
 
 - Android LiteRT-LM needs the app's optional vendor OpenCL manifest request
   when targeting API 31+ on Android 12+; see [Android setup](../getting-started/installation#android-litert-lm-setup).
-  Without accessible OpenCL, the runtime can try WebGPU. On Adreno 750
+  Without accessible OpenCL, the runtime can try WebGPU. In 0.18.0 through
+  0.19.9 it creates the GPU engine and then fails the first generation with
+  "Can not find OpenCL library on this device" because the Android runtime
+  lacks the WebGPU sampler; 0.19.10 fixes this
+  ([#1998](https://github.com/leehack/llamadart/issues/1998)). On those
+  versions, declare `libOpenCL.so` or use `ComputeDevice.cpu`. On Adreno 750
   (Galaxy S24), WebGPU's 128 MiB storage-buffer binding limit rejects a
   larger Qwen3 weight buffer. `ComputeDevice.gpu` fails on GPU creation;
   `auto` retries on the CPU with a warning

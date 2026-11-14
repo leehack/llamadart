@@ -14,6 +14,7 @@ validate against the exact release tag notes.
 ## Unreleased
 
 - Chat app microphone: a microphone that disconnects mid-recording now transcribes the audio captured so far with a warning, a missing input device on Web is reported as such instead of as a permission denial, and a failed Web start releases the microphone ([#329](https://github.com/leehack/llamadart/issues/329)).
+- Fixed Android LiteRT-LM GPU generation failing with "Can not find OpenCL library on this device" when the app does not declare `libOpenCL.so` or the device has no loadable OpenCL: the runtime (`v0.19.1-5`) links the WebGPU sampler again. Affects 0.18.0 through 0.19.9 on Android ([#1998](https://github.com/leehack/llamadart/issues/1998)).
 
 ## 0.19.9
 

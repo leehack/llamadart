@@ -419,7 +419,7 @@ parameters. The public lazy facade, service metadata/finish probes and speech
 worker share discovery and ABI selection. `_liteRtLmV1ProductionSelection` in
 `litert_lm_runtime_facade.dart` enables public C API 1.0.x dispatch. The native
 hook and Apple companion source now pin published
-[v0.19.1-4](https://github.com/leehack/litert-lm-native/releases/tag/v0.19.1-4),
+[v0.19.1-5](https://github.com/leehack/litert-lm-native/releases/tag/v0.19.1-5),
 owner `5da99205` / upstream `7a03724c`, which keeps C API 1.0.0 and the
 `v0.19.0` exports and adds the in-process LiteRT marker
 `litert_lm_native_in_process_litert_abi_version` (1 on every platform); the
@@ -427,7 +427,11 @@ owner `5da99205` / upstream `7a03724c`, which keeps C API 1.0.0 and the
 x64 runtime lacks the export or does not report 1, and prints the value as
 `inProcessLiteRtAbi`; Linux arm64 has no CI runner for it. Rolling the pin back
 to a pre-marker tag (`v0.18.1-4`, `v0.19.0`, `v0.19.1`, `v0.19.1-1`) therefore
-fails the smoke on Linux and Windows by design. The
+fails the smoke on Linux and Windows by design. `v0.19.1-5` links the
+WebGPU top-k sampler into the Android `libLiteRtLm.so` again
+([#1998](https://github.com/leehack/llamadart/issues/1998)), so Android
+GPU runs on the WebGPU route work without OpenCL; rolling back to `-4` brings
+the failure back. The
 earlier `-1` rebuild links LiteRT into the Linux and Windows
 `libLiteRtLm` ([litert-lm-native#112](https://github.com/leehack/litert-lm-native/pull/112));
 its Apple and Android binaries are identical to `v0.19.1`. Upstream
@@ -467,7 +471,7 @@ blocks unload and dispose. On Linux ext4, releasing a freshly written CPU
 XNNPACK weight cache flushes it to disk, about 4 s for Qwen3 0.6B's 600 MB
 cache on CI disks ([#1814](https://github.com/leehack/llamadart/issues/1814)).
 
-Public ABI-aware selection and the v0.19.1-4 source pin are enabled; remaining
+Public ABI-aware selection and the v0.19.1-5 source pin are enabled; remaining
 consumer, feature and platform gates are recorded in
 `doc/litert_lm_v1_adoption.md`. This transport contract alone does not qualify a
 model or device. The owner proxy's
