@@ -1,9 +1,13 @@
-"""Drive the Safari app through safaridriver (W3C WebDriver).
+"""Drive Safari (safaridriver) or Firefox (geckodriver) over W3C WebDriver.
 
-Requires Safari's Settings > Developer > Allow Remote Automation.
+Safari needs Settings > Developer > Allow Remote Automation. Firefox runs the
+binary in FIREFOX_EXECUTABLE (the system Firefox when unset) through the
+geckodriver in GECKODRIVER (the one on PATH when unset).
 """
 import contextlib
 import json
+import os
+import shutil
 import socket
 import subprocess
 import tempfile
@@ -33,10 +37,27 @@ def _free_port() -> int:
         return probe.getsockname()[1]
 
 
-class SafariSession:
-    """One safaridriver process and one Safari automation window."""
+def _driver_command(browser: str) -> tuple[str, dict[str, Any]]:
+    """Returns the driver executable and the W3C capabilities for [browser]."""
+    if browser == "safari":
+        return SAFARIDRIVER, {"browserName": "safari"}
+    if browser != "firefox":
+        raise ValueError(f"Unsupported WebDriver browser: {browser}")
+    driver = os.environ.get("GECKODRIVER") or shutil.which("geckodriver")
+    if not driver:
+        raise WebDriverError("geckodriver not found: set GECKODRIVER or add it to PATH")
+    capabilities: dict[str, Any] = {"browserName": "firefox"}
+    if binary := os.environ.get("FIREFOX_EXECUTABLE"):
+        capabilities["moz:firefoxOptions"] = {"binary": binary}
+    return driver, capabilities
 
-    def __init__(self, *, command_timeout_s: float = 300) -> None:
+
+class SafariSession:
+    """One WebDriver process (safaridriver or geckodriver) and one browser window."""
+
+    def __init__(self, *, browser: str = "safari", command_timeout_s: float = 300) -> None:
+        self.browser = browser
+        driver, capabilities = _driver_command(browser)
         self._timeout = command_timeout_s
         self._port = _free_port()
         # A file, not a pipe: nothing reads stderr while the driver runs, and a
@@ -44,7 +65,7 @@ class SafariSession:
         self._stderr = tempfile.TemporaryFile()
         try:
             self._driver = subprocess.Popen(
-                [SAFARIDRIVER, "-p", str(self._port)],
+                [driver, "-p", str(self._port)],
                 stdout=subprocess.DEVNULL,
                 stderr=self._stderr,
             )
@@ -58,7 +79,7 @@ class SafariSession:
             value = self._request(
                 "POST",
                 "/session",
-                {"capabilities": {"alwaysMatch": {"browserName": "safari"}}},
+                {"capabilities": {"alwaysMatch": capabilities}},
             )
             self.session_id = value["sessionId"]
             self.capabilities = value.get("capabilities", {})
@@ -70,7 +91,7 @@ class SafariSession:
         deadline = time.monotonic() + _DRIVER_START_TIMEOUT_S
         while time.monotonic() < deadline:
             if self._driver.poll() is not None:
-                raise WebDriverError(f"safaridriver exited: {self._driver_stderr()}")
+                raise WebDriverError(f"{self.browser} driver exited: {self._driver_stderr()}")
             try:
                 self._request("GET", "/status")
                 return
@@ -78,7 +99,7 @@ class SafariSession:
                 time.sleep(0.2)
         detail = self._driver_stderr()
         raise WebDriverError(
-            f"safaridriver did not start within {_DRIVER_START_TIMEOUT_S} s"
+            f"{self.browser} driver did not start within {_DRIVER_START_TIMEOUT_S} s"
             + (f": {detail}" if detail else "")
         )
 
@@ -115,6 +136,24 @@ class SafariSession:
         """Runs [script] as a function body; `return` yields its value."""
         return self._command(
             "POST", "/execute/sync", {"script": script, "args": list(args)}
+        )
+
+    def run_in_page(self, script: str) -> None:
+        """Runs [script] in the page's own JavaScript world.
+
+        geckodriver executes scripts in a sandbox that hides page globals and
+        wraps page objects, so a script that installs capture hooks must run
+        as a page <script> element there.
+        """
+        if self.browser != "firefox":
+            self.execute(script)
+            return
+        self.execute(
+            "const node = document.createElement('script');"
+            "node.textContent = arguments[0];"
+            "document.documentElement.appendChild(node);"
+            "node.remove();",
+            script,
         )
 
     def click(self, element: str) -> None:

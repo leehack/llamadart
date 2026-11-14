@@ -434,6 +434,29 @@ void main() {
     );
   });
 
+  test('rejects tool-call expectations in Firefox', () async {
+    final result = await _runProcess(
+      Platform.isWindows ? 'python' : 'python3',
+      [
+        _script,
+        'http://127.0.0.1:1/',
+        '--model-url',
+        'http://127.0.0.1:1/model.gguf',
+        '--expect-tool-call',
+        'getWeather',
+        '--browser',
+        'firefox',
+      ],
+      environment: {'PYTHONPATH': tempDir.path},
+    );
+
+    expect(result.exitCode, 2);
+    expect(
+      result.stderr,
+      contains('--browser firefox does not record tool-call completions'),
+    );
+  });
+
   test('rejects speech input in Safari', () async {
     final audio = File(p.join(tempDir.path, 'speech.wav'))
       ..writeAsBytesSync(const <int>[0]);
@@ -472,6 +495,7 @@ void main() {
         required String visibility,
         required int frames,
         int stderrBytes = 0,
+        String browser = 'safari',
       }) async {
         final driver = File(p.join(tempDir.path, 'fake_safaridriver'))
           ..writeAsStringSync(_fakeSafariDriver);
@@ -495,10 +519,12 @@ void main() {
             '--response-timeout-ms',
             '4000',
             '--browser',
-            'safari',
+            browser,
           ],
           environment: {
             'PYTHONPATH': tempDir.path,
+            'GECKODRIVER': driver.path,
+            'FIREFOX_EXECUTABLE': '/fake/Firefox.app/Contents/MacOS/firefox',
             'LLAMADART_FAKE_SAFARI_SCENARIO': jsonEncode({
               'logPath': logPath,
               'visibility': visibility,
@@ -549,6 +575,72 @@ void main() {
             .join();
         expect(typed, '2+2?');
         expect(run.commands.last['method'], 'DELETE');
+      });
+
+      test(
+        'Firefox starts geckodriver and injects scripts as page elements',
+        () async {
+          final run = await runSafari(
+            visibility: 'visible',
+            frames: 60,
+            browser: 'firefox',
+          );
+
+          expect(run.result.exitCode, 0, reason: '${run.result.stderr}');
+          final session = run.commands.firstWhere(
+            (c) => c['command'] == 'session',
+          );
+          expect(session['body']['capabilities']['alwaysMatch'], {
+            'browserName': 'firefox',
+            'moz:firefoxOptions': {
+              'binary': '/fake/Firefox.app/Contents/MacOS/firefox',
+            },
+          });
+          final scripts = [
+            for (final c in run.commands)
+              if (c['command'] == 'sync') c['body'] as Map<String, dynamic>,
+          ];
+          final injections = scripts
+              .where(
+                (b) =>
+                    (b['script'] as String).contains("createElement('script')"),
+              )
+              .toList();
+          expect(injections, hasLength(2));
+          for (final injection in injections) {
+            expect(
+              (injection['args'] as List).single,
+              contains('__llamadartRealBridgePatchTimer'),
+            );
+          }
+          expect(
+            scripts.where(
+              (b) => (b['script'] as String).contains(
+                '__llamadartRealBridgePatchTimer',
+              ),
+            ),
+            isEmpty,
+            reason: 'the init script must not run in the driver sandbox',
+          );
+          expect(run.commands.last['method'], 'DELETE');
+        },
+      );
+
+      test('Safari executes the init script directly', () async {
+        final run = await runSafari(visibility: 'visible', frames: 60);
+
+        final scripts = [
+          for (final c in run.commands)
+            if (c['command'] == 'sync') (c['body'] as Map)['script'] as String,
+        ];
+        expect(
+          scripts.where((s) => s.contains('__llamadartRealBridgePatchTimer')),
+          hasLength(2),
+        );
+        expect(
+          scripts.where((s) => s.contains("createElement('script')")),
+          isEmpty,
+        );
       });
 
       for (final (name, visibility, frames) in [

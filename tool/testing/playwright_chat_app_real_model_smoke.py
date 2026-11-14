@@ -261,15 +261,15 @@ def _require_visible_page(session: SafariSession) -> None:
     # Flutter frames, and Safari can terminate it while a large model loads.
     if state["visibility"] != "visible" or state["frames"] == 0:
         raise RuntimeError(
-            "Safari page is not visible; unlock the screen and keep the "
-            f"automation window in front: {state}"
+            f"{session.browser.capitalize()} page is not visible; unlock the "
+            f"screen and keep the automation window in front: {state}"
         )
 
 
-def run_safari(
+def run_webdriver(
     args, init_script: str, *, started_at: float, remote_fetch_mode: str
 ) -> int:
-    with SafariSession() as session:
+    with SafariSession(browser=args.browser) as session:
         page = _SafariPage(session)
         emit("safari_session", version=session.capabilities.get("browserVersion"))
         session.set_window_size(1440, 1100)
@@ -277,9 +277,9 @@ def run_safari(
         # WebDriver has no init script: seed settings, reload so the app reads
         # them, then install the capture globals before the model loads.
         session.navigate(args.app_url)
-        session.execute(init_script)
+        session.run_in_page(init_script)
         session.navigate(args.app_url)
-        session.execute(init_script)
+        session.run_in_page(init_script)
         _require_visible_page(session)
 
         _find_semantics(session, "flt-semantics-placeholder", "", 120)
@@ -611,17 +611,20 @@ def main() -> int:
     parser.add_argument("--headed", action="store_true")
     parser.add_argument(
         "--browser",
-        choices=["chromium", "safari"],
+        choices=["chromium", "safari", "firefox"],
         default="chromium",
-        help="safari drives the Safari app through safaridriver (plain chat only).",
+        help=(
+            "safari drives the Safari app through safaridriver; firefox drives "
+            "FIREFOX_EXECUTABLE through geckodriver (plain chat only)."
+        ),
     )
     args = parser.parse_args()
-    if args.browser == "safari" and (
+    if args.browser != "chromium" and (
         args.speech_audio_path or args.prefetch_mmproj_cache
     ):
         parser.error(
-            "--browser safari supports plain chat only, without speech input "
-            "or mmproj prefetch"
+            f"--browser {args.browser} supports plain chat only, without speech "
+            "input or mmproj prefetch"
         )
     if args.expect_mmproj_cache_hit and not args.prefetch_mmproj_cache:
         parser.error("--expect-mmproj-cache-hit requires --prefetch-mmproj-cache")
@@ -637,8 +640,10 @@ def main() -> int:
             "--expect-tool-call, --expect-tool-argument and "
             "--expect-tool-result conflict with --allow-any-response"
         )
-    if args.expect_tool_call and args.browser == "safari":
-        parser.error("--browser safari does not record tool-call completions")
+    if args.expect_tool_call and args.browser != "chromium":
+        parser.error(
+            f"--browser {args.browser} does not record tool-call completions"
+        )
     if args.speech_audio_path:
         audio_path = Path(args.speech_audio_path).resolve()
         if not audio_path.is_file():
@@ -959,8 +964,8 @@ def main() -> int:
         )}
     """
 
-    if args.browser == "safari":
-        return run_safari(
+    if args.browser != "chromium":
+        return run_webdriver(
             args,
             init_script,
             started_at=started_at,
