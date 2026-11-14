@@ -2477,10 +2477,11 @@ with the SD-Turbo full-VAE harness:
 | C1, split off | iPhone 16 Pro, iOS 18.3 | third decode failed with the GPU command-buffer error (watchdog) |
 | C2b soak | iPhone 16 Pro, iPhone 17 Pro | 30 of 30 decodes passed, one image hash, flat footprint |
 
-Known limit ([#2004](https://github.com/leehack/llamadart/issues/2004)): on
-the iPhone 17 Pro (iOS 26.5.1) the second engine dispose kept about 2 GB
+On the iPhone 17 Pro (iOS 26.5.1) the second engine dispose kept about 2 GB
 resident and later loads failed the memory check; the iPhone 16 Pro returned to
-its baseline. Whether it is a leak or delayed reclaim is undecided.
+its baseline ([#2004](https://github.com/leehack/llamadart/issues/2004)).
+Runtime `v0.3.0-5` carries the ggml `vm_allocate` host-buffer fix for it (fixed
+in runtime `v0.3.0-5`, device check pending).
 
 Final qualification of the public API at PR head `6109c8d1e` with the published
 `v0.3.0-4` pin: DDP session `session-954952c8-39c6-4878-9f17-ca2c6efed56b`,

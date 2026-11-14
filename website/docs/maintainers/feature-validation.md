@@ -139,8 +139,9 @@ at 2^26 elements. On 2026-11-13, DDP ran these exact bytes on an iPhone 16 Pro
 (iOS 18.3) and an iPhone 17 Pro. Every split arm passed 3 of 3 decodes, the
 unsplit control failed its third decode with the GPU command-buffer error (the
 watchdog), and a 30-decode soak passed 30 of 30 with one image hash and a flat
-footprint. The iPhone 17 Pro (iOS 26.5) showed the dispose limit in
-[#2004](https://github.com/leehack/llamadart/issues/2004). The dated record is in
+footprint. The iPhone 17 Pro (iOS 26.5) showed the dispose retention that
+runtime `v0.3.0-5` fixes (device check pending,
+[#2004](https://github.com/leehack/llamadart/issues/2004)). The dated record is in
 [cross-platform validation](https://github.com/leehack/llamadart/blob/main/doc/cross_platform_validation.md#ios-full-vae-graph-split-1047-2026-11-13).
 
 ### Full-checkpoint container checks
