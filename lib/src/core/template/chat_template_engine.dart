@@ -691,6 +691,12 @@ class ChatTemplateEngine {
   ///
   /// Output that a PEG [parser] cannot parse, or that is nested too deeply to
   /// parse, throws [LlamaInferenceException].
+  ///
+  /// When [tools] has a `ToolDefinition.fromJsonSchema` tool, a final parse also
+  /// throws [LlamaInferenceException] for a call to an undeclared name and for
+  /// arguments of a schema tool that do not match its schema. Calls to
+  /// `ToolParam` tools are returned as parsed, as is every call when no tool has
+  /// a schema, so check the name before invoking one.
   static ChatParseResult parse(
     int formatIndex,
     String output, {
@@ -1158,12 +1164,29 @@ class ChatTemplateEngine {
     if (supportsSystemRole) {
       if (messages.isNotEmpty && messages.first.role == LlamaChatRole.system) {
         final first = messages.first;
-        if (first.content.trim() == instruction.trim()) {
+        if (first.content.contains(instruction)) {
           return messages;
         }
+        final parts = first.parts;
+        if (parts.every(
+          (part) => part is LlamaTextContent && part.text.trim().isEmpty,
+        )) {
+          return <LlamaChatMessage>[
+            first.copyWith(content: instruction),
+            ...messages.skip(1),
+          ];
+        }
 
+        final last = parts.last;
         return <LlamaChatMessage>[
-          first.copyWith(content: instruction),
+          first.copyWith(
+            parts: last is LlamaTextContent
+                ? [
+                    ...parts.take(parts.length - 1),
+                    LlamaTextContent('${last.text}\n\n$instruction'),
+                  ]
+                : [...parts, LlamaTextContent('\n\n$instruction')],
+          ),
           ...messages.skip(1),
         ];
       }

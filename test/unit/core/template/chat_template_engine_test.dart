@@ -21,6 +21,133 @@ void main() {
 
   final messages = [const LlamaChatMessage(role: 'user', content: 'hello')];
 
+  group('generic tool instruction', () {
+    const chatMl =
+        "{% for message in messages %}{{'<|im_start|>' + message['role'] + '\n' + message['content'] + '<|im_end|>\n'}}{% endfor %}{% if add_generation_prompt %}{{'<|im_start|>assistant\n'}}{% endif %}";
+
+    const hermes =
+        "{% if tools %}<tools>{{ tools | tojson }}</tools><tool_call>{% endif %}{% for message in messages %}{{'<|im_start|>' + message['role'] + '\n' + message['content'] + '<|im_end|>\n'}}{% endfor %}{% if add_generation_prompt %}{{'<|im_start|>assistant\n'}}{% endif %}";
+
+    const instruction =
+        'Respond in JSON format, either with `tool_call` (a request to call '
+        "tools) or with `response` reply to the user's request";
+
+    final tool = ToolDefinition(
+      name: 'save_note',
+      description: 'Saves a note.',
+      parameters: [ToolParam.string('text', required: true)],
+    );
+    const user = LlamaChatMessage.fromText(
+      role: LlamaChatRole.user,
+      text: 'hi',
+    );
+    const tail = '<|im_start|>user\nhi<|im_end|>\n<|im_start|>assistant\n';
+    String system(String text) => '<|im_start|>system\n$text<|im_end|>\n';
+
+    String render(
+      LlamaChatMessage? first, {
+      ToolChoice toolChoice = ToolChoice.auto,
+      String template = chatMl,
+      Map<String, dynamic>? responseFormat,
+    }) {
+      final result = ChatTemplateEngine.render(
+        templateSource: template,
+        messages: [?first, user],
+        metadata: const {},
+        tools: [tool],
+        toolChoice: toolChoice,
+        responseFormat: responseFormat,
+      );
+      expect(result.format, ChatFormat.generic.index);
+      return result.prompt;
+    }
+
+    for (final choice in [ToolChoice.auto, ToolChoice.required]) {
+      test('follows the caller system message with ${choice.name}', () {
+        expect(
+          render(
+            const LlamaChatMessage.fromText(
+              role: LlamaChatRole.system,
+              text: 'Be brief.',
+            ),
+            toolChoice: choice,
+          ),
+          '${system('Be brief.\n\n$instruction')}$tail',
+        );
+      });
+    }
+
+    test('follows a system message given as parts', () {
+      expect(
+        render(
+          const LlamaChatMessage.withContent(
+            role: LlamaChatRole.system,
+            content: [LlamaTextContent('Be '), LlamaTextContent('brief.')],
+          ),
+        ),
+        '${system('Be brief.\n\n$instruction')}$tail',
+      );
+    });
+
+    test('follows a media part that ends the system message', () {
+      expect(
+        render(
+          const LlamaChatMessage.withContent(
+            role: LlamaChatRole.system,
+            content: [
+              LlamaTextContent('Look: '),
+              LlamaImageContent(path: '/tmp/x.png'),
+            ],
+          ),
+        ),
+        '${system('Look: <__media__>\n\n$instruction')}$tail',
+      );
+    });
+
+    test('is not repeated when the system message already has it', () {
+      expect(
+        render(
+          const LlamaChatMessage.fromText(
+            role: LlamaChatRole.system,
+            text: 'Be brief.\n\n$instruction',
+          ),
+        ),
+        '${system('Be brief.\n\n$instruction')}$tail',
+      );
+    });
+
+    test('replaces an empty system message', () {
+      expect(
+        render(
+          const LlamaChatMessage.fromText(role: LlamaChatRole.system, text: ''),
+        ),
+        '${system(instruction)}$tail',
+      );
+    });
+
+    test('becomes the system message when the caller gives none', () {
+      expect(render(null), '${system(instruction)}$tail');
+    });
+
+    test('follows the system message when a response schema routes a '
+        'tool template to generic', () {
+      final prompt = render(
+        const LlamaChatMessage.fromText(
+          role: LlamaChatRole.system,
+          text: 'Be brief.',
+        ),
+        template: hermes,
+        responseFormat: {
+          'type': 'json_schema',
+          'json_schema': {
+            'schema': {'type': 'object'},
+          },
+        },
+      );
+      expect(prompt, contains(system('Be brief.\n\n$instruction')));
+    });
+  });
+
   group('Ministral terminal reasoning', () {
     const template = '[SYSTEM_PROMPT]x[/SYSTEM_PROMPT][TOOL_CALLS][ARGS]';
     final tool = ToolDefinition(

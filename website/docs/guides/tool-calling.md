@@ -180,6 +180,9 @@ if (reply.toolCalls.isNotEmpty) {
 - With `engine.create`, append the collected `completion.message` (a
   `LlamaToolCallContent` per call) and the tool messages to your own list
   before the next call.
+- Check `call.name` against your tools before invoking: calls to `ToolParam`
+  tools come back as the model wrote them, even with an undeclared name or
+  mistyped arguments.
 - Cap the rounds: a model can keep calling tools.
 
 For LFM2/LFM2.5, a quoted `<|tool_call_end|>` inside an argument is literal
@@ -468,7 +471,8 @@ Active schema tools require grammar-constrained decoding. Native llama.cpp
 supports it. LiteRT-LM is rejected, and WebGPU is limited as described under
 [WebGPU](#webgpu). `ToolChoice.none` can retain declarations for replay
 without enabling calls. Final parsed calls and direct `invoke` arguments are
-validated before handlers run. A schema constrains the input shape; the app still controls
+validated before handlers run; the final parse checks names and arguments only
+when a schema tool is in the request, and only schema tools' arguments. A schema constrains the input shape; the app still controls
 tool permissions and side effects.
 
 Active schema tools cannot be combined with `responseFormat`, which would
@@ -520,7 +524,9 @@ properties.
 
 For templates without a recognized tool-call format, and for Gemma 2/3/3n,
 llamadart keeps its generic JSON fallback when tools are passed with
-`ToolChoice.auto` or `ToolChoice.required`. It adds a JSON instruction,
+`ToolChoice.auto` or `ToolChoice.required`. It adds a JSON instruction
+after your system message (it becomes the system message when you give none,
+and goes before the first message for templates without a system role),
 builds a grammar from the supplied tools for runtimes that support it, and
 parses output such as:
 
