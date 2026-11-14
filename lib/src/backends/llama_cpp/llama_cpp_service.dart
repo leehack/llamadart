@@ -701,10 +701,15 @@ class LlamaCppService {
   /// context-time KQV/op offload and flash-attention auto-selection stay fully
   /// enabled. We keep model layers offloaded but disable the more aggressive
   /// context compute knobs for stability.
+  ///
+  /// [placedOnVulkan] is whether the model's layers are on a Vulkan device
+  /// whatever [ModelParams.preferredBackend] asked for: a request for another
+  /// GPU backend that registered no device lands on a registered Vulkan one.
   static bool shouldUseConservativeAndroidVulkanContextConfig(
     ModelParams modelParams, {
     int? resolvedGpuLayers,
     bool isAndroid = false,
+    bool placedOnVulkan = false,
   }) {
     if (!isAndroid) {
       return false;
@@ -712,7 +717,8 @@ class LlamaCppService {
 
     final effectiveGpuLayers =
         resolvedGpuLayers ?? resolveGpuLayersForLoad(modelParams);
-    return modelParams.preferredBackend == GpuBackend.vulkan &&
+    return (placedOnVulkan ||
+            modelParams.preferredBackend == GpuBackend.vulkan) &&
         effectiveGpuLayers > 0;
   }
 
@@ -745,14 +751,16 @@ class LlamaCppService {
   /// context created with [modelParams], or `null` for the context's own
   /// micro-batch.
   ///
-  /// An Android Vulkan context gets [androidVulkanPromptMicroBatchSize]
-  /// unless [ModelParams.microBatchSize] is set or
-  /// [hasSmallMatmulTileDefect] returns false. That is called only when the
-  /// cap would otherwise apply; without it the cap applies.
+  /// An Android Vulkan context, requested or [placedOnVulkan], gets
+  /// [androidVulkanPromptMicroBatchSize] unless
+  /// [ModelParams.microBatchSize] is set or [hasSmallMatmulTileDefect]
+  /// returns false. That is called only when the cap would otherwise apply;
+  /// without it the cap applies.
   static int? resolvePromptMicroBatchLimit(
     ModelParams modelParams, {
     int? resolvedGpuLayers,
     bool isAndroid = false,
+    bool placedOnVulkan = false,
     bool Function()? hasSmallMatmulTileDefect,
   }) {
     // A speed default: on a Pixel 9 Pro (Mali-G715, subgroup 16), 8-token
@@ -767,6 +775,7 @@ class LlamaCppService {
           modelParams,
           resolvedGpuLayers: resolvedGpuLayers,
           isAndroid: isAndroid,
+          placedOnVulkan: placedOnVulkan,
         ) ||
         hasSmallMatmulTileDefect?.call() == false) {
       return null;
@@ -3976,6 +3985,7 @@ class LlamaCppService {
       params,
       resolvedGpuLayers: resolvedModelGpuLayers,
       isAndroid: _isAndroid,
+      placedOnVulkan: _modelUsesAndroidVulkan(modelHandle),
     )) {
       _applyConservativeAndroidVulkanContextConfig(ctxParams, modelHandle);
     }
@@ -4025,6 +4035,7 @@ class LlamaCppService {
               params,
               resolvedGpuLayers: resolvedModelGpuLayers,
               isAndroid: _isAndroid,
+              placedOnVulkan: _modelUsesAndroidVulkan(modelHandle),
               hasSmallMatmulTileDefect: _androidVulkanHasSmallMatmulTileDefect,
             ),
     );
@@ -9475,6 +9486,7 @@ class LlamaCppService {
             params,
             resolvedGpuLayers: resolvedGpuLayers,
             isAndroid: _isAndroid,
+            placedOnVulkan: _modelUsesAndroidVulkan(modelHandle),
           )) {
         _applyConservativeAndroidVulkanContextConfig(ctxParams, modelHandle);
       }
