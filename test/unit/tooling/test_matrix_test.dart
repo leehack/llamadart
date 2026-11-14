@@ -949,6 +949,54 @@ void main() {
       }
     });
 
+    test('chat app Chrome lane runs the files AGENTS.md and the docs list', () {
+      const files = [
+        'test/audio_recording_service_web_test.dart',
+        'test/chat_generation_service_test.dart',
+        'test/image_generation_screen_test.dart',
+        'test/unit_test.dart',
+        'test/conversation_state_service_test.dart',
+      ];
+      final steps =
+          (jsonDecode(
+                    jsonEncode(
+                      loadYaml(
+                        File('.github/workflows/ci.yml').readAsStringSync(),
+                      ),
+                    ),
+                  )
+                  as Map<String, dynamic>)['jobs']
+              .values
+              .expand((job) => (job['steps'] as List?) ?? const [])
+              .where(
+                (step) => '${step['run']}'.contains(
+                  '--output-dir "\$RUNNER_TEMP/chat-app-chrome"',
+                ),
+              )
+              .toList();
+      expect(steps, hasLength(1));
+      final run = '${steps.single['run']}';
+      final doc = File('website/docs/examples/chat-app.md').readAsStringSync();
+      final agents = File('AGENTS.md').readAsStringSync();
+      for (final file in files) {
+        expect(run.split(RegExp(r'\s+')), contains(file), reason: 'ci.yml');
+        expect(doc, contains(file), reason: 'chat-app.md');
+        expect(agents, contains(file), reason: 'AGENTS.md');
+      }
+      final chromeCommand = RegExp(
+        r'--platform chrome ([^\n`]*?)(?:`|\n\n)',
+        dotAll: true,
+      );
+      final listed = chromeCommand.firstMatch(
+        agents.replaceAll(RegExp(r'\s*\n\s*'), ' '),
+      )!;
+      expect(
+        RegExp(r'test/\w+\.dart').allMatches(listed.group(1)!).length,
+        files.length,
+        reason: 'AGENTS.md lists exactly the CI files',
+      );
+    });
+
     test('includes targeted physical iOS speech E2E row', () {
       final row = testMatrixRows.singleWhere(
         (row) => row.id == 'physical-ios-speech-e2e',

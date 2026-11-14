@@ -1461,17 +1461,59 @@ process.exit(0);
       );
     }
 
-    test('the runtime probe bounds its own wait', () async {
-      final passed = await run('probe_timeout', const [
-        '--expect',
-        'fellow Americans',
-      ]);
+    test(
+      'the runtime probe gives up on a bridge that never answers',
+      testOn: '!windows',
+      () async {
+        final passed = await run('probe_timeout', const [
+          '--expect',
+          'fellow Americans',
+        ]);
+        final probe = (passed.capture['evaluateScripts'] as List<dynamic>)
+            .cast<String>()
+            .singleWhere((script) => script.contains('getModelMetadata'));
+        final limit = RegExp(
+          r'setTimeout\([^;]*?,\s*(\d+)\)',
+        ).firstMatch(probe)?.group(1);
+        expect(limit, isNotNull, reason: 'the probe must set a timeout');
+        expect(int.parse(limit!), lessThanOrEqualTo(60000));
 
-      final probe = (passed.capture['evaluateScripts'] as List<dynamic>)
-          .cast<String>()
-          .singleWhere((script) => script.contains('getModelMetadata'));
-      expect(probe, contains('probe timed out'));
-    });
+        // Runs the recorded script against a bridge whose metadata call never
+        // settles, with the real limit shortened so the test stays fast.
+        final harness = File(p.join(tempDir.path, 'probe_harness.mjs'))
+          ..writeAsStringSync(r"""
+import { readFileSync } from 'node:fs';
+const [path, limit] = process.argv.slice(2);
+const source = readFileSync(path, 'utf8').replace(limit, '200');
+globalThis.window = globalThis;
+window.__llamadartRealBridge = {
+  getModelMetadata: () => new Promise(() => {}),
+  isGpuActive: () => true,
+  getBackendName: () => 'WebGPU',
+};
+const hung = Symbol('hung');
+const result = await Promise.race([
+  (0, eval)(`(${source})`)(),
+  new Promise((resolve) => setTimeout(() => resolve(hung), 5000)),
+]);
+console.log(JSON.stringify(result === hung ? 'hung' : result));
+process.exit(0);
+""");
+        final script = File(p.join(tempDir.path, 'probe_script.js'))
+          ..writeAsStringSync(probe);
+        final node = await _runProcess('node', [
+          harness.path,
+          script.path,
+          limit,
+        ]);
+
+        expect(node.exitCode, 0, reason: '${node.stderr}');
+        expect(jsonDecode((node.stdout as String).trim()), {
+          'available': false,
+          'error': 'probe timed out',
+        });
+      },
+    );
 
     test('no longer accepts any microphone response', () async {
       final result = await run('mic_allow_any', [
