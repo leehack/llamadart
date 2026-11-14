@@ -1695,6 +1695,29 @@ constrained string. Only driver 615.71 was tested (Dawn hides `shader-f16` on
 NVIDIA Vulkan drivers older than 615.71). Linux arm64 and Windows x64 (D3D12)
 GPUs remain unqualified.
 
+## Windows x64 strict JSON Schema on CPU and GPU (2026-11-14)
+
+`run_local_e2e.dart --scenario litert-lm-json-schema` on a GCE g2-standard-8
+(Windows Server 2022, NVIDIA L4, NVIDIA GRID 596.86 WDDM), LiteRT-LM
+`v0.19.1-5`, source `bf366a20` with only `Abi.windowsX64: {'cpu', 'gpu'}`
+admitted (diff SHA-256 `721ba23c…7c077`)
+([#174](https://github.com/leehack/llamadart/issues/174#issuecomment-6881250581)).
+An extra probe loaded each family with debug logging: both logged `Selected
+adapter: NVIDIA L4, arch=lovelace, vendor=nvidia, backend=Direct3D 12,
+adapterType=Discrete GPU` and answered the unconstrained prompt.
+
+| Model | Backend | Cases | GPU memory delta | Result |
+| --- | --- | --- | --- | --- |
+| Qwen3-0.6B (`c5f39b41…`) | CPU | 12 | 0 | pass |
+| Qwen3-0.6B | GPU | 12 | 1766 MiB | pass |
+| Gemma 4 E2B | CPU | 13 | 0 | pass |
+| Gemma 4 E2B | GPU | 13 | 1169 MiB | pass |
+
+Results tarball SHA-256: `40130115b0f3ad44cb7cc8d8b89d8da151ec24aaad5324b539811314c9de93b0`.
+Only driver 596.86 was tested. `ComputeDevice.auto` on Windows runs on the CPU;
+an explicit `ComputeDevice.gpu` that fails engine creation throws. The Linux
+arm64 GPU remains unqualified.
+
 ## Planned platform/backend coverage
 
 Inspect the model/use-case coverage catalog without downloading models or

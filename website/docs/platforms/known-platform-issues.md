@@ -99,7 +99,11 @@ feature. For which runtime supports which feature, see the
   Vulkan with driver 615.71 (Qwen3-0.6B and Gemma 4 E2B). Only that driver was
   tested; Dawn hides `shader-f16` on NVIDIA Vulkan drivers older than 615.71,
   so with an older driver `ComputeDevice.gpu` may fail to create the engine and
-  the load throws. `auto` on Linux runs on the CPU. Linux arm64 and Windows x64 GPUs are not qualified for it.
+  the load throws. `auto` on Linux runs on the CPU. The Linux arm64 GPU is not qualified for it.
+- Strict `responseFormat` on the Windows x64 GPU passed on an NVIDIA L4 over
+  Direct3D 12 with NVIDIA GRID driver 596.86 (Qwen3-0.6B and Gemma 4 E2B). Only
+  that driver was tested, and an explicit `ComputeDevice.gpu` that fails to
+  create the engine throws; `auto` on Windows runs on the CPU.
 - Windows x64 LiteRT-LM GPU needs `dxil.dll` and `dxcompiler.dll`, which the
   pinned runtime bundles. Its GPU accelerator and sampler load
   `webgpu_dawn.dll`, which the hook bundles. Windows Qwen3 0.6B GPU execution
@@ -109,7 +113,7 @@ feature. For which runtime supports which feature, see the
   remain unresolved; a new runtime regression has not been established
   ([litert-lm-native#64](https://github.com/leehack/litert-lm-native/issues/64)).
   Use `ComputeDevice.cpu` to avoid this GPU path. A Flutter Windows app has not
-  been run with it.
+  been run with it. The strict JSON Schema run above used `v0.19.1-5`.
 
 ## Android
 

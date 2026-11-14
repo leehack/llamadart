@@ -74,9 +74,12 @@ the `chat-app-litert-json-schema` scenario on a Galaxy S24 and a Pixel 9 Pro;
 the run record is in
 [`doc/cross_platform_validation.md`](https://github.com/leehack/llamadart/blob/main/doc/cross_platform_validation.md#android-arm64-strict-json-schema-on-cpu-and-gpu-2026-11-13).
 It is qualified on Linux x64 CPU and GPU by the `litert-lm-json-schema`
-scenario on an NVIDIA L4 (Vulkan, driver 615.71); Linux arm64 and Windows x64
-GPUs stay unqualified
-([record](https://github.com/leehack/llamadart/blob/main/doc/cross_platform_validation.md#linux-x64-strict-json-schema-on-cpu-and-gpu-2026-11-14)).
+scenario on an NVIDIA L4 (Vulkan, driver 615.71)
+([record](https://github.com/leehack/llamadart/blob/main/doc/cross_platform_validation.md#linux-x64-strict-json-schema-on-cpu-and-gpu-2026-11-14)),
+and on Windows x64 CPU and GPU by the same scenario on an NVIDIA L4 (Direct3D 12,
+GRID 596.86)
+([record](https://github.com/leehack/llamadart/blob/main/doc/cross_platform_validation.md#windows-x64-strict-json-schema-on-cpu-and-gpu-2026-11-14)).
+The Linux arm64 GPU stays unqualified.
 
 ## Speech to text
 
