@@ -67,6 +67,13 @@ final List<BridgeTagPin> bridgeTagPins = <BridgeTagPin>[
     ),
   ),
   BridgeTagPin(
+    'packages/llamadart_studio/web/index.html',
+    RegExp(
+      r"^\s*const defaultBridgeAssetsTag = '(v\d+\.\d+\.\d+)';$",
+      multiLine: true,
+    ),
+  ),
+  BridgeTagPin(
     'lib/src/web_setup/web_bridge_setup.dart',
     RegExp(
       r"^const String webBridgeAssetsTag = '(v\d+\.\d+\.\d+)';$",
@@ -418,6 +425,13 @@ final RegExp _nativeLlamaCppTag = RegExp(r"const llamaCppTag = '([^']+)';");
 final List<BridgeTagPin> bridgeLlamaCppParityPins = <BridgeTagPin>[
   BridgeTagPin(
     'example/chat_app/web/index.html',
+    RegExp(
+      r"^\s*const defaultBridgeLlamaCppTag = '(v\d+\.\d+\.\d+|b\d+)';$",
+      multiLine: true,
+    ),
+  ),
+  BridgeTagPin(
+    'packages/llamadart_studio/web/index.html',
     RegExp(
       r"^\s*const defaultBridgeLlamaCppTag = '(v\d+\.\d+\.\d+|b\d+)';$",
       multiLine: true,

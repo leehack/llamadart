@@ -12,7 +12,48 @@ const String _llamaCppSource =
     'reads no repository Markdown.';
 
 /// Files that several exempt suites reach, with the tokens discovery finds.
+// Workflow and workspace path literals make discovery follow Studio sources.
+// These root suites inspect CI, manifests or temp trees; they do not run the
+// Studio skill/project discovery paths against repository Markdown.
+const Map<String, String> _studioSourceFiles = {
+  'packages/llamadart_studio/lib/src/widgets/code_syntax_highlighter.dart':
+      'git diff | git grep | git show',
+  'packages/llamadart_studio/lib/src/widgets/command_palette_modal.dart':
+      '.md | AGENTS',
+  'packages/llamadart_studio/lib/src/widgets/inspector/inspector_tabs_secondary.dart':
+      '.md | AGENTS',
+  'packages/llamadart_studio/lib/src/widgets/mcp_skills/mcp_and_skills_sheet.dart':
+      '.md | AGENTS | SKILL',
+  'packages/llamadart_studio/lib/src/widgets/mcp_skills/skills_and_context_tabs.dart':
+      '.md | AGENTS | SKILL | skills/',
+  'packages/llamadart_studio/lib/src/workspaces/coding/coding_workspace_header.dart':
+      '.md | AGENTS',
+  'packages/llamadart_studio_core/lib/llamadart_studio_core.dart': 'skills/',
+  'packages/llamadart_studio_core/lib/src/controllers/coding/coding_workspace_controller.dart':
+      '.md | AGENTS | SKILL | skills/',
+  'packages/llamadart_studio_core/lib/src/controllers/coding/coding_workspace_tools.dart':
+      '.md',
+  'packages/llamadart_studio_core/lib/src/domain/studio_note.dart':
+      '.md | SKILL | skills/',
+  'packages/llamadart_studio_core/lib/src/domain/studio_skill.dart':
+      '.md | SKILL',
+  'packages/llamadart_studio_core/lib/src/ports/studio_context_ports.dart':
+      'skills/',
+  'packages/llamadart_studio_core/lib/src/services/coding/coding_workspace_fs_io.dart':
+      'list',
+  'packages/llamadart_studio_core/lib/src/services/mcp/mcp_manager.dart':
+      'skills/',
+  'packages/llamadart_studio_core/lib/src/services/mcp/mcp_transport_factory_io.dart':
+      'skills/',
+  'packages/llamadart_studio_core/lib/src/services/skills/project_context_discovery_io.dart':
+      '.md | AGENTS',
+  'packages/llamadart_studio_core/lib/src/services/skills/skill_discovery_io.dart':
+      '.md | SKILL | skills/',
+};
+
 const Map<String, String> _ciToolFiles = {
+  'test/ci/test_check_format.py': '.md | README | website/',
+  'tool/ci/check_format.py': 'listdir',
   'packages/genkit_llamadart/.github/check_docs.py':
       '.md | CHANGELOG | CONTRIBUTING | README | doc/ | glob | skills/',
   'packages/llamadart_validation/bin/run.dart': 'listSync',
@@ -359,6 +400,7 @@ const Map<String, Exemption> suiteExemptions = {
   'test/unit/tooling/ci_workflow_selection_test.dart': (
     reason: 'Only passes Markdown paths to the selector.',
     evidence: {
+      ..._studioSourceFiles,
       ..._validationFiles,
       ..._pinTableFiles,
       'test/unit/tooling/ci_workflow_selection_test.dart':
@@ -376,6 +418,7 @@ const Map<String, Exemption> suiteExemptions = {
   'test/unit/tooling/classify_high_risk_changes_test.dart': (
     reason: 'Only classifies Markdown path strings.',
     evidence: {
+      ..._studioSourceFiles,
       ..._ciToolFiles,
       'test/unit/tooling/classify_high_risk_changes_test.dart':
           '.md | CONTRIBUTING | README | doc/ | git checkout | ls-files | website/',
@@ -392,6 +435,7 @@ const Map<String, Exemption> suiteExemptions = {
   'test/unit/tooling/companion_package_contents_test.dart': (
     reason: _tempTree,
     evidence: {
+      ..._studioSourceFiles,
       ..._releaseToolFiles,
       'test/unit/tooling/companion_package_contents_test.dart':
           '.md | CHANGELOG | README',
@@ -404,6 +448,7 @@ const Map<String, Exemption> suiteExemptions = {
   'test/unit/tooling/companion_pub_preflight_test.dart': (
     reason: _tempTree,
     evidence: {
+      ..._studioSourceFiles,
       ..._releaseToolFiles,
       'tool/release/companion_pub_preflight.dart': 'cp -r | listSync',
     },
@@ -432,6 +477,7 @@ const Map<String, Exemption> suiteExemptions = {
   'test/unit/tooling/install_doc_versions_test.dart': (
     reason: _tempTree,
     evidence: {
+      ..._studioSourceFiles,
       ..._releaseToolFiles,
       'test/unit/tooling/install_doc_versions_test.dart': '.md | CHANGELOG',
     },
@@ -439,13 +485,13 @@ const Map<String, Exemption> suiteExemptions = {
   ),
   'test/unit/tooling/litert_lm_tokenizer_fixture_test.dart': (
     reason: _validationTooling,
-    evidence: {..._ciToolFiles},
+    evidence: {..._studioSourceFiles, ..._ciToolFiles},
     gate: null,
   ),
   'test/unit/tooling/litert_lm_v1_schema_qualification_test.dart': (
     reason:
         'Only reads the JSON CPU profile and renders dry-run plans; it does not execute validation or read Markdown.',
-    evidence: {..._ciToolFiles},
+    evidence: {..._studioSourceFiles, ..._ciToolFiles},
     gate: null,
   ),
   'test/unit/tooling/macos_litert_lm_prepare_app_script_test.dart': (
@@ -487,6 +533,7 @@ const Map<String, Exemption> suiteExemptions = {
     reason:
         'Runs the guards against fixture checkouts it writes to temp directories.',
     evidence: {
+      ..._studioSourceFiles,
       ..._validationFiles,
       ..._pinTableFiles,
       'test/ci/test_preview_guard.py': '.md | README',
@@ -510,6 +557,7 @@ const Map<String, Exemption> suiteExemptions = {
   'test/unit/tooling/run_local_e2e_test.dart': (
     reason: _validationTooling,
     evidence: {
+      ..._studioSourceFiles,
       ..._ciToolFiles,
       'test/unit/tooling/run_local_e2e_test.dart': 'listSync',
     },
@@ -532,6 +580,7 @@ const Map<String, Exemption> suiteExemptions = {
   'test/unit/tooling/validation_android_java_home_test.dart': (
     reason: _validationTooling,
     evidence: {
+      ..._studioSourceFiles,
       ..._validationFiles,
       ..._pinTableFiles,
       'test/unit/tooling/validation_android_java_home_test.dart':
@@ -542,6 +591,7 @@ const Map<String, Exemption> suiteExemptions = {
   'test/unit/tooling/validation_embedding_profile_test.dart': (
     reason: _validationTooling,
     evidence: {
+      ..._studioSourceFiles,
       ..._validationFiles,
       ..._pinTableFiles,
       'tool/testing/validation/coverage_catalog.dart': '.md',
@@ -552,6 +602,7 @@ const Map<String, Exemption> suiteExemptions = {
   'test/unit/tooling/validation_image_profile_test.dart': (
     reason: _validationTooling,
     evidence: {
+      ..._studioSourceFiles,
       ..._validationFiles,
       ..._pinTableFiles,
       'test/unit/tooling/validation_image_profile_test.dart': 'git checkout',
@@ -562,6 +613,7 @@ const Map<String, Exemption> suiteExemptions = {
   'test/unit/tooling/validation_internal_diagnostic_test.dart': (
     reason: _validationTooling,
     evidence: {
+      ..._studioSourceFiles,
       ..._validationFiles,
       ..._pinTableFiles,
       'test/unit/tooling/validation_internal_diagnostic_test.dart': 'ls-files',
@@ -570,12 +622,13 @@ const Map<String, Exemption> suiteExemptions = {
   ),
   'test/unit/tooling/validation_npu_test.dart': (
     reason: _validationTooling,
-    evidence: {..._validationFiles, ..._pinTableFiles},
+    evidence: {..._studioSourceFiles, ..._validationFiles, ..._pinTableFiles},
     gate: null,
   ),
   'test/unit/tooling/validation_remote_test.dart': (
     reason: _validationTooling,
     evidence: {
+      ..._studioSourceFiles,
       ..._validationFiles,
       ..._pinTableFiles,
       'test/unit/tooling/validation_remote_test.dart': 'listSync',
@@ -587,6 +640,7 @@ const Map<String, Exemption> suiteExemptions = {
   'test/unit/tooling/verify_release_docs_companion_core_constraint_test.dart': (
     reason: _tempTree,
     evidence: {
+      ..._studioSourceFiles,
       ..._releaseToolFiles,
       'test/unit/tooling/verify_release_docs_companion_core_constraint_test.dart':
           'git checkout',

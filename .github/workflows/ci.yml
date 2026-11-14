@@ -60,6 +60,7 @@ jobs:
       genkit: ${{ steps.select.outputs.genkit }}
       example-packages: ${{ steps.select.outputs.example-packages }}
       model-store: ${{ steps.select.outputs.model-store }}
+      studio: ${{ steps.select.outputs.studio }}
       markdown-tests: ${{ steps.select.outputs.markdown-tests }}
     steps:
       - uses: actions/checkout@v7
@@ -70,6 +71,36 @@ jobs:
         run: python3 -m unittest discover -s test/ci -p 'test_*.py'
       - id: select
         run: python3 tool/ci/select_jobs.py select
+
+  studio:
+    needs: changes
+    if: needs.changes.outputs.studio == 'true'
+    name: Studio packages
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version-file: packages/llamadart_studio/.flutter-version
+          channel: stable
+          cache: true
+      - name: Analyze and test Studio core
+        working-directory: packages/llamadart_studio_core
+        run: |
+          dart pub get
+          dart format --output=none --set-exit-if-changed .
+          dart analyze --fatal-infos
+          TMPDIR="$(mktemp -d)" dart test --exclude-tags local-only
+      - name: Analyze and test Studio UI
+        working-directory: packages/llamadart_studio
+        run: |
+          flutter pub get
+          dart format --output=none --set-exit-if-changed .
+          flutter analyze --fatal-infos
+          TMPDIR="$(mktemp -d)" flutter test --exclude-tags local-only
 
   genkit:
     needs: changes
@@ -270,7 +301,7 @@ jobs:
         run: git diff --exit-code
 
       - name: Verify formatting
-        run: dart format --output=none --set-exit-if-changed .
+        run: python3 tool/ci/check_format.py
 
       - name: Analyze project source
         run: dart analyze
@@ -986,6 +1017,7 @@ jobs:
       - genkit
       - example-packages
       - model-store
+      - studio
       - markdown-tests
     steps:
       - uses: actions/checkout@v7

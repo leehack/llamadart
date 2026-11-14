@@ -1,0 +1,22 @@
+analyzer:
+  language:
+    strict-casts: true
+    strict-inference: true
+    strict-raw-types: true
+  exclude:
+    - build/**
+    - android/**
+    - ios/**
+    - web/**
+    - windows/**
+    - macos/**
+    - linux/**
+include: package:flutter_lints/flutter.yaml
+
+linter:
+  rules:
+    avoid_void_async: true
+    directives_ordering: true
+    prefer_final_locals: true
+    public_member_api_docs: true
+    unawaited_futures: true

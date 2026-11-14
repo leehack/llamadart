@@ -45,6 +45,8 @@ Directory _fakeRuntimeRepo({
     nativeLlamaCppTagPath: "const llamaCppTag = '$nativeTag';\n",
     'example/chat_app/web/index.html':
         "    const defaultBridgeLlamaCppTag = '$bridgeTag';\n",
+    'packages/llamadart_studio/web/index.html':
+        "    const defaultBridgeLlamaCppTag = '$bridgeTag';\n",
     'doc/webgpu_bridge.md': parityWording
         ? 'That release embeds llama.cpp `$bridgeTag`, matching the '
               '`hook/build.dart` native pin\n'
@@ -251,6 +253,21 @@ void main() {
       );
     },
   );
+
+  test('tracked Studio bootstrap pins are registered and cannot drift', () {
+    const path = 'packages/llamadart_studio/web/index.html';
+    final root = _fakeRepo(
+      'v9.9.9',
+      files: {path: "const defaultBridgeAssetsTag = 'v9.9.9';\n"},
+    );
+    Process.runSync('git', ['init', '--quiet'], workingDirectory: root.path);
+    Process.runSync('git', ['add', '-A'], workingDirectory: root.path);
+    expect(findUnregisteredTagSites(root, 'v9.9.9'), isEmpty);
+    File(
+      '${root.path}/$path',
+    ).writeAsStringSync("const defaultBridgeAssetsTag = 'v9.9.8';\n");
+    expect(findBridgeTagDrift(root, 'v9.9.9'), contains(contains('$path:')));
+  });
 
   test('the checked-in pins all quote the source of truth', () {
     final repoRoot = Directory.current;

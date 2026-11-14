@@ -1,0 +1,55 @@
+import 'dart:io' as io;
+
+import 'package:mcp_dart/mcp_dart.dart';
+
+import '../../domain/mcp_server_config.dart';
+import '../skills/project_context_discovery_io.dart';
+
+/// Native `dart:io` transport factory supporting stdio subprocesses, Streamable
+/// HTTP, and Legacy SSE MCP servers.
+Transport createMcpTransportImpl(McpServerConfig config) {
+  switch (config.transportType) {
+    case McpTransportType.stdio:
+      final cmd = config.command?.trim() ?? '';
+      if (cmd.isEmpty) {
+        throw ArgumentError('MCP stdio server requires an executable command.');
+      }
+      final resolvedCmd = resolveHostExecutableSync(cmd);
+      return StdioClientTransport(
+        StdioServerParameters(
+          command: resolvedCmd,
+          args: config.args,
+          environment: buildMcpProcessEnvironmentImpl(config.environment),
+          workingDirectory: config.workingDirectory?.trim().isEmpty ?? true
+              ? null
+              : config.workingDirectory!.trim(),
+          stderrMode: io.ProcessStartMode.normal,
+          restartOnUnexpectedExit: false,
+        ),
+      );
+    case McpTransportType.streamableHttp:
+      final rawUrl = config.url?.trim() ?? '';
+      if (rawUrl.isEmpty) {
+        throw ArgumentError('MCP Streamable HTTP server requires a URL.');
+      }
+      return StreamableHttpClientTransport(
+        Uri.parse(rawUrl),
+        opts: StreamableHttpClientTransportOptions(
+          requestInit: config.headers.isEmpty
+              ? null
+              : <String, dynamic>{'headers': config.headers},
+        ),
+      );
+    case McpTransportType.sse:
+      final rawUrl = config.url?.trim() ?? '';
+      if (rawUrl.isEmpty) {
+        throw ArgumentError('MCP SSE server requires a URL.');
+      }
+      // ignore: deprecated_member_use
+      return SseClientTransport(
+        Uri.parse(rawUrl),
+        // ignore: deprecated_member_use
+        opts: SseClientTransportOptions(headers: config.headers),
+      );
+  }
+}

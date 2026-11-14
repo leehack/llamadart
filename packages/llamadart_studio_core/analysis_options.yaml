@@ -1,0 +1,17 @@
+include: package:lints/recommended.yaml
+
+analyzer:
+  language:
+    strict-casts: true
+    strict-inference: true
+    strict-raw-types: true
+
+linter:
+  rules:
+    avoid_void_async: true
+    directives_ordering: true
+    discarded_futures: true
+    prefer_final_locals: true
+    public_member_api_docs: true
+    unawaited_futures: true
+    unnecessary_await_in_return: true
