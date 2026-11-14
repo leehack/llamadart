@@ -656,7 +656,10 @@ await prefs.setInt('preferred_backend', backendIndex);
 - Image/audio attachments on web use browser file bytes (local path-based loading remains native-only).
 - Browser microphone recording warms up before the app shows its ready state.
   Before ASR, the app trims that warmup silence and rejects too-short, silent,
-  or unsupported PCM WAV captures with an actionable message.
+  or unsupported PCM WAV captures with an actionable message. A denied
+  permission, a missing input device, a discarded take and an input that ends
+  mid-recording all release the microphone; `chat-app-web-microphone-lifecycle`
+  in `tool/testing/run_local_e2e.dart` checks each in Chromium.
 - Browser paste events support screenshots and copied image/audio files without
   replacing normal text paste. Clipboard attachments are capped at 64 MB.
 - On web, model files are loaded by URL (local file download/cache flow differs from native).

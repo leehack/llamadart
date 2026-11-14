@@ -95,7 +95,8 @@ including its [model licenses](../guides/image-generation#model-licenses).
 ```bash
 cd example/chat_app
 flutter test test test_vm
-flutter test --platform chrome test/chat_generation_service_test.dart \
+flutter test --platform chrome test/audio_recording_service_web_test.dart \
+  test/chat_generation_service_test.dart \
   test/image_generation_screen_test.dart test/unit_test.dart \
   test/conversation_state_service_test.dart
 ```

@@ -399,6 +399,15 @@ the runtime note `gpu_unavailable:<reason>` (`no_webgpu`, `no_adapter`,
 layers the bridge no longer creates the WebGPU backend: on Firefox 160 (isolated
 page, CPU, stories15M, 32 tokens) that is 640 to 762 tok/s against 10 tok/s before.
 
+The speech smokes read the loaded runtime from the bridge, not from the
+request. `chat-app-web-speech-to-text-webgpu-smoke` requires `isGpuActive()` to
+be `true`, `-mem64-smoke` requires `llamadart.webgpu.core_variant` to be
+`wasm64` on the CPU backend, and `-webgpu-mem64-smoke` requires both. In
+`getModelMetadata()`, `llamadart.webgpu.n_gpu_layers` is the requested
+`nGpuLayers`, not the layers offloaded: a 99-layer request on a browser without
+WebGPU still reports `99` while `isGpuActive()` is `false`. When the mem64 core
+cannot load, the bridge falls back to wasm32 and reports `wasm32`.
+
 ## Expected global
 
 ```js

@@ -163,6 +163,7 @@ Pick targeted rows based on the touched surface:
 | LiteRT-LM native backend | `litert-lm-lifecycle`, `litert-lm-engine-smoke`, `litert-lm-chat-features-smoke`, `litert-lm-json-schema`, `litert-lm-asr-smoke`, `litert-lm-asr-preservation`, `litert-lm-media-preservation`, `litert-lm-utility-preservation` |
 | Web bridge bootstrap or interop | `web-bridge-smoke`, `web-mock-chat-smoke`, `web-real-model-smoke`, `web-tool-penalty-smoke`, `web-lazy-grammar`, `web-tool-choice-grammar` |
 | WebGPU multimodal | `webgpu-multimodal-regression`, `web-speech-task-cancel`, plus `web-speech-to-text-smoke` for typed Qwen3-ASR and `web-text-to-speech-smoke` for typed Qwen3-TTS |
+| Web microphone recorder (`record` bump, permission or interruption handling) | `web-microphone-lifecycle`, `chat-app-web-microphone-device-smoke` for real hardware |
 | Large WebGPU GGUF / wasm64 selection | `gemma4-webgpu-mem64` |
 | LiteRT-LM web / Gemma 4 web bundle | `gemma4-litert-web` |
 | Chat app model cache/download/projector | `chat-app-device-cache` |
@@ -232,7 +233,7 @@ The matrix is designed to cover these essential axes:
 | Axis | Covered by |
 | --- | --- |
 | llama.cpp native GGUF | `root-vm`, `native-prompt-reuse-parity`, `native-inference-benchmark`, `gguf-chat-features-smoke`, `gguf-audio-chat-smoke`, `decision-model-smoke` |
-| llama.cpp WebGPU GGUF | `web-bridge-smoke`, `web-mock-chat-smoke`, `web-real-model-smoke`, `web-tool-penalty-smoke`, `web-lazy-grammar`, `web-tool-choice-grammar`, `webgpu-multimodal-regression`, `web-speech-to-text-smoke`, `web-text-to-speech-smoke`, `web-speech-task-cancel`, `gemma4-webgpu-mem64`, `decision-model-web-smoke` |
+| llama.cpp WebGPU GGUF | `web-bridge-smoke`, `web-mock-chat-smoke`, `web-real-model-smoke`, `web-tool-penalty-smoke`, `web-lazy-grammar`, `web-tool-choice-grammar`, `webgpu-multimodal-regression`, `web-speech-to-text-smoke`, `web-microphone-lifecycle`, `web-text-to-speech-smoke`, `web-speech-task-cancel`, `gemma4-webgpu-mem64`, `decision-model-web-smoke` |
 | LiteRT-LM native `.litertlm` | `litert-lm-engine-smoke`, `litert-lm-chat-features-smoke`, `native-hook-bundles` |
 | LiteRT-LM web `.litertlm` | `gemma4-litert-web` |
 | Model families | Qwen 2.5 prompt reuse, Qwen 3/3.5 chat/multimodal, Gemma 4 tool/thinking/mem64/LiteRT-LM/audio, Laya ModernBERT decision encoder and head |
@@ -432,13 +433,25 @@ dart run tool/testing/run_local_e2e.dart --scenario speech-to-text-smoke \
 dart run tool/testing/run_local_e2e.dart \
   --scenario chat-app-web-speech-to-text-smoke \
   --audio-path /path/to/known-speech.wav \
-  --expect "Exact expected transcript."
+  --expect "The full transcript of the clip."
 
 # The Web scenario validates file selection and, for a WAV fixture, Chromium's
-# fake microphone path with the same file. An MP3 or FLAC fixture runs file
-# selection only. The selected-file transcript must contain the expected text
-# (case-insensitive); the fake microphone only needs a non-empty transcript
-# because its artificial input can loop at the capture boundary.
+# fake microphone path with the same file, played once behind a second of
+# silence. An MP3 or FLAC fixture runs file selection only. Both transcripts are
+# compared with --expect ignoring case and punctuation: the selected file must
+# contain it, and the microphone take must be within a word error rate of 0.1
+# of it, so pass the whole transcript, not a phrase. Add -webgpu-smoke,
+# -mem64-smoke or -webgpu-mem64-smoke to the scenario name to also require
+# isGpuActive() and the wasm32/wasm64 core the bridge reports.
+
+dart run tool/testing/run_local_e2e.dart \
+  --scenario chat-app-web-microphone-lifecycle \
+  --audio-path /path/to/known-speech.wav \
+  --expect "The full transcript of the clip."
+
+# Runs a denied permission, discard, a too-short take and a track the browser
+# ends mid-capture (permission revoked); each must show the app's message and
+# leave no live track, open AudioContext or unrevoked recording blob.
 
 dart run tool/testing/run_local_e2e.dart --scenario text-to-speech-smoke \
   --model-path /path/to/Qwen3-TTS-12Hz-1.7B-Base-Q4_K_M.gguf \
@@ -591,11 +604,14 @@ Speech evidence outside the `validation-speech-stt` pack
   backends.
 - `web-speech-to-text-smoke` verifies browser file selection of a WAV, MP3 or
   FLAC fixture and, for a WAV, Chromium fake-device microphone capture with the
-  same file. File selection returns a transcript containing the expected text
-  (case-insensitive); the microphone assertion requires only a non-empty
-  transcript without raw `<asr_text>` markers, because Chromium loops its
-  artificial input at the capture boundary. Real microphone hardware and
-  browser/device combinations remain deployment-specific checks.
+  same file, played once. File selection returns a transcript containing the
+  expected text (ignoring case and punctuation); the microphone take must be
+  within a word error rate of 0.1 of it, without raw `<asr_text>` markers. The
+  `-webgpu-smoke`, `-mem64-smoke` and `-webgpu-mem64-smoke` scenarios also
+  assert the bridge's `isGpuActive()` and `llamadart.webgpu.core_variant`.
+  `web-microphone-lifecycle` covers the recorder's failure paths and microphone
+  release in Chromium. Real microphone hardware and browser/device combinations
+  remain checks in `chat-app-web-microphone-device-smoke`.
 - **Ask with voice**: the experimental llama.cpp GGUF voice path has
   engine-level Metal evidence on macOS, while current packaged microphone UI
   evidence is LiteRT-LM on macOS. Android, iOS, and Windows still require
