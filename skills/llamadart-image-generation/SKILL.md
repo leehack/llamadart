@@ -125,11 +125,11 @@ core and `llamadart_stable_diffusion_flutter` together.
   reference, sides multiples of 64, at most 1024x1024; crop and resize it
   first. Headers cannot tell Kontext from FLUX.1 [dev]; other models,
   devices and platforms throw `LlamaUnsupportedException`.
-- Gate UI on `await ImageGenerationEngine.checkRuntime()` (no model needed;
-  probes on a separate isolate): show a progress indicator until it
-  completes, then `unsupportedReason` when `isSupported` is false.
-  `ImageGenerationEngine.load` throws `LlamaUnsupportedException` in the same
-  cases. There is no synchronous probe.
+- Gate UI on `await ImageGenerationEngine.checkRuntime()` (no model; background isolate); show progress, then `unsupportedReason` when `isSupported` is false.
+  `ImageGenerationEngine.load` throws `LlamaUnsupportedException` in the same cases; there is no synchronous image probe.
+  For Linux Vulkan builds, first run backend SPI `probeLinuxVulkanUnavailableReason()` off the UI isolate.
+  Refuse when it returns a reason, before native device enumeration can abort on an incompatible driver.
+  This loader/ICD check is a no-op off Linux and does not qualify Vulkan versions or driver stability; CPU-only builds skip it.
 - `await engine.capabilities` (an `EngineCapabilities`) reports the loaded
   model's family and device, and unsupported once disposed; it never throws.
   It changes only on `dispose()`, so read it once after `load` and keep it in

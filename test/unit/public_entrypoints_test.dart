@@ -410,6 +410,7 @@ void main() {
       'LiteRtLmAsrProcessState',
       'LiteRtLmAsrPushResult',
       'LiteRtLmAsrRuntimeSession',
+      'probeLinuxVulkanUnavailableReason',
     });
   });
 

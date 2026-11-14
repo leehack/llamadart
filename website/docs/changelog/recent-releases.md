@@ -13,6 +13,10 @@ validate against the exact release tag notes.
 
 ## Unreleased
 
+- Add an experimental Studio app with seven workspaces and a reusable pure-Dart core, alongside the existing chat example.
+- Add a Linux Vulkan preflight so Studio can report unavailable image drivers before native device enumeration.
+- Speed up model checksum verification on Apple platforms and keep verification off the UI isolate.
+
 ## 0.19.10
 
 - Adopt stable-diffusion `v0.3.0-4`: on iOS Metal the runtime splits graphs, so `ImageGenerationEngine.load` no longer refuses a full VAE there; a runtime without the split keeps the refusal. Qualified on an iPhone 16 Pro and an iPhone 17 Pro with SD-Turbo's embedded full VAE at 512x512; external VAE/TAESD components, SDXL-size VAEs, larger resolutions and SDXS through `sd_dart_new_sd_ctx` are admitted but not device-qualified. On iOS 26 the second engine dispose can leave about 2 GB resident ([#1047](https://github.com/leehack/llamadart/issues/1047), [#2004](https://github.com/leehack/llamadart/issues/2004)).

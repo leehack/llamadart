@@ -152,6 +152,40 @@ class SelectionTest(unittest.TestCase):
             plan = ci.select(paths)
             self.assertTrue(plan['jobs']['genkit'])
 
+    def test_studio_packages_run_together_without_selecting_root_or_bundles(self):
+        for package in ('llamadart_studio', 'llamadart_studio_core'):
+            for suffix in ('lib/main.dart', 'pubspec.yaml', 'test/chat_test.dart',
+                           'README.md'):
+                plan = ci.select(['packages/' + package + '/' + suffix])
+                expected = {'studio'}
+                if suffix.endswith('.md'):
+                    expected.add('markdown-tests')
+                self.assertEqual({j for j, v in plan['jobs'].items() if v}, expected)
+                self.assertEqual(plan['companions'], [])
+                self.assertEqual(plan['apps'], [])
+                self.assertEqual(plan['desktops'], [])
+
+    def test_studio_uses_its_own_sdk_pin_without_changing_other_lanes(self):
+        workflow = (ROOT / '.github/workflows/ci.yml').read_text()
+        studio = workflow.split('\n  studio:\n', 1)[1].split('\n  genkit:\n', 1)[0]
+        self.assertIn('flutter-version-file: packages/llamadart_studio/.flutter-version',
+                      studio)
+        self.assertNotIn('flutter-version:', studio)
+        self.assertIn('working-directory: packages/llamadart_studio_core', studio)
+        self.assertIn('working-directory: packages/llamadart_studio', studio)
+        self.assertIn('flutter-version: 3.47.1', workflow)
+
+    def test_studio_web_changes_run_the_shared_bridge_pin_gate(self):
+        plan = ci.select(['packages/llamadart_studio/web/index.html'])
+        self.assertTrue(plan['jobs']['studio'])
+        self.assertTrue(plan['jobs']['docs-versions'])
+
+    def test_studio_runs_for_runtime_companions_shared_changes_and_fallback(self):
+        for paths in (['lib/llamadart.dart'], ['pubspec.yaml'], ['hook/build.dart'],
+                      ['.github/workflows/ci.yml'], [],
+                      ['packages/llamadart_llama_cpp_flutter/lib/runtime.dart']):
+            self.assertTrue(ci.select(paths)['jobs']['studio'], paths)
+
     def test_model_store_is_independent_but_core_changes_test_it(self):
         for path in ('lib/llamadart_model_store.dart', 'README.md', 'pubspec.yaml',
                      'test/model_store_test.dart'):

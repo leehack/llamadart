@@ -23,7 +23,7 @@ CORE_JOBS = (
     'validation-integration', 'companion-packages', 'test-linux-coverage',
     'test-web', 'web-chat-contract', 'test-other-os',
     'native-prompt-reuse-parity', 'artifact-contract',
-    'genkit', 'example-packages', 'model-store', 'markdown-tests',
+    'genkit', 'example-packages', 'model-store', 'studio', 'markdown-tests',
 )
 # Jobs outside the plan that run exactly when the planned job they feed is
 # selected: the Linux VM test shards. The planned test-linux-coverage job only
@@ -126,6 +126,11 @@ def select(paths, force_full=False, pull_request=False):
             jobs.update(('docs-check', 'docs-versions', 'genkit'))
         elif path.startswith('packages/genkit_llamadart/'):
             jobs.add('genkit')
+        elif path.startswith(('packages/llamadart_studio/',
+                              'packages/llamadart_studio_core/')):
+            jobs.add('studio')
+            if path.startswith('packages/llamadart_studio/web/'):
+                jobs.add('docs-versions')
         elif path == 'website/docs/guides/model-store.md':
             jobs.update(('docs-check', 'docs-versions', 'model-store'))
         elif path.startswith('packages/llamadart_model_store/'):
@@ -139,7 +144,7 @@ def select(paths, force_full=False, pull_request=False):
             companions.add(name)
             # Root hooks/loaders and Flutter consumers depend on companions.
             jobs.update(('analyze', 'companion-packages', 'test-linux-coverage',
-                         'test-other-os', 'web-chat-contract'))
+                         'test-other-os', 'web-chat-contract', 'studio'))
             apps.update(APPS)
         elif path.startswith('packages/llamadart_validation/'):
             jobs.update(('analyze', 'validation-harness', 'validation-integration'))

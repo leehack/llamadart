@@ -74,6 +74,8 @@ void main() {
         'packages/genkit_llamadart/pubspec_overrides.yaml',
         'packages/llamadart_model_store/pubspec.yaml',
         'packages/llamadart_model_store/lib/llamadart_model_store.dart',
+        'packages/llamadart_studio_core/pubspec.yaml',
+        'packages/llamadart_studio/pubspec.yaml',
       ]) {
         expect(
           await _isIgnored(repository, candidate),
@@ -112,6 +114,8 @@ void main() {
       'packages/genkit_llamadart/pubspec.yaml',
       'packages/llamadart_model_store/pubspec.yaml',
       'packages/llamadart_validation/pubspec.yaml',
+      'packages/llamadart_studio_core/pubspec.yaml',
+      'packages/llamadart_studio/pubspec.yaml',
     ]) {
       expect(await errors([...shipped, package]), isNotEmpty, reason: package);
     }

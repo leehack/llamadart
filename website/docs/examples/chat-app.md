@@ -11,6 +11,11 @@ A Flutter chat app that downloads models from a built-in library and streams
 on-device chat, with runtime controls and diagnostics. Live demo:
 https://leehack-llamadart.static.hf.space
 
+For a separate experimental app with Notes, Coding, and reusable pure-Dart
+controllers, see [Studio](https://github.com/leehack/llamadart/tree/main/packages/llamadart_studio).
+Studio uses its own Flutter SDK pin; its README records setup and qualification
+limits. The chat example remains available independently.
+
 ## Run
 
 Run this example from a repository checkout. The chat app and its private

@@ -44,6 +44,7 @@ darwin/llamadart/Artifacts/
 # Local bridge build/fetch outputs
 webgpu_bridge/
 example/chat_app/web/webgpu_bridge/
+packages/llamadart_studio/web/webgpu_bridge/
 
 # Removed legacy backend paths (avoid local empty-dir leakage)
 lib/src/backends/wllama/
@@ -65,6 +66,8 @@ AGENTS.md
 # Independently published packages and their dependency graphs.
 /packages/genkit_llamadart/
 /packages/llamadart_model_store/
+/packages/llamadart_studio_core/
+/packages/llamadart_studio/
 
 # The chat app imports the private validation harness. Keep both checkout-only
 # rather than shipping an example whose local dependency cannot resolve.

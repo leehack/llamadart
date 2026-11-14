@@ -78,6 +78,9 @@ dart run skills@ get
 
 To check a desktop setup without a model, run `dart run llamadart:doctor`; see
 [setup report scope](https://llamadart.leehack.com/docs/platforms/diagnose-setup#desktop-setup-report).
+Hosts bundling a Linux Vulkan runtime can preflight the system loader with
+`probeLinuxVulkanUnavailableReason()` from `package:llamadart/backend.dart`;
+see [API levels](https://llamadart.leehack.com/docs/guides/api-levels).
 
 ## First generation
 
@@ -221,6 +224,7 @@ or try the [hosted chat app](https://leehack-llamadart.static.hf.space).
 
 - [Basic Dart CLI](https://github.com/leehack/llamadart/tree/main/example/basic_app)
 - [Flutter chat app](https://github.com/leehack/llamadart/tree/main/example/chat_app)
+- [Experimental Studio app and reusable core](https://github.com/leehack/llamadart/tree/main/packages/llamadart_studio), with Chat, Notes, Coding, model management, speech, images, and runtime exploration
 - [Laya Tetris, a Flutter game played by a decision model](https://github.com/leehack/llamadart/tree/main/example/laya_tetris)
 - [HTTP server example](https://github.com/leehack/llamadart/tree/main/example/llamadart_server)
 - [TUI coding agent example](https://github.com/leehack/llamadart/tree/main/example/tui_coding_agent)

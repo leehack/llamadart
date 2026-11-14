@@ -1,0 +1,50 @@
+name: llamadart_studio
+description: Production-grade, local-first multimodal AI studio powered by llamadart.
+publish_to: 'none'
+version: 0.1.0
+
+environment:
+  sdk: ^3.14.0
+  flutter: ^3.50.0
+
+dependencies:
+  audioplayers: 6.5.1
+  file_picker: ^10.3.10
+  flutter:
+    sdk: flutter
+  flutter_markdown: ^0.7.7+1
+  google_fonts: ^8.0.0
+  llamadart:
+    path: ../..
+  llamadart_litert_lm_flutter:
+    path: ../llamadart_litert_lm_flutter
+  llamadart_llama_cpp_flutter:
+    path: ../llamadart_llama_cpp_flutter
+  llamadart_stable_diffusion_flutter:
+    path: ../llamadart_stable_diffusion_flutter
+  llamadart_studio_core:
+    path: ../llamadart_studio_core
+  pasteboard: ^0.5.0
+  path_provider: ^2.1.5
+  record: ^6.2.1
+  shared_preferences: ^2.2.0
+  url_launcher: ^6.3.2
+
+dev_dependencies:
+  flutter_lints: ^6.0.0
+  flutter_test:
+    sdk: flutter
+  integration_test:
+    sdk: flutter
+
+dependency_overrides:
+  llamadart:
+    path: ../..
+
+flutter:
+  uses-material-design: true
+
+hooks:
+  user_defines:
+    llamadart:
+      llamadart_native_runtimes: all

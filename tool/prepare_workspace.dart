@@ -78,6 +78,16 @@ const List<WorkspacePackage> workspacePackages = <WorkspacePackage>[
     WorkspacePackageManager.flutter,
     prepareForRootQualityGates: false,
   ),
+  WorkspacePackage(
+    'packages/llamadart_studio_core',
+    WorkspacePackageManager.dart,
+    prepareForRootQualityGates: false,
+  ),
+  WorkspacePackage(
+    'packages/llamadart_studio',
+    WorkspacePackageManager.flutter,
+    prepareForRootQualityGates: false,
+  ),
 ];
 
 /// Runs one dependency-resolution command.
