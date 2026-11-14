@@ -1700,6 +1700,27 @@ void main() {
         });
       }
 
+      test('gpu ignores a note that only ends in gpu_unavailable:', () async {
+        addTearDown(fakeNavigatorGpu(FakeWebGpu.adapter));
+        runtimeGpuActive = false;
+        bridgeRuntimeHints['llamadart.webgpu.runtime_notes'] =
+            'core_wasm32_active;not_gpu_unavailable:no_adapter';
+
+        await expectLater(
+          backend.modelLoadFromUrl(
+            url,
+            const ModelParams(device: ComputeDevice.gpu),
+          ),
+          throwsA(
+            isA<LlamaUnsupportedException>().having(
+              (e) => e.message,
+              'message',
+              contains('without GPU layers. Use ComputeDevice.auto or cpu.'),
+            ),
+          ),
+        );
+      });
+
       test('gpu without a reason note keeps the plain message', () async {
         addTearDown(fakeNavigatorGpu(FakeWebGpu.adapter));
         runtimeGpuActive = false;
@@ -2221,6 +2242,33 @@ void main() {
           expect(backend.isReady, isFalse);
         });
       }
+
+      test('disposes the bridge after the rejection', () async {
+        var disposeCalls = 0;
+        bridge.setProperty(
+          'dispose'.toJS,
+          (() {
+            disposeCalls += 1;
+            return Future<void>.value().toJS;
+          }).toJS,
+        );
+        bridge.setProperty(
+          'loadModelFromUrl'.toJS,
+          ((String url, JSObject? config) => rejectIsolation(
+            name: 'CrossOriginIsolationError',
+            code: 'CROSS_ORIGIN_ISOLATION_REQUIRED',
+          )).toJS,
+        );
+
+        await expectLater(
+          backend.modelLoadFromUrl(
+            'https://example.com/no-coi.gguf',
+            const ModelParams(contextSize: 4096, gpuLayers: 99),
+          ),
+          throwsA(isA<LlamaUnsupportedException>()),
+        );
+        expect(disposeCalls, 1);
+      });
 
       test('does not remap an unrelated error carrying another code', () async {
         bridge.setProperty(

@@ -57,7 +57,7 @@ in the llamadart-getting-started and llamadart-chat-streaming skills.
   in Chromium-based browsers; it does not isolate Safari). Without
   isolation (`window.crossOriginIsolated == false`) assets `v0.1.85+`
   reject the load at once and llamadart throws `LlamaUnsupportedException`
-  naming COOP/COEP; earlier assets hang or fail with thread errors.
+  naming COOP/COEP; earlier assets wait minutes for the init timeout before a generic error.
 - Treat WebGPU as a runtime capability. A supported browser (Chrome/Edge 128+,
   Firefox 129+, Safari 17.4+) can still lack an adapter, features or memory.
   Prove a first load with a small quantized GGUF, `contextSize: 2048` or less

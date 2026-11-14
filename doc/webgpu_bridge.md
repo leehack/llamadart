@@ -60,7 +60,7 @@ an earlier `<script>`:
 | `__llamadartBridgeAssetsRepo`, `__llamadartBridgeAssetsTag` | CDN source; defaults to `leehack/llama-web-bridge-assets` at the pinned tag |
 | `__llamadartPreferLocalBridgeRuntime` | `true` loads local assets first off `localhost` |
 | `__llamadartBridgeEnableMem64` | `true` sets `__llamadartBridgePreferMemory64`; default off |
-| `__llamadartBridgeThreadPoolSize` | Thread hint; default `hardwareConcurrency` clamped to 2..4 (a page without cross-origin isolation cannot load the core) |
+| `__llamadartBridgeThreadPoolSize` | Thread hint; chat app default 1 when the page is not cross-origin isolated, else `hardwareConcurrency` clamped to 2..4 |
 | `__llamadartBridgeSpeechToTextSupported` | Defaults to `true` only for the official repository at `v0.1.30` or newer |
 | `__llamadartLiteRtLmModuleUrl` | `@litert-lm/core` module; default `@litert-lm/core@0.19.0` from jsDelivr |
 | `__llamadartBridgeBootstrapVerbose` | `true` enables bootstrap `console.*` logs |
@@ -205,6 +205,10 @@ physical playback, intelligibility or speaker-reference fidelity.
   suppress tokens, so Qwen3-TTS no longer fails with `code out of range` when it
   samples a codec control token
   ([llama-web-bridge#211](https://github.com/leehack/llama-web-bridge/pull/211)).
+- `v0.1.85+`: a page without cross-origin isolation rejects the load at once
+  with `CrossOriginIsolationError` (`code: 'CROSS_ORIGIN_ISOLATION_REQUIRED'`);
+  `gpu_unavailable:<reason>` appears in the runtime notes when `nGpuLayers > 0`
+  and the GPU is not active; at 0 GPU layers the WebGPU backend is not created.
 - `v0.1.84+`: `getCompletionCapabilities()` reports
   `thinkingBudgetPauseGrammar`, and `thinkingBudget.pauseGrammar: false` keeps a
   grammar applied while the model reasons
@@ -339,8 +343,8 @@ Chromium-based browsers, see
 the web core cannot start: assets `v0.1.85+` reject the load at once
 with `CrossOriginIsolationError` (`code: 'CROSS_ORIGIN_ISOLATION_REQUIRED'`),
 which `WebGpuLlamaBackend` throws as `LlamaUnsupportedException` on the direct
-and worker paths; earlier assets hang for about 90 seconds or fail with
-thread-constructor errors. `credentialless` does not isolate Safari.
+and worker paths; earlier assets waited minutes (the init timeout, retried: 180 s direct,
+360 s worker) before a generic `Bridge core init timeout` error. `credentialless` does not isolate Safari.
 
 For Hugging Face Spaces with `sdk: static`, set the headers in the Space
 README frontmatter; keys and values must be lowercase:
@@ -392,8 +396,9 @@ the runtime note `gpu_unavailable:<reason>` (`no_webgpu`, `no_adapter`,
 `adapter_missing_shader_f16` or `unknown`), and the `ComputeDevice.gpu` error
 "loaded the model without GPU layers" names it. Chrome on Linux hides
 `shader-f16` from NVIDIA adapters with a driver older than 615.71. At 0 GPU
-layers the bridge no longer creates the WebGPU backend, which makes Firefox CPU
-runs about 25 times faster.
+layers the bridge no longer creates the WebGPU backend: on Firefox 160 (isolated
+page, CPU, stories15M, 32 tokens) that is 640 to 762 tok/s against 10 tok/s on
+`v0.1.84`.
 
 ## Expected global
 
