@@ -221,8 +221,8 @@ needed for this Dart/diagnostic-only change.
 
 Freeze clean source and independent review before preparing an APK. The final
 binding must contain exact source commit/tree/inventory, runtime tag `v0.19.1`,
-`v0.19.1-1`, `v0.19.1-3` or `v0.19.1-4` (same Android binaries) or `v0.19.1-2`
-(requalified on S24 in `matrix-wmalbq6nz437a`, see
+`v0.19.1-1`, `v0.19.1-3` or `v0.19.1-4` (same Android binaries), or `v0.19.1-2`
+or `v0.19.1-5` (requalified on S24; `-2` in `matrix-wmalbq6nz437a`, see
 [the adoption notes](../../../../doc/litert_lm_v1_adoption.md)) and its owner
 commit, runtime archive and manifest hashes, complete owner archive libraries,
 complete installed APK libraries, child executable and canonical Qwen template

@@ -1,3 +1,7 @@
+## Unreleased
+
+- Updated Apple SwiftPM native pin to `leehack/litert-lm-native@v0.19.1-5`.
+
 ## 0.19.9
 
 - Refresh README installation guidance for core `0.19.9`.

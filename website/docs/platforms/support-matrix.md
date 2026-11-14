@@ -218,20 +218,20 @@ web are on [Known platform issues](./known-platform-issues).
 | Runtime | Pinned release |
 | --- | --- |
 | llama.cpp native | `leehack/llamadart-native@v0.9.0` |
-| LiteRT-LM native | `leehack/litert-lm-native@v0.19.1-4` |
+| LiteRT-LM native | `leehack/litert-lm-native@v0.19.1-5` |
 | stable-diffusion.cpp native (opt-in, Preview) | `leehack/stable-diffusion-native@v0.3.0-4`, for [image generation](../guides/image-generation); see [Opt-in stable_diffusion runtime](./native-build-hooks#opt-in-stable_diffusion-runtime-experimental). Flutter iOS/macOS apps link its XCFramework through `llamadart_stable_diffusion_flutter` |
 | WebGPU bridge assets | `leehack/llama-web-bridge-assets`; see [Pinned bridge assets](./webgpu-bridge#pinned-bridge-assets) |
 
 The native-assets hook currently pins `llamadart-native` tag
 `v0.9.0` and
-`litert-lm-native` release `v0.19.1-4` (`lib/src/hook/native_release_pins.dart`).
+`litert-lm-native` release `v0.19.1-5` (`lib/src/hook/native_release_pins.dart`).
 
 The direct native client, service probes and speech worker share ABI-aware
 discovery. Public selection admits legacy runtimes and C API 1.0.x; unknown
 or future versions are refused before engine calls. The pinned runtime is
 published native
-[v0.19.1-4](https://github.com/leehack/litert-lm-native/releases/tag/v0.19.1-4)
-(owner `5da99205`, upstream `7a03724c`). The selected loader requires macOS 14+
+[v0.19.1-5](https://github.com/leehack/litert-lm-native/releases/tag/v0.19.1-5)
+(owner `bb4e7709`, upstream `7a03724c`). The selected loader requires macOS 14+
 before loading any core or companion library, including legacy libraries and
 custom paths. Web uses `@litert-lm/core@0.19.0`.
 The Flutter companion's iOS 16.4 floor remains separate.
