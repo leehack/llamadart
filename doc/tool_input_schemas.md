@@ -91,7 +91,8 @@ supports it; WebGPU works only when the selected grammar starts at the first
 token (usually `ToolChoice.required`). Lazy auto grammars and LiteRT-LM are
 rejected. `ToolChoice.none` can retain declarations for replay without enabling
 calls. Final parsed calls and direct `invoke` arguments are validated before
-handlers run. A schema constrains the input shape; the app still controls
+handlers run; the final parse checks names and arguments only when a schema
+tool is in the request, and only schema tools' arguments. A schema constrains the input shape; the app still controls
 tool permissions and side effects.
 
 Active schema tools cannot be combined with `responseFormat`, which would
