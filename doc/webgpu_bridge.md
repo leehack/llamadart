@@ -60,18 +60,18 @@ an earlier `<script>`:
 | `__llamadartBridgeAssetsRepo`, `__llamadartBridgeAssetsTag` | CDN source; defaults to `leehack/llama-web-bridge-assets` at the pinned tag |
 | `__llamadartPreferLocalBridgeRuntime` | `true` loads local assets first off `localhost` |
 | `__llamadartBridgeEnableMem64` | `true` sets `__llamadartBridgePreferMemory64`; default off |
-| `__llamadartBridgeThreadPoolSize` | Thread hint; default 1 without cross-origin isolation, else `hardwareConcurrency` clamped to 2..4 |
+| `__llamadartBridgeThreadPoolSize` | Thread hint; chat app default 1 when the page is not cross-origin isolated, else `hardwareConcurrency` clamped to 2..4 |
 | `__llamadartBridgeSpeechToTextSupported` | Defaults to `true` only for the official repository at `v0.1.30` or newer |
 | `__llamadartLiteRtLmModuleUrl` | `@litert-lm/core` module; default `@litert-lm/core@0.19.0` from jsDelivr |
 | `__llamadartBridgeBootstrapVerbose` | `true` enables bootstrap `console.*` logs |
 
 ## Pinned assets
 
-Default pinned tag in the example is `v0.1.84`.
+Default pinned tag in the example is `v0.1.85`.
 Vendor the pinned assets into the chat app with:
 
 ```bash
-WEBGPU_BRIDGE_ASSETS_TAG=v0.1.84 ./scripts/fetch_webgpu_bridge_assets.sh
+WEBGPU_BRIDGE_ASSETS_TAG=v0.1.85 ./scripts/fetch_webgpu_bridge_assets.sh
 ```
 
 `WEBGPU_BRIDGE_OUT_DIR` changes the destination. The script verifies
@@ -90,17 +90,17 @@ the chat app, set the bootstrap globals before the bootstrap runs:
 ```html
 <script>
   window.__llamadartBridgeAssetsRepo = 'leehack/llama-web-bridge-assets';
-  window.__llamadartBridgeAssetsTag = 'v0.1.84';
+  window.__llamadartBridgeAssetsTag = 'v0.1.85';
 </script>
 ```
 
 That release embeds llama.cpp `v0.9.0`, matching the `hook/build.dart` native pin
 (`v0.9.0`, both built from upstream llama.cpp `v0.9.0@cd959bae99ff4bed22bef2604f45241c09bbb8c8`)
-even though the bridge asset tag `v0.1.84` differs from the native runtime tag
-`v0.9.0`. Provenance for this immutable consumer artifact: release `443341300`,
-tag commit `0a3c45f24fd6293050e1772bed4a425b2b5a8493`, bridge source
-`dc359398bc6445ec15878ddb873555295f957f85`, and manifest SHA-256
-`55abeb377597148156059a8ee5400f2314c6254ad91b57db65b709e304c0dea0`.
+even though the bridge asset tag `v0.1.85` differs from the native runtime tag
+`v0.9.0`. Provenance for this immutable consumer artifact: release `444874209`,
+tag commit `28a6180925e74e1038ee4c22cde6b403ae21ed84`, bridge source
+`f1ac2fc1d4d4d3fda56c161ac6a629ae4c67a7d3`, and manifest SHA-256
+`6767783edd85e14853a8a79cd6ce53d53f4eb2d99aeb62601014bd68c1b6b7b3`.
 They expose the API-version-1 media embedding contract. State and extraction
 qualification covers wasm32 and memory64 through direct and worker runtimes. Existing decision,
 scoring, sampling, LoRA, speculative decoding and speech APIs remain available.
@@ -205,6 +205,10 @@ physical playback, intelligibility or speaker-reference fidelity.
   suppress tokens, so Qwen3-TTS no longer fails with `code out of range` when it
   samples a codec control token
   ([llama-web-bridge#211](https://github.com/leehack/llama-web-bridge/pull/211)).
+- `v0.1.85+`: a page without cross-origin isolation rejects the load at once
+  with `CrossOriginIsolationError` (`code: 'CROSS_ORIGIN_ISOLATION_REQUIRED'`);
+  `gpu_unavailable:<reason>` appears in the runtime notes when `nGpuLayers > 0`
+  and the GPU is not active; at 0 GPU layers the WebGPU backend is not created.
 - `v0.1.84+`: `getCompletionCapabilities()` reports
   `thinkingBudgetPauseGrammar`, and `thinkingBudget.pauseGrammar: false` keeps a
   grammar applied while the model reasons
@@ -336,8 +340,11 @@ isolated (`Cross-Origin-Opener-Policy: same-origin`,
 `Cross-Origin-Embedder-Policy: require-corp`; `credentialless` isolates only in
 Chromium-based browsers, see
 [#1025](https://github.com/leehack/llamadart/issues/1025)). Without it
-the bridge caps threads to one, and fetch-backed loading fails with
-thread-constructor errors.
+the web core cannot start: assets `v0.1.85+` reject the load at once
+with `CrossOriginIsolationError` (`code: 'CROSS_ORIGIN_ISOLATION_REQUIRED'`),
+which `WebGpuLlamaBackend` throws as `LlamaUnsupportedException` on the direct
+and worker paths; earlier assets waited minutes (the init timeout, retried: 180 s direct,
+360 s worker) before a generic `Bridge core init timeout` error. `credentialless` does not isolate Safari.
 
 For Hugging Face Spaces with `sdk: static`, set the headers in the Space
 README frontmatter; keys and values must be lowercase:
@@ -383,6 +390,14 @@ On macOS headless Chromium, keep the smoke script's default
 `--browser-angle auto` or pass `--browser-angle metal`. Without Metal ANGLE the
 adapter can lack `shader-f16`, and llama.cpp may abort in `ggml-webgpu` even on
 `gpuLayers = 0` runs.
+
+When `nGpuLayers > 0` and the GPU is not active, assets `v0.1.85+` add
+the runtime note `gpu_unavailable:<reason>` (`no_webgpu`, `no_adapter`,
+`adapter_missing_shader_f16` or `unknown`), and the `ComputeDevice.gpu` error
+"loaded the model without GPU layers" names it. Chrome on Linux hides
+`shader-f16` from NVIDIA adapters with a driver older than 615.71. At 0 GPU
+layers the bridge no longer creates the WebGPU backend: on Firefox 160 (isolated
+page, CPU, stories15M, 32 tokens) that is 640 to 762 tok/s against 10 tok/s before.
 
 The speech smokes read the loaded runtime from the bridge, not from the
 request. `chat-app-web-speech-to-text-webgpu-smoke` requires `isGpuActive()` to

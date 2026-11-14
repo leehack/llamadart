@@ -428,6 +428,59 @@ void main() {
     }
   });
 
+  test('Safari and Firefox rows select the isolated chat-app smoke', () async {
+    final doc = File('doc/testing_matrix.md').readAsStringSync();
+    for (final browser in ['safari', 'firefox']) {
+      final row = testMatrixRows.singleWhere(
+        (row) => row.id == 'web-real-model-smoke-$browser',
+      );
+      expect(row.mode, startsWith('local-only'));
+      expect(row.command, contains('--browser $browser'));
+      expect(row.covers, contains('require-corp'));
+      expect(doc, contains('`${row.id}`'));
+      final command = row.command
+          .replaceFirst('FIREFOX_EXECUTABLE=<firefox> ', '')
+          .replaceAll('<model-url>', 'http://127.0.0.1:1/m.gguf')
+          .replaceAll(' [--backend webgpu]', '')
+          .split(' ');
+      final result = await runLocalE2e(
+        [...command.skip(3), '--skip-build', '--dry-run'],
+        projectRoot: '/repo',
+        displayShell: LocalE2eDisplayShell.posix,
+      );
+      expect(result.exitCode, 0, reason: result.stderr);
+      expect(result.stdout, contains('--coep require-corp'));
+      expect(result.stdout, contains('--browser $browser'));
+    }
+    expect(doc, contains('## Safari and Firefox chat-app smoke'));
+  });
+
+  test(
+    'the WebGPU generation row reaches its scenario and test file',
+    () async {
+      final row = testMatrixRows.singleWhere(
+        (row) => row.id == 'web-webgpu-generation',
+      );
+      expect(row.mode, contains('local-only'));
+      final result = await runLocalE2e(
+        row.command.split(' ').skip(3).toList()..add('--dry-run'),
+        projectRoot: '/repo',
+      );
+      expect(result.exitCode, 0, reason: result.stderr);
+      expect(
+        result.stdout,
+        contains('test/e2e/webgpu/webgpu_generation_e2e_test.dart'),
+      );
+      expect(
+        File('test/e2e/webgpu/webgpu_generation_e2e_test.dart').existsSync(),
+        isTrue,
+      );
+      final doc = File('doc/testing_matrix.md').readAsStringSync();
+      expect(doc, contains('`web-webgpu-generation`'));
+      expect(doc, contains('## Web WebGPU generation'));
+    },
+  );
+
   test('the Web tool penalty row asserts the call and drops any-response', () {
     final row = testMatrixRows.singleWhere(
       (row) => row.id == 'web-tool-penalty-smoke',

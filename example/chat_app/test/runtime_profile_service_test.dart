@@ -14,9 +14,9 @@ void main() {
           'llamadart.webgpu.thread_pool_size': '2',
           'llamadart.webgpu.execution': 'worker',
           'llamadart.webgpu.core_variant': 'wasm64',
-          'llamadart.webgpu.worker_fallback_reason': 'threads_capped_no_coi',
+          'llamadart.webgpu.worker_fallback_reason': 'worker_unavailable',
           'llamadart.webgpu.runtime_notes':
-              'threads_capped_no_coi;model_fetch_backend_attempt',
+              'core_pthreads:1;model_fetch_backend_attempt',
           'llamadart.webgpu.model_source': 'network-fetch',
           'llamadart.webgpu.model_cache_state': 'hit',
         },
@@ -27,10 +27,10 @@ void main() {
       expect(diagnostics.runtimeThreadPoolSize, 2);
       expect(diagnostics.runtimeExecution, 'worker');
       expect(diagnostics.runtimeCoreVariant, 'wasm64');
-      expect(diagnostics.runtimeWorkerFallbackReason, 'threads_capped_no_coi');
+      expect(diagnostics.runtimeWorkerFallbackReason, 'worker_unavailable');
       expect(
         diagnostics.runtimeNotes,
-        'threads_capped_no_coi;model_fetch_backend_attempt',
+        'core_pthreads:1;model_fetch_backend_attempt',
       );
       expect(diagnostics.runtimeModelSource, 'network-fetch');
       expect(diagnostics.runtimeModelCacheState, 'hit');

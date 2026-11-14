@@ -49,9 +49,12 @@ after load. The bridge ignores negative `mainGpu` values, including with
   credentialless` isolates the page in Chromium-based browsers only: Safari 27
   reports `crossOriginIsolated === false` with it and `true` with
   `require-corp` ([#1025](https://github.com/leehack/llamadart/issues/1025)).
-  Without isolation (`window.crossOriginIsolated === false`) the bridge caps
-  inference at one thread and records `threads_capped_no_coi` in its runtime
-  notes.
+  Without isolation (`window.crossOriginIsolated === false`) the web core
+  cannot start, and bridge assets `v0.1.85+` reject the load at once
+  with `CrossOriginIsolationError` (`code: 'CROSS_ORIGIN_ISOLATION_REQUIRED'`).
+  llamadart reports it as a `LlamaUnsupportedException` that names COOP/COEP
+  `require-corp`; earlier assets waited minutes (the init timeout, retried) before a generic
+  `Bridge core init timeout` error.
 
 A supported browser version does not guarantee that a GGUF loads with WebGPU
 offload; the GPU, driver, OS, flags and memory pressure all matter.
@@ -383,6 +386,8 @@ When retries run out, the load throws an error with runtime hints such as
 | Memory, OOM, `bad_alloc` or abort during load | Model or config pressure | Reduce model size, context, threads or GPU layers; use memory64. |
 | Safari forces CPU | Safari safeguard | Set `__llamadartBridgeAdaptiveSafariGpu` from the loaded assets, or `__llamadartAllowSafariWebGpu` for testing. |
 | Works on `localhost` but not hosted | Deployment | Check base href, asset paths, COOP/COEP headers and service-worker cache. |
+| `CrossOriginIsolationError` or "needs cross-origin isolation" | Page is not isolated | Send `Cross-Origin-Opener-Policy: same-origin` and `Cross-Origin-Embedder-Policy: require-corp`; `credentialless` does not isolate Safari. |
+| `ComputeDevice.gpu` fails with "without GPU layers" and `gpu_unavailable:adapter_missing_shader_f16` | Adapter lacks `shader-f16` | WebGPU needs `shader-f16`. On Linux with an NVIDIA GPU, Chrome exposes it only with driver 615.71 or newer; older drivers run on the CPU. |
 | GPU output unstable, CPU fine | Adapter, feature or driver | Check adapter features such as `shader-f16`; lower GPU layers. |
 
 More cases: [Troubleshooting](../troubleshooting/common-issues#web).
@@ -406,10 +411,10 @@ first model load, for diagnosis or controlled deployments:
 
 ## Pinned bridge assets
 
-This llamadart version pins bridge assets `v0.1.84`, which include the
+This llamadart version pins bridge assets `v0.1.85`, which include the
 API-version-1 media embedding contract.
 
-- The pinned `v0.1.84` bridge assets embed llama.cpp `v0.9.0`, matching the native runtime.
+- The pinned `v0.1.85` bridge assets embed llama.cpp `v0.9.0`, matching the native runtime.
 
 Provenance and the pinned manifest digest are in
 [`doc/webgpu_bridge.md`](https://github.com/leehack/llamadart/blob/main/doc/webgpu_bridge.md).
@@ -417,7 +422,7 @@ Provenance and the pinned manifest digest are in
 In a llamadart checkout, vendor the pinned assets into the chat app with:
 
 ```bash
-WEBGPU_BRIDGE_ASSETS_TAG=v0.1.84 ./scripts/fetch_webgpu_bridge_assets.sh
+WEBGPU_BRIDGE_ASSETS_TAG=v0.1.85 ./scripts/fetch_webgpu_bridge_assets.sh
 ```
 
 The chat app bootstrap takes its CDN source from these globals:
@@ -425,7 +430,7 @@ The chat app bootstrap takes its CDN source from these globals:
 ```html
 <script>
   window.__llamadartBridgeAssetsRepo = 'leehack/llama-web-bridge-assets';
-  window.__llamadartBridgeAssetsTag = 'v0.1.84';
+  window.__llamadartBridgeAssetsTag = 'v0.1.85';
 </script>
 ```
 
@@ -464,4 +469,5 @@ probe, not the tag.
 | `v0.1.75` | A draft context that does not fit throws `LlamaUnsupportedException` and the target stays usable | The draft leaks until the runtime aborts |
 | `v0.1.76` | The projector copy behind the repeated wasm32 media batch abort is freed (repeated batches qualified on wasm32, measured on the pinned assets; memory64 recommended for headroom) | Repeated media batches can abort on wasm32 |
 | `v0.1.79+` | A worker image or audio `embed` gets 10 minutes per input | Two minutes per request |
+| `v0.1.85+` | A page without cross-origin isolation rejects the load at once (`CrossOriginIsolationError`); `gpu_unavailable:<reason>` runtime note; 0 GPU layers skip the WebGPU backend | Minutes of init timeout, then a generic error; no reason note; the WebGPU backend is created anyway |
 | `v0.1.84+` | A thinking budget keeps a grammar that takes the thought applied (`thinkingBudgetPauseGrammar`) | That combination throws `LlamaUnsupportedException` |

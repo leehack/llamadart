@@ -138,6 +138,7 @@ def sync_playwright():
 const _fakeSafariDriver = r'''#!/usr/bin/env python3
 import json
 import os
+import re
 import sys
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
@@ -158,7 +159,19 @@ def log(entry):
         out.write(json.dumps(entry) + '\n')
 
 
+EVALS = {}
+
+
 def execute(script, args):
+    if "createElement('script')" in script:
+        match = re.search(r'data-llamadart-eval-[0-9a-f]+', args[0])
+        if match:
+            EVALS[match.group(0)] = json.dumps({'value': execute(args[0], [])})
+        return None
+    if 'getAttribute(arguments[0])' in script:
+        return EVALS.get(args[0])
+    if 'isGpuActive' in script and '__llamadartRealBridge' in script:
+        return SCENARIO.get('probe')
     if 'requestAnimationFrame(tick)' in script:
         return {'visibility': SCENARIO['visibility'], 'frames': SCENARIO['frames']}
     if 'querySelectorAll(selector)' in script:
@@ -446,6 +459,63 @@ void main() {
     );
   });
 
+  test('rejects tool-call expectations in Firefox', () async {
+    final result = await _runProcess(
+      Platform.isWindows ? 'python' : 'python3',
+      [
+        _script,
+        'http://127.0.0.1:1/',
+        '--model-url',
+        'http://127.0.0.1:1/model.gguf',
+        '--expect-tool-call',
+        'getWeather',
+        '--browser',
+        'firefox',
+      ],
+      environment: {'PYTHONPATH': tempDir.path},
+    );
+
+    expect(result.exitCode, 2);
+    expect(
+      result.stderr,
+      contains('--browser firefox does not record tool-call completions'),
+    );
+  });
+
+  test('rejects speech input and mmproj prefetch in Firefox', () async {
+    final audio = File(p.join(tempDir.path, 'speech.wav'))
+      ..writeAsBytesSync(const <int>[0]);
+    for (final extra in [
+      [
+        '--mmproj-url',
+        'http://127.0.0.1:1/mmproj.gguf',
+        '--speech-audio-path',
+        audio.path,
+      ],
+      ['--prefetch-mmproj-cache'],
+    ]) {
+      final result = await _runProcess(
+        Platform.isWindows ? 'python' : 'python3',
+        [
+          _script,
+          'http://127.0.0.1:1/',
+          '--model-url',
+          'http://127.0.0.1:1/model.gguf',
+          ...extra,
+          '--browser',
+          'firefox',
+        ],
+        environment: {'PYTHONPATH': tempDir.path},
+      );
+
+      expect(result.exitCode, 2, reason: '$extra');
+      expect(
+        result.stderr,
+        contains('--browser firefox supports plain chat only'),
+      );
+    }
+  });
+
   test('rejects speech input in Safari', () async {
     final audio = File(p.join(tempDir.path, 'speech.wav'))
       ..writeAsBytesSync(const <int>[0]);
@@ -484,6 +554,9 @@ void main() {
         required String visibility,
         required int frames,
         int stderrBytes = 0,
+        String browser = 'safari',
+        List<String> extraArguments = const [],
+        Map<String, Object?>? probe,
       }) async {
         final driver = File(p.join(tempDir.path, 'fake_safaridriver'))
           ..writeAsStringSync(_fakeSafariDriver);
@@ -507,15 +580,19 @@ void main() {
             '--response-timeout-ms',
             '4000',
             '--browser',
-            'safari',
+            browser,
+            ...extraArguments,
           ],
           environment: {
             'PYTHONPATH': tempDir.path,
+            'GECKODRIVER': driver.path,
+            'FIREFOX_EXECUTABLE': '/fake/Firefox.app/Contents/MacOS/firefox',
             'LLAMADART_FAKE_SAFARI_SCENARIO': jsonEncode({
               'logPath': logPath,
               'visibility': visibility,
               'frames': frames,
               'stderrBytes': stderrBytes,
+              'probe': probe,
             }),
           },
           timeout: _processTimeout * 2,
@@ -561,6 +638,139 @@ void main() {
             .join();
         expect(typed, '2+2?');
         expect(run.commands.last['method'], 'DELETE');
+      });
+
+      test(
+        'Firefox starts geckodriver and injects scripts as page elements',
+        () async {
+          final run = await runSafari(
+            visibility: 'visible',
+            frames: 60,
+            browser: 'firefox',
+          );
+
+          expect(run.result.exitCode, 0, reason: '${run.result.stderr}');
+          final session = run.commands.firstWhere(
+            (c) => c['command'] == 'session',
+          );
+          expect(session['body']['capabilities']['alwaysMatch'], {
+            'browserName': 'firefox',
+            'moz:firefoxOptions': {
+              'binary': '/fake/Firefox.app/Contents/MacOS/firefox',
+            },
+          });
+          final scripts = [
+            for (final c in run.commands)
+              if (c['command'] == 'sync') c['body'] as Map<String, dynamic>,
+          ];
+          final injections = scripts
+              .where(
+                (b) =>
+                    (b['script'] as String).contains(
+                      "createElement('script')",
+                    ) &&
+                    ((b['args'] as List).single as String).contains(
+                      '__llamadartRealBridgePatchTimer',
+                    ),
+              )
+              .toList();
+          expect(injections, hasLength(2));
+          for (final injection in injections) {
+            expect(
+              (injection['args'] as List).single,
+              contains('__llamadartRealBridgePatchTimer'),
+            );
+          }
+          expect(
+            scripts.where(
+              (b) => (b['script'] as String).contains(
+                '__llamadartRealBridgePatchTimer',
+              ),
+            ),
+            isEmpty,
+            reason: 'the init script must not run in the driver sandbox',
+          );
+          expect(run.commands.last['method'], 'DELETE');
+        },
+      );
+
+      test('Firefox reads page state through page-world evaluation', () async {
+        final run = await runSafari(
+          visibility: 'visible',
+          frames: 60,
+          browser: 'firefox',
+        );
+
+        expect(run.result.exitCode, 0, reason: '${run.result.stderr}');
+        final sandboxed = [
+          for (final c in run.commands)
+            if (c['command'] == 'sync') (c['body'] as Map)['script'] as String,
+        ];
+        expect(
+          sandboxed.where((s) => s.contains('liteRtLmResponse:')),
+          isEmpty,
+          reason: 'page objects must not be read in the driver sandbox',
+        );
+        expect(
+          run.commands.where(
+            (c) =>
+                c['command'] == 'sync' &&
+                ((c['body'] as Map)['args'] as List).any(
+                  (a) => '$a'.contains('data-llamadart-eval-'),
+                ),
+          ),
+          isNotEmpty,
+        );
+      });
+
+      for (final browser in ['safari', 'firefox']) {
+        test('$browser fails a CPU run that expected the GPU', () async {
+          const gpuArguments = ['--expect-gpu-active', 'true'];
+          final cpu = await runSafari(
+            visibility: 'visible',
+            frames: 60,
+            browser: browser,
+            extraArguments: gpuArguments,
+            probe: {
+              'available': true,
+              'isGpuActive': false,
+              'backendName': 'WASM',
+            },
+          );
+          expect(cpu.result.exitCode, isNot(0));
+          expect(cpu.result.stderr, contains('isGpuActive() was False'));
+          expect(cpu.commands.last['method'], 'DELETE');
+
+          final gpu = await runSafari(
+            visibility: 'visible',
+            frames: 60,
+            browser: browser,
+            extraArguments: gpuArguments,
+            probe: {
+              'available': true,
+              'isGpuActive': true,
+              'backendName': 'WebGPU',
+            },
+          );
+          expect(gpu.result.exitCode, 0, reason: '${gpu.result.stderr}');
+        });
+      }
+
+      test('Safari executes the init script directly', () async {
+        final run = await runSafari(visibility: 'visible', frames: 60);
+
+        final scripts = [
+          for (final c in run.commands)
+            if (c['command'] == 'sync') (c['body'] as Map)['script'] as String,
+        ];
+        expect(
+          scripts.where((s) => s.contains('__llamadartRealBridgePatchTimer')),
+          hasLength(2),
+        );
+        expect(
+          scripts.where((s) => s.contains("createElement('script')")),
+          isEmpty,
+        );
       });
 
       for (final (name, visibility, frames) in [

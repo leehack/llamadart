@@ -103,3 +103,52 @@ LlamaException? webGpuBridgeRequestError(
   }
   return null;
 }
+
+/// The bridge's `CrossOriginIsolationError` code, which the worker path keeps
+/// on the error it rebuilds in the page.
+const String _crossOriginIsolationRequiredCode =
+    'CROSS_ORIGIN_ISOLATION_REQUIRED';
+
+/// Returns [LlamaUnsupportedException] when [error] is the bridge's
+/// `CrossOriginIsolationError` (assets `v0.1.85+`), otherwise null.
+LlamaUnsupportedException? webGpuCrossOriginIsolationError(Object error) {
+  if (error is LlamaException) return null;
+  try {
+    final object = error as JSObject;
+    final code = object.getProperty<JSAny?>('code'.toJS);
+    final name = object.getProperty<JSAny?>('name'.toJS);
+    final isIsolationError =
+        (code.isA<JSString>() &&
+            (code as JSString).toDart == _crossOriginIsolationRequiredCode) ||
+        (name.isA<JSString>() &&
+            (name as JSString).toDart == 'CrossOriginIsolationError');
+    if (!isIsolationError) return null;
+  } catch (_) {
+    return null;
+  }
+  return LlamaUnsupportedException(
+    'The Web runtime needs cross-origin isolation (COOP/COEP) for shared '
+    'memory, which this page does not have. Serve the page with '
+    '"Cross-Origin-Opener-Policy: same-origin" and '
+    '"Cross-Origin-Embedder-Policy: require-corp". '
+    '"credentialless" does not isolate Safari.',
+  );
+}
+
+final RegExp _gpuUnavailableNote = RegExp(r'(?:^|;)gpu_unavailable:([^;]+)');
+
+/// Why the bridge ran without GPU layers, from its `gpu_unavailable:<reason>`
+/// runtime note (assets `v0.1.85+`), or an empty string.
+String webGpuUnavailableDetail(String runtimeNotes) {
+  final reason = _gpuUnavailableNote.firstMatch(runtimeNotes)?.group(1);
+  return switch (reason) {
+    null => '',
+    'no_webgpu' => ' The browser exposes no WebGPU.',
+    'no_adapter' => ' The browser granted no WebGPU adapter.',
+    'adapter_missing_shader_f16' =>
+      ' WebGPU needs the shader-f16 feature, which this adapter does not '
+          'expose. On Linux with an NVIDIA GPU, Chrome exposes it only with '
+          'driver 615.71 or newer.',
+    _ => ' The bridge reported gpu_unavailable:$reason.',
+  };
+}

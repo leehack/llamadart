@@ -235,7 +235,13 @@ In the browser console, `window.LlamaWebGpuBridge` should exist and
 1. Check browser capability: secure context, `navigator.gpu`,
    `requestAdapter()`, adapter features and limits, and current GPU drivers.
 2. For large single-file GGUF loads, check `window.crossOriginIsolated === true`
-   and that the origin sends COOP/COEP headers.
+   and that the origin sends COOP/COEP headers (`require-corp`; `credentialless`
+   does not isolate Safari). Bridge assets `v0.1.85+` fail at once with
+   a `LlamaUnsupportedException` naming cross-origin isolation.
+   When `ComputeDevice.gpu` fails with "without GPU layers", the message names
+   the bridge's `gpu_unavailable:*` reason; `adapter_missing_shader_f16` means
+   Chrome hid `shader-f16` (on Linux with NVIDIA, update to driver 615.71 or
+   newer).
 3. `bad_alloc`, `memory access out of bounds` or aborts usually mean the model,
    context size, thread count or GPU-layer count is too large for the browser.
    Reduce them before treating the failure as a bridge problem.

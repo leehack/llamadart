@@ -2661,13 +2661,6 @@ class ChatProvider extends ChangeNotifier {
         .where((value) => value.isNotEmpty)
         .toSet();
 
-    if (runtimeNotes.contains('threads_capped_no_coi')) {
-      _addInfoMessage(
-        'Web runtime is not cross-origin isolated, so inference threads are capped to 1. '
-        'Enable COOP/COEP headers for better throughput.',
-      );
-    }
-
     if (runtimeNotes.contains('threads_capped_no_pthread')) {
       _addInfoMessage(
         'Loaded bridge core does not include pthread support, so runtime threads are capped to 1. '

@@ -27,7 +27,7 @@ interface does not establish backend/model support; read `await engine.capabilit
 - Use the pinned native LiteRT-LM v0.19.1-5 runtime. Direct calls, service
   probes and speech share ABI-aware discovery. Public selection admits legacy
   runtimes and C API 1.0.x; unknown/future versions are refused before engine
-  calls. The pin is published native v0.19.1-5 (owner `5da99205`, upstream
+  calls. The pin is published native v0.19.1-5 (owner `bb4e7709`, upstream
   `7a03724c`). The selected loader requires macOS 14+ even for legacy
   libraries and custom paths. Web uses `@litert-lm/core@0.19.0`.
 

@@ -420,7 +420,7 @@ worker share discovery and ABI selection. `_liteRtLmV1ProductionSelection` in
 `litert_lm_runtime_facade.dart` enables public C API 1.0.x dispatch. The native
 hook and Apple companion source now pin published
 [v0.19.1-5](https://github.com/leehack/litert-lm-native/releases/tag/v0.19.1-5),
-owner `5da99205` / upstream `7a03724c`, which keeps C API 1.0.0 and the
+owner `bb4e7709` / upstream `7a03724c`, which keeps C API 1.0.0 and the
 `v0.19.0` exports and adds the in-process LiteRT marker
 `litert_lm_native_in_process_litert_abi_version` (1 on every platform); the
 `LiteRT-LM Smoke` library step fails when the bundled Linux x64 or Windows
