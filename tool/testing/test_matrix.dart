@@ -1608,7 +1608,9 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
     covers:
         'built Flutter web chat app with a real GGUF in Safari through '
         'safaridriver, served cross-origin isolated (require-corp); plain '
-        'chat, CPU Wasm or full WebGPU offload (--backend webgpu); needs an '
+        'chat, CPU Wasm or WebGPU (--backend webgpu requests 99 layers and '
+        'requires isGpuActive(); models llamadart caps, such as Qwen3.5-0.8B at '
+        '2 layers, are partial offload); needs an '
         'unlocked screen and Allow Remote Automation; no tool, speech or '
         'mmproj coverage',
     command:
@@ -1626,8 +1628,9 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
     covers:
         'built Flutter web chat app with a real GGUF in Firefox through '
         'geckodriver (binary from FIREFOX_EXECUTABLE), served cross-origin '
-        'isolated (require-corp); plain chat, CPU Wasm or full WebGPU offload '
-        '(--backend webgpu); no tool, speech or mmproj coverage',
+        'isolated (require-corp); plain chat, CPU Wasm or WebGPU '
+        '(--backend webgpu requests 99 layers and requires isGpuActive()); no '
+        'tool, speech or mmproj coverage; UNQUALIFIED, not yet run in Firefox',
     command:
         'FIREFOX_EXECUTABLE=<firefox> dart run tool/testing/run_local_e2e.dart '
         '--scenario chat-app-web-real-model-smoke --browser firefox '

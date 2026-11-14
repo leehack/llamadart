@@ -4,6 +4,7 @@ import json
 import re
 import tempfile
 import time
+import uuid
 import wave
 from pathlib import Path
 from typing import Any
@@ -210,19 +211,61 @@ class _SafariPage:
     def evaluate(self, function_source: str, *args: Any) -> Any:
         # Unlike Playwright, WebDriver rejects cyclic values such as the
         # captured LiteRT-LM conversation config.
+        serialize = """(value) => {
+          const seen = new WeakSet();
+          return JSON.parse(JSON.stringify(value ?? null, (_, item) => {
+            if (typeof item !== 'object' || item === null) return item;
+            if (seen.has(item)) return '[Circular]';
+            seen.add(item);
+            return item;
+          }));
+        }"""
+        if self._session.browser == "firefox":
+            return self._evaluate_in_page(function_source, serialize, args)
         return self._session.execute(
             f"""return Promise.resolve(({function_source})(...arguments))
-              .then(value => {{
-                const seen = new WeakSet();
-                return JSON.parse(JSON.stringify(value ?? null, (_, item) => {{
-                  if (typeof item !== 'object' || item === null) return item;
-                  if (seen.has(item)) return '[Circular]';
-                  seen.add(item);
-                  return item;
-                }}));
-              }});""",
+              .then({serialize});""",
             *args,
         )
+
+    def _evaluate_in_page(
+        self, function_source: str, serialize: str, args: tuple[Any, ...]
+    ) -> Any:
+        """Runs [function_source] in the page world, as the capture hooks do.
+
+        geckodriver's execute sandbox sees page objects through Xray wrappers,
+        so the result crosses back as a JSON string in a DOM attribute.
+        """
+        attribute = f"data-llamadart-eval-{uuid.uuid4().hex}"
+        self._session.run_in_page(
+            f"""(async () => {{
+              let out;
+              try {{
+                const value = await ({function_source})(...{json.dumps(list(args))});
+                out = {{value: ({serialize})(value)}};
+              }} catch (error) {{
+                out = {{error: String(error)}};
+              }}
+              document.documentElement.setAttribute({json.dumps(attribute)}, JSON.stringify(out));
+            }})();"""
+        )
+        deadline = time.monotonic() + 300
+        while time.monotonic() < deadline:
+            raw = self._session.execute(
+                "return document.documentElement.getAttribute(arguments[0]);",
+                attribute,
+            )
+            if raw is not None:
+                self._session.execute(
+                    "document.documentElement.removeAttribute(arguments[0]);",
+                    attribute,
+                )
+                result = json.loads(raw)
+                if "error" in result:
+                    raise RuntimeError(result["error"])
+                return result["value"]
+            time.sleep(0.1)
+        raise TimeoutError("Timed out waiting for the page-world evaluation")
 
     def locator(self, selector: str) -> _SafariBody:
         assert selector == "body", selector
@@ -747,13 +790,6 @@ def main() -> int:
     ):
         parser.error(
             "--microphone-max-wer needs a reference with at least one word"
-        )
-    if args.browser == "safari" and (
-        args.expect_gpu_active or args.expect_core_variant
-    ):
-        parser.error(
-            "--browser safari does not support --expect-gpu-active or "
-            "--expect-core-variant"
         )
 
     remote_fetch_mode = "default"

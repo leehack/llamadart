@@ -1487,13 +1487,18 @@ separate template contract and false-probe restriction.
 `tool/testing/safari_webdriver.py`. The runner serves the repo with
 `--coep require-corp`, because both browsers expose `SharedArrayBuffer` only to
 cross-origin isolated pages. `--backend webgpu` adds `--backend-index 0
---gpu-layers 99`; the default stays CPU Wasm. Run each with `--dry-run` first.
+--gpu-layers 99 --expect-gpu-active true`, so a silent CPU fallback fails; the
+default stays CPU Wasm. It requests 99 layers, but llamadart caps some models
+(Qwen3.5-0.8B at 2 layers): use an uncapped model such as stories15M with
+`--allow-any-response` to claim full offload. Run each with `--dry-run` first.
 
 - Safari needs Settings > Developer > Allow Remote Automation and an unlocked
   screen; a hidden page fails before the model loads.
 - Firefox runs the binary in `FIREFOX_EXECUTABLE` through the geckodriver in
-  `GECKODRIVER` (default: `PATH`). geckodriver's script sandbox hides page
-  globals, so the helper installs its capture hooks as a page `<script>`.
+  `GECKODRIVER` (default: `PATH`). geckodriver's script sandbox sees page
+  objects through wrappers, so the helper installs its capture hooks and runs
+  its page-state reads as page `<script>` elements. `web-real-model-smoke-firefox`
+  is unqualified until a real Firefox run passes.
 - Both cover plain chat only: no tool-call, speech or mmproj checks.
 - The Dart web scenarios (`web-lazy-grammar`, `web-webgpu-generation` and the
   other `dart test -p chrome*` scenarios) reject `--browser safari|firefox`:

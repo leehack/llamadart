@@ -197,7 +197,8 @@ class LocalE2eRunContext {
   final bool skipBuild;
   final Map<String, String>? _environment;
 
-  /// Whether `--backend webgpu` asked the Web smoke for full WebGPU offload.
+  /// Whether `--backend webgpu` asked the Web smoke for the WebGPU backend with
+  /// 99 GPU layers and an active-GPU check.
   bool get webgpuRequested => backendProvided && backend == 'webgpu';
 
   /// The process environment scenarios read, or what a test injected.
@@ -322,6 +323,8 @@ List<LocalE2eCommandStep> _webRealModelSmokeSteps(
           '0',
           '--gpu-layers',
           '99',
+          '--expect-gpu-active',
+          'true',
         ],
         if (webDriverBrowser) ...['--browser', context.browser!],
       ],
@@ -424,8 +427,8 @@ const List<String> _referenceEditComponentVariables = [
   'LLAMADART_REFERENCE_EDIT_T5XXL',
 ];
 
-/// Scenarios that run `dart test -p chrome*`; their pages are not served with
-/// COOP/COEP headers.
+/// Scenarios whose Dart tests run under `dart test -p chrome*`; those pages are
+/// not served with COOP/COEP headers.
 const Set<String> _dartWebE2eScenarios = {
   'decision-model-web-smoke',
   'web-lazy-grammar',
@@ -434,7 +437,6 @@ const Set<String> _dartWebE2eScenarios = {
   'web-multimodal-embeddings',
   'web-multimodal-embeddings-webgpu',
   'web-webgpu-generation',
-  'webgpu-multimodal-regression',
 };
 
 List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
@@ -3994,7 +3996,7 @@ Options:
   --model-url <url>              Model URL for real-model web smoke.
   --mmproj-url <url>             Projector URL for real-model web smoke.
   --backend <name>               Backend for local model scenarios (default: auto; decision-model-smoke: cpu;
-                                 chat-app-web-real-model-smoke: cpu or webgpu for full WebGPU offload).
+                                 chat-app-web-real-model-smoke: cpu or webgpu: 99 GPU layers and isGpuActive() must be true).
   --browser <name>               LiteRT-LM Web history and Gemma 4 smoke browser: chrome (default) or safari (safaridriver);
                                  chat-app-web-real-model-smoke also accepts firefox (geckodriver, binary from FIREFOX_EXECUTABLE).
   --speculative-cases <list>     Benchmark cases for llama.cpp speculative benchmark.

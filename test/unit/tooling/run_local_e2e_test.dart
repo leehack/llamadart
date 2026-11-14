@@ -699,21 +699,22 @@ Future<void> main(List<String> args) async {
       expect(result.stdout, isNot(contains('--browser')));
     });
 
-    test(
-      '--backend webgpu asks for full offload on the auto backend',
-      () async {
-        final result = await dryRun([
-          '--browser',
-          'safari',
-          '--backend',
-          'webgpu',
-        ]);
+    test('--backend webgpu requests 99 layers on the auto backend', () async {
+      final result = await dryRun([
+        '--browser',
+        'safari',
+        '--backend',
+        'webgpu',
+      ]);
 
-        expect(result.exitCode, 0, reason: result.stderr);
-        expect(result.stdout, contains('--backend-index 0 --gpu-layers 99'));
-        expect(result.stdout, contains('--browser safari'));
-      },
-    );
+      expect(result.exitCode, 0, reason: result.stderr);
+      expect(
+        result.stdout,
+        contains('--backend-index 0 --gpu-layers 99 --expect-gpu-active true'),
+        reason: 'a silent CPU fallback must fail the run',
+      );
+      expect(result.stdout, contains('--browser safari'));
+    });
 
     test('--backend cpu keeps the CPU runtime', () async {
       final result = await dryRun(['--backend', 'cpu']);
