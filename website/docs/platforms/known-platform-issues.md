@@ -223,6 +223,20 @@ feature. For which runtime supports which feature, see the
   memory limit. Loading Gemma 4 E2B through LiteRT-LM Web peaks near 7 GB, so
   keep the tab visible until the model finishes loading
   ([#1025](https://github.com/leehack/llamadart/issues/1025)).
+- Measured on the pinned bridge assets (`v0.1.85+`):
+  - Safari 27: CPU and WebGPU chat work. It needs
+    `Cross-Origin-Embedder-Policy: require-corp` and runs the 32-bit core only
+    (no memory64; Safari caps 64-bit memory at 4 GiB). It keeps one GPU layer
+    by default ([llama-web-bridge#217](https://github.com/leehack/llama-web-bridge/issues/217)),
+    and media embeddings run on the CPU.
+  - Firefox 160: works. CPU at 0 GPU layers on an isolated page runs 640 to 762 tok/s (stories15M,
+    32 tokens; 10 tok/s before); WebGPU
+    is slow (about 0.7 tok/s, Firefox syncs the GPU on a 100 ms tick), so use
+    the CPU there.
+  - Chrome 157 on Linux with an NVIDIA L4: WebGPU is active, text matches the
+    CPU and embedding cosine similarity is at least 0.9999, but only with
+    NVIDIA driver 615.71 or newer. Older drivers make Chrome hide `shader-f16`,
+    so the load runs on the CPU (`gpu_unavailable:adapter_missing_shader_f16`).
 - Browsers without WebAssembly relaxed SIMD, including Safari 27, run
   LiteRT-LM Web on CPU through the runtime's compat build, which can generate
   different tokens from Chrome's. With Qwen3 0.6B and default thinking, a
