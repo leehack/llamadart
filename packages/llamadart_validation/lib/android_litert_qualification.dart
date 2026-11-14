@@ -30,12 +30,15 @@ const s24LiteRtNativeLibraries = {
 /// and passed the full S24 graph again (Test Lab `matrix-wmalbq6nz437a`,
 /// #1830). `v0.19.1-3` and `v0.19.1-4` leave Android unchanged: their
 /// Android arm64 archives hold the same libraries as `v0.19.1-2` (#1798, #1911).
+/// `v0.19.1-5` changes the Android `libLiteRtLm.so` again (it links the WebGPU
+/// top-k sampler, #1998) and is admitted for its S24 requalification.
 const s24LiteRtRuntimeTags = {
   'v0.19.1',
   'v0.19.1-1',
   'v0.19.1-2',
   'v0.19.1-3',
   'v0.19.1-4',
+  'v0.19.1-5',
 };
 
 /// Fixed prospective stage caps sum to 1,050s; FTL still caps the run at 1,200s.
