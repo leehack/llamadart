@@ -1674,6 +1674,27 @@ step rather than each request; the shipped binary is not attested against the
 sources read; the Pixel has no system-side GPU telemetry; Set B ran on a Debug app and the
 CPU runs on `v0.19.1-4`. The runs cover one schema contract and two models, not every model or driver.
 
+## Linux x64 strict JSON Schema on CPU and GPU (2026-11-14)
+
+`run_local_e2e.dart --scenario litert-lm-json-schema` on a GCE g2-standard-8
+(Ubuntu 24.04, glibc 2.39, NVIDIA L4, driver 615.71.09, Vulkan 1.4.351,
+`vulkaninfo` reports a discrete GPU), LiteRT-LM `v0.19.1-5`, source `ff6e028b`
+with only `Abi.linuxX64: {'cpu', 'gpu'}` admitted
+([#174](https://github.com/leehack/llamadart/issues/174#issuecomment-6877420141)):
+
+| Model | Backend | Cases | GPU memory peak | Result |
+| --- | --- | --- | --- | --- |
+| Qwen3-0.6B (`c5f39b41…`) | CPU | 12 | 0 | pass |
+| Qwen3-0.6B | GPU | 12 | 1744 MiB | pass |
+| Gemma 4 E2B | CPU | 13 | 0 | pass |
+| Gemma 4 E2B | GPU | 13 | 1127 MiB | pass |
+
+The GPU rows match the CPU control on sentinels, scalar types, the wide
+contract, unicode, history, cancel and reuse, and a `length` cut inside a
+constrained string. Only driver 615.71 was tested (Dawn hides `shader-f16` on
+NVIDIA Vulkan drivers older than 615.71). Linux arm64 and Windows x64 (D3D12)
+GPUs remain unqualified.
+
 ## Planned platform/backend coverage
 
 Inspect the model/use-case coverage catalog without downloading models or

@@ -204,7 +204,7 @@ void main() {
         Abi.iosArm64: {'cpu', 'gpu'},
         Abi.androidArm64: {'cpu', 'gpu'},
         Abi.androidX64: {},
-        Abi.linuxX64: {'cpu'},
+        Abi.linuxX64: {'cpu', 'gpu'},
         Abi.linuxArm64: {'cpu'},
         Abi.windowsX64: {'cpu'},
         Abi.macosX64: {},
@@ -240,7 +240,7 @@ void main() {
           );
         }
       }
-      for (final abi in [Abi.linuxX64, Abi.windowsX64]) {
+      for (final abi in [Abi.windowsX64, Abi.linuxArm64]) {
         test(
           'refuses the deprecated gpu backend override on $abi',
           skip: hostHasGpu ? null : 'needs a host with a LiteRT-LM GPU backend',
@@ -330,7 +330,7 @@ void main() {
             '${tempDir.path}/Qwen3-0.6B.litertlm',
             const ModelParams(liteRtLmBackend: LiteRtLmBackendPreference.gpu),
           );
-          debugLiteRtLmAbiOverride = Abi.linuxX64;
+          debugLiteRtLmAbiOverride = Abi.windowsX64;
           await expectRefused('gpu', hint: '; load with ComputeDevice.cpu.');
         },
       );
