@@ -230,7 +230,7 @@ feature. For which runtime supports which feature, see the
     by default ([llama-web-bridge#217](https://github.com/leehack/llama-web-bridge/issues/217)),
     and media embeddings run on the CPU.
   - Firefox 160: works. CPU at 0 GPU layers on an isolated page runs 640 to 762 tok/s (stories15M,
-    32 tokens; 10 tok/s on `v0.1.84`); WebGPU
+    32 tokens; 10 tok/s before); WebGPU
     is slow (about 0.7 tok/s, Firefox syncs the GPU on a 100 ms tick), so use
     the CPU there.
   - Chrome 157 on Linux with an NVIDIA L4: WebGPU is active, text matches the

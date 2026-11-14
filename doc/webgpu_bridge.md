@@ -397,8 +397,7 @@ the runtime note `gpu_unavailable:<reason>` (`no_webgpu`, `no_adapter`,
 "loaded the model without GPU layers" names it. Chrome on Linux hides
 `shader-f16` from NVIDIA adapters with a driver older than 615.71. At 0 GPU
 layers the bridge no longer creates the WebGPU backend: on Firefox 160 (isolated
-page, CPU, stories15M, 32 tokens) that is 640 to 762 tok/s against 10 tok/s on
-`v0.1.84`.
+page, CPU, stories15M, 32 tokens) that is 640 to 762 tok/s against 10 tok/s before.
 
 ## Expected global
 

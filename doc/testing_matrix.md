@@ -304,7 +304,7 @@ compares that generation with its exact baseline before reusing TTS.
 These bounded controls do not qualify every output length or load setting.
 
 The `chrome-webgpu` test pages enable SharedArrayBuffer with browser flags but
-remain non-isolated (`crossOriginIsolated == false`), so assets before `v0.1.85`
+remain non-isolated (`crossOriginIsolated == false`), so assets without the `v0.1.85+` isolation check
 capped native threads at one. In the [#1371 controls recorded in PR #1418](https://github.com/leehack/llamadart/pull/1418),
 with that run's staged Qwen3-TTS fixture and bridge manifest, the 4096/4096 batch
 profile aborted even on fresh one- and eight-frame synthesis, before
