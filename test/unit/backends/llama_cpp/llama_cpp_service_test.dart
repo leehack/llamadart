@@ -2009,6 +2009,7 @@ void main() {
             :android,
             :onGpu,
             :gpuDevice,
+            :backend,
             :requested,
             :context,
             :opOffload,
@@ -2019,6 +2020,7 @@ void main() {
               android: false,
               onGpu: false,
               gpuDevice: true,
+              backend: 'Vulkan',
               requested: GpuBackend.vulkan,
               context: cpuOnly,
               opOffload: false,
@@ -2028,6 +2030,7 @@ void main() {
               android: false,
               onGpu: true,
               gpuDevice: true,
+              backend: 'Vulkan',
               requested: GpuBackend.vulkan,
               context: offloaded,
               opOffload: true,
@@ -2037,6 +2040,7 @@ void main() {
               android: false,
               onGpu: true,
               gpuDevice: false,
+              backend: 'Vulkan',
               requested: GpuBackend.vulkan,
               context: offloaded,
               opOffload: false,
@@ -2046,6 +2050,7 @@ void main() {
               android: true,
               onGpu: true,
               gpuDevice: true,
+              backend: 'Vulkan',
               requested: GpuBackend.vulkan,
               context: cpuOnly,
               opOffload: false,
@@ -2055,9 +2060,20 @@ void main() {
               android: true,
               onGpu: true,
               gpuDevice: true,
+              backend: 'Vulkan',
               requested: GpuBackend.opencl,
               context: cpuOnly,
               opOffload: false,
+            ),
+            (
+              'full-offload Android OpenCL, for an OpenCL request placed there,',
+              android: true,
+              onGpu: true,
+              gpuDevice: true,
+              backend: 'OpenCL',
+              requested: GpuBackend.opencl,
+              context: offloaded,
+              opOffload: true,
             ),
           ]) {
         test('passes the $name offload choices to the head context and '
@@ -2096,8 +2112,8 @@ void main() {
             registeredDevices: () => [
               if (gpuDevice)
                 GgmlDeviceEntry(
-                  name: 'Vulkan0',
-                  registry: 'Vulkan',
+                  name: '${backend}0',
+                  registry: backend,
                   type:
                       ggml_backend_dev_type.GGML_BACKEND_DEVICE_TYPE_GPU.value,
                   device: cpu,
@@ -2122,7 +2138,7 @@ void main() {
               '_modelResolvedBackends',
             ]) {
               _readPrivateForTesting<Map<int, String>>(service, field)[model] =
-                  'Vulkan';
+                  backend;
             }
             _readPrivateForTesting<Map<int, int>>(
               service,
@@ -2868,83 +2884,114 @@ void main() {
         expect(records, isEmpty);
       });
 
-      for (final backend in [GpuBackend.vulkan, GpuBackend.opencl]) {
-        test('gives a ${backend.name} request placed on Android Vulkan the '
-            'conservative context settings and prompt cap', () async {
-          final real = ExitTeardownApi.tryResolve(
-            isWindows: Platform.isWindows,
-          )!;
-          final recorder = RecordingExitTeardown(real);
-          // The host has no Vulkan device: only the native load is
-          // substituted, and the service still resolves the placement.
-          recorder.modelLoad = (file, params) {
-            params.devices = nullptr;
-            params.n_gpu_layers = 0;
-            return real.modelLoadFromFile(file, params);
-          };
-          final android = _VulkanReportingService(
-            objectCalls: LlamaCppObjectCalls.tracked(recorder.api),
-            deviceTypes: (requested) => [
-              requested == GpuBackend.auto
-                  ? ggml_backend_dev_type.GGML_BACKEND_DEVICE_TYPE_GPU.value
-                  : ggml_backend_dev_type.GGML_BACKEND_DEVICE_TYPE_CPU.value,
-            ],
-            registeredDevices: () => [
-              GgmlDeviceEntry(
-                name: 'Vulkan0',
-                registry: 'Vulkan',
-                type: ggml_backend_dev_type.GGML_BACKEND_DEVICE_TYPE_GPU.value,
-              ),
-            ],
-            backendDevices: (_) => null,
-            vulkanDeviceProbe: () =>
-                const VulkanDeviceProbe.unavailable('not read in this case'),
-          );
-          addTearDown(android.dispose);
-          final moduleDir = path.join(tempDir.path, 'modules');
-          final moduleName = Platform.isWindows
-              ? 'ggml-${backend.name}.dll'
-              : Platform.isMacOS
-              ? 'libggml-${backend.name}.dylib'
-              : 'libggml-${backend.name}.so';
-          File(path.join(moduleDir, moduleName)).writeAsStringSync('junk');
-          _writePrivateForTesting(
-            android,
-            '_backendModuleDirectory',
-            moduleDir,
-          );
-          final params = ModelParams(
-            contextSize: 256,
-            numberOfThreads: 2,
-            numberOfThreadsBatch: 2,
-            preferredBackend: backend,
-            gpuLayers: 99,
-          );
+      for (final (:requested, :placed) in [
+        (requested: GpuBackend.vulkan, placed: 'Vulkan'),
+        (requested: GpuBackend.opencl, placed: 'Vulkan'),
+        (requested: GpuBackend.opencl, placed: 'OpenCL'),
+      ]) {
+        final conservative = placed == 'Vulkan';
+        test(
+          'gives a ${requested.name} request placed on Android $placed '
+          '${conservative ? 'the conservative' : 'full-offload'} context '
+          'settings and ${conservative ? 'prompt cap' : 'no prompt cap'}',
+          () async {
+            final real = ExitTeardownApi.tryResolve(
+              isWindows: Platform.isWindows,
+            )!;
+            final recorder = RecordingExitTeardown(real);
+            // The host has no Vulkan device: only the native load is
+            // substituted, and the service still resolves the placement.
+            recorder.modelLoad = (file, params) {
+              params.devices = nullptr;
+              params.n_gpu_layers = 0;
+              return real.modelLoadFromFile(file, params);
+            };
+            final android = _VulkanReportingService(
+              gpuBackend: placed,
+              objectCalls: LlamaCppObjectCalls.tracked(recorder.api),
+              deviceTypes: (requested) => [
+                requested == GpuBackend.auto
+                    ? ggml_backend_dev_type.GGML_BACKEND_DEVICE_TYPE_GPU.value
+                    : ggml_backend_dev_type.GGML_BACKEND_DEVICE_TYPE_CPU.value,
+              ],
+              registeredDevices: () => [
+                GgmlDeviceEntry(
+                  name: '${placed}0',
+                  registry: placed,
+                  type:
+                      ggml_backend_dev_type.GGML_BACKEND_DEVICE_TYPE_GPU.value,
+                ),
+              ],
+              backendDevices: (_) => null,
+              vulkanDeviceProbe: () =>
+                  const VulkanDeviceProbe.unavailable('not read in this case'),
+            );
+            addTearDown(android.dispose);
+            final moduleDir = path.join(tempDir.path, 'modules');
+            final moduleName = Platform.isWindows
+                ? 'ggml-${requested.name}.dll'
+                : Platform.isMacOS
+                ? 'libggml-${requested.name}.dylib'
+                : 'libggml-${requested.name}.so';
+            File(path.join(moduleDir, moduleName)).writeAsStringSync('junk');
+            _writePrivateForTesting(
+              android,
+              '_backendModuleDirectory',
+              moduleDir,
+            );
+            final params = ModelParams(
+              contextSize: 256,
+              numberOfThreads: 2,
+              numberOfThreadsBatch: 2,
+              preferredBackend: requested,
+              gpuLayers: 99,
+            );
 
-          final model = android.loadModel(modelPath, params);
-          expect(android.getActiveBackendName(), 'Vulkan');
-          expect(android.getResolvedGpuLayers(), 99);
-          final context = android.createContext(model, params);
+            final model = android.loadModel(modelPath, params);
+            expect(android.getActiveBackendName(), placed);
+            expect(android.getResolvedGpuLayers(), 99);
+            final context = android.createContext(model, params);
 
-          expect(recorder.contextOffload.single, (
-            offloadKqv: false,
-            opOffload: false,
-            flashAttnType:
-                llama_flash_attn_type.LLAMA_FLASH_ATTN_TYPE_DISABLED.value,
-          ));
-          recorder.clearCalls();
-          final cancel = calloc<Int8>();
-          addTearDown(() => calloc.free(cancel));
-          await android
-              .generate(
-                context,
-                'a' * 96,
-                GenerationParams(maxTokens: 1, temp: 0, seed: 1),
-                cancel.address,
-              )
-              .drain<void>();
-          expect(recorder.decodedTokens.take(12), everyElement(8));
-        });
+            expect(
+              recorder.contextOffload.single,
+              conservative
+                  ? (
+                      offloadKqv: false,
+                      opOffload: false,
+                      flashAttnType: llama_flash_attn_type
+                          .LLAMA_FLASH_ATTN_TYPE_DISABLED
+                          .value,
+                    )
+                  : (
+                      offloadKqv: true,
+                      opOffload: true,
+                      flashAttnType: llama_flash_attn_type
+                          .LLAMA_FLASH_ATTN_TYPE_AUTO
+                          .value,
+                    ),
+            );
+            recorder.clearCalls();
+            final cancel = calloc<Int8>();
+            addTearDown(() => calloc.free(cancel));
+            await android
+                .generate(
+                  context,
+                  'a' * 96,
+                  GenerationParams(maxTokens: 1, temp: 0, seed: 1),
+                  cancel.address,
+                )
+                .drain<void>();
+            if (conservative) {
+              expect(recorder.decodedTokens.take(12), everyElement(8));
+            } else {
+              expect(recorder.decodedTokens, isNotEmpty);
+              expect(
+                recorder.decodedTokens.any((tokens) => tokens > 8),
+                isTrue,
+              );
+            }
+          },
+        );
       }
 
       test('reports 0 GPU layers under auto without a warning or a change to '
@@ -8665,10 +8712,13 @@ class _VulkanReportingService extends LlamaCppService {
     super.deviceTypes,
     super.backendDevices,
     super.vulkanDeviceProbe,
+    this.gpuBackend = 'Vulkan',
   }) : super(isAndroid: true);
 
+  final String gpuBackend;
+
   @override
-  List<String> getBackendInfo() => const ['CPU', 'Vulkan (fake GPU)'];
+  List<String> getBackendInfo() => ['CPU', '$gpuBackend (fake GPU)'];
 }
 
 class _MetalReportingService extends LlamaCppService {
