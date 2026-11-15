@@ -1107,25 +1107,6 @@ void main() {
       ),
     ];
 
-    test('forwards the delegate capability and generation', () async {
-      final inner = _PenaltyDelegate();
-      final LlamaBackend router = WebAutoBackend(webBackend: inner);
-
-      expect(router, isA<BackendPromptPenaltyGeneration>());
-      final backend = router as BackendPromptPenaltyGeneration;
-      expect(backend.supportsPromptPenaltiesWithGrammar, isTrue);
-      await backend
-          .generateWithPromptPenalties(
-            1,
-            'Hello',
-            const GenerationParams(grammar: 'root ::= "a"'),
-            mediaMarker: '<m>',
-          )
-          .drain<void>();
-      expect(inner.penaltyPrompts, ['Hello']);
-      expect(inner.mediaMarkers, ['<m>']);
-    });
-
     for (final (label, create)
         in <(String, WebAutoBackend Function(_PenaltyDelegate))>[
           ('router', (inner) => WebAutoBackend(webBackend: inner)),
@@ -1134,6 +1115,61 @@ void main() {
             (inner) => WebAutoBackend.withTextHistory(webBackend: inner),
           ),
         ]) {
+      test(
+        'forwards capability, ordered parts and null through the $label',
+        () async {
+          final inner = _PenaltyDelegate();
+          final LlamaBackend router = create(inner);
+
+          expect(router, isA<BackendPromptPenaltyGeneration>());
+          final backend = router as BackendPromptPenaltyGeneration;
+          expect(backend.supportsPromptPenaltiesWithGrammar, isTrue);
+          await backend
+              .generateWithPromptPenalties(
+                1,
+                'Hello',
+                const GenerationParams(grammar: 'root ::= "a"'),
+                mediaMarker: '<m>',
+                parts: const [
+                  LlamaTextContent('Before image'),
+                  LlamaImageContent(path: 'image.png'),
+                  LlamaTextContent('After image'),
+                ],
+              )
+              .drain<void>();
+          expect(inner.penaltyPrompts, ['Hello']);
+          expect(inner.mediaMarkers, ['<m>']);
+          expect(inner.receivedParts, hasLength(1));
+          expect(inner.receivedParts.single, [
+            isA<LlamaTextContent>().having(
+              (part) => part.text,
+              'text',
+              'Before image',
+            ),
+            isA<LlamaImageContent>().having(
+              (part) => part.path,
+              'path',
+              'image.png',
+            ),
+            isA<LlamaTextContent>().having(
+              (part) => part.text,
+              'text',
+              'After image',
+            ),
+          ]);
+
+          await backend
+              .generateWithPromptPenalties(
+                1,
+                'No parts',
+                const GenerationParams(),
+              )
+              .drain<void>();
+          expect(inner.receivedParts, hasLength(2));
+          expect(inner.receivedParts.last, isNull);
+        },
+      );
+
       test('LFM auto reaches the delegate through the $label', () async {
         final inner = _PenaltyDelegate();
         final engine = LlamaEngine(create(inner));
@@ -1223,6 +1259,7 @@ class _PenaltyDelegate extends MockLlamaBackend
   final bool supported;
   final penaltyPrompts = <String>[];
   final mediaMarkers = <String?>[];
+  final receivedParts = <List<LlamaContentPart>?>[];
 
   @override
   bool get supportsLazyGrammar => true;
@@ -1240,6 +1277,7 @@ class _PenaltyDelegate extends MockLlamaBackend
   }) {
     penaltyPrompts.add(prompt);
     mediaMarkers.add(mediaMarker);
+    receivedParts.add(parts);
     return const Stream<List<int>>.empty();
   }
 }

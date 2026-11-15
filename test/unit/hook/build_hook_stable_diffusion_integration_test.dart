@@ -816,7 +816,17 @@ dependencies:
     );
   }
 
-  for (final earlier in stableDiffusionCompatibleAppleCompanionTags.keys) {
+  for (final (earlier, missingReason) in const [
+    (
+      'v0.3.0-3',
+      'the sd_dart_graph_split_* exports (iOS full-VAE decoding) and '
+          'Apple host-buffer and model-loader scratch release fixes',
+    ),
+    (
+      'v0.3.0-4',
+      'the Apple host-buffer and model-loader scratch release fixes',
+    ),
+  ]) {
     test('accepts a locked companion pinning the earlier $earlier XCFramework '
         'with an upgrade warning', () async {
       final defines = await _flutterAppleApp(
@@ -832,10 +842,8 @@ dependencies:
             ),
       );
       var emitted = false;
-      final records = <String>[];
-      final subscription = Logger.root.onRecord.listen(
-        (record) => records.add(record.message),
-      );
+      final records = <LogRecord>[];
+      final subscription = Logger.root.onRecord.listen(records.add);
       addTearDown(subscription.cancel);
       await project.testCodeBuildHook(
         mainMethod: build_hook.main,
@@ -843,21 +851,35 @@ dependencies:
         targetArchitecture: Architecture.arm64,
         targetIOSSdk: IOSSdk.iPhoneOS,
         userDefines: defines,
-        check: (_, _) => emitted = true,
+        check: (_, output) {
+          emitted = true;
+          expect(
+            _codeAssetIds(output),
+            containsAll({_primaryAssetId, _stableDiffusionAssetId}),
+          );
+          expect(
+            output.assets.encodedAssets
+                .map((asset) => asset.asCodeAsset)
+                .where((asset) => asset.id == _stableDiffusionAssetId)
+                .every((asset) => asset.linkMode is LookupInProcess),
+            isTrue,
+          );
+        },
       );
       expect(emitted, isTrue);
+      final warning = records.singleWhere(
+        (record) =>
+            record.message.contains('leehack/stable-diffusion-native@$earlier'),
+      );
+      expect(warning.level, Level.WARNING);
+      expect(warning.message, contains('Its frameworks lack $missingReason.'));
       expect(
-        records,
-        contains(
-          allOf(
-            contains('leehack/stable-diffusion-native@$earlier'),
-            contains(
-              'Its frameworks lack '
-              '${stableDiffusionCompatibleAppleCompanionTags[earlier]}.',
-            ),
-            contains(stableDiffusionReleaseTag),
-          ),
-        ),
+        warning.message,
+        contains('Depend on `$_stableDiffusionCompanionName: '),
+      );
+      expect(
+        warning.message,
+        contains('` to link $stableDiffusionReleaseTag.'),
       );
     });
 
