@@ -1,6 +1,8 @@
 Releases before 0.10.0 are in the
 [changelog archive](https://github.com/leehack/llamadart/blob/main/doc/changelog_archive.md).
 
+## Unreleased
+
 ## 0.19.11
 
 - Preserve the system message before the generic JSON tool instruction with `ToolChoice.auto` or `required` ([#1973](https://github.com/leehack/llamadart/issues/1973)).
