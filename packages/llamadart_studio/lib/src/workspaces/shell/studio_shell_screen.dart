@@ -365,8 +365,7 @@ class _StudioShellScreenState extends State<StudioShellScreen> {
                     if (isWideDesktop)
                       Builder(
                         builder: (BuildContext context) {
-                          final inspectorPanel =
-                              shellState.inspectorVisible
+                          final inspectorPanel = shellState.inspectorVisible
                               ? SizedBox(
                                   width: 334,
                                   child: SessionInspectorPanel(

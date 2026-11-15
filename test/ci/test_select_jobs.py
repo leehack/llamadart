@@ -156,9 +156,7 @@ class SelectionTest(unittest.TestCase):
             for suffix in ('lib/main.dart', 'pubspec.yaml', 'test/chat_test.dart',
                            'README.md'):
                 plan = ci.select(['packages/' + package + '/' + suffix])
-                expected = {'studio'}
-                if suffix.endswith('.md'):
-                    expected.add('markdown-tests')
+                expected = {'studio', 'markdown-tests'}
                 self.assertEqual({j for j, v in plan['jobs'].items() if v}, expected)
                 self.assertEqual(plan['companions'], [])
                 self.assertEqual(plan['apps'], [])
