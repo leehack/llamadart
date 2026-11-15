@@ -644,6 +644,7 @@ for event,mode,oldflag,owner,attempt,cancel,good,main in itertools.product(('pus
       expect(jobs.keys.toSet(), {
         ...planned,
         ...shards.keys,
+        'studio-macos',
         'changes',
         'test-linux-web',
         'deploy-chat-app',
@@ -658,6 +659,7 @@ for event,mode,oldflag,owner,attempt,cancel,good,main in itertools.product(('pus
       expect((aggregate['needs'] as List).toSet(), {
         ...planned,
         ...shards.keys,
+        'studio-macos',
         'changes',
       });
       final steps = aggregate['steps'] as List;

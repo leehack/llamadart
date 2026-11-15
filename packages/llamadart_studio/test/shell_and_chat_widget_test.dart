@@ -325,16 +325,13 @@ void main() {
       );
 
       // Simulate Meta + I (toggle Session Inspector).
-      final beforeInspector = deps.shellController.state.settings.inspectorOpen;
+      final beforeInspector = deps.shellController.state.inspectorVisible;
       await tester.sendKeyDownEvent(LogicalKeyboardKey.metaLeft);
       await tester.sendKeyDownEvent(LogicalKeyboardKey.keyI);
       await tester.sendKeyUpEvent(LogicalKeyboardKey.keyI);
       await tester.sendKeyUpEvent(LogicalKeyboardKey.metaLeft);
       await tester.pumpAndSettle();
-      expect(
-        deps.shellController.state.settings.inspectorOpen,
-        !beforeInspector,
-      );
+      expect(deps.shellController.state.inspectorVisible, !beforeInspector);
 
       // Simulate Meta + N (new chat conversation + switch to Chat).
       await tester.sendKeyDownEvent(LogicalKeyboardKey.metaLeft);

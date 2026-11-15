@@ -75,11 +75,32 @@ void main() {
         conversations.delayNextSave = true;
         final send = chat.sendMessage('sent prompt');
         await conversations.entered.future;
+        expect(chat.state.isSubmitting, isTrue);
+        await chat.sendMessage('overlapping prompt');
+        expect(inference.calls, 0);
         if (switchConversation) chat.selectConversation(second.id);
         chat.setComposerDraft('new draft while saving');
+        chat.addPendingAttachment(
+          const StudioAttachment(
+            id: 'next-image',
+            kind: StudioAttachmentKind.image,
+            name: 'next.png',
+          ),
+        );
+
         conversations.finish.complete();
         await inference.entered.future;
+        expect(chat.state.isSubmitting, isFalse);
+        expect(
+          chat.state.conversations
+              .firstWhere((c) => c.id == first)
+              .nodes
+              .where((n) => n.role == StudioRole.user)
+              .map((n) => n.text),
+          ['sent prompt'],
+        );
         expect(chat.state.composerDraft, 'new draft while saving');
+        expect(chat.state.pendingAttachments.map((a) => a.id), ['next-image']);
         inference.finished.complete();
         await send;
         expect(chat.state.composerDraft, 'new draft while saving');
@@ -92,6 +113,47 @@ void main() {
       },
     );
   }
+
+  test(
+    'failed message persistence releases admission and retains its draft',
+    () async {
+      final kv = InMemoryKeyValueStore();
+      final conversations = _GatedConversationStore(kv);
+      final shell = StudioShellController(keyValueStore: kv);
+      final inference = _PausedInference();
+      final chat = ChatWorkspaceController(
+        conversationStore: conversations,
+        inferencePort: inference,
+        shellController: shell,
+      );
+      addTearDown(() async {
+        await chat.dispose();
+        await inference.dispose();
+        await shell.dispose();
+      });
+      await chat.initialize();
+      chat.setComposerDraft('retry this');
+      conversations.delayNextSave = true;
+      final send = chat.sendMessage('retry this');
+      final failure = expectLater(send, throwsStateError);
+      await conversations.entered.future;
+      conversations.finish.completeError(StateError('disk full'));
+      await failure;
+      expect(chat.state.isSubmitting, isFalse);
+      expect(chat.state.composerDraft, 'retry this');
+      expect(inference.calls, 0);
+      final retry = chat.sendMessage('retry this');
+      await inference.entered.future;
+      inference.finished.complete();
+      await retry;
+      expect(
+        chat.state.activeConversation!.nodes
+            .where((n) => n.role == StudioRole.user)
+            .map((n) => n.text),
+        ['retry this'],
+      );
+    },
+  );
 
   for (final lateFailure in <bool>[false, true]) {
     test('late HF search A cannot replace B (error=$lateFailure)', () async {

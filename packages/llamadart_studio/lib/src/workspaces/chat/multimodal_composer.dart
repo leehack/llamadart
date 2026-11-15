@@ -57,6 +57,7 @@ class _MultimodalComposerState extends State<MultimodalComposer> {
   Future<void> _submit() async {
     final deps = StudioScope.of(context);
     if (_submitting ||
+        deps.chatController.state.isSubmitting ||
         deps.chatController.activeStreamStore.state.isGenerating) {
       return;
     }
@@ -386,12 +387,18 @@ class _MultimodalComposerState extends State<MultimodalComposer> {
                                         )
                                       : FilledButton.icon(
                                           key: const Key('chat_send_button'),
-                                          onPressed: _submit,
+                                          onPressed: chatState.isSubmitting
+                                              ? null
+                                              : _submit,
                                           icon: const Icon(
                                             Icons.arrow_upward_rounded,
                                             size: 17,
                                           ),
-                                          label: const Text('Send'),
+                                          label: Text(
+                                            chatState.isSubmitting
+                                                ? 'Saving…'
+                                                : 'Send',
+                                          ),
                                         );
 
                                   final iconActions = <Widget>[

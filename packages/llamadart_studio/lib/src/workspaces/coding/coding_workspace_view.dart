@@ -44,6 +44,7 @@ class _CodingWorkspaceViewState extends State<CodingWorkspaceView> {
   final ScrollController _chatScrollCtrl = ScrollController();
 
   StudioDependencies? _deps;
+  String? _draftWorkspaceRoot;
   StreamSubscription<CodingWorkspaceState>? _codingSub;
   StreamSubscription<ActiveTurnStreamState>? _streamSub;
   bool _stickToBottom = true;
@@ -64,6 +65,7 @@ class _CodingWorkspaceViewState extends State<CodingWorkspaceView> {
   void initState() {
     super.initState();
     _promptFocusNode = FocusNode(onKeyEvent: _handlePromptKey);
+    _promptCtrl.addListener(_savePromptDraft);
   }
 
   @override
@@ -76,6 +78,10 @@ class _CodingWorkspaceViewState extends State<CodingWorkspaceView> {
     _codingSub?.cancel();
     _streamSub?.cancel();
     _deps = nextDeps;
+    _draftWorkspaceRoot = nextDeps.codingController.state.workspaceRoot;
+    _promptCtrl.text = nextDeps.codingController.promptDraftForWorkspace(
+      _draftWorkspaceRoot,
+    );
 
     _lastMessageCount = nextDeps.codingController.state.messages.length;
     _wasGenerating =
@@ -88,7 +94,23 @@ class _CodingWorkspaceViewState extends State<CodingWorkspaceView> {
     );
   }
 
+  void _savePromptDraft() {
+    _deps?.codingController.setPromptDraftForWorkspace(
+      _draftWorkspaceRoot,
+      _promptCtrl.text,
+    );
+  }
+
+  void _restoreWorkspaceDraft(String? workspaceRoot) {
+    _draftWorkspaceRoot = workspaceRoot;
+    final draft = _deps!.codingController.promptDraftForWorkspace(
+      workspaceRoot,
+    );
+    if (_promptCtrl.text != draft) _promptCtrl.text = draft;
+  }
+
   void _onCodingStateChanged(CodingWorkspaceState codingState) {
+    _restoreWorkspaceDraft(codingState.workspaceRoot);
     final nextCount = codingState.messages.length;
     if (nextCount != _lastMessageCount) {
       final grew = nextCount > _lastMessageCount;
@@ -199,6 +221,7 @@ class _CodingWorkspaceViewState extends State<CodingWorkspaceView> {
     if (deps.codingController.activeStreamStore.state.isGenerating) {
       return;
     }
+    _restoreWorkspaceDraft(deps.codingController.state.workspaceRoot);
     final text = _promptCtrl.text.trim();
     if (text.isEmpty) {
       return;

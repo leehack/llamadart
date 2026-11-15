@@ -63,6 +63,7 @@ class ChatWorkspaceState {
     this.searchQuery = '',
     this.pendingAttachments = const <StudioAttachment>[],
     this.composerDraft,
+    this.isSubmitting = false,
     this.activePresetId = 'general_assistant',
     this.lastTurnError,
     this.lastStructuredJsonValid,
@@ -82,6 +83,9 @@ class ChatWorkspaceState {
 
   /// Unsent text for the active conversation, including staged workspace text.
   final String? composerDraft;
+
+  /// Whether a turn is being persisted before inference can start.
+  final bool isSubmitting;
 
   /// Selected built-in [StudioPreset] ID.
   final String activePresetId;
@@ -129,6 +133,7 @@ class ChatWorkspaceState {
     List<StudioAttachment>? pendingAttachments,
     String? composerDraft,
     bool clearComposerDraft = false,
+    bool? isSubmitting,
     String? activePresetId,
     String? lastTurnError,
     bool clearLastTurnError = false,
@@ -145,6 +150,7 @@ class ChatWorkspaceState {
       composerDraft: clearComposerDraft
           ? null
           : (composerDraft ?? this.composerDraft),
+      isSubmitting: isSubmitting ?? this.isSubmitting,
       activePresetId: activePresetId ?? this.activePresetId,
       lastTurnError: clearLastTurnError
           ? null

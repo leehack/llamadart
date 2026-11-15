@@ -281,7 +281,8 @@ void main() {
         expect(branch.last.thinkingText, 'Analyzing...');
         expect(branch.last.toolCalls.single.name, 'getWeather');
         expect(streamEmissions, greaterThanOrEqualTo(3));
-        expect(structuralEmissions, lessThan(streamEmissions));
+        // Admission and persistence update structure; token deltas do not.
+        expect(structuralEmissions, lessThanOrEqualTo(5));
 
         // Verify edit + branch creates sibling without losing first answer.
         fakeInference.nextEvents = const <StudioTurnEvent>[

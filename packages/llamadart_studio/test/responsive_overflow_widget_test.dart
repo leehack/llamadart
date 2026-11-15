@@ -163,7 +163,7 @@ void main() {
         await tester.pumpAndSettle();
 
         // Verify Session Inspector (persistent on >=1120, endDrawer below 1120).
-        if (size.width < 1120) {
+        if (size.width < 1120 || !deps.shellController.state.inspectorVisible) {
           await tester.tap(find.byKey(const Key('toggle_inspector_button')));
           await tester.pumpAndSettle();
         }

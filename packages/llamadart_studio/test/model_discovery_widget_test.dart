@@ -100,6 +100,14 @@ void main() {
         );
         await tester.pumpAndSettle();
         expect(find.text('No models match your filters.'), findsOneWidget);
+        if (find.byKey(const Key('model_hub_reset')).evaluate().isEmpty) {
+          await tester.ensureVisible(
+            find.byKey(const Key('model_hub_filter_toggle')),
+          );
+          await tester.pumpAndSettle();
+          await tester.tap(find.byKey(const Key('model_hub_filter_toggle')));
+          await tester.pumpAndSettle();
+        }
         await tester.ensureVisible(find.byKey(const Key('model_hub_reset')));
         await tester.pumpAndSettle();
         await tester.tap(find.byKey(const Key('model_hub_reset')));

@@ -62,6 +62,8 @@ class CodingWorkspaceController {
 
   static const Duration _streamPublishInterval = Duration(milliseconds: 40);
 
+  final Map<String?, String> _promptDrafts = <String?, String>{};
+
   int _idCounter = 0;
   int _workspaceEpoch = 0;
   int _workspaceSelection = 0;
@@ -75,6 +77,19 @@ class CodingWorkspaceController {
 
   /// Current snapshot.
   CodingWorkspaceState get state => _store.state;
+
+  /// Unsent prompt retained in memory for [workspaceRoot], including no folder.
+  String promptDraftForWorkspace(String? workspaceRoot) =>
+      _promptDrafts[workspaceRoot] ?? '';
+
+  /// Stages a draft for its original workspace, even while another is active.
+  void setPromptDraftForWorkspace(String? workspaceRoot, String text) {
+    if (text.isEmpty) {
+      _promptDrafts.remove(workspaceRoot);
+    } else {
+      _promptDrafts[workspaceRoot] = text;
+    }
+  }
 
   /// Isolated ~25fps streaming store for the active Coding assistant turn.
   ReadOnlyStore<ActiveTurnStreamState> get activeStreamStore =>
@@ -143,6 +158,7 @@ class CodingWorkspaceController {
         _workspaceEpoch++;
         cancelGeneration();
         _resetStreamThrottle();
+        _activeStreamStore.set(ActiveTurnStreamState.idle);
       }
       _store.update(
         (CodingWorkspaceState s) => s.copyWith(
@@ -380,7 +396,11 @@ class CodingWorkspaceController {
 
   /// Clears the current Coding chat thread and edit audit log.
   void clearSession() {
-    resolveShellCommandApproval(false);
+    _workspaceEpoch++;
+    cancelGeneration();
+    _resetStreamThrottle();
+    _activeStreamStore.set(ActiveTurnStreamState.idle);
+    setPromptDraftForWorkspace(_store.state.workspaceRoot, '');
     _store.update(
       (CodingWorkspaceState s) => s.copyWith(
         messages: const <StudioMessage>[],
@@ -620,9 +640,11 @@ class CodingWorkspaceController {
         ),
       );
     } finally {
-      resolveShellCommandApproval(false);
-      _resetStreamThrottle();
-      _activeStreamStore.set(ActiveTurnStreamState.idle);
+      if (epoch == _workspaceEpoch) {
+        resolveShellCommandApproval(false);
+        _resetStreamThrottle();
+        _activeStreamStore.set(ActiveTurnStreamState.idle);
+      }
     }
   }
 

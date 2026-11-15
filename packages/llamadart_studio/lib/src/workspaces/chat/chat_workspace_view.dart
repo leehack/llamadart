@@ -412,7 +412,11 @@ class _EmptyChatHero extends StatelessWidget {
             final starterDownloading = starterProgress?.isActive ?? false;
             final needsFirstModel =
                 !runtime.isReady && installed.isEmpty && starter != null;
-            final canRunPrompts = runtime.isReady || installed.isNotEmpty;
+            final sending =
+                deps.chatController.state.isSubmitting ||
+                deps.chatController.activeStreamStore.state.isGenerating;
+            final canRunPrompts =
+                !sending && (runtime.isReady || installed.isNotEmpty);
 
             return ListView(
               padding: const EdgeInsets.fromLTRB(24, 28, 24, 16),
@@ -709,13 +713,28 @@ class _EmptyChatHero extends StatelessWidget {
                                               ),
                                               onPressed: canRunPrompts
                                                   ? () async {
-                                                      await deps.chatController
-                                                          .applyPreset(preset);
-                                                      await deps.chatController
-                                                          .sendMessage(
-                                                            preset
-                                                                .starterPrompt!,
-                                                          );
+                                                      try {
+                                                        await deps
+                                                            .chatController
+                                                            .sendMessage(
+                                                              preset
+                                                                  .starterPrompt!,
+                                                              preset: preset,
+                                                            );
+                                                      } catch (error) {
+                                                        if (!context.mounted) {
+                                                          return;
+                                                        }
+                                                        ScaffoldMessenger.maybeOf(
+                                                          context,
+                                                        )?.showSnackBar(
+                                                          SnackBar(
+                                                            content: Text(
+                                                              'Could not send message: ${humanizeStudioError(error)}',
+                                                            ),
+                                                          ),
+                                                        );
+                                                      }
                                                     }
                                                   : null,
                                               icon: Icon(
@@ -727,6 +746,8 @@ class _EmptyChatHero extends StatelessWidget {
                                               label: Text(
                                                 canRunPrompts
                                                     ? 'Run starter prompt'
+                                                    : sending
+                                                    ? 'Sending…'
                                                     : 'Download model to run',
                                                 style: const TextStyle(
                                                   fontSize: 11.5,

@@ -792,7 +792,13 @@ void main() {
 
       if (!kIsWeb && repoPath != null) {
         expect(deps.codingController.state.recentChanges, hasLength(1));
-        await tester.tap(find.text('Edits (1)'));
+        if (find.text('Edits (1)').evaluate().isNotEmpty) {
+          await tester.tap(find.text('Edits (1)'));
+        } else {
+          await tester.tap(find.byKey(const Key('coding_explorer_toggle')));
+          await tester.pumpAndSettle();
+          await tester.tap(find.text('Changes (1)'));
+        }
         await tester.pumpAndSettle();
         expect(find.byKey(const Key('coding_revert_change_0')), findsOneWidget);
         await tester.ensureVisible(
@@ -816,8 +822,10 @@ void main() {
           isTrue,
         );
 
-        await tester.tap(find.text('Agent'));
-        await tester.pumpAndSettle();
+        if (find.text('Agent').evaluate().isNotEmpty) {
+          await tester.tap(find.text('Agent'));
+          await tester.pumpAndSettle();
+        }
         await tester.tap(find.byKey(const Key('coding_setup_toggle')));
         await tester.pumpAndSettle();
         // Enable `bash` tool -> Ask before bash toggle appears; pending bash shows approval banner.

@@ -300,58 +300,67 @@ class ChatWorkspaceController {
   }
 
   /// Sends a new user message on the active conversation branch and streams
-  /// the assistant response.
-  Future<void> sendMessage(String rawText) async {
-    if (_activeStreamStore.state.isGenerating) {
-      return;
-    }
+  /// the assistant response. An optional [preset] is applied within the same
+  /// submission reservation, before saving the prompt.
+  Future<void> sendMessage(String rawText, {StudioPreset? preset}) async {
     final text = rawText.trim();
     final staged = _store.state.pendingAttachments;
-    if (text.isEmpty && staged.isEmpty) {
-      return;
-    }
-
-    final active =
-        _store.state.activeConversation ?? await createConversation();
-    final branch = active.activeBranch;
-    final parentId = branch.isEmpty ? null : branch.last.id;
-
-    final persistedAttachments = <StudioAttachment>[];
-    for (final att in staged) {
-      persistedAttachments.add(
-        await _conversations.persistAttachment(
-          conversationId: active.id,
-          attachment: att,
-        ),
-      );
-    }
-
-    final userMsg = StudioMessage(
-      id: _nextId('usr'),
-      parentId: parentId,
-      role: StudioRole.user,
-      text: text,
-      attachments: persistedAttachments,
-      createdAt: DateTime.now(),
-    );
-
-    var updatedConv = active.appendChild(parentId: parentId, message: userMsg);
-    if (branch.isEmpty && text.isNotEmpty) {
-      updatedConv = updatedConv.copyWith(title: _deriveTitle(text));
-    }
-    await _saveAndPublish(
-      updatedConv,
-      clearAttachments: true,
-      clearErrors: true,
-    );
-
-    if (_drafts[active.id] == rawText) {
-      _drafts.remove(active.id);
-      if (_store.state.activeConversationId == active.id) {
-        _store.update((s) => s.copyWith(clearComposerDraft: true));
+    if (text.isEmpty && staged.isEmpty) return;
+    await _submitTurn(() async {
+      var active =
+          _store.state.activeConversation ?? await createConversation();
+      if (preset != null) {
+        final conversationId = active.id;
+        await applyPreset(preset);
+        active = _store.state.conversations.firstWhere(
+          (conversation) => conversation.id == conversationId,
+        );
       }
-    }
-    await _executeAssistantTurn(updatedConv, parentUserMessage: userMsg);
+      final branch = active.activeBranch;
+      final parentId = branch.isEmpty ? null : branch.last.id;
+
+      final persistedAttachments = <StudioAttachment>[];
+      for (final att in staged) {
+        persistedAttachments.add(
+          await _conversations.persistAttachment(
+            conversationId: active.id,
+            attachment: att,
+          ),
+        );
+      }
+
+      final userMsg = StudioMessage(
+        id: _nextId('usr'),
+        parentId: parentId,
+        role: StudioRole.user,
+        text: text,
+        attachments: persistedAttachments,
+        createdAt: DateTime.now(),
+      );
+
+      var updatedConv = active.appendChild(
+        parentId: parentId,
+        message: userMsg,
+      );
+      if (branch.isEmpty && text.isNotEmpty) {
+        updatedConv = updatedConv.copyWith(title: _deriveTitle(text));
+      }
+      await _saveAndPublish(
+        updatedConv,
+        completedAttachmentIds: staged
+            .map((attachment) => attachment.id)
+            .toSet(),
+        clearErrors: true,
+      );
+
+      if (_drafts[active.id] == rawText) {
+        _drafts.remove(active.id);
+        if (_store.state.activeConversationId == active.id) {
+          _store.update((s) => s.copyWith(clearComposerDraft: true));
+        }
+      }
+      return (conversation: updatedConv, user: userMsg);
+    });
   }
 
   /// Non-destructively edits an existing user message by creating a sibling
@@ -360,9 +369,6 @@ class ChatWorkspaceController {
     required String originalMessageId,
     required String editedText,
   }) async {
-    if (_activeStreamStore.state.isGenerating) {
-      return;
-    }
     final active = _store.state.activeConversation;
     if (active == null) {
       return;
@@ -372,28 +378,27 @@ class ChatWorkspaceController {
       return;
     }
 
-    final branchedUser = StudioMessage(
-      id: _nextId('usr'),
-      parentId: original.parentId,
-      role: StudioRole.user,
-      text: editedText.trim(),
-      attachments: original.attachments,
-      createdAt: DateTime.now(),
-    );
-    final updatedConv = active.appendChild(
-      parentId: original.parentId,
-      message: branchedUser,
-    );
-    await _saveAndPublish(updatedConv, clearErrors: true);
-    await _executeAssistantTurn(updatedConv, parentUserMessage: branchedUser);
+    await _submitTurn(() async {
+      final branchedUser = StudioMessage(
+        id: _nextId('usr'),
+        parentId: original.parentId,
+        role: StudioRole.user,
+        text: editedText.trim(),
+        attachments: original.attachments,
+        createdAt: DateTime.now(),
+      );
+      final updatedConv = active.appendChild(
+        parentId: original.parentId,
+        message: branchedUser,
+      );
+      await _saveAndPublish(updatedConv, clearErrors: true);
+      return (conversation: updatedConv, user: branchedUser);
+    });
   }
 
   /// Non-destructively regenerates an assistant message as a new sibling branch
   /// under the same user prompt.
   Future<void> regenerateAssistantMessage(String assistantMessageId) async {
-    if (_activeStreamStore.state.isGenerating) {
-      return;
-    }
     final active = _store.state.activeConversation;
     if (active == null) {
       return;
@@ -408,10 +413,34 @@ class ChatWorkspaceController {
       return;
     }
 
-    // Ensure the branch up to parentUser is selected, then stream a new child.
-    final aligned = active.selectBranch(parentUser.id);
-    await _saveAndPublish(aligned, clearErrors: true);
-    await _executeAssistantTurn(aligned, parentUserMessage: parentUser);
+    await _submitTurn(() async {
+      // Ensure the branch up to parentUser is selected, then stream a new child.
+      final aligned = active.selectBranch(parentUser.id);
+      await _saveAndPublish(aligned, clearErrors: true);
+      return (conversation: aligned, user: parentUser);
+    });
+  }
+
+  Future<void> _submitTurn(
+    Future<({StudioConversation conversation, StudioMessage user})> Function()
+    prepare,
+  ) async {
+    if (_store.state.isSubmitting || _activeStreamStore.state.isGenerating) {
+      return;
+    }
+    _store.update((s) => s.copyWith(isSubmitting: true));
+    late final Future<void> generation;
+    try {
+      final turn = await prepare();
+      // Inference reserves its stream synchronously before releasing submission.
+      generation = _executeAssistantTurn(
+        turn.conversation,
+        parentUserMessage: turn.user,
+      );
+    } finally {
+      _store.update((s) => s.copyWith(isSubmitting: false));
+    }
+    await generation;
   }
 
   /// Stops the active streaming generation, keeping any partial output.
@@ -827,7 +856,7 @@ class ChatWorkspaceController {
 
   Future<void> _saveAndPublish(
     StudioConversation updated, {
-    bool clearAttachments = false,
+    Set<String> completedAttachmentIds = const {},
     bool clearErrors = false,
     String? lastError,
     bool? structuredJsonValid,
@@ -849,9 +878,14 @@ class ChatWorkspaceController {
       ];
       return s.copyWith(
         conversations: list,
-        pendingAttachments: clearAttachments
-            ? const <StudioAttachment>[]
-            : null,
+        pendingAttachments: completedAttachmentIds.isEmpty
+            ? null
+            : s.pendingAttachments
+                  .where(
+                    (attachment) =>
+                        !completedAttachmentIds.contains(attachment.id),
+                  )
+                  .toList(),
         clearLastTurnError: clearErrors && lastError == null,
         lastTurnError: lastError,
         clearStructuredJsonValid: clearErrors && structuredJsonValid == null,
