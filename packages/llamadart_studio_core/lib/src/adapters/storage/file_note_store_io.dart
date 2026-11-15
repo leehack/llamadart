@@ -133,19 +133,22 @@ class FileNoteStore implements StudioNoteStore {
     bool clearAudio = false,
   }) {
     return _writeLock.synchronized(() async {
-      final stored = await _offloadMediaAndWriteJsonUnlocked(
+      _validatedNoteId(note.id);
+      await _prepareNotesDirectory();
+      final order = await _readOrderIds();
+      if (!order.contains(note.id)) {
+        order.insert(0, note.id);
+        // Order is advisory; a failed repair must precede the note commit so
+        // callers can safely retry with their still-current media references.
+        await _writeOrderIdsUnlocked(order);
+      }
+      return _offloadMediaAndWriteJsonUnlocked(
         note,
         imageBytes: imageBytes,
         audioWavBytes: audioWavBytes,
         clearImage: clearImage,
         clearAudio: clearAudio,
       );
-      final order = await _readOrderIds();
-      if (!order.contains(stored.id)) {
-        order.insert(0, stored.id);
-        await _writeOrderIdsUnlocked(order);
-      }
-      return stored;
     });
   }
 

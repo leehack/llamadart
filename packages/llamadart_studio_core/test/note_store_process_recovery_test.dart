@@ -10,6 +10,7 @@ import 'dart:isolate';
 import 'package:llamadart_studio_core/llamadart_studio_core.dart';
 import 'package:test/test.dart';
 
+import 'studio_test_fakes.dart';
 import 'support/note_store_process_fixture.dart' as fixture;
 
 void main() {
@@ -288,6 +289,78 @@ void main() {
       expect(
         await reopened.readAudioBytes(restored),
         fixture.processFixtureAudio(replacement: true),
+      );
+    },
+  );
+
+  test(
+    'failed advisory order repair preserves media and permits draft retry',
+    () async {
+      final store = _store(root);
+      final storage = FakeStudioStoragePort();
+      final notebook = NotebookController(
+        storagePort: storage,
+        embeddingPort: DummyPlaygroundPort(),
+        noteStore: store,
+        isWeb: false,
+        isMobile: false,
+      );
+      addTearDown(() async {
+        await notebook.dispose();
+        await storage.dispose();
+      });
+      await notebook.initialize();
+      final original = await notebook.createNote(
+        title: 'Media',
+        content: 'Previously committed content',
+        imageBytes: fixture.processFixtureImage(),
+      );
+      await File('${root.path}/notes/_order.json').writeAsString('[]');
+      await notebook.initialize();
+      final obstruction = await Directory(
+        '${root.path}/notes/_order.json.tmp',
+      ).create();
+      await expectLater(
+        notebook.updateNote(
+          original.id,
+          content: 'Pending content',
+          imageBytes: fixture.processFixtureImage(replacement: true),
+        ),
+        throwsA(isA<FileSystemException>()),
+      );
+      expect(
+        notebook.state.notes
+            .singleWhere((note) => note.id == original.id)
+            .toJson(),
+        original.toJson(),
+      );
+      final restored = (await _store(
+        root,
+      ).loadAll()).singleWhere((note) => note.id == original.id);
+      expect(restored.toJson(), original.toJson());
+      expect(await File(original.imageLocalPath!).exists(), isTrue);
+      expect(
+        await store.readImageBytes(restored),
+        fixture.processFixtureImage(),
+      );
+      await obstruction.delete();
+      notebook.retainDraft(
+        original.id,
+        const NotebookDraft(
+          title: 'Media',
+          content: 'Retried content',
+          tags: '',
+          transcript: '',
+        ),
+      );
+      expect(await notebook.saveDraft(original.id), isTrue);
+      final retried = (await _store(
+        root,
+      ).loadAll()).singleWhere((note) => note.id == original.id);
+      expect(retried.content, 'Retried content');
+      expect(
+        await store.readImageBytes(retried),
+        fixture.processFixtureImage(),
       );
     },
   );
