@@ -19,7 +19,8 @@ validate against the exact release tag notes.
 - Report incomplete Studio replies and exhausted tool rounds with actionable errors instead of empty successful responses.
 
 - Add an experimental Studio app with seven workspaces and a reusable pure-Dart core, alongside the existing chat example.
-- Add a Linux Vulkan preflight so Studio can report unavailable image drivers before native device enumeration.
+- Use the Linux Vulkan preflight in Studio to report unavailable image drivers before native device enumeration.
+- Add an opt-in Linux Vulkan loader preflight for native hosts.
 - Speed up model checksum verification on Apple platforms and keep verification off the UI isolate.
 
 ## 0.19.11

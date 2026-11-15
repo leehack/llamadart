@@ -145,8 +145,9 @@ before initializing that runtime. Run the synchronous probe off the UI isolate;
 it loads system drivers. A non-null reason reports an unavailable loader,
 instance or device list. `null` means the loader enumerated a device, or the
 host is not Linux (including Web, where the probe does nothing). It does not
-qualify Vulkan versions, extensions or driver stability. CPU-only builds do
-not need this preflight.
+qualify GPU suitability, Vulkan versions, extensions, inference or driver
+stability; software devices are accepted. `ImageGenerationEngine` does not run
+this opt-in helper automatically. CPU-only builds need no preflight.
 
 Studio's default Linux image runtime is a Vulkan build. Studio runs this
 preflight before image probing and loading, and disables Image Studio with the
