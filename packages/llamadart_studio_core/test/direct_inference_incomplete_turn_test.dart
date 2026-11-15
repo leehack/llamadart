@@ -172,6 +172,11 @@ void main() {
             .whereType<StudioTurnCompletedEvent>()
             .single
             .result;
+        expect(result.metrics.elapsedMs, greaterThanOrEqualTo(1));
+        expect(
+          result.metrics.decodeElapsedMs,
+          inInclusiveRange(1, result.metrics.elapsedMs),
+        );
         expect(result.text, prefix);
         expect(result.toolInvocations.single.isError, isTrue);
         expect(result.toolInvocations.single.resultJson, contains('cancelled'));
@@ -187,6 +192,11 @@ void main() {
     ]);
     final events = await port.streamTurn(_request(readTool())).toList();
     final result = events.whereType<StudioTurnCompletedEvent>().single.result;
+    expect(result.metrics.elapsedMs, greaterThanOrEqualTo(1));
+    expect(
+      result.metrics.decodeElapsedMs,
+      inInclusiveRange(1, result.metrics.elapsedMs),
+    );
     expect(result.text, 'The token is MONTREAL-4827.');
     expect(result.toolInvocations.single.isError, isFalse);
     expect(result.toolInvocations.single.resultJson, contains('MONTREAL-4827'));

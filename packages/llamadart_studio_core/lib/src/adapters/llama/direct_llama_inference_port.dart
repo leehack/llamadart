@@ -764,7 +764,8 @@ class DirectLlamaInferencePort
       }
     }
 
-    final totalMs = stopwatch.elapsedMilliseconds;
+    // Millisecond-resolution timers can finish at zero before metrics are built.
+    final totalMs = math.max(1, stopwatch.elapsedMilliseconds);
     final decodeMs = firstTokenMs != null
         ? (totalMs - firstTokenMs).clamp(1, totalMs)
         : totalMs;
