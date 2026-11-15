@@ -2477,10 +2477,59 @@ with the SD-Turbo full-VAE harness:
 | C1, split off | iPhone 16 Pro, iOS 18.3 | third decode failed with the GPU command-buffer error (watchdog) |
 | C2b soak | iPhone 16 Pro, iPhone 17 Pro | 30 of 30 decodes passed, one image hash, flat footprint |
 
-Known limit ([#2004](https://github.com/leehack/llamadart/issues/2004)): on
-the iPhone 17 Pro (iOS 26.5.1) the second engine dispose kept about 2 GB
+On the iPhone 17 Pro (iOS 26.5.1) the second engine dispose kept about 2 GB
 resident and later loads failed the memory check; the iPhone 16 Pro returned to
-its baseline. Whether it is a leak or delayed reclaim is undecided.
+its baseline ([#2004](https://github.com/leehack/llamadart/issues/2004)).
+Runtime `v0.3.0-5` carries the ggml `vm_allocate` host-buffer fix for it.
+
+The current `v0.3.0-6` pin adds Apple model-loader scratch release; its
+qualification is recorded below, separately from these historical v5 measurements.
+
+Repin soak of runtime `v0.3.0-5` (source `f7dcae3bb`): DDP session
+`session-790c4db5-300b-4c86-aeb0-2e74585a34a2`, record `R1047`, SD-Turbo q8_0 with its embedded full VAE,
+4 load/dispose cycles per device. The preserved harness calls
+`profile.buildModel(modelPath: modelFile)` without `taesdPath`; the original
+v5 soak and the v4/v5 A/B therefore both used full VAE. Both jobs passed with no `load_failed`
+and stable decode hashes.
+
+| Device | Peak per load | After dispose |
+| --- | --- | --- |
+| iPhone 17 Pro, iOS 26.5.1 | about 2.4 GB | 163 to 190 MB (148 MB baseline); the old runtime kept about 2 GB |
+| iPhone 16 Pro, iOS 18.3.2 | about 2.4 GB | about 370 MB, flat across cycles (125 MB first-cycle baseline; earlier v3/v4 measured about 150 MB on this device/model) |
+
+#### v0.3.0-6 full-VAE disposal qualification (2026-11-15)
+
+Tested source: `6b191b28b0f39eae1368fc76ea37f8051c5d2cb8`, session
+`session-5511bf15-6626-4b14-b920-70836728c503`, test ZIP SHA-256
+`a7af0af3d97606d2e93d0eacb84f4307d521ca6120a6ae50bbbb601f255881a8`.
+Both devices completed four loads/disposals and eight successful decodes with
+no failures on Metal (`MTL0`). The preserved harness used the same SD-Turbo
+q8_0 model with its embedded full VAE, no `taesdPath`, at 512x512, one step,
+guidance 1 and seed 42. Per-device PNG hashes were unchanged across v4/v5/v6.
+
+| Device / OS | v4 end residual (MiB) | v5 end residual (MiB) | v6 end residual (MiB) |
+| --- | --- | --- | --- |
+| iPhone 16 Pro / iOS 18.3.2 | 21.38–25.56 | 239.66–240.56 | 37.91–40.05 |
+| iPhone 17 Pro / iOS 26.5.1 | about 1.9 GiB retained after the first cycle | 28.23–43.63 | 32.36–43.95 |
+
+Residuals are relative to each run's first baseline, before epilogue heap
+churn. V6 substantially reduces the v5 iOS 18 residual and keeps iOS 26 near
+v5; small nonzero residuals remain. These are single-session observations,
+not proof of zero leaks. The historical v4 iOS 26 provider result was PASS,
+but its raw log has one `load_failed` and five disposal records; it was not a
+clean functional pass.
+
+Raw configs report `runtime_version: unknown`. Independent binary provenance
+verified the published v6 XCFramework SHA-256
+`7e5a79218d731ce7fb6b54020190a79630bd843d9a1dbafb24e5f0442ab95cb8`,
+matching UUID `7C8D9AC4-524A-309E-A24B-FF6FF5A7B673` and byte equality after
+signature removal and normalization of `__LINKEDIT.vmsize`. The evidence bundle
+retains `results/ab-v6/evidence-report.md`, `comparison.json`,
+`bundles/ab-v6/state.json` and `artifact-verification.json` under
+`llamadart-evidence/issue-2004`. Original logs remain unchanged. This follow-up
+changes documentation only; tested source and v6 native binary are unchanged.
+
+#### v0.3.0-4 public API qualification
 
 Final qualification of the public API at PR head `6109c8d1e` with the published
 `v0.3.0-4` pin: DDP session `session-954952c8-39c6-4878-9f17-ca2c6efed56b`,

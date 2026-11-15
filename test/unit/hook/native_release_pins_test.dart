@@ -222,13 +222,13 @@ void main() {
     },
   );
 
-  test('stable_diffusion pins the qualified v0.3.0-4 release artifacts', () {
+  test('stable_diffusion pins the published v0.3.0-6 release artifacts', () {
     // Exact published owner manifest, independently checked against GitHub
     // asset digests before adoption. This also binds the Apple binary target.
     final manifest =
         jsonDecode(
               File(
-                'test/fixtures/native/stable_diffusion_v0_3_0_4_manifest.json',
+                'test/fixtures/native/stable_diffusion_v0_3_0_6_manifest.json',
               ).readAsStringSync(),
             )
             as Map<String, dynamic>;
@@ -256,7 +256,7 @@ void main() {
     final apple = artifacts.singleWhere(
       (artifact) =>
           artifact['file'] ==
-          'stable-diffusion-native-apple-xcframework-v0.3.0-4.zip',
+          'stable-diffusion-native-apple-xcframework-v0.3.0-6.zip',
     );
     final swift = File(
       'packages/llamadart_stable_diffusion_flutter/darwin/'
@@ -266,34 +266,41 @@ void main() {
     expect(swift, contains(apple['sha256'] as String));
   });
 
-  // No older XCFramework is requalified: v0.3.0 aborts on FP8 weights on
-  // Metal, and earlier pins have a smaller sd_ctx_params_t.
-  test('the SD hook accepts only the pinned Apple companion artifact', () {
+  // Only checksum-proven older XCFrameworks are admitted; v0.3.0 aborts on
+  // FP8 weights on Metal, and earlier pins have a smaller sd_ctx_params_t.
+  test('the SD hook validates the current Apple companion artifact', () {
     final manifest =
         jsonDecode(
               File(
-                'test/fixtures/native/stable_diffusion_v0_3_0_4_manifest.json',
+                'test/fixtures/native/stable_diffusion_v0_3_0_6_manifest.json',
               ).readAsStringSync(),
             )
             as Map<String, dynamic>;
     final apple = (manifest['artifacts'] as List)
         .cast<Map<String, dynamic>>()
         .singleWhere((artifact) => artifact['kind'] == 'xcframework');
-    final previous =
-        (jsonDecode(
-                  File(
-                    'test/fixtures/native/'
-                    'stable_diffusion_v0_3_0_3_manifest.json',
-                  ).readAsStringSync(),
-                )
-                as Map<String, dynamic>)['artifacts']
-            as List;
-    final previousApple = previous.cast<Map<String, dynamic>>().singleWhere(
-      (artifact) => artifact['kind'] == 'xcframework',
-    );
-    expect(stableDiffusionCompatibleAppleCompanionTags.keys, ['v0.3.0-3']);
+    String appleChecksum(String manifestFile) {
+      final artifacts =
+          (jsonDecode(
+                    File(
+                      'test/fixtures/native/$manifestFile',
+                    ).readAsStringSync(),
+                  )
+                  as Map<String, dynamic>)['artifacts']
+              as List;
+      return artifacts.cast<Map<String, dynamic>>().singleWhere(
+            (artifact) => artifact['kind'] == 'xcframework',
+          )['sha256']
+          as String;
+    }
+
+    expect(stableDiffusionCompatibleAppleCompanionTags.keys, [
+      'v0.3.0-3',
+      'v0.3.0-4',
+    ]);
     expect(stableDiffusionAppleCompanionChecksums, {
-      'v0.3.0-3': previousApple['sha256'],
+      'v0.3.0-3': appleChecksum('stable_diffusion_v0_3_0_3_manifest.json'),
+      'v0.3.0-4': appleChecksum('stable_diffusion_v0_3_0_4_manifest.json'),
       stableDiffusionReleaseTag: apple['sha256'],
     });
   });

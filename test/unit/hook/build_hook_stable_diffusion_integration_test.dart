@@ -816,78 +816,80 @@ dependencies:
     );
   }
 
-  test('accepts a locked companion pinning the earlier v0.3.0-3 XCFramework '
-      'with an upgrade warning', () async {
-    final defines = await _flutterAppleApp(
-      companions: const [_stableDiffusionCompanionName],
-      editManifest: (manifest) => manifest
-          .replaceFirst(
-            'let stableDiffusionTag = "$stableDiffusionReleaseTag"',
-            'let stableDiffusionTag = "v0.3.0-3"',
-          )
-          .replaceFirst(
-            stableDiffusionAppleCompanionChecksums[stableDiffusionReleaseTag]!,
-            stableDiffusionAppleCompanionChecksums['v0.3.0-3']!,
-          ),
-    );
-    var emitted = false;
-    final records = <String>[];
-    final subscription = Logger.root.onRecord.listen(
-      (record) => records.add(record.message),
-    );
-    addTearDown(subscription.cancel);
-    await project.testCodeBuildHook(
-      mainMethod: build_hook.main,
-      targetOS: OS.iOS,
-      targetArchitecture: Architecture.arm64,
-      targetIOSSdk: IOSSdk.iPhoneOS,
-      userDefines: defines,
-      check: (_, _) => emitted = true,
-    );
-    expect(emitted, isTrue);
-    expect(
-      records,
-      contains(
-        allOf(
-          contains('leehack/stable-diffusion-native@v0.3.0-3'),
-          contains(
-            'Its frameworks lack '
-            '${stableDiffusionCompatibleAppleCompanionTags['v0.3.0-3']}.',
-          ),
-          contains(stableDiffusionReleaseTag),
-        ),
-      ),
-    );
-  });
-
-  test('rejects a locked companion pinning v0.3.0-3 with another '
-      'checksum', () async {
-    final defines = await _flutterAppleApp(
-      companions: const [_stableDiffusionCompanionName],
-      editManifest: (manifest) => manifest.replaceFirst(
-        'let stableDiffusionTag = "$stableDiffusionReleaseTag"',
-        'let stableDiffusionTag = "v0.3.0-3"',
-      ),
-    );
-    await expectLater(
-      project.testCodeBuildHook(
+  for (final earlier in stableDiffusionCompatibleAppleCompanionTags.keys) {
+    test('accepts a locked companion pinning the earlier $earlier XCFramework '
+        'with an upgrade warning', () async {
+      final defines = await _flutterAppleApp(
+        companions: const [_stableDiffusionCompanionName],
+        editManifest: (manifest) => manifest
+            .replaceFirst(
+              'let stableDiffusionTag = "$stableDiffusionReleaseTag"',
+              'let stableDiffusionTag = "$earlier"',
+            )
+            .replaceFirst(
+              stableDiffusionAppleCompanionChecksums[stableDiffusionReleaseTag]!,
+              stableDiffusionAppleCompanionChecksums[earlier]!,
+            ),
+      );
+      var emitted = false;
+      final records = <String>[];
+      final subscription = Logger.root.onRecord.listen(
+        (record) => records.add(record.message),
+      );
+      addTearDown(subscription.cancel);
+      await project.testCodeBuildHook(
         mainMethod: build_hook.main,
         targetOS: OS.iOS,
         targetArchitecture: Architecture.arm64,
         targetIOSSdk: IOSSdk.iPhoneOS,
         userDefines: defines,
-        check: (_, _) => fail('Must not emit in-process assets'),
-      ),
-      throwsA(
-        predicate(
-          (error) => error.toString().contains(
-            'Companion XCFramework checksum does not match the qualified '
-            'published artifact for v0.3.0-3',
+        check: (_, _) => emitted = true,
+      );
+      expect(emitted, isTrue);
+      expect(
+        records,
+        contains(
+          allOf(
+            contains('leehack/stable-diffusion-native@$earlier'),
+            contains(
+              'Its frameworks lack '
+              '${stableDiffusionCompatibleAppleCompanionTags[earlier]}.',
+            ),
+            contains(stableDiffusionReleaseTag),
           ),
         ),
-      ),
-    );
-  });
+      );
+    });
+
+    test('rejects a locked companion pinning $earlier with another '
+        'checksum', () async {
+      final defines = await _flutterAppleApp(
+        companions: const [_stableDiffusionCompanionName],
+        editManifest: (manifest) => manifest.replaceFirst(
+          'let stableDiffusionTag = "$stableDiffusionReleaseTag"',
+          'let stableDiffusionTag = "$earlier"',
+        ),
+      );
+      await expectLater(
+        project.testCodeBuildHook(
+          mainMethod: build_hook.main,
+          targetOS: OS.iOS,
+          targetArchitecture: Architecture.arm64,
+          targetIOSSdk: IOSSdk.iPhoneOS,
+          userDefines: defines,
+          check: (_, _) => fail('Must not emit in-process assets'),
+        ),
+        throwsA(
+          predicate(
+            (error) => error.toString().contains(
+              'Companion XCFramework checksum does not match the qualified '
+              'published artifact for $earlier',
+            ),
+          ),
+        ),
+      );
+    });
+  }
 
   // v0.3.0 grew sd_ctx_params_t: the bindings would overrun the
   // allocation of a v0.2.0-4 runtime. The v0.3.0 runtime aborts on FP8
