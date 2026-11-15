@@ -238,9 +238,10 @@ class StudioSkill {
       instructions: '''
 When writing or reviewing Dart or Flutter code:
 1. Prefer small, immutable `@immutable` models with explicit `copyWith` and JSON serialization.
-2. Read the existing file before proposing edits (`read_file` / `search_code`) so symbol names and imports match the codebase verbatim.
+2. Read the existing file before proposing edits (`read` / `grep`) so symbol names and imports match the codebase verbatim.
 3. Keep business logic cleanly separated from Flutter `Widget` trees; do not import `dart:io` into platform-agnostic core libraries without conditional imports.
-4. For patches, use `patch_file` with exact verbatim snippets and summarize changed files and verification steps accurately.''',
+4. For patches, use `edit` with exact verbatim snippets and summarize changed files and verification steps accurately.
+5. Use the active Dart & Flutter MCP tools for targeted verification when available. Shell commands require the optional `bash` tool, which is disabled by default; when enabled, respect its approval decision and never claim a rejected or cancelled command ran.''',
       isBuiltIn: true,
       enabled: true,
     ),
@@ -263,7 +264,7 @@ When reviewing code or proposing changes:
           'Enforces read-first workspace exploration and minimal surgical edits over speculative rewrites.',
       instructions: '''
 Follow a disciplined read-search-patch loop:
-1. Start by exploring directory layout (`list_files`) or searching symbols (`search_code`) instead of guessing paths.
+1. Start by exploring directory layout (`ls`) or searching symbols (`grep`) instead of guessing paths.
 2. Read only the relevant sections of target files before editing.
 3. Apply the smallest complete patch needed and explain the behavioral impact concisely.''',
       isBuiltIn: true,

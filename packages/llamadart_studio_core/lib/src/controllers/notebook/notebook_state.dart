@@ -65,7 +65,8 @@ class NotebookState {
   /// Whether an audio note is currently being transcribed by local ASR.
   final bool isTranscribingNote;
 
-  /// Cited note hits used to ground [notebookAnswerText].
+  /// Retrieved note hits supplied to the model for [notebookAnswerText].
+  /// Numeric source markers index this list; the model may cite only a subset.
   final List<NoteSearchHit> notebookAnswerSources;
 
   /// Wall-clock duration of the completed Notebook Q&A turn.

@@ -70,6 +70,10 @@ paths; see the `local_*_acceptance_test.dart` files under `test/` and
 
 ## Qualification scope
 
+The [macOS Notes and Coding procedure](doc/notes-coding-qualification.md) defines
+real-model workflow, grounding, and process-recovery gates with explicit defaults
+and evidence requirements. Consult the PR for completed runs and exact revisions.
+
 Acceptance evidence covers macOS model-backed workflows, Chrome UI tests and
 release-browser startup/persistence, and Android emulator/iOS simulator smoke
 checks. A physical Pixel 8a (Android 15) passed Qwen3.5 0.8B CPU Chat inference

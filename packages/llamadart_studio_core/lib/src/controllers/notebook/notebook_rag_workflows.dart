@@ -34,6 +34,12 @@ extension NotebookRagWorkflows on NotebookController {
     final watch = Stopwatch()..start();
     try {
       final hits = await searchNotes(question, topK: topK);
+      if (_store.state.errorMessage != null) {
+        _store.update(
+          (NotebookState s) => s.copyWith(isAnsweringNotebook: false),
+        );
+        return;
+      }
       final sources = hits.isNotEmpty
           ? hits
           : <NoteSearchHit>[
@@ -158,43 +164,47 @@ extension NotebookRagWorkflows on NotebookController {
     }
   }
 
-  Future<void> _indexNotesImpl({bool forceReindex = false}) async {
-    _store.update((NotebookState s) => s.copyWith(clearErrorMessage: true));
-    try {
-      await _labModels.ensureCachedSpecialtyLoaded(
-        StudioModelSpecialty.embedding,
-      );
-      _store.update((NotebookState s) => s.copyWith(isEvaluating: true));
-      final updated = await _indexMissingNotesInternal(
-        _store.state.notes,
-        forceReindex: forceReindex,
-      );
-      final selectedId = _store.state.selectedNoteId;
-      _store.update(
-        (NotebookState s) => s.copyWith(
-          isEvaluating: false,
-          notes: updated,
-          relatedNotes: selectedId == null
-              ? const <NoteSearchHit>[]
-              : NotebookController._computeRelatedNotes(updated, selectedId),
-        ),
-      );
-      await _persistNotes(updated);
-    } catch (error) {
-      _store.update(
-        (NotebookState s) => s.copyWith(
-          isEvaluating: false,
-          errorMessage: humanizeStudioError(error),
-        ),
-      );
-    }
-  }
+  Future<void> _indexNotesImpl({bool forceReindex = false}) =>
+      _noteOperations.synchronized(() async {
+        _store.update((NotebookState s) => s.copyWith(clearErrorMessage: true));
+        try {
+          await _labModels.ensureCachedSpecialtyLoaded(
+            StudioModelSpecialty.embedding,
+          );
+          _store.update((NotebookState s) => s.copyWith(isEvaluating: true));
+          final updated = await _indexMissingNotesInternal(
+            _store.state.notes,
+            forceReindex: forceReindex,
+          );
+          await _persistNotes(updated);
+          final selectedId = _store.state.selectedNoteId;
+          _store.update(
+            (NotebookState s) => s.copyWith(
+              isEvaluating: false,
+              notes: updated,
+              relatedNotes: selectedId == null
+                  ? const <NoteSearchHit>[]
+                  : NotebookController._computeRelatedNotes(
+                      updated,
+                      selectedId,
+                    ),
+            ),
+          );
+        } catch (error) {
+          _store.update(
+            (NotebookState s) => s.copyWith(
+              isEvaluating: false,
+              errorMessage: humanizeStudioError(error),
+            ),
+          );
+        }
+      });
 
   Future<List<NoteSearchHit>> _searchNotesImpl(
     String query, {
     int topK = 5,
     bool? rerank,
-  }) async {
+  }) => _noteOperations.synchronized(() async {
     final trimmed = query.trim();
     _store.update(
       (NotebookState s) =>
@@ -287,12 +297,13 @@ extension NotebookRagWorkflows on NotebookController {
       _store.update(
         (NotebookState s) => s.copyWith(
           isEvaluating: false,
+          noteSearchHits: const <NoteSearchHit>[],
           errorMessage: humanizeStudioError(error),
         ),
       );
       return const <NoteSearchHit>[];
     }
-  }
+  });
 
   String _buildRagChatPromptImpl(String question, {List<NoteSearchHit>? hits}) {
     final effectiveHits = (hits != null && hits.isNotEmpty)

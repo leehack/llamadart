@@ -254,97 +254,122 @@ class FileNoteStore implements StudioNoteStore {
     final noteMediaDir = Directory(p.join(_mediaDir.path, safeId));
 
     var updated = note;
+    Directory? revision;
+    var committed = false;
+    Future<File> newMediaFile(String name) async {
+      await noteMediaDir.create(recursive: true);
+      revision ??= await noteMediaDir.createTemp('revision_');
+      return File(p.join(revision!.path, name));
+    }
 
-    // 1. Handle image attachment off-heap lifecycle.
-    if (clearImage) {
-      await _deleteFilesWithPrefix(noteMediaDir, 'image.');
-      updated = updated.copyWith(clearImage: true);
-    } else {
-      Uint8List? effectiveImg = imageBytes;
-      if ((effectiveImg == null || effectiveImg.isEmpty) &&
-          updated.imageBase64 != null &&
-          updated.imageBase64!.isNotEmpty) {
+    try {
+      // 1. Handle image attachment off-heap lifecycle.
+      if (clearImage) {
+        updated = updated.copyWith(clearImage: true);
+      } else {
+        Uint8List? effectiveImg = imageBytes;
+        if ((effectiveImg == null || effectiveImg.isEmpty) &&
+            updated.imageBase64 != null &&
+            updated.imageBase64!.isNotEmpty) {
+          try {
+            effectiveImg = base64Decode(updated.imageBase64!);
+          } catch (_) {
+            effectiveImg = null;
+          }
+        }
+        if (effectiveImg != null && effectiveImg.isNotEmpty) {
+          final ext = _imageExtensionForMime(updated.imageMimeType);
+          // Old metadata keeps its immutable files until the new JSON commits.
+          final imgFile = await newMediaFile('image.$ext');
+          await imgFile.writeAsBytes(effectiveImg, flush: true);
+          updated = updated.copyWith(
+            imageLocalPath: imgFile.path,
+            clearImageBase64: true,
+          );
+        }
+      }
+
+      // 2. Handle audio WAV attachment off-heap lifecycle.
+      if (clearAudio) {
+        updated = updated.copyWith(clearAudio: true);
+      } else {
+        Uint8List? effectiveAudio = audioWavBytes;
+        if ((effectiveAudio == null || effectiveAudio.isEmpty) &&
+            updated.audioBase64 != null &&
+            updated.audioBase64!.isNotEmpty) {
+          try {
+            effectiveAudio = base64Decode(updated.audioBase64!);
+          } catch (_) {
+            effectiveAudio = null;
+          }
+        }
+        if (effectiveAudio != null && effectiveAudio.isNotEmpty) {
+          final wavFile = await newMediaFile('audio.wav');
+          await wavFile.writeAsBytes(effectiveAudio, flush: true);
+          updated = updated.copyWith(
+            audioLocalPath: wavFile.path,
+            clearAudioBase64: true,
+          );
+        }
+      }
+
+      // 3. Atomic write (.tmp + rename) without inline base64 blobs.
+      final target = File(p.join(_notesDir.path, '$safeId.json'));
+      final temp = File('${target.path}.tmp');
+      await temp.writeAsString(
+        const JsonEncoder.withIndent(
+          '  ',
+        ).convert(updated.toJson(includeInlineMedia: false)),
+        flush: true,
+      );
+      await temp.rename(target.path);
+      committed = true;
+      await _removeUnreferencedMedia(noteMediaDir, updated);
+      return updated;
+    } finally {
+      if (!committed && revision != null) {
         try {
-          effectiveImg = base64Decode(updated.imageBase64!);
-        } catch (_) {
-          effectiveImg = null;
+          await revision!.delete(recursive: true);
+        } on FileSystemException {
+          // A later committed save also collects interrupted revisions.
         }
-      }
-      if (effectiveImg != null && effectiveImg.isNotEmpty) {
-        if (!await noteMediaDir.exists()) {
-          await noteMediaDir.create(recursive: true);
-        }
-        await _deleteFilesWithPrefix(noteMediaDir, 'image.');
-        final ext = _imageExtensionForMime(updated.imageMimeType);
-        final imgFile = File(p.join(noteMediaDir.path, 'image.$ext'));
-        await imgFile.writeAsBytes(effectiveImg, flush: true);
-        updated = updated.copyWith(
-          imageLocalPath: imgFile.path,
-          clearImageBase64: true,
-        );
       }
     }
-
-    // 2. Handle audio WAV attachment off-heap lifecycle.
-    if (clearAudio) {
-      final wavFile = File(p.join(noteMediaDir.path, 'audio.wav'));
-      if (await wavFile.exists()) {
-        await wavFile.delete();
-      }
-      updated = updated.copyWith(clearAudio: true);
-    } else {
-      Uint8List? effectiveAudio = audioWavBytes;
-      if ((effectiveAudio == null || effectiveAudio.isEmpty) &&
-          updated.audioBase64 != null &&
-          updated.audioBase64!.isNotEmpty) {
-        try {
-          effectiveAudio = base64Decode(updated.audioBase64!);
-        } catch (_) {
-          effectiveAudio = null;
-        }
-      }
-      if (effectiveAudio != null && effectiveAudio.isNotEmpty) {
-        if (!await noteMediaDir.exists()) {
-          await noteMediaDir.create(recursive: true);
-        }
-        final wavFile = File(p.join(noteMediaDir.path, 'audio.wav'));
-        await wavFile.writeAsBytes(effectiveAudio, flush: true);
-        updated = updated.copyWith(
-          audioLocalPath: wavFile.path,
-          clearAudioBase64: true,
-        );
-      }
-    }
-
-    // Clean up empty media directory if all media was cleared.
-    if (await noteMediaDir.exists()) {
-      final hasRemaining = !(await noteMediaDir.list().isEmpty);
-      if (!hasRemaining) {
-        await noteMediaDir.delete();
-      }
-    }
-
-    // 3. Atomic write (.tmp + rename) without inline base64 blobs.
-    final target = File(p.join(_notesDir.path, '$safeId.json'));
-    final temp = File('${target.path}.tmp');
-    await temp.writeAsString(
-      const JsonEncoder.withIndent(
-        '  ',
-      ).convert(updated.toJson(includeInlineMedia: false)),
-      flush: true,
-    );
-    await temp.rename(target.path);
-    return updated;
   }
 
-  Future<void> _deleteFilesWithPrefix(Directory dir, String prefix) async {
-    if (!await dir.exists()) {
-      return;
-    }
-    await for (final entity in dir.list(followLinks: false)) {
-      if (entity is File && p.basename(entity.path).startsWith(prefix)) {
-        await entity.delete();
+  Future<void> _removeUnreferencedMedia(Directory dir, StudioNote note) async {
+    // Collect abandoned revisions on the next successful save after a crash.
+    // Never follow links or touch paths outside this note's owned directory.
+    try {
+      if (!await dir.exists()) return;
+      final retained = <String>{
+        if (note.imageLocalPath case final String path)
+          p.normalize(p.absolute(path)),
+        if (note.audioLocalPath case final String path)
+          p.normalize(p.absolute(path)),
+      };
+      final directories = <Directory>[];
+      await for (final entity in dir.list(
+        recursive: true,
+        followLinks: false,
+      )) {
+        if (entity is File &&
+            !retained.contains(p.normalize(p.absolute(entity.path)))) {
+          await entity.delete();
+        } else if (entity is Directory) {
+          directories.add(entity);
+        }
       }
+      for (final directory in directories.reversed) {
+        if (await directory.list(followLinks: false).isEmpty) {
+          await directory.delete();
+        }
+      }
+      if (await dir.list(followLinks: false).isEmpty) {
+        await dir.delete();
+      }
+    } on FileSystemException {
+      // Cleanup is retryable; the metadata commit already succeeded.
     }
   }
 

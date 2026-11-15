@@ -13,6 +13,9 @@ validate against the exact release tag notes.
 
 ## Unreleased
 
+- Preserve Studio notes and attachments across failed or interrupted saves, and keep indexing consistent with concurrent edits.
+- Align Studio coding skills with available file tools and add realistic macOS Notes and Coding qualification.
+
 - Report incomplete Studio replies and exhausted tool rounds with actionable errors instead of empty successful responses.
 
 - Add an experimental Studio app with seven workspaces and a reusable pure-Dart core, alongside the existing chat example.

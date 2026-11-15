@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:meta/meta.dart';
+import 'package:synchronized/synchronized.dart';
 
 import '../../adapters/curated_studio_model_catalog.dart';
 import '../../adapters/storage/key_value_note_store.dart';
@@ -88,6 +89,9 @@ class NotebookController {
   final StudioModelCatalog _catalog;
   final Future<bool> Function()? _ensureChatModelReady;
 
+  // Indexing snapshots must commit in the same order as note mutations.
+  final Lock _noteOperations = Lock();
+
   bool _sttLoadedOnce = false;
   int _idCounter = 0;
 
@@ -127,7 +131,7 @@ class NotebookController {
 
   /// Restores persisted Semantic Note Vault notes or seeds starter notes on
   /// first launch.
-  Future<void> initialize() async {
+  Future<void> initialize() => _noteOperations.synchronized(() async {
     var loaded = await _noteStore.loadAll();
     if (loaded.isEmpty) {
       loaded = await _noteStore.saveAll(StudioNote.starterNotes());
@@ -142,7 +146,7 @@ class NotebookController {
             : _computeRelatedNotes(loaded, initialSelected),
       ),
     );
-  }
+  });
 
   /// Downloads and loads a dedicated auxiliary model (e.g. EmbeddingGemma 2)
   /// and mirrors any failure onto [NotebookState.errorMessage].
@@ -267,7 +271,7 @@ class NotebookController {
     Uint8List? audioWavBytes,
     int? audioDurationMs,
     String? transcript,
-  }) async {
+  }) => _noteOperations.synchronized(() async {
     final now = DateTime.now();
     _idCounter++;
     final draft = StudioNote(
@@ -298,7 +302,7 @@ class NotebookController {
       ),
     );
     return created;
-  }
+  });
 
   /// Updates an existing note, invalidating its cached vector if content or
   /// media changed.
@@ -316,7 +320,7 @@ class NotebookController {
     bool clearAudio = false,
     String? transcript,
     bool clearTranscript = false,
-  }) async {
+  }) => _noteOperations.synchronized(() async {
     StudioNote? existing;
     for (final n in _store.state.notes) {
       if (n.id == noteId) {
@@ -378,20 +382,26 @@ class NotebookController {
     _store.update(
       (NotebookState s) => s.copyWith(
         notes: nextNotes,
+        noteSearchHits: contentChanged
+            ? const <NoteSearchHit>[]
+            : s.noteSearchHits,
         relatedNotes: s.selectedNoteId == null
             ? const <NoteSearchHit>[]
             : _computeRelatedNotes(nextNotes, s.selectedNoteId!),
       ),
     );
-  }
+  });
 
   /// Replaces the note list after an external workflow (such as System-1 batch
   /// note auditing) mutates tags/metadata and optionally persists the updates.
   Future<void> applyAuditedNotes(
     List<StudioNote> updatedNotes, {
     bool persist = true,
-  }) async {
+  }) => _noteOperations.synchronized(() async {
     final normalized = List<StudioNote>.unmodifiable(updatedNotes);
+    if (persist) {
+      await _persistNotes(normalized);
+    }
     final selectedId = _store.state.selectedNoteId;
     _store.update(
       (NotebookState s) => s.copyWith(
@@ -401,10 +411,7 @@ class NotebookController {
             : _computeRelatedNotes(normalized, selectedId),
       ),
     );
-    if (persist) {
-      await _persistNotes(normalized);
-    }
-  }
+  });
 
   /// Transcribes an audio note using Studio's local ASR model (e.g.
   /// `Qwen3-ASR 0.6B` or `Moonshine Tiny`) and stores the transcript onto the note.
@@ -513,30 +520,34 @@ class NotebookController {
   }
 
   /// Deletes a note from the Vault.
-  Future<void> deleteNote(String noteId) async {
-    final nextNotes = _store.state.notes
-        .where((StudioNote n) => n.id != noteId)
-        .toList(growable: false);
-    final nextSelected = _store.state.selectedNoteId == noteId
-        ? nextNotes.firstOrNull?.id
-        : _store.state.selectedNoteId;
-    final nextHits = _store.state.noteSearchHits
-        .where((NoteSearchHit h) => h.note.id != noteId)
-        .toList(growable: false);
+  Future<void> deleteNote(String noteId) =>
+      _noteOperations.synchronized(() async {
+        await _noteStore.delete(noteId);
+        final nextNotes = _store.state.notes
+            .where((StudioNote n) => n.id != noteId)
+            .toList(growable: false);
+        final nextSelected = _store.state.selectedNoteId == noteId
+            ? nextNotes.firstOrNull?.id
+            : _store.state.selectedNoteId;
+        final nextHits = _store.state.noteSearchHits
+            .where((NoteSearchHit h) => h.note.id != noteId)
+            .toList(growable: false);
 
-    _store.update(
-      (NotebookState s) => s.copyWith(
-        notes: nextNotes,
-        selectedNoteId: nextSelected,
-        clearSelectedNoteId: nextSelected == null,
-        noteSearchHits: nextHits,
-        relatedNotes: nextSelected == null
-            ? const <NoteSearchHit>[]
-            : _computeRelatedNotes(nextNotes, nextSelected),
-      ),
-    );
-    await _noteStore.delete(noteId);
-  }
+        _store.update(
+          (NotebookState s) => s.copyWith(
+            notes: nextNotes,
+            drafts: <String, NotebookDraft>{...s.drafts}..remove(noteId),
+            draftSaveErrors: <String, String>{...s.draftSaveErrors}
+              ..remove(noteId),
+            selectedNoteId: nextSelected,
+            clearSelectedNoteId: nextSelected == null,
+            noteSearchHits: nextHits,
+            relatedNotes: nextSelected == null
+                ? const <NoteSearchHit>[]
+                : _computeRelatedNotes(nextNotes, nextSelected),
+          ),
+        );
+      });
 
   /// Indexes all unindexed notes (or every note when [forceReindex] is true or
   /// the loaded embedding model changed) and updates related-note links.
