@@ -26,6 +26,8 @@ const Map<String, String> _studioSourceFiles = {
       '.md | AGENTS | SKILL',
   'packages/llamadart_studio/lib/src/widgets/mcp_skills/skills_and_context_tabs.dart':
       '.md | AGENTS | SKILL | skills/',
+  'packages/llamadart_studio/lib/src/workspaces/coding/coding_agent_chat_pane.dart':
+      'skills/',
   'packages/llamadart_studio/lib/src/workspaces/coding/coding_workspace_header.dart':
       '.md | AGENTS',
   'packages/llamadart_studio_core/lib/llamadart_studio_core.dart': 'skills/',
