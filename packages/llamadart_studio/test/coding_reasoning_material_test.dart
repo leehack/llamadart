@@ -1,5 +1,3 @@
-import 'dart:io';
-
 // Keep Material types compatible with flutter_markdown (see README).
 // ignore: deprecated_member_use
 import 'package:flutter/material.dart';
@@ -12,17 +10,8 @@ void main() {
   testWidgets('Coding reasoning paints on its own Material surface', (
     tester,
   ) async {
-    final root = (await tester.runAsync(
-      () => Directory.systemTemp.createTemp('coding_reasoning_'),
-    ))!;
     final deps = await buildTestDeps();
-    addTearDown(() async {
-      await deps.dispose();
-      await tester.runAsync(() => root.delete(recursive: true));
-    });
-    await tester.runAsync(
-      () => deps.codingController.setWorkspaceRoot(root.path),
-    );
+    addTearDown(deps.dispose);
     await tester.pumpWidget(
       StudioScope(
         deps: deps,

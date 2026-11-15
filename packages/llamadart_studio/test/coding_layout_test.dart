@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 // Keep Material types compatible with flutter_markdown (see README).
 // ignore: deprecated_member_use
 import 'package:flutter/material.dart';
@@ -10,6 +11,7 @@ import 'studio_widget_test_helpers.dart';
 
 void main() {
   for (final scale in <double>[1, 1.8]) {
+    // Shell approval requires a native folder and its gated bash tool.
     testWidgets('Long command approval scrolls at 420x600 with scale $scale', (
       WidgetTester tester,
     ) async {
@@ -66,7 +68,7 @@ void main() {
       await tester.pumpAndSettle();
       expect((await result as Map)['rejected'], isTrue);
       expect(find.byKey(const Key('coding_prompt_input')), findsOneWidget);
-    });
+    }, skip: kIsWeb);
   }
 
   for (final size in const <Size>[Size(360, 740), Size(1280, 900)]) {

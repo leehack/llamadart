@@ -64,6 +64,8 @@ class CodingWorkspaceController {
 
   final Map<String?, String> _promptDrafts = <String?, String>{};
 
+  bool _awaitingModel = false;
+  int? _drainingTurnEpoch;
   int _idCounter = 0;
   int _workspaceEpoch = 0;
   int _workspaceSelection = 0;
@@ -155,10 +157,7 @@ class CodingWorkspaceController {
       if (selection != _workspaceSelection) return;
       final changed = _store.state.workspaceRoot != trimmed;
       if (changed) {
-        _workspaceEpoch++;
-        cancelGeneration();
-        _resetStreamThrottle();
-        _activeStreamStore.set(ActiveTurnStreamState.idle);
+        _invalidateActiveTurn();
       }
       _store.update(
         (CodingWorkspaceState s) => s.copyWith(
@@ -396,10 +395,7 @@ class CodingWorkspaceController {
 
   /// Clears the current Coding chat thread and edit audit log.
   void clearSession() {
-    _workspaceEpoch++;
-    cancelGeneration();
-    _resetStreamThrottle();
-    _activeStreamStore.set(ActiveTurnStreamState.idle);
+    _invalidateActiveTurn();
     setPromptDraftForWorkspace(_store.state.workspaceRoot, '');
     _store.update(
       (CodingWorkspaceState s) => s.copyWith(
@@ -460,8 +456,10 @@ class CodingWorkspaceController {
 
     try {
       if (needsAutoLoad) {
+        _awaitingModel = true;
         await _ensureModelReady();
         if (epoch != _workspaceEpoch) return;
+        _awaitingModel = false;
         _activeStreamStore.set(
           ActiveTurnStreamState(
             isGenerating: true,
@@ -640,11 +638,34 @@ class CodingWorkspaceController {
         ),
       );
     } finally {
-      if (epoch == _workspaceEpoch) {
+      if (epoch == _workspaceEpoch || epoch == _drainingTurnEpoch) {
+        _drainingTurnEpoch = null;
+        _awaitingModel = false;
         resolveShellCommandApproval(false);
         _resetStreamThrottle();
         _activeStreamStore.set(ActiveTurnStreamState.idle);
       }
+    }
+  }
+
+  void _invalidateActiveTurn() {
+    final epoch = _workspaceEpoch++;
+    final draining = _activeStreamStore.state.isGenerating && !_awaitingModel;
+    _awaitingModel = false;
+    cancelGeneration();
+    _resetStreamThrottle();
+    if (draining) {
+      // A dispatched tool may still own the shared inference port after Stop.
+      _drainingTurnEpoch ??= epoch;
+      _activeStreamStore.set(
+        const ActiveTurnStreamState(
+          isGenerating: true,
+          conversationId: 'coding',
+          statusLabel: 'Stopping previous turn…',
+        ),
+      );
+    } else if (_drainingTurnEpoch == null) {
+      _activeStreamStore.set(ActiveTurnStreamState.idle);
     }
   }
 
@@ -669,6 +690,12 @@ class CodingWorkspaceController {
   void cancelGeneration() {
     resolveShellCommandApproval(false);
     _inference.cancelGeneration();
+    if (_awaitingModel) {
+      _workspaceEpoch++;
+      _awaitingModel = false;
+      _resetStreamThrottle();
+      _activeStreamStore.set(ActiveTurnStreamState.idle);
+    }
   }
 
   static String _budgetAgentsForPrompt(String instructions) {

@@ -63,6 +63,44 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets(
+    'Stop while loading allows a newer prompt before load completes',
+    (tester) async {
+      final inference = _HeldLoadInference();
+      final deps = await buildTestDeps(inferencePort: inference);
+      addTearDown(deps.dispose);
+      addTearDown(() {
+        if (!inference.release.isCompleted) inference.release.complete();
+      });
+      await tester.pumpWidget(LlamadartStudioApp(dependencies: deps));
+      await tester.pumpAndSettle();
+      final input = find.byKey(const Key('chat_composer_input'));
+      await tester.enterText(input, 'First prompt');
+      await tester.tap(find.byKey(const Key('chat_send_button')));
+      for (var i = 0; i < 10; i++) {
+        await tester.pump(const Duration(milliseconds: 20));
+      }
+      expect(inference.entered.isCompleted, isTrue);
+      await tester.tap(find.byKey(const Key('chat_stop_button')));
+      await tester.pump();
+      await tester.enterText(input, 'Newer prompt');
+      await tester.tap(find.byKey(const Key('chat_send_button')));
+      for (var i = 0; i < 10; i++) {
+        await tester.pump(const Duration(milliseconds: 20));
+      }
+      expect(
+        deps.chatController.state.activeConversation!.nodes
+            .where((n) => n.role == StudioRole.user)
+            .map((n) => n.text),
+        ['First prompt', 'Newer prompt'],
+      );
+      expect(deps.chatController.activeStreamStore.state.isGenerating, isTrue);
+      inference.release.complete();
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+    },
+  );
+
   testWidgets('420px filters collapse with active count and reset', (
     tester,
   ) async {
@@ -279,5 +317,21 @@ class _ProgressInference extends FakeInferencePort {
   Future<void> dispose() async {
     await runtime.dispose();
     await super.dispose();
+  }
+}
+
+class _HeldLoadInference extends _ProgressInference {
+  final entered = Completer<void>();
+  final release = Completer<void>();
+  @override
+  Future<void> loadModel({
+    required ResolvedModelAssets assets,
+    required StudioSettings settings,
+    required bool isWeb,
+  }) async {
+    progress(assets.descriptor, null, 'Loading local model...');
+    entered.complete();
+    await release.future;
+    ready(assets.descriptor);
   }
 }

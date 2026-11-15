@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 // Keep Material types compatible with flutter_markdown (see README).
 // ignore: deprecated_member_use
 import 'package:flutter/material.dart';
@@ -73,6 +74,7 @@ void main() {
     StudioWorkspace.notes,
     StudioWorkspace.speech,
   ]) {
+    // Recovery reuses a WAV file returned by the native recorder channel.
     testWidgets('${workspace.name} keeps capture when navigation save fails', (
       WidgetTester tester,
     ) async {
@@ -141,10 +143,11 @@ void main() {
         expect(speech.lastAudio, capture.bytes);
       }
       expect(tester.takeException(), isNull);
-    });
+    }, skip: kIsWeb);
   }
 
   for (final workspace in [StudioWorkspace.notes, StudioWorkspace.speech]) {
+    // Concurrent stops share the native recorder operation and its WAV file.
     testWidgets('${workspace.name} coalesces Stop with navigation capture', (
       tester,
     ) async {
@@ -207,7 +210,7 @@ void main() {
         expect(speech.transcriptions, 1);
       }
       expect(tester.takeException(), isNull);
-    });
+    }, skip: kIsWeb);
   }
 
   for (final workspace in [StudioWorkspace.notes, StudioWorkspace.speech]) {
@@ -238,6 +241,8 @@ void main() {
         expect(capture.stops, 0);
         expect(tester.takeException(), isNull);
       },
+      // Permission denial is injected through the native recorder MethodChannel.
+      skip: kIsWeb,
     );
   }
 
@@ -351,7 +356,9 @@ class RecoverableSpeechPort extends FakeSpeechPort {
 
 class FakeMicChannels {
   FakeMicChannels(this.tester) {
-    directory = Directory.systemTemp.createTempSync('studio_fake_mic_');
+    if (!kIsWeb) {
+      directory = Directory.systemTemp.createTempSync('studio_fake_mic_');
+    }
     for (final name in <String>[
       'xyz.luan/audioplayers.global',
       'xyz.luan/audioplayers.global/events',
@@ -371,7 +378,7 @@ class FakeMicChannels {
     }
     messenger.setMockMethodCallHandler(
       const MethodChannel('plugins.flutter.io/path_provider'),
-      (call) async => directory.path,
+      (call) async => directory?.path,
     );
     messenger.setMockMethodCallHandler(
       const MethodChannel('com.llfbandit.record/messages'),
@@ -405,7 +412,7 @@ class FakeMicChannels {
       tester.binding.defaultBinaryMessenger;
   final List<MethodChannel> events = <MethodChannel>[];
   final Uint8List bytes = Uint8List.fromList(<int>[82, 73, 70, 70, 1, 2, 3, 4]);
-  late Directory directory;
+  Directory? directory;
   String? path;
   final List<String> methods = <String>[];
   bool permission = true;
@@ -425,6 +432,6 @@ class FakeMicChannels {
     for (final event in events) {
       messenger.setMockMethodCallHandler(event, null);
     }
-    directory.deleteSync(recursive: true);
+    directory?.deleteSync(recursive: true);
   }
 }

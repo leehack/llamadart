@@ -27,7 +27,6 @@ class _MultimodalComposerState extends State<MultimodalComposer> {
   final TextEditingController _controller = TextEditingController();
   late final FocusNode _focusNode;
   int _attachmentSeq = 0;
-  bool _submitting = false;
 
   @override
   void initState() {
@@ -56,8 +55,7 @@ class _MultimodalComposerState extends State<MultimodalComposer> {
 
   Future<void> _submit() async {
     final deps = StudioScope.of(context);
-    if (_submitting ||
-        deps.chatController.state.isSubmitting ||
+    if (deps.chatController.state.isSubmitting ||
         deps.chatController.activeStreamStore.state.isGenerating) {
       return;
     }
@@ -67,7 +65,6 @@ class _MultimodalComposerState extends State<MultimodalComposer> {
     if (text.trim().isEmpty && !hasAttachments) {
       return;
     }
-    _submitting = true;
     try {
       await deps.chatController.sendMessage(text);
     } catch (error) {
@@ -79,8 +76,6 @@ class _MultimodalComposerState extends State<MultimodalComposer> {
           ),
         ),
       );
-    } finally {
-      _submitting = false;
     }
   }
 
