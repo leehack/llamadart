@@ -139,5 +139,15 @@ for the bounded guarantee and remaining raw-allocation limits.
 
 ## Which should you choose?
 
+Native hosts bundling a Linux Vulkan runtime can call
+`probeLinuxVulkanUnavailableReason()` from `package:llamadart/backend.dart`
+before initializing that runtime. Run the synchronous probe off the UI isolate;
+it loads system drivers. A non-null reason reports an unavailable loader,
+instance or device list. `null` means the loader enumerated a device, or the
+host is not Linux (including Web, where the probe does nothing). It does not
+qualify GPU suitability, Vulkan versions, extensions, inference or driver
+stability; software devices are accepted. `ImageGenerationEngine` does not run
+this opt-in helper automatically. CPU-only builds need no preflight.
+
 Start with the high-level API. Move down to `LlamaBackend` only when you need
 explicit handle-level control that `LlamaEngine`/`ChatSession` do not provide.

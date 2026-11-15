@@ -3,6 +3,9 @@ Releases before 0.10.0 are in the
 
 ## Unreleased
 
+- Add an opt-in Linux Vulkan loader preflight for native hosts.
+- Speed up model checksum verification on Apple platforms and keep verification off the UI isolate.
+
 ## 0.19.11
 
 - Preserve the system message before the generic JSON tool instruction with `ToolChoice.auto` or `required` ([#1973](https://github.com/leehack/llamadart/issues/1973)).

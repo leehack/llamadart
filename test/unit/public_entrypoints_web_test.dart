@@ -15,6 +15,10 @@ void main() {
       throwsA(isA<app.LlamaUnsupportedException>()),
     );
   });
+  test('Linux Vulkan preflight is a no-op on Web', () {
+    expect(backend.probeLinuxVulkanUnavailableReason(), isNull);
+  });
+
   test('the app and backend entrypoints import on Web', () {
     expect(app.LlamaEngine, isNotNull);
     expect(backend.LlamaBackend, isNotNull);
