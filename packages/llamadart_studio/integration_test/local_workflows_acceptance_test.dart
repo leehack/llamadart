@@ -112,6 +112,10 @@ void main() {
           await tester.pumpAndSettle();
         }
         final f = find.byKey(Key(key));
+        if (key.startsWith('nav_workspace_') && f.evaluate().isEmpty) {
+          await tester.tap(find.byKey(const Key('open_sidebar_drawer_button')));
+          await tester.pumpAndSettle();
+        }
         await tester.ensureVisible(f);
         await tester.pumpAndSettle();
         await tester.tap(f);
