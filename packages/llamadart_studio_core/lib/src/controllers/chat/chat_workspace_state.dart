@@ -80,7 +80,7 @@ class ChatWorkspaceState {
   /// Staged image/audio attachments in the composer.
   final List<StudioAttachment> pendingAttachments;
 
-  /// Optional staged prompt text seeded from Notes/Coding/MCP workflows.
+  /// Unsent text for the active conversation, including staged workspace text.
   final String? composerDraft;
 
   /// Selected built-in [StudioPreset] ID.

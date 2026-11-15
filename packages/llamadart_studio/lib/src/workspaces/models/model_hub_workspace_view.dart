@@ -7,9 +7,11 @@ import 'package:llamadart_studio_core/llamadart_studio_core.dart';
 
 import '../../app/studio_dependencies.dart';
 import '../../app/studio_theme.dart';
+import '../../widgets/model_load_error_banner.dart';
 import '../../widgets/model_load_progress_banner.dart';
 import '../../widgets/store_widgets.dart';
 import '../../widgets/studio_motion.dart';
+import '../../widgets/studio_selectable_text.dart';
 
 part 'model_hub_cards.dart';
 part 'model_hub_discovery.dart';
@@ -27,6 +29,15 @@ class ModelHubWorkspaceView extends StatefulWidget {
 
 class _ModelHubWorkspaceViewState extends State<ModelHubWorkspaceView> {
   final TextEditingController _searchController = TextEditingController();
+  bool _filtersExpanded = false;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final query = StudioScope.of(context).modelHubController.state.searchQuery;
+    if (_searchController.text != query) _searchController.text = query;
+  }
+
   _ModelHubSection _section = _ModelHubSection.browse;
   _ModelCapability _capability = _ModelCapability.any;
   _ModelSort _sort = _ModelSort.recommended;
@@ -51,10 +62,10 @@ class _ModelHubWorkspaceViewState extends State<ModelHubWorkspaceView> {
           await deps.modelHubController.activateChatModel(descriptor);
           if (deps.shellController.state.activeWorkspace ==
               StudioWorkspace.models) {
-            deps.shellController.selectWorkspace(StudioWorkspace.chat);
+            await deps.shellController.selectWorkspace(StudioWorkspace.chat);
           }
         case StudioModelCategory.speech:
-          deps.shellController.selectWorkspace(StudioWorkspace.speech);
+          await deps.shellController.selectWorkspace(StudioWorkspace.speech);
           if (descriptor.supportsTextToSpeech) {
             await deps.speechController.loadTtsModel(descriptor);
             final state = deps.speechController.state;
@@ -75,7 +86,7 @@ class _ModelHubWorkspaceViewState extends State<ModelHubWorkspaceView> {
             }
           }
         case StudioModelCategory.image:
-          deps.shellController.selectWorkspace(StudioWorkspace.image);
+          await deps.shellController.selectWorkspace(StudioWorkspace.image);
           await deps.imageController.loadModel(descriptor);
           final state = deps.imageController.state;
           if (state.errorMessage != null ||
@@ -85,12 +96,19 @@ class _ModelHubWorkspaceViewState extends State<ModelHubWorkspaceView> {
             );
           }
         case StudioModelCategory.playground:
-          deps.shellController.selectWorkspace(StudioWorkspace.playground);
+          await deps.shellController.selectWorkspace(
+            StudioWorkspace.playground,
+          );
           await deps.labModelCoordinator.loadLabModel(descriptor);
       }
     } catch (error) {
+      if (!context.mounted) return;
       messenger?.showSnackBar(
-        SnackBar(content: Text('Failed to load ${descriptor.name}: $error')),
+        SnackBar(
+          content: Text(
+            'Failed to load ${descriptor.name}: ${humanizeStudioError(error, sensitiveValues: <String>[deps.modelHubController.state.bearerToken])}',
+          ),
+        ),
       );
     }
   }
@@ -128,6 +146,7 @@ class _ModelHubWorkspaceViewState extends State<ModelHubWorkspaceView> {
                         tooltip: 'Browse local file',
                         onPressed: () async {
                           final picked = await FilePicker.platform.pickFiles();
+                          if (!dialogContext.mounted) return;
                           final path = picked?.files.firstOrNull?.path;
                           if (path != null) {
                             pathCtrl.text = path;
@@ -161,11 +180,17 @@ class _ModelHubWorkspaceViewState extends State<ModelHubWorkspaceView> {
                 if (primary.isEmpty) {
                   return;
                 }
-                await deps.modelHubController.loadCustomModel(
-                  pathOrUrl: primary,
-                  mmprojPathOrUrl: mmproj.isEmpty ? null : mmproj,
+                final load = runModelLoadAction(
+                  context,
+                  () => deps.modelHubController.loadCustomModel(
+                    pathOrUrl: primary,
+                    mmprojPathOrUrl: mmproj.isEmpty ? null : mmproj,
+                  ),
                 );
-                deps.shellController.selectWorkspace(StudioWorkspace.chat);
+                await deps.shellController.selectWorkspace(
+                  StudioWorkspace.chat,
+                );
+                await load;
               },
               child: const Text('Load Model'),
             ),

@@ -57,8 +57,10 @@ class _NotebookWorkspaceViewState extends State<NotebookWorkspaceView> {
 
   String? _syncedNoteId;
   bool _noteDirty = false;
-  int _noteEditRevision = 0;
-  Future<void> _noteSaveQueue = Future<void>.value();
+  Uint8List? _pendingRecordingBytes;
+  String? _pendingRecordingPath;
+  int? _pendingRecordingDurationMs;
+  Future<void>? _micOperation;
   bool _isRecordingMic = false;
   String? _playingNoteId;
   int _playbackSequence = 0;
@@ -91,14 +93,16 @@ class _NotebookWorkspaceViewState extends State<NotebookWorkspaceView> {
   void didChangeDependencies() {
     super.didChangeDependencies();
     _deps = StudioScope.of(context);
+    _deps!.shellController.registerWorkspaceExitGuard(
+      this,
+      _prepareWorkspaceExit,
+    );
   }
 
   @override
   void dispose() {
     _autoSaveTimer?.cancel();
-    if (_noteDirty && _deps != null) {
-      unawaited(_saveCurrentNote(_deps!, updateUi: false));
-    }
+    _deps?.shellController.clearWorkspaceExitGuard(this);
     _searchCtrl.dispose();
     _titleCtrl.dispose();
     _tagsCtrl.dispose();
@@ -157,19 +161,10 @@ class _NotebookWorkspaceViewState extends State<NotebookWorkspaceView> {
     return _cachedImageKey == key ? _cachedImageBytes : null;
   }
 
-  static List<String> _parseCsvTags(String raw) {
-    return raw
-        .split(',')
-        .map((String t) => t.trim())
-        .where((String t) => t.isNotEmpty)
-        .toSet()
-        .toList(growable: false);
-  }
-
   void _markNoteDirty(StudioDependencies deps) {
     final wasDirty = _noteDirty;
-    _noteEditRevision++;
     _noteDirty = true;
+    _retainCurrentDraft(deps);
     if (!wasDirty && mounted) {
       setState(() {});
     }
@@ -197,11 +192,12 @@ class _NotebookWorkspaceViewState extends State<NotebookWorkspaceView> {
     if (_syncedNoteId != selected.id) {
       _autoSaveTimer?.cancel();
       _syncedNoteId = selected.id;
-      _noteDirty = false;
-      _titleCtrl.text = selected.title;
-      _tagsCtrl.text = selected.tags.join(', ');
-      _bodyCtrl.text = selected.content;
-      _transcriptCtrl.text = selected.transcript ?? '';
+      final draft = _deps?.notebookController.state.drafts[selected.id];
+      _noteDirty = draft != null;
+      _titleCtrl.text = draft?.title ?? selected.title;
+      _tagsCtrl.text = draft?.tags ?? selected.tags.join(', ');
+      _bodyCtrl.text = draft?.content ?? selected.content;
+      _transcriptCtrl.text = draft?.transcript ?? selected.transcript ?? '';
     } else if (!_noteDirty) {
       if (_titleCtrl.text != selected.title) {
         _titleCtrl.text = selected.title;
@@ -220,120 +216,155 @@ class _NotebookWorkspaceViewState extends State<NotebookWorkspaceView> {
     }
   }
 
-  Future<void> _saveCurrentNote(
-    StudioDependencies deps, {
-    bool updateUi = true,
-  }) async {
+  void _retainCurrentDraft(StudioDependencies deps) {
+    final id = _syncedNoteId;
+    if (id == null) return;
+    deps.notebookController.retainDraft(
+      id,
+      NotebookDraft(
+        title: _titleCtrl.text,
+        content: _bodyCtrl.text,
+        tags: _tagsCtrl.text,
+        transcript: _transcriptCtrl.text,
+      ),
+    );
+  }
+
+  Future<bool> _saveCurrentNote(StudioDependencies deps) async {
     _autoSaveTimer?.cancel();
-    final targetId =
-        _syncedNoteId ?? deps.notebookController.state.selectedNote?.id;
-    if (targetId == null || !_noteDirty) {
-      return;
+    final targetId = _syncedNoteId;
+    if (targetId == null || !_noteDirty) return true;
+    final succeeded = await deps.notebookController.saveDraft(targetId);
+    if (mounted && _syncedNoteId == targetId) {
+      setState(() {
+        _noteDirty = deps.notebookController.state.drafts.containsKey(targetId);
+      });
+      // Preserve edits made while storage was writing the previous revision.
+      if (succeeded && _noteDirty) return _saveCurrentNote(deps);
     }
-    final revision = _noteEditRevision;
-    final title = _titleCtrl.text.trim().isEmpty
-        ? 'Untitled Note'
-        : _titleCtrl.text.trim();
-    final content = _bodyCtrl.text;
-    final tags = _parseCsvTags(_tagsCtrl.text);
-    final transcript = _transcriptCtrl.text.trim();
-    // Keep the draft protected from store snapshots until its write completes.
-    // Serialize writes so an older save cannot overwrite a newer edit.
-    _noteSaveQueue = _noteSaveQueue.catchError((Object _) {}).then((_) async {
-      await deps.notebookController.updateNote(
-        targetId,
-        title: title,
-        content: content,
-        tags: tags,
-        transcript: transcript.isEmpty ? null : transcript,
-        clearTranscript: transcript.isEmpty,
-      );
-      if (_syncedNoteId == targetId && _noteEditRevision == revision) {
-        _noteDirty = false;
-        if (updateUi && mounted) {
-          setState(() {});
+    return succeeded;
+  }
+
+  Future<bool> _prepareWorkspaceExit() async {
+    final deps = _deps!;
+    try {
+      await _micOperation;
+      if (_isRecordingMic ||
+          _pendingRecordingPath != null ||
+          _pendingRecordingBytes != null) {
+        await _runMicOperation(() => _finishRecording(deps));
+      }
+      if (!await _saveCurrentNote(deps)) return false;
+      for (final id in deps.notebookController.state.drafts.keys.toList()) {
+        if (!await deps.notebookController.saveDraft(id)) {
+          deps.notebookController.selectNote(id);
+          return false;
         }
       }
-    });
-    await _noteSaveQueue;
-    // A source switch must also persist edits made while its save was pending.
-    if (mounted &&
-        _syncedNoteId == targetId &&
-        _noteDirty &&
-        _noteEditRevision != revision) {
-      await _saveCurrentNote(deps, updateUi: updateUi);
+      return true;
+    } catch (error) {
+      _showCaptureError(error);
+      return false;
     }
   }
 
-  Future<void> _toggleMicRecording(StudioDependencies deps) async {
+  void _showCaptureError(Object error) {
+    if (!mounted) return;
+    final hasRecording =
+        _isRecordingMic ||
+        _pendingRecordingPath != null ||
+        _pendingRecordingBytes != null;
+    final message = hasRecording
+        ? 'Could not finish recording. Retry before leaving.'
+        : 'Could not start recording.';
+    ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+      SnackBar(content: Text('$message ${humanizeStudioError(error)}')),
+    );
+  }
+
+  Future<void> _finishRecording(StudioDependencies deps) async {
     if (_isRecordingMic) {
-      final recordedPath = await _recorder.stop();
+      final path = await _recorder.stop();
       _recordingWatch.stop();
-      final durationMs = _recordingWatch.elapsedMilliseconds;
+      _pendingRecordingDurationMs = _recordingWatch.elapsedMilliseconds;
       _recordingWatch.reset();
-      if (mounted) {
-        setState(() => _isRecordingMic = false);
+      if (path == null || path.isEmpty) {
+        throw StateError('The recorder did not return a WAV file.');
       }
-      if (recordedPath == null || recordedPath.isEmpty) {
-        return;
-      }
+      _pendingRecordingPath = path;
+      if (mounted) setState(() => _isRecordingMic = false);
+    }
+    if (_pendingRecordingBytes == null && _pendingRecordingPath != null) {
       final bytes = await StudioPlatformFileHelper.readBytesFromPath(
-        recordedPath,
+        _pendingRecordingPath!,
       );
       if (bytes == null || bytes.isEmpty) {
-        return;
+        throw StateError('The recorded WAV file could not be read.');
       }
-      await _saveCurrentNote(deps);
-      final now = DateTime.now();
-      final hh = now.hour.toString().padLeft(2, '0');
-      final mm = now.minute.toString().padLeft(2, '0');
-      final created = await deps.notebookController.createNote(
-        title: 'Voice Memo ($hh:$mm)',
-        content: '',
-        tags: const <String>['voice', 'recording'],
-        sourceKind: StudioNoteSourceKind.audio,
-        sourceFileName: 'voice_memo_$hh$mm.wav',
-        audioWavBytes: bytes,
-        audioDurationMs: durationMs > 0 ? durationMs : null,
-      );
-      if (mounted) {
-        ScaffoldMessenger.maybeOf(context)?.showSnackBar(
-          SnackBar(
-            content: Text(
-              'Captured "${created.title}" (${(bytes.length / 1024).toStringAsFixed(0)} KB WAV)',
-            ),
-          ),
-        );
+      _pendingRecordingBytes = bytes;
+    }
+    final bytes = _pendingRecordingBytes;
+    if (bytes == null) return;
+    if (!await _saveCurrentNote(deps)) {
+      throw StateError('Save the current note before saving the recording.');
+    }
+    final now = DateTime.now();
+    final hh = now.hour.toString().padLeft(2, '0');
+    final mm = now.minute.toString().padLeft(2, '0');
+    await deps.notebookController.createNote(
+      title: 'Voice Memo ($hh:$mm)',
+      content: '',
+      tags: const <String>['voice', 'recording'],
+      sourceKind: StudioNoteSourceKind.audio,
+      sourceFileName: 'voice_memo_$hh$mm.wav',
+      audioWavBytes: bytes,
+      audioDurationMs: _pendingRecordingDurationMs,
+    );
+    _pendingRecordingBytes = null;
+    _pendingRecordingPath = null;
+    _pendingRecordingDurationMs = null;
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _runMicOperation(Future<void> Function() action) {
+    final pending = _micOperation;
+    if (pending != null) return pending;
+    late final Future<void> operation;
+    operation = Future<void>.sync(action).whenComplete(() {
+      if (identical(_micOperation, operation)) {
+        _micOperation = null;
+        if (mounted) setState(() {});
       }
+    });
+    _micOperation = operation;
+    if (mounted) setState(() {});
+    return operation;
+  }
+
+  Future<void> _toggleMicRecording(StudioDependencies deps) async {
+    try {
+      await _runMicOperation(() => _changeMicRecording(deps));
+    } catch (error) {
+      _showCaptureError(error);
+    }
+  }
+
+  Future<void> _changeMicRecording(StudioDependencies deps) async {
+    if (_isRecordingMic ||
+        _pendingRecordingPath != null ||
+        _pendingRecordingBytes != null) {
+      await _finishRecording(deps);
       return;
     }
-
     if (deps.isWeb) {
-      if (mounted) {
-        ScaffoldMessenger.maybeOf(context)?.showSnackBar(
-          const SnackBar(
-            content: Text(
-              'Live microphone WAV capture is available on native apps.',
-            ),
-          ),
-        );
-      }
-      return;
+      throw StateError(
+        'Live microphone WAV capture is available on native apps.',
+      );
     }
-
     if (!await _recorder.hasPermission()) {
-      if (mounted) {
-        ScaffoldMessenger.maybeOf(context)?.showSnackBar(
-          const SnackBar(content: Text('Microphone permission denied')),
-        );
-      }
-      return;
+      throw StateError('Microphone permission denied.');
     }
-
     final tempPath = await StudioPlatformFileHelper.createTempRecordingPath();
-    _recordingWatch
-      ..reset()
-      ..start();
     await _recorder.start(
       const RecordConfig(
         encoder: AudioEncoder.wav,
@@ -343,9 +374,10 @@ class _NotebookWorkspaceViewState extends State<NotebookWorkspaceView> {
       ),
       path: tempPath,
     );
-    if (mounted) {
-      setState(() => _isRecordingMic = true);
-    }
+    _recordingWatch
+      ..reset()
+      ..start();
+    if (mounted) setState(() => _isRecordingMic = true);
   }
 
   Future<void> _importImageNote(StudioDependencies deps) async {
@@ -367,7 +399,7 @@ class _NotebookWorkspaceViewState extends State<NotebookWorkspaceView> {
     }
     final lower = file.name.toLowerCase();
     final mime = lower.endsWith('.png') ? 'image/png' : 'image/jpeg';
-    await _saveCurrentNote(deps);
+    if (!await _saveCurrentNote(deps)) return;
     await deps.notebookController.createNote(
       title: file.name.replaceAll(RegExp(r'\.[^.]+$'), ''),
       content: 'Visual reference imported from ${file.name}.',
@@ -404,7 +436,7 @@ class _NotebookWorkspaceViewState extends State<NotebookWorkspaceView> {
     if (bytes == null || bytes.isEmpty) {
       return;
     }
-    await _saveCurrentNote(deps);
+    if (!await _saveCurrentNote(deps)) return;
     final lower = file.name.toLowerCase();
     if (lower.endsWith('.wav')) {
       await deps.notebookController.createNote(
@@ -498,12 +530,12 @@ class _NotebookWorkspaceViewState extends State<NotebookWorkspaceView> {
   }
 
   Future<void> _sendVaultToChat(StudioDependencies deps) async {
-    await _saveCurrentNote(deps);
+    if (!await _saveCurrentNote(deps)) return;
     final ragPrompt = deps.notebookController.buildRagChatPrompt(
       _searchCtrl.text,
     );
     deps.chatController.setComposerDraft(ragPrompt);
-    deps.shellController.selectWorkspace(StudioWorkspace.chat);
+    await deps.shellController.selectWorkspace(StudioWorkspace.chat);
   }
 
   static IconData _iconForKind(StudioNoteSourceKind kind) => switch (kind) {

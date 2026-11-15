@@ -103,7 +103,7 @@ void main() {
 
         // Cycle every workspace.
         for (final ws in StudioWorkspace.values) {
-          deps.shellController.selectWorkspace(ws);
+          await deps.shellController.selectWorkspace(ws);
           await tester.pumpAndSettle();
 
           if (ws == StudioWorkspace.playground) {
@@ -134,7 +134,7 @@ void main() {
         }
 
         // Open MCP & Skills modal from Coding workspace at this viewport size.
-        deps.shellController.selectWorkspace(StudioWorkspace.coding);
+        await deps.shellController.selectWorkspace(StudioWorkspace.coding);
         await tester.pumpAndSettle();
         if (find
             .byKey(const Key('coding_open_mcp_button'))
@@ -188,7 +188,7 @@ void main() {
         await tester.pumpAndSettle();
 
         // Verify Model Hub Custom Path dialog & Cache Sheet at narrowest/widest.
-        deps.shellController.selectWorkspace(StudioWorkspace.models);
+        await deps.shellController.selectWorkspace(StudioWorkspace.models);
         await tester.pumpAndSettle();
         await tester.tap(find.byKey(const Key('open_custom_model_button')));
         await tester.pumpAndSettle();

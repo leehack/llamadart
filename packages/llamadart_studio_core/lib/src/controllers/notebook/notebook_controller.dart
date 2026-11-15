@@ -21,6 +21,7 @@ import '../../services/studio_error_formatter.dart';
 import '../lab_model_coordinator.dart';
 
 part 'notebook_state.dart';
+part 'notebook_draft.dart';
 part 'notebook_rag_workflows.dart';
 
 /// Coordinates Studio's Multimodal Notebook (`StudioWorkspace.notes`) and
@@ -189,6 +190,68 @@ class NotebookController {
   /// searches.
   void setRerankVaultHits(bool enabled) {
     _store.update((NotebookState s) => s.copyWith(rerankVaultHits: enabled));
+  }
+
+  Future<void> _draftSaveQueue = Future<void>.value();
+
+  /// Retains editor text independently of the mounted Notes view.
+  void retainDraft(String noteId, NotebookDraft draft) {
+    _store.update(
+      (NotebookState s) => s.copyWith(
+        drafts: <String, NotebookDraft>{...s.drafts, noteId: draft},
+        draftSaveErrors: <String, String>{...s.draftSaveErrors}..remove(noteId),
+      ),
+    );
+  }
+
+  /// Saves retained edits in order and keeps failed or newer edits for retry.
+  Future<bool> saveDraft(String noteId) async {
+    var succeeded = true;
+    final operation = _draftSaveQueue.then((_) async {
+      final draft = state.drafts[noteId];
+      if (draft == null) return;
+      try {
+        await updateNote(
+          noteId,
+          title: draft.title.trim().isEmpty
+              ? 'Untitled Note'
+              : draft.title.trim(),
+          content: draft.content,
+          tags: draft.tags
+              .split(',')
+              .map((String tag) => tag.trim())
+              .where((String tag) => tag.isNotEmpty)
+              .toSet()
+              .toList(),
+          transcript: draft.transcript.trim().isEmpty
+              ? null
+              : draft.transcript.trim(),
+          clearTranscript: draft.transcript.trim().isEmpty,
+        );
+        if (identical(state.drafts[noteId], draft)) {
+          _store.update(
+            (NotebookState s) => s.copyWith(
+              drafts: <String, NotebookDraft>{...s.drafts}..remove(noteId),
+              draftSaveErrors: <String, String>{...s.draftSaveErrors}
+                ..remove(noteId),
+            ),
+          );
+        }
+      } catch (error) {
+        succeeded = false;
+        _store.update(
+          (NotebookState s) => s.copyWith(
+            draftSaveErrors: <String, String>{
+              ...s.draftSaveErrors,
+              noteId: humanizeStudioError(error),
+            },
+          ),
+        );
+      }
+    });
+    _draftSaveQueue = operation;
+    await operation;
+    return succeeded;
   }
 
   /// Creates a new note in the Multimodal Notebook and selects it.

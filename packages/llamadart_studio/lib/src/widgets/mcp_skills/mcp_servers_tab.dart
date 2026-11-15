@@ -150,7 +150,7 @@ class _McpServersTabState extends State<_McpServersTab> {
       final snippet =
           'Context from MCP server "${server.config.name}" (${resource.uri}):\n\n$text';
       deps.chatController.setComposerDraft(snippet);
-      deps.shellController.selectWorkspace(StudioWorkspace.chat);
+      await deps.shellController.selectWorkspace(StudioWorkspace.chat);
       if (mounted) {
         Navigator.of(context).pop();
       }

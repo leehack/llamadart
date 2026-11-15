@@ -209,6 +209,7 @@ class _HuggingFaceRepoTile extends StatelessWidget {
     required this.hit,
     required this.canActivate,
     required this.isExpanded,
+    required this.isLoading,
     required this.files,
     required this.onTapRepo,
     required this.onActivateFile,
@@ -217,6 +218,7 @@ class _HuggingFaceRepoTile extends StatelessWidget {
   final HuggingFaceRepoHit hit;
   final bool canActivate;
   final bool isExpanded;
+  final bool isLoading;
   final List<StudioModelDescriptor> files;
   final VoidCallback onTapRepo;
   final ValueChanged<StudioModelDescriptor> onActivateFile;
@@ -263,7 +265,15 @@ class _HuggingFaceRepoTile extends StatelessWidget {
             if (isExpanded)
               Padding(
                 padding: const EdgeInsets.fromLTRB(14, 0, 14, 12),
-                child: files.isEmpty
+                child: isLoading
+                    ? const Center(
+                        child: SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        ),
+                      )
+                    : files.isEmpty
                     ? Text(
                         'No standalone .gguf or .litertlm files found in main.',
                         style: TextStyle(

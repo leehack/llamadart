@@ -74,7 +74,7 @@ void main() {
       await tester.pumpWidget(LlamadartStudioApp(dependencies: deps));
       await tester.pumpAndSettle();
 
-      deps.shellController.selectWorkspace(StudioWorkspace.playground);
+      await deps.shellController.selectWorkspace(StudioWorkspace.playground);
       deps.playgroundController.selectTab(PlaygroundToolTab.reranker);
       await tester.pumpAndSettle();
 
@@ -345,7 +345,7 @@ void main() {
       await tester.pumpWidget(LlamadartStudioApp(dependencies: deps));
       await tester.pumpAndSettle();
 
-      deps.shellController.selectWorkspace(StudioWorkspace.playground);
+      await deps.shellController.selectWorkspace(StudioWorkspace.playground);
       deps.playgroundController.selectTab(PlaygroundToolTab.decision);
       await tester.pumpAndSettle();
 
@@ -684,7 +684,7 @@ void main() {
       await tester.pumpAndSettle();
 
       if (!kIsWeb && repoPath != null) {
-        deps.shellController.selectWorkspace(StudioWorkspace.coding);
+        await deps.shellController.selectWorkspace(StudioWorkspace.coding);
         await tester.pumpAndSettle();
 
         expect(
@@ -701,7 +701,7 @@ void main() {
       }
 
       // Notebook auto-saves edited content after 600ms debounce without manual Save tap.
-      deps.shellController.selectWorkspace(StudioWorkspace.notes);
+      await deps.shellController.selectWorkspace(StudioWorkspace.notes);
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(const Key('vault_new_note_button')));
       await tester.pumpAndSettle();

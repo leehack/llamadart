@@ -85,7 +85,7 @@ void main() {
       addTearDown(deps.dispose);
       await tester.pumpWidget(LlamadartStudioApp(dependencies: deps));
       await tester.pumpAndSettle();
-      deps.shellController.selectWorkspace(StudioWorkspace.models);
+      await deps.shellController.selectWorkspace(StudioWorkspace.models);
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(const Key('open_cache_sheet_button')));
       await tester.pumpAndSettle();
@@ -131,7 +131,7 @@ void main() {
     addTearDown(deps.dispose);
     await tester.pumpWidget(LlamadartStudioApp(dependencies: deps));
     await tester.pumpAndSettle();
-    deps.shellController.selectWorkspace(StudioWorkspace.models);
+    await deps.shellController.selectWorkspace(StudioWorkspace.models);
     await tester.pumpAndSettle();
     await tester.ensureVisible(
       find.byKey(const Key('open_cache_sheet_button')),

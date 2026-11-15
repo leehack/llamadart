@@ -16,6 +16,7 @@ import '../../app/studio_theme.dart';
 import '../../widgets/command_palette_modal.dart';
 import '../../widgets/download_activity_bar.dart';
 import '../../widgets/inspector/session_inspector_panel.dart';
+import '../../widgets/model_load_error_banner.dart';
 import '../../widgets/store_widgets.dart';
 import '../../widgets/studio_motion.dart';
 import '../chat/chat_workspace_view.dart';
@@ -56,6 +57,9 @@ class _StudioShellScreenState extends State<StudioShellScreen> {
     _lifecycleListener ??= AppLifecycleListener(
       onExitRequested: () async {
         final deps = StudioScope.of(context);
+        if (!await deps.shellController.prepareWorkspaceExit()) {
+          return AppExitResponse.cancel;
+        }
         await deps.lifecycleCoordinator.shutdownAll();
         return AppExitResponse.exit;
       },
@@ -362,7 +366,7 @@ class _StudioShellScreenState extends State<StudioShellScreen> {
                       Builder(
                         builder: (BuildContext context) {
                           final inspectorPanel =
-                              shellState.settings.inspectorOpen
+                              shellState.inspectorVisible
                               ? SizedBox(
                                   width: 334,
                                   child: SessionInspectorPanel(

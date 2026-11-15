@@ -11,6 +11,7 @@ import '../../app/studio_theme.dart';
 import '../../widgets/code_syntax_highlighter.dart';
 import '../../widgets/store_widgets.dart';
 import '../../widgets/studio_motion.dart';
+import '../../widgets/studio_selectable_text.dart';
 
 part 'message_turn_widgets.dart';
 

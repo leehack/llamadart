@@ -182,7 +182,7 @@ class DirectLlamaInferencePort
           phase: StudioEnginePhase.loading,
           activeDescriptor: descriptor,
           activeModelLabel: descriptor.name,
-          loadProgressFraction: 0.0,
+          clearLoadProgress: true,
           statusMessage: 'Initializing ${descriptor.name}...',
           clearErrorMessage: true,
         ),
@@ -221,7 +221,12 @@ class DirectLlamaInferencePort
             _runtimeStore.update(
               (StudioRuntimeSnapshot s) => s.copyWith(
                 loadProgressFraction: progress.fraction,
-                statusMessage: 'Loading weights into runtime...',
+                clearLoadProgress:
+                    progress.fraction == null || progress.fraction! >= 1,
+                statusMessage:
+                    progress.fraction != null && progress.fraction! >= 1
+                    ? 'Initializing runtime weights...'
+                    : 'Downloading runtime model files...',
               ),
             );
           },

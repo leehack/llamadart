@@ -119,7 +119,7 @@ class _ThinkingDisclosureCardState extends State<_ThinkingDisclosureCard> {
                               fontFamilyFallback: StudioTheme.monoFontFallback,
                             ),
                           )
-                        : SelectableText(
+                        : StudioSelectableText(
                             widget.thinkingText,
                             style: TextStyle(
                               fontSize: 12,
@@ -376,15 +376,15 @@ class _MarkdownMessageBody extends StatelessWidget {
   Widget build(BuildContext context) {
     final palette = StudioPalette.of(context);
     if (isError) {
-      return SelectableText(
+      return StudioSelectableText(
         text,
         style: TextStyle(fontSize: 13, color: palette.danger, height: 1.45),
       );
     }
 
-    return MarkdownBody(
+    final markdown = MarkdownBody(
       data: text,
-      selectable: !isStreaming,
+      selectable: false,
       syntaxHighlighter: StudioMarkdownSyntaxHighlighter(
         palette: palette,
         brightness: Theme.of(context).brightness,
@@ -404,6 +404,7 @@ class _MarkdownMessageBody extends StatelessWidget {
         ),
       ),
     );
+    return isStreaming ? markdown : SelectionArea(child: markdown);
   }
 }
 

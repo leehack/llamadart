@@ -86,116 +86,134 @@ extension _CodingAgentChatPane on _CodingWorkspaceViewState {
                 ),
         ),
         if (codingState.pendingShellApproval != null)
-          _PendingBashApprovalBanner(
-            approval: codingState.pendingShellApproval!,
-            onApprove: () =>
-                deps.codingController.resolveShellCommandApproval(true),
-            onReject: () =>
-                deps.codingController.resolveShellCommandApproval(false),
-          ),
-        Container(
-          padding: const EdgeInsets.fromLTRB(16, 8, 16, 14),
-          child: Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: palette.surfaceElevated,
-              borderRadius: BorderRadius.circular(14),
-              border: Border.all(color: palette.borderStrong),
+          Expanded(
+            child: SingleChildScrollView(
+              key: const Key('coding_approval_scroll'),
+              child: _PendingBashApprovalBanner(
+                approval: codingState.pendingShellApproval!,
+                onApprove: () =>
+                    deps.codingController.resolveShellCommandApproval(true),
+                onReject: () =>
+                    deps.codingController.resolveShellCommandApproval(false),
+              ),
             ),
-            child: StoreSelector<ActiveTurnStreamState, bool>(
-              store: deps.codingController.activeStreamStore,
-              selector: (ActiveTurnStreamState s) => s.isGenerating,
-              builder: (BuildContext context, bool isGenerating) {
-                return Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: <Widget>[
-                    TextField(
-                      key: const Key('coding_prompt_input'),
-                      controller: _promptCtrl,
-                      focusNode: _promptFocusNode,
-                      minLines: 1,
-                      maxLines: 6,
-                      decoration: const InputDecoration(
-                        hintText: 'Describe a change or ask about your code…',
-                        filled: false,
-                        border: InputBorder.none,
-                        enabledBorder: InputBorder.none,
-                        focusedBorder: InputBorder.none,
-                      ),
-                    ),
-                    const SizedBox(height: 6),
-                    Row(
-                      children: <Widget>[
-                        Expanded(
-                          child: SingleChildScrollView(
-                            scrollDirection: Axis.horizontal,
-                            child: Row(
-                              children: <Widget>[
-                                if (codingState.selectedFileSlice != null &&
-                                    codingState.includeSelectedFileContext)
-                                  Padding(
-                                    padding: const EdgeInsets.only(right: 6),
-                                    child: StudioPillBadge(
-                                      label:
-                                          'Context: ${codingState.selectedFileSlice!.relativePath}',
-                                      foreground: palette.accent,
-                                      monospace: true,
-                                    ),
-                                  ),
-                                if (mcpState.activeTools.isNotEmpty)
-                                  Padding(
-                                    padding: const EdgeInsets.only(right: 6),
-                                    child: StudioPillBadge(
-                                      label:
-                                          '${mcpState.activeTools.length} MCP tools',
-                                      foreground: palette.teal,
-                                      monospace: true,
-                                    ),
-                                  ),
-                                if (skillState.activeSkills.isNotEmpty)
-                                  StudioPillBadge(
-                                    label:
-                                        '${skillState.activeSkills.length} skills',
-                                    foreground: palette.amber,
-                                    monospace: true,
-                                  ),
-                              ],
+          )
+        else
+          Flexible(
+            child: SingleChildScrollView(
+              child: Container(
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 14),
+                child: Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: palette.surfaceElevated,
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: palette.borderStrong),
+                  ),
+                  child: StoreSelector<ActiveTurnStreamState, bool>(
+                    store: deps.codingController.activeStreamStore,
+                    selector: (ActiveTurnStreamState s) => s.isGenerating,
+                    builder: (BuildContext context, bool isGenerating) {
+                      return Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: <Widget>[
+                          TextField(
+                            key: const Key('coding_prompt_input'),
+                            controller: _promptCtrl,
+                            focusNode: _promptFocusNode,
+                            minLines: 1,
+                            maxLines: 6,
+                            decoration: const InputDecoration(
+                              hintText:
+                                  'Describe a change or ask about your code…',
+                              filled: false,
+                              border: InputBorder.none,
+                              enabledBorder: InputBorder.none,
+                              focusedBorder: InputBorder.none,
                             ),
                           ),
-                        ),
-                        const SizedBox(width: 8),
-                        if (isGenerating)
-                          FilledButton.tonalIcon(
-                            key: const Key('coding_stop_button'),
-                            onPressed: deps.codingController.cancelGeneration,
-                            icon: Icon(
-                              Icons.stop_circle_outlined,
-                              size: 17,
-                              color: palette.danger,
-                            ),
-                            label: Text(
-                              'Stop',
-                              style: TextStyle(color: palette.danger),
-                            ),
-                          )
-                        else
-                          FilledButton.icon(
-                            key: const Key('coding_send_button'),
-                            onPressed: _submitPrompt,
-                            icon: const Icon(
-                              Icons.arrow_upward_rounded,
-                              size: 16,
-                            ),
-                            label: const Text('Run Agent'),
+                          const SizedBox(height: 6),
+                          Row(
+                            children: <Widget>[
+                              Expanded(
+                                child: SingleChildScrollView(
+                                  scrollDirection: Axis.horizontal,
+                                  child: Row(
+                                    children: <Widget>[
+                                      if (codingState.selectedFileSlice !=
+                                              null &&
+                                          codingState
+                                              .includeSelectedFileContext)
+                                        Padding(
+                                          padding: const EdgeInsets.only(
+                                            right: 6,
+                                          ),
+                                          child: StudioPillBadge(
+                                            label:
+                                                'Context: ${codingState.selectedFileSlice!.relativePath}',
+                                            foreground: palette.accent,
+                                            monospace: true,
+                                          ),
+                                        ),
+                                      if (mcpState.activeTools.isNotEmpty)
+                                        Padding(
+                                          padding: const EdgeInsets.only(
+                                            right: 6,
+                                          ),
+                                          child: StudioPillBadge(
+                                            label:
+                                                '${mcpState.activeTools.length} MCP tools',
+                                            foreground: palette.teal,
+                                            monospace: true,
+                                          ),
+                                        ),
+                                      if (skillState.activeSkills.isNotEmpty)
+                                        StudioPillBadge(
+                                          label:
+                                              '${skillState.activeSkills.length} skills',
+                                          foreground: palette.amber,
+                                          monospace: true,
+                                        ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              if (isGenerating)
+                                FilledButton.tonalIcon(
+                                  key: const Key('coding_stop_button'),
+                                  onPressed:
+                                      deps.codingController.cancelGeneration,
+                                  icon: Icon(
+                                    Icons.stop_circle_outlined,
+                                    size: 17,
+                                    color: palette.danger,
+                                  ),
+                                  label: Text(
+                                    'Stop',
+                                    style: TextStyle(color: palette.danger),
+                                  ),
+                                )
+                              else
+                                FilledButton.icon(
+                                  key: const Key('coding_send_button'),
+                                  onPressed: _submitPrompt,
+                                  icon: const Icon(
+                                    Icons.arrow_upward_rounded,
+                                    size: 16,
+                                  ),
+                                  label: const Text('Run Agent'),
+                                ),
+                            ],
                           ),
-                      ],
-                    ),
-                  ],
-                );
-              },
+                        ],
+                      );
+                    },
+                  ),
+                ),
+              ),
             ),
           ),
-        ),
       ],
     );
   }
@@ -252,12 +270,18 @@ class _PendingBashApprovalBanner extends StatelessWidget {
               borderRadius: BorderRadius.circular(8),
               border: Border.all(color: palette.borderSubtle),
             ),
-            child: SelectableText(
-              approval.command,
-              style: TextStyle(
-                fontSize: 11.5,
-                color: palette.textPrimary,
-                fontFamilyFallback: StudioTheme.monoFontFallback,
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxHeight: 140),
+              child: SingleChildScrollView(
+                key: const Key('coding_approval_command_scroll'),
+                child: StudioSelectableText(
+                  approval.command,
+                  style: TextStyle(
+                    fontSize: 11.5,
+                    color: palette.textPrimary,
+                    fontFamilyFallback: StudioTheme.monoFontFallback,
+                  ),
+                ),
               ),
             ),
           ),
@@ -406,7 +430,7 @@ class _CodingMessageCard extends StatelessWidget {
                   ),
                 ),
                 children: <Widget>[
-                  SelectableText(
+                  StudioSelectableText(
                     message.thinkingText!,
                     style: TextStyle(
                       fontSize: 11.5,
@@ -552,33 +576,35 @@ class _CodingMessageCard extends StatelessWidget {
           ],
           if (message.text.isNotEmpty) ...<Widget>[
             const SizedBox(height: 8),
-            MarkdownBody(
-              data: message.text,
-              selectable: true,
-              syntaxHighlighter: StudioMarkdownSyntaxHighlighter(
-                palette: palette,
-                brightness: Theme.of(context).brightness,
+            SelectionArea(
+              child: MarkdownBody(
+                data: message.text,
+                selectable: false,
+                syntaxHighlighter: StudioMarkdownSyntaxHighlighter(
+                  palette: palette,
+                  brightness: Theme.of(context).brightness,
+                ),
+                styleSheet: MarkdownStyleSheet.fromTheme(Theme.of(context))
+                    .copyWith(
+                      p: TextStyle(
+                        fontSize: 13.5,
+                        height: 1.5,
+                        color: palette.textPrimary,
+                      ),
+                      code: TextStyle(
+                        fontSize: 12,
+                        color: palette.teal,
+                        backgroundColor: palette.canvas,
+                        fontFamilyFallback: StudioTheme.monoFontFallback,
+                      ),
+                      codeblockPadding: const EdgeInsets.all(12),
+                      codeblockDecoration: BoxDecoration(
+                        color: palette.canvas,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: palette.borderSubtle),
+                      ),
+                    ),
               ),
-              styleSheet: MarkdownStyleSheet.fromTheme(Theme.of(context))
-                  .copyWith(
-                    p: TextStyle(
-                      fontSize: 13.5,
-                      height: 1.5,
-                      color: palette.textPrimary,
-                    ),
-                    code: TextStyle(
-                      fontSize: 12,
-                      color: palette.teal,
-                      backgroundColor: palette.canvas,
-                      fontFamilyFallback: StudioTheme.monoFontFallback,
-                    ),
-                    codeblockPadding: const EdgeInsets.all(12),
-                    codeblockDecoration: BoxDecoration(
-                      color: palette.canvas,
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: palette.borderSubtle),
-                    ),
-                  ),
             ),
           ],
         ],

@@ -519,11 +519,14 @@ Future<StudioDependencies> buildTestDeps({
   Map<String, Object>? kvSeed,
   StudioModelStoragePort? storagePort,
   StudioInferencePort? inferencePort,
+  StudioNoteStore? noteStore,
+  StudioSpeechPort? speechPort,
 }) {
   final kv = InMemoryKeyValueStore(kvSeed);
   return StudioDependencies.fromPorts(
     keyValueStore: kv,
     conversationStore: KeyValueConversationStore(kv),
+    noteStore: noteStore,
     mcpManager: McpManager(
       keyValueStore: kv,
       transportBuilder: (_) =>
@@ -531,7 +534,7 @@ Future<StudioDependencies> buildTestDeps({
     ),
     storagePort: storagePort ?? FakeStoragePort(),
     inferencePort: inferencePort ?? FakeInferencePort(),
-    speechPort: FakeSpeechPort(),
+    speechPort: speechPort ?? FakeSpeechPort(),
     imagePort: FakeImagePort(),
     playgroundPort: FakePlaygroundPort(),
   );

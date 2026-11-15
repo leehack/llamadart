@@ -18,7 +18,7 @@ void main() {
     addTearDown(deps.dispose);
     await tester.pumpWidget(LlamadartStudioApp(dependencies: deps));
     await tester.pumpAndSettle();
-    deps.shellController.selectWorkspace(StudioWorkspace.image);
+    await deps.shellController.selectWorkspace(StudioWorkspace.image);
     await tester.pumpAndSettle();
     final prompt = find.byWidgetPredicate(
       (widget) =>
@@ -26,9 +26,9 @@ void main() {
           widget.decoration?.labelText == 'Positive Prompt',
     );
     await tester.enterText(prompt, 'A handwritten draft to keep');
-    deps.shellController.selectWorkspace(StudioWorkspace.chat);
+    await deps.shellController.selectWorkspace(StudioWorkspace.chat);
     await tester.pumpAndSettle();
-    deps.shellController.selectWorkspace(StudioWorkspace.image);
+    await deps.shellController.selectWorkspace(StudioWorkspace.image);
     await tester.pumpAndSettle();
     expect(
       tester.widget<TextField>(prompt).controller!.text,
@@ -45,7 +45,7 @@ void main() {
     addTearDown(deps.dispose);
     await tester.pumpWidget(LlamadartStudioApp(dependencies: deps));
     await tester.pumpAndSettle();
-    deps.shellController.selectWorkspace(StudioWorkspace.image);
+    await deps.shellController.selectWorkspace(StudioWorkspace.image);
     await tester.pumpAndSettle();
     final prompt = find.byWidgetPredicate(
       (widget) =>
@@ -53,10 +53,10 @@ void main() {
           widget.decoration?.labelText == 'Positive Prompt',
     );
     await tester.enterText(prompt, 'Rapid navigation draft');
-    deps.shellController.selectWorkspace(StudioWorkspace.chat);
+    await deps.shellController.selectWorkspace(StudioWorkspace.chat);
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 50));
-    deps.shellController.selectWorkspace(StudioWorkspace.image);
+    await deps.shellController.selectWorkspace(StudioWorkspace.image);
     await tester.pumpAndSettle();
     expect(
       tester.widget<TextField>(prompt).controller!.text,
@@ -75,7 +75,7 @@ void main() {
       addTearDown(deps.dispose);
       await tester.pumpWidget(LlamadartStudioApp(dependencies: deps));
       await tester.pumpAndSettle();
-      deps.shellController.selectWorkspace(workspace);
+      await deps.shellController.selectWorkspace(workspace);
       await tester.pumpAndSettle();
       final label = workspace == StudioWorkspace.speech
           ? 'Text to Synthesize'
@@ -85,9 +85,9 @@ void main() {
             widget is TextField && widget.decoration?.labelText == label,
       );
       await tester.enterText(field, 'Keep this unfinished draft');
-      deps.shellController.selectWorkspace(StudioWorkspace.chat);
+      await deps.shellController.selectWorkspace(StudioWorkspace.chat);
       await tester.pumpAndSettle();
-      deps.shellController.selectWorkspace(workspace);
+      await deps.shellController.selectWorkspace(workspace);
       await tester.pumpAndSettle();
       expect(
         tester.widget<TextField>(field).controller!.text,

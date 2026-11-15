@@ -46,128 +46,139 @@ class ModelLoadProgressBanner extends StatelessWidget {
     final deps = StudioScope.of(context);
     final palette = StudioPalette.of(context);
 
-    return StoreBuilder<ModelHubState>(
-      store: deps.modelHubController.store,
-      builder: (BuildContext context, ModelHubState hubState) {
-        final progress = hubState.downloadsByModelId[descriptor.id];
-        final isDownloading = progress != null && progress.isActive;
-        final fraction = isDownloading
-            ? progress.fraction?.clamp(0.0, 1.0)
-            : null;
-        final accentColor = isDownloading ? palette.accent : palette.teal;
+    return StoreBuilder<StudioRuntimeSnapshot>(
+      store: deps.modelHubController.runtimeStore,
+      builder: (context, runtime) => StoreBuilder<ModelHubState>(
+        store: deps.modelHubController.store,
+        builder: (BuildContext context, ModelHubState hubState) {
+          final progress = hubState.downloadsByModelId[descriptor.id];
+          final isDownloading = progress != null && progress.isActive;
+          final runtimeLoading =
+              runtime.isLoading &&
+              runtime.activeDescriptor?.id == descriptor.id;
+          final fraction = isDownloading
+              ? progress.fraction?.clamp(0.0, 1.0)
+              : runtimeLoading
+              ? runtime.loadProgressFraction?.clamp(0.0, 1.0)
+              : null;
+          final accentColor = isDownloading ? palette.accent : palette.teal;
 
-        final String title = isDownloading
-            ? 'Downloading ${descriptor.name}'
-            : preparing
-            ? 'Preparing ${descriptor.name}...'
-            : 'Loading ${descriptor.name} into memory...';
+          final String title = isDownloading
+              ? 'Downloading ${descriptor.name}'
+              : preparing
+              ? 'Preparing ${descriptor.name}...'
+              : 'Loading ${descriptor.name} into memory...';
 
-        String? detail;
-        if (isDownloading) {
-          if (progress.totalBytes > 0) {
-            detail =
-                '${_formatMegabytes(progress.receivedBytes)} / '
-                '${_formatMegabytes(progress.totalBytes)}';
-          } else if (progress.receivedBytes > 0) {
-            detail = _formatMegabytes(progress.receivedBytes);
+          String? detail;
+          if (isDownloading) {
+            if (progress.totalBytes > 0) {
+              detail =
+                  '${_formatMegabytes(progress.receivedBytes)} / '
+                  '${_formatMegabytes(progress.totalBytes)}';
+            } else if (progress.receivedBytes > 0) {
+              detail = _formatMegabytes(progress.receivedBytes);
+            }
+            if (progress.statusLabel != null &&
+                progress.statusLabel!.trim().isNotEmpty) {
+              detail = detail == null
+                  ? progress.statusLabel!
+                  : '$detail · ${progress.statusLabel!}';
+            }
+          } else {
+            detail = runtimeLoading && runtime.statusMessage != null
+                ? runtime.statusMessage
+                : preparing
+                ? 'Checking model files before initialization'
+                : 'Initializing runtime weights (${descriptor.sizeLabel(isWeb: deps.isWeb)})';
           }
-          if (progress.statusLabel != null &&
-              progress.statusLabel!.trim().isNotEmpty) {
-            detail = detail == null
-                ? progress.statusLabel!
-                : '$detail · ${progress.statusLabel!}';
-          }
-        } else {
-          detail = preparing
-              ? 'Checking model files before initialization'
-              : 'Initializing runtime weights (${descriptor.sizeLabel(isWeb: deps.isWeb)})';
-        }
 
-        return Container(
-          key: Key('model_load_banner_${descriptor.id}'),
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-          decoration: BoxDecoration(
-            color: accentColor.withValues(alpha: 0.10),
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: accentColor.withValues(alpha: 0.34)),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: <Widget>[
-              Row(
-                children: <Widget>[
-                  StatusPulseDot(color: accentColor, pulsing: true),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: <Widget>[
-                        Text(
-                          title,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            fontSize: 12.5,
-                            fontWeight: FontWeight.w700,
-                            color: palette.textPrimary,
-                          ),
-                        ),
-                        if (detail != null) ...<Widget>[
-                          const SizedBox(height: 2),
+          return Container(
+            key: Key('model_load_banner_${descriptor.id}'),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            decoration: BoxDecoration(
+              color: accentColor.withValues(alpha: 0.10),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: accentColor.withValues(alpha: 0.34)),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Row(
+                  children: <Widget>[
+                    StatusPulseDot(color: accentColor, pulsing: true),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: <Widget>[
                           Text(
-                            detail,
+                            title,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: TextStyle(
-                              fontSize: 11.5,
-                              color: palette.textSecondary,
-                              fontFamilyFallback: StudioTheme.monoFontFallback,
+                              fontSize: 12.5,
+                              fontWeight: FontWeight.w700,
+                              color: palette.textPrimary,
                             ),
                           ),
+                          if (detail != null) ...<Widget>[
+                            const SizedBox(height: 2),
+                            Text(
+                              detail,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontSize: 11.5,
+                                color: palette.textSecondary,
+                                fontFamilyFallback:
+                                    StudioTheme.monoFontFallback,
+                              ),
+                            ),
+                          ],
                         ],
-                      ],
-                    ),
-                  ),
-                  if (fraction != null) ...<Widget>[
-                    const SizedBox(width: 8),
-                    StudioPillBadge(
-                      label: '${(fraction * 100).round()}%',
-                      foreground: accentColor,
-                      monospace: true,
-                    ),
-                  ],
-                  if (isDownloading) ...<Widget>[
-                    const SizedBox(width: 8),
-                    TextButton(
-                      key: Key('cancel_model_download_${descriptor.id}'),
-                      onPressed:
-                          onCancel ??
-                          () => deps.modelHubController.cancelDownload(
-                            descriptor.id,
-                          ),
-                      style: TextButton.styleFrom(
-                        visualDensity: VisualDensity.compact,
-                        foregroundColor: palette.danger,
                       ),
-                      child: const Text('Cancel'),
                     ),
+                    if (fraction != null) ...<Widget>[
+                      const SizedBox(width: 8),
+                      StudioPillBadge(
+                        label: '${(fraction * 100).round()}%',
+                        foreground: accentColor,
+                        monospace: true,
+                      ),
+                    ],
+                    if (isDownloading) ...<Widget>[
+                      const SizedBox(width: 8),
+                      TextButton(
+                        key: Key('cancel_model_download_${descriptor.id}'),
+                        onPressed:
+                            onCancel ??
+                            () => deps.modelHubController.cancelDownload(
+                              descriptor.id,
+                            ),
+                        style: TextButton.styleFrom(
+                          visualDensity: VisualDensity.compact,
+                          foregroundColor: palette.danger,
+                        ),
+                        child: const Text('Cancel'),
+                      ),
+                    ],
                   ],
-                ],
-              ),
-              const SizedBox(height: 8),
-              ClipRRect(
-                borderRadius: BorderRadius.circular(4),
-                child: LinearProgressIndicator(
-                  value: fraction,
-                  minHeight: 5,
-                  color: accentColor,
-                  backgroundColor: palette.borderSubtle,
                 ),
-              ),
-            ],
-          ),
-        );
-      },
+                const SizedBox(height: 8),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(4),
+                  child: LinearProgressIndicator(
+                    value: fraction,
+                    minHeight: 5,
+                    color: accentColor,
+                    backgroundColor: palette.borderSubtle,
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
     );
   }
 }

@@ -42,7 +42,7 @@ extension _NotebookPanels on _NotebookWorkspaceViewState {
                     key: Key('vault_note_item_${note.id}'),
                     borderRadius: BorderRadius.circular(9),
                     onTap: () async {
-                      await _saveCurrentNote(deps);
+                      if (!await _saveCurrentNote(deps)) return;
                       deps.notebookController.selectNote(note.id);
                     },
                     child: Container(
@@ -190,10 +190,19 @@ extension _NotebookPanels on _NotebookWorkspaceViewState {
                 ),
               StudioPillBadge(
                 key: const Key('notebook_save_status_badge'),
-                label: _noteDirty ? 'Auto-saving…' : 'Saved',
+                label: state.draftSaveErrors.containsKey(selectedNote.id)
+                    ? 'Save failed'
+                    : (_noteDirty ? 'Auto-saving…' : 'Saved'),
                 foreground: _noteDirty ? palette.amber : palette.teal,
                 monospace: true,
               ),
+              if (state.draftSaveErrors.containsKey(selectedNote.id))
+                TextButton.icon(
+                  key: const Key('notebook_retry_save_button'),
+                  onPressed: () => _saveCurrentNote(deps),
+                  icon: const Icon(Icons.refresh_rounded, size: 16),
+                  label: const Text('Retry save'),
+                ),
               IconButton(
                 tooltip: selectedNote.pinned ? 'Unpin note' : 'Pin note',
                 onPressed: () => deps.notebookController.updateNote(
@@ -222,6 +231,15 @@ extension _NotebookPanels on _NotebookWorkspaceViewState {
               ),
             ],
           ),
+          if (state.draftSaveErrors[selectedNote.id] case final error?)
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Text(
+                'Could not save: $error. Your draft is kept for retry.',
+                key: const Key('notebook_save_error'),
+                style: TextStyle(color: palette.danger),
+              ),
+            ),
           const SizedBox(height: 8),
           TextField(
             key: const Key('vault_note_title_input'),
@@ -381,7 +399,8 @@ extension _NotebookPanels on _NotebookWorkspaceViewState {
                   key: const Key('vault_save_note_button'),
                   onPressed: () async {
                     _noteDirty = true;
-                    await _saveCurrentNote(deps);
+                    _retainCurrentDraft(deps);
+                    if (!await _saveCurrentNote(deps)) return;
                   },
                   icon: const Icon(Icons.save_outlined, size: 15),
                   label: const Text('Save Note'),
@@ -419,7 +438,7 @@ extension _NotebookPanels on _NotebookWorkspaceViewState {
                       style: const TextStyle(fontSize: 11.5),
                     ),
                     onPressed: () async {
-                      await _saveCurrentNote(deps);
+                      if (!await _saveCurrentNote(deps)) return;
                       deps.notebookController.selectNote(rel.note.id);
                     },
                   ),

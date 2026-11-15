@@ -249,6 +249,7 @@ def expected_jobs(plan, bundle=False):
         **{job: plan['jobs'][fed] for job, fed in SHARD_JOBS.items()},
         'test-linux-coverage': plan['jobs']['test-linux-coverage'] and plan['coverage'],
         'companion-packages': companion_job_selected(plan),
+        'studio-macos': plan['jobs']['studio'],
     }
 
 

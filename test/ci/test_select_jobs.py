@@ -165,6 +165,21 @@ class SelectionTest(unittest.TestCase):
                 self.assertEqual(plan['apps'], [])
                 self.assertEqual(plan['desktops'], [])
 
+    def test_studio_native_regressions_are_required_with_the_studio_lane(self):
+        plan = ci.select(['packages/llamadart_studio/lib/main.dart'])
+        self.assertTrue(ci.expected_jobs(plan)['studio-macos'])
+        needs = {'changes': {'result': 'success'}}
+        needs.update({job: {'result': 'success' if selected else 'skipped'}
+                      for job, selected in ci.expected_jobs(plan).items()})
+        self.assertEqual(ci.aggregate(plan, needs), [])
+        needs['studio-macos']['result'] = 'skipped'
+        self.assertTrue(ci.aggregate(plan, needs))
+        workflow = (ROOT / '.github/workflows/ci.yml').read_text()
+        native = workflow.split('\n  studio-macos:\n', 1)[1].split('\n  genkit:\n', 1)[0]
+        self.assertIn('runs-on: macos-15', native)
+        self.assertIn('macos_static_semantics_test.dart', native)
+        self.assertIn('macos_app_delegate_test.dart', native)
+
     def test_studio_uses_its_own_sdk_pin_without_changing_other_lanes(self):
         workflow = (ROOT / '.github/workflows/ci.yml').read_text()
         studio = workflow.split('\n  studio:\n', 1)[1].split('\n  genkit:\n', 1)[0]

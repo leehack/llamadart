@@ -36,13 +36,13 @@ enum StudioAppearance {
 /// High-level hardware tuning presets surfaced in Simple Inspector mode.
 enum StudioHardwarePreset {
   /// Compact context & quantized KV cache for lower memory footprint & faster response.
-  fast('Fast', '2K ctx · Q8 KV · FlashAttn'),
+  fast('Fast', '2K context · lower memory use'),
 
   /// Auto-tuned GPU layers & context window fitted to free VRAM.
-  balanced('Balanced', 'Auto-tuned VRAM & 4K ctx'),
+  balanced('Balanced', 'Fit available memory · 4K context'),
 
   /// Expanded context window & full F16 KV precision.
-  quality('Max Quality', '16K ctx · F16 KV · FlashAttn');
+  quality('Max Quality', '16K context · higher memory use');
 
   const StudioHardwarePreset(this.label, this.subtitle);
 

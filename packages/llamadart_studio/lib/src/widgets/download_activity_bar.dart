@@ -21,15 +21,34 @@ class _DownloadActivityBarState extends State<DownloadActivityBar> {
   final Map<String, StudioModelDownloadProgress> _dismissed =
       <String, StudioModelDownloadProgress>{};
 
-  List<StudioModelDownloadProgress> _visible(ModelHubState state) => state
-      .downloadsByModelId
-      .values
-      .where(
+  List<StudioModelDownloadProgress> _visible(
+    ModelHubState state,
+    StudioRuntimeSnapshot runtime,
+  ) {
+    final descriptor = runtime.activeDescriptor;
+    final runtimeLoading =
+        StudioScope.of(context).isWeb &&
+        runtime.isLoading &&
+        descriptor != null &&
+        descriptor.primarySource(isWeb: true).isRemote;
+    return <StudioModelDownloadProgress>[
+      ...state.downloadsByModelId.values.where(
         (p) =>
+            (!runtimeLoading || p.modelId != descriptor.id) &&
             p.stage != ModelDownloadTaskStage.idle &&
             (p.isActive || !identical(_dismissed[p.modelId], p)),
-      )
-      .toList();
+      ),
+      if (runtimeLoading)
+        StudioModelDownloadProgress(
+          modelId: descriptor.id,
+          stage: runtime.loadProgressFraction == null
+              ? ModelDownloadTaskStage.resolving
+              : ModelDownloadTaskStage.downloading,
+          fraction: runtime.loadProgressFraction,
+          statusLabel: runtime.statusMessage,
+        ),
+    ];
+  }
 
   String _modelName(ModelHubState state, String id) {
     for (final model in <StudioModelDescriptor>[
@@ -45,7 +64,7 @@ class _DownloadActivityBarState extends State<DownloadActivityBar> {
 
   String _stage(StudioModelDownloadProgress p) => switch (p.stage) {
     ModelDownloadTaskStage.idle => 'Waiting',
-    ModelDownloadTaskStage.resolving => 'Preparing download',
+    ModelDownloadTaskStage.resolving => p.statusLabel ?? 'Preparing download',
     ModelDownloadTaskStage.checkingCache => 'Checking cache',
     ModelDownloadTaskStage.downloading => 'Downloading',
     ModelDownloadTaskStage.verifying => 'Verifying files',
@@ -72,89 +91,93 @@ class _DownloadActivityBarState extends State<DownloadActivityBar> {
       builder: (BuildContext context) => SafeArea(
         child: SizedBox(
           height: MediaQuery.sizeOf(context).height * .65,
-          child: StoreBuilder<ModelHubState>(
-            store: controller.store,
-            builder: (BuildContext context, ModelHubState state) {
-              final entries = _visible(state);
-              return Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: <Widget>[
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(24, 0, 12, 12),
-                    child: Row(
-                      children: <Widget>[
-                        Expanded(
-                          child: Text(
-                            'Model downloads',
-                            style: Theme.of(context).textTheme.titleLarge,
-                          ),
-                        ),
-                        IconButton(
-                          tooltip: 'Close downloads',
-                          onPressed: () => Navigator.pop(context),
-                          icon: const Icon(Icons.close),
-                        ),
-                      ],
-                    ),
-                  ),
-                  Expanded(
-                    child: ListView.separated(
-                      padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
-                      itemCount: entries.length,
-                      separatorBuilder: (_, _) => const Divider(height: 32),
-                      itemBuilder: (BuildContext context, int index) {
-                        final p = entries[index];
-                        final fraction = _fraction(p);
-                        return Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: <Widget>[
-                            Row(
-                              children: <Widget>[
-                                Expanded(
-                                  child: Text(
-                                    _modelName(state, p.modelId),
-                                    style: Theme.of(context)
-                                        .textTheme
-                                        .titleSmall,
-                                  ),
-                                ),
-                                if (p.isActive)
-                                  IconButton(
-                                    key: Key('cancel_download_${p.modelId}'),
-                                    tooltip: 'Cancel download',
-                                    onPressed: () =>
-                                        controller.cancelDownload(p.modelId),
-                                    icon: const Icon(Icons.close_rounded),
-                                  ),
-                              ],
+          child: StoreBuilder<StudioRuntimeSnapshot>(
+            store: controller.runtimeStore,
+            builder: (context, runtime) => StoreBuilder<ModelHubState>(
+              store: controller.store,
+              builder: (BuildContext context, ModelHubState state) {
+                final entries = _visible(state, runtime);
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: <Widget>[
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(24, 0, 12, 12),
+                      child: Row(
+                        children: <Widget>[
+                          Expanded(
+                            child: Text(
+                              'Model downloads',
+                              style: Theme.of(context).textTheme.titleLarge,
                             ),
-                            Text(_stage(p)),
-                            if (p.isActive) ...<Widget>[
-                              const SizedBox(height: 10),
-                              LinearProgressIndicator(value: fraction),
-                              const SizedBox(height: 8),
-                              Text(
-                                '${fraction == null ? '' : '${(fraction * 100).round()}% · '}${_bytes(p.receivedBytes)}${p.totalBytes > 0 ? ' / ${_bytes(p.totalBytes)}' : ''}',
-                              ),
-                            ],
-                            if (p.statusLabel?.isNotEmpty ?? false)
-                              Text(p.statusLabel!),
-                            if (p.stage == ModelDownloadTaskStage.failed &&
-                                p.errorMessage != null)
-                              Text(
-                                p.errorMessage!,
-                                style: TextStyle(
-                                  color: StudioPalette.of(context).danger,
-                                ),
-                              ),
-                          ],
-                        );
-                      },
+                          ),
+                          IconButton(
+                            tooltip: 'Close downloads',
+                            onPressed: () => Navigator.pop(context),
+                            icon: const Icon(Icons.close),
+                          ),
+                        ],
+                      ),
                     ),
-                  ),
-                ],
-              );
-            },
+                    Expanded(
+                      child: ListView.separated(
+                        padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
+                        itemCount: entries.length,
+                        separatorBuilder: (_, _) => const Divider(height: 32),
+                        itemBuilder: (BuildContext context, int index) {
+                          final p = entries[index];
+                          final fraction = _fraction(p);
+                          return Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: <Widget>[
+                              Row(
+                                children: <Widget>[
+                                  Expanded(
+                                    child: Text(
+                                      _modelName(state, p.modelId),
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .titleSmall,
+                                    ),
+                                  ),
+                                  if (p.isActive &&
+                                      !StudioScope.of(context).isWeb)
+                                    IconButton(
+                                      key: Key('cancel_download_${p.modelId}'),
+                                      tooltip: 'Cancel download',
+                                      onPressed: () =>
+                                          controller.cancelDownload(p.modelId),
+                                      icon: const Icon(Icons.close_rounded),
+                                    ),
+                                ],
+                              ),
+                              Text(_stage(p)),
+                              if (p.isActive) ...<Widget>[
+                                const SizedBox(height: 10),
+                                LinearProgressIndicator(value: fraction),
+                                const SizedBox(height: 8),
+                                Text(
+                                  '${fraction == null ? '' : '${(fraction * 100).round()}% · '}${_bytes(p.receivedBytes)}${p.totalBytes > 0 ? ' / ${_bytes(p.totalBytes)}' : ''}',
+                                ),
+                              ],
+                              if (p.statusLabel?.isNotEmpty ?? false)
+                                Text(p.statusLabel!),
+                              if (p.stage == ModelDownloadTaskStage.failed &&
+                                  p.errorMessage != null)
+                                Text(
+                                  p.errorMessage!,
+                                  style: TextStyle(
+                                    color: StudioPalette.of(context).danger,
+                                  ),
+                                ),
+                            ],
+                          );
+                        },
+                      ),
+                    ),
+                  ],
+                );
+              },
+            ),
           ),
         ),
       ),
@@ -165,82 +188,85 @@ class _DownloadActivityBarState extends State<DownloadActivityBar> {
   Widget build(BuildContext context) {
     final controller = StudioScope.of(context).modelHubController;
     final palette = StudioPalette.of(context);
-    return StoreBuilder<ModelHubState>(
-      store: controller.store,
-      builder: (BuildContext context, ModelHubState state) {
-        final entries = _visible(state);
-        if (entries.isEmpty) return const SizedBox.shrink();
-        final active = entries.where((p) => p.isActive).toList();
-        final failed = entries
-            .where((p) => p.stage == ModelDownloadTaskStage.failed)
-            .length;
-        final primary = active.isEmpty ? entries.last : active.first;
-        final fraction = active.length == 1 ? _fraction(primary) : null;
-        final summary = active.length > 1
-            ? '${active.length} model downloads in progress'
-            : active.length == 1
-            ? '${_stage(primary)} · ${_modelName(state, primary.modelId)}'
-            : failed > 0
-            ? '$failed model download${failed == 1 ? '' : 's'} failed'
-            : entries.length == 1
-            ? '${_stage(primary)} · ${_modelName(state, primary.modelId)}'
-            : '${entries.length} model downloads finished';
-        return Material(
-          key: const Key('download_activity_bar'),
-          color: palette.accent.withValues(alpha: .08),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: <Widget>[
-              Row(
-                children: <Widget>[
-                  const SizedBox(width: 12),
-                  Icon(
-                    failed > 0
-                        ? Icons.error_outline
-                        : active.isEmpty
-                        ? Icons.download_done_rounded
-                        : Icons.downloading_rounded,
-                    size: 19,
-                    color: failed > 0 ? palette.danger : palette.accent,
-                  ),
-                  Expanded(
-                    child: TextButton(
-                      key: const Key('open_downloads'),
-                      style: TextButton.styleFrom(
-                        alignment: Alignment.centerLeft,
-                      ),
-                      onPressed: () => _showDetails(context),
-                      child: Text(
-                        summary,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
+    return StoreBuilder<StudioRuntimeSnapshot>(
+      store: controller.runtimeStore,
+      builder: (context, runtime) => StoreBuilder<ModelHubState>(
+        store: controller.store,
+        builder: (BuildContext context, ModelHubState state) {
+          final entries = _visible(state, runtime);
+          if (entries.isEmpty) return const SizedBox.shrink();
+          final active = entries.where((p) => p.isActive).toList();
+          final failed = entries
+              .where((p) => p.stage == ModelDownloadTaskStage.failed)
+              .length;
+          final primary = active.isEmpty ? entries.last : active.first;
+          final fraction = active.length == 1 ? _fraction(primary) : null;
+          final summary = active.length > 1
+              ? '${active.length} model downloads in progress'
+              : active.length == 1
+              ? '${_stage(primary)} · ${_modelName(state, primary.modelId)}'
+              : failed > 0
+              ? '$failed model download${failed == 1 ? '' : 's'} failed'
+              : entries.length == 1
+              ? '${_stage(primary)} · ${_modelName(state, primary.modelId)}'
+              : '${entries.length} model downloads finished';
+          return Material(
+            key: const Key('download_activity_bar'),
+            color: palette.accent.withValues(alpha: .08),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                Row(
+                  children: <Widget>[
+                    const SizedBox(width: 12),
+                    Icon(
+                      failed > 0
+                          ? Icons.error_outline
+                          : active.isEmpty
+                          ? Icons.download_done_rounded
+                          : Icons.downloading_rounded,
+                      size: 19,
+                      color: failed > 0 ? palette.danger : palette.accent,
+                    ),
+                    Expanded(
+                      child: TextButton(
+                        key: const Key('open_downloads'),
+                        style: TextButton.styleFrom(
+                          alignment: Alignment.centerLeft,
+                        ),
+                        onPressed: () => _showDetails(context),
+                        child: Text(
+                          summary,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
                       ),
                     ),
-                  ),
-                  if (fraction != null) Text('${(fraction * 100).round()}%'),
-                  IconButton(
-                    tooltip: 'Download details',
-                    onPressed: () => _showDetails(context),
-                    icon: const Icon(Icons.expand_more_rounded),
-                  ),
-                  if (entries.any((p) => !p.isActive))
+                    if (fraction != null) Text('${(fraction * 100).round()}%'),
                     IconButton(
-                      tooltip: 'Dismiss finished downloads',
-                      onPressed: () => setState(() {
-                        for (final p in entries.where((p) => !p.isActive)) {
-                          _dismissed[p.modelId] = p;
-                        }
-                      }),
-                      icon: const Icon(Icons.close_rounded, size: 18),
+                      tooltip: 'Download details',
+                      onPressed: () => _showDetails(context),
+                      icon: const Icon(Icons.expand_more_rounded),
                     ),
-                ],
-              ),
-              if (active.isNotEmpty)
-                LinearProgressIndicator(value: fraction, minHeight: 2),
-            ],
-          ),
-        );
-      },
+                    if (entries.any((p) => !p.isActive))
+                      IconButton(
+                        tooltip: 'Dismiss finished downloads',
+                        onPressed: () => setState(() {
+                          for (final p in entries.where((p) => !p.isActive)) {
+                            _dismissed[p.modelId] = p;
+                          }
+                        }),
+                        icon: const Icon(Icons.close_rounded, size: 18),
+                      ),
+                  ],
+                ),
+                if (active.isNotEmpty)
+                  LinearProgressIndicator(value: fraction, minHeight: 2),
+              ],
+            ),
+          );
+        },
+      ),
     );
   }
 }

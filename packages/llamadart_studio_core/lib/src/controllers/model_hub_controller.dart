@@ -13,6 +13,7 @@ import '../ports/studio_context_ports.dart';
 import '../reactive/state_store.dart';
 import '../services/discovery/hugging_face_discovery_service.dart';
 import '../services/discovery/memory_fit_estimator.dart';
+import '../services/studio_error_formatter.dart';
 
 /// Immutable state for the Model Hub & Cache Manager workspace.
 @immutable
@@ -33,6 +34,7 @@ class ModelHubState {
     this.cacheEntries = const <ModelCacheEntry>[],
     this.bearerToken = '',
     this.activatingDescriptor,
+    this.activationErrorMessage,
   });
 
   /// Active category filter (`null` = all categories).
@@ -78,6 +80,9 @@ class ModelHubState {
   /// Model being prepared or loaded, including file and settings preparation.
   final StudioModelDescriptor? activatingDescriptor;
 
+  /// Last Chat model load error, retained until another load attempt.
+  final String? activationErrorMessage;
+
   /// Total disk usage across managed [cacheEntries] and discovered local files.
   int get totalCacheBytes {
     final managed = cacheEntries.fold<int>(
@@ -107,6 +112,8 @@ class ModelHubState {
     String? bearerToken,
     StudioModelDescriptor? activatingDescriptor,
     bool clearActivatingDescriptor = false,
+    String? activationErrorMessage,
+    bool clearActivationErrorMessage = false,
   }) {
     return ModelHubState(
       selectedCategory: clearSelectedCategory
@@ -128,6 +135,9 @@ class ModelHubState {
       localDiscoveredBytes: localDiscoveredBytes ?? this.localDiscoveredBytes,
       cacheEntries: cacheEntries ?? this.cacheEntries,
       bearerToken: bearerToken ?? this.bearerToken,
+      activationErrorMessage: clearActivationErrorMessage
+          ? null
+          : (activationErrorMessage ?? this.activationErrorMessage),
       activatingDescriptor: clearActivatingDescriptor
           ? null
           : (activatingDescriptor ?? this.activatingDescriptor),
@@ -439,6 +449,8 @@ class ModelHubController {
 
   /// Queries Hugging Face Hub for GGUF / LiteRT-LM repositories.
   Future<void> searchHuggingFace([String? customQuery]) async {
+    if (_disposed) return;
+    final request = ++_searchRequest;
     final query = (customQuery ?? _store.state.searchQuery).trim();
     _store.update(
       (ModelHubState s) => s.copyWith(
@@ -452,23 +464,43 @@ class ModelHubController {
         query,
         bearerToken: _store.state.bearerToken,
       );
+      if (_disposed || request != _searchRequest) return;
       _store.update(
         (ModelHubState s) => s.copyWith(hfResults: hits, isSearchingHf: false),
       );
     } catch (error) {
+      if (_disposed || request != _searchRequest) return;
       _store.update(
-        (ModelHubState s) =>
-            s.copyWith(isSearchingHf: false, hfErrorMessage: error.toString()),
+        (ModelHubState s) => s.copyWith(
+          isSearchingHf: false,
+          hfErrorMessage: humanizeStudioError(
+            error,
+            sensitiveValues: <String>[_store.state.bearerToken],
+          ),
+        ),
       );
     }
   }
 
+  int _searchRequest = 0;
+  int _repoRequest = 0;
+  bool _disposed = false;
+  Future<void> Function()? _retryLastLoad;
+
+  /// Retries the most recently requested Chat model load with its options.
+  Future<void> retryLastChatModelLoad() async {
+    await _retryLastLoad?.call();
+  }
+
   /// Expands a Hugging Face repository and lists its loadable GGUF files.
   Future<void> expandHuggingFaceRepo(String repoId) async {
+    if (_disposed) return;
+    final request = ++_repoRequest;
     if (_store.state.expandedRepoId == repoId) {
       _store.update(
         (ModelHubState s) => s.copyWith(
           clearExpandedRepoId: true,
+          isSearchingHf: false,
           expandedRepoFiles: const <StudioModelDescriptor>[],
         ),
       );
@@ -487,14 +519,29 @@ class ModelHubController {
         repoId,
         bearerToken: _store.state.bearerToken,
       );
+      if (_disposed ||
+          request != _repoRequest ||
+          _store.state.expandedRepoId != repoId) {
+        return;
+      }
       _store.update(
         (ModelHubState s) =>
             s.copyWith(expandedRepoFiles: files, isSearchingHf: false),
       );
     } catch (error) {
+      if (_disposed ||
+          request != _repoRequest ||
+          _store.state.expandedRepoId != repoId) {
+        return;
+      }
       _store.update(
-        (ModelHubState s) =>
-            s.copyWith(isSearchingHf: false, hfErrorMessage: error.toString()),
+        (ModelHubState s) => s.copyWith(
+          isSearchingHf: false,
+          hfErrorMessage: humanizeStudioError(
+            error,
+            sensitiveValues: <String>[_store.state.bearerToken],
+          ),
+        ),
       );
     }
   }
@@ -536,8 +583,13 @@ class ModelHubController {
       }
     }
 
+    _retryLastLoad = () =>
+        activateChatModel(descriptor, applyModelPreset: applyModelPreset);
     _store.update(
-      (ModelHubState s) => s.copyWith(activatingDescriptor: descriptor),
+      (ModelHubState s) => s.copyWith(
+        activatingDescriptor: descriptor,
+        clearActivationErrorMessage: true,
+      ),
     );
     final future = _performActivateChatModel(
       descriptor,
@@ -546,6 +598,16 @@ class ModelHubController {
     _inFlightActivation = future;
     try {
       await future;
+    } catch (error) {
+      _store.update(
+        (s) => s.copyWith(
+          activationErrorMessage: humanizeStudioError(
+            error,
+            sensitiveValues: <String>[_store.state.bearerToken],
+          ),
+        ),
+      );
+      rethrow;
     } finally {
       if (identical(_inFlightActivation, future)) {
         _inFlightActivation = null;
@@ -645,8 +707,13 @@ class ModelHubController {
       ],
     );
 
+    _retryLastLoad = () =>
+        loadCustomModel(pathOrUrl: pathOrUrl, mmprojPathOrUrl: mmprojPathOrUrl);
     _store.update(
-      (ModelHubState s) => s.copyWith(activatingDescriptor: descriptor),
+      (ModelHubState s) => s.copyWith(
+        activatingDescriptor: descriptor,
+        clearActivationErrorMessage: true,
+      ),
     );
     try {
       await _shell.bootGuard.beginModelLoad(
@@ -658,6 +725,16 @@ class ModelHubController {
         settings: _shell.currentSettings,
         isWeb: isWeb,
       );
+    } catch (error) {
+      _store.update(
+        (s) => s.copyWith(
+          activationErrorMessage: humanizeStudioError(
+            error,
+            sensitiveValues: <String>[_store.state.bearerToken],
+          ),
+        ),
+      );
+      rethrow;
     } finally {
       _store.update(
         (ModelHubState s) => s.copyWith(clearActivatingDescriptor: true),
@@ -738,6 +815,9 @@ class ModelHubController {
 
   /// Disposes internal subscriptions and reactive stores.
   Future<void> dispose() async {
+    _disposed = true;
+    _searchRequest++;
+    _repoRequest++;
     await _progressSub?.cancel();
     await _store.dispose();
   }

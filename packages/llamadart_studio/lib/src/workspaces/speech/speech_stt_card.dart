@@ -99,7 +99,11 @@ extension _SpeechSttCardExtension on _SpeechWorkspaceViewState {
                   size: 17,
                 ),
                 label: Text(
-                  _isRecordingMic ? 'Stop & Transcribe' : 'Record Mic',
+                  _isRecordingMic
+                      ? 'Stop & Transcribe'
+                      : (_pendingRecordingPath != null
+                            ? 'Retry transcription'
+                            : 'Record Mic'),
                 ),
               ),
               OutlinedButton.icon(
@@ -157,13 +161,13 @@ extension _SpeechSttCardExtension on _SpeechWorkspaceViewState {
                             TextButton.icon(
                               onPressed: () async {
                                 final text = state.latestTranscript!.text;
-                                deps.shellController.selectWorkspace(
+                                deps.chatController.stageDraft(text);
+                                await deps.shellController.selectWorkspace(
                                   StudioWorkspace.chat,
                                 );
-                                await deps.chatController.sendMessage(text);
                               },
                               icon: const Icon(Icons.send_rounded, size: 14),
-                              label: const Text('Send to Chat'),
+                              label: const Text('Use in Chat'),
                             ),
                           ],
                         ),
@@ -171,7 +175,7 @@ extension _SpeechSttCardExtension on _SpeechWorkspaceViewState {
                     ),
                   ),
                   const SizedBox(height: 6),
-                  SelectableText(
+                  StudioSelectableText(
                     state.latestTranscript!.text,
                     style: TextStyle(
                       fontSize: 13.5,

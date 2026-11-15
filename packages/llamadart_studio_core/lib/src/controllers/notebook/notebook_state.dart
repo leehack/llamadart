@@ -7,6 +7,8 @@ class NotebookState {
   /// Creates a [NotebookState].
   const NotebookState({
     this.notes = const <StudioNote>[],
+    this.drafts = const <String, NotebookDraft>{},
+    this.draftSaveErrors = const <String, String>{},
     this.selectedNoteId,
     this.noteSearchQuery = '',
     this.noteSearchHits = const <NoteSearchHit>[],
@@ -26,6 +28,12 @@ class NotebookState {
 
   /// Local Multimodal Notebook entries.
   final List<StudioNote> notes;
+
+  /// Unsaved editor text retained across workspace navigation.
+  final Map<String, NotebookDraft> drafts;
+
+  /// Save failures for retained drafts, cleared by a successful retry or edit.
+  final Map<String, String> draftSaveErrors;
 
   /// Currently selected note ID in the Notebook editor.
   final String? selectedNoteId;
@@ -112,6 +120,8 @@ class NotebookState {
   /// Returns an updated copy of [NotebookState].
   NotebookState copyWith({
     List<StudioNote>? notes,
+    Map<String, NotebookDraft>? drafts,
+    Map<String, String>? draftSaveErrors,
     String? selectedNoteId,
     bool clearSelectedNoteId = false,
     String? noteSearchQuery,
@@ -133,6 +143,8 @@ class NotebookState {
   }) {
     return NotebookState(
       notes: notes ?? this.notes,
+      drafts: drafts ?? this.drafts,
+      draftSaveErrors: draftSaveErrors ?? this.draftSaveErrors,
       selectedNoteId: clearSelectedNoteId
           ? null
           : (selectedNoteId ?? this.selectedNoteId),

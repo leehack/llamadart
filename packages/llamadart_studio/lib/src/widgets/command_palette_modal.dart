@@ -92,7 +92,7 @@ class _StudioCommandPaletteModalState extends State<StudioCommandPaletteModal> {
             : StudioTheme.shortcutLabel(context, 'N'),
         onInvoke: () async {
           await deps.chatController.createConversation();
-          deps.shellController.selectWorkspace(StudioWorkspace.chat);
+          await deps.shellController.selectWorkspace(StudioWorkspace.chat);
         },
       ),
       for (final workspace in StudioWorkspace.values)
@@ -107,7 +107,7 @@ class _StudioCommandPaletteModalState extends State<StudioCommandPaletteModal> {
                   '${workspace.shortcutDigit}',
                 ),
           onInvoke: () async {
-            deps.shellController.selectWorkspace(workspace);
+            await deps.shellController.selectWorkspace(workspace);
           },
         ),
       for (final preset in StudioPreset.builtInPresets)
@@ -117,7 +117,7 @@ class _StudioCommandPaletteModalState extends State<StudioCommandPaletteModal> {
           icon: Icons.auto_awesome_outlined,
           onInvoke: () async {
             await deps.chatController.applyPreset(preset);
-            deps.shellController.selectWorkspace(StudioWorkspace.chat);
+            await deps.shellController.selectWorkspace(StudioWorkspace.chat);
             messenger?.showSnackBar(
               SnackBar(content: Text('Applied preset "${preset.name}"')),
             );

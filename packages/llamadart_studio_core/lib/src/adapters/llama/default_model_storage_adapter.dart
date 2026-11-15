@@ -107,14 +107,8 @@ class DefaultStudioModelStorageAdapter implements StudioModelStoragePort {
         for (final companion in descriptor.companions)
           companion.role: companion.toModelSource(isWeb: true),
       };
-      _emit(
-        StudioModelDownloadProgress(
-          modelId: descriptor.id,
-          stage: ModelDownloadTaskStage.ready,
-          fraction: 1.0,
-          statusLabel: 'Ready via WebGPU URL loader',
-        ),
-      );
+      // Runtime Fetch owns transfer progress; resolving URLs does not mean
+      // the browser has downloaded or initialized the model.
       return ResolvedModelAssets(
         descriptor: descriptor,
         primarySource: primary,

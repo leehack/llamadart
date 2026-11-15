@@ -42,7 +42,7 @@ extension _NotebookLayout on _NotebookWorkspaceViewState {
             OutlinedButton.icon(
               key: const Key('vault_new_note_button'),
               onPressed: () async {
-                await _saveCurrentNote(deps);
+                if (!await _saveCurrentNote(deps)) return;
                 await deps.notebookController.createNote(
                   title: 'Untitled Note',
                   content: '',
@@ -66,7 +66,14 @@ extension _NotebookLayout on _NotebookWorkspaceViewState {
                     : Icons.mic_none_rounded,
                 size: 16,
               ),
-              label: Text(_isRecordingMic ? 'Stop Recording' : 'Record Mic'),
+              label: Text(
+                _isRecordingMic
+                    ? 'Stop Recording'
+                    : (_pendingRecordingBytes != null ||
+                              _pendingRecordingPath != null
+                          ? 'Retry saving recording'
+                          : 'Record Mic'),
+              ),
             ),
             if (!deps.isWeb) ...<Widget>[
               OutlinedButton.icon(
@@ -263,7 +270,7 @@ extension _NotebookLayout on _NotebookWorkspaceViewState {
                       onPressed: isBusy
                           ? null
                           : () async {
-                              await _saveCurrentNote(deps);
+                              if (!await _saveCurrentNote(deps)) return;
                               await deps.notebookController.indexNotes();
                             },
                       icon: const Icon(Icons.hub_outlined, size: 16),

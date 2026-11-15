@@ -398,7 +398,7 @@ class _ModelStorageSheetState extends State<_ModelStorageSheet> {
       children: <Widget>[
         Align(
           alignment: Alignment.centerLeft,
-          child: SelectableText(file.path),
+          child: StudioSelectableText(file.path),
         ),
         if (file.cacheKey != null)
           Align(

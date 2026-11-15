@@ -200,7 +200,7 @@ void main() {
         contains('qwen3.6-27b-ud-q4-k-xl'),
       );
 
-      deps.shellController.selectWorkspace(StudioWorkspace.models);
+      await deps.shellController.selectWorkspace(StudioWorkspace.models);
       await tester.pump(const Duration(milliseconds: 350));
       expect(find.textContaining('INSTALLED ON THIS MACHINE'), findsOneWidget);
       expect(tester.takeException(), isNull);
@@ -249,7 +249,7 @@ void main() {
         isNotEmpty,
       );
 
-      deps.shellController.selectWorkspace(StudioWorkspace.chat);
+      await deps.shellController.selectWorkspace(StudioWorkspace.chat);
       await tester.pump(const Duration(milliseconds: 300));
 
       debugPrint('[E2E] Phase 2: sendMessage 1');
@@ -316,7 +316,7 @@ void main() {
 
       // Real Token Inspector & Throughput Benchmark on active chat engine.
       debugPrint('[E2E] Phase 2: token inspection & benchmark');
-      deps.shellController.selectWorkspace(StudioWorkspace.playground);
+      await deps.shellController.selectWorkspace(StudioWorkspace.playground);
       deps.playgroundController.selectTab(PlaygroundToolTab.tokens);
       await tester.pump(const Duration(milliseconds: 250));
 
@@ -357,7 +357,7 @@ void main() {
           qwenModel,
           applyModelPreset: false,
         );
-        deps.shellController.selectWorkspace(StudioWorkspace.chat);
+        await deps.shellController.selectWorkspace(StudioWorkspace.chat);
         await deps.chatController.createConversation();
         await tester.pump(const Duration(milliseconds: 250));
 
@@ -501,7 +501,7 @@ void main() {
 
       // Dedicated Multimodal Notebook: navigate UI -> create note -> vector index ->
       // Stage-2 BGE Rerank -> Related Notes + grounded RAG prompt handoff + Ask Notebook.
-      deps.shellController.selectWorkspace(StudioWorkspace.notes);
+      await deps.shellController.selectWorkspace(StudioWorkspace.notes);
       await tester.pump(const Duration(milliseconds: 250));
       expect(find.text('Multimodal Notebook'), findsOneWidget);
 
@@ -554,7 +554,7 @@ void main() {
         reason: 'Expected local Laya + laya-head.safetensors to be discovered.',
       );
 
-      deps.shellController.selectWorkspace(StudioWorkspace.playground);
+      await deps.shellController.selectWorkspace(StudioWorkspace.playground);
       deps.playgroundController.selectTab(PlaygroundToolTab.decision);
       debugPrint('[E2E] Phase 3c: runDecisionHead + multi-key batch workflows');
       await deps.playgroundController.runDecisionHead(
@@ -629,7 +629,7 @@ void main() {
           applyModelPreset: false,
         );
 
-        deps.shellController.selectWorkspace(StudioWorkspace.notes);
+        await deps.shellController.selectWorkspace(StudioWorkspace.notes);
         await tester.pump(const Duration(milliseconds: 200));
         await deps.notebookController.askNotebook(
           'How do I reduce 32K context window memory on Apple Silicon?',
@@ -641,7 +641,7 @@ void main() {
         );
         expect(deps.notebookController.state.notebookAnswerSources, isNotEmpty);
 
-        deps.shellController.selectWorkspace(StudioWorkspace.playground);
+        await deps.shellController.selectWorkspace(StudioWorkspace.playground);
         deps.playgroundController.selectTab(PlaygroundToolTab.decision);
         await tester.pump(const Duration(milliseconds: 200));
         final speedBench = await deps.playgroundController
@@ -684,7 +684,7 @@ void main() {
       //    (both audioBytes AND audioFilePath)
       // -----------------------------------------------------------------------
       debugPrint('[E2E] Phase 4: Speech TTS->Clone->ASR');
-      deps.shellController.selectWorkspace(StudioWorkspace.speech);
+      await deps.shellController.selectWorkspace(StudioWorkspace.speech);
       await tester.pump(const Duration(milliseconds: 200));
 
       final ttsModel = deps.speechController.availableTtsModels.firstWhere(
@@ -791,7 +791,7 @@ void main() {
       // 5. Real Image Studio Diffusion (negativePrompt + Deterministic Seed)
       // -----------------------------------------------------------------------
       debugPrint('[E2E] Phase 5: Image Diffusion');
-      deps.shellController.selectWorkspace(StudioWorkspace.image);
+      await deps.shellController.selectWorkspace(StudioWorkspace.image);
       await tester.pump(const Duration(milliseconds: 200));
 
       final sdxs = deps.imageController.availableModels.firstWhere(
@@ -852,7 +852,7 @@ void main() {
           sizeBytes: generatedImage.pngBytes.length,
         ),
       );
-      deps.shellController.selectWorkspace(StudioWorkspace.chat);
+      await deps.shellController.selectWorkspace(StudioWorkspace.chat);
 
       await deps.chatController.sendMessage(
         'Describe this image in five words or fewer.',
@@ -1073,7 +1073,7 @@ Future<void> main() async {
       expect(mcpResourceText, contains('E2E MCP resource OK'));
 
       // Render Coding workspace UI & run real local model coding turn.
-      deps.shellController.selectWorkspace(StudioWorkspace.coding);
+      await deps.shellController.selectWorkspace(StudioWorkspace.coding);
       await tester.pump(const Duration(milliseconds: 300));
       expect(find.textContaining('Qwen3.6 27B'), findsAtLeastNWidgets(1));
       expect(

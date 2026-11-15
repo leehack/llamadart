@@ -9,6 +9,7 @@ import 'package:llamadart_studio_core/llamadart_studio_core.dart';
 import '../../app/studio_dependencies.dart';
 import '../../app/studio_theme.dart';
 import '../mcp_skills/mcp_and_skills_sheet.dart';
+import '../model_load_error_banner.dart';
 import '../store_widgets.dart';
 import '../studio_motion.dart';
 

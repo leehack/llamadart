@@ -15,6 +15,7 @@ import '../../app/studio_theme.dart';
 import '../../widgets/model_load_progress_banner.dart';
 import '../../widgets/store_widgets.dart';
 import '../../widgets/studio_motion.dart';
+import '../../widgets/studio_selectable_text.dart';
 
 part 'speech_stt_card.dart';
 
@@ -47,6 +48,9 @@ class _SpeechWorkspaceViewState extends State<SpeechWorkspaceView> {
   String? _speakerRefPath;
   Uint8List? _speakerRefBytes;
   bool _isRecordingMic = false;
+  String? _pendingRecordingPath;
+  Future<void>? _micOperation;
+  StudioDependencies? _deps;
   String? _playingClipId;
   int _playbackSequence = 0;
 
@@ -88,6 +92,11 @@ class _SpeechWorkspaceViewState extends State<SpeechWorkspaceView> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
+    _deps = StudioScope.of(context);
+    _deps!.shellController.registerWorkspaceExitGuard(
+      this,
+      _prepareWorkspaceExit,
+    );
     _draftBucket = PageStorage.maybeOf(context);
     if (_draftRestored) return;
     _draftRestored = true;
@@ -127,6 +136,7 @@ class _SpeechWorkspaceViewState extends State<SpeechWorkspaceView> {
 
   @override
   void dispose() {
+    _deps?.shellController.clearWorkspaceExitGuard(this);
     _ttsPromptCtrl.dispose();
     _sttContextCtrl.dispose();
     unawaited(_playerCompleteSub?.cancel() ?? Future<void>.value());
@@ -248,34 +258,89 @@ class _SpeechWorkspaceViewState extends State<SpeechWorkspaceView> {
     );
   }
 
-  Future<void> _toggleMicRecording() async {
-    final deps = StudioScope.of(context);
-    if (_isRecordingMic) {
-      final recordedPath = await _recorder.stop();
-      setState(() => _isRecordingMic = false);
-      if (recordedPath == null || recordedPath.isEmpty) {
-        return;
+  Future<bool> _prepareWorkspaceExit() async {
+    try {
+      await _micOperation;
+      if (_isRecordingMic || _pendingRecordingPath != null) {
+        await _runMicOperation(() => _finishRecording());
       }
-      final bytes = await StudioPlatformFileHelper.readBytesFromPath(
-        recordedPath,
+      return true;
+    } catch (error) {
+      _showRecordingError(error);
+      return false;
+    }
+  }
+
+  void _showRecordingError(Object error) {
+    if (!mounted) return;
+    final hasRecording = _isRecordingMic || _pendingRecordingPath != null;
+    final message = hasRecording
+        ? 'Could not finish recording. Retry before leaving.'
+        : 'Could not start recording.';
+    ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+      SnackBar(content: Text('$message ${humanizeStudioError(error)}')),
+    );
+  }
+
+  Future<void> _finishRecording() async {
+    final deps = _deps!;
+    if (_isRecordingMic) {
+      final path = await _recorder.stop();
+      if (path == null || path.isEmpty) {
+        throw StateError('The recorder did not return a WAV file.');
+      }
+      _pendingRecordingPath = path;
+      if (mounted) setState(() => _isRecordingMic = false);
+    }
+    final path = _pendingRecordingPath;
+    if (path == null) return;
+    final bytes = await StudioPlatformFileHelper.readBytesFromPath(path);
+    final result = await deps.speechController.transcribeAudio(
+      audioBytes: bytes,
+      audioFilePath: deps.isWeb ? null : path,
+      contextPrompt: _sttContextCtrl.text.trim().isEmpty
+          ? null
+          : _sttContextCtrl.text.trim(),
+    );
+    if (result == null) {
+      throw StateError(
+        deps.speechController.state.errorMessage ?? 'Transcription is busy. Retry when the current transcription finishes.',
       );
-      await deps.speechController.transcribeAudio(
-        audioBytes: bytes,
-        audioFilePath: deps.isWeb ? null : recordedPath,
-        contextPrompt: _sttContextCtrl.text.trim().isEmpty
-            ? null
-            : _sttContextCtrl.text.trim(),
-      );
+    }
+    _pendingRecordingPath = null;
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _runMicOperation(Future<void> Function() action) {
+    final pending = _micOperation;
+    if (pending != null) return pending;
+    late final Future<void> operation;
+    operation = Future<void>.sync(action).whenComplete(() {
+      if (identical(_micOperation, operation)) {
+        _micOperation = null;
+        if (mounted) setState(() {});
+      }
+    });
+    _micOperation = operation;
+    if (mounted) setState(() {});
+    return operation;
+  }
+
+  Future<void> _toggleMicRecording() async {
+    try {
+      await _runMicOperation(() => _changeMicRecording());
+    } catch (error) {
+      _showRecordingError(error);
+    }
+  }
+
+  Future<void> _changeMicRecording() async {
+    if (_isRecordingMic || _pendingRecordingPath != null) {
+      await _finishRecording();
       return;
     }
-
     if (!await _recorder.hasPermission()) {
-      if (mounted) {
-        ScaffoldMessenger.maybeOf(context)?.showSnackBar(
-          const SnackBar(content: Text('Microphone permission denied')),
-        );
-      }
-      return;
+      throw StateError('Microphone permission denied.');
     }
     final tempPath = await StudioPlatformFileHelper.createTempRecordingPath();
     await _recorder.start(
@@ -286,7 +351,7 @@ class _SpeechWorkspaceViewState extends State<SpeechWorkspaceView> {
       ),
       path: tempPath,
     );
-    setState(() => _isRecordingMic = true);
+    if (mounted) setState(() => _isRecordingMic = true);
   }
 
   @override

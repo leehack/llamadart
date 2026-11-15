@@ -1,6 +1,9 @@
 /// Formats caught runtime and exception objects into concise, user-facing Studio
 /// error messages without raw Dart exception class prefixes.
-String humanizeStudioError(Object error) {
+String humanizeStudioError(
+  Object error, {
+  Iterable<String> sensitiveValues = const <String>[],
+}) {
   var raw = error.toString().trim();
   const prefixes = <String>[
     'LlamaUnsupportedException: ',
@@ -11,6 +14,7 @@ String humanizeStudioError(Object error) {
     'LlamaStateException: ',
     'LlamaException: ',
     'StateError: ',
+    'Bad state: ',
     'ArgumentError: ',
     'Exception: ',
   ];
@@ -24,5 +28,17 @@ String humanizeStudioError(Object error) {
       }
     }
   }
+  for (final secret in sensitiveValues) {
+    if (secret.isNotEmpty) raw = raw.replaceAll(secret, '[redacted]');
+  }
+  raw = raw.replaceAllMapped(RegExp(r'https?://[^\s<>]+'), (match) {
+    final uri = Uri.tryParse(match[0]!);
+    if (uri == null) return '[redacted URL]';
+    return uri.replace(userInfo: '', query: '', fragment: '').toString();
+  });
+  raw = raw.replaceAll(
+    RegExp(r'Bearer\s+[^\s,;]+', caseSensitive: false),
+    'Bearer [redacted]',
+  );
   return raw;
 }

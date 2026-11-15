@@ -238,7 +238,7 @@ class _StudioTopBar extends StatelessWidget {
   ) async {
     final installed = deps.modelHubController.installedChatModels();
     if (installed.isEmpty && !runtime.isReady) {
-      deps.shellController.selectWorkspace(StudioWorkspace.models);
+      await deps.shellController.selectWorkspace(StudioWorkspace.models);
       return;
     }
 
@@ -246,7 +246,7 @@ class _StudioTopBar extends StatelessWidget {
     final overlay =
         Overlay.maybeOf(pillContext)?.context.findRenderObject() as RenderBox?;
     if (box == null || overlay == null) {
-      deps.shellController.selectWorkspace(StudioWorkspace.models);
+      await deps.shellController.selectWorkspace(StudioWorkspace.models);
       return;
     }
 
@@ -396,11 +396,12 @@ class _StudioTopBar extends StatelessWidget {
       ],
     );
 
+    if (!pillContext.mounted) return;
     if (selected == null) {
       return;
     }
     if (selected == browseHubAction) {
-      deps.shellController.selectWorkspace(StudioWorkspace.models);
+      await deps.shellController.selectWorkspace(StudioWorkspace.models);
       return;
     }
     if (deps.modelHubController.runtimeStore.state.isLoading ||
@@ -413,7 +414,12 @@ class _StudioTopBar extends StatelessWidget {
     }
     final chosen = modelsById[selected];
     if (chosen != null) {
-      unawaited(deps.modelHubController.activateChatModel(chosen));
+      unawaited(
+        runModelLoadAction(
+          pillContext,
+          () => deps.modelHubController.activateChatModel(chosen),
+        ),
+      );
     }
   }
 }

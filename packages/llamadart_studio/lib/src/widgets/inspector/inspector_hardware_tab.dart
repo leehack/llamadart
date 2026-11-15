@@ -77,12 +77,12 @@ extension _InspectorHardwareTab on _SessionInspectorPanelState {
                   ),
                   if (runtime.resolvedContextSize != null)
                     StudioPillBadge(
-                      label: 'ctx ${runtime.resolvedContextSize}',
+                      label: 'Context ${runtime.resolvedContextSize}',
                       monospace: true,
                     ),
                   if (runtime.resolvedGpuLayers != null)
                     StudioPillBadge(
-                      label: 'ngl ${runtime.resolvedGpuLayers}',
+                      label: 'GPU layers ${runtime.resolvedGpuLayers}',
                       monospace: true,
                     ),
                   if (hasUnappliedChanges)
@@ -112,8 +112,10 @@ extension _InspectorHardwareTab on _SessionInspectorPanelState {
                               key: const Key('inspector_apply_reload_button'),
                               onPressed: runtime.isLoading
                                   ? null
-                                  : () => deps.modelHubController
-                                        .reloadActiveModel(),
+                                  : () => runModelLoadAction(
+                                      context,
+                                      deps.modelHubController.reloadActiveModel,
+                                    ),
                               icon: const Icon(Icons.refresh_rounded, size: 15),
                               label: const Text(
                                 'Apply & Reload',
@@ -124,8 +126,10 @@ extension _InspectorHardwareTab on _SessionInspectorPanelState {
                               key: const Key('inspector_apply_reload_button'),
                               onPressed: runtime.isLoading
                                   ? null
-                                  : () => deps.modelHubController
-                                        .reloadActiveModel(),
+                                  : () => runModelLoadAction(
+                                      context,
+                                      deps.modelHubController.reloadActiveModel,
+                                    ),
                               icon: const Icon(Icons.refresh_rounded, size: 15),
                               label: const Text(
                                 'Apply & Reload',
@@ -659,7 +663,10 @@ extension _InspectorHardwareTab on _SessionInspectorPanelState {
                   ),
                   onPressed: runtime.isLoading
                       ? null
-                      : () => deps.modelHubController.reloadActiveModel(),
+                      : () => runModelLoadAction(
+                          context,
+                          deps.modelHubController.reloadActiveModel,
+                        ),
                   child: const Text(
                     'Reload',
                     style: TextStyle(

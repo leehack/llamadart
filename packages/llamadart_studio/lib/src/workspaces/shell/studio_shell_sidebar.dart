@@ -32,7 +32,7 @@ class _StudioSidebarContent extends StatelessWidget {
         return;
       }
       await deps.chatController.importFromJson(content);
-      deps.shellController.selectWorkspace(StudioWorkspace.chat);
+      await deps.shellController.selectWorkspace(StudioWorkspace.chat);
       onNavigate?.call();
     } catch (error) {
       if (context.mounted) {
@@ -118,7 +118,7 @@ class _StudioSidebarContent extends StatelessWidget {
                     visualDensity: VisualDensity.compact,
                     onPressed: () async {
                       await deps.chatController.createConversation();
-                      deps.shellController.selectWorkspace(
+                      await deps.shellController.selectWorkspace(
                         StudioWorkspace.chat,
                       );
                       onNavigate?.call();
@@ -139,8 +139,8 @@ class _StudioSidebarContent extends StatelessWidget {
                     child: InkWell(
                       key: Key('nav_workspace_${ws.routeSegment}'),
                       borderRadius: BorderRadius.circular(10),
-                      onTap: () {
-                        deps.shellController.selectWorkspace(ws);
+                      onTap: () async {
+                        await deps.shellController.selectWorkspace(ws);
                         onNavigate?.call();
                       },
                       child: Container(
@@ -243,8 +243,8 @@ class _StudioSidebarContent extends StatelessWidget {
                               return InkWell(
                                 key: const Key('nav_workspace_models'),
                                 borderRadius: BorderRadius.circular(11),
-                                onTap: () {
-                                  deps.shellController.selectWorkspace(
+                                onTap: () async {
+                                  await deps.shellController.selectWorkspace(
                                     StudioWorkspace.models,
                                   );
                                   onNavigate?.call();
@@ -397,9 +397,9 @@ class _StudioSidebarContent extends StatelessWidget {
                           conv.id == chatState.activeConversation?.id;
                       return InkWell(
                         borderRadius: BorderRadius.circular(10),
-                        onTap: () {
+                        onTap: () async {
                           deps.chatController.selectConversation(conv.id);
-                          deps.shellController.selectWorkspace(
+                          await deps.shellController.selectWorkspace(
                             StudioWorkspace.chat,
                           );
                           onNavigate?.call();

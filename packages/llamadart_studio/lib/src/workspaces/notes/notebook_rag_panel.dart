@@ -30,7 +30,7 @@ extension _NotebookRagPanelExtension on _NotebookWorkspaceViewState {
             onSubmitted: isBusy || state.isAnsweringNotebook
                 ? null
                 : (String q) async {
-                    await _saveCurrentNote(deps);
+                    if (!await _saveCurrentNote(deps)) return;
                     await deps.notebookController.askNotebook(q);
                   },
           ),
@@ -57,7 +57,7 @@ extension _NotebookRagPanelExtension on _NotebookWorkspaceViewState {
                     onPressed: isBusy
                         ? null
                         : () async {
-                            await _saveCurrentNote(deps);
+                            if (!await _saveCurrentNote(deps)) return;
                             await deps.notebookController.searchNotes(
                               _searchCtrl.text,
                             );
@@ -85,7 +85,7 @@ extension _NotebookRagPanelExtension on _NotebookWorkspaceViewState {
                       onPressed: isBusy
                           ? null
                           : () async {
-                              await _saveCurrentNote(deps);
+                              if (!await _saveCurrentNote(deps)) return;
                               await deps.notebookController.askNotebook(
                                 _searchCtrl.text,
                               );
@@ -148,29 +148,31 @@ extension _NotebookRagPanelExtension on _NotebookWorkspaceViewState {
                   ),
                   if (state.notebookAnswerText.isNotEmpty) ...<Widget>[
                     const SizedBox(height: 8),
-                    MarkdownBody(
-                      data: state.notebookAnswerText,
-                      selectable: true,
-                      syntaxHighlighter: StudioMarkdownSyntaxHighlighter(
-                        palette: palette,
-                        brightness: Theme.of(context).brightness,
+                    SelectionArea(
+                      child: MarkdownBody(
+                        data: state.notebookAnswerText,
+                        selectable: false,
+                        syntaxHighlighter: StudioMarkdownSyntaxHighlighter(
+                          palette: palette,
+                          brightness: Theme.of(context).brightness,
+                        ),
+                        styleSheet:
+                            MarkdownStyleSheet.fromTheme(Theme.of(context))
+                                .copyWith(
+                                  p: TextStyle(
+                                    fontSize: 13,
+                                    height: 1.5,
+                                    color: palette.textPrimary,
+                                  ),
+                                  code: TextStyle(
+                                    fontSize: 12,
+                                    color: palette.teal,
+                                    backgroundColor: palette.surfaceElevated,
+                                    fontFamilyFallback:
+                                        StudioTheme.monoFontFallback,
+                                  ),
+                                ),
                       ),
-                      styleSheet:
-                          MarkdownStyleSheet.fromTheme(
-                            Theme.of(context),
-                          ).copyWith(
-                            p: TextStyle(
-                              fontSize: 13,
-                              height: 1.5,
-                              color: palette.textPrimary,
-                            ),
-                            code: TextStyle(
-                              fontSize: 12,
-                              color: palette.teal,
-                              backgroundColor: palette.surfaceElevated,
-                              fontFamilyFallback: StudioTheme.monoFontFallback,
-                            ),
-                          ),
                     ),
                   ],
                   if (state.notebookAnswerSources.isNotEmpty) ...<Widget>[
@@ -195,7 +197,7 @@ extension _NotebookRagPanelExtension on _NotebookWorkspaceViewState {
                               style: const TextStyle(fontSize: 11),
                             ),
                             onPressed: () async {
-                              await _saveCurrentNote(deps);
+                              if (!await _saveCurrentNote(deps)) return;
                               deps.notebookController.selectNote(src.note.id);
                             },
                           );
@@ -246,7 +248,7 @@ extension _NotebookRagPanelExtension on _NotebookWorkspaceViewState {
                   for (var i = 0; i < state.noteSearchHits.length; i++)
                     InkWell(
                       onTap: () async {
-                        await _saveCurrentNote(deps);
+                        if (!await _saveCurrentNote(deps)) return;
                         deps.notebookController.selectNote(
                           state.noteSearchHits[i].note.id,
                         );

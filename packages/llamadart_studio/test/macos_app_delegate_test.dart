@@ -25,7 +25,9 @@ void main() {
       final sdk = Directory.fromUri(
         config.absolute.uri.resolve(flutter['rootUri'] as String),
       ).parent.parent;
-      final frameworks = '${sdk.path}/bin/cache/artifacts/engine/darwin-x64';
+      final frameworks =
+          '${sdk.path}/bin/cache/artifacts/engine/darwin-x64/'
+          'FlutterMacOS.xcframework/macos-arm64_x86_64';
       final library = '${temporary.path}/AppDelegate.dylib';
       final harness = File('${temporary.path}/main.m');
       final executable = '${temporary.path}/delegate_test';

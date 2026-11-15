@@ -27,7 +27,7 @@ class _MultimodalComposerState extends State<MultimodalComposer> {
   final TextEditingController _controller = TextEditingController();
   late final FocusNode _focusNode;
   int _attachmentSeq = 0;
-  String? _lastAppliedDraft;
+  bool _submitting = false;
 
   @override
   void initState() {
@@ -56,7 +56,8 @@ class _MultimodalComposerState extends State<MultimodalComposer> {
 
   Future<void> _submit() async {
     final deps = StudioScope.of(context);
-    if (deps.chatController.activeStreamStore.state.isGenerating) {
+    if (_submitting ||
+        deps.chatController.activeStreamStore.state.isGenerating) {
       return;
     }
     final text = _controller.text;
@@ -65,9 +66,21 @@ class _MultimodalComposerState extends State<MultimodalComposer> {
     if (text.trim().isEmpty && !hasAttachments) {
       return;
     }
-    _lastAppliedDraft = null;
-    _controller.clear();
-    await deps.chatController.sendMessage(text);
+    _submitting = true;
+    try {
+      await deps.chatController.sendMessage(text);
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+        SnackBar(
+          content: Text(
+            'Could not send message: ${humanizeStudioError(error)}',
+          ),
+        ),
+      );
+    } finally {
+      _submitting = false;
+    }
   }
 
   Future<void> _pickImage() async {
@@ -159,21 +172,12 @@ class _MultimodalComposerState extends State<MultimodalComposer> {
     return StoreBuilder<ChatWorkspaceState>(
       store: deps.chatController.store,
       builder: (BuildContext context, ChatWorkspaceState chatState) {
-        final incomingDraft = chatState.composerDraft;
-        if (incomingDraft != null &&
-            incomingDraft.isNotEmpty &&
-            incomingDraft != _lastAppliedDraft) {
-          _lastAppliedDraft = incomingDraft;
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (!mounted) {
-              return;
-            }
-            _controller
-              ..text = incomingDraft
-              ..selection = TextSelection.collapsed(
-                offset: incomingDraft.length,
-              );
-          });
+        final incomingDraft = chatState.composerDraft ?? '';
+        if (_controller.text != incomingDraft) {
+          _controller.value = TextEditingValue(
+            text: incomingDraft,
+            selection: TextSelection.collapsed(offset: incomingDraft.length),
+          );
         }
         return StoreBuilder<StudioShellState>(
           store: deps.shellController.store,
@@ -333,6 +337,7 @@ class _MultimodalComposerState extends State<MultimodalComposer> {
                           TextField(
                             key: const Key('chat_composer_input'),
                             controller: _controller,
+                            onChanged: deps.chatController.setComposerDraft,
                             focusNode: _focusNode,
                             minLines: 1,
                             maxLines: 6,

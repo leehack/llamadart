@@ -17,6 +17,7 @@ import '../../widgets/mcp_skills/mcp_and_skills_sheet.dart';
 import '../../widgets/model_load_progress_banner.dart';
 import '../../widgets/store_widgets.dart';
 import '../../widgets/studio_motion.dart';
+import '../../widgets/studio_selectable_text.dart';
 
 part 'coding_agent_chat_pane.dart';
 part 'coding_explorer_changes_pane.dart';

@@ -54,6 +54,7 @@ class ChatWorkspaceController {
 
   static const Duration _streamPublishInterval = Duration(milliseconds: 40);
 
+  final Map<String?, String> _drafts = <String?, String>{};
   int _idCounter = 0;
   int _turnEpoch = 0;
   bool _awaitingModel = false;
@@ -103,6 +104,7 @@ class ChatWorkspaceController {
       (ChatWorkspaceState s) => s.copyWith(
         conversations: <StudioConversation>[created, ...s.conversations],
         activeConversationId: created.id,
+        clearComposerDraft: true,
         activePresetId: chosen.id,
         pendingAttachments: const <StudioAttachment>[],
         clearLastTurnError: true,
@@ -117,6 +119,8 @@ class ChatWorkspaceController {
     _store.update(
       (ChatWorkspaceState s) => s.copyWith(
         activeConversationId: conversationId,
+        composerDraft: _drafts[conversationId],
+        clearComposerDraft: !_drafts.containsKey(conversationId),
         pendingAttachments: const <StudioAttachment>[],
         clearLastTurnError: true,
       ),
@@ -158,6 +162,7 @@ class ChatWorkspaceController {
       _deletedConversationIds.remove(conversationId);
       rethrow;
     }
+    _drafts.remove(conversationId);
     final remaining = _store.state.conversations
         .where((StudioConversation c) => c.id != conversationId)
         .toList();
@@ -168,6 +173,7 @@ class ChatWorkspaceController {
         (ChatWorkspaceState s) => s.copyWith(
           conversations: <StudioConversation>[fresh],
           activeConversationId: fresh.id,
+          clearComposerDraft: true,
         ),
       );
       return;
@@ -179,6 +185,8 @@ class ChatWorkspaceController {
       (ChatWorkspaceState s) => s.copyWith(
         conversations: remaining,
         activeConversationId: nextActive,
+        composerDraft: _drafts[nextActive],
+        clearComposerDraft: !_drafts.containsKey(nextActive),
       ),
     );
   }
@@ -254,14 +262,29 @@ class ChatWorkspaceController {
     );
   }
 
-  /// Stages or clears a draft prompt in the Chat composer (used when sending
-  /// Semantic Vault notes or MCP resources into Chat).
+  /// Replaces the active conversation's unsent composer text.
+  ///
+  /// Drafts survive workspace navigation and conversation switching for this
+  /// session. Passing `null` or an empty string clears the active draft.
   void setComposerDraft(String? draft) {
+    final id = _store.state.activeConversationId;
+    if (draft == null || draft.isEmpty) {
+      _drafts.remove(id);
+    } else {
+      _drafts[id] = draft;
+    }
     _store.update(
       (ChatWorkspaceState s) => draft == null || draft.isEmpty
           ? s.copyWith(clearComposerDraft: true)
           : s.copyWith(composerDraft: draft),
     );
+  }
+
+  /// Appends text to the active draft without sending, including during a turn.
+  void stageDraft(String text) {
+    if (text.trim().isEmpty) return;
+    final current = _store.state.composerDraft ?? '';
+    setComposerDraft(current.isEmpty ? text : '$current\n\n$text');
   }
 
   /// Switches the active branch at [messageId] (`< 1 / 2 >` sibling selector).
@@ -322,6 +345,12 @@ class ChatWorkspaceController {
       clearErrors: true,
     );
 
+    if (_drafts[active.id] == rawText) {
+      _drafts.remove(active.id);
+      if (_store.state.activeConversationId == active.id) {
+        _store.update((s) => s.copyWith(clearComposerDraft: true));
+      }
+    }
     await _executeAssistantTurn(updatedConv, parentUserMessage: userMsg);
   }
 
@@ -823,7 +852,6 @@ class ChatWorkspaceController {
         pendingAttachments: clearAttachments
             ? const <StudioAttachment>[]
             : null,
-        clearComposerDraft: clearAttachments,
         clearLastTurnError: clearErrors && lastError == null,
         lastTurnError: lastError,
         clearStructuredJsonValid: clearErrors && structuredJsonValid == null,

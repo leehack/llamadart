@@ -190,7 +190,9 @@ Studio Web files also select the shared version and bridge-pin checks.
 Root formatting uses `python3 tool/ci/check_format.py` to skip only these two
 Studio packages, whose Dart language version requires their independent SDK;
 all other package and example directories remain in the root formatter.
-The lane runs model-free VM tests with isolated temporary directories.
+The lane runs model-free VM tests with isolated temporary directories. A paired
+macOS lane runs the native lifecycle and accessibility regressions against the
+SPM Flutter framework; both lanes must pass whenever Studio is selected.
 
 `Example Package Tests` runs the model-free tests (`--exclude-tags
 local-only`) of every example package except the chat app, which Web Chat

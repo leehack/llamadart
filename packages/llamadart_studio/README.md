@@ -38,6 +38,11 @@ deprecates that library in favor of `material_ui`, which defines distinct theme
 types. Imports carry a narrow deprecation ignore until the Markdown dependency
 can migrate with the UI.
 
+Selectable outputs use static-text semantics with a selection area. This avoids
+a Flutter 3.50 macOS accessibility bridge crash when read-only text changes,
+while retaining selection, copying, and readable accessibility text. Native
+regressions exercise the SPM engine framework used by the macOS app.
+
 ```bash
 cd packages/llamadart_studio
 flutter pub get

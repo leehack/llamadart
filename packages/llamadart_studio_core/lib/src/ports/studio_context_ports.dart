@@ -35,8 +35,9 @@ abstract interface class StudioModelHubSettingsPort
 
 /// Navigation contract for switching active top-level Studio destinations.
 abstract interface class StudioWorkspaceNavigator {
-  /// Activates [workspace].
-  void selectWorkspace(StudioWorkspace workspace);
+  /// Attempts to activate [workspace] after protecting the current draft/capture.
+  /// A failed save may retain the current workspace with recovery feedback.
+  Future<void> selectWorkspace(StudioWorkspace workspace);
 }
 
 /// Segregated read-only MCP tool provider port for prompt/turn execution.

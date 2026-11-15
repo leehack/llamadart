@@ -8,6 +8,7 @@ import 'package:llamadart_studio_core/llamadart_studio_core.dart';
 
 import '../../app/studio_dependencies.dart';
 import '../../app/studio_theme.dart';
+import '../../widgets/model_load_error_banner.dart';
 import '../../widgets/store_widgets.dart';
 import '../../widgets/studio_motion.dart';
 import 'message_turn_card.dart';
@@ -211,6 +212,7 @@ class _ChatWorkspaceViewState extends State<ChatWorkspaceView> {
 
         return Column(
           children: <Widget>[
+            const ModelLoadErrorBanner(),
             if (topError != null && !duplicateInlineError)
               Container(
                 width: double.infinity,
@@ -445,8 +447,10 @@ class _EmptyChatHero extends StatelessWidget {
                               FilledButton.icon(
                                 key: const Key('chat_download_starter_button'),
                                 onPressed: () => unawaited(
-                                  deps.modelHubController.activateChatModel(
-                                    starter,
+                                  runModelLoadAction(
+                                    context,
+                                    () => deps.modelHubController
+                                        .activateChatModel(starter),
                                   ),
                                 ),
                                 icon: const Icon(
@@ -470,8 +474,10 @@ class _EmptyChatHero extends StatelessWidget {
                               FilledButton.icon(
                                 key: const Key('hero_quick_load_model_button'),
                                 onPressed: () => unawaited(
-                                  deps.modelHubController.activateChatModel(
-                                    best,
+                                  runModelLoadAction(
+                                    context,
+                                    () => deps.modelHubController
+                                        .activateChatModel(best),
                                   ),
                                 ),
                                 icon: const Icon(Icons.bolt_rounded, size: 16),

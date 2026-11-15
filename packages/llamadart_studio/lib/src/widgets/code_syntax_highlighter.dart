@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
 
 import '../app/studio_theme.dart';
+import 'studio_selectable_text.dart';
 
 /// Multi-language syntax tokenizer producing colored [TextSpan] trees harmonized
 /// with [StudioPalette] for both light and dark modes.
@@ -475,7 +476,7 @@ class SyntaxCodeView extends StatelessWidget {
     final lineGutter = showLineNumbers
         ? Padding(
             padding: const EdgeInsets.only(right: 12),
-            child: SelectableText(
+            child: StudioSelectableText(
               List<String>.generate(
                 lines.length,
                 (int i) => '${startLine + i}'.padLeft(gutterWidth),
@@ -493,7 +494,10 @@ class SyntaxCodeView extends StatelessWidget {
         scrollDirection: Axis.horizontal,
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
-          children: <Widget>[?lineGutter, SelectableText.rich(highlighted)],
+          children: <Widget>[
+            ?lineGutter,
+            StudioSelectableText.rich(highlighted),
+          ],
         ),
       ),
     );
