@@ -202,7 +202,10 @@ extension _CodingWorkspaceTools on CodingWorkspaceController {
           ToolDefinition(
             name: 'bash',
             description:
-                'Execute a shell command inside the workspace root (user-enabled).',
+                'Execute a shell command inside the workspace root (user-enabled). '
+                'Returns exitCode, stdout, and stderr when present. '
+                'Use exact user commands verbatim, without wrappers or appended '
+                'status-printing commands.',
             parameters: <ToolParam>[
               ToolParam.string(
                 'command',
