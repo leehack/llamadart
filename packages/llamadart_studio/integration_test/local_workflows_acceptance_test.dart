@@ -257,6 +257,16 @@ void main() {
       );
       expect(deps.codingController.state.lastError, isNull);
       final answer = deps.codingController.state.messages.last;
+      debugPrint(
+        'UI_ACCEPTANCE_CODING ${jsonEncode(<String, Object?>{
+          'textLength': answer.text.length,
+          'thinkingLength': answer.thinkingText?.length ?? 0,
+          'tools': answer.toolCalls.map((tool) => <String, Object?>{'name': tool.name, 'isError': tool.isError, 'resultLength': tool.resultJson?.length ?? 0}).toList(),
+          'tokens': answer.metrics?.generatedTokens,
+          'elapsedMs': answer.metrics?.elapsedMs,
+          'isError': answer.isError,
+        })}',
+      );
       expect(answer.text, contains('MONTREAL-4827'));
       expect(
         answer.toolCalls.any(
