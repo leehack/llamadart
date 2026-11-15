@@ -615,6 +615,28 @@ for event,mode,oldflag,owner,attempt,cancel,good,main in itertools.product(('pus
     expect(steps.where((s) => s.containsKey('if')), [diagnostics]);
   });
 
+  test('Studio macOS runs each native lifecycle and semantics regression', () {
+    final job = readWorkflow('ci')['jobs']['studio-macos'] as Map;
+    expect(job['runs-on'], 'macos-15');
+    expect(job['if'], "needs.changes.outputs.studio == 'true'");
+    final steps = job['steps'] as List;
+    final native =
+        steps.singleWhere((step) => '${step['run']}'.contains('flutter test'))
+            as Map;
+    expect(native['working-directory'], 'packages/llamadart_studio');
+    for (final regression in [
+      'macos_app_delegate_test.dart',
+      'macos_static_semantics_test.dart',
+      'macos_navigation_semantics_test.dart',
+    ]) {
+      expect(native['run'], contains('test/$regression'));
+      expect(
+        File('packages/llamadart_studio/test/$regression').existsSync(),
+        isTrue,
+      );
+    }
+  });
+
   test('dependabot updates every independently resolved package', () {
     final config =
         loadYaml(File('.github/dependabot.yml').readAsStringSync()) as Map;

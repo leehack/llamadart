@@ -122,7 +122,7 @@ jobs:
         working-directory: packages/llamadart_studio
         run: |
           flutter pub get
-          TMPDIR="$(mktemp -d)" flutter test test/macos_app_delegate_test.dart test/macos_static_semantics_test.dart
+          TMPDIR="$(mktemp -d)" flutter test test/macos_app_delegate_test.dart test/macos_static_semantics_test.dart test/macos_navigation_semantics_test.dart
 
   genkit:
     needs: changes

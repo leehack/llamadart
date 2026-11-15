@@ -1,4 +1,5 @@
 #import <Cocoa/Cocoa.h>
+#include <vector>
 #import <FlutterMacOS/FlutterMacOS.h>
 #define FlutterEngine EmbedderFlutterEngine
 #include "embedder.h"
@@ -12,7 +13,7 @@
 - (void)updateSemantics:(const FlutterSemanticsUpdate2 *)update;
 @end
 
-int main() {
+int main(int argc, const char *argv[]) {
   @autoreleasepool {
     [NSApplication sharedApplication];
     FlutterViewController *controller = [[FlutterViewController alloc] initWithProject:nil];
@@ -27,6 +28,48 @@ int main() {
     // bridge directly, including VALUE_CHANGED dispatch to the hosted view.
     controller.engine.semanticsEnabled = YES;
     [controller notifySemanticsEnabledChanged];
+
+    if (argc > 1) {
+      NSData *data = [NSData dataWithContentsOfFile:[NSString stringWithUTF8String:argv[1]]];
+      NSArray *packets = [NSJSONSerialization JSONObjectWithData:data options:0 error:nil];
+      NSCAssert(packets.count > 0, @"Navigation must emit semantics updates");
+      // Replay the captured topology using static roles to isolate node
+      // reachability. Output value-change notifications are covered below.
+      for (NSArray *packet in packets) {
+        const size_t count = packet.count;
+        std::vector<FlutterSemanticsNode2> nodes(count);
+        std::vector<std::vector<int32_t>> children(count);
+        std::vector<FlutterSemanticsNode2 *> pointers(count);
+        FlutterSemanticsFlags replayFlags = {};
+        replayFlags.struct_size = sizeof(replayFlags);
+        for (size_t i = 0; i < count; i++) {
+          NSDictionary *value = packet[i];
+          FlutterSemanticsNode2 &node = nodes[i];
+          node.struct_size = sizeof(node);
+          node.id = [value[@"id"] intValue];
+          node.flags2 = &replayFlags;
+          node.label = [value[@"label"] UTF8String];
+          node.value = [value[@"value"] UTF8String];
+          node.hint = node.increased_value = node.decreased_value = "";
+          node.tooltip = node.identifier = "";
+          node.text_selection_base = node.text_selection_extent = -1;
+          node.rect = {0, 0, 800, 600};
+          node.transform = {1, 0, 0, 0, 1, 0, 0, 0, 1};
+          for (NSNumber *child in value[@"children"]) children[i].push_back(child.intValue);
+          node.child_count = children[i].size();
+          node.children_in_traversal_order = node.children_in_hit_test_order = children[i].data();
+          pointers[i] = &node;
+        }
+        FlutterSemanticsUpdate2 update = {};
+        update.struct_size = sizeof(update);
+        update.node_count = count;
+        update.nodes = pointers.data();
+        [controller updateSemantics:&update];
+      }
+      NSLog(@"NAVIGATION_SEMANTICS_UPDATE_OK");
+      [controller.engine shutDownEngine];
+      return 0;
+    }
 
     FlutterSemanticsFlags flags = {};
     flags.struct_size = sizeof(flags);

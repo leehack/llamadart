@@ -41,7 +41,9 @@ can migrate with the UI.
 Selectable outputs use static-text semantics with a selection area. This avoids
 a Flutter 3.50 macOS accessibility bridge crash when read-only text changes,
 while retaining selection, copying, and readable accessibility text. Native
-regressions exercise the SPM engine framework used by the macOS app.
+regressions exercise the SPM engine framework used by the macOS app. The
+inspector opens at its full width because a zero-width size transition can emit
+an orphan slider accessibility node in this SDK.
 
 ```bash
 cd packages/llamadart_studio

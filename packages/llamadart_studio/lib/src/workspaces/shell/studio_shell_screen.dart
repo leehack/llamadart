@@ -362,29 +362,14 @@ class _StudioShellScreenState extends State<StudioShellScreen> {
                             },
                       ),
                     Expanded(child: workspaceBody),
-                    if (isWideDesktop)
-                      Builder(
-                        builder: (BuildContext context) {
-                          final inspectorPanel = shellState.inspectorVisible
-                              ? SizedBox(
-                                  width: 334,
-                                  child: SessionInspectorPanel(
-                                    onClose:
-                                        deps.shellController.toggleInspector,
-                                  ),
-                                )
-                              : const SizedBox.shrink();
-                          if (MediaQuery.disableAnimationsOf(context)) {
-                            return inspectorPanel;
-                          }
-                          return ClipRect(
-                            child: AnimatedSize(
-                              duration: const Duration(milliseconds: 220),
-                              curve: Curves.easeOutCubic,
-                              child: inspectorPanel,
-                            ),
-                          );
-                        },
+                    // A zero-width size animation clips a new slider's parent
+                    // semantics before Flutter 3.50 emits its overlay child.
+                    if (isWideDesktop && shellState.inspectorVisible)
+                      SizedBox(
+                        width: 334,
+                        child: SessionInspectorPanel(
+                          onClose: deps.shellController.toggleInspector,
+                        ),
                       ),
                   ],
                 ),
