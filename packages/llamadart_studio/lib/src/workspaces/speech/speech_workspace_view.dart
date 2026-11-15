@@ -642,12 +642,15 @@ class _SpeechWorkspaceViewState extends State<SpeechWorkspaceView> {
               ),
             ],
           ),
-          Slider(
-            value: _ttsTemperature,
-            min: 0.2,
-            max: 1.2,
-            divisions: 20,
-            onChanged: (double v) => setState(() => _ttsTemperature = v),
+          Semantics(
+            container: true,
+            child: Slider(
+              value: _ttsTemperature,
+              min: 0.2,
+              max: 1.2,
+              divisions: 20,
+              onChanged: (double v) => setState(() => _ttsTemperature = v),
+            ),
           ),
           if (state.isSynthesizing) ...<Widget>[
             Text(

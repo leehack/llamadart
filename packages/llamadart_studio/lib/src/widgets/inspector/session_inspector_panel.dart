@@ -326,12 +326,16 @@ class _SliderControl extends StatelessWidget {
               thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6.5),
               overlayShape: const RoundSliderOverlayShape(overlayRadius: 13),
             ),
-            child: Slider(
-              value: value,
-              min: min,
-              max: max,
-              divisions: divisions,
-              onChanged: onChanged,
+            // Each slider overlay needs a distinct traversal parent.
+            child: Semantics(
+              container: true,
+              child: Slider(
+                value: value,
+                min: min,
+                max: max,
+                divisions: divisions,
+                onChanged: onChanged,
+              ),
             ),
           ),
         ],

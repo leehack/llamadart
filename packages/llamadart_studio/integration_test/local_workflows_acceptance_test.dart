@@ -250,23 +250,40 @@ void main() {
         find.byKey(const Key('coding_prompt_input')),
         'Use the read tool to open release.txt. Report the exact release confirmation token. Do not modify files or run commands.',
       );
+      var loggedToolError = false;
+      final toolDiagnostics = deps.codingController.activeStreamStore.stream
+          .listen((stream) {
+            final failed = stream.toolInvocations
+                .where((tool) => tool.isError)
+                .firstOrNull;
+            if (!loggedToolError && failed != null) {
+              loggedToolError = true;
+              debugPrint(
+                'UI_ACCEPTANCE_FIRST_TOOL_ERROR ${jsonEncode(<String, Object?>{'name': failed.name, 'arguments': failed.argumentsJson, 'result': failed.resultJson?.replaceAll(temp.path, '<temporary>')})}',
+              );
+            }
+          });
+      addTearDown(toolDiagnostics.cancel);
       await tap('coding_send_button');
       await waitFor(
         () => !deps.codingController.activeStreamStore.state.isGenerating,
         'Coding read tool',
       );
-      expect(deps.codingController.state.lastError, isNull);
       final answer = deps.codingController.state.messages.last;
       debugPrint(
         'UI_ACCEPTANCE_CODING ${jsonEncode(<String, Object?>{
           'textLength': answer.text.length,
           'thinkingLength': answer.thinkingText?.length ?? 0,
           'tools': answer.toolCalls.map((tool) => <String, Object?>{'name': tool.name, 'isError': tool.isError, 'resultLength': tool.resultJson?.length ?? 0}).toList(),
+          'firstToolArgs': answer.toolCalls.firstOrNull?.argumentsJson,
+          'firstToolResult': answer.toolCalls.firstOrNull?.resultJson?.replaceAll(temp.path, '<temporary>'),
+          'reachedTokenLimit': answer.metrics?.reachedTokenLimit,
           'tokens': answer.metrics?.generatedTokens,
           'elapsedMs': answer.metrics?.elapsedMs,
           'isError': answer.isError,
         })}',
       );
+      expect(deps.codingController.state.lastError, isNull);
       expect(answer.text, contains('MONTREAL-4827'));
       expect(
         answer.toolCalls.any(

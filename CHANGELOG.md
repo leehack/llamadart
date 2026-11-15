@@ -3,6 +3,8 @@ Releases before 0.10.0 are in the
 
 ## Unreleased
 
+- Report incomplete Studio replies and exhausted tool rounds with actionable errors instead of empty successful responses.
+
 - Add an experimental Studio app with seven workspaces and a reusable pure-Dart core, alongside the existing chat example.
 - Add a Linux Vulkan preflight so Studio can report unavailable image drivers before native device enumeration.
 - Speed up model checksum verification on Apple platforms and keep verification off the UI isolate.

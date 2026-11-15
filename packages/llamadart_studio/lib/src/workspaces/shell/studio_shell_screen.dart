@@ -206,6 +206,20 @@ class _StudioShellScreenState extends State<StudioShellScreen> {
     };
   }
 
+  static Widget _buildWorkspaceTransition(
+    Widget child,
+    Animation<double> animation,
+  ) {
+    return FadeTransition(
+      key: ValueKey<Key?>(child.key),
+      opacity: animation,
+      // Slider overlays emit semantics even at opacity zero. Keep their page
+      // parents present so the native tree never receives an orphan child.
+      alwaysIncludeSemantics: true,
+      child: child,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final deps = StudioScope.of(context);
@@ -244,6 +258,7 @@ class _StudioShellScreenState extends State<StudioShellScreen> {
                         ? Duration.zero
                         : const Duration(milliseconds: 200),
                     switchInCurve: Curves.easeOutCubic,
+                    transitionBuilder: _buildWorkspaceTransition,
                     child: _buildActiveWorkspace(shellState.activeWorkspace),
                   ),
                 ),

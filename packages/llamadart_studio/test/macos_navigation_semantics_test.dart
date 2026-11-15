@@ -9,6 +9,7 @@ import 'package:flutter/foundation.dart';
 // Keep Material types compatible with flutter_markdown (see README).
 // ignore: deprecated_member_use
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:llamadart_studio/llamadart_studio.dart';
 import 'package:llamadart_studio_core/llamadart_studio_core.dart';
@@ -26,6 +27,41 @@ void main() {
       addTearDown(() => debugDefaultTargetPlatformOverride = null);
       await tester.binding.setSurfaceSize(const Size(820, 900));
       addTearDown(() => tester.binding.setSurfaceSize(null));
+      final channels = <MethodChannel>[];
+      void mock(String name, Future<Object?> Function(MethodCall) handler) {
+        final channel = MethodChannel(name);
+        channels.add(channel);
+        tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+          channel,
+          handler,
+        );
+      }
+
+      for (final name in <String>[
+        'xyz.luan/audioplayers.global',
+        'xyz.luan/audioplayers.global/events',
+        'xyz.luan/audioplayers',
+        'com.llfbandit.record/messages',
+      ]) {
+        mock(name, (call) async {
+          if (call.method == 'create') {
+            final args = call.arguments as Map;
+            final event = name == 'xyz.luan/audioplayers'
+                ? 'xyz.luan/audioplayers/events/${args['playerId']}'
+                : 'com.llfbandit.record/events/${args['recorderId']}';
+            mock(event, (_) async => null);
+          }
+          return null;
+        });
+      }
+      addTearDown(() {
+        for (final channel in channels) {
+          tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+            channel,
+            null,
+          );
+        }
+      });
       final deps = await buildTestDeps();
       addTearDown(deps.dispose);
       binding.updates.clear();
@@ -69,6 +105,54 @@ void main() {
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 50));
       await deps.shellController.selectWorkspace(StudioWorkspace.chat);
+      await tester.pumpAndSettle();
+      // Expert hardware and Sampling both mount multiple slider overlays.
+      await tester.tap(find.byKey(const Key('inspector_mode_expert')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Sampling').last);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Hardware').last);
+      await tester.pumpAndSettle();
+      for (final width in <double>[1360, 820]) {
+        await tester.binding.setSurfaceSize(Size(width, 900));
+        await tester.pumpAndSettle();
+        for (final workspace in StudioWorkspace.values) {
+          await deps.shellController.selectWorkspace(workspace);
+          // Include the initial zero-opacity frame: an overlay may emit a
+          // semantics child even while the incoming page is hidden.
+          await tester.pump();
+          await tester.pump(const Duration(milliseconds: 50));
+          await tester.pumpAndSettle();
+          if (width >= 1120 &&
+              (workspace == StudioWorkspace.speech ||
+                  workspace == StudioWorkspace.image)) {
+            final page = workspace == StudioWorkspace.speech
+                ? find.byType(SpeechWorkspaceView)
+                : find.byType(ImageWorkspaceView);
+            final slider = find
+                .descendant(of: page, matching: find.byType(Slider))
+                .first;
+            await tester.ensureVisible(slider);
+            final before = tester.widget<Slider>(slider).value;
+            await tester.drag(slider, const Offset(40, 0));
+            await tester.pumpAndSettle();
+            expect(tester.widget<Slider>(slider).value, isNot(before));
+          }
+          if (width >= 1120) {
+            await deps.shellController.toggleInspector();
+            await tester.pumpAndSettle();
+            await deps.shellController.toggleInspector();
+            await tester.pumpAndSettle();
+          }
+          if (workspace == StudioWorkspace.playground) {
+            for (final tab in PlaygroundToolTab.values) {
+              deps.playgroundController.selectTab(tab);
+              await tester.pumpAndSettle();
+            }
+          }
+        }
+      }
+      await tester.pumpWidget(const SizedBox.shrink());
       await tester.pumpAndSettle();
       expect(tester.takeException(), isNull);
       final temporary = Directory.systemTemp.createTempSync(

@@ -320,13 +320,16 @@ class _ImageWorkspaceViewState extends State<ImageWorkspaceView> {
                                   'Steps: $_steps',
                                   style: const TextStyle(fontSize: 12),
                                 ),
-                                Slider(
-                                  value: _steps.toDouble(),
-                                  min: 1,
-                                  max: 16,
-                                  divisions: 15,
-                                  onChanged: (double v) =>
-                                      setState(() => _steps = v.round()),
+                                Semantics(
+                                  container: true,
+                                  child: Slider(
+                                    value: _steps.toDouble(),
+                                    min: 1,
+                                    max: 16,
+                                    divisions: 15,
+                                    onChanged: (double v) =>
+                                        setState(() => _steps = v.round()),
+                                  ),
                                 ),
                               ],
                             ),
@@ -343,13 +346,16 @@ class _ImageWorkspaceViewState extends State<ImageWorkspaceView> {
                                   'CFG: ${_cfgScale.toStringAsFixed(1)}',
                                   style: const TextStyle(fontSize: 12),
                                 ),
-                                Slider(
-                                  value: _cfgScale,
-                                  min: 1.0,
-                                  max: 8.0,
-                                  divisions: 14,
-                                  onChanged: (double v) =>
-                                      setState(() => _cfgScale = v),
+                                Semantics(
+                                  container: true,
+                                  child: Slider(
+                                    value: _cfgScale,
+                                    min: 1.0,
+                                    max: 8.0,
+                                    divisions: 14,
+                                    onChanged: (double v) =>
+                                        setState(() => _cfgScale = v),
+                                  ),
                                 ),
                               ],
                             ),

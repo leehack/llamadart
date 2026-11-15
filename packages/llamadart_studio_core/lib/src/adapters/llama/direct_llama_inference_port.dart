@@ -588,11 +588,15 @@ class DirectLlamaInferencePort
         }
       }
 
-      if (_cancelRequested ||
-          roundToolCalls.isEmpty ||
-          rawTools.isEmpty ||
-          round >= request.maxToolRounds) {
+      if (_cancelRequested || roundToolCalls.isEmpty || rawTools.isEmpty) {
         break;
+      }
+      if (round >= request.maxToolRounds) {
+        throw LlamaInferenceException(
+          'The model reached the tool round limit (${request.maxToolRounds}) '
+          'before finishing. Review the tool results, simplify the prompt, '
+          'or choose another model and retry.',
+        );
       }
 
       round++;
@@ -738,6 +742,16 @@ class DirectLlamaInferencePort
     }
 
     final finalText = textBuffer.toString();
+    if (!_cancelRequested && finalText.trim().isEmpty) {
+      throw LlamaInferenceException(
+        reachedTokenLimit
+            ? 'The model reached a generation limit before producing a visible '
+                  'answer. Increase the output token limit or context size '
+                  'and retry.'
+            : 'The model returned no visible answer. Review any tool results, '
+                  'simplify the prompt, or choose another model and retry.',
+      );
+    }
     bool? jsonValid;
     String? jsonError;
     if (structuredOutput != null) {
