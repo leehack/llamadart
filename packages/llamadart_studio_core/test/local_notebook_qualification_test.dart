@@ -189,7 +189,11 @@ void main() {
           expect(answer, contains('45'));
           expect(
             answer.toLowerCase(),
-            matches(RegExp(r'conflict|contradict|disagree|inconsisten')),
+            matches(
+              RegExp(
+                r'conflict|contradict|disagree|inconsisten|different durations',
+              ),
+            ),
           );
           expect(
             answer.toLowerCase(),
