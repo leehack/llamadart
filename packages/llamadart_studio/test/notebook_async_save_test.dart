@@ -61,10 +61,16 @@ void main() {
       final other = deps.notebookController.state.notes.firstWhere(
         (n) => n.id != selected.id,
       );
-      await deps.notebookController.applyAuditedNotes(<StudioNote>[
-        selected.copyWith(title: 'First', content: ''),
-        other.copyWith(title: 'Second', content: ''),
-      ]);
+      await deps.notebookController.updateNote(
+        selected.id,
+        title: 'First',
+        content: '',
+      );
+      await deps.notebookController.updateNote(
+        other.id,
+        title: 'Second',
+        content: '',
+      );
       await tester.pumpWidget(
         StudioScope(
           deps: deps,

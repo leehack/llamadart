@@ -6,11 +6,23 @@ class CodingQualificationProject {
 
   final Directory root;
   bool _policyTestEnabled = false;
+  bool _analysisProbeEnabled = false;
+
+  static const String analysisProbePath =
+      'qualification/mcp_analysis_probe.dart';
+  static const String analysisProbeSymbol =
+      'studioQualificationMissingSymbol7319';
+  static const String analysisProbeSource = '''
+void studioQualificationDiagnosticProbe() {
+  studioQualificationMissingSymbol7319();
+}
+''';
 
   Map<String, String> get expectedProtectedFiles => <String, String>{
     for (final entry in protectedFiles.entries)
       if (_policyTestEnabled || entry.key != 'test/order_total_test.dart')
         entry.key: entry.value,
+    if (_analysisProbeEnabled) analysisProbePath: analysisProbeSource,
   };
 
   static const String originalSource = '''
@@ -198,6 +210,17 @@ void main() {
     if (added.exitCode != 0) throw StateError('${added.stderr}');
     _policyTestEnabled = true;
   }
+
+  /// A known analyzer error proves MCP analyzed this project, rather than a clean file.
+  Future<void> enableAnalysisProbe() async {
+    await write(analysisProbePath, analysisProbeSource);
+    final added = await git(<String>['add', analysisProbePath]);
+    if (added.exitCode != 0) throw StateError('${added.stderr}');
+    _analysisProbeEnabled = true;
+  }
+
+  String get canonicalRootUri =>
+      Directory(root.resolveSymbolicLinksSync()).uri.toString();
 
   File file(String path) => File('${root.path}/$path');
 

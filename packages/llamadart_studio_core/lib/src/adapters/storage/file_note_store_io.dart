@@ -34,12 +34,21 @@ class FileNoteStore implements StudioNoteStore {
   FileNoteStore({
     required Directory rootDirectory,
     KeyValueStore? fallbackStore,
-  }) : _notesDir = Directory(p.join(rootDirectory.path, 'notes')),
-       _mediaDir = Directory(p.join(rootDirectory.path, 'note_media')),
+  }) : _rootDir = Directory(p.absolute(rootDirectory.path)),
+       _notesDir = Directory(p.absolute(rootDirectory.path, 'notes')),
+       _mediaDir = Directory(p.absolute(rootDirectory.path, 'note_media')),
        _fallbackStore = fallbackStore;
 
   static const String _orderFileName = '_order.json';
+  static const Set<String> _mediaFileNames = <String>{
+    'image.png',
+    'image.jpg',
+    'image.webp',
+    'image.gif',
+    'audio.wav',
+  };
 
+  final Directory _rootDir;
   final Directory _notesDir;
   final Directory _mediaDir;
   final KeyValueStore? _fallbackStore;
@@ -47,9 +56,7 @@ class FileNoteStore implements StudioNoteStore {
 
   @override
   Future<List<StudioNote>> loadAll() async {
-    if (!await _notesDir.exists()) {
-      await _notesDir.create(recursive: true);
-    }
+    await _prepareNotesDirectory();
 
     final notesById = <String, StudioNote>{};
     await for (final entity in _notesDir.list(followLinks: false)) {
@@ -64,6 +71,7 @@ class FileNoteStore implements StudioNoteStore {
         final decoded = jsonDecode(raw);
         if (decoded is Map<String, Object?>) {
           var note = StudioNote.fromJson(decoded);
+          _validatedNoteId(note.id);
           // Migrate any lingering inline base64 payloads inside JSON to disk.
           if ((note.imageBase64 != null && note.imageBase64!.isNotEmpty) ||
               (note.audioBase64 != null && note.audioBase64!.isNotEmpty)) {
@@ -144,9 +152,10 @@ class FileNoteStore implements StudioNoteStore {
   @override
   Future<List<StudioNote>> saveAll(List<StudioNote> notes) {
     return _writeLock.synchronized(() async {
-      if (!await _notesDir.exists()) {
-        await _notesDir.create(recursive: true);
+      for (final note in notes) {
+        _validatedNoteId(note.id);
       }
+      await _prepareNotesDirectory();
       final storedList = <StudioNote>[];
       final keepSafeIds = <String>{};
       final nextOrder = <String>[];
@@ -154,7 +163,7 @@ class FileNoteStore implements StudioNoteStore {
       for (final note in notes) {
         final stored = await _offloadMediaAndWriteJsonUnlocked(note);
         storedList.add(stored);
-        keepSafeIds.add(_sanitizeFileName(stored.id));
+        keepSafeIds.add(_validatedNoteId(stored.id));
         nextOrder.add(stored.id);
       }
 
@@ -168,12 +177,11 @@ class FileNoteStore implements StudioNoteStore {
           continue;
         }
         final stem = base.substring(0, base.length - 5);
+        if (!_isValidNoteId(stem)) continue;
         if (!keepSafeIds.contains(stem)) {
           await entity.delete();
           final staleMedia = Directory(p.join(_mediaDir.path, stem));
-          if (await staleMedia.exists()) {
-            await staleMedia.delete(recursive: true);
-          }
+          await _removeUnreferencedMedia(staleMedia);
         }
       }
 
@@ -185,18 +193,19 @@ class FileNoteStore implements StudioNoteStore {
   @override
   Future<void> delete(String noteId) {
     return _writeLock.synchronized(() async {
-      final safeId = _sanitizeFileName(noteId);
+      final safeId = _validatedNoteId(noteId);
+      await _prepareNotesDirectory();
+      final order = await _readOrderIds()
+        ..remove(noteId);
+      // Order is advisory: a crash before note deletion still reloads the note.
+      // A failed order write must not delete the authoritative JSON or media.
+      await _writeOrderIdsUnlocked(order);
       final file = File(p.join(_notesDir.path, '$safeId.json'));
       if (await file.exists()) {
         await file.delete();
       }
       final mediaSubdir = Directory(p.join(_mediaDir.path, safeId));
-      if (await mediaSubdir.exists()) {
-        await mediaSubdir.delete(recursive: true);
-      }
-      final order = await _readOrderIds()
-        ..remove(noteId);
-      await _writeOrderIdsUnlocked(order);
+      await _removeUnreferencedMedia(mediaSubdir);
     });
   }
 
@@ -247,17 +256,16 @@ class FileNoteStore implements StudioNoteStore {
     bool clearImage = false,
     bool clearAudio = false,
   }) async {
-    if (!await _notesDir.exists()) {
-      await _notesDir.create(recursive: true);
-    }
-    final safeId = _sanitizeFileName(note.id);
+    final safeId = _validatedNoteId(note.id);
+    await _prepareNotesDirectory();
     final noteMediaDir = Directory(p.join(_mediaDir.path, safeId));
+    await _checkMediaDirectory(noteMediaDir);
 
     var updated = note;
     Directory? revision;
     var committed = false;
     Future<File> newMediaFile(String name) async {
-      await noteMediaDir.create(recursive: true);
+      await _checkMediaDirectory(noteMediaDir, create: true);
       revision ??= await noteMediaDir.createTemp('revision_');
       return File(p.join(revision!.path, name));
     }
@@ -314,8 +322,10 @@ class FileNoteStore implements StudioNoteStore {
       }
 
       // 3. Atomic write (.tmp + rename) without inline base64 blobs.
+      await _validateManagedMedia(updated, noteMediaDir);
       final target = File(p.join(_notesDir.path, '$safeId.json'));
       final temp = File('${target.path}.tmp');
+      await _rejectFileLink(temp);
       await temp.writeAsString(
         const JsonEncoder.withIndent(
           '  ',
@@ -324,12 +334,12 @@ class FileNoteStore implements StudioNoteStore {
       );
       await temp.rename(target.path);
       committed = true;
-      await _removeUnreferencedMedia(noteMediaDir, updated);
+      await _removeUnreferencedMedia(noteMediaDir, note: updated);
       return updated;
     } finally {
       if (!committed && revision != null) {
         try {
-          await revision!.delete(recursive: true);
+          await _collectRevision(revision!, <String>{});
         } on FileSystemException {
           // A later committed save also collects interrupted revisions.
         }
@@ -337,39 +347,184 @@ class FileNoteStore implements StudioNoteStore {
     }
   }
 
-  Future<void> _removeUnreferencedMedia(Directory dir, StudioNote note) async {
-    // Collect abandoned revisions on the next successful save after a crash.
-    // Never follow links or touch paths outside this note's owned directory.
+  Future<void> _prepareNotesDirectory() async {
+    await _rootDir.create(recursive: true);
+    await _checkChildDirectory(_rootDir, _notesDir, create: true);
+  }
+
+  Future<bool> _checkChildDirectory(
+    Directory parent,
+    Directory child, {
+    bool create = false,
+  }) async {
+    var type = await FileSystemEntity.type(child.path, followLinks: false);
+    if (type == FileSystemEntityType.notFound) {
+      if (!create) return false;
+      await child.create();
+      type = await FileSystemEntity.type(child.path, followLinks: false);
+    }
+    final canonicalParent = await parent.resolveSymbolicLinks();
+    final canonicalRoot = await _rootDir.resolveSymbolicLinks();
+    if (type != FileSystemEntityType.directory) {
+      throw FileSystemException(
+        'Note store directory must not be a link',
+        child.path,
+      );
+    }
+    final canonicalChild = await child.resolveSymbolicLinks();
+    if (!p.equals(
+          canonicalChild,
+          p.join(canonicalParent, p.basename(child.path)),
+        ) ||
+        !p.isWithin(canonicalRoot, canonicalChild)) {
+      throw FileSystemException(
+        'Note store directory escapes its owned parent',
+        child.path,
+      );
+    }
+    return true;
+  }
+
+  Future<bool> _checkMediaDirectory(
+    Directory dir, {
+    bool create = false,
+  }) async {
+    _validatedNoteId(p.basename(dir.path));
+    if (!await _checkChildDirectory(_rootDir, _mediaDir, create: create)) {
+      return false;
+    }
+    return _checkChildDirectory(_mediaDir, dir, create: create);
+  }
+
+  Future<void> _validateManagedMedia(StudioNote note, Directory dir) async {
+    final managedRoot = p.normalize(p.absolute(_mediaDir.path));
+    final canonicalManagedRoot = await _canonicalPath(managedRoot);
+    final canonicalDir = await _canonicalPath(dir.path);
+    for (final path in <String?>[note.imageLocalPath, note.audioLocalPath]) {
+      if (path == null || path.isEmpty) continue;
+      final absolute = p.normalize(p.absolute(path));
+      final canonical = await _canonicalPath(absolute);
+      if (!p.isWithin(managedRoot, absolute) &&
+          !p.isWithin(canonicalManagedRoot, canonical)) {
+        continue;
+      }
+      final relative = p.split(p.relative(canonical, from: canonicalDir));
+      final recognized =
+          (relative.length == 1 ||
+              (relative.length == 2 && _isRevisionName(relative.first))) &&
+          _mediaFileNames.contains(relative.last);
+      if (!p.isWithin(canonicalDir, canonical) ||
+          !recognized ||
+          !await _checkMediaDirectory(dir)) {
+        throw FileSystemException('Invalid managed note media reference', path);
+      }
+      if (relative.length == 2) {
+        await _checkChildDirectory(
+          dir,
+          Directory(p.join(dir.path, relative.first)),
+        );
+      }
+      final file = File(absolute);
+      if (await FileSystemEntity.type(absolute, followLinks: false) !=
+              FileSystemEntityType.file ||
+          !p.equals(
+            await file.resolveSymbolicLinks(),
+            p.join(await dir.resolveSymbolicLinks(), p.joinAll(relative)),
+          )) {
+        throw FileSystemException(
+          'Managed note media is missing or unsafe',
+          path,
+        );
+      }
+    }
+  }
+
+  Future<String> _canonicalPath(String path) async {
+    var existing = p.normalize(p.absolute(path));
+    final missing = <String>[];
+    while (await FileSystemEntity.type(existing, followLinks: false) ==
+        FileSystemEntityType.notFound) {
+      missing.insert(0, p.basename(existing));
+      final parent = p.dirname(existing);
+      if (parent == existing) {
+        throw FileSystemException('No existing path ancestor', path);
+      }
+      existing = parent;
+    }
+    return p.joinAll(<String>[
+      await File(existing).resolveSymbolicLinks(),
+      ...missing,
+    ]);
+  }
+
+  Future<void> _removeUnreferencedMedia(
+    Directory dir, {
+    StudioNote? note,
+  }) async {
+    // Only recognized media is ours. Unknown entries and links are preserved.
     try {
-      if (!await dir.exists()) return;
-      final retained = <String>{
-        if (note.imageLocalPath case final String path)
-          p.normalize(p.absolute(path)),
-        if (note.audioLocalPath case final String path)
-          p.normalize(p.absolute(path)),
-      };
-      final directories = <Directory>[];
-      await for (final entity in dir.list(
-        recursive: true,
-        followLinks: false,
-      )) {
-        if (entity is File &&
-            !retained.contains(p.normalize(p.absolute(entity.path)))) {
-          await entity.delete();
-        } else if (entity is Directory) {
-          directories.add(entity);
+      if (!await _checkMediaDirectory(dir)) return;
+      final retained = <String>{};
+      for (final path in <String?>[
+        note?.imageLocalPath,
+        note?.audioLocalPath,
+      ]) {
+        if (path != null && await File(path).exists()) {
+          retained.add(await File(path).resolveSymbolicLinks());
         }
       }
-      for (final directory in directories.reversed) {
-        if (await directory.list(followLinks: false).isEmpty) {
-          await directory.delete();
+      await _collectRecognizedFiles(dir, retained);
+      await for (final entity in dir.list(followLinks: false)) {
+        if (entity is Directory && _isRevisionName(p.basename(entity.path))) {
+          await _collectRevision(entity, retained);
         }
       }
-      if (await dir.list(followLinks: false).isEmpty) {
-        await dir.delete();
-      }
+      if (await dir.list(followLinks: false).isEmpty) await dir.delete();
     } on FileSystemException {
       // Cleanup is retryable; the metadata commit already succeeded.
+    }
+  }
+
+  Future<void> _collectRevision(
+    Directory revision,
+    Set<String> retained,
+  ) async {
+    final parent = revision.parent;
+    if (!_isRevisionName(p.basename(revision.path)) ||
+        !await _checkMediaDirectory(parent) ||
+        !await _checkChildDirectory(parent, revision)) {
+      return;
+    }
+    await _collectRecognizedFiles(revision, retained);
+    if (await revision.list(followLinks: false).isEmpty) {
+      await revision.delete();
+    }
+  }
+
+  Future<void> _collectRecognizedFiles(
+    Directory dir,
+    Set<String> retained,
+  ) async {
+    for (final name in _mediaFileNames) {
+      final file = File(p.join(dir.path, name));
+      if (await FileSystemEntity.type(file.path, followLinks: false) ==
+              FileSystemEntityType.file &&
+          !retained.contains(await file.resolveSymbolicLinks())) {
+        await file.delete();
+      }
+    }
+  }
+
+  static bool _isRevisionName(String name) =>
+      RegExp(r'^revision_[a-zA-Z0-9]+$').hasMatch(name);
+
+  static Future<void> _rejectFileLink(File file) async {
+    if (await FileSystemEntity.type(file.path, followLinks: false) ==
+        FileSystemEntityType.link) {
+      throw FileSystemException(
+        'Note store staging file must not be a link',
+        file.path,
+      );
     }
   }
 
@@ -389,11 +544,10 @@ class FileNoteStore implements StudioNoteStore {
   }
 
   Future<void> _writeOrderIdsUnlocked(List<String> ids) async {
-    if (!await _notesDir.exists()) {
-      await _notesDir.create(recursive: true);
-    }
+    await _prepareNotesDirectory();
     final target = File(p.join(_notesDir.path, _orderFileName));
     final temp = File('${target.path}.tmp');
+    await _rejectFileLink(temp);
     await temp.writeAsString(jsonEncode(ids), flush: true);
     await temp.rename(target.path);
   }
@@ -412,7 +566,21 @@ class FileNoteStore implements StudioNoteStore {
     return 'png';
   }
 
-  static String _sanitizeFileName(String raw) {
-    return raw.replaceAll(RegExp(r'[^a-zA-Z0-9._-]'), '_');
+  static bool _isValidNoteId(String id) =>
+      id.isNotEmpty &&
+      id != '.' &&
+      id != '..' &&
+      id != '_order' &&
+      RegExp(r'^[a-zA-Z0-9._-]+$').hasMatch(id);
+
+  static String _validatedNoteId(String raw) {
+    if (!_isValidNoteId(raw)) {
+      throw ArgumentError.value(
+        raw,
+        'noteId',
+        'Must be one non-reserved filename component',
+      );
+    }
+    return raw;
   }
 }

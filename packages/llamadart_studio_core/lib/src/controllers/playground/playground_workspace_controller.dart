@@ -24,6 +24,9 @@ part 'playground_decision_workflows.dart';
 /// [LabModelCoordinator].
 class PlaygroundWorkspaceController {
   /// Creates a [PlaygroundWorkspaceController].
+  ///
+  /// [onNotesUpdated] receives evaluated note snapshots carrying derived tags
+  /// only. The recipient merges tags into current notes and skips stale results.
   PlaygroundWorkspaceController({
     required StudioModelStoragePort storagePort,
     StudioPlaygroundPort? playgroundPort,
@@ -36,7 +39,7 @@ class PlaygroundWorkspaceController {
     LabModelCoordinator? labModels,
     StudioModelCatalog modelCatalog = const CuratedStudioModelCatalog(),
     List<StudioNote> Function()? notesProvider,
-    Future<void> Function(List<StudioNote> updatedNotes)? onNotesUpdated,
+    Future<void> Function(List<StudioNote> auditedNotes)? onNotesUpdated,
     Future<bool> Function()? ensureChatModelReady,
     required this.isWeb,
     required this.isMobile,
@@ -71,7 +74,7 @@ class PlaygroundWorkspaceController {
   final LabModelCoordinator _labModels;
   final bool _ownsLabModels;
   final List<StudioNote> Function()? _notesProvider;
-  final Future<void> Function(List<StudioNote> updatedNotes)? _onNotesUpdated;
+  final Future<void> Function(List<StudioNote> auditedNotes)? _onNotesUpdated;
   final Future<bool> Function()? _ensureChatModelReady;
 
   /// Whether running on WebGPU.

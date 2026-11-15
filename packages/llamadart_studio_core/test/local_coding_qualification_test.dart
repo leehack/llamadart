@@ -9,6 +9,7 @@ import 'package:llamadart/llamadart.dart';
 import 'package:llamadart_studio_core/llamadart_studio_core.dart';
 import 'package:test/test.dart';
 
+import 'support/coding_qualification_evidence.dart';
 import 'support/coding_qualification_project.dart';
 
 /// Runs only with an explicitly supplied, locally cached Qwen3.8 27B GGUF.
@@ -128,6 +129,7 @@ void main() {
           ]);
           expect('${diff.stdout}', contains('diff --git a/lib/shipping.dart'));
 
+          await project.enableAnalysisProbe();
           final analyze = session.mcp.state.activeTools.singleWhere(
             (tool) => tool.name == 'analyze_files',
           );
@@ -135,10 +137,13 @@ void main() {
           final review = await session.prompt(
             'Review the actual patch now. Use bash to run exactly '
             '`$diffCommand`, then use the default Dart MCP tool '
-            '`${analyze.exposedToolName}` to analyze lib/shipping.dart. '
+            '`${analyze.exposedToolName}` with exactly these arguments: '
+            '${session.analysisArguments(<String>['lib/shipping.dart'])}. '
             'Register the active workspace root with the MCP server first if '
-            'required. Do not change any files. Report the diff and actual '
-            'analysis outcome, including any failures.',
+            'required. The protected diagnostic probe intentionally contains '
+            'an undefined function; report that diagnostic as proof of analysis '
+            'and do not repair it. Do not change any files. Report the diff '
+            'and actual analysis outcome, including any other failures.',
             approvedCommands: const <String>{diffCommand},
           );
           expect(review.isError, isFalse);
@@ -150,15 +155,11 @@ void main() {
             _result(inspected)['stdout'],
             contains('diff --git a/lib/shipping.dart'),
           );
-          final analyzed = review.toolCalls.where(
-            (t) => t.name == analyze.exposedToolName && !t.isError,
+          final analyzed = session.requireAnalysis(
+            review,
+            analyze.exposedToolName,
+            <String>['lib/shipping.dart'],
           );
-          expect(
-            analyzed,
-            isNotEmpty,
-            reason: 'Real default MCP use is required.',
-          );
-          expect(analyzed.any((t) => _result(t)['isError'] != true), isTrue);
           expect(session.coding.state.lastError, isNull);
 
           final changes = session.coding.state.recentChanges;
@@ -260,15 +261,18 @@ void main() {
 
           const diffCommand =
               'git diff -- lib/shipping.dart lib/order_total.dart';
+          await project.enableAnalysisProbe();
           final analyze = session.mcp.state.activeTools.singleWhere(
             (tool) => tool.name == 'analyze_files',
           );
           final review = await session.prompt(
             'Review both changed modules. Use bash to run exactly `$diffCommand` '
-            'and use the default MCP `${analyze.exposedToolName}` tool to analyze '
-            'both lib/shipping.dart and lib/order_total.dart. Register the '
-            'workspace root first if required. Do not edit files. Report the '
-            'actual diff and analysis outcomes.',
+            'and use the default MCP `${analyze.exposedToolName}` tool with '
+            'exactly these arguments: ${session.analysisArguments(sourcePaths)}. '
+            'Register the workspace root first if required. The protected '
+            'diagnostic probe intentionally has an undefined function; report '
+            'that expected diagnostic and do not repair it. Do not edit files. '
+            'Report the actual diff and analysis outcomes for both modules.',
             approvedCommands: const <String>{diffCommand},
           );
           final inspected = review.toolCalls.singleWhere(
@@ -281,13 +285,11 @@ void main() {
               contains('diff --git a/$path'),
             );
           }
-          final analyzed = review.toolCalls.where(
-            (t) =>
-                t.name == analyze.exposedToolName &&
-                !t.isError &&
-                _result(t)['isError'] != true,
+          final analyzed = session.requireAnalysis(
+            review,
+            analyze.exposedToolName,
+            sourcePaths,
           );
-          expect(analyzed, isNotEmpty);
           await session.expectProtectedFiles();
 
           final changes = session.coding.state.recentChanges;
@@ -327,9 +329,18 @@ void main() {
           'Use bash to run exactly `$command` once. Do not use other tools '
           'or modify files. If approval is rejected, stop and report it; '
           'do not retry or bypass the decision.',
+          approvedCommands: <String>{command},
           rejectCommands: true,
         );
+        requireExactProbeApproval(
+          decisions: session.lastApprovalDecisions,
+          calls: response.toolCalls,
+          ownedRoot: session.project.root.path,
+          expectedCommand: command,
+          cancelled: false,
+        );
         final call = response.toolCalls.singleWhere((t) => t.name == 'bash');
+        expect(_arguments(call)['command'], command);
         expect(_result(call)['approved'], isFalse);
         expect(_result(call)['rejected'], isTrue);
         expect(_result(call).containsKey('exitCode'), isFalse);
@@ -345,10 +356,18 @@ void main() {
           final command = session.project.dartCommand(
             'tool/approval_probe.dart',
           );
-          await session.prompt(
+          final stopped = await session.prompt(
             'Use bash to run exactly `$command` once. Do not use any other tool '
             'or write files. Wait for the command approval decision.',
+            approvedCommands: <String>{command},
             cancelAtApproval: true,
+          );
+          requireExactProbeApproval(
+            decisions: session.lastApprovalDecisions,
+            calls: stopped.toolCalls,
+            ownedRoot: session.project.root.path,
+            expectedCommand: command,
+            cancelled: true,
           );
           expect(
             session.project.file('approval-ran.txt').existsSync(),
@@ -426,6 +445,33 @@ class _QualificationSession {
   final McpManager mcp;
   final SkillRegistry skills;
   final CodingWorkspaceController coding;
+  List<Map<String, Object?>> lastApprovalDecisions = <Map<String, Object?>>[];
+
+  String analysisArguments(List<String> changedPaths) =>
+      jsonEncode(<String, Object?>{
+        'roots': <Map<String, Object?>>[
+          <String, Object?>{
+            'root': project.canonicalRootUri,
+            'paths': <String>[
+              ...changedPaths,
+              CodingQualificationProject.analysisProbePath,
+            ],
+          },
+        ],
+      });
+
+  List<StudioToolInvocation> requireAnalysis(
+    StudioMessage message,
+    String toolName,
+    List<String> changedPaths,
+  ) => requireOwnedAnalysisEvidence(
+    calls: message.toolCalls,
+    toolName: toolName,
+    ownedRoot: project.root.path,
+    changedPaths: changedPaths,
+    probePath: CodingQualificationProject.analysisProbePath,
+    probeSymbol: CodingQualificationProject.analysisProbeSymbol,
+  );
 
   static Future<_QualificationSession> create(
     DirectLlamaInferencePort inference,
@@ -521,12 +567,12 @@ class _QualificationSession {
       final controlledRoot = pending.workspaceRoot == project.root.path;
       final approved =
           controlledRoot && approvedCommands.contains(pending.command);
-      if (!controlledRoot ||
-          (!approved && !rejectCommands && !cancelAtApproval)) {
+      if (!approved) {
         unexpected.add(pending.command);
       }
       decisions.add(<String, Object?>{
         'command': pending.command,
+        'workspaceRoot': pending.workspaceRoot,
         'approved': approved && !rejectCommands && !cancelAtApproval,
         'cancelled': cancelAtApproval,
       });
@@ -540,6 +586,7 @@ class _QualificationSession {
       await coding.sendCodingPrompt(text);
     } finally {
       await subscription.cancel();
+      lastApprovalDecisions = decisions;
       _evidence('turn', <String, Object?>{
         'prompt': text,
         'approvalDecisions': decisions,

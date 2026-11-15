@@ -1,4 +1,5 @@
 @TestOn('vm')
+@Timeout(Duration(minutes: 2))
 library;
 
 import 'dart:async';
@@ -18,7 +19,7 @@ void main() {
     root = await Directory.systemTemp.createTemp('studio_notes_process_');
   });
   tearDown(() async {
-    await root.delete(recursive: true);
+    if (await root.exists()) await root.delete(recursive: true);
   });
 
   test(
@@ -196,6 +197,149 @@ void main() {
     expect(await image.readAsBytes(), fixture.processFixtureImage());
     expect(await audio.readAsBytes(), fixture.processFixtureAudio());
   });
+
+  test(
+    'malformed persisted IDs cannot turn media cleanup into app-data deletion',
+    () async {
+      final sentinel = File('${root.path}/conversations.json');
+      await sentinel.writeAsString('unrelated durable data', flush: true);
+      final notes = await Directory('${root.path}/notes').create();
+      await Directory('${root.path}/note_media').create();
+      await File('${notes.path}/corrupt.json').writeAsString(
+        jsonEncode(<String, Object?>{
+          ...fixture.processFixtureNote().toJson(),
+          'id': '..',
+        }),
+        flush: true,
+      );
+      final store = _store(root);
+      final loaded = await store.loadAll();
+      await store.saveAll(loaded);
+      expect(await sentinel.readAsString(), 'unrelated durable data');
+      expect(loaded, isEmpty);
+    },
+  );
+
+  test('invalid IDs are rejected before any note-store mutation', () async {
+    final store = _store(root);
+    for (final id in <String>[
+      '',
+      '.',
+      '..',
+      '../escape',
+      'nested/note',
+      '_order',
+    ]) {
+      final note = StudioNote.fromJson(<String, Object?>{
+        ...fixture.processFixtureNote().toJson(),
+        'id': id,
+      });
+      await expectLater(store.save(note), throwsArgumentError);
+      await expectLater(
+        store.saveAll(<StudioNote>[fixture.processFixtureTextNote(), note]),
+        throwsArgumentError,
+      );
+      await expectLater(store.delete(id), throwsArgumentError);
+    }
+    expect(await root.list().isEmpty, isTrue);
+  });
+
+  test(
+    'stale missing managed media cannot overwrite the current durable note',
+    () async {
+      final store = _store(root);
+      final original = await store.save(
+        fixture.processFixtureNote(),
+        imageBytes: fixture.processFixtureImage(),
+        audioWavBytes: fixture.processFixtureAudio(),
+      );
+      final current = await store.save(
+        original.copyWith(content: 'Current content'),
+        imageBytes: fixture.processFixtureImage(replacement: true),
+        audioWavBytes: fixture.processFixtureAudio(replacement: true),
+      );
+      await expectLater(
+        store.save(original.copyWith(tags: <String>['stale'])),
+        throwsA(isA<FileSystemException>()),
+      );
+      final canonicalRoot = await root.resolveSymbolicLinks();
+      await expectLater(
+        store.save(
+          original.copyWith(
+            imageLocalPath: original.imageLocalPath!.replaceFirst(
+              root.path,
+              canonicalRoot,
+            ),
+            audioLocalPath: original.audioLocalPath!.replaceFirst(
+              root.path,
+              canonicalRoot,
+            ),
+          ),
+        ),
+        throwsA(isA<FileSystemException>()),
+      );
+      final reopened = _store(root);
+      final restored = (await reopened.loadAll()).single;
+      expect(restored.toJson(), current.toJson());
+      expect(
+        await reopened.readImageBytes(restored),
+        fixture.processFixtureImage(replacement: true),
+      );
+      expect(
+        await reopened.readAudioBytes(restored),
+        fixture.processFixtureAudio(replacement: true),
+      );
+    },
+  );
+
+  test(
+    'failed delete order write preserves note and media on cold reload',
+    () async {
+      final original = await _runFixture(root, 'seed');
+      final obstruction = await Directory(
+        '${root.path}/notes/_order.json.tmp',
+      ).create();
+      await expectLater(
+        _store(root).delete('media'),
+        throwsA(isA<FileSystemException>()),
+      );
+      expect(await _runFixture(root, 'read'), original);
+      await obstruction.delete();
+      await _store(root).delete('media');
+      final restored = await _runFixture(root, 'read');
+      expect(restored, <Object?>[original.first]);
+    },
+  );
+
+  test(
+    'media cleanup preserves unknown owned-directory entries and symlink targets',
+    () async {
+      final external = await Directory('${root.path}/external').create();
+      final externalImage = File('${external.path}/image.png');
+      await externalImage.writeAsBytes(fixture.processFixtureImage());
+      final mediaRoot = await Directory('${root.path}/note_media').create();
+      await Link('${mediaRoot.path}/media').create(external.path);
+      await expectLater(
+        _store(root).save(fixture.processFixtureNote()),
+        throwsA(isA<FileSystemException>()),
+      );
+      expect(await externalImage.readAsBytes(), fixture.processFixtureImage());
+      await Link('${mediaRoot.path}/media').delete();
+      final original = await _store(root).save(
+        fixture.processFixtureNote(),
+        imageBytes: fixture.processFixtureImage(),
+      );
+      final unknown = File('${mediaRoot.path}/media/unrelated.txt');
+      await unknown.writeAsString('keep');
+      final linked = Link('${mediaRoot.path}/media/revision_external');
+      await linked.create(external.path);
+      await _store(root).save(original, clearImage: true);
+      expect(await unknown.readAsString(), 'keep');
+      expect(await externalImage.readAsBytes(), fixture.processFixtureImage());
+      expect(await linked.exists(), isTrue);
+    },
+    skip: Platform.isWindows ? 'Requires POSIX symlinks.' : false,
+  );
 }
 
 StudioNoteStore _store(Directory root) => createDefaultNoteStore(

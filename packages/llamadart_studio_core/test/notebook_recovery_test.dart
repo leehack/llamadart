@@ -182,7 +182,9 @@ void main() {
   test('failed bulk audit keeps last durable note state', () async {
     notes.failure = 'saveAll';
     await expectLater(
-      notebook.applyAuditedNotes(<StudioNote>[_note('Uncommitted audit')]),
+      notebook.applyAuditedNotes(<StudioNote>[
+        notebook.state.notes.single.copyWith(tags: <String>['architecture']),
+      ]),
       throwsA(isA<FileSystemException>()),
     );
     expect(notebook.state.notes.single.content, 'Previously saved content');

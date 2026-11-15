@@ -451,6 +451,7 @@ class DirectLlamaInferencePort
     final textBuffer = StringBuffer();
     final thinkingBuffer = StringBuffer();
     final invocations = <StudioToolInvocation>[];
+    final usedToolCallIds = <String>{};
 
     final templateKwargs = _buildThinkingTemplateKwargsHelper(
       settings: request.settings,
@@ -600,12 +601,59 @@ class DirectLlamaInferencePort
       }
 
       round++;
+      final reservedIds = roundToolCalls
+          .map((call) => call.id)
+          .whereType<String>()
+          .toSet();
+      final callIds = <String>[];
+      var renamedCalls = false;
+      for (var i = 0; i < roundToolCalls.length; i++) {
+        final originalId = roundToolCalls[i].id;
+        var callId = originalId ?? '';
+        if (callId.isEmpty || usedToolCallIds.contains(callId)) {
+          final base = 'call_${round}_$i';
+          callId = base;
+          var suffix = 1;
+          while (usedToolCallIds.contains(callId) ||
+              reservedIds.contains(callId)) {
+            callId = '${base}_${suffix++}';
+          }
+        }
+        usedToolCallIds.add(callId);
+        callIds.add(callId);
+        renamedCalls |= callId != originalId;
+      }
+      if (renamedCalls) {
+        // Engine fallback IDs restart at call_0 each round. Keep the live
+        // records and both sides of the model's tool history in agreement.
+        final history = session.history;
+        var callIndex = 0;
+        final assistant = history.last.copyWith(
+          parts: <LlamaContentPart>[
+            for (final part in history.last.parts)
+              if (part is LlamaToolCallContent)
+                LlamaToolCallContent(
+                  id: callIds[callIndex++],
+                  name: part.name,
+                  arguments: part.arguments,
+                  rawJson: part.rawJson,
+                )
+              else
+                part,
+          ],
+        );
+        session.reset();
+        for (final message in history.take(history.length - 1)) {
+          session.addMessage(message);
+        }
+        session.addMessage(assistant);
+      }
       for (var i = 0; i < roundToolCalls.length && !_cancelRequested; i++) {
         final call = roundToolCalls[i];
         final callName = call.function?.name ?? 'tool';
         final rawArgsText = call.function?.arguments ?? '{}';
         final parsedArgs = _decodeToolArgumentsHelper(rawArgsText);
-        final callId = call.id ?? 'call_${round}_$i';
+        final callId = callIds[i];
         final argsPretty = _prettyJsonHelper(parsedArgs);
         var record = StudioToolInvocation(
           id: callId,
@@ -662,7 +710,7 @@ class DirectLlamaInferencePort
             role: LlamaChatRole.tool,
             content: <LlamaContentPart>[
               LlamaToolResultContent(
-                id: call.id,
+                id: callId,
                 name: callName,
                 result: toolResult,
               ),

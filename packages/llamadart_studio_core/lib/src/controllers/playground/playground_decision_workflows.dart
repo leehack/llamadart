@@ -371,7 +371,7 @@ extension PlaygroundDecisionWorkflows on PlaygroundWorkspaceController {
       );
 
       final audits = <NoteAuditResult>[];
-      final updatedNotes = <StudioNote>[];
+      final taggedSnapshots = <StudioNote>[];
 
       for (final note in currentNotes) {
         final eval = await decision.evaluateSystemOneBatch(
@@ -408,14 +408,11 @@ extension PlaygroundDecisionWorkflows on PlaygroundWorkspaceController {
         );
 
         if (applyTagsToNotes) {
-          final mergedTags = <String>{
-            ...note.tags,
+          final derivedTags = <String>[
             category,
             if (hasActionItem >= 0.55) 'action-item',
-          }.toList(growable: false);
-          updatedNotes.add(note.copyWith(tags: mergedTags));
-        } else {
-          updatedNotes.add(note);
+          ];
+          taggedSnapshots.add(note.copyWith(tags: derivedTags));
         }
       }
 
@@ -426,7 +423,7 @@ extension PlaygroundDecisionWorkflows on PlaygroundWorkspaceController {
         ),
       );
       if (applyTagsToNotes && _onNotesUpdated != null) {
-        await _onNotesUpdated(List<StudioNote>.unmodifiable(updatedNotes));
+        await _onNotesUpdated(List<StudioNote>.unmodifiable(taggedSnapshots));
       }
       return audits;
     } catch (error) {

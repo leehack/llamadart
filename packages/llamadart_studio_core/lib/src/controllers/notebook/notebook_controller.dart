@@ -392,13 +392,37 @@ class NotebookController {
     );
   });
 
-  /// Replaces the note list after an external workflow (such as System-1 batch
-  /// note auditing) mutates tags/metadata and optionally persists the updates.
+  /// Merges derived audit tags into unchanged notes, optionally persisting them.
+  ///
+  /// Each input retains the snapshot evaluated by the audit, with [StudioNote.tags]
+  /// containing only derived tags. Results for changed or deleted notes are
+  /// ignored; current note content, media, vectors and ordering remain authoritative.
   Future<void> applyAuditedNotes(
-    List<StudioNote> updatedNotes, {
+    List<StudioNote> auditedNotes, {
     bool persist = true,
   }) => _noteOperations.synchronized(() async {
-    final normalized = List<StudioNote>.unmodifiable(updatedNotes);
+    final auditedById = <String, StudioNote>{
+      for (final note in auditedNotes) note.id: note,
+    };
+    var changed = false;
+    final merged = <StudioNote>[];
+    for (final current in _store.state.notes) {
+      final audited = auditedById[current.id];
+      if (audited == null ||
+          !_matchesAuditSnapshot(current, audited) ||
+          audited.tags.every((String tag) => current.tags.contains(tag))) {
+        merged.add(current);
+        continue;
+      }
+      changed = true;
+      merged.add(
+        current.copyWith(
+          tags: <String>{...current.tags, ...audited.tags}.toList(),
+        ),
+      );
+    }
+    if (!changed) return;
+    final normalized = List<StudioNote>.unmodifiable(merged);
     if (persist) {
       await _persistNotes(normalized);
     }
@@ -412,6 +436,14 @@ class NotebookController {
       ),
     );
   });
+
+  static bool _matchesAuditSnapshot(StudioNote current, StudioNote audited) =>
+      current.updatedAt == audited.updatedAt &&
+      current.searchableText == audited.searchableText &&
+      current.imageLocalPath == audited.imageLocalPath &&
+      current.audioLocalPath == audited.audioLocalPath &&
+      current.imageBase64 == audited.imageBase64 &&
+      current.audioBase64 == audited.audioBase64;
 
   /// Transcribes an audio note using Studio's local ASR model (e.g.
   /// `Qwen3-ASR 0.6B` or `Moonshine Tiny`) and stores the transcript onto the note.
