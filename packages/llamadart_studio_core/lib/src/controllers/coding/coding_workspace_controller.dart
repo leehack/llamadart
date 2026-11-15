@@ -505,6 +505,8 @@ class CodingWorkspaceController {
               'You are a focused local software engineering agent inside llamadart Studio. '
               'Follow the project instructions (`AGENTS.md`) and active `SKILL.md` skills strictly. '
               'Active tools: [$activeToolSummary]. '
+              'File tool paths are relative to the active workspace, with no '
+              'leading slash; for example, use lib/main.dart. '
               'Inspect real files with `read`, `grep`, and `ls` before editing with `edit` or `write`, '
               'and verify changes cleanly with minimal edits.',
           extraSystemContext: extraContext,
