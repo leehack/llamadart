@@ -39,7 +39,7 @@ Bridge source contract inspected read-only at
 restore and structured-clone ownership; those are bridge responsibilities.
 
 Qualification target: EmbeddingGemma-2 BF16 with its matching
-mmproj and pinned assets `v0.1.85` on Chrome CPU wasm memory64
+mmproj and the pinned assets on Chrome CPU wasm memory64
 (`gpuLayers: 0`), Chrome CPU wasm32 and Chrome WebGPU on an Apple GPU (Metal
 backend, `gpuLayers: 99`, memory64 core). The scenario below checks the bridge's production worker
 budget against references from the matching native `v0.9.0`.
@@ -88,12 +88,58 @@ and the bridge then reports media embeddings as unsupported
 ([#1971](https://github.com/leehack/llamadart/issues/1971)). The
 `web-multimodal-embeddings-webgpu` scenario (`gpuLayers: 99`) qualifies
 direct and worker image/audio/mixed vectors on Chrome with the Metal backend on
-an Apple M4 Max, cosine at least 0.9999 versus native CPU and Metal. NVIDIA and
-Linux WebGPU are unqualified. The scenario below adds
+an Apple M4 Max, cosine at least 0.9999 versus native CPU and Metal. The bounded
+NVIDIA L4 qualification below adds one Linux hardware combination. The scenario below adds
 consumer model-backed checks for cancellation of a pending worker RPC,
 projector reload, CPU worker restoration and capacity rejection. Hardware
-WebGPU, device-loss recovery and mobile browser resource limits require
-separate device qualification.
+WebGPU combinations beyond those recorded here, device-loss recovery and mobile
+browser resource limits require separate device qualification.
+
+## NVIDIA L4 qualification on the recorded source
+
+[The #1189 qualification record](https://github.com/leehack/llamadart/issues/1189#issuecomment-6884516995)
+covers tested llamadart source
+[`eb18767e6e9aad09585c3405e2093a43c477d77e`](https://github.com/leehack/llamadart/commit/eb18767e6e9aad09585c3405e2093a43c477d77e),
+EmbeddingGemma-2 BF16 with matching
+mmproj and pinned assets `v0.1.85` on wasm64, NVIDIA L4, Ubuntu 24.04.5,
+Chrome 157.0.8103.78 and driver 615.71.09. Both
+direct and worker paths reported `gpuActive: true` with the mixed backend label
+`WebGPU, CPU`; this was actual GPU execution, not a CPU fallback. The model and
+projector hashes and guest-fetched bridge manifest bind the recorded artifacts:
+
+| Artifact | SHA-256 |
+| --- | --- |
+| `embeddinggemma-2-BF16.gguf` | `68bae29d62fb8c7d23e98d21fd4662753ddd636e6b62b8a70dfe059a9844f216` |
+| `mmproj-embeddinggemma-2-BF16.gguf` | `d2033b3cd0223cfb2e7a2b50dc80a664c78c816d375f5b017ec3ef80ee0bc766` |
+| Bridge manifest | `6767783edd85e14853a8a79cd6ce53d53f4eb2d99aeb62601014bd68c1b6b7b3` |
+
+Offline provenance review recovered both original result archives from split
+base64 records preserved in the serial capture. The recovered GPU archive is
+116915 bytes, SHA-256
+`540a64fe1b201026f383fb208af49777d72d5d06271a928ecdce27bcd2b8b4f6`;
+the recovered final archive is 147717 bytes, SHA-256
+`3b5df708db55371b9bedb51277c4daa0ebc9adab97c6cb8245e90caa13dfa925`.
+Both match their guest announcements and pass gzip validation. Offline grading
+and independent full-vector recalculation pass against the recovered final
+results; the original shortened downloads are preserved and are not the basis
+for these claims. This is recovery of historical evidence, not a release-head
+hardware rerun.
+
+The five-input validation-pack reference explicitly records native `v0.7.0-1`
+CPU provenance. Against it, GPU direct/worker vectors have minimum cosine
+0.9997128258965725 and maximum absolute component difference
+0.003359783591734937, passing the portable gates of cosine >=0.999 and maximum
+absolute difference <=0.01. The four-input scenario also passes against its
+staged reference, but an independent native `v0.9.0` reference-generation receipt
+has not been established for that fixture; this record claims no fresh current
+native `v0.9.0` parity. Direct and worker GPU vectors are identical, finite,
+768-wide and normalized within 1e-5.
+
+Worker retention, cancellation/reuse, capacity rejection/reuse and projector
+unload/reload passed. A separate injected worker-loss test restores the model,
+projector and settings on **CPU direct**; it does not establish persistent GPU
+execution after loss or WebGPU device-loss recovery. This record qualifies no
+other NVIDIA/Linux/browser/hardware combination or wasm32 path.
 
 ## Local reference scenario
 

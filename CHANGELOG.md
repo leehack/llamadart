@@ -1,13 +1,16 @@
 Releases before 0.10.0 are in the
 [changelog archive](https://github.com/leehack/llamadart/blob/main/doc/changelog_archive.md).
 
-## Unreleased
+## 0.19.11
 
-- Fixed the generic JSON tool fallback replacing your system message with its JSON instruction when tools are passed with `ToolChoice.auto` or `required`; the instruction now follows the system message ([#1973](https://github.com/leehack/llamadart/issues/1973)).
+- Preserve the system message before the generic JSON tool instruction with `ToolChoice.auto` or `required` ([#1973](https://github.com/leehack/llamadart/issues/1973)).
 - Native LiteRT-LM strict `responseFormat` now also runs on the Windows x64 GPU (NVIDIA L4 over Direct3D 12, GRID driver 596.86, Qwen3 and Gemma 4); `ComputeDevice.gpu` there no longer needs `ComputeDevice.cpu`. Other drivers are untested and the Linux arm64 GPU stays unqualified ([#174](https://github.com/leehack/llamadart/issues/174)).
 - Adopt stable-diffusion `v0.3.0-6` with Apple host-buffer and model-loader scratch release fixes ([#2004](https://github.com/leehack/llamadart/issues/2004)); full-VAE load/dispose checks passed on iOS 18 and 26 with small residual memory.
-- Documented that the Android llama.cpp `opencl` module needs the `libOpenCL.so` `<uses-native-library android:required="false"/>` manifest declaration on target API 31+; without it the module cannot load and `ComputeDevice.gpu` with OpenCL throws. ggml-opencl admits only Adreno (and Intel) GPUs. With it, EmbeddingGemma 2 ran fully on OpenCL on a Galaxy S24 ([#1189](https://github.com/leehack/llamadart/issues/1189)).
-- Fixed Android llama.cpp loads that ask for another GPU backend (such as `opencl`) and land on an already registered Vulkan device skipping the Android Vulkan context settings and the 8-token prompt cap ([#2016](https://github.com/leehack/llamadart/issues/2016)).
+- Document Android llama.cpp OpenCL requirements: the `opencl` module needs the `libOpenCL.so` `<uses-native-library android:required="false"/>` manifest declaration on target API 31+; without it the module cannot load and `ComputeDevice.gpu` with OpenCL throws. ggml-opencl admits only Adreno (and Intel) GPUs. With it, EmbeddingGemma 2 ran fully on OpenCL on a Galaxy S24 ([#1189](https://github.com/leehack/llamadart/issues/1189)).
+- Apply Android Vulkan context settings and the 8-token prompt cap when a requested backend (such as `opencl`) falls back to an already registered Vulkan device ([#2016](https://github.com/leehack/llamadart/issues/2016)).
+- Keep the default WebGPU bridge assets at `v0.1.85` (unchanged from 0.19.10).
+
+Runtime baseline: native llama.cpp `v0.9.0` and Web use upstream `v0.9.0@cd959bae99ff4bed22bef2604f45241c09bbb8c8`; native LiteRT-LM uses `v0.19.1-5` and stable-diffusion uses `v0.3.0-6`. Web LiteRT-LM uses `@litert-lm/core@0.19.0`. Manifest SHA-256: `6767783edd85e14853a8a79cd6ce53d53f4eb2d99aeb62601014bd68c1b6b7b3`.
 
 ## 0.19.10
 
