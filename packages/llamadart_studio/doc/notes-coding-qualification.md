@@ -52,7 +52,8 @@ committed data and kills only its owned child. Its mid-save test uses an injecte
 POSIX FIFO stall at metadata writing, then a real `SIGKILL`, to verify that prior
 committed metadata still references the prior attachment bytes. That is a
 controlled process-crash test; power-loss durability and concurrent independent
-writers remain unqualified.
+writers remain unqualified. The file store commits notes individually; batch
+operations do not provide a collection-wide transaction.
 
 ## Coding gates
 
