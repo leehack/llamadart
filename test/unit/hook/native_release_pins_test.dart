@@ -117,6 +117,64 @@ void main() {
     expect(liteRtLmVersion, liteRtLmReleaseTag.substring(1));
   });
 
+  test('LiteRT-LM SwiftPM targets match the published owner manifest', () {
+    // Published manifest SHA-256 b8d5d196e1c9c64026aad52ae14a9909228eabe6eceb4837a7cab60fffe58d9f;
+    // verified against GitHub asset metadata and the independent #2003 receipt.
+    final manifest =
+        jsonDecode(
+              File(
+                'test/fixtures/native/litert_lm_v0_19_1_5_manifest.json',
+              ).readAsStringSync(),
+            )
+            as Map<String, dynamic>;
+    final tag = (manifest['release'] as Map<String, dynamic>)['tag'];
+    expect(liteRtLmReleaseTag, tag);
+    final artifacts = (manifest['artifacts'] as List)
+        .cast<Map<String, dynamic>>();
+    final swift = File(
+      'packages/llamadart_litert_lm_flutter/darwin/'
+      'llamadart_litert_lm_flutter/Package.swift',
+    ).readAsStringSync();
+    expect(swift, contains('let liteRtLmTag = "$tag"'));
+    expect(
+      swift,
+      contains(
+        r'url: "https://github.com/\(repository)/releases/download/\(tag)/\(artifactName)"',
+      ),
+    );
+    final targets = RegExp(
+      r'nativeRepoBinaryTarget\(\s*name: "([^"]+)",\s*'
+      r'repository: "([^"]+)",\s*artifactName: "([^"]+)",\s*'
+      r'tag: liteRtLmTag,\s*checksum: "([^"]+)"\s*\)',
+    ).allMatches(swift).toList();
+    const names = ['LiteRtLm', 'CLiteRTLM', 'CLiteRTLMMac', 'WebgpuDawn'];
+    expect(targets.map((target) => target.group(1)), unorderedEquals(names));
+    expect(
+      RegExp(r'nativeRepoBinaryTarget\(').allMatches(swift).length,
+      names.length + 1,
+      reason: 'one helper declaration and four target calls',
+    );
+    for (final name in names) {
+      final target = targets.singleWhere((target) => target.group(1) == name);
+      final fileName = 'litert-lm-native-apple-$name-xcframework-$tag.zip';
+      final artifact = artifacts.singleWhere(
+        (artifact) => artifact['fileName'] == fileName,
+      );
+      expect(artifact['releaseTag'], tag, reason: name);
+      expect(
+        target.group(2),
+        (manifest['native'] as Map)['repository'],
+        reason: name,
+      );
+      expect(
+        target.group(3)!.replaceAll(r'\(liteRtLmTag)', '$tag'),
+        fileName,
+        reason: name,
+      );
+      expect(target.group(4), artifact['sha256'], reason: '$name checksum');
+    }
+  });
+
   test('LiteRT-LM bundle specs are unique and pin a sha256 each', () {
     final bundles = liteRtLmBundleSpecs.map((spec) => spec.bundle).toList();
     expect(bundles.toSet(), hasLength(bundles.length));
