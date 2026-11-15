@@ -9,6 +9,8 @@ extension _CodingAgentChatPane on _CodingWorkspaceViewState {
     McpManagerState mcpState,
     SkillRegistryState skillState,
   ) {
+    final toolCount = mcpState.activeTools.length;
+    final skillCount = skillState.activeSkills.length;
     return Column(
       children: <Widget>[
         Expanded(
@@ -155,22 +157,22 @@ extension _CodingAgentChatPane on _CodingWorkspaceViewState {
                                             monospace: true,
                                           ),
                                         ),
-                                      if (mcpState.activeTools.isNotEmpty)
+                                      if (toolCount > 0)
                                         Padding(
                                           padding: const EdgeInsets.only(
                                             right: 6,
                                           ),
                                           child: StudioPillBadge(
                                             label:
-                                                '${mcpState.activeTools.length} MCP tools',
+                                                '$toolCount MCP ${toolCount == 1 ? 'tool' : 'tools'}',
                                             foreground: palette.teal,
                                             monospace: true,
                                           ),
                                         ),
-                                      if (skillState.activeSkills.isNotEmpty)
+                                      if (skillCount > 0)
                                         StudioPillBadge(
                                           label:
-                                              '${skillState.activeSkills.length} skills',
+                                              '$skillCount ${skillCount == 1 ? 'skill' : 'skills'}',
                                           foreground: palette.amber,
                                           monospace: true,
                                         ),
