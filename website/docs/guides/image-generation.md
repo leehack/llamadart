@@ -200,7 +200,7 @@ and external-decoder recipes: use `ImageModelPlacement(vaeOnCpu: true)` for
 Metal diffusion, or `ComputeDevice.cpu`. Its intrinsic tiny-decoder v1 context
 policy still serves SDXS Metal decoding.
 
-The current SD `v0.3.0-6` pin adds Apple model-loader scratch release. Device qualification of v6 is pending (#2004); graph-split measurements used v4 and dispose measurements used v5.
+SD `v0.3.0-6` passed four full-VAE load/dispose cycles and eight decodes per device on iPhone 16 Pro (iOS 18.3.2) and iPhone 17 Pro (iOS 26.5.1), tested at `6b191b28`. Small nonzero residual memory remains; this single session is not proof of zero leaks (#2004).
 
 On iOS 26, `v0.3.0-5` returns an image model's memory when you dispose it, so a
 later load no longer fails the memory check; earlier runtimes could keep about

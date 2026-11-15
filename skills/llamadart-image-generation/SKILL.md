@@ -55,7 +55,7 @@ description: >-
 The core accepts only an Apple SD companion pinning its own runtime
 (`v0.3.0-6`, or `v0.3.0-4`/`v0.3.0-3` with an upgrade warning): runtimes before `v0.3.0-1` abort on FP8 weights on Metal, and those before
 `v0.3.0` have a smaller `sd_ctx_params_t`. Upgrade the
-core and `llamadart_stable_diffusion_flutter` together. The current SD `v0.3.0-6` pin adds Apple model-loader scratch release. Device qualification of v6 is pending (#2004); graph-split measurements used v4 and dispose measurements used v5.
+core and `llamadart_stable_diffusion_flutter` together. SD `v0.3.0-6` passed four full-VAE load/dispose cycles and eight decodes per device on iPhone 16 Pro (iOS 18.3.2) and iPhone 17 Pro (iOS 26.5.1), tested at `6b191b28`. Small nonzero residual memory remains; this single session is not proof of zero leaks (#2004).
 - Platforms: Android arm64 (CPU only; Armv8.2 dot-product and fp16), iOS 16.4+
   and macOS 13.3+ (Metal), Linux arm64/x64 and Windows x64 (CPU or Vulkan; x64
   CPUs need AVX2, FMA, F16C and BMI2). Web, Android x64 and Windows arm64
