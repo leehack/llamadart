@@ -189,7 +189,7 @@ Use trusted model files. There is no public conversion API or load-time
 quantization/mmap option. Weights load eagerly; see the
 [memory check](./image-generation-memory-and-limits#memory-check) before substituting larger unquantized files.
 
-On iOS, the pinned `v0.3.0-5` runtime splits Metal graphs, so full-VAE
+On iOS, the pinned `v0.3.0-6` runtime splits Metal graphs, so full-VAE
 recipes are admitted. Device-qualified is SD-Turbo with its embedded full VAE at
 512x512 on an iPhone 16 Pro and an iPhone 17 Pro, which decoded without
 tripping the watchdog ([#1047](https://github.com/leehack/llamadart/issues/1047)).
@@ -200,10 +200,12 @@ and external-decoder recipes: use `ImageModelPlacement(vaeOnCpu: true)` for
 Metal diffusion, or `ComputeDevice.cpu`. Its intrinsic tiny-decoder v1 context
 policy still serves SDXS Metal decoding.
 
+The current SD `v0.3.0-6` pin adds Apple model-loader scratch release. Device qualification of v6 is pending (#2004); graph-split measurements used v4 and dispose measurements used v5.
+
 On iOS 26, `v0.3.0-5` returns an image model's memory when you dispose it, so a
 later load no longer fails the memory check; earlier runtimes could keep about
-2 GB resident after the second dispose (fixed in runtime `v0.3.0-5`, device-qualified
-on iPhone 16 Pro and 17 Pro, [#2004](https://github.com/leehack/llamadart/issues/2004)).
+2 GB resident after the second dispose (fixed in runtime `v0.3.0-5`, measured
+on iPhone 17 Pro; iPhone 16 Pro retained memory above baseline, [#2004](https://github.com/leehack/llamadart/issues/2004)).
 
 #### Pinned-runtime format checks
 

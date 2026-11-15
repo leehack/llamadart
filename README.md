@@ -149,10 +149,12 @@ creation fails, `ComputeDevice.auto` retries on the CPU with a warning;
 
 Image generation
 is not available on the web. On iOS, use
-`ImageModelPlacement(vaeOnCpu: true)` to keep diffusion on Metal, or CPU
-generation. The pinned `v0.3.0-5` runtime splits Metal graphs, so a full VAE
+`ImageModelPlacement(vaeOnCpu: true)` for CPU VAE decoding with Metal
+diffusion, or choose CPU generation. The pinned `v0.3.0-6` runtime splits Metal graphs, so a full VAE
 is admitted on iOS Metal (qualified: SD-Turbo's embedded VAE at 512x512); a runtime without the split keeps the intrinsic SDXS
 tiny-decoder policy and refuses full-VAE Metal decoding.
+The current SD `v0.3.0-6` pin adds Apple model-loader scratch release. Device qualification of v6 is pending (#2004); graph-split measurements used v4 and dispose measurements used v5.
+
 Per-target support, device limitations and runtime options:
 
 - [Platform and backend support matrix](https://llamadart.leehack.com/docs/platforms/support-matrix), including
