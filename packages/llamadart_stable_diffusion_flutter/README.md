@@ -19,8 +19,8 @@ with core `0.19.x`. Upgrade both together. Earlier pairings are in the
 
 ```yaml
 dependencies:
-  llamadart: ^0.19.10
-  llamadart_stable_diffusion_flutter: ^0.19.10
+  llamadart: ^0.19.11
+  llamadart_stable_diffusion_flutter: ^0.19.11
 ```
 
 Adding the package selects the `stable_diffusion` runtime for Flutter iOS and
@@ -34,7 +34,7 @@ Flutter iOS and macOS it does so only with this package.
 This package has no runtime Dart API of its own. Import `package:llamadart`
 normally from the core package and use `ImageGenerationEngine` there.
 
-The Apple SwiftPM manifest pins `leehack/stable-diffusion-native@v0.3.0-4`.
+The Apple SwiftPM manifest pins `leehack/stable-diffusion-native@v0.3.0-6`.
 
 Apps bound for the App Store should use this package: the Apple privacy
 manifest for the stable-diffusion.cpp runtime ships inside this XCFramework,

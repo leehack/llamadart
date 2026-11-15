@@ -28,14 +28,14 @@ concrete engine; see [shared lifecycle ownership](https://llamadart.leehack.com/
 
 LFM2 Python-style tool calls use declared argument types and preserve copied string backslashes; see [tool calling](https://llamadart.leehack.com/docs/guides/tool-calling). The automatic grammar preserves copied singleton string spellings and can use an existing Python arguments wrapper for unambiguous JSON-escaped string values. Foreign XML closing tags remain raw diagnostics with no executable calls.
 Native llama.cpp applies schema-directed lazy grammar to LFM2 automatic Python tool calls. Web additionally requires bridge assets v0.1.82+ with a loaded-core prompt-penalty capability; older runtimes reject before inference.
-Native LiteRT-LM enforces strict JSON Schema output for Qwen3 and Gemma 4 on the macOS arm64 CPU and GPU, the iOS arm64 CPU, the Android arm64 CPU and GPU, the Linux x64 GPU and CPU, and the Linux arm64 and Windows CPU, and for Qwen3 on the iOS arm64 GPU (Gemma 4 cannot create a GPU engine there; per-host model evidence in the structured-output guide), for the schemas llama.cpp's GBNF converter also enforces; see [structured output](https://llamadart.leehack.com/docs/guides/generation-and-streaming#structured-json-output) and the [support matrix](https://llamadart.leehack.com/docs/platforms/support-matrix).
+Native LiteRT-LM enforces strict JSON Schema output for Qwen3 and Gemma 4 on the macOS arm64 CPU and GPU, the iOS arm64 CPU, the Android arm64 CPU and GPU, the Linux x64 and Windows x64 GPU and CPU, and the Linux arm64 CPU, and for Qwen3 on the iOS arm64 GPU (Gemma 4 cannot create a GPU engine there; per-host model evidence in the structured-output guide), for the schemas llama.cpp's GBNF converter also enforces; see [structured output](https://llamadart.leehack.com/docs/guides/generation-and-streaming#structured-json-output) and the [support matrix](https://llamadart.leehack.com/docs/platforms/support-matrix).
 LFM2 replies cut off at a reported length limit expose raw `partialToolCalls` diagnostics separately from executable calls and history. LFM2 tool markers inside reasoning stay in reasoning and produce no executable calls. Explicit parallel-tool requests reach supported Dart tool grammars even when template probes do not recognize parallel history.
 
 ## Install
 
 ```yaml
 dependencies:
-  llamadart: ^0.19.10
+  llamadart: ^0.19.11
 ```
 
 ```bash
@@ -56,10 +56,10 @@ companion shares its core's `MAJOR.MINOR` and constrains `llamadart` to it.
 
 ```yaml
 dependencies:
-  llamadart: ^0.19.10
-  llamadart_llama_cpp_flutter: ^0.19.10 # GGUF / llama.cpp
-  llamadart_litert_lm_flutter: ^0.19.10 # Apple .litertlm / LiteRT-LM targets
-  llamadart_stable_diffusion_flutter: ^0.19.10 # Apple image generation, opt-in
+  llamadart: ^0.19.11
+  llamadart_llama_cpp_flutter: ^0.19.11 # GGUF / llama.cpp
+  llamadart_litert_lm_flutter: ^0.19.11 # Apple .litertlm / LiteRT-LM targets
+  llamadart_stable_diffusion_flutter: ^0.19.11 # Apple image generation, opt-in
 ```
 
 Pairing rules, the SwiftPM bootstrap and the privacy manifest are in
@@ -142,16 +142,22 @@ bundled runtime does not. See [Android Vulkan](website/docs/platforms/known-plat
 LiteRT-LM can also use GPU and, on compatible Android deployments, NPU.
 Android 12+ apps targeting API 31+ must request the optional vendor OpenCL
 library in their manifest; see [Android LiteRT-LM setup](website/docs/getting-started/installation.md#android-litert-lm-setup).
+The opt-in llama.cpp `opencl` module on Android needs the same declaration;
+without it the module cannot load, `ComputeDevice.auto` runs elsewhere and
+`ComputeDevice.gpu` with `GpuBackend.opencl` throws. ggml-opencl admits only
+Adreno (and Intel) GPUs.
 GPU support still depends on the device, driver and model. If GPU engine
 creation fails, `ComputeDevice.auto` retries on the CPU with a warning;
 `ComputeDevice.gpu` fails instead.
 
 Image generation
 is not available on the web. On iOS, use
-`ImageModelPlacement(vaeOnCpu: true)` to keep diffusion on Metal, or CPU
-generation. The pinned `v0.3.0-4` runtime splits Metal graphs, so a full VAE
+`ImageModelPlacement(vaeOnCpu: true)` for CPU VAE decoding with Metal
+diffusion, or choose CPU generation. The pinned `v0.3.0-6` runtime splits Metal graphs, so a full VAE
 is admitted on iOS Metal (qualified: SD-Turbo's embedded VAE at 512x512); a runtime without the split keeps the intrinsic SDXS
 tiny-decoder policy and refuses full-VAE Metal decoding.
+SD `v0.3.0-6` passed four full-VAE load/dispose cycles and eight decodes per device on iPhone 16 Pro (iOS 18.3.2) and iPhone 17 Pro (iOS 26.5.1), tested at `6b191b28`. Small nonzero residual memory remains; this single session is not proof of zero leaks (#2004).
+
 Per-target support, device limitations and runtime options:
 
 - [Platform and backend support matrix](https://llamadart.leehack.com/docs/platforms/support-matrix), including

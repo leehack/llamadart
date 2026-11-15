@@ -46,26 +46,12 @@ POST_MERGE_TARGETS = {
         'packages/' + name + '/' + part for name in COMPANIONS
         for part in ('lib/', 'pubspec.yaml')),
 }
-# Imported by tool/testing/validation/image_profile.dart, whose root tests run
-# in validation-integration.
-VALIDATION_IMPORTED_CHAT_APP_FILES = (
-    'example/chat_app/lib/models/image_model_profile.dart',
-    'example/chat_app/integration_test/support/image_evidence.dart',
-    'example/chat_app/integration_test/support/image_settings_evidence.dart',
-)
 # The validation package's `flutter.assets`, which the chat app bundles.
 VALIDATION_BUNDLED_ASSETS = (
     'packages/llamadart_validation/assets/profiles/',
     'packages/llamadart_validation/assets/decision/',
     'packages/llamadart_validation/assets/embeddings/v1/',
 )
-
-# Files whose recorded Markdown-reader evidence the guard test pins. Several sit
-# in lanes that run no root test, so a change there must still run the guard.
-MARKDOWN_READER_FILES = frozenset(
-    line for line in (Path(__file__).with_name('markdown_reader_files.txt')
-                      .read_text(encoding='utf-8').splitlines()) if line)
-
 
 def inventory(raw):
     """Return both endpoints of renames/copies and deleted paths; reject truncation."""
@@ -146,8 +132,12 @@ def select(paths, force_full=False, pull_request=False):
             jobs.update(('analyze', 'companion-packages', 'test-linux-coverage',
                          'test-other-os', 'web-chat-contract', 'studio'))
             apps.update(APPS)
+        # Root suites import, copy and read files throughout the validation
+        # trees and the chat app, so no list of files or suites can stand in
+        # for the root Linux tests there.
         elif path.startswith('packages/llamadart_validation/'):
-            jobs.update(('analyze', 'validation-harness', 'validation-integration'))
+            jobs.update(('analyze', 'validation-harness', 'validation-integration',
+                         'test-linux-coverage'))
             compiled = not path.startswith(('packages/llamadart_validation/test/',
                                             'packages/llamadart_validation/assets/',
                                             'packages/llamadart_validation/schemas/'))
@@ -158,41 +148,34 @@ def select(paths, force_full=False, pull_request=False):
                 desktops.update(DESKTOPS)
                 apps.update(APPS)
         elif path.startswith(('tool/testing/validation/', 'tool/testing/validation.dart')):
-            jobs.update(('analyze', 'validation-harness', 'validation-integration'))
+            jobs.update(('analyze', 'validation-harness', 'validation-integration',
+                         'test-linux-coverage'))
             # Build/orchestration helpers are shared between all bundle targets.
             desktops.update(DESKTOPS)
             apps.update(APPS)
-        elif path.startswith('example/chat_app/android/'):
-            jobs.add('analyze')
-            apps.add('android')
-        elif path.startswith('example/chat_app/ios/'):
-            jobs.add('analyze')
-            apps.add('ios-inputs')
-        elif path.startswith('example/chat_app/web/'):
-            jobs.update(('analyze', 'web-chat-contract'))
-            apps.add('web')
-        elif path.startswith(('example/chat_app/test/', 'example/chat_app/test_vm/')):
-            jobs.update(('analyze', 'web-chat-contract'))
         elif path.startswith('example/chat_app/'):
-            jobs.update(('analyze', 'web-chat-contract', 'validation-harness'))
-            if path in VALIDATION_IMPORTED_CHAT_APP_FILES:
-                jobs.add('validation-integration')
-            apps.update(APPS)
+            jobs.update(('analyze', 'test-linux-coverage'))
+            if path.startswith('example/chat_app/android/'):
+                apps.add('android')
+            elif path.startswith('example/chat_app/ios/'):
+                apps.add('ios-inputs')
+            elif path.startswith('example/chat_app/web/'):
+                jobs.add('web-chat-contract')
+                apps.add('web')
+            elif path.startswith(('example/chat_app/test/', 'example/chat_app/test_vm/')):
+                jobs.add('web-chat-contract')
+            else:
+                jobs.update(('web-chat-contract', 'validation-harness'))
+                apps.update(APPS)
         elif path.startswith('test/'):
             # Preserve all root test inventories, including platform-sensitive tests.
             jobs.update(('analyze', 'test-linux-coverage', 'test-web', 'test-other-os'))
         else:
             full('shared/runtime or unclassified path: ' + path)
-        # Root tests scan all maintained Markdown, including independent package
-        # docs and the Genkit gateway handled above. Keep this additive so a
-        # specialized path cannot bypass those repository-wide contracts.
-        # These helpers are followed by the reader-inventory guard. A helper
-        # can start reading Markdown without changing its root test suite.
-        if (path.endswith('.md') or path.startswith(('tool/docs/',
-                                                   'tool/testing/validation/'))
-                or path == 'tool/testing/validation.dart'
-                or path in MARKDOWN_READER_FILES):
-            jobs.add('markdown-tests')
+        # Root tests scan all maintained Markdown, and any file a root suite
+        # reaches can start reading it, so every path runs those suites and
+        # their reader-inventory guard unless Linux coverage runs them.
+        jobs.add('markdown-tests')
     if 'analyze' in jobs:
         jobs.discard('docs-versions')  # Already included in root static validation.
     if 'test-linux-coverage' in jobs:

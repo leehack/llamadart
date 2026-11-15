@@ -23,7 +23,7 @@ For Genkit or Flutter Edge AI integration setup, see
 
 ```yaml
 dependencies:
-  llamadart: ^0.19.10
+  llamadart: ^0.19.11
 ```
 
 Then resolve packages:
@@ -42,10 +42,10 @@ Apple XCFrameworks:
 
 ```yaml
 dependencies:
-  llamadart: ^0.19.10
-  llamadart_llama_cpp_flutter: ^0.19.10 # GGUF / llama.cpp
-  llamadart_litert_lm_flutter: ^0.19.10 # Apple .litertlm / LiteRT-LM targets
-  llamadart_stable_diffusion_flutter: ^0.19.10 # Apple image generation, opt-in
+  llamadart: ^0.19.11
+  llamadart_llama_cpp_flutter: ^0.19.11 # GGUF / llama.cpp
+  llamadart_litert_lm_flutter: ^0.19.11 # Apple .litertlm / LiteRT-LM targets
+  llamadart_stable_diffusion_flutter: ^0.19.11 # Apple image generation, opt-in
 ```
 
 Companions use the core's `MAJOR.MINOR`; pub refuses a mismatched pair.
@@ -56,7 +56,9 @@ a fresh macOS build, and the LiteRT-LM build phase.
 ## Android LiteRT-LM setup
 
 On Android 12 and newer, apps targeting API 31+ must explicitly request
-vendor OpenCL access in `android/app/src/main/AndroidManifest.xml`, inside
+vendor OpenCL access for LiteRT-LM and for the opt-in llama.cpp `opencl`
+module (`llamadart_native_backends`) in
+`android/app/src/main/AndroidManifest.xml`, inside
 `<application>`:
 
 ```xml
@@ -69,6 +71,12 @@ Keep it optional so devices without that library can install the app.
 [Android's native-library manifest contract](https://developer.android.com/guide/topics/manifest/uses-native-library-element)
 applies to the consuming app; bundling LiteRT-LM alone does not grant access.
 The chat example includes this declaration.
+
+Without it, `libggml-opencl.so` cannot load `libOpenCL.so`, so the llama.cpp
+`opencl` module is unavailable. `ComputeDevice.auto` then runs on the CPU or
+another GPU backend, and `ComputeDevice.gpu` with `GpuBackend.opencl` throws
+`LlamaUnsupportedException`. ggml-opencl admits only Adreno (and Intel) GPUs;
+it drops Mali at registration.
 
 This enables library discovery, not model/device qualification. A GPU engine
 can still fail because of driver or buffer limits. `ComputeDevice.auto`

@@ -568,7 +568,7 @@ for event,mode,oldflag,owner,attempt,cancel,good,main in itertools.product(('pus
       (plan['jobs'] as Map).entries
           .where((e) => e.value == true)
           .map((e) => e.key),
-      ['model-store'],
+      unorderedEquals(['model-store', 'markdown-tests']),
     );
 
     final job = readWorkflow('ci')['jobs']['model-store'] as Map;
@@ -1357,7 +1357,7 @@ for event,flag,native,cancel,good,main in itertools.product(('push','pull_reques
       }
       expect(
         await enabled('example/chat_app/test_vm/chat_settings_test.dart'),
-        {'analyze', 'web-chat-contract'},
+        {'analyze', 'web-chat-contract', 'test-linux-coverage'},
       );
     },
   );
@@ -1368,8 +1368,8 @@ for event,flag,native,cancel,good,main in itertools.product(('push','pull_reques
       for (final path in [
         'tool/docs/build_site.sh',
         'tool/docs/new_reader.dart',
-        'tool/testing/validation/remote.dart',
-        'tool/testing/validation.dart',
+        'website/tool/finalize_site.dart',
+        'packages/genkit_llamadart/lib/genkit_llamadart.dart',
       ]) {
         final jobs = (await selected([path]))['jobs'] as Map;
         expect(jobs['markdown-tests'], isTrue, reason: path);
@@ -1427,24 +1427,30 @@ for event,flag,native,cancel,good,main in itertools.product(('push','pull_reques
     'isolated validation keeps root and Flutter consumer assertions',
     () async {
       final jobs = readWorkflow('ci')['jobs'];
-      final plan = await selected([
+      // The Linux VM shards run every root suite, whichever validation or
+      // chat app file it imports, copies or reads.
+      for (final path in [
         'packages/llamadart_validation/lib/src/runner.dart',
-      ]);
-      expect(plan['jobs']['validation-integration'], isTrue);
+        'packages/llamadart_validation/test/validation_test.dart',
+        'tool/testing/validation/remote.dart',
+        'example/chat_app/lib/models/downloadable_model.dart',
+      ]) {
+        final plan = await selected([path]);
+        expect(plan['jobs']['test-linux-coverage'], isTrue, reason: path);
+        expect(
+          plan['jobs']['web-chat-contract'] !=
+              plan['jobs']['validation-integration'],
+          isTrue,
+          reason: '$path: one job runs the Flutter consumer tests',
+        );
+      }
       final runs = (jobs['validation-integration']['steps'] as List)
           .where((step) => step['run'] != null)
           .map((step) => step['run'] as String)
           .join('\n');
-      for (final assertion in [
-        'validation_remote_test.dart',
-        'validation_image_profile_test.dart',
-        'validation_npu_test.dart',
-        'prepare_workspace_test.dart',
-        'validation_controller_test.dart',
-        'validation_app_test.dart',
-      ]) {
-        expect(runs, contains(assertion));
-      }
+      expect(runs, contains('validation_controller_test.dart'));
+      expect(runs, contains('validation_app_test.dart'));
+      expect(runs, isNot(contains('validation_remote_test.dart')));
     },
   );
 
@@ -1452,14 +1458,6 @@ for event,flag,native,cancel,good,main in itertools.product(('push','pull_reques
     'full graph substitution executes both root and all Flutter consumers',
     () async {
       final jobs = readWorkflow('ci')['jobs'];
-      final rootRun = (jobs['validation-integration']['steps'] as List)
-          .singleWhere(
-            (s) => '${s['run']}'.contains('validation_remote_test.dart'),
-          );
-      expect(
-        rootRun['if'],
-        "needs.changes.outputs.test-linux-coverage != 'true'",
-      );
       final appSteps = (jobs['web-chat-contract']['steps'] as List).where(
         (s) => s['working-directory'] == 'example/chat_app',
       );

@@ -17,6 +17,17 @@ validate against the exact release tag notes.
 - Add a Linux Vulkan preflight so Studio can report unavailable image drivers before native device enumeration.
 - Speed up model checksum verification on Apple platforms and keep verification off the UI isolate.
 
+## 0.19.11
+
+- Preserve the system message before the generic JSON tool instruction with `ToolChoice.auto` or `required` ([#1973](https://github.com/leehack/llamadart/issues/1973)).
+- Native LiteRT-LM strict `responseFormat` now also runs on the Windows x64 GPU (NVIDIA L4 over Direct3D 12, GRID driver 596.86, Qwen3 and Gemma 4); `ComputeDevice.gpu` there no longer needs `ComputeDevice.cpu`. Other drivers are untested and the Linux arm64 GPU stays unqualified ([#174](https://github.com/leehack/llamadart/issues/174)).
+- Adopt stable-diffusion `v0.3.0-6` with Apple host-buffer and model-loader scratch release fixes ([#2004](https://github.com/leehack/llamadart/issues/2004)); full-VAE load/dispose checks passed on iOS 18 and 26 with small residual memory.
+- Document Android llama.cpp OpenCL requirements: the `opencl` module needs the `libOpenCL.so` `<uses-native-library android:required="false"/>` manifest declaration on target API 31+; without it the module cannot load and `ComputeDevice.gpu` with OpenCL throws. ggml-opencl admits only Adreno (and Intel) GPUs. With it, EmbeddingGemma 2 ran fully on OpenCL on a Galaxy S24 ([#1189](https://github.com/leehack/llamadart/issues/1189)).
+- Apply Android Vulkan context settings and the 8-token prompt cap when a requested backend (such as `opencl`) falls back to an already registered Vulkan device ([#2016](https://github.com/leehack/llamadart/issues/2016)).
+- Keep default WebGPU bridge assets at `v0.1.85` (unchanged from 0.19.10).
+
+Runtime baseline: native llama.cpp `v0.9.0` and Web use upstream `v0.9.0@cd959bae99ff4bed22bef2604f45241c09bbb8c8`; native LiteRT-LM uses `v0.19.1-5` and stable-diffusion uses `v0.3.0-6`. Web LiteRT-LM uses `@litert-lm/core@0.19.0`. Manifest SHA-256: `6767783edd85e14853a8a79cd6ce53d53f4eb2d99aeb62601014bd68c1b6b7b3`.
+
 ## 0.19.10
 
 - Adopt stable-diffusion `v0.3.0-4`: on iOS Metal the runtime splits graphs, so `ImageGenerationEngine.load` no longer refuses a full VAE there; a runtime without the split keeps the refusal. Qualified on an iPhone 16 Pro and an iPhone 17 Pro with SD-Turbo's embedded full VAE at 512x512; external VAE/TAESD components, SDXL-size VAEs, larger resolutions and SDXS through `sd_dart_new_sd_ctx` are admitted but not device-qualified. On iOS 26 the second engine dispose can leave about 2 GB resident ([#1047](https://github.com/leehack/llamadart/issues/1047), [#2004](https://github.com/leehack/llamadart/issues/2004)).

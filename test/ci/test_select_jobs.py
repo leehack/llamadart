@@ -3,6 +3,8 @@ import importlib.util
 import json
 import os
 from pathlib import Path
+import posixpath
+import re
 import subprocess
 import sys
 import tempfile
@@ -14,13 +16,32 @@ ci = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(ci)
 
 
+def root_suite_imports():
+    """Files outside `test/` that a root test suite imports, directly or not."""
+    directive = re.compile(r'''^\s*(?:import|export|part)\s+((?:[^;'"]|'[^']*'|"[^"]*")*);''', re.M)
+    seen, pending = set(), [path.relative_to(ROOT).as_posix()
+                            for path in (ROOT / 'test').rglob('*_test.dart')]
+    while pending:
+        path = pending.pop()
+        if path in seen or not (ROOT / path).is_file():
+            continue
+        seen.add(path)
+        for match in directive.finditer((ROOT / path).read_text(encoding='utf-8')):
+            for uri in re.findall(r'''['"]([^'"]+)['"]''', match.group(1)):
+                if uri.startswith('package:llamadart/'):
+                    pending.append('lib/' + uri[len('package:llamadart/'):])
+                elif ':' not in uri:
+                    pending.append(posixpath.normpath(posixpath.join(posixpath.dirname(path), uri)))
+    return {path for path in seen if not path.startswith('test/')}
+
+
 class SelectionTest(unittest.TestCase):
     def test_documentation_omits_native_and_bundles(self):
         for path in ('website/pubspec.lock', 'website/sidebars.json'):
             with self.subTest(path=path):
                 plan = ci.select([path])
                 self.assertEqual({j for j, v in plan['jobs'].items() if v},
-                                 {'docs-check', 'docs-versions'})
+                                 {'docs-check', 'docs-versions', 'markdown-tests'})
                 self.assertEqual(plan['apps'], [])
                 self.assertEqual(plan['desktops'], [])
 
@@ -52,49 +73,29 @@ class SelectionTest(unittest.TestCase):
                 self.assertTrue(plan['jobs']['test-linux-coverage'])
                 self.assertFalse(plan['jobs']['markdown-tests'])
 
-    def test_validation_integration_is_not_dropped_for_markdown_alone(self):
-        # Only full Linux coverage, not the Markdown tests, runs its root tests.
-        plan = ci.select(['packages/llamadart_validation/lib/a.dart', 'doc/a.md'])
-        self.assertFalse(plan['jobs']['test-linux-coverage'])
-        self.assertTrue(plan['jobs']['web-chat-contract'])
-        self.assertTrue(plan['jobs']['validation-integration'])
-
-    def test_markdown_reader_helpers_run_the_guard_without_full_coverage(self):
-        for path in ('tool/docs/build_site.sh', 'tool/docs/new_reader.dart',
-                     'tool/testing/validation/remote.dart', 'tool/testing/validation.dart'):
+    def test_every_path_runs_the_markdown_reader_guard(self):
+        # Any file a root suite reaches can start reading Markdown, so no lane
+        # may skip both jobs that run the reader-inventory guard.
+        for path in ('.github/workflows/ci.yml', 'website/docs/integrations/genkit.md',
+                     'packages/genkit_llamadart/lib/a.dart', 'website/docs/guides/model-store.md',
+                     'packages/llamadart_model_store/lib/a.dart', 'README.md', 'LICENSE',
+                     'doc/images/a.png', 'website/sidebars.json', 'website/tool/a.dart',
+                     'tool/docs/build_site.sh', 'packages/llamadart_litert_lm_flutter/lib/a.dart',
+                     'packages/llamadart_validation/schemas/a.json', 'tool/testing/validation.dart',
+                     'example/chat_app/android/a', 'example/chat_app/lib/main.dart',
+                     'test/unit/a_test.dart', 'new/unknown.file'):
+            for pull_request in (True, False):
+                with self.subTest(path=path, pull_request=pull_request):
+                    jobs = ci.select([path], pull_request=pull_request)['jobs']
+                    self.assertNotEqual(jobs['markdown-tests'], jobs['test-linux-coverage'])
+        for path in ('tool/docs/build_site.sh', 'website/lib/src/site/site_model.dart',
+                     'packages/genkit_llamadart/lib/a.dart', 'LICENSE'):
             with self.subTest(path=path):
                 plan = ci.select([path])
                 self.assertTrue(plan['jobs']['markdown-tests'])
                 self.assertFalse(plan['jobs']['test-linux-coverage'])
                 self.assertFalse(plan['jobs']['test-web'])
                 self.assertFalse(plan['jobs']['test-other-os'])
-
-    def test_files_with_recorded_reader_evidence_run_the_guard(self):
-        listed = (ROOT / 'tool/ci/markdown_reader_files.txt').read_text().splitlines()
-        self.assertEqual(listed, sorted(set(listed)))
-        for path in ('website/lib/src/site/site_model.dart',
-                     'website/lib/src/site/sidebar.dart',
-                     'packages/llamadart_validation/bin/run.dart',
-                     'packages/llamadart_validation/lib/src/manifest.dart',
-                     'packages/genkit_llamadart/.github/check_docs.py'):
-            self.assertIn(path, listed)
-        for path in listed:
-            with self.subTest(path=path):
-                jobs = ci.select([path])['jobs']
-                self.assertTrue(jobs['markdown-tests'] or jobs['test-linux-coverage'])
-        for path in ('website/lib/src/site/site_model.dart',
-                     'packages/genkit_llamadart/.github/check_docs.py'):
-            for pull_request in (True, False):
-                plan = ci.select([path], pull_request=pull_request)
-                self.assertTrue(plan['jobs']['markdown-tests'])
-                self.assertFalse(plan['jobs']['test-linux-coverage'])
-
-    def test_unrelated_paths_do_not_select_markdown_tests(self):
-        for path in ('website/sidebars.json', 'doc/images/a.png',
-                     'LICENSE', 'packages/genkit_llamadart/lib/a.dart',
-                     'example/chat_app/test/unit_test.dart'):
-            with self.subTest(path=path):
-                self.assertFalse(ci.select([path])['jobs']['markdown-tests'])
 
     def test_deleted_and_renamed_markdown_keep_tooling_and_specialized_jobs(self):
         for raw in (b'D\0website/docs/integrations/genkit.md\0',
@@ -105,13 +106,13 @@ class SelectionTest(unittest.TestCase):
             self.assertEqual(plan['apps'], [])
             self.assertEqual(plan['desktops'], [])
 
-    def test_chat_app_vm_only_tests_select_chat_app_tests_only(self):
+    def test_chat_app_tests_select_chat_app_and_root_linux_tests_only(self):
         for path in ('example/chat_app/test/unit_test.dart',
                      'example/chat_app/test_vm/image_evidence_test.dart'):
             with self.subTest(path=path):
                 plan = ci.select([path])
                 self.assertEqual({j for j, v in plan['jobs'].items() if v},
-                                 {'analyze', 'web-chat-contract'})
+                                 {'analyze', 'web-chat-contract', 'test-linux-coverage'})
                 self.assertEqual(plan['apps'], [])
 
     def test_example_package_tests_follow_core_and_example_changes_only(self):
@@ -139,10 +140,8 @@ class SelectionTest(unittest.TestCase):
         for path in ('lib/genkit_llamadart.dart', 'README.md', 'pubspec.yaml',
                      '.github/check_docs.py', 'test/contract_test.dart'):
             plan = ci.select(['packages/genkit_llamadart/' + path])
-            expected = {'genkit'}
-            if path.endswith(('.md', 'check_docs.py')):
-                expected.add('markdown-tests')
-            self.assertEqual({j for j, v in plan['jobs'].items() if v}, expected)
+            self.assertEqual({j for j, v in plan['jobs'].items() if v},
+                             {'genkit', 'markdown-tests'})
             self.assertEqual(plan['companions'], [])
             self.assertEqual(plan['apps'], [])
             self.assertEqual(plan['desktops'], [])
@@ -205,10 +204,8 @@ class SelectionTest(unittest.TestCase):
         for path in ('lib/llamadart_model_store.dart', 'README.md', 'pubspec.yaml',
                      'test/model_store_test.dart'):
             plan = ci.select(['packages/llamadart_model_store/' + path])
-            expected = {'model-store'}
-            if path.endswith('.md'):
-                expected.add('markdown-tests')
-            self.assertEqual({j for j, v in plan['jobs'].items() if v}, expected)
+            self.assertEqual({j for j, v in plan['jobs'].items() if v},
+                             {'model-store', 'markdown-tests'})
             self.assertEqual(plan['companions'], [])
             self.assertEqual(plan['apps'], [])
             self.assertEqual(plan['desktops'], [])
@@ -257,8 +254,11 @@ class SelectionTest(unittest.TestCase):
         for path in ('test/validation_test.dart', 'assets/profiles/chat-gguf-cpu.json',
                      'schemas/profile.schema.json'):
             plan = ci.select(['packages/llamadart_validation/' + path])
-            for job in ('analyze', 'validation-harness', 'validation-integration'):
+            for job in ('analyze', 'validation-harness', 'test-linux-coverage'):
                 self.assertTrue(plan['jobs'][job])
+            # Web Chat runs the Flutter consumer tests when it is selected.
+            self.assertNotEqual(plan['jobs']['validation-integration'],
+                                plan['jobs']['web-chat-contract'])
             self.assertEqual(plan['apps'], [])
             self.assertEqual(plan['desktops'], [])
 
@@ -288,7 +288,9 @@ class SelectionTest(unittest.TestCase):
     def test_validation_implementation_and_deps_build_consumers(self):
         for path in ('lib/src/runner.dart', 'bin/run.dart', 'pubspec.yaml'):
             plan = ci.select(['packages/llamadart_validation/' + path])
-            self.assertTrue(plan['jobs']['validation-integration'])
+            self.assertTrue(plan['jobs']['test-linux-coverage'])
+            self.assertTrue(plan['jobs']['web-chat-contract'])
+            self.assertFalse(plan['jobs']['validation-integration'])
             self.assertEqual(plan['apps'], list(ci.APPS))
             self.assertEqual(plan['desktops'], list(ci.DESKTOPS))
 
@@ -312,15 +314,40 @@ class SelectionTest(unittest.TestCase):
         self.assertEqual(plan['apps'], list(ci.APPS))
         self.assertFalse(plan['jobs']['validation-integration'])
 
-    def test_chat_app_files_imported_by_validation_tooling_run_root_validation_tests(self):
-        for path in ('example/chat_app/lib/models/image_model_profile.dart',
-                     'example/chat_app/integration_test/support/image_evidence.dart',
-                     'example/chat_app/integration_test/support/image_settings_evidence.dart'):
+    def test_chat_app_and_validation_trees_run_the_root_linux_tests(self):
+        # Root suites import, copy or read each of these.
+        for path in ('example/chat_app/integration_test/support/micro_batch_sweep_support.dart',
+                     'example/chat_app/lib/models/downloadable_model.dart',
+                     'example/chat_app/lib/validation/controller.dart',
+                     'example/chat_app/test_vm/evidence_png_fixture.dart',
+                     'example/chat_app/test/unit_test.dart',
+                     'example/chat_app/pubspec.lock',
+                     'example/chat_app/web/index.html',
+                     'example/chat_app/macos/Runner/Configs/AppInfo.xcconfig',
+                     'example/chat_app/ios/Runner.xcodeproj/project.pbxproj',
+                     'example/chat_app/android/app/src/main/AndroidManifest.xml',
+                     'packages/llamadart_validation/lib/src/case_catalog.dart',
+                     'packages/llamadart_validation/bin/run.dart',
+                     'packages/llamadart_validation/assets/image_profiles/image-sdxs-cpu.json',
+                     'packages/llamadart_validation/test/validation_test.dart',
+                     'tool/testing/validation/process.dart', 'tool/testing/validation.dart'):
+            for pull_request in (True, False):
+                with self.subTest(path=path, pull_request=pull_request):
+                    jobs = ci.select([path], pull_request=pull_request)['jobs']
+                    self.assertTrue(jobs['test-linux-coverage'])
+                    self.assertFalse(jobs['markdown-tests'])
+                    self.assertFalse(jobs['test-web'])
+                    self.assertFalse(jobs['test-other-os'])
+
+    def test_every_file_a_root_suite_imports_runs_the_root_linux_tests(self):
+        imported = root_suite_imports()
+        for path in ('lib/llamadart.dart', 'tool/testing/validation/remote.dart',
+                     'example/chat_app/lib/models/downloadable_model.dart',
+                     'packages/llamadart_validation/lib/src/report.dart'):
+            self.assertIn(path, imported)
+        for path in sorted(imported):
             with self.subTest(path=path):
-                plan = ci.select([path])
-                for job in ('analyze', 'validation-harness', 'validation-integration',
-                            'web-chat-contract'):
-                    self.assertTrue(plan['jobs'][job], job)
+                self.assertTrue(ci.select([path])['jobs']['test-linux-coverage'])
 
     def test_root_tests_retain_all_os_inventories(self):
         for path in ('test/unit/tooling/windows_test.dart', 'test/test_helper.dart',
@@ -525,7 +552,8 @@ class AggregateTest(unittest.TestCase):
                 self.assertTrue(ci.aggregate(plan, needs, bundle))
 
     def test_linux_vm_shards_share_the_coverage_selection(self):
-        for paths, selected in ((['example/chat_app/android/a'], False), (['lib/llamadart.dart'], True)):
+        for paths, selected in ((['README.md'], False), (['example/chat_app/android/a'], True),
+                                (['lib/llamadart.dart'], True)):
             plan = ci.select(paths)
             self.assertEqual(plan['jobs']['test-linux-coverage'], selected)
             self.assertEqual(ci.expected_jobs(plan)['test-linux-vm'], selected)

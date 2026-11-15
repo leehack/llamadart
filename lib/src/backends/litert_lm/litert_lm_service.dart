@@ -67,7 +67,7 @@ const _jsonSchemaQualifiedBackendsByAbi = <Abi, Set<String>>{
   Abi.androidArm64: {'cpu', 'gpu'},
   Abi.linuxX64: {'cpu', 'gpu'},
   Abi.linuxArm64: {'cpu'},
-  Abi.windowsX64: {'cpu'},
+  Abi.windowsX64: {'cpu', 'gpu'},
 };
 
 /// Reads what the `.litertlm` bundle at a path declares, as
