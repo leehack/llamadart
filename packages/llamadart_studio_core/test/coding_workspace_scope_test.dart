@@ -48,6 +48,30 @@ void main() {
   });
 
   test(
+    'the write gate captures slash and backslash paths before completion',
+    () async {
+      await Directory('${directory.path}/scope').create();
+      for (final suffix in ['scope/slow.txt', r'scope\slow.txt']) {
+        final overrides = _GatedWriteOverrides();
+        final pending = IOOverrides.runWithIOOverrides(
+          () => File('${directory.path}/$suffix').writeAsString('gated'),
+          overrides,
+        );
+        final first = await Future.any([
+          overrides.entered.future.then((_) => 'entered'),
+          pending.then((_) => 'completed'),
+        ]);
+        try {
+          expect(first, 'entered', reason: suffix);
+        } finally {
+          overrides.release.complete();
+          await pending;
+        }
+      }
+    },
+  );
+
+  test(
     'switching roots clears changes and rejects old tools and revert IDs',
     () async {
       final write = controller.buildCodingTools().firstWhere(
@@ -171,7 +195,7 @@ final class _GatedWriteOverrides extends IOOverrides {
   @override
   File createFile(String path) {
     final file = super.createFile(path);
-    return path.endsWith('/slow.txt')
+    return path.replaceAll(r'\', '/').endsWith('/slow.txt')
         ? _GatedFile(file, entered, release)
         : file;
   }
