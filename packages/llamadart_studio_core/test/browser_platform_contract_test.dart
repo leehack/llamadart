@@ -7,11 +7,54 @@ import 'dart:typed_data';
 
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
+import 'package:llamadart/llamadart.dart';
 import 'package:llamadart_studio_core/llamadart_studio_core.dart';
 import 'package:mcp_dart/mcp_dart.dart';
 import 'package:test/test.dart';
 
+import 'studio_test_fakes.dart';
+
 void main() {
+  for (final explicitEnable in [false, true]) {
+    test(
+      'Web cannot enable shell with ${explicitEnable ? 'explicit true' : 'default'} policy',
+      () async {
+        final kv = InMemoryKeyValueStore();
+        final shell = StudioShellController(keyValueStore: kv);
+        final inference = FakeInferencePort();
+        final mcp = McpManager(keyValueStore: kv);
+        final skills = SkillRegistry(keyValueStore: kv);
+        final controller = explicitEnable
+            ? CodingWorkspaceController(
+                inferencePort: inference,
+                shellController: shell,
+                keyValueStore: kv,
+                mcpManager: mcp,
+                skillRegistry: skills,
+                localProcessExecutionAvailable: true,
+              )
+            : CodingWorkspaceController(
+                inferencePort: inference,
+                shellController: shell,
+                keyValueStore: kv,
+                mcpManager: mcp,
+                skillRegistry: skills,
+              );
+        addTearDown(() async {
+          await controller.dispose();
+          await skills.dispose();
+          await mcp.dispose();
+          await inference.dispose();
+          await shell.dispose();
+        });
+        expect(CodingWorkspaceFs.localProcessExecutionAvailable, isFalse);
+        controller.setAllowShellCommandTool(true);
+        controller.setAllowShellCommandTool(true);
+        expect(controller.state.allowShellCommandTool, isFalse);
+      },
+    );
+  }
+
   test(
     'browser conversation factory reopens caller-owned storage and media',
     () async {
@@ -122,8 +165,6 @@ void main() {
           replaceText: 'b',
         ),
         'deletion': () => CodingWorkspaceFs.deleteFile('/workspace', 'a.txt'),
-        'execution': () =>
-            CodingWorkspaceFs.runCommand('/workspace', 'echo unsafe'),
       };
       for (final operation in operations.entries) {
         await expectLater(
@@ -138,6 +179,16 @@ void main() {
           reason: operation.key,
         );
       }
+      await expectLater(
+        CodingWorkspaceFs.runCommand('/workspace', 'echo unsafe'),
+        throwsA(
+          isA<LlamaUnsupportedException>().having(
+            (error) => error.message,
+            'unsupported platform',
+            contains('Web'),
+          ),
+        ),
+      );
     },
   );
 

@@ -227,6 +227,15 @@ void main() {
         Navigator.of(tester.element(find.byType(Dialog).first)).pop();
         await tester.pumpAndSettle();
 
+        final setupDone = find.byKey(const Key('coding_setup_done'));
+        if (setupDone.evaluate().isNotEmpty) {
+          await tester.ensureVisible(setupDone);
+          await tester.pumpAndSettle();
+          await tester.tap(setupDone);
+          await tester.pumpAndSettle();
+          expect(setupDone, findsNothing);
+        }
+
         // Verify Session Inspector (persistent on >=1120, endDrawer below 1120).
         if (size.width < 1120 || !deps.shellController.state.inspectorVisible) {
           await tester.tap(find.byKey(const Key('toggle_inspector_button')));
