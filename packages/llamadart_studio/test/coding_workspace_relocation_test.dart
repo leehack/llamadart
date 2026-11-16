@@ -266,36 +266,87 @@ void main() {
     expect(fresh.codingController.state.workspaceRoot, a);
   });
 
-  testWidgets(
-    'unavailable app storage reports errors and keeps exact external roots',
-    (tester) async {
-      const channel = MethodChannel('plugins.flutter.io/path_provider');
-      final messenger = tester.binding.defaultBinaryMessenger;
-      messenger.setMockMethodCallHandler(
-        channel,
-        (_) async => throw PlatformException(code: 'unavailable'),
+  testWidgets('a storage outage preserves the owned root across a later move', (
+    tester,
+  ) async {
+    var support = '${temp.path}/supportA';
+    var unavailable = false;
+    const channel = MethodChannel('plugins.flutter.io/path_provider');
+    final messenger = tester.binding.defaultBinaryMessenger;
+    messenger.setMockMethodCallHandler(channel, (_) async {
+      if (unavailable) throw PlatformException(code: 'unavailable');
+      return support;
+    });
+    addTearDown(() => messenger.setMockMethodCallHandler(channel, null));
+    await tester.runAsync(() async {
+      const id = 'workspace_abc';
+      final saved = jsonEncode(_owned(id));
+      final kv = InMemoryKeyValueStore({_v2: saved});
+      final root = '$support/llamadart_studio/coding_workspaces/$id';
+      final file = File('$root/$_nested')..createSync(recursive: true);
+      file.writeAsStringSync(_bytes);
+      final other = Directory(
+        '$support/llamadart_studio/coding_workspaces/workspace_def',
+      )..createSync();
+      final current = await buildTestDeps(isMobile: true, keyValueStore: kv);
+      addTearDown(current.dispose);
+      expect(current.codingController.state.workspaceRoot, root);
+      current.codingController.setPromptDraftForWorkspace(root, 'Keep draft');
+      unavailable = true;
+      await current.codingController.setWorkspaceRoot(other.path);
+      expect(current.codingController.state.workspaceRoot, root);
+      expect(current.codingController.state.lastError, contains(_recovery));
+      expect(
+        current.codingController.promptDraftForWorkspace(root),
+        'Keep draft',
       );
-      addTearDown(() => messenger.setMockMethodCallHandler(channel, null));
-      final external = Directory('${temp.path}/external')..createSync();
-      final kv = InMemoryKeyValueStore({
-        _v2: jsonEncode(_owned('workspace_abc')),
-      });
-      await tester.runAsync(() async {
-        final restored = await buildTestDeps(
-          isMobile: true,
-          keyValueStore: kv,
-        ).timeout(const Duration(seconds: 5));
-        addTearDown(restored.dispose);
-        expect(restored.codingController.state.workspaceRoot, isNull);
-        expect(restored.codingController.state.lastError, isNotNull);
-        await restored.codingController
-            .setWorkspaceRoot(external.path)
-            .timeout(const Duration(seconds: 5));
-        expect(restored.codingController.state.workspaceRoot, external.path);
-        expect(await _readV2(kv), _absolute(external.path));
-      });
-    },
-  );
+      expect(await kv.readString(_v2), saved);
+      expect(file.readAsBytesSync(), utf8.encode(_bytes));
+      await current.dispose();
+      final moved = '${temp.path}/supportB';
+      await Directory(support).rename(moved);
+      support = moved;
+      unavailable = false;
+      final restored = await buildTestDeps(isMobile: true, keyValueStore: kv);
+      addTearDown(restored.dispose);
+      final expected = '$support/llamadart_studio/coding_workspaces/$id';
+      expect(restored.codingController.state.workspaceRoot, expected);
+      expect(restored.codingController.state.lastError, isNull);
+      expect(await kv.readString(_v2), saved);
+      expect(File('$expected/$_nested').readAsBytesSync(), utf8.encode(_bytes));
+    });
+  });
+
+  testWidgets('unavailable app storage preserves the saved owned root', (
+    tester,
+  ) async {
+    const channel = MethodChannel('plugins.flutter.io/path_provider');
+    final messenger = tester.binding.defaultBinaryMessenger;
+    messenger.setMockMethodCallHandler(
+      channel,
+      (_) async => throw PlatformException(code: 'unavailable'),
+    );
+    addTearDown(() => messenger.setMockMethodCallHandler(channel, null));
+    final external = Directory('${temp.path}/external')..createSync();
+    final kv = InMemoryKeyValueStore({
+      _v2: jsonEncode(_owned('workspace_abc')),
+    });
+    await tester.runAsync(() async {
+      final restored = await buildTestDeps(
+        isMobile: true,
+        keyValueStore: kv,
+      ).timeout(const Duration(seconds: 5));
+      addTearDown(restored.dispose);
+      expect(restored.codingController.state.workspaceRoot, isNull);
+      expect(restored.codingController.state.lastError, contains(_recovery));
+      await restored.codingController
+          .setWorkspaceRoot(external.path)
+          .timeout(const Duration(seconds: 5));
+      expect(restored.codingController.state.workspaceRoot, isNull);
+      expect(restored.codingController.state.lastError, contains(_recovery));
+      expect(await _readV2(kv), _owned('workspace_abc'));
+    });
+  });
 
   testWidgets('stale legacy root recovers through Open local workspace', (
     tester,

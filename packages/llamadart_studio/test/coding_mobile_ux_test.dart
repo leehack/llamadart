@@ -147,10 +147,13 @@ void main() {
     const size = Size(320, 740);
     const inset = 300.0;
     addTearDown(() => tester.binding.setSurfaceSize(null));
-    final deps = await buildTestDeps(isMobile: true);
-    addTearDown(deps.dispose);
     final root = Directory.systemTemp.createTempSync('coding_refresh_');
     addTearDown(() => root.deleteSync(recursive: true));
+    final deps = await buildTestDeps(
+      isMobile: true,
+      appDataDirectory: root.path,
+    );
+    addTearDown(deps.dispose);
     await tester.runAsync(
       () => deps.codingController.setWorkspaceRoot(root.path),
     );
@@ -224,10 +227,13 @@ void main() {
     tester,
   ) async {
     addTearDown(() => tester.binding.setSurfaceSize(null));
-    final deps = await buildTestDeps(isMobile: true);
-    addTearDown(deps.dispose);
     final root = Directory.systemTemp.createTempSync('coding_back_');
     addTearDown(() => root.deleteSync(recursive: true));
+    final deps = await buildTestDeps(
+      isMobile: true,
+      appDataDirectory: root.path,
+    );
+    addTearDown(deps.dispose);
     File('${root.path}/main.dart').writeAsStringSync('owned file');
     await tester.runAsync(
       () => deps.codingController.setWorkspaceRoot(root.path),
@@ -401,16 +407,17 @@ void main() {
     (tester) async {
       addTearDown(() => tester.binding.setSurfaceSize(null));
       final inference = _FileInference();
+      final root = Directory.systemTemp.createTempSync('coding_mobile_');
+      addTearDown(() => root.deleteSync(recursive: true));
       final deps = await buildTestDeps(
         isMobile: true,
+        appDataDirectory: root.path,
         inferencePort: inference,
       );
       addTearDown(deps.dispose);
       addTearDown(() {
         unawaited(inference.events.close());
       });
-      final root = Directory.systemTemp.createTempSync('coding_mobile_');
-      addTearDown(() => root.deleteSync(recursive: true));
       final file = File('${root.path}/main.dart')..writeAsStringSync('before');
       File('${root.path}/README.md').writeAsStringSync('Owned readme');
       await tester.runAsync(

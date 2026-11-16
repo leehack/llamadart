@@ -32,11 +32,17 @@ void main() {
         .setMockMethodCallHandler(SystemChannels.platform, null);
   });
 
-  Future<StudioDependencies> mount(WidgetTester tester) async {
+  Future<StudioDependencies> mount(
+    WidgetTester tester, {
+    String? appDataDirectory,
+  }) async {
     tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
     await tester.binding.setSurfaceSize(const Size(390, 844));
     addTearDown(() => tester.binding.setSurfaceSize(null));
-    final deps = await buildTestDeps(isMobile: true);
+    final deps = await buildTestDeps(
+      isMobile: true,
+      appDataDirectory: appDataDirectory,
+    );
     addTearDown(deps.dispose);
     await tester.pumpWidget(LlamadartStudioApp(dependencies: deps));
     await deps.shellController.selectWorkspace(StudioWorkspace.coding);
@@ -49,9 +55,9 @@ void main() {
   testWidgets(
     'Local history updates Android Back registration through the app',
     (tester) async {
-      final deps = await mount(tester);
       final root = Directory.systemTemp.createTempSync('back_registration_');
       addTearDown(() => root.deleteSync(recursive: true));
+      final deps = await mount(tester, appDataDirectory: root.path);
       File('${root.path}/main.dart').writeAsStringSync('owned file');
       await tester.runAsync(
         () => deps.codingController.setWorkspaceRoot(root.path),

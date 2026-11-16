@@ -91,7 +91,7 @@ class _LocalCodingWorkspaceRootStore implements CodingWorkspaceRootStore {
     }
     final record = _decode(raw);
     if (record.kind == 'absolute') return record.value;
-    final namespace = await _workspaceDirectory(_appDataDirectory);
+    final namespace = await _currentNamespace();
     final root = '${namespace.path}/${record.value}';
     if (!await _isRealDirectory(namespace.path) ||
         !await _isRealDirectory(root)) {
@@ -102,16 +102,10 @@ class _LocalCodingWorkspaceRootStore implements CodingWorkspaceRootStore {
 
   @override
   Future<void> writeRoot(String root) async {
-    Directory? namespace;
-    try {
-      namespace = await _workspaceDirectory(_appDataDirectory);
-    } catch (_) {
-      // Without current app storage, ownership is unproven: keep the exact path.
-    }
+    final namespace = await _currentNamespace();
     final id = Directory(root).uri.pathSegments
         .lastWhere((s) => s.isNotEmpty, orElse: () => '');
     final owned =
-        namespace != null &&
         _ownedId.hasMatch(id) &&
         await _isRealDirectory(namespace.path) &&
         await _isRealDirectory(root) &&
@@ -127,6 +121,14 @@ class _LocalCodingWorkspaceRootStore implements CodingWorkspaceRootStore {
             : {'version': 2, 'kind': 'absolute', 'path': root},
       ),
     );
+  }
+
+  Future<Directory> _currentNamespace() async {
+    try {
+      return await _workspaceDirectory(_appDataDirectory);
+    } catch (_) {
+      throw StateError(_unavailableRoot);
+    }
   }
 
   static ({String kind, String value}) _decode(String raw) {
