@@ -1818,10 +1818,14 @@ class HighRiskReadinessEvaluator {
       io: '1ff6f91e0fff132c0138b00620f159210d902937eaaa812436987a2f57cabdf1',
       stub: '86161bc45a9f511637e0e926ca1bcfebcb6214255679824a967df016414c5cb1',
     };
+    const manifests = {'pubspec.yaml', 'pubspec.lock'};
     if (changes[barrel]?.kind != RepositoryChangeKind.modified ||
         changes[barrel]?.previousPath != null ||
-        changes.containsKey('pubspec.yaml') ||
-        changes.containsKey('pubspec.lock')) {
+        changes.values.any(
+          (change) =>
+              manifests.contains(change.path) ||
+              manifests.contains(change.previousPath),
+        )) {
       return false;
     }
     Future<ReadinessFile?> read(String sha, String path) =>

@@ -1700,6 +1700,24 @@ final segment = '${Object()}ImageEditingRequest${Object()}';
         );
       }
     });
+    for (final manifest in ['pubspec.yaml', 'pubspec.lock']) {
+      test('dependency manifest rename origin $manifest is rejected', () async {
+        final proof = evidence();
+        (proof['surfaces'] as List).add('artifactConsumer');
+        final result = await evaluate(
+          proof: proof,
+          inventory: [
+            ...changes,
+            RepositoryChange(
+              path: 'archive/$manifest',
+              kind: RepositoryChangeKind.renamed,
+              previousPath: manifest,
+            ),
+          ],
+        );
+        expect(result.decision, ReadinessDecision.rejected);
+      });
+    }
     test('empty families do not excuse an ordinary backend export', () async {
       final state = files();
       state[headSha]![io] = (
@@ -1785,6 +1803,7 @@ final segment = '${Object()}ImageEditingRequest${Object()}';
         git(['config', 'user.email', 'vulkan-policy@example.invalid']);
         final state = files();
         write(state[baseSha]!);
+        File('${repo.path}/pubspec.lock').writeAsStringSync('packages: {}\n');
         git(['add', '.']);
         git(['commit', '--quiet', '-m', 'base']);
         final base = git(['rev-parse', 'HEAD']);
@@ -1796,10 +1815,16 @@ final segment = '${Object()}ImageEditingRequest${Object()}';
         git(['add', io]);
         git(['commit', '--quiet', '-m', 'complete reviewed export']);
         final complete = git(['rev-parse', 'HEAD']);
-        Future<HighRiskReadinessResult> run(String head) {
+        Future<HighRiskReadinessResult> run(
+          String head, {
+          bool renamedManifest = false,
+        }) {
           final proof = evidence()
             ..['expected_pr_head_sha'] = head
             ..['current_base_sha'] = base;
+          if (renamedManifest) {
+            (proof['surfaces'] as List).add('artifactConsumer');
+          }
           proof['independent_audit']['audit_head_sha'] = head;
           proof['independent_audit']['audit_base_sha'] = base;
           return const HighRiskReadinessEvaluator().evaluate(
@@ -1820,6 +1845,12 @@ final segment = '${Object()}ImageEditingRequest${Object()}';
         expect(
           (await run(complete)).decision,
           ReadinessDecision.unverifiedPrerequisites,
+        );
+        Directory('${repo.path}/archive').createSync();
+        git(['mv', 'pubspec.lock', 'archive/pubspec.lock']);
+        git(['commit', '--quiet', '-m', 'rename dependency lock']);
+        expectConservative(
+          await run(git(['rev-parse', 'HEAD']), renamedManifest: true),
         );
       },
     );
