@@ -91,6 +91,32 @@ void main() {
         tester.testTextInput.enterText('Continue typing');
         await tester.pump();
         expect(field.controller!.text, 'Continue typing');
+        tester.testTextInput.log.clear();
+        await tester.tap(find.text('Files (0)'));
+        await tester.pumpAndSettle();
+        expect(field.focusNode!.hasFocus, isFalse);
+        expect(tester.testTextInput.isVisible, isFalse);
+        expect(field.controller!.text, 'Continue typing');
+        expect(
+          tester.testTextInput.log.map((call) => call.method),
+          contains('TextInput.hide'),
+        );
+        tester.view.viewInsets = const FakeViewPadding();
+        tester.view.padding = const FakeViewPadding(top: 62, bottom: 34);
+        await tester.pumpAndSettle();
+        await tester.tap(input);
+        await tester.pumpAndSettle();
+        expect(tester.state<EditableTextState>(editable), same(editor));
+        expect(tester.testTextInput.isVisible, isTrue);
+        tester.testTextInput.log.clear();
+        await tester.tap(find.byKey(const Key('coding_send_button')));
+        await tester.pumpAndSettle();
+        expect(field.controller!.text, isEmpty);
+        expect(field.focusNode!.hasFocus, isTrue);
+        expect(
+          tester.testTextInput.log.map((call) => call.method),
+          isNot(contains('TextInput.hide')),
+        );
         expect(tester.takeException(), isNull);
         await tester.pumpWidget(const SizedBox.shrink());
       },

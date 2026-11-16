@@ -131,6 +131,7 @@ extension _CodingAgentChatPane on _CodingWorkspaceViewState {
             focusNode: _promptFocusNode,
             minLines: 1,
             maxLines: compact ? (shortPane ? 1 : 2) : 6,
+            onTapOutside: compact ? (_) => _promptFocusNode.unfocus() : null,
             decoration: const InputDecoration(
               hintText: 'Ask about your code…',
               filled: false,
@@ -189,27 +190,30 @@ extension _CodingAgentChatPane on _CodingWorkspaceViewState {
             ),
           );
           final inlineAction = compact && shortPane;
-          return Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              // Reparenting the focused field during keyboard resize closes it.
-              Row(
-                children: [
-                  Expanded(child: input),
-                  if (inlineAction) ...[const SizedBox(width: 8), action],
-                ],
-              ),
-              if (inlineAction && (hasContext || running)) badges,
-              if (!inlineAction)
+          // Send/Stop must not count as an outside tap and dismiss the editor.
+          return TextFieldTapRegion(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                // Reparenting the focused field during keyboard resize closes it.
                 Row(
                   children: [
-                    Expanded(child: badges),
-                    const SizedBox(width: 8),
-                    action,
+                    Expanded(child: input),
+                    if (inlineAction) ...[const SizedBox(width: 8), action],
                   ],
                 ),
-            ],
+                if (inlineAction && (hasContext || running)) badges,
+                if (!inlineAction)
+                  Row(
+                    children: [
+                      Expanded(child: badges),
+                      const SizedBox(width: 8),
+                      action,
+                    ],
+                  ),
+              ],
+            ),
           );
         },
       ),
