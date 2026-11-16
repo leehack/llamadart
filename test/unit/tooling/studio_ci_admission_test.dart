@@ -8,6 +8,37 @@ import 'package:test/test.dart';
 import 'package:yaml/yaml.dart';
 
 void main() {
+  test('Studio admission executes browser-only contracts in both packages', () {
+    final workflow =
+        loadYaml(File('.github/workflows/ci.yml').readAsStringSync()) as Map;
+    final steps = (workflow['jobs'] as Map)['studio']['steps'] as List;
+    for (final (package, command) in [
+      (
+        'llamadart_studio_core',
+        'dart test -p chrome test/browser_platform_contract_test.dart '
+            'test/web_engine_batch_settings_test.dart '
+            'test/studio_error_formatter_test.dart',
+      ),
+      (
+        'llamadart_studio',
+        'flutter test --platform chrome test/web_recording_test.dart '
+            'test/web_platform_acceptance_test.dart '
+            'test/tool_availability_widget_test.dart',
+      ),
+    ]) {
+      final step =
+          steps.singleWhere(
+                (step) => step['working-directory'] == 'packages/$package',
+              )
+              as Map;
+      final lines = (step['run'] as String)
+          .split('\n')
+          .map((line) => line.trim());
+      expect(lines, contains(command), reason: package);
+      expect(step.containsKey('continue-on-error'), isFalse);
+    }
+  });
+
   test(
     'Studio production changes select both package and native admission',
     () async {
