@@ -51,7 +51,12 @@ awaiting a capability probe.
 
 Speech to text, text to speech and decision models are experimental. Image
 generation is a Preview: its API is experimental and may change, and it needs
-the opt-in `stable_diffusion` runtime. Per-platform requirements, validated
+the opt-in `stable_diffusion` runtime. Native hosts can opt into the Linux
+Vulkan loader preflight from `backend.dart` before runtime initialization. It
+checks instance creation and a nonempty device list, including software devices;
+it does not qualify GPU suitability or Linux image inference and is not run
+automatically by `ImageGenerationEngine`. CPU-only builds need no preflight.
+Per-platform requirements, validated
 models, memory figures and the bounded recipes for tiling, editing, ControlNet,
 hires fix, reference editing, seamless textures, module placement, the
 conditioning cache, FP8 weights and local checkpoint sets are in

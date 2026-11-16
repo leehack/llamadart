@@ -79,6 +79,10 @@ dart run skills@ get
 To check a desktop setup without a model, run `dart run llamadart:doctor`; see
 [setup report scope](https://llamadart.leehack.com/docs/platforms/diagnose-setup#desktop-setup-report).
 
+Hosts bundling a Linux Vulkan runtime can preflight the system loader with
+`probeLinuxVulkanUnavailableReason()` from `package:llamadart/backend.dart`;
+see [API levels](https://llamadart.leehack.com/docs/guides/api-levels).
+
 ## First generation
 
 ```dart

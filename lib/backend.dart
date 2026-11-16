@@ -82,6 +82,9 @@ export 'src/backends/backend.dart'
         BackendToolResultMedia,
         StateLoadResult;
 export 'src/core/engine/engine.dart' show LlamaEngineBackendHooks;
+export 'src/backends/linux_vulkan_probe_stub.dart'
+    if (dart.library.io) 'src/backends/linux_vulkan_probe_io.dart'
+    show probeLinuxVulkanUnavailableReason;
 
 // LiteRT-LM runtime
 export 'src/backends/litert_lm/litert_lm_backend_stub.dart'

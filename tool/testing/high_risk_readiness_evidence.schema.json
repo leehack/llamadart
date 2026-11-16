@@ -272,7 +272,6 @@
         },
         "families": {
           "type": "array",
-          "minItems": 1,
           "items": {
             "type": "object",
             "additionalProperties": false,
@@ -292,7 +291,54 @@
             }
           }
         }
-      }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "impacts": {
+                "properties": {
+                  "inputRenderingHistory": {
+                    "properties": {
+                      "applicable": {
+                        "const": false
+                      }
+                    }
+                  },
+                  "outputParsingStreaming": {
+                    "properties": {
+                      "applicable": {
+                        "const": false
+                      }
+                    }
+                  },
+                  "grammarSchema": {
+                    "properties": {
+                      "applicable": {
+                        "const": false
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "families": {
+                "minItems": 0
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "families": {
+                "minItems": 1
+              }
+            }
+          }
+        }
+      ]
     },
     "repositoryChange": {
       "type": "object",

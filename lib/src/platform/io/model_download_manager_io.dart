@@ -3,7 +3,6 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
 
-import 'package:crypto/crypto.dart';
 import 'package:path/path.dart' as path;
 
 import '../../core/exceptions.dart';
@@ -14,6 +13,7 @@ import '../../core/models/model_target_file.dart';
 import '../../core/url_redaction.dart';
 import 'mobile_app_cache_directory.dart';
 import 'model_cache_entry_lock.dart';
+import 'model_file_sha256.dart';
 import 'windows_delete_refusal.dart';
 
 const String _metadataFileName = 'metadata.json';
@@ -2083,8 +2083,7 @@ void _validateResumeValidator(
 }
 
 Future<String> _sha256File(File file) async {
-  final digest = await sha256.bind(file.openRead()).first;
-  return digest.toString();
+  return modelFileSha256(file);
 }
 
 Future<int> _entrySize(ModelCacheEntry entry) async {
