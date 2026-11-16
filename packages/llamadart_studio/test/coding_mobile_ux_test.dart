@@ -558,7 +558,10 @@ void main() {
       file.writeAsStringSync('after owned write');
       await tester.runAsync(() async {
         await tester.tap(find.byKey(const Key('coding_revert_change_0')));
-        await Future<void>.delayed(const Duration(milliseconds: 60));
+        for (var i = 0; i < 250; i++) {
+          if (deps.codingController.state.recentChanges.single.reverted) break;
+          await Future<void>.delayed(const Duration(milliseconds: 20));
+        }
       });
       await tester.pumpAndSettle();
       expect(file.readAsStringSync(), 'before');
