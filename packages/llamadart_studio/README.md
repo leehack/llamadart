@@ -22,6 +22,13 @@ qualify every model, workflow, or platform for production use.
 
 ## Running Locally
 
+Linux WAV playback needs GStreamer's runtime plugins in addition to the build
+headers. On Ubuntu/Debian, install `gstreamer1.0-plugins-base` and
+`gstreamer1.0-plugins-good`. Speech and Notes create their audio player only on
+playback, after checking these runtime elements; a missing dependency shows an
+actionable playback error while recording, inference, WAV export and note editing
+remain available. See [Linux prerequisites](../../website/docs/platforms/linux-prerequisites.md).
+
 The default Linux image runtime uses Vulkan. Studio preflights the system
 loader before probing or loading images and shows an unsupported reason if a
 compatible driver/ICD is unavailable, allowing the other workspaces to start.

@@ -10,6 +10,7 @@ import 'package:llamadart_studio_core/llamadart_studio_core.dart';
 import 'package:record/record.dart';
 
 import '../../app/platform_file_helper.dart';
+import '../../app/studio_audio_playback.dart';
 import '../../app/studio_dependencies.dart';
 import '../../app/studio_file_actions.dart';
 import '../../app/studio_theme.dart';
@@ -24,7 +25,10 @@ part 'speech_stt_card.dart';
 /// reference voice cloning) and Neural STT (`Qwen3-ASR` & `Moonshine Tiny`).
 class SpeechWorkspaceView extends StatefulWidget {
   /// Creates a [SpeechWorkspaceView].
-  const SpeechWorkspaceView({super.key});
+  const SpeechWorkspaceView({super.key, this.audioPlayback});
+
+  /// Optional playback owner for hosts supplying a custom runtime probe.
+  final StudioAudioPlayback? audioPlayback;
 
   @override
   State<SpeechWorkspaceView> createState() => _SpeechWorkspaceViewState();
@@ -35,7 +39,7 @@ class _SpeechWorkspaceViewState extends State<SpeechWorkspaceView> {
     text: 'Welcome to llamadart Studio. Neural speech synthesis is running 100% locally on your device.',
   );
   final TextEditingController _sttContextCtrl = TextEditingController();
-  final AudioPlayer _audioPlayer = AudioPlayer();
+  late final StudioAudioPlayback _audioPlayback;
   final AudioRecorder _recorder = AudioRecorder();
   final Set<String> _tempPlaybackPaths = <String>{};
   final Set<String> _tempRecordingPaths = <String>{};
@@ -70,14 +74,18 @@ class _SpeechWorkspaceViewState extends State<SpeechWorkspaceView> {
   @override
   void initState() {
     super.initState();
-    _playerCompleteSub = _audioPlayer.onPlayerComplete.listen((_) {
+    _audioPlayback = widget.audioPlayback ?? StudioAudioPlayback();
+  }
+
+  Future<AudioPlayer?> _ensureAudioPlayer() async {
+    final player = await _audioPlayback.getOrCreate();
+    if (player == null || !mounted) return null;
+    _playerCompleteSub ??= player.onPlayerComplete.listen((_) {
       if (mounted) {
         setState(() => _playingClipId = null);
       }
     });
-    _playerStateSub = _audioPlayer.onPlayerStateChanged.listen((
-      PlayerState state,
-    ) {
+    _playerStateSub ??= player.onPlayerStateChanged.listen((PlayerState state) {
       if (!mounted) {
         return;
       }
@@ -86,6 +94,7 @@ class _SpeechWorkspaceViewState extends State<SpeechWorkspaceView> {
         setState(() => _playingClipId = null);
       }
     });
+    return player;
   }
 
   PageStorageBucket? _draftBucket;
@@ -143,7 +152,7 @@ class _SpeechWorkspaceViewState extends State<SpeechWorkspaceView> {
     _sttContextCtrl.dispose();
     unawaited(_playerCompleteSub?.cancel() ?? Future<void>.value());
     unawaited(_playerStateSub?.cancel() ?? Future<void>.value());
-    unawaited(_audioPlayer.dispose());
+    unawaited(_audioPlayback.dispose());
     unawaited(_releaseRecorder());
     for (final path in _tempPlaybackPaths) {
       unawaited(StudioPlatformFileHelper.releaseTemporaryFile(path));
@@ -199,7 +208,7 @@ class _SpeechWorkspaceViewState extends State<SpeechWorkspaceView> {
     final seq = ++_playbackSequence;
     if (_playingClipId == entry.id) {
       try {
-        await _audioPlayer.stop();
+        await _audioPlayback.current?.stop();
       } catch (_) {
         // Ignore stop errors while resetting playback state.
       }
@@ -211,7 +220,7 @@ class _SpeechWorkspaceViewState extends State<SpeechWorkspaceView> {
 
     if (_playingClipId != null) {
       try {
-        await _audioPlayer.stop();
+        await _audioPlayback.current?.stop();
       } catch (_) {
         // Best-effort stop before switching clips.
       }
@@ -222,6 +231,8 @@ class _SpeechWorkspaceViewState extends State<SpeechWorkspaceView> {
 
     setState(() => _playingClipId = entry.id);
     try {
+      final player = await _ensureAudioPlayer();
+      if (player == null || !mounted || _playbackSequence != seq) return;
       final wavPath = await StudioPlatformFileHelper.writeTempWavFile(
         entry.clip.wavBytes,
         clipId: entry.id,
@@ -234,11 +245,9 @@ class _SpeechWorkspaceViewState extends State<SpeechWorkspaceView> {
       }
       if (wavPath != null) {
         _tempPlaybackPaths.add(wavPath);
-        await _audioPlayer.play(
-          DeviceFileSource(wavPath, mimeType: 'audio/wav'),
-        );
+        await player.play(DeviceFileSource(wavPath, mimeType: 'audio/wav'));
       } else {
-        await _audioPlayer.play(
+        await player.play(
           BytesSource(entry.clip.wavBytes, mimeType: 'audio/wav'),
         );
       }

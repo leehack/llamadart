@@ -13,6 +13,8 @@ validate against the exact release tag notes.
 
 ## Unreleased
 
+- Keep Studio Speech and Notes usable when Linux audio playback plugins are missing.
+
 - Restore native text-to-speech discovery when Dart bundles its runtime outside the working directory.
 
 - Avoid initializing unavailable Linux Vulkan backends during llama.cpp automatic loading and device probes, while retaining other bundled backends.

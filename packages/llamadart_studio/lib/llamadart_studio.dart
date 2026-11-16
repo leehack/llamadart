@@ -16,6 +16,7 @@ import 'src/app/studio_theme.dart';
 import 'src/widgets/store_widgets.dart';
 import 'src/workspaces/shell/studio_shell_screen.dart';
 
+export 'src/app/studio_audio_playback.dart';
 export 'src/app/studio_dependencies.dart';
 export 'src/app/studio_router.dart';
 export 'src/app/studio_theme.dart';

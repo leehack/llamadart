@@ -13,6 +13,7 @@ import 'package:llamadart_studio_core/llamadart_studio_core.dart';
 import 'package:record/record.dart';
 
 import '../../app/platform_file_helper.dart';
+import '../../app/studio_audio_playback.dart';
 import '../../app/studio_dependencies.dart';
 import '../../app/studio_file_actions.dart';
 import '../../app/studio_theme.dart';
@@ -33,7 +34,10 @@ part 'notebook_rag_panel.dart';
 /// streaming source-grounded Q&A powered by the local Chat LLM.
 class NotebookWorkspaceView extends StatefulWidget {
   /// Creates a [NotebookWorkspaceView].
-  const NotebookWorkspaceView({super.key});
+  const NotebookWorkspaceView({super.key, this.audioPlayback});
+
+  /// Optional playback owner for hosts supplying a custom runtime probe.
+  final StudioAudioPlayback? audioPlayback;
 
   @override
   State<NotebookWorkspaceView> createState() => _NotebookWorkspaceViewState();
@@ -46,7 +50,7 @@ class _NotebookWorkspaceViewState extends State<NotebookWorkspaceView> {
   final TextEditingController _bodyCtrl = TextEditingController();
   final TextEditingController _transcriptCtrl = TextEditingController();
 
-  final AudioPlayer _audioPlayer = AudioPlayer();
+  late final StudioAudioPlayback _audioPlayback;
   final AudioRecorder _recorder = AudioRecorder();
   final Set<String> _tempPlaybackPaths = <String>{};
   final Set<String> _tempRecordingPaths = <String>{};
@@ -73,14 +77,18 @@ class _NotebookWorkspaceViewState extends State<NotebookWorkspaceView> {
   @override
   void initState() {
     super.initState();
-    _playerCompleteSub = _audioPlayer.onPlayerComplete.listen((_) {
+    _audioPlayback = widget.audioPlayback ?? StudioAudioPlayback();
+  }
+
+  Future<AudioPlayer?> _ensureAudioPlayer() async {
+    final player = await _audioPlayback.getOrCreate();
+    if (player == null || !mounted) return null;
+    _playerCompleteSub ??= player.onPlayerComplete.listen((_) {
       if (mounted) {
         setState(() => _playingNoteId = null);
       }
     });
-    _playerStateSub = _audioPlayer.onPlayerStateChanged.listen((
-      PlayerState state,
-    ) {
+    _playerStateSub ??= player.onPlayerStateChanged.listen((PlayerState state) {
       if (!mounted) {
         return;
       }
@@ -89,6 +97,7 @@ class _NotebookWorkspaceViewState extends State<NotebookWorkspaceView> {
         setState(() => _playingNoteId = null);
       }
     });
+    return player;
   }
 
   @override
@@ -112,7 +121,7 @@ class _NotebookWorkspaceViewState extends State<NotebookWorkspaceView> {
     _transcriptCtrl.dispose();
     unawaited(_playerCompleteSub?.cancel() ?? Future<void>.value());
     unawaited(_playerStateSub?.cancel() ?? Future<void>.value());
-    unawaited(_audioPlayer.dispose());
+    unawaited(_audioPlayback.dispose());
     unawaited(_releaseRecorder());
     for (final path in _tempPlaybackPaths) {
       unawaited(StudioPlatformFileHelper.releaseTemporaryFile(path));
@@ -510,7 +519,7 @@ class _NotebookWorkspaceViewState extends State<NotebookWorkspaceView> {
     final seq = ++_playbackSequence;
     if (_playingNoteId == note.id) {
       try {
-        await _audioPlayer.stop();
+        await _audioPlayback.current?.stop();
       } catch (_) {}
       if (mounted && _playbackSequence == seq) {
         setState(() => _playingNoteId = null);
@@ -519,7 +528,7 @@ class _NotebookWorkspaceViewState extends State<NotebookWorkspaceView> {
     }
     if (_playingNoteId != null) {
       try {
-        await _audioPlayer.stop();
+        await _audioPlayback.current?.stop();
       } catch (_) {}
     }
     if (!mounted || _playbackSequence != seq) {
@@ -527,11 +536,13 @@ class _NotebookWorkspaceViewState extends State<NotebookWorkspaceView> {
     }
     setState(() => _playingNoteId = note.id);
     try {
+      final player = await _ensureAudioPlayer();
+      if (player == null || !mounted || _playbackSequence != seq) return;
       final localAudioPath = note.audioLocalPath;
       if (!deps.isWeb &&
           localAudioPath != null &&
           localAudioPath.trim().isNotEmpty) {
-        await _audioPlayer.play(
+        await player.play(
           DeviceFileSource(localAudioPath, mimeType: 'audio/wav'),
         );
         return;
@@ -552,11 +563,9 @@ class _NotebookWorkspaceViewState extends State<NotebookWorkspaceView> {
       }
       if (wavPath != null) {
         _tempPlaybackPaths.add(wavPath);
-        await _audioPlayer.play(
-          DeviceFileSource(wavPath, mimeType: 'audio/wav'),
-        );
+        await player.play(DeviceFileSource(wavPath, mimeType: 'audio/wav'));
       } else {
-        await _audioPlayer.play(BytesSource(wavBytes, mimeType: 'audio/wav'));
+        await player.play(BytesSource(wavBytes, mimeType: 'audio/wav'));
       }
     } catch (error) {
       if (!mounted) {
