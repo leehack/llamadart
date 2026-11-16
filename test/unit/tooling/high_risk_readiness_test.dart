@@ -1618,8 +1618,14 @@ final segment = '${Object()}ImageEditingRequest${Object()}';
         headSha: {
           ...base,
           barrel: (mode: '100644', contents: oldBarrel + addition),
-          io: (mode: '100644', contents: File(io).readAsStringSync()),
-          stub: (mode: '100644', contents: File(stub).readAsStringSync()),
+          io: (
+            mode: '100644',
+            contents: File(io).readAsStringSync().replaceAll('\r\n', '\n'),
+          ),
+          stub: (
+            mode: '100644',
+            contents: File(stub).readAsStringSync().replaceAll('\r\n', '\n'),
+          ),
         },
       };
     }
@@ -1814,6 +1820,7 @@ final segment = '${Object()}ImageEditingRequest${Object()}';
         }
 
         git(['init', '--quiet']);
+        git(['config', 'core.autocrlf', 'false']);
         git(['config', 'user.name', 'Vulkan export policy test']);
         git(['config', 'user.email', 'vulkan-policy@example.invalid']);
         final state = files();
