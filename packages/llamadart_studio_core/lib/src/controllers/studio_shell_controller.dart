@@ -19,6 +19,8 @@ class StudioShellState {
     this.initialized = false,
     this.activeWorkspace = StudioWorkspace.chat,
     this.settings = const StudioSettings(),
+    this.savingSettings = false,
+    this.settingsSaveError,
     this.bootRecoveryAlert,
     this.commandPaletteOpen = false,
     this.inspectorVisibility = const {},
@@ -30,8 +32,14 @@ class StudioShellState {
   /// Active Studio workspace tab/route.
   final StudioWorkspace activeWorkspace;
 
-  /// Persisted global Studio settings.
+  /// Current in-memory global Studio settings.
   final StudioSettings settings;
+
+  /// Whether the latest settings save is pending.
+  final bool savingSettings;
+
+  /// Non-null when current settings could not be saved for the next launch.
+  final String? settingsSaveError;
 
   /// Non-null when the previous launch crashed or OOM'd mid-model-load.
   final BootRecoveryAlert? bootRecoveryAlert;
@@ -52,6 +60,9 @@ class StudioShellState {
     bool? initialized,
     StudioWorkspace? activeWorkspace,
     StudioSettings? settings,
+    bool? savingSettings,
+    String? settingsSaveError,
+    bool clearSettingsSaveError = false,
     BootRecoveryAlert? bootRecoveryAlert,
     bool clearBootRecoveryAlert = false,
     bool? commandPaletteOpen,
@@ -61,6 +72,10 @@ class StudioShellState {
       initialized: initialized ?? this.initialized,
       activeWorkspace: activeWorkspace ?? this.activeWorkspace,
       settings: settings ?? this.settings,
+      savingSettings: savingSettings ?? this.savingSettings,
+      settingsSaveError: clearSettingsSaveError
+          ? null
+          : (settingsSaveError ?? this.settingsSaveError),
       bootRecoveryAlert: clearBootRecoveryAlert
           ? null
           : (bootRecoveryAlert ?? this.bootRecoveryAlert),
@@ -152,6 +167,7 @@ class StudioShellController
   Future<bool>? _pendingExit;
   int _navigationEpoch = 0;
   bool _disposed = false;
+  int _settingsSaveEpoch = 0;
 
   /// Registers the mounted workspace's save/capture guard.
   void registerWorkspaceExitGuard(Object owner, Future<bool> Function() guard) {
@@ -243,13 +259,37 @@ class StudioShellController
   }
 
   /// Applies [transform] to [StudioSettings] and persists to [KeyValueStore].
+  /// Save failures remain visible in [StudioShellState.settingsSaveError]; the
+  /// changes stay available for the current session.
   @override
   Future<void> updateSettings(
     StudioSettings Function(StudioSettings current) transform,
   ) async {
-    final next = transform(_store.state.settings);
-    _store.update((StudioShellState s) => s.copyWith(settings: next));
-    await _kv.writeString(_settingsKey, jsonEncode(next.toJson()));
+    await _saveSettings(transform(_store.state.settings));
+  }
+
+  /// Retries saving the latest in-memory settings.
+  Future<void> retrySettingsSave() => _saveSettings(state.settings);
+
+  Future<void> _saveSettings(StudioSettings next) async {
+    if (_disposed) return;
+    final epoch = ++_settingsSaveEpoch;
+    _store.update((s) => s.copyWith(settings: next, savingSettings: true));
+    var saved = false;
+    try {
+      await _kv.writeString(_settingsKey, jsonEncode(next.toJson()));
+      saved = true;
+    } catch (_) {
+      saved = false;
+    }
+    if (_disposed || epoch != _settingsSaveEpoch) return;
+    _store.update(
+      (s) => s.copyWith(
+        savingSettings: false,
+        clearSettingsSaveError: saved,
+        settingsSaveError: saved ? null : 'Settings not saved.',
+      ),
+    );
   }
 
   /// Disposes internal reactive streams.

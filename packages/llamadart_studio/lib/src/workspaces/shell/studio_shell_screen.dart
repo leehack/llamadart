@@ -266,7 +266,7 @@ class _StudioShellScreenState extends State<StudioShellScreen> {
               ],
             );
 
-            return Scaffold(
+            final scaffold = Scaffold(
               key: _scaffoldKey,
               backgroundColor: palette.canvas,
               drawer: isWideDesktop
@@ -394,9 +394,79 @@ class _StudioShellScreenState extends State<StudioShellScreen> {
                 ),
               ),
             );
+            return SafeArea(
+              top: shellState.settingsSaveError != null,
+              bottom: false,
+              left: false,
+              right: false,
+              child: Column(
+                children: [
+                  _SettingsSaveBanner(
+                    message: shellState.settingsSaveError,
+                    saving: shellState.savingSettings,
+                    onRetry: deps.shellController.retrySettingsSave,
+                  ),
+                  Expanded(child: scaffold),
+                ],
+              ),
+            );
           },
         );
       },
+    );
+  }
+}
+
+class _SettingsSaveBanner extends StatelessWidget {
+  const _SettingsSaveBanner({
+    required this.message,
+    required this.saving,
+    required this.onRetry,
+  });
+
+  final String? message;
+  final bool saving;
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    if (message == null) return const SizedBox.shrink();
+    final palette = StudioPalette.of(context);
+    return Semantics(
+      container: true,
+      liveRegion: true,
+      child: Material(
+        key: const Key('settings_save_error_banner'),
+        color: palette.surfaceElevated,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+          child: Row(
+            children: [
+              Icon(Icons.warning_amber_rounded, size: 20, color: palette.amber),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Tooltip(
+                  message: 'Your changes are kept for this session. Retry to save them.',
+                  child: Text(
+                    message!,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: palette.textPrimary,
+                      fontSize: 12.5,
+                    ),
+                  ),
+                ),
+              ),
+              TextButton(
+                key: const Key('retry_settings_save_button'),
+                onPressed: saving ? null : onRetry,
+                child: Text(saving ? 'Saving…' : 'Retry'),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }
