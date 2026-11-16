@@ -1916,7 +1916,7 @@ void main() {
         );
 
         expect(
-          () => service.loadModel(corruptGgufPath, const ModelParams()),
+          () => service.loadModel(corruptGgufPath, _loadFailureModelParams),
           throwsA(
             isA<Exception>().having(
               (error) => error.toString(),
@@ -1941,7 +1941,7 @@ void main() {
         final service = _warmedLoadFailureService(corruptGgufPath);
 
         expect(
-          () => service.loadModel(corruptGgufPath, const ModelParams()),
+          () => service.loadModel(corruptGgufPath, _loadFailureModelParams),
           throwsA(
             isA<Exception>().having(
               (error) => error.toString(),
@@ -8742,10 +8742,17 @@ int _registerMtmdContextForTesting(LlamaCppService service) {
   return handle;
 }
 
+// These native null-return tests control their own diagnostic buffer. CPU-only
+// loads keep optional driver diagnostics from changing that controlled input.
+const _loadFailureModelParams = ModelParams(
+  preferredBackend: GpuBackend.cpu,
+  gpuLayers: 0,
+);
+
 LlamaCppService _warmedLoadFailureService(String corruptGgufPath) {
   final service = LlamaCppService();
   try {
-    service.loadModel(corruptGgufPath, const ModelParams());
+    service.loadModel(corruptGgufPath, _loadFailureModelParams);
   } on Exception {
     // The first controlled failure initializes platform backend discovery.
   }
@@ -8773,6 +8780,10 @@ void _loadDraftModelForTesting(
   String path,
   String label,
 ) {
+  _readPrivateForTesting<Map<int, ModelParams>>(
+    service,
+    '_modelLoadParams',
+  )[-1] = _loadFailureModelParams;
   _invokePrivateForTesting<Object?>(
     service,
     '_loadSpeculativeDraftModel',
