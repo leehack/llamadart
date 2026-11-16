@@ -19,17 +19,24 @@ class _AgentSkillsTabState extends State<_AgentSkillsTab> {
   }
 
   Future<void> _pickSkillDirectory() async {
-    final deps = StudioScope.of(context);
-    String? chosen;
-    if (!deps.isWeb) {
-      chosen = await FilePicker.platform.getDirectoryPath(
-        dialogTitle: 'Select SKILL.md Folder',
-      );
-    }
-    if (chosen == null || chosen.trim().isEmpty) {
-      return;
-    }
-    await deps.skillRegistry.addSkillDirectory(chosen);
+    await runStudioFileAction(
+      context,
+      'Could not choose skill folder',
+      () async {
+        final deps = StudioScope.of(context);
+        String? chosen;
+        if (!deps.isWeb) {
+          chosen = await FilePicker.platform.getDirectoryPath(
+            dialogTitle: 'Select SKILL.md Folder',
+          );
+        }
+        if (!mounted) return;
+        if (chosen == null || chosen.trim().isEmpty) {
+          return;
+        }
+        await deps.skillRegistry.addSkillDirectory(chosen);
+      },
+    );
   }
 
   Future<void> _addSkillDirectoryManual() async {

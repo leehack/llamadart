@@ -11,6 +11,7 @@ import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:llamadart_studio_core/llamadart_studio_core.dart';
 
 import '../../app/studio_dependencies.dart';
+import '../../app/studio_file_actions.dart';
 import '../../app/studio_theme.dart';
 import '../../widgets/code_syntax_highlighter.dart';
 import '../../widgets/mcp_skills/mcp_and_skills_sheet.dart';
@@ -18,6 +19,7 @@ import '../../widgets/model_load_progress_banner.dart';
 import '../../widgets/store_widgets.dart';
 import '../../widgets/studio_motion.dart';
 import '../../widgets/studio_selectable_text.dart';
+import '../../widgets/tool_availability_notice_card.dart';
 
 part 'coding_agent_chat_pane.dart';
 part 'coding_explorer_changes_pane.dart';
@@ -257,16 +259,23 @@ class _CodingWorkspaceViewState extends State<CodingWorkspaceView> {
   }
 
   Future<void> _pickFolder() async {
-    final deps = StudioScope.of(context);
-    if (deps.isWeb) {
-      return;
-    }
-    final picked = await FilePicker.platform.getDirectoryPath(
-      dialogTitle: 'Select Project Workspace Folder',
+    await runStudioFileAction(
+      context,
+      'Could not select workspace folder',
+      () async {
+        final deps = StudioScope.of(context);
+        if (deps.isWeb) {
+          return;
+        }
+        final picked = await FilePicker.platform.getDirectoryPath(
+          dialogTitle: 'Select Project Workspace Folder',
+        );
+        if (!context.mounted) return;
+        if (picked != null && picked.trim().isNotEmpty) {
+          await deps.codingController.setWorkspaceRoot(picked);
+        }
+      },
     );
-    if (picked != null && picked.trim().isNotEmpty) {
-      await deps.codingController.setWorkspaceRoot(picked);
-    }
   }
 
   Future<void> _openManualPathDialog() async {

@@ -12,6 +12,7 @@ import 'package:llamadart_studio_core/llamadart_studio_core.dart';
 
 import '../../app/platform_file_helper.dart';
 import '../../app/studio_dependencies.dart';
+import '../../app/studio_file_actions.dart';
 import '../../app/studio_theme.dart';
 import '../../widgets/command_palette_modal.dart';
 import '../../widgets/download_activity_bar.dart';

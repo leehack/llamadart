@@ -9,6 +9,7 @@ import 'package:llamadart_studio_core/llamadart_studio_core.dart';
 import 'package:pasteboard/pasteboard.dart';
 
 import '../../app/studio_dependencies.dart';
+import '../../app/studio_file_actions.dart';
 import '../../app/studio_theme.dart';
 import '../../widgets/store_widgets.dart';
 import '../../widgets/studio_motion.dart';
@@ -79,57 +80,58 @@ class _MultimodalComposerState extends State<MultimodalComposer> {
     }
   }
 
-  Future<void> _pickImage() async {
-    final deps = StudioScope.of(context);
-    final result = await FilePicker.platform.pickFiles(
-      type: FileType.image,
-      withData: true,
-    );
-    final picked = result?.files.firstOrNull;
-    if (picked == null) {
-      return;
-    }
-    _attachmentSeq++;
-    deps.chatController.addPendingAttachment(
-      StudioAttachment(
-        id: 'att_img_${DateTime.now().microsecondsSinceEpoch}_$_attachmentSeq',
-        kind: StudioAttachmentKind.image,
-        name: picked.name,
-        localPath: deps.isWeb ? null : picked.path,
-        bytes: picked.bytes,
-        sizeBytes: picked.size,
-      ),
-    );
-  }
+  Future<void> _pickImage() => _pickAttachment(StudioAttachmentKind.image);
 
-  Future<void> _pickAudio() async {
+  Future<void> _pickAudio() => _pickAttachment(StudioAttachmentKind.audio);
+
+  Future<void> _pickAttachment(StudioAttachmentKind kind) async {
     final deps = StudioScope.of(context);
-    final result = await FilePicker.platform.pickFiles(
-      type: FileType.custom,
-      allowedExtensions: const <String>['wav', 'mp3', 'm4a', 'flac', 'ogg'],
-      withData: true,
-    );
-    final picked = result?.files.firstOrNull;
-    if (picked == null) {
-      return;
-    }
-    _attachmentSeq++;
-    deps.chatController.addPendingAttachment(
-      StudioAttachment(
-        id: 'att_aud_${DateTime.now().microsecondsSinceEpoch}_$_attachmentSeq',
-        kind: StudioAttachmentKind.audio,
-        name: picked.name,
-        localPath: deps.isWeb ? null : picked.path,
-        bytes: picked.bytes,
-        sizeBytes: picked.size,
-      ),
-    );
+    final conversationId = deps.chatController.state.activeConversationId;
+    await runStudioFileAction(context, 'Could not attach file', () async {
+      final result = await FilePicker.platform.pickFiles(
+        type: kind == StudioAttachmentKind.image
+            ? FileType.image
+            : FileType.custom,
+        allowedExtensions: kind == StudioAttachmentKind.audio
+            ? const <String>['wav', 'mp3', 'm4a', 'flac', 'ogg']
+            : null,
+        withData: true,
+      );
+      if (!mounted ||
+          deps.chatController.state.activeConversationId != conversationId) {
+        return;
+      }
+      final picked = result?.files.firstOrNull;
+      if (picked == null) return;
+      if ((picked.bytes == null || picked.bytes!.isEmpty) &&
+          (deps.isWeb || picked.path == null || picked.path!.isEmpty)) {
+        throw StateError(
+          'The selected file could not be read. Choose another file.',
+        );
+      }
+      _attachmentSeq++;
+      deps.chatController.addPendingAttachment(
+        StudioAttachment(
+          id: 'att_${DateTime.now().microsecondsSinceEpoch}_$_attachmentSeq',
+          kind: kind,
+          name: picked.name,
+          localPath: deps.isWeb ? null : picked.path,
+          bytes: picked.bytes,
+          sizeBytes: picked.size,
+        ),
+      );
+    });
   }
 
   Future<void> _pasteClipboardImage() async {
     final deps = StudioScope.of(context);
+    final conversationId = deps.chatController.state.activeConversationId;
     try {
       final bytes = await Pasteboard.image;
+      if (!mounted ||
+          deps.chatController.state.activeConversationId != conversationId) {
+        return;
+      }
       if (bytes == null || bytes.isEmpty) {
         if (mounted) {
           ScaffoldMessenger.maybeOf(context)?.showSnackBar(

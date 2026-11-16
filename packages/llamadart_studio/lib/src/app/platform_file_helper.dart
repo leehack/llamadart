@@ -4,6 +4,7 @@ import 'package:flutter/painting.dart';
 
 import 'platform_io_stub.dart'
     if (dart.library.io) 'platform_io_native.dart'
+    if (dart.library.js_interop) 'platform_io_web.dart'
     as platform_io;
 
 /// Platform-safe file and image helpers that compile cleanly on both native
@@ -14,7 +15,7 @@ abstract final class StudioPlatformFileHelper {
   static Future<void> writeBytesToPath(String filePath, Uint8List bytes) =>
       platform_io.writeBytesToPath(filePath, bytes);
 
-  /// Reads bytes from [filePath] on native platforms, or returns `null` on Web.
+  /// Reads a native path or a recorder-owned browser blob URL.
   static Future<Uint8List?> readBytesFromPath(String filePath) =>
       platform_io.readBytesFromPath(filePath);
 
@@ -36,7 +37,16 @@ abstract final class StudioPlatformFileHelper {
     required String clipId,
   }) => platform_io.writeTempWavFile(bytes, clipId: clipId);
 
-  /// Deletes a temporary file on native platforms if it exists.
+  /// Deletes a native temporary file or releases a browser recording blob URL.
   static Future<void> deleteFileIfExists(String filePath) =>
       platform_io.deleteFileIfExists(filePath);
+
+  /// Releases an owned temporary file without turning cleanup into a UI error.
+  static Future<void> releaseTemporaryFile(String filePath) async {
+    try {
+      await platform_io.deleteFileIfExists(filePath);
+    } catch (_) {
+      // The OS can already have removed a cache file during app teardown.
+    }
+  }
 }

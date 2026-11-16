@@ -14,6 +14,7 @@ import 'package:record/record.dart';
 
 import '../../app/platform_file_helper.dart';
 import '../../app/studio_dependencies.dart';
+import '../../app/studio_file_actions.dart';
 import '../../app/studio_theme.dart';
 import '../../widgets/code_syntax_highlighter.dart';
 import '../../widgets/model_load_progress_banner.dart';
@@ -48,6 +49,7 @@ class _NotebookWorkspaceViewState extends State<NotebookWorkspaceView> {
   final AudioPlayer _audioPlayer = AudioPlayer();
   final AudioRecorder _recorder = AudioRecorder();
   final Set<String> _tempPlaybackPaths = <String>{};
+  final Set<String> _tempRecordingPaths = <String>{};
 
   StreamSubscription<void>? _playerCompleteSub;
   StreamSubscription<PlayerState>? _playerStateSub;
@@ -111,9 +113,9 @@ class _NotebookWorkspaceViewState extends State<NotebookWorkspaceView> {
     unawaited(_playerCompleteSub?.cancel() ?? Future<void>.value());
     unawaited(_playerStateSub?.cancel() ?? Future<void>.value());
     unawaited(_audioPlayer.dispose());
-    unawaited(_recorder.dispose());
+    unawaited(_releaseRecorder());
     for (final path in _tempPlaybackPaths) {
-      unawaited(StudioPlatformFileHelper.deleteFileIfExists(path));
+      unawaited(StudioPlatformFileHelper.releaseTemporaryFile(path));
     }
     super.dispose();
   }
@@ -282,6 +284,21 @@ class _NotebookWorkspaceViewState extends State<NotebookWorkspaceView> {
     );
   }
 
+  Future<void> _releaseRecorder() async {
+    try {
+      await _micOperation;
+    } catch (_) {
+      // A failed capture still owns its recorder and temporary files.
+    }
+    try {
+      await _recorder.dispose();
+    } finally {
+      for (final path in _tempRecordingPaths) {
+        await StudioPlatformFileHelper.releaseTemporaryFile(path);
+      }
+    }
+  }
+
   Future<void> _finishRecording(StudioDependencies deps) async {
     if (_isRecordingMic) {
       final path = await _recorder.stop();
@@ -290,6 +307,11 @@ class _NotebookWorkspaceViewState extends State<NotebookWorkspaceView> {
       _recordingWatch.reset();
       if (path == null || path.isEmpty) {
         throw StateError('The recorder did not return a WAV file.');
+      }
+      _tempRecordingPaths.add(path);
+      if (!mounted) {
+        await StudioPlatformFileHelper.releaseTemporaryFile(path);
+        return;
       }
       _pendingRecordingPath = path;
       if (mounted) setState(() => _isRecordingMic = false);
@@ -321,7 +343,12 @@ class _NotebookWorkspaceViewState extends State<NotebookWorkspaceView> {
       audioDurationMs: _pendingRecordingDurationMs,
     );
     _pendingRecordingBytes = null;
+    final completedPath = _pendingRecordingPath;
     _pendingRecordingPath = null;
+    if (completedPath != null) {
+      _tempRecordingPaths.remove(completedPath);
+      await StudioPlatformFileHelper.releaseTemporaryFile(completedPath);
+    }
     _pendingRecordingDurationMs = null;
     if (mounted) setState(() {});
   }
@@ -356,15 +383,21 @@ class _NotebookWorkspaceViewState extends State<NotebookWorkspaceView> {
       await _finishRecording(deps);
       return;
     }
-    if (deps.isWeb) {
+    if (!await _recorder.isEncoderSupported(AudioEncoder.wav)) {
       throw StateError(
-        'Live microphone WAV capture is available on native apps.',
+        'WAV microphone capture is unavailable on this device. Import a WAV file instead.',
       );
     }
+    if (!mounted) return;
     if (!await _recorder.hasPermission()) {
-      throw StateError('Microphone permission denied.');
+      throw StateError(
+        'Microphone permission denied. Allow access in system or browser settings and retry.',
+      );
     }
+    if (!mounted) return;
     final tempPath = await StudioPlatformFileHelper.createTempRecordingPath();
+    if (!mounted) return;
+    if (!deps.isWeb) _tempRecordingPaths.add(tempPath);
     await _recorder.start(
       const RecordConfig(
         encoder: AudioEncoder.wav,
@@ -381,82 +414,90 @@ class _NotebookWorkspaceViewState extends State<NotebookWorkspaceView> {
   }
 
   Future<void> _importImageNote(StudioDependencies deps) async {
-    final res = await FilePicker.platform.pickFiles(
-      type: FileType.custom,
-      allowedExtensions: const <String>['png', 'jpg', 'jpeg'],
-      withData: true,
-    );
-    final file = res?.files.firstOrNull;
-    if (file == null) {
-      return;
-    }
-    var bytes = file.bytes;
-    if (bytes == null && file.path != null) {
-      bytes = await StudioPlatformFileHelper.readBytesFromPath(file.path!);
-    }
-    if (bytes == null || bytes.isEmpty) {
-      return;
-    }
-    final lower = file.name.toLowerCase();
-    final mime = lower.endsWith('.png') ? 'image/png' : 'image/jpeg';
-    if (!await _saveCurrentNote(deps)) return;
-    await deps.notebookController.createNote(
-      title: file.name.replaceAll(RegExp(r'\.[^.]+$'), ''),
-      content: 'Visual reference imported from ${file.name}.',
-      tags: const <String>['image', 'multimodal'],
-      sourceKind: StudioNoteSourceKind.image,
-      sourceFileName: file.name,
-      imageBytes: bytes,
-      imageMimeType: mime,
-    );
+    await runStudioFileAction(context, 'Could not import image', () async {
+      final res = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: const <String>['png', 'jpg', 'jpeg'],
+        withData: true,
+      );
+      if (!mounted) return;
+      final file = res?.files.firstOrNull;
+      if (file == null) {
+        return;
+      }
+      var bytes = file.bytes;
+      if (bytes == null && file.path != null) {
+        bytes = await StudioPlatformFileHelper.readBytesFromPath(file.path!);
+      }
+      if (!mounted) return;
+      if (bytes == null || bytes.isEmpty) {
+        throw StateError('The selected file could not be read.');
+      }
+      final lower = file.name.toLowerCase();
+      final mime = lower.endsWith('.png') ? 'image/png' : 'image/jpeg';
+      if (!await _saveCurrentNote(deps) || !mounted) return;
+      await deps.notebookController.createNote(
+        title: file.name.replaceAll(RegExp(r'\.[^.]+$'), ''),
+        content: 'Visual reference imported from ${file.name}.',
+        tags: const <String>['image', 'multimodal'],
+        sourceKind: StudioNoteSourceKind.image,
+        sourceFileName: file.name,
+        imageBytes: bytes,
+        imageMimeType: mime,
+      );
+    });
   }
 
   Future<void> _importTextOrAudioFile(StudioDependencies deps) async {
-    final res = await FilePicker.platform.pickFiles(
-      type: FileType.custom,
-      allowedExtensions: const <String>[
-        'md',
-        'txt',
-        'dart',
-        'json',
-        'yaml',
-        'yml',
-        'wav',
-      ],
-      withData: true,
-    );
-    final file = res?.files.firstOrNull;
-    if (file == null) {
-      return;
-    }
-    var bytes = file.bytes;
-    if (bytes == null && file.path != null) {
-      bytes = await StudioPlatformFileHelper.readBytesFromPath(file.path!);
-    }
-    if (bytes == null || bytes.isEmpty) {
-      return;
-    }
-    if (!await _saveCurrentNote(deps)) return;
-    final lower = file.name.toLowerCase();
-    if (lower.endsWith('.wav')) {
-      await deps.notebookController.createNote(
-        title: file.name.replaceAll(RegExp(r'\.[^.]+$'), ''),
-        content: '',
-        tags: const <String>['audio'],
-        sourceKind: StudioNoteSourceKind.audio,
-        sourceFileName: file.name,
-        audioWavBytes: bytes,
+    await runStudioFileAction(context, 'Could not import file', () async {
+      final res = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: const <String>[
+          'md',
+          'txt',
+          'dart',
+          'json',
+          'yaml',
+          'yml',
+          'wav',
+        ],
+        withData: true,
       );
-      return;
-    }
-    final text = utf8.decode(bytes, allowMalformed: true);
-    await deps.notebookController.createNote(
-      title: file.name,
-      content: text,
-      tags: const <String>['file'],
-      sourceKind: StudioNoteSourceKind.file,
-      sourceFileName: file.name,
-    );
+      if (!mounted) return;
+      final file = res?.files.firstOrNull;
+      if (file == null) {
+        return;
+      }
+      var bytes = file.bytes;
+      if (bytes == null && file.path != null) {
+        bytes = await StudioPlatformFileHelper.readBytesFromPath(file.path!);
+      }
+      if (!mounted) return;
+      if (bytes == null || bytes.isEmpty) {
+        throw StateError('The selected file could not be read.');
+      }
+      if (!await _saveCurrentNote(deps) || !mounted) return;
+      final lower = file.name.toLowerCase();
+      if (lower.endsWith('.wav')) {
+        await deps.notebookController.createNote(
+          title: file.name.replaceAll(RegExp(r'\.[^.]+$'), ''),
+          content: '',
+          tags: const <String>['audio'],
+          sourceKind: StudioNoteSourceKind.audio,
+          sourceFileName: file.name,
+          audioWavBytes: bytes,
+        );
+        return;
+      }
+      final text = utf8.decode(bytes, allowMalformed: true);
+      await deps.notebookController.createNote(
+        title: file.name,
+        content: text,
+        tags: const <String>['file'],
+        sourceKind: StudioNoteSourceKind.file,
+        sourceFileName: file.name,
+      );
+    });
   }
 
   Future<void> _playOrStopNoteAudio(
@@ -504,6 +545,9 @@ class _NotebookWorkspaceViewState extends State<NotebookWorkspaceView> {
         clipId: 'note_${note.id}',
       );
       if (!mounted || _playbackSequence != seq) {
+        if (wavPath != null) {
+          await StudioPlatformFileHelper.releaseTemporaryFile(wavPath);
+        }
         return;
       }
       if (wavPath != null) {
@@ -530,7 +574,7 @@ class _NotebookWorkspaceViewState extends State<NotebookWorkspaceView> {
   }
 
   Future<void> _sendVaultToChat(StudioDependencies deps) async {
-    if (!await _saveCurrentNote(deps)) return;
+    if (!await _saveCurrentNote(deps) || !mounted) return;
     final ragPrompt = deps.notebookController.buildRagChatPrompt(
       _searchCtrl.text,
     );

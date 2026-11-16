@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:llamadart_studio_core/llamadart_studio_core.dart';
 
 import '../../app/studio_dependencies.dart';
+import '../../app/studio_file_actions.dart';
 import '../../app/studio_theme.dart';
 import '../code_syntax_highlighter.dart';
 import '../store_widgets.dart';

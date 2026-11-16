@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
 // Keep Material types compatible with flutter_markdown (see README).
 // ignore: deprecated_member_use
@@ -112,6 +113,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(deps.shellController.state.activeWorkspace, workspace);
       expect(capture.stops, 1);
+      expect(File(capture.path!).existsSync(), isTrue);
       notes.fail = false;
       speech.fail = false;
       await tester.runAsync(
@@ -127,6 +129,7 @@ void main() {
         1,
         reason: 'Retry must reuse the stopped recording',
       );
+      expect(File(capture.path!).existsSync(), isFalse);
       if (workspace == StudioWorkspace.notes) {
         final note = deps.notebookController.state.notes.firstWhere(
           (n) => n.hasAudio,
@@ -242,6 +245,104 @@ void main() {
         expect(tester.takeException(), isNull);
       },
       // Permission denial is injected through the native recorder MethodChannel.
+      skip: kIsWeb,
+    );
+  }
+
+  for (final (workspace, label, message) in [
+    (StudioWorkspace.notes, 'Import Image', 'Could not import image'),
+    (StudioWorkspace.notes, 'Import File', 'Could not import file'),
+    (
+      StudioWorkspace.speech,
+      'Clone Voice WAV',
+      'Could not choose speaker reference',
+    ),
+    (StudioWorkspace.speech, 'Transcribe Audio File', 'Could not import audio'),
+  ]) {
+    testWidgets(
+      '$label cancellation is silent and picker failure is recoverable',
+      (tester) async {
+        final capture = FakeMicChannels(tester);
+        addTearDown(capture.dispose);
+        final picker = _MediaFilePicker();
+        FilePicker.platform = picker;
+        final deps = await buildTestDeps();
+        addTearDown(deps.dispose);
+        _drainMediaOnTearDown(tester);
+        await deps.shellController.selectWorkspace(workspace);
+        await tester.pumpWidget(_app(deps));
+        await tester.pumpAndSettle();
+        final button = find.text(label);
+        await tester.ensureVisible(button);
+        await tester.pumpAndSettle();
+        await tester.tap(button);
+        picker.result.complete(null);
+        await tester.pumpAndSettle();
+        expect(find.byType(SnackBar), findsNothing);
+        picker.result = Completer<FilePickerResult?>();
+        await tester.tap(button);
+        picker.result.completeError(StateError('picker failed'));
+        await tester.pumpAndSettle();
+        expect(find.textContaining(message), findsOneWidget);
+        expect(tester.takeException(), isNull);
+      },
+      skip: kIsWeb,
+    );
+  }
+
+  testWidgets('speaker-reference picker ignores completion after disposal', (
+    tester,
+  ) async {
+    final capture = FakeMicChannels(tester);
+    addTearDown(capture.dispose);
+    final picker = _MediaFilePicker();
+    FilePicker.platform = picker;
+    final deps = await buildTestDeps();
+    addTearDown(deps.dispose);
+    _drainMediaOnTearDown(tester);
+    await deps.shellController.selectWorkspace(StudioWorkspace.speech);
+    await tester.pumpWidget(_app(deps));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('Clone Voice WAV'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Clone Voice WAV'));
+    await tester.pumpWidget(const SizedBox());
+    picker.result.complete(
+      FilePickerResult([
+        PlatformFile(name: 'voice.wav', size: 8, bytes: capture.bytes),
+      ]),
+    );
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+  }, skip: kIsWeb);
+
+  for (final workspace in [StudioWorkspace.notes, StudioWorkspace.speech]) {
+    testWidgets(
+      '${workspace.name} explains unavailable WAV encoder before requesting permission',
+      (tester) async {
+        final capture = FakeMicChannels(tester)..supportsWav = false;
+        addTearDown(capture.dispose);
+        final deps = await buildTestDeps();
+        addTearDown(deps.dispose);
+        _drainMediaOnTearDown(tester);
+        await deps.shellController.selectWorkspace(workspace);
+        await tester.pumpWidget(_app(deps));
+        await tester.pumpAndSettle();
+        final start = workspace == StudioWorkspace.notes
+            ? find.byKey(const Key('notebook_record_audio_button'))
+            : find.text('Record Mic');
+        await tester.ensureVisible(start);
+        await tester.pumpAndSettle();
+        await tester.tap(start);
+        await tester.pumpAndSettle();
+        expect(
+          find.textContaining('WAV microphone capture is unavailable'),
+          findsOneWidget,
+        );
+        expect(capture.starts, 0);
+        expect(capture.methods, isNot(contains('hasPermission')));
+        expect(tester.takeException(), isNull);
+      },
       skip: kIsWeb,
     );
   }
@@ -393,6 +494,7 @@ class FakeMicChannels {
           messenger.setMockMethodCallHandler(channel, (_) async => null);
         }
         if (call.method == 'hasPermission') return permission;
+        if (call.method == 'isEncoderSupported') return supportsWav;
         if (call.method == 'start') {
           starts++;
           path = args['path']! as String;
@@ -416,6 +518,7 @@ class FakeMicChannels {
   String? path;
   final List<String> methods = <String>[];
   bool permission = true;
+  bool supportsWav = true;
   int starts = 0;
   int stops = 0;
   Completer<void>? stopGate;
@@ -434,4 +537,24 @@ class FakeMicChannels {
     }
     directory?.deleteSync(recursive: true);
   }
+}
+
+class _MediaFilePicker extends FilePicker {
+  Completer<FilePickerResult?> result = Completer<FilePickerResult?>();
+
+  @override
+  Future<FilePickerResult?> pickFiles({
+    String? dialogTitle,
+    String? initialDirectory,
+    FileType type = FileType.any,
+    List<String>? allowedExtensions,
+    void Function(FilePickerStatus)? onFileLoading,
+    bool allowCompression = false,
+    int compressionQuality = 0,
+    bool allowMultiple = false,
+    bool withData = false,
+    bool withReadStream = false,
+    bool lockParentWindow = false,
+    bool readSequential = false,
+  }) => result.future;
 }

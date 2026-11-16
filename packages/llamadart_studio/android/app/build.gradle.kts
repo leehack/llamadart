@@ -28,6 +28,33 @@ val hasReleaseKeystore = releaseStoreFilePath != null &&
     releaseKeyAlias != null &&
     releaseKeyPassword != null &&
     rootProject.file(releaseStoreFilePath).exists()
+val allowDebugSigningForQualification = providers.gradleProperty(
+    "studioAllowDebugSigningForQualification",
+).map { it == "true" }.getOrElse(false)
+
+val validateStudioReleaseSigning = tasks.register("validateStudioReleaseSigning") {
+    group = "verification"
+    description = "Requires production signing credentials or an explicit qualification-only debug key."
+    doLast {
+        if (!hasReleaseKeystore && !allowDebugSigningForQualification) {
+            throw GradleException(
+                "Studio release signing is not configured. Provide storeFile, storePassword, " +
+                    "keyAlias and keyPassword in android/key.properties, or set STUDIO_KEYSTORE_PATH, " +
+                    "STUDIO_KEYSTORE_PASSWORD, STUDIO_KEY_ALIAS and STUDIO_KEY_PASSWORD. " +
+                    "For local qualification only, explicitly set " +
+                    "ORG_GRADLE_PROJECT_studioAllowDebugSigningForQualification=true " +
+                    "to use the debug key. Do not distribute that build.",
+            )
+        }
+    }
+}
+
+// An output-free prerequisite also runs when AGP's signing validation is cached.
+tasks.matching {
+    it.name.startsWith("validateSigning") && it.name.endsWith("Release")
+}.configureEach {
+    dependsOn(validateStudioReleaseSigning)
+}
 
 android {
     namespace = "dev.llamadart.studio"

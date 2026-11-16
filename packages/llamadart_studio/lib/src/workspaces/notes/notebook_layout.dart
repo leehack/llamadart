@@ -75,7 +75,7 @@ extension _NotebookLayout on _NotebookWorkspaceViewState {
                           : 'Record Mic'),
               ),
             ),
-            if (!deps.isWeb) ...<Widget>[
+            ...<Widget>[
               OutlinedButton.icon(
                 key: const Key('notebook_import_image_button'),
                 onPressed: isBusy ? null : () => _importImageNote(deps),

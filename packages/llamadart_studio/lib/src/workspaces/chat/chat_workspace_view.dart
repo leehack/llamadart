@@ -7,10 +7,12 @@ import 'package:flutter/material.dart';
 import 'package:llamadart_studio_core/llamadart_studio_core.dart';
 
 import '../../app/studio_dependencies.dart';
+import '../../app/studio_file_actions.dart';
 import '../../app/studio_theme.dart';
 import '../../widgets/model_load_error_banner.dart';
 import '../../widgets/store_widgets.dart';
 import '../../widgets/studio_motion.dart';
+import '../../widgets/tool_availability_notice_card.dart';
 import 'message_turn_card.dart';
 import 'multimodal_composer.dart';
 
@@ -276,6 +278,13 @@ class _ChatWorkspaceViewState extends State<ChatWorkspaceView> {
                                       structuredJsonValid:
                                           chatState.lastStructuredJsonValid,
                                     ),
+                                  ToolAvailabilityNoticeCard(
+                                    notices: chatState.toolAvailabilityNotices,
+                                    onChooseModel: () =>
+                                        deps.shellController.selectWorkspace(
+                                          StudioWorkspace.models,
+                                        ),
+                                  ),
                                   if (activeConv != null)
                                     ActiveStreamingTurnCard(
                                       conversationId: activeConv.id,
@@ -375,15 +384,18 @@ class _EmptyChatHero extends StatelessWidget {
     BuildContext context,
     StudioDependencies deps,
   ) async {
-    if (deps.isWeb) {
-      return;
-    }
-    final picked = await FilePicker.platform.getDirectoryPath(
-      dialogTitle: 'Select Folder Containing .gguf / .litertlm Models',
-    );
-    if (picked != null && picked.trim().isNotEmpty) {
-      await deps.modelHubController.addCustomModelDirectory(picked);
-    }
+    await runStudioFileAction(context, 'Could not scan model folder', () async {
+      if (deps.isWeb) {
+        return;
+      }
+      final picked = await FilePicker.platform.getDirectoryPath(
+        dialogTitle: 'Select Folder Containing .gguf / .litertlm Models',
+      );
+      if (!context.mounted) return;
+      if (picked != null && picked.trim().isNotEmpty) {
+        await deps.modelHubController.addCustomModelDirectory(picked);
+      }
+    });
   }
 
   @override

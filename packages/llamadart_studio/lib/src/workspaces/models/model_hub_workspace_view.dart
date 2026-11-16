@@ -6,6 +6,7 @@ import 'package:llamadart/llamadart.dart';
 import 'package:llamadart_studio_core/llamadart_studio_core.dart';
 
 import '../../app/studio_dependencies.dart';
+import '../../app/studio_file_actions.dart';
 import '../../app/studio_theme.dart';
 import '../../widgets/model_load_error_banner.dart';
 import '../../widgets/model_load_progress_banner.dart';
@@ -145,12 +146,17 @@ class _ModelHubWorkspaceViewState extends State<ModelHubWorkspaceView> {
                       IconButton(
                         tooltip: 'Browse local file',
                         onPressed: () async {
-                          final picked = await FilePicker.platform.pickFiles();
-                          if (!dialogContext.mounted) return;
-                          final path = picked?.files.firstOrNull?.path;
-                          if (path != null) {
-                            pathCtrl.text = path;
-                          }
+                          await runStudioFileAction(
+                            context,
+                            'Could not choose model file',
+                            () async {
+                              final picked = await FilePicker.platform
+                                  .pickFiles();
+                              if (!dialogContext.mounted) return;
+                              final path = picked?.files.firstOrNull?.path;
+                              if (path != null) pathCtrl.text = path;
+                            },
+                          );
                         },
                         icon: const Icon(Icons.folder_open_rounded),
                       ),
@@ -203,19 +209,22 @@ class _ModelHubWorkspaceViewState extends State<ModelHubWorkspaceView> {
   }
 
   Future<void> _pickAndAddModelFolder(BuildContext context) async {
-    final deps = StudioScope.of(context);
-    final selected = await FilePicker.platform.getDirectoryPath(
-      dialogTitle: 'Select Local Model Folder (.gguf / .litertlm)',
-    );
-    if (selected == null || selected.trim().isEmpty) {
-      return;
-    }
-    await deps.modelHubController.addCustomModelDirectory(selected);
-    if (context.mounted) {
-      ScaffoldMessenger.maybeOf(context)?.showSnackBar(
-        SnackBar(content: Text('Scanned model folder: $selected')),
+    await runStudioFileAction(context, 'Could not scan model folder', () async {
+      final deps = StudioScope.of(context);
+      final selected = await FilePicker.platform.getDirectoryPath(
+        dialogTitle: 'Select Local Model Folder (.gguf / .litertlm)',
       );
-    }
+      if (!context.mounted) return;
+      if (selected == null || selected.trim().isEmpty) {
+        return;
+      }
+      await deps.modelHubController.addCustomModelDirectory(selected);
+      if (context.mounted) {
+        ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+          SnackBar(content: Text('Scanned model folder: $selected')),
+        );
+      }
+    });
   }
 
   Widget _buildModelGrid({

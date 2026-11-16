@@ -70,6 +70,11 @@ extension _CodingAgentChatPane on _CodingWorkspaceViewState {
                           onRevertChange: deps.codingController.revertChange,
                           onOpenFile: deps.codingController.openFile,
                         ),
+                      ToolAvailabilityNoticeCard(
+                        notices: codingState.toolAvailabilityNotices,
+                        onChooseModel: () => deps.shellController
+                            .selectWorkspace(StudioWorkspace.models),
+                      ),
                       StoreBuilder<ActiveTurnStreamState>(
                         store: deps.codingController.activeStreamStore,
                         builder:

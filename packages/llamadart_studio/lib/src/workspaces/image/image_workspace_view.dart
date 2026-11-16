@@ -8,6 +8,7 @@ import 'package:llamadart_studio_core/llamadart_studio_core.dart';
 
 import '../../app/platform_file_helper.dart';
 import '../../app/studio_dependencies.dart';
+import '../../app/studio_file_actions.dart';
 import '../../app/studio_theme.dart';
 import '../../widgets/model_load_progress_banner.dart';
 import '../../widgets/store_widgets.dart';
@@ -83,14 +84,16 @@ class _ImageWorkspaceViewState extends State<ImageWorkspaceView> {
   }
 
   Future<void> _savePng(StudioGeneratedImageItem item) async {
-    final path = await FilePicker.platform.saveFile(
-      dialogTitle: 'Save Generated Image',
-      fileName: '${item.id}.png',
-      bytes: item.pngBytes,
-    );
-    if (path != null && path.isNotEmpty) {
-      await StudioPlatformFileHelper.writeBytesToPath(path, item.pngBytes);
-    }
+    await runStudioFileAction(context, 'Could not save image', () async {
+      final path = await FilePicker.platform.saveFile(
+        dialogTitle: 'Save Generated Image',
+        fileName: '${item.id}.png',
+        bytes: item.pngBytes,
+      );
+      if (path != null && path.isNotEmpty) {
+        await StudioPlatformFileHelper.writeBytesToPath(path, item.pngBytes);
+      }
+    });
   }
 
   void _sendToVisionChat(BuildContext context, StudioGeneratedImageItem item) {

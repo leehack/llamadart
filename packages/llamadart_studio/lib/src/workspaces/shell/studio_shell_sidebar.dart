@@ -7,40 +7,43 @@ class _StudioSidebarContent extends StatelessWidget {
 
   Future<void> _importConversationJson(BuildContext context) async {
     final deps = StudioScope.of(context);
-    final res = await FilePicker.platform.pickFiles(
-      type: FileType.custom,
-      allowedExtensions: const <String>['json'],
-      withData: true,
-    );
-    final file = res?.files.firstOrNull;
-    if (file == null) {
-      return;
-    }
-    try {
-      String? content;
-      if (file.bytes != null) {
-        content = utf8.decode(file.bytes!);
-      } else if (file.path != null) {
-        final diskBytes = await StudioPlatformFileHelper.readBytesFromPath(
-          file.path!,
-        );
-        if (diskBytes != null) {
-          content = utf8.decode(diskBytes);
-        }
-      }
-      if (content == null || content.trim().isEmpty) {
+    await runStudioFileAction(context, 'Could not import session', () async {
+      final res = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: const <String>['json'],
+        withData: true,
+      );
+      if (!context.mounted) return;
+      final file = res?.files.firstOrNull;
+      if (file == null) {
         return;
       }
-      await deps.chatController.importFromJson(content);
-      await deps.shellController.selectWorkspace(StudioWorkspace.chat);
-      onNavigate?.call();
-    } catch (error) {
-      if (context.mounted) {
-        ScaffoldMessenger.maybeOf(context)?.showSnackBar(
-          SnackBar(content: Text('Invalid session JSON: $error')),
-        );
+      try {
+        String? content;
+        if (file.bytes != null) {
+          content = utf8.decode(file.bytes!);
+        } else if (file.path != null) {
+          final diskBytes = await StudioPlatformFileHelper.readBytesFromPath(
+            file.path!,
+          );
+          if (diskBytes != null) {
+            content = utf8.decode(diskBytes);
+          }
+        }
+        if (content == null || content.trim().isEmpty) {
+          return;
+        }
+        await deps.chatController.importFromJson(content);
+        await deps.shellController.selectWorkspace(StudioWorkspace.chat);
+        onNavigate?.call();
+      } catch (error) {
+        if (context.mounted) {
+          ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+            SnackBar(content: Text('Invalid session JSON: $error')),
+          );
+        }
       }
-    }
+    });
   }
 
   Future<void> _renameDialog(

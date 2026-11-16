@@ -11,6 +11,7 @@ import 'package:record/record.dart';
 
 import '../../app/platform_file_helper.dart';
 import '../../app/studio_dependencies.dart';
+import '../../app/studio_file_actions.dart';
 import '../../app/studio_theme.dart';
 import '../../widgets/model_load_progress_banner.dart';
 import '../../widgets/store_widgets.dart';
@@ -37,6 +38,7 @@ class _SpeechWorkspaceViewState extends State<SpeechWorkspaceView> {
   final AudioPlayer _audioPlayer = AudioPlayer();
   final AudioRecorder _recorder = AudioRecorder();
   final Set<String> _tempPlaybackPaths = <String>{};
+  final Set<String> _tempRecordingPaths = <String>{};
 
   StreamSubscription<void>? _playerCompleteSub;
   StreamSubscription<PlayerState>? _playerStateSub;
@@ -142,29 +144,55 @@ class _SpeechWorkspaceViewState extends State<SpeechWorkspaceView> {
     unawaited(_playerCompleteSub?.cancel() ?? Future<void>.value());
     unawaited(_playerStateSub?.cancel() ?? Future<void>.value());
     unawaited(_audioPlayer.dispose());
-    unawaited(_recorder.dispose());
+    unawaited(_releaseRecorder());
     for (final path in _tempPlaybackPaths) {
-      unawaited(StudioPlatformFileHelper.deleteFileIfExists(path));
+      unawaited(StudioPlatformFileHelper.releaseTemporaryFile(path));
     }
     super.dispose();
   }
 
-  Future<void> _pickSpeakerReference() async {
-    final deps = StudioScope.of(context);
-    final res = await FilePicker.platform.pickFiles(
-      type: FileType.custom,
-      allowedExtensions: const <String>['wav', 'mp3', 'm4a', 'flac'],
-      withData: true,
-    );
-    final file = res?.files.firstOrNull;
-    if (file == null) {
-      return;
+  Future<void> _releaseRecorder() async {
+    try {
+      await _micOperation;
+    } catch (_) {
+      // A failed capture still owns its recorder and temporary files.
     }
-    setState(() {
-      _speakerRefName = file.name;
-      _speakerRefPath = deps.isWeb ? null : file.path;
-      _speakerRefBytes = file.bytes;
-    });
+    try {
+      await _recorder.dispose();
+    } finally {
+      for (final path in _tempRecordingPaths) {
+        await StudioPlatformFileHelper.releaseTemporaryFile(path);
+      }
+    }
+  }
+
+  Future<void> _pickSpeakerReference() async {
+    await runStudioFileAction(
+      context,
+      'Could not choose speaker reference',
+      () async {
+        final deps = StudioScope.of(context);
+        final res = await FilePicker.platform.pickFiles(
+          type: FileType.custom,
+          allowedExtensions: const <String>['wav', 'mp3', 'm4a', 'flac'],
+          withData: true,
+        );
+        if (!mounted) return;
+        final file = res?.files.firstOrNull;
+        if (file == null) {
+          return;
+        }
+        if ((file.bytes == null || file.bytes!.isEmpty) &&
+            (deps.isWeb || file.path == null || file.path!.isEmpty)) {
+          throw StateError('The selected audio file could not be read.');
+        }
+        setState(() {
+          _speakerRefName = file.name;
+          _speakerRefPath = deps.isWeb ? null : file.path;
+          _speakerRefBytes = file.bytes;
+        });
+      },
+    );
   }
 
   Future<void> _playOrStopClip(StudioSynthesizedClipEntry entry) async {
@@ -199,6 +227,9 @@ class _SpeechWorkspaceViewState extends State<SpeechWorkspaceView> {
         clipId: entry.id,
       );
       if (!mounted || _playbackSequence != seq) {
+        if (wavPath != null) {
+          await StudioPlatformFileHelper.releaseTemporaryFile(wavPath);
+        }
         return;
       }
       if (wavPath != null) {
@@ -225,37 +256,42 @@ class _SpeechWorkspaceViewState extends State<SpeechWorkspaceView> {
   }
 
   Future<void> _saveWavClip(StudioSynthesizedClipEntry entry) async {
-    final path = await FilePicker.platform.saveFile(
-      dialogTitle: 'Export Synthesized WAV',
-      fileName: '${entry.id}.wav',
-      bytes: entry.clip.wavBytes,
-    );
-    if (path != null && path.isNotEmpty) {
-      await StudioPlatformFileHelper.writeBytesToPath(
-        path,
-        entry.clip.wavBytes,
+    await runStudioFileAction(context, 'Could not export WAV', () async {
+      final path = await FilePicker.platform.saveFile(
+        dialogTitle: 'Export Synthesized WAV',
+        fileName: '${entry.id}.wav',
+        bytes: entry.clip.wavBytes,
       );
-    }
+      if (path != null && path.isNotEmpty) {
+        await StudioPlatformFileHelper.writeBytesToPath(
+          path,
+          entry.clip.wavBytes,
+        );
+      }
+    });
   }
 
   Future<void> _pickAndTranscribeFile() async {
-    final deps = StudioScope.of(context);
-    final res = await FilePicker.platform.pickFiles(
-      type: FileType.custom,
-      allowedExtensions: const <String>['wav', 'mp3', 'm4a', 'flac', 'ogg'],
-      withData: true,
-    );
-    final file = res?.files.firstOrNull;
-    if (file == null) {
-      return;
-    }
-    await deps.speechController.transcribeAudio(
-      audioBytes: file.bytes,
-      audioFilePath: deps.isWeb ? null : file.path,
-      contextPrompt: _sttContextCtrl.text.trim().isEmpty
-          ? null
-          : _sttContextCtrl.text.trim(),
-    );
+    await runStudioFileAction(context, 'Could not import audio', () async {
+      final deps = StudioScope.of(context);
+      final res = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: const <String>['wav', 'mp3', 'm4a', 'flac', 'ogg'],
+        withData: true,
+      );
+      if (!mounted) return;
+      final file = res?.files.firstOrNull;
+      if (file == null) {
+        return;
+      }
+      await deps.speechController.transcribeAudio(
+        audioBytes: file.bytes,
+        audioFilePath: deps.isWeb ? null : file.path,
+        contextPrompt: _sttContextCtrl.text.trim().isEmpty
+            ? null
+            : _sttContextCtrl.text.trim(),
+      );
+    });
   }
 
   Future<bool> _prepareWorkspaceExit() async {
@@ -289,12 +325,21 @@ class _SpeechWorkspaceViewState extends State<SpeechWorkspaceView> {
       if (path == null || path.isEmpty) {
         throw StateError('The recorder did not return a WAV file.');
       }
+      _tempRecordingPaths.add(path);
+      if (!mounted) {
+        await StudioPlatformFileHelper.releaseTemporaryFile(path);
+        return;
+      }
       _pendingRecordingPath = path;
       if (mounted) setState(() => _isRecordingMic = false);
     }
     final path = _pendingRecordingPath;
     if (path == null) return;
     final bytes = await StudioPlatformFileHelper.readBytesFromPath(path);
+    if (!mounted) return;
+    if (bytes == null || bytes.isEmpty) {
+      throw StateError('The recorded WAV file could not be read.');
+    }
     final result = await deps.speechController.transcribeAudio(
       audioBytes: bytes,
       audioFilePath: deps.isWeb ? null : path,
@@ -307,7 +352,12 @@ class _SpeechWorkspaceViewState extends State<SpeechWorkspaceView> {
         deps.speechController.state.errorMessage ?? 'Transcription is busy. Retry when the current transcription finishes.',
       );
     }
+    final completedPath = _pendingRecordingPath;
     _pendingRecordingPath = null;
+    if (completedPath != null) {
+      _tempRecordingPaths.remove(completedPath);
+      await StudioPlatformFileHelper.releaseTemporaryFile(completedPath);
+    }
     if (mounted) setState(() {});
   }
 
@@ -339,10 +389,21 @@ class _SpeechWorkspaceViewState extends State<SpeechWorkspaceView> {
       await _finishRecording();
       return;
     }
-    if (!await _recorder.hasPermission()) {
-      throw StateError('Microphone permission denied.');
+    if (!await _recorder.isEncoderSupported(AudioEncoder.wav)) {
+      throw StateError(
+        'WAV microphone capture is unavailable on this device. Import a WAV file instead.',
+      );
     }
+    if (!mounted) return;
+    if (!await _recorder.hasPermission()) {
+      throw StateError(
+        'Microphone permission denied. Allow access in system or browser settings and retry.',
+      );
+    }
+    if (!mounted) return;
     final tempPath = await StudioPlatformFileHelper.createTempRecordingPath();
+    if (!mounted) return;
+    if (!_deps!.isWeb) _tempRecordingPaths.add(tempPath);
     await _recorder.start(
       const RecordConfig(
         encoder: AudioEncoder.wav,

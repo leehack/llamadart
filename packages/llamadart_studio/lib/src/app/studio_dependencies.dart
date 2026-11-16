@@ -28,7 +28,12 @@ class StudioDependencies {
     required this.lifecycleCoordinator,
     required this.isWeb,
     required this.isMobile,
-  });
+  }) {
+    // Shutdown runs in reverse order: invalidate work before releasing ports.
+    lifecycleCoordinator
+      ..register(mcpManager.dispose)
+      ..register(_disposeControllers);
+  }
 
   /// Global shell, workspace routing, and settings controller.
   final StudioShellController shellController;
@@ -265,12 +270,11 @@ class StudioDependencies {
     );
 
     lifecycle
-      ..register(resolvedMcpManager.dispose)
-      ..register(inferencePort.dispose)
-      ..register(speechPort.dispose)
-      ..register(imagePort.dispose)
+      ..register(storagePort.dispose)
       ..register(playgroundPort.dispose)
-      ..register(storagePort.dispose);
+      ..register(imagePort.dispose)
+      ..register(speechPort.dispose)
+      ..register(inferencePort.dispose);
 
     await Future.wait(<Future<void>>[
       resolvedMcpManager.initialize(),
@@ -309,19 +313,21 @@ class StudioDependencies {
   }
 
   /// Disposes all controllers and native engines cleanly.
-  Future<void> dispose() async {
-    await lifecycleCoordinator.shutdownAll();
-    await codingController.dispose();
-    await chatController.dispose();
-    await modelHubController.dispose();
-    await speechController.dispose();
-    await imageController.dispose();
-    await notebookController.dispose();
-    await playgroundController.dispose();
-    await labModelCoordinator.dispose();
-    await skillRegistry.dispose();
-    await mcpManager.dispose();
-    await shellController.dispose();
+  Future<void> dispose() => lifecycleCoordinator.shutdownAll();
+
+  Future<void> _disposeControllers() async {
+    await Future.wait(<Future<void>>[
+      codingController.dispose(),
+      chatController.dispose(),
+      modelHubController.dispose(),
+      speechController.dispose(),
+      imageController.dispose(),
+      notebookController.dispose(),
+      playgroundController.dispose(),
+      labModelCoordinator.dispose(),
+      skillRegistry.dispose(),
+      shellController.dispose(),
+    ]);
   }
 }
 

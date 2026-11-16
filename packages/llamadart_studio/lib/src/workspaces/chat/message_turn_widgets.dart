@@ -335,6 +335,14 @@ class _AttachmentChip extends StatelessWidget {
                 width: 34,
                 height: 34,
                 fit: BoxFit.cover,
+                errorBuilder: (_, _, _) => Tooltip(
+                  message: 'Image preview unavailable',
+                  child: Icon(
+                    Icons.broken_image_outlined,
+                    size: 34,
+                    color: palette.textMuted,
+                  ),
+                ),
               ),
             )
           else
