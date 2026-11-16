@@ -110,6 +110,7 @@ class CodingFileChange {
     required this.afterPreview,
     required this.timestamp,
     this.previousContent,
+    this.expectedContent,
     this.unifiedDiff = '',
     this.reverted = false,
   });
@@ -136,6 +137,10 @@ class CodingFileChange {
   /// newly created). Used for 1-click revert.
   final String? previousContent;
 
+  /// Bounded post-edit content used to detect later changes before reverting.
+  /// A missing snapshot disables automatic revert.
+  final String? expectedContent;
+
   /// Compact unified diff text suitable for inline review cards.
   final String unifiedDiff;
 
@@ -146,6 +151,7 @@ class CodingFileChange {
   bool get canRevert =>
       !reverted &&
       id.isNotEmpty &&
+      expectedContent != null &&
       (kind == CodingChangeKind.created || previousContent != null);
 
   /// Returns an updated copy of [CodingFileChange].
@@ -158,6 +164,7 @@ class CodingFileChange {
       afterPreview: afterPreview,
       timestamp: timestamp,
       previousContent: previousContent,
+      expectedContent: expectedContent,
       unifiedDiff: unifiedDiff,
       reverted: reverted ?? this.reverted,
     );
@@ -219,6 +226,11 @@ abstract final class CodingWorkspaceFs {
     startLine: startLine,
     maxLines: maxLines,
   );
+
+  /// Reverts [change] only while its bounded post-edit content still matches.
+  /// External writes racing the check and write require filesystem coordination.
+  static Future<void> revertFile(String rootPath, CodingFileChange change) =>
+      impl.revertFileImpl(rootPath, change);
 
   /// Searches plain-text files inside [rootPath] for case-insensitive [query].
   static Future<List<WorkspaceSearchMatch>> searchCode(

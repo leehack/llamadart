@@ -211,6 +211,9 @@ class _GatedFile implements File {
   Future<bool> exists() => delegate.exists();
 
   @override
+  Future<int> length() => delegate.length();
+
+  @override
   String resolveSymbolicLinksSync() => delegate.resolveSymbolicLinksSync();
 
   @override

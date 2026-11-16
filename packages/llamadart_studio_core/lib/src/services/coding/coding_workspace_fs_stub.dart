@@ -1,3 +1,5 @@
+import 'package:llamadart/llamadart.dart';
+
 import 'coding_workspace_fs.dart';
 
 /// Web stub where direct local directory sandboxing is unavailable.
@@ -64,6 +66,10 @@ Future<WorkspaceCommandOutput> runCommandImpl(
   String rootPath,
   String commandLine, {
   Duration timeout = const Duration(seconds: 20),
-}) async => throw UnsupportedError(
-  'Shell command execution requires a desktop/mobile IO host.',
+}) async => throw LlamaUnsupportedException(
+  'Local process execution is unavailable on Web; use a desktop host for shell commands.',
 );
+
+/// Reverts a workspace edit (unsupported on Web).
+Future<void> revertFileImpl(String rootPath, CodingFileChange change) async =>
+    throw UnsupportedError('Local file reverting requires an IO host.');

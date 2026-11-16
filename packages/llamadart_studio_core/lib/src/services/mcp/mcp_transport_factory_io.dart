@@ -1,5 +1,6 @@
 import 'dart:io' as io;
 
+import 'package:llamadart/llamadart.dart';
 import 'package:mcp_dart/mcp_dart.dart';
 
 import '../../domain/mcp_server_config.dart';
@@ -10,6 +11,11 @@ import '../skills/project_context_discovery_io.dart';
 Transport createMcpTransportImpl(McpServerConfig config) {
   switch (config.transportType) {
     case McpTransportType.stdio:
+      if (io.Platform.isIOS || io.Platform.isAndroid) {
+        throw LlamaUnsupportedException(
+          'Local process MCP servers are unavailable on iOS and Android; use network MCP instead.',
+        );
+      }
       final cmd = config.command?.trim() ?? '';
       if (cmd.isEmpty) {
         throw ArgumentError('MCP stdio server requires an executable command.');

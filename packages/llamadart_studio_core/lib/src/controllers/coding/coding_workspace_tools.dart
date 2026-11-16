@@ -203,7 +203,8 @@ extension _CodingWorkspaceTools on CodingWorkspaceController {
         ),
       ]);
 
-      if (_store.state.allowShellCommandTool) {
+      if (_localProcessExecutionAvailable &&
+          _store.state.allowShellCommandTool) {
         tools.add(
           ToolDefinition(
             name: 'bash',

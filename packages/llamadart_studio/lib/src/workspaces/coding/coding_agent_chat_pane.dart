@@ -1,23 +1,35 @@
 part of 'coding_workspace_view.dart';
 
 extension _CodingAgentChatPane on _CodingWorkspaceViewState {
+  Widget _buildApproval(StudioDependencies deps, CodingWorkspaceState state) =>
+      _PendingBashApprovalBanner(
+        approval: state.pendingShellApproval!,
+        onApprove: () =>
+            deps.codingController.resolveShellCommandApproval(true),
+        onReject: () =>
+            deps.codingController.resolveShellCommandApproval(false),
+        onStop: deps.codingController.cancelGeneration,
+      );
+
   Widget _buildAgentPane(
     BuildContext context,
     StudioDependencies deps,
     StudioPalette palette,
     CodingWorkspaceState codingState,
     McpManagerState mcpState,
-    SkillRegistryState skillState,
-  ) {
-    final toolCount = mcpState.activeTools.length;
-    final skillCount = skillState.activeSkills.length;
+    SkillRegistryState skillState, {
+    bool includeControls = true,
+  }) {
+    if (includeControls && codingState.pendingShellApproval != null) {
+      return _buildApproval(deps, codingState);
+    }
     return Column(
-      children: <Widget>[
+      children: [
         Expanded(
           child: codingState.messages.isEmpty
               ? ListView(
-                  padding: const EdgeInsets.all(24),
-                  children: <Widget>[
+                  padding: const EdgeInsets.all(20),
+                  children: [
                     Text(
                       'What would you like to build?',
                       style: TextStyle(
@@ -35,40 +47,39 @@ extension _CodingAgentChatPane on _CodingWorkspaceViewState {
                       ),
                     ),
                     const SizedBox(height: 16),
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
-                      children: <Widget>[
-                        for (final prompt in const <String>[
-                          'Inspect the workspace structure and summarize the architecture.',
-                          'Search for TODO or error handling edge cases and suggest minimal fixes.',
-                          'Read the currently selected file and explain key invariants.',
-                        ])
-                          ActionChip(
-                            label: Text(
-                              prompt,
-                              style: const TextStyle(fontSize: 12),
+                    for (final prompt in const [
+                      'Explain this project',
+                      'Find an edge case',
+                      'Explain the open file',
+                    ])
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 8),
+                        child: Align(
+                          alignment: Alignment.centerLeft,
+                          child: OutlinedButton(
+                            onPressed: () => _promptCtrl.text = prompt,
+                            style: OutlinedButton.styleFrom(
+                              minimumSize: const Size(48, 48),
                             ),
-                            onPressed: () {
-                              _promptCtrl.text = prompt;
-                            },
+                            child: Text(prompt),
                           ),
-                      ],
-                    ),
+                        ),
+                      ),
                   ],
                 )
               : NotificationListener<ScrollNotification>(
                   onNotification: _handleCodingScrollNotification,
                   child: ListView(
+                    key: const Key('coding_conversation'),
                     controller: _chatScrollCtrl,
                     padding: const EdgeInsets.all(18),
-                    children: <Widget>[
+                    children: [
                       for (final msg in codingState.messages)
                         _CodingMessageCard(
                           message: msg,
                           recentChanges: codingState.recentChanges,
                           onRevertChange: deps.codingController.revertChange,
-                          onOpenFile: deps.codingController.openFile,
+                          onOpenFile: _openFileAndReveal,
                         ),
                       ToolAvailabilityNoticeCard(
                         notices: codingState.toolAvailabilityNotices,
@@ -77,151 +88,137 @@ extension _CodingAgentChatPane on _CodingWorkspaceViewState {
                       ),
                       StoreBuilder<ActiveTurnStreamState>(
                         store: deps.codingController.activeStreamStore,
-                        builder:
-                            (
-                              BuildContext context,
-                              ActiveTurnStreamState stream,
-                            ) {
-                              if (!stream.isGenerating) {
-                                return const SizedBox.shrink();
-                              }
-                              return _CodingStreamingCard(stream: stream);
-                            },
+                        builder: (context, stream) => stream.isGenerating
+                            ? _CodingStreamingCard(stream: stream)
+                            : const SizedBox.shrink(),
                       ),
                     ],
                   ),
                 ),
         ),
-        if (codingState.pendingShellApproval != null)
-          Expanded(
-            child: SingleChildScrollView(
-              key: const Key('coding_approval_scroll'),
-              child: _PendingBashApprovalBanner(
-                approval: codingState.pendingShellApproval!,
-                onApprove: () =>
-                    deps.codingController.resolveShellCommandApproval(true),
-                onReject: () =>
-                    deps.codingController.resolveShellCommandApproval(false),
-              ),
-            ),
-          )
-        else
-          Flexible(
-            child: SingleChildScrollView(
-              child: Container(
-                padding: const EdgeInsets.fromLTRB(16, 8, 16, 14),
-                child: Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: palette.surfaceElevated,
-                    borderRadius: BorderRadius.circular(14),
-                    border: Border.all(color: palette.borderStrong),
-                  ),
-                  child: StoreSelector<ActiveTurnStreamState, bool>(
-                    store: deps.codingController.activeStreamStore,
-                    selector: (ActiveTurnStreamState s) => s.isGenerating,
-                    builder: (BuildContext context, bool isGenerating) {
-                      return Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: <Widget>[
-                          TextField(
-                            key: const Key('coding_prompt_input'),
-                            controller: _promptCtrl,
-                            focusNode: _promptFocusNode,
-                            minLines: 1,
-                            maxLines: 6,
-                            decoration: const InputDecoration(
-                              hintText:
-                                  'Describe a change or ask about your code…',
-                              filled: false,
-                              border: InputBorder.none,
-                              enabledBorder: InputBorder.none,
-                              focusedBorder: InputBorder.none,
-                            ),
-                          ),
-                          const SizedBox(height: 6),
-                          Row(
-                            children: <Widget>[
-                              Expanded(
-                                child: SingleChildScrollView(
-                                  scrollDirection: Axis.horizontal,
-                                  child: Row(
-                                    children: <Widget>[
-                                      if (codingState.selectedFileSlice !=
-                                              null &&
-                                          codingState
-                                              .includeSelectedFileContext)
-                                        Padding(
-                                          padding: const EdgeInsets.only(
-                                            right: 6,
-                                          ),
-                                          child: StudioPillBadge(
-                                            label:
-                                                'Context: ${codingState.selectedFileSlice!.relativePath}',
-                                            foreground: palette.accent,
-                                            monospace: true,
-                                          ),
-                                        ),
-                                      if (toolCount > 0)
-                                        Padding(
-                                          padding: const EdgeInsets.only(
-                                            right: 6,
-                                          ),
-                                          child: StudioPillBadge(
-                                            label:
-                                                '$toolCount MCP ${toolCount == 1 ? 'tool' : 'tools'}',
-                                            foreground: palette.teal,
-                                            monospace: true,
-                                          ),
-                                        ),
-                                      if (skillCount > 0)
-                                        StudioPillBadge(
-                                          label:
-                                              '$skillCount ${skillCount == 1 ? 'skill' : 'skills'}',
-                                          foreground: palette.amber,
-                                          monospace: true,
-                                        ),
-                                    ],
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(width: 8),
-                              if (isGenerating)
-                                FilledButton.tonalIcon(
-                                  key: const Key('coding_stop_button'),
-                                  onPressed:
-                                      deps.codingController.cancelGeneration,
-                                  icon: Icon(
-                                    Icons.stop_circle_outlined,
-                                    size: 17,
-                                    color: palette.danger,
-                                  ),
-                                  label: Text(
-                                    'Stop',
-                                    style: TextStyle(color: palette.danger),
-                                  ),
-                                )
-                              else
-                                FilledButton.icon(
-                                  key: const Key('coding_send_button'),
-                                  onPressed: _submitPrompt,
-                                  icon: const Icon(
-                                    Icons.arrow_upward_rounded,
-                                    size: 16,
-                                  ),
-                                  label: const Text('Run Agent'),
-                                ),
-                            ],
-                          ),
-                        ],
-                      );
-                    },
-                  ),
-                ),
-              ),
-            ),
-          ),
+        if (includeControls)
+          _buildComposer(context, deps, palette, codingState),
       ],
+    );
+  }
+
+  Widget _buildComposer(
+    BuildContext context,
+    StudioDependencies deps,
+    StudioPalette palette,
+    CodingWorkspaceState state,
+  ) {
+    final compact = _compactLayout;
+    // Scaffold has already consumed keyboard insets; use the pane's constraints.
+    final shortPane = _shortCodingPane;
+    return Container(
+      key: const Key('coding_composer'),
+      margin: const EdgeInsets.fromLTRB(12, 4, 12, 8),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      decoration: BoxDecoration(
+        color: palette.surfaceElevated,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: palette.borderStrong),
+      ),
+      child: StoreSelector<ActiveTurnStreamState, (bool, String?)>(
+        store: deps.codingController.activeStreamStore,
+        selector: (s) => (s.isGenerating, s.statusLabel),
+        builder: (context, activity) {
+          final running = activity.$1;
+          final input = TextField(
+            key: const Key('coding_prompt_input'),
+            controller: _promptCtrl,
+            focusNode: _promptFocusNode,
+            minLines: 1,
+            maxLines: compact ? (shortPane ? 1 : 2) : 6,
+            decoration: const InputDecoration(
+              hintText: 'Ask about your code…',
+              filled: false,
+              border: InputBorder.none,
+              enabledBorder: InputBorder.none,
+              focusedBorder: InputBorder.none,
+            ),
+          );
+          final action = running
+              ? FilledButton.tonalIcon(
+                  key: const Key('coding_stop_button'),
+                  style: FilledButton.styleFrom(
+                    minimumSize: const Size(48, 48),
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                  ),
+                  onPressed: deps.codingController.cancelGeneration,
+                  icon: Icon(
+                    Icons.stop_circle_outlined,
+                    size: 17,
+                    color: palette.danger,
+                  ),
+                  label: const Text('Stop'),
+                )
+              : FilledButton.icon(
+                  key: const Key('coding_send_button'),
+                  style: FilledButton.styleFrom(
+                    minimumSize: const Size(48, 48),
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                  ),
+                  onPressed: _submitPrompt,
+                  icon: const Icon(Icons.arrow_upward_rounded, size: 16),
+                  label: Text(compact ? 'Send' : 'Run Agent'),
+                );
+          final hasContext =
+              state.selectedFileSlice != null &&
+              state.includeSelectedFileContext;
+          final badges = SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: [
+                if (hasContext)
+                  StudioPillBadge(
+                    label: 'Context: ${state.selectedFileSlice!.relativePath}',
+                    foreground: palette.accent,
+                    monospace: true,
+                  ),
+                if (running)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 6),
+                    child: Text(
+                      activity.$2 ?? 'Running',
+                      style: const TextStyle(fontSize: 12),
+                    ),
+                  ),
+              ],
+            ),
+          );
+          if (compact && shortPane) {
+            return Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Row(
+                  children: [
+                    Expanded(child: input),
+                    const SizedBox(width: 8),
+                    action,
+                  ],
+                ),
+                if (hasContext || running) badges,
+              ],
+            );
+          }
+          return Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              input,
+              Row(
+                children: [
+                  Expanded(child: badges),
+                  const SizedBox(width: 8),
+                  action,
+                ],
+              ),
+            ],
+          );
+        },
+      ),
     );
   }
 }
@@ -231,18 +228,19 @@ class _PendingBashApprovalBanner extends StatelessWidget {
     required this.approval,
     required this.onApprove,
     required this.onReject,
+    required this.onStop,
   });
-
   final PendingShellCommandApproval approval;
   final VoidCallback onApprove;
   final VoidCallback onReject;
+  final VoidCallback onStop;
 
   @override
   Widget build(BuildContext context) {
     final palette = StudioPalette.of(context);
     return Container(
       key: const Key('coding_command_approval_banner'),
-      margin: const EdgeInsets.fromLTRB(16, 6, 16, 2),
+      margin: const EdgeInsets.all(12),
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
         color: palette.amber.withValues(alpha: 0.14),
@@ -251,88 +249,76 @@ class _PendingBashApprovalBanner extends StatelessWidget {
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
-        children: <Widget>[
-          Row(
-            children: <Widget>[
-              Icon(Icons.terminal_rounded, size: 16, color: palette.amber),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  'Approve shell command?',
-                  style: TextStyle(
-                    fontSize: 12.5,
-                    fontWeight: FontWeight.w700,
-                    color: palette.textPrimary,
+        children: [
+          Expanded(
+            child: SingleChildScrollView(
+              key: const Key('coding_approval_scroll'),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Approve shell command?',
+                    style: TextStyle(fontWeight: FontWeight.w700),
                   ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 6),
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
-            decoration: BoxDecoration(
-              color: palette.canvas,
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: palette.borderSubtle),
-            ),
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxHeight: 140),
-              child: SingleChildScrollView(
-                key: const Key('coding_approval_command_scroll'),
-                child: StudioSelectableText(
-                  approval.command,
-                  style: TextStyle(
-                    fontSize: 11.5,
-                    color: palette.textPrimary,
-                    fontFamilyFallback: StudioTheme.monoFontFallback,
+                  const SizedBox(height: 8),
+                  ConstrainedBox(
+                    constraints: const BoxConstraints(maxHeight: 140),
+                    child: SingleChildScrollView(
+                      key: const Key('coding_approval_command_scroll'),
+                      child: StudioSelectableText(
+                        approval.command,
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: palette.textPrimary,
+                          fontFamilyFallback: StudioTheme.monoFontFallback,
+                        ),
+                      ),
+                    ),
                   ),
-                ),
+                  const SizedBox(height: 8),
+                  StudioSelectableText(
+                    'cwd: ${approval.workspaceRoot}',
+                    style: TextStyle(fontSize: 12, color: palette.textMuted),
+                  ),
+                ],
               ),
             ),
           ),
           const SizedBox(height: 8),
-          Wrap(
-            spacing: 8,
-            runSpacing: 6,
-            alignment: WrapAlignment.spaceBetween,
-            crossAxisAlignment: WrapCrossAlignment.center,
-            children: <Widget>[
-              Text(
-                'cwd: ${approval.workspaceRoot}',
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  fontSize: 10.5,
-                  color: palette.textMuted,
-                  fontFamilyFallback: StudioTheme.monoFontFallback,
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton(
+                  key: const Key('coding_reject_bash_button'),
+                  style: OutlinedButton.styleFrom(
+                    minimumSize: const Size(48, 48),
+                  ),
+                  onPressed: onReject,
+                  child: const Text('Reject'),
                 ),
               ),
-              Wrap(
-                spacing: 8,
-                runSpacing: 6,
-                children: <Widget>[
-                  OutlinedButton(
-                    key: const Key('coding_reject_bash_button'),
-                    style: OutlinedButton.styleFrom(
-                      visualDensity: VisualDensity.compact,
-                    ),
-                    onPressed: onReject,
-                    child: const Text('Reject'),
+              const SizedBox(width: 8),
+              Expanded(
+                child: FilledButton(
+                  key: const Key('coding_approve_bash_button'),
+                  style: FilledButton.styleFrom(
+                    minimumSize: const Size(48, 48),
                   ),
-                  FilledButton.icon(
-                    key: const Key('coding_approve_bash_button'),
-                    style: FilledButton.styleFrom(
-                      visualDensity: VisualDensity.compact,
-                    ),
-                    onPressed: onApprove,
-                    icon: const Icon(Icons.play_arrow_rounded, size: 16),
-                    label: const Text('Approve & Run'),
-                  ),
-                ],
+                  onPressed: onApprove,
+                  child: const Text('Approve'),
+                ),
               ),
             ],
+          ),
+          Align(
+            alignment: Alignment.centerRight,
+            child: TextButton.icon(
+              key: const Key('coding_approval_stop_button'),
+              style: TextButton.styleFrom(minimumSize: const Size(48, 48)),
+              onPressed: onStop,
+              icon: const Icon(Icons.stop_circle_outlined),
+              label: const Text('Stop agent'),
+            ),
           ),
         ],
       ),
@@ -404,15 +390,18 @@ class _CodingMessageCard extends StatelessWidget {
                 color: isUser ? palette.accent : palette.teal,
               ),
               const SizedBox(width: 8),
-              Text(
-                isUser ? 'You' : 'Coding Agent',
-                style: TextStyle(
-                  fontSize: 12.5,
-                  fontWeight: FontWeight.w700,
-                  color: palette.textPrimary,
+              Expanded(
+                child: Text(
+                  isUser ? 'You' : 'Coding Agent',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w700,
+                    color: palette.textPrimary,
+                  ),
                 ),
               ),
-              const Spacer(),
               if (message.metrics != null)
                 StudioPillBadge(
                   label:
@@ -493,15 +482,23 @@ class _CodingMessageCard extends StatelessWidget {
                                     ? () =>
                                           onOpenFile(matchedChange.relativePath)
                                     : null,
-                                child: Text(
-                                  '${call.name}(${call.argumentsJson})',
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: TextStyle(
-                                    fontSize: 11.5,
-                                    color: palette.textPrimary,
-                                    fontFamilyFallback:
-                                        StudioTheme.monoFontFallback,
+                                child: ConstrainedBox(
+                                  constraints: const BoxConstraints(
+                                    minHeight: 48,
+                                  ),
+                                  child: Align(
+                                    alignment: Alignment.centerLeft,
+                                    child: Text(
+                                      '${call.name}(${call.argumentsJson})',
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: TextStyle(
+                                        fontSize: 11.5,
+                                        color: palette.textPrimary,
+                                        fontFamilyFallback:
+                                            StudioTheme.monoFontFallback,
+                                      ),
+                                    ),
                                   ),
                                 ),
                               ),
@@ -519,12 +516,12 @@ class _CodingMessageCard extends StatelessWidget {
                               const SizedBox(width: 6),
                               TextButton.icon(
                                 style: TextButton.styleFrom(
-                                  visualDensity: VisualDensity.compact,
+                                  visualDensity: VisualDensity.standard,
                                   padding: const EdgeInsets.symmetric(
                                     horizontal: 6,
                                     vertical: 2,
                                   ),
-                                  minimumSize: Size.zero,
+                                  minimumSize: const Size(48, 48),
                                   tapTargetSize:
                                       MaterialTapTargetSize.shrinkWrap,
                                 ),

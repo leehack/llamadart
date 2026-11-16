@@ -291,7 +291,10 @@ class _StudioShellScreenState extends State<StudioShellScreen> {
                         ),
                       ),
                     ),
-              bottomNavigationBar: isCompactMobile
+              bottomNavigationBar:
+                  isCompactMobile &&
+                      !(shellState.activeWorkspace == StudioWorkspace.coding &&
+                          MediaQuery.viewInsetsOf(context).bottom > 0)
                   ? NavigationBarTheme(
                       data: NavigationBarThemeData(
                         labelTextStyle: WidgetStatePropertyAll<TextStyle>(

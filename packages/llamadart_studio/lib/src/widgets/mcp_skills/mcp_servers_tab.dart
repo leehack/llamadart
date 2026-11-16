@@ -164,6 +164,9 @@ class _McpServersTabState extends State<_McpServersTab> {
   @override
   Widget build(BuildContext context) {
     final deps = StudioScope.of(context);
+    if ((deps.isMobile || deps.isWeb) && _transport == McpTransportType.stdio) {
+      _transport = McpTransportType.streamableHttp;
+    }
     final palette = StudioPalette.of(context);
 
     return StoreBuilder<McpManagerState>(
@@ -274,7 +277,7 @@ class _McpServersTabState extends State<_McpServersTab> {
                     spacing: 8,
                     runSpacing: 6,
                     children: <Widget>[
-                      if (!deps.isWeb)
+                      if (!deps.isWeb && !deps.isMobile)
                         OutlinedButton.icon(
                           style: OutlinedButton.styleFrom(
                             visualDensity: VisualDensity.compact,
@@ -378,7 +381,7 @@ class _McpServersTabState extends State<_McpServersTab> {
                         visualDensity: VisualDensity.compact,
                       ),
                       segments: <ButtonSegment<McpTransportType>>[
-                        if (!deps.isWeb)
+                        if (!deps.isWeb && !deps.isMobile)
                           const ButtonSegment<McpTransportType>(
                             value: McpTransportType.stdio,
                             label: Text('Stdio'),
@@ -393,7 +396,8 @@ class _McpServersTabState extends State<_McpServersTab> {
                         ),
                       ],
                       selected: <McpTransportType>{
-                        deps.isWeb && _transport == McpTransportType.stdio
+                        (deps.isWeb || deps.isMobile) &&
+                                _transport == McpTransportType.stdio
                             ? McpTransportType.streamableHttp
                             : _transport,
                       },
@@ -403,7 +407,8 @@ class _McpServersTabState extends State<_McpServersTab> {
                     ),
                     const SizedBox(height: 10),
                     if (_transport == McpTransportType.stdio &&
-                        !deps.isWeb) ...<Widget>[
+                        !deps.isWeb &&
+                        !deps.isMobile) ...<Widget>[
                       TextField(
                         key: const Key('mcp_command_input'),
                         controller: _commandCtrl,

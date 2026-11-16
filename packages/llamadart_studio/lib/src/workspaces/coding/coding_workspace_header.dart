@@ -11,6 +11,7 @@ extension _CodingWorkspaceHeaderExtension on _CodingWorkspaceViewState {
     ModelHubState hubState,
     StudioRuntimeSnapshot runtime, {
     bool compact = false,
+    bool setupSheet = false,
   }) {
     final modelStrip = <StudioModelDescriptor>[];
     final seenIds = <String>{};
@@ -56,7 +57,7 @@ extension _CodingWorkspaceHeaderExtension on _CodingWorkspaceViewState {
     }
 
     final actionButtons = <Widget>[
-      if (!deps.isWeb)
+      if (!deps.isWeb && !deps.isMobile)
         IconButton(
           key: const Key('coding_manual_path_button'),
           tooltip: 'Enter workspace path',
@@ -84,14 +85,14 @@ extension _CodingWorkspaceHeaderExtension on _CodingWorkspaceViewState {
           style: const TextStyle(fontSize: 12),
         ),
       ),
-      if (!deps.isWeb)
+      if (!deps.isWeb && !deps.isMobile)
         FilterChip(
           key: const Key('coding_shell_toggle'),
           label: const Text('bash', style: TextStyle(fontSize: 11.5)),
           selected: codingState.allowShellCommandTool,
           onSelected: deps.codingController.setAllowShellCommandTool,
         ),
-      if (!deps.isWeb && codingState.allowShellCommandTool)
+      if (!deps.isWeb && !deps.isMobile && codingState.allowShellCommandTool)
         FilterChip(
           key: const Key('coding_confirm_bash_toggle'),
           label: const Text(
@@ -114,96 +115,197 @@ extension _CodingWorkspaceHeaderExtension on _CodingWorkspaceViewState {
       width: double.infinity,
       padding: EdgeInsets.symmetric(
         horizontal: compact ? 16 : 24,
-        vertical: 12,
+        vertical: compact ? 0 : 12,
       ),
       decoration: BoxDecoration(
         color: palette.canvas,
         border: Border(bottom: BorderSide(color: palette.borderSubtle)),
       ),
       child: Column(
+        mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
-          Row(
-            children: <Widget>[
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: <Widget>[
-                    Text(
-                      'Coding Agent',
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.w700,
-                        color: palette.textPrimary,
+          if (!setupSheet)
+            Row(
+              children: <Widget>[
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      Text(
+                        compact
+                            ? (codingState.workspaceRoot
+                                      ?.replaceAll('\\', '/')
+                                      .split('/')
+                                      .last ??
+                                  'Open folder')
+                            : 'Coding Agent',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w700,
+                          color: palette.textPrimary,
+                        ),
                       ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      codingState.workspaceRoot ??
-                          'Choose a folder to work with your code',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(fontSize: 12, color: palette.textMuted),
-                    ),
-                  ],
+                      if (!compact) const SizedBox(height: 4),
+                      if (!compact)
+                        Text(
+                          codingState.workspaceRoot ??
+                              'Choose a folder to work with your code',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: palette.textMuted,
+                          ),
+                        ),
+                    ],
+                  ),
                 ),
-              ),
-              const SizedBox(width: 8),
-              if (!deps.isWeb)
+                const SizedBox(width: 8),
+                if (!deps.isWeb)
+                  IconButton(
+                    key: const Key('coding_pick_folder_button'),
+                    tooltip: 'Open workspace folder',
+                    onPressed: _pickFolder,
+                    icon: const Icon(Icons.folder_open_rounded, size: 20),
+                  ),
+                if (!compact)
+                  IconButton(
+                    key: const Key('coding_explorer_toggle'),
+                    tooltip: _showExplorer ? 'Hide files' : 'Show files',
+                    isSelected: _showExplorer,
+                    onPressed: () =>
+                        _updateState(() => _showExplorer = !_showExplorer),
+                    icon: const Icon(Icons.view_sidebar_outlined, size: 20),
+                  ),
                 IconButton(
-                  key: const Key('coding_pick_folder_button'),
-                  tooltip: 'Open workspace folder',
-                  onPressed: _pickFolder,
-                  icon: const Icon(Icons.folder_open_rounded, size: 20),
+                  key: const Key('coding_setup_toggle'),
+                  tooltip: _showSetup ? 'Hide coding setup' : 'Coding setup',
+                  isSelected: _showSetup,
+                  onPressed: () {
+                    if (!compact) {
+                      _updateState(() => _showSetup = !_showSetup);
+                      return;
+                    }
+                    showModalBottomSheet<void>(
+                      context: context,
+                      isScrollControlled: true,
+                      showDragHandle: true,
+                      builder: (sheetContext) => Padding(
+                        padding: EdgeInsets.only(
+                          bottom: MediaQuery.viewInsetsOf(sheetContext).bottom,
+                        ),
+                        child: SafeArea(
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Align(
+                                alignment: Alignment.centerRight,
+                                child: TextButton(
+                                  key: const Key('coding_setup_done'),
+                                  onPressed: () => Navigator.pop(sheetContext),
+                                  child: const Text('Done'),
+                                ),
+                              ),
+                              StoreBuilder<McpManagerState>(
+                                store: deps.mcpManager.store,
+                                builder: (context, mcp) =>
+                                    StoreBuilder<SkillRegistryState>(
+                                      store: deps.skillRegistry.store,
+                                      builder: (context, skills) =>
+                                          StoreBuilder<ModelHubState>(
+                                            store:
+                                                deps.modelHubController.store,
+                                            builder: (context, hub) =>
+                                                StoreBuilder<
+                                                  StudioRuntimeSnapshot
+                                                >(
+                                                  store: deps
+                                                      .modelHubController
+                                                      .runtimeStore,
+                                                  builder: (context, runtime) =>
+                                                      StoreBuilder<
+                                                        CodingWorkspaceState
+                                                      >(
+                                                        store: deps
+                                                            .codingController
+                                                            .store,
+                                                        builder:
+                                                            (context, state) =>
+                                                                _buildHeader(
+                                                                  context,
+                                                                  deps,
+                                                                  palette,
+                                                                  state,
+                                                                  mcp,
+                                                                  skills,
+                                                                  hub,
+                                                                  runtime,
+                                                                  compact: true,
+                                                                  setupSheet:
+                                                                      true,
+                                                                ),
+                                                      ),
+                                                ),
+                                          ),
+                                    ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    );
+                  },
+                  icon: const Icon(Icons.tune_rounded, size: 20),
                 ),
-              if (!compact)
-                IconButton(
-                  key: const Key('coding_explorer_toggle'),
-                  tooltip: _showExplorer ? 'Hide files' : 'Show files',
-                  isSelected: _showExplorer,
-                  onPressed: () =>
-                      _updateState(() => _showExplorer = !_showExplorer),
-                  icon: const Icon(Icons.view_sidebar_outlined, size: 20),
+              ],
+            ),
+          if (!compact) const SizedBox(height: 10),
+          if (!compact && !setupSheet)
+            Row(
+              children: <Widget>[
+                Icon(
+                  runtime.isReady
+                      ? Icons.check_circle_outline
+                      : Icons.circle_outlined,
+                  size: 14,
+                  color: runtime.isReady ? palette.teal : palette.textMuted,
                 ),
-              IconButton(
-                key: const Key('coding_setup_toggle'),
-                tooltip: _showSetup ? 'Hide coding setup' : 'Coding setup',
-                isSelected: _showSetup,
-                onPressed: () => _updateState(() => _showSetup = !_showSetup),
-                icon: const Icon(Icons.tune_rounded, size: 20),
-              ),
-            ],
-          ),
-          const SizedBox(height: 10),
-          Row(
-            children: <Widget>[
-              Icon(
-                runtime.isReady
-                    ? Icons.check_circle_outline
-                    : Icons.circle_outlined,
-                size: 14,
-                color: runtime.isReady ? palette.teal : palette.textMuted,
-              ),
-              const SizedBox(width: 6),
-              Expanded(
-                child: Text(
-                  runtime.activeModelLabel ?? 'Select a coding model in setup',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(fontSize: 12, color: palette.textSecondary),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    runtime.activeModelLabel ??
+                        'Select a coding model in setup',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: palette.textSecondary,
+                    ),
+                  ),
                 ),
-              ),
-              TextButton(
-                key: const Key('coding_model_setup_button'),
-                onPressed: () => _updateState(() => _showSetup = !_showSetup),
-                child: Text(runtime.isReady ? 'Change model' : 'Choose model'),
-              ),
-            ],
-          ),
-          if (_showSetup)
+                TextButton(
+                  key: const Key('coding_model_setup_button'),
+                  onPressed: () => _updateState(() => _showSetup = !_showSetup),
+                  child: Text(
+                    runtime.isReady ? 'Change model' : 'Choose model',
+                  ),
+                ),
+              ],
+            ),
+          if (_showSetup || setupSheet)
             ConstrainedBox(
               constraints: BoxConstraints(
-                maxHeight: MediaQuery.sizeOf(context).height * 0.32,
+                maxHeight: setupSheet
+                    ? ((MediaQuery.sizeOf(context).height -
+                                  MediaQuery.viewInsetsOf(context).bottom -
+                                  MediaQuery.viewPaddingOf(context).vertical -
+                                  120) *
+                              0.85)
+                          .clamp(0.0, double.infinity)
+                    : MediaQuery.sizeOf(context).height * 0.32,
               ),
               child: SingleChildScrollView(
                 key: const Key('coding_setup_panel'),
@@ -211,6 +313,13 @@ extension _CodingWorkspaceHeaderExtension on _CodingWorkspaceViewState {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: <Widget>[
                     const SizedBox(height: 8),
+                    if (deps.isMobile)
+                      const Padding(
+                        padding: EdgeInsets.only(bottom: 12),
+                        child: Text(
+                          'Local commands and process MCP servers are unavailable on mobile. Network MCP remains available. Folder access depends on permissions granted by your device.',
+                        ),
+                      ),
                     Wrap(
                       spacing: 8,
                       runSpacing: 8,

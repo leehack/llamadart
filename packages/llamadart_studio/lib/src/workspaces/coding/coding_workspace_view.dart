@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:math' as math;
 
 import 'package:file_picker/file_picker.dart';
 // Keep Material types compatible with flutter_markdown (see README).
@@ -58,6 +57,9 @@ class _CodingWorkspaceViewState extends State<CodingWorkspaceView> {
 
   _CompactCodingSection _compactSection = _CompactCodingSection.agent;
   bool _showEditsInExplorer = false;
+  bool _showFileDetail = false;
+  bool _compactLayout = false;
+  bool _shortCodingPane = false;
   bool _showSetup = false;
   bool _showExplorer = false;
   StudioModelDescriptor? _pendingModel;
@@ -258,6 +260,58 @@ class _CodingWorkspaceViewState extends State<CodingWorkspaceView> {
     });
   }
 
+  Future<void> _openFileAndReveal(String path) async {
+    final controller = _deps!.codingController;
+    final root = controller.state.workspaceRoot;
+    final opened = await controller.openFile(path);
+    if (!opened ||
+        !mounted ||
+        controller.state.workspaceRoot != root ||
+        controller.state.lastError != null ||
+        controller.state.selectedFileSlice == null) {
+      return;
+    }
+    setState(() {
+      _compactSection = _CompactCodingSection.files;
+      _showFileDetail = true;
+      _showExplorer = true;
+      _showEditsInExplorer = false;
+    });
+  }
+
+  void _showErrorDetails(String error, {required bool needsModel}) {
+    showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        scrollable: true,
+        title: const Text('Coding needs attention'),
+        content: StudioSelectableText(error),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('Close'),
+          ),
+          if (needsModel)
+            FilledButton(
+              onPressed: () {
+                Navigator.pop(dialogContext);
+                _deps!.shellController.selectWorkspace(StudioWorkspace.models);
+              },
+              child: const Text('Model Hub'),
+            ),
+          if (!needsModel && !_deps!.isWeb)
+            FilledButton(
+              onPressed: () {
+                Navigator.pop(dialogContext);
+                _pickFolder();
+              },
+              child: const Text('Choose folder'),
+            ),
+        ],
+      ),
+    );
+  }
+
   Future<void> _pickFolder() async {
     await runStudioFileAction(
       context,
@@ -342,7 +396,8 @@ class _CodingWorkspaceViewState extends State<CodingWorkspaceView> {
                         return LayoutBuilder(
                           builder: (BuildContext context, BoxConstraints rootBox) {
                             final compactWidth = rootBox.maxWidth < 900;
-                            final shortViewport = rootBox.maxHeight < 540;
+                            _compactLayout = compactWidth;
+                            _shortCodingPane = rootBox.maxHeight < 500;
 
                             final header = _buildHeader(
                               context,
@@ -427,15 +482,11 @@ class _CodingWorkspaceViewState extends State<CodingWorkspaceView> {
                                           ),
                                         ),
                                         TextButton(
-                                          onPressed: () => deps.shellController
-                                              .selectWorkspace(
-                                                StudioWorkspace.models,
-                                              ),
-                                          style: TextButton.styleFrom(
-                                            visualDensity:
-                                                VisualDensity.compact,
+                                          onPressed: () => _showErrorDetails(
+                                            activeError,
+                                            needsModel: !runtime.isReady,
                                           ),
-                                          child: const Text('Model Hub'),
+                                          child: const Text('Details'),
                                         ),
                                         if (_modelLoadError != null)
                                           IconButton(
@@ -581,6 +632,7 @@ class _CodingWorkspaceViewState extends State<CodingWorkspaceView> {
                                 );
                               }
                               return Column(
+                                key: const Key('coding_compact_body'),
                                 children: <Widget>[
                                   Padding(
                                     padding: const EdgeInsets.fromLTRB(
@@ -599,18 +651,20 @@ class _CodingWorkspaceViewState extends State<CodingWorkspaceView> {
                                           _CompactCodingSection
                                         >(
                                           value: _CompactCodingSection.agent,
-                                          label: Text('Agent'),
+                                          label: Text('Agent', maxLines: 1),
                                         ),
                                         ButtonSegment<_CompactCodingSection>(
                                           value: _CompactCodingSection.files,
                                           label: Text(
                                             'Files (${codingState.files.length})',
+                                            maxLines: 1,
                                           ),
                                         ),
                                         ButtonSegment<_CompactCodingSection>(
                                           value: _CompactCodingSection.edits,
                                           label: Text(
                                             'Edits (${codingState.recentChanges.length})',
+                                            maxLines: 1,
                                           ),
                                         ),
                                       ],
@@ -626,52 +680,45 @@ class _CodingWorkspaceViewState extends State<CodingWorkspaceView> {
                                     ),
                                   ),
                                   Expanded(
-                                    child: switch (_compactSection) {
-                                      _CompactCodingSection.agent =>
-                                        _buildAgentPane(
-                                          context,
-                                          deps,
-                                          palette,
-                                          codingState,
-                                          mcpState,
-                                          skillState,
-                                        ),
-                                      _CompactCodingSection.files =>
-                                        _buildExplorerPane(
-                                          context,
-                                          deps,
-                                          palette,
-                                          codingState,
-                                          forceChangesTab: false,
-                                        ),
-                                      _CompactCodingSection.edits =>
-                                        _buildExplorerPane(
-                                          context,
-                                          deps,
-                                          palette,
-                                          codingState,
-                                          forceChangesTab: true,
-                                        ),
-                                    },
+                                    child:
+                                        codingState.pendingShellApproval != null
+                                        ? _buildApproval(deps, codingState)
+                                        : IndexedStack(
+                                            index: _compactSection.index,
+                                            children: [
+                                              _buildAgentPane(
+                                                context,
+                                                deps,
+                                                palette,
+                                                codingState,
+                                                mcpState,
+                                                skillState,
+                                                includeControls: false,
+                                              ),
+                                              _buildExplorerPane(
+                                                context,
+                                                deps,
+                                                palette,
+                                                codingState,
+                                                forceChangesTab: false,
+                                              ),
+                                              _buildExplorerPane(
+                                                context,
+                                                deps,
+                                                palette,
+                                                codingState,
+                                                forceChangesTab: true,
+                                              ),
+                                            ],
+                                          ),
                                   ),
-                                ],
-                              );
-                            }
-
-                            if (shortViewport) {
-                              return ListView(
-                                children: <Widget>[
-                                  header,
-                                  ?loadBanner,
-                                  ?errorBanner,
-                                  ?untrustedMcpBanner,
-                                  SizedBox(
-                                    height: math.max(
-                                      340.0,
-                                      rootBox.maxHeight - 130.0,
+                                  if (codingState.pendingShellApproval == null)
+                                    _buildComposer(
+                                      context,
+                                      deps,
+                                      palette,
+                                      codingState,
                                     ),
-                                    child: buildMainBody(),
-                                  ),
                                 ],
                               );
                             }
@@ -679,9 +726,23 @@ class _CodingWorkspaceViewState extends State<CodingWorkspaceView> {
                             return Column(
                               children: <Widget>[
                                 header,
-                                ?loadBanner,
-                                ?errorBanner,
-                                ?untrustedMcpBanner,
+                                if (loadBanner != null ||
+                                    errorBanner != null ||
+                                    untrustedMcpBanner != null)
+                                  ConstrainedBox(
+                                    constraints: BoxConstraints(
+                                      maxHeight: rootBox.maxHeight * 0.2,
+                                    ),
+                                    child: SingleChildScrollView(
+                                      child: Column(
+                                        children: [
+                                          ?loadBanner,
+                                          ?errorBanner,
+                                          ?untrustedMcpBanner,
+                                        ],
+                                      ),
+                                    ),
+                                  ),
                                 Expanded(child: buildMainBody()),
                               ],
                             );

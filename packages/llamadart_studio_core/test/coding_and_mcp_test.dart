@@ -889,7 +889,13 @@ Future<void> main() async {
         expect(editChange.unifiedDiff, contains('+const String mode = "v2";'));
         expect(editChange.canRevert, isTrue);
 
-        await controller.revertChange(editChange.id);
+        final modifiedFile = File('${tempRepo.path}/lib/app.dart');
+        await modifiedFile.writeAsString('concurrent edit');
+        expect(await controller.revertChange(editChange.id), isFalse);
+        expect(await modifiedFile.readAsString(), 'concurrent edit');
+        expect(controller.state.recentChanges.first.reverted, isFalse);
+        await modifiedFile.writeAsString('const String mode = "v2";\n');
+        expect(await controller.revertChange(editChange.id), isTrue);
         expect(
           await File('${tempRepo.path}/lib/app.dart').readAsString(),
           'const String mode = "v1";\n',
@@ -910,7 +916,12 @@ Future<void> main() async {
         expect(createChange.kind, CodingChangeKind.created);
         expect(createChange.canRevert, isTrue);
 
-        await controller.revertChange(createChange.id);
+        final createdFile = File('${tempRepo.path}/lib/created.dart');
+        await createdFile.writeAsString('concurrent created edit');
+        expect(await controller.revertChange(createChange.id), isFalse);
+        expect(await createdFile.readAsString(), 'concurrent created edit');
+        await createdFile.writeAsString('void helper() {}\n');
+        expect(await controller.revertChange(createChange.id), isTrue);
         expect(
           await File('${tempRepo.path}/lib/created.dart').exists(),
           isFalse,

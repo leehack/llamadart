@@ -221,6 +221,7 @@ class StudioDependencies {
       skillRegistry: skillRegistry,
       ensureModelReady: hub.ensureChatModelReady,
       autoConnectWorkspaceMcp: autoConnectDefaultMcp,
+      localProcessExecutionAvailable: !isWeb && !isMobile,
     );
     final speech = SpeechWorkspaceController(
       storagePort: storagePort,

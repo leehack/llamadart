@@ -35,6 +35,7 @@ class CodingWorkspaceController {
     StudioModelCatalog modelCatalog = const CuratedStudioModelCatalog(),
     Future<bool> Function()? ensureModelReady,
     bool autoConnectWorkspaceMcp = true,
+    bool localProcessExecutionAvailable = true,
   }) : _inference = inferencePort,
        _shell = shellController,
        _kv = keyValueStore,
@@ -42,7 +43,8 @@ class CodingWorkspaceController {
        _skills = skillRegistry,
        _catalog = modelCatalog,
        _ensureModelReady = ensureModelReady,
-       _autoConnectWorkspaceMcp = autoConnectWorkspaceMcp;
+       _autoConnectWorkspaceMcp = autoConnectWorkspaceMcp,
+       _localProcessExecutionAvailable = localProcessExecutionAvailable;
 
   static const String _workspaceRootKey = 'studio.coding.workspace_root.v1';
 
@@ -54,6 +56,7 @@ class CodingWorkspaceController {
   final StudioModelCatalog _catalog;
   final Future<bool> Function()? _ensureModelReady;
   final bool _autoConnectWorkspaceMcp;
+  final bool _localProcessExecutionAvailable;
 
   final StateStore<CodingWorkspaceState> _store =
       StateStore<CodingWorkspaceState>(const CodingWorkspaceState());
@@ -224,12 +227,12 @@ class CodingWorkspaceController {
     }
   }
 
-  /// Opens a workspace-relative file in the code viewer.
-  Future<void> openFile(String relativePath) async {
+  /// Opens a bounded workspace-relative file slice; returns whether it loaded.
+  Future<bool> openFile(String relativePath) async {
     final epoch = _workspaceEpoch;
     final root = _store.state.workspaceRoot;
     if (root == null) {
-      return;
+      return false;
     }
     try {
       final slice = await CodingWorkspaceFs.readFile(
@@ -237,7 +240,7 @@ class CodingWorkspaceController {
         relativePath,
         maxLines: 300,
       );
-      if (epoch != _workspaceEpoch) return;
+      if (epoch != _workspaceEpoch) return false;
       _store.update(
         (CodingWorkspaceState s) => s.copyWith(
           selectedFilePath: slice.relativePath,
@@ -245,12 +248,14 @@ class CodingWorkspaceController {
           clearLastError: true,
         ),
       );
+      return true;
     } catch (error) {
-      if (epoch != _workspaceEpoch) return;
+      if (epoch != _workspaceEpoch) return false;
       _store.update(
         (CodingWorkspaceState s) =>
             s.copyWith(lastError: humanizeStudioError(error)),
       );
+      return false;
     }
   }
 
@@ -308,6 +313,7 @@ class CodingWorkspaceController {
 
   /// Toggles whether the agent may execute the gated `bash` tool.
   void setAllowShellCommandTool(bool allowed) {
+    allowed = allowed && _localProcessExecutionAvailable;
     if (!allowed) {
       resolveShellCommandApproval(false);
     }
@@ -354,17 +360,7 @@ class CodingWorkspaceController {
     }
     final target = _store.state.recentChanges[idx];
     try {
-      if (target.kind == CodingChangeKind.created) {
-        await CodingWorkspaceFs.deleteFile(root, target.relativePath);
-      } else if (target.previousContent != null) {
-        await CodingWorkspaceFs.writeFile(
-          root,
-          target.relativePath,
-          target.previousContent!,
-        );
-      } else {
-        return false;
-      }
+      await CodingWorkspaceFs.revertFile(root, target);
 
       if (epoch != _workspaceEpoch) return false;
       final updated = List<CodingFileChange>.of(_store.state.recentChanges);

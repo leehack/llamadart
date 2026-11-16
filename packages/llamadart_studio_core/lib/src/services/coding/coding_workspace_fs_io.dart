@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:llamadart/llamadart.dart';
 import 'package:path/path.dart' as p;
 
 import 'coding_workspace_fs.dart';
@@ -305,6 +306,7 @@ Future<CodingFileChange> writeFileImpl(
     kind: existed ? CodingChangeKind.modified : CodingChangeKind.created,
     beforePreview: _excerpt(before),
     afterPreview: _excerpt(content),
+    expectedContent: content.length <= 1024 * 1024 ? content : null,
     timestamp: DateTime.now(),
     previousContent: existed && before.length <= 1024 * 1024 ? before : null,
     unifiedDiff: CodingWorkspaceFs.buildUnifiedDiff(before, content),
@@ -355,10 +357,30 @@ Future<CodingFileChange> patchFileImpl(
     kind: CodingChangeKind.modified,
     beforePreview: _excerpt(findText),
     afterPreview: _excerpt(replaceText),
+    expectedContent: updated.length <= 1024 * 1024 ? updated : null,
     timestamp: DateTime.now(),
     previousContent: before.length <= 1024 * 1024 ? before : null,
     unifiedDiff: CodingWorkspaceFs.buildUnifiedDiff(before, updated),
   );
+}
+
+/// Checks the bounded post-edit snapshot before undoing a recorded change.
+Future<void> revertFileImpl(String rootPath, CodingFileChange change) async {
+  final root = _canonicalRealRoot(rootPath);
+  final file = File(_resolveSafePath(root, change.relativePath));
+  if (!change.canRevert ||
+      !await file.exists() ||
+      await file.length() > 4 * 1024 * 1024 ||
+      await file.readAsString() != change.expectedContent) {
+    throw StateError(
+      'Cannot revert "${change.relativePath}": the file changed since this edit. Review the current file first.',
+    );
+  }
+  if (change.kind == CodingChangeKind.created) {
+    await deleteFileImpl(root, change.relativePath);
+  } else {
+    await writeFileImpl(root, change.relativePath, change.previousContent!);
+  }
 }
 
 /// Deletes [relativePath] inside [rootPath] safely if it exists.
@@ -377,6 +399,11 @@ Future<WorkspaceCommandOutput> runCommandImpl(
   String commandLine, {
   Duration timeout = const Duration(seconds: 20),
 }) async {
+  if (Platform.isIOS || Platform.isAndroid) {
+    throw LlamaUnsupportedException(
+      'Local process execution is unavailable on iOS and Android; use a desktop host for shell commands.',
+    );
+  }
   final canonicalRoot = _canonicalRealRoot(rootPath);
   final trimmed = commandLine.trim();
   if (trimmed.isEmpty) {

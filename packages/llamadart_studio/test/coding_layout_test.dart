@@ -107,7 +107,13 @@ void main() {
       expect(find.byType(Dialog), findsOneWidget);
       Navigator.of(tester.element(find.byType(Dialog))).pop();
       await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const Key('coding_setup_toggle')));
+      if (size.width < 900) {
+        Navigator.of(
+          tester.element(find.byKey(const Key('coding_setup_panel'))),
+        ).pop();
+      } else {
+        await tester.tap(find.byKey(const Key('coding_setup_toggle')));
+      }
       await tester.pumpAndSettle();
       expect(find.byKey(const Key('coding_setup_panel')), findsNothing);
       if (size.width >= 900) {
