@@ -926,6 +926,16 @@ void main() {
       },
     );
 
+    test('reviewed empty chat impacts need no invented model family', () async {
+      final evidence = imageEvidence();
+      evidence['structured_output_evidence']['families'] =
+          <Map<String, dynamic>>[];
+      expect(
+        (await evaluateImage(evidence: evidence)).decision,
+        ReadinessDecision.unverifiedPrerequisites,
+      );
+    });
+
     test('reads only Git blobs despite forged working tree source', () async {
       final repo = Directory.systemTemp.createTempSync('image-export-git-');
       addTearDown(() => repo.deleteSync(recursive: true));
@@ -1494,6 +1504,501 @@ final segment = '${Object()}ImageEditingRequest${Object()}';
             : otherSha;
         expect(
           (await evaluateImage(evidence: evidence)).decision,
+          ReadinessDecision.rejected,
+        );
+      }
+    });
+  });
+
+  group('Git-bound additive Linux Vulkan SPI export impacts', () {
+    const barrel = 'lib/backend.dart';
+    const io = 'lib/src/backends/linux_vulkan_probe_io.dart';
+    const stub = 'lib/src/backends/linux_vulkan_probe_stub.dart';
+    const adapter = 'lib/src/backends/litert_lm/litert_lm_gpu_adapter.dart';
+    const native = 'lib/src/backends/litert_lm/litert_lm_backend.dart';
+    const worker = 'lib/src/backends/litert_lm/worker.dart';
+    const service = 'lib/src/backends/litert_lm/litert_lm_service.dart';
+    const probeTest = 'test/unit/backends/linux_vulkan_probe_io_test.dart';
+    const addition =
+        "export 'src/backends/linux_vulkan_probe_stub.dart'\n"
+        "    if (dart.library.io) 'src/backends/linux_vulkan_probe_io.dart'\n"
+        '    show probeLinuxVulkanUnavailableReason;\n';
+    const oldBarrel =
+        "export 'src/backends/litert_lm/litert_lm_backend_stub.dart'\n"
+        "    if (dart.library.js_interop) 'src/backends/litert_lm/litert_lm_backend_web.dart'\n"
+        "    if (dart.library.io) 'src/backends/litert_lm/litert_lm_backend.dart';\n";
+    const changes = [
+      RepositoryChange(path: barrel, kind: RepositoryChangeKind.modified),
+      RepositoryChange(path: io, kind: RepositoryChangeKind.added),
+      RepositoryChange(path: stub, kind: RepositoryChangeKind.added),
+    ];
+    Map<String, Map<String, ReadinessFile>> files() {
+      final base = <String, ReadinessFile>{
+        barrel: (mode: '100644', contents: oldBarrel),
+        'lib/src/backends/litert_lm/litert_lm_backend_stub.dart': (
+          mode: '100644',
+          contents: 'class Stub {}',
+        ),
+        'lib/src/backends/litert_lm/litert_lm_backend_web.dart': (
+          mode: '100644',
+          contents: 'class Web {}',
+        ),
+        native: (
+          mode: '100644',
+          contents: "import 'worker.dart'; class Native {}",
+        ),
+        worker: (mode: '100644', contents: "import 'litert_lm_service.dart';"),
+        service: (
+          mode: '100644',
+          contents: "import 'litert_lm_gpu_adapter.dart';",
+        ),
+        adapter: (
+          mode: '100644',
+          contents:
+              "import 'dart:convert'; import 'dart:ffi'; import 'package:ffi/ffi.dart';",
+        ),
+        probeTest: (
+          mode: '100644',
+          contents:
+              "void main() { test('regression case', () { productionCall(); }); }",
+        ),
+      };
+      return {
+        baseSha: base,
+        headSha: {
+          ...base,
+          barrel: (mode: '100644', contents: oldBarrel + addition),
+          io: (mode: '100644', contents: File(io).readAsStringSync()),
+          stub: (mode: '100644', contents: File(stub).readAsStringSync()),
+        },
+      };
+    }
+
+    Map<String, dynamic> evidence() {
+      final e = structuredEvidence();
+      e['surfaces'] = ['structuredOutput', 'backendRuntime'];
+      e['affected_test_paths'] = [probeTest];
+      final refs = <Map<String, dynamic>>[
+        {'path': barrel, 'snippet': addition.trim()},
+        {'path': io, 'snippet': 'String? probeLinuxVulkanUnavailableReason()'},
+        {
+          'path': stub,
+          'snippet': 'String? probeLinuxVulkanUnavailableReason()',
+        },
+      ];
+      e['test_evidence'] = {
+        probeTest: testProof(barrel)
+          ..['production_refs'] = <Map<String, dynamic>>[
+            for (final ref in refs) {...ref},
+          ],
+      };
+      final structured = e['structured_output_evidence'] as Map;
+      for (final axis in (structured['coverage'] as Map).keys) {
+        structured['coverage'][axis] = <String>[];
+      }
+      for (final impact in StructuredImpact.values) {
+        structured['impacts'][impact.name] = {
+          'applicable': false,
+          'rationale':
+              'Independent review of the bounded additive loader probe.',
+          'production_refs': <Map<String, dynamic>>[
+            for (final ref in refs) {...ref},
+          ],
+        };
+      }
+      structured['families'] = <Map<String, dynamic>>[];
+      return e;
+    }
+
+    Future<HighRiskReadinessResult> evaluate({
+      Map<String, Map<String, ReadinessFile>>? state,
+      Map<String, dynamic>? proof,
+      List<RepositoryChange>? inventory,
+    }) {
+      final blobs = state ?? files();
+      return HighRiskReadinessEvaluator(
+        repositoryState: FakeRepositoryState(
+          changes: inventory ?? changes,
+          existingPaths: blobs[headSha]!.keys.toSet(),
+          files: blobs,
+        ),
+      ).evaluate(evidence: proof ?? evidence(), context: context);
+    }
+
+    void expectConservative(HighRiskReadinessResult result) {
+      expectFailure(
+        result,
+        ReadinessFailureClassification.missingStructuredOutputEvidence,
+      );
+      expect(result.message, contains('cannot be excluded'));
+    }
+
+    test('only the proven SPI contribution can exclude chat axes', () async {
+      final result = await evaluate();
+      expect(result.decision, ReadinessDecision.unverifiedPrerequisites);
+      expect(
+        result.failureClassification,
+        ReadinessFailureClassification.externalPrerequisitesUnavailable,
+      );
+      expect(result.changedFiles.map((c) => c.path), [barrel, io, stub]);
+    });
+
+    test('any applicable impact still needs real family evidence', () async {
+      for (final impact in StructuredImpact.values) {
+        final proof = evidence();
+        proof['structured_output_evidence']['impacts'][impact
+                .name]['applicable'] =
+            true;
+        expectFailure(
+          await evaluate(proof: proof),
+          ReadinessFailureClassification.schemaViolation,
+        );
+      }
+    });
+    test('empty families do not excuse an ordinary backend export', () async {
+      final state = files();
+      state[headSha]![io] = (
+        mode: '100644',
+        contents: '${state[headSha]![io]!.contents}\nvoid otherCapability() {}',
+      );
+      expectConservative(await evaluate(state: state));
+    });
+    test('empty families never accept missing or nonboolean impacts', () async {
+      final missing = evidence();
+      (missing['structured_output_evidence']['impacts'] as Map).remove(
+        'grammarSchema',
+      );
+      expectFailure(
+        await evaluate(proof: missing),
+        ReadinessFailureClassification.schemaViolation,
+      );
+      final malformed = evidence();
+      malformed['structured_output_evidence']['impacts']['grammarSchema']['applicable'] =
+          'false';
+      expectFailure(
+        await evaluate(proof: malformed),
+        ReadinessFailureClassification.schemaViolation,
+      );
+    });
+    test(
+      'old namespace imports of either new leaf cannot be skipped',
+      () async {
+        for (final target in [
+          '../linux_vulkan_probe_io.dart',
+          '../linux_vulkan_probe_stub.dart',
+        ]) {
+          final state = files();
+          for (final sha in [baseSha, headSha]) {
+            state[sha]![native] = (
+              mode: '100644',
+              contents:
+                  "import 'worker.dart'; import '$target'; class Native {}",
+            );
+          }
+          expectConservative(await evaluate(state: state));
+        }
+      },
+    );
+    test(
+      'a changed pre-existing exported source is outside the proof',
+      () async {
+        final state = files();
+        const web = 'lib/src/backends/litert_lm/litert_lm_backend_web.dart';
+        state[headSha]![web] = (
+          mode: '100644',
+          contents: 'class ChangedWeb {}',
+        );
+        expectConservative(await evaluate(state: state));
+      },
+    );
+
+    test(
+      'actual Git blobs govern despite untracked or forged probe source',
+      () async {
+        final repo = Directory.systemTemp.createTempSync('vulkan-export-git-');
+        addTearDown(() => repo.deleteSync(recursive: true));
+        String git(List<String> args) {
+          final result = Process.runSync(
+            'git',
+            args,
+            workingDirectory: repo.path,
+          );
+          expect(result.exitCode, 0, reason: '${result.stderr}');
+          return (result.stdout as String).trim();
+        }
+
+        void write(Map<String, ReadinessFile> blobs) {
+          for (final entry in blobs.entries) {
+            final file = File('${repo.path}/${entry.key}');
+            file.parent.createSync(recursive: true);
+            file.writeAsStringSync(entry.value.contents);
+          }
+        }
+
+        git(['init', '--quiet']);
+        git(['config', 'user.name', 'Vulkan export policy test']);
+        git(['config', 'user.email', 'vulkan-policy@example.invalid']);
+        final state = files();
+        write(state[baseSha]!);
+        git(['add', '.']);
+        git(['commit', '--quiet', '-m', 'base']);
+        final base = git(['rev-parse', 'HEAD']);
+        write(state[headSha]!);
+        // The IO leaf is present on disk but deliberately not committed yet.
+        git(['add', barrel, stub]);
+        git(['commit', '--quiet', '-m', 'untracked IO leaf']);
+        final incomplete = git(['rev-parse', 'HEAD']);
+        git(['add', io]);
+        git(['commit', '--quiet', '-m', 'complete reviewed export']);
+        final complete = git(['rev-parse', 'HEAD']);
+        Future<HighRiskReadinessResult> run(String head) {
+          final proof = evidence()
+            ..['expected_pr_head_sha'] = head
+            ..['current_base_sha'] = base;
+          proof['independent_audit']['audit_head_sha'] = head;
+          proof['independent_audit']['audit_base_sha'] = base;
+          return const HighRiskReadinessEvaluator().evaluate(
+            evidence: proof,
+            context: PullRequestContext(
+              repository: context.repository,
+              prNumber: context.prNumber,
+              headSha: head,
+              baseSha: base,
+              author: context.author,
+            ),
+            workingDirectory: repo.path,
+          );
+        }
+
+        expect((await run(incomplete)).decision, ReadinessDecision.rejected);
+        File('${repo.path}/$io').writeAsStringSync('forged local chat call');
+        expect(
+          (await run(complete)).decision,
+          ReadinessDecision.unverifiedPrerequisites,
+        );
+      },
+    );
+
+    final barrelMutations = <String, String Function(String)>{
+      'changed existing directive': (s) =>
+          s.replaceFirst('dart.library.js_interop', 'dart.library.html'),
+      'extra export': (s) => "$s export 'src/other.dart';",
+      'different condition': (s) => s.replaceFirst(
+        "if (dart.library.io) 'src/backends/linux",
+        "if (dart.library.js_interop) 'src/backends/linux",
+      ),
+      'different URI': (s) => s.replaceFirst(
+        'linux_vulkan_probe_stub.dart',
+        'other_probe_stub.dart',
+      ),
+      'extra shown name': (s) => s.replaceFirst(
+        'show probeLinuxVulkanUnavailableReason;',
+        'show probeLinuxVulkanUnavailableReason, LlamaEngine;',
+      ),
+      'different shown name': (s) => s.replaceFirst(
+        'show probeLinuxVulkanUnavailableReason;',
+        'show LlamaEngine;',
+      ),
+      'hide instead of show': (s) => s.replaceFirst(
+        'show probeLinuxVulkanUnavailableReason;',
+        'hide probeLinuxVulkanUnavailableReason;',
+      ),
+      'forged commented directive': (s) =>
+          s.replaceFirst(addition, '/*\n$addition*/\n'),
+      'duplicate addition': (s) => '$s$addition',
+      'directive annotation': (s) =>
+          s.replaceFirst(addition, '@deprecated\n$addition'),
+      'formatting ambiguity': (s) =>
+          s.replaceFirst('    show probe', '\tshow probe'),
+    };
+    for (final entry in barrelMutations.entries) {
+      test('${entry.key} retains every impact', () async {
+        final state = files();
+        state[headSha]![barrel] = (
+          mode: '100644',
+          contents: entry.value(oldBarrel + addition),
+        );
+        final proof = evidence();
+        for (final record in [
+          proof['test_evidence'][probeTest],
+          ...(proof['structured_output_evidence']['impacts'] as Map).values,
+        ]) {
+          for (final ref in record['production_refs']) {
+            if (ref['path'] == barrel) ref['snippet'] = 'export';
+          }
+        }
+        expectConservative(await evaluate(state: state, proof: proof));
+      });
+    }
+    for (final target in [io, stub]) {
+      for (final mode in ['100755', '120000']) {
+        test('$target $mode is not a trusted new target', () async {
+          final state = files();
+          state[headSha]![target] = (
+            mode: mode,
+            contents: state[headSha]![target]!.contents,
+          );
+          final result = await evaluate(state: state);
+          if (mode == '120000') {
+            expectFailure(
+              result,
+              ReadinessFailureClassification.missingStructuredOutputEvidence,
+            );
+            expect(result.message, contains('disconnected'));
+          } else {
+            expectConservative(result);
+          }
+        });
+      }
+      for (final source in [
+        "\nimport '../core/template/chat_template_engine.dart';\n",
+        '\nvoid callChat() { LlamaEngine(); }\n',
+        '\nfinal eager = probeLinuxVulkanUnavailableReason();\n',
+        '\n// ignore_for_file: unused_import\n',
+        '\n// different reviewed bytes\n',
+      ]) {
+        test('$target rejects extra source ${source.trim()}', () async {
+          final state = files();
+          state[headSha]![target] = (
+            mode: '100644',
+            contents: state[headSha]![target]!.contents + source,
+          );
+          expectConservative(await evaluate(state: state));
+        });
+      }
+      test('$target cannot already exist at base', () async {
+        final state = files();
+        state[baseSha]![target] = state[headSha]![target]!;
+        expectConservative(await evaluate(state: state));
+      });
+      for (final kind in [
+        RepositoryChangeKind.modified,
+        RepositoryChangeKind.renamed,
+        RepositoryChangeKind.copied,
+      ]) {
+        test('$target $kind is not an addition', () async {
+          expectConservative(
+            await evaluate(
+              inventory: [
+                for (final c in changes)
+                  if (c.path == target)
+                    RepositoryChange(
+                      path: target,
+                      kind: kind,
+                      previousPath: kind == RepositoryChangeKind.modified
+                          ? null
+                          : 'old_probe.dart',
+                    )
+                  else
+                    c,
+              ],
+            ),
+          );
+        });
+      }
+    }
+    for (final path in [native, worker, service, adapter]) {
+      test('changed loading dependency $path cannot be admitted', () async {
+        final state = files();
+        state[headSha]![path] = (
+          mode: '100644',
+          contents: '${state[headSha]![path]!.contents}\n// changed dependency',
+        );
+        expectConservative(await evaluate(state: state));
+      });
+    }
+    test(
+      'an adapter chat import at both revisions is outside the proof',
+      () async {
+        final state = files();
+        for (final sha in [baseSha, headSha]) {
+          state[sha]![adapter] = (
+            mode: '100644',
+            contents: "import '../../core/template/chat_template_engine.dart';",
+          );
+        }
+        expectConservative(await evaluate(state: state));
+      },
+    );
+    for (final edge in [
+      "import 'worker.dart' deferred as worker;",
+      "import 'other.dart' if (dart.library.js_interop) 'worker.dart';",
+      "import 'other.dart';",
+    ]) {
+      test('unproven IO loading edge $edge is not admitted', () async {
+        final state = files();
+        for (final sha in [baseSha, headSha]) {
+          state[sha]![native] = (mode: '100644', contents: edge);
+        }
+        expectConservative(await evaluate(state: state));
+      });
+    }
+    test(
+      'hidden collision on any conditional export branch fails closed',
+      () async {
+        final state = files();
+        const web = 'lib/src/backends/litert_lm/litert_lm_backend_web.dart';
+        for (final sha in [baseSha, headSha]) {
+          state[sha]![web] = (
+            mode: '100644',
+            contents: 'void probeLinuxVulkanUnavailableReason() {}',
+          );
+        }
+        expectConservative(await evaluate(state: state));
+      },
+    );
+    for (final source in [
+      structuredSource,
+      'lib/src/core/grammar/tool_grammar_generator.dart',
+      'lib/src/core/template/template_render_context.dart',
+      'lib/llamadart.dart',
+      'lib/llama_cpp_bindings.dart',
+    ]) {
+      test('mixed $source still needs its own structured axes', () async {
+        final state = files();
+        state[headSha]![source] = (
+          mode: '100644',
+          contents: 'productionCall();',
+        );
+        final proof = evidence();
+        for (final record in [
+          proof['test_evidence'][probeTest],
+          ...(proof['structured_output_evidence']['impacts'] as Map).values,
+        ]) {
+          (record['production_refs'] as List).addAll(productionRefs(source));
+        }
+        expectConservative(
+          await evaluate(
+            state: state,
+            proof: proof,
+            inventory: [
+              ...changes,
+              RepositoryChange(
+                path: source,
+                kind: RepositoryChangeKind.modified,
+              ),
+            ],
+          ),
+        );
+      });
+    }
+    test('evidence cannot supply its own waiver or bypass the audit', () async {
+      final waived = evidence()..['additive_spi_export'] = true;
+      expectFailure(
+        await evaluate(proof: waived),
+        ReadinessFailureClassification.schemaViolation,
+      );
+      for (final field in [
+        'auditor_identity',
+        'audit_head_sha',
+        'audit_base_sha',
+      ]) {
+        final proof = evidence();
+        proof['independent_audit'][field] = field == 'auditor_identity'
+            ? context.author
+            : otherSha;
+        expect(
+          (await evaluate(proof: proof)).decision,
           ReadinessDecision.rejected,
         );
       }
@@ -2244,6 +2749,8 @@ final segment = '${Object()}ImageEditingRequest${Object()}';
         'tool/testing/classify_high_risk_changes.dart',
         'tool/testing/high_risk_readiness.dart',
         'tool/testing/release_metadata_readiness.dart',
+        'lib/src/backends/linux_vulkan_probe_io.dart',
+        'lib/src/backends/linux_vulkan_probe_stub.dart',
         'test/unit/tooling/support/bounded_process.dart',
         'test/unit/tooling/high_risk_readiness_test.dart',
       ];
@@ -2309,6 +2816,7 @@ final segment = '${Object()}ImageEditingRequest${Object()}';
           paths.last,
           '--name',
           'Git-bound additive image export impacts|'
+              'Git-bound additive Linux Vulkan SPI export impacts|'
               'Git-proven comment-only production changes',
           '--exclude-tags',
           'local-only',
@@ -4696,6 +5204,21 @@ final segment = '${Object()}ImageEditingRequest${Object()}';
       );
     });
 
+    test('unproven excluded impacts cannot use an empty family list', () async {
+      final evidence = structuredEvidence();
+      evidence['structured_output_evidence']['families'] =
+          <Map<String, dynamic>>[];
+      for (final impact
+          in (evidence['structured_output_evidence']['impacts'] as Map)
+              .values) {
+        impact['applicable'] = false;
+      }
+      expectFailure(
+        await evaluateStructured(evidence),
+        ReadinessFailureClassification.missingStructuredOutputEvidence,
+      );
+    });
+
     test(
       'requires compiled acceptance and rejection production tests',
       () async {
@@ -4932,6 +5455,38 @@ final segment = '${Object()}ImageEditingRequest${Object()}';
         coverage.keys.toSet(),
         (coverageSchema['properties'] as Map).keys.toSet(),
       );
+      expect(
+        structuredSchema['properties']['families'].containsKey('minItems'),
+        isFalse,
+      );
+      expect(structuredSchema['allOf'], [
+        {
+          'if': {
+            'properties': {
+              'impacts': {
+                'properties': {
+                  for (final impact in StructuredImpact.values)
+                    impact.name: {
+                      'properties': {
+                        'applicable': {'const': false},
+                      },
+                    },
+                },
+              },
+            },
+          },
+          'then': {
+            'properties': {
+              'families': {'minItems': 0},
+            },
+          },
+          'else': {
+            'properties': {
+              'families': {'minItems': 1},
+            },
+          },
+        },
+      ]);
       final family =
           (structured['families'] as List<dynamic>).single
               as Map<String, dynamic>;

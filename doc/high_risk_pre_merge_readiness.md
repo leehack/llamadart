@@ -366,6 +366,42 @@ conservative minima. Every other changed structured production path, including
 rename origins, still contributes its normal impacts. Evidence-only emptiness
 still requires all impacts; proven empty contribution is a distinct case.
 
+A second bounded refinement applies only to the additive backend SPI
+`probeLinuxVulkanUnavailableReason`. It removes only `lib/backend.dart`'s
+minimum chat contribution when all of these Git-derived facts hold:
+
+- Subtracting exactly the parsed conditional export from
+  `src/backends/linux_vulkan_probe_stub.dart`, with only `dart.library.io`
+  selecting `src/backends/linux_vulkan_probe_io.dart` and only
+  `show probeLinuxVulkanUnavailableReason`, recovers the base barrel byte for
+  byte. Both barrels are regular, non-executable blobs.
+- Both targets are newly added regular, non-executable blobs, absent at base,
+  with no rename or copy. Their reviewed UTF-8 SHA-256 fingerprints are
+  `86161bc45a9f511637e0e926ca1bcfebcb6214255679824a967df016414c5cb1`
+  (stub) and
+  `1ff6f91e0fff132c0138b00620f159210d902937eaaa812436987a2f57cabdf1`
+  (IO). These pin the no-import, null-returning stub and the two-function IO
+  wrapper around the existing adapter probe. Any byte change, including an
+  extra declaration, import, eager initializer, chat call, comment or tool
+  directive, retains conservative minima until the rule is reviewed again.
+- The old barrel already eagerly loads the adapter on IO through
+  `litert_lm_backend.dart`, `worker.dart` and `litert_lm_service.dart`.
+  Every chain blob is regular, non-executable and unchanged; the evaluator
+  checks the selected IO conditional branch rather than an inactive import.
+  The unchanged adapter imports exactly `dart:convert`, `dart:ffi` and
+  `package:ffi/ffi.dart`. Root dependency manifests remain unchanged.
+- Every old export branch is parsed at base and head, ignoring show/hide
+  filters, and every pre-existing exported source remains unchanged. Neither new probe identifier may occur in its source tokens, and no old
+  namespace source may import either newly added target. Missing, nonlocal, cyclic or part-based export graphs fail closed. The
+  exact proven addition is the only removed edge.
+
+This is a source-identity proof for two reviewed opt-in probe implementations,
+not a capability-name or backend-path exemption. All three independent impact
+reviews, exact production references, causal source/export tests, high-risk
+matrix rows and exact-pair audit remain required. Every other changed path,
+including policy code and actual chat or grammar changes, keeps its ordinary
+coverage obligations and minimum impacts. The classifier is unchanged; no caller-supplied waiver is accepted.
+
 Namespace extraction uses stable AST keyword tokens for class, enum and
 extension-type names across the allowed analyzer range. To qualify cached older
 and current dependency graphs without editing the checkout's pubspec or lock:
@@ -390,7 +426,11 @@ corresponding coverage. An internally consistent result still exits 2 for the
 unconfigured external prerequisites; it never establishes operational readiness.
 
 The `families` list retains unique `tested`/`unavailable` entries, relevant tests
-and a rationale. Missing weights require named unavailable families and primary
+and a rationale. It may be empty only when all three explicitly reviewed impacts
+are `applicable: false` and the Git-derived minimum/relevance checks admit every
+exclusion. Any applicable impact still requires actual family evidence. This
+lets model-free backend controls remain separate from model-family qualification,
+without inventing a family to satisfy the schema. Missing weights require named unavailable families and primary
 upstream emissions plus fixtures; unrelated model evidence remains pipeline-only.
 
 For the original rendering-only #529 fix, `TemplateRenderContext.messagesForTemplate`

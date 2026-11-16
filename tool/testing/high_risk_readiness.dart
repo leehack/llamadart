@@ -6,6 +6,7 @@ import 'dart:io';
 import 'package:analyzer/dart/analysis/utilities.dart';
 import 'package:analyzer/dart/ast/ast.dart';
 import 'package:analyzer/dart/ast/token.dart';
+import 'package:crypto/crypto.dart';
 
 import 'classify_high_risk_changes.dart';
 import 'release_metadata_readiness.dart';
@@ -1531,8 +1532,18 @@ class HighRiskReadinessEvaluator {
       final contribution = structuredProductionImpactHints(path);
       if (contribution == null) continue;
       hasProductionContribution = true;
-      if (path == 'lib/llamadart.dart' &&
-          await _isAdditiveImageExport(context, changes, workingDirectory)) {
+      if ((path == 'lib/llamadart.dart' &&
+              await _isAdditiveImageExport(
+                context,
+                changes,
+                workingDirectory,
+              )) ||
+          (path == 'lib/backend.dart' &&
+              await _isAdditiveLinuxVulkanProbeExport(
+                context,
+                changes,
+                workingDirectory,
+              ))) {
         continue;
       }
       minimumImpacts.addAll(contribution);
@@ -1784,6 +1795,207 @@ class HighRiskReadinessEvaluator {
       for (final dependency in imports.where((uri) => uri.startsWith('lib/'))) {
         if ((await read(sha, dependency))?.mode != '100644') return false;
       }
+    }
+    return true;
+  }
+
+  // The two reviewed leaf implementations are fixed, rather than admitting
+  // arbitrary code behind a capability-looking export. Any byte change keeps
+  // conservative impacts until this narrow rule is reviewed again.
+  Future<bool> _isAdditiveLinuxVulkanProbeExport(
+    PullRequestContext context,
+    Map<String, RepositoryChange> changes,
+    String? workingDirectory,
+  ) async {
+    const barrel = 'lib/backend.dart';
+    const io = 'lib/src/backends/linux_vulkan_probe_io.dart';
+    const stub = 'lib/src/backends/linux_vulkan_probe_stub.dart';
+    const addition =
+        "export 'src/backends/linux_vulkan_probe_stub.dart'\n"
+        "    if (dart.library.io) 'src/backends/linux_vulkan_probe_io.dart'\n"
+        '    show probeLinuxVulkanUnavailableReason;\n';
+    const fingerprints = {
+      io: '1ff6f91e0fff132c0138b00620f159210d902937eaaa812436987a2f57cabdf1',
+      stub: '86161bc45a9f511637e0e926ca1bcfebcb6214255679824a967df016414c5cb1',
+    };
+    if (changes[barrel]?.kind != RepositoryChangeKind.modified ||
+        changes[barrel]?.previousPath != null ||
+        changes.containsKey('pubspec.yaml') ||
+        changes.containsKey('pubspec.lock')) {
+      return false;
+    }
+    Future<ReadinessFile?> read(String sha, String path) =>
+        repositoryState.fileAt(sha, path, workingDirectory: workingDirectory);
+    CompilationUnit? parse(String source) {
+      final result = parseString(content: source, throwIfDiagnostics: false);
+      return result.errors.isEmpty ? result.unit : null;
+    }
+
+    for (final entry in fingerprints.entries) {
+      if (changes[entry.key]?.kind != RepositoryChangeKind.added ||
+          changes[entry.key]?.previousPath != null ||
+          await read(context.baseSha, entry.key) != null) {
+        return false;
+      }
+      final file = await read(context.headSha, entry.key);
+      if (file?.mode != '100644' ||
+          sha256.convert(utf8.encode(file!.contents)).toString() !=
+              entry.value) {
+        return false;
+      }
+    }
+    final base = await read(context.baseSha, barrel);
+    final head = await read(context.headSha, barrel);
+    if (base?.mode != '100644' || head?.mode != '100644') return false;
+    final offset = head!.contents.indexOf(addition);
+    if (offset < 0 ||
+        (offset != 0 && head.contents[offset - 1] != '\n') ||
+        head.contents.indexOf(addition, offset + addition.length) >= 0 ||
+        head.contents.replaceRange(offset, offset + addition.length, '') !=
+            base!.contents) {
+      return false;
+    }
+    final unit = parse(head.contents);
+    if (unit == null ||
+        unit.directives
+                .whereType<ExportDirective>()
+                .where(
+                  (directive) =>
+                      directive.offset == offset &&
+                      directive.end == offset + addition.trimRight().length,
+                )
+                .length !=
+            1) {
+      return false;
+    }
+
+    // On the IO branch the old barrel already loads the adapter through this
+    // eager chain. Every intermediate blob must be unchanged; finding an
+    // import in an inactive conditional branch does not prove loading.
+    const chain = [
+      barrel,
+      'lib/src/backends/litert_lm/litert_lm_backend.dart',
+      'lib/src/backends/litert_lm/worker.dart',
+      'lib/src/backends/litert_lm/litert_lm_service.dart',
+      'lib/src/backends/litert_lm/litert_lm_gpu_adapter.dart',
+    ];
+    String? selectedIoUri(UriBasedDirective directive) {
+      final configurations = switch (directive) {
+        ImportDirective() when directive.deferredKeyword == null =>
+          directive.configurations,
+        ExportDirective() => directive.configurations,
+        _ => null,
+      };
+      if (configurations == null) return null;
+      for (final branch in configurations) {
+        final enabled = switch (branch.name.toSource()) {
+          'dart.library.io' => true,
+          'dart.library.js_interop' => false,
+          _ => null,
+        };
+        final expected = branch.value?.stringValue ?? 'true';
+        if (enabled == null || !{'true', 'false'}.contains(expected)) {
+          return null;
+        }
+        if (enabled == (expected == 'true')) return branch.uri.stringValue;
+      }
+      return directive.uri.stringValue;
+    }
+
+    CompilationUnit? adapter;
+    for (var i = 0; i < chain.length; i++) {
+      final before = await read(context.baseSha, chain[i]);
+      final after = await read(context.headSha, chain[i]);
+      if (before?.mode != '100644' ||
+          after?.mode != '100644' ||
+          (i != 0 && before!.contents != after!.contents)) {
+        return false;
+      }
+      final source = parse(before!.contents);
+      if (source == null) return false;
+      if (i == chain.length - 1) {
+        adapter = source;
+      } else if (!source.directives.whereType<UriBasedDirective>().any(
+        (directive) =>
+            _localExportPath(chain[i], selectedIoUri(directive)) ==
+            chain[i + 1],
+      )) {
+        return false;
+      }
+    }
+    const adapterImports = {'dart:convert', 'dart:ffi', 'package:ffi/ffi.dart'};
+    final imports = <String>{};
+    for (final directive in adapter!.directives) {
+      if (directive is! ImportDirective ||
+          directive.metadata.isNotEmpty ||
+          directive.configurations.isNotEmpty ||
+          directive.combinators.isNotEmpty ||
+          directive.prefix != null ||
+          directive.deferredKeyword != null ||
+          !imports.add(directive.uri.stringValue ?? '')) {
+        return false;
+      }
+    }
+    if (!_sameSet(imports, adapterImports)) return false;
+
+    // Inspect the entire pre-existing exported namespace at both revisions,
+    // including inactive branches and names hidden by combinators. Any use of
+    // either new identifier is outside this additive, opt-in proof.
+    for (final sha in [context.baseSha, context.headSha]) {
+      final visiting = <String>{};
+      final inspected = <String>{};
+      Future<bool> inspect(String path) async {
+        if (visiting.contains(path)) return false;
+        if (inspected.contains(path)) return true;
+        visiting.add(path);
+        final file = await read(sha, path);
+        final old = await read(context.baseSha, path);
+        final source =
+            file?.mode == '100644' &&
+                old?.mode == '100644' &&
+                (path == barrel || file!.contents == old!.contents)
+            ? parse(path == barrel ? base.contents : file!.contents)
+            : null;
+        if (source == null) return false;
+        for (var token = source.beginToken; !token.isEof; token = token.next!) {
+          if (token.type == TokenType.IDENTIFIER &&
+              const {
+                'probeLinuxVulkanUnavailableReason',
+                'linuxVulkanUnavailableReason',
+              }.contains(token.lexeme)) {
+            return false;
+          }
+        }
+        for (final directive in source.directives) {
+          if (directive is LibraryDirective) continue;
+          if (directive is ImportDirective) {
+            for (final uri in [
+              directive.uri.stringValue,
+              for (final branch in directive.configurations)
+                branch.uri.stringValue,
+            ]) {
+              if (fingerprints.containsKey(_localExportPath(path, uri))) {
+                return false;
+              }
+            }
+            continue;
+          }
+          if (directive is! ExportDirective) return false;
+          for (final uri in [
+            directive.uri.stringValue,
+            for (final branch in directive.configurations)
+              branch.uri.stringValue,
+          ]) {
+            final child = _localExportPath(path, uri);
+            if (child == null || !await inspect(child)) return false;
+          }
+        }
+        visiting.remove(path);
+        inspected.add(path);
+        return true;
+      }
+
+      if (!await inspect(barrel)) return false;
     }
     return true;
   }
@@ -2055,8 +2267,15 @@ class HighRiskReadinessEvaluator {
         if (axisError != null) return axisError;
       }
       final families = structured['families'];
-      if (families is! List || families.isEmpty) {
-        return 'structured families must be a non-empty list.';
+      if (families is! List) {
+        return 'structured families must be a list.';
+      }
+      final impacts = structured['impacts'] as Map<String, dynamic>;
+      if (families.isEmpty &&
+          impacts.values.any(
+            (impact) => (impact as Map)['applicable'] != false,
+          )) {
+        return 'Applicable structured impacts require a non-empty family list.';
       }
       final familyNames = <String>{};
       for (final value in families) {
