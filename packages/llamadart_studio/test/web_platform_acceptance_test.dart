@@ -6,11 +6,45 @@ library;
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:llamadart_studio/llamadart_studio.dart';
+import 'package:llamadart_studio/src/app/local_coding_workspace.dart';
 import 'package:llamadart_studio_core/llamadart_studio_core.dart';
 
 import 'studio_widget_test_helpers.dart';
 
 void main() {
+  testWidgets('Web Coding explicitly excludes local workspace creation', (
+    tester,
+  ) async {
+    final deps = await buildTestDeps(isWeb: true);
+    addTearDown(deps.dispose);
+    await tester.pumpWidget(
+      StudioScope(
+        deps: deps,
+        child: MaterialApp(
+          theme: StudioTheme.dark(),
+          home: const Scaffold(body: CodingWorkspaceView()),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(
+      find.text('Local workspace files are unavailable on Web.'),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const Key('coding_create_local_workspace_button')),
+      findsNothing,
+    );
+    expect(find.byKey(const Key('coding_pick_folder_button')), findsNothing);
+    expect(deps.createLocalCodingWorkspace, throwsUnsupportedError);
+    await expectLater(
+      createLocalCodingWorkspaceDirectory(),
+      throwsUnsupportedError,
+    );
+    expect(deps.codingController.state.workspaceRoot, isNull);
+    expect(deps.codingController.state.activeCoreTools, isEmpty);
+  });
+
   testWidgets('Web Image Studio explains the real unsupported runtime', (
     tester,
   ) async {

@@ -517,15 +517,20 @@ class FakePlaygroundPort implements StudioPlaygroundPort {
 
 Future<StudioDependencies> buildTestDeps({
   bool isMobile = false,
+  bool isWeb = false,
+  String? appDataDirectory,
+  KeyValueStore? keyValueStore,
   Map<String, Object>? kvSeed,
   StudioModelStoragePort? storagePort,
   StudioInferencePort? inferencePort,
   StudioNoteStore? noteStore,
   StudioSpeechPort? speechPort,
 }) {
-  final kv = InMemoryKeyValueStore(kvSeed);
+  final kv = keyValueStore ?? InMemoryKeyValueStore(kvSeed);
   return StudioDependencies.fromPorts(
     isMobile: isMobile,
+    isWeb: isWeb,
+    appDataDirectory: appDataDirectory,
     keyValueStore: kv,
     conversationStore: KeyValueConversationStore(kv),
     noteStore: noteStore,

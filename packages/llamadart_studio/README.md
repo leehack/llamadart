@@ -24,8 +24,15 @@ On phones, Coding keeps the draft and Send/Stop controls below Agent, Files and
 Edits. File links reveal a full file detail with button/system Back to files and an explicit
 Use as context toggle; setup opens separately. Local shell commands and stdio MCP
 processes are unavailable on iOS/Android and Web; network MCP remains available.
-The mobile folder picker can only grant access supported by the device and
-provider. A returned path does not establish durable provider or write access.
+On iOS/Android, **Create local workspace** makes a new, empty folder in persistent
+app storage and enables file tools without an external provider grant. Ask the
+agent to create files (including nested paths), browse them in Files, and use
+**Copy** in file details to copy text elsewhere. The last selected root reopens
+on restart; app data removal or uninstall removes local workspaces. Creation
+never reuses an existing workspace. Local shell and process MCP stay unavailable.
+External folder selection only works for already accessible filesystem paths;
+provider URI/security-scoped access and durable provider grants are unsupported.
+Web local workspace files and creation are unavailable.
 Revert checks the bounded post-edit UTF-8 bytes and refuses a file changed since
 that edit. Changes without a retained snapshot require manual review.
 

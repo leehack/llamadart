@@ -10,7 +10,6 @@ import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:llamadart_studio_core/llamadart_studio_core.dart';
 
 import '../../app/studio_dependencies.dart';
-import '../../app/studio_file_actions.dart';
 import '../../app/studio_theme.dart';
 import '../../widgets/code_syntax_highlighter.dart';
 import '../../widgets/mcp_skills/mcp_and_skills_sheet.dart';
@@ -67,6 +66,8 @@ class _CodingWorkspaceViewState extends State<CodingWorkspaceView> {
   bool _showExplorer = false;
   StudioModelDescriptor? _pendingModel;
   String? _modelLoadError;
+  bool _creatingLocalWorkspace = false;
+  bool _pickingFolder = false;
 
   @override
   void initState() {
@@ -362,24 +363,94 @@ class _CodingWorkspaceViewState extends State<CodingWorkspaceView> {
     );
   }
 
-  Future<void> _pickFolder() async {
-    await runStudioFileAction(
-      context,
-      'Could not select workspace folder',
-      () async {
-        final deps = StudioScope.of(context);
-        if (deps.isWeb) {
-          return;
-        }
-        final picked = await FilePicker.platform.getDirectoryPath(
-          dialogTitle: 'Select Project Workspace Folder',
-        );
-        if (!context.mounted) return;
-        if (picked != null && picked.trim().isNotEmpty) {
-          await deps.codingController.setWorkspaceRoot(picked);
-        }
-      },
+  void _showFolderMessage(String message, {bool offerLocal = false}) {
+    if (!mounted) return;
+    final messenger = ScaffoldMessenger.maybeOf(context);
+    messenger?.hideCurrentSnackBar();
+    messenger?.showSnackBar(
+      SnackBar(
+        content: Text(message),
+        action: offerLocal
+            ? SnackBarAction(
+                label: 'Create local',
+                onPressed: _createLocalWorkspace,
+              )
+            : null,
+      ),
     );
+  }
+
+  Future<void> _createLocalWorkspace() async {
+    final deps = _deps!;
+    if (!deps.isMobile ||
+        deps.isWeb ||
+        _creatingLocalWorkspace ||
+        _pickingFolder) {
+      return;
+    }
+    setState(() => _creatingLocalWorkspace = true);
+    try {
+      final root = await deps.createLocalCodingWorkspace();
+      if (!mounted) return;
+      await deps.codingController.setWorkspaceRoot(root);
+      if (!mounted) return;
+      if (deps.codingController.state.workspaceRoot != root ||
+          deps.codingController.state.lastError != null) {
+        _showFolderMessage(
+          'The local folder could not be opened. Try creating a new local workspace.',
+        );
+        return;
+      }
+      _showFolderMessage(
+        'Local workspace created. Ask the agent to create files.',
+      );
+    } catch (_) {
+      _showFolderMessage(
+        'Could not create a local workspace. Check available app storage and try again.',
+      );
+    } finally {
+      if (mounted) setState(() => _creatingLocalWorkspace = false);
+    }
+  }
+
+  Future<void> _pickFolder() async {
+    final deps = _deps!;
+    if (deps.isWeb || _pickingFolder || _creatingLocalWorkspace) return;
+    setState(() => _pickingFolder = true);
+    try {
+      final picked = await FilePicker.platform.getDirectoryPath(
+        dialogTitle: 'Select Project Workspace Folder',
+      );
+      if (!mounted) return;
+      if (picked != null && picked.trim().isNotEmpty) {
+        await deps.codingController.setWorkspaceRoot(picked);
+        if (mounted &&
+            deps.isMobile &&
+            deps.codingController.state.lastError != null) {
+          _showFolderMessage(
+            'This folder could not be opened. Try a local workspace in app storage.',
+            offerLocal: true,
+          );
+        }
+      } else if (deps.isMobile) {
+        // The picker also returns null for some native errors, so this is not
+        // evidence of either explicit cancellation or a provider failure.
+        _showFolderMessage(
+          'No folder selected. You can create a local workspace instead.',
+          offerLocal: true,
+        );
+      }
+    } catch (error) {
+      if (!mounted) return;
+      _showFolderMessage(
+        deps.isMobile
+            ? 'Could not select a folder. Try a local workspace in app storage.'
+            : 'Could not select workspace folder: ${humanizeStudioError(error)}',
+        offerLocal: deps.isMobile,
+      );
+    } finally {
+      if (mounted) setState(() => _pickingFolder = false);
+    }
   }
 
   Future<void> _openManualPathDialog() async {

@@ -7,6 +7,7 @@ import 'package:llamadart_studio_core/llamadart_studio_core.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'local_coding_workspace.dart';
 import 'shared_prefs_store.dart';
 
 /// Assembles all pure-Dart Studio controllers, ports, and native shutdown
@@ -28,6 +29,7 @@ class StudioDependencies {
     required this.lifecycleCoordinator,
     required this.isWeb,
     required this.isMobile,
+    this.appDataDirectory,
   }) {
     lifecycleCoordinator.register(_disposeControllersAndMcp);
   }
@@ -73,6 +75,25 @@ class StudioDependencies {
 
   /// Whether running on iOS or Android.
   final bool isMobile;
+
+  /// Application storage root for new local Coding workspaces.
+  /// Defaults to Studio's path-provider application-support directory.
+  final String? appDataDirectory;
+
+  /// Creates an app-owned persistent Coding folder on iOS/Android.
+  ///
+  /// The caller selects the result through [codingController]. No existing
+  /// workspace is replaced or selected by this operation.
+  Future<String> createLocalCodingWorkspace() {
+    if (isWeb || !isMobile) {
+      throw UnsupportedError(
+        'Local Coding workspace creation is available only on iOS and Android.',
+      );
+    }
+    return createLocalCodingWorkspaceDirectory(
+      appDataDirectory: appDataDirectory,
+    );
+  }
 
   /// Bootstraps production dependencies backed by `SharedPreferences`,
   /// `path_provider` application support storage, and `llamadart` native/Web
@@ -158,6 +179,7 @@ class StudioDependencies {
       playgroundPort: playgroundPort,
       isWeb: isWebHost,
       isMobile: isMobileHost,
+      appDataDirectory: appDataPath,
       autoLoadStarterOnFirstLaunch: keyValueStoreOverride == null,
       autoDetectCodingWorkspace: !isWebHost && !isMobileHost,
       autoConnectDefaultMcp: !isWebHost && !isMobileHost,
@@ -178,6 +200,7 @@ class StudioDependencies {
     required StudioPlaygroundPort playgroundPort,
     bool isWeb = false,
     bool isMobile = false,
+    String? appDataDirectory,
     bool autoLoadStarterOnFirstLaunch = false,
     bool autoDetectCodingWorkspace = false,
     bool autoConnectDefaultMcp = false,
@@ -307,6 +330,7 @@ class StudioDependencies {
       lifecycleCoordinator: lifecycle,
       isWeb: isWeb,
       isMobile: isMobile,
+      appDataDirectory: appDataDirectory,
     );
   }
 

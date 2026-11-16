@@ -56,6 +56,34 @@ extension _CodingWorkspaceHeaderExtension on _CodingWorkspaceViewState {
               active.filename.toLowerCase() == m.filename.toLowerCase());
     }
 
+    final localWorkspaceAction = TextButton.icon(
+      key: Key(
+        setupSheet || _showSetup
+            ? 'coding_create_local_workspace_setup_button'
+            : 'coding_create_local_workspace_button',
+      ),
+      onPressed: _creatingLocalWorkspace || _pickingFolder
+          ? null
+          : () {
+              if (setupSheet) Navigator.pop(context);
+              _createLocalWorkspace();
+            },
+      icon: _creatingLocalWorkspace
+          ? const SizedBox(
+              width: 16,
+              height: 16,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            )
+          : const Icon(Icons.create_new_folder_outlined, size: 18),
+      label: Text(
+        _creatingLocalWorkspace
+            ? 'Creating workspace…'
+            : 'Create local workspace',
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+      ),
+    );
+
     final actionButtons = <Widget>[
       if (!deps.isWeb && !deps.isMobile)
         IconButton(
@@ -132,22 +160,28 @@ extension _CodingWorkspaceHeaderExtension on _CodingWorkspaceViewState {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: <Widget>[
-                      Text(
-                        compact
-                            ? (codingState.workspaceRoot
-                                      ?.replaceAll('\\', '/')
-                                      .split('/')
-                                      .last ??
-                                  'Open folder')
-                            : 'Coding Agent',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.w700,
-                          color: palette.textPrimary,
+                      if (deps.isMobile &&
+                          !deps.isWeb &&
+                          (codingState.workspaceRoot == null ||
+                              _creatingLocalWorkspace))
+                        localWorkspaceAction
+                      else
+                        Text(
+                          compact
+                              ? (codingState.workspaceRoot
+                                        ?.replaceAll('\\', '/')
+                                        .split('/')
+                                        .last ??
+                                    'Open folder')
+                              : 'Coding Agent',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.w700,
+                            color: palette.textPrimary,
+                          ),
                         ),
-                      ),
                       if (!compact) const SizedBox(height: 4),
                       if (!compact)
                         Text(
@@ -168,7 +202,9 @@ extension _CodingWorkspaceHeaderExtension on _CodingWorkspaceViewState {
                   IconButton(
                     key: const Key('coding_pick_folder_button'),
                     tooltip: 'Open workspace folder',
-                    onPressed: _pickFolder,
+                    onPressed: _pickingFolder || _creatingLocalWorkspace
+                        ? null
+                        : _pickFolder,
                     icon: const Icon(Icons.folder_open_rounded, size: 20),
                   ),
                 if (!compact)
@@ -262,6 +298,8 @@ extension _CodingWorkspaceHeaderExtension on _CodingWorkspaceViewState {
                 ),
               ],
             ),
+          if (deps.isWeb && !setupSheet)
+            const Text('Local workspace files are unavailable on Web.'),
           if (!compact) const SizedBox(height: 10),
           if (!compact && !setupSheet)
             Row(
@@ -313,11 +351,12 @@ extension _CodingWorkspaceHeaderExtension on _CodingWorkspaceViewState {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: <Widget>[
                     const SizedBox(height: 8),
+                    if (deps.isMobile && !deps.isWeb) localWorkspaceAction,
                     if (deps.isMobile)
                       const Padding(
                         padding: EdgeInsets.only(bottom: 12),
                         child: Text(
-                          'Local commands and process MCP servers are unavailable on mobile. Network MCP remains available. Folder access depends on permissions granted by your device.',
+                          'Local commands and process MCP servers are unavailable on mobile. Network MCP remains available. Create a local workspace in app storage for file tools. Files persist across restarts until app data is removed; use Copy in file details to copy text elsewhere. External provider folders may be inaccessible; local creation does not grant provider access.',
                         ),
                       ),
                     Wrap(

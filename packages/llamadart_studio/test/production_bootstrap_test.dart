@@ -83,6 +83,15 @@ void main() {
             content: 'Saved through production storage.',
           );
           expect(await File('$appData/notes/${note.id}.json').exists(), isTrue);
+          expect(deps.codingController.state.workspaceRoot, isNull);
+          final localRoot = await deps.createLocalCodingWorkspace();
+          expect(
+            Directory(localRoot).parent.path,
+            '$appData/coding_workspaces',
+          );
+          await deps.codingController.setWorkspaceRoot(localRoot);
+          expect(deps.codingController.state.workspaceRoot, localRoot);
+          expect(deps.codingController.state.lastError, isNull);
           await deps.shellController.updateSettings(
             (s) => s.copyWith(maxTokens: 321),
           );

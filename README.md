@@ -234,7 +234,7 @@ or try the [hosted chat app](https://leehack-llamadart.static.hf.space).
 
 - [Basic Dart CLI](https://github.com/leehack/llamadart/tree/main/example/basic_app)
 - [Flutter chat app](https://github.com/leehack/llamadart/tree/main/example/chat_app)
-- [Experimental Studio app and reusable core](https://github.com/leehack/llamadart/tree/main/packages/llamadart_studio), with Chat, Notes, Coding, model management, speech, images, and runtime exploration
+- [Experimental Studio app and reusable core](https://github.com/leehack/llamadart/tree/main/packages/llamadart_studio), with Chat, Notes, Coding (including app-owned local workspaces on iOS/Android), model management, speech, images, and runtime exploration
 - [Laya Tetris, a Flutter game played by a decision model](https://github.com/leehack/llamadart/tree/main/example/laya_tetris)
 - [HTTP server example](https://github.com/leehack/llamadart/tree/main/example/llamadart_server)
 - [TUI coding agent example](https://github.com/leehack/llamadart/tree/main/example/tui_coding_agent)
