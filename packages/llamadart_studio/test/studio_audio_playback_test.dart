@@ -26,7 +26,10 @@ void main() {
     );
     addTearDown(playback.dispose);
     await tester.runAsync(() async {
-      final ready = playback.getOrCreate();
+      final ready = playback.getOrCreate().then<Object?>(
+        (value) => value,
+        onError: (Object error) => error,
+      );
       await expectLater(ready, completion(isA<AudioPlayer>()));
       expect(await ready, same(player));
       await expectLater(playback.getOrCreate(), completion(same(player)));
