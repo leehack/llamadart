@@ -197,6 +197,10 @@ class WorkspaceCommandOutput {
 
 /// Conditional filesystem helpers backing Studio's Coding Workspace tools.
 abstract final class CodingWorkspaceFs {
+  /// Whether this host supports local subprocesses (desktop IO only).
+  static bool get localProcessExecutionAvailable =>
+      impl.localProcessExecutionAvailableImpl;
+
   /// Returns an initial default workspace directory path if available on desktop.
   static Future<String?> detectDefaultWorkspaceRoot() =>
       impl.detectDefaultWorkspaceRootImpl();
@@ -227,7 +231,7 @@ abstract final class CodingWorkspaceFs {
     maxLines: maxLines,
   );
 
-  /// Reverts [change] only while its bounded post-edit content still matches.
+  /// Reverts [change] only while its bounded post-edit UTF-8 bytes still match.
   /// External writes racing the check and write require filesystem coordination.
   static Future<void> revertFile(String rootPath, CodingFileChange change) =>
       impl.revertFileImpl(rootPath, change);

@@ -26,6 +26,9 @@ part 'coding_workspace_tools.dart';
 /// coding agent turns.
 class CodingWorkspaceController {
   /// Creates a [CodingWorkspaceController].
+  ///
+  /// [localProcessExecutionAvailable] can disable shell tools on desktop;
+  /// it cannot enable them on iOS, Android or Web.
   CodingWorkspaceController({
     required StudioInferencePort inferencePort,
     required StudioSettingsReader shellController,
@@ -44,7 +47,9 @@ class CodingWorkspaceController {
        _catalog = modelCatalog,
        _ensureModelReady = ensureModelReady,
        _autoConnectWorkspaceMcp = autoConnectWorkspaceMcp,
-       _localProcessExecutionAvailable = localProcessExecutionAvailable;
+       _localProcessExecutionAvailable =
+           localProcessExecutionAvailable &&
+           CodingWorkspaceFs.localProcessExecutionAvailable;
 
   static const String _workspaceRootKey = 'studio.coding.workspace_root.v1';
 

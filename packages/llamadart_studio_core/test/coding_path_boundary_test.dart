@@ -1,6 +1,7 @@
 @TestOn('vm')
 library;
 
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:llamadart_studio_core/llamadart_studio_core.dart';
@@ -18,6 +19,35 @@ void main() {
     await root.delete(recursive: true);
     await outside.delete(recursive: true);
   });
+
+  for (final existed in [false, true]) {
+    test(
+      'Revert preserves an externally added BOM (existing=$existed)',
+      () async {
+        final file = File(p.join(root.path, 'bom.txt'));
+        if (existed) await file.writeAsString('before');
+        final change = await CodingWorkspaceFs.writeFile(
+          root.path,
+          'bom.txt',
+          'after',
+        );
+        final externalBytes = [0xef, 0xbb, 0xbf, ...utf8.encode('after')];
+        await file.writeAsBytes(externalBytes);
+        await expectLater(
+          CodingWorkspaceFs.revertFile(root.path, change),
+          throwsStateError,
+        );
+        expect(await file.readAsBytes(), externalBytes);
+        await file.writeAsString('after');
+        await CodingWorkspaceFs.revertFile(root.path, change);
+        if (existed) {
+          expect(await file.readAsString(), 'before');
+        } else {
+          expect(await file.exists(), isFalse);
+        }
+      },
+    );
+  }
 
   test('write refuses a dangling symlink to a missing outside file', () async {
     final destination = File(p.join(outside.path, 'missing.txt'));

@@ -224,6 +224,14 @@ class _GatedFile implements File {
       delegate.readAsString(encoding: encoding);
 
   @override
+  Stream<List<int>> openRead([int? start, int? end]) =>
+      delegate.openRead(start, end);
+
+  @override
+  Future<RandomAccessFile> open({FileMode mode = FileMode.read}) =>
+      delegate.open(mode: mode);
+
+  @override
   Future<File> writeAsString(
     String contents, {
     FileMode mode = FileMode.write,

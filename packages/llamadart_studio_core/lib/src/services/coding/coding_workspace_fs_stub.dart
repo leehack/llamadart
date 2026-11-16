@@ -2,6 +2,9 @@ import 'package:llamadart/llamadart.dart';
 
 import 'coding_workspace_fs.dart';
 
+/// Web hosts cannot create local subprocesses.
+bool get localProcessExecutionAvailableImpl => false;
+
 /// Web stub where direct local directory sandboxing is unavailable.
 Future<String?> detectDefaultWorkspaceRootImpl() async => null;
 

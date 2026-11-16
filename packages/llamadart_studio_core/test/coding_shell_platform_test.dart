@@ -7,6 +7,12 @@ import 'package:test/test.dart';
 import 'studio_test_fakes.dart';
 
 void main() {
+  test('local process capability follows the IO host', () {
+    expect(
+      CodingWorkspaceFs.localProcessExecutionAvailable,
+      !Platform.isIOS && !Platform.isAndroid,
+    );
+  });
   for (final available in [true, false]) {
     test(
       'local process policy $available preserves file and network tools',

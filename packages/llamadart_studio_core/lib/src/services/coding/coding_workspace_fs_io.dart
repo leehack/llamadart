@@ -1,10 +1,15 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:llamadart/llamadart.dart';
 import 'package:path/path.dart' as p;
 
 import 'coding_workspace_fs.dart';
+
+/// Whether this IO host supports local subprocesses.
+bool get localProcessExecutionAvailableImpl =>
+    !Platform.isIOS && !Platform.isAndroid;
 
 const Set<String> _ignoredDirNames = <String>{
   '.git',
@@ -370,8 +375,7 @@ Future<void> revertFileImpl(String rootPath, CodingFileChange change) async {
   final file = File(_resolveSafePath(root, change.relativePath));
   if (!change.canRevert ||
       !await file.exists() ||
-      await file.length() > 4 * 1024 * 1024 ||
-      await file.readAsString() != change.expectedContent) {
+      !await _matchesExpectedBytes(file, change.expectedContent!)) {
     throw StateError(
       'Cannot revert "${change.relativePath}": the file changed since this edit. Review the current file first.',
     );
@@ -381,6 +385,19 @@ Future<void> revertFileImpl(String rootPath, CodingFileChange change) async {
   } else {
     await writeFileImpl(root, change.relativePath, change.previousContent!);
   }
+}
+
+Future<bool> _matchesExpectedBytes(File file, String content) async {
+  final expected = utf8.encode(content);
+  var offset = 0;
+  // Read one extra byte to detect appended data without decoding away a BOM.
+  await for (final chunk in file.openRead(0, expected.length + 1)) {
+    if (offset + chunk.length > expected.length) return false;
+    for (final byte in chunk) {
+      if (byte != expected[offset++]) return false;
+    }
+  }
+  return offset == expected.length;
 }
 
 /// Deletes [relativePath] inside [rootPath] safely if it exists.
@@ -399,7 +416,7 @@ Future<WorkspaceCommandOutput> runCommandImpl(
   String commandLine, {
   Duration timeout = const Duration(seconds: 20),
 }) async {
-  if (Platform.isIOS || Platform.isAndroid) {
+  if (!localProcessExecutionAvailableImpl) {
     throw LlamaUnsupportedException(
       'Local process execution is unavailable on iOS and Android; use a desktop host for shell commands.',
     );

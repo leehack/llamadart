@@ -637,19 +637,29 @@ class _CodingStreamingCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
-            Row(
+            Wrap(
+              spacing: 8,
+              runSpacing: 6,
+              crossAxisAlignment: WrapCrossAlignment.center,
               children: <Widget>[
-                StatusPulseDot(color: palette.accent, pulsing: true),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    stream.statusLabel ?? 'Coding Agent · Streaming',
-                    style: TextStyle(
-                      fontSize: 12.5,
-                      fontWeight: FontWeight.w700,
-                      color: palette.textPrimary,
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    StatusPulseDot(color: palette.accent, pulsing: true),
+                    const SizedBox(width: 8),
+                    Flexible(
+                      child: Text(
+                        stream.statusLabel ?? 'Coding Agent · Streaming',
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 12.5,
+                          fontWeight: FontWeight.w700,
+                          color: palette.textPrimary,
+                        ),
+                      ),
                     ),
-                  ),
+                  ],
                 ),
                 StudioPillBadge(
                   label:

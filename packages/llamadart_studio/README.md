@@ -21,12 +21,12 @@ qualify every model, workflow, or platform for production use.
 7. **Coding**: Workspace-scoped chat with file tools, desktop command execution, and explicit trust for repository MCP servers.
 
 On phones, Coding keeps the draft and Send/Stop controls below Agent, Files and
-Edits. File links reveal a full file detail with Back to files and an explicit
+Edits. File links reveal a full file detail with button/system Back to files and an explicit
 Use as context toggle; setup opens separately. Local shell commands and stdio MCP
 processes are unavailable on iOS/Android and Web; network MCP remains available.
 The mobile folder picker can only grant access supported by the device and
 provider. A returned path does not establish durable provider or write access.
-Revert checks the bounded post-edit snapshot and refuses a file changed since
+Revert checks the bounded post-edit UTF-8 bytes and refuses a file changed since
 that edit. Changes without a retained snapshot require manual review.
 
 ## Running Locally

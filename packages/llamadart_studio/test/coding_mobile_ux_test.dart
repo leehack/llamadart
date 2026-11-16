@@ -160,6 +160,68 @@ void main() {
       await loader.load();
     }
   });
+  testWidgets('Framework Back dismisses file detail before leaving Coding', (
+    tester,
+  ) async {
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final deps = await buildTestDeps(isMobile: true);
+    addTearDown(deps.dispose);
+    final root = Directory.systemTemp.createTempSync('coding_back_');
+    addTearDown(() => root.deleteSync(recursive: true));
+    File('${root.path}/main.dart').writeAsStringSync('owned file');
+    await tester.runAsync(
+      () => deps.codingController.setWorkspaceRoot(root.path),
+    );
+    await tester.binding.setSurfaceSize(const Size(390, 844));
+    await tester.pumpWidget(LlamadartStudioApp(dependencies: deps));
+    await deps.shellController.selectWorkspace(StudioWorkspace.coding);
+    await tester.pumpAndSettle();
+    final prompt = find.byKey(const Key('coding_prompt_input'));
+    await tester.enterText(prompt, 'Keep this draft');
+    await tester.tap(find.text('Files (1)'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextFormField), 'main');
+    await tester.runAsync(() async {
+      await tester.tap(find.byKey(const Key('coding_file_main.dart')));
+      await Future<void>.delayed(const Duration(milliseconds: 60));
+    });
+    await tester.pumpAndSettle();
+    final detail = find.byKey(const Key('coding_back_to_files'));
+    expect(detail, findsOneWidget);
+    expect(
+      ModalRoute.of(tester.element(detail))!.popDisposition,
+      RoutePopDisposition.doNotPop,
+    );
+    await tester.tap(find.byKey(const Key('coding_use_context')));
+    await tester.pumpAndSettle();
+    expect(deps.codingController.state.includeSelectedFileContext, isFalse);
+    unawaited(
+      showDialog<void>(
+        context: tester.element(detail),
+        builder: (_) => const AlertDialog(title: Text('Overlay before detail')),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(await tester.binding.handlePopRoute(), isTrue);
+    await tester.pumpAndSettle();
+    expect(find.text('Overlay before detail'), findsNothing);
+    expect(detail, findsOneWidget);
+    expect(await tester.binding.handlePopRoute(), isTrue);
+    await tester.pumpAndSettle();
+    expect(detail, findsNothing);
+    expect(find.byKey(const Key('coding_file_main.dart')), findsOneWidget);
+    expect(
+      tester.widget<TextFormField>(find.byType(TextFormField)).initialValue,
+      'main',
+    );
+    expect(
+      tester.widget<TextField>(prompt).controller!.text,
+      'Keep this draft',
+    );
+    expect(deps.codingController.state.includeSelectedFileContext, isFalse);
+    expect(await tester.binding.handlePopRoute(), isFalse);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
   for (final size in const [Size(360, 740), Size(390, 844)]) {
     for (final scale in [1.0, 1.8]) {
       for (final inset in [0.0, 300.0]) {

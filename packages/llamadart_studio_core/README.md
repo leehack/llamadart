@@ -14,15 +14,15 @@ Pure-Dart headless foundation for **llamadart Studio**, designed for reuse acros
 
 ## Coding host policy
 
-Hosts without local subprocess support pass
-`localProcessExecutionAvailable: false` to `CodingWorkspaceController`.
-Re-enabling the shell toggle then leaves `bash` unregistered while file and
-connected network MCP tools remain available. Studio sets this policy on mobile
-and Web; the IO boundaries also reject shell and stdio MCP process creation on
-iOS/Android with `LlamaUnsupportedException`.
+Core bounds shell-tool registration to desktop IO hosts. Mobile and Web cannot
+re-enable `bash`, even when an embedder passes
+`localProcessExecutionAvailable: true`; hosts can further disable it with
+`false`. File and connected network MCP tools retain their existing support.
+The IO boundaries also reject shell and stdio MCP process creation on iOS/Android
+with `LlamaUnsupportedException`.
 
 File tools operate only on application-accessible filesystem paths. They do not
 provide document-provider permissions or security-scoped access. Revert retains
-post-edit content up to 1 Mi characters and checks it before restoring or
+post-edit content up to 1 Mi characters and checks its UTF-8 bytes before restoring or
 deleting a file. It rejects mismatches and missing snapshots; this optimistic
 check does not coordinate simultaneous external writers between check and write.
