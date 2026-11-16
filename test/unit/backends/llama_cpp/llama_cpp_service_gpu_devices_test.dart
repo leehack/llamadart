@@ -69,6 +69,7 @@ Object? _loadDraft(LlamaCppService service, int target, String model) {
 
 // Fake devices must never reach llama.cpp: tests either stop before the load
 // or replace its device params at the recording boundary with a CPU load.
+// The injected devices and loader availability describe the same synthetic host.
 void main() {
   late Directory dir;
   late String model;
@@ -95,6 +96,7 @@ void main() {
       ),
       registeredDevices: registeredDevices,
       vulkanDeviceProbe: () => probe,
+      linuxVulkanProbe: () => null,
       splitBufferTypeProbe: splitBufferTypeProbe,
       backendDevices: backendDevices,
       deviceTypes: deviceTypes,

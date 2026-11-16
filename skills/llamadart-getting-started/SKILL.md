@@ -98,6 +98,13 @@ interface does not establish backend/model support; read `await engine.capabilit
   policy, not proof the load succeeds: LoRA limits, download options
   (`ModelLoadOptions`) and the file are checked by the load, and
   `engine.capabilities` still describes only a loaded model.
+- Native llama.cpp on Linux preflights Vulkan before automatic backend loading.
+  `GpuBackend.auto` skips unavailable Vulkan while keeping the other bundled
+  backends eligible. Explicit `GpuBackend.vulkan` throws
+  `LlamaUnsupportedException` before initialization; install a Vulkan driver and
+  ICD or choose `auto`/`cpu`. Opt-in Vulkan device enumeration skips an
+  unavailable module. This loader check does not qualify inference or driver
+  stability.
 - Prefer GGUF / llama.cpp unless the model only ships as `.litertlm`. Only
   llama.cpp supports embeddings, grammar-constrained and structured JSON output,
   runtime LoRA, KV-cache state persistence, next-token scores and external

@@ -1057,6 +1057,51 @@ shutdown. Destroying the detached windows alone is insufficient when plugins
 retain engine references. Keep the zero-tracked-object and completed-native-call
 assertions; an exit code of zero alone does not satisfy this row.
 
+### Linux backend preflight under Flutter
+
+`linux-backend-preflight` uses an existing chat GGUF and the production Flutter
+Linux library; it downloads nothing and runs one profile per Dart process.
+Prepare the root native assets before setting `LD_PRELOAD`; build-hook processes
+are outside this qualification. Use a fresh combined log for each invocation:
+
+```bash
+LLAMADART_LINUX_BACKEND_PROFILE=auto-no-vulkan-cuda \
+LLAMADART_LINUX_BACKEND_MODEL=/path/to/chat.gguf \
+LLAMADART_LINUX_BACKEND_MODEL_SHA256=YOUR_VERIFIED_MODEL_SHA256 \
+LLAMADART_LINUX_BACKEND_NATIVE_LOG=/path/to/profile.log \
+VK_ICD_FILENAMES=/nonexistent/disabled-vulkan.json \
+LD_PRELOAD=/path/to/production/libflutter_linux_gtk.so \
+TMPDIR="$(mktemp -d)" \
+dart test -p vm -j 1 --run-skipped -t local-only \
+  test/e2e/backends/linux_backend_preflight_e2e_test.dart \
+  > /path/to/profile.log 2>&1
+```
+
+Run these profiles separately, with the native modules and hardware each needs:
+
+| Profile | Vulkan configuration | Required result |
+| --- | --- | --- |
+| `auto-no-vulkan-cpu` | Invalid process-scoped ICD path; CPU bundle/host | AUTO reports CPU and no positive native offload |
+| `auto-no-vulkan-cuda` | Invalid process-scoped ICD path; CUDA module and NVIDIA GPU | AUTO reports CUDA and native offload greater than zero |
+| `vulkan` | Remove the invalid ICD override; working Vulkan device/module | Explicit Vulkan reports Vulkan and native offload greater than zero |
+| `cpu-no-vulkan` | Invalid process-scoped ICD path | Explicit CPU reports zero resolved layers and no positive native offload |
+
+The test uses two threads, a 2048-token context and at most 32 generated tokens,
+with thinking disabled; the chat model must answer the arithmetic prompt with
+`4`. The JSON receipt records source and loaded native module hashes, native
+build identity, model SHA256, loader probe reason, requested/resolved layers,
+actual backend, native offload records and the answer. The fresh log must be the
+same file receiving this process's stdout/stderr: an earlier offload record is
+rejected. GPU profiles require both the matching loaded module and positive
+native `offloaded N/M layers to GPU` evidence; requested/resolved layers alone
+are insufficient. The loaded module inventory must include the Flutter library.
+
+A CPU receipt does not qualify CUDA, Vulkan, OpenCL or HIP. These Dart profiles
+do not qualify ordinary Flutter app startup, Studio packaging, Web or Metal;
+run the ordinary Flutter release path separately with its unchanged package
+configuration. A successful Vulkan loader probe establishes device enumeration,
+not complete driver health.
+
 ### Native prompt-evaluation cancel
 
 ```bash

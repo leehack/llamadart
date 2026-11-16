@@ -56,6 +56,8 @@ Vulkan loader preflight from `backend.dart` before runtime initialization. It
 checks instance creation and a nonempty device list, including software devices;
 it does not qualify GPU suitability or Linux image inference and is not run
 automatically by `ImageGenerationEngine`. CPU-only builds need no preflight.
+Studio runs this preflight before probing and loading its default Linux Vulkan
+image runtime and disables Image Studio with the returned reason.
 Per-platform requirements, validated
 models, memory figures and the bounded recipes for tiling, editing, ControlNet,
 hires fix, reference editing, seamless textures, module placement, the
@@ -107,6 +109,13 @@ each runtime's default; `cpu`, `gpu` and `npu` run there or throw
 | LiteRT-LM Web | WebGPU, without a probe | Needs a WebGPU adapter | Throws |
 | Image generation | First GPU reported, else CPU; CPU on macOS x86_64 | Needs a GPU; Android and the CPU builds have none | Throws |
 | LiteRT-LM ASR | CPU | Not selectable | Not selectable |
+
+Native llama.cpp on Linux checks Vulkan loader/device availability before
+initialization. `GpuBackend.auto` skips unavailable Vulkan and keeps the other
+bundled backends eligible; an explicit `GpuBackend.vulkan` load throws
+`LlamaUnsupportedException`. Opt-in Vulkan device enumeration skips its module
+when unavailable. Passing this check does not qualify driver stability or
+inference.
 
 The WebGPU bridge ignores negative `mainGpu` values, including with
 `splitMode: ModelSplitMode.none`; they do not select the CPU as they do in

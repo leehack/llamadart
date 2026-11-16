@@ -610,6 +610,291 @@ void main() {
     });
   });
 
+  group('Linux Vulkan backend preparation', () {
+    List<String> prepare(
+      GpuBackend backend, {
+      String os = 'linux',
+      String? reason = 'vkCreateInstance returned -9; install a Vulkan ICD',
+      bool loadAllSucceeds = true,
+      String? directory,
+    }) {
+      final calls = <String>[];
+      final service = LlamaCppService();
+      if (directory != null) {
+        _writePrivateForTesting(service, '_backendModuleDirectory', directory);
+      }
+      _invokePrivateForTesting<void>(
+        service,
+        '_prepareBackendsForModelLoad',
+        [backend],
+        {
+          #operatingSystem: os,
+          #linuxVulkanProbe: () {
+            calls.add('probe');
+            return reason;
+          },
+          #loadAllBackends: (String? directory) {
+            calls.add('load-all:$directory');
+            return loadAllSucceeds;
+          },
+          #loadBackendModule: (String backend) => calls.add(backend),
+        },
+      );
+      return calls;
+    }
+
+    test('AUTO omits only Vulkan when the Linux loader is unavailable', () {
+      expect(prepare(GpuBackend.auto), [
+        'probe',
+        'cpu',
+        'blas',
+        'cuda',
+        'hip',
+        'opencl',
+      ]);
+    });
+
+    test('AUTO preserves path load-all after a successful Linux probe', () {
+      expect(prepare(GpuBackend.auto, reason: null, directory: '/bundle'), [
+        'probe',
+        'load-all:/bundle',
+        'vulkan',
+        'blas',
+        'cuda',
+        'hip',
+      ]);
+    });
+
+    test('AUTO preserves search-path load-all after a successful probe', () {
+      expect(prepare(GpuBackend.auto, reason: null), [
+        'probe',
+        'load-all:null',
+        'vulkan',
+        'blas',
+        'cuda',
+        'hip',
+      ]);
+    });
+
+    test('healthy Vulkan keeps the missing load-all symbol CPU fallback', () {
+      expect(prepare(GpuBackend.auto, reason: null, loadAllSucceeds: false), [
+        'probe',
+        'load-all:null',
+        'cpu',
+        'vulkan',
+        'blas',
+        'cuda',
+        'hip',
+      ]);
+    });
+
+    test('explicit Vulkan refuses before any module initializer', () {
+      final calls = <String>[];
+      expect(
+        () => _invokePrivateForTesting<void>(
+          LlamaCppService(),
+          '_prepareBackendsForModelLoad',
+          [GpuBackend.vulkan],
+          {
+            #operatingSystem: 'linux',
+            #linuxVulkanProbe: () => 'vkCreateInstance returned -9',
+            #loadAllBackends: (String? directory) {
+              calls.add('all');
+              return true;
+            },
+            #loadBackendModule: (String backend) => calls.add(backend),
+          },
+        ),
+        throwsA(
+          isA<LlamaUnsupportedException>().having(
+            (error) => error.message,
+            'actionable refusal',
+            allOf(
+              contains('Vulkan'),
+              contains('vkCreateInstance returned -9'),
+              contains('GpuBackend.auto'),
+              contains('GpuBackend.cpu'),
+            ),
+          ),
+        ),
+      );
+      expect(calls, isEmpty);
+    });
+
+    test('constructor probe refuses explicit Vulkan before the loader', () {
+      var probes = 0;
+      final loaded = <String>[];
+      final service = LlamaCppService(
+        linuxVulkanProbe: () {
+          probes++;
+          return 'synthetic Linux loader unavailable';
+        },
+      );
+      expect(
+        () => _invokePrivateForTesting<void>(
+          service,
+          '_prepareBackendsForModelLoad',
+          [GpuBackend.vulkan],
+          {
+            #operatingSystem: 'linux',
+            #loadBackendModule: (String backend) => loaded.add(backend),
+          },
+        ),
+        throwsA(
+          isA<LlamaUnsupportedException>().having(
+            (error) => error.message,
+            'loader refusal',
+            contains('synthetic Linux loader unavailable'),
+          ),
+        ),
+      );
+      expect(probes, 1);
+      expect(loaded, isEmpty);
+    });
+
+    test('constructor probe preserves healthy AUTO preparation', () {
+      final calls = <String>[];
+      final service = LlamaCppService(
+        linuxVulkanProbe: () {
+          calls.add('probe');
+          return null;
+        },
+      );
+      _invokePrivateForTesting<void>(
+        service,
+        '_prepareBackendsForModelLoad',
+        [GpuBackend.auto],
+        {
+          #operatingSystem: 'linux',
+          #loadAllBackends: (String? directory) {
+            calls.add('load-all');
+            return true;
+          },
+          #loadBackendModule: (String backend) => calls.add(backend),
+        },
+      );
+      expect(calls, ['probe', 'load-all', 'vulkan', 'blas', 'cuda', 'hip']);
+    });
+
+    test('non-Linux preparation ignores the constructor Linux probe', () {
+      final calls = <String>[];
+      final service = LlamaCppService(
+        linuxVulkanProbe: () => throw StateError('must not probe Linux'),
+      );
+      _invokePrivateForTesting<void>(
+        service,
+        '_prepareBackendsForModelLoad',
+        [GpuBackend.vulkan],
+        {
+          #operatingSystem: 'windows',
+          #loadBackendModule: (String backend) => calls.add(backend),
+        },
+      );
+      expect(calls, ['cpu', 'vulkan']);
+    });
+
+    test('explicit healthy Vulkan initializes only CPU and Vulkan', () {
+      expect(prepare(GpuBackend.vulkan, reason: null), [
+        'probe',
+        'cpu',
+        'vulkan',
+      ]);
+    });
+
+    test('other explicit backends never probe or initialize Vulkan', () {
+      for (final backend in [
+        GpuBackend.cpu,
+        GpuBackend.cuda,
+        GpuBackend.opencl,
+        GpuBackend.hip,
+        GpuBackend.blas,
+      ]) {
+        expect(prepare(backend), [
+          'cpu',
+          if (backend != GpuBackend.cpu) backend.name,
+        ]);
+      }
+    });
+
+    test('non-Linux AUTO and explicit Vulkan never use the Linux probe', () {
+      expect(prepare(GpuBackend.auto, os: 'windows'), [
+        'load-all:null',
+        'vulkan',
+        'blas',
+        'cuda',
+      ]);
+      expect(prepare(GpuBackend.auto, os: 'android'), [
+        'load-all:null',
+        'vulkan',
+      ]);
+      expect(prepare(GpuBackend.auto, os: 'macos'), isEmpty);
+      expect(prepare(GpuBackend.vulkan, os: 'windows'), ['cpu', 'vulkan']);
+    });
+  });
+
+  group('guarded optional Vulkan module loading', () {
+    List<String> load(String backend, {String os = 'linux', String? reason}) {
+      final calls = <String>[];
+      _invokePrivateForTesting<void>(
+        LlamaCppService(),
+        '_tryLoadBackendModuleIfBundled',
+        [backend],
+        {
+          #operatingSystem: os,
+          #linuxVulkanProbe: () {
+            calls.add('probe');
+            return reason;
+          },
+          #loadBackendModule: (String backend) {
+            calls.add(backend);
+            return true;
+          },
+        },
+      );
+      return calls;
+    }
+
+    test(
+      'opt-in enumeration skips unavailable Linux Vulkan before loading',
+      () {
+        expect(load('vulkan', reason: 'no Vulkan loader'), ['probe']);
+        expect(load('vulkan', reason: 'no devices'), ['probe']);
+      },
+    );
+
+    test('a later successful probe can initialize Vulkan', () {
+      var available = false;
+      final service = LlamaCppService(
+        linuxVulkanProbe: () => available ? null : 'no devices',
+      );
+      final loaded = <String>[];
+      void attempt() => _invokePrivateForTesting<void>(
+        service,
+        '_tryLoadBackendModuleIfBundled',
+        ['vulkan'],
+        {
+          #operatingSystem: 'linux',
+          #loadBackendModule: (String backend) {
+            loaded.add(backend);
+            return true;
+          },
+        },
+      );
+      attempt();
+      expect(loaded, isEmpty);
+      available = true;
+      attempt();
+      expect(loaded, ['vulkan']);
+    });
+
+    test('healthy Vulkan and non-Linux retain module loading', () {
+      expect(load('vulkan'), ['probe', 'vulkan']);
+      expect(load('vulkan', os: 'windows'), ['vulkan']);
+      expect(load('cuda', reason: 'no Vulkan loader'), ['cuda']);
+      expect(load('opencl', reason: 'no Vulkan loader'), ['opencl']);
+    });
+  });
+
   group('getVramInfo', () {
     test('returns a non-negative (total, free) record without throwing', () {
       // Shape invariant: callers destructure these two fields. A
@@ -3672,6 +3957,7 @@ void main() {
           final service = LlamaCppService(
             deviceTypes: (_) => const <int>[],
             registeredDevices: () => registered,
+            linuxVulkanProbe: () => null,
           );
           addTearDown(service.dispose);
           try {
@@ -7046,6 +7332,7 @@ void main() {
           deviceTypes: (_) => [gpuType],
           objectCalls: objectCalls,
           registeredDevices: () => registered,
+          linuxVulkanProbe: () => null,
           vulkanDeviceProbe: () {
             reads++;
             return facts == null
@@ -8713,7 +9000,7 @@ class _VulkanReportingService extends LlamaCppService {
     super.backendDevices,
     super.vulkanDeviceProbe,
     this.gpuBackend = 'Vulkan',
-  }) : super(isAndroid: true);
+  }) : super(isAndroid: true, linuxVulkanProbe: () => null);
 
   final String gpuBackend;
 
@@ -8726,7 +9013,7 @@ class _MetalReportingService extends LlamaCppService {
     super.objectCalls,
     super.registeredDevices,
     super.deviceTypes,
-  }) : super(isMacosX64: false);
+  }) : super(isMacosX64: false, linuxVulkanProbe: () => null);
 
   @override
   List<String> getBackendInfo() => const ['CPU', 'Metal (fake GPU)'];

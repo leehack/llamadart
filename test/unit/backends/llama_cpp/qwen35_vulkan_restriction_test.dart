@@ -864,7 +864,7 @@ class _VulkanService extends LlamaCppService {
     super.backendDevices,
     super.vulkanDeviceProbe,
     super.ggmlVersion,
-  });
+  }) : super(linuxVulkanProbe: () => null);
   @override
   List<String> getBackendInfo() => const ['CPU', 'Vulkan (injected registry)'];
 }
