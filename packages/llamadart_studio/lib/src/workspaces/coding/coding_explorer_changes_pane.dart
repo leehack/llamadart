@@ -15,84 +15,72 @@ extension _CodingExplorerChangesPane on _CodingWorkspaceViewState {
         _showFileDetail &&
         codingState.selectedFileSlice != null) {
       final slice = codingState.selectedFileSlice!;
-      return PopScope<void>(
-        canPop:
-            _compactSection != _CompactCodingSection.files ||
-            codingState.pendingShellApproval != null,
-        onPopInvokedWithResult: (didPop, _) {
-          if (!didPop &&
-              _compactSection == _CompactCodingSection.files &&
-              codingState.pendingShellApproval == null) {
-            _updateState(() => _showFileDetail = false);
-          }
-        },
-        child: LayoutBuilder(
-          builder: (context, box) => Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              ConstrainedBox(
-                constraints: BoxConstraints(maxHeight: box.maxHeight * 0.55),
-                child: SingleChildScrollView(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      Row(
-                        children: [
-                          TextButton.icon(
-                            key: const Key('coding_back_to_files'),
-                            style: TextButton.styleFrom(
-                              minimumSize: const Size(48, 48),
-                            ),
-                            onPressed: () =>
-                                _updateState(() => _showFileDetail = false),
-                            icon: const Icon(Icons.arrow_back_rounded),
-                            label: const Text('Files'),
+      return LayoutBuilder(
+        builder: (context, box) => Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            ConstrainedBox(
+              constraints: BoxConstraints(maxHeight: box.maxHeight * 0.55),
+              child: SingleChildScrollView(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Row(
+                      children: [
+                        TextButton.icon(
+                          key: const Key('coding_back_to_files'),
+                          style: TextButton.styleFrom(
+                            minimumSize: const Size(48, 48),
                           ),
-                          Expanded(
-                            child: Tooltip(
-                              message: slice.relativePath,
-                              child: Text(
-                                slice.relativePath,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.w700,
-                                ),
+                          onPressed: () =>
+                              _updateState(() => _showFileDetail = false),
+                          icon: const Icon(Icons.arrow_back_rounded),
+                          label: const Text('Files'),
+                        ),
+                        Expanded(
+                          child: Tooltip(
+                            message: slice.relativePath,
+                            child: Text(
+                              slice.relativePath,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w700,
                               ),
                             ),
                           ),
-                        ],
-                      ),
-                      SwitchListTile.adaptive(
-                        key: const Key('coding_use_context'),
-                        contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 12,
                         ),
-                        title: const Text('Use as context'),
-                        value: codingState.includeSelectedFileContext,
-                        onChanged:
-                            deps.codingController.setIncludeSelectedFileContext,
+                      ],
+                    ),
+                    SwitchListTile.adaptive(
+                      key: const Key('coding_use_context'),
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 12,
                       ),
-                    ],
-                  ),
+                      title: const Text('Use as context'),
+                      value: codingState.includeSelectedFileContext,
+                      onChanged:
+                          deps.codingController.setIncludeSelectedFileContext,
+                    ),
+                  ],
                 ),
               ),
-              Expanded(
-                child: Container(
-                  key: const Key('coding_file_syntax_preview'),
-                  color: palette.canvas,
-                  child: SyntaxCodeView(
-                    code: slice.content,
-                    filePath: slice.relativePath,
-                    startLine: slice.startLine,
-                    showLineNumbers: true,
-                    showHeader: box.maxHeight > 180,
-                    fontSize: 12,
-                  ),
+            ),
+            Expanded(
+              child: Container(
+                key: const Key('coding_file_syntax_preview'),
+                color: palette.canvas,
+                child: SyntaxCodeView(
+                  code: slice.content,
+                  filePath: slice.relativePath,
+                  startLine: slice.startLine,
+                  showLineNumbers: true,
+                  showHeader: box.maxHeight > 180,
+                  fontSize: 12,
                 ),
               ),
-            ],
-          ),
+            ),
+          ],
         ),
       );
     }

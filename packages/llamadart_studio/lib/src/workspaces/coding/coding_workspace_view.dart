@@ -58,6 +58,9 @@ class _CodingWorkspaceViewState extends State<CodingWorkspaceView> {
   _CompactCodingSection _compactSection = _CompactCodingSection.agent;
   bool _showEditsInExplorer = false;
   bool _showFileDetail = false;
+  LocalHistoryEntry? _fileDetailHistory;
+  ModalRoute<dynamic>? _fileDetailHistoryRoute;
+  bool _fileDetailHistorySyncScheduled = false;
   bool _compactLayout = false;
   bool _shortCodingPane = false;
   bool _showSetup = false;
@@ -174,12 +177,59 @@ class _CodingWorkspaceViewState extends State<CodingWorkspaceView> {
 
   @override
   void dispose() {
+    _removeFileDetailHistory();
     _codingSub?.cancel();
     _streamSub?.cancel();
     _promptCtrl.dispose();
     _promptFocusNode.dispose();
     _chatScrollCtrl.dispose();
     super.dispose();
+  }
+
+  void _removeFileDetailHistory() {
+    final entry = _fileDetailHistory;
+    _fileDetailHistory = null;
+    _fileDetailHistoryRoute = null;
+    entry?.remove();
+  }
+
+  void _scheduleFileDetailHistorySync(ModalRoute<dynamic>? route) {
+    if (_fileDetailHistorySyncScheduled) return;
+    _fileDetailHistorySyncScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _fileDetailHistorySyncScheduled = false;
+      if (!mounted) return;
+      final codingState = _deps!.codingController.state;
+      final active =
+          _compactLayout &&
+          _compactSection == _CompactCodingSection.files &&
+          _showFileDetail &&
+          codingState.selectedFileSlice != null &&
+          codingState.pendingShellApproval == null;
+      if (!active || _fileDetailHistoryRoute != route) {
+        _removeFileDetailHistory();
+      }
+      if (!active || route == null || _fileDetailHistory != null) return;
+      final scaffold = Scaffold.maybeOf(context);
+      // A file read can finish behind a drawer; keep that drawer's history last.
+      if ((scaffold?.isDrawerOpen ?? false) ||
+          (scaffold?.isEndDrawerOpen ?? false)) {
+        return;
+      }
+      late final LocalHistoryEntry entry;
+      entry = LocalHistoryEntry(
+        impliesAppBarDismissal: false,
+        onRemove: () {
+          if (!identical(_fileDetailHistory, entry)) return;
+          _fileDetailHistory = null;
+          _fileDetailHistoryRoute = null;
+          _updateState(() => _showFileDetail = false);
+        },
+      );
+      _fileDetailHistory = entry;
+      _fileDetailHistoryRoute = route;
+      route.addLocalHistoryEntry(entry);
+    });
   }
 
   Future<void> _activateCodingModel(
@@ -377,6 +427,7 @@ class _CodingWorkspaceViewState extends State<CodingWorkspaceView> {
   Widget build(BuildContext context) {
     final deps = StudioScope.of(context);
     final palette = StudioPalette.of(context);
+    final route = ModalRoute.of(context);
 
     return StoreBuilder<CodingWorkspaceState>(
       store: deps.codingController.store,
@@ -398,6 +449,7 @@ class _CodingWorkspaceViewState extends State<CodingWorkspaceView> {
                             final compactWidth = rootBox.maxWidth < 900;
                             _compactLayout = compactWidth;
                             _shortCodingPane = rootBox.maxHeight < 500;
+                            _scheduleFileDetailHistorySync(route);
 
                             final header = _buildHeader(
                               context,

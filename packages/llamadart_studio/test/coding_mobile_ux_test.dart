@@ -188,9 +188,58 @@ void main() {
     await tester.pumpAndSettle();
     final detail = find.byKey(const Key('coding_back_to_files'));
     expect(detail, findsOneWidget);
+    final scaffold = Scaffold.of(tester.element(detail));
+    for (final end in [false, true]) {
+      await tester.tap(
+        find.byKey(
+          Key(end ? 'toggle_inspector_button' : 'open_sidebar_drawer_button'),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(end ? scaffold.isEndDrawerOpen : scaffold.isDrawerOpen, isTrue);
+      expect(await tester.binding.handlePopRoute(), isTrue);
+      await tester.pumpAndSettle();
+      expect(end ? scaffold.isEndDrawerOpen : scaffold.isDrawerOpen, isFalse);
+      expect(detail, findsOneWidget);
+    }
+    for (final section in ['Agent', 'Edits (0)']) {
+      await tester.tap(find.text(section));
+      await tester.pumpAndSettle();
+      expect(await tester.binding.handlePopRoute(), isFalse);
+      await tester.tap(find.text('Files (1)'));
+      await tester.pumpAndSettle();
+      expect(detail, findsOneWidget);
+    }
+    for (final end in [false, true]) {
+      await tester.binding.setSurfaceSize(const Size(1100, 900));
+      await tester.pumpAndSettle();
+      expect(detail, findsNothing);
+      final preview = find.byKey(const Key('coding_file_syntax_preview'));
+      final resizedScaffold = Scaffold.of(tester.element(preview));
+      if (end) {
+        resizedScaffold.openEndDrawer();
+      } else {
+        resizedScaffold.openDrawer();
+      }
+      await tester.pumpAndSettle();
+      await tester.binding.setSurfaceSize(const Size(390, 844));
+      await tester.pumpAndSettle();
+      expect(detail, findsOneWidget);
+      expect(
+        end ? resizedScaffold.isEndDrawerOpen : resizedScaffold.isDrawerOpen,
+        isTrue,
+      );
+      expect(await tester.binding.handlePopRoute(), isTrue);
+      await tester.pumpAndSettle();
+      expect(
+        end ? resizedScaffold.isEndDrawerOpen : resizedScaffold.isDrawerOpen,
+        isFalse,
+      );
+      expect(detail, findsOneWidget);
+    }
     expect(
       ModalRoute.of(tester.element(detail))!.popDisposition,
-      RoutePopDisposition.doNotPop,
+      RoutePopDisposition.pop,
     );
     await tester.tap(find.byKey(const Key('coding_use_context')));
     await tester.pumpAndSettle();
