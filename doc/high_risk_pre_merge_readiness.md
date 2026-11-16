@@ -391,16 +391,24 @@ minimum chat contribution when all of these Git-derived facts hold:
   The unchanged adapter imports exactly `dart:convert`, `dart:ffi` and
   `package:ffi/ffi.dart`. Root dependency manifests remain unchanged.
 - Every old export branch is parsed at base and head, ignoring show/hide
-  filters, and every pre-existing exported source remains unchanged. Neither new probe identifier may occur in its source tokens, and no old
-  namespace source may import either newly added target. Missing, nonlocal, cyclic or part-based export graphs fail closed. The
-  exact proven addition is the only removed edge.
+  filters, and every pre-existing exported source remains unchanged. Neither
+  new probe identifier may occur in its source tokens, and no old
+  namespace source may import either newly added target. Missing, nonlocal or
+  cyclic export graphs fail closed. The only admitted parts belong to the
+  unchanged `litert_lm_runtime.dart`: `litert_lm_embedding_native.dart` and
+  `litert_lm_runtime_facade.dart`. Each must be a regular, non-executable,
+  unchanged blob with exactly one unannotated URI `part of` directive resolving
+  to that owner, and its complete tokens undergo the same identifier check.
+  Other owners, parts, directives and part changes retain conservative minima.
+  The exact proven export addition is the only removed edge.
 
 This is a source-identity proof for two reviewed opt-in probe implementations,
 not a capability-name or backend-path exemption. All three independent impact
 reviews, exact production references, causal source/export tests, high-risk
 matrix rows and exact-pair audit remain required. Every other changed path,
 including policy code and actual chat or grammar changes, keeps its ordinary
-coverage obligations and minimum impacts. The classifier is unchanged; no caller-supplied waiver is accepted.
+coverage obligations and minimum impacts. The classifier is unchanged; no
+caller-supplied waiver is accepted.
 
 Namespace extraction uses stable AST keyword tokens for class, enum and
 extension-type names across the allowed analyzer range. To qualify cached older

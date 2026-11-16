@@ -1942,14 +1942,23 @@ class HighRiskReadinessEvaluator {
     }
     if (!_sameSet(imports, adapterImports)) return false;
 
+    const runtimeOwner = 'lib/src/backends/litert_lm/litert_lm_runtime.dart';
+    const partOwners = {
+      'lib/src/backends/litert_lm/litert_lm_embedding_native.dart':
+          runtimeOwner,
+      'lib/src/backends/litert_lm/litert_lm_runtime_facade.dart': runtimeOwner,
+    };
+
     // Inspect the entire pre-existing exported namespace at both revisions,
     // including inactive branches and names hidden by combinators. Any use of
     // either new identifier is outside this additive, opt-in proof.
     for (final sha in [context.baseSha, context.headSha]) {
       final visiting = <String>{};
       final inspected = <String>{};
-      Future<bool> inspect(String path) async {
-        if (visiting.contains(path)) return false;
+      Future<bool> inspect(String path, {String? partOwner}) async {
+        if (partOwners[path] != partOwner || visiting.contains(path)) {
+          return false;
+        }
         if (inspected.contains(path)) return true;
         visiting.add(path);
         final file = await read(sha, path);
@@ -1970,7 +1979,41 @@ class HighRiskReadinessEvaluator {
             return false;
           }
         }
+        if (partOwner != null) {
+          if (source.directives.length != 1) return false;
+          final directive = source.directives.single;
+          if (directive is! PartOfDirective ||
+              directive.metadata.isNotEmpty ||
+              _localExportPath(path, directive.uri?.stringValue) != partOwner) {
+            return false;
+          }
+        } else if (path == runtimeOwner) {
+          final parts = source.directives.whereType<PartDirective>().toList();
+          if (parts.length != partOwners.length ||
+              !_sameSet(
+                parts
+                    .map(
+                      (part) =>
+                          _localExportPath(path, part.uri.stringValue) ?? '',
+                    )
+                    .toSet(),
+                partOwners.keys.toSet(),
+              )) {
+            return false;
+          }
+        }
         for (final directive in source.directives) {
+          if (partOwner != null) continue;
+          if (directive is PartDirective) {
+            final child = _localExportPath(path, directive.uri.stringValue);
+            if (directive.metadata.isNotEmpty ||
+                child == null ||
+                partOwners[child] != path ||
+                !await inspect(child, partOwner: path)) {
+              return false;
+            }
+            continue;
+          }
           if (directive is LibraryDirective) continue;
           if (directive is ImportDirective) {
             for (final uri in [

@@ -1553,6 +1553,11 @@ final segment = '${Object()}ImageEditingRequest${Object()}';
     const native = 'lib/src/backends/litert_lm/litert_lm_backend.dart';
     const worker = 'lib/src/backends/litert_lm/worker.dart';
     const service = 'lib/src/backends/litert_lm/litert_lm_service.dart';
+    const runtime = 'lib/src/backends/litert_lm/litert_lm_runtime.dart';
+    const parts = [
+      'lib/src/backends/litert_lm/litert_lm_embedding_native.dart',
+      'lib/src/backends/litert_lm/litert_lm_runtime_facade.dart',
+    ];
     const probeTest = 'test/unit/backends/linux_vulkan_probe_io_test.dart';
     const addition =
         "export 'src/backends/linux_vulkan_probe_stub.dart'\n"
@@ -1561,7 +1566,8 @@ final segment = '${Object()}ImageEditingRequest${Object()}';
     const oldBarrel =
         "export 'src/backends/litert_lm/litert_lm_backend_stub.dart'\n"
         "    if (dart.library.js_interop) 'src/backends/litert_lm/litert_lm_backend_web.dart'\n"
-        "    if (dart.library.io) 'src/backends/litert_lm/litert_lm_backend.dart';\n";
+        "    if (dart.library.io) 'src/backends/litert_lm/litert_lm_backend.dart';\n"
+        "export 'src/backends/litert_lm/litert_lm_runtime.dart';\n";
     const changes = [
       RepositoryChange(path: barrel, kind: RepositoryChangeKind.modified),
       RepositoryChange(path: io, kind: RepositoryChangeKind.added),
@@ -1592,6 +1598,15 @@ final segment = '${Object()}ImageEditingRequest${Object()}';
           contents:
               "import 'dart:convert'; import 'dart:ffi'; import 'package:ffi/ffi.dart';",
         ),
+        runtime: (
+          mode: '100644',
+          contents:
+              "part 'litert_lm_embedding_native.dart';\n"
+              "part 'litert_lm_runtime_facade.dart';\n"
+              'class ExistingRuntime {}',
+        ),
+        for (final part in parts)
+          part: (mode: '100644', contents: File(part).readAsStringSync()),
         probeTest: (
           mode: '100644',
           contents:
@@ -1852,6 +1867,88 @@ final segment = '${Object()}ImageEditingRequest${Object()}';
         expectConservative(
           await run(git(['rev-parse', 'HEAD']), renamedManifest: true),
         );
+      },
+    );
+
+    for (final part in parts) {
+      test('tokens in the existing part $part cannot shadow the probe', () async {
+        final state = files();
+        for (final sha in [baseSha, headSha]) {
+          state[sha]![part] = (
+            mode: '100644',
+            contents:
+                '${state[sha]![part]!.contents}\nvoid probeLinuxVulkanUnavailableReason() {}',
+          );
+        }
+        expectConservative(await evaluate(state: state));
+      });
+      for (final source in [
+        'class MissingOwner {}',
+        "part of 'different_owner.dart';",
+        'part of named.runtime;',
+        "@deprecated part of 'litert_lm_runtime.dart';",
+        "part of 'litert_lm_runtime.dart'; import 'other.dart';",
+        "part of 'litert_lm_runtime.dart'; export 'other.dart';",
+        "part of 'litert_lm_runtime.dart'; part 'other.dart';",
+        "part of 'litert_lm_runtime.dart'; part of 'litert_lm_runtime.dart';",
+      ]) {
+        test('part $part rejects unrelated directives $source', () async {
+          final state = files();
+          for (final sha in [baseSha, headSha]) {
+            state[sha]![part] = (mode: '100644', contents: source);
+          }
+          expectConservative(await evaluate(state: state));
+        });
+      }
+      for (final mode in ['100755', '120000']) {
+        test(
+          'existing part $part must remain a regular non-executable blob: $mode',
+          () async {
+            final state = files();
+            state[headSha]![part] = (
+              mode: mode,
+              contents: state[headSha]![part]!.contents,
+            );
+            expectConservative(await evaluate(state: state));
+          },
+        );
+      }
+      test(
+        'changed, deleted or newly present part $part is unproven',
+        () async {
+          final changed = files();
+          changed[headSha]![part] = (
+            mode: '100644',
+            contents: '${changed[headSha]![part]!.contents}\n// modified part',
+          );
+          expectConservative(await evaluate(state: changed));
+          final deleted = files();
+          deleted[headSha]!.remove(part);
+          expectConservative(await evaluate(state: deleted));
+          final added = files();
+          added[baseSha]!.remove(part);
+          expectConservative(await evaluate(state: added));
+        },
+      );
+    }
+    test(
+      'only the two existing runtime owner-part pairs are admitted',
+      () async {
+        for (final owner in [runtime, native]) {
+          final state = files();
+          for (final sha in [baseSha, headSha]) {
+            state[sha]![owner] = (
+              mode: '100644',
+              contents:
+                  "${state[sha]![owner]!.contents}\npart 'other_part.dart';",
+            );
+            state[sha]!['lib/src/backends/litert_lm/other_part.dart'] = (
+              mode: '100644',
+              contents: "part of '${owner.split('/').last}';",
+            );
+          }
+          expectConservative(await evaluate(state: state));
+        }
       },
     );
 
@@ -2827,6 +2924,8 @@ final segment = '${Object()}ImageEditingRequest${Object()}';
         'tool/testing/release_metadata_readiness.dart',
         'lib/src/backends/linux_vulkan_probe_io.dart',
         'lib/src/backends/linux_vulkan_probe_stub.dart',
+        'lib/src/backends/litert_lm/litert_lm_embedding_native.dart',
+        'lib/src/backends/litert_lm/litert_lm_runtime_facade.dart',
         'test/unit/tooling/support/bounded_process.dart',
         'test/unit/tooling/high_risk_readiness_test.dart',
       ];
