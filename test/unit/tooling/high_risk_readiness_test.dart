@@ -420,6 +420,41 @@ void mutateIdentityToOtherValidValues(Map<String, dynamic> evidence) {
   evidence['pr_author'] = 'other-author';
 }
 
+void _expectModelFreeFamilySchema(Map<String, dynamic> structuredSchema) {
+  expect(
+    structuredSchema['properties']['families'].containsKey('minItems'),
+    isFalse,
+  );
+  expect(structuredSchema['allOf'], [
+    {
+      'if': {
+        'properties': {
+          'impacts': {
+            'properties': {
+              for (final impact in StructuredImpact.values)
+                impact.name: {
+                  'properties': {
+                    'applicable': {'const': false},
+                  },
+                },
+            },
+          },
+        },
+      },
+      'then': {
+        'properties': {
+          'families': {'minItems': 0},
+        },
+      },
+      'else': {
+        'properties': {
+          'families': {'minItems': 1},
+        },
+      },
+    },
+  ]);
+}
+
 void main() {
   for (final scenario in [
     (
@@ -1634,6 +1669,16 @@ final segment = '${Object()}ImageEditingRequest${Object()}';
     }
 
     test('only the proven SPI contribution can exclude chat axes', () async {
+      final schema =
+          jsonDecode(
+                File(
+                  'tool/testing/high_risk_readiness_evidence.schema.json',
+                ).readAsStringSync(),
+              )
+              as Map<String, dynamic>;
+      _expectModelFreeFamilySchema(
+        schema[r'$defs']['structuredOutputEvidence'] as Map<String, dynamic>,
+      );
       final result = await evaluate();
       expect(result.decision, ReadinessDecision.unverifiedPrerequisites);
       expect(
@@ -5455,38 +5500,7 @@ final segment = '${Object()}ImageEditingRequest${Object()}';
         coverage.keys.toSet(),
         (coverageSchema['properties'] as Map).keys.toSet(),
       );
-      expect(
-        structuredSchema['properties']['families'].containsKey('minItems'),
-        isFalse,
-      );
-      expect(structuredSchema['allOf'], [
-        {
-          'if': {
-            'properties': {
-              'impacts': {
-                'properties': {
-                  for (final impact in StructuredImpact.values)
-                    impact.name: {
-                      'properties': {
-                        'applicable': {'const': false},
-                      },
-                    },
-                },
-              },
-            },
-          },
-          'then': {
-            'properties': {
-              'families': {'minItems': 0},
-            },
-          },
-          'else': {
-            'properties': {
-              'families': {'minItems': 1},
-            },
-          },
-        },
-      ]);
+      _expectModelFreeFamilySchema(structuredSchema);
       final family =
           (structured['families'] as List<dynamic>).single
               as Map<String, dynamic>;
