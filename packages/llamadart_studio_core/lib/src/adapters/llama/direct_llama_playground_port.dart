@@ -479,25 +479,7 @@ class DirectLlamaPlaygroundPort implements StudioPlaygroundPort {
       );
     }
 
-    final builtKeys = <DecisionKey<Object?>>[];
-    for (final spec in questions) {
-      switch (spec) {
-        case SystemOneChoiceQuestionSpec():
-          builtKeys.add(
-            ChoiceKey.labels(
-              spec.id,
-              spec.prompt,
-              criteria: <String, Object?>{
-                for (final label in spec.labels) label: null,
-              },
-            ),
-          );
-        case SystemOneScoreQuestionSpec():
-          builtKeys.add(ScoreKey.of(spec.id, spec.prompt, levels: spec.levels));
-        case SystemOneNoulQuestionSpec():
-          builtKeys.add(NoulKey.of(spec.id, spec.prompt));
-      }
-    }
+    final builtKeys = _buildDecisionKeysHelper(questions);
 
     final watch = Stopwatch()..start();
     final result = await engine.systemOne(

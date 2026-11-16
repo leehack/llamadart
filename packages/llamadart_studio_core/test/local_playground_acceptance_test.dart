@@ -352,6 +352,30 @@ void main() {
               closeTo((reference['$index'] as num).toDouble(), 0.05),
             );
           }
+          // Both rows use default Noul criteria supported by the Studio spec.
+          for (final rowId in ['readme/churn_risk', 'gguf_readme/churn_risk']) {
+            final row = referenceRows.singleWhere((row) => row['id'] == rowId);
+            final prompt = (row['question'] as Map)['instructions'] as String;
+            final noulResult = await controller.runDecisionBatch(
+              state: row['state'] as Object,
+              questions: [
+                SystemOneNoulQuestionSpec(id: 'churn', prompt: prompt),
+              ],
+            );
+            expect(controller.state.errorMessage, isNull);
+            expect(noulResult, isNotNull);
+            final noul = noulResult!.byId('churn')! as SystemOneNoulAnswer;
+            expect(noul.prompt, prompt);
+            expect(
+              noul.probabilityTrue,
+              closeTo(((row['answer'] as Map)['noul'] as num).toDouble(), 0.05),
+            );
+            record('noul', {
+              'referenceRow': rowId,
+              'probabilityTrue': noul.probabilityTrue,
+              'confidence': noul.confidence,
+            });
+          }
           final speed = await controller.runDecisionSpeedBenchmark(
             state: category['state'] as Object,
             questions: questions,
