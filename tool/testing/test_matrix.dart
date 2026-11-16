@@ -154,6 +154,23 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
         'speculative test/integration/stop_sequences_test.dart suite.',
   ),
   TestMatrixRow(
+    id: 'linux-backend-preflight',
+    tier: 'platform',
+    mode: 'manual local-only; Linux, existing GGUF and Flutter library',
+    covers:
+        'Linux unavailable-Vulkan AUTO CPU/CUDA preservation, healthy explicit '
+        'Vulkan and explicit CPU, with native offload and source/runtime hashes',
+    command:
+        'dart test -p vm -j 1 --run-skipped -t local-only '
+        'test/e2e/backends/linux_backend_preflight_e2e_test.dart; '
+        'set LLAMADART_LINUX_BACKEND_* and process-scoped loader variables '
+        'per doc/testing_matrix.md',
+    useWhen:
+        'Linux llama.cpp module preparation or Vulkan preflight changes. '
+        'Run one process per profile; CPU success does not qualify CUDA/Vulkan, '
+        'other GPU families or an ordinary Flutter app.',
+  ),
+  TestMatrixRow(
     id: 'native-prompt-cancel',
     tier: 'targeted',
     mode: 'local-only',

@@ -137,6 +137,14 @@ before: `gpuLayers: 0` or a CPU or BLAS `preferredBackend` selects the CPU on
 both runtimes, and a GPU `preferredBackend` (Vulkan, Metal, CUDA, OpenCL or
 HIP) selects the LiteRT-LM GPU backend.
 
+On Linux, native llama.cpp preflights the Vulkan loader and device list before
+automatic backend initialization. If Vulkan is unavailable, `GpuBackend.auto`
+loads the other bundled modules (CPU, BLAS, CUDA, HIP and OpenCL as applicable)
+without changing your device preference or GPU layer count. An explicit
+`GpuBackend.vulkan` load throws `LlamaUnsupportedException`; install a compatible
+Vulkan driver and ICD, choose `GpuBackend.auto`, or choose `GpuBackend.cpu`.
+A passing loader probe does not establish full driver compatibility.
+
 `cpu`, `gpu` and `npu` are requirements. The model runs there, or the load
 throws `LlamaUnsupportedException` naming the device, runtime and platform; it
 never falls back to another device:

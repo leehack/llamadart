@@ -10,6 +10,7 @@ import 'package:path/path.dart' as path;
 
 import '../backend.dart';
 import '../isolate_shutdown_releases.dart';
+import '../linux_vulkan_probe_io.dart';
 import '../windows_runtime_libraries.dart';
 import '../../core/decision/decision_decoder.dart';
 import '../../core/exceptions.dart';
@@ -253,9 +254,10 @@ class LlamaCppService {
   /// [ComputeDevice.gpu] load checks for a backend, the calls that create,
   /// free and run models and contexts, the ggml calls of decision heads, the
   /// calls that allocate and free per-request token batches and prepared
-  /// embedding resources, the read of the Vulkan device facts, the registered
-  /// ggml devices a load selects from, the devices the registry of an
-  /// explicit GPU backend lists, the probe of whether a device's
+  /// embedding resources, the Linux Vulkan loader availability check and Vulkan
+  /// device facts, the registered ggml devices a load selects from, the devices
+  /// the registry of an explicit GPU backend lists, the probe of whether a
+  /// device's
   /// backend has row split buffer types, the allocator of the model paths,
   /// tensor splits and tensor buffer overrides [loadModel] and draft model
   /// loads pass to llama.cpp, and the allocator
@@ -280,6 +282,7 @@ class LlamaCppService {
     void Function(Pointer<mtmd_bitmap>)? embeddingBitmapFree,
     void Function(Pointer<llama_batch_ext>)? embeddingBatchFree,
     VulkanDeviceProbe Function()? vulkanDeviceProbe,
+    String? Function()? linuxVulkanProbe,
     List<GgmlDeviceEntry> Function()? registeredDevices,
     List<ggml_backend_dev_t>? Function(GpuBackend backend)? backendDevices,
     bool Function(GgmlDeviceEntry device)? splitBufferTypeProbe,
@@ -305,6 +308,7 @@ class LlamaCppService {
        _embeddingBitmapFree = embeddingBitmapFree,
        _embeddingBatchFree = embeddingBatchFree,
        _vulkanDeviceProbeOverride = vulkanDeviceProbe,
+       _linuxVulkanProbeOverride = linuxVulkanProbe,
        _registeredDevicesOverride = registeredDevices,
        _backendDevicesOverride = backendDevices,
        _splitBufferTypeProbeOverride = splitBufferTypeProbe,
@@ -413,6 +417,7 @@ class LlamaCppService {
   final void Function(Pointer<mtmd_bitmap>)? _embeddingBitmapFree;
   final void Function(Pointer<llama_batch_ext>)? _embeddingBatchFree;
   final VulkanDeviceProbe Function()? _vulkanDeviceProbeOverride;
+  final String? Function()? _linuxVulkanProbeOverride;
   late final LlamaCppObjectCalls _calls =
       _objectCallsOverride ?? _resolveObjectCalls();
 
@@ -2615,64 +2620,130 @@ class LlamaCppService {
     }
   }
 
-  void _prepareBackendsForModelLoad(GpuBackend preferredBackend) {
+  void _tryLoadBackendModuleIfBundled(
+    String backend, {
+    String? operatingSystem,
+    String? Function()? linuxVulkanProbe,
+    bool Function(String backend)? loadBackendModule,
+  }) {
+    if (_backendModuleDirectory != null && !_isBackendModuleBundled(backend)) {
+      return;
+    }
+    if (backend == 'vulkan') {
+      final reason = _linuxVulkanUnavailableReason(
+        operatingSystem: operatingSystem,
+        probe: linuxVulkanProbe,
+      );
+      if (reason != null) {
+        _recordStartupDiagnostic('Skipping the Vulkan backend: $reason');
+        return;
+      }
+    }
+    (loadBackendModule ?? _tryLoadBackendModule)(backend);
+  }
+
+  String? _linuxVulkanUnavailableReason({
+    String? operatingSystem,
+    String? Function()? probe,
+  }) {
+    if ((operatingSystem ?? Platform.operatingSystem) != 'linux') return null;
+    return (probe ??
+        _linuxVulkanProbeOverride ??
+        probeLinuxVulkanUnavailableReason)();
+  }
+
+  void _prepareBackendsForModelLoad(
+    GpuBackend preferredBackend, {
+    String? operatingSystem,
+    String? Function()? linuxVulkanProbe,
+    bool Function(String? directory)? loadAllBackends,
+    void Function(String backend)? loadBackendModule,
+  }) {
+    final os = operatingSystem ?? Platform.operatingSystem;
+    final loadModule = loadBackendModule ?? _tryLoadBackendModuleIfBundled;
+    final loadAll =
+        loadAllBackends ??
+        (String? directory) => directory == null
+            ? _tryLoadAllBackendsBestEffort()
+            : _tryLoadAllBackendsFromPathBestEffort(directory);
     // Apple bundles are consolidated into a single native library and do not
     // ship separate ggml backend modules.
-    if ((Platform.isMacOS || Platform.isIOS) &&
-        _backendModuleDirectory == null) {
+    if ((os == 'macos' || os == 'ios') && _backendModuleDirectory == null) {
       return;
     }
     final backendModuleDirectory = _backendModuleDirectory;
+    if (os == 'linux' &&
+        (preferredBackend == GpuBackend.auto ||
+            preferredBackend == GpuBackend.vulkan)) {
+      final reason = _linuxVulkanUnavailableReason(
+        operatingSystem: os,
+        probe: linuxVulkanProbe,
+      );
+      if (reason != null) {
+        if (preferredBackend == GpuBackend.vulkan) {
+          throw LlamaUnsupportedException(
+            'Cannot initialize the Linux Vulkan backend: $reason '
+            'Use GpuBackend.auto to keep other available backends, or '
+            'GpuBackend.cpu for CPU-only inference.',
+          );
+        }
+        // Loading all modules can abort inside ggml-vulkan before Dart can
+        // handle a missing ICD, notably when Flutter supplies the unwinder.
+        _recordStartupDiagnostic('Skipping the Vulkan backend: $reason');
+        for (final backend in ['cpu', 'blas', 'cuda', 'hip', 'opencl']) {
+          loadModule(backend);
+        }
+        return;
+      }
+    }
 
     switch (preferredBackend) {
       case GpuBackend.auto:
-        final loadedAll = backendModuleDirectory == null
-            ? _tryLoadAllBackendsBestEffort()
-            : _tryLoadAllBackendsFromPathBestEffort(backendModuleDirectory);
+        final loadedAll = loadAll(backendModuleDirectory);
 
         if (!loadedAll) {
           // Fallback when load-all symbols are unavailable.
-          _tryLoadBackendModuleIfBundled('cpu');
+          loadModule('cpu');
         }
 
-        if (Platform.isAndroid || Platform.isLinux || Platform.isWindows) {
-          _tryLoadBackendModuleIfBundled('vulkan');
+        if (os == 'android' || os == 'linux' || os == 'windows') {
+          loadModule('vulkan');
         }
-        if (Platform.isLinux || Platform.isWindows) {
-          _tryLoadBackendModuleIfBundled('blas');
-          _tryLoadBackendModuleIfBundled('cuda');
+        if (os == 'linux' || os == 'windows') {
+          loadModule('blas');
+          loadModule('cuda');
         }
-        if (Platform.isLinux) {
-          _tryLoadBackendModuleIfBundled('hip');
+        if (os == 'linux') {
+          loadModule('hip');
         }
         return;
       case GpuBackend.cpu:
         // Explicit CPU mode must not initialize optional GPU backends.
-        _tryLoadBackendModuleIfBundled('cpu');
+        loadModule('cpu');
         return;
       case GpuBackend.vulkan:
-        _tryLoadBackendModuleIfBundled('cpu');
-        _tryLoadBackendModuleIfBundled('vulkan');
+        loadModule('cpu');
+        loadModule('vulkan');
         return;
       case GpuBackend.metal:
-        _tryLoadBackendModuleIfBundled('cpu');
-        _tryLoadBackendModuleIfBundled('metal');
+        loadModule('cpu');
+        loadModule('metal');
         return;
       case GpuBackend.cuda:
-        _tryLoadBackendModuleIfBundled('cpu');
-        _tryLoadBackendModuleIfBundled('cuda');
+        loadModule('cpu');
+        loadModule('cuda');
         return;
       case GpuBackend.blas:
-        _tryLoadBackendModuleIfBundled('cpu');
-        _tryLoadBackendModuleIfBundled('blas');
+        loadModule('cpu');
+        loadModule('blas');
         return;
       case GpuBackend.opencl:
-        _tryLoadBackendModuleIfBundled('cpu');
-        _tryLoadBackendModuleIfBundled('opencl');
+        loadModule('cpu');
+        loadModule('opencl');
         return;
       case GpuBackend.hip:
-        _tryLoadBackendModuleIfBundled('cpu');
-        _tryLoadBackendModuleIfBundled('hip');
+        loadModule('cpu');
+        loadModule('hip');
         return;
     }
   }
