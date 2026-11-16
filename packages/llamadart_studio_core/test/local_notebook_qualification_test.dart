@@ -12,6 +12,7 @@ import 'studio_test_fakes.dart';
 
 // All inputs are synthetic. Local files are explicit; no discovery or downloads.
 void main() {
+  final threads = _notesAcceptanceThreads();
   final chatPath = Platform.environment['STUDIO_ACCEPTANCE_CHAT_MODEL'];
   final embedPath = Platform.environment['STUDIO_ACCEPTANCE_EMBED_MODEL'];
   final rerankPath = Platform.environment['STUDIO_ACCEPTANCE_RERANK_MODEL'];
@@ -67,8 +68,8 @@ void main() {
           autoTuneHardware: false,
           contextSize: 8192,
           requestedContextSize: 8192,
-          numberOfThreads: 2,
-          numberOfThreadsBatch: 2,
+          numberOfThreads: threads,
+          numberOfThreadsBatch: threads,
           maxTokens: 512,
           temperature: 0,
           thinkingEnabled: false,
@@ -101,7 +102,7 @@ void main() {
         await lab.loadLabModel(embedder);
         if (rerankPath != null) await lab.loadLabModel(reranker);
         print(
-          'NOTES_QUALIFICATION_RUNTIME ${jsonEncode(<String, Object?>{'chatDescriptor': chatId, 'embeddingDescriptor': embedder.id, 'rerankerDescriptor': rerankPath == null ? null : reranker.id, 'backend': inference.runtimeStore.state.backendName, 'computeDevice': settings.computeDevice.name, 'gpuLayers': settings.gpuLayers, 'resolvedGpuLayers': runtime.resolvedGpuLayers, 'contextSize': settings.contextSize, 'temperature': settings.temperature, 'maxTokens': settings.maxTokens, 'thinkingEnabled': settings.thinkingEnabled})}',
+          'NOTES_QUALIFICATION_RUNTIME ${jsonEncode(<String, Object?>{'chatDescriptor': chatId, 'embeddingDescriptor': embedder.id, 'rerankerDescriptor': rerankPath == null ? null : reranker.id, 'backend': inference.runtimeStore.state.backendName, 'computeDevice': settings.computeDevice.name, 'gpuLayers': settings.gpuLayers, 'resolvedGpuLayers': runtime.resolvedGpuLayers, 'contextSize': settings.contextSize, 'resolvedContextSize': runtime.resolvedContextSize, 'numberOfThreads': settings.numberOfThreads, 'numberOfThreadsBatch': settings.numberOfThreadsBatch, 'temperature': settings.temperature, 'maxTokens': settings.maxTokens, 'thinkingEnabled': settings.thinkingEnabled})}',
         );
       });
       tearDownAll(() async {
@@ -291,6 +292,20 @@ void main() {
         : 'Set STUDIO_ACCEPTANCE_CHAT_MODEL and STUDIO_ACCEPTANCE_EMBED_MODEL to explicit local GGUF paths.',
     timeout: const Timeout(Duration(minutes: 10)),
   );
+}
+
+int _notesAcceptanceThreads() {
+  final value = Platform.environment['STUDIO_NOTES_ACCEPTANCE_THREADS'];
+  if (value == null) return 2;
+  final threads = RegExp(r'^[0-9]+$').hasMatch(value)
+      ? int.tryParse(value)
+      : null;
+  if (threads == null || threads < 1 || threads > 32) {
+    throw ArgumentError(
+      'STUDIO_NOTES_ACCEPTANCE_THREADS must be a decimal integer from 1 to 32.',
+    );
+  }
+  return threads;
 }
 
 Future<String> _answer(NotebookController notebook, String question) async {

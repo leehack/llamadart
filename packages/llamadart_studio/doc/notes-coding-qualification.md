@@ -34,6 +34,14 @@ cd packages/llamadart_studio_core
 TMPDIR="$(mktemp -d)" dart test test/local_notebook_qualification_test.dart -j 1 --reporter expanded
 ```
 
+`STUDIO_NOTES_ACCEPTANCE_THREADS` optionally sets both decode and batch CPU
+threads to a decimal integer from 1 to 32; omitted, it stays at two. Invalid
+values fail before the suite runs. An explicit override (for example, `4` on
+a dedicated 16-vCPU Windows CPU guest with `STUDIO_NOTES_ACCEPTANCE_CPU=1`)
+defines a separate profile requiring its own run evidence. The runtime receipt
+prints configured decode/batch threads and both requested and resolved context
+sizes. Retain earlier failed profiles as failed when evaluating a new profile.
+
 The suite exercises distractor retrieval, two-source synthesis, contradictory
 sources, missing information, edits/reindexing, fresh-controller reload, and
 source deletion. Check the printed synthetic answers against source content.
