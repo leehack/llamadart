@@ -1,5 +1,6 @@
 import 'package:llamadart/llamadart.dart';
 import 'package:meta/meta.dart';
+import 'package:synchronized/synchronized.dart';
 
 import '../adapters/curated_studio_model_catalog.dart';
 import '../domain/studio_model_descriptor.dart';
@@ -109,6 +110,12 @@ class ImageWorkspaceController {
   final StudioModelStoragePort _storage;
   final StudioImagePort _image;
   final StudioModelCatalog _catalog;
+  final Lock _runtimeLock = Lock();
+  bool _disposed = false;
+  int _generation = 0;
+  Future<void>? _disposeFuture;
+
+  bool _isCurrent(int generation) => !_disposed && generation == _generation;
 
   /// Whether running on Web.
   final bool isWeb;
@@ -141,6 +148,8 @@ class ImageWorkspaceController {
 
   /// Probes Stable Diffusion runtime availability on the current host.
   Future<void> initialize() async {
+    if (_disposed) return;
+    final generation = _generation;
     if (isWeb) {
       _store.update(
         (ImageWorkspaceState s) => s.copyWith(
@@ -155,11 +164,16 @@ class ImageWorkspaceController {
       return;
     }
     try {
-      final caps = await _image.checkRuntime();
-      _store.update(
-        (ImageWorkspaceState s) => s.copyWith(runtimeCapabilities: caps),
-      );
+      await _runtimeLock.synchronized(() async {
+        if (!_isCurrent(generation)) return;
+        final caps = await _image.checkRuntime();
+        if (!_isCurrent(generation)) return;
+        _store.update(
+          (ImageWorkspaceState s) => s.copyWith(runtimeCapabilities: caps),
+        );
+      });
     } catch (error) {
+      if (!_isCurrent(generation)) return;
       _store.update(
         (ImageWorkspaceState s) =>
             s.copyWith(errorMessage: humanizeStudioError(error)),
@@ -169,6 +183,8 @@ class ImageWorkspaceController {
 
   /// Downloads and loads [descriptor] into the diffusion engine.
   Future<void> loadModel(StudioModelDescriptor descriptor) async {
+    if (_disposed) return;
+    final generation = _generation;
     _store.update(
       (ImageWorkspaceState s) => s.copyWith(
         isLoadingModel: true,
@@ -178,16 +194,21 @@ class ImageWorkspaceController {
     );
     try {
       final assets = await _storage.ensureDownloaded(descriptor, isWeb: isWeb);
-      final caps = await _image.loadModel(assets: assets);
-      _store.update(
-        (ImageWorkspaceState s) => s.copyWith(
-          activeModel: descriptor,
-          runtimeCapabilities: caps,
-          isLoadingModel: false,
-          clearLoadingModel: true,
-        ),
-      );
+      await _runtimeLock.synchronized(() async {
+        if (!_isCurrent(generation)) return;
+        final caps = await _image.loadModel(assets: assets);
+        if (!_isCurrent(generation)) return;
+        _store.update(
+          (ImageWorkspaceState s) => s.copyWith(
+            activeModel: descriptor,
+            runtimeCapabilities: caps,
+            isLoadingModel: false,
+            clearLoadingModel: true,
+          ),
+        );
+      });
     } catch (error) {
+      if (!_isCurrent(generation)) return;
       _store.update(
         (ImageWorkspaceState s) => s.copyWith(
           isLoadingModel: false,
@@ -198,12 +219,15 @@ class ImageWorkspaceController {
     }
   }
 
-  Future<void> _ensureCachedCheckpointLoaded() async {
+  Future<void> _ensureCachedCheckpointLoaded(int generation) async {
+    if (!_isCurrent(generation)) return;
     if (_store.state.activeModel != null) {
       return;
     }
     for (final candidate in availableModels) {
-      if (await _storage.isCached(candidate, isWeb: isWeb)) {
+      final cached = await _storage.isCached(candidate, isWeb: isWeb);
+      if (!_isCurrent(generation)) return;
+      if (cached) {
         await loadModel(candidate);
         return;
       }
@@ -220,71 +244,81 @@ class ImageWorkspaceController {
     double guidanceScale = 1.0,
     int? seed,
   }) async {
+    if (_disposed) return null;
+    final generation = _generation;
     final trimmed = prompt.trim();
     if (trimmed.isEmpty || _store.state.isGenerating) {
       return null;
     }
-    await _ensureCachedCheckpointLoaded();
-    if (_store.state.errorMessage != null && _store.state.activeModel == null) {
-      return null;
-    }
-    _store.update(
-      (ImageWorkspaceState s) => s.copyWith(
-        isGenerating: true,
-        step: 0,
-        totalSteps: steps,
-        phaseLabel: 'Encoding prompt...',
-        clearErrorMessage: true,
-      ),
-    );
+    await _ensureCachedCheckpointLoaded(generation);
+    if (!_isCurrent(generation)) return null;
+    return _runtimeLock.synchronized(() async {
+      if (!_isCurrent(generation)) return null;
+      if (_store.state.errorMessage != null &&
+          _store.state.activeModel == null) {
+        return null;
+      }
+      _store.update(
+        (ImageWorkspaceState s) => s.copyWith(
+          isGenerating: true,
+          step: 0,
+          totalSteps: steps,
+          phaseLabel: 'Encoding prompt...',
+          clearErrorMessage: true,
+        ),
+      );
 
-    try {
-      final item = await _image.generateImage(
-        prompt: trimmed,
-        negativePrompt: negativePrompt.trim(),
-        width: width,
-        height: height,
-        steps: steps,
-        guidanceScale: guidanceScale,
-        seed: seed,
-        onProgress: (ImageGenerationProgressEvent event) {
-          final label = switch (event.phase) {
-            ImageGenerationPhase.loading => 'Loading tensors...',
-            ImageGenerationPhase.encodingPrompt => 'Encoding text prompt...',
-            ImageGenerationPhase.sampling =>
-              'Sampling step ${event.step} / ${event.steps}',
-            ImageGenerationPhase.decoding => 'Decoding VAE latents...',
-          };
-          _store.update(
-            (ImageWorkspaceState s) => s.copyWith(
-              step: event.step,
-              totalSteps: event.steps,
-              phaseLabel: label,
-            ),
-          );
-        },
-      );
-      _store.update(
-        (ImageWorkspaceState s) => s.copyWith(
-          isGenerating: false,
-          clearPhaseLabel: true,
-          gallery: <StudioGeneratedImageItem>[
-            item,
-            ...s.gallery,
-          ].take(maxGalleryItems).toList(growable: false),
-        ),
-      );
-      return item;
-    } catch (error) {
-      _store.update(
-        (ImageWorkspaceState s) => s.copyWith(
-          isGenerating: false,
-          clearPhaseLabel: true,
-          errorMessage: humanizeStudioError(error),
-        ),
-      );
-      return null;
-    }
+      try {
+        final item = await _image.generateImage(
+          prompt: trimmed,
+          negativePrompt: negativePrompt.trim(),
+          width: width,
+          height: height,
+          steps: steps,
+          guidanceScale: guidanceScale,
+          seed: seed,
+          onProgress: (ImageGenerationProgressEvent event) {
+            if (!_isCurrent(generation)) return;
+            final label = switch (event.phase) {
+              ImageGenerationPhase.loading => 'Loading tensors...',
+              ImageGenerationPhase.encodingPrompt => 'Encoding text prompt...',
+              ImageGenerationPhase.sampling =>
+                'Sampling step ${event.step} / ${event.steps}',
+              ImageGenerationPhase.decoding => 'Decoding VAE latents...',
+            };
+            _store.update(
+              (ImageWorkspaceState s) => s.copyWith(
+                step: event.step,
+                totalSteps: event.steps,
+                phaseLabel: label,
+              ),
+            );
+          },
+        );
+        if (!_isCurrent(generation)) return null;
+        _store.update(
+          (ImageWorkspaceState s) => s.copyWith(
+            isGenerating: false,
+            clearPhaseLabel: true,
+            gallery: <StudioGeneratedImageItem>[
+              item,
+              ...s.gallery,
+            ].take(maxGalleryItems).toList(growable: false),
+          ),
+        );
+        return item;
+      } catch (error) {
+        if (!_isCurrent(generation)) return null;
+        _store.update(
+          (ImageWorkspaceState s) => s.copyWith(
+            isGenerating: false,
+            clearPhaseLabel: true,
+            errorMessage: humanizeStudioError(error),
+          ),
+        );
+        return null;
+      }
+    });
   }
 
   /// Maximum in-memory PNG gallery items retained per session.
@@ -311,17 +345,41 @@ class ImageWorkspaceController {
 
   /// Cancels the active image generation pass.
   void cancelGeneration() {
-    _image.cancelGeneration();
+    if (!_disposed) _image.cancelGeneration();
   }
 
   /// Unloads the active diffusion engine from memory.
   Future<void> unloadModel() async {
-    await _image.dispose();
+    if (_disposed) return;
+    _generation++;
+    _cancelPendingLoad();
+    if (_store.state.isGenerating) _image.cancelGeneration();
     _store.update(
-      (ImageWorkspaceState s) => s.copyWith(clearActiveModel: true),
+      (s) => s.copyWith(
+        clearActiveModel: true,
+        clearLoadingModel: true,
+        isLoadingModel: false,
+        isGenerating: false,
+        clearPhaseLabel: true,
+      ),
     );
+    await _runtimeLock.synchronized(() async {
+      if (!_disposed) await _image.dispose();
+    });
   }
 
-  /// Disposes internal reactive store.
-  Future<void> dispose() => _store.dispose();
+  void _cancelPendingLoad() {
+    final loading = _store.state.loadingModel;
+    if (loading != null) _storage.cancelDownload(loading.id);
+  }
+
+  /// Invalidates pending downloads and drains entered native calls before shutdown.
+  Future<void> dispose() {
+    if (_disposeFuture != null) return _disposeFuture!;
+    _disposed = true;
+    _generation++;
+    _cancelPendingLoad();
+    if (_store.state.isGenerating) _image.cancelGeneration();
+    return _disposeFuture = _runtimeLock.synchronized(_store.dispose);
+  }
 }

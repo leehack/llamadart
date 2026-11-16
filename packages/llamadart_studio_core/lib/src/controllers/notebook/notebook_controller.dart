@@ -92,6 +92,9 @@ class NotebookController {
   // Indexing snapshots must commit in the same order as note mutations.
   final Lock _noteOperations = Lock();
 
+  final Lock _sttOperations = Lock();
+  bool _disposed = false;
+  Future<void>? _disposeFuture;
   bool _sttLoadedOnce = false;
   int _idCounter = 0;
 
@@ -448,6 +451,7 @@ class NotebookController {
   /// Transcribes an audio note using Studio's local ASR model (e.g.
   /// `Qwen3-ASR 0.6B` or `Moonshine Tiny`) and stores the transcript onto the note.
   Future<String?> transcribeAudioNote(String noteId) async {
+    if (_disposed) return null;
     final stt = _stt;
     if (stt == null) {
       _store.update(
@@ -500,7 +504,9 @@ class NotebookController {
 
         StudioModelDescriptor? chosen;
         for (final c in candidates) {
-          if (await _storage.isCached(c, isWeb: isWeb)) {
+          final cached = await _storage.isCached(c, isWeb: isWeb);
+          if (_disposed) return null;
+          if (cached) {
             chosen = c;
             break;
           }
@@ -513,22 +519,35 @@ class NotebookController {
         }
         _store.update((NotebookState s) => s.copyWith(loadingModel: chosen));
         final assets = await _storage.ensureDownloaded(chosen, isWeb: isWeb);
-        await stt.loadSttModel(assets: assets, isWeb: isWeb);
-        _sttLoadedOnce = true;
+        await _sttOperations.synchronized(() async {
+          if (_disposed) return;
+          await stt.loadSttModel(assets: assets, isWeb: isWeb);
+          if (!_disposed) _sttLoadedOnce = true;
+        });
+        if (_disposed) return null;
         _store.update((NotebookState s) => s.copyWith(clearLoadingModel: true));
       }
 
       final audioBytes = await _noteStore.readAudioBytes(target);
-      final result = await stt.transcribe(
-        audioBytes: audioBytes,
-        audioFilePath: target.audioLocalPath,
-        contextPrompt: target.title,
-      );
-      final transcript = result.text.trim();
-      await updateNote(noteId, transcript: transcript);
-      _store.update((NotebookState s) => s.copyWith(isTranscribingNote: false));
-      return transcript;
+      final audioNote = target;
+      if (_disposed) return null;
+      return await _sttOperations.synchronized(() async {
+        if (_disposed) return null;
+        final result = await stt.transcribe(
+          audioBytes: audioBytes,
+          audioFilePath: audioNote.audioLocalPath,
+          contextPrompt: audioNote.title,
+        );
+        if (_disposed) return null;
+        final transcript = result.text.trim();
+        await updateNote(noteId, transcript: transcript);
+        _store.update(
+          (NotebookState s) => s.copyWith(isTranscribingNote: false),
+        );
+        return transcript;
+      });
     } catch (error) {
+      if (_disposed) return null;
       _store.update(
         (NotebookState s) => s.copyWith(
           clearLoadingModel: true,
@@ -636,12 +655,18 @@ class NotebookController {
     await _noteStore.saveAll(notes);
   }
 
-  /// Disposes internal reactive state (and owned [LabModelCoordinator] if
-  /// not shared externally).
-  Future<void> dispose() async {
-    if (_ownsLabModels) {
-      await _labModels.dispose();
-    }
+  /// Invalidates pending ASR resolution and drains entered native ASR calls.
+  Future<void> dispose() {
+    if (_disposeFuture != null) return _disposeFuture!;
+    _disposed = true;
+    final loading = _store.state.loadingModel;
+    if (loading != null) _storage.cancelDownload(loading.id);
+    return _disposeFuture = _dispose();
+  }
+
+  Future<void> _dispose() async {
+    if (_ownsLabModels) await _labModels.dispose();
+    await _sttOperations.synchronized(() async {});
     await _store.dispose();
   }
 }

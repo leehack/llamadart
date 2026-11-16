@@ -2,6 +2,7 @@ import 'dart:typed_data';
 
 import 'package:llamadart/llamadart.dart';
 import 'package:meta/meta.dart';
+import 'package:synchronized/synchronized.dart';
 
 import '../adapters/curated_studio_model_catalog.dart';
 import '../domain/studio_model_descriptor.dart';
@@ -193,6 +194,12 @@ class SpeechWorkspaceController {
   final StudioTtsPort? _tts;
   final StudioSttPort? _stt;
   final StudioModelCatalog _catalog;
+  final Lock _runtimeLock = Lock();
+  bool _disposed = false;
+  int _generation = 0;
+  Future<void>? _disposeFuture;
+
+  bool _isCurrent(int generation) => !_disposed && generation == _generation;
 
   /// Whether running on WebGPU.
   final bool isWeb;
@@ -243,6 +250,8 @@ class SpeechWorkspaceController {
 
   /// Downloads and loads [descriptor] as the active TTS model.
   Future<void> loadTtsModel(StudioModelDescriptor descriptor) async {
+    if (_disposed) return;
+    final generation = _generation;
     final tts = _tts;
     if (tts == null) {
       _store.update(
@@ -261,16 +270,21 @@ class SpeechWorkspaceController {
     );
     try {
       final assets = await _storage.ensureDownloaded(descriptor, isWeb: isWeb);
-      final caps = await tts.loadTtsModel(assets: assets, isWeb: isWeb);
-      _store.update(
-        (SpeechWorkspaceState s) => s.copyWith(
-          activeTtsModel: descriptor,
-          ttsCapabilities: caps,
-          isLoadingTts: false,
-          clearLoadingTtsModel: true,
-        ),
-      );
+      await _runtimeLock.synchronized(() async {
+        if (!_isCurrent(generation)) return;
+        final caps = await tts.loadTtsModel(assets: assets, isWeb: isWeb);
+        if (!_isCurrent(generation)) return;
+        _store.update(
+          (SpeechWorkspaceState s) => s.copyWith(
+            activeTtsModel: descriptor,
+            ttsCapabilities: caps,
+            isLoadingTts: false,
+            clearLoadingTtsModel: true,
+          ),
+        );
+      });
     } catch (error) {
+      if (!_isCurrent(generation)) return;
       _store.update(
         (SpeechWorkspaceState s) => s.copyWith(
           isLoadingTts: false,
@@ -283,6 +297,8 @@ class SpeechWorkspaceController {
 
   /// Downloads and loads [descriptor] as the active STT model.
   Future<void> loadSttModel(StudioModelDescriptor descriptor) async {
+    if (_disposed) return;
+    final generation = _generation;
     final stt = _stt;
     if (stt == null) {
       _store.update(
@@ -301,16 +317,21 @@ class SpeechWorkspaceController {
     );
     try {
       final assets = await _storage.ensureDownloaded(descriptor, isWeb: isWeb);
-      final caps = await stt.loadSttModel(assets: assets, isWeb: isWeb);
-      _store.update(
-        (SpeechWorkspaceState s) => s.copyWith(
-          activeSttModel: descriptor,
-          sttCapabilities: caps,
-          isLoadingStt: false,
-          clearLoadingSttModel: true,
-        ),
-      );
+      await _runtimeLock.synchronized(() async {
+        if (!_isCurrent(generation)) return;
+        final caps = await stt.loadSttModel(assets: assets, isWeb: isWeb);
+        if (!_isCurrent(generation)) return;
+        _store.update(
+          (SpeechWorkspaceState s) => s.copyWith(
+            activeSttModel: descriptor,
+            sttCapabilities: caps,
+            isLoadingStt: false,
+            clearLoadingSttModel: true,
+          ),
+        );
+      });
     } catch (error) {
+      if (!_isCurrent(generation)) return;
       _store.update(
         (SpeechWorkspaceState s) => s.copyWith(
           isLoadingStt: false,
@@ -321,24 +342,30 @@ class SpeechWorkspaceController {
     }
   }
 
-  Future<void> _ensureCachedTtsLoaded() async {
+  Future<void> _ensureCachedTtsLoaded(int generation) async {
+    if (!_isCurrent(generation)) return;
     if (_store.state.activeTtsModel != null) {
       return;
     }
     for (final candidate in availableTtsModels) {
-      if (await _storage.isCached(candidate, isWeb: isWeb)) {
+      final cached = await _storage.isCached(candidate, isWeb: isWeb);
+      if (!_isCurrent(generation)) return;
+      if (cached) {
         await loadTtsModel(candidate);
         return;
       }
     }
   }
 
-  Future<void> _ensureCachedSttLoaded() async {
+  Future<void> _ensureCachedSttLoaded(int generation) async {
+    if (!_isCurrent(generation)) return;
     if (_store.state.activeSttModel != null) {
       return;
     }
     for (final candidate in availableSttModels) {
-      if (await _storage.isCached(candidate, isWeb: isWeb)) {
+      final cached = await _storage.isCached(candidate, isWeb: isWeb);
+      if (!_isCurrent(generation)) return;
+      if (cached) {
         await loadSttModel(candidate);
         return;
       }
@@ -354,6 +381,8 @@ class SpeechWorkspaceController {
     String? speakerReferencePath,
     double temperature = 0.8,
   }) async {
+    if (_disposed) return null;
+    final generation = _generation;
     final trimmed = text.trim();
     if (trimmed.isEmpty || _store.state.isSynthesizing) {
       return null;
@@ -367,68 +396,76 @@ class SpeechWorkspaceController {
       );
       return null;
     }
-    await _ensureCachedTtsLoaded();
-    if (_store.state.errorMessage != null &&
-        _store.state.activeTtsModel == null) {
-      return null;
-    }
-    _store.update(
-      (SpeechWorkspaceState s) => s.copyWith(
-        isSynthesizing: true,
-        framesGenerated: 0,
-        ttsPhaseLabel: 'Processing prompt...',
-        clearErrorMessage: true,
-      ),
-    );
+    await _ensureCachedTtsLoaded(generation);
+    if (!_isCurrent(generation)) return null;
+    return _runtimeLock.synchronized(() async {
+      if (!_isCurrent(generation)) return null;
+      if (_store.state.errorMessage != null &&
+          _store.state.activeTtsModel == null) {
+        return null;
+      }
+      _store.update(
+        (SpeechWorkspaceState s) => s.copyWith(
+          isSynthesizing: true,
+          framesGenerated: 0,
+          ttsPhaseLabel: 'Processing prompt...',
+          clearErrorMessage: true,
+        ),
+      );
 
-    try {
-      final clip = await tts.synthesize(
-        text: trimmed,
-        isWeb: isWeb,
-        language: language,
-        voice: voice,
-        speakerReferenceBytes: speakerReferenceBytes,
-        speakerReferencePath: speakerReferencePath,
-        temperature: temperature,
-        onProgress: (int frames, TextToSpeechProgressPhase phase) {
-          _store.update(
-            (SpeechWorkspaceState s) => s.copyWith(
-              framesGenerated: frames,
-              ttsPhaseLabel: phase == TextToSpeechProgressPhase.processingPrompt
-                  ? 'Encoding text & speaker reference...'
-                  : 'Generating codec frames ($frames)...',
-            ),
-          );
-        },
-      );
-      final entry = StudioSynthesizedClipEntry(
-        id: 'tts_${DateTime.now().microsecondsSinceEpoch}_${++_clipSequence}',
-        promptText: trimmed,
-        clip: clip,
-        createdAt: DateTime.now(),
-        language: language,
-      );
-      _store.update(
-        (SpeechWorkspaceState s) => s.copyWith(
-          isSynthesizing: false,
-          clearTtsPhaseLabel: true,
-          synthesizedHistory: <StudioSynthesizedClipEntry>[
-            entry,
-            ...s.synthesizedHistory,
-          ].take(maxHistoryItems).toList(growable: false),
-        ),
-      );
-      return entry;
-    } catch (error) {
-      _store.update(
-        (SpeechWorkspaceState s) => s.copyWith(
-          isSynthesizing: false,
-          clearTtsPhaseLabel: true,
-          errorMessage: humanizeStudioError(error),
-        ),
-      );
-      return null;
-    }
+      try {
+        final clip = await tts.synthesize(
+          text: trimmed,
+          isWeb: isWeb,
+          language: language,
+          voice: voice,
+          speakerReferenceBytes: speakerReferenceBytes,
+          speakerReferencePath: speakerReferencePath,
+          temperature: temperature,
+          onProgress: (int frames, TextToSpeechProgressPhase phase) {
+            if (!_isCurrent(generation)) return;
+            _store.update(
+              (SpeechWorkspaceState s) => s.copyWith(
+                framesGenerated: frames,
+                ttsPhaseLabel:
+                    phase == TextToSpeechProgressPhase.processingPrompt
+                    ? 'Encoding text & speaker reference...'
+                    : 'Generating codec frames ($frames)...',
+              ),
+            );
+          },
+        );
+        if (!_isCurrent(generation)) return null;
+        final entry = StudioSynthesizedClipEntry(
+          id: 'tts_${DateTime.now().microsecondsSinceEpoch}_${++_clipSequence}',
+          promptText: trimmed,
+          clip: clip,
+          createdAt: DateTime.now(),
+          language: language,
+        );
+        _store.update(
+          (SpeechWorkspaceState s) => s.copyWith(
+            isSynthesizing: false,
+            clearTtsPhaseLabel: true,
+            synthesizedHistory: <StudioSynthesizedClipEntry>[
+              entry,
+              ...s.synthesizedHistory,
+            ].take(maxHistoryItems).toList(growable: false),
+          ),
+        );
+        return entry;
+      } catch (error) {
+        if (!_isCurrent(generation)) return null;
+        _store.update(
+          (SpeechWorkspaceState s) => s.copyWith(
+            isSynthesizing: false,
+            clearTtsPhaseLabel: true,
+            errorMessage: humanizeStudioError(error),
+          ),
+        );
+        return null;
+      }
+    });
   }
 
   /// Maximum synthesized WAV clips retained in RAM per session.
@@ -455,7 +492,7 @@ class SpeechWorkspaceController {
 
   /// Cancels active speech synthesis.
   void cancelSynthesis() {
-    _tts?.cancelSynthesis();
+    if (!_disposed) _tts?.cancelSynthesis();
   }
 
   /// Transcribes an audio file or byte buffer.
@@ -464,6 +501,8 @@ class SpeechWorkspaceController {
     String? audioFilePath,
     String? contextPrompt,
   }) async {
+    if (_disposed) return null;
+    final generation = _generation;
     if (_store.state.isTranscribing) {
       return null;
     }
@@ -476,49 +515,86 @@ class SpeechWorkspaceController {
       );
       return null;
     }
-    await _ensureCachedSttLoaded();
-    if (_store.state.errorMessage != null &&
-        _store.state.activeSttModel == null) {
-      return null;
-    }
-    _store.update(
-      (SpeechWorkspaceState s) =>
-          s.copyWith(isTranscribing: true, clearErrorMessage: true),
-    );
-    try {
-      final result = await stt.transcribe(
-        audioBytes: audioBytes,
-        audioFilePath: audioFilePath,
-        contextPrompt: contextPrompt,
-      );
+    await _ensureCachedSttLoaded(generation);
+    if (!_isCurrent(generation)) return null;
+    return _runtimeLock.synchronized(() async {
+      if (!_isCurrent(generation)) return null;
+      if (_store.state.errorMessage != null &&
+          _store.state.activeSttModel == null) {
+        return null;
+      }
       _store.update(
         (SpeechWorkspaceState s) =>
-            s.copyWith(isTranscribing: false, latestTranscript: result),
+            s.copyWith(isTranscribing: true, clearErrorMessage: true),
       );
-      return result;
-    } catch (error) {
-      _store.update(
-        (SpeechWorkspaceState s) => s.copyWith(
-          isTranscribing: false,
-          errorMessage: humanizeStudioError(error),
-        ),
-      );
-      return null;
-    }
+      try {
+        final result = await stt.transcribe(
+          audioBytes: audioBytes,
+          audioFilePath: audioFilePath,
+          contextPrompt: contextPrompt,
+        );
+        if (!_isCurrent(generation)) return null;
+        _store.update(
+          (SpeechWorkspaceState s) =>
+              s.copyWith(isTranscribing: false, latestTranscript: result),
+        );
+        return result;
+      } catch (error) {
+        if (!_isCurrent(generation)) return null;
+        _store.update(
+          (SpeechWorkspaceState s) => s.copyWith(
+            isTranscribing: false,
+            errorMessage: humanizeStudioError(error),
+          ),
+        );
+        return null;
+      }
+    });
   }
 
   /// Unloads active TTS and STT engines from memory.
   Future<void> unloadModels() async {
-    await _tts?.dispose();
-    if (_stt != null && !identical(_stt, _tts)) {
-      await _stt.dispose();
-    }
+    if (_disposed) return;
+    _generation++;
+    _cancelPendingLoads();
+    if (_store.state.isSynthesizing) _tts?.cancelSynthesis();
     _store.update(
-      (SpeechWorkspaceState s) =>
-          s.copyWith(clearActiveTtsModel: true, clearActiveSttModel: true),
+      (s) => s.copyWith(
+        clearActiveTtsModel: true,
+        clearActiveSttModel: true,
+        clearLoadingTtsModel: true,
+        clearLoadingSttModel: true,
+        isLoadingTts: false,
+        isLoadingStt: false,
+        isSynthesizing: false,
+        isTranscribing: false,
+        clearTtsPhaseLabel: true,
+      ),
     );
+    await _runtimeLock.synchronized(() async {
+      if (_disposed) return;
+      await _tts?.dispose();
+      if (_stt != null && !identical(_stt, _tts)) await _stt.dispose();
+    });
   }
 
-  /// Disposes internal reactive state.
-  Future<void> dispose() => _store.dispose();
+  void _cancelPendingLoads() {
+    final state = _store.state;
+    if (state.loadingTtsModel != null) {
+      _storage.cancelDownload(state.loadingTtsModel!.id);
+    }
+    if (state.loadingSttModel != null) {
+      _storage.cancelDownload(state.loadingSttModel!.id);
+    }
+  }
+
+  /// Invalidates pending downloads and drains entered native calls before shutdown.
+  Future<void> dispose() {
+    if (_disposeFuture != null) return _disposeFuture!;
+    _disposed = true;
+    _generation++;
+    _cancelPendingLoads();
+    if (_store.state.isSynthesizing) _tts?.cancelSynthesis();
+    return _disposeFuture = _runtimeLock.synchronized(_store.dispose);
+  }
 }
