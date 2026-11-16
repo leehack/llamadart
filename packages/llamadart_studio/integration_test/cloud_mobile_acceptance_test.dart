@@ -15,11 +15,13 @@ import 'package:llamadart_studio_core/llamadart_studio_core.dart';
 import 'package:path_provider/path_provider.dart';
 
 import '../test/studio_widget_test_helpers.dart';
+import 'support/chat_diagnostics.dart';
 
 const _enabled = bool.fromEnvironment('STUDIO_CLOUD_ACCEPTANCE');
 const _modelSha256 = String.fromEnvironment('STUDIO_CLOUD_MODEL_SHA256');
 const _modelUrl = String.fromEnvironment('STUDIO_CLOUD_MODEL_URL');
 const _sourceCommit = String.fromEnvironment('STUDIO_CLOUD_SOURCE_COMMIT');
+const _chatPrompt = 'What is 2 + 2? Reply with just the digit.';
 const _modelBytes = 532517120;
 
 class _StagedModelStorage extends FakeStoragePort {
@@ -107,7 +109,25 @@ void main() {
         fallbackKeyValueStore: kv,
         directoryPath: temp.path,
       );
-      final inference = DirectLlamaInferencePort();
+      final diagnosticRoot = Platform.isIOS
+          ? await getApplicationDocumentsDirectory()
+          : (await getExternalStorageDirectory())!;
+      final run = DateTime.now().toUtc().toIso8601String().replaceAll(':', '-');
+      final diagnostics = ChatDiagnostics(
+        File(
+          '${diagnosticRoot.path}/${Platform.isIOS ? 'validation/runs' : 'studio-acceptance'}/$run/chat-diagnostics.jsonl',
+        ),
+      );
+      diagnostics.record('verified_model', {
+        'source_commit': _sourceCommit,
+        'sha256': verified.sha256,
+        'bytes': await File(verified.filePath).length(),
+      });
+      addTearDown(diagnostics.flush);
+      final inference = RecordingInferencePort(
+        DirectLlamaInferencePort(),
+        diagnostics,
+      );
       final deps = await StudioDependencies.fromPorts(
         keyValueStore: kv,
         conversationStore: createDefaultConversationStore(
@@ -123,6 +143,8 @@ void main() {
         isMobile: true,
       );
       addTearDown(() async {
+        diagnostics.record('before_cleanup', chatCheckpoint(deps, _chatPrompt));
+        await diagnostics.flush();
         await tester.pumpWidget(const SizedBox.shrink());
         await deps.dispose();
         if (await temp.exists()) await temp.delete(recursive: true);
@@ -171,10 +193,35 @@ void main() {
 
       Future<void> waitFor(bool Function() done, String phase) async {
         final deadline = DateTime.now().add(const Duration(seconds: 90));
+        var nextCheckpoint = DateTime.now();
+        diagnostics.record('wait_start', {
+          'operation': phase,
+          ...chatCheckpoint(deps, _chatPrompt),
+        });
         while (!done() && DateTime.now().isBefore(deadline)) {
+          if (!DateTime.now().isBefore(nextCheckpoint)) {
+            diagnostics.record('wait_checkpoint', {
+              'operation': phase,
+              ...chatCheckpoint(deps, _chatPrompt),
+            });
+            await diagnostics.flush();
+            nextCheckpoint = DateTime.now().add(const Duration(seconds: 10));
+          }
           await tester.pump(const Duration(milliseconds: 100));
           await Future<void>.delayed(const Duration(milliseconds: 20));
         }
+        diagnostics.record('wait_end', {
+          'operation': phase,
+          'done': done(),
+          ...chatCheckpoint(deps, _chatPrompt),
+        });
+        if (!done()) {
+          final exception = tester.takeException();
+          diagnostics.record('flutter_exception', {
+            'type': exception?.runtimeType.toString(),
+          });
+        }
+        await diagnostics.flush();
         expect(
           done(),
           isTrue,
@@ -204,9 +251,40 @@ void main() {
       await tester.pumpAndSettle();
       await tester.enterText(
         find.byKey(const Key('chat_composer_input')),
-        'What is 2 + 2? Reply with just the digit.',
+        _chatPrompt,
       );
+      final composer = tester.widget<TextField>(
+        find.byKey(const Key('chat_composer_input')),
+      );
+      expect(composer.controller!.text, _chatPrompt);
+      expect(
+        tester
+            .widget<FilledButton>(find.byKey(const Key('chat_send_button')))
+            .onPressed,
+        isNotNull,
+      );
+      final runtime = inference.runtimeStore.state;
+      diagnostics.record('before_send', {
+        ...chatCheckpoint(deps, _chatPrompt),
+        'backend_cached': runtime.backendName,
+        'context_target_cached': runtime.resolvedContextSize,
+        'gpu_layers_target_cached': runtime.resolvedGpuLayers,
+        'actual_measurement_available': false,
+        'requested': {
+          'compute': 'cpu',
+          'gpu_layers': 0,
+          'context': 2048,
+          'threads': 2,
+          'batch_threads': 2,
+          'max_tokens': 32,
+          'temperature': 0,
+          'thinking': false,
+          'tools': false,
+        },
+      });
+      await diagnostics.flush();
       await tap('chat_send_button');
+      diagnostics.record('after_send', chatCheckpoint(deps, _chatPrompt));
       await waitFor(
         () =>
             !deps.chatController.activeStreamStore.state.isGenerating &&

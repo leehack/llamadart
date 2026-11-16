@@ -97,3 +97,29 @@ connected MCP server/tools, case results, and observed failures. Repeat after
 behavior changes and retain failed-run evidence. Successful completion establishes
 the profiles and scenarios above; longer-session memory pressure, other models,
 other platforms, and end-user app distribution require separate qualification.
+
+## Physical mobile Chat wait diagnostics
+
+`integration_test/cloud_mobile_acceptance_test.dart` writes schema-1
+`chat-diagnostics.jsonl` independently of its success receipt. iOS uses
+`Documents/validation/runs/<UTC-run>/`, retained by the existing XCTest
+KeepAlways collector even on failure; Android uses the existing pulled
+`studio-acceptance/<UTC-run>/` directory. Keep failed-run attachments.
+Each checkpoint is synchronously appended and flushed before cleanup, with
+at most 128 records and 256 KiB per run (below the collector's 2 MiB limit).
+Write failures print only their type and do not replace the original failure.
+Records contain verified model hash/bytes, source revision, requested settings,
+cached runtime targets (explicitly not actual measurements), conversation ID,
+branch roles/count, submission/generation state, synthetic prompt equality,
+text/thinking lengths, token counts, elapsed time, operation and error metadata.
+No model paths, URLs, prompt content or generated content are recorded.
+
+The next separately authorized physical run must distinguish: enabled Send and
+composer content; persisted user turn; inference request and stream subscription;
+first text/thinking; completion, stream error or closure; and continued generation
+at the original deadline. A ready runtime describes model loading only. These
+records are diagnostic evidence, not a runtime fix or qualification. Preserve
+CPU/GPU0, context 2048, threads 2+2, max 32, temperature zero, thinking/tools off,
+the exact model, Chat `4` and Notes assertions, 90-second waits and four-minute
+outer bound. The original failure at `1b07009` remains failed; final source
+rebuild, independent review and physical Chat/Notes proof remain separate gates.
