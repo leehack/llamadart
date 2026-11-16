@@ -122,6 +122,17 @@ class StudioShellController
       }
     }
 
+    if (restored.activeModelId?.startsWith('custom:') ?? false) {
+      // Older Inspector reloads persisted transient sources, including signed
+      // URLs. Remove them rather than restoring an expired or private source.
+      restored = restored.copyWith(
+        clearActiveModelId: true,
+        clearModelPath: true,
+        clearMmprojPath: true,
+      );
+      await _kv.writeString(_settingsKey, jsonEncode(restored.toJson()));
+    }
+
     if (recovery != null) {
       // Safe Mode: disable auto-loading the offending model on this boot.
       restored = restored.copyWith(autoLoadLastModel: false);

@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:meta/meta.dart';
 
 import '../ports/key_value_store.dart';
+import 'studio_error_formatter.dart';
 
 /// Alert surfaced on startup when the previous process terminated while loading
 /// a model (for example, due to an OS out-of-memory kill or GPU driver reset).
@@ -46,8 +47,12 @@ class BootGuardService {
     try {
       final decoded = jsonDecode(raw) as Map<String, Object?>;
       return BootRecoveryAlert(
-        modelName: (decoded['modelName'] as String?) ?? 'Unknown model',
-        modelIdOrPath: (decoded['modelIdOrPath'] as String?) ?? '',
+        modelName: humanizeStudioError(
+          (decoded['modelName'] as String?) ?? 'Unknown model',
+        ),
+        modelIdOrPath: humanizeStudioError(
+          (decoded['modelIdOrPath'] as String?) ?? '',
+        ),
         startedAt:
             DateTime.tryParse((decoded['startedAt'] as String?) ?? '') ??
             DateTime.now().toUtc(),
@@ -55,7 +60,7 @@ class BootGuardService {
     } catch (_) {
       return BootRecoveryAlert(
         modelName: 'Previous model',
-        modelIdOrPath: raw,
+        modelIdOrPath: '',
         startedAt: DateTime.now().toUtc(),
       );
     }
@@ -67,8 +72,8 @@ class BootGuardService {
     required String modelIdOrPath,
   }) async {
     final payload = jsonEncode(<String, Object?>{
-      'modelName': modelName,
-      'modelIdOrPath': modelIdOrPath,
+      'modelName': humanizeStudioError(modelName),
+      'modelIdOrPath': humanizeStudioError(modelIdOrPath),
       'startedAt': DateTime.now().toUtc().toIso8601String(),
     });
     await _store.writeString(_sentinelKey, payload);

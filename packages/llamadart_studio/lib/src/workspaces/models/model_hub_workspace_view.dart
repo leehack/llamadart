@@ -130,6 +130,10 @@ class _ModelHubWorkspaceViewState extends State<ModelHubWorkspaceView> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: <Widget>[
+                const Text(
+                  'Custom sources are used for this session. Load them again after restarting Studio.',
+                ),
+                const SizedBox(height: 12),
                 Row(
                   children: <Widget>[
                     Expanded(

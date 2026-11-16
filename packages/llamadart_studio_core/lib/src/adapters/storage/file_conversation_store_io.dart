@@ -159,28 +159,43 @@ class FileConversationStore implements StudioConversationStore {
     required StudioAttachment attachment,
   }) async {
     _validatedConversationId(conversationId);
-    if (attachment.localPath != null && attachment.localPath!.isNotEmpty) {
-      return attachment;
-    }
-    final bytes = attachment.bytes;
-    if (bytes == null || bytes.isEmpty) {
-      return attachment;
-    }
     return _lock.synchronized(() async {
       final attDir = _attachmentsDirFor(conversationId);
       await attDir.create(recursive: true);
-      final safeName = _sanitizeFileSegment(attachment.name);
-      final filename = '${_sanitizeFileSegment(attachment.id)}_$safeName';
-      final file = File(p.join(attDir.path, filename));
-      await file.writeAsBytes(bytes, flush: true);
-      return StudioAttachment(
-        id: attachment.id,
-        kind: attachment.kind,
-        name: attachment.name,
-        mimeType: attachment.mimeType,
-        localPath: file.path,
-        sizeBytes: bytes.length,
-      );
+      final existingPath = attachment.localPath;
+      if (attachment.bytes == null && existingPath != null) {
+        try {
+          final ownedRoot = await attDir.resolveSymbolicLinks();
+          final existing = await File(existingPath).resolveSymbolicLinks();
+          if (p.isWithin(ownedRoot, existing)) return attachment;
+        } on FileSystemException {
+          // Read below reports a missing source without saving a broken link.
+        }
+      }
+      final bytes = await readAttachmentBytes(attachment);
+      if (bytes == null) {
+        throw StateError('This attachment is unavailable. Choose it again.');
+      }
+      // Unique directories also prevent sanitized names or stale symlinks from
+      // overwriting another attachment.
+      final owned = await attDir.createTemp('media-');
+      try {
+        final file = File(
+          p.join(owned.path, _sanitizeFileSegment(attachment.name)),
+        );
+        await file.writeAsBytes(bytes, flush: true);
+        return StudioAttachment(
+          id: attachment.id,
+          kind: attachment.kind,
+          name: attachment.name,
+          mimeType: attachment.mimeType,
+          localPath: file.path,
+          sizeBytes: bytes.length,
+        );
+      } catch (_) {
+        await owned.delete(recursive: true);
+        rethrow;
+      }
     });
   }
 

@@ -634,6 +634,16 @@ class ModelHubController {
     StudioModelDescriptor descriptor, {
     required bool applyModelPreset,
   }) async {
+    if (descriptor.id.startsWith('custom:')) {
+      await _loadCustomModel(
+        pathOrUrl: descriptor.sourceUri,
+        mmprojPathOrUrl: descriptor.companions
+            .where((companion) => companion.role == 'projector')
+            .firstOrNull
+            ?.sourceUri,
+      );
+      return;
+    }
     final assets = await downloadModel(descriptor);
     if (_disposed) return;
     final fit = evaluateFit(descriptor);
@@ -743,7 +753,7 @@ class ModelHubController {
     try {
       await _shell.bootGuard.beginModelLoad(
         modelName: descriptor.name,
-        modelIdOrPath: trimmed,
+        modelIdOrPath: 'custom',
       );
       if (_disposed) return;
       await _inference.loadCustomSource(
