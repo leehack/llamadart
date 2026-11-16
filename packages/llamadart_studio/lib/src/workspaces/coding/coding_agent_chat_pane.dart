@@ -188,33 +188,27 @@ extension _CodingAgentChatPane on _CodingWorkspaceViewState {
               ],
             ),
           );
-          if (compact && shortPane) {
-            return Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
+          final inlineAction = compact && shortPane;
+          return Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              // Reparenting the focused field during keyboard resize closes it.
+              Row(
+                children: [
+                  Expanded(child: input),
+                  if (inlineAction) ...[const SizedBox(width: 8), action],
+                ],
+              ),
+              if (inlineAction && (hasContext || running)) badges,
+              if (!inlineAction)
                 Row(
                   children: [
-                    Expanded(child: input),
+                    Expanded(child: badges),
                     const SizedBox(width: 8),
                     action,
                   ],
                 ),
-                if (hasContext || running) badges,
-              ],
-            );
-          }
-          return Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              input,
-              Row(
-                children: [
-                  Expanded(child: badges),
-                  const SizedBox(width: 8),
-                  action,
-                ],
-              ),
             ],
           );
         },

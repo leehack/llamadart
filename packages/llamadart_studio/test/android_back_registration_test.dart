@@ -76,8 +76,11 @@ void main() {
       await tester.tap(find.text('Files (1)'));
       await tester.pumpAndSettle();
       await tester.runAsync(() async {
+        final opened = deps.codingController.store.stream
+            .firstWhere((state) => state.selectedFileSlice != null)
+            .timeout(const Duration(seconds: 5));
         await tester.tap(find.byKey(const Key('coding_file_main.dart')));
-        await Future<void>.delayed(const Duration(milliseconds: 60));
+        await opened;
       });
       await tester.pumpAndSettle();
       final detail = find.byKey(const Key('coding_back_to_files'));
