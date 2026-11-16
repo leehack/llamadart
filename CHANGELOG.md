@@ -3,7 +3,7 @@ Releases before 0.10.0 are in the
 
 ## Unreleased
 
-- Let Studio Coding create persistent local workspaces on iOS/Android, with clear recovery when a folder cannot be selected.
+- Let Studio Coding create and reopen persistent local workspaces on iOS/Android, with clear recovery when a folder cannot be selected.
 
 - Improve Studio Coding on phones with reachable task controls, file navigation, guarded Revert, and explicit desktop-only local commands.
 

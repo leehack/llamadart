@@ -67,6 +67,7 @@ class _CodingWorkspaceViewState extends State<CodingWorkspaceView> {
   StudioModelDescriptor? _pendingModel;
   String? _modelLoadError;
   bool _creatingLocalWorkspace = false;
+  bool _openingLocalWorkspace = false;
   bool _pickingFolder = false;
 
   @override
@@ -385,6 +386,7 @@ class _CodingWorkspaceViewState extends State<CodingWorkspaceView> {
     if (!deps.isMobile ||
         deps.isWeb ||
         _creatingLocalWorkspace ||
+        _openingLocalWorkspace ||
         _pickingFolder) {
       return;
     }
@@ -415,7 +417,12 @@ class _CodingWorkspaceViewState extends State<CodingWorkspaceView> {
 
   Future<void> _pickFolder() async {
     final deps = _deps!;
-    if (deps.isWeb || _pickingFolder || _creatingLocalWorkspace) return;
+    if (deps.isWeb ||
+        _pickingFolder ||
+        _creatingLocalWorkspace ||
+        _openingLocalWorkspace) {
+      return;
+    }
     setState(() => _pickingFolder = true);
     try {
       final picked = await FilePicker.platform.getDirectoryPath(
@@ -450,6 +457,96 @@ class _CodingWorkspaceViewState extends State<CodingWorkspaceView> {
       );
     } finally {
       if (mounted) setState(() => _pickingFolder = false);
+    }
+  }
+
+  Future<void> _openLocalWorkspace() async {
+    final deps = _deps!;
+    if (deps.isWeb ||
+        !deps.isMobile ||
+        _pickingFolder ||
+        _creatingLocalWorkspace ||
+        _openingLocalWorkspace) {
+      return;
+    }
+    setState(() => _openingLocalWorkspace = true);
+    _promptFocusNode.unfocus();
+    try {
+      Future<List<String>>? rootsFuture;
+      final selected = await showDialog<String>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          scrollable: true,
+          title: const Text('Local workspaces'),
+          content: SizedBox(
+            width: 400,
+            child: FutureBuilder<List<String>>(
+              future: rootsFuture ??= deps.listLocalCodingWorkspaces(),
+              builder: (context, snapshot) {
+                if (snapshot.hasError) {
+                  return const Text(
+                    'Could not read local workspaces. Check app storage and try again.',
+                  );
+                }
+                if (!snapshot.hasData) {
+                  return const Column(
+                    key: Key('coding_local_workspaces_loading'),
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      CircularProgressIndicator(),
+                      SizedBox(height: 12),
+                      Text('Loading local workspaces…'),
+                    ],
+                  );
+                }
+                final roots = snapshot.data!;
+                if (roots.isEmpty) {
+                  return const Text(
+                    'No local workspaces yet. Create one from Coding setup.',
+                  );
+                }
+                return Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    for (final root in roots)
+                      ListTile(
+                        key: Key('coding_open_local_$root'),
+                        title: Text(root.replaceAll(r'\', '/').split('/').last),
+                        subtitle: Text(
+                          root == deps.codingController.state.workspaceRoot
+                              ? 'Current workspace'
+                              : 'Saved on this device',
+                        ),
+                        onTap: () => Navigator.pop(dialogContext, root),
+                      ),
+                  ],
+                );
+              },
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('Cancel'),
+            ),
+          ],
+        ),
+      );
+      if (selected == null || !mounted) return;
+      await deps.codingController.setWorkspaceRoot(selected);
+      if (!mounted) return;
+      if (deps.codingController.state.workspaceRoot != selected ||
+          deps.codingController.state.lastError != null) {
+        _showFolderMessage(
+          'Could not reopen this local workspace. Your files have not been changed.',
+        );
+      }
+    } catch (_) {
+      _showFolderMessage(
+        'Could not open local workspaces. Check app storage and try again.',
+      );
+    } finally {
+      if (mounted) setState(() => _openingLocalWorkspace = false);
     }
   }
 

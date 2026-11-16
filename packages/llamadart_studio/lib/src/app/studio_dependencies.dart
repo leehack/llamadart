@@ -95,6 +95,18 @@ class StudioDependencies {
     );
   }
 
+  /// Lists app-owned Coding folders so earlier work can be reopened on mobile.
+  Future<List<String>> listLocalCodingWorkspaces() {
+    if (isWeb || !isMobile) {
+      throw UnsupportedError(
+        'Local Coding workspaces are available only on iOS and Android.',
+      );
+    }
+    return listLocalCodingWorkspaceDirectories(
+      appDataDirectory: appDataDirectory,
+    );
+  }
+
   /// Bootstraps production dependencies backed by `SharedPreferences`,
   /// `path_provider` application support storage, and `llamadart` native/Web
   /// engines.

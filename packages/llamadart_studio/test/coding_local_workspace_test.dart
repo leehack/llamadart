@@ -25,6 +25,39 @@ Future<void> _mount(WidgetTester tester, StudioDependencies deps) async {
   await tester.pumpAndSettle();
 }
 
+Future<void> _waitFor(WidgetTester tester, bool Function() ready) async {
+  final elapsed = Stopwatch()..start();
+  while (!ready()) {
+    if (elapsed.elapsed > const Duration(seconds: 5)) {
+      throw TestFailure('Coding workspace did not reach the expected state.');
+    }
+    await tester.pump();
+    await tester.runAsync(() => Future<void>.delayed(Duration.zero));
+  }
+  await tester.pumpAndSettle();
+}
+
+Future<void> _openSetup(WidgetTester tester) async {
+  await tester.tap(find.byKey(const Key('coding_setup_toggle')));
+  await tester.pumpAndSettle();
+}
+
+Future<void> _selectLocal(WidgetTester tester, String root) async {
+  await _openSetup(tester);
+  await tester.tap(
+    find.byKey(const Key('coding_open_local_workspaces_button')),
+  );
+  await _waitFor(
+    tester,
+    () => find.byKey(Key('coding_open_local_$root')).evaluate().isNotEmpty,
+  );
+  await tester.tap(find.byKey(Key('coding_open_local_$root')));
+  await _waitFor(
+    tester,
+    () => tester.widget<IconButton>(find.byKey(_folderKey)).onPressed != null,
+  );
+}
+
 void main() {
   late Directory owned;
   setUp(() {
@@ -51,6 +84,14 @@ void main() {
       expect(Directory(root).parent.path, '${owned.path}/coding_workspaces');
       expect(Directory(root).existsSync(), isTrue);
     }
+    await Directory('${owned.path}/coding_workspaces/not_a_workspace').create();
+    await File('${owned.path}/coding_workspaces/workspace_not_a_directory')
+        .writeAsString('keep');
+    if (!Platform.isWindows) {
+      await Link('${owned.path}/coding_workspaces/workspace_external_link')
+          .create(owned.path);
+    }
+    expect((await deps.listLocalCodingWorkspaces()).toSet(), roots.toSet());
     final root = roots.first;
     await deps.codingController.setWorkspaceRoot(root);
     final tools = deps.codingController.buildCodingTools();
@@ -145,9 +186,14 @@ void main() {
       expect(deps.codingController.state.workspaceRoot, isNull);
       await tester.runAsync(() async {
         supportPath.complete(owned.path);
-        await Future<void>.delayed(const Duration(milliseconds: 100));
       });
-      await tester.pumpAndSettle();
+      await _waitFor(
+        tester,
+        () =>
+            (deps.codingController.state.workspaceRoot != null ||
+                deps.codingController.state.lastError != null) &&
+            tester.widget<IconButton>(find.byKey(_folderKey)).onPressed != null,
+      );
       expect(
         deps.codingController.state.workspaceRoot,
         isNotNull,
@@ -172,9 +218,12 @@ void main() {
       await tester.pumpAndSettle();
       await tester.runAsync(() async {
         await tester.tap(find.byKey(const Key('coding_file_src/main.dart')));
-        await Future<void>.delayed(const Duration(milliseconds: 60));
       });
-      await tester.pumpAndSettle();
+      await _waitFor(
+        tester,
+        () =>
+            find.byKey(const Key('coding_back_to_files')).evaluate().isNotEmpty,
+      );
       expect(find.byKey(const Key('coding_back_to_files')), findsOneWidget);
       expect(find.text('Copy'), findsOneWidget);
       String? copiedText;
@@ -219,9 +268,14 @@ void main() {
       await tester.tap(
         find.byKey(const Key('coding_create_local_workspace_setup_button')),
       );
-      await Future<void>.delayed(const Duration(milliseconds: 100));
     });
-    await tester.pumpAndSettle();
+    await _waitFor(
+      tester,
+      () => find
+          .textContaining('Could not create a local workspace.')
+          .evaluate()
+          .isNotEmpty,
+    );
     expect(deps.codingController.state.workspaceRoot, owned.path);
     expect(find.text('Keep this prompt'), findsOneWidget);
     expect(blocked.readAsStringSync(), 'keep');
@@ -261,10 +315,10 @@ void main() {
             result == 'inaccessible' ? '${owned.path}/missing' : null,
           );
         }
-        await tester.runAsync(
-          () => Future<void>.delayed(const Duration(milliseconds: 100)),
+        await _waitFor(
+          tester,
+          () => find.text('Create local').evaluate().isNotEmpty,
         );
-        await tester.pumpAndSettle();
         expect(deps.codingController.state.workspaceRoot, owned.path);
         expect(find.text('Keep picker draft'), findsOneWidget);
         expect(find.text('Create local'), findsOneWidget);
@@ -309,6 +363,7 @@ void main() {
       expect(find.byType(SnackBar), findsNothing);
       expect(deps.codingController.state.workspaceRoot, isNull);
       expect(deps.createLocalCodingWorkspace, throwsUnsupportedError);
+      expect(deps.listLocalCodingWorkspaces, throwsUnsupportedError);
       expect(owned.listSync(), isEmpty);
     },
   );
@@ -350,9 +405,14 @@ void main() {
     await _mount(tester, deps);
     await tester.runAsync(() async {
       await tester.tap(find.byKey(_createKey));
-      await Future<void>.delayed(const Duration(milliseconds: 100));
     });
-    await tester.pumpAndSettle();
+    await _waitFor(
+      tester,
+      () => find
+          .textContaining('The local folder could not be opened.')
+          .evaluate()
+          .isNotEmpty,
+    );
     expect(
       Directory('${owned.path}/coding_workspaces').listSync(),
       hasLength(1),
@@ -366,6 +426,144 @@ void main() {
     expect(find.textContaining('Local workspace created.'), findsNothing);
     expect(find.byKey(_createKey).hitTestable(), findsOneWidget);
   });
+
+  testWidgets(
+    'earlier local work reopens through UI before and after restart',
+    (tester) async {
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      final kv = InMemoryKeyValueStore();
+      final deps = await buildTestDeps(
+        isMobile: true,
+        appDataDirectory: owned.path,
+        keyValueStore: kv,
+      );
+      addTearDown(deps.dispose);
+      await _mount(tester, deps);
+      await tester.tap(find.byKey(_createKey));
+      await _waitFor(
+        tester,
+        () =>
+            deps.codingController.state.workspaceRoot != null &&
+            tester.widget<IconButton>(find.byKey(_folderKey)).onPressed != null,
+      );
+      final first = deps.codingController.state.workspaceRoot!;
+      await tester.runAsync(() async {
+        await deps.codingController
+            .buildCodingTools()
+            .firstWhere((t) => t.name == 'write')
+            .invoke({
+              'path': 'src/prior_work.txt',
+              'content': 'Montréal retained',
+            });
+      });
+      await tester.enterText(
+        find.byKey(const Key('coding_prompt_input')),
+        'First workspace draft',
+      );
+      await _openSetup(tester);
+      await tester.tap(
+        find.byKey(const Key('coding_create_local_workspace_setup_button')),
+      );
+      await _waitFor(
+        tester,
+        () =>
+            deps.codingController.state.workspaceRoot != first &&
+            tester.widget<IconButton>(find.byKey(_folderKey)).onPressed != null,
+      );
+      final second = deps.codingController.state.workspaceRoot!;
+      await _openSetup(tester);
+      await tester.tap(
+        find.byKey(const Key('coding_open_local_workspaces_button')),
+      );
+      await _waitFor(
+        tester,
+        () => find.byKey(Key('coding_open_local_$first')).evaluate().isNotEmpty,
+      );
+      await tester.tap(find.widgetWithText(TextButton, 'Cancel'));
+      await _waitFor(
+        tester,
+        () =>
+            tester.widget<IconButton>(find.byKey(_folderKey)).onPressed != null,
+      );
+      expect(deps.codingController.state.workspaceRoot, second);
+      await _selectLocal(tester, first);
+      expect(deps.codingController.state.workspaceRoot, first);
+      expect(
+        tester
+            .widget<TextField>(find.byKey(const Key('coding_prompt_input')))
+            .controller!
+            .text,
+        'First workspace draft',
+      );
+      await _selectLocal(tester, second);
+      expect(deps.codingController.state.workspaceRoot, second);
+      await tester.pumpWidget(const SizedBox.shrink());
+      final fresh = (await tester.runAsync(
+        () => buildTestDeps(
+          isMobile: true,
+          appDataDirectory: owned.path,
+          keyValueStore: kv,
+        ),
+      ))!;
+      addTearDown(fresh.dispose);
+      expect(fresh.codingController.state.workspaceRoot, second);
+      await _mount(tester, fresh);
+      await _selectLocal(tester, first);
+      expect(fresh.codingController.state.workspaceRoot, first);
+      await tester.runAsync(() async {
+        final result = await fresh.codingController
+            .buildCodingTools()
+            .firstWhere((t) => t.name == 'read')
+            .invoke({'path': 'src/prior_work.txt'});
+        expect(result.toString(), contains('Montréal retained'));
+      });
+      expect(
+        File('$first/src/prior_work.txt').readAsStringSync(),
+        'Montréal retained',
+      );
+      expect(Directory(second).existsSync(), isTrue);
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+  );
+
+  testWidgets(
+    'local folder picker shows progress and cancels without creating files',
+    (tester) async {
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      const channel = MethodChannel('plugins.flutter.io/path_provider');
+      final messenger = tester.binding.defaultBinaryMessenger;
+      final support = Completer<String>();
+      messenger.setMockMethodCallHandler(channel, (_) => support.future);
+      addTearDown(() => messenger.setMockMethodCallHandler(channel, null));
+      final deps = await buildTestDeps(isMobile: true);
+      addTearDown(deps.dispose);
+      await _mount(tester, deps);
+      await _openSetup(tester);
+      await tester.tap(
+        find.byKey(const Key('coding_open_local_workspaces_button')),
+      );
+      await tester.pump();
+      expect(
+        find.byKey(const Key('coding_local_workspaces_loading')),
+        findsOneWidget,
+      );
+      support.complete(owned.path);
+      await _waitFor(
+        tester,
+        () => find
+            .text('No local workspaces yet. Create one from Coding setup.')
+            .evaluate()
+            .isNotEmpty,
+      );
+      await tester.tap(find.widgetWithText(TextButton, 'Cancel'));
+      await tester.pumpAndSettle();
+      expect(deps.codingController.state.workspaceRoot, isNull);
+      expect(owned.listSync(), isEmpty);
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+  );
 }
 
 class _DirectoryPicker extends FilePicker {

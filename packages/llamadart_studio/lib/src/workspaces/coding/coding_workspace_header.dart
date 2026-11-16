@@ -62,7 +62,8 @@ extension _CodingWorkspaceHeaderExtension on _CodingWorkspaceViewState {
             ? 'coding_create_local_workspace_setup_button'
             : 'coding_create_local_workspace_button',
       ),
-      onPressed: _creatingLocalWorkspace || _pickingFolder
+      onPressed:
+          _creatingLocalWorkspace || _pickingFolder || _openingLocalWorkspace
           ? null
           : () {
               if (setupSheet) Navigator.pop(context);
@@ -202,7 +203,10 @@ extension _CodingWorkspaceHeaderExtension on _CodingWorkspaceViewState {
                   IconButton(
                     key: const Key('coding_pick_folder_button'),
                     tooltip: 'Open workspace folder',
-                    onPressed: _pickingFolder || _creatingLocalWorkspace
+                    onPressed:
+                        _pickingFolder ||
+                            _creatingLocalWorkspace ||
+                            _openingLocalWorkspace
                         ? null
                         : _pickFolder,
                     icon: const Icon(Icons.folder_open_rounded, size: 20),
@@ -351,7 +355,33 @@ extension _CodingWorkspaceHeaderExtension on _CodingWorkspaceViewState {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: <Widget>[
                     const SizedBox(height: 8),
-                    if (deps.isMobile && !deps.isWeb) localWorkspaceAction,
+                    if (deps.isMobile && !deps.isWeb)
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 4,
+                        children: [
+                          localWorkspaceAction,
+                          TextButton.icon(
+                            key: const Key(
+                              'coding_open_local_workspaces_button',
+                            ),
+                            onPressed:
+                                _creatingLocalWorkspace ||
+                                    _pickingFolder ||
+                                    _openingLocalWorkspace
+                                ? null
+                                : () {
+                                    if (setupSheet) Navigator.pop(context);
+                                    _openLocalWorkspace();
+                                  },
+                            icon: const Icon(
+                              Icons.folder_open_rounded,
+                              size: 18,
+                            ),
+                            label: const Text('Open local workspace'),
+                          ),
+                        ],
+                      ),
                     if (deps.isMobile)
                       const Padding(
                         padding: EdgeInsets.only(bottom: 12),

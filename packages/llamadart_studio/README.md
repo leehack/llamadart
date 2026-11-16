@@ -28,7 +28,8 @@ On iOS/Android, **Create local workspace** makes a new, empty folder in persiste
 app storage and enables file tools without an external provider grant. Ask the
 agent to create files (including nested paths), browse them in Files, and use
 **Copy** in file details to copy text elsewhere. The last selected root reopens
-on restart; app data removal or uninstall removes local workspaces. Creation
+on restart; **Open local workspace** in Coding setup reopens earlier local folders.
+App data removal or uninstall removes local workspaces. Creation
 never reuses an existing workspace. Local shell and process MCP stay unavailable.
 External folder selection only works for already accessible filesystem paths;
 provider URI/security-scoped access and durable provider grants are unsupported.

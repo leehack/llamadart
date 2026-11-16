@@ -37,8 +37,13 @@ void main() {
     );
     expect(find.byKey(const Key('coding_pick_folder_button')), findsNothing);
     expect(deps.createLocalCodingWorkspace, throwsUnsupportedError);
+    expect(deps.listLocalCodingWorkspaces, throwsUnsupportedError);
     await expectLater(
       createLocalCodingWorkspaceDirectory(),
+      throwsUnsupportedError,
+    );
+    await expectLater(
+      listLocalCodingWorkspaceDirectories(),
       throwsUnsupportedError,
     );
     expect(deps.codingController.state.workspaceRoot, isNull);
