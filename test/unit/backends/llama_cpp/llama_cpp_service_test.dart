@@ -721,6 +721,78 @@ void main() {
       expect(calls, isEmpty);
     });
 
+    test('constructor probe refuses explicit Vulkan before the loader', () {
+      var probes = 0;
+      final loaded = <String>[];
+      final service = LlamaCppService(
+        linuxVulkanProbe: () {
+          probes++;
+          return 'synthetic Linux loader unavailable';
+        },
+      );
+      expect(
+        () => _invokePrivateForTesting<void>(
+          service,
+          '_prepareBackendsForModelLoad',
+          [GpuBackend.vulkan],
+          {
+            #operatingSystem: 'linux',
+            #loadBackendModule: (String backend) => loaded.add(backend),
+          },
+        ),
+        throwsA(
+          isA<LlamaUnsupportedException>().having(
+            (error) => error.message,
+            'loader refusal',
+            contains('synthetic Linux loader unavailable'),
+          ),
+        ),
+      );
+      expect(probes, 1);
+      expect(loaded, isEmpty);
+    });
+
+    test('constructor probe preserves healthy AUTO preparation', () {
+      final calls = <String>[];
+      final service = LlamaCppService(
+        linuxVulkanProbe: () {
+          calls.add('probe');
+          return null;
+        },
+      );
+      _invokePrivateForTesting<void>(
+        service,
+        '_prepareBackendsForModelLoad',
+        [GpuBackend.auto],
+        {
+          #operatingSystem: 'linux',
+          #loadAllBackends: (String? directory) {
+            calls.add('load-all');
+            return true;
+          },
+          #loadBackendModule: (String backend) => calls.add(backend),
+        },
+      );
+      expect(calls, ['probe', 'load-all', 'vulkan', 'blas', 'cuda', 'hip']);
+    });
+
+    test('non-Linux preparation ignores the constructor Linux probe', () {
+      final calls = <String>[];
+      final service = LlamaCppService(
+        linuxVulkanProbe: () => throw StateError('must not probe Linux'),
+      );
+      _invokePrivateForTesting<void>(
+        service,
+        '_prepareBackendsForModelLoad',
+        [GpuBackend.vulkan],
+        {
+          #operatingSystem: 'windows',
+          #loadBackendModule: (String backend) => calls.add(backend),
+        },
+      );
+      expect(calls, ['cpu', 'vulkan']);
+    });
+
     test('explicit healthy Vulkan initializes only CPU and Vulkan', () {
       expect(prepare(GpuBackend.vulkan, reason: null), [
         'probe',
@@ -791,8 +863,10 @@ void main() {
     );
 
     test('a later successful probe can initialize Vulkan', () {
-      final service = LlamaCppService();
       var available = false;
+      final service = LlamaCppService(
+        linuxVulkanProbe: () => available ? null : 'no devices',
+      );
       final loaded = <String>[];
       void attempt() => _invokePrivateForTesting<void>(
         service,
@@ -800,7 +874,6 @@ void main() {
         ['vulkan'],
         {
           #operatingSystem: 'linux',
-          #linuxVulkanProbe: () => available ? null : 'no devices',
           #loadBackendModule: (String backend) {
             loaded.add(backend);
             return true;
@@ -3884,6 +3957,7 @@ void main() {
           final service = LlamaCppService(
             deviceTypes: (_) => const <int>[],
             registeredDevices: () => registered,
+            linuxVulkanProbe: () => null,
           );
           addTearDown(service.dispose);
           try {
@@ -7258,6 +7332,7 @@ void main() {
           deviceTypes: (_) => [gpuType],
           objectCalls: objectCalls,
           registeredDevices: () => registered,
+          linuxVulkanProbe: () => null,
           vulkanDeviceProbe: () {
             reads++;
             return facts == null
@@ -8925,7 +9000,7 @@ class _VulkanReportingService extends LlamaCppService {
     super.backendDevices,
     super.vulkanDeviceProbe,
     this.gpuBackend = 'Vulkan',
-  }) : super(isAndroid: true);
+  }) : super(isAndroid: true, linuxVulkanProbe: () => null);
 
   final String gpuBackend;
 
@@ -8938,7 +9013,7 @@ class _MetalReportingService extends LlamaCppService {
     super.objectCalls,
     super.registeredDevices,
     super.deviceTypes,
-  }) : super(isMacosX64: false);
+  }) : super(isMacosX64: false, linuxVulkanProbe: () => null);
 
   @override
   List<String> getBackendInfo() => const ['CPU', 'Metal (fake GPU)'];

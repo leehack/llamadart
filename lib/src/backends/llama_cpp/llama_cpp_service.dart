@@ -254,9 +254,10 @@ class LlamaCppService {
   /// [ComputeDevice.gpu] load checks for a backend, the calls that create,
   /// free and run models and contexts, the ggml calls of decision heads, the
   /// calls that allocate and free per-request token batches and prepared
-  /// embedding resources, the read of the Vulkan device facts, the registered
-  /// ggml devices a load selects from, the devices the registry of an
-  /// explicit GPU backend lists, the probe of whether a device's
+  /// embedding resources, the Linux Vulkan loader availability check and Vulkan
+  /// device facts, the registered ggml devices a load selects from, the devices
+  /// the registry of an explicit GPU backend lists, the probe of whether a
+  /// device's
   /// backend has row split buffer types, the allocator of the model paths,
   /// tensor splits and tensor buffer overrides [loadModel] and draft model
   /// loads pass to llama.cpp, and the allocator
@@ -281,6 +282,7 @@ class LlamaCppService {
     void Function(Pointer<mtmd_bitmap>)? embeddingBitmapFree,
     void Function(Pointer<llama_batch_ext>)? embeddingBatchFree,
     VulkanDeviceProbe Function()? vulkanDeviceProbe,
+    String? Function()? linuxVulkanProbe,
     List<GgmlDeviceEntry> Function()? registeredDevices,
     List<ggml_backend_dev_t>? Function(GpuBackend backend)? backendDevices,
     bool Function(GgmlDeviceEntry device)? splitBufferTypeProbe,
@@ -306,6 +308,7 @@ class LlamaCppService {
        _embeddingBitmapFree = embeddingBitmapFree,
        _embeddingBatchFree = embeddingBatchFree,
        _vulkanDeviceProbeOverride = vulkanDeviceProbe,
+       _linuxVulkanProbeOverride = linuxVulkanProbe,
        _registeredDevicesOverride = registeredDevices,
        _backendDevicesOverride = backendDevices,
        _splitBufferTypeProbeOverride = splitBufferTypeProbe,
@@ -414,6 +417,7 @@ class LlamaCppService {
   final void Function(Pointer<mtmd_bitmap>)? _embeddingBitmapFree;
   final void Function(Pointer<llama_batch_ext>)? _embeddingBatchFree;
   final VulkanDeviceProbe Function()? _vulkanDeviceProbeOverride;
+  final String? Function()? _linuxVulkanProbeOverride;
   late final LlamaCppObjectCalls _calls =
       _objectCallsOverride ?? _resolveObjectCalls();
 
@@ -2643,7 +2647,9 @@ class LlamaCppService {
     String? Function()? probe,
   }) {
     if ((operatingSystem ?? Platform.operatingSystem) != 'linux') return null;
-    return (probe ?? probeLinuxVulkanUnavailableReason)();
+    return (probe ??
+        _linuxVulkanProbeOverride ??
+        probeLinuxVulkanUnavailableReason)();
   }
 
   void _prepareBackendsForModelLoad(
