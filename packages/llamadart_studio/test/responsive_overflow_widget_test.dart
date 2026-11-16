@@ -106,6 +106,65 @@ void main() {
           await deps.shellController.selectWorkspace(ws);
           await tester.pumpAndSettle();
 
+          if (ws == StudioWorkspace.speech ||
+              ws == StudioWorkspace.image ||
+              ws == StudioWorkspace.models) {
+            final workspace = switch (ws) {
+              StudioWorkspace.speech => find.byType(SpeechWorkspaceView),
+              StudioWorkspace.image => find.byType(ImageWorkspaceView),
+              _ => find.byType(ModelHubWorkspaceView),
+            };
+            final content = switch (ws) {
+              StudioWorkspace.speech => find.text('Hello Studio'),
+              StudioWorkspace.image => find.byKey(
+                const Key('clear_image_gallery_button'),
+              ),
+              _ => find.byKey(
+                Key('activate_model_${CuratedModelCatalog.models.first.id}'),
+              ),
+            };
+            await tester.scrollUntilVisible(
+              content,
+              200,
+              scrollable: find
+                  .descendant(of: workspace, matching: find.byType(Scrollable))
+                  .first,
+            );
+            await tester.pumpAndSettle();
+            expect(tester.getSize(content).height, greaterThan(0));
+          }
+
+          if (ws == StudioWorkspace.notes) {
+            final notebookScroll = find
+                .descendant(
+                  of: find.byKey(const Key('notebook_workspace_scroll')),
+                  matching: find.byType(Scrollable),
+                )
+                .first;
+            final ask = find.byKey(const Key('notebook_ask_section'));
+            await tester.scrollUntilVisible(
+              ask,
+              200,
+              scrollable: notebookScroll,
+            );
+            await tester.ensureVisible(find.text('Ask notebook'));
+            await tester.pumpAndSettle();
+            await tester.tap(find.text('Ask notebook'));
+            await tester.pumpAndSettle();
+            final search = find.byKey(const Key('vault_search_input'));
+            await tester.ensureVisible(search);
+            await tester.pumpAndSettle();
+            expect(tester.getSize(search).width, greaterThan(0));
+            await tester.ensureVisible(find.text('Search settings'));
+            await tester.pumpAndSettle();
+            await tester.tap(find.text('Search settings'));
+            await tester.pumpAndSettle();
+            final index = find.byKey(const Key('vault_index_notes_button'));
+            await tester.ensureVisible(index);
+            await tester.pumpAndSettle();
+            expect(tester.getSize(index).height, greaterThan(0));
+          }
+
           if (ws == StudioWorkspace.playground) {
             for (final tab in PlaygroundToolTab.values) {
               deps.playgroundController.selectTab(tab);
@@ -127,6 +186,12 @@ void main() {
                 for (final mode in DecisionWorkflowMode.values) {
                   deps.playgroundController.selectDecisionMode(mode);
                   await tester.pumpAndSettle();
+                  final burst = find.byKey(
+                    const Key('decision_speed_burst_panel'),
+                  );
+                  await tester.ensureVisible(burst);
+                  await tester.pumpAndSettle();
+                  expect(tester.getSize(burst).width, greaterThan(0));
                 }
               }
             }
@@ -189,6 +254,18 @@ void main() {
 
         // Verify Model Hub Custom Path dialog & Cache Sheet at narrowest/widest.
         await deps.shellController.selectWorkspace(StudioWorkspace.models);
+        await tester.pumpAndSettle();
+        tester
+            .state<ScrollableState>(
+              find
+                  .descendant(
+                    of: find.byType(ModelHubWorkspaceView),
+                    matching: find.byType(Scrollable),
+                  )
+                  .first,
+            )
+            .position
+            .jumpTo(0);
         await tester.pumpAndSettle();
         await tester.tap(find.byKey(const Key('open_custom_model_button')));
         await tester.pumpAndSettle();

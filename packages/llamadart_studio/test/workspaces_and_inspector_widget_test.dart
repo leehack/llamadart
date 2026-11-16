@@ -9,6 +9,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:llamadart/llamadart.dart';
 import 'package:llamadart_studio/llamadart_studio.dart';
 import 'package:llamadart_studio/src/app/platform_file_helper.dart';
+import 'package:llamadart_studio/src/widgets/studio_motion.dart';
 import 'package:llamadart_studio_core/llamadart_studio_core.dart';
 
 import 'studio_widget_test_helpers.dart';
@@ -308,6 +309,30 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.byKey(const Key('notebook_answer_card')), findsOneWidget);
+      final answerCard = find.byKey(const Key('notebook_answer_card'));
+      expect(
+        find.descendant(
+          of: answerCard,
+          matching: find.textContaining('Reply to:', findRichText: true),
+        ),
+        findsWidgets,
+      );
+      final source = deps.notebookController.state.notebookAnswerSources.first;
+      final sourceChip = find.descendant(
+        of: answerCard,
+        matching: find.text('Source 1: ${source.note.title}'),
+      );
+      final otherNote = deps.notebookController.state.notes.firstWhere(
+        (note) => note.id != source.note.id,
+      );
+      deps.notebookController.selectNote(otherNote.id);
+      await tester.pumpAndSettle();
+      expect(deps.notebookController.state.selectedNoteId, otherNote.id);
+      await tester.ensureVisible(sourceChip);
+      await tester.pumpAndSettle();
+      await tester.tap(sourceChip);
+      await tester.pumpAndSettle();
+      expect(deps.notebookController.state.selectedNoteId, source.note.id);
       expect(
         deps.notebookController.state.notebookAnswerText,
         contains('Reply to:'),
@@ -416,6 +441,47 @@ void main() {
       await tester.binding.setSurfaceSize(const Size(1560, 900));
       addTearDown(() => tester.binding.setSurfaceSize(null));
 
+      const motionChild = Text('Coding entrance');
+      final entry = find.byType(FadeSlideEntry);
+      await tester.pumpWidget(
+        const MaterialApp(
+          home: MediaQuery(
+            data: MediaQueryData(disableAnimations: true),
+            child: FadeSlideEntry(child: motionChild),
+          ),
+        ),
+      );
+      expect(find.text('Coding entrance'), findsOneWidget);
+      expect(
+        find.descendant(of: entry, matching: find.byType(Opacity)),
+        findsNothing,
+      );
+      expect(
+        find.descendant(of: entry, matching: find.byType(Transform)),
+        findsNothing,
+      );
+      await tester.pumpWidget(
+        const MaterialApp(
+          home: MediaQuery(
+            data: MediaQueryData(),
+            child: FadeSlideEntry(child: motionChild),
+          ),
+        ),
+      );
+      final opacity = find.descendant(
+        of: entry,
+        matching: find.byType(Opacity),
+      );
+      final transform = find.descendant(
+        of: entry,
+        matching: find.byType(Transform),
+      );
+      expect(tester.widget<Opacity>(opacity).opacity, 0);
+      expect(tester.widget<Transform>(transform).transform.storage[13], 10);
+      await tester.pumpAndSettle();
+      expect(tester.widget<Opacity>(opacity).opacity, 1);
+      expect(tester.widget<Transform>(transform).transform.storage[13], 0);
+
       final repoPath = await tester.runAsync(
         () => createTempDir('studio_widget_coding_'),
       );
@@ -492,6 +558,19 @@ void main() {
         expect(
           find.byKey(const Key('coding_file_syntax_preview')),
           findsOneWidget,
+        );
+        final renderedCode = tester
+            .widgetList<Text>(
+              find.descendant(
+                of: find.byKey(const Key('coding_file_syntax_preview')),
+                matching: find.byType(Text),
+              ),
+            )
+            .where((text) => text.textSpan != null)
+            .single;
+        expect(
+          renderedCode.textSpan!.toPlainText(),
+          'void main() {\n  print("hello syntax");\n}\n',
         );
       } else {
         expect(

@@ -169,7 +169,13 @@ void main() {
     );
     await tester.pumpAndSettle();
     expect(find.byKey(const Key('chat_model_load_error')), findsOneWidget);
-    expect(find.textContaining('Forced load failure'), findsWidgets);
+    expect(
+      find.descendant(
+        of: find.byKey(const Key('chat_model_load_error')),
+        matching: find.textContaining('Forced load failure'),
+      ),
+      findsOneWidget,
+    );
     expect(tester.takeException(), isNull);
     inference.fail = false;
     await tester.tap(find.byKey(const Key('retry_chat_model_load')));
