@@ -525,10 +525,18 @@ class _MultimodalComposerState extends State<MultimodalComposer> {
                                               children: statusPills,
                                             ),
                                           ),
-                                        Row(
+                                        OverflowBar(
+                                          alignment:
+                                              MainAxisAlignment.spaceBetween,
+                                          overflowAlignment:
+                                              OverflowBarAlignment.end,
+                                          spacing: 8,
+                                          overflowSpacing: 6,
                                           children: <Widget>[
-                                            ...iconActions,
-                                            const Spacer(),
+                                            Row(
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: iconActions,
+                                            ),
                                             actionButton,
                                           ],
                                         ),

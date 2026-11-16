@@ -688,7 +688,7 @@ class DirectLlamaPlaygroundPort implements StudioPlaygroundPort {
           'Explain in concise technical prose how quantized matrix-vector '
           'multiplication accelerates on-device transformer inference across '
           'CPU SIMD and GPU shader pipelines.';
-      final promptTokens = await engine.getTokenCount(benchmarkPrompt);
+      int? promptTokens;
       final watch = Stopwatch()..start();
       int? firstTokenMs;
       var generated = 0;
@@ -716,11 +716,28 @@ class DirectLlamaPlaygroundPort implements StudioPlaygroundPort {
           firstTokenMs ??= watch.elapsedMilliseconds;
           generated++;
         }
-        if (chunk.usage != null && chunk.usage!.completionTokens > 0) {
-          generated = chunk.usage!.completionTokens;
+        final usage = chunk.usage;
+        if (usage != null) {
+          if (usage.promptTokens > 0) promptTokens = usage.promptTokens;
+          if (usage.completionTokens > 0) generated = usage.completionTokens;
         }
       }
       watch.stop();
+
+      if (promptTokens == null) {
+        final diagnostics = await engine.getPerformanceContext();
+        if (diagnostics == null || diagnostics.promptEvalTokens <= 0) {
+          throw LlamaUnsupportedException(
+            'This runtime does not report evaluated prompt-token counts for '
+            'benchmarks. Choose a runtime with completion usage or performance diagnostics.',
+          );
+        }
+        promptTokens = diagnostics.promptEvalTokens;
+        LlamaLogger.instance.info(
+          'Benchmark prompt-token count uses performance diagnostics because '
+          'completion usage was unavailable.',
+        );
+      }
 
       final prefillMs = firstTokenMs ?? watch.elapsedMilliseconds;
       final decodeMs = (watch.elapsedMilliseconds - prefillMs).clamp(

@@ -802,13 +802,32 @@ class _SpeechWorkspaceViewState extends State<SpeechWorkspaceView> {
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(fontSize: 12.5),
                       ),
-                      subtitle: Text(
-                        '${(clipEntry.clip.duration.inMilliseconds / 1000).toStringAsFixed(1)}s · ${clipEntry.clip.sampleRateHz} Hz',
-                        style: TextStyle(
-                          fontSize: 11,
-                          color: palette.textMuted,
-                          fontFamilyFallback: StudioTheme.monoFontFallback,
-                        ),
+                      subtitle: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: <Widget>[
+                          Text(
+                            '${(clipEntry.clip.duration.inMilliseconds / 1000).toStringAsFixed(1)}s · ${clipEntry.clip.sampleRateHz} Hz',
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: palette.textMuted,
+                              fontFamilyFallback: StudioTheme.monoFontFallback,
+                            ),
+                          ),
+                          if (clipEntry.clip.truncated)
+                            Semantics(
+                              liveRegion: true,
+                              child: Text(
+                                'Audio stopped at the generation limit. '
+                                'This clip may be incomplete. '
+                                'Synthesize shorter sections.',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: palette.amber,
+                                ),
+                              ),
+                            ),
+                        ],
                       ),
                       trailing: Row(
                         mainAxisSize: MainAxisSize.min,
