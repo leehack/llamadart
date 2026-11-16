@@ -24,9 +24,11 @@ class McpManager implements StudioWorkspaceMcpCoordinator {
     required KeyValueStore keyValueStore,
     McpConfigStore? configStore,
     Transport Function(McpServerConfig config)? transportBuilder,
+    Future<String?> Function(String command)? executableResolver,
     this.connectionTimeout = const Duration(seconds: 45),
     this.discoveryTimeout = const Duration(seconds: 30),
   }) : _configStore = configStore ?? McpConfigStore(keyValueStore),
+       _executableResolver = executableResolver ?? resolveHostExecutable,
        _transportBuilder = transportBuilder ?? createMcpTransport {
     if (discoveryTimeout <= Duration.zero ||
         discoveryTimeout >= connectionTimeout) {
@@ -65,6 +67,7 @@ class McpManager implements StudioWorkspaceMcpCoordinator {
       McpConfigStore.normalizeWorkspaceRoot(root);
 
   final McpConfigStore _configStore;
+  final Future<String?> Function(String command) _executableResolver;
   final Transport Function(McpServerConfig config) _transportBuilder;
   final StateStore<McpManagerState> _store = StateStore<McpManagerState>(
     const McpManagerState(),
@@ -178,23 +181,22 @@ class McpManager implements StudioWorkspaceMcpCoordinator {
   }
 
   /// Registers Studio's built-in `Dart & Flutter MCP` (`dart mcp-server`)
-  /// when a local `dart` executable is available on the host, optionally
-  /// connecting automatically in the background.
+  /// using the current local SDK, refreshing previously generated commands.
+  /// Missing SDKs appear as an actionable server error. Custom configurations
+  /// and the built-in server's enablement and tool filters are preserved.
   Future<void> ensureBuiltInDartFlutterServer({
     String? workspaceRoot,
     bool autoConnect = true,
   }) async {
-    final dartExec = await resolveHostExecutable('dart');
-    if (dartExec == null) {
-      return;
-    }
     final existing = _findServer(builtInDartFlutterServerId);
+    if (existing != null && !existing.config.isBuiltIn) return;
+    final dartExec = await _executableResolver('dart');
     final keepExistingFilter = existing?.config.hasCustomToolFilter ?? false;
     final nextConfig = McpServerConfig(
       id: builtInDartFlutterServerId,
       name: 'Dart & Flutter MCP',
       transportType: McpTransportType.stdio,
-      command: dartExec,
+      command: dartExec ?? 'dart',
       args: const <String>['mcp-server'],
       workingDirectory: workspaceRoot,
       enabled: existing?.config.enabled ?? true,
@@ -206,11 +208,32 @@ class McpManager implements StudioWorkspaceMcpCoordinator {
           : defaultDisabledBuiltInDartTools,
       hasCustomToolFilter: keepExistingFilter,
     );
+    final connectionChanged =
+        existing != null &&
+        (existing.config.command != nextConfig.command ||
+            existing.config.workingDirectory != nextConfig.workingDirectory);
+    if (existing != null && (connectionChanged || dartExec == null)) {
+      await disconnectServer(builtInDartFlutterServerId);
+    }
     await saveServer(nextConfig);
+    if (dartExec == null) {
+      _mutateServer(
+        builtInDartFlutterServerId,
+        (s) => s.copyWith(
+          status: McpConnectionStatus.error,
+          errorMessage:
+              'Dart & Flutter MCP needs a Dart SDK executable. Install the Dart '
+              'or Flutter SDK, add its bin directory to PATH, then reconnect. '
+              'On Windows the SDK must contain dart.exe.',
+        ),
+      );
+      return;
+    }
     if (autoConnect &&
         nextConfig.enabled &&
-        existing?.status != McpConnectionStatus.connected &&
-        existing?.status != McpConnectionStatus.connecting) {
+        (connectionChanged ||
+            (existing?.status != McpConnectionStatus.connected &&
+                existing?.status != McpConnectionStatus.connecting))) {
       unawaited(_connectSafe(builtInDartFlutterServerId));
     }
   }

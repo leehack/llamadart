@@ -20,6 +20,7 @@ test/unit/tooling/release_install_snippets_test.dart
 test/unit/tooling/release_prep_heading_test.dart
 test/unit/tooling/reopen_unreleased_changelog_test.dart
 test/unit/tooling/safe_pr_head_update_test.dart
+test/unit/tooling/studio_ci_admission_test.dart
 test/unit/tooling/sync_native_release_pins_script_test.dart
 test/unit/tooling/test_matrix_test.dart
 test/unit/tooling/validation_coverage_test.dart

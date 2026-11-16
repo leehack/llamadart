@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:developer' as developer;
 import 'dart:io';
 
+import 'package:llamadart/llamadart.dart';
 import 'package:path/path.dart' as p;
 
 import '../../domain/mcp_server_config.dart';
@@ -312,6 +313,10 @@ McpServerConfig? _mapEntryToConfig({
 
 List<String> _commonBinDirectories() {
   final dirs = <String>[];
+  final executableName = p.basename(Platform.resolvedExecutable).toLowerCase();
+  if (Platform.isWindows && executableName == 'dart.exe') {
+    dirs.add(p.dirname(Platform.resolvedExecutable));
+  }
   final envPath = Platform.environment['PATH'];
   if (envPath != null && envPath.isNotEmpty) {
     final sep = Platform.isWindows ? ';' : ':';
@@ -357,79 +362,122 @@ List<String> _commonBinDirectories() {
 }
 
 /// Resolves [command] across explicit paths, PATH, and standard SDK bins.
-Future<String?> resolveHostExecutableImpl(String command) async {
+Future<String?> resolveHostExecutableImpl(
+  String command, {
+  bool? isWindows,
+  Iterable<String>? searchDirectories,
+  bool Function(String)? fileExists,
+}) async {
+  final resolved = _findHostExecutable(
+    command,
+    isWindows: isWindows,
+    searchDirectories: searchDirectories,
+    fileExists: fileExists,
+  );
+  if (resolved != null || searchDirectories != null) return resolved;
   final trimmed = command.trim();
-  if (trimmed.isEmpty) {
+  if (trimmed.isEmpty || trimmed.contains('/') || trimmed.contains('\\')) {
     return null;
   }
-
-  if (trimmed.contains('/') || trimmed.contains('\\')) {
-    final file = File(trimmed);
-    if (await file.exists()) {
-      return file.path;
-    }
-    return null;
-  }
-
-  final candidates = Platform.isWindows
-      ? <String>[trimmed, '$trimmed.exe', '$trimmed.bat', '$trimmed.cmd']
-      : <String>[trimmed];
-
-  final seenDirs = <String>{};
-  for (final dir in _commonBinDirectories()) {
-    if (!seenDirs.add(dir)) {
-      continue;
-    }
-    for (final name in candidates) {
-      final candidate = File(p.join(dir, name));
-      if (await candidate.exists()) {
-        return candidate.path;
-      }
-    }
-  }
-
   try {
     final res = await Process.run(
       Platform.isWindows ? 'where' : 'which',
       <String>[trimmed],
     );
     if (res.exitCode == 0) {
-      final firstLine = res.stdout
-          .toString()
-          .split(RegExp(r'\r?\n'))
-          .map((String l) => l.trim())
-          .firstWhere((String l) => l.isNotEmpty, orElse: () => '');
-      if (firstLine.isNotEmpty && await File(firstLine).exists()) {
-        return firstLine;
+      for (final line in res.stdout.toString().split(RegExp(r'\r?\n'))) {
+        final candidate = line.trim();
+        if (candidate.isEmpty) continue;
+        final resolved = _findHostExecutable(candidate);
+        if (resolved != null) return resolved;
       }
     }
   } catch (_) {}
-
   return null;
 }
 
-/// Synchronous executable lookup for transport initialization.
-String resolveHostExecutableSync(String command) {
+String? _findHostExecutable(
+  String command, {
+  bool? isWindows,
+  Iterable<String>? searchDirectories,
+  bool Function(String)? fileExists,
+}) {
   final trimmed = command.trim();
-  if (trimmed.isEmpty || trimmed.contains('/') || trimmed.contains('\\')) {
-    return trimmed;
+  if (trimmed.isEmpty) return null;
+  final windows = isWindows ?? Platform.isWindows;
+  final paths = p.Context(style: windows ? p.Style.windows : p.Style.posix);
+  final exists = fileExists ?? (String path) => File(path).existsSync();
+  final dartOnWindows = windows && _isDartCommand(trimmed, paths);
+  String? dartInDirectory(String dir) {
+    // Flutter's bin/dart and bin/dart.bat are launchers, not native programs.
+    // MCP stdio uses Process.start with runInShell:false.
+    for (final candidate in [
+      paths.join(dir, 'dart.exe'),
+      paths.join(dir, 'cache', 'dart-sdk', 'bin', 'dart.exe'),
+    ]) {
+      if (exists(candidate)) return candidate;
+    }
+    return null;
   }
-  final candidates = Platform.isWindows
+
+  if (trimmed.contains('/') || trimmed.contains('\\')) {
+    if (dartOnWindows) return dartInDirectory(paths.dirname(trimmed));
+    return exists(trimmed) ? trimmed : null;
+  }
+  final candidates = windows
       ? <String>[trimmed, '$trimmed.exe', '$trimmed.bat', '$trimmed.cmd']
       : <String>[trimmed];
   final seenDirs = <String>{};
-  for (final dir in _commonBinDirectories()) {
-    if (!seenDirs.add(dir)) {
+  for (var dir in searchDirectories ?? _commonBinDirectories()) {
+    dir = dir.trim();
+    if (dir.length >= 2 && dir.startsWith('"') && dir.endsWith('"')) {
+      dir = dir.substring(1, dir.length - 1);
+    }
+    if (dir.isEmpty) continue;
+    if (!seenDirs.add(dir)) continue;
+    if (dartOnWindows) {
+      final candidate = dartInDirectory(dir);
+      if (candidate != null) return candidate;
       continue;
     }
     for (final name in candidates) {
-      final file = File(p.join(dir, name));
-      if (file.existsSync()) {
-        return file.path;
-      }
+      final candidate = paths.join(dir, name);
+      if (exists(candidate)) return candidate;
     }
   }
-  return trimmed;
+  return null;
+}
+
+bool _isDartCommand(String command, p.Context paths) => const {
+  'dart',
+  'dart.exe',
+  'dart.bat',
+  'dart.cmd',
+}.contains(paths.basename(command).toLowerCase());
+
+/// Synchronous executable lookup for transport initialization.
+String resolveHostExecutableSync(
+  String command, {
+  bool? isWindows,
+  Iterable<String>? searchDirectories,
+  bool Function(String)? fileExists,
+}) {
+  final resolved = _findHostExecutable(
+    command,
+    isWindows: isWindows,
+    searchDirectories: searchDirectories,
+    fileExists: fileExists,
+  );
+  if (resolved != null) return resolved;
+  if ((isWindows ?? Platform.isWindows) &&
+      _isDartCommand(command.trim(), p.Context(style: p.Style.windows))) {
+    throw LlamaUnsupportedException(
+      'Dart MCP needs a native Dart SDK executable (dart.exe). Install the '
+      'Dart or Flutter SDK and add its bin directory to PATH, then reconnect '
+      'Dart & Flutter MCP.',
+    );
+  }
+  return command.trim();
 }
 
 /// Augments process environment PATH so Finder-launched macOS apps find `dart`,
