@@ -16,6 +16,7 @@ import 'package:path_provider/path_provider.dart';
 
 import '../test/studio_widget_test_helpers.dart';
 import 'support/chat_diagnostics.dart';
+import 'support/cloud_mobile_profile.dart';
 import 'support/fixture_text_input.dart';
 
 const _enabled = bool.fromEnvironment('STUDIO_CLOUD_ACCEPTANCE');
@@ -151,22 +152,7 @@ void main() {
         await deps.dispose();
         if (await temp.exists()) await temp.delete(recursive: true);
       });
-      await deps.shellController.updateSettings(
-        (s) => s.copyWith(
-          computeDevice: ComputeDevice.cpu,
-          gpuLayers: 0,
-          autoTuneHardware: false,
-          contextSize: 2048,
-          requestedContextSize: 2048,
-          numberOfThreads: 2,
-          numberOfThreadsBatch: 2,
-          maxTokens: 32,
-          temperature: 0,
-          thinkingEnabled: false,
-          toolsEnabled: false,
-          enabledBuiltInTools: const [],
-        ),
-      );
+      await deps.shellController.updateSettings(cloudMobileSettings);
       await tester.pumpWidget(LlamadartStudioApp(dependencies: deps));
       await tester.pumpAndSettle();
       Future<void> tap(String key) async {
@@ -241,6 +227,22 @@ void main() {
             deps.shellController.state.activeWorkspace == StudioWorkspace.chat,
         'model load and navigation',
       );
+      diagnostics.record('profile_reload_start', {
+        'effective_settings': chatProfileSettings(
+          deps.shellController.state.settings,
+        ),
+      });
+      await applyCloudMobileProfile(deps).timeout(const Duration(seconds: 90));
+      diagnostics.record('profile_reload_end', {
+        'effective_settings': chatProfileSettings(
+          deps.shellController.state.settings,
+        ),
+        'engine_options': inference.loadedEngineOptions,
+        'loaded_engine_signature':
+            inference.runtimeStore.state.loadedEngineSignature,
+        'ready': inference.runtimeStore.state.isReady,
+      });
+      expectCloudMobileRuntime(deps, inference);
       await tester.pumpAndSettle();
       await enterFixtureText(
         tester,
@@ -264,19 +266,14 @@ void main() {
         'context_target_cached': runtime.resolvedContextSize,
         'gpu_layers_target_cached': runtime.resolvedGpuLayers,
         'actual_measurement_available': false,
-        'requested': {
-          'compute': 'cpu',
-          'gpu_layers': 0,
-          'context': 2048,
-          'threads': 2,
-          'batch_threads': 2,
-          'max_tokens': 32,
-          'temperature': 0,
-          'thinking': false,
-          'tools': false,
-        },
+        'effective_settings': chatProfileSettings(
+          deps.shellController.state.settings,
+        ),
+        'engine_options': inference.loadedEngineOptions,
+        'loaded_engine_signature': runtime.loadedEngineSignature,
       });
       await diagnostics.flush();
+      expectCloudMobileRuntime(deps, inference);
       await tap('chat_send_button');
       diagnostics.record('after_send', chatCheckpoint(deps, _chatPrompt));
       await waitFor(
@@ -302,6 +299,7 @@ void main() {
           .trim();
       expect(deps.chatController.state.lastTurnError, isNull);
       expect(answer, '4');
+      expectCloudMobileTurn(inference);
       await navigate('notes');
       final priorNoteIds = deps.notebookController.state.notes
           .map((n) => n.id)
@@ -372,8 +370,17 @@ void main() {
           'gpu_layers': inference.runtimeStore.state.resolvedGpuLayers,
           'chat_answer': answer,
           'note_reopened': true,
-          'compute': 'cpu',
-          'threads': 2,
+          'compute': deps.shellController.state.settings.computeDevice.name,
+          'threads': deps.shellController.state.settings.numberOfThreads,
+          'actual_measurement_available': false,
+          'effective_settings': chatProfileSettings(
+            deps.shellController.state.settings,
+          ),
+          'engine_options': inference.loadedEngineOptions,
+          'generation_options_from_request': inference.generationOptions,
+          'generated_tokens':
+              inference.completedResult!.metrics.generatedTokens,
+          'thinking_events': inference.thinkingEvents,
           'qualified_scope': 'chat-ui-inference-and-notes-persistence',
         }),
         flush: true,

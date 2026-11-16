@@ -26,6 +26,32 @@ checks client changes across fields, and exercises the real Send and Notes
 controllers with a fake inference port. This checks the fixture configuration;
 debug test results do not qualify release input or physical inference.
 
+Model Hub activation intentionally applies the curated model preset. The mobile
+fixture first bounds hardware settings, activates through the actual Model Hub
+UI, then reapplies its admitted CPU profile through `updateSettings` and awaits
+`reloadActiveModel` when the engine signature changes. Reload preserves those
+settings (`applyModelPreset: false`). Do not disable normal preset application
+to qualify the fixture. The post-activation reload has a 90-second bound; the
+existing 90-second workflow phases and four-minute outer bound remain unchanged.
+
+Before Send, the fixture asserts the persisted settings, successful load options,
+ready state and loaded engine signature. The recording port captures the actual
+Send request and its capability-aware generation parameters; completion must
+contain no thinking events or reasoning text and at most 32 generated tokens.
+The profile remains CPU / zero GPU layers, context 2048, threads 2/2,
+temperature 0, maxTokens 32, thinking/tools off. The model-free regression uses
+real curated preset application, the shared fixture correction and real Send
+through `DirectLlamaInferencePort` to an observing backend double. It checks the
+backend-bound engine and generation arguments, without model weights.
+
+Journal and receipt `effective_settings` and `engine_options` describe application
+inputs; `generation_options_from_request` is the production settings conversion
+of the actual controller request. These are not independent native measurements.
+Receipt `backend`, `context_size` and `gpu_layers` remain cached runtime metadata,
+with `actual_measurement_available: false`; they establish no GPU execution proof.
+Preserve earlier functional passes at their observed profile. They cannot qualify
+a different requested profile merely because the final answer and Notes passed.
+
 Prepare the root with its Flutter pin first, on a clean checkout:
 
 ```sh
@@ -96,3 +122,11 @@ retained pair on an admitted physical device, stages the exact model with
 `stageModel=true`, and grades the real fixture outputs, JUnit, logs and storage
 receipts. Rebuild after integration: a constituent's source identity does not
 qualify the integration head. See [production acceptance](production-readiness.md).
+
+The next physical owner must independently review the integrated fixture, then
+freeze the actual engine/framework and `gen_snapshot` inputs **before** each
+build, including the platform/architecture-specific cached binaries used by that
+build. Retain their prebuild hashes and compare postbuild identities alongside
+source, dependency, native artifact and signing receipts. Postbuild-only compiler
+hashes cannot establish which bytes were consumed. Fresh bounded authorization
+and fresh integration artifacts are required for another physical attempt.

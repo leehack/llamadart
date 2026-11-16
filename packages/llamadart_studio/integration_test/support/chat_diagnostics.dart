@@ -6,6 +6,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:llamadart/llamadart.dart';
 import 'package:llamadart_studio/llamadart_studio.dart';
 import 'package:llamadart_studio_core/llamadart_studio_core.dart';
 
@@ -64,6 +65,24 @@ class RecordingInferencePort implements StudioInferencePort {
   RecordingInferencePort(this.delegate, this.diagnostics);
   final StudioInferencePort delegate;
   final ChatDiagnostics diagnostics;
+
+  /// Settings of the last successfully completed load.
+  StudioSettings? loadedSettings;
+
+  /// Engine arguments converted from that load, not hardware measurements.
+  Map<String, Object?>? loadedEngineOptions;
+
+  /// Actual controller request passed to the delegate.
+  StudioTurnRequest? lastRequest;
+
+  /// Capability-aware conversion of the actual request, not native telemetry.
+  Map<String, Object?>? generationOptions;
+
+  /// Reasoning events observed on the latest stream.
+  int thinkingEvents = 0;
+
+  /// Latest completion and its runtime-supplied token metrics.
+  StudioTurnResult? completedResult;
   @override
   ReadOnlyStore<StudioRuntimeSnapshot> get runtimeStore =>
       delegate.runtimeStore;
@@ -75,7 +94,30 @@ class RecordingInferencePort implements StudioInferencePort {
     required ResolvedModelAssets assets,
     required StudioSettings settings,
     required bool isWeb,
-  }) => delegate.loadModel(assets: assets, settings: settings, isWeb: isWeb);
+  }) async {
+    final params = settings.toModelParams(
+      format: assets.descriptor.format,
+      isWeb: isWeb,
+    );
+    final options = <String, Object?>{
+      'compute': params.device.name,
+      'gpu_layers': params.gpuLayers,
+      'context': params.contextSize,
+      'threads': params.numberOfThreads,
+      if (params is LlamaCppModelParams)
+        'batch_threads': params.numberOfThreadsBatch,
+    };
+    diagnostics.record('load_requested', {'engine_options': options});
+    await delegate.loadModel(assets: assets, settings: settings, isWeb: isWeb);
+    loadedSettings = settings;
+    loadedEngineOptions = options;
+    diagnostics.record('load_completed', {
+      'engine_options': options,
+      'loaded_engine_signature': runtimeStore.state.loadedEngineSignature,
+      'ready': runtimeStore.state.isReady,
+    });
+  }
+
   @override
   Future<void> loadCustomSource({
     required StudioModelDescriptor descriptor,
@@ -90,7 +132,31 @@ class RecordingInferencePort implements StudioInferencePort {
   Future<void> unloadModel() => delegate.unloadModel();
   @override
   Stream<StudioTurnEvent> streamTurn(StudioTurnRequest request) {
-    diagnostics.record('stream_requested');
+    lastRequest = request;
+    thinkingEvents = 0;
+    completedResult = null;
+    final capabilities = runtimeStore.state.capabilities;
+    final params = capabilities == null
+        ? null
+        : request.settings.toGenerationParams(capabilities: capabilities);
+    generationOptions = params == null
+        ? null
+        : <String, Object?>{
+            'max_tokens': params.maxTokens,
+            'temperature': params.temp,
+            'top_k': params.topK,
+            'top_p': params.topP,
+            'min_p': params.minP,
+            'penalty': params.penalty,
+            'thinking_budget': params.thinkingBudget?.maxTokens,
+          };
+    diagnostics.record('stream_requested', {
+      'effective_settings': chatProfileSettings(request.settings),
+      'generation_options_from_request': generationOptions,
+      'tools_enabled':
+          request.toolsEnabledOverride ?? request.settings.toolsEnabled,
+      'extra_tool_count': request.extraTools.length,
+    });
     var text = false;
     var thinking = false;
     final source = delegate.streamTurn(request);
@@ -101,13 +167,19 @@ class RecordingInferencePort implements StudioInferencePort {
           text = true;
           diagnostics.record('first_text');
         }
-        if (event is StudioThinkingDeltaEvent && !thinking) {
-          thinking = true;
-          diagnostics.record('first_thinking');
+        if (event is StudioThinkingDeltaEvent) {
+          thinkingEvents++;
+          if (!thinking) {
+            thinking = true;
+            diagnostics.record('first_thinking');
+          }
         }
         if (event is StudioTurnCompletedEvent) {
+          completedResult = event.result;
           diagnostics.record('completion', {
             'tokens': event.result.metrics.generatedTokens,
+            'thinking_events': thinkingEvents,
+            'thinking_length': event.result.thinkingText?.length ?? 0,
           });
         }
       });
@@ -123,6 +195,22 @@ class RecordingInferencePort implements StudioInferencePort {
   @override
   Future<void> dispose() => delegate.dispose();
 }
+
+/// Whitelisted settings metadata, never model paths, content or credentials.
+Map<String, Object?> chatProfileSettings(StudioSettings settings) => {
+  'compute': settings.computeDevice.name,
+  'gpu_layers': settings.gpuLayers,
+  'auto_tune': settings.autoTuneHardware,
+  'context': settings.contextSize,
+  'requested_context': settings.requestedContextSize,
+  'threads': settings.numberOfThreads,
+  'batch_threads': settings.numberOfThreadsBatch,
+  'max_tokens': settings.maxTokens,
+  'temperature': settings.temperature,
+  'thinking': settings.thinkingEnabled,
+  'tools': settings.toolsEnabled,
+  'built_in_tool_count': settings.enabledBuiltInTools.length,
+};
 
 class _Observer implements EventSink<StudioTurnEvent> {
   _Observer(this.sink, this.diagnostics, this.observe);
