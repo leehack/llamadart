@@ -628,3 +628,492 @@ external void _windowsGgmlBackendDevMemory(
   Pointer<Size> free,
   Pointer<Size> total,
 );
+
+Pointer<NativeType> _ttsAssetSymbol(
+  String name, {
+  required bool isWindows,
+}) => switch (name) {
+  'llama_dart_tts_api_version' =>
+    isWindows
+        ? Native.addressOf<NativeFunction<_TtsApiVersionNative>>(
+            _wrapperTtsApiVersion,
+          )
+        : Native.addressOf<NativeFunction<_TtsApiVersionNative>>(
+            _primaryTtsApiVersion,
+          ),
+  'llama_dart_tts_request_default' =>
+    isWindows
+        ? Native.addressOf<NativeFunction<_TtsRequestDefaultNative>>(
+            _wrapperTtsRequestDefault,
+          )
+        : Native.addressOf<NativeFunction<_TtsRequestDefaultNative>>(
+            _primaryTtsRequestDefault,
+          ),
+  'llama_dart_tts_get_info' =>
+    isWindows
+        ? Native.addressOf<NativeFunction<_TtsGetInfoNative>>(
+            _wrapperTtsGetInfo,
+          )
+        : Native.addressOf<NativeFunction<_TtsGetInfoNative>>(
+            _primaryTtsGetInfo,
+          ),
+  'llama_dart_tts_init' =>
+    isWindows
+        ? Native.addressOf<NativeFunction<_TtsInitNative>>(_wrapperTtsInit)
+        : Native.addressOf<NativeFunction<_TtsInitNative>>(_primaryTtsInit),
+  'llama_dart_tts_free' =>
+    isWindows
+        ? Native.addressOf<NativeFunction<_TtsFreeNative>>(_wrapperTtsFree)
+        : Native.addressOf<NativeFunction<_TtsFreeNative>>(_primaryTtsFree),
+  'llama_dart_tts_start' =>
+    isWindows
+        ? Native.addressOf<NativeFunction<_TtsStartNative>>(_wrapperTtsStart)
+        : Native.addressOf<NativeFunction<_TtsStartNative>>(_primaryTtsStart),
+  'llama_dart_tts_step' =>
+    isWindows
+        ? Native.addressOf<NativeFunction<_TtsStepNative>>(_wrapperTtsStep)
+        : Native.addressOf<NativeFunction<_TtsStepNative>>(_primaryTtsStep),
+  'llama_dart_tts_cancel' =>
+    isWindows
+        ? Native.addressOf<NativeFunction<_TtsCancelNative>>(_wrapperTtsCancel)
+        : Native.addressOf<NativeFunction<_TtsCancelNative>>(_primaryTtsCancel),
+  'llama_dart_tts_reset' =>
+    isWindows
+        ? Native.addressOf<NativeFunction<_TtsResetNative>>(_wrapperTtsReset)
+        : Native.addressOf<NativeFunction<_TtsResetNative>>(_primaryTtsReset),
+  'llama_dart_tts_get_output_info' =>
+    isWindows
+        ? Native.addressOf<NativeFunction<_TtsGetOutputInfoNative>>(
+            _wrapperTtsGetOutputInfo,
+          )
+        : Native.addressOf<NativeFunction<_TtsGetOutputInfoNative>>(
+            _primaryTtsGetOutputInfo,
+          ),
+  'llama_dart_tts_read_pcm' =>
+    isWindows
+        ? Native.addressOf<NativeFunction<_TtsReadPcmNative>>(
+            _wrapperTtsReadPcm,
+          )
+        : Native.addressOf<NativeFunction<_TtsReadPcmNative>>(
+            _primaryTtsReadPcm,
+          ),
+  'llama_dart_tts_last_error' =>
+    isWindows
+        ? Native.addressOf<NativeFunction<_TtsLastErrorNative>>(
+            _wrapperTtsLastError,
+          )
+        : Native.addressOf<NativeFunction<_TtsLastErrorNative>>(
+            _primaryTtsLastError,
+          ),
+  'llama_dart_tts_set_cancel_flag' =>
+    isWindows
+        ? Native.addressOf<NativeFunction<_TtsSetCancelFlagNative>>(
+            _wrapperTtsSetCancelFlag,
+          )
+        : Native.addressOf<NativeFunction<_TtsSetCancelFlagNative>>(
+            _primaryTtsSetCancelFlag,
+          ),
+  'llama_dart_tts_supported_model_types' =>
+    isWindows
+        ? Native.addressOf<NativeFunction<_TtsSupportedModelTypesNative>>(
+            _wrapperTtsSupportedModelTypes,
+          )
+        : Native.addressOf<NativeFunction<_TtsSupportedModelTypesNative>>(
+            _primaryTtsSupportedModelTypes,
+          ),
+  'llama_dart_tts_get_info_ext' =>
+    isWindows
+        ? Native.addressOf<NativeFunction<_TtsGetInfoExtNative>>(
+            _wrapperTtsGetInfoExt,
+          )
+        : Native.addressOf<NativeFunction<_TtsGetInfoExtNative>>(
+            _primaryTtsGetInfoExt,
+          ),
+  'llama_dart_tts_init_ext' =>
+    isWindows
+        ? Native.addressOf<NativeFunction<_TtsInitExtNative>>(
+            _wrapperTtsInitExt,
+          )
+        : Native.addressOf<NativeFunction<_TtsInitExtNative>>(
+            _primaryTtsInitExt,
+          ),
+  'llama_dart_tts_start_with_voice' =>
+    isWindows
+        ? Native.addressOf<NativeFunction<_TtsStartWithVoiceNative>>(
+            _wrapperTtsStartWithVoice,
+          )
+        : Native.addressOf<NativeFunction<_TtsStartWithVoiceNative>>(
+            _primaryTtsStartWithVoice,
+          ),
+  'llama_dart_tts_get_voice_count' =>
+    isWindows
+        ? Native.addressOf<NativeFunction<_TtsGetVoiceCountNative>>(
+            _wrapperTtsGetVoiceCount,
+          )
+        : Native.addressOf<NativeFunction<_TtsGetVoiceCountNative>>(
+            _primaryTtsGetVoiceCount,
+          ),
+  'llama_dart_tts_get_voice_name' =>
+    isWindows
+        ? Native.addressOf<NativeFunction<_TtsGetVoiceNameNative>>(
+            _wrapperTtsGetVoiceName,
+          )
+        : Native.addressOf<NativeFunction<_TtsGetVoiceNameNative>>(
+            _primaryTtsGetVoiceName,
+          ),
+  'llama_dart_tts_eval_callback' =>
+    isWindows
+        ? Native.addressOf<
+            NativeFunction<ggml_backend_sched_eval_callbackFunction>
+          >(_wrapperTtsEvalCallback)
+        : Native.addressOf<
+            NativeFunction<ggml_backend_sched_eval_callbackFunction>
+          >(_primaryTtsEvalCallback),
+  _ => throw ArgumentError.value(name, 'name', 'Unknown TTS symbol'),
+};
+
+@Native<_TtsApiVersionNative>(
+  assetId: 'package:llamadart/llamadart',
+  symbol: 'llama_dart_tts_api_version',
+)
+external int _primaryTtsApiVersion();
+
+@Native<_TtsRequestDefaultNative>(
+  assetId: 'package:llamadart/llamadart',
+  symbol: 'llama_dart_tts_request_default',
+)
+external llama_dart_tts_request _primaryTtsRequestDefault();
+
+@Native<_TtsGetInfoNative>(
+  assetId: 'package:llamadart/llamadart',
+  symbol: 'llama_dart_tts_get_info',
+)
+external int _primaryTtsGetInfo(
+  Pointer<mtmd_context> mtmd,
+  Pointer<llama_dart_tts_info> info,
+);
+
+@Native<_TtsInitNative>(
+  assetId: 'package:llamadart/llamadart',
+  symbol: 'llama_dart_tts_init',
+)
+external Pointer<llama_dart_tts> _primaryTtsInit(
+  Pointer<llama_context> context,
+  Pointer<mtmd_context> mtmd,
+  Pointer<Int32> status,
+);
+
+@Native<_TtsFreeNative>(
+  assetId: 'package:llamadart/llamadart',
+  symbol: 'llama_dart_tts_free',
+)
+external void _primaryTtsFree(Pointer<llama_dart_tts> tts);
+
+@Native<_TtsStartNative>(
+  assetId: 'package:llamadart/llamadart',
+  symbol: 'llama_dart_tts_start',
+)
+external int _primaryTtsStart(
+  Pointer<llama_dart_tts> tts,
+  Pointer<llama_dart_tts_request> request,
+);
+
+@Native<_TtsStepNative>(
+  assetId: 'package:llamadart/llamadart',
+  symbol: 'llama_dart_tts_step',
+)
+external int _primaryTtsStep(
+  Pointer<llama_dart_tts> tts,
+  Pointer<llama_dart_tts_progress> progress,
+);
+
+@Native<_TtsCancelNative>(
+  assetId: 'package:llamadart/llamadart',
+  symbol: 'llama_dart_tts_cancel',
+)
+external void _primaryTtsCancel(Pointer<llama_dart_tts> tts);
+
+@Native<_TtsResetNative>(
+  assetId: 'package:llamadart/llamadart',
+  symbol: 'llama_dart_tts_reset',
+)
+external int _primaryTtsReset(Pointer<llama_dart_tts> tts);
+
+@Native<_TtsGetOutputInfoNative>(
+  assetId: 'package:llamadart/llamadart',
+  symbol: 'llama_dart_tts_get_output_info',
+)
+external int _primaryTtsGetOutputInfo(
+  Pointer<llama_dart_tts> tts,
+  Pointer<llama_dart_tts_output_info> info,
+);
+
+@Native<_TtsReadPcmNative>(
+  assetId: 'package:llamadart/llamadart',
+  symbol: 'llama_dart_tts_read_pcm',
+)
+external int _primaryTtsReadPcm(
+  Pointer<llama_dart_tts> tts,
+  int offset,
+  Pointer<Float> output,
+  int capacity,
+  Pointer<Size> written,
+);
+
+@Native<_TtsLastErrorNative>(
+  assetId: 'package:llamadart/llamadart',
+  symbol: 'llama_dart_tts_last_error',
+)
+external Pointer<Char> _primaryTtsLastError(Pointer<llama_dart_tts> tts);
+
+@Native<_TtsSetCancelFlagNative>(
+  assetId: 'package:llamadart/llamadart',
+  symbol: 'llama_dart_tts_set_cancel_flag',
+)
+external int _primaryTtsSetCancelFlag(
+  Pointer<llama_dart_tts> tts,
+  Pointer<Int8> flag,
+);
+
+@Native<_TtsSupportedModelTypesNative>(
+  assetId: 'package:llamadart/llamadart',
+  symbol: 'llama_dart_tts_supported_model_types',
+)
+external int _primaryTtsSupportedModelTypes();
+
+@Native<_TtsGetInfoExtNative>(
+  assetId: 'package:llamadart/llamadart',
+  symbol: 'llama_dart_tts_get_info_ext',
+)
+external int _primaryTtsGetInfoExt(
+  Pointer<mtmd_context> mtmd,
+  int acceptedTypes,
+  Pointer<llama_dart_tts_info> info,
+);
+
+@Native<_TtsInitExtNative>(
+  assetId: 'package:llamadart/llamadart',
+  symbol: 'llama_dart_tts_init_ext',
+)
+external Pointer<llama_dart_tts> _primaryTtsInitExt(
+  Pointer<llama_context> context,
+  Pointer<mtmd_context> mtmd,
+  int acceptedTypes,
+  Pointer<Int32> status,
+);
+
+@Native<_TtsStartWithVoiceNative>(
+  assetId: 'package:llamadart/llamadart',
+  symbol: 'llama_dart_tts_start_with_voice',
+)
+external int _primaryTtsStartWithVoice(
+  Pointer<llama_dart_tts> tts,
+  Pointer<llama_dart_tts_request> request,
+  Pointer<Char> voice,
+);
+
+@Native<_TtsGetVoiceCountNative>(
+  assetId: 'package:llamadart/llamadart',
+  symbol: 'llama_dart_tts_get_voice_count',
+)
+external int _primaryTtsGetVoiceCount(
+  Pointer<mtmd_context> mtmd,
+  int acceptedTypes,
+  Pointer<Int32> count,
+);
+
+@Native<_TtsGetVoiceNameNative>(
+  assetId: 'package:llamadart/llamadart',
+  symbol: 'llama_dart_tts_get_voice_name',
+)
+external int _primaryTtsGetVoiceName(
+  Pointer<mtmd_context> mtmd,
+  int acceptedTypes,
+  int index,
+  Pointer<Char> name,
+  int capacity,
+  Pointer<Size> written,
+);
+
+@Native<ggml_backend_sched_eval_callbackFunction>(
+  assetId: 'package:llamadart/llamadart',
+  symbol: 'llama_dart_tts_eval_callback',
+)
+external bool _primaryTtsEvalCallback(
+  Pointer<ggml_tensor> tensor,
+  bool ask,
+  Pointer<Void> userData,
+);
+
+@Native<_TtsApiVersionNative>(
+  assetId: 'package:llamadart/llamadart_wrapper',
+  symbol: 'llama_dart_tts_api_version',
+)
+external int _wrapperTtsApiVersion();
+
+@Native<_TtsRequestDefaultNative>(
+  assetId: 'package:llamadart/llamadart_wrapper',
+  symbol: 'llama_dart_tts_request_default',
+)
+external llama_dart_tts_request _wrapperTtsRequestDefault();
+
+@Native<_TtsGetInfoNative>(
+  assetId: 'package:llamadart/llamadart_wrapper',
+  symbol: 'llama_dart_tts_get_info',
+)
+external int _wrapperTtsGetInfo(
+  Pointer<mtmd_context> mtmd,
+  Pointer<llama_dart_tts_info> info,
+);
+
+@Native<_TtsInitNative>(
+  assetId: 'package:llamadart/llamadart_wrapper',
+  symbol: 'llama_dart_tts_init',
+)
+external Pointer<llama_dart_tts> _wrapperTtsInit(
+  Pointer<llama_context> context,
+  Pointer<mtmd_context> mtmd,
+  Pointer<Int32> status,
+);
+
+@Native<_TtsFreeNative>(
+  assetId: 'package:llamadart/llamadart_wrapper',
+  symbol: 'llama_dart_tts_free',
+)
+external void _wrapperTtsFree(Pointer<llama_dart_tts> tts);
+
+@Native<_TtsStartNative>(
+  assetId: 'package:llamadart/llamadart_wrapper',
+  symbol: 'llama_dart_tts_start',
+)
+external int _wrapperTtsStart(
+  Pointer<llama_dart_tts> tts,
+  Pointer<llama_dart_tts_request> request,
+);
+
+@Native<_TtsStepNative>(
+  assetId: 'package:llamadart/llamadart_wrapper',
+  symbol: 'llama_dart_tts_step',
+)
+external int _wrapperTtsStep(
+  Pointer<llama_dart_tts> tts,
+  Pointer<llama_dart_tts_progress> progress,
+);
+
+@Native<_TtsCancelNative>(
+  assetId: 'package:llamadart/llamadart_wrapper',
+  symbol: 'llama_dart_tts_cancel',
+)
+external void _wrapperTtsCancel(Pointer<llama_dart_tts> tts);
+
+@Native<_TtsResetNative>(
+  assetId: 'package:llamadart/llamadart_wrapper',
+  symbol: 'llama_dart_tts_reset',
+)
+external int _wrapperTtsReset(Pointer<llama_dart_tts> tts);
+
+@Native<_TtsGetOutputInfoNative>(
+  assetId: 'package:llamadart/llamadart_wrapper',
+  symbol: 'llama_dart_tts_get_output_info',
+)
+external int _wrapperTtsGetOutputInfo(
+  Pointer<llama_dart_tts> tts,
+  Pointer<llama_dart_tts_output_info> info,
+);
+
+@Native<_TtsReadPcmNative>(
+  assetId: 'package:llamadart/llamadart_wrapper',
+  symbol: 'llama_dart_tts_read_pcm',
+)
+external int _wrapperTtsReadPcm(
+  Pointer<llama_dart_tts> tts,
+  int offset,
+  Pointer<Float> output,
+  int capacity,
+  Pointer<Size> written,
+);
+
+@Native<_TtsLastErrorNative>(
+  assetId: 'package:llamadart/llamadart_wrapper',
+  symbol: 'llama_dart_tts_last_error',
+)
+external Pointer<Char> _wrapperTtsLastError(Pointer<llama_dart_tts> tts);
+
+@Native<_TtsSetCancelFlagNative>(
+  assetId: 'package:llamadart/llamadart_wrapper',
+  symbol: 'llama_dart_tts_set_cancel_flag',
+)
+external int _wrapperTtsSetCancelFlag(
+  Pointer<llama_dart_tts> tts,
+  Pointer<Int8> flag,
+);
+
+@Native<_TtsSupportedModelTypesNative>(
+  assetId: 'package:llamadart/llamadart_wrapper',
+  symbol: 'llama_dart_tts_supported_model_types',
+)
+external int _wrapperTtsSupportedModelTypes();
+
+@Native<_TtsGetInfoExtNative>(
+  assetId: 'package:llamadart/llamadart_wrapper',
+  symbol: 'llama_dart_tts_get_info_ext',
+)
+external int _wrapperTtsGetInfoExt(
+  Pointer<mtmd_context> mtmd,
+  int acceptedTypes,
+  Pointer<llama_dart_tts_info> info,
+);
+
+@Native<_TtsInitExtNative>(
+  assetId: 'package:llamadart/llamadart_wrapper',
+  symbol: 'llama_dart_tts_init_ext',
+)
+external Pointer<llama_dart_tts> _wrapperTtsInitExt(
+  Pointer<llama_context> context,
+  Pointer<mtmd_context> mtmd,
+  int acceptedTypes,
+  Pointer<Int32> status,
+);
+
+@Native<_TtsStartWithVoiceNative>(
+  assetId: 'package:llamadart/llamadart_wrapper',
+  symbol: 'llama_dart_tts_start_with_voice',
+)
+external int _wrapperTtsStartWithVoice(
+  Pointer<llama_dart_tts> tts,
+  Pointer<llama_dart_tts_request> request,
+  Pointer<Char> voice,
+);
+
+@Native<_TtsGetVoiceCountNative>(
+  assetId: 'package:llamadart/llamadart_wrapper',
+  symbol: 'llama_dart_tts_get_voice_count',
+)
+external int _wrapperTtsGetVoiceCount(
+  Pointer<mtmd_context> mtmd,
+  int acceptedTypes,
+  Pointer<Int32> count,
+);
+
+@Native<_TtsGetVoiceNameNative>(
+  assetId: 'package:llamadart/llamadart_wrapper',
+  symbol: 'llama_dart_tts_get_voice_name',
+)
+external int _wrapperTtsGetVoiceName(
+  Pointer<mtmd_context> mtmd,
+  int acceptedTypes,
+  int index,
+  Pointer<Char> name,
+  int capacity,
+  Pointer<Size> written,
+);
+
+@Native<ggml_backend_sched_eval_callbackFunction>(
+  assetId: 'package:llamadart/llamadart_wrapper',
+  symbol: 'llama_dart_tts_eval_callback',
+)
+external bool _wrapperTtsEvalCallback(
+  Pointer<ggml_tensor> tensor,
+  bool ask,
+  Pointer<Void> userData,
+);

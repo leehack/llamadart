@@ -24,6 +24,10 @@ complete mono float32 PCM buffer. It does not stream playable audio chunks yet.
 | Native LiteRT-LM / `.litertlm` | Unsupported by the pinned native artifact | None |
 | LiteRT-LM Web | Unsupported | None |
 
+Native llama.cpp checks the selected runtime's TTS ABI and required exports
+before synthesis. An incompatible or incomplete runtime reports unsupported
+capabilities even when it can load a text model.
+
 ## Models
 
 Pick the adapter for the model; `capabilities` reports what the loaded pair
