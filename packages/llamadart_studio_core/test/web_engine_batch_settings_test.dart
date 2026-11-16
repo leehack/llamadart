@@ -3,6 +3,14 @@ import 'package:llamadart_studio_core/llamadart_studio_core.dart';
 import 'package:test/test.dart';
 
 void main() {
+  test('GGUF NPU requests remain explicit for runtime validation', () {
+    for (final isWeb in [false, true]) {
+      final params = const StudioSettings(
+        computeDevice: ComputeDevice.npu,
+      ).toModelParams(format: ModelFormat.gguf, isWeb: isWeb);
+      expect(params.device, ComputeDevice.npu);
+    }
+  });
   test('Web automatic batching remains owned by the runtime', () {
     final params = const StudioSettings().toModelParams(
       format: ModelFormat.gguf,

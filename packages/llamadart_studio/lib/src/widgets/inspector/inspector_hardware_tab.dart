@@ -20,6 +20,8 @@ extension _InspectorHardwareTab on _SessionInspectorPanelState {
 
     final activePreset = settings.activeHardwarePreset;
     final expertMode = settings.inspectorExpertMode;
+    final isLiteRt = runtime.capabilities?.runtime == LlamaRuntime.liteRtLm;
+    final nativeLlamaCpp = !deps.isWeb && !isLiteRt;
 
     final list = ListView(
       key: const Key('inspector_hardware_list'),
@@ -263,7 +265,7 @@ extension _InspectorHardwareTab on _SessionInspectorPanelState {
               tapTargetSize: MaterialTapTargetSize.shrinkWrap,
               padding: const EdgeInsets.symmetric(horizontal: 6),
             ),
-            segments: const <ButtonSegment<ComputeDevice>>[
+            segments: <ButtonSegment<ComputeDevice>>[
               ButtonSegment<ComputeDevice>(
                 value: ComputeDevice.auto,
                 label: Text('Auto', style: TextStyle(fontSize: 11)),
@@ -274,6 +276,8 @@ extension _InspectorHardwareTab on _SessionInspectorPanelState {
               ),
               ButtonSegment<ComputeDevice>(
                 value: ComputeDevice.npu,
+                enabled: !deps.isWeb && isLiteRt,
+                tooltip: 'NPU requires a supported native LiteRT-LM model.',
                 label: Text('NPU', style: TextStyle(fontSize: 11)),
               ),
               ButtonSegment<ComputeDevice>(
@@ -357,243 +361,256 @@ extension _InspectorHardwareTab on _SessionInspectorPanelState {
             ),
           ),
         ] else ...<Widget>[
-          const SizedBox(height: 10),
-          _SectionLabel(label: 'KV Cache Quantization (K / V)'),
-          const SizedBox(height: 6),
-          Row(
-            children: <Widget>[
-              Expanded(
-                child: DropdownButtonFormField<KvCacheType>(
-                  initialValue: settings.cacheTypeK,
-                  isExpanded: true,
-                  decoration: const InputDecoration(
-                    labelText: 'Cache K',
-                    contentPadding: EdgeInsets.symmetric(
-                      horizontal: 10,
-                      vertical: 10,
-                    ),
-                  ),
-                  items: KvCacheType.values
-                      .map(
-                        (KvCacheType t) => DropdownMenuItem<KvCacheType>(
-                          value: t,
-                          child: Text(
-                            t.name.toUpperCase(),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(fontSize: 12),
-                          ),
-                        ),
-                      )
-                      .toList(),
-                  onChanged: (KvCacheType? v) {
-                    if (v != null) {
-                      deps.shellController.updateSettings(
-                        (StudioSettings s) => s.copyWith(cacheTypeK: v),
-                      );
-                    }
-                  },
-                ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: DropdownButtonFormField<KvCacheType>(
-                  initialValue: settings.cacheTypeV,
-                  isExpanded: true,
-                  decoration: const InputDecoration(
-                    labelText: 'Cache V',
-                    contentPadding: EdgeInsets.symmetric(
-                      horizontal: 10,
-                      vertical: 10,
-                    ),
-                  ),
-                  items: KvCacheType.values
-                      .map(
-                        (KvCacheType t) => DropdownMenuItem<KvCacheType>(
-                          value: t,
-                          child: Text(
-                            t.name.toUpperCase(),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(fontSize: 12),
-                          ),
-                        ),
-                      )
-                      .toList(),
-                  onChanged: (KvCacheType? v) {
-                    if (v != null) {
-                      deps.shellController.updateSettings(
-                        (StudioSettings s) => s.copyWith(cacheTypeV: v),
-                      );
-                    }
-                  },
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          DropdownButtonFormField<FlashAttention>(
-            initialValue: settings.flashAttention,
-            isExpanded: true,
-            decoration: const InputDecoration(labelText: 'FlashAttention'),
-            items: FlashAttention.values
-                .map(
-                  (FlashAttention mode) => DropdownMenuItem<FlashAttention>(
-                    value: mode,
-                    child: Text(
-                      mode.name.toUpperCase(),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(fontSize: 12),
-                    ),
-                  ),
-                )
-                .toList(),
-            onChanged: (FlashAttention? mode) {
-              if (mode != null) {
-                deps.shellController.updateSettings(
-                  (StudioSettings s) => s.copyWith(flashAttention: mode),
-                );
-              }
-            },
-          ),
-          const SizedBox(height: 12),
-          _SectionLabel(label: 'Logical Batch Size (n_batch)'),
-          const SizedBox(height: 6),
-          Wrap(
-            spacing: 6,
-            runSpacing: 6,
-            children: <int>[0, 512, 1024, 2048, 4096].map((int batch) {
-              final selected = settings.batchSize == batch;
-              return ChoiceChip(
-                key: Key('inspector_batch_size_$batch'),
-                label: Text(
-                  batch == 0 ? 'Auto' : '$batch',
-                  style: const TextStyle(fontSize: 11.5),
-                ),
-                selected: selected,
-                onSelected: (_) => deps.shellController.updateSettings(
-                  (StudioSettings s) => s.copyWith(batchSize: batch),
-                ),
-              );
-            }).toList(),
-          ),
-          const SizedBox(height: 12),
-          _SectionLabel(label: 'Micro-Batch Size (n_ubatch)'),
-          const SizedBox(height: 6),
-          Wrap(
-            spacing: 6,
-            runSpacing: 6,
-            children: <int>[0, 128, 256, 512, 1024].map((int ubatch) {
-              final selected = settings.microBatchSize == ubatch;
-              return ChoiceChip(
-                key: Key('inspector_micro_batch_size_$ubatch'),
-                label: Text(
-                  ubatch == 0 ? 'Auto' : '$ubatch',
-                  style: const TextStyle(fontSize: 11.5),
-                ),
-                selected: selected,
-                onSelected: (_) => deps.shellController.updateSettings(
-                  (StudioSettings s) => s.copyWith(microBatchSize: ubatch),
-                ),
-              );
-            }).toList(),
-          ),
-          const SizedBox(height: 12),
-          _SliderControl(
-            label: 'Decode Threads (n_threads)',
-            valueLabel: settings.numberOfThreads <= 0
-                ? 'Auto'
-                : '${settings.numberOfThreads}',
-            value: settings.numberOfThreads.clamp(0, 32).toDouble(),
-            min: 0,
-            max: 32,
-            divisions: 32,
-            onChanged: (double v) => deps.shellController.updateSettings(
-              (StudioSettings s) => s.copyWith(numberOfThreads: v.round()),
-            ),
-          ),
-          _SliderControl(
-            label: 'Prompt/Batch Threads (n_threads_batch)',
-            valueLabel: settings.numberOfThreadsBatch <= 0
-                ? 'Auto'
-                : '${settings.numberOfThreadsBatch}',
-            value: settings.numberOfThreadsBatch.clamp(0, 32).toDouble(),
-            min: 0,
-            max: 32,
-            divisions: 32,
-            onChanged: (double v) => deps.shellController.updateSettings(
-              (StudioSettings s) => s.copyWith(numberOfThreadsBatch: v.round()),
-            ),
-          ),
-          const SizedBox(height: 4),
-          SwitchListTile.adaptive(
-            contentPadding: EdgeInsets.zero,
-            dense: true,
-            title: const Text(
-              'Memory-Map Weights (use_mmap)',
-              style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600),
-            ),
-            subtitle: Text(
-              'Zero-copy weight paging from disk (recommended)',
+          if (!nativeLlamaCpp)
+            Text(
+              'This runtime manages cache, memory and advanced engine options automatically.',
               style: TextStyle(fontSize: 11, color: palette.textMuted),
             ),
-            value: settings.useMmap,
-            onChanged: (bool v) => deps.shellController.updateSettings(
-              (StudioSettings s) => s.copyWith(useMmap: v),
-            ),
-          ),
-          SwitchListTile.adaptive(
-            contentPadding: EdgeInsets.zero,
-            dense: true,
-            title: const Text(
-              'Lock Weights in RAM (use_mlock)',
-              style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600),
-            ),
-            subtitle: Text(
-              'Prevent OS swap on host RAM-heavy setups',
-              style: TextStyle(fontSize: 11, color: palette.textMuted),
-            ),
-            value: settings.useMlock,
-            onChanged: (bool v) => deps.shellController.updateSettings(
-              (StudioSettings s) => s.copyWith(useMlock: v),
-            ),
-          ),
-          const SizedBox(height: 8),
-          DropdownButtonFormField<StudioSpeculativeMode>(
-            initialValue: settings.speculativeMode,
-            isExpanded: true,
-            decoration: const InputDecoration(
-              labelText: 'Speculative Decoding',
-            ),
-            items: StudioSpeculativeMode.values
-                .map(
-                  (StudioSpeculativeMode m) =>
-                      DropdownMenuItem<StudioSpeculativeMode>(
-                        value: m,
-                        child: Text(
-                          m.label,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(fontSize: 12),
-                        ),
+          if (nativeLlamaCpp) ...<Widget>[
+            const SizedBox(height: 10),
+            _SectionLabel(label: 'KV Cache Quantization (K / V)'),
+            const SizedBox(height: 6),
+            Row(
+              children: <Widget>[
+                Expanded(
+                  child: DropdownButtonFormField<KvCacheType>(
+                    initialValue: settings.cacheTypeK,
+                    isExpanded: true,
+                    decoration: const InputDecoration(
+                      labelText: 'Cache K',
+                      contentPadding: EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 10,
                       ),
-                )
-                .toList(),
-            onChanged: (StudioSpeculativeMode? mode) {
-              if (mode != null) {
-                deps.shellController.updateSettings(
-                  (StudioSettings s) => s.copyWith(speculativeMode: mode),
+                    ),
+                    items: KvCacheType.values
+                        .map(
+                          (KvCacheType t) => DropdownMenuItem<KvCacheType>(
+                            value: t,
+                            child: Text(
+                              t.name.toUpperCase(),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(fontSize: 12),
+                            ),
+                          ),
+                        )
+                        .toList(),
+                    onChanged: (KvCacheType? v) {
+                      if (v != null) {
+                        deps.shellController.updateSettings(
+                          (StudioSettings s) => s.copyWith(cacheTypeK: v),
+                        );
+                      }
+                    },
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: DropdownButtonFormField<KvCacheType>(
+                    initialValue: settings.cacheTypeV,
+                    isExpanded: true,
+                    decoration: const InputDecoration(
+                      labelText: 'Cache V',
+                      contentPadding: EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 10,
+                      ),
+                    ),
+                    items: KvCacheType.values
+                        .map(
+                          (KvCacheType t) => DropdownMenuItem<KvCacheType>(
+                            value: t,
+                            child: Text(
+                              t.name.toUpperCase(),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(fontSize: 12),
+                            ),
+                          ),
+                        )
+                        .toList(),
+                    onChanged: (KvCacheType? v) {
+                      if (v != null) {
+                        deps.shellController.updateSettings(
+                          (StudioSettings s) => s.copyWith(cacheTypeV: v),
+                        );
+                      }
+                    },
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            DropdownButtonFormField<FlashAttention>(
+              initialValue: settings.flashAttention,
+              isExpanded: true,
+              decoration: const InputDecoration(labelText: 'FlashAttention'),
+              items: FlashAttention.values
+                  .map(
+                    (FlashAttention mode) => DropdownMenuItem<FlashAttention>(
+                      value: mode,
+                      child: Text(
+                        mode.name.toUpperCase(),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontSize: 12),
+                      ),
+                    ),
+                  )
+                  .toList(),
+              onChanged: (FlashAttention? mode) {
+                if (mode != null) {
+                  deps.shellController.updateSettings(
+                    (StudioSettings s) => s.copyWith(flashAttention: mode),
+                  );
+                }
+              },
+            ),
+            const SizedBox(height: 12),
+          ],
+          if (!isLiteRt) ...<Widget>[
+            _SectionLabel(label: 'Logical Batch Size (n_batch)'),
+            const SizedBox(height: 6),
+            Wrap(
+              spacing: 6,
+              runSpacing: 6,
+              children: <int>[0, 512, 1024, 2048, 4096].map((int batch) {
+                final selected = settings.batchSize == batch;
+                return ChoiceChip(
+                  key: Key('inspector_batch_size_$batch'),
+                  label: Text(
+                    batch == 0 ? 'Auto' : '$batch',
+                    style: const TextStyle(fontSize: 11.5),
+                  ),
+                  selected: selected,
+                  onSelected: (_) => deps.shellController.updateSettings(
+                    (StudioSettings s) => s.copyWith(batchSize: batch),
+                  ),
                 );
-              }
-            },
-          ),
-          const SizedBox(height: 6),
-          Text(
-            'Applies on compatible text-only turns. MTP requires model support and Apply & Reload.',
-            style: TextStyle(fontSize: 11, color: palette.textMuted),
-          ),
-          const SizedBox(height: 8),
+              }).toList(),
+            ),
+            const SizedBox(height: 12),
+            _SectionLabel(label: 'Micro-Batch Size (n_ubatch)'),
+            const SizedBox(height: 6),
+            Wrap(
+              spacing: 6,
+              runSpacing: 6,
+              children: <int>[0, 128, 256, 512, 1024].map((int ubatch) {
+                final selected = settings.microBatchSize == ubatch;
+                return ChoiceChip(
+                  key: Key('inspector_micro_batch_size_$ubatch'),
+                  label: Text(
+                    ubatch == 0 ? 'Auto' : '$ubatch',
+                    style: const TextStyle(fontSize: 11.5),
+                  ),
+                  selected: selected,
+                  onSelected: (_) => deps.shellController.updateSettings(
+                    (StudioSettings s) => s.copyWith(microBatchSize: ubatch),
+                  ),
+                );
+              }).toList(),
+            ),
+            const SizedBox(height: 12),
+          ],
+          if (!deps.isWeb)
+            _SliderControl(
+              label: 'Decode Threads (n_threads)',
+              valueLabel: settings.numberOfThreads <= 0
+                  ? 'Auto'
+                  : '${settings.numberOfThreads}',
+              value: settings.numberOfThreads.clamp(0, 32).toDouble(),
+              min: 0,
+              max: 32,
+              divisions: 32,
+              onChanged: (double v) => deps.shellController.updateSettings(
+                (StudioSettings s) => s.copyWith(numberOfThreads: v.round()),
+              ),
+            ),
+          if (nativeLlamaCpp) ...<Widget>[
+            _SliderControl(
+              label: 'Prompt/Batch Threads (n_threads_batch)',
+              valueLabel: settings.numberOfThreadsBatch <= 0
+                  ? 'Auto'
+                  : '${settings.numberOfThreadsBatch}',
+              value: settings.numberOfThreadsBatch.clamp(0, 32).toDouble(),
+              min: 0,
+              max: 32,
+              divisions: 32,
+              onChanged: (double v) => deps.shellController.updateSettings(
+                (StudioSettings s) =>
+                    s.copyWith(numberOfThreadsBatch: v.round()),
+              ),
+            ),
+            const SizedBox(height: 4),
+            SwitchListTile.adaptive(
+              contentPadding: EdgeInsets.zero,
+              dense: true,
+              title: const Text(
+                'Memory-Map Weights (use_mmap)',
+                style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600),
+              ),
+              subtitle: Text(
+                'Zero-copy weight paging from disk (recommended)',
+                style: TextStyle(fontSize: 11, color: palette.textMuted),
+              ),
+              value: settings.useMmap,
+              onChanged: (bool v) => deps.shellController.updateSettings(
+                (StudioSettings s) => s.copyWith(useMmap: v),
+              ),
+            ),
+            SwitchListTile.adaptive(
+              contentPadding: EdgeInsets.zero,
+              dense: true,
+              title: const Text(
+                'Lock Weights in RAM (use_mlock)',
+                style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600),
+              ),
+              subtitle: Text(
+                'Prevent OS swap on host RAM-heavy setups',
+                style: TextStyle(fontSize: 11, color: palette.textMuted),
+              ),
+              value: settings.useMlock,
+              onChanged: (bool v) => deps.shellController.updateSettings(
+                (StudioSettings s) => s.copyWith(useMlock: v),
+              ),
+            ),
+            const SizedBox(height: 8),
+            DropdownButtonFormField<StudioSpeculativeMode>(
+              initialValue: settings.speculativeMode,
+              isExpanded: true,
+              decoration: const InputDecoration(
+                labelText: 'Speculative Decoding',
+              ),
+              items: StudioSpeculativeMode.values
+                  .map(
+                    (StudioSpeculativeMode m) =>
+                        DropdownMenuItem<StudioSpeculativeMode>(
+                          value: m,
+                          child: Text(
+                            m.label,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(fontSize: 12),
+                          ),
+                        ),
+                  )
+                  .toList(),
+              onChanged: (StudioSpeculativeMode? mode) {
+                if (mode != null) {
+                  deps.shellController.updateSettings(
+                    (StudioSettings s) => s.copyWith(speculativeMode: mode),
+                  );
+                }
+              },
+            ),
+            const SizedBox(height: 6),
+            Text(
+              'Applies on compatible text-only turns. MTP requires model support and Apply & Reload.',
+              style: TextStyle(fontSize: 11, color: palette.textMuted),
+            ),
+            const SizedBox(height: 8),
+          ],
           SwitchListTile.adaptive(
             contentPadding: EdgeInsets.zero,
             dense: true,
@@ -611,7 +628,8 @@ extension _InspectorHardwareTab on _SessionInspectorPanelState {
             ),
           ),
           const SizedBox(height: 4),
-          _buildAdvancedEngineSection(context, deps, palette, settings),
+          if (nativeLlamaCpp)
+            _buildAdvancedEngineSection(context, deps, palette, settings),
         ],
       ],
     );

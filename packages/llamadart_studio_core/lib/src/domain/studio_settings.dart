@@ -419,9 +419,7 @@ class StudioSettings {
 
     return LlamaCppModelParams(
       contextSize: resolvedContext,
-      device: computeDevice == ComputeDevice.npu
-          ? ComputeDevice.auto
-          : computeDevice,
+      device: computeDevice,
       gpuLayers: resolvedLayers,
       preferredBackend: preferredBackend,
       numberOfThreads: isWeb ? 0 : numberOfThreads,
