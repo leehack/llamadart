@@ -580,7 +580,8 @@ class _DirectoryPicker extends FilePicker {
 class _RejectWorkspaceStore extends InMemoryKeyValueStore {
   @override
   Future<void> writeString(String key, String value) async {
-    if (value.contains('/coding_workspaces/')) {
+    if (key == 'studio.coding.workspace_root.v2' ||
+        value.contains('/coding_workspaces/')) {
       throw StateError('Storage unavailable');
     }
     await super.writeString(key, value);

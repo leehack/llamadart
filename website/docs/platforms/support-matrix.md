@@ -269,7 +269,8 @@ Linux system libraries: [Linux prerequisites](./linux-prerequisites).
 Studio on iOS/Android offers **Create local workspace** in persistent app storage,
 with nested browse/read/write/edit tools and per-file Copy. **Open local workspace**
 in Coding setup reopens earlier folders. The last selected workspace is restored
-on restart; app data removal removes local files. Physical
+on restart, including after app storage moves during an update; app data
+removal removes local files. Physical
 mobile workflow qualification remains open. External provider URI/security-scoped
 grants are unsupported. Local shell and process MCP remain desktop-only; Web has
 no local workspace filesystem. See the

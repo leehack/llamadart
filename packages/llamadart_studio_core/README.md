@@ -10,6 +10,7 @@ Pure-Dart headless foundation for **llamadart Studio**, designed for reuse acros
   - `StudioPlaygroundPort`: Embeddings, cosine similarity, reranking, token inspection, and benchmarks.
   - `StudioSpeechPort` & `StudioImagePort`: Local speech-to-text, text-to-speech, and image generation ports.
   - `KeyValueStore` & `StudioConversationStore`: Durable settings, crash-safe boot sentinels, and conversation-tree persistence.
+  - `CodingWorkspaceRootStore`: The last selected Coding root (`KeyValueCodingWorkspaceRootStore` stores the absolute path; hosts can resolve relocatable app storage instead).
 - **Focused Controllers**: Separate single-responsibility controllers for the shell, Model Hub, Chat (with non-destructive message branching and incremental stream updates), Speech Studio, Image Studio, and Playground.
 
 ## Coding host policy

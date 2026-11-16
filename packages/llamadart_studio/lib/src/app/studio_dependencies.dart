@@ -257,6 +257,12 @@ class StudioDependencies {
       ensureModelReady: hub.ensureChatModelReady,
       autoConnectWorkspaceMcp: autoConnectDefaultMcp,
       localProcessExecutionAvailable: !isWeb && !isMobile,
+      workspaceRootStore: !isWeb && isMobile
+          ? createLocalCodingWorkspaceRootStore(
+              keyValueStore: keyValueStore,
+              appDataDirectory: appDataDirectory,
+            )
+          : null,
     );
     final speech = SpeechWorkspaceController(
       storagePort: storagePort,

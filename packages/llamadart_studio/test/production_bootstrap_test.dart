@@ -99,6 +99,12 @@ void main() {
           final saved =
               jsonDecode(preferences.getString('studio.settings.v1')!) as Map;
           expect(saved['maxTokens'], 321);
+          expect(
+            jsonDecode(
+              preferences.getString('studio.coding.workspace_root.v2')!,
+            ),
+            {'version': 2, 'kind': 'appOwned', 'id': localRoot.split('/').last},
+          );
         });
         expect(deps.mcpManager.state.servers, isEmpty);
       } finally {

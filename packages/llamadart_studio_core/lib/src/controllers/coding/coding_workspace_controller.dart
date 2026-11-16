@@ -5,9 +5,11 @@ import 'package:meta/meta.dart';
 import 'package:path/path.dart' as p;
 
 import '../../adapters/curated_studio_model_catalog.dart';
+import '../../adapters/storage/key_value_coding_workspace_root_store.dart';
 import '../../domain/curated_model_catalog.dart';
 import '../../domain/studio_message.dart';
 import '../../domain/studio_model_descriptor.dart';
+import '../../ports/coding_workspace_root_store.dart';
 import '../../ports/inference_port.dart';
 import '../../ports/key_value_store.dart';
 import '../../ports/studio_context_ports.dart';
@@ -29,6 +31,9 @@ class CodingWorkspaceController {
   ///
   /// [localProcessExecutionAvailable] can disable shell tools on desktop;
   /// it cannot enable them on iOS, Android or Web.
+  ///
+  /// [workspaceRootStore] persists the selected root; it defaults to
+  /// [KeyValueCodingWorkspaceRootStore] over [keyValueStore].
   CodingWorkspaceController({
     required StudioInferencePort inferencePort,
     required StudioSettingsReader shellController,
@@ -39,9 +44,12 @@ class CodingWorkspaceController {
     Future<bool> Function()? ensureModelReady,
     bool autoConnectWorkspaceMcp = true,
     bool localProcessExecutionAvailable = true,
+    CodingWorkspaceRootStore? workspaceRootStore,
   }) : _inference = inferencePort,
        _shell = shellController,
-       _kv = keyValueStore,
+       _rootStore =
+           workspaceRootStore ??
+           KeyValueCodingWorkspaceRootStore(keyValueStore),
        _mcp = mcpManager,
        _skills = skillRegistry,
        _catalog = modelCatalog,
@@ -51,11 +59,9 @@ class CodingWorkspaceController {
            localProcessExecutionAvailable &&
            CodingWorkspaceFs.localProcessExecutionAvailable;
 
-  static const String _workspaceRootKey = 'studio.coding.workspace_root.v1';
-
   final StudioInferencePort _inference;
   final StudioSettingsReader _shell;
-  final KeyValueStore _kv;
+  final CodingWorkspaceRootStore _rootStore;
   final StudioWorkspaceMcpCoordinator _mcp;
   final StudioWorkspaceSkillCoordinator _skills;
   final StudioModelCatalog _catalog;
@@ -138,7 +144,16 @@ class CodingWorkspaceController {
 
   /// Restores last workspace folder (or detects cwd on desktop) and scans files.
   Future<void> initialize({bool autoDetectDefaultRoot = true}) async {
-    final saved = await _kv.readString(_workspaceRootKey);
+    final String? saved;
+    try {
+      saved = await _rootStore.readRoot();
+    } catch (error) {
+      _store.update(
+        (CodingWorkspaceState s) =>
+            s.copyWith(lastError: humanizeStudioError(error)),
+      );
+      return;
+    }
     final candidate = (saved != null && saved.trim().isNotEmpty)
         ? saved.trim()
         : (autoDetectDefaultRoot
@@ -161,7 +176,7 @@ class CodingWorkspaceController {
       final entries = await CodingWorkspaceFs.listFiles(trimmed);
       final agentsContext = await discoverProjectAgentsContext(trimmed);
       if (selection != _workspaceSelection) return;
-      await _kv.writeString(_workspaceRootKey, trimmed);
+      await _rootStore.writeRoot(trimmed);
       if (selection != _workspaceSelection) return;
       final changed = _store.state.workspaceRoot != trimmed;
       if (changed) {

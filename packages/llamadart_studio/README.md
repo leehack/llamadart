@@ -28,7 +28,11 @@ On iOS/Android, **Create local workspace** makes a new, empty folder in persiste
 app storage and enables file tools without an external provider grant. Ask the
 agent to create files (including nested paths), browse them in Files, and use
 **Copy** in file details to copy text elsewhere. The last selected root reopens
-on restart; **Open local workspace** in Coding setup reopens earlier local folders.
+on restart, and an app-stored folder is found again after the app's storage
+moves (for example, during an iOS update); **Open local workspace** in Coding
+setup reopens earlier local folders. A saved root that cannot be found is never
+replaced with another folder: Coding shows the error, keeps the setting and the
+existing folders, and waits for you to reopen a folder through Coding setup.
 App data removal or uninstall removes local workspaces. Creation
 never reuses an existing workspace. Local shell and process MCP stay unavailable.
 External folder selection only works for already accessible filesystem paths;
