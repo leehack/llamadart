@@ -3,6 +3,8 @@ Releases before 0.10.0 are in the
 
 ## Unreleased
 
+- Report rejected Studio settings saves without reusing unsaved cached values.
+
 - Let Studio Coding create and reopen persistent local workspaces on iOS/Android, restore them after app storage moves, and show clear recovery when a folder cannot be selected.
 
 - Improve Studio Coding on phones with reachable task controls, file navigation, guarded Revert, and explicit desktop-only local commands.

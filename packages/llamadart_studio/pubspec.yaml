@@ -38,6 +38,7 @@ dev_dependencies:
     sdk: flutter
   integration_test:
     sdk: flutter
+  shared_preferences_platform_interface: ^2.4.2
 
 dependency_overrides:
   llamadart:
