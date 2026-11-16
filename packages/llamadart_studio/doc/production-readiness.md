@@ -39,6 +39,9 @@ A qualification-only Android debug signature is never a distributable production
 signature. Do not publish unsigned or development-signed artifacts as releases.
 An unavailable platform or physical device stays an explicit open gate.
 
+For the maintained opt-in Android release instrumentation build and artifact
+receipts, see [Android release acceptance](android-release-acceptance.md).
+
 ## Evidence and verification
 
 Use the package-local Flutter pin for both Studio packages. Run their analysis,

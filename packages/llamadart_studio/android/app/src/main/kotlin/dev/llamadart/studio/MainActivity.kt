@@ -16,6 +16,7 @@ class MainActivity : FlutterActivity() {
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
+        StudioAcceptanceRegistration.registerWith(flutterEngine)
         validationNpuHost = ValidationNpuHost(this, flutterEngine)
         val channel = MethodChannel(
             flutterEngine.dartExecutor.binaryMessenger,

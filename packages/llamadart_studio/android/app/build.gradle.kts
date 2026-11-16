@@ -31,6 +31,8 @@ val hasReleaseKeystore = releaseStoreFilePath != null &&
 val allowDebugSigningForQualification = providers.gradleProperty(
     "studioAllowDebugSigningForQualification",
 ).map { it == "true" }.getOrElse(false)
+val releaseAcceptance = providers.gradleProperty("studioReleaseAcceptance")
+    .map { it == "true" }.getOrElse(false)
 
 val validateStudioReleaseSigning = tasks.register("validateStudioReleaseSigning") {
     group = "verification"
@@ -60,6 +62,15 @@ android {
     namespace = "dev.llamadart.studio"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = "28.2.13676358"
+    // Flutter excludes dev plugins from release dependencies and registration.
+    // Select both halves explicitly, without changing ordinary release inputs.
+    sourceSets.getByName("main").java.srcDir(
+        if (releaseAcceptance) "src/releaseAcceptance/java" else "src/ordinary/java",
+    )
+    if (releaseAcceptance) {
+        testBuildType = "release"
+        buildTypes.getByName("release").proguardFiles("release-acceptance-proguard-rules.pro")
+    }
     val qualificationStage = System.getenv("LLAMADART_ANDROID_QUALIFICATION_STAGE")
     if (qualificationStage != null) {
         sourceSets.getByName("main") {
@@ -142,6 +153,9 @@ flutter {
 
 // Match the integration_test plugin bundled with the pinned Flutter SDK.
 dependencies {
+    if (releaseAcceptance) {
+        "releaseImplementation"(project(":integration_test"))
+    }
     androidTestImplementation("androidx.test:runner:1.3.0")
     androidTestImplementation("androidx.test:rules:1.2.0")
 }
