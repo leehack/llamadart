@@ -68,7 +68,9 @@ class StudioRuntimeSnapshot {
   /// Effective allocated context window (`n_ctx`).
   final int? resolvedContextSize;
 
-  /// Effective offloaded GPU layer count.
+  /// Backend-resolved GPU layer target for the active load.
+  ///
+  /// This is not a measured count of layers offloaded to the GPU.
   final int? resolvedGpuLayers;
 
   /// Signature of load-time engine settings active when the model was loaded.

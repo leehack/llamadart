@@ -84,7 +84,7 @@ extension _InspectorHardwareTab on _SessionInspectorPanelState {
                     ),
                   if (runtime.resolvedGpuLayers != null)
                     StudioPillBadge(
-                      label: 'GPU layers ${runtime.resolvedGpuLayers}',
+                      label: 'GPU layer target ${runtime.resolvedGpuLayers}',
                       monospace: true,
                     ),
                   if (hasUnappliedChanges)

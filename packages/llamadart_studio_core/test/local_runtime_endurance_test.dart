@@ -173,6 +173,7 @@ Future<Map<String, Object?>> _cycle(
     final settings = StudioSettings(
       computeDevice: gpuLayers == 0 ? ComputeDevice.cpu : ComputeDevice.gpu,
       gpuLayers: gpuLayers,
+      nativeLogLevel: LlamaLogLevel.info,
       autoTuneHardware: false,
       contextSize: 4096,
       requestedContextSize: 4096,
@@ -209,7 +210,7 @@ Future<Map<String, Object?>> _cycle(
       expect(
         port.runtimeStore.state.resolvedGpuLayers,
         greaterThan(0),
-        reason: 'A requested GPU soak requires verified GPU-layer offload.',
+        reason: 'The active load must retain a nonzero GPU layer target.',
       );
     }
     sample['afterLoadRssBytes'] = ProcessInfo.currentRss;
