@@ -13,6 +13,8 @@ validate against the exact release tag notes.
 
 ## Unreleased
 
+- Validate Studio tool arguments before execution, preserve tool history across reloads, and make media failures and tool compatibility visible.
+
 - Preserve Studio notes and attachments across failed or interrupted saves, and keep indexing consistent with concurrent edits.
 - Align Studio coding skills with available file tools and add realistic macOS Notes and Coding qualification.
 

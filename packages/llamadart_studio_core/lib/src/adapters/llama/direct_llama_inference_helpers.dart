@@ -201,6 +201,40 @@ ToolDefinition? _findToolHelper(List<ToolDefinition> tools, String name) {
   return null;
 }
 
+ToolDefinition _toolDispatchValidatorHelper(ToolDefinition tool) {
+  final schema = tool.toJsonSchema();
+  if (!schema.containsKey('additionalProperties')) {
+    // ToolParam schemas use closed objects, unlike JSON Schema's open default.
+    // Preserve that existing contract when asking the canonical validator to
+    // validate an emitted call, without exposing a canonical tool to templates.
+    _closeLegacyObjectSchemasHelper(schema);
+  }
+  return ToolDefinition.fromJsonSchema(
+    name: tool.name,
+    description: tool.description,
+    schema: schema,
+    handler: (params) => tool.invoke(params.raw),
+  );
+}
+
+void _closeLegacyObjectSchemasHelper(Map<String, dynamic> schema) {
+  if (schema['type'] == 'object') {
+    schema.putIfAbsent('additionalProperties', () => false);
+    final properties = schema['properties'];
+    if (properties is Map) {
+      for (final property in properties.values) {
+        if (property is Map<String, dynamic>) {
+          _closeLegacyObjectSchemasHelper(property);
+        }
+      }
+    }
+  }
+  final items = schema['items'];
+  if (items is Map<String, dynamic>) {
+    _closeLegacyObjectSchemasHelper(items);
+  }
+}
+
 Map<String, dynamic>? _buildThinkingTemplateKwargsHelper({
   required StudioSettings settings,
   required LlamaEngineCapabilities capabilities,

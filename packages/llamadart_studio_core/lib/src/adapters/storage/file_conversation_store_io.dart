@@ -94,12 +94,19 @@ class FileConversationStore implements StudioConversationStore {
       final dir = _conversationsDir;
       await dir.create(recursive: true);
       final target = _conversationFile(conversation.id);
-      final temp = File('${target.path}.tmp');
       final encoded = const JsonEncoder.withIndent(
         '  ',
       ).convert(conversation.toJson(includeInlineAttachmentBytes: false));
-      await temp.writeAsString(encoded, flush: true);
-      await temp.rename(target.path);
+      // A private, newly allocated directory prevents a stale temporary
+      // symlink from redirecting writes outside the conversation store.
+      final staging = await dir.createTemp('.save-');
+      try {
+        final temp = File(p.join(staging.path, 'conversation.json'));
+        await temp.writeAsString(encoded, flush: true);
+        await temp.rename(target.path);
+      } finally {
+        await staging.delete(recursive: true);
+      }
     });
   }
 

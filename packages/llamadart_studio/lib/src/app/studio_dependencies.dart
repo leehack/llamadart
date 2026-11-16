@@ -29,10 +29,7 @@ class StudioDependencies {
     required this.isWeb,
     required this.isMobile,
   }) {
-    // Shutdown runs in reverse order: invalidate work before releasing ports.
-    lifecycleCoordinator
-      ..register(mcpManager.dispose)
-      ..register(_disposeControllers);
+    lifecycleCoordinator.register(_disposeControllersAndMcp);
   }
 
   /// Global shell, workspace routing, and settings controller.
@@ -314,6 +311,14 @@ class StudioDependencies {
 
   /// Disposes all controllers and native engines cleanly.
   Future<void> dispose() => lifecycleCoordinator.shutdownAll();
+
+  Future<void> _disposeControllersAndMcp() async {
+    // Signal cancellation before closing MCP, but do not join an async*
+    // subscription until MCP has released the tool handler it may await.
+    final controllers = _disposeControllers();
+    final mcp = mcpManager.dispose();
+    await Future.wait(<Future<void>>[controllers, mcp]);
+  }
 
   Future<void> _disposeControllers() async {
     await Future.wait(<Future<void>>[

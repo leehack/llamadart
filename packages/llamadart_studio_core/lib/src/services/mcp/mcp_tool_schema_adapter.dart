@@ -109,10 +109,16 @@ abstract final class McpToolSchemaAdapter {
       return prefixed;
     }
     var n = 2;
-    while (usedNames.contains('${prefixed}_$n')) {
+    while (true) {
+      final suffix = '_$n';
+      final budget = 64 - suffix.length;
+      final stem = prefixed.length > budget
+          ? prefixed.substring(0, budget)
+          : prefixed;
+      final candidate = '$stem$suffix';
+      if (!usedNames.contains(candidate)) return candidate;
       n++;
     }
-    return cleanIdentifier('${prefixed}_$n');
   }
 
   static List<ToolParam>? _tryJsonSchemaToToolParams(

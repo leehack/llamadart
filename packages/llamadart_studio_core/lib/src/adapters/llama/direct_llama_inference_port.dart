@@ -509,6 +509,7 @@ class DirectLlamaInferencePort
     final textBuffer = StringBuffer();
     final thinkingBuffer = StringBuffer();
     final invocations = <StudioToolInvocation>[];
+    final dispatchValidators = <ToolDefinition, ToolDefinition>{};
     final transcript = <StudioTurnTranscriptEntry>[];
     void recordMessage(LlamaChatMessage message) {
       if (message.role == LlamaChatRole.assistant ||
@@ -822,7 +823,11 @@ class DirectLlamaInferencePort
               'error': 'Tool "$callName" is not enabled.',
             };
           } else {
-            toolResult = await matching.invoke(parsedArgs);
+            final validator = dispatchValidators.putIfAbsent(
+              matching,
+              () => _toolDispatchValidatorHelper(matching),
+            );
+            toolResult = await validator.invoke(parsedArgs);
           }
         } catch (error) {
           isError = true;

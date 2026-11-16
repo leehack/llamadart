@@ -64,10 +64,16 @@ extension _CodingWorkspaceTools on CodingWorkspaceController {
           ],
           handler: (ToolParams params) async {
             _ensureWorkspaceScope(workspaceEpoch);
+            final content = params.raw['content'];
+            if (content is! String) {
+              throw LlamaInferenceException(
+                'The write tool requires string content; no file was changed.',
+              );
+            }
             final change = await CodingWorkspaceFs.writeFile(
               root,
               params.getString('path') ?? '',
-              params.getString('content') ?? '',
+              content,
             );
             _recordChange(change, workspaceEpoch: workspaceEpoch);
             return <String, Object?>{

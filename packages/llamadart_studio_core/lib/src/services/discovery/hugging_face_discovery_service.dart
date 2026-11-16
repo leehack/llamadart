@@ -177,7 +177,12 @@ class HuggingFaceDiscoveryService {
             sizeBytes: mmprojBytes,
           ),
       ];
-      final totalBytes = entry.sizeBytes + mmprojBytes;
+      final totalBytes =
+          entry.sizeBytes +
+          companions.fold<int>(
+            0,
+            (total, asset) => total + (asset.sizeBytes ?? 0),
+          );
       final estimatedRamGb = totalBytes > 0
           ? ((totalBytes / (1024 * 1024 * 1024)) * 1.6).ceil().clamp(2, 64)
           : 4;

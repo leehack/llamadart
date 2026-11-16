@@ -70,6 +70,10 @@ paths; see the `local_*_acceptance_test.dart` files under `test/` and
 
 ## Qualification scope
 
+The [production acceptance matrix](doc/production-readiness.md) defines the
+workflow, platform, lifecycle and evidence gates for a production candidate.
+Completed results belong to the exact revision recorded in the PR.
+
 The [macOS Notes and Coding procedure](doc/notes-coding-qualification.md) defines
 real-model workflow, grounding, and process-recovery gates with explicit defaults
 and evidence requirements. Consult the PR for completed runs and exact revisions.
