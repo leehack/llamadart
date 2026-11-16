@@ -63,7 +63,7 @@ class StudioRouterDelegate extends RouterDelegate<StudioWorkspace>
       pages: <Page<void>>[
         MaterialPage<void>(
           key: const ValueKey<String>('studio_shell_root'),
-          child: Builder(builder: rootBuilder),
+          child: _ShellBackRegistration(child: Builder(builder: rootBuilder)),
         ),
       ],
       onDidRemovePage: (_) {},
@@ -81,4 +81,38 @@ class StudioRouterDelegate extends RouterDelegate<StudioWorkspace>
     _sub?.cancel();
     super.dispose();
   }
+}
+
+class _ShellBackRegistration extends StatefulWidget {
+  const _ShellBackRegistration({required this.child});
+
+  final Widget child;
+
+  @override
+  State<_ShellBackRegistration> createState() => _ShellBackRegistrationState();
+}
+
+class _ShellBackRegistrationState extends State<_ShellBackRegistration> {
+  bool _refreshScheduled = false;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    ModalRoute.canPopOf(context);
+    ModalRoute.isCurrentOf(context);
+    if (_refreshScheduled) return;
+    _refreshScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _refreshScheduled = false;
+      if (!mounted) return;
+      final route = ModalRoute.of(context);
+      if (route == null || !route.isCurrent) return;
+      // LocalHistoryEntry changes rebuild route dependencies without publishing
+      // the navigation notification Android needs for ahead-of-time Back.
+      NavigationNotification(canHandlePop: route.canPop).dispatch(context);
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) => widget.child;
 }
