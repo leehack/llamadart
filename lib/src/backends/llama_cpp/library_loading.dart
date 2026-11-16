@@ -62,106 +62,96 @@ class _TtsApi {
   /// Whether the runtime lists predefined voices.
   bool get listsVoices => getVoiceCount != null && getVoiceName != null;
 
-  static _TtsApi? tryLoad(DynamicLibrary library) {
+  static _TtsApi? tryLoad(Pointer<NativeType> Function(String) symbol) {
+    bool has(String name) {
+      try {
+        return symbol(name) != nullptr;
+      } on ArgumentError {
+        return false;
+      }
+    }
+
     try {
-      const setCancelFlagSymbol = 'llama_dart_tts_set_cancel_flag';
-      const evalCallbackSymbol = 'llama_dart_tts_eval_callback';
-      bool has(String symbol) => library.providesSymbol(symbol);
-      const supportedModelTypesSymbol = 'llama_dart_tts_supported_model_types';
-      const getInfoExtSymbol = 'llama_dart_tts_get_info_ext';
-      const initExtSymbol = 'llama_dart_tts_init_ext';
-      const startWithVoiceSymbol = 'llama_dart_tts_start_with_voice';
-      const getVoiceCountSymbol = 'llama_dart_tts_get_voice_count';
-      const getVoiceNameSymbol = 'llama_dart_tts_get_voice_name';
+      final apiVersion = symbol('llama_dart_tts_api_version')
+          .cast<NativeFunction<_TtsApiVersionNative>>()
+          .asFunction<_TtsApiVersionDart>();
+      if (apiVersion() != LLAMA_DART_TTS_API_VERSION) return null;
       return _TtsApi(
-        apiVersion: library
-            .lookupFunction<_TtsApiVersionNative, _TtsApiVersionDart>(
-              'llama_dart_tts_api_version',
-            ),
-        requestDefault: library
-            .lookupFunction<_TtsRequestDefaultNative, _TtsRequestDefaultDart>(
-              'llama_dart_tts_request_default',
-            ),
-        getInfo: library.lookupFunction<_TtsGetInfoNative, _TtsGetInfoDart>(
-          'llama_dart_tts_get_info',
-        ),
-        init: library.lookupFunction<_TtsInitNative, _TtsInitDart>(
+        apiVersion: apiVersion,
+        requestDefault: symbol('llama_dart_tts_request_default')
+            .cast<NativeFunction<_TtsRequestDefaultNative>>()
+            .asFunction<_TtsRequestDefaultDart>(),
+        getInfo: symbol('llama_dart_tts_get_info')
+            .cast<NativeFunction<_TtsGetInfoNative>>()
+            .asFunction<_TtsGetInfoDart>(),
+        init: symbol(
           'llama_dart_tts_init',
-        ),
-        free: library.lookupFunction<_TtsFreeNative, _TtsFreeDart>(
+        ).cast<NativeFunction<_TtsInitNative>>().asFunction<_TtsInitDart>(),
+        free: symbol(
           'llama_dart_tts_free',
-        ),
-        freeAddress: library.lookup('llama_dart_tts_free'),
-        start: library.lookupFunction<_TtsStartNative, _TtsStartDart>(
+        ).cast<NativeFunction<_TtsFreeNative>>().asFunction<_TtsFreeDart>(),
+        freeAddress: symbol('llama_dart_tts_free').cast(),
+        start: symbol(
           'llama_dart_tts_start',
-        ),
-        step: library.lookupFunction<_TtsStepNative, _TtsStepDart>(
+        ).cast<NativeFunction<_TtsStartNative>>().asFunction<_TtsStartDart>(),
+        step: symbol(
           'llama_dart_tts_step',
-        ),
-        cancel: library.lookupFunction<_TtsCancelNative, _TtsCancelDart>(
+        ).cast<NativeFunction<_TtsStepNative>>().asFunction<_TtsStepDart>(),
+        cancel: symbol(
           'llama_dart_tts_cancel',
-        ),
-        reset: library.lookupFunction<_TtsResetNative, _TtsResetDart>(
+        ).cast<NativeFunction<_TtsCancelNative>>().asFunction<_TtsCancelDart>(),
+        reset: symbol(
           'llama_dart_tts_reset',
-        ),
-        getOutputInfo: library
-            .lookupFunction<_TtsGetOutputInfoNative, _TtsGetOutputInfoDart>(
-              'llama_dart_tts_get_output_info',
-            ),
-        readPcm: library.lookupFunction<_TtsReadPcmNative, _TtsReadPcmDart>(
-          'llama_dart_tts_read_pcm',
-        ),
-        lastError: library
-            .lookupFunction<_TtsLastErrorNative, _TtsLastErrorDart>(
-              'llama_dart_tts_last_error',
-            ),
-        setCancelFlag: library.providesSymbol(setCancelFlagSymbol)
-            ? library.lookupFunction<
-                _TtsSetCancelFlagNative,
-                _TtsSetCancelFlagDart
-              >(setCancelFlagSymbol)
+        ).cast<NativeFunction<_TtsResetNative>>().asFunction<_TtsResetDart>(),
+        getOutputInfo: symbol('llama_dart_tts_get_output_info')
+            .cast<NativeFunction<_TtsGetOutputInfoNative>>()
+            .asFunction<_TtsGetOutputInfoDart>(),
+        readPcm: symbol('llama_dart_tts_read_pcm')
+            .cast<NativeFunction<_TtsReadPcmNative>>()
+            .asFunction<_TtsReadPcmDart>(),
+        lastError: symbol('llama_dart_tts_last_error')
+            .cast<NativeFunction<_TtsLastErrorNative>>()
+            .asFunction<_TtsLastErrorDart>(),
+        setCancelFlag: has('llama_dart_tts_set_cancel_flag')
+            ? symbol('llama_dart_tts_set_cancel_flag')
+                  .cast<NativeFunction<_TtsSetCancelFlagNative>>()
+                  .asFunction<_TtsSetCancelFlagDart>()
             : null,
-        evalCallback: library.providesSymbol(evalCallbackSymbol)
-            ? library.lookup<
-                NativeFunction<ggml_backend_sched_eval_callbackFunction>
-              >(evalCallbackSymbol)
+        supportedModelTypes: has('llama_dart_tts_supported_model_types')
+            ? symbol('llama_dart_tts_supported_model_types')
+                  .cast<NativeFunction<_TtsSupportedModelTypesNative>>()
+                  .asFunction<_TtsSupportedModelTypesDart>()
+            : null,
+        getInfoExt: has('llama_dart_tts_get_info_ext')
+            ? symbol('llama_dart_tts_get_info_ext')
+                  .cast<NativeFunction<_TtsGetInfoExtNative>>()
+                  .asFunction<_TtsGetInfoExtDart>()
+            : null,
+        initExt: has('llama_dart_tts_init_ext')
+            ? symbol('llama_dart_tts_init_ext')
+                  .cast<NativeFunction<_TtsInitExtNative>>()
+                  .asFunction<_TtsInitExtDart>()
+            : null,
+        startWithVoice: has('llama_dart_tts_start_with_voice')
+            ? symbol('llama_dart_tts_start_with_voice')
+                  .cast<NativeFunction<_TtsStartWithVoiceNative>>()
+                  .asFunction<_TtsStartWithVoiceDart>()
+            : null,
+        getVoiceCount: has('llama_dart_tts_get_voice_count')
+            ? symbol('llama_dart_tts_get_voice_count')
+                  .cast<NativeFunction<_TtsGetVoiceCountNative>>()
+                  .asFunction<_TtsGetVoiceCountDart>()
+            : null,
+        getVoiceName: has('llama_dart_tts_get_voice_name')
+            ? symbol('llama_dart_tts_get_voice_name')
+                  .cast<NativeFunction<_TtsGetVoiceNameNative>>()
+                  .asFunction<_TtsGetVoiceNameDart>()
+            : null,
+        evalCallback: has('llama_dart_tts_eval_callback')
+            ? symbol('llama_dart_tts_eval_callback').cast()
             : nullptr,
-        supportedModelTypes: has(supportedModelTypesSymbol)
-            ? library.lookupFunction<
-                _TtsSupportedModelTypesNative,
-                _TtsSupportedModelTypesDart
-              >(supportedModelTypesSymbol)
-            : null,
-        getInfoExt: has(getInfoExtSymbol)
-            ? library.lookupFunction<_TtsGetInfoExtNative, _TtsGetInfoExtDart>(
-                getInfoExtSymbol,
-              )
-            : null,
-        initExt: has(initExtSymbol)
-            ? library.lookupFunction<_TtsInitExtNative, _TtsInitExtDart>(
-                initExtSymbol,
-              )
-            : null,
-        startWithVoice: has(startWithVoiceSymbol)
-            ? library.lookupFunction<
-                _TtsStartWithVoiceNative,
-                _TtsStartWithVoiceDart
-              >(startWithVoiceSymbol)
-            : null,
-        getVoiceCount: has(getVoiceCountSymbol)
-            ? library.lookupFunction<
-                _TtsGetVoiceCountNative,
-                _TtsGetVoiceCountDart
-              >(getVoiceCountSymbol)
-            : null,
-        getVoiceName: has(getVoiceNameSymbol)
-            ? library
-                  .lookupFunction<_TtsGetVoiceNameNative, _TtsGetVoiceNameDart>(
-                    getVoiceNameSymbol,
-                  )
-            : null,
       );
-    } catch (_) {
+    } on ArgumentError {
       return null;
     }
   }

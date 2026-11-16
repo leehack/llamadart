@@ -13,6 +13,11 @@ description: >-
 
 ## Guidelines
 
+- Native llama.cpp TTS probes the selected code asset (the wrapper asset on
+  Windows) for ABI 1 and every required TTS export. An incomplete or
+  incompatible runtime remains unsupported; a text model loading successfully
+  does not establish TTS support.
+
 - Native LiteRT-LM speech probes and workers share the text client's ABI-aware
   discovery. Public selection admits legacy runtimes and C API 1.0.x; the
   pinned runtime is published native v0.19.1-5. The selector checks macOS 14+
