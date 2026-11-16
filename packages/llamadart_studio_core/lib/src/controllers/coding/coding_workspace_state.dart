@@ -43,6 +43,7 @@ class CodingWorkspaceState {
     this.messages = const <StudioMessage>[],
     this.recentChanges = const <CodingFileChange>[],
     this.lastError,
+    this.toolAvailabilityNotices = const <StudioToolAvailabilityNotice>[],
   });
 
   /// Active sandboxed project folder path.
@@ -86,6 +87,9 @@ class CodingWorkspaceState {
 
   /// Optional error banner message.
   final String? lastError;
+
+  /// Explicit tool compatibility feedback from the latest inference turn.
+  final List<StudioToolAvailabilityNotice> toolAvailabilityNotices;
 
   /// Explicit `pi.dev`-style core tool primitives active for the current session.
   List<String> get activeCoreTools => workspaceRoot == null
@@ -133,9 +137,12 @@ class CodingWorkspaceState {
     List<StudioMessage>? messages,
     List<CodingFileChange>? recentChanges,
     String? lastError,
+    List<StudioToolAvailabilityNotice>? toolAvailabilityNotices,
     bool clearLastError = false,
   }) {
     return CodingWorkspaceState(
+      toolAvailabilityNotices:
+          toolAvailabilityNotices ?? this.toolAvailabilityNotices,
       workspaceRoot: clearWorkspaceRoot
           ? null
           : (workspaceRoot ?? this.workspaceRoot),

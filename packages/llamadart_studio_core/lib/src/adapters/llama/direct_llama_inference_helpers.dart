@@ -72,20 +72,124 @@ List<LlamaContentPart> _toUserPartsHelper(StudioMessage message) {
   return parts;
 }
 
-LlamaChatMessage _toLlamaMessageHelper(StudioMessage message) {
-  final role = switch (message.role) {
-    StudioRole.system => LlamaChatRole.system,
-    StudioRole.user => LlamaChatRole.user,
-    StudioRole.assistant => LlamaChatRole.assistant,
-    StudioRole.tool => LlamaChatRole.tool,
+Iterable<LlamaChatMessage> _toLlamaHistoryHelper(
+  List<StudioMessage> history,
+) sync* {
+  final explicitResultIds = <String>{
+    for (final message in history)
+      if (!message.isError && message.role == StudioRole.tool)
+        for (final call in message.toolCalls) call.id,
   };
-  if (role == LlamaChatRole.user && message.attachments.isNotEmpty) {
-    return LlamaChatMessage.withContent(
-      role: role,
-      content: _toUserPartsHelper(message),
+  for (final message in history) {
+    if (message.isError) continue;
+    if (message.transcript.isNotEmpty) {
+      for (final entry in message.transcript) {
+        if (entry.role == StudioRole.tool) {
+          for (final call in entry.toolCalls) {
+            yield _toolResultMessageHelper(call, fallbackText: entry.text);
+          }
+        } else {
+          yield LlamaChatMessage.withContent(
+            role: LlamaChatRole.assistant,
+            content: <LlamaContentPart>[
+              if (entry.thinkingText != null)
+                LlamaThinkingContent(entry.thinkingText!),
+              if (entry.text.isNotEmpty) LlamaTextContent(entry.text),
+              for (final call in entry.toolCalls)
+                LlamaToolCallContent(
+                  id: call.id,
+                  name: call.name,
+                  arguments: _decodeToolArgumentsHelper(call.argumentsJson),
+                  rawJson: call.argumentsJson,
+                ),
+            ],
+          );
+        }
+      }
+      continue;
+    }
+    if (message.role == StudioRole.tool && message.toolCalls.isNotEmpty) {
+      for (final call in message.toolCalls) {
+        yield _toolResultMessageHelper(call, fallbackText: message.text);
+      }
+      continue;
+    }
+    if (message.role != StudioRole.assistant || message.toolCalls.isEmpty) {
+      yield message.toLlamaChatMessage();
+      continue;
+    }
+    // A saved assistant node aggregates tool rounds. Replay completed calls
+    // and results together; interrupted calls have no result to replay.
+    final calls = message.toolCalls
+        .where(
+          (call) =>
+              explicitResultIds.contains(call.id) || call.resultJson != null,
+        )
+        .toList(growable: false);
+    yield LlamaChatMessage.withContent(
+      role: LlamaChatRole.assistant,
+      content: <LlamaContentPart>[
+        ...message.toLlamaChatMessage().parts,
+        for (final call in calls)
+          LlamaToolCallContent(
+            id: call.id,
+            name: call.name,
+            arguments: _decodeToolArgumentsHelper(call.argumentsJson),
+            rawJson: call.argumentsJson,
+          ),
+      ],
     );
+    for (final call in calls) {
+      if (!explicitResultIds.contains(call.id)) {
+        yield _toolResultMessageHelper(call);
+      }
+    }
   }
-  return LlamaChatMessage.fromText(role: role, text: message.text);
+}
+
+StudioTurnTranscriptEntry _toStudioTranscriptEntryHelper(
+  LlamaChatMessage message,
+) => StudioTurnTranscriptEntry(
+  role: message.role == LlamaChatRole.tool
+      ? StudioRole.tool
+      : StudioRole.assistant,
+  text: message.parts.whereType<LlamaTextContent>().map((p) => p.text).join(),
+  thinkingText: message.reasoning,
+  toolCalls: <StudioToolInvocation>[
+    for (final part in message.parts)
+      if (part is LlamaToolCallContent)
+        StudioToolInvocation(
+          id: part.id ?? '',
+          name: part.name,
+          argumentsJson: jsonEncode(part.arguments),
+        )
+      else if (part is LlamaToolResultContent)
+        StudioToolInvocation(
+          id: part.id ?? '',
+          name: part.name,
+          argumentsJson: '{}',
+          resultJson: _encodeToolOutputHelper(part.result),
+        ),
+  ],
+);
+
+LlamaChatMessage _toolResultMessageHelper(
+  StudioToolInvocation call, {
+  String fallbackText = '',
+}) {
+  final raw = call.resultJson ?? fallbackText;
+  Object? result;
+  try {
+    result = jsonDecode(raw);
+  } catch (_) {
+    result = raw;
+  }
+  return LlamaChatMessage.withContent(
+    role: LlamaChatRole.tool,
+    content: <LlamaContentPart>[
+      LlamaToolResultContent(id: call.id, name: call.name, result: result),
+    ],
+  );
 }
 
 ToolDefinition? _findToolHelper(List<ToolDefinition> tools, String name) {

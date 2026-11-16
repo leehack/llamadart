@@ -572,50 +572,62 @@ class ModelHubController {
     StudioModelDescriptor descriptor, {
     bool applyModelPreset = true,
   }) async {
-    final existing = _inFlightActivation;
-    if (existing != null) {
-      try {
-        await existing;
-      } catch (_) {}
-      if (_inference.runtimeStore.state.activeDescriptor?.id == descriptor.id &&
+    final wasQueued = _inFlightActivation != null;
+    return _queueModelOperation(() async {
+      if (wasQueued &&
+          _inference.runtimeStore.state.activeDescriptor?.id == descriptor.id &&
           _inference.runtimeStore.state.isReady) {
         return;
       }
-    }
-
-    _retryLastLoad = () =>
-        activateChatModel(descriptor, applyModelPreset: applyModelPreset);
-    _store.update(
-      (ModelHubState s) => s.copyWith(
-        activatingDescriptor: descriptor,
-        clearActivationErrorMessage: true,
-      ),
-    );
-    final future = _performActivateChatModel(
-      descriptor,
-      applyModelPreset: applyModelPreset,
-    );
-    _inFlightActivation = future;
-    try {
-      await future;
-    } catch (error) {
+      _retryLastLoad = () =>
+          activateChatModel(descriptor, applyModelPreset: applyModelPreset);
       _store.update(
         (s) => s.copyWith(
-          activationErrorMessage: humanizeStudioError(
-            error,
-            sensitiveValues: <String>[_store.state.bearerToken],
-          ),
+          activatingDescriptor: descriptor,
+          clearActivationErrorMessage: true,
         ),
       );
-      rethrow;
-    } finally {
-      if (identical(_inFlightActivation, future)) {
-        _inFlightActivation = null;
-        _store.update(
-          (ModelHubState s) => s.copyWith(clearActivatingDescriptor: true),
+      try {
+        await _performActivateChatModel(
+          descriptor,
+          applyModelPreset: applyModelPreset,
         );
+      } catch (error) {
+        _store.update(
+          (s) => s.copyWith(
+            activationErrorMessage: humanizeStudioError(
+              error,
+              sensitiveValues: <String>[_store.state.bearerToken],
+            ),
+          ),
+        );
+        rethrow;
+      } finally {
+        _store.update((s) => s.copyWith(clearActivatingDescriptor: true));
       }
-    }
+    });
+  }
+
+  Future<void> _queueModelOperation(Future<void> Function() action) {
+    if (_disposed) return Future<void>.value();
+    final previous = _inFlightActivation;
+    final operation = () async {
+      if (previous != null) {
+        try {
+          await previous;
+        } catch (_) {
+          // A failed load must not prevent the user's next model selection.
+        }
+      }
+      if (_disposed) return;
+      await action();
+    }();
+    _inFlightActivation = operation;
+    return operation.whenComplete(() {
+      if (identical(_inFlightActivation, operation)) {
+        _inFlightActivation = null;
+      }
+    });
   }
 
   Future<void> _performActivateChatModel(
@@ -623,6 +635,7 @@ class ModelHubController {
     required bool applyModelPreset,
   }) async {
     final assets = await downloadModel(descriptor);
+    if (_disposed) return;
     final fit = evaluateFit(descriptor);
 
     var nextSettings = _shell.currentSettings.copyWith(
@@ -660,11 +673,13 @@ class ModelHubController {
     }
 
     await _shell.updateSettings((_) => nextSettings);
+    if (_disposed) return;
     await _shell.bootGuard.beginModelLoad(
       modelName: descriptor.name,
       modelIdOrPath: descriptor.id,
     );
     try {
+      if (_disposed) return;
       await _inference.loadModel(
         assets: assets,
         settings: nextSettings,
@@ -677,6 +692,16 @@ class ModelHubController {
 
   /// Loads a custom local file path or remote URL directly into the Chat engine.
   Future<void> loadCustomModel({
+    required String pathOrUrl,
+    String? mmprojPathOrUrl,
+  }) => _queueModelOperation(
+    () => _loadCustomModel(
+      pathOrUrl: pathOrUrl,
+      mmprojPathOrUrl: mmprojPathOrUrl,
+    ),
+  );
+
+  Future<void> _loadCustomModel({
     required String pathOrUrl,
     String? mmprojPathOrUrl,
   }) async {
@@ -720,6 +745,7 @@ class ModelHubController {
         modelName: descriptor.name,
         modelIdOrPath: trimmed,
       );
+      if (_disposed) return;
       await _inference.loadCustomSource(
         descriptor: descriptor,
         settings: _shell.currentSettings,
@@ -753,18 +779,21 @@ class ModelHubController {
   }
 
   /// Unloads the active chat model from memory.
-  Future<void> unloadActiveModel() async {
-    await _inference.unloadModel();
-  }
+  Future<void> unloadActiveModel() =>
+      _queueModelOperation(_inference.unloadModel);
 
   /// Refreshes local directory scan, cached model flags, and raw disk inventory.
   Future<void> refreshCacheInventory() async {
+    if (_disposed) return;
     final localModels = await _storage.refreshLocalModels(
       extraDirectories: _shell.currentSettings.customModelDirectories,
     );
+    if (_disposed) return;
     final entries = await _storage.listCachedEntries();
+    if (_disposed) return;
     final cachedIds = <String>{for (final local in localModels) local.id};
     for (final model in _catalog.models) {
+      if (_disposed) return;
       if (await _storage.isCached(model, isWeb: isWeb)) {
         cachedIds.add(model.id);
       }

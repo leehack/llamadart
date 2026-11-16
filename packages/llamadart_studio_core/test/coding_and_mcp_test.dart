@@ -256,27 +256,30 @@ void main() {
       }
     });
 
-    test('sanitizes external MCP tool JSON schemas cleanly', () {
-      final sanitized = McpManager.sanitizeMcpInputSchema(<String, dynamic>{
-        'title': 'EchoArgs',
-        'properties': <String, Object?>{
-          'message': <String, Object?>{
-            'type': 'string',
-            'format': 'custom-unsupported',
-            'description': 'Message to echo',
+    test(
+      'preserves external MCP schema constraints for explicit validation',
+      () {
+        final sanitized = McpManager.sanitizeMcpInputSchema(<String, dynamic>{
+          'title': 'EchoArgs',
+          'properties': <String, Object?>{
+            'message': <String, Object?>{
+              'type': 'string',
+              'format': 'custom-unsupported',
+              'description': 'Message to echo',
+            },
           },
-        },
-        'required': <String>['message'],
-        '\$defs': <String, Object?>{'Unused': <String, Object?>{}},
-      });
-      expect(sanitized['type'], 'object');
-      expect(sanitized.containsKey(r'$defs'), isFalse);
-      final msgProp =
-          (sanitized['properties'] as Map<String, dynamic>)['message']
-              as Map<String, dynamic>;
-      expect(msgProp['type'], 'string');
-      expect(msgProp.containsKey('format'), isFalse);
-    });
+          'required': <String>['message'],
+          '\$defs': <String, Object?>{'Unused': <String, Object?>{}},
+        });
+        expect(sanitized['type'], 'object');
+        expect(sanitized.containsKey(r'$defs'), isTrue);
+        final msgProp =
+            (sanitized['properties'] as Map<String, dynamic>)['message']
+                as Map<String, dynamic>;
+        expect(msgProp['type'], 'string');
+        expect(msgProp['format'], 'custom-unsupported');
+      },
+    );
 
     test(
       'connects to a slow-starting stdio server, lists/calls tools, and reads resources',
@@ -394,7 +397,7 @@ Future<void> main() async {
     );
 
     test(
-      'coerces canonical JSON Schema tools (anyOf/const/type-list/minItems) to legacy ToolParams and compacts verbose docs',
+      'preserves complex schemas and rejects unsupported legacy coercion',
       () {
         final complex = McpToolDescriptor(
           serverId: 'dart',
@@ -434,19 +437,15 @@ Future<void> main() async {
           handler: (ToolParams params) async => params.raw,
         );
         expect(canonical.description.length, lessThanOrEqualTo(210));
-        final legacy = McpManager.coerceToLegacyToolDefinition(canonical);
-        expect(legacy.parameters, hasLength(4));
         expect(
-          legacy.parameters.map((ToolParam p) => p.name),
-          containsAll(<String>['target', 'flags', 'mode', 'count']),
+          () => McpManager.coerceToLegacyToolDefinition(canonical),
+          throwsA(isA<LlamaUnsupportedException>()),
         );
-        final schema = legacy.toJsonSchema();
-        final props = schema['properties'] as Map<String, dynamic>;
-        expect(
-          ((props['target'] as Map<String, dynamic>)['description'] as String)
-              .length,
-          lessThanOrEqualTo(125),
-        );
+        final props =
+            canonical.toJsonSchema()['properties'] as Map<String, dynamic>;
+        expect((props['flags'] as Map)['minItems'], 1);
+        expect((props['mode'] as Map)['const'], 'fast');
+        expect((props['count'] as Map)['type'], ['integer', 'null']);
       },
     );
   });

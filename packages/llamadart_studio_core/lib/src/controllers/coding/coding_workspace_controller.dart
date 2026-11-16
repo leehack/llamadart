@@ -165,6 +165,7 @@ class CodingWorkspaceController {
           currentSubdir: '',
           recentChanges: changed ? const <CodingFileChange>[] : null,
           messages: changed ? const <StudioMessage>[] : null,
+          toolAvailabilityNotices: changed ? const [] : null,
           files: entries,
           agentsContext: agentsContext,
           clearSelectedFile: true,
@@ -400,6 +401,7 @@ class CodingWorkspaceController {
     _store.update(
       (CodingWorkspaceState s) => s.copyWith(
         messages: const <StudioMessage>[],
+        toolAvailabilityNotices: const [],
         recentChanges: const <CodingFileChange>[],
         clearPendingShellApproval: true,
         clearLastError: true,
@@ -432,8 +434,11 @@ class CodingWorkspaceController {
     );
     final history = <StudioMessage>[..._store.state.messages, userMsg];
     _store.update(
-      (CodingWorkspaceState s) =>
-          s.copyWith(messages: history, clearLastError: true),
+      (CodingWorkspaceState s) => s.copyWith(
+        messages: history,
+        clearLastError: true,
+        toolAvailabilityNotices: const [],
+      ),
     );
 
     final turnWatch = Stopwatch()..start();
@@ -564,6 +569,10 @@ class CodingWorkspaceController {
                 turnWatch.elapsedMilliseconds,
                 immediate: true,
               );
+            case StudioToolAvailabilityEvent(:final notices):
+              _store.update(
+                (s) => s.copyWith(toolAvailabilityNotices: notices),
+              );
             case StudioTurnCompletedEvent(:final result):
               finalResult = result;
           }
@@ -602,6 +611,7 @@ class CodingWorkspaceController {
             (thinkingBuf.isEmpty ? null : thinkingBuf.toString()),
         thinkingDurationMs: finalResult?.thinkingDurationMs,
         toolCalls: finalResult?.toolInvocations ?? toolCalls,
+        transcript: finalResult?.transcript ?? const [],
         metrics:
             finalResult?.metrics ??
             StudioTurnMetrics(

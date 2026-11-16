@@ -40,11 +40,16 @@ class FileConversationStore implements StudioConversationStore {
       Directory(p.join(directoryPath, 'conversations'));
 
   Directory _attachmentsDirFor(String conversationId) => Directory(
-    p.join(directoryPath, 'attachments', _sanitizeFileSegment(conversationId)),
+    p.join(
+      directoryPath,
+      'attachments',
+      _validatedConversationId(conversationId),
+    ),
   );
 
-  File _conversationFile(String id) =>
-      File(p.join(_conversationsDir.path, '${_sanitizeFileSegment(id)}.json'));
+  File _conversationFile(String id) => File(
+    p.join(_conversationsDir.path, '${_validatedConversationId(id)}.json'),
+  );
 
   @override
   Future<List<StudioConversation>> loadAll() {
@@ -61,7 +66,9 @@ class FileConversationStore implements StudioConversationStore {
         try {
           final raw = await entity.readAsString();
           final map = jsonDecode(raw) as Map<String, Object?>;
-          loaded.add(StudioConversation.fromJson(map));
+          final conversation = StudioConversation.fromJson(map);
+          _validatedConversationId(conversation.id);
+          loaded.add(conversation);
         } catch (error, stackTrace) {
           // Ignore unreadable/partial files without breaking startup.
           developer.log(
@@ -83,6 +90,7 @@ class FileConversationStore implements StudioConversationStore {
   @override
   Future<void> save(StudioConversation conversation) {
     return _lock.synchronized(() async {
+      _validatedConversationId(conversation.id);
       final dir = _conversationsDir;
       await dir.create(recursive: true);
       final target = _conversationFile(conversation.id);
@@ -143,6 +151,7 @@ class FileConversationStore implements StudioConversationStore {
     required String conversationId,
     required StudioAttachment attachment,
   }) async {
+    _validatedConversationId(conversationId);
     if (attachment.localPath != null && attachment.localPath!.isNotEmpty) {
       return attachment;
     }
@@ -171,5 +180,19 @@ class FileConversationStore implements StudioConversationStore {
   static String _sanitizeFileSegment(String input) {
     final sanitized = input.replaceAll(RegExp(r'[^a-zA-Z0-9._-]'), '_');
     return sanitized.isEmpty ? 'item' : sanitized;
+  }
+
+  static String _validatedConversationId(String id) {
+    if (id.isEmpty ||
+        id == '.' ||
+        id == '..' ||
+        !RegExp(r'^[a-zA-Z0-9._-]+$').hasMatch(id)) {
+      throw ArgumentError.value(
+        id,
+        'conversationId',
+        'Invalid conversation ID',
+      );
+    }
+    return id;
   }
 }

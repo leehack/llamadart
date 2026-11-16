@@ -196,6 +196,61 @@ class StudioToolInvocation {
   }
 }
 
+/// One ordered assistant or tool message within a generated Studio turn.
+///
+/// Separate entries preserve tool-round boundaries without depending on a
+/// runtime's chat-message types. A tool entry carries its result in [toolCalls].
+@immutable
+class StudioTurnTranscriptEntry {
+  /// Creates an entry in the exact order supplied to the model.
+  const StudioTurnTranscriptEntry({
+    required this.role,
+    this.text = '',
+    this.thinkingText,
+    this.toolCalls = const <StudioToolInvocation>[],
+  });
+
+  /// Assistant response or tool result role.
+  final StudioRole role;
+
+  /// Visible text emitted at this point in the turn.
+  final String text;
+
+  /// Reasoning emitted in this assistant round.
+  final String? thinkingText;
+
+  /// Calls requested by this assistant message, or results for a tool message.
+  final List<StudioToolInvocation> toolCalls;
+
+  /// Serializes this entry without any runtime-specific objects.
+  Map<String, Object?> toJson() => <String, Object?>{
+    'role': role.name,
+    'text': text,
+    if (thinkingText != null) 'thinkingText': thinkingText,
+    if (toolCalls.isNotEmpty)
+      'toolCalls': toolCalls.map((call) => call.toJson()).toList(),
+  };
+
+  /// Restores an ordered entry from persisted conversation JSON.
+  factory StudioTurnTranscriptEntry.fromJson(Map<String, Object?> json) {
+    final role = StudioRole.values.byName(json['role'] as String);
+    if (role != StudioRole.assistant && role != StudioRole.tool) {
+      throw const FormatException(
+        'Turn transcript needs assistant/tool roles.',
+      );
+    }
+    return StudioTurnTranscriptEntry(
+      role: role,
+      text: (json['text'] as String?) ?? '',
+      thinkingText: json['thinkingText'] as String?,
+      toolCalls: <StudioToolInvocation>[
+        for (final raw in (json['toolCalls'] as List?) ?? const [])
+          StudioToolInvocation.fromJson(Map<String, Object?>.from(raw as Map)),
+      ],
+    );
+  }
+}
+
 /// Telemetry recorded for a completed assistant generation turn.
 @immutable
 class StudioTurnMetrics {
@@ -291,6 +346,7 @@ class StudioMessage {
     this.thinkingDurationMs,
     this.attachments = const <StudioAttachment>[],
     this.toolCalls = const <StudioToolInvocation>[],
+    this.transcript = const <StudioTurnTranscriptEntry>[],
     this.metrics,
     this.isStreaming = false,
     this.isError = false,
@@ -319,6 +375,10 @@ class StudioMessage {
 
   /// Explicit tool calls invoked during this assistant turn.
   final List<StudioToolInvocation> toolCalls;
+
+  /// Ordered assistant/tool messages for replay of newly recorded tool turns.
+  /// Empty for older transcripts that stored only aggregated [toolCalls].
+  final List<StudioTurnTranscriptEntry> transcript;
 
   /// Performance telemetry for completed assistant turns.
   final StudioTurnMetrics? metrics;
@@ -369,6 +429,7 @@ class StudioMessage {
     int? thinkingDurationMs,
     List<StudioAttachment>? attachments,
     List<StudioToolInvocation>? toolCalls,
+    List<StudioTurnTranscriptEntry>? transcript,
     StudioTurnMetrics? metrics,
     DateTime? createdAt,
     bool? isStreaming,
@@ -383,6 +444,7 @@ class StudioMessage {
       thinkingDurationMs: thinkingDurationMs ?? this.thinkingDurationMs,
       attachments: attachments ?? this.attachments,
       toolCalls: toolCalls ?? this.toolCalls,
+      transcript: transcript ?? this.transcript,
       metrics: metrics ?? this.metrics,
       createdAt: createdAt ?? this.createdAt,
       isStreaming: isStreaming ?? this.isStreaming,
@@ -408,6 +470,8 @@ class StudioMessage {
             .toList(growable: false),
       if (toolCalls.isNotEmpty)
         'toolCalls': toolCalls.map((call) => call.toJson()).toList(),
+      if (transcript.isNotEmpty)
+        'transcript': transcript.map((entry) => entry.toJson()).toList(),
       if (metrics != null) 'metrics': metrics!.toJson(),
       'createdAt': createdAt.toUtc().toIso8601String(),
       if (isError) 'isError': true,
@@ -454,6 +518,12 @@ class StudioMessage {
       thinkingDurationMs: (json['thinkingDurationMs'] as num?)?.toInt(),
       attachments: attachments,
       toolCalls: toolCalls,
+      transcript: <StudioTurnTranscriptEntry>[
+        for (final raw in (json['transcript'] as List?) ?? const [])
+          StudioTurnTranscriptEntry.fromJson(
+            Map<String, Object?>.from(raw as Map),
+          ),
+      ],
       metrics: rawMetrics is Map
           ? StudioTurnMetrics.fromJson(Map<String, Object?>.from(rawMetrics))
           : null,

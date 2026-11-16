@@ -66,6 +66,7 @@ class ChatWorkspaceState {
     this.isSubmitting = false,
     this.activePresetId = 'general_assistant',
     this.lastTurnError,
+    this.toolAvailabilityNotices = const <StudioToolAvailabilityNotice>[],
     this.lastStructuredJsonValid,
   });
 
@@ -92,6 +93,9 @@ class ChatWorkspaceState {
 
   /// Optional error banner from the most recent turn.
   final String? lastTurnError;
+
+  /// Explicit tool compatibility feedback from the latest inference turn.
+  final List<StudioToolAvailabilityNotice> toolAvailabilityNotices;
 
   /// Schema validation outcome from the most recent JSON-schema turn.
   final bool? lastStructuredJsonValid;
@@ -136,11 +140,14 @@ class ChatWorkspaceState {
     bool? isSubmitting,
     String? activePresetId,
     String? lastTurnError,
+    List<StudioToolAvailabilityNotice>? toolAvailabilityNotices,
     bool clearLastTurnError = false,
     bool? lastStructuredJsonValid,
     bool clearStructuredJsonValid = false,
   }) {
     return ChatWorkspaceState(
+      toolAvailabilityNotices:
+          toolAvailabilityNotices ?? this.toolAvailabilityNotices,
       conversations: conversations ?? this.conversations,
       activeConversationId: clearActiveConversationId
           ? null

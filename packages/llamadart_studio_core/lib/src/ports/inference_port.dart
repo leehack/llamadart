@@ -27,6 +27,8 @@ class StudioTurnRequest {
     this.includeBuiltInTools = true,
     this.toolsEnabledOverride,
     this.maxToolRounds = 5,
+    this.toolChoice = ToolChoice.auto,
+    this.requiredToolName,
   });
 
   /// Ordered conversation branch ending with the user turn to answer.
@@ -59,6 +61,32 @@ class StudioTurnRequest {
 
   /// Maximum automatic tool execution rounds before returning.
   final int maxToolRounds;
+
+  /// Whether model tool use is automatic, required, or disabled.
+  final ToolChoice toolChoice;
+
+  /// Restricts a required tool turn to this exposed tool name when non-null.
+  final String? requiredToolName;
+}
+
+/// Actionable compatibility feedback for one tool on the selected runtime.
+@immutable
+class StudioToolAvailabilityNotice {
+  /// Creates an unavailable-tool or restricted-generation notice.
+  const StudioToolAvailabilityNotice({
+    required this.toolName,
+    required this.reason,
+    this.isUnavailable = true,
+  });
+
+  /// Exposed tool name affected by the selected model/runtime.
+  final String toolName;
+
+  /// User-facing reason and recovery action.
+  final String reason;
+
+  /// Whether the tool was omitted, rather than limited to a safe input subset.
+  final bool isUnavailable;
 }
 
 /// Final outcome of a completed assistant turn.
@@ -71,6 +99,7 @@ class StudioTurnResult {
     this.thinkingText,
     this.thinkingDurationMs,
     this.toolInvocations = const <StudioToolInvocation>[],
+    this.transcript = const <StudioTurnTranscriptEntry>[],
     this.structuredJsonValid,
     this.structuredJsonError,
   });
@@ -90,6 +119,9 @@ class StudioTurnResult {
   /// Recorded tool calls and results executed during the turn.
   final List<StudioToolInvocation> toolInvocations;
 
+  /// Ordered assistant/tool round messages for durable, lossless replay.
+  final List<StudioTurnTranscriptEntry> transcript;
+
   /// Whether [text] validated against `StudioTurnRequest.jsonSchema` when set.
   final bool? structuredJsonValid;
 
@@ -101,6 +133,15 @@ class StudioTurnResult {
 @immutable
 sealed class StudioTurnEvent {
   const StudioTurnEvent();
+}
+
+/// Reports explicit tool admission changes before automatic inference retries.
+final class StudioToolAvailabilityEvent extends StudioTurnEvent {
+  /// Creates an availability update for the current turn.
+  const StudioToolAvailabilityEvent(this.notices);
+
+  /// Unavailable tools or restricted generation schemas and their reasons.
+  final List<StudioToolAvailabilityNotice> notices;
 }
 
 /// Incremental visible text delta.

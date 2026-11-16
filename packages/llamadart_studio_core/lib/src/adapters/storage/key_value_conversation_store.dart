@@ -1,6 +1,8 @@
 import 'dart:convert';
 import 'dart:typed_data';
 
+import 'package:synchronized/synchronized.dart';
+
 import '../../domain/studio_conversation.dart';
 import '../../domain/studio_message.dart';
 import '../../ports/conversation_store.dart';
@@ -16,53 +18,58 @@ class KeyValueConversationStore implements StudioConversationStore {
   static String _itemKey(String id) => 'studio.conversations.item.$id';
 
   final KeyValueStore _store;
+  final Lock _lock = Lock();
 
   @override
-  Future<List<StudioConversation>> loadAll() async {
-    final rawIndex = await _store.readString(_indexKey);
-    if (rawIndex == null || rawIndex.isEmpty) {
-      return const <StudioConversation>[];
-    }
-    final List<Object?> ids;
-    try {
-      ids = jsonDecode(rawIndex) as List<Object?>;
-    } catch (_) {
-      return const <StudioConversation>[];
-    }
-    final conversations = <StudioConversation>[];
-    for (final rawId in ids) {
-      if (rawId is! String) {
-        continue;
+  Future<List<StudioConversation>> loadAll() {
+    return _lock.synchronized(() async {
+      final rawIndex = await _store.readString(_indexKey);
+      if (rawIndex == null || rawIndex.isEmpty) {
+        return const <StudioConversation>[];
       }
-      final rawItem = await _store.readString(_itemKey(rawId));
-      if (rawItem == null || rawItem.isEmpty) {
-        continue;
-      }
+      final List<Object?> ids;
       try {
-        final map = jsonDecode(rawItem) as Map<String, Object?>;
-        conversations.add(StudioConversation.fromJson(map));
+        ids = jsonDecode(rawIndex) as List<Object?>;
       } catch (_) {
-        // Skip corrupted entries rather than failing startup.
+        return const <StudioConversation>[];
       }
-    }
-    conversations.sort(
-      (StudioConversation a, StudioConversation b) =>
-          b.updatedAt.compareTo(a.updatedAt),
-    );
-    return conversations;
+      final conversations = <StudioConversation>[];
+      for (final rawId in ids) {
+        if (rawId is! String) {
+          continue;
+        }
+        final rawItem = await _store.readString(_itemKey(rawId));
+        if (rawItem == null || rawItem.isEmpty) {
+          continue;
+        }
+        try {
+          final map = jsonDecode(rawItem) as Map<String, Object?>;
+          conversations.add(StudioConversation.fromJson(map));
+        } catch (_) {
+          // Skip corrupted entries rather than failing startup.
+        }
+      }
+      conversations.sort(
+        (StudioConversation a, StudioConversation b) =>
+            b.updatedAt.compareTo(a.updatedAt),
+      );
+      return conversations;
+    });
   }
 
   @override
-  Future<void> save(StudioConversation conversation) async {
-    await _store.writeString(
-      _itemKey(conversation.id),
-      jsonEncode(conversation.toJson()),
-    );
-    final ids = await _readIds();
-    if (!ids.contains(conversation.id)) {
-      ids.add(conversation.id);
-      await _store.writeString(_indexKey, jsonEncode(ids));
-    }
+  Future<void> save(StudioConversation conversation) {
+    return _lock.synchronized(() async {
+      await _store.writeString(
+        _itemKey(conversation.id),
+        jsonEncode(conversation.toJson()),
+      );
+      final ids = await _readIds();
+      if (!ids.contains(conversation.id)) {
+        ids.add(conversation.id);
+        await _store.writeString(_indexKey, jsonEncode(ids));
+      }
+    });
   }
 
   @override
@@ -71,21 +78,25 @@ class KeyValueConversationStore implements StudioConversationStore {
   }
 
   @override
-  Future<void> delete(String id) async {
-    await _store.remove(_itemKey(id));
-    final ids = await _readIds();
-    if (ids.remove(id)) {
-      await _store.writeString(_indexKey, jsonEncode(ids));
-    }
+  Future<void> delete(String id) {
+    return _lock.synchronized(() async {
+      await _store.remove(_itemKey(id));
+      final ids = await _readIds();
+      if (ids.remove(id)) {
+        await _store.writeString(_indexKey, jsonEncode(ids));
+      }
+    });
   }
 
   @override
-  Future<void> clearAll() async {
-    final ids = await _readIds();
-    for (final id in ids) {
-      await _store.remove(_itemKey(id));
-    }
-    await _store.remove(_indexKey);
+  Future<void> clearAll() {
+    return _lock.synchronized(() async {
+      final ids = await _readIds();
+      for (final id in ids) {
+        await _store.remove(_itemKey(id));
+      }
+      await _store.remove(_indexKey);
+    });
   }
 
   @override

@@ -3,12 +3,11 @@ import 'package:llamadart/llamadart.dart';
 import '../../domain/mcp_server_config.dart';
 
 /// Pure adapter converting arbitrary external MCP JSON Schemas into
-/// `llamadart` [ToolDefinition]s and sanitizing schema subsets for grammar and
-/// chat-template compatibility.
+/// `llamadart` [ToolDefinition]s without weakening input constraints.
 abstract final class McpToolSchemaAdapter {
   /// Converts an [McpToolDescriptor] into a `llamadart` [ToolDefinition],
-  /// sanitizing its JSON Schema and preferring `ToolParam` definitions when
-  /// representable so all chat templates (including `qwen3CoderXml`) qualify.
+  /// preserving its JSON Schema. Unsupported schemas throw a named
+  /// [LlamaUnsupportedException] before the tool can run.
   static ToolDefinition toLlamaToolDefinition(
     McpToolDescriptor tool, {
     required Future<Object?> Function(ToolParams params) handler,
@@ -19,16 +18,6 @@ abstract final class McpToolSchemaAdapter {
         ? 'MCP tool ${tool.name} from ${tool.serverName}.'
         : '[MCP:${tool.serverName}] $rawDesc';
 
-    final simpleParams = _tryJsonSchemaToToolParams(sanitized);
-    if (simpleParams != null) {
-      return ToolDefinition(
-        name: tool.exposedToolName,
-        description: description,
-        parameters: simpleParams,
-        handler: handler,
-      );
-    }
-
     try {
       return ToolDefinition.fromJsonSchema(
         name: tool.exposedToolName,
@@ -36,42 +25,65 @@ abstract final class McpToolSchemaAdapter {
         schema: sanitized,
         handler: handler,
       );
-    } on LlamaUnsupportedException {
-      return ToolDefinition(
-        name: tool.exposedToolName,
-        description: description,
-        parameters: const <ToolParam>[],
-        handler: handler,
+    } on LlamaUnsupportedException catch (error) {
+      throw LlamaUnsupportedException(
+        'MCP tool "${tool.name}" is unavailable: ${error.message} '
+        'Its input constraints cannot be weakened safely.',
       );
     }
   }
 
-  /// Converts any [ToolDefinition] (including canonical JSON Schema tools)
-  /// into a legacy [ToolParam]-backed [ToolDefinition] compatible with all
-  /// chat templates including `ChatFormat.qwen3CoderXml` (Qwen3.5 / Qwen3.6).
-  static ToolDefinition coerceToLegacyToolDefinition(ToolDefinition tool) {
-    final schema = sanitizeMcpInputSchema(tool.toJsonSchema());
-    final strictParams = _tryJsonSchemaToToolParams(schema);
-    final params = strictParams ?? _lossyJsonSchemaToToolParams(schema);
+  /// Converts canonical schemas without weakening validation constraints.
+  ///
+  /// [allowClosedObjectSubset] additionally permits restricting generation to
+  /// finite declared object fields; [onRestriction] reports that reduction.
+  /// Invocation always retains the original canonical validation. Dynamic
+  /// object schemas and unrepresentable constraints fail closed.
+  static ToolDefinition coerceToLegacyToolDefinition(
+    ToolDefinition tool, {
+    bool allowClosedObjectSubset = false,
+    void Function(String reason)? onRestriction,
+  }) {
+    final schema = tool.toJsonSchema();
+    // Canonical schemas always publish an explicit property policy. Existing
+    // ToolParam tools already have the legacy runtime's closed-object policy.
+    if (!schema.containsKey('additionalProperties')) return tool;
+    final params = _tryJsonSchemaToToolParams(
+      schema,
+      allowClosedObjectSubset: allowClosedObjectSubset,
+    );
+    if (params == null) {
+      throw LlamaUnsupportedException(
+        'Tool "${tool.name}" requires canonical JSON Schema input constraints '
+        'that this model/chat template cannot represent with legacy parameters. '
+        'Disable the tool or choose a compatible model/runtime.',
+      );
+    }
+    if (allowClosedObjectSubset && _containsOpenObject(schema)) {
+      onRestriction?.call(
+        'Restricted generation options: this model can supply only the tool\'s '
+        'declared object fields. Choose a compatible model/runtime for additional fields.',
+      );
+    }
     return ToolDefinition(
       name: tool.name,
       description: tool.description,
       parameters: params,
-      handler: tool.handler,
+      handler: tool.handler == null
+          ? null
+          : (params) => tool.invoke(params.raw),
     );
   }
 
-  /// Sanitizes an arbitrary JSON Schema from an external MCP server so it
-  /// conforms strictly to the subset supported by `ToolDefinition.fromJsonSchema`.
+  /// Copies an MCP schema root without discarding validation constraints.
+  /// Missing root type defaults to the object required by MCP tool arguments.
   static Map<String, dynamic> sanitizeMcpInputSchema(
     Map<String, dynamic> rawSchema,
   ) {
-    final cleaned = _sanitizeSchemaNode(rawSchema, isRoot: true);
-    cleaned['type'] = 'object';
-    if (cleaned['properties'] is! Map) {
-      cleaned['properties'] = <String, dynamic>{};
-    }
-    return cleaned;
+    // The canonical tool constructor bounds and owns the complete JSON tree.
+    final owned = Map<String, dynamic>.of(rawSchema);
+    owned.putIfAbsent('type', () => 'object');
+    return owned;
   }
 
   /// Allocates a collision-free identifier for an exposed MCP tool name.
@@ -103,199 +115,22 @@ abstract final class McpToolSchemaAdapter {
     return cleanIdentifier('${prefixed}_$n');
   }
 
-  static List<ToolParam> _lossyJsonSchemaToToolParams(
-    Map<String, dynamic> objectSchema,
-  ) {
-    final rawProps = objectSchema['properties'];
-    if (rawProps is! Map) {
-      return const <ToolParam>[];
-    }
-    final requiredSet = <String>{
-      if (objectSchema['required'] is List)
-        for (final item in (objectSchema['required'] as List))
-          if (item is String) item,
-    };
-    final params = <ToolParam>[];
-    for (final entry in rawProps.entries) {
-      final key = entry.key;
-      final value = entry.value;
-      if (key is! String || key.isEmpty || value is! Map) {
-        continue;
-      }
-      params.add(
-        _lossySchemaPropToToolParam(
-          key,
-          Map<String, dynamic>.from(value),
-          isRequired: requiredSet.contains(key),
-        ),
-      );
-    }
-    return params;
-  }
-
-  static ToolParam _lossySchemaPropToToolParam(
-    String name,
-    Map<String, dynamic> schema, {
-    required bool isRequired,
-  }) {
-    final description = schema['description'] as String?;
-
-    if (schema.containsKey('const')) {
-      final c = schema['const'];
-      if (c is String) {
-        return ToolParam.enumType(
-          name,
-          values: <String>[c],
-          description: description,
-          required: isRequired,
-        );
-      }
-      if (c is bool) {
-        return ToolParam.boolean(
-          name,
-          description: description,
-          required: isRequired,
-        );
-      }
-      if (c is int) {
-        return ToolParam.integer(
-          name,
-          description: description,
-          required: isRequired,
-        );
-      }
-      if (c is num) {
-        return ToolParam.number(
-          name,
-          description: description,
-          required: isRequired,
-        );
-      }
-      return ToolParam.string(
-        name,
-        description: description,
-        required: isRequired,
-      );
-    }
-
-    final anyOf = schema['anyOf'];
-    if (anyOf is List && anyOf.isNotEmpty) {
-      Map<String, dynamic>? chosen;
-      for (final branch in anyOf) {
-        if (branch is Map) {
-          final branchMap = Map<String, dynamic>.from(branch);
-          if (branchMap['type'] != 'null') {
-            chosen = branchMap;
-            break;
-          }
-          chosen ??= branchMap;
-        }
-      }
-      if (chosen != null) {
-        if (description != null && chosen['description'] == null) {
-          chosen['description'] = description;
-        }
-        return _lossySchemaPropToToolParam(
-          name,
-          chosen,
-          isRequired: isRequired,
-        );
-      }
-    }
-
-    final rawEnum = schema['enum'];
-    final rawTypeField = schema['type'];
-    String? rawType;
-    if (rawTypeField is String) {
-      rawType = rawTypeField;
-    } else if (rawTypeField is List) {
-      for (final item in rawTypeField) {
-        if (item is String && item != 'null') {
-          rawType = item;
-          break;
-        }
-      }
-      rawType ??= rawTypeField.whereType<String>().firstOrNull;
-    }
-
-    if (rawEnum is List &&
-        rawEnum.isNotEmpty &&
-        (rawType == null || rawType == 'string') &&
-        rawEnum.every((Object? item) => item is String)) {
-      return ToolParam.enumType(
-        name,
-        values: rawEnum.cast<String>(),
-        description: description,
-        required: isRequired,
-      );
-    }
-
-    switch (rawType) {
-      case 'integer':
-        return ToolParam.integer(
-          name,
-          description: description,
-          required: isRequired,
-        );
-      case 'number':
-        return ToolParam.number(
-          name,
-          description: description,
-          required: isRequired,
-        );
-      case 'boolean':
-        return ToolParam.boolean(
-          name,
-          description: description,
-          required: isRequired,
-        );
-      case 'null':
-        return ToolParam.nullType(
-          name,
-          description: description,
-          required: isRequired,
-        );
-      case 'array':
-        final items = schema['items'];
-        final itemParam = items is Map
-            ? _lossySchemaPropToToolParam(
-                '${name}_item',
-                Map<String, dynamic>.from(items),
-                isRequired: false,
-              )
-            : ToolParam.string('${name}_item');
-        return ToolParam.array(
-          name,
-          itemType: itemParam,
-          description: description,
-          required: isRequired,
-        );
-      case 'object':
-        return ToolParam.object(
-          name,
-          properties: _lossyJsonSchemaToToolParams(schema),
-          description: description,
-          required: isRequired,
-        );
-      case 'string':
-      default:
-        return ToolParam.string(
-          name,
-          description: description,
-          required: isRequired,
-        );
-    }
-  }
-
   static List<ToolParam>? _tryJsonSchemaToToolParams(
-    Map<String, dynamic> objectSchema,
-  ) {
-    if (objectSchema.containsKey('anyOf') ||
+    Map<String, dynamic> objectSchema, {
+    bool allowClosedObjectSubset = false,
+  }) {
+    final rawProps = objectSchema['properties'];
+    final canCloseObject =
+        allowClosedObjectSubset &&
+        objectSchema['additionalProperties'] == true &&
+        rawProps is Map &&
+        rawProps.isNotEmpty;
+    if ((!canCloseObject && objectSchema['additionalProperties'] != false) ||
+        objectSchema.containsKey('anyOf') ||
         objectSchema.containsKey('const') ||
         objectSchema['additionalProperties'] is Map) {
       return null;
     }
-    final rawProps = objectSchema['properties'];
     if (rawProps == null) {
       return const <ToolParam>[];
     }
@@ -307,6 +142,7 @@ abstract final class McpToolSchemaAdapter {
         for (final item in (objectSchema['required'] as List))
           if (item is String) item,
     };
+    if (requiredSet.any((name) => !rawProps.containsKey(name))) return null;
 
     final params = <ToolParam>[];
     for (final entry in rawProps.entries) {
@@ -319,6 +155,7 @@ abstract final class McpToolSchemaAdapter {
         key,
         Map<String, dynamic>.from(value),
         isRequired: requiredSet.contains(key),
+        allowClosedObjectSubset: allowClosedObjectSubset,
       );
       if (param == null) {
         return null;
@@ -332,6 +169,7 @@ abstract final class McpToolSchemaAdapter {
     String name,
     Map<String, dynamic> schema, {
     required bool isRequired,
+    bool allowClosedObjectSubset = false,
   }) {
     const unsupportedByToolParam = <String>{
       'anyOf',
@@ -408,6 +246,7 @@ abstract final class McpToolSchemaAdapter {
           '${name}_item',
           Map<String, dynamic>.from(items),
           isRequired: false,
+          allowClosedObjectSubset: allowClosedObjectSubset,
         );
         if (itemParam == null) {
           return null;
@@ -419,7 +258,10 @@ abstract final class McpToolSchemaAdapter {
           required: isRequired,
         );
       case 'object':
-        final nested = _tryJsonSchemaToToolParams(schema);
+        final nested = _tryJsonSchemaToToolParams(
+          schema,
+          allowClosedObjectSubset: allowClosedObjectSubset,
+        );
         if (nested == null) {
           return null;
         }
@@ -447,77 +289,13 @@ abstract final class McpToolSchemaAdapter {
     return '${cut.trimRight()}...';
   }
 
-  static const Set<String> _allowedSchemaKeys = <String>{
-    'type',
-    'properties',
-    'required',
-    'additionalProperties',
-    'items',
-    'minItems',
-    'maxItems',
-    'minLength',
-    'maxLength',
-    'enum',
-    'const',
-    'anyOf',
-    'description',
-    'title',
-    'default',
-    r'$schema',
-    'deprecated',
-    'readOnly',
-    'writeOnly',
-  };
-
-  static Map<String, dynamic> _sanitizeSchemaNode(
-    Map<String, dynamic> node, {
-    bool isRoot = false,
-  }) {
-    final out = <String, dynamic>{};
-    for (final entry in node.entries) {
-      final key = entry.key;
-      final value = entry.value;
-      if (!_allowedSchemaKeys.contains(key) && !key.startsWith('x-')) {
-        continue;
+  static bool _containsOpenObject(Object? node) {
+    if (node is Map) {
+      if (node['type'] == 'object' && node['additionalProperties'] == true) {
+        return true;
       }
-      if (key == 'description' && value is String) {
-        final compact = _compactDescription(value, maxChars: 120);
-        if (compact.isNotEmpty) {
-          out['description'] = compact;
-        }
-      } else if (key == 'properties' && value is Map) {
-        final props = <String, dynamic>{};
-        for (final propEntry in value.entries) {
-          if (propEntry.key is String && propEntry.value is Map) {
-            props[propEntry.key as String] = _sanitizeSchemaNode(
-              Map<String, dynamic>.from(propEntry.value as Map),
-            );
-          }
-        }
-        out['properties'] = props;
-      } else if (key == 'items' && value is Map) {
-        out['items'] = _sanitizeSchemaNode(Map<String, dynamic>.from(value));
-      } else if (key == 'additionalProperties' && value is Map) {
-        out['additionalProperties'] = _sanitizeSchemaNode(
-          Map<String, dynamic>.from(value),
-        );
-      } else if (key == 'anyOf' && value is List) {
-        final branches = <Map<String, dynamic>>[
-          for (final item in value)
-            if (item is Map)
-              _sanitizeSchemaNode(Map<String, dynamic>.from(item)),
-        ];
-        if (branches.isNotEmpty) {
-          out['anyOf'] = branches;
-        }
-      } else {
-        out[key] = value;
-      }
+      return node.values.any(_containsOpenObject);
     }
-
-    if (isRoot && !out.containsKey('type')) {
-      out['type'] = 'object';
-    }
-    return out;
+    return node is List && node.any(_containsOpenObject);
   }
 }

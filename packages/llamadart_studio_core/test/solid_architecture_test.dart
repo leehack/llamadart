@@ -376,12 +376,12 @@ void main() {
     );
 
     test(
-      'SRP: McpToolSchemaAdapter sanitizes external schemas, allocates unique names, and coerces legacy params',
+      'SRP: MCP adapter preserves constraints and rejects lossy legacy conversion',
       () async {
         final sanitized = McpToolSchemaAdapter.sanitizeMcpInputSchema(
           <String, dynamic>{
             '\$schema': 'https://json-schema.org/draft/2020-12/schema',
-            'unknownKeyword': 'should_be_dropped',
+            'x-source': 'preserved annotation',
             'properties': <String, dynamic>{
               'mode': <String, dynamic>{
                 'anyOf': <Object?>[
@@ -397,7 +397,7 @@ void main() {
           },
         );
         expect(sanitized['type'], 'object');
-        expect(sanitized.containsKey('unknownKeyword'), isFalse);
+        expect(sanitized['x-source'], 'preserved annotation');
 
         final used = <String>{'search'};
         expect(
@@ -420,14 +420,21 @@ void main() {
           ),
           handler: (ToolParams p) async => p.getString('mode') ?? 'none',
         );
-        final coerced = McpToolSchemaAdapter.coerceToLegacyToolDefinition(tool);
-        expect(coerced.name, 'docs_query');
-        expect(coerced.parameters.map((ToolParam p) => p.name), <String>[
-          'mode',
-        ]);
         expect(
-          await coerced.invoke(const <String, dynamic>{'mode': 'fast'}),
+          () => McpToolSchemaAdapter.coerceToLegacyToolDefinition(tool),
+          throwsA(isA<LlamaUnsupportedException>()),
+        );
+        expect(
+          await tool.invoke(const <String, dynamic>{'mode': 'fast'}),
           'fast',
+        );
+        expect(
+          await tool.invoke(const <String, dynamic>{'mode': null}),
+          'none',
+        );
+        await expectLater(
+          tool.invoke(const <String, dynamic>{'mode': 'unsafe'}),
+          throwsA(isA<LlamaArgumentException>()),
         );
       },
     );

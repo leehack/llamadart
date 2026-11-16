@@ -62,6 +62,10 @@ class ChatWorkspaceController {
   Timer? _streamFlushTimer;
   ActiveTurnStreamState? _pendingStreamState;
   DateTime? _lastStreamEmitAt;
+  bool _disposed = false;
+  Future<void>? _disposal;
+  StreamSubscription<StudioTurnEvent>? _turnSubscription;
+  Completer<void>? _turnStreamDone;
 
   /// Structural conversation/composer store.
   ReadOnlyStore<ChatWorkspaceState> get store => _store;
@@ -104,6 +108,7 @@ class ChatWorkspaceController {
       (ChatWorkspaceState s) => s.copyWith(
         conversations: <StudioConversation>[created, ...s.conversations],
         activeConversationId: created.id,
+        toolAvailabilityNotices: const [],
         clearComposerDraft: true,
         activePresetId: chosen.id,
         pendingAttachments: const <StudioAttachment>[],
@@ -119,6 +124,7 @@ class ChatWorkspaceController {
     _store.update(
       (ChatWorkspaceState s) => s.copyWith(
         activeConversationId: conversationId,
+        toolAvailabilityNotices: const [],
         composerDraft: _drafts[conversationId],
         clearComposerDraft: !_drafts.containsKey(conversationId),
         pendingAttachments: const <StudioAttachment>[],
@@ -173,6 +179,7 @@ class ChatWorkspaceController {
         (ChatWorkspaceState s) => s.copyWith(
           conversations: <StudioConversation>[fresh],
           activeConversationId: fresh.id,
+          toolAvailabilityNotices: const [],
           clearComposerDraft: true,
         ),
       );
@@ -185,6 +192,7 @@ class ChatWorkspaceController {
       (ChatWorkspaceState s) => s.copyWith(
         conversations: remaining,
         activeConversationId: nextActive,
+        toolAvailabilityNotices: const [],
         composerDraft: _drafts[nextActive],
         clearComposerDraft: !_drafts.containsKey(nextActive),
       ),
@@ -425,13 +433,18 @@ class ChatWorkspaceController {
     Future<({StudioConversation conversation, StudioMessage user})> Function()
     prepare,
   ) async {
-    if (_store.state.isSubmitting || _activeStreamStore.state.isGenerating) {
+    if (_disposed ||
+        _store.state.isSubmitting ||
+        _activeStreamStore.state.isGenerating) {
       return;
     }
-    _store.update((s) => s.copyWith(isSubmitting: true));
+    _store.update(
+      (s) => s.copyWith(isSubmitting: true, toolAvailabilityNotices: const []),
+    );
     late final Future<void> generation;
     try {
       final turn = await prepare();
+      if (_disposed) return;
       // Inference reserves its stream synchronously before releasing submission.
       generation = _executeAssistantTurn(
         turn.conversation,
@@ -519,6 +532,7 @@ class ChatWorkspaceController {
       (ChatWorkspaceState s) => s.copyWith(
         conversations: <StudioConversation>[imported, ...s.conversations],
         activeConversationId: imported.id,
+        toolAvailabilityNotices: const [],
       ),
     );
     return imported;
@@ -605,6 +619,7 @@ class ChatWorkspaceController {
       late final StreamSubscription<StudioTurnEvent> streamSub;
       streamSub = stream.listen(
         (StudioTurnEvent event) {
+          if (_disposed || turnEpoch != _turnEpoch) return;
           switch (event) {
             case StudioTextDeltaEvent(:final delta):
               textBuf.write(delta);
@@ -649,6 +664,11 @@ class ChatWorkspaceController {
                 elapsedMs: turnWatch.elapsedMilliseconds,
                 immediate: true,
               );
+            case StudioToolAvailabilityEvent(:final notices):
+              if (_store.state.activeConversationId != conversation.id) break;
+              _store.update(
+                (s) => s.copyWith(toolAvailabilityNotices: notices),
+              );
             case StudioTurnCompletedEvent(:final result):
               finalResult = result;
           }
@@ -667,14 +687,21 @@ class ChatWorkspaceController {
         },
         cancelOnError: true,
       );
+      _turnSubscription = streamSub;
+      _turnStreamDone = streamDone;
       try {
         await streamDone.future;
       } finally {
         if (!streamFinished) {
           await streamSub.cancel();
         }
+        if (identical(_turnSubscription, streamSub)) {
+          _turnSubscription = null;
+          _turnStreamDone = null;
+        }
       }
 
+      if (_disposed || turnEpoch != _turnEpoch) return;
       turnWatch.stop();
       final assistantMsg = StudioMessage(
         id: _nextId('ast'),
@@ -686,6 +713,7 @@ class ChatWorkspaceController {
             (thinkingBuf.isEmpty ? null : thinkingBuf.toString()),
         thinkingDurationMs: finalResult?.thinkingDurationMs,
         toolCalls: finalResult?.toolInvocations ?? toolCalls,
+        transcript: finalResult?.transcript ?? const [],
         metrics:
             finalResult?.metrics ??
             StudioTurnMetrics(
@@ -861,7 +889,7 @@ class ChatWorkspaceController {
     String? lastError,
     bool? structuredJsonValid,
   }) async {
-    if (_deletedConversationIds.contains(updated.id)) {
+    if (_disposed || _deletedConversationIds.contains(updated.id)) {
       return;
     }
     await _conversations.save(updated);
@@ -870,6 +898,7 @@ class ChatWorkspaceController {
       await _conversations.delete(updated.id);
       return;
     }
+    if (_disposed) return;
     _store.update((ChatWorkspaceState s) {
       final list = <StudioConversation>[
         updated,
@@ -907,9 +936,25 @@ class ChatWorkspaceController {
     return '${singleLine.substring(0, 41)}...';
   }
 
-  /// Disposes both structural and streaming stores.
-  Future<void> dispose() async {
+  /// Cancels generation, detaches its stream, and closes both state stores.
+  Future<void> dispose() => _disposal ??= _dispose();
+
+  Future<void> _dispose() async {
+    _disposed = true;
+    _turnEpoch++;
+    _awaitingModel = false;
     _resetStreamThrottle();
+    final subscription = _turnSubscription;
+    final done = _turnStreamDone;
+    if (subscription != null) {
+      _inference.cancelGeneration();
+      try {
+        await subscription.cancel();
+      } finally {
+        if (done != null && !done.isCompleted) done.complete();
+      }
+    }
+    _drafts.clear();
     await _store.dispose();
     await _activeStreamStore.dispose();
   }

@@ -368,11 +368,8 @@ class DirectLlamaInferencePort
       0,
       request.history.length - 1,
     );
-    for (final msg in priorMessages) {
-      if (msg.isError) {
-        continue;
-      }
-      session.addMessage(_toLlamaMessageHelper(msg));
+    for (final msg in _toLlamaHistoryHelper(priorMessages)) {
+      session.addMessage(msg);
     }
 
     final latestTurn = request.history.last;
@@ -406,10 +403,7 @@ class DirectLlamaInferencePort
     // Prepare active tools when supported and no strict JSON schema overrides.
     final effectiveToolsEnabled =
         request.toolsEnabledOverride ?? request.settings.toolsEnabled;
-    var rawTools =
-        effectiveToolsEnabled &&
-            capabilities.supportsToolCalling &&
-            responseFormat == null
+    final requestedTools = effectiveToolsEnabled && responseFormat == null
         ? _mergeToolDefinitionsHelper(
             request.includeBuiltInTools
                 ? _toolCatalog.resolveTools(
@@ -421,6 +415,70 @@ class DirectLlamaInferencePort
             request.extraTools,
           )
         : const <ToolDefinition>[];
+    var rawTools = capabilities.supportsToolCalling
+        ? requestedTools
+        : const <ToolDefinition>[];
+    final availabilityNotices = <StudioToolAvailabilityNotice>[];
+    void recordNotices(List<StudioToolAvailabilityNotice> notices) {
+      final byName = <String, StudioToolAvailabilityNotice>{
+        for (final notice in availabilityNotices) notice.toolName: notice,
+        for (final notice in notices) notice.toolName: notice,
+      };
+      availabilityNotices
+        ..clear()
+        ..addAll(byName.values);
+      final unavailable = availabilityNotices.where(
+        (notice) => notice.isUnavailable,
+      );
+      if (unavailable.isNotEmpty) {
+        session.systemPrompt = <String>[
+          ?systemPromptText,
+          'Unavailable tools for this turn: ${unavailable.map((notice) => '${notice.toolName}: ${notice.reason}').join('; ')}',
+          'Do not claim to call unavailable tools. Use an available tool or explain the limitation.',
+        ].join('\n\n');
+      }
+    }
+
+    final requiredToolName = request.requiredToolName;
+    final toolChoice = requiredToolName == null
+        ? request.toolChoice
+        : ToolChoice.required;
+    if (!capabilities.supportsToolCalling &&
+        toolChoice != ToolChoice.none &&
+        requestedTools.isNotEmpty) {
+      if (toolChoice == ToolChoice.required) {
+        throw LlamaUnsupportedException(
+          'The loaded runtime does not support tool calling for this required-tool turn. '
+          'Choose a runtime/model with tool support.',
+        );
+      }
+      recordNotices([
+        for (final tool in requestedTools)
+          StudioToolAvailabilityNotice(
+            toolName: tool.name,
+            reason:
+                'The loaded runtime does not support tool calling. Choose a compatible model/runtime or disable this tool.',
+          ),
+      ]);
+      yield StudioToolAvailabilityEvent(List.unmodifiable(availabilityNotices));
+    }
+    if (toolChoice == ToolChoice.none) {
+      rawTools = const <ToolDefinition>[];
+    } else if (requiredToolName != null) {
+      rawTools = rawTools
+          .where((tool) => tool.name == requiredToolName)
+          .toList();
+      if (rawTools.isEmpty) {
+        throw LlamaUnsupportedException(
+          'Required tool "$requiredToolName" is not enabled or available.',
+        );
+      }
+    }
+    if (toolChoice == ToolChoice.required && rawTools.isEmpty) {
+      throw LlamaUnsupportedException(
+        'No enabled tools are available for this required-tool turn.',
+      );
+    }
 
     final int? effectiveBudgetTokens = request.settings.thinkingEnabled
         ? (request.settings.thinkingBudgetTokens > 0
@@ -451,6 +509,14 @@ class DirectLlamaInferencePort
     final textBuffer = StringBuffer();
     final thinkingBuffer = StringBuffer();
     final invocations = <StudioToolInvocation>[];
+    final transcript = <StudioTurnTranscriptEntry>[];
+    void recordMessage(LlamaChatMessage message) {
+      if (message.role == LlamaChatRole.assistant ||
+          message.role == LlamaChatRole.tool) {
+        transcript.add(_toStudioTranscriptEntryHelper(message));
+      }
+    }
+
     final usedToolCallIds = <String>{};
 
     final templateKwargs = _buildThinkingTemplateKwargsHelper(
@@ -470,10 +536,13 @@ class DirectLlamaInferencePort
         currentParts,
         params: genParams,
         tools: rawTools.isEmpty ? null : rawTools,
-        toolChoice: rawTools.isEmpty ? null : ToolChoice.auto,
+        toolChoice: rawTools.isEmpty
+            ? null
+            : (round == 0 ? toolChoice : ToolChoice.auto),
         enableThinking: request.settings.thinkingEnabled,
         chatTemplateKwargs: templateKwargs,
         responseFormat: responseFormat,
+        onMessageAdded: recordMessage,
       );
 
       var retriedWithoutSpeculative = false;
@@ -563,9 +632,52 @@ class DirectLlamaInferencePort
               rawTools.isNotEmpty &&
               error.message.contains('Canonical JSON Schema')) {
             retriedWithLegacyTools = true;
-            rawTools = rawTools
-                .map(McpToolSchemaAdapter.coerceToLegacyToolDefinition)
-                .toList(growable: false);
+            final adapted = <ToolDefinition>[];
+            final notices = <StudioToolAvailabilityNotice>[];
+            for (final tool in rawTools) {
+              try {
+                adapted.add(
+                  McpToolSchemaAdapter.coerceToLegacyToolDefinition(
+                    tool,
+                    allowClosedObjectSubset: true,
+                    onRestriction: (reason) => notices.add(
+                      StudioToolAvailabilityNotice(
+                        toolName: tool.name,
+                        reason: reason,
+                        isUnavailable: false,
+                      ),
+                    ),
+                  ),
+                );
+              } on LlamaUnsupportedException catch (compatibilityError) {
+                if (requiredToolName != null) {
+                  throw LlamaUnsupportedException(
+                    '${compatibilityError.message} ${error.message}',
+                  );
+                }
+                notices.add(
+                  StudioToolAvailabilityNotice(
+                    toolName: tool.name,
+                    reason:
+                        'This model cannot safely preserve this tool\'s input constraints. '
+                        'Choose a compatible model/runtime or disable this tool.',
+                  ),
+                );
+              }
+            }
+            rawTools = adapted;
+            if (notices.isNotEmpty) {
+              recordNotices(notices);
+              yield StudioToolAvailabilityEvent(
+                List.unmodifiable(availabilityNotices),
+              );
+            }
+            if (toolChoice == ToolChoice.required && rawTools.isEmpty) {
+              throw LlamaUnsupportedException(
+                'None of the required tools supports the loaded model input format. '
+                'Choose a compatible model/runtime or enable a supported tool.',
+              );
+            }
             continue;
           }
           rethrow;
@@ -580,6 +692,26 @@ class DirectLlamaInferencePort
             final nextCount = rawTools.length > 5
                 ? math.max(5, rawTools.length ~/ 2)
                 : (rawTools.length > 1 ? rawTools.length ~/ 2 : 0);
+            if (nextCount == 0 &&
+                round == 0 &&
+                toolChoice == ToolChoice.required) {
+              throw LlamaUnsupportedException(
+                requiredToolName == null
+                    ? 'No required tool fits the current model context. Shorten the conversation, disable unneeded tools or increase the context size.'
+                    : 'Required tool "$requiredToolName" does not fit the current model context. Shorten the conversation or increase the context size.',
+              );
+            }
+            recordNotices([
+              for (final tool in rawTools.skip(nextCount))
+                StudioToolAvailabilityNotice(
+                  toolName: tool.name,
+                  reason:
+                      'This tool was omitted because the conversation and tools exceed the model context limit. Shorten the conversation or increase the context size.',
+                ),
+            ]);
+            yield StudioToolAvailabilityEvent(
+              List.unmodifiable(availabilityNotices),
+            );
             rawTools = nextCount == 0
                 ? const <ToolDefinition>[]
                 : rawTools.sublist(0, nextCount);
@@ -647,6 +779,9 @@ class DirectLlamaInferencePort
           session.addMessage(message);
         }
         session.addMessage(assistant);
+        transcript[transcript.length - 1] = _toStudioTranscriptEntryHelper(
+          assistant,
+        );
       }
       for (var i = 0; i < roundToolCalls.length && !_cancelRequested; i++) {
         final call = roundToolCalls[i];
@@ -705,18 +840,18 @@ class DirectLlamaInferencePort
         invocations[invocations.length - 1] = record;
         yield StudioToolInvocationEvent(record);
 
-        session.addMessage(
-          LlamaChatMessage.withContent(
-            role: LlamaChatRole.tool,
-            content: <LlamaContentPart>[
-              LlamaToolResultContent(
-                id: callId,
-                name: callName,
-                result: toolResult,
-              ),
-            ],
-          ),
+        final resultMessage = LlamaChatMessage.withContent(
+          role: LlamaChatRole.tool,
+          content: <LlamaContentPart>[
+            LlamaToolResultContent(
+              id: callId,
+              name: callName,
+              result: toolResult,
+            ),
+          ],
         );
+        session.addMessage(resultMessage);
+        recordMessage(resultMessage);
       }
 
       // Continue the assistant turn with tool results now in session history.
@@ -738,11 +873,8 @@ class DirectLlamaInferencePort
         maxContextTokens: effectiveMaxContext,
         systemPrompt: systemPromptText,
       );
-      for (final msg in priorMessages) {
-        if (msg.isError) {
-          continue;
-        }
-        recoverySession.addMessage(_toLlamaMessageHelper(msg));
+      for (final msg in _toLlamaHistoryHelper(priorMessages)) {
+        recoverySession.addMessage(msg);
       }
       final recoveryParams = baseGenParams.copyWith(
         clearThinkingBudget: true,
@@ -759,6 +891,7 @@ class DirectLlamaInferencePort
           'reasoning': false,
         },
         responseFormat: responseFormat,
+        onMessageAdded: recordMessage,
       )) {
         if (_cancelRequested) {
           break;
@@ -827,6 +960,9 @@ class DirectLlamaInferencePort
         thinkingText: thinkingBuffer.isEmpty ? null : thinkingBuffer.toString(),
         thinkingDurationMs: thinkingDuration,
         toolInvocations: List<StudioToolInvocation>.unmodifiable(invocations),
+        transcript: _cancelRequested
+            ? const <StudioTurnTranscriptEntry>[]
+            : List<StudioTurnTranscriptEntry>.unmodifiable(transcript),
         structuredJsonValid: jsonValid,
         structuredJsonError: jsonError,
         metrics: StudioTurnMetrics(

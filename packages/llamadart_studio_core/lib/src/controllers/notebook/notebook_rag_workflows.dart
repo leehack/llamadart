@@ -118,6 +118,7 @@ extension NotebookRagWorkflows on NotebookController {
                   ..clear()
                   ..write(finalText);
               }
+            case StudioToolAvailabilityEvent():
             case StudioThinkingDeltaEvent():
             case StudioToolInvocationEvent():
               break;

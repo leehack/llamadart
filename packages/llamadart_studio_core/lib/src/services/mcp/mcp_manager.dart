@@ -501,7 +501,8 @@ class McpManager implements StudioWorkspaceMcpCoordinator {
         );
       }
 
-      final updated = entry.copyWith(
+      // Discovery may outlive a user's server/tool enablement changes.
+      final updated = (_findServer(serverId) ?? entry).copyWith(
         status: McpConnectionStatus.connected,
         serverVersion: versionLabel,
         tools: List<McpToolDescriptor>.unmodifiable(toolDescriptors),
@@ -527,7 +528,7 @@ class McpManager implements StudioWorkspaceMcpCoordinator {
       await _closeQuietly(client: client, transport: transport);
 
       if (!_disposed && _connectGenerations[serverId] == generation) {
-        final failed = entry.copyWith(
+        final failed = (_findServer(serverId) ?? entry).copyWith(
           status: McpConnectionStatus.error,
           tools: const <McpToolDescriptor>[],
           resources: const <McpResourceDescriptor>[],
@@ -652,23 +653,21 @@ class McpManager implements StudioWorkspaceMcpCoordinator {
     return defs;
   }
 
-  /// Converts an [McpToolDescriptor] into a `llamadart` [ToolDefinition],
-  /// sanitizing its JSON Schema and preferring `ToolParam` definitions when
-  /// representable so all chat templates (including `qwen3CoderXml` used by
-  /// Qwen3.5 / Qwen3.6) qualify cleanly.
+  /// Converts an MCP descriptor while preserving its canonical input schema.
+  /// Unsupported schema constraints throw before tool publication; individual
+  /// model/templates may require explicit compatibility admission at inference.
   static ToolDefinition toLlamaToolDefinition(
     McpToolDescriptor tool, {
     required Future<Object?> Function(ToolParams params) handler,
   }) => McpToolSchemaAdapter.toLlamaToolDefinition(tool, handler: handler);
 
-  /// Converts any [ToolDefinition] (including canonical JSON Schema tools)
-  /// into a legacy [ToolParam]-backed [ToolDefinition] compatible with all
-  /// chat templates including `ChatFormat.qwen3CoderXml` (Qwen3.5 / Qwen3.6).
+  /// Converts a tool to legacy parameters only when its constraints survive.
+  /// Unrepresentable schemas throw [LlamaUnsupportedException].
   static ToolDefinition coerceToLegacyToolDefinition(ToolDefinition tool) =>
       McpToolSchemaAdapter.coerceToLegacyToolDefinition(tool);
 
-  /// Sanitizes an arbitrary JSON Schema from an external MCP tool so both
-  /// native GBNF grammar compilers and model chat templates accept it cleanly.
+  /// Copies the schema root and defaults its missing type to `object` without
+  /// discarding constraints. The canonical tool constructor validates it.
   static Map<String, dynamic> sanitizeMcpInputSchema(
     Map<String, dynamic> rawSchema,
   ) => McpToolSchemaAdapter.sanitizeMcpInputSchema(rawSchema);
