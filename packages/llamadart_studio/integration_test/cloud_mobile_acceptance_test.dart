@@ -16,6 +16,7 @@ import 'package:path_provider/path_provider.dart';
 
 import '../test/studio_widget_test_helpers.dart';
 import 'support/chat_diagnostics.dart';
+import 'support/fixture_text_input.dart';
 
 const _enabled = bool.fromEnvironment('STUDIO_CLOUD_ACCEPTANCE');
 const _modelSha256 = String.fromEnvironment('STUDIO_CLOUD_MODEL_SHA256');
@@ -63,6 +64,7 @@ void main() {
   testWidgets(
     'physical mobile Studio Chat inference and Notes persistence',
     (tester) async {
+      registerFixtureTextInput(tester);
       WidgetController.hitTestWarningShouldBeFatal = true;
       addTearDown(() => WidgetController.hitTestWarningShouldBeFatal = false);
       expect(Platform.isAndroid || Platform.isIOS, isTrue);
@@ -225,7 +227,8 @@ void main() {
       }
 
       await navigate('models');
-      await tester.enterText(
+      await enterFixtureText(
+        tester,
         find.byKey(const Key('model_hub_search_field')),
         'qwen3.5 0.8b',
       );
@@ -239,7 +242,8 @@ void main() {
         'model load and navigation',
       );
       await tester.pumpAndSettle();
-      await tester.enterText(
+      await enterFixtureText(
+        tester,
         find.byKey(const Key('chat_composer_input')),
         _chatPrompt,
       );
@@ -311,7 +315,8 @@ void main() {
             ),
         'note creation',
       );
-      await tester.enterText(
+      await enterFixtureText(
+        tester,
         find.byKey(const Key('vault_note_title_input')),
         'Cloud acceptance — Montréal',
       );
@@ -319,7 +324,8 @@ void main() {
         find.byKey(const Key('vault_note_content_input')),
       );
       await tester.pumpAndSettle();
-      await tester.enterText(
+      await enterFixtureText(
+        tester,
         find.byKey(const Key('vault_note_content_input')),
         'Saved on the physical ${Platform.operatingSystem} host.',
       );

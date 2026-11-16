@@ -16,6 +16,16 @@ is idempotent. The ordinary adapter is empty and has no test-plugin dependency.
 No generated registrant or SDK source is edited. `integration_test` remains a dev
 dependency in Studio's pubspec. R8 remains enabled.
 
+The Dart fixture registers `TestTextInput` inside the `testWidgets` body, after
+the binding reset, and restores an initially unregistered state at teardown.
+Flutter 3.50's integration binding disables automatic registration. Without it,
+synthetic edits send client ID `-1`, which Flutter accepts only in debug builds.
+The shared input helper requires registration and an active positive client
+before editing. Its model-free regression starts with registration disabled,
+checks client changes across fields, and exercises the real Send and Notes
+controllers with a fake inference port. This checks the fixture configuration;
+debug test results do not qualify release input or physical inference.
+
 Prepare the root with its Flutter pin first, on a clean checkout:
 
 ```sh
