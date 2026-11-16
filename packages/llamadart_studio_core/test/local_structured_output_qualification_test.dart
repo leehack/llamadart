@@ -651,6 +651,23 @@ void main() {
               McpManager.builtInDartFlutterServerId,
             );
             expect(server.isConnected, isTrue, reason: server.errorMessage);
+            final canonicalRoot = Directory(
+              await directory.resolveSymbolicLinks(),
+            ).uri.toString();
+            // The SDK starts with no permitted roots, independently of cwd.
+            final registered = await manager.callTool(
+              serverId: McpManager.builtInDartFlutterServerId,
+              toolName: 'roots',
+              arguments: {
+                'command': 'add',
+                'uris': [canonicalRoot],
+              },
+            );
+            expect(
+              registered['isError'],
+              isFalse,
+              reason: jsonEncode(registered),
+            );
             var dispatched = 0;
             final tools = [
               for (final descriptor in manager.state.activeTools)
@@ -713,7 +730,7 @@ void main() {
               ripgrep.invoke({
                 'arguments': <String>[],
                 'packageNames': <String>[],
-                'root': directory.uri.toString(),
+                'root': canonicalRoot,
               }),
               throwsA(isA<LlamaArgumentException>()),
             );
@@ -737,14 +754,18 @@ void main() {
             final result = await projectedAnalyze.invoke({
               'roots': [
                 {
-                  'root': directory.uri.toString(),
+                  'root': canonicalRoot,
                   'paths': ['lib/main.dart'],
                 },
               ],
               'applyFixes': false,
             });
             expect(dispatched, 1);
-            expect((result as Map)['isError'], isFalse);
+            expect(
+              (result as Map)['isError'],
+              isFalse,
+              reason: jsonEncode(result),
+            );
             print(
               'STUDIO_DEFAULT_MCP_COMPATIBILITY ${jsonEncode({
                 'sdk': Platform.version,

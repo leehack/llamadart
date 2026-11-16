@@ -18,6 +18,7 @@ import '../test/studio_widget_test_helpers.dart';
 
 const _enabled = bool.fromEnvironment('STUDIO_CLOUD_ACCEPTANCE');
 const _modelSha256 = String.fromEnvironment('STUDIO_CLOUD_MODEL_SHA256');
+const _sourceCommit = String.fromEnvironment('STUDIO_CLOUD_SOURCE_COMMIT');
 const _modelBytes = 532517120;
 
 class _StagedModelStorage extends FakeStoragePort {
@@ -57,11 +58,12 @@ class _StagedModelStorage extends FakeStoragePort {
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
   testWidgets(
-    'physical Android Studio Chat inference and Notes persistence',
+    'physical mobile Studio Chat inference and Notes persistence',
     (tester) async {
       WidgetController.hitTestWarningShouldBeFatal = true;
       addTearDown(() => WidgetController.hitTestWarningShouldBeFatal = false);
-      expect(Platform.isAndroid, isTrue);
+      expect(Platform.isAndroid || Platform.isIOS, isTrue);
+      expect(RegExp(r'^[a-f0-9]{40}$').hasMatch(_sourceCommit), isTrue);
       expect(RegExp(r'^[a-f0-9]{64}$').hasMatch(_modelSha256), isTrue);
       final cache = await getTemporaryDirectory();
       final model = File('${cache.path}/firebase-model.gguf');
@@ -84,7 +86,10 @@ void main() {
       final inference = DirectLlamaInferencePort();
       final deps = await StudioDependencies.fromPorts(
         keyValueStore: kv,
-        conversationStore: KeyValueConversationStore(kv),
+        conversationStore: createDefaultConversationStore(
+          fallbackKeyValueStore: kv,
+          directoryPath: temp.path,
+        ),
         noteStore: notes,
         storagePort: _StagedModelStorage(model.path),
         inferencePort: inference,
@@ -224,7 +229,7 @@ void main() {
       await tester.pumpAndSettle();
       await tester.enterText(
         find.byKey(const Key('vault_note_content_input')),
-        'Saved on the physical Android host.',
+        'Saved on the physical ${Platform.operatingSystem} host.',
       );
       FocusManager.instance.primaryFocus?.unfocus();
       await tester.pumpAndSettle();
@@ -234,7 +239,7 @@ void main() {
             deps.notebookController.state.selectedNote?.title ==
                 'Cloud acceptance — Montréal' &&
             deps.notebookController.state.selectedNote?.content ==
-                'Saved on the physical Android host.',
+                'Saved on the physical ${Platform.operatingSystem} host.',
         'note save completed',
       );
       final reopened = await createDefaultNoteStore(
@@ -245,20 +250,28 @@ void main() {
         reopened.any(
           (note) =>
               note.title == 'Cloud acceptance — Montréal' &&
-              note.content == 'Saved on the physical Android host.',
+              note.content ==
+                  'Saved on the physical ${Platform.operatingSystem} host.',
         ),
         isTrue,
       );
-      final external = await getExternalStorageDirectory();
-      expect(external, isNotNull);
-      final output = await Directory('${external!.path}/studio-acceptance')
+      final outputRoot = Platform.isAndroid
+          ? await getExternalStorageDirectory()
+          : await getApplicationDocumentsDirectory();
+      expect(outputRoot, isNotNull);
+      final output = await Directory('${outputRoot!.path}/studio-acceptance')
           .create(recursive: true);
       await File('${output.path}/receipt.json').writeAsString(
         jsonEncode({
           'schema': 1,
+          'source_commit': _sourceCommit,
+          'platform': Platform.operatingSystem,
+          'dart_sdk': Platform.version,
           'model_sha256': _modelSha256,
           'model_bytes': _modelBytes,
           'backend': inference.runtimeStore.state.backendName,
+          'context_size': inference.runtimeStore.state.resolvedContextSize,
+          'gpu_layers': inference.runtimeStore.state.resolvedGpuLayers,
           'chat_answer': answer,
           'note_reopened': true,
           'compute': 'cpu',
