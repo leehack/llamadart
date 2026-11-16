@@ -232,6 +232,12 @@ void main() {
 
         await notebook.indexNotes(forceReindex: true);
         expect(playgroundPort.multimodalEmbedCalls, greaterThanOrEqualTo(1));
+        expect(
+          labModels.state.loadedLabModels[StudioModelSpecialty.embedding]?.id,
+          'nomic-embed-text-v1.5-q8-0',
+        );
+        expect(labModels.state.embeddingCapabilities.isReady, isTrue);
+        expect(labModels.state.embeddingCapabilities.supportsImage, isTrue);
         final reindexedVoice = notebook.state.notes.firstWhere(
           (StudioNote n) => n.id == voiceNote.id,
         );
@@ -265,7 +271,7 @@ void main() {
         expect(benchmark!.passesPerSecond, greaterThan(100));
         expect(benchmark.decisionsPerSecond, greaterThan(200));
         expect(benchmark.speedupVsLlm, greaterThan(50));
-        expect(playground.state.decisionBenchmark, isNotNull);
+        expect(playground.state.decisionBenchmark, same(benchmark));
 
         await playground.dispose();
         await notebook.dispose();
