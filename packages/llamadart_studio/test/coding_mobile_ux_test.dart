@@ -141,6 +141,66 @@ void _reachable(WidgetTester tester, String key, Size size, double inset) {
 }
 
 void main() {
+  testWidgets('Mobile Files refreshes external changes without reopening', (
+    tester,
+  ) async {
+    const size = Size(320, 740);
+    const inset = 300.0;
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final deps = await buildTestDeps(isMobile: true);
+    addTearDown(deps.dispose);
+    final root = Directory.systemTemp.createTempSync('coding_refresh_');
+    addTearDown(() => root.deleteSync(recursive: true));
+    await tester.runAsync(
+      () => deps.codingController.setWorkspaceRoot(root.path),
+    );
+    await deps.shellController.selectWorkspace(StudioWorkspace.coding);
+    await _mount(tester, deps, size, inset: inset, scale: 1.8);
+    await tester.enterText(
+      find.byKey(const Key('coding_prompt_input')),
+      'Keep this draft',
+    );
+    await tester.tap(find.text('Files (0)'));
+    await tester.pumpAndSettle();
+    final refresh = find.byTooltip('Refresh directory').hitTestable();
+    expect(refresh, findsOneWidget);
+    expect(
+      tester.getRect(refresh).bottom,
+      lessThanOrEqualTo(size.height - inset),
+    );
+    final file = File('${root.path}/external.txt');
+    for (final added in [true, false]) {
+      if (added) {
+        file.writeAsStringSync('External UTF-8 change: Montréal');
+      } else {
+        file.deleteSync();
+      }
+      await tester.runAsync(() async {
+        final changed = deps.codingController.store.stream
+            .firstWhere((state) => state.files.length == (added ? 1 : 0))
+            .timeout(const Duration(seconds: 5));
+        await tester.tap(refresh);
+        await changed;
+      });
+      await tester.pumpAndSettle();
+      expect(find.text('Files (${added ? 1 : 0})'), findsOneWidget);
+      expect(
+        find.byKey(const Key('coding_file_external.txt')),
+        added ? findsOneWidget : findsNothing,
+      );
+      expect(deps.codingController.state.workspaceRoot, root.path);
+    }
+    expect(
+      tester
+          .widget<TextField>(find.byKey(const Key('coding_prompt_input')))
+          .controller!
+          .text,
+      'Keep this draft',
+    );
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
   setUpAll(() async {
     // Optional render font; product fonts are unchanged. Code may still use Ahem.
     final iconPath = Platform.environment['STUDIO_CODING_RENDER_ICONS'];

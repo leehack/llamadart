@@ -191,6 +191,14 @@ extension _CodingExplorerChangesPane on _CodingWorkspaceViewState {
                                 ),
                               ),
                             ),
+                            if (forceChangesTab != null)
+                              IconButton(
+                                tooltip: 'Refresh directory',
+                                onPressed: codingState.workspaceRoot == null
+                                    ? null
+                                    : deps.codingController.refreshExplorer,
+                                icon: const Icon(Icons.refresh_rounded),
+                              ),
                           ],
                         ),
                       ],
