@@ -148,6 +148,11 @@ host is not Linux (including Web, where the probe does nothing). It does not
 qualify GPU suitability, Vulkan versions, extensions, inference or driver
 stability; software devices are accepted. `ImageGenerationEngine` does not run
 this opt-in helper automatically. CPU-only builds need no preflight.
+Native llama.cpp runs the Linux preflight before automatic backend preparation
+and explicit Vulkan loads. An unavailable loader or device list skips only
+Vulkan under `GpuBackend.auto`; other bundled backends remain eligible. Explicit
+Vulkan loads throw `LlamaUnsupportedException` before module initialization,
+while `listGpuDevices(probeBackends: [GpuBackend.vulkan])` skips that module.
 
 Studio's default Linux image runtime is a Vulkan build. Studio runs this
 preflight before image probing and loading, and disables Image Studio with the

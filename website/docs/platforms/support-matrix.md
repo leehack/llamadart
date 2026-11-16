@@ -110,6 +110,13 @@ each runtime's default; `cpu`, `gpu` and `npu` run there or throw
 | Image generation | First GPU reported, else CPU; CPU on macOS x86_64 | Needs a GPU; Android and the CPU builds have none | Throws |
 | LiteRT-LM ASR | CPU | Not selectable | Not selectable |
 
+Native llama.cpp on Linux checks Vulkan loader/device availability before
+initialization. `GpuBackend.auto` skips unavailable Vulkan and keeps the other
+bundled backends eligible; an explicit `GpuBackend.vulkan` load throws
+`LlamaUnsupportedException`. Opt-in Vulkan device enumeration skips its module
+when unavailable. Passing this check does not qualify driver stability or
+inference.
+
 The WebGPU bridge ignores negative `mainGpu` values, including with
 `splitMode: ModelSplitMode.none`; they do not select the CPU as they do in
 native llama.cpp. Explicit `gpu` still requires WebGPU after load.

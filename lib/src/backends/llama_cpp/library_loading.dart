@@ -1043,13 +1043,6 @@ extension _LlamaCppLibraryLoading on LlamaCppService {
     }
   }
 
-  void _tryLoadBackendModuleIfBundled(String backend) {
-    if (_backendModuleDirectory != null && !_isBackendModuleBundled(backend)) {
-      return;
-    }
-    _tryLoadBackendModule(backend);
-  }
-
   bool _isBackendModuleBundled(String backend) {
     final backendModuleDirectory = _backendModuleDirectory;
     if (backendModuleDirectory == null) {

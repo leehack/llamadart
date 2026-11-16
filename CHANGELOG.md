@@ -3,6 +3,8 @@ Releases before 0.10.0 are in the
 
 ## Unreleased
 
+- Avoid initializing unavailable Linux Vulkan backends during llama.cpp automatic loading and device probes, while retaining other bundled backends.
+
 - Validate Studio tool arguments before execution, preserve tool history across reloads, and make media failures and tool compatibility visible.
 
 - Preserve Studio notes and attachments across failed or interrupted saves, and keep indexing consistent with concurrent edits.
