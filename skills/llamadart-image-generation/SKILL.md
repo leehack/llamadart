@@ -127,7 +127,7 @@ core and `llamadart_stable_diffusion_flutter` together. SD `v0.3.0-6` passed fou
 - Gate UI on `await ImageGenerationEngine.checkRuntime()` (no model; background isolate): show progress, then `unsupportedReason` when `isSupported` is false.
   `ImageGenerationEngine.load` throws `LlamaUnsupportedException` in the same cases; there is no synchronous image probe.
 - Native Linux Vulkan hosts can opt into backend SPI `probeLinuxVulkanUnavailableReason()` before runtime initialization; run it off the UI isolate.
-  A reason indicates an unavailable loader, instance or nonempty device list; software devices are accepted.
+  A reason indicates an unavailable loader or instance, or an empty device list; software devices are accepted.
   It does not qualify GPU suitability, inference or driver stability, and `ImageGenerationEngine` does not call it automatically.
   It does nothing off Linux; CPU-only builds need no preflight.
 - `await engine.capabilities` (an `EngineCapabilities`) reports the loaded
