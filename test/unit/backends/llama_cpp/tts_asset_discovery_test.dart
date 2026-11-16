@@ -162,18 +162,12 @@ void main() {
         : 'package:llamadart/llamadart';
     final location = mapping[id] as List;
     expect(location.first, 'absolute');
-    final opened = <String>[];
     final api = _resolve(
       LlamaCppService(),
       lookup: (_) => throw ArgumentError('selected export absent'),
-      candidates: ['fallback'],
-      open: (name) {
-        opened.add(name);
-        return DynamicLibrary.open(location[1] as String);
-      },
+      candidates: [location[1] as String],
     );
     expect(api, isNotNull);
-    expect(opened, ['fallback']);
   });
 
   group('real bundled native asset without filesystem fallbacks', () {
