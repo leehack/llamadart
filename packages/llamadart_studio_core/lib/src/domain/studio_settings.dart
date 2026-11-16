@@ -344,7 +344,7 @@ class StudioSettings {
         ? 0
         : moeCacheBytes;
     if (isWeb) {
-      return 'web|$resolvedCtx|$resolvedLayers|${preferredBackend.name}|${computeDevice.name}';
+      return 'web|$resolvedCtx|$resolvedLayers|${preferredBackend.name}|${computeDevice.name}|${batchSize < 0 ? 0 : batchSize}|${microBatchSize < 0 ? 0 : microBatchSize}';
     }
     final mtp = speculativeMode == StudioSpeculativeMode.mtp;
     return <Object?>[
@@ -426,8 +426,8 @@ class StudioSettings {
       preferredBackend: preferredBackend,
       numberOfThreads: isWeb ? 0 : numberOfThreads,
       numberOfThreadsBatch: isWeb ? 0 : numberOfThreadsBatch,
-      batchSize: isWeb ? 0 : sanitizedBatch,
-      microBatchSize: isWeb ? 0 : sanitizedMicroBatch,
+      batchSize: sanitizedBatch,
+      microBatchSize: sanitizedMicroBatch,
       maxParallelSequences: isWeb ? 1 : sanitizedSeqs,
       useMmap: isWeb ? true : useMmap,
       useMlock: isWeb ? false : useMlock,

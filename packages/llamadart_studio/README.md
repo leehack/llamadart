@@ -63,6 +63,11 @@ included and validated:
 Serve `build/web` with `Cross-Origin-Opener-Policy: same-origin` and
 `Cross-Origin-Embedder-Policy: require-corp` response headers.
 
+Web batch and micro-batch changes in Expert tuning take effect after
+**Apply & Reload**. Auto keeps the runtime's model-specific defaults. If a
+custom model cannot load, reduce its context or batch sizes, or try a smaller
+model.
+
 A successful Web build verifies packaging, not model inference or browser GPU
 compatibility. Local model acceptance tests are opt-in and require explicit model
 paths; see the `local_*_acceptance_test.dart` files under `test/` and

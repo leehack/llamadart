@@ -175,6 +175,7 @@ class _BlobRecorder extends RecordPlatform {
     RecordConfig config, {
     required String path,
   }) async {
+    expect(path, 'studio_recording.wav');
     expect(config.encoder, AudioEncoder.wav);
     starts++;
   }

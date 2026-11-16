@@ -431,8 +431,8 @@ void main() {
         final webParams =
             roundTrip.toModelParams(format: ModelFormat.gguf, isWeb: true)
                 as LlamaCppModelParams;
-        expect(webParams.batchSize, 0);
-        expect(webParams.microBatchSize, 0);
+        expect(webParams.batchSize, 2048);
+        expect(webParams.microBatchSize, 512);
         expect(webParams.useMmap, isTrue);
         expect(webParams.useMlock, isFalse);
 

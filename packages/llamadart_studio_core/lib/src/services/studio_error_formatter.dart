@@ -40,5 +40,10 @@ String humanizeStudioError(
     RegExp(r'Bearer\s+[^\s,;]+', caseSensitive: false),
     'Bearer [redacted]',
   );
+  if (raw.contains('Web runtime could not load the model') &&
+      raw.contains('Aborted()')) {
+    return 'Browser model loading stopped. Try a smaller model or reduce the '
+        'context and batch sizes in Expert tuning, then reload.';
+  }
   return raw;
 }

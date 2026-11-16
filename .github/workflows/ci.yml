@@ -94,6 +94,7 @@ jobs:
           dart format --output=none --set-exit-if-changed .
           dart analyze --fatal-infos
           TMPDIR="$(mktemp -d)" dart test --exclude-tags local-only
+          dart test -p chrome test/browser_platform_contract_test.dart test/web_engine_batch_settings_test.dart test/studio_error_formatter_test.dart
       - name: Analyze and test Studio UI
         working-directory: packages/llamadart_studio
         run: |
@@ -101,6 +102,7 @@ jobs:
           dart format --output=none --set-exit-if-changed .
           flutter analyze --fatal-infos
           TMPDIR="$(mktemp -d)" flutter test --exclude-tags local-only
+          flutter test --platform chrome test/web_recording_test.dart test/web_platform_acceptance_test.dart test/tool_availability_widget_test.dart
 
 
   studio-macos:
