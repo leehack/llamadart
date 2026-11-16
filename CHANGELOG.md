@@ -3,6 +3,8 @@ Releases before 0.10.0 are in the
 
 ## Unreleased
 
+- Restore native text-to-speech discovery when Dart bundles its runtime outside the working directory.
+
 - Avoid initializing unavailable Linux Vulkan backends during llama.cpp automatic loading and device probes, while retaining other bundled backends.
 
 - Add an opt-in Linux Vulkan loader preflight for native hosts.

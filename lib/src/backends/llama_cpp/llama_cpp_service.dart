@@ -3585,7 +3585,11 @@ class LlamaCppService {
     throw LlamaUnsupportedException(_speculativeUnavailableMessage());
   }
 
-  _TtsApi _resolveTtsApi() {
+  _TtsApi _resolveTtsApi({
+    List<String>? candidates,
+    DynamicLibrary Function(String)? open,
+    Pointer<NativeType> Function(String)? assetSymbol,
+  }) {
     final cached = _ttsApi;
     if (cached != null) {
       return cached;
@@ -3595,10 +3599,20 @@ class LlamaCppService {
     }
     _ttsApiLookupAttempted = true;
 
-    for (final candidate in _llamadartWrapperLibraryCandidates()) {
+    // Code asset URIs are identifiers for @Native, not dlopen file names.
+    final direct = _TtsApi.tryLoad(
+      assetSymbol ?? (name) => _ttsAssetSymbol(name, isWindows: _isWindows),
+    );
+    if (direct != null) {
+      _ttsApi = direct;
+      return direct;
+    }
+
+    for (final candidate
+        in candidates ?? _llamadartWrapperLibraryCandidates()) {
       try {
-        final library = _openWrapperLibrary(candidate);
-        final api = _TtsApi.tryLoad(library);
+        final library = (open ?? _openWrapperLibrary)(candidate);
+        final api = _TtsApi.tryLoad(library.lookup);
         if (api != null) {
           _ttsApi = api;
           return api;
