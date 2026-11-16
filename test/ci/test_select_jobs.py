@@ -198,6 +198,14 @@ class SelectionTest(unittest.TestCase):
                       ['packages/llamadart_llama_cpp_flutter/lib/runtime.dart']):
             self.assertTrue(ci.select(paths)['jobs']['studio'], paths)
 
+    def test_root_test_fixtures_studio_reads_run_the_studio_lanes(self):
+        for path in ('test/fixtures/templates/Qwen3_5-0_8B.jinja',
+                     'test/support/qwen35_tool_result_fixture.dart'):
+            for pull_request in (True, False):
+                plan = ci.select([path], pull_request=pull_request)
+                self.assertTrue(plan['jobs']['studio'], path)
+                self.assertTrue(ci.expected_jobs(plan)['studio-macos'], path)
+
     def test_model_store_is_independent_but_core_changes_test_it(self):
         for path in ('lib/llamadart_model_store.dart', 'README.md', 'pubspec.yaml',
                      'test/model_store_test.dart'):

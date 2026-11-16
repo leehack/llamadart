@@ -169,7 +169,9 @@ def select(paths, force_full=False, pull_request=False):
                 apps.update(APPS)
         elif path.startswith('test/'):
             # Preserve all root test inventories, including platform-sensitive tests.
-            jobs.update(('analyze', 'test-linux-coverage', 'test-web', 'test-other-os'))
+            # Studio core tests import and read root test support and fixtures.
+            jobs.update(('analyze', 'test-linux-coverage', 'test-web', 'test-other-os',
+                         'studio'))
         else:
             full('shared/runtime or unclassified path: ' + path)
         # Root tests scan all maintained Markdown, and any file a root suite
