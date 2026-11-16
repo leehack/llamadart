@@ -10,6 +10,18 @@ INTEGRATION_TEST_IOS_RUNNER(RunnerTests)
   NSFileManager *files = NSFileManager.defaultManager;
   NSURL *documents = [files URLsForDirectory:NSDocumentDirectory
                                  inDomains:NSUserDomainMask].firstObject;
+  NSURL *receipt = [documents URLByAppendingPathComponent:@"studio-acceptance/receipt.json"];
+  NSNumber *receiptSize = nil;
+  NSNumber *receiptIsRegularFile = nil;
+  [receipt getResourceValue:&receiptSize forKey:NSURLFileSizeKey error:nil];
+  [receipt getResourceValue:&receiptIsRegularFile forKey:NSURLIsRegularFileKey error:nil];
+  if (receiptIsRegularFile.boolValue && receiptSize != nil &&
+      receiptSize.unsignedLongLongValue <= 2 * 1024 * 1024) {
+    XCTAttachment *attachment = [XCTAttachment attachmentWithContentsOfFileAtURL:receipt];
+    attachment.name = @"studio-acceptance-receipt.json";
+    attachment.lifetime = XCTAttachmentLifetimeKeepAlways;
+    [self addAttachment:attachment];
+  }
   [self llamadart_attachLatestRunIn:[documents URLByAppendingPathComponent:@"validation/runs" isDirectory:YES]
                          extensions:@[@"json", @"jsonl", @"csv", @"xml", @"html"]
                            maxBytes:2 * 1024 * 1024];

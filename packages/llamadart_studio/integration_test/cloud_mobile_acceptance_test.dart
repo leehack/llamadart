@@ -18,6 +18,7 @@ import '../test/studio_widget_test_helpers.dart';
 
 const _enabled = bool.fromEnvironment('STUDIO_CLOUD_ACCEPTANCE');
 const _modelSha256 = String.fromEnvironment('STUDIO_CLOUD_MODEL_SHA256');
+const _modelUrl = String.fromEnvironment('STUDIO_CLOUD_MODEL_URL');
 const _sourceCommit = String.fromEnvironment('STUDIO_CLOUD_SOURCE_COMMIT');
 const _modelBytes = 532517120;
 
@@ -67,17 +68,40 @@ void main() {
       expect(RegExp(r'^[a-f0-9]{64}$').hasMatch(_modelSha256), isTrue);
       final cache = await getTemporaryDirectory();
       final model = File('${cache.path}/firebase-model.gguf');
-      expect(await model.length(), _modelBytes);
+      var modelSource = ModelSource.path(model.path);
+      if (Platform.isIOS && !await model.exists()) {
+        final uri = Uri.tryParse(_modelUrl);
+        expect(
+          uri != null &&
+              uri.scheme == 'https' &&
+              uri.host == 'huggingface.co' &&
+              uri.userInfo.isEmpty &&
+              !uri.hasQuery &&
+              !uri.hasFragment &&
+              RegExp(r'^/[^/]+/[^/]+/resolve/[a-f0-9]{40}/[^/]+\.gguf$')
+                  .hasMatch(uri.path),
+          isTrue,
+          reason:
+              'iOS has no staged firebase-model.gguf. Supply '
+              '--dart-define=STUDIO_CLOUD_MODEL_URL with a public HTTPS '
+              'huggingface.co model URL pinned to /resolve/<40-hex-commit>/, '
+              'without credentials, query parameters or fragments.',
+        );
+        modelSource = ModelSource.url(uri!);
+      } else {
+        expect(await model.length(), _modelBytes);
+      }
       final support = await getApplicationSupportDirectory();
       final temp = await Directory('${support.path}/studio_cloud').create();
       final manager = DefaultModelDownloadManager(
         defaultCacheDirectory: '${temp.path}/models',
       );
       final verified = await manager.ensureModel(
-        ModelSource.path(model.path),
+        modelSource,
         options: ModelLoadOptions(sha256: _modelSha256),
       );
       expect(verified.sha256, _modelSha256);
+      expect(await File(verified.filePath).length(), _modelBytes);
       final kv = InMemoryKeyValueStore();
       final notes = createDefaultNoteStore(
         fallbackKeyValueStore: kv,
@@ -91,7 +115,7 @@ void main() {
           directoryPath: temp.path,
         ),
         noteStore: notes,
-        storagePort: _StagedModelStorage(model.path),
+        storagePort: _StagedModelStorage(verified.filePath),
         inferencePort: inference,
         speechPort: FakeSpeechPort(),
         imagePort: FakeImagePort(),

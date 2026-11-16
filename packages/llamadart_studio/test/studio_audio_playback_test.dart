@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:audioplayers/audioplayers.dart';
+import 'package:flutter/foundation.dart';
 // Keep Material types compatible with flutter_markdown (see README).
 // ignore: deprecated_member_use
 import 'package:flutter/material.dart';
@@ -12,6 +13,37 @@ import 'package:llamadart_studio_core/llamadart_studio_core.dart';
 import 'studio_widget_test_helpers.dart';
 
 void main() {
+  testWidgets('Web default audio probe permits lazy playback', (tester) async {
+    final channels = _Channels(tester);
+    addTearDown(channels.dispose);
+    late _Player player;
+    var creations = 0;
+    final playback = StudioAudioPlayback(
+      createPlayer: () {
+        creations++;
+        return player = _Player();
+      },
+    );
+    addTearDown(playback.dispose);
+    await tester.runAsync(() async {
+      final ready = playback.getOrCreate();
+      await expectLater(ready, completion(isA<AudioPlayer>()));
+      expect(await ready, same(player));
+      await expectLater(playback.getOrCreate(), completion(same(player)));
+      expect(creations, 1);
+      expect(channels.creates, 0);
+      await player.play(BytesSource(Uint8List(44)));
+      expect(player.plays, 1);
+      final stopped = player.onPlayerStateChanged.first;
+      await player.stop();
+      await expectLater(stopped, completion(PlayerState.stopped));
+      await playback.dispose();
+      await playback.dispose();
+      expect(player.disposals, 1);
+      await expectLater(playback.getOrCreate(), completion(isNull));
+    });
+  }, skip: !kIsWeb);
+
   for (final workspace in [StudioWorkspace.speech, StudioWorkspace.notes]) {
     for (final scenario in [
       'navigation',
