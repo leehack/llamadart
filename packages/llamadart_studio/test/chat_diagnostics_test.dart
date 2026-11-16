@@ -36,6 +36,40 @@ class ControlledInference extends FakeInferencePort {
 }
 
 void main() {
+  testWidgets('timeout diagnostics preserve pending Flutter error details', (
+    tester,
+  ) async {
+    final dir = Directory.systemTemp.createTempSync(
+      'chat-timeout-diagnostics-',
+    );
+    addTearDown(() => dir.deleteSync(recursive: true));
+    final journal = ChatDiagnostics(File('${dir.path}/chat.jsonl'));
+    final original = StateError('original framework failure');
+    FlutterError.reportError(
+      FlutterErrorDetails(exception: original, stack: StackTrace.current),
+    );
+
+    await expectLater(
+      expectChatWaitFinished(
+        tester: tester,
+        diagnostics: journal,
+        done: () => false,
+        phase: 'chat generation',
+        checkpoint: const {'is_generating': true, 'text_length': 7},
+        reason: 'original 90-second deadline expired',
+      ),
+      throwsA(isA<TestFailure>()),
+    );
+
+    expect(tester.takeException(), same(original));
+    final row = jsonDecode(
+      journal.file.readAsLinesSync().single,
+    ) as Map<String, Object?>;
+    expect(row['phase'], 'wait_end');
+    expect(row['done'], false);
+    expect(row['text_length'], 7);
+  });
+
   testWidgets(
     'real Send forwards request; stalled and error states survive journal flush',
     (tester) async {

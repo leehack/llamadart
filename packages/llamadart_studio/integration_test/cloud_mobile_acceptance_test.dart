@@ -210,28 +210,18 @@ void main() {
           await tester.pump(const Duration(milliseconds: 100));
           await Future<void>.delayed(const Duration(milliseconds: 20));
         }
-        diagnostics.record('wait_end', {
-          'operation': phase,
-          'done': done(),
-          ...chatCheckpoint(deps, _chatPrompt),
-        });
-        if (!done()) {
-          final exception = tester.takeException();
-          diagnostics.record('flutter_exception', {
-            'type': exception?.runtimeType.toString(),
-          });
-        }
-        await diagnostics.flush();
-        expect(
-          done(),
-          isTrue,
+        await expectChatWaitFinished(
+          tester: tester,
+          diagnostics: diagnostics,
+          done: done,
+          phase: phase,
+          checkpoint: chatCheckpoint(deps, _chatPrompt),
           reason:
               '$phase: runtime=${inference.runtimeStore.state.phase} '
               'error=${inference.runtimeStore.state.errorMessage} '
               'activating=${deps.modelHubController.state.activatingDescriptor?.id} '
               'noteTitle=${deps.notebookController.state.selectedNote?.title}',
         );
-        expect(tester.takeException(), isNull, reason: phase);
       }
 
       await navigate('models');

@@ -5,6 +5,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter_test/flutter_test.dart';
 import 'package:llamadart_studio/llamadart_studio.dart';
 import 'package:llamadart_studio_core/llamadart_studio_core.dart';
 
@@ -37,6 +38,25 @@ class ChatDiagnostics {
   }
 
   Future<void> flush() async {}
+}
+
+Future<void> expectChatWaitFinished({
+  required WidgetTester tester,
+  required ChatDiagnostics diagnostics,
+  required bool Function() done,
+  required String phase,
+  required Map<String, Object?> checkpoint,
+  required String reason,
+}) async {
+  diagnostics.record('wait_end', {
+    'operation': phase,
+    'done': done(),
+    ...checkpoint,
+  });
+  await diagnostics.flush();
+  // A timeout must leave pending framework error details for normal reporting.
+  expect(done(), isTrue, reason: reason);
+  expect(tester.takeException(), isNull, reason: phase);
 }
 
 /// Observes one subscription without changing events, errors or cancellation.
