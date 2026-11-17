@@ -9451,11 +9451,11 @@ class LlamaCppService {
       return 'Video input is unavailable on $platform: the llamadart native '
           'artifacts for this platform are built without mtmd video support '
           '(upstream forces MTMD_VIDEO off when LLAMA_SUBPROCESS, which '
-          'spawns FFmpeg, is off), so mtmd_helper_support_video reports '
-          'false. Extract and send image frames instead.';
+          'spawns FFmpeg, is off), so mtmd_helper_get_capabilities reports '
+          'no video. Extract and send image frames instead.';
     }
     return 'Video input is unavailable: the loaded native mtmd runtime '
-        'reports no video support (mtmd_helper_support_video is false). On '
+        'reports no video support (mtmd_helper_get_capabilities().video is false). On '
         'the pinned $llamaCppTag macOS, Linux and Windows artifacts this means '
         'the loaded multimodal projector has no vision encoder; load a vision '
         'projector. Otherwise the runtime is an older or custom build without '
@@ -9474,10 +9474,15 @@ class LlamaCppService {
       return false;
     }
 
+    final model = _modelForMtmdContext(mmContextHandle);
+    if (model == null) {
+      return false;
+    }
+
     if (!_mtmdPrimarySymbolsUnavailable &&
         !_mtmdVideoPrimarySymbolUnavailable) {
       try {
-        return mtmd_helper_support_video(mmCtx);
+        return mtmd_helper_get_capabilities(model, mmCtx).video;
       } on ArgumentError {
         // Video helpers were added after the core mtmd surface. Do not mark
         // working vision/audio symbols unavailable when only this optional
@@ -9487,7 +9492,16 @@ class LlamaCppService {
     }
 
     final fallback = _resolveMtmdFallbackApi();
-    return fallback?.supportsVideo(mmCtx) ?? false;
+    return fallback?.supportsVideo(model, mmCtx) ?? false;
+  }
+
+  Pointer<llama_model>? _modelForMtmdContext(int mmContextHandle) {
+    for (final entry in _modelToMtmd.entries) {
+      if (entry.value == mmContextHandle) {
+        return _models[entry.key]?.pointer;
+      }
+    }
+    return null;
   }
 
   /// Reports whether the model [modelHandle] can run decision heads.

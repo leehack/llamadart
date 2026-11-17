@@ -5492,12 +5492,8 @@ void main() {
           service.embed(handle, second),
         ];
         final vectors = service.embedBatch(handle, [first, second]);
-        for (var i = 0; i < 2; i++) {
-          expect(vectors[i], hasLength(expected[i].length));
-          for (var j = 0; j < expected[i].length; j++) {
-            expect(vectors[i][j], closeTo(expected[i][j], 1e-6));
-          }
-        }
+        expect(vectors[0], orderedEquals(expected[0]));
+        expect(vectors[1], orderedEquals(expected[1]));
       });
     }
 

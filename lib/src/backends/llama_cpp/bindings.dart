@@ -6100,6 +6100,32 @@ external int llama_dart_exit_tracked_count();
 @ffi.Native<ffi.Bool Function(ffi.Pointer<ffi.Void>)>()
 external bool llama_dart_exit_untrack(ffi.Pointer<ffi.Void> object);
 
+@ffi.Native<ffi.Uint32 Function()>()
+external int llama_dart_fit_api_version();
+
+@ffi.Native<
+  ffi.Int32 Function(
+    ffi.Pointer<ffi.Char>,
+    ffi.Pointer<llama_model_params>,
+    ffi.Pointer<llama_context_params>,
+    ffi.Pointer<ffi.Float>,
+    ffi.Pointer<llama_model_tensor_buft_override>,
+    ffi.Pointer<ffi.Size>,
+    ffi.Uint32,
+    ffi.Pointer<llama_dart_fit_report>,
+  )
+>()
+external int llama_dart_fit_params(
+  ffi.Pointer<ffi.Char> path_model,
+  ffi.Pointer<llama_model_params> mparams,
+  ffi.Pointer<llama_context_params> cparams,
+  ffi.Pointer<ffi.Float> tensor_split,
+  ffi.Pointer<llama_model_tensor_buft_override> tensor_buft_overrides,
+  ffi.Pointer<ffi.Size> margins,
+  int n_ctx_min,
+  ffi.Pointer<llama_dart_fit_report> report,
+);
+
 @ffi.Native<
   ggml_backend_buffer_t Function(ffi.Pointer<ggml_context>, ggml_backend_t)
 >()
@@ -9593,6 +9619,8 @@ const int GGML_ROPE_TYPE_VISION = 24;
 
 const int GGML_TENSOR_SIZE = 336;
 
+const int LLAMA_DART_FIT_MAX_DEVICES = 16;
+
 const int LLAMA_DART_TTS_API_VERSION = 1;
 
 const int LLAMA_DEFAULT_SEED = 4294967295;
@@ -11429,6 +11457,61 @@ enum llama_dart_exit_stage {
     4 => LLAMA_DART_EXIT_STAGE_BACKEND,
     5 => LLAMA_DART_EXIT_STAGE_MODEL,
     _ => throw ArgumentError('Unknown value for llama_dart_exit_stage: $value'),
+  };
+}
+
+final class llama_dart_fit_device extends ffi.Struct {
+  @ffi.Array.multi([64])
+  external ffi.Array<ffi.Char> name;
+
+  @ffi.Int64()
+  external int total_bytes;
+
+  @ffi.Int64()
+  external int free_bytes;
+
+  @ffi.Uint64()
+  external int model_bytes;
+
+  @ffi.Uint64()
+  external int context_bytes;
+
+  @ffi.Uint64()
+  external int compute_bytes;
+}
+
+final class llama_dart_fit_report extends ffi.Struct {
+  @ffi.Uint32()
+  external int n_devices;
+
+  @ffi.Uint32()
+  external int n_layers;
+
+  @ffi.Uint32()
+  external int n_ctx_train;
+
+  @ffi.Uint32()
+  external int n_layers_skipped;
+
+  @ffi.Array.multi([16])
+  external ffi.Array<llama_dart_fit_device> devices;
+
+  external llama_dart_fit_device host;
+}
+
+enum llama_dart_fit_status {
+  LLAMA_DART_FIT_STATUS_SUCCESS(0),
+  LLAMA_DART_FIT_STATUS_FAILURE(1),
+  LLAMA_DART_FIT_STATUS_ERROR(2);
+
+  final int value;
+  const llama_dart_fit_status(this.value);
+
+  static llama_dart_fit_status fromValue(int value) => switch (value) {
+    0 => LLAMA_DART_FIT_STATUS_SUCCESS,
+    1 => LLAMA_DART_FIT_STATUS_FAILURE,
+    2 => LLAMA_DART_FIT_STATUS_ERROR,
+    _ => throw ArgumentError('Unknown value for llama_dart_fit_status: $value'),
   };
 }
 

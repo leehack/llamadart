@@ -13,6 +13,8 @@ validate against the exact release tag notes.
 
 ## Unreleased
 
+- Adopt native llama.cpp `v1.0.0` (llama.cpp `b1b770d9`) with regenerated bindings; it keeps the `v0.9.0` ARM FP16 fixes. The video capability probe uses `mtmd_helper_get_capabilities`, the replacement for the deprecated `mtmd_helper_support_video`.
+
 - Refuse a native llama.cpp runtime that was not built from llama.cpp `v1.0.0` with `LlamaUnsupportedException`, before the first call that passes a llama.cpp struct by value. A `llamadart_native_tag` or `llamadart_native_path` override to any other llama.cpp release no longer loads.
 
 - Restore native text-to-speech discovery when Dart bundles its runtime outside the working directory.

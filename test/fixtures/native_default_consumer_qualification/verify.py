@@ -16,7 +16,7 @@ MODEL_SHA256 = '6a1a2eb6d15622bf3c96857206351ba97e1af16c30d7a74ee38970e434e9407e
 PROMPT = 'Repeat and continue this sequence exactly:\n' + '\n'.join(
     ['alpha beta gamma delta epsilon zeta eta theta'] * 5)
 PROMPT_SHA256 = hashlib.sha256(PROMPT.encode()).hexdigest()
-TAGS = ('v0.8.0-2', 'v0.8.0-3', 'v0.9.0')
+TAGS = ('v0.8.0-2', 'v0.8.0-3', 'v0.9.0', 'v1.0.0')
 NATIVE_NAME = re.compile(r'^(?:lib)?(?:llama(?:dart)?|ggml|mtmd)(?:[-_.].*)?\.(?:dll|dylib)$', re.I)
 
 

@@ -473,7 +473,7 @@ class _MtmdApi {
     try {
       _MtmdLogSetDart? logSet;
       _MtmdLogSetDart? helperLogSet;
-      _MtmdSupportVideoDart supportsVideo = (_) => false;
+      _MtmdSupportVideoDart supportsVideo = (_, _) => false;
       try {
         logSet = library.lookupFunction<_MtmdLogSetNative, _MtmdLogSetDart>(
           'mtmd_log_set',
@@ -486,10 +486,15 @@ class _MtmdApi {
             );
       } catch (_) {}
       try {
-        supportsVideo = library
-            .lookupFunction<_MtmdSupportVideoNative, _MtmdSupportVideoDart>(
-              'mtmd_helper_support_video',
-            );
+        final capabilities = library
+            .lookupFunction<
+              _MtmdHelperCapabilitiesNative,
+              mtmd_helper_cap Function(
+                Pointer<llama_model>,
+                Pointer<mtmd_context>,
+              )
+            >('mtmd_helper_get_capabilities');
+        supportsVideo = (model, context) => capabilities(model, context).video;
       } catch (_) {}
 
       return _MtmdApi(
