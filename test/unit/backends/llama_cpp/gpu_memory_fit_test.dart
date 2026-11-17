@@ -111,8 +111,4 @@ void main() {
       expect(message(GpuMemoryFitOutcome.skipped), contains('because'));
     });
   });
-
-  test('a runtime without llama_dart_fit_params resolves no runner', () {
-    expect(resolveNativeGpuMemoryFitRunner(), isNull);
-  });
 }

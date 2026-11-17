@@ -94,10 +94,10 @@ the chat app, set the bootstrap globals before the bootstrap runs:
 </script>
 ```
 
-That release embeds llama.cpp `v0.9.0`, matching the `hook/build.dart` native pin
-(`v0.9.0`, both built from upstream llama.cpp `v0.9.0@cd959bae99ff4bed22bef2604f45241c09bbb8c8`)
+That release embeds llama.cpp `v0.9.0`, behind the `hook/build.dart` native pin
+(`v1.0.0`; the bridge is built from upstream llama.cpp `v0.9.0@cd959bae99ff4bed22bef2604f45241c09bbb8c8`)
 even though the bridge asset tag `v0.1.85` differs from the native runtime tag
-`v0.9.0`. Provenance for this immutable consumer artifact: release `444874209`,
+`v1.0.0`. Provenance for this immutable consumer artifact: release `444874209`,
 tag commit `28a6180925e74e1038ee4c22cde6b403ae21ed84`, bridge source
 `f1ac2fc1d4d4d3fda56c161ac6a629ae4c67a7d3`, and manifest SHA-256
 `6767783edd85e14853a8a79cd6ce53d53f4eb2d99aeb62601014bd68c1b6b7b3`.

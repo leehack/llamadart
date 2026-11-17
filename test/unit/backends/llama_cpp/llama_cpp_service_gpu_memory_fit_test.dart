@@ -50,6 +50,7 @@ final class _FakeFit {
   List<double> split = const [];
   List<String> overridePatterns = const [];
   int offloadableLayers = 28;
+  int skippedLayers = 0;
   int trainedContext = 1024;
   List<GpuMemoryFitDevice> devices = [_device()];
   Object? throws;
@@ -102,6 +103,7 @@ final class _FakeFit {
     return GpuMemoryFitNativeResult(
       status: status,
       offloadableLayers: offloadableLayers,
+      skippedLayers: skippedLayers,
       trainedContextSize: trainedContext,
       devices: devices,
     );
@@ -182,7 +184,7 @@ void main() {
       isMacosX64: false,
       isAndroid: isAndroid,
       operatingSystem: operatingSystem,
-      gpuMemoryFitRunner: withRunner ? fit.run : null,
+      gpuMemoryFitRunner: () => withRunner ? fit.run : null,
       objectCalls: LlamaCppObjectCalls.tracked(
         recorder.api,
         isWindows: Platform.isWindows,
@@ -275,6 +277,21 @@ void main() {
     allocator.expectAllFreed();
   });
 
+  test('skipped NextN layers count toward the full offload bound', () {
+    fit
+      ..skippedLayers = 1
+      ..fittedLayers = 29;
+    start();
+    service.loadModel(model, params());
+    // 28 layers + 1 skipped + the output layer: 29 is partial, not full.
+    final report = service.getGpuMemoryFitReport()!;
+    expect(report.modelLayers, 30);
+    expect(report.outcome, GpuMemoryFitOutcome.reduced);
+    expect(report.gpuLayers, 29);
+    expect(recorder.loadGpuLayers, [29]);
+    allocator.expectAllFreed();
+  });
+
   test('a load that fits keeps every requested layer', () {
     start();
     service.loadModel(model, params());
@@ -296,6 +313,10 @@ void main() {
       [GpuBackend.cpu],
     ).single;
     expect(recorder.loadDevices.single, [cpuDevice.address]);
+    expect(
+      recorder.loadDevices.single,
+      isNot(contains(_cuda(0).device!.address)),
+    );
     expect(recorder.loadGpuLayers, [0]);
     final report = service.getGpuMemoryFitReport()!;
     expect(report.outcome, GpuMemoryFitOutcome.cpu);

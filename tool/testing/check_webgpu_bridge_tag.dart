@@ -384,13 +384,13 @@ const String bridgeNativeRepository = 'leehack/llamadart-native';
 const String bridgeNativeReleaseTag = 'v0.9.0';
 
 /// The native pin approved beside the pinned bridge assets.
-const String bridgeApprovedNativePin = 'v0.9.0';
+const String bridgeApprovedNativePin = 'v1.0.0';
 
 /// The upstream llama.cpp release the native pin may run ahead of
 /// [bridgeLlamaCppTag] on until the next bridge repin; equal to it when they
-/// must match, as they do now. Web and native share no ABI: the bridge assets
+/// must match. Web and native share no ABI: the bridge assets
 /// are self-contained, so a skew changes only which release each runtime uses.
-const String bridgeApprovedNativeUpstreamAhead = 'v0.9.0';
+const String bridgeApprovedNativeUpstreamAhead = 'v1.0.0';
 
 /// The asset repository release that published the pinned bridge assets.
 const String bridgeAssetsReleaseId = '444874209';
@@ -426,7 +426,7 @@ final List<BridgeTagPin> bridgeLlamaCppParityPins = <BridgeTagPin>[
   BridgeTagPin(
     'doc/webgpu_bridge.md',
     RegExp(
-      r'^That release embeds llama\.cpp `(v\d+\.\d+\.\d+|b\d+)`, matching the '
+      r'^That release embeds llama\.cpp `(v\d+\.\d+\.\d+|b\d+)`, (?:matching|behind) the '
       r'`hook/build\.dart` native pin$',
       multiLine: true,
     ),
@@ -434,7 +434,7 @@ final List<BridgeTagPin> bridgeLlamaCppParityPins = <BridgeTagPin>[
   BridgeTagPin(
     'website/docs/platforms/webgpu-bridge.md',
     RegExp(
-      r'^- The pinned `v\d+\.\d+\.\d+` bridge assets embed llama\.cpp `(v\d+\.\d+\.\d+|b\d+)`, matching the native runtime\.?$',
+      r'^- The pinned `v\d+\.\d+\.\d+` bridge assets embed llama\.cpp `(v\d+\.\d+\.\d+|b\d+)`, (?:matching|behind) the native runtime\.?$',
       multiLine: true,
     ),
   ),
@@ -450,7 +450,7 @@ final List<BridgeTagPin> bridgeProvenancePins = <BridgeTagPin>[
   BridgeTagPin(
     'doc/webgpu_bridge.md',
     RegExp(
-      r'^\(`(?<nativePin>[^`]+)`, both built from upstream llama\.cpp '
+      r'^\(`(?<nativePin>[^`]+)`(?:, both|; the bridge is) built from upstream llama\.cpp '
       r'`(?<upstreamTag>[^`@]+)@(?<upstreamCommit>[0-9a-f]{40})`\)\r?\n'
       r'even though the bridge asset tag `v\d+\.\d+\.\d+` differs from the '
       r'native runtime tag\r?\n'

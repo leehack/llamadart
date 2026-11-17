@@ -66,6 +66,7 @@ final class FakeMtmd {
     this.audioBitmap = _audioBitmap,
     this.vision = false,
     this.audio = true,
+    this.video = false,
   }) {
     final owner = reflectClass(LlamaCppService).owner as LibraryMirror;
     final apiClass =
@@ -81,8 +82,9 @@ final class FakeMtmd {
       #defaultMarker: () => _marker.cast<Char>(),
       #contextParamsDefault: () => Struct.create<mtmd_context_params>(),
       #initFromFile:
-          (Pointer<Char> _, Pointer<llama_model> _, mtmd_context_params _) {
+          (Pointer<Char> _, Pointer<llama_model> model, mtmd_context_params _) {
             calls.add('mtmd_init_from_file');
+            projectorModels.add(model.address);
             return projector;
           },
       #free: (Pointer<mtmd_context> _) {
@@ -115,7 +117,10 @@ final class FakeMtmd {
           audioBitmap(sampleCount),
       #supportsVision: (Pointer<mtmd_context> _) => vision,
       #supportsAudio: (Pointer<mtmd_context> _) => audio,
-      #supportsVideo: (Pointer<mtmd_context> _) => false,
+      #supportsVideo: (Pointer<llama_model> model, Pointer<mtmd_context> _) {
+        videoProbeModels.add(model.address);
+        return video;
+      },
       #bitmapFree: (Pointer<mtmd_bitmap> bitmap) {
         freedBitmaps.add(bitmap.address);
       },
@@ -195,6 +200,15 @@ final class FakeMtmd {
 
   /// Whether the fake `mtmd_support_audio` reports an audio encoder.
   final bool audio;
+
+  /// Whether the fake `mtmd_helper_get_capabilities` reports video.
+  final bool video;
+
+  /// Addresses of the models the fake projector was created for so far.
+  final List<int> projectorModels = <int>[];
+
+  /// Addresses of the models passed to the fake capability probe so far.
+  final List<int> videoProbeModels = <int>[];
 
   /// Whether the fake bitmap helpers load a path or encoded bytes; when
   /// false they return a null bitmap, as mtmd does for a source it cannot

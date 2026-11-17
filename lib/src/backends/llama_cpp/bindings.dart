@@ -99,34 +99,6 @@ external ffi.Pointer<ggml_tensor> ggml_add(
   ffi.Pointer<ggml_tensor> b,
 );
 
-@Deprecated('use ggml_add instead')
-@ffi.Native<
-  ffi.Pointer<ggml_tensor> Function(
-    ffi.Pointer<ggml_context>,
-    ffi.Pointer<ggml_tensor>,
-    ffi.Pointer<ggml_tensor>,
-  )
->()
-external ffi.Pointer<ggml_tensor> ggml_add1(
-  ffi.Pointer<ggml_context> ctx,
-  ffi.Pointer<ggml_tensor> a,
-  ffi.Pointer<ggml_tensor> b,
-);
-
-@Deprecated('use ggml_add_inplace instead')
-@ffi.Native<
-  ffi.Pointer<ggml_tensor> Function(
-    ffi.Pointer<ggml_context>,
-    ffi.Pointer<ggml_tensor>,
-    ffi.Pointer<ggml_tensor>,
-  )
->()
-external ffi.Pointer<ggml_tensor> ggml_add1_inplace(
-  ffi.Pointer<ggml_context> ctx,
-  ffi.Pointer<ggml_tensor> a,
-  ffi.Pointer<ggml_tensor> b,
-);
-
 @ffi.Native<
   ffi.Pointer<ggml_tensor> Function(
     ffi.Pointer<ggml_context>,
@@ -2018,58 +1990,6 @@ external ffi.Pointer<ggml_tensor> ggml_diag(
   ffi.Pointer<ggml_tensor> Function(
     ffi.Pointer<ggml_context>,
     ffi.Pointer<ggml_tensor>,
-    ffi.Int,
-  )
->()
-external ffi.Pointer<ggml_tensor> ggml_diag_mask_inf(
-  ffi.Pointer<ggml_context> ctx,
-  ffi.Pointer<ggml_tensor> a,
-  int n_past,
-);
-
-@ffi.Native<
-  ffi.Pointer<ggml_tensor> Function(
-    ffi.Pointer<ggml_context>,
-    ffi.Pointer<ggml_tensor>,
-    ffi.Int,
-  )
->()
-external ffi.Pointer<ggml_tensor> ggml_diag_mask_inf_inplace(
-  ffi.Pointer<ggml_context> ctx,
-  ffi.Pointer<ggml_tensor> a,
-  int n_past,
-);
-
-@ffi.Native<
-  ffi.Pointer<ggml_tensor> Function(
-    ffi.Pointer<ggml_context>,
-    ffi.Pointer<ggml_tensor>,
-    ffi.Int,
-  )
->()
-external ffi.Pointer<ggml_tensor> ggml_diag_mask_zero(
-  ffi.Pointer<ggml_context> ctx,
-  ffi.Pointer<ggml_tensor> a,
-  int n_past,
-);
-
-@ffi.Native<
-  ffi.Pointer<ggml_tensor> Function(
-    ffi.Pointer<ggml_context>,
-    ffi.Pointer<ggml_tensor>,
-    ffi.Int,
-  )
->()
-external ffi.Pointer<ggml_tensor> ggml_diag_mask_zero_inplace(
-  ffi.Pointer<ggml_context> ctx,
-  ffi.Pointer<ggml_tensor> a,
-  int n_past,
-);
-
-@ffi.Native<
-  ffi.Pointer<ggml_tensor> Function(
-    ffi.Pointer<ggml_context>,
-    ffi.Pointer<ggml_tensor>,
     ffi.Pointer<ggml_tensor>,
   )
 >()
@@ -2373,19 +2293,6 @@ external void ggml_flash_attn_ext_set_n_kv_max(
   ffi.Pointer<ggml_tensor> a,
   int n_kv_max,
 );
-
-@Deprecated('use ggml_prec_set_acc() instead')
-@ffi.Native<ffi.Void Function(ffi.Pointer<ggml_tensor>, ffi.UnsignedInt)>(
-  symbol: 'ggml_flash_attn_ext_set_prec',
-)
-external void _ggml_flash_attn_ext_set_prec(
-  ffi.Pointer<ggml_tensor> a,
-  int prec,
-);
-
-void ggml_flash_attn_ext_set_prec(ffi.Pointer<ggml_tensor> a, ggml_prec prec) {
-  return _ggml_flash_attn_ext_set_prec(a, prec.value);
-}
 
 @ffi.Native<
   ffi.Pointer<ggml_tensor> Function(
@@ -3558,16 +3465,6 @@ void ggml_mul_mat_set_hint(ffi.Pointer<ggml_tensor> a, ggml_op_hint hint) {
   return _ggml_mul_mat_set_hint(a, hint.value);
 }
 
-@Deprecated('use ggml_prec_set_acc() instead')
-@ffi.Native<ffi.Void Function(ffi.Pointer<ggml_tensor>, ffi.UnsignedInt)>(
-  symbol: 'ggml_mul_mat_set_prec',
-)
-external void _ggml_mul_mat_set_prec(ffi.Pointer<ggml_tensor> a, int prec);
-
-void ggml_mul_mat_set_prec(ffi.Pointer<ggml_tensor> a, ggml_prec prec) {
-  return _ggml_mul_mat_set_prec(a, prec.value);
-}
-
 @ffi.Native<ffi.Int Function(ffi.Pointer<ggml_tensor>)>()
 external int ggml_n_dims(ffi.Pointer<ggml_tensor> tensor);
 
@@ -4447,70 +4344,6 @@ external ffi.Pointer<ggml_tensor> ggml_rope(
   int mode,
 );
 
-@Deprecated('use ggml_rope_ext instead')
-@ffi.Native<
-  ffi.Pointer<ggml_tensor> Function(
-    ffi.Pointer<ggml_context>,
-    ffi.Pointer<ggml_tensor>,
-    ffi.Pointer<ggml_tensor>,
-    ffi.Int,
-    ffi.Int,
-    ffi.Int,
-    ffi.Float,
-    ffi.Float,
-    ffi.Float,
-    ffi.Float,
-    ffi.Float,
-    ffi.Float,
-  )
->()
-external ffi.Pointer<ggml_tensor> ggml_rope_custom(
-  ffi.Pointer<ggml_context> ctx,
-  ffi.Pointer<ggml_tensor> a,
-  ffi.Pointer<ggml_tensor> b,
-  int n_dims,
-  int mode,
-  int n_ctx_orig,
-  double freq_base,
-  double freq_scale,
-  double ext_factor,
-  double attn_factor,
-  double beta_fast,
-  double beta_slow,
-);
-
-@Deprecated('use ggml_rope_ext_inplace instead')
-@ffi.Native<
-  ffi.Pointer<ggml_tensor> Function(
-    ffi.Pointer<ggml_context>,
-    ffi.Pointer<ggml_tensor>,
-    ffi.Pointer<ggml_tensor>,
-    ffi.Int,
-    ffi.Int,
-    ffi.Int,
-    ffi.Float,
-    ffi.Float,
-    ffi.Float,
-    ffi.Float,
-    ffi.Float,
-    ffi.Float,
-  )
->()
-external ffi.Pointer<ggml_tensor> ggml_rope_custom_inplace(
-  ffi.Pointer<ggml_context> ctx,
-  ffi.Pointer<ggml_tensor> a,
-  ffi.Pointer<ggml_tensor> b,
-  int n_dims,
-  int mode,
-  int n_ctx_orig,
-  double freq_base,
-  double freq_scale,
-  double ext_factor,
-  double attn_factor,
-  double beta_fast,
-  double beta_slow,
-);
-
 @ffi.Native<
   ffi.Pointer<ggml_tensor> Function(
     ffi.Pointer<ggml_context>,
@@ -4741,22 +4574,11 @@ external ffi.Pointer<ggml_tensor> ggml_rope_set_offset(
 );
 
 @ffi.Native<
-  ffi.Void Function(
-    ffi.Int,
-    ffi.Int,
-    ffi.Float,
-    ffi.Float,
-    ffi.Float,
-    ffi.Pointer<ffi.Float>,
-  )
+  ffi.Pointer<ggml_tensor> Function(ffi.Pointer<ggml_tensor>, ffi.Bool)
 >()
-external void ggml_rope_yarn_corr_dims(
-  int n_dims,
-  int n_ctx_orig,
-  double freq_base,
-  double beta_fast,
-  double beta_slow,
-  ffi.Pointer<ffi.Float> dims,
+external ffi.Pointer<ggml_tensor> ggml_rope_set_truncate(
+  ffi.Pointer<ggml_tensor> a,
+  bool truncate,
 );
 
 @ffi.Native<
@@ -5689,14 +5511,6 @@ int ggml_type_size(ggml_type type) {
   return _ggml_type_size(type.value);
 }
 
-@Deprecated('use ggml_row_size() instead')
-@ffi.Native<ffi.Double Function(ffi.UnsignedInt)>(symbol: 'ggml_type_sizef')
-external double _ggml_type_sizef(int type);
-
-double ggml_type_sizef(ggml_type type) {
-  return _ggml_type_sizef(type.value);
-}
-
 @ffi.Native<
   ffi.Pointer<ggml_tensor> Function(
     ffi.Pointer<ggml_context>,
@@ -5789,40 +5603,6 @@ ffi.Pointer<ggml_tensor> ggml_upscale(
   ggml_scale_mode mode,
 ) {
   return _ggml_upscale(ctx, a, scale_factor, mode.value);
-}
-
-@Deprecated('use ggml_interpolate instead')
-@ffi.Native<
-  ffi.Pointer<ggml_tensor> Function(
-    ffi.Pointer<ggml_context>,
-    ffi.Pointer<ggml_tensor>,
-    ffi.Int,
-    ffi.Int,
-    ffi.Int,
-    ffi.Int,
-    ffi.UnsignedInt,
-  )
->(symbol: 'ggml_upscale_ext')
-external ffi.Pointer<ggml_tensor> _ggml_upscale_ext(
-  ffi.Pointer<ggml_context> ctx,
-  ffi.Pointer<ggml_tensor> a,
-  int ne0,
-  int ne1,
-  int ne2,
-  int ne3,
-  int mode,
-);
-
-ffi.Pointer<ggml_tensor> ggml_upscale_ext(
-  ffi.Pointer<ggml_context> ctx,
-  ffi.Pointer<ggml_tensor> a,
-  int ne0,
-  int ne1,
-  int ne2,
-  int ne3,
-  ggml_scale_mode mode,
-) {
-  return _ggml_upscale_ext(ctx, a, ne0, ne1, ne2, ne3, mode.value);
 }
 
 @ffi.Native<ffi.Size Function(ffi.Pointer<ggml_context>)>()
@@ -6077,14 +5857,6 @@ external int llama_adapter_meta_val_str_by_index(
   int buf_size,
 );
 
-@Deprecated('use llama_vocab_get_add_bos instead')
-@ffi.Native<ffi.Bool Function(ffi.Pointer<llama_vocab>)>()
-external bool llama_add_bos_token(ffi.Pointer<llama_vocab> vocab);
-
-@Deprecated('use llama_vocab_get_add_eos instead')
-@ffi.Native<ffi.Bool Function(ffi.Pointer<llama_vocab>)>()
-external bool llama_add_eos_token(ffi.Pointer<llama_vocab> vocab);
-
 @ffi.Native<
   ffi.Void Function(
     ffi.Pointer<llama_context>,
@@ -6117,6 +5889,15 @@ external int llama_batch_ext_add_embd(
   ffi.Pointer<llama_batch_ext> batch,
   int seq_id,
   llama_embd embd,
+);
+
+@ffi.Native<
+  ffi.Int32 Function(ffi.Pointer<llama_batch_ext>, llama_seq_id, ffi.Int32)
+>()
+external int llama_batch_ext_add_embd_row(
+  ffi.Pointer<llama_batch_ext> batch,
+  int seq_id,
+  int row,
 );
 
 @ffi.Native<
@@ -6155,6 +5936,15 @@ external bool llama_batch_ext_set_embd_state(
   ffi.Pointer<llama_batch_ext> batch,
   int idx,
   llama_embd embd,
+);
+
+@ffi.Native<
+  ffi.Bool Function(ffi.Pointer<llama_batch_ext>, ffi.Int32, ffi.Int32)
+>()
+external bool llama_batch_ext_set_embd_state_row(
+  ffi.Pointer<llama_batch_ext> batch,
+  int idx,
+  int row,
 );
 
 @ffi.Native<
@@ -6247,15 +6037,6 @@ external int llama_chat_builtin_templates(
 @ffi.Native<llama_context_params Function()>()
 external llama_context_params llama_context_default_params();
 
-@Deprecated('use llama_state_get_data instead')
-@ffi.Native<
-  ffi.Size Function(ffi.Pointer<llama_context>, ffi.Pointer<ffi.Uint8>)
->()
-external int llama_copy_state_data(
-  ffi.Pointer<llama_context> ctx,
-  ffi.Pointer<ffi.Uint8> dst,
-);
-
 @ffi.Native<
   ffi.Pointer<llama_adapter_lora> Function(
     ffi.Pointer<llama_model>,
@@ -6318,6 +6099,32 @@ external int llama_dart_exit_tracked_count();
 
 @ffi.Native<ffi.Bool Function(ffi.Pointer<ffi.Void>)>()
 external bool llama_dart_exit_untrack(ffi.Pointer<ffi.Void> object);
+
+@ffi.Native<ffi.Uint32 Function()>()
+external int llama_dart_fit_api_version();
+
+@ffi.Native<
+  ffi.Int32 Function(
+    ffi.Pointer<ffi.Char>,
+    ffi.Pointer<llama_model_params>,
+    ffi.Pointer<llama_context_params>,
+    ffi.Pointer<ffi.Float>,
+    ffi.Pointer<llama_model_tensor_buft_override>,
+    ffi.Pointer<ffi.Size>,
+    ffi.Uint32,
+    ffi.Pointer<llama_dart_fit_report>,
+  )
+>()
+external int llama_dart_fit_params(
+  ffi.Pointer<ffi.Char> path_model,
+  ffi.Pointer<llama_model_params> mparams,
+  ffi.Pointer<llama_context_params> cparams,
+  ffi.Pointer<ffi.Float> tensor_split,
+  ffi.Pointer<llama_model_tensor_buft_override> tensor_buft_overrides,
+  ffi.Pointer<ffi.Size> margins,
+  int n_ctx_min,
+  ffi.Pointer<llama_dart_fit_report> report,
+);
 
 @ffi.Native<
   ggml_backend_buffer_t Function(ffi.Pointer<ggml_context>, ggml_backend_t)
@@ -7380,10 +7187,6 @@ ffi.Pointer<ffi.Char> llama_flash_attn_type_name(
 @ffi.Native<ffi.Void Function(ffi.Pointer<llama_context>)>()
 external void llama_free(ffi.Pointer<llama_context> ctx);
 
-@Deprecated('use llama_model_free instead')
-@ffi.Native<ffi.Void Function(ffi.Pointer<llama_model>)>()
-external void llama_free_model(ffi.Pointer<llama_model> model);
-
 @ffi.Native<ffi.Pointer<ffi.Char> Function(ffi.UnsignedInt)>(
   symbol: 'llama_ftype_name',
 )
@@ -7396,6 +7199,11 @@ ffi.Pointer<ffi.Char> llama_ftype_name(llama_ftype ftype) {
 @ffi.Native<ffi.Bool Function(ffi.Pointer<llama_context>)>()
 external bool llama_get_causal_attn(ffi.Pointer<llama_context> ctx);
 
+@ffi.Native<ffi.Pointer<llama_context> Function(ffi.Pointer<llama_context>)>()
+external ffi.Pointer<llama_context> llama_get_ctx_other(
+  ffi.Pointer<llama_context> ctx,
+);
+
 @ffi.Native<ffi.Pointer<ffi.Float> Function(ffi.Pointer<llama_context>)>()
 external ffi.Pointer<ffi.Float> llama_get_embeddings(
   ffi.Pointer<llama_context> ctx,
@@ -7407,6 +7215,42 @@ external ffi.Pointer<ffi.Float> llama_get_embeddings(
 external ffi.Pointer<ffi.Float> llama_get_embeddings_ith(
   ffi.Pointer<llama_context> ctx,
   int i,
+);
+
+@ffi.Native<
+  ffi.Pointer<ffi.Float> Function(ffi.Pointer<llama_context>, ffi.Uint32)
+>()
+external ffi.Pointer<ffi.Float> llama_get_embeddings_layer_inp(
+  ffi.Pointer<llama_context> ctx,
+  int lid,
+);
+
+@ffi.Native<ffi.Pointer<ffi.Float> Function(ffi.Pointer<llama_context>)>()
+external ffi.Pointer<ffi.Float> llama_get_embeddings_nextn(
+  ffi.Pointer<llama_context> ctx,
+);
+
+@ffi.Native<
+  ffi.Pointer<ffi.Float> Function(ffi.Pointer<llama_context>, ffi.Int32)
+>()
+external ffi.Pointer<ffi.Float> llama_get_embeddings_nextn_ith(
+  ffi.Pointer<llama_context> ctx,
+  int i,
+);
+
+@ffi.Native<
+  ffi.Bool Function(
+    ffi.Pointer<llama_context>,
+    ffi.Int64,
+    ffi.Int64,
+    ffi.Pointer<ffi.Float>,
+  )
+>()
+external bool llama_get_embeddings_nextn_rows(
+  ffi.Pointer<llama_context> ctx,
+  int row0,
+  int n_rows,
+  ffi.Pointer<ffi.Float> out,
 );
 
 @ffi.Native<
@@ -7483,10 +7327,6 @@ external ffi.Pointer<ffi.Float> llama_get_sampled_probs_ith(
 @ffi.Native<llama_token Function(ffi.Pointer<llama_context>, ffi.Int32)>()
 external int llama_get_sampled_token_ith(ffi.Pointer<llama_context> ctx, int i);
 
-@Deprecated('use llama_state_get_size instead')
-@ffi.Native<ffi.Size Function(ffi.Pointer<llama_context>)>()
-external int llama_get_state_size(ffi.Pointer<llama_context> ctx);
-
 @ffi.Native<
   ffi.Pointer<llama_context> Function(
     ffi.Pointer<llama_model>,
@@ -7515,33 +7355,6 @@ external ffi.Pointer<ffi.Char> _llama_load_mode_name(int load_mode);
 ffi.Pointer<ffi.Char> llama_load_mode_name(llama_load_mode load_mode) {
   return _llama_load_mode_name(load_mode.value);
 }
-
-@Deprecated('use llama_model_load_from_file instead')
-@ffi.Native<
-  ffi.Pointer<llama_model> Function(ffi.Pointer<ffi.Char>, llama_model_params)
->()
-external ffi.Pointer<llama_model> llama_load_model_from_file(
-  ffi.Pointer<ffi.Char> path_model,
-  llama_model_params params,
-);
-
-@Deprecated('use llama_state_load_file instead')
-@ffi.Native<
-  ffi.Bool Function(
-    ffi.Pointer<llama_context>,
-    ffi.Pointer<ffi.Char>,
-    ffi.Pointer<llama_token>,
-    ffi.Size,
-    ffi.Pointer<ffi.Size>,
-  )
->()
-external bool llama_load_session_file(
-  ffi.Pointer<llama_context> ctx,
-  ffi.Pointer<ffi.Char> path_session,
-  ffi.Pointer<llama_token> tokens_out,
-  int n_token_capacity,
-  ffi.Pointer<ffi.Size> n_token_count_out,
-);
 
 @ffi.Native<
   ffi.Void Function(
@@ -7672,6 +7485,9 @@ external int llama_model_desc(
   ffi.Pointer<ffi.Char> buf,
   int buf_size,
 );
+
+@ffi.Native<ffi.Int32 Function(ffi.Pointer<llama_model>)>()
+external int llama_model_dflash_selector_top_k(ffi.Pointer<llama_model> model);
 
 @ffi.Native<ffi.Void Function(ffi.Pointer<llama_model>)>()
 external void llama_model_free(ffi.Pointer<llama_model> model);
@@ -7880,6 +7696,14 @@ external void llama_model_save_to_file(
 @ffi.Native<ffi.Uint64 Function(ffi.Pointer<llama_model>)>()
 external int llama_model_size(ffi.Pointer<llama_model> model);
 
+@ffi.Native<ffi.Pointer<ffi.Int32> Function(ffi.Pointer<llama_model>)>()
+external ffi.Pointer<ffi.Int32> llama_model_target_layer_ids(
+  ffi.Pointer<llama_model> model,
+);
+
+@ffi.Native<ffi.Uint32 Function(ffi.Pointer<llama_model>)>()
+external int llama_model_target_layer_ids_n(ffi.Pointer<llama_model> model);
+
 @ffi.Native<ffi.Uint32 Function(ffi.Pointer<llama_context>)>()
 external int llama_n_batch(ffi.Pointer<llama_context> ctx);
 
@@ -7888,22 +7712,6 @@ external int llama_n_ctx(ffi.Pointer<llama_context> ctx);
 
 @ffi.Native<ffi.Uint32 Function(ffi.Pointer<llama_context>)>()
 external int llama_n_ctx_seq(ffi.Pointer<llama_context> ctx);
-
-@Deprecated('use llama_model_n_ctx_train instead')
-@ffi.Native<ffi.Int32 Function(ffi.Pointer<llama_model>)>()
-external int llama_n_ctx_train(ffi.Pointer<llama_model> model);
-
-@Deprecated('use llama_model_n_embd instead')
-@ffi.Native<ffi.Int32 Function(ffi.Pointer<llama_model>)>()
-external int llama_n_embd(ffi.Pointer<llama_model> model);
-
-@Deprecated('use llama_model_n_head instead')
-@ffi.Native<ffi.Int32 Function(ffi.Pointer<llama_model>)>()
-external int llama_n_head(ffi.Pointer<llama_model> model);
-
-@Deprecated('use llama_model_n_layer instead')
-@ffi.Native<ffi.Int32 Function(ffi.Pointer<llama_model>)>()
-external int llama_n_layer(ffi.Pointer<llama_model> model);
 
 @ffi.Native<ffi.Uint32 Function(ffi.Pointer<llama_context>)>()
 external int llama_n_rs_seq(ffi.Pointer<llama_context> ctx);
@@ -7919,22 +7727,6 @@ external int llama_n_threads_batch(ffi.Pointer<llama_context> ctx);
 
 @ffi.Native<ffi.Uint32 Function(ffi.Pointer<llama_context>)>()
 external int llama_n_ubatch(ffi.Pointer<llama_context> ctx);
-
-@Deprecated('use llama_vocab_n_tokens instead')
-@ffi.Native<ffi.Int32 Function(ffi.Pointer<llama_vocab>)>()
-external int llama_n_vocab(ffi.Pointer<llama_vocab> vocab);
-
-@Deprecated('use llama_init_from_model instead')
-@ffi.Native<
-  ffi.Pointer<llama_context> Function(
-    ffi.Pointer<llama_model>,
-    llama_context_params,
-  )
->()
-external ffi.Pointer<llama_context> llama_new_context_with_model(
-  ffi.Pointer<llama_model> model,
-  llama_context_params params,
-);
 
 @ffi.Native<ffi.Void Function(ffi.UnsignedInt)>(symbol: 'llama_numa_init')
 external void _llama_numa_init(int numa);
@@ -8192,28 +7984,6 @@ external ffi.Pointer<llama_sampler> llama_sampler_init_grammar(
   ffi.Pointer<ffi.Char> grammar_root,
 );
 
-@Deprecated('use llama_sampler_init_grammar_lazy_patterns instead')
-@ffi.Native<
-  ffi.Pointer<llama_sampler> Function(
-    ffi.Pointer<llama_vocab>,
-    ffi.Pointer<ffi.Char>,
-    ffi.Pointer<ffi.Char>,
-    ffi.Pointer<ffi.Pointer<ffi.Char>>,
-    ffi.Size,
-    ffi.Pointer<llama_token>,
-    ffi.Size,
-  )
->()
-external ffi.Pointer<llama_sampler> llama_sampler_init_grammar_lazy(
-  ffi.Pointer<llama_vocab> vocab,
-  ffi.Pointer<ffi.Char> grammar_str,
-  ffi.Pointer<ffi.Char> grammar_root,
-  ffi.Pointer<ffi.Pointer<ffi.Char>> trigger_words,
-  int num_trigger_words,
-  ffi.Pointer<llama_token> trigger_tokens,
-  int num_trigger_tokens,
-);
-
 /// @details Lazy grammar sampler, introduced in https://github.com/ggml-org/llama.cpp/pull/9639
 /// @param trigger_patterns A list of patterns that will trigger the grammar sampler. Pattern will be matched from the start of the generation output, and grammar sampler will be fed content starting from its first match group.
 /// @param trigger_tokens A list of tokens that will trigger the grammar sampler. Grammar sampler will be fed content starting from the trigger token included.
@@ -8395,22 +8165,6 @@ external int llama_sampler_sample(
   int idx,
 );
 
-@Deprecated('use llama_state_save_file instead')
-@ffi.Native<
-  ffi.Bool Function(
-    ffi.Pointer<llama_context>,
-    ffi.Pointer<ffi.Char>,
-    ffi.Pointer<llama_token>,
-    ffi.Size,
-  )
->()
-external bool llama_save_session_file(
-  ffi.Pointer<llama_context> ctx,
-  ffi.Pointer<ffi.Char> path_session,
-  ffi.Pointer<llama_token> tokens,
-  int n_token_count,
-);
-
 @ffi.Native<
   ffi.Void Function(
     ffi.Pointer<llama_context>,
@@ -8464,10 +8218,61 @@ external void llama_set_causal_attn(
   bool causal_attn,
 );
 
+@ffi.Native<
+  ffi.Bool Function(ffi.Pointer<llama_context>, ffi.Pointer<llama_context>)
+>()
+external bool llama_set_ctx_state_src(
+  ffi.Pointer<llama_context> ctx,
+  ffi.Pointer<llama_context> ctx_src,
+);
+
 @ffi.Native<ffi.Void Function(ffi.Pointer<llama_context>, ffi.Bool)>()
 external void llama_set_embeddings(
   ffi.Pointer<llama_context> ctx,
   bool embeddings,
+);
+
+@ffi.Native<
+  ffi.Void Function(ffi.Pointer<llama_context>, ffi.Uint32, ffi.Bool)
+>()
+external void llama_set_embeddings_layer_inp(
+  ffi.Pointer<llama_context> ctx,
+  int lid,
+  bool value,
+);
+
+@ffi.Native<ffi.Void Function(ffi.Pointer<llama_context>, ffi.Bool)>()
+external void llama_set_embeddings_layer_inp_dev(
+  ffi.Pointer<llama_context> ctx,
+  bool value,
+);
+
+@ffi.Native<ffi.Void Function(ffi.Pointer<llama_context>, ffi.Bool, ffi.Bool)>()
+external void llama_set_embeddings_nextn(
+  ffi.Pointer<llama_context> ctx,
+  bool value,
+  bool masked,
+);
+
+@ffi.Native<ffi.Bool Function(ffi.Pointer<llama_context>, ffi.Bool)>()
+external bool llama_set_embeddings_nextn_dev(
+  ffi.Pointer<llama_context> ctx,
+  bool value,
+);
+
+@ffi.Native<
+  ffi.Bool Function(
+    ffi.Pointer<llama_context>,
+    ffi.Int64,
+    ffi.Int64,
+    ffi.Pointer<ffi.Float>,
+  )
+>()
+external bool llama_set_embeddings_nextn_rows(
+  ffi.Pointer<llama_context> ctx,
+  int row0,
+  int n_rows,
+  ffi.Pointer<ffi.Float> data,
 );
 
 @ffi.Native<
@@ -8477,6 +8282,12 @@ external void llama_set_n_threads(
   ffi.Pointer<llama_context> ctx,
   int n_threads,
   int n_threads_batch,
+);
+
+@ffi.Native<ffi.Void Function(ffi.Pointer<llama_context>, ffi.Int32)>()
+external void llama_set_nextn_layer_offset(
+  ffi.Pointer<llama_context> ctx,
+  int offset,
 );
 
 @ffi.Native<
@@ -8491,21 +8302,6 @@ external bool llama_set_sampler(
   int seq_id,
   ffi.Pointer<llama_sampler> smpl,
 );
-
-@Deprecated('use llama_state_set_data instead')
-@ffi.Native<
-  ffi.Size Function(ffi.Pointer<llama_context>, ffi.Pointer<ffi.Uint8>)
->()
-external int llama_set_state_data(
-  ffi.Pointer<llama_context> ctx,
-  ffi.Pointer<ffi.Uint8> src,
-);
-
-@Deprecated(
-  'user code should do warmup runs manually [TAG_LLAMA_GRAPH_NO_WARMUP]',
-)
-@ffi.Native<ffi.Void Function(ffi.Pointer<llama_context>, ffi.Bool)>()
-external void llama_set_warmup(ffi.Pointer<llama_context> ctx, bool warmup);
 
 /// @details Build a split GGUF final path for this chunk.
 /// llama_split_path(split_path, sizeof(split_path), "/models/ggml-model-q4_0", 2, 4) => split_path = "/models/ggml-model-q4_0-00002-of-00004.gguf"
@@ -8725,6 +8521,9 @@ external int llama_state_set_data(
   int size,
 );
 
+@ffi.Native<ffi.Bool Function(ffi.Pointer<llama_context>)>()
+external bool llama_supports_embd_row(ffi.Pointer<llama_context> ctx);
+
 @ffi.Native<ffi.Bool Function()>()
 external bool llama_supports_gpu_offload();
 
@@ -8742,95 +8541,6 @@ external void llama_synchronize(ffi.Pointer<llama_context> ctx);
 
 @ffi.Native<ffi.Int64 Function()>()
 external int llama_time_us();
-
-@Deprecated('use llama_vocab_bos instead')
-@ffi.Native<llama_token Function(ffi.Pointer<llama_vocab>)>()
-external int llama_token_bos(ffi.Pointer<llama_vocab> vocab);
-
-@Deprecated('use llama_vocab_cls instead')
-@ffi.Native<llama_token Function(ffi.Pointer<llama_vocab>)>()
-external int llama_token_cls(ffi.Pointer<llama_vocab> vocab);
-
-@Deprecated('use llama_vocab_eos instead')
-@ffi.Native<llama_token Function(ffi.Pointer<llama_vocab>)>()
-external int llama_token_eos(ffi.Pointer<llama_vocab> vocab);
-
-@Deprecated('use llama_vocab_eot instead')
-@ffi.Native<llama_token Function(ffi.Pointer<llama_vocab>)>()
-external int llama_token_eot(ffi.Pointer<llama_vocab> vocab);
-
-@Deprecated('use llama_vocab_fim_mid instead')
-@ffi.Native<llama_token Function(ffi.Pointer<llama_vocab>)>()
-external int llama_token_fim_mid(ffi.Pointer<llama_vocab> vocab);
-
-@Deprecated('use llama_vocab_fim_pad instead')
-@ffi.Native<llama_token Function(ffi.Pointer<llama_vocab>)>()
-external int llama_token_fim_pad(ffi.Pointer<llama_vocab> vocab);
-
-@Deprecated('use llama_vocab_fim_pre instead')
-@ffi.Native<llama_token Function(ffi.Pointer<llama_vocab>)>()
-external int llama_token_fim_pre(ffi.Pointer<llama_vocab> vocab);
-
-@Deprecated('use llama_vocab_fim_rep instead')
-@ffi.Native<llama_token Function(ffi.Pointer<llama_vocab>)>()
-external int llama_token_fim_rep(ffi.Pointer<llama_vocab> vocab);
-
-@Deprecated('use llama_vocab_fim_sep instead')
-@ffi.Native<llama_token Function(ffi.Pointer<llama_vocab>)>()
-external int llama_token_fim_sep(ffi.Pointer<llama_vocab> vocab);
-
-@Deprecated('use llama_vocab_fim_suf instead')
-@ffi.Native<llama_token Function(ffi.Pointer<llama_vocab>)>()
-external int llama_token_fim_suf(ffi.Pointer<llama_vocab> vocab);
-
-@Deprecated('use llama_vocab_get_attr instead')
-@ffi.Native<ffi.UnsignedInt Function(ffi.Pointer<llama_vocab>, llama_token)>(
-  symbol: 'llama_token_get_attr',
-)
-external int _llama_token_get_attr(ffi.Pointer<llama_vocab> vocab, int token);
-
-llama_token_attr llama_token_get_attr(
-  ffi.Pointer<llama_vocab> vocab,
-  Dartllama_token token,
-) {
-  return llama_token_attr.fromValue(_llama_token_get_attr(vocab, token));
-}
-
-@Deprecated('use llama_vocab_get_score instead')
-@ffi.Native<ffi.Float Function(ffi.Pointer<llama_vocab>, llama_token)>()
-external double llama_token_get_score(
-  ffi.Pointer<llama_vocab> vocab,
-  int token,
-);
-
-@Deprecated('use llama_vocab_get_text instead')
-@ffi.Native<
-  ffi.Pointer<ffi.Char> Function(ffi.Pointer<llama_vocab>, llama_token)
->()
-external ffi.Pointer<ffi.Char> llama_token_get_text(
-  ffi.Pointer<llama_vocab> vocab,
-  int token,
-);
-
-@Deprecated('use llama_vocab_is_control instead')
-@ffi.Native<ffi.Bool Function(ffi.Pointer<llama_vocab>, llama_token)>()
-external bool llama_token_is_control(ffi.Pointer<llama_vocab> vocab, int token);
-
-@Deprecated('use llama_vocab_is_eog instead')
-@ffi.Native<ffi.Bool Function(ffi.Pointer<llama_vocab>, llama_token)>()
-external bool llama_token_is_eog(ffi.Pointer<llama_vocab> vocab, int token);
-
-@Deprecated('use llama_vocab_nl instead')
-@ffi.Native<llama_token Function(ffi.Pointer<llama_vocab>)>()
-external int llama_token_nl(ffi.Pointer<llama_vocab> vocab);
-
-@Deprecated('use llama_vocab_pad instead')
-@ffi.Native<llama_token Function(ffi.Pointer<llama_vocab>)>()
-external int llama_token_pad(ffi.Pointer<llama_vocab> vocab);
-
-@Deprecated('use llama_vocab_sep instead')
-@ffi.Native<llama_token Function(ffi.Pointer<llama_vocab>)>()
-external int llama_token_sep(ffi.Pointer<llama_vocab> vocab);
 
 @ffi.Native<
   ffi.Int32 Function(
@@ -8885,10 +8595,6 @@ external ffi.Pointer<ffi.Char> llama_version();
 
 @ffi.Native<llama_token Function(ffi.Pointer<llama_vocab>)>()
 external int llama_vocab_bos(ffi.Pointer<llama_vocab> vocab);
-
-@Deprecated('use llama_vocab_bos instead')
-@ffi.Native<llama_token Function(ffi.Pointer<llama_vocab>)>()
-external int llama_vocab_cls(ffi.Pointer<llama_vocab> vocab);
 
 @ffi.Native<llama_token Function(ffi.Pointer<llama_vocab>)>()
 external int llama_vocab_eos(ffi.Pointer<llama_vocab> vocab);
@@ -9578,6 +9284,32 @@ external bool mtmd_helper_model_can_chat(
   ffi.Pointer<mtmd_context> mctx,
 );
 
+@ffi.Native<ffi.Void Function(ffi.Pointer<mtmd_helper_resampler>)>()
+external void mtmd_helper_resampler_free(
+  ffi.Pointer<mtmd_helper_resampler> ctx,
+);
+
+@ffi.Native<ffi.Pointer<mtmd_helper_resampler> Function(ffi.Int32, ffi.Int32)>()
+external ffi.Pointer<mtmd_helper_resampler> mtmd_helper_resampler_init(
+  int rate_in,
+  int rate_out,
+);
+
+@ffi.Native<
+  ffi.Int64 Function(
+    ffi.Pointer<mtmd_helper_resampler>,
+    ffi.Pointer<ffi.Float>,
+    ffi.Size,
+    ffi.Pointer<ffi.Pointer<ffi.Float>>,
+  )
+>()
+external int mtmd_helper_resampler_process(
+  ffi.Pointer<mtmd_helper_resampler> ctx,
+  ffi.Pointer<ffi.Float> in$,
+  int n_in,
+  ffi.Pointer<ffi.Pointer<ffi.Float>> out,
+);
+
 @Deprecated('use mtmd_helper_get_capabilities() instead')
 @ffi.Native<ffi.Bool Function(ffi.Pointer<mtmd_context>)>()
 external bool mtmd_helper_support_video(ffi.Pointer<mtmd_context> ctx);
@@ -9886,6 +9618,8 @@ const int GGML_ROPE_TYPE_NORMAL = 0;
 const int GGML_ROPE_TYPE_VISION = 24;
 
 const int GGML_TENSOR_SIZE = 336;
+
+const int LLAMA_DART_FIT_MAX_DEVICES = 16;
 
 const int LLAMA_DART_TTS_API_VERSION = 1;
 
@@ -10696,105 +10430,102 @@ enum ggml_op {
   GGML_OP_DUP(1),
   GGML_OP_ADD(2),
   GGML_OP_ADD_ID(3),
-  GGML_OP_ADD1(4),
-  GGML_OP_ACC(5),
-  GGML_OP_SUB(6),
-  GGML_OP_MUL(7),
-  GGML_OP_DIV(8),
-  GGML_OP_SQR(9),
-  GGML_OP_SQRT(10),
-  GGML_OP_LOG(11),
-  GGML_OP_SIN(12),
-  GGML_OP_COS(13),
-  GGML_OP_SUM(14),
-  GGML_OP_SUM_ROWS(15),
-  GGML_OP_CUMSUM(16),
-  GGML_OP_MEAN(17),
-  GGML_OP_ARGMAX(18),
-  GGML_OP_COUNT_EQUAL(19),
-  GGML_OP_REPEAT(20),
-  GGML_OP_REPEAT_BACK(21),
-  GGML_OP_CONCAT(22),
-  GGML_OP_SILU_BACK(23),
-  GGML_OP_NORM(24),
-  GGML_OP_RMS_NORM(25),
-  GGML_OP_RMS_NORM_BACK(26),
-  GGML_OP_GROUP_NORM(27),
-  GGML_OP_L2_NORM(28),
-  GGML_OP_MUL_MAT(29),
-  GGML_OP_MUL_MAT_ID(30),
-  GGML_OP_OUT_PROD(31),
-  GGML_OP_SCALE(32),
-  GGML_OP_SET(33),
-  GGML_OP_CPY(34),
-  GGML_OP_CONT(35),
-  GGML_OP_RESHAPE(36),
-  GGML_OP_VIEW(37),
-  GGML_OP_PERMUTE(38),
-  GGML_OP_TRANSPOSE(39),
-  GGML_OP_GET_ROWS(40),
-  GGML_OP_GET_ROWS_BACK(41),
-  GGML_OP_SET_ROWS(42),
-  GGML_OP_DIAG(43),
-  GGML_OP_DIAG_MASK_INF(44),
-  GGML_OP_DIAG_MASK_ZERO(45),
-  GGML_OP_SOFT_MAX(46),
-  GGML_OP_SOFT_MAX_BACK(47),
-  GGML_OP_ROPE(48),
-  GGML_OP_ROPE_BACK(49),
-  GGML_OP_CLAMP(50),
-  GGML_OP_CONV_TRANSPOSE_1D(51),
-  GGML_OP_IM2COL(52),
-  GGML_OP_IM2COL_BACK(53),
-  GGML_OP_IM2COL_3D(54),
-  GGML_OP_COL2IM_1D(55),
-  GGML_OP_CONV_2D(56),
-  GGML_OP_CONV_3D(57),
-  GGML_OP_CONV_2D_DW(58),
-  GGML_OP_CONV_TRANSPOSE_2D(59),
-  GGML_OP_POOL_1D(60),
-  GGML_OP_POOL_2D(61),
-  GGML_OP_POOL_2D_BACK(62),
-  GGML_OP_UPSCALE(63),
-  GGML_OP_PAD(64),
-  GGML_OP_PAD_REFLECT_1D(65),
-  GGML_OP_ROLL(66),
-  GGML_OP_ARANGE(67),
-  GGML_OP_TIMESTEP_EMBEDDING(68),
-  GGML_OP_ARGSORT(69),
-  GGML_OP_TOP_K(70),
-  GGML_OP_LEAKY_RELU(71),
-  GGML_OP_TRI(72),
-  GGML_OP_FILL(73),
-  GGML_OP_FLASH_ATTN_EXT(74),
-  GGML_OP_FLASH_ATTN_BACK(75),
-  GGML_OP_SSM_CONV(76),
-  GGML_OP_SSM_SCAN(77),
-  GGML_OP_WIN_PART(78),
-  GGML_OP_WIN_UNPART(79),
-  GGML_OP_GET_REL_POS(80),
-  GGML_OP_ADD_REL_POS(81),
-  GGML_OP_RWKV_WKV6(82),
-  GGML_OP_GATED_LINEAR_ATTN(83),
-  GGML_OP_RWKV_WKV7(84),
-  GGML_OP_SOLVE_TRI(85),
-  GGML_OP_GATED_DELTA_NET(86),
-  GGML_OP_LIGHTNING_INDEXER(87),
-  GGML_OP_DSV4_HC_COMB(88),
-  GGML_OP_DSV4_HC_PRE(89),
-  GGML_OP_DSV4_HC_POST(90),
-  GGML_OP_TOP_K_MASK(91),
-  GGML_OP_UNARY(92),
-  GGML_OP_MAP_CUSTOM1(93),
-  GGML_OP_MAP_CUSTOM2(94),
-  GGML_OP_MAP_CUSTOM3(95),
-  GGML_OP_CUSTOM(96),
-  GGML_OP_CROSS_ENTROPY_LOSS(97),
-  GGML_OP_CROSS_ENTROPY_LOSS_BACK(98),
-  GGML_OP_OPT_STEP_ADAMW(99),
-  GGML_OP_OPT_STEP_SGD(100),
-  GGML_OP_GLU(101),
-  GGML_OP_COUNT(102);
+  GGML_OP_ACC(4),
+  GGML_OP_SUB(5),
+  GGML_OP_MUL(6),
+  GGML_OP_DIV(7),
+  GGML_OP_SQR(8),
+  GGML_OP_SQRT(9),
+  GGML_OP_LOG(10),
+  GGML_OP_SIN(11),
+  GGML_OP_COS(12),
+  GGML_OP_SUM(13),
+  GGML_OP_SUM_ROWS(14),
+  GGML_OP_CUMSUM(15),
+  GGML_OP_MEAN(16),
+  GGML_OP_ARGMAX(17),
+  GGML_OP_COUNT_EQUAL(18),
+  GGML_OP_REPEAT(19),
+  GGML_OP_REPEAT_BACK(20),
+  GGML_OP_CONCAT(21),
+  GGML_OP_SILU_BACK(22),
+  GGML_OP_NORM(23),
+  GGML_OP_RMS_NORM(24),
+  GGML_OP_RMS_NORM_BACK(25),
+  GGML_OP_GROUP_NORM(26),
+  GGML_OP_L2_NORM(27),
+  GGML_OP_MUL_MAT(28),
+  GGML_OP_MUL_MAT_ID(29),
+  GGML_OP_OUT_PROD(30),
+  GGML_OP_SCALE(31),
+  GGML_OP_SET(32),
+  GGML_OP_CPY(33),
+  GGML_OP_CONT(34),
+  GGML_OP_RESHAPE(35),
+  GGML_OP_VIEW(36),
+  GGML_OP_PERMUTE(37),
+  GGML_OP_TRANSPOSE(38),
+  GGML_OP_GET_ROWS(39),
+  GGML_OP_GET_ROWS_BACK(40),
+  GGML_OP_SET_ROWS(41),
+  GGML_OP_DIAG(42),
+  GGML_OP_SOFT_MAX(43),
+  GGML_OP_SOFT_MAX_BACK(44),
+  GGML_OP_ROPE(45),
+  GGML_OP_ROPE_BACK(46),
+  GGML_OP_CLAMP(47),
+  GGML_OP_CONV_TRANSPOSE_1D(48),
+  GGML_OP_IM2COL(49),
+  GGML_OP_IM2COL_BACK(50),
+  GGML_OP_IM2COL_3D(51),
+  GGML_OP_COL2IM_1D(52),
+  GGML_OP_CONV_2D(53),
+  GGML_OP_CONV_3D(54),
+  GGML_OP_CONV_2D_DW(55),
+  GGML_OP_CONV_TRANSPOSE_2D(56),
+  GGML_OP_POOL_1D(57),
+  GGML_OP_POOL_2D(58),
+  GGML_OP_POOL_2D_BACK(59),
+  GGML_OP_UPSCALE(60),
+  GGML_OP_PAD(61),
+  GGML_OP_PAD_REFLECT_1D(62),
+  GGML_OP_ROLL(63),
+  GGML_OP_ARANGE(64),
+  GGML_OP_TIMESTEP_EMBEDDING(65),
+  GGML_OP_ARGSORT(66),
+  GGML_OP_TOP_K(67),
+  GGML_OP_LEAKY_RELU(68),
+  GGML_OP_TRI(69),
+  GGML_OP_FILL(70),
+  GGML_OP_FLASH_ATTN_EXT(71),
+  GGML_OP_FLASH_ATTN_BACK(72),
+  GGML_OP_SSM_CONV(73),
+  GGML_OP_SSM_SCAN(74),
+  GGML_OP_WIN_PART(75),
+  GGML_OP_WIN_UNPART(76),
+  GGML_OP_GET_REL_POS(77),
+  GGML_OP_ADD_REL_POS(78),
+  GGML_OP_RWKV_WKV6(79),
+  GGML_OP_GATED_LINEAR_ATTN(80),
+  GGML_OP_RWKV_WKV7(81),
+  GGML_OP_SOLVE_TRI(82),
+  GGML_OP_GATED_DELTA_NET(83),
+  GGML_OP_LIGHTNING_INDEXER(84),
+  GGML_OP_DSV4_HC_COMB(85),
+  GGML_OP_DSV4_HC_PRE(86),
+  GGML_OP_DSV4_HC_POST(87),
+  GGML_OP_TOP_K_MASK(88),
+  GGML_OP_UNARY(89),
+  GGML_OP_MAP_CUSTOM1(90),
+  GGML_OP_MAP_CUSTOM2(91),
+  GGML_OP_MAP_CUSTOM3(92),
+  GGML_OP_CUSTOM(93),
+  GGML_OP_CROSS_ENTROPY_LOSS(94),
+  GGML_OP_CROSS_ENTROPY_LOSS_BACK(95),
+  GGML_OP_OPT_STEP_ADAMW(96),
+  GGML_OP_OPT_STEP_SGD(97),
+  GGML_OP_GLU(98),
+  GGML_OP_COUNT(99);
 
   final int value;
   const ggml_op(this.value);
@@ -10804,105 +10535,102 @@ enum ggml_op {
     1 => GGML_OP_DUP,
     2 => GGML_OP_ADD,
     3 => GGML_OP_ADD_ID,
-    4 => GGML_OP_ADD1,
-    5 => GGML_OP_ACC,
-    6 => GGML_OP_SUB,
-    7 => GGML_OP_MUL,
-    8 => GGML_OP_DIV,
-    9 => GGML_OP_SQR,
-    10 => GGML_OP_SQRT,
-    11 => GGML_OP_LOG,
-    12 => GGML_OP_SIN,
-    13 => GGML_OP_COS,
-    14 => GGML_OP_SUM,
-    15 => GGML_OP_SUM_ROWS,
-    16 => GGML_OP_CUMSUM,
-    17 => GGML_OP_MEAN,
-    18 => GGML_OP_ARGMAX,
-    19 => GGML_OP_COUNT_EQUAL,
-    20 => GGML_OP_REPEAT,
-    21 => GGML_OP_REPEAT_BACK,
-    22 => GGML_OP_CONCAT,
-    23 => GGML_OP_SILU_BACK,
-    24 => GGML_OP_NORM,
-    25 => GGML_OP_RMS_NORM,
-    26 => GGML_OP_RMS_NORM_BACK,
-    27 => GGML_OP_GROUP_NORM,
-    28 => GGML_OP_L2_NORM,
-    29 => GGML_OP_MUL_MAT,
-    30 => GGML_OP_MUL_MAT_ID,
-    31 => GGML_OP_OUT_PROD,
-    32 => GGML_OP_SCALE,
-    33 => GGML_OP_SET,
-    34 => GGML_OP_CPY,
-    35 => GGML_OP_CONT,
-    36 => GGML_OP_RESHAPE,
-    37 => GGML_OP_VIEW,
-    38 => GGML_OP_PERMUTE,
-    39 => GGML_OP_TRANSPOSE,
-    40 => GGML_OP_GET_ROWS,
-    41 => GGML_OP_GET_ROWS_BACK,
-    42 => GGML_OP_SET_ROWS,
-    43 => GGML_OP_DIAG,
-    44 => GGML_OP_DIAG_MASK_INF,
-    45 => GGML_OP_DIAG_MASK_ZERO,
-    46 => GGML_OP_SOFT_MAX,
-    47 => GGML_OP_SOFT_MAX_BACK,
-    48 => GGML_OP_ROPE,
-    49 => GGML_OP_ROPE_BACK,
-    50 => GGML_OP_CLAMP,
-    51 => GGML_OP_CONV_TRANSPOSE_1D,
-    52 => GGML_OP_IM2COL,
-    53 => GGML_OP_IM2COL_BACK,
-    54 => GGML_OP_IM2COL_3D,
-    55 => GGML_OP_COL2IM_1D,
-    56 => GGML_OP_CONV_2D,
-    57 => GGML_OP_CONV_3D,
-    58 => GGML_OP_CONV_2D_DW,
-    59 => GGML_OP_CONV_TRANSPOSE_2D,
-    60 => GGML_OP_POOL_1D,
-    61 => GGML_OP_POOL_2D,
-    62 => GGML_OP_POOL_2D_BACK,
-    63 => GGML_OP_UPSCALE,
-    64 => GGML_OP_PAD,
-    65 => GGML_OP_PAD_REFLECT_1D,
-    66 => GGML_OP_ROLL,
-    67 => GGML_OP_ARANGE,
-    68 => GGML_OP_TIMESTEP_EMBEDDING,
-    69 => GGML_OP_ARGSORT,
-    70 => GGML_OP_TOP_K,
-    71 => GGML_OP_LEAKY_RELU,
-    72 => GGML_OP_TRI,
-    73 => GGML_OP_FILL,
-    74 => GGML_OP_FLASH_ATTN_EXT,
-    75 => GGML_OP_FLASH_ATTN_BACK,
-    76 => GGML_OP_SSM_CONV,
-    77 => GGML_OP_SSM_SCAN,
-    78 => GGML_OP_WIN_PART,
-    79 => GGML_OP_WIN_UNPART,
-    80 => GGML_OP_GET_REL_POS,
-    81 => GGML_OP_ADD_REL_POS,
-    82 => GGML_OP_RWKV_WKV6,
-    83 => GGML_OP_GATED_LINEAR_ATTN,
-    84 => GGML_OP_RWKV_WKV7,
-    85 => GGML_OP_SOLVE_TRI,
-    86 => GGML_OP_GATED_DELTA_NET,
-    87 => GGML_OP_LIGHTNING_INDEXER,
-    88 => GGML_OP_DSV4_HC_COMB,
-    89 => GGML_OP_DSV4_HC_PRE,
-    90 => GGML_OP_DSV4_HC_POST,
-    91 => GGML_OP_TOP_K_MASK,
-    92 => GGML_OP_UNARY,
-    93 => GGML_OP_MAP_CUSTOM1,
-    94 => GGML_OP_MAP_CUSTOM2,
-    95 => GGML_OP_MAP_CUSTOM3,
-    96 => GGML_OP_CUSTOM,
-    97 => GGML_OP_CROSS_ENTROPY_LOSS,
-    98 => GGML_OP_CROSS_ENTROPY_LOSS_BACK,
-    99 => GGML_OP_OPT_STEP_ADAMW,
-    100 => GGML_OP_OPT_STEP_SGD,
-    101 => GGML_OP_GLU,
-    102 => GGML_OP_COUNT,
+    4 => GGML_OP_ACC,
+    5 => GGML_OP_SUB,
+    6 => GGML_OP_MUL,
+    7 => GGML_OP_DIV,
+    8 => GGML_OP_SQR,
+    9 => GGML_OP_SQRT,
+    10 => GGML_OP_LOG,
+    11 => GGML_OP_SIN,
+    12 => GGML_OP_COS,
+    13 => GGML_OP_SUM,
+    14 => GGML_OP_SUM_ROWS,
+    15 => GGML_OP_CUMSUM,
+    16 => GGML_OP_MEAN,
+    17 => GGML_OP_ARGMAX,
+    18 => GGML_OP_COUNT_EQUAL,
+    19 => GGML_OP_REPEAT,
+    20 => GGML_OP_REPEAT_BACK,
+    21 => GGML_OP_CONCAT,
+    22 => GGML_OP_SILU_BACK,
+    23 => GGML_OP_NORM,
+    24 => GGML_OP_RMS_NORM,
+    25 => GGML_OP_RMS_NORM_BACK,
+    26 => GGML_OP_GROUP_NORM,
+    27 => GGML_OP_L2_NORM,
+    28 => GGML_OP_MUL_MAT,
+    29 => GGML_OP_MUL_MAT_ID,
+    30 => GGML_OP_OUT_PROD,
+    31 => GGML_OP_SCALE,
+    32 => GGML_OP_SET,
+    33 => GGML_OP_CPY,
+    34 => GGML_OP_CONT,
+    35 => GGML_OP_RESHAPE,
+    36 => GGML_OP_VIEW,
+    37 => GGML_OP_PERMUTE,
+    38 => GGML_OP_TRANSPOSE,
+    39 => GGML_OP_GET_ROWS,
+    40 => GGML_OP_GET_ROWS_BACK,
+    41 => GGML_OP_SET_ROWS,
+    42 => GGML_OP_DIAG,
+    43 => GGML_OP_SOFT_MAX,
+    44 => GGML_OP_SOFT_MAX_BACK,
+    45 => GGML_OP_ROPE,
+    46 => GGML_OP_ROPE_BACK,
+    47 => GGML_OP_CLAMP,
+    48 => GGML_OP_CONV_TRANSPOSE_1D,
+    49 => GGML_OP_IM2COL,
+    50 => GGML_OP_IM2COL_BACK,
+    51 => GGML_OP_IM2COL_3D,
+    52 => GGML_OP_COL2IM_1D,
+    53 => GGML_OP_CONV_2D,
+    54 => GGML_OP_CONV_3D,
+    55 => GGML_OP_CONV_2D_DW,
+    56 => GGML_OP_CONV_TRANSPOSE_2D,
+    57 => GGML_OP_POOL_1D,
+    58 => GGML_OP_POOL_2D,
+    59 => GGML_OP_POOL_2D_BACK,
+    60 => GGML_OP_UPSCALE,
+    61 => GGML_OP_PAD,
+    62 => GGML_OP_PAD_REFLECT_1D,
+    63 => GGML_OP_ROLL,
+    64 => GGML_OP_ARANGE,
+    65 => GGML_OP_TIMESTEP_EMBEDDING,
+    66 => GGML_OP_ARGSORT,
+    67 => GGML_OP_TOP_K,
+    68 => GGML_OP_LEAKY_RELU,
+    69 => GGML_OP_TRI,
+    70 => GGML_OP_FILL,
+    71 => GGML_OP_FLASH_ATTN_EXT,
+    72 => GGML_OP_FLASH_ATTN_BACK,
+    73 => GGML_OP_SSM_CONV,
+    74 => GGML_OP_SSM_SCAN,
+    75 => GGML_OP_WIN_PART,
+    76 => GGML_OP_WIN_UNPART,
+    77 => GGML_OP_GET_REL_POS,
+    78 => GGML_OP_ADD_REL_POS,
+    79 => GGML_OP_RWKV_WKV6,
+    80 => GGML_OP_GATED_LINEAR_ATTN,
+    81 => GGML_OP_RWKV_WKV7,
+    82 => GGML_OP_SOLVE_TRI,
+    83 => GGML_OP_GATED_DELTA_NET,
+    84 => GGML_OP_LIGHTNING_INDEXER,
+    85 => GGML_OP_DSV4_HC_COMB,
+    86 => GGML_OP_DSV4_HC_PRE,
+    87 => GGML_OP_DSV4_HC_POST,
+    88 => GGML_OP_TOP_K_MASK,
+    89 => GGML_OP_UNARY,
+    90 => GGML_OP_MAP_CUSTOM1,
+    91 => GGML_OP_MAP_CUSTOM2,
+    92 => GGML_OP_MAP_CUSTOM3,
+    93 => GGML_OP_CUSTOM,
+    94 => GGML_OP_CROSS_ENTROPY_LOSS,
+    95 => GGML_OP_CROSS_ENTROPY_LOSS_BACK,
+    96 => GGML_OP_OPT_STEP_ADAMW,
+    97 => GGML_OP_OPT_STEP_SGD,
+    98 => GGML_OP_GLU,
+    99 => GGML_OP_COUNT,
     _ => throw ArgumentError('Unknown value for ggml_op: $value'),
   };
 }
@@ -11007,8 +10735,6 @@ enum ggml_prec {
   GGML_PREC_Q8(30),
   GGML_PREC_Q4(40);
 
-  static const GGML_PREC_DEFAULT = GGML_PREC_UNDEFINED;
-
   final int value;
   const ggml_prec(this.value);
 
@@ -11021,13 +10747,6 @@ enum ggml_prec {
     40 => GGML_PREC_Q4,
     _ => throw ArgumentError('Unknown value for ggml_prec: $value'),
   };
-
-  @override
-  String toString() {
-    if (this == GGML_PREC_UNDEFINED)
-      return "ggml_prec.GGML_PREC_UNDEFINED, ggml_prec.GGML_PREC_DEFAULT";
-    return super.toString();
-  }
 }
 
 enum ggml_scale_flag {
@@ -11573,9 +11292,6 @@ final class llama_context_params extends ffi.Struct {
   @ffi.Uint32()
   external int yarn_orig_ctx;
 
-  @ffi.Float()
-  external double defrag_thold;
-
   external ggml_backend_sched_eval_callback cb_eval;
 
   external ffi.Pointer<ffi.Void> cb_eval_user_data;
@@ -11594,6 +11310,9 @@ final class llama_context_params extends ffi.Struct {
 
   @ffi.Size()
   external int moe_cache_size;
+
+  @ffi.Float()
+  external double moe_cache_cpu_share;
 
   external ggml_abort_callback abort_callback;
 
@@ -11647,12 +11366,12 @@ final class llama_context_params extends ffi.Struct {
     required double yarn_beta_fast,
     required double yarn_beta_slow,
     required int yarn_orig_ctx,
-    required double defrag_thold,
     required ggml_backend_sched_eval_callback cb_eval,
     required ffi.Pointer<ffi.Void> cb_eval_user_data,
     required ggml_type type_k,
     required ggml_type type_v,
     required int moe_cache_size,
+    required double moe_cache_cpu_share,
     required ggml_abort_callback abort_callback,
     required ffi.Pointer<ffi.Void> abort_callback_data,
     required bool embeddings,
@@ -11686,12 +11405,12 @@ final class llama_context_params extends ffi.Struct {
     ..ref.yarn_beta_fast = yarn_beta_fast
     ..ref.yarn_beta_slow = yarn_beta_slow
     ..ref.yarn_orig_ctx = yarn_orig_ctx
-    ..ref.defrag_thold = defrag_thold
     ..ref.cb_eval = cb_eval
     ..ref.cb_eval_user_data = cb_eval_user_data
     ..ref.type_k = type_k
     ..ref.type_v = type_v
     ..ref.moe_cache_size = moe_cache_size
+    ..ref.moe_cache_cpu_share = moe_cache_cpu_share
     ..ref.abort_callback = abort_callback
     ..ref.abort_callback_data = abort_callback_data
     ..ref.embeddings = embeddings
@@ -11738,6 +11457,61 @@ enum llama_dart_exit_stage {
     4 => LLAMA_DART_EXIT_STAGE_BACKEND,
     5 => LLAMA_DART_EXIT_STAGE_MODEL,
     _ => throw ArgumentError('Unknown value for llama_dart_exit_stage: $value'),
+  };
+}
+
+final class llama_dart_fit_device extends ffi.Struct {
+  @ffi.Array.multi([64])
+  external ffi.Array<ffi.Char> name;
+
+  @ffi.Int64()
+  external int total_bytes;
+
+  @ffi.Int64()
+  external int free_bytes;
+
+  @ffi.Uint64()
+  external int model_bytes;
+
+  @ffi.Uint64()
+  external int context_bytes;
+
+  @ffi.Uint64()
+  external int compute_bytes;
+}
+
+final class llama_dart_fit_report extends ffi.Struct {
+  @ffi.Uint32()
+  external int n_devices;
+
+  @ffi.Uint32()
+  external int n_layers;
+
+  @ffi.Uint32()
+  external int n_ctx_train;
+
+  @ffi.Uint32()
+  external int n_layers_skipped;
+
+  @ffi.Array.multi([16])
+  external ffi.Array<llama_dart_fit_device> devices;
+
+  external llama_dart_fit_device host;
+}
+
+enum llama_dart_fit_status {
+  LLAMA_DART_FIT_STATUS_SUCCESS(0),
+  LLAMA_DART_FIT_STATUS_FAILURE(1),
+  LLAMA_DART_FIT_STATUS_ERROR(2);
+
+  final int value;
+  const llama_dart_fit_status(this.value);
+
+  static llama_dart_fit_status fromValue(int value) => switch (value) {
+    0 => LLAMA_DART_FIT_STATUS_SUCCESS,
+    1 => LLAMA_DART_FIT_STATUS_FAILURE,
+    2 => LLAMA_DART_FIT_STATUS_ERROR,
+    _ => throw ArgumentError('Unknown value for llama_dart_fit_status: $value'),
   };
 }
 
@@ -13533,7 +13307,8 @@ enum mtmd_gen_audio_type {
   MTMD_GEN_AUDIO_TYPE_POCKETTTS(2),
   MTMD_GEN_AUDIO_TYPE_SOPRANO(3),
   MTMD_GEN_AUDIO_TYPE_LFM3A(4),
-  MTMD_GEN_AUDIO_TYPE_CHATTERBOX(5);
+  MTMD_GEN_AUDIO_TYPE_CHATTERBOX(5),
+  MTMD_GEN_AUDIO_TYPE_DRAMA3(6);
 
   final int value;
   const mtmd_gen_audio_type(this.value);
@@ -13545,6 +13320,7 @@ enum mtmd_gen_audio_type {
     3 => MTMD_GEN_AUDIO_TYPE_SOPRANO,
     4 => MTMD_GEN_AUDIO_TYPE_LFM3A,
     5 => MTMD_GEN_AUDIO_TYPE_CHATTERBOX,
+    6 => MTMD_GEN_AUDIO_TYPE_DRAMA3,
     _ => throw ArgumentError('Unknown value for mtmd_gen_audio_type: $value'),
   };
 }
@@ -13812,6 +13588,9 @@ final class mtmd_helper_gen_audio_inp extends ffi.Struct {
   @ffi.Float()
   external double top_p;
 
+  @ffi.Float()
+  external double temp;
+
   @ffi.Uint32()
   external int seed;
 
@@ -13835,6 +13614,7 @@ final class mtmd_helper_gen_audio_inp extends ffi.Struct {
     required ffi.Pointer<ffi.Char> lang,
     required int top_k,
     required double top_p,
+    required double temp,
     required int seed,
     required mtmd_helper_gen_audio_outtype out_type,
   }) => $allocator<mtmd_helper_gen_audio_inp>()
@@ -13848,6 +13628,7 @@ final class mtmd_helper_gen_audio_inp extends ffi.Struct {
     ..ref.lang = lang
     ..ref.top_k = top_k
     ..ref.top_p = top_p
+    ..ref.temp = temp
     ..ref.seed = seed
     ..ref.out_type = out_type;
 }
@@ -13904,6 +13685,8 @@ typedef Dartmtmd_helper_post_decode_callbackFunction =
       ffi.Pointer<mtmd_helper_embd_batch> batch,
       ffi.Pointer<ffi.Void> user_data,
     );
+
+final class mtmd_helper_resampler extends ffi.Opaque {}
 
 final class mtmd_helper_video extends ffi.Opaque {}
 

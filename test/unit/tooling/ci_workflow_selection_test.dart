@@ -732,7 +732,7 @@ for event,mode,oldflag,owner,attempt,cancel,good,main in itertools.product(('pus
         },
         'native_default_expected_native_tag': {
           'description':
-              'Verify checked-in v0.8.0-2, v0.8.0-3 or v0.9.0 pin; never override it',
+              'Verify checked-in v0.8.0-2, v0.8.0-3, v0.9.0 or v1.0.0 pin; never override it',
           'type': 'string',
           'required': false,
           'default': '',

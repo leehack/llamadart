@@ -162,12 +162,13 @@ const params = LlamaCppModelParams(
   Android share memory between CPU and GPU, so a load there is not fitted and
   the report says it was skipped. The Web and LiteRT-LM throw
   `LlamaUnsupportedException`, as does a llama.cpp runtime that does not export
-  `llama_dart_fit_params`. `validate()` rejects `gpuLayers` other than
+  `llama_dart_fit_params` (`llamadart-native` v1.0.0 or later). `validate()` rejects `gpuLayers` other than
   `maxGpuLayers`, `tensorSplit`, `ModelSplitMode.row`, `ModelSplitMode.tensor`
   and `cpuMoeLayers`, which the fit owns. The fit counts the model and its main
   context, not a projector, LoRA adapters or a draft model, so raise
   `marginBytes` for them; free memory can also change between the fit and the
-  load. Not yet validated on NVIDIA or Windows hardware.
+  load. Validated at the native level on Linux with an NVIDIA L4 (Vulkan and
+  CUDA); Windows is pending.
 
 ```dart
 const params = LlamaCppModelParams(

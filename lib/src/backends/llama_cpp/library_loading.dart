@@ -227,6 +227,10 @@ class _SpeculativeApi {
   });
 
   factory _SpeculativeApi.direct() {
+    requireAdmittedPrimaryRuntime(
+      isWindows: false,
+      capability: 'Speculative decoding',
+    );
     final api = _SpeculativeApi(
       init: llama_dart_speculative_init,
       free: llama_dart_speculative_free,
@@ -246,6 +250,10 @@ class _SpeculativeApi {
   }
 
   factory _SpeculativeApi.windowsAsset() {
+    requireAdmittedPrimaryRuntime(
+      isWindows: true,
+      capability: 'Speculative decoding',
+    );
     final api = _SpeculativeApi(
       init: _llamadartWrapperSpeculativeInit,
       free: _llamadartWrapperSpeculativeFree,
@@ -297,6 +305,7 @@ class _SpeculativeApi {
   }
 
   static _SpeculativeApi? tryLoad(DynamicLibrary library) {
+    requireAdmittedLibrary(library, capability: 'Speculative decoding');
     try {
       return _SpeculativeApi(
         init: library
@@ -456,10 +465,15 @@ class _MtmdApi {
     DynamicLibrary library, {
     bool loadChunkEval = true,
   }) {
+    requireAdmittedLibrary(
+      library,
+      capability: 'Multimodal input',
+      identityOptional: true,
+    );
     try {
       _MtmdLogSetDart? logSet;
       _MtmdLogSetDart? helperLogSet;
-      _MtmdSupportVideoDart supportsVideo = (_) => false;
+      _MtmdSupportVideoDart supportsVideo = (_, _) => false;
       try {
         logSet = library.lookupFunction<_MtmdLogSetNative, _MtmdLogSetDart>(
           'mtmd_log_set',
@@ -472,10 +486,15 @@ class _MtmdApi {
             );
       } catch (_) {}
       try {
-        supportsVideo = library
-            .lookupFunction<_MtmdSupportVideoNative, _MtmdSupportVideoDart>(
-              'mtmd_helper_support_video',
-            );
+        final capabilities = library
+            .lookupFunction<
+              _MtmdHelperCapabilitiesNative,
+              mtmd_helper_cap Function(
+                Pointer<llama_model>,
+                Pointer<mtmd_context>,
+              )
+            >('mtmd_helper_get_capabilities');
+        supportsVideo = (model, context) => capabilities(model, context).video;
       } catch (_) {}
 
       return _MtmdApi(

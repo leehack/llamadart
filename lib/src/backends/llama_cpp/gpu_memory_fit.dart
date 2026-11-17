@@ -78,6 +78,7 @@ final class GpuMemoryFitNativeResult {
     required this.status,
     this.error,
     this.offloadableLayers = 0,
+    this.skippedLayers = 0,
     this.trainedContextSize = 0,
     this.devices = const [],
   });
@@ -88,8 +89,17 @@ final class GpuMemoryFitNativeResult {
   /// The native error message of a status other than success.
   final String? error;
 
-  /// Offloadable layers of the model, the output layer excluded.
+  /// Offloadable layers of the model, the output layer and the skipped layers
+  /// excluded.
   final int offloadableLayers;
+
+  /// Layers llama.cpp counts for offload but never runs in the main graph,
+  /// such as NextN/MTP layers.
+  final int skippedLayers;
+
+  /// The `n_gpu_layers` that offloads everything: every layer, the skipped
+  /// ones and the output layer.
+  int get modelLayers => offloadableLayers + skippedLayers + 1;
 
   /// The context size the model was trained with.
   final int trainedContextSize;
@@ -101,13 +111,6 @@ final class GpuMemoryFitNativeResult {
 /// Runs llama.cpp's fit on [request].
 typedef GpuMemoryFitRunner =
     GpuMemoryFitNativeResult Function(GpuMemoryFitRequest request);
-
-/// The runner for the loaded runtime's `llama_dart_fit_params`, or `null` when
-/// the runtime does not export it.
-///
-/// The export ships with a `llamadart-native` release newer than the current
-/// pin, and its bindings arrive with that pin, so no runtime has it yet.
-GpuMemoryFitRunner? resolveNativeGpuMemoryFitRunner() => null;
 
 /// Why a load is not fitted, or `null` when it is.
 String? gpuMemoryFitSkipReason({

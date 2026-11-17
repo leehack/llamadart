@@ -80,7 +80,7 @@ interface does not establish backend/model support; read `await engine.capabilit
   token they receive, even though disposal no longer waits for their work.
 - Await `dispose()` before host shutdown. Killing a worker is not cooperative
   cancellation. Reclaiming models/contexts created during a forced kill needs
-  owner API v1, supplied by the pinned `v0.9.0` runtime. Custom runtimes
+  owner API v1, supplied by the pinned `v1.0.0` runtime. Custom runtimes
   without it retain that gap. Other raw allocations have separate limits.
 - `LlamaBackend()` routes by model format: LiteRT-LM bundles run on LiteRT-LM
   and GGUF on llama.cpp. Native targets read the file header, so extensionless
@@ -366,8 +366,8 @@ Fit a native llama.cpp GPU load to the free device memory on Linux and Windows
 (opt-in; macOS, iOS and Android report it skipped). Only the layers that fit
 are offloaded; with no fit, `ComputeDevice.auto` loads on the CPU and
 `ComputeDevice.gpu` throws `LlamaGpuMemoryFitException`. It needs a runtime
-that exports `llama_dart_fit_params`, and is not yet validated on NVIDIA or
-Windows hardware:
+from `llamadart-native` v1.0.0 or later; validated at the native level on a
+Linux NVIDIA L4 (Vulkan and CUDA), Windows pending:
 
 ```dart
 import 'package:llamadart/llamadart.dart';

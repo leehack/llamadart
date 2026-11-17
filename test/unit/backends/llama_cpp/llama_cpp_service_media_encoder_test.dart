@@ -73,7 +73,12 @@ void main() {
   late FakeMtmd fake;
   late int context;
 
-  void attach({required bool vision, required bool audio, Abi? abi}) {
+  void attach({
+    required bool vision,
+    required bool audio,
+    bool video = false,
+    Abi? abi,
+  }) {
     dir = Directory.systemTemp.createTempSync('llamadart_media_encoder_');
     addTearDown(() => dir.deleteSync(recursive: true));
     final modelPath = writeSyntheticLlamaGguf('${dir.path}/model.gguf').path;
@@ -87,6 +92,7 @@ void main() {
       tokens: service.tokenize(model, 'ab', true),
       vision: vision,
       audio: audio,
+      video: video,
     );
     addTearDown(fake.dispose);
     addTearDown(service.dispose);
@@ -171,6 +177,23 @@ void main() {
         );
       });
     }
+  });
+
+  test('probes video capability with the projector model', () async {
+    attach(vision: true, audio: false, video: true);
+
+    await expectLater(
+      send([LlamaVideoContent(path: '/tmp/clip.mp4')]),
+      throwsA(
+        isA<LlamaUnsupportedException>().having(
+          (e) => e.message,
+          'message',
+          contains('frame-ingestion'),
+        ),
+      ),
+    );
+    expect(fake.videoProbeModels, fake.projectorModels);
+    expect(fake.videoProbeModels, hasLength(1));
   });
 
   group('a projector with a vision encoder only', () {

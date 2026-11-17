@@ -13,13 +13,17 @@ validate against the exact release tag notes.
 
 ## Unreleased
 
+- Adopt native llama.cpp `v1.0.0` (llama.cpp `b1b770d9`) with regenerated bindings; it keeps the `v0.9.0` ARM FP16 fixes. The video capability probe uses `mtmd_helper_get_capabilities`, the replacement for the deprecated `mtmd_helper_support_video`.
+
+- Refuse a native llama.cpp runtime that was not built from llama.cpp `v1.0.0` with `LlamaUnsupportedException`, before the first call that passes a llama.cpp struct by value. A `llamadart_native_tag` or `llamadart_native_path` override to any other llama.cpp release no longer loads.
+
 - Restore native text-to-speech discovery when Dart bundles its runtime outside the working directory.
 
 - Avoid initializing unavailable Linux Vulkan backends during llama.cpp automatic loading and device probes, while retaining other bundled backends.
 
 - Add an opt-in Linux Vulkan loader preflight for native hosts.
 - Speed up model checksum verification on Apple platforms and keep verification off the UI isolate.
-- Add opt-in `ModelParams.gpuMemoryFit`: Linux and Windows llama.cpp GPU loads offload only the layers that fit free GPU memory, or load on the CPU, and report the result through `LlamaEngine.getGpuMemoryFitReport()`. It needs a `llamadart-native` runtime that exports `llama_dart_fit_params` ([#2034](https://github.com/leehack/llamadart/issues/2034)).
+- Add opt-in `ModelParams.gpuMemoryFit`: Linux and Windows llama.cpp GPU loads offload only the layers that fit free GPU memory, or load on the CPU, and report the result through `LlamaEngine.getGpuMemoryFitReport()`. It needs `llamadart-native` v1.0.0 or later ([#2034](https://github.com/leehack/llamadart/issues/2034)).
 
 ## 0.19.11
 
