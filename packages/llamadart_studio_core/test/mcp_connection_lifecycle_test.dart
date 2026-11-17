@@ -1,15 +1,15 @@
-import 'dart:async';
-
 import 'package:llamadart_studio_core/llamadart_studio_core.dart';
 import 'package:mcp_dart/mcp_dart.dart';
 import 'package:test/test.dart';
+
+import 'support/loopback_mcp_transport.dart';
 
 void main() {
   test(
     'discovery cannot restore a server or tool disabled while connecting',
     () async {
-      final clientTransport = _LoopbackTransport();
-      final serverTransport = _LoopbackTransport(gateToolDiscovery: true);
+      final clientTransport = LoopbackMcpTransport();
+      final serverTransport = LoopbackMcpTransport(gateToolDiscovery: true);
       clientTransport.peer = serverTransport;
       serverTransport.peer = clientTransport;
       final server = McpServer(
@@ -48,43 +48,4 @@ void main() {
       expect(manager.state.activeTools, isEmpty);
     },
   );
-}
-
-class _LoopbackTransport implements Transport {
-  _LoopbackTransport({this.gateToolDiscovery = false});
-
-  final bool gateToolDiscovery;
-  final discoveryEntered = Completer<void>();
-  final discoveryRelease = Completer<void>();
-  late _LoopbackTransport peer;
-  bool closed = false;
-
-  @override
-  void Function()? onclose;
-  @override
-  void Function(Error)? onerror;
-  @override
-  void Function(JsonRpcMessage)? onmessage;
-  @override
-  String? get sessionId => null;
-
-  @override
-  Future<void> start() async {}
-
-  @override
-  Future<void> send(JsonRpcMessage message, {int? relatedRequestId}) async {
-    final result = message.toJson()['result'];
-    if (gateToolDiscovery && result is Map && result.containsKey('tools')) {
-      discoveryEntered.complete();
-      await discoveryRelease.future;
-    }
-    if (!closed && !peer.closed) peer.onmessage?.call(message);
-  }
-
-  @override
-  Future<void> close() async {
-    if (closed) return;
-    closed = true;
-    onclose?.call();
-  }
 }

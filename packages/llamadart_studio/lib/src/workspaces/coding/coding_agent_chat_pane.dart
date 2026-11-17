@@ -501,6 +501,13 @@ class _CodingMessageCard extends StatelessWidget {
                                 ),
                               ),
                             ),
+                          ],
+                        ),
+                        Wrap(
+                          spacing: 6,
+                          runSpacing: 4,
+                          crossAxisAlignment: WrapCrossAlignment.center,
+                          children: <Widget>[
                             if (matchedChange != null &&
                                 matchedChange.reverted) ...<Widget>[
                               const SizedBox(width: 6),
@@ -549,6 +556,47 @@ class _CodingMessageCard extends StatelessWidget {
                             ],
                           ],
                         ),
+                        if (!call.isRunning)
+                          Material(
+                            type: MaterialType.transparency,
+                            child: ExpansionTile(
+                              key: ValueKey('coding_tool_details_${call.id}'),
+                              dense: true,
+                              tilePadding: EdgeInsets.zero,
+                              title: Text(
+                                call.isError
+                                    ? 'Failed · Details'
+                                    : 'Completed · Details',
+                                style: TextStyle(
+                                  fontSize: 11.5,
+                                  color: call.isError
+                                      ? palette.danger
+                                      : palette.textSecondary,
+                                ),
+                              ),
+                              children: <Widget>[
+                                ConstrainedBox(
+                                  constraints: const BoxConstraints(
+                                    maxHeight: 240,
+                                  ),
+                                  child: SingleChildScrollView(
+                                    child: Align(
+                                      alignment: Alignment.centerLeft,
+                                      child: StudioSelectableText(
+                                        'Arguments: ${call.argumentsJson}\n\nResult: ${call.resultJson ?? '(no result)'}',
+                                        style: TextStyle(
+                                          fontSize: 11.5,
+                                          color: palette.textPrimary,
+                                          fontFamilyFallback:
+                                              StudioTheme.monoFontFallback,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
                         if (diffText.isNotEmpty) ...<Widget>[
                           const SizedBox(height: 6),
                           Container(

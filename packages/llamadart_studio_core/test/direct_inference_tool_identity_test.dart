@@ -3,9 +3,11 @@ import 'dart:io';
 
 import 'package:llamadart/llamadart.dart';
 import 'package:llamadart_studio_core/llamadart_studio_core.dart';
+import 'package:mcp_dart/mcp_dart.dart' as mcp;
 import 'package:test/test.dart';
 
 import 'studio_test_fakes.dart';
+import 'support/loopback_mcp_transport.dart';
 
 const _settings = StudioSettings(thinkingEnabled: false, toolsEnabled: true);
 const _read = '<|tool_call>call:read{"path":"release.txt"}<tool_call|>';
@@ -44,6 +46,158 @@ void main() {
     await port.dispose();
     await directory.delete(recursive: true);
   });
+
+  for (final mode in ['MCP failed', 'MCP success', 'custom map', 'thrown']) {
+    test(
+      '$mode preserves payload and invocation status through the tool loop',
+      () async {
+        final payload = <String, Object?>{
+          'isError': mode != 'MCP success',
+          'text': 'No roots set. At least one root must be set.',
+          'structuredContent': <String, Object?>{
+            'diagnostics': [
+              <String, Object?>{'message': 'precise SDK detail', 'code': 7},
+            ],
+          },
+        };
+        late ToolDefinition tool;
+        if (mode.startsWith('MCP')) {
+          final clientTransport = LoopbackMcpTransport();
+          final serverTransport = LoopbackMcpTransport();
+          clientTransport.peer = serverTransport;
+          serverTransport.peer = clientTransport;
+          final server = mcp.McpServer(
+            const mcp.Implementation(name: 'local', version: '1'),
+          );
+          server.registerTool(
+            'read',
+            inputSchema: const mcp.JsonObject(
+              properties: {},
+              additionalProperties: false,
+            ),
+            callback: (_, _) async => mcp.CallToolResult(
+              isError: payload['isError'] as bool,
+              content: [mcp.TextContent(text: payload['text'] as String)],
+              structuredContent: Map<String, dynamic>.from(
+                payload['structuredContent'] as Map,
+              ),
+            ),
+          );
+          await server.connect(serverTransport);
+          final manager = McpManager(
+            keyValueStore: InMemoryKeyValueStore(),
+            transportBuilder: (_) => clientTransport,
+          );
+          addTearDown(() async {
+            await manager.dispose();
+            await server.close();
+          });
+          await manager.saveServer(
+            const McpServerConfig(
+              id: 'local',
+              name: 'Local',
+              transportType: McpTransportType.stdio,
+            ),
+          );
+          await manager.connectServer('local');
+          expect(
+            await manager.callTool(serverId: 'local', toolName: 'read'),
+            payload,
+          );
+          tool = manager.buildActiveToolDefinitions().single;
+          if (mode == 'MCP failed') {
+            await expectLater(
+              tool.invoke({}),
+              throwsA(
+                isA<StudioToolExecutionException>().having(
+                  (e) => e.result,
+                  'original MCP payload',
+                  payload,
+                ),
+              ),
+            );
+          } else {
+            expect(await tool.invoke({}), payload);
+          }
+        } else {
+          tool = ToolDefinition(
+            name: 'read',
+            description: 'Custom tool',
+            parameters: const [],
+            handler: (_) async {
+              if (mode == 'thrown') throw StateError('handler failed');
+              return payload;
+            },
+          );
+        }
+        backend.outputs.addAll([
+          jsonEncode([
+            {
+              'id': 'tool-result',
+              'type': 'function',
+              'function': {'name': tool.name, 'arguments': <String, Object?>{}},
+            },
+          ]),
+          'complete',
+        ]);
+        final events = await port
+            .streamTurn(
+              StudioTurnRequest(
+                history: [
+                  StudioMessage(
+                    id: 'user',
+                    role: StudioRole.user,
+                    text: 'Run the tool',
+                    createdAt: DateTime.utc(2026),
+                  ),
+                ],
+                settings: _settings,
+                includeBuiltInTools: false,
+                extraTools: [tool],
+              ),
+            )
+            .toList();
+        final result = events
+            .whereType<StudioTurnCompletedEvent>()
+            .single
+            .result;
+        expect(
+          result.toolInvocations,
+          isNotEmpty,
+          reason:
+              '${events.whereType<StudioToolAvailabilityEvent>().map((e) => e.notices.map((n) => n.reason))} tool=${tool.name} text=${result.text}',
+        );
+        final call = result.toolInvocations.single;
+        final failed = mode == 'MCP failed' || mode == 'thrown';
+        expect(call.isError, failed);
+        final live = events
+            .whereType<StudioToolInvocationEvent>()
+            .last
+            .invocation;
+        expect(live.isRunning, isFalse);
+        expect(live.isError, failed);
+        expect(live.resultJson, call.resultJson);
+        final expectedPayload = mode == 'thrown'
+            ? {'error': 'Bad state: handler failed'}
+            : payload;
+        expect(jsonDecode(call.resultJson!), expectedPayload);
+        expect(
+          jsonDecode(
+            result.transcript
+                .singleWhere((e) => e.role == StudioRole.tool)
+                .toolCalls
+                .single
+                .resultJson!,
+          ),
+          expectedPayload,
+        );
+        final history = (jsonDecode(backend.prompts.last) as List)
+            .cast<Map<String, dynamic>>();
+        final toolMessage = history.singleWhere((m) => m['role'] == 'tool');
+        expect(jsonDecode(toolMessage['content'] as String), expectedPayload);
+      },
+    );
+  }
 
   for (final finalOutput in <String>['complete', '']) {
     test(

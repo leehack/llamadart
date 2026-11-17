@@ -20,6 +20,8 @@ class _FileInference extends FakeInferencePort {
   final events = StreamController<StudioTurnEvent>();
   bool hold = false;
   String response = 'Updated the owned example.';
+  String resultJson = '{"ok":true}';
+  bool toolFailed = false;
   int cancellations = 0;
 
   @override
@@ -31,15 +33,16 @@ class _FileInference extends FakeInferencePort {
   @override
   Stream<StudioTurnEvent> streamTurn(StudioTurnRequest request) {
     if (hold) return events.stream;
-    const call = StudioToolInvocation(
+    final call = StudioToolInvocation(
       id: 'write-call',
       name: 'write',
       argumentsJson: '{"path":"main.dart"}',
-      resultJson: '{"ok":true}',
+      resultJson: resultJson,
+      isError: toolFailed,
       durationMs: 1,
     );
     return Stream.fromIterable([
-      const StudioToolInvocationEvent(call),
+      StudioToolInvocationEvent(call),
       StudioTextDeltaEvent(response),
       StudioTurnCompletedEvent(
         StudioTurnResult(
@@ -141,6 +144,115 @@ void _reachable(WidgetTester tester, String key, Size size, double inset) {
 }
 
 void main() {
+  for (final failed in [false, true]) {
+    testWidgets(
+      'Completed tool details expand/collapse and retain edit actions at narrow enlarged text: failed=$failed',
+      (tester) async {
+        addTearDown(() => tester.binding.setSurfaceSize(null));
+        final semantics = tester.ensureSemantics();
+        final fullResult =
+            '{"isError":$failed,"text":"${List.filled(80, 'Full SDK diagnostic line with details.').join(r'\n')} END OF RESULT"}';
+        final inference = _FileInference()
+          ..toolFailed = failed
+          ..resultJson = fullResult
+          ..response = List.filled(
+            30,
+            'Long assistant response remains scrollable.',
+          ).join('\n\n');
+        final root = Directory.systemTemp.createTempSync(
+          'coding_tool_details_',
+        );
+        addTearDown(() => root.deleteSync(recursive: true));
+        final deps = await buildTestDeps(
+          isMobile: true,
+          appDataDirectory: root.path,
+          inferencePort: inference,
+        );
+        addTearDown(deps.dispose);
+        addTearDown(() {
+          unawaited(inference.events.close());
+        });
+        final file = File('${root.path}/main.dart')
+          ..writeAsStringSync('before');
+        await tester.runAsync(() async {
+          await deps.codingController.setWorkspaceRoot(root.path);
+          await deps.codingController
+              .buildCodingTools()
+              .firstWhere((t) => t.name == 'write')
+              .invoke({'path': 'main.dart', 'content': 'after'});
+          await deps.codingController.sendCodingPrompt('Show the result');
+        });
+        await deps.shellController.selectWorkspace(StudioWorkspace.coding);
+        await _mount(tester, deps, const Size(360, 740), scale: 1.8);
+        final list = tester.widget<ListView>(
+          find.byKey(const Key('coding_conversation')),
+        );
+        list.controller!.jumpTo(0);
+        await tester.pumpAndSettle();
+        final details = find.byKey(
+          const ValueKey('coding_tool_details_write-call'),
+        );
+        await tester.ensureVisible(details);
+        await tester.pumpAndSettle();
+        final status = failed ? 'Failed · Details' : 'Completed · Details';
+        expect(tester.getSemantics(find.text(status)).label, contains(status));
+        semantics.dispose();
+        final output = 'Arguments: {"path":"main.dart"}\n\nResult: $fullResult';
+        expect(find.text(output), findsNothing);
+        await tester.tap(find.text(status));
+        await tester.pumpAndSettle();
+        expect(find.text(output), findsOneWidget);
+        expect(tester.takeException(), isNull);
+        final innerScroll = find.descendant(
+          of: details,
+          matching: find.byType(SingleChildScrollView),
+        );
+        await tester.drag(innerScroll, const Offset(0, -500));
+        await tester.pumpAndSettle();
+        expect(tester.takeException(), isNull);
+        await tester.tap(find.text(status));
+        await tester.pumpAndSettle();
+        expect(find.text(output), findsNothing);
+        expect(find.text('Revert'), findsOneWidget);
+        await Scrollable.ensureVisible(
+          tester.element(find.text('write({"path":"main.dart"})')),
+          alignment: 0.5,
+        );
+        await tester.pumpAndSettle();
+        await tester.runAsync(() async {
+          await tester.tap(find.text('write({"path":"main.dart"})'));
+          await Future<void>.delayed(const Duration(milliseconds: 60));
+        });
+        await tester.pumpAndSettle();
+        expect(
+          find.byKey(const Key('coding_file_syntax_preview')),
+          findsOneWidget,
+        );
+        await tester.tap(find.byKey(const Key('coding_back_to_files')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Agent'));
+        await tester.pumpAndSettle();
+        await Scrollable.ensureVisible(
+          tester.element(find.text('Revert')),
+          alignment: 0.5,
+        );
+        await tester.pumpAndSettle();
+        await tester.runAsync(() async {
+          await tester.tap(find.text('Revert'));
+          await Future<void>.delayed(const Duration(milliseconds: 100));
+        });
+        await tester.pumpAndSettle();
+        expect(file.readAsStringSync(), 'before');
+        expect(
+          deps.codingController.state.recentChanges.single.reverted,
+          isTrue,
+        );
+        expect(tester.takeException(), isNull);
+        await tester.pumpWidget(const SizedBox.shrink());
+      },
+    );
+  }
+
   testWidgets('Mobile Files refreshes external changes without reopening', (
     tester,
   ) async {

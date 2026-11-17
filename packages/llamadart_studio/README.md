@@ -38,6 +38,11 @@ never reuses an existing workspace. Local shell and process MCP stay unavailable
 External folder selection only works for already accessible filesystem paths;
 provider URI/security-scoped access and durable provider grants are unsupported.
 Web local workspace files and creation are unavailable.
+Completed Coding tool cards expand to show full arguments and results, including
+server-reported failures. On desktop, the built-in Dart MCP registers the selected
+workspace before becoming ready and restarts when the root changes, clearing old
+SDK roots. Custom server roots and repository trust remain separately configured.
+
 Revert checks the bounded post-edit UTF-8 bytes and refuses a file changed since
 that edit. Changes without a retained snapshot require manual review.
 

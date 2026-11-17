@@ -4,8 +4,10 @@ import 'dart:developer' as developer;
 import 'package:llamadart/llamadart.dart';
 import 'package:mcp_dart/mcp_dart.dart';
 import 'package:meta/meta.dart';
+import 'package:path/path.dart' as p;
 
 import '../../domain/mcp_server_config.dart';
+import '../../domain/studio_tool_execution_exception.dart';
 import '../../ports/key_value_store.dart';
 import '../../ports/studio_context_ports.dart';
 import '../../reactive/state_store.dart';
@@ -80,6 +82,9 @@ class McpManager implements StudioWorkspaceMcpCoordinator {
       <String, Future<McpServerRuntimeState>>{};
   final Map<String, int> _connectGenerations = <String, int>{};
   bool _disposed = false;
+  int _workspaceGeneration = 0;
+  String? _selectedWorkspaceRoot;
+  bool _selectedWorkspaceAutoConnect = true;
 
   /// Reactive MCP state store.
   @override
@@ -188,9 +193,18 @@ class McpManager implements StudioWorkspaceMcpCoordinator {
     String? workspaceRoot,
     bool autoConnect = true,
   }) async {
-    final existing = _findServer(builtInDartFlutterServerId);
-    if (existing != null && !existing.config.isBuiltIn) return;
+    workspaceRoot = _selectWorkspace(workspaceRoot, autoConnect: autoConnect);
+    await _synchronizeBuiltInWorkspace(workspaceRoot);
+    if (_disposed) return;
     final dartExec = await _executableResolver('dart');
+    if (_disposed) return;
+    // SDK discovery may finish after a newer workspace selection. Bootstrap
+    // that selection rather than leaving a first-time registration stranded.
+    final generation = _workspaceGeneration;
+    workspaceRoot = _selectedWorkspaceRoot;
+    autoConnect = _selectedWorkspaceAutoConnect;
+    final existing = _findServer(builtInDartFlutterServerId);
+    if (existing != null && !_isBuiltInDart(existing.config)) return;
     final keepExistingFilter = existing?.config.hasCustomToolFilter ?? false;
     final nextConfig = McpServerConfig(
       id: builtInDartFlutterServerId,
@@ -202,7 +216,7 @@ class McpManager implements StudioWorkspaceMcpCoordinator {
       enabled: existing?.config.enabled ?? true,
       origin: McpServerOrigin.builtIn,
       sourcePath: 'Dart SDK (dart mcp-server)',
-      autoConnect: true,
+      autoConnect: existing?.config.autoConnect ?? true,
       disabledTools: keepExistingFilter
           ? existing!.config.disabledTools
           : defaultDisabledBuiltInDartTools,
@@ -214,8 +228,10 @@ class McpManager implements StudioWorkspaceMcpCoordinator {
             existing.config.workingDirectory != nextConfig.workingDirectory);
     if (existing != null && (connectionChanged || dartExec == null)) {
       await disconnectServer(builtInDartFlutterServerId);
+      if (_disposed || generation != _workspaceGeneration) return;
     }
     await saveServer(nextConfig);
+    if (_disposed || generation != _workspaceGeneration) return;
     if (dartExec == null) {
       _mutateServer(
         builtInDartFlutterServerId,
@@ -230,12 +246,47 @@ class McpManager implements StudioWorkspaceMcpCoordinator {
       return;
     }
     if (autoConnect &&
+        nextConfig.autoConnect &&
         nextConfig.enabled &&
         (connectionChanged ||
             (existing?.status != McpConnectionStatus.connected &&
                 existing?.status != McpConnectionStatus.connecting))) {
       unawaited(_connectSafe(builtInDartFlutterServerId));
     }
+  }
+
+  bool _isBuiltInDart(McpServerConfig config) =>
+      config.id == builtInDartFlutterServerId &&
+      config.isBuiltIn &&
+      config.transportType == McpTransportType.stdio;
+
+  String? _canonicalWorkspaceRoot(String? root) =>
+      root == null || root.trim().isEmpty
+      ? null
+      : p.canonicalize(p.absolute(root.trim()));
+
+  String? _selectWorkspace(String? root, {required bool autoConnect}) {
+    final canonical = _canonicalWorkspaceRoot(root);
+    if (canonical != _selectedWorkspaceRoot) {
+      _selectedWorkspaceRoot = canonical;
+      ++_workspaceGeneration;
+    }
+    _selectedWorkspaceAutoConnect = autoConnect;
+    return canonical;
+  }
+
+  Future<void> _synchronizeBuiltInWorkspace(String? root) async {
+    final existing = _findServer(builtInDartFlutterServerId);
+    if (existing == null || !_isBuiltInDart(existing.config)) return;
+    if (_canonicalWorkspaceRoot(existing.config.workingDirectory) == root) {
+      return;
+    }
+    // Invalidate tools and detach clients before any discovery or close awaits.
+    // A fresh SDK process also forgets roots a previous model turn added.
+    await _disconnectServer(
+      builtInDartFlutterServerId,
+      config: existing.config.copyWith(workingDirectory: root ?? ''),
+    );
   }
 
   /// Synchronizes workspace-scoped MCP servers from `.agents/mcp.json`,
@@ -250,7 +301,12 @@ class McpManager implements StudioWorkspaceMcpCoordinator {
     bool autoConnect = true,
     bool requireTrustForAutoConnect = true,
   }) async {
+    workspaceRoot = _selectWorkspace(workspaceRoot, autoConnect: autoConnect);
+    final generation = _workspaceGeneration;
+    await _synchronizeBuiltInWorkspace(workspaceRoot);
+    if (_disposed || generation != _workspaceGeneration) return;
     final discovered = await discoverProjectMcpConfigs(workspaceRoot);
+    if (_disposed || generation != _workspaceGeneration) return;
     final staleProjectIds = _store.state.servers
         .where(
           (McpServerRuntimeState s) =>
@@ -262,6 +318,7 @@ class McpManager implements StudioWorkspaceMcpCoordinator {
 
     for (final staleId in staleProjectIds) {
       await disconnectServer(staleId);
+      if (_disposed || generation != _workspaceGeneration) return;
     }
 
     final existingById = <String, McpServerRuntimeState>{
@@ -270,23 +327,22 @@ class McpManager implements StudioWorkspaceMcpCoordinator {
 
     final nextList = <McpServerRuntimeState>[
       for (final s in _store.state.servers)
-        if (!s.config.isProjectScoped)
-          s.config.id == builtInDartFlutterServerId &&
-                  workspaceRoot != null &&
-                  workspaceRoot.trim().isNotEmpty
-              ? s.copyWith(
-                  config: s.config.copyWith(
-                    workingDirectory: workspaceRoot.trim(),
-                  ),
-                )
-              : s,
+        if (!s.config.isProjectScoped) s,
     ];
 
     final canAutoConnectProject =
         autoConnect &&
         (!requireTrustForAutoConnect || isWorkspaceTrusted(workspaceRoot));
 
-    final toConnect = <String>[];
+    final toConnect = <String>[
+      for (final s in nextList)
+        if (_isBuiltInDart(s.config) &&
+            autoConnect &&
+            s.config.autoConnect &&
+            s.config.enabled &&
+            s.status == McpConnectionStatus.disconnected)
+          s.config.id,
+    ];
     for (final cfg in discovered) {
       final prev = existingById[cfg.id];
       if (prev != null &&
@@ -304,6 +360,7 @@ class McpManager implements StudioWorkspaceMcpCoordinator {
       } else {
         if (prev != null && prev.isConnected) {
           await disconnectServer(cfg.id);
+          if (_disposed || generation != _workspaceGeneration) return;
         }
         nextList.add(McpServerRuntimeState(config: cfg));
         if (canAutoConnectProject && cfg.enabled && cfg.autoConnect) {
@@ -481,6 +538,30 @@ class McpManager implements StudioWorkspaceMcpCoordinator {
       final toolsResult = await client.listTools().timeout(
         const Duration(seconds: 15),
       );
+      if (_isBuiltInDart(entry.config)) {
+        final root = _canonicalWorkspaceRoot(entry.config.workingDirectory);
+        if (root != null) {
+          final registration = await client
+              .callTool(
+                CallToolRequest(
+                  name: 'roots',
+                  arguments: <String, dynamic>{
+                    'command': 'add',
+                    'uris': <String>[Uri.directory(root).toString()],
+                  },
+                ),
+              )
+              .timeout(connectionTimeout);
+          if (registration.isError == true) {
+            throw LlamaInferenceException(
+              registration.content
+                  .whereType<TextContent>()
+                  .map((c) => c.text)
+                  .join('\n'),
+            );
+          }
+        }
+      }
       final resources = await _safeListResources(client);
       final prompts = await _safeListPrompts(client);
 
@@ -575,14 +656,18 @@ class McpManager implements StudioWorkspaceMcpCoordinator {
   }
 
   /// Disconnects a running MCP server client & transport cleanly.
-  Future<void> disconnectServer(String serverId) async {
+  Future<void> disconnectServer(String serverId) => _disconnectServer(serverId);
+
+  Future<void> _disconnectServer(
+    String serverId, {
+    McpServerConfig? config,
+  }) async {
     _connectGenerations[serverId] = (_connectGenerations[serverId] ?? 0) + 1;
     unawaited(_inFlightConnects.remove(serverId));
-    await _closeExistingClients(serverId);
-
     _mutateServer(
       serverId,
       (McpServerRuntimeState s) => s.copyWith(
+        config: config,
         status: McpConnectionStatus.disconnected,
         tools: const <McpToolDescriptor>[],
         resources: const <McpResourceDescriptor>[],
@@ -590,6 +675,7 @@ class McpManager implements StudioWorkspaceMcpCoordinator {
         clearErrorMessage: true,
       ),
     );
+    await _closeExistingClients(serverId);
   }
 
   Future<void> _closeQuietly({McpClient? client, Transport? transport}) async {
@@ -612,7 +698,7 @@ class McpManager implements StudioWorkspaceMcpCoordinator {
     Map<String, dynamic> arguments = const <String, dynamic>{},
   }) async {
     final client = _clients[serverId];
-    if (client == null) {
+    if (client == null || _findServer(serverId)?.isConnected != true) {
       throw StateError('MCP server "$serverId" is not connected.');
     }
     final result = await client.callTool(
@@ -665,11 +751,17 @@ class McpManager implements StudioWorkspaceMcpCoordinator {
       defs.add(
         toLlamaToolDefinition(
           tool,
-          handler: (ToolParams params) => callTool(
-            serverId: tool.serverId,
-            toolName: tool.name,
-            arguments: Map<String, dynamic>.from(params.raw),
-          ),
+          handler: (ToolParams params) async {
+            final result = await callTool(
+              serverId: tool.serverId,
+              toolName: tool.name,
+              arguments: Map<String, dynamic>.from(params.raw),
+            );
+            if (result['isError'] == true) {
+              throw StudioToolExecutionException(result);
+            }
+            return result;
+          },
         ),
       );
     }

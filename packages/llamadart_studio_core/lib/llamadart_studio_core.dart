@@ -33,6 +33,7 @@ export 'src/domain/studio_preset.dart';
 export 'src/domain/studio_runtime_snapshot.dart';
 export 'src/domain/studio_settings.dart';
 export 'src/domain/studio_skill.dart';
+export 'src/domain/studio_tool_execution_exception.dart';
 export 'src/domain/studio_workspace.dart';
 export 'src/ports/coding_workspace_root_store.dart';
 export 'src/ports/conversation_store.dart';

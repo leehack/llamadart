@@ -10,6 +10,7 @@ import '../../domain/studio_message.dart';
 import '../../domain/studio_model_descriptor.dart';
 import '../../domain/studio_runtime_snapshot.dart';
 import '../../domain/studio_settings.dart';
+import '../../domain/studio_tool_execution_exception.dart';
 import '../../ports/engine_lease_port.dart';
 import '../../ports/inference_port.dart';
 import '../../ports/model_storage_port.dart';
@@ -829,6 +830,9 @@ class DirectLlamaInferencePort
             );
             toolResult = await validator.invoke(parsedArgs);
           }
+        } on StudioToolExecutionException catch (error) {
+          isError = true;
+          toolResult = error.result;
         } catch (error) {
           isError = true;
           toolResult = <String, Object?>{'error': error.toString()};

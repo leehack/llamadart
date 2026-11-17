@@ -13,6 +13,8 @@ validate against the exact release tag notes.
 
 ## Unreleased
 
+- Initialize Studio Coding’s built-in Dart MCP for the selected workspace, preserve tool failures, and expose full tool results.
+
 - Report rejected Studio settings saves without reusing unsaved cached values.
 
 - Let Studio Coding create and reopen persistent local workspaces on iOS/Android, restore them after app storage moves, and show clear recovery when a folder cannot be selected.

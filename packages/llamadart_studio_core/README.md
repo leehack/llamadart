@@ -27,3 +27,15 @@ provide document-provider permissions or security-scoped access. Revert retains
 post-edit content up to 1 Mi characters and checks its UTF-8 bytes before restoring or
 deleting a file. It rejects mismatches and missing snapshots; this optimistic
 check does not coordinate simultaneous external writers between check and write.
+
+The built-in Dart stdio MCP connection registers the selected canonical directory
+URI with the SDK's `roots` tool before exposing ready tools. Workspace changes
+replace the process, retaining enablement and tool filters; automatic connection
+still respects `autoConnect`. Custom/project/network servers receive no SDK root
+bootstrap, and project trust is unchanged.
+
+`McpManager.callTool` returns the raw MCP result map. Its active tool handlers
+throw exported `StudioToolExecutionException` for returned MCP failures; direct
+inference preserves `result` in invocation JSON and model history and marks the
+invocation failed. Custom tools may use this exception for a failed payload;
+ordinary custom maps with an `isError` key remain successful return values.
