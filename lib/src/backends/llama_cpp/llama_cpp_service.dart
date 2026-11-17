@@ -6298,7 +6298,7 @@ class LlamaCppService {
       return false;
     }
 
-    final bosPtr = llama_token_get_text(vocab, bos);
+    final bosPtr = llama_vocab_get_text(vocab, bos);
     if (bosPtr == nullptr) {
       return false;
     }
