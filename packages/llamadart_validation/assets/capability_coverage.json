@@ -667,6 +667,17 @@
     },
     {
       "surfaces": [
+        "matrix:GPU memory fit",
+        "api:LlamaEngine.getGpuMemoryFitReport"
+      ],
+      "exemption": {
+        "id": "gpu-memory-fit",
+        "reason": "ModelParams.gpuMemoryFit has maintained validation, runtime-rejection, skip-gate, outcome, buffer-ownership and shared-context-parameter tests against a fake fit runner, plus a local-only real-runtime test that activates once a runtime exports llama_dart_fit_params. No validation-pack profile covers it, and no NVIDIA, Windows or multi-GPU hardware run is recorded yet.",
+        "issue": "https://github.com/leehack/llamadart/issues/2034"
+      }
+    },
+    {
+      "surfaces": [
         "api:LlamaEngine.createTask",
         "api:LlamaEngine.generateTask"
       ],

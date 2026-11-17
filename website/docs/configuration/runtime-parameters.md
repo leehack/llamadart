@@ -147,6 +147,34 @@ const params = LlamaCppModelParams(
   moeCacheBytes: 4 << 30, // keep up to 4 GiB of recently used experts on the GPU
 );
 ```
+- `gpuMemoryFit`: opt-in fit of a native llama.cpp GPU load to the free device
+  memory. `null`, the default, loads as before: every requested layer is
+  offloaded whatever the GPU has free, and a driver that fails to allocate can
+  crash the process. With a `GpuMemoryFit`, a Linux or Windows GPU load first
+  asks llama.cpp (`common_fit_params`) how many layers fit, offloads only
+  those, and leaves `marginBytes` (default 1 GiB, llama.cpp's own) free on each
+  GPU. With `contextSize: 0`, `minContextSize` lets the fit shrink the context
+  down to that size. When no layer fits, `ComputeDevice.auto` loads on the CPU
+  and `ComputeDevice.gpu` throws `LlamaGpuMemoryFitException` before the model
+  loads; a fit that fails throws too, and never falls back to a full load.
+  `LlamaEngine.getGpuMemoryFitReport()` returns what the fit measured and
+  chose, and a warning is logged when it changed the load. macOS, iOS and
+  Android share memory between CPU and GPU, so a load there is not fitted and
+  the report says it was skipped. The Web and LiteRT-LM throw
+  `LlamaUnsupportedException`, as does a llama.cpp runtime that does not export
+  `llama_dart_fit_params`. `validate()` rejects `gpuLayers` other than
+  `maxGpuLayers`, `tensorSplit`, `ModelSplitMode.row`, `ModelSplitMode.tensor`
+  and `cpuMoeLayers`, which the fit owns. The fit counts the model and its main
+  context, not a projector, LoRA adapters or a draft model, so raise
+  `marginBytes` for them; free memory can also change between the fit and the
+  load. Not yet validated on NVIDIA or Windows hardware.
+
+```dart
+const params = LlamaCppModelParams(
+  gpuMemoryFit: GpuMemoryFit(marginBytes: 1 << 30),
+);
+// After loading: engine.getGpuMemoryFitReport()
+```
 - `batchSize`: context logical batch size (`n_batch`). On native,
   decoder/generative models use the llama.cpp-aligned `min(n_ctx, 2048)`
   default when this is `0`. Native encoder-only models retain a full-context
@@ -260,7 +288,7 @@ or KV-cache types: the load
 throws `LlamaUnsupportedException` naming each rejected field, so a GGUF
 tuning profile never appears to apply silently. That includes `loadMtp`,
 `speculativeRollbackTokenMax`, `cpuMoeLayers`, `moeCacheBytes`,
-`preferMemory64` and `modelBytesHint`.
+`gpuMemoryFit`, `preferMemory64` and `modelBytesHint`.
 LiteRT-LM web accepts `device` or `liteRtLmBackend` for CPU or GPU selection
 and rejects every other field in the table the same way.
 

@@ -547,6 +547,24 @@ class ModelParams {
   /// multi-GPU hosts have no hardware evidence yet.
   final int moeCacheBytes;
 
+  /// Opt-in fit of a native llama.cpp GPU load to the free device memory.
+  ///
+  /// `null`, the default, loads as before: every requested layer is offloaded
+  /// whatever the GPU has free, and a driver that fails to allocate can crash
+  /// the process. With a value, a Linux or Windows GPU load first asks
+  /// llama.cpp how many layers fit, offloads only those and reports the
+  /// outcome through `LlamaEngine.getGpuMemoryFitReport`. When no layer fits,
+  /// [ComputeDevice.auto] loads on the CPU and [ComputeDevice.gpu] throws
+  /// `LlamaGpuMemoryFitException` before the model loads. A fit that fails
+  /// throws as well, and never falls back to a full load.
+  ///
+  /// macOS, iOS and Android share memory between CPU and GPU, so a load there
+  /// is not fitted and the report says it was skipped. The Web and LiteRT-LM
+  /// reject a value. [validate] rejects fields the fit owns: [gpuLayers]
+  /// other than [maxGpuLayers], [tensorSplit], [splitMode]
+  /// [ModelSplitMode.row] and [ModelSplitMode.tensor], and [cpuMoeLayers].
+  final GpuMemoryFit? gpuMemoryFit;
+
   /// Web/WebGPU only: prefer the 64-bit (wasm64/mem64) bridge core.
   ///
   /// The default 32-bit core has a 4 GiB linear-memory limit, but large models
@@ -657,6 +675,7 @@ class ModelParams {
     this.ropeFrequencyScale,
     this.cpuMoeLayers = 0,
     this.moeCacheBytes = 0,
+    this.gpuMemoryFit,
     this.preferMemory64,
     this.modelBytesHint,
   });
@@ -698,6 +717,7 @@ class ModelParams {
       ropeFrequencyScale = other.ropeFrequencyScale,
       cpuMoeLayers = other.cpuMoeLayers,
       moeCacheBytes = other.moeCacheBytes,
+      gpuMemoryFit = other.gpuMemoryFit,
       preferMemory64 = other.preferMemory64,
       modelBytesHint = other.modelBytesHint;
 
@@ -772,6 +792,7 @@ class ModelParams {
             'cpuMoeLayers (negative for every layer)',
       );
     }
+    _validateGpuMemoryFit();
     if ((cacheTypeK != KvCacheType.f16 || cacheTypeV != KvCacheType.f16) &&
         flashAttention == FlashAttention.disabled) {
       throw LlamaArgumentException(
@@ -838,6 +859,66 @@ class ModelParams {
         'mainGpu to a GPU index (0 or more).',
         name: 'mainGpu',
         invalidValue: mainGpu,
+      );
+    }
+  }
+
+  void _validateGpuMemoryFit() {
+    final fit = gpuMemoryFit;
+    if (fit == null) return;
+    if (fit.marginBytes < 0) {
+      throw _invalid(
+        'gpuMemoryFit.marginBytes',
+        fit.marginBytes,
+        'must be non-negative',
+      );
+    }
+    final minContextSize = fit.minContextSize;
+    if (minContextSize != null) {
+      if (minContextSize <= 0) {
+        throw _invalid(
+          'gpuMemoryFit.minContextSize',
+          minContextSize,
+          'must be positive when provided',
+        );
+      }
+      if (contextSize > 0) {
+        throw _invalid(
+          'gpuMemoryFit.minContextSize',
+          minContextSize,
+          'reduces only an automatic context, and contextSize is $contextSize; '
+              'set contextSize to 0 or drop minContextSize',
+        );
+      }
+    }
+    final cpuBackend =
+        preferredBackend == GpuBackend.cpu ||
+        preferredBackend == GpuBackend.blas;
+    if (device == ComputeDevice.cpu || cpuBackend) {
+      throw _invalid(
+        'gpuMemoryFit',
+        fit,
+        'fits a GPU load, and this load offloads none (device ${device.name}, '
+            'preferredBackend ${preferredBackend.name})',
+      );
+    }
+    if (gpuLayers >= 0 && gpuLayers != maxGpuLayers) {
+      throw _invalid(
+        'gpuLayers',
+        gpuLayers,
+        'is chosen by gpuMemoryFit; leave it at maxGpuLayers or negative',
+      );
+    }
+    if (tensorSplit != null ||
+        splitMode == ModelSplitMode.row ||
+        splitMode == ModelSplitMode.tensor ||
+        cpuMoeLayers != 0) {
+      throw _invalid(
+        'gpuMemoryFit',
+        fit,
+        'owns the tensor split and tensor buffer overrides, so it cannot '
+            'combine with tensorSplit, ModelSplitMode.row, ModelSplitMode.tensor '
+            'or cpuMoeLayers',
       );
     }
   }
@@ -1056,6 +1137,8 @@ class ModelParams {
     bool clearRopeFrequencyScale = false,
     int? cpuMoeLayers,
     int? moeCacheBytes,
+    GpuMemoryFit? gpuMemoryFit,
+    bool clearGpuMemoryFit = false,
     bool? preferMemory64,
     bool clearPreferMemory64 = false,
     int? modelBytesHint,
@@ -1119,6 +1202,9 @@ class ModelParams {
           : (ropeFrequencyScale ?? this.ropeFrequencyScale),
       cpuMoeLayers: cpuMoeLayers ?? this.cpuMoeLayers,
       moeCacheBytes: moeCacheBytes ?? this.moeCacheBytes,
+      gpuMemoryFit: clearGpuMemoryFit
+          ? null
+          : (gpuMemoryFit ?? this.gpuMemoryFit),
       preferMemory64: clearPreferMemory64
           ? null
           : (preferMemory64 ?? this.preferMemory64),
@@ -1127,6 +1213,40 @@ class ModelParams {
           : (modelBytesHint ?? this.modelBytesHint),
     );
   }
+}
+
+/// Opt-in fit of a native llama.cpp GPU load to free device memory; see
+/// [ModelParams.gpuMemoryFit].
+final class GpuMemoryFit {
+  /// Creates a fit that leaves [marginBytes] free on each GPU the load uses.
+  const GpuMemoryFit({
+    this.marginBytes = defaultMarginBytes,
+    this.minContextSize,
+  });
+
+  /// llama.cpp's own default: 1 GiB left free on each GPU.
+  static const int defaultMarginBytes = 1 << 30;
+
+  /// Free memory to leave on each GPU the load uses.
+  final int marginBytes;
+
+  /// With a [ModelParams.contextSize] of `0` or less, the smallest context
+  /// the fit may pick instead of the trained one. `null` never reduces the
+  /// context.
+  final int? minContextSize;
+
+  @override
+  bool operator ==(Object other) =>
+      other is GpuMemoryFit &&
+      other.marginBytes == marginBytes &&
+      other.minContextSize == minContextSize;
+
+  @override
+  int get hashCode => Object.hash(marginBytes, minContextSize);
+
+  @override
+  String toString() =>
+      'GpuMemoryFit(marginBytes: $marginBytes, minContextSize: $minContextSize)';
 }
 
 /// [ModelParams] for a GGUF model, which llama.cpp runs natively and on the
@@ -1175,6 +1295,7 @@ class LlamaCppModelParams extends ModelParams {
     super.ropeFrequencyScale,
     super.cpuMoeLayers,
     super.moeCacheBytes,
+    super.gpuMemoryFit,
     super.preferMemory64,
     super.modelBytesHint,
   });
@@ -1292,6 +1413,8 @@ class LlamaCppModelParams extends ModelParams {
     bool clearRopeFrequencyScale = false,
     int? cpuMoeLayers,
     int? moeCacheBytes,
+    GpuMemoryFit? gpuMemoryFit,
+    bool clearGpuMemoryFit = false,
     bool? preferMemory64,
     bool clearPreferMemory64 = false,
     int? modelBytesHint,
@@ -1351,6 +1474,8 @@ class LlamaCppModelParams extends ModelParams {
         clearRopeFrequencyScale: clearRopeFrequencyScale,
         cpuMoeLayers: cpuMoeLayers,
         moeCacheBytes: moeCacheBytes,
+        gpuMemoryFit: gpuMemoryFit,
+        clearGpuMemoryFit: clearGpuMemoryFit,
         preferMemory64: preferMemory64,
         clearPreferMemory64: clearPreferMemory64,
         modelBytesHint: modelBytesHint,
@@ -1564,6 +1689,8 @@ class LiteRtLmModelParams extends ModelParams {
     bool clearRopeFrequencyScale = false,
     int? cpuMoeLayers,
     int? moeCacheBytes,
+    GpuMemoryFit? gpuMemoryFit,
+    bool clearGpuMemoryFit = false,
     bool? preferMemory64,
     bool clearPreferMemory64 = false,
     int? modelBytesHint,
@@ -1590,10 +1717,12 @@ class LiteRtLmModelParams extends ModelParams {
       'ropeFrequencyScale': ropeFrequencyScale,
       'cpuMoeLayers': cpuMoeLayers,
       'moeCacheBytes': moeCacheBytes,
+      'gpuMemoryFit': gpuMemoryFit,
       'preferMemory64': preferMemory64,
       'modelBytesHint': modelBytesHint,
       if (clearGpuDevices) 'clearGpuDevices': true,
       if (clearTensorSplit) 'clearTensorSplit': true,
+      if (clearGpuMemoryFit) 'clearGpuMemoryFit': true,
       if (clearKvUnified) 'clearKvUnified': true,
       if (clearRopeFrequencyBase) 'clearRopeFrequencyBase': true,
       if (clearRopeFrequencyScale) 'clearRopeFrequencyScale': true,

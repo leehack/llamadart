@@ -342,6 +342,12 @@ class ResolvedGpuLayersRequest extends WorkerRequest {
   ResolvedGpuLayersRequest(super.sendPort);
 }
 
+/// Request for the GPU memory fit of the active model.
+class GpuMemoryFitReportRequest extends WorkerRequest {
+  /// Creates a new [GpuMemoryFitReportRequest].
+  GpuMemoryFitReportRequest(super.sendPort);
+}
+
 /// Request for native llama.cpp perf timings of an active context.
 class PerformanceContextRequest extends WorkerRequest {
   /// The handle of the context.
@@ -951,6 +957,15 @@ class ResolvedGpuLayersResponse {
 
   /// Creates a new [ResolvedGpuLayersResponse].
   ResolvedGpuLayersResponse(this.layers);
+}
+
+/// Response containing the GPU memory fit of the active model.
+class GpuMemoryFitReportResponse {
+  /// The fit, or null when the load asked for none.
+  final GpuMemoryFitReport? report;
+
+  /// Creates a new [GpuMemoryFitReportResponse].
+  GpuMemoryFitReportResponse(this.report);
 }
 
 /// Response containing native llama.cpp perf timings.

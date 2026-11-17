@@ -22,6 +22,7 @@ List<String> modelParamsUnsupportedBy(
       if (!params.useMmap) 'useMmap=false',
       if (params.useMlock) 'useMlock',
       ..._moeExpertFields(params),
+      if (params.gpuMemoryFit != null) 'gpuMemoryFit',
     ] else ...[
       if (params.preferMemory64 != null) 'preferMemory64',
       if (params.modelBytesHint != null) 'modelBytesHint',
@@ -54,6 +55,7 @@ List<String> modelParamsUnsupportedBy(
     if (params.ropeFrequencyBase != null) 'ropeFrequencyBase',
     if (params.ropeFrequencyScale != null) 'ropeFrequencyScale',
     ..._moeExpertFields(params),
+    if (params.gpuMemoryFit != null) 'gpuMemoryFit',
     if (params.preferMemory64 != null) 'preferMemory64',
     if (params.modelBytesHint != null) 'modelBytesHint',
   ],
@@ -123,8 +125,9 @@ String unsupportedModelParamsMessage(
     (LlamaRuntime.llamaCpp, true) =>
       'llama.cpp on the Web does not apply these ModelParams: $fields. The '
           'liteRtLm* fields apply only to LiteRT-LM (.litertlm) models, and '
-          'the Web runtime neither memory-maps nor locks model weights nor '
-          'keeps MoE experts in host memory. Leave them unset for this model.',
+          'the Web runtime neither memory-maps nor locks model weights, keeps '
+          'MoE experts in host memory, nor fits a load to free GPU memory. '
+          'Leave them unset for this model.',
     (LlamaRuntime.liteRtLm, false) =>
       'LiteRtLmBackend does not support llama.cpp-specific ModelParams: '
           '$fields. Supported LiteRT-LM load options are contextSize, '

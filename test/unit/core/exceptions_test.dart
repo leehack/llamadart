@@ -1,5 +1,6 @@
 import 'package:test/test.dart';
 import 'package:llamadart/src/core/exceptions.dart';
+import 'package:llamadart/src/core/models/config/gpu_device_info.dart';
 
 void main() {
   test(
@@ -55,5 +56,18 @@ void main() {
       expect(ex.details, isNull);
       expect(ex.toString(), 'LlamaException: Context full');
     });
+  });
+
+  test('a GPU memory fit failure is a model error that carries its report', () {
+    const report = GpuMemoryFitReport(outcome: GpuMemoryFitOutcome.cpu);
+    final error = LlamaGpuMemoryFitException(
+      'nothing fits',
+      report: report,
+      details: 'failure',
+    );
+    expect(error, isA<LlamaModelException>());
+    expect(error.report, same(report));
+    expect(error.toString(), 'LlamaException: nothing fits (failure)');
+    expect(LlamaGpuMemoryFitException('failed').report, isNull);
   });
 }

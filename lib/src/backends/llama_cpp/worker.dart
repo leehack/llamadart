@@ -548,6 +548,11 @@ void runLlamaWorkerForTesting(
             final layers = service.getResolvedGpuLayers();
             message.sendPort.send(ResolvedGpuLayersResponse(layers));
 
+          case GpuMemoryFitReportRequest():
+            message.sendPort.send(
+              GpuMemoryFitReportResponse(service.getGpuMemoryFitReport()),
+            );
+
           case PerformanceContextRequest():
             final perf = service.getPerformanceContext(message.contextHandle);
             if (perf == null) {

@@ -83,6 +83,12 @@ void main() {
         );
         expect(resolved, isA<ResolvedGpuLayersResponse>());
 
+        final fit = await _sendRequest(
+          worker.sendPort,
+          GpuMemoryFitReportRequest.new,
+        );
+        expect(fit, isA<GpuMemoryFitReportResponse>());
+
         final gpuSupport = await _sendRequest(
           worker.sendPort,
           GpuSupportRequest.new,

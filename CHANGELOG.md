@@ -9,6 +9,7 @@ Releases before 0.10.0 are in the
 
 - Add an opt-in Linux Vulkan loader preflight for native hosts.
 - Speed up model checksum verification on Apple platforms and keep verification off the UI isolate.
+- Add opt-in `ModelParams.gpuMemoryFit`: Linux and Windows llama.cpp GPU loads offload only the layers that fit free GPU memory, or load on the CPU, and report the result through `LlamaEngine.getGpuMemoryFitReport()`. It needs a `llamadart-native` runtime that exports `llama_dart_fit_params` ([#2034](https://github.com/leehack/llamadart/issues/2034)).
 
 ## 0.19.11
 

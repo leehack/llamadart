@@ -457,6 +457,143 @@ void main() {
     });
   });
 
+  group('validate(): GPU memory fit', () {
+    void expectInvalid(ModelParams params, String name, Pattern message) {
+      expect(
+        params.validate,
+        throwsA(
+          isA<LlamaArgumentException>()
+              .having((e) => e.name, 'name', name)
+              .having((e) => e.message, 'message', contains(message)),
+        ),
+      );
+    }
+
+    test('a default fit and an automatic context pass', () {
+      const ModelParams(gpuMemoryFit: GpuMemoryFit()).validate();
+      const ModelParams(
+        contextSize: 0,
+        gpuMemoryFit: GpuMemoryFit(minContextSize: 4096),
+      ).validate();
+      const ModelParams(
+        gpuLayers: ModelParams.maxGpuLayers,
+        gpuMemoryFit: GpuMemoryFit(marginBytes: 0),
+        gpuDevices: [0, 1],
+      ).validate();
+      const ModelParams(gpuLayers: -1, gpuMemoryFit: GpuMemoryFit()).validate();
+    });
+
+    test('a negative margin and a minimum context are rejected', () {
+      expectInvalid(
+        const ModelParams(gpuMemoryFit: GpuMemoryFit(marginBytes: -1)),
+        'gpuMemoryFit.marginBytes',
+        'non-negative',
+      );
+      expectInvalid(
+        const ModelParams(
+          contextSize: 0,
+          gpuMemoryFit: GpuMemoryFit(minContextSize: 0),
+        ),
+        'gpuMemoryFit.minContextSize',
+        'positive',
+      );
+      expectInvalid(
+        const ModelParams(
+          contextSize: 4096,
+          gpuMemoryFit: GpuMemoryFit(minContextSize: 1024),
+        ),
+        'gpuMemoryFit.minContextSize',
+        'automatic context',
+      );
+    });
+
+    test('a load that offloads nothing is rejected', () {
+      expectInvalid(
+        const ModelParams(
+          device: ComputeDevice.cpu,
+          gpuMemoryFit: GpuMemoryFit(),
+        ),
+        'gpuMemoryFit',
+        'offloads none',
+      );
+      for (final backend in [GpuBackend.cpu, GpuBackend.blas]) {
+        expectInvalid(
+          ModelParams(
+            preferredBackend: backend,
+            gpuMemoryFit: const GpuMemoryFit(),
+          ),
+          'gpuMemoryFit',
+          backend.name,
+        );
+      }
+    });
+
+    test('a layer count the fit would override is rejected', () {
+      for (final layers in [0, 12]) {
+        expectInvalid(
+          ModelParams(gpuLayers: layers, gpuMemoryFit: const GpuMemoryFit()),
+          'gpuLayers',
+          'gpuMemoryFit',
+        );
+      }
+    });
+
+    test('fields that own the split or the overrides are rejected', () {
+      for (final params in [
+        const ModelParams(tensorSplit: [1, 1], gpuMemoryFit: GpuMemoryFit()),
+        const ModelParams(
+          splitMode: ModelSplitMode.row,
+          gpuMemoryFit: GpuMemoryFit(),
+        ),
+        const ModelParams(
+          splitMode: ModelSplitMode.tensor,
+          gpuMemoryFit: GpuMemoryFit(),
+        ),
+        const ModelParams(cpuMoeLayers: -1, gpuMemoryFit: GpuMemoryFit()),
+      ]) {
+        expectInvalid(params, 'gpuMemoryFit', 'tensor split');
+      }
+    });
+
+    test('GpuMemoryFit compares by value', () {
+      expect(const GpuMemoryFit(), const GpuMemoryFit());
+      expect(
+        const GpuMemoryFit().hashCode,
+        const GpuMemoryFit(
+          marginBytes: GpuMemoryFit.defaultMarginBytes,
+        ).hashCode,
+      );
+      expect(
+        const GpuMemoryFit(minContextSize: 1),
+        isNot(const GpuMemoryFit()),
+      );
+      expect(const GpuMemoryFit().toString(), contains('marginBytes'));
+    });
+
+    test('copyWith sets and clears the fit', () {
+      const fit = GpuMemoryFit(marginBytes: 7);
+      expect(const ModelParams().copyWith(gpuMemoryFit: fit).gpuMemoryFit, fit);
+      expect(
+        const ModelParams(
+          gpuMemoryFit: fit,
+        ).copyWith(clearGpuMemoryFit: true).gpuMemoryFit,
+        isNull,
+      );
+      expect(
+        const LlamaCppModelParams(
+          gpuMemoryFit: fit,
+        ).copyWith(contextSize: 1).gpuMemoryFit,
+        fit,
+      );
+      expect(
+        const LlamaCppModelParams(
+          gpuMemoryFit: fit,
+        ).copyWith(clearGpuMemoryFit: true).gpuMemoryFit,
+        isNull,
+      );
+    });
+  });
+
   group('validate(): device', () {
     Matcher rejects(String name, Object? value, String text) => throwsA(
       isA<LlamaArgumentException>()
@@ -1088,6 +1225,7 @@ void main() {
       'ropeFrequencyScale': p.ropeFrequencyScale,
       'cpuMoeLayers': p.cpuMoeLayers,
       'moeCacheBytes': p.moeCacheBytes,
+      'gpuMemoryFit': p.gpuMemoryFit,
       'preferMemory64': p.preferMemory64,
       'modelBytesHint': p.modelBytesHint,
     };
@@ -1120,6 +1258,7 @@ void main() {
       ropeFrequencyScale: 0.5,
       cpuMoeLayers: -1,
       moeCacheBytes: 1 << 30,
+      gpuMemoryFit: GpuMemoryFit(marginBytes: 1 << 29, minContextSize: 2048),
       preferMemory64: true,
       modelBytesHint: 123,
     );
@@ -1185,6 +1324,7 @@ void main() {
         ropeFrequencyScale: 0.25,
         cpuMoeLayers: 4,
         moeCacheBytes: 1 << 20,
+        gpuMemoryFit: const GpuMemoryFit(),
         preferMemory64: false,
         modelBytesHint: 456,
       );
@@ -1210,6 +1350,7 @@ void main() {
         'ropeFrequencyScale': 0.25,
         'cpuMoeLayers': 4,
         'moeCacheBytes': 1 << 20,
+        'gpuMemoryFit': const GpuMemoryFit(),
         'preferMemory64': false,
         'modelBytesHint': 456,
       });
@@ -1276,6 +1417,8 @@ void main() {
         #clearRopeFrequencyScale: true,
         #cpuMoeLayers: -1,
         #moeCacheBytes: 1,
+        #gpuMemoryFit: GpuMemoryFit(),
+        #clearGpuMemoryFit: true,
         #preferMemory64: true,
         #clearPreferMemory64: true,
         #modelBytesHint: 1,

@@ -15,6 +15,7 @@ import 'package:llamadart/src/backends/llama_cpp/llama_cpp_service.dart';
 import 'package:llamadart/src/backends/llama_cpp/worker.dart';
 import 'package:llamadart/src/core/decision/decision_question.dart';
 import 'package:llamadart/src/core/engine/engine.dart';
+import 'package:llamadart/src/core/models/config/gpu_device_info.dart';
 import 'package:llamadart/src/core/engine/engine_capabilities.dart';
 import 'package:llamadart/src/core/models/chat/content_part.dart';
 import 'package:llamadart/src/core/models/inference/embedding.dart';
@@ -914,6 +915,9 @@ void main() {
       expect(await backend.getBackendName(), 'CPU');
       expect(await backend.getAvailableBackends(), 'CPU, METAL');
       expect(await backend.getResolvedGpuLayers(), 12);
+      final fit = await backend.getGpuMemoryFitReport();
+      expect(fit?.outcome, GpuMemoryFitOutcome.reduced);
+      expect(fit?.gpuLayers, 14);
       expect(await backend.isGpuSupported(), isTrue);
       expect(await backend.getVramInfo(), (total: 100, free: 40));
 
@@ -2624,6 +2628,15 @@ class _FakeWorkerHarness {
           message.sendPort.send(BackendInfoResponse('CPU, METAL'));
         case ResolvedGpuLayersRequest():
           message.sendPort.send(ResolvedGpuLayersResponse(12));
+        case GpuMemoryFitReportRequest():
+          message.sendPort.send(
+            GpuMemoryFitReportResponse(
+              const GpuMemoryFitReport(
+                outcome: GpuMemoryFitOutcome.reduced,
+                gpuLayers: 14,
+              ),
+            ),
+          );
         case GpuSupportRequest():
           message.sendPort.send(GpuSupportResponse(true));
         case SystemInfoRequest():

@@ -375,6 +375,14 @@ abstract class BackendRuntimeDiagnostics {
   Future<int?> getResolvedGpuLayers();
 }
 
+/// Optional backend capability for reporting what `ModelParams.gpuMemoryFit`
+/// did to the active model load.
+abstract class BackendGpuMemoryFitReporting {
+  /// The fit of the active model load, or null when it asked for none or the
+  /// backend cannot fit.
+  Future<GpuMemoryFitReport?> getGpuMemoryFitReport();
+}
+
 /// Optional backend capability for reporting deferred native engine creation.
 ///
 /// A backend that defers creation returns from [LlamaBackend.modelLoad] and

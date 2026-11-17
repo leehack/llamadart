@@ -54,6 +54,7 @@ class NativeLlamaBackend
         BackendDecision,
         BackendGenerationCapabilitiesSupport,
         BackendVideoRuntimeSupport,
+        BackendGpuMemoryFitReporting,
         BackendGenerationLimitReporting,
         BackendGenerationUsageReporting,
         BackendChatPromptGeneration,
@@ -1282,6 +1283,15 @@ class NativeLlamaBackend
     _dispatchRequest(rp, AvailableBackendsRequest(rp.sendPort));
     final res = await _receiveResponse(rp);
     return (res as BackendInfoResponse).name;
+  }
+
+  @override
+  Future<GpuMemoryFitReport?> getGpuMemoryFitReport() async {
+    await _ensureIsolate();
+    final rp = _openResponsePort();
+    _dispatchRequest(rp, GpuMemoryFitReportRequest(rp.sendPort));
+    final res = await _receiveResponse(rp);
+    return (res as GpuMemoryFitReportResponse).report;
   }
 
   @override
