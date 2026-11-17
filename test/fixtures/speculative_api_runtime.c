@@ -22,6 +22,9 @@ typedef struct {
     int8_t *logits;
 } batch;
 static int calls[10];
+EXPORT const char *llama_dart_build_identity(void) {
+    return "llamadart-native-build/1;llama.cpp=b1b770d90d94cad9e9ea5b993bdbc383a522fb28;";
+}
 static void require_null(void *pointer) { if (pointer) abort(); }
 EXPORT int fixture_context_params_size(void) { return sizeof(context_params); }
 EXPORT int fixture_batch_size(void) { return sizeof(batch); }

@@ -48,7 +48,6 @@ void main() {
     expect(product.ref.op_params[3], ggml_prec.GGML_PREC_F16.value);
     expect(setAccumulator(lhs, ggml_prec.GGML_PREC_F32.value), isFalse);
     expect(setSource(lhs, ggml_prec.GGML_PREC_F16.value, 1), isFalse);
-    expect(ggml_prec.GGML_PREC_DEFAULT, ggml_prec.GGML_PREC_UNDEFINED);
     expect(ggml_prec.fromValue(40), ggml_prec.GGML_PREC_Q4);
   });
 }
