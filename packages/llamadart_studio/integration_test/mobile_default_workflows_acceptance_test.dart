@@ -147,7 +147,9 @@ void main() {
     expect(_arguments(call)['expression'], _expression);
     expect(_result(call)['expression'], _expression);
     expect(_result(call)['result'], 83);
-    expect(message.text.trim(), '83');
+    final finalMath = double.tryParse(message.text.trim());
+    expect(finalMath?.isFinite, isTrue);
+    expect(finalMath, 83);
   });
   workflow('coding_files', 4, (h) async {
     await h.activate();

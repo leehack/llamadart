@@ -26,9 +26,13 @@ are recorded. Those targets are not independent native placement measurements.
 | Independent case | Required result | Case deadline |
 | --- | --- | --- |
 | Chat arithmetic | Original question, answer exactly `4`, no turn error | 3 minutes |
-| Chat math tool | Actual `evaluateMath` with `(18.5 * 4) + sqrt(81)`, result and final answer `83` | 3 minutes |
+| Chat math tool | Actual `evaluateMath` with `(18.5 * 4) + sqrt(81)`, result and final answer numeric `83` (`83.0` allowed) | 3 minutes |
 | Coding files | Visible local workspace creation; model write/read nested Unicode file, then read/edit/reread; real invocation results, independent exact disk bytes/hashes and browser-displayed text | 4 minutes |
 | Notes | Exact Unicode title/body through UI and committed JSON; dispose all dependencies, reload preferences, fresh production bootstrap and exact UI/file reopen | 2 minutes |
+
+The math final answer must parse in full, after trimming, as one finite decimal
+number equal to `83`. Explanations, multiple numbers, `NaN` and `Infinity` fail.
+This contract applies to future candidates; retained runs and grades stay unchanged.
 
 There are at most four user-level model turns across the suite (one, one, two,
 zero). Existing production tool-round caps remain unchanged. Operations have
