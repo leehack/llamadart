@@ -19,6 +19,7 @@ validate against the exact release tag notes.
 
 - Add an opt-in Linux Vulkan loader preflight for native hosts.
 - Speed up model checksum verification on Apple platforms and keep verification off the UI isolate.
+- Add experimental streamed text-to-speech: `TextToSpeechRequest.streamAudio` emits `TextToSpeechAudioChunkEvent` PCM chunks on `TextToSpeechTask.events` before the final event for Qwen3-TTS, LFM3-Audio and Pocket TTS on native, gated by `TextToSpeechCapabilities.supportsIncrementalAudio` (needs llamadart-native `v1.0.0-1`; Soprano, Chatterbox and Web refuse with `LlamaUnsupportedException`). The new sealed event subtype means an exhaustive `switch` over `TextToSpeechEvent` needs a case ([#2036](https://github.com/leehack/llamadart/issues/2036)).
 
 ## 0.19.11
 

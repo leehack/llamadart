@@ -110,6 +110,18 @@ void main() {
     expect(mirror.getField(#setCancelFlag).reflectee, isNull);
   });
 
+  test('the streaming export is optional', () {
+    final api = _load((name) {
+      if (name == 'llama_dart_tts_start_streaming') {
+        throw ArgumentError('optional export absent');
+      }
+      return version.nativeFunction;
+    });
+    expect(api, isNotNull);
+    expect(reflect(api).getField(#startStreaming).reflectee, isNull);
+    expect(reflect(api).getField(#hasModelTypeOptIn).reflectee, isTrue);
+  });
+
   for (final missing in [
     'supported_model_types',
     'get_info_ext',
@@ -228,6 +240,23 @@ void main() {
             reason: '${result.stdout}\n${result.stderr}',
           );
           expect(result.stdout, contains('ABI=1 required=12'));
+          final selected =
+              ((_nativeAssets()['native-assets'] as Map)[Abi.current()
+                          .toString()]
+                      as Map)[Platform.isWindows
+                      ? 'package:llamadart/llamadart_wrapper'
+                      : 'package:llamadart/llamadart']
+                  as List;
+          final bundleHasStreaming = latin1
+              .decode(File(selected[1] as String).readAsBytesSync())
+              .contains('llama_dart_tts_start_streaming');
+          expect(
+            result.stdout,
+            contains('streaming=$bundleHasStreaming'),
+            reason:
+                'The bundled asset exports start_streaming: '
+                '$bundleHasStreaming.',
+          );
         },
       );
     }

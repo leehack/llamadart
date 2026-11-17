@@ -51,6 +51,10 @@ typedef _WebGpuCompletionCapabilities = ({
   Set<SpeculativeDecodingStrategy> speculativeDecoding,
 });
 
+const String _webTtsStreamingUnsupportedReason =
+    'Streaming text-to-speech is not available on Web: the WebGPU bridge '
+    'returns complete PCM only.';
+
 /// Why Web text-to-speech cannot drive [model], or null for Qwen3-TTS.
 String? webTextToSpeechModelUnsupportedReason(BackendTextToSpeechModel model) =>
     model == BackendTextToSpeechModel.qwen3Tts
@@ -2500,6 +2504,7 @@ class WebGpuLlamaBackend
         supportsSpeakerReference:
             _jsBoolProperty(value, 'supportsSpeakerReference') == true,
         supportsCancellation: true,
+        incrementalAudioUnsupportedReason: _webTtsStreamingUnsupportedReason,
       );
     } catch (error) {
       return BackendTextToSpeechCapabilities(
@@ -2517,6 +2522,9 @@ class WebGpuLlamaBackend
     BackendTextToSpeechRequest request, {
     void Function(BackendTextToSpeechProgress progress)? onProgress,
   }) async {
+    if (request.streamAudio) {
+      throw LlamaUnsupportedException(_webTtsStreamingUnsupportedReason);
+    }
     if (request.speakerAudioPath != null) {
       throw LlamaUnsupportedException(
         'Web text-to-speech speaker references require encoded bytes; '

@@ -10121,6 +10121,7 @@ class LlamaCppService {
       final supportsVoice = has(
         llama_dart_tts_capability.LLAMA_DART_TTS_CAPABILITY_VOICE,
       );
+      final streamingReason = _ttsStreamingUnsupportedReason(api, model, flags);
       return BackendTextToSpeechCapabilities(
         isSupported: true,
         model: model,
@@ -10135,9 +10136,84 @@ class LlamaCppService {
         voices: supportsVoice && api.hasModelTypeOptIn
             ? _ttsVoices(api, mtmd, acceptedTypes)
             : const <String>[],
+        supportsIncrementalAudio: streamingReason == null,
+        incrementalAudioUnsupportedReason: streamingReason,
       );
     } finally {
       malloc.free(info);
+    }
+  }
+
+  /// The wrapper's `LLAMA_DART_TTS_CAPABILITY_STREAMING_PCM` bit, declared
+  /// here until the generated bindings carry llamadart-native v1.0.0-1.
+  static const int _ttsCapabilityStreamingPcm = 1 << 3;
+
+  String? _ttsStreamingUnsupportedReason(
+    _TtsApi api,
+    BackendTextToSpeechModel model,
+    int capabilityFlags,
+  ) {
+    if (api.startStreaming == null) {
+      return 'Streaming text-to-speech needs `llama_dart_tts_start_streaming` '
+          'of llamadart-native v1.0.0-1 or later; this llama.cpp runtime '
+          'lacks it.';
+    }
+    if (capabilityFlags & _ttsCapabilityStreamingPcm == 0) {
+      return '${_ttsModelName(model)} decodes its audio only when synthesis '
+          'ends, so it cannot stream PCM.';
+    }
+    return null;
+  }
+
+  /// PCM from [offset] that the native task has produced so far, or null when
+  /// nothing new exists.
+  Float32List? _readTtsPcmSince(
+    _TtsApi api,
+    Pointer<llama_dart_tts> task,
+    int offset,
+  ) {
+    final outputInfo = malloc<llama_dart_tts_output_info>();
+    try {
+      outputInfo.ref.struct_size = sizeOf<llama_dart_tts_output_info>();
+      _throwForTtsStatus(
+        llama_dart_tts_status.fromValue(api.getOutputInfo(task, outputInfo)),
+        operation: 'Text-to-speech output metadata',
+        api: api,
+        task: task,
+      );
+      final sampleCount = outputInfo.ref.sample_count;
+      if (sampleCount < offset) {
+        throw LlamaTextToSpeechException(
+          'Native text-to-speech streamed PCM shrank.',
+          '$sampleCount/$offset samples',
+        );
+      }
+      final count = sampleCount - offset;
+      if (count == 0) return null;
+      final pcm = malloc<Float>(count);
+      final outputCount = malloc<Size>();
+      try {
+        _throwForTtsStatus(
+          llama_dart_tts_status.fromValue(
+            api.readPcm(task, offset, pcm, count, outputCount),
+          ),
+          operation: 'Text-to-speech PCM read',
+          api: api,
+          task: task,
+        );
+        if (outputCount.value != count) {
+          throw LlamaTextToSpeechException(
+            'Native text-to-speech returned incomplete PCM output.',
+            '${outputCount.value}/$count samples',
+          );
+        }
+        return Float32List.fromList(pcm.asTypedList(count));
+      } finally {
+        malloc.free(pcm);
+        malloc.free(outputCount);
+      }
+    } finally {
+      malloc.free(outputInfo);
     }
   }
 
@@ -10380,6 +10456,18 @@ class LlamaCppService {
         'later; this runtime lacks it.',
       );
     }
+    final startStreaming = request.streamAudio ? api.startStreaming : null;
+    if (request.streamAudio && startStreaming == null) {
+      malloc.free(text);
+      if (language != nullptr) malloc.free(language);
+      throw LlamaUnsupportedException(
+        _ttsStreamingUnsupportedReason(
+          api,
+          BackendTextToSpeechModel.qwen3Tts,
+          _ttsCapabilityStreamingPcm,
+        )!,
+      );
+    }
     final Pointer<Utf8> voice = voiceName == null
         ? nullptr
         : voiceName.toNativeUtf8();
@@ -10414,6 +10502,7 @@ class LlamaCppService {
     Pointer<llama_dart_tts> task = nullptr;
     var framesGenerated = 0;
     var truncated = false;
+    var streamedSamples = 0;
 
     llama_set_embeddings(context.pointer, true);
     try {
@@ -10478,14 +10567,18 @@ class LlamaCppService {
 
       _throwForTtsStatus(
         llama_dart_tts_status.fromValue(
-          voice == nullptr
+          startStreaming != null
+              ? startStreaming(task, requestPointer, voice.cast())
+              : voice == nullptr
               ? api.start(task, requestPointer)
               : startWithVoice!(task, requestPointer, voice.cast()),
         ),
         operation: 'Text-to-speech startup',
         api: api,
         task: task,
-        barrierCall: voice == nullptr
+        barrierCall: startStreaming != null
+            ? 'llama_dart_tts_start_streaming'
+            : voice == nullptr
             ? 'llama_dart_tts_start'
             : 'llama_dart_tts_start_with_voice',
         context: context.pointer,
@@ -10514,6 +10607,21 @@ class LlamaCppService {
         truncated = progress.ref.truncated;
         final state = llama_dart_tts_state.fromValue(progress.ref.state);
         if (state == llama_dart_tts_state.LLAMA_DART_TTS_STATE_COMPLETED) {
+          if (startStreaming != null) {
+            final tail = _readTtsPcmSince(api, task, streamedSamples);
+            if (tail != null) {
+              streamedSamples += tail.length;
+              onProgress?.call(
+                BackendTextToSpeechProgress(
+                  phase: BackendTextToSpeechPhase.generating,
+                  promptTokensRemaining: progress.ref.prompt_tokens_remaining,
+                  framesGenerated: framesGenerated,
+                  truncated: truncated,
+                  audio: tail,
+                ),
+              );
+            }
+          }
           break;
         }
         if (state == llama_dart_tts_state.LLAMA_DART_TTS_STATE_CANCELLED) {
@@ -10527,6 +10635,12 @@ class LlamaCppService {
             _ttsLastError(api, task),
           );
         }
+        final audio =
+            startStreaming != null &&
+                state == llama_dart_tts_state.LLAMA_DART_TTS_STATE_GENERATING
+            ? _readTtsPcmSince(api, task, streamedSamples)
+            : null;
+        if (audio != null) streamedSamples += audio.length;
         onProgress?.call(
           BackendTextToSpeechProgress(
             phase:
@@ -10537,6 +10651,7 @@ class LlamaCppService {
             promptTokensRemaining: progress.ref.prompt_tokens_remaining,
             framesGenerated: framesGenerated,
             truncated: truncated,
+            audio: audio,
           ),
         );
         await Future<void>.delayed(Duration.zero);

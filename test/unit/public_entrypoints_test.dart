@@ -262,6 +262,7 @@ const _appNames = <String>{
   'TemplateTimeChatSession',
   'TemplateToolCallSerialization',
   'TextToSpeechAdapter',
+  'TextToSpeechAudioChunkEvent',
   'TextToSpeechCapabilities',
   'TextToSpeechCompletion',
   'TextToSpeechCompletionState',

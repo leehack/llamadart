@@ -45,6 +45,9 @@ class _Spec {
   final bool supportsSpeakerReference;
   final int sequences;
 
+  /// Whether the model streams PCM chunks while it generates.
+  final bool streamsAudio;
+
   /// Text in another language and its code, spoken and transcribed back.
   final (String, String)? otherLanguage;
   final double temperature;
@@ -60,6 +63,7 @@ class _Spec {
     this.supportsLanguage = false,
     this.supportsSpeakerReference = false,
     this.sequences = 1,
+    this.streamsAudio = false,
     this.otherLanguage,
     this.temperature = 0.8,
   });
@@ -78,6 +82,7 @@ const _specs = <_Spec>[
     sampleRateHz: 24000,
     voices: ['female', 'male'],
     supportsLanguage: true,
+    streamsAudio: true,
   ),
   _Spec(
     name: 'Soprano',
@@ -115,6 +120,7 @@ const _specs = <_Spec>[
     voices: ['alba', 'anna', 'azelma'],
     listedVoices: 25,
     defaultIsFirstVoice: true,
+    streamsAudio: true,
   ),
 ];
 
@@ -340,6 +346,45 @@ void main() {
             throwsA(isA<LlamaTextToSpeechException>()),
           );
         }
+      });
+
+      test('streams PCM chunks equal to the non-streamed result, or refuses '
+          'streaming', () async {
+        final tts = engine();
+        if (tts == null) return;
+        final capabilities = await tts.capabilities;
+        expect(capabilities.supportsIncrementalAudio, spec.streamsAudio);
+        final streamed = TextToSpeechRequest(
+          text: _text,
+          maxFrames: 1024,
+          temperature: spec.temperature,
+          seed: 1,
+          streamAudio: true,
+        );
+        if (!spec.streamsAudio) {
+          await expectLater(
+            tts.synthesize(streamed),
+            throwsA(isA<LlamaUnsupportedException>()),
+          );
+          return;
+        }
+        final task = await tts.synthesize(streamed);
+        final events = await task.events.toList();
+        final result = await task.result;
+        final chunks = events.whereType<TextToSpeechAudioChunkEvent>().toList();
+        expect(chunks, isNotEmpty);
+        var offset = 0;
+        for (final chunk in chunks) {
+          expect(chunk.sampleOffset, offset);
+          offset += chunk.samples.length;
+        }
+        expect(offset, result.samples.length);
+        expect(
+          chunks.expand((chunk) => chunk.samples),
+          orderedEquals(result.samples),
+        );
+        final plain = await tts.synthesizeOnce(request());
+        expect(result.samples, orderedEquals(plain.samples));
       });
 
       test('a fixed seed repeats after a cancelled task', () async {
