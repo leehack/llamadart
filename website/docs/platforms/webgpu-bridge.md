@@ -414,8 +414,8 @@ first model load, for diagnosis or controlled deployments:
 This llamadart version pins bridge assets `v0.1.85`, which include the
 API-version-1 media embedding contract.
 
-- The pinned `v0.1.85` bridge assets embed llama.cpp `v0.9.0`, behind the native runtime.
-  Web and native share no ABI, so the native pin `v1.0.0` is supported ahead of the bridge; changes new in llama.cpp `v1.0.0` reach Web only with a later bridge repin.
+- The pinned `v0.1.85` bridge assets embed llama.cpp `v0.9.0`, behind the native runtime `v1.0.0`.
+  The runtimes have independent ABIs.
 
 Provenance and the pinned manifest digest are in
 [`doc/webgpu_bridge.md`](https://github.com/leehack/llamadart/blob/main/doc/webgpu_bridge.md).

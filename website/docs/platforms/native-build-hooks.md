@@ -434,15 +434,15 @@ hooks:
   release ships CUDA only when the `windows-x64-cuda12` archive is extracted
   into the same directory.
 
-Overrides do not regenerate the Dart FFI bindings, so the binary must stay ABI-
-and symbol-compatible with the pinned release; the hook logs a warning when an
-override is active. This core is qualified on the pinned `v0.9.0` runtime. It
-requires the speculative rollback and model-creation ownership fixes from
-`v0.8.0-3`, as well as compatible struct layouts and symbols, and an older
-binary also lacks the `v0.9.0` ARM F16 accumulation fix. Older binaries are not
-qualified by symbol presence alone. Use core `0.13.x` for its v0.6.0 runtime and companions. Do not point a core before
-`0.17.1` at native `v0.8.0` or later: its bindings give
-`mtmd_helper_init_opt` 24 bytes, and `v0.8.0` writes past them.
+The pinned `v1.0.0` runtime matches this core's FFI bindings. For a custom
+bundle, use the required llama.cpp commit above and preserve the pinned
+runtime's struct layouts and symbols. The hook logs a warning when an
+override is active.
+
+For older cores, use the native runtime and Apple companions pinned by that
+core. For example, core `0.13.x` uses native `v0.6.0`. A core before `0.17.1`
+allocates 24 bytes for `mtmd_helper_init_opt`, which native `v0.8.0` can write
+past.
 
 The hook and runtime fallbacks use `native_bundles_v2` for llama.cpp only,
 including explicit compatible tag/repository overrides and extracted local
