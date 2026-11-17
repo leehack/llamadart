@@ -1,5 +1,9 @@
 # Android release acceptance builds
 
+The default target below remains the fixed-profile diagnostic. For the separate
+production-bootstrap suite and explicit `--suite default-workflows` route, see
+[mobile default workflow preparation](mobile-default-acceptance.md).
+
 `integration_test/cloud_mobile_acceptance_test.dart` needs both the SDK's native
 completion plugin in the app and `FlutterTestRunner` on the instrumentation
 classpath. Flutter 3.50 deliberately excludes dev plugins from release

@@ -4,11 +4,13 @@ import importlib.util
 import os
 from pathlib import Path
 import subprocess
+import sys
 import tempfile
 import unittest
 import zipfile
 
 HELPER = Path(__file__).resolve().parents[1] / "build_android_release_acceptance.py"
+sys.path.insert(0, str(HELPER.parent))
 spec = importlib.util.spec_from_file_location("acceptance", HELPER)
 acceptance = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(acceptance)

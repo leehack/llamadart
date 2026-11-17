@@ -41,6 +41,8 @@ An unavailable platform or physical device stays an explicit open gate.
 
 For the maintained opt-in Android release instrumentation build and artifact
 receipts, see [Android release acceptance](android-release-acceptance.md).
+The separate [mobile default workflow suite](mobile-default-acceptance.md)
+defines bounded production-bootstrap preparation and its still-open execution gates.
 
 ## Evidence and verification
 

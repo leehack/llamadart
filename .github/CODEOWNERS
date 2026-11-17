@@ -141,3 +141,13 @@ lib/src/backends/litert_lm/litert_lm_embedding_bindings.dart @leehack
 
 # Private Android release-instrumentation class retention.
 /example/chat_app/android/app/consumer-profile-proguard-rules.pro @leehack
+
+# Studio mobile qualification-only build and resource boundaries.
+/packages/llamadart_studio/tool/build_android_release_acceptance.py @leehack
+/packages/llamadart_studio/tool/build_ios_release_acceptance.py @leehack
+/packages/llamadart_studio/tool/mobile_default_assets.py @leehack
+/packages/llamadart_studio/tool/stage_ios_mobile_default.py @leehack
+/packages/llamadart_studio/ios/Runner.xcodeproj/project.pbxproj @leehack
+/packages/llamadart_studio/android/app/src/androidTest/ @leehack
+/packages/llamadart_studio/integration_test/mobile_default_workflows_acceptance_test.dart @leehack
+/packages/llamadart_studio/integration_test/support/mobile_default_inputs.dart @leehack

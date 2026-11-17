@@ -30,7 +30,17 @@ public class MainActivityTest {
     public MainActivityTest() throws IOException {
         Bundle arguments = InstrumentationRegistry.getArguments();
         Instrumentation instrumentation = InstrumentationRegistry.getInstrumentation();
-        if ("true".equals(arguments.getString("stageModel"))) stageModel(instrumentation);
+        boolean defaults = "true".equals(arguments.getString("studioMobileDefault"));
+        if (defaults && "true".equals(arguments.getString("stageModel"))) {
+            throw new IOException("Mobile default and diagnostic staging are mutually exclusive");
+        }
+        if (defaults) {
+            MobileDefaultModelStaging.stage(instrumentation.getTargetContext().getCacheDir(), name -> {
+                ParcelFileDescriptor descriptor = instrumentation.getUiAutomation().executeShellCommand(
+                    "cat /data/local/tmp/studio-mobile-default-models/" + name);
+                return new ParcelFileDescriptor.AutoCloseInputStream(descriptor);
+            });
+        } else if ("true".equals(arguments.getString("stageModel"))) stageModel(instrumentation);
         forwardReloadMemoryArguments(arguments, instrumentation);
         forwardMicroBatchSweepArguments(arguments, instrumentation);
         forwardAndroidQualificationArguments(arguments, instrumentation);
