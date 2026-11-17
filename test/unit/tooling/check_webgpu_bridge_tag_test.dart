@@ -1387,23 +1387,42 @@ void main() {
       ]);
     });
 
-    test('the repeated native runtime tag must match the exact pin', () {
-      final path = 'doc/webgpu_bridge.md';
-      final root = _fakeRepo(
-        readPinnedBridgeTag(Directory.current),
-        files: {
-          path: File(path).readAsStringSync().replaceFirst(
-            'native runtime tag\n`$bridgeApprovedNativePin`',
-            'native runtime tag\n`$bridgeLlamaCppTag`',
-          ),
+    for (final (name, lineEnding) in [('LF', '\n'), ('CRLF', '\r\n')]) {
+      test(
+        'the repeated native runtime tag must match the exact pin ($name)',
+        () {
+          const path = 'doc/webgpu_bridge.md';
+          const staleNativeTag = 'v0.0.0';
+          const provenanceStart =
+              '. Provenance for this immutable consumer artifact:';
+          const target = '`$bridgeApprovedNativePin`$provenanceStart';
+          final source = File(path)
+              .readAsStringSync()
+              .replaceAll('\r\n', '\n')
+              .replaceAll('\n', lineEnding);
+          expect(
+            target.allMatches(source),
+            hasLength(1),
+            reason:
+                'The fixture must have one repeated native runtime tag to replace',
+          );
+          final root = _fakeRepo(
+            readPinnedBridgeTag(Directory.current),
+            files: {
+              path: source.replaceFirst(
+                target,
+                '`$staleNativeTag`$provenanceStart',
+              ),
+            },
+          );
+
+          expect(findBridgeProvenanceDrift(root), [
+            '$path: states nativeRuntimeTag $staleNativeTag, '
+                'expected $bridgeApprovedNativePin',
+          ]);
         },
       );
-
-      expect(findBridgeProvenanceDrift(root), [
-        '$path: states nativeRuntimeTag $bridgeLlamaCppTag, '
-            'expected $bridgeApprovedNativePin',
-      ]);
-    });
+    }
 
     test('a reworded provenance passage is reported rather than skipped', () {
       final root = Directory.systemTemp.createTempSync('bridge_provenance');
