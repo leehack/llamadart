@@ -404,9 +404,9 @@ void main() {
         'hook_sha256': hash,
         'probe_sha256': hash,
         'selector_sha256': hash,
-        'native_tag': 'v0.9.0',
+        'native_tag': 'v1.0.0',
         'native_archive_sha256':
-            'd3c933a63e8ccaafeee32edd30685fdccd17c05e54b75895282f01fe74914a1b',
+            '68248fa23753d4ee2f7ccacae69c49ee3006a66a86f4cddb997c02bd893b269e',
         'libraries': {
           for (final name in selection['packaged'] as List<String>)
             name: archive[name],
@@ -426,6 +426,17 @@ void main() {
         {...good, 'source_dirty': true},
         {...good, 'source_commit': 'b'},
         {...good, 'native_tag': 'v0.7.0-1'},
+        {
+          ...good,
+          'native_tag': 'v0.9.0',
+          'native_archive_sha256':
+              'd3c933a63e8ccaafeee32edd30685fdccd17c05e54b75895282f01fe74914a1b',
+        },
+        {
+          ...good,
+          'native_archive_sha256':
+              'd3c933a63e8ccaafeee32edd30685fdccd17c05e54b75895282f01fe74914a1b',
+        },
         {...good, 'libraries': {}},
         {...good, 'probe_sha256': 'd' * 64},
         {...good, 'plan_sha256': pixel.hash},

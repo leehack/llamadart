@@ -39,9 +39,9 @@ void main() {
       'consumer_pubspec_sha256': 'a' * 64,
       'hook_sha256': 'a' * 64,
       'selector_sha256': 'a' * 64,
-      'native_tag': 'v0.9.0',
+      'native_tag': 'v1.0.0',
       'native_archive_sha256':
-          'd3c933a63e8ccaafeee32edd30685fdccd17c05e54b75895282f01fe74914a1b',
+          '68248fa23753d4ee2f7ccacae69c49ee3006a66a86f4cddb997c02bd893b269e',
       'archive_libraries': archive,
       'packaging_selection': selection,
       'libraries': {
@@ -78,6 +78,10 @@ void main() {
         (plan.wire['hook_defines'] as Map)['llamadart_native_tag'],
         llamaCppTag,
       );
+      expect(
+        binding(plan)['native_archive_sha256'],
+        llamaCppBundleSha256['android-arm64'],
+      );
     }
   });
 
@@ -93,11 +97,22 @@ void main() {
           consumerCpuProfile: profile,
           consumerPlanHash: plan.hash,
         );
-        expect(read(good)['native_tag'], 'v0.9.0');
+        expect(read(good)['native_tag'], 'v1.0.0');
         for (final bad in [
           {...good, 'source_dirty': true},
           {...good, 'consumer_pubspec_sha256': ''},
           {...good, 'native_tag': 'v0.8.0-1'},
+          {
+            ...good,
+            'native_tag': 'v0.9.0',
+            'native_archive_sha256':
+                'd3c933a63e8ccaafeee32edd30685fdccd17c05e54b75895282f01fe74914a1b',
+          },
+          {
+            ...good,
+            'native_archive_sha256':
+                'd3c933a63e8ccaafeee32edd30685fdccd17c05e54b75895282f01fe74914a1b',
+          },
           {
             ...good,
             'plan_sha256': AndroidConsumerProfilePlan(
