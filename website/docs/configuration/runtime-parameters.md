@@ -168,7 +168,9 @@ const params = LlamaCppModelParams(
   context, not a projector, LoRA adapters or a draft model, so raise
   `marginBytes` for them; free memory can also change between the fit and the
   load. Validated at the native level on Linux with an NVIDIA L4 (Vulkan and
-  CUDA); Windows is pending.
+  CUDA). Windows is pending a native free-memory fix: on a Windows L4 the
+  reported free memory did not account for other processes' VRAM, so the fit
+  returned `unchanged` under a cross-process hog (no crash was seen).
 
 ```dart
 const params = LlamaCppModelParams(
