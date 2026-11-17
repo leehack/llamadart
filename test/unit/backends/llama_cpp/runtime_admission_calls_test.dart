@@ -49,7 +49,7 @@ void main() {
     final result = await run(
       Platform.resolvedExecutable,
       [kernel.snapshot, mode, expected, kernel.library],
-      environment: {if (identity != null) 'FIXTURE_IDENTITY': identity},
+      environment: {'FIXTURE_IDENTITY': ?identity},
     );
     expect(result.exitCode, 0, reason: '${result.stdout}\n${result.stderr}');
   }

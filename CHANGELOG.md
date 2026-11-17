@@ -3,6 +3,8 @@ Releases before 0.10.0 are in the
 
 ## Unreleased
 
+- Refuse a native llama.cpp runtime that was not built from llama.cpp `v1.0.0` with `LlamaUnsupportedException`, before the first call that passes a llama.cpp struct by value. A `llamadart_native_tag` or `llamadart_native_path` override to any other llama.cpp release no longer loads.
+
 - Restore native text-to-speech discovery when Dart bundles its runtime outside the working directory.
 
 - Avoid initializing unavailable Linux Vulkan backends during llama.cpp automatic loading and device probes, while retaining other bundled backends.

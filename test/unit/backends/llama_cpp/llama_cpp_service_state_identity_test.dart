@@ -12,7 +12,9 @@ import 'package:test/test.dart';
 import '../../../support/synthetic_embedding_gguf.dart';
 
 const _params = ModelParams(gpuLayers: 0, contextSize: 64);
-const _build = 'llamadart-native-build/1;owner=abc;backends=cpu';
+const _build =
+    'llamadart-native-build/1;owner=abc;'
+    'llama.cpp=b1b770d90d94cad9e9ea5b993bdbc383a522fb28;backends=cpu';
 
 // Runs the real llama.cpp runtime on the CPU with a synthetic model; the
 // build identity reader stands in for runtimes that predate it.
@@ -76,39 +78,19 @@ void main() {
     expect(a.matches(b), isFalse);
   });
 
-  test('a runtime without llama_dart_build_identity is unsupported', () {
-    final (service, context) = open(() => null);
+  for (final entry in {
+    'a runtime without llama_dart_build_identity': null,
+    'an empty build identity': '',
+  }.entries) {
+    test('${entry.key} is refused when the model loads', () {
+      final service = LlamaCppService(buildIdentity: () => entry.value);
 
-    expect(
-      () => service.stateIdentity(context),
-      throwsA(
-        isA<LlamaUnsupportedException>().having(
-          (e) => e.message,
-          'message',
-          allOf(
-            contains('llama_dart_build_identity'),
-            contains('v0.7.0-3 or newer'),
-            contains('native release override'),
-          ),
-        ),
-      ),
-    );
-  });
-
-  test('an empty build identity is unsupported', () {
-    final (service, context) = open(() => '');
-
-    expect(
-      () => service.stateIdentity(context),
-      throwsA(
-        isA<LlamaUnsupportedException>().having(
-          (e) => e.message,
-          'message',
-          allOf(contains('reports an empty one'), contains('v0.7.0-3')),
-        ),
-      ),
-    );
-  });
+      expect(
+        () => service.loadModel(modelPath, _params),
+        throwsA(isA<LlamaUnsupportedException>()),
+      );
+    });
+  }
 
   test('an unknown context is a state error', () {
     final (service, _) = open(() => _build);

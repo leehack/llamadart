@@ -391,6 +391,11 @@ hooks:
   cores are written without leading zeros, and rebuild counters start at 1.
   List releases with
   `gh release list --repo leehack/llamadart-native --limit 20`.
+- This core loads only a runtime built from llama.cpp `v1.0.0`
+  (`b1b770d90d94cad9e9ea5b993bdbc383a522fb28`), which it checks from the
+  runtime's `llama_dart_build_identity` before the first by-value call. Any
+  other build, including a runtime without that export, is refused with
+  `LlamaUnsupportedException`; there is no override.
 - The release must contain `llamadart-native-<bundle>-<tag>.tar.gz` for the
   target and a `SHA256SUMS` that lists it; otherwise the build fails before
   using the archive. The pinned release is verified against digests in
