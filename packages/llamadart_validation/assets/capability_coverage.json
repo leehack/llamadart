@@ -672,7 +672,7 @@
       ],
       "exemption": {
         "id": "gpu-memory-fit",
-        "reason": "ModelParams.gpuMemoryFit has maintained validation, runtime-rejection, skip-gate, outcome, buffer-ownership and shared-context-parameter tests against a fake fit runner, a real-runtime fit call on the synthetic model, and a local-only real-model test. A native-level harness run on a Linux NVIDIA L4 (Vulkan and CUDA) is recorded on the issue. No validation-pack profile covers it; Windows validation is pending a native free-memory fix; multi-GPU has no run.",
+        "reason": "ModelParams.gpuMemoryFit has maintained validation, runtime-rejection, skip-gate, outcome, buffer-ownership and shared-context-parameter tests against a fake fit runner, a real-runtime fit call on the synthetic model, and a local-only real-model test. A native-level harness run on a Linux NVIDIA L4 (Vulkan and CUDA) is recorded on the issue. No validation-pack profile covers it; Windows Vulkan was qualified on an NVIDIA L4 with llamadart-native v1.0.0-1; multi-GPU has no run.",
         "issue": "https://github.com/leehack/llamadart/issues/2034"
       }
     },

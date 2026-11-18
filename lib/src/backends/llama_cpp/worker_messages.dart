@@ -907,6 +907,9 @@ enum WorkerErrorKind {
 
   /// An embedding input exceeds the context or single-pass capacity.
   embeddingInputTooLong,
+
+  /// The GPU memory fit failed or found nothing that fits.
+  gpuMemoryFit,
 }
 
 /// Response containing an error message and category.
@@ -923,6 +926,8 @@ class ErrorResponse {
     this.kind = WorkerErrorKind.generic,
     this.maxInputTokens,
     this.actualTokens,
+    this.gpuMemoryFitReport,
+    this.details,
   });
 
   /// Effective limit for an embedding overflow; null for other errors.
@@ -930,6 +935,13 @@ class ErrorResponse {
 
   /// Exact input size when supplied by the embedding runtime.
   final int? actualTokens;
+
+  /// What the fit measured for [WorkerErrorKind.gpuMemoryFit]; null when it
+  /// failed before measuring.
+  final GpuMemoryFitReport? gpuMemoryFitReport;
+
+  /// Detail of the original exception, kept apart from [message].
+  final Object? details;
 }
 
 /// Response containing backend name.

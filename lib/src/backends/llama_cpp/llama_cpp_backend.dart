@@ -147,6 +147,12 @@ class NativeLlamaBackend
     switch (response.kind) {
       case WorkerErrorKind.model:
         return LlamaModelException(response.message);
+      case WorkerErrorKind.gpuMemoryFit:
+        return LlamaGpuMemoryFitException(
+          response.message,
+          report: response.gpuMemoryFitReport,
+          details: response.details,
+        );
       case WorkerErrorKind.context:
         return LlamaContextException(response.message);
       case WorkerErrorKind.embeddingInputTooLong:

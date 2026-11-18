@@ -4,6 +4,7 @@
 library;
 
 import 'dart:io';
+import 'dart:math' as math;
 
 import 'package:llamadart/llamadart.dart';
 import 'package:test/test.dart';
@@ -41,7 +42,7 @@ void main() {
         modelParams: LlamaCppModelParams(
           contextSize: 2048,
           preferredBackend: gpus.first.backend,
-          gpuMemoryFit: GpuMemoryFit(marginBytes: free - budget),
+          gpuMemoryFit: GpuMemoryFit(marginBytes: math.max(free - budget, 0)),
         ),
       );
     } on LlamaUnsupportedException catch (error) {

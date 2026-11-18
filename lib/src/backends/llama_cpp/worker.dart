@@ -21,6 +21,14 @@ ErrorResponse _toErrorResponse(Object error) {
   if (error is LlamaArgumentException) {
     return ErrorResponse(messageFor(error), kind: WorkerErrorKind.argument);
   }
+  if (error is LlamaGpuMemoryFitException) {
+    return ErrorResponse(
+      error.message,
+      kind: WorkerErrorKind.gpuMemoryFit,
+      gpuMemoryFitReport: error.report,
+      details: error.details,
+    );
+  }
   if (error is LlamaModelException) {
     return ErrorResponse(messageFor(error), kind: WorkerErrorKind.model);
   }

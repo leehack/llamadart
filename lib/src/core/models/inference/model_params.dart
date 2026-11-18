@@ -570,6 +570,10 @@ class ModelParams {
   /// reject a value. [validate] rejects fields the fit owns: [gpuLayers]
   /// other than [maxGpuLayers], [tensorSplit], [splitMode]
   /// [ModelSplitMode.row] and [ModelSplitMode.tensor], and [cpuMoeLayers].
+  ///
+  /// With several [gpuDevices] the load carries a tensor split, which the fit
+  /// cannot change: it succeeds only when the whole model fits as placed, and
+  /// throws `LlamaGpuMemoryFitException` otherwise.
   final GpuMemoryFit? gpuMemoryFit;
 
   /// Web/WebGPU only: prefer the 64-bit (wasm64/mem64) bridge core.

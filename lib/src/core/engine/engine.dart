@@ -945,7 +945,9 @@ class LlamaEngine implements LlamadartEngine<LlamaEngineCapabilities> {
         _redactedErrorDetails(e, path),
         stackTrace,
       );
-      if (e is LlamaUnsupportedException || e is LlamaModelFormatException) {
+      if (e is LlamaUnsupportedException ||
+          e is LlamaModelFormatException ||
+          e is LlamaGpuMemoryFitException) {
         rethrow;
       }
       if (e is UnsupportedError) {

@@ -25,12 +25,18 @@ void main() {
 
   tearDown(() => dir.deleteSync(recursive: true));
 
-  GpuMemoryFitNativeResult run(String path, {int contextSize = 0}) {
+  GpuMemoryFitNativeResult run(
+    String path, {
+    int contextSize = 0,
+    int? gpuLayers,
+    int marginBytes = 0,
+  }) {
     final pathPtr = path.toNativeUtf8();
     final model = calloc<llama_model_params>();
     final context = calloc<llama_context_params>();
     final defaults = llama_model_default_params();
     model.ref = defaults;
+    if (gpuLayers != null) model.ref.n_gpu_layers = gpuLayers;
     context.ref = llama_context_default_params();
     context.ref.n_ctx = contextSize;
     final slots = llama_max_devices();
@@ -40,7 +46,7 @@ void main() {
     );
     final margins = calloc<Size>(slots);
     for (var i = 0; i < slots; i++) {
-      margins[i] = 0;
+      margins[i] = marginBytes;
     }
     try {
       return runner(
@@ -81,6 +87,18 @@ void main() {
       expect(device.name, isNotEmpty);
       expect(device.totalBytes, greaterThan(0));
     }
+  });
+
+  test('a fit that cannot change a preset layer count is a failed fit', () {
+    final path = writeSyntheticLlamaGguf('${dir.path}/model.gguf').path;
+    final result = run(
+      path,
+      contextSize: 256,
+      gpuLayers: 0,
+      marginBytes: 1 << 60,
+    );
+    expect(result.status, GpuMemoryFitStatus.failure);
+    expect(result.devices, isEmpty);
   });
 
   test('an unreadable model is an error that carries the native message', () {

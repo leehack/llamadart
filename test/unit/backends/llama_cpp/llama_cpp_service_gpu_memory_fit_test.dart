@@ -460,6 +460,34 @@ void main() {
     allocator.expectAllFreed();
   });
 
+  test('an automatic context measures the batches it will be created with', () {
+    model = writeSyntheticLlamaGguf(
+      '${dir.path}/long.gguf',
+      contextLength: 8192,
+    ).path;
+    fit.trainedContext = 8192;
+    start();
+    const requested = ModelParams(
+      contextSize: 0,
+      preferredBackend: GpuBackend.cuda,
+      gpuMemoryFit: GpuMemoryFit(marginBytes: _gib),
+      batchSize: 4096,
+      microBatchSize: 4096,
+    );
+    final handle = service.loadModel(model, requested);
+    // The synthetic model's head size rejects the context after the
+    // recorder has seen its parameters.
+    try {
+      service.createContext(handle, requested);
+    } on Object {
+      // Only the recorded parameters matter.
+    }
+    final seen = fit.seen.single;
+    final created = recorder.contextConfigs.single;
+    expect((seen.nBatch, seen.nUbatch), (created.nBatch, created.nUbatch));
+    expect((seen.nBatch, seen.nUbatch), (4096, 4096));
+  });
+
   test('the fit measures the context that is created', () {
     start();
     final measured = ModelParams(

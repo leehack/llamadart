@@ -157,6 +157,9 @@ const params = LlamaCppModelParams(
   down to that size. When no layer fits, `ComputeDevice.auto` loads on the CPU
   and `ComputeDevice.gpu` throws `LlamaGpuMemoryFitException` before the model
   loads; a fit that fails throws too, and never falls back to a full load.
+  With several `gpuDevices` the fit cannot change the placement's tensor
+  split, so it succeeds only when the whole model fits as placed and throws
+  otherwise.
   `LlamaEngine.getGpuMemoryFitReport()` returns what the fit measured and
   chose, and a warning is logged when it changed the load. macOS, iOS and
   Android share memory between CPU and GPU, so a load there is not fitted and

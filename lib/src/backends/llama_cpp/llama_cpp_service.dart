@@ -2118,8 +2118,12 @@ class LlamaCppService {
     final measured = _newContextParams(
       modelParams,
       contextSize: math.max(modelParams.contextSize, 0),
+      // With an automatic context the real batches are only known after the
+      // fit, so measure the largest they can be.
       batchContextSize: math.max(
-        modelParams.contextSize,
+        modelParams.contextSize > 0
+            ? modelParams.contextSize
+            : modelParams.batchSize,
         ModelParams.defaultBatchSize,
       ),
       useFullContextDefaults: false,
