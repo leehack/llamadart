@@ -16,7 +16,10 @@ MODEL_SHA256 = '6a1a2eb6d15622bf3c96857206351ba97e1af16c30d7a74ee38970e434e9407e
 PROMPT = 'Repeat and continue this sequence exactly:\n' + '\n'.join(
     ['alpha beta gamma delta epsilon zeta eta theta'] * 5)
 PROMPT_SHA256 = hashlib.sha256(PROMPT.encode()).hexdigest()
-TAGS = ('v0.8.0-2', 'v0.8.0-3', 'v0.9.0', 'v1.0.0')
+PIPELINE_ONLY_TAG = 'v0.8.0-2'
+# Preserve the historical field for sealed receipts from the earlier lanes.
+LEGACY_NATIVE3_REPORT_TAGS = ('v0.8.0-3', 'v0.9.0', 'v1.0.0')
+TAGS = (PIPELINE_ONLY_TAG, *LEGACY_NATIVE3_REPORT_TAGS, 'v1.0.0-1')
 NATIVE_NAME = re.compile(r'^(?:lib)?(?:llama(?:dart)?|ggml|mtmd)(?:[-_.].*)?\.(?:dll|dylib)$', re.I)
 
 
@@ -50,7 +53,7 @@ def reject_overrides(environment):
 
 
 def pins(source, expected_tag, target):
-    require(expected_tag in TAGS, 'only explicitly scoped native2/native3 accepted')
+    require(expected_tag in TAGS, 'only explicitly supported native tags accepted')
     tag = re.findall(r"^const llamaCppTag = '([^']+)';$", source, re.M)
     require(tag == [expected_tag], 'expected-native-tag does not match the committed default pin')
     body = re.search(r'const llamaCppBundleSha256 = <String, String>\{(.*?)\n\};', source, re.S)
@@ -262,7 +265,7 @@ def query_result(result, modules, tag):
     query = result.get('query', {})
     require(query.get('hasNextn') is True and query.get('nextnNullFalse') is True
             and query.get('probeAfterPublicOutcome') is True, 'retained nextn(null) probe failed')
-    require(query.get('hasLegacyQuery') is (tag == TAGS[0]), 'legacy query presence disagrees with native scope')
+    require(query.get('hasLegacyQuery') is (tag == PIPELINE_ONLY_TAG), 'legacy query presence disagrees with native scope')
     for path_key, hash_key in (('wrapperPath', 'wrapperSha256'), ('nextnOwnerPath', 'nextnOwnerSha256')):
         require(query.get(path_key) in modules, 'query provider outside observed native map')
         require(query.get(hash_key) == modules[query[path_key]]['sha256'], 'query owner hash mismatch')
@@ -374,8 +377,8 @@ def bind_providers(modules, members, platform, allowed_root):
 
 
 def scope(tag, complete):
-    return {'expectedNativeTag': tag, 'pipelineOnly': tag == TAGS[0],
-            'finalNative3Qualified': tag in TAGS[1:] and complete,
+    return {'expectedNativeTag': tag, 'pipelineOnly': tag == PIPELINE_ONLY_TAG,
+            'finalNative3Qualified': tag in LEGACY_NATIVE3_REPORT_TAGS and complete,
             'independentAcceptance': 'required separately', 'platformScopeOnly': True,
             'gpuQualification': False}
 
@@ -389,7 +392,7 @@ def verify_seal(output):
     unchanged(manifest.get('files'), actual, 'sealed evidence inventory')
     require(manifest.get('terminalSha256') == sha256(output / 'terminal.json'), 'terminal seal mismatch')
     terminal = json.loads((output / 'terminal.json').read_text(encoding='utf-8'))
-    require(terminal.get('finalNative3Qualified') is
-            (terminal.get('expectedNativeTag') in TAGS[1:] and terminal.get('completed') is True),
+    expected_scope = scope(terminal.get('expectedNativeTag'), terminal.get('completed') is True)
+    require(terminal.get('finalNative3Qualified') is expected_scope['finalNative3Qualified'],
             'terminal native3 scope contradicts completion')
     return terminal

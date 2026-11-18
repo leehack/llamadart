@@ -49,6 +49,7 @@ void main() {
         'v0.8.0-3',
         'v0.9.0',
         'v1.0.0',
+        'v1.0.0-1',
       ]);
       final guard = qualification()['if'] as String;
       expect(guard, startsWith(r'${{'));
@@ -375,6 +376,7 @@ void main() {
       pin.parent.createSync(recursive: true);
       const historicalTag = 'v0.8.0-2';
       const currentTag = 'v1.0.0';
+      const rebuildTag = 'v1.0.0-1';
       const sha = '1111111111111111111111111111111111111111';
       const child = r'''
 import os
@@ -435,6 +437,18 @@ exec(sys.argv[1], {})
           {'LLAMADART_DEFAULT_AOT_EXPECTED_NATIVE_TAG': historicalTag},
           false,
         ),
+        (
+          'rebuild-request-pin-drift',
+          currentTag,
+          {'LLAMADART_DEFAULT_AOT_EXPECTED_NATIVE_TAG': rebuildTag},
+          false,
+        ),
+        (
+          'rebuild-source-pin-drift',
+          rebuildTag,
+          {'LLAMADART_DEFAULT_AOT_EXPECTED_NATIVE_TAG': currentTag},
+          false,
+        ),
         ('wrong-platform', historicalTag, {'TEST_PLATFORM': 'win32'}, false),
         ('wrong-architecture', historicalTag, {'TEST_MACHINE': 'amd64'}, false),
         (
@@ -447,6 +461,8 @@ exec(sys.argv[1], {})
         ('valid-windows-historical', historicalTag, windows, true),
         ('valid-macos-current', currentTag, {}, true),
         ('valid-windows-current', currentTag, windows, true),
+        ('valid-macos-rebuild', rebuildTag, {}, true),
+        ('valid-windows-rebuild', rebuildTag, windows, true),
       ];
       for (final (label, sourceTag, overrides, requestsModel) in cases) {
         pin.writeAsStringSync("const llamaCppTag = '$sourceTag';\n");
@@ -470,6 +486,12 @@ exec(sys.argv[1], {})
         );
         expect(result.exitCode, 1, reason: '$label: ${result.stderr}');
         expect(marker.existsSync(), requestsModel, reason: label);
+        if (label.endsWith('pin-drift')) {
+          expect(
+            result.stderr,
+            contains('qualification checkout or source pin mismatch'),
+          );
+        }
         if (marker.existsSync()) expect(marker.readAsLinesSync(), ['attempt']);
         final receipt =
             jsonDecode(

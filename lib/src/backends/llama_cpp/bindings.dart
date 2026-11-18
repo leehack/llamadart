@@ -6048,6 +6048,194 @@ external ffi.Pointer<llama_adapter_lora> llama_dart_adapter_lora_init(
   ffi.Pointer<ffi.Char> path_lora,
 );
 
+@ffi.Native<ffi.Uint32 Function()>()
+external int llama_dart_asr_stream_api_version();
+
+@ffi.Native<ffi.Void Function(ffi.Pointer<llama_dart_asr_stream>)>()
+external void llama_dart_asr_stream_cancel(
+  ffi.Pointer<llama_dart_asr_stream> stream,
+);
+
+@ffi.Native<ffi.Int Function(ffi.Pointer<llama_dart_asr_stream>)>(
+  symbol: 'llama_dart_asr_stream_finish',
+)
+external int _llama_dart_asr_stream_finish(
+  ffi.Pointer<llama_dart_asr_stream> stream,
+);
+
+llama_dart_asr_stream_status llama_dart_asr_stream_finish(
+  ffi.Pointer<llama_dart_asr_stream> stream,
+) {
+  return llama_dart_asr_stream_status.fromValue(
+    _llama_dart_asr_stream_finish(stream),
+  );
+}
+
+@ffi.Native<ffi.Void Function(ffi.Pointer<llama_dart_asr_stream>)>()
+external void llama_dart_asr_stream_free(
+  ffi.Pointer<llama_dart_asr_stream> stream,
+);
+
+@ffi.Native<
+  ffi.Int Function(
+    ffi.Pointer<llama_context>,
+    ffi.Pointer<mtmd_context>,
+    ffi.Uint32,
+    ffi.Pointer<llama_dart_asr_stream_info>,
+  )
+>(symbol: 'llama_dart_asr_stream_get_info')
+external int _llama_dart_asr_stream_get_info(
+  ffi.Pointer<llama_context> llama,
+  ffi.Pointer<mtmd_context> mtmd,
+  int accepted_modes,
+  ffi.Pointer<llama_dart_asr_stream_info> out_info,
+);
+
+llama_dart_asr_stream_status llama_dart_asr_stream_get_info(
+  ffi.Pointer<llama_context> llama,
+  ffi.Pointer<mtmd_context> mtmd,
+  int accepted_modes,
+  ffi.Pointer<llama_dart_asr_stream_info> out_info,
+) {
+  return llama_dart_asr_stream_status.fromValue(
+    _llama_dart_asr_stream_get_info(llama, mtmd, accepted_modes, out_info),
+  );
+}
+
+@ffi.Native<
+  ffi.Pointer<llama_dart_asr_stream> Function(
+    ffi.Pointer<llama_context>,
+    ffi.Pointer<mtmd_context>,
+    ffi.Uint32,
+    ffi.Pointer<llama_dart_asr_stream_params>,
+    ffi.Pointer<ffi.Int>,
+  )
+>()
+external ffi.Pointer<llama_dart_asr_stream> llama_dart_asr_stream_init(
+  ffi.Pointer<llama_context> llama,
+  ffi.Pointer<mtmd_context> mtmd,
+  int accepted_modes,
+  ffi.Pointer<llama_dart_asr_stream_params> params,
+  ffi.Pointer<ffi.Int> out_status,
+);
+
+@ffi.Native<
+  ffi.Pointer<ffi.Char> Function(ffi.Pointer<llama_dart_asr_stream>)
+>()
+external ffi.Pointer<ffi.Char> llama_dart_asr_stream_last_error(
+  ffi.Pointer<llama_dart_asr_stream> stream,
+);
+
+@ffi.Native<llama_dart_asr_stream_params Function()>()
+external llama_dart_asr_stream_params llama_dart_asr_stream_params_default();
+
+@ffi.Native<
+  ffi.Int Function(
+    ffi.Pointer<llama_dart_asr_stream>,
+    ffi.Pointer<ffi.Float>,
+    ffi.Size,
+    ffi.Pointer<ffi.Size>,
+  )
+>(symbol: 'llama_dart_asr_stream_push')
+external int _llama_dart_asr_stream_push(
+  ffi.Pointer<llama_dart_asr_stream> stream,
+  ffi.Pointer<ffi.Float> samples,
+  int sample_count,
+  ffi.Pointer<ffi.Size> out_accepted,
+);
+
+llama_dart_asr_stream_status llama_dart_asr_stream_push(
+  ffi.Pointer<llama_dart_asr_stream> stream,
+  ffi.Pointer<ffi.Float> samples,
+  int sample_count,
+  ffi.Pointer<ffi.Size> out_accepted,
+) {
+  return llama_dart_asr_stream_status.fromValue(
+    _llama_dart_asr_stream_push(stream, samples, sample_count, out_accepted),
+  );
+}
+
+@ffi.Native<
+  ffi.Int Function(
+    ffi.Pointer<llama_dart_asr_stream>,
+    ffi.Pointer<ffi.Char>,
+    ffi.Size,
+    ffi.Pointer<ffi.Size>,
+  )
+>(symbol: 'llama_dart_asr_stream_read_text')
+external int _llama_dart_asr_stream_read_text(
+  ffi.Pointer<llama_dart_asr_stream> stream,
+  ffi.Pointer<ffi.Char> out,
+  int capacity,
+  ffi.Pointer<ffi.Size> out_len,
+);
+
+llama_dart_asr_stream_status llama_dart_asr_stream_read_text(
+  ffi.Pointer<llama_dart_asr_stream> stream,
+  ffi.Pointer<ffi.Char> out,
+  int capacity,
+  ffi.Pointer<ffi.Size> out_len,
+) {
+  return llama_dart_asr_stream_status.fromValue(
+    _llama_dart_asr_stream_read_text(stream, out, capacity, out_len),
+  );
+}
+
+@ffi.Native<ffi.Int Function(ffi.Pointer<llama_dart_asr_stream>)>(
+  symbol: 'llama_dart_asr_stream_reset',
+)
+external int _llama_dart_asr_stream_reset(
+  ffi.Pointer<llama_dart_asr_stream> stream,
+);
+
+llama_dart_asr_stream_status llama_dart_asr_stream_reset(
+  ffi.Pointer<llama_dart_asr_stream> stream,
+) {
+  return llama_dart_asr_stream_status.fromValue(
+    _llama_dart_asr_stream_reset(stream),
+  );
+}
+
+@ffi.Native<
+  ffi.Int Function(ffi.Pointer<llama_dart_asr_stream>, ffi.Pointer<ffi.Int8>)
+>(symbol: 'llama_dart_asr_stream_set_cancel_flag')
+external int _llama_dart_asr_stream_set_cancel_flag(
+  ffi.Pointer<llama_dart_asr_stream> stream,
+  ffi.Pointer<ffi.Int8> flag,
+);
+
+llama_dart_asr_stream_status llama_dart_asr_stream_set_cancel_flag(
+  ffi.Pointer<llama_dart_asr_stream> stream,
+  ffi.Pointer<ffi.Int8> flag,
+) {
+  return llama_dart_asr_stream_status.fromValue(
+    _llama_dart_asr_stream_set_cancel_flag(stream, flag),
+  );
+}
+
+@ffi.Native<
+  ffi.Int Function(
+    ffi.Pointer<llama_dart_asr_stream>,
+    ffi.Pointer<llama_dart_asr_stream_progress>,
+  )
+>(symbol: 'llama_dart_asr_stream_step')
+external int _llama_dart_asr_stream_step(
+  ffi.Pointer<llama_dart_asr_stream> stream,
+  ffi.Pointer<llama_dart_asr_stream_progress> out_progress,
+);
+
+llama_dart_asr_stream_status llama_dart_asr_stream_step(
+  ffi.Pointer<llama_dart_asr_stream> stream,
+  ffi.Pointer<llama_dart_asr_stream_progress> out_progress,
+) {
+  return llama_dart_asr_stream_status.fromValue(
+    _llama_dart_asr_stream_step(stream, out_progress),
+  );
+}
+
+@ffi.Native<ffi.Uint32 Function()>()
+external int llama_dart_asr_stream_supported_modes();
+
 @ffi.Native<ffi.Pointer<llama_batch_ext> Function(ffi.Pointer<llama_context>)>()
 external ffi.Pointer<llama_batch_ext> llama_dart_batch_ext_init(
   ffi.Pointer<llama_context> ctx,
@@ -7078,6 +7266,29 @@ llama_dart_tts_status llama_dart_tts_start(
   ffi.Pointer<llama_dart_tts_request> request,
 ) {
   return llama_dart_tts_status.fromValue(_llama_dart_tts_start(tts, request));
+}
+
+@ffi.Native<
+  ffi.Int Function(
+    ffi.Pointer<llama_dart_tts>,
+    ffi.Pointer<llama_dart_tts_request>,
+    ffi.Pointer<ffi.Char>,
+  )
+>(symbol: 'llama_dart_tts_start_streaming')
+external int _llama_dart_tts_start_streaming(
+  ffi.Pointer<llama_dart_tts> tts,
+  ffi.Pointer<llama_dart_tts_request> request,
+  ffi.Pointer<ffi.Char> voice,
+);
+
+llama_dart_tts_status llama_dart_tts_start_streaming(
+  ffi.Pointer<llama_dart_tts> tts,
+  ffi.Pointer<llama_dart_tts_request> request,
+  ffi.Pointer<ffi.Char> voice,
+) {
+  return llama_dart_tts_status.fromValue(
+    _llama_dart_tts_start_streaming(tts, request, voice),
+  );
 }
 
 @ffi.Native<
@@ -9619,6 +9830,8 @@ const int GGML_ROPE_TYPE_VISION = 24;
 
 const int GGML_TENSOR_SIZE = 336;
 
+const int LLAMA_DART_ASR_STREAM_API_VERSION = 1;
+
 const int LLAMA_DART_FIT_MAX_DEVICES = 16;
 
 const int LLAMA_DART_TTS_API_VERSION = 1;
@@ -11438,6 +11651,182 @@ enum llama_context_type {
   };
 }
 
+final class llama_dart_asr_stream extends ffi.Opaque {}
+
+final class llama_dart_asr_stream_info extends ffi.Struct {
+  @ffi.Uint32()
+  external int struct_size;
+
+  @ffi.Uint32()
+  external int api_version;
+
+  @ffi.Int32()
+  external int mode;
+
+  @ffi.Int32()
+  external int sample_rate;
+
+  @ffi.Int32()
+  external int channels;
+
+  @ffi.Int32()
+  external int text_interval_ms;
+
+  @ffi.Int32()
+  external int delay_ms;
+
+  @ffi.Int64()
+  external int max_session_ms;
+
+  static ffi.Pointer<llama_dart_asr_stream_info> $allocate(
+    ffi.Allocator $allocator, {
+    required int struct_size,
+    required int api_version,
+    required int mode,
+    required int sample_rate,
+    required int channels,
+    required int text_interval_ms,
+    required int delay_ms,
+    required int max_session_ms,
+  }) => $allocator<llama_dart_asr_stream_info>()
+    ..ref.struct_size = struct_size
+    ..ref.api_version = api_version
+    ..ref.mode = mode
+    ..ref.sample_rate = sample_rate
+    ..ref.channels = channels
+    ..ref.text_interval_ms = text_interval_ms
+    ..ref.delay_ms = delay_ms
+    ..ref.max_session_ms = max_session_ms;
+}
+
+enum llama_dart_asr_stream_mode {
+  LLAMA_DART_ASR_STREAM_MODE_NONE(0),
+  LLAMA_DART_ASR_STREAM_MODE_TOKEN_DELAY(1),
+  LLAMA_DART_ASR_STREAM_MODE_PROMPTED_CHUNKS(2);
+
+  final int value;
+  const llama_dart_asr_stream_mode(this.value);
+
+  static llama_dart_asr_stream_mode fromValue(int value) => switch (value) {
+    0 => LLAMA_DART_ASR_STREAM_MODE_NONE,
+    1 => LLAMA_DART_ASR_STREAM_MODE_TOKEN_DELAY,
+    2 => LLAMA_DART_ASR_STREAM_MODE_PROMPTED_CHUNKS,
+    _ => throw ArgumentError(
+      'Unknown value for llama_dart_asr_stream_mode: $value',
+    ),
+  };
+}
+
+final class llama_dart_asr_stream_params extends ffi.Struct {
+  @ffi.Uint32()
+  external int struct_size;
+
+  @ffi.Int32()
+  external int max_buffered_ms;
+
+  @llama_seq_id()
+  external int sequence_id;
+
+  static ffi.Pointer<llama_dart_asr_stream_params> $allocate(
+    ffi.Allocator $allocator, {
+    required int struct_size,
+    required int max_buffered_ms,
+    required int sequence_id,
+  }) => $allocator<llama_dart_asr_stream_params>()
+    ..ref.struct_size = struct_size
+    ..ref.max_buffered_ms = max_buffered_ms
+    ..ref.sequence_id = sequence_id;
+}
+
+final class llama_dart_asr_stream_progress extends ffi.Struct {
+  @ffi.Uint32()
+  external int struct_size;
+
+  @ffi.Int32()
+  external int state;
+
+  @ffi.Int32()
+  external int segment_breaks;
+
+  @ffi.Int32()
+  external int tokens_sampled;
+
+  @ffi.Int64()
+  external int samples_buffered;
+
+  @ffi.Int64()
+  external int samples_consumed;
+
+  @ffi.Int64()
+  external int text_available;
+
+  static ffi.Pointer<llama_dart_asr_stream_progress> $allocate(
+    ffi.Allocator $allocator, {
+    required int struct_size,
+    required int state,
+    required int segment_breaks,
+    required int tokens_sampled,
+    required int samples_buffered,
+    required int samples_consumed,
+    required int text_available,
+  }) => $allocator<llama_dart_asr_stream_progress>()
+    ..ref.struct_size = struct_size
+    ..ref.state = state
+    ..ref.segment_breaks = segment_breaks
+    ..ref.tokens_sampled = tokens_sampled
+    ..ref.samples_buffered = samples_buffered
+    ..ref.samples_consumed = samples_consumed
+    ..ref.text_available = text_available;
+}
+
+enum llama_dart_asr_stream_state {
+  LLAMA_DART_ASR_STREAM_STATE_NEEDS_AUDIO(0),
+  LLAMA_DART_ASR_STREAM_STATE_WORKING(1),
+  LLAMA_DART_ASR_STREAM_STATE_FINISHED(2),
+  LLAMA_DART_ASR_STREAM_STATE_CANCELLED(3),
+  LLAMA_DART_ASR_STREAM_STATE_FAILED(4);
+
+  final int value;
+  const llama_dart_asr_stream_state(this.value);
+
+  static llama_dart_asr_stream_state fromValue(int value) => switch (value) {
+    0 => LLAMA_DART_ASR_STREAM_STATE_NEEDS_AUDIO,
+    1 => LLAMA_DART_ASR_STREAM_STATE_WORKING,
+    2 => LLAMA_DART_ASR_STREAM_STATE_FINISHED,
+    3 => LLAMA_DART_ASR_STREAM_STATE_CANCELLED,
+    4 => LLAMA_DART_ASR_STREAM_STATE_FAILED,
+    _ => throw ArgumentError(
+      'Unknown value for llama_dart_asr_stream_state: $value',
+    ),
+  };
+}
+
+enum llama_dart_asr_stream_status {
+  LLAMA_DART_ASR_STREAM_STATUS_OK(0),
+  LLAMA_DART_ASR_STREAM_STATUS_INVALID_ARGUMENT(-1),
+  LLAMA_DART_ASR_STREAM_STATUS_UNSUPPORTED(-2),
+  LLAMA_DART_ASR_STREAM_STATUS_INVALID_STATE(-3),
+  LLAMA_DART_ASR_STREAM_STATUS_UPSTREAM_ERROR(-5),
+  LLAMA_DART_ASR_STREAM_STATUS_CANCELLED(-6),
+  LLAMA_DART_ASR_STREAM_STATUS_CONTEXT_FULL(-7);
+
+  final int value;
+  const llama_dart_asr_stream_status(this.value);
+
+  static llama_dart_asr_stream_status fromValue(int value) => switch (value) {
+    0 => LLAMA_DART_ASR_STREAM_STATUS_OK,
+    -1 => LLAMA_DART_ASR_STREAM_STATUS_INVALID_ARGUMENT,
+    -2 => LLAMA_DART_ASR_STREAM_STATUS_UNSUPPORTED,
+    -3 => LLAMA_DART_ASR_STREAM_STATUS_INVALID_STATE,
+    -5 => LLAMA_DART_ASR_STREAM_STATUS_UPSTREAM_ERROR,
+    -6 => LLAMA_DART_ASR_STREAM_STATUS_CANCELLED,
+    -7 => LLAMA_DART_ASR_STREAM_STATUS_CONTEXT_FULL,
+    _ => throw ArgumentError(
+      'Unknown value for llama_dart_asr_stream_status: $value',
+    ),
+  };
+}
+
 enum llama_dart_exit_stage {
   LLAMA_DART_EXIT_STAGE_SESSION(0),
   LLAMA_DART_EXIT_STAGE_SCHEDULER(1),
@@ -11656,7 +12045,8 @@ final class llama_dart_tts extends ffi.Opaque {}
 enum llama_dart_tts_capability {
   LLAMA_DART_TTS_CAPABILITY_LANGUAGE(1),
   LLAMA_DART_TTS_CAPABILITY_SPEAKER_REFERENCE(2),
-  LLAMA_DART_TTS_CAPABILITY_VOICE(4);
+  LLAMA_DART_TTS_CAPABILITY_VOICE(4),
+  LLAMA_DART_TTS_CAPABILITY_STREAMING_PCM(8);
 
   final int value;
   const llama_dart_tts_capability(this.value);
@@ -11665,6 +12055,7 @@ enum llama_dart_tts_capability {
     1 => LLAMA_DART_TTS_CAPABILITY_LANGUAGE,
     2 => LLAMA_DART_TTS_CAPABILITY_SPEAKER_REFERENCE,
     4 => LLAMA_DART_TTS_CAPABILITY_VOICE,
+    8 => LLAMA_DART_TTS_CAPABILITY_STREAMING_PCM,
     _ => throw ArgumentError(
       'Unknown value for llama_dart_tts_capability: $value',
     ),

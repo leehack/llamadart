@@ -4,7 +4,7 @@ import PackageDescription
 
 let packageRoot = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
 let artifactsRoot = packageRoot.appendingPathComponent("Artifacts")
-let llamaCppTag = "v1.0.0"
+let llamaCppTag = "v1.0.0-1"
 
 func localArtifactPath(_ name: String) -> String? {
     let path = artifactsRoot.appendingPathComponent(name).path
@@ -47,7 +47,7 @@ let package = Package(
             repository: "leehack/llamadart-native",
             artifactName: "llamadart-native-apple-xcframework-\(llamaCppTag).zip",
             tag: llamaCppTag,
-            checksum: "e7223258c6d1c21686b4ee6235e82ceb2bd19e9fc1851e60e5b99556ed44112f"
+            checksum: "0c66ca422bfc8ba266845b57fea99d2792ea67c84233f49358301a640846d669"
         ),
         .target(
             name: "llamadart_llama_cpp_flutter",
