@@ -342,6 +342,12 @@ extension LlamaCppServiceAsrStream on LlamaCppService {
       params.ref.sequence_id = 0;
       outStatus.value = 0;
 
+      // ASR init clears sequence 0 in native KV memory, so any cached prompt
+      // tokens or state-load marker on this context are invalidated before
+      // calling native init, which can still fail after running seq_rm.
+      handles.context.cachedPromptTokens = null;
+      handles.context.kvFromStateLoad = false;
+
       stream = _calls.asrStreamInit(
         context: handles.context.pointer,
         model: handles.model.pointer,
@@ -381,10 +387,6 @@ extension LlamaCppServiceAsrStream on LlamaCppService {
           'Live speech recognition initialization failed.',
         );
       }
-      // ASR init clears sequence 0 in native KV memory, so any cached prompt
-      // tokens or state-load marker on this context are no longer valid.
-      handles.context.cachedPromptTokens = null;
-      handles.context.kvFromStateLoad = false;
 
       if (cancelFlag != nullptr) {
         final flagStatus = _calls.asrStreamSetCancelFlag(
