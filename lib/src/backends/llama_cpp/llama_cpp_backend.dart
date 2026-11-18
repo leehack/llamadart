@@ -49,6 +49,7 @@ class NativeLlamaBackend
         BackendNextTokenScoring,
         BackendStatePersistence,
         BackendStateIdentity,
+        BackendStreamingSpeechToText,
         BackendTextToSpeech,
         BackendTextToSpeechModelSupport,
         BackendDecision,
@@ -1679,6 +1680,21 @@ class NativeLlamaBackend
     }
   }
 
+  @override
+  Future<String?> streamingSpeechToTextUnsupportedReason(
+    int contextHandle,
+    int mmContextHandle,
+  ) => probeAsrStreamUnsupportedReason(contextHandle, mmContextHandle);
+
+  @override
+  Future<BackendStreamingSpeechToTextSession> startStreamingSpeechToText(
+    int contextHandle,
+    int mmContextHandle,
+  ) async {
+    final session = await startAsrStreamSession(contextHandle, mmContextHandle);
+    return _LlamaCppBackendStreamingSpeechSession(session);
+  }
+
   /// Probes whether [contextHandle] and [mmContextHandle] support live ASR.
   Future<String?> probeAsrStreamUnsupportedReason(
     int contextHandle,
@@ -2259,6 +2275,31 @@ final class LlamaCppAsrStreamSession {
       _cancelFlag.free();
     }
   }
+}
+
+final class _LlamaCppBackendStreamingSpeechSession
+    implements BackendStreamingSpeechToTextSession {
+  final LlamaCppAsrStreamSession _session;
+
+  _LlamaCppBackendStreamingSpeechSession(this._session);
+
+  @override
+  Stream<BackendStreamingSpeechToTextUpdate> get updates =>
+      _session.updates.map(
+        (update) => BackendStreamingSpeechToTextUpdate(
+          confirmedText: update.confirmedText,
+          acceptedSamples: update.acceptedSamples,
+        ),
+      );
+
+  @override
+  Future<int> pushAudio(Float32List samples) => _session.pushAudio(samples);
+
+  @override
+  Future<String> finish() => _session.finish();
+
+  @override
+  Future<void> cancel() => _session.cancel();
 }
 
 /// A [RangeError] raised on the worker isolate, described as it was there.

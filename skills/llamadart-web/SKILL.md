@@ -123,7 +123,9 @@ in the llamadart-getting-started and llamadart-chat-streaming skills.
     late successful bridge results with `LlamaInferenceException`; await the
     future before reuse because synchronous WASM cancellation is cooperative.
   - Qwen3-ASR also needs `window.__llamadartBridgeSpeechToTextSupported =
-    true`; Qwen3-TTS needs memory64.
+    true`; `LlamaCppLiveAsrAdapter` (live PCM streaming) is native-only and
+    throws `LlamaUnsupportedException` on Web before any model fetch.
+    Qwen3-TTS needs memory64.
   - For diagnosing old assets, the tag floors are listed once in the docs'
     WebGPU bridge page, "Older bridge assets".
 - With the bridge's `supportsCompletionUsage` probe, a runtime

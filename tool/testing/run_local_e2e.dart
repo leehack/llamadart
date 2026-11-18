@@ -972,6 +972,27 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
       ],
     ),
     LocalE2eScenario(
+      name: 'speech-to-text-stream-smoke',
+      group: LocalE2eScenarioGroup.dartLocalOnly,
+      description:
+          'Run typed native llama.cpp live PCM streaming ASR (Voxtral Realtime, LFM3-Audio, Qwen3 refusal, 300s bounds).',
+      requiresDevice: false,
+      stepsBuilder: (context) => [
+        LocalE2eCommandStep(
+          workingDirectory: context.projectRoot,
+          executable: 'dart',
+          arguments: const [
+            'test',
+            '--run-skipped',
+            '-t',
+            'local-only',
+            'test/e2e/backends/speech_to_text_stream_e2e_test.dart',
+          ],
+          description: 'Typed live PCM speech-to-text real-model smoke',
+        ),
+      ],
+    ),
+    LocalE2eScenario(
       name: 'litert-lm-asr-smoke',
       group: LocalE2eScenarioGroup.dartLocalOnly,
       description:

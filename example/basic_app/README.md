@@ -23,6 +23,12 @@ Pocket TTS, run `dart run bin/llamadart_text_to_speech_example.dart -m
 listed voices; `--speaker` clones a WAV, and Chatterbox Multilingual needs
 `--sequences 2`. Ctrl-C cancels the synthesis.
 
+For native live PCM speech recognition on llama.cpp (Voxtral Realtime or
+LFM3-Audio), run `dart run bin/llamadart_live_asr_example.dart <model.gguf>
+<mmproj.gguf> <audio.f32le>`. It streams mono 16 kHz little-endian float32 PCM
+incrementally through `LlamaCppLiveAsrAdapter` and prints partial and final
+transcripts. Ctrl-C cancels the session.
+
 ## Features
 
 - **Interactive Mode**: Have a back-and-forth conversation with an LLM in your terminal.

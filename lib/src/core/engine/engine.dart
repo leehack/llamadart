@@ -4564,6 +4564,61 @@ extension LlamaEngineBackendHooks on LlamaEngine {
     }
   }
 
+  /// Probes whether the loaded model and projector support native live
+  /// speech-to-text streaming.
+  ///
+  /// This is the low-level integration hook used by `SpeechToTextEngine`.
+  /// Applications should prefer `SpeechToTextEngine.capabilities`.
+  Future<String?> get backendStreamingSpeechToTextUnsupportedReason async {
+    if (isDisposed) {
+      return LlamaEngine._disposedMessage;
+    }
+    if (!_isReady || _contextHandle == null || _mmContextHandle == null) {
+      return 'Load a model and its audio-capable multimodal projector first.';
+    }
+    final candidate = backend;
+    if (candidate is! BackendStreamingSpeechToText) {
+      return 'The active backend does not expose native live speech '
+          'recognition (requires BackendStreamingSpeechToText and llama.cpp '
+          'ASR stream API v1).';
+    }
+    return (candidate as BackendStreamingSpeechToText)
+        .streamingSpeechToTextUnsupportedReason(
+          _contextHandle!,
+          _mmContextHandle!,
+        );
+  }
+
+  /// Starts a backend-native live speech-to-text session for
+  /// `SpeechToTextEngine`.
+  ///
+  /// Applications should prefer `SpeechToTextEngine.startStream`.
+  Future<BackendStreamingSpeechToTextSession>
+  startStreamingSpeechToTextBackend() {
+    _ensureReady();
+    final mmContextHandle = _mmContextHandle;
+    if (mmContextHandle == null) {
+      throw LlamaStateException(
+        'Load an audio-capable multimodal projector first.',
+      );
+    }
+    final candidate = backend;
+    if (candidate is! BackendStreamingSpeechToText) {
+      throw LlamaUnsupportedException(
+        'The active backend does not expose native live speech recognition '
+        '(requires BackendStreamingSpeechToText and llama.cpp ASR stream '
+        'API v1).',
+      );
+    }
+    final streamingBackend = candidate as BackendStreamingSpeechToText;
+    return _contextCall(
+      () => streamingBackend.startStreamingSpeechToText(
+        _contextHandle!,
+        mmContextHandle,
+      ),
+    );
+  }
+
   /// Returns decision-model support for the loaded model.
   ///
   /// This is the low-level integration hook used by `DecisionEngine`.

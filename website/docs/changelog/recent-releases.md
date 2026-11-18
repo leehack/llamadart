@@ -13,6 +13,8 @@ validate against the exact release tag notes.
 
 ## Unreleased
 
+- Add `LlamaCppLiveAsrAdapter` for native incremental live PCM speech recognition (`SpeechToTextEngine.startStream()` and `transcribe`/`transcribeOnce` with mono 16 kHz `pcm-f32le`) on Voxtral Realtime and LFM3-Audio GGUF models with their audio projectors (`llamadart-native@v1.0.0-1`; Web and older runtimes throw `LlamaUnsupportedException`). Also adds `SpeechToTextCapabilities.streamingInputUnsupportedReason` ([#327](https://github.com/leehack/llamadart/issues/327)).
+
 ## 0.20.0
 
 - Adopt `leehack/llamadart-native@v1.0.0-1` (llama.cpp `v1.0.0`, `b1b770d9`) with regenerated bindings, `mtmd_helper_get_capabilities` video probing and the `v0.9.0` ARM FP16 fixes. Native runtimes not built from llama.cpp `v1.0.0`, including `llamadart_native_tag` or `llamadart_native_path` overrides, now throw `LlamaUnsupportedException` before a model loads.

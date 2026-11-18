@@ -252,6 +252,14 @@ void main() {
         ),
       );
       expect(backend.audioProbeStarted.isCompleted, isFalse);
+
+      final capabilities = await speechEngine.capabilities;
+      expect(capabilities.isSupported, isTrue);
+      expect(capabilities.supportsStreamingInput, isFalse);
+      expect(
+        capabilities.streamingInputUnsupportedReason,
+        'The Qwen3-ASR prompt adapter accepts complete encoded audio only.',
+      );
     });
 
     test('turns an audio probe failure into capability diagnostics', () async {

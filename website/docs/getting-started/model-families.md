@@ -109,6 +109,8 @@ examples use. `.litertlm` bundles process media themselves. See
 | Task | Model | Evidence | Repo |
 | --- | --- | --- | --- |
 | Speech to text (whole file) | Qwen3-ASR 0.6B | Validated | `ggml-org/Qwen3-ASR-0.6B-GGUF` |
+| Speech to text (live, llama.cpp) | Voxtral Mini 4B Realtime | Checked on macOS arm64 | `mistralai/Voxtral-Mini-4B-Realtime-2602` GGUF + mmproj |
+| Speech to text (live, llama.cpp) | LFM3-Audio 2B | Checked on macOS arm64 | `LiquidAI/LFM3-Audio-2B-GGUF` + mmproj |
 | Speech to text (live, LiteRT-LM) | Moonshine Tiny | Validated | `litert-community/moonshine-tiny` |
 | Text to speech | Qwen3-TTS 1.7B | Validated | `ggml-org/Qwen3-TTS-12Hz-1.7B-Base-GGUF` |
 | Text to speech | LFM3-Audio 2B | Checked on macOS arm64 | `LiquidAI/LFM3-Audio-2B-GGUF` |

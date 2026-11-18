@@ -1,6 +1,9 @@
 /// Whether this platform requires a backend runtime opt-in for prompt ASR.
 bool get speechToTextRequiresBackendCapability => false;
 
+/// Whether native llama.cpp live PCM ASR is supported on this platform.
+bool get speechToTextSupportsLlamaCppLiveAsr => true;
+
 /// Whether prompt-adapted audio is rendered through the model chat template.
 ///
 /// Native Qwen3-ASR only emits a transcript when the audio turn is wrapped by

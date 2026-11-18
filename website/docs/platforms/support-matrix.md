@@ -84,8 +84,10 @@ runtimes could keep about 2 GB resident, so a later load failed the memory check
 [#2004](https://github.com/leehack/llamadart/issues/2004)).
 
 GGUF Qwen3-ASR accepts WAV, MP3 and FLAC; real-model checks cover all three on
-native macOS and in headless Chromium. LiteRT-LM ASR is CPU-only streaming
-recognition. Decision models run on llama.cpp and WebGPU only; on LiteRT-LM
+native macOS and in headless Chromium. Native llama.cpp live PCM streaming
+(`LlamaCppLiveAsrAdapter` on Voxtral Realtime and LFM3-Audio) is native-only
+and requires `llamadart-native@v1.0.0-1`+; Web throws `LlamaUnsupportedException`
+before model download. LiteRT-LM ASR is CPU-only streaming recognition. Decision models run on llama.cpp and WebGPU only; on LiteRT-LM
 `DecisionEngine.load` and `attach` throw `LlamaUnsupportedException`. See
 [Speech to text](../guides/speech-to-text#choose-an-approach),
 [Text to speech](../guides/text-to-speech) and

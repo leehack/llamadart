@@ -38,6 +38,14 @@ Use this checklist when upgrading `llamadart` across minor or major versions.
 
 ## Version-specific notes
 
+### 0.20.1: experimental speech `LlamaCppLiveAsrAdapter` and `streamingInputUnsupportedReason`
+
+`SpeechToTextAdapter` gains `LlamaCppLiveAsrAdapter` and
+`SpeechToTextCapabilities` gains `streamingInputUnsupportedReason`; exhaustive
+`switch` code over `SpeechToTextAdapter` and external
+`implements SpeechToTextCapabilities` classes need updating. See
+[`MIGRATION.md`](https://github.com/leehack/llamadart/blob/main/MIGRATION.md#0200---0201-experimental-speech-llamacppliveasradapter-and-streaminginputunsupportedreason).
+
 ### 0.20.x: streamed text-to-speech event
 
 `TextToSpeechEvent` gains `TextToSpeechAudioChunkEvent`; exhaustive `switch`

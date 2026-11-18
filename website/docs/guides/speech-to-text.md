@@ -19,13 +19,14 @@ adapter that drives it. The adapter picks the runtime.
 | --- | --- | --- | --- | --- |
 | Qwen3-ASR, whole file | `SpeechToTextEngine.load` with `Qwen3AsrAdapter`, or `attach` | Native llama.cpp; WebGPU (pinned bridge assets) | A complete WAV, MP3, or FLAC file or bytes; bytes only on Web | One final transcript |
 | Another audio chat model, whole file | `load` or `attach` with your own `SpeechToTextPromptAdapter` | As Qwen3-ASR | As Qwen3-ASR | One final transcript |
+| llama.cpp, live streaming | `SpeechToTextEngine.load` with `LlamaCppLiveAsrAdapter` | Native llama.cpp (`llamadart-native@v1.0.0-1`+) | Mono 16 kHz finite normalized float32 PCM, pushed incrementally or as one buffer | Cumulative confirmed partials, then a final transcript |
 | LiteRT-LM, live streaming | `SpeechToTextEngine.load` with `LiteRtLmAsrAdapter` | Native LiteRT-LM, CPU only | Mono 16 kHz float PCM, pushed incrementally or as one buffer | Replaceable partial text, then a final transcript |
 | Generic audio chat | `LlamaAudioContent` in `engine.create` | Audio-capable GGUF projectors; `.litertlm` bundles with audio | Audio as a chat content part | Ordinary chat output, no transcript contract |
 
 LiteRT-LM Web supports none of these. A prompt adapter reports
 `SpeechToTextImplementation.multimodalPromptAdapter`: it runs whole-audio
-generation on a `LlamaEngine`. `LiteRtLmAsrAdapter` reports
-`SpeechToTextImplementation.dedicatedBackend` and does not use a chat model.
+generation on a `LlamaEngine`. `LlamaCppLiveAsrAdapter` and
+`LiteRtLmAsrAdapter` report `SpeechToTextImplementation.dedicatedBackend`.
 
 The adapter is an explicit declaration: an audio-understanding model is not
 advertised as ASR merely because it accepts audio.
@@ -217,6 +218,55 @@ projector supports audio; whether the prompt suits the model is the adapter's
 responsibility. An empty transcript's `LlamaSpeechException.details` says the
 model may not match the adapter.
 
+## Stream live audio with llama.cpp
+
+`LlamaCppLiveAsrAdapter` runs native incremental live PCM speech recognition on
+Voxtral Realtime and LFM3-Audio GGUF models with their matching multimodal
+projectors (`llamadart-native@v1.0.0-1` or newer). Load through
+`SpeechToTextEngine.load` (leave `tokenizer` unset; `attach` is prompt-only):
+
+```dart
+final recognizer = await SpeechToTextEngine.load(
+  SpeechToTextModel(
+    ModelSource.path('/models/Voxtral-Mini-4B-Realtime.gguf'),
+    projector: ModelSource.path('/models/mmproj-Voxtral-Mini-4B-Realtime.gguf'),
+    adapter: const LlamaCppLiveAsrAdapter(),
+  ),
+  params: const ModelParams(contextSize: 4096),
+);
+try {
+  final session = await recognizer.startStream();
+  final sub = session.events.listen((event) {
+    if (event is SpeechToTextPartialEvent) {
+      print(event.confirmedText);
+    }
+  });
+  try {
+    await for (final chunk in mono16kPcmChunks) {
+      await session.addPcm(chunk);
+    }
+    await session.finish();
+    final completion = await session.done;
+    print(completion.result?.text);
+  } finally {
+    await session.cancel();
+    await sub.cancel();
+  }
+} finally {
+  await recognizer.dispose();
+}
+```
+
+- **Capability branching**: inspect `capabilities.supportsStreamingInput` and
+  `capabilities.streamingInputUnsupportedReason` before calling `startStream()`.
+- **Context policy**: `LFM3-Audio` (prompted-chunks mode) requires an actual
+  per-sequence context capacity of at least `2048` (`4096` recommended).
+  `Voxtral Realtime` (token-delay mode) runs within a finite context window;
+  `4096` gives roughly five minutes of audio. Context exhaustion emits terminal
+  text and fails with `LlamaSpeechTranscriptTruncatedException`.
+- **Example**: see `example/basic_app/bin/llamadart_live_asr_example.dart` for
+  an incremental `.f32le` file streamer.
+
 ## Stream live audio with LiteRT-LM
 
 LiteRT-LM's dedicated ASR engines consume PCM
@@ -380,7 +430,9 @@ needs enough memory for the roughly 1.02 GB Qwen3-ASR
   detected-language metadata until language behavior has a dedicated
   validation contract.
 - There are no word/segment timestamps, confidence scores, or speaker
-  diarization. Incremental audio and partial text are LiteRT-LM-only.
+  diarization. Incremental audio and partial text are native-only
+  (`LlamaCppLiveAsrAdapter` on llama.cpp and `LiteRtLmAsrAdapter` on
+  LiteRT-LM); Web throws `LlamaUnsupportedException` for live streaming.
 - Inference backend correctness and performance remain device dependent;
   establish a CPU baseline before claiming GPU support for a deployment.
 - On the Web, Qwen3-ASR 0.6B Q8_0 returned the exact transcript of an
