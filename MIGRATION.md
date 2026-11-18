@@ -2,6 +2,18 @@
 
 This document covers the major breaking upgrade paths.
 
+## `0.20.0` -> `0.20.1`: experimental speech `LlamaCppLiveAsrAdapter` and `streamingInputUnsupportedReason`
+
+`SpeechToTextAdapter` is `sealed` and gains `LlamaCppLiveAsrAdapter` for native
+llama.cpp live PCM speech recognition. Exhaustive `switch` expressions over
+`SpeechToTextAdapter` need a case for `LlamaCppLiveAsrAdapter()`.
+
+`SpeechToTextCapabilities` also gains the optional nullable field
+`String? streamingInputUnsupportedReason`. External classes that
+`implement SpeechToTextCapabilities` must add that getter; callers that
+construct `SpeechToTextCapabilities(...)` are unaffected because the parameter
+defaults to `null`.
+
 ## `0.19.x` -> `0.20.0`: streamed text-to-speech event
 
 `TextToSpeechEvent` is sealed and gains the experimental subtype

@@ -59,6 +59,17 @@ description: >-
   - Qwen3-ASR (whole file, one final transcript): `Qwen3AsrAdapter` with the
     Qwen3-ASR GGUF as `source` and its mmproj as `projector`. Native
     llama.cpp, or WebGPU (pinned bridge assets).
+  - Native llama.cpp live PCM ASR (cumulative confirmed partials, then a
+    final transcript): `LlamaCppLiveAsrAdapter` with a Voxtral Realtime or
+    LFM3-Audio GGUF as `source` and its audio mmproj as `projector` (leave
+    `tokenizer` unset; `attach` is prompt-only). Requires
+    `llamadart-native@v1.0.0-1`+ on a native platform; Web and older runtimes
+    throw `LlamaUnsupportedException` before downloading. Accepts mono 16 kHz
+    finite normalized float32 PCM (`pcm-f32le`) via `startStream()` or
+    `transcribe`/`transcribeOnce`; await each `addPcm()` call. `LFM3-Audio`
+    requires an actual per-sequence context capacity of at least `2048`
+    (`4096` recommended). Check `capabilities.supportsStreamingInput` and
+    `capabilities.streamingInputUnsupportedReason` before streaming.
   - Another audio chat model on `LlamaEngine`: extend
     `SpeechToTextPromptAdapter` with `name`, `promptFor(request)` (the text
     sent before the audio) and `parseTranscript(output)` (returns a

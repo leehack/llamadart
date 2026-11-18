@@ -65,6 +65,7 @@ class NativeAutoBackend
         BackendStatePersistence,
         BackendStatePersistenceSupport,
         BackendStateIdentity,
+        BackendStreamingSpeechToText,
         BackendGrammarConstraintsSupport,
         BackendNativeChatGeneration,
         BackendJsonSchemaThinkingChatGeneration,
@@ -746,6 +747,38 @@ class NativeAutoBackend
     if (delegate is BackendTextToSpeech) {
       (delegate as BackendTextToSpeech).cancelTextToSpeech();
     }
+  }
+
+  @override
+  Future<String?> streamingSpeechToTextUnsupportedReason(
+    int contextHandle,
+    int mmContextHandle,
+  ) {
+    final delegate = _delegate;
+    if (delegate is! BackendStreamingSpeechToText) {
+      return Future<String?>.value(
+        'The selected native backend does not expose streaming '
+        'speech-to-text.',
+      );
+    }
+    return (delegate as BackendStreamingSpeechToText)
+        .streamingSpeechToTextUnsupportedReason(contextHandle, mmContextHandle);
+  }
+
+  @override
+  Future<BackendStreamingSpeechToTextSession> startStreamingSpeechToText(
+    int contextHandle,
+    int mmContextHandle,
+  ) {
+    final delegate = _requireDelegate();
+    if (delegate is! BackendStreamingSpeechToText) {
+      throw LlamaUnsupportedException(
+        'The selected native backend does not expose streaming '
+        'speech-to-text.',
+      );
+    }
+    return (delegate as BackendStreamingSpeechToText)
+        .startStreamingSpeechToText(contextHandle, mmContextHandle);
   }
 
   @override

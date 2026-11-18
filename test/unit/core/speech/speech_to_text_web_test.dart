@@ -409,6 +409,39 @@ void main() {
       throwsA(isA<LlamaUnsupportedException>()),
     );
   });
+
+  test(
+    'LlamaCppLiveAsrAdapter rejects Web before model fetch, progress, or bridge calls',
+    () async {
+      final backend = _WebSpeechBackend(promptSpeechToTextSupported: true);
+      var progressCalls = 0;
+
+      await expectLater(
+        () => SpeechToTextEngine.load(
+          SpeechToTextModel(
+            ModelSource.parse('https://example.com/voxtral.gguf'),
+            projector: ModelSource.parse(
+              'https://example.com/mmproj-voxtral.gguf',
+            ),
+            adapter: const LlamaCppLiveAsrAdapter(),
+          ),
+          backend: backend,
+          onProgress: (_) => progressCalls++,
+        ),
+        throwsA(
+          isA<LlamaUnsupportedException>().having(
+            (e) => e.message,
+            'message',
+            allOf(contains('Web'), contains('llama.cpp ASR stream API v1')),
+          ),
+        ),
+      );
+      expect(progressCalls, 0);
+      expect(backend.modelUrl, isNull);
+      expect(backend.projectorUrl, isNull);
+      expect(backend.disposeCalls, 1);
+    },
+  );
 }
 
 Future<LlamaEngine> _loadedEngine({

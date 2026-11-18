@@ -934,6 +934,83 @@ abstract class BackendTextToSpeech {
   void cancelTextToSpeech();
 }
 
+/// A cumulative transcript update emitted by a
+/// [BackendStreamingSpeechToTextSession].
+class BackendStreamingSpeechToTextUpdate {
+  /// Cumulative confirmed transcript text produced so far.
+  final String confirmedText;
+
+  /// Cumulative mono 16 kHz PCM samples accepted by the session.
+  final int acceptedSamples;
+
+  /// Creates a streaming speech-to-text update.
+  const BackendStreamingSpeechToTextUpdate({
+    required this.confirmedText,
+    required this.acceptedSamples,
+  });
+}
+
+/// An active backend session for incremental live PCM speech recognition.
+///
+/// Callers must subscribe to [updates] before pushing audio so partial updates
+/// and fatal idle-state errors are observed. Callers must await each
+/// [pushAudio] call; overlapping pushes are rejected. [finish] joins any
+/// admitted push, flushes remaining audio, releases native resources, and
+/// returns the final cumulative transcript. [cancel] interrupts any active
+/// work and releases native resources.
+///
+/// Implementations must terminate the session and release all native resources
+/// if [pushAudio] or [finish] throws, or when emitting an error on [updates].
+/// [cancel] may still be called after a failed push or finish and must be
+/// idempotent.
+abstract class BackendStreamingSpeechToTextSession {
+  /// Cumulative confirmed transcript updates and accepted sample counts.
+  ///
+  /// Fatal worker failures emit an error on this stream even while idle, wake
+  /// pending operations, and must terminate the session and release native
+  /// resources before or alongside emitting the error.
+  Stream<BackendStreamingSpeechToTextUpdate> get updates;
+
+  /// Pushes mono 16 kHz normalized float32 [samples] and returns the cumulative
+  /// accepted sample count.
+  ///
+  /// A failed push must terminate the session and release native resources.
+  Future<int> pushAudio(Float32List samples);
+
+  /// Joins any admitted push, flushes remaining audio, releases native
+  /// resources, and returns the final cumulative transcript.
+  ///
+  /// A failed finish must still terminate the session and release native
+  /// resources.
+  Future<String> finish();
+
+  /// Cooperatively cancels the session and releases native resources.
+  Future<void> cancel();
+}
+
+/// Optional backend capability for native incremental live speech recognition.
+///
+/// Distinct from [BackendPromptSpeechToTextSupport], which gates
+/// prompt-adapted multimodal chat transcription.
+abstract class BackendStreamingSpeechToText {
+  /// Probes whether [contextHandle] and [mmContextHandle] support streaming
+  /// speech recognition.
+  ///
+  /// Returns `null` when the loaded pair passes the probe, or an actionable
+  /// reason when unsupported.
+  Future<String?> streamingSpeechToTextUnsupportedReason(
+    int contextHandle,
+    int mmContextHandle,
+  );
+
+  /// Rechecks [contextHandle] and [mmContextHandle] and starts a streaming
+  /// speech-to-text session.
+  Future<BackendStreamingSpeechToTextSession> startStreamingSpeechToText(
+    int contextHandle,
+    int mmContextHandle,
+  );
+}
+
 /// Optional [GenerationParams] controls that the loaded model's runtime
 /// applies.
 ///

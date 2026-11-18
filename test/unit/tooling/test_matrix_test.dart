@@ -953,6 +953,14 @@ void main() {
       expect(web.covers, contains('microphone transcription for a WAV'));
     });
 
+    test('speech-to-text-stream-smoke row is registered in testMatrixRows', () {
+      final row = testMatrixRows.singleWhere(
+        (row) => row.id == 'speech-to-text-stream-smoke',
+      );
+      expect(row.command, contains('speech-to-text-stream-smoke'));
+      expect(row.covers, contains('LlamaCppLiveAsrAdapter'));
+    });
+
     test('Web speech rows name their scenarios and the WER gate', () {
       final scenarios = buildLocalE2eScenarios().map((s) => s.name).toSet();
       final web = testMatrixRows.singleWhere(

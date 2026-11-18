@@ -16,6 +16,7 @@ const _bindingsUri = 'package:llamadart/llama_cpp_bindings.dart';
 
 const _engineHooks = <String>{
   'backendDecisionCapabilities',
+  'backendStreamingSpeechToTextUnsupportedReason',
   'backendTextToSpeechCapabilities',
   'cancelTextToSpeechBackend',
   'contextHandle',
@@ -23,6 +24,7 @@ const _engineHooks = <String>{
   'loadDecisionHeadBackend',
   'modelHandle',
   'runDecisionBackend',
+  'startStreamingSpeechToTextBackend',
   'synthesizeTextToSpeechBackend',
 };
 
@@ -125,6 +127,7 @@ const _appNames = <String>{
   'LlamaAudioFormatException',
   'LlamaBackend',
   'LlamaBackendInitializationException',
+  'LlamaCppLiveAsrAdapter',
   'LlamaChatMessage',
   'LlamaChatOperation',
   'LlamaChatRole',
@@ -395,6 +398,9 @@ void main() {
       'BackendStateIdentity',
       'BackendStatePersistence',
       'BackendStatePersistenceSupport',
+      'BackendStreamingSpeechToText',
+      'BackendStreamingSpeechToTextSession',
+      'BackendStreamingSpeechToTextUpdate',
       'BackendTextToSpeech',
       'BackendTextToSpeechCapabilities',
       'BackendTextToSpeechModel',

@@ -30,6 +30,9 @@ import 'package:llamadart/src/core/models/inference/next_token_scores.dart';
 import 'package:llamadart/src/core/models/model_load_options.dart';
 import 'package:llamadart/src/core/models/config/log_level.dart';
 import 'package:llamadart/src/core/models/config/lora_config.dart';
+import 'package:llamadart/src/core/models/model_source.dart';
+import 'package:llamadart/src/core/speech/speech_to_text.dart';
+import 'package:llamadart/src/core/speech/speech_to_text_model.dart';
 import 'package:test/test.dart';
 
 import '../../../support/slow_exiting_worker.dart';
@@ -2586,7 +2589,205 @@ void main() {
         );
       },
     );
+
+    test(
+      'refuses public stateSaveFile/stateLoadFile during live ASR and surfaces targeted free cancellation on SpeechToTextEngine stream',
+      () async {
+        final tempDir = Directory.systemTemp.createTempSync(
+          'llamadart_public_asr_worker_',
+        );
+        addTearDown(() => tempDir.deleteSync(recursive: true));
+        final modelFile = File('${tempDir.path}/model.gguf')
+          ..writeAsBytesSync(const <int>[1, 2, 3, 4]);
+        final mmprojFile = File('${tempDir.path}/mmproj.gguf')
+          ..writeAsBytesSync(const <int>[5, 6, 7, 8]);
+        final statePath = '${tempDir.path}/state.bin';
+
+        // 1) Public LlamaEngine.stateSaveFile / stateLoadFile refuse while ASR
+        //    reservation is active, then succeed after cancel.
+        final stateWorkerBoot = ReceivePort();
+        runLlamaWorkerForTesting(
+          stateWorkerBoot.sendPort,
+          _PublicAsrWorkerFakeService(),
+          exitOnDispose: false,
+        );
+        final stateWorkerPort = await stateWorkerBoot.first as SendPort;
+        stateWorkerBoot.close();
+
+        final engineBackend = NativeLlamaBackend(
+          initialSendPort: stateWorkerPort,
+        );
+        final engine = LlamaEngine(engineBackend);
+        addTearDown(engine.dispose);
+        await engine.loadModel(modelFile.path);
+        await engine.loadMultimodalProjector(mmprojFile.path);
+
+        final backendSession = await engine.startStreamingSpeechToTextBackend();
+        await expectLater(
+          engine.stateSaveFile(statePath, tokens: const <int>[1, 2]),
+          throwsA(isA<LlamaStateException>()),
+        );
+        await expectLater(
+          engine.stateLoadFile(statePath, tokenCapacity: 8),
+          throwsA(isA<LlamaStateException>()),
+        );
+        await backendSession.cancel();
+        expect(
+          await engine.stateSaveFile(statePath, tokens: const <int>[1, 2]),
+          isTrue,
+        );
+        final loaded = await engine.stateLoadFile(statePath, tokenCapacity: 8);
+        expect(loaded.tokens, const <int>[1, 2]);
+
+        // 2) Targeted contextFree during active SpeechToTextEngine.startStream()
+        //    surfaces LlamaSpeechException + stream end on session.events.
+        final sttWorkerBoot = ReceivePort();
+        runLlamaWorkerForTesting(
+          sttWorkerBoot.sendPort,
+          _PublicAsrWorkerFakeService(),
+          exitOnDispose: false,
+        );
+        final sttWorkerPort = await sttWorkerBoot.first as SendPort;
+        sttWorkerBoot.close();
+
+        final sttBackend = NativeLlamaBackend(initialSendPort: sttWorkerPort);
+        final stt = await SpeechToTextEngine.load(
+          SpeechToTextModel(
+            ModelSource.path(modelFile.path),
+            projector: ModelSource.path(mmprojFile.path),
+            adapter: const LlamaCppLiveAsrAdapter(),
+          ),
+          backend: sttBackend,
+        );
+        addTearDown(stt.dispose);
+
+        final session = await stt.startStream();
+        final eventsDone = expectLater(
+          session.events,
+          emitsInOrder([
+            emitsError(
+              isA<LlamaSpeechException>().having(
+                (e) => e.message,
+                'message',
+                contains('cancelled'),
+              ),
+            ),
+            emitsDone,
+          ]),
+        );
+
+        await sttBackend.contextFree(1);
+        await eventsDone;
+        final completion = await session.done;
+        expect(completion.state, SpeechToTextCompletionState.failed);
+        expect(completion.error, isA<LlamaSpeechException>());
+      },
+    );
   });
+}
+
+class _PublicAsrWorkerFakeService extends _LoggingLlamaCppService {
+  bool _hasActiveAsr = false;
+  int? _asrContextHandle;
+  int? _asrMmContextHandle;
+  int? _asrModelHandle;
+
+  @override
+  int loadModel(String modelPath, ModelParams modelParams) => 1;
+
+  @override
+  void freeModel(int modelHandle) {}
+
+  @override
+  int createContext(
+    int modelHandle,
+    ModelParams modelParams, {
+    bool reranking = false,
+  }) => 1;
+
+  @override
+  void freeContext(int contextHandle) {}
+
+  @override
+  int getContextSize(int contextHandle) => 4096;
+
+  @override
+  int createMultimodalContext(
+    int modelHandle,
+    String mmProjPath, {
+    bool warmup = true,
+  }) => 2;
+
+  @override
+  void freeMultimodalContext(int mmContextHandle) {}
+
+  @override
+  bool supportsAudio(int mmContextHandle) => true;
+
+  @override
+  Future<String?> asrStreamUnsupportedReason(
+    int contextHandle,
+    int mmContextHandle,
+  ) async => null;
+
+  @override
+  bool get hasActiveAsrStream => _hasActiveAsr;
+
+  @override
+  int? get activeAsrStreamContextHandle => _asrContextHandle;
+
+  @override
+  int? get activeAsrStreamMmContextHandle => _asrMmContextHandle;
+
+  @override
+  int? get activeAsrStreamModelHandle => _asrModelHandle;
+
+  @override
+  Future<void> startAsrStream(
+    int sessionId,
+    int contextHandle,
+    int mmContextHandle,
+    int cancelFlagAddress, {
+    required void Function(String confirmedText, int acceptedSamples) onText,
+  }) async {
+    _hasActiveAsr = true;
+    _asrContextHandle = contextHandle;
+    _asrMmContextHandle = mmContextHandle;
+    _asrModelHandle = 1;
+  }
+
+  @override
+  void cancelAsrStream([int? sessionId]) {
+    _hasActiveAsr = false;
+  }
+
+  @override
+  void closeAsrStreamIfIdle([int? sessionId]) {
+    _hasActiveAsr = false;
+    _asrContextHandle = null;
+    _asrMmContextHandle = null;
+    _asrModelHandle = null;
+  }
+
+  @override
+  bool stateSaveFile(int contextHandle, String path, List<int> tokens) {
+    if (_hasActiveAsr && _asrContextHandle == contextHandle) {
+      throw LlamaStateException(
+        'Cannot save state while live speech recognition is active on context $contextHandle.',
+      );
+    }
+    return true;
+  }
+
+  @override
+  List<int> stateLoadFile(int contextHandle, String path, int tokenCapacity) {
+    if (_hasActiveAsr && _asrContextHandle == contextHandle) {
+      throw LlamaStateException(
+        'Cannot load state while live speech recognition is active on context $contextHandle.',
+      );
+    }
+    return const <int>[1, 2];
+  }
 }
 
 void _asrExitWorkerEntry(SendPort initialSendPort) {
