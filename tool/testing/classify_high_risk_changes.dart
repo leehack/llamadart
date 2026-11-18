@@ -49,7 +49,11 @@ Set<StructuredImpact> structuredImpactHints(Iterable<String> paths) {
 /// A production path's conservative contribution, or `null` for evidence and
 /// unrelated paths. An absent contribution is not proof of no runtime effects.
 Set<StructuredImpact>? structuredProductionImpactHints(String path) {
-  if (!_isStructuredOutput(path) || path.startsWith('test/')) return null;
+  if (!_isStructuredOutput(path) ||
+      path.startsWith('test/') ||
+      path.startsWith('packages/llamadart_studio_core/test/')) {
+    return null;
+  }
   if (path == 'lib/src/core/template/template_render_context.dart') {
     return {StructuredImpact.inputRenderingHistory};
   }
@@ -124,6 +128,7 @@ bool isWorkflowPath(String path) =>
 bool _isPublicEntrypoint(String path) {
   return path == 'packages/genkit_llamadart/lib/genkit_llamadart.dart' ||
       path == 'packages/genkit_llamadart/lib/experimental.dart' ||
+      path == 'packages/llamadart_studio_core/lib/llamadart_studio_core.dart' ||
       path == 'lib/llamadart.dart' ||
       path == 'lib/backend.dart' ||
       path == 'lib/llama_cpp_bindings.dart';
@@ -131,6 +136,7 @@ bool _isPublicEntrypoint(String path) {
 
 bool _isStructuredOutput(String path) {
   return _isPublicEntrypoint(path) ||
+      _isStudioStructuredOutput(path) ||
       path.startsWith('packages/genkit_llamadart/lib/src/core/streaming/') ||
       path.startsWith(
         'packages/genkit_llamadart/lib/src/integration/genkit/converters/',
@@ -155,6 +161,23 @@ bool _isStructuredOutput(String path) {
           (path.contains('template') ||
               path.contains('grammar') ||
               path.contains('structured')));
+}
+
+bool _isStudioStructuredOutput(String path) {
+  const prefix = 'packages/llamadart_studio_core/lib/src/';
+  return path.startsWith('${prefix}controllers/chat/') ||
+      path.startsWith('${prefix}controllers/coding/') ||
+      const {
+        '${prefix}adapters/llama/direct_llama_inference_port.dart',
+        '${prefix}adapters/llama/direct_llama_inference_helpers.dart',
+        '${prefix}domain/studio_message.dart',
+        '${prefix}domain/studio_settings.dart',
+        '${prefix}ports/inference_port.dart',
+        '${prefix}services/mcp/mcp_tool_schema_adapter.dart',
+        '${prefix}services/studio_tool_registry.dart',
+        'packages/llamadart_studio_core/test/local_structured_output_qualification_test.dart',
+        'packages/llamadart_studio_core/test/support/studio_structured_qualification.dart',
+      }.contains(path);
 }
 
 bool _isStructuredOutputEvidence(String path) {
@@ -182,6 +205,7 @@ bool _isStructuredOutputEvidence(String path) {
 bool _isBackendRuntime(String path) {
   return _isPublicEntrypoint(path) ||
       path.startsWith('packages/genkit_llamadart/lib/') ||
+      path.startsWith('packages/llamadart_studio_core/lib/') ||
       path.startsWith('lib/src/backends/') ||
       path.startsWith('lib/src/core/engine/') ||
       path.startsWith('lib/src/core/models/') ||
@@ -258,6 +282,7 @@ bool _isRegressionPolicy(String path) {
       path == 'test/unit/tooling/classify_high_risk_changes_test.dart' ||
       path == 'test/unit/tooling/high_risk_review_policy_test.dart' ||
       path == 'test/unit/tooling/high_risk_readiness_test.dart' ||
+      path == 'test/unit/tooling/studio_ci_admission_test.dart' ||
       path == 'tool/git/safe_pr_head_update.dart' ||
       path == 'tool/git/pr_head_update_evidence.schema.json' ||
       path == 'test/unit/tooling/safe_pr_head_update_test.dart';

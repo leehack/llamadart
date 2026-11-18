@@ -10,6 +10,7 @@ PR. A path filter must not prevent a required workflow from reporting.
 |---|---|---|
 | Documentation, website, docs tooling | Docs build/tool tests plus version and bridge-pin checks | None |
 | Any path | Adds `Markdown Tests`, unless the Linux VM tests are selected | None |
+| Studio core or UI package | Studio core and Flutter UI format, analysis and VM tests; native macOS regressions; Web files also run version and bridge-pin checks | None |
 | One companion package | Root static checks, affected package's Flutter/SwiftPM/publish checks, root Linux coverage and full macOS/Windows VM checks, Web Chat consumer | Android, Web, iOS inputs |
 | Validation package tests/schemas or unbundled assets | Root static checks, Linux VM tests, private suite and Flutter consumer contracts | None |
 | Validation assets the chat app bundles (`flutter.assets`, such as profiles) | Same validation checks and Web Chat | None |
@@ -179,6 +180,19 @@ each even if an earlier one failed. On Windows the process memory test runs in
 `Validation harness` matrix leg, so a validation-only change starts no native
 tests. The Genkit job runs Dart 3.12.0 lower bounds on a fresh tree before it
 sets up Flutter, so `FLUTTER_ROOT` and Flutter's Dart cannot affect them.
+
+`Studio packages` checks both checkout-only Studio packages together on Ubuntu.
+It uses Flutter 3.50.0 (Dart 3.14.0), pinned independently in
+`packages/llamadart_studio/.flutter-version`; other lanes retain the root SDK pin.
+Studio changes select this lane without root runtime tests or portable bundles;
+shared runtime and companion changes also select it because Studio consumes them.
+Studio Web files also select the shared version and bridge-pin checks.
+Root formatting uses `python3 tool/ci/check_format.py` to skip only these two
+Studio packages, whose Dart language version requires their independent SDK;
+all other package and example directories remain in the root formatter.
+The lane runs model-free VM tests with isolated temporary directories. A paired
+macOS lane runs the native lifecycle and accessibility regressions against the
+SPM Flutter framework; both lanes must pass whenever Studio is selected.
 
 `Example Package Tests` runs the model-free tests (`--exclude-tags
 local-only`) of every example package except the chat app, which Web Chat

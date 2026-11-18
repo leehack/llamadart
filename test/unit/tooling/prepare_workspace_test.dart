@@ -48,6 +48,8 @@ void main() {
       'packages/llamadart_model_store',
       'packages/llamadart_llama_cpp_flutter',
       'packages/llamadart_stable_diffusion_flutter',
+      'packages/llamadart_studio_core',
+      'packages/llamadart_studio',
     ]);
     expect(
       workspacePackages.map((package) => package.path).toSet(),

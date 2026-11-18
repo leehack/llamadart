@@ -121,6 +121,17 @@ snippet must occur in its exact candidate blob, like any source reference.
 This does not admit other harness assets or arbitrary package paths, or relax
 compiled-grammar, independent-audit or external-authentication requirements.
 
+Studio admits production references only under
+`packages/llamadart_studio_core/lib/` and `packages/llamadart_studio/lib/`.
+Its tests are the corresponding `test/**/*_test.dart` trees and the Flutter
+app's `integration_test/**/*_test.dart` tree. These paths retain exact-blob,
+complete changed-production coverage, snippet and observed causal-control
+requirements; they do not admit arbitrary packages or platform assets.
+Studio inference, message/settings, MCP schema, and Chat/Coding boundaries are
+conservative structured-output surfaces with all three minimum impacts.
+An unchanged root grammar does not establish that adapter-produced schemas,
+history or streamed tool calls are correct.
+
 The exact root `ffigen.yaml` is an artifact-consumer production reference,
 paired only with
 `test/unit/tooling/native_bindings_generator_policy_test.dart`. That test reads
@@ -143,7 +154,15 @@ directly, each only with its paired script in `production_refs` and a
 | `tool/native/test_sync_native_headers_and_bindings.py` | `tool/native/sync_native_headers_and_bindings.sh` |
 | `tool/native/test_sync_native_release_pins.py` | `tool/native/sync_native_release_pins.py` |
 | `tool/native/test_sync_stable_diffusion_bindings.py` | `tool/native/sync_stable_diffusion_bindings.py` |
+| `test/ci/test_check_format.py` | `tool/ci/check_format.py` |
 | `test/ci/test_nonpublishing_auth_probe.py` | `tool/release/nonpublishing_auth_probe.py` |
+
+The formatter suite has no script entrypoint, and `test/` is not a Python
+package. Its command must be exactly
+`python3 -B -m unittest discover -s test/ci -p test_check_format.py`
+(with `-B` optionally omitted). Running its file directly does not execute
+assertions; dotted module invocation may resolve Python's standard-library
+`test` package. Neither is formatter evidence.
 
 Every other path rule, case/snippet and causal-control obligation applies. Other
 Python files are rejected regardless of name or extension. Everything under
@@ -320,13 +339,22 @@ Acceptance/rejection still cite a maintained compiled production grammar test:
 - `test/integration/core/grammar/generated_tool_schema_grammar_test.dart`; or
 - `test/e2e/template/specialized_tool_grammar_validation_e2e_test.dart`;
 - `packages/genkit_llamadart/test/integration/genkit/plugin/real_model_constrained_grammar_test.dart`; or
-- `packages/genkit_llamadart/test/integration/genkit/plugin/real_model_rich_tool_schemas_test.dart`.
+- `packages/genkit_llamadart/test/integration/genkit/plugin/real_model_rich_tool_schemas_test.dart`; or
+- `packages/llamadart_studio_core/test/local_structured_output_qualification_test.dart`.
 
-The adapter suites compile serialized tool/response schemas with the native
+The Genkit adapter suites compile serialized tool/response schemas with the native
 sampler and test accepted and rejected token sequences. They require the pinned
 Qwen3 fixture; an optional-fixture skip is not passing model evidence. This keeps
 adapter tests independent of core's dependency graph without accepting arbitrary
-package tests as compiled grammar proof.
+package tests as compiled grammar proof. Studio's suite checks the actual
+adapter-produced response constraint and MCP tool schema with the native
+sampler, then separately runs native strict-schema generation. Its scripted
+stream tests are deterministic adapter evidence, not model inference. Native
+qualification requires an explicit affected-family GGUF; a skip is not passing
+compiled-grammar evidence. The upstream parity case also requires an
+operator-started server built from `tool/testing/llama_cpp_templates.ref`,
+with its source checkout and startup/model identity independently reviewed;
+a local path or environment assertion alone cannot authenticate that process.
 
 Path hints establish conservative minimum impacts. The render-context boundary
 is rendering/history; dedicated PEG execution/fallback parse files are parsing/streaming;

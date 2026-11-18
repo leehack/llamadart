@@ -11,6 +11,16 @@ A Flutter chat app that downloads models from a built-in library and streams
 on-device chat, with runtime controls and diagnostics. Live demo:
 https://leehack-llamadart.static.hf.space
 
+For a separate experimental app with Notes, Coding, and reusable pure-Dart
+controllers, see [Studio](https://github.com/leehack/llamadart/tree/main/packages/llamadart_studio).
+Studio uses its own Flutter SDK pin; its README records setup and qualification
+limits. Studio Coding offers **Create local workspace** on iOS/Android for
+persistent app-owned files, nested file tools and per-file Copy. App data removal
+removes these workspaces. External provider grants and local shell/process MCP
+are unsupported on mobile; Web has no local workspace filesystem. Physical mobile
+creation, tool I/O and cold reopen still require qualification.
+The chat example remains available independently.
+
 ## Run
 
 Run this example from a repository checkout. The chat app and its private

@@ -169,7 +169,7 @@
     },
     "testPath": {
       "type": "string",
-      "pattern": "^(?:(?![\\s\\S]*[\\u0000-\\u001F\\u007F])(?![\\s\\S]*[*?\\[\\]])(?!.*\\\\)(?!.*(?:^|/)(?:\\.|\\.\\.)(?:/|$))(?:packages/(?:genkit_llamadart|llamadart_validation)/)?test/(?:[^/]+/)*[^/]+_test\\.dart|tool/native/test_(?:native_header_archive|sync_native_headers_and_bindings|sync_native_release_pins|sync_stable_diffusion_bindings)\\.py|test/ci/test_nonpublishing_auth_probe\\.py)$"
+      "pattern": "^(?:(?![\\s\\S]*[\\u0000-\\u001F\\u007F])(?![\\s\\S]*[*?\\[\\]])(?!.*\\\\)(?!.*(?:^|/)(?:\\.|\\.\\.)(?:/|$))(?:(?:packages/(?:genkit_llamadart|llamadart_validation|llamadart_studio_core|llamadart_studio)/)?test/|packages/llamadart_studio/integration_test/)(?:[^/]+/)*[^/]+_test\\.dart|tool/native/test_(?:native_header_archive|sync_native_headers_and_bindings|sync_native_release_pins|sync_stable_diffusion_bindings)\\.py|test/ci/test_(?:nonpublishing_auth_probe|check_format)\\.py)$"
     },
     "matrixRow": {
       "type": "object",

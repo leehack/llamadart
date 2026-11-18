@@ -1,0 +1,41 @@
+# llamadart_studio_core
+
+Pure-Dart headless foundation for **llamadart Studio**, designed for reuse across Flutter, Jaspr web apps, and Dart CLI hosts without UI framework coupling.
+
+## Architecture
+
+- **Reactive Stores (`StateStore<S>`)**: Framework-agnostic synchronous state snapshots paired with broadcast streams and selector subscriptions.
+- **Hexagonal Ports**:
+  - `StudioInferencePort`: Stateless streaming chat/tool/structured-output port (`DirectLlamaInferencePort` out of the box; an integration boundary for a future `genkit_llamadart` adapter).
+  - `StudioPlaygroundPort`: Embeddings, cosine similarity, reranking, token inspection, and benchmarks.
+  - `StudioSpeechPort` & `StudioImagePort`: Local speech-to-text, text-to-speech, and image generation ports.
+  - `KeyValueStore` & `StudioConversationStore`: Durable settings, crash-safe boot sentinels, and conversation-tree persistence.
+  - `CodingWorkspaceRootStore`: The last selected Coding root (`KeyValueCodingWorkspaceRootStore` stores the absolute path; hosts can resolve relocatable app storage instead).
+- **Focused Controllers**: Separate single-responsibility controllers for the shell, Model Hub, Chat (with non-destructive message branching and incremental stream updates), Speech Studio, Image Studio, and Playground.
+
+## Coding host policy
+
+Core bounds shell-tool registration to desktop IO hosts. Mobile and Web cannot
+re-enable `bash`, even when an embedder passes
+`localProcessExecutionAvailable: true`; hosts can further disable it with
+`false`. File and connected network MCP tools retain their existing support.
+The IO boundaries also reject shell and stdio MCP process creation on iOS/Android
+with `LlamaUnsupportedException`.
+
+File tools operate only on application-accessible filesystem paths. They do not
+provide document-provider permissions or security-scoped access. Revert retains
+post-edit content up to 1 Mi characters and checks its UTF-8 bytes before restoring or
+deleting a file. It rejects mismatches and missing snapshots; this optimistic
+check does not coordinate simultaneous external writers between check and write.
+
+The built-in Dart stdio MCP connection registers the selected canonical directory
+URI with the SDK's `roots` tool before exposing ready tools. Workspace changes
+replace the process, retaining enablement and tool filters; automatic connection
+still respects `autoConnect`. Custom/project/network servers receive no SDK root
+bootstrap, and project trust is unchanged.
+
+`McpManager.callTool` returns the raw MCP result map. Its active tool handlers
+throw exported `StudioToolExecutionException` for returned MCP failures; direct
+inference preserves `result` in invocation JSON and model history and marks the
+invocation failed. Custom tools may use this exception for a failed payload;
+ordinary custom maps with an `isError` key remain successful return values.

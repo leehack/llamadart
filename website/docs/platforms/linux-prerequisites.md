@@ -46,6 +46,27 @@ sudo pacman -S --needed libgomp vulkan-icd-loader vulkan-tools openblas
 Minimal cloud and container images may lack `libgomp1`. Building the
 [chat app](../examples/chat-app) on Linux has its own extra requirements.
 
+## Studio audio playback
+
+Studio's Speech and Notes workspaces use GStreamer to play WAV audio. The
+development packages needed to build the app do not include all runtime plugins.
+Install these on Ubuntu/Debian systems running Studio:
+
+```bash
+sudo apt-get install -y gstreamer1.0-plugins-base gstreamer1.0-plugins-good
+```
+
+`playbin` comes from the base plugins; WAV parsing and automatic audio sink
+selection come from the good plugins. Studio checks that it can create `playbin`,
+`autoaudiosink` and `wavparse` before constructing its playback plugin. Missing
+elements produce an actionable playback error; entering Speech or Notes, speech
+inference, WAV export, recording and note editing do not initialize playback.
+This check does not qualify an audio output device or guarantee audible playback.
+
+To inspect the runtime independently, optionally install `gstreamer1.0-tools` and
+run `gst-inspect-1.0 playbin`, `gst-inspect-1.0 autoaudiosink` and
+`gst-inspect-1.0 wavparse`. Restart Studio after installing missing plugins.
+
 ## Quick link check
 
 ```bash

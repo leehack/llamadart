@@ -269,3 +269,16 @@ tag forms, keys, backend modules and local bundles:
 Apps load the bridge assets themselves; see
 [Add the bridge to your app](./webgpu-bridge#add-the-bridge-to-your-app).
 Linux system libraries: [Linux prerequisites](./linux-prerequisites).
+
+## Experimental Studio Coding storage
+
+Studio on iOS/Android offers **Create local workspace** in persistent app storage,
+with nested browse/read/write/edit tools and per-file Copy. **Open local workspace**
+in Coding setup reopens earlier folders. The last selected workspace is restored
+on restart, including after app storage moves during an update; app data
+removal removes local files. Physical
+mobile workflow qualification remains open. External provider URI/security-scoped
+grants are unsupported. Local shell and process MCP remain desktop-only; Web has
+no local workspace filesystem. See the
+[Studio README](https://github.com/leehack/llamadart/tree/main/packages/llamadart_studio)
+for setup and qualification limits.
