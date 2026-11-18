@@ -164,7 +164,8 @@ python3 -m unittest discover -s packages/llamadart_studio/tool/test -v
 cd packages/llamadart_studio
 dart format --output=none --set-exit-if-changed integration_test test
 flutter analyze --no-pub
-TMPDIR="$(mktemp -d)" flutter test --no-pub test/mobile_default_inputs_test.dart \
+TMPDIR="$(mktemp -d)" flutter test --no-pub test/coding_file_browser_test.dart \
+  test/mobile_default_inputs_test.dart \
   test/fixture_text_input_test.dart test/coding_local_workspace_test.dart \
   test/notebook_async_save_test.dart
 ```

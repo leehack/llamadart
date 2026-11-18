@@ -17,6 +17,7 @@ import 'package:llamadart_studio_core/llamadart_studio_core.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'support/coding_file_browser.dart';
 import 'support/coding_pipeline_grade.dart';
 import 'support/fixture_text_input.dart';
 import 'support/mobile_default_inputs.dart';
@@ -221,11 +222,7 @@ void main() {
     final files = find.textContaining('Files (');
     await h.tester.tap(files);
     await h.tester.pumpAndSettle();
-    final segments = editedPath.split('/');
-    for (var i = 1; i < segments.length; i++) {
-      await h.tap('coding_file_${segments.take(i).join('/')}');
-    }
-    await h.tap('coding_file_$editedPath');
+    await openCodingBrowserFile(editedPath, tap: h.tap, waitFor: h.waitFor);
     await h.waitFor(
       () =>
           h.deps!.codingController.state.selectedFileSlice?.content ==
@@ -402,6 +399,10 @@ class _Workflow {
       'runtime_error': r.errorMessage,
       'chat_error': d.chatController.state.lastTurnError,
       'coding_error': d.codingController.state.lastError,
+      'coding_subdir': d.codingController.state.currentSubdir,
+      'coding_files': d.codingController.state.files
+          .map((f) => f.relativePath)
+          .toList(),
       'active_skills': d.skillRegistry.state.activeSkills
           .map((s) => s.id)
           .toList(),
