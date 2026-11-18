@@ -14,6 +14,7 @@ import '../linux_vulkan_probe_io.dart';
 import '../windows_runtime_libraries.dart';
 import '../../core/decision/decision_decoder.dart';
 import '../../core/exceptions.dart';
+import '../../core/image/image_model_classifier.dart';
 import '../../core/llama_logger.dart';
 import '../../core/models/chat/chat_message.dart';
 import '../../core/models/chat/chat_role.dart';
@@ -59,6 +60,7 @@ import 'native_library_candidates.dart';
 import 'native_owner_api.dart';
 import 'vulkan_device_probe.dart';
 
+part 'asr_stream_service.dart';
 part 'library_loading.dart';
 part 'multimodal_embedding.dart';
 part 'native_signatures.dart';
@@ -325,6 +327,7 @@ class LlamaCppService {
     String? Function()? buildIdentity,
     String? Function(Pointer<llama_model> model)? modelArchitecture,
     String? Function()? ggmlVersion,
+    Pointer<NativeType> Function(String name)? asrStreamSymbolLookup,
   }) : _backendInit = backendInit ?? (() => llama_backend_init()),
        _abi = abi ?? Abi.current(),
        _isWindows = isWindows ?? Platform.isWindows,
@@ -352,7 +355,10 @@ class LlamaCppService {
        _gpuMemoryFitRunnerOverride = gpuMemoryFitRunner,
        _readBuildIdentity = buildIdentity,
        _modelArchitectureOverride = modelArchitecture,
-       _readGgmlVersion = ggmlVersion;
+       _readGgmlVersion = ggmlVersion,
+       _asrStreamApi = asrStreamSymbolLookup == null
+           ? null
+           : _AsrStreamApi.tryLoad(asrStreamSymbolLookup);
 
   NativeWorkerOwner? _nativeOwner;
 
@@ -560,7 +566,79 @@ class LlamaCppService {
   Pointer<llama_dart_tts> _activeTts = nullptr;
   bool _ttsCancelPending = false;
   int? _activeTtsContextHandle;
+  bool _asrStreamApiLookupAttempted = false;
+  _AsrStreamApi? _asrStreamApi;
+  _AsrStreamSession? _activeAsrStreamSession;
+  final Map<int, String> _mtmdProjectorPaths = {};
+  final Map<int, String?> _mtmdProjectorTypes = {};
   final StartupDiagnosticBuffer _startupDiagnostics = StartupDiagnosticBuffer();
+
+  /// Whether a live ASR session is currently open on this service.
+  bool get hasActiveAsrStream => _activeAsrStreamSession != null;
+
+  /// The model handle reserved by the active live ASR session, if any.
+  int? get activeAsrStreamModelHandle => _activeAsrStreamSession?.modelHandle;
+
+  /// The context handle reserved by the active live ASR session, if any.
+  int? get activeAsrStreamContextHandle =>
+      _activeAsrStreamSession?.contextHandle;
+
+  /// The multimodal projector handle reserved by the active live ASR session,
+  /// if any.
+  int? get activeAsrStreamMmContextHandle =>
+      _activeAsrStreamSession?.mmContextHandle;
+
+  void _ensureContextNotReservedByAsr(int contextHandle) {
+    if (_activeAsrStreamSession?.contextHandle == contextHandle) {
+      throw LlamaStateException(
+        'Context $contextHandle is reserved by an active live speech '
+        'recognition session.',
+      );
+    }
+  }
+
+  /// Returns `null` when [contextHandle] and [mmContextHandle] support live ASR,
+  /// or an actionable refusal reason otherwise.
+  Future<String?> asrStreamUnsupportedReason(
+    int contextHandle,
+    int mmContextHandle,
+  ) => _asrStreamUnsupportedReason(contextHandle, mmContextHandle);
+
+  /// Starts a live ASR session on [contextHandle] and [mmContextHandle].
+  Future<void> startAsrStream(
+    int sessionId,
+    int contextHandle,
+    int mmContextHandle,
+    int cancelFlagAddress, {
+    required void Function(String confirmedText, int acceptedSamples) onText,
+  }) => _startAsrStream(
+    sessionId,
+    contextHandle,
+    mmContextHandle,
+    cancelFlagAddress,
+    onText: onText,
+  );
+
+  /// Pushes a bounded PCM slice into the active ASR session and drains to
+  /// `NEEDS_AUDIO`.
+  Future<int> pushAsrPcm(
+    int sessionId,
+    int sampleOffset,
+    Float32List samples,
+  ) => _pushAsrPcm(sessionId, sampleOffset, samples);
+
+  /// Finishes the active ASR session, drains all remaining text, and frees
+  /// the native stream.
+  Future<({String finalText, int acceptedSamples, int consumedSamples})>
+  finishAsrStream(int sessionId, int expectedTotalSamples) =>
+      _finishAsrStream(sessionId, expectedTotalSamples);
+
+  /// Requests cancellation of the active ASR session if [sessionId] matches.
+  void cancelAsrStream([int? sessionId]) => _cancelAsrStream(sessionId);
+
+  /// Closes the active ASR session immediately when idle.
+  void closeAsrStreamIfIdle([int? sessionId]) =>
+      _closeAsrStreamIfIdle(sessionId);
 
   // --- Internal State ---
   final Map<int, _LlamaModelWrapper> _models = {};
@@ -1707,6 +1785,7 @@ class LlamaCppService {
         'Cannot $operation while text-to-speech is active on this context.',
       );
     }
+    _ensureContextNotReservedByAsr(contextHandle);
   }
 
   /// Loads a model from the specified [modelPath].
@@ -3981,6 +4060,145 @@ class LlamaCppService {
     throw LlamaUnsupportedException(_ttsUnavailableMessage());
   }
 
+  /// Probes an ASR symbol lookup function for unit tests and returns its
+  /// accepted mode mask, or `null` when exports are missing or ABI mismatches.
+  static int? tryLoadAsrStreamApiModesForTest(
+    Pointer<NativeType> Function(String) symbol,
+  ) => _AsrStreamApi.tryLoad(symbol)?.acceptedModes;
+
+  /// Resolves the ASR stream dispatch table for unit tests.
+  void resolveAsrStreamApiForTest({
+    List<String>? candidates,
+    DynamicLibrary Function(String)? open,
+    Pointer<NativeType> Function(String)? assetSymbol,
+  }) {
+    _resolveAsrStreamApi(
+      candidates: candidates,
+      open: open,
+      assetSymbol: assetSymbol,
+    );
+  }
+
+  /// Looks up a raw `@Native` ASR stream symbol address for unit tests.
+  static Pointer<NativeType> asrStreamAssetSymbolForTest(
+    String name, {
+    required bool isWindows,
+  }) => _asrStreamAssetSymbol(name, isWindows: isWindows);
+
+  /// Registers synthetic model/context/projector handles for ASR unit tests.
+  void registerAsrTestHandles({
+    required int contextHandle,
+    required int mmHandle,
+    required LlamaCppObjectCalls calls,
+    String? projectorPath,
+    String? projectorType,
+    int modelHandle = 1,
+    int modelAddress = 0x1000,
+    int contextAddress = 0x2000,
+    int mmAddress = 0x3000,
+  }) {
+    final modelWrapper = _LlamaModelWrapper(
+      Pointer<llama_model>.fromAddress(modelAddress),
+      calls,
+      vocabSize: 0,
+      suppressedTokens: const <int>[],
+    );
+    final ctxWrapper = _LlamaContextWrapper(
+      Pointer<llama_context>.fromAddress(contextAddress),
+      modelWrapper,
+      calls,
+    );
+    _models[modelHandle] = modelWrapper;
+    _contexts[contextHandle] = ctxWrapper;
+    _contextToModel[contextHandle] = modelHandle;
+    _mtmdContexts[mmHandle] = Pointer<mtmd_context>.fromAddress(mmAddress);
+    _modelToMtmd[modelHandle] = mmHandle;
+    if (projectorPath != null) {
+      _mtmdProjectorPaths[mmHandle] = projectorPath;
+    }
+    if (projectorType != null) {
+      _mtmdProjectorTypes[mmHandle] = projectorType;
+    }
+  }
+
+  /// Clears cached projector types so ASR probe tests can rewrite fixtures.
+  void clearAsrTestProjectorTypes() {
+    _mtmdProjectorTypes.clear();
+  }
+
+  /// Marks [contextHandle] as actively generating for ASR unit tests.
+  void setAsrTestContextGenerating(int contextHandle, {required bool active}) {
+    if (active) {
+      _generatingContexts[contextHandle] = 1;
+    } else {
+      _generatingContexts.remove(contextHandle);
+    }
+  }
+
+  /// Sets cached prompt token state on [contextHandle] for ASR unit tests.
+  void setAsrTestCachedPromptTokens(
+    int contextHandle,
+    List<int>? tokens, {
+    bool kvFromStateLoad = false,
+  }) {
+    final ctx = _contexts[contextHandle]!;
+    ctx.cachedPromptTokens = tokens;
+    ctx.kvFromStateLoad = kvFromStateLoad;
+  }
+
+  /// Reads cached prompt token state on [contextHandle] for ASR unit tests.
+  ({List<int>? cachedPromptTokens, bool kvFromStateLoad})
+  getAsrTestCachedPromptState(int contextHandle) {
+    final ctx = _contexts[contextHandle]!;
+    return (
+      cachedPromptTokens: ctx.cachedPromptTokens,
+      kvFromStateLoad: ctx.kvFromStateLoad,
+    );
+  }
+
+  _AsrStreamApi _resolveAsrStreamApi({
+    List<String>? candidates,
+    DynamicLibrary Function(String)? open,
+    Pointer<NativeType> Function(String)? assetSymbol,
+  }) {
+    final cached = _asrStreamApi;
+    if (cached != null) {
+      return cached;
+    }
+    if (_asrStreamApiLookupAttempted) {
+      throw LlamaUnsupportedException(_asrStreamUnavailableMessage());
+    }
+    _asrStreamApiLookupAttempted = true;
+    _requireAdmittedRuntime('Live speech recognition');
+
+    final direct = _AsrStreamApi.tryLoad(
+      assetSymbol ??
+          (name) => _asrStreamAssetSymbol(name, isWindows: _isWindows),
+    );
+    if (direct != null) {
+      _asrStreamApi = direct;
+      return direct;
+    }
+
+    for (final candidate
+        in candidates ?? _llamadartWrapperLibraryCandidates()) {
+      try {
+        final library = (open ?? _openWrapperLibrary)(candidate);
+        requireAdmittedLibrary(library, capability: 'Live speech recognition');
+        final api = _AsrStreamApi.tryLoad(library.lookup);
+        if (api != null) {
+          _asrStreamApi = api;
+          return api;
+        }
+      } on LlamaUnsupportedException {
+        rethrow;
+      } catch (_) {
+        continue;
+      }
+    }
+    throw LlamaUnsupportedException(_asrStreamUnavailableMessage());
+  }
+
   DynamicLibrary _openWrapperLibrary(String candidate) {
     return openWrapperLibraryWithDependencies(
       candidate,
@@ -4291,6 +4509,12 @@ class LlamaCppService {
       // Free associated multimodal context
       final mmHandle = _modelToMtmd.remove(modelHandle);
       if (mmHandle != null) {
+        if (_activeAsrStreamSession?.mmContextHandle == mmHandle) {
+          cancelAsrStream(_activeAsrStreamSession!.sessionId);
+          _closeAsrSession(_activeAsrStreamSession!);
+        }
+        _mtmdProjectorPaths.remove(mmHandle);
+        _mtmdProjectorTypes.remove(mmHandle);
         final mmCtx = _mtmdContexts.remove(mmHandle);
         if (mmCtx != null) _mtmdFree(mmCtx);
       }
@@ -4575,6 +4799,10 @@ class LlamaCppService {
   }
 
   void _freeContext(int handle) {
+    if (_activeAsrStreamSession?.contextHandle == handle) {
+      cancelAsrStream(_activeAsrStreamSession!.sessionId);
+      _closeAsrSession(_activeAsrStreamSession!);
+    }
     _contextToModel.remove(handle);
     _activeLoras.remove(handle);
     _contextParams.remove(handle);
@@ -7998,6 +8226,7 @@ class LlamaCppService {
       throw LlamaStateException('Unknown context handle: $contextHandle');
     }
     _ensureContextUsable(contextHandle, ctx);
+    _ensureContextNotReservedByAsr(contextHandle);
     if (_generatingContexts.containsKey(contextHandle)) {
       final activity = _activeTtsContextHandle == contextHandle
           ? 'text-to-speech'
@@ -8058,6 +8287,7 @@ class LlamaCppService {
       throw LlamaStateException('Unknown context handle: $contextHandle');
     }
     _ensureContextUsable(contextHandle, ctx);
+    _ensureContextNotReservedByAsr(contextHandle);
     if (_generatingContexts.containsKey(contextHandle)) {
       final activity = _activeTtsContextHandle == contextHandle
           ? 'text-to-speech'
@@ -8764,6 +8994,11 @@ class LlamaCppService {
 
   /// Disposes of all resources managed by the service.
   void dispose() {
+    final activeAsr = _activeAsrStreamSession;
+    if (activeAsr != null) {
+      cancelAsrStream(activeAsr.sessionId);
+      _closeAsrSession(activeAsr);
+    }
     _freeDecisionHeadsWhere((_) => true);
     for (final handle in _contexts.keys.toList()) {
       _freeContext(handle);
@@ -8773,6 +9008,8 @@ class LlamaCppService {
       _mtmdFree(m);
     }
     _mtmdContexts.clear();
+    _mtmdProjectorPaths.clear();
+    _mtmdProjectorTypes.clear();
     _modelToMtmd.clear();
     _modelToMtmdUseGpu.clear();
     for (final m in _models.values) {
@@ -8835,6 +9072,8 @@ class LlamaCppService {
     final handle = _getHandle();
     _mtmdContexts[handle] = mmCtx;
     _modelToMtmd[modelHandle] = handle;
+    _mtmdProjectorPaths[handle] = mmProjPath;
+    _mtmdProjectorTypes.remove(handle);
     return handle;
   }
 
@@ -8889,6 +9128,12 @@ class LlamaCppService {
 
   /// Frees the multimodal context (projector).
   void freeMultimodalContext(int mmContextHandle) {
+    if (_activeAsrStreamSession?.mmContextHandle == mmContextHandle) {
+      cancelAsrStream(_activeAsrStreamSession!.sessionId);
+      _closeAsrSession(_activeAsrStreamSession!);
+    }
+    _mtmdProjectorPaths.remove(mmContextHandle);
+    _mtmdProjectorTypes.remove(mmContextHandle);
     final mmCtx = _mtmdContexts.remove(mmContextHandle);
     if (mmCtx != null) {
       _mtmdFree(mmCtx);
@@ -10795,6 +11040,7 @@ class LlamaCppService {
     void Function(BackendTextToSpeechProgress progress)? onProgress,
   }) async {
     final context = _contexts[contextHandle];
+    _ensureContextNotReservedByAsr(contextHandle);
     if (_activeTtsContextHandle != null) {
       throw LlamaStateException('Text-to-speech synthesis is already active.');
     }

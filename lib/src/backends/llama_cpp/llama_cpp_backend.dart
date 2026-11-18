@@ -88,6 +88,8 @@ class NativeLlamaBackend
   bool _textToSpeechCancelRequested = false;
   bool _textToSpeechRequestSent = false;
   _NativeCancelFlag? _textToSpeechCancelFlag;
+  LlamaCppAsrStreamSession? _activeAsrSession;
+  int _nextAsrSessionId = 0;
   final Expando<BackendGenerationLimit> _generationLimits =
       Expando<BackendGenerationLimit>();
   final Expando<LlamaGenerationUsage> _generationUsages =
@@ -173,6 +175,12 @@ class NativeLlamaBackend
         return LlamaStateException(response.message);
       case WorkerErrorKind.speech:
         return LlamaSpeechException(response.message);
+      case WorkerErrorKind.speechTranscriptTruncated:
+        return LlamaSpeechTranscriptTruncatedException(
+          response.message,
+          limit: response.transcriptLimit ?? LlamaSpeechTranscriptLimit.runtime,
+          partialTranscript: response.partialTranscript ?? '',
+        );
       case WorkerErrorKind.audioFormat:
         return LlamaAudioFormatException(response.message);
       case WorkerErrorKind.textToSpeech:
@@ -254,6 +262,7 @@ class NativeLlamaBackend
     // An actual onExit notification proves that this worker has stopped
     // reading shared cancellation flags. Error notifications alone do not.
     _activeGenerationFailure?.call(failure);
+    _activeAsrSession?._onWorkerExit(failure);
     for (final port in _responsePorts.toList()) {
       port.sendPort.send(
         ErrorResponse(failure.message, kind: WorkerErrorKind.state),
@@ -674,6 +683,13 @@ class NativeLlamaBackend
   }) {
     final failure = _workerFailure;
     if (failure != null) return Stream<List<int>>.error(failure);
+    if (_activeAsrSession != null) {
+      return Stream<List<int>>.error(
+        LlamaStateException(
+          'Cannot generate text while live speech recognition is active.',
+        ),
+      );
+    }
     final runningToken = _activeCancelToken;
     if (_queuedGeneration != null ||
         (runningToken != null && !runningToken.isRaised)) {
@@ -1381,6 +1397,7 @@ class NativeLlamaBackend
     // A synthesis claimed after this point sends its flag to the next worker,
     // so this dispose must not free it.
     final textToSpeechCancelFlag = _textToSpeechCancelFlag;
+    final activeAsrSession = _activeAsrSession;
     _lifecycleEpoch += 1;
     _activeModelHandle = null;
     _isReady = false;
@@ -1401,6 +1418,9 @@ class NativeLlamaBackend
     cancelGeneration();
     _activeGenerationCleanup?.call();
     cancelTextToSpeech();
+    if (activeAsrSession != null) {
+      unawaited(activeAsrSession.cancel());
+    }
 
     var acknowledgedDispose = false;
     if (_sendPort != null && _workerCleanupFailure == null) {
@@ -1447,6 +1467,7 @@ class NativeLlamaBackend
       _queuedGeneration?.close();
       _stalePerformanceContexts.clear();
       textToSpeechCancelFlag?.free();
+      activeAsrSession?._freeCancelFlagAfterWorkerExit();
       _activeCancelToken = null;
       _activeGenerationCleanup = null;
       _activeGenerationFailure = null;
@@ -1555,6 +1576,12 @@ class NativeLlamaBackend
     BackendTextToSpeechRequest request, {
     void Function(BackendTextToSpeechProgress progress)? onProgress,
   }) async {
+    if (_activeAsrSession != null) {
+      throw LlamaStateException(
+        'Cannot synthesize text-to-speech while live speech recognition is '
+        'active.',
+      );
+    }
     if (_textToSpeechActive) {
       throw LlamaStateException(
         'llama.cpp text-to-speech synthesis is already in progress.',
@@ -1649,6 +1676,79 @@ class NativeLlamaBackend
     _textToSpeechCancelFlag?.raise();
     if (_textToSpeechRequestSent) {
       _sendPort?.send(TextToSpeechCancelRequest());
+    }
+  }
+
+  /// Probes whether [contextHandle] and [mmContextHandle] support live ASR.
+  Future<String?> probeAsrStreamUnsupportedReason(
+    int contextHandle,
+    int mmContextHandle,
+  ) async {
+    _throwIfWorkerFailed();
+    await _ensureIsolate();
+    final rp = _openResponsePort();
+    _dispatchRequest(
+      rp,
+      AsrStreamSupportRequest(contextHandle, mmContextHandle, rp.sendPort),
+    );
+    final response = await _receiveResponse(rp);
+    if (response is AsrStreamSupportResponse) {
+      return response.unsupportedReason;
+    }
+    if (response is ErrorResponse) {
+      throw _workerError(response);
+    }
+    throw LlamaSpeechException('Unknown response during live ASR probe.');
+  }
+
+  /// Starts a live ASR session on [contextHandle] and [mmContextHandle].
+  Future<LlamaCppAsrStreamSession> startAsrStreamSession(
+    int contextHandle,
+    int mmContextHandle,
+  ) async {
+    _throwIfWorkerFailed();
+    if (_activeAsrSession != null) {
+      throw LlamaStateException(
+        'A live speech recognition session is already active.',
+      );
+    }
+    if (_textToSpeechActive) {
+      throw LlamaStateException(
+        'Cannot start live speech recognition while text-to-speech is active.',
+      );
+    }
+    final runningToken = _activeCancelToken;
+    if (_queuedGeneration != null ||
+        (runningToken != null && !runningToken.isRaised)) {
+      throw LlamaStateException(
+        'Cannot start live speech recognition while generation is active.',
+      );
+    }
+
+    final sessionId = ++_nextAsrSessionId;
+    final cancelFlag = _NativeCancelFlag(_cancelFlagAllocator);
+    final session = LlamaCppAsrStreamSession._(
+      backend: this,
+      sessionId: sessionId,
+      contextHandle: contextHandle,
+      mmContextHandle: mmContextHandle,
+      cancelFlag: cancelFlag,
+    );
+    _activeAsrSession = session;
+
+    try {
+      await _ensureIsolate();
+      if (session._cancelled) {
+        throw LlamaSpeechException('Live speech recognition was cancelled.');
+      }
+      await session._start();
+      return session;
+    } catch (error) {
+      session._cleanupBeforeStart();
+      if (identical(_activeAsrSession, session)) {
+        _activeAsrSession = null;
+      }
+      rethrow;
     }
   }
 
@@ -1859,6 +1959,321 @@ final class _QueuedGeneration {
   final void Function(Object error) fail;
 
   _QueuedGeneration(this.start, this.close, this.fail);
+}
+
+/// Active live ASR session on [NativeLlamaBackend].
+final class LlamaCppAsrStreamSession {
+  static const int _maxTransferSamples = 5120;
+
+  final NativeLlamaBackend _backend;
+  final int _sessionId;
+  final int _contextHandle;
+  final int _mmContextHandle;
+  final _NativeCancelFlag _cancelFlag;
+  final StreamController<({String confirmedText, int acceptedSamples})>
+  _updatesController =
+      StreamController<
+        ({String confirmedText, int acceptedSamples})
+      >.broadcast();
+
+  ReceivePort? _eventPort;
+  StreamSubscription<dynamic>? _eventSubscription;
+  bool _startSent = false;
+  bool _startFailed = false;
+  bool _cancelled = false;
+  bool _closed = false;
+  int _suppliedSamples = 0;
+  int _acceptedSamples = 0;
+  Future<int>? _inFlightPush;
+  Future<String>? _finishFuture;
+  Future<void>? _cancelFuture;
+
+  LlamaCppAsrStreamSession._({
+    required NativeLlamaBackend backend,
+    required int sessionId,
+    required int contextHandle,
+    required int mmContextHandle,
+    required _NativeCancelFlag cancelFlag,
+  }) : _backend = backend,
+       _sessionId = sessionId,
+       _contextHandle = contextHandle,
+       _mmContextHandle = mmContextHandle,
+       _cancelFlag = cancelFlag;
+
+  /// Broadcast stream of confirmed transcript updates and cumulative accepted
+  /// sample counts.
+  Stream<({String confirmedText, int acceptedSamples})> get updates =>
+      _updatesController.stream;
+
+  /// Cumulative accepted sample count acknowledged by the worker.
+  int get acceptedSamples => _acceptedSamples;
+
+  Future<void> _start() async {
+    final eventPort = ReceivePort();
+    _eventPort = eventPort;
+    _eventSubscription = eventPort.listen((message) {
+      if (_closed || _cancelled) {
+        return;
+      }
+      if (message is AsrStreamTextResponse && message.sessionId == _sessionId) {
+        _acceptedSamples = message.acceptedSamples;
+        if (!_updatesController.isClosed) {
+          _updatesController.add((
+            confirmedText: message.confirmedText,
+            acceptedSamples: message.acceptedSamples,
+          ));
+        }
+      } else if (message is ErrorResponse) {
+        _cancelled = true;
+        final error = _backend._workerError(message);
+        if (!_updatesController.isClosed) {
+          _updatesController.addError(error);
+        }
+        unawaited(_closeResources(freeFlag: true));
+      }
+    });
+
+    final rp = _backend._openResponsePort();
+    _startSent = true;
+    try {
+      _backend._dispatchRequest(
+        rp,
+        AsrStreamStartRequest(
+          _sessionId,
+          _contextHandle,
+          _mmContextHandle,
+          _cancelFlag.address,
+          eventPort.sendPort,
+          rp.sendPort,
+        ),
+      );
+      final response = await _backend._receiveResponse(rp);
+      if (response is AsrStreamStartedResponse &&
+          response.sessionId == _sessionId) {
+        return;
+      }
+      if (response is ErrorResponse) {
+        throw _backend._workerError(response);
+      }
+      throw LlamaSpeechException('Unknown response starting live ASR session.');
+    } catch (_) {
+      _startFailed = true;
+      rethrow;
+    }
+  }
+
+  /// Pushes [samples] in bounded slices (at most 5,120 samples per transfer).
+  Future<int> pushAudio(Float32List samples) {
+    if (_cancelled) {
+      return Future<int>.error(
+        LlamaSpeechException('Live speech recognition was cancelled.'),
+      );
+    }
+    if (_closed || _finishFuture != null) {
+      return Future<int>.error(
+        LlamaStateException('Live speech recognition session is closed.'),
+      );
+    }
+    if (_inFlightPush != null) {
+      return Future<int>.error(
+        LlamaStateException(
+          'Another live speech recognition push is already in progress.',
+        ),
+      );
+    }
+    if (samples.isEmpty) {
+      return Future<int>.value(_acceptedSamples);
+    }
+
+    final push = _pushSlices(samples);
+    _inFlightPush = push;
+    return push.whenComplete(() {
+      if (identical(_inFlightPush, push)) {
+        _inFlightPush = null;
+      }
+    });
+  }
+
+  Future<int> _pushSlices(Float32List samples) async {
+    var offset = 0;
+    while (offset < samples.length) {
+      if (_cancelled) {
+        throw LlamaSpeechException('Live speech recognition was cancelled.');
+      }
+      _backend._throwIfWorkerFailed();
+      final end = offset + _maxTransferSamples < samples.length
+          ? offset + _maxTransferSamples
+          : samples.length;
+      final slice = Float32List.sublistView(samples, offset, end);
+      final rp = _backend._openResponsePort();
+      _backend._dispatchRequest(
+        rp,
+        AsrStreamPushRequest(
+          sessionId: _sessionId,
+          sampleOffset: _suppliedSamples,
+          samples: slice,
+          sendPort: rp.sendPort,
+        ),
+      );
+      final Object? response;
+      try {
+        response = await _backend._receiveResponse(rp);
+      } catch (error) {
+        await _closeResources(freeFlag: true);
+        if (!_updatesController.isClosed) {
+          _updatesController.addError(error);
+        }
+        rethrow;
+      }
+      if (response is AsrStreamPushAckResponse &&
+          response.sessionId == _sessionId) {
+        _suppliedSamples += slice.length;
+        _acceptedSamples = response.acceptedSamples;
+        offset = end;
+        continue;
+      }
+      await _closeResources(freeFlag: true);
+      throw LlamaSpeechException('Unknown response during live ASR push.');
+    }
+    return _acceptedSamples;
+  }
+
+  /// Finishes the stream, joining any in-flight push first, and returns the
+  /// final normalized transcript.
+  Future<String> finish() {
+    final existing = _finishFuture;
+    if (existing != null) {
+      return existing;
+    }
+    if (_cancelled) {
+      return Future<String>.error(
+        LlamaSpeechException('Live speech recognition was cancelled.'),
+      );
+    }
+    if (_closed) {
+      return Future<String>.error(
+        LlamaStateException('Live speech recognition session is closed.'),
+      );
+    }
+    final future = _runFinish();
+    _finishFuture = future;
+    return future;
+  }
+
+  Future<String> _runFinish() async {
+    try {
+      final inFlight = _inFlightPush;
+      if (inFlight != null) {
+        await inFlight;
+      }
+      if (_cancelled) {
+        throw LlamaSpeechException('Live speech recognition was cancelled.');
+      }
+      _backend._throwIfWorkerFailed();
+      final rp = _backend._openResponsePort();
+      _backend._dispatchRequest(
+        rp,
+        AsrStreamFinishRequest(_sessionId, _suppliedSamples, rp.sendPort),
+      );
+      final response = await _backend._receiveResponse(rp);
+      if (response is AsrStreamFinishResponse &&
+          response.sessionId == _sessionId) {
+        _acceptedSamples = response.acceptedSamples;
+        await _closeResources(freeFlag: true);
+        return response.finalText;
+      }
+      await _closeResources(freeFlag: true);
+      throw LlamaSpeechException('Unknown response finishing live ASR.');
+    } catch (error) {
+      await _closeResources(freeFlag: true);
+      if (!_updatesController.isClosed) {
+        _updatesController.addError(error);
+      }
+      rethrow;
+    }
+  }
+
+  /// Cancels the session and awaits worker-side native cleanup.
+  Future<void> cancel() {
+    final existing = _cancelFuture;
+    if (existing != null) {
+      return existing;
+    }
+    _cancelled = true;
+    _cancelFlag.raise();
+    final future = _runCancel();
+    _cancelFuture = future;
+    return future;
+  }
+
+  Future<void> _runCancel() async {
+    var freeFlag = _backend._workerFailure != null;
+    if (_startSent &&
+        _backend._sendPort != null &&
+        _backend._workerFailure == null) {
+      final rp = _backend._openResponsePort();
+      try {
+        _backend._dispatchRequest(
+          rp,
+          AsrStreamCancelRequest(_sessionId, rp.sendPort),
+        );
+        await _backend._receiveResponse(rp);
+        freeFlag = true;
+      } catch (_) {
+        freeFlag = _backend._workerFailure != null;
+      }
+    } else if (!_startSent) {
+      freeFlag = true;
+    }
+    await _closeResources(freeFlag: freeFlag);
+  }
+
+  void _cleanupBeforeStart() {
+    _cancelled = true;
+    _cancelFlag.raise();
+    final canFree =
+        !_startSent || _startFailed || _backend._workerFailure != null;
+    if (canFree) {
+      _cancelFlag.free();
+    }
+    unawaited(_closeResources(freeFlag: canFree));
+  }
+
+  void _onWorkerExit(LlamaStateException failure) {
+    _cancelled = true;
+    _cancelFlag.raise();
+    if (!_updatesController.isClosed) {
+      _updatesController.addError(failure);
+    }
+    unawaited(_closeResources(freeFlag: true));
+  }
+
+  void _freeCancelFlagAfterWorkerExit() {
+    _cancelFlag.free();
+  }
+
+  Future<void> _closeResources({required bool freeFlag}) async {
+    if (_closed) {
+      if (freeFlag) {
+        _cancelFlag.free();
+      }
+      return;
+    }
+    _closed = true;
+    if (identical(_backend._activeAsrSession, this)) {
+      _backend._activeAsrSession = null;
+    }
+    await _eventSubscription?.cancel();
+    _eventSubscription = null;
+    _eventPort?.close();
+    _eventPort = null;
+    if (!_updatesController.isClosed) {
+      await _updatesController.close();
+    }
+    if (freeFlag) {
+      _cancelFlag.free();
+    }
+  }
 }
 
 /// A [RangeError] raised on the worker isolate, described as it was there.

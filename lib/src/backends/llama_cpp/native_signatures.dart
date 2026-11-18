@@ -122,6 +122,97 @@ typedef _TtsGetVoiceNameDart =
       int,
       Pointer<Size>,
     );
+
+typedef _AsrStreamApiVersionNative = Uint32 Function();
+typedef _AsrStreamApiVersionDart = int Function();
+typedef _AsrStreamSupportedModesNative = Uint32 Function();
+typedef _AsrStreamSupportedModesDart = int Function();
+typedef _AsrStreamParamsDefaultNative = llama_dart_asr_stream_params Function();
+typedef _AsrStreamParamsDefaultDart = llama_dart_asr_stream_params Function();
+typedef _AsrStreamGetInfoNative =
+    Int Function(
+      Pointer<llama_context>,
+      Pointer<mtmd_context>,
+      Uint32,
+      Pointer<llama_dart_asr_stream_info>,
+    );
+typedef _AsrStreamGetInfoDart =
+    int Function(
+      Pointer<llama_context>,
+      Pointer<mtmd_context>,
+      int,
+      Pointer<llama_dart_asr_stream_info>,
+    );
+typedef _AsrStreamInitNative =
+    Pointer<llama_dart_asr_stream> Function(
+      Pointer<llama_context>,
+      Pointer<mtmd_context>,
+      Uint32,
+      Pointer<llama_dart_asr_stream_params>,
+      Pointer<Int>,
+    );
+typedef _AsrStreamInitDart =
+    Pointer<llama_dart_asr_stream> Function(
+      Pointer<llama_context>,
+      Pointer<mtmd_context>,
+      int,
+      Pointer<llama_dart_asr_stream_params>,
+      Pointer<Int>,
+    );
+typedef _AsrStreamFreeNative = Void Function(Pointer<llama_dart_asr_stream>);
+typedef _AsrStreamFreeDart = void Function(Pointer<llama_dart_asr_stream>);
+typedef _AsrStreamPushNative =
+    Int Function(
+      Pointer<llama_dart_asr_stream>,
+      Pointer<Float>,
+      Size,
+      Pointer<Size>,
+    );
+typedef _AsrStreamPushDart =
+    int Function(
+      Pointer<llama_dart_asr_stream>,
+      Pointer<Float>,
+      int,
+      Pointer<Size>,
+    );
+typedef _AsrStreamFinishNative = Int Function(Pointer<llama_dart_asr_stream>);
+typedef _AsrStreamFinishDart = int Function(Pointer<llama_dart_asr_stream>);
+typedef _AsrStreamStepNative =
+    Int Function(
+      Pointer<llama_dart_asr_stream>,
+      Pointer<llama_dart_asr_stream_progress>,
+    );
+typedef _AsrStreamStepDart =
+    int Function(
+      Pointer<llama_dart_asr_stream>,
+      Pointer<llama_dart_asr_stream_progress>,
+    );
+typedef _AsrStreamReadTextNative =
+    Int Function(
+      Pointer<llama_dart_asr_stream>,
+      Pointer<Char>,
+      Size,
+      Pointer<Size>,
+    );
+typedef _AsrStreamReadTextDart =
+    int Function(
+      Pointer<llama_dart_asr_stream>,
+      Pointer<Char>,
+      int,
+      Pointer<Size>,
+    );
+typedef _AsrStreamCancelNative = Void Function(Pointer<llama_dart_asr_stream>);
+typedef _AsrStreamCancelDart = void Function(Pointer<llama_dart_asr_stream>);
+typedef _AsrStreamSetCancelFlagNative =
+    Int Function(Pointer<llama_dart_asr_stream>, Pointer<Int8>);
+typedef _AsrStreamSetCancelFlagDart =
+    int Function(Pointer<llama_dart_asr_stream>, Pointer<Int8>);
+typedef _AsrStreamResetNative = Int Function(Pointer<llama_dart_asr_stream>);
+typedef _AsrStreamResetDart = int Function(Pointer<llama_dart_asr_stream>);
+typedef _AsrStreamLastErrorNative =
+    Pointer<Char> Function(Pointer<llama_dart_asr_stream>);
+typedef _AsrStreamLastErrorDart =
+    Pointer<Char> Function(Pointer<llama_dart_asr_stream>);
 typedef _GgmlBackendInitNative = ggml_backend_reg_t Function();
 typedef _GgmlBackendInitDart = ggml_backend_reg_t Function();
 typedef _GgmlBackendLoadAllNative = Void Function();
@@ -1148,4 +1239,349 @@ external bool _wrapperTtsEvalCallback(
   Pointer<ggml_tensor> tensor,
   bool ask,
   Pointer<Void> userData,
+);
+
+Pointer<NativeType> _asrStreamAssetSymbol(
+  String name, {
+  required bool isWindows,
+}) => switch (name) {
+  'llama_dart_asr_stream_api_version' =>
+    isWindows
+        ? Native.addressOf<NativeFunction<_AsrStreamApiVersionNative>>(
+            _wrapperAsrStreamApiVersion,
+          )
+        : Native.addressOf<NativeFunction<_AsrStreamApiVersionNative>>(
+            _primaryAsrStreamApiVersion,
+          ),
+  'llama_dart_asr_stream_supported_modes' =>
+    isWindows
+        ? Native.addressOf<NativeFunction<_AsrStreamSupportedModesNative>>(
+            _wrapperAsrStreamSupportedModes,
+          )
+        : Native.addressOf<NativeFunction<_AsrStreamSupportedModesNative>>(
+            _primaryAsrStreamSupportedModes,
+          ),
+  'llama_dart_asr_stream_params_default' =>
+    isWindows
+        ? Native.addressOf<NativeFunction<_AsrStreamParamsDefaultNative>>(
+            _wrapperAsrStreamParamsDefault,
+          )
+        : Native.addressOf<NativeFunction<_AsrStreamParamsDefaultNative>>(
+            _primaryAsrStreamParamsDefault,
+          ),
+  'llama_dart_asr_stream_get_info' =>
+    isWindows
+        ? Native.addressOf<NativeFunction<_AsrStreamGetInfoNative>>(
+            _wrapperAsrStreamGetInfo,
+          )
+        : Native.addressOf<NativeFunction<_AsrStreamGetInfoNative>>(
+            _primaryAsrStreamGetInfo,
+          ),
+  'llama_dart_asr_stream_init' =>
+    isWindows
+        ? Native.addressOf<NativeFunction<_AsrStreamInitNative>>(
+            _wrapperAsrStreamInit,
+          )
+        : Native.addressOf<NativeFunction<_AsrStreamInitNative>>(
+            _primaryAsrStreamInit,
+          ),
+  'llama_dart_asr_stream_free' =>
+    isWindows
+        ? Native.addressOf<NativeFunction<_AsrStreamFreeNative>>(
+            _wrapperAsrStreamFree,
+          )
+        : Native.addressOf<NativeFunction<_AsrStreamFreeNative>>(
+            _primaryAsrStreamFree,
+          ),
+  'llama_dart_asr_stream_push' =>
+    isWindows
+        ? Native.addressOf<NativeFunction<_AsrStreamPushNative>>(
+            _wrapperAsrStreamPush,
+          )
+        : Native.addressOf<NativeFunction<_AsrStreamPushNative>>(
+            _primaryAsrStreamPush,
+          ),
+  'llama_dart_asr_stream_finish' =>
+    isWindows
+        ? Native.addressOf<NativeFunction<_AsrStreamFinishNative>>(
+            _wrapperAsrStreamFinish,
+          )
+        : Native.addressOf<NativeFunction<_AsrStreamFinishNative>>(
+            _primaryAsrStreamFinish,
+          ),
+  'llama_dart_asr_stream_step' =>
+    isWindows
+        ? Native.addressOf<NativeFunction<_AsrStreamStepNative>>(
+            _wrapperAsrStreamStep,
+          )
+        : Native.addressOf<NativeFunction<_AsrStreamStepNative>>(
+            _primaryAsrStreamStep,
+          ),
+  'llama_dart_asr_stream_read_text' =>
+    isWindows
+        ? Native.addressOf<NativeFunction<_AsrStreamReadTextNative>>(
+            _wrapperAsrStreamReadText,
+          )
+        : Native.addressOf<NativeFunction<_AsrStreamReadTextNative>>(
+            _primaryAsrStreamReadText,
+          ),
+  'llama_dart_asr_stream_cancel' =>
+    isWindows
+        ? Native.addressOf<NativeFunction<_AsrStreamCancelNative>>(
+            _wrapperAsrStreamCancel,
+          )
+        : Native.addressOf<NativeFunction<_AsrStreamCancelNative>>(
+            _primaryAsrStreamCancel,
+          ),
+  'llama_dart_asr_stream_set_cancel_flag' =>
+    isWindows
+        ? Native.addressOf<NativeFunction<_AsrStreamSetCancelFlagNative>>(
+            _wrapperAsrStreamSetCancelFlag,
+          )
+        : Native.addressOf<NativeFunction<_AsrStreamSetCancelFlagNative>>(
+            _primaryAsrStreamSetCancelFlag,
+          ),
+  'llama_dart_asr_stream_reset' =>
+    isWindows
+        ? Native.addressOf<NativeFunction<_AsrStreamResetNative>>(
+            _wrapperAsrStreamReset,
+          )
+        : Native.addressOf<NativeFunction<_AsrStreamResetNative>>(
+            _primaryAsrStreamReset,
+          ),
+  'llama_dart_asr_stream_last_error' =>
+    isWindows
+        ? Native.addressOf<NativeFunction<_AsrStreamLastErrorNative>>(
+            _wrapperAsrStreamLastError,
+          )
+        : Native.addressOf<NativeFunction<_AsrStreamLastErrorNative>>(
+            _primaryAsrStreamLastError,
+          ),
+  _ => throw ArgumentError.value(name, 'name', 'Unknown ASR stream symbol'),
+};
+
+@Native<_AsrStreamApiVersionNative>(
+  assetId: 'package:llamadart/llamadart',
+  symbol: 'llama_dart_asr_stream_api_version',
+)
+external int _primaryAsrStreamApiVersion();
+
+@Native<_AsrStreamSupportedModesNative>(
+  assetId: 'package:llamadart/llamadart',
+  symbol: 'llama_dart_asr_stream_supported_modes',
+)
+external int _primaryAsrStreamSupportedModes();
+
+@Native<_AsrStreamParamsDefaultNative>(
+  assetId: 'package:llamadart/llamadart',
+  symbol: 'llama_dart_asr_stream_params_default',
+)
+external llama_dart_asr_stream_params _primaryAsrStreamParamsDefault();
+
+@Native<_AsrStreamGetInfoNative>(
+  assetId: 'package:llamadart/llamadart',
+  symbol: 'llama_dart_asr_stream_get_info',
+)
+external int _primaryAsrStreamGetInfo(
+  Pointer<llama_context> llama,
+  Pointer<mtmd_context> mtmd,
+  int acceptedModes,
+  Pointer<llama_dart_asr_stream_info> outInfo,
+);
+
+@Native<_AsrStreamInitNative>(
+  assetId: 'package:llamadart/llamadart',
+  symbol: 'llama_dart_asr_stream_init',
+)
+external Pointer<llama_dart_asr_stream> _primaryAsrStreamInit(
+  Pointer<llama_context> llama,
+  Pointer<mtmd_context> mtmd,
+  int acceptedModes,
+  Pointer<llama_dart_asr_stream_params> params,
+  Pointer<Int> outStatus,
+);
+
+@Native<_AsrStreamFreeNative>(
+  assetId: 'package:llamadart/llamadart',
+  symbol: 'llama_dart_asr_stream_free',
+)
+external void _primaryAsrStreamFree(Pointer<llama_dart_asr_stream> stream);
+
+@Native<_AsrStreamPushNative>(
+  assetId: 'package:llamadart/llamadart',
+  symbol: 'llama_dart_asr_stream_push',
+)
+external int _primaryAsrStreamPush(
+  Pointer<llama_dart_asr_stream> stream,
+  Pointer<Float> samples,
+  int sampleCount,
+  Pointer<Size> outAccepted,
+);
+
+@Native<_AsrStreamFinishNative>(
+  assetId: 'package:llamadart/llamadart',
+  symbol: 'llama_dart_asr_stream_finish',
+)
+external int _primaryAsrStreamFinish(Pointer<llama_dart_asr_stream> stream);
+
+@Native<_AsrStreamStepNative>(
+  assetId: 'package:llamadart/llamadart',
+  symbol: 'llama_dart_asr_stream_step',
+)
+external int _primaryAsrStreamStep(
+  Pointer<llama_dart_asr_stream> stream,
+  Pointer<llama_dart_asr_stream_progress> outProgress,
+);
+
+@Native<_AsrStreamReadTextNative>(
+  assetId: 'package:llamadart/llamadart',
+  symbol: 'llama_dart_asr_stream_read_text',
+)
+external int _primaryAsrStreamReadText(
+  Pointer<llama_dart_asr_stream> stream,
+  Pointer<Char> out,
+  int capacity,
+  Pointer<Size> outLen,
+);
+
+@Native<_AsrStreamCancelNative>(
+  assetId: 'package:llamadart/llamadart',
+  symbol: 'llama_dart_asr_stream_cancel',
+)
+external void _primaryAsrStreamCancel(Pointer<llama_dart_asr_stream> stream);
+
+@Native<_AsrStreamSetCancelFlagNative>(
+  assetId: 'package:llamadart/llamadart',
+  symbol: 'llama_dart_asr_stream_set_cancel_flag',
+)
+external int _primaryAsrStreamSetCancelFlag(
+  Pointer<llama_dart_asr_stream> stream,
+  Pointer<Int8> flag,
+);
+
+@Native<_AsrStreamResetNative>(
+  assetId: 'package:llamadart/llamadart',
+  symbol: 'llama_dart_asr_stream_reset',
+)
+external int _primaryAsrStreamReset(Pointer<llama_dart_asr_stream> stream);
+
+@Native<_AsrStreamLastErrorNative>(
+  assetId: 'package:llamadart/llamadart',
+  symbol: 'llama_dart_asr_stream_last_error',
+)
+external Pointer<Char> _primaryAsrStreamLastError(
+  Pointer<llama_dart_asr_stream> stream,
+);
+
+@Native<_AsrStreamApiVersionNative>(
+  assetId: 'package:llamadart/llamadart_wrapper',
+  symbol: 'llama_dart_asr_stream_api_version',
+)
+external int _wrapperAsrStreamApiVersion();
+
+@Native<_AsrStreamSupportedModesNative>(
+  assetId: 'package:llamadart/llamadart_wrapper',
+  symbol: 'llama_dart_asr_stream_supported_modes',
+)
+external int _wrapperAsrStreamSupportedModes();
+
+@Native<_AsrStreamParamsDefaultNative>(
+  assetId: 'package:llamadart/llamadart_wrapper',
+  symbol: 'llama_dart_asr_stream_params_default',
+)
+external llama_dart_asr_stream_params _wrapperAsrStreamParamsDefault();
+
+@Native<_AsrStreamGetInfoNative>(
+  assetId: 'package:llamadart/llamadart_wrapper',
+  symbol: 'llama_dart_asr_stream_get_info',
+)
+external int _wrapperAsrStreamGetInfo(
+  Pointer<llama_context> llama,
+  Pointer<mtmd_context> mtmd,
+  int acceptedModes,
+  Pointer<llama_dart_asr_stream_info> outInfo,
+);
+
+@Native<_AsrStreamInitNative>(
+  assetId: 'package:llamadart/llamadart_wrapper',
+  symbol: 'llama_dart_asr_stream_init',
+)
+external Pointer<llama_dart_asr_stream> _wrapperAsrStreamInit(
+  Pointer<llama_context> llama,
+  Pointer<mtmd_context> mtmd,
+  int acceptedModes,
+  Pointer<llama_dart_asr_stream_params> params,
+  Pointer<Int> outStatus,
+);
+
+@Native<_AsrStreamFreeNative>(
+  assetId: 'package:llamadart/llamadart_wrapper',
+  symbol: 'llama_dart_asr_stream_free',
+)
+external void _wrapperAsrStreamFree(Pointer<llama_dart_asr_stream> stream);
+
+@Native<_AsrStreamPushNative>(
+  assetId: 'package:llamadart/llamadart_wrapper',
+  symbol: 'llama_dart_asr_stream_push',
+)
+external int _wrapperAsrStreamPush(
+  Pointer<llama_dart_asr_stream> stream,
+  Pointer<Float> samples,
+  int sampleCount,
+  Pointer<Size> outAccepted,
+);
+
+@Native<_AsrStreamFinishNative>(
+  assetId: 'package:llamadart/llamadart_wrapper',
+  symbol: 'llama_dart_asr_stream_finish',
+)
+external int _wrapperAsrStreamFinish(Pointer<llama_dart_asr_stream> stream);
+
+@Native<_AsrStreamStepNative>(
+  assetId: 'package:llamadart/llamadart_wrapper',
+  symbol: 'llama_dart_asr_stream_step',
+)
+external int _wrapperAsrStreamStep(
+  Pointer<llama_dart_asr_stream> stream,
+  Pointer<llama_dart_asr_stream_progress> outProgress,
+);
+
+@Native<_AsrStreamReadTextNative>(
+  assetId: 'package:llamadart/llamadart_wrapper',
+  symbol: 'llama_dart_asr_stream_read_text',
+)
+external int _wrapperAsrStreamReadText(
+  Pointer<llama_dart_asr_stream> stream,
+  Pointer<Char> out,
+  int capacity,
+  Pointer<Size> outLen,
+);
+
+@Native<_AsrStreamCancelNative>(
+  assetId: 'package:llamadart/llamadart_wrapper',
+  symbol: 'llama_dart_asr_stream_cancel',
+)
+external void _wrapperAsrStreamCancel(Pointer<llama_dart_asr_stream> stream);
+
+@Native<_AsrStreamSetCancelFlagNative>(
+  assetId: 'package:llamadart/llamadart_wrapper',
+  symbol: 'llama_dart_asr_stream_set_cancel_flag',
+)
+external int _wrapperAsrStreamSetCancelFlag(
+  Pointer<llama_dart_asr_stream> stream,
+  Pointer<Int8> flag,
+);
+
+@Native<_AsrStreamResetNative>(
+  assetId: 'package:llamadart/llamadart_wrapper',
+  symbol: 'llama_dart_asr_stream_reset',
+)
+external int _wrapperAsrStreamReset(Pointer<llama_dart_asr_stream> stream);
+
+@Native<_AsrStreamLastErrorNative>(
+  assetId: 'package:llamadart/llamadart_wrapper',
+  symbol: 'llama_dart_asr_stream_last_error',
+)
+external Pointer<Char> _wrapperAsrStreamLastError(
+  Pointer<llama_dart_asr_stream> stream,
 );

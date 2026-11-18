@@ -167,6 +167,143 @@ class _TtsApi {
   }
 }
 
+const int _asrStreamKnownModeMask = (1 << 1) | (1 << 2);
+
+class _AsrStreamApi {
+  final _AsrStreamApiVersionDart apiVersion;
+  final _AsrStreamSupportedModesDart supportedModes;
+  final _AsrStreamParamsDefaultDart paramsDefault;
+  final _AsrStreamGetInfoDart getInfo;
+  final _AsrStreamInitDart init;
+  final _AsrStreamFreeDart free;
+  final Pointer<NativeFinalizerFunction> freeAddress;
+  final _AsrStreamPushDart push;
+  final _AsrStreamFinishDart finish;
+  final _AsrStreamStepDart step;
+  final _AsrStreamReadTextDart readText;
+  final _AsrStreamCancelDart cancel;
+  final _AsrStreamSetCancelFlagDart setCancelFlag;
+  final _AsrStreamResetDart reset;
+  final _AsrStreamLastErrorDart lastError;
+  final int acceptedModes;
+
+  const _AsrStreamApi({
+    required this.apiVersion,
+    required this.supportedModes,
+    required this.paramsDefault,
+    required this.getInfo,
+    required this.init,
+    required this.free,
+    required this.freeAddress,
+    required this.push,
+    required this.finish,
+    required this.step,
+    required this.readText,
+    required this.cancel,
+    required this.setCancelFlag,
+    required this.reset,
+    required this.lastError,
+    required this.acceptedModes,
+  });
+
+  static _AsrStreamApi? tryLoad(Pointer<NativeType> Function(String) symbol) {
+    Pointer<NativeType>? resolve(String name) {
+      final address = symbol(name);
+      return address == nullptr ? null : address;
+    }
+
+    try {
+      final versionPtr = resolve('llama_dart_asr_stream_api_version');
+      if (versionPtr == null) return null;
+      final apiVersion = versionPtr
+          .cast<NativeFunction<_AsrStreamApiVersionNative>>()
+          .asFunction<_AsrStreamApiVersionDart>();
+      if (apiVersion() != LLAMA_DART_ASR_STREAM_API_VERSION) return null;
+
+      final supportedModesPtr = resolve(
+        'llama_dart_asr_stream_supported_modes',
+      );
+      final paramsDefaultPtr = resolve('llama_dart_asr_stream_params_default');
+      final getInfoPtr = resolve('llama_dart_asr_stream_get_info');
+      final initPtr = resolve('llama_dart_asr_stream_init');
+      final freePtr = resolve('llama_dart_asr_stream_free');
+      final pushPtr = resolve('llama_dart_asr_stream_push');
+      final finishPtr = resolve('llama_dart_asr_stream_finish');
+      final stepPtr = resolve('llama_dart_asr_stream_step');
+      final readTextPtr = resolve('llama_dart_asr_stream_read_text');
+      final cancelPtr = resolve('llama_dart_asr_stream_cancel');
+      final setCancelFlagPtr = resolve('llama_dart_asr_stream_set_cancel_flag');
+      final resetPtr = resolve('llama_dart_asr_stream_reset');
+      final lastErrorPtr = resolve('llama_dart_asr_stream_last_error');
+
+      if (supportedModesPtr == null ||
+          paramsDefaultPtr == null ||
+          getInfoPtr == null ||
+          initPtr == null ||
+          freePtr == null ||
+          pushPtr == null ||
+          finishPtr == null ||
+          stepPtr == null ||
+          readTextPtr == null ||
+          cancelPtr == null ||
+          setCancelFlagPtr == null ||
+          resetPtr == null ||
+          lastErrorPtr == null) {
+        return null;
+      }
+
+      final supportedModes = supportedModesPtr
+          .cast<NativeFunction<_AsrStreamSupportedModesNative>>()
+          .asFunction<_AsrStreamSupportedModesDart>();
+
+      return _AsrStreamApi(
+        apiVersion: apiVersion,
+        supportedModes: supportedModes,
+        paramsDefault: paramsDefaultPtr
+            .cast<NativeFunction<_AsrStreamParamsDefaultNative>>()
+            .asFunction<_AsrStreamParamsDefaultDart>(),
+        getInfo: getInfoPtr
+            .cast<NativeFunction<_AsrStreamGetInfoNative>>()
+            .asFunction<_AsrStreamGetInfoDart>(),
+        init: initPtr
+            .cast<NativeFunction<_AsrStreamInitNative>>()
+            .asFunction<_AsrStreamInitDart>(),
+        free: freePtr
+            .cast<NativeFunction<_AsrStreamFreeNative>>()
+            .asFunction<_AsrStreamFreeDart>(),
+        freeAddress: freePtr.cast(),
+        push: pushPtr
+            .cast<NativeFunction<_AsrStreamPushNative>>()
+            .asFunction<_AsrStreamPushDart>(),
+        finish: finishPtr
+            .cast<NativeFunction<_AsrStreamFinishNative>>()
+            .asFunction<_AsrStreamFinishDart>(),
+        step: stepPtr
+            .cast<NativeFunction<_AsrStreamStepNative>>()
+            .asFunction<_AsrStreamStepDart>(),
+        readText: readTextPtr
+            .cast<NativeFunction<_AsrStreamReadTextNative>>()
+            .asFunction<_AsrStreamReadTextDart>(),
+        cancel: cancelPtr
+            .cast<NativeFunction<_AsrStreamCancelNative>>()
+            .asFunction<_AsrStreamCancelDart>(),
+        setCancelFlag: setCancelFlagPtr
+            .cast<NativeFunction<_AsrStreamSetCancelFlagNative>>()
+            .asFunction<_AsrStreamSetCancelFlagDart>(),
+        reset: resetPtr
+            .cast<NativeFunction<_AsrStreamResetNative>>()
+            .asFunction<_AsrStreamResetDart>(),
+        lastError: lastErrorPtr
+            .cast<NativeFunction<_AsrStreamLastErrorNative>>()
+            .asFunction<_AsrStreamLastErrorDart>(),
+        acceptedModes: supportedModes() & _asrStreamKnownModeMask,
+      );
+    } on ArgumentError {
+      return null;
+    }
+  }
+}
+
 class _ReasoningBudgetApi {
   const _ReasoningBudgetApi({required this.init});
 
@@ -1184,6 +1321,13 @@ extension _LlamaCppLibraryLoading on LlamaCppService {
     return 'Native text-to-speech is unavailable in this runtime bundle '
         '(missing llama_dart_tts_* ABI v$LLAMA_DART_TTS_API_VERSION symbols). '
         'Update to a compatible llamadart-native artifact.';
+  }
+
+  String _asrStreamUnavailableMessage() {
+    return 'Native live speech recognition is unavailable in this runtime '
+        'bundle (missing llama_dart_asr_stream_* ABI '
+        'v$LLAMA_DART_ASR_STREAM_API_VERSION symbols). Update to a compatible '
+        'llamadart-native artifact.';
   }
 
   List<String> _llamadartWrapperLibraryCandidates() =>

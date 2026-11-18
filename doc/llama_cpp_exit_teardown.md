@@ -137,7 +137,12 @@ for the calling thread (`llama_dart_last_error`) and returns a failure value.
   `llama_dart_` call. A call made outside `LlamaCppObjectCalls` (speculative
   decoding, the reasoning-budget sampler, TTS, the mtmd calls and the decision
   head's ggml calls) reads it with `NativeCallFailures.throwIfCaught` at the
-  place that sees the failure value.
+  place that sees the failure value. Live ASR stream calls (`llama_dart_asr_stream_*`)
+  go through `LlamaCppObjectCalls` (`asrStreamGetInfo`, `asrStreamInit`,
+  `asrStreamSetCancelFlag`, `asrStreamPush`, `asrStreamFinish`, `asrStreamStep`,
+  `asrStreamReadText`, `asrStreamFree`), hold returned stream handles at
+  `ShutdownStage.session`, and mark `[stream, context, projector]` (plus the
+  model on Windows) free-only on barrier exceptions.
 - The native contract leaves a llama or mtmd context in no defined state
   after a call on it caught an exception, and on Windows every object of the
   call, a model included. `NativeCallFailures` records those objects by
@@ -389,7 +394,15 @@ new call on an `sd_ctx_t` that can run longer than the 250 ms settle time
   values; the lookup requests all 22 names and resolves nothing when any one
   is missing; each member calls the function exported under its own name;
   `LlamaCppObjectCalls.tracked` uses the exit API for every call; one free per
-  tracked object.
+  tracked object; `asrStreamInit` holds at `ShutdownStage.session`,
+  `asrStreamFree` releases once and forgets, and `asrStreamStep` barrier
+  exceptions mark `[stream, context, projector]` (plus the model on Windows)
+  free-only.
+- `test/unit/backends/llama_cpp/asr_stream_service_test.dart`: all 14
+  `llama_dart_asr_stream_*` exports resolved all-or-nothing, ABI version and
+  mode bitmask admission, GGUF projector metadata and 2,048-position LFM3
+  floor checks, FFI fake streaming/UTF-8/segment-break/truncation state
+  machine, and `ShutdownStage.session` release on exit.
 - `test/integration/backends/llama_cpp/native_symbol_integration_test.dart`:
   the address resolved for each name is the wrapper library's own export of
   that name.

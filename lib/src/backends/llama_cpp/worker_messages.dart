@@ -1,6 +1,8 @@
 import 'dart:isolate';
 import 'dart:typed_data';
 
+import '../../core/exceptions.dart';
+
 import '../backend.dart';
 import '../../core/models/inference/model_params.dart';
 import '../../core/models/inference/embedding.dart';
@@ -516,6 +518,174 @@ class TextToSpeechSynthesizeRequest extends WorkerRequest {
 /// Fire-and-forget request to cancel active native speech synthesis.
 class TextToSpeechCancelRequest {}
 
+/// Request for why the runtime cannot drive live ASR on a context/projector.
+class AsrStreamSupportRequest extends WorkerRequest {
+  /// Handle of the loaded llama context.
+  final int contextHandle;
+
+  /// Handle of the loaded multimodal projector.
+  final int mmContextHandle;
+
+  /// Creates a live ASR support request.
+  AsrStreamSupportRequest(
+    this.contextHandle,
+    this.mmContextHandle,
+    super.sendPort,
+  );
+}
+
+/// Worker response to an [AsrStreamSupportRequest].
+class AsrStreamSupportResponse {
+  /// Why the runtime cannot drive live ASR, or null when it can.
+  final String? unsupportedReason;
+
+  /// Creates a live ASR support response.
+  AsrStreamSupportResponse(this.unsupportedReason);
+}
+
+/// Request to start a live ASR session on the worker.
+class AsrStreamStartRequest extends WorkerRequest {
+  /// Monotonic session ID assigned by the parent backend.
+  final int sessionId;
+
+  /// Handle of the loaded llama context.
+  final int contextHandle;
+
+  /// Handle of the loaded multimodal projector.
+  final int mmContextHandle;
+
+  /// Address of the per-session cancel flag byte owned by the parent.
+  final int cancelFlagAddress;
+
+  /// Port receiving asynchronous [AsrStreamTextResponse] updates.
+  final SendPort eventPort;
+
+  /// Creates a live ASR start request.
+  AsrStreamStartRequest(
+    this.sessionId,
+    this.contextHandle,
+    this.mmContextHandle,
+    this.cancelFlagAddress,
+    this.eventPort,
+    super.sendPort,
+  );
+}
+
+/// Worker response acknowledging that [sessionId] started.
+class AsrStreamStartedResponse {
+  /// Session ID that started.
+  final int sessionId;
+
+  /// Creates a live ASR started response.
+  AsrStreamStartedResponse(this.sessionId);
+}
+
+/// Request to push a bounded slice of mono 16 kHz float32 PCM to [sessionId].
+class AsrStreamPushRequest extends WorkerRequest {
+  /// Active session ID.
+  final int sessionId;
+
+  /// Contiguous cumulative sample offset before this slice.
+  final int sampleOffset;
+
+  /// Number of float32 samples in [pcm].
+  final int sampleCount;
+
+  /// Transferable bytes containing a copy of the logical float32 slice.
+  final TransferableTypedData pcm;
+
+  /// Creates a live ASR push request.
+  AsrStreamPushRequest({
+    required this.sessionId,
+    required this.sampleOffset,
+    required Float32List samples,
+    required SendPort sendPort,
+  }) : sampleCount = samples.length,
+       pcm = TransferableTypedData.fromList(<TypedData>[
+         Uint8List.sublistView(samples),
+       ]),
+       super(sendPort);
+}
+
+/// Worker acknowledgement after pushing and draining a PCM slice.
+class AsrStreamPushAckResponse {
+  /// Session ID that accepted the slice.
+  final int sessionId;
+
+  /// Authoritative cumulative accepted sample count.
+  final int acceptedSamples;
+
+  /// Creates a live ASR push acknowledgement.
+  AsrStreamPushAckResponse(this.sessionId, this.acceptedSamples);
+}
+
+/// Request to finish [sessionId] and drain all remaining transcript output.
+class AsrStreamFinishRequest extends WorkerRequest {
+  /// Active session ID.
+  final int sessionId;
+
+  /// Expected total supplied samples before finish.
+  final int expectedTotalSamples;
+
+  /// Creates a live ASR finish request.
+  AsrStreamFinishRequest(
+    this.sessionId,
+    this.expectedTotalSamples,
+    super.sendPort,
+  );
+}
+
+/// Worker response containing the final live ASR transcript and counts.
+class AsrStreamFinishResponse {
+  /// Session ID that finished.
+  final int sessionId;
+
+  /// Final normalized cumulative transcript.
+  final String finalText;
+
+  /// Cumulative accepted samples.
+  final int acceptedSamples;
+
+  /// Cumulative consumed samples.
+  final int consumedSamples;
+
+  /// Creates a live ASR finish response.
+  AsrStreamFinishResponse({
+    required this.sessionId,
+    required this.finalText,
+    required this.acceptedSamples,
+    required this.consumedSamples,
+  });
+}
+
+/// Request to cancel [sessionId] on the worker.
+class AsrStreamCancelRequest extends WorkerRequest {
+  /// Session ID to cancel.
+  final int sessionId;
+
+  /// Creates a live ASR cancel request.
+  AsrStreamCancelRequest(this.sessionId, super.sendPort);
+}
+
+/// Incremental confirmed transcript update emitted by the worker.
+class AsrStreamTextResponse {
+  /// Active session ID.
+  final int sessionId;
+
+  /// Cumulative normalized confirmed text.
+  final String confirmedText;
+
+  /// Authoritative cumulative accepted sample count.
+  final int acceptedSamples;
+
+  /// Creates a live ASR text update response.
+  AsrStreamTextResponse({
+    required this.sessionId,
+    required this.confirmedText,
+    required this.acceptedSamples,
+  });
+}
+
 /// Request for generation controls of a loaded model and runtime bundle.
 class GenerationCapabilitiesRequest extends WorkerRequest {
   /// Handle of the loaded model.
@@ -899,6 +1069,9 @@ enum WorkerErrorKind {
   /// Text-to-speech synthesis failed.
   textToSpeech,
 
+  /// Speech recognition stopped at a token or runtime limit.
+  speechTranscriptTruncated,
+
   /// An argument was outside its valid range.
   range,
 
@@ -927,6 +1100,8 @@ class ErrorResponse {
     this.maxInputTokens,
     this.actualTokens,
     this.gpuMemoryFitReport,
+    this.transcriptLimit,
+    this.partialTranscript,
     this.details,
   });
 
@@ -939,6 +1114,12 @@ class ErrorResponse {
   /// What the fit measured for [WorkerErrorKind.gpuMemoryFit]; null when it
   /// failed before measuring.
   final GpuMemoryFitReport? gpuMemoryFitReport;
+
+  /// Limiting budget for [WorkerErrorKind.speechTranscriptTruncated].
+  final LlamaSpeechTranscriptLimit? transcriptLimit;
+
+  /// Normalized transcript produced before truncation.
+  final String? partialTranscript;
 
   /// Detail of the original exception, kept apart from [message].
   final Object? details;
