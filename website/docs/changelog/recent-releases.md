@@ -11,52 +11,18 @@ For upgrade planning, combine this page with the
 [Upgrade Checklist](../migration/upgrade-checklist). For breaking changes,
 validate against the exact release tag notes.
 
-## Unreleased
+## 0.20.0
 
-- Report `TextToSpeechCapabilities.supportsIncrementalAudio` false and refuse `TextToSpeechRequest(streamAudio: true)` with `LlamaUnsupportedException` when backend capabilities lack a positive sample rate or channel count instead of emitting `0` Hz chunks ([#2023](https://github.com/leehack/llamadart/issues/2023)).
-
-- Keep the workspace root out of Studio Coding prompts unless a shell or MCP tool needs absolute paths, so small models stop copying it into file tool paths.
-
-- Initialize Studio Coding’s built-in Dart MCP for the selected workspace, preserve tool failures, and expose full tool results.
-
-- Report rejected Studio settings saves without reusing unsaved cached values.
-
-- Let Studio Coding create and reopen persistent local workspaces on iOS/Android, restore them after app storage moves, and show clear recovery when a folder cannot be selected.
-
-- Improve Studio Coding on phones with reachable task controls, file navigation, guarded Revert, and explicit desktop-only local commands.
-
-- Keep Studio Speech and Notes usable when Linux audio playback plugins are missing.
-- Fixed Gemma 4 tool-call parsing dropping or corrupting `<|"|>`-delimited string arguments that contain raw newlines, `"` or backslashes; delimited text is now taken verbatim, as in llama.cpp ([#2041](https://github.com/leehack/llamadart/issues/2041)).
-
-- Adopt `leehack/llamadart-native@v1.0.0-1` (llama.cpp `v1.0.0`, `b1b770d9`) with regenerated bindings; it keeps the `v0.9.0` ARM FP16 fixes. The video capability probe uses `mtmd_helper_get_capabilities`, the replacement for the deprecated `mtmd_helper_support_video`.
-
+- Adopt `leehack/llamadart-native@v1.0.0-1` (llama.cpp `v1.0.0`, `b1b770d9`) with regenerated bindings, `mtmd_helper_get_capabilities` video probing and the `v0.9.0` ARM FP16 fixes. Native runtimes not built from llama.cpp `v1.0.0`, including `llamadart_native_tag` or `llamadart_native_path` overrides, now throw `LlamaUnsupportedException` before a model loads.
 - Aligned default WebGPU bridge assets to `v0.1.86` (llama.cpp `v1.0.0`, matching the native runtime) ([#2024](https://github.com/leehack/llamadart/issues/2024)).
-
-- Refuse a native llama.cpp runtime that was not built from llama.cpp `v1.0.0` with `LlamaUnsupportedException`, before the first call that passes a llama.cpp struct by value. A `llamadart_native_tag` or `llamadart_native_path` override to any other llama.cpp release no longer loads.
-
-- Update native image generation to stable-diffusion-native `v0.4.0`. Apple apps using image generation must upgrade the core and Stable Diffusion companion together.
-
+- Update native image generation to `stable-diffusion-native@v0.4.0`. Apple apps using image generation must upgrade the core and Stable Diffusion companion together. FLUX.1 Kontext reference editing now reports `supportsReferenceImageEditing` false and throws `LlamaUnsupportedException` on this runtime until it is requalified ([#1222](https://github.com/leehack/llamadart/issues/1222)).
+- Add experimental streamed text-to-speech: `TextToSpeechRequest.streamAudio` emits `TextToSpeechAudioChunkEvent` PCM chunks on `TextToSpeechTask.events` before the final event for Qwen3-TTS, LFM3-Audio and Pocket TTS on native, gated by `TextToSpeechCapabilities.supportsIncrementalAudio` (needs `llamadart-native@v1.0.0-1`; Soprano, Chatterbox, Web, and capabilities without a positive sample rate or channel count report `supportsIncrementalAudio` false and throw `LlamaUnsupportedException` instead of emitting 0 Hz chunks). The new sealed event subtype means an exhaustive `switch` over `TextToSpeechEvent` needs a case ([#2036](https://github.com/leehack/llamadart/issues/2036), [#2023](https://github.com/leehack/llamadart/issues/2023)).
+- Add opt-in `ModelParams.gpuMemoryFit`: Linux and Windows llama.cpp GPU loads offload only the layers that fit free GPU memory, or fall back to CPU, and report the result through `LlamaEngine.getGpuMemoryFitReport()`. Requires `llamadart-native` `v1.0.0` or later (`v1.0.0-1` on Windows; Windows CUDA free-memory excludes other processes, so prefer Vulkan there) ([#2034](https://github.com/leehack/llamadart/issues/2034)).
+- Fixed Gemma 4 tool-call parsing dropping or corrupting `<|"|>`-delimited string arguments containing raw newlines, `"` or backslashes; delimited text is now taken verbatim, as in llama.cpp ([#2041](https://github.com/leehack/llamadart/issues/2041)).
 - Restore native text-to-speech discovery when Dart bundles its runtime outside the working directory.
-
-- Avoid initializing unavailable Linux Vulkan backends during llama.cpp automatic loading and device probes, while retaining other bundled backends.
-
-- Validate Studio tool arguments before execution, preserve tool history across reloads, and make media failures and tool compatibility visible.
-
-- Preserve Studio notes and attachments across failed or interrupted saves, and keep indexing consistent with concurrent edits.
-
-- Align Studio coding skills with available file tools and add realistic macOS Notes and Coding qualification.
-
-- Report incomplete Studio replies and exhausted tool rounds with actionable errors instead of empty successful responses.
-
-- Add an experimental Studio app with seven workspaces and a reusable pure-Dart core, alongside the existing chat example.
-
-- Use the Linux Vulkan preflight in Studio to report unavailable image drivers before native device enumeration.
-
-- Add an opt-in Linux Vulkan loader preflight for native hosts.
-
+- Avoid initializing unavailable Linux Vulkan backends during llama.cpp automatic loading and device probes while retaining other bundled backends, and add an opt-in Linux Vulkan loader preflight for native hosts.
 - Speed up model checksum verification on Apple platforms and keep verification off the UI isolate.
-- Add opt-in `ModelParams.gpuMemoryFit`: Linux and Windows llama.cpp GPU loads offload only the layers that fit free GPU memory, or load on the CPU, and report the result through `LlamaEngine.getGpuMemoryFitReport()`. It needs `llamadart-native` v1.0.0 or later (v1.0.0-1 on Windows; the Windows CUDA free-memory figure ignores other processes, so prefer Vulkan there) ([#2034](https://github.com/leehack/llamadart/issues/2034)).
-- Add experimental streamed text-to-speech: `TextToSpeechRequest.streamAudio` emits `TextToSpeechAudioChunkEvent` PCM chunks on `TextToSpeechTask.events` before the final event for Qwen3-TTS, LFM3-Audio and Pocket TTS on native, gated by `TextToSpeechCapabilities.supportsIncrementalAudio` (needs llamadart-native `v1.0.0-1`; Soprano, Chatterbox and Web refuse with `LlamaUnsupportedException`). The new sealed event subtype means an exhaustive `switch` over `TextToSpeechEvent` needs a case ([#2036](https://github.com/leehack/llamadart/issues/2036)).
+- Pair all three Apple runtime companions at `0.20.0` with matching native binaries.
 
 Runtime baseline: native llama.cpp `v1.0.0-1` and Web use upstream `v1.0.0@b1b770d90d94cad9e9ea5b993bdbc383a522fb28`; native LiteRT-LM uses `v0.19.1-5` and stable-diffusion uses `v0.4.0`. Web LiteRT-LM uses `@litert-lm/core@0.19.0`. Manifest SHA-256: `d589fbe3c334e4fcb0ccbac3efc4500209358a010b6662ee8523e598a433a0f2`.
 
@@ -189,24 +155,3 @@ Runtime baseline: native llama.cpp `v0.9.0` and Web use upstream `v0.9.0@cd959ba
 - Pair all three Apple runtime companions at `0.19.0` with matching native binaries.
 
 Runtime baseline: native llama.cpp `v0.9.0` and Web use upstream `v0.9.0@cd959bae99ff4bed22bef2604f45241c09bbb8c8`; native LiteRT-LM uses `v0.19.1-1` and stable-diffusion uses `v0.3.0-3`. Web LiteRT-LM uses `@litert-lm/core@0.19.0`. Manifest SHA-256: `ae6f488408672f9ba28d8f9e664a2b85f4e12048f290e259e18dd0b750c038e5`.
-
-## 0.18.0
-
-- Fix synthesized speech playback in the macOS chat example.
-- Add shared `LlamadartEngine<C>` lifecycle management and eager text/chat and Decision tasks with events, completion and request-scoped cancellation.
-- Parse LFM2 tool arguments against their schemas, preserve unescaped inner quotes in required JSON string arguments ([#1609](https://github.com/leehack/llamadart/issues/1609)), honor explicit parallel requests, keep reasoning non-executable and expose unfinished calls as separate diagnostics.
-- Apply supported native/Web lazy tool grammars and Web prompt penalties with explicit capability checks and unchanged ordinary grammar defaults.
-- Adopt native LiteRT-LM `v0.19.0` and C API 1.0 with legacy compatibility, tagged Android pointer support, validated settings and typed unsupported-path errors.
-- Preserve LiteRT-LM workers and model caches after unsettled native cleanup; reject incomplete runtime overrides and document process-restart recovery and unsupported text LoRA.
-- Keep cached models reusable, visible and removable after cache-root moves, including iOS app updates ([#1741](https://github.com/leehack/llamadart/issues/1741)).
-- Adopt llama.cpp `v0.8.0-3` for speculative rollback and model-creation ownership fixes, retaining the genuine nextn query while retiring the unused embedding query; isolate native bundle caches from older apps, verify Apple framework identity and report missing Windows speculative helpers.
-- Restrict unqualified Android Vulkan Qwen3.5 combinations to bounded ordinary text; refuse larger micro-batches, media, speculation and embeddings ([#948](https://github.com/leehack/llamadart/issues/948)).
-- Adopt stable-diffusion `v0.3.0-3` for original SD checkpoint containers while retaining the SDXS tiny-decoder policy and iOS full-VAE Metal restrictions.
-- Reinitialize native LiteRT-LM image-chat engines after cancellation before reusing them ([#1749](https://github.com/leehack/llamadart/issues/1749)).
-- Keep future LiteRT-LM SwiftPM pin syncs aligned with macOS app-bundle runtime discovery.
-- Request optional Android vendor OpenCL access in the chat example and document LiteRT-LM GPU setup and CPU fallback.
-- Document Safari 27 LiteRT-LM Web GPU support, required `require-corp` isolation and hidden-tab termination during large model loads ([#1025](https://github.com/leehack/llamadart/issues/1025)).
-- Aligned default WebGPU bridge assets to `v0.1.82` with bounded preallocation for large wasm32 model writes.
-- Pair all three Apple runtime companions at `0.18.0` with matching native binaries.
-
-Runtime baseline: native llama.cpp `v0.8.0-3` and Web use upstream `v0.8.0@8642541b255bfb5dc39cd351a178be09013a55d6`; native LiteRT-LM uses `v0.19.0` and stable-diffusion uses `v0.3.0-3`. Web LiteRT-LM stays `@litert-lm/core@0.18.0`. Manifest SHA-256: `fda19e047aba5a511020854437cc89e2f53e2f67f5f6cf5fec336faef3a6c362`.

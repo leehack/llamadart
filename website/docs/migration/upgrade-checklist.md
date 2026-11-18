@@ -44,6 +44,12 @@ Use this checklist when upgrading `llamadart` across minor or major versions.
 code needs a case. See
 [`MIGRATION.md`](https://github.com/leehack/llamadart/blob/main/MIGRATION.md#019x---0200-streamed-text-to-speech-event).
 
+### 0.20.x: native runtime overrides and FLUX.1 Kontext
+
+Native release overrides must point at a llama.cpp `v1.0.0` build, and FLUX.1
+Kontext reference editing is refused on `stable-diffusion-native@v0.4.0`. See
+[`MIGRATION.md`](https://github.com/leehack/llamadart/blob/main/MIGRATION.md#019x---0200-native-runtime-overrides-and-flux1-kontext).
+
 ### 0.19.x: Android Vulkan Qwen3.5
 
 With the bundled runtime, native `qwen35` on Android Vulkan again accepts
