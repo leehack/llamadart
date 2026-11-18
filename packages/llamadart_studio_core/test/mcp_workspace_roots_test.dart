@@ -99,7 +99,7 @@ void main() {
         await pending;
         if (!autoConnect) expect(launches, isEmpty);
         await manager.connectServer(_id);
-        expect(launches.single.workingDirectory, b);
+        expect(launches.single.workingDirectory, p.canonicalize(b));
         expect(first.roots, [Uri.directory(p.canonicalize(b)).toString()]);
       },
     );
@@ -135,7 +135,8 @@ void main() {
       final rootsAtReady = <List<String>>[];
       final subscription = manager.store.stream.listen((state) {
         final entry = state.servers.single;
-        if (entry.config.workingDirectory == b && entry.isConnected) {
+        if (entry.config.workingDirectory == p.canonicalize(b) &&
+            entry.isConnected) {
           rootsAtReady.add(List.of(second.roots));
         }
       });
@@ -155,7 +156,7 @@ void main() {
         rootsAtReady,
         everyElement([Uri.directory(p.canonicalize(b)).toString()]),
       );
-      expect(launches.map((c) => c.workingDirectory), [a, b]);
+      expect(launches.map((c) => c.workingDirectory), [a, p.canonicalize(b)]);
       expect(second.roots, [Uri.directory(p.canonicalize(b)).toString()]);
       expect(
         (await manager.callTool(
@@ -198,7 +199,10 @@ void main() {
     await rejected;
     expect(first.client.closed, isTrue);
     expect(manager.state.servers.single.isConnected, isTrue);
-    expect(manager.state.servers.single.config.workingDirectory, b);
+    expect(
+      manager.state.servers.single.config.workingDirectory,
+      p.canonicalize(b),
+    );
     expect(second.roots, [Uri.directory(p.canonicalize(b)).toString()]);
     expect(manager.state.activeTools.map((t) => t.name), ['analyze']);
   });

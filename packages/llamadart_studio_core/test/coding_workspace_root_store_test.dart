@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:llamadart_studio_core/llamadart_studio_core.dart';
+import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
 
 import 'studio_test_fakes.dart';
@@ -41,11 +42,12 @@ void main() {
   }
 
   test('default store keeps the v1 absolute root key', () async {
+    final canonicalRoot = p.canonicalize(directory.path);
     final first = await controller();
     await first.setWorkspaceRoot(directory.path);
     expect(
       await kv.readString(KeyValueCodingWorkspaceRootStore.storageKey),
-      directory.path,
+      canonicalRoot,
     );
     expect(
       KeyValueCodingWorkspaceRootStore.storageKey,
@@ -53,7 +55,7 @@ void main() {
     );
     final restored = await controller();
     await restored.initialize(autoDetectDefaultRoot: false);
-    expect(restored.state.workspaceRoot, directory.path);
+    expect(restored.state.workspaceRoot, canonicalRoot);
   });
 
   test('read failure is reported without selecting a default root', () async {
@@ -66,11 +68,12 @@ void main() {
   });
 
   test('injected store receives the selected canonical root', () async {
+    final canonicalRoot = p.canonicalize(directory.path);
     final store = _FailingRootStore(root: '${directory.path}/./');
     final restored = await controller(rootStore: store);
     await restored.initialize();
-    expect(restored.state.workspaceRoot, directory.path);
-    expect(store.writes, [directory.path]);
+    expect(restored.state.workspaceRoot, canonicalRoot);
+    expect(store.writes, [canonicalRoot]);
     expect(
       await kv.readString(KeyValueCodingWorkspaceRootStore.storageKey),
       isNull,
