@@ -76,6 +76,7 @@ class NativeAutoBackend
         BackendDecision,
         BackendGenerationCapabilitiesSupport,
         BackendVideoRuntimeSupport,
+        BackendGpuMemoryFitReporting,
         BackendGenerationLimitReporting,
         BackendGenerationLimitSupport,
         BackendGenerationUsageReporting,
@@ -527,6 +528,15 @@ class NativeAutoBackend
       return (delegate as BackendAvailability).getAvailableBackends();
     }
     return 'llama.cpp, LiteRT-LM';
+  }
+
+  @override
+  Future<GpuMemoryFitReport?> getGpuMemoryFitReport() {
+    final delegate = _delegate;
+    if (delegate is BackendGpuMemoryFitReporting) {
+      return (delegate as BackendGpuMemoryFitReporting).getGpuMemoryFitReport();
+    }
+    return Future<GpuMemoryFitReport?>.value(null);
   }
 
   @override

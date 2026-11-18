@@ -1175,6 +1175,7 @@ void main() {
 
       expect(await backend.getAvailableBackends(), 'llama.cpp, LiteRT-LM');
       expect(await backend.getResolvedGpuLayers(), isNull);
+      expect(await backend.getGpuMemoryFitReport(), isNull);
       expect(await backend.getPerformanceContext(1), isNull);
       expect(backend.supportsEmbeddings, isFalse);
       expect(backend.supportsStatePersistence, isFalse);
@@ -1221,6 +1222,10 @@ void main() {
 
       expect(await backend.getAvailableBackends(), 'capability-backends');
       expect(await backend.getResolvedGpuLayers(), 123);
+      expect(
+        (await backend.getGpuMemoryFitReport())?.outcome,
+        GpuMemoryFitOutcome.unchanged,
+      );
       final perf = await backend.getPerformanceContext(1);
       expect(perf, isNotNull);
       expect(perf!.evalTokens, 7);
@@ -2687,6 +2692,7 @@ class _CapabilityFakeBackend extends _FakeBackend
     implements
         BackendAvailability,
         BackendRuntimeDiagnostics,
+        BackendGpuMemoryFitReporting,
         BackendPerformanceDiagnostics,
         BackendEmbeddings,
         BackendEmbeddingsSupport,
@@ -2734,6 +2740,10 @@ class _CapabilityFakeBackend extends _FakeBackend
 
   @override
   Future<int?> getResolvedGpuLayers() async => 123;
+
+  @override
+  Future<GpuMemoryFitReport?> getGpuMemoryFitReport() async =>
+      const GpuMemoryFitReport(outcome: GpuMemoryFitOutcome.unchanged);
 
   @override
   Future<BackendPerfContextData?> getPerformanceContext(

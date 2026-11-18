@@ -7,6 +7,7 @@ import 'dart:typed_data';
 
 import 'package:llamadart/src/backends/backend.dart';
 import 'package:llamadart/src/core/decision/decision_question.dart';
+import 'package:llamadart/src/core/models/config/gpu_device_info.dart';
 import 'package:llamadart/src/core/models/config/log_level.dart';
 import 'package:llamadart/src/core/models/chat/content_part.dart';
 import 'package:llamadart/src/core/models/inference/generation_params.dart';
@@ -82,6 +83,12 @@ void main() {
           ResolvedGpuLayersRequest.new,
         );
         expect(resolved, isA<ResolvedGpuLayersResponse>());
+
+        final fit = await _sendRequest(
+          worker.sendPort,
+          GpuMemoryFitReportRequest.new,
+        );
+        expect(fit, isA<GpuMemoryFitReportResponse>());
 
         final gpuSupport = await _sendRequest(
           worker.sendPort,
@@ -316,6 +323,44 @@ void main() {
         }
       },
     );
+
+    test('forwards the GPU memory fit report of the active model', () async {
+      final worker = await _startWorkerInCurrentIsolate(_DecisionService());
+      try {
+        final response =
+            await _sendRequest(worker.sendPort, GpuMemoryFitReportRequest.new)
+                as GpuMemoryFitReportResponse;
+        expect(response.report, same(_decisionFitReport));
+      } finally {
+        await _disposeWorker(worker);
+      }
+    });
+
+    test('preserves the typed GPU memory fit exception', () async {
+      final worker = await _startWorkerInCurrentIsolate(
+        _DecisionService(
+          error: LlamaGpuMemoryFitException(
+            'no layer fits',
+            report: _decisionFitReport,
+            details: 'failure',
+          ),
+        ),
+      );
+      try {
+        final response =
+            await _sendRequest(
+                  worker.sendPort,
+                  (sendPort) => DecisionRunRequest(1, const [], sendPort),
+                )
+                as ErrorResponse;
+        expect(response.kind, WorkerErrorKind.gpuMemoryFit);
+        expect(response.message, 'no layer fits');
+        expect(response.details, 'failure');
+        expect(response.gpuMemoryFitReport, same(_decisionFitReport));
+      } finally {
+        await _disposeWorker(worker);
+      }
+    });
 
     test('preserves decision error categories', () async {
       final cases = <(Object, WorkerErrorKind)>[
@@ -1644,6 +1689,11 @@ class _ScoringService extends LlamaCppService {
   }
 }
 
+const _decisionFitReport = GpuMemoryFitReport(
+  outcome: GpuMemoryFitOutcome.cpu,
+  modelLayers: 29,
+);
+
 class _DecisionService extends LlamaCppService {
   _DecisionService({this.error});
 
@@ -1659,6 +1709,9 @@ class _DecisionService extends LlamaCppService {
 
   @override
   void setLogLevel(LlamaLogLevel level) {}
+
+  @override
+  GpuMemoryFitReport? getGpuMemoryFitReport() => _decisionFitReport;
 
   @override
   BackendDecisionCapabilities decisionCapabilities(int modelHandle) {

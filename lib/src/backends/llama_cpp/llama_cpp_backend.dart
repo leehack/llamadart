@@ -54,6 +54,7 @@ class NativeLlamaBackend
         BackendDecision,
         BackendGenerationCapabilitiesSupport,
         BackendVideoRuntimeSupport,
+        BackendGpuMemoryFitReporting,
         BackendGenerationLimitReporting,
         BackendGenerationUsageReporting,
         BackendChatPromptGeneration,
@@ -146,6 +147,12 @@ class NativeLlamaBackend
     switch (response.kind) {
       case WorkerErrorKind.model:
         return LlamaModelException(response.message);
+      case WorkerErrorKind.gpuMemoryFit:
+        return LlamaGpuMemoryFitException(
+          response.message,
+          report: response.gpuMemoryFitReport,
+          details: response.details,
+        );
       case WorkerErrorKind.context:
         return LlamaContextException(response.message);
       case WorkerErrorKind.embeddingInputTooLong:
@@ -1282,6 +1289,15 @@ class NativeLlamaBackend
     _dispatchRequest(rp, AvailableBackendsRequest(rp.sendPort));
     final res = await _receiveResponse(rp);
     return (res as BackendInfoResponse).name;
+  }
+
+  @override
+  Future<GpuMemoryFitReport?> getGpuMemoryFitReport() async {
+    await _ensureIsolate();
+    final rp = _openResponsePort();
+    _dispatchRequest(rp, GpuMemoryFitReportRequest(rp.sendPort));
+    final res = await _receiveResponse(rp);
+    return (res as GpuMemoryFitReportResponse).report;
   }
 
   @override

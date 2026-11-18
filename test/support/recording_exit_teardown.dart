@@ -98,6 +98,20 @@ final class RecordingExitTeardown {
   final List<({bool offloadKqv, bool opOffload, int flashAttnType})>
   contextOffload = [];
 
+  /// The sizing and cache fields of each `llama_dart_init_from_model` so far.
+  final List<
+    ({
+      int nCtx,
+      int nBatch,
+      int nUbatch,
+      int nSeqMax,
+      int typeK,
+      int typeV,
+      bool kvUnified,
+    })
+  >
+  contextConfigs = [];
+
   /// Token count of the batch of each `llama_dart_decode` so far.
   final List<int> decodedTokens = <int>[];
 
@@ -218,6 +232,15 @@ final class RecordingExitTeardown {
         flashAttnType: params.flash_attn_typeAsInt,
       ));
       contextMoeCacheSizes.add(params.moe_cache_size);
+      contextConfigs.add((
+        nCtx: params.n_ctx,
+        nBatch: params.n_batch,
+        nUbatch: params.n_ubatch,
+        nSeqMax: params.n_seq_max,
+        typeK: params.type_kAsInt,
+        typeV: params.type_vAsInt,
+        kvUnified: params.kv_unified,
+      ));
       if (!_proceeds('llama_dart_init_from_model')) return nullptr;
       final context = real.initFromModel(model, params);
       owned.add(context.address);

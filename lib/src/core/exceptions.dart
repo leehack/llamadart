@@ -1,3 +1,4 @@
+import 'models/config/gpu_device_info.dart';
 import 'models/model_format.dart';
 
 /// Base class for all Llama-related exceptions.
@@ -20,6 +21,18 @@ abstract class LlamaException implements Exception {
 class LlamaModelException extends LlamaException {
   /// Creates a new [LlamaModelException].
   LlamaModelException(super.message, [super.details]);
+}
+
+/// Exception thrown before a model loads when `ModelParams.gpuMemoryFit` finds
+/// no layer that fits free GPU memory under `ComputeDevice.gpu`, or the fit
+/// itself fails.
+class LlamaGpuMemoryFitException extends LlamaModelException {
+  /// What the fit measured, or `null` when it failed before measuring.
+  final GpuMemoryFitReport? report;
+
+  /// Creates a new [LlamaGpuMemoryFitException].
+  LlamaGpuMemoryFitException(String message, {this.report, Object? details})
+    : super(message, details);
 }
 
 /// Exception thrown when a model file's content is in one format but its file

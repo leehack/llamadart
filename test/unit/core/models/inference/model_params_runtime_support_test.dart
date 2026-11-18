@@ -42,6 +42,7 @@ void main() {
     ropeFrequencyScale: 1,
     cpuMoeLayers: -1,
     moeCacheBytes: 1 << 30,
+    gpuMemoryFit: GpuMemoryFit(),
     splitMode: ModelSplitMode.none,
     mainGpu: 1,
     gpuDevices: [0, 1],
@@ -114,6 +115,7 @@ void main() {
         'useMlock',
         'cpuMoeLayers',
         'moeCacheBytes',
+        'gpuMemoryFit',
       ]);
       expect(
         unsupported(
@@ -169,6 +171,7 @@ void main() {
         'ropeFrequencyScale',
         'cpuMoeLayers',
         'moeCacheBytes',
+        'gpuMemoryFit',
       ]);
       expect(unsupported(webGpuHints, LlamaRuntime.liteRtLm, web: false), [
         'preferMemory64',

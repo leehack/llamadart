@@ -362,6 +362,29 @@ Future<LlamaEngine> loadMoeWithExpertCache(String path) {
 }
 ```
 
+Fit a native llama.cpp GPU load to the free device memory on Linux and Windows
+(opt-in; macOS, iOS and Android report it skipped). Only the layers that fit
+are offloaded; with no fit, `ComputeDevice.auto` loads on the CPU and
+`ComputeDevice.gpu` throws `LlamaGpuMemoryFitException`. It needs a runtime
+from `llamadart-native` v1.0.0 or later (v1.0.0-1 or later on Windows);
+validated on an NVIDIA L4 on Linux (Vulkan and CUDA) and Windows (Vulkan). On
+Windows CUDA, free memory ignores other processes and the fit can over-commit
+(llamadart-native#206): prefer Vulkan there or raise `marginBytes`:
+
+```dart
+import 'package:llamadart/llamadart.dart';
+
+Future<LlamaEngine> loadFittedToGpuMemory(String path) async {
+  final engine = await LlamaEngine.load(
+    LlamaModel(ModelSource.path(path)),
+    params: const LlamaCppModelParams(gpuMemoryFit: GpuMemoryFit()),
+  );
+  final report = await engine.getGpuMemoryFitReport();
+  print(report); // outcome, offloaded layers, free and projected bytes
+  return engine;
+}
+```
+
 ## More
 
 - Installation and platform setup: https://llamadart.leehack.com/docs/getting-started/installation

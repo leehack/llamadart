@@ -40,6 +40,8 @@ import 'decision_head.dart';
 import 'exit_teardown_api.dart';
 import 'ggml_graph_api.dart';
 import 'gpu_device_placement.dart';
+import 'gpu_memory_fit.dart';
+import 'native_gpu_memory_fit.dart';
 import 'lazy_grammar_triggers.dart';
 import 'load_device_selection.dart';
 import 'reranking_classifier.dart';
@@ -105,6 +107,33 @@ LlamaArgumentException _draftMicroBatchTooSmall(
 const String _draftBlockRequirement =
     'for llama.cpp draft-dflash and draft-dspark, which decode a whole draft '
     'block in one micro-batch.';
+
+/// What a GPU memory fit decided for one model load.
+class _GpuMemoryFitLoad {
+  const _GpuMemoryFitLoad({
+    required this.report,
+    required this.loadsOnCpu,
+    required this.gpuLayers,
+    required this.fittedContextSize,
+    required this.measuredBatchSize,
+    required this.measuredMicroBatchSize,
+    required this.tensorSplit,
+    required this.tensorBufferOverrides,
+  });
+
+  final GpuMemoryFitReport report;
+  final bool loadsOnCpu;
+
+  /// The fitted layer count when it is below the model's, else `null`.
+  final int? gpuLayers;
+
+  /// The fitted context when it replaces the trained one, else `null`.
+  final int? fittedContextSize;
+  final int measuredBatchSize;
+  final int measuredMicroBatchSize;
+  final Pointer<Float> tensorSplit;
+  final Pointer<llama_model_tensor_buft_override> tensorBufferOverrides;
+}
 
 class _LlamaCppThinkingBudgetConfig {
   const _LlamaCppThinkingBudgetConfig({
@@ -263,7 +292,9 @@ class LlamaCppService {
   /// tensor splits and tensor buffer overrides [loadModel] and draft model
   /// loads pass to llama.cpp, and the allocator
   /// of each context's token batch, whose blocks `malloc`'s free must be able
-  /// to free: an isolate exit frees a batch still held with it.
+  /// to free: an isolate exit frees a batch still held with it, the operating
+  /// system that decides whether [ModelParams.gpuMemoryFit] applies, and the
+  /// native call that fits a load.
   LlamaCppService({
     void Function()? backendInit,
     Abi? abi,
@@ -289,6 +320,8 @@ class LlamaCppService {
     bool Function(GgmlDeviceEntry device)? splitBufferTypeProbe,
     Allocator modelLoadAllocator = malloc,
     Allocator contextBatchAllocator = malloc,
+    String? operatingSystem,
+    GpuMemoryFitRunner? Function()? gpuMemoryFitRunner,
     String? Function()? buildIdentity,
     String? Function(Pointer<llama_model> model)? modelArchitecture,
     String? Function()? ggmlVersion,
@@ -315,6 +348,8 @@ class LlamaCppService {
        _splitBufferTypeProbeOverride = splitBufferTypeProbe,
        _modelLoadAllocator = modelLoadAllocator,
        _contextBatchAllocator = contextBatchAllocator,
+       _operatingSystem = operatingSystem ?? Platform.operatingSystem,
+       _gpuMemoryFitRunnerOverride = gpuMemoryFitRunner,
        _readBuildIdentity = buildIdentity,
        _modelArchitectureOverride = modelArchitecture,
        _readGgmlVersion = ggmlVersion;
@@ -428,6 +463,8 @@ class LlamaCppService {
   final bool Function(GgmlDeviceEntry device)? _splitBufferTypeProbeOverride;
   final Allocator _modelLoadAllocator;
   final Allocator _contextBatchAllocator;
+  final String _operatingSystem;
+  final GpuMemoryFitRunner? Function()? _gpuMemoryFitRunnerOverride;
   final String? Function()? _readBuildIdentity;
   late final String? _buildIdentity =
       (_readBuildIdentity ??
@@ -551,6 +588,10 @@ class LlamaCppService {
   final Map<int, ModelParams> _modelLoadParams = <int, ModelParams>{};
   final Map<int, GpuDevicePlacement> _modelPlacements =
       <int, GpuDevicePlacement>{};
+  final Map<int, GpuMemoryFitReport> _modelGpuMemoryFitReports =
+      <int, GpuMemoryFitReport>{};
+  final Map<int, int> _modelFittedContextSizes = <int, int>{};
+  GpuMemoryFitReport? _activeGpuMemoryFitReport;
   final Map<String, _LlamaModelWrapper> _speculativeDraftModels =
       <String, _LlamaModelWrapper>{};
   final Map<int, Set<String>> _modelToSpeculativeDraftModelKeys =
@@ -1673,6 +1714,9 @@ class LlamaCppService {
   /// Returns a handle to the loaded model.
   /// Throws an [Exception] if the file does not exist or fails to load.
   int loadModel(String modelPath, ModelParams modelParams) {
+    if (modelParams.gpuMemoryFit != null) {
+      modelParams.validate();
+    }
     _requireAdmittedRuntime('Model loading');
     modelParams = resolveComputeDeviceParams(
       modelParams,
@@ -1773,14 +1817,14 @@ class LlamaCppService {
       }
       rethrow;
     }
-    final mtmdUseGpu = resolveMtmdUseGpuForLoad(
+    var mtmdUseGpu = resolveMtmdUseGpuForLoad(
       modelParams,
       gpuLayers,
       modelPath: modelPath,
       isAndroid: _isAndroid,
     );
 
-    final GpuDevicePlacement? placement;
+    GpuDevicePlacement? placement;
     try {
       placement = _resolveGpuDevicePlacement(
         modelParams,
@@ -1831,6 +1875,73 @@ class LlamaCppService {
     if (cpuMoeOverrides != null) {
       mparams.tensor_buft_overrides = cpuMoeOverrides;
     }
+    GpuMemoryFitReport? fitReport;
+    _GpuMemoryFitLoad? fitLoad;
+    if (modelParams.gpuMemoryFit case final fit?) {
+      final skipReason = gpuMemoryFitSkipReason(
+        operatingSystem: _operatingSystem,
+        gpuLayers: gpuLayers,
+        noGpuDevice:
+            loadsOnNoGpu ||
+            selectsNoGpuDevice(
+              splitMode: modelParams.splitMode.llamaCppValue,
+              mainGpu: modelParams.mainGpu,
+            ),
+      );
+      if (skipReason != null) {
+        fitReport = GpuMemoryFitReport(
+          outcome: GpuMemoryFitOutcome.skipped,
+          reason: skipReason,
+          marginBytes: fit.marginBytes,
+        );
+      } else {
+        try {
+          fitLoad = _fitGpuMemory(
+            modelPath,
+            modelParams,
+            fit,
+            mparams,
+            gpuLayers: gpuLayers,
+          );
+        } catch (_) {
+          if (preferredDevices != null) {
+            _modelLoadAllocator.free(preferredDevices);
+          }
+          if (tensorSplit != null) {
+            _modelLoadAllocator.free(tensorSplit);
+          }
+          if (cpuMoeOverrides != null) {
+            freeTensorBufferOverrides(
+              cpuMoeOverrides,
+              allocator: _modelLoadAllocator,
+            );
+          }
+          rethrow;
+        }
+        fitReport = fitLoad.report;
+        if (fitLoad.loadsOnCpu) {
+          if (preferredDevices != null) {
+            _modelLoadAllocator.free(preferredDevices);
+          }
+          // The CPU device alone: a GPU device with 0 layers still takes
+          // compute buffers on the GPU.
+          preferredDevices = _createPreferredDeviceList(GpuBackend.cpu);
+          mparams.devices = preferredDevices ?? nullptr;
+          mparams.tensor_split = nullptr;
+          mparams.n_gpu_layers = 0;
+          placement = null;
+          gpuLayers = 0;
+          mtmdUseGpu = resolveMtmdUseGpuForLoad(
+            modelParams,
+            gpuLayers,
+            modelPath: modelPath,
+            isAndroid: _isAndroid,
+          );
+        } else {
+          gpuLayers = fitLoad.gpuLayers ?? gpuLayers;
+        }
+      }
+    }
     // Without a device list llama.cpp offloads to every registered GPU,
     // whichever backend was requested.
     final reportedBackend = preferredDevices == null
@@ -1860,6 +1971,14 @@ class LlamaCppService {
           allocator: _modelLoadAllocator,
         );
       }
+      // The override patterns are static native strings, so only the array
+      // itself is freed.
+      if (fitLoad?.tensorSplit case final split?) {
+        _modelLoadAllocator.free(split);
+      }
+      if (fitLoad?.tensorBufferOverrides case final overrides?) {
+        _modelLoadAllocator.free(overrides);
+      }
     }
 
     if (modelPtr == nullptr) {
@@ -1882,6 +2001,13 @@ class LlamaCppService {
       freeModel(handle);
       throw LlamaUnsupportedException(problem);
     }
+    if (fitLoad != null && gpuLayers > 0) {
+      if (_gpuMemoryFitBatchProblem(model, modelParams, fitLoad)
+          case final problem?) {
+        freeModel(handle);
+        throw LlamaUnsupportedException(problem);
+      }
+    }
     final resolvedBackend = _resolveBackendNameForLoad(
       requestedBackend: reportedBackend,
       resolvedGpuLayers: gpuLayers,
@@ -1896,6 +2022,12 @@ class LlamaCppService {
     if (placement != null) {
       _modelPlacements[handle] = placement;
     }
+    if (fitReport != null) {
+      _modelGpuMemoryFitReports[handle] = fitReport;
+    }
+    if (fitLoad?.fittedContextSize case final fittedContextSize?) {
+      _modelFittedContextSizes[handle] = fittedContextSize;
+    }
     if (loadsOnNoGpu ||
         selectsNoGpuDevice(
           splitMode: modelParams.splitMode.llamaCppValue,
@@ -1904,6 +2036,15 @@ class LlamaCppService {
       _modelsOnNoGpu.add(handle);
     }
     _activateModelReport(handle);
+    if (fitReport != null) {
+      final message = gpuMemoryFitLogMessage(fitReport);
+      switch (fitReport.outcome) {
+        case GpuMemoryFitOutcome.reduced || GpuMemoryFitOutcome.cpu:
+          LlamaLogger.instance.warning(message);
+        case GpuMemoryFitOutcome.unchanged || GpuMemoryFitOutcome.skipped:
+          LlamaLogger.instance.info(message);
+      }
+    }
     if (vulkan.unsupported case final unsupported?) {
       LlamaLogger.instance.warning(
         vulkan.refused
@@ -1948,6 +2089,201 @@ class LlamaCppService {
     return handle;
   }
 
+  /// Asks llama.cpp how much of the load fits the free GPU memory and applies
+  /// it to [mparams].
+  ///
+  /// Throws [LlamaGpuMemoryFitException] when the fit fails or nothing fits a
+  /// [ComputeDevice.gpu] load, and [LlamaUnsupportedException] when the
+  /// runtime cannot fit. The caller frees [_GpuMemoryFitLoad.tensorSplit] and
+  /// [_GpuMemoryFitLoad.tensorBufferOverrides] after the load.
+  _GpuMemoryFitLoad _fitGpuMemory(
+    String modelPath,
+    ModelParams modelParams,
+    GpuMemoryFit fit,
+    llama_model_params mparams, {
+    required int gpuLayers,
+  }) {
+    final runner =
+        (_gpuMemoryFitRunnerOverride ?? resolveNativeGpuMemoryFitRunner)();
+    if (runner == null) {
+      throw LlamaUnsupportedException(
+        'ModelParams.gpuMemoryFit needs llama_dart_fit_params, which the '
+        'loaded llama.cpp runtime does not export. Use llamadart-native '
+        'v1.0.0 or later, or leave gpuMemoryFit unset.',
+      );
+    }
+    final allocator = _modelLoadAllocator;
+    final deviceSlots = llama_max_devices();
+    final overrideSlots = llama_max_tensor_buft_overrides();
+    final measured = _newContextParams(
+      modelParams,
+      contextSize: math.max(modelParams.contextSize, 0),
+      // With an automatic context the real batches are only known after the
+      // fit, so measure the largest they can be.
+      batchContextSize: math.max(
+        modelParams.contextSize > 0
+            ? modelParams.contextSize
+            : modelParams.batchSize,
+        ModelParams.defaultBatchSize,
+      ),
+      useFullContextDefaults: false,
+    );
+    applyContextParams(measured, modelParams);
+
+    final path = modelPath.toNativeUtf8(allocator: allocator);
+    final fitted = allocator<llama_model_params>();
+    final context = allocator<llama_context_params>();
+    final split = allocator<Float>(deviceSlots);
+    final overrides = allocator<llama_model_tensor_buft_override>(
+      overrideSlots,
+    );
+    final margins = allocator<Size>(deviceSlots);
+    var keepSplitAndOverrides = false;
+    try {
+      fitted.ref = mparams;
+      fitted.ref.n_gpu_layers = gpuMemoryFitDefaultLayers;
+      context.ref = measured;
+      for (var i = 0; i < deviceSlots; i++) {
+        split[i] = 0;
+        margins[i] = fit.marginBytes;
+      }
+      for (var i = 0; i < overrideSlots; i++) {
+        overrides[i]
+          ..pattern = nullptr
+          ..buft = nullptr;
+      }
+      final stopwatch = Stopwatch()..start();
+      final result = runner(
+        GpuMemoryFitRequest(
+          modelPath: path.cast(),
+          modelParams: fitted,
+          contextParams: context,
+          tensorSplit: split,
+          tensorBufferOverrides: overrides,
+          margins: margins,
+          deviceSlots: deviceSlots,
+          overrideSlots: overrideSlots,
+          minContextSize: fit.minContextSize ?? gpuMemoryFitKeepContext,
+        ),
+      );
+      stopwatch.stop();
+      if (result.status != GpuMemoryFitStatus.success) {
+        throw LlamaGpuMemoryFitException(
+          'Fitting the model to free GPU memory failed: '
+          '${result.error ?? result.status.name}. The model was not loaded.',
+          details: result.status.name,
+        );
+      }
+
+      final fittedLayers = fitted.ref.n_gpu_layers;
+      final fittedContext = context.ref.n_ctx;
+      final trainedContext = result.trainedContextSize;
+      final contextReduced =
+          modelParams.contextSize <= 0 &&
+          fittedContext > 0 &&
+          (trainedContext <= 0 || fittedContext < trainedContext);
+      final modelLayers = result.modelLayers;
+      final outcome = gpuMemoryFitOutcome(
+        fittedLayers: fittedLayers,
+        offloadableLayers: modelLayers,
+        contextReduced: contextReduced,
+      );
+      final partial = fittedLayers > 0 && fittedLayers < modelLayers;
+      final report = GpuMemoryFitReport(
+        outcome: outcome,
+        modelLayers: modelLayers,
+        gpuLayers: switch (outcome) {
+          GpuMemoryFitOutcome.cpu => 0,
+          _ when partial => fittedLayers,
+          _ => modelLayers,
+        },
+        contextSize: modelParams.contextSize > 0
+            ? modelParams.contextSize
+            : math.max(fittedContext, 0),
+        marginBytes: fit.marginBytes,
+        devices: result.devices,
+        elapsed: stopwatch.elapsed,
+      );
+      if (outcome == GpuMemoryFitOutcome.cpu &&
+          modelParams.device == ComputeDevice.gpu) {
+        throw LlamaGpuMemoryFitException(
+          'ComputeDevice.gpu was requested, but no layer of the model fits '
+          'the free GPU memory with a ${fit.marginBytes}-byte margin. The '
+          'model was not loaded. Use ComputeDevice.auto to load it on the '
+          'CPU, free GPU memory, or lower gpuMemoryFit.marginBytes.',
+          report: report,
+        );
+      }
+      if (partial) {
+        mparams.n_gpu_layers = fittedLayers;
+      }
+      var splitSet = false;
+      for (var i = 0; i < deviceSlots; i++) {
+        splitSet = splitSet || split[i] != 0;
+      }
+      if (splitSet && outcome != GpuMemoryFitOutcome.cpu) {
+        mparams.tensor_split = split;
+      }
+      if (overrides[0].pattern != nullptr &&
+          outcome != GpuMemoryFitOutcome.cpu) {
+        mparams.tensor_buft_overrides = overrides;
+      }
+      keepSplitAndOverrides = true;
+      return _GpuMemoryFitLoad(
+        report: report,
+        loadsOnCpu: outcome == GpuMemoryFitOutcome.cpu,
+        gpuLayers: partial ? fittedLayers : null,
+        fittedContextSize: contextReduced ? fittedContext : null,
+        measuredBatchSize: measured.n_batch,
+        measuredMicroBatchSize: measured.n_ubatch,
+        tensorSplit: split,
+        tensorBufferOverrides: overrides,
+      );
+    } finally {
+      allocator.free(path);
+      allocator.free(fitted);
+      allocator.free(context);
+      allocator.free(margins);
+      if (!keepSplitAndOverrides) {
+        allocator.free(split);
+        allocator.free(overrides);
+      }
+    }
+  }
+
+  /// The message of the exception for a model whose context [createContext]
+  /// would batch larger than the fit measured, or `null` when it does not.
+  ///
+  /// llama.cpp sizes an encoder-only model's batches to its whole context, but
+  /// the fit runs before the model is read.
+  String? _gpuMemoryFitBatchProblem(
+    _LlamaModelWrapper model,
+    ModelParams modelParams,
+    _GpuMemoryFitLoad fitLoad,
+  ) {
+    if (!llama_model_has_encoder(model.pointer) ||
+        llama_model_has_decoder(model.pointer)) {
+      return null;
+    }
+    final real = resolveContextBatchSizes(
+      modelParams,
+      fitLoad.fittedContextSize ??
+          (modelParams.contextSize > 0
+              ? modelParams.contextSize
+              : llama_model_n_ctx_train(model.pointer)),
+      useFullContextDefaults: true,
+    );
+    if (real.batchSize <= fitLoad.measuredBatchSize &&
+        real.microBatchSize <= fitLoad.measuredMicroBatchSize) {
+      return null;
+    }
+    return 'ModelParams.gpuMemoryFit measured batch sizes of '
+        '${fitLoad.measuredBatchSize} and ${fitLoad.measuredMicroBatchSize}, '
+        'but this encoder-only model batches its whole context '
+        '(${real.batchSize} and ${real.microBatchSize}), which the fit did '
+        'not count. Set ModelParams.batchSize and microBatchSize explicitly.';
+  }
+
   void _activateModelReport(int handle) {
     final params = _modelLoadParams[handle]!;
     final noGpu = selectsNoGpuDevice(
@@ -1962,6 +2298,7 @@ class LlamaCppService {
     _activeResolvedGpuLayers = noGpu || _modelsOnNoGpu.contains(handle)
         ? 0
         : _modelResolvedGpuLayers[handle]!;
+    _activeGpuMemoryFitReport = _modelGpuMemoryFitReports[handle];
   }
 
   /// What a load on [backend] with [gpuLayers] layers does about Vulkan
@@ -3968,6 +4305,8 @@ class LlamaCppService {
     _modelsOnNoGpu.remove(modelHandle);
     _modelLoadParams.remove(modelHandle);
     _modelPlacements.remove(modelHandle);
+    _modelGpuMemoryFitReports.remove(modelHandle);
+    _modelFittedContextSizes.remove(modelHandle);
     final draftModelKeys = _modelToSpeculativeDraftModelKeys.remove(
       modelHandle,
     );
@@ -3979,6 +4318,7 @@ class LlamaCppService {
     if (_modelBackendNames.isEmpty) {
       _activeBackendName = _backendDisplayName('cpu');
       _activeResolvedGpuLayers = 0;
+      _activeGpuMemoryFitReport = null;
     } else {
       _activateModelReport(_modelBackendNames.keys.last);
     }
@@ -4044,35 +4384,20 @@ class LlamaCppService {
       );
     }
 
-    final ctxParams = llama_context_default_params();
     int nCtx = params.contextSize;
     if (nCtx <= 0) {
-      nCtx = llama_model_n_ctx_train(model.pointer);
+      nCtx =
+          _modelFittedContextSizes[modelHandle] ??
+          llama_model_n_ctx_train(model.pointer);
     }
     final hasEncoder = llama_model_has_encoder(model.pointer);
     final hasDecoder = llama_model_has_decoder(model.pointer);
-    final resolvedBatchSizes = resolveContextBatchSizes(
+    final ctxParams = _newContextParams(
       params,
-      nCtx,
+      contextSize: nCtx,
+      batchContextSize: nCtx,
       useFullContextDefaults: hasEncoder && !hasDecoder,
     );
-    final maxSeqLimit = llama_max_parallel_sequences();
-    final resolvedMaxParallelSequences = math.max(
-      1,
-      math.min(params.maxParallelSequences, maxSeqLimit),
-    );
-
-    ctxParams.n_ctx = nCtx;
-    ctxParams.n_batch = resolvedBatchSizes.batchSize;
-    ctxParams.n_ubatch = resolvedBatchSizes.microBatchSize;
-    ctxParams.n_seq_max = resolvedMaxParallelSequences;
-    ctxParams.n_rs_seq = params.speculativeRollbackTokenMax;
-    applyContextThreads(ctxParams, params, availableCores: _availableCores);
-    if (resolvedMaxParallelSequences > 1) {
-      // Keep per-sequence context at full n_ctx when multiple sequence slots
-      // are enabled so regular generation behavior is unchanged.
-      ctxParams.kv_unified = true;
-    }
 
     final resolvedModelGpuLayers = _modelsOnNoGpu.contains(modelHandle)
         ? 0
@@ -4154,7 +4479,7 @@ class LlamaCppService {
     _holdSamplerChain(sampler);
     _samplers[handle] = sampler;
     final batch = TokenBatch.allocate(
-      resolvedBatchSizes.batchSize,
+      ctxParams.n_batch,
       1,
       allocator: _contextBatchAllocator,
     );
@@ -4166,6 +4491,44 @@ class LlamaCppService {
     _batches[handle] = batch;
 
     return handle;
+  }
+
+  /// The context parameters every context of [params] starts from, with
+  /// [contextSize] as `n_ctx` and batch sizes resolved against
+  /// [batchContextSize].
+  ///
+  /// The GPU memory fit measures the context [createContext] will create
+  /// through this, so both must not diverge.
+  llama_context_params _newContextParams(
+    ModelParams params, {
+    required int contextSize,
+    required int batchContextSize,
+    required bool useFullContextDefaults,
+  }) {
+    final ctxParams = llama_context_default_params();
+    final resolvedBatchSizes = resolveContextBatchSizes(
+      params,
+      batchContextSize,
+      useFullContextDefaults: useFullContextDefaults,
+    );
+    final maxSeqLimit = llama_max_parallel_sequences();
+    final resolvedMaxParallelSequences = math.max(
+      1,
+      math.min(params.maxParallelSequences, maxSeqLimit),
+    );
+
+    ctxParams.n_ctx = contextSize;
+    ctxParams.n_batch = resolvedBatchSizes.batchSize;
+    ctxParams.n_ubatch = resolvedBatchSizes.microBatchSize;
+    ctxParams.n_seq_max = resolvedMaxParallelSequences;
+    ctxParams.n_rs_seq = params.speculativeRollbackTokenMax;
+    applyContextThreads(ctxParams, params, availableCores: _availableCores);
+    if (resolvedMaxParallelSequences > 1) {
+      // Keep per-sequence context at full n_ctx when multiple sequence slots
+      // are enabled so regular generation behavior is unchanged.
+      ctxParams.kv_unified = true;
+    }
+    return ctxParams;
   }
 
   bool _androidVulkanHasSmallMatmulTileDefect() {
@@ -8244,6 +8607,15 @@ class LlamaCppService {
     return _activeBackendName;
   }
 
+  /// Returns the GPU memory fit of the active model load, or `null` when it
+  /// asked for none.
+  GpuMemoryFitReport? getGpuMemoryFitReport() {
+    if (_models.isEmpty) {
+      return null;
+    }
+    return _activeGpuMemoryFitReport;
+  }
+
   /// Returns resolved GPU layers for the active model load.
   int? getResolvedGpuLayers() {
     if (_models.isEmpty) {
@@ -8419,6 +8791,9 @@ class LlamaCppService {
     _modelsOnNoGpu.clear();
     _modelLoadParams.clear();
     _modelPlacements.clear();
+    _modelGpuMemoryFitReports.clear();
+    _modelFittedContextSizes.clear();
+    _activeGpuMemoryFitReport = null;
     _activeBackendName = _backendDisplayName('cpu');
     _activeResolvedGpuLayers = 0;
     // llama_backend_free(); // DISABLED: Prevents race conditions with other isolates

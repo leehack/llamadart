@@ -945,7 +945,9 @@ class LlamaEngine implements LlamadartEngine<LlamaEngineCapabilities> {
         _redactedErrorDetails(e, path),
         stackTrace,
       );
-      if (e is LlamaUnsupportedException || e is LlamaModelFormatException) {
+      if (e is LlamaUnsupportedException ||
+          e is LlamaModelFormatException ||
+          e is LlamaGpuMemoryFitException) {
         rethrow;
       }
       if (e is UnsupportedError) {
@@ -3977,6 +3979,20 @@ class LlamaEngine implements LlamadartEngine<LlamaEngineCapabilities> {
     final candidate = backend;
     if (candidate is BackendRuntimeDiagnostics) {
       return (candidate as BackendRuntimeDiagnostics).getResolvedGpuLayers();
+    }
+    return null;
+  }
+
+  /// Returns what [ModelParams.gpuMemoryFit] did to the active model load, or
+  /// null when the load asked for no fit or the backend cannot fit one.
+  ///
+  /// Throws [LlamaStateException] after [dispose].
+  Future<GpuMemoryFitReport?> getGpuMemoryFitReport() async {
+    _throwIfDisposed();
+    final candidate = backend;
+    if (candidate is BackendGpuMemoryFitReporting) {
+      return (candidate as BackendGpuMemoryFitReporting)
+          .getGpuMemoryFitReport();
     }
     return null;
   }

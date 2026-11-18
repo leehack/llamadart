@@ -342,6 +342,12 @@ class ResolvedGpuLayersRequest extends WorkerRequest {
   ResolvedGpuLayersRequest(super.sendPort);
 }
 
+/// Request for the GPU memory fit of the active model.
+class GpuMemoryFitReportRequest extends WorkerRequest {
+  /// Creates a new [GpuMemoryFitReportRequest].
+  GpuMemoryFitReportRequest(super.sendPort);
+}
+
 /// Request for native llama.cpp perf timings of an active context.
 class PerformanceContextRequest extends WorkerRequest {
   /// The handle of the context.
@@ -901,6 +907,9 @@ enum WorkerErrorKind {
 
   /// An embedding input exceeds the context or single-pass capacity.
   embeddingInputTooLong,
+
+  /// The GPU memory fit failed or found nothing that fits.
+  gpuMemoryFit,
 }
 
 /// Response containing an error message and category.
@@ -917,6 +926,8 @@ class ErrorResponse {
     this.kind = WorkerErrorKind.generic,
     this.maxInputTokens,
     this.actualTokens,
+    this.gpuMemoryFitReport,
+    this.details,
   });
 
   /// Effective limit for an embedding overflow; null for other errors.
@@ -924,6 +935,13 @@ class ErrorResponse {
 
   /// Exact input size when supplied by the embedding runtime.
   final int? actualTokens;
+
+  /// What the fit measured for [WorkerErrorKind.gpuMemoryFit]; null when it
+  /// failed before measuring.
+  final GpuMemoryFitReport? gpuMemoryFitReport;
+
+  /// Detail of the original exception, kept apart from [message].
+  final Object? details;
 }
 
 /// Response containing backend name.
@@ -951,6 +969,15 @@ class ResolvedGpuLayersResponse {
 
   /// Creates a new [ResolvedGpuLayersResponse].
   ResolvedGpuLayersResponse(this.layers);
+}
+
+/// Response containing the GPU memory fit of the active model.
+class GpuMemoryFitReportResponse {
+  /// The fit, or null when the load asked for none.
+  final GpuMemoryFitReport? report;
+
+  /// Creates a new [GpuMemoryFitReportResponse].
+  GpuMemoryFitReportResponse(this.report);
 }
 
 /// Response containing native llama.cpp perf timings.

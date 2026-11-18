@@ -68,4 +68,46 @@ void main() {
     expect(text, contains('NVIDIA RTX'));
     expect(text, contains('discreteGpu'));
   });
+
+  group('GpuMemoryFitReport', () {
+    const device = GpuMemoryFitDevice(
+      name: 'CUDA0',
+      freeBytes: 300,
+      totalBytes: 800,
+      modelBytes: 100,
+      contextBytes: 50,
+      computeBytes: 10,
+    );
+
+    test('a device projects the sum of what it holds', () {
+      expect(device.projectedBytes, 160);
+    });
+
+    test('prints layers, free and projected bytes', () {
+      const report = GpuMemoryFitReport(
+        outcome: GpuMemoryFitOutcome.reduced,
+        modelLayers: 29,
+        gpuLayers: 14,
+        contextSize: 512,
+        marginBytes: 64,
+        devices: [device],
+      );
+      expect(
+        report.toString(),
+        'GpuMemoryFitReport(reduced, gpuLayers: 14 of 29, contextSize: 512, '
+        'marginBytes: 64, CUDA0: free 300, projected 160)',
+      );
+    });
+
+    test('prints why a load was skipped', () {
+      expect(
+        const GpuMemoryFitReport(
+          outcome: GpuMemoryFitOutcome.skipped,
+          reason: 'shared memory',
+        ).toString(),
+        contains('reason: shared memory'),
+      );
+      expect(device.toString(), contains('projected: 160'));
+    });
+  });
 }

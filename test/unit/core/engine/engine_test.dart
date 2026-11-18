@@ -12,6 +12,7 @@ import 'package:llamadart/src/backends/backend.dart'
         BackendGenerationLimit,
         BackendGenerationLimitReporting,
         BackendGenerationUsageReporting,
+        BackendGpuMemoryFitReporting,
         BackendRuntimePromptTokenization,
         BackendVideoRuntimeSupport,
         registerRuntimePromptTokenizer;
@@ -28,6 +29,7 @@ class MockLlamaBackend
         BackendMultimodalSupport,
         BackendAvailability,
         BackendRuntimeDiagnostics,
+        BackendGpuMemoryFitReporting,
         BackendVideoRuntimeSupport {
   MockLlamaBackend({
     this.backendName = 'Mock',
@@ -55,6 +57,7 @@ class MockLlamaBackend
   String? lastMultimodalProjectorPath;
   double? lastLoraScale;
   int resolvedGpuLayers = 0;
+  GpuMemoryFitReport? gpuMemoryFitReport;
   int modelLoadCalls = 0;
   int modelLoadFromUrlCalls = 0;
   int modelFreeCalls = 0;
@@ -229,6 +232,10 @@ class MockLlamaBackend
 
   @override
   Future<int?> getResolvedGpuLayers() async => resolvedGpuLayers;
+
+  @override
+  Future<GpuMemoryFitReport?> getGpuMemoryFitReport() async =>
+      gpuMemoryFitReport;
 
   @override
   bool get supportsUrlLoading => urlLoadingSupported;
@@ -2986,6 +2993,7 @@ void main() {
         () => engine.getVramInfo(),
         () => engine.listGpuDevices(),
         () => engine.getResolvedGpuLayers(),
+        () => engine.getGpuMemoryFitReport(),
       ]) {
         await expectLater(
           operation(),
@@ -5397,6 +5405,13 @@ void main() {
     test('resolved gpu layers', () async {
       backend.resolvedGpuLayers = 24;
       expect(await engine.getResolvedGpuLayers(), 24);
+    });
+
+    test('GPU memory fit report', () async {
+      expect(await engine.getGpuMemoryFitReport(), isNull);
+      const report = GpuMemoryFitReport(outcome: GpuMemoryFitOutcome.cpu);
+      backend.gpuMemoryFitReport = report;
+      expect(await engine.getGpuMemoryFitReport(), same(report));
     });
 
     test('LoRA management', () async {
