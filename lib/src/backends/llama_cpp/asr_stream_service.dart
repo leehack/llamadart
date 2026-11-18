@@ -23,6 +23,7 @@ final class _AsrStreamProbeResult {
 
 final class _AsrStreamSession {
   final int sessionId;
+  final int modelHandle;
   final int contextHandle;
   final int mmContextHandle;
   final Pointer<llama_context> context;
@@ -39,6 +40,7 @@ final class _AsrStreamSession {
 
   int suppliedSamples = 0;
   int acceptedSamples = 0;
+  int lastSamplesConsumed = 0;
   int lastSegmentBreaks = 0;
   bool pendingSegmentBreak = false;
   bool hasVisibleText = false;
@@ -50,6 +52,7 @@ final class _AsrStreamSession {
 
   _AsrStreamSession({
     required this.sessionId,
+    required this.modelHandle,
     required this.contextHandle,
     required this.mmContextHandle,
     required this.context,
@@ -378,6 +381,10 @@ extension LlamaCppServiceAsrStream on LlamaCppService {
           'Live speech recognition initialization failed.',
         );
       }
+      // ASR init clears sequence 0 in native KV memory, so any cached prompt
+      // tokens or state-load marker on this context are no longer valid.
+      handles.context.cachedPromptTokens = null;
+      handles.context.kvFromStateLoad = false;
 
       if (cancelFlag != nullptr) {
         final flagStatus = _calls.asrStreamSetCancelFlag(
@@ -409,6 +416,7 @@ extension LlamaCppServiceAsrStream on LlamaCppService {
 
       _activeAsrStreamSession = _AsrStreamSession(
         sessionId: sessionId,
+        modelHandle: handles.modelHandle,
         contextHandle: contextHandle,
         mmContextHandle: mmContextHandle,
         context: handles.context.pointer,
@@ -499,15 +507,11 @@ extension LlamaCppServiceAsrStream on LlamaCppService {
         offset += accepted;
         session.acceptedSamples += accepted;
 
-        final consumedBefore = session.acceptedSamples;
         final drainedWithProgress = await _drainAsrSteps(
           session,
           expectingFinish: false,
         );
-        if (offset < samples.length &&
-            accepted == 0 &&
-            !drainedWithProgress &&
-            session.acceptedSamples == consumedBefore) {
+        if (offset < samples.length && accepted == 0 && !drainedWithProgress) {
           throw LlamaSpeechException(
             'Native live speech recognition made no progress on buffered '
             'audio.',
@@ -633,7 +637,7 @@ extension LlamaCppServiceAsrStream on LlamaCppService {
     var anyProgress = false;
     var idleWorkingSteps = 0;
     var lastBuffered = -1;
-    var lastConsumed = -1;
+    var lastConsumed = session.lastSamplesConsumed;
     var lastTokens = -1;
     var lastTextAvailable = -1;
     var lastBreaks = session.lastSegmentBreaks;
@@ -672,7 +676,10 @@ extension LlamaCppServiceAsrStream on LlamaCppService {
         );
       }
       final textGrew = _drainAsrText(session, progress.segment_breaks);
-      if (textGrew) {
+      if (textGrew || progress.samples_consumed > session.lastSamplesConsumed) {
+        if (progress.samples_consumed > session.lastSamplesConsumed) {
+          session.lastSamplesConsumed = progress.samples_consumed;
+        }
         anyProgress = true;
       }
 
