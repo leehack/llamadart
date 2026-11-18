@@ -3,6 +3,7 @@ Releases before 0.10.0 are in the
 
 ## Unreleased
 
+- Adopt `leehack/llamadart-native@v1.0.0-2` (llama.cpp `v1.0.0`, `b1b770d9`): Windows CUDA `ModelParams.gpuMemoryFit` now accounts for VRAM held by other processes, matching Vulkan, and refuses TCC or `GGML_CUDA_DEVICES` virtual devices where system-wide free memory cannot be read with `LlamaGpuMemoryFitException` ([#2049](https://github.com/leehack/llamadart/issues/2049)).
 - Fixed a race when multiple processes first access the same model cache entry concurrently ([#2028](https://github.com/leehack/llamadart/issues/2028)).
 
 ## 0.20.0

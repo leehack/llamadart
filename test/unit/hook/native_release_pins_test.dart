@@ -16,8 +16,8 @@ import 'package:test/test.dart';
 void main() {
   final sha256Pattern = RegExp(r'^[0-9a-f]{64}$');
 
-  test('llama.cpp pins the approved v1.0.0-1 release', () {
-    expect(llamaCppTag, 'v1.0.0-1');
+  test('llama.cpp pins the approved v1.0.0-2 release', () {
+    expect(llamaCppTag, 'v1.0.0-2');
   });
 
   test('llama.cpp tag follows the native release tag grammar', () {
@@ -30,7 +30,7 @@ void main() {
     expect(llamaCppCompatibleAppleCompanionTags, isEmpty);
     expect(llamaCppCompatibleAppleCompanionChecksums, {
       llamaCppTag:
-          '0c66ca422bfc8ba266845b57fea99d2792ea67c84233f49358301a640846d669',
+          '641020c50159a001096dcd66cc7356fe3c81915b26f985ebd48b2cec87169bcb',
     });
     final manifest = File(
       'packages/llamadart_llama_cpp_flutter/darwin/'
@@ -40,7 +40,7 @@ void main() {
     expect(
       manifest,
       contains(
-        'checksum: "0c66ca422bfc8ba266845b57fea99d2792ea67c84233f49358301a640846d669"',
+        'checksum: "641020c50159a001096dcd66cc7356fe3c81915b26f985ebd48b2cec87169bcb"',
       ),
     );
   });

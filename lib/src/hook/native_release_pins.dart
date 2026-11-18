@@ -5,7 +5,7 @@
 library;
 
 /// `leehack/llamadart-native` release tag downloaded for the llama.cpp runtime.
-const llamaCppTag = 'v1.0.0-1';
+const llamaCppTag = 'v1.0.0-2';
 
 /// The first `llamadart_llama_cpp_flutter` release whose `Package.swift` pins
 /// [llamaCppTag].
@@ -16,7 +16,7 @@ const llamaCppTag = 'v1.0.0-1';
 /// `MAJOR.MINOR`, and its own minor's first release otherwise. The native pin
 /// sync sets it to the companion's next release whenever it moves the
 /// companion pin.
-const llamaCppAppleCompanionVersion = '0.20.0';
+const llamaCppAppleCompanionVersion = '0.20.1';
 
 /// Earlier `leehack/llamadart-native` tags that a published Apple llama.cpp
 /// companion pins and the build still accepts, each mapped to what its
@@ -34,8 +34,8 @@ const llamaCppCompatibleAppleCompanionTags = <String, String>{};
 /// Native pin sync preserves this proof on a same-tag refresh and replaces it
 /// with the newly published artifact's checksum when the pin moves.
 const llamaCppCompatibleAppleCompanionChecksums = <String, String>{
-  'v1.0.0-1':
-      '0c66ca422bfc8ba266845b57fea99d2792ea67c84233f49358301a640846d669',
+  'v1.0.0-2':
+      '641020c50159a001096dcd66cc7356fe3c81915b26f985ebd48b2cec87169bcb',
 };
 
 /// SHA-256 of each published `llamadart-native-<bundle>-<llamaCppTag>.tar.gz`
@@ -45,27 +45,27 @@ const llamaCppCompatibleAppleCompanionChecksums = <String, String>{
 /// against this map before extracting it.
 const llamaCppBundleSha256 = <String, String>{
   'android-arm64':
-      'd6b735f88a0896f0e2229d95867c3836313caaab288b83c82b63e4fa20a86198',
+      '05094c8ff94f928f48b7167e3436d1131d620c6a8954adfc53af74ccea0ff4d8',
   'android-x64':
-      '46e604b116326a0bf72c557cfaf71ed032d565978ebfdfa6f24d2270c99dfff4',
+      'c426a1b689d91040c058d45909d707021541e1be2299611a554a547825664f88',
   'ios-arm64':
-      '92c6d4b28845d0de834e0ccdf58ec6b54e5e649c2cb8b126a68a806a81b56749',
+      '4962f3c73fe193f4dee48a7d2140387715f14e5ee4244a64d50e36d1ecc42c57',
   'ios-arm64-sim':
-      'abbe2032eca99140be4a29f3772f6ce0e523b55eca168eaf13631c7d786b0642',
+      '22ab69c394210d3fdb5b179685c514b6d1ed9b48f86d5233693f469980b91cfd',
   'ios-x86_64-sim':
-      '6d3253d501685defa1b58246d011d028452d44de1fcff36d769600289271c72e',
+      '603e8705259ab0adadacb48d813176b6c18990f50ada14c909d7f4f850eb3da9',
   'linux-arm64':
-      '52eec56a23c67821b1c11699c762bd30437cf7b0262fc4c620c86b1ddbe07bcf',
+      '7dace3bea0fa9c9781395ed256e02bfd2cd872478d064eb96ddaeaf0a76bcb6e',
   'linux-x64':
-      '1bbc08721621d9a2f3c7f9774d548982b63dea1b153d2c4921d2a5c81a00b64c',
+      '223fa6c4e61c34bc42cc01be7c3f969ad5a4cfa03598015299d7f974e2c8f4e9',
   'macos-arm64':
-      '6f80a55c781bef2e5d40429965887bab147a5b1bda864f040c79f6b317a819d0',
+      '1a6266aede035e0feb8b724220719fd2f494c45dc874dd87ea3ab1b4fd4e5ca1',
   'macos-x86_64':
-      '8d32a4f7ea2936fd812d86f5f75f565210afe0119ab0911c6d9eb8b430cdcafb',
+      'ffab88885ba27de55950a2e67d6c24fcf3f5251f25b1f1aab4de1d9aea62897e',
   'windows-arm64':
-      '36d8a8eef13b19f73a82db560ab9c374751f41f4bbbad33606997865183fd1a5',
+      '3d97c272f26a6342d1a47b37280062596ef081d7ad381776ea73a67c64208689',
   'windows-x64':
-      'f5763f5e220cc8f13cb8f9f19d7297732d0fdadd7ae4a132c5da3834ced5f7aa',
+      '3c8ffe70059f81b6e381da6e1d994152f988f037d67334307601e76bf258023e',
 };
 
 /// The `hook_contract_version` of the [llamaCppTag] release's `assets.json`.
@@ -102,7 +102,7 @@ const llamaCppBackendSidecarSpecs = <LlamaCppBackendSidecarSpec>[
     bundle: 'windows-x64',
     backend: 'cuda',
     archive: 'windows-x64-cuda12',
-    sha256: '715b766a86acdca0db0fbde6eb95a3d5d51ec2eb9e9a0c7956bfe928834aec6f',
+    sha256: 'd9c054b399ca0b6c1ba5c8f15b550e2a3e610dd67093ea9a9522fab37aa705ec',
   ),
 ];
 
