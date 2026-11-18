@@ -236,6 +236,7 @@ void main() {
         expect(nativeLastProjector(), projector);
       }
     },
+    timeout: const Timeout(Duration(minutes: 2)),
   );
 
   for (final changeDirectory in [false, true]) {

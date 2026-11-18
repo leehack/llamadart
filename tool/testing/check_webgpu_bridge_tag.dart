@@ -380,7 +380,7 @@ const String bridgeNativeRepository = 'leehack/llamadart-native';
 const String bridgeNativeReleaseTag = 'v1.0.0';
 
 /// The native pin approved beside the pinned bridge assets.
-const String bridgeApprovedNativePin = 'v1.0.0';
+const String bridgeApprovedNativePin = 'v1.0.0-1';
 
 /// The asset repository release that published the pinned bridge assets.
 const String bridgeAssetsReleaseId = '449436143';

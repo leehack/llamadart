@@ -31,11 +31,11 @@ symlink/reparse ancestors; `/private/tmp` is the canonical macOS temp root.
 
 `--expected-native-tag` verifies the committed `llamaCppTag`; it never enters
 hook configuration. The generated consumer config contains only the documented
-`llamadart_native_runtimes: [llama_cpp]` filter. Native2 reports
-`pipelineOnly: true` and `finalNative3Qualified: false`. Native3 can report
-success only after all same-platform gates pass; independent acceptance and the
-other platform's qualification remain separate. Owner publication must precede
-native3 consumer pin work.
+`llamadart_native_runtimes: [llama_cpp]` filter. The `v0.8.0-2` baseline
+reports `pipelineOnly: true`. The legacy `finalNative3Qualified` field retains
+its meaning for earlier receipts. For `v1.0.0-1`, read `completed` alongside
+`expectedNativeTag` and the reported host. Each exact pin requires published
+owner assets, all same-platform gates and independent acceptance.
 
 The driver exports every tracked source file to a fresh package tree, checks
 its inventory against reviewed H, and uses a fresh public-hook acquisition.
