@@ -426,7 +426,8 @@ final List<BridgeTagPin> bridgeLlamaCppParityPins = <BridgeTagPin>[
   BridgeTagPin(
     'doc/webgpu_bridge.md',
     RegExp(
-      r'^That release embeds llama\.cpp `(v\d+\.\d+\.\d+|b\d+)`, (?:matching|behind) the '
+      r'^That release embeds llama\.cpp `(v\d+\.\d+\.\d+|b\d+)`, '
+      r'(?<relationship>matching|behind) the '
       r'`hook/build\.dart` native pin$',
       multiLine: true,
     ),
@@ -434,7 +435,9 @@ final List<BridgeTagPin> bridgeLlamaCppParityPins = <BridgeTagPin>[
   BridgeTagPin(
     'website/docs/platforms/webgpu-bridge.md',
     RegExp(
-      r'^- The pinned `v\d+\.\d+\.\d+` bridge assets embed llama\.cpp `(v\d+\.\d+\.\d+|b\d+)`, (?:matching|behind) the native runtime\.?$',
+      r'^- The pinned `v\d+\.\d+\.\d+` bridge assets embed llama\.cpp '
+      r'`(v\d+\.\d+\.\d+|b\d+)`, (?<relationship>matching|behind) the '
+      r'native runtime `(?<nativePin>[^`]+)`\.$',
       multiLine: true,
     ),
   ),
@@ -442,19 +445,18 @@ final List<BridgeTagPin> bridgeLlamaCppParityPins = <BridgeTagPin>[
 
 /// The provenance values the docs restate for the pinned immutable release.
 ///
-/// Each pattern matches one passage; every named group is checked against
-/// [bridgeProvenanceValues]. The same seven values are written out in one doc,
-/// so without this a partial bump leaves it describing the previous
-/// release with nothing failing.
+/// Each pattern matches one passage. [bridgeProvenanceValues] checks the
+/// recorded values and whether native and Web share an upstream release.
 final List<BridgeTagPin> bridgeProvenancePins = <BridgeTagPin>[
   BridgeTagPin(
     'doc/webgpu_bridge.md',
     RegExp(
-      r'^\(`(?<nativePin>[^`]+)`(?:, both|; the bridge is) built from upstream llama\.cpp '
+      r'^\(`(?<nativePin>[^`]+)`(?<upstreamRelationship>, both|; the bridge is) '
+      r'built from upstream llama\.cpp '
       r'`(?<upstreamTag>[^`@]+)@(?<upstreamCommit>[0-9a-f]{40})`\)\r?\n'
       r'even though the bridge asset tag `v\d+\.\d+\.\d+` differs from the '
       r'native runtime tag\r?\n'
-      r'`v\d+\.\d+\.\d+(?:-\d+)?`\. Provenance for this immutable consumer artifact: '
+      r'`(?<nativeRuntimeTag>[^`]+)`\. Provenance for this immutable consumer artifact: '
       r'release `(?<releaseId>\d+)`,\r?\n'
       r'tag commit `(?<tagCommit>[0-9a-f]{40})`, bridge source\r?\n'
       r'`(?<bridgeCommit>[0-9a-f]{40})`, and manifest SHA-256\r?\n'
@@ -467,8 +469,13 @@ final List<BridgeTagPin> bridgeProvenancePins = <BridgeTagPin>[
 /// The expected value behind each [bridgeProvenancePins] group name.
 Map<String, String> get bridgeProvenanceValues => <String, String>{
   'nativePin': bridgeApprovedNativePin,
+  'upstreamRelationship':
+      normalizeNativeLlamaCppTag(bridgeApprovedNativePin) == bridgeLlamaCppTag
+      ? ', both'
+      : '; the bridge is',
   'upstreamTag': bridgeLlamaCppTag,
   'upstreamCommit': bridgeLlamaCppCommit,
+  'nativeRuntimeTag': bridgeApprovedNativePin,
   'releaseId': bridgeAssetsReleaseId,
   'tagCommit': bridgeAssetsTagCommit,
   'bridgeCommit': bridgeSourceCommit,
@@ -647,6 +654,9 @@ List<String> findBridgeRuntimeDrift(Directory repoRoot, String bridgeTag) {
 
   final nativeTag = matches.single.group(1)!;
   final normalizedNativeFamily = normalizeNativeLlamaCppTag(nativeTag);
+  final expectedRelationship = normalizedNativeFamily == bridgeTag
+      ? 'matching'
+      : 'behind';
   if (normalizedNativeFamily == null) {
     problems.add(
       '$nativeLlamaCppTagPath: malformed native llama.cpp tag "$nativeTag" — '
@@ -688,20 +698,35 @@ List<String> findBridgeRuntimeDrift(Directory repoRoot, String bridgeTag) {
       );
       continue;
     }
-    final found = matches.single.group(1)!;
+    final match = matches.single;
+    final found = match.group(1)!;
     if (found != bridgeTag) {
       problems.add('${pin.path}: states $found, expected $bridgeTag');
+    }
+    if (normalizedNativeFamily != null &&
+        match.groupNames.contains('relationship')) {
+      final relationship = match.namedGroup('relationship');
+      if (relationship != expectedRelationship) {
+        problems.add(
+          '${pin.path}: states "$relationship", expected '
+          '"$expectedRelationship" for Web $bridgeTag and native $nativeTag',
+        );
+      }
+    }
+    if (match.groupNames.contains('nativePin')) {
+      final foundNativePin = match.namedGroup('nativePin');
+      if (foundNativePin != nativeTag) {
+        problems.add(
+          '${pin.path}: states native pin $foundNativePin, expected $nativeTag',
+        );
+      }
     }
   }
 
   return problems;
 }
 
-/// Returns one message per provenance value a doc states incorrectly.
-///
-/// The bridge assets are consumed as an immutable artifact, so every value in
-/// [bridgeProvenanceValues] identifies bytes that can be re-fetched and
-/// re-hashed. Docs that restate them are pinned rather than trusted.
+/// Returns one message per incorrect claim in the pinned provenance docs.
 List<String> findBridgeProvenanceDrift(Directory repoRoot) {
   final problems = <String>[];
   for (final pin in bridgeProvenancePins) {

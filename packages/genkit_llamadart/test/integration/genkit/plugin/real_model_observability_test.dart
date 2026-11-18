@@ -2,6 +2,7 @@
 library;
 
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:genkit/genkit.dart' as genkit;
 import 'package:genkit/plugin.dart' as api;
@@ -77,15 +78,21 @@ void main() {
 
         final structured = await ai.generate(
           model: llamaDart.model('observed'),
-          prompt: 'Return a JSON object with an answer.',
+          prompt: 'Return only the JSON object {"answer":"yes"}.',
           outputFormat: 'json',
           config: const LlamaDartGenerationConfig(
-            maxTokens: 32,
+            maxTokens: 64,
             temperature: 0,
           ),
         );
-        expect(structured.finishReason, isNot(genkit.FinishReason.failed));
+        expect(
+          structured.finishReason,
+          genkit.FinishReason.stop,
+          reason: '${structured.error}',
+        );
+        expect(jsonDecode(structured.text), isA<Map<String, dynamic>>());
         expect(structured.usage!.inputTokens, greaterThan(0));
+        expect(structured.usage!.outputTokens, greaterThan(0));
         expect(
           observer.records.where(
             (r) => r.operation is LlamaTextCompletionOperation,

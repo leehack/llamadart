@@ -39,6 +39,9 @@ Directory _fakeRuntimeRepo({
   required String nativeTag,
   bool parityWording = true,
 }) {
+  final relationship = normalizeNativeLlamaCppTag(nativeTag) == bridgeTag
+      ? 'matching'
+      : 'behind';
   final root = Directory.systemTemp.createTempSync('bridge_runtime_gate');
   addTearDown(() => root.deleteSync(recursive: true));
   final entries = <String, String>{
@@ -46,13 +49,13 @@ Directory _fakeRuntimeRepo({
     'example/chat_app/web/index.html':
         "    const defaultBridgeLlamaCppTag = '$bridgeTag';\n",
     'doc/webgpu_bridge.md': parityWording
-        ? 'That release embeds llama.cpp `$bridgeTag`, matching the '
+        ? 'That release embeds llama.cpp `$bridgeTag`, $relationship the '
               '`hook/build.dart` native pin\n'
         : 'That release embeds llama.cpp `$bridgeTag`, which now trails the '
               '`hook/build.dart`\n',
     'website/docs/platforms/webgpu-bridge.md': parityWording
-        ? '- The pinned `v1.2.3` bridge assets embed llama.cpp `$bridgeTag`, matching '
-              'the native runtime\n'
+        ? '- The pinned `v1.2.3` bridge assets embed llama.cpp `$bridgeTag`, $relationship '
+              'the native runtime `$nativeTag`.\n'
         : '- The pinned `v1.2.3` bridge assets embed llama.cpp `$bridgeTag`, which now '
               'trails the\n',
   };
@@ -1163,6 +1166,63 @@ void main() {
       expect(findBridgeRuntimeDrift(root, bridgeLlamaCppTag), isEmpty);
     });
 
+    for (final path in [
+      'doc/webgpu_bridge.md',
+      'website/docs/platforms/webgpu-bridge.md',
+    ]) {
+      test('$path cannot claim parity during an approved skew', () {
+        final root = _fakeRuntimeRepo(
+          bridgeTag: bridgeLlamaCppTag,
+          nativeTag: bridgeApprovedNativePin,
+        );
+        final doc = File('${root.path}/$path');
+        doc.writeAsStringSync(
+          doc.readAsStringSync().replaceFirst(', behind the', ', matching the'),
+        );
+
+        expect(findBridgeRuntimeDrift(root, bridgeLlamaCppTag), [
+          contains('$path: states "matching", expected "behind"'),
+        ]);
+      });
+    }
+
+    test('a wrapper rebuild shares its upstream release with Web', () {
+      final root = _fakeRuntimeRepo(
+        bridgeTag: bridgeLlamaCppTag,
+        nativeTag: '$bridgeLlamaCppTag-1',
+      );
+      final path = 'doc/webgpu_bridge.md';
+      final doc = File('${root.path}/$path');
+      doc.writeAsStringSync(
+        doc.readAsStringSync().replaceFirst(', matching the', ', behind the'),
+      );
+
+      expect(
+        findBridgeRuntimeDrift(root, bridgeLlamaCppTag),
+        contains(contains('$path: states "behind", expected "matching"')),
+      );
+    });
+
+    test('the website must name the exact native runtime pin', () {
+      final root = _fakeRuntimeRepo(
+        bridgeTag: bridgeLlamaCppTag,
+        nativeTag: bridgeApprovedNativePin,
+      );
+      final path = 'website/docs/platforms/webgpu-bridge.md';
+      final doc = File('${root.path}/$path');
+      doc.writeAsStringSync(
+        doc.readAsStringSync().replaceFirst(
+          'runtime `$bridgeApprovedNativePin`',
+          'runtime `$bridgeLlamaCppTag`',
+        ),
+      );
+
+      expect(findBridgeRuntimeDrift(root, bridgeLlamaCppTag), [
+        '$path: states native pin $bridgeLlamaCppTag, '
+            'expected $bridgeApprovedNativePin',
+      ]);
+    });
+
     test('a doc naming a different bridge build is reported', () {
       final root = _fakeRuntimeRepo(
         bridgeTag: 'v0.1.0',
@@ -1307,6 +1367,62 @@ void main() {
         ),
       );
     });
+
+    test('the provenance doc cannot claim a shared upstream during skew', () {
+      final path = 'doc/webgpu_bridge.md';
+      final root = _fakeRepo(
+        readPinnedBridgeTag(Directory.current),
+        files: {
+          path: File(path).readAsStringSync().replaceFirst(
+            '; the bridge is built from',
+            ', both built from',
+          ),
+        },
+      );
+
+      expect(findBridgeProvenanceDrift(root), [
+        contains(
+          'states upstreamRelationship , both, expected ; the bridge is',
+        ),
+      ]);
+    });
+
+    for (final (name, lineEnding) in [('LF', '\n'), ('CRLF', '\r\n')]) {
+      test(
+        'the repeated native runtime tag must match the exact pin ($name)',
+        () {
+          const path = 'doc/webgpu_bridge.md';
+          const staleNativeTag = 'v0.0.0';
+          const provenanceStart =
+              '. Provenance for this immutable consumer artifact:';
+          const target = '`$bridgeApprovedNativePin`$provenanceStart';
+          final source = File(path)
+              .readAsStringSync()
+              .replaceAll('\r\n', '\n')
+              .replaceAll('\n', lineEnding);
+          expect(
+            target.allMatches(source),
+            hasLength(1),
+            reason:
+                'The fixture must have one repeated native runtime tag to replace',
+          );
+          final root = _fakeRepo(
+            readPinnedBridgeTag(Directory.current),
+            files: {
+              path: source.replaceFirst(
+                target,
+                '`$staleNativeTag`$provenanceStart',
+              ),
+            },
+          );
+
+          expect(findBridgeProvenanceDrift(root), [
+            '$path: states nativeRuntimeTag $staleNativeTag, '
+                'expected $bridgeApprovedNativePin',
+          ]);
+        },
+      );
+    }
 
     test('a reworded provenance passage is reported rather than skipped', () {
       final root = Directory.systemTemp.createTempSync('bridge_provenance');

@@ -373,7 +373,8 @@ void main() {
       addTearDown(() => root.deleteSync(recursive: true));
       final pin = File('${root.path}/lib/src/hook/native_release_pins.dart');
       pin.parent.createSync(recursive: true);
-      pin.writeAsStringSync("const llamaCppTag = 'v0.8.0-2';\n");
+      const historicalTag = 'v0.8.0-2';
+      const currentTag = 'v1.0.0';
       const sha = '1111111111111111111111111111111111111111';
       const child = r'''
 import os
@@ -394,14 +395,22 @@ class Download:
 urllib.request.build_opener = lambda *a, **k: Download()
 exec(sys.argv[1], {})
 ''';
-      final cases = <(String, Map<String, String>, bool)>[
+      const windows = {
+        'QUALIFICATION_PLATFORM': 'windows',
+        'QUALIFICATION_ARCH': 'x64',
+        'TEST_PLATFORM': 'win32',
+        'TEST_MACHINE': 'AMD64',
+      };
+      final cases = <(String, String, Map<String, String>, bool)>[
         (
           'invalid-sha',
+          historicalTag,
           {'LLAMADART_DEFAULT_AOT_EXPECTED_SHA': 'not-a-sha'},
           false,
         ),
         (
           'event-drift',
+          historicalTag,
           {
             'GITHUB_SHA': '2222222222222222222222222222222222222222',
             'TEST_CHECKOUT': sha,
@@ -410,34 +419,37 @@ exec(sys.argv[1], {})
         ),
         (
           'checkout-drift',
+          historicalTag,
           {'TEST_CHECKOUT': '2222222222222222222222222222222222222222'},
           false,
         ),
         (
           'pin-drift',
+          historicalTag,
           {'LLAMADART_DEFAULT_AOT_EXPECTED_NATIVE_TAG': 'v0.8.0-3'},
           false,
         ),
-        ('wrong-platform', {'TEST_PLATFORM': 'win32'}, false),
-        ('wrong-architecture', {'TEST_MACHINE': 'amd64'}, false),
+        (
+          'current-tag-pin-drift',
+          currentTag,
+          {'LLAMADART_DEFAULT_AOT_EXPECTED_NATIVE_TAG': historicalTag},
+          false,
+        ),
+        ('wrong-platform', historicalTag, {'TEST_PLATFORM': 'win32'}, false),
+        ('wrong-architecture', historicalTag, {'TEST_MACHINE': 'amd64'}, false),
         (
           'unqualified-macos-x64',
+          historicalTag,
           {'QUALIFICATION_ARCH': 'x64', 'TEST_MACHINE': 'amd64'},
           false,
         ),
-        ('valid-baseline-transport-stop', {}, true),
-        (
-          'valid-windows-baseline-transport-stop',
-          {
-            'QUALIFICATION_PLATFORM': 'windows',
-            'QUALIFICATION_ARCH': 'x64',
-            'TEST_PLATFORM': 'win32',
-            'TEST_MACHINE': 'AMD64',
-          },
-          true,
-        ),
+        ('valid-macos-historical', historicalTag, {}, true),
+        ('valid-windows-historical', historicalTag, windows, true),
+        ('valid-macos-current', currentTag, {}, true),
+        ('valid-windows-current', currentTag, windows, true),
       ];
-      for (final (label, overrides, requestsModel) in cases) {
+      for (final (label, sourceTag, overrides, requestsModel) in cases) {
+        pin.writeAsStringSync("const llamaCppTag = '$sourceTag';\n");
         final output = '${root.path}/$label/results';
         final marker = File('${root.path}/$label-download');
         final result = await Process.run(
@@ -446,7 +458,7 @@ exec(sys.argv[1], {})
           workingDirectory: root.path,
           environment: {
             'LLAMADART_DEFAULT_AOT_EXPECTED_SHA': sha,
-            'LLAMADART_DEFAULT_AOT_EXPECTED_NATIVE_TAG': 'v0.8.0-2',
+            'LLAMADART_DEFAULT_AOT_EXPECTED_NATIVE_TAG': sourceTag,
             'LLAMADART_DEFAULT_AOT_MODEL_PATH':
                 '${root.path}/$label/model.gguf',
             'LLAMADART_DEFAULT_AOT_OUTPUT_ROOT': output,
