@@ -151,6 +151,76 @@ void main() {
       );
     });
 
+    group('raw delimited string arguments', () {
+      Map<String, dynamic> parseArguments(String arguments) {
+        final parsed = ChatTemplateEngine.parse(
+          ChatFormat.gemma4.index,
+          '<|tool_call>call:write$arguments<tool_call|>',
+        );
+        expect(parsed.toolCalls, hasLength(1));
+        return jsonDecode(parsed.toolCalls.single.function!.arguments!)
+            as Map<String, dynamic>;
+      }
+
+      test('keeps raw newlines', () {
+        expect(parseArguments('{content:<|"|>a\nb<|"|>}'), {'content': 'a\nb'});
+      });
+
+      test('keeps raw double quotes', () {
+        expect(parseArguments('{content:<|"|>say "hi"<|"|>}'), {
+          'content': 'say "hi"',
+        });
+      });
+
+      test('keeps code with quotes and escape sequences', () {
+        expect(parseArguments('{code:<|"|>print("a\\nb");<|"|>}'), {
+          'code': 'print("a\\nb");',
+        });
+      });
+
+      test('keeps backslashes verbatim', () {
+        expect(parseArguments(r'{path:<|"|>C:\temp\new<|"|>}'), {
+          'path': r'C:\temp\new',
+        });
+      });
+
+      test('parses the upstream multi-line unicode write emission', () {
+        const content = 'Bonjour Montréal — café ☕\n안녕하세요 🌲\n';
+
+        expect(
+          parseArguments(
+            '{content:<|"|>$content<|"|>,path:<|"|>nested/bonjour.txt<|"|>}',
+          ),
+          {'content': content, 'path': 'nested/bonjour.txt'},
+        );
+      });
+
+      test('parses nested objects, arrays and scalars', () {
+        expect(
+          parseArguments(
+            '{a:{b:<|"|>x"y<|"|>},list:[1,-2.5,true,null,<|"|>z\n<|"|>],'
+            'flag:false,"quoted":"j\\"son"}',
+          ),
+          {
+            'a': {'b': 'x"y'},
+            'list': [1, -2.5, true, null, 'z\n'],
+            'flag': false,
+            'quoted': 'j"son',
+          },
+        );
+      });
+
+      test('partial output without the closing brace yields no call', () {
+        final parsed = ChatTemplateEngine.parse(
+          ChatFormat.gemma4.index,
+          '<|tool_call>call:write{content:<|"|>a\nb',
+          isPartial: true,
+        );
+
+        expect(parsed.toolCalls, isEmpty);
+      });
+    });
+
     test('parses loose function call syntax emitted by Gemma 4 LiteRT-LM', () {
       const output = 'get_weather(location="Seoul")';
 
