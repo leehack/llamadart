@@ -13,6 +13,8 @@ validate against the exact release tag notes.
 
 ## Unreleased
 
+- Fixed a race when multiple processes first access the same model cache entry concurrently ([#2028](https://github.com/leehack/llamadart/issues/2028)).
+
 ## 0.20.0
 
 - Adopt `leehack/llamadart-native@v1.0.0-1` (llama.cpp `v1.0.0`, `b1b770d9`) with regenerated bindings, `mtmd_helper_get_capabilities` video probing and the `v0.9.0` ARM FP16 fixes. Native runtimes not built from llama.cpp `v1.0.0`, including `llamadart_native_tag` or `llamadart_native_path` overrides, now throw `LlamaUnsupportedException` before a model loads.
