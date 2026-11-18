@@ -30,8 +30,6 @@ validate against the exact release tag notes.
 
 Runtime baseline: native llama.cpp `v1.0.0-1` and Web use upstream `v1.0.0@b1b770d90d94cad9e9ea5b993bdbc383a522fb28`; native LiteRT-LM uses `v0.19.1-5` and stable-diffusion uses `v0.4.0`. Web LiteRT-LM uses `@litert-lm/core@0.19.0`. Manifest SHA-256: `d589fbe3c334e4fcb0ccbac3efc4500209358a010b6662ee8523e598a433a0f2`.
 
-Runtime baseline: native llama.cpp `v1.0.0-1` and Web use upstream `v1.0.0@b1b770d90d94cad9e9ea5b993bdbc383a522fb28`; native LiteRT-LM uses `v0.19.1-5` and stable-diffusion uses `v0.4.0`. Web LiteRT-LM uses `@litert-lm/core@0.19.0`. Manifest SHA-256: `d589fbe3c334e4fcb0ccbac3efc4500209358a010b6662ee8523e598a433a0f2`.
-
 ## 0.19.11
 
 - Preserve the system message before the generic JSON tool instruction with `ToolChoice.auto` or `required` ([#1973](https://github.com/leehack/llamadart/issues/1973)).
