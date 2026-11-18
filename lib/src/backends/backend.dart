@@ -758,6 +758,13 @@ class BackendTextToSpeechCapabilities {
   /// Empty when the model has no voices or the backend cannot list them.
   final List<String> voices;
 
+  /// Whether a request with [BackendTextToSpeechRequest.streamAudio] reports
+  /// PCM through [BackendTextToSpeechProgress.audio] while it generates.
+  final bool supportsIncrementalAudio;
+
+  /// Actionable reason when [supportsIncrementalAudio] is false.
+  final String? incrementalAudioUnsupportedReason;
+
   /// Creates a backend capability snapshot.
   const BackendTextToSpeechCapabilities({
     required this.isSupported,
@@ -770,6 +777,8 @@ class BackendTextToSpeechCapabilities {
     this.supportsCancellation = false,
     this.supportsVoice = false,
     this.voices = const <String>[],
+    this.supportsIncrementalAudio = false,
+    this.incrementalAudioUnsupportedReason,
   });
 }
 
@@ -811,6 +820,10 @@ class BackendTextToSpeechRequest {
   /// Random seed.
   final int seed;
 
+  /// Whether to report PCM through [BackendTextToSpeechProgress.audio] while
+  /// generating. Sent only to backends that report incremental audio.
+  final bool streamAudio;
+
   /// Creates a backend synthesis request.
   const BackendTextToSpeechRequest({
     required this.text,
@@ -825,6 +838,7 @@ class BackendTextToSpeechRequest {
     this.minP = 0.0,
     this.temperature = 0.8,
     this.seed = 0xffffffff,
+    this.streamAudio = false,
   });
 }
 
@@ -842,12 +856,17 @@ class BackendTextToSpeechProgress {
   /// Whether generation reached the requested frame limit.
   final bool truncated;
 
+  /// PCM produced since the previous progress report of a streamed request,
+  /// or null.
+  final Float32List? audio;
+
   /// Creates a progress snapshot.
   const BackendTextToSpeechProgress({
     required this.phase,
     required this.promptTokensRemaining,
     required this.framesGenerated,
     required this.truncated,
+    this.audio,
   });
 }
 

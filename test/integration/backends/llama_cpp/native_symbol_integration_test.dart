@@ -1187,6 +1187,20 @@ void main() {
       );
     });
 
+    test('a wrapper that has the streaming TTS export resolves it', () {
+      final wrapper = _llamadartWrapperLibraryFileOrNull();
+      expect(wrapper, isNotNull);
+      if (!_fileContainsAscii(wrapper!, 'llama_dart_tts_start_streaming')) {
+        return;
+      }
+      expect(
+        ffi.DynamicLibrary.open(
+          wrapper.path,
+        ).providesSymbol('llama_dart_tts_start_streaming'),
+        isTrue,
+      );
+    });
+
     test('Verify core llama symbols are resolvable', () {
       expect(() => llama_backend_init(), returnsNormally);
       expect(llama_version().cast<Utf8>().toDartString(), isNotEmpty);

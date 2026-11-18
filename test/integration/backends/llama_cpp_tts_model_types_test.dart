@@ -4,6 +4,7 @@ library;
 import 'dart:ffi';
 import 'dart:io';
 import 'dart:mirrors';
+import 'dart:typed_data';
 
 import 'package:ffi/ffi.dart';
 import 'package:llamadart/backend.dart';
@@ -28,6 +29,7 @@ const _chatterbox = 4;
 const _pocketTts = 5;
 const _voiceCapability = 4;
 const _languageCapability = 1;
+const _streamingCapability = 8;
 
 void main() {
   late _Harness h;
@@ -267,6 +269,102 @@ void main() {
       expect(h.legacyInitCalls, 0);
     });
   });
+
+  group('streamed PCM', () {
+    test(
+      'starts through the streaming export and reports PCM increments',
+      () async {
+        h.reportedCapabilities = _streamingCapability | _voiceCapability;
+        h.sampleTotals = [0, 2, 2, 5];
+        expect(h.capabilities().supportsIncrementalAudio, isTrue);
+
+        final progress = <BackendTextToSpeechProgress>[];
+        final result = await h.synthesize(
+          voice: 'male',
+          streamAudio: true,
+          onProgress: progress.add,
+        );
+
+        expect(h.streamingStarts, ['male']);
+        expect(h.legacyStartCalls, 0);
+        expect(h.startedVoices, isEmpty);
+        expect(progress.map((p) => p.audio).whereType<Float32List>().toList(), [
+          Float32List.fromList([0, 0.1]),
+          Float32List.fromList([0.2, 0.3, 0.4]),
+        ]);
+        expect(result.samples, Float32List.fromList([0, 0.1, 0.2, 0.3, 0.4]));
+        expect(h.reads, [(2, 0), (4, 2), (4, 0)]);
+      },
+    );
+
+    test('starts without a voice through the streaming export', () async {
+      h.reportedCapabilities = _streamingCapability;
+      h.sampleTotals = [1];
+
+      await h.synthesize(streamAudio: true);
+
+      expect(h.streamingStarts, [null]);
+    });
+
+    test(
+      'reports a runtime without the export and refuses before init',
+      () async {
+        h.reportedCapabilities = _streamingCapability;
+        h.withoutStreamingExport = true;
+
+        final capabilities = h.capabilities();
+        expect(capabilities.supportsIncrementalAudio, isFalse);
+        expect(
+          capabilities.incrementalAudioUnsupportedReason,
+          allOf(
+            contains('llama_dart_tts_start_streaming'),
+            contains('v1.0.0-1'),
+          ),
+        );
+        await expectLater(
+          h.synthesize(streamAudio: true),
+          throwsA(
+            isA<LlamaUnsupportedException>().having(
+              (error) => error.message,
+              'message',
+              contains('llama_dart_tts_start_streaming'),
+            ),
+          ),
+        );
+        expect(h.initMasks, isEmpty);
+        expect(h.legacyInitCalls, 0);
+      },
+    );
+
+    test('names a model whose runtime lacks the capability bit', () {
+      h.reportedType = _soprano;
+      h.reportedCapabilities = 0;
+
+      final capabilities = h.capabilities();
+
+      expect(capabilities.isSupported, isTrue);
+      expect(capabilities.supportsIncrementalAudio, isFalse);
+      expect(
+        capabilities.incrementalAudioUnsupportedReason,
+        contains('Soprano'),
+      );
+    });
+
+    test(
+      'a request without streamAudio reads PCM only after completion',
+      () async {
+        h.reportedCapabilities = _streamingCapability;
+        h.sampleTotals = [0, 2, 5];
+
+        final result = await h.synthesize();
+
+        expect(h.streamingStarts, isEmpty);
+        expect(h.legacyStartCalls, 1);
+        expect(h.reads, [(3, 0)]);
+        expect(result.samples, hasLength(5));
+      },
+    );
+  });
 }
 
 extension on BackendTextToSpeechCapabilities {
@@ -287,6 +385,11 @@ class _Harness {
   late final Map modelProjectors;
 
   bool withoutOptIn = false;
+  bool withoutStreamingExport = false;
+  List<int>? sampleTotals;
+  int stepIndex = 0;
+  final streamingStarts = <String?>[];
+  final reads = <(int, int)>[];
   int runtimeTypes = 0x3f;
   int sequences = 1;
   int reportedType = _qwen3;
@@ -364,14 +467,19 @@ class _Harness {
         };
     fields[#step] =
         (Pointer<llama_dart_tts> task, Pointer<llama_dart_tts_progress> p) {
-          p.ref.state =
-              llama_dart_tts_state.LLAMA_DART_TTS_STATE_COMPLETED.value;
+          final totals = sampleTotals;
+          final completed = totals == null || stepIndex == totals.length - 1;
+          stepIndex++;
+          p.ref.state = completed
+              ? llama_dart_tts_state.LLAMA_DART_TTS_STATE_COMPLETED.value
+              : llama_dart_tts_state.LLAMA_DART_TTS_STATE_GENERATING.value;
           p.ref.frames_generated = 2;
           return 0;
         };
     fields[#getOutputInfo] =
         (Pointer<llama_dart_tts> task, Pointer<llama_dart_tts_output_info> i) {
-          i.ref.sample_count = 1;
+          final totals = sampleTotals;
+          i.ref.sample_count = totals == null ? 1 : totals[stepIndex - 1];
           i.ref.sample_rate = 24000;
           i.ref.channels = 1;
           return 0;
@@ -384,8 +492,16 @@ class _Harness {
           int capacity,
           Pointer<Size> count,
         ) {
-          pcm[0] = 0.25;
-          count.value = 1;
+          if (sampleTotals == null) {
+            pcm[0] = 0.25;
+            count.value = 1;
+          } else {
+            reads.add((stepIndex, offset));
+            for (var i = 0; i < capacity; i++) {
+              pcm[i] = (offset + i) / 10;
+            }
+            count.value = capacity;
+          }
           return 0;
         };
     fields[#reset] = (Pointer<llama_dart_tts> task) => 0;
@@ -403,7 +519,20 @@ class _Harness {
       ]) {
         fields[name] = null;
       }
+      fields[#startStreaming] = null;
     } else {
+      fields[#startStreaming] = withoutStreamingExport
+          ? null
+          : (
+              Pointer<llama_dart_tts> task,
+              Pointer<llama_dart_tts_request> r,
+              Pointer<Char> voice,
+            ) {
+              streamingStarts.add(
+                voice == nullptr ? null : voice.cast<Utf8>().toDartString(),
+              );
+              return 0;
+            };
       fields[#supportedModelTypes] = () => runtimeTypes;
       fields[#getInfoExt] =
           (
@@ -479,14 +608,23 @@ class _Harness {
     return service.textToSpeechCapabilities(context, 900 + model);
   }
 
-  Future<BackendTextToSpeechResult> synthesize({String? voice}) {
+  Future<BackendTextToSpeechResult> synthesize({
+    String? voice,
+    bool streamAudio = false,
+    void Function(BackendTextToSpeechProgress progress)? onProgress,
+  }) {
     final context = _context();
     _installApi();
     return service.synthesizeTextToSpeech(
       context,
       900 + model,
-      BackendTextToSpeechRequest(text: 'hello', voice: voice),
+      BackendTextToSpeechRequest(
+        text: 'hello',
+        voice: voice,
+        streamAudio: streamAudio,
+      ),
       flag.address,
+      onProgress: onProgress,
     );
   }
 

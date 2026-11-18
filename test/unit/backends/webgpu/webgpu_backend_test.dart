@@ -6189,6 +6189,64 @@ void main() {
     );
 
     test(
+      'refuses streamed text-to-speech without calling the bridge',
+      () async {
+        var capabilityProbes = 0;
+        var synthesisCalls = 0;
+        bridge.setProperty(
+          'getTextToSpeechCapabilities'.toJS,
+          (() {
+            capabilityProbes++;
+            final result = JSObject()
+              ..setProperty('apiVersion'.toJS, 1.toJS)
+              ..setProperty('supported'.toJS, true.toJS)
+              ..setProperty('modelType'.toJS, 1.toJS)
+              ..setProperty('capabilities'.toJS, 3.toJS)
+              ..setProperty('sampleRate'.toJS, 24000.toJS)
+              ..setProperty('channels'.toJS, 1.toJS)
+              ..setProperty('reason'.toJS, ''.toJS);
+            return Future<JSObject>.value(result).toJS;
+          }).toJS,
+        );
+        bridge.setProperty(
+          'synthesizeSpeech'.toJS,
+          ((JSObject options) {
+            synthesisCalls++;
+            return Future<JSObject>.value(JSObject()).toJS;
+          }).toJS,
+        );
+        await backend.modelLoadFromUrl(
+          'https://example.com/model.gguf',
+          const ModelParams(),
+        );
+        final mmHandle = await backend.multimodalContextCreate(
+          1,
+          'https://example.com/mmproj.gguf',
+        );
+
+        final capabilities = await backend.textToSpeechCapabilities(
+          1,
+          mmHandle!,
+        );
+        expect(capabilities.supportsIncrementalAudio, isFalse);
+        expect(
+          capabilities.incrementalAudioUnsupportedReason,
+          contains('complete PCM only'),
+        );
+        await expectLater(
+          backend.synthesizeTextToSpeech(
+            1,
+            mmHandle,
+            const BackendTextToSpeechRequest(text: 'Hi.', streamAudio: true),
+          ),
+          throwsA(isA<LlamaUnsupportedException>()),
+        );
+        expect(synthesisCalls, 0);
+        expect(capabilityProbes, 1);
+      },
+    );
+
+    test(
       'public TTS startup cancellation preserves another active generation',
       () async {
         final engine = LlamaEngine(backend);

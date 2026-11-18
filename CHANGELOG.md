@@ -3,6 +3,8 @@ Releases before 0.10.0 are in the
 
 ## Unreleased
 
+- Fixed Gemma 4 tool-call parsing dropping or corrupting `<|"|>`-delimited string arguments that contain raw newlines, `"` or backslashes; delimited text is now taken verbatim, as in llama.cpp ([#2041](https://github.com/leehack/llamadart/issues/2041)).
+
 - Adopt `leehack/llamadart-native@v1.0.0-1` (llama.cpp `v1.0.0`, `b1b770d9`) with regenerated bindings; it keeps the `v0.9.0` ARM FP16 fixes. The video capability probe uses `mtmd_helper_get_capabilities`, the replacement for the deprecated `mtmd_helper_support_video`.
 
 - Aligned the default WebGPU bridge assets to `v0.1.86` (llama.cpp `v1.0.0`, matching the native runtime) ([#2024](https://github.com/leehack/llamadart/issues/2024)).
@@ -17,6 +19,7 @@ Releases before 0.10.0 are in the
 - Add an opt-in Linux Vulkan loader preflight for native hosts.
 - Speed up model checksum verification on Apple platforms and keep verification off the UI isolate.
 - Add opt-in `ModelParams.gpuMemoryFit`: Linux and Windows llama.cpp GPU loads offload only the layers that fit free GPU memory, or load on the CPU, and report the result through `LlamaEngine.getGpuMemoryFitReport()`. It needs `llamadart-native` v1.0.0 or later (v1.0.0-1 on Windows; the Windows CUDA free-memory figure ignores other processes, so prefer Vulkan there) ([#2034](https://github.com/leehack/llamadart/issues/2034)).
+- Add experimental streamed text-to-speech: `TextToSpeechRequest.streamAudio` emits `TextToSpeechAudioChunkEvent` PCM chunks on `TextToSpeechTask.events` before the final event for Qwen3-TTS, LFM3-Audio and Pocket TTS on native, gated by `TextToSpeechCapabilities.supportsIncrementalAudio` (needs llamadart-native `v1.0.0-1`; Soprano, Chatterbox and Web refuse with `LlamaUnsupportedException`). The new sealed event subtype means an exhaustive `switch` over `TextToSpeechEvent` needs a case ([#2036](https://github.com/leehack/llamadart/issues/2036)).
 
 Runtime baseline: native llama.cpp `v1.0.0-1` and Web use upstream `v1.0.0@b1b770d90d94cad9e9ea5b993bdbc383a522fb28`; native LiteRT-LM uses `v0.19.1-5` and stable-diffusion uses `v0.4.0`. Web LiteRT-LM uses `@litert-lm/core@0.19.0`. Manifest SHA-256: `d589fbe3c334e4fcb0ccbac3efc4500209358a010b6662ee8523e598a433a0f2`.
 

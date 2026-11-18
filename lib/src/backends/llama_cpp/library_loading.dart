@@ -24,6 +24,10 @@ class _TtsApi {
   final _TtsInitExtDart? initExt;
   final _TtsStartWithVoiceDart? startWithVoice;
 
+  // Streamed PCM (llamadart-native v1.0.0-1). Older wrappers lack it; the
+  // per-model capability bit then does not matter.
+  final _TtsStartStreamingDart? startStreaming;
+
   // Predefined-voice listing (llamadart-native v0.9.0).
   final _TtsGetVoiceCountDart? getVoiceCount;
   final _TtsGetVoiceNameDart? getVoiceName;
@@ -48,6 +52,7 @@ class _TtsApi {
     required this.getInfoExt,
     required this.initExt,
     required this.startWithVoice,
+    required this.startStreaming,
     required this.getVoiceCount,
     required this.getVoiceName,
   });
@@ -136,6 +141,11 @@ class _TtsApi {
             ? symbol('llama_dart_tts_start_with_voice')
                   .cast<NativeFunction<_TtsStartWithVoiceNative>>()
                   .asFunction<_TtsStartWithVoiceDart>()
+            : null,
+        startStreaming: has('llama_dart_tts_start_streaming')
+            ? symbol('llama_dart_tts_start_streaming')
+                  .cast<NativeFunction<_TtsStartStreamingNative>>()
+                  .asFunction<_TtsStartStreamingDart>()
             : null,
         getVoiceCount: has('llama_dart_tts_get_voice_count')
             ? symbol('llama_dart_tts_get_voice_count')

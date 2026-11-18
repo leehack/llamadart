@@ -45,6 +45,11 @@ DLLs they need, so they need no Visual C++ Redistributable. The opt-in
 latest Microsoft Visual C++ v14 Redistributable (x64), which stock Windows
 Server lacks, and its load error names the DLLs that failed to load.
 
+Streamed text-to-speech PCM (`TextToSpeechRequest.streamAudio`) is native only
+and needs llamadart-native `v1.0.0-1`: Qwen3-TTS, LFM3-Audio and Pocket TTS
+stream, Soprano and Chatterbox do not, and Web refuses
+([details](../guides/text-to-speech#streaming-audio)).
+
 With the pinned bridge assets, Web speech-to-text and text-to-speech
 cancellation is request-scoped, including queued STT generation and TTS startup
 awaiting a capability probe.

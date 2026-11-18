@@ -173,6 +173,88 @@ void main() {
     }
   });
 
+  test('streams Qwen3-TTS PCM chunks equal to the non-streamed result, and '
+      'cancels after the first chunk', () async {
+    final modelPath = _requiredFile(_modelPathKey);
+    final mmprojPath = _requiredFile(_mmprojPathKey);
+    if (modelPath == null || mmprojPath == null) {
+      return;
+    }
+
+    final engine = LlamaEngine(LlamaBackend());
+    try {
+      await engine.loadModel(
+        modelPath,
+        modelParams: const ModelParams(
+          contextSize: 4096,
+          numberOfThreads: 2,
+          numberOfThreadsBatch: 2,
+          preferredBackend: GpuBackend.cpu,
+          gpuLayers: 0,
+        ),
+      );
+      await engine.loadMultimodalProjector(mmprojPath);
+      final synthesizer = TextToSpeechEngine.attach(
+        engine,
+        adapter: const Qwen3TtsAdapter(),
+      );
+      expect((await synthesizer.capabilities).supportsIncrementalAudio, isTrue);
+
+      // More than 72 frames, so a chunk arrives before the final event.
+      const text =
+          'Hello from llamadart. This audio was generated locally on your '
+          'device, one chunk at a time, while the model is still speaking.';
+      const request = TextToSpeechRequest(
+        text: text,
+        language: 'English',
+        maxFrames: 384,
+        seed: 1,
+        streamAudio: true,
+      );
+      final task = await synthesizer.synthesize(request);
+      final events = await task.events.toList();
+      final result = await task.result;
+      final chunkIndexes = [
+        for (var i = 0; i < events.length; i++)
+          if (events[i] is TextToSpeechAudioChunkEvent) i,
+      ];
+      expect(chunkIndexes, isNotEmpty);
+      expect(chunkIndexes.first, lessThan(events.length - 1));
+      expect(
+        events.whereType<TextToSpeechAudioChunkEvent>().expand(
+          (chunk) => chunk.samples,
+        ),
+        orderedEquals(result.samples),
+      );
+      final plain = await synthesizer.synthesizeOnce(
+        const TextToSpeechRequest(
+          text: text,
+          language: 'English',
+          maxFrames: 384,
+          seed: 1,
+        ),
+      );
+      expect(result.samples, orderedEquals(plain.samples));
+
+      final cancelled = await synthesizer.synthesize(request);
+      final seen = <TextToSpeechEvent>[];
+      await for (final event in cancelled.events) {
+        seen.add(event);
+        if (event is TextToSpeechAudioChunkEvent) {
+          cancelled.cancel();
+          break;
+        }
+      }
+      expect(
+        (await cancelled.done).state,
+        TextToSpeechCompletionState.cancelled,
+      );
+      expect(seen.whereType<TextToSpeechFinalEvent>(), isEmpty);
+    } finally {
+      await engine.dispose();
+    }
+  });
+
   // https://github.com/leehack/llamadart/issues/632: the code predictor that
   // samples codebooks 1-15 ignored the seed and continued the previous
   // synthesis's random stream, so only the first synthesis after a load was

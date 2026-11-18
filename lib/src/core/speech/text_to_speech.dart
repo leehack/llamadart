@@ -92,6 +92,14 @@ class TextToSpeechRequest {
   /// Random seed. `0xffffffff` requests the runtime's random default.
   final int seed;
 
+  /// Whether to emit PCM as [TextToSpeechAudioChunkEvent]s while the model
+  /// generates, before the [TextToSpeechFinalEvent].
+  ///
+  /// Experimental. Needs [TextToSpeechCapabilities.supportsIncrementalAudio];
+  /// [TextToSpeechEngine.synthesize] throws [LlamaUnsupportedException] when
+  /// it is false. The final result is the same PCM as without streaming.
+  final bool streamAudio;
+
   /// Creates a text-to-speech request using Qwen3-TTS defaults.
   const TextToSpeechRequest({
     required this.text,
@@ -105,6 +113,7 @@ class TextToSpeechRequest {
     this.minP = 0,
     this.temperature = 0.8,
     this.seed = 0xffffffff,
+    this.streamAudio = false,
   });
 }
 
@@ -155,8 +164,17 @@ class TextToSpeechCapabilities implements EngineCapabilities {
   /// runtime then checks the name when synthesis starts.
   final List<String> voices;
 
-  /// Whether PCM can be emitted while synthesis is still running.
+  /// Whether [TextToSpeechRequest.streamAudio] can emit PCM while synthesis
+  /// is still running.
+  ///
+  /// Chunk size depends on the model; Qwen3-TTS emits about 5.76 s of audio
+  /// per chunk.
   final bool supportsIncrementalAudio;
+
+  /// Actionable reason when [supportsIncrementalAudio] is false for a
+  /// supported runtime, such as an older native bundle or a model family that
+  /// decodes only at the end.
+  final String? incrementalAudioUnsupportedReason;
 
   /// Whether an active task can be cancelled cooperatively.
   final bool supportsCancellation;
@@ -182,6 +200,7 @@ class TextToSpeechCapabilities implements EngineCapabilities {
     this.supportsVoice = false,
     this.voices = const <String>[],
     this.supportsIncrementalAudio = false,
+    this.incrementalAudioUnsupportedReason,
     this.supportsCancellation = false,
     this.supportsOutputBackpressure = false,
     this.maxConcurrentTasks = 0,
@@ -311,6 +330,34 @@ class TextToSpeechProgressEvent extends TextToSpeechEvent {
   });
 }
 
+/// PCM produced since the previous audio chunk of a streamed synthesis.
+///
+/// Experimental. Emitted only when [TextToSpeechRequest.streamAudio] is true,
+/// before the [TextToSpeechFinalEvent]. The chunks concatenate to
+/// [TextToSpeechResult.samples]. Check events with `is`: an exhaustive
+/// `switch` over [TextToSpeechEvent] needs a case for this class.
+class TextToSpeechAudioChunkEvent extends TextToSpeechEvent {
+  /// Interleaved normalized float32 PCM samples of this chunk.
+  final Float32List samples;
+
+  /// Index of `samples[0]` in [TextToSpeechResult.samples].
+  final int sampleOffset;
+
+  /// Output sample rate in Hertz.
+  final int sampleRateHz;
+
+  /// Number of interleaved output channels.
+  final int channelCount;
+
+  /// Creates an audio chunk event.
+  const TextToSpeechAudioChunkEvent({
+    required this.samples,
+    required this.sampleOffset,
+    required this.sampleRateHz,
+    required this.channelCount,
+  });
+}
+
 /// Final PCM event emitted after generation completes.
 class TextToSpeechFinalEvent extends TextToSpeechEvent {
   /// Complete synthesis result.
@@ -385,13 +432,14 @@ class TextToSpeechTask {
       _eventsController = StreamController<TextToSpeechEvent>(),
       _doneCompleter = Completer<TextToSpeechCompletion>();
 
-  /// Progress followed by one final PCM event.
+  /// Progress, optional [TextToSpeechAudioChunkEvent]s, then one final PCM
+  /// event.
   ///
-  /// This is a single-subscription stream. It carries progress only and
-  /// never emits an error: a failed or cancelled task closes it without a
-  /// final event, and [done] and [result] report why. Current synthesis
-  /// exposes PCM only after generation completes; progress is not live
-  /// audio.
+  /// This is a single-subscription stream. It never emits an error: a failed
+  /// or cancelled task closes it without a final event, and [done] and
+  /// [result] report why. Without [TextToSpeechRequest.streamAudio], PCM
+  /// arrives only in the final event. A paused subscription is not
+  /// backpressure: events buffer, at most the utterance.
   Stream<TextToSpeechEvent> get events => _eventsController.stream;
 
   /// Completes once the task succeeds, is cancelled, or fails. It never
@@ -436,8 +484,10 @@ class TextToSpeechTask {
 /// [attach] runs a [TextToSpeechAdapter] on a `LlamaEngine` the caller loaded
 /// and keeps owning. The runtime generates audio natively on llama.cpp and
 /// through compatible WebGPU bridge runtimes, with the model's
-/// audio-generation projector. It reports progress and cancellation, but PCM
-/// becomes available only after generation has completed.
+/// audio-generation projector. It reports progress and cancellation. PCM
+/// becomes available after generation completes, or earlier in chunks when
+/// [TextToSpeechRequest.streamAudio] is set and
+/// [TextToSpeechCapabilities.supportsIncrementalAudio] is true.
 ///
 /// ```dart
 /// final synthesizer = await TextToSpeechEngine.load(
@@ -699,7 +749,11 @@ class TextToSpeechEngine implements LlamadartEngine<TextToSpeechCapabilities> {
       voices: backendCapabilities.supportsVoice
           ? backendCapabilities.voices
           : const <String>[],
-      supportsIncrementalAudio: false,
+      supportsIncrementalAudio: backendCapabilities.supportsIncrementalAudio,
+      incrementalAudioUnsupportedReason:
+          backendCapabilities.supportsIncrementalAudio
+          ? null
+          : backendCapabilities.incrementalAudioUnsupportedReason,
       supportsCancellation: backendCapabilities.supportsCancellation,
       supportsOutputBackpressure: false,
       maxConcurrentTasks: 1,
@@ -709,11 +763,15 @@ class TextToSpeechEngine implements LlamadartEngine<TextToSpeechCapabilities> {
   /// Starts one complete synthesis and returns the running task.
   ///
   /// The task's [TextToSpeechTask.events] report prompt processing and
-  /// generated frames; the PCM arrives only on completion, in one
-  /// [TextToSpeechFinalEvent] and in [TextToSpeechTask.result].
+  /// generated frames; the complete PCM arrives on completion, in one
+  /// [TextToSpeechFinalEvent] and in [TextToSpeechTask.result], and earlier
+  /// in [TextToSpeechAudioChunkEvent]s when
+  /// [TextToSpeechRequest.streamAudio] is set.
   /// [TextToSpeechTask.cancel] stops only this synthesis.
   ///
-  /// Invalid input and unsupported preflight checks throw before the task is
+  /// Invalid input and unsupported preflight checks, including
+  /// [TextToSpeechRequest.streamAudio] without
+  /// [TextToSpeechCapabilities.supportsIncrementalAudio], throw before the task is
   /// returned. Failures after backend startup are reported by
   /// [TextToSpeechTask.done] and [TextToSpeechTask.result]. Throws
   /// [LlamaStateException] after [dispose] and after [LlamaEngine.dispose]
@@ -740,6 +798,13 @@ class TextToSpeechEngine implements LlamadartEngine<TextToSpeechCapabilities> {
         throw LlamaUnsupportedException(
           currentCapabilities.unsupportedReason ??
               'Text-to-speech is not supported by the active runtime.',
+        );
+      }
+      if (request.streamAudio &&
+          !currentCapabilities.supportsIncrementalAudio) {
+        throw LlamaUnsupportedException(
+          currentCapabilities.incrementalAudioUnsupportedReason ??
+              'The active text-to-speech runtime cannot stream audio.',
         );
       }
       final normalizedLanguage = _normalizeLanguage(request.language);
@@ -780,7 +845,15 @@ class TextToSpeechEngine implements LlamadartEngine<TextToSpeechCapabilities> {
       );
       _engineLease.onUnload(_leaseOwner, task.cancel);
       _activeTask = task;
-      unawaited(_runTask(task, request, normalizedLanguage));
+      unawaited(
+        _runTask(
+          task,
+          request,
+          normalizedLanguage,
+          sampleRateHz: currentCapabilities.sampleRateHz ?? 0,
+          channelCount: currentCapabilities.channelCount ?? 1,
+        ),
+      );
       return task;
     } catch (_) {
       _engineLease.release(_leaseOwner);
@@ -902,8 +975,11 @@ class TextToSpeechEngine implements LlamadartEngine<TextToSpeechCapabilities> {
   Future<void> _runTask(
     TextToSpeechTask task,
     TextToSpeechRequest request,
-    String? normalizedLanguage,
-  ) async {
+    String? normalizedLanguage, {
+    required int sampleRateHz,
+    required int channelCount,
+  }) async {
+    var streamedSamples = 0;
     TextToSpeechCompletion? outcome;
     try {
       if (task.isCancellationRequested) {
@@ -932,6 +1008,7 @@ class TextToSpeechEngine implements LlamadartEngine<TextToSpeechCapabilities> {
           minP: request.minP,
           temperature: request.temperature,
           seed: request.seed,
+          streamAudio: request.streamAudio,
         ),
         onProgress: (progress) {
           if (task.isCancellationRequested || task._eventsController.isClosed) {
@@ -947,6 +1024,18 @@ class TextToSpeechEngine implements LlamadartEngine<TextToSpeechCapabilities> {
               truncated: progress.truncated,
             ),
           );
+          final audio = progress.audio;
+          if (request.streamAudio && audio != null && audio.isNotEmpty) {
+            task._eventsController.add(
+              TextToSpeechAudioChunkEvent(
+                samples: audio,
+                sampleOffset: streamedSamples,
+                sampleRateHz: sampleRateHz,
+                channelCount: channelCount,
+              ),
+            );
+            streamedSamples += audio.length;
+          }
         },
       );
 
