@@ -1271,29 +1271,27 @@ void main() {
         expect(staleFinishErr.kind, WorkerErrorKind.state);
         expect(service.hasActiveAsrStream, isTrue);
 
-        // Unrelated handle frees / rerank / reranking context creation leave ASR intact.
-        for (final req in <Object>[
-          ContextFreeRequest(999, ReceivePort().sendPort),
-          ModelFreeRequest(999, ReceivePort().sendPort),
-          MultimodalContextFreeRequest(999, ReceivePort().sendPort),
+        // Unrelated handle frees, rerank on another context, and reranking
+        // context creation leave ASR intact.
+        for (final buildReq in <Object Function(SendPort)>[
+          (sp) => ContextFreeRequest(999, sp),
+          (sp) => ModelFreeRequest(999, sp),
+          (sp) => MultimodalContextFreeRequest(999, sp),
+          (sp) => RerankingContextCreateRequest(1, const ModelParams(), sp),
+          (sp) => RerankRequest(999, 'q', const ['d'], 0, sp),
         ]) {
-          final rp = switch (req) {
-            ContextFreeRequest r => r.sendPort,
-            ModelFreeRequest r => r.sendPort,
-            MultimodalContextFreeRequest r => r.sendPort,
-            _ => throw StateError('unexpected'),
-          };
           final port = ReceivePort();
-          if (req is ContextFreeRequest) {
-            sendPort.send(ContextFreeRequest(999, port.sendPort));
-          } else if (req is ModelFreeRequest) {
-            sendPort.send(ModelFreeRequest(999, port.sendPort));
-          } else if (req is MultimodalContextFreeRequest) {
-            sendPort.send(MultimodalContextFreeRequest(999, port.sendPort));
-          }
-          expect(await port.first, isA<DoneResponse>());
+          sendPort.send(buildReq(port.sendPort));
+          final res = await port.first;
           port.close();
-          expect(rp, isNotNull);
+          expect(
+            res,
+            anyOf(
+              isA<DoneResponse>(),
+              isA<HandleResponse>(),
+              isA<ErrorResponse>(),
+            ),
+          );
         }
         expect(service.hasActiveAsrStream, isTrue);
         expect(service.cancelCalls, 0);
@@ -1369,26 +1367,122 @@ void main() {
         await targetedSub.cancel();
         targetedEventPort.close();
 
-        // Start session 4 and dispose while idle -> cancels & frees without deadlock
-        final startPort4 = ReceivePort();
+        // Start session 4 and verify targeted ModelFree, MultimodalContextFree,
+        // and Rerank cancel ASR, wait for in-flight push, and notify eventPort.
+        Future<void> verifyTargetedInterrupt({
+          required int sessionId,
+          required Object Function(SendPort) buildRequest,
+          required String expectedFreeEvent,
+          required Matcher expectedResponse,
+          bool holdPush = true,
+        }) async {
+          final errEvents = <Object>[];
+          final ep = ReceivePort();
+          final epSub = ep.listen((msg) {
+            if (msg is ErrorResponse) errEvents.add(msg);
+          });
+          final sp = ReceivePort();
+          sendPort.send(
+            AsrStreamStartRequest(sessionId, 1, 2, 0, ep.sendPort, sp.sendPort),
+          );
+          await sp.first;
+          sp.close();
+
+          service.cancelCalls = 0;
+          service.events.clear();
+          ReceivePort? pushPort;
+          Future<dynamic>? pushDone;
+          if (holdPush) {
+            service.pushGate = Completer<void>();
+            pushPort = ReceivePort();
+            sendPort.send(
+              AsrStreamPushRequest(
+                sessionId: sessionId,
+                sampleOffset: 0,
+                samples: Float32List.fromList([0.1]),
+                sendPort: pushPort.sendPort,
+              ),
+            );
+            await Future<void>.delayed(Duration.zero);
+          }
+
+          final opPort = ReceivePort();
+          sendPort.send(buildRequest(opPort.sendPort));
+          await Future<void>.delayed(Duration.zero);
+          if (holdPush) {
+            expect(service.events, isNot(contains(expectedFreeEvent)));
+            service.pushGate!.complete();
+            service.pushGate = null;
+            pushDone = pushPort!.first;
+            await pushDone;
+            pushPort.close();
+          }
+
+          final opRes = await opPort.first;
+          opPort.close();
+          expect(opRes, expectedResponse);
+          await Future<void>.delayed(Duration.zero);
+          expect(service.cancelCalls, 1);
+          expect(service.hasActiveAsrStream, isFalse);
+          expect(
+            errEvents.single,
+            isA<ErrorResponse>().having(
+              (e) => e.kind,
+              'kind',
+              WorkerErrorKind.speech,
+            ),
+          );
+          if (holdPush) {
+            expect(
+              service.events.indexOf('push_done'),
+              lessThan(service.events.indexOf(expectedFreeEvent)),
+            );
+          }
+          await epSub.cancel();
+          ep.close();
+        }
+
+        await verifyTargetedInterrupt(
+          sessionId: 4,
+          buildRequest: (sp) => ModelFreeRequest(1, sp),
+          expectedFreeEvent: 'freeModel',
+          expectedResponse: isA<DoneResponse>(),
+        );
+        await verifyTargetedInterrupt(
+          sessionId: 5,
+          buildRequest: (sp) => MultimodalContextFreeRequest(2, sp),
+          expectedFreeEvent: 'freeMultimodalContext',
+          expectedResponse: isA<DoneResponse>(),
+        );
+        await verifyTargetedInterrupt(
+          sessionId: 6,
+          buildRequest: (sp) => RerankRequest(1, 'q', const ['d'], 0, sp),
+          expectedFreeEvent: 'rerank',
+          expectedResponse: isA<ErrorResponse>(),
+          holdPush: false,
+        );
+
+        // Start session 7 and dispose while idle -> cancels & frees without deadlock
+        final startPort7 = ReceivePort();
         sendPort.send(
           AsrStreamStartRequest(
-            4,
+            7,
             1,
             2,
             0,
             eventPort.sendPort,
-            startPort4.sendPort,
+            startPort7.sendPort,
           ),
         );
-        await startPort4.first;
-        startPort4.close();
+        await startPort7.first;
+        startPort7.close();
 
+        service.cancelCalls = 0;
         final disposePort = ReceivePort();
         sendPort.send(DisposeRequest(disposePort.sendPort));
         await disposePort.first;
         disposePort.close();
-        expect(service.cancelCalls, greaterThanOrEqualTo(2));
+        expect(service.cancelCalls, greaterThanOrEqualTo(1));
         expect(service.disposeCalls, 1);
 
         await eventSub.cancel();
@@ -2080,6 +2174,8 @@ class _AsrTestService extends LlamaCppService {
   int _supplied = 0;
   void Function(String, int)? _onText;
   bool throwTruncatedOnFinish = false;
+  Completer<void>? pushGate;
+  final List<String> events = <String>[];
   int cancelCalls = 0;
   int disposeCalls = 0;
 
@@ -2123,8 +2219,12 @@ class _AsrTestService extends LlamaCppService {
     int sampleOffset,
     Float32List samples,
   ) async {
+    if (pushGate != null) {
+      await pushGate!.future;
+    }
     _supplied += samples.length;
     _onText?.call('hello', _supplied);
+    events.add('push_done');
     return _supplied;
   }
 
@@ -2153,6 +2253,7 @@ class _AsrTestService extends LlamaCppService {
   void cancelAsrStream([int? sessionId]) {
     if (sessionId == null || sessionId == _activeSessionId) {
       cancelCalls++;
+      events.add('cancel');
     }
   }
 
@@ -2167,13 +2268,14 @@ class _AsrTestService extends LlamaCppService {
   }
 
   @override
-  void freeContext(int contextHandle) {}
+  void freeContext(int contextHandle) => events.add('freeContext');
 
   @override
-  void freeModel(int modelHandle) {}
+  void freeModel(int modelHandle) => events.add('freeModel');
 
   @override
-  void freeMultimodalContext(int mmContextHandle) {}
+  void freeMultimodalContext(int mmContextHandle) =>
+      events.add('freeMultimodalContext');
 
   @override
   void dispose() => disposeCalls++;

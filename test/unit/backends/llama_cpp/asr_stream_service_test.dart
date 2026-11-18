@@ -856,6 +856,9 @@ void main() {
           0,
           onText: (_, _) {},
         );
+        expect(service.activeAsrStreamModelHandle, 1);
+        expect(service.activeAsrStreamContextHandle, contextHandle);
+        expect(service.activeAsrStreamMmContextHandle, mmHandle);
 
         final statePath = path.join(tempDir.path, 'state.bin');
         expect(
@@ -918,8 +921,29 @@ void main() {
     );
 
     test(
-      'startAsrStream clears cachedPromptTokens and kvFromStateLoad',
+      'startAsrStream clears cachedPromptTokens and kvFromStateLoad even if init fails',
       () async {
+        service.setAsrTestCachedPromptTokens(contextHandle, const [
+          10,
+          20,
+          30,
+        ], kvFromStateLoad: true);
+        runtime.returnNullInit = true;
+        await expectLater(
+          () => service.startAsrStream(
+            140,
+            contextHandle,
+            mmHandle,
+            0,
+            onText: (_, _) {},
+          ),
+          throwsA(isA<LlamaSpeechException>()),
+        );
+        final failedCache = service.getAsrTestCachedPromptState(contextHandle);
+        expect(failedCache.cachedPromptTokens, isNull);
+        expect(failedCache.kvFromStateLoad, isFalse);
+
+        runtime.returnNullInit = false;
         service.setAsrTestCachedPromptTokens(contextHandle, const [
           10,
           20,
@@ -1297,6 +1321,88 @@ void main() {
               contains('stopped making progress'),
             ),
           ),
+        );
+
+        // N03: consumed sample growth counts as progress without text/segments.
+        await service.startAsrStream(
+          26,
+          contextHandle,
+          mmHandle,
+          0,
+          onText: (_, _) {},
+        );
+        runtime.scriptedAcceptedCounts.add(0);
+        runtime.scriptedSteps.add((
+          status: 0,
+          state: 0, // NEEDS_AUDIO
+          segmentBreaks: 0,
+          samplesConsumed: 1,
+          samplesBuffered: 0,
+          text: '',
+        ));
+        expect(
+          await service.pushAsrPcm(26, 0, Float32List.fromList([0.1, 0.2])),
+          2,
+        );
+        service.closeAsrStreamIfIdle(26);
+
+        // N05: later zero-acceptance push with unchanged samplesConsumed throws.
+        await service.startAsrStream(
+          27,
+          contextHandle,
+          mmHandle,
+          0,
+          onText: (_, _) {},
+        );
+        runtime.scriptedSteps.add((
+          status: 0,
+          state: 0, // NEEDS_AUDIO
+          segmentBreaks: 0,
+          samplesConsumed: 1,
+          samplesBuffered: 0,
+          text: '',
+        ));
+        expect(await service.pushAsrPcm(27, 0, Float32List.fromList([0.1])), 1);
+
+        runtime.scriptedAcceptedCounts.add(0);
+        runtime.scriptedSteps.add((
+          status: 0,
+          state: 0, // NEEDS_AUDIO
+          segmentBreaks: 0,
+          samplesConsumed: 1, // unchanged from baseline 1
+          samplesBuffered: 0,
+          text: '',
+        ));
+        await expectLater(
+          () => service.pushAsrPcm(27, 1, Float32List.fromList([0.2])),
+          throwsA(
+            isA<LlamaSpeechException>().having(
+              (e) => e.message,
+              'message',
+              contains('made no progress'),
+            ),
+          ),
+        );
+
+        // M09: non-OK step status with non-terminal state still throws.
+        await service.startAsrStream(
+          28,
+          contextHandle,
+          mmHandle,
+          0,
+          onText: (_, _) {},
+        );
+        runtime.scriptedSteps.add((
+          status: -1,
+          state: 0, // NEEDS_AUDIO (non-terminal)
+          segmentBreaks: 0,
+          samplesConsumed: 1,
+          samplesBuffered: 0,
+          text: '',
+        ));
+        await expectLater(
+          () => service.pushAsrPcm(28, 0, Float32List.fromList([0.1])),
+          throwsA(isA<LlamaSpeechException>()),
         );
       },
     );
