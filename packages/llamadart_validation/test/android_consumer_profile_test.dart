@@ -39,9 +39,9 @@ void main() {
       'consumer_pubspec_sha256': 'a' * 64,
       'hook_sha256': 'a' * 64,
       'selector_sha256': 'a' * 64,
-      'native_tag': 'v1.0.0-1',
+      'native_tag': 'v1.0.0-2',
       'native_archive_sha256':
-          'd6b735f88a0896f0e2229d95867c3836313caaab288b83c82b63e4fa20a86198',
+          '05094c8ff94f928f48b7167e3436d1131d620c6a8954adfc53af74ccea0ff4d8',
       'archive_libraries': archive,
       'packaging_selection': selection,
       'libraries': {
@@ -95,7 +95,7 @@ void main() {
         consumerCpuProfile: profile,
         consumerPlanHash: plan.hash,
       );
-      expect(read(good)['native_tag'], 'v1.0.0-1');
+      expect(read(good)['native_tag'], 'v1.0.0-2');
       for (final bad in [
         {...good, 'source_dirty': true},
         {...good, 'consumer_pubspec_sha256': ''},
