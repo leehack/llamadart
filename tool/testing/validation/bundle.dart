@@ -186,8 +186,21 @@ Future<Directory> buildValidationBundle(
   final app = p.join(root, 'example', 'chat_app');
   final sourceIdentity = await readValidationProvenance(root, execute: execute);
   final source = sourceIdentity['source_commit'] as String;
+  final sdkResult = await execute('flutter', [
+    '--version',
+    '--machine',
+  ], directory: root);
+  final sdkJsonMatch = sdkResult.code == 0
+      ? RegExp(r'^[ \t]*\{', multiLine: true).firstMatch(sdkResult.output)
+      : null;
   final sdk = jsonObject(
-    await execute('flutter', ['--version', '--machine'], directory: root),
+    sdkJsonMatch == null
+        ? sdkResult
+        : CommandResult(
+            sdkResult.code,
+            sdkResult.output.substring(sdkJsonMatch.end - 1),
+            sdkResult.error,
+          ),
   );
   final expectedFlutter = File(
     p.join(root, '.flutter-version'),
