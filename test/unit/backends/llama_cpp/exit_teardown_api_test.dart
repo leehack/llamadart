@@ -843,6 +843,103 @@ void main() {
     calls.freeContext(context);
     calls.freeModel(model);
   });
+
+  for (final isWindows in [false, true]) {
+    test(
+      'asrStreamInit holds at session stage and UPSTREAM_ERROR marks objects free-only (Windows rule: $isWindows)',
+      () {
+        final exports = _RecordingExports();
+        addTearDown(exports.close);
+        final exit = ExitTeardownApi.tryResolve(
+          isWindows: false,
+          symbol: exports.symbol,
+        )!;
+        final barrier = FakeNativeBarrier();
+        addTearDown(barrier.clear);
+        final calls = LlamaCppObjectCalls.tracked(
+          exit,
+          barrier: barrier.api,
+          isWindows: isWindows,
+        );
+
+        final model = Pointer<llama_model>.fromAddress(0x5010);
+        final context = Pointer<llama_context>.fromAddress(0x5020);
+        final projector = Pointer<mtmd_context>.fromAddress(0x5030);
+        final streamHandle = Pointer<llama_dart_asr_stream>.fromAddress(0x5040);
+        final freeAddress = Pointer<NativeFinalizerFunction>.fromAddress(
+          0x5050,
+        );
+        final params = calloc<llama_dart_asr_stream_params>();
+        final outStatus = calloc<Int>();
+        final outProgress = calloc<llama_dart_asr_stream_progress>();
+        addTearDown(() {
+          calloc.free(params);
+          calloc.free(outStatus);
+          calloc.free(outProgress);
+        });
+
+        final stream = calls.asrStreamInit(
+          context: context,
+          model: model,
+          projector: projector,
+          acceptedModes: 6,
+          params: params,
+          outStatus: outStatus,
+          init: (_, _, _, _, _) => streamHandle,
+          freeAddress: freeAddress,
+        );
+        expect(stream, streamHandle);
+        expect(
+          IsolateShutdownReleases.current.debugHeldForTesting,
+          contains((free: freeAddress, stage: ShutdownStage.session)),
+        );
+
+        barrier.catchException('asr boom');
+        expect(
+          () => calls.asrStreamStep(
+            stream: stream,
+            context: context,
+            model: model,
+            projector: projector,
+            outProgress: outProgress,
+            step: (_, _) => llama_dart_asr_stream_status
+                .LLAMA_DART_ASR_STREAM_STATUS_UPSTREAM_ERROR
+                .value,
+          ),
+          throwsA(isA<LlamaSpeechException>()),
+        );
+        expect(
+          () => calls.failures.ensureUsable(stream, 'stream'),
+          throwsA(isA<LlamaStateException>()),
+        );
+        expect(
+          () => calls.failures.ensureUsable(context, 'context'),
+          throwsA(isA<LlamaStateException>()),
+        );
+        expect(
+          () => calls.failures.ensureUsable(projector, 'projector'),
+          throwsA(isA<LlamaStateException>()),
+        );
+        if (isWindows) {
+          expect(
+            () => calls.failures.ensureUsable(model, 'model'),
+            throwsA(isA<LlamaStateException>()),
+          );
+        } else {
+          calls.failures.ensureUsable(model, 'model');
+        }
+
+        var freed = 0;
+        calls.asrStreamFree(stream, (_) => freed++);
+        expect(freed, 1);
+        expect(IsolateShutdownReleases.current.debugHeldForTesting, isEmpty);
+        calls.failures.ensureUsable(stream, 'stream');
+        calls.failures.forget(context);
+        calls.failures.forget(projector);
+        calls.failures.forget(model);
+      },
+    );
+  }
 }
 
 /// Stands in for a runtime's exports: one native function per name, each of

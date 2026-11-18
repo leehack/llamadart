@@ -52,4 +52,44 @@ void main() {
       expect((parts[7] as LlamaImageContent).url, 'https://invalid.example');
     },
   );
+
+  test(
+    'AsrStreamPushRequest copies only the logical Float32List view slice',
+    () {
+      final port = ReceivePort();
+      addTearDown(port.close);
+      final backing = Float32List.fromList([99, 1.5, 2.5, 3.5, 88]);
+      final slice = Float32List.sublistView(backing, 1, 4);
+      final request = AsrStreamPushRequest(
+        sessionId: 42,
+        sampleOffset: 10,
+        samples: slice,
+        sendPort: port.sendPort,
+      );
+      backing[1] = -9.0;
+      final bytes = request.pcm.materialize().asUint8List();
+      final copied = Float32List.view(
+        bytes.buffer,
+        bytes.offsetInBytes,
+        bytes.lengthInBytes ~/ Float32List.bytesPerElement,
+      );
+      expect(request.sampleCount, 3);
+      expect(copied, [1.5, 2.5, 3.5]);
+    },
+  );
+
+  test(
+    'ErrorResponse preserves speechTranscriptTruncated limit and partial',
+    () {
+      final response = ErrorResponse(
+        'context full',
+        kind: WorkerErrorKind.speechTranscriptTruncated,
+        transcriptLimit: LlamaSpeechTranscriptLimit.contextSize,
+        partialTranscript: 'hello world',
+      );
+      expect(response.kind, WorkerErrorKind.speechTranscriptTruncated);
+      expect(response.transcriptLimit, LlamaSpeechTranscriptLimit.contextSize);
+      expect(response.partialTranscript, 'hello world');
+    },
+  );
 }

@@ -2292,6 +2292,194 @@ void main() {
       }
     });
   });
+
+  group('NativeLlamaBackend live ASR session', () {
+    test(
+      'chunks >5120 samples, rejects overlapping push without failing session, and finish joins in-flight push',
+      () async {
+        final receivePort = ReceivePort();
+        final pushRequests = <AsrStreamPushRequest>[];
+        final firstPushGate = Completer<void>();
+        final cancelAllocator = _RecordingAllocator();
+        addTearDown(cancelAllocator.release);
+        late final StreamSubscription<dynamic> sub;
+        sub = receivePort.listen((message) async {
+          switch (message) {
+            case AsrStreamSupportRequest():
+              message.sendPort.send(AsrStreamSupportResponse(null));
+            case AsrStreamStartRequest():
+              message.sendPort.send(
+                AsrStreamStartedResponse(message.sessionId),
+              );
+            case AsrStreamPushRequest():
+              pushRequests.add(message);
+              if (pushRequests.length == 1) {
+                await firstPushGate.future;
+              }
+              message.sendPort.send(
+                AsrStreamPushAckResponse(
+                  message.sessionId,
+                  message.sampleOffset + message.sampleCount,
+                ),
+              );
+            case AsrStreamFinishRequest():
+              message.sendPort.send(
+                AsrStreamFinishResponse(
+                  sessionId: message.sessionId,
+                  finalText: 'done',
+                  acceptedSamples: message.expectedTotalSamples,
+                  consumedSamples: message.expectedTotalSamples,
+                ),
+              );
+            case DisposeRequest():
+              message.sendPort.send(null);
+          }
+        });
+        addTearDown(() async {
+          await sub.cancel();
+          receivePort.close();
+        });
+
+        final backend = NativeLlamaBackend(
+          initialSendPort: receivePort.sendPort,
+          cancelFlagAllocator: cancelAllocator,
+        );
+        addTearDown(backend.dispose);
+
+        expect(await backend.probeAsrStreamUnsupportedReason(1, 2), isNull);
+        final session = await backend.startAsrStreamSession(1, 2);
+        expect(
+          cancelAllocator.allocated.length - cancelAllocator.freed.length,
+          1,
+        );
+
+        // Competing generation/TTS rejected while ASR is open
+        await expectLater(
+          backend.generate(1, 'hi', const GenerationParams()).toList(),
+          throwsA(isA<LlamaStateException>()),
+        );
+        await expectLater(
+          backend.synthesizeTextToSpeech(
+            1,
+            2,
+            const BackendTextToSpeechRequest(text: 'hi'),
+          ),
+          throwsA(isA<LlamaStateException>()),
+        );
+
+        final pcm = Float32List(12000);
+        final pushFuture = session.pushAudio(pcm);
+        await Future<void>.delayed(Duration.zero);
+
+        // Overlapping push is rejected without failing the original session
+        await expectLater(
+          session.pushAudio(Float32List(10)),
+          throwsA(isA<LlamaStateException>()),
+        );
+
+        // finish joins the admitted push
+        final finishFuture = session.finish();
+        firstPushGate.complete();
+        expect(await pushFuture, 12000);
+        expect(await finishFuture, 'done');
+        expect(pushRequests.map((r) => (r.sampleOffset, r.sampleCount)), [
+          (0, 5120),
+          (5120, 5120),
+          (10240, 1760),
+        ]);
+        expect(
+          cancelAllocator.allocated.length - cancelAllocator.freed.length,
+          0,
+        );
+      },
+    );
+
+    test(
+      'preserves speechTranscriptTruncated and frees cancel flag only after cancel ack',
+      () async {
+        final receivePort = ReceivePort();
+        final cancelAckGate = Completer<void>();
+        var cancelFlagAddress = 0;
+        late final StreamSubscription<dynamic> sub;
+        sub = receivePort.listen((message) async {
+          switch (message) {
+            case AsrStreamStartRequest():
+              cancelFlagAddress = message.cancelFlagAddress;
+              message.sendPort.send(
+                AsrStreamStartedResponse(message.sessionId),
+              );
+            case AsrStreamFinishRequest():
+              message.sendPort.send(
+                ErrorResponse(
+                  'truncated',
+                  kind: WorkerErrorKind.speechTranscriptTruncated,
+                  transcriptLimit: LlamaSpeechTranscriptLimit.contextSize,
+                  partialTranscript: 'kept text',
+                ),
+              );
+            case AsrStreamCancelRequest():
+              await cancelAckGate.future;
+              message.sendPort.send(DoneResponse());
+            case DisposeRequest():
+              message.sendPort.send(null);
+          }
+        });
+        addTearDown(() async {
+          await sub.cancel();
+          receivePort.close();
+        });
+
+        final cancelAllocator = _RecordingAllocator();
+        addTearDown(cancelAllocator.release);
+        final backend = NativeLlamaBackend(
+          initialSendPort: receivePort.sendPort,
+          cancelFlagAllocator: cancelAllocator,
+        );
+        addTearDown(backend.dispose);
+
+        final s1 = await backend.startAsrStreamSession(1, 2);
+        await expectLater(
+          s1.finish(),
+          throwsA(
+            isA<LlamaSpeechTranscriptTruncatedException>()
+                .having(
+                  (e) => e.limit,
+                  'limit',
+                  LlamaSpeechTranscriptLimit.contextSize,
+                )
+                .having(
+                  (e) => e.partialTranscript,
+                  'partialTranscript',
+                  'kept text',
+                ),
+          ),
+        );
+        expect(
+          cancelAllocator.allocated.length - cancelAllocator.freed.length,
+          0,
+        );
+
+        final s2 = await backend.startAsrStreamSession(1, 2);
+        expect(
+          cancelAllocator.allocated.length - cancelAllocator.freed.length,
+          1,
+        );
+        final cancelFuture = s2.cancel();
+        // Raised immediately, not freed before worker ack
+        expect(Pointer<Int8>.fromAddress(cancelFlagAddress).value, 1);
+        expect(
+          cancelAllocator.allocated.length - cancelAllocator.freed.length,
+          1,
+        );
+        cancelAckGate.complete();
+        await cancelFuture;
+        expect(
+          cancelAllocator.allocated.length - cancelAllocator.freed.length,
+          0,
+        );
+      },
+    );
+  });
 }
 
 void _delayedTextToSpeechRejectingWorkerEntry(SendPort initialSendPort) {

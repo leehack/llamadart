@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:ffi';
 import 'dart:isolate';
+import 'dart:typed_data';
 
 import '../../core/exceptions.dart';
 import '../../core/llama_logger.dart';
@@ -58,6 +59,14 @@ ErrorResponse _toErrorResponse(Object error) {
   if (error is LlamaTextToSpeechException) {
     return ErrorResponse(messageFor(error), kind: WorkerErrorKind.textToSpeech);
   }
+  if (error is LlamaSpeechTranscriptTruncatedException) {
+    return ErrorResponse(
+      messageFor(error),
+      kind: WorkerErrorKind.speechTranscriptTruncated,
+      transcriptLimit: error.limit,
+      partialTranscript: error.partialTranscript,
+    );
+  }
   if (error is LlamaSpeechException) {
     return ErrorResponse(messageFor(error), kind: WorkerErrorKind.speech);
   }
@@ -105,6 +114,8 @@ void runLlamaWorkerForTesting(
   Future<void> activeGenerate = Future<void>.value();
   Completer<void>? activeTextToSpeech;
   var pendingTextToSpeech = 0;
+  int? activeAsrSessionId;
+  Completer<void>? activeAsrOperation;
 
   Future<bool> waitForActiveGenerate({Duration? timeout}) async {
     try {
@@ -139,10 +150,36 @@ void runLlamaWorkerForTesting(
     }
   }
 
+  Future<bool> cancelAndWaitForActiveAsrStream({Duration? timeout}) async {
+    service.cancelAsrStream();
+    try {
+      final operation = activeAsrOperation?.future ?? Future<void>.value();
+      if (timeout == null) {
+        await operation;
+      } else {
+        await operation.timeout(timeout);
+      }
+      service.closeAsrStreamIfIdle();
+      if (!service.hasActiveAsrStream) {
+        activeAsrSessionId = null;
+      }
+      return true;
+    } on TimeoutException {
+      return false;
+    } catch (_) {
+      service.closeAsrStreamIfIdle();
+      if (!service.hasActiveAsrStream) {
+        activeAsrSessionId = null;
+      }
+      return true;
+    }
+  }
+
   receivePort.listen((message) async {
     if (message is DisposeRequest) {
       shuttingDown = true;
       service.cancelTextToSpeech();
+      service.cancelAsrStream();
       // Let any in-flight generation observe the cancel flag and finish
       // emitting its terminal response before we dispose native resources.
       final generationStopped = await waitForActiveGenerate(
@@ -151,10 +188,13 @@ void runLlamaWorkerForTesting(
       final synthesisStopped = await waitForActiveTextToSpeech(
         timeout: disposeActiveGenerateTimeout,
       );
+      final asrStopped = await cancelAndWaitForActiveAsrStream(
+        timeout: disposeActiveGenerateTimeout,
+      );
       // If native generation wedges, acknowledge dispose and exit the worker
       // instead of hanging the caller forever. Skipping service.dispose() leaks
       // native handles only in this edge case, but avoids use-after-free.
-      if (generationStopped && synthesisStopped) {
+      if (generationStopped && synthesisStopped && asrStopped) {
         try {
           service.dispose();
         } catch (e) {
@@ -171,6 +211,28 @@ void runLlamaWorkerForTesting(
 
     if (message is TextToSpeechCancelRequest) {
       service.cancelTextToSpeech();
+      return;
+    }
+
+    if (message is AsrStreamCancelRequest) {
+      if (activeAsrSessionId != message.sessionId) {
+        message.sendPort.send(DoneResponse());
+        return;
+      }
+      service.cancelAsrStream(message.sessionId);
+      final operation = activeAsrOperation?.future;
+      if (operation != null) {
+        try {
+          await operation;
+        } catch (_) {}
+      }
+      if (activeAsrSessionId == message.sessionId) {
+        service.closeAsrStreamIfIdle(message.sessionId);
+        if (!service.hasActiveAsrStream) {
+          activeAsrSessionId = null;
+        }
+      }
+      message.sendPort.send(DoneResponse());
       return;
     }
 
@@ -243,12 +305,14 @@ void runLlamaWorkerForTesting(
           case ModelFreeRequest():
             await waitForActiveGenerate();
             await waitForActiveTextToSpeech();
+            await cancelAndWaitForActiveAsrStream();
             service.freeModel(message.modelHandle);
             message.sendPort.send(DoneResponse());
 
           case RerankingContextCreateRequest():
             await waitForActiveGenerate();
             await waitForActiveTextToSpeech();
+            await cancelAndWaitForActiveAsrStream();
             message.sendPort.send(
               HandleResponse(
                 service.createRerankingContext(
@@ -268,6 +332,7 @@ void runLlamaWorkerForTesting(
           case ContextFreeRequest():
             await waitForActiveGenerate();
             await waitForActiveTextToSpeech();
+            await cancelAndWaitForActiveAsrStream();
             service.freeContext(message.contextHandle);
             message.sendPort.send(DoneResponse());
 
@@ -403,6 +468,148 @@ void runLlamaWorkerForTesting(
               }
             }
 
+          case AsrStreamSupportRequest():
+            final reason = await service.asrStreamUnsupportedReason(
+              message.contextHandle,
+              message.mmContextHandle,
+            );
+            message.sendPort.send(AsrStreamSupportResponse(reason));
+
+          case AsrStreamStartRequest():
+            if (activeAsrSessionId != null || service.hasActiveAsrStream) {
+              throw LlamaStateException(
+                'A live speech recognition session is already active.',
+              );
+            }
+            if (activeTextToSpeech != null) {
+              throw LlamaStateException(
+                'Cannot start live speech recognition while text-to-speech is '
+                'active.',
+              );
+            }
+            activeAsrSessionId = message.sessionId;
+            final op = Completer<void>();
+            activeAsrOperation = op;
+            try {
+              await service.startAsrStream(
+                message.sessionId,
+                message.contextHandle,
+                message.mmContextHandle,
+                message.cancelFlagAddress,
+                onText: (confirmedText, acceptedSamples) {
+                  message.eventPort.send(
+                    AsrStreamTextResponse(
+                      sessionId: message.sessionId,
+                      confirmedText: confirmedText,
+                      acceptedSamples: acceptedSamples,
+                    ),
+                  );
+                },
+              );
+              message.sendPort.send(
+                AsrStreamStartedResponse(message.sessionId),
+              );
+            } catch (_) {
+              if (!service.hasActiveAsrStream &&
+                  activeAsrSessionId == message.sessionId) {
+                activeAsrSessionId = null;
+              }
+              rethrow;
+            } finally {
+              if (identical(activeAsrOperation, op)) {
+                activeAsrOperation = null;
+              }
+              op.complete();
+            }
+
+          case AsrStreamPushRequest():
+            if (activeAsrSessionId != message.sessionId ||
+                !service.hasActiveAsrStream) {
+              throw LlamaStateException(
+                'Live speech recognition session ${message.sessionId} is not '
+                'active.',
+              );
+            }
+            if (activeAsrOperation != null) {
+              throw LlamaStateException(
+                'Another live speech recognition operation is already in '
+                'progress.',
+              );
+            }
+            final op = Completer<void>();
+            activeAsrOperation = op;
+            try {
+              final bytes = message.pcm.materialize().asUint8List();
+              if (bytes.lengthInBytes !=
+                  message.sampleCount * Float32List.bytesPerElement) {
+                throw LlamaAudioFormatException(
+                  'Live speech recognition PCM payload length mismatch.',
+                );
+              }
+              final samples = Float32List.view(
+                bytes.buffer,
+                bytes.offsetInBytes,
+                message.sampleCount,
+              );
+              final accepted = await service.pushAsrPcm(
+                message.sessionId,
+                message.sampleOffset,
+                samples,
+              );
+              message.sendPort.send(
+                AsrStreamPushAckResponse(message.sessionId, accepted),
+              );
+            } finally {
+              if (identical(activeAsrOperation, op)) {
+                activeAsrOperation = null;
+              }
+              if (!service.hasActiveAsrStream &&
+                  activeAsrSessionId == message.sessionId) {
+                activeAsrSessionId = null;
+              }
+              op.complete();
+            }
+
+          case AsrStreamFinishRequest():
+            if (activeAsrSessionId != message.sessionId ||
+                !service.hasActiveAsrStream) {
+              throw LlamaStateException(
+                'Live speech recognition session ${message.sessionId} is not '
+                'active.',
+              );
+            }
+            if (activeAsrOperation != null) {
+              throw LlamaStateException(
+                'Another live speech recognition operation is already in '
+                'progress.',
+              );
+            }
+            final op = Completer<void>();
+            activeAsrOperation = op;
+            try {
+              final result = await service.finishAsrStream(
+                message.sessionId,
+                message.expectedTotalSamples,
+              );
+              message.sendPort.send(
+                AsrStreamFinishResponse(
+                  sessionId: message.sessionId,
+                  finalText: result.finalText,
+                  acceptedSamples: result.acceptedSamples,
+                  consumedSamples: result.consumedSamples,
+                ),
+              );
+            } finally {
+              if (identical(activeAsrOperation, op)) {
+                activeAsrOperation = null;
+              }
+              if (!service.hasActiveAsrStream &&
+                  activeAsrSessionId == message.sessionId) {
+                activeAsrSessionId = null;
+              }
+              op.complete();
+            }
+
           case GenerationCapabilitiesRequest():
             final capabilities = service.generationCapabilities(
               message.modelHandle,
@@ -445,6 +652,7 @@ void runLlamaWorkerForTesting(
           case RerankRequest():
             await waitForActiveGenerate();
             await waitForActiveTextToSpeech();
+            await cancelAndWaitForActiveAsrStream();
             message.sendPort.send(
               RerankResponse(
                 service.rerank(
@@ -603,6 +811,7 @@ void runLlamaWorkerForTesting(
           case MultimodalContextFreeRequest():
             await waitForActiveGenerate();
             await waitForActiveTextToSpeech();
+            await cancelAndWaitForActiveAsrStream();
             service.freeMultimodalContext(message.mmContextHandle);
             message.sendPort.send(DoneResponse());
 

@@ -649,6 +649,231 @@ final class LlamaCppObjectCalls {
   Pointer<Float> embeddingMediaOutput(Pointer<mtmd_context> projector) =>
       mixedBatch!.mediaOutput(projector);
 
+  /// Actual per-sequence context capacity allocated for [context].
+  int contextSequenceCapacity(Pointer<llama_context> context) {
+    failures.ensureUsable(context, 'This context');
+    return _contextSequenceCapacity(context);
+  }
+
+  /// Probes live ASR streaming support for [context] and [projector].
+  int asrStreamGetInfo({
+    required Pointer<llama_context> context,
+    required Pointer<llama_model> model,
+    required Pointer<mtmd_context> projector,
+    required int acceptedModes,
+    required Pointer<llama_dart_asr_stream_info> outInfo,
+    required int Function(
+      Pointer<llama_context>,
+      Pointer<mtmd_context>,
+      int,
+      Pointer<llama_dart_asr_stream_info>,
+    )
+    getInfo,
+  }) {
+    failures.ensureUsable(model, 'This speech recognition model');
+    failures.ensureUsable(context, 'This speech recognition context');
+    failures.ensureUsable(projector, 'This multimodal projector');
+    final status = getInfo(context, projector, acceptedModes, outInfo);
+    if (status ==
+        llama_dart_asr_stream_status
+            .LLAMA_DART_ASR_STREAM_STATUS_UPSTREAM_ERROR
+            .value) {
+      failures.throwIfCaught(
+        'llama_dart_asr_stream_get_info',
+        LlamaSpeechException.new,
+        freeOnly: [context, projector],
+        windowsFreeOnly: [model],
+      );
+    }
+    return status;
+  }
+
+  /// Initializes a live ASR stream and registers it at [ShutdownStage.session].
+  Pointer<llama_dart_asr_stream> asrStreamInit({
+    required Pointer<llama_context> context,
+    required Pointer<llama_model> model,
+    required Pointer<mtmd_context> projector,
+    required int acceptedModes,
+    required Pointer<llama_dart_asr_stream_params> params,
+    required Pointer<Int> outStatus,
+    required Pointer<llama_dart_asr_stream> Function(
+      Pointer<llama_context>,
+      Pointer<mtmd_context>,
+      int,
+      Pointer<llama_dart_asr_stream_params>,
+      Pointer<Int>,
+    )
+    init,
+    required Pointer<NativeFinalizerFunction> freeAddress,
+  }) {
+    failures.ensureUsable(model, 'This speech recognition model');
+    failures.ensureUsable(context, 'This speech recognition context');
+    failures.ensureUsable(projector, 'This multimodal projector');
+    final stream = init(context, projector, acceptedModes, params, outStatus);
+    if (stream != nullptr) {
+      IsolateShutdownReleases.current.hold(
+        ShutdownStage.session,
+        freeAddress,
+        stream,
+      );
+      return stream;
+    }
+    if (outStatus.value ==
+        llama_dart_asr_stream_status
+            .LLAMA_DART_ASR_STREAM_STATUS_UPSTREAM_ERROR
+            .value) {
+      failures.throwIfCaught(
+        'llama_dart_asr_stream_init',
+        LlamaSpeechException.new,
+        freeOnly: [context, projector],
+        windowsFreeOnly: [model],
+      );
+    }
+    return nullptr;
+  }
+
+  int _guardAsrStreamCall(
+    String callName,
+    Pointer<llama_dart_asr_stream> stream,
+    Pointer<llama_context> context,
+    Pointer<llama_model> model,
+    Pointer<mtmd_context> projector,
+    int Function() call,
+  ) {
+    failures.ensureUsable(stream, 'This speech recognition stream');
+    failures.ensureUsable(model, 'This speech recognition model');
+    failures.ensureUsable(context, 'This speech recognition context');
+    failures.ensureUsable(projector, 'This multimodal projector');
+    final status = call();
+    if (status ==
+        llama_dart_asr_stream_status
+            .LLAMA_DART_ASR_STREAM_STATUS_UPSTREAM_ERROR
+            .value) {
+      failures.throwIfCaught(
+        callName,
+        LlamaSpeechException.new,
+        freeOnly: [stream, context, projector],
+        windowsFreeOnly: [model],
+      );
+    }
+    return status;
+  }
+
+  /// Attaches a native cancel flag byte to [stream].
+  int asrStreamSetCancelFlag({
+    required Pointer<llama_dart_asr_stream> stream,
+    required Pointer<llama_context> context,
+    required Pointer<llama_model> model,
+    required Pointer<mtmd_context> projector,
+    required Pointer<Int8> flag,
+    required int Function(Pointer<llama_dart_asr_stream>, Pointer<Int8>)
+    setCancelFlag,
+  }) => _guardAsrStreamCall(
+    'llama_dart_asr_stream_set_cancel_flag',
+    stream,
+    context,
+    model,
+    projector,
+    () => setCancelFlag(stream, flag),
+  );
+
+  /// Pushes float32 mono 16 kHz PCM samples into [stream].
+  int asrStreamPush({
+    required Pointer<llama_dart_asr_stream> stream,
+    required Pointer<llama_context> context,
+    required Pointer<llama_model> model,
+    required Pointer<mtmd_context> projector,
+    required Pointer<Float> samples,
+    required int sampleCount,
+    required Pointer<Size> outAccepted,
+    required int Function(
+      Pointer<llama_dart_asr_stream>,
+      Pointer<Float>,
+      int,
+      Pointer<Size>,
+    )
+    push,
+  }) => _guardAsrStreamCall(
+    'llama_dart_asr_stream_push',
+    stream,
+    context,
+    model,
+    projector,
+    () => push(stream, samples, sampleCount, outAccepted),
+  );
+
+  /// Marks end-of-audio on [stream].
+  int asrStreamFinish({
+    required Pointer<llama_dart_asr_stream> stream,
+    required Pointer<llama_context> context,
+    required Pointer<llama_model> model,
+    required Pointer<mtmd_context> projector,
+    required int Function(Pointer<llama_dart_asr_stream>) finish,
+  }) => _guardAsrStreamCall(
+    'llama_dart_asr_stream_finish',
+    stream,
+    context,
+    model,
+    projector,
+    () => finish(stream),
+  );
+
+  /// Advances [stream] by one native step.
+  int asrStreamStep({
+    required Pointer<llama_dart_asr_stream> stream,
+    required Pointer<llama_context> context,
+    required Pointer<llama_model> model,
+    required Pointer<mtmd_context> projector,
+    required Pointer<llama_dart_asr_stream_progress> outProgress,
+    required int Function(
+      Pointer<llama_dart_asr_stream>,
+      Pointer<llama_dart_asr_stream_progress>,
+    )
+    step,
+  }) => _guardAsrStreamCall(
+    'llama_dart_asr_stream_step',
+    stream,
+    context,
+    model,
+    projector,
+    () => step(stream, outProgress),
+  );
+
+  /// Reads available UTF-8 text bytes from [stream].
+  int asrStreamReadText({
+    required Pointer<llama_dart_asr_stream> stream,
+    required Pointer<llama_context> context,
+    required Pointer<llama_model> model,
+    required Pointer<mtmd_context> projector,
+    required Pointer<Char> out,
+    required int capacity,
+    required Pointer<Size> outLen,
+    required int Function(
+      Pointer<llama_dart_asr_stream>,
+      Pointer<Char>,
+      int,
+      Pointer<Size>,
+    )
+    readText,
+  }) => _guardAsrStreamCall(
+    'llama_dart_asr_stream_read_text',
+    stream,
+    context,
+    model,
+    projector,
+    () => readText(stream, out, capacity, outLen),
+  );
+
+  /// Releases the isolate-shutdown hold and frees [stream] once.
+  void asrStreamFree(
+    Pointer<llama_dart_asr_stream> stream,
+    void Function(Pointer<llama_dart_asr_stream>) free,
+  ) {
+    failures.forget(stream);
+    IsolateShutdownReleases.current.release(stream);
+    free(stream);
+  }
+
   /// Encodes one media chunk under the native exit and exception barriers.
   void encodeEmbeddingChunk(
     Pointer<mtmd_context> projector,
@@ -741,8 +966,12 @@ final class LlamaCppObjectCalls {
     required this.adapterLoraInit,
     LlamaCppMixedBatchApi? Function()? mixedBatchResolver,
     int Function(Pointer<llama_model>)? modelInputWidth,
+    int Function(Pointer<llama_context>)? contextSequenceCapacity,
   }) : _mixedBatchResolver = mixedBatchResolver,
-       _modelInputWidth = modelInputWidth ?? llama_model_n_embd_inp;
+       _modelInputWidth = modelInputWidth ?? llama_model_n_embd_inp,
+       _contextSequenceCapacity = contextSequenceCapacity ?? llama_n_ctx_seq;
+
+  final int Function(Pointer<llama_context>) _contextSequenceCapacity;
 
   /// The tracked and guarded functions of [exit].
   ///
@@ -756,6 +985,7 @@ final class LlamaCppObjectCalls {
     bool isWindows = false,
     LlamaCppMixedBatchApi? Function()? mixedBatchResolver,
     int Function(Pointer<llama_model>)? modelInputWidth,
+    int Function(Pointer<llama_context>)? contextSequenceCapacity,
   }) {
     final failures = NativeCallFailures(barrier, isWindows: isWindows);
     return LlamaCppObjectCalls._(
@@ -763,6 +993,7 @@ final class LlamaCppObjectCalls {
       failures: failures,
       mixedBatchResolver: mixedBatchResolver,
       modelInputWidth: modelInputWidth,
+      contextSequenceCapacity: contextSequenceCapacity,
       loadModel: (path, params) {
         final model = exit.modelLoadFromFile(path, params);
         if (model == nullptr) {

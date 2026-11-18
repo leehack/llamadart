@@ -1185,6 +1185,128 @@ void main() {
         }
       },
     );
+
+    test(
+      'routes ASR probe, start, push, finish, truncation, and idle dispose/free',
+      () async {
+        final service = _AsrTestService();
+        final receivePort = ReceivePort();
+        runLlamaWorkerForTesting(
+          receivePort.sendPort,
+          service,
+          exitOnDispose: false,
+        );
+        final sendPort = await receivePort.first as SendPort;
+        receivePort.close();
+        await _performHandshake(sendPort);
+
+        final probePort = ReceivePort();
+        sendPort.send(AsrStreamSupportRequest(1, 2, probePort.sendPort));
+        final probeRes = await probePort.first as AsrStreamSupportResponse;
+        probePort.close();
+        expect(probeRes.unsupportedReason, isNull);
+
+        // Start session 1
+        final eventPort = ReceivePort();
+        final events = <AsrStreamTextResponse>[];
+        final eventSub = eventPort.listen((msg) {
+          if (msg is AsrStreamTextResponse) events.add(msg);
+        });
+        final startPort = ReceivePort();
+        sendPort.send(
+          AsrStreamStartRequest(
+            1,
+            1,
+            2,
+            0,
+            eventPort.sendPort,
+            startPort.sendPort,
+          ),
+        );
+        final started = await startPort.first as AsrStreamStartedResponse;
+        startPort.close();
+        expect(started.sessionId, 1);
+
+        // Stale cancel for session 99 is ignored
+        final staleCancelPort = ReceivePort();
+        sendPort.send(AsrStreamCancelRequest(99, staleCancelPort.sendPort));
+        expect(await staleCancelPort.first, isA<DoneResponse>());
+        staleCancelPort.close();
+        expect(service.hasActiveAsrStream, isTrue);
+
+        // Push slice
+        final pushPort = ReceivePort();
+        sendPort.send(
+          AsrStreamPushRequest(
+            sessionId: 1,
+            sampleOffset: 0,
+            samples: Float32List.fromList([0.1, 0.2]),
+            sendPort: pushPort.sendPort,
+          ),
+        );
+        final ack = await pushPort.first as AsrStreamPushAckResponse;
+        pushPort.close();
+        expect(ack.acceptedSamples, 2);
+
+        // Finish
+        final finishPort = ReceivePort();
+        sendPort.send(AsrStreamFinishRequest(1, 2, finishPort.sendPort));
+        final finishRes = await finishPort.first as AsrStreamFinishResponse;
+        finishPort.close();
+        expect(finishRes.finalText, 'hello world');
+        expect(events.map((e) => e.confirmedText), ['hello']);
+
+        // Start session 2 and test truncation error serialization
+        service.throwTruncatedOnFinish = true;
+        final startPort2 = ReceivePort();
+        sendPort.send(
+          AsrStreamStartRequest(
+            2,
+            1,
+            2,
+            0,
+            eventPort.sendPort,
+            startPort2.sendPort,
+          ),
+        );
+        await startPort2.first;
+        startPort2.close();
+
+        final finishPort2 = ReceivePort();
+        sendPort.send(AsrStreamFinishRequest(2, 0, finishPort2.sendPort));
+        final err = await finishPort2.first as ErrorResponse;
+        finishPort2.close();
+        expect(err.kind, WorkerErrorKind.speechTranscriptTruncated);
+        expect(err.transcriptLimit, LlamaSpeechTranscriptLimit.contextSize);
+        expect(err.partialTranscript, 'partial');
+
+        // Start session 3 and dispose while idle -> cancels & frees without deadlock
+        service.throwTruncatedOnFinish = false;
+        final startPort3 = ReceivePort();
+        sendPort.send(
+          AsrStreamStartRequest(
+            3,
+            1,
+            2,
+            0,
+            eventPort.sendPort,
+            startPort3.sendPort,
+          ),
+        );
+        await startPort3.first;
+        startPort3.close();
+
+        final disposePort = ReceivePort();
+        sendPort.send(DisposeRequest(disposePort.sendPort));
+        await disposePort.first;
+        disposePort.close();
+        expect(service.cancelCalls, greaterThanOrEqualTo(1));
+        expect(service.disposeCalls, 1);
+
+        await eventSub.cancel();
+        eventPort.close();
+      },
+    );
   });
 }
 
@@ -1860,4 +1982,81 @@ class _SequentialTextToSpeechService extends _BlockingTextToSpeechService {
 class _ThrowingSendPort implements SendPort {
   @override
   void send(Object? message) => throw StateError('Injected reply send failure');
+}
+
+class _AsrTestService extends LlamaCppService {
+  int? _activeSessionId;
+  int _supplied = 0;
+  void Function(String, int)? _onText;
+  bool throwTruncatedOnFinish = false;
+  int cancelCalls = 0;
+  int disposeCalls = 0;
+
+  @override
+  bool get hasActiveAsrStream => _activeSessionId != null;
+
+  @override
+  Future<String?> asrStreamUnsupportedReason(
+    int contextHandle,
+    int mmContextHandle,
+  ) async => null;
+
+  @override
+  Future<void> startAsrStream(
+    int sessionId,
+    int contextHandle,
+    int mmContextHandle,
+    int cancelFlagAddress, {
+    required void Function(String confirmedText, int acceptedSamples) onText,
+  }) async {
+    _activeSessionId = sessionId;
+    _supplied = 0;
+    _onText = onText;
+  }
+
+  @override
+  Future<int> pushAsrPcm(
+    int sessionId,
+    int sampleOffset,
+    Float32List samples,
+  ) async {
+    _supplied += samples.length;
+    _onText?.call('hello', _supplied);
+    return _supplied;
+  }
+
+  @override
+  Future<({String finalText, int acceptedSamples, int consumedSamples})>
+  finishAsrStream(int sessionId, int expectedTotalSamples) async {
+    _activeSessionId = null;
+    if (throwTruncatedOnFinish) {
+      throw LlamaSpeechTranscriptTruncatedException(
+        'context full',
+        limit: LlamaSpeechTranscriptLimit.contextSize,
+        partialTranscript: 'partial',
+      );
+    }
+    return (
+      finalText: 'hello world',
+      acceptedSamples: _supplied,
+      consumedSamples: _supplied,
+    );
+  }
+
+  @override
+  void cancelAsrStream([int? sessionId]) {
+    if (sessionId == null || sessionId == _activeSessionId) {
+      cancelCalls++;
+    }
+  }
+
+  @override
+  void closeAsrStreamIfIdle([int? sessionId]) {
+    if (sessionId == null || sessionId == _activeSessionId) {
+      _activeSessionId = null;
+    }
+  }
+
+  @override
+  void dispose() => disposeCalls++;
 }
