@@ -54,7 +54,7 @@ Directory _fakeRuntimeRepo({
               '`hook/build.dart`\n',
     'website/docs/platforms/webgpu-bridge.md': parityWording
         ? '- The pinned `v1.2.3` bridge assets embed llama.cpp `$bridgeTag`, matching '
-              'the native runtime\n'
+              'the native runtime `$nativeTag`.\n'
         : '- The pinned `v1.2.3` bridge assets embed llama.cpp `$bridgeTag`, which now '
               'trails the\n',
   };
@@ -82,25 +82,25 @@ const String _approvedManifestJson = '''
       "size_bytes": 257
     },
     "llama_webgpu_core.js": {
-      "sha256": "f34ad08e95cf6dd1bddd7df31794383ceb6e350553f4487746f54210f8fd9c18",
-      "size_bytes": 123583
+      "sha256": "fe21febf5ffe94ef1538d9530ab7b422ca21cd7a7631fab050af1abe122cc4af",
+      "size_bytes": 123803
     },
     "llama_webgpu_core.wasm": {
-      "sha256": "06be047419dcd3fb55b8d6d28577dee658d9dbe0b7e240153841d05f37a1b8a5",
-      "size_bytes": 11099393
+      "sha256": "02651671d474d99856c3ff131e61beae9c0dee0af113f4a6da32980501f93be4",
+      "size_bytes": 10984908
     },
     "llama_webgpu_core_mem64.js": {
-      "sha256": "32b4689944aa4e3a940bddaf31928ab3476e57b9963b918cb38c1281e5688297",
-      "size_bytes": 147340
+      "sha256": "39ba686d0051439892f1af2444a44aeeff4b8d8c3300b96750a091f7f54afae0",
+      "size_bytes": 146823
     },
     "llama_webgpu_core_mem64.wasm": {
-      "sha256": "d81d1b4e7fecade75da7446885777ea7af7a31292fc43ed062fac9613092165d",
-      "size_bytes": 11390682
+      "sha256": "727ffcabc2c3ed6eb4497b9cc45b5e25daf7a0fa5b5d37362a52941093d67b42",
+      "size_bytes": 11338290
     }
   },
   "assets_repository": "leehack/llama-web-bridge-assets",
-  "bridge_assets_tag": "v0.1.85",
-  "bridge_commit": "f1ac2fc1d4d4d3fda56c161ac6a629ae4c67a7d3",
+  "bridge_assets_tag": "v0.1.86",
+  "bridge_commit": "7c81e03cf79952625b561c910c8e6e182b75df49",
   "bridge_repository": "leehack/llama-web-bridge",
   "capabilities": {
     "memory64": true,
@@ -143,31 +143,31 @@ const String _approvedManifestJson = '''
       "size_bytes": 257
     },
     "llama_webgpu_core.js": {
-      "sha256": "f34ad08e95cf6dd1bddd7df31794383ceb6e350553f4487746f54210f8fd9c18",
-      "size_bytes": 123583
+      "sha256": "fe21febf5ffe94ef1538d9530ab7b422ca21cd7a7631fab050af1abe122cc4af",
+      "size_bytes": 123803
     },
     "llama_webgpu_core.wasm": {
-      "sha256": "06be047419dcd3fb55b8d6d28577dee658d9dbe0b7e240153841d05f37a1b8a5",
-      "size_bytes": 11099393
+      "sha256": "02651671d474d99856c3ff131e61beae9c0dee0af113f4a6da32980501f93be4",
+      "size_bytes": 10984908
     },
     "llama_webgpu_core_mem64.js": {
-      "sha256": "32b4689944aa4e3a940bddaf31928ab3476e57b9963b918cb38c1281e5688297",
-      "size_bytes": 147340
+      "sha256": "39ba686d0051439892f1af2444a44aeeff4b8d8c3300b96750a091f7f54afae0",
+      "size_bytes": 146823
     },
     "llama_webgpu_core_mem64.wasm": {
-      "sha256": "d81d1b4e7fecade75da7446885777ea7af7a31292fc43ed062fac9613092165d",
-      "size_bytes": 11390682
+      "sha256": "727ffcabc2c3ed6eb4497b9cc45b5e25daf7a0fa5b5d37362a52941093d67b42",
+      "size_bytes": 11338290
     }
   },
-  "github_run_id": "43520247188",
-  "github_run_url": "https://github.com/leehack/llama-web-bridge/actions/runs/43520247188",
-  "llama_cpp_commit": "cd959bae99ff4bed22bef2604f45241c09bbb8c8",
-  "llama_cpp_tag": "v0.9.0",
-  "native_commit": "a604639131105c42a25a3e7384ca10314d385f80",
-  "native_manifest_sha256": "0d2119cdcf34d347a96a996423094498de3393026efb6ad1a96ba286b621c39e",
-  "native_release_tag": "v0.9.0",
+  "github_run_id": "44206101754",
+  "github_run_url": "https://github.com/leehack/llama-web-bridge/actions/runs/44206101754",
+  "llama_cpp_commit": "b1b770d90d94cad9e9ea5b993bdbc383a522fb28",
+  "llama_cpp_tag": "v1.0.0",
+  "native_commit": "2b58fbfc2f3938f235c82acc2c0dec789a7fe9c8",
+  "native_manifest_sha256": "b3df45f63cfa2d528ec97504ac5b85405b4c0b329dd7ca22ab143b78ad0f639a",
+  "native_release_tag": "v1.0.0",
   "native_repository": "leehack/llamadart-native",
-  "orchestrator_correlation_id": "manual-v0.1.85",
+  "orchestrator_correlation_id": "manual-v0.1.86-7c81e03",
   "qualification_gates": {
     "multimodal": "passed",
     "speech_to_text": "required-automated-qualification",
@@ -176,9 +176,9 @@ const String _approvedManifestJson = '''
   },
   "release_channel": "stable",
   "release_rebuild": 0,
-  "release_tag": "v0.1.85",
+  "release_tag": "v0.1.86",
   "schema_version": 2,
-  "source_commit": "f1ac2fc1d4d4d3fda56c161ac6a629ae4c67a7d3",
+  "source_commit": "7c81e03cf79952625b561c910c8e6e182b75df49",
   "source_repository": "leehack/llama-web-bridge",
   "unproven_capabilities": {
     "hardware_gpu_acceleration": "unavailable-on-hosted-runners",
@@ -187,9 +187,9 @@ const String _approvedManifestJson = '''
     "speaker_reference_fidelity": "unproven",
     "wasm32_text_to_speech": "unsupported"
   },
-  "upstream_commit": "cd959bae99ff4bed22bef2604f45241c09bbb8c8",
+  "upstream_commit": "b1b770d90d94cad9e9ea5b993bdbc383a522fb28",
   "upstream_repository": "ggml-org/llama.cpp",
-  "upstream_tag": "v0.9.0"
+  "upstream_tag": "v1.0.0"
 }
 ''';
 
@@ -199,7 +199,7 @@ Future<List<String>> _verifyManifestJson(
 }) {
   final bytes = utf8.encode(manifestJson);
   return verifyManifest(
-    expectedTag: 'v0.1.85',
+    expectedTag: 'v0.1.86',
     expectedLlamaCppTag: bridgeLlamaCppTag,
     expectedLlamaCppCommit: bridgeLlamaCppCommit,
     expectedBridgeCommit: bridgeSourceCommit,
@@ -225,14 +225,13 @@ String _currentReleaseNotes(String path) {
 
 void main() {
   test('default assets include the qualified media embedding API', () {
-    expect(readPinnedBridgeTag(Directory.current), 'v0.1.85');
-    expect(bridgeNativeReleaseTag, 'v0.9.0');
-    expect(bridgeApprovedNativePin, 'v0.9.0');
+    expect(readPinnedBridgeTag(Directory.current), 'v0.1.86');
+    expect(bridgeNativeReleaseTag, 'v1.0.0');
+    expect(bridgeApprovedNativePin, 'v1.0.0-1');
     expect(
       normalizeNativeLlamaCppTag(bridgeApprovedNativePin),
       bridgeLlamaCppTag,
     );
-    expect(bridgeApprovedNativeUpstreamAhead, bridgeLlamaCppTag);
   });
 
   test(
@@ -302,21 +301,18 @@ void main() {
         'website/docs/changelog/recent-releases.md',
       ]) {
         final current = _currentReleaseNotes(path);
-        expect(current, contains('`v0.1.85`'), reason: path);
+        expect(current, contains('`v0.1.86`'), reason: path);
         expect(current, contains(bridgeManifestSha256), reason: path);
         expect(
           current,
           contains('$bridgeLlamaCppTag@$bridgeLlamaCppCommit'),
           reason: path,
         );
-        // A released section names the native pin of its own release, which
-        // the approved pin may run ahead of until the next bridge repin.
         expect(
           current,
           contains(
             RegExp(
-              'native llama\\.cpp `(?:${RegExp.escape(bridgeApprovedNativePin)}'
-              '|${RegExp.escape(bridgeLlamaCppTag)}(?:-\\d+)?)`',
+              'native llama\\.cpp `${RegExp.escape(bridgeApprovedNativePin)}`',
             ),
           ),
           reason: path,
@@ -1092,7 +1088,7 @@ void main() {
       );
     });
 
-    test('the native pin may run ahead only on the approved upstream', () {
+    test('the native pin must share the Web upstream release', () {
       expect(
         findBridgeRuntimeDrift(
           _fakeRuntimeRepo(
@@ -1120,9 +1116,7 @@ void main() {
         contains(
           'bridge assets embed llama.cpp v0.2.0 but $nativeLlamaCppTagPath '
           'pins v0.3.0-1 (upstream family v0.3.0) — Web and native must share '
-          'an upstream llama.cpp release unless a skew is approved in '
-          'bridgeApprovedNativeUpstreamAhead '
-          '($bridgeApprovedNativeUpstreamAhead)',
+          'an upstream llama.cpp release',
         ),
       );
     });
@@ -1178,6 +1172,68 @@ void main() {
       );
 
       expect(findBridgeRuntimeDrift(root, bridgeLlamaCppTag), isEmpty);
+    });
+
+    for (final (name, from, to) in [
+      ('behind', ', matching the', ', behind the'),
+      ('ahead', ', matching the', ', ahead of the'),
+    ]) {
+      for (final path in [
+        'doc/webgpu_bridge.md',
+        'website/docs/platforms/webgpu-bridge.md',
+      ]) {
+        test('$path cannot state a $name relationship at parity', () {
+          final root = _fakeRuntimeRepo(
+            bridgeTag: bridgeLlamaCppTag,
+            nativeTag: bridgeApprovedNativePin,
+          );
+          final doc = File('${root.path}/$path');
+          final source = doc.readAsStringSync();
+          expect(source, contains(from));
+          doc.writeAsStringSync(source.replaceFirst(from, to));
+
+          expect(
+            findBridgeRuntimeDrift(root, bridgeLlamaCppTag).join('\n'),
+            contains('$path: '),
+          );
+          expect(
+            findBridgeRuntimeDrift(root, bridgeLlamaCppTag).join('\n'),
+            contains('matches 0 lines, expected 1'),
+          );
+        });
+      }
+    }
+
+    test('a native pin ahead of Web is reported even with parity prose', () {
+      final root = _fakeRuntimeRepo(
+        bridgeTag: bridgeLlamaCppTag,
+        nativeTag: 'v1.1.0',
+      );
+
+      expect(
+        findBridgeRuntimeDrift(root, bridgeLlamaCppTag),
+        contains(contains('Web and native must share')),
+      );
+    });
+
+    test('the website must name the exact native runtime pin', () {
+      final root = _fakeRuntimeRepo(
+        bridgeTag: bridgeLlamaCppTag,
+        nativeTag: bridgeApprovedNativePin,
+      );
+      final path = 'website/docs/platforms/webgpu-bridge.md';
+      final doc = File('${root.path}/$path');
+      doc.writeAsStringSync(
+        doc.readAsStringSync().replaceFirst(
+          'runtime `$bridgeApprovedNativePin`',
+          'runtime `v0.0.0`',
+        ),
+      );
+
+      expect(findBridgeRuntimeDrift(root, bridgeLlamaCppTag), [
+        '$path: states native pin v0.0.0, '
+            'expected $bridgeApprovedNativePin',
+      ]);
     });
 
     test('a doc naming a different bridge build is reported', () {
@@ -1279,8 +1335,8 @@ void main() {
     });
 
     test('immutable release identity stays pinned to the approved release', () {
-      expect(bridgeAssetsReleaseId, '444874209');
-      expect(bridgeAssetsTagCommit, '28a6180925e74e1038ee4c22cde6b403ae21ed84');
+      expect(bridgeAssetsReleaseId, '449436143');
+      expect(bridgeAssetsTagCommit, 'dd164fb6fa05276e6a1700c563573842831ea362');
     });
 
     test('accepts equivalent CRLF documentation passages', () {
@@ -1324,6 +1380,65 @@ void main() {
         ),
       );
     });
+
+    for (final (name, lineEnding) in [('LF', '\n'), ('CRLF', '\r\n')]) {
+      test('the provenance doc cannot state a skewed upstream ($name)', () {
+        const path = 'doc/webgpu_bridge.md';
+        const parity = ', both built from';
+        final source = File(path)
+            .readAsStringSync()
+            .replaceAll('\r\n', '\n')
+            .replaceAll('\n', lineEnding);
+        expect(source, contains(parity));
+        final root = _fakeRepo(
+          readPinnedBridgeTag(Directory.current),
+          files: {
+            path: source.replaceFirst(parity, '; the bridge is built from'),
+          },
+        );
+
+        expect(findBridgeProvenanceDrift(root), [
+          contains('$path: the pinned release provenance passage matches 0'),
+        ]);
+      });
+    }
+
+    for (final (name, lineEnding) in [('LF', '\n'), ('CRLF', '\r\n')]) {
+      test(
+        'the repeated native runtime tag must match the exact pin ($name)',
+        () {
+          const path = 'doc/webgpu_bridge.md';
+          const staleNativeTag = 'v0.0.0';
+          const provenanceStart =
+              '. Provenance for this immutable consumer artifact:';
+          const target = '`$bridgeApprovedNativePin`$provenanceStart';
+          final source = File(path)
+              .readAsStringSync()
+              .replaceAll('\r\n', '\n')
+              .replaceAll('\n', lineEnding);
+          expect(
+            target.allMatches(source),
+            hasLength(1),
+            reason:
+                'The fixture must have one repeated native runtime tag to replace',
+          );
+          final root = _fakeRepo(
+            readPinnedBridgeTag(Directory.current),
+            files: {
+              path: source.replaceFirst(
+                target,
+                '`$staleNativeTag`$provenanceStart',
+              ),
+            },
+          );
+
+          expect(findBridgeProvenanceDrift(root), [
+            '$path: states nativeRuntimeTag $staleNativeTag, '
+                'expected $bridgeApprovedNativePin',
+          ]);
+        },
+      );
+    }
 
     test('a reworded provenance passage is reported rather than skipped', () {
       final root = Directory.systemTemp.createTempSync('bridge_provenance');

@@ -391,6 +391,11 @@ hooks:
   cores are written without leading zeros, and rebuild counters start at 1.
   List releases with
   `gh release list --repo leehack/llamadart-native --limit 20`.
+- This core loads only a runtime built from llama.cpp `v1.0.0`
+  (`b1b770d90d94cad9e9ea5b993bdbc383a522fb28`), which it checks from the
+  runtime's `llama_dart_build_identity` before the first by-value call. Any
+  other build, including a runtime without that export, is refused with
+  `LlamaUnsupportedException`; there is no override.
 - The release must contain `llamadart-native-<bundle>-<tag>.tar.gz` for the
   target and a `SHA256SUMS` that lists it; otherwise the build fails before
   using the archive. The pinned release is verified against digests in
@@ -429,15 +434,15 @@ hooks:
   release ships CUDA only when the `windows-x64-cuda12` archive is extracted
   into the same directory.
 
-Overrides do not regenerate the Dart FFI bindings, so the binary must stay ABI-
-and symbol-compatible with the pinned release; the hook logs a warning when an
-override is active. This core is qualified on the pinned `v0.9.0` runtime. It
-requires the speculative rollback and model-creation ownership fixes from
-`v0.8.0-3`, as well as compatible struct layouts and symbols, and an older
-binary also lacks the `v0.9.0` ARM F16 accumulation fix. Older binaries are not
-qualified by symbol presence alone. Use core `0.13.x` for its v0.6.0 runtime and companions. Do not point a core before
-`0.17.1` at native `v0.8.0` or later: its bindings give
-`mtmd_helper_init_opt` 24 bytes, and `v0.8.0` writes past them.
+The pinned `v1.0.0` runtime matches this core's FFI bindings. For a custom
+bundle, use the required llama.cpp commit above and preserve the pinned
+runtime's struct layouts and symbols. The hook logs a warning when an
+override is active.
+
+For older cores, use the native runtime and Apple companions pinned by that
+core. For example, core `0.13.x` uses native `v0.6.0`. A core before `0.17.1`
+allocates 24 bytes for `mtmd_helper_init_opt`, which native `v0.8.0` can write
+past.
 
 The hook and runtime fallbacks use `native_bundles_v2` for llama.cpp only,
 including explicit compatible tag/repository overrides and extracted local

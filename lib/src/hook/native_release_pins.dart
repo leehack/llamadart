@@ -5,7 +5,7 @@
 library;
 
 /// `leehack/llamadart-native` release tag downloaded for the llama.cpp runtime.
-const llamaCppTag = 'v0.9.0';
+const llamaCppTag = 'v1.0.0-1';
 
 /// The first `llamadart_llama_cpp_flutter` release whose `Package.swift` pins
 /// [llamaCppTag].
@@ -16,13 +16,13 @@ const llamaCppTag = 'v0.9.0';
 /// `MAJOR.MINOR`, and its own minor's first release otherwise. The native pin
 /// sync sets it to the companion's next release whenever it moves the
 /// companion pin.
-const llamaCppAppleCompanionVersion = '0.19.0';
+const llamaCppAppleCompanionVersion = '0.19.12';
 
 /// Earlier `leehack/llamadart-native` tags that a published Apple llama.cpp
 /// companion pins and the build still accepts, each mapped to what its
 /// frameworks lack compared with [llamaCppTag].
 ///
-/// No older Apple runtime is admitted for v0.9.0: consumers need its ARM F16
+/// No older Apple runtime is admitted for v1.0.0: consumers need its ARM F16
 /// accumulation fix. Native pin sync clears this map whenever the pin moves;
 /// additions require exact artifact compatibility evidence and matching
 /// checksums below.
@@ -34,7 +34,8 @@ const llamaCppCompatibleAppleCompanionTags = <String, String>{};
 /// Native pin sync preserves this proof on a same-tag refresh and replaces it
 /// with the newly published artifact's checksum when the pin moves.
 const llamaCppCompatibleAppleCompanionChecksums = <String, String>{
-  'v0.9.0': 'b0005b1da364f9ea4345218b8d53d78d6de888f301c6defb44b08321e136ac2e',
+  'v1.0.0-1':
+      '0c66ca422bfc8ba266845b57fea99d2792ea67c84233f49358301a640846d669',
 };
 
 /// SHA-256 of each published `llamadart-native-<bundle>-<llamaCppTag>.tar.gz`
@@ -44,27 +45,27 @@ const llamaCppCompatibleAppleCompanionChecksums = <String, String>{
 /// against this map before extracting it.
 const llamaCppBundleSha256 = <String, String>{
   'android-arm64':
-      'd3c933a63e8ccaafeee32edd30685fdccd17c05e54b75895282f01fe74914a1b',
+      'd6b735f88a0896f0e2229d95867c3836313caaab288b83c82b63e4fa20a86198',
   'android-x64':
-      'e86181d67997c25704f84a39fdf268f3622491a481149a39079c90323d208132',
+      '46e604b116326a0bf72c557cfaf71ed032d565978ebfdfa6f24d2270c99dfff4',
   'ios-arm64':
-      'a1dc8707568e6dc92ea44caf63489c23b86f7bf51d367ae8bfff84cc333f18b3',
+      '92c6d4b28845d0de834e0ccdf58ec6b54e5e649c2cb8b126a68a806a81b56749',
   'ios-arm64-sim':
-      '1744bb7220e11b1b3f7ccf3e788e03695f1cce6e4009729d87bd3c4098dd8e99',
+      'abbe2032eca99140be4a29f3772f6ce0e523b55eca168eaf13631c7d786b0642',
   'ios-x86_64-sim':
-      '0e373a49f8d7740466534c8c5106bf3182579cfdd8f11b5c377e942e23867fdb',
+      '6d3253d501685defa1b58246d011d028452d44de1fcff36d769600289271c72e',
   'linux-arm64':
-      '7706ea759d93f2ea20e013c4531edd4223b9f290961eac229c1967e6b2f1fa1d',
+      '52eec56a23c67821b1c11699c762bd30437cf7b0262fc4c620c86b1ddbe07bcf',
   'linux-x64':
-      '92662cc83d076590d1b3785b349f0f1d20233c40c2247e9c00d1296446ec5729',
+      '1bbc08721621d9a2f3c7f9774d548982b63dea1b153d2c4921d2a5c81a00b64c',
   'macos-arm64':
-      '7ec293c79fc4a1ba74e367b31567a6eed616ce2d37b4d3eedc4fd67b998182e8',
+      '6f80a55c781bef2e5d40429965887bab147a5b1bda864f040c79f6b317a819d0',
   'macos-x86_64':
-      '1c033603f99ca3b9a7aca96c98ecefea2043c7729e65f711a380240fb556ae1b',
+      '8d32a4f7ea2936fd812d86f5f75f565210afe0119ab0911c6d9eb8b430cdcafb',
   'windows-arm64':
-      '464cd1b5d0637c85d248361ab27de9ae977d0e05b4079a6731c76e61ab9a06b9',
+      '36d8a8eef13b19f73a82db560ab9c374751f41f4bbbad33606997865183fd1a5',
   'windows-x64':
-      '970c019489aa4e698c915a9e54f82cf0328facd93f2cd9fc9b1394ea81141693',
+      'f5763f5e220cc8f13cb8f9f19d7297732d0fdadd7ae4a132c5da3834ced5f7aa',
 };
 
 /// The `hook_contract_version` of the [llamaCppTag] release's `assets.json`.
@@ -101,7 +102,7 @@ const llamaCppBackendSidecarSpecs = <LlamaCppBackendSidecarSpec>[
     bundle: 'windows-x64',
     backend: 'cuda',
     archive: 'windows-x64-cuda12',
-    sha256: 'faa8eb0cadf3dfd22b4f4052b6460c9f1f87a00853c6237e516d88867bdb4a00',
+    sha256: '715b766a86acdca0db0fbde6eb95a3d5d51ec2eb9e9a0c7956bfe928834aec6f',
   ),
 ];
 

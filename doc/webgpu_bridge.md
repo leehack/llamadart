@@ -67,11 +67,11 @@ an earlier `<script>`:
 
 ## Pinned assets
 
-Default pinned tag in the example is `v0.1.85`.
+Default pinned tag in the example is `v0.1.86`.
 Vendor the pinned assets into the chat app with:
 
 ```bash
-WEBGPU_BRIDGE_ASSETS_TAG=v0.1.85 ./scripts/fetch_webgpu_bridge_assets.sh
+WEBGPU_BRIDGE_ASSETS_TAG=v0.1.86 ./scripts/fetch_webgpu_bridge_assets.sh
 ```
 
 `WEBGPU_BRIDGE_OUT_DIR` changes the destination. The script verifies
@@ -90,17 +90,17 @@ the chat app, set the bootstrap globals before the bootstrap runs:
 ```html
 <script>
   window.__llamadartBridgeAssetsRepo = 'leehack/llama-web-bridge-assets';
-  window.__llamadartBridgeAssetsTag = 'v0.1.85';
+  window.__llamadartBridgeAssetsTag = 'v0.1.86';
 </script>
 ```
 
-That release embeds llama.cpp `v0.9.0`, matching the `hook/build.dart` native pin
-(`v0.9.0`, both built from upstream llama.cpp `v0.9.0@cd959bae99ff4bed22bef2604f45241c09bbb8c8`)
-even though the bridge asset tag `v0.1.85` differs from the native runtime tag
-`v0.9.0`. Provenance for this immutable consumer artifact: release `444874209`,
-tag commit `28a6180925e74e1038ee4c22cde6b403ae21ed84`, bridge source
-`f1ac2fc1d4d4d3fda56c161ac6a629ae4c67a7d3`, and manifest SHA-256
-`6767783edd85e14853a8a79cd6ce53d53f4eb2d99aeb62601014bd68c1b6b7b3`.
+That release embeds llama.cpp `v1.0.0`, matching the `hook/build.dart` native pin
+(`v1.0.0-1`, both built from upstream llama.cpp `v1.0.0@b1b770d90d94cad9e9ea5b993bdbc383a522fb28`)
+even though the bridge asset tag `v0.1.86` differs from the native runtime tag
+`v1.0.0-1`. Provenance for this immutable consumer artifact: release `449436143`,
+tag commit `dd164fb6fa05276e6a1700c563573842831ea362`, bridge source
+`7c81e03cf79952625b561c910c8e6e182b75df49`, and manifest SHA-256
+`d589fbe3c334e4fcb0ccbac3efc4500209358a010b6662ee8523e598a433a0f2`.
 They expose the API-version-1 media embedding contract. State and extraction
 qualification covers wasm32 and memory64 through direct and worker runtimes. Existing decision,
 scoring, sampling, LoRA, speculative decoding and speech APIs remain available.
@@ -205,6 +205,10 @@ physical playback, intelligibility or speaker-reference fidelity.
   suppress tokens, so Qwen3-TTS no longer fails with `code out of range` when it
   samples a codec control token
   ([llama-web-bridge#211](https://github.com/leehack/llama-web-bridge/pull/211)).
+- `v0.1.86+`: llama.cpp `v1.0.0`. Projector workers are released between
+  graphs, so a four-thread direct wasm32 image completion no longer stalls
+  against the text decode threads
+  ([llama-web-bridge#221](https://github.com/leehack/llama-web-bridge/pull/221)).
 - `v0.1.85+`: a page without cross-origin isolation rejects the load at once
   with `CrossOriginIsolationError` (`code: 'CROSS_ORIGIN_ISOLATION_REQUIRED'`);
   `gpu_unavailable:<reason>` appears in the runtime notes when `nGpuLayers > 0`
