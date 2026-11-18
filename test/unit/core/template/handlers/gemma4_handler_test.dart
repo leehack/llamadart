@@ -151,6 +151,76 @@ void main() {
       );
     });
 
+    group('raw delimited string arguments', () {
+      Map<String, dynamic> parseArguments(String arguments) {
+        final parsed = ChatTemplateEngine.parse(
+          ChatFormat.gemma4.index,
+          '<|tool_call>call:write$arguments<tool_call|>',
+        );
+        expect(parsed.toolCalls, hasLength(1));
+        return jsonDecode(parsed.toolCalls.single.function!.arguments!)
+            as Map<String, dynamic>;
+      }
+
+      test('keeps raw newlines', () {
+        expect(parseArguments('{content:<|"|>a\nb<|"|>}'), {'content': 'a\nb'});
+      });
+
+      test('keeps raw double quotes', () {
+        expect(parseArguments('{content:<|"|>say "hi"<|"|>}'), {
+          'content': 'say "hi"',
+        });
+      });
+
+      test('keeps code with quotes and escape sequences', () {
+        expect(parseArguments('{code:<|"|>print("a\\nb");<|"|>}'), {
+          'code': 'print("a\\nb");',
+        });
+      });
+
+      test('keeps backslashes verbatim', () {
+        expect(parseArguments(r'{path:<|"|>C:\temp\new<|"|>}'), {
+          'path': r'C:\temp\new',
+        });
+      });
+
+      test('parses the upstream multi-line unicode write emission', () {
+        const content = 'Bonjour Montréal — café ☕\n안녕하세요 🌲\n';
+
+        expect(
+          parseArguments(
+            '{content:<|"|>$content<|"|>,path:<|"|>nested/bonjour.txt<|"|>}',
+          ),
+          {'content': content, 'path': 'nested/bonjour.txt'},
+        );
+      });
+
+      test('parses nested objects, arrays and scalars', () {
+        expect(
+          parseArguments(
+            '{a:{b:<|"|>x"y<|"|>},list:[1,-2.5,true,null,<|"|>z\n<|"|>],'
+            'flag:false,"quoted":"j\\"son"}',
+          ),
+          {
+            'a': {'b': 'x"y'},
+            'list': [1, -2.5, true, null, 'z\n'],
+            'flag': false,
+            'quoted': 'j"son',
+          },
+        );
+      });
+
+      test('partial output without the closing brace yields no call', () {
+        final parsed = ChatTemplateEngine.parse(
+          ChatFormat.gemma4.index,
+          '<|tool_call>call:write{content:<|"|>a\nb',
+          isPartial: true,
+        );
+
+        expect(parsed.toolCalls, isEmpty);
+      });
+    });
+
     test('parses loose function call syntax emitted by Gemma 4 LiteRT-LM', () {
       const output = 'get_weather(location="Seoul")';
 
@@ -648,6 +718,90 @@ void main() {
         expect(parsed.toolCalls, isEmpty);
         expect(parsed.content, isNot(contains('<|tool_call>')));
         expect(parsed.content, isNot(contains('<tool_call|>')));
+      });
+
+      test('accepts upstream key grammar for unquoted keys', () {
+        const keys = ['2fa', '이름', 'file path', r'$filter'];
+        for (final key in keys) {
+          final parsed = ChatTemplateEngine.parse(
+            ChatFormat.gemma4.index,
+            '<|tool_call>call:get_weather{$key:1}<tool_call|>',
+            tools: [weatherTool],
+          );
+
+          expect(parsed.toolCalls, hasLength(1), reason: key);
+          expect(jsonDecode(parsed.toolCalls.single.function!.arguments!), {
+            key: 1,
+          }, reason: key);
+        }
+      });
+
+      test('malformed call does not drop later valid calls', () {
+        const output =
+            '<|tool_call>call:f{unit:celsius}<tool_call|>'
+            '<|tool_call>call:g{x:1}<tool_call|>';
+
+        final parsed = ChatTemplateEngine.parse(
+          ChatFormat.gemma4.index,
+          output,
+        );
+
+        expect(parsed.toolCalls.map((call) => call.function?.name), ['g']);
+        expect(jsonDecode(parsed.toolCalls.single.function!.arguments!), {
+          'x': 1,
+        });
+        expect(parsed.content, isEmpty);
+      });
+
+      test('trims only ASCII whitespace from bare keys', () {
+        for (final (raw, key) in [('a ', 'a'), ('a\u00a0', 'a\u00a0')]) {
+          final parsed = ChatTemplateEngine.parse(
+            ChatFormat.gemma4.index,
+            '<|tool_call>call:get_weather{$raw:1}<tool_call|>',
+            tools: [weatherTool],
+          );
+          expect(parsed.toolCalls, hasLength(1), reason: raw);
+          expect(jsonDecode(parsed.toolCalls.single.function!.arguments!), {
+            key: 1,
+          }, reason: raw);
+        }
+
+        for (final key in [' ', '\t']) {
+          final empty = ChatTemplateEngine.parse(
+            ChatFormat.gemma4.index,
+            '<|tool_call>call:get_weather{$key:1}<tool_call|>',
+            tools: [weatherTool],
+          );
+          expect(empty.toolCalls, isEmpty, reason: 'key ${key.codeUnits}');
+        }
+      });
+
+      test('malformed call skips closers inside delimited strings', () {
+        final parsed = ChatTemplateEngine.parse(
+          ChatFormat.gemma4.index,
+          '<|tool_call>call:get_weather{a:<|"|>x<tool_call|>y<|"|>,b:bad}'
+          '<tool_call|><|tool_call>call:search{x:1}<tool_call|>',
+        );
+
+        expect(parsed.content, isEmpty);
+        expect(parsed.toolCalls.map((call) => call.function?.name), ['search']);
+        expect(jsonDecode(parsed.toolCalls.single.function!.arguments!), {
+          'x': 1,
+        });
+      });
+
+      test('streaming never exposes text from a closer inside a string', () {
+        const output =
+            '<|tool_call>call:get_weather{a:<|"|>x<tool_call|>y<|"|>}'
+            '<tool_call|>';
+        for (var length = 0; length <= output.length; length++) {
+          final parsed = ChatTemplateEngine.parse(
+            ChatFormat.gemma4.index,
+            output.substring(0, length),
+            isPartial: true,
+          );
+          expect(parsed.content, isEmpty, reason: 'prefix length $length');
+        }
       });
 
       test('pure tool-call protocol whitespace stays non-visible', () {

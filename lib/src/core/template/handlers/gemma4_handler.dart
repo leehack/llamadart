@@ -32,7 +32,6 @@ class Gemma4Handler extends ChatTemplateHandler
   static const String _callMarker = 'call:';
   static const String _channelStart = '<|channel>';
   static const String _channelEnd = '<channel|>';
-  static const List<String> _customQuoteTokens = <String>['<|\\"|>', '<|"|>'];
   // Present in Gemma 4 templates that read OpenAI-style `role: tool`
   // messages; llama.cpp only embeds `tool_responses` for templates without it.
   static const String _openAiToolMessagesMarker =
@@ -536,7 +535,12 @@ class Gemma4Handler extends ChatTemplateHandler
         tools: tools,
       );
       if (parsed == null) {
-        break;
+        final end = _findToolCallEnd(output, start);
+        if (end == -1) {
+          break;
+        }
+        cursor = end + _toolCallEnd.length;
+        continue;
       }
 
       toolCalls.add(parsed.toolCall);
@@ -570,21 +574,18 @@ class Gemma4Handler extends ChatTemplateHandler
     final name = parsedName.name;
     cursor = parsedName.argumentsStart;
 
-    final endBrace = _findMatchingBrace(output, cursor);
-    if (endBrace == -1) {
+    final parsedArguments = _Gemma4ArgumentsParser(output, cursor).parse();
+    if (parsedArguments == null) {
       return null;
     }
 
-    var end = _skipWhitespace(output, endBrace + 1);
+    var end = _skipWhitespace(output, parsedArguments.end);
     if (output.startsWith(_toolCallEnd, end)) {
       end += _toolCallEnd.length;
     }
 
-    final arguments = _normalizePseudoJson(
-      output.substring(cursor, endBrace + 1),
-    );
     final decodedArguments = normalizeFallbackToolArguments(
-      decodeToolArgumentsObject(arguments),
+      parsedArguments.value,
     );
     final normalizedName = normalizeFallbackToolName(
       name,
@@ -601,75 +602,30 @@ class Gemma4Handler extends ChatTemplateHandler
     );
   }
 
-  String _normalizePseudoJson(String input) {
-    final normalizedQuotes = input
-        .replaceAll(RegExp(r'<\|\\?"\|>'), '"')
-        .replaceAll('<escape>', '"');
-
-    return normalizedQuotes.replaceAllMapped(
-      RegExp(r'(^|[{,])\s*([a-zA-Z_][\w\.-]*)\s*:'),
-      (match) => '${match.group(1)}"${match.group(2)}":',
-    );
-  }
-
-  int _findMatchingBrace(String text, int start) {
-    var depth = 0;
-    var inString = false;
-    var escaped = false;
-
-    for (var i = start; i < text.length; i++) {
-      final quoteTokenLength = _customQuoteTokenLengthAt(text, i);
-
-      if (inString) {
-        if (quoteTokenLength != null) {
-          inString = false;
-          i += quoteTokenLength - 1;
-          continue;
-        }
-
-        final codeUnit = text.codeUnitAt(i);
-        if (escaped) {
-          escaped = false;
-          continue;
-        }
-        if (codeUnit == 0x5C) {
-          escaped = true;
-          continue;
-        }
-        if (codeUnit == 0x22) {
-          inString = false;
-        }
-        continue;
+  int _findToolCallEnd(String text, int from) {
+    var offset = from;
+    while (offset < text.length) {
+      if (text.startsWith(_toolCallEnd, offset)) {
+        return offset;
       }
-
-      if (quoteTokenLength != null) {
-        inString = true;
-        i += quoteTokenLength - 1;
-        continue;
-      }
-
-      final codeUnit = text.codeUnitAt(i);
-      if (codeUnit == 0x22) {
-        inString = true;
-      } else if (codeUnit == 0x7B) {
-        depth++;
-      } else if (codeUnit == 0x7D) {
-        depth--;
-        if (depth == 0) {
-          return i;
+      var skipped = false;
+      for (final delimiter in _Gemma4ArgumentsParser.delimiters) {
+        if (!text.startsWith(delimiter, offset)) {
+          continue;
         }
+        final close = text.indexOf(delimiter, offset + delimiter.length);
+        if (close == -1) {
+          return -1;
+        }
+        offset = close + delimiter.length;
+        skipped = true;
+        break;
+      }
+      if (!skipped) {
+        offset++;
       }
     }
     return -1;
-  }
-
-  int? _customQuoteTokenLengthAt(String text, int index) {
-    for (final token in _customQuoteTokens) {
-      if (text.startsWith(token, index)) {
-        return token.length;
-      }
-    }
-    return null;
   }
 
   int _skipWhitespace(String text, int start) {
@@ -804,5 +760,171 @@ class Gemma4Handler extends ChatTemplateHandler
     }
 
     return buffer.toString();
+  }
+}
+
+/// Parses Gemma 4 tool arguments like llama.cpp: `<|"|>`-delimited strings are
+/// raw text (no escape processing), keys may be bare, and standard JSON values
+/// are accepted too.
+class _Gemma4ArgumentsParser {
+  static const List<String> delimiters = <String>[
+    '<|"|>',
+    '<|\\"|>',
+    '<escape>',
+  ];
+  static final RegExp _bareKey = RegExp(r'[^:}]+');
+  static final RegExp _scalar = RegExp(
+    r'-?\d+(\.\d+)?([eE][+-]?\d+)?|true|false|null',
+  );
+
+  _Gemma4ArgumentsParser(this._text, this._pos);
+
+  final String _text;
+  int _pos;
+
+  ({Map<String, dynamic> value, int end})? parse() {
+    try {
+      final value = _parseObject();
+      return (value: value, end: _pos);
+    } on FormatException {
+      return null;
+    }
+  }
+
+  Map<String, dynamic> _parseObject() {
+    _expect('{');
+    final result = <String, dynamic>{};
+    _skipWhitespace();
+    if (_consume('}')) {
+      return result;
+    }
+    while (true) {
+      _skipWhitespace();
+      final key = _parseKey();
+      _skipWhitespace();
+      _expect(':');
+      result[key] = _parseValue();
+      _skipWhitespace();
+      if (_consume('}')) {
+        return result;
+      }
+      _expect(',');
+    }
+  }
+
+  List<dynamic> _parseArray() {
+    _expect('[');
+    final result = <dynamic>[];
+    _skipWhitespace();
+    if (_consume(']')) {
+      return result;
+    }
+    while (true) {
+      result.add(_parseValue());
+      _skipWhitespace();
+      if (_consume(']')) {
+        return result;
+      }
+      _expect(',');
+    }
+  }
+
+  String _parseKey() {
+    final delimited = _tryParseDelimitedString();
+    if (delimited != null) {
+      return delimited;
+    }
+    if (_peek('"')) {
+      return _parseJsonString();
+    }
+    final match = _bareKey.matchAsPrefix(_text, _pos);
+    if (match == null) {
+      throw const FormatException('Expected argument key');
+    }
+    _pos = match.end;
+    return _trimAsciiRight(match.group(0)!);
+  }
+
+  dynamic _parseValue() {
+    _skipWhitespace();
+    final delimited = _tryParseDelimitedString();
+    if (delimited != null) {
+      return delimited;
+    }
+    if (_peek('"')) {
+      return _parseJsonString();
+    }
+    if (_peek('{')) {
+      return _parseObject();
+    }
+    if (_peek('[')) {
+      return _parseArray();
+    }
+    final match = _scalar.matchAsPrefix(_text, _pos);
+    if (match == null) {
+      throw const FormatException('Expected argument value');
+    }
+    _pos = match.end;
+    return jsonDecode(match.group(0)!);
+  }
+
+  String? _tryParseDelimitedString() {
+    for (final delimiter in delimiters) {
+      if (!_text.startsWith(delimiter, _pos)) {
+        continue;
+      }
+      final start = _pos + delimiter.length;
+      final close = _text.indexOf(delimiter, start);
+      if (close == -1) {
+        throw const FormatException('Unterminated string');
+      }
+      _pos = close + delimiter.length;
+      return _text.substring(start, close);
+    }
+    return null;
+  }
+
+  String _parseJsonString() {
+    final start = _pos;
+    _pos++;
+    while (_pos < _text.length) {
+      final codeUnit = _text.codeUnitAt(_pos++);
+      if (codeUnit == 0x5C) {
+        _pos++;
+      } else if (codeUnit == 0x22) {
+        return jsonDecode(_text.substring(start, _pos)) as String;
+      }
+    }
+    throw const FormatException('Unterminated string');
+  }
+
+  static String _trimAsciiRight(String value) {
+    var end = value.length;
+    while (end > 0 && ' \n\r\t'.contains(value[end - 1])) {
+      end--;
+    }
+    return value.substring(0, end);
+  }
+
+  void _skipWhitespace() {
+    while (_pos < _text.length && ' \n\r\t'.contains(_text[_pos])) {
+      _pos++;
+    }
+  }
+
+  bool _peek(String token) => _text.startsWith(token, _pos);
+
+  bool _consume(String token) {
+    if (!_peek(token)) {
+      return false;
+    }
+    _pos += token.length;
+    return true;
+  }
+
+  void _expect(String token) {
+    if (!_consume(token)) {
+      throw FormatException('Expected $token');
+    }
   }
 }

@@ -13,6 +13,8 @@ validate against the exact release tag notes.
 
 ## Unreleased
 
+- Fixed Gemma 4 tool-call parsing dropping or corrupting `<|"|>`-delimited string arguments that contain raw newlines, `"` or backslashes; delimited text is now taken verbatim, as in llama.cpp ([#2041](https://github.com/leehack/llamadart/issues/2041)).
+
 - Adopt `leehack/llamadart-native@v1.0.0-1` (llama.cpp `v1.0.0`, `b1b770d9`) with regenerated bindings; it keeps the `v0.9.0` ARM FP16 fixes. The video capability probe uses `mtmd_helper_get_capabilities`, the replacement for the deprecated `mtmd_helper_support_video`.
 
 - Aligned default WebGPU bridge assets to `v0.1.86` (llama.cpp `v1.0.0`, matching the native runtime) ([#2024](https://github.com/leehack/llamadart/issues/2024)).
