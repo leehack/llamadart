@@ -177,9 +177,9 @@ stream rules of each format.
 On native llama.cpp, `engine.getMetadata()` reports the vocabulary's BOS and
 EOS token text as `tokenizer.ggml.bos_token` and `tokenizer.ggml.eos_token`,
 resolved as llama.cpp resolves them (including its default ids for a
-vocabulary that sets none; empty only when the id is negative), and templates
-render them as `bos_token` and `eos_token`. GGUF files store only the token
-ids.
+vocabulary that sets none; empty when the id is negative or has no piece
+text), and templates render them as `bos_token` and `eos_token`. GGUF files
+store only the token ids.
 
 ### LiteRT-LM template registry
 
