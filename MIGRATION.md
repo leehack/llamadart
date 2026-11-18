@@ -21,6 +21,20 @@ Custom `BackendTextToSpeech` backends compile unchanged: the new
 `supportsIncrementalAudio`, `streamAudio` and `BackendTextToSpeechProgress.audio`
 members are optional fields that default to off.
 
+## `0.19.x` -> `0.20.0`: native runtime overrides and FLUX.1 Kontext
+
+- Native runtimes must be built from llama.cpp `v1.0.0`. A
+  `llamadart_native_tag` or `llamadart_native_path` override pointing at an
+  older build now throws `LlamaUnsupportedException` before a model loads;
+  point it at a `llamadart-native` release built from llama.cpp `v1.0.0`
+  (`v1.0.0` or `v1.0.0-1`), or remove it.
+- FLUX.1 Kontext reference editing is refused on the bundled
+  `stable-diffusion-native@v0.4.0`: `supportsReferenceImageEditing` reports
+  false and a request with reference images throws
+  `LlamaUnsupportedException` until it is requalified
+  ([#1222](https://github.com/leehack/llamadart/issues/1222)). Check the
+  capability before offering reference editing.
+
 ## `0.19.6` -> `0.19.7`: image generation `ComputeDevice.auto` on macOS x86_64
 
 No Dart API changes. On macOS x86_64 (Intel Macs and Rosetta), image generation
