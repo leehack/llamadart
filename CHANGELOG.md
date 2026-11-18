@@ -1,6 +1,8 @@
 Releases before 0.10.0 are in the
 [changelog archive](https://github.com/leehack/llamadart/blob/main/doc/changelog_archive.md).
 
+## Unreleased
+
 ## 0.20.0
 
 - Adopt `leehack/llamadart-native@v1.0.0-1` (llama.cpp `v1.0.0`, `b1b770d9`) with regenerated bindings, `mtmd_helper_get_capabilities` video probing and the `v0.9.0` ARM FP16 fixes. Native runtimes not built from llama.cpp `v1.0.0`, including `llamadart_native_tag` or `llamadart_native_path` overrides, now throw `LlamaUnsupportedException` before a model loads.
