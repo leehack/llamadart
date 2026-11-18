@@ -52,12 +52,9 @@ description: >-
   `flutter build ios` output shows neither build warning; Xcode and
   `xcodebuild` show both. Use the companion with the core's `MAJOR.MINOR`. Adding it
   opts the app into the runtime (about 37 MB per Apple target).
-Treat `<image:...>` in positive and negative prompts as literal text; the
-engine handles the native parser escape.
-
-The Apple companion must bundle stable-diffusion-native `v0.4.0`. Upgrade the
-core and companion together: v0.4.0 uses a larger image-generation parameter
-structure than the v0.3.x runtimes. SD `v0.3.0-6` passed four full-VAE load/dispose cycles and eight decodes per device on iPhone 16 Pro (iOS 18.3.2) and iPhone 17 Pro (iOS 26.5.1), tested at `6b191b28`. Small nonzero residual memory remains; this single session is not proof of zero leaks (#2004).
+- Both prompts treat `<image:...>` as text. The engine escapes native image markers.
+- Upgrade core and the Apple companion together. The companion must bundle `v0.4.0` for its larger image-generation parameter structure.
+- SD `v0.3.0-6` passed four full-VAE load/dispose cycles and eight decodes per device on iPhone 16 Pro (iOS 18.3.2) and iPhone 17 Pro (iOS 26.5.1), tested at `6b191b28`. Small nonzero residual memory remains; this single session is not proof of zero leaks (#2004).
 - Platforms: Android arm64 (CPU only; Armv8.2 dot-product and fp16), iOS 16.4+
   and macOS 13.3+ (Metal), Linux arm64/x64 and Windows x64 (CPU or Vulkan; x64
   CPUs need AVX2, FMA, F16C and BMI2). Web, Android x64 and Windows arm64

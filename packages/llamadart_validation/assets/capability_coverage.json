@@ -652,7 +652,7 @@
       "exemption": {
         "id": "bounded-image-reference-editing",
         "issue": "https://github.com/leehack/llamadart/issues/1222",
-        "reason": "The v0.4.0 runtime refuses this recipe pending exact-source requalification under #1222. FLUX.1 Kontext header admission, load-time recipe gate, session probe, reference size/count validation and ref_images/ref_image_args mapping have maintained unit and worker tests plus the local-only image-reference-editing macOS Metal direct-C scenario (doc/image_reference_editing.md); a versioned validation-pack profile is not yet defined. Inventory presence is not platform/model qualification."
+        "reason": "The maintained image-reference-editing scenario checks typed refusal on v0.4.0 with macOS Metal. The historical v0.3.0-1 direct-C parity evidence is in doc/image_reference_editing.md. Header admission, recipe and session gates, reference validation and native parameter mapping have unit and worker tests. Requalification under #1222 remains open."
       }
     },
     {

@@ -58,14 +58,15 @@ it does not qualify GPU suitability or Linux image inference and is not run
 automatically by `ImageGenerationEngine`. CPU-only builds need no preflight.
 Studio runs this preflight before probing and loading its default Linux Vulkan
 image runtime and disables Image Studio with the returned reason.
+The table’s phone, Linux and Windows image-generation measurements predate v0.4.0.
 Per-platform requirements, validated
 models, memory figures and the bounded recipes for tiling, editing, ControlNet,
 hires fix, reference editing, seamless textures, module placement, the
 conditioning cache, FP8 weights and local checkpoint sets are in
 [Image generation](../guides/image-generation#support). On iOS, the pinned
 `v0.4.0` runtime splits Metal graphs, so full-VAE decoding is admitted;
-only SD-Turbo with its embedded full VAE at 512x512 is qualified, on an iPhone
-16 Pro and an iPhone 17 Pro ([#1047](https://github.com/leehack/llamadart/issues/1047)).
+device qualification on v0.4.0 is pending. Earlier runtimes decoded SD-Turbo with its embedded full VAE at 512×512 on iPhone
+16 Pro and iPhone 17 Pro ([#1047](https://github.com/leehack/llamadart/issues/1047)).
 External VAE/TAESD components, SDXL-size VAEs, larger resolutions and SDXS
 through `sd_dart_new_sd_ctx` are not device-qualified, and a Metal
 command-buffer failure surfaces as an error. A runtime without
