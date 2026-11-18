@@ -12,6 +12,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:llamadart_studio/llamadart_studio.dart';
 import 'package:llamadart_studio_core/llamadart_studio_core.dart';
+import 'package:path/path.dart' as p;
 
 import 'studio_widget_test_helpers.dart';
 
@@ -42,16 +43,16 @@ Future<void> _openSetup(WidgetTester tester) async {
   await tester.pumpAndSettle();
 }
 
+Finder _localTile(String root) =>
+    find.widgetWithText(ListTile, p.basename(root));
+
 Future<void> _selectLocal(WidgetTester tester, String root) async {
   await _openSetup(tester);
   await tester.tap(
     find.byKey(const Key('coding_open_local_workspaces_button')),
   );
-  await _waitFor(
-    tester,
-    () => find.byKey(Key('coding_open_local_$root')).evaluate().isNotEmpty,
-  );
-  await tester.tap(find.byKey(Key('coding_open_local_$root')));
+  await _waitFor(tester, () => _localTile(root).evaluate().isNotEmpty);
+  await tester.tap(_localTile(root));
   await _waitFor(
     tester,
     () => tester.widget<IconButton>(find.byKey(_folderKey)).onPressed != null,
@@ -93,6 +94,7 @@ void main() {
     }
     expect((await deps.listLocalCodingWorkspaces()).toSet(), roots.toSet());
     final root = roots.first;
+    final selected = p.canonicalize(root);
     await deps.codingController.setWorkspaceRoot(root);
     final tools = deps.codingController.buildCodingTools();
     expect(tools.map((tool) => tool.name), isNot(contains('bash')));
@@ -124,10 +126,13 @@ void main() {
       File('$root/src/nested/main.dart').readAsStringSync(),
       'const label = "Québec";\n',
     );
-    deps.codingController.setPromptDraftForWorkspace(root, 'Keep this draft');
+    deps.codingController.setPromptDraftForWorkspace(
+      selected,
+      'Keep this draft',
+    );
     await deps.codingController.setWorkspaceRoot(roots.last);
     expect(
-      deps.codingController.promptDraftForWorkspace(root),
+      deps.codingController.promptDraftForWorkspace(selected),
       'Keep this draft',
     );
     expect(Directory(roots.last).listSync(), isEmpty);
@@ -142,7 +147,7 @@ void main() {
       keyValueStore: kv,
     );
     addTearDown(restored.dispose);
-    expect(restored.codingController.state.workspaceRoot, root);
+    expect(restored.codingController.state.workspaceRoot, selected);
     await restored.codingController.openDirectory('src/nested');
     expect(restored.codingController.state.files.single.name, 'main.dart');
     await restored.codingController.openFile('src/nested/main.dart');
@@ -150,8 +155,8 @@ void main() {
       restored.codingController.state.selectedFileSlice!.content,
       'const label = "Québec";\n',
     );
-    expect(owned.listSync().map((entry) => entry.path), [
-      '${owned.path}/coding_workspaces',
+    expect(owned.listSync().map((entry) => p.basename(entry.path)), [
+      'coding_workspaces',
     ]);
   });
 
@@ -203,7 +208,7 @@ void main() {
       final root = deps.codingController.state.workspaceRoot!;
       expect(
         Directory(root).parent.path,
-        '${owned.path}/llamadart_studio/coding_workspaces',
+        p.canonicalize('${owned.path}/llamadart_studio/coding_workspaces'),
       );
       expect(find.textContaining('Local workspace created.'), findsOneWidget);
       await tester.runAsync(() async {
@@ -217,7 +222,9 @@ void main() {
       await tester.tap(find.text('Files (1)'));
       await tester.pumpAndSettle();
       await tester.runAsync(() async {
-        await tester.tap(find.byKey(const Key('coding_file_src/main.dart')));
+        await tester.tap(
+          find.byKey(Key('coding_file_${p.join('src', 'main.dart')}')),
+        );
       });
       await _waitFor(
         tester,
@@ -276,7 +283,10 @@ void main() {
           .evaluate()
           .isNotEmpty,
     );
-    expect(deps.codingController.state.workspaceRoot, owned.path);
+    expect(
+      deps.codingController.state.workspaceRoot,
+      p.canonicalize(owned.path),
+    );
     expect(find.text('Keep this prompt'), findsOneWidget);
     expect(blocked.readAsStringSync(), 'keep');
     expect(
@@ -319,7 +329,10 @@ void main() {
           tester,
           () => find.text('Create local').evaluate().isNotEmpty,
         );
-        expect(deps.codingController.state.workspaceRoot, owned.path);
+        expect(
+          deps.codingController.state.workspaceRoot,
+          p.canonicalize(owned.path),
+        );
         expect(find.text('Keep picker draft'), findsOneWidget);
         expect(find.text('Create local'), findsOneWidget);
         if (result == 'null') {
@@ -387,7 +400,10 @@ void main() {
       await selected.timeout(const Duration(seconds: 3));
     });
     await tester.pumpAndSettle();
-    expect(deps.codingController.state.workspaceRoot, owned.path);
+    expect(
+      deps.codingController.state.workspaceRoot,
+      p.canonicalize(owned.path),
+    );
     expect(find.byType(SnackBar), findsNothing);
     expect(find.byKey(_createKey), findsNothing);
   });
@@ -475,9 +491,20 @@ void main() {
       await tester.tap(
         find.byKey(const Key('coding_open_local_workspaces_button')),
       );
-      await _waitFor(
-        tester,
-        () => find.byKey(Key('coding_open_local_$first')).evaluate().isNotEmpty,
+      await _waitFor(tester, () => _localTile(first).evaluate().isNotEmpty);
+      expect(
+        find.descendant(
+          of: _localTile(second),
+          matching: find.text('Current workspace'),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(
+          of: _localTile(first),
+          matching: find.text('Saved on this device'),
+        ),
+        findsOneWidget,
       );
       await tester.tap(find.widgetWithText(TextButton, 'Cancel'));
       await _waitFor(
@@ -488,6 +515,10 @@ void main() {
       expect(deps.codingController.state.workspaceRoot, second);
       await _selectLocal(tester, first);
       expect(deps.codingController.state.workspaceRoot, first);
+      expect(
+        find.textContaining('Could not reopen this local workspace.'),
+        findsNothing,
+      );
       expect(
         tester
             .widget<TextField>(find.byKey(const Key('coding_prompt_input')))
@@ -522,6 +553,60 @@ void main() {
         'Montréal retained',
       );
       expect(Directory(second).existsSync(), isTrue);
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+  );
+
+  testWidgets(
+    'a non-canonical app storage path still reports local workspace state',
+    (tester) async {
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      final deps = await buildTestDeps(
+        isMobile: true,
+        appDataDirectory: '${owned.path}/.',
+      );
+      addTearDown(deps.dispose);
+      await _mount(tester, deps);
+      await tester.tap(find.byKey(_createKey));
+      await _waitFor(
+        tester,
+        () =>
+            deps.codingController.state.workspaceRoot != null &&
+            tester.widget<IconButton>(find.byKey(_folderKey)).onPressed != null,
+      );
+      final root = deps.codingController.state.workspaceRoot!;
+      final listed = (await tester.runAsync(deps.listLocalCodingWorkspaces))!;
+      expect(listed.single, isNot(root));
+      expect(p.equals(listed.single, root), isTrue);
+      expect(find.textContaining('Local workspace created.'), findsOneWidget);
+      expect(
+        find.textContaining('The local folder could not be opened.'),
+        findsNothing,
+      );
+      await _openSetup(tester);
+      await tester.tap(
+        find.byKey(const Key('coding_open_local_workspaces_button')),
+      );
+      await _waitFor(tester, () => _localTile(root).evaluate().isNotEmpty);
+      expect(
+        find.descendant(
+          of: _localTile(root),
+          matching: find.text('Current workspace'),
+        ),
+        findsOneWidget,
+      );
+      await tester.tap(_localTile(root));
+      await _waitFor(
+        tester,
+        () =>
+            tester.widget<IconButton>(find.byKey(_folderKey)).onPressed != null,
+      );
+      expect(deps.codingController.state.workspaceRoot, root);
+      expect(
+        find.textContaining('Could not reopen this local workspace.'),
+        findsNothing,
+      );
       expect(tester.takeException(), isNull);
       await tester.pumpWidget(const SizedBox.shrink());
     },

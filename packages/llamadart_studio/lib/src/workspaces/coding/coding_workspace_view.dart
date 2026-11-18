@@ -8,6 +8,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:llamadart_studio_core/llamadart_studio_core.dart';
+import 'package:path/path.dart' as p;
 
 import '../../app/studio_dependencies.dart';
 import '../../app/studio_theme.dart';
@@ -381,6 +382,12 @@ class _CodingWorkspaceViewState extends State<CodingWorkspaceView> {
     );
   }
 
+  // The controller canonicalizes the root it stores, so compare as paths.
+  bool _isActiveWorkspaceRoot(StudioDependencies deps, String root) {
+    final active = deps.codingController.state.workspaceRoot;
+    return active != null && p.equals(active, root);
+  }
+
   Future<void> _createLocalWorkspace() async {
     final deps = _deps!;
     if (!deps.isMobile ||
@@ -396,7 +403,7 @@ class _CodingWorkspaceViewState extends State<CodingWorkspaceView> {
       if (!mounted) return;
       await deps.codingController.setWorkspaceRoot(root);
       if (!mounted) return;
-      if (deps.codingController.state.workspaceRoot != root ||
+      if (!_isActiveWorkspaceRoot(deps, root) ||
           deps.codingController.state.lastError != null) {
         _showFolderMessage(
           'The local folder could not be opened. Try creating a new local workspace.',
@@ -513,7 +520,7 @@ class _CodingWorkspaceViewState extends State<CodingWorkspaceView> {
                         key: Key('coding_open_local_$root'),
                         title: Text(root.replaceAll(r'\', '/').split('/').last),
                         subtitle: Text(
-                          root == deps.codingController.state.workspaceRoot
+                          _isActiveWorkspaceRoot(deps, root)
                               ? 'Current workspace'
                               : 'Saved on this device',
                         ),
@@ -535,7 +542,7 @@ class _CodingWorkspaceViewState extends State<CodingWorkspaceView> {
       if (selected == null || !mounted) return;
       await deps.codingController.setWorkspaceRoot(selected);
       if (!mounted) return;
-      if (deps.codingController.state.workspaceRoot != selected ||
+      if (!_isActiveWorkspaceRoot(deps, selected) ||
           deps.codingController.state.lastError != null) {
         _showFolderMessage(
           'Could not reopen this local workspace. Your files have not been changed.',

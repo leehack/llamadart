@@ -13,6 +13,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:llamadart_studio/llamadart_studio.dart';
 import 'package:llamadart_studio_core/llamadart_studio_core.dart';
+import 'package:path/path.dart' as p;
 
 import 'studio_widget_test_helpers.dart';
 
@@ -303,7 +304,10 @@ void main() {
         find.byKey(const Key('coding_file_external.txt')),
         added ? findsOneWidget : findsNothing,
       );
-      expect(deps.codingController.state.workspaceRoot, root.path);
+      expect(
+        deps.codingController.state.workspaceRoot,
+        p.canonicalize(root.path),
+      );
     }
     expect(
       tester
@@ -826,11 +830,20 @@ void main() {
     addTearDown(deps.dispose);
     final root = Directory.systemTemp.createTempSync('coding_approval_');
     addTearDown(() => root.deleteSync(recursive: true));
+    // Directory.list cannot enumerate a path beyond MAX_PATH on Windows.
+    final depth = Platform.isWindows
+        ? ((240 - root.path.length) ~/ 25).clamp(1, 10)
+        : 10;
     final workspace = Directory(
-      '${root.path}/${List.filled(10, 'long_workspace_component').join('/')}',
+      '${root.path}/${List.filled(depth, 'long_workspace_component').join('/')}',
     )..createSync(recursive: true);
     await tester.runAsync(
       () => deps.codingController.setWorkspaceRoot(workspace.path),
+    );
+    expect(deps.codingController.state.lastError, isNull);
+    expect(
+      deps.codingController.state.workspaceRoot,
+      p.canonicalize(workspace.path),
     );
     deps.codingController.setAllowShellCommandTool(true);
     final result = deps.codingController

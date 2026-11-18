@@ -9,6 +9,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:llamadart_studio/llamadart_studio.dart';
 import 'package:llamadart_studio_core/llamadart_studio_core.dart';
+import 'package:path/path.dart' as p;
 
 import 'studio_widget_test_helpers.dart';
 
@@ -78,7 +79,7 @@ void main() {
     final first = '${temp.path}/A';
     final original = await deps(first, kv);
     final root = await original.createLocalCodingWorkspace();
-    final id = root.split('/').last;
+    final id = p.basename(root);
     await original.codingController.setWorkspaceRoot(root);
     await original.codingController
         .buildCodingTools()
@@ -94,7 +95,7 @@ void main() {
       expect(Directory(current).existsSync(), isFalse);
       current = next;
       final restored = await deps(current, kv);
-      final expected = '$current/coding_workspaces/$id';
+      final expected = p.canonicalize('$current/coding_workspaces/$id');
       expect(restored.codingController.state.lastError, isNull);
       expect(restored.codingController.state.workspaceRoot, expected);
       expect(await restored.codingController.openFile(_nested), isTrue);
@@ -103,7 +104,9 @@ void main() {
         _bytes,
       );
       expect(File('$expected/$_nested').readAsBytesSync(), utf8.encode(_bytes));
-      expect(await restored.listLocalCodingWorkspaces(), [expected]);
+      expect((await restored.listLocalCodingWorkspaces()).map(p.canonicalize), [
+        expected,
+      ]);
       await restored.dispose();
     }
   });
@@ -113,21 +116,22 @@ void main() {
     final appData = '${temp.path}/app';
     final first = await deps(appData, kv);
     final owned = await first.createLocalCodingWorkspace();
-    final id = owned.split('/').last;
+    final id = p.basename(owned);
     // An external folder shaped like an owned one must stay an exact path.
     final external = Directory('${temp.path}/other/coding_workspaces/$id')
       ..createSync(recursive: true);
+    final externalRecord = _absolute(p.canonicalize(external.path));
     for (final (root, record) in [
       (owned, _owned(id)),
-      (external.path, _absolute(external.path)),
+      (external.path, externalRecord),
       (owned, _owned(id)),
-      (external.path, _absolute(external.path)),
+      (external.path, externalRecord),
     ]) {
       await first.codingController.setWorkspaceRoot(root);
-      expect(first.codingController.state.workspaceRoot, root);
+      expect(first.codingController.state.workspaceRoot, p.canonicalize(root));
       expect(await _readV2(kv), record);
       final fresh = await deps(appData, kv);
-      expect(fresh.codingController.state.workspaceRoot, root);
+      expect(fresh.codingController.state.workspaceRoot, p.canonicalize(root));
       await fresh.dispose();
     }
     expect(await kv.readString(_v1), isNull);
@@ -139,12 +143,15 @@ void main() {
     final owned = await setup.createLocalCodingWorkspace();
     final external = Directory('${temp.path}/external')..createSync();
     for (final (root, record) in [
-      (owned, _owned(owned.split('/').last)),
-      (external.path, _absolute(external.path)),
+      (owned, _owned(p.basename(owned))),
+      (external.path, _absolute(p.canonicalize(external.path))),
     ]) {
       final kv = InMemoryKeyValueStore({_v1: root});
       final restored = await deps(appData, kv);
-      expect(restored.codingController.state.workspaceRoot, root);
+      expect(
+        restored.codingController.state.workspaceRoot,
+        p.canonicalize(root),
+      );
       expect(await _readV2(kv), record);
       expect(await kv.readString(_v1), root);
     }
@@ -225,14 +232,17 @@ void main() {
     Directory('${temp.path}/app').createSync();
     Link('${temp.path}/app/coding_workspaces')
         .createSync('${temp.path}/real/coding_workspaces');
-    final kv = InMemoryKeyValueStore({
-      _v2: jsonEncode(_owned(root.split('/').last)),
-    });
+    final id = p.basename(root);
+    final kv = InMemoryKeyValueStore({_v2: jsonEncode(_owned(id))});
     final restored = await deps('${temp.path}/app', kv);
     expect(restored.codingController.state.workspaceRoot, isNull);
+    expect(restored.codingController.state.lastError, contains('unavailable'));
     expect(restored.codingController.state.lastError, contains(_recovery));
-    await restored.codingController.setWorkspaceRoot(
-      '${temp.path}/app/coding_workspaces/${root.split('/').last}',
+    final linked = '${temp.path}/app/coding_workspaces/$id';
+    await restored.codingController.setWorkspaceRoot(linked);
+    expect(
+      restored.codingController.state.workspaceRoot,
+      p.canonicalize(linked),
     );
     expect(
       (await _readV2(kv) as Map)['kind'],
@@ -247,23 +257,27 @@ void main() {
     final current = await deps(appData, kv);
     final a = await current.createLocalCodingWorkspace();
     final b = await current.createLocalCodingWorkspace();
+    final selected = p.canonicalize(a);
     await current.codingController.setWorkspaceRoot(a);
     await current.codingController
         .buildCodingTools()
         .firstWhere((tool) => tool.name == 'write')
         .invoke({'path': _nested, 'content': _bytes});
-    current.codingController.setPromptDraftForWorkspace(a, 'Keep draft');
+    current.codingController.setPromptDraftForWorkspace(selected, 'Keep draft');
     final saved = await kv.readString(_v2);
     kv.reject = true;
     await current.codingController.setWorkspaceRoot(b);
-    expect(current.codingController.state.workspaceRoot, a);
+    expect(current.codingController.state.workspaceRoot, selected);
     expect(current.codingController.state.lastError, contains('unavailable'));
-    expect(current.codingController.promptDraftForWorkspace(a), 'Keep draft');
+    expect(
+      current.codingController.promptDraftForWorkspace(selected),
+      'Keep draft',
+    );
     expect(await kv.readString(_v2), saved);
     expect(File('$a/$_nested').readAsBytesSync(), utf8.encode(_bytes));
     kv.reject = false;
     final fresh = await deps(appData, kv);
-    expect(fresh.codingController.state.workspaceRoot, a);
+    expect(fresh.codingController.state.workspaceRoot, selected);
   });
 
   testWidgets('a storage outage preserves the owned root across a later move', (
@@ -290,14 +304,18 @@ void main() {
       )..createSync();
       final current = await buildTestDeps(isMobile: true, keyValueStore: kv);
       addTearDown(current.dispose);
-      expect(current.codingController.state.workspaceRoot, root);
-      current.codingController.setPromptDraftForWorkspace(root, 'Keep draft');
+      final selected = p.canonicalize(root);
+      expect(current.codingController.state.workspaceRoot, selected);
+      current.codingController.setPromptDraftForWorkspace(
+        selected,
+        'Keep draft',
+      );
       unavailable = true;
       await current.codingController.setWorkspaceRoot(other.path);
-      expect(current.codingController.state.workspaceRoot, root);
+      expect(current.codingController.state.workspaceRoot, selected);
       expect(current.codingController.state.lastError, contains(_recovery));
       expect(
-        current.codingController.promptDraftForWorkspace(root),
+        current.codingController.promptDraftForWorkspace(selected),
         'Keep draft',
       );
       expect(await kv.readString(_v2), saved);
@@ -309,7 +327,9 @@ void main() {
       unavailable = false;
       final restored = await buildTestDeps(isMobile: true, keyValueStore: kv);
       addTearDown(restored.dispose);
-      final expected = '$support/llamadart_studio/coding_workspaces/$id';
+      final expected = p.canonicalize(
+        '$support/llamadart_studio/coding_workspaces/$id',
+      );
       expect(restored.codingController.state.workspaceRoot, expected);
       expect(restored.codingController.state.lastError, isNull);
       expect(await kv.readString(_v2), saved);
@@ -381,26 +401,21 @@ void main() {
     await tester.pumpAndSettle();
     expect(deps.codingController.state.workspaceRoot, isNull);
     expect(find.textContaining(_recovery, findRichText: true), findsWidgets);
-    final current =
-        '${temp.path}/app/coding_workspaces/${root.split('/').last}';
+    final id = p.basename(root);
+    final current = p.canonicalize('${temp.path}/app/coding_workspaces/$id');
+    final tile = find.text(id);
     await tester.tap(find.byKey(const Key('coding_setup_toggle')));
     await tester.pumpAndSettle();
     await tester.tap(
       find.byKey(const Key('coding_open_local_workspaces_button')),
     );
-    await _waitFor(
-      tester,
-      () => find.byKey(Key('coding_open_local_$current')).evaluate().isNotEmpty,
-    );
-    await tester.tap(find.byKey(Key('coding_open_local_$current')));
+    await _waitFor(tester, () => tile.evaluate().isNotEmpty);
+    await tester.tap(tile);
     await _waitFor(
       tester,
       () => deps.codingController.state.workspaceRoot == current,
     );
-    expect(
-      await tester.runAsync(() => _readV2(kv)),
-      _owned(root.split('/').last),
-    );
+    expect(await tester.runAsync(() => _readV2(kv)), _owned(id));
     expect(await tester.runAsync(() => kv.readString(_v1)), root);
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.runAsync(() async {
@@ -411,8 +426,7 @@ void main() {
         appDataDirectory: '${temp.path}/moved',
         keyValueStore: kv,
       );
-      final moved =
-          '${temp.path}/moved/coding_workspaces/${root.split('/').last}';
+      final moved = p.canonicalize('${temp.path}/moved/coding_workspaces/$id');
       expect(fresh.codingController.state.workspaceRoot, moved);
       expect(File('$moved/$_nested').readAsBytesSync(), utf8.encode(_bytes));
       await fresh.dispose();

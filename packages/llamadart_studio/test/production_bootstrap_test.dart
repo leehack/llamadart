@@ -12,6 +12,7 @@ import 'package:llamadart/llamadart.dart';
 import 'package:llamadart_studio/llamadart_studio.dart';
 import 'package:llamadart_studio/main.dart' as app;
 import 'package:llamadart_studio_core/llamadart_studio_core.dart';
+import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -90,7 +91,10 @@ void main() {
             '$appData/coding_workspaces',
           );
           await deps.codingController.setWorkspaceRoot(localRoot);
-          expect(deps.codingController.state.workspaceRoot, localRoot);
+          expect(
+            deps.codingController.state.workspaceRoot,
+            p.canonicalize(localRoot),
+          );
           expect(deps.codingController.state.lastError, isNull);
           await deps.shellController.updateSettings(
             (s) => s.copyWith(maxTokens: 321),
@@ -103,7 +107,7 @@ void main() {
             jsonDecode(
               preferences.getString('studio.coding.workspace_root.v2')!,
             ),
-            {'version': 2, 'kind': 'appOwned', 'id': localRoot.split('/').last},
+            {'version': 2, 'kind': 'appOwned', 'id': p.basename(localRoot)},
           );
         });
         expect(deps.mcpManager.state.servers, isEmpty);
