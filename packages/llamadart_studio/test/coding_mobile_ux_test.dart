@@ -240,7 +240,12 @@ void main() {
         await tester.pumpAndSettle();
         await tester.runAsync(() async {
           await tester.tap(find.text('Revert'));
-          await Future<void>.delayed(const Duration(milliseconds: 100));
+          for (var i = 0; i < 250; i++) {
+            if (deps.codingController.state.recentChanges.single.reverted) {
+              break;
+            }
+            await Future<void>.delayed(const Duration(milliseconds: 20));
+          }
         });
         await tester.pumpAndSettle();
         expect(file.readAsStringSync(), 'before');
