@@ -227,7 +227,7 @@ void main() {
   test('default assets include the qualified media embedding API', () {
     expect(readPinnedBridgeTag(Directory.current), 'v0.1.86');
     expect(bridgeNativeReleaseTag, 'v1.0.0');
-    expect(bridgeApprovedNativePin, 'v1.0.0-1');
+    expect(bridgeApprovedNativePin, 'v1.0.0-2');
     expect(
       normalizeNativeLlamaCppTag(bridgeApprovedNativePin),
       bridgeLlamaCppTag,
@@ -312,11 +312,12 @@ void main() {
           current,
           contains(
             RegExp(
-              'native llama\\.cpp `${RegExp.escape(bridgeApprovedNativePin)}`',
+              'native llama\\.cpp `${RegExp.escape(normalizeNativeLlamaCppTag(bridgeApprovedNativePin)!)}(?:-\\d+)?`',
             ),
           ),
           reason: path,
         );
+        expect(findRuntimeBaselineDrift(Directory.current), isEmpty);
         expect(current, contains('@litert-lm/core@0.19.0'), reason: path);
       }
 

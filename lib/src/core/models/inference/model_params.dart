@@ -558,12 +558,11 @@ class ModelParams {
   /// `LlamaGpuMemoryFitException` before the model loads. A fit that fails
   /// throws as well, and never falls back to a full load.
   ///
-  /// On Windows, use `llamadart-native` v1.0.0-1 or later: it fixes the
-  /// Vulkan free-memory figure so other processes' VRAM counts. The CUDA
-  /// backend still reports free memory that ignores other processes, so the
-  /// fit can over-commit there (llamadart-native#206), including under
-  /// [ComputeDevice.auto] when llama.cpp picks CUDA. Prefer Vulkan for the fit
-  /// on Windows, or raise `GpuMemoryFit.marginBytes`.
+  /// On Windows, use `llamadart-native` v1.0.0-2 or later so both Vulkan and
+  /// CUDA free-memory figures count other processes' VRAM (v1.0.0-1 fixed
+  /// Vulkan only). For CUDA TCC or `GGML_CUDA_DEVICES` virtual devices where
+  /// system-wide free memory cannot be read, the fit fails closed with
+  /// `LlamaGpuMemoryFitException`.
   ///
   /// macOS, iOS and Android share memory between CPU and GPU, so a load there
   /// is not fitted and the report says it was skipped. The Web and LiteRT-LM

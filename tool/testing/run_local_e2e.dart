@@ -3217,6 +3217,7 @@ Future<LocalE2eResult> runLocalE2e(
       'v0.9.0',
       'v1.0.0',
       'v1.0.0-1',
+      'v1.0.0-2',
     ];
     if (sha.length != 40 ||
         !RegExp(r'^[0-9a-f]{40}$').hasMatch(sha) ||

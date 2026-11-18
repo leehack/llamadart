@@ -50,6 +50,7 @@ void main() {
         'v0.9.0',
         'v1.0.0',
         'v1.0.0-1',
+        'v1.0.0-2',
       ]);
       final guard = qualification()['if'] as String;
       expect(guard, startsWith(r'${{'));
