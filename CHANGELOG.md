@@ -12,6 +12,7 @@ Releases before 0.10.0 are in the
 - Improve Studio Coding on phones with reachable task controls, file navigation, guarded Revert, and explicit desktop-only local commands.
 
 - Keep Studio Speech and Notes usable when Linux audio playback plugins are missing.
+- Update native image generation to stable-diffusion-native `v0.4.0`. Apple apps using image generation must upgrade the core and Stable Diffusion companion together.
 
 - Restore native text-to-speech discovery when Dart bundles its runtime outside the working directory.
 

@@ -14,6 +14,8 @@ import 'package:llamadart/src/core/models/config/log_level.dart';
 import 'package:llamadart/src/hook/native_bundle_config.dart';
 import 'package:llamadart/src/platform/io/ios_simulator.dart';
 
+import '../../../support/fake_stable_diffusion_runtime.dart';
+
 const _dotProductCpuInfo =
     'Features\t: fp asimd atomics fphp asimdhp asimddp\n';
 const _haswellCpuInfo = 'flags\t\t: fpu sse4_2 avx f16c fma avx2 bmi2\n';
@@ -175,8 +177,8 @@ void main() {
       StableDiffusionCalls? resolve({
         String releaseTag = StableDiffusionCalls.fp8MetalNativeRelease,
         Set<String> missing = const {},
-      }) => StableDiffusionCalls.tryResolve(
-        symbol: (name) => missing.contains(name)
+      }) => resolveFakeStableDiffusionExports(
+        (name) => missing.contains(name)
             ? throw ArgumentError("Couldn't resolve native function '$name'")
             : Pointer.fromAddress(0x1000),
         releaseTag: releaseTag,
@@ -208,11 +210,11 @@ void main() {
           logLevel: level,
         );
 
-        expect(api.order, ['recordLog ${level.name}', 'listDevices']);
+        expect(api.order, ['admit', 'recordLog ${level.name}', 'listDevices']);
       }
       final api = _FakeApi();
       probeStableDiffusionRuntime(abi: Abi.macosArm64, api: api);
-      expect(api.order.first, 'recordLog none');
+      expect(api.order, ['admit', 'recordLog none', 'listDevices']);
     });
 
     test('a runtime without the sd_dart_ functions is unavailable, and the '
@@ -223,6 +225,7 @@ void main() {
       );
 
       expect(status.isAvailable, isFalse);
+      expect(status.devices, isEmpty);
       expect(
         status.unavailableReason?.message,
         allOf(
@@ -232,6 +235,18 @@ void main() {
           contains('stable-diffusion-native v0.2.0-1 or later'),
         ),
       );
+    });
+
+    test('reports an ABI mismatch before logging or initializing devices', () {
+      final abiError = stableDiffusionAbiUnsupported();
+      final api = _FakeApi(admissionFailure: abiError);
+      final status = probeStableDiffusionRuntime(abi: Abi.macosArm64, api: api);
+
+      expect(status.isAvailable, isFalse);
+      expect(status.unavailableReason, same(abiError));
+      expect(status.devices, isEmpty);
+      expect(api.order, ['admit']);
+      expect(status.throwIfUnavailable, throwsA(same(abiError)));
     });
 
     test('rejects an unpublished ABI before touching the library', () {
@@ -768,6 +783,7 @@ final class _FakeApi implements StableDiffusionNativeApi {
   _FakeApi({
     this.devices = 'CPU\tHost CPU\n',
     this.error,
+    this.admissionFailure,
     this.wrapperCalls = true,
     this.fp8Metal = false,
     this.intrinsicTinyV1 = false,
@@ -776,6 +792,7 @@ final class _FakeApi implements StableDiffusionNativeApi {
 
   final String devices;
   final ArgumentError? error;
+  final LlamaUnsupportedException? admissionFailure;
   final bool wrapperCalls;
   final bool fp8Metal;
   final bool intrinsicTinyV1;
@@ -811,7 +828,12 @@ final class _FakeApi implements StableDiffusionNativeApi {
   }
 
   @override
-  bool exportsWrapperCalls() => _call(wrapperCalls);
+  bool exportsWrapperCalls() {
+    order.add('admit');
+    final failure = admissionFailure;
+    if (failure != null) throw failure;
+    return _call(wrapperCalls);
+  }
 
   @override
   bool loadsFp8AsF16OnMetal() => _call(fp8Metal);

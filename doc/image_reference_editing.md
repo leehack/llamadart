@@ -1,16 +1,40 @@
 # Bounded reference-image editing qualification
 
-`ReferenceImageEditingRequest` with `ImageReferenceEditingRecipe.fluxKontext`
-edits one reference image as the prompt describes. stable-diffusion.cpp
-encodes the reference with the FLUX autoencoder and passes its latent tokens
-to the transformer at one fixed RoPE index (`preset=flux_kontext`) at every
-sampling step. The admitted recipe is the pinned stable-diffusion-native
-v0.3.0-1 runtime on macOS with Metal and exactly the FLUX.1 Kontext [dev]
-transformer, `ae`, CLIP-L and T5-XXL.
+The current stable-diffusion-native v0.4.0 pin reports
+`supportsReferenceImageEditing == false`. A FLUX.1 Kontext reference-editing
+request throws `LlamaUnsupportedException` before generation starts. The
+owner's upstream refresh validation measured a 23-row bar for the fixed
+seed-42 recipe, below the existing 24-row minimum. Requalification remains
+open. [Owner evidence](https://github.com/leehack/stable-diffusion-native/issues/20)
+[#1222](https://github.com/leehack/llamadart/issues/1222)
 
-**Status: qualified** on macOS Metal with `flux1-kontext-dev` Q4_0: the Dart
-output is byte-identical to the direct C reference for `edit` and `plain`, and
-every gate below passes ([run record](https://github.com/leehack/llamadart/pull/1515#issuecomment-6465651561)).
+## Check the current runtime
+
+Use the local weights listed below. The maintained scenario loads the
+FLUX.1 Kontext component set on macOS Metal and checks the typed refusal.
+
+```bash
+export LLAMADART_REFERENCE_EDIT_VAE="$ae" \
+  LLAMADART_REFERENCE_EDIT_CLIP_L="$clip_l" \
+  LLAMADART_REFERENCE_EDIT_T5XXL="$t5xxl"
+dart run tool/testing/run_local_e2e.dart \
+  --scenario image-reference-editing --model-path "$kontext" --dry-run
+TMPDIR="$(mktemp -d)" dart run tool/testing/run_local_e2e.dart \
+  --scenario image-reference-editing --model-path "$kontext"
+```
+
+## Historical v0.3.0-1 qualification
+
+`ReferenceImageEditingRequest` with `ImageReferenceEditingRecipe.fluxKontext`
+edited one reference image as the prompt described. stable-diffusion.cpp
+encoded the reference with the FLUX autoencoder and passed its latent tokens
+to the transformer at one fixed RoPE index (`preset=flux_kontext`) at every
+sampling step. The qualified combination used macOS Metal, the
+FLUX.1 Kontext [dev] transformer, `ae`, CLIP-L and T5-XXL.
+
+On macOS Metal with `flux1-kontext-dev` Q4_0, the Dart output matched the
+direct C reference byte for byte for `edit` and `plain` and passed every gate
+below. [Run record](https://github.com/leehack/llamadart/pull/1515#issuecomment-6465651561)
 
 ## Family choice
 
@@ -67,7 +91,7 @@ Size errors (`LlamaImageGenerationException`) and recipe refusals
   No new `sd_ctx_t` call, native object or callback is added; see
   `doc/llama_cpp_exit_teardown.md`, "Rule for new code".
 
-## Reproduce
+## Reproduce the historical qualification
 
 Weights (the [upstream guide](https://github.com/leejet/stable-diffusion.cpp/blob/be486498eadc29dc3cd234d944c2180ed42b1415/docs/kontext.md)
 names the same set):
@@ -82,8 +106,10 @@ names the same set):
 FLUX.1 Kontext [dev] is released under the FLUX.1 [dev] Non-Commercial
 License. Record each file's revision and SHA-256 with the results.
 
-Prepare the clean checkout with the pinned SDK, extract the checksum-verified
-pinned runtime bundle into `$bundle`, then:
+Use a separate checkout of [7096056b1](https://github.com/leehack/llamadart/tree/7096056b1b0ede3fc3b150d3694cb12d8ebfb059).
+That revision contains the positive Dart fixture and pins v0.3.0-1. Prepare
+the checkout with its pinned SDK and extract its checksum-verified runtime
+bundle into `$bundle`.
 
 ```bash
 mkdir -p build/image-reference-editing-native-reference

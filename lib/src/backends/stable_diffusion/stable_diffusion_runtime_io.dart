@@ -28,7 +28,8 @@ abstract interface class StableDiffusionNativeApi {
   /// `sd_list_devices()` output.
   String listDevices();
 
-  /// Whether the runtime exports every function of [StableDiffusionCalls].
+  /// Whether the runtime exports the required calls, after ABI admission.
+  /// Throws [LlamaUnsupportedException] if the runtime has a different ABI.
   bool exportsWrapperCalls();
 
   /// [StableDiffusionCalls.loadsFp8AsF16OnMetal] of the runtime.
@@ -82,10 +83,9 @@ const Set<Abi> stableDiffusionPublishedAbis = {
 /// cross-compiled without AVX, and macOS 13.3 runs only on Intel CPUs that
 /// have AVX2 anyway.
 ///
-/// Then `sd_version`, `sd_commit` and `sd_list_devices` must answer, and the
-/// runtime must export the `sd_dart_` functions of [StableDiffusionCalls],
-/// which a release older than [StableDiffusionCalls.minimumNativeRelease]
-/// does not.
+/// Then `sd_version` and `sd_commit` must answer and the runtime must pass
+/// the ABI and wrapper checks in [StableDiffusionCalls.tryResolve] before
+/// log registration or the device query.
 ///
 /// `sd_list_devices` initializes the GPU backend, which logs through ggml.
 /// The runtime's log recorder is registered before it, at [logLevel], so
@@ -174,13 +174,13 @@ StableDiffusionRuntimeStatus probeStableDiffusionRuntime({
   try {
     final version = api.version();
     final commit = api.commit();
-    api.recordLog(logLevel);
-    final devices = parseStableDiffusionDeviceList(api.listDevices());
     if (!api.exportsWrapperCalls()) {
       return StableDiffusionRuntimeStatus.unavailable(
         stableDiffusionWrapperUnsupported(),
       );
     }
+    api.recordLog(logLevel);
+    final devices = parseStableDiffusionDeviceList(api.listDevices());
     return StableDiffusionRuntimeStatus.available(
       version: version,
       commit: commit,
@@ -189,6 +189,8 @@ StableDiffusionRuntimeStatus probeStableDiffusionRuntime({
       splitsGraphsOnMetal: api.splitsGraphsOnMetal(),
       supportsIntrinsicTinyDecoderV1: api.supportsIntrinsicTinyDecoderV1(),
     );
+  } on LlamaUnsupportedException catch (error) {
+    return StableDiffusionRuntimeStatus.unavailable(error);
   } on ArgumentError catch (error) {
     return StableDiffusionRuntimeStatus.unavailable(
       stableDiffusionLoadFailure(
@@ -382,7 +384,7 @@ final class BundledStableDiffusionApi implements StableDiffusionNativeApi {
 
   @override
   void recordLog(LlamaLogLevel level) {
-    final log = StableDiffusionCalls.tryResolve()?.log;
+    final log = resolveCalls()?.log;
     if (log != null) {
       recordStableDiffusionLog(log, level);
     }

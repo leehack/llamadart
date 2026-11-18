@@ -2482,7 +2482,7 @@ resident and later loads failed the memory check; the iPhone 16 Pro returned to
 its baseline ([#2004](https://github.com/leehack/llamadart/issues/2004)).
 Runtime `v0.3.0-5` carries the ggml `vm_allocate` host-buffer fix for it.
 
-The current `v0.3.0-6` pin adds Apple model-loader scratch release; its
+The `v0.3.0-6` pin adds Apple model-loader scratch release; its
 qualification is recorded below, separately from these historical v5 measurements.
 
 Repin soak of runtime `v0.3.0-5` (source `f7dcae3bb`): DDP session

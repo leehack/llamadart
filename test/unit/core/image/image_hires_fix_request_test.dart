@@ -226,7 +226,7 @@ void main() {
           isA<LlamaUnsupportedException>().having(
             (error) => error.message,
             'message',
-            allOf(contains('v0.3.0-1'), contains('not qualified')),
+            allOf(contains('v0.4.0'), contains('not qualified')),
           ),
         ),
         reason: family,
