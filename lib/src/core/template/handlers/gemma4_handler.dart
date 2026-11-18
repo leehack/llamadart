@@ -535,7 +535,7 @@ class Gemma4Handler extends ChatTemplateHandler
         tools: tools,
       );
       if (parsed == null) {
-        final end = output.indexOf(_toolCallEnd, start);
+        final end = _findToolCallEnd(output, start);
         if (end == -1) {
           break;
         }
@@ -600,6 +600,32 @@ class Gemma4Handler extends ChatTemplateHandler
         arguments: decodedArguments,
       ),
     );
+  }
+
+  int _findToolCallEnd(String text, int from) {
+    var offset = from;
+    while (offset < text.length) {
+      if (text.startsWith(_toolCallEnd, offset)) {
+        return offset;
+      }
+      var skipped = false;
+      for (final delimiter in _Gemma4ArgumentsParser.delimiters) {
+        if (!text.startsWith(delimiter, offset)) {
+          continue;
+        }
+        final close = text.indexOf(delimiter, offset + delimiter.length);
+        if (close == -1) {
+          return -1;
+        }
+        offset = close + delimiter.length;
+        skipped = true;
+        break;
+      }
+      if (!skipped) {
+        offset++;
+      }
+    }
+    return -1;
   }
 
   int _skipWhitespace(String text, int start) {
@@ -741,7 +767,7 @@ class Gemma4Handler extends ChatTemplateHandler
 /// raw text (no escape processing), keys may be bare, and standard JSON values
 /// are accepted too.
 class _Gemma4ArgumentsParser {
-  static const List<String> _delimiters = <String>[
+  static const List<String> delimiters = <String>[
     '<|"|>',
     '<|\\"|>',
     '<escape>',
@@ -816,7 +842,7 @@ class _Gemma4ArgumentsParser {
       throw const FormatException('Expected argument key');
     }
     _pos = match.end;
-    return match.group(0)!.trimRight();
+    return _trimAsciiRight(match.group(0)!);
   }
 
   dynamic _parseValue() {
@@ -843,7 +869,7 @@ class _Gemma4ArgumentsParser {
   }
 
   String? _tryParseDelimitedString() {
-    for (final delimiter in _delimiters) {
+    for (final delimiter in delimiters) {
       if (!_text.startsWith(delimiter, _pos)) {
         continue;
       }
@@ -870,6 +896,14 @@ class _Gemma4ArgumentsParser {
       }
     }
     throw const FormatException('Unterminated string');
+  }
+
+  static String _trimAsciiRight(String value) {
+    var end = value.length;
+    while (end > 0 && ' \n\r\t'.contains(value[end - 1])) {
+      end--;
+    }
+    return value.substring(0, end);
   }
 
   void _skipWhitespace() {

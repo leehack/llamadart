@@ -753,6 +753,57 @@ void main() {
         expect(parsed.content, isEmpty);
       });
 
+      test('trims only ASCII whitespace from bare keys', () {
+        for (final (raw, key) in [('a ', 'a'), ('a\u00a0', 'a\u00a0')]) {
+          final parsed = ChatTemplateEngine.parse(
+            ChatFormat.gemma4.index,
+            '<|tool_call>call:get_weather{$raw:1}<tool_call|>',
+            tools: [weatherTool],
+          );
+          expect(parsed.toolCalls, hasLength(1), reason: raw);
+          expect(jsonDecode(parsed.toolCalls.single.function!.arguments!), {
+            key: 1,
+          }, reason: raw);
+        }
+
+        for (final key in [' ', '\t']) {
+          final empty = ChatTemplateEngine.parse(
+            ChatFormat.gemma4.index,
+            '<|tool_call>call:get_weather{$key:1}<tool_call|>',
+            tools: [weatherTool],
+          );
+          expect(empty.toolCalls, isEmpty, reason: 'key ${key.codeUnits}');
+        }
+      });
+
+      test('malformed call skips closers inside delimited strings', () {
+        final parsed = ChatTemplateEngine.parse(
+          ChatFormat.gemma4.index,
+          '<|tool_call>call:get_weather{a:<|"|>x<tool_call|>y<|"|>,b:bad}'
+          '<tool_call|><|tool_call>call:search{x:1}<tool_call|>',
+        );
+
+        expect(parsed.content, isEmpty);
+        expect(parsed.toolCalls.map((call) => call.function?.name), ['search']);
+        expect(jsonDecode(parsed.toolCalls.single.function!.arguments!), {
+          'x': 1,
+        });
+      });
+
+      test('streaming never exposes text from a closer inside a string', () {
+        const output =
+            '<|tool_call>call:get_weather{a:<|"|>x<tool_call|>y<|"|>}'
+            '<tool_call|>';
+        for (var length = 0; length <= output.length; length++) {
+          final parsed = ChatTemplateEngine.parse(
+            ChatFormat.gemma4.index,
+            output.substring(0, length),
+            isPartial: true,
+          );
+          expect(parsed.content, isEmpty, reason: 'prefix length $length');
+        }
+      });
+
       test('pure tool-call protocol whitespace stays non-visible', () {
         const output =
             ' \n<|tool_call>call:get_weather{"location":"Seoul"}'
