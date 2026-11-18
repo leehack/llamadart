@@ -988,6 +988,11 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
             'local-only',
             'test/e2e/backends/speech_to_text_stream_e2e_test.dart',
           ],
+          environment: {
+            if (Platform.environment['LLAMADART_STT_LIVE_PACED'] != null)
+              'LLAMADART_STT_LIVE_PACED':
+                  Platform.environment['LLAMADART_STT_LIVE_PACED']!,
+          },
           description: 'Typed live PCM speech-to-text real-model smoke',
         ),
       ],

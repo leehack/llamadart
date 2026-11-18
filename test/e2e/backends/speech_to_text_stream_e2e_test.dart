@@ -263,7 +263,9 @@ void main() {
         await sub300.cancel();
         final peakRss = ProcessInfo.maxRss;
         expect(completion300.state, SpeechToTextCompletionState.completed);
-        expect(completion300.result!.text, isNotEmpty);
+        final voxtral300Text = completion300.result!.text;
+        expect(_normalizeWords(voxtral300Text), contains('fellow americans'));
+        expect(_normalizeWords(voxtral300Text), contains('country'));
         stderr.writeln(
           '[Voxtral 300s fast] wall=${sw.elapsedMilliseconds}ms '
           'flush=${flushSw.elapsedMilliseconds}ms '
@@ -272,6 +274,56 @@ void main() {
           'baselineRssMB=${(baselineRss / (1024 * 1024)).toStringAsFixed(1)} '
           'peakRssMB=${(peakRss / (1024 * 1024)).toStringAsFixed(1)}',
         );
+        stderr.writeln('[Voxtral 300s fast] transcript=$voxtral300Text');
+
+        if (Platform.environment['LLAMADART_STT_LIVE_PACED'] == '1') {
+          final liveBaselineRss = ProcessInfo.currentRss;
+          final liveSw = Stopwatch()..start();
+          Duration? liveFirstPartialWall;
+          Duration? liveFirstPartialAudio;
+          var livePushed = 0;
+          final sLive = await engine.startStream();
+          final subLive = sLive.events.listen((event) {
+            if (event is SpeechToTextPartialEvent &&
+                event.text.trim().isNotEmpty &&
+                liveFirstPartialWall == null) {
+              liveFirstPartialWall = liveSw.elapsed;
+              liveFirstPartialAudio = event.acceptedAudioDuration;
+            }
+          });
+          while (livePushed < clip300s.length) {
+            final next = min(5120, clip300s.length - livePushed);
+            await sLive.addPcm(
+              Float32List.sublistView(clip300s, livePushed, livePushed + next),
+            );
+            livePushed += next;
+            final targetMs = (livePushed * 1000) ~/ 16000;
+            final remainingMs = targetMs - liveSw.elapsedMilliseconds;
+            if (remainingMs > 0) {
+              await Future<void>.delayed(Duration(milliseconds: remainingMs));
+            }
+          }
+          final liveFlushSw = Stopwatch()..start();
+          await sLive.finish();
+          final liveCompletion = await sLive.done;
+          liveFlushSw.stop();
+          liveSw.stop();
+          await subLive.cancel();
+          final livePeakRss = ProcessInfo.maxRss;
+          expect(liveCompletion.state, SpeechToTextCompletionState.completed);
+          final liveText = liveCompletion.result!.text;
+          expect(_normalizeWords(liveText), contains('fellow americans'));
+          expect(_normalizeWords(liveText), contains('country'));
+          stderr.writeln(
+            '[Voxtral 300s live-paced] wall=${liveSw.elapsedMilliseconds}ms '
+            'flush=${liveFlushSw.elapsedMilliseconds}ms '
+            'firstPartialWall=${liveFirstPartialWall?.inMilliseconds}ms '
+            'firstPartialAudio=${liveFirstPartialAudio?.inMilliseconds}ms '
+            'baselineRssMB=${(liveBaselineRss / (1024 * 1024)).toStringAsFixed(1)} '
+            'peakRssMB=${(livePeakRss / (1024 * 1024)).toStringAsFixed(1)}',
+          );
+          stderr.writeln('[Voxtral 300s live-paced] transcript=$liveText');
+        }
       } finally {
         await engine.dispose();
       }
@@ -366,9 +418,18 @@ void main() {
         final baselineRss = ProcessInfo.currentRss;
         final clip300s = _repeatPcm(jfk, 300);
         final sw = Stopwatch()..start();
+        Duration? firstPartialWall;
+        Duration? firstPartialAudio;
         var pushedSamples = 0;
         final s300 = await engine4096.startStream();
-        final sub300 = s300.events.listen((_) {});
+        final sub300 = s300.events.listen((event) {
+          if (event is SpeechToTextPartialEvent &&
+              event.text.trim().isNotEmpty &&
+              firstPartialWall == null) {
+            firstPartialWall = sw.elapsed;
+            firstPartialAudio = event.acceptedAudioDuration;
+          }
+        });
         while (pushedSamples < clip300s.length) {
           final next = min(5120, clip300s.length - pushedSamples);
           await s300.addPcm(
@@ -380,18 +441,75 @@ void main() {
           );
           pushedSamples += next;
         }
+        final flushSw = Stopwatch()..start();
         await s300.finish();
         final completion300 = await s300.done;
+        flushSw.stop();
         sw.stop();
         await sub300.cancel();
         final peakRss = ProcessInfo.maxRss;
         expect(completion300.state, SpeechToTextCompletionState.completed);
-        expect(completion300.result!.text, isNotEmpty);
+        final lfm300Text = completion300.result!.text;
+        expect(_normalizeWords(lfm300Text), contains('fellow americans'));
+        expect(_normalizeWords(lfm300Text), contains('country'));
         stderr.writeln(
           '[LFM3 300s fast] wall=${sw.elapsedMilliseconds}ms '
+          'flush=${flushSw.elapsedMilliseconds}ms '
+          'firstPartialWall=${firstPartialWall?.inMilliseconds}ms '
+          'firstPartialAudio=${firstPartialAudio?.inMilliseconds}ms '
           'baselineRssMB=${(baselineRss / (1024 * 1024)).toStringAsFixed(1)} '
           'peakRssMB=${(peakRss / (1024 * 1024)).toStringAsFixed(1)}',
         );
+        stderr.writeln('[LFM3 300s fast] transcript=$lfm300Text');
+
+        if (Platform.environment['LLAMADART_STT_LIVE_PACED'] == '1') {
+          final liveBaselineRss = ProcessInfo.currentRss;
+          final liveSw = Stopwatch()..start();
+          Duration? liveFirstPartialWall;
+          Duration? liveFirstPartialAudio;
+          var livePushed = 0;
+          final sLive = await engine4096.startStream();
+          final subLive = sLive.events.listen((event) {
+            if (event is SpeechToTextPartialEvent &&
+                event.text.trim().isNotEmpty &&
+                liveFirstPartialWall == null) {
+              liveFirstPartialWall = liveSw.elapsed;
+              liveFirstPartialAudio = event.acceptedAudioDuration;
+            }
+          });
+          while (livePushed < clip300s.length) {
+            final next = min(5120, clip300s.length - livePushed);
+            await sLive.addPcm(
+              Float32List.sublistView(clip300s, livePushed, livePushed + next),
+            );
+            livePushed += next;
+            final targetMs = (livePushed * 1000) ~/ 16000;
+            final remainingMs = targetMs - liveSw.elapsedMilliseconds;
+            if (remainingMs > 0) {
+              await Future<void>.delayed(Duration(milliseconds: remainingMs));
+            }
+          }
+          final liveFlushSw = Stopwatch()..start();
+          await sLive.finish();
+          final liveCompletion = await sLive.done;
+          liveFlushSw.stop();
+          liveSw.stop();
+          await subLive.cancel();
+          final livePeakRss = ProcessInfo.maxRss;
+          expect(liveCompletion.state, SpeechToTextCompletionState.completed);
+          final liveText = liveCompletion.result!.text;
+          expect(_normalizeWords(liveText), contains('fellow americans'));
+          expect(_normalizeWords(liveText), contains('country'));
+          stderr.writeln(
+            '[LFM3 300s live-paced] wall=${liveSw.elapsedMilliseconds}ms '
+            'flush=${liveFlushSw.elapsedMilliseconds}ms '
+            'firstPartialWall=${liveFirstPartialWall?.inMilliseconds}ms '
+            'firstPartialAudio=${liveFirstPartialAudio?.inMilliseconds}ms '
+            'baselineRssMB=${(liveBaselineRss / (1024 * 1024)).toStringAsFixed(1)} '
+            'peakRssMB=${(livePeakRss / (1024 * 1024)).toStringAsFixed(1)}',
+          );
+          stderr.writeln('[LFM3 300s live-paced] transcript=$liveText');
+        }
       } finally {
         await engine4096.dispose();
       }
