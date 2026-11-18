@@ -237,7 +237,7 @@ void main() {
       });
 
       test(
-        'refuses streaming when capabilities report no sample rate',
+        'reports streaming unsupported when capabilities report no sample rate',
         () async {
           backend.capabilities = const BackendTextToSpeechCapabilities(
             isSupported: true,
@@ -248,12 +248,19 @@ void main() {
           );
           await _loadTextToSpeechModel(llamaEngine);
 
+          final capabilities = await speechEngine.capabilities;
+          expect(capabilities.supportsIncrementalAudio, isFalse);
+          expect(
+            capabilities.incrementalAudioUnsupportedReason,
+            contains('sample rate'),
+          );
+
           await expectLater(
             speechEngine.synthesize(
               const TextToSpeechRequest(text: 'Hello.', streamAudio: true),
             ),
             throwsA(
-              isA<LlamaTextToSpeechException>().having(
+              isA<LlamaUnsupportedException>().having(
                 (error) => error.message,
                 'message',
                 contains('sample rate'),
@@ -274,7 +281,52 @@ void main() {
       );
 
       test(
-        'refuses streaming when capabilities report non-positive channels',
+        'reports streaming unsupported when capabilities report zero sample rate',
+        () async {
+          backend.capabilities = const BackendTextToSpeechCapabilities(
+            isSupported: true,
+            model: BackendTextToSpeechModel.qwen3Tts,
+            sampleRateHz: 0,
+            channelCount: 1,
+            supportsCancellation: true,
+            supportsIncrementalAudio: true,
+          );
+          await _loadTextToSpeechModel(llamaEngine);
+
+          final capabilities = await speechEngine.capabilities;
+          expect(capabilities.supportsIncrementalAudio, isFalse);
+          expect(
+            capabilities.incrementalAudioUnsupportedReason,
+            contains('sample rate'),
+          );
+
+          await expectLater(
+            speechEngine.synthesize(
+              const TextToSpeechRequest(text: 'Hello.', streamAudio: true),
+            ),
+            throwsA(
+              isA<LlamaUnsupportedException>().having(
+                (error) => error.message,
+                'message',
+                contains('sample rate'),
+              ),
+            ),
+          );
+          expect(backend.lastRequest, isNull);
+
+          backend.capabilities = streaming;
+          final task = await speechEngine.synthesize(
+            const TextToSpeechRequest(text: 'Hello.'),
+          );
+          expect(
+            (await task.done).state,
+            TextToSpeechCompletionState.completed,
+          );
+        },
+      );
+
+      test(
+        'reports streaming unsupported when capabilities report non-positive channels',
         () async {
           backend.capabilities = const BackendTextToSpeechCapabilities(
             isSupported: true,
@@ -286,12 +338,19 @@ void main() {
           );
           await _loadTextToSpeechModel(llamaEngine);
 
+          final capabilities = await speechEngine.capabilities;
+          expect(capabilities.supportsIncrementalAudio, isFalse);
+          expect(
+            capabilities.incrementalAudioUnsupportedReason,
+            contains('channel count'),
+          );
+
           await expectLater(
             speechEngine.synthesize(
               const TextToSpeechRequest(text: 'Hello.', streamAudio: true),
             ),
             throwsA(
-              isA<LlamaTextToSpeechException>().having(
+              isA<LlamaUnsupportedException>().having(
                 (error) => error.message,
                 'message',
                 contains('channel count'),
@@ -299,6 +358,15 @@ void main() {
             ),
           );
           expect(backend.lastRequest, isNull);
+
+          backend.capabilities = streaming;
+          final task = await speechEngine.synthesize(
+            const TextToSpeechRequest(text: 'Hello.'),
+          );
+          expect(
+            (await task.done).state,
+            TextToSpeechCompletionState.completed,
+          );
         },
       );
     });

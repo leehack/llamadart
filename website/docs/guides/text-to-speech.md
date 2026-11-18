@@ -396,8 +396,10 @@ the final event, about twice the audio, when `streamAudio` is true).
 | Soprano, Chatterbox | No | Decode the whole utterance at the end |
 
 Native streaming needs llamadart-native `v1.0.0-1` or later; an older runtime
-reports `supportsIncrementalAudio` false. The WebGPU bridge returns complete
-PCM only, so Web refuses `streamAudio`.
+or a backend without a positive `sampleRateHz` and `channelCount` reports
+`supportsIncrementalAudio` false (with the reason in
+`incrementalAudioUnsupportedReason`). The WebGPU bridge returns complete PCM
+only, so Web refuses `streamAudio`.
 
 The [chat app](../examples/chat-app) has a Qwen3-TTS mode built on this API.
 

@@ -260,6 +260,13 @@ void main() {
                 'The bundled asset exports start_streaming: '
                 '$bundleHasStreaming.',
           );
+          expect(
+            result.stdout,
+            contains('pinned=$bundleHasStreaming'),
+            reason:
+                'The symbol pin must run whenever the bundled asset exports '
+                'start_streaming.',
+          );
         },
       );
     }

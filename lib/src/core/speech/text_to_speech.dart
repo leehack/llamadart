@@ -729,14 +729,36 @@ class TextToSpeechEngine implements LlamadartEngine<TextToSpeechCapabilities> {
       );
     }
 
+    final rate = backendCapabilities.sampleRateHz;
+    final channels = backendCapabilities.channelCount;
+    final String? streamingFormatReason;
+    if (rate == null || rate <= 0) {
+      streamingFormatReason =
+          'Text-to-speech streaming requires a positive sample rate from '
+          'backend capabilities. Omit `streamAudio` for complete audio.';
+    } else if (channels == null || channels <= 0) {
+      streamingFormatReason =
+          'Text-to-speech streaming requires a positive channel count from '
+          'backend capabilities. Omit `streamAudio` for complete audio.';
+    } else {
+      streamingFormatReason = null;
+    }
+    final supportsIncrementalAudio =
+        backendCapabilities.supportsIncrementalAudio &&
+        streamingFormatReason == null;
+    final incrementalAudioUnsupportedReason = supportsIncrementalAudio
+        ? null
+        : backendCapabilities.incrementalAudioUnsupportedReason ??
+              streamingFormatReason;
+
     return TextToSpeechCapabilities(
       isSupported: true,
       backendName: backendName,
       implementation: textToSpeechSupportsFileInput
           ? TextToSpeechImplementation.nativeAudioGeneration
           : TextToSpeechImplementation.webAudioGeneration,
-      sampleRateHz: backendCapabilities.sampleRateHz,
-      channelCount: backendCapabilities.channelCount,
+      sampleRateHz: rate,
+      channelCount: channels,
       speakerReferenceInputKinds: backendCapabilities.supportsSpeakerReference
           ? const <SpeechAudioInputKind>{
               if (textToSpeechSupportsFileInput) SpeechAudioInputKind.file,
@@ -752,11 +774,8 @@ class TextToSpeechEngine implements LlamadartEngine<TextToSpeechCapabilities> {
       voices: backendCapabilities.supportsVoice
           ? backendCapabilities.voices
           : const <String>[],
-      supportsIncrementalAudio: backendCapabilities.supportsIncrementalAudio,
-      incrementalAudioUnsupportedReason:
-          backendCapabilities.supportsIncrementalAudio
-          ? null
-          : backendCapabilities.incrementalAudioUnsupportedReason,
+      supportsIncrementalAudio: supportsIncrementalAudio,
+      incrementalAudioUnsupportedReason: incrementalAudioUnsupportedReason,
       supportsCancellation: backendCapabilities.supportsCancellation,
       supportsOutputBackpressure: false,
       maxConcurrentTasks: 1,
@@ -843,29 +862,12 @@ class TextToSpeechEngine implements LlamadartEngine<TextToSpeechCapabilities> {
         }
       }
 
-      final int streamSampleRateHz;
-      final int streamChannelCount;
-      if (request.streamAudio) {
-        final rate = currentCapabilities.sampleRateHz;
-        final channels = currentCapabilities.channelCount;
-        if (rate == null || rate <= 0) {
-          throw LlamaTextToSpeechException(
-            'Text-to-speech streaming requires a positive sample rate from '
-            'backend capabilities.',
-          );
-        }
-        if (channels == null || channels <= 0) {
-          throw LlamaTextToSpeechException(
-            'Text-to-speech streaming requires a positive channel count from '
-            'backend capabilities.',
-          );
-        }
-        streamSampleRateHz = rate;
-        streamChannelCount = channels;
-      } else {
-        streamSampleRateHz = 0;
-        streamChannelCount = 1;
-      }
+      final streamSampleRateHz = request.streamAudio
+          ? currentCapabilities.sampleRateHz ?? 0
+          : 0;
+      final streamChannelCount = request.streamAudio
+          ? currentCapabilities.channelCount ?? 1
+          : 1;
 
       final task = TextToSpeechTask._(
         onCancel: _engine.cancelTextToSpeechBackend,

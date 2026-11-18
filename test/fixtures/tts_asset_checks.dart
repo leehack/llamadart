@@ -36,6 +36,7 @@ void main(List<String> args) {
   final free = api.getField(#freeAddress).reflectee as Pointer<NativeType>;
   if (free == nullptr) throw StateError('Unresolved TTS release address');
   final streams = api.getField(#startStreaming).reflectee != null;
+  var pinned = false;
   if (streams && args.length > 1) {
     final resolvedAddress =
         (library
@@ -56,9 +57,10 @@ void main(List<String> args) {
         'expected $expectedAddress',
       );
     }
+    pinned = true;
   }
   print(
     'TTS_ASSET_DISCOVERY $mode ABI=$version required=12 '
-    'streaming=$streams',
+    'streaming=$streams pinned=$pinned',
   );
 }
