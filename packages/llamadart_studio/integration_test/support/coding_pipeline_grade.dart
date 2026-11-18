@@ -105,10 +105,12 @@ CodingPipelineGrade gradeWriteAndRead({
   );
 }
 
-/// Grades the last successful `edit` against [preEditBytes] and a later read.
+/// Grades the successful `edit`s of [expectedPath] against [preEditBytes]
+/// and a later read.
 ///
-/// The edit passes when the disk file at its result path equals
-/// [preEditBytes] with the dispatched find/replace applied.
+/// The edits pass when they all target [expectedPath], change the file, and
+/// the disk equals [preEditBytes] with each dispatched find/replace applied in
+/// order.
 CodingPipelineGrade gradeEditAndRead({
   required List<GradedToolCall> calls,
   required String expectedPath,
@@ -118,10 +120,11 @@ CodingPipelineGrade gradeEditAndRead({
   required WorkspaceDiskReader readDisk,
 }) {
   final failures = <String>[];
-  final editIndex = calls.lastIndexWhere(
-    (c) => c.name == 'edit' && c.succeeded,
-  );
-  if (editIndex < 0) {
+  final edits = [
+    for (var i = 0; i < calls.length; i++)
+      if (calls[i].name == 'edit' && calls[i].succeeded) i,
+  ];
+  if (edits.isEmpty) {
     return const CodingPipelineGrade(
       failures: ['no successful edit'],
       path: null,
@@ -129,28 +132,37 @@ CodingPipelineGrade gradeEditAndRead({
       contentExact: false,
     );
   }
-  final edit = calls[editIndex];
-  final path = edit.result?['path'];
-  final find = edit.arguments['findText'];
-  final replace = edit.arguments['replaceText'];
-  final replaceAll = edit.arguments['replaceAll'] == true;
-  if (path is! String || path.isEmpty) {
-    failures.add('edit result has no path');
-  } else if (find is! String || find.isEmpty || replace is! String) {
-    failures.add('edit dispatched no find/replace strings');
-  } else {
-    final before = utf8.decode(preEditBytes, allowMalformed: true);
-    final expected = replaceAll
-        ? before.replaceAll(find, replace)
-        : before.replaceFirst(find, replace);
-    final disk = readDisk(path);
+  final before = utf8.decode(preEditBytes, allowMalformed: true);
+  var expected = before;
+  Object? path;
+  Object? find;
+  Object? replace;
+  for (final index in edits) {
+    final edit = calls[index];
+    path = edit.result?['path'];
+    find = edit.arguments['findText'];
+    replace = edit.arguments['replaceText'];
+    if (path != expectedPath) {
+      failures.add('edit targets $path, not the written file $expectedPath');
+    } else if (find is! String || find.isEmpty || replace is! String) {
+      failures.add('edit dispatched no find/replace strings');
+    } else {
+      expected = edit.arguments['replaceAll'] == true
+          ? expected.replaceAll(find, replace)
+          : expected.replaceFirst(find, replace);
+    }
+  }
+  if (failures.isEmpty) {
+    final disk = readDisk(expectedPath);
     if (disk == null) {
-      failures.add('edited file missing on disk: $path');
+      failures.add('edited file missing on disk: $expectedPath');
+    } else if (expected == before) {
+      failures.add('edit left the file unchanged');
     } else if (!_sameBytes(disk, utf8.encode(expected))) {
       failures.add('disk bytes differ from pre-edit bytes with edit applied');
     }
   }
-  _gradeLaterRead(calls, editIndex, readDisk, failures);
+  _gradeLaterRead(calls, edits.last, readDisk, failures);
   return CodingPipelineGrade(
     failures: failures,
     path: path is String ? path : null,

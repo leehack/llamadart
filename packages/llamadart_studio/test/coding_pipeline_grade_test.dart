@@ -240,5 +240,72 @@ void main() {
       final result = grade(utf8.encode(edited), [editCalls(edited).first]);
       expect(result.failures, ['no successful read after the mutation']);
     });
+
+    test('a read only before the edit fails', () {
+      final calls = editCalls(edited);
+      final result = grade(utf8.encode(edited), [calls.last, calls.first]);
+      expect(result.failures, ['no successful read after the mutation']);
+    });
+
+    test('an edit that leaves the file unchanged fails', () {
+      final noOp = GradedToolCall(
+        name: 'edit',
+        arguments: const {
+          'path': _expectedPath,
+          'findText': 'café',
+          'replaceText': 'café',
+        },
+        result: const {'status': 'patched', 'path': _expectedPath},
+        succeeded: true,
+      );
+      final result = grade(pre, [noOp, editCalls(_expectedContent).last]);
+      expect(result.failures, ['edit left the file unchanged']);
+    });
+
+    test('an edit of another file fails', () {
+      final other = GradedToolCall(
+        name: 'edit',
+        arguments: const {
+          'path': 'other.txt',
+          'findText': 'Bonjour Montréal',
+          'replaceText': 'Salut Québec',
+        },
+        result: const {'status': 'patched', 'path': 'other.txt'},
+        succeeded: true,
+      );
+      final result = grade(utf8.encode(edited), [
+        other,
+        editCalls(edited).last,
+      ]);
+      expect(result.pipelinePass, isFalse);
+      expect(result.failures.join(), contains('not the written file'));
+    });
+
+    test('successive correct edits pass', () {
+      final calls = [
+        GradedToolCall(
+          name: 'edit',
+          arguments: const {
+            'path': _expectedPath,
+            'findText': 'Bonjour',
+            'replaceText': 'Salut',
+          },
+          result: const {'status': 'patched', 'path': _expectedPath},
+          succeeded: true,
+        ),
+        GradedToolCall(
+          name: 'edit',
+          arguments: const {
+            'path': _expectedPath,
+            'findText': 'Montréal',
+            'replaceText': 'Québec',
+          },
+          result: const {'status': 'patched', 'path': _expectedPath},
+          succeeded: true,
+        ),
+        editCalls(edited).last,
+      ];
+      expect(grade(utf8.encode(edited), calls).pipelinePass, isTrue);
+    });
   });
 }
