@@ -69,6 +69,7 @@ tool/native/test_sync_stable_diffusion_bindings.py @leehack
 ffigen.yaml @leehack
 ffigen_stable_diffusion.yaml @leehack
 lib/src/backends/stable_diffusion/stable_diffusion_bindings.dart @leehack
+test/fixtures/native/stable_diffusion_v0_4_0_manifest.json @leehack
 tool/native/fixtures/ @leehack
 scripts/fetch_webgpu_bridge_assets.sh @leehack
 website/docs/changelog/recent-releases.md @leehack

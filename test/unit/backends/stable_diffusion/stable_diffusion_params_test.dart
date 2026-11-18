@@ -359,7 +359,7 @@ void main() {
   // shorter Dart allocation would be overrun.
   test('the bound structs match the pinned runtime layout', () {
     expect(sizeOf<sd.sd_ctx_params_t>(), 336);
-    expect(sizeOf<sd.sd_img_gen_params_t>(), 552);
+    expect(sizeOf<sd.sd_img_gen_params_t>(), 560);
     expect(sizeOf<sd.sd_sample_params_t>(), 96);
     expect(sizeOf<sd.sd_image_t>(), 24);
     expect(sizeOf<sd.sd_tiling_params_t>(), 32);
@@ -753,6 +753,43 @@ void main() {
         expect(params.ref.sample_params.guidance.txt_cfg, 1.5);
       });
     });
+
+    for (final (input, escaped) in const [
+      ('café <image:猫.png>', r'café \<image:猫.png>'),
+      (
+        'empty <image:> or unclosed <image:',
+        r'empty \<image:> or unclosed \<image:',
+      ),
+      (r'escaped \<image:>\<image:', r'escaped \<image:>\<image:'),
+      (
+        r'odd \\\<image:x> and even \\<image:y>',
+        r'odd \\\<image:x> and even \\\<image:y>',
+      ),
+      ('<Image:x> <image> <image :x>', '<Image:x> <image> <image :x>'),
+    ]) {
+      test('keeps image marker syntax as text in both prompts: $input', () {
+        using((arena) {
+          final params = arena<sd.sd_img_gen_params_t>();
+          applyStableDiffusionGenerationParams(
+            params,
+            ImageGenerationSessionRequest(
+              prompt: input,
+              negativePrompt: 'avoid $input',
+              width: 512,
+              height: 512,
+              steps: 4,
+              guidanceScale: 7,
+              seed: 42,
+              count: 1,
+            ),
+            arena,
+          );
+
+          expect(_text(params.ref.prompt), escaped);
+          expect(_text(params.ref.negative_prompt), 'avoid $escaped');
+        });
+      });
+    }
 
     test('an unset sampler, scheduler and flow shift ask the runtime for '
         'its defaults', () {

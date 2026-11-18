@@ -1,4 +1,4 @@
-// Independent pinned-runtime C reference; see doc/image_reference_editing.md.
+// Independent C reference for the historical v0.3.0-1 recipe.
 #include <chrono>
 #include <cmath>
 #include <cstdio>

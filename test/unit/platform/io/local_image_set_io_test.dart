@@ -386,7 +386,10 @@ void main() {
           isA<LlamaUnsupportedException>().having(
             (e) => e.message,
             'message',
-            isNot(contains('PRIVATE_ALIAS_CANARY')),
+            allOf(
+              contains('SD-Turbo F16/F32 tensor-layout recipe'),
+              isNot(contains('PRIVATE_ALIAS_CANARY')),
+            ),
           ),
         ),
       );
@@ -410,7 +413,13 @@ void main() {
             vaeDirectConvolution: false,
           ),
         ),
-        throwsA(isA<LlamaUnsupportedException>()),
+        throwsA(
+          isA<LlamaUnsupportedException>().having(
+            (e) => e.message,
+            'message',
+            contains('SD-Turbo F16/F32 tensor-layout recipe'),
+          ),
+        ),
       );
       expect(driver.starts, 0);
       expect(driver.memoryChecks, 0);
@@ -670,7 +679,7 @@ class _RecordingSetDriver implements ImageGenerationDriver {
   Future<StableDiffusionRuntimeStatus> probeInBackground() async =>
       StableDiffusionRuntimeStatus.available(
         version: 'unknown',
-        commit: 'be48649',
+        commit: '5dcfa79',
         devices: parseStableDiffusionDeviceList('CPU\tCPU\n'),
       );
   @override

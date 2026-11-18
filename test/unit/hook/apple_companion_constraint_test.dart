@@ -71,6 +71,14 @@ void main() {
       );
     });
 
+    test('an unreleased source pin from a later minor names no dependency', () {
+      expect(
+        appleCompanionConstraint('0.19.11', firstPinningRelease: '0.20.0'),
+        isNull,
+      );
+      expect(_requirement('0.19.11', firstPinningRelease: '0.20.0'), isNull);
+    });
+
     test('a prerelease of the first lockstep core precedes lockstep', () {
       expect(
         appleCompanionConstraint('0.13.0-dev.1', firstPinningRelease: '0.0.23'),

@@ -394,15 +394,15 @@ void main() {
   // the literal text, so a hook that stops reading its own version, or names
   // a 0.0.x companion from a lockstep core, fails.
   final checkoutCore = readCheckoutCoreVersion();
-  final coreConstraints = <String?, String>{
+  final coreConstraints = <String?, String?>{
     null: appleCompanionConstraint(
       checkoutCore,
       firstPinningRelease: llamaCppAppleCompanionVersion,
     )!,
     for (final core in ['0.12.2', '0.13.0-dev.1'])
       core: '^$llamaCppAppleCompanionVersion',
-    '0.13.0': '^0.13.0',
-    '0.13.3': '^0.13.0',
+    '0.13.0': null,
+    '0.13.3': null,
   };
   final coreRequirements = <String?, String>{
     null: appleCompanionRequirement(
@@ -420,9 +420,8 @@ void main() {
           'never resolves it.',
     for (final core in ['0.13.0', '0.13.3'])
       core:
-          'Depend on `llamadart_llama_cpp_flutter: ^0.13.0`, the core 0.13.x '
-          'companion releases pinning leehack/llamadart-native@$llamaCppTag, '
-          'in pubspec.yaml and rerun flutter pub get.',
+          'Resolve llamadart_llama_cpp_flutter with a Package.swift pin matching '
+          'leehack/llamadart-native@$llamaCppTag and rerun flutter pub get.',
   };
   HookProjectRoot coreRoot(String? core) {
     final root = HookProjectRoot.create(coreVersion: core);
@@ -469,7 +468,7 @@ void main() {
       for (final MapEntry(key: core, value: constraint)
           in coreConstraints.entries) {
         test('Apple $target core ${coreLabel(core)} links a companion pinning '
-            'compatible $tag and names `$constraint`', () async {
+            'compatible $tag and reports upgrade guidance', () async {
           final records = <String>[];
           final subscription = Logger.root.onRecord.listen(
             (record) => records.add(record.message),
@@ -495,14 +494,15 @@ void main() {
               },
             ),
           );
+          final advice = constraint == null
+              ? 'Upgrade llamadart_llama_cpp_flutter to a release pinning'
+              : 'Depend on `llamadart_llama_cpp_flutter: $constraint` to link';
           final warning =
               'Resolved llamadart_llama_cpp_flutter 0.0.22 pins '
               'leehack/llamadart-native@$tag, an earlier llama.cpp runtime '
               'than $llamaCppTag that this core still supports, so this build '
               'links it. '
-              'Its frameworks lack $missing. Depend on '
-              '`llamadart_llama_cpp_flutter: $constraint` to link '
-              '$llamaCppTag.';
+              'Its frameworks lack $missing. $advice $llamaCppTag.';
           expect(stderrLines, contains('warning: llamadart: $warning'));
           expect(records, contains(warning));
         });
@@ -616,7 +616,7 @@ void main() {
       for (final MapEntry(key: core, value: requirement)
           in coreRequirements.entries) {
         test('Apple $target core ${coreLabel(core)} rejects unlisted companion '
-            'pin $tag and names the companion release to depend on', () async {
+            'pin $tag and reports how to resolve it', () async {
           final defines = await _flutterAppleUserDefines(
             dependencies: const ['llamadart_llama_cpp_flutter'],
             companionTag: tag,

@@ -102,10 +102,12 @@ void applyStableDiffusionGenerationParams(
   Allocator allocator,
 ) {
   params.ref
-    ..prompt = request.prompt.toNativeUtf8(allocator: allocator).cast()
-    ..negative_prompt = request.negativePrompt
-        .toNativeUtf8(allocator: allocator)
-        .cast()
+    ..prompt = _escapePromptImageMarkers(
+      request.prompt,
+    ).toNativeUtf8(allocator: allocator).cast()
+    ..negative_prompt = _escapePromptImageMarkers(
+      request.negativePrompt,
+    ).toNativeUtf8(allocator: allocator).cast()
     ..width = request.width
     ..height = request.height
     ..seed = request.seed
@@ -180,6 +182,20 @@ void applyStableDiffusionGenerationParams(
       ..rel_size_w = 0
       ..rel_size_h = 0;
   }
+}
+
+// The runtime treats every <image: prefix as special syntax, even an empty
+// or unclosed marker. An odd number of backslashes keeps it as text and the
+// runtime removes one backslash. Leave existing escapes intact.
+String _escapePromptImageMarkers(String prompt) {
+  const backslash = 0x5c;
+  return prompt.replaceAllMapped('<image:', (match) {
+    var start = match.start;
+    while (start > 0 && prompt.codeUnitAt(start - 1) == backslash) {
+      start--;
+    }
+    return (match.start - start).isEven ? r'\<image:' : '<image:';
+  });
 }
 
 /// The runtime's sampler for [sampler]. `null` maps to

@@ -3328,7 +3328,7 @@ dev_dependencies:
       expect(ready.stdout, contains('test/image_generation_smoke.yaml'));
     });
 
-    test('reference-editing qualification requires the transformer and '
+    test('reference-editing refusal requires the transformer and '
         'every component, and selects the maintained suite', () async {
       const components = {
         'LLAMADART_REFERENCE_EDIT_VAE': '/ae.safetensors',
@@ -3366,6 +3366,7 @@ dev_dependencies:
         environment: components,
       );
       expect(ready.exitCode, 0);
+      expect(ready.stdout, contains('reference-editing refusal on v0.4.0'));
       expect(
         ready.stdout,
         contains('test/image_reference_editing_e2e_test.dart'),

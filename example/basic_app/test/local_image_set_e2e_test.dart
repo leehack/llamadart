@@ -70,9 +70,10 @@ void main() {
         final image = (await engine.generateImage(_request)).images.single;
         expect((image.width, image.height, image.channels), (128, 128, 3));
         final hash = sha256.convert(image.pixels).toString();
+        // Raw RGB from the independent direct-C fixture using v0.4.0.
         expect(
           hash,
-          'f08a13f24bbe3fee369616e1d2308468dacbcd78af3c09162ddd46405f532ec6',
+          'bbc3a78965d7ff99dabb48323065d62623f1b7eaa1127e26b2d494829d1e9b9c',
         );
         if (reference != null) {
           final raw = File(reference).readAsBytesSync();

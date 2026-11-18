@@ -18,6 +18,7 @@ validate against the exact release tag notes.
 - Aligned default WebGPU bridge assets to `v0.1.86` (llama.cpp `v1.0.0`, matching the native runtime) ([#2024](https://github.com/leehack/llamadart/issues/2024)).
 
 - Refuse a native llama.cpp runtime that was not built from llama.cpp `v1.0.0` with `LlamaUnsupportedException`, before the first call that passes a llama.cpp struct by value. A `llamadart_native_tag` or `llamadart_native_path` override to any other llama.cpp release no longer loads.
+- Update native image generation to stable-diffusion-native `v0.4.0`. Apple apps using image generation must upgrade the core and Stable Diffusion companion together.
 
 - Restore native text-to-speech discovery when Dart bundles its runtime outside the working directory.
 

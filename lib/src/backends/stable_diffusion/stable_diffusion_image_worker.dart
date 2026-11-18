@@ -156,9 +156,10 @@ final class StableDiffusionImageWorker
   ///
   /// Throws [LlamaModelException] when the runtime cannot load the files as
   /// an image model, with the runtime's reason when it gives one, and
-  /// [LlamaUnsupportedException] when the runtime does not export the
-  /// functions of [StableDiffusionCalls], or FP8 weights would reach Metal on
-  /// a runtime without [StableDiffusionCalls.loadsFp8AsF16OnMetal]. On Apple
+  /// [LlamaUnsupportedException] when the runtime fails ABI admission, does
+  /// not export the functions of [StableDiffusionCalls], or FP8 weights would
+  /// reach Metal on a runtime without
+  /// [StableDiffusionCalls.loadsFp8AsF16OnMetal]. On Apple
   /// platforms an unspecified backend may select Metal; use `cpu` explicitly
   /// for FP8 weights there. That preflight inspects every regular file before
   /// any native context is constructed.
@@ -694,7 +695,14 @@ void _workerMain(
   arguments,
 ) {
   final (replies, config, resolveCalls, logLevel, logPosition) = arguments;
-  final calls = resolveCalls();
+  final StableDiffusionCalls? resolvedCalls;
+  try {
+    resolvedCalls = resolveCalls();
+  } on LlamaUnsupportedException catch (error) {
+    replies.send(_LoadFailure(error));
+    return;
+  }
+  final calls = resolvedCalls;
   if (calls == null) {
     replies.send(_LoadFailure(stableDiffusionWrapperUnsupported()));
     return;
