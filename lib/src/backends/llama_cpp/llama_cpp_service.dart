@@ -10183,9 +10183,8 @@ class LlamaCppService {
     }
   }
 
-  /// The wrapper's `LLAMA_DART_TTS_CAPABILITY_STREAMING_PCM` bit, declared
-  /// here until the generated bindings carry llamadart-native v1.0.0-1.
-  static const int _ttsCapabilityStreamingPcm = 1 << 3;
+  static final int _ttsCapabilityStreamingPcm =
+      llama_dart_tts_capability.LLAMA_DART_TTS_CAPABILITY_STREAMING_PCM.value;
 
   String? _ttsStreamingUnsupportedReason(
     _TtsApi api,
