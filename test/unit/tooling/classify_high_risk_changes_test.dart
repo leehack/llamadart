@@ -72,6 +72,64 @@ void main() {
     );
   });
 
+  test(
+    'Studio structured production keeps all impacts and excludes evidence from production hints',
+    () {
+      const prefix = 'packages/llamadart_studio_core/';
+      expect(
+        assessHighRiskFiles([
+          'test/unit/tooling/studio_ci_admission_test.dart',
+        ]).surfaces,
+        {HighRiskSurface.regressionPolicy},
+      );
+      for (final path in [
+        'lib/llamadart_studio_core.dart',
+        'lib/src/adapters/llama/direct_llama_inference_port.dart',
+        'lib/src/adapters/llama/direct_llama_inference_helpers.dart',
+        'lib/src/domain/studio_message.dart',
+        'lib/src/domain/studio_settings.dart',
+        'lib/src/ports/inference_port.dart',
+        'lib/src/services/mcp/mcp_tool_schema_adapter.dart',
+        'lib/src/services/studio_tool_registry.dart',
+        'lib/src/controllers/chat/chat_workspace_controller.dart',
+        'lib/src/controllers/coding/coding_workspace_controller.dart',
+      ]) {
+        expect(
+          assessHighRiskFiles(['$prefix$path']).surfaces,
+          containsAll({
+            HighRiskSurface.structuredOutput,
+            HighRiskSurface.backendRuntime,
+          }),
+          reason: path,
+        );
+        expect(
+          structuredProductionImpactHints('$prefix$path'),
+          StructuredImpact.values.toSet(),
+          reason: path,
+        );
+      }
+      const suite =
+          '${prefix}test/local_structured_output_qualification_test.dart';
+      expect(
+        assessHighRiskFiles([suite]).surfaces,
+        contains(HighRiskSurface.structuredOutput),
+      );
+      expect(structuredProductionImpactHints(suite), isNull);
+      expect(
+        assessHighRiskFiles([
+          '${prefix}lib/src/services/lifecycle_coordinator.dart',
+        ]).surfaces,
+        {HighRiskSurface.backendRuntime},
+      );
+      expect(
+        assessHighRiskFiles([
+          'packages/llamadart_studio_core_extra/lib/api.dart',
+        ]).surfaces,
+        isEmpty,
+      );
+    },
+  );
+
   group('assessHighRiskFiles', () {
     test('only exact root ffigen config is an artifact consumer', () {
       expect(assessHighRiskFiles(['ffigen.yaml']).surfaces, {

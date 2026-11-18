@@ -4,6 +4,7 @@
 build/
 pubspec.lock
 !example/chat_app/pubspec.lock
+!packages/llamadart_studio/pubspec.lock
 !packages/llamadart_validation/pubspec.lock
 !website/pubspec.lock
 !website/examples/observability/pubspec.lock
@@ -122,12 +123,17 @@ a.out.wasm
 __pycache__/
 *.pyc
 
-# Local web bridge artifacts fetched/built for chat_app
+# Local web bridge artifacts fetched/built for chat_app and llamadart_studio
 example/chat_app/web/webgpu_bridge/*.js
 example/chat_app/web/webgpu_bridge/*.d.ts
 example/chat_app/web/webgpu_bridge/*.wasm
 example/chat_app/web/webgpu_bridge/manifest.json
 example/chat_app/web/webgpu_bridge/sha256sums.txt
+packages/llamadart_studio/web/webgpu_bridge/*.js
+packages/llamadart_studio/web/webgpu_bridge/*.d.ts
+packages/llamadart_studio/web/webgpu_bridge/*.wasm
+packages/llamadart_studio/web/webgpu_bridge/manifest.json
+packages/llamadart_studio/web/webgpu_bridge/sha256sums.txt
 
 
 # SwiftPM build output (for example from `swift package dump-package`)

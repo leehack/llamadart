@@ -1,0 +1,4 @@
+// Application-level settings for the Runner target.
+PRODUCT_NAME = llamadart_studio
+PRODUCT_BUNDLE_IDENTIFIER = dev.llamadart.studio
+PRODUCT_COPYRIGHT = Copyright © 2026 llamadart. All rights reserved.

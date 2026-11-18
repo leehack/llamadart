@@ -70,7 +70,9 @@ class CoreArchiveTest(unittest.TestCase):
         for path in ('packages/llamadart_validation/lib/llamadart_validation.dart',
                      'example/chat_app/pubspec.yaml',
                      'packages/genkit_llamadart/pubspec.yaml',
-                     'packages/llamadart_model_store/pubspec.yaml'):
+                     'packages/llamadart_model_store/pubspec.yaml',
+                     'packages/llamadart_studio_core/pubspec.yaml',
+                     'packages/llamadart_studio/pubspec.yaml'):
             self.assertTrue(archive.archive_errors(valid + [path]), path)
         for path in valid:
             self.assertTrue(archive.archive_errors([p for p in valid if p != path]), path)

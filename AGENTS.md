@@ -7,7 +7,7 @@ leaves out.
 
 ```bash
 dart run tool/prepare_workspace.dart
-dart format --output=none --set-exit-if-changed .
+python3 tool/ci/check_format.py
 dart analyze   # CI's Pana step also fails on any info in lib/
 dart run tool/testing/check_platform_boundaries.dart
 dart test -p vm -j 1 --exclude-tags local-only
@@ -25,12 +25,15 @@ dart test -p chrome --exclude-tags local-only
   `useSuiteSystemTemp()` (`test/support/suite_system_temp.dart`); CI fails a VM
   lane whose tests delete its canary there.
 - Use the Flutter SDK in `.flutter-version`; other SDKs format differently from
-  CI. A pin bump is its own PR that updates `.flutter-version`, every workflow
-  `flutter-version:`, and the reformat it causes.
+  CI. A root pin bump is its own PR that updates `.flutter-version`, every
+  workflow using that pin, and the reformat it causes. Studio core and UI use
+  the independent `packages/llamadart_studio/.flutter-version` pin; run their
+  package-local format, analysis and tests with that SDK. The root format
+  helper excludes both Studio packages (`doc/ci_selection.md`).
 - Root preparation, analysis and tests skip `packages/` and `website/` (root
-  format does not): companion packages keep their own dependency, analyze,
-  test, SwiftPM and publish-validation lanes, and the Jaspr docs site its own
-  analyze and test lane (`ci.yml`).
+  format includes all except Studio): companion packages keep their own
+  dependency, analyze, test, SwiftPM and publish-validation lanes, and the Jaspr
+  docs site its own analyze and test lane (`ci.yml`).
 - `packages/genkit_llamadart` is independently versioned and resolved. Its
   package-specific CI, history and release routing are documented in
   `website/docs/maintainers/genkit-package.md`; never include it in core or

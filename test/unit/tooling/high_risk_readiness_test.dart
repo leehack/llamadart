@@ -4291,6 +4291,162 @@ final segment = '${Object()}ImageEditingRequest${Object()}';
       },
     );
 
+    for (final (source, target) in [
+      (
+        'packages/llamadart_studio_core/lib/src/services/lifecycle_coordinator.dart',
+        'packages/llamadart_studio_core/test/lifecycle_test.dart',
+      ),
+      (
+        'packages/llamadart_studio/lib/src/services/runtime_factory.dart',
+        'packages/llamadart_studio/test/runtime_factory_test.dart',
+      ),
+      (
+        'packages/llamadart_studio/lib/src/services/runtime_factory.dart',
+        'packages/llamadart_studio/integration_test/local_workflows_acceptance_test.dart',
+      ),
+    ]) {
+      test('Studio exact-tree causal evidence admits $target', () async {
+        final evidence = backendEvidence()
+          ..['affected_test_paths'] = [target]
+          ..['test_evidence'] = {target: testProof(source)};
+        final state = FakeRepositoryState(
+          changes: [
+            RepositoryChange(path: source, kind: RepositoryChangeKind.added),
+          ],
+          existingPaths: {source, target},
+        );
+        // UI presentation paths are not themselves backend-runtime surfaces.
+        evidence['surfaces'] = assessHighRiskFiles([
+          source,
+        ]).surfaces.map((surface) => surface.name).toList();
+        if ((evidence['surfaces'] as List).isEmpty) {
+          state.changes.add(
+            const RepositoryChange(
+              path: 'tool/ci/check_format.py',
+              kind: RepositoryChangeKind.modified,
+            ),
+          );
+          state.existingPaths.add('tool/ci/check_format.py');
+          evidence['surfaces'] = ['regressionPolicy'];
+          evidence['test_evidence'][target]['production_refs'].addAll(
+            productionRefs('tool/ci/check_format.py'),
+          );
+        }
+        final evaluator = HighRiskReadinessEvaluator(repositoryState: state);
+        Future<HighRiskReadinessResult> evaluate() =>
+            evaluator.evaluate(evidence: evidence, context: context);
+        expect(
+          (await evaluate()).decision,
+          ReadinessDecision.unverifiedPrerequisites,
+        );
+        evidence['test_evidence'][target]['control_result'] = 'pass';
+        expect((await evaluate()).decision, ReadinessDecision.rejected);
+        evidence['test_evidence'][target]['control_result'] = 'fail';
+        state.existingPaths.remove(target);
+        expectFailure(
+          await evaluate(),
+          ReadinessFailureClassification.missingTestPath,
+        );
+      });
+    }
+
+    test(
+      'Studio compiled proof admits only its maintained native qualification suite',
+      () async {
+        const source =
+            'packages/llamadart_studio_core/lib/src/adapters/llama/direct_llama_inference_port.dart';
+        const suite =
+            'packages/llamadart_studio_core/test/local_structured_output_qualification_test.dart';
+        const ordinary =
+            'packages/llamadart_studio_core/test/structured_output_capability_test.dart';
+        final evidence =
+            jsonDecode(
+                  jsonEncode(structuredEvidence())
+                      .replaceAll(structuredSource, source)
+                      .replaceAll(compiledTest, suite),
+                )
+                as Map<String, dynamic>;
+        evidence['surfaces'] = ['structuredOutput', 'backendRuntime'];
+        Future<HighRiskReadinessResult> evaluate() => evaluatorFor(
+          const [
+            RepositoryChange(path: source, kind: RepositoryChangeKind.added),
+          ],
+          existingPaths: {source, suite, ordinary},
+        ).evaluate(evidence: evidence, context: context);
+        expect(
+          (await evaluate()).decision,
+          ReadinessDecision.unverifiedPrerequisites,
+        );
+        evidence['affected_test_paths'].add(ordinary);
+        evidence['test_evidence'][ordinary] = testProof(source);
+        evidence['structured_output_evidence']['coverage']['compiled_grammar_acceptance'] =
+            [ordinary];
+        expectFailure(
+          await evaluate(),
+          ReadinessFailureClassification.missingStructuredOutputEvidence,
+        );
+        evidence['structured_output_evidence']['coverage']['compiled_grammar_acceptance'] =
+            [suite];
+        evidence['structured_output_evidence']['impacts']['grammarSchema']['applicable'] =
+            false;
+        expectFailure(
+          await evaluate(),
+          ReadinessFailureClassification.missingStructuredOutputEvidence,
+        );
+        evidence['structured_output_evidence']['impacts']['grammarSchema']['applicable'] =
+            true;
+        evidence['test_evidence'][suite]['production_refs'] = productionRefs(
+          backendSource,
+        );
+        expectFailure(
+          await evaluate(),
+          ReadinessFailureClassification.missingStructuredOutputEvidence,
+        );
+      },
+    );
+
+    test('formatter Python evidence binds its own script and suite', () async {
+      const source = 'tool/ci/check_format.py';
+      const suite = 'test/ci/test_check_format.py';
+      final evidence = backendEvidence()
+        ..['surfaces'] = ['regressionPolicy']
+        ..['affected_test_paths'] = [suite]
+        ..['test_evidence'] = {suite: testProof(source)};
+      final proof = evidence['test_evidence'][suite];
+      Future<HighRiskReadinessResult> evaluate() => evaluatorFor(
+        const [
+          RepositoryChange(path: source, kind: RepositoryChangeKind.modified),
+        ],
+        existingPaths: {source, suite, backendSource},
+      ).evaluate(evidence: evidence, context: context);
+      for (final command in [
+        'python3 -B -m unittest discover -s test/ci -p test_check_format.py',
+        'python3 -m unittest discover -s test/ci -p test_check_format.py',
+      ]) {
+        proof['command'] = command;
+        expect(
+          (await evaluate()).decision,
+          ReadinessDecision.unverifiedPrerequisites,
+        );
+      }
+      for (final command in [
+        'python3 -B $suite',
+        'python3 -B -m unittest test.ci.test_check_format',
+      ]) {
+        proof['command'] = command;
+        expect((await evaluate()).decision, ReadinessDecision.rejected);
+      }
+      proof['command'] = 'python3 tool/ci/check_format.py';
+      expect((await evaluate()).decision, ReadinessDecision.rejected);
+      proof['command'] =
+          'python3 -B -m unittest discover -s test/ci -p test_check_format.py';
+      proof['production_refs'] = productionRefs(backendSource);
+      expect((await evaluate()).decision, ReadinessDecision.rejected);
+      proof['production_refs'] = productionRefs(source);
+      proof['control_result'] = 'pass';
+      expect((await evaluate()).decision, ReadinessDecision.rejected);
+    });
+
     test(
       'Genkit test and production paths bind exact-head evidence without bypasses',
       () async {
@@ -5723,11 +5879,20 @@ final segment = '${Object()}ImageEditingRequest${Object()}';
         'tool/native/test_sync_native_release_pins.py',
         'tool/native/test_sync_stable_diffusion_bindings.py',
         'test/ci/test_nonpublishing_auth_probe.py',
+        'test/ci/test_check_format.py',
+        'packages/llamadart_studio_core/test/local_structured_output_qualification_test.dart',
+        'packages/llamadart_studio/test/chat_test.dart',
+        'packages/llamadart_studio/integration_test/local_workflows_acceptance_test.dart',
       ]) {
         expect(testPathPattern.hasMatch(path), isTrue, reason: path);
       }
       for (final path in [
         'packages/other/test/reuse_test.dart',
+        'packages/llamadart_studio_core_extra/test/reuse_test.dart',
+        'packages/llamadart_studio_core/test/../lib/reuse_test.dart',
+        'packages/llamadart_studio/integration_test/../lib/reuse_test.dart',
+        'packages/llamadart_studio_core/integration_test/reuse_test.dart',
+        'test/ci/test_check_format_extra.py',
         'packages/genkit_llamadart/test/../lib/reuse_test.dart',
         'packages/genkit_llamadart/test/unit/*_test.dart',
         'packages/llamadart_validation/test/../lib/reuse_test.dart',

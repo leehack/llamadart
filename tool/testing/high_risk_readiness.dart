@@ -756,13 +756,14 @@ class HighRiskReadinessEvaluator {
     'test/e2e/template/specialized_tool_grammar_validation_e2e_test.dart',
     'packages/genkit_llamadart/test/integration/genkit/plugin/real_model_constrained_grammar_test.dart',
     'packages/genkit_llamadart/test/integration/genkit/plugin/real_model_rich_tool_schemas_test.dart',
+    'packages/llamadart_studio_core/test/local_structured_output_qualification_test.dart',
   };
   static const _ffigenConfig = 'ffigen.yaml';
   static const _ffigenPolicyTest =
       'test/unit/tooling/native_bindings_generator_policy_test.dart';
 
   // Python suites CI runs directly, each bound to the one script it drives.
-  static const _nativeSyncPythonTests = <String, String>{
+  static const _pairedPythonTests = <String, String>{
     'tool/native/test_native_header_archive.py':
         'tool/native/native_header_archive.py',
     'tool/native/test_sync_native_headers_and_bindings.py':
@@ -771,6 +772,7 @@ class HighRiskReadinessEvaluator {
         'tool/native/sync_native_release_pins.py',
     'tool/native/test_sync_stable_diffusion_bindings.py':
         'tool/native/sync_stable_diffusion_bindings.py',
+    'test/ci/test_check_format.py': 'tool/ci/check_format.py',
     'test/ci/test_nonpublishing_auth_probe.py':
         'tool/release/nonpublishing_auth_probe.py',
   };
@@ -1501,14 +1503,21 @@ class HighRiskReadinessEvaluator {
               !entry.key.startsWith('test/unit/tooling/'))) {
         return 'Private harness evidence must use paired harness or root tooling tests: ${entry.key}.';
       }
-      final pairedScript = _nativeSyncPythonTests[entry.key];
+      final pairedScript = _pairedPythonTests[entry.key];
       if (pairedScript != null) {
         final command = proof['command'] as String;
         final module = entry.key
             .substring(0, entry.key.length - '.py'.length)
             .replaceAll('/', '.');
-        if (!referenced.contains(pairedScript) ||
-            !(command.contains(entry.key) || command.contains(module))) {
+        // This suite has no __main__ entrypoint and test/ is not a Python
+        // package. Only discovery actually executes its assertions.
+        final runsSuite = entry.key == 'test/ci/test_check_format.py'
+            ? const {
+                'python3 -B -m unittest discover -s test/ci -p test_check_format.py',
+                'python3 -m unittest discover -s test/ci -p test_check_format.py',
+              }.contains(command)
+            : command.contains(entry.key) || command.contains(module);
+        if (!referenced.contains(pairedScript) || !runsSuite) {
           return 'Python evidence must run its own suite and reference $pairedScript: ${entry.key}.';
         }
       }
@@ -2524,6 +2533,8 @@ class HighRiskReadinessEvaluator {
       path.startsWith('tool/') ||
       path.startsWith('hook/') ||
       path.startsWith('packages/genkit_llamadart/lib/') ||
+      path.startsWith('packages/llamadart_studio_core/lib/') ||
+      path.startsWith('packages/llamadart_studio/lib/') ||
       _isValidationHarnessProductionPath(path) ||
       isWorkflowPath(path);
 
@@ -2544,10 +2555,13 @@ class HighRiskReadinessEvaluator {
             .any((part) => part.isEmpty || part == '.' || part == '..')) {
       return false;
     }
-    if (_nativeSyncPythonTests.containsKey(path)) return true;
+    if (_pairedPythonTests.containsKey(path)) return true;
     return (path.startsWith('test/') ||
             path.startsWith('packages/genkit_llamadart/test/') ||
-            path.startsWith('packages/llamadart_validation/test/')) &&
+            path.startsWith('packages/llamadart_validation/test/') ||
+            path.startsWith('packages/llamadart_studio_core/test/') ||
+            path.startsWith('packages/llamadart_studio/test/') ||
+            path.startsWith('packages/llamadart_studio/integration_test/')) &&
         path.endsWith('_test.dart');
   }
 

@@ -1,0 +1,392 @@
+@Tags(<String>['local-only'])
+library;
+
+import 'dart:convert';
+import 'dart:io';
+
+// Keep Material types compatible with flutter_markdown (see README).
+// ignore: deprecated_member_use
+import 'package:flutter/material.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:integration_test/integration_test.dart';
+import 'package:llamadart/llamadart.dart';
+import 'package:llamadart_studio/llamadart_studio.dart';
+import 'package:llamadart_studio_core/llamadart_studio_core.dart';
+import 'package:path_provider/path_provider.dart';
+
+import '../test/studio_widget_test_helpers.dart';
+import 'support/chat_diagnostics.dart';
+import 'support/cloud_mobile_profile.dart';
+import 'support/fixture_text_input.dart';
+
+const _enabled = bool.fromEnvironment('STUDIO_CLOUD_ACCEPTANCE');
+const _modelSha256 = String.fromEnvironment('STUDIO_CLOUD_MODEL_SHA256');
+const _modelUrl = String.fromEnvironment('STUDIO_CLOUD_MODEL_URL');
+const _sourceCommit = String.fromEnvironment('STUDIO_CLOUD_SOURCE_COMMIT');
+const _chatPrompt = 'What is 2 + 2? Reply with just the digit.';
+const _modelBytes = 532517120;
+
+class _StagedModelStorage extends FakeStoragePort {
+  _StagedModelStorage(this.modelPath);
+  final String modelPath;
+
+  @override
+  List<StudioModelDescriptor> get discoveredLocalModels => const [];
+
+  @override
+  Future<List<StudioModelDescriptor>> refreshLocalModels({
+    List<String> extraDirectories = const [],
+  }) async => const [];
+
+  @override
+  Future<bool> isCached(
+    StudioModelDescriptor descriptor, {
+    required bool isWeb,
+  }) async => descriptor.id == 'qwen3.5-0.8b-q4-k-m';
+
+  @override
+  Future<ResolvedModelAssets> ensureDownloaded(
+    StudioModelDescriptor descriptor, {
+    required bool isWeb,
+    String? bearerToken,
+  }) async {
+    if (descriptor.id != 'qwen3.5-0.8b-q4-k-m') {
+      throw StateError('Only the admitted staged model is available.');
+    }
+    return ResolvedModelAssets(
+      descriptor: descriptor,
+      primarySource: ModelSource.path(modelPath),
+    );
+  }
+}
+
+void main() {
+  IntegrationTestWidgetsFlutterBinding.ensureInitialized();
+  testWidgets(
+    'physical mobile Studio Chat inference and Notes persistence',
+    (tester) async {
+      registerFixtureTextInput(tester);
+      WidgetController.hitTestWarningShouldBeFatal = true;
+      addTearDown(() => WidgetController.hitTestWarningShouldBeFatal = false);
+      expect(Platform.isAndroid || Platform.isIOS, isTrue);
+      expect(RegExp(r'^[a-f0-9]{40}$').hasMatch(_sourceCommit), isTrue);
+      expect(RegExp(r'^[a-f0-9]{64}$').hasMatch(_modelSha256), isTrue);
+      final cache = await getTemporaryDirectory();
+      final model = File('${cache.path}/firebase-model.gguf');
+      var modelSource = ModelSource.path(model.path);
+      if (Platform.isIOS && !await model.exists()) {
+        final uri = Uri.tryParse(_modelUrl);
+        expect(
+          uri != null &&
+              uri.scheme == 'https' &&
+              uri.host == 'huggingface.co' &&
+              uri.userInfo.isEmpty &&
+              !uri.hasQuery &&
+              !uri.hasFragment &&
+              RegExp(r'^/[^/]+/[^/]+/resolve/[a-f0-9]{40}/[^/]+\.gguf$')
+                  .hasMatch(uri.path),
+          isTrue,
+          reason:
+              'iOS has no staged firebase-model.gguf. Supply '
+              '--dart-define=STUDIO_CLOUD_MODEL_URL with a public HTTPS '
+              'huggingface.co model URL pinned to /resolve/<40-hex-commit>/, '
+              'without credentials, query parameters or fragments.',
+        );
+        modelSource = ModelSource.url(uri!);
+      } else {
+        expect(await model.length(), _modelBytes);
+      }
+      final support = await getApplicationSupportDirectory();
+      final temp = await Directory('${support.path}/studio_cloud').create();
+      final manager = DefaultModelDownloadManager(
+        defaultCacheDirectory: '${temp.path}/models',
+      );
+      final verified = await manager.ensureModel(
+        modelSource,
+        options: ModelLoadOptions(sha256: _modelSha256),
+      );
+      expect(verified.sha256, _modelSha256);
+      expect(await File(verified.filePath).length(), _modelBytes);
+      final kv = InMemoryKeyValueStore();
+      final notes = createDefaultNoteStore(
+        fallbackKeyValueStore: kv,
+        directoryPath: temp.path,
+      );
+      final diagnosticRoot = Platform.isIOS
+          ? await getApplicationDocumentsDirectory()
+          : (await getExternalStorageDirectory())!;
+      final run = DateTime.now().toUtc().toIso8601String().replaceAll(':', '-');
+      final diagnostics = ChatDiagnostics(
+        File(
+          '${diagnosticRoot.path}/${Platform.isIOS ? 'validation/runs' : 'studio-acceptance'}/$run/chat-diagnostics.jsonl',
+        ),
+      );
+      diagnostics.record('verified_model', {
+        'source_commit': _sourceCommit,
+        'sha256': verified.sha256,
+        'bytes': await File(verified.filePath).length(),
+      });
+      addTearDown(diagnostics.flush);
+      final inference = RecordingInferencePort(
+        DirectLlamaInferencePort(),
+        diagnostics,
+      );
+      final deps = await StudioDependencies.fromPorts(
+        keyValueStore: kv,
+        conversationStore: createDefaultConversationStore(
+          fallbackKeyValueStore: kv,
+          directoryPath: temp.path,
+        ),
+        noteStore: notes,
+        storagePort: _StagedModelStorage(verified.filePath),
+        inferencePort: inference,
+        speechPort: FakeSpeechPort(),
+        imagePort: FakeImagePort(),
+        playgroundPort: FakePlaygroundPort(),
+        isMobile: true,
+      );
+      addTearDown(() async {
+        diagnostics.record('before_cleanup', chatCheckpoint(deps, _chatPrompt));
+        await diagnostics.flush();
+        await tester.pumpWidget(const SizedBox.shrink());
+        await deps.dispose();
+        if (await temp.exists()) await temp.delete(recursive: true);
+      });
+      await deps.shellController.updateSettings(cloudMobileSettings);
+      await tester.pumpWidget(LlamadartStudioApp(dependencies: deps));
+      await tester.pumpAndSettle();
+      Future<void> tap(String key) async {
+        final notificationDeadline = DateTime.now().add(
+          const Duration(seconds: 10),
+        );
+        while (find.byType(SnackBar).evaluate().isNotEmpty &&
+            DateTime.now().isBefore(notificationDeadline)) {
+          await tester.pump(const Duration(milliseconds: 100));
+          await Future<void>.delayed(const Duration(milliseconds: 20));
+        }
+        expect(find.byType(SnackBar), findsNothing);
+        final target = find.byKey(Key(key));
+        await tester.ensureVisible(target);
+        await tester.pumpAndSettle();
+        await tester.tap(target);
+        await tester.pump();
+      }
+
+      Future<void> navigate(String workspace) async {
+        await tap('open_sidebar_drawer_button');
+        await tester.pumpAndSettle();
+        await tap('nav_workspace_$workspace');
+        await tester.pumpAndSettle();
+      }
+
+      Future<void> waitFor(bool Function() done, String phase) async {
+        final deadline = DateTime.now().add(const Duration(seconds: 90));
+        var nextCheckpoint = DateTime.now();
+        diagnostics.record('wait_start', {
+          'operation': phase,
+          ...chatCheckpoint(deps, _chatPrompt),
+        });
+        while (!done() && DateTime.now().isBefore(deadline)) {
+          if (!DateTime.now().isBefore(nextCheckpoint)) {
+            diagnostics.record('wait_checkpoint', {
+              'operation': phase,
+              ...chatCheckpoint(deps, _chatPrompt),
+            });
+            await diagnostics.flush();
+            nextCheckpoint = DateTime.now().add(const Duration(seconds: 10));
+          }
+          await tester.pump(const Duration(milliseconds: 100));
+          await Future<void>.delayed(const Duration(milliseconds: 20));
+        }
+        await expectChatWaitFinished(
+          tester: tester,
+          diagnostics: diagnostics,
+          done: done,
+          phase: phase,
+          checkpoint: chatCheckpoint(deps, _chatPrompt),
+          reason:
+              '$phase: runtime=${inference.runtimeStore.state.phase} '
+              'error=${inference.runtimeStore.state.errorMessage} '
+              'activating=${deps.modelHubController.state.activatingDescriptor?.id} '
+              'noteTitle=${deps.notebookController.state.selectedNote?.title}',
+        );
+      }
+
+      await navigate('models');
+      await enterFixtureText(
+        tester,
+        find.byKey(const Key('model_hub_search_field')),
+        'qwen3.5 0.8b',
+      );
+      FocusManager.instance.primaryFocus?.unfocus();
+      await tester.pumpAndSettle();
+      await tap('activate_model_qwen3.5-0.8b-q4-k-m');
+      await waitFor(
+        () =>
+            inference.runtimeStore.state.isReady &&
+            deps.shellController.state.activeWorkspace == StudioWorkspace.chat,
+        'model load and navigation',
+      );
+      diagnostics.record('profile_reload_start', {
+        'effective_settings': chatProfileSettings(
+          deps.shellController.state.settings,
+        ),
+      });
+      await applyCloudMobileProfile(deps).timeout(const Duration(seconds: 90));
+      diagnostics.record('profile_reload_end', {
+        'effective_settings': chatProfileSettings(
+          deps.shellController.state.settings,
+        ),
+        'engine_options': inference.loadedEngineOptions,
+        'loaded_engine_signature':
+            inference.runtimeStore.state.loadedEngineSignature,
+        'ready': inference.runtimeStore.state.isReady,
+      });
+      expectCloudMobileRuntime(deps, inference);
+      await tester.pumpAndSettle();
+      await enterFixtureText(
+        tester,
+        find.byKey(const Key('chat_composer_input')),
+        _chatPrompt,
+      );
+      final composer = tester.widget<TextField>(
+        find.byKey(const Key('chat_composer_input')),
+      );
+      expect(composer.controller!.text, _chatPrompt);
+      expect(
+        tester
+            .widget<FilledButton>(find.byKey(const Key('chat_send_button')))
+            .onPressed,
+        isNotNull,
+      );
+      final runtime = inference.runtimeStore.state;
+      diagnostics.record('before_send', {
+        ...chatCheckpoint(deps, _chatPrompt),
+        'backend_cached': runtime.backendName,
+        'context_target_cached': runtime.resolvedContextSize,
+        'gpu_layers_target_cached': runtime.resolvedGpuLayers,
+        'actual_measurement_available': false,
+        'effective_settings': chatProfileSettings(
+          deps.shellController.state.settings,
+        ),
+        'engine_options': inference.loadedEngineOptions,
+        'loaded_engine_signature': runtime.loadedEngineSignature,
+      });
+      await diagnostics.flush();
+      expectCloudMobileRuntime(deps, inference);
+      await tap('chat_send_button');
+      diagnostics.record('after_send', chatCheckpoint(deps, _chatPrompt));
+      await waitFor(
+        () =>
+            !deps.chatController.activeStreamStore.state.isGenerating &&
+            (deps
+                        .chatController
+                        .state
+                        .activeConversation
+                        ?.activeBranch
+                        .length ??
+                    0) >=
+                2,
+        'chat generation',
+      );
+      final answer = deps
+          .chatController
+          .state
+          .activeConversation!
+          .activeBranch
+          .last
+          .text
+          .trim();
+      expect(deps.chatController.state.lastTurnError, isNull);
+      expect(answer, '4');
+      expectCloudMobileTurn(inference);
+      await navigate('notes');
+      final priorNoteIds = deps.notebookController.state.notes
+          .map((n) => n.id)
+          .toSet();
+      await tap('vault_new_note_button');
+      await waitFor(
+        () =>
+            deps.notebookController.state.selectedNote != null &&
+            !priorNoteIds.contains(
+              deps.notebookController.state.selectedNote!.id,
+            ),
+        'note creation',
+      );
+      await enterFixtureText(
+        tester,
+        find.byKey(const Key('vault_note_title_input')),
+        'Cloud acceptance — Montréal',
+      );
+      await tester.ensureVisible(
+        find.byKey(const Key('vault_note_content_input')),
+      );
+      await tester.pumpAndSettle();
+      await enterFixtureText(
+        tester,
+        find.byKey(const Key('vault_note_content_input')),
+        'Saved on the physical ${Platform.operatingSystem} host.',
+      );
+      FocusManager.instance.primaryFocus?.unfocus();
+      await tester.pumpAndSettle();
+      await tap('vault_save_note_button');
+      await waitFor(
+        () =>
+            deps.notebookController.state.selectedNote?.title ==
+                'Cloud acceptance — Montréal' &&
+            deps.notebookController.state.selectedNote?.content ==
+                'Saved on the physical ${Platform.operatingSystem} host.',
+        'note save completed',
+      );
+      final reopened = await createDefaultNoteStore(
+        fallbackKeyValueStore: kv,
+        directoryPath: temp.path,
+      ).loadAll();
+      expect(
+        reopened.any(
+          (note) =>
+              note.title == 'Cloud acceptance — Montréal' &&
+              note.content ==
+                  'Saved on the physical ${Platform.operatingSystem} host.',
+        ),
+        isTrue,
+      );
+      final outputRoot = Platform.isAndroid
+          ? await getExternalStorageDirectory()
+          : await getApplicationDocumentsDirectory();
+      expect(outputRoot, isNotNull);
+      final output = await Directory('${outputRoot!.path}/studio-acceptance')
+          .create(recursive: true);
+      await File('${output.path}/receipt.json').writeAsString(
+        jsonEncode({
+          'schema': 1,
+          'source_commit': _sourceCommit,
+          'platform': Platform.operatingSystem,
+          'dart_sdk': Platform.version,
+          'model_sha256': _modelSha256,
+          'model_bytes': _modelBytes,
+          'backend': inference.runtimeStore.state.backendName,
+          'context_size': inference.runtimeStore.state.resolvedContextSize,
+          'gpu_layers': inference.runtimeStore.state.resolvedGpuLayers,
+          'chat_answer': answer,
+          'note_reopened': true,
+          'compute': deps.shellController.state.settings.computeDevice.name,
+          'threads': deps.shellController.state.settings.numberOfThreads,
+          'actual_measurement_available': false,
+          'effective_settings': chatProfileSettings(
+            deps.shellController.state.settings,
+          ),
+          'engine_options': inference.loadedEngineOptions,
+          'generation_options_from_request': inference.generationOptions,
+          'generated_tokens':
+              inference.completedResult!.metrics.generatedTokens,
+          'thinking_events': inference.thinkingEvents,
+          'qualified_scope': 'chat-ui-inference-and-notes-persistence',
+        }),
+        flush: true,
+      );
+    },
+    skip: !_enabled,
+    timeout: const Timeout(Duration(minutes: 4)),
+  );
+}

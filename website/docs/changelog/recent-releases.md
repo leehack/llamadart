@@ -13,6 +13,17 @@ validate against the exact release tag notes.
 
 ## Unreleased
 
+- Keep the workspace root out of Studio Coding prompts unless a shell or MCP tool needs absolute paths, so small models stop copying it into file tool paths.
+
+- Initialize Studio Coding’s built-in Dart MCP for the selected workspace, preserve tool failures, and expose full tool results.
+
+- Report rejected Studio settings saves without reusing unsaved cached values.
+
+- Let Studio Coding create and reopen persistent local workspaces on iOS/Android, restore them after app storage moves, and show clear recovery when a folder cannot be selected.
+
+- Improve Studio Coding on phones with reachable task controls, file navigation, guarded Revert, and explicit desktop-only local commands.
+
+- Keep Studio Speech and Notes usable when Linux audio playback plugins are missing.
 - Fixed Gemma 4 tool-call parsing dropping or corrupting `<|"|>`-delimited string arguments that contain raw newlines, `"` or backslashes; delimited text is now taken verbatim, as in llama.cpp ([#2041](https://github.com/leehack/llamadart/issues/2041)).
 
 - Adopt `leehack/llamadart-native@v1.0.0-1` (llama.cpp `v1.0.0`, `b1b770d9`) with regenerated bindings; it keeps the `v0.9.0` ARM FP16 fixes. The video capability probe uses `mtmd_helper_get_capabilities`, the replacement for the deprecated `mtmd_helper_support_video`.
@@ -20,13 +31,27 @@ validate against the exact release tag notes.
 - Aligned default WebGPU bridge assets to `v0.1.86` (llama.cpp `v1.0.0`, matching the native runtime) ([#2024](https://github.com/leehack/llamadart/issues/2024)).
 
 - Refuse a native llama.cpp runtime that was not built from llama.cpp `v1.0.0` with `LlamaUnsupportedException`, before the first call that passes a llama.cpp struct by value. A `llamadart_native_tag` or `llamadart_native_path` override to any other llama.cpp release no longer loads.
+
 - Update native image generation to stable-diffusion-native `v0.4.0`. Apple apps using image generation must upgrade the core and Stable Diffusion companion together.
 
 - Restore native text-to-speech discovery when Dart bundles its runtime outside the working directory.
 
 - Avoid initializing unavailable Linux Vulkan backends during llama.cpp automatic loading and device probes, while retaining other bundled backends.
 
+- Validate Studio tool arguments before execution, preserve tool history across reloads, and make media failures and tool compatibility visible.
+
+- Preserve Studio notes and attachments across failed or interrupted saves, and keep indexing consistent with concurrent edits.
+
+- Align Studio coding skills with available file tools and add realistic macOS Notes and Coding qualification.
+
+- Report incomplete Studio replies and exhausted tool rounds with actionable errors instead of empty successful responses.
+
+- Add an experimental Studio app with seven workspaces and a reusable pure-Dart core, alongside the existing chat example.
+
+- Use the Linux Vulkan preflight in Studio to report unavailable image drivers before native device enumeration.
+
 - Add an opt-in Linux Vulkan loader preflight for native hosts.
+
 - Speed up model checksum verification on Apple platforms and keep verification off the UI isolate.
 - Add experimental streamed text-to-speech: `TextToSpeechRequest.streamAudio` emits `TextToSpeechAudioChunkEvent` PCM chunks on `TextToSpeechTask.events` before the final event for Qwen3-TTS, LFM3-Audio and Pocket TTS on native, gated by `TextToSpeechCapabilities.supportsIncrementalAudio` (needs llamadart-native `v1.0.0-1`; Soprano, Chatterbox and Web refuse with `LlamaUnsupportedException`). The new sealed event subtype means an exhaustive `switch` over `TextToSpeechEvent` needs a case ([#2036](https://github.com/leehack/llamadart/issues/2036)).
 
