@@ -4,6 +4,7 @@ Releases before 0.10.0 are in the
 ## Unreleased
 
 - Adopt `leehack/llamadart-native@v1.0.0-2` (llama.cpp `v1.0.0`, `b1b770d9`): Windows CUDA `ModelParams.gpuMemoryFit` now accounts for VRAM held by other processes, matching Vulkan, and refuses TCC or `GGML_CUDA_DEVICES` virtual devices where system-wide free memory cannot be read with `LlamaGpuMemoryFitException` ([#2049](https://github.com/leehack/llamadart/issues/2049)).
+- Add `LlamaCppLiveAsrAdapter` for native incremental live PCM speech recognition (`SpeechToTextEngine.startStream()` and `transcribe`/`transcribeOnce` with mono 16 kHz `pcm-f32le`) on Voxtral Realtime and LFM3-Audio GGUF models with their audio projectors (`llamadart-native@v1.0.0-1`; Web and older runtimes throw `LlamaUnsupportedException`). Also adds `SpeechToTextCapabilities.streamingInputUnsupportedReason` ([#327](https://github.com/leehack/llamadart/issues/327)).
 - Fixed a race when multiple processes first access the same model cache entry concurrently ([#2028](https://github.com/leehack/llamadart/issues/2028)).
 
 ## 0.20.0

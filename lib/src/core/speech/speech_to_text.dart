@@ -243,6 +243,10 @@ class SpeechToTextCapabilities implements EngineCapabilities {
   /// Maximum number of concurrent tasks owned by one recognizer or engine.
   final int maxConcurrentTasks;
 
+  /// Actionable reason when [supportsStreamingInput] is false while the
+  /// recognizer itself may still support complete-input transcription.
+  final String? streamingInputUnsupportedReason;
+
   /// Creates a capability snapshot.
   const SpeechToTextCapabilities({
     required this.isSupported,
@@ -253,6 +257,7 @@ class SpeechToTextCapabilities implements EngineCapabilities {
     this.encodedAudioFormats = const <String>{},
     this.supportsPartialResults = false,
     this.supportsStreamingInput = false,
+    this.streamingInputUnsupportedReason,
     this.supportsSegmentTimestamps = false,
     this.supportsWordTimestamps = false,
     this.supportsConfidence = false,
@@ -446,16 +451,53 @@ class _CancelledSpeechToTextCompletion extends SpeechToTextCompletion {
 
 /// A cancellable speech recognition operation.
 class SpeechToTextTask {
-  final StreamController<SpeechToTextEvent> _eventsController;
+  late final StreamController<SpeechToTextEvent> _eventsController;
   final Completer<SpeechToTextCompletion> _doneCompleter;
   final void Function()? _onCancel;
   void Function()? _cancelTokenStream;
+  SpeechToTextPartialEvent? _pendingPartial;
   bool _cancelled = false;
 
   SpeechToTextTask._({void Function()? onCancel})
     : _onCancel = onCancel,
-      _eventsController = StreamController<SpeechToTextEvent>(),
-      _doneCompleter = Completer<SpeechToTextCompletion>();
+      _doneCompleter = Completer<SpeechToTextCompletion>() {
+    _eventsController = StreamController<SpeechToTextEvent>(
+      onListen: _flushPendingPartial,
+      onResume: _flushPendingPartial,
+    );
+  }
+
+  void _flushPendingPartial() {
+    final pending = _pendingPartial;
+    if (pending == null ||
+        _cancelled ||
+        _eventsController.isClosed ||
+        !_eventsController.hasListener ||
+        _eventsController.isPaused) {
+      return;
+    }
+    _pendingPartial = null;
+    _eventsController.add(pending);
+  }
+
+  void _addEvent(SpeechToTextEvent event) {
+    if (_cancelled || _eventsController.isClosed) {
+      return;
+    }
+    if (event is SpeechToTextPartialEvent &&
+        (!_eventsController.hasListener || _eventsController.isPaused)) {
+      _pendingPartial = event;
+      return;
+    }
+    if (event is SpeechToTextFinalEvent) {
+      final pending = _pendingPartial;
+      if (pending != null) {
+        _pendingPartial = null;
+        _eventsController.add(pending);
+      }
+    }
+    _eventsController.add(event);
+  }
 
   /// Recognition events.
   ///
@@ -535,14 +577,16 @@ abstract interface class SpeechToTextStreamingSession {
   Future<void> cancel();
 }
 
-/// Typed speech-to-text API for prompt-adapted and dedicated ASR runtimes.
+/// Typed speech-to-text API for prompt-adapted and streaming ASR runtimes.
 ///
 /// [load] loads a [SpeechToTextModel] and owns what it loads; [attach] runs
 /// a [SpeechToTextPromptAdapter] on a `LlamaEngine` the caller loaded and
 /// keeps owning. The model's adapter picks the runtime: a prompt adapter,
 /// such as [Qwen3AsrAdapter], sends encoded audio through multimodal chat on
-/// a `LlamaEngine`; [LiteRtLmAsrAdapter] runs a dedicated native LiteRT-LM
-/// recognizer with incremental PCM input and partial transcripts.
+/// a `LlamaEngine`; [LlamaCppLiveAsrAdapter] runs incremental live PCM
+/// streaming on native `llama.cpp` (such as Voxtral Realtime and LFM3-Audio);
+/// and [LiteRtLmAsrAdapter] runs a dedicated native LiteRT-LM recognizer with
+/// incremental PCM input and partial transcripts.
 ///
 /// ```dart
 /// final recognizer = await SpeechToTextEngine.load(
@@ -577,14 +621,15 @@ class SpeechToTextEngine implements LlamadartEngine<SpeechToTextCapabilities> {
   final String? _liteRtLmLibraryPath;
   Future<LiteRtLmSpeechToTextSupport>? _liteRtLmSupportFuture;
   bool _liteRtLmTaskActive = false;
+  Future<void>? _pendingStreamStart;
   SpeechToTextStreamingSession? _activeStream;
   SpeechToTextTask? _activeTask;
   Future<void>? _disposal;
   LoadedMultimodalProjector? _checkedProjector;
   Future<String?>? _checkedProjectorType;
 
-  /// What drives the model: a [SpeechToTextPromptAdapter] or a
-  /// [LiteRtLmAsrAdapter].
+  /// What drives the model: a [SpeechToTextPromptAdapter],
+  /// [LiteRtLmAsrAdapter], or [LlamaCppLiveAsrAdapter].
   final SpeechToTextAdapter adapter;
 
   SpeechToTextEngine._prompt(
@@ -597,6 +642,16 @@ class SpeechToTextEngine implements LlamadartEngine<SpeechToTextCapabilities> {
        _liteRtLmConfig = null,
        _liteRtLmDriver = null,
        _liteRtLmLibraryPath = null;
+
+  SpeechToTextEngine._llamaCppLiveAsr(
+    LlamaEngine engine,
+    LlamaCppLiveAsrAdapter this.adapter,
+  ) : _engine = engine,
+      _ownsEngine = true,
+      _engineLease = SpeechEngineLease.forEngine(engine),
+      _liteRtLmConfig = null,
+      _liteRtLmDriver = null,
+      _liteRtLmLibraryPath = null;
 
   SpeechToTextEngine._liteRtLm(
     LiteRtLmAsrRuntimeConfig config,
@@ -716,8 +771,9 @@ class SpeechToTextEngine implements LlamadartEngine<SpeechToTextCapabilities> {
   ///   [LiteRtLmAsrAdapter], or when [download] would send credentials to
   ///   more than one host.
   /// - [LlamaUnsupportedException] when the loaded model cannot recognize
-  ///   speech (see [capabilities]), when the LiteRT-LM ASR runtime is
-  ///   unavailable, including on the web, and when [download] sets
+  ///   speech (see [capabilities]), when [LlamaCppLiveAsrAdapter] or
+  ///   [LiteRtLmAsrAdapter] is unavailable on the current platform or runtime
+  ///   (including on the web), and when [download] sets
   ///   [ModelLoadOptions.sha256] for a model of more than one file.
   /// - [LlamaStateException] when [download]'s cancel token cancels the load.
   /// - What [LlamaEngine.setModel], the resolver and the download manager
@@ -839,6 +895,68 @@ class SpeechToTextEngine implements LlamadartEngine<SpeechToTextCapabilities> {
           libraryPath: adapter.libraryPath,
           support: Future<LiteRtLmSpeechToTextSupport>.value(support),
         );
+      case final LlamaCppLiveAsrAdapter adapter:
+        if (!speechToTextSupportsLlamaCppLiveAsr) {
+          await _rejectLoad(
+            backend,
+            LlamaUnsupportedException(
+              'Live PCM speech recognition (${adapter.name}) is not supported '
+              'on Web; the WebGPU bridge does not expose native live ASR '
+              'streaming (requires a native platform with llama.cpp ASR '
+              'stream API v1).',
+            ),
+          );
+        }
+        if (model.tokenizer != null) {
+          await _rejectLoad(
+            backend,
+            LlamaArgumentException(
+              'A ${adapter.name} model takes no tokenizer file; the tokenizer '
+              'is part of the model. Leave SpeechToTextModel.tokenizer unset.',
+              name: 'model.tokenizer',
+            ),
+          );
+        }
+        if (model.projector == null) {
+          await _rejectLoad(
+            backend,
+            LlamaArgumentException(
+              'A ${adapter.name} model requires its multimodal audio '
+              'projector. Set SpeechToTextModel.projector.',
+              name: 'model.projector',
+            ),
+          );
+        }
+        final (engine, _) = await loadLlamaEngine(
+          LlamaModel(model.source, projector: model.projector),
+          params: params ?? const ModelParams(),
+          download: download,
+          onProgress: onProgress,
+          store: store,
+          backend: backend,
+          operation: 'SpeechToTextEngine model loading',
+        );
+        try {
+          final recognizer = SpeechToTextEngine._llamaCppLiveAsr(
+            engine,
+            adapter,
+          );
+          final capabilities = await recognizer.capabilities;
+          if (!capabilities.isSupported) {
+            throw LlamaUnsupportedException(
+              capabilities.unsupportedReason ??
+                  'The loaded model cannot run live speech recognition.',
+            );
+          }
+          return recognizer;
+        } catch (_) {
+          try {
+            await engine.dispose();
+          } catch (_) {
+            // The load failure is the error the caller needs.
+          }
+          rethrow;
+        }
     }
   }
 
@@ -846,7 +964,7 @@ class SpeechToTextEngine implements LlamadartEngine<SpeechToTextCapabilities> {
   /// [error].
   static Future<Never> _rejectLoad(
     LlamaBackend? backend,
-    LlamaArgumentException error,
+    LlamaException error,
   ) async {
     try {
       await backend?.dispose();
@@ -902,6 +1020,17 @@ class SpeechToTextEngine implements LlamadartEngine<SpeechToTextCapabilities> {
 
   bool get _usesLiteRtLm => _liteRtLmConfig != null;
 
+  bool get _usesLlamaCppLiveAsr => adapter is LlamaCppLiveAsrAdapter;
+
+  bool get _usesPcmStreaming => _usesLiteRtLm || _usesLlamaCppLiveAsr;
+
+  static String _promptStreamingUnsupportedReason(
+    SpeechToTextAdapter adapter,
+  ) =>
+      'The ${adapter.name} prompt adapter accepts complete encoded audio only. '
+      'Use LlamaCppLiveAsrAdapter or LiteRtLmAsrAdapter for incremental PCM '
+      'streaming.';
+
   SpeechToTextPromptAdapter get _promptAdapter =>
       adapter as SpeechToTextPromptAdapter;
 
@@ -955,6 +1084,53 @@ class SpeechToTextEngine implements LlamadartEngine<SpeechToTextCapabilities> {
       return const SpeechToTextCapabilities(
         isSupported: false,
         unsupportedReason: _engineDisposedMessage,
+      );
+    }
+    if (_usesLlamaCppLiveAsr) {
+      if (!speechToTextSupportsLlamaCppLiveAsr) {
+        return SpeechToTextCapabilities(
+          isSupported: false,
+          unsupportedReason:
+              'Live PCM speech recognition (${adapter.name}) is not supported '
+              'on Web; the WebGPU bridge does not expose native live ASR '
+              'streaming (requires a native platform with llama.cpp ASR '
+              'stream API v1).',
+        );
+      }
+      if (!engine.isReady) {
+        return const SpeechToTextCapabilities(
+          isSupported: false,
+          unsupportedReason:
+              'Load a model and its audio-capable multimodal projector first.',
+        );
+      }
+      String? backendName;
+      try {
+        backendName = await engine.getBackendName();
+      } catch (_) {
+        // Capability discovery can still use the streaming ASR probe.
+      }
+      final unsupportedReason =
+          await engine.backendStreamingSpeechToTextUnsupportedReason;
+      if (unsupportedReason != null) {
+        return SpeechToTextCapabilities(
+          isSupported: false,
+          unsupportedReason: unsupportedReason,
+          backendName: backendName,
+        );
+      }
+      return SpeechToTextCapabilities(
+        isSupported: true,
+        backendName: backendName,
+        implementation: SpeechToTextImplementation.dedicatedBackend,
+        inputKinds: const <SpeechAudioInputKind>{
+          SpeechAudioInputKind.pcmFloat32,
+        },
+        supportsPartialResults: true,
+        supportsStreamingInput: true,
+        supportsCancellation: true,
+        supportsInputBackpressure: true,
+        maxConcurrentTasks: 1,
       );
     }
     if (speechToTextRequiresBackendCapability) {
@@ -1041,6 +1217,10 @@ class SpeechToTextEngine implements LlamadartEngine<SpeechToTextCapabilities> {
         SpeechAudioInputKind.encodedBytes,
       },
       encodedAudioFormats: speechToTextEncodedAudioFormats,
+      supportsStreamingInput: false,
+      streamingInputUnsupportedReason: _promptStreamingUnsupportedReason(
+        promptAdapter,
+      ),
       supportsLanguageDetection: promptAdapter.supportsLanguageDetection,
       supportsLanguageHints: promptAdapter.supportsLanguageHints,
       supportsCancellation: true,
@@ -1072,8 +1252,8 @@ class SpeechToTextEngine implements LlamadartEngine<SpeechToTextCapabilities> {
   Future<SpeechToTextTask> transcribe(SpeechToTextRequest request) async {
     _throwIfDisposed();
     _validateRequest(request);
-    if (_usesLiteRtLm) {
-      return _transcribeLiteRtLm(request);
+    if (_usesPcmStreaming) {
+      return _transcribePcmStream(request);
     }
 
     final lease = _engineLease!;
@@ -1121,8 +1301,8 @@ class SpeechToTextEngine implements LlamadartEngine<SpeechToTextCapabilities> {
 
   /// Starts an incremental dedicated-ASR session.
   ///
-  /// This is available only with a [LiteRtLmAsrAdapter]. The accepted
-  /// [format] is mono 16 kHz `pcm-f32le`. Await every
+  /// Available with [LiteRtLmAsrAdapter] and [LlamaCppLiveAsrAdapter]. The
+  /// accepted [format] is mono 16 kHz `pcm-f32le`. Await every
   /// [SpeechToTextStreamingSession.addPcm] call so bounded native
   /// backpressure can throttle the producer. [dispose] cancels the session.
   /// Throws [LlamaStateException] after [dispose].
@@ -1130,13 +1310,15 @@ class SpeechToTextEngine implements LlamadartEngine<SpeechToTextCapabilities> {
     SpeechAudioFormat format = _liteRtLmPcmFormat,
   }) async {
     _throwIfDisposed();
-    if (!_usesLiteRtLm) {
+    if (!_usesPcmStreaming) {
       throw LlamaUnsupportedException(
-        'The ${adapter.name} prompt adapter accepts complete encoded audio '
-        'only.',
+        _promptStreamingUnsupportedReason(adapter),
       );
     }
-    _validateLiteRtLmPcmFormat(format);
+    _validatePcmFormat(format);
+    if (_usesLlamaCppLiveAsr) {
+      return _startLlamaCppStream(format);
+    }
     if (_liteRtLmTaskActive) {
       throw LlamaStateException(
         'This SpeechToTextEngine already has an active LiteRT-LM ASR task.',
@@ -1177,6 +1359,60 @@ class SpeechToTextEngine implements LlamadartEngine<SpeechToTextCapabilities> {
     }
   }
 
+  Future<SpeechToTextStreamingSession> _startLlamaCppStream(
+    SpeechAudioFormat format,
+  ) async {
+    final lease = _engineLease!;
+    if (!lease.acquire(_leaseOwner)) {
+      throw LlamaStateException(
+        'This LlamaEngine already has an active typed speech task '
+        '(${lease.activeOwner}).',
+      );
+    }
+    final engine = _engine!;
+    final startup = Completer<void>();
+    _pendingStreamStart = startup.future;
+    try {
+      final currentCapabilities = await capabilities;
+      _throwIfDisposed();
+      if (engine.isDisposed) {
+        throw LlamaStateException(_engineDisposedMessage);
+      }
+      if (!currentCapabilities.isSupported) {
+        throw LlamaUnsupportedException(
+          currentCapabilities.unsupportedReason ??
+              'Native live speech recognition is unavailable.',
+        );
+      }
+      final backendSession = await engine.startStreamingSpeechToTextBackend();
+      if (_disposal != null) {
+        await backendSession.cancel();
+        _throwIfDisposed();
+      }
+      late final _LlamaCppStreamingSession session;
+      session = _LlamaCppStreamingSession(
+        backendSession: backendSession,
+        sourceFormat: format,
+        onClosed: () {
+          lease.release(_leaseOwner);
+          if (identical(_activeStream, session)) {
+            _activeStream = null;
+          }
+        },
+      );
+      lease.onUnload(_leaseOwner, () => unawaited(session.cancel()));
+      return _activeStream = session;
+    } catch (_) {
+      lease.release(_leaseOwner);
+      rethrow;
+    } finally {
+      if (identical(_pendingStreamStart, startup.future)) {
+        _pendingStreamStart = null;
+      }
+      startup.complete();
+    }
+  }
+
   /// Cancels a running task or stream, waits for it to stop, and disposes
   /// the [LlamaEngine] that [load] created. An engine passed to [attach]
   /// stays loaded. Calling this more than once is safe.
@@ -1194,8 +1430,17 @@ class SpeechToTextEngine implements LlamadartEngine<SpeechToTextCapabilities> {
 
   Future<void> _dispose() async {
     final task = _activeTask;
-    final stream = _activeStream;
+    final pendingStart = _pendingStreamStart;
+    final initialStream = _activeStream;
     task?.cancel();
+    if (pendingStart != null) {
+      try {
+        await pendingStart;
+      } catch (_) {
+        // Pending startup failure is handled by the caller that started it.
+      }
+    }
+    final stream = _activeStream ?? initialStream;
     if (stream != null) {
       try {
         await stream.cancel();
@@ -1264,7 +1509,7 @@ class SpeechToTextEngine implements LlamadartEngine<SpeechToTextCapabilities> {
     }
   }
 
-  Future<SpeechToTextTask> _transcribeLiteRtLm(
+  Future<SpeechToTextTask> _transcribePcmStream(
     SpeechToTextRequest request,
   ) async {
     final audio = request.audio as SpeechAudioPcmInput;
@@ -1272,27 +1517,35 @@ class SpeechToTextEngine implements LlamadartEngine<SpeechToTextCapabilities> {
     late final SpeechToTextTask task;
     task = SpeechToTextTask._(onCancel: () => unawaited(session.cancel()));
     _activeTask = task;
-    unawaited(_pipeLiteRtLmTask(task, session, audio.samples));
+    unawaited(
+      Future<void>.microtask(
+        () => _pipeStreamingTask(task, session, audio.samples),
+      ),
+    );
     return task;
   }
 
-  Future<void> _pipeLiteRtLmTask(
+  Future<void> _pipeStreamingTask(
     SpeechToTextTask task,
     SpeechToTextStreamingSession session,
     Float32List samples,
   ) async {
     final subscription = session.events.listen(
-      task._eventsController.add,
+      task._addEvent,
       // session.done reports the failure.
       onError: (Object _) {},
     );
     try {
-      await session.addPcm(samples);
+      if (!task.isCancellationRequested) {
+        await session.addPcm(samples);
+      }
       if (!task.isCancellationRequested) {
         await session.finish();
       }
       final completion = await session.done;
-      if (!task._doneCompleter.isCompleted) {
+      if (task.isCancellationRequested) {
+        _completeCancelled(task);
+      } else if (!task._doneCompleter.isCompleted) {
         task._doneCompleter.complete(completion);
       }
     } catch (error) {
@@ -1330,7 +1583,7 @@ class SpeechToTextEngine implements LlamadartEngine<SpeechToTextCapabilities> {
     }
     final languageHint = request.languageHint?.trim();
     final contextPrompt = request.contextPrompt?.trim();
-    final promptAdapter = _usesLiteRtLm ? null : _promptAdapter;
+    final promptAdapter = _usesPcmStreaming ? null : _promptAdapter;
     if (languageHint != null &&
         languageHint.isNotEmpty &&
         !(promptAdapter?.supportsLanguageHints ?? false)) {
@@ -1338,16 +1591,20 @@ class SpeechToTextEngine implements LlamadartEngine<SpeechToTextCapabilities> {
         'The selected speech recognizer does not expose validated language hints.',
       );
     }
-    if (_usesLiteRtLm) {
+    if (_usesPcmStreaming) {
       if (contextPrompt != null && contextPrompt.isNotEmpty) {
         throw LlamaUnsupportedException(
-          'Dedicated LiteRT-LM ASR does not expose context prompting.',
+          _usesLiteRtLm
+              ? 'Dedicated LiteRT-LM ASR does not expose context prompting.'
+              : '${adapter.name} does not expose context prompting.',
         );
       }
       final audio = request.audio;
       if (audio is! SpeechAudioPcmInput) {
         throw LlamaUnsupportedException(
-          'Dedicated LiteRT-LM ASR accepts SpeechAudioPcmInput only.',
+          _usesLiteRtLm
+              ? 'Dedicated LiteRT-LM ASR accepts SpeechAudioPcmInput only.'
+              : '${adapter.name} accepts SpeechAudioPcmInput only.',
         );
       }
       if (audio.samples.isEmpty) {
@@ -1356,10 +1613,15 @@ class SpeechToTextEngine implements LlamadartEngine<SpeechToTextCapabilities> {
       final format = audio.format;
       if (format == null) {
         throw LlamaAudioFormatException(
-          'Dedicated LiteRT-LM ASR requires explicit PCM metadata.',
+          _usesLiteRtLm
+              ? 'Dedicated LiteRT-LM ASR requires explicit PCM metadata.'
+              : '${adapter.name} requires explicit PCM metadata.',
         );
       }
-      _validateLiteRtLmPcmFormat(format);
+      _validatePcmFormat(format);
+      if (_usesLlamaCppLiveAsr) {
+        _validatePcmSamples(audio.samples);
+      }
       return;
     }
     if (contextPrompt != null &&
@@ -1436,15 +1698,17 @@ class SpeechToTextEngine implements LlamadartEngine<SpeechToTextCapabilities> {
     return '${formats.take(formats.length - 1).join(', ')}, or ${formats.last}';
   }
 
-  void _validateLiteRtLmPcmFormat(SpeechAudioFormat format) {
+  void _validatePcmFormat(SpeechAudioFormat format) {
     final encoding = format.encoding?.trim().toLowerCase();
     if (format.sampleRateHz != 16000 ||
         format.channelCount != 1 ||
         (encoding != null && encoding.isNotEmpty && encoding != 'pcm-f32le')) {
       throw LlamaAudioFormatException(
-        'Dedicated LiteRT-LM ASR requires mono 16 kHz pcm-f32le audio.',
+        _usesLiteRtLm
+            ? 'Dedicated LiteRT-LM ASR requires mono 16 kHz pcm-f32le audio.'
+            : '${adapter.name} requires mono 16 kHz pcm-f32le audio.',
         'sampleRateHz=${format.sampleRateHz}, '
-            'channelCount=${format.channelCount}, encoding=${format.encoding}',
+        'channelCount=${format.channelCount}, encoding=${format.encoding}',
       );
     }
   }
@@ -1899,6 +2163,315 @@ class _LiteRtLmStreamingSession implements SpeechToTextStreamingSession {
       unawaited(_events.close());
     }
     _onClosed();
+  }
+}
+
+class _LlamaCppStreamingSession implements SpeechToTextStreamingSession {
+  static const int _sampleRateHz = 16000;
+
+  final BackendStreamingSpeechToTextSession _backendSession;
+  final SpeechAudioFormat _sourceFormat;
+  final void Function() _onClosed;
+  late final StreamController<SpeechToTextEvent> _events;
+  final Completer<SpeechToTextCompletion> _done =
+      Completer<SpeechToTextCompletion>();
+  late final StreamSubscription<BackendStreamingSpeechToTextUpdate>
+  _backendSubscription;
+
+  Future<void>? _inFlightPush;
+  Future<void>? _finishFuture;
+  Future<void>? _cancelFuture;
+  SpeechToTextPartialEvent? _pendingPartial;
+  bool _finishing = false;
+  bool _cancelled = false;
+  bool _closed = false;
+  int _acceptedSamples = 0;
+  String _latestConfirmedText = '';
+
+  _LlamaCppStreamingSession({
+    required BackendStreamingSpeechToTextSession backendSession,
+    required SpeechAudioFormat sourceFormat,
+    required void Function() onClosed,
+  }) : _backendSession = backendSession,
+       _sourceFormat = sourceFormat,
+       _onClosed = onClosed {
+    _events = StreamController<SpeechToTextEvent>(
+      onListen: _flushPendingPartial,
+      onResume: _flushPendingPartial,
+    );
+    _backendSubscription = _backendSession.updates.listen(
+      _handleUpdate,
+      onError: (Object error, StackTrace stackTrace) {
+        unawaited(_fail(error, stackTrace));
+      },
+      onDone: () {
+        if (!_finishing && !_cancelled && !_closed) {
+          unawaited(
+            _fail(
+              LlamaSpeechException(
+                'Live speech recognition stream ended unexpectedly.',
+              ),
+              StackTrace.current,
+            ),
+          );
+        }
+      },
+    );
+  }
+
+  @override
+  Stream<SpeechToTextEvent> get events => _events.stream;
+
+  @override
+  Future<SpeechToTextCompletion> get done => _done.future;
+
+  @override
+  Future<void> addPcm(Float32List samples) {
+    if (_cancelled) {
+      return Future<void>.error(
+        LlamaStateException(
+          'Cannot add audio after the speech stream has been cancelled.',
+        ),
+      );
+    }
+    if (_finishing || _closed) {
+      return Future<void>.error(
+        LlamaStateException(
+          'Cannot add audio after the speech stream has finished.',
+        ),
+      );
+    }
+    if (_inFlightPush != null) {
+      return Future<void>.error(
+        LlamaStateException(
+          'Another live speech recognition push is already in progress.',
+        ),
+      );
+    }
+    if (samples.isEmpty) {
+      return Future<void>.value();
+    }
+    try {
+      _validatePcmSamples(samples);
+    } on LlamaAudioFormatException catch (error, stackTrace) {
+      return _failInvalidSlice(error, stackTrace);
+    }
+
+    final push = _runPush(samples);
+    _inFlightPush = push;
+    return push.whenComplete(() {
+      if (identical(_inFlightPush, push)) {
+        _inFlightPush = null;
+      }
+    });
+  }
+
+  Future<void> _failInvalidSlice(
+    LlamaAudioFormatException error,
+    StackTrace stackTrace,
+  ) async {
+    _finishing = true;
+    try {
+      await _backendSession.cancel();
+    } catch (_) {
+      // Preserve the validation error as the session failure.
+    }
+    await _fail(error, stackTrace);
+    Error.throwWithStackTrace(error, stackTrace);
+  }
+
+  Future<void> _runPush(Float32List samples) async {
+    try {
+      final accepted = await _backendSession.pushAudio(samples);
+      if (accepted > _acceptedSamples) {
+        _acceptedSamples = accepted;
+      }
+    } catch (error, stackTrace) {
+      await _fail(error, stackTrace);
+      Error.throwWithStackTrace(error, stackTrace);
+    }
+  }
+
+  @override
+  Future<void> finish() {
+    final existing = _finishFuture;
+    if (existing != null) {
+      return existing;
+    }
+    if (_cancelled) {
+      return Future<void>.error(
+        LlamaStateException('Speech recognition was cancelled.'),
+      );
+    }
+    if (_closed) {
+      return _done.future.then((_) {});
+    }
+    _finishing = true;
+    final future = _runFinish();
+    _finishFuture = future;
+    return future;
+  }
+
+  Future<void> _runFinish() async {
+    try {
+      final inFlight = _inFlightPush;
+      if (inFlight != null) {
+        await inFlight;
+      }
+      if (_cancelled || _closed) {
+        return;
+      }
+      final transcript = await _backendSession.finish();
+      if (_cancelled || _closed) {
+        return;
+      }
+      final text = transcript.isEmpty ? _latestConfirmedText : transcript;
+      final result = SpeechToTextResult(
+        text: text,
+        segments: text.isEmpty
+            ? const <TranscriptSegment>[]
+            : <TranscriptSegment>[TranscriptSegment(text: text)],
+        sourceFormat: _sourceFormat,
+        audioDuration: _durationForSamples(_acceptedSamples),
+      );
+      final pending = _pendingPartial;
+      _pendingPartial = null;
+      if (!_events.isClosed) {
+        if (pending != null) {
+          _events.add(pending);
+        }
+        _events.add(SpeechToTextFinalEvent(result));
+      }
+      await _close();
+      if (!_done.isCompleted) {
+        _done.complete(SpeechToTextCompletion.completed(result));
+      }
+    } catch (error, stackTrace) {
+      if (_cancelled) {
+        await _close();
+        if (!_done.isCompleted) {
+          _done.complete(const SpeechToTextCompletion.cancelled());
+        }
+        return;
+      }
+      await _fail(error, stackTrace);
+    }
+  }
+
+  @override
+  Future<void> cancel() {
+    final existing = _cancelFuture;
+    if (existing != null) {
+      return existing;
+    }
+    _cancelled = true;
+    _finishing = true;
+    _pendingPartial = null;
+    final future = _runCancel();
+    _cancelFuture = future;
+    return future;
+  }
+
+  Future<void> _runCancel() async {
+    try {
+      await _backendSession.cancel();
+    } finally {
+      await _close();
+      if (!_done.isCompleted) {
+        _done.complete(const SpeechToTextCompletion.cancelled());
+      }
+    }
+  }
+
+  void _handleUpdate(BackendStreamingSpeechToTextUpdate update) {
+    if (_closed || _cancelled) {
+      return;
+    }
+    _latestConfirmedText = update.confirmedText;
+    if (update.acceptedSamples > _acceptedSamples) {
+      _acceptedSamples = update.acceptedSamples;
+    }
+    final text = update.confirmedText;
+    final event = SpeechToTextPartialEvent(
+      text,
+      confirmedText: text,
+      pendingText: '',
+      acceptedAudioDuration: _durationForSamples(_acceptedSamples),
+    );
+    if (!_events.hasListener || _events.isPaused) {
+      _pendingPartial = event;
+      return;
+    }
+    _events.add(event);
+  }
+
+  void _flushPendingPartial() {
+    final pending = _pendingPartial;
+    if (pending == null ||
+        _closed ||
+        _cancelled ||
+        _events.isClosed ||
+        !_events.hasListener ||
+        _events.isPaused) {
+      return;
+    }
+    _pendingPartial = null;
+    _events.add(pending);
+  }
+
+  Duration _durationForSamples(int samples) => Duration(
+    microseconds: (samples * Duration.microsecondsPerSecond) ~/ _sampleRateHz,
+  );
+
+  Future<void> _fail(Object error, StackTrace stackTrace) async {
+    if (_closed) {
+      return;
+    }
+    if (_cancelled) {
+      await _close();
+      if (!_done.isCompleted) {
+        _done.complete(const SpeechToTextCompletion.cancelled());
+      }
+      return;
+    }
+    _pendingPartial = null;
+    final speechError = _speechError(error);
+    if (!_events.isClosed) {
+      _events.addError(speechError, stackTrace);
+    }
+    await _close();
+    if (!_done.isCompleted) {
+      _done.complete(SpeechToTextCompletion.failed(speechError));
+    }
+  }
+
+  Future<void> _close() async {
+    if (_closed) {
+      return;
+    }
+    _closed = true;
+    _pendingPartial = null;
+    try {
+      await _backendSubscription.cancel();
+    } catch (_) {
+      // Continue releasing the public task lease.
+    }
+    if (!_events.isClosed) {
+      unawaited(_events.close());
+    }
+    _onClosed();
+  }
+}
+
+void _validatePcmSamples(Float32List samples) {
+  for (var i = 0; i < samples.length; i++) {
+    final sample = samples[i];
+    if (!sample.isFinite || sample < -1.0 || sample > 1.0) {
+      throw LlamaAudioFormatException(
+        'Float PCM samples must be finite and normalized to [-1.0, 1.0].',
+        'sample[$i]=$sample',
+      );
+    }
   }
 }
 

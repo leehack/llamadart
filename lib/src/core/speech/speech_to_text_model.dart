@@ -206,3 +206,25 @@ class LiteRtLmAsrAdapter extends SpeechToTextAdapter {
   @override
   String get name => 'LiteRT-LM ASR';
 }
+
+/// Native llama.cpp live PCM speech recognition for streaming ASR models such
+/// as Voxtral Realtime and LFM3-Audio.
+///
+/// Requires a native platform, a GGUF model and its matching multimodal audio
+/// [SpeechToTextModel.projector], and `SpeechToTextEngine.load` (with no
+/// [SpeechToTextModel.tokenizer]). It accepts mono 16 kHz finite normalized
+/// float32 PCM (`pcm-f32le`) via `SpeechToTextEngine.startStream` and
+/// `SpeechToTextEngine.transcribe` / `transcribeOnce`, and rejects file or
+/// encoded-byte inputs, language hints, and context prompts.
+///
+/// Prompted-chunk models (such as LFM3-Audio) require an actual per-sequence
+/// context capacity of at least 2,048 tokens; token-delay models (such as
+/// Voxtral Realtime) run within a finite context window and 4,096 tokens is
+/// recommended for roughly five minutes of audio.
+final class LlamaCppLiveAsrAdapter extends SpeechToTextAdapter {
+  /// Creates a llama.cpp live ASR adapter.
+  const LlamaCppLiveAsrAdapter();
+
+  @override
+  String get name => 'llama.cpp live ASR';
+}

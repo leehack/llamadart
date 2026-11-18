@@ -12,7 +12,7 @@ experimental. Native targets need no network once the model is on the device.
 - Streaming chat and text generation, with structured JSON output and cancellable task handles.
 - Tool calling driven by the model's chat template.
 - Embeddings, reranking, and image and audio input with multimodal models.
-- Speech to text, text to speech (Qwen3-TTS; LFM3-Audio, Soprano, Chatterbox and Pocket TTS on native; experimental PCM streaming for Qwen3-TTS, LFM3-Audio and Pocket TTS), and decision models with cooperative task cancellation.
+- Speech to text (including incremental live PCM streaming on native `llama.cpp` via `LlamaCppLiveAsrAdapter` for Voxtral Realtime and LFM3-Audio, and on native LiteRT-LM), text to speech (Qwen3-TTS; LFM3-Audio, Soprano, Chatterbox and Pocket TTS on native; experimental PCM streaming for Qwen3-TTS, LFM3-Audio and Pocket TTS), and decision models with cooperative task cancellation.
 - Image generation from text prompts on native platforms (Preview).
 - Runtime LoRA adapters for llama.cpp, observability hooks and typed capability checks.
 

@@ -455,7 +455,7 @@ probe, not the tag.
 | --- | --- | --- |
 | `v0.1.7` | Text embedding APIs | Embedding calls can fail with a missing-API error |
 | `v0.1.15` | State save and load on WASMFS paths | State persistence reports unsupported |
-| `v0.1.30` | Qwen3-ASR whole-file transcription | No speech-to-text on Web |
+| `v0.1.30` | Qwen3-ASR whole-file transcription (`LlamaCppLiveAsrAdapter` live PCM remains native-only and unsupported on Web) | No speech-to-text on Web |
 | `v0.1.33` | Qwen3-TTS (memory64 only) | No text-to-speech on Web |
 | `v0.1.34` | A failed worker WebGPU synthesis retries once on the main thread | No retry |
 | `v0.1.47` | Decision models (API version 1) | Decision models report unsupported |
