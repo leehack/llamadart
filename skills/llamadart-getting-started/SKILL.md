@@ -366,8 +366,10 @@ Fit a native llama.cpp GPU load to the free device memory on Linux and Windows
 (opt-in; macOS, iOS and Android report it skipped). Only the layers that fit
 are offloaded; with no fit, `ComputeDevice.auto` loads on the CPU and
 `ComputeDevice.gpu` throws `LlamaGpuMemoryFitException`. It needs a runtime
-from `llamadart-native` v1.0.0 or later; validated at the native level on a
-Linux NVIDIA L4 (Vulkan and CUDA), Windows validation pending a native free-memory fix:
+from `llamadart-native` v1.0.0 or later (v1.0.0-1 or later on Windows);
+validated on an NVIDIA L4 on Linux (Vulkan and CUDA) and Windows (Vulkan). On
+Windows CUDA, free memory ignores other processes and the fit can over-commit
+(llamadart-native#206): prefer Vulkan there or raise `marginBytes`:
 
 ```dart
 import 'package:llamadart/llamadart.dart';

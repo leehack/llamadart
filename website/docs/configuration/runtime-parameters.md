@@ -167,10 +167,14 @@ const params = LlamaCppModelParams(
   and `cpuMoeLayers`, which the fit owns. The fit counts the model and its main
   context, not a projector, LoRA adapters or a draft model, so raise
   `marginBytes` for them; free memory can also change between the fit and the
-  load. Validated at the native level on Linux with an NVIDIA L4 (Vulkan and
-  CUDA). Windows is pending a native free-memory fix: on a Windows L4 the
-  reported free memory did not account for other processes' VRAM, so the fit
-  returned `unchanged` under a cross-process hog (no crash was seen).
+  load. Validated on an NVIDIA L4 on Linux (Vulkan and CUDA) and Windows
+  (Vulkan, `llamadart-native` v1.0.0-1 or later, which counts other processes'
+  VRAM in the free figure). Known limit: on Windows the CUDA backend still
+  reports free memory that ignores other processes
+  ([llamadart-native#206](https://github.com/leehack/llamadart-native/issues/206)),
+  so the fit can over-commit there, including `ComputeDevice.auto` when the
+  `cuda12` add-on is installed and llama.cpp picks CUDA. Prefer Vulkan for the
+  fit on Windows, or raise `marginBytes`.
 
 ```dart
 const params = LlamaCppModelParams(
