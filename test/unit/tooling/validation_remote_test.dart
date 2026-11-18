@@ -335,6 +335,189 @@ void main() {
         : false,
   );
 
+  group('flutter --version --machine probe', () {
+    Directory createMinimalCheckout() {
+      final root = Directory.systemTemp.createTempSync(
+        'validation-flutter-probe-',
+      );
+      addTearDown(() => root.deleteSync(recursive: true));
+      for (final path in [
+        '.flutter-version',
+        'hook/build.dart',
+        'lib/src/hook/native_release_pins.dart',
+        'scripts/fetch_webgpu_bridge_assets.sh',
+        'packages/llamadart_validation/assets/profiles/tiny-gguf-cpu.json',
+      ]) {
+        final target = File(p.join(root.path, path));
+        target.parent.createSync(recursive: true);
+        File(path).copySync(target.path);
+      }
+      return root;
+    }
+
+    Map<String, dynamic> validVersionPayload({
+      String? frameworkVersion,
+      String? dartSdkVersion,
+    }) => {
+      'frameworkVersion':
+          frameworkVersion ??
+          File('.flutter-version').readAsStringSync().trim(),
+      'dartSdkVersion': dartSdkVersion ?? Platform.version.split(' ').first,
+    };
+
+    Future<void> runProbe(
+      Directory root,
+      CommandResult flutterVersionResult, {
+      void Function(String? directory)? onPubGet,
+    }) async {
+      await buildValidationBundle(
+        root.path,
+        'desktop',
+        p.join(root.path, 'output'),
+        execute: (binary, args, {directory, timeout, environment}) async {
+          if (binary == 'git') {
+            return CommandResult(
+              0,
+              args.first == 'rev-parse' ? 'a' * 40 : '',
+              '',
+            );
+          }
+          if (binary == 'flutter' &&
+              args.length == 2 &&
+              args[0] == '--version' &&
+              args[1] == '--machine') {
+            return flutterVersionResult;
+          }
+          if (args.length >= 2 && args[0] == 'pub' && args[1] == 'get') {
+            onPubGet?.call(directory);
+            throw const _PubGetSentinel();
+          }
+          throw StateError('Unexpected command: $binary ${args.join(' ')}');
+        },
+      );
+    }
+
+    test(
+      'accepts cold Windows bootstrap output before pretty-printed CRLF JSON',
+      () async {
+        final root = createMinimalCheckout();
+        final prettyJson = const JsonEncoder.withIndent(
+          '  ',
+        ).convert(validVersionPayload()).replaceAll('\n', '\r\n');
+        final coldStdout =
+            'Resolving dependencies... {flutter_tools}\r\n'
+            'Downloading packages...\r\n'
+            'Got dependencies.\r\n'
+            '$prettyJson\r\n';
+        String? pubGetDirectory;
+        await expectLater(
+          runProbe(
+            root,
+            CommandResult(0, coldStdout, 'Running pub upgrade...\r\n'),
+            onPubGet: (directory) => pubGetDirectory = directory,
+          ),
+          throwsA(isA<_PubGetSentinel>()),
+        );
+        expect(
+          pubGetDirectory,
+          equals(p.join(root.path, 'packages', 'llamadart_validation')),
+        );
+      },
+    );
+
+    test('accepts warm compact and pretty-printed JSON', () async {
+      for (final stdout in [
+        jsonEncode(validVersionPayload()),
+        '\n  ${const JsonEncoder.withIndent('  ').convert(validVersionPayload())}\n',
+      ]) {
+        final root = createMinimalCheckout();
+        String? pubGetDirectory;
+        await expectLater(
+          runProbe(
+            root,
+            CommandResult(0, stdout, ''),
+            onPubGet: (directory) => pubGetDirectory = directory,
+          ),
+          throwsA(isA<_PubGetSentinel>()),
+        );
+        expect(
+          pubGetDirectory,
+          equals(p.join(root.path, 'packages', 'llamadart_validation')),
+        );
+      }
+    });
+
+    test('rejects missing, malformed, and trailing-junk JSON', () async {
+      final valid = jsonEncode(validVersionPayload());
+      for (final stdout in [
+        '',
+        'Resolving dependencies...\r\nGot dependencies.\r\n',
+        'Resolving dependencies...\r\n{"frameworkVersion": }\r\n',
+        '$valid\ntrailing\n',
+      ]) {
+        final root = createMinimalCheckout();
+        var pubGetCalled = false;
+        await expectLater(
+          runProbe(
+            root,
+            CommandResult(0, stdout, ''),
+            onPubGet: (_) => pubGetCalled = true,
+          ),
+          throwsFormatException,
+        );
+        expect(pubGetCalled, isFalse);
+      }
+    });
+
+    test('rejects nonzero exit code even with valid JSON', () async {
+      final root = createMinimalCheckout();
+      var pubGetCalled = false;
+      await expectLater(
+        runProbe(
+          root,
+          CommandResult(1, jsonEncode(validVersionPayload()), 'error'),
+          onPubGet: (_) => pubGetCalled = true,
+        ),
+        throwsA(
+          isA<StateError>().having(
+            (error) => error.message,
+            'message',
+            contains('Provider command failed (1)'),
+          ),
+        ),
+      );
+      expect(pubGetCalled, isFalse);
+    });
+
+    test(
+      'rejects framework or Dart version mismatch before harness pub get',
+      () async {
+        for (final payload in [
+          validVersionPayload(frameworkVersion: '0.0.0-wrong'),
+          validVersionPayload(dartSdkVersion: '0.0.0-wrong'),
+        ]) {
+          final root = createMinimalCheckout();
+          var pubGetCalled = false;
+          await expectLater(
+            runProbe(
+              root,
+              CommandResult(0, jsonEncode(payload), ''),
+              onPubGet: (_) => pubGetCalled = true,
+            ),
+            throwsA(
+              isA<StateError>().having(
+                (error) => error.message,
+                'message',
+                contains('repository-pinned Flutter and matching Dart SDK'),
+              ),
+            ),
+          );
+          expect(pubGetCalled, isFalse);
+        }
+      },
+    );
+  });
+
   test(
     'Windows arm64 keeps GGUF builds without requiring a LiteRT archive',
     () async {
@@ -3481,4 +3664,8 @@ except Exception as error:
     print('Subprocess host failed (' + type(error).__name__ + ')', file=sys.stderr)
     sys.exit(125)
 ''');
+}
+
+class _PubGetSentinel implements Exception {
+  const _PubGetSentinel();
 }
