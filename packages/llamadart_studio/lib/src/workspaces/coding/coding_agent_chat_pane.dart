@@ -324,6 +324,38 @@ class _PendingBashApprovalBanner extends StatelessWidget {
   }
 }
 
+/// Returns the matching [CodingFileChange] for a completed `write` or `edit`
+/// tool invocation, normalizing path separators across platforms.
+@visibleForTesting
+CodingFileChange? matchingCodingChangeForCall(
+  StudioToolInvocation call,
+  List<CodingFileChange> recentChanges,
+) {
+  if (call.name != 'write' && call.name != 'edit') {
+    return null;
+  }
+  try {
+    final decoded = jsonDecode(call.argumentsJson);
+    if (decoded is Map<String, Object?>) {
+      final rawPath = decoded['path'];
+      if (rawPath is String && rawPath.trim().isNotEmpty) {
+        final normalized = _normalizeCodingRelativePath(rawPath);
+        for (final change in recentChanges) {
+          if (_normalizeCodingRelativePath(change.relativePath) == normalized) {
+            return change;
+          }
+        }
+      }
+    }
+  } catch (_) {
+    // Ignore malformed JSON arguments in historic transcripts.
+  }
+  return null;
+}
+
+String _normalizeCodingRelativePath(String rawPath) =>
+    p.posix.normalize(rawPath.trim().replaceAll('\\', '/'));
+
 class _CodingMessageCard extends StatelessWidget {
   const _CodingMessageCard({
     required this.message,
@@ -337,28 +369,8 @@ class _CodingMessageCard extends StatelessWidget {
   final Future<bool> Function(String changeId) onRevertChange;
   final Future<void> Function(String relativePath) onOpenFile;
 
-  CodingFileChange? _matchingChangeForCall(StudioToolInvocation call) {
-    if (call.name != 'write' && call.name != 'edit') {
-      return null;
-    }
-    try {
-      final decoded = jsonDecode(call.argumentsJson);
-      if (decoded is Map<String, Object?>) {
-        final rawPath = decoded['path'];
-        if (rawPath is String && rawPath.trim().isNotEmpty) {
-          final normalized = rawPath.trim().replaceAll('\\', '/');
-          for (final change in recentChanges) {
-            if (change.relativePath == normalized) {
-              return change;
-            }
-          }
-        }
-      }
-    } catch (_) {
-      // Ignore malformed JSON arguments in historic transcripts.
-    }
-    return null;
-  }
+  CodingFileChange? _matchingChangeForCall(StudioToolInvocation call) =>
+      matchingCodingChangeForCall(call, recentChanges);
 
   @override
   Widget build(BuildContext context) {

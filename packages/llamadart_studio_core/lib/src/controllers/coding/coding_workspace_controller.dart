@@ -45,6 +45,22 @@ class CodingWorkspaceController {
     bool autoConnectWorkspaceMcp = true,
     bool localProcessExecutionAvailable = true,
     CodingWorkspaceRootStore? workspaceRootStore,
+    @visibleForTesting
+    Future<List<WorkspaceFileEntry>> Function(
+      String rootPath, {
+      String subdir,
+      int maxEntries,
+      bool recursive,
+    })?
+    listFiles,
+    @visibleForTesting
+    Future<WorkspaceFileSlice> Function(
+      String rootPath,
+      String relativePath, {
+      int startLine,
+      int maxLines,
+    })?
+    readFile,
   }) : _inference = inferencePort,
        _shell = shellController,
        _rootStore =
@@ -57,7 +73,9 @@ class CodingWorkspaceController {
        _autoConnectWorkspaceMcp = autoConnectWorkspaceMcp,
        _localProcessExecutionAvailable =
            localProcessExecutionAvailable &&
-           CodingWorkspaceFs.localProcessExecutionAvailable;
+           CodingWorkspaceFs.localProcessExecutionAvailable,
+       _listFiles = listFiles ?? CodingWorkspaceFs.listFiles,
+       _readFile = readFile ?? CodingWorkspaceFs.readFile;
 
   final StudioInferencePort _inference;
   final StudioSettingsReader _shell;
@@ -68,6 +86,20 @@ class CodingWorkspaceController {
   final Future<bool> Function()? _ensureModelReady;
   final bool _autoConnectWorkspaceMcp;
   final bool _localProcessExecutionAvailable;
+  final Future<List<WorkspaceFileEntry>> Function(
+    String rootPath, {
+    String subdir,
+    int maxEntries,
+    bool recursive,
+  })
+  _listFiles;
+  final Future<WorkspaceFileSlice> Function(
+    String rootPath,
+    String relativePath, {
+    int startLine,
+    int maxLines,
+  })
+  _readFile;
 
   final StateStore<CodingWorkspaceState> _store =
       StateStore<CodingWorkspaceState>(const CodingWorkspaceState());
@@ -82,6 +114,7 @@ class CodingWorkspaceController {
   int? _drainingTurnEpoch;
   int _idCounter = 0;
   int _workspaceEpoch = 0;
+  int _explorerEpoch = 0;
   int _workspaceSelection = 0;
   Timer? _streamFlushTimer;
   ActiveTurnStreamState? _pendingStreamState;
@@ -173,7 +206,7 @@ class CodingWorkspaceController {
     final trimmed = p.canonicalize(path.trim());
     final selection = ++_workspaceSelection;
     try {
-      final entries = await CodingWorkspaceFs.listFiles(trimmed);
+      final entries = await _listFiles(trimmed);
       final agentsContext = await discoverProjectAgentsContext(trimmed);
       if (selection != _workspaceSelection) return;
       await _rootStore.writeRoot(trimmed);
@@ -224,13 +257,14 @@ class CodingWorkspaceController {
   /// Navigates into [subdir] relative to the workspace root.
   Future<void> openDirectory(String subdir) async {
     final epoch = _workspaceEpoch;
+    final explorerEpoch = ++_explorerEpoch;
     final root = _store.state.workspaceRoot;
     if (root == null) {
       return;
     }
     try {
-      final entries = await CodingWorkspaceFs.listFiles(root, subdir: subdir);
-      if (epoch != _workspaceEpoch) return;
+      final entries = await _listFiles(root, subdir: subdir);
+      if (epoch != _workspaceEpoch || explorerEpoch != _explorerEpoch) return;
       _store.update(
         (CodingWorkspaceState s) => s.copyWith(
           currentSubdir: subdir,
@@ -239,7 +273,7 @@ class CodingWorkspaceController {
         ),
       );
     } catch (error) {
-      if (epoch != _workspaceEpoch) return;
+      if (epoch != _workspaceEpoch || explorerEpoch != _explorerEpoch) return;
       _store.update(
         (CodingWorkspaceState s) =>
             s.copyWith(lastError: humanizeStudioError(error)),
@@ -255,11 +289,7 @@ class CodingWorkspaceController {
       return false;
     }
     try {
-      final slice = await CodingWorkspaceFs.readFile(
-        root,
-        relativePath,
-        maxLines: 300,
-      );
+      final slice = await _readFile(root, relativePath, maxLines: 300);
       if (epoch != _workspaceEpoch) return false;
       _store.update(
         (CodingWorkspaceState s) => s.copyWith(
@@ -282,36 +312,37 @@ class CodingWorkspaceController {
   /// Refreshes the current directory listing and active open file preview.
   Future<void> refreshExplorer() async {
     final epoch = _workspaceEpoch;
+    final explorerEpoch = ++_explorerEpoch;
     final root = _store.state.workspaceRoot;
     if (root == null) {
       return;
     }
     try {
-      final entries = await CodingWorkspaceFs.listFiles(
+      final entries = await _listFiles(
         root,
         subdir: _store.state.currentSubdir,
       );
+      if (epoch != _workspaceEpoch || explorerEpoch != _explorerEpoch) return;
       WorkspaceFileSlice? refreshedSlice;
       final selected = _store.state.selectedFilePath;
       if (selected != null) {
         try {
-          refreshedSlice = await CodingWorkspaceFs.readFile(
-            root,
-            selected,
-            maxLines: 300,
-          );
+          refreshedSlice = await _readFile(root, selected, maxLines: 300);
         } catch (_) {}
       }
-      if (epoch != _workspaceEpoch) return;
+      if (epoch != _workspaceEpoch || explorerEpoch != _explorerEpoch) return;
       _store.update(
         (CodingWorkspaceState s) => s.copyWith(
           files: entries,
-          selectedFileSlice: refreshedSlice ?? s.selectedFileSlice,
+          selectedFileSlice:
+              refreshedSlice != null && s.selectedFilePath == selected
+              ? refreshedSlice
+              : s.selectedFileSlice,
           clearLastError: true,
         ),
       );
     } catch (error) {
-      if (epoch != _workspaceEpoch) return;
+      if (epoch != _workspaceEpoch || explorerEpoch != _explorerEpoch) return;
       _store.update(
         (CodingWorkspaceState s) =>
             s.copyWith(lastError: humanizeStudioError(error)),
