@@ -24,11 +24,13 @@ validate against the exact release tag notes.
 - Improve Studio Coding on phones with reachable task controls, file navigation, guarded Revert, and explicit desktop-only local commands.
 
 - Keep Studio Speech and Notes usable when Linux audio playback plugins are missing.
+
 - Adopt `leehack/llamadart-native@v1.0.0-1` (llama.cpp `v1.0.0`, `b1b770d9`) with regenerated bindings; it keeps the `v0.9.0` ARM FP16 fixes. The video capability probe uses `mtmd_helper_get_capabilities`, the replacement for the deprecated `mtmd_helper_support_video`.
 
 - Aligned default WebGPU bridge assets to `v0.1.86` (llama.cpp `v1.0.0`, matching the native runtime) ([#2024](https://github.com/leehack/llamadart/issues/2024)).
 
 - Refuse a native llama.cpp runtime that was not built from llama.cpp `v1.0.0` with `LlamaUnsupportedException`, before the first call that passes a llama.cpp struct by value. A `llamadart_native_tag` or `llamadart_native_path` override to any other llama.cpp release no longer loads.
+
 - Update native image generation to stable-diffusion-native `v0.4.0`. Apple apps using image generation must upgrade the core and Stable Diffusion companion together.
 
 - Restore native text-to-speech discovery when Dart bundles its runtime outside the working directory.
@@ -38,13 +40,17 @@ validate against the exact release tag notes.
 - Validate Studio tool arguments before execution, preserve tool history across reloads, and make media failures and tool compatibility visible.
 
 - Preserve Studio notes and attachments across failed or interrupted saves, and keep indexing consistent with concurrent edits.
+
 - Align Studio coding skills with available file tools and add realistic macOS Notes and Coding qualification.
 
 - Report incomplete Studio replies and exhausted tool rounds with actionable errors instead of empty successful responses.
 
 - Add an experimental Studio app with seven workspaces and a reusable pure-Dart core, alongside the existing chat example.
+
 - Use the Linux Vulkan preflight in Studio to report unavailable image drivers before native device enumeration.
+
 - Add an opt-in Linux Vulkan loader preflight for native hosts.
+
 - Speed up model checksum verification on Apple platforms and keep verification off the UI isolate.
 
 Runtime baseline: native llama.cpp `v1.0.0-1` and Web use upstream `v1.0.0@b1b770d90d94cad9e9ea5b993bdbc383a522fb28`; native LiteRT-LM uses `v0.19.1-5` and stable-diffusion uses `v0.4.0`. Web LiteRT-LM uses `@litert-lm/core@0.19.0`. Manifest SHA-256: `d589fbe3c334e4fcb0ccbac3efc4500209358a010b6662ee8523e598a433a0f2`.
