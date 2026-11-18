@@ -504,7 +504,8 @@ class CodingWorkspaceController {
           ? _store.state.selectedFileSlice
           : null;
       final extraContext = <String>[
-        if (_store.state.workspaceRoot != null)
+        if (_store.state.workspaceRoot != null &&
+            (coreNames.contains('bash') || mcpNames.isNotEmpty))
           'Active workspace root: ${_store.state.workspaceRoot}',
         if (agentsCtx.hasInstructions)
           '<project_instructions sources="${agentsCtx.sourceFiles.join(', ')}">\n$promptAgentsInstructions\n</project_instructions>',

@@ -23,6 +23,8 @@ The [Notes and Coding qualification](notes-coding-qualification.md) defines the
 Qwen3.8 27B Metal scenarios, approved commands and grounding checks. A small
 model's pipeline test cannot replace that profile's model-quality acceptance.
 Valid source numbering alone does not prove a grounded answer.
+Mobile Coding with the curated starter model is pipeline evidence: its exact
+file output is model-limited ([model limits](mobile-default-acceptance.md#model-limits)).
 
 ## Platform evidence
 
@@ -57,6 +59,12 @@ case outputs and failures. Use isolated temporary storage and synthetic data;
 never mutate the user's notes, conversations, model cache or coding projects.
 Record the exact processes and cloud resources owned by the run and verify their
 cleanup. Keep credentials and signed URLs out of artifacts and logs.
+
+Answers at default sampling are pipeline evidence, because a small model's
+sampling variance can change them on every runtime. Grade an exact answer with a
+Temperature 0 control in a fresh conversation. Replay a control mismatch
+greedily on native or upstream `llama-server` with the same rendered prompt
+before calling it a platform failure.
 
 The opt-in `local_runtime_endurance_test.dart` records whole-process RSS across
 repeated load/chat/cancel/recovery/teardown cycles. Its default gate is at most

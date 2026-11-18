@@ -13,6 +13,8 @@ validate against the exact release tag notes.
 
 ## Unreleased
 
+- Keep the workspace root out of Studio Coding prompts unless a shell or MCP tool needs absolute paths, so small models stop copying it into file tool paths.
+
 - Initialize Studio Coding’s built-in Dart MCP for the selected workspace, preserve tool failures, and expose full tool results.
 
 - Report rejected Studio settings saves without reusing unsaved cached values.

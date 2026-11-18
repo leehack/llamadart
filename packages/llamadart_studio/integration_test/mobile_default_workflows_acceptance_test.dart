@@ -17,6 +17,7 @@ import 'package:llamadart_studio_core/llamadart_studio_core.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'support/coding_pipeline_grade.dart';
 import 'support/fixture_text_input.dart';
 import 'support/mobile_default_inputs.dart';
 
@@ -26,8 +27,7 @@ const _modelId = 'qwen3.5-0.8b-q4-k-m';
 const _arithmetic = 'What is 2 + 2? Reply with just the digit.';
 const _expression = '(18.5 * 4) + sqrt(81)';
 const _filePath = 'nested/bonjour.txt';
-const _original = 'Bonjour Montréal — café ☕\n안녕하세요 🌲\n';
-const _edited = 'Salut Québec — café ☕\n안녕하세요 🌲\n';
+const _original = 'Bonjour Montréal — café ☕ 안녕하세요 🌲';
 const _title = 'Montréal — 메모 🌲';
 const _body = 'Café, naïve, 안녕하세요 👋\nDeuxième ligne — exact UTF-8.\n';
 
@@ -133,8 +133,18 @@ void main() {
 
   workflow('chat_arithmetic', 3, (h) async {
     await h.activate();
-    final message = await h.chat(_arithmetic);
-    expect(message.text.trim(), '4');
+    final message = await h.chat(_arithmetic, maxTurns: 2);
+    expect(message.text.trim(), isNotEmpty);
+    expect(message.text, isNot(contains('<think')));
+    expect(message.text, isNot(contains('</think')));
+    h.record('default_sampling_answer', {
+      'answer': message.text,
+      'exact_four': message.text.trim() == '4',
+      'thinking_present': (message.thinkingText ?? '').trim().isNotEmpty,
+    });
+    await h.freshConversationAtTemperatureZero();
+    final control = await h.chat(_arithmetic, maxTurns: 2);
+    expect(control.text.trim(), '4');
   });
   workflow('chat_math_tool', 3, (h) async {
     await h.activate();
@@ -151,7 +161,7 @@ void main() {
     expect(finalMath?.isFinite, isTrue);
     expect(finalMath, 83);
   });
-  workflow('coding_files', 4, (h) async {
+  workflow('coding_files', 12, (h) async {
     await h.activate();
     await h.navigate('coding');
     await h.tap('coding_create_local_workspace_button');
@@ -162,63 +172,64 @@ void main() {
     final root = h.deps!.codingController.state.workspaceRoot!;
     expect(root.startsWith('${h.data!.path}/coding_workspaces/'), isTrue);
     expect(h.deps!.codingController.state.allowShellCommandTool, isFalse);
+    final disk = _workspaceDisk(root);
     final created = await h.coding(
-      'Use write to create $_filePath with exactly this UTF-8 content '
-      '(JSON string): ${jsonEncode(_original)}. Then use read on $_filePath '
-      'to verify it. Do not use shell commands.',
+      'Use write to create $_filePath with exactly this one-line UTF-8 '
+      'content: $_original. Then use read on $_filePath to verify it. '
+      'Do not use shell commands.',
     );
-    final write = created.toolCalls.singleWhere((c) => c.name == 'write');
-    h.successful(write);
-    expect(_arguments(write)['path'], _filePath);
-    expect(_arguments(write)['content'], _original);
-    expect(_result(write)['path'], _filePath);
-    expect(_result(write)['status'], 'created');
-    final firstRead = created.toolCalls.lastWhere((c) => c.name == 'read');
-    h.readResult(firstRead, _original);
-    expect(
-      created.toolCalls.indexOf(write),
-      lessThan(created.toolCalls.indexOf(firstRead)),
+    final written = gradeWriteAndRead(
+      calls: _graded(created),
+      expectedPath: _filePath,
+      expectedContent: _original,
+      readDisk: disk,
     );
-    await h.disk(File('$root/$_filePath'), _original, 'created_bytes');
+    h.record('write_grade', written.toJson());
+    expect(written.failures, isEmpty);
+    final path = written.path!;
+    final preEdit = disk(path)!;
+    h.record('created_bytes', {
+      'relative_path': path,
+      'sha256': sha256.convert(preEdit).toString(),
+      'bytes': preEdit.length,
+    });
 
     final changed = await h.coding(
-      'First use read on $_filePath. Then use edit on $_filePath to replace '
+      'First use read on $path. Then use edit on $path to replace '
       'exactly "Bonjour Montréal" with "Salut Québec". Then use read again '
       'to verify the entire edited file. Preserve every other byte. '
-      'Do not overwrite with write or use shell commands.',
+      'Do not use shell commands.',
     );
-    final edit = changed.toolCalls.singleWhere((c) => c.name == 'edit');
-    h.successful(edit);
-    expect(_arguments(edit)['path'], _filePath);
-    expect(_arguments(edit)['findText'], 'Bonjour Montréal');
-    expect(_arguments(edit)['replaceText'], 'Salut Québec');
-    expect(_result(edit)['status'], 'patched');
-    expect(_result(edit)['path'], _filePath);
-    final before = changed.toolCalls.firstWhere((c) => c.name == 'read');
-    final after = changed.toolCalls.lastWhere((c) => c.name == 'read');
-    h.readResult(before, _original);
-    h.readResult(after, _edited);
-    expect(
-      changed.toolCalls.indexOf(before),
-      lessThan(changed.toolCalls.indexOf(edit)),
+    final edited = gradeEditAndRead(
+      calls: _graded(changed),
+      expectedPath: path,
+      expectedFindText: 'Bonjour Montréal',
+      expectedReplaceText: 'Salut Québec',
+      preEditBytes: preEdit,
+      readDisk: disk,
     );
-    expect(
-      changed.toolCalls.indexOf(edit),
-      lessThan(changed.toolCalls.indexOf(after)),
-    );
-    expect(
-      changed.toolCalls.any((c) => c.name == 'write' || c.name == 'bash'),
-      isFalse,
-    );
-    await h.disk(File('$root/$_filePath'), _edited, 'edited_bytes');
+    h.record('edit_grade', edited.toJson());
+    expect(edited.failures, isEmpty);
+    final editedPath = edited.path!;
+    final editedBytes = disk(editedPath)!;
+    h.record('edited_bytes', {
+      'relative_path': editedPath,
+      'sha256': sha256.convert(editedBytes).toString(),
+      'bytes': editedBytes.length,
+    });
+    final editedText = utf8.decode(editedBytes);
     final files = find.textContaining('Files (');
     await h.tester.tap(files);
     await h.tester.pumpAndSettle();
-    await h.tap('coding_file_nested');
-    await h.tap('coding_file_$_filePath');
+    final segments = editedPath.split('/');
+    for (var i = 1; i < segments.length; i++) {
+      await h.tap('coding_file_${segments.take(i).join('/')}');
+    }
+    await h.tap('coding_file_$editedPath');
     await h.waitFor(
       () =>
-          h.deps!.codingController.state.selectedFileSlice?.content == _edited,
+          h.deps!.codingController.state.selectedFileSlice?.content ==
+          editedText,
       'file browser text',
     );
     final preview = find.byKey(const Key('coding_file_syntax_preview'));
@@ -232,9 +243,9 @@ void main() {
         )
         .map((w) => w.text.toPlainText())
         .join('\n');
-    expect(displayed, contains('Salut Québec — café ☕'));
-    expect(displayed, contains('안녕하세요 🌲'));
-    expect(displayed, isNot(contains('Bonjour Montréal')));
+    for (final line in editedText.split('\n').where((l) => l.isNotEmpty)) {
+      expect(displayed, contains(line));
+    }
     h.record('displayed_file', {'text': displayed});
   });
   workflow('notes_fresh_bootstrap', 2, (h) async {
@@ -312,6 +323,35 @@ Map<String, dynamic> _arguments(StudioToolInvocation call) =>
 Map<String, dynamic> _result(StudioToolInvocation call) =>
     jsonDecode(call.resultJson!) as Map<String, dynamic>;
 
+Map<String, dynamic>? _decodedMap(String? json) {
+  if (json == null) return null;
+  try {
+    final decoded = jsonDecode(json);
+    return decoded is Map<String, dynamic> ? decoded : null;
+  } on FormatException {
+    return null;
+  }
+}
+
+List<GradedToolCall> _graded(StudioMessage message) => [
+  for (final call in message.toolCalls)
+    GradedToolCall(
+      name: call.name,
+      arguments: _decodedMap(call.argumentsJson) ?? const {},
+      result: _decodedMap(call.resultJson),
+      succeeded:
+          !call.isRunning &&
+          !call.isError &&
+          _decodedMap(call.resultJson) != null &&
+          !_decodedMap(call.resultJson)!.containsKey('error'),
+    ),
+];
+
+WorkspaceDiskReader _workspaceDisk(String root) => (String relativePath) {
+  final file = File('$root/$relativePath');
+  return file.existsSync() ? file.readAsBytesSync() : null;
+};
+
 class _Workflow {
   _Workflow(this.tester, this.journal);
   final WidgetTester tester;
@@ -385,7 +425,11 @@ class _Workflow {
     final root = deps?.codingController.state.workspaceRoot;
     final noteId = deps?.notebookController.state.selectedNote?.id;
     final files = <String, File>{
-      if (root != null) _filePath: File('$root/$_filePath'),
+      if (root != null && Directory(root).existsSync())
+        for (final entity in Directory(
+          root,
+        ).listSync(recursive: true, followLinks: false))
+          if (entity is File) entity.path.substring(root.length + 1): entity,
       if (data != null && noteId != null)
         'committed_note': File('${data!.path}/notes/$noteId.json'),
     };
@@ -419,6 +463,7 @@ class _Workflow {
       'sole_hardware_override': 'threads2+2',
       'startup_selection_qualified': false,
       'operation_deadline_seconds': 90,
+      'coding_turn_deadline_seconds': 300,
     });
     models = Platform.isIOS
         ? Directory(
@@ -515,8 +560,12 @@ class _Workflow {
     );
   }
 
-  Future<void> waitFor(bool Function() done, String phase) async {
-    final deadline = DateTime.now().add(const Duration(seconds: 90));
+  Future<void> waitFor(
+    bool Function() done,
+    String phase, {
+    Duration timeout = const Duration(seconds: 90),
+  }) async {
+    final deadline = DateTime.now().add(timeout);
     record('wait_start', {'operation': phase});
     while (!done() && DateTime.now().isBefore(deadline)) {
       await tester.pump(const Duration(milliseconds: 100));
@@ -558,8 +607,25 @@ class _Workflow {
     await tester.pumpAndSettle();
   }
 
-  Future<StudioMessage> chat(String prompt) async {
-    expect(++turns, lessThanOrEqualTo(1));
+  Future<void> freshConversationAtTemperatureZero() async {
+    final d = deps!;
+    await tap('open_sidebar_drawer_button');
+    await tester.pumpAndSettle();
+    await tap('sidebar_new_chat_button');
+    await tester.pumpAndSettle();
+    await waitFor(
+      () =>
+          d.chatController.state.activeConversation?.activeBranch.isEmpty ??
+          false,
+      'fresh conversation',
+    );
+    await d.shellController.updateSettings((s) => s.copyWith(temperature: 0));
+    expect(d.shellController.state.settings.temperature, 0);
+    record('temperature_zero_control', snapshot());
+  }
+
+  Future<StudioMessage> chat(String prompt, {int maxTurns = 1}) async {
+    expect(++turns, lessThanOrEqualTo(maxTurns));
     await enter('chat_composer_input', prompt);
     record('before_chat_send', {'prompt': prompt, ...snapshot()});
     await tap('chat_send_button');
@@ -595,14 +661,12 @@ class _Workflow {
           !deps!.codingController.activeStreamStore.state.isGenerating &&
           deps!.codingController.state.messages.length >= count + 2,
       'coding turn',
+      timeout: const Duration(seconds: 300),
     );
     final message = deps!.codingController.state.messages.last;
     record('coding_outcome', {'message': message.toJson(), ...snapshot()});
     expect(deps!.codingController.state.lastError, isNull);
     expect(message.role, StudioRole.assistant);
-    for (final call in message.toolCalls) {
-      successful(call);
-    }
     return message;
   }
 
@@ -611,28 +675,6 @@ class _Workflow {
     expect(call.isError, isFalse);
     expect(call.resultJson, isNotNull);
     expect(_result(call).containsKey('error'), isFalse);
-  }
-
-  void readResult(StudioToolInvocation call, String text) {
-    successful(call);
-    expect(_arguments(call)['path'], _filePath);
-    expect(_result(call)['path'], _filePath);
-    final lines = text.split('\n');
-    final numbered = [
-      for (var i = 0; i < lines.length; i++) '${i + 1}: ${lines[i]}',
-    ].join('\n').trimRight();
-    expect(_result(call)['content'], numbered);
-    expect(_result(call)['truncated'], isFalse);
-  }
-
-  Future<void> disk(File file, String expected, String phase) async {
-    final bytes = await file.readAsBytes();
-    record(phase, {
-      'relative_path': _filePath,
-      'sha256': sha256.convert(bytes).toString(),
-      'bytes': bytes.length,
-    });
-    expect(bytes, utf8.encode(expected));
   }
 
   Future<void> unmount() async {

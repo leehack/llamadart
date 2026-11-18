@@ -772,6 +772,63 @@ Future<void> main() async {
     );
 
     test(
+      'CodingWorkspaceController names the workspace root only when a tool needs absolute paths',
+      () async {
+        final tempDir = await Directory.systemTemp.createTemp(
+          'coding_root_context_test_',
+        );
+        addTearDown(() async {
+          if (await tempDir.exists()) {
+            await tempDir.delete(recursive: true);
+          }
+        });
+
+        Future<String> extraContextFor({
+          bool processExecution = false,
+          bool shell = false,
+          bool mcpTool = false,
+        }) async {
+          final kv = InMemoryKeyValueStore();
+          final shellController = StudioShellController(keyValueStore: kv);
+          await shellController.initialize();
+          final mcp = _StubToolMcpManager(kv, withTool: mcpTool);
+          await mcp.initialize();
+          final skills = SkillRegistry(keyValueStore: kv);
+          await skills.initialize();
+          final inference = FakeInferencePort();
+          final coding = CodingWorkspaceController(
+            inferencePort: inference,
+            shellController: shellController,
+            keyValueStore: kv,
+            mcpManager: mcp,
+            skillRegistry: skills,
+            autoConnectWorkspaceMcp: false,
+            localProcessExecutionAvailable: processExecution,
+          );
+          await coding.initialize(autoDetectDefaultRoot: false);
+          await coding.setWorkspaceRoot(tempDir.path);
+          coding.setAllowShellCommandTool(shell);
+          await coding.sendCodingPrompt('hello');
+          final context = inference.lastRequest!.extraSystemContext;
+          await coding.dispose();
+          await skills.dispose();
+          await mcp.dispose();
+          await shellController.dispose();
+          await inference.dispose();
+          return context;
+        }
+
+        final rootLine = 'Active workspace root: ${tempDir.path}';
+        expect(await extraContextFor(shell: true), isNot(contains(rootLine)));
+        expect(
+          await extraContextFor(processExecution: true, shell: true),
+          contains(rootLine),
+        );
+        expect(await extraContextFor(mcpTool: true), contains(rootLine));
+      },
+    );
+
+    test(
       'McpManager gates repo .mcp.json servers behind workspace trust before spawning',
       () async {
         final tempRepo = await Directory.systemTemp.createTemp(
@@ -930,4 +987,37 @@ Future<void> main() async {
       },
     );
   });
+}
+
+class _StubToolMcpManager extends McpManager {
+  _StubToolMcpManager(InMemoryKeyValueStore kv, {required this.withTool})
+    : super(keyValueStore: kv);
+
+  final bool withTool;
+
+  @override
+  McpManagerState get state {
+    if (!withTool) return super.state;
+    return McpManagerState(
+      servers: <McpServerRuntimeState>[
+        McpServerRuntimeState(
+          config: const McpServerConfig(
+            id: 'stub',
+            name: 'Stub',
+            transportType: McpTransportType.stdio,
+            command: 'stub',
+          ),
+          status: McpConnectionStatus.connected,
+          tools: const <McpToolDescriptor>[
+            McpToolDescriptor(
+              serverId: 'stub',
+              serverName: 'Stub',
+              name: 'echo',
+              exposedToolName: 'mcp_stub_echo',
+            ),
+          ],
+        ),
+      ],
+    );
+  }
 }

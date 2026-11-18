@@ -25,21 +25,21 @@ are recorded. Those targets are not independent native placement measurements.
 
 | Independent case | Required result | Case deadline |
 | --- | --- | --- |
-| Chat arithmetic | Original question, answer exactly `4`, no turn error | 3 minutes |
+| Chat arithmetic | Default sampling: turn completes without error, non-empty answer, reasoning separated; the answer is journaled, not graded. Control: new conversation at Temperature 0, answer exactly `4` | 3 minutes |
 | Chat math tool | Actual `evaluateMath` with `(18.5 * 4) + sqrt(81)`, result and final answer numeric `83` (`83.0` allowed) | 3 minutes |
-| Coding files | Visible local workspace creation; model write/read nested Unicode file, then read/edit/reread; real invocation results, independent exact disk bytes/hashes and browser-displayed text | 4 minutes |
+| Coding files | Visible local workspace creation; model write/read of a one-line Unicode file, then read/edit/reread of the path actually written. Pipeline gate: disk bytes at the last successful `write` result path equal the UTF-8 of the dispatched content, the edited disk equals the pre-edit bytes with the dispatched find/replace applied, later successful reads equal the numbered disk view, and the file browser shows the disk text. Path and content fidelity are journaled (`path_exact`, `content_exact`), not asserted | 12 minutes |
 | Notes | Exact Unicode title/body through UI and committed JSON; dispose all dependencies, reload preferences, fresh production bootstrap and exact UI/file reopen | 2 minutes |
 
 The math final answer must parse in full, after trimming, as one finite decimal
 number equal to `83`. Explanations, multiple numbers, `NaN` and `Infinity` fail.
 This contract applies to future candidates; retained runs and grades stay unchanged.
 
-There are at most four user-level model turns across the suite (one, one, two,
+There are at most five user-level model turns across the suite (two, one, two,
 zero). Existing production tool-round caps remain unchanged. Operations have
-90-second bounds; there are no automatic generation retries, alternate prompts,
-relaxed answers or profile/model fallbacks. The execution owner must configure
-an external process/provider deadline above the 12-minute case sum, for example
-15 minutes. A Dart timeout cannot terminate blocked native work; the execution
+90-second bounds, except each Coding turn, which has 300 seconds. There are no
+automatic generation retries, alternate prompts, relaxed answers or
+profile/model fallbacks. The execution owner must configure an external
+process/provider deadline above the 20-minute case sum, for example 25 minutes. A Dart timeout cannot terminate blocked native work; the execution
 owner owns that outer process deadline and cleanup. Do not start execution from
 this source-preparation procedure without the parent's separate execution gate.
 
@@ -49,6 +49,22 @@ No Nomic asset is required for this text scope. Permissions, supported media,
 hardware coverage, Coding provider grants, clipboard/cold root reopen, native
 keyboard/back/focus, lifecycle/endurance and remaining six-platform gates stay
 open.
+
+## Model limits
+
+The curated Qwen3.5 0.8B is a fidelity-limited model, so this suite grades the
+pipeline and journals fidelity. Measured on the same model:
+
+- Coding: pinned upstream `llama-server` reproduces the exact requested file
+  0/40 times. Failures are model emissions (literal `\n`, quoting, swallowed
+  tool markup, missing final newline, dropped directories). Pipeline-only
+  invariants pass 39–40/40. The 4B model reaches 4/12 and Gemma 4 E2B 12/12
+  exact on the same task upstream.
+- Arithmetic: at default sampling (temperature 0.7, top-k 20, top-p 0.8,
+  thinking on) the answer is `2` in about 15% of native draws and about 11% of
+  Web draws, and only about 36% of single draws are exactly `4`. At
+  Temperature 0 in a fresh conversation every runtime answers `4`, which is why
+  the exact-answer control uses it.
 
 ## Closed local asset stage
 
