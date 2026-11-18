@@ -742,13 +742,15 @@ class _ChatInputState extends State<ChatInput> {
   ) {
     final colorScheme = Theme.of(context).colorScheme;
     final progress = provider.textToSpeechProgress;
+    final buffered = provider.textToSpeechBufferedDuration;
     final progressLabel = progress == null
         ? provider.isSynthesizingSpeech
               ? 'Preparing speech synthesis…'
               : 'Dedicated Qwen3-TTS mode'
         : progress.phase == TextToSpeechProgressPhase.processingPrompt
         ? 'Processing text…'
-        : 'Generating audio · ${progress.framesGenerated} frames';
+        : 'Generating audio · ${progress.framesGenerated} frames'
+              '${buffered > Duration.zero ? ' · ${(buffered.inMilliseconds / 1000).toStringAsFixed(1)} s buffered' : ''}';
     final controlsEnabled =
         !provider.isSynthesizingSpeech && !provider.hasActiveAudioRecording;
     final recordedReference = provider.recordedSpeakerReference;

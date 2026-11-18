@@ -2,6 +2,25 @@
 
 This document covers the major breaking upgrade paths.
 
+## `0.19.x` -> `0.20.0`: streamed text-to-speech event
+
+`TextToSpeechEvent` is sealed and gains the experimental subtype
+`TextToSpeechAudioChunkEvent`, which `TextToSpeechTask.events` emits only for a
+request with `streamAudio: true`. Code that switches exhaustively over
+`TextToSpeechEvent` needs a case for it, or can use `is` checks:
+
+```dart
+task.events.listen((TextToSpeechEvent event) {
+  if (event is TextToSpeechAudioChunkEvent) {
+    play(event.samples);
+  }
+});
+```
+
+Custom `BackendTextToSpeech` backends compile unchanged: the new
+`supportsIncrementalAudio`, `streamAudio` and `BackendTextToSpeechProgress.audio`
+members are optional fields that default to off.
+
 ## `0.19.6` -> `0.19.7`: image generation `ComputeDevice.auto` on macOS x86_64
 
 No Dart API changes. On macOS x86_64 (Intel Macs and Rosetta), image generation

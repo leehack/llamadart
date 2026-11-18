@@ -98,6 +98,8 @@ typedef _TtsStartWithVoiceDart =
       Pointer<llama_dart_tts_request>,
       Pointer<Char>,
     );
+typedef _TtsStartStreamingNative = _TtsStartWithVoiceNative;
+typedef _TtsStartStreamingDart = _TtsStartWithVoiceDart;
 typedef _TtsGetVoiceCountNative =
     Int32 Function(Pointer<mtmd_context>, Uint32, Pointer<Int32>);
 typedef _TtsGetVoiceCountDart =
@@ -747,6 +749,14 @@ Pointer<NativeType> _ttsAssetSymbol(
         : Native.addressOf<NativeFunction<_TtsStartWithVoiceNative>>(
             _primaryTtsStartWithVoice,
           ),
+  'llama_dart_tts_start_streaming' =>
+    isWindows
+        ? Native.addressOf<NativeFunction<_TtsStartStreamingNative>>(
+            _wrapperTtsStartStreaming,
+          )
+        : Native.addressOf<NativeFunction<_TtsStartStreamingNative>>(
+            _primaryTtsStartStreaming,
+          ),
   'llama_dart_tts_get_voice_count' =>
     isWindows
         ? Native.addressOf<NativeFunction<_TtsGetVoiceCountNative>>(
@@ -909,6 +919,16 @@ external Pointer<llama_dart_tts> _primaryTtsInitExt(
   symbol: 'llama_dart_tts_start_with_voice',
 )
 external int _primaryTtsStartWithVoice(
+  Pointer<llama_dart_tts> tts,
+  Pointer<llama_dart_tts_request> request,
+  Pointer<Char> voice,
+);
+
+@Native<_TtsStartStreamingNative>(
+  assetId: 'package:llamadart/llamadart',
+  symbol: 'llama_dart_tts_start_streaming',
+)
+external int _primaryTtsStartStreaming(
   Pointer<llama_dart_tts> tts,
   Pointer<llama_dart_tts_request> request,
   Pointer<Char> voice,
@@ -1082,6 +1102,16 @@ external Pointer<llama_dart_tts> _wrapperTtsInitExt(
   symbol: 'llama_dart_tts_start_with_voice',
 )
 external int _wrapperTtsStartWithVoice(
+  Pointer<llama_dart_tts> tts,
+  Pointer<llama_dart_tts_request> request,
+  Pointer<Char> voice,
+);
+
+@Native<_TtsStartStreamingNative>(
+  assetId: 'package:llamadart/llamadart_wrapper',
+  symbol: 'llama_dart_tts_start_streaming',
+)
+external int _wrapperTtsStartStreaming(
   Pointer<llama_dart_tts> tts,
   Pointer<llama_dart_tts_request> request,
   Pointer<Char> voice,

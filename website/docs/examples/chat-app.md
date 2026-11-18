@@ -86,7 +86,8 @@ native chat models can add live English dictation through a separately
 installed LiteRT model: Moonshine Tiny
 (54 MB) or Parakeet TDT 0.6B (615 MB). Native Gemma 4 E2B answers a spoken
 question through **Ask with voice**, and the Qwen3-TTS preset switches the
-composer to speech synthesis. See [Speech to text](../guides/speech-to-text) and
+composer to speech synthesis; when the runtime streams PCM, the app requests
+it and shows the buffered audio duration while synthesizing. See [Speech to text](../guides/speech-to-text) and
 [Text to speech](../guides/text-to-speech).
 
 ## Image generation
