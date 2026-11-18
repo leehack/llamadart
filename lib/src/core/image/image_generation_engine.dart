@@ -530,10 +530,8 @@ class ImageGenerationEngine
       readGpus = true;
     }
     if (readGpus && gpus?.any((gpu) => !gpu.integrated) != true) {
-      // ggml-vulkan reports an integrated GPU as IGPU. With no backend named,
-      // the runtime's fit plans only for discrete GPUs, then computes on the
-      // integrated one under max_vram without a plan, which aborts like the
-      // fit-off case. Metal devices always report the GPU type.
+      // Older runtimes missed integrated Vulkan GPUs when planning a budget.
+      // Keep the guard until the newer planner is qualified on these devices.
       throw LlamaUnsupportedException(
         'ImageModelPlacement.maxGpuMemoryGiB needs a discrete GPU, and the '
         'stable_diffusion runtime reports $backendName as an integrated GPU '

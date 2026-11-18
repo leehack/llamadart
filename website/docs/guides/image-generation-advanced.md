@@ -269,17 +269,24 @@ native generation.
 
 ```dart
 final engine = await ImageGenerationEngine.load(
-  ImageGenerationModel(ModelSource.path('v1-5-pruned-emaonly.safetensors')),
+  ImageGenerationModel(ModelSource.path('sd_turbo-f16-q8_0.gguf')),
+  params: const ImageModelParams(
+    device: ComputeDevice.gpu,
+    flashAttention: false,
+    vaeDirectConvolution: false,
+  ),
 );
 if ((await engine.capabilities).supportsHiresFix) {
   final result = await engine.generateImage(
     const HiresFixImageGenerationRequest(
       prompt: 'a red fox sitting in a snowy forest, photograph',
+      negativePrompt: 'blurry',
       width: 512,
       height: 512,
-      steps: 20,
+      steps: 2,
+      guidanceScale: 1,
       seed: 42,
-      hiresFix: ImageHiresFix.scale(1.5, steps: 10, denoisingStrength: 0.55),
+      hiresFix: ImageHiresFix.scale(1.5, steps: 2, denoisingStrength: 0.5),
     ),
   );
   // result.images.single is 768x768.
@@ -296,9 +303,9 @@ and `height` (`ImageHiresFix.size`), never both:
   the final image is larger than the first pass and at most 1024x1024.
 - A request makes at most 4 images. Image `i` uses seed `seed + i` in both
   passes.
-- `steps` (1 to 150) defaults to the first pass's steps. As in
-  stable-diffusion.cpp, the second pass runs the last steps of a schedule of
-  `steps / denoisingStrength` steps, which can be one more than `steps`.
+- `steps` (1 to 150) defaults to the first pass's steps. The second pass runs
+  exactly this many steps from the end of a schedule of
+  `steps / denoisingStrength` steps.
 - `denoisingStrength` (0.05 to 1, default 0.7) is how much noise the second
   pass adds; lower values keep more of the first pass.
 - `upscaler` is `ImageHiresUpscaler.latent`: bilinear interpolation of the
@@ -312,7 +319,7 @@ native-detected SD 1.x or SD 2.x checkpoint with its embedded full VAE and no
 component overrides. Other families, decoders, hosts and devices report
 `supportsHiresFix: false`, and a hires-fix request throws
 `LlamaUnsupportedException`. The request type cannot carry image editing,
-ControlNet, VAE tiling or circular axes. Qualified on SD 1.5 and SD-Turbo.
+ControlNet, VAE tiling or circular axes. The v0.4.0 qualification used SD-Turbo.
 
 Progress reports both passes: `ImageGenerationProgressEvent.pass` is 0 for
 the first pass and 1 for the second, with `passCount` 2 and the second

@@ -214,11 +214,11 @@ final engine = await ImageGenerationEngine.load(
 );
 ```
 
-| Setting | Effect | Measured with SD-Turbo Q8_0, 512x512, one step, M4 Max Metal |
+| Setting | Effect | Measured with SD-Turbo Q8_0 and native v0.4.0, 512x512, one step, M4 Max Metal |
 | --- | --- | --- |
-| `textEncoderOnCpu` | Text encoders compute on the CPU, weights in system memory | 359 MB of weights left the GPU; pixels changed by at most 40, mean 0.23 of 255 |
-| `vaeOnCpu` | VAE or tiny autoencoder computes on the CPU, weights and decode memory in system memory | 160 MB of weights and the 1.6 GiB decode buffer left the GPU; image 8.9 s instead of 2.1 to 2.6 s; pixels at most 1 of 255 apart |
-| `maxGpuMemoryGiB` | Per-GPU budget, in whole GiB, for weights plus the room the fit reserves to compute (2 GiB beside the diffusion model and the text encoders, 1 GiB beside the VAE), so weights can move to system memory, another GPU or disk even when they alone fit; moved weights stream in | 1 GiB: all 1.9 GB of weights in system memory, and the decode, above the budget, retried in tiles (at most 85, mean 2.5 of 255 apart); 8 GiB: identical pixels |
+| `textEncoderOnCpu` | Text encoders compute on the CPU, weights in system memory | 359 MB of weights moved to system memory. Pixels changed by at most 37, with a mean of 0.229 out of 255. |
+| `vaeOnCpu` | VAE or tiny autoencoder computes on the CPU, weights and decode memory in system memory | 160 MB of weights and the decode buffer moved to system memory. Generation took 7.17 s with the CPU VAE and 2.02 s with the Metal VAE. Pixels differed by at most 1 out of 255. |
+| `maxGpuMemoryGiB` | Per-GPU budget, in whole GiB, for weights and compute buffers. Weights can move to system memory, another GPU or disk and stream in when needed. | At 1 GiB, all 1.9 GB of weights were in system memory and the runtime retried the decode in tiles. Pixels differed by at most 86, with a mean of 2.474 out of 255. At 8 GiB, pixels matched the default. |
 | `autoFit: false` | No automatic fit: weights are allocated on the device their module computes on, and `ComputeDevice.auto` uses the first GPU (the CPU on macOS x86_64); a load the device cannot allocate fails with `LlamaModelException` instead of spilling | Identical pixels |
 
 `maxGpuMemoryGiB` must be 1 to `ImageModelPlacement.largestGpuMemoryGiB`;
@@ -229,23 +229,21 @@ then keeps every weight on the GPU and aborts the process in `new_sd_ctx`
 when the budget is below them (SD-Turbo with 1 GiB).
 Outside Metal it also needs a discrete GPU: when the runtime reports only
 integrated Vulkan GPUs, or no GPU type (`SD_VK_DEVICE` set), it throws
-`LlamaUnsupportedException`, because the runtime's fit plans only for
-discrete GPUs and would compute on the integrated one under the budget
-without a plan, which aborts the same way. Moving the text encoders or the
-VAE with an integrated GPU is allowed.
+`LlamaUnsupportedException`. Older runtimes can abort under a budget on
+integrated Vulkan, and the newer planner has yet to be qualified there.
+Moving the text encoders or the VAE with an integrated GPU is allowed.
 
-On a host with a discrete and an integrated Vulkan GPU and
-`ComputeDevice.auto`, moving the text encoders or the VAE lets the fit also
-consider the integrated GPU, which can then compute the diffusion model when
-it reports more free memory. That is slower, not a failure;
-`ComputeDevice.gpu` keeps the first discrete GPU.
+With automatic fit and `ComputeDevice.auto`, the runtime prefers the discrete
+GPU with the largest usable budget. It can use an integrated GPU when no
+discrete GPU has a usable budget. The CPU overrides still apply to their
+assigned modules.
 
 A module moved to the CPU leaves the Metal-only
 FLUX.1 Kontext recipe unqualified (`supportsReferenceImageEditing` is
 `false`). The [memory check](./image-generation-memory-and-limits#memory-check) counts every weight against the
-device whatever the placement. Placement was measured with SD-Turbo on one
-Linux x64 Vulkan Tesla T4 too; two-GPU hosts and the larger models the setting
-is for (FLUX, SD 3.5, Z-Image) have not been measured yet.
+device whatever the placement. The previous runtime was also tested with
+SD-Turbo on a Linux x64 Vulkan Tesla T4. The v0.4.0 measurements above cover
+Metal on one GPU.
 
 ## First-image latency and warm-up
 

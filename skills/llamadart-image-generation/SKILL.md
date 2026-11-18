@@ -112,7 +112,7 @@ description: >-
   SD 1.x or SD 2.x single checkpoint with embedded full VAE on macOS CPU or
   Metal qualifies; others throw `LlamaUnsupportedException`. The upscaler is
   `ImageHiresUpscaler.latent` (no model upscaler). Progress events carry
-  `pass` 0 then 1; the second pass can run one step more than `steps`.
+  `pass` 0 then 1; the second pass runs the requested `steps` on v0.4.0.
   A cancelled or failed second pass returns no images.
 - v0.4.0 reports `supportsReferenceImageEditing: false` pending Kontext
   requalification (#1222). On the previously qualified runtime, load the FLUX.1 Kontext [dev] transformer with

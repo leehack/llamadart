@@ -736,8 +736,8 @@ void main() {
     }
   });
 
-  test('module placement moves SD-Turbo\'s weights where the runtime logs '
-      'them, and pixels change only when a module leaves the GPU', () async {
+  test('module placement honors CPU overrides and GPU memory budgets for '
+      'SD-Turbo', () async {
     // A skip: argument would not apply: the scenario passes --run-skipped.
     if (sdTurboPath == null) {
       markTestSkipped('Set LLAMADART_SD_TURBO_MODEL');
@@ -751,6 +751,7 @@ void main() {
     addTearDown(LlamaLogging.configure);
 
     Future<({String backend, Uint8List pixels, List<String> log})> run(
+      String name,
       ImageModelPlacement placement,
     ) async {
       final start = records.length;
@@ -769,10 +770,16 @@ void main() {
             seed: 42,
           ),
         );
+        final log = [for (final record in records.skip(start)) record.message];
+        if (outputDir != null) {
+          File(
+            '$outputDir/sd-turbo-placement-$name-native.log',
+          ).writeAsStringSync(log.join('\n'));
+        }
         return (
           backend: (await engine.capabilities).backendName!,
           pixels: result.images.single.pixels,
-          log: [for (final record in records.skip(start)) record.message],
+          log: log,
         );
       } finally {
         await engine.dispose();
@@ -793,12 +800,23 @@ void main() {
       };
     }
 
-    String? computesOn(List<String> log, String runner) => [
+    // The scheduler logs a buffer for each backend, including CPU scratch
+    // for runners assigned to a GPU.
+    Iterable<({String backend, double sizeMb})> computeBuffers(
+      List<String> log,
+      String runner,
+    ) => [
       for (final line in log)
-        ?RegExp(
-          '$runner compute buffer size: .* on (\\S+)',
-        ).firstMatch(line)?.group(1),
-    ].lastOrNull;
+        if (RegExp(
+              '$runner compute buffer size: ([\\d.]+) MB\\((?:VRAM|RAM)\\) '
+              'on (\\S+)',
+            ).firstMatch(line)
+            case final match?)
+          (backend: match.group(2)!, sizeMb: double.parse(match.group(1)!)),
+    ];
+
+    Set<String> computeDevices(List<String> log, String runner) =>
+        computeBuffers(log, runner).map((buffer) => buffer.backend).toSet();
 
     ({int max, double mean}) difference(Uint8List a, Uint8List b) {
       var largest = 0;
@@ -811,7 +829,7 @@ void main() {
       return (max: largest, mean: sum / a.length);
     }
 
-    final base = await run(const ImageModelPlacement());
+    final base = await run('default', const ImageModelPlacement());
     if (!base.backend.startsWith('MTL') && !base.backend.startsWith('Vulkan')) {
       markTestSkipped('Placement needs a GPU engine; got ${base.backend}');
       return;
@@ -822,10 +840,12 @@ void main() {
       'diffusion_model': 'VRAM',
       'vae': 'VRAM',
     });
-    expect(computesOn(base.log, 'clip'), gpu);
-    expect(computesOn(base.log, 'vae'), gpu);
+    expect(computeDevices(base.log, 'clip'), contains(gpu));
+    expect(computeDevices(base.log, 'unet'), contains(gpu));
+    expect(computeDevices(base.log, 'vae'), contains(gpu));
 
     final textEncoder = await run(
+      'text-encoder-on-cpu',
       const ImageModelPlacement(textEncoderOnCpu: true),
     );
     expect(paramsMemory(textEncoder.log), {
@@ -833,30 +853,46 @@ void main() {
       'diffusion_model': 'VRAM',
       'vae': 'VRAM',
     });
-    expect(computesOn(textEncoder.log, 'clip'), 'CPU');
-    expect(computesOn(textEncoder.log, 'unet'), gpu);
+    expect(computeDevices(textEncoder.log, 'clip'), {'CPU'});
+    expect(computeDevices(textEncoder.log, 'unet'), contains(gpu));
+    expect(computeDevices(textEncoder.log, 'vae'), contains(gpu));
 
-    final vae = await run(const ImageModelPlacement(vaeOnCpu: true));
+    final vae = await run(
+      'vae-on-cpu',
+      const ImageModelPlacement(vaeOnCpu: true),
+    );
     expect(paramsMemory(vae.log), {
       'text_encoders': 'VRAM',
       'diffusion_model': 'VRAM',
       'vae': 'RAM',
     });
-    expect(computesOn(vae.log, 'vae'), 'CPU');
-    expect(computesOn(vae.log, 'unet'), gpu);
+    expect(computeDevices(vae.log, 'clip'), contains(gpu));
+    expect(computeDevices(vae.log, 'unet'), contains(gpu));
+    expect(computeDevices(vae.log, 'vae'), {'CPU'});
 
     // 1 GiB is below SD-Turbo's 1.9 GB of weights: the fit keeps them in
     // system memory and streams them to the GPU.
-    final budget = await run(const ImageModelPlacement(maxGpuMemoryGiB: 1));
+    final budget = await run(
+      'budget-1-gib',
+      const ImageModelPlacement(maxGpuMemoryGiB: 1),
+    );
     expect(paramsMemory(budget.log), {
       'text_encoders': 'RAM',
       'diffusion_model': 'RAM',
       'vae': 'RAM',
     });
-    expect(computesOn(budget.log, 'unet'), gpu);
+    expect(computeDevices(budget.log, 'clip'), contains(gpu));
+    expect(computeDevices(budget.log, 'unet'), contains(gpu));
+    expect(computeDevices(budget.log, 'vae'), contains(gpu));
 
-    final ample = await run(const ImageModelPlacement(maxGpuMemoryGiB: 8));
-    final unfitted = await run(const ImageModelPlacement(autoFit: false));
+    final ample = await run(
+      'budget-8-gib',
+      const ImageModelPlacement(maxGpuMemoryGiB: 8),
+    );
+    final unfitted = await run(
+      'auto-fit-off',
+      const ImageModelPlacement(autoFit: false),
+    );
     expect(base.log.where((line) => line.contains('auto-fit:')), isNotEmpty);
     expect(unfitted.log.where((line) => line.contains('auto-fit')), isEmpty);
     expect(paramsMemory(ample.log), paramsMemory(base.log));
@@ -867,12 +903,10 @@ void main() {
     // The untiled decode buffer the default placement logs decides whether
     // the 1 GiB budget makes the runtime decode in tiles, which shows at the
     // seams: 1664 MB on an M4 Max with Metal, 704 MB on a T4 with Vulkan.
-    final decodeMiB = [
-      for (final line in base.log)
-        if (RegExp(r'vae compute buffer size: ([\d.]+) MB').firstMatch(line)
-            case final match?)
-          double.parse(match.group(1)!),
-    ].last;
+    final decodeMiB = computeBuffers(base.log, 'vae')
+        .where((buffer) => buffer.backend == gpu)
+        .map((buffer) => buffer.sizeMb)
+        .reduce(max);
     final tiled = budget.log.any(
       (line) => line.contains('retrying with spatial tiling'),
     );
@@ -880,9 +914,23 @@ void main() {
     if (!tiled) {
       expect(budget.pixels, base.pixels);
     }
-    // Measured: text encoder max 40, mean 0.23 (M4 Max, Metal) and max 47,
-    // mean 0.59 (T4, Vulkan); VAE max 1, mean 0.03 (Metal) and max 4, mean
-    // 0.11 (Vulkan); tiled budget max 85, mean 2.5 (Metal).
+    for (final (name, placed) in [
+      ('default', base),
+      ('text-encoder-on-cpu', textEncoder),
+      ('vae-on-cpu', vae),
+      ('budget-1-gib', budget),
+      ('budget-8-gib', ample),
+      ('auto-fit-off', unfitted),
+    ]) {
+      print(
+        'IMAGE_PLACEMENT $name on $gpu: weights ${paramsMemory(placed.log)}, '
+        'CLIP ${computeDevices(placed.log, 'clip')}, '
+        'UNet ${computeDevices(placed.log, 'unet')}, '
+        'VAE ${computeDevices(placed.log, 'vae')}',
+      );
+    }
+    // v0.4.0 on M4 Max Metal: text encoder max 37, mean 0.229; VAE max 1,
+    // mean 0.006; tiled budget max 86, mean 2.474.
     for (final (name, placed, maxDelta, meanDelta) in [
       ('textEncoderOnCpu', textEncoder, 255, 1.0),
       ('vaeOnCpu', vae, 6, 0.2),

@@ -58,8 +58,8 @@ final class ImageHiresFix {
 
   /// Sampling steps of the second pass, from 1 to
   /// [ImageGenerationRequest.maxSteps]. `null` uses the first pass's steps.
-  /// As in stable-diffusion.cpp, the pass runs the last steps of a schedule
-  /// of `steps / denoisingStrength` steps, which can be one more than this.
+  /// The pass runs this many steps from the end of the runtime's schedule
+  /// of `steps / denoisingStrength` steps.
   final int? steps;
 
   /// How much noise the second pass adds, from [minDenoisingStrength] to 1.
