@@ -535,7 +535,12 @@ class Gemma4Handler extends ChatTemplateHandler
         tools: tools,
       );
       if (parsed == null) {
-        break;
+        final end = output.indexOf(_toolCallEnd, start);
+        if (end == -1) {
+          break;
+        }
+        cursor = end + _toolCallEnd.length;
+        continue;
       }
 
       toolCalls.add(parsed.toolCall);
@@ -741,7 +746,7 @@ class _Gemma4ArgumentsParser {
     '<|\\"|>',
     '<escape>',
   ];
-  static final RegExp _bareKey = RegExp(r'[a-zA-Z_][\w\.-]*');
+  static final RegExp _bareKey = RegExp(r'[^:}]+');
   static final RegExp _scalar = RegExp(
     r'-?\d+(\.\d+)?([eE][+-]?\d+)?|true|false|null',
   );
@@ -811,7 +816,7 @@ class _Gemma4ArgumentsParser {
       throw const FormatException('Expected argument key');
     }
     _pos = match.end;
-    return match.group(0)!;
+    return match.group(0)!.trimRight();
   }
 
   dynamic _parseValue() {

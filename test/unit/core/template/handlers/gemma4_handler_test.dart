@@ -720,6 +720,39 @@ void main() {
         expect(parsed.content, isNot(contains('<tool_call|>')));
       });
 
+      test('accepts upstream key grammar for unquoted keys', () {
+        const keys = ['2fa', '이름', 'file path', r'$filter'];
+        for (final key in keys) {
+          final parsed = ChatTemplateEngine.parse(
+            ChatFormat.gemma4.index,
+            '<|tool_call>call:get_weather{$key:1}<tool_call|>',
+            tools: [weatherTool],
+          );
+
+          expect(parsed.toolCalls, hasLength(1), reason: key);
+          expect(jsonDecode(parsed.toolCalls.single.function!.arguments!), {
+            key: 1,
+          }, reason: key);
+        }
+      });
+
+      test('malformed call does not drop later valid calls', () {
+        const output =
+            '<|tool_call>call:f{unit:celsius}<tool_call|>'
+            '<|tool_call>call:g{x:1}<tool_call|>';
+
+        final parsed = ChatTemplateEngine.parse(
+          ChatFormat.gemma4.index,
+          output,
+        );
+
+        expect(parsed.toolCalls.map((call) => call.function?.name), ['g']);
+        expect(jsonDecode(parsed.toolCalls.single.function!.arguments!), {
+          'x': 1,
+        });
+        expect(parsed.content, isEmpty);
+      });
+
       test('pure tool-call protocol whitespace stays non-visible', () {
         const output =
             ' \n<|tool_call>call:get_weather{"location":"Seoul"}'
