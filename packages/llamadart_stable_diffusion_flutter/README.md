@@ -13,14 +13,14 @@ writes `MinimumOSVersion` 13.0 into it, while the library requires iOS 16.4.
 The hook reports this as an Xcode build warning, which Xcode and `xcodebuild`
 show but plain `flutter build` and `flutter run` output does not.
 
-Use the companion that shares the core's `MAJOR.MINOR`: companion `0.19.x` pairs
-with core `0.19.x`. Upgrade both together. Earlier pairings are in the
+Use the companion that shares the core's `MAJOR.MINOR`: companion `0.20.x` pairs
+with core `0.20.x`. Upgrade both together. Earlier pairings are in the
 [changelog](https://github.com/leehack/llamadart/blob/main/CHANGELOG.md).
 
 ```yaml
 dependencies:
-  llamadart: ^0.19.11
-  llamadart_stable_diffusion_flutter: ^0.19.11
+  llamadart: ^0.20.0
+  llamadart_stable_diffusion_flutter: ^0.20.0
 ```
 
 Adding the package selects the `stable_diffusion` runtime for Flutter iOS and
@@ -35,8 +35,6 @@ This package has no runtime Dart API of its own. Import `package:llamadart`
 normally from the core package and use `ImageGenerationEngine` there.
 
 The Apple SwiftPM manifest pins `leehack/stable-diffusion-native@v0.4.0`.
-This pin targets the matching 0.20.0 core and companion releases. The
-published 0.19.11 companion in the example above pins `v0.3.0-6`.
 
 Apps bound for the App Store should use this package: the Apple privacy
 manifest for the stable-diffusion.cpp runtime ships inside this XCFramework,
