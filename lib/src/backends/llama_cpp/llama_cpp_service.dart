@@ -327,6 +327,7 @@ class LlamaCppService {
     String? Function()? buildIdentity,
     String? Function(Pointer<llama_model> model)? modelArchitecture,
     String? Function()? ggmlVersion,
+    Pointer<NativeType> Function(String name)? asrStreamSymbolLookup,
   }) : _backendInit = backendInit ?? (() => llama_backend_init()),
        _abi = abi ?? Abi.current(),
        _isWindows = isWindows ?? Platform.isWindows,
@@ -354,7 +355,10 @@ class LlamaCppService {
        _gpuMemoryFitRunnerOverride = gpuMemoryFitRunner,
        _readBuildIdentity = buildIdentity,
        _modelArchitectureOverride = modelArchitecture,
-       _readGgmlVersion = ggmlVersion;
+       _readGgmlVersion = ggmlVersion,
+       _asrStreamApi = asrStreamSymbolLookup == null
+           ? null
+           : _AsrStreamApi.tryLoad(asrStreamSymbolLookup);
 
   NativeWorkerOwner? _nativeOwner;
 
@@ -4046,6 +4050,72 @@ class LlamaCppService {
       }
     }
     throw LlamaUnsupportedException(_ttsUnavailableMessage());
+  }
+
+  /// Probes an ASR symbol lookup function for unit tests and returns its
+  /// accepted mode mask, or `null` when exports are missing or ABI mismatches.
+  static int? tryLoadAsrStreamApiModesForTest(
+    Pointer<NativeType> Function(String) symbol,
+  ) => _AsrStreamApi.tryLoad(symbol)?.acceptedModes;
+
+  /// Resolves the ASR stream dispatch table for unit tests.
+  void resolveAsrStreamApiForTest({
+    List<String>? candidates,
+    DynamicLibrary Function(String)? open,
+    Pointer<NativeType> Function(String)? assetSymbol,
+  }) {
+    _resolveAsrStreamApi(
+      candidates: candidates,
+      open: open,
+      assetSymbol: assetSymbol,
+    );
+  }
+
+  /// Looks up a raw `@Native` ASR stream symbol address for unit tests.
+  static Pointer<NativeType> asrStreamAssetSymbolForTest(
+    String name, {
+    required bool isWindows,
+  }) => _asrStreamAssetSymbol(name, isWindows: isWindows);
+
+  /// Registers synthetic model/context/projector handles for ASR unit tests.
+  void registerAsrTestHandles({
+    required int contextHandle,
+    required int mmHandle,
+    required LlamaCppObjectCalls calls,
+    String? projectorPath,
+    String? projectorType,
+    int modelHandle = 1,
+    int modelAddress = 0x1000,
+    int contextAddress = 0x2000,
+    int mmAddress = 0x3000,
+  }) {
+    final modelWrapper = _LlamaModelWrapper(
+      Pointer<llama_model>.fromAddress(modelAddress),
+      calls,
+      vocabSize: 0,
+      suppressedTokens: const <int>[],
+    );
+    final ctxWrapper = _LlamaContextWrapper(
+      Pointer<llama_context>.fromAddress(contextAddress),
+      modelWrapper,
+      calls,
+    );
+    _models[modelHandle] = modelWrapper;
+    _contexts[contextHandle] = ctxWrapper;
+    _contextToModel[contextHandle] = modelHandle;
+    _mtmdContexts[mmHandle] = Pointer<mtmd_context>.fromAddress(mmAddress);
+    _modelToMtmd[modelHandle] = mmHandle;
+    if (projectorPath != null) {
+      _mtmdProjectorPaths[mmHandle] = projectorPath;
+    }
+    if (projectorType != null) {
+      _mtmdProjectorTypes[mmHandle] = projectorType;
+    }
+  }
+
+  /// Clears cached projector types so ASR probe tests can rewrite fixtures.
+  void clearAsrTestProjectorTypes() {
+    _mtmdProjectorTypes.clear();
   }
 
   _AsrStreamApi _resolveAsrStreamApi({

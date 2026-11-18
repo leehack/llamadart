@@ -4,7 +4,6 @@ library;
 import 'dart:convert';
 import 'dart:ffi';
 import 'dart:io';
-import 'dart:mirrors';
 import 'dart:typed_data';
 
 import 'package:ffi/ffi.dart';
@@ -12,9 +11,13 @@ import 'package:llamadart/src/backends/isolate_shutdown_releases.dart';
 import 'package:llamadart/src/backends/llama_cpp/bindings.dart' as llama;
 import 'package:llamadart/src/backends/llama_cpp/exit_teardown_api.dart';
 import 'package:llamadart/src/backends/llama_cpp/llama_cpp_service.dart';
+import 'package:llamadart/src/backends/llama_cpp/runtime_admission.dart';
 import 'package:llamadart/src/core/exceptions.dart';
 import 'package:path/path.dart' as path;
 import 'package:test/test.dart';
+
+const String _admittedBuildIdentity =
+    'llamadart-native-build/1;llama.cpp=$admittedLlamaCppCommit;variant=test;';
 
 const List<String> _requiredSuffixes = [
   'api_version',
@@ -32,27 +35,6 @@ const List<String> _requiredSuffixes = [
   'reset',
   'last_error',
 ];
-
-LibraryMirror get _serviceLibrary =>
-    reflectClass(LlamaCppService).owner as LibraryMirror;
-
-Symbol _symbol(String name) => MirrorSystem.getSymbol(name, _serviceLibrary);
-
-Object? _tryLoadApi(Pointer<NativeType> Function(String) lookup) =>
-    (_serviceLibrary.declarations[_symbol('_AsrStreamApi')]! as ClassMirror)
-        .invoke(#tryLoad, [lookup])
-        .reflectee;
-
-Object? _resolveApi(
-  LlamaCppService service, {
-  required Pointer<NativeType> Function(String) lookup,
-  List<String> candidates = const [],
-  DynamicLibrary Function(String)? open,
-}) => reflect(service).invoke(_symbol('_resolveAsrStreamApi'), const [], {
-  #assetSymbol: lookup,
-  #candidates: candidates,
-  #open: ?open,
-}).reflectee;
 
 void _writeTestGguf(File file, Map<String, String> stringMetadata) {
   final builder = BytesBuilder();
@@ -418,14 +400,14 @@ void main() {
     for (final missing in _requiredSuffixes) {
       test('missing required $missing does not admit a partial ASR API', () {
         final requested = <String>[];
-        final api = _tryLoadApi((name) {
+        final modes = LlamaCppService.tryLoadAsrStreamApiModesForTest((name) {
           requested.add(name);
           if (name == 'llama_dart_asr_stream_$missing') {
             throw ArgumentError('missing export');
           }
           return runtime.lookup(name);
         });
-        expect(api, isNull);
+        expect(modes, isNull);
         expect(requested, contains('llama_dart_asr_stream_$missing'));
       });
     }
@@ -434,38 +416,37 @@ void main() {
       test('ABI $incompatible is rejected before binding other exports', () {
         runtime.apiVersion = incompatible;
         final requested = <String>[];
-        final api = _tryLoadApi((name) {
+        final modes = LlamaCppService.tryLoadAsrStreamApiModesForTest((name) {
           requested.add(name);
           return runtime.lookup(name);
         });
-        expect(api, isNull);
+        expect(modes, isNull);
         expect(requested, ['llama_dart_asr_stream_api_version']);
       });
     }
 
     test('supported_modes intersects with shifted mode mask 6', () {
       runtime.supportedModes = 1; // unshifted / NONE bit
-      final none = _tryLoadApi(runtime.lookup);
-      expect(reflect(none).getField(#acceptedModes).reflectee, 0);
+      final none = LlamaCppService.tryLoadAsrStreamApiModesForTest(
+        runtime.lookup,
+      );
+      expect(none, 0);
 
       runtime.supportedModes = 14; // bits 1, 2, and unknown bit 3
-      final masked = _tryLoadApi(runtime.lookup);
-      expect(reflect(masked).getField(#acceptedModes).reflectee, 6);
+      final masked = LlamaCppService.tryLoadAsrStreamApiModesForTest(
+        runtime.lookup,
+      );
+      expect(masked, 6);
     });
 
     test('asset symbol table maps all 14 exports on primary and wrapper', () {
-      final symbolFn =
-          _serviceLibrary.declarations[_symbol('_asrStreamAssetSymbol')]!
-              as MethodMirror;
-      expect(symbolFn, isNotNull);
       // Verify every suffix is handled without ArgumentError on both OS paths.
       for (final isWindows in [false, true]) {
         for (final suffix in _requiredSuffixes) {
           try {
-            _serviceLibrary.invoke(
-              _symbol('_asrStreamAssetSymbol'),
-              ['llama_dart_asr_stream_$suffix'],
-              {#isWindows: isWindows},
+            LlamaCppService.asrStreamAssetSymbolForTest(
+              'llama_dart_asr_stream_$suffix',
+              isWindows: isWindows,
             );
           } on ArgumentError catch (error) {
             // Native.addressOf throws ArgumentError only when the local test
@@ -479,21 +460,58 @@ void main() {
     test(
       'resolve throws LlamaUnsupportedException when runtime lacks exports',
       () {
-        final service = LlamaCppService(isWindows: false);
+        final service = LlamaCppService(
+          isWindows: false,
+          buildIdentity: () => _admittedBuildIdentity,
+        );
         expect(
-          () => _resolveApi(
-            service,
-            lookup: (name) => throw ArgumentError('missing $name'),
+          () => service.resolveAsrStreamApiForTest(
+            candidates: const [],
+            assetSymbol: (name) => throw ArgumentError('missing $name'),
           ),
           throwsA(isA<LlamaUnsupportedException>()),
         );
         // Cached negative lookup still throws LlamaUnsupportedException.
         expect(
-          () => _resolveApi(service, lookup: runtime.lookup),
+          () => service.resolveAsrStreamApiForTest(
+            candidates: const [],
+            assetSymbol: runtime.lookup,
+          ),
           throwsA(isA<LlamaUnsupportedException>()),
         );
       },
     );
+
+    test('real resolver refuses an unadmitted runtime', () {
+      for (final identity in [
+        null,
+        'llamadart-native-build/1;llama.cpp=deadbeef;',
+      ]) {
+        final service = LlamaCppService(
+          isWindows: false,
+          buildIdentity: () => identity,
+        );
+        expect(
+          () => service.resolveAsrStreamApiForTest(
+            candidates: const [],
+            assetSymbol: runtime.lookup,
+          ),
+          throwsA(
+            isA<LlamaUnsupportedException>()
+                .having(
+                  (e) => e.message,
+                  'message',
+                  contains('Live speech recognition'),
+                )
+                .having(
+                  (e) => e.message,
+                  'message',
+                  contains(admittedLlamaCppRelease),
+                ),
+          ),
+        );
+      }
+    });
   });
 
   group('ASR stream probe and FFI state machine', () {
@@ -544,48 +562,21 @@ void main() {
         exitApi,
         contextSequenceCapacity: (_) => seqCapacity,
       );
-      service = LlamaCppService(isWindows: false, objectCalls: calls);
-      _resolveApi(service, lookup: runtime.lookup);
-
-      // Register synthetic live model/context/projector handles via mirrors.
-      final modelWrapperClass =
-          _serviceLibrary.declarations[_symbol('_LlamaModelWrapper')]!
-              as ClassMirror;
-      final ctxWrapperClass =
-          _serviceLibrary.declarations[_symbol('_LlamaContextWrapper')]!
-              as ClassMirror;
-      final modelWrapper = modelWrapperClass
-          .newInstance(
-            Symbol.empty,
-            [Pointer<llama.llama_model>.fromAddress(0x1000), calls],
-            {#vocabSize: 0, #suppressedTokens: const <int>[]},
-          )
-          .reflectee;
-      final ctxWrapper = ctxWrapperClass.newInstance(Symbol.empty, [
-        Pointer<llama.llama_context>.fromAddress(0x2000),
-        modelWrapper,
-        calls,
-      ]).reflectee;
+      service = LlamaCppService(
+        isWindows: false,
+        objectCalls: calls,
+        buildIdentity: () => _admittedBuildIdentity,
+        asrStreamSymbolLookup: runtime.lookup,
+      );
 
       contextHandle = 1;
       mmHandle = 2;
-      (reflect(service).getField(_symbol('_models')).reflectee as Map)[1] =
-          modelWrapper;
-      (reflect(service).getField(_symbol('_contexts')).reflectee
-              as Map)[contextHandle] =
-          ctxWrapper;
-      (reflect(service).getField(_symbol('_contextToModel')).reflectee
-              as Map)[contextHandle] =
-          1;
-      (reflect(service).getField(_symbol('_mtmdContexts')).reflectee
-          as Map)[mmHandle] = Pointer<llama.mtmd_context>.fromAddress(
-        0x3000,
+      service.registerAsrTestHandles(
+        contextHandle: contextHandle,
+        mmHandle: mmHandle,
+        calls: calls,
+        projectorPath: projectorFile.path,
       );
-      (reflect(service).getField(_symbol('_modelToMtmd')).reflectee as Map)[1] =
-          mmHandle;
-      (reflect(service).getField(_symbol('_mtmdProjectorPaths')).reflectee
-              as Map)[mmHandle] =
-          projectorFile.path;
     });
 
     tearDown(() {
@@ -622,9 +613,7 @@ void main() {
           'clip.audio.projector_type': 'lfm3a',
           'clip.projector_type': 'voxtral_rt',
         });
-        (reflect(service).getField(_symbol('_mtmdProjectorTypes')).reflectee
-                as Map)
-            .clear();
+        service.clearAsrTestProjectorTypes();
         seqCapacity = 512; // Small working context allowed for TOKEN_DELAY
         expect(
           await service.asrStreamUnsupportedReason(contextHandle, mmHandle),
@@ -633,9 +622,7 @@ void main() {
 
         // Qwen3-ASR / unknown projector fails closed
         _writeTestGguf(projectorFile, {'clip.projector_type': 'qwen3_asr'});
-        (reflect(service).getField(_symbol('_mtmdProjectorTypes')).reflectee
-                as Map)
-            .clear();
+        service.clearAsrTestProjectorTypes();
         expect(
           await service.asrStreamUnsupportedReason(contextHandle, mmHandle),
           contains('qwen3_asr'),
