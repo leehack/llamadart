@@ -247,7 +247,9 @@ void main() {
           isA<LlamaUnsupportedException>().having(
             (error) => error.message,
             'message',
-            'The Qwen3-ASR prompt adapter accepts complete encoded audio only.',
+            'The Qwen3-ASR prompt adapter accepts complete encoded audio only. '
+                'Use LlamaCppLiveAsrAdapter or LiteRtLmAsrAdapter for '
+                'incremental PCM streaming.',
           ),
         ),
       );
@@ -258,7 +260,9 @@ void main() {
       expect(capabilities.supportsStreamingInput, isFalse);
       expect(
         capabilities.streamingInputUnsupportedReason,
-        'The Qwen3-ASR prompt adapter accepts complete encoded audio only.',
+        'The Qwen3-ASR prompt adapter accepts complete encoded audio only. '
+        'Use LlamaCppLiveAsrAdapter or LiteRtLmAsrAdapter for incremental '
+        'PCM streaming.',
       );
     });
 

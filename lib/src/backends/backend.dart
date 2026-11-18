@@ -958,19 +958,29 @@ class BackendStreamingSpeechToTextUpdate {
 /// admitted push, flushes remaining audio, releases native resources, and
 /// returns the final cumulative transcript. [cancel] interrupts any active
 /// work and releases native resources.
-abstract interface class BackendStreamingSpeechToTextSession {
+///
+/// Implementations must terminate the session and release all native resources
+/// if [pushAudio] or [finish] throws, or when emitting an error on [updates];
+/// the public layer relies on this and does not call [cancel] after a failure.
+abstract class BackendStreamingSpeechToTextSession {
   /// Cumulative confirmed transcript updates and accepted sample counts.
   ///
-  /// Fatal worker failures emit an error on this stream even while idle and
-  /// wake pending operations.
+  /// Fatal worker failures emit an error on this stream even while idle, wake
+  /// pending operations, and must terminate the session and release native
+  /// resources before or alongside emitting the error.
   Stream<BackendStreamingSpeechToTextUpdate> get updates;
 
   /// Pushes mono 16 kHz normalized float32 [samples] and returns the cumulative
   /// accepted sample count.
+  ///
+  /// A failed push must terminate the session and release native resources.
   Future<int> pushAudio(Float32List samples);
 
   /// Joins any admitted push, flushes remaining audio, releases native
   /// resources, and returns the final cumulative transcript.
+  ///
+  /// A failed finish must still terminate the session and release native
+  /// resources.
   Future<String> finish();
 
   /// Cooperatively cancels the session and releases native resources.
@@ -981,7 +991,7 @@ abstract interface class BackendStreamingSpeechToTextSession {
 ///
 /// Distinct from [BackendPromptSpeechToTextSupport], which gates
 /// prompt-adapted multimodal chat transcription.
-abstract interface class BackendStreamingSpeechToText {
+abstract class BackendStreamingSpeechToText {
   /// Probes whether [contextHandle] and [mmContextHandle] support streaming
   /// speech recognition.
   ///

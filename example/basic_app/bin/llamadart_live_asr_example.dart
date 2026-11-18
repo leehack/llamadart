@@ -63,57 +63,73 @@ Future<void> main(List<String> arguments) async {
         stderr.writeln('\nError: $error');
       },
     );
-    interrupt = ProcessSignal.sigint.watch().listen(
-      (_) => unawaited(session.cancel()),
-    );
+    var cancelled = false;
+    interrupt = ProcessSignal.sigint.watch().listen((_) {
+      cancelled = true;
+      unawaited(session.cancel());
+    });
 
     try {
       const chunkBytes =
           16000; // 4,000 mono float32 samples = 250 ms at 16 kHz.
       final carry = <int>[];
-      await for (final rawChunk in audioFile.openRead()) {
-        if (rawChunk.isEmpty) {
-          continue;
-        }
-        var offset = 0;
-        if (carry.isNotEmpty) {
-          final needed = 4 - carry.length;
-          if (rawChunk.length < needed) {
-            carry.addAll(rawChunk);
+      try {
+        await for (final rawChunk in audioFile.openRead()) {
+          if (cancelled) {
+            break;
+          }
+          if (rawChunk.isEmpty) {
             continue;
           }
-          carry.addAll(rawChunk.sublist(0, needed));
-          await session.addPcm(_bytesToFloat32(Uint8List.fromList(carry)));
-          carry.clear();
-          offset = needed;
+          var offset = 0;
+          if (carry.isNotEmpty) {
+            final needed = 4 - carry.length;
+            if (rawChunk.length < needed) {
+              carry.addAll(rawChunk);
+              continue;
+            }
+            carry.addAll(rawChunk.sublist(0, needed));
+            await session.addPcm(_bytesToFloat32(Uint8List.fromList(carry)));
+            carry.clear();
+            offset = needed;
+          }
+
+          final remaining = rawChunk.length - offset;
+          final alignedBytes = remaining - (remaining % 4);
+          var sliceOffset = offset;
+          while (sliceOffset < offset + alignedBytes) {
+            if (cancelled) {
+              break;
+            }
+            final sliceEnd = sliceOffset + chunkBytes < offset + alignedBytes
+                ? sliceOffset + chunkBytes
+                : offset + alignedBytes;
+            final aligned = Uint8List.fromList(
+              rawChunk.sublist(sliceOffset, sliceEnd),
+            );
+            await session.addPcm(_bytesToFloat32(aligned));
+            sliceOffset = sliceEnd;
+          }
+          if (sliceOffset < rawChunk.length) {
+            carry.addAll(rawChunk.sublist(sliceOffset));
+          }
         }
 
-        final remaining = rawChunk.length - offset;
-        final alignedBytes = remaining - (remaining % 4);
-        var sliceOffset = offset;
-        while (sliceOffset < offset + alignedBytes) {
-          final sliceEnd = sliceOffset + chunkBytes < offset + alignedBytes
-              ? sliceOffset + chunkBytes
-              : offset + alignedBytes;
-          final aligned = Uint8List.fromList(
-            rawChunk.sublist(sliceOffset, sliceEnd),
-          );
-          await session.addPcm(_bytesToFloat32(aligned));
-          sliceOffset = sliceEnd;
+        if (!cancelled) {
+          if (carry.isNotEmpty) {
+            throw FormatException(
+              'Trailing ${carry.length} byte(s) in ${audioFile.path}; '
+              'expected 4-byte aligned mono 16 kHz little-endian float32 PCM.',
+            );
+          }
+
+          await session.finish();
         }
-        if (sliceOffset < rawChunk.length) {
-          carry.addAll(rawChunk.sublist(sliceOffset));
+      } on LlamaStateException {
+        if (!cancelled) {
+          rethrow;
         }
       }
-
-      if (carry.isNotEmpty) {
-        throw FormatException(
-          'Trailing ${carry.length} byte(s) in ${audioFile.path}; '
-          'expected 4-byte aligned mono 16 kHz little-endian float32 PCM.',
-        );
-      }
-
-      await session.finish();
       final completion = await session.done;
       if (completion.state == SpeechToTextCompletionState.failed) {
         stderr.writeln('Failed: ${completion.error}');

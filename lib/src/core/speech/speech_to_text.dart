@@ -577,14 +577,16 @@ abstract interface class SpeechToTextStreamingSession {
   Future<void> cancel();
 }
 
-/// Typed speech-to-text API for prompt-adapted and dedicated ASR runtimes.
+/// Typed speech-to-text API for prompt-adapted and streaming ASR runtimes.
 ///
 /// [load] loads a [SpeechToTextModel] and owns what it loads; [attach] runs
 /// a [SpeechToTextPromptAdapter] on a `LlamaEngine` the caller loaded and
 /// keeps owning. The model's adapter picks the runtime: a prompt adapter,
 /// such as [Qwen3AsrAdapter], sends encoded audio through multimodal chat on
-/// a `LlamaEngine`; [LiteRtLmAsrAdapter] runs a dedicated native LiteRT-LM
-/// recognizer with incremental PCM input and partial transcripts.
+/// a `LlamaEngine`; [LlamaCppLiveAsrAdapter] runs incremental live PCM
+/// streaming on native `llama.cpp` (such as Voxtral Realtime and LFM3-Audio);
+/// and [LiteRtLmAsrAdapter] runs a dedicated native LiteRT-LM recognizer with
+/// incremental PCM input and partial transcripts.
 ///
 /// ```dart
 /// final recognizer = await SpeechToTextEngine.load(
@@ -769,8 +771,9 @@ class SpeechToTextEngine implements LlamadartEngine<SpeechToTextCapabilities> {
   ///   [LiteRtLmAsrAdapter], or when [download] would send credentials to
   ///   more than one host.
   /// - [LlamaUnsupportedException] when the loaded model cannot recognize
-  ///   speech (see [capabilities]), when the LiteRT-LM ASR runtime is
-  ///   unavailable, including on the web, and when [download] sets
+  ///   speech (see [capabilities]), when [LlamaCppLiveAsrAdapter] or
+  ///   [LiteRtLmAsrAdapter] is unavailable on the current platform or runtime
+  ///   (including on the web), and when [download] sets
   ///   [ModelLoadOptions.sha256] for a model of more than one file.
   /// - [LlamaStateException] when [download]'s cancel token cancels the load.
   /// - What [LlamaEngine.setModel], the resolver and the download manager
@@ -1024,7 +1027,9 @@ class SpeechToTextEngine implements LlamadartEngine<SpeechToTextCapabilities> {
   static String _promptStreamingUnsupportedReason(
     SpeechToTextAdapter adapter,
   ) =>
-      'The ${adapter.name} prompt adapter accepts complete encoded audio only.';
+      'The ${adapter.name} prompt adapter accepts complete encoded audio only. '
+      'Use LlamaCppLiveAsrAdapter or LiteRtLmAsrAdapter for incremental PCM '
+      'streaming.';
 
   SpeechToTextPromptAdapter get _promptAdapter =>
       adapter as SpeechToTextPromptAdapter;
@@ -1512,7 +1517,11 @@ class SpeechToTextEngine implements LlamadartEngine<SpeechToTextCapabilities> {
     late final SpeechToTextTask task;
     task = SpeechToTextTask._(onCancel: () => unawaited(session.cancel()));
     _activeTask = task;
-    unawaited(_pipeStreamingTask(task, session, audio.samples));
+    unawaited(
+      Future<void>.microtask(
+        () => _pipeStreamingTask(task, session, audio.samples),
+      ),
+    );
     return task;
   }
 

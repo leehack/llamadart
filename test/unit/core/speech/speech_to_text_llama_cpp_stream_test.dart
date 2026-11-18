@@ -502,9 +502,193 @@ void main() {
       await recognizer.dispose();
     },
   );
+
+  test(
+    'dispose does not free backend before pending startStream settles (M06)',
+    () async {
+      final backend = _FakeStreamingSpeechBackend();
+      final gate = Completer<void>();
+      backend.startGate = gate;
+      final recognizer = await SpeechToTextEngine.load(
+        makeModel(),
+        backend: backend,
+      );
+      final start = recognizer.startStream();
+      await Future<void>.delayed(Duration.zero);
+      final disposeFuture = recognizer.dispose();
+      for (var i = 0; i < 20; i++) {
+        await Future<void>.delayed(Duration.zero);
+      }
+      expect(backend.disposed, isFalse);
+      gate.complete();
+      await expectLater(start, throwsA(isA<LlamaStateException>()));
+      await disposeFuture;
+      expect(backend.disposed, isTrue);
+    },
+  );
+
+  test(
+    'start failure releases lease and non-SPI backend reports unsupported (M13, M23)',
+    () async {
+      await expectLater(
+        () => SpeechToTextEngine.load(
+          makeModel(),
+          backend: _NoSpiMultimodalBackend(),
+        ),
+        throwsA(isA<LlamaUnsupportedException>()),
+      );
+
+      final backend = _ThrowingStartBackend();
+      final recognizer = await SpeechToTextEngine.load(
+        makeModel(),
+        backend: backend,
+      );
+      await expectLater(
+        recognizer.startStream(),
+        throwsA(isA<LlamaSpeechException>()),
+      );
+      backend.throwOnStart = false;
+      final session = await recognizer.startStream();
+      await session.cancel();
+      await recognizer.dispose();
+    },
+  );
+
+  test(
+    'cancel suppresses gated updates and gated finish final (M11, M15)',
+    () async {
+      final backend = _FakeStreamingSpeechBackend();
+      final recognizer = await SpeechToTextEngine.load(
+        makeModel(),
+        backend: backend,
+      );
+
+      // M11: update arriving while backend cancel() is pending is suppressed.
+      backend.nextSession = _GatedCancelSession();
+      final s1 = await recognizer.startStream();
+      final events1 = <SpeechToTextEvent>[];
+      final sub1 = s1.events.listen(events1.add);
+      final cancelGateSession = backend.session! as _GatedCancelSession;
+      final c1 = s1.cancel();
+      cancelGateSession.emitUpdate('late', 1600);
+      await Future<void>.delayed(Duration.zero);
+      cancelGateSession.gate.complete();
+      await c1;
+      await sub1.cancel();
+      expect(events1, isEmpty);
+
+      // M15: final is suppressed when cancel wins while backend finish() is pending.
+      backend.nextSession = _GatedFinishSession();
+      final s2 = await recognizer.startStream();
+      final events2 = <SpeechToTextEvent>[];
+      final sub2 = s2.events.listen(events2.add);
+      final finishGateSession = backend.session! as _GatedFinishSession;
+      final f2 = s2.finish();
+      await Future<void>.delayed(Duration.zero);
+      final c2 = s2.cancel();
+      finishGateSession.gate.complete();
+      await Future.wait([f2, c2]);
+      expect((await s2.done).state, SpeechToTextCompletionState.cancelled);
+      await sub2.cancel();
+      expect(events2.whereType<SpeechToTextFinalEvent>(), isEmpty);
+
+      await recognizer.dispose();
+    },
+  );
+
+  test(
+    'emits pending partial before final and coalesces transcribe task partials (M26, M17)',
+    () async {
+      final backend = _FakeStreamingSpeechBackend();
+      final recognizer = await SpeechToTextEngine.load(
+        makeModel(),
+        backend: backend,
+      );
+
+      // M26: session finish flushes pending coalesced partial before final.
+      backend.nextSession = _FakeBackendStreamingSession(finishResult: 'a b');
+      final s1 = await recognizer.startStream();
+      backend.session!.emitUpdate('a', 800);
+      backend.session!.emitUpdate('a b', 1600);
+      await s1.finish();
+      expect((await s1.done).state, SpeechToTextCompletionState.completed);
+      final sessionEvents = await s1.events.toList();
+      expect(sessionEvents, hasLength(2));
+      expect(
+        sessionEvents[0],
+        isA<SpeechToTextPartialEvent>().having((e) => e.text, 'text', 'a b'),
+      );
+      expect(sessionEvents[1], isA<SpeechToTextFinalEvent>());
+
+      // M17: SpeechToTextTask coalesces partials while unlistened in transcribe().
+      final taskSession = _FakeBackendStreamingSession(finishResult: 'p2');
+      final pushGate = Completer<void>();
+      taskSession.onPush = (_) async {
+        await pushGate.future;
+        taskSession.emitUpdate('p1', 800);
+        taskSession.emitUpdate('p2', 1600);
+        return 1600;
+      };
+      backend.nextSession = taskSession;
+      final task = await recognizer.transcribe(
+        SpeechToTextRequest(audio: SpeechAudioPcmInput(Float32List(1600))),
+      );
+      pushGate.complete();
+      expect((await task.done).state, SpeechToTextCompletionState.completed);
+      final taskEvents = await task.events.toList();
+      expect(taskEvents, hasLength(2));
+      expect(
+        taskEvents[0],
+        isA<SpeechToTextPartialEvent>().having((e) => e.text, 'text', 'p2'),
+      );
+      expect(taskEvents[1], isA<SpeechToTextFinalEvent>());
+
+      await recognizer.dispose();
+    },
+  );
+
+  test(
+    'whole-audio transcribe skips addPcm when cancelled before pipe starts and honours cancel after final (M18, M19)',
+    () async {
+      final backend = _FakeStreamingSpeechBackend();
+      final recognizer = await SpeechToTextEngine.load(
+        makeModel(),
+        backend: backend,
+      );
+
+      // M19: cancel immediately after transcribe() returns skips pushAudio.
+      var pushCalls = 0;
+      backend.nextSession = _FakeBackendStreamingSession()
+        ..onPush = (_) async {
+          pushCalls++;
+          return 1600;
+        };
+      final task1 = await recognizer.transcribe(
+        SpeechToTextRequest(audio: SpeechAudioPcmInput(Float32List(1600))),
+      );
+      task1.cancel();
+      expect((await task1.done).state, SpeechToTextCompletionState.cancelled);
+      expect(pushCalls, 0);
+
+      // M18: cancel requested when final event fires still completes task as cancelled.
+      backend.nextSession = _FakeBackendStreamingSession(finishResult: 'done');
+      final task2 = await recognizer.transcribe(
+        SpeechToTextRequest(audio: SpeechAudioPcmInput(Float32List(1600))),
+      );
+      final sub2 = task2.events.listen((event) {
+        if (event is SpeechToTextFinalEvent) {
+          task2.cancel();
+        }
+      });
+      expect((await task2.done).state, SpeechToTextCompletionState.cancelled);
+      await sub2.cancel();
+
+      await recognizer.dispose();
+    },
+  );
 }
 
-final class _FakeStreamingSpeechBackend
+base class _FakeStreamingSpeechBackend
     implements
         LlamaBackend,
         BackendMultimodalSupport,
@@ -640,7 +824,7 @@ final class _FakeStreamingSpeechBackend
   }
 }
 
-final class _FakeBackendStreamingSession
+base class _FakeBackendStreamingSession
     implements BackendStreamingSpeechToTextSession {
   final StreamController<BackendStreamingSpeechToTextUpdate> _updates =
       StreamController<BackendStreamingSpeechToTextUpdate>.broadcast();
@@ -740,6 +924,141 @@ final class _NonStreamingNativeDelegate implements LlamaBackend {
 
   @override
   Future<String> getBackendName() async => 'FakeNonStreaming';
+
+  @override
+  Future<bool> isGpuSupported() async => false;
+
+  @override
+  Future<({int total, int free})> getVramInfo() async => (total: 0, free: 0);
+
+  @override
+  Stream<List<int>> generate(
+    int contextHandle,
+    String prompt,
+    GenerationParams params, {
+    List<LlamaContentPart>? parts,
+  }) => const Stream<List<int>>.empty();
+
+  @override
+  void cancelGeneration() {}
+
+  @override
+  Future<List<int>> tokenize(
+    int modelHandle,
+    String text, {
+    bool addSpecial = true,
+  }) async => const <int>[];
+
+  @override
+  Future<String> detokenize(
+    int modelHandle,
+    List<int> tokens, {
+    bool special = false,
+  }) async => '';
+
+  @override
+  Future<Map<String, String>> modelMetadata(int modelHandle) async =>
+      const <String, String>{};
+
+  @override
+  Future<String> applyChatTemplate(
+    int modelHandle,
+    List<Map<String, dynamic>> messages, {
+    String? customTemplate,
+    bool addAssistant = true,
+  }) async => '';
+
+  @override
+  Future<void> setLogLevel(LlamaLogLevel level) async {}
+
+  @override
+  Future<void> dispose() async {}
+}
+
+final class _ThrowingStartBackend extends _FakeStreamingSpeechBackend {
+  bool throwOnStart = true;
+
+  @override
+  Future<BackendStreamingSpeechToTextSession> startStreamingSpeechToText(
+    int contextHandle,
+    int mmContextHandle,
+  ) async {
+    if (throwOnStart) {
+      throw LlamaSpeechException('native start failed');
+    }
+    return super.startStreamingSpeechToText(contextHandle, mmContextHandle);
+  }
+}
+
+final class _GatedCancelSession extends _FakeBackendStreamingSession {
+  final Completer<void> gate = Completer<void>();
+
+  @override
+  Future<void> cancel() async {
+    await gate.future;
+    await super.cancel();
+  }
+}
+
+final class _GatedFinishSession extends _FakeBackendStreamingSession {
+  final Completer<void> gate = Completer<void>();
+
+  _GatedFinishSession() : super(finishResult: 'should not appear');
+
+  @override
+  Future<String> finish() async {
+    await gate.future;
+    return super.finish();
+  }
+}
+
+final class _NoSpiMultimodalBackend
+    implements LlamaBackend, BackendMultimodalSupport {
+  @override
+  bool get isReady => true;
+
+  @override
+  bool get supportsUrlLoading => false;
+
+  @override
+  Future<int> modelLoad(String path, ModelParams params) async => 1;
+
+  @override
+  Future<int> modelLoadFromUrl(
+    String url,
+    ModelParams params, {
+    void Function(double progress)? onProgress,
+  }) async => 1;
+
+  @override
+  Future<void> modelFree(int modelHandle) async {}
+
+  @override
+  Future<int> contextCreate(int modelHandle, ModelParams params) async => 2;
+
+  @override
+  Future<void> contextFree(int contextHandle) async {}
+
+  @override
+  Future<int> getContextSize(int contextHandle) async => 4096;
+
+  @override
+  Future<int?> multimodalContextCreate(
+    int modelHandle,
+    String mmProjPath,
+  ) async => 3;
+
+  @override
+  Future<void> multimodalContextFree(int mmContextHandle) async {}
+
+  @override
+  Future<bool> supportsAudio(int mmContextHandle) async => true;
+
+  @override
+  Future<bool> supportsVision(int mmContextHandle) async => false;
+
+  @override
+  Future<String> getBackendName() async => 'NoSpiMultimodal';
 
   @override
   Future<bool> isGpuSupported() async => false;

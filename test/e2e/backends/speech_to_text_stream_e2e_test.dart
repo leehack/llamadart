@@ -11,19 +11,24 @@ import 'package:llamadart/llamadart.dart';
 import 'package:llamadart/src/backends/llama_cpp/llama_cpp_backend.dart';
 import 'package:test/test.dart';
 
-const String _lfm3Model =
-    '/opt/UnitySrc/personal/llama/models/lfm3-audio-2b-02355c1a/LFM3-Audio-2B-Q4_K_M.gguf';
-const String _lfm3Mmproj =
-    '/opt/UnitySrc/personal/llama/models/lfm3-audio-2b-02355c1a/mmproj-LFM3-Audio-2B-Q8_0.gguf';
-const String _voxtralModel =
-    '/opt/UnitySrc/personal/llama/models/voxtral-mini-4b-realtime-0b0f7ac9/Voxtral-Mini-4B-Realtime-2602-Q4_K_M.gguf';
-const String _voxtralMmproj =
-    '/opt/UnitySrc/personal/llama/models/voxtral-mini-4b-realtime-0b0f7ac9/mmproj-Voxtral-Mini-4B-Realtime-2602-Q8_0.gguf';
-const String _qwen3AsrModel =
-    '/opt/UnitySrc/personal/llama/models/qwen3-asr-0.6b-ggml-org/Qwen3-ASR-0.6B-Q8_0.gguf';
-const String _qwen3AsrMmproj =
-    '/opt/UnitySrc/personal/llama/models/qwen3-asr-0.6b-ggml-org/mmproj-Qwen3-ASR-0.6B-Q8_0.gguf';
-const String _jfkWav = 'packages/llamadart_validation/assets/speech/jfk.wav';
+const String _defaultJfkWav =
+    'packages/llamadart_validation/assets/speech/jfk.wav';
+
+String? _envFile(String key, [String? fallbackKey]) {
+  final raw = Platform.environment[key]?.trim();
+  if (raw != null && raw.isNotEmpty) {
+    return raw;
+  }
+  if (fallbackKey != null) {
+    final fallback = Platform.environment[fallbackKey]?.trim();
+    if (fallback != null && fallback.isNotEmpty) {
+      return fallback;
+    }
+  }
+  return null;
+}
+
+bool _exists(String? path) => path != null && File(path).existsSync();
 
 Float32List _decodeWavPcm16Mono16k(String path) {
   final bytes = File(path).readAsBytesSync();
@@ -63,6 +68,19 @@ String _normalizeWords(String text) => text
     .replaceAll(RegExp(r'[^a-z0-9\s]'), ' ')
     .replaceAll(RegExp(r'\s+'), ' ')
     .trim();
+
+int _countOccurrences(String haystack, String needle) {
+  var count = 0;
+  var index = 0;
+  while (true) {
+    final found = haystack.indexOf(needle, index);
+    if (found < 0) {
+      return count;
+    }
+    count++;
+    index = found + needle.length;
+  }
+}
 
 void _assertMonotonicPartials(
   List<SpeechToTextPartialEvent> partials,
@@ -127,22 +145,33 @@ Future<String> _streamChunks(
 }
 
 void main() {
-  final hasJfk = File(_jfkWav).existsSync();
-  final hasVoxtral =
-      File(_voxtralModel).existsSync() && File(_voxtralMmproj).existsSync();
-  final hasLfm3 =
-      File(_lfm3Model).existsSync() && File(_lfm3Mmproj).existsSync();
-  final hasQwen =
-      File(_qwen3AsrModel).existsSync() && File(_qwen3AsrMmproj).existsSync();
+  final jfkPath = _envFile('LLAMADART_STT_STREAM_AUDIO_PATH') ?? _defaultJfkWav;
+  final voxtralModel = _envFile('LLAMADART_STT_STREAM_VOXTRAL_MODEL_PATH');
+  final voxtralMmproj = _envFile('LLAMADART_STT_STREAM_VOXTRAL_MMPROJ_PATH');
+  final lfm3Model = _envFile('LLAMADART_STT_STREAM_LFM3_MODEL_PATH');
+  final lfm3Mmproj = _envFile('LLAMADART_STT_STREAM_LFM3_MMPROJ_PATH');
+  final qwenModel = _envFile(
+    'LLAMADART_STT_STREAM_QWEN_MODEL_PATH',
+    'LLAMADART_STT_MODEL_PATH',
+  );
+  final qwenMmproj = _envFile(
+    'LLAMADART_STT_STREAM_QWEN_MMPROJ_PATH',
+    'LLAMADART_STT_MMPROJ_PATH',
+  );
+
+  final hasJfk = _exists(jfkPath);
+  final hasVoxtral = _exists(voxtralModel) && _exists(voxtralMmproj);
+  final hasLfm3 = _exists(lfm3Model) && _exists(lfm3Mmproj);
+  final hasQwen = _exists(qwenModel) && _exists(qwenMmproj);
 
   test(
     'Voxtral Realtime public parity, irregular chunkings, truncation, cancel/reuse, and 300s run',
     () async {
-      final jfk = _decodeWavPcm16Mono16k(_jfkWav);
+      final jfk = _decodeWavPcm16Mono16k(jfkPath);
       final engine = await SpeechToTextEngine.load(
         SpeechToTextModel(
-          ModelSource.path(_voxtralModel),
-          projector: ModelSource.path(_voxtralMmproj),
+          ModelSource.path(voxtralModel!),
+          projector: ModelSource.path(voxtralMmproj!),
           adapter: const LlamaCppLiveAsrAdapter(),
         ),
         params: const ModelParams(
@@ -184,7 +213,7 @@ void main() {
         final directBackend = NativeLlamaBackend();
         try {
           final m = await directBackend.modelLoad(
-            _voxtralModel,
+            voxtralModel,
             const ModelParams(
               contextSize: 4096,
               numberOfThreads: 2,
@@ -201,7 +230,7 @@ void main() {
           );
           final p = await directBackend.multimodalContextCreate(
             m,
-            _voxtralMmproj,
+            voxtralMmproj,
           );
           final directSession = await directBackend.startAsrStreamSession(
             c,
@@ -214,7 +243,47 @@ void main() {
           await directBackend.dispose();
         }
 
-        // Cancel before first step, during push, while idle, after first text, and 10x alternate.
+        // Cancel before first step, during an active push, while idle, and after
+        // first text, verifying immediate reuse after each.
+        final sBeforePush = await engine.startStream();
+        await sBeforePush.cancel();
+        expect(
+          (await sBeforePush.done).state,
+          SpeechToTextCompletionState.cancelled,
+        );
+        expect(await _streamChunks(engine, jfk, const [5120]), fixedText);
+
+        final sMidPush = await engine.startStream();
+        final blockedPush = sMidPush
+            .addPcm(jfk)
+            .then<void>((_) {}, onError: (_) {});
+        await sMidPush.cancel();
+        await blockedPush;
+        expect(
+          (await sMidPush.done).state,
+          SpeechToTextCompletionState.cancelled,
+        );
+        expect(await _streamChunks(engine, jfk, const [5120]), fixedText);
+
+        final sAfterFirstText = await engine.startStream();
+        final firstTextSeen = Completer<void>();
+        final afterFirstSub = sAfterFirstText.events.listen((event) {
+          if (event is SpeechToTextPartialEvent &&
+              event.text.trim().isNotEmpty &&
+              !firstTextSeen.isCompleted) {
+            firstTextSeen.complete();
+          }
+        });
+        await sAfterFirstText.addPcm(Float32List.sublistView(jfk, 0, 32000));
+        await firstTextSeen.future.timeout(const Duration(seconds: 30));
+        await sAfterFirstText.cancel();
+        await afterFirstSub.cancel();
+        expect(
+          (await sAfterFirstText.done).state,
+          SpeechToTextCompletionState.cancelled,
+        );
+
+        // 10x alternating idle cancel / finish reuse.
         for (var i = 0; i < 10; i++) {
           final s = await engine.startStream();
           if (i.isEven) {
@@ -230,6 +299,7 @@ void main() {
 
         // 300s fast-producer run.
         final baselineRss = ProcessInfo.currentRss;
+        var peakCurrentRss = baselineRss;
         final clip300s = _repeatPcm(jfk, 300);
         final sw = Stopwatch()..start();
         Duration? firstPartialWall;
@@ -254,6 +324,7 @@ void main() {
             ),
           );
           pushedSamples += next;
+          peakCurrentRss = max(peakCurrentRss, ProcessInfo.currentRss);
         }
         final flushSw = Stopwatch()..start();
         await s300.finish();
@@ -261,23 +332,29 @@ void main() {
         flushSw.stop();
         sw.stop();
         await sub300.cancel();
-        final peakRss = ProcessInfo.maxRss;
+        peakCurrentRss = max(peakCurrentRss, ProcessInfo.currentRss);
         expect(completion300.state, SpeechToTextCompletionState.completed);
         final voxtral300Text = completion300.result!.text;
-        expect(_normalizeWords(voxtral300Text), contains('fellow americans'));
-        expect(_normalizeWords(voxtral300Text), contains('country'));
+        final voxtral300Norm = _normalizeWords(voxtral300Text);
+        expect(voxtral300Norm, contains('fellow americans'));
+        expect(voxtral300Norm, contains('country'));
+        expect(
+          _countOccurrences(voxtral300Norm, 'fellow americans'),
+          greaterThanOrEqualTo(25),
+        );
         stderr.writeln(
           '[Voxtral 300s fast] wall=${sw.elapsedMilliseconds}ms '
           'flush=${flushSw.elapsedMilliseconds}ms '
           'firstPartialWall=${firstPartialWall?.inMilliseconds}ms '
           'firstPartialAudio=${firstPartialAudio?.inMilliseconds}ms '
           'baselineRssMB=${(baselineRss / (1024 * 1024)).toStringAsFixed(1)} '
-          'peakRssMB=${(peakRss / (1024 * 1024)).toStringAsFixed(1)}',
+          'peakCurrentRssMB=${(peakCurrentRss / (1024 * 1024)).toStringAsFixed(1)}',
         );
         stderr.writeln('[Voxtral 300s fast] transcript=$voxtral300Text');
 
         if (Platform.environment['LLAMADART_STT_LIVE_PACED'] == '1') {
           final liveBaselineRss = ProcessInfo.currentRss;
+          var livePeakCurrentRss = liveBaselineRss;
           final liveSw = Stopwatch()..start();
           Duration? liveFirstPartialWall;
           Duration? liveFirstPartialAudio;
@@ -297,6 +374,10 @@ void main() {
               Float32List.sublistView(clip300s, livePushed, livePushed + next),
             );
             livePushed += next;
+            livePeakCurrentRss = max(
+              livePeakCurrentRss,
+              ProcessInfo.currentRss,
+            );
             final targetMs = (livePushed * 1000) ~/ 16000;
             final remainingMs = targetMs - liveSw.elapsedMilliseconds;
             if (remainingMs > 0) {
@@ -309,18 +390,23 @@ void main() {
           liveFlushSw.stop();
           liveSw.stop();
           await subLive.cancel();
-          final livePeakRss = ProcessInfo.maxRss;
+          livePeakCurrentRss = max(livePeakCurrentRss, ProcessInfo.currentRss);
           expect(liveCompletion.state, SpeechToTextCompletionState.completed);
           final liveText = liveCompletion.result!.text;
-          expect(_normalizeWords(liveText), contains('fellow americans'));
-          expect(_normalizeWords(liveText), contains('country'));
+          final liveNorm = _normalizeWords(liveText);
+          expect(liveNorm, contains('fellow americans'));
+          expect(liveNorm, contains('country'));
+          expect(
+            _countOccurrences(liveNorm, 'fellow americans'),
+            greaterThanOrEqualTo(25),
+          );
           stderr.writeln(
             '[Voxtral 300s live-paced] wall=${liveSw.elapsedMilliseconds}ms '
             'flush=${liveFlushSw.elapsedMilliseconds}ms '
             'firstPartialWall=${liveFirstPartialWall?.inMilliseconds}ms '
             'firstPartialAudio=${liveFirstPartialAudio?.inMilliseconds}ms '
             'baselineRssMB=${(liveBaselineRss / (1024 * 1024)).toStringAsFixed(1)} '
-            'peakRssMB=${(livePeakRss / (1024 * 1024)).toStringAsFixed(1)}',
+            'peakCurrentRssMB=${(livePeakCurrentRss / (1024 * 1024)).toStringAsFixed(1)}',
           );
           stderr.writeln('[Voxtral 300s live-paced] transcript=$liveText');
         }
@@ -331,8 +417,8 @@ void main() {
       // Voxtral 512 context truncation on 55s clip.
       final smallEngine = await SpeechToTextEngine.load(
         SpeechToTextModel(
-          ModelSource.path(_voxtralModel),
-          projector: ModelSource.path(_voxtralMmproj),
+          ModelSource.path(voxtralModel),
+          projector: ModelSource.path(voxtralMmproj),
           adapter: const LlamaCppLiveAsrAdapter(),
         ),
         params: const ModelParams(
@@ -361,18 +447,21 @@ void main() {
         await smallEngine.dispose();
       }
     },
-    skip: !(hasJfk && hasVoxtral),
+    skip: !(hasJfk && hasVoxtral)
+        ? 'Set LLAMADART_STT_STREAM_VOXTRAL_MODEL_PATH and '
+              'LLAMADART_STT_STREAM_VOXTRAL_MMPROJ_PATH (and jfk.wav).'
+        : false,
     timeout: const Timeout(Duration(minutes: 15)),
   );
 
   test(
     'LFM3-Audio 2048 floor restart, chunking parity, and 300s run',
     () async {
-      final jfk = _decodeWavPcm16Mono16k(_jfkWav);
+      final jfk = _decodeWavPcm16Mono16k(jfkPath);
       final engine2048 = await SpeechToTextEngine.load(
         SpeechToTextModel(
-          ModelSource.path(_lfm3Model),
-          projector: ModelSource.path(_lfm3Mmproj),
+          ModelSource.path(lfm3Model!),
+          projector: ModelSource.path(lfm3Mmproj!),
           adapter: const LlamaCppLiveAsrAdapter(),
         ),
         params: const ModelParams(
@@ -404,8 +493,8 @@ void main() {
 
       final engine4096 = await SpeechToTextEngine.load(
         SpeechToTextModel(
-          ModelSource.path(_lfm3Model),
-          projector: ModelSource.path(_lfm3Mmproj),
+          ModelSource.path(lfm3Model),
+          projector: ModelSource.path(lfm3Mmproj),
           adapter: const LlamaCppLiveAsrAdapter(),
         ),
         params: const ModelParams(
@@ -416,6 +505,7 @@ void main() {
       );
       try {
         final baselineRss = ProcessInfo.currentRss;
+        var peakCurrentRss = baselineRss;
         final clip300s = _repeatPcm(jfk, 300);
         final sw = Stopwatch()..start();
         Duration? firstPartialWall;
@@ -440,6 +530,7 @@ void main() {
             ),
           );
           pushedSamples += next;
+          peakCurrentRss = max(peakCurrentRss, ProcessInfo.currentRss);
         }
         final flushSw = Stopwatch()..start();
         await s300.finish();
@@ -447,23 +538,29 @@ void main() {
         flushSw.stop();
         sw.stop();
         await sub300.cancel();
-        final peakRss = ProcessInfo.maxRss;
+        peakCurrentRss = max(peakCurrentRss, ProcessInfo.currentRss);
         expect(completion300.state, SpeechToTextCompletionState.completed);
         final lfm300Text = completion300.result!.text;
-        expect(_normalizeWords(lfm300Text), contains('fellow americans'));
-        expect(_normalizeWords(lfm300Text), contains('country'));
+        final lfm300Norm = _normalizeWords(lfm300Text);
+        expect(lfm300Norm, contains('fellow americans'));
+        expect(lfm300Norm, contains('country'));
+        expect(
+          _countOccurrences(lfm300Norm, 'fellow americans'),
+          greaterThanOrEqualTo(25),
+        );
         stderr.writeln(
           '[LFM3 300s fast] wall=${sw.elapsedMilliseconds}ms '
           'flush=${flushSw.elapsedMilliseconds}ms '
           'firstPartialWall=${firstPartialWall?.inMilliseconds}ms '
           'firstPartialAudio=${firstPartialAudio?.inMilliseconds}ms '
           'baselineRssMB=${(baselineRss / (1024 * 1024)).toStringAsFixed(1)} '
-          'peakRssMB=${(peakRss / (1024 * 1024)).toStringAsFixed(1)}',
+          'peakCurrentRssMB=${(peakCurrentRss / (1024 * 1024)).toStringAsFixed(1)}',
         );
         stderr.writeln('[LFM3 300s fast] transcript=$lfm300Text');
 
         if (Platform.environment['LLAMADART_STT_LIVE_PACED'] == '1') {
           final liveBaselineRss = ProcessInfo.currentRss;
+          var livePeakCurrentRss = liveBaselineRss;
           final liveSw = Stopwatch()..start();
           Duration? liveFirstPartialWall;
           Duration? liveFirstPartialAudio;
@@ -483,6 +580,10 @@ void main() {
               Float32List.sublistView(clip300s, livePushed, livePushed + next),
             );
             livePushed += next;
+            livePeakCurrentRss = max(
+              livePeakCurrentRss,
+              ProcessInfo.currentRss,
+            );
             final targetMs = (livePushed * 1000) ~/ 16000;
             final remainingMs = targetMs - liveSw.elapsedMilliseconds;
             if (remainingMs > 0) {
@@ -495,18 +596,23 @@ void main() {
           liveFlushSw.stop();
           liveSw.stop();
           await subLive.cancel();
-          final livePeakRss = ProcessInfo.maxRss;
+          livePeakCurrentRss = max(livePeakCurrentRss, ProcessInfo.currentRss);
           expect(liveCompletion.state, SpeechToTextCompletionState.completed);
           final liveText = liveCompletion.result!.text;
-          expect(_normalizeWords(liveText), contains('fellow americans'));
-          expect(_normalizeWords(liveText), contains('country'));
+          final liveNorm = _normalizeWords(liveText);
+          expect(liveNorm, contains('fellow americans'));
+          expect(liveNorm, contains('country'));
+          expect(
+            _countOccurrences(liveNorm, 'fellow americans'),
+            greaterThanOrEqualTo(25),
+          );
           stderr.writeln(
             '[LFM3 300s live-paced] wall=${liveSw.elapsedMilliseconds}ms '
             'flush=${liveFlushSw.elapsedMilliseconds}ms '
             'firstPartialWall=${liveFirstPartialWall?.inMilliseconds}ms '
             'firstPartialAudio=${liveFirstPartialAudio?.inMilliseconds}ms '
             'baselineRssMB=${(liveBaselineRss / (1024 * 1024)).toStringAsFixed(1)} '
-            'peakRssMB=${(livePeakRss / (1024 * 1024)).toStringAsFixed(1)}',
+            'peakCurrentRssMB=${(livePeakCurrentRss / (1024 * 1024)).toStringAsFixed(1)}',
           );
           stderr.writeln('[LFM3 300s live-paced] transcript=$liveText');
         }
@@ -514,25 +620,35 @@ void main() {
         await engine4096.dispose();
       }
     },
-    skip: !(hasJfk && hasLfm3),
+    skip: !(hasJfk && hasLfm3)
+        ? 'Set LLAMADART_STT_STREAM_LFM3_MODEL_PATH and '
+              'LLAMADART_STT_STREAM_LFM3_MMPROJ_PATH (and jfk.wav).'
+        : false,
     timeout: const Timeout(Duration(minutes: 15)),
   );
 
-  test('Qwen3-ASR projector refuses LlamaCppLiveAsrAdapter', () async {
-    await expectLater(
-      () => SpeechToTextEngine.load(
-        SpeechToTextModel(
-          ModelSource.path(_qwen3AsrModel),
-          projector: ModelSource.path(_qwen3AsrMmproj),
-          adapter: const LlamaCppLiveAsrAdapter(),
+  test(
+    'Qwen3-ASR projector refuses LlamaCppLiveAsrAdapter',
+    () async {
+      await expectLater(
+        () => SpeechToTextEngine.load(
+          SpeechToTextModel(
+            ModelSource.path(qwenModel!),
+            projector: ModelSource.path(qwenMmproj!),
+            adapter: const LlamaCppLiveAsrAdapter(),
+          ),
+          params: const ModelParams(
+            contextSize: 2048,
+            numberOfThreads: 2,
+            numberOfThreadsBatch: 2,
+          ),
         ),
-        params: const ModelParams(
-          contextSize: 2048,
-          numberOfThreads: 2,
-          numberOfThreadsBatch: 2,
-        ),
-      ),
-      throwsA(isA<LlamaUnsupportedException>()),
-    );
-  }, skip: !hasQwen);
+        throwsA(isA<LlamaUnsupportedException>()),
+      );
+    },
+    skip: !hasQwen
+        ? 'Set LLAMADART_STT_STREAM_QWEN_MODEL_PATH and '
+              'LLAMADART_STT_STREAM_QWEN_MMPROJ_PATH.'
+        : false,
+  );
 }

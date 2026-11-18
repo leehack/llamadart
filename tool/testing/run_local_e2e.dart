@@ -989,9 +989,20 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
             'test/e2e/backends/speech_to_text_stream_e2e_test.dart',
           ],
           environment: {
-            if (Platform.environment['LLAMADART_STT_LIVE_PACED'] != null)
-              'LLAMADART_STT_LIVE_PACED':
-                  Platform.environment['LLAMADART_STT_LIVE_PACED']!,
+            for (final key in const [
+              'LLAMADART_STT_LIVE_PACED',
+              'LLAMADART_STT_STREAM_VOXTRAL_MODEL_PATH',
+              'LLAMADART_STT_STREAM_VOXTRAL_MMPROJ_PATH',
+              'LLAMADART_STT_STREAM_LFM3_MODEL_PATH',
+              'LLAMADART_STT_STREAM_LFM3_MMPROJ_PATH',
+              'LLAMADART_STT_STREAM_QWEN_MODEL_PATH',
+              'LLAMADART_STT_STREAM_QWEN_MMPROJ_PATH',
+              'LLAMADART_STT_STREAM_AUDIO_PATH',
+              'LLAMADART_STT_MODEL_PATH',
+              'LLAMADART_STT_MMPROJ_PATH',
+            ])
+              if (Platform.environment[key] != null)
+                key: Platform.environment[key]!,
           },
           description: 'Typed live PCM speech-to-text real-model smoke',
         ),
