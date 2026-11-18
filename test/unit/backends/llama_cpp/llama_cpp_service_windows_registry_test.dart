@@ -8,6 +8,7 @@ import 'dart:mirrors';
 import 'package:ffi/ffi.dart';
 import 'package:llamadart/llamadart.dart';
 import 'package:llamadart/src/backends/llama_cpp/bindings.dart';
+import 'package:llamadart/src/backends/llama_cpp/build_identity.dart';
 import 'package:llamadart/src/backends/llama_cpp/exit_teardown_api.dart';
 import 'package:llamadart/src/backends/llama_cpp/llama_cpp_service.dart';
 import 'package:llamadart/src/backends/llama_cpp/load_device_selection.dart';
@@ -161,6 +162,9 @@ final class _RegistryFixture {
     service = LlamaCppService(
       isWindows: true,
       isMacosX64: false,
+      // Simulate Windows registry lookup against the actual host's runtime.
+      buildIdentity: () =>
+          readNativeBuildIdentity(isWindows: Platform.isWindows),
       objectCalls: LlamaCppObjectCalls.tracked(
         recorder.api,
         isWindows: Platform.isWindows,

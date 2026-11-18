@@ -414,7 +414,7 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
     command:
         'dart run tool/testing/run_local_e2e.dart --scenario native-default-consumer-aot',
     useWhen:
-        'Native pin or consumer/AOT qualification; explicit local/manual execution only. Expected tag must match source; native2 is pipeline-only, native3 needs independent acceptance.',
+        'Native pin or consumer/AOT qualification. Run explicitly on each host. The expected tag must match source. v0.8.0-2 is pipeline-only. Each exact pin requires independent acceptance.',
   ),
   TestMatrixRow(
     id: 'windows-native-override-registry',

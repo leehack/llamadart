@@ -3,6 +3,7 @@ import hashlib
 import io
 import json
 from pathlib import Path
+import re
 import struct
 import tarfile
 import tempfile
@@ -13,6 +14,16 @@ import build_probe
 import verify_apk
 
 class PreparationTest(unittest.TestCase):
+    def test_current_archive_binding_matches_the_core_pin(self):
+        pins = (build_probe.ROOT / "lib/src/hook/native_release_pins.dart").read_text()
+        tag = re.search(r"const llamaCppTag = '([^']+)';", pins)
+        self.assertIsNotNone(tag)
+        self.assertEqual(build_probe.NATIVE_TAG, tag.group(1))
+        checksum_map = pins.split("const llamaCppBundleSha256 =", 1)[1].split("};", 1)[0]
+        checksum = re.search(r"'android-arm64':\s*'([a-f0-9]{64})'", checksum_map)
+        self.assertIsNotNone(checksum)
+        self.assertEqual(build_probe.ARCHIVE_SHA, checksum.group(1))
+
     def test_archive_traversal_and_links_fail(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -45,7 +56,9 @@ class PreparationTest(unittest.TestCase):
             owner_fixture = Path(__file__).resolve().parents[2] / (
                 "test/fixtures/android_qualification/android_arm64_runtime_names.json")
             owner = json.loads(owner_fixture.read_text())
-            self.assertEqual(owner["native_archive_sha256"], build_probe.ARCHIVE_SHA)
+            # Historical name inventory is not a receipt for the current pin.
+            self.assertEqual(owner["native_archive_sha256"],
+                             "a40669ffb3ab20a62028fbe65c0d217e5a36f71e4beef36447a6a630d5953a76")
             # The production default CPU/Vulkan selector omits only OpenCL;
             # its exact selection is covered by android_qualification_test.dart.
             names = [name for name in owner["libraries"] if name != "libggml-opencl.so"]

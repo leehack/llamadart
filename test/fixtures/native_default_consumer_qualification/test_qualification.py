@@ -21,7 +21,7 @@ from test_compare_macho_identity import fixture, dylib
 
 
 def pin_fixture(tag='v0.8.0-2'):
-    # Model both future source pins without pinning source-only controls to
+    # Model different source pins without binding source-only controls to
     # today's production tag. Archive bytes are fabricated in separate tests.
     source = (qualify.FIXTURE.parents[2] / 'lib/src/hook/native_release_pins.dart').read_text()
     return re.sub(r"^const llamaCppTag = '[^']+';$", "const llamaCppTag = '" + tag + "';",
@@ -99,18 +99,36 @@ class QualificationControls(unittest.TestCase):
         self.assertTrue(v.scope('v0.8.0-3', True)['finalNative3Qualified'])
         self.assertFalse(v.scope('v0.9.0', False)['finalNative3Qualified'])
         self.assertTrue(v.scope('v0.9.0', True)['finalNative3Qualified'])
+        self.assertFalse(v.scope('v1.0.0', False)['finalNative3Qualified'])
+        self.assertTrue(v.scope('v1.0.0', True)['finalNative3Qualified'])
 
     def test_tag_is_verification_only_and_mismatch_refused(self):
         for tag in v.TAGS:
             source = pin_fixture(tag)
             self.assertIn('macos-arm64', v.pins(source, tag, 'macos-arm64'))
-            other = next(value for value in v.TAGS if value != tag)
-            with self.assertRaisesRegex(v.Refusal, 'committed default pin'):
-                v.pins(source, other, 'macos-arm64')
+            for other in v.TAGS:
+                if other != tag:
+                    with self.subTest(source_tag=tag, expected_tag=other):
+                        with self.assertRaisesRegex(v.Refusal, 'committed default pin'):
+                            v.pins(source, other, 'macos-arm64')
         config = qualify.pubspec(self.root)
         self.assertIn('llamadart_native_runtimes: [llama_cpp]', config)
         for forbidden in ('native_tag', 'native_path', 'native_repository', 'native_backends', 'v0.8.0'):
             self.assertNotIn(forbidden, config)
+
+    def test_rebuild_receipt_reports_exact_pin_completion(self):
+        tag = 'v1.0.0-1'
+        self.assertIn('macos-arm64', v.pins(pin_fixture(tag), tag, 'macos-arm64'))
+        output = self.root / 'evidence'
+        (output / 'logs').mkdir(parents=True)
+        for completed in (False, True):
+            qualify.seal_terminal(output, {'completed': completed, **v.scope(tag, completed)})
+            receipt = v.verify_seal(output)
+            self.assertEqual(tag, receipt['expectedNativeTag'])
+            self.assertIs(completed, receipt['completed'])
+            self.assertFalse(receipt['pipelineOnly'])
+            self.assertFalse(receipt['finalNative3Qualified'])
+            self.assertEqual('required separately', receipt['independentAcceptance'])
 
     def test_override_environment_refused_without_values(self):
         for name in ('DYLD_LIBRARY_PATH', 'LD_PRELOAD', 'GGML_BACKEND_PATH',

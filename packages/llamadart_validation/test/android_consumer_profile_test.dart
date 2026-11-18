@@ -39,9 +39,9 @@ void main() {
       'consumer_pubspec_sha256': 'a' * 64,
       'hook_sha256': 'a' * 64,
       'selector_sha256': 'a' * 64,
-      'native_tag': 'v0.9.0',
+      'native_tag': 'v1.0.0-1',
       'native_archive_sha256':
-          'd3c933a63e8ccaafeee32edd30685fdccd17c05e54b75895282f01fe74914a1b',
+          'd6b735f88a0896f0e2229d95867c3836313caaab288b83c82b63e4fa20a86198',
       'archive_libraries': archive,
       'packaging_selection': selection,
       'libraries': {
@@ -78,59 +78,77 @@ void main() {
         (plan.wire['hook_defines'] as Map)['llamadart_native_tag'],
         llamaCppTag,
       );
+      expect(
+        binding(plan)['native_archive_sha256'],
+        llamaCppBundleSha256['android-arm64'],
+      );
     }
   });
 
-  test(
-    'consumer binding refuses crossed profile, mutation and probe injection',
-    () {
-      for (final profile in ['full', 'compact']) {
-        final plan = AndroidConsumerProfilePlan(profile);
-        final good = binding(plan);
-        Map read(Map value) => readAndroidQualificationBinding(
-          jsonEncode(value),
-          plan.fixture,
-          consumerCpuProfile: profile,
-          consumerPlanHash: plan.hash,
-        );
-        expect(read(good)['native_tag'], 'v0.9.0');
-        for (final bad in [
-          {...good, 'source_dirty': true},
-          {...good, 'consumer_pubspec_sha256': ''},
-          {...good, 'native_tag': 'v0.8.0-1'},
-          {
-            ...good,
-            'plan_sha256': AndroidConsumerProfilePlan(
-              profile == 'full' ? 'compact' : 'full',
-            ).hash,
-          },
-          {
-            ...good,
-            'packaging_selection': androidQualificationLibrarySelection(names),
-          },
-          {
-            ...good,
-            'libraries': {
-              ...good['libraries'] as Map,
-              'libllamadart_android_qualification.so': {
-                'bytes': 12,
-                'sha256': 'a' * 64,
-              },
+  test('consumer binding refuses crossed profile, mutation and probe injection', () {
+    for (final profile in ['full', 'compact']) {
+      final plan = AndroidConsumerProfilePlan(profile);
+      final good = binding(plan);
+      Map read(Map value) => readAndroidQualificationBinding(
+        jsonEncode(value),
+        plan.fixture,
+        consumerCpuProfile: profile,
+        consumerPlanHash: plan.hash,
+      );
+      expect(read(good)['native_tag'], 'v1.0.0-1');
+      for (final bad in [
+        {...good, 'source_dirty': true},
+        {...good, 'consumer_pubspec_sha256': ''},
+        {...good, 'native_tag': 'v0.8.0-1'},
+        {
+          ...good,
+          'native_tag': 'v1.0.0',
+          'native_archive_sha256':
+              '68248fa23753d4ee2f7ccacae69c49ee3006a66a86f4cddb997c02bd893b269e',
+        },
+        {
+          ...good,
+          'native_tag': 'v0.9.0',
+          'native_archive_sha256':
+              'd3c933a63e8ccaafeee32edd30685fdccd17c05e54b75895282f01fe74914a1b',
+        },
+        {
+          ...good,
+          'native_archive_sha256':
+              'd3c933a63e8ccaafeee32edd30685fdccd17c05e54b75895282f01fe74914a1b',
+        },
+        {
+          ...good,
+          'plan_sha256': AndroidConsumerProfilePlan(
+            profile == 'full' ? 'compact' : 'full',
+          ).hash,
+        },
+        {
+          ...good,
+          'packaging_selection': androidQualificationLibrarySelection(names),
+        },
+        {
+          ...good,
+          'libraries': {
+            ...good['libraries'] as Map,
+            'libllamadart_android_qualification.so': {
+              'bytes': 12,
+              'sha256': 'a' * 64,
             },
           },
-          {
-            ...good,
-            'libraries': {
-              ...good['libraries'] as Map,
-              'libllama.so': {'bytes': 13, 'sha256': 'a' * 64},
-            },
+        },
+        {
+          ...good,
+          'libraries': {
+            ...good['libraries'] as Map,
+            'libllama.so': {'bytes': 13, 'sha256': 'a' * 64},
           },
-        ]) {
-          expect(() => read(bad), throwsFormatException);
-        }
+        },
+      ]) {
+        expect(() => read(bad), throwsFormatException);
       }
-    },
-  );
+    }
+  });
 
   test('semantic fixture rejects empty, unrelated and corrupted output', () {
     expect(androidConsumerOutputPasses(' Paris.'), isTrue);

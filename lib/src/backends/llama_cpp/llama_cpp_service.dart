@@ -44,6 +44,7 @@ import 'lazy_grammar_triggers.dart';
 import 'load_device_selection.dart';
 import 'reranking_classifier.dart';
 import 'load_param_helpers.dart';
+import 'runtime_admission.dart';
 import 'safetensors.dart';
 import 'stop_sequence_buffer.dart';
 import 'token_batch.dart';
@@ -431,6 +432,13 @@ class LlamaCppService {
   late final String? _buildIdentity =
       (_readBuildIdentity ??
       () => readNativeBuildIdentity(isWindows: _isWindows))();
+  void _requireAdmittedRuntime(String capability) {
+    final identity = _buildIdentity;
+    if (!admitsRuntimeBuildIdentity(identity)) {
+      throw runtimeNotAdmitted(capability: capability, identity: identity);
+    }
+  }
+
   final String? Function()? _readGgmlVersion;
   late final bool _ggmlHasSmallMatmulTileFix = () {
     final version = (_readGgmlVersion ?? readGgmlVersion)();
@@ -1665,6 +1673,7 @@ class LlamaCppService {
   /// Returns a handle to the loaded model.
   /// Throws an [Exception] if the file does not exist or fails to load.
   int loadModel(String modelPath, ModelParams modelParams) {
+    _requireAdmittedRuntime('Model loading');
     modelParams = resolveComputeDeviceParams(
       modelParams,
       isAndroid: _isAndroid,
@@ -2410,6 +2419,7 @@ class LlamaCppService {
 
     _prepareBackendsForModelLoad(draftBackend);
 
+    _requireAdmittedRuntime('Draft model loading');
     final mparams = llama_model_default_params();
     var preferredDevices = _createPreferredDeviceList(draftBackend);
     // The target load already decided whether the GPU is usable; a draft
@@ -3557,6 +3567,8 @@ class LlamaCppService {
         final direct = _SpeculativeApi.direct();
         _speculativeApi = direct;
         return direct;
+      } on LlamaUnsupportedException {
+        rethrow;
       } catch (_) {}
     }
 
@@ -3565,6 +3577,8 @@ class LlamaCppService {
         final asset = _SpeculativeApi.windowsAsset();
         _speculativeApi = asset;
         return asset;
+      } on LlamaUnsupportedException {
+        rethrow;
       } catch (_) {}
     }
 
@@ -3577,6 +3591,8 @@ class LlamaCppService {
           _speculativeApi = api;
           return api;
         }
+      } on LlamaUnsupportedException {
+        rethrow;
       } catch (_) {
         continue;
       }
@@ -3598,6 +3614,7 @@ class LlamaCppService {
       throw LlamaUnsupportedException(_ttsUnavailableMessage());
     }
     _ttsApiLookupAttempted = true;
+    _requireAdmittedRuntime('Text-to-speech');
 
     // Code asset URIs are identifiers for @Native, not dlopen file names.
     final direct = _TtsApi.tryLoad(
@@ -3612,11 +3629,14 @@ class LlamaCppService {
         in candidates ?? _llamadartWrapperLibraryCandidates()) {
       try {
         final library = (open ?? _openWrapperLibrary)(candidate);
+        requireAdmittedLibrary(library, capability: 'Text-to-speech');
         final api = _TtsApi.tryLoad(library.lookup);
         if (api != null) {
           _ttsApi = api;
           return api;
         }
+      } on LlamaUnsupportedException {
+        rethrow;
       } catch (_) {
         continue;
       }
@@ -3996,6 +4016,7 @@ class LlamaCppService {
     if (model == null) {
       throw Exception("Invalid model handle");
     }
+    _requireAdmittedRuntime('Context creation');
     _ensureModelUsable(model);
     params = resolveComputeDeviceParams(
       params,
@@ -8513,6 +8534,7 @@ class LlamaCppService {
   }
 
   mtmd_context_params _mtmdContextParamsDefault() {
+    _requireAdmittedRuntime('Multimodal input');
     if (!_mtmdPrimarySymbolsUnavailable) {
       try {
         return mtmd_context_params_default();
@@ -8666,6 +8688,7 @@ class LlamaCppService {
     Pointer<mtmd_context> ctx,
     Pointer<Char> pathPtr,
   ) {
+    _requireAdmittedRuntime('Multimodal input');
     final barrier = _mtmdBarrier;
     if (barrier != null) return barrier.mtmdBitmapInitFromFile(ctx, pathPtr);
     if (!_mtmdPrimarySymbolsUnavailable) {
@@ -8701,6 +8724,7 @@ class LlamaCppService {
     Pointer<UnsignedChar> data,
     int size,
   ) {
+    _requireAdmittedRuntime('Multimodal input');
     final barrier = _mtmdBarrier;
     if (barrier != null) return barrier.mtmdBitmapInitFromBuf(ctx, data, size);
     if (!_mtmdPrimarySymbolsUnavailable) {
@@ -9427,11 +9451,11 @@ class LlamaCppService {
       return 'Video input is unavailable on $platform: the llamadart native '
           'artifacts for this platform are built without mtmd video support '
           '(upstream forces MTMD_VIDEO off when LLAMA_SUBPROCESS, which '
-          'spawns FFmpeg, is off), so mtmd_helper_support_video reports '
-          'false. Extract and send image frames instead.';
+          'spawns FFmpeg, is off), so mtmd_helper_get_capabilities reports '
+          'no video. Extract and send image frames instead.';
     }
     return 'Video input is unavailable: the loaded native mtmd runtime '
-        'reports no video support (mtmd_helper_support_video is false). On '
+        'reports no video support (mtmd_helper_get_capabilities().video is false). On '
         'the pinned $llamaCppTag macOS, Linux and Windows artifacts this means '
         'the loaded multimodal projector has no vision encoder; load a vision '
         'projector. Otherwise the runtime is an older or custom build without '
@@ -9450,10 +9474,15 @@ class LlamaCppService {
       return false;
     }
 
+    final model = _modelForMtmdContext(mmContextHandle);
+    if (model == null) {
+      return false;
+    }
+
     if (!_mtmdPrimarySymbolsUnavailable &&
         !_mtmdVideoPrimarySymbolUnavailable) {
       try {
-        return mtmd_helper_support_video(mmCtx);
+        return mtmd_helper_get_capabilities(model, mmCtx).video;
       } on ArgumentError {
         // Video helpers were added after the core mtmd surface. Do not mark
         // working vision/audio symbols unavailable when only this optional
@@ -9463,7 +9492,16 @@ class LlamaCppService {
     }
 
     final fallback = _resolveMtmdFallbackApi();
-    return fallback?.supportsVideo(mmCtx) ?? false;
+    return fallback?.supportsVideo(model, mmCtx) ?? false;
+  }
+
+  Pointer<llama_model>? _modelForMtmdContext(int mmContextHandle) {
+    for (final entry in _modelToMtmd.entries) {
+      if (entry.value == mmContextHandle) {
+        return _models[entry.key]?.pointer;
+      }
+    }
+    return null;
   }
 
   /// Reports whether the model [modelHandle] can run decision heads.
@@ -9558,6 +9596,7 @@ class LlamaCppService {
         resolvedGpuLayers: resolvedGpuLayers,
       );
 
+      _requireAdmittedRuntime('Decision head');
       final ctxParams = llama_context_default_params();
       applyDecisionContextParams(
         ctxParams,
