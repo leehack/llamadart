@@ -3301,7 +3301,8 @@ class LlamaEngine implements LlamadartEngine<LlamaEngineCapabilities> {
   /// On native llama.cpp, `tokenizer.ggml.bos_token` and
   /// `tokenizer.ggml.eos_token` hold the vocabulary's BOS and EOS token text as
   /// llama.cpp resolves it for a chat template (including its default ids for
-  /// a vocabulary that sets none), empty only when the id is negative.
+  /// a vocabulary that sets none), empty when the id is negative or has no
+  /// piece text.
   ///
   /// On native LiteRT-LM, `tokenizer.chat_template` is the template the
   /// runtime renders for text-only chats: the bundle's embedded template, or

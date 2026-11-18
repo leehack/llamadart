@@ -421,6 +421,10 @@ void main() {
           routeNotRun =
               'legacy assets are ${assetFacts[assets]?['assetsTag']}, '
               'not $_legacyAssetsTag';
+        } else if (!legacy &&
+            binding['coreVariant'] != 'wasm32' &&
+            binding['coreVariant'] != 'wasm64') {
+          routeNotRun = 'unexpected coreVariant: ${binding['coreVariant']}';
         }
       });
 
@@ -431,15 +435,17 @@ void main() {
         }
         if (notRunReason != null || routeNotRun != null) return;
         final facts = assetFacts[assets];
-        final coreKey = binding['coreVariant'] == 'wasm64'
-            ? 'coreWasm64Sha256'
-            : 'coreWasm32Sha256';
+        final coreKey = switch (binding['coreVariant']) {
+          'wasm64' => 'coreWasm64Sha256',
+          'wasm32' => 'coreWasm32Sha256',
+          _ => null,
+        };
         final receipt = {
           'route': route.name,
           'results': results,
           'binding': binding,
           ...?facts,
-          'coreWasmSha256': facts?[coreKey],
+          'coreWasmSha256': coreKey == null ? null : facts?[coreKey],
           ...modelFacts,
           'penalty': recorder.calls.isEmpty
               ? null
