@@ -6,6 +6,7 @@ import 'dart:ffi';
 import 'dart:io';
 import 'dart:mirrors';
 
+import 'package:llamadart/src/backends/llama_cpp/bindings.dart' as llama;
 import 'package:llamadart/src/backends/llama_cpp/llama_cpp_service.dart';
 import 'package:llamadart/src/core/exceptions.dart';
 import 'package:path/path.dart' as path;
@@ -230,16 +231,6 @@ void main() {
       test(
         '$mode resolves the complete real ABI from its code asset',
         () async {
-          final result = await Process.run(Platform.resolvedExecutable, [
-            kernel,
-            mode,
-          ], workingDirectory: temp.path);
-          expect(
-            result.exitCode,
-            0,
-            reason: '${result.stdout}\n${result.stderr}',
-          );
-          expect(result.stdout, contains('ABI=1 required=12'));
           final selected =
               ((_nativeAssets()['native-assets'] as Map)[Abi.current()
                           .toString()]
@@ -247,8 +238,20 @@ void main() {
                       ? 'package:llamadart/llamadart_wrapper'
                       : 'package:llamadart/llamadart']
                   as List;
+          final assetPath = selected[1] as String;
+          final result = await Process.run(Platform.resolvedExecutable, [
+            kernel,
+            mode,
+            assetPath,
+          ], workingDirectory: temp.path);
+          expect(
+            result.exitCode,
+            0,
+            reason: '${result.stdout}\n${result.stderr}',
+          );
+          expect(result.stdout, contains('ABI=1 required=12'));
           final bundleHasStreaming = latin1
-              .decode(File(selected[1] as String).readAsBytesSync())
+              .decode(File(assetPath).readAsBytesSync())
               .contains('llama_dart_tts_start_streaming');
           expect(
             result.stdout,
@@ -260,6 +263,59 @@ void main() {
         },
       );
     }
+  });
+
+  group('streamed PCM read guard', () {
+    test('throws when native sample count shrinks below offset', () {
+      var reportedSamples = 3;
+      final getOutputInfo =
+          NativeCallable<
+            Int32 Function(
+              Pointer<llama.llama_dart_tts>,
+              Pointer<llama.llama_dart_tts_output_info>,
+            )
+          >.isolateLocal((
+            Pointer<llama.llama_dart_tts> _,
+            Pointer<llama.llama_dart_tts_output_info> info,
+          ) {
+            info.ref.sample_count = reportedSamples;
+            return llama.llama_dart_tts_status.LLAMA_DART_TTS_STATUS_OK.value;
+          }, exceptionalReturn: -1);
+      addTearDown(getOutputInfo.close);
+
+      final api = _load(
+        (name) => name == 'llama_dart_tts_get_output_info'
+            ? getOutputInfo.nativeFunction
+            : version.nativeFunction,
+      );
+      expect(api, isNotNull);
+
+      final service = LlamaCppService();
+      expect(
+        () => reflect(service).invoke(_symbol('_readTtsPcmSince'), [
+          api,
+          nullptr.cast<llama.llama_dart_tts>(),
+          5,
+        ]),
+        throwsA(
+          isA<LlamaTextToSpeechException>().having(
+            (error) => error.message,
+            'message',
+            contains('shrank'),
+          ),
+        ),
+      );
+
+      reportedSamples = 5;
+      expect(
+        reflect(service).invoke(_symbol('_readTtsPcmSince'), [
+          api,
+          nullptr.cast<llama.llama_dart_tts>(),
+          5,
+        ]).reflectee,
+        isNull,
+      );
+    });
   });
 }
 

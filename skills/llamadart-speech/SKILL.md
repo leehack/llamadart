@@ -199,7 +199,9 @@ description: >-
     Chatterbox, Web, native runtimes before llamadart-native `v1.0.0-1`; see
     `incrementalAudioUnsupportedReason`). Qwen3-TTS chunks are about 5.76 s
     apart. Match events with `is`, not an exhaustive `switch`. No output
-    backpressure.
+    backpressure: a paused `events` subscription buffers every chunk plus the
+    final event (about twice the audio). Cancelling the subscription does not
+    cancel synthesis; call `task.cancel()`.
   - `result.truncated` is true when generation hit `maxFrames` (default
     512); it is not an error.
   - Use `result.toWavBytes()` for 16-bit WAV and `result.duration` for

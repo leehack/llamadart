@@ -42,7 +42,7 @@ Use this checklist when upgrading `llamadart` across minor or major versions.
 
 `TextToSpeechEvent` gains `TextToSpeechAudioChunkEvent`; exhaustive `switch`
 code needs a case. See
-[`MIGRATION.md`](https://github.com/leehack/llamadart/blob/main/MIGRATION.md#019x---020-streamed-text-to-speech-event).
+[`MIGRATION.md`](https://github.com/leehack/llamadart/blob/main/MIGRATION.md#019x---0200-streamed-text-to-speech-event).
 
 ### 0.19.x: Android Vulkan Qwen3.5
 

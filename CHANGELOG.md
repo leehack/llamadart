@@ -3,6 +3,8 @@ Releases before 0.10.0 are in the
 
 ## Unreleased
 
+- Refuse `TextToSpeechRequest(streamAudio: true)` with `LlamaTextToSpeechException` when backend capabilities lack a positive sample rate or channel count instead of emitting `0` Hz chunks ([#2023](https://github.com/leehack/llamadart/issues/2023)).
+
 - Fixed Gemma 4 tool-call parsing dropping or corrupting `<|"|>`-delimited string arguments that contain raw newlines, `"` or backslashes; delimited text is now taken verbatim, as in llama.cpp ([#2041](https://github.com/leehack/llamadart/issues/2041)).
 
 - Adopt `leehack/llamadart-native@v1.0.0-1` (llama.cpp `v1.0.0`, `b1b770d9`) with regenerated bindings; it keeps the `v0.9.0` ARM FP16 fixes. The video capability probe uses `mtmd_helper_get_capabilities`, the replacement for the deprecated `mtmd_helper_support_video`.

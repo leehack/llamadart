@@ -437,9 +437,12 @@ class TextToSpeechTask {
   ///
   /// This is a single-subscription stream. It never emits an error: a failed
   /// or cancelled task closes it without a final event, and [done] and
-  /// [result] report why. Without [TextToSpeechRequest.streamAudio], PCM
-  /// arrives only in the final event. A paused subscription is not
-  /// backpressure: events buffer, at most the utterance.
+  /// [result] report why. Cancelling the subscription does not cancel
+  /// synthesis; call [cancel] to stop the task. Without
+  /// [TextToSpeechRequest.streamAudio], PCM arrives only in the final event.
+  /// A paused subscription is not backpressure: events buffer, holding the
+  /// utterance (or every chunk plus the final event, about twice the audio,
+  /// when [TextToSpeechRequest.streamAudio] is true).
   Stream<TextToSpeechEvent> get events => _eventsController.stream;
 
   /// Completes once the task succeeds, is cancelled, or fails. It never
@@ -840,6 +843,30 @@ class TextToSpeechEngine implements LlamadartEngine<TextToSpeechCapabilities> {
         }
       }
 
+      final int streamSampleRateHz;
+      final int streamChannelCount;
+      if (request.streamAudio) {
+        final rate = currentCapabilities.sampleRateHz;
+        final channels = currentCapabilities.channelCount;
+        if (rate == null || rate <= 0) {
+          throw LlamaTextToSpeechException(
+            'Text-to-speech streaming requires a positive sample rate from '
+            'backend capabilities.',
+          );
+        }
+        if (channels == null || channels <= 0) {
+          throw LlamaTextToSpeechException(
+            'Text-to-speech streaming requires a positive channel count from '
+            'backend capabilities.',
+          );
+        }
+        streamSampleRateHz = rate;
+        streamChannelCount = channels;
+      } else {
+        streamSampleRateHz = 0;
+        streamChannelCount = 1;
+      }
+
       final task = TextToSpeechTask._(
         onCancel: _engine.cancelTextToSpeechBackend,
       );
@@ -850,8 +877,8 @@ class TextToSpeechEngine implements LlamadartEngine<TextToSpeechCapabilities> {
           task,
           request,
           normalizedLanguage,
-          sampleRateHz: currentCapabilities.sampleRateHz ?? 0,
-          channelCount: currentCapabilities.channelCount ?? 1,
+          sampleRateHz: streamSampleRateHz,
+          channelCount: streamChannelCount,
         ),
       );
       return task;
