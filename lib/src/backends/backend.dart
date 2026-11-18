@@ -960,8 +960,9 @@ class BackendStreamingSpeechToTextUpdate {
 /// work and releases native resources.
 ///
 /// Implementations must terminate the session and release all native resources
-/// if [pushAudio] or [finish] throws, or when emitting an error on [updates];
-/// the public layer relies on this and does not call [cancel] after a failure.
+/// if [pushAudio] or [finish] throws, or when emitting an error on [updates].
+/// [cancel] may still be called after a failed push or finish and must be
+/// idempotent.
 abstract class BackendStreamingSpeechToTextSession {
   /// Cumulative confirmed transcript updates and accepted sample counts.
   ///

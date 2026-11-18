@@ -975,7 +975,12 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
       name: 'speech-to-text-stream-smoke',
       group: LocalE2eScenarioGroup.dartLocalOnly,
       description:
-          'Run typed native llama.cpp live PCM streaming ASR (Voxtral Realtime, LFM3-Audio, Qwen3 refusal, 300s bounds).',
+          'Run typed native llama.cpp live PCM streaming ASR (Voxtral Realtime, '
+          'LFM3-Audio, Qwen3 refusal, 300s bounds; set '
+          'LLAMADART_STT_STREAM_VOXTRAL_MODEL_PATH / _MMPROJ_PATH, '
+          'LLAMADART_STT_STREAM_LFM3_MODEL_PATH / _MMPROJ_PATH, '
+          'LLAMADART_STT_STREAM_QWEN_MODEL_PATH / _MMPROJ_PATH, optional '
+          'LLAMADART_STT_STREAM_AUDIO_PATH and LLAMADART_STT_LIVE_PACED=1).',
       requiresDevice: false,
       stepsBuilder: (context) => [
         LocalE2eCommandStep(

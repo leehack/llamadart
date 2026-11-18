@@ -638,7 +638,14 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
     covers:
         'real native llama.cpp live PCM streaming via LlamaCppLiveAsrAdapter '
         '(Voxtral Realtime, LFM3-Audio 2048 floor restart, chunking parity, '
-        'truncation, cancellation/reuse, Qwen3-ASR refusal, 300s bounded run)',
+        'truncation, cancellation/reuse, Qwen3-ASR refusal, 300s bounded run; '
+        'set LLAMADART_STT_STREAM_VOXTRAL_MODEL_PATH, '
+        'LLAMADART_STT_STREAM_VOXTRAL_MMPROJ_PATH, '
+        'LLAMADART_STT_STREAM_LFM3_MODEL_PATH, '
+        'LLAMADART_STT_STREAM_LFM3_MMPROJ_PATH, '
+        'LLAMADART_STT_STREAM_QWEN_MODEL_PATH, '
+        'LLAMADART_STT_STREAM_QWEN_MMPROJ_PATH, optional '
+        'LLAMADART_STT_STREAM_AUDIO_PATH and LLAMADART_STT_LIVE_PACED=1)',
     command:
         'dart run tool/testing/run_local_e2e.dart --scenario '
         'speech-to-text-stream-smoke',

@@ -30,6 +30,17 @@ String? _envFile(String key, [String? fallbackKey]) {
 
 bool _exists(String? path) => path != null && File(path).existsSync();
 
+String? _requireStreamInput(String? path, String envKey) {
+  if (path == null || path.isEmpty) {
+    markTestSkipped('Set $envKey to run the live ASR stream E2E.');
+    return null;
+  }
+  if (!File(path).existsSync()) {
+    throw StateError('$envKey does not exist: $path');
+  }
+  return path;
+}
+
 Float32List _decodeWavPcm16Mono16k(String path) {
   final bytes = File(path).readAsBytesSync();
   final data = ByteData.sublistView(bytes);
@@ -167,11 +178,29 @@ void main() {
   test(
     'Voxtral Realtime public parity, irregular chunkings, truncation, cancel/reuse, and 300s run',
     () async {
-      final jfk = _decodeWavPcm16Mono16k(jfkPath);
+      final resolvedJfk = _requireStreamInput(
+        jfkPath,
+        'LLAMADART_STT_STREAM_AUDIO_PATH',
+      );
+      final resolvedModel = _requireStreamInput(
+        voxtralModel,
+        'LLAMADART_STT_STREAM_VOXTRAL_MODEL_PATH',
+      );
+      final resolvedMmproj = _requireStreamInput(
+        voxtralMmproj,
+        'LLAMADART_STT_STREAM_VOXTRAL_MMPROJ_PATH',
+      );
+      if (resolvedJfk == null ||
+          resolvedModel == null ||
+          resolvedMmproj == null) {
+        return;
+      }
+
+      final jfk = _decodeWavPcm16Mono16k(resolvedJfk);
       final engine = await SpeechToTextEngine.load(
         SpeechToTextModel(
-          ModelSource.path(voxtralModel!),
-          projector: ModelSource.path(voxtralMmproj!),
+          ModelSource.path(resolvedModel),
+          projector: ModelSource.path(resolvedMmproj),
           adapter: const LlamaCppLiveAsrAdapter(),
         ),
         params: const ModelParams(
@@ -213,7 +242,7 @@ void main() {
         final directBackend = NativeLlamaBackend();
         try {
           final m = await directBackend.modelLoad(
-            voxtralModel,
+            resolvedModel,
             const ModelParams(
               contextSize: 4096,
               numberOfThreads: 2,
@@ -230,7 +259,7 @@ void main() {
           );
           final p = await directBackend.multimodalContextCreate(
             m,
-            voxtralMmproj,
+            resolvedMmproj,
           );
           final directSession = await directBackend.startAsrStreamSession(
             c,
@@ -417,8 +446,8 @@ void main() {
       // Voxtral 512 context truncation on 55s clip.
       final smallEngine = await SpeechToTextEngine.load(
         SpeechToTextModel(
-          ModelSource.path(voxtralModel),
-          projector: ModelSource.path(voxtralMmproj),
+          ModelSource.path(resolvedModel),
+          projector: ModelSource.path(resolvedMmproj),
           adapter: const LlamaCppLiveAsrAdapter(),
         ),
         params: const ModelParams(
@@ -457,11 +486,29 @@ void main() {
   test(
     'LFM3-Audio 2048 floor restart, chunking parity, and 300s run',
     () async {
-      final jfk = _decodeWavPcm16Mono16k(jfkPath);
+      final resolvedJfk = _requireStreamInput(
+        jfkPath,
+        'LLAMADART_STT_STREAM_AUDIO_PATH',
+      );
+      final resolvedModel = _requireStreamInput(
+        lfm3Model,
+        'LLAMADART_STT_STREAM_LFM3_MODEL_PATH',
+      );
+      final resolvedMmproj = _requireStreamInput(
+        lfm3Mmproj,
+        'LLAMADART_STT_STREAM_LFM3_MMPROJ_PATH',
+      );
+      if (resolvedJfk == null ||
+          resolvedModel == null ||
+          resolvedMmproj == null) {
+        return;
+      }
+
+      final jfk = _decodeWavPcm16Mono16k(resolvedJfk);
       final engine2048 = await SpeechToTextEngine.load(
         SpeechToTextModel(
-          ModelSource.path(lfm3Model!),
-          projector: ModelSource.path(lfm3Mmproj!),
+          ModelSource.path(resolvedModel),
+          projector: ModelSource.path(resolvedMmproj),
           adapter: const LlamaCppLiveAsrAdapter(),
         ),
         params: const ModelParams(
@@ -493,8 +540,8 @@ void main() {
 
       final engine4096 = await SpeechToTextEngine.load(
         SpeechToTextModel(
-          ModelSource.path(lfm3Model),
-          projector: ModelSource.path(lfm3Mmproj),
+          ModelSource.path(resolvedModel),
+          projector: ModelSource.path(resolvedMmproj),
           adapter: const LlamaCppLiveAsrAdapter(),
         ),
         params: const ModelParams(
@@ -630,11 +677,23 @@ void main() {
   test(
     'Qwen3-ASR projector refuses LlamaCppLiveAsrAdapter',
     () async {
+      final resolvedModel = _requireStreamInput(
+        qwenModel,
+        'LLAMADART_STT_STREAM_QWEN_MODEL_PATH',
+      );
+      final resolvedMmproj = _requireStreamInput(
+        qwenMmproj,
+        'LLAMADART_STT_STREAM_QWEN_MMPROJ_PATH',
+      );
+      if (resolvedModel == null || resolvedMmproj == null) {
+        return;
+      }
+
       await expectLater(
         () => SpeechToTextEngine.load(
           SpeechToTextModel(
-            ModelSource.path(qwenModel!),
-            projector: ModelSource.path(qwenMmproj!),
+            ModelSource.path(resolvedModel),
+            projector: ModelSource.path(resolvedMmproj),
             adapter: const LlamaCppLiveAsrAdapter(),
           ),
           params: const ModelParams(

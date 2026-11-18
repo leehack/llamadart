@@ -125,7 +125,7 @@ Future<void> main(List<String> arguments) async {
 
           await session.finish();
         }
-      } on LlamaStateException {
+      } on LlamaException {
         if (!cancelled) {
           rethrow;
         }
