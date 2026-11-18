@@ -141,7 +141,7 @@ unsplit control failed its third decode with the GPU command-buffer error (the
 watchdog), and a 30-decode soak passed 30 of 30 with one image hash and a flat
 footprint. The iPhone 17 Pro (iOS 26.5) showed the dispose retention that
 runtime `v0.3.0-5` improved; four load/dispose cycles completed on both phones,
-but the iPhone 16 Pro retained memory above baseline. The current `v0.3.0-6`
+but the iPhone 16 Pro retained memory above baseline. The `v0.3.0-6`
 Apple scratch-buffer fix passed four full-VAE load/dispose cycles and eight
 decodes per device at `6b191b28` on iOS 18.3.2 and 26.5.1. Small nonzero
 residuals remain; this single session is not proof of zero leaks

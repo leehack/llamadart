@@ -157,9 +157,8 @@ creation fails, `ComputeDevice.auto` retries on the CPU with a warning;
 Image generation
 is not available on the web. On iOS, use
 `ImageModelPlacement(vaeOnCpu: true)` for CPU VAE decoding with Metal
-diffusion, or choose CPU generation. The pinned `v0.3.0-6` runtime splits Metal graphs, so a full VAE
-is admitted on iOS Metal (qualified: SD-Turbo's embedded VAE at 512x512); a runtime without the split keeps the intrinsic SDXS
-tiny-decoder policy and refuses full-VAE Metal decoding.
+diffusion, or choose CPU generation. The pinned `v0.4.0` runtime splits Metal graphs, so a full VAE
+is admitted on iOS Metal. Device qualification for v0.4.0 is pending.
 SD `v0.3.0-6` passed four full-VAE load/dispose cycles and eight decodes per device on iPhone 16 Pro (iOS 18.3.2) and iPhone 17 Pro (iOS 26.5.1), tested at `6b191b28`. Small nonzero residual memory remains; this single session is not proof of zero leaks (#2004).
 
 Per-target support, device limitations and runtime options:
@@ -176,7 +175,7 @@ Current default runtime pins:
 | --- | --- |
 | Native llama.cpp / GGUF | `leehack/llamadart-native@v1.0.0` |
 | Native LiteRT-LM / `.litertlm` | `leehack/litert-lm-native@v0.19.1-5` |
-| Web llama.cpp / GGUF | `leehack/llama-web-bridge-assets@v0.1.85` |
+| Web llama.cpp / GGUF | `leehack/llama-web-bridge-assets@v0.1.86` |
 | Web LiteRT-LM / `.litertlm` | `@litert-lm/core@0.19.0` |
 
 Native LiteRT-LM uses a lazy ABI-aware client for direct calls, services and

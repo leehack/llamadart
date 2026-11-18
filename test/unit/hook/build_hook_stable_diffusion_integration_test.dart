@@ -7,7 +7,6 @@ import 'dart:io';
 
 import 'package:code_assets/code_assets.dart';
 import 'package:hooks/hooks.dart';
-import 'package:logging/logging.dart';
 import 'package:path/path.dart' as path;
 import 'package:test/test.dart';
 
@@ -816,106 +815,8 @@ dependencies:
     );
   }
 
-  for (final (earlier, missingReason) in const [
-    (
-      'v0.3.0-3',
-      'the sd_dart_graph_split_* exports (iOS full-VAE decoding) and '
-          'Apple host-buffer and model-loader scratch release fixes',
-    ),
-    (
-      'v0.3.0-4',
-      'the Apple host-buffer and model-loader scratch release fixes',
-    ),
-  ]) {
-    test('accepts a locked companion pinning the earlier $earlier XCFramework '
-        'with an upgrade warning', () async {
-      final defines = await _flutterAppleApp(
-        companions: const [_stableDiffusionCompanionName],
-        editManifest: (manifest) => manifest
-            .replaceFirst(
-              'let stableDiffusionTag = "$stableDiffusionReleaseTag"',
-              'let stableDiffusionTag = "$earlier"',
-            )
-            .replaceFirst(
-              stableDiffusionAppleCompanionChecksums[stableDiffusionReleaseTag]!,
-              stableDiffusionAppleCompanionChecksums[earlier]!,
-            ),
-      );
-      var emitted = false;
-      final records = <LogRecord>[];
-      final subscription = Logger.root.onRecord.listen(records.add);
-      addTearDown(subscription.cancel);
-      await project.testCodeBuildHook(
-        mainMethod: build_hook.main,
-        targetOS: OS.iOS,
-        targetArchitecture: Architecture.arm64,
-        targetIOSSdk: IOSSdk.iPhoneOS,
-        userDefines: defines,
-        check: (_, output) {
-          emitted = true;
-          expect(
-            _codeAssetIds(output),
-            containsAll({_primaryAssetId, _stableDiffusionAssetId}),
-          );
-          expect(
-            output.assets.encodedAssets
-                .map((asset) => asset.asCodeAsset)
-                .where((asset) => asset.id == _stableDiffusionAssetId)
-                .every((asset) => asset.linkMode is LookupInProcess),
-            isTrue,
-          );
-        },
-      );
-      expect(emitted, isTrue);
-      final warning = records.singleWhere(
-        (record) =>
-            record.message.contains('leehack/stable-diffusion-native@$earlier'),
-      );
-      expect(warning.level, Level.WARNING);
-      expect(warning.message, contains('Its frameworks lack $missingReason.'));
-      expect(
-        warning.message,
-        contains('Depend on `$_stableDiffusionCompanionName: '),
-      );
-      expect(
-        warning.message,
-        contains('` to link $stableDiffusionReleaseTag.'),
-      );
-    });
-
-    test('rejects a locked companion pinning $earlier with another '
-        'checksum', () async {
-      final defines = await _flutterAppleApp(
-        companions: const [_stableDiffusionCompanionName],
-        editManifest: (manifest) => manifest.replaceFirst(
-          'let stableDiffusionTag = "$stableDiffusionReleaseTag"',
-          'let stableDiffusionTag = "$earlier"',
-        ),
-      );
-      await expectLater(
-        project.testCodeBuildHook(
-          mainMethod: build_hook.main,
-          targetOS: OS.iOS,
-          targetArchitecture: Architecture.arm64,
-          targetIOSSdk: IOSSdk.iPhoneOS,
-          userDefines: defines,
-          check: (_, _) => fail('Must not emit in-process assets'),
-        ),
-        throwsA(
-          predicate(
-            (error) => error.toString().contains(
-              'Companion XCFramework checksum does not match the qualified '
-              'published artifact for $earlier',
-            ),
-          ),
-        ),
-      );
-    });
-  }
-
-  // v0.3.0 grew sd_ctx_params_t: the bindings would overrun the
-  // allocation of a v0.2.0-4 runtime. The v0.3.0 runtime aborts on FP8
-  // weights on Metal, which the image preflight admits on the pinned runtime.
+  // The v0.3.0 line uses the old image generation parameter layout,
+  // including the XCFrameworks the previous hook admitted.
   for (final (tag, checksum) in [
     (
       'v0.2.0-4',
@@ -925,6 +826,8 @@ dependencies:
       'v0.3.0',
       '3b83a0c21a00f6418890b679ea45b00c20d012da0a57fe989635b793e09f096a',
     ),
+    for (final rebuild in [3, 4, 6])
+      _publishedStableDiffusionAppleArtifact(rebuild),
   ]) {
     test('rejects a locked companion pinning the published $tag '
         'XCFramework', () async {
@@ -965,18 +868,17 @@ dependencies:
     });
   }
 
-  // A core names the first pinning companion only within that companion's
-  // minor, and release prep moves both to a new minor together.
-  final companionMinor = stableDiffusionAppleCompanionVersion.substring(
-    0,
-    stableDiffusionAppleCompanionVersion.lastIndexOf('.'),
-  );
-  for (final core in ['$companionMinor.0', '$companionMinor.1']) {
-    const requirement =
-        'Depend on `llamadart_stable_diffusion_flutter: '
-        '^$stableDiffusionAppleCompanionVersion`';
-    test('core $core: the stable_diffusion companion rejection names the '
-        'first compatible companion release', () async {
+  for (final (core, requirement) in const [
+    (
+      '0.19.11',
+      'Resolve llamadart_stable_diffusion_flutter with a Package.swift pin '
+          'matching leehack/stable-diffusion-native@v0.4.0',
+    ),
+    ('0.20.0', 'Depend on `llamadart_stable_diffusion_flutter: ^0.20.0`'),
+    ('0.20.1', 'Depend on `llamadart_stable_diffusion_flutter: ^0.20.0`'),
+  ]) {
+    test('core $core: the stable_diffusion companion rejection gives matching '
+        'pin guidance', () async {
       final defines = await _flutterAppleApp(
         companions: const [_stableDiffusionCompanionName],
         editManifest: (manifest) => manifest.replaceFirst(
@@ -999,6 +901,20 @@ dependencies:
       );
     });
   }
+}
+
+(String, String) _publishedStableDiffusionAppleArtifact(int rebuild) {
+  final manifest =
+      jsonDecode(
+            File(
+              'test/fixtures/native/stable_diffusion_v0_3_0_${rebuild}_manifest.json',
+            ).readAsStringSync(),
+          )
+          as Map<String, dynamic>;
+  final apple = (manifest['artifacts'] as List)
+      .cast<Map<String, dynamic>>()
+      .singleWhere((artifact) => artifact['kind'] == 'xcframework');
+  return (manifest['tag'] as String, apple['sha256'] as String);
 }
 
 const _impliedSkipWarning =

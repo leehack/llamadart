@@ -58,8 +58,8 @@ final class ImageHiresFix {
 
   /// Sampling steps of the second pass, from 1 to
   /// [ImageGenerationRequest.maxSteps]. `null` uses the first pass's steps.
-  /// As in stable-diffusion.cpp, the pass runs the last steps of a schedule
-  /// of `steps / denoisingStrength` steps, which can be one more than this.
+  /// The pass runs this many steps from the end of the runtime's schedule
+  /// of `steps / denoisingStrength` steps.
   final int? steps;
 
   /// How much noise the second pass adds, from [minDenoisingStrength] to 1.
@@ -92,7 +92,7 @@ final class ImageHiresFix {
 ///
 /// [width] and [height] are the first-pass size; the images have the final
 /// size of [hiresFix]. The bounded recipe requires the pinned
-/// stable_diffusion v0.3.0-1 runtime on macOS with the CPU or Metal, and an
+/// stable_diffusion v0.4.0 runtime on macOS with the CPU or Metal, and an
 /// SD 1.x or SD 2.x checkpoint with its embedded full VAE and no component
 /// overrides; check `ImageGenerationCapabilities.supportsHiresFix`. Other
 /// recipes, and requests that combine it with image editing, ControlNet,
@@ -241,7 +241,7 @@ void validateImageHiresFixRecipe(
   if (!config.hiresFixRecipeVerified ||
       !imageHiresFixModelVersions.contains(modelVersion)) {
     throw LlamaUnsupportedException(
-      'A hires fix requires the stable_diffusion v0.3.0-1 runtime on macOS '
+      'A hires fix requires the stable_diffusion v0.4.0 runtime on macOS '
       'with the CPU or Metal, and an SD 1.x or SD 2.x checkpoint with its '
       'embedded full VAE and no component overrides. This model '
       '(${modelVersion.isEmpty ? 'no detected family' : modelVersion}), '

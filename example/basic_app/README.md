@@ -437,9 +437,8 @@ To compare containers without downloading models, supply comma-separated local
 files with **identical tensor values**, baseline first:
 
 - FP8 image weights load as F16 on Metal with the pinned
-  stable-diffusion-native v0.3.0-1 runtime. An older runtime refuses them
-  before native construction, including automatic selection; use
-  `--device cpu` or compatible non-FP8 weights there. CPU selection preserves
+  stable-diffusion-native v0.4.0 runtime. The engine checks the runtime ABI
+  before creating a context for any device. CPU selection preserves
   native dtype admission and does not qualify every FP8 model
   ([#1446](https://github.com/leehack/llamadart/issues/1446)). To check Metal
   with an existing FP8 SD-Turbo model, set `LLAMADART_IMAGE_FP8_MODEL` and run
