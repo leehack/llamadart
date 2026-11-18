@@ -9,7 +9,15 @@ are deliberately unavailable. Individual-file GGUF/Safetensors and explicit
 PyTorch roles retain their existing route; no remote set/repository fetch,
 native owner/ABI/pin change, GPU/device or new validation catalog is involved.
 
-## Recipe and provenance
+## v0.4.0 reference output
+
+On macOS arm64 CPU, the complete SD-Turbo checkpoint, its two-shard
+directory and its explicit shard index produced identical 128×128 RGB bytes
+through the direct C API. The v0.4.0 library (upstream `5dcfa79`) produced
+SHA-256 `bbc3a78965d7ff99dabb48323065d62623f1b7eaa1127e26b2d494829d1e9b9c`
+for all three inputs using the fixture and settings below.
+
+## v0.3.0-1 recipe and provenance
 
 Requalified on stable-diffusion-native `v0.3.0-1` (2026-10-27): every result below is byte-identical to the `v0.3.0` measurement ([#922](https://github.com/leehack/llamadart/issues/922)).
 

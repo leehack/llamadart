@@ -92,7 +92,7 @@ final class ImageHiresFix {
 ///
 /// [width] and [height] are the first-pass size; the images have the final
 /// size of [hiresFix]. The bounded recipe requires the pinned
-/// stable_diffusion v0.3.0-1 runtime on macOS with the CPU or Metal, and an
+/// stable_diffusion v0.4.0 runtime on macOS with the CPU or Metal, and an
 /// SD 1.x or SD 2.x checkpoint with its embedded full VAE and no component
 /// overrides; check `ImageGenerationCapabilities.supportsHiresFix`. Other
 /// recipes, and requests that combine it with image editing, ControlNet,
@@ -241,7 +241,7 @@ void validateImageHiresFixRecipe(
   if (!config.hiresFixRecipeVerified ||
       !imageHiresFixModelVersions.contains(modelVersion)) {
     throw LlamaUnsupportedException(
-      'A hires fix requires the stable_diffusion v0.3.0-1 runtime on macOS '
+      'A hires fix requires the stable_diffusion v0.4.0 runtime on macOS '
       'with the CPU or Metal, and an SD 1.x or SD 2.x checkpoint with its '
       'embedded full VAE and no component overrides. This model '
       '(${modelVersion.isEmpty ? 'no detected family' : modelVersion}), '

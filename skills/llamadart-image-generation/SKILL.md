@@ -52,10 +52,12 @@ description: >-
   `flutter build ios` output shows neither build warning; Xcode and
   `xcodebuild` show both. Use the companion with the core's `MAJOR.MINOR`. Adding it
   opts the app into the runtime (about 37 MB per Apple target).
-The core accepts only an Apple SD companion pinning its own runtime
-(`v0.3.0-6`, or `v0.3.0-4`/`v0.3.0-3` with an upgrade warning): runtimes before `v0.3.0-1` abort on FP8 weights on Metal, and those before
-`v0.3.0` have a smaller `sd_ctx_params_t`. Upgrade the
-core and `llamadart_stable_diffusion_flutter` together. SD `v0.3.0-6` passed four full-VAE load/dispose cycles and eight decodes per device on iPhone 16 Pro (iOS 18.3.2) and iPhone 17 Pro (iOS 26.5.1), tested at `6b191b28`. Small nonzero residual memory remains; this single session is not proof of zero leaks (#2004).
+Treat `<image:...>` in positive and negative prompts as literal text; the
+engine handles the native parser escape.
+
+The Apple companion must bundle stable-diffusion-native `v0.4.0`. Upgrade the
+core and companion together: v0.4.0 uses a larger image-generation parameter
+structure than the v0.3.x runtimes. SD `v0.3.0-6` passed four full-VAE load/dispose cycles and eight decodes per device on iPhone 16 Pro (iOS 18.3.2) and iPhone 17 Pro (iOS 26.5.1), tested at `6b191b28`. Small nonzero residual memory remains; this single session is not proof of zero leaks (#2004).
 - Platforms: Android arm64 (CPU only; Armv8.2 dot-product and fp16), iOS 16.4+
   and macOS 13.3+ (Metal), Linux arm64/x64 and Windows x64 (CPU or Vulkan; x64
   CPUs need AVX2, FMA, F16C and BMI2). Web, Android x64 and Windows arm64
@@ -115,7 +117,8 @@ core and `llamadart_stable_diffusion_flutter` together. SD `v0.3.0-6` passed fou
   `ImageHiresUpscaler.latent` (no model upscaler). Progress events carry
   `pass` 0 then 1; the second pass can run one step more than `steps`.
   A cancelled or failed second pass returns no images.
-- For reference editing, load the FLUX.1 Kontext [dev] transformer with
+- v0.4.0 reports `supportsReferenceImageEditing: false` pending Kontext
+  requalification (#1222). On the previously qualified runtime, load the FLUX.1 Kontext [dev] transformer with
   `ae`, CLIP-L and T5-XXL on `ComputeDevice.gpu` (macOS Metal), check
   `(await engine.capabilities).supportsReferenceImageEditing`, and pass
   `ReferenceImageEditingRequest(prompt: 'Change the car to red.', recipe:
@@ -283,7 +286,7 @@ core and `llamadart_stable_diffusion_flutter` together. SD `v0.3.0-6` passed fou
   true` on iOS Metal throws `LlamaUnsupportedException` at load: every decode
   tripped the GPU watchdog and returned a corrupt image
   ([#1044](https://github.com/leehack/llamadart/issues/1044)). Full-VAE Metal
-  decoding on iOS is refused only without the graph split (pinned `v0.3.0-6`
+  decoding on iOS is refused only without the graph split (pinned `v0.4.0`
   has it, #1047); only SD-Turbo's embedded VAE at 512x512 is qualified, and a
   Metal command-buffer failure is an error. An older runtime needs an SDXS
   intrinsic decoder, `vaeOnCpu: true` or CPU. iOS 26: fixed in runtime `v0.3.0-5` (measured on iPhone 17 Pro; iPhone 16 Pro retained memory above baseline, #2004).

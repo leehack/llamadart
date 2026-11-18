@@ -63,7 +63,7 @@ models, memory figures and the bounded recipes for tiling, editing, ControlNet,
 hires fix, reference editing, seamless textures, module placement, the
 conditioning cache, FP8 weights and local checkpoint sets are in
 [Image generation](../guides/image-generation#support). On iOS, the pinned
-`v0.3.0-6` runtime splits Metal graphs, so full-VAE decoding is admitted;
+`v0.4.0` runtime splits Metal graphs, so full-VAE decoding is admitted;
 only SD-Turbo with its embedded full VAE at 512x512 is qualified, on an iPhone
 16 Pro and an iPhone 17 Pro ([#1047](https://github.com/leehack/llamadart/issues/1047)).
 External VAE/TAESD components, SDXL-size VAEs, larger resolutions and SDXS
@@ -238,7 +238,7 @@ web are on [Known platform issues](./known-platform-issues).
 | --- | --- |
 | llama.cpp native | `leehack/llamadart-native@v0.9.0` |
 | LiteRT-LM native | `leehack/litert-lm-native@v0.19.1-5` |
-| stable-diffusion.cpp native (opt-in, Preview) | `leehack/stable-diffusion-native@v0.3.0-6`, for [image generation](../guides/image-generation); see [Opt-in stable_diffusion runtime](./native-build-hooks#opt-in-stable_diffusion-runtime-experimental). Flutter iOS/macOS apps link its XCFramework through `llamadart_stable_diffusion_flutter` |
+| stable-diffusion.cpp native (opt-in, Preview) | `leehack/stable-diffusion-native@v0.4.0`, for [image generation](../guides/image-generation); see [Opt-in stable_diffusion runtime](./native-build-hooks#opt-in-stable_diffusion-runtime-experimental). Flutter iOS/macOS apps link its XCFramework through `llamadart_stable_diffusion_flutter` |
 | WebGPU bridge assets | `leehack/llama-web-bridge-assets`; see [Pinned bridge assets](./webgpu-bridge#pinned-bridge-assets) |
 
 SD `v0.3.0-6` passed four full-VAE load/dispose cycles and eight decodes per device on iPhone 16 Pro (iOS 18.3.2) and iPhone 17 Pro (iOS 26.5.1), tested at `6b191b28`. Small nonzero residual memory remains; this single session is not proof of zero leaks (#2004).

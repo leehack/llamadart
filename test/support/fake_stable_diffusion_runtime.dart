@@ -10,6 +10,31 @@ import 'package:llamadart/src/backends/stable_diffusion/stable_diffusion_binding
     as sd;
 import 'package:llamadart/src/backends/stable_diffusion/stable_diffusion_calls.dart';
 
+/// Resolves [lookup]'s image calls against a fake `sd_commit` export.
+StableDiffusionCalls? resolveFakeStableDiffusionExports(
+  Pointer<NativeType> Function(String) lookup, {
+  String? commit = '5dcfa79',
+  String? releaseTag,
+}) {
+  final text = commit?.toNativeUtf8().cast<Char>() ?? nullptr;
+  final export = NativeCallable<Pointer<Char> Function()>.isolateLocal(
+    () => text,
+  );
+  Pointer<NativeType> symbol(String name) =>
+      name == 'sd_commit' ? export.nativeFunction : lookup(name);
+  try {
+    return releaseTag == null
+        ? StableDiffusionCalls.tryResolve(symbol: symbol)
+        : StableDiffusionCalls.tryResolve(
+            symbol: symbol,
+            releaseTag: releaseTag,
+          );
+  } finally {
+    export.close();
+    malloc.free(text);
+  }
+}
+
 const _workerIsolateName = 'llamadart-image-generation';
 
 // Byte offsets into the state block both isolates share.
@@ -80,6 +105,7 @@ const _controlInputBytes = 48;
 const _loadsFp8AsF16OnMetal = _controlInput + _controlInputBytes * 2;
 const _intrinsicTinyPolicy = _loadsFp8AsF16OnMetal + 1;
 const _intrinsicTinyMissingWorker = _loadsFp8AsF16OnMetal + 2;
+const _wrongAbiInWorker = _loadsFp8AsF16OnMetal + 3;
 // Hires: enabled and ignore flags as bytes, then upscaler, target width and
 // height and steps as Int32, strength and scale as Float, the custom sigma
 // count as Int32 and the upscaler model path address as Int64.
@@ -242,6 +268,9 @@ final class FakeStableDiffusionRuntime {
 
   /// Makes [resolver] return `null` in the worker isolate only.
   set missingInWorker(bool value) => _state[_missingInWorker] = value ? 1 : 0;
+
+  /// Makes [resolver] reject the ABI in the worker isolate only.
+  set wrongAbiInWorker(bool value) => _state[_wrongAbiInWorker] = value ? 1 : 0;
 
   /// Makes the load fail.
   set rejectLoad(bool value) => _state[_rejectLoad] = value ? 1 : 0;
@@ -654,6 +683,9 @@ final class _FakeCalls {
   }
 
   StableDiffusionCalls? resolve() {
+    if (_inWorker && _state[_wrongAbiInWorker] != 0) {
+      throw stableDiffusionAbiUnsupported();
+    }
     if (_inWorker && _state[_missingInWorker] != 0) {
       return null;
     }

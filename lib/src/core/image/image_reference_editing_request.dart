@@ -27,13 +27,13 @@ enum ImageReferenceEditingRecipe {
 /// reference. References are copied on creation and stay owned until the
 /// native call has ended, including after a cancel.
 ///
-/// The bounded recipe requires the pinned stable_diffusion v0.3.0-1 runtime
-/// on macOS with Metal; check
-/// `ImageGenerationCapabilities.supportsReferenceImageEditing`. Other
-/// models, components, runtimes, devices and platforms, more references,
-/// and requests that combine it with image editing, ControlNet, a hires
-/// fix, VAE tiling or circular axes throw [LlamaUnsupportedException]
-/// before a task starts.
+/// The bounded recipe was qualified on stable_diffusion v0.3.0-1 with
+/// macOS Metal. The bundled v0.4.0 runtime refuses it pending recipe
+/// requalification. Check
+/// `ImageGenerationCapabilities.supportsReferenceImageEditing` before use.
+/// Unqualified recipes and requests that combine reference editing with
+/// image editing, ControlNet, a hires fix, VAE tiling or circular axes
+/// throw [LlamaUnsupportedException] before a task starts.
 final class ReferenceImageEditingRequest extends ImageGenerationRequest {
   /// Largest output and reference size: 1024 by 1024 pixels. The runtime
   /// shrinks larger references before encoding them.
@@ -117,8 +117,8 @@ void validateImageReferenceEditingRecipe(
   }
   if (!config.referenceEditingRecipeVerified || modelVersion != 'Flux') {
     throw LlamaUnsupportedException(
-      'Reference image editing requires the stable_diffusion v0.3.0-1 '
-      'runtime on macOS with Metal, and exactly a FLUX.1 Kontext [dev] '
+      'Reference image editing was qualified on stable_diffusion v0.3.0-1 '
+      'on macOS with Metal and exactly a FLUX.1 Kontext [dev] '
       'transformer with the FLUX autoencoder, CLIP-L and T5-XXL. This model '
       '(${modelVersion.isEmpty ? 'no detected family' : modelVersion}), '
       'runtime or device recipe is not qualified for reference editing.',

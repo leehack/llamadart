@@ -27,10 +27,15 @@ void main() {
       status['version'],
       isA<String>().having((v) => v, 'version', isNotEmpty),
     );
-    expect(
-      status['commit'],
-      isA<String>().having((v) => v, 'commit', isNotEmpty),
-    );
+    expect(status['commit'], '5dcfa79');
+    expect(status['abi'], {
+      'size': 560,
+      'controlType': 0,
+      'controlTypeAt552': 0,
+      'width': 512,
+      'height': 512,
+      'canariesIntact': true,
+    });
     final devices = (status['devices'] as List).cast<String>();
     expect(devices, contains(startsWith('CPU')));
     expect(devices, contains(startsWith('MTL')));
@@ -95,7 +100,12 @@ $hooks''');
   final bin = await Directory(path.join(consumer.path, 'bin')).create();
   await File(path.join(bin.path, 'probe.dart')).writeAsString(r'''
 import 'dart:convert';
+import 'dart:ffi';
 
+import 'package:ffi/ffi.dart';
+import 'package:llamadart/src/backends/stable_diffusion/stable_diffusion_bindings.dart'
+    as sd;
+import 'package:llamadart/src/backends/stable_diffusion/stable_diffusion_calls.dart';
 import 'package:llamadart/src/backends/stable_diffusion/stable_diffusion_runtime.dart';
 
 void main() {
@@ -106,8 +116,34 @@ void main() {
     'commit': status.commit,
     'devices': [for (final d in status.devices) '${d.name}\t${d.description}'],
     'reason': status.unavailableReason?.message,
+    'abi': status.isAvailable
+        ? checkImageParams(StableDiffusionCalls.tryResolve()!)
+        : null,
   })}');
 }
+
+Map<String, Object?> checkImageParams(StableDiffusionCalls calls) =>
+  using((arena) {
+    const paramsSize = 560;
+    const guardSize = 32;
+    const sentinel = 0xA5;
+    final storage = arena<Uint8>(paramsSize + 2 * guardSize);
+    final bytes = storage.asTypedList(paramsSize + 2 * guardSize);
+    bytes.fillRange(0, bytes.length, sentinel);
+    final params = (storage + guardSize).cast<sd.sd_img_gen_params_t>();
+    calls.imageGenerationParamsInit(params);
+    return {
+      'size': sizeOf<sd.sd_img_gen_params_t>(),
+      'controlType': params.ref.control_type.value,
+      'controlTypeAt552': params.cast<Uint32>()[552 ~/ sizeOf<Uint32>()],
+      'width': params.ref.width,
+      'height': params.ref.height,
+      'canariesIntact': [
+        ...bytes.take(guardSize),
+        ...bytes.skip(guardSize + paramsSize),
+      ].every((byte) => byte == sentinel),
+    };
+  });
 ''');
 
   await _expectSuccess(Platform.resolvedExecutable, [

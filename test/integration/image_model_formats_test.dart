@@ -217,7 +217,7 @@ void main() {
       'ControlNet support only when the runtime proves it', () async {
     driver
       ..operatingSystemOverride = 'macos'
-      ..runtimeCommit = 'be48649';
+      ..runtimeCommit = '5dcfa79';
     runtime.modelVersion = 'SD 1.x';
     final checkpoint = await file(
       'sd15.safetensors',

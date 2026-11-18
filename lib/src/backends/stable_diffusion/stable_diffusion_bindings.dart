@@ -168,6 +168,9 @@ external void free_sd_video_generation_result(
 @ffi.Native<ffi.Void Function(ffi.Pointer<upscaler_ctx_t>)>()
 external void free_upscaler_ctx(ffi.Pointer<upscaler_ctx_t> upscaler_ctx);
 
+@ffi.Native<ffi.Void Function(ffi.Pointer<video_upscaler_ctx_t>)>()
+external void free_video_upscaler_ctx(ffi.Pointer<video_upscaler_ctx_t> ctx);
+
 @ffi.Native<
   ffi.Bool Function(
     ffi.Pointer<sd_ctx_t>,
@@ -243,6 +246,15 @@ external ffi.Pointer<upscaler_ctx_t> new_upscaler_ctx(
 );
 
 @ffi.Native<
+  ffi.Pointer<video_upscaler_ctx_t> Function(
+    ffi.Pointer<sd_video_upscaler_ctx_params_t>,
+  )
+>()
+external ffi.Pointer<video_upscaler_ctx_t> new_video_upscaler_ctx(
+  ffi.Pointer<sd_video_upscaler_ctx_params_t> params,
+);
+
+@ffi.Native<
   ffi.Bool Function(
     sd_image_t,
     ffi.Float,
@@ -281,6 +293,15 @@ void sd_cancel_generation(ffi.Pointer<sd_ctx_t> sd_ctx, sd_cancel_mode_t mode) {
 
 @ffi.Native<ffi.Pointer<ffi.Char> Function()>()
 external ffi.Pointer<ffi.Char> sd_commit();
+
+@ffi.Native<ffi.Pointer<ffi.Char> Function(ffi.UnsignedInt)>(
+  symbol: 'sd_control_type_name',
+)
+external ffi.Pointer<ffi.Char> _sd_control_type_name(int control_type);
+
+ffi.Pointer<ffi.Char> sd_control_type_name(sd_control_type_t control_type) {
+  return _sd_control_type_name(control_type.value);
+}
 
 @ffi.Native<ffi.Bool Function(ffi.Pointer<sd_ctx_t>)>()
 external bool sd_ctx_has_control_net(ffi.Pointer<sd_ctx_t> sd_ctx);
@@ -561,6 +582,19 @@ external void sd_set_backend_eval_callback(
   ffi.Pointer<ffi.Void> data,
 );
 
+@ffi.Native<
+  ffi.Void Function(
+    ffi.Pointer<sd_ctx_t>,
+    sd_generation_progress_cb_t,
+    ffi.Pointer<ffi.Void>,
+  )
+>()
+external void sd_set_generation_progress_callback(
+  ffi.Pointer<sd_ctx_t> ctx,
+  sd_generation_progress_cb_t cb,
+  ffi.Pointer<ffi.Void> data,
+);
+
 @ffi.Native<ffi.Void Function(sd_log_cb_t, ffi.Pointer<ffi.Void>)>()
 external void sd_set_log_callback(
   sd_log_cb_t sd_log_cb,
@@ -610,6 +644,19 @@ external void sd_set_progress_callback(
   ffi.Pointer<ffi.Void> data,
 );
 
+@ffi.Native<
+  ffi.Void Function(
+    ffi.Pointer<sd_ctx_t>,
+    sd_prompt_image_cb_t,
+    ffi.Pointer<ffi.Void>,
+  )
+>()
+external void sd_set_prompt_image_callback(
+  ffi.Pointer<sd_ctx_t> ctx,
+  sd_prompt_image_cb_t cb,
+  ffi.Pointer<ffi.Void> data,
+);
+
 @ffi.Native<ffi.Pointer<ffi.Char> Function(ffi.UnsignedInt)>(
   symbol: 'sd_type_name',
 )
@@ -625,6 +672,16 @@ external ffi.Pointer<ffi.Char> sd_version();
 @ffi.Native<ffi.Void Function(ffi.Pointer<sd_vid_gen_params_t>)>()
 external void sd_vid_gen_params_init(
   ffi.Pointer<sd_vid_gen_params_t> sd_vid_gen_params,
+);
+
+@ffi.Native<ffi.Void Function(ffi.Pointer<sd_video_upscale_params_t>)>()
+external void sd_video_upscale_params_init(
+  ffi.Pointer<sd_video_upscale_params_t> params,
+);
+
+@ffi.Native<ffi.Void Function(ffi.Pointer<sd_video_upscaler_ctx_params_t>)>()
+external void sd_video_upscaler_ctx_params_init(
+  ffi.Pointer<sd_video_upscaler_ctx_params_t> params,
 );
 
 @ffi.Native<ffi.UnsignedInt Function(ffi.Pointer<ffi.Char>)>(
@@ -682,6 +739,15 @@ scheduler_t str_to_scheduler(ffi.Pointer<ffi.Char> str) {
 }
 
 @ffi.Native<ffi.UnsignedInt Function(ffi.Pointer<ffi.Char>)>(
+  symbol: 'str_to_sd_control_type',
+)
+external int _str_to_sd_control_type(ffi.Pointer<ffi.Char> str);
+
+sd_control_type_t str_to_sd_control_type(ffi.Pointer<ffi.Char> str) {
+  return sd_control_type_t.fromValue(_str_to_sd_control_type(str));
+}
+
+@ffi.Native<ffi.UnsignedInt Function(ffi.Pointer<ffi.Char>)>(
   symbol: 'str_to_sd_hires_upscaler',
 )
 external int _str_to_sd_hires_upscaler(ffi.Pointer<ffi.Char> str);
@@ -712,6 +778,19 @@ external bool upscale(
   sd_image_t input_image,
   int upscale_factor,
   ffi.Pointer<ffi.Pointer<sd_image_generation_result_t>> result_out,
+);
+
+@ffi.Native<
+  ffi.Bool Function(
+    ffi.Pointer<video_upscaler_ctx_t>,
+    ffi.Pointer<sd_video_upscale_params_t>,
+    ffi.Pointer<ffi.Pointer<sd_video_generation_result_t>>,
+  )
+>()
+external bool upscale_video(
+  ffi.Pointer<video_upscaler_ctx_t> ctx,
+  ffi.Pointer<sd_video_upscale_params_t> params,
+  ffi.Pointer<ffi.Pointer<sd_video_generation_result_t>> result_out,
 );
 
 const int SD_DART_GPU_DEFAULT_DEVICE = -1;
@@ -1123,6 +1202,36 @@ enum sd_cancel_mode_t {
   };
 }
 
+enum sd_control_type_t {
+  SD_CONTROL_TYPE_NONE(0),
+  SD_CONTROL_TYPE_OPENPOSE(1),
+  SD_CONTROL_TYPE_DEPTH(2),
+  SD_CONTROL_TYPE_SCRIBBLE(3),
+  SD_CONTROL_TYPE_CANNY(4),
+  SD_CONTROL_TYPE_NORMAL(5),
+  SD_CONTROL_TYPE_SEGMENT(6),
+  SD_CONTROL_TYPE_TILE(7),
+  SD_CONTROL_TYPE_REPAINT(8),
+  SD_CONTROL_TYPE_COUNT(9);
+
+  final int value;
+  const sd_control_type_t(this.value);
+
+  static sd_control_type_t fromValue(int value) => switch (value) {
+    0 => SD_CONTROL_TYPE_NONE,
+    1 => SD_CONTROL_TYPE_OPENPOSE,
+    2 => SD_CONTROL_TYPE_DEPTH,
+    3 => SD_CONTROL_TYPE_SCRIBBLE,
+    4 => SD_CONTROL_TYPE_CANNY,
+    5 => SD_CONTROL_TYPE_NORMAL,
+    6 => SD_CONTROL_TYPE_SEGMENT,
+    7 => SD_CONTROL_TYPE_TILE,
+    8 => SD_CONTROL_TYPE_REPAINT,
+    9 => SD_CONTROL_TYPE_COUNT,
+    _ => throw ArgumentError('Unknown value for sd_control_type_t: $value'),
+  };
+}
+
 final class sd_ctx_params_t extends ffi.Struct {
   external ffi.Pointer<ffi.Char> model_path;
 
@@ -1505,6 +1614,52 @@ final class sd_embedding_t extends ffi.Struct {
     ..ref.path = path;
 }
 
+typedef sd_generation_progress_cb_t =
+    ffi.Pointer<ffi.NativeFunction<sd_generation_progress_cb_tFunction>>;
+typedef sd_generation_progress_cb_tFunction =
+    ffi.Void Function(
+      ffi.Pointer<sd_generation_progress_t> progress,
+      ffi.Pointer<ffi.Void> data,
+    );
+typedef Dartsd_generation_progress_cb_tFunction =
+    void Function(
+      ffi.Pointer<sd_generation_progress_t> progress,
+      ffi.Pointer<ffi.Void> data,
+    );
+
+final class sd_generation_progress_t extends ffi.Struct {
+  external ffi.Pointer<ffi.Char> stage;
+
+  external ffi.Pointer<ffi.Char> detail;
+
+  external ffi.Pointer<ffi.Char> unit;
+
+  @ffi.Int()
+  external int sample_pass;
+
+  @ffi.Int64()
+  external int completed;
+
+  @ffi.Int64()
+  external int total;
+
+  static ffi.Pointer<sd_generation_progress_t> $allocate(
+    ffi.Allocator $allocator, {
+    required ffi.Pointer<ffi.Char> stage,
+    required ffi.Pointer<ffi.Char> detail,
+    required ffi.Pointer<ffi.Char> unit,
+    required int sample_pass,
+    required int completed,
+    required int total,
+  }) => $allocator<sd_generation_progress_t>()
+    ..ref.stage = stage
+    ..ref.detail = detail
+    ..ref.unit = unit
+    ..ref.sample_pass = sample_pass
+    ..ref.completed = completed
+    ..ref.total = total;
+}
+
 typedef sd_graph_eval_callback_t =
     ffi.Pointer<ffi.NativeFunction<sd_graph_eval_callback_tFunction>>;
 typedef sd_graph_eval_callback_tFunction =
@@ -1754,6 +1909,13 @@ final class sd_img_gen_params_t extends ffi.Struct {
   external bool circular_y;
 
   external sd_image_preprocess_params_t image_preprocess;
+
+  @ffi.UnsignedInt()
+  external int control_typeAsInt;
+
+  sd_control_type_t get control_type =>
+      sd_control_type_t.fromValue(control_typeAsInt);
+  set control_type(sd_control_type_t value) => control_typeAsInt = value.value;
 }
 
 typedef sd_log_cb_t = ffi.Pointer<ffi.NativeFunction<sd_log_cb_tFunction>>;
@@ -1880,6 +2042,20 @@ typedef sd_progress_cb_tFunction =
     );
 typedef Dartsd_progress_cb_tFunction =
     void Function(int step, int steps, double time, ffi.Pointer<ffi.Void> data);
+typedef sd_prompt_image_cb_t =
+    ffi.Pointer<ffi.NativeFunction<sd_prompt_image_cb_tFunction>>;
+typedef sd_prompt_image_cb_tFunction =
+    ffi.Bool Function(
+      ffi.Pointer<ffi.Char> source,
+      ffi.Pointer<ffi.Void> data,
+      ffi.Pointer<sd_image_t> image_out,
+    );
+typedef Dartsd_prompt_image_cb_tFunction =
+    bool Function(
+      ffi.Pointer<ffi.Char> source,
+      ffi.Pointer<ffi.Void> data,
+      ffi.Pointer<sd_image_t> image_out,
+    );
 
 final class sd_pulid_params_t extends ffi.Struct {
   external ffi.Pointer<ffi.Char> id_embedding_path;
@@ -2237,4 +2413,81 @@ final class sd_video_generation_result_t extends ffi.Struct {
     ..ref.generation_info = generation_info;
 }
 
+final class sd_video_upscale_params_t extends ffi.Struct {
+  external ffi.Pointer<sd_image_t> frames;
+
+  @ffi.Int()
+  external int frame_count;
+
+  @ffi.Int()
+  external int fps;
+
+  @ffi.Int64()
+  external int seed;
+
+  @ffi.Int()
+  external int window_size;
+
+  @ffi.Int()
+  external int temporal_chunk_size;
+
+  static ffi.Pointer<sd_video_upscale_params_t> $allocate(
+    ffi.Allocator $allocator, {
+    required ffi.Pointer<sd_image_t> frames,
+    required int frame_count,
+    required int fps,
+    required int seed,
+    required int window_size,
+    required int temporal_chunk_size,
+  }) => $allocator<sd_video_upscale_params_t>()
+    ..ref.frames = frames
+    ..ref.frame_count = frame_count
+    ..ref.fps = fps
+    ..ref.seed = seed
+    ..ref.window_size = window_size
+    ..ref.temporal_chunk_size = temporal_chunk_size;
+}
+
+final class sd_video_upscaler_ctx_params_t extends ffi.Struct {
+  external ffi.Pointer<ffi.Char> diffusion_model_path;
+
+  external ffi.Pointer<ffi.Char> vae_path;
+
+  @ffi.Int()
+  external int upscale_factor;
+
+  @ffi.Int()
+  external int n_threads;
+
+  external ffi.Pointer<ffi.Char> backend;
+
+  external ffi.Pointer<ffi.Char> params_backend;
+
+  external ffi.Pointer<ffi.Char> flash_attn_mode;
+
+  external ffi.Pointer<ffi.Char> conv_direct_mode;
+
+  static ffi.Pointer<sd_video_upscaler_ctx_params_t> $allocate(
+    ffi.Allocator $allocator, {
+    required ffi.Pointer<ffi.Char> diffusion_model_path,
+    required ffi.Pointer<ffi.Char> vae_path,
+    required int upscale_factor,
+    required int n_threads,
+    required ffi.Pointer<ffi.Char> backend,
+    required ffi.Pointer<ffi.Char> params_backend,
+    required ffi.Pointer<ffi.Char> flash_attn_mode,
+    required ffi.Pointer<ffi.Char> conv_direct_mode,
+  }) => $allocator<sd_video_upscaler_ctx_params_t>()
+    ..ref.diffusion_model_path = diffusion_model_path
+    ..ref.vae_path = vae_path
+    ..ref.upscale_factor = upscale_factor
+    ..ref.n_threads = n_threads
+    ..ref.backend = backend
+    ..ref.params_backend = params_backend
+    ..ref.flash_attn_mode = flash_attn_mode
+    ..ref.conv_direct_mode = conv_direct_mode;
+}
+
 final class upscaler_ctx_t extends ffi.Opaque {}
+
+final class video_upscaler_ctx_t extends ffi.Opaque {}
