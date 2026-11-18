@@ -930,10 +930,12 @@ void main() {
       );
     }
     // v0.4.0 on M4 Max Metal: text encoder max 37, mean 0.229; VAE max 1,
-    // mean 0.006; tiled budget max 86, mean 2.474.
+    // mean 0.006; tiled budget max 86, mean 2.474. v0.4.0 on L4 Vulkan: VAE
+    // max 9, mean 0.110, since CPU and Vulkan decode round differently.
+    final vaeBounds = gpu.startsWith('MTL') ? (6, 0.2) : (16, 0.5);
     for (final (name, placed, maxDelta, meanDelta) in [
       ('textEncoderOnCpu', textEncoder, 255, 1.0),
-      ('vaeOnCpu', vae, 6, 0.2),
+      ('vaeOnCpu', vae, vaeBounds.$1, vaeBounds.$2),
       ('maxGpuMemoryGiB: 1', budget, 255, 5.0),
     ]) {
       final delta = difference(base.pixels, placed.pixels);
