@@ -383,8 +383,10 @@ Each chunk holds the samples produced since the previous one, with
 `sampleOffset` (its first sample's index in the final result), `sampleRateHz`
 and `channelCount`. The chunks concatenate to `result.samples`, which equals
 the PCM of the same request without `streamAudio`. After `cancel()` no chunk
-or final event arrives. There is no output backpressure: a paused subscription
-buffers events, at most the utterance.
+or final event arrives; cancelling only the `events` subscription does not
+cancel synthesis (call `task.cancel()`). There is no output backpressure: a
+paused subscription buffers events, holding the utterance (or every chunk plus
+the final event, about twice the audio, when `streamAudio` is true).
 
 | Model | Streams | Chunk cadence |
 | --- | --- | --- |
@@ -394,8 +396,10 @@ buffers events, at most the utterance.
 | Soprano, Chatterbox | No | Decode the whole utterance at the end |
 
 Native streaming needs llamadart-native `v1.0.0-1` or later; an older runtime
-reports `supportsIncrementalAudio` false. The WebGPU bridge returns complete
-PCM only, so Web refuses `streamAudio`.
+or a backend without a positive `sampleRateHz` and `channelCount` reports
+`supportsIncrementalAudio` false (with the reason in
+`incrementalAudioUnsupportedReason`). The WebGPU bridge returns complete PCM
+only, so Web refuses `streamAudio`.
 
 The [chat app](../examples/chat-app) has a Qwen3-TTS mode built on this API.
 

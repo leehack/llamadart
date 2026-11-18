@@ -3,6 +3,8 @@ Releases before 0.10.0 are in the
 
 ## Unreleased
 
+- Report `TextToSpeechCapabilities.supportsIncrementalAudio` false and refuse `TextToSpeechRequest(streamAudio: true)` with `LlamaUnsupportedException` when backend capabilities lack a positive sample rate or channel count instead of emitting `0` Hz chunks ([#2023](https://github.com/leehack/llamadart/issues/2023)).
+
 - Keep the workspace root out of Studio Coding prompts unless a shell or MCP tool needs absolute paths, so small models stop copying it into file tool paths.
 
 - Initialize Studio Coding’s built-in Dart MCP for the selected workspace, preserve tool failures, and expose full tool results.
