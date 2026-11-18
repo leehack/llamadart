@@ -9,7 +9,7 @@ import 'dart:io';
 
 import 'package:crypto/crypto.dart';
 import 'package:llamadart/llamadart.dart';
-import 'package:llamadart/src/backends/stable_diffusion/stable_diffusion_runtime_io.dart';
+import 'package:llamadart/src/backends/stable_diffusion/stable_diffusion_runtime.dart';
 import 'package:test/test.dart';
 
 const _request = ImageGenerationRequest(
@@ -34,6 +34,7 @@ void main() {
   Future<Map<String, Object?>> generateOnMetal(
     String label,
     String path,
+    StableDiffusionRuntimeStatus runtime,
   ) async {
     final modelHash = (await sha256.bind(File(path).openRead()).first)
         .toString();
@@ -54,6 +55,8 @@ void main() {
       expect(image.pixels.toSet().length, greaterThan(64));
       final record = {
         'modelSha256': modelHash,
+        'runtimeVersion': runtime.version,
+        'runtimeCommit': runtime.commit,
         'backend': capabilities.backendName,
         'rgbSha256': sha256.convert(image.pixels).toString(),
       };
@@ -78,10 +81,10 @@ void main() {
       expect(runtime.loadsFp8AsF16OnMetal, isTrue);
       expect(
         runtime.commit,
-        anyOf('be48649', 'be486498eadc29dc3cd234d944c2180ed42b1415'),
+        anyOf('5dcfa79', '5dcfa79801213f23e27b3e83617350ebb8ea93aa'),
       );
-      await generateOnMetal('FP8', fp8!);
-      if (f16 != null) await generateOnMetal('F16', f16);
+      await generateOnMetal('FP8', fp8!, runtime);
+      if (f16 != null) await generateOnMetal('F16', f16, runtime);
     },
     skip: fp8 == null
         ? 'Set LLAMADART_IMAGE_FP8_MODEL to an existing FP8 checkpoint.'

@@ -115,8 +115,7 @@ int? stableDiffusionFileSize(String path) {
 /// the runtime's device order, from `sd_dart_gpu_device_count` and
 /// `sd_dart_gpu_device_memory`, or `null` when it is not known:
 ///
-/// - the runtime is older than `StableDiffusionCalls.optionalNativeRelease`
-///   and does not export the queries;
+/// - the runtime does not export [StableDiffusionCalls.deviceMemorySymbols];
 /// - the runtime has no GPU backend or found no GPU, or one of the devices
 ///   does not report its memory;
 /// - `SD_VK_DEVICE` is set, which can make the runtime pick a Vulkan device

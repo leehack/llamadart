@@ -6,6 +6,7 @@ import 'dart:ffi';
 import 'dart:io';
 
 import 'package:code_assets/code_assets.dart';
+import 'package:crypto/crypto.dart';
 import 'package:llamadart/src/backends/litert_lm/litert_lm_runtime.dart';
 import 'package:llamadart/src/hook/native_bundle_config.dart';
 import 'package:llamadart/src/hook/native_release_manifest.dart';
@@ -280,16 +281,18 @@ void main() {
     },
   );
 
-  test('stable_diffusion pins the published v0.3.0-6 release artifacts', () {
+  test('stable_diffusion pins the published v0.4.0 release artifacts', () {
     // Exact published owner manifest, independently checked against GitHub
     // asset digests before adoption. This also binds the Apple binary target.
+    final manifestBytes = File(
+      'test/fixtures/native/stable_diffusion_v0_4_0_manifest.json',
+    ).readAsBytesSync();
+    expect(
+      sha256.convert(manifestBytes).toString(),
+      'bed5598df5a62914b48a3c0652701df9819cb2405f6346c692e2494dccfeb927',
+    );
     final manifest =
-        jsonDecode(
-              File(
-                'test/fixtures/native/stable_diffusion_v0_3_0_6_manifest.json',
-              ).readAsStringSync(),
-            )
-            as Map<String, dynamic>;
+        jsonDecode(utf8.decode(manifestBytes)) as Map<String, dynamic>;
     expect(stableDiffusionReleaseTag, manifest['tag']);
     final artifacts = (manifest['artifacts'] as List)
         .cast<Map<String, dynamic>>();
@@ -314,51 +317,16 @@ void main() {
     final apple = artifacts.singleWhere(
       (artifact) =>
           artifact['file'] ==
-          'stable-diffusion-native-apple-xcframework-v0.3.0-6.zip',
+          'stable-diffusion-native-apple-xcframework-v0.4.0.zip',
     );
     final swift = File(
       'packages/llamadart_stable_diffusion_flutter/darwin/'
       'llamadart_stable_diffusion_flutter/Package.swift',
     ).readAsStringSync();
     expect(swift, contains('let stableDiffusionTag = "${manifest['tag']}"'));
-    expect(swift, contains(apple['sha256'] as String));
-  });
-
-  // Only checksum-proven older XCFrameworks are admitted; v0.3.0 aborts on
-  // FP8 weights on Metal, and earlier pins have a smaller sd_ctx_params_t.
-  test('the SD hook validates the current Apple companion artifact', () {
-    final manifest =
-        jsonDecode(
-              File(
-                'test/fixtures/native/stable_diffusion_v0_3_0_6_manifest.json',
-              ).readAsStringSync(),
-            )
-            as Map<String, dynamic>;
-    final apple = (manifest['artifacts'] as List)
-        .cast<Map<String, dynamic>>()
-        .singleWhere((artifact) => artifact['kind'] == 'xcframework');
-    String appleChecksum(String manifestFile) {
-      final artifacts =
-          (jsonDecode(
-                    File(
-                      'test/fixtures/native/$manifestFile',
-                    ).readAsStringSync(),
-                  )
-                  as Map<String, dynamic>)['artifacts']
-              as List;
-      return artifacts.cast<Map<String, dynamic>>().singleWhere(
-            (artifact) => artifact['kind'] == 'xcframework',
-          )['sha256']
-          as String;
-    }
-
-    expect(stableDiffusionCompatibleAppleCompanionTags.keys, [
-      'v0.3.0-3',
-      'v0.3.0-4',
-    ]);
+    expect(swift, contains('checksum: "${apple['sha256']}"'));
+    expect(stableDiffusionCompatibleAppleCompanionTags, isEmpty);
     expect(stableDiffusionAppleCompanionChecksums, {
-      'v0.3.0-3': appleChecksum('stable_diffusion_v0_3_0_3_manifest.json'),
-      'v0.3.0-4': appleChecksum('stable_diffusion_v0_3_0_4_manifest.json'),
       stableDiffusionReleaseTag: apple['sha256'],
     });
   });
@@ -366,10 +334,6 @@ void main() {
   test('Apple SD companion version is the first release pinning '
       'stableDiffusionReleaseTag', () {
     const companion = 'packages/llamadart_stable_diffusion_flutter';
-    final version = RegExp(
-      r'^version: (\d+)\.(\d+)\.(\d+)$',
-      multiLine: true,
-    ).firstMatch(File('$companion/pubspec.yaml').readAsStringSync())!;
     final changelog = File('$companion/CHANGELOG.md').readAsStringSync();
     final sections = RegExp(
       r'^## (.+)$',
@@ -388,11 +352,9 @@ void main() {
         firstPinning = section.group(1);
       }
     }
-    final expected = firstPinning == 'Unreleased'
-        ? '${version.group(1)}.${version.group(2)}.'
-              '${int.parse(version.group(3)!) + 1}'
-        : firstPinning;
-    expect(stableDiffusionAppleCompanionVersion, expected);
+    // v0.4.0 breaks the image generation parameter ABI of the 0.19.x pair.
+    expect(firstPinning, anyOf('Unreleased', '0.20.0'));
+    expect(stableDiffusionAppleCompanionVersion, '0.20.0');
   });
 
   test('stable_diffusion cache version is the release tag without its v', () {

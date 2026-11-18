@@ -1368,13 +1368,11 @@ other family, decoder, host, device or upscaler qualification is inferred.
 
 ### Reference image editing
 
-`image-reference-editing` runs the maintained local-only FLUX.1 Kontext
-[dev] reference edit on macOS Metal: a visible requested edit with preserved
-content, a reference effect against ordinary text-to-image, cancellation,
-ordinary reset and reload, with optional exact direct-C references. See
-[the fixture, gates and provenance](image_reference_editing.md). No other
-family, component, host, device or reference-count qualification is
-inferred.
+`image-reference-editing` loads FLUX.1 Kontext [dev] on macOS Metal with
+v0.4.0 and checks that the capability is disabled and the fixed reference
+request throws `LlamaUnsupportedException` before generation. The
+[historical qualification](image_reference_editing.md) records the positive
+v0.3.0-1 fixture, its direct-C parity and how to reproduce it.
 
 ## Windows native override registry
 

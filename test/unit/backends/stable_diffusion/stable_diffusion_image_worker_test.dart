@@ -1518,6 +1518,25 @@ void main() {
       expect(runtime.calls('worker'), isEmpty);
     });
 
+    test(
+      'preserves an ABI mismatch from the worker before any context call',
+      () async {
+        runtime.wrongAbiInWorker = true;
+        await expectLater(
+          start(),
+          throwsA(
+            isA<LlamaUnsupportedException>().having(
+              (error) => error.message,
+              'message',
+              contains('560-byte sd_img_gen_params_t ABI'),
+            ),
+          ),
+        );
+        await runtime.flush();
+        expect(runtime.calls('worker'), isEmpty);
+      },
+    );
+
     test('a generation that fails leaves its context held, so the worker\'s '
         'shutdown frees it through the exit-free', () async {
       final worker = await loaded();

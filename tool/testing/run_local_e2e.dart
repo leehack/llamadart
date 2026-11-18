@@ -1369,11 +1369,10 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
       name: 'image-reference-editing',
       group: LocalE2eScenarioGroup.dartLocalOnly,
       description:
-          'Qualify FLUX.1 Kontext [dev] reference image editing on macOS '
-          'Metal: visible edit, preserved content, reference effect, direct-C '
-          'parity, cancellation and reload; --model-path is the transformer '
-          'and LLAMADART_REFERENCE_EDIT_VAE, _CLIP_L and _T5XXL its '
-          'components.',
+          'Verify that v0.4.0 refuses FLUX.1 Kontext [dev] reference editing '
+          'after the model loads on macOS Metal; --model-path is the '
+          'transformer and LLAMADART_REFERENCE_EDIT_VAE, _CLIP_L and _T5XXL '
+          'its components.',
       requiresDevice: false,
       stepsBuilder: (context) => [
         LocalE2eCommandStep(
@@ -1391,10 +1390,8 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
             'LLAMADART_REFERENCE_EDIT_DIFFUSION': context.modelPath!,
             for (final name in _referenceEditComponentVariables)
               name: context.environment[name]!,
-            'LLAMADART_IMAGE_OUTPUT_DIR':
-                '${context.projectRoot}/build/image-reference-editing',
           },
-          description: 'FLUX.1 Kontext reference-editing qualification',
+          description: 'FLUX.1 Kontext reference-editing refusal on v0.4.0',
         ),
       ],
     ),
@@ -3465,7 +3462,8 @@ Future<LocalE2eResult> runLocalE2e(
         stderr:
             '--model-path <flux1-kontext-dev transformer> and '
             '${_referenceEditComponentVariables.join(', ')} are required for '
-            'image-reference-editing. See doc/image_reference_editing.md.\n',
+            'the image-reference-editing refusal scenario. '
+            'See doc/image_reference_editing.md.\n',
       );
     }
   }

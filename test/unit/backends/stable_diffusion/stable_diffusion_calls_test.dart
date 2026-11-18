@@ -11,7 +11,10 @@ import 'package:llamadart/src/backends/stable_diffusion/stable_diffusion_binding
     as sd;
 import 'package:llamadart/src/backends/stable_diffusion/stable_diffusion_calls.dart';
 import 'package:llamadart/src/backends/stable_diffusion/stable_diffusion_runtime_io.dart';
+import 'package:llamadart/src/core/exceptions.dart';
 import 'package:llamadart/src/hook/native_release_pins.dart';
+
+import '../../../support/fake_stable_diffusion_runtime.dart';
 
 // The exports image generation depends on.
 const _symbols = [
@@ -23,7 +26,10 @@ const _symbols = [
   'sd_dart_exit_free',
 ];
 
-// The exports of stable-diffusion-native v0.2.0-2 it works without.
+const _abiMarker = 'sd_control_type_name';
+const _initializers = ['sd_ctx_params_init', 'sd_img_gen_params_init'];
+
+// The optional exports first shipped in stable-diffusion-native v0.2.0-2.
 const _logSymbols = [
   'sd_dart_log_enable',
   'sd_dart_log_set_level',
@@ -47,6 +53,52 @@ const _graphSplitSymbols = ['sd_dart_graph_split_threshold'];
 // runtime's own export is checked against the real runtime by
 // example/basic_app/test/image_exit_teardown_e2e_test.dart.
 void main() {
+  test('matches the released 64-bit image generation parameter layout', () {
+    expect(sizeOf<sd.sd_ctx_params_t>(), 336);
+    expect(sizeOf<sd.sd_img_gen_params_t>(), 560);
+    using((arena) {
+      final params = arena<sd.sd_img_gen_params_t>();
+      expect(sd.sd_control_type_t.SD_CONTROL_TYPE_NONE.value, 0);
+      params.ref.control_type = sd.sd_control_type_t.SD_CONTROL_TYPE_CANNY;
+      expect(params.cast<Uint32>()[552 ~/ sizeOf<Uint32>()], 4);
+    });
+  });
+
+  test('rejects old, unknown and missing native source identities before '
+      'resolving any initializer or generation symbol', () {
+    final error = isA<LlamaUnsupportedException>().having(
+      (error) => error.message,
+      'message',
+      allOf(contains('560-byte sd_img_gen_params_t'), contains('v0.4.0')),
+    );
+    for (final commit in [
+      'be48649',
+      'unknown',
+      '',
+      null,
+      '5dcfa7',
+      '5dcfa79801213f23e27b3e83617350ebb8ea93ab',
+    ]) {
+      expect(
+        () => resolveFakeStableDiffusionExports(
+          (name) => fail('looked up $name before admission'),
+          commit: commit,
+        ),
+        throwsA(error),
+        reason: '$commit',
+      );
+    }
+    final requested = <String>[];
+    expect(
+      () => resolveFakeStableDiffusionExports((name) {
+        requested.add(name);
+        throw ArgumentError('missing $name');
+      }, commit: '5dcfa79801213f23e27b3e83617350ebb8ea93aa'),
+      throwsA(error),
+    );
+    expect(requested, [_abiMarker]);
+  });
+
   test('binds every sd_dart_ function through the lookup, and resolves '
       'nothing when one is missing', () {
     final requested = <String>[];
@@ -55,11 +107,14 @@ void main() {
       return Pointer.fromAddress(0x1000 + requested.length);
     }
 
-    expect(StableDiffusionCalls.tryResolve(symbol: exported), isNotNull);
+    expect(resolveFakeStableDiffusionExports(exported), isNotNull);
+    expect(requested.first, _abiMarker);
     expect(
       requested,
       unorderedEquals([
         ..._symbols,
+        _abiMarker,
+        ..._initializers,
         ..._logSymbols,
         ..._deviceMemorySymbols,
         ..._fp8MetalSymbols,
@@ -69,10 +124,10 @@ void main() {
     );
     expect(StableDiffusionCalls.wrapperSymbols, unorderedEquals(_symbols));
 
-    for (final missing in _symbols) {
+    for (final missing in [..._symbols, ..._initializers]) {
       expect(
-        StableDiffusionCalls.tryResolve(
-          symbol: (name) => name == missing
+        resolveFakeStableDiffusionExports(
+          (name) => name == missing
               ? throw ArgumentError("Couldn't resolve native function '$name'")
               : exported(name),
         ),
@@ -82,10 +137,10 @@ void main() {
     }
   });
 
-  test('a runtime of v0.2.0-1, without the log and device memory functions, '
+  test('an admitted runtime without the log and device memory functions '
       'resolves with both absent', () {
-    final calls = StableDiffusionCalls.tryResolve(
-      symbol: (name) => _symbols.contains(name)
+    final calls = resolveFakeStableDiffusionExports(
+      (name) => [_abiMarker, ..._initializers, ..._symbols].contains(name)
           ? Pointer.fromAddress(0x1000)
           : throw ArgumentError("Couldn't resolve native function '$name'"),
     );
@@ -105,8 +160,8 @@ void main() {
     expect(StableDiffusionCalls.optionalNativeRelease, 'v0.2.0-2');
 
     StableDiffusionCalls without(String missing) =>
-        StableDiffusionCalls.tryResolve(
-          symbol: (name) => name == missing
+        resolveFakeStableDiffusionExports(
+          (name) => name == missing
               ? throw ArgumentError("Couldn't resolve native function '$name'")
               : Pointer.fromAddress(0x1000),
         )!;
@@ -126,15 +181,15 @@ void main() {
   test(
     'the intrinsic tiny-decoder contract is optional and versioned by its export',
     () {
-      final absent = StableDiffusionCalls.tryResolve(
-        symbol: (name) => name == 'sd_dart_new_sd_ctx_intrinsic_tiny_v1'
+      final absent = resolveFakeStableDiffusionExports(
+        (name) => name == 'sd_dart_new_sd_ctx_intrinsic_tiny_v1'
             ? throw ArgumentError('missing')
             : Pointer.fromAddress(0x1000),
       );
       expect(absent, isNotNull);
       expect(absent!.newContextIntrinsicTinyV1, isNull);
-      final present = StableDiffusionCalls.tryResolve(
-        symbol: (_) => Pointer.fromAddress(0x1000),
+      final present = resolveFakeStableDiffusionExports(
+        (_) => Pointer.fromAddress(0x1000),
       );
       expect(present!.newContextIntrinsicTinyV1, isNotNull);
     },
@@ -147,16 +202,16 @@ void main() {
       unorderedEquals(_graphSplitSymbols),
     );
     expect(StableDiffusionCalls.graphSplitNativeRelease, 'v0.3.0-4');
-    final absent = StableDiffusionCalls.tryResolve(
-      symbol: (name) => _graphSplitSymbols.contains(name)
+    final absent = resolveFakeStableDiffusionExports(
+      (name) => _graphSplitSymbols.contains(name)
           ? throw ArgumentError("Couldn't resolve native function '$name'")
           : Pointer.fromAddress(0x1000),
     );
     expect(absent, isNotNull);
     expect(absent!.graphSplit, isNull);
     expect(
-      StableDiffusionCalls.tryResolve(
-        symbol: (_) => Pointer.fromAddress(0x1000),
+      resolveFakeStableDiffusionExports(
+        (_) => Pointer.fromAddress(0x1000),
       )!.graphSplit,
       isNotNull,
     );
@@ -178,12 +233,7 @@ void main() {
       Pointer<NativeType> symbol(String name) => missing.contains(name)
           ? throw ArgumentError("Couldn't resolve native function '$name'")
           : Pointer.fromAddress(0x1000);
-      return releaseTag == null
-          ? StableDiffusionCalls.tryResolve(symbol: symbol)!
-          : StableDiffusionCalls.tryResolve(
-              symbol: symbol,
-              releaseTag: releaseTag,
-            )!;
+      return resolveFakeStableDiffusionExports(symbol, releaseTag: releaseTag)!;
     }
 
     test('holds for the pinned release when it exports the upstream 1017 '
@@ -201,8 +251,8 @@ void main() {
       expect(resolve(releaseTag: 'v1.0.0').loadsFp8AsF16OnMetal, isTrue);
     });
 
-    test('fails closed for an older runtime in the process, which still '
-        'generates', () {
+    test('fails closed when an admitted runtime lacks the upstream 1017 '
+        'functions', () {
       final calls = resolve(missing: _fp8MetalSymbols.toSet());
 
       expect(calls.loadsFp8AsF16OnMetal, isFalse);
@@ -234,9 +284,11 @@ void main() {
       'members', () {
     final exports = _RecordingExports();
     addTearDown(exports.close);
-    final calls = StableDiffusionCalls.tryResolve(symbol: exports.symbol)!;
+    final calls = resolveFakeStableDiffusionExports(exports.symbol)!;
 
     final members = <String, void Function()>{
+      'sd_ctx_params_init': () => calls.contextParamsInit(nullptr),
+      'sd_img_gen_params_init': () => calls.imageGenerationParamsInit(nullptr),
       'sd_dart_progress_enable': calls.progressEnable,
       'sd_dart_new_sd_ctx': () => calls.newContext(nullptr),
       'sd_dart_new_sd_ctx_intrinsic_tiny_v1': () =>
@@ -343,6 +395,18 @@ final class _RecordingExports {
   int? deviceIndex;
 
   late final Map<String, NativeCallable<Function>> _functions = {
+    'sd_ctx_params_init':
+        NativeCallable<Void Function(Pointer<sd.sd_ctx_params_t>)>.isolateLocal(
+          (Pointer<sd.sd_ctx_params_t> _) {
+            _record('sd_ctx_params_init', null);
+          },
+        ),
+    'sd_img_gen_params_init':
+        NativeCallable<
+          Void Function(Pointer<sd.sd_img_gen_params_t>)
+        >.isolateLocal((Pointer<sd.sd_img_gen_params_t> _) {
+          _record('sd_img_gen_params_init', null);
+        }),
     'sd_dart_progress_enable': NativeCallable<Void Function()>.isolateLocal(
       () => _record('sd_dart_progress_enable', null),
     ),
@@ -446,10 +510,13 @@ final class _RecordingExports {
     return result;
   }
 
-  Pointer<NativeType> symbol(String name) => name == 'sd_dart_progress_read'
-      ? _memcpy
-      : _functions[name]?.nativeFunction ??
-            (throw ArgumentError("Couldn't resolve native function '$name'"));
+  Pointer<NativeType> symbol(String name) => switch (name) {
+    _abiMarker => Pointer.fromAddress(0x1000),
+    'sd_dart_progress_read' => _memcpy,
+    _ =>
+      _functions[name]?.nativeFunction ??
+          (throw ArgumentError("Couldn't resolve native function '$name'")),
+  };
 
   void close() {
     for (final function in _functions.values) {

@@ -80,7 +80,7 @@ identified by all 1,323 tensor names, dtypes and shapes. The fingerprint is a
 versioned recipe boundary, not a generic architecture-completeness detector or
 weight authenticity check. Its measured source is the complete local checkpoint
 derived for the format qualification; other matching weights are unmeasured.
-Only macOS CPU with pinned SD v0.3.0-1/upstream `be48649`, explicit
+Only macOS CPU with pinned SD v0.4.0/upstream `5dcfa79`, explicit
 `flashAttention: false` and `vaeDirectConvolution: false` is admitted. A loaded
 engine reports `supportsLocalSafetensorsSets`; it is false before load/after
 disposal. Editing, VAE tiling and seamless opt-ins remain refused for this path.
@@ -163,7 +163,7 @@ PNG/JPEG, applies orientation, resizes and composites alpha before submission.
 No such transformations happen implicitly.
 
 Check `(await engine.capabilities).supportsImageEditing` after loading. The
-bounded recipe requires stable-diffusion-native `v0.3.0-1` (upstream `be48649`),
+bounded recipe requires stable-diffusion-native `v0.4.0` (upstream `5dcfa79`),
 a native-detected SD 2.x single checkpoint with a header-detected embedded full
 VAE on macOS CPU, `flashAttention: false` and `vaeDirectConvolution: false`.
 Component overrides, tiny decoders, other families, platforms/devices, VAE
@@ -241,8 +241,8 @@ if ((await engine.capabilities).supportsControlNet) {
 }
 ```
 
-The bounded recipe requires stable-diffusion-native `v0.3.0-1` (upstream
-`be48649`) on macOS with `ComputeDevice.cpu`, `flashAttention: false` and
+The bounded recipe requires stable-diffusion-native `v0.4.0` (upstream
+`5dcfa79`) on macOS with `ComputeDevice.cpu`, `flashAttention: false` and
 `vaeDirectConvolution: false`, and exactly an SD 1.x checkpoint with its
 embedded full VAE plus an SD 1.x ControlNet in the original (lllyasviel)
 layout, as Safetensors or GGUF. The headers must show a 768-wide text context
@@ -269,17 +269,24 @@ native generation.
 
 ```dart
 final engine = await ImageGenerationEngine.load(
-  ImageGenerationModel(ModelSource.path('v1-5-pruned-emaonly.safetensors')),
+  ImageGenerationModel(ModelSource.path('sd_turbo-f16-q8_0.gguf')),
+  params: const ImageModelParams(
+    device: ComputeDevice.gpu,
+    flashAttention: false,
+    vaeDirectConvolution: false,
+  ),
 );
 if ((await engine.capabilities).supportsHiresFix) {
   final result = await engine.generateImage(
     const HiresFixImageGenerationRequest(
       prompt: 'a red fox sitting in a snowy forest, photograph',
+      negativePrompt: 'blurry',
       width: 512,
       height: 512,
-      steps: 20,
+      steps: 2,
+      guidanceScale: 1,
       seed: 42,
-      hiresFix: ImageHiresFix.scale(1.5, steps: 10, denoisingStrength: 0.55),
+      hiresFix: ImageHiresFix.scale(1.5, steps: 2, denoisingStrength: 0.5),
     ),
   );
   // result.images.single is 768x768.
@@ -296,9 +303,9 @@ and `height` (`ImageHiresFix.size`), never both:
   the final image is larger than the first pass and at most 1024x1024.
 - A request makes at most 4 images. Image `i` uses seed `seed + i` in both
   passes.
-- `steps` (1 to 150) defaults to the first pass's steps. As in
-  stable-diffusion.cpp, the second pass runs the last steps of a schedule of
-  `steps / denoisingStrength` steps, which can be one more than `steps`.
+- `steps` (1 to 150) defaults to the first pass's steps. The second pass runs
+  exactly this many steps from the end of a schedule of
+  `steps / denoisingStrength` steps.
 - `denoisingStrength` (0.05 to 1, default 0.7) is how much noise the second
   pass adds; lower values keep more of the first pass.
 - `upscaler` is `ImageHiresUpscaler.latent`: bilinear interpolation of the
@@ -306,13 +313,13 @@ and `height` (`ImageHiresFix.size`), never both:
   are not offered.
 
 Out-of-range values throw `LlamaImageGenerationException` before the task
-starts. The bounded recipe requires stable-diffusion-native `v0.3.0-1`
-(upstream `be48649`) on macOS with `ComputeDevice.cpu` or Metal, and a
+starts. The bounded recipe requires stable-diffusion-native `v0.4.0`
+(upstream `5dcfa79`) on macOS with `ComputeDevice.cpu` or Metal, and a
 native-detected SD 1.x or SD 2.x checkpoint with its embedded full VAE and no
 component overrides. Other families, decoders, hosts and devices report
 `supportsHiresFix: false`, and a hires-fix request throws
 `LlamaUnsupportedException`. The request type cannot carry image editing,
-ControlNet, VAE tiling or circular axes. Qualified on SD 1.5 and SD-Turbo.
+ControlNet, VAE tiling or circular axes. The v0.4.0 qualification used SD-Turbo.
 
 Progress reports both passes: `ImageGenerationProgressEvent.pass` is 0 for
 the first pass and 1 for the second, with `passCount` 2 and the second
@@ -325,6 +332,11 @@ the task fails with `LlamaInferenceException`. Run
 `example/basic_app/bin/image_hires_fix.dart` with a local checkpoint.
 
 ## Reference image editing
+
+On v0.4.0 this capability stays disabled until the fixed Kontext recipe is
+requalified ([#1222](https://github.com/leehack/llamadart/issues/1222)). The
+following recipe records the earlier runtime contract.
+
 
 Reference editing changes a supplied image as the prompt describes and keeps
 the rest of it: FLUX.1 Kontext [dev] encodes the reference with its

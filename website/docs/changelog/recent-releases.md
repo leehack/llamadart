@@ -13,6 +13,8 @@ validate against the exact release tag notes.
 
 ## Unreleased
 
+- Update native image generation to stable-diffusion-native `v0.4.0`. Apple apps using image generation must upgrade the core and Stable Diffusion companion together.
+
 - Restore native text-to-speech discovery when Dart bundles its runtime outside the working directory.
 
 - Avoid initializing unavailable Linux Vulkan backends during llama.cpp automatic loading and device probes, while retaining other bundled backends.

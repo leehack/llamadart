@@ -2,19 +2,13 @@
 @Timeout(Duration(minutes: 60))
 library;
 
-import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
-import 'package:crypto/crypto.dart';
 import 'package:llamadart/llamadart.dart';
 import 'package:test/test.dart';
 
-import 'support/reference_edit_bar.dart';
-
 const _size = 512;
-const _barCoreTop = 440;
-const _maxBarDrift = 48;
 const _prompt =
     'Change the red circle to blue. Keep the gray background and the dark bar.';
 
@@ -47,38 +41,10 @@ void main() {
   final vae = environment['LLAMADART_REFERENCE_EDIT_VAE'];
   final clipL = environment['LLAMADART_REFERENCE_EDIT_CLIP_L'];
   final t5xxl = environment['LLAMADART_REFERENCE_EDIT_T5XXL'];
-  final output = environment['LLAMADART_IMAGE_OUTPUT_DIR'];
-  final references = environment['LLAMADART_REFERENCE_EDIT_NATIVE_REFERENCES'];
   test(
-    'FLUX.1 Kontext reference editing on Metal: visible edit, preserved '
-    'content, references used, direct-C parity, cancellation and reload',
+    'v0.4.0 refuses the historical FLUX.1 Kontext reference edit on Metal',
     () async {
-      final referencePixels = _referencePixels();
-      final edit = ReferenceImageEditingRequest(
-        prompt: _prompt,
-        recipe: ImageReferenceEditingRecipe.fluxKontext,
-        references: [
-          ImageEditingPixels.rgb(
-            width: _size,
-            height: _size,
-            pixels: referencePixels,
-          ),
-        ],
-        steps: 20,
-        guidanceScale: 1,
-        seed: 42,
-        sampler: ImageGenerationSampler.euler,
-      );
-      const plain = ImageGenerationRequest(
-        prompt: _prompt,
-        width: _size,
-        height: _size,
-        steps: 20,
-        guidanceScale: 1,
-        seed: 42,
-        sampler: ImageGenerationSampler.euler,
-      );
-      Future<ImageGenerationEngine> load() => ImageGenerationEngine.load(
+      final engine = await ImageGenerationEngine.load(
         ImageGenerationModel(
           ModelSource.path(diffusion!),
           components: [
@@ -89,209 +55,43 @@ void main() {
         ),
         params: const ImageModelParams(device: ComputeDevice.gpu),
       );
-
-      final engine = await load();
       addTearDown(engine.dispose);
+
       final capabilities = await engine.capabilities;
       expect(capabilities.modelVersion, 'Flux');
       expect(capabilities.backendName, startsWith('MTL'));
-      expect(capabilities.supportsReferenceImageEditing, isTrue);
+      expect(capabilities.supportsReferenceImageEditing, isFalse);
 
-      final records = <String, Object>{};
-      Future<GeneratedImage> run(
-        String name,
-        ImageGenerationRequest request,
-      ) async {
-        final result = await engine.generateImage(request);
-        final image = result.images.single;
-        records[name] = {
-          'size': '${image.width}x${image.height}',
-          'sha256': sha256.convert(image.pixels).toString(),
-          'elapsedMs': result.elapsed.inMilliseconds,
-        };
-        if (output != null) {
-          File('$output/$name.png').writeAsBytesSync(image.toPng());
-        }
-        if (references != null && (name == 'edit' || name == 'plain')) {
-          final bytes = File('$references/$name.ppm').readAsBytesSync();
-          expect(
-            image.pixels,
-            bytes.sublist(bytes.length - image.pixels.length),
-            reason: 'Independent direct-C parity $name',
-          );
-        }
-        return image;
-      }
-
-      if (output != null) {
-        Directory(output).createSync(recursive: true);
-        File('$output/reference.png').writeAsBytesSync(
-          GeneratedImage(
+      final request = ReferenceImageEditingRequest(
+        prompt: _prompt,
+        recipe: ImageReferenceEditingRecipe.fluxKontext,
+        references: [
+          ImageEditingPixels.rgb(
             width: _size,
             height: _size,
-            channels: 3,
-            pixels: referencePixels,
-          ).toPng(),
-        );
-      }
-      final edited = await run('edit', edit);
-      expect((edited.width, edited.height, edited.channels), (_size, _size, 3));
-      final ordinary = await run('plain', plain);
-
-      // Fixed before qualification, except the bar gate: it was revised after
-      // the first real-model run because Kontext redraws the scene shifted up
-      // (threshold unchanged, original window failed at 164.69):
-      // https://github.com/leehack/llamadart/pull/1515#issuecomment-6465651561
-      final disk = _region(
-        edited.pixels,
-        (x, y) => _distance2(x, y) <= 90 * 90,
+            pixels: _referencePixels(),
+          ),
+        ],
+        steps: 20,
+        guidanceScale: 1,
+        seed: 42,
+        sampler: ImageGenerationSampler.euler,
       );
-      final sourceDisk = _region(
-        referencePixels,
-        (x, y) => _distance2(x, y) <= 90 * 90,
+      await expectLater(
+        engine.generate(request),
+        throwsA(
+          isA<LlamaUnsupportedException>().having(
+            (error) => error.message,
+            'message',
+            contains('Reference image editing'),
+          ),
+        ),
       );
-      bool background(int x, int y) =>
-          _distance2(x, y) >= 150 * 150 && (y < 416 || y >= 480) && y >= 16;
-      final keptMae = _maeIn(edited.pixels, referencePixels, background);
-      final bar = findDarkBar(edited.pixels);
-      final referencesUsedMae = _mae(edited.pixels, ordinary.pixels);
-      expect(
-        sourceDisk.b - sourceDisk.r,
-        lessThan(-100),
-        reason: 'the fixture disk is red',
-      );
-      expect(disk.b - disk.r, greaterThan(40), reason: 'the disk turned blue');
-      expect(keptMae, lessThan(25), reason: 'the background is kept');
-      expect(bar.mean, lessThan(90), reason: 'the dark bar is kept');
-      expect(
-        (bar.top - _barCoreTop).abs(),
-        lessThanOrEqualTo(_maxBarDrift),
-        reason: 'the dark bar stays near its fixture position',
-      );
-      expect(
-        hasFixtureBarShape(bar),
-        isTrue,
-        reason:
-            'the dark bar keeps its shape: ${bar.height} rows by ${bar.width} '
-            'columns',
-      );
-      expect(
-        referencesUsedMae,
-        greaterThan(10),
-        reason: 'the reference changes the output',
-      );
-
-      final task = await engine.generate(edit);
-      var cancelled = false;
-      await for (final event in task.events) {
-        if (event case ImageGenerationProgressEvent(
-          phase: ImageGenerationPhase.sampling,
-          :final step,
-        ) when step > 0 && !cancelled) {
-          cancelled = true;
-          task.cancel();
-        }
-      }
-      expect(cancelled, isTrue);
-      expect((await task.done).state, ImageGenerationCompletionState.cancelled);
-      expect((await task.done).result, isNull);
-      expect(
-        (await engine.generateImage(edit)).images.single.pixels,
-        edited.pixels,
-        reason: 'reuse after a cancel',
-      );
-      expect(
-        (await engine.generateImage(plain)).images.single.pixels,
-        ordinary.pixels,
-        reason: 'an ordinary request after an edit',
-      );
-      await engine.dispose();
-      expect(
-        (await engine.capabilities).supportsReferenceImageEditing,
-        isFalse,
-      );
-      final reloaded = await load();
-      try {
-        expect(
-          (await reloaded.capabilities).supportsReferenceImageEditing,
-          isTrue,
-        );
-        expect(
-          (await reloaded.generateImage(edit)).images.single.pixels,
-          edited.pixels,
-          reason: 'reload',
-        );
-      } finally {
-        await reloaded.dispose();
-      }
-
-      final metrics = {
-        'backend': capabilities.backendName,
-        'runtime': capabilities.runtimeVersion,
-        'family': capabilities.modelVersion,
-        'diskBlueMinusRed': disk.b - disk.r,
-        'backgroundKeptMae': keptMae,
-        'barMean': bar.mean,
-        'barTop': bar.top,
-        'barHeight': bar.height,
-        'barWidth': bar.width,
-        'editVsPlainMae': referencesUsedMae,
-        'maxRssBytes': ProcessInfo.maxRss,
-        'images': records,
-      };
-      print('REFERENCE_EDIT_METRICS ${jsonEncode(metrics)}');
-      if (output != null) {
-        File('$output/results.json').writeAsStringSync(
-          const JsonEncoder.withIndent('  ').convert(metrics),
-        );
-      }
     },
     skip: !Platform.isMacOS
-        ? 'The bounded recipe is macOS Metal'
+        ? 'The refusal scenario requires macOS Metal'
         : [diffusion, vae, clipL, t5xxl].contains(null)
         ? 'Set LLAMADART_REFERENCE_EDIT_DIFFUSION, _VAE, _CLIP_L and _T5XXL'
         : false,
   );
-}
-
-/// Squared distance from the fixture disk's centre.
-int _distance2(int x, int y) {
-  final dx = x - 256;
-  final dy = y - 224;
-  return dx * dx + dy * dy;
-}
-
-({double r, double g, double b}) _region(
-  Uint8List pixels,
-  bool Function(int x, int y) inside,
-) {
-  var r = 0, g = 0, b = 0, count = 0;
-  for (var y = 0; y < _size; y++) {
-    for (var x = 0; x < _size; x++) {
-      if (!inside(x, y)) continue;
-      final offset = (y * _size + x) * 3;
-      r += pixels[offset];
-      g += pixels[offset + 1];
-      b += pixels[offset + 2];
-      count++;
-    }
-  }
-  return (r: r / count, g: g / count, b: b / count);
-}
-
-double _mae(Uint8List a, Uint8List b) => _maeIn(a, b, (_, _) => true);
-
-double _maeIn(Uint8List a, Uint8List b, bool Function(int x, int y) inside) {
-  var sum = 0, count = 0;
-  for (var y = 0; y < _size; y++) {
-    for (var x = 0; x < _size; x++) {
-      if (!inside(x, y)) continue;
-      for (var c = 0; c < 3; c++) {
-        final offset = (y * _size + x) * 3 + c;
-        sum += (a[offset] - b[offset]).abs();
-        count++;
-      }
-    }
-  }
-  return sum / count;
 }

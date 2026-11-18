@@ -4,13 +4,13 @@
 text-to-image generation: the runtime samples the request's size, enlarges
 each latent bilinearly (`ImageHiresUpscaler.latent`) to the `ImageHiresFix`
 final size, adds noise for `denoisingStrength` and samples again at the final
-size, then decodes the final latents. The admitted recipe is the pinned
-stable-diffusion-native v0.3.0-1 runtime on macOS with the CPU or Metal and
+size, then decodes the final latents. The admitted recipe uses the pinned
+stable-diffusion-native v0.4.0 runtime on macOS with the CPU or Metal and
 one native-detected SD 1.x or SD 2.x checkpoint with a header-detected
 embedded full VAE and no component overrides.
 
-**Status: qualified** on macOS arm64 CPU and Metal with SD 1.5 and SD-Turbo
-(2026-10-27; [measured results](#reproduce)). Only this recipe is admitted.
+The v0.4.0 qualification uses SD-Turbo with its embedded full VAE on macOS
+arm64. The v0.3.0-1 measurements covered SD 1.5 and SD-Turbo on the same host.
 
 ## Contract
 
@@ -19,7 +19,7 @@ embedded full VAE and no component overrides.
 | Final size | `ImageHiresFix.scale` (> 1, ≤ 2) or `ImageHiresFix.size`; the two are separate constructors |
 | Alignment | First-pass and final sides are multiples of 64; a scale that does not land on one is rejected, never rounded |
 | Bounds | Each final side ≥ the first-pass side and ≤ twice it, final area > first-pass area, final ≤ 1024x1024 (1,048,576 px), `count` ≤ 4 |
-| Second-pass steps | 1 to 150, default the first pass's; the runtime runs the tail of a `steps / denoisingStrength` schedule, which can be one step more |
+| Second-pass steps | 1 to 150, default the first pass's. The runtime takes exactly that many steps from the end of a `steps / denoisingStrength` schedule |
 | Strength | 0.05 to 1, default 0.7 (upstream's default) |
 | Seeds | Image `i` uses `seed + i` in both passes (upstream re-seeds before each image's second pass) |
 | Upscaler | Latent bilinear only; model, Lanczos and nearest upscalers are not offered |
@@ -34,7 +34,7 @@ Validation errors (`LlamaImageGenerationException`) and recipe refusals
 ## Admission and runtime path
 
 - Load: `hiresFixRecipeVerified` needs macOS, a CPU or Metal backend, the
-  pinned runtime commit (`be48649`), and the header proof the image-editing
+  pinned runtime commit (`5dcfa79`), and the header proof the image-editing
   recipe uses: one checkpoint with four latent channels and
   `first_stage_model.decoder.conv_in.weight`, no tiny autoencoder and no
   other component. `ImageGenerationCapabilities.supportsHiresFix` also needs
@@ -44,7 +44,8 @@ Validation errors (`LlamaImageGenerationException`) and recipe refusals
 - Kernel options: unlike image editing and ControlNet, the recipe admits
   any `flashAttention` and `vaeDirectConvolution`. Both passes run the
   sampling and decode kernels an ordinary request runs, so the options
-  change hires output only as they change any request. With the defaults
+  change hires output only as they change any request. In historical v0.3.0-1
+  measurements with the defaults
   (flash attention on; direct convolution on for CPU, off for Metal),
   SD-Turbo `hires` differed from the direct-C reference with both off by
   MAE 0.09 on Metal and 1.12 on CPU, within the one-pass `base` and `final`
@@ -123,6 +124,27 @@ Fixed acceptance gates, recorded before any hires output was observed:
 | Cancel in the second pass | Cancelled completion, then exact hires reuse |
 | Dispose/reload | Capability cleared then restored; exact hires RGB |
 
+## v0.4.0 measurements
+
+The maintained SD-Turbo recipe passed all gates on an Apple M4 Max with
+macOS 26.7.1 and Flutter 3.47.1. It used `sd_turbo-f16-q8_0.gguf` (SHA-256
+`d50be7655f0a554cf8041c145d88b210bd5f3c545423119dee62ae08cae51580`)
+with its embedded full VAE, and the published macOS arm64 archive (SHA-256
+`db386420ccd34b07dbd4ef5c943e49c04c7965a96aa32d437eac524a968893c6`).
+Both backends matched the same-release direct C reference exactly for
+`base`, `final` and `hires`.
+
+| Backend | Hires vs enlarged base MAE | Downscaled hires vs base MAE | Downscaled one-pass final vs base MAE | Sampling steps, first and second pass |
+| --- | ---: | ---: | ---: | --- |
+| CPU | 21.58 | 21.98 | 56.65 | 2 and 2 |
+| Metal (`MTL0`) | 21.52 | 21.91 | 56.57 | 2 and 2 |
+
+The refinement pass now honors the requested step count. The SD-Turbo
+qualification used the same request and weights as the historical run below.
+[Upstream fix](https://github.com/leejet/stable-diffusion.cpp/pull/2227)
+
+## Historical v0.3.0-1 measurements
+
 Measured inputs (2026-10-27, Apple M4 Max, macOS 26.7.1, Flutter 3.47.1;
 pinned runtime `stable-diffusion-native-runtime-macos-arm64-v0.3.0-1.tar.gz`,
 SHA-256 `79c3517b363e6509df17af4d20056ed6e47bbbd134681fb9321520702534cb40`,
@@ -145,7 +167,7 @@ size vs scale, reset, post-cancel reuse and reload.
 | SD-Turbo, Metal | 34.42 | 34.30 | 56.57 | 3 (asked 2, strength 0.5) |
 | SD-Turbo, CPU | 34.56 | 34.44 | 56.64 | 3 (asked 2, strength 0.5) |
 
-SD-Turbo's 3 second-pass steps for 2 asked are upstream's schedule
+The historical runtime gave SD-Turbo 3 second-pass steps for 2 requested
 (`steps / strength` = 4, tail of `trunc(4 × 0.5) + 1` = 3); the C reference
 reported the same totals. CPU and Metal hashes differ from each other, as
 for every image recipe.

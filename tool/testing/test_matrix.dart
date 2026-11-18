@@ -830,11 +830,11 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
     tier: 'targeted',
     mode: 'local-only',
     covers:
-        'FLUX.1 Kontext [dev] reference image editing on macOS Metal: a visible requested edit with preserved content, a reference effect against ordinary text-to-image, direct-C reference parity, cancellation/reuse, ordinary reset and reload; other families, components, hosts, devices and reference counts refused',
+        'Typed refusal of the historical FLUX.1 Kontext [dev] reference edit after the model loads on macOS Metal with v0.4.0.',
     command:
         'LLAMADART_REFERENCE_EDIT_VAE=<ae> LLAMADART_REFERENCE_EDIT_CLIP_L=<clip_l> LLAMADART_REFERENCE_EDIT_T5XXL=<t5xxl> dart run tool/testing/run_local_e2e.dart --scenario image-reference-editing --model-path <flux1-kontext-dev>',
     useWhen:
-        'ReferenceImageEditingRequest, ImageReferenceEditingRecipe, supportsReferenceImageEditing, FLUX.1 Kontext header admission or ref_images/ref_image_args native mapping changes.',
+        'ReferenceImageEditingRequest, supportsReferenceImageEditing, FLUX.1 Kontext header admission or the runtime recipe gate changes.',
   ),
   TestMatrixRow(
     id: 'image-exit-teardown',
