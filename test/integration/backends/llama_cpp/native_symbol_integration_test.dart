@@ -555,9 +555,10 @@ void main() {
     });
 
     test('v0.7.0 context defaults preserve fields around the expert cache', () {
-      // Qualified 64-bit C headers: the expert cache and graph counters grow
-      // both structs passed by value across the FFI boundary.
-      expect(ffi.sizeOf<llama_context_params>(), 168);
+      // Qualified 64-bit C headers: the expert cache, its CPU share and the
+      // graph counters grow both structs passed by value across the FFI
+      // boundary.
+      expect(ffi.sizeOf<llama_context_params>(), 176);
       expect(ffi.sizeOf<llama_perf_context_data>(), 56);
       final params = llama_context_default_params();
 

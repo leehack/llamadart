@@ -259,8 +259,8 @@ void main() {
         expect(driver.started.single.backend, isNull);
       });
     });
-    test('the pinned upstream commit alone does not admit FP8 on Metal, '
-        'since a runtime without the fix shares it', () async {
+    test('builds sharing the legacy upstream commit still need the '
+        'Metal FP8 capability', () async {
       driver.status = StableDiffusionRuntimeStatus.available(
         version: 'unknown',
         commit: 'be48649',
@@ -695,7 +695,7 @@ void main() {
             isA<LlamaUnsupportedException>().having(
               (error) => error.message,
               'message',
-              allOf(contains('hires fix'), contains('v0.3.0-1')),
+              allOf(contains('hires fix'), contains('v0.4.0')),
             ),
           ),
           reason: kind,
@@ -812,6 +812,8 @@ void main() {
   });
 
   group('reference image editing', () {
+    final legacyRuntime = _available('MTL0\tApple M4\n', commit: 'be48649');
+
     ImageEditingPixels reference([int value = 5, int width = 512]) =>
         ImageEditingPixels.rgb(
           width: width,
@@ -831,12 +833,14 @@ void main() {
     setUp(() {
       driver.headers[_flux] = ImageModelHeaders.fluxKontextDiffusion;
       driver.session.modelVersion = 'Flux';
+      driver.status = legacyRuntime;
     });
 
     test('a FLUX.1 Kontext set on macOS Metal maps the reference, its size '
         'and the recipe, and an ordinary request after it has none', () async {
       for (final device in [ComputeDevice.auto, ComputeDevice.gpu]) {
         driver = _FakeDriver()
+          ..status = legacyRuntime
           ..headers[_flux] = ImageModelHeaders.fluxKontextDiffusion;
         driver.session.modelVersion = 'Flux';
         downloads = _FakeDownloads(driver);
@@ -885,7 +889,8 @@ void main() {
       () async {
         for (final kind in [
           'host',
-          'runtime',
+          'older runtime',
+          'v0.4.0 runtime',
           'cpu',
           'vulkan',
           'schnell',
@@ -895,6 +900,7 @@ void main() {
           'session probe',
         ]) {
           driver = _FakeDriver()
+            ..status = legacyRuntime
             ..headers[_flux] = kind == 'schnell'
                 ? ImageModelHeaders.fluxDiffusion
                 : ImageModelHeaders.fluxKontextDiffusion;
@@ -902,15 +908,21 @@ void main() {
           downloads = _FakeDownloads(driver);
           debugImageGenerationDriverOverride = driver;
           if (kind == 'host') driver.operatingSystem = 'linux';
-          if (kind == 'runtime') {
+          if (kind == 'older runtime') {
             driver.status = StableDiffusionRuntimeStatus.available(
               version: 'master-929',
               commit: '3f8527a',
               devices: parseStableDiffusionDeviceList('MTL0\tApple M4\n'),
             );
           }
+          if (kind == 'v0.4.0 runtime') {
+            driver.status = _available('MTL0\tApple M4\n');
+          }
           if (kind == 'vulkan') {
-            driver.status = _available('Vulkan0\tRTX\nCPU\tCPU\n');
+            driver.status = _available(
+              'Vulkan0\tRTX\nCPU\tCPU\n',
+              commit: 'be48649',
+            );
           }
           if (kind == 'legacy session') {
             driver.sessionOverride = _LegacySession(driver.session);
@@ -1354,6 +1366,7 @@ void main() {
         'unqualified; a GPU budget does not', () async {
       driver.headers[_flux] = ImageModelHeaders.fluxKontextDiffusion;
       driver.session.modelVersion = 'Flux';
+      driver.status = _available('MTL0\tApple M4\n', commit: 'be48649');
       for (final (placement, qualified) in [
         (const ImageModelPlacement(), true),
         (const ImageModelPlacement(maxGpuMemoryGiB: 12), true),
@@ -1867,7 +1880,7 @@ void main() {
       expect(capabilities.unsupportedReason, isNull);
       expect(capabilities.deviceNames, ['MTL0', 'BLAS', 'CPU']);
       expect(capabilities.backendName, 'MTL0');
-      expect(capabilities.runtimeVersion, 'master-929');
+      expect(capabilities.runtimeVersion, 'unknown');
       expect(capabilities.modelVersion, isNull);
       expect(capabilities.supportsCancellation, isTrue);
       expect(capabilities.maxConcurrentTasks, 1);
@@ -4360,12 +4373,13 @@ void main() {
 
 StableDiffusionRuntimeStatus _available(
   String devices, {
+  String commit = '5dcfa79',
   bool loadsFp8AsF16OnMetal = false,
   bool supportsIntrinsicTinyDecoderV1 = true,
   bool splitsGraphsOnMetal = false,
 }) => StableDiffusionRuntimeStatus.available(
-  version: 'master-929',
-  commit: 'be48649',
+  version: 'unknown',
+  commit: commit,
   devices: parseStableDiffusionDeviceList(devices),
   loadsFp8AsF16OnMetal: loadsFp8AsF16OnMetal,
   supportsIntrinsicTinyDecoderV1: supportsIntrinsicTinyDecoderV1,

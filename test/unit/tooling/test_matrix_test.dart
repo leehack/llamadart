@@ -530,15 +530,14 @@ void main() {
     expect(row.command, contains('--scenario image-hires-fix'));
     expect(row.command, contains('LLAMADART_HIRES_DEVICE='));
   });
-  test('reference-editing matrix identifies its bounded Metal '
-      'qualification', () {
+  test('reference-editing matrix identifies the v0.4.0 Metal refusal', () {
     final row = testMatrixRows.singleWhere(
       (r) => r.id == 'image-reference-editing',
     );
     expect(row.tier, 'targeted');
     expect(row.mode, 'local-only');
     expect(row.covers, contains('macOS Metal'));
-    expect(row.covers, contains('direct-C'));
+    expect(row.covers, allOf(contains('refusal'), contains('v0.4.0')));
     final scenario = buildLocalE2eScenarios().singleWhere(
       (s) => s.name == row.id,
     );

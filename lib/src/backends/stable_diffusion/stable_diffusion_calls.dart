@@ -1,11 +1,17 @@
 import 'dart:ffi';
 
+import 'package:ffi/ffi.dart';
+
 import '../../core/exceptions.dart';
 import '../../hook/native_release_pins.dart';
 import 'stable_diffusion_bindings.dart' as sd;
 
 const _stableDiffusionAsset = 'package:llamadart/stable_diffusion';
 
+typedef _CommitNative = Pointer<Char> Function();
+typedef _ControlTypeNameNative = Pointer<Char> Function(UnsignedInt);
+typedef _ContextParamsInitNative = Void Function(Pointer<sd.sd_ctx_params_t>);
+typedef _ImageParamsInitNative = Void Function(Pointer<sd.sd_img_gen_params_t>);
 typedef _ProgressEnableNative = Void Function();
 typedef _ProgressReadNative =
     Size Function(
@@ -57,16 +63,13 @@ typedef _FreeImageGenerationResultNative =
 ///   [exitFree]: any other native call on a context that is in flight when
 ///   the process exits is freed under (`doc/llama_cpp_exit_teardown.md`).
 ///
-/// [tryResolve] binds the six of them through the addresses it resolves, so
-/// the calls exist only when the runtime exports all six. An older runtime
-/// has no way to report progress without a Dart callback, so image
-/// generation is unsupported on it rather than falling back.
+/// [tryResolve] first checks the runtime's source identity and layout-specific
+/// export. After admission it binds both parameter initializers and the six
+/// required wrapper functions through addresses from the same lookup.
 ///
 /// [log] and [gpu] are the functions [optionalNativeRelease]
 /// added. Each group is bound only when the runtime exports all of it, and is
-/// `null` otherwise: a runtime between the two releases still generates
-/// images, without the runtime's log and its reason for a failed load, and
-/// without the memory check of a Vulkan GPU. [graphSplit] is the same for
+/// `null` otherwise, disabling that optional feature. [graphSplit] is the same for
 /// [graphSplitNativeRelease]'s Metal graph splitting.
 ///
 /// `sd_dart_exit_teardown`, `sd_dart_exit_call_begin`,
@@ -104,6 +107,16 @@ final class StableDiffusionCalls {
   /// The oldest `stable-diffusion-native` release that exports the `sd_dart_`
   /// functions.
   static const String minimumNativeRelease = 'v0.2.0-1';
+
+  /// The first owner release with the 560-byte image parameter ABI.
+  static const String imageParamsAbiRelease = 'v0.4.0';
+
+  // sd_commit() reports the upstream checkout's abbreviated SHA, not the
+  // owner release tag. The hook verifies the actual owner archive separately.
+  static const _imageParamsAbiCommit =
+      '5dcfa79801213f23e27b3e83617350ebb8ea93aa';
+  static const _contextParamsBytes = 336;
+  static const _imageParamsBytes = 560;
 
   /// The `sd_dart_` functions [tryResolve] needs the runtime to export.
   static const List<String> wrapperSymbols = [
@@ -160,8 +173,10 @@ final class StableDiffusionCalls {
     'free_sd_image_generation_result',
   ];
 
-  /// Resolves the calls from the bundled runtime, or returns `null` when it
-  /// does not export every one of [wrapperSymbols]. [log], [gpu] and
+  /// Resolves the calls from the bundled runtime, or returns `null` if the
+  /// library or required wrapper functions could not be resolved. Throws
+  /// [LlamaUnsupportedException] if the loaded source or its ABI exports do
+  /// not match [imageParamsAbiRelease]. [log], [gpu] and
   /// [graphSplit] are `null` when it does not export theirs
   /// ([logSymbols], [deviceMemorySymbols], [graphSplitSymbols]).
   ///
@@ -174,20 +189,53 @@ final class StableDiffusionCalls {
     Pointer<NativeType> Function(String name)? symbol,
     String releaseTag = stableDiffusionReleaseTag,
   }) {
+    if (sizeOf<sd.sd_ctx_params_t>() != _contextParamsBytes ||
+        sizeOf<sd.sd_img_gen_params_t>() != _imageParamsBytes) {
+      throw stableDiffusionAbiUnsupported();
+    }
     try {
-      return StableDiffusionCalls._fromSymbols(
-        symbol ?? symbolAddress,
-        releaseTag,
-      );
+      final lookup = symbol ?? symbolAddress;
+      final readCommit = lookup(
+        'sd_commit',
+      ).cast<NativeFunction<_CommitNative>>().asFunction<_CommitNative>();
+      final commitPointer = readCommit();
+      final commit = commitPointer == nullptr
+          ? ''
+          : commitPointer.cast<Utf8>().toDartString();
+      if (commit.length < 7 || !_imageParamsAbiCommit.startsWith(commit)) {
+        throw stableDiffusionAbiUnsupported();
+      }
+      try {
+        // The upstream change that added control_type to the image params
+        // added this export. A symbol check does not call into an initializer.
+        lookup('sd_control_type_name');
+      } on ArgumentError {
+        throw stableDiffusionAbiUnsupported();
+      }
+      return StableDiffusionCalls._fromSymbols(lookup, releaseTag);
     } on ArgumentError {
       return null;
     }
   }
 
-  /// The address of the function the bundled runtime exports as [name], one
-  /// of [wrapperSymbols], [logSymbols], [deviceMemorySymbols],
-  /// [graphSplitSymbols] or [fp8MetalSymbols]; throws [ArgumentError] when it exports none.
+  /// The address of the function the bundled runtime exports as [name].
+  /// Throws [ArgumentError] when the symbol cannot be resolved.
   static Pointer<NativeType> symbolAddress(String name) => switch (name) {
+    'sd_commit' => Native.addressOf<NativeFunction<_CommitNative>>(
+      sd.sd_commit,
+    ),
+    'sd_control_type_name' =>
+      Native.addressOf<NativeFunction<_ControlTypeNameNative>>(
+        _controlTypeName,
+      ),
+    'sd_ctx_params_init' =>
+      Native.addressOf<NativeFunction<_ContextParamsInitNative>>(
+        sd.sd_ctx_params_init,
+      ),
+    'sd_img_gen_params_init' =>
+      Native.addressOf<NativeFunction<_ImageParamsInitNative>>(
+        sd.sd_img_gen_params_init,
+      ),
     'sd_dart_progress_enable' =>
       Native.addressOf<NativeFunction<_ProgressEnableNative>>(
         sd.sd_dart_progress_enable,
@@ -294,11 +342,15 @@ final class StableDiffusionCalls {
           cancelGeneration(context, sd.sd_cancel_mode_t.SD_CANCEL_ALL.value),
       exitFree: exitFree.asFunction(),
       exitFreeAddress: exitFree.cast(),
-      contextParamsInit: sd.sd_ctx_params_init,
+      contextParamsInit: function<_ContextParamsInitNative>(
+        'sd_ctx_params_init',
+      ).asFunction(),
       supportsImageGeneration: sd.sd_ctx_supports_image_generation,
       hasControlNet: sd.sd_ctx_has_control_net,
       modelVersionName: sd.sd_get_model_version_name,
-      imageGenerationParamsInit: sd.sd_img_gen_params_init,
+      imageGenerationParamsInit: function<_ImageParamsInitNative>(
+        'sd_img_gen_params_init',
+      ).asFunction(),
       freeImages: sd.free_sd_images,
       log: optional(
         () => StableDiffusionLogCalls(
@@ -415,16 +467,15 @@ final class StableDiffusionCalls {
   /// `free_sd_images`.
   final void Function(Pointer<sd.sd_image_t> images, int count) freeImages;
 
-  /// The runtime's log recorder, or `null` on a runtime older than
-  /// [optionalNativeRelease].
+  /// The runtime's log recorder, or `null` if it lacks [logSymbols].
   final StableDiffusionLogCalls? log;
 
-  /// The runtime's GPU device queries, or `null` on a runtime older than
-  /// [optionalNativeRelease].
+  /// The runtime's GPU device queries, or `null` if it lacks
+  /// [deviceMemorySymbols].
   final StableDiffusionGpuCalls? gpu;
 
-  /// The runtime's Metal graph-split query, or `null` on a runtime older than
-  /// [graphSplitNativeRelease].
+  /// The runtime's Metal graph-split query, or `null` if it lacks
+  /// [graphSplitSymbols].
   final StableDiffusionGraphSplitCalls? graphSplit;
 
   /// Whether the runtime loads FP8 weights a Metal backend computes with as
@@ -537,7 +588,8 @@ final class StableDiffusionLogCalls {
 LlamaUnsupportedException stableDiffusionWrapperUnsupported() =>
     LlamaUnsupportedException(
       'The stable_diffusion runtime does not export the sd_dart_ functions '
-      'image generation needs for progress without a Dart callback and for '
+      'or parameter initializers image generation needs for progress '
+      'without a Dart callback and for '
       'freeing its contexts at process exit '
       '(${StableDiffusionCalls.wrapperSymbols.join(', ')}): '
       'stable-diffusion-native ${StableDiffusionCalls.minimumNativeRelease} '
@@ -545,7 +597,22 @@ LlamaUnsupportedException stableDiffusionWrapperUnsupported() =>
       '$stableDiffusionReleaseTag.',
     );
 
+/// The error for a loaded runtime with an unrecognized image parameter ABI.
+LlamaUnsupportedException
+stableDiffusionAbiUnsupported() => LlamaUnsupportedException(
+  'The loaded stable_diffusion runtime and Dart bindings must share the '
+  '560-byte sd_img_gen_params_t ABI introduced in stable-diffusion-native '
+  '${StableDiffusionCalls.imageParamsAbiRelease}. Bundle the package-pinned '
+  'release $stableDiffusionReleaseTag and rebuild.',
+);
+
 // The generated binding takes the enum, so it has no address of its own.
+@Native<_ControlTypeNameNative>(
+  symbol: 'sd_control_type_name',
+  assetId: _stableDiffusionAsset,
+)
+external Pointer<Char> _controlTypeName(int type);
+
 @Native<_CancelGenerationNative>(
   symbol: 'sd_dart_cancel_generation',
   assetId: _stableDiffusionAsset,

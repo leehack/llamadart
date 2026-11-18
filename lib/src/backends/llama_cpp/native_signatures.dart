@@ -338,8 +338,10 @@ typedef _MtmdSupportVisionNative = Bool Function(Pointer<mtmd_context>);
 typedef _MtmdSupportVisionDart = bool Function(Pointer<mtmd_context>);
 typedef _MtmdSupportAudioNative = Bool Function(Pointer<mtmd_context>);
 typedef _MtmdSupportAudioDart = bool Function(Pointer<mtmd_context>);
-typedef _MtmdSupportVideoNative = Bool Function(Pointer<mtmd_context>);
-typedef _MtmdSupportVideoDart = bool Function(Pointer<mtmd_context>);
+typedef _MtmdHelperCapabilitiesNative =
+    mtmd_helper_cap Function(Pointer<llama_model>, Pointer<mtmd_context>);
+typedef _MtmdSupportVideoDart =
+    bool Function(Pointer<llama_model>, Pointer<mtmd_context>);
 typedef _MtmdBitmapFreeNative = Void Function(Pointer<mtmd_bitmap>);
 typedef _MtmdBitmapFreeDart = void Function(Pointer<mtmd_bitmap>);
 typedef _MtmdTokenizeNative =

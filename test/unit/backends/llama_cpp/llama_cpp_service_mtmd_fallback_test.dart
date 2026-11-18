@@ -5,6 +5,8 @@ import 'dart:ffi';
 import 'dart:io';
 import 'dart:mirrors';
 
+import 'package:llamadart/src/backends/llama_cpp/bindings.dart';
+import 'package:llamadart/src/backends/llama_cpp/exit_teardown_api.dart';
 import 'package:llamadart/src/backends/llama_cpp/llama_cpp_service.dart';
 import 'package:path/path.dart' as path;
 import 'package:test/test.dart';
@@ -165,6 +167,77 @@ void main() {
       moduleDirectory,
     );
   });
+
+  test(
+    'split mtmd returns the by-value video flag for the model and projector',
+    () async {
+      final fixture = path.join(moduleDirectory, fileName);
+      final compile = await Process.run(Platform.isWindows ? 'clang' : 'cc', [
+        if (Platform.isWindows) '-fuse-ld=lld',
+        Platform.isMacOS ? '-dynamiclib' : '-shared',
+        if (!Platform.isWindows) '-fPIC',
+        'test/fixtures/mtmd_video_capabilities.c',
+        '-o',
+        fixture,
+      ]);
+      expect(
+        compile.exitCode,
+        0,
+        reason: '${compile.stdout}\n${compile.stderr}',
+      );
+      final library = DynamicLibrary.open(fixture);
+      addTearDown(library.close);
+      setDirectory(moduleDirectory);
+      expect(resolve(open: (_) => library), isNotNull);
+
+      final nativeSetVideoEnabled = library
+          .lookupFunction<Void Function(Bool), void Function(bool)>(
+            'fixture_set_video_enabled',
+          );
+      final nativeLastModel = library
+          .lookupFunction<
+            Pointer<llama_model> Function(),
+            Pointer<llama_model> Function()
+          >('fixture_last_model');
+      final nativeLastProjector = library
+          .lookupFunction<
+            Pointer<mtmd_context> Function(),
+            Pointer<mtmd_context> Function()
+          >('fixture_last_projector');
+
+      // Seed opaque pointers without calling the primary code asset or
+      // giving it ownership of the fixture's sentinel addresses.
+      const modelHandle = 1;
+      const projectorHandle = 2;
+      final model = Pointer<llama_model>.fromAddress(0x1000);
+      final projector = Pointer<mtmd_context>.fromAddress(0x2000);
+      final wrapper =
+          owner.declarations[private('_LlamaModelWrapper')] as ClassMirror;
+      final mirror = reflect(service);
+      (mirror.getField(private('_models')).reflectee
+          as Map)[modelHandle] = wrapper
+          .newInstance(
+            Symbol.empty,
+            [model, LlamaCppObjectCalls.upstream],
+            {#vocabSize: 0, #suppressedTokens: const <int>[]},
+          )
+          .reflectee;
+      (mirror.getField(private('_modelToMtmd')).reflectee as Map)[modelHandle] =
+          projectorHandle;
+      (mirror.getField(private('_mtmdContexts')).reflectee
+              as Map)[projectorHandle] =
+          projector;
+      mirror.setField(private('_mtmdPrimarySymbolsUnavailable'), true);
+
+      for (final enabled in [true, false]) {
+        nativeSetVideoEnabled(enabled);
+        expect(service.supportsVideo(projectorHandle), enabled);
+        expect(nativeLastModel(), model);
+        expect(nativeLastProjector(), projector);
+      }
+    },
+    timeout: const Timeout(Duration(minutes: 2)),
+  );
 
   for (final changeDirectory in [false, true]) {
     test('fake mtmd absence survives a real library beside the backend '

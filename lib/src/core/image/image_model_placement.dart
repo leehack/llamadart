@@ -19,21 +19,15 @@ final class ImageModelPlacement {
   /// It frees the encoders' GPU memory (T5-XXL Q8_0 alone is about 5 GB) for
   /// a CPU encode once per generation. The conditioning differs from the
   /// GPU's in rounding, which sampling carries into the image: SD-Turbo on an
-  /// M4 Max changed by at most 40 and on average 0.23 of 255 per channel.
-  ///
-  /// With a discrete and an integrated Vulkan GPU and `ComputeDevice.auto`,
-  /// moving a module, here or with [vaeOnCpu], lets the runtime's fit also
-  /// consider the integrated GPU, which can then compute the diffusion model
-  /// when it reports more free memory: slower, not a failure.
-  /// `ComputeDevice.gpu` keeps the first discrete GPU.
+  /// M4 Max changed by at most 37 and on average 0.229 of 255 per channel.
   final bool textEncoderOnCpu;
 
   /// Whether the VAE or tiny autoencoder computes on the CPU, with its
   /// weights and the decode's working memory (1.6 GiB for a 512x512 SD 2.x
   /// image) in system memory.
   ///
-  /// The decode is slower: a one-step 512x512 SD-Turbo image took 8.9 s
-  /// instead of 2.1 to 2.6 s on an M4 Max, and its pixels changed by at most
+  /// The decode is slower: a one-step 512x512 SD-Turbo image took 7.17 s
+  /// instead of 2.02 s on an M4 Max, and its pixels changed by at most
   /// 1 of 255.
   final bool vaeOnCpu;
 
@@ -46,28 +40,29 @@ final class ImageModelPlacement {
   /// beside the VAE, in the pinned runtime), so weights can move to system
   /// memory, another GPU or disk even when they alone are below it. Moved
   /// weights are streamed to the GPU when used, which is slower; compute
-  /// buffers above the budget are split into segments. A budget below the VAE
-  /// decode's
-  /// working memory makes the runtime decode in tiles, which shows at their
-  /// seams: SD-Turbo at 512x512 with 1 GiB changed by at most 85 and on
-  /// average 2.5 of 255 per channel. A budget the model fits leaves pixels
-  /// unchanged.
+  /// buffers above the budget can be split into segments. A budget below
+  /// the VAE decode's working memory can make the runtime decode in tiles,
+  /// which shows at their seams. SD-Turbo at 512x512 with 1 GiB changed by
+  /// at most 86 and on average 2.474 of 255 per channel. At 8 GiB, SD-Turbo
+  /// kept the same pixels as the default budget.
   ///
   /// From 1 to [largestGpuMemoryGiB], in whole GiB because the runtime parses
   /// a fraction in the process's locale, which may use a decimal comma.
   /// Needs [autoFit] and, outside Metal, a discrete GPU: the load throws
   /// `LlamaUnsupportedException` when the runtime reports only integrated
-  /// GPUs or no GPU type, because the pinned runtime can then compute on an
-  /// integrated GPU under the budget without its fit and abort.
+  /// GPUs or no GPU type. Older runtimes can abort under a budget on
+  /// integrated Vulkan, and the newer planner has yet to be qualified there.
   final int? maxGpuMemoryGiB;
 
   /// Whether stable-diffusion.cpp decides where weights go from the memory
   /// that is free (its automatic fit).
   ///
-  /// When on, as by default, the runtime computes on the GPU with the most
-  /// free memory (with `ComputeDevice.auto`), keeps there the weights that
-  /// fit, and moves the rest to system memory, another GPU, or disk, in that
-  /// order: a model larger than the GPU loads and generates more slowly.
+  /// With automatic fit and `ComputeDevice.auto`, the runtime prefers a
+  /// discrete GPU with the most usable memory and can use an integrated GPU
+  /// when no discrete GPU has a usable budget. It keeps the weights that fit
+  /// on the compute device and moves the rest to system memory, another GPU,
+  /// or disk, in that order. A model larger than the GPU loads and generates
+  /// more slowly.
   ///
   /// When off, every module's weights are allocated at load on the device it
   /// computes on, and `ComputeDevice.auto` uses the first GPU (the CPU on

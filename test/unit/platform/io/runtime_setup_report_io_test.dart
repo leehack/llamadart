@@ -56,9 +56,9 @@ void main() {
           'stable_diffusion',
         ]);
         expect(report.runtimes.map((runtime) => runtime.expectedReleaseTag), [
-          'v0.9.0',
+          'v1.0.0-1',
           'v0.19.1-5',
-          'v0.3.0-6',
+          'v0.4.0',
         ]);
         expect(report.dartVersion, '3.13.1');
         expect(jsonEncode(report.toJson()), isNot(contains('private-user')));

@@ -36,3 +36,18 @@ String? readNativeBuildIdentity({
   symbol: 'llama_dart_build_identity',
 )
 external Pointer<Char> _wrapperBuildIdentity();
+
+/// The build identity [library] reports, or `null` when it lacks
+/// `llama_dart_build_identity`.
+String? readLibraryBuildIdentity(DynamicLibrary library) {
+  final Pointer<Char> identity;
+  try {
+    identity = library
+        .lookupFunction<Pointer<Char> Function(), Pointer<Char> Function()>(
+          'llama_dart_build_identity',
+        )();
+  } on ArgumentError {
+    return null;
+  }
+  return identity == nullptr ? '' : identity.cast<Utf8>().toDartString();
+}

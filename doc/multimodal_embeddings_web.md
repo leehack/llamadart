@@ -101,7 +101,7 @@ browser resource limits require separate device qualification.
 covers tested llamadart source
 [`eb18767e6e9aad09585c3405e2093a43c477d77e`](https://github.com/leehack/llamadart/commit/eb18767e6e9aad09585c3405e2093a43c477d77e),
 EmbeddingGemma-2 BF16 with matching
-mmproj and pinned assets `v0.1.85` on wasm64, NVIDIA L4, Ubuntu 24.04.5,
+mmproj and the assets pinned then (`v0.1.85`) on wasm64, NVIDIA L4, Ubuntu 24.04.5,
 Chrome 157.0.8103.78 and driver 615.71.09. Both
 direct and worker paths reported `gpuActive: true` with the mixed backend label
 `WebGPU, CPU`; this was actual GPU execution, not a CPU fallback. The model and

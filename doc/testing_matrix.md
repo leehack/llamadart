@@ -149,7 +149,7 @@ Pick targeted rows based on the touched surface:
 | Shared model store package or its guide | `model-store-contracts` |
 | Native sync tooling under `tool/native/`, `lib/src/hook/native_release_pins.dart`, `sync_native_bindings.yml`, an Apple companion `Package.swift`, or a runtime pin constant | `native-sync-python-suites`, `native-release-digests` |
 | Native-assets hook, runtime pin, bundle layout | `native-hook-bundles`, `litert-lm-engine-smoke`, and relevant `platform` rows such as `android-arm64-device-smoke` |
-| Ordinary default llama.cpp consumer and distributed AOT | `native-default-consumer-aot` (explicit local/manual macOS arm64 and Windows x64; native2 pipeline-only, exact native3 qualification separately accepted) |
+| Ordinary default llama.cpp consumer and distributed AOT | `native-default-consumer-aot` (explicit local/manual macOS arm64 and Windows x64 with independent acceptance for each exact native pin) |
 | Windows llama.cpp registry or native-module override loading | `root-vm`, including `test/integration/windows_ggml_registry_test.dart`; fresh-process Windows model/context load with normal assets and the #1649 override matrix below |
 | llama.cpp / GGUF generation, prompt reuse, context reuse | `native-prompt-reuse-parity`, `native-inference-benchmark`, `gguf-chat-features-smoke`, `native-prompt-cancel` |
 | Generation cancel or engine stream forwarding | `native-prompt-cancel`, plus `web-speech-task-cancel` for browser speech task isolation |
@@ -1368,13 +1368,11 @@ other family, decoder, host, device or upscaler qualification is inferred.
 
 ### Reference image editing
 
-`image-reference-editing` runs the maintained local-only FLUX.1 Kontext
-[dev] reference edit on macOS Metal: a visible requested edit with preserved
-content, a reference effect against ordinary text-to-image, cancellation,
-ordinary reset and reload, with optional exact direct-C references. See
-[the fixture, gates and provenance](image_reference_editing.md). No other
-family, component, host, device or reference-count qualification is
-inferred.
+`image-reference-editing` loads FLUX.1 Kontext [dev] on macOS Metal with
+v0.4.0 and checks that the capability is disabled and the fixed reference
+request throws `LlamaUnsupportedException` before generation. The
+[historical qualification](image_reference_editing.md) records the positive
+v0.3.0-1 fixture, its direct-C parity and how to reproduce it.
 
 ## Windows native override registry
 
@@ -1422,8 +1420,9 @@ The outer dry-run prints the command with placeholders when inputs are absent;
 it produces no qualification result. Before real local execution set all four:
 
 - `LLAMADART_DEFAULT_AOT_EXPECTED_SHA`: reviewed full lowercase checkout commit.
-- `LLAMADART_DEFAULT_AOT_EXPECTED_NATIVE_TAG`: `v0.8.0-2`, `v0.8.0-3` or `v0.9.0`, which must
-  match the source pin. This verifies identity and never overrides the pin.
+- `LLAMADART_DEFAULT_AOT_EXPECTED_NATIVE_TAG` must match the source pin. The
+  supported values are `v0.8.0-2`, `v0.8.0-3`, `v0.9.0`, `v1.0.0`
+  and `v1.0.0-1`.
 - `LLAMADART_DEFAULT_AOT_MODEL_PATH`: the admitted local Qwen2.5-1.5B Instruct
   Q4_K_M fixture; local execution downloads nothing through the dispatcher.
 - `LLAMADART_DEFAULT_AOT_OUTPUT_ROOT`: a fresh owned evidence directory.
@@ -1459,7 +1458,7 @@ default-branch registration. Reruns are refused by the attempt-1 guard.
 
 Native `v0.8.0-2` is **pipeline baseline only**; it provides no native3 acceptance.
 Native3 acceptance remains [#1762](https://github.com/leehack/llamadart/issues/1762).
-It requires its own source/artifact/provenance gates, actual provider
+Each exact pin requires its own source/artifact/provenance gates, actual provider
 identity, model inference and distributed AOT results, plus independent
 acceptance. A `--help`, list, build or source-check pass supplies no inference or
 AOT evidence. Historical Windows 16-case evidence belongs to native

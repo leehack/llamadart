@@ -31,6 +31,7 @@ doc/pr_branch_writer_inventory.md @leehack
 doc/high_risk_pre_merge_readiness.md @leehack
 hook/build.dart @leehack
 lib/src/hook/native_release_pins.dart @leehack
+lib/src/backends/llama_cpp/runtime_admission.dart @leehack
 tool/testing/test_matrix.dart @leehack
 example/chat_app/integration_test/flutter_shutdown_probe.dart @leehack
 example/chat_app/test/flutter_shutdown_e2e_test.dart @leehack
@@ -68,6 +69,7 @@ tool/native/test_sync_stable_diffusion_bindings.py @leehack
 ffigen.yaml @leehack
 ffigen_stable_diffusion.yaml @leehack
 lib/src/backends/stable_diffusion/stable_diffusion_bindings.dart @leehack
+test/fixtures/native/stable_diffusion_v0_4_0_manifest.json @leehack
 tool/native/fixtures/ @leehack
 scripts/fetch_webgpu_bridge_assets.sh @leehack
 website/docs/changelog/recent-releases.md @leehack

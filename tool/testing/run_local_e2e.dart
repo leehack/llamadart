@@ -1369,11 +1369,10 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
       name: 'image-reference-editing',
       group: LocalE2eScenarioGroup.dartLocalOnly,
       description:
-          'Qualify FLUX.1 Kontext [dev] reference image editing on macOS '
-          'Metal: visible edit, preserved content, reference effect, direct-C '
-          'parity, cancellation and reload; --model-path is the transformer '
-          'and LLAMADART_REFERENCE_EDIT_VAE, _CLIP_L and _T5XXL its '
-          'components.',
+          'Verify that v0.4.0 refuses FLUX.1 Kontext [dev] reference editing '
+          'after the model loads on macOS Metal; --model-path is the '
+          'transformer and LLAMADART_REFERENCE_EDIT_VAE, _CLIP_L and _T5XXL '
+          'its components.',
       requiresDevice: false,
       stepsBuilder: (context) => [
         LocalE2eCommandStep(
@@ -1391,10 +1390,8 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
             'LLAMADART_REFERENCE_EDIT_DIFFUSION': context.modelPath!,
             for (final name in _referenceEditComponentVariables)
               name: context.environment[name]!,
-            'LLAMADART_IMAGE_OUTPUT_DIR':
-                '${context.projectRoot}/build/image-reference-editing',
           },
-          description: 'FLUX.1 Kontext reference-editing qualification',
+          description: 'FLUX.1 Kontext reference-editing refusal on v0.4.0',
         ),
       ],
     ),
@@ -3172,21 +3169,29 @@ Future<LocalE2eResult> runLocalE2e(
     final env = environment ?? Platform.environment;
     final sha = env['LLAMADART_DEFAULT_AOT_EXPECTED_SHA'] ?? '';
     final tag = env['LLAMADART_DEFAULT_AOT_EXPECTED_NATIVE_TAG'];
+    const supportedTags = [
+      'v0.8.0-2',
+      'v0.8.0-3',
+      'v0.9.0',
+      'v1.0.0',
+      'v1.0.0-1',
+    ];
     if (sha.length != 40 ||
         !RegExp(r'^[0-9a-f]{40}$').hasMatch(sha) ||
         sha == '0000000000000000000000000000000000000000' ||
-        !const {'v0.8.0-2', 'v0.8.0-3', 'v0.9.0'}.contains(tag) ||
+        !supportedTags.contains(tag) ||
         (env['LLAMADART_DEFAULT_AOT_MODEL_PATH'] ?? '').trim().isEmpty ||
         (env['LLAMADART_DEFAULT_AOT_OUTPUT_ROOT'] ?? '').trim().isEmpty) {
-      return const LocalE2eResult(
+      return LocalE2eResult(
         64,
         stderr:
             'native-default-consumer-aot requires '
             'LLAMADART_DEFAULT_AOT_EXPECTED_SHA (full lowercase commit), '
-            'LLAMADART_DEFAULT_AOT_EXPECTED_NATIVE_TAG (v0.8.0-2, v0.8.0-3 or v0.9.0), '
+            'LLAMADART_DEFAULT_AOT_EXPECTED_NATIVE_TAG (${supportedTags.join(', ')}), '
             'LLAMADART_DEFAULT_AOT_MODEL_PATH and '
             'LLAMADART_DEFAULT_AOT_OUTPUT_ROOT (fresh output). '
-            'Expected tag is verification only; native2 is pipeline-only.\n',
+            'The expected tag must match the checked-in pin. '
+            'v0.8.0-2 is pipeline-only.\n',
       );
     }
   }
@@ -3465,7 +3470,8 @@ Future<LocalE2eResult> runLocalE2e(
         stderr:
             '--model-path <flux1-kontext-dev transformer> and '
             '${_referenceEditComponentVariables.join(', ')} are required for '
-            'image-reference-editing. See doc/image_reference_editing.md.\n',
+            'the image-reference-editing refusal scenario. '
+            'See doc/image_reference_editing.md.\n',
       );
     }
   }

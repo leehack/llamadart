@@ -252,7 +252,7 @@ control record until process termination. No guarantee covers arbitrary
 simultaneous parent/worker death. Token registration is separate from payload
 ownership.
 
-The pinned `v0.9.0` runtime supplies owner API v1 for this creation-time
+The pinned `v1.0.0` runtime supplies owner API v1 for this creation-time
 cleanup path. Capability resolution remains all-or-nothing: custom runtimes
 with absent, partial or unsupported owner APIs use the existing path and
 retain its creation-time gap rather than mixing ownership protocols.
@@ -497,30 +497,23 @@ stand-in:
   `sd_get_model_version_name` right after the load, `sd_img_gen_params_init`
   and `free_sd_images`.
 
-`StableDiffusionCalls.tryResolve` binds the six `sd_dart_` functions through
-the addresses it resolves, all or nothing. There is no fallback to the
-upstream functions, unlike the llama.cpp backend: without the recorder a
-runtime reports progress only through a Dart callback, which is the abort the
-recorder removes, and without the callback the engine would report a
-generation as successful while it emits none of the documented progress
-events. `probeStableDiffusionRuntime` therefore reports such a runtime as
-unavailable and names `v0.2.0-1`
-(`StableDiffusionCalls.minimumNativeRelease`), and
-`StableDiffusionImageWorker.start` throws the same
-`LlamaUnsupportedException`. No supported configuration reaches an older
-runtime: the hook downloads the pinned archives by checksum, this runtime has
-no tag or path override, and the build rejects an Apple companion whose pin
-differs from the core pin.
+`StableDiffusionCalls.tryResolve` checks the runtime's source identity and
+requires the `sd_control_type_name` export before binding the context and image
+initializers through the same lookup. The published v0.4.0 library reports
+`5dcfa79`. Its image parameter structure is 560 bytes on the supported
+64-bit targets, with `control_type` at offset 552. The v0.3.x structure was
+552 bytes. Both the runtime probe and the image worker require ABI admission
+before passing a Dart-allocated structure to native code.
 
-The functions `v0.2.0-2` added are optional: `StableDiffusionCalls.log` binds
-the five log functions when the runtime exports all of them, and
-`gpu` its two device queries, and each is `null` otherwise
-(`StableDiffusionCalls.optionalNativeRelease`). On such a runtime image
-generation works as it did on `v0.2.0-1`: no log call is made, a failed load
-names the missing file roles and the release that reports reasons, and a
-Vulkan GPU is not memory-checked. The same holds for the reason above: no
-supported configuration reaches it, so the fallback is tested on the
-stand-in and was run once by hand against the `v0.2.0-1` archive.
+The six required wrapper functions provide tracked context creation, generation,
+cancellation, disposal and callback-free progress. The worker reports a typed
+unsupported error if these exports are unavailable. The hook verifies archive
+checksums and requires the Apple companion to pin the same runtime.
+
+On an admitted runtime, `StableDiffusionCalls.log` resolves the five optional
+logging functions as a group, and `gpu` resolves both device queries. An
+incomplete group is unavailable. The worker skips logging or GPU memory
+queries for that group.
 
 `sd_dart_exit_teardown`, `sd_dart_exit_call_begin`, `sd_dart_exit_call_end`,
 `sd_dart_exit_track` and `sd_dart_exit_untrack` are excluded from the

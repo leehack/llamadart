@@ -5,7 +5,7 @@
 library;
 
 /// `leehack/llamadart-native` release tag downloaded for the llama.cpp runtime.
-const llamaCppTag = 'v0.9.0';
+const llamaCppTag = 'v1.0.0-1';
 
 /// The first `llamadart_llama_cpp_flutter` release whose `Package.swift` pins
 /// [llamaCppTag].
@@ -16,13 +16,13 @@ const llamaCppTag = 'v0.9.0';
 /// `MAJOR.MINOR`, and its own minor's first release otherwise. The native pin
 /// sync sets it to the companion's next release whenever it moves the
 /// companion pin.
-const llamaCppAppleCompanionVersion = '0.19.0';
+const llamaCppAppleCompanionVersion = '0.19.12';
 
 /// Earlier `leehack/llamadart-native` tags that a published Apple llama.cpp
 /// companion pins and the build still accepts, each mapped to what its
 /// frameworks lack compared with [llamaCppTag].
 ///
-/// No older Apple runtime is admitted for v0.9.0: consumers need its ARM F16
+/// No older Apple runtime is admitted for v1.0.0: consumers need its ARM F16
 /// accumulation fix. Native pin sync clears this map whenever the pin moves;
 /// additions require exact artifact compatibility evidence and matching
 /// checksums below.
@@ -34,7 +34,8 @@ const llamaCppCompatibleAppleCompanionTags = <String, String>{};
 /// Native pin sync preserves this proof on a same-tag refresh and replaces it
 /// with the newly published artifact's checksum when the pin moves.
 const llamaCppCompatibleAppleCompanionChecksums = <String, String>{
-  'v0.9.0': 'b0005b1da364f9ea4345218b8d53d78d6de888f301c6defb44b08321e136ac2e',
+  'v1.0.0-1':
+      '0c66ca422bfc8ba266845b57fea99d2792ea67c84233f49358301a640846d669',
 };
 
 /// SHA-256 of each published `llamadart-native-<bundle>-<llamaCppTag>.tar.gz`
@@ -44,27 +45,27 @@ const llamaCppCompatibleAppleCompanionChecksums = <String, String>{
 /// against this map before extracting it.
 const llamaCppBundleSha256 = <String, String>{
   'android-arm64':
-      'd3c933a63e8ccaafeee32edd30685fdccd17c05e54b75895282f01fe74914a1b',
+      'd6b735f88a0896f0e2229d95867c3836313caaab288b83c82b63e4fa20a86198',
   'android-x64':
-      'e86181d67997c25704f84a39fdf268f3622491a481149a39079c90323d208132',
+      '46e604b116326a0bf72c557cfaf71ed032d565978ebfdfa6f24d2270c99dfff4',
   'ios-arm64':
-      'a1dc8707568e6dc92ea44caf63489c23b86f7bf51d367ae8bfff84cc333f18b3',
+      '92c6d4b28845d0de834e0ccdf58ec6b54e5e649c2cb8b126a68a806a81b56749',
   'ios-arm64-sim':
-      '1744bb7220e11b1b3f7ccf3e788e03695f1cce6e4009729d87bd3c4098dd8e99',
+      'abbe2032eca99140be4a29f3772f6ce0e523b55eca168eaf13631c7d786b0642',
   'ios-x86_64-sim':
-      '0e373a49f8d7740466534c8c5106bf3182579cfdd8f11b5c377e942e23867fdb',
+      '6d3253d501685defa1b58246d011d028452d44de1fcff36d769600289271c72e',
   'linux-arm64':
-      '7706ea759d93f2ea20e013c4531edd4223b9f290961eac229c1967e6b2f1fa1d',
+      '52eec56a23c67821b1c11699c762bd30437cf7b0262fc4c620c86b1ddbe07bcf',
   'linux-x64':
-      '92662cc83d076590d1b3785b349f0f1d20233c40c2247e9c00d1296446ec5729',
+      '1bbc08721621d9a2f3c7f9774d548982b63dea1b153d2c4921d2a5c81a00b64c',
   'macos-arm64':
-      '7ec293c79fc4a1ba74e367b31567a6eed616ce2d37b4d3eedc4fd67b998182e8',
+      '6f80a55c781bef2e5d40429965887bab147a5b1bda864f040c79f6b317a819d0',
   'macos-x86_64':
-      '1c033603f99ca3b9a7aca96c98ecefea2043c7729e65f711a380240fb556ae1b',
+      '8d32a4f7ea2936fd812d86f5f75f565210afe0119ab0911c6d9eb8b430cdcafb',
   'windows-arm64':
-      '464cd1b5d0637c85d248361ab27de9ae977d0e05b4079a6731c76e61ab9a06b9',
+      '36d8a8eef13b19f73a82db560ab9c374751f41f4bbbad33606997865183fd1a5',
   'windows-x64':
-      '970c019489aa4e698c915a9e54f82cf0328facd93f2cd9fc9b1394ea81141693',
+      'f5763f5e220cc8f13cb8f9f19d7297732d0fdadd7ae4a132c5da3834ced5f7aa',
 };
 
 /// The `hook_contract_version` of the [llamaCppTag] release's `assets.json`.
@@ -101,7 +102,7 @@ const llamaCppBackendSidecarSpecs = <LlamaCppBackendSidecarSpec>[
     bundle: 'windows-x64',
     backend: 'cuda',
     archive: 'windows-x64-cuda12',
-    sha256: 'faa8eb0cadf3dfd22b4f4052b6460c9f1f87a00853c6237e516d88867bdb4a00',
+    sha256: '715b766a86acdca0db0fbde6eb95a3d5d51ec2eb9e9a0c7956bfe928834aec6f',
   ),
 ];
 
@@ -217,41 +218,26 @@ const liteRtLmBundleSpecs = <LiteRtLmBundleSpec>[
 
 /// `leehack/stable-diffusion-native` release tag downloaded for the opt-in
 /// stable-diffusion.cpp runtime.
-const stableDiffusionReleaseTag = 'v0.3.0-6';
+const stableDiffusionReleaseTag = 'v0.4.0';
 
 /// First Apple companion release containing [stableDiffusionReleaseTag].
-const stableDiffusionAppleCompanionVersion = '0.19.11';
+const stableDiffusionAppleCompanionVersion = '0.20.0';
 
 /// Explicitly qualified older Apple SD pins that preserve existing app locks.
 ///
-/// These builds share the pinned upstream and C ABI, not identical machine
-/// code. The Dart worker rejects recorded Metal backend failures even when
-/// native generation returns images; the newer native guard remains preferred.
-/// Clear and requalify this map whenever [stableDiffusionReleaseTag] changes.
-///
-/// `v0.3.0-3` and `v0.3.0-4` share the pinned upstream and its C headers.
-/// `v0.3.0-3` lacks the `sd_dart_graph_split_*` exports, which the bindings
-/// load as an optional group, so it keeps the iOS full-VAE refusal; `v0.3.0-4`
-/// lacks the Apple host-buffer and model-loader scratch release fixes.
-const stableDiffusionCompatibleAppleCompanionTags = <String, String>{
-  'v0.3.0-3':
-      'the sd_dart_graph_split_* exports (iOS full-VAE decoding) and Apple host-buffer and model-loader scratch release fixes',
-  'v0.3.0-4': 'the Apple host-buffer and model-loader scratch release fixes',
-};
+/// The v0.4.0 image generation parameter layout is incompatible with the
+/// v0.3.0 line. Clear and requalify this map whenever
+/// [stableDiffusionReleaseTag] changes.
+const stableDiffusionCompatibleAppleCompanionTags = <String, String>{};
 
 /// Checksums of the exact published XCFrameworks accepted by the SD hook.
 const stableDiffusionAppleCompanionChecksums = <String, String>{
-  'v0.3.0-3':
-      '8f35c67f72d1d4bf86d31f20f3437d04baaf3b6ac7389908000fd166e387783f',
-  'v0.3.0-4':
-      '0d022638f54be80aa75fd8e73a94d139ad8887f4f3c73084501369ca5e7ac354',
-  'v0.3.0-6':
-      '7e5a79218d731ce7fb6b54020190a79630bd843d9a1dbafb24e5f0442ab95cb8',
+  'v0.4.0': '3a9d99a0f818c1511c62b585d3170c41c68f35756143979fe29f4a476bece3ce',
 };
 
 /// stable_diffusion cache directory version derived from
 /// [stableDiffusionReleaseTag].
-const stableDiffusionVersion = '0.3.0-6';
+const stableDiffusionVersion = '0.4.0';
 
 /// A published stable-diffusion-native runtime archive and the library it must
 /// contain under `lib/`.
@@ -278,62 +264,62 @@ class StableDiffusionBundleSpec {
 const stableDiffusionBundleSpecs = <StableDiffusionBundleSpec>[
   StableDiffusionBundleSpec(
     'android-arm64',
-    sha256: '56ab35a9e1b941fab1169b6308c0e2a1fceaea0e97499e19f849242ee2d076f8',
+    sha256: 'b9f0e9b7b6daf62f48457cb36465397a8a7805cef3317a9b0a4cd5f3f20ea45b',
     requiredLibraries: {'libstable-diffusion.so'},
   ),
   StableDiffusionBundleSpec(
     'ios-arm64',
-    sha256: '87e5a91bf2b68fac21722aac7bc22ec265ba4946cb54a83e75e7ff3b69aaa801',
+    sha256: '21ea0cdd69545445d8f5e9579e300a415db6859437f5b92c8d78717ebaa82d25',
     requiredLibraries: {'libstable-diffusion.dylib'},
   ),
   StableDiffusionBundleSpec(
     'ios-arm64-sim',
-    sha256: '30f65bcebf4044b87085b8c130322398d3212530ad0948e6166a11e838966731',
+    sha256: '84554867c86eb439ef4929722a9af75950b5c365f66c9691adadbe2ad2de84cc',
     requiredLibraries: {'libstable-diffusion.dylib'},
   ),
   StableDiffusionBundleSpec(
     'ios-x64-sim',
-    sha256: 'ff135eca41f75798dd3edc16da31af515b10f5793d35e8d70c340f02479fdfcd',
+    sha256: '73a1264dc7f396ad62f8765eeef48afd4ff26014204842c869ea524e909a5d4e',
     requiredLibraries: {'libstable-diffusion.dylib'},
   ),
   StableDiffusionBundleSpec(
     'macos-arm64',
-    sha256: '2a2468ecd8aa284a093179ecf28f17e93b31d4359ab553a4010353063cb410dc',
+    sha256: 'db386420ccd34b07dbd4ef5c943e49c04c7965a96aa32d437eac524a968893c6',
     requiredLibraries: {'libstable-diffusion.dylib'},
   ),
   StableDiffusionBundleSpec(
     'macos-x64',
-    sha256: 'e2f49a8ecbc898cfafa9feefaca1b4703f23af19e74b3b2a6bd407f8730eb8ff',
+    sha256: 'cfd5228df4eea3706187fb8faf1afb2221e8537582f52e3cb9d3d553c6cda9ff',
     requiredLibraries: {'libstable-diffusion.dylib'},
   ),
   StableDiffusionBundleSpec(
     'linux-arm64',
-    sha256: 'd394acffe3a9de8cc86abb4f1176f1bb1b5af5ed83efc013384e2b6e220d831f',
+    sha256: 'c6fd70911050931e6cfbae311fd6f9e40a2bd7b93f4740c4f56b15952f431747',
     requiredLibraries: {'libstable-diffusion.so'},
   ),
   StableDiffusionBundleSpec(
     'linux-arm64-vulkan',
-    sha256: 'd2412bc1ee28dd87a353d37181c060e1e0287d37ffc6c231dae5b3b399071dab',
+    sha256: 'e2c253e056f4c7a605d334a67f2d845d7b23371ba0f69ead42e2d5e9f5abc148',
     requiredLibraries: {'libstable-diffusion.so'},
   ),
   StableDiffusionBundleSpec(
     'linux-x64',
-    sha256: '6dd33ff5cede6b9468006dcd08b6b60d5d3ac32c65863df1475942b7c6d9baac',
+    sha256: '97eed4c3a181d28b167c55b1b132d8e6ea75e14f0f4712b921eade086d437fc9',
     requiredLibraries: {'libstable-diffusion.so'},
   ),
   StableDiffusionBundleSpec(
     'linux-x64-vulkan',
-    sha256: 'dda3969e18974ddd2dc110ca2576927548bcc0e9355932cd25249803ff1f816c',
+    sha256: '63637887575783b121d0cd0f00bbcbe2f72a3f22ffa550a9f5ea30820d079f9a',
     requiredLibraries: {'libstable-diffusion.so'},
   ),
   StableDiffusionBundleSpec(
     'windows-x64',
-    sha256: '8da3d2d03634bcd9a76e52d84d92995a02b956ed697cc23e4303f45b3d1fdc5e',
+    sha256: '9e807c03805475edebb88ee3675f06d79823dbe5696565517cf473f43b941c60',
     requiredLibraries: {'stable-diffusion.dll'},
   ),
   StableDiffusionBundleSpec(
     'windows-x64-vulkan',
-    sha256: 'eb15f8673c87cfbfd0a8a9f133dc96af1316bc1b58009e33f9f851e43b8d3d39',
+    sha256: 'cca8b94826f60bc172007acc44f15984fe233f8007120c3def572f14b074194f',
     requiredLibraries: {'stable-diffusion.dll'},
   ),
 ];

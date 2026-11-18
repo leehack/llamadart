@@ -530,10 +530,8 @@ class ImageGenerationEngine
       readGpus = true;
     }
     if (readGpus && gpus?.any((gpu) => !gpu.integrated) != true) {
-      // ggml-vulkan reports an integrated GPU as IGPU. With no backend named,
-      // the runtime's fit plans only for discrete GPUs, then computes on the
-      // integrated one under max_vram without a plan, which aborts like the
-      // fit-off case. Metal devices always report the GPU type.
+      // Older runtimes missed integrated Vulkan GPUs when planning a budget.
+      // Keep the guard until the newer planner is qualified on these devices.
       throw LlamaUnsupportedException(
         'ImageModelPlacement.maxGpuMemoryGiB needs a discrete GPU, and the '
         'stable_diffusion runtime reports $backendName as an integrated GPU '
@@ -555,7 +553,9 @@ class ImageGenerationEngine
           params.vaeDirectConvolution != false ||
           !_isQualifiedRuntime(runtime)) {
         throw LlamaUnsupportedException(
-          'Local checkpoint sets require the pinned SD v0.3.0-1 runtime on macOS CPU with explicit flash attention and direct VAE convolution off.',
+          'Local checkpoint sets require the pinned stable_diffusion v0.4.0 '
+          'runtime on macOS CPU with explicit flash attention and direct VAE '
+          'convolution off.',
         );
       }
       snapshot = await resolveLocalImageSet(
@@ -701,7 +701,7 @@ class ImageGenerationEngine
         !vaeDirectConvolution;
     if (loadsControlNet && !controlNetRecipeVerified) {
       throw LlamaUnsupportedException(
-        'Loading a ControlNet requires the pinned stable_diffusion v0.3.0-1 '
+        'Loading a ControlNet requires the pinned stable_diffusion v0.4.0 '
         'runtime on macOS with ComputeDevice.cpu, flashAttention: false and '
         'vaeDirectConvolution: false, and exactly an SD 1.x checkpoint with '
         'its embedded full VAE plus an SD 1.x ControlNet in the original '
@@ -776,7 +776,6 @@ class ImageGenerationEngine
             assignment.roles.length == 1 &&
             assignment.roles.containsKey(ImageModelRole.checkpoint),
         vaeTilingRecipeVerified:
-            // v0.3.0-1 is the runtime whose tiling layout and decode are qualified.
             _isQualifiedRuntime(runtime) &&
             assignment.vaeTilingDecoderVerified &&
             assignment.roles.containsKey(ImageModelRole.checkpoint) &&
@@ -799,7 +798,7 @@ class ImageGenerationEngine
             _isMetal(backendName) &&
             !placement.textEncoderOnCpu &&
             !placement.vaeOnCpu &&
-            _isQualifiedRuntime(runtime) &&
+            _isQualifiedKontextRuntime(runtime) &&
             assignment.fluxKontextRecipeVerified,
         seamlessRecipeVerified:
             assignment.decodesWithTinyAutoencoder &&
@@ -1017,14 +1016,14 @@ class ImageGenerationEngine
         !_supportsReferenceImageEditing(_session)) {
       throw LlamaUnsupportedException(
         'This image-generation backend does not report support for '
-        'reference images. Use the pinned stable_diffusion v0.3.0-1 runtime '
-        'with the supported macOS Metal FLUX.1 Kontext recipe.',
+        'reference images for the FLUX.1 Kontext macOS Metal recipe '
+        'qualified on stable_diffusion v0.3.0-1.',
       );
     }
     if (resolved.hiresFix != null && !_supportsHiresFix(_session)) {
       throw LlamaUnsupportedException(
         'This image-generation backend does not report support for a hires '
-        'fix. Use the pinned stable_diffusion v0.3.0-1 runtime with the '
+        'fix. Use the pinned stable_diffusion v0.4.0 runtime with the '
         'supported macOS CPU or Metal SD 1.x or SD 2.x full-VAE recipe.',
       );
     }
@@ -1032,7 +1031,7 @@ class ImageGenerationEngine
       throw LlamaUnsupportedException(
         'This image-generation backend does not report a loaded ControlNet. '
         'Load an SD 1.x ControlNet with its checkpoint on the pinned '
-        'stable_diffusion v0.3.0-1 runtime with the supported macOS CPU recipe.',
+        'stable_diffusion v0.4.0 runtime with the supported macOS CPU recipe.',
       );
     }
     if (resolved.initialImage != null &&
@@ -1043,7 +1042,7 @@ class ImageGenerationEngine
       throw LlamaUnsupportedException(
         'This image-generation backend does not report support for '
         'owned RGB/mask image editing. Use the pinned stable_diffusion '
-        'v0.3.0-1 runtime with the supported macOS CPU SD 2.x full-VAE recipe.',
+        'v0.4.0 runtime with the supported macOS CPU SD 2.x full-VAE recipe.',
       );
     }
     if (resolved.vaeTiling != null &&
@@ -1053,7 +1052,7 @@ class ImageGenerationEngine
         }) {
       throw LlamaUnsupportedException(
         'This image-generation backend does not report support for '
-        'per-request VAE tiling. Use the pinned stable_diffusion v0.3.0-1 '
+        'per-request VAE tiling. Use the pinned stable_diffusion v0.4.0 '
         'runtime with a supported SD 2.x decoder recipe.',
       );
     }
@@ -1273,9 +1272,15 @@ class ImageGenerationEngine
     ImageModelRole.controlNet: 'controlNet',
   };
 
-  /// Whether [status] is the pinned v0.3.0-1 runtime (upstream
-  /// master-1017) the bounded image recipes were qualified on.
+  /// Source identities admitted for the bounded recipes other than Kontext.
   static bool _isQualifiedRuntime(StableDiffusionRuntimeStatus status) =>
+      status.commit == '5dcfa79' ||
+      status.commit == '5dcfa79801213f23e27b3e83617350ebb8ea93aa' ||
+      _isQualifiedKontextRuntime(status);
+
+  // The fixed Kontext seed fails its shape gate after the upstream Flux
+  // scheduler change. Keep the recipe tied to its qualified source (#1222).
+  static bool _isQualifiedKontextRuntime(StableDiffusionRuntimeStatus status) =>
       status.commit == 'be48649' ||
       status.commit == 'be486498eadc29dc3cd234d944c2180ed42b1415';
 

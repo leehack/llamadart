@@ -29,18 +29,19 @@ Image generation is a Preview.
 `ImageGenerationEngine` turns a text prompt into images on the device. It runs
 [stable-diffusion.cpp](https://github.com/leejet/stable-diffusion.cpp) through
 the opt-in `stable_diffusion` native runtime, separately from `LlamaEngine`.
+Both `prompt` and `negativePrompt` are text. For example, `<image:cat.png>`
+is passed as literal text. The engine escapes native image markers, including
+incomplete ones, and respects an existing backslash escape.
 
-The API is experimental. Two small, distilled SD 1.x/2.x-family models are
-validated on phones and desktops: SDXS-512 and SD-Turbo.
+The API is experimental. Earlier runtimes ran two distilled SD 1.x/2.x-family models, SDXS-512 and SD-Turbo, on phones and desktops.
 [Desktop models](#desktop-models) cover SDXL-Lightning, FLUX.1-schnell,
-SD 3.5 Large Turbo and Z-Image-Turbo on desktop GPUs and Macs (validated
-on macOS Metal only), and [other families](#other-families) load the same
+SD 3.5 Large Turbo and Z-Image-Turbo on desktop GPUs and Macs (tested with earlier runtimes on macOS Metal), and [other families](#other-families) load the same
 way; the [recipes](#recipes) give each one's files and settings. Bounded image-to-image and binary-mask editing are available through
 `ImageEditingRequest` on the [CPU recipe](./image-generation-advanced#image-editing), and an
 SD 1.x ControlNet steers `ControlNetImageGenerationRequest` on the
-[bounded CPU recipe](./image-generation-advanced#controlnet). FLUX.1 Kontext [dev] edits a reference
-image through `ReferenceImageEditingRequest` on the
-[bounded Metal recipe](./image-generation-advanced#reference-image-editing). LoRA has no public
+[bounded CPU recipe](./image-generation-advanced#controlnet). The v0.4.0 runtime reports
+`supportsReferenceImageEditing: false` pending requalification of the
+[FLUX.1 Kontext Metal recipe](./image-generation-advanced#reference-image-editing). LoRA has no public
 image-generation API yet.
 
 ## Support
@@ -189,10 +190,10 @@ Use trusted model files. There is no public conversion API or load-time
 quantization/mmap option. Weights load eagerly; see the
 [memory check](./image-generation-memory-and-limits#memory-check) before substituting larger unquantized files.
 
-On iOS, the pinned `v0.3.0-6` runtime splits Metal graphs, so full-VAE
-recipes are admitted. Device-qualified is SD-Turbo with its embedded full VAE at
-512x512 on an iPhone 16 Pro and an iPhone 17 Pro, which decoded without
-tripping the watchdog ([#1047](https://github.com/leehack/llamadart/issues/1047)).
+On iOS, the pinned `v0.4.0` runtime splits Metal graphs, so full-VAE
+recipes are admitted. Device qualification on v0.4.0 is pending. Earlier runtimes
+decoded SD-Turbo with its embedded full VAE at 512×512 on iPhone 16 Pro and
+iPhone 17 Pro without tripping the watchdog ([#1047](https://github.com/leehack/llamadart/issues/1047)).
 External VAE/TAESD components, SDXL-size VAEs, larger resolutions and SDXS
 through `sd_dart_new_sd_ctx` are not device-qualified, and a Metal
 command-buffer failure surfaces as an error. A runtime without the split refuses full VAE
