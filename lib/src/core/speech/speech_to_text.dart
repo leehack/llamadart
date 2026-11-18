@@ -2195,6 +2195,18 @@ class _LlamaCppStreamingSession implements SpeechToTextStreamingSession {
       onError: (Object error, StackTrace stackTrace) {
         unawaited(_fail(error, stackTrace));
       },
+      onDone: () {
+        if (!_finishing && !_cancelled && !_closed) {
+          unawaited(
+            _fail(
+              LlamaSpeechException(
+                'Live speech recognition stream ended unexpectedly.',
+              ),
+              StackTrace.current,
+            ),
+          );
+        }
+      },
     );
   }
 

@@ -453,6 +453,55 @@ void main() {
       await recognizer.dispose();
     },
   );
+
+  test(
+    'surfaces targeted backend cancellation and unexpected stream end as typed errors on SpeechToTextEngine stream',
+    () async {
+      final backend = _FakeStreamingSpeechBackend();
+      final recognizer = await SpeechToTextEngine.load(
+        makeModel(),
+        backend: backend,
+      );
+
+      final cancelledSession = await recognizer.startStream();
+      final eventsDone = expectLater(
+        cancelledSession.events,
+        emitsInOrder([
+          emitsError(
+            isA<LlamaSpeechException>().having(
+              (e) => e.message,
+              'message',
+              contains('cancelled'),
+            ),
+          ),
+          emitsDone,
+        ]),
+      );
+      await backend.session!.emitErrorAndClose(
+        LlamaSpeechException('Live speech recognition was cancelled.'),
+      );
+      await eventsDone;
+      final failed = await cancelledSession.done;
+      expect(failed.state, SpeechToTextCompletionState.failed);
+      expect(failed.error, isA<LlamaSpeechException>());
+
+      // Lease is released so another stream can start, and unexpected close
+      // also surfaces a typed error/end.
+      backend.nextSession = _FakeBackendStreamingSession();
+      final closedSession = await recognizer.startStream();
+      final unexpectedDone = expectLater(
+        closedSession.events,
+        emitsInOrder([emitsError(isA<LlamaSpeechException>()), emitsDone]),
+      );
+      await backend.session!.closeUnexpectedly();
+      await unexpectedDone;
+      final closedCompletion = await closedSession.done;
+      expect(closedCompletion.state, SpeechToTextCompletionState.failed);
+      expect(closedCompletion.error, isA<LlamaSpeechException>());
+
+      await recognizer.dispose();
+    },
+  );
 }
 
 final class _FakeStreamingSpeechBackend
@@ -615,6 +664,19 @@ final class _FakeBackendStreamingSession
           acceptedSamples: samples,
         ),
       );
+    }
+  }
+
+  Future<void> emitErrorAndClose(Object error) async {
+    if (!_updates.isClosed) {
+      _updates.addError(error);
+      await _updates.close();
+    }
+  }
+
+  Future<void> closeUnexpectedly() async {
+    if (!_updates.isClosed) {
+      await _updates.close();
     }
   }
 
