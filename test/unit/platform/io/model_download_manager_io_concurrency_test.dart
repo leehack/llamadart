@@ -1164,6 +1164,33 @@ void main() {
         _FirstExistsCheckMisses(modelPath),
       );
     });
+
+    test('cacheOnly reports a normal miss when the entry directory is created '
+        'while resolving its lock key', () async {
+      final overrides = _DirectoryAppearsDuringLockKeyResolution(
+        entryDirectory().path,
+      );
+
+      await IOOverrides.runWithIOOverrides(
+        () => expectLater(
+          manager.ensureModel(
+            source(),
+            options: ModelLoadOptions(cachePolicy: ModelCachePolicy.cacheOnly),
+          ),
+          throwsA(
+            isA<LlamaStateException>().having(
+              (error) => error.message,
+              'message',
+              contains('No cached model is available for'),
+            ),
+          ),
+        ),
+        overrides,
+      );
+
+      expect(overrides.createdDuringTypeCheck, isTrue);
+      expect(server.requestCount, 0);
+    });
   });
 }
 
@@ -1199,6 +1226,25 @@ final class _MissingFile implements File {
   @override
   Object? noSuchMethod(Invocation invocation) =>
       throw UnsupportedError('${invocation.memberName} on $path');
+}
+
+/// Creates [_targetPath] when its no-follow type is checked after
+/// `resolveSymbolicLinksSync` failed, simulating another caller creating the
+/// directory mid-resolution.
+final class _DirectoryAppearsDuringLockKeyResolution extends IOOverrides {
+  _DirectoryAppearsDuringLockKeyResolution(this._targetPath);
+
+  final String _targetPath;
+  bool createdDuringTypeCheck = false;
+
+  @override
+  FileSystemEntityType fseGetTypeSync(String path, bool followLinks) {
+    if (!createdDuringTypeCheck && !followLinks && path == _targetPath) {
+      createdDuringTypeCheck = true;
+      super.createDirectory(_targetPath).createSync(recursive: true);
+    }
+    return super.fseGetTypeSync(path, followLinks);
+  }
 }
 
 // A top-level function, so the closure sent to the isolate captures only
