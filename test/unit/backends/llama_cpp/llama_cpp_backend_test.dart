@@ -2479,6 +2479,131 @@ void main() {
         );
       },
     );
+
+    test(
+      'frees cancel flag on failed start and handles targeted worker cancellation event',
+      () async {
+        final receivePort = ReceivePort();
+        var failNextStart = true;
+        SendPort? sessionEventPort;
+        late final StreamSubscription<dynamic> sub;
+        sub = receivePort.listen((message) async {
+          switch (message) {
+            case AsrStreamStartRequest():
+              if (failNextStart) {
+                failNextStart = false;
+                message.sendPort.send(
+                  ErrorResponse(
+                    'unsupported',
+                    kind: WorkerErrorKind.unsupported,
+                  ),
+                );
+              } else {
+                sessionEventPort = message.eventPort;
+                message.sendPort.send(
+                  AsrStreamStartedResponse(message.sessionId),
+                );
+              }
+            case DisposeRequest():
+              message.sendPort.send(null);
+          }
+        });
+        addTearDown(() async {
+          await sub.cancel();
+          receivePort.close();
+        });
+
+        final cancelAllocator = _RecordingAllocator();
+        addTearDown(cancelAllocator.release);
+        final backend = NativeLlamaBackend(
+          initialSendPort: receivePort.sendPort,
+          cancelFlagAllocator: cancelAllocator,
+        );
+        addTearDown(backend.dispose);
+
+        await expectLater(
+          backend.startAsrStreamSession(1, 2),
+          throwsA(isA<LlamaUnsupportedException>()),
+        );
+        expect(
+          cancelAllocator.allocated.length - cancelAllocator.freed.length,
+          0,
+        );
+
+        final session = await backend.startAsrStreamSession(1, 2);
+        final updatesDone = expectLater(
+          session.updates,
+          emitsInOrder([emitsError(isA<LlamaSpeechException>()), emitsDone]),
+        );
+        sessionEventPort!.send(
+          ErrorResponse(
+            'Live speech recognition was cancelled.',
+            kind: WorkerErrorKind.speech,
+          ),
+        );
+        await updatesDone;
+        expect(
+          cancelAllocator.allocated.length - cancelAllocator.freed.length,
+          0,
+        );
+        // Session is closed and backend reservation is cleared.
+        await expectLater(
+          session.finish(),
+          throwsA(isA<LlamaSpeechException>()),
+        );
+      },
+    );
+
+    test(
+      'propagates worker exit to active ASR session updates and frees cancel flag',
+      () async {
+        final cancelAllocator = _RecordingAllocator();
+        addTearDown(cancelAllocator.release);
+        final backend = NativeLlamaBackend(
+          workerEntrypoint: _asrExitWorkerEntry,
+          cancelFlagAllocator: cancelAllocator,
+        );
+        addTearDown(backend.dispose);
+
+        final session = await backend.startAsrStreamSession(1, 2);
+        expect(
+          cancelAllocator.allocated.length - cancelAllocator.freed.length,
+          1,
+        );
+
+        final updatesDone = expectLater(
+          session.updates,
+          emitsInOrder([emitsError(isA<LlamaStateException>()), emitsDone]),
+        );
+        await expectLater(
+          session.pushAudio(Float32List(10)),
+          throwsA(isA<LlamaStateException>()),
+        );
+        await updatesDone;
+        expect(
+          cancelAllocator.allocated.length - cancelAllocator.freed.length,
+          0,
+        );
+      },
+    );
+  });
+}
+
+void _asrExitWorkerEntry(SendPort initialSendPort) {
+  final receivePort = ReceivePort();
+  initialSendPort.send(receivePort.sendPort);
+  receivePort.listen((message) {
+    switch (message) {
+      case WorkerHandshake():
+        message.sendPort.send(DoneResponse());
+      case AsrStreamStartRequest():
+        message.sendPort.send(AsrStreamStartedResponse(message.sessionId));
+      case AsrStreamPushRequest():
+        Isolate.exit();
+      case DisposeRequest():
+        message.sendPort.send(null);
+        receivePort.close();
+    }
   });
 }
 

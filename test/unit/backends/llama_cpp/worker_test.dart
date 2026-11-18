@@ -1248,6 +1248,56 @@ void main() {
         pushPort.close();
         expect(ack.acceptedSamples, 2);
 
+        // Stale push and finish with wrong session ID return WorkerErrorKind.state
+        // without disturbing active session 1.
+        final stalePushPort = ReceivePort();
+        sendPort.send(
+          AsrStreamPushRequest(
+            sessionId: 99,
+            sampleOffset: 2,
+            samples: Float32List.fromList([0.5]),
+            sendPort: stalePushPort.sendPort,
+          ),
+        );
+        final stalePushErr = await stalePushPort.first as ErrorResponse;
+        stalePushPort.close();
+        expect(stalePushErr.kind, WorkerErrorKind.state);
+        expect(service.hasActiveAsrStream, isTrue);
+
+        final staleFinishPort = ReceivePort();
+        sendPort.send(AsrStreamFinishRequest(99, 2, staleFinishPort.sendPort));
+        final staleFinishErr = await staleFinishPort.first as ErrorResponse;
+        staleFinishPort.close();
+        expect(staleFinishErr.kind, WorkerErrorKind.state);
+        expect(service.hasActiveAsrStream, isTrue);
+
+        // Unrelated handle frees / rerank / reranking context creation leave ASR intact.
+        for (final req in <Object>[
+          ContextFreeRequest(999, ReceivePort().sendPort),
+          ModelFreeRequest(999, ReceivePort().sendPort),
+          MultimodalContextFreeRequest(999, ReceivePort().sendPort),
+        ]) {
+          final rp = switch (req) {
+            ContextFreeRequest r => r.sendPort,
+            ModelFreeRequest r => r.sendPort,
+            MultimodalContextFreeRequest r => r.sendPort,
+            _ => throw StateError('unexpected'),
+          };
+          final port = ReceivePort();
+          if (req is ContextFreeRequest) {
+            sendPort.send(ContextFreeRequest(999, port.sendPort));
+          } else if (req is ModelFreeRequest) {
+            sendPort.send(ModelFreeRequest(999, port.sendPort));
+          } else if (req is MultimodalContextFreeRequest) {
+            sendPort.send(MultimodalContextFreeRequest(999, port.sendPort));
+          }
+          expect(await port.first, isA<DoneResponse>());
+          port.close();
+          expect(rp, isNotNull);
+        }
+        expect(service.hasActiveAsrStream, isTrue);
+        expect(service.cancelCalls, 0);
+
         // Finish
         final finishPort = ReceivePort();
         sendPort.send(AsrStreamFinishRequest(1, 2, finishPort.sendPort));
@@ -1280,8 +1330,13 @@ void main() {
         expect(err.transcriptLimit, LlamaSpeechTranscriptLimit.contextSize);
         expect(err.partialTranscript, 'partial');
 
-        // Start session 3 and dispose while idle -> cancels & frees without deadlock
+        // Start session 3 and verify targeted ContextFree cancels ASR and notifies eventPort.
         service.throwTruncatedOnFinish = false;
+        final targetedErrors = <Object>[];
+        final targetedEventPort = ReceivePort();
+        final targetedSub = targetedEventPort.listen((msg) {
+          if (msg is ErrorResponse) targetedErrors.add(msg);
+        });
         final startPort3 = ReceivePort();
         sendPort.send(
           AsrStreamStartRequest(
@@ -1289,18 +1344,51 @@ void main() {
             1,
             2,
             0,
-            eventPort.sendPort,
+            targetedEventPort.sendPort,
             startPort3.sendPort,
           ),
         );
         await startPort3.first;
         startPort3.close();
 
+        final ctxFreePort = ReceivePort();
+        sendPort.send(ContextFreeRequest(1, ctxFreePort.sendPort));
+        expect(await ctxFreePort.first, isA<DoneResponse>());
+        ctxFreePort.close();
+        await Future<void>.delayed(Duration.zero);
+        expect(service.hasActiveAsrStream, isFalse);
+        expect(service.cancelCalls, 1);
+        expect(
+          targetedErrors.single,
+          isA<ErrorResponse>().having(
+            (e) => e.kind,
+            'kind',
+            WorkerErrorKind.speech,
+          ),
+        );
+        await targetedSub.cancel();
+        targetedEventPort.close();
+
+        // Start session 4 and dispose while idle -> cancels & frees without deadlock
+        final startPort4 = ReceivePort();
+        sendPort.send(
+          AsrStreamStartRequest(
+            4,
+            1,
+            2,
+            0,
+            eventPort.sendPort,
+            startPort4.sendPort,
+          ),
+        );
+        await startPort4.first;
+        startPort4.close();
+
         final disposePort = ReceivePort();
         sendPort.send(DisposeRequest(disposePort.sendPort));
         await disposePort.first;
         disposePort.close();
-        expect(service.cancelCalls, greaterThanOrEqualTo(1));
+        expect(service.cancelCalls, greaterThanOrEqualTo(2));
         expect(service.disposeCalls, 1);
 
         await eventSub.cancel();
@@ -1986,6 +2074,9 @@ class _ThrowingSendPort implements SendPort {
 
 class _AsrTestService extends LlamaCppService {
   int? _activeSessionId;
+  int? _activeModelHandle;
+  int? _activeContextHandle;
+  int? _activeMmContextHandle;
   int _supplied = 0;
   void Function(String, int)? _onText;
   bool throwTruncatedOnFinish = false;
@@ -1994,6 +2085,15 @@ class _AsrTestService extends LlamaCppService {
 
   @override
   bool get hasActiveAsrStream => _activeSessionId != null;
+
+  @override
+  int? get activeAsrStreamModelHandle => _activeModelHandle;
+
+  @override
+  int? get activeAsrStreamContextHandle => _activeContextHandle;
+
+  @override
+  int? get activeAsrStreamMmContextHandle => _activeMmContextHandle;
 
   @override
   Future<String?> asrStreamUnsupportedReason(
@@ -2010,6 +2110,9 @@ class _AsrTestService extends LlamaCppService {
     required void Function(String confirmedText, int acceptedSamples) onText,
   }) async {
     _activeSessionId = sessionId;
+    _activeModelHandle = 1;
+    _activeContextHandle = contextHandle;
+    _activeMmContextHandle = mmContextHandle;
     _supplied = 0;
     _onText = onText;
   }
@@ -2029,6 +2132,9 @@ class _AsrTestService extends LlamaCppService {
   Future<({String finalText, int acceptedSamples, int consumedSamples})>
   finishAsrStream(int sessionId, int expectedTotalSamples) async {
     _activeSessionId = null;
+    _activeModelHandle = null;
+    _activeContextHandle = null;
+    _activeMmContextHandle = null;
     if (throwTruncatedOnFinish) {
       throw LlamaSpeechTranscriptTruncatedException(
         'context full',
@@ -2054,8 +2160,20 @@ class _AsrTestService extends LlamaCppService {
   void closeAsrStreamIfIdle([int? sessionId]) {
     if (sessionId == null || sessionId == _activeSessionId) {
       _activeSessionId = null;
+      _activeModelHandle = null;
+      _activeContextHandle = null;
+      _activeMmContextHandle = null;
     }
   }
+
+  @override
+  void freeContext(int contextHandle) {}
+
+  @override
+  void freeModel(int modelHandle) {}
+
+  @override
+  void freeMultimodalContext(int mmContextHandle) {}
 
   @override
   void dispose() => disposeCalls++;

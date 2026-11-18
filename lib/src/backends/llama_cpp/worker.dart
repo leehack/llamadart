@@ -115,6 +115,7 @@ void runLlamaWorkerForTesting(
   Completer<void>? activeTextToSpeech;
   var pendingTextToSpeech = 0;
   int? activeAsrSessionId;
+  SendPort? activeAsrEventPort;
   Completer<void>? activeAsrOperation;
 
   Future<bool> waitForActiveGenerate({Duration? timeout}) async {
@@ -150,7 +151,11 @@ void runLlamaWorkerForTesting(
     }
   }
 
-  Future<bool> cancelAndWaitForActiveAsrStream({Duration? timeout}) async {
+  Future<bool> cancelAndWaitForActiveAsrStream({
+    Duration? timeout,
+    bool notifyParent = false,
+  }) async {
+    final eventPort = notifyParent ? activeAsrEventPort : null;
     service.cancelAsrStream();
     try {
       final operation = activeAsrOperation?.future ?? Future<void>.value();
@@ -162,6 +167,15 @@ void runLlamaWorkerForTesting(
       service.closeAsrStreamIfIdle();
       if (!service.hasActiveAsrStream) {
         activeAsrSessionId = null;
+        activeAsrEventPort = null;
+      }
+      if (notifyParent && eventPort != null) {
+        eventPort.send(
+          ErrorResponse(
+            'Live speech recognition was cancelled.',
+            kind: WorkerErrorKind.speech,
+          ),
+        );
       }
       return true;
     } on TimeoutException {
@@ -170,6 +184,15 @@ void runLlamaWorkerForTesting(
       service.closeAsrStreamIfIdle();
       if (!service.hasActiveAsrStream) {
         activeAsrSessionId = null;
+        activeAsrEventPort = null;
+      }
+      if (notifyParent && eventPort != null) {
+        eventPort.send(
+          ErrorResponse(
+            'Live speech recognition was cancelled.',
+            kind: WorkerErrorKind.speech,
+          ),
+        );
       }
       return true;
     }
@@ -230,6 +253,7 @@ void runLlamaWorkerForTesting(
         service.closeAsrStreamIfIdle(message.sessionId);
         if (!service.hasActiveAsrStream) {
           activeAsrSessionId = null;
+          activeAsrEventPort = null;
         }
       }
       message.sendPort.send(DoneResponse());
@@ -305,14 +329,15 @@ void runLlamaWorkerForTesting(
           case ModelFreeRequest():
             await waitForActiveGenerate();
             await waitForActiveTextToSpeech();
-            await cancelAndWaitForActiveAsrStream();
+            if (service.activeAsrStreamModelHandle == message.modelHandle) {
+              await cancelAndWaitForActiveAsrStream(notifyParent: true);
+            }
             service.freeModel(message.modelHandle);
             message.sendPort.send(DoneResponse());
 
           case RerankingContextCreateRequest():
             await waitForActiveGenerate();
             await waitForActiveTextToSpeech();
-            await cancelAndWaitForActiveAsrStream();
             message.sendPort.send(
               HandleResponse(
                 service.createRerankingContext(
@@ -332,7 +357,9 @@ void runLlamaWorkerForTesting(
           case ContextFreeRequest():
             await waitForActiveGenerate();
             await waitForActiveTextToSpeech();
-            await cancelAndWaitForActiveAsrStream();
+            if (service.activeAsrStreamContextHandle == message.contextHandle) {
+              await cancelAndWaitForActiveAsrStream(notifyParent: true);
+            }
             service.freeContext(message.contextHandle);
             message.sendPort.send(DoneResponse());
 
@@ -488,6 +515,7 @@ void runLlamaWorkerForTesting(
               );
             }
             activeAsrSessionId = message.sessionId;
+            activeAsrEventPort = message.eventPort;
             final op = Completer<void>();
             activeAsrOperation = op;
             try {
@@ -513,6 +541,7 @@ void runLlamaWorkerForTesting(
               if (!service.hasActiveAsrStream &&
                   activeAsrSessionId == message.sessionId) {
                 activeAsrSessionId = null;
+                activeAsrEventPort = null;
               }
               rethrow;
             } finally {
@@ -566,6 +595,7 @@ void runLlamaWorkerForTesting(
               if (!service.hasActiveAsrStream &&
                   activeAsrSessionId == message.sessionId) {
                 activeAsrSessionId = null;
+                activeAsrEventPort = null;
               }
               op.complete();
             }
@@ -606,6 +636,7 @@ void runLlamaWorkerForTesting(
               if (!service.hasActiveAsrStream &&
                   activeAsrSessionId == message.sessionId) {
                 activeAsrSessionId = null;
+                activeAsrEventPort = null;
               }
               op.complete();
             }
@@ -652,7 +683,9 @@ void runLlamaWorkerForTesting(
           case RerankRequest():
             await waitForActiveGenerate();
             await waitForActiveTextToSpeech();
-            await cancelAndWaitForActiveAsrStream();
+            if (service.activeAsrStreamContextHandle == message.contextHandle) {
+              await cancelAndWaitForActiveAsrStream(notifyParent: true);
+            }
             message.sendPort.send(
               RerankResponse(
                 service.rerank(
@@ -811,7 +844,10 @@ void runLlamaWorkerForTesting(
           case MultimodalContextFreeRequest():
             await waitForActiveGenerate();
             await waitForActiveTextToSpeech();
-            await cancelAndWaitForActiveAsrStream();
+            if (service.activeAsrStreamMmContextHandle ==
+                message.mmContextHandle) {
+              await cancelAndWaitForActiveAsrStream(notifyParent: true);
+            }
             service.freeMultimodalContext(message.mmContextHandle);
             message.sendPort.send(DoneResponse());
 

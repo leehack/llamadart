@@ -7,12 +7,14 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:ffi/ffi.dart';
+import 'package:llamadart/src/backends/backend.dart';
 import 'package:llamadart/src/backends/isolate_shutdown_releases.dart';
 import 'package:llamadart/src/backends/llama_cpp/bindings.dart' as llama;
 import 'package:llamadart/src/backends/llama_cpp/exit_teardown_api.dart';
 import 'package:llamadart/src/backends/llama_cpp/llama_cpp_service.dart';
 import 'package:llamadart/src/backends/llama_cpp/runtime_admission.dart';
 import 'package:llamadart/src/core/exceptions.dart';
+import 'package:llamadart/src/core/models/inference/generation_params.dart';
 import 'package:path/path.dart' as path;
 import 'package:test/test.dart';
 
@@ -94,10 +96,12 @@ final class _FakeNativeAsrRuntime {
   >
   scriptedSteps = [];
   int finishStatus = 0;
+  int initCalls = 0;
   int cancelCalls = 0;
   int freeCalls = 0;
   int resetCalls = 0;
   int? cancelFlagPtrAddress;
+  int? scriptedReadTextCount;
   String _pendingText = '';
   int _textReadOffset = 0;
   int? _lastConsumed;
@@ -181,6 +185,7 @@ final class _FakeNativeAsrRuntime {
         Pointer<llama.llama_dart_asr_stream_params> params,
         Pointer<Int> outStatus,
       ) {
+        initCalls++;
         outStatus.value = initStatus;
         if (returnNullInit || initStatus != 0) {
           return nullptr;
@@ -292,6 +297,11 @@ final class _FakeNativeAsrRuntime {
         int capacity,
         Pointer<Size> outLen,
       ) {
+        if (scriptedReadTextCount != null) {
+          outLen.value = scriptedReadTextCount!;
+          scriptedReadTextCount = null;
+          return 0;
+        }
         final encoded = utf8.encode(_pendingText);
         if (_textReadOffset >= encoded.length) {
           outLen.value = 0;
@@ -580,6 +590,7 @@ void main() {
     });
 
     tearDown(() {
+      service.dispose();
       runtime.dispose();
       if (tempDir.existsSync()) {
         tempDir.deleteSync(recursive: true);
@@ -832,6 +843,461 @@ void main() {
           ),
         );
         expect(runtime.freeCalls, 1);
+      },
+    );
+
+    test(
+      'active ASR session reserves context against stateSaveFile, stateLoadFile, generate, embed, score, LoRA, and TTS',
+      () async {
+        await service.startAsrStream(
+          13,
+          contextHandle,
+          mmHandle,
+          0,
+          onText: (_, _) {},
+        );
+
+        final statePath = path.join(tempDir.path, 'state.bin');
+        expect(
+          () => service.stateSaveFile(contextHandle, statePath, const [1, 2]),
+          throwsA(isA<LlamaStateException>()),
+        );
+        expect(
+          () => service.stateLoadFile(contextHandle, statePath, 16),
+          throwsA(isA<LlamaStateException>()),
+        );
+        await expectLater(
+          service
+              .generate(contextHandle, 'hi', const GenerationParams(), 0)
+              .toList(),
+          throwsA(isA<LlamaStateException>()),
+        );
+        expect(
+          () => service.embed(contextHandle, 'hi'),
+          throwsA(isA<LlamaStateException>()),
+        );
+        expect(
+          () => service.embedBatch(contextHandle, const ['hi']),
+          throwsA(isA<LlamaStateException>()),
+        );
+        expect(
+          () => service.scoreNextToken(
+            contextHandle,
+            'hi',
+            candidates: const [1],
+            topK: 1,
+            reusePromptPrefix: false,
+          ),
+          throwsA(isA<LlamaStateException>()),
+        );
+        expect(
+          () => service.handleLora(contextHandle, null, null, 'clear'),
+          throwsA(isA<LlamaStateException>()),
+        );
+        await expectLater(
+          service.synthesizeTextToSpeech(
+            contextHandle,
+            mmHandle,
+            const BackendTextToSpeechRequest(text: 'hi'),
+            0,
+          ),
+          throwsA(isA<LlamaStateException>()),
+        );
+
+        runtime.scriptedSteps.add((
+          status: 0,
+          state: 2, // FINISHED
+          segmentBreaks: 0,
+          samplesConsumed: 0,
+          samplesBuffered: 0,
+          text: '',
+        ));
+        await service.finishAsrStream(13, 0);
+        expect(service.hasActiveAsrStream, isFalse);
+      },
+    );
+
+    test(
+      'startAsrStream clears cachedPromptTokens and kvFromStateLoad',
+      () async {
+        service.setAsrTestCachedPromptTokens(contextHandle, const [
+          10,
+          20,
+          30,
+        ], kvFromStateLoad: true);
+        await service.startAsrStream(
+          14,
+          contextHandle,
+          mmHandle,
+          0,
+          onText: (_, _) {},
+        );
+        final cache = service.getAsrTestCachedPromptState(contextHandle);
+        expect(cache.cachedPromptTokens, isNull);
+        expect(cache.kvFromStateLoad, isFalse);
+      },
+    );
+
+    test(
+      'startAsrStream refuses active generation and pre-raised cancel flag before init',
+      () async {
+        service.setAsrTestContextGenerating(contextHandle, active: true);
+        await expectLater(
+          () => service.startAsrStream(
+            15,
+            contextHandle,
+            mmHandle,
+            0,
+            onText: (_, _) {},
+          ),
+          throwsA(isA<LlamaStateException>()),
+        );
+        service.setAsrTestContextGenerating(contextHandle, active: false);
+        expect(runtime.initCalls, 0);
+
+        final flag = calloc<Int8>();
+        try {
+          flag.value = 1;
+          await expectLater(
+            () => service.startAsrStream(
+              16,
+              contextHandle,
+              mmHandle,
+              flag.address,
+              onText: (_, _) {},
+            ),
+            throwsA(isA<LlamaSpeechException>()),
+          );
+          expect(runtime.initCalls, 0);
+        } finally {
+          calloc.free(flag);
+        }
+      },
+    );
+
+    test(
+      'sample offset mismatch, stale cancel, double close, and freeModel cleanup',
+      () async {
+        await service.startAsrStream(
+          17,
+          contextHandle,
+          mmHandle,
+          0,
+          onText: (_, _) {},
+        );
+        // Stale cancel does not affect session 17.
+        service.cancelAsrStream(999);
+        expect(service.hasActiveAsrStream, isTrue);
+
+        // Wrong sample offset is rejected without closing or corrupting state.
+        await expectLater(
+          () => service.pushAsrPcm(17, 1, Float32List.fromList([0.1])),
+          throwsA(isA<LlamaStateException>()),
+        );
+        await service.pushAsrPcm(17, 0, Float32List.fromList([0.1, 0.2]));
+        await expectLater(
+          () => service.finishAsrStream(17, 1),
+          throwsA(isA<LlamaStateException>()),
+        );
+
+        // freeModel tears down the active ASR session and frees it once.
+        service.freeModel(1);
+        expect(service.hasActiveAsrStream, isFalse);
+        expect(runtime.freeCalls, 1);
+
+        // Double close / dispose never frees the native stream a second time.
+        service.closeAsrStreamIfIdle(17);
+        service.dispose();
+        expect(runtime.freeCalls, 1);
+
+        // Concurrent freeModel while pushAsrPcm is paused in WORKING hits
+        // _closeAsrSession on the same session twice without double-freeing.
+        final calls2 = LlamaCppObjectCalls.tracked(
+          ExitTeardownApi(
+            track: (_, _, _) => false,
+            untrack: (_) => false,
+            free: (_) {},
+            freeAddress: nullptr,
+            modelLoadFromFile: (_, _) => nullptr,
+            initFromModel: (_, _) => nullptr,
+            mtmdInitFromFile: (_, _, _) => nullptr,
+            decode: (_, _) => 0,
+            encode: (_, _) => 0,
+            synchronize: (_) {},
+            samplerSample: (_, _, _) => 0,
+            stateSaveFile: (_, _, _, _) => false,
+            stateLoadFile: (_, _, _, _, _) => false,
+            stateSeqGetSizeExt: (_, _, _) => 0,
+            stateSeqGetDataExt: (_, _, _, _, _) => 0,
+            stateSeqSetDataExt: (_, _, _, _, _) => 0,
+            adapterLoraInit: (_, _) => nullptr,
+            mtmdTokenize: (_, _, _, _, _) => 0,
+            mtmdEncodeChunk: (_, _) => 0,
+            mtmdHelperEvalChunks: (_, _, _, _, _, _, _, _) => 0,
+            mtmdHelperEvalChunkSingle: (_, _, _, _, _, _, _, _) => 0,
+            mtmdHelperDecodeImageChunk: (_, _, _, _, _, _, _, _, _, _) => 0,
+            schedGraphCompute: (_, _) => 0,
+          ),
+          contextSequenceCapacity: (_) => seqCapacity,
+        );
+        final service2 = LlamaCppService(
+          isWindows: false,
+          objectCalls: calls2,
+          buildIdentity: () => _admittedBuildIdentity,
+          asrStreamSymbolLookup: runtime.lookup,
+        );
+        addTearDown(service2.dispose);
+        service2.registerAsrTestHandles(
+          contextHandle: contextHandle,
+          mmHandle: mmHandle,
+          calls: calls2,
+          projectorPath: projectorFile.path,
+        );
+        await service2.startAsrStream(
+          170,
+          contextHandle,
+          mmHandle,
+          0,
+          onText: (_, _) {},
+        );
+        runtime.scriptedSteps.add((
+          status: 0,
+          state: 1, // WORKING
+          segmentBreaks: 0,
+          samplesConsumed: 1,
+          samplesBuffered: 1,
+          text: '',
+        ));
+        Future<void>(() => service2.freeModel(1));
+        await expectLater(
+          () => service2.pushAsrPcm(170, 0, Float32List.fromList([0.1, 0.2])),
+          throwsA(isA<LlamaSpeechException>()),
+        );
+        expect(runtime.freeCalls, 2);
+      },
+    );
+
+    test(
+      'push throws on zero-progress NEEDS_AUDIO and yields event loop between WORKING steps',
+      () async {
+        // Zero acceptance + NEEDS_AUDIO with zero progress throws instead of spinning.
+        await service.startAsrStream(
+          18,
+          contextHandle,
+          mmHandle,
+          0,
+          onText: (_, _) {},
+        );
+        runtime.scriptedAcceptedCounts.add(0);
+        runtime.scriptedSteps.add((
+          status: 0,
+          state: 0, // NEEDS_AUDIO
+          segmentBreaks: 0,
+          samplesConsumed: 0,
+          samplesBuffered: 0,
+          text: '',
+        ));
+        await expectLater(
+          () => service.pushAsrPcm(18, 0, Float32List.fromList([0.1, 0.2])),
+          throwsA(
+            isA<LlamaSpeechException>().having(
+              (e) => e.message,
+              'message',
+              contains('made no progress'),
+            ),
+          ),
+        );
+
+        // Event loop yields between WORKING steps so scheduled cancel takes effect.
+        await service.startAsrStream(
+          19,
+          contextHandle,
+          mmHandle,
+          0,
+          onText: (_, _) {},
+        );
+        runtime.scriptedSteps.addAll([
+          (
+            status: 0,
+            state: 1, // WORKING
+            segmentBreaks: 0,
+            samplesConsumed: 1,
+            samplesBuffered: 1,
+            text: '',
+          ),
+          (
+            status: 0,
+            state:
+                0, // NEEDS_AUDIO (should not be reached if event loop yields)
+            segmentBreaks: 0,
+            samplesConsumed: 2,
+            samplesBuffered: 0,
+            text: '',
+          ),
+        ]);
+        Future<void>(() => service.cancelAsrStream(19));
+        await expectLater(
+          () => service.pushAsrPcm(19, 0, Float32List.fromList([0.1, 0.2])),
+          throwsA(isA<LlamaSpeechException>()),
+        );
+        expect(runtime.scriptedSteps, hasLength(1));
+      },
+    );
+
+    test(
+      'rejects malformed native counts, decreasing segments, idle WORKING loops, NEEDS_AUDIO after finish, and early FINISHED on push',
+      () async {
+        // M40: accepted > remaining
+        await service.startAsrStream(
+          20,
+          contextHandle,
+          mmHandle,
+          0,
+          onText: (_, _) {},
+        );
+        runtime.scriptedAcceptedCounts.add(5);
+        await expectLater(
+          () => service.pushAsrPcm(20, 0, Float32List.fromList([0.1, 0.2])),
+          throwsA(isA<LlamaSpeechException>()),
+        );
+
+        // M39: read_text count > capacity
+        await service.startAsrStream(
+          21,
+          contextHandle,
+          mmHandle,
+          0,
+          onText: (_, _) {},
+        );
+        runtime.scriptedReadTextCount = 999999;
+        runtime.scriptedSteps.add((
+          status: 0,
+          state: 0, // NEEDS_AUDIO
+          segmentBreaks: 0,
+          samplesConsumed: 1,
+          samplesBuffered: 0,
+          text: '',
+        ));
+        await expectLater(
+          () => service.pushAsrPcm(21, 0, Float32List.fromList([0.1])),
+          throwsA(isA<LlamaSpeechException>()),
+        );
+
+        // M35: decreasing segment_breaks
+        await service.startAsrStream(
+          22,
+          contextHandle,
+          mmHandle,
+          0,
+          onText: (_, _) {},
+        );
+        runtime.scriptedSteps.add((
+          status: 0,
+          state: 0, // NEEDS_AUDIO
+          segmentBreaks: 2,
+          samplesConsumed: 1,
+          samplesBuffered: 0,
+          text: 'a',
+        ));
+        await service.pushAsrPcm(22, 0, Float32List.fromList([0.1]));
+        runtime.scriptedSteps.add((
+          status: 0,
+          state: 0, // NEEDS_AUDIO
+          segmentBreaks: 1,
+          samplesConsumed: 2,
+          samplesBuffered: 0,
+          text: '',
+        ));
+        await expectLater(
+          () => service.pushAsrPcm(22, 1, Float32List.fromList([0.2])),
+          throwsA(isA<LlamaSpeechException>()),
+        );
+
+        // M37: NEEDS_AUDIO during finish
+        await service.startAsrStream(
+          23,
+          contextHandle,
+          mmHandle,
+          0,
+          onText: (_, _) {},
+        );
+        runtime.scriptedSteps.add((
+          status: 0,
+          state: 0, // NEEDS_AUDIO
+          segmentBreaks: 0,
+          samplesConsumed: 0,
+          samplesBuffered: 0,
+          text: '',
+        ));
+        await expectLater(
+          () => service.finishAsrStream(23, 0),
+          throwsA(isA<LlamaSpeechException>()),
+        );
+
+        // M38: unsolicited FINISHED during push preserves partial transcript
+        await service.startAsrStream(
+          24,
+          contextHandle,
+          mmHandle,
+          0,
+          onText: (_, _) {},
+        );
+        runtime.scriptedSteps.add((
+          status: 0,
+          state: 2, // FINISHED
+          segmentBreaks: 0,
+          samplesConsumed: 1,
+          samplesBuffered: 0,
+          text: 'cutoff',
+        ));
+        await expectLater(
+          () => service.pushAsrPcm(24, 0, Float32List.fromList([0.1, 0.2])),
+          throwsA(
+            isA<LlamaSpeechTranscriptTruncatedException>()
+                .having(
+                  (e) => e.limit,
+                  'limit',
+                  LlamaSpeechTranscriptLimit.runtime,
+                )
+                .having(
+                  (e) => e.partialTranscript,
+                  'partialTranscript',
+                  'cutoff',
+                ),
+          ),
+        );
+
+        // M36: idle WORKING loop (> 10000 identical WORKING steps)
+        await service.startAsrStream(
+          25,
+          contextHandle,
+          mmHandle,
+          0,
+          onText: (_, _) {},
+        );
+        runtime.scriptedSteps.addAll(
+          List.generate(
+            10002,
+            (_) => (
+              status: 0,
+              state: 1, // WORKING
+              segmentBreaks: 0,
+              samplesConsumed: 0,
+              samplesBuffered: 1,
+              text: '',
+            ),
+          ),
+        );
+        await expectLater(
+          () => service.pushAsrPcm(25, 0, Float32List.fromList([0.1])),
+          throwsA(
+            isA<LlamaSpeechException>().having(
+              (e) => e.message,
+              'message',
+              contains('stopped making progress'),
+            ),
+          ),
+        );
       },
     );
   });

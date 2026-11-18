@@ -576,9 +576,17 @@ class LlamaCppService {
   /// Whether a live ASR session is currently open on this service.
   bool get hasActiveAsrStream => _activeAsrStreamSession != null;
 
+  /// The model handle reserved by the active live ASR session, if any.
+  int? get activeAsrStreamModelHandle => _activeAsrStreamSession?.modelHandle;
+
   /// The context handle reserved by the active live ASR session, if any.
   int? get activeAsrStreamContextHandle =>
       _activeAsrStreamSession?.contextHandle;
+
+  /// The multimodal projector handle reserved by the active live ASR session,
+  /// if any.
+  int? get activeAsrStreamMmContextHandle =>
+      _activeAsrStreamSession?.mmContextHandle;
 
   void _ensureContextNotReservedByAsr(int contextHandle) {
     if (_activeAsrStreamSession?.contextHandle == contextHandle) {
@@ -4116,6 +4124,36 @@ class LlamaCppService {
   /// Clears cached projector types so ASR probe tests can rewrite fixtures.
   void clearAsrTestProjectorTypes() {
     _mtmdProjectorTypes.clear();
+  }
+
+  /// Marks [contextHandle] as actively generating for ASR unit tests.
+  void setAsrTestContextGenerating(int contextHandle, {required bool active}) {
+    if (active) {
+      _generatingContexts[contextHandle] = 1;
+    } else {
+      _generatingContexts.remove(contextHandle);
+    }
+  }
+
+  /// Sets cached prompt token state on [contextHandle] for ASR unit tests.
+  void setAsrTestCachedPromptTokens(
+    int contextHandle,
+    List<int>? tokens, {
+    bool kvFromStateLoad = false,
+  }) {
+    final ctx = _contexts[contextHandle]!;
+    ctx.cachedPromptTokens = tokens;
+    ctx.kvFromStateLoad = kvFromStateLoad;
+  }
+
+  /// Reads cached prompt token state on [contextHandle] for ASR unit tests.
+  ({List<int>? cachedPromptTokens, bool kvFromStateLoad})
+  getAsrTestCachedPromptState(int contextHandle) {
+    final ctx = _contexts[contextHandle]!;
+    return (
+      cachedPromptTokens: ctx.cachedPromptTokens,
+      kvFromStateLoad: ctx.kvFromStateLoad,
+    );
   }
 
   _AsrStreamApi _resolveAsrStreamApi({
@@ -8188,6 +8226,7 @@ class LlamaCppService {
       throw LlamaStateException('Unknown context handle: $contextHandle');
     }
     _ensureContextUsable(contextHandle, ctx);
+    _ensureContextNotReservedByAsr(contextHandle);
     if (_generatingContexts.containsKey(contextHandle)) {
       final activity = _activeTtsContextHandle == contextHandle
           ? 'text-to-speech'
@@ -8248,6 +8287,7 @@ class LlamaCppService {
       throw LlamaStateException('Unknown context handle: $contextHandle');
     }
     _ensureContextUsable(contextHandle, ctx);
+    _ensureContextNotReservedByAsr(contextHandle);
     if (_generatingContexts.containsKey(contextHandle)) {
       final activity = _activeTtsContextHandle == contextHandle
           ? 'text-to-speech'

@@ -1995,6 +1995,7 @@ final class LlamaCppAsrStreamSession {
   ReceivePort? _eventPort;
   StreamSubscription<dynamic>? _eventSubscription;
   bool _startSent = false;
+  bool _startFailed = false;
   bool _cancelled = false;
   bool _closed = false;
   int _suppliedSamples = 0;
@@ -2038,31 +2039,43 @@ final class LlamaCppAsrStreamSession {
             acceptedSamples: message.acceptedSamples,
           ));
         }
+      } else if (message is ErrorResponse) {
+        _cancelled = true;
+        final error = _backend._workerError(message);
+        if (!_updatesController.isClosed) {
+          _updatesController.addError(error);
+        }
+        unawaited(_closeResources(freeFlag: true));
       }
     });
 
     final rp = _backend._openResponsePort();
     _startSent = true;
-    _backend._dispatchRequest(
-      rp,
-      AsrStreamStartRequest(
-        _sessionId,
-        _contextHandle,
-        _mmContextHandle,
-        _cancelFlag.address,
-        eventPort.sendPort,
-        rp.sendPort,
-      ),
-    );
-    final response = await _backend._receiveResponse(rp);
-    if (response is AsrStreamStartedResponse &&
-        response.sessionId == _sessionId) {
-      return;
+    try {
+      _backend._dispatchRequest(
+        rp,
+        AsrStreamStartRequest(
+          _sessionId,
+          _contextHandle,
+          _mmContextHandle,
+          _cancelFlag.address,
+          eventPort.sendPort,
+          rp.sendPort,
+        ),
+      );
+      final response = await _backend._receiveResponse(rp);
+      if (response is AsrStreamStartedResponse &&
+          response.sessionId == _sessionId) {
+        return;
+      }
+      if (response is ErrorResponse) {
+        throw _backend._workerError(response);
+      }
+      throw LlamaSpeechException('Unknown response starting live ASR session.');
+    } catch (_) {
+      _startFailed = true;
+      rethrow;
     }
-    if (response is ErrorResponse) {
-      throw _backend._workerError(response);
-    }
-    throw LlamaSpeechException('Unknown response starting live ASR session.');
   }
 
   /// Pushes [samples] in bounded slices (at most 5,120 samples per transfer).
@@ -2234,10 +2247,12 @@ final class LlamaCppAsrStreamSession {
   void _cleanupBeforeStart() {
     _cancelled = true;
     _cancelFlag.raise();
-    if (!_startSent) {
+    final canFree =
+        !_startSent || _startFailed || _backend._workerFailure != null;
+    if (canFree) {
       _cancelFlag.free();
     }
-    unawaited(_closeResources(freeFlag: !_startSent));
+    unawaited(_closeResources(freeFlag: canFree));
   }
 
   void _onWorkerExit(LlamaStateException failure) {
