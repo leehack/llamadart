@@ -188,10 +188,18 @@ description: >-
   until `task.done` completes. A LiteRT-LM recognizer allows one task per instance.
 - TTS returns one complete buffer of interleaved float32 PCM (24 kHz mono for
   Qwen3-TTS, LFM3-Audio, Chatterbox and Pocket TTS, 32 kHz for Soprano; read
-  `result.sampleRateHz` and `channelCount` rather than hard-coding). There are
-  no playable chunks (`supportsIncrementalAudio` is false).
+  `result.sampleRateHz` and `channelCount` rather than hard-coding).
   - `TextToSpeechProgressEvent` (`phase`, `promptTokensRemaining`,
     `framesGenerated`) is for status UI only.
+  - Experimental streaming: `TextToSpeechRequest(streamAudio: true)` adds
+    `TextToSpeechAudioChunkEvent`s (`samples`, `sampleOffset`, `sampleRateHz`,
+    `channelCount`) to `task.events` before the final event; they concatenate
+    to `result.samples`. Check `capabilities.supportsIncrementalAudio` first:
+    `synthesize` throws `LlamaUnsupportedException` without it (Soprano,
+    Chatterbox, Web, native runtimes before llamadart-native `v1.0.0-1`; see
+    `incrementalAudioUnsupportedReason`). Qwen3-TTS chunks are about 5.76 s
+    apart. Match events with `is`, not an exhaustive `switch`. No output
+    backpressure.
   - `result.truncated` is true when generation hit `maxFrames` (default
     512); it is not an error.
   - Use `result.toWavBytes()` for 16-bit WAV and `result.duration` for
@@ -369,6 +377,8 @@ Future<void> speak(
     task.events.listen((TextToSpeechEvent event) {
       if (event is TextToSpeechProgressEvent) {
         print('${event.phase.name}: ${event.framesGenerated} frames');
+      } else if (event is TextToSpeechAudioChunkEvent) {
+        print('${event.samples.length} samples at ${event.sampleOffset}');
       }
     });
     final TextToSpeechResult result = await task.result;

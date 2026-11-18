@@ -888,6 +888,8 @@ void main() {
         mockEngine.mockBackend.lastTextToSpeechRequest?.text,
         'Hello from llamadart.',
       );
+      expect(mockEngine.mockBackend.lastTextToSpeechRequest?.streamAudio, true);
+      expect(ttsProvider.textToSpeechBufferedDuration, Duration.zero);
       expect(mockEngine.mockBackend.lastTextToSpeechRequest?.language, 'en');
       expect(
         mockEngine.mockBackend.lastTextToSpeechRequest?.speakerAudioBytes,
@@ -899,6 +901,53 @@ void main() {
         mockEngine.mockBackend.lastTextToSpeechRequest?.maxFrames,
         kIsWeb ? 96 : 512,
       );
+    });
+
+    test('TTS shows buffered audio while a streaming runtime generates and '
+        'does not request streaming otherwise', () async {
+      for (final streams in <bool>[true, false]) {
+        final engine = MockLlamaEngine();
+        engine.mockBackend
+          ..textToSpeechStreams = streams
+          ..textToSpeechResultCompleter =
+              Completer<BackendTextToSpeechResult>();
+        final ttsProvider = ChatProvider(
+          chatService: MockChatService(engine: engine),
+          settingsService: MockSettingsService(),
+          initialSettings: const ChatSettings(
+            modelPath: 'qwen3-tts.gguf',
+            mmprojPath: 'qwen3-tts-mmproj.gguf',
+            modelSupportsTextToSpeech: true,
+          ),
+        );
+        addTearDown(ttsProvider.dispose);
+        await ttsProvider.loadModel();
+
+        final completed = ttsProvider.synthesizeSpeech('Hello.');
+        while (engine.mockBackend.lastTextToSpeechRequest == null) {
+          await Future<void>.delayed(Duration.zero);
+        }
+        await Future<void>.delayed(Duration.zero);
+
+        expect(
+          engine.mockBackend.lastTextToSpeechRequest?.streamAudio,
+          streams,
+        );
+        expect(
+          ttsProvider.textToSpeechBufferedDuration,
+          streams ? const Duration(microseconds: 166) : Duration.zero,
+        );
+        engine.mockBackend.textToSpeechResultCompleter!.complete(
+          BackendTextToSpeechResult(
+            samples: Float32List.fromList(const <double>[0, 0.25]),
+            sampleRateHz: 24000,
+            channelCount: 1,
+            framesGenerated: 2,
+            truncated: false,
+          ),
+        );
+        expect(await completed, isTrue);
+      }
     });
 
     test('TTS sends Min-P only when the loaded runtime supports it', () async {

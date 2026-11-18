@@ -16,6 +16,7 @@ class MockLlamaBackend
         BackendPromptSpeechToTextSupport,
         BackendTextToSpeech {
   BackendTextToSpeechRequest? lastTextToSpeechRequest;
+  bool textToSpeechStreams = true;
   bool textToSpeechCancelled = false;
   Completer<BackendTextToSpeechResult>? textToSpeechResultCompleter;
   final List<String> loadedModelPaths = <String>[];
@@ -137,7 +138,7 @@ class MockLlamaBackend
   Future<BackendTextToSpeechCapabilities> textToSpeechCapabilities(
     int contextHandle,
     int mmContextHandle,
-  ) async => const BackendTextToSpeechCapabilities(
+  ) async => BackendTextToSpeechCapabilities(
     isSupported: true,
     model: BackendTextToSpeechModel.qwen3Tts,
     sampleRateHz: 24000,
@@ -145,6 +146,7 @@ class MockLlamaBackend
     supportsLanguage: true,
     supportsSpeakerReference: true,
     supportsCancellation: true,
+    supportsIncrementalAudio: textToSpeechStreams,
   );
 
   @override
@@ -163,6 +165,17 @@ class MockLlamaBackend
         truncated: false,
       ),
     );
+    if (request.streamAudio) {
+      onProgress?.call(
+        BackendTextToSpeechProgress(
+          phase: BackendTextToSpeechPhase.generating,
+          promptTokensRemaining: 0,
+          framesGenerated: 2,
+          truncated: false,
+          audio: Float32List.fromList(const <double>[0, 0.25, -0.25, 0]),
+        ),
+      );
+    }
     final result = BackendTextToSpeechResult(
       samples: Float32List.fromList(const <double>[0, 0.25, -0.25, 0]),
       sampleRateHz: 24000,

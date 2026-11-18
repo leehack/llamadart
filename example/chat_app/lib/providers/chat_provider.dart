@@ -212,6 +212,7 @@ class ChatProvider extends ChangeNotifier {
   Completer<void>? _activeTextToSpeechDone;
   TextToSpeechResult? _textToSpeechResult;
   TextToSpeechProgressEvent? _textToSpeechProgress;
+  Duration _textToSpeechBufferedDuration = Duration.zero;
   String? _textToSpeechError;
   SpeechAudioBytesInput? _recordedSpeakerReference;
   bool _isSynthesizingSpeech = false;
@@ -336,6 +337,9 @@ class ChatProvider extends ChangeNotifier {
 
   /// Latest complete synthesized audio for the active conversation and model.
   TextToSpeechResult? get textToSpeechResult => _textToSpeechResult;
+
+  /// Audio streamed so far by a runtime that streams PCM, else zero.
+  Duration get textToSpeechBufferedDuration => _textToSpeechBufferedDuration;
 
   /// Latest synthesis progress reported by the active runtime.
   TextToSpeechProgressEvent? get textToSpeechProgress => _textToSpeechProgress;
@@ -3913,6 +3917,7 @@ class ChatProvider extends ChangeNotifier {
     _isSynthesizingSpeech = true;
     _textToSpeechResult = null;
     _textToSpeechProgress = null;
+    _textToSpeechBufferedDuration = Duration.zero;
     _textToSpeechError = null;
     notifyListeners();
 
@@ -3923,8 +3928,11 @@ class ChatProvider extends ChangeNotifier {
     TextToSpeechTask? task;
     StreamSubscription<TextToSpeechEvent>? eventSubscription;
     try {
+      final streamAudio =
+          (await synthesizer.capabilities).supportsIncrementalAudio;
       task = await synthesizer.synthesize(
         TextToSpeechRequest(
+          streamAudio: streamAudio,
           text: normalizedText,
           language: (language?.trim().isEmpty ?? true)
               ? null
@@ -3949,13 +3957,23 @@ class ChatProvider extends ChangeNotifier {
       }
       _activeTextToSpeechTask = task;
       eventSubscription = task.events.listen((event) {
-        if (event is TextToSpeechProgressEvent &&
-            identical(_activeTextToSpeechTask, task) &&
-            _textToSpeechContextMatches(context)) {
+        if (!identical(_activeTextToSpeechTask, task) ||
+            !_textToSpeechContextMatches(context)) {
+          return;
+        }
+        if (event is TextToSpeechProgressEvent) {
           _textToSpeechProgress = event;
-          if (!_isDisposed) {
-            notifyListeners();
-          }
+        } else if (event is TextToSpeechAudioChunkEvent) {
+          _textToSpeechBufferedDuration = _bufferedDuration(
+            event.sampleOffset + event.samples.length,
+            event.sampleRateHz,
+            event.channelCount,
+          );
+        } else {
+          return;
+        }
+        if (!_isDisposed) {
+          notifyListeners();
         }
       });
 
@@ -4004,6 +4022,7 @@ class ChatProvider extends ChangeNotifier {
         _activeTextToSpeechOperationId = null;
         _isSynthesizingSpeech = false;
         _textToSpeechProgress = null;
+        _textToSpeechBufferedDuration = Duration.zero;
         if (_activeGenerationOperationId == null &&
             _activeVoiceQuestionOperationId == null &&
             !_isTranscribing) {
@@ -4037,9 +4056,23 @@ class ChatProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  static Duration _bufferedDuration(
+    int samples,
+    int sampleRateHz,
+    int channelCount,
+  ) => sampleRateHz <= 0 || channelCount <= 0
+      ? Duration.zero
+      : Duration(
+          microseconds:
+              samples *
+              Duration.microsecondsPerSecond ~/
+              (sampleRateHz * channelCount),
+        );
+
   void _clearTextToSpeechOutput() {
     _textToSpeechResult = null;
     _textToSpeechProgress = null;
+    _textToSpeechBufferedDuration = Duration.zero;
     _textToSpeechError = null;
   }
 

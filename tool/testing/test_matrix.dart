@@ -669,7 +669,9 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
     mode: 'local-only',
     covers:
         'real native Qwen3-TTS capability discovery, progress, complete 24 kHz '
-        'PCM output, cancellation boundary, and playable WAV encoding',
+        'PCM output, streamed PCM chunks equal to the non-stream result with '
+        'a cancel after the first chunk, cancellation boundary, and playable '
+        'WAV encoding',
     command:
         'dart run tool/testing/run_local_e2e.dart --scenario '
         'text-to-speech-smoke --model-path <model.gguf> '
@@ -687,7 +689,9 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
         'Pocket TTS capabilities, listed voices, default-voice identity, '
         'speaker cloning, Multilingual language and guidance-sequence '
         'refusal, voice/language/speaker-reference refusals, seed repeat '
-        'after a cancel, and a Qwen3-ASR round trip of the synthesized speech',
+        'after a cancel, streamed PCM for LFM3-Audio and Pocket TTS with '
+        'Soprano and Chatterbox refusing it, and a Qwen3-ASR round trip of '
+        'the synthesized speech',
     command:
         'LLAMADART_TTS_LFM3_MODEL_PATH=<model.gguf> '
         'LLAMADART_TTS_LFM3_MMPROJ_PATH=<mmproj.gguf> '

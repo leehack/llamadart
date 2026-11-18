@@ -125,6 +125,118 @@ void main() {
       expect(ByteData.sublistView(wav).getInt16(52, Endian.little), 32767);
     });
 
+    group('streamAudio', () {
+      const streaming = BackendTextToSpeechCapabilities(
+        isSupported: true,
+        model: BackendTextToSpeechModel.qwen3Tts,
+        sampleRateHz: 24000,
+        channelCount: 1,
+        supportsCancellation: true,
+        supportsIncrementalAudio: true,
+      );
+
+      test('emits chunks with offsets before the final event', () async {
+        backend.capabilities = streaming;
+        await _loadTextToSpeechModel(llamaEngine);
+        expect(
+          (await speechEngine.capabilities).supportsIncrementalAudio,
+          true,
+        );
+
+        final task = await speechEngine.synthesize(
+          const TextToSpeechRequest(text: 'Hello.', streamAudio: true),
+        );
+        final events = await task.events.toList();
+        final result = await task.result;
+
+        expect(backend.lastRequest?.streamAudio, isTrue);
+        final chunks = events.whereType<TextToSpeechAudioChunkEvent>().toList();
+        expect(chunks.map((chunk) => chunk.sampleOffset), <int>[0, 2]);
+        expect(chunks.map((chunk) => chunk.sampleRateHz), everyElement(24000));
+        expect(chunks.map((chunk) => chunk.channelCount), everyElement(1));
+        expect(
+          chunks.expand((chunk) => chunk.samples).toList(),
+          result.samples,
+        );
+        expect(events.last, isA<TextToSpeechFinalEvent>());
+        expect(
+          events.lastIndexWhere(
+            (event) => event is TextToSpeechAudioChunkEvent,
+          ),
+          lessThan(events.length - 1),
+        );
+      });
+
+      test('emits no chunks unless requested', () async {
+        backend.capabilities = streaming;
+        await _loadTextToSpeechModel(llamaEngine);
+
+        final task = await speechEngine.synthesize(
+          const TextToSpeechRequest(text: 'Hello.'),
+        );
+        final events = await task.events.toList();
+
+        expect(backend.lastRequest?.streamAudio, isFalse);
+        expect(events.whereType<TextToSpeechAudioChunkEvent>(), isEmpty);
+      });
+
+      test('refuses with the backend reason and frees the lease', () async {
+        backend.capabilities = const BackendTextToSpeechCapabilities(
+          isSupported: true,
+          model: BackendTextToSpeechModel.qwen3Tts,
+          sampleRateHz: 24000,
+          channelCount: 1,
+          supportsCancellation: true,
+          incrementalAudioUnsupportedReason: 'Needs native v1.0.0-1.',
+        );
+        await _loadTextToSpeechModel(llamaEngine);
+        final capabilities = await speechEngine.capabilities;
+        expect(capabilities.supportsIncrementalAudio, isFalse);
+        expect(
+          capabilities.incrementalAudioUnsupportedReason,
+          'Needs native v1.0.0-1.',
+        );
+
+        await expectLater(
+          speechEngine.synthesize(
+            const TextToSpeechRequest(text: 'Hello.', streamAudio: true),
+          ),
+          throwsA(
+            isA<LlamaUnsupportedException>().having(
+              (error) => error.message,
+              'message',
+              contains('v1.0.0-1'),
+            ),
+          ),
+        );
+        expect(backend.lastRequest, isNull);
+
+        final task = await speechEngine.synthesize(
+          const TextToSpeechRequest(text: 'Hello.'),
+        );
+        expect((await task.done).state, TextToSpeechCompletionState.completed);
+      });
+
+      test('drops chunks reported after cancel', () async {
+        backend
+          ..capabilities = streaming
+          ..blockSynthesis = true;
+        await _loadTextToSpeechModel(llamaEngine);
+
+        final task = await speechEngine.synthesize(
+          const TextToSpeechRequest(text: 'Hello.', streamAudio: true),
+        );
+        final pending = task.events.toList();
+        await backend.synthesisStarted.future;
+        task.cancel();
+
+        expect((await task.done).state, TextToSpeechCompletionState.cancelled);
+        final events = await pending;
+        expect(events.whereType<TextToSpeechAudioChunkEvent>(), isEmpty);
+        expect(events.whereType<TextToSpeechFinalEvent>(), isEmpty);
+      });
+    });
+
     test('accepts a speaker reference file', () async {
       await _loadTextToSpeechModel(llamaEngine);
 
@@ -984,6 +1096,10 @@ class _TextToSpeechBackend
         supportsSpeakerReference: true,
         supportsCancellation: true,
       );
+  List<Float32List> streamChunks = <Float32List>[
+    Float32List.fromList(<double>[-1, -0.5]),
+    Float32List.fromList(<double>[0, 0.5, 1]),
+  ];
   bool blockCapabilities = false;
   bool blockSynthesis = false;
   bool contextFreeAwaitsSynthesis = false;
@@ -1079,6 +1195,19 @@ class _TextToSpeechBackend
         truncated: false,
       ),
     );
+    if (request.streamAudio) {
+      for (final chunk in streamChunks) {
+        onProgress?.call(
+          BackendTextToSpeechProgress(
+            phase: BackendTextToSpeechPhase.generating,
+            promptTokensRemaining: 0,
+            framesGenerated: 3,
+            truncated: false,
+            audio: chunk,
+          ),
+        );
+      }
+    }
     return BackendTextToSpeechResult(
       samples: Float32List.fromList(<double>[-1, -0.5, 0, 0.5, 1]),
       sampleRateHz: 24000,

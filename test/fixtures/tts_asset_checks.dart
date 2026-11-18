@@ -33,5 +33,9 @@ void main(List<String> args) {
   }
   final free = api.getField(#freeAddress).reflectee as Pointer<NativeType>;
   if (free == nullptr) throw StateError('Unresolved TTS release address');
-  print('TTS_ASSET_DISCOVERY ${args.single} ABI=$version required=12');
+  final streams = api.getField(#startStreaming).reflectee != null;
+  print(
+    'TTS_ASSET_DISCOVERY ${args.single} ABI=$version required=12 '
+    'streaming=$streams',
+  );
 }

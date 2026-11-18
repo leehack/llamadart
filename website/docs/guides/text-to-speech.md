@@ -352,17 +352,59 @@ context while text-to-speech is active with `LlamaStateException`. Await the
 synthesis task, including cancellation, before reusing that context. The
 reservation starts before speaker-reference loading.
 
-The current native and Web wrappers produce PCM only after all requested audio-codec
-frames have been generated. `supportsIncrementalAudio` and
-`supportsOutputBackpressure` are therefore false. Progress events are useful
-for status and cancellation, but are not playable audio chunks.
+Without `streamAudio`, PCM arrives only after all requested audio-codec
+frames have been generated, and progress events are not playable audio.
+`supportsOutputBackpressure` is false.
+
+## Streaming audio
+
+Streaming is experimental. Set `streamAudio: true` to receive PCM while the
+model generates, as `TextToSpeechAudioChunkEvent`s on `task.events` before the
+unchanged `TextToSpeechFinalEvent`. Check `supportsIncrementalAudio` first:
+`synthesize` throws `LlamaUnsupportedException` before a task starts when it
+is false, with the reason in `incrementalAudioUnsupportedReason`.
+
+```dart
+final TextToSpeechCapabilities capabilities = await synthesizer.capabilities;
+final TextToSpeechTask task = await synthesizer.synthesize(
+  TextToSpeechRequest(
+    text: 'Hello.',
+    streamAudio: capabilities.supportsIncrementalAudio,
+  ),
+);
+task.events.listen((TextToSpeechEvent event) {
+  if (event is TextToSpeechAudioChunkEvent) {
+    // event.samples continue the stream at event.sampleOffset.
+  }
+});
+```
+
+Each chunk holds the samples produced since the previous one, with
+`sampleOffset` (its first sample's index in the final result), `sampleRateHz`
+and `channelCount`. The chunks concatenate to `result.samples`, which equals
+the PCM of the same request without `streamAudio`. After `cancel()` no chunk
+or final event arrives. There is no output backpressure: a paused subscription
+buffers events, at most the utterance.
+
+| Model | Streams | Chunk cadence |
+| --- | --- | --- |
+| Qwen3-TTS | Yes | 72 frames, about 5.76 s of audio; shorter speech arrives as one chunk at the end |
+| Pocket TTS | Yes | 8 frames, about 0.64 s |
+| LFM3-Audio | Yes | 1 frame, about 0.08 s |
+| Soprano, Chatterbox | No | Decode the whole utterance at the end |
+
+Native streaming needs llamadart-native `v1.0.0-1` or later; an older runtime
+reports `supportsIncrementalAudio` false. The WebGPU bridge returns complete
+PCM only, so Web refuses `streamAudio`.
 
 The [chat app](../examples/chat-app) has a Qwen3-TTS mode built on this API.
 
 ## Known limits
 
-- Output is complete mono PCM at the model's rate (`sampleRateHz`); no
-  incremental audio chunks, timestamps, or output backpressure are available.
+- Output is mono PCM at the model's rate (`sampleRateHz`); timestamps and
+  output backpressure are unavailable, and incremental chunks need
+  `streamAudio` on a supporting native runtime (see
+  [Streaming audio](#streaming-audio)).
 - Qwen3-TTS, LFM3-Audio, Soprano, Chatterbox, Pocket TTS and llama.cpp audio
   generation are experimental. The models other than Qwen3-TTS were checked on
   macOS arm64 (CPU) with an ASR round trip; other hosts are unqualified. Voice
