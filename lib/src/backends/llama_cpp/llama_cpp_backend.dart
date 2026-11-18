@@ -1680,21 +1680,6 @@ class NativeLlamaBackend
     }
   }
 
-  @override
-  Future<String?> streamingSpeechToTextUnsupportedReason(
-    int contextHandle,
-    int mmContextHandle,
-  ) => probeAsrStreamUnsupportedReason(contextHandle, mmContextHandle);
-
-  @override
-  Future<BackendStreamingSpeechToTextSession> startStreamingSpeechToText(
-    int contextHandle,
-    int mmContextHandle,
-  ) async {
-    final session = await startAsrStreamSession(contextHandle, mmContextHandle);
-    return _LlamaCppBackendStreamingSpeechSession(session);
-  }
-
   /// Probes whether [contextHandle] and [mmContextHandle] support live ASR.
   Future<String?> probeAsrStreamUnsupportedReason(
     int contextHandle,
@@ -1766,6 +1751,21 @@ class NativeLlamaBackend
       }
       rethrow;
     }
+  }
+
+  @override
+  Future<String?> streamingSpeechToTextUnsupportedReason(
+    int contextHandle,
+    int mmContextHandle,
+  ) => probeAsrStreamUnsupportedReason(contextHandle, mmContextHandle);
+
+  @override
+  Future<BackendStreamingSpeechToTextSession> startStreamingSpeechToText(
+    int contextHandle,
+    int mmContextHandle,
+  ) async {
+    final session = await startAsrStreamSession(contextHandle, mmContextHandle);
+    return _LlamaCppBackendStreamingSpeechSession(session);
   }
 
   @override

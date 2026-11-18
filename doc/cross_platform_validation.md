@@ -1655,7 +1655,7 @@ the `v0.19.1-5` Android runtime prepared in
 that route created the engine and failed the first generation.
 
 Set B, on the PR head `a9c83d50` ([#2006](https://github.com/leehack/llamadart/pull/2006),
-clean bundles, LiteRT-LM `v0.19.1-5`, `libLiteRtLm.so` `9926197b…`), graded with
+clean bundles for G1–G4, LiteRT-LM `v0.19.1-5`, `libLiteRtLm.so` `9926197b…`), graded with
 the same verifier. Each OpenCL run logs one `Loaded OpenCL library with dlopen.`
 record in the test process; W2c's app omits the `libOpenCL.so` declaration (a
 diagnostic build with two local patches) and logs one Mali-G715 Vulkan

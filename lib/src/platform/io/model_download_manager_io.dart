@@ -798,6 +798,8 @@ class DefaultModelDownloadManager implements ModelDownloadManager {
     }
   }
 
+  static const int _maxCacheLockKeyDirectoryRetries = 8;
+
   // A path whose resolution is denied (errno 5) and whose type also reads as
   // `notFound` (for example a parent ACL denial) is walked past like a missing
   // one. The operation then fails later, as an access denial on create or
@@ -805,6 +807,7 @@ class DefaultModelDownloadManager implements ModelDownloadManager {
   String _cacheLockKey(Directory cacheDirectory) {
     var ancestor = path.normalize(path.absolute(cacheDirectory.path));
     final missing = <String>[];
+    var directoryAppearedRetries = 0;
     try {
       while (true) {
         try {
@@ -828,9 +831,16 @@ class DefaultModelDownloadManager implements ModelDownloadManager {
               _mayBeWindowsDeletePending(error);
           // A new cache root must keep its identity after it is created.
           // Resolve its existing ancestor instead of using alias spelling.
-          if (!missingPath ||
-              FileSystemEntity.typeSync(ancestor, followLinks: false) !=
-                  FileSystemEntityType.notFound) {
+          if (!missingPath) {
+            rethrow;
+          }
+          final type = FileSystemEntity.typeSync(ancestor, followLinks: false);
+          if (type == FileSystemEntityType.directory &&
+              directoryAppearedRetries < _maxCacheLockKeyDirectoryRetries) {
+            directoryAppearedRetries++;
+            continue;
+          }
+          if (type != FileSystemEntityType.notFound) {
             rethrow;
           }
           final parent = path.dirname(ancestor);
