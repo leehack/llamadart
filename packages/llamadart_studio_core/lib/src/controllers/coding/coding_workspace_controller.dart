@@ -114,7 +114,8 @@ class CodingWorkspaceController {
   int? _drainingTurnEpoch;
   int _idCounter = 0;
   int _workspaceEpoch = 0;
-  int _explorerEpoch = 0;
+  int _navigationEpoch = 0;
+  int _refreshEpoch = 0;
   int _workspaceSelection = 0;
   Timer? _streamFlushTimer;
   ActiveTurnStreamState? _pendingStreamState;
@@ -215,6 +216,8 @@ class CodingWorkspaceController {
       if (changed) {
         _invalidateActiveTurn();
       }
+      ++_navigationEpoch;
+      ++_refreshEpoch;
       _store.update(
         (CodingWorkspaceState s) => s.copyWith(
           workspaceRoot: trimmed,
@@ -257,14 +260,17 @@ class CodingWorkspaceController {
   /// Navigates into [subdir] relative to the workspace root.
   Future<void> openDirectory(String subdir) async {
     final epoch = _workspaceEpoch;
-    final explorerEpoch = ++_explorerEpoch;
+    final navigationEpoch = ++_navigationEpoch;
     final root = _store.state.workspaceRoot;
     if (root == null) {
       return;
     }
     try {
       final entries = await _listFiles(root, subdir: subdir);
-      if (epoch != _workspaceEpoch || explorerEpoch != _explorerEpoch) return;
+      if (epoch != _workspaceEpoch || navigationEpoch != _navigationEpoch) {
+        return;
+      }
+      ++_refreshEpoch;
       _store.update(
         (CodingWorkspaceState s) => s.copyWith(
           currentSubdir: subdir,
@@ -273,7 +279,9 @@ class CodingWorkspaceController {
         ),
       );
     } catch (error) {
-      if (epoch != _workspaceEpoch || explorerEpoch != _explorerEpoch) return;
+      if (epoch != _workspaceEpoch || navigationEpoch != _navigationEpoch) {
+        return;
+      }
       _store.update(
         (CodingWorkspaceState s) =>
             s.copyWith(lastError: humanizeStudioError(error)),
@@ -312,7 +320,7 @@ class CodingWorkspaceController {
   /// Refreshes the current directory listing and active open file preview.
   Future<void> refreshExplorer() async {
     final epoch = _workspaceEpoch;
-    final explorerEpoch = ++_explorerEpoch;
+    final refreshEpoch = ++_refreshEpoch;
     final root = _store.state.workspaceRoot;
     if (root == null) {
       return;
@@ -322,7 +330,7 @@ class CodingWorkspaceController {
         root,
         subdir: _store.state.currentSubdir,
       );
-      if (epoch != _workspaceEpoch || explorerEpoch != _explorerEpoch) return;
+      if (epoch != _workspaceEpoch || refreshEpoch != _refreshEpoch) return;
       WorkspaceFileSlice? refreshedSlice;
       final selected = _store.state.selectedFilePath;
       if (selected != null) {
@@ -330,7 +338,7 @@ class CodingWorkspaceController {
           refreshedSlice = await _readFile(root, selected, maxLines: 300);
         } catch (_) {}
       }
-      if (epoch != _workspaceEpoch || explorerEpoch != _explorerEpoch) return;
+      if (epoch != _workspaceEpoch || refreshEpoch != _refreshEpoch) return;
       _store.update(
         (CodingWorkspaceState s) => s.copyWith(
           files: entries,
@@ -342,7 +350,7 @@ class CodingWorkspaceController {
         ),
       );
     } catch (error) {
-      if (epoch != _workspaceEpoch || explorerEpoch != _explorerEpoch) return;
+      if (epoch != _workspaceEpoch || refreshEpoch != _refreshEpoch) return;
       _store.update(
         (CodingWorkspaceState s) =>
             s.copyWith(lastError: humanizeStudioError(error)),
