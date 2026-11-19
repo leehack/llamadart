@@ -360,6 +360,8 @@ class QwenWindowedAsrSession implements SpeechToTextStreamingSession {
 
     var sumSquares = 0.0;
     var quietFrames = 0;
+    var quietSquares = 0.0;
+    var quietSamples = 0;
     var frameCount = 0;
     for (
       var start = 0;
@@ -377,6 +379,8 @@ class QwenWindowedAsrSession implements SpeechToTextStreamingSession {
       if (frameSquares <=
           (end - start) * _verificationFrameRms * _verificationFrameRms) {
         quietFrames++;
+        quietSquares += frameSquares;
+        quietSamples += end - start;
       }
     }
     // A majority of quiet frames tests the upper median without sorting.
@@ -388,7 +392,10 @@ class QwenWindowedAsrSession implements SpeechToTextStreamingSession {
     // Amplified quiet noise can yield an empty decode even when the original
     // decode hallucinates. Keep checking the window after a rejection so a
     // subsequent decode cannot bypass verification by crossing the gate.
-    final rms = math.sqrt(sumSquares / length);
+    // Fall back to the interval energy when quiet frames contain no signal.
+    final rms = quietSquares > 0.0
+        ? math.sqrt(quietSquares / quietSamples)
+        : math.sqrt(sumSquares / length);
     final gain = (0.02 / rms).clamp(1.0, 256.0);
     final verified = await _decodeAtGain(length, gain, peakLimit: 0.9);
     if (verified.isEmpty) {

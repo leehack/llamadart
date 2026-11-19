@@ -13,6 +13,7 @@ validate against the exact release tag notes.
 
 ## Unreleased
 
+- Suppress Qwen3-ASR prompt echoes in live partials after short thumps in quiet audio ([#2088](https://github.com/leehack/llamadart/issues/2088)).
 - Reduce false transcripts on quiet noise in Qwen3-ASR windowed live speech recognition ([#2079](https://github.com/leehack/llamadart/issues/2079)).
 - Report Vulkan and apply Android Vulkan context settings and prompt limits when an OpenCL preference falls back to a filtered list of Vulkan devices ([#2020](https://github.com/leehack/llamadart/issues/2020)).
 - Keep Gemma 4 reply text and later valid tool calls when a malformed call has an unclosed string delimiter ([#2042](https://github.com/leehack/llamadart/pull/2042)).

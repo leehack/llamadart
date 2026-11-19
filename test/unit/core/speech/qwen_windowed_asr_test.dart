@@ -102,6 +102,179 @@ void main() {
   });
 
   group('QwenWindowedAsrSession', () {
+    for (final thumpMs in [100, 300]) {
+      test(
+        'keeps a $thumpMs ms thump from exposing a quiet prompt echo',
+        () async {
+          const echo = 'Transcreva este áudio com precisão.';
+          final pcm = Float32List(96000)..fillRange(0, 96000, 0.00125);
+          for (var i = 40000; i < 40000 + thumpMs * 16; i++) {
+            pcm[i] = i.isEven ? 0.08 : -0.08;
+          }
+
+          final checkpointSamples = <int>[];
+          final session = _verificationSession((
+            wavBytes, {
+            required confirmedPrefix,
+            required registerCancel,
+            required isCancelled,
+          }) async {
+            final first = _wavSample(wavBytes, 0);
+            if (wavBytes.length == 44 + 64000 * 2) {
+              checkpointSamples.add(first);
+              return first < 600 ? echo : '';
+            }
+            return first == 41 ? echo : '';
+          });
+          final events = <SpeechToTextEvent>[];
+          final sub = session.events.listen(events.add, onError: (Object _) {});
+          addTearDown(sub.cancel);
+
+          await session.addPcm(pcm);
+          await session.finish();
+
+          expect(
+            events.whereType<SpeechToTextPartialEvent>().map(
+              (event) => event.text,
+            ),
+            ['', '', ''],
+          );
+          expect(events.whereType<SpeechToTextFinalEvent>(), isEmpty);
+          expect((await session.done).error, isA<LlamaSpeechException>());
+          expect(checkpointSamples, [41, 655]);
+        },
+      );
+    }
+
+    for (final (label, quietSamples, totalSamples, loudLevel, expected) in [
+      ('60% quiet', 19200, 32000, 0.08, [41, 655]),
+      ('50% quiet', 16000, 32000, 0.008, [41]),
+      ('a loud 1 ms final frame', 320, 656, 0.02, [41]),
+    ]) {
+      test('checks the quiet-frame majority with $label', () async {
+        final pcm = Float32List(totalSamples)
+          ..fillRange(0, quietSamples, 0.00125)
+          ..fillRange(quietSamples, totalSamples, loudLevel);
+        final firstSamples = <int>[];
+        final session = _verificationSession((
+          wavBytes, {
+          required confirmedPrefix,
+          required registerCancel,
+          required isCancelled,
+        }) async {
+          firstSamples.add(_wavSample(wavBytes, 0));
+          return 'speech';
+        });
+
+        await session.addPcm(pcm);
+        await session.finish();
+
+        expect(firstSamples, expected);
+        expect((await session.done).result?.text, 'speech');
+      });
+    }
+
+    test('does not attenuate audio when all quiet frames are silent', () async {
+      final pcm = Float32List(32000)..fillRange(24000, 32000, 0.25);
+      final loudSamples = <int>[];
+      final session = _verificationSession((
+        wavBytes, {
+        required confirmedPrefix,
+        required registerCancel,
+        required isCancelled,
+      }) async {
+        loudSamples.add(_wavSample(wavBytes, 24000));
+        return 'speech';
+      });
+
+      await session.addPcm(pcm);
+      await session.finish();
+
+      expect(loudSamples, [8192, 8192]);
+      expect((await session.done).result?.text, 'speech');
+    });
+
+    test(
+      'rechecks after an empty checkpoint and stops rechecking at commit',
+      () async {
+        final calls = <(int, int)>[];
+        final session = _verificationSession((
+          wavBytes, {
+          required confirmedPrefix,
+          required registerCancel,
+          required isCancelled,
+        }) async {
+          final length = (wavBytes.length - qwenWindowedWavHeaderBytes) ~/ 2;
+          final first = _wavSample(wavBytes, 0);
+          calls.add((length, first));
+          if (length == 64000 || first == 655) return '';
+          return first == 41 ? 'prompt echo' : 'speech';
+        });
+        final pcm = Float32List(160000)
+          ..fillRange(0, 32000, 0.00125)
+          ..fillRange(32000, 160000, 0.05);
+
+        await session.addPcm(pcm);
+        await session.finish();
+
+        expect(calls, [
+          (32000, 41),
+          (32000, 655),
+          (64000, 41),
+          (96000, 41),
+          (96000, 655),
+          (128000, 41),
+          (128000, 655),
+          (32000, 1638),
+        ]);
+        expect((await session.done).result?.text, 'speech');
+      },
+    );
+
+    test('does not force a recheck after quiet speech is verified', () async {
+      final firstSamples = <int>[];
+      final session = _verificationSession((
+        wavBytes, {
+        required confirmedPrefix,
+        required registerCancel,
+        required isCancelled,
+      }) async {
+        firstSamples.add(_wavSample(wavBytes, 0));
+        return 'speech';
+      });
+      final pcm = Float32List(64000)
+        ..fillRange(0, 32000, 0.00125)
+        ..fillRange(32000, 64000, 0.05);
+
+      await session.addPcm(pcm);
+      await session.finish();
+
+      expect(firstSamples, [41, 655, 41]);
+      expect((await session.done).result?.text, 'speech');
+    });
+
+    test('does not call the completed verification hook on cancel', () async {
+      var passes = 0;
+      var cancelCalls = 0;
+      final session = _verificationSession((
+        wavBytes, {
+        required confirmedPrefix,
+        required registerCancel,
+        required isCancelled,
+      }) async {
+        passes++;
+        registerCancel(() => cancelCalls++);
+        return 'speech';
+      });
+
+      await session.addPcm(Float32List(32000)..fillRange(0, 32000, 0.00125));
+      await session.cancel();
+
+      expect(passes, 2);
+      expect(cancelCalls, 0);
+      expect((await session.done).state, SpeechToTextCompletionState.cancelled);
+    });
+
     for (final isSpeech in [false, true]) {
       test(
         'verifies quiet ${isSpeech ? 'speech' : 'noise'} before publication',
@@ -790,6 +963,24 @@ void main() {
     );
   });
 }
+
+QwenWindowedAsrSession _verificationSession(QwenWindowDecode decodeWindow) {
+  final session = QwenWindowedAsrSession(
+    sourceFormat: const SpeechAudioFormat(
+      sampleRateHz: 16000,
+      channelCount: 1,
+      encoding: 'pcm-f32le',
+    ),
+    onClosed: () {},
+    decodeWindow: decodeWindow,
+  );
+  addTearDown(session.cancel);
+  return session;
+}
+
+int _wavSample(Uint8List wav, int index) => ByteData.sublistView(
+  wav,
+).getInt16(qwenWindowedWavHeaderBytes + index * 2, Endian.little);
 
 /// Encodes each 320-sample frame's global frame index into the first two samples
 /// of that frame so a fake decoder can recover the exact `[start, end)` sample
