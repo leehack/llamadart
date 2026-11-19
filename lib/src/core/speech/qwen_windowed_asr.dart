@@ -84,12 +84,13 @@ int selectQwenWindowCut(Float32List window, int length) {
 }
 
 /// Encodes `samples[0 .. length)` as mono 16 kHz PCM16 LE RIFF/WAVE into
-/// [target] and returns a view of the written bytes.
+/// [target] at [gain] and returns a view of the written bytes.
 Uint8List encodePcm16WavInto(
   Float32List samples,
   int length,
-  Uint8List target,
-) {
+  Uint8List target, {
+  double gain = 1.0,
+}) {
   final dataBytes = length * 2;
   final totalBytes = qwenWindowedWavHeaderBytes + dataBytes;
   final data = ByteData.sublistView(target, 0, totalBytes);
@@ -125,7 +126,7 @@ Uint8List encodePcm16WavInto(
   data.setUint32(40, dataBytes, Endian.little);
 
   for (var i = 0; i < length; i++) {
-    final clamped = samples[i].clamp(-1.0, 1.0);
+    final clamped = (samples[i] * gain).clamp(-1.0, 1.0);
     final scaled = clamped < 0
         ? (clamped * 32768.0).round()
         : (clamped * 32767.0).round();
@@ -167,7 +168,7 @@ class QwenWindowedAsrSession implements SpeechToTextStreamingSession {
       Completer<SpeechToTextCompletion>();
 
   Future<void>? _inFlightPush;
-  Future<void>? _activeDecode;
+  Future<String>? _activeDecode;
   Future<void>? _finishFuture;
   Future<void>? _cancelFuture;
   void Function()? _cancelActiveDecode;
@@ -336,22 +337,54 @@ class QwenWindowedAsrSession implements SpeechToTextStreamingSession {
   }
 
   Future<String> _decodeInterval(int length) {
-    final wavBytes = encodePcm16WavInto(_ring, length, _wavBuffer);
-    final future = _decodeWindow(
-      wavBytes,
-      confirmedPrefix: _confirmedText,
-      registerCancel: (cancel) {
-        _cancelActiveDecode = cancel;
-      },
-      isCancelled: () => _cancelled || _closed,
-    );
+    final future = _decodeVerified(length);
     _activeDecode = future;
     return future.whenComplete(() {
       if (identical(_activeDecode, future)) {
         _activeDecode = null;
       }
-      _cancelActiveDecode = null;
     });
+  }
+
+  Future<String> _decodeVerified(int length) async {
+    final decoded = await _decodeAtGain(length, 1.0);
+    if (decoded.isEmpty || _cancelled || _closed) {
+      return decoded;
+    }
+
+    var sumSquares = 0.0;
+    var peak = 0.0;
+    for (var i = 0; i < length; i++) {
+      final sample = _ring[i];
+      sumSquares += sample * sample;
+      peak = math.max(peak, sample.abs());
+    }
+    final rms = math.sqrt(sumSquares / length);
+    if (rms == 0.0 || rms > 0.005 || peak > 0.05) {
+      return decoded;
+    }
+
+    // Amplified quiet noise can yield an empty decode even when the original
+    // prompted decode hallucinates. Preserve the original wording if verified.
+    final gain = math.min(256.0, math.min(0.02 / rms, 0.9 / peak));
+    final verified = await _decodeAtGain(length, gain);
+    return verified.isEmpty ? '' : decoded;
+  }
+
+  Future<String> _decodeAtGain(int length, double gain) async {
+    final wavBytes = encodePcm16WavInto(_ring, length, _wavBuffer, gain: gain);
+    try {
+      return await _decodeWindow(
+        wavBytes,
+        confirmedPrefix: _confirmedText,
+        registerCancel: (cancel) {
+          _cancelActiveDecode = cancel;
+        },
+        isCancelled: () => _cancelled || _closed,
+      );
+    } finally {
+      _cancelActiveDecode = null;
+    }
   }
 
   @override

@@ -437,6 +437,129 @@ void main() {
     timeout: const Timeout(Duration(minutes: 5)),
   );
 
+  for (final (noiseSeconds, seed) in [(4, 257), (5, 327)]) {
+    test(
+      'Qwen3-ASR does not transcribe a ${noiseSeconds}s quiet noise tail',
+      () async {
+        if (modelPath == null || projectorPath == null) {
+          markTestSkipped('Set the Qwen model and projector paths.');
+          return;
+        }
+
+        final engine = await SpeechToTextEngine.load(
+          SpeechToTextModel(
+            ModelSource.path(modelPath),
+            projector: ModelSource.path(projectorPath),
+            adapter: const Qwen3WindowedAsrAdapter(),
+          ),
+          params: params,
+        );
+        try {
+          const speechEnd = 112000;
+          final speech = _decodeWavPcm16Mono16k(_defaultSecondWav);
+          final noise = _quietNoise(noiseSeconds * 16000, seed);
+          final pcm = Float32List(speechEnd + noise.length)
+            ..setRange(0, speech.length, speech)
+            ..setRange(speechEnd, speechEnd + noise.length, noise);
+          final run = await _streamChunks(engine, pcm, [4000]);
+
+          expect(run.duration, Duration(seconds: 7 + noiseSeconds));
+          final committed = run.partials.firstWhere(
+            (event) => event.confirmedText!.isNotEmpty,
+          );
+          final tailPartials = run.partials.skipWhile(
+            (event) => !identical(event, committed),
+          );
+          expect(tailPartials.length, greaterThan(1));
+          expect([
+            run.text,
+            ...tailPartials.map((event) => event.text),
+          ], everyElement(committed.confirmedText));
+          expect(
+            _normalizeWords(run.text),
+            _normalizeWords(_loadSiblingTranscript(_defaultSecondWav)!),
+          );
+        } finally {
+          await engine.dispose();
+        }
+      },
+    );
+  }
+
+  test('Qwen3-ASR retains quiet speech and a quieter final word', () async {
+    if (modelPath == null || projectorPath == null) {
+      markTestSkipped('Set the Qwen model and projector paths.');
+      return;
+    }
+
+    final engine = await SpeechToTextEngine.load(
+      SpeechToTextModel(
+        ModelSource.path(modelPath),
+        projector: ModelSource.path(projectorPath),
+        adapter: const Qwen3WindowedAsrAdapter(),
+      ),
+      params: params,
+    );
+    try {
+      final speech = _decodeWavPcm16Mono16k(_defaultSecondWav);
+      final gain = 0.003 / _rms(speech);
+      final noise = _quietNoise(speech.length, 257);
+      for (var i = 0; i < speech.length; i++) {
+        final endGain = i < speech.length - 16000 ? 1.0 : 0.35;
+        final hum = 0.0001 * sin(2 * pi * 60 * i / 16000);
+        speech[i] = speech[i] * gain * endGain + noise[i] * 0.1 + hum;
+      }
+      final run = await _streamChunks(engine, speech, [4000]);
+      final words = _normalizeWords(run.text);
+      if (words.first == 'mr') words[0] = 'mister';
+      expect(
+        words,
+        _normalizeWords(_loadSiblingTranscript(_defaultSecondWav)!),
+      );
+    } finally {
+      await engine.dispose();
+    }
+  });
+
+  test(
+    'Qwen3-ASR retains the spoken Portuguese instruction at low gain',
+    () async {
+      final spokenPath = _envFile(
+        'LLAMADART_STT_WINDOWED_PORTUGUESE_AUDIO_PATH',
+      );
+      if (modelPath == null || projectorPath == null || spokenPath == null) {
+        markTestSkipped(
+          'Set the Qwen model/projector and '
+          'LLAMADART_STT_WINDOWED_PORTUGUESE_AUDIO_PATH.',
+        );
+        return;
+      }
+
+      final engine = await SpeechToTextEngine.load(
+        SpeechToTextModel(
+          ModelSource.path(modelPath),
+          projector: ModelSource.path(projectorPath),
+          adapter: const Qwen3WindowedAsrAdapter(),
+        ),
+        params: params,
+      );
+      try {
+        final speech = _decodeWavPcm16Mono16k(spokenPath);
+        final gain = 0.00125 / _rms(speech);
+        for (var i = 0; i < speech.length; i++) {
+          speech[i] *= gain;
+        }
+        final run = await _streamChunks(engine, speech, [4000]);
+        expect(
+          run.text.trim().toLowerCase().replaceFirst(RegExp(r'[.!?]$'), ''),
+          'transcreva este áudio com precisão',
+        );
+      } finally {
+        await engine.dispose();
+      }
+    },
+  );
+
   test(
     'Qwen3-ASR 300s sustained public-session run with RSS and lag metrics',
     () async {
@@ -509,6 +632,27 @@ void main() {
     },
     timeout: const Timeout(Duration(minutes: 10)),
   );
+}
+
+double _rms(Float32List pcm) {
+  var sumSquares = 0.0;
+  for (final sample in pcm) {
+    sumSquares += sample * sample;
+  }
+  return sqrt(sumSquares / pcm.length);
+}
+
+Float32List _quietNoise(int sampleCount, int seed) {
+  final noise = Float32List(sampleCount);
+  var state = seed;
+  var filtered = 0.0;
+  for (var i = 0; i < noise.length; i++) {
+    state = (1664525 * state + 1013904223) & 0xffffffff;
+    final white = 2.0 * (state / 4294967296.0) - 1.0;
+    filtered = 0.96 * filtered + 0.04 * white;
+    noise[i] = 0.015 * filtered;
+  }
+  return noise;
 }
 
 Float32List _addUniformNoise(

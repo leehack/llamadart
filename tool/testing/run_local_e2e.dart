@@ -1105,7 +1105,7 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
       group: LocalE2eScenarioGroup.dartLocalOnly,
       description:
           'Run opt-in Qwen3-ASR windowed live PCM E2E (44s repetition, '
-          'boundaries, LibriSpeech dev-clean WER, 300s sustained run; set '
+          'boundaries, LibriSpeech WER, quiet noise/speech, 300s sustained run; set '
           'LLAMADART_STT_STREAM_QWEN_MODEL_PATH / _MMPROJ_PATH).',
       requiresDevice: false,
       stepsBuilder: (context) => [
@@ -1126,6 +1126,7 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
               'LLAMADART_STT_STREAM_QWEN_MMPROJ_PATH',
               'LLAMADART_STT_STREAM_AUDIO_PATH',
               'LLAMADART_STT_WINDOWED_SECOND_AUDIO_PATH',
+              'LLAMADART_STT_WINDOWED_PORTUGUESE_AUDIO_PATH',
               'LLAMADART_STT_MODEL_PATH',
               'LLAMADART_STT_MMPROJ_PATH',
             ])

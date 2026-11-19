@@ -284,7 +284,13 @@ native `llama.cpp` Qwen3-ASR models with a verified `qwen3a` projector. Unlike
 `LlamaCppLiveAsrAdapter` (`SpeechToTextInputMode.stateful`), it re-decodes
 2, 4, and 6 second uncommitted prefixes through the prompt path in a bounded 8 s
 ring buffer (`SpeechToTextInputMode.windowed`). When the buffer fills, it
-commits at a quiet boundary or hard-cuts at 8 s:
+commits at a quiet boundary or hard-cuts at 8 s.
+
+When a quiet interval produces text, the adapter may decode the same interval
+at higher gain before publishing it. If the second decode is empty, the adapter
+suppresses the hypothesis. Otherwise, it keeps the original wording. This can
+add latency to partial updates, commits, or the final flush. Background noise
+can still affect transcription accuracy.
 
 ```dart
 final recognizer = await SpeechToTextEngine.load(

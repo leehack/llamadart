@@ -173,7 +173,7 @@ Pick targeted rows based on the touched surface:
 | Android Vulkan prompt cap, Vulkan device facts or the Vulkan 1.2 load refusal on a device | `chat-app-micro-batch-sweep` |
 | Isolate shutdown releases, exit teardown, a Flutter pin bump, or app-exit guidance | `chat-app-macos-quit` |
 | Speech-to-text API or adapter | `speech-to-text-smoke`, `speech-to-text-stream-smoke`, `web-speech-to-text-smoke`, plus `litert-lm-asr-smoke` and `litert-lm-asr-preservation` for the dedicated LiteRT-LM streaming engine |
-| Opt-in Qwen3-ASR windowed live PCM | `speech-to-text-windowed-smoke`, including absolute WER against the vendored [LibriSpeech dev-clean `1272-128104-0000` clip and official transcript](../test/fixtures/librispeech_dev_clean/README.md) |
+| Opt-in Qwen3-ASR windowed live PCM | `speech-to-text-windowed-smoke`, including quiet-noise tails, reduced-gain speech, a 300 s sustained stream, and absolute WER against the vendored [LibriSpeech dev-clean `1272-128104-0000` clip and official transcript](../test/fixtures/librispeech_dev_clean/README.md) |
 | Physical macOS microphone through the Dart speech SDK | [`macos-mic-asr`](#macos-physical-microphone-asr) |
 | Text-to-speech API or adapter | `text-to-speech-smoke`, `text-to-speech-models-smoke` for LFM3-Audio, Soprano, Chatterbox and Pocket TTS, plus `web-text-to-speech-smoke` for browser synthesis/playback/export |
 | Decision engine, decision head, or safetensors reader | `decision-model-smoke`, plus `decision-model-web-smoke` for the Web decision head or bridge pin |
@@ -188,6 +188,12 @@ Pick targeted rows based on the touched surface:
 | Chat-app live LiteRT-LM dictation | `litert-lm-asr-smoke`, `chat-app-live-speech-smoke` |
 | Chat-app Ask with voice | `gguf-audio-chat-smoke`, `litert-lm-chat-features-smoke`, `chat-app-voice-question-smoke` |
 | Example app, CLI, or server package | `examples-tests` |
+
+For the Qwen spoken-instruction control, set
+`LLAMADART_STT_WINDOWED_PORTUGUESE_AUDIO_PATH` to a mono 16 kHz PCM16 WAV of
+“Transcreva este áudio com precisão.” The test reduces its RMS to 0.00125.
+The macOS control uses `say -v Luciana` and FFmpeg to produce that WAV.
+Set `LLAMADART_STT_LIVE_PACED=1` for the 300 s run at the input audio rate.
 
 `litert-lm-asr-preservation` is a local-only CPU campaign using the public
 `SpeechToTextEngine` and normal published native assets, with Whisper Tiny
