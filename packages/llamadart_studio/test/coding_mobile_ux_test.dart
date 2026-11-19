@@ -2,6 +2,7 @@
 library;
 
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'dart:ui' as ui;
 
@@ -917,4 +918,141 @@ void main() {
     expect((await cancelled as Map)['rejected'], isTrue);
     await tester.pumpWidget(const SizedBox.shrink());
   });
+
+  testWidgets(
+    'Chat-card Revert button disables while in flight and re-enables on failure',
+    (tester) async {
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      final inference = _FileInference();
+      final root = Directory.systemTemp.createTempSync('coding_revert_guard_');
+      addTearDown(() => root.deleteSync(recursive: true));
+      final deps = await buildTestDeps(
+        isMobile: true,
+        appDataDirectory: root.path,
+        inferencePort: inference,
+      );
+      addTearDown(deps.dispose);
+      addTearDown(() => unawaited(inference.events.close()));
+      final file = File('${root.path}/main.dart')..writeAsStringSync('before');
+      await tester.runAsync(() async {
+        await deps.codingController.setWorkspaceRoot(root.path);
+        await deps.codingController
+            .buildCodingTools()
+            .firstWhere((t) => t.name == 'write')
+            .invoke({'path': 'main.dart', 'content': 'after'});
+        await deps.codingController.sendCodingPrompt('Edit main.dart');
+      });
+      await deps.shellController.selectWorkspace(StudioWorkspace.coding);
+      await _mount(tester, deps, const Size(390, 844));
+      await Scrollable.ensureVisible(
+        tester.element(find.text('Revert')),
+        alignment: 0.5,
+      );
+      await tester.pumpAndSettle();
+
+      ButtonStyleButton revertButton() => tester.widget<ButtonStyleButton>(
+        find.ancestor(
+          of: find.text('Revert'),
+          matching: find.bySubtype<ButtonStyleButton>(),
+        ),
+      );
+
+      expect(revertButton().enabled, isTrue);
+
+      final overrides = _GatedRevertOverrides();
+      await IOOverrides.runWithIOOverrides(() async {
+        await tester.tap(find.text('Revert'));
+        await _waitUntil(
+          tester,
+          () => overrides.entered.isCompleted,
+          'in-flight revert',
+        );
+        expect(revertButton().enabled, isFalse);
+        overrides.release.completeError(const FileSystemException('disk full'));
+        await _waitUntil(
+          tester,
+          () => deps.codingController.state.lastError != null,
+          'revert failure',
+        );
+      }, overrides);
+      await tester.pumpAndSettle();
+
+      expect(
+        deps.codingController.state.recentChanges.single.reverted,
+        isFalse,
+      );
+      expect(revertButton().enabled, isTrue);
+
+      await tester.tap(find.text('Revert'));
+      await _waitForSingleRevert(tester, deps.codingController);
+      await tester.pumpAndSettle();
+      expect(file.readAsStringSync(), 'before');
+      expect(find.text('REVERTED'), findsOneWidget);
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+  );
+}
+
+final class _GatedRevertOverrides extends IOOverrides {
+  final Completer<void> entered = Completer<void>();
+  final Completer<void> release = Completer<void>();
+
+  @override
+  File createFile(String path) {
+    final file = super.createFile(path);
+    return path.replaceAll(r'\', '/').endsWith('/main.dart')
+        ? _GatedRevertFile(file, entered, release)
+        : file;
+  }
+}
+
+class _GatedRevertFile implements File {
+  _GatedRevertFile(this.delegate, this.entered, this.release);
+  final File delegate;
+  final Completer<void> entered;
+  final Completer<void> release;
+
+  @override
+  Future<bool> exists() => delegate.exists();
+
+  @override
+  Future<int> length() => delegate.length();
+
+  @override
+  String resolveSymbolicLinksSync() => delegate.resolveSymbolicLinksSync();
+
+  @override
+  Directory get parent => delegate.parent;
+
+  @override
+  Future<String> readAsString({Encoding encoding = utf8}) =>
+      delegate.readAsString(encoding: encoding);
+
+  @override
+  Stream<List<int>> openRead([int? start, int? end]) =>
+      delegate.openRead(start, end);
+
+  @override
+  Future<RandomAccessFile> open({FileMode mode = FileMode.read}) =>
+      delegate.open(mode: mode);
+
+  @override
+  Future<File> writeAsString(
+    String contents, {
+    FileMode mode = FileMode.write,
+    Encoding encoding = utf8,
+    bool flush = false,
+  }) async {
+    if (!entered.isCompleted) entered.complete();
+    await release.future;
+    return delegate.writeAsString(
+      contents,
+      mode: mode,
+      encoding: encoding,
+      flush: flush,
+    );
+  }
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }

@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:llamadart_studio_core/llamadart_studio_core.dart';
+import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
 
 import 'studio_test_fakes.dart';
@@ -73,10 +74,13 @@ class _ExplorerRaceHarness {
               readGates[relativePath] = completer;
               return completer.future;
             }
+            final content = readVersion == 0
+                ? 'hello $relativePath'
+                : 'v$readVersion:$relativePath';
             return WorkspaceFileSlice(
               relativePath: relativePath,
-              content: 'hello $relativePath',
-              numberedPreview: '1: hello $relativePath',
+              content: content,
+              numberedPreview: '1: $content',
               startLine: 1,
               endLine: 1,
               totalLines: 1,
@@ -87,6 +91,7 @@ class _ExplorerRaceHarness {
   }
 
   late final CodingWorkspaceController controller;
+  int readVersion = 0;
   final Set<String> gateSubdirs = <String>{};
   final Map<String, Completer<List<WorkspaceFileEntry>>> listGates =
       <String, Completer<List<WorkspaceFileEntry>>>{};
@@ -426,4 +431,114 @@ void main() {
     expect(h.controller.state.currentSubdir, '');
     expect(h.filePaths, <String>['nested', 'top.txt']);
   });
+
+  test(
+    'stale refresh preview does not overwrite a newer re-open of same file when listing is stale',
+    () async {
+      final h = _ExplorerRaceHarness();
+      await h.controller.setWorkspaceRoot(rootDir.path);
+      await h.controller.openFile('top.txt');
+
+      h.gateReads.add('top.txt');
+      final refreshFuture = h.controller.refreshExplorer();
+      await Future<void>.delayed(Duration.zero);
+
+      await h.controller.openDirectory('nested');
+      h.readVersion = 3;
+      await h.controller.openFile('top.txt');
+
+      h.readGates['top.txt']!.complete(
+        const WorkspaceFileSlice(
+          relativePath: 'top.txt',
+          content: 'stale',
+          numberedPreview: '1: stale',
+          startLine: 1,
+          endLine: 1,
+          totalLines: 1,
+          truncated: false,
+        ),
+      );
+      await refreshFuture;
+
+      expect(h.controller.state.currentSubdir, 'nested');
+      expect(h.controller.state.selectedFileSlice?.content, 'v3:top.txt');
+    },
+  );
+
+  test(
+    'stale refresh preview does not overwrite a newer selection when listing is stale',
+    () async {
+      final h = _ExplorerRaceHarness();
+      await h.controller.setWorkspaceRoot(rootDir.path);
+      await h.controller.openFile('top.txt');
+
+      h.gateReads.add('top.txt');
+      final refreshFuture = h.controller.refreshExplorer();
+      await Future<void>.delayed(Duration.zero);
+
+      await h.controller.openDirectory('nested');
+      await h.controller.openFile('nested/inner.txt');
+
+      h.readGates['top.txt']!.complete(
+        const WorkspaceFileSlice(
+          relativePath: 'top.txt',
+          content: 'stale',
+          numberedPreview: '1: stale',
+          startLine: 1,
+          endLine: 1,
+          totalLines: 1,
+          truncated: false,
+        ),
+      );
+      await refreshFuture;
+
+      expect(h.controller.state.selectedFilePath, 'nested/inner.txt');
+      expect(
+        h.controller.state.selectedFileSlice?.relativePath,
+        'nested/inner.txt',
+      );
+    },
+  );
+
+  test(
+    'stale refresh preview from old root does not land after root switch and same relative path open',
+    () async {
+      final otherRoot = await Directory.systemTemp.createTemp(
+        'studio_explorer_race_other_',
+      );
+      addTearDown(() async {
+        if (otherRoot.existsSync()) {
+          await otherRoot.delete(recursive: true);
+        }
+      });
+
+      final h = _ExplorerRaceHarness();
+      await h.controller.setWorkspaceRoot(rootDir.path);
+      await h.controller.openFile('top.txt');
+
+      h.gateReads.add('top.txt');
+      final refreshFuture = h.controller.refreshExplorer();
+      await Future<void>.delayed(Duration.zero);
+
+      await h.controller.setWorkspaceRoot(otherRoot.path);
+      h.readVersion = 9;
+      await h.controller.openFile('top.txt');
+
+      h.readGates['top.txt']!.complete(
+        const WorkspaceFileSlice(
+          relativePath: 'top.txt',
+          content: 'old root',
+          numberedPreview: '1: old root',
+          startLine: 1,
+          endLine: 1,
+          totalLines: 1,
+          truncated: false,
+        ),
+      );
+      await refreshFuture;
+
+      expect(h.controller.state.workspaceRoot, p.canonicalize(otherRoot.path));
+      expect(h.controller.state.selectedFileSlice?.content, 'v9:top.txt');
+    },
+  );
 }

@@ -223,6 +223,25 @@ void main() {
       expect(await File('${first.path}/slow.txt').readAsString(), 'before A');
     },
   );
+
+  test('failed revertChange releases guard so retry succeeds', () async {
+    final write = controller.buildCodingTools().firstWhere(
+      (tool) => tool.name == 'write',
+    );
+    final file = File('${first.path}/retry.txt');
+    await file.writeAsString('before');
+    await write.invoke(<String, dynamic>{
+      'path': 'retry.txt',
+      'content': 'after',
+    });
+    final changeId = controller.state.recentChanges.single.id;
+    await file.writeAsString('concurrent');
+    expect(await controller.revertChange(changeId), isFalse);
+    expect(controller.state.lastError, isNotNull);
+    await file.writeAsString('after');
+    expect(await controller.revertChange(changeId), isTrue);
+    expect(await file.readAsString(), 'before');
+  });
 }
 
 final class _GatedWriteOverrides extends IOOverrides {
