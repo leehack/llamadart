@@ -570,6 +570,10 @@ fallback does not add grammar enforcement to LiteRT-LM. See
 [Chat templates and output parsing](./chat-template-and-parsing) for runtime
 routing and [model families](../getting-started/model-families) for formats.
 
+Gemma 4 can recover loose JSON tool calls alongside its native tool envelopes.
+It preserves the text before a recovered JSON call, including when the prose
+arrived in earlier chunks.
+
 ### Tool results on templates without a tool role
 
 Gemma 2/3/3n and older Mistral templates reject the `tool` role. When such a

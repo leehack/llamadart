@@ -24,6 +24,7 @@ validate against the exact release tag notes.
 - Document measured live ASR throughput on two-thread Linux and Windows x64 CPU runs. Voxtral Realtime takes about four times the audio duration, while LFM3-Audio keeps up with live input ([#327](https://github.com/leehack/llamadart/issues/327)).
 - Document `-` for stdin in the live ASR example and report the required PCM format when input ends mid-sample.
 - Document the Windows system commit limit for very large llama.cpp contexts and advise keeping a system-managed pagefile with adequate disk space or reducing `contextSize` ([llamadart-native#211](https://github.com/leehack/llamadart-native/issues/211)).
+- Keep Gemma 4 prose before loose JSON tool calls visible while streaming and in the final reply ([#1930](https://github.com/leehack/llamadart/issues/1930)).
 
 ## 0.20.1
 
