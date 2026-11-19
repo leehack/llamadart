@@ -13,8 +13,8 @@ with core `0.20.x`. Upgrade both together. Earlier pairings are in the
 
 ```yaml
 dependencies:
-  llamadart: ^0.20.1
-  llamadart_llama_cpp_flutter: ^0.20.1
+  llamadart: ^0.20.2
+  llamadart_llama_cpp_flutter: ^0.20.2
 ```
 
 This package has no runtime Dart API of its own. Import `package:llamadart`
