@@ -24,11 +24,11 @@ class ToolCallFallbackParseResult {
 ///
 /// This is intentionally permissive and used only when a format-specific
 /// parser fails to extract explicit tool-call structures.
-/// With [preserveJsonProse], keep the text around a loose JSON call or a
-/// leading function call with a closed argument list. While [isPartial], hold
-/// text that can still become a call. When [allowedToolNames] is provided,
-/// accept only those names. With [holdRecoveredCallSuffix] in partial mode,
-/// only expose content before a recovered call while native parsing can win.
+/// With [preserveJsonProse], keep the text around a loose JSON call and
+/// recognize a standalone function call. While [isPartial], hold text that
+/// can still become a call. When [allowedToolNames] is provided, accept only
+/// those names. With [holdRecoveredCallSuffix] in partial mode, only expose
+/// content before a recovered JSON call while native parsing can win.
 ToolCallFallbackParseResult parseToolCallsFromLooseText(
   String input, {
   bool preserveJsonProse = false,
@@ -53,17 +53,7 @@ ToolCallFallbackParseResult parseToolCallsFromLooseText(
       allowedNames: allowedNames,
       isPartial: isPartial,
     );
-    if (function != null) {
-      if (isPartial &&
-          holdRecoveredCallSuffix &&
-          function.toolCalls.isNotEmpty) {
-        return ToolCallFallbackParseResult(
-          content: '',
-          toolCalls: function.toolCalls,
-        );
-      }
-      return function;
-    }
+    if (function != null) return function;
   }
   final codeSpans = _MarkdownCodeSpans.parse(input);
 
@@ -1394,12 +1384,11 @@ ToolCallFallbackParseResult? _parseLeadingFunctionCall(
     from: afterCall,
     isPartial: isPartial,
   );
-  final content = _joinAtCallJunction(
-    input.substring(0, start),
-    input.substring(suffix.suffixStart, suffix.holdFrom),
-  );
+  if (input.substring(suffix.suffixStart, suffix.holdFrom).trim().isNotEmpty) {
+    return null;
+  }
   return ToolCallFallbackParseResult(
-    content: content.trim().isEmpty ? '' : content,
+    content: '',
     toolCalls: [
       ToolCallParsingUtils.createFunctionToolCall(
         index: 0,

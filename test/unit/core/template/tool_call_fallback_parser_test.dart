@@ -380,6 +380,78 @@ void main() {
       expect(declared.content, isEmpty);
     });
 
+    for (final explanation in [
+      'would retrieve the current weather information.',
+      'is my call',
+    ]) {
+      test('leaves a leading function followed by "$explanation" as text', () {
+        final output = 'get_weather(location="Paris") $explanation';
+        for (final partial in [false, true]) {
+          final parsed = parseToolCallsFromLooseText(
+            output,
+            preserveJsonProse: true,
+            isPartial: partial,
+            allowedToolNames: const {'get_weather'},
+          );
+          expect(parsed.toolCalls, isEmpty);
+          expect(parsed.content, output);
+        }
+      });
+    }
+
+    test('holds an unclosed nested function argument', () {
+      const output = 'weather(city=lookup(a';
+      final partial = parseToolCallsFromLooseText(
+        output,
+        preserveJsonProse: true,
+        isPartial: true,
+        allowedToolNames: const {'weather'},
+      );
+      expect(partial.content, isEmpty);
+      expect(partial.toolCalls, isEmpty);
+
+      final completed = parseToolCallsFromLooseText(
+        '$output))',
+        preserveJsonProse: true,
+        allowedToolNames: const {'weather'},
+      );
+      expect(completed.content, isEmpty);
+      expect(jsonDecode(completed.toolCalls.single.function!.arguments!), {
+        'city': 'lookup(a)',
+      });
+    });
+
+    test('keeps an escaped quote inside a function argument', () {
+      final parsed = parseToolCallsFromLooseText(
+        r'weather(city="A\"B")',
+        preserveJsonProse: true,
+        allowedToolNames: const {'weather'},
+      );
+      expect(parsed.content, isEmpty);
+      expect(jsonDecode(parsed.toolCalls.single.function!.arguments!), {
+        'city': r'A\"B',
+      });
+    });
+
+    for (final input in [
+      'weather(city="A", city="B")',
+      'weather(city="A")\n;',
+      'weather(city={"name":unknown ',
+    ]) {
+      test('releases invalid function syntax "$input"', () {
+        for (final partial in [false, true]) {
+          final parsed = parseToolCallsFromLooseText(
+            input,
+            preserveJsonProse: true,
+            isPartial: partial,
+            allowedToolNames: const {'weather'},
+          );
+          expect(parsed.content, input);
+          expect(parsed.toolCalls, isEmpty);
+        }
+      });
+    }
+
     test('holds whitespace that might precede a closing tool tag', () {
       const call = '{"name":"weather","arguments":{"city":"Seoul"}}';
       final partial = parseToolCallsFromLooseText(

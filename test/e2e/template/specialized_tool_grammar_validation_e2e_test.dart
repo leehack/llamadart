@@ -827,13 +827,22 @@ void main() {
   });
 
   test('Gemma 4 eager grammar enforces one exact schema-valid envelope', () {
-    final grammar = Gemma4Handler().buildGrammar([
-      _weatherWithCityTool,
-      _zeroArgTool,
-      _gemmaEscapedTool,
-    ])!;
-    final weatherCall = '<|tool_call>call:weather{"city":"Seoul"}<tool_call|>';
-    final pingCall = '<|tool_call>call:ping{}<tool_call|>';
+    final rendered = Gemma4Handler().render(
+      templateSource: File(
+        'test/fixtures/templates/gemma-4-E2B-it.jinja',
+      ).readAsStringSync(),
+      messages: const [
+        LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'Weather?'),
+      ],
+      metadata: {internalToolChoiceMetadataKey: ToolChoice.required.name},
+      tools: [_weatherWithCityTool, _zeroArgTool, _gemmaEscapedTool],
+    );
+    expect(rendered.format, ChatFormat.gemma4.index);
+    expect(rendered.grammarLazy, isFalse);
+    expect(rendered.grammarTriggers, isEmpty);
+    const weatherBody = '<|tool_call>call:weather{"city":"Seoul"}';
+    const weatherCall = '$weatherBody<tool_call|>';
+    const pingCall = '<|tool_call>call:ping{}<tool_call|>';
     final escapedRequiredArguments = <String, dynamic>{
       'a b': 'one',
       r'city&"zone\path': 'Montréal {north}',
@@ -848,7 +857,7 @@ void main() {
 
     _expectGrammar(
       validator,
-      grammar,
+      rendered.grammar!,
       valid: [
         weatherCall,
         pingCall,
@@ -856,6 +865,7 @@ void main() {
         escapedCall(escapedOptionalArguments),
       ],
       invalid: [
+        weatherBody,
         'leading prose$weatherCall',
         '$weatherCall$pingCall',
         '<|tool_call>call:unknown{}<tool_call|>',

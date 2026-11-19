@@ -1062,7 +1062,12 @@ void main() {
     test(
       'LFM2 keeps its paced delivery cadence after a parenthetical',
       () async {
-        final tokens = ['The', ' (forecast)', ...List.filled(23, ' stays')];
+        final tokens = [
+          'The',
+          ' weather',
+          ' (forecast)',
+          ...List.filled(22, ' stays'),
+        ];
         var received = 0;
         Stream<String> paced() async* {
           for (final token in tokens) {

@@ -72,20 +72,55 @@ void main() {
 
   const oslo = '{"name":"weather","arguments":{"city":"Oslo"}}';
   const paris = '{"name":"weather","arguments":{"city":"Paris"}}';
+  for (final explanation in [
+    'would retrieve the current weather information.',
+    'is my call',
+  ]) {
+    test('ChatSession leaves "$explanation" as text without dispatch', () async {
+      final output = 'get_weather(location="Paris") $explanation';
+      final backend = _GemmaBackend(template)
+        ..queueResponse(output.split(''))
+        ..queueResponse(['Done.']);
+      final engine = LlamaEngine(backend);
+      addTearDown(engine.dispose);
+      await engine.loadModel('mock.gguf');
+      var invocations = 0;
+      final result = await ChatSession(engine, maxContextTokens: 0).sendWithTools(
+        'Do not call any tool. Explain what get_weather(location="Paris") does.',
+        tools: [
+          ToolDefinition(
+            name: 'get_weather',
+            description: 'Weather',
+            parameters: [ToolParam.string('location', required: true)],
+            handler: (_) async {
+              invocations++;
+              return 'sunny';
+            },
+          ),
+        ],
+        toolChoice: ToolChoice.auto,
+        enableThinking: false,
+      );
+      expect(invocations, 0);
+      expect(result.stopReason, LlamaToolLoopStopReason.completed);
+      expect(result.text, output);
+    });
+  }
+
   for (final (label, raw, cities) in [
     ('closed wrapper', '<tool_call>$oslo;$paris</tool_call>', ['Oslo']),
     ('unclosed wrapper', '<tool_call>$oslo;$paris', ['Oslo']),
     ('unwrapped continuation', '$oslo;$paris', ['Oslo', 'Paris']),
     ('native call', _native, ['Seoul']),
     (
-      'native call after a loose function and prose',
+      'native call after function-like prose',
       'weather(city="A") then later visible text $_native',
       ['Seoul'],
     ),
     (
-      'call followed by prose',
+      'function-like prose with another parenthetical',
       'weather(city="A") is a lesson (see below)',
-      ['A'],
+      <String>[],
     ),
     ('unterminated call', 'weather(city="A)', <String>[]),
   ]) {
@@ -463,17 +498,17 @@ void main() {
       true,
     ),
     (
-      'declared function call with trailing prose',
+      'declared function syntax with trailing prose',
       'weather(city="Seoul") is a lesson (see below)',
-      ' is a lesson (see below)',
+      'weather(city="Seoul") is a lesson (see below)',
       '',
-      [_weather],
+      <(String, Map<String, String>)>[],
       true,
     ),
     (
       'declared function call strips a trailing separator and closing tag',
-      'weather(city="Seoul"); </tool_call> Done.',
-      ' Done.',
+      'weather(city="Seoul"); </tool_call> ',
+      '',
       '',
       [_weather],
       true,
@@ -996,7 +1031,7 @@ void main() {
   );
 
   const nativeBody = '<|tool_call>call:weather{city:<|"|>Seoul<|"|>}';
-  const leadingFunction = 'weather(city="A") then later visible text ';
+  const functionProse = 'weather(city="A") then later visible text ';
   for (final parallel in [false, true]) {
     for (final (termination, cancelled, limit) in [
       ('EOF', false, false),
@@ -1005,21 +1040,21 @@ void main() {
       ('cancellation at the token limit', true, true),
     ]) {
       test(
-        'delayed native function precedence at $termination (parallel: $parallel)',
+        'native call after function-like prose at $termination (parallel: $parallel)',
         () async {
           final rendered = render(parallelToolCalls: parallel);
-          const raw = '$leadingFunction$_native';
+          const raw = '$functionProse$_native';
           final parsed = ChatTemplateEngine.parseRendered(
             rendered,
             raw,
             tools: _tools,
           );
-          expect(parsed.content, leadingFunction);
+          expect(parsed.content, functionProse);
           expect(parsed.toolCalls.map(_callValue), _expectedCalls([_weather]));
           await _expectStream(
             Stream.fromIterable(raw.split('')),
             rendered,
-            leadingFunction,
+            functionProse,
             '',
             [_weather],
             true,
@@ -1032,12 +1067,12 @@ void main() {
     }
 
     for (final (label, prefix, live, fallbackContent) in [
-      ('function', leadingFunction, '', ' then later visible text '),
+      ('standalone function', 'weather(city="A")', '', ''),
       (
         'indented function with residue',
-        '\n\t weather(city="A"); </tool_call>\t then later visible text ',
+        '\n\t weather(city="A"); </tool_call>\t ',
         '',
-        '\n then later visible text ',
+        '',
       ),
       (
         'loose JSON with preamble and wrapper',
@@ -1226,6 +1261,9 @@ void main() {
       final rendered = render();
       for (final (label, raw, tools) in [
         ('declared', 'weather(city="Seoul")', _tools),
+        ('unclosed nested argument', 'weather(city=lookup(a', _tools),
+        ('closed nested argument', 'weather(city=lookup(a))', _tools),
+        ('function followed by prose', functionProse, _tools),
         ('undeclared', 'rm(path="/")', _tools),
         ('undeclared dotted', 'os.system(cmd="ls")', _tools),
         ('shared-prefix undeclared', 'get_other(location="Paris")', _tools),

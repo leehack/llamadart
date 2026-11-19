@@ -259,7 +259,6 @@ void main() {
     test('only an accepted native envelope supersedes a loose function', () {
       const thought = '<|channel>thought\nNeed weather<channel|>';
       const function = 'weather(city="A")';
-      const suffix = ' then later visible text ';
       const nativeBody = '<|tool_call>call:weather{city:<|"|>Seoul<|"|>}';
       const malformed = '<|tool_call>call:weather{city:}<tool_call|>';
       final tools = [
@@ -283,20 +282,12 @@ void main() {
         for (final partial in [true, false]) {
           final result = ChatTemplateEngine.parse(
             ChatFormat.gemma4.index,
-            '$thought$function$suffix$tail',
+            '$thought$function$tail',
             isPartial: partial,
             tools: tools,
           );
           expect(result.reasoningContent, 'Need weather', reason: tail);
-          expect(
-            result.content,
-            nativeWins
-                ? '$function$suffix'
-                : partial
-                ? ''
-                : suffix,
-            reason: tail,
-          );
+          expect(result.content, nativeWins ? function : '', reason: tail);
           final call = result.toolCalls.single;
           expect(call.index, 0, reason: tail);
           expect(call.function?.name, 'weather', reason: tail);
@@ -307,11 +298,12 @@ void main() {
       }
     });
 
-    test('a leading loose function keeps later loose JSON as prose', () {
-      const suffix = ' example {"name":"weather","arguments":{"city":"B"}}';
+    test('loose JSON recovery preserves preceding function-like prose', () {
+      const prose = 'weather(city="A") example ';
+      const json = '{"name":"weather","arguments":{"city":"B"}}';
       final parsed = ChatTemplateEngine.parse(
         ChatFormat.gemma4.index,
-        'weather(city="A")$suffix',
+        '$prose$json',
         tools: [
           ToolDefinition(
             name: 'weather',
@@ -320,10 +312,10 @@ void main() {
           ),
         ],
       );
-      expect(parsed.content, suffix);
+      expect(parsed.content, prose);
       final call = parsed.toolCalls.single;
       expect(call.function?.name, 'weather');
-      expect(jsonDecode(call.function!.arguments!), {'city': 'A'});
+      expect(jsonDecode(call.function!.arguments!), {'city': 'B'});
     });
 
     test('streams an open thought channel as partial reasoning', () {

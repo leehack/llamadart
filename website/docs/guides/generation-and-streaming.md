@@ -217,12 +217,12 @@ With Gemma 4 tools enabled, confirmed prose can stream while a possible loose
 JSON or function-call-syntax payload is still arriving. Fenced and closed
 inline-backtick JSON stream as text, non-matching tool names release once the
 name is known, and function-like prose releases once it can no longer form a
-valid argument list. The parser keeps text around recovered calls, strips
-adjacent `;` and `</tool_call>` residue, and collapses horizontal junction
-whitespace to one space when the loose call wins. A recovered loose call can
-delay following prose until the stream ends or a valid native call appears.
-If the native call wins, the literal loose call and following prose stream in
-order. Executable calls arrive on the final chunk.
+standalone call. A closed argument list followed by explanatory prose stays
+text. The parser keeps text around recovered loose JSON calls, strips adjacent
+`;` and `</tool_call>` residue, and collapses horizontal junction whitespace to
+one space. A recovered loose JSON call can delay following prose until the stream
+ends or a valid native call appears. If the native call wins, the literal
+fallback text streams in order. Executable calls arrive on the final chunk.
 
 ## Token usage and timings
 
