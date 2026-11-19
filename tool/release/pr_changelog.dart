@@ -54,6 +54,10 @@ PrChangelog parsePrChangelog(String body) {
       }
       continue;
     }
+    if (!inComment && _quote.hasMatch(line)) {
+      if (inSection) _invalid('quoted content is not an entry.');
+      continue;
+    }
     if (!inComment && fenceMatch != null) {
       final marker = fenceMatch[1]!;
       if (!marker.startsWith('`') || !fenceMatch[2]!.contains('`')) {
@@ -81,7 +85,7 @@ PrChangelog parsePrChangelog(String body) {
       }
     }
     if (!inSection) {
-      if (visible == line && !nested && !_quote.hasMatch(line)) {
+      if (visible == line && !nested) {
         outside.add(line);
       }
       continue;

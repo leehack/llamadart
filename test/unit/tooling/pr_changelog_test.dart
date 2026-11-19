@@ -109,6 +109,8 @@ Co-authored-by: Example <example@example.invalid>
 ## Changelog
 - Actual.
 ''',
+    'quoted guidance cannot hide the live heading':
+        '> <!--\n\n## Changelog\n- Visible note.',
     'standalone guidance': '''
 ## Changelog
 <!-- How to fill in this section:
