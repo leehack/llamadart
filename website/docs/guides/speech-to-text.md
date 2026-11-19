@@ -269,6 +269,11 @@ try {
   `Voxtral Realtime` (token-delay mode) runs within a finite context window;
   `4096` gives roughly five minutes of audio. Context exhaustion emits terminal
   text and fails with `LlamaSpeechTranscriptTruncatedException`.
+- **Live microphone throughput** on measured Linux and Windows x64 CPU runs
+  with 2 threads and a 4096 context: Voxtral Realtime took about four times
+  the audio duration (real-time factor 3.7–4.3), so it cannot keep up with a
+  live microphone. LFM3-Audio kept up (RTF about 0.72–0.75 when fed as fast as
+  possible and 1.00 when paced at the audio rate).
 - **Example**: see `example/basic_app/bin/llamadart_live_asr_example.dart` for
   an incremental `.f32le` file streamer.
 

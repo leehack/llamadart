@@ -66,12 +66,9 @@ int _runEvaluate(String receiptDir, String backend) {
   }
 
   final legs = <SpeechStreamLegReceipt>[];
-  for (final entity in dir.listSync()) {
-    if (entity is File && entity.path.endsWith('.json')) {
-      final decoded =
-          jsonDecode(entity.readAsStringSync()) as Map<String, Object?>;
-      legs.add(SpeechStreamLegReceipt.fromJson(decoded));
-    }
+  for (final file in speechStreamReceiptFiles(dir)) {
+    final decoded = jsonDecode(file.readAsStringSync()) as Map<String, Object?>;
+    legs.add(SpeechStreamLegReceipt.fromJson(decoded));
   }
 
   final isBaselineCollection =

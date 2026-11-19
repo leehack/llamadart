@@ -496,13 +496,17 @@ dart run tool/testing/run_local_e2e.dart --scenario speech-to-text-smoke \
 # or `--backend cuda`), warming up with the 11s JFK clip before sampling
 # baseline RSS and feeding 4,800,000 samples (300s) via a reusable <=5120 slab.
 # Calibrated RSS growth ceilings (max(64 MiB, ceil_32MiB(1.25 * max_observed))):
-#   - voxtral / macos / arm64 / cpu / fast: 416 MiB above warm baseline
-#   - lfm3 / macos / arm64 / cpu / fast: 64 MiB above warm baseline
-# Paced runs and other host/backend profiles remain `unbounded / qualification
-# pending` until calibrated from three independent baseline runs. Set
-# `LLAMADART_STT_STREAM_QUALIFY=1` to preflight all 6 model/mmproj SHA-256
-# digests, run both fast and paced legs, and fail on any skip, wrong placement,
-# truncation, or uncalibrated/exceeded memory ceiling.
+#   - macOS arm64 CPU, fast and paced: Voxtral 416 MiB, LFM3 64 MiB
+#   - Linux x64 CPU, fast and paced: Voxtral 416 MiB, LFM3 64 MiB
+#   - Windows x64 CPU, fast and paced: Voxtral 384 MiB, LFM3 64 MiB
+# Each ceiling uses three independent runs. Other profiles, including Windows
+# L4 CUDA, remain `unbounded / qualification pending`.
+# On Linux and Windows x64 CPU with 2 threads, Voxtral took about 4 times
+# the audio duration (RTF 3.7–4.3), so it cannot keep up with a live mic.
+# LFM3 kept up (RTF about 0.72–0.75 fast and 1.00 paced).
+# Strict mode (`LLAMADART_STT_STREAM_QUALIFY=1`) checks all model, projector,
+# and WAV SHA-256 digests. It runs both fast and paced legs and fails on any
+# skip, wrong placement, truncation, or uncalibrated/exceeded memory ceiling.
 dart run tool/testing/run_local_e2e.dart --scenario speech-to-text-stream-smoke \
   --backend cpu
 
