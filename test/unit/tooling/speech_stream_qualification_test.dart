@@ -79,21 +79,17 @@ void main() {
       }
     });
 
-    test('scales both Voxtral timeouts for x64 CPU', () {
-      for (final (baseMinutes, scaledMinutes) in const [(10, 30), (15, 45)]) {
-        final base = Duration(minutes: baseMinutes);
-        expect(
-          voxtralSpeechStreamTimeout(base, arch: 'x64', backend: 'cpu'),
-          Duration(minutes: scaledMinutes),
-        );
-        expect(
-          voxtralSpeechStreamTimeout(base, arch: 'arm64', backend: 'cpu'),
-          base,
-        );
-        expect(
-          voxtralSpeechStreamTimeout(base, arch: 'x64', backend: 'cuda'),
-          base,
-        );
+    test('selects short and timed Voxtral budgets by host and backend', () {
+      for (final (arch, backend, shortMinutes, timedMinutes) in const [
+        ('x64', 'cpu', 30, 45),
+        ('arm64', 'cpu', 10, 15),
+        ('x64', 'cuda', 10, 15),
+        ('x64', 'auto', 10, 15),
+      ]) {
+        expect(voxtralSpeechStreamTimeouts(arch: arch, backend: backend), (
+          short: Duration(minutes: shortMinutes),
+          timed: Duration(minutes: timedMinutes),
+        ), reason: '$arch/$backend');
       }
     });
 

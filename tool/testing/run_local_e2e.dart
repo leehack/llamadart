@@ -3550,6 +3550,16 @@ Future<LocalE2eResult> runLocalE2e(
           '--audio-path uses the dedicated gguf-audio-chat-smoke scenario.\n',
     );
   }
+  if (scenario.name == 'speech-to-text-stream-smoke' &&
+      (environment ?? Platform.environment)['LLAMADART_STT_STREAM_QUALIFY'] ==
+          '1' &&
+      !const ['cpu', 'cuda'].contains(parsed.backend)) {
+    return const LocalE2eResult(
+      64,
+      stderr:
+          'speech-to-text-stream-smoke qualification requires --backend cpu or cuda.\n',
+    );
+  }
   if (scenario.name == 'macos-mic-asr') {
     if (parsed.modelPath == null ||
         parsed.mmprojPath == null ||

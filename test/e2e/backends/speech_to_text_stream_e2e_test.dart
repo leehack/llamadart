@@ -540,22 +540,12 @@ void main() {
   final hasLfm3 = _exists(lfm3Model) && _exists(lfm3Mmproj);
   final hasQwen = _exists(qwenModel) && _exists(qwenMmproj);
   final runPaced = _shouldRunPaced();
-  final arch = currentHostArch();
-  final backend = _requestedBackend();
-  final voxtralShortTimeout = Timeout(
-    voxtralSpeechStreamTimeout(
-      const Duration(minutes: 10),
-      arch: arch,
-      backend: backend,
-    ),
+  final voxtralTimeouts = voxtralSpeechStreamTimeouts(
+    arch: currentHostArch(),
+    backend: _requestedBackend(),
   );
-  final voxtralTimedTimeout = Timeout(
-    voxtralSpeechStreamTimeout(
-      const Duration(minutes: 15),
-      arch: arch,
-      backend: backend,
-    ),
-  );
+  final voxtralShortTimeout = Timeout(voxtralTimeouts.short);
+  final voxtralTimedTimeout = Timeout(voxtralTimeouts.timed);
 
   test(
     'Voxtral Realtime short parity, irregular chunkings, truncation, cancel/reuse',

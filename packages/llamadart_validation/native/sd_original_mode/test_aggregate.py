@@ -10,8 +10,20 @@ import time
 import unittest
 from unittest.mock import patch
 
+import owned_capture
 import run as operator
 import test_operator as protocol_fixtures
+
+
+class DeadlineClock:
+    def __init__(self):
+        self.now = 100
+
+    def monotonic(self):
+        return self.now
+
+    def sleep(self, _seconds):
+        self.now += 1
 
 
 class AggregateTest(unittest.TestCase):
@@ -20,21 +32,53 @@ class AggregateTest(unittest.TestCase):
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
 
-    def budget(self, active=0.08, total=0.3, name="cases"):
-        now = time.monotonic()
+    def budget(self, active, total, name="cases"):
+        now = operator.time.monotonic()
         return {"phase": name, "started": now, "active_end": now + active, "total_end": now + total}
 
-    def test_shared_deadline_wins_and_owned_child_is_killed_reaped(self):
-        budget = self.budget()
-        with self.assertRaises(ValueError):
-            operator.run_owned([sys.executable, "-c", "import time;time.sleep(60)"], self.root / "short",
-                               {"model_inference": False}, seconds=177, budget=budget)
-        record = json.loads((self.root / "short/capture.json").read_text())
+    def assert_shared_timeout(self, phase, output, seconds):
+        clock = DeadlineClock()
+        wait_timeouts = []
+        real_popen = subprocess.Popen
+
+        def launch(*args, **kwargs):
+            child = real_popen(*args, **kwargs)
+            real_wait = child.wait
+
+            def reap():
+                if child.poll() is None:
+                    child.kill()
+                real_wait(timeout=3)
+
+            def record_wait(timeout=None):
+                wait_timeouts.append(timeout)
+                return real_wait(timeout=timeout)
+
+            self.addCleanup(reap)
+            child.wait = record_wait
+            return child
+
+        with (patch.object(operator, "time", clock),
+              patch.object(owned_capture, "time", clock),
+              patch.object(owned_capture.subprocess, "Popen", launch)):
+            budget = self.budget(active=1, total=3.5, name=phase)
+            with self.assertRaisesRegex(ValueError, "^owned phase/case failed$"):
+                operator.run_owned([sys.executable, "-c", "import time;time.sleep(60)"], output,
+                                   {"phase": phase, "model_inference": False}, seconds=seconds, budget=budget)
+
+        record = json.loads((output / "capture.json").read_text())
+        self.assertTrue(record["timed_out"])
         self.assertTrue(record["shared_deadline_reached"])
         self.assertTrue(record["leader_reaped"])
+        self.assertEqual(record["exit"], -signal.SIGKILL)
         self.assertEqual(record["cleanup_errors"], [])
-        self.assertLess(record["elapsed_seconds"], 1)
-        with self.assertRaises(ProcessLookupError): os.kill(record["pid"], 0)
+        self.assertEqual(record["elapsed_seconds"], 1)
+        self.assertEqual(wait_timeouts, [2.5])
+        with self.assertRaises(ProcessLookupError):
+            os.kill(record["pid"], 0)
+
+    def test_shared_deadline_wins_and_owned_child_is_killed_reaped(self):
+        self.assert_shared_timeout("cases", self.root / "short", seconds=177)
 
     def test_expired_budget_cannot_launch_or_accept_stale_pass(self):
         budget = self.budget(active=-1, total=1)
@@ -69,13 +113,7 @@ class AggregateTest(unittest.TestCase):
     def test_real_prehash_grade_and_post_worker_deadlines_are_charged(self):
         for phase in ("preflight", "cases", "post"):
             with self.subTest(phase=phase):
-                budget = self.budget(name=phase)
-                with self.assertRaises(ValueError):
-                    operator.run_owned([sys.executable, "-c", "import time;time.sleep(60)"], self.root / phase,
-                                       {"phase": phase, "model_inference": False}, seconds=7, budget=budget)
-                record = json.loads((self.root / phase / "capture.json").read_text())
-                self.assertTrue(record["leader_reaped"])
-                self.assertTrue(record["shared_deadline_reached"])
+                self.assert_shared_timeout(phase, self.root / phase, seconds=7)
 
     def test_scoped_git_children_are_owned_and_reaped(self):
         # The actual fixed source metadata commands, not a fake launcher.

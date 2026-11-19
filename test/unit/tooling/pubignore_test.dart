@@ -93,6 +93,7 @@ void main() {
       'hook/build.dart',
       'example/basic_app/pubspec.yaml',
       'example/basic_app/bin/llamadart_litert_embedding_example.dart',
+      'example/basic_app/assets/demo.wav',
     ];
     Future<List<Object?>> errors(List<String> files) async {
       final result = await Process.run(
