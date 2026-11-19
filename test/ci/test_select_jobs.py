@@ -374,6 +374,9 @@ class SelectionTest(unittest.TestCase):
 
     def test_pull_requests_build_macos_desktop_and_android_for_their_inputs_only(self):
         for paths in (['lib/llamadart.dart'], ['lib/src/core/engine.dart', 'README.md'],
+                      ['.github/workflows/ci.yml'], ['new/unknown.file'],
+                      ['skills/llamadart-web/SKILL.md'], ['MIGRATION.md'],
+                      ['tool/testing/test_matrix.dart'],
                       ['example/basic_app/lib/main.dart'], ['example/chat_app/web/config'],
                       ['example/chat_app/test/unit_test.dart']):
             with self.subTest(paths=paths):
@@ -394,7 +397,7 @@ class SelectionTest(unittest.TestCase):
                 plan = ci.select([path], pull_request=True)
                 self.assertIn('macos-15', plan['desktops'])
                 self.assertIn('android', plan['apps'])
-        for path in ('.flutter-version', '.github/workflows/ci.yml', 'new/unknown.file'):
+        for path in ('.flutter-version',):
             with self.subTest(path=path):
                 plan = ci.select([path], pull_request=True)
                 self.assertIn('macos-15', plan['desktops'])
@@ -846,6 +849,15 @@ class MacosPathGatingTest(unittest.TestCase):
             plan = json.loads(result.stdout)
             self._assert_zero_macos(plan)
 
+            # Non-zero probe exit falls back conservatively to Mac native.
+            fake_dart.write_text(f'#!{sys.executable}\nimport sys; sys.exit(3)\n')
+            nonzero = subprocess.run([sys.executable, 'tool/ci/select_jobs.py', 'select'],
+                                     cwd=scratch, env=env, capture_output=True, text=True)
+            self.assertEqual(nonzero.returncode, 0, nonzero.stderr)
+            nonzero_plan = json.loads(nonzero.stdout)
+            self.assertTrue(nonzero_plan['macos-native'])
+            self.assertIn('Host-suite probe exited 3', nonzero_plan['reasons'])
+
             # Malformed probe output falls back conservatively to Mac native.
             fake_dart.write_text(f'#!{sys.executable}\nprint("not-json")\n')
             bad_out = subprocess.run([sys.executable, 'tool/ci/select_jobs.py', 'select'],
@@ -886,6 +898,32 @@ class MacosPathGatingTest(unittest.TestCase):
             plan[field] = value
             with self.subTest(field=field), self.assertRaises(ValueError):
                 ci.validate_plan(plan)
+
+    def test_recent_pr_diffs_never_exceed_base_macos_job_count(self):
+        def macos_job_count(plan):
+            return (3 * int(plan['macos-native'])
+                    + int(ci.companion_job_selected(plan))
+                    + int(plan['studio-macos'])
+                    + int('macos-15' in plan['desktops']))
+
+        cases = (
+            ('skill-only', ['skills/llamadart-web/SKILL.md'], None, 5),
+            ('#2055', ['lib/llamadart.dart', 'MIGRATION.md',
+                       'skills/llamadart-chat/SKILL.md', 'tool/testing/test_matrix.dart'],
+             None, 5),
+            ('#2053', ['test/unit/tooling/validation_remote_test.dart',
+                       'tool/testing/validation/bundle.dart'],
+             {'test/unit/tooling/validation_remote_test.dart': True}, 6),
+            ('#1985', ['lib/src/backends/web/web_backend.dart',
+                       'test/unit/backends/web/web_backend_test.dart'],
+             {'test/unit/backends/web/web_backend_test.dart': True}, 5),
+            ('grammar-leaf', ['test/unit/core/grammar/response_schema_validation_test.dart'],
+             {'test/unit/core/grammar/response_schema_validation_test.dart': False}, 5),
+        )
+        for label, paths, host_suites, base_count in cases:
+            with self.subTest(label=label):
+                plan = ci.select(paths, pull_request=True, host_suites=host_suites)
+                self.assertLessEqual(macos_job_count(plan), base_count, label)
 
 
 if __name__ == '__main__':

@@ -23,8 +23,8 @@ PR. A path filter must not prevent a required workflow from reporting.
 | Root `test/**` (extant Linux-only leaf suite on PR vs host-sensitive suite, helper/fixture, deleted/unknown, or push) | Static, all Linux VM tests, Chrome and Windows host tests; Mac native shards only when `test_shards.dart hosts-json` reports host-relevant or on helper/fixture/push/probe-failure; shared fixtures/helpers also run Studio, `studio-macos` and Apple cache | None |
 | Browser backend trees (`lib/src/backends/web/**`, `lib/src/backends/webgpu/**`) | Non-Mac full graph (Linux, Chrome, Windows native, Ubuntu Studio, Web Chat, Genkit, Model Store, examples) with zero Mac allocations | Linux, Windows desktops; apps (PR defers Android) |
 | Root runtime/hooks/dependencies, other example packages, conditional backend entrypoints | Full behavioral graph | All targets; a PR defers macOS desktop and Android unless it changes their build inputs (`.flutter-version` included for `macos-15`) |
-| Workflow/selector or unclassified paths | Full graph including synthetic artifact transport (workflows/selector) and `macos-15` desktop | All targets (`macos-15` retained on PR; Android deferred unless its inputs changed) |
-| Missing, empty or invalid diff; explicit manual bundle run | Full fallback | All targets |
+| Workflow/selector or unclassified paths | Full graph including synthetic artifact transport (workflows/selector) | All targets; a PR defers `macos-15` and `android` unless it changes their build inputs (`validation_bundles.yml`, `select_jobs.py`, `hook/`, `lib/src/hook/`, `pubspec.*`, `.flutter-version`, `tool/testing/validation*`, or compiled `packages/llamadart_validation/` for `macos-15`) |
+| Missing, empty or invalid diff; explicit manual bundle run | Full fallback | All targets (`macos-15` retained) |
 
 Selections combine for mixed changes. Version checks already executed by the
 root static job are not duplicated in the docs-only job. Root suites import,

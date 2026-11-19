@@ -44,12 +44,12 @@ APPS = ('android', 'web', 'ios-inputs')
 # Bundle targets a pull request builds only when it changes their own build
 # inputs; pushes to main and manual runs build them for every selecting change.
 # Their Dart code also compiles in the Linux desktop and Web builds.
-_BUNDLE_WORKFLOW = ('.github/workflows/', '.github/actions/', 'tool/ci/', 'test/ci/')
+_BUNDLE_WORKFLOW = ('.github/workflows/validation_bundles.yml', 'tool/ci/select_jobs.py')
 _NATIVE_BUILD_INPUTS = ('hook/', 'lib/src/hook/', 'pubspec.yaml', 'pubspec.lock',
                         'tool/testing/validation/', 'tool/testing/validation.dart')
 POST_MERGE_TARGETS = {
     'macos-15': _BUNDLE_WORKFLOW + _NATIVE_BUILD_INPUTS + ('.flutter-version',),
-    'android': ('.github/workflows/validation_bundles.yml', 'tool/ci/select_jobs.py') + _NATIVE_BUILD_INPUTS + tuple(
+    'android': _BUNDLE_WORKFLOW + _NATIVE_BUILD_INPUTS + tuple(
         'packages/' + name + '/' + part for name in COMPANIONS
         for part in ('lib/', 'pubspec.yaml')),
 }
@@ -104,7 +104,6 @@ def select(paths, force_full=False, pull_request=False, host_suites=None):
     studio_macos = False
     macos_validation_memory = False
     apple_cache = False
-    keep_macos_desktop = False
 
     def full(reason):
         nonlocal macos_native, windows_native, studio_macos, macos_validation_memory, apple_cache
@@ -123,12 +122,10 @@ def select(paths, force_full=False, pull_request=False, host_suites=None):
     if force_full or not paths:
         full('manual, missing or unavailable change inventory')
         jobs.add('artifact-contract')
-        keep_macos_desktop = True
     for path in paths:
         if path.startswith(('.github/workflows/', '.github/actions/', 'tool/ci/', 'test/ci/')):
             full('workflow or selector change')
             jobs.add('artifact-contract')
-            keep_macos_desktop = True
         elif path == 'website/docs/integrations/genkit.md':
             jobs.update(('docs-check', 'docs-versions', 'genkit'))
         elif path.startswith('packages/genkit_llamadart/'):
@@ -244,7 +241,6 @@ def select(paths, force_full=False, pull_request=False, host_suites=None):
             full('shared/runtime or example path: ' + path)
         else:
             full('shared/runtime or unclassified path: ' + path)
-            keep_macos_desktop = True
         # Root tests scan all maintained Markdown, and any file a root suite
         # reaches can start reading it, so every path runs those suites and
         # their reader-inventory guard unless Linux coverage runs them.
@@ -266,8 +262,6 @@ def select(paths, force_full=False, pull_request=False, host_suites=None):
         jobs.discard('companion-packages')
     if pull_request and paths and not force_full:
         for target in POST_MERGE_TARGETS:
-            if target == 'macos-15' and keep_macos_desktop:
-                continue
             if not any(builds_target(target, path) for path in paths):
                 desktops.discard(target)
                 apps.discard(target)
