@@ -9,6 +9,11 @@ const changelogPackages = {
   'packages/llamadart_model_store',
 };
 
+final coreReleaseVersion = RegExp(
+  r'^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)'
+  r'(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$',
+);
+
 typedef ChangelogBullet = ({String target, String text});
 
 class PrChangelog {
@@ -29,7 +34,10 @@ final _commentToken = RegExp(r'`+|<!--');
 final _scope = RegExp(r'^\[(core|packages/[^\]]*)\](?![([])');
 final _checkBox = RegExp(r'^\[[ xX]\](?:\s|$)');
 final _notApplicable = RegExp(r'^N/A\s*(?::|$)', caseSensitive: false);
-final _invisibleText = RegExp(r'[\p{Cf}\s*_~`\[\]]', unicode: true);
+final _invisibleText = RegExp(
+  r'[\p{Cf}\p{Default_Ignorable_Code_Point}\u2800\s*_~`\[\]]',
+  unicode: true,
+);
 final _placeholder = RegExp(
   r'^\s*(?:tbd|todo|placeholder|fill (?:me|this) in|insert (?:text|reason) here|<[^>]+>)[.!]?\s*$',
   caseSensitive: false,
@@ -43,42 +51,23 @@ PrChangelog parsePrChangelog(String body) {
   var found = false;
   var inSection = false;
   var inComment = false;
-  String? fence;
-  var listIndent = 0;
-  for (final line in const LineSplitter().convert(body)) {
-    final fenceMatch = _fence.firstMatch(line);
-    if (fence != null) {
-      if (fenceMatch != null &&
-          fenceMatch[1]!.startsWith(fence) &&
-          fenceMatch[2]!.trim().isEmpty) {
-        fence = null;
-      }
-      continue;
-    }
-    if (!inComment && _quote.hasMatch(line)) {
-      if (inSection) _invalid('quoted content is not an entry.');
-      continue;
-    }
-    if (!inComment && fenceMatch != null) {
-      final marker = fenceMatch[1]!;
-      if (!marker.startsWith('`') || !fenceMatch[2]!.contains('`')) {
-        if (inSection) _invalid('fenced content is not an entry.');
-        fence = marker;
-        continue;
-      }
-    }
-
-    final (visible, commentContinues) = _withoutComments(line, inComment);
+  for (final row in _markdownLines(body)) {
+    final (
+      index: _,
+      :line,
+      :visible,
+      :heading,
+      :nested,
+      :example,
+      inComment: commentContinues,
+    ) = row;
     inComment = commentContinues;
-    final indent = line.length - line.trimLeft().length;
-    final nested = listIndent != 0 && indent >= listIndent;
-    if (!nested && visible.trim().isNotEmpty) {
-      listIndent = _listMarker.firstMatch(visible)?.end ?? 0;
+    if (example != null) {
+      if (inSection) _invalid('$example content is not an entry.');
+      continue;
     }
-    final heading = nested ? null : _heading.firstMatch(line);
-    if (heading != null && visible.startsWith(heading[0]!)) {
-      final title = (heading[2] ?? '').replaceFirst(_closingHashes, '').trim();
-      inSection = heading[1] == '##' && title == 'Changelog';
+    if (heading != null) {
+      inSection = _isSection(heading, 'Changelog');
       if (inSection) {
         if (found) _invalid('provide exactly one section.');
         found = true;
@@ -137,13 +126,202 @@ PrChangelog parsePrChangelog(String body) {
 Never _invalid(String problem) => throw FormatException('Changelog: $problem');
 
 void _validateText(String text) {
-  if (text.replaceAll(_invisibleText, '').isEmpty ||
-      _checkBox.hasMatch(text) ||
-      _notApplicable.hasMatch(text) ||
-      _placeholder.hasMatch(text) ||
-      text == '...') {
+  if (!_specificText(text)) {
     _invalid('write visible text and replace placeholders and checkboxes.');
   }
+}
+
+bool _specificText(String text) =>
+    text.replaceAll(_invisibleText, '').isNotEmpty &&
+    !_checkBox.hasMatch(text) &&
+    !_notApplicable.hasMatch(text) &&
+    !_placeholder.hasMatch(text) &&
+    text != '...';
+
+bool _isSection(Match heading, String title) =>
+    heading[1] == '##' &&
+    (heading[2] ?? '').replaceFirst(_closingHashes, '').trim() == title;
+
+typedef _MarkdownLine = ({
+  int index,
+  String line,
+  String visible,
+  Match? heading,
+  bool nested,
+  String? example,
+  bool inComment,
+});
+
+Iterable<_MarkdownLine> _markdownLines(String body) sync* {
+  var inComment = false;
+  String? fence;
+  var listIndent = 0;
+  for (final (index, line) in const LineSplitter().convert(body).indexed) {
+    final fenceMatch = _fence.firstMatch(line);
+    if (fence != null) {
+      if (fenceMatch != null &&
+          fenceMatch[1]!.startsWith(fence) &&
+          fenceMatch[2]!.trim().isEmpty) {
+        fence = null;
+      }
+      continue;
+    }
+    if (!inComment && _quote.hasMatch(line)) {
+      yield (
+        index: index,
+        line: line,
+        visible: '',
+        heading: null,
+        nested: false,
+        example: 'quoted',
+        inComment: false,
+      );
+      continue;
+    }
+    if (!inComment && fenceMatch != null) {
+      final marker = fenceMatch[1]!;
+      if (!marker.startsWith('`') || !fenceMatch[2]!.contains('`')) {
+        yield (
+          index: index,
+          line: line,
+          visible: '',
+          heading: null,
+          nested: false,
+          example: 'fenced',
+          inComment: false,
+        );
+        fence = marker;
+        continue;
+      }
+    }
+
+    final (visible, commentContinues) = _withoutComments(line, inComment);
+    inComment = commentContinues;
+    final indent = line.length - line.trimLeft().length;
+    final nested = listIndent != 0 && indent >= listIndent;
+    if (!nested && visible.trim().isNotEmpty) {
+      listIndent = _listMarker.firstMatch(visible)?.end ?? 0;
+    }
+    final heading = nested ? null : _heading.firstMatch(line);
+    yield (
+      index: index,
+      line: line,
+      visible: visible,
+      heading: heading != null && visible.startsWith(heading[0]!)
+          ? heading
+          : null,
+      nested: nested,
+      example: null,
+      inComment: inComment,
+    );
+  }
+}
+
+/// Zero-based lines that can supply visible release bullets in committed Markdown.
+Set<int> visibleReleaseBulletLines(String body) => {
+  for (final row in _markdownLines(body))
+    if (!row.nested &&
+        row.line.startsWith('- ') &&
+        row.visible.startsWith('- '))
+      row.index,
+};
+
+/// The independently resolved identifiers written into a release prep body.
+typedef ReleaseNotesInput = ({
+  String previousTag,
+  String previousSha,
+  String through,
+  String inputSha256,
+});
+
+final _previousField = RegExp(r'^Previous-tag: (v[^@ ]+)@([a-f0-9]{40})$');
+final _throughField = RegExp(r'^Through: ([a-f0-9]{40})$');
+final _inputDigestField = RegExp(r'^Input-SHA256: ([a-f0-9]{64})$');
+final _reviewRow = RegExp(r'^- ([a-f0-9]{40}) (\S.*)$');
+final _genericReview = RegExp(
+  r'^(?:ack(?:nowledged)?|reviewed|done|ok|omit(?:ted)?|drop(?:ped)?|keep|kept|combine(?:d)?)[.!]?$',
+  caseSensitive: false,
+);
+
+/// Reads the receipt from a prep PR body or landed message.
+ReleaseNotesInput parseReleaseNotesInput(String body) {
+  const title = 'Release notes input';
+  final lines = _metadataSection(body, title);
+  if (lines == null) throw const FormatException('$title: add one section.');
+  final fields = <String, Match>{};
+  for (final line in lines) {
+    if (_previousField.firstMatch(line) case final tag?
+        when coreReleaseVersion.hasMatch(tag[1]!.substring(1)) &&
+            !fields.containsKey('Previous-tag')) {
+      fields['Previous-tag'] = tag;
+    } else if (_throughField.firstMatch(line) case final through?
+        when !fields.containsKey('Through')) {
+      fields['Through'] = through;
+    } else if (_inputDigestField.firstMatch(line) case final digest?
+        when !fields.containsKey('Input-SHA256')) {
+      fields['Input-SHA256'] = digest;
+    } else {
+      throw const FormatException('$title: duplicate or malformed field.');
+    }
+  }
+  for (final field in ['Previous-tag', 'Through', 'Input-SHA256']) {
+    if (!fields.containsKey(field)) {
+      throw FormatException('$title: missing $field.');
+    }
+  }
+  return (
+    previousTag: fields['Previous-tag']![1]!,
+    previousSha: fields['Previous-tag']![2]!,
+    through: fields['Through']![1]!,
+    inputSha256: fields['Input-SHA256']![1]!,
+  );
+}
+
+/// Reads one editorial disposition per affected source commit.
+Map<String, String> parseReleaseNotesReview(String body) {
+  const title = 'Release notes review';
+  final reviews = <String, String>{};
+  for (final line in _metadataSection(body, title) ?? const <String>[]) {
+    final row = _reviewRow.firstMatch(line);
+    if (row == null) {
+      throw const FormatException(
+        '$title: use "- <SHA> <specific disposition>".',
+      );
+    }
+    final sha = row[1]!;
+    final text = row[2]!.trimRight();
+    if (!_specificText(text) || _genericReview.hasMatch(text)) {
+      throw FormatException('$title: provide a specific disposition for $sha.');
+    }
+    if (reviews.containsKey(sha)) {
+      throw FormatException('$title: duplicate disposition for $sha.');
+    }
+    reviews[sha] = text;
+  }
+  return reviews;
+}
+
+List<String>? _metadataSection(String body, String title) {
+  List<String>? lines;
+  var inSection = false;
+  for (final row in _markdownLines(body)) {
+    if (row.heading case final heading?) {
+      inSection = _isSection(heading, title);
+      if (inSection) {
+        if (lines != null) {
+          throw FormatException('$title: provide exactly one section.');
+        }
+        lines = [];
+        continue;
+      }
+    }
+    if (!inSection || row.visible.trim().isEmpty) continue;
+    if (row.nested || row.line != row.visible) {
+      throw FormatException('$title: malformed field or review entry.');
+    }
+    lines!.add(row.line);
+  }
+  return lines;
 }
 
 (String, bool) _withoutComments(String line, bool inComment) {

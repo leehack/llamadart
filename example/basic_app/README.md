@@ -76,7 +76,7 @@ dart run bin/llamadart_schema_tool_example.dart /path/to/model.gguf
 It runs a bounded tool loop and prints the tool result and answer. Use a GGUF
 whose template selects a supported JSON tool format (generic JSON fallback,
 Hermes or Mistral Nemo JSON). Unsupported formats and runtimes fail explicitly;
-see the [schema subset](../../website/docs/guides/tool-calling.md#import-a-json-schema).
+see the [schema subset](https://llamadart.leehack.com/docs/guides/tool-calling#import-a-json-schema).
 
 Tool results are text or JSON here. A tool's images go in
 `LlamaToolResultContent.content` (or a handler's `LlamaToolOutput`) only where
@@ -484,7 +484,7 @@ LLAMADART_IMAGE_CONTAINER_REFERENCES=/local/native-reference-outputs \
 Run that command from the repository root, then remove `--dry-run`. The manifest
 is a JSON array of `{ "id": "short-id", "path": "/local/file", "sha256": "..." }`;
 add `"auto": false` for PyTorch inputs that require explicit roles. Each
-reference is `<id>.ppm`. The [maintainer recipe](../../doc/image_weight_formats.md)
+reference is `<id>.ppm`. The [maintainer recipe](https://github.com/leehack/llamadart/blob/main/doc/image_weight_formats.md)
 provides pinned inputs, tensor-only fixture producers and direct-C commands.
 No model bytes are included or fetched. The current complete-checkpoint result
 covers SD-Turbo F16/macOS arm64 CPU; other models and hardware need qualification.

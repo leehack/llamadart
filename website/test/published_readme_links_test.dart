@@ -109,6 +109,53 @@ void main() {
         }
       },
     );
+
+    test(
+      'moved image guide sections link to their anchors at $prefix',
+      () async {
+        const id = 'guides/image-generation';
+        final nodes = await parse(
+          File('docs/$id.md').readAsStringSync(),
+          '$prefix/$id',
+        );
+        for (final (fragment, targetId, targetFragment) in [
+          ('recipes', 'examples/basic-app', 'image-generation-presets'),
+          ('model-licenses', 'examples/basic-app', 'model-licenses'),
+          (
+            'other-families',
+            'examples/basic-app',
+            'other-image-model-families',
+          ),
+          (
+            'desktop-models',
+            'maintainers/feature-validation',
+            'desktop-model-timings',
+          ),
+          (
+            'pinned-runtime-format-checks',
+            'maintainers/feature-validation',
+            'full-checkpoint-container-checks',
+          ),
+        ]) {
+          final targetPath = '$prefix/$targetId';
+          expect(
+            destinationProblems(nodes, fragment, '$targetPath#$targetFragment'),
+            isEmpty,
+          );
+          final targetNodes = await parse(
+            File('docs/$targetId.md').readAsStringSync(),
+            targetPath,
+          );
+          expect(
+            elements(
+              targetNodes,
+            ).any((node) => node.attributes['id'] == targetFragment),
+            isTrue,
+            reason: 'migration destination $targetPath#$targetFragment',
+          );
+        }
+      },
+    );
   }
 
   test(

@@ -141,11 +141,11 @@ WebGPU in the browser. Android Vulkan is experimental and opt-in.
 
 A llama.cpp runtime older than ggml `0.28.0` (llamadart-native `v0.8.0`)
 limits native Qwen3.5 on Android Vulkan to ordinary text on some GPUs; the
-bundled runtime does not. See [Android Vulkan](website/docs/platforms/known-platform-issues.md#android).
+bundled runtime does not. See [Android Vulkan](https://llamadart.leehack.com/docs/platforms/known-platform-issues#android).
 
 LiteRT-LM can also use GPU and, on compatible Android deployments, NPU.
 Android 12+ apps targeting API 31+ must request the optional vendor OpenCL
-library in their manifest; see [Android LiteRT-LM setup](website/docs/getting-started/installation.md#android-litert-lm-setup).
+library in their manifest; see [Android LiteRT-LM setup](https://llamadart.leehack.com/docs/getting-started/installation#android-litert-lm-setup).
 The opt-in llama.cpp `opencl` module on Android needs the same declaration;
 without it the module cannot load, `ComputeDevice.auto` runs elsewhere and
 `ComputeDevice.gpu` with `GpuBackend.opencl` throws. ggml-opencl admits only
@@ -202,7 +202,7 @@ complete runtime. The full override rules are in [Native runtime configuration](
 Await engine disposal before host shutdown. Forced worker cleanup during
 native creation uses owner API v1 in the pinned `v1.0.0` runtime. Raw
 allocation-to-registration gaps remain; see the
-[shutdown contract](doc/llama_cpp_exit_teardown.md#creation-time-owner-preparation).
+[shutdown contract](https://github.com/leehack/llamadart/blob/main/doc/llama_cpp_exit_teardown.md#creation-time-owner-preparation).
 
 ## Guides
 

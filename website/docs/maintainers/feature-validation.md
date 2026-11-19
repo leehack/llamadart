@@ -17,6 +17,7 @@ the user page's "Qualified on" line in step with what you can reproduce.
 | Native reranking | [`doc/native_reranking.md`](https://github.com/leehack/llamadart/blob/main/doc/native_reranking.md) |
 | Decision models (timings, parity, web check) | [`doc/decision_engine.md`](https://github.com/leehack/llamadart/blob/main/doc/decision_engine.md) |
 | LiteRT-LM chat templates | [`doc/litert_lm_templates.md`](https://github.com/leehack/llamadart/blob/main/doc/litert_lm_templates.md) |
+| Chat app native device qualification | [Firebase Test Lab runbook](https://github.com/leehack/llamadart/blob/main/doc/chat_app_native_qualification.md) |
 | Image seamless textures | [`doc/image_seamless_textures.md`](https://github.com/leehack/llamadart/blob/main/doc/image_seamless_textures.md) |
 | Local image sets | [`doc/local_image_sets.md`](https://github.com/leehack/llamadart/blob/main/doc/local_image_sets.md) |
 | Image editing | [`doc/image_editing.md`](https://github.com/leehack/llamadart/blob/main/doc/image_editing.md) |
@@ -60,6 +61,59 @@ Run a scenario with `dart run tool/testing/run_local_e2e.dart --list`, then
   smoke-tested on macOS CPU and Metal with Qwen3.5-0.8B weights, a
   `qwen3vl_merger` projector and the Qwen3-VL template.
 
+## Image and audio embeddings
+
+### Native llama.cpp media embeddings
+
+EmbeddingGemma-2 needs a compatible projector, native `v0.7.0-1` or later,
+and one complete physical micro-batch per input. The
+[BF16 validation pack](https://github.com/leehack/llamadart/blob/main/doc/cross_platform_validation.md#multimodal-embedding-pack)
+has CPU qualification on macOS arm64, Linux x64, Windows x64, Android and
+iOS, plus macOS Metal.
+
+The November 14, 2026 media-vector receipts used EmbeddingGemma-2 BF16 with
+the gemma4v/gemma4a projector:
+
+| Platform | Device and driver | Package | Result |
+| --- | --- | --- | --- |
+| Linux x64 | NVIDIA L4, driver 580.178 | 0.19.9 | CPU, CUDA and Vulkan ([Linux receipt](https://github.com/leehack/llamadart/issues/1189#issuecomment-6877631575)) |
+| Windows Server 2022 x64 | NVIDIA L4, GRID driver 596.86 | 0.19.10 | CPU, CUDA and Vulkan ([Windows receipt](https://github.com/leehack/llamadart/issues/1189#issuecomment-6881250817)) |
+| Android arm64 | Galaxy S24, Adreno 750, API 36 | 0.19.10 | OpenCL passed. Vulkan driver 2150604839 gave a typed refusal ([Android receipt](https://github.com/leehack/llamadart/issues/1189#issuecomment-6883121575)) |
+| Android arm64 | Pixel 9 Pro, Mali-G715, API 35 | 0.19.10 | Vulkan passed. OpenCL gave a typed refusal ([Android receipt](https://github.com/leehack/llamadart/issues/1189#issuecomment-6883121575)) |
+
+These receipts cover the recorded native artifacts, models, backends and
+devices. Native 1.0, core 0.20 and other GPU combinations require their own
+qualification.
+
+### WebGPU media embeddings
+
+The loaded bridge must report API-version-1 modality support, and the model
+needs a compatible projector. The
+[Web receipts](https://github.com/leehack/llamadart/blob/main/doc/multimodal_embeddings_web.md#current-evidence-and-limits)
+cover EmbeddingGemma-2 on Chrome CPU wasm memory64 and Chrome WebGPU on an
+Apple GPU with Metal, compared with native CPU and Metal. The wasm32 repeat
+batch check passed on the then-pinned assets with the fix available from
+`v0.1.76`. Use memory64 for more heap headroom.
+
+The [NVIDIA L4 receipt](https://github.com/leehack/llamadart/blob/main/doc/multimodal_embeddings_web.md#nvidia-l4-qualification-on-the-recorded-source)
+covers Ubuntu 24.04.5, Chrome 157.0.8103.78, driver 615.71.09 and bridge
+`v0.1.85` on wasm64. Direct and worker runs at source `eb18767e` had the
+GPU active and passed against the native `v0.7.0-1` CPU pack reference.
+Fresh native `v0.9.0` parity, GPU device-loss recovery and other GPU
+combinations remain unqualified.
+
+### LiteRT-LM media embeddings
+
+Native bundle processors are qualified on CPU on macOS arm64, iOS arm64,
+Android arm64 (Galaxy S24 and arm64 emulators), Linux x64 and arm64, and
+Windows x64. This uses the separate embedding engine with a compatible
+bundle.
+
+LiteRT-LM Web is unsupported. Web CPU cannot load the external text-encoder
+weights, and the pinned WebGPU vectors missed the native CPU parity gate.
+See the [basic app](../examples/basic-app#run) for the native CPU recipe and
+its platform and bundle requirements.
+
 ## LiteRT-LM Qwen3 bundles
 
 The updated Qwen3-0.6B bundle is verified on macOS CPU, and Linux and Windows
@@ -90,6 +144,50 @@ windowing for inputs over 30 s is tracked in
 [#327](https://github.com/leehack/llamadart/issues/327).
 
 ## Image generation
+
+### SDXS and SD-Turbo timings
+
+The [SDXS and SD-Turbo receipt](https://github.com/leehack/llamadart/issues/779)
+records earlier runtimes on macOS (M4 Max), iOS (iPhone 16 Pro and iPhone SE 3),
+Android (Pixel 9 Pro, Galaxy S24 and Galaxy A53), Linux x64 and Windows x64.
+
+Warm measurements used the same runtime, 512x512 and one step:
+
+| Device | SDXS Q8 (651 MB) | SD-Turbo Q8 + TAESD (1.9 GB) |
+| --- | --- | --- |
+| M4 Max, Metal | 1.5 s | 1.2 s |
+| iPhone 16 Pro, Metal | 1.7 s | 4.1 s |
+| Galaxy S24, CPU | 5.9 s | 11.8 s |
+| Galaxy A53, CPU | 26 to 29 s | Refused by the [memory check](../guides/image-generation-memory-and-limits#memory-check) |
+
+### Desktop model timings
+
+The October 2026 [Metal receipt](https://github.com/leehack/llamadart/pull/810#real-model-runs-m4-max-64-gb-metal-macos-this-branch)
+and [Vulkan CLI receipt](https://github.com/leehack/llamadart/issues/802#issuecomment-5925069431)
+cover 1024x1024 images from the [desktop model families](../examples/basic-app#image-generation-presets).
+The Metal column measures the first image in a new process with automatic
+attention and VAE settings.
+
+| Model | M4 Max, Metal: time, peak process memory | Memory check asks for | NVIDIA L4, Vulkan (native CLI, warm) |
+| --- | --- | --- | --- |
+| SDXL-Lightning + TAESDXL | 6.1 s, 7.8 GiB (12.1 s with the checkpoint's VAE) | 8.6 GiB | 4.4 s |
+| FLUX.1-schnell Q4_0 + TAEF1 | 61 s, 12.9 GiB | 14.5 GiB | 25.3 s with `ae` |
+| SD 3.5 Large Turbo Q4_0 + TAESD3 | 16.1 s, 12.3 GiB | 13.1 GiB | 19.4 s with the SD 3.5 VAE |
+| Z-Image-Turbo Q4_K | 91 s, 7.8 GiB | 8.3 GiB | 35.0 s (Q8_0) |
+
+The Vulkan figures come from stable-diffusion.cpp's own CLI on the same
+runtime commit with `vae_conv_direct`. The Dart desktop runs covered macOS
+Metal. The engine now sets `vae_conv_direct` on Vulkan. The tiny autoencoders
+(TAESDXL, TAEF1, TAESD3) cut 6 to 9 s from each 1024x1024 decode on the M4 Max
+with no visible quality loss in these samples. The SD 3.5 VAE repository is
+gated, so TAESD3 is the ungated choice.
+
+### Other image family timings
+
+The [initial Metal receipt](https://github.com/leehack/llamadart/issues/802#issuecomment-5923960986)
+reports about 3 minutes for SD 3.5 Medium and about 11 minutes for Qwen-Image
+per 1024x1024 image on an M4 Max. Qwen-Image used the native CLI. See the
+[files and settings](../examples/basic-app#other-image-model-families).
 
 ### Android memory-check calibration
 
@@ -140,8 +238,10 @@ at 2^26 elements. On 2026-11-13, DDP ran these exact bytes on an iPhone 16 Pro
 unsplit control failed its third decode with the GPU command-buffer error (the
 watchdog), and a 30-decode soak passed 30 of 30 with one image hash and a flat
 footprint. The iPhone 17 Pro (iOS 26.5) showed the dispose retention that
-runtime `v0.3.0-5` improved; four load/dispose cycles completed on both phones,
-but the iPhone 16 Pro retained memory above baseline. The `v0.3.0-6`
+runtime `v0.3.0-5` improved. Before the fix, the second dispose could leave
+about 2 GB resident and trigger a memory-check refusal on a later load. Four
+load/dispose cycles completed on both phones, with residual memory above
+baseline on the iPhone 16 Pro. The `v0.3.0-6`
 Apple scratch-buffer fix passed four full-VAE load/dispose cycles and eight
 decodes per device at `6b191b28` on iOS 18.3.2 and 26.5.1. Small nonzero
 residuals remain; this single session is not proof of zero leaks
@@ -149,6 +249,31 @@ residuals remain; this single session is not proof of zero leaks
 [cross-platform validation](https://github.com/leehack/llamadart/blob/main/doc/cross_platform_validation.md#ios-full-vae-graph-split-1047-2026-11-13).
 
 ### Full-checkpoint container checks
+
+With `stable-diffusion-native v0.3.0-1` (`be48649` plus the owner
+pickle-reader repair), complete byte-equivalent SD-Turbo F16 checkpoints pass
+through `ImageGenerationEngine` on macOS arm64 CPU:
+
+| Complete checkpoint | Role selection | Result |
+| --- | --- | --- |
+| F16 GGUF | Automatic and explicit checkpoint | Exact native-reference RGB |
+| Safetensors, same 1,323 tensors | Automatic and explicit checkpoint | Exact native-reference RGB |
+| Tensor-only PyTorch legacy `.pth` | Explicit checkpoint | Exact native-reference RGB, including the >2-GiB input |
+| PyTorch ZIP `.pt` and nested `state_dict` ZIP `.ckpt` | Explicit checkpoint | Exact native-reference RGB |
+
+These checks use the [pinned SD-Turbo F16 source](https://huggingface.co/Green-Sky/SD-Turbo-GGUF/blob/19a31586d02d64a73b4419bc193b3ecfaf38e1f0/sd_turbo-f16.gguf)
+and its embedded full VAE. Local Safetensors and PyTorch 2.11/protocol-2
+variants preserve every tensor byte. All seven public loads generate the same
+128-square, one-step Euler/discrete image at seed 42, CFG 1 and four CPU
+threads, matching separate guarded direct-C controls. This is container and
+transport evidence, not an image-quality or speed benchmark.
+
+Other architectures, dtypes, producer layouts, arbitrary serialized objects,
+accelerators, Windows/Linux and mobile full-checkpoint paths are unqualified
+by this check. No model weights ship with the tests. The
+[basic example's container checks](https://github.com/leehack/llamadart/tree/main/example/basic_app#8-image-generation-example-experimental)
+and maintained `image-container-formats` scenario repeat the selected controls
+from local files and independent native references.
 
 Earlier `v0.2.0-4` checks rejected the 2.6-GB legacy file and timed out on full
 ZIP inputs. The current legacy result verifies the published reader repair;

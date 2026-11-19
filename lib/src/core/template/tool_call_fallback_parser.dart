@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:math';
 
 import '../models/chat/completion_chunk.dart';
@@ -23,12 +24,15 @@ class ToolCallFallbackParseResult {
 ///
 /// This is intentionally permissive and used only when a format-specific
 /// parser fails to extract explicit tool-call structures.
-/// With [preserveJsonProse], keep the raw text preceding a loose JSON call.
-/// While [isPartial], hold only the suffix that can still become such a call.
+/// With [preserveJsonProse], keep the raw text preceding and following a loose
+/// JSON call. While [isPartial], hold only the suffix that can still become
+/// such a call. When [allowedToolNames] is provided, loose JSON calls are
+/// accepted only if their name is in [allowedToolNames].
 ToolCallFallbackParseResult parseToolCallsFromLooseText(
   String input, {
   bool preserveJsonProse = false,
   bool isPartial = false,
+  Iterable<String>? allowedToolNames,
 }) {
   final trimmed = input.trim();
   if (trimmed.isEmpty) {
@@ -38,27 +42,50 @@ ToolCallFallbackParseResult parseToolCallsFromLooseText(
     );
   }
 
-  final (payload, payloadStart) = _stripToolFence(trimmed);
+  final allowedNames = allowedToolNames is Set<String>
+      ? allowedToolNames
+      : allowedToolNames?.toSet();
+  final codeSpans = _MarkdownCodeSpans.parse(input);
 
-  final json = _parseJsonLikeToolCalls(payload);
+  final json = _parseJsonLikeToolCalls(
+    input,
+    codeSpans: codeSpans,
+    allowedNames: allowedNames,
+    isPartial: isPartial,
+  );
   if (json != null) {
-    var contentEnd = 0;
-    if (preserveJsonProse) {
-      final leadingSpace = input.length - input.trimLeft().length;
-      contentEnd = _looseJsonWrapperStart(
-        input.substring(0, leadingSpace + payloadStart + json.start),
-      );
-      if (isPartial) {
-        contentEnd = min(contentEnd, _pendingLooseJsonStart(input));
-      }
+    if (!preserveJsonProse) {
+      return ToolCallFallbackParseResult(content: '', toolCalls: json.calls);
     }
+
+    var prefix = input.substring(0, json.contentPrefixEnd);
+    var insidePendingContainer = false;
+    if (isPartial) {
+      final holdFrom = _pendingLooseJsonStart(
+        input,
+        scanEnd: json.firstCallStart,
+        endLimit: input.length,
+        codeSpans: codeSpans,
+        allowedNames: allowedNames,
+      );
+      if (holdFrom < prefix.length) {
+        prefix = input.substring(0, holdFrom);
+      }
+      insidePendingContainer = holdFrom < json.firstCallStart;
+    }
+
+    final suffix = insidePendingContainer
+        ? ''
+        : isPartial && json.holdTrailingFrom != null
+        ? input.substring(json.suffixStart, json.holdTrailingFrom!)
+        : input.substring(json.suffixStart);
     return ToolCallFallbackParseResult(
-      content: input.substring(0, contentEnd),
+      content: _joinAtCallJunction(prefix, suffix),
       toolCalls: json.calls,
     );
   }
 
-  final functionCall = _parseFunctionCallSyntax(payload);
+  final functionCall = _parseFunctionCallSyntax(trimmed);
   if (functionCall != null) {
     return ToolCallFallbackParseResult(
       content: '',
@@ -70,48 +97,122 @@ ToolCallFallbackParseResult parseToolCallsFromLooseText(
     content: !preserveJsonProse
         ? trimmed
         : isPartial
-        ? input.substring(0, _pendingLooseJsonStart(input))
+        ? input.substring(
+            0,
+            _pendingLooseJsonStart(
+              input,
+              scanEnd: input.length,
+              endLimit: input.length,
+              codeSpans: codeSpans,
+              allowedNames: allowedNames,
+            ),
+          )
         : input,
     toolCalls: const <LlamaCompletionChunkToolCall>[],
   );
 }
 
-final _looseJsonWrapper = RegExp(
-  r'(?:<tool_call>|```(?:tool_code|tool|json)?)\s*(?:\[\s*)?$|\[\s*$',
-);
+final _looseJsonWrapper = RegExp(r'<tool_call>\s*(?:\[\s*)?$|\[\s*$');
 
-int _looseJsonWrapperStart(String prefix) =>
-    _looseJsonWrapper.firstMatch(prefix)?.start ?? prefix.length;
+({int start, bool hasToolCallTag}) _looseJsonWrapperMatch(String prefix) {
+  final match = _looseJsonWrapper.firstMatch(prefix);
+  if (match == null) {
+    return (start: prefix.length, hasToolCallTag: false);
+  }
+  return (start: match.start, hasToolCallTag: match[0]!.startsWith('<'));
+}
 
-int _pendingLooseJsonStart(String input) {
-  const wrapperOpenings = ['<tool_call>', '```json', '```tool', '```tool_code'];
-  final wrapperPrefix = withoutTrailingTagPrefix(input, wrapperOpenings);
-  var holdFrom = min(wrapperPrefix.length, _looseJsonWrapperStart(input));
+int _pendingLooseJsonStart(
+  String input, {
+  required int scanEnd,
+  required int endLimit,
+  required _MarkdownCodeSpans codeSpans,
+  required Set<String>? allowedNames,
+}) {
+  if (allowedNames != null && allowedNames.isEmpty) {
+    return scanEnd;
+  }
 
-  // The fallback tries semicolon-delimited parts and the whole reply. A
-  // semicolon can also be inside a JSON string, so both can still complete.
-  for (final start in {0, input.lastIndexOf(';') + 1}) {
-    final remainder = input.substring(start);
-    final trimmed = remainder.trimLeft();
-    final array = start + remainder.length - trimmed.length;
-    if (trimmed.startsWith('[') && _isPendingLooseJson(input, array)) {
-      holdFrom = min(holdFrom, array);
+  final prefixSlice = input.substring(0, scanEnd);
+  final wrapperPrefix = withoutTrailingTagPrefix(prefixSlice, const [
+    '<tool_call>',
+  ]);
+  var holdFrom = min(
+    wrapperPrefix.length,
+    _looseJsonWrapperMatch(prefixSlice).start,
+  );
+
+  var pos = 0;
+  while (pos < scanEnd) {
+    final closedEnd = codeSpans.closedEndAt(pos);
+    if (closedEnd != null) {
+      pos = closedEnd;
+      continue;
     }
-    final object = input.indexOf('{', start);
-    if (object >= 0 && _isPendingLooseJson(input, object)) {
-      holdFrom = min(
-        holdFrom,
-        _looseJsonWrapperStart(input.substring(0, object)),
-      );
+
+    final ch = input.codeUnitAt(pos);
+    if (ch != 0x7B && ch != 0x5B) {
+      pos++;
+      continue;
+    }
+
+    final scan = _JsonPrefixScanner(
+      input,
+      start: pos,
+      endLimit: endLimit,
+      allowedNames: allowedNames,
+    ).scan();
+
+    switch (scan.status) {
+      case _JsonScanStatus.invalid:
+        pos++;
+      case _JsonScanStatus.complete:
+        if (_hasDeclaredLooseCalls(
+          input,
+          pos,
+          scan.end,
+          allowedNames: allowedNames,
+        )) {
+          return min(
+            holdFrom,
+            _looseJsonWrapperMatch(input.substring(0, pos)).start,
+          );
+        }
+        pos = scan.end;
+      case _JsonScanStatus.pending:
+        if (!scan.rejectedName) {
+          return min(
+            holdFrom,
+            _looseJsonWrapperMatch(input.substring(0, pos)).start,
+          );
+        }
+        // Skip nested objects inside a still-open outer object whose name is
+        // rejected.
+        return holdFrom;
     }
   }
+
   return holdFrom;
 }
 
-// Bare identifiers accepted by the fallback also have to stay private.
-bool _isPendingLooseJson(String input, int start) => _JsonPrefixScanner(
-  _normalizeLooseJsonIdentifiers(input.substring(start)),
-).isPending();
+bool _hasDeclaredLooseCalls(
+  String input,
+  int start,
+  int end, {
+  required Set<String>? allowedNames,
+}) {
+  final decoded = _decodeJsonSlice(input.substring(start, end));
+  if (decoded == null) {
+    return false;
+  }
+  return _toolCallsFromDecoded(
+    decoded,
+    startIndex: 0,
+    allowedNames: allowedNames,
+  ).isNotEmpty;
+}
+
+enum _JsonScanStatus { invalid, complete, pending }
 
 enum _JsonPart {
   objectStart,
@@ -123,8 +224,22 @@ enum _JsonPart {
   arrayEnd,
 }
 
+enum _ContainerRole { candidate, functionObj, toolCallsArray, other }
+
+class _ContainerFrame {
+  _ContainerFrame(this.role);
+
+  final _ContainerRole role;
+  String? currentKey;
+}
+
 class _JsonPrefixScanner {
-  _JsonPrefixScanner(this.input);
+  _JsonPrefixScanner(
+    this.input, {
+    required this.start,
+    required this.endLimit,
+    required this.allowedNames,
+  }) : _offset = start;
 
   static const _integer = r'-?(?:0|[1-9][0-9]*)';
   static const _fraction = r'(?:\.[0-9]+)?';
@@ -136,6 +251,7 @@ class _JsonPrefixScanner {
     '(?:-|$_integer\\.|$_integer$_fraction'
     r'[eE][+-]?)$',
   );
+  static final _bareIdentifier = RegExp(r'[A-Za-z_][A-Za-z0-9_\.-]*');
   static const _objectMember = [
     _JsonPart.objectEnd,
     _JsonPart.value,
@@ -144,60 +260,259 @@ class _JsonPrefixScanner {
   ];
 
   final String input;
-  var _offset = 0;
+  final int start;
+  final int endLimit;
+  final Set<String>? allowedNames;
 
-  bool isPending() {
+  int _offset;
+  bool _rejectedName = false;
+  final _frames = <_ContainerFrame>[];
+
+  ({_JsonScanStatus status, int end, bool rejectedName}) scan() {
     final parts = [_JsonPart.value];
-    while (parts.isNotEmpty && _offset < input.length) {
+    while (parts.isNotEmpty && _offset < endLimit) {
       if (' \t\n\r'.contains(input[_offset])) {
         _offset++;
         continue;
       }
       switch (parts.removeLast()) {
         case _JsonPart.objectStart:
-          if (!_take('}')) {
+          if (_take('}')) {
+            _popFrame();
+          } else {
             parts.addAll(_objectMember);
           }
         case _JsonPart.key:
-          if (!_scanString()) return false;
+          final key = _scanString();
+          if (key == null) {
+            return (
+              status: _JsonScanStatus.invalid,
+              end: _offset,
+              rejectedName: false,
+            );
+          }
+          if (_frames.isNotEmpty) {
+            _frames.last.currentKey = key.complete ? key.value : null;
+          }
         case _JsonPart.colon:
-          if (!_take(':')) return false;
+          if (!_take(':')) {
+            return (
+              status: _JsonScanStatus.invalid,
+              end: _offset,
+              rejectedName: false,
+            );
+          }
         case _JsonPart.value:
+          final frame = _frames.isNotEmpty ? _frames.last : null;
+          final key = frame?.currentKey;
+          final role = frame?.role;
           switch (input[_offset]) {
             case '{':
               _offset++;
               parts.add(_JsonPart.objectStart);
+              _frames.add(_ContainerFrame(_childObjectRole(role, key)));
             case '[':
               _offset++;
               parts.add(_JsonPart.arrayStart);
+              _frames.add(_ContainerFrame(_childArrayRole(role, key)));
             case '"':
-              if (!_scanString()) return false;
+              final str = _scanString();
+              if (str == null) {
+                return (
+                  status: _JsonScanStatus.invalid,
+                  end: _offset,
+                  rejectedName: false,
+                );
+              }
+              if (str.complete && str.value != null && frame != null) {
+                _checkFieldName(frame.role, key, str.value!);
+              }
             case 'n':
-              if (!_scanLiteral('null')) return false;
+              if ((key == 'name' || key == 'function') &&
+                  _scanBareIdentifier(frame, key)) {
+                break;
+              }
+              if (!_scanLiteral('null')) {
+                return (
+                  status: _JsonScanStatus.invalid,
+                  end: _offset,
+                  rejectedName: false,
+                );
+              }
             case 't':
-              if (!_scanLiteral('true')) return false;
+              if ((key == 'name' || key == 'function') &&
+                  _scanBareIdentifier(frame, key)) {
+                break;
+              }
+              if (!_scanLiteral('true')) {
+                return (
+                  status: _JsonScanStatus.invalid,
+                  end: _offset,
+                  rejectedName: false,
+                );
+              }
             case 'f':
-              if (!_scanLiteral('false')) return false;
+              if ((key == 'name' || key == 'function') &&
+                  _scanBareIdentifier(frame, key)) {
+                break;
+              }
+              if (!_scanLiteral('false')) {
+                return (
+                  status: _JsonScanStatus.invalid,
+                  end: _offset,
+                  rejectedName: false,
+                );
+              }
             default:
-              if (!_scanNumber()) return false;
+              if ((key == 'name' || key == 'function') &&
+                  _scanBareIdentifier(frame, key)) {
+                break;
+              }
+              if (!_scanNumber()) {
+                return (
+                  status: _JsonScanStatus.invalid,
+                  end: _offset,
+                  rejectedName: false,
+                );
+              }
           }
         case _JsonPart.objectEnd:
-          if (!_take('}')) {
-            if (!_take(',')) return false;
+          if (_take('}')) {
+            _popFrame();
+          } else if (_take(',')) {
+            if (_frames.isNotEmpty) {
+              _frames.last.currentKey = null;
+            }
             parts.addAll(_objectMember);
+          } else {
+            return (
+              status: _JsonScanStatus.invalid,
+              end: _offset,
+              rejectedName: false,
+            );
           }
         case _JsonPart.arrayStart:
-          if (!_take(']')) {
+          if (_take(']')) {
+            _popFrame();
+          } else {
             parts.addAll(const [_JsonPart.arrayEnd, _JsonPart.value]);
           }
         case _JsonPart.arrayEnd:
-          if (!_take(']')) {
-            if (!_take(',')) return false;
+          if (_take(']')) {
+            _popFrame();
+          } else if (_take(',')) {
             parts.addAll(const [_JsonPart.arrayEnd, _JsonPart.value]);
+          } else {
+            return (
+              status: _JsonScanStatus.invalid,
+              end: _offset,
+              rejectedName: false,
+            );
           }
       }
     }
-    return parts.isNotEmpty;
+
+    if (parts.isEmpty) {
+      return (
+        status: _JsonScanStatus.complete,
+        end: _offset,
+        rejectedName: _rejectedName,
+      );
+    }
+    return (
+      status: _JsonScanStatus.pending,
+      end: _offset,
+      rejectedName: _rejectedName,
+    );
+  }
+
+  _ContainerRole _childObjectRole(_ContainerRole? parent, String? key) {
+    if (parent == null) {
+      return _ContainerRole.candidate;
+    }
+    if (parent == _ContainerRole.toolCallsArray) {
+      return _ContainerRole.candidate;
+    }
+    if (parent == _ContainerRole.candidate) {
+      if (key == 'tool_call' || key == 'tool_calls') {
+        return _ContainerRole.candidate;
+      }
+      if (key == 'function') {
+        return _ContainerRole.functionObj;
+      }
+    }
+    return _ContainerRole.other;
+  }
+
+  _ContainerRole _childArrayRole(_ContainerRole? parent, String? key) {
+    if (parent == null) {
+      return _ContainerRole.toolCallsArray;
+    }
+    if (parent == _ContainerRole.candidate && key == 'tool_calls') {
+      return _ContainerRole.toolCallsArray;
+    }
+    return _ContainerRole.other;
+  }
+
+  void _popFrame() {
+    if (_frames.isNotEmpty) {
+      _frames.removeLast();
+    }
+  }
+
+  void _checkFieldName(_ContainerRole role, String? key, String value) {
+    final allowed = allowedNames;
+    if (allowed == null || key == null) {
+      return;
+    }
+    if (_frames.length > 3) {
+      return;
+    }
+    if (role == _ContainerRole.functionObj && key == 'name') {
+      final normalized = normalizeFallbackToolName(value);
+      if (normalized.isEmpty || !allowed.contains(normalized)) {
+        _rejectedName = true;
+      }
+      return;
+    }
+    if (role != _ContainerRole.candidate) {
+      return;
+    }
+    // Only single top-level/tool_call objects can be rejected before `}` closes;
+    // arrays in `tool_calls` may still hold a valid later item.
+    if (_frames.any((f) => f.role == _ContainerRole.toolCallsArray)) {
+      return;
+    }
+    if (key == 'name' ||
+        key == 'tool_name' ||
+        key == 'code' ||
+        key == 'function') {
+      final normalized = normalizeFallbackToolName(value);
+      if (normalized.isEmpty || !allowed.contains(normalized)) {
+        _rejectedName = true;
+      }
+    } else if (key == 'type') {
+      final normalized = normalizeFallbackToolName(value);
+      if (normalized != 'function' &&
+          normalized != 'tool' &&
+          !allowed.contains(normalized)) {
+        _rejectedName = true;
+      }
+    }
+  }
+
+  bool _scanBareIdentifier(_ContainerFrame? frame, String? key) {
+    final match = _bareIdentifier.matchAsPrefix(input, _offset);
+    if (match == null) {
+      return false;
+    }
+    _offset = match.end;
+    // Only reject once a delimiter/whitespace follows, so an identifier still
+    // arriving at the partial tail (e.g. `weath`) is not rejected early.
+    if (frame != null && _offset < endLimit) {
+      _checkFieldName(frame.role, key, match.group(0)!);
+    }
+    return true;
   }
 
   bool _take(String value) {
@@ -207,39 +522,233 @@ class _JsonPrefixScanner {
   }
 
   bool _scanLiteral(String literal) {
-    for (var i = 0; i < literal.length && _offset < input.length; i++) {
+    for (var i = 0; i < literal.length && _offset < endLimit; i++) {
       if (!_take(literal[i])) return false;
     }
     return true;
   }
 
   bool _scanNumber() {
-    if (_incompleteNumber.matchAsPrefix(input, _offset)?.end == input.length) {
-      _offset = input.length;
+    final slice = endLimit == input.length
+        ? input
+        : input.substring(0, endLimit);
+    if (_incompleteNumber.matchAsPrefix(slice, _offset)?.end == endLimit) {
+      _offset = endLimit;
       return true;
     }
-    final match = _number.matchAsPrefix(input, _offset);
+    final match = _number.matchAsPrefix(slice, _offset);
     if (match == null) return false;
     _offset = match.end;
     return true;
   }
 
-  bool _scanString() {
-    if (!_take('"')) return false;
-    while (_offset < input.length) {
+  ({bool complete, String? value})? _scanString() {
+    if (!_take('"')) return null;
+    final tokenStart = _offset - 1;
+    while (_offset < endLimit) {
       final value = input.codeUnitAt(_offset++);
-      if (value == 0x22) return true;
-      if (value < 0x20) return false;
+      if (value == 0x22) {
+        String? decoded;
+        try {
+          final parsed = jsonDecode(input.substring(tokenStart, _offset));
+          if (parsed is String) {
+            decoded = parsed;
+          }
+        } on FormatException {
+          decoded = null;
+        }
+        return (complete: true, value: decoded);
+      }
+      if (value < 0x20) return null;
       if (value != 0x5C) continue;
-      if (_offset == input.length) return true;
+      if (_offset == endLimit) return (complete: false, value: null);
       final escape = input[_offset++];
       if (r'"\/bfnrt'.contains(escape)) continue;
-      if (escape != 'u') return false;
-      for (var i = 0; i < 4 && _offset < input.length; i++) {
-        if (!'0123456789abcdefABCDEF'.contains(input[_offset++])) return false;
+      if (escape != 'u') return null;
+      for (var i = 0; i < 4 && _offset < endLimit; i++) {
+        if (!'0123456789abcdefABCDEF'.contains(input[_offset++])) return null;
       }
     }
-    return true;
+    return (complete: false, value: null);
+  }
+}
+
+class _MarkdownCodeSpans {
+  _MarkdownCodeSpans._(this._closedRanges, this._openInlineStarts);
+
+  final List<({int start, int end})> _closedRanges;
+  final List<int> _openInlineStarts;
+
+  static _MarkdownCodeSpans parse(String input) {
+    final closed = <({int start, int end})>[];
+    final openInline = <int>[];
+    var i = 0;
+    var atLineStart = true;
+
+    while (i < input.length) {
+      if (atLineStart) {
+        var ws = i;
+        while (ws < input.length && (input[ws] == ' ' || input[ws] == '\t')) {
+          ws++;
+        }
+        if (ws < input.length && (input[ws] == '`' || input[ws] == '~')) {
+          final fenceChar = input[ws];
+          var fenceLen = 0;
+          while (ws + fenceLen < input.length &&
+              input[ws + fenceLen] == fenceChar) {
+            fenceLen++;
+          }
+          if (fenceLen >= 3) {
+            final lineEnd = _lineBreakIndex(input, ws + fenceLen);
+            final info = input.substring(ws + fenceLen, lineEnd);
+            if (fenceChar != '`' || !info.contains('`')) {
+              final closeEnd = _findClosingFenceEnd(
+                input,
+                lineEnd < input.length ? lineEnd + 1 : input.length,
+                fenceChar: fenceChar,
+                minLen: fenceLen,
+              );
+              closed.add((start: ws, end: closeEnd));
+              i = closeEnd;
+              atLineStart = i == input.length || input[i - 1] == '\n';
+              continue;
+            }
+          }
+        }
+        atLineStart = false;
+      }
+
+      final ch = input[i];
+      if (ch == '\n') {
+        var ws = i + 1;
+        while (ws < input.length &&
+            (input[ws] == ' ' || input[ws] == '\t' || input[ws] == '\r')) {
+          ws++;
+        }
+        if (ws < input.length && input[ws] == '\n') {
+          openInline.clear();
+        }
+        atLineStart = true;
+        i++;
+        continue;
+      }
+
+      if (ch == '`') {
+        var backslashes = 0;
+        var k = i - 1;
+        while (k >= 0 && input[k] == r'\') {
+          backslashes++;
+          k--;
+        }
+        if (backslashes.isOdd) {
+          i++;
+          continue;
+        }
+        var runLen = 0;
+        while (i + runLen < input.length && input[i + runLen] == '`') {
+          runLen++;
+        }
+        final closeEnd = _findClosingBacktickRun(
+          input,
+          i + runLen,
+          runLen: runLen,
+        );
+        if (closeEnd != null) {
+          closed.add((start: i, end: closeEnd));
+          i = closeEnd;
+          continue;
+        }
+        openInline.add(i);
+        i += runLen;
+        continue;
+      }
+
+      i++;
+    }
+
+    return _MarkdownCodeSpans._(closed, openInline);
+  }
+
+  static int _lineBreakIndex(String input, int from) {
+    final idx = input.indexOf('\n', from);
+    return idx == -1 ? input.length : idx;
+  }
+
+  static int _findClosingFenceEnd(
+    String input,
+    int from, {
+    required String fenceChar,
+    required int minLen,
+  }) {
+    var pos = from;
+    while (pos < input.length) {
+      var ws = pos;
+      while (ws < input.length && (input[ws] == ' ' || input[ws] == '\t')) {
+        ws++;
+      }
+      var run = 0;
+      while (ws + run < input.length && input[ws + run] == fenceChar) {
+        run++;
+      }
+      final lineEnd = _lineBreakIndex(input, ws + run);
+      if (run >= minLen && input.substring(ws + run, lineEnd).trim().isEmpty) {
+        return lineEnd < input.length ? lineEnd + 1 : input.length;
+      }
+      pos = lineEnd < input.length ? lineEnd + 1 : input.length;
+    }
+    return input.length;
+  }
+
+  static int? _findClosingBacktickRun(
+    String input,
+    int from, {
+    required int runLen,
+  }) {
+    var i = from;
+    while (i < input.length) {
+      if (input[i] == '\n') {
+        // CommonMark inline code spans cannot cross a blank line.
+        var ws = i + 1;
+        while (ws < input.length &&
+            (input[ws] == ' ' || input[ws] == '\t' || input[ws] == '\r')) {
+          ws++;
+        }
+        if (ws < input.length && input[ws] == '\n') {
+          return null;
+        }
+      }
+      if (input[i] == '`') {
+        var len = 0;
+        while (i + len < input.length && input[i + len] == '`') {
+          len++;
+        }
+        if (len == runLen) {
+          return i + len;
+        }
+        i += len;
+        continue;
+      }
+      i++;
+    }
+    return null;
+  }
+
+  int? closedEndAt(int offset) {
+    for (final range in _closedRanges) {
+      if (offset >= range.start && offset < range.end) {
+        return range.end;
+      }
+    }
+    return null;
+  }
+
+  bool isOpenInlineAt(int offset) {
+    for (final start in _openInlineStarts) {
+      if (offset >= start) {
+        return true;
+      }
+    }
+    return false;
   }
 }
 
@@ -308,73 +817,293 @@ String normalizeFallbackToolName(
   return trimmed;
 }
 
-({List<LlamaCompletionChunkToolCall> calls, int start})?
-_parseJsonLikeToolCalls(String input) {
-  final parts = input.split(';');
+({
+  List<LlamaCompletionChunkToolCall> calls,
+  int firstCallStart,
+  int contentPrefixEnd,
+  int suffixStart,
+  int? holdTrailingFrom,
+})?
+_parseJsonLikeToolCalls(
+  String input, {
+  required _MarkdownCodeSpans codeSpans,
+  required Set<String>? allowedNames,
+  required bool isPartial,
+}) {
+  if (allowedNames != null && allowedNames.isEmpty) {
+    return null;
+  }
 
-  if (parts.where((part) => part.trim().isNotEmpty).skip(1).isNotEmpty) {
-    final calls = <LlamaCompletionChunkToolCall>[];
-    var offset = 0;
-    int? firstCall;
-    for (final part in parts) {
-      final partStart = offset + part.length - part.trimLeft().length;
-      offset += part.length + 1;
-      final decoded = _decodeJsonLoose(part.trim());
-      if (decoded == null) continue;
-      final partCalls = _toolCallsFromDecoded(
-        decoded.value,
+  final first = _findFirstLooseCall(
+    input,
+    from: 0,
+    startIndex: 0,
+    codeSpans: codeSpans,
+    allowedNames: allowedNames,
+  );
+  if (first == null) {
+    return null;
+  }
+
+  // When streaming inside an unclosed inline backtick span, keep holding from
+  // the JSON opening until the backtick closes (or EOF proves it unmatched).
+  if (isPartial && codeSpans.isOpenInlineAt(first.callStart)) {
+    return null;
+  }
+
+  final wrapper = _looseJsonWrapperMatch(input.substring(0, first.callStart));
+  final contentPrefixEnd = wrapper.start;
+  final calls = <LlamaCompletionChunkToolCall>[...first.calls];
+  var callEnd = first.callEnd;
+  int? holdTrailingFrom;
+  var strippedSemicolon = false;
+
+  if (!wrapper.hasToolCallTag) {
+    // Collect semicolon-separated continuation calls (`call1; call2`) while
+    // holding only a trailing `;` whose following text can still become a call.
+    while (callEnd < input.length) {
+      var ws = callEnd;
+      while (ws < input.length && ' \t\r\n'.contains(input[ws])) {
+        ws++;
+      }
+      if (ws >= input.length || input[ws] != ';') {
+        break;
+      }
+
+      final afterSemi = ws + 1;
+      final next = _findFirstLooseCall(
+        input,
+        from: afterSemi,
         startIndex: calls.length,
+        codeSpans: codeSpans,
+        allowedNames: allowedNames,
       );
-      if (partCalls.isEmpty) continue;
-      firstCall ??= partStart + decoded.start;
-      calls.addAll(partCalls);
-    }
+      if (next != null &&
+          input.substring(afterSemi, next.callStart).trim().isEmpty) {
+        if (isPartial && codeSpans.isOpenInlineAt(next.callStart)) {
+          holdTrailingFrom = callEnd;
+          break;
+        }
+        calls.addAll(next.calls);
+        callEnd = next.callEnd;
+        continue;
+      }
 
-    if (firstCall != null) {
-      return (calls: List.unmodifiable(calls), start: firstCall);
+      if (isPartial) {
+        final tail = input.substring(afterSemi);
+        if (tail.trim().isEmpty ||
+            _pendingLooseJsonStart(
+                  tail,
+                  scanEnd: tail.length,
+                  endLimit: tail.length,
+                  codeSpans: _MarkdownCodeSpans.parse(tail),
+                  allowedNames: allowedNames,
+                ) <
+                tail.length) {
+          holdTrailingFrom = callEnd;
+          break;
+        }
+      }
+
+      if (!_containsNewline(input, callEnd, ws)) {
+        callEnd = _skipHorizontalWhitespace(input, afterSemi);
+        strippedSemicolon = true;
+      }
+      break;
     }
   }
 
-  final decoded = _decodeJsonLoose(input);
-  if (decoded != null) {
-    final calls = _toolCallsFromDecoded(decoded.value, startIndex: 0);
-    if (calls.isNotEmpty) return (calls: calls, start: decoded.start);
+  if (holdTrailingFrom == null && !strippedSemicolon) {
+    final after = _consumeClosingToolCallTag(
+      input,
+      from: callEnd,
+      isPartial: isPartial,
+    );
+    callEnd = after.suffixStart;
+    holdTrailingFrom = after.holdFrom;
   }
 
+  return (
+    calls: List<LlamaCompletionChunkToolCall>.unmodifiable(calls),
+    firstCallStart: first.callStart,
+    contentPrefixEnd: contentPrefixEnd,
+    suffixStart: callEnd,
+    holdTrailingFrom: holdTrailingFrom,
+  );
+}
+
+({int suffixStart, int? holdFrom}) _consumeClosingToolCallTag(
+  String input, {
+  required int from,
+  required bool isPartial,
+}) {
+  const closeTag = '</tool_call>';
+  var ws = from;
+  while (ws < input.length && ' \t\r\n'.contains(input[ws])) {
+    ws++;
+  }
+  final rest = input.substring(ws);
+  if (rest.startsWith(closeTag)) {
+    return (suffixStart: ws + closeTag.length, holdFrom: null);
+  }
+  if (rest.isNotEmpty && closeTag.startsWith(rest)) {
+    return isPartial
+        ? (suffixStart: from, holdFrom: from)
+        : (suffixStart: input.length, holdFrom: null);
+  }
+  if (isPartial && rest.isEmpty) {
+    return (suffixStart: from, holdFrom: from);
+  }
+  return (suffixStart: from, holdFrom: null);
+}
+
+bool _isHorizontalWhitespace(int codeUnit) =>
+    codeUnit == 0x20 || codeUnit == 0x09;
+
+int _skipHorizontalWhitespace(String input, int start) {
+  var pos = start;
+  while (pos < input.length && _isHorizontalWhitespace(input.codeUnitAt(pos))) {
+    pos++;
+  }
+  return pos;
+}
+
+String _trimRightHorizontalWhitespace(String text) {
+  var end = text.length;
+  while (end > 0 && _isHorizontalWhitespace(text.codeUnitAt(end - 1))) {
+    end--;
+  }
+  return text.substring(0, end);
+}
+
+String _trimLeftHorizontalWhitespace(String text) =>
+    text.substring(_skipHorizontalWhitespace(text, 0));
+
+bool _containsNewline(String input, int start, int end) {
+  for (var i = start; i < end; i++) {
+    final unit = input.codeUnitAt(i);
+    if (unit == 0x0A || unit == 0x0D) {
+      return true;
+    }
+  }
+  return false;
+}
+
+String _joinAtCallJunction(String left, String right) {
+  if (left.isEmpty) {
+    return right;
+  }
+  if (right.isEmpty) {
+    return left;
+  }
+  final leftTrimmed = _trimRightHorizontalWhitespace(left);
+  final rightTrimmed = _trimLeftHorizontalWhitespace(right);
+  final hadHorizontalWhitespace =
+      leftTrimmed.length < left.length || rightTrimmed.length < right.length;
+  if (leftTrimmed.isNotEmpty && rightTrimmed.isNotEmpty) {
+    return hadHorizontalWhitespace
+        ? '$leftTrimmed $rightTrimmed'
+        : '$leftTrimmed$rightTrimmed';
+  }
+  if (rightTrimmed.isEmpty) {
+    return leftTrimmed.isEmpty
+        ? (hadHorizontalWhitespace ? ' ' : '')
+        : (hadHorizontalWhitespace ? '$leftTrimmed ' : leftTrimmed);
+  }
+  return left.trim().isEmpty
+      ? (hadHorizontalWhitespace ? ' $rightTrimmed' : rightTrimmed)
+      : '$left$right';
+}
+
+({List<LlamaCompletionChunkToolCall> calls, int callStart, int callEnd})?
+_findFirstLooseCall(
+  String input, {
+  required int from,
+  required int startIndex,
+  required _MarkdownCodeSpans codeSpans,
+  required Set<String>? allowedNames,
+}) {
+  var pos = from;
+  while (pos < input.length) {
+    final closedEnd = codeSpans.closedEndAt(pos);
+    if (closedEnd != null) {
+      pos = closedEnd;
+      continue;
+    }
+
+    final ch = input.codeUnitAt(pos);
+    if (ch != 0x7B && ch != 0x5B) {
+      pos++;
+      continue;
+    }
+
+    final scan = _JsonPrefixScanner(
+      input,
+      start: pos,
+      endLimit: input.length,
+      allowedNames: allowedNames,
+    ).scan();
+
+    switch (scan.status) {
+      case _JsonScanStatus.invalid:
+        pos++;
+      case _JsonScanStatus.complete:
+        final decoded = _decodeJsonSlice(input.substring(pos, scan.end));
+        if (decoded != null) {
+          final calls = _toolCallsFromDecoded(
+            decoded,
+            startIndex: startIndex,
+            allowedNames: allowedNames,
+          );
+          if (calls.isNotEmpty) {
+            return (calls: calls, callStart: pos, callEnd: scan.end);
+          }
+        }
+        pos = scan.end;
+      case _JsonScanStatus.pending:
+        if (scan.rejectedName) {
+          return null;
+        }
+        pos++;
+    }
+  }
   return null;
 }
 
-({Object value, int start})? _decodeJsonLoose(String input) {
-  final direct = ToolCallParsingUtils.decodeJsonValue(input);
+Object? _decodeJsonSlice(String slice) {
+  final direct = ToolCallParsingUtils.decodeJsonValue(slice);
   if (direct != null) {
-    return (value: direct, start: 0);
+    return direct;
   }
 
-  final normalized = _normalizeLooseJsonIdentifiers(input);
-  final normalizedDecoded = ToolCallParsingUtils.decodeJsonValue(normalized);
-  if (normalizedDecoded != null) {
-    return (value: normalizedDecoded, start: 0);
-  }
-
-  final object = ToolCallParsingUtils.extractFirstJsonObject(normalized);
-  return object == null ? null : (value: object, start: input.indexOf('{'));
+  final normalized = _normalizeLooseJsonIdentifiers(slice);
+  return ToolCallParsingUtils.decodeJsonValue(normalized);
 }
 
 List<LlamaCompletionChunkToolCall> _toolCallsFromDecoded(
   Object decoded, {
   required int startIndex,
+  required Set<String>? allowedNames,
 }) {
   final decodedMap = ToolCallParsingUtils.coerceMap(decoded);
   if (decodedMap != null) {
     final toolCallsRaw = decodedMap['tool_calls'];
     if (toolCallsRaw != null) {
-      final calls = _toolCallsFromDecoded(toolCallsRaw, startIndex: startIndex);
+      final calls = _toolCallsFromDecoded(
+        toolCallsRaw,
+        startIndex: startIndex,
+        allowedNames: allowedNames,
+      );
       if (calls.isNotEmpty) {
         return calls;
       }
     }
 
-    final call = _toolCallFromMap(decodedMap, index: startIndex);
+    final call = _toolCallFromMap(
+      decodedMap,
+      index: startIndex,
+      allowedNames: allowedNames,
+    );
     if (call == null) {
       return const <LlamaCompletionChunkToolCall>[];
     }
@@ -389,7 +1118,11 @@ List<LlamaCompletionChunkToolCall> _toolCallsFromDecoded(
         continue;
       }
 
-      final call = _toolCallFromMap(item, index: startIndex + i);
+      final call = _toolCallFromMap(
+        item,
+        index: startIndex + i,
+        allowedNames: allowedNames,
+      );
       if (call != null) {
         calls.add(call);
       }
@@ -403,6 +1136,7 @@ List<LlamaCompletionChunkToolCall> _toolCallsFromDecoded(
 LlamaCompletionChunkToolCall? _toolCallFromMap(
   Map<String, dynamic> object, {
   required int index,
+  required Set<String>? allowedNames,
 }) {
   final candidate =
       ToolCallParsingUtils.coerceMap(object['tool_call']) ?? object;
@@ -442,6 +1176,21 @@ LlamaCompletionChunkToolCall? _toolCallFromMap(
     return null;
   }
 
+  if (allowedNames != null) {
+    // Reject envelopes whose explicit `type` already rules out a tool call
+    // (e.g. `{"type":"object","name":"weather"}`), matching streaming early
+    // release so stream and final parses always agree.
+    final typeRaw = candidate['type'];
+    if (typeRaw is String) {
+      final normalizedType = normalizeFallbackToolName(typeRaw);
+      if (normalizedType != 'function' &&
+          normalizedType != 'tool' &&
+          !allowedNames.contains(normalizedType)) {
+        return null;
+      }
+    }
+  }
+
   final argsMap = argumentsRaw == null
       ? _extractInlineArguments(candidate)
       : _toArgumentsObject(argumentsRaw);
@@ -452,6 +1201,10 @@ LlamaCompletionChunkToolCall? _toolCallFromMap(
   );
 
   if (normalizedName.isEmpty) {
+    return null;
+  }
+
+  if (allowedNames != null && !allowedNames.contains(normalizedName)) {
     return null;
   }
 
@@ -637,30 +1390,6 @@ Map<String, dynamic>? _parseFunctionArguments(String raw) {
   }
 
   return result;
-}
-
-(String, int) _stripToolFence(String input) {
-  // Require a whitespace boundary after the optional language token so a
-  // payload like ```jsonify{...} does not get "json" consumed as the language
-  // (which would leave "ify{...}" as the body and corrupt the JSON).
-  final fenced = RegExp(
-    r'^(```(?:(?:tool_code|tool|json)(?=\s))?\s*)([\s\S]*?)\s*```$',
-  );
-  final match = fenced.firstMatch(input);
-  if (match == null) {
-    return (input, 0);
-  }
-
-  final inner = match.group(2)!;
-  final payload = inner.trimLeft();
-  if (payload.isEmpty) {
-    return (input, 0);
-  }
-
-  return (
-    payload.trimRight(),
-    match.group(1)!.length + inner.length - payload.length,
-  );
 }
 
 String _normalizeLooseJsonIdentifiers(String input) {

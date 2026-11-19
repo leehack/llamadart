@@ -1500,7 +1500,9 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
         'LiteRT-LM runtime pin, engine lifecycle or Android GPU memory '
         'changes. Downloads the locked model unless --model-path names a '
         'copy on the target device. Graphics memory needs the Test Lab '
-        'arguments in example/chat_app/README.md.',
+        'arguments at '
+        'https://github.com/leehack/llamadart/blob/main/doc/chat_app_native_qualification.md'
+        '#litert-lm-reload-memory',
   ),
   TestMatrixRow(
     id: 'chat-app-litert-read-only-bundle',
@@ -1522,7 +1524,9 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
         'device. macOS and Android default to a temp cache directory, so '
         'of the POSIX targets only iOS and Linux run uncached through the '
         'public API; '
-        'the Test Lab build is in example/chat_app/README.md.',
+        'see the Test Lab build at '
+        'https://github.com/leehack/llamadart/blob/main/doc/chat_app_native_qualification.md'
+        '#litert-lm-bundle-in-a-read-only-directory',
   ),
   TestMatrixRow(
     id: 'chat-app-text-image-coexistence',
@@ -1542,7 +1546,9 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
         'llama.cpp or stable_diffusion runtime pin, native bundle packaging, '
         'or image engine load and memory check changes (#779). Downloads '
         'the locked chat-gguf-cpu model and SDXS (1.2 GB together); the '
-        'Test Lab build is in example/chat_app/README.md.',
+        'Test Lab build is documented at '
+        'https://github.com/leehack/llamadart/blob/main/doc/chat_app_native_qualification.md'
+        '#llamacpp-text-and-stable_diffusion-images-in-one-process',
   ),
   TestMatrixRow(
     id: 'chat-app-image-settings-comparison',
@@ -1589,7 +1595,9 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
         'facts or the Vulkan 1.2 load refusal changes. Downloads the locked '
         'chat-gguf-vulkan model unless --model-path names a copy on the '
         'target device. Only an Android Vulkan device exercises the cap; '
-        'the Test Lab arguments are in example/chat_app/README.md.',
+        'see the Test Lab arguments at '
+        'https://github.com/leehack/llamadart/blob/main/doc/chat_app_native_qualification.md'
+        '#micro-batch-sweep-and-the-android-vulkan-prompt-cap',
   ),
   TestMatrixRow(
     id: 'chat-app-macos-quit',

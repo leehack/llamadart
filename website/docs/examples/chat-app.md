@@ -11,16 +11,6 @@ A Flutter chat app that downloads models from a built-in library and streams
 on-device chat, with runtime controls and diagnostics. Live demo:
 https://leehack-llamadart.static.hf.space
 
-For a separate experimental app with Notes, Coding, and reusable pure-Dart
-controllers, see [Studio](https://github.com/leehack/llamadart/tree/main/packages/llamadart_studio).
-Studio uses its own Flutter SDK pin; its README records setup and qualification
-limits. Studio Coding offers **Create local workspace** on iOS/Android for
-persistent app-owned files, nested file tools and per-file Copy. App data removal
-removes these workspaces. External provider grants and local shell/process MCP
-are unsupported on mobile; Web has no local workspace filesystem. Physical mobile
-creation, tool I/O and cold reopen still require qualification.
-The chat example remains available independently.
-
 ## Run
 
 Run this example from a repository checkout. The chat app and its private
@@ -57,6 +47,8 @@ flutter run --dart-define=HF_TOKEN=<your_token>
 python3 tool/testing/serve_static_with_headers.py \
   --directory example/chat_app/build/web --port 8080
 ```
+
+For a separate experimental app, see [Studio](https://github.com/leehack/llamadart/tree/main/packages/llamadart_studio).
 
 ## What it demonstrates
 
@@ -99,7 +91,7 @@ at 256 or 512 px with phase progress, cancellation, a reusable seed and PNG
 save. A model that does not fit in memory shows the engine's refusal, with an
 offer to unload the chat model. The web and targets without the runtime show
 why generation is unavailable. See [Image generation](../guides/image-generation),
-including its [model licenses](../guides/image-generation#model-licenses).
+and the [model licenses](./basic-app#model-licenses).
 
 ## Test
 
@@ -114,6 +106,9 @@ flutter test --platform chrome test/audio_recording_service_web_test.dart \
 
 `test_vm/` holds VM-only tests that cannot compile for the Web, so a Chrome
 run covers `test/` only. The second command covers Web-only paths.
+
+For Firebase device qualification, see the
+[native qualification runbook](https://github.com/leehack/llamadart/blob/main/doc/chat_app_native_qualification.md).
 
 Full options: the model catalog, download behavior, settings, platform and
 validation status, Web and Android notes, and troubleshooting are in the

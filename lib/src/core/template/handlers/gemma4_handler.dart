@@ -335,6 +335,9 @@ class Gemma4Handler extends ChatTemplateHandler
         parsed.content,
         preserveJsonProse: true,
         isPartial: isPartial,
+        allowedToolNames: {
+          for (final tool in tools ?? const <ToolDefinition>[]) tool.name,
+        },
       );
       return ChatParseResult(
         content: _visibleContent(

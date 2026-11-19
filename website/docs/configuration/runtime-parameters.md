@@ -94,21 +94,31 @@ Important fields:
 
 ```dart
 final engine = LlamaEngine(LlamaBackend());
-// mainGpu counts the devices of one backend, so keep only CUDA devices.
-final gpus = [
-  for (final gpu in await engine.listGpuDevices(
-    probeBackends: [GpuBackend.cuda],
-  ))
-    if (gpu.backend == GpuBackend.cuda) gpu,
-];
-await engine.setModel(
-  LlamaModel(ModelSource.path('/path/to/model.gguf')),
-  params: LlamaCppModelParams(
-    preferredBackend: GpuBackend.cuda,
-    gpuDevices: [gpus[0].mainGpu, gpus[2].mainGpu],
-    tensorSplit: const [3, 1], // three quarters of the layers on the first
-  ),
-);
+try {
+  // mainGpu counts the devices of one backend, so keep only CUDA devices.
+  final gpus = [
+    for (final gpu in await engine.listGpuDevices(
+      probeBackends: [GpuBackend.cuda],
+    ))
+      if (gpu.backend == GpuBackend.cuda) gpu,
+  ];
+  if (gpus.length < 2) {
+    throw LlamaUnsupportedException(
+      'Expected at least 2 CUDA devices, found ${gpus.length}.',
+    );
+  }
+  await engine.setModel(
+    LlamaModel(ModelSource.path('/path/to/model.gguf')),
+    params: LlamaCppModelParams(
+      preferredBackend: GpuBackend.cuda,
+      gpuDevices: [gpus[0].mainGpu, gpus[1].mainGpu],
+      tensorSplit: const [3, 1], // three quarters of the layers on the first
+    ),
+  );
+} catch (_) {
+  await engine.dispose();
+  rethrow;
+}
 ```
 - `mainGpu`: primary GPU device index passed through to llama.cpp `main_gpu`.
   To select one GPU for the full model, use

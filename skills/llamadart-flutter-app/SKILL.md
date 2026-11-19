@@ -232,7 +232,7 @@ or shipping runtimes the app does not use.
   the unchanged collector FAIL; 15 exact sidecars were forensically extracted
   from the retained journal, not independently downloaded. This does not
   qualify every Qwen artifact/device or release profile; see
-  [the platform limits](../../website/docs/platforms/known-platform-issues.md#android)
+  [the platform limits](https://llamadart.leehack.com/docs/platforms/known-platform-issues#android)
   and #1677 / litert-lm-native#51. `ComputeDevice.npu` needs a
   supporting SoC and bundle, and throws `LlamaUnsupportedException` without
   one.
