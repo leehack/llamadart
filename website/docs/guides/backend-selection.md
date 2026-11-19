@@ -274,8 +274,8 @@ multimodal, tokenization and more) is in
 of thumb:
 
 - Pick the runtime by model format first: GGUF runs on llama.cpp, `.litertlm`
-  bundles on LiteRT-LM. Only llama.cpp offers GBNF grammars, multi-adapter
-  LoRA and state persistence; LiteRT-LM web is text-only.
+  bundles on LiteRT-LM. Only llama.cpp offers GBNF grammars, LoRA adapters, and
+  state persistence; LiteRT-LM web is text-only.
 - Tokenization APIs work on llama.cpp and native LiteRT-LM, not on LiteRT-LM
   web.
 - On the web, GGUF URLs use the llama.cpp WebGPU/CPU bridge and web-compatible
@@ -289,10 +289,12 @@ Load-time controls differ by runtime:
   `microBatchSize`, `splitMode` / `mainGpu`, and the LoRA and
   state-persistence APIs.
 - `.litertlm` / LiteRT-LM: the deprecated `liteRtLmBackend`, `contextSize`,
-  `chatTemplate`, `numberOfThreads`, one
-  default-scale text LoRA adapter through `ModelParams.loras`, and the native
-  `liteRtLm*` fields in
+  `chatTemplate`, `numberOfThreads`, and the native `liteRtLm*` fields in
   [LiteRT-LM runtime controls](../configuration/runtime-parameters#litert-lm-runtime-controls).
+  Initial text LoRA through `ModelParams.loras` is refused on native LiteRT-LM
+  ([owner #99](https://github.com/leehack/litert-lm-native/issues/99)) and on
+  web; use a compatible llama.cpp/GGUF model and adapter pair instead (see
+  [LoRA platform notes](./lora-adapters#platform-notes)).
   Generation honors `maxTokens`, `temp`, `topK`, `topP`, `seed`, and
   `stopSequences` (enforced by `llamadart`); `speculativeDecoding` is native
   only.

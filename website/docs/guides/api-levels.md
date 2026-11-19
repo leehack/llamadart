@@ -105,27 +105,32 @@ Future<void> main() async {
   final LlamaBackend backend = LlamaBackend();
   final ModelParams modelParams = const ModelParams();
 
-  final int modelHandle = await backend.modelLoad('model.gguf', modelParams);
-  final int contextHandle = await backend.contextCreate(
-    modelHandle,
-    modelParams,
-  );
-
   try {
-    final Stream<String> textStream = backend
-        .generate(
-          contextHandle,
-          'Hello from low-level API',
-          const GenerationParams(),
-        )
-        .transform(const Utf8Decoder());
+    final int modelHandle = await backend.modelLoad('model.gguf', modelParams);
+    try {
+      final int contextHandle = await backend.contextCreate(
+        modelHandle,
+        modelParams,
+      );
+      try {
+        final Stream<String> textStream = backend
+            .generate(
+              contextHandle,
+              'Hello from low-level API',
+              const GenerationParams(),
+            )
+            .transform(const Utf8Decoder());
 
-    await for (final String text in textStream) {
-      print(text);
+        await for (final String text in textStream) {
+          print(text);
+        }
+      } finally {
+        await backend.contextFree(contextHandle);
+      }
+    } finally {
+      await backend.modelFree(modelHandle);
     }
   } finally {
-    await backend.contextFree(contextHandle);
-    await backend.modelFree(modelHandle);
     await backend.dispose();
   }
 }
@@ -133,7 +138,10 @@ Future<void> main() async {
 
 Always await `backend.dispose()` before shutting down its host. A forced
 worker kill cannot interrupt synchronous native creation. Creation-time
-reclamation uses owner API v1 in the pinned `v0.9.0` runtime. See the maintainer
+reclamation uses owner API v1 when the loaded `llamadart-native` wrapper exports
+it (included in the
+[pinned native runtime](../platforms/support-matrix#pinned-runtimes)). See the
+maintainer
 [shutdown contract](https://github.com/leehack/llamadart/blob/main/doc/llama_cpp_exit_teardown.md#creation-time-owner-preparation)
 for the bounded guarantee and remaining raw-allocation limits.
 

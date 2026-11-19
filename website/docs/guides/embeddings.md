@@ -225,14 +225,17 @@ try {
   Causal models with a KV cache retain chunked LAST or unpooled embedding
   support. Batched one-pass inputs are grouped only within the micro-batch
   capacity, and every input is validated before any group is decoded.
-- Native causal-attention detection follows the pinned llama.cpp `v0.9.0`
-  contract: the runtime's diffusion-model probe and EmbeddingGemma's forced
-  non-causal attention take precedence over metadata. Other loaded models
-  use their boolean `<architecture>.attention.causal` value, defaulting to
-  causal attention when that optional key is absent. Missing architecture,
-  invalid attention metadata or an unavailable required runtime probe throws
-  `LlamaUnsupportedException` before decoding. Use the pinned native runtime
-  or a compatible runtime that exposes the required model information.
+- Native causal-attention detection uses the loaded `llamadart-native`
+  wrapper's runtime probe and model metadata contract (see the
+  [pinned native runtime](../platforms/support-matrix#pinned-runtimes)): the
+  runtime's diffusion-model probe (`llama_model_is_diffusion`) and
+  EmbeddingGemma's forced non-causal attention take precedence over metadata.
+  Other loaded models use their boolean `<architecture>.attention.causal`
+  value, defaulting to causal attention when that optional key is absent.
+  Missing architecture, invalid attention metadata or an unavailable required
+  runtime probe throws `LlamaUnsupportedException` before decoding. Use the
+  pinned native runtime or a compatible runtime that exposes the required model
+  information.
 - Web backend supports embeddings when bridge assets expose embedding APIs;
   the pinned assets do. With older assets, embedding calls can fail with an
   unsupported/runtime error ([Older bridge assets](../platforms/webgpu-bridge#older-bridge-assets)).
