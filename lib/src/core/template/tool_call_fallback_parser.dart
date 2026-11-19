@@ -94,13 +94,11 @@ int _pendingLooseJsonStart(String input) {
     final remainder = input.substring(start);
     final trimmed = remainder.trimLeft();
     final array = start + remainder.length - trimmed.length;
-    if (trimmed.startsWith('[') &&
-        ToolCallParsingUtils.findStructuredJsonEnd(input, array) == null) {
+    if (trimmed.startsWith('[') && _isPendingLooseJson(input, array)) {
       holdFrom = min(holdFrom, array);
     }
     final object = input.indexOf('{', start);
-    if (object >= 0 &&
-        ToolCallParsingUtils.findStructuredJsonEnd(input, object) == null) {
+    if (object >= 0 && _isPendingLooseJson(input, object)) {
       holdFrom = min(
         holdFrom,
         _looseJsonWrapperStart(input.substring(0, object)),
@@ -108,6 +106,141 @@ int _pendingLooseJsonStart(String input) {
     }
   }
   return holdFrom;
+}
+
+// Bare identifiers accepted by the fallback also have to stay private.
+bool _isPendingLooseJson(String input, int start) => _JsonPrefixScanner(
+  _normalizeLooseJsonIdentifiers(input.substring(start)),
+).isPending();
+
+enum _JsonPart {
+  objectStart,
+  key,
+  colon,
+  value,
+  objectEnd,
+  arrayStart,
+  arrayEnd,
+}
+
+class _JsonPrefixScanner {
+  _JsonPrefixScanner(this.input);
+
+  static const _integer = r'-?(?:0|[1-9][0-9]*)';
+  static const _fraction = r'(?:\.[0-9]+)?';
+  static final _number = RegExp(
+    '$_integer$_fraction'
+    r'(?:[eE][+-]?[0-9]+)?',
+  );
+  static final _incompleteNumber = RegExp(
+    '(?:-|$_integer\\.|$_integer$_fraction'
+    r'[eE][+-]?)$',
+  );
+  static const _objectMember = [
+    _JsonPart.objectEnd,
+    _JsonPart.value,
+    _JsonPart.colon,
+    _JsonPart.key,
+  ];
+
+  final String input;
+  var _offset = 0;
+
+  bool isPending() {
+    final parts = [_JsonPart.value];
+    while (parts.isNotEmpty && _offset < input.length) {
+      if (' \t\n\r'.contains(input[_offset])) {
+        _offset++;
+        continue;
+      }
+      switch (parts.removeLast()) {
+        case _JsonPart.objectStart:
+          if (!_take('}')) {
+            parts.addAll(_objectMember);
+          }
+        case _JsonPart.key:
+          if (!_scanString()) return false;
+        case _JsonPart.colon:
+          if (!_take(':')) return false;
+        case _JsonPart.value:
+          switch (input[_offset]) {
+            case '{':
+              _offset++;
+              parts.add(_JsonPart.objectStart);
+            case '[':
+              _offset++;
+              parts.add(_JsonPart.arrayStart);
+            case '"':
+              if (!_scanString()) return false;
+            case 'n':
+              if (!_scanLiteral('null')) return false;
+            case 't':
+              if (!_scanLiteral('true')) return false;
+            case 'f':
+              if (!_scanLiteral('false')) return false;
+            default:
+              if (!_scanNumber()) return false;
+          }
+        case _JsonPart.objectEnd:
+          if (!_take('}')) {
+            if (!_take(',')) return false;
+            parts.addAll(_objectMember);
+          }
+        case _JsonPart.arrayStart:
+          if (!_take(']')) {
+            parts.addAll(const [_JsonPart.arrayEnd, _JsonPart.value]);
+          }
+        case _JsonPart.arrayEnd:
+          if (!_take(']')) {
+            if (!_take(',')) return false;
+            parts.addAll(const [_JsonPart.arrayEnd, _JsonPart.value]);
+          }
+      }
+    }
+    return parts.isNotEmpty;
+  }
+
+  bool _take(String value) {
+    if (input[_offset] != value) return false;
+    _offset++;
+    return true;
+  }
+
+  bool _scanLiteral(String literal) {
+    for (var i = 0; i < literal.length && _offset < input.length; i++) {
+      if (!_take(literal[i])) return false;
+    }
+    return true;
+  }
+
+  bool _scanNumber() {
+    if (_incompleteNumber.matchAsPrefix(input, _offset)?.end == input.length) {
+      _offset = input.length;
+      return true;
+    }
+    final match = _number.matchAsPrefix(input, _offset);
+    if (match == null) return false;
+    _offset = match.end;
+    return true;
+  }
+
+  bool _scanString() {
+    if (!_take('"')) return false;
+    while (_offset < input.length) {
+      final value = input.codeUnitAt(_offset++);
+      if (value == 0x22) return true;
+      if (value < 0x20) return false;
+      if (value != 0x5C) continue;
+      if (_offset == input.length) return true;
+      final escape = input[_offset++];
+      if (r'"\/bfnrt'.contains(escape)) continue;
+      if (escape != 'u') return false;
+      for (var i = 0; i < 4 && _offset < input.length; i++) {
+        if (!'0123456789abcdefABCDEF'.contains(input[_offset++])) return false;
+      }
+    }
+    return true;
+  }
 }
 
 /// Decodes tool arguments JSON/object text into a map.

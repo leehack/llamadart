@@ -57,7 +57,16 @@ void main() {
 
   for (final (label, raw, content, reasoning, calls, tools) in [
     ('bare JSON', _json, '', '', [_weather], true),
+    ('indented bare JSON', '\n  $_json', '', '', [_weather], true),
     ('prose before JSON', '$_prose $_json', '$_prose ', '', [_weather], true),
+    (
+      'indented prose before JSON',
+      '\n\n$_prose $_json',
+      '\n\n$_prose ',
+      '',
+      [_weather],
+      true,
+    ),
     (
       'archived Hermes wrapper',
       _archive,
@@ -314,6 +323,135 @@ void main() {
       await controller.close();
       await done;
     }
+  });
+
+  final code = StringBuffer('Here is the class:\n```js\nclass Store {\n')
+    ..writeln('  constructor() { this.items = {}; }');
+  for (var i = 0; i < 40; i++) {
+    code.writeln('  method$i(x) {\n    return x + $i;\n  }');
+  }
+  code.write('}\n```\nThat is the full store implementation.');
+  final prose = List.filled(400, 'word').join(' ');
+  for (final (label, raw) in [
+    ('JavaScript class', code.toString()),
+    ('brace emoticon', 'Smile :-{ $prose'),
+    ('brace key', 'Press the { key. $prose'),
+    ('invalid array', 'Display this; [true, plain text. $prose'),
+  ]) {
+    test('Gemma 4 $label keeps streaming before EOF', () async {
+      final rendered = render();
+      final controller = StreamController<String>();
+      final content = StringBuffer();
+      final done = _stream(controller.stream, rendered, true).forEach((chunk) {
+        final choice = chunk.choices.single;
+        content.write(choice.delta.content ?? '');
+        expect(choice.delta.toolCalls ?? const [], isEmpty);
+      });
+      var maxHeld = 0;
+      try {
+        for (var start = 0; start < raw.length; start += 4) {
+          final end = (start + 4).clamp(0, raw.length);
+          controller.add(raw.substring(start, end));
+          await pumpEventQueue(times: 2);
+          final held = end - content.length;
+          if (held > maxHeld) maxHeld = held;
+          expect(raw, startsWith(content.toString()));
+        }
+        // Includes the existing periodic snapshot interval, measured in bytes
+        // of scripted input rather than wall time.
+        expect(maxHeld, lessThanOrEqualTo(48));
+      } finally {
+        await controller.close();
+        await done;
+      }
+      final parsed = ChatTemplateEngine.parseRendered(
+        rendered,
+        raw,
+        tools: _tools,
+      );
+      expect(parsed.toolCalls, isEmpty);
+      expect(parsed.content, raw);
+      expect(content.toString(), raw);
+    });
+  }
+
+  test('partial JSON releases at the first impossible token', () {
+    final rendered = render();
+    for (final (maybe, impossible) in [
+      ('{ ', 'k'),
+      ('{\n  ', 'c'),
+      ('["item", ', 'p'),
+      ('{"name":"weather" ', '!'),
+      ('{"name":"weather","arguments":{"count":1e+', 'x'),
+      ('{"name":"weather","arguments":{"ready":tr', 'x'),
+      (r'{"name":"weather","arguments":{"city":"a\u12', 'x'),
+    ]) {
+      const prose = 'Before; ';
+      final pending = ChatTemplateEngine.parseRendered(
+        rendered,
+        '$prose$maybe',
+        isPartial: true,
+        tools: _tools,
+      );
+      expect(pending.content, prose, reason: maybe);
+      final rejected = ChatTemplateEngine.parseRendered(
+        rendered,
+        '$prose$maybe$impossible',
+        isPartial: true,
+        tools: _tools,
+      );
+      expect(rejected.content, '$prose$maybe$impossible', reason: maybe);
+    }
+  });
+
+  test('valid loose JSON remains held through strings, scalars and escapes', () {
+    final rendered = render();
+    const raw =
+        r'{"name":weather,"arguments":{"a":[true,false,null,-1.2e+3,"\u2601","\n","a;b"]}}';
+    const prose = 'Before ';
+    for (var cut = 1; cut < raw.length; cut++) {
+      final parsed = ChatTemplateEngine.parseRendered(
+        rendered,
+        '$prose${raw.substring(0, cut)}',
+        isPartial: true,
+        tools: _tools,
+      );
+      expect(parsed.content, prose, reason: 'cut $cut');
+    }
+    final parsed = ChatTemplateEngine.parseRendered(
+      rendered,
+      '$prose$raw',
+      tools: _tools,
+    );
+    expect(parsed.content, prose);
+    expect(parsed.toolCalls.single.function?.name, 'weather');
+  });
+
+  test('a recovered inner object stays private in an open array', () async {
+    final rendered = render();
+    const prefix = '[null,$_json';
+    final partial = ChatTemplateEngine.parseRendered(
+      rendered,
+      prefix,
+      isPartial: true,
+      tools: _tools,
+    );
+    expect(partial.toolCalls.single.index, 0);
+    expect(partial.content, isEmpty);
+    final raw = '$prefix]';
+    final complete = ChatTemplateEngine.parseRendered(
+      rendered,
+      raw,
+      tools: _tools,
+    );
+    expect(complete.toolCalls.single.index, 1);
+    final chunks = await _stream(
+      Stream.fromIterable([prefix, ']']),
+      rendered,
+      true,
+    ).toList();
+    expect(_content(chunks), isEmpty);
+    expect(chunks.last.choices.single.delta.toolCalls!.single.index, 1);
   });
 }
 
