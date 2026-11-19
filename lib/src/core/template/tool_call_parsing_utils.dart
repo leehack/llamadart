@@ -475,7 +475,7 @@ class ToolCallParsingUtils {
     int? end;
     final first = input.codeUnitAt(offset);
     if (first == 0x7B || first == 0x5B) {
-      end = _findStructuredJsonEnd(input, offset);
+      end = findStructuredJsonEnd(input, offset);
     } else if (first == 0x22) {
       end = _findJsonStringEnd(input, offset);
     } else {
@@ -574,7 +574,9 @@ class ToolCallParsingUtils {
     return (found: false, value: null);
   }
 
-  static int? _findStructuredJsonEnd(String input, int start) {
+  /// The end offset of a balanced object or array that starts at [start].
+  /// The caller supplies an opening brace or bracket; syntax is not validated.
+  static int? findStructuredJsonEnd(String input, int start) {
     var depth = 0;
     var inString = false;
     var escaped = false;

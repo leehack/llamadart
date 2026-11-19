@@ -1,0 +1,119 @@
+{
+  "llamaCppCommit": "b1b770d90d94cad9e9ea5b993bdbc383a522fb28",
+  "template": "test/fixtures/templates/gemma-4-E2B-it.jinja",
+  "templateSha256": "33204f1acb5bd0002713e16a593847f24ceeafe711ed88bda2a352dc996a3373",
+  "request": {
+    "messages": [
+      {
+        "role": "user",
+        "content": "Hi"
+      }
+    ],
+    "tools": [
+      {
+        "type": "function",
+        "function": {
+          "name": "weather",
+          "description": "Weather",
+          "parameters": {
+            "type": "object",
+            "properties": {
+              "city": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "city"
+            ]
+          }
+        }
+      },
+      {
+        "type": "function",
+        "function": {
+          "name": "get_weather",
+          "description": "Weather",
+          "parameters": {
+            "type": "object",
+            "properties": {
+              "location": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "location"
+            ]
+          }
+        }
+      }
+    ],
+    "tool_choice": "auto",
+    "parallel": true,
+    "enable_thinking": true
+  },
+  "format": "peg-gemma4",
+  "generationPrompt": "<|turn>model\n",
+  "rows": [
+    {
+      "partial": false,
+      "input": "The weather looks clear.",
+      "content": "The weather looks clear.",
+      "reasoning": "",
+      "tool_calls": []
+    },
+    {
+      "partial": false,
+      "input": "{\"name\":\"weather\",\"arguments\":{\"city\":\"Seoul\"}}",
+      "content": "{\"name\":\"weather\",\"arguments\":{\"city\":\"Seoul\"}}",
+      "reasoning": "",
+      "tool_calls": []
+    },
+    {
+      "partial": false,
+      "input": "The weather looks clear. {\"name\":\"weather\",\"arguments\":{\"city\":\"Seoul\"}}",
+      "content": "The weather looks clear. {\"name\":\"weather\",\"arguments\":{\"city\":\"Seoul\"}}",
+      "reasoning": "",
+      "tool_calls": []
+    },
+    {
+      "partial": false,
+      "input": "Plan.</think><tool_call>\n{\"name\": \"get_weather\", \"arguments\": {\"location\": \"Paris\"}}\n</tool_call>",
+      "content": "Plan.</think><tool_call>\n{\"name\": \"get_weather\", \"arguments\": {\"location\": \"Paris\"}}\n</tool_call>",
+      "reasoning": "",
+      "tool_calls": []
+    },
+    {
+      "partial": false,
+      "input": "Before <|tool_call>call:weather{city:<|\"|>Seoul<|\"|>}<tool_call|>",
+      "content": "Before ",
+      "reasoning": "",
+      "tool_calls": [
+        {
+          "name": "weather",
+          "arguments": "{\"city\":\"Seoul\"}"
+        }
+      ]
+    },
+    {
+      "partial": false,
+      "input": "weather(city=\"Seoul\")",
+      "content": "weather(city=\"Seoul\")",
+      "reasoning": "",
+      "tool_calls": []
+    },
+    {
+      "partial": true,
+      "input": "The weather looks clear. {",
+      "content": "The weather looks clear. {",
+      "reasoning": "",
+      "tool_calls": []
+    },
+    {
+      "partial": true,
+      "input": "Plan.</think><tool_call>",
+      "content": "Plan.</think><tool_call>",
+      "reasoning": "",
+      "tool_calls": []
+    }
+  ]
+}

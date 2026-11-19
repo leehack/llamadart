@@ -14,6 +14,7 @@ validate against the exact release tag notes.
 ## Unreleased
 
 - Reduce false transcripts on quiet noise in Qwen3-ASR windowed live speech recognition ([#2079](https://github.com/leehack/llamadart/issues/2079)).
+- Report Vulkan and apply Android Vulkan context settings and prompt limits when an OpenCL preference falls back to a filtered list of Vulkan devices ([#2020](https://github.com/leehack/llamadart/issues/2020)).
 - Keep Gemma 4 reply text and later valid tool calls when a malformed call has an unclosed string delimiter ([#2042](https://github.com/leehack/llamadart/pull/2042)).
 - Preserve partial LFM2 end-marker text such as `<|` in the last plain string argument when the model omits its closing quote ([#1988](https://github.com/leehack/llamadart/pull/1988)).
 - Clarify that a thinking budget keeps forced-open Granite required-call grammars applied and pauses Ling 3 required-call grammars ([#1965](https://github.com/leehack/llamadart/pull/1965)).
@@ -24,6 +25,7 @@ validate against the exact release tag notes.
 - Document measured live ASR throughput on two-thread Linux and Windows x64 CPU runs. Voxtral Realtime takes about four times the audio duration, while LFM3-Audio keeps up with live input ([#327](https://github.com/leehack/llamadart/issues/327)).
 - Document `-` for stdin in the live ASR example and report the required PCM format when input ends mid-sample.
 - Document the Windows system commit limit for very large llama.cpp contexts and advise keeping a system-managed pagefile with adequate disk space or reducing `contextSize` ([llamadart-native#211](https://github.com/leehack/llamadart-native/issues/211)).
+- Keep Gemma 4 prose before loose JSON tool calls visible while streaming and in the final reply ([#1930](https://github.com/leehack/llamadart/issues/1930)).
 
 ## 0.20.1
 
