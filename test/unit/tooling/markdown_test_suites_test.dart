@@ -109,6 +109,24 @@ void main() {
     );
   });
 
+  test('the Markdown lane covers the site build script', () {
+    expect(
+      inventory,
+      contains('test/unit/tooling/build_site_script_test.dart'),
+    );
+  });
+
+  test('the workflow row attributes the macOS SDK input correctly', () {
+    final row = File('doc/ci_selection.md').readAsLinesSync().singleWhere(
+      (line) => line.startsWith('| Workflow/selector or unclassified paths |'),
+    );
+    expect(row, contains('`.flutter-version` for `macos-15`'));
+    expect(
+      row,
+      isNot(contains('`packages/llamadart_validation/` for `macos-15`')),
+    );
+  });
+
   test('the Markdown Tests job runs the inventory on Linux', () {
     final workflow =
         loadYaml(File('.github/workflows/ci.yml').readAsStringSync())

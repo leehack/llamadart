@@ -323,6 +323,106 @@ void main() {
     }
   });
 
+  group('current runtime docs', () {
+    late Directory root;
+    const pinSource = 'lib/src/hook/native_release_pins.dart';
+    const installation = 'website/docs/getting-started/installation.md';
+    const matrix = 'website/docs/platforms/support-matrix.md';
+    const maintainer = 'website/docs/maintainers/native-and-web-sync.md';
+    const skill = 'skills/llamadart-getting-started/SKILL.md';
+    const companion = 'packages/llamadart_llama_cpp_flutter';
+    const fixture = 'test/fixtures/native/litert_lm_v0_19_1_5_manifest.json';
+
+    setUp(() {
+      root = Directory.systemTemp.createTempSync('sw2-runtime-docs-');
+      for (final path in [
+        pinSource,
+        installation,
+        matrix,
+        maintainer,
+        skill,
+        fixture,
+        'README.md',
+        '$companion/README.md',
+        '$companion/darwin/llamadart_llama_cpp_flutter/Package.swift',
+      ]) {
+        final target = File('${root.path}/$path');
+        target.parent.createSync(recursive: true);
+        File(path).copySync(target.path);
+      }
+    });
+    tearDown(() => root.deleteSync(recursive: true));
+
+    void replace(String path, Pattern before, String after) {
+      final file = File('${root.path}/$path');
+      final original = file.readAsStringSync();
+      final changed = original.replaceFirst(before, after);
+      expect(changed, isNot(original), reason: path);
+      file.writeAsStringSync(changed);
+    }
+
+    test(
+      'the current checkout agrees with the maintained pins and manifest',
+      () {
+        final errors = <String>[];
+        expect(checkCurrentNativePins(root, errors), isNotNull);
+        checkLiteRtLmDocs(root, errors);
+        expect(errors, isEmpty);
+      },
+    );
+
+    for (final (path, pattern, replacement) in [
+      (
+        matrix,
+        RegExp(r'(?<=\| llama\.cpp native \| `leehack/llamadart-native@)[^`]+'),
+        'v0.0.1',
+      ),
+      (
+        installation,
+        RegExp(
+          r'(?<=ABI-compatible with the default `leehack/llamadart-native@)[^`]+',
+        ),
+        'v0.0.1',
+      ),
+    ]) {
+      test(
+        '$path rejects a stale llama.cpp claim with other claims current',
+        () {
+          replace(path, pattern, replacement);
+          final errors = <String>[];
+          checkCurrentNativePins(root, errors);
+          expect(errors, [startsWith('$path pins native tag v0.0.1')]);
+        },
+      );
+    }
+
+    test('a stale LiteRT-LM README pin is rejected', () {
+      replace(
+        'README.md',
+        RegExp(
+          r'(?<=\| Native LiteRT-LM / `\.litertlm` \| `leehack/litert-lm-native@)[^`]+',
+        ),
+        'v0.0.1',
+      );
+      final errors = <String>[];
+      checkLiteRtLmDocs(root, errors);
+      expect(errors, [startsWith('README.md pins LiteRT-LM v0.0.1')]);
+    });
+
+    for (final path in ['README.md', matrix, maintainer, skill]) {
+      test('$path rejects a stale LiteRT-LM owner commit', () {
+        replace(
+          path,
+          RegExp(r'owner(?: source)? `[0-9a-f]{8}`'),
+          'owner `11111111`',
+        );
+        final errors = <String>[];
+        checkLiteRtLmDocs(root, errors);
+        expect(errors, [startsWith('$path names LiteRT-LM owner 11111111')]);
+      });
+    }
+  });
+
   test('checked-in SwiftPM pins are recorded in released or pending notes', () {
     final errors = <String>[];
     // Pin adoption precedes companion release preparation. The CLI enforces

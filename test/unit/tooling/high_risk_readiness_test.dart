@@ -4301,6 +4301,14 @@ final segment = '${Object()}ImageEditingRequest${Object()}';
         'packages/llamadart_studio/test/runtime_factory_test.dart',
       ),
       (
+        'packages/llamadart_studio_core/lib/src/services/lifecycle_coordinator.dart',
+        'packages/llamadart_studio/test/lifecycle_integration_test.dart',
+      ),
+      (
+        'packages/llamadart_studio/lib/src/services/runtime_factory.dart',
+        'packages/llamadart_studio_core/test/runtime_integration_test.dart',
+      ),
+      (
         'packages/llamadart_studio/lib/src/services/runtime_factory.dart',
         'packages/llamadart_studio/integration_test/local_workflows_acceptance_test.dart',
       ),
