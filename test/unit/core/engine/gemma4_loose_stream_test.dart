@@ -174,7 +174,79 @@ void main() {
     (
       'declared call with trailing text',
       '$_prose $_json Then I will summarize.',
-      '$_prose  Then I will summarize.',
+      '$_prose Then I will summarize.',
+      '',
+      [_weather],
+      true,
+    ),
+    (
+      'declared call without horizontal whitespace at junction',
+      'Ok${_json}Done',
+      'OkDone',
+      '',
+      [_weather],
+      true,
+    ),
+    (
+      'unpaired closing tag after bare call',
+      '$_json</tool_call> Done',
+      ' Done',
+      '',
+      [_weather],
+      true,
+    ),
+    (
+      'unpaired closing tag with prose around call',
+      '$_prose $_json</tool_call> Done',
+      '$_prose Done',
+      '',
+      [_weather],
+      true,
+    ),
+    (
+      'unpaired closing tag before call stays visible',
+      '$_prose </tool_call> $_json',
+      '$_prose </tool_call> ',
+      '',
+      [_weather],
+      true,
+    ),
+    (
+      'truncated closing tag after bare call',
+      '$_prose $_json</tool_',
+      '$_prose ',
+      '',
+      [_weather],
+      true,
+    ),
+    (
+      'trailing semicolon after loose call',
+      '$_prose $_json;',
+      '$_prose ',
+      '',
+      [_weather],
+      true,
+    ),
+    (
+      'semicolon separator before prose',
+      '$_prose $_json; then done',
+      '$_prose then done',
+      '',
+      [_weather],
+      true,
+    ),
+    (
+      'leading call with semicolon separator before prose',
+      '$_json; then done',
+      'then done',
+      '',
+      [_weather],
+      true,
+    ),
+    (
+      'semicolon separator before newline',
+      '$_prose $_json;\nDone',
+      '$_prose \nDone',
       '',
       [_weather],
       true,
@@ -207,7 +279,7 @@ void main() {
     (
       'parallel JSON with trailing text',
       '$_prose $_json; $_json; bye',
-      '$_prose ; bye',
+      '$_prose bye',
       '',
       [_weather, _weather],
       true,
@@ -728,10 +800,7 @@ void main() {
           controller.add(token);
         }
         await pumpEventQueue(times: 4);
-        expect(
-          _content(chunks),
-          '$_prose  Then I will soon explain all of it.',
-        );
+        expect(_content(chunks), '$_prose Then I will soon explain all of it.');
         expect(
           chunks.every((chunk) => chunk.choices.single.finishReason == null),
           isTrue,
@@ -740,12 +809,54 @@ void main() {
         await controller.close();
         await done;
       }
-      expect(_content(chunks), '$_prose  Then I will soon explain all of it.');
+      expect(_content(chunks), '$_prose Then I will soon explain all of it.');
       expect(chunks.last.choices.single.finishReason, 'tool_calls');
       expect(
         chunks.last.choices.single.delta.toolCalls!.single.function?.name,
         'weather',
       );
+    },
+  );
+
+  test(
+    'cancel and length limit strip trailing semicolon and truncated closing tag',
+    () async {
+      final rendered = render();
+      for (final (label, tokens, expectedContent) in [
+        ('bare truncated close tag', ['$_json</tool_'], ''),
+        ('wrapped truncated close tag', ['<tool_call>$_json', '</tool_'], ''),
+        (
+          'prose with truncated close tag',
+          ['$_prose $_json', '</tool_'],
+          '$_prose ',
+        ),
+        ('prose with trailing semicolon', ['$_prose $_json', ';'], '$_prose '),
+        ('bare trailing semicolon', [_json, '; '], ''),
+      ]) {
+        for (final atLimit in [false, true]) {
+          final chunks = await ChatCompletionStreamParser.parse(
+            tokenStream: Stream.fromIterable(tokens),
+            templateResult: rendered,
+            parseToolCallsEnabled: true,
+            enableThinking: true,
+            modelName: 'gemma4',
+            completionId: 'gemma4-residue-$label-$atLimit',
+            tools: _tools,
+            cancelled: () => !atLimit,
+            stoppedAtLimit: () => atLimit,
+          ).toList();
+          expect(
+            _content(chunks),
+            expectedContent,
+            reason: '$label (limit=$atLimit)',
+          );
+          expect(
+            chunks.last.choices.single.finishReason,
+            atLimit ? 'length' : 'tool_calls',
+            reason: '$label (limit=$atLimit)',
+          );
+        }
+      }
     },
   );
 }

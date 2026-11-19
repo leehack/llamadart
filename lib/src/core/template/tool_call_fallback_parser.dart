@@ -80,7 +80,7 @@ ToolCallFallbackParseResult parseToolCallsFromLooseText(
         ? input.substring(json.suffixStart, json.holdTrailingFrom!)
         : input.substring(json.suffixStart);
     return ToolCallFallbackParseResult(
-      content: '$prefix$suffix',
+      content: _joinAtCallJunction(prefix, suffix),
       toolCalls: json.calls,
     );
   }
@@ -855,77 +855,72 @@ _parseJsonLikeToolCalls(
   final contentPrefixEnd = wrapper.start;
   final calls = <LlamaCompletionChunkToolCall>[...first.calls];
   var callEnd = first.callEnd;
+  int? holdTrailingFrom;
+  var strippedSemicolon = false;
 
-  if (wrapper.hasToolCallTag) {
+  if (!wrapper.hasToolCallTag) {
+    // Collect semicolon-separated continuation calls (`call1; call2`) while
+    // holding only a trailing `;` whose following text can still become a call.
+    while (callEnd < input.length) {
+      var ws = callEnd;
+      while (ws < input.length && ' \t\r\n'.contains(input[ws])) {
+        ws++;
+      }
+      if (ws >= input.length || input[ws] != ';') {
+        break;
+      }
+
+      final afterSemi = ws + 1;
+      final next = _findFirstLooseCall(
+        input,
+        from: afterSemi,
+        startIndex: calls.length,
+        codeSpans: codeSpans,
+        allowedNames: allowedNames,
+      );
+      if (next != null &&
+          input.substring(afterSemi, next.callStart).trim().isEmpty) {
+        if (isPartial && codeSpans.isOpenInlineAt(next.callStart)) {
+          holdTrailingFrom = callEnd;
+          break;
+        }
+        calls.addAll(next.calls);
+        callEnd = next.callEnd;
+        continue;
+      }
+
+      if (isPartial) {
+        final tail = input.substring(afterSemi);
+        if (tail.trim().isEmpty ||
+            _pendingLooseJsonStart(
+                  tail,
+                  scanEnd: tail.length,
+                  endLimit: tail.length,
+                  codeSpans: _MarkdownCodeSpans.parse(tail),
+                  allowedNames: allowedNames,
+                ) <
+                tail.length) {
+          holdTrailingFrom = callEnd;
+          break;
+        }
+      }
+
+      if (!_containsNewline(input, callEnd, ws)) {
+        callEnd = _skipHorizontalWhitespace(input, afterSemi);
+        strippedSemicolon = true;
+      }
+      break;
+    }
+  }
+
+  if (holdTrailingFrom == null && !strippedSemicolon) {
     final after = _consumeClosingToolCallTag(
       input,
       from: callEnd,
       isPartial: isPartial,
     );
-    if (after.holdFrom != null) {
-      return (
-        calls: List<LlamaCompletionChunkToolCall>.unmodifiable(calls),
-        firstCallStart: first.callStart,
-        contentPrefixEnd: contentPrefixEnd,
-        suffixStart: callEnd,
-        holdTrailingFrom: after.holdFrom,
-      );
-    }
-    return (
-      calls: List<LlamaCompletionChunkToolCall>.unmodifiable(calls),
-      firstCallStart: first.callStart,
-      contentPrefixEnd: contentPrefixEnd,
-      suffixStart: after.suffixStart,
-      holdTrailingFrom: null,
-    );
-  }
-
-  // Collect semicolon-separated continuation calls (`call1; call2`) while
-  // holding only a trailing `;` whose following text can still become a call.
-  int? holdTrailingFrom;
-  while (callEnd < input.length) {
-    var ws = callEnd;
-    while (ws < input.length && ' \t\r\n'.contains(input[ws])) {
-      ws++;
-    }
-    if (ws >= input.length || input[ws] != ';') {
-      break;
-    }
-
-    final afterSemi = ws + 1;
-    final next = _findFirstLooseCall(
-      input,
-      from: afterSemi,
-      startIndex: calls.length,
-      codeSpans: codeSpans,
-      allowedNames: allowedNames,
-    );
-    if (next != null &&
-        input.substring(afterSemi, next.callStart).trim().isEmpty) {
-      if (isPartial && codeSpans.isOpenInlineAt(next.callStart)) {
-        holdTrailingFrom = callEnd;
-        break;
-      }
-      calls.addAll(next.calls);
-      callEnd = next.callEnd;
-      continue;
-    }
-
-    if (isPartial) {
-      final tail = input.substring(afterSemi);
-      if (tail.trim().isEmpty ||
-          _pendingLooseJsonStart(
-                tail,
-                scanEnd: tail.length,
-                endLimit: tail.length,
-                codeSpans: _MarkdownCodeSpans.parse(tail),
-                allowedNames: allowedNames,
-              ) <
-              tail.length) {
-        holdTrailingFrom = callEnd;
-      }
-    }
-    break;
+    callEnd = after.suffixStart;
+    holdTrailingFrom = after.holdFrom;
   }
 
   return (
@@ -951,10 +946,73 @@ _parseJsonLikeToolCalls(
   if (rest.startsWith(closeTag)) {
     return (suffixStart: ws + closeTag.length, holdFrom: null);
   }
-  if (isPartial && closeTag.startsWith(rest)) {
+  if (rest.isNotEmpty && closeTag.startsWith(rest)) {
+    return isPartial
+        ? (suffixStart: from, holdFrom: from)
+        : (suffixStart: input.length, holdFrom: null);
+  }
+  if (isPartial && rest.isEmpty) {
     return (suffixStart: from, holdFrom: from);
   }
   return (suffixStart: from, holdFrom: null);
+}
+
+bool _isHorizontalWhitespace(int codeUnit) =>
+    codeUnit == 0x20 || codeUnit == 0x09;
+
+int _skipHorizontalWhitespace(String input, int start) {
+  var pos = start;
+  while (pos < input.length && _isHorizontalWhitespace(input.codeUnitAt(pos))) {
+    pos++;
+  }
+  return pos;
+}
+
+String _trimRightHorizontalWhitespace(String text) {
+  var end = text.length;
+  while (end > 0 && _isHorizontalWhitespace(text.codeUnitAt(end - 1))) {
+    end--;
+  }
+  return text.substring(0, end);
+}
+
+String _trimLeftHorizontalWhitespace(String text) =>
+    text.substring(_skipHorizontalWhitespace(text, 0));
+
+bool _containsNewline(String input, int start, int end) {
+  for (var i = start; i < end; i++) {
+    final unit = input.codeUnitAt(i);
+    if (unit == 0x0A || unit == 0x0D) {
+      return true;
+    }
+  }
+  return false;
+}
+
+String _joinAtCallJunction(String left, String right) {
+  if (left.isEmpty) {
+    return right;
+  }
+  if (right.isEmpty) {
+    return left;
+  }
+  final leftTrimmed = _trimRightHorizontalWhitespace(left);
+  final rightTrimmed = _trimLeftHorizontalWhitespace(right);
+  final hadHorizontalWhitespace =
+      leftTrimmed.length < left.length || rightTrimmed.length < right.length;
+  if (leftTrimmed.isNotEmpty && rightTrimmed.isNotEmpty) {
+    return hadHorizontalWhitespace
+        ? '$leftTrimmed $rightTrimmed'
+        : '$leftTrimmed$rightTrimmed';
+  }
+  if (rightTrimmed.isEmpty) {
+    return leftTrimmed.isEmpty
+        ? (hadHorizontalWhitespace ? ' ' : '')
+        : (hadHorizontalWhitespace ? '$leftTrimmed ' : leftTrimmed);
+  }
+  return left.trim().isEmpty
+      ? (hadHorizontalWhitespace ? ' $rightTrimmed' : rightTrimmed)
+      : '$left$right';
 }
 
 ({List<LlamaCompletionChunkToolCall> calls, int callStart, int callEnd})?

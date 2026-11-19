@@ -224,7 +224,7 @@ void main() {
 
       expect(parsed.toolCalls, hasLength(1));
       expect(parsed.toolCalls.single.function?.name, 'weather');
-      expect(parsed.content, 'Before.  After.');
+      expect(parsed.content, 'Before. After.');
     });
 
     test('releases partial JSON once name is known not to match', () {
@@ -232,6 +232,7 @@ void main() {
         'Here: {"name":"other"',
         'Here: {"type":"object"',
         'Here: {"name": nope,',
+        'Try {"type":"function","function":{"name":"rm"',
       ]) {
         final parsed = parseToolCallsFromLooseText(
           partial,
@@ -242,6 +243,79 @@ void main() {
         expect(parsed.toolCalls, isEmpty, reason: partial);
         expect(parsed.content, partial, reason: partial);
       }
+    });
+
+    test('rejects explicit non-tool type even with a declared tool name', () {
+      const sample =
+          '{"type":"object","name":"weather","arguments":{"city":"Seoul"}}';
+      final parsed = parseToolCallsFromLooseText(
+        sample,
+        preserveJsonProse: true,
+        allowedToolNames: const {'weather'},
+      );
+
+      expect(parsed.toolCalls, isEmpty);
+      expect(parsed.content, sample);
+    });
+
+    test('unclosed rejected outer object hides nested declared call', () {
+      const sample =
+          'Here {"name":"other","x":{"name":"weather","arguments":{}}';
+      final parsed = parseToolCallsFromLooseText(
+        sample,
+        preserveJsonProse: true,
+        allowedToolNames: const {'weather'},
+      );
+
+      expect(parsed.toolCalls, isEmpty);
+      expect(parsed.content, sample);
+    });
+
+    test('strips wrapper residue and normalizes junction whitespace', () {
+      const call = '{"name":"weather","arguments":{"city":"Seoul"}}';
+      for (final (input, expected) in [
+        ('$call</tool_call> Done', ' Done'),
+        ('Ok $call</tool_call> Done', 'Ok Done'),
+        ('Ok $call </tool_call>\nDone', 'Ok \nDone'),
+        ('Ok </tool_call> $call', 'Ok </tool_call> '),
+        ('Ok $call foo </tool_call>', 'Ok foo </tool_call>'),
+        ('$call</tool_', ''),
+        ('Ok $call</tool_', 'Ok '),
+        ('Ok $call\n</tool_', 'Ok '),
+        ('Ok $call</tool_ Done', 'Ok </tool_ Done'),
+        ('Ok $call;', 'Ok '),
+        ('Ok $call; then done', 'Ok then done'),
+        ('$call; then done', 'then done'),
+        ('Ok $call;\nDone', 'Ok \nDone'),
+        ('Ok $call; $call; bye', 'Ok bye'),
+        ('Ok $call\n; then done', 'Ok \n; then done'),
+        ('Ok${call}Done', 'OkDone'),
+        ('Ok\n$call\nDone', 'Ok\n\nDone'),
+        ('Ok$call Done', 'Ok Done'),
+        ('Ok ${call}Done', 'Ok Done'),
+        ('Ok\t$call\tDone', 'Ok Done'),
+      ]) {
+        final parsed = parseToolCallsFromLooseText(
+          input,
+          preserveJsonProse: true,
+          allowedToolNames: const {'weather'},
+        );
+        expect(parsed.toolCalls, isNotEmpty, reason: input);
+        expect(parsed.content, expected, reason: input);
+      }
+    });
+
+    test('holds partial closing tag prefix after a bare loose call', () {
+      const partial = '{"name":"weather","arguments":{}}</tool_';
+      final parsed = parseToolCallsFromLooseText(
+        partial,
+        preserveJsonProse: true,
+        isPartial: true,
+        allowedToolNames: const {'weather'},
+      );
+
+      expect(parsed.toolCalls, hasLength(1));
+      expect(parsed.content, isNot(contains('</tool_')));
     });
   });
 }
