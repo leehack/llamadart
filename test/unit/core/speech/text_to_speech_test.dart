@@ -496,6 +496,54 @@ void main() {
       expect((await next.done).state, TextToSpeechCompletionState.completed);
     });
 
+    test(
+      'cancels during final audio decoding after final progress and allows reuse',
+      () async {
+        await _loadTextToSpeechModel(llamaEngine);
+        backend.blockFinalDecode = true;
+        final task = await speechEngine.synthesize(
+          const TextToSpeechRequest(
+            text: 'Cancel during decode.',
+            maxFrames: 12,
+          ),
+        );
+        final eventsFuture = task.events.toList();
+        await backend.finalDecodeStarted.future;
+
+        task.cancel();
+        final completion = await task.done;
+        final events = await eventsFuture;
+
+        expect(backend.cancelCalls, 1);
+        expect(task.isCancellationRequested, isTrue);
+        expect(completion.state, TextToSpeechCompletionState.cancelled);
+        expect(
+          events.whereType<TextToSpeechProgressEvent>().map((e) => e.phase),
+          <TextToSpeechProgressPhase>[
+            TextToSpeechProgressPhase.processingPrompt,
+            TextToSpeechProgressPhase.generating,
+          ],
+        );
+        expect(events.whereType<TextToSpeechFinalEvent>(), isEmpty);
+        await expectLater(
+          task.result,
+          throwsA(
+            isA<LlamaStateException>().having(
+              (error) => error.message,
+              'message',
+              'Speech synthesis was cancelled.',
+            ),
+          ),
+        );
+
+        backend.blockFinalDecode = false;
+        final next = await speechEngine.synthesizeOnce(
+          const TextToSpeechRequest(text: 'Reuse after decode cancel.'),
+        );
+        expect(next.samples, isNotEmpty);
+      },
+    );
+
     for (final call in <String>['unloadModel', 'dispose']) {
       test('$call cancels an active synthesis', () async {
         await _loadTextToSpeechModel(llamaEngine);
@@ -1236,12 +1284,15 @@ class _TextToSpeechBackend
   ];
   bool blockCapabilities = false;
   bool blockSynthesis = false;
+  bool blockFinalDecode = false;
   bool contextFreeAwaitsSynthesis = false;
   Object? synthesisError;
   Completer<void> capabilityProbeStarted = Completer<void>();
   Completer<void> synthesisStarted = Completer<void>();
+  Completer<void> finalDecodeStarted = Completer<void>();
   final Completer<void> _capabilityRelease = Completer<void>();
   final Completer<void> _synthesisRelease = Completer<void>();
+  final Completer<void> _finalDecodeRelease = Completer<void>();
   int cancelCalls = 0;
   void Function()? onCancel;
   int disposeCalls = 0;
@@ -1342,6 +1393,12 @@ class _TextToSpeechBackend
         );
       }
     }
+    if (!finalDecodeStarted.isCompleted) {
+      finalDecodeStarted.complete();
+    }
+    if (blockFinalDecode) {
+      await _finalDecodeRelease.future;
+    }
     return BackendTextToSpeechResult(
       samples: Float32List.fromList(<double>[-1, -0.5, 0, 0.5, 1]),
       sampleRateHz: 24000,
@@ -1356,6 +1413,7 @@ class _TextToSpeechBackend
     onCancel?.call();
     cancelCalls += 1;
     releaseSynthesis();
+    releaseFinalDecode();
   }
 
   @override
@@ -1370,6 +1428,12 @@ class _TextToSpeechBackend
   void releaseSynthesis() {
     if (!_synthesisRelease.isCompleted) {
       _synthesisRelease.complete();
+    }
+  }
+
+  void releaseFinalDecode() {
+    if (!_finalDecodeRelease.isCompleted) {
+      _finalDecodeRelease.complete();
     }
   }
 

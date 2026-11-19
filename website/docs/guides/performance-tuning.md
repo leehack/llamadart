@@ -61,7 +61,9 @@ const modelParams = LlamaCppModelParams(
 - `gpuLayers`: start with the default and lower it if stability or latency is
   worse than on CPU.
 - `contextSize`: keep it only as large as the use case needs. Oversized
-  context raises first-token latency and memory use.
+  context raises first-token latency and memory use (on Windows, see
+  [Known platform issues](../platforms/known-platform-issues#linux-and-windows)
+  for system commit limits at very large contexts).
 - `numberOfThreads` / `numberOfThreadsBatch`: `0` (automatic) is a good
   baseline. On native llama.cpp it means 4, or the host's core count when
   lower. Some mobile devices prefer fewer threads; set them only after
