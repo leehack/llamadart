@@ -327,9 +327,10 @@ hooks:
 ```
 
 Unset, the key bundles `llama_cpp` and `litert_lm`; a list replaces those
-defaults. This one ships GGUF chat and images without LiteRT-LM, which no
-example here loads; `all` ships every runtime published for the target, and
-`[stable_diffusion]` images only.
+defaults. This package keeps LiteRT-LM out of its checked-in list so GGUF chat
+and image runs skip that download (add `litert_lm` back for
+[LiteRT-LM image embeddings](#litert-lm-image-embeddings)); `all` ships every
+runtime published for the target, and `[stable_diffusion]` images only.
 
 The first run downloads the runtime (40 to 70 MB) through the build hook.
 `ImageGenerationEngine.load` then downloads the files this example pins for
@@ -539,10 +540,23 @@ dart test
 
 ### LiteRT-LM image embeddings
 
-Use an existing embedding bundle with vision encoder/adapter sections and a local
-PNG/JPEG. This example selects the separate native CPU embedding engine, which
-runs on macOS arm64, iOS arm64, Android arm64 (verified on a Galaxy S24 without SME and on arm64 emulators), Linux x64 and arm64, and Windows x64;
-native GPU, Android x86_64 and LiteRT-LM Web embeddings are unavailable.
+`example/basic_app/pubspec.yaml` omits `litert_lm` from its checked-in
+`llamadart_native_runtimes` list so GGUF and image runs skip that download.
+Before running this example, add `litert_lm` in `pubspec.yaml` (or set `all`)
+and run `dart pub get`:
+
+```yaml
+hooks:
+  user_defines:
+    llamadart:
+      llamadart_native_runtimes: [llama_cpp, litert_lm, stable_diffusion]
+```
+
+Then supply an existing embedding bundle with vision encoder/adapter sections
+and a local PNG/JPEG. This example selects the separate native CPU embedding
+engine, which runs on macOS arm64, iOS arm64, Android arm64 (verified on a
+Galaxy S24 without SME and on arm64 emulators), Linux x64 and arm64, and Windows
+x64; native GPU, Android x86_64 and LiteRT-LM Web embeddings are unavailable.
 
 ```bash
 dart run bin/llamadart_litert_embedding_example.dart /path/model.litertlm /path/image.png
