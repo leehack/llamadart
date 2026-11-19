@@ -11,19 +11,16 @@ Image generation is a Preview.
   release.
 - The `stable_diffusion` runtime is opt-in: an app bundles it only when it
   [names it in `pubspec.yaml`](#bundle-the-runtime).
-- SDXS and SD-Turbo are validated with real models on macOS (M4 Max), iOS
-  (iPhone 16 Pro, iPhone SE 3), Android (Pixel 9 Pro, Galaxy S24,
-  Galaxy A53), Linux x64 and Windows x64
-  ([#779](https://github.com/leehack/llamadart/issues/779)). The
-  [desktop models](#desktop-models) are validated on macOS Metal only
-  ([#802](https://github.com/leehack/llamadart/issues/802)).
+- Earlier runtimes ran SDXS and SD-Turbo on macOS, iOS, Android, Linux x64
+  and Windows x64. Desktop presets have Dart qualification on macOS Metal.
+  See [device qualification and timings](../maintainers/feature-validation#image-generation).
 - Open limits: no web runtime yet
   ([#969](https://github.com/leehack/llamadart/issues/969)); the
   [memory check](./image-generation-memory-and-limits#memory-check)'s warning, refusal and two-GPU paths have not
   been checked on physical Vulkan hardware
   ([#1024](https://github.com/leehack/llamadart/issues/1024)).
 - Model licenses differ, including on commercial use; see
-  [Model licenses](#model-licenses).
+  [Model licenses](../examples/basic-app#model-licenses).
 :::
 
 `ImageGenerationEngine` turns a text prompt into images on the device. It runs
@@ -33,10 +30,7 @@ Both `prompt` and `negativePrompt` are text. For example, `<image:cat.png>`
 is passed as literal text. The engine escapes native image markers, including
 incomplete ones, and respects an existing backslash escape.
 
-The API is experimental. Earlier runtimes ran two distilled SD 1.x/2.x-family models, SDXS-512 and SD-Turbo, on phones and desktops.
-[Desktop models](#desktop-models) cover SDXL-Lightning, FLUX.1-schnell,
-SD 3.5 Large Turbo and Z-Image-Turbo on desktop GPUs and Macs (tested with earlier runtimes on macOS Metal), and [other families](#other-families) load the same
-way; the [recipes](#recipes) give each one's files and settings. Bounded image-to-image and binary-mask editing are available through
+Bounded image-to-image and binary-mask editing are available through
 `ImageEditingRequest` on the [CPU recipe](./image-generation-advanced#image-editing), and an
 SD 1.x ControlNet steers `ControlNetImageGenerationRequest` on the
 [bounded CPU recipe](./image-generation-advanced#controlnet). The v0.4.0 runtime reports
@@ -54,18 +48,6 @@ image-generation API yet.
 | Linux (arm64, x64) | CPU, or Vulkan with the Vulkan build | Not set by llamadart | x64 CPUs need AVX2, FMA, F16C and BMI2; validated on x64 with CPU and an NVIDIA L4 |
 | Windows x64 | CPU, or Vulkan with the Vulkan build | Not set by llamadart | Needs the latest Microsoft Visual C++ v14 Redistributable (x64) and AVX2; the Vulkan build needs a GPU driver that provides `vulkan-1.dll`; validated on Windows Server 2022 with CPU and an NVIDIA L4; no arm64 runtime |
 | Web | None | | `load` throws `LlamaUnsupportedException` |
-
-Validation evidence for each recipe is listed in
-[Feature validation evidence](../maintainers/feature-validation#qualification-procedures).
-
-Measured on the same runtime, 512x512, one step, warm:
-
-| Device | SDXS Q8 (651 MB) | SD-Turbo Q8 + TAESD (1.9 GB) |
-| --- | --- | --- |
-| M4 Max, Metal | 1.5 s | 1.2 s |
-| iPhone 16 Pro, Metal | 1.7 s | 4.1 s |
-| Galaxy S24, CPU | 5.9 s | 11.8 s |
-| Galaxy A53, CPU | 26 to 29 s | Refused by the [memory check](./image-generation-memory-and-limits#memory-check) |
 
 `await ImageGenerationEngine.checkRuntime()` reports whether this build and
 device can generate images, and why not, without loading a model or blocking
@@ -145,7 +127,7 @@ model formats; leave `ModelSource.format` unset for image files.
 | GGUF file (`.gguf`) | Direct loading; automatic role detection from metadata and tensor names | Use a compatible image checkpoint or component, not an arbitrary LLM GGUF |
 | Safetensors file (`.safetensors`) | Direct loading; automatic role detection from tensor names and shapes | Complete SD-Turbo F16 and existing SDXL-Lightning/VAE/TAESD recipes; see the bounded checks below |
 | PyTorch checkpoint (`.ckpt`, `.pth`, `.pt`) | Explicit role required; forwarded to the native loader | Selected complete SD-Turbo tensor-only ZIP/nested ZIP/legacy checkpoints pass on macOS CPU; arbitrary layouts remain unqualified ([#1218](https://github.com/leehack/llamadart/issues/1218)) |
-| Separate component files | Each file resolves independently and gets a role; GGUF and Safetensors can be mixed | Supply the matching diffusion weights, encoders and decoder from the [recipes](#recipes) |
+| Separate component files | Each file resolves independently and gets a role; GGUF and Safetensors can be mixed | Supply the matching diffusion weights, encoders and decoder from the [preset index](../examples/basic-app#image-generation-presets) |
 | Diffusers component directory or repository | No public Diffusers pipeline/repository ingestion | Pass compatible component files individually; this does not describe the separate complete-checkpoint index recipe |
 | Complete Safetensors checkpoint index and shards | Opt in with `ImageGenerationModel.localSafetensorsSet` | Bounded SD-Turbo F16/F32 tensor recipe, macOS CPU, owned verified cache and whole-set accounting; no automatic remote shard fetch. See [local checkpoint sets](./image-generation-advanced#local-checkpoint-sets) |
 
@@ -190,78 +172,29 @@ Use trusted model files. There is no public conversion API or load-time
 quantization/mmap option. Weights load eagerly; see the
 [memory check](./image-generation-memory-and-limits#memory-check) before substituting larger unquantized files.
 
-On iOS, the pinned `v0.4.0` runtime splits Metal graphs, so full-VAE
-recipes are admitted. Device qualification on v0.4.0 is pending. Earlier runtimes
-decoded SD-Turbo with its embedded full VAE at 512×512 on iPhone 16 Pro and
-iPhone 17 Pro without tripping the watchdog ([#1047](https://github.com/leehack/llamadart/issues/1047)).
-External VAE/TAESD components, SDXL-size VAEs, larger resolutions and SDXS
-through `sd_dart_new_sd_ctx` are not device-qualified, and a Metal
-command-buffer failure surfaces as an error. A runtime without the split refuses full VAE
-and external-decoder recipes: use `ImageModelPlacement(vaeOnCpu: true)` for
-Metal diffusion, or `ComputeDevice.cpu`. Its intrinsic tiny-decoder v1 context
-policy still serves SDXS Metal decoding.
-
-SD `v0.3.0-6` passed four full-VAE load/dispose cycles and eight decodes per device on iPhone 16 Pro (iOS 18.3.2) and iPhone 17 Pro (iOS 26.5.1), tested at `6b191b28`. Small nonzero residual memory remains; this single session is not proof of zero leaks (#2004).
-
-On iOS 26, `v0.3.0-5` returns an image model's memory when you dispose it, so a
-later load no longer fails the memory check; earlier runtimes could keep about
-2 GB resident after the second dispose (fixed in runtime `v0.3.0-5`, measured
-on iPhone 17 Pro; iPhone 16 Pro retained memory above baseline, [#2004](https://github.com/leehack/llamadart/issues/2004)).
+On iOS, the pinned `v0.4.0` runtime admits full-VAE recipes through Metal
+graph splitting. Device qualification on v0.4.0 is pending. External
+VAE/TAESD components, SDXL-size VAEs, larger resolutions and SDXS through
+`sd_dart_new_sd_ctx` lack device qualification. A Metal command-buffer failure
+surfaces as an error. A runtime without the split refuses full VAE and
+external-decoder recipes. Use `ImageModelPlacement(vaeOnCpu: true)` for Metal
+diffusion or `ComputeDevice.cpu`. Its intrinsic tiny-decoder v1 context
+policy still serves SDXS Metal decoding. See the
+[iOS device receipts](../maintainers/feature-validation#ios-full-vae-graph-split).
 
 #### Pinned-runtime format checks
 
-With `stable-diffusion-native v0.3.0-1` (`be48649` plus the owner
-pickle-reader repair), complete byte-equivalent SD-Turbo F16 checkpoints pass
-through `ImageGenerationEngine` on macOS arm64 CPU:
-
-| Complete checkpoint | Role selection | Result |
-| --- | --- | --- |
-| F16 GGUF | Automatic and explicit checkpoint | Exact native-reference RGB |
-| Safetensors, same 1,323 tensors | Automatic and explicit checkpoint | Exact native-reference RGB |
-| Tensor-only PyTorch legacy `.pth` | Explicit checkpoint | Exact native-reference RGB, including the >2-GiB input |
-| PyTorch ZIP `.pt` and nested `state_dict` ZIP `.ckpt` | Explicit checkpoint | Exact native-reference RGB |
-
-These checks use the [pinned SD-Turbo F16 source](https://huggingface.co/Green-Sky/SD-Turbo-GGUF/blob/19a31586d02d64a73b4419bc193b3ecfaf38e1f0/sd_turbo-f16.gguf)
-and its embedded full VAE. Local Safetensors and PyTorch 2.11/protocol-2
-variants preserve every tensor byte. All seven public loads generate the same
-128-square, one-step Euler/discrete image at seed 42, CFG 1 and four CPU
-threads, matching separate guarded direct-C controls. This is container and
-transport evidence, not an image-quality or speed benchmark.
-
-Other architectures, dtypes, producer layouts, arbitrary serialized objects,
-accelerators, Windows/Linux and mobile full-checkpoint paths are unqualified
-by this check. No model weights ship with the tests. The
-[basic example's container checks](https://github.com/leehack/llamadart/tree/main/example/basic_app#8-image-generation-example-experimental)
-and maintained `image-container-formats` scenario repeat the selected controls
-from local files and independent native references.
+See the [full-checkpoint container checks](../maintainers/feature-validation#full-checkpoint-container-checks)
+for the tested files, runtime and results.
 
 ### Sources
 
-A model is its main file and the other files it needs, each a
-`ModelSource`: a local file (`ModelSource.path`), an HTTP(S) URL or a
-Hugging Face file. `ImageGenerationEngine.load` downloads what is not local
-and gives each file its runtime role from its header, so the files can be
-listed in any order:
-
-```dart
-final cancel = ModelDownloadCancelToken();
-final engine = await ImageGenerationEngine.load(
-  ImageGenerationModel(
-    ModelSource.parse(
-      'hf://second-state/FLUX.1-schnell-GGUF@'
-      '8c45a2ba25e2d02bd34230989fb54983f39e44ec/flux1-schnell-Q4_0.gguf',
-    ),
-    components: [
-      ImageModelComponent.auto(ModelSource.path('ae.safetensors')),
-      ImageModelComponent.auto(ModelSource.path('clip_l-Q8_0.gguf')),
-      ImageModelComponent.auto(ModelSource.path('t5xxl-Q8_0.gguf')),
-    ],
-  ),
-  params: const ImageModelParams(device: ComputeDevice.auto),
-  download: ModelLoadOptions(cancelToken: cancel),
-  onProgress: (progress) => print(progress.fraction),
-);
-```
+Each file uses a `ModelSource`: a local file (`ModelSource.path`), an HTTP(S)
+URL, or a Hugging Face file. Pin Hugging Face files with `@<sha>` to keep the
+bytes stable. `ImageGenerationEngine.load` resolves each file and reads its
+header to determine its runtime role. For split models, supply the other files
+through `ImageGenerationModel.components` using `ImageModelComponent.auto`
+or an explicit role.
 
 ### Roles
 
@@ -338,262 +271,50 @@ wrong file costs its download; it stays in the cache.
 
 `engine.roles` reports the file in each role.
 
-### Recipes
+## Generate an image with SDXS
 
-Files pinned to the Hugging Face commits the
-[basic app](../examples/basic-app) uses, and the request settings each model
-was validated with. Pin a commit (`@<sha>`) so the file cannot change under
-the app. The request carries the generation settings; unset, size falls back
-to 512x512, steps to 20 and guidance to 7.
-
-**SDXS-512** (683 MB, phones and desktops). Distilled for exactly one step at
-guidance 1:
+With the [runtime bundled](#bundle-the-runtime), save this script in your
+Dart package as `bin/generate_image.dart` and run
+`dart run bin/generate_image.dart`. The first run downloads the pinned
+683 MB SDXS-512 checkpoint. It uses one step at guidance 1 and writes a
+512x512 PNG.
 
 ```dart
-final sdxs = await ImageGenerationEngine.load(
-  ImageGenerationModel(
-    ModelSource.parse(
-      'hf://concedo/sdxs-512-tinySDdistilled-GGUF@'
-      '3144d898d61492f8382ffcabec055733fc5b2a0e/'
-      'sdxs-512-tinySDdistilled_Q8_0.gguf',
-    ),
-  ),
-);
-const request = ImageGenerationRequest(
-  prompt: 'a red fox in autumn leaves',
-  steps: 1,
-  guidanceScale: 1,
-);
-```
+import 'dart:io';
 
-**SD-Turbo with TAESD** (2.0 GB plus 10 MB). One step at guidance 1, or up to
-four for more detail at about four times the sampling time. TAESD replaces
-the full VAE decoder: several times faster and far less memory, at a small
-quality cost; use it on phones:
+import 'package:llamadart/llamadart.dart';
 
-```dart
-final sdTurbo = await ImageGenerationEngine.load(
-  ImageGenerationModel(
-    ModelSource.parse(
-      'hf://Green-Sky/SD-Turbo-GGUF@19a31586d02d64a73b4419bc193b3ecfaf38e1f0/'
-      'sd_turbo-f16-q8_0.gguf',
-    ),
-    components: [
-      ImageModelComponent.auto(
-        ModelSource.parse(
-          'hf://madebyollin/taesd@614f76814bbe30edbe2e627ace1c2234c81a2c0e/'
-          'diffusion_pytorch_model.safetensors',
-        ),
+Future<void> main() async {
+  final engine = await ImageGenerationEngine.load(
+    ImageGenerationModel(
+      ModelSource.parse(
+        'hf://concedo/sdxs-512-tinySDdistilled-GGUF@'
+        '3144d898d61492f8382ffcabec055733fc5b2a0e/'
+        'sdxs-512-tinySDdistilled_Q8_0.gguf',
       ),
-    ],
-  ),
-);
-const request = ImageGenerationRequest(
-  prompt: 'a lighthouse at dusk',
-  steps: 1,
-  guidanceScale: 1,
-);
-```
-
-**SDXL-Lightning 4-step** (6.9 GB plus 10 MB). 1024x1024, 4 Euler steps on
-the `sgmUniform` schedule at guidance 1, as the model card recommends.
-TAESDXL halved the time per image on an M4 Max; leave it out to decode with
-the checkpoint's VAE:
-
-```dart
-final sdxlLightning = await ImageGenerationEngine.load(
-  ImageGenerationModel(
-    ModelSource.parse(
-      'hf://ByteDance/SDXL-Lightning@c9a24f48e1c025556787b0c58dd67a091ece2e44/'
-      'sdxl_lightning_4step.safetensors',
     ),
-    components: [
-      ImageModelComponent.auto(
-        ModelSource.parse(
-          'hf://madebyollin/taesdxl@b20258aaef75ef61e659c1e0f14f251cf0ad153e/'
-          'diffusion_pytorch_model.safetensors',
-        ),
+  );
+  try {
+    final result = await engine.generateImage(
+      const ImageGenerationRequest(
+        prompt: 'a red fox in autumn leaves',
+        steps: 1,
+        guidanceScale: 1,
       ),
-    ],
-  ),
-);
-const request = ImageGenerationRequest(
-  prompt: 'a lighthouse at dusk',
-  width: 1024,
-  height: 1024,
-  steps: 4,
-  guidanceScale: 1,
-  sampler: ImageGenerationSampler.euler,
-  scheduler: ImageGenerationScheduler.sgmUniform,
-);
+    );
+    await File('sdxs.png').writeAsBytes(result.images.first.toPng());
+  } finally {
+    await engine.dispose();
+  }
+}
 ```
-
-**FLUX.1-schnell** (12.3 GB). 1024x1024, 4 steps at guidance 1, from the
-Q4_0 transformer, the FLUX autoencoder and the CLIP-L and T5-XXL encoders.
-TAEF1
-(`hf://madebyollin/taef1@b1b2d00e9e440cfbf3dedb34266864da86016ceb/diffusion_pytorch_model.safetensors`)
-can replace `ae`:
-
-```dart
-const fluxRepo =
-    'hf://second-state/FLUX.1-schnell-GGUF@'
-    '8c45a2ba25e2d02bd34230989fb54983f39e44ec';
-const encoders =
-    'hf://second-state/stable-diffusion-3.5-medium-GGUF@'
-    '58b78c305a43ddfcffe1ab54d7022995f61667ac';
-final flux = await ImageGenerationEngine.load(
-  ImageGenerationModel(
-    ModelSource.parse('$fluxRepo/flux1-schnell-Q4_0.gguf'),
-    components: [
-      for (final file in [
-        '$fluxRepo/ae.safetensors',
-        '$encoders/clip_l-Q8_0.gguf',
-        '$encoders/t5xxl-Q8_0.gguf',
-      ])
-        ImageModelComponent.auto(ModelSource.parse(file)),
-    ],
-  ),
-);
-const request = ImageGenerationRequest(
-  prompt: 'a red fox in autumn leaves',
-  width: 1024,
-  height: 1024,
-  steps: 4,
-  guidanceScale: 1,
-);
-```
-
-**SD 3.5 Large Turbo** (10.9 GB). 1024x1024, 4 steps at guidance 1. The
-SD 3.5 VAE repository is gated, so this decodes with TAESD3:
-
-```dart
-const encoders =
-    'hf://second-state/stable-diffusion-3.5-medium-GGUF@'
-    '58b78c305a43ddfcffe1ab54d7022995f61667ac';
-final sd35LargeTurbo = await ImageGenerationEngine.load(
-  ImageGenerationModel(
-    ModelSource.parse(
-      'hf://city96/stable-diffusion-3.5-large-turbo-gguf@'
-      '527c5548afc123f309238ca6bce7dfe3349aa997/sd3.5_large_turbo-Q4_0.gguf',
-    ),
-    components: [
-      for (final file in [
-        'hf://madebyollin/taesd3@d58dcaccd2b36fcb7a6b9e93c1cc507acab5a778/'
-            'diffusion_pytorch_model.safetensors',
-        '$encoders/clip_l-Q8_0.gguf',
-        '$encoders/clip_g-Q8_0.gguf',
-        '$encoders/t5xxl-Q8_0.gguf',
-      ])
-        ImageModelComponent.auto(ModelSource.parse(file)),
-    ],
-  ),
-);
-const request = ImageGenerationRequest(
-  prompt: 'a red fox in autumn leaves',
-  width: 1024,
-  height: 1024,
-  steps: 4,
-  guidanceScale: 1,
-);
-```
-
-**Z-Image-Turbo** (6.7 GB). 1024x1024, 8 steps at guidance 1, with the
-Qwen3-4B text encoder and the FLUX autoencoder:
-
-```dart
-final zImageTurbo = await ImageGenerationEngine.load(
-  ImageGenerationModel(
-    ModelSource.parse(
-      'hf://leejet/Z-Image-Turbo-GGUF@c61c0e422dc8b541b7548cf33a4ef8302b0f8085/'
-      'z_image_turbo-Q4_K.gguf',
-    ),
-    components: [
-      for (final file in [
-        'hf://second-state/FLUX.1-schnell-GGUF@'
-            '8c45a2ba25e2d02bd34230989fb54983f39e44ec/ae.safetensors',
-        'hf://unsloth/Qwen3-4B-Instruct-2507-GGUF@'
-            'a06e946bb6b655725eafa393f4a9745d460374c9/'
-            'Qwen3-4B-Instruct-2507-Q4_K_M.gguf',
-      ])
-        ImageModelComponent.auto(ModelSource.parse(file)),
-    ],
-  ),
-);
-const request = ImageGenerationRequest(
-  prompt: 'a red fox in autumn leaves',
-  width: 1024,
-  height: 1024,
-  steps: 8,
-  guidanceScale: 1,
-);
-```
-
-### Model licenses
-
-Each model's weights carry their own license, and commercial-use terms
-differ between them. llamadart does not license any model; check the license
-on the linked model card before you ship or use a model commercially. Licenses
-as stated on the repositories in the recipes and their upstream model cards:
-
-| Model | Model license | Other files |
-| --- | --- | --- |
-| SDXS | CreativeML Open RAIL++-M, per [`concedo/sdxs-512-tinySDdistilled-GGUF`](https://huggingface.co/concedo/sdxs-512-tinySDdistilled-GGUF) and its upstream [`IDKiro/sdxs-512-dreamshaper`](https://huggingface.co/IDKiro/sdxs-512-dreamshaper) | None |
-| SD-Turbo | [Stability AI Community License](https://huggingface.co/stabilityai/sd-turbo/blob/main/LICENSE.md), per [`stabilityai/sd-turbo`](https://huggingface.co/stabilityai/sd-turbo), whose card says to see [stability.ai/license](https://stability.ai/license) for commercial use | TAESD: MIT ([`madebyollin/taesd`](https://huggingface.co/madebyollin/taesd)) |
-| SDXL-Lightning | [CreativeML Open RAIL++-M](https://huggingface.co/ByteDance/SDXL-Lightning/blob/main/LICENSE.md), per [`ByteDance/SDXL-Lightning`](https://huggingface.co/ByteDance/SDXL-Lightning) | TAESDXL: MIT ([`madebyollin/taesdxl`](https://huggingface.co/madebyollin/taesdxl)) |
-| FLUX.1-schnell | Apache 2.0, per [`black-forest-labs/FLUX.1-schnell`](https://huggingface.co/black-forest-labs/FLUX.1-schnell) and [`second-state/FLUX.1-schnell-GGUF`](https://huggingface.co/second-state/FLUX.1-schnell-GGUF), which also hosts `ae`, `clip_l` and `t5xxl` | TAEF1: MIT ([`madebyollin/taef1`](https://huggingface.co/madebyollin/taef1)) |
-| SD 3.5 Large Turbo | [Stability AI Community License](https://huggingface.co/stabilityai/stable-diffusion-3.5-large-turbo/blob/main/LICENSE.md), per the gated [`stabilityai/stable-diffusion-3.5-large-turbo`](https://huggingface.co/stabilityai/stable-diffusion-3.5-large-turbo), whose card limits free commercial use to organizations or individuals under $1M in total annual revenue and asks those above it for an Enterprise License; [`city96/stable-diffusion-3.5-large-turbo-gguf`](https://huggingface.co/city96/stable-diffusion-3.5-large-turbo-gguf) keeps the original terms | Text encoders from [`second-state/stable-diffusion-3.5-medium-GGUF`](https://huggingface.co/second-state/stable-diffusion-3.5-medium-GGUF): Stability AI Community License; TAESD3: MIT ([`madebyollin/taesd3`](https://huggingface.co/madebyollin/taesd3)) |
-| Z-Image-Turbo | Apache 2.0, per [`Tongyi-MAI/Z-Image-Turbo`](https://huggingface.co/Tongyi-MAI/Z-Image-Turbo) and [`leejet/Z-Image-Turbo-GGUF`](https://huggingface.co/leejet/Z-Image-Turbo-GGUF) | Qwen3-4B-Instruct-2507: [Apache 2.0](https://huggingface.co/Qwen/Qwen3-4B-Instruct-2507/blob/main/LICENSE) ([`unsloth/Qwen3-4B-Instruct-2507-GGUF`](https://huggingface.co/unsloth/Qwen3-4B-Instruct-2507-GGUF)); `ae` as for FLUX.1-schnell |
-
-Any other model carries its own license.
-
-### Desktop models
-
-SDXL-Lightning, FLUX.1-schnell, SD 3.5 Large Turbo and Z-Image-Turbo
-generate at 1024x1024 with the recipe settings. They are for desktop GPUs
-and Macs, not phones. Measured from
-[#802](https://github.com/leehack/llamadart/issues/802), first image in a new
-process, automatic attention and VAE settings:
-
-| Model | M4 Max, Metal: time, peak process memory | Memory check asks for | NVIDIA L4, Vulkan (native CLI, warm) |
-| --- | --- | --- | --- |
-| SDXL-Lightning + TAESDXL | 6.1 s, 7.8 GiB (12.1 s with the checkpoint's VAE) | 8.6 GiB | 4.4 s |
-| FLUX.1-schnell Q4_0 + TAEF1 | 61 s, 12.9 GiB | 14.5 GiB | 25.3 s with `ae` |
-| SD 3.5 Large Turbo Q4_0 + TAESD3 | 16.1 s, 12.3 GiB | 13.1 GiB | 19.4 s with the SD 3.5 VAE |
-| Z-Image-Turbo Q4_K | 91 s, 7.8 GiB | 8.3 GiB | 35.0 s (Q8_0) |
-
-The Vulkan figures come from stable-diffusion.cpp's own CLI on the same
-runtime commit with `vae_conv_direct`, which the engine now sets on Vulkan;
-llamadart itself was not run there. The tiny autoencoders (TAESDXL, TAEF1,
-TAESD3) cut 6 to 9 s from each 1024x1024 decode on the M4 Max with no visible
-quality loss in these samples. The SD 3.5 VAE repository is gated, so TAESD3
-is the ungated choice.
-
-### Other families
-
-Any family the bundled stable-diffusion.cpp supports loads the same way,
-including other SDXL, SD 3.5, FLUX, Z-Image and Qwen-Image checkpoints.
-These need several GB of memory and are meant for desktop GPUs and Macs.
-Settings run in [#802](https://github.com/leehack/llamadart/issues/802)
-(SD 3.5 Medium took about 3 minutes per 1024x1024 image on an M4 Max,
-Qwen-Image about 11):
-
-| Model | Files | Request settings |
-| --- | --- | --- |
-| SD 3.5 Medium | `sd3.5_medium-Q8_0.gguf` (a checkpoint with its VAE) plus `clip_l`, `clip_g` and `t5xxl` from [`second-state/stable-diffusion-3.5-medium-GGUF`](https://huggingface.co/second-state/stable-diffusion-3.5-medium-GGUF) | 1024x1024, 28 steps, guidance 4.5 |
-| Qwen-Image | `Qwen_Image-Q4_0.gguf`, `qwen_image_vae.safetensors`, `Qwen2.5-VL-7B-Instruct.Q4_K_M.gguf` | 1024x1024, 20 steps, guidance 2.5, `flowShift: 3` |
-
-Left unset, `sampler`, `scheduler` and `flowShift` are the runtime's own for
-the model: Euler for SD 3.5, FLUX and Z-Image, Euler ancestral with the
-discrete schedule for SD 1.x, 2.x and SDXL. `flowShift` applies only to
-flow-matching models.
 
 ## Examples
 
-The [basic app](../examples/basic-app) has a command-line image example, and
-the [chat app](../examples/chat-app) has an image screen that downloads SDXS
-or SD-Turbo with TAESD from the same pinned files and generates on device.
-The command-line example also runs the desktop models from pinned
-downloads; both keep their pinned sources and settings in the app.
+The [basic app's image presets](../examples/basic-app#image-generation-presets)
+include SDXS, SD-Turbo and the four desktop models. The
+[chat app's image screen](../examples/chat-app#image-generation) runs SDXS and
+SD-Turbo with TAESD.
 
 ## Next
 
@@ -645,3 +366,23 @@ See [Hires fix](./image-generation-advanced#hires-fix) for the current instructi
 ### Reference image editing
 
 See [Reference image editing](./image-generation-advanced#reference-image-editing) for the current instructions.
+
+### Recipes
+
+See [Image generation presets](../examples/basic-app#image-generation-presets)
+for the runnable presets and their inputs.
+
+### Model licenses
+
+See [Model licenses](../examples/basic-app#model-licenses) for model and
+component license sources.
+
+### Desktop models
+
+See [Desktop model timings](../maintainers/feature-validation#desktop-model-timings)
+for the measured desktop presets and their qualification limits.
+
+### Other families
+
+See [Other image model families](../examples/basic-app#other-image-model-families)
+for the SD 3.5 Medium and Qwen-Image recipes.

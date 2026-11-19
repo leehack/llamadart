@@ -91,6 +91,50 @@ windowing for inputs over 30 s is tracked in
 
 ## Image generation
 
+### SDXS and SD-Turbo timings
+
+The [SDXS and SD-Turbo receipt](https://github.com/leehack/llamadart/issues/779)
+records earlier runtimes on macOS (M4 Max), iOS (iPhone 16 Pro and iPhone SE 3),
+Android (Pixel 9 Pro, Galaxy S24 and Galaxy A53), Linux x64 and Windows x64.
+
+Warm measurements used the same runtime, 512x512 and one step:
+
+| Device | SDXS Q8 (651 MB) | SD-Turbo Q8 + TAESD (1.9 GB) |
+| --- | --- | --- |
+| M4 Max, Metal | 1.5 s | 1.2 s |
+| iPhone 16 Pro, Metal | 1.7 s | 4.1 s |
+| Galaxy S24, CPU | 5.9 s | 11.8 s |
+| Galaxy A53, CPU | 26 to 29 s | Refused by the [memory check](../guides/image-generation-memory-and-limits#memory-check) |
+
+### Desktop model timings
+
+The October 2026 [Metal receipt](https://github.com/leehack/llamadart/pull/810#real-model-runs-m4-max-64-gb-metal-macos-this-branch)
+and [Vulkan CLI receipt](https://github.com/leehack/llamadart/issues/802#issuecomment-5925069431)
+cover 1024x1024 images from the [desktop model families](../examples/basic-app#image-generation-presets).
+The Metal column measures the first image in a new process with automatic
+attention and VAE settings.
+
+| Model | M4 Max, Metal: time, peak process memory | Memory check asks for | NVIDIA L4, Vulkan (native CLI, warm) |
+| --- | --- | --- | --- |
+| SDXL-Lightning + TAESDXL | 6.1 s, 7.8 GiB (12.1 s with the checkpoint's VAE) | 8.6 GiB | 4.4 s |
+| FLUX.1-schnell Q4_0 + TAEF1 | 61 s, 12.9 GiB | 14.5 GiB | 25.3 s with `ae` |
+| SD 3.5 Large Turbo Q4_0 + TAESD3 | 16.1 s, 12.3 GiB | 13.1 GiB | 19.4 s with the SD 3.5 VAE |
+| Z-Image-Turbo Q4_K | 91 s, 7.8 GiB | 8.3 GiB | 35.0 s (Q8_0) |
+
+The Vulkan figures come from stable-diffusion.cpp's own CLI on the same
+runtime commit with `vae_conv_direct`. The Dart desktop runs covered macOS
+Metal. The engine now sets `vae_conv_direct` on Vulkan. The tiny autoencoders
+(TAESDXL, TAEF1, TAESD3) cut 6 to 9 s from each 1024x1024 decode on the M4 Max
+with no visible quality loss in these samples. The SD 3.5 VAE repository is
+gated, so TAESD3 is the ungated choice.
+
+### Other image family timings
+
+The [initial Metal receipt](https://github.com/leehack/llamadart/issues/802#issuecomment-5923960986)
+reports about 3 minutes for SD 3.5 Medium and about 11 minutes for Qwen-Image
+per 1024x1024 image on an M4 Max. Qwen-Image used the native CLI. See the
+[files and settings](../examples/basic-app#other-image-model-families).
+
 ### Android memory-check calibration
 
 The memory check's Android allowance comes from Firebase Test Lab runs of the
@@ -140,8 +184,10 @@ at 2^26 elements. On 2026-11-13, DDP ran these exact bytes on an iPhone 16 Pro
 unsplit control failed its third decode with the GPU command-buffer error (the
 watchdog), and a 30-decode soak passed 30 of 30 with one image hash and a flat
 footprint. The iPhone 17 Pro (iOS 26.5) showed the dispose retention that
-runtime `v0.3.0-5` improved; four load/dispose cycles completed on both phones,
-but the iPhone 16 Pro retained memory above baseline. The `v0.3.0-6`
+runtime `v0.3.0-5` improved. Before the fix, the second dispose could leave
+about 2 GB resident and trigger a memory-check refusal on a later load. Four
+load/dispose cycles completed on both phones, with residual memory above
+baseline on the iPhone 16 Pro. The `v0.3.0-6`
 Apple scratch-buffer fix passed four full-VAE load/dispose cycles and eight
 decodes per device at `6b191b28` on iOS 18.3.2 and 26.5.1. Small nonzero
 residuals remain; this single session is not proof of zero leaks
@@ -149,6 +195,31 @@ residuals remain; this single session is not proof of zero leaks
 [cross-platform validation](https://github.com/leehack/llamadart/blob/main/doc/cross_platform_validation.md#ios-full-vae-graph-split-1047-2026-11-13).
 
 ### Full-checkpoint container checks
+
+With `stable-diffusion-native v0.3.0-1` (`be48649` plus the owner
+pickle-reader repair), complete byte-equivalent SD-Turbo F16 checkpoints pass
+through `ImageGenerationEngine` on macOS arm64 CPU:
+
+| Complete checkpoint | Role selection | Result |
+| --- | --- | --- |
+| F16 GGUF | Automatic and explicit checkpoint | Exact native-reference RGB |
+| Safetensors, same 1,323 tensors | Automatic and explicit checkpoint | Exact native-reference RGB |
+| Tensor-only PyTorch legacy `.pth` | Explicit checkpoint | Exact native-reference RGB, including the >2-GiB input |
+| PyTorch ZIP `.pt` and nested `state_dict` ZIP `.ckpt` | Explicit checkpoint | Exact native-reference RGB |
+
+These checks use the [pinned SD-Turbo F16 source](https://huggingface.co/Green-Sky/SD-Turbo-GGUF/blob/19a31586d02d64a73b4419bc193b3ecfaf38e1f0/sd_turbo-f16.gguf)
+and its embedded full VAE. Local Safetensors and PyTorch 2.11/protocol-2
+variants preserve every tensor byte. All seven public loads generate the same
+128-square, one-step Euler/discrete image at seed 42, CFG 1 and four CPU
+threads, matching separate guarded direct-C controls. This is container and
+transport evidence, not an image-quality or speed benchmark.
+
+Other architectures, dtypes, producer layouts, arbitrary serialized objects,
+accelerators, Windows/Linux and mobile full-checkpoint paths are unqualified
+by this check. No model weights ship with the tests. The
+[basic example's container checks](https://github.com/leehack/llamadart/tree/main/example/basic_app#8-image-generation-example-experimental)
+and maintained `image-container-formats` scenario repeat the selected controls
+from local files and independent native references.
 
 Earlier `v0.2.0-4` checks rejected the 2.6-GB legacy file and timed out on full
 ZIP inputs. The current legacy result verifies the published reader repair;
