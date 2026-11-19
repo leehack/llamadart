@@ -180,11 +180,14 @@ class Qwen3AsrAdapter extends SpeechToTextPromptAdapter {
 /// remaining audio. Quiet intervals with a nonempty decode may take a second
 /// inference pass on amplified audio to suppress false text. An isolated
 /// transient has limited influence on quiet classification. Later decodes of
-/// a rejected quiet window are checked again before publication. If a window
-/// returns the default instruction or a known Portuguese variant, one more
-/// decode of the original audio with an audio-only prompt must agree before
-/// the original wording is published. These checks can add latency to a push
-/// or the final flush. Other echoes and recognition errors are still possible.
+/// a rejected quiet window are checked again before publication. When the
+/// entire window transcript matches the default instruction or a known
+/// Portuguese variant, changing voiced speech preserves the original wording.
+/// Otherwise an audio-only decode of the original audio must corroborate it
+/// within one word edit. The extra decode can delay a partial or the final
+/// flush. Quiet or misrecognized dictation can be dropped. If no text survives,
+/// the session completes with an empty-transcript error. Other echoes can
+/// still appear.
 ///
 /// Requires `SpeechToTextEngine.load` on a native platform with a loaded
 /// Qwen3-ASR model and verified `qwen3a` audio [SpeechToTextModel.projector].

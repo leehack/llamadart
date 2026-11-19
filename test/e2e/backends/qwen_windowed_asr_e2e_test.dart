@@ -842,6 +842,136 @@ void main() {
     }
   });
 
+  const quilter =
+      'Mr. Quilter is the apostle of the middle classes, and we are glad to welcome his gospel.';
+  const samantha = '$quilter\nTranscribe this audio accurately.';
+  const jfk =
+      'And so, my fellow Americans, ask not what your country can do for you.';
+  for (final (name, hash, expected, partials) in [
+    (
+      'samantha-afterlibri',
+      '9bf017575f81c8b412f08b9b25f84214de7f7f58e109363538293f5ce87032e8',
+      samantha,
+      [
+        'Mr. Quilter is the apostle.',
+        'Mr. Quilter is the apostle of the middle classes, and we are glad.',
+        quilter,
+        quilter,
+        samantha,
+      ],
+    ),
+    (
+      'eddy-0.04',
+      'a188fe010cacefb9198d40e6fcfb4526a71dfebdcf09a2fb12b6ca883b22f356',
+      'Transcreva este áudio com precisão.',
+      ['Transcreva este áudio com'],
+    ),
+    (
+      'joana-0.00125',
+      '64ba1331ab712c2f10b743e1dd955f26dbd8b83135f8b6b5687b74b5a24f4be2',
+      'Transcreva este áudio acertadamente.',
+      ['transcreva este áudio assim'],
+    ),
+    (
+      'jfk-floportu',
+      '1820cfb3a22fa52b3f3d520bd895ae53b4a49bf4295e4bdd5aadc2455716ee93',
+      '$jfk\nTranscreva este audio com precisão.',
+      [
+        'And so, my fellow Americans.',
+        'And so, my fellow Americans, ask.',
+        'And so, my fellow Americans, ask not what your country.',
+        jfk,
+        '$jfk\nAsk what you can do for your.',
+        '$jfk\nAsk what you can do for your country.',
+        '$jfk\nAsk what you can do for your country.',
+      ],
+    ),
+  ]) {
+    test('Qwen3-ASR retains audited dictation ($name)', () async {
+      if (modelPath == null ||
+          projectorPath == null ||
+          echoFixtureDir == null) {
+        markTestSkipped(
+          'Set the Qwen model, projector and echo fixture paths.',
+        );
+        return;
+      }
+      final pcm = _hashedFloatPcm(
+        File.fromUri(
+          Directory(echoFixtureDir).absolute.uri.resolve('i2088b-$name.f32le'),
+        ),
+        hash,
+      );
+      final engine = await loadWindowed(modelPath, projectorPath);
+      try {
+        final run = await _collectStream(engine, pcm, [4000]);
+        expect(
+          {
+            'partials': run.partials.map((event) => event.text).toList(),
+            'finals': run.finals.map((event) => event.result.text).toList(),
+            'state': run.completion.state,
+            'result': run.completion.result?.text,
+            'error': run.completion.error,
+          },
+          {
+            'partials': partials,
+            'finals': [expected],
+            'state': SpeechToTextCompletionState.completed,
+            'result': expected,
+            'error': isNull,
+          },
+        );
+      } finally {
+        await engine.dispose();
+      }
+    });
+  }
+
+  for (final (name, hash) in [
+    (
+      'faint tone',
+      '3fbe9988176f28b2de77842cad937da9b26be358846cd43a85bc7a2bd9cbee5b',
+    ),
+    (
+      'loud tone',
+      '78ed154c0e3a8591528360d6b125a3e3b3f09da8d0b5b7f627bf7100a7543256',
+    ),
+    (
+      'loud filtered noise',
+      'b1caf4d67c67213d12b82527911567d21460411e0d6e7f38dde02dc00e0e0ed3',
+    ),
+  ]) {
+    test('Qwen3-ASR rejects a noise burst ($name)', () async {
+      if (modelPath == null || projectorPath == null) {
+        markTestSkipped('Set the Qwen model and projector paths.');
+        return;
+      }
+      final pcm = _quietNoise(96000, 257);
+      for (var i = 0; i < pcm.length; i++) {
+        pcm[i] += 0.008;
+      }
+      final faint = name == 'faint tone';
+      final offset = faint ? 5000 : 4000;
+      final samples = faint ? 6400 : 10400;
+      final filtered = _quietNoise(samples, 257);
+      for (var i = 0; i < samples; i++) {
+        pcm[offset + i] = switch (name) {
+          'faint tone' => 0.000005 * sin(2 * pi * 200 * i / 16000),
+          'loud tone' => 0.06 * sin(2 * pi * 200 * i / 16000),
+          _ => 32 * filtered[i],
+        };
+      }
+      _addThump(pcm, 45600, 3200, 0.25, seed: 412, decay: 2);
+      expect(sha256.convert(Uint8List.sublistView(pcm)).toString(), hash);
+      final engine = await loadWindowed(modelPath, projectorPath);
+      try {
+        await _expectEmptyStream(engine, pcm, 3);
+      } finally {
+        await engine.dispose();
+      }
+    });
+  }
+
   test(
     'Qwen3-ASR replays all 23 quiet-speech audit controls unchanged',
     () async {
@@ -870,19 +1000,10 @@ void main() {
       try {
         for (final entry in cases) {
           final name = entry['file']! as String;
-          final samples = File.fromUri(
-            manifest.absolute.uri.resolve(name),
-          ).readAsBytesSync();
-          expect(
-            sha256.convert(samples).toString(),
-            entry['sha256'],
-            reason: name,
+          final pcm = _hashedFloatPcm(
+            File.fromUri(manifest.absolute.uri.resolve(name)),
+            entry['sha256']! as String,
           );
-          final bytes = ByteData.sublistView(samples);
-          final pcm = Float32List(samples.length ~/ 4);
-          for (var i = 0; i < pcm.length; i++) {
-            pcm[i] = bytes.getFloat32(i * 4, Endian.little);
-          }
           final run = await _streamChunks(engine, pcm, [4000]);
           expect(run.text, entry['text'], reason: name);
           expect(
@@ -1019,6 +1140,21 @@ Float32List _hashedWav(String directory, String name, String hash) {
   final file = File.fromUri(Directory(directory).absolute.uri.resolve(name));
   expect(sha256.convert(file.readAsBytesSync()).toString(), hash, reason: name);
   return _decodeWavPcm16Mono16k(file.path);
+}
+
+Float32List _hashedFloatPcm(File file, String hash) {
+  final samples = file.readAsBytesSync();
+  expect(
+    sha256.convert(samples).toString(),
+    hash,
+    reason: file.uri.pathSegments.last,
+  );
+  final bytes = ByteData.sublistView(samples);
+  final pcm = Float32List(samples.length ~/ 4);
+  for (var i = 0; i < pcm.length; i++) {
+    pcm[i] = bytes.getFloat32(i * 4, Endian.little);
+  }
+  return pcm;
 }
 
 void _addThump(

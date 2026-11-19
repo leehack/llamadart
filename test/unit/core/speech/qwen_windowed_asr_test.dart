@@ -327,6 +327,193 @@ void main() {
       );
     }
 
+    group('instruction publication', () {
+      const original = 'TRANSCREVA este áudio com precisão!';
+      const distant = 'Ask what you can do for your country.';
+
+      for (final (label, reference, accepted) in [
+        (
+          'two added words',
+          'por favor transcreva este audio com precisao',
+          false,
+        ),
+        ('one added word', 'transcreva este audio com muita precisao', true),
+        (
+          'one added word at the end',
+          'transcreva este audio com precisao agora',
+          true,
+        ),
+        ('one omitted word', 'transcreva audio com precisao', true),
+        ('one omitted word at the end', 'transcreva este audio com', true),
+        ('one substitution', 'transcreve este audio com precisao', true),
+        ('two substitutions', 'traduza este audio com cuidado', false),
+        ('empty', '', false),
+        ('unrelated', distant, false),
+        (
+          'folded accents',
+          'transcreva este a\u0301udio com precisa\u0303o.',
+          true,
+        ),
+      ]) {
+        test('weak audio with a $label reference', () async {
+          final run = await _publishInstruction(
+            _voicingPcm([_voicedTone(16)]),
+            original,
+            reference,
+          );
+          expect(run.referenceLengths, [640]);
+          expect(run.completion.result?.text, accepted ? original : isNull);
+          expect(
+            run.completion.error,
+            accepted ? isNull : isA<LlamaSpeechException>(),
+          );
+        });
+      }
+
+      for (final text in [
+        'Please transcribe this audio accurately.',
+        'Transcreva este áudio com cuidado.',
+      ]) {
+        test(
+          'passes the entire nonmatching hypothesis through ($text)',
+          () async {
+            final run = await _publishInstruction(Float32List(320), text, '');
+            expect(run.referenceLengths, isEmpty);
+            expect(run.completion.result?.text, text);
+          },
+        );
+      }
+
+      final fast = _voicedTone(16);
+      final slow = _voicedTone(23);
+      final fourChanges = [fast, slow, fast, slow, fast];
+      final threeChanges = fourChanges.take(4).toList();
+      final twoCrossings = _voicedTone(21);
+      final belowEnergy = _alternatingTones(0.0098);
+      final aboveEnergy = _alternatingTones(0.0101);
+      final correlationBelow = _voicedTone(13, amplitude: 0.03, noise: 0.00815);
+      final correlationAbove = _voicedTone(13, amplitude: 0.03, noise: 0.00785);
+
+      List<List<double>> alternatingWithSlow(List<double> frame) => [
+        frame,
+        slow,
+        frame,
+        slow,
+        frame,
+      ];
+
+      for (final (label, pcm, bypass) in [
+        (
+          'four changes, including a difference of three',
+          _voicingPcm(fourChanges),
+          true,
+        ),
+        ('three changes', _voicingPcm(threeChanges), false),
+        (
+          'differences of two',
+          _voicingPcm([fast, twoCrossings, fast, twoCrossings, fast]),
+          false,
+        ),
+        (
+          'RMS just below 0.007 with DC offset',
+          _voicingPcm(belowEnergy),
+          false,
+        ),
+        ('RMS just above 0.007 with DC offset', _voicingPcm(aboveEnergy), true),
+        (
+          'correlation below 0.75',
+          _voicingPcm(alternatingWithSlow(correlationBelow)),
+          false,
+        ),
+        (
+          'correlation above 0.75',
+          _voicingPcm(alternatingWithSlow(correlationAbove)),
+          true,
+        ),
+        (
+          'only lag 9 correlates',
+          _voicingPcm(alternatingWithSlow(_laggedFrame(9, 3, 0.65))),
+          false,
+        ),
+        (
+          'only lag 10 correlates',
+          _voicingPcm(alternatingWithSlow(_laggedFrame(10, 2, 0.33))),
+          true,
+        ),
+        (
+          'only lag 40 correlates',
+          _voicingPcm(alternatingWithSlow(_laggedFrame(40, 1, 0.33))),
+          true,
+        ),
+        (
+          'period 41 is outside the lag range',
+          _voicingPcm(alternatingWithSlow(_laggedFrame(41, 1, 0.33))),
+          false,
+        ),
+        ('constant tone', _voicingPcm(List.filled(8, fast)), false),
+        (
+          'four pairs in separate voiced runs',
+          _voicingPcm([
+            for (var i = 0; i < 4; i++) ...[fast, slow, null],
+          ]),
+          true,
+        ),
+        (
+          'only three connected pairs with unvoiced gaps',
+          _voicingPcm([
+            fast,
+            slow,
+            fast,
+            slow,
+            null,
+            fast,
+            null,
+            slow,
+            null,
+            fast,
+          ]),
+          false,
+        ),
+        (
+          'partial last frame',
+          Float32List.sublistView(_voicingPcm(fourChanges), 0, 6 * 320 - 1),
+          false,
+        ),
+      ]) {
+        test('selects the reference using $label', () async {
+          final run = await _publishInstruction(pcm, original, distant);
+          expect(run.referenceLengths, bypass ? isEmpty : [pcm.length]);
+          expect(run.completion.result?.text, bypass ? original : isNull);
+          expect(
+            run.completion.error,
+            bypass ? isNull : isA<LlamaSpeechException>(),
+          );
+        });
+      }
+
+      test('counts carried voicing only after the commit cut', () async {
+        const cut = 125120;
+        final voiced = _voicingPcm(fourChanges);
+        final pcm = Float32List(128320)
+          ..fillRange(0, 124160, 0.04)
+          ..fillRange(126080, 128320, 0.04)
+          ..setRange(126080, 126080 + voiced.length, voiced);
+        final run = await _publishInstruction(pcm, original, distant);
+        expect(run.referenceLengths, [32000, 64000, 96000, cut]);
+        expect(run.completion.result?.text, original);
+      });
+
+      test('starts over on a weak interval after a voiced commit', () async {
+        final voiced = _voicingPcm(fourChanges);
+        final pcm = Float32List(128320)
+          ..fillRange(0, 128320, 0.04)
+          ..setRange(6400, 6400 + voiced.length, voiced);
+        final run = await _publishInstruction(pcm, original, distant);
+        expect(run.referenceLengths, [320]);
+        expect(run.completion.result?.text, original);
+      });
+    });
+
     test(
       'bounds verification gain and reuses verified checkpoints at finish',
       () async {
@@ -949,6 +1136,80 @@ void main() {
       },
     );
   });
+}
+
+Future<({List<int> referenceLengths, SpeechToTextCompletion completion})>
+_publishInstruction(Float32List pcm, String original, String reference) async {
+  final referenceLengths = <int>[];
+  final session = QwenWindowedAsrSession(
+    sourceFormat: const SpeechAudioFormat(
+      sampleRateHz: 16000,
+      channelCount: 1,
+      encoding: 'pcm-f32le',
+    ),
+    onClosed: () {},
+    decodeWindow:
+        (
+          wav, {
+          required prompt,
+          required confirmedPrefix,
+          required registerCancel,
+          required isCancelled,
+        }) async {
+          if (prompt == QwenWindowPrompt.instructed) return original;
+          referenceLengths.add((wav.length - qwenWindowedWavHeaderBytes) ~/ 2);
+          return reference;
+        },
+  );
+  final sub = session.events.listen((_) {}, onError: (Object _) {});
+  addTearDown(sub.cancel);
+  addTearDown(session.cancel);
+  await session.addPcm(pcm);
+  await session.finish();
+  return (referenceLengths: referenceLengths, completion: await session.done);
+}
+
+List<double> _voicedTone(
+  int period, {
+  double amplitude = 0.02,
+  double noise = 0,
+}) {
+  var seed = 2;
+  return List.generate(80, (i) {
+    seed = (1664525 * seed + 1013904223) & 0xffffffff;
+    final white = 2 * seed / 4294967296 - 1;
+    return amplitude * math.sin(2 * math.pi * (i + 0.37) / period) +
+        noise * white;
+  });
+}
+
+List<List<double>> _alternatingTones(double amplitude) => [
+  for (final period in [16, 23, 16, 23, 16])
+    _voicedTone(period, amplitude: amplitude),
+];
+
+List<double> _laggedFrame(int lag, int seed, double drift) {
+  final samples = List.filled(80, 0.0);
+  for (var i = 0; i < samples.length; i++) {
+    seed = (1664525 * seed + 1013904223) & 0xffffffff;
+    final white = 2 * seed / 4294967296 - 1;
+    samples[i] = i < lag ? white : 0.7 * samples[i - lag] + drift * white;
+  }
+  return samples.map((value) => 0.04 * value).toList();
+}
+
+Float32List _voicingPcm(List<List<double>?> frames) {
+  const dc = 0.04;
+  final pcm = Float32List((frames.length + 1) * 320)
+    ..fillRange(0, (frames.length + 1) * 320, dc);
+  for (final (frameIndex, frame) in frames.indexed) {
+    if (frame == null) continue;
+    for (final (sampleIndex, sample) in frame.indexed) {
+      final start = (frameIndex + 1) * 320 + sampleIndex * 4;
+      pcm.fillRange(start, start + 4, dc + sample);
+    }
+  }
+  return pcm;
 }
 
 /// Encodes each 320-sample frame's global frame index into the first two samples

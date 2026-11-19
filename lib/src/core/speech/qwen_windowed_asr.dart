@@ -27,6 +27,15 @@ const int qwenWindowedQuietMinFrames = 5;
 const double qwenWindowedQuietRmsThreshold = 0.01;
 
 const double _verificationFrameRms = 0.007;
+const int _voicingDownsample = 4;
+const int _voicingFrameSize =
+    qwenWindowedQuietFrameSamples ~/ _voicingDownsample;
+const int _voicingMinLag = 10;
+const int _voicingMaxLag = 40;
+const double _voicingMinRms = 0.007;
+const double _voicingMinCorrelation = 0.75;
+const int _voicingMinCrossingChange = 3;
+const int _voicingMinChanges = 4;
 
 /// Shared transcription instruction for Qwen3-ASR's instructed prompt.
 const String qwen3AsrDefaultInstruction = 'Transcribe this audio accurately.';
@@ -51,6 +60,67 @@ String _normalizeInstruction(String text) => text
     .replaceAll(_instructionWhitespace, ' ')
     .replaceFirst(_instructionTerminalPunctuation, '')
     .trimRight();
+
+bool _referenceAgrees(String original, String reference) {
+  if (original == reference) {
+    return true;
+  }
+  final originalWords = original.split(' ');
+  final referenceWords = reference.split(' ');
+  if ((originalWords.length - referenceWords.length).abs() > 1) {
+    return false;
+  }
+  var originalIndex = 0;
+  var referenceIndex = 0;
+  var edits = 0;
+  while (originalIndex < originalWords.length &&
+      referenceIndex < referenceWords.length) {
+    if (originalWords[originalIndex] == referenceWords[referenceIndex]) {
+      originalIndex++;
+      referenceIndex++;
+    } else {
+      if (++edits > 1) {
+        return false;
+      }
+      if (originalWords.length >= referenceWords.length) {
+        originalIndex++;
+      }
+      if (referenceWords.length >= originalWords.length) {
+        referenceIndex++;
+      }
+    }
+  }
+  return edits +
+          (originalWords.length - originalIndex) +
+          (referenceWords.length - referenceIndex) <=
+      1;
+}
+
+bool _hasVoicingPeriod(Float64List differences) {
+  const correlationStart = _voicingFrameSize - _voicingMaxLag;
+  var energy = 0.0;
+  for (var i = correlationStart; i < _voicingFrameSize; i++) {
+    energy += differences[i] * differences[i];
+  }
+  for (var lag = _voicingMinLag; lag <= _voicingMaxLag; lag++) {
+    var dot = 0.0;
+    var delayedEnergy = 0.0;
+    for (var i = correlationStart; i < _voicingFrameSize; i++) {
+      final delayed = differences[i - lag];
+      dot += differences[i] * delayed;
+      delayedEnergy += delayed * delayed;
+    }
+    if (dot > 0 &&
+        dot * dot >=
+            _voicingMinCorrelation *
+                _voicingMinCorrelation *
+                energy *
+                delayedEnergy) {
+      return true;
+    }
+  }
+  return false;
+}
 
 /// RIFF/WAVE header byte length for PCM16 LE mono audio.
 const int qwenWindowedWavHeaderBytes = 44;
@@ -392,7 +462,8 @@ class QwenWindowedAsrSession implements SpeechToTextStreamingSession {
       return decoded;
     }
     final normalized = _normalizeInstruction(decoded);
-    if (!_instructionHypotheses.contains(normalized)) {
+    if (!_instructionHypotheses.contains(normalized) ||
+        _hasChangingVoicing(length)) {
       return decoded;
     }
 
@@ -403,7 +474,53 @@ class QwenWindowedAsrSession implements SpeechToTextStreamingSession {
       1.0,
       prompt: QwenWindowPrompt.reference,
     );
-    return _normalizeInstruction(reference) == normalized ? decoded : '';
+    return _referenceAgrees(normalized, _normalizeInstruction(reference))
+        ? decoded
+        : '';
+  }
+
+  bool _hasChangingVoicing(int length) {
+    final differences = Float64List(_voicingFrameSize);
+    var changes = 0;
+    int? previousCrossings;
+    var previousSample = 0.0;
+    for (
+      var start = 0;
+      start + qwenWindowedQuietFrameSamples <= length;
+      start += qwenWindowedQuietFrameSamples
+    ) {
+      var sum = 0.0;
+      var squares = 0.0;
+      var crossings = 0;
+      for (var k = 0; k < _voicingFrameSize; k++) {
+        final i = start + k * _voicingDownsample;
+        final sample =
+            (_ring[i] + _ring[i + 1] + _ring[i + 2] + _ring[i + 3]) /
+            _voicingDownsample;
+        sum += sample;
+        squares += sample * sample;
+        differences[k] = i == 0 ? 0.0 : sample - previousSample;
+        previousSample = sample;
+        if (k > 0 && (differences[k] > 0) != (differences[k - 1] > 0)) {
+          crossings++;
+        }
+      }
+      final centeredEnergy = squares - sum * sum / _voicingFrameSize;
+      if (centeredEnergy <
+              _voicingFrameSize * _voicingMinRms * _voicingMinRms ||
+          !_hasVoicingPeriod(differences)) {
+        previousCrossings = null;
+        continue;
+      }
+      // Stationary tones can be loud and periodic without changing voicing.
+      if (previousCrossings != null &&
+          (crossings - previousCrossings).abs() >= _voicingMinCrossingChange &&
+          ++changes >= _voicingMinChanges) {
+        return true;
+      }
+      previousCrossings = crossings;
+    }
+    return false;
   }
 
   Future<String> _decodeVerified(int length) async {

@@ -13,7 +13,7 @@ validate against the exact release tag notes.
 
 ## Unreleased
 
-- Suppress known Qwen3-ASR instruction echoes in windowed transcripts while preserving independently confirmed speech ([#2088](https://github.com/leehack/llamadart/issues/2088)).
+- Reduce known Qwen3-ASR instruction echoes in windowed partials and finals. Keep the original wording with changing voiced speech or audio-only agreement within one word edit. Quiet or misrecognized dictation can be dropped, with an empty-transcript error if no text survives ([#2088](https://github.com/leehack/llamadart/issues/2088)).
 
 ## 0.20.2
 

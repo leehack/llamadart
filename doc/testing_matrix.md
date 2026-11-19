@@ -203,6 +203,19 @@ the four dictated controls. Each dictated control runs at RMS 0.00125 and
 `i2088-en.wav`, `i2088-pt-short.wav`, `i2088-pt-alt.wav`, and
 `i2088-pt-long.wav`, covering the English instruction, the short Portuguese
 form, the less common Portuguese translation, and a longer sentence.
+Put the audit's mono 16 kHz float32 little-endian fixtures in the same
+directory to check exact partial and final text in the
+`speech-to-text-windowed-smoke` scenario.
+
+| File | SHA-256 | Control |
+| --- | --- | --- |
+| `i2088b-samantha-afterlibri.f32le` | `9bf017575f81c8b412f08b9b25f84214de7f7f58e109363538293f5ce87032e8` | Samantha dictating after LibriSpeech |
+| `i2088b-eddy-0.04.f32le` | `a188fe010cacefb9198d40e6fcfb4526a71dfebdcf09a2fb12b6ca883b22f356` | Eddy dictating in Portuguese at RMS 0.04 |
+| `i2088b-joana-0.00125.f32le` | `64ba1331ab712c2f10b743e1dd955f26dbd8b83135f8b6b5687b74b5a24f4be2` | Quiet dictation with a one-word reference mismatch |
+| `i2088b-jfk-floportu.f32le` | `1820cfb3a22fa52b3f3d520bd895ae53b4a49bf4295e4bdd5aadc2455716ee93` | FloPortu dictating after JFK with an unrelated audio-only reference |
+
+The scenario also checks a faint tone and loud tone and filtered-noise bursts
+against three empty partials, zero finals, and a typed empty completion.
 Set `LLAMADART_STT_LIVE_PACED=1` for the 300 s run at the input audio rate.
 Set `LLAMADART_STT_WINDOWED_SUSTAINED_QUIET_TAILS=1` to repeat the LibriSpeech
 clip with seeded quiet-noise tails in the 300 s run.
