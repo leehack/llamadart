@@ -11,12 +11,14 @@ For upgrade planning, combine this page with the
 [Upgrade Checklist](../migration/upgrade-checklist). For breaking changes,
 validate against the exact release tag notes.
 
-## Unreleased
+## 0.20.1
 
-- Accept `llamadart_llama_cpp_flutter` `0.20.0` (`leehack/llamadart-native@v1.0.0-1`) on Apple with an upgrade warning alongside the pinned `v1.0.0-2` runtime ([#2049](https://github.com/leehack/llamadart/issues/2049)).
-- Adopt `leehack/llamadart-native@v1.0.0-2` (llama.cpp `v1.0.0`, `b1b770d9`): Windows CUDA `ModelParams.gpuMemoryFit` now accounts for VRAM held by other processes, matching Vulkan, and refuses TCC or `GGML_CUDA_DEVICES` virtual devices where system-wide free memory cannot be read with `LlamaGpuMemoryFitException` ([#2049](https://github.com/leehack/llamadart/issues/2049)).
-- Add `LlamaCppLiveAsrAdapter` for native incremental live PCM speech recognition (`SpeechToTextEngine.startStream()` and `transcribe`/`transcribeOnce` with mono 16 kHz `pcm-f32le`) on Voxtral Realtime and LFM3-Audio GGUF models with their audio projectors (`llamadart-native@v1.0.0-1`; Web and older runtimes throw `LlamaUnsupportedException`). Also adds `SpeechToTextCapabilities.streamingInputUnsupportedReason` ([#327](https://github.com/leehack/llamadart/issues/327)).
+- Adopt `leehack/llamadart-native@v1.0.0-2` (llama.cpp `v1.0.0`, `b1b770d9`): Windows CUDA `ModelParams.gpuMemoryFit` now accounts for VRAM held by other processes, matching Vulkan, and refuses TCC or `GGML_CUDA_DEVICES` virtual devices with `LlamaGpuMemoryFitException` when system-wide free memory cannot be read; Apple apps may still pair `llamadart_llama_cpp_flutter` `0.20.0` (`v1.0.0-1`) with an upgrade warning ([#2034](https://github.com/leehack/llamadart/issues/2034)).
+- Add `LlamaCppLiveAsrAdapter` for native incremental live PCM speech recognition (`SpeechToTextEngine.startStream()`, `transcribe`, `transcribeOnce` with mono 16 kHz `pcm-f32le`) on Voxtral Realtime and LFM3-Audio GGUF models with their audio projectors (`llamadart-native@v1.0.0-1`; Web and older runtimes throw `LlamaUnsupportedException`), and expose `SpeechToTextCapabilities.streamingInputUnsupportedReason` ([#327](https://github.com/leehack/llamadart/issues/327)).
 - Fixed a race when multiple processes first access the same model cache entry concurrently ([#2028](https://github.com/leehack/llamadart/issues/2028)).
+- Keep default WebGPU bridge assets at `v0.1.86` (unchanged from 0.20.0).
+
+Runtime baseline: native llama.cpp `v1.0.0-2` and Web use upstream `v1.0.0@b1b770d90d94cad9e9ea5b993bdbc383a522fb28`; native LiteRT-LM uses `v0.19.1-5` and stable-diffusion uses `v0.4.0`. Web LiteRT-LM uses `@litert-lm/core@0.19.0`. Manifest SHA-256: `d589fbe3c334e4fcb0ccbac3efc4500209358a010b6662ee8523e598a433a0f2`.
 
 ## 0.20.0
 
