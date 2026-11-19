@@ -691,3 +691,7 @@ Its reasoning comes from channel frames; literal `<think>`/`</think>`
 text stays literal, including in tool arguments. Gemma 4 preserves visible text
 after a tool envelope, including its whitespace, across split token delivery.
 Calls still arrive complete in the final chunk.
+
+MiniMax M3 recognizes its namespaced tool-call opener. Quoted markup such as
+`<tool_call>` stays visible before a namespaced call, including when it arrives
+in several chunks.

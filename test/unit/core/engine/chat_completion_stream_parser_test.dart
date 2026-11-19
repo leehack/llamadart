@@ -1,7 +1,9 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'dart:math';
 
+import 'package:http/http.dart' as http;
 import 'package:llamadart/src/core/engine/chat_completion_stream_parser.dart';
 import 'package:llamadart/src/core/exceptions.dart';
 import 'package:llamadart/src/core/llama_logger.dart';
@@ -27,6 +29,8 @@ import '../../../support/peg_constructed_qwen_xml_parser.dart';
 
 void main() {
   group('ChatCompletionStreamParser', () {
+    _minimaxChunkBoundaryProperties();
+
     for (final valid in [true, false]) {
       test(
         'fixed-clock prompt preserves split tool output (valid=$valid)',
@@ -4071,6 +4075,398 @@ void main() {
       },
     );
   });
+}
+
+const _m3Namespace = ']<]minimax[>[';
+const _m3Open = '$_m3Namespace<tool_call>';
+const _m3Close = '$_m3Namespace</tool_call>';
+const _m3Invoke =
+    '$_m3Namespace<invoke name="weather">\n'
+    '$_m3Namespace<city>Seoul$_m3Namespace</city>\n'
+    '$_m3Namespace</invoke>';
+const _m3Call = '$_m3Open\n$_m3Invoke\n$_m3Close';
+const _weatherInSeoul = ('weather', <String, Object?>{'city': 'Seoul'});
+
+Future<String> _templateFixture(String path) async {
+  if (Uri.base.scheme == 'file') return File(path).readAsString();
+  final response = await http.get(Uri.base.resolve('../../../../$path'));
+  expect(response.statusCode, 200, reason: path);
+  return utf8.decode(response.bodyBytes);
+}
+
+LlamaChatTemplateResult _renderChunkingFixture(
+  String template, {
+  required String thinkingMode,
+  List<ToolDefinition> tools = const [],
+}) => ChatTemplateEngine.render(
+  templateSource: template,
+  messages: const [
+    LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'Hi'),
+  ],
+  metadata: const {},
+  tools: tools,
+  parallelToolCalls: true,
+  chatTemplateKwargs: {'thinking_mode': thinkingMode},
+);
+
+void _minimaxChunkBoundaryProperties() {
+  group('MiniMax M3 chunk boundary properties', () {
+    late String m3Template;
+    setUpAll(() async {
+      m3Template = await _templateFixture(
+        'test/fixtures/llama_cpp_templates/MiniMax-M3.jinja',
+      );
+    });
+
+    for (final literal in [
+      '<tool_call> quoted as text. ',
+      '{"tool_call":"quoted"} prose. ',
+      '<function=quoted> prose. ',
+    ]) {
+      test('MiniMax M3 preserves ${literal.trim()} before a call', () async {
+        final tools = [_weatherTool];
+        final rendered = _renderChunkingFixture(
+          m3Template,
+          tools: tools,
+          thinkingMode: 'adaptive',
+        );
+        expect(rendered.format, ChatFormat.minimaxM3.index);
+        await _checkChunkBoundaryProperties(
+          rendered,
+          '$literal$_m3Call',
+          content: literal.trim(),
+          calls: [_weatherInSeoul],
+          tools: tools,
+          markers: [_m3Open, _m3Close, literal.trim()],
+          explicit: [
+            [3],
+            [3, literal.length],
+            [literal.length, literal.length + 38],
+          ],
+        );
+      });
+    }
+
+    for (final (name, raw, content, calls) in [
+      (
+        'literal near miss',
+        'Before ${_m3Open.substring(0, 15)}X',
+        'Before ${_m3Open.substring(0, 15)}X',
+        <(String, Map<String, Object?>)>[],
+      ),
+      (
+        'malformed scope',
+        'Before $_m3Open broken',
+        'Before $_m3Open broken',
+        <(String, Map<String, Object?>)>[],
+      ),
+      (
+        'surrounding prose',
+        'Before\n$_m3Call\nAfter',
+        'Before\n\nAfter',
+        [_weatherInSeoul],
+      ),
+      (
+        'ordered duplicate calls',
+        'Before $_m3Open\n$_m3Invoke\n$_m3Invoke\n$_m3Close',
+        'Before',
+        [_weatherInSeoul, _weatherInSeoul],
+      ),
+    ]) {
+      test('MiniMax M3 $name', () async {
+        final tools = [_weatherTool];
+        final rendered = _renderChunkingFixture(
+          m3Template,
+          tools: tools,
+          thinkingMode: 'adaptive',
+        );
+        await _checkChunkBoundaryProperties(
+          rendered,
+          raw,
+          content: content,
+          calls: calls,
+          tools: tools,
+          markers: [_m3Open, _m3Close],
+        );
+      });
+    }
+
+    for (final toolsEnabled in [true, false]) {
+      for (final forced in [true, false]) {
+        final fixtures = forced
+            ? [
+                ('Plan</mm:thin', '', 'Plan</mm:thin'),
+                ('Plan</mm:think>Answer<mm:thi', 'Answer<mm:thi', 'Plan'),
+              ]
+            : [
+                (
+                  '<mm:think>Plan</mm:think>Answer</mm:th',
+                  'Answer</mm:th',
+                  'Plan',
+                ),
+                ('</mm:think>Answer<mm:thi', 'Answer<mm:thi', ''),
+                (' <mm:think>Literal', '<mm:think>Literal', ''),
+                ('Plan it </mm:thin', 'Plan it </mm:thin', ''),
+                ('</mm:thin', '</mm:thin', ''),
+              ];
+        for (final (raw, content, thinking) in fixtures) {
+          test(
+            'MiniMax M3 thinking, tools=$toolsEnabled forced=$forced: $raw',
+            () async {
+              final tools = toolsEnabled ? [_weatherTool] : <ToolDefinition>[];
+              final rendered = _renderChunkingFixture(
+                m3Template,
+                tools: tools,
+                thinkingMode: forced ? 'enabled' : 'adaptive',
+              );
+              expect(rendered.thinkingForcedOpen, forced);
+              await _checkChunkBoundaryProperties(
+                rendered,
+                raw,
+                content: content,
+                thinking: thinking,
+                tools: tools,
+                markers: ['<mm:think>', '</mm:think>'],
+              );
+            },
+          );
+        }
+      }
+    }
+
+    test(
+      'quoted prose arrives before EOF with a real opener pending',
+      () async {
+        const literal = '<tool_call> quoted as text. ';
+        final tools = [_weatherTool];
+        final rendered = _renderChunkingFixture(
+          m3Template,
+          tools: tools,
+          thinkingMode: 'adaptive',
+        );
+        for (var cut = 0; cut < _m3Open.length; cut++) {
+          await _expectMinimaxContentBeforeEof(
+            rendered,
+            tools,
+            '$literal${_m3Open.substring(0, cut)}',
+            literal.trim(),
+          );
+        }
+      },
+    );
+
+    test('a real thought delimiter stays private across snapshots', () async {
+      final tools = [_weatherTool];
+      final rendered = _renderChunkingFixture(
+        m3Template,
+        tools: tools,
+        thinkingMode: 'adaptive',
+      );
+      await _expectMinimaxContentBeforeEof(rendered, tools, '<mm:thi', '');
+      await _expectMinimaxContentBeforeEof(
+        rendered,
+        tools,
+        '<mm:think>Plan</mm:thi',
+        '',
+        thinking: 'Plan',
+      );
+      await _expectMinimaxContentBeforeEof(
+        rendered,
+        tools,
+        '<mm:think>Plan</mm:thiX',
+        '',
+        thinking: 'Plan</mm:thiX',
+      );
+    });
+
+    test('does not postpone confirmed body fragments until EOF', () async {
+      final tools = [_weatherTool];
+      final rendered = _renderChunkingFixture(
+        m3Template,
+        tools: tools,
+        thinkingMode: 'adaptive',
+      );
+      await _expectMinimaxContentBeforeEof(
+        rendered,
+        tools,
+        '<mm:think>Plan</mm:think>Answer</mm:th',
+        'Answer</mm:th',
+        thinking: 'Plan',
+      );
+    });
+  });
+}
+
+Future<void> _expectMinimaxContentBeforeEof(
+  LlamaChatTemplateResult rendered,
+  List<ToolDefinition> tools,
+  String input,
+  String content, {
+  String thinking = '',
+}) async {
+  final upstream = StreamController<String>();
+  final chunks = <LlamaCompletionChunk>[];
+  final done = _chunkBoundaryStream(
+    upstream.stream,
+    rendered,
+    tools,
+    true,
+  ).forEach(chunks.add);
+  try {
+    upstream.add(input);
+    await pumpEventQueue();
+    expect(
+      chunks.map((c) => c.choices.single.delta.content ?? '').join(),
+      content,
+      reason: input,
+    );
+    expect(
+      chunks.map((c) => c.choices.single.delta.thinking ?? '').join(),
+      thinking,
+      reason: input,
+    );
+    for (final chunk in chunks) {
+      expect(chunk.choices.single.finishReason, isNull);
+      expect(chunk.choices.single.delta.toolCalls ?? const [], isEmpty);
+    }
+  } finally {
+    await upstream.close();
+    await done;
+  }
+}
+
+Stream<LlamaCompletionChunk> _chunkBoundaryStream(
+  Stream<String> tokens,
+  LlamaChatTemplateResult rendered,
+  List<ToolDefinition> tools,
+  bool parseTools,
+) => ChatCompletionStreamParser.parse(
+  tokenStream: tokens,
+  templateResult: rendered,
+  parseToolCallsEnabled: parseTools,
+  enableThinking: true,
+  modelName: 'chunk-boundary',
+  completionId: 'chunk-boundary',
+  tools: tools,
+);
+
+Future<void> _checkChunkBoundaryProperties(
+  LlamaChatTemplateResult rendered,
+  String raw, {
+  required String content,
+  required List<ToolDefinition> tools,
+  String thinking = '',
+  List<(String, Map<String, Object?>)> calls = const [],
+  List<String> markers = const [],
+  List<List<int>> explicit = const [],
+}) async {
+  final expectedCalls = [
+    for (final (index, (name, args)) in calls.indexed)
+      {'index': index, 'type': 'function', 'name': name, 'arguments': args},
+  ];
+  Map<String, Object?> callValue(LlamaCompletionChunkToolCall call) => {
+    'index': call.index,
+    'type': call.type,
+    'name': call.function?.name,
+    'arguments': jsonDecode(call.function!.arguments!),
+  };
+  final parseTools = tools.isNotEmpty;
+  final parsed = ChatTemplateEngine.parseRendered(
+    rendered,
+    raw,
+    parseToolCalls: parseTools,
+    tools: tools,
+  );
+  expect(parsed.content, content, reason: 'final parse of $raw');
+  expect(
+    parsed.reasoningContent ?? '',
+    thinking,
+    reason: 'final parse of $raw',
+  );
+  expect(
+    parsed.toolCalls.map(callValue),
+    expectedCalls,
+    reason: 'final parse of $raw',
+  );
+  final expectedFinish = calls.isEmpty ? 'stop' : 'tool_calls';
+
+  Future<void> check(Stream<String> tokens, String partition) async {
+    var streamedContent = '';
+    var streamedThinking = '';
+    var finished = false;
+    var index = 0;
+    await for (final chunk in _chunkBoundaryStream(
+      tokens,
+      rendered,
+      tools,
+      parseTools,
+    )) {
+      final choice = chunk.choices.single;
+      final delta = choice.delta;
+      final reason =
+          '$raw | $partition | delta ${index++} '
+          '${jsonEncode([delta.content, delta.thinking])}';
+      expect(finished, isFalse, reason: reason);
+      streamedContent += delta.content ?? '';
+      streamedThinking += delta.thinking ?? '';
+      expect(content, startsWith(streamedContent), reason: reason);
+      expect(thinking, startsWith(streamedThinking), reason: reason);
+      final toolCalls = delta.toolCalls ?? const [];
+      if (choice.finishReason == null) {
+        expect(toolCalls, isEmpty, reason: reason);
+      } else {
+        finished = true;
+        expect(choice.finishReason, expectedFinish, reason: reason);
+        expect(toolCalls.map(callValue), expectedCalls, reason: reason);
+        expect(toolCalls.map((call) => call.id), [
+          for (final call in parsed.toolCalls) call.id ?? 'call_${call.index}',
+        ], reason: reason);
+      }
+    }
+    expect(finished, isTrue, reason: partition);
+    expect(streamedContent, content, reason: partition);
+    expect(streamedThinking, thinking, reason: partition);
+  }
+
+  await check(Stream.value(raw), 'whole');
+
+  final markerCuts = <int>{};
+  for (final marker in markers) {
+    for (
+      var at = raw.indexOf(marker);
+      at >= 0;
+      at = raw.indexOf(marker, at + 1)
+    ) {
+      for (
+        var cut = max(1, at - 1);
+        cut <= min(raw.length - 1, at + marker.length + 1);
+        cut++
+      ) {
+        markerCuts.add(cut);
+      }
+    }
+  }
+  final partitions = <String>{};
+  for (final cuts in [
+    ...explicit,
+    for (final width in [1, 4, 8])
+      [for (var cut = width; cut < raw.length; cut += width) cut],
+    for (var cut = 1; cut < raw.length; cut++) [cut],
+    for (var first = 1; first < raw.length; first++)
+      for (var second = first + 1; second < raw.length; second++)
+        if (raw.length <= 48 ||
+            (second - first - 1) % 7 == 0 ||
+            (markerCuts.contains(first) && markerCuts.contains(second)))
+          [first, second],
+  ]) {
+    if (!partitions.add(cuts.join(','))) continue;
+    final boundaries = [0, ...cuts, raw.length];
+    final pieces = [
+      for (var i = 1; i < boundaries.length; i++)
+        raw.substring(boundaries[i - 1], boundaries[i]),
+    ];
+    await check(Stream.fromIterable(pieces), 'immediate cuts $cuts');
+  }
 }
 
 final _weatherTool = ToolDefinition(

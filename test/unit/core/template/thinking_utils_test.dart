@@ -203,6 +203,7 @@ void main() {
       String text, {
       bool thinkingForcedOpen = false,
       bool exact = false,
+      bool isPartial = false,
       String startTag = '<think>',
       String endTag = '</think>',
     }) => withThoughtOnlyAtReplyStart(
@@ -211,6 +212,7 @@ void main() {
         thinkingForcedOpen: thinkingForcedOpen,
         startTag: startTag,
         endTag: endTag,
+        isPartial: isPartial,
       ),
       exact: exact,
     );
@@ -282,6 +284,38 @@ void main() {
       expect(result.reasoning, 'a\nb');
       expect(result.content, 'c<|inner_suffix|>');
     });
+
+    test(
+      'partial exact thoughts hold a prefix only where a tag can complete',
+      () {
+        for (final (text, content, reasoning) in const [
+          ('<thi', '', null),
+          ('</thi', '', null),
+          (' <thi', '<thi', null),
+          ('<thiX', '<thiX', null),
+          ('<think>Plan</thi', '', 'Plan'),
+          ('<think>Plan</thiX', '', 'Plan</thiX'),
+          ('<think>Plan<thi', '', 'Plan<thi'),
+          ('<think>Plan</think>Answer</thi', 'Answer</thi', 'Plan'),
+          ('</think>Answer<thi', 'Answer<thi', null),
+        ]) {
+          expect(leading(text, exact: true, isPartial: true), (
+            content: content,
+            reasoning: reasoning,
+          ), reason: text);
+        }
+      },
+    );
+
+    test(
+      'partial legacy parsing still strips both trailing prefixes in order',
+      () {
+        expect(extractThinking('Answer<thi</thi', isPartial: true), (
+          content: 'Answer',
+          reasoning: null,
+        ));
+      },
+    );
 
     test('leaves a forced-open thought and other parses as they were', () {
       expect(

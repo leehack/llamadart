@@ -18,6 +18,8 @@ typedef ThinkingExtraction = ({String content, String? reasoning});
 /// only a thought that starts [text] is reasoning, and the rest is content in
 /// which thinking tags are text. With its `exact` rule, whitespace before the
 /// thought makes it content, and an [endTag] that starts [text] is dropped.
+/// With [isPartial], the exact rule holds only a prefix capable of completing
+/// a tag in its current position.
 ///
 /// Escaped `\n` and `\r` in reasoning become a newline and a carriage return
 /// unless [unescape] is false. The content keeps the whitespace at its ends
@@ -29,6 +31,7 @@ ThinkingExtraction extractThinking(
   bool thinkingForcedOpen = false,
   bool unescape = true,
   bool trimContent = true,
+  bool isPartial = false,
 }) {
   final verbatimPartial = Zone.current[_forcedThoughtVerbatim];
   if (thinkingForcedOpen && verbatimPartial is bool) {
@@ -47,16 +50,23 @@ ThinkingExtraction extractThinking(
     );
   }
   final leadingRule = Zone.current[_thoughtOnlyAtReplyStart];
+  final exact = leadingRule == _LeadingThoughtRule.exact;
+  final input = isPartial && !thinkingForcedOpen && !exact
+      ? withoutTrailingTagPrefix(withoutTrailingTagPrefix(text, [endTag]), [
+          startTag,
+        ])
+      : text;
   final result = !thinkingForcedOpen && leadingRule is _LeadingThoughtRule
       ? _extractLeadingThought(
-          text,
+          input,
           startTag: startTag,
           endTag: endTag,
           unescape: unescape,
-          exact: leadingRule == _LeadingThoughtRule.exact,
+          exact: exact,
+          isPartial: isPartial,
         )
       : _extractThinking(
-          text,
+          input,
           startTag: startTag,
           endTag: endTag,
           thinkingForcedOpen: thinkingForcedOpen,
@@ -185,15 +195,26 @@ ThinkingExtraction _extractLeadingThought(
   required String endTag,
   required bool unescape,
   required bool exact,
+  required bool isPartial,
 }) {
   final rest = exact ? text : trimLeftAsciiSpace(text);
   if (exact && rest.startsWith(endTag)) {
     return (content: rest.substring(endTag.length), reasoning: null);
   }
-  if (!rest.startsWith(startTag)) return (content: text, reasoning: null);
+  if (!rest.startsWith(startTag)) {
+    final pendingTag =
+        exact &&
+        isPartial &&
+        (startTag.startsWith(rest) || endTag.startsWith(rest));
+    return (content: pendingTag ? '' : text, reasoning: null);
+  }
   final thought = rest.substring(startTag.length);
   final end = thought.indexOf(endTag);
-  var reasoning = end == -1 ? thought : thought.substring(0, end);
+  var reasoning = end != -1
+      ? thought.substring(0, end)
+      : exact && isPartial
+      ? withoutTrailingTagPrefix(thought, [endTag])
+      : thought;
   if (unescape) {
     reasoning = reasoning.replaceAll(r'\n', '\n').replaceAll(r'\r', '\r');
   }
