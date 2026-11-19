@@ -1,3 +1,7 @@
+## 0.20.1
+
+- Refresh README installation guidance for core `0.20.1`; Apple SwiftPM stays pinned to `leehack/litert-lm-native@v0.19.1-5`.
+
 ## 0.20.0
 
 - Pair with core `>=0.20.0 <0.21.0` and refresh README installation guidance for core `0.20.0`; Apple SwiftPM stays pinned to `leehack/litert-lm-native@v0.19.1-5`.
