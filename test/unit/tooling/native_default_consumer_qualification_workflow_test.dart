@@ -376,8 +376,12 @@ void main() {
       final pin = File('${root.path}/lib/src/hook/native_release_pins.dart');
       pin.parent.createSync(recursive: true);
       const historicalTag = 'v0.8.0-2';
-      const currentTag = 'v1.0.0';
+      const stableTag = 'v1.0.0';
       const rebuildTag = 'v1.0.0-1';
+      final dispatchTags =
+          (workflow()['on']['workflow_dispatch']['inputs']['expected_native_tag']['options']
+                  as YamlList)
+              .cast<String>();
       const sha = '1111111111111111111111111111111111111111';
       const child = r'''
 import os
@@ -434,20 +438,20 @@ exec(sys.argv[1], {})
         ),
         (
           'current-tag-pin-drift',
-          currentTag,
+          stableTag,
           {'LLAMADART_DEFAULT_AOT_EXPECTED_NATIVE_TAG': historicalTag},
           false,
         ),
         (
           'rebuild-request-pin-drift',
-          currentTag,
+          stableTag,
           {'LLAMADART_DEFAULT_AOT_EXPECTED_NATIVE_TAG': rebuildTag},
           false,
         ),
         (
           'rebuild-source-pin-drift',
           rebuildTag,
-          {'LLAMADART_DEFAULT_AOT_EXPECTED_NATIVE_TAG': currentTag},
+          {'LLAMADART_DEFAULT_AOT_EXPECTED_NATIVE_TAG': stableTag},
           false,
         ),
         ('wrong-platform', historicalTag, {'TEST_PLATFORM': 'win32'}, false),
@@ -458,12 +462,11 @@ exec(sys.argv[1], {})
           {'QUALIFICATION_ARCH': 'x64', 'TEST_MACHINE': 'amd64'},
           false,
         ),
-        ('valid-macos-historical', historicalTag, {}, true),
-        ('valid-windows-historical', historicalTag, windows, true),
-        ('valid-macos-current', currentTag, {}, true),
-        ('valid-windows-current', currentTag, windows, true),
-        ('valid-macos-rebuild', rebuildTag, {}, true),
-        ('valid-windows-rebuild', rebuildTag, windows, true),
+        ('unlisted-tag', 'v99.0.0', {}, false),
+        for (final tag in dispatchTags) ...[
+          ('valid-macos-$tag', tag, {}, true),
+          ('valid-windows-$tag', tag, windows, true),
+        ],
       ];
       for (final (label, sourceTag, overrides, requestsModel) in cases) {
         pin.writeAsStringSync("const llamaCppTag = '$sourceTag';\n");
@@ -491,6 +494,12 @@ exec(sys.argv[1], {})
           expect(
             result.stderr,
             contains('qualification checkout or source pin mismatch'),
+          );
+        }
+        if (label == 'unlisted-tag') {
+          expect(
+            result.stderr,
+            contains('qualification input identity rejected'),
           );
         }
         if (marker.existsSync()) expect(marker.readAsLinesSync(), ['attempt']);

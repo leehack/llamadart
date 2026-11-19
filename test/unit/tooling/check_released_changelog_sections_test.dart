@@ -558,8 +558,12 @@ void main() {
       expect(run().exitCode, 0);
     });
 
-    test('exempts release prep', () {
-      repo.commit({'CHANGELOG.md': '## 1.2.0\n\n- Pending.\n\n$_released'});
+    test('exempts release prep from the released-text comparison', () {
+      const promoted = '## 1.2.0\n\n- Pending.\n\n$_released';
+      repo.commit({
+        'CHANGELOG.md': promoted,
+        _docsChangelog: '$_docsIntro$promoted',
+      });
 
       expect(run().exitCode, 1);
       for (final result in [
@@ -570,6 +574,31 @@ void main() {
         expect(result.stdout, contains('Release-prep PR'));
       }
     });
+
+    test(
+      'rejects a stray Unreleased heading in either release-prep changelog',
+      () {
+        const promoted = '## 1.2.0\n\n- Pending.\n\n$_released';
+        for (final path in ['CHANGELOG.md', _docsChangelog]) {
+          repo.commit({
+            'CHANGELOG.md':
+                "${path == 'CHANGELOG.md' ? '## Unreleased\n\n' : ''}$promoted",
+            _docsChangelog:
+                "$_docsIntro${path == _docsChangelog ? '##  Unreleased  \n\n' : ''}$promoted",
+          });
+          for (final result in [
+            run(labels: ['release-prep']),
+            run(headRef: 'release/prep-1.2.0'),
+          ]) {
+            expect(result.exitCode, 1, reason: '${result.stdout}');
+            expect(
+              result.stderr,
+              contains('$path must not keep `## Unreleased` when publishing.'),
+            );
+          }
+        }
+      },
+    );
 
     test('fails closed when the base branch is not fetched', () {
       final result = run(baseRef: 'release-branch');
