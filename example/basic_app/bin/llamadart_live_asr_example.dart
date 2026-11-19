@@ -4,6 +4,8 @@ import 'dart:typed_data';
 
 import 'package:llamadart/llamadart.dart';
 
+import 'src/live_asr_pcm.dart';
+
 Future<void> main(List<String> arguments) async {
   var qwenWindowed = false;
   final positional = <String>[];
@@ -17,7 +19,7 @@ Future<void> main(List<String> arguments) async {
   if (positional.length != 3) {
     stderr.writeln(
       'Usage: dart run bin/llamadart_live_asr_example.dart '
-      '[--qwen-windowed] <model.gguf> <mmproj.gguf> <audio.f32le>',
+      '[--qwen-windowed] <model.gguf> <mmproj.gguf> <audio.f32le|->',
     );
     exitCode = 64;
     return;
@@ -25,8 +27,8 @@ Future<void> main(List<String> arguments) async {
 
   final modelSource = ModelSource.parse(positional[0]);
   final projectorSource = ModelSource.parse(positional[1]);
-  final audioFile = File(positional[2]);
-  if (!await audioFile.exists()) {
+  final audioFile = positional[2] == '-' ? null : File(positional[2]);
+  if (audioFile != null && !await audioFile.exists()) {
     stderr.writeln('Audio file not found: ${audioFile.path}');
     exitCode = 66;
     return;
@@ -107,66 +109,27 @@ Future<void> main(List<String> arguments) async {
         stderr.writeln('\nError: $error');
       },
     );
+    final input = StreamIterator<Float32List>(
+      readLiveAsrPcm(audioFile?.openRead() ?? stdin),
+    );
     var cancelled = false;
     interrupt = ProcessSignal.sigint.watch().listen((_) {
       cancelled = true;
       unawaited(session.cancel());
+      unawaited(input.cancel());
     });
 
     try {
-      const chunkBytes =
-          16000; // 4,000 mono float32 samples = 250 ms at 16 kHz.
-      final carry = <int>[];
+      if (audioFile == null) {
+        stderr.writeln('Ready for mono 16 kHz f32le PCM on stdin.');
+      }
       try {
-        await for (final rawChunk in audioFile.openRead()) {
-          if (cancelled) {
-            break;
-          }
-          if (rawChunk.isEmpty) {
-            continue;
-          }
-          var offset = 0;
-          if (carry.isNotEmpty) {
-            final needed = 4 - carry.length;
-            if (rawChunk.length < needed) {
-              carry.addAll(rawChunk);
-              continue;
-            }
-            carry.addAll(rawChunk.sublist(0, needed));
-            await session.addPcm(_bytesToFloat32(Uint8List.fromList(carry)));
-            carry.clear();
-            offset = needed;
-          }
-
-          final remaining = rawChunk.length - offset;
-          final alignedBytes = remaining - (remaining % 4);
-          var sliceOffset = offset;
-          while (sliceOffset < offset + alignedBytes) {
-            if (cancelled) {
-              break;
-            }
-            final sliceEnd = sliceOffset + chunkBytes < offset + alignedBytes
-                ? sliceOffset + chunkBytes
-                : offset + alignedBytes;
-            final aligned = Uint8List.fromList(
-              rawChunk.sublist(sliceOffset, sliceEnd),
-            );
-            await session.addPcm(_bytesToFloat32(aligned));
-            sliceOffset = sliceEnd;
-          }
-          if (sliceOffset < rawChunk.length) {
-            carry.addAll(rawChunk.sublist(sliceOffset));
+        while (!cancelled && await input.moveNext()) {
+          if (!cancelled) {
+            await session.addPcm(input.current);
           }
         }
-
         if (!cancelled) {
-          if (carry.isNotEmpty) {
-            throw FormatException(
-              'Trailing ${carry.length} byte(s) in ${audioFile.path}; '
-              'expected 4-byte aligned mono 16 kHz little-endian float32 PCM.',
-            );
-          }
-
           await session.finish();
         }
       } on LlamaException {
@@ -183,6 +146,7 @@ Future<void> main(List<String> arguments) async {
         exitCode = 130;
       }
     } finally {
+      await input.cancel();
       await session.cancel();
       await events.cancel();
     }
@@ -190,14 +154,4 @@ Future<void> main(List<String> arguments) async {
     await interrupt?.cancel();
     await recognizer.dispose();
   }
-}
-
-Float32List _bytesToFloat32(Uint8List bytes) {
-  final count = bytes.lengthInBytes ~/ 4;
-  final data = ByteData.sublistView(bytes);
-  final samples = Float32List(count);
-  for (var i = 0; i < count; i++) {
-    samples[i] = data.getFloat32(i * 4, Endian.little);
-  }
-  return samples;
 }

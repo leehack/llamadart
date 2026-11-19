@@ -31,6 +31,7 @@ class LocalE2eCommandStep {
     required this.description,
     this.environment = const {},
     this.background = false,
+    this.inheritStdio = false,
     this.waitForPort,
     this.foregroundStdoutEncoding = systemEncoding,
   });
@@ -41,6 +42,7 @@ class LocalE2eCommandStep {
   final Map<String, String> environment;
   final String description;
   final bool background;
+  final bool inheritStdio;
   final int? waitForPort;
 
   /// Codec for foreground stdout; controlled Dart protocols can opt into
@@ -268,6 +270,7 @@ LocalE2eCommandStep _withoutAppNap(
   environment: step.environment,
   description: step.description,
   background: step.background,
+  inheritStdio: step.inheritStdio,
   waitForPort: step.waitForPort,
   foregroundStdoutEncoding: step.foregroundStdoutEncoding,
 );
@@ -1130,6 +1133,41 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
                 key: Platform.environment[key]!,
           },
           description: 'Opt-in Qwen3-ASR windowed live PCM E2E',
+        ),
+      ],
+    ),
+    LocalE2eScenario(
+      name: 'macos-mic-asr',
+      group: LocalE2eScenarioGroup.dartLocalOnly,
+      description:
+          'Classify one macOS microphone/model pair or replay a paced fixture.',
+      requiresDevice: false,
+      stepsBuilder: (context) => [
+        LocalE2eCommandStep(
+          workingDirectory: '${context.projectRoot}/example/basic_app',
+          executable: 'dart',
+          arguments: [
+            'run',
+            'bin/llamadart_macos_mic_asr.dart',
+            '--profile',
+            context.modelPreset,
+            '--model',
+            _projectPath(context.projectRoot, context.modelPath!),
+            '--mmproj',
+            _projectPath(context.projectRoot, context.mmprojPath!),
+            if (context.audioPath case final audioPath?) ...[
+              '--audio',
+              _projectPath(context.projectRoot, audioPath),
+              '--expect',
+              context.expect,
+            ],
+          ],
+          environment: {
+            'LLAMADART_MIC_RECEIPT_DIR':
+                '${context.projectRoot}/build/macos-mic-asr',
+          },
+          inheritStdio: context.audioPath == null,
+          description: 'macOS live ASR finish, cancel and restart',
         ),
       ],
     ),
@@ -3271,7 +3309,19 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
 
 /// Runs a foreground step without letting malformed diagnostics hide its exit
 /// code. Explicit stdout codecs remain strict for controlled output protocols.
-Future<ProcessResult> runLocalE2eForegroundStep(LocalE2eCommandStep step) {
+Future<ProcessResult> runLocalE2eForegroundStep(
+  LocalE2eCommandStep step,
+) async {
+  if (step.inheritStdio) {
+    final process = await Process.start(
+      step.executable,
+      step.arguments,
+      workingDirectory: step.workingDirectory,
+      environment: step.environment.isEmpty ? null : step.environment,
+      mode: ProcessStartMode.inheritStdio,
+    );
+    return ProcessResult(process.pid, await process.exitCode, '', '');
+  }
   final diagnostics = Platform.isWindows
       ? systemEncoding
       : const Utf8Codec(allowMalformed: true);
@@ -3500,7 +3550,31 @@ Future<LocalE2eResult> runLocalE2e(
           '--audio-path uses the dedicated gguf-audio-chat-smoke scenario.\n',
     );
   }
+  if (scenario.name == 'macos-mic-asr') {
+    if (parsed.modelPath == null ||
+        parsed.mmprojPath == null ||
+        !const ['voxtral', 'lfm3', 'qwen'].contains(parsed.modelPreset) ||
+        (parsed.backendProvided && parsed.backend != 'cpu')) {
+      return const LocalE2eResult(
+        64,
+        stderr:
+            'macos-mic-asr requires --model-path, --mmproj-path and '
+            '--model-preset voxtral|lfm3|qwen (CPU only).\n',
+      );
+    }
+    if ((parsed.audioPath != null &&
+            (!parsed.expectProvided || parsed.expect.trim().isEmpty)) ||
+        (parsed.audioPath == null && parsed.expectProvided)) {
+      return const LocalE2eResult(
+        64,
+        stderr:
+            'macos-mic-asr accepts --audio-path and --expect together '
+            'for simulated replay. Physical capture uses the prompted phrase.\n',
+      );
+    }
+  }
   const audioPathScenarios = <String>{
+    'macos-mic-asr',
     'gguf-audio-chat-smoke',
     'speech-to-text-smoke',
     'litert-lm-asr-smoke',
@@ -4155,7 +4229,7 @@ Options:
   --python <path>                Python executable for helper scripts (default: repo Playwright venv, then python3).
   --model-path <path>            Local model path for Dart local-only model scenarios.
   --tokenizer-path <path>        Local tokenizer JSON path for dedicated ASR scenarios.
-  --model-preset <name>          Dedicated ASR preset (default: moonshine-tiny).
+  --model-preset <name>          Dedicated ASR preset (default: moonshine-tiny), or voxtral|lfm3|qwen for macos-mic-asr.
   --draft-model-path <path>      Optional draft GGUF model path for llama.cpp speculative benchmark.
   --mmproj-path <path>           Optional multimodal projector path for GGUF chat smoke.
   --image-path <path>            Optional image path for GGUF chat smoke multimodal variant.
@@ -4240,6 +4314,9 @@ Direct environment for test/e2e/backends/decision_engine_e2e_test.dart:
                                  row's largest reference action logit (default: 0.05).
 ''';
 }
+
+String _projectPath(String root, String path) =>
+    File(path).isAbsolute ? path : '$root/$path';
 
 String _shellQuote(String value) {
   if (value.isEmpty) {

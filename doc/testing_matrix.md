@@ -174,6 +174,7 @@ Pick targeted rows based on the touched surface:
 | Isolate shutdown releases, exit teardown, a Flutter pin bump, or app-exit guidance | `chat-app-macos-quit` |
 | Speech-to-text API or adapter | `speech-to-text-smoke`, `speech-to-text-stream-smoke`, `web-speech-to-text-smoke`, plus `litert-lm-asr-smoke` and `litert-lm-asr-preservation` for the dedicated LiteRT-LM streaming engine |
 | Opt-in Qwen3-ASR windowed live PCM | `speech-to-text-windowed-smoke` |
+| Physical macOS microphone through the Dart speech SDK | [`macos-mic-asr`](#macos-physical-microphone-asr) |
 | Text-to-speech API or adapter | `text-to-speech-smoke`, `text-to-speech-models-smoke` for LFM3-Audio, Soprano, Chatterbox and Pocket TTS, plus `web-text-to-speech-smoke` for browser synthesis/playback/export |
 | Decision engine, decision head, or safetensors reader | `decision-model-smoke`, plus `decision-model-web-smoke` for the Web decision head or bridge pin |
 | Image generation API or `stable_diffusion` runtime | `image-generation-smoke`, `native-hook-bundles` |
@@ -386,6 +387,65 @@ core release tag, waits for the core on pub.dev, then publishes missing
 companion versions, waits for `publish_companion_pubdev.yml`, and verifies the
 pub.dev listing. Companions publish after the core because each constrains the
 core version it pairs with.
+
+## macOS physical microphone ASR
+
+Run from an interactive terminal on the maintainer's Mac with the pinned Flutter
+SDK and FFmpeg with [AVFoundation input support](https://ffmpeg.org/ffmpeg-devices.html#avfoundation).
+Run once per model/projector pair, using `voxtral` for Voxtral Mini 4B Realtime,
+`lfm3` for LFM3-Audio 2B, and `qwen` for Qwen3-ASR windowed. The harness
+uses the public Dart speech engine on CPU.
+
+```sh
+dart run tool/testing/run_local_e2e.dart --list
+dart run tool/testing/run_local_e2e.dart --scenario macos-mic-asr \
+  --model-preset "$profile" --model-path "$model" --mmproj-path "$projector" \
+  --dry-run
+dart run tool/testing/run_local_e2e.dart --scenario macos-mic-asr \
+  --model-preset "$profile" --model-path "$model" --mmproj-path "$projector"
+```
+
+1. Select the physical microphone by its displayed AVFoundation index. Exclude
+   virtual, loopback, and remote audio devices. The FFmpeg executable on
+   `PATH` opens the input. Allow microphone access when macOS prompts for the
+   terminal app that launched FFmpeg, or for FFmpeg if that is what macOS
+   identifies. Check **System Settings → Privacy & Security → Microphone** if
+   capture is denied. Dart only reads the PCM pipe.
+2. When the harness prints **Speak now**, read the phrase with short pauses
+   between sentences. Take about 15–18 seconds. Capture ends automatically
+   after 20 seconds. On the next **Speak now**, begin the phrase again and
+   keep reading through the automatic 8-second cancellation. On the third
+   prompt, repeat the complete phrase from the beginning.
+3. Review the receipt under `build/macos-mic-asr/`. Check each completed
+   recording for a partial during capture, a final after stop, phrase order
+   and terminal words. Check the cancelled recording for zero final events.
+   Review WER, timing, sample counts and FFmpeg diagnostics. Record each
+   named device/model result separately on [#327](https://github.com/leehack/llamadart/issues/327).
+   When practicable, run an additional permission-denied or disconnect
+   attempt and record the observed failure separately.
+
+> The red bicycle is beside the station. After the rain stops, we will take
+> the long road past the river. At the end of the trail, look for the yellow
+> lantern by the wooden gate.
+
+Allow about 1–2 minutes per model after files are available. The three
+recording stages total 48 seconds. A first launch or a slow inference pass can
+take longer.
+
+Receipts include the model and projector hashes, capture input format reported
+by FFmpeg, converted sample rate and counts, transcript, WER and lifecycle
+errors. First-partial latency starts at the first PCM read. Final latency
+starts at the finish request. A process success code and PCM sample count
+cannot establish that AVFoundation delivered every hardware frame. Confirm
+the backend/artifact provenance when publishing a hardware result. The
+receipt's runtime setup report records package pin policy and override presence.
+The harness saves JSON only. Windows and Linux physical microphone rows stay
+open on #327.
+
+For an automated replay, use a known audio file at least 20 seconds long, with
+the reference for the first 20 seconds. Append `--audio-path "$wav" --expect
+"$reference"` to the command. FFmpeg paces the fixture through the same PCM
+pipe and the harness labels its receipt `simulated_file`.
 
 ## Local Model Scenarios
 
