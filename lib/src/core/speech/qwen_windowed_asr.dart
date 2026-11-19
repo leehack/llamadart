@@ -26,6 +26,8 @@ const int qwenWindowedQuietMinFrames = 5;
 /// Normalized RMS threshold for a quiet 20 ms frame.
 const double qwenWindowedQuietRmsThreshold = 0.01;
 
+const double _verificationFrameRms = 0.007;
+
 /// RIFF/WAVE header byte length for PCM16 LE mono audio.
 const int qwenWindowedWavHeaderBytes = 44;
 
@@ -84,12 +86,15 @@ int selectQwenWindowCut(Float32List window, int length) {
 }
 
 /// Encodes `samples[0 .. length)` as mono 16 kHz PCM16 LE RIFF/WAVE into
-/// [target] and returns a view of the written bytes.
+/// [target] at [gain], limiting samples to [peakLimit], and returns a view of
+/// the written bytes.
 Uint8List encodePcm16WavInto(
   Float32List samples,
   int length,
-  Uint8List target,
-) {
+  Uint8List target, {
+  double gain = 1.0,
+  double peakLimit = 1.0,
+}) {
   final dataBytes = length * 2;
   final totalBytes = qwenWindowedWavHeaderBytes + dataBytes;
   final data = ByteData.sublistView(target, 0, totalBytes);
@@ -125,7 +130,7 @@ Uint8List encodePcm16WavInto(
   data.setUint32(40, dataBytes, Endian.little);
 
   for (var i = 0; i < length; i++) {
-    final clamped = samples[i].clamp(-1.0, 1.0);
+    final clamped = (samples[i] * gain).clamp(-peakLimit, peakLimit);
     final scaled = clamped < 0
         ? (clamped * 32768.0).round()
         : (clamped * 32767.0).round();
@@ -167,7 +172,7 @@ class QwenWindowedAsrSession implements SpeechToTextStreamingSession {
       Completer<SpeechToTextCompletion>();
 
   Future<void>? _inFlightPush;
-  Future<void>? _activeDecode;
+  Future<String>? _activeDecode;
   Future<void>? _finishFuture;
   Future<void>? _cancelFuture;
   void Function()? _cancelActiveDecode;
@@ -180,6 +185,7 @@ class QwenWindowedAsrSession implements SpeechToTextStreamingSession {
   String _pendingText = '';
 
   bool _finishing = false;
+  bool _recheckCurrentWindow = false;
   bool _cancelled = false;
   bool _closed = false;
 
@@ -308,6 +314,7 @@ class QwenWindowedAsrSession implements SpeechToTextStreamingSession {
           }
           _pendingText = '';
           _lastDecodedLength = 0;
+          _recheckCurrentWindow = false;
           final carry = _buffered - cut;
           if (carry > 0) {
             _ring.setRange(0, carry, _ring, cut);
@@ -336,22 +343,85 @@ class QwenWindowedAsrSession implements SpeechToTextStreamingSession {
   }
 
   Future<String> _decodeInterval(int length) {
-    final wavBytes = encodePcm16WavInto(_ring, length, _wavBuffer);
-    final future = _decodeWindow(
-      wavBytes,
-      confirmedPrefix: _confirmedText,
-      registerCancel: (cancel) {
-        _cancelActiveDecode = cancel;
-      },
-      isCancelled: () => _cancelled || _closed,
-    );
+    final future = _decodeVerified(length);
     _activeDecode = future;
     return future.whenComplete(() {
       if (identical(_activeDecode, future)) {
         _activeDecode = null;
       }
-      _cancelActiveDecode = null;
     });
+  }
+
+  Future<String> _decodeVerified(int length) async {
+    final decoded = await _decodeAtGain(length, 1.0);
+    if (decoded.isEmpty || _cancelled || _closed) {
+      return decoded;
+    }
+
+    var sumSquares = 0.0;
+    var quietFrames = 0;
+    var frameCount = 0;
+    for (
+      var start = 0;
+      start < length;
+      start += qwenWindowedQuietFrameSamples
+    ) {
+      final end = math.min(start + qwenWindowedQuietFrameSamples, length);
+      var frameSquares = 0.0;
+      for (var i = start; i < end; i++) {
+        final sample = _ring[i];
+        frameSquares += sample * sample;
+      }
+      sumSquares += frameSquares;
+      frameCount++;
+      if (frameSquares <=
+          (end - start) * _verificationFrameRms * _verificationFrameRms) {
+        quietFrames++;
+      }
+    }
+    // A majority of quiet frames tests the upper median without sorting.
+    if (sumSquares == 0.0 ||
+        (!_recheckCurrentWindow && quietFrames * 2 <= frameCount)) {
+      return decoded;
+    }
+
+    // Amplified quiet noise can yield an empty decode even when the original
+    // decode hallucinates. Keep checking the window after a rejection so a
+    // subsequent decode cannot bypass verification by crossing the gate.
+    final rms = math.sqrt(sumSquares / length);
+    final gain = (0.02 / rms).clamp(1.0, 256.0);
+    final verified = await _decodeAtGain(length, gain, peakLimit: 0.9);
+    if (verified.isEmpty) {
+      _recheckCurrentWindow = true;
+      return '';
+    }
+    return decoded;
+  }
+
+  Future<String> _decodeAtGain(
+    int length,
+    double gain, {
+    double peakLimit = 1.0,
+  }) async {
+    final wavBytes = encodePcm16WavInto(
+      _ring,
+      length,
+      _wavBuffer,
+      gain: gain,
+      peakLimit: peakLimit,
+    );
+    try {
+      return await _decodeWindow(
+        wavBytes,
+        confirmedPrefix: _confirmedText,
+        registerCancel: (cancel) {
+          _cancelActiveDecode = cancel;
+        },
+        isCancelled: () => _cancelled || _closed,
+      );
+    } finally {
+      _cancelActiveDecode = null;
+    }
   }
 
   @override

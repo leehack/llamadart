@@ -88,8 +88,9 @@ native macOS and in headless Chromium. Opt-in windowed live PCM for Qwen3-ASR
 (`Qwen3WindowedAsrAdapter`) is native-only, requires a verified `qwen3a`
 projector via `SpeechToTextEngine.load`, and re-decodes 2/4/6 s uncommitted
 prefixes in a bounded 8 s ring. The first window commits after 8 s of audio
-plus a decode, and later full windows need 6.05–8 s of new audio plus a decode.
-`finish()` flushes remaining audio. Windows join with `\n`, and
+plus inference, and later full windows need 6.05–8 s of new audio plus inference.
+Quiet intervals with a nonempty decode may take a second inference pass,
+including when `finish()` flushes remaining audio. Windows join with `\n`, and
 `maxOutputTokens` applies per decode (`1024` in `startStream`). Continuous
 speech or background noise can force an 8 s hard cut and split words.
 Evidence so far covers only English on macOS arm64 CPU. Native llama.cpp

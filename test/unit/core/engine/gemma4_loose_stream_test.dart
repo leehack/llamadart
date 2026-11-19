@@ -396,6 +396,11 @@ void main() {
       ('{"name":"weather","arguments":{"count":1e+', 'x'),
       ('{"name":"weather","arguments":{"ready":tr', 'x'),
       (r'{"name":"weather","arguments":{"city":"a\u12', 'x'),
+      ('{"name":"weather","arguments":{}', '!'),
+      ('{"name":"weather","arguments":{"city":"a', '\n'),
+      (r'{"name":"weather","arguments":{"city":"a\', 'q'),
+      ('[1', 'x'),
+      ('{"name"', 'x'),
     ]) {
       const prose = 'Before; ';
       final pending = ChatTemplateEngine.parseRendered(

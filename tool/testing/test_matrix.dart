@@ -663,7 +663,8 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
         'opt-in Qwen3-ASR windowed live PCM streaming via '
         'Qwen3WindowedAsrAdapter (44s JFK repetition, chunking parity, '
         'boundaries, absolute WER on bundled LibriSpeech dev-clean '
-        '1272-128104-0000, and 300s sustained run; requires '
+        '1272-128104-0000, quiet-noise tails, reduced-gain speech, and 300s '
+        'sustained run; requires '
         'LLAMADART_STT_STREAM_QWEN_MODEL_PATH, '
         'LLAMADART_STT_STREAM_QWEN_MMPROJ_PATH; optionally set '
         'LLAMADART_STT_LIVE_PACED=1)',

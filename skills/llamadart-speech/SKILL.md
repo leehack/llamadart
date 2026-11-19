@@ -64,10 +64,14 @@ description: >-
     `projector` (`attach` and Web throw `LlamaUnsupportedException`). Accepts
     mono 16 kHz `pcm-f32le` via `startStream()` or `transcribeOnce()`,
     re-decodes the uncommitted prefix at 2/4/6 s checkpoints for replaceable
-    `pendingText`. The first window commits after 8 s of audio plus a decode,
-    and later full windows need 6.05–8 s of new audio plus a decode.
-    `finish()` flushes remaining audio. A full buffer commits at a quiet
-    boundary or hard-cuts at 8 s, which can split a word. Confirmed windows
+    `pendingText`. The first window commits after 8 s of audio plus inference,
+    and later full windows need 6.05–8 s of new audio plus inference.
+    A nonempty quiet decode may take a second pass at higher gain before
+    publishing text, including during the `finish()` flush. An empty second
+    decode suppresses the hypothesis and keeps later decodes of that window
+    subject to verification. Background noise can still affect accuracy.
+    A full buffer commits at a quiet boundary or hard-cuts at 8 s, which can
+    split a word. Confirmed windows
     join with `\n`, empty intermediate windows are suppressed, and
     `maxOutputTokens` applies per decode (`1024` for `startStream`).
     Rejects context prompts and language hints. `capabilities.inputMode` is

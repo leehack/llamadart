@@ -4,6 +4,7 @@ Releases before 0.10.0 are in the
 ## Unreleased
 
 - Adopt `llamadart-native@v1.0.0-3` for the Windows Visual C++ runtime and GPU memory fit fixes, plus native speech cancellation and text handling fixes ([#2059](https://github.com/leehack/llamadart/issues/2059)).
+- Reduce false transcripts on quiet noise in Qwen3-ASR windowed live speech recognition ([#2079](https://github.com/leehack/llamadart/issues/2079)).
 - Report Vulkan and apply Android Vulkan context settings and prompt limits when an OpenCL preference falls back to a filtered list of Vulkan devices ([#2020](https://github.com/leehack/llamadart/issues/2020)).
 - Keep Gemma 4 reply text and later valid tool calls when a malformed call has an unclosed string delimiter ([#2042](https://github.com/leehack/llamadart/pull/2042)).
 - Preserve partial LFM2 end-marker text such as `<|` in the last plain string argument when the model omits its closing quote ([#1988](https://github.com/leehack/llamadart/pull/1988)).
