@@ -93,6 +93,7 @@ tool/ci/select_jobs.py @leehack
 tool/ci/check_format.py @leehack
 tool/ci/native_test_timing.dart @leehack
 tool/ci/test_shards.dart @leehack
+tool/ci/run_linux_vm_shards.sh @leehack
 tool/ci/test_shard_weights.json @leehack
 tool/ci/litert_lm_temp_canary.sh @leehack
 tool/ci/supervise_chrome_test.py @leehack

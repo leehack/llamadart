@@ -2074,10 +2074,7 @@ esac
             'PRUNE_SHARD': '${pruneShard ?? ''}',
           },
         );
-        final failures = {
-          if (failShard != null) failShard,
-          if (pruneShard != null) pruneShard,
-        };
+        final failures = {?failShard, ?pruneShard};
         expect(
           result.exitCode,
           failures.isEmpty ? 0 : 1,
