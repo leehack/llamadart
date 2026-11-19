@@ -9,19 +9,45 @@ import 'dart:math' as math;
 import 'package:llamadart/llamadart.dart';
 import 'package:test/test.dart';
 
-const _gib = 1 << 30;
+Future<GpuDeviceInfo?> _selectGpu(LlamaEngine engine) async {
+  final gpus = await engine.listGpuDevices(
+    probeBackends: const [
+      GpuBackend.vulkan,
+      GpuBackend.cuda,
+      GpuBackend.hip,
+      GpuBackend.opencl,
+    ],
+  );
+  if (gpus.isEmpty) {
+    markTestSkipped('No GPU device on this host.');
+    return null;
+  }
+  return gpus.first;
+}
 
-Future<({GpuBackend backend, int freeBytes})?> _measureGpuBaseline(
+LlamaCppModelParams _params(
+  GpuDeviceInfo gpu, {
+  GpuMemoryFit? fit,
+  ComputeDevice device = ComputeDevice.auto,
+}) => LlamaCppModelParams(
+  contextSize: 2048,
+  numberOfThreads: 2,
+  numberOfThreadsBatch: 2,
+  device: device,
+  preferredBackend: gpu.backend,
+  gpuDevices: [gpu.mainGpu],
+  gpuMemoryFit: fit,
+);
+
+Future<GpuMemoryFitDevice?> _measureGpuBaseline(
   LlamaEngine engine,
   String model,
+  GpuDeviceInfo gpu,
 ) async {
   try {
     await engine.loadModel(
       model,
-      modelParams: const LlamaCppModelParams(
-        contextSize: 2048,
-        gpuMemoryFit: GpuMemoryFit(marginBytes: 0),
-      ),
+      modelParams: _params(gpu, fit: const GpuMemoryFit(marginBytes: 0)),
     );
   } on LlamaUnsupportedException catch (error) {
     if (error.message.contains('llama_dart_fit_params')) {
@@ -31,21 +57,13 @@ Future<({GpuBackend backend, int freeBytes})?> _measureGpuBaseline(
     rethrow;
   }
 
-  final gpus = await engine.listGpuDevices();
-  if (gpus.isEmpty) {
-    markTestSkipped('No GPU device on this host.');
-    return null;
-  }
   final baseline = await engine.getGpuMemoryFitReport();
-  if (baseline == null || baseline.devices.isEmpty) {
-    markTestSkipped('GPU memory fit did not report any device.');
-    return null;
-  }
-  final maxFreeBytes = baseline.devices
-      .map((device) => device.freeBytes)
-      .reduce(math.max);
+  expect(baseline, isNotNull);
+  expect(baseline!.devices.map((device) => device.name), [gpu.name]);
+  final device = baseline.devices.single;
+  expect(device.totalBytes, greaterThan(0));
   await engine.unloadModel();
-  return (backend: gpus.first.backend, freeBytes: maxFreeBytes);
+  return device;
 }
 
 /// Loads a model on a Linux or Windows GPU with a margin that leaves only a
@@ -62,17 +80,22 @@ void main() {
   test('a partial fit loads and generates', skip: skip, () async {
     final engine = LlamaEngine(LlamaBackend());
     addTearDown(engine.dispose);
-    final baseline = await _measureGpuBaseline(engine, model!);
+    final gpu = await _selectGpu(engine);
+    if (gpu == null) return;
+    final baseline = await _measureGpuBaseline(engine, model!, gpu);
     if (baseline == null) return;
 
-    final modelBytes = File(model).lengthSync();
-    final budget = modelBytes ~/ 2 + _gib ~/ 4;
+    expect(baseline.modelBytes, greaterThan(0));
+    // Size the budget from the fitted load so the overhead scales even for
+    // small models, and keep room for the measured compute buffers.
+    final budget =
+        baseline.computeBytes +
+        (baseline.modelBytes + baseline.contextBytes) ~/ 2;
     await engine.loadModel(
       model,
-      modelParams: LlamaCppModelParams(
-        contextSize: 2048,
-        preferredBackend: baseline.backend,
-        gpuMemoryFit: GpuMemoryFit(
+      modelParams: _params(
+        gpu,
+        fit: GpuMemoryFit(
           marginBytes: math.max(baseline.freeBytes - budget, 0),
         ),
       ),
@@ -80,6 +103,7 @@ void main() {
 
     final report = (await engine.getGpuMemoryFitReport())!;
     print(report);
+    expect(report.devices.map((device) => device.name), [gpu.name]);
     expect(report.outcome, GpuMemoryFitOutcome.reduced);
     expect(report.gpuLayers, inExclusiveRange(0, report.modelLayers));
     expect(await engine.getResolvedGpuLayers(), report.gpuLayers);
@@ -98,21 +122,22 @@ void main() {
     () async {
       final engine = LlamaEngine(LlamaBackend());
       addTearDown(engine.dispose);
-      final baseline = await _measureGpuBaseline(engine, model!);
+      final gpu = await _selectGpu(engine);
+      if (gpu == null) return;
+      final baseline = await _measureGpuBaseline(engine, model!, gpu);
       if (baseline == null) return;
 
       LlamaGpuMemoryFitException? caught;
       try {
         await engine.loadModel(
           model,
-          modelParams: LlamaCppModelParams(
-            contextSize: 2048,
+          modelParams: _params(
+            gpu,
             device: ComputeDevice.gpu,
-            preferredBackend: baseline.backend,
-            gpuMemoryFit: GpuMemoryFit(marginBytes: baseline.freeBytes + _gib),
+            fit: GpuMemoryFit(marginBytes: baseline.totalBytes),
           ),
         );
-        fail('Expected LlamaGpuMemoryFitException when margin exceeds free.');
+        fail('Expected LlamaGpuMemoryFitException when reserving the GPU.');
       } on LlamaGpuMemoryFitException catch (error) {
         caught = error;
       }
@@ -122,14 +147,10 @@ void main() {
       expect(report, isNotNull);
       expect(report!.outcome, GpuMemoryFitOutcome.cpu);
       expect(report.gpuLayers, 0);
+      expect(report.devices.map((device) => device.name), [gpu.name]);
+      expect(report.devices.single.modelBytes, 0);
 
-      await engine.loadModel(
-        model,
-        modelParams: LlamaCppModelParams(
-          contextSize: 2048,
-          preferredBackend: baseline.backend,
-        ),
-      );
+      await engine.loadModel(model, modelParams: _params(gpu));
       expect(await engine.getResolvedGpuLayers(), greaterThan(0));
     },
   );

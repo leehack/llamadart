@@ -292,6 +292,34 @@ void main() {
     allocator.expectAllFreed();
   });
 
+  test('freeModel removes that model\'s fit report', () {
+    start();
+    final first = service.loadModel(model, params());
+    final firstReport = service.getGpuMemoryFitReport();
+    final second = service.loadModel(model, params());
+    final secondReport = service.getGpuMemoryFitReport();
+    expect(firstReport, isNotNull);
+    expect(secondReport, isNotNull);
+    expect(secondReport, isNot(same(firstReport)));
+
+    service.freeModel(first);
+
+    final library = reflectClass(LlamaCppService).owner as LibraryMirror;
+    final reports =
+        reflect(service)
+                .getField(
+                  MirrorSystem.getSymbol('_modelGpuMemoryFitReports', library),
+                )
+                .reflectee
+            as Map<int, GpuMemoryFitReport>;
+    expect(reports, {second: secondReport});
+    expect(service.getGpuMemoryFitReport(), same(secondReport));
+
+    service.freeModel(second);
+    expect(reports, isEmpty);
+    expect(service.getGpuMemoryFitReport(), isNull);
+  });
+
   test('a load that fits keeps every requested layer', () {
     start();
     service.loadModel(model, params());

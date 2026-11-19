@@ -218,7 +218,8 @@ description: >-
   - Experimental streaming: `TextToSpeechRequest(streamAudio: true)` adds
     `TextToSpeechAudioChunkEvent`s (`samples`, `sampleOffset`, `sampleRateHz`,
     `channelCount`) to `task.events` before the final event; they concatenate
-    to `result.samples`. Check `capabilities.supportsIncrementalAudio` first:
+    to `result.samples`. Use each chunk's `sampleRateHz` and `channelCount`
+    for playback. Check `capabilities.supportsIncrementalAudio` first:
     `synthesize` throws `LlamaUnsupportedException` without it (Soprano,
     Chatterbox, Web, native runtimes before llamadart-native `v1.0.0-1`, or
     backends without a positive sample rate and channel count; see

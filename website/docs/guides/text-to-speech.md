@@ -381,7 +381,9 @@ task.events.listen((TextToSpeechEvent event) {
 
 Each chunk holds the samples produced since the previous one, with
 `sampleOffset` (its first sample's index in the final result), `sampleRateHz`
-and `channelCount`. The chunks concatenate to `result.samples`, which equals
+and `channelCount`. Native chunks carry the format of the PCM produced for
+that chunk. Custom backends can omit the chunk format to use the format
+reported in their capabilities. The chunks concatenate to `result.samples`, which equals
 the PCM of the same request without `streamAudio`. After `cancel()` no chunk
 or final event arrives; cancelling only the `events` subscription does not
 cancel synthesis (call `task.cancel()`). There is no output backpressure: a
