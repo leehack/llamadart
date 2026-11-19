@@ -50,7 +50,13 @@ void main() {
         readLiveAsrPcm(Stream.value(pcm.sublist(0, 5))),
         emitsInOrder([
           orderedEquals([0.25]),
-          emitsError(isA<FormatException>()),
+          emitsError(
+            isA<FormatException>().having(
+              (error) => error.message,
+              'message',
+              contains('4-byte aligned mono 16 kHz float32'),
+            ),
+          ),
         ]),
       );
     },
