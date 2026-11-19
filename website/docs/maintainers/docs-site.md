@@ -33,14 +33,17 @@ Verify these paths before running cross-repo workflows.
 
 ## Daily verification commands
 
-From repo root:
+The canonical repository baseline is
+[`AGENTS.md`](https://github.com/leehack/llamadart/blob/main/AGENTS.md)
+(`Build and test`). From repo root:
 
 ```bash
 dart run tool/prepare_workspace.dart
-dart format --output=none --set-exit-if-changed .
+python3 tool/ci/check_format.py
 dart analyze
-dart test
-./tool/docs/build_site.sh
+dart run tool/testing/check_platform_boundaries.dart
+TMPDIR="$(mktemp -d)" dart test -p vm -j 1 --exclude-tags local-only
+dart test -p chrome --exclude-tags local-only
 ```
 
 Preparation resolves the root package and every maintained example. It also
@@ -56,25 +59,43 @@ Use the Flutter SDK pinned in `.flutter-version` (`3.47.1`), the same version
 CI installs, for repository-wide quality gates. Other Dart formatters produce
 different source layouts even after the same dependency bootstrap.
 
+- **Studio formatting and SDK:** `python3 tool/ci/check_format.py` checks
+  root-SDK formatting while excluding `packages/llamadart_studio` and
+  `packages/llamadart_studio_core`. Those two Studio packages use the
+  independent Flutter SDK pinned in
+  `packages/llamadart_studio/.flutter-version` (`3.50.0`); run their
+  package-local `dart format --output=none --set-exit-if-changed .`,
+  analyze, and tests with that SDK.
+- **Isolated `TMPDIR` on macOS:** Run local VM tests with an isolated `TMPDIR`
+  (`TMPDIR="$(mktemp -d)" dart test -p vm ...`). LiteRT-LM engines without
+  `liteRtLmCacheDir` prune program caches shared under
+  `$TMPDIR/llamadart_litert_lm`, and CI checks the canary there.
+
 Use targeted test commands when iterating quickly, then run full checks before
 release-related merges.
 
 ## Validating changes
 
-Package changes run the commands above plus the platform lanes:
+Package changes run the repository baseline above with isolated `TMPDIR` for VM
+tests and `dart test -p chrome --exclude-tags local-only` for browser tests,
+plus package-local Studio checks under `packages/llamadart_studio/.flutter-version`
+when Studio files change.
 
-```bash
-dart test -p vm -j 1 --exclude-tags local-only
-dart test -p chrome --exclude-tags local-only
-```
-
-Docs changes also run:
+Docs and website changes run:
 
 ```bash
 dart run tool/testing/verify_release_docs_versions.dart
 ./tool/docs/build_site.sh
-./tool/docs/validate_links.sh
+(cd website && dart pub get && dart analyze --fatal-infos && dart test)
 ```
+
+`./tool/docs/build_site.sh` checks the observability example, builds the Jaspr
+site, runs `website/tool/finalize_site.dart` (which fails on any broken
+internal link or anchor), and indexes search with Pagefind, so a separate
+`validate_links.sh` call is not needed. Also run
+`TMPDIR="$(mktemp -d)" dart test -p vm test/unit/tooling/` and
+`TMPDIR="$(mktemp -d)" xargs dart test -p vm -j 1 --exclude-tags local-only < tool/ci/markdown_test_suites.txt`
+when touching docs checked by root Markdown tests.
 
 For heavier local model checks, list the discoverable scenarios:
 
@@ -145,9 +166,20 @@ Writing docs:
 - Add every new doc to `sidebars.json`: `website/test/site_model_test.dart`
   fails unless each doc without `unlisted: true` appears there exactly once.
 
-`dart run tool/cut_version.dart <version>` in `website/` snapshots `docs/` and
-`sidebars.json` for a release and makes it the latest; `docs_version_cut.yml`
-runs it on release tags.
+How changes reach GitHub Pages:
+
+- Ordinary pushes or merges to `main` do **not** deploy GitHub Pages.
+- **Tag-triggered release deployment:** Pushing a core `v*` tag triggers
+  `docs_version_cut.yml`, which runs `dart run tool/cut_version.dart <version>`
+  in `website/` to snapshot `docs/` and `sidebars.json` (making that release
+  the latest at `/docs/...`), reopens `## Unreleased` in both core changelogs,
+  and pushes to `main`. When `docs_version_cut.yml` completes successfully
+  (`workflow_run`), `docs_pages.yml` builds the site with
+  `./tool/docs/build_site.sh` and deploys it to GitHub Pages.
+- **Manual deployment:** Triggering `docs_pages.yml` via `workflow_dispatch` on
+  `main` builds and deploys the current default branch to GitHub Pages,
+  publishing `/docs/next/...` from `website/docs/` alongside existing
+  snapshots.
 
 ## Analytics and SEO maintenance
 

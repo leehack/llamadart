@@ -13,16 +13,22 @@ companion and is not released by this checklist.
 # Print release-tier rows for evidence planning; this does not run validation.
 dart run tool/testing/test_matrix.dart --tier release
 dart run tool/prepare_workspace.dart
-dart format --output=none --set-exit-if-changed .
+python3 tool/ci/check_format.py
 dart analyze
 dart run tool/testing/check_platform_boundaries.dart
-dart test -p vm -j 1 --exclude-tags local-only
+TMPDIR="$(mktemp -d)" dart test -p vm -j 1 --exclude-tags local-only
 dart test -p chrome --exclude-tags local-only
 dart test -p vm test/unit/tooling/validation_coverage_test.dart
 dart run tool/testing/verify_release_docs_versions.dart --release-prep
 python3 tool/release/check_core_archive.py
 ./tool/docs/build_site.sh # fails on broken internal links
 ```
+
+`python3 tool/ci/check_format.py` excludes `packages/llamadart_studio` and
+`packages/llamadart_studio_core`; check their formatting, analysis, and tests
+locally with the Flutter SDK pinned in
+`packages/llamadart_studio/.flutter-version` (`3.50.0`). On macOS, keep
+`TMPDIR="$(mktemp -d)"` for VM tests so LiteRT-LM cache pruning stays isolated.
 
 Ensure migration/changelog docs reflect behavior in the release branch.
 

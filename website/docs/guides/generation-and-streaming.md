@@ -214,8 +214,10 @@ credential, which reports `llama_model`. An OpenAI-compatible server that
 exposes its own model id should set that id on its responses instead.
 
 With Gemma 4 tools enabled, confirmed prose can stream while a possible loose
-JSON tool payload is still arriving. The parser keeps preceding prose in the
-completed reply and publishes executable calls on the final chunk.
+JSON tool payload is still arriving. Fenced and closed inline-backtick JSON
+stream as text, non-matching tool names release once the name is known, and the
+parser keeps text before and after a recovered call while publishing executable
+calls on the final chunk.
 
 ## Token usage and timings
 

@@ -75,28 +75,211 @@ void main() {
       [_getWeather],
       true,
     ),
-    ('wrapped bare JSON', '```json\n$_json\n```', '', '', [_weather], true),
     (
-      'prose before a fence',
+      'archived Hermes wrapper with trailing text',
+      '$_archive\nDone.',
+      'Plan.</think>\nDone.',
+      '',
+      [_getWeather],
+      true,
+    ),
+    (
+      'fenced bare JSON stays text',
+      '```json\n$_json\n```',
+      '```json\n$_json\n```',
+      '',
+      <(String, Map<String, String>)>[],
+      true,
+    ),
+    (
+      'prose before fenced JSON stays text',
       '$_prose\n```json\n$_json\n```',
-      '$_prose\n',
+      '$_prose\n```json\n$_json\n```',
+      '',
+      <(String, Map<String, String>)>[],
+      true,
+    ),
+    (
+      'tilde fenced JSON stays text',
+      '$_prose\n~~~json\n$_json\n~~~\nDone.',
+      '$_prose\n~~~json\n$_json\n~~~\nDone.',
+      '',
+      <(String, Map<String, String>)>[],
+      true,
+    ),
+    (
+      'literal text inside a fence before JSON stays text',
+      '```json\nResult: $_json\n```',
+      '```json\nResult: $_json\n```',
+      '',
+      <(String, Map<String, String>)>[],
+      true,
+    ),
+    (
+      'inline-backtick JSON stays text',
+      'Run `$_json` now.',
+      'Run `$_json` now.',
+      '',
+      <(String, Map<String, String>)>[],
+      true,
+    ),
+    (
+      'multi-backtick inline JSON stays text',
+      'Run ``$_json`` now.',
+      'Run ``$_json`` now.',
+      '',
+      <(String, Map<String, String>)>[],
+      true,
+    ),
+    (
+      'multiline inline-backtick JSON stays text',
+      'Run `{\n"name":"weather","arguments":{"city":"Seoul"}\n}` now.',
+      'Run `{\n"name":"weather","arguments":{"city":"Seoul"}\n}` now.',
+      '',
+      <(String, Map<String, String>)>[],
+      true,
+    ),
+    (
+      'inline-backtick span before declared loose call',
+      'Use `foo` then $_json',
+      'Use `foo` then ',
       '',
       [_weather],
       true,
     ),
     (
-      'literal text inside a fence before JSON',
-      '```json\nResult: $_json\n```',
-      '```json\nResult: ',
+      'undeclared loose JSON name stays text',
+      '$_prose {"name":"other","arguments":{"city":"Seoul"}}',
+      '$_prose {"name":"other","arguments":{"city":"Seoul"}}',
+      '',
+      <(String, Map<String, String>)>[],
+      true,
+    ),
+    (
+      'schema JSON stays text',
+      'Schema: {"type":"object","properties":{"city":{"type":"string"}}}',
+      'Schema: {"type":"object","properties":{"city":{"type":"string"}}}',
+      '',
+      <(String, Map<String, String>)>[],
+      true,
+    ),
+    (
+      'schema JSON with nested declared name stays text',
+      'Schema: {"type":"object","properties":{"sub":$_json}}',
+      'Schema: {"type":"object","properties":{"sub":$_json}}',
+      '',
+      <(String, Map<String, String>)>[],
+      true,
+    ),
+    (
+      'declared call with trailing text',
+      '$_prose $_json Then I will summarize.',
+      '$_prose Then I will summarize.',
+      '',
+      [_weather],
+      true,
+    ),
+    (
+      'declared call without horizontal whitespace at junction',
+      'Ok${_json}Done',
+      'OkDone',
+      '',
+      [_weather],
+      true,
+    ),
+    (
+      'unpaired closing tag after bare call',
+      '$_json</tool_call> Done',
+      ' Done',
+      '',
+      [_weather],
+      true,
+    ),
+    (
+      'unpaired closing tag with prose around call',
+      '$_prose $_json</tool_call> Done',
+      '$_prose Done',
+      '',
+      [_weather],
+      true,
+    ),
+    (
+      'unpaired closing tag before call stays visible',
+      '$_prose </tool_call> $_json',
+      '$_prose </tool_call> ',
+      '',
+      [_weather],
+      true,
+    ),
+    (
+      'truncated closing tag after bare call',
+      '$_prose $_json</tool_',
+      '$_prose ',
+      '',
+      [_weather],
+      true,
+    ),
+    (
+      'trailing semicolon after loose call',
+      '$_prose $_json;',
+      '$_prose ',
+      '',
+      [_weather],
+      true,
+    ),
+    (
+      'semicolon separator before prose',
+      '$_prose $_json; then done',
+      '$_prose then done',
+      '',
+      [_weather],
+      true,
+    ),
+    (
+      'leading call with semicolon separator before prose',
+      '$_json; then done',
+      'then done',
+      '',
+      [_weather],
+      true,
+    ),
+    (
+      'semicolon separator before newline',
+      '$_prose $_json;\nDone',
+      '$_prose \nDone',
+      '',
+      [_weather],
+      true,
+    ),
+    (
+      'non-call JSON before declared call',
+      'Use {"a":1} like this. $_json',
+      'Use {"a":1} like this. ',
       '',
       [_weather],
       true,
     ),
     ('wrapped array', '$_prose [$_json]', '$_prose ', '', [_weather], true),
     (
+      'parallel array calls',
+      '$_prose [$_json,{"name":"get_weather","arguments":{"location":"Paris"}}]',
+      '$_prose ',
+      '',
+      [_weather, _getWeather],
+      true,
+    ),
+    (
       'parallel JSON',
       '$_prose $_json;$_json',
       '$_prose ',
+      '',
+      [_weather, _weather],
+      true,
+    ),
+    (
+      'parallel JSON with trailing text',
+      '$_prose $_json; $_json; bye',
+      '$_prose bye',
       '',
       [_weather, _weather],
       true,
@@ -119,13 +302,19 @@ void main() {
     ),
     (
       'loose JSON recovered after a malformed native envelope',
-      'Pre <|tool_call>call:f{a:<|"|>x<tool_call|>'
-          '{"name":"rm","arguments":{"path":"/"}}',
+      'Pre <|tool_call>call:f{a:<|"|>x<tool_call|>$_json',
       'Pre ',
       '',
-      [
-        ('rm', <String, String>{'path': '/'}),
-      ],
+      [_weather],
+      true,
+    ),
+    (
+      'undeclared loose JSON after a malformed native envelope stays text',
+      'Pre <|tool_call>call:f{a:<|"|>x<tool_call|>'
+          '{"name":"rm","arguments":{"path":"/"}}',
+      'Pre {"name":"rm","arguments":{"path":"/"}}',
+      '',
+      <(String, Map<String, String>)>[],
       true,
     ),
     (
@@ -469,6 +658,207 @@ void main() {
     expect(_content(chunks), isEmpty);
     expect(chunks.last.choices.single.delta.toolCalls!.single.index, 1);
   });
+
+  test('streaming releases undeclared name and schema JSON before }', () async {
+    for (final (label, prefix, tail) in [
+      (
+        'undeclared name',
+        'Try {"name":"other"',
+        ',"arguments":{"city":"Seoul","extra":"long"}}',
+      ),
+      (
+        'schema JSON',
+        'Schema: {"type":"object"',
+        ',"properties":{"city":{"type":"string"}}}',
+      ),
+    ]) {
+      final controller = StreamController<String>();
+      final chunks = <LlamaCompletionChunk>[];
+      final done = _stream(
+        controller.stream,
+        render(),
+        true,
+      ).forEach(chunks.add);
+      try {
+        for (final token in prefix.split('')) {
+          controller.add(token);
+        }
+        // Trigger a signal-driven partial parse without closing the object.
+        await Future<void>.delayed(const Duration(milliseconds: 30));
+        controller.add(',');
+        await pumpEventQueue(times: 4);
+        expect(_content(chunks), '$prefix,', reason: label);
+        controller.add(tail.substring(1));
+      } finally {
+        await controller.close();
+        await done;
+      }
+      expect(_content(chunks), '$prefix$tail', reason: label);
+      expect(chunks.last.choices.single.finishReason, 'stop', reason: label);
+    }
+  });
+
+  test(
+    'streaming releases fenced and inline-backtick JSON before EOF',
+    () async {
+      final fencedController = StreamController<String>();
+      final fencedChunks = <LlamaCompletionChunk>[];
+      final fencedDone = _stream(
+        fencedController.stream,
+        render(),
+        true,
+      ).forEach(fencedChunks.add);
+      try {
+        for (final token in ['Look:\n```json\n', '{"name":"weather",']) {
+          fencedController.add(token);
+        }
+        await Future<void>.delayed(const Duration(milliseconds: 30));
+        fencedController.add('"city"');
+        await pumpEventQueue(times: 4);
+        expect(
+          _content(fencedChunks),
+          'Look:\n```json\n{"name":"weather","city"',
+        );
+        fencedController.add('}\n```');
+      } finally {
+        await fencedController.close();
+        await fencedDone;
+      }
+      expect(
+        _content(fencedChunks),
+        'Look:\n```json\n{"name":"weather","city"}\n```',
+      );
+      expect(fencedChunks.last.choices.single.finishReason, 'stop');
+
+      final inlineController = StreamController<String>();
+      final inlineChunks = <LlamaCompletionChunk>[];
+      final inlineDone = _stream(
+        inlineController.stream,
+        render(),
+        true,
+      ).forEach(inlineChunks.add);
+      try {
+        for (final token in [
+          'Run `',
+          '{"name":"weather",',
+          '"arguments":{"city":"Seoul"}}',
+          '`',
+        ]) {
+          inlineController.add(token);
+        }
+        await pumpEventQueue(times: 4);
+        expect(_content(inlineChunks), 'Run `');
+
+        for (final token in [
+          ' ',
+          'next',
+          ' ',
+          'step',
+          ' ',
+          'now',
+          ' ',
+          'ok.',
+        ]) {
+          inlineController.add(token);
+        }
+        await pumpEventQueue(times: 4);
+        expect(_content(inlineChunks), 'Run `$_json` next step');
+      } finally {
+        await inlineController.close();
+        await inlineDone;
+      }
+      expect(_content(inlineChunks), 'Run `$_json` next step now ok.');
+      expect(inlineChunks.last.choices.single.finishReason, 'stop');
+    },
+  );
+
+  test(
+    'streaming emits trailing text after a declared loose call before EOF',
+    () async {
+      final controller = StreamController<String>();
+      final chunks = <LlamaCompletionChunk>[];
+      final done = _stream(
+        controller.stream,
+        render(),
+        true,
+      ).forEach(chunks.add);
+      try {
+        controller.add('$_prose $_json');
+        await pumpEventQueue(times: 4);
+        expect(_content(chunks), _prose);
+
+        for (final token in [
+          ' Then',
+          ' I',
+          ' will',
+          ' soon',
+          ' explain',
+          ' all',
+          ' of',
+          ' it.',
+        ]) {
+          controller.add(token);
+        }
+        await pumpEventQueue(times: 4);
+        expect(_content(chunks), '$_prose Then I will soon explain all of it.');
+        expect(
+          chunks.every((chunk) => chunk.choices.single.finishReason == null),
+          isTrue,
+        );
+      } finally {
+        await controller.close();
+        await done;
+      }
+      expect(_content(chunks), '$_prose Then I will soon explain all of it.');
+      expect(chunks.last.choices.single.finishReason, 'tool_calls');
+      expect(
+        chunks.last.choices.single.delta.toolCalls!.single.function?.name,
+        'weather',
+      );
+    },
+  );
+
+  test(
+    'cancel and length limit strip trailing semicolon and truncated closing tag',
+    () async {
+      final rendered = render();
+      for (final (label, tokens, expectedContent) in [
+        ('bare truncated close tag', ['$_json</tool_'], ''),
+        ('wrapped truncated close tag', ['<tool_call>$_json', '</tool_'], ''),
+        (
+          'prose with truncated close tag',
+          ['$_prose $_json', '</tool_'],
+          '$_prose ',
+        ),
+        ('prose with trailing semicolon', ['$_prose $_json', ';'], '$_prose '),
+        ('bare trailing semicolon', [_json, '; '], ''),
+      ]) {
+        for (final atLimit in [false, true]) {
+          final chunks = await ChatCompletionStreamParser.parse(
+            tokenStream: Stream.fromIterable(tokens),
+            templateResult: rendered,
+            parseToolCallsEnabled: true,
+            enableThinking: true,
+            modelName: 'gemma4',
+            completionId: 'gemma4-residue-$label-$atLimit',
+            tools: _tools,
+            cancelled: () => !atLimit,
+            stoppedAtLimit: () => atLimit,
+          ).toList();
+          expect(
+            _content(chunks),
+            expectedContent,
+            reason: '$label (limit=$atLimit)',
+          );
+          expect(
+            chunks.last.choices.single.finishReason,
+            atLimit ? 'length' : 'tool_calls',
+            reason: '$label (limit=$atLimit)',
+          );
+        }
+      }
+    },
+  );
 }
 
 String _content(Iterable<LlamaCompletionChunk> chunks) =>
