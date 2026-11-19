@@ -12,6 +12,54 @@ import '../../../tool/audio_chat_smoke_support.dart';
 import '../../../tool/testing/run_local_e2e.dart';
 
 void main() {
+  test(
+    'dry run selects the interactive harness and leaves profiles explicit',
+    () async {
+      const args = [
+        '--scenario',
+        'macos-mic-asr',
+        '--model-preset',
+        'qwen',
+        '--model-path',
+        'model.gguf',
+        '--mmproj-path',
+        'proj.gguf',
+      ];
+      final result = await runLocalE2e([
+        ...args,
+        '--dry-run',
+      ], projectRoot: '/repo');
+      expect(result.exitCode, 0);
+      expect(result.stdout, contains('bin/llamadart_macos_mic_asr.dart'));
+      expect(result.stdout, contains('--profile qwen'));
+      final invalid = await runLocalE2e([
+        ...args,
+        '--audio-path',
+        'file.wav',
+        '--dry-run',
+      ]);
+      expect(invalid.exitCode, 64);
+      for (final simulated in [false, true]) {
+        await runLocalE2e(
+          [
+            ...args,
+            if (simulated) ...[
+              '--audio-path',
+              'file.wav',
+              '--expect',
+              'a red bike',
+            ],
+          ],
+          foregroundStepRun: (step) async {
+            expect(step.inheritStdio, !simulated);
+            expect(step.arguments.contains('--audio'), simulated);
+            return ProcessResult(0, 0, '', '');
+          },
+        );
+      }
+    },
+  );
+
   group('default native consumer AOT scenario', () {
     const identity = {
       'LLAMADART_DEFAULT_AOT_EXPECTED_SHA':
