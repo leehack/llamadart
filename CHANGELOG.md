@@ -1,26 +1,27 @@
 Releases before 0.10.0 are in the
 [changelog archive](https://github.com/leehack/llamadart/blob/main/doc/changelog_archive.md).
 
-## Unreleased
+## 0.20.2
 
-- Adopt `llamadart-native@v1.0.0-3` for the Windows Visual C++ runtime and GPU memory fit fixes, plus native speech cancellation and text handling fixes ([#2059](https://github.com/leehack/llamadart/issues/2059)).
-- Reduce false transcripts on quiet noise in Qwen3-ASR windowed live speech recognition ([#2079](https://github.com/leehack/llamadart/issues/2079)).
+- Adopt `llamadart-native@v1.0.0-3` for the Windows Visual C++ runtime and GPU memory fit fixes, plus native speech cancellation and text handling fixes ([#2087](https://github.com/leehack/llamadart/pull/2087)).
+- Add opt-in `Qwen3WindowedAsrAdapter` and expose `SpeechToTextInputMode` via `SpeechToTextCapabilities.inputMode` for bounded native Qwen3-ASR live PCM. It emits replaceable partials at 2, 4 and 6 seconds, commits at quiet boundaries or 8 seconds, and reduces false transcripts from quiet noise. Web, `SpeechToTextEngine.attach` and non-`qwen3a` projectors throw `LlamaUnsupportedException` ([#327](https://github.com/leehack/llamadart/issues/327), [#2079](https://github.com/leehack/llamadart/issues/2079)).
+- Document measured `LlamaCppLiveAsrAdapter` throughput on two-thread Linux and Windows x64 CPUs. LFM3-Audio kept up with live input and Voxtral Realtime took about four times the audio duration ([#327](https://github.com/leehack/llamadart/issues/327)).
+- Document `-` for stdin in the live ASR example and report the required PCM format when input ends mid-sample.
 - Report Vulkan and apply Android Vulkan context settings and prompt limits when an OpenCL preference falls back to a filtered list of Vulkan devices ([#2020](https://github.com/leehack/llamadart/issues/2020)).
 - Keep Gemma 4 reply text and later valid tool calls when a malformed call has an unclosed string delimiter ([#2042](https://github.com/leehack/llamadart/pull/2042)).
+- Preserve Gemma 4 prose before loose JSON tool calls in streamed and final replies, and keep MiniMax M3 quoted tool markup and literal thinking tags visible across token splits ([#1930](https://github.com/leehack/llamadart/issues/1930)).
 - Preserve partial LFM2 end-marker text such as `<|` in the last plain string argument when the model omits its closing quote ([#1988](https://github.com/leehack/llamadart/pull/1988)).
 - Clarify that a thinking budget keeps forced-open Granite required-call grammars applied and pauses Ling 3 required-call grammars ([#1965](https://github.com/leehack/llamadart/pull/1965)).
 - Throw `LlamaUnsupportedException` when the loaded WebGPU assets lack `presencePenalty` support ([#1965](https://github.com/leehack/llamadart/pull/1965)).
 - Streamed text-to-speech chunks now report the sample rate and channel count of the actual native PCM ([#2048](https://github.com/leehack/llamadart/issues/2048)).
-- Add opt-in `Qwen3WindowedAsrAdapter` for bounded 8 s windowed live PCM speech recognition on native Qwen3-ASR (2/4/6 s replaceable partials, quiet-boundary commits with 8 s hard cut; Web, `SpeechToTextEngine.attach`, and non-`qwen3a` projectors throw `LlamaUnsupportedException`), and expose `SpeechToTextInputMode` via `SpeechToTextCapabilities.inputMode` ([#327](https://github.com/leehack/llamadart/issues/327)).
-- Fixed MiniMax M3 streaming so quoted tool markup and literal thinking-tag fragments stay visible across token splits ([#1930](https://github.com/leehack/llamadart/issues/1930)).
-- Document measured live ASR throughput on two-thread Linux and Windows x64 CPU runs. Voxtral Realtime takes about four times the audio duration, while LFM3-Audio keeps up with live input ([#327](https://github.com/leehack/llamadart/issues/327)).
-- Document `-` for stdin in the live ASR example and report the required PCM format when input ends mid-sample.
 - Document the Windows system commit limit for very large llama.cpp contexts and advise keeping a system-managed pagefile with adequate disk space or reducing `contextSize` ([llamadart-native#211](https://github.com/leehack/llamadart-native/issues/211)).
-- Keep Gemma 4 prose before loose JSON tool calls visible while streaming and in the final reply ([#1930](https://github.com/leehack/llamadart/issues/1930)).
+- Keep the default WebGPU bridge assets at `v0.1.86` (unchanged from 0.20.1).
+
+Runtime baseline: native llama.cpp `v1.0.0-3` and Web use upstream `v1.0.0@b1b770d90d94cad9e9ea5b993bdbc383a522fb28`; native LiteRT-LM uses `v0.19.1-5` and stable-diffusion uses `v0.4.0`. Web LiteRT-LM uses `@litert-lm/core@0.19.0`. Manifest SHA-256: `d589fbe3c334e4fcb0ccbac3efc4500209358a010b6662ee8523e598a433a0f2`.
 
 ## 0.20.1
 
-- Adopt `leehack/llamadart-native@v1.0.0-2` (llama.cpp `v1.0.0`, `b1b770d9`): Windows CUDA `ModelParams.gpuMemoryFit` now accounts for VRAM held by other processes, matching Vulkan, and refuses TCC or `GGML_CUDA_DEVICES` virtual devices with `LlamaGpuMemoryFitException` when system-wide free memory cannot be read; Apple apps may still pair `llamadart_llama_cpp_flutter` `0.20.0` (`v1.0.0-1`) with an upgrade warning ([#2034](https://github.com/leehack/llamadart/issues/2034)).
+- Adopt `leehack/llamadart-native@v1.0.0-2` (llama.cpp `v1.0.0`, `b1b770d9`): Windows CUDA `ModelParams.gpuMemoryFit` now accounts for VRAM held by other processes, matching Vulkan, and refuses TCC or `GGML_CUDA_DEVICES` virtual devices with `LlamaGpuMemoryFitException` when system-wide free memory cannot be read; Apple apps may still pair `llamadart_llama_cpp_flutter` `0.20.0` (`v1.0.0-1`) with an upgrade warning ([#2034](https://github.com/leehack/llamadart/issues/2034), [llamadart-native#206](https://github.com/leehack/llamadart-native/issues/206)).
 - Add `LlamaCppLiveAsrAdapter` for native incremental live PCM speech recognition (`SpeechToTextEngine.startStream()`, `transcribe`, `transcribeOnce` with mono 16 kHz `pcm-f32le`) on Voxtral Realtime and LFM3-Audio GGUF models with their audio projectors (`llamadart-native@v1.0.0-1`; Web and older runtimes throw `LlamaUnsupportedException`), and expose `SpeechToTextCapabilities.streamingInputUnsupportedReason` ([#327](https://github.com/leehack/llamadart/issues/327)).
 - Fixed a race when multiple processes first access the same model cache entry concurrently ([#2028](https://github.com/leehack/llamadart/issues/2028)).
 - Keep the default WebGPU bridge assets at `v0.1.86` (unchanged from 0.20.0).
