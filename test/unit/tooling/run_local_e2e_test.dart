@@ -2830,6 +2830,61 @@ Future<void> main(List<String> args) async {
       expect(result.stderr, contains('a nonempty --expect'));
     });
 
+    test(
+      'dry-runs speech-to-text-stream-smoke in developer smoke mode',
+      () async {
+        final result = await runLocalE2e(
+          const [
+            '--scenario',
+            'speech-to-text-stream-smoke',
+            '--backend',
+            'cpu',
+            '--dry-run',
+          ],
+          projectRoot: '/repo',
+          displayShell: LocalE2eDisplayShell.posix,
+          environment: const <String, String>{},
+        );
+
+        expect(result.exitCode, 0);
+        expect(result.stdout, contains('LLAMADART_STT_STREAM_BACKEND=cpu'));
+        expect(result.stdout, contains('--run-skipped'));
+        expect(result.stdout, contains('Voxtral Realtime 300s fast-producer'));
+        expect(result.stdout, contains('LFM3-Audio 300s fast-producer'));
+        expect(result.stdout, isNot(contains('300s live-paced')));
+        expect(result.stdout, isNot(contains('--preflight')));
+      },
+    );
+
+    test(
+      'dry-runs speech-to-text-stream-smoke in strict qualify mode',
+      () async {
+        final result = await runLocalE2e(
+          const [
+            '--scenario',
+            'speech-to-text-stream-smoke',
+            '--backend',
+            'cuda',
+            '--dry-run',
+          ],
+          projectRoot: '/repo',
+          displayShell: LocalE2eDisplayShell.posix,
+          environment: const <String, String>{
+            'LLAMADART_STT_STREAM_QUALIFY': '1',
+          },
+        );
+
+        expect(result.exitCode, 0);
+        expect(result.stdout, contains('LLAMADART_STT_STREAM_BACKEND=cuda'));
+        expect(result.stdout, contains('--preflight'));
+        expect(result.stdout, contains('Voxtral Realtime 300s live-paced'));
+        expect(result.stdout, contains('LFM3-Audio 300s live-paced'));
+        expect(result.stdout, contains('--evaluate'));
+        expect(result.stdout, contains('--backend cuda'));
+        expect(result.stdout, isNot(contains('--run-skipped')));
+      },
+    );
+
     test('dry-runs dedicated LiteRT-LM ASR with exact inputs', () async {
       final result = await runLocalE2e(
         const [
