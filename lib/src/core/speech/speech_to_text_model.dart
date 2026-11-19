@@ -171,9 +171,12 @@ class Qwen3AsrAdapter extends SpeechToTextPromptAdapter {
 /// `llama.cpp`.
 ///
 /// Re-transcribes short 2, 4, and 6 second prefixes inside a bounded 8 second
-/// (128,000-sample) ring buffer through the Qwen3-ASR prompt path, then commits
-/// at a quiet boundary (latest contiguous >= 100 ms run with RMS <= 0.01 in
-/// the final 2 seconds) or hard-cuts at 8 seconds.
+/// (128,000-sample) ring buffer through the Qwen3-ASR prompt path. A full
+/// buffer commits at a quiet boundary (latest contiguous >= 100 ms run with
+/// RMS <= 0.01 in the final 2 seconds) or hard-cuts at 8 seconds.
+/// The first window commits after 8 s of audio plus a decode. Subsequent full
+/// windows need 6.05–8 s of new audio plus a decode. Finishing flushes any
+/// remaining audio.
 ///
 /// Requires `SpeechToTextEngine.load` on a native platform with a loaded
 /// Qwen3-ASR model and verified `qwen3a` audio [SpeechToTextModel.projector].

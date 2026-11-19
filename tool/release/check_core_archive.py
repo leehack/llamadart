@@ -41,13 +41,16 @@ def archive_files(output, root):
 
 
 def archive_errors(files):
-    """Keep checkout-only dependencies together and runnable examples present."""
+    """Keep checkout-only files out and runnable examples present."""
     errors = []
     for prefix in ('packages/llamadart_validation/', 'example/chat_app/',
                    'packages/genkit_llamadart/', 'packages/llamadart_model_store/',
                    'packages/llamadart_studio_core/', 'packages/llamadart_studio/'):
         if any(path.startswith(prefix) for path in files):
             errors.append('checkout-only files included: ' + prefix)
+    for path in files:
+        if path.startswith('test/') and path.lower().endswith(('.wav', '.flac')):
+            errors.append('checkout-only test audio included: ' + path)
     for required in ('pubspec.yaml', 'lib/llamadart.dart', 'hook/build.dart',
                      'example/basic_app/pubspec.yaml',
                      'example/basic_app/bin/llamadart_litert_embedding_example.dart'):

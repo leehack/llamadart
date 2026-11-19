@@ -173,7 +173,7 @@ Pick targeted rows based on the touched surface:
 | Android Vulkan prompt cap, Vulkan device facts or the Vulkan 1.2 load refusal on a device | `chat-app-micro-batch-sweep` |
 | Isolate shutdown releases, exit teardown, a Flutter pin bump, or app-exit guidance | `chat-app-macos-quit` |
 | Speech-to-text API or adapter | `speech-to-text-smoke`, `speech-to-text-stream-smoke`, `web-speech-to-text-smoke`, plus `litert-lm-asr-smoke` and `litert-lm-asr-preservation` for the dedicated LiteRT-LM streaming engine |
-| Opt-in Qwen3-ASR windowed live PCM | `speech-to-text-windowed-smoke` |
+| Opt-in Qwen3-ASR windowed live PCM | `speech-to-text-windowed-smoke`, including absolute WER against the vendored [LibriSpeech dev-clean `1272-128104-0000` clip and official transcript](../test/fixtures/librispeech_dev_clean/README.md) |
 | Physical macOS microphone through the Dart speech SDK | [`macos-mic-asr`](#macos-physical-microphone-asr) |
 | Text-to-speech API or adapter | `text-to-speech-smoke`, `text-to-speech-models-smoke` for LFM3-Audio, Soprano, Chatterbox and Pocket TTS, plus `web-text-to-speech-smoke` for browser synthesis/playback/export |
 | Decision engine, decision head, or safetensors reader | `decision-model-smoke`, plus `decision-model-web-smoke` for the Web decision head or bridge pin |

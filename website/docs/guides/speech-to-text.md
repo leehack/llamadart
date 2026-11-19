@@ -18,7 +18,7 @@ adapter that drives it. The adapter picks the runtime.
 | Approach | API | Runtimes | Input | Output |
 | --- | --- | --- | --- | --- |
 | Qwen3-ASR, whole file | `SpeechToTextEngine.load` with `Qwen3AsrAdapter`, or `attach` | Native llama.cpp; WebGPU (pinned bridge assets) | A complete WAV, MP3, or FLAC file or bytes; bytes only on Web | One final transcript |
-| Qwen3-ASR, windowed live (opt-in) | `SpeechToTextEngine.load` with `Qwen3WindowedAsrAdapter` | Native llama.cpp (`qwen3a` projector required) | Mono 16 kHz finite normalized float32 PCM, pushed incrementally or as one buffer | Replaceable 2/4/6 s partials, quiet-boundary or 8 s hard-cut commits, then final |
+| Qwen3-ASR, windowed live (opt-in) | `SpeechToTextEngine.load` with `Qwen3WindowedAsrAdapter` | Native llama.cpp (`qwen3a` projector required) | Mono 16 kHz finite normalized float32 PCM, pushed incrementally or as one buffer | Replaceable 2/4/6 s partials, commits when the 8 s buffer fills, then final |
 | Another audio chat model, whole file | `load` or `attach` with your own `SpeechToTextPromptAdapter` | As Qwen3-ASR | As Qwen3-ASR | One final transcript |
 | llama.cpp, live streaming | `SpeechToTextEngine.load` with `LlamaCppLiveAsrAdapter` | Native llama.cpp (`llamadart-native@v1.0.0-1`+) | Mono 16 kHz finite normalized float32 PCM, pushed incrementally or as one buffer | Cumulative confirmed partials, then a final transcript |
 | LiteRT-LM, live streaming | `SpeechToTextEngine.load` with `LiteRtLmAsrAdapter` | Native LiteRT-LM, CPU only | Mono 16 kHz float PCM, pushed incrementally or as one buffer | Replaceable partial text, then a final transcript |
@@ -278,8 +278,8 @@ try {
 native `llama.cpp` Qwen3-ASR models with a verified `qwen3a` projector. Unlike
 `LlamaCppLiveAsrAdapter` (`SpeechToTextInputMode.stateful`), it re-decodes
 2, 4, and 6 second uncommitted prefixes through the prompt path in a bounded 8 s
-ring buffer and commits at a quiet boundary or at an 8 s hard cut
-(`SpeechToTextInputMode.windowed`):
+ring buffer (`SpeechToTextInputMode.windowed`). When the buffer fills, it
+commits at a quiet boundary or hard-cuts at 8 s:
 
 ```dart
 final recognizer = await SpeechToTextEngine.load(
@@ -493,8 +493,9 @@ needs enough memory for the roughly 1.02 GB Qwen3-ASR
   live streaming.
 - For `Qwen3WindowedAsrAdapter`:
   - Confirmed windows are joined with `\n` in `confirmedText` and `result.text`.
-  - The first confirmation arrives after up to 8 s of audio plus a decode (2, 4,
-    and 6 s partials are replaceable).
+  - The first window commits after 8 s of audio plus a decode. Later full
+    windows need 6.05–8 s of new audio plus a decode. Calling `finish()` flushes
+    any remaining audio.
   - Each checkpoint re-decodes the whole uncommitted prefix, and an 8 s hard cut
     under continuous speech or background noise can split a word across windows.
   - `maxOutputTokens` applies per decode (`1024` for `startStream`, configurable

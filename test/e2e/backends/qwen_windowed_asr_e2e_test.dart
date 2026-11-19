@@ -14,6 +14,9 @@ import 'package:test/test.dart';
 const String _defaultJfkWav =
     'packages/llamadart_validation/assets/speech/jfk.wav';
 
+const String _defaultSecondWav =
+    'test/fixtures/librispeech_dev_clean/1272-128104-0000.wav';
+
 const String _jfkReference =
     'and so my fellow americans ask not what your country can do for you '
     'ask what you can do for your country';
@@ -210,10 +213,10 @@ void main() {
     'LLAMADART_STT_MMPROJ_PATH',
   );
   final jfkPath = _envFile('LLAMADART_STT_STREAM_AUDIO_PATH') ?? _defaultJfkWav;
-  final secondAudioPath = _envFile('LLAMADART_STT_WINDOWED_SECOND_AUDIO_PATH');
-  final secondReference = Platform
-      .environment['LLAMADART_STT_WINDOWED_SECOND_REFERENCE']
-      ?.trim();
+  final secondAudioOverride = _envFile(
+    'LLAMADART_STT_WINDOWED_SECOND_AUDIO_PATH',
+  );
+  final secondAudioPath = secondAudioOverride ?? _defaultSecondWav;
   final runPaced = Platform.environment['LLAMADART_STT_LIVE_PACED'] == '1';
 
   const params = ModelParams(
@@ -235,6 +238,23 @@ void main() {
         return;
       }
 
+      final secondPcm = _decodeWavPcm16Mono16k(secondAudioPath);
+      final secondReference =
+          (secondAudioOverride == null
+              ? null
+              : _envFile('LLAMADART_STT_WINDOWED_SECOND_REFERENCE')) ??
+          _loadSiblingTranscript(secondAudioPath);
+      if (secondReference == null) {
+        throw StateError(
+          'Missing sibling .txt transcript for $secondAudioPath. '
+          'For custom audio, you can also set '
+          'LLAMADART_STT_WINDOWED_SECOND_REFERENCE.',
+        );
+      }
+      final secondAudioLabel = secondAudioOverride == null
+          ? _defaultSecondWav
+          : 'custom audio';
+
       // 1. Whole-file reference via Qwen3AsrAdapter.
       final wholeEngine = await SpeechToTextEngine.load(
         SpeechToTextModel(
@@ -245,18 +265,16 @@ void main() {
         params: params,
       );
       late final String wholeJfkText;
-      String? wholeSecondText;
+      late final String wholeSecondText;
       try {
         final jfkResult = await wholeEngine.transcribeOnce(
           SpeechToTextRequest(audio: SpeechAudioFileInput(jfkPath)),
         );
         wholeJfkText = jfkResult.text;
-        if (secondAudioPath != null && File(secondAudioPath).existsSync()) {
-          final secondResult = await wholeEngine.transcribeOnce(
-            SpeechToTextRequest(audio: SpeechAudioFileInput(secondAudioPath)),
-          );
-          wholeSecondText = secondResult.text;
-        }
+        final secondResult = await wholeEngine.transcribeOnce(
+          SpeechToTextRequest(audio: SpeechAudioFileInput(secondAudioPath)),
+        );
+        wholeSecondText = secondResult.text;
       } finally {
         await wholeEngine.dispose();
       }
@@ -388,32 +406,17 @@ void main() {
         expect(silentDone.state, SpeechToTextCompletionState.failed);
         expect(silentDone.error, isA<LlamaSpeechException>());
 
-        // Second utterance with published human ground-truth transcript.
-        if (wholeSecondText != null) {
-          final refText =
-              secondReference ?? _loadSiblingTranscript(secondAudioPath!);
-          expect(
-            refText,
-            isNotNull,
-            reason:
-                'Provide LLAMADART_STT_WINDOWED_SECOND_REFERENCE or a sibling '
-                '.txt human transcript for $secondAudioPath',
-          );
-          final secondPcm = _decodeWavPcm16Mono16k(secondAudioPath!);
-          final secondRun = await _streamChunks(
-            windowedEngine,
-            secondPcm,
-            <int>[4000],
-          );
-          final wholeAbsWer = _wordErrorRate(refText!, wholeSecondText);
-          final windowedAbsWer = _wordErrorRate(refText, secondRun.text);
-          stderr.writeln(
-            'Second utterance (ref="$refText", '
-            'whole="$wholeSecondText" [abs WER=$wholeAbsWer], '
-            'windowed="${secondRun.text}" [abs WER=$windowedAbsWer])',
-          );
-          expect(windowedAbsWer, lessThanOrEqualTo(0.15));
-        }
+        final secondRun = await _streamChunks(windowedEngine, secondPcm, <int>[
+          4000,
+        ]);
+        final wholeAbsWer = _wordErrorRate(secondReference, wholeSecondText);
+        final windowedAbsWer = _wordErrorRate(secondReference, secondRun.text);
+        stderr.writeln(
+          'Second utterance ($secondAudioLabel, ref="$secondReference", '
+          'whole="$wholeSecondText" [abs WER=$wholeAbsWer], '
+          'windowed="${secondRun.text}" [abs WER=$windowedAbsWer])',
+        );
+        expect(windowedAbsWer, lessThanOrEqualTo(0.15));
 
         // Active cancellation and immediate reuse.
         final cancelSession = await windowedEngine.startStream();

@@ -265,6 +265,38 @@ void main() {
       expect(capabilities.streamingInputUnsupportedReason, expectedReason);
     });
 
+    test(
+      'reports the generic streaming refusal for other prompt adapters',
+      () async {
+        await _loadSpeechModel(llamaEngine);
+        final recognizer = SpeechToTextEngine.attach(
+          llamaEngine,
+          adapter: const _BracketLanguageAdapter(),
+        );
+        addTearDown(recognizer.dispose);
+
+        const expectedReason =
+            'The Bracket-ASR prompt adapter accepts complete encoded audio only. '
+            'Use LlamaCppLiveAsrAdapter or LiteRtLmAsrAdapter for incremental PCM '
+            'streaming.';
+        await expectLater(
+          recognizer.startStream(),
+          throwsA(
+            isA<LlamaUnsupportedException>().having(
+              (error) => error.message,
+              'message',
+              expectedReason,
+            ),
+          ),
+        );
+
+        final capabilities = await recognizer.capabilities;
+        expect(capabilities.isSupported, isTrue);
+        expect(capabilities.supportsStreamingInput, isFalse);
+        expect(capabilities.streamingInputUnsupportedReason, expectedReason);
+      },
+    );
+
     test('turns an audio probe failure into capability diagnostics', () async {
       backend.audioProbeError = StateError('old native symbols');
       await _loadSpeechModel(llamaEngine);
