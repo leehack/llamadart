@@ -134,18 +134,19 @@ class QualificationControls(unittest.TestCase):
             self.assertNotIn(forbidden, config)
 
     def test_rebuild_receipt_reports_exact_pin_completion(self):
-        tag = 'v1.0.0-2'
-        self.assertIn('macos-arm64', v.pins(pin_fixture(tag), tag, 'macos-arm64'))
-        output = self.root / 'evidence'
-        (output / 'logs').mkdir(parents=True)
-        for completed in (False, True):
-            qualify.seal_terminal(output, {'completed': completed, **v.scope(tag, completed)})
-            receipt = v.verify_seal(output)
-            self.assertEqual(tag, receipt['expectedNativeTag'])
-            self.assertIs(completed, receipt['completed'])
-            self.assertFalse(receipt['pipelineOnly'])
-            self.assertFalse(receipt['finalNative3Qualified'])
-            self.assertEqual('required separately', receipt['independentAcceptance'])
+        for tag in ('v1.0.0-2', 'v1.0.0-3'):
+            with self.subTest(tag=tag):
+                self.assertIn('macos-arm64', v.pins(pin_fixture(tag), tag, 'macos-arm64'))
+                output = self.root / tag
+                (output / 'logs').mkdir(parents=True)
+                for completed in (False, True):
+                    qualify.seal_terminal(output, {'completed': completed, **v.scope(tag, completed)})
+                    receipt = v.verify_seal(output)
+                    self.assertEqual(tag, receipt['expectedNativeTag'])
+                    self.assertIs(completed, receipt['completed'])
+                    self.assertFalse(receipt['pipelineOnly'])
+                    self.assertFalse(receipt['finalNative3Qualified'])
+                    self.assertEqual('required separately', receipt['independentAcceptance'])
 
     def test_override_environment_refused_without_values(self):
         for name in ('DYLD_LIBRARY_PATH', 'LD_PRELOAD', 'GGML_BACKEND_PATH',

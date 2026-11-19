@@ -207,7 +207,7 @@ interface does not establish backend/model support; read `await engine.capabilit
   local-archive overrides use the new namespace too. Keep manual overrides
   ABI- and symbol-compatible with the pinned runtime; remove a mismatched
   override or upgrade the consumer/runtime together. Apple companions must
-  match the qualified tag and exact XCFramework checksum.
+  match an admitted tag and its exact XCFramework checksum.
 - Platform setup the code cannot do for you:
   - Flutter iOS needs deployment target 16.4+, macOS 14.0+.
   - Windows llama.cpp: replace the complete runtime through the build-hook
@@ -217,7 +217,9 @@ interface does not establish backend/model support; read `await engine.capabilit
     `PATH` to replace those assets. An unavailable ggml code asset or missing
     `ggml_backend_reg_count` export throws `LlamaUnsupportedException`.
   - Windows: llama.cpp and LiteRT-LM bundle the Visual C++ runtime DLLs
-    they need. Machines that run the opt-in `stable_diffusion` runtime need
+    they need. Use `llamadart-native@v1.0.0-3` or later for the fix to
+    mismatched bundled Visual C++ runtime versions. Machines that run the
+    opt-in `stable_diffusion` runtime need
     the latest Microsoft Visual C++ v14 Redistributable (x64); stock Windows
     Server lacks it.
   - Web apps must add the WebGPU bridge script to `web/index.html`; the package

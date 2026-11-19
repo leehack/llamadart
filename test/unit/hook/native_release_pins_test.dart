@@ -16,8 +16,8 @@ import 'package:test/test.dart';
 void main() {
   final sha256Pattern = RegExp(r'^[0-9a-f]{64}$');
 
-  test('llama.cpp pins the approved v1.0.0-2 release', () {
-    expect(llamaCppTag, 'v1.0.0-2');
+  test('llama.cpp pins the approved v1.0.0-3 release', () {
+    expect(llamaCppTag, 'v1.0.0-3');
   });
 
   test('llama.cpp tag follows the native release tag grammar', () {
@@ -33,19 +33,22 @@ void main() {
             )
             as Map<String, dynamic>;
 
-    test('is bound to the verified artifact pair', () {
-      final checksums = proof['xcframework_checksums'] as Map<String, dynamic>;
-      final previous = proof['previous_tag'] as String;
+    final checksums = (proof['xcframework_checksums'] as Map)
+        .cast<String, String>();
+    final published = (proof['published_companion_tags'] as Map)
+        .cast<String, String>();
+
+    test('is bound to the verified artifacts', () {
       expect(proof['current_tag'], llamaCppTag);
-      expect(llamaCppCompatibleAppleCompanionTags.keys, [previous]);
+      expect(published, isNotEmpty);
       expect(
-        llamaCppCompatibleAppleCompanionTags[previous]!.trim(),
-        isNotEmpty,
+        llamaCppCompatibleAppleCompanionTags.keys,
+        unorderedEquals(published.values.toSet()),
       );
-      expect(llamaCppCompatibleAppleCompanionChecksums, {
-        previous: checksums[previous],
-        llamaCppTag: checksums[llamaCppTag],
-      });
+      for (final description in llamaCppCompatibleAppleCompanionTags.values) {
+        expect(description.trim(), isNotEmpty);
+      }
+      expect(llamaCppCompatibleAppleCompanionChecksums, checksums);
       expect(
         File(
           'packages/llamadart_llama_cpp_flutter/darwin/'
@@ -57,20 +60,30 @@ void main() {
 
     test('checked every framework slice', () {
       final slices = proof['slices'] as List<dynamic>;
-      expect(slices, hasLength(5));
+      expect(proof['core_symbols_checked'], greaterThan(0));
+      expect(
+        slices.cast<Map<String, dynamic>>().map(
+          (slice) => (slice['library'], slice['architecture']),
+        ),
+        unorderedEquals([
+          ('ios-arm64', 'arm64'),
+          ('ios-arm64_x86_64-simulator', 'arm64'),
+          ('ios-arm64_x86_64-simulator', 'x86_64'),
+          ('macos-arm64_x86_64', 'arm64'),
+          ('macos-arm64_x86_64', 'x86_64'),
+        ]),
+      );
       for (final slice in slices.cast<Map<String, dynamic>>()) {
-        expect(slice['core_symbols_missing_from_previous'], isEmpty);
-        expect(slice['core_symbols_missing_from_current'], isEmpty);
+        final missing = slice['missing_core_symbols'] as Map<String, dynamic>;
+        expect(missing.keys, unorderedEquals(checksums.keys));
+        expect(missing.values, everyElement(isEmpty));
       }
     });
 
     test('names the checksum the published companions declare', () {
-      final previous = proof['previous_tag'] as String;
-      final published =
-          proof['published_companion_checksums'] as Map<String, dynamic>;
-      expect(published, isNotEmpty);
-      for (final MapEntry(key: tag, value: checksum) in published.entries) {
-        expect(checksum, llamaCppCompatibleAppleCompanionChecksums[previous]);
+      for (final MapEntry(key: tag, value: nativeTag) in published.entries) {
+        final checksum = checksums[nativeTag];
+        expect(checksum, isNotNull);
         final ref = 'refs/tags/$tag';
         final tagExists =
             Process.runSync('git', [
@@ -94,7 +107,7 @@ void main() {
         final manifest = shown.stdout as String;
         expect(
           manifest,
-          contains('let llamaCppTag = "$previous"'),
+          contains('let llamaCppTag = "$nativeTag"'),
           reason: tag,
         );
         expect(manifest, contains('checksum: "$checksum"'), reason: tag);
@@ -143,8 +156,8 @@ void main() {
         uses,
         isEmpty,
         reason:
-            'A published companion links ${proof['previous_tag']}, which '
-            'lacks these or lays them out differently. Probe the runtime '
+            'An admitted companion lacks these or lays them out differently. '
+            'Probe the runtime '
             'first, then move the name out of the fixture.',
       );
     });
