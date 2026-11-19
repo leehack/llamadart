@@ -46,14 +46,22 @@ void main() {
     );
   });
 
-  test('ignores Unreleased and sections only one file has', () {
-    expect(
-      docsChangelogDriftProblems(
-        {'Unreleased': '- A.\n', '0.1.0': '- Old.\n'},
-        {'Unreleased': '- B.\n'},
-      ),
-      isEmpty,
-    );
+  test('rejects missing or changed Unreleased bullets on either side', () {
+    const pending = {'Unreleased': '- Pending.\n'};
+    for (final (core, docs) in [
+      (pending, {'Unreleased': '- Different.\n'}),
+      (pending, {'Unreleased': ''}),
+      (pending, <String, String>{}),
+      (<String, String>{}, pending),
+    ]) {
+      expect(docsChangelogDriftProblems(core, docs), [
+        contains('section "## Unreleased" differs from CHANGELOG.md'),
+      ]);
+    }
+    expect(docsChangelogDriftProblems({'Unreleased': '\n'}, {}), isEmpty);
+  });
+
+  test('ignores released sections that are present in only one file', () {
     expect(
       docsChangelogDriftProblems({'0.1.0': '- Old.\n'}, {'0.2.0': '- New.\n'}),
       isEmpty,
@@ -149,6 +157,12 @@ void main() {
       expect(problems.single, contains('bridge line must read'));
     }
     expect(docsChangelogDriftProblems({}, {'0.2.0': bridgeCore}), hasLength(1));
-    expect(docsChangelogDriftProblems({}, {'Unreleased': bridgeCore}), isEmpty);
+    expect(
+      docsChangelogDriftProblems(
+        {'Unreleased': bridgeCore},
+        {'Unreleased': bridgeDocs},
+      ),
+      isEmpty,
+    );
   });
 }

@@ -568,7 +568,7 @@ for event,mode,oldflag,owner,attempt,cancel,good,main in itertools.product(('pus
       (plan['jobs'] as Map).entries
           .where((e) => e.value == true)
           .map((e) => e.key),
-      unorderedEquals(['model-store', 'markdown-tests']),
+      unorderedEquals(['model-store', 'test-linux-coverage']),
     );
 
     final job = readWorkflow('ci')['jobs']['model-store'] as Map;
@@ -1422,6 +1422,27 @@ for event,flag,native,cancel,good,main in itertools.product(('push','pull_reques
     },
   );
 
+  test('Linux VM tests have published companion tags and require them', () {
+    final steps = readWorkflow('ci')['jobs']['test-linux-vm']['steps'] as List;
+    final checkout = steps.singleWhere(
+      (step) => '${step['uses']}'.startsWith('actions/checkout@'),
+    );
+    expect(checkout['with']?['fetch-depth'], 0);
+    final tests = steps.singleWhere((step) => step['name'] == 'Run VM tests');
+    expect(tests['env']['LLAMADART_REQUIRE_PUBLISHED_COMPANION_TAGS'], '1');
+  });
+
+  test('validation consumer resolves dependencies only in the chat app', () {
+    final steps =
+        readWorkflow('ci')['jobs']['validation-integration']['steps'] as List;
+    final resolution = steps.where(
+      (step) => '${step['run']}'.contains('pub get'),
+    );
+    expect(resolution, [
+      {'run': 'flutter pub get', 'working-directory': 'example/chat_app'},
+    ]);
+  });
+
   test('selection uses complete checkout and safe event metadata boundary', () {
     for (final name in ['ci', 'validation_bundles']) {
       final job = readWorkflow(name)['jobs']['changes'];
@@ -1476,7 +1497,6 @@ for event,flag,native,cancel,good,main in itertools.product(('push','pull_reques
         'tool/docs/build_site.sh',
         'tool/docs/new_reader.dart',
         'website/tool/finalize_site.dart',
-        'packages/genkit_llamadart/lib/genkit_llamadart.dart',
       ]) {
         final jobs = (await selected([path]))['jobs'] as Map;
         expect(jobs['markdown-tests'], isTrue, reason: path);

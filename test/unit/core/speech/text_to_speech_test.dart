@@ -180,6 +180,30 @@ void main() {
         expect(events.whereType<TextToSpeechAudioChunkEvent>(), isEmpty);
       });
 
+      test('emits the output format even when capabilities differ', () async {
+        backend
+          ..capabilities = streaming
+          ..outputFormat = (sampleRateHz: 32000, channelCount: 2)
+          ..streamChunks = [
+            Float32List.fromList([-1, -0.5]),
+            Float32List.fromList([0.5, 1]),
+          ];
+        await _loadTextToSpeechModel(llamaEngine);
+
+        final task = await speechEngine.synthesize(
+          const TextToSpeechRequest(text: 'Hello.', streamAudio: true),
+        );
+        final chunks = (await task.events.toList())
+            .whereType<TextToSpeechAudioChunkEvent>();
+        final result = await task.result;
+
+        expect(chunks.map((chunk) => chunk.sampleOffset), [0, 2]);
+        expect(chunks.map((chunk) => chunk.sampleRateHz), [32000, 32000]);
+        expect(chunks.map((chunk) => chunk.channelCount), [2, 2]);
+        expect(result.sampleRateHz, 32000);
+        expect(result.channelCount, 2);
+      });
+
       test('refuses with the backend reason and frees the lease', () async {
         backend.capabilities = const BackendTextToSpeechCapabilities(
           isSupported: true,
@@ -495,6 +519,54 @@ void main() {
       );
       expect((await next.done).state, TextToSpeechCompletionState.completed);
     });
+
+    test(
+      'cancels during final audio decoding after final progress and allows reuse',
+      () async {
+        await _loadTextToSpeechModel(llamaEngine);
+        backend.blockFinalDecode = true;
+        final task = await speechEngine.synthesize(
+          const TextToSpeechRequest(
+            text: 'Cancel during decode.',
+            maxFrames: 12,
+          ),
+        );
+        final eventsFuture = task.events.toList();
+        await backend.finalDecodeStarted.future;
+
+        task.cancel();
+        final completion = await task.done;
+        final events = await eventsFuture;
+
+        expect(backend.cancelCalls, 1);
+        expect(task.isCancellationRequested, isTrue);
+        expect(completion.state, TextToSpeechCompletionState.cancelled);
+        expect(
+          events.whereType<TextToSpeechProgressEvent>().map((e) => e.phase),
+          <TextToSpeechProgressPhase>[
+            TextToSpeechProgressPhase.processingPrompt,
+            TextToSpeechProgressPhase.generating,
+          ],
+        );
+        expect(events.whereType<TextToSpeechFinalEvent>(), isEmpty);
+        await expectLater(
+          task.result,
+          throwsA(
+            isA<LlamaStateException>().having(
+              (error) => error.message,
+              'message',
+              'Speech synthesis was cancelled.',
+            ),
+          ),
+        );
+
+        backend.blockFinalDecode = false;
+        final next = await speechEngine.synthesizeOnce(
+          const TextToSpeechRequest(text: 'Reuse after decode cancel.'),
+        );
+        expect(next.samples, isNotEmpty);
+      },
+    );
 
     for (final call in <String>['unloadModel', 'dispose']) {
       test('$call cancels an active synthesis', () async {
@@ -1234,14 +1306,18 @@ class _TextToSpeechBackend
     Float32List.fromList(<double>[-1, -0.5]),
     Float32List.fromList(<double>[0, 0.5, 1]),
   ];
+  ({int sampleRateHz, int channelCount})? outputFormat;
   bool blockCapabilities = false;
   bool blockSynthesis = false;
+  bool blockFinalDecode = false;
   bool contextFreeAwaitsSynthesis = false;
   Object? synthesisError;
   Completer<void> capabilityProbeStarted = Completer<void>();
   Completer<void> synthesisStarted = Completer<void>();
+  Completer<void> finalDecodeStarted = Completer<void>();
   final Completer<void> _capabilityRelease = Completer<void>();
   final Completer<void> _synthesisRelease = Completer<void>();
+  final Completer<void> _finalDecodeRelease = Completer<void>();
   int cancelCalls = 0;
   void Function()? onCancel;
   int disposeCalls = 0;
@@ -1338,14 +1414,24 @@ class _TextToSpeechBackend
             framesGenerated: 3,
             truncated: false,
             audio: chunk,
+            sampleRateHz: outputFormat?.sampleRateHz,
+            channelCount: outputFormat?.channelCount,
           ),
         );
       }
     }
+    if (!finalDecodeStarted.isCompleted) {
+      finalDecodeStarted.complete();
+    }
+    if (blockFinalDecode) {
+      await _finalDecodeRelease.future;
+    }
     return BackendTextToSpeechResult(
-      samples: Float32List.fromList(<double>[-1, -0.5, 0, 0.5, 1]),
-      sampleRateHz: 24000,
-      channelCount: 1,
+      samples: Float32List.fromList(
+        streamChunks.expand((chunk) => chunk).toList(),
+      ),
+      sampleRateHz: outputFormat?.sampleRateHz ?? 24000,
+      channelCount: outputFormat?.channelCount ?? 1,
       framesGenerated: 3,
       truncated: false,
     );
@@ -1356,6 +1442,7 @@ class _TextToSpeechBackend
     onCancel?.call();
     cancelCalls += 1;
     releaseSynthesis();
+    releaseFinalDecode();
   }
 
   @override
@@ -1370,6 +1457,12 @@ class _TextToSpeechBackend
   void releaseSynthesis() {
     if (!_synthesisRelease.isCompleted) {
       _synthesisRelease.complete();
+    }
+  }
+
+  void releaseFinalDecode() {
+    if (!_finalDecodeRelease.isCompleted) {
+      _finalDecodeRelease.complete();
     }
   }
 

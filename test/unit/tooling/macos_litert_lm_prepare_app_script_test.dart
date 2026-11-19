@@ -25,7 +25,12 @@ void main() {
       expect(project, isNot(contains('macos_litert_lm_prepare_app.sh')));
     });
 
-    for (final docs in _installationDocs) {
+    final versions =
+        jsonDecode(File('website/versions.json').readAsStringSync()) as List;
+    for (final docs in [
+      ..._installationDocs,
+      'website/versioned_docs/version-${versions.first}/platforms/apple-setup.md',
+    ]) {
       // Only macOS can run the documented script, so its text may change only
       // together with this fixture, which selects the macOS tests.
       test('$docs build phase is the reviewed script', () {

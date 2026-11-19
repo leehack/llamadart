@@ -118,6 +118,13 @@ feature. For which runtime supports which feature, see the
   not collected to check for them, so the older problem is untested rather than
   confirmed resolved. Use `ComputeDevice.cpu` to avoid the GPU path. A Flutter
   Windows app has not been run with it.
+- Windows llama.cpp contexts count against the Windows system commit limit (RAM
+  plus pagefile), and `gpuMemoryFit` budgets only device memory. With a small
+  fixed-size pagefile, very large contexts (such as 172k+ tokens) can fail at
+  context creation with an allocation error rather than crashing. Keep Windows's
+  system-managed pagefile enabled with enough free disk space, or reduce
+  `contextSize`
+  ([llamadart-native#211](https://github.com/leehack/llamadart-native/issues/211)).
 
 ## Android
 

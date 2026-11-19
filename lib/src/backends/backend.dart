@@ -860,6 +860,12 @@ class BackendTextToSpeechProgress {
   /// or null.
   final Float32List? audio;
 
+  /// Sample rate in Hertz of [audio]. Null falls back to backend capabilities.
+  final int? sampleRateHz;
+
+  /// Interleaved channel count of [audio]. Null falls back to backend capabilities.
+  final int? channelCount;
+
   /// Creates a progress snapshot.
   const BackendTextToSpeechProgress({
     required this.phase,
@@ -867,6 +873,8 @@ class BackendTextToSpeechProgress {
     required this.framesGenerated,
     required this.truncated,
     this.audio,
+    this.sampleRateHz,
+    this.channelCount,
   });
 }
 

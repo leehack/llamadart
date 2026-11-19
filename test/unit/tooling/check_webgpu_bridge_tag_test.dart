@@ -1042,10 +1042,12 @@ void main() {
       expect(findRuntimeBaselineDrift(root), hasLength(4));
     });
 
-    test('frozen sections keep their own tags', () {
+    test('a frozen top section keeps the tags it shipped with', () {
+      final released = paragraph(liteRt: 'v0.18.0', sd: 'v0.2.0');
       final root = baselineRepo(
-        changelog: '## 1.0.0\n\n${paragraph(liteRt: 'v0.18.0', sd: 'v0.2.0')}',
-        docs: paragraph(),
+        heading: '1.0.0',
+        changelog: released,
+        docs: released,
       );
       expect(findRuntimeBaselineDrift(root), isEmpty);
     });

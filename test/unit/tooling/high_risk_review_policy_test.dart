@@ -57,6 +57,14 @@ void main() {
       expect(runbook, contains('reviewed as a change in its own right'));
     });
 
+    test(
+      'the runbook states the evaluator uses no package-local Studio pairing',
+      () {
+        final runbook = read('doc/high_risk_pre_merge_readiness.md');
+        expect(runbook, contains('does not require package-local pairing'));
+      },
+    );
+
     test('classifier help preserves rename and deletion visibility', () {
       final classifier = read('tool/testing/classify_high_risk_changes.dart');
 
