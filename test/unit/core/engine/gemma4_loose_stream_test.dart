@@ -7,6 +7,8 @@ import 'package:llamadart/llamadart.dart';
 import 'package:llamadart/src/core/engine/chat_completion_stream_parser.dart';
 import 'package:test/test.dart';
 
+import '../../../integration/core/engine/tool_calling_integration_test.dart';
+
 const _prose = 'The weather looks clear.';
 const _json = '{"name":"weather","arguments":{"city":"Seoul"}}';
 const _archive =
@@ -30,6 +32,17 @@ final _tools = [
   ),
 ];
 
+class _GemmaBackend extends MockLlamaBackend {
+  _GemmaBackend(this.template);
+
+  final String template;
+
+  @override
+  Future<Map<String, String>> modelMetadata(int modelHandle) async => {
+    'tokenizer.chat_template': template,
+  };
+}
+
 void main() {
   late String template;
   setUpAll(() async {
@@ -43,17 +56,69 @@ void main() {
     }
   });
 
-  LlamaChatTemplateResult render({bool tools = true}) =>
-      ChatTemplateEngine.render(
-        templateSource: template,
-        messages: const [
-          LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'Hi'),
-        ],
-        metadata: const {},
-        tools: _tools,
-        toolChoice: tools ? ToolChoice.auto : ToolChoice.none,
-        parallelToolCalls: true,
-      );
+  LlamaChatTemplateResult render({
+    bool tools = true,
+    bool parallelToolCalls = true,
+  }) => ChatTemplateEngine.render(
+    templateSource: template,
+    messages: const [
+      LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'Hi'),
+    ],
+    metadata: const {},
+    tools: _tools,
+    toolChoice: tools ? ToolChoice.auto : ToolChoice.none,
+    parallelToolCalls: parallelToolCalls,
+  );
+
+  const oslo = '{"name":"weather","arguments":{"city":"Oslo"}}';
+  const paris = '{"name":"weather","arguments":{"city":"Paris"}}';
+  for (final (label, raw, cities) in [
+    ('closed wrapper', '<tool_call>$oslo;$paris</tool_call>', ['Oslo']),
+    ('unclosed wrapper', '<tool_call>$oslo;$paris', ['Oslo']),
+    ('unwrapped continuation', '$oslo;$paris', ['Oslo', 'Paris']),
+    ('native call', _native, ['Seoul']),
+    (
+      'native call after a loose function and prose',
+      'weather(city="A") then later visible text $_native',
+      ['Seoul'],
+    ),
+    (
+      'call followed by prose',
+      'weather(city="A") is a lesson (see below)',
+      ['A'],
+    ),
+    ('unterminated call', 'weather(city="A)', <String>[]),
+  ]) {
+    test('Gemma 4 ChatSession dispatches expected calls for $label', () async {
+      final backend = _GemmaBackend(template)
+        ..queueResponse(raw.split(''))
+        ..queueResponse(['Done.']);
+      final engine = LlamaEngine(backend);
+      addTearDown(engine.dispose);
+      await engine.loadModel('mock.gguf');
+      final invocations = <String>[];
+      final result = await ChatSession(engine, maxContextTokens: 0)
+          .sendWithTools(
+            'Weather?',
+            tools: [
+              ToolDefinition(
+                name: 'weather',
+                description: 'Weather',
+                parameters: [ToolParam.string('city', required: true)],
+                handler: (params) async {
+                  invocations.add(params.getRequiredString('city'));
+                  return 'sunny';
+                },
+              ),
+            ],
+            toolChoice: ToolChoice.auto,
+            parallelToolCalls: false,
+            enableThinking: false,
+          );
+      expect(result.stopReason, LlamaToolLoopStopReason.completed);
+      expect(invocations, cities);
+    });
+  }
 
   for (final (label, raw, content, reasoning, calls, tools) in [
     ('bare JSON', _json, '', '', [_weather], true),
@@ -395,6 +460,30 @@ void main() {
       '',
       '',
       [_weather],
+      true,
+    ),
+    (
+      'declared function call with trailing prose',
+      'weather(city="Seoul") is a lesson (see below)',
+      ' is a lesson (see below)',
+      '',
+      [_weather],
+      true,
+    ),
+    (
+      'declared function call strips a trailing separator and closing tag',
+      'weather(city="Seoul"); </tool_call> Done.',
+      ' Done.',
+      '',
+      [_weather],
+      true,
+    ),
+    (
+      'parenthetical after a declared tool name stays text',
+      'weather (humidity) means relative humidity.',
+      'weather (humidity) means relative humidity.',
+      '',
+      <(String, Map<String, String>)>[],
       true,
     ),
     (
@@ -861,7 +950,7 @@ void main() {
   );
 
   test(
-    'streaming emits trailing text after a declared loose call before EOF',
+    'streaming holds trailing text after a declared loose call until EOF',
     () async {
       final controller = StreamController<String>();
       final chunks = <LlamaCompletionChunk>[];
@@ -888,7 +977,7 @@ void main() {
           controller.add(token);
         }
         await pumpEventQueue(times: 4);
-        expect(_content(chunks), '$_prose Then I will soon explain all of it.');
+        expect(_content(chunks), _prose);
         expect(
           chunks.every((chunk) => chunk.choices.single.finishReason == null),
           isTrue,
@@ -905,6 +994,114 @@ void main() {
       );
     },
   );
+
+  const nativeBody = '<|tool_call>call:weather{city:<|"|>Seoul<|"|>}';
+  const leadingFunction = 'weather(city="A") then later visible text ';
+  for (final parallel in [false, true]) {
+    for (final (termination, cancelled, limit) in [
+      ('EOF', false, false),
+      ('cancellation', true, false),
+      ('token limit', false, true),
+      ('cancellation at the token limit', true, true),
+    ]) {
+      test(
+        'delayed native function precedence at $termination (parallel: $parallel)',
+        () async {
+          final rendered = render(parallelToolCalls: parallel);
+          const raw = '$leadingFunction$_native';
+          final parsed = ChatTemplateEngine.parseRendered(
+            rendered,
+            raw,
+            tools: _tools,
+          );
+          expect(parsed.content, leadingFunction);
+          expect(parsed.toolCalls.map(_callValue), _expectedCalls([_weather]));
+          await _expectStream(
+            Stream.fromIterable(raw.split('')),
+            rendered,
+            leadingFunction,
+            '',
+            [_weather],
+            true,
+            termination,
+            cancelled: cancelled,
+            stoppedAtLimit: limit,
+          );
+        },
+      );
+    }
+
+    for (final (label, prefix, live, fallbackContent) in [
+      ('function', leadingFunction, '', ' then later visible text '),
+      (
+        'indented function with residue',
+        '\n\t weather(city="A"); </tool_call>\t then later visible text ',
+        '',
+        '\n then later visible text ',
+      ),
+      (
+        'loose JSON with preamble and wrapper',
+        'Intro:\t <tool_call>{"name":"weather","arguments":{"city":"A"}}; </tool_call>\t then later visible text ',
+        'Intro:',
+        'Intro: then later visible text ',
+      ),
+    ]) {
+      test(
+        '$label restores literal text only when native wins (parallel: $parallel)',
+        () async {
+          final rendered = render(parallelToolCalls: parallel);
+          for (final nativeWins in [false, true]) {
+            final controller = StreamController<String>();
+            final chunks = <LlamaCompletionChunk>[];
+            final done = _stream(
+              controller.stream,
+              rendered,
+              true,
+            ).forEach(chunks.add);
+            try {
+              controller.add(prefix);
+              await pumpEventQueue(times: 4);
+              expect(_content(chunks), live);
+              expect(
+                chunks.expand(
+                  (chunk) => chunk.choices.single.delta.toolCalls ?? [],
+                ),
+                isEmpty,
+              );
+              if (nativeWins) {
+                await Future<void>.delayed(const Duration(milliseconds: 30));
+                controller.add(nativeBody);
+                for (var i = 0; i < 8; i++) {
+                  controller.add(' ');
+                }
+                await pumpEventQueue(times: 4);
+                expect(_content(chunks), prefix.trimRight());
+                expect(
+                  chunks.expand(
+                    (chunk) => chunk.choices.single.delta.toolCalls ?? [],
+                  ),
+                  isEmpty,
+                );
+                controller.add('<tool_call|>');
+              }
+            } finally {
+              await controller.close();
+              await done;
+            }
+            expect(_content(chunks), nativeWins ? prefix : fallbackContent);
+            final terminal = chunks.last.choices.single;
+            expect(terminal.finishReason, 'tool_calls');
+            expect(
+              terminal.delta.toolCalls!.map(_callValue),
+              _expectedCalls([
+                nativeWins ? _weather : ('weather', {'city': 'A'}),
+              ]),
+            );
+          }
+        },
+      );
+    }
+  }
 
   test(
     'cancel and length limit strip trailing semicolon and truncated closing tag',
@@ -957,6 +1154,71 @@ void main() {
       }
     },
   );
+
+  test(
+    'streaming releases an impossible function argument list early',
+    () async {
+      const impossible = 'weather (humidity)';
+      final tokens = [
+        'weather',
+        ' (humidity)',
+        ' means ',
+        ...List.filled(128, 'another word of prose '),
+      ];
+      final raw = tokens.join();
+      final rendered = render();
+      var charactersRead = 0;
+      int? firstVisibleAt;
+      final chunks = <LlamaCompletionChunk>[];
+
+      Stream<String> source() async* {
+        for (final token in tokens) {
+          charactersRead += token.length;
+          yield token;
+        }
+      }
+
+      await for (final chunk in _stream(source(), rendered, true)) {
+        if ((chunk.choices.single.delta.content ?? '').isNotEmpty) {
+          firstVisibleAt ??= charactersRead;
+        }
+        chunks.add(chunk);
+      }
+      expect(firstVisibleAt, lessThanOrEqualTo(impossible.length + 4 * 22));
+      expect(_content(chunks), raw);
+      expect(
+        _content(chunks),
+        ChatTemplateEngine.parseRendered(rendered, raw, tools: _tools).content,
+      );
+      expect(chunks.last.choices.single.finishReason, 'stop');
+    },
+  );
+
+  for (final atLimit in [false, true]) {
+    test(
+      'unterminated quoted function argument at ${atLimit ? 'limit' : 'cancel'} stays text',
+      () async {
+        const raw = 'weather(city="A)';
+        final chunks = await ChatCompletionStreamParser.parse(
+          tokenStream: Stream.fromIterable(raw.split('')),
+          templateResult: render(),
+          parseToolCallsEnabled: true,
+          enableThinking: true,
+          modelName: 'gemma4',
+          completionId: 'gemma4-unterminated-function',
+          tools: _tools,
+          cancelled: () => !atLimit,
+          stoppedAtLimit: () => atLimit,
+        ).toList();
+        expect(_content(chunks), raw);
+        expect(chunks.last.choices.single.delta.toolCalls, isNull);
+        expect(
+          chunks.last.choices.single.finishReason,
+          atLimit ? 'length' : 'stop',
+        );
+      },
+    );
+  }
 
   test(
     'function-call syntax matches final parse at every prefix and cancel/limit',
@@ -1116,8 +1378,10 @@ List<List<Object?>> _expectedCalls(List<(String, Map<String, String>)> calls) =>
 Stream<LlamaCompletionChunk> _stream(
   Stream<String> tokens,
   LlamaChatTemplateResult rendered,
-  bool tools,
-) => ChatCompletionStreamParser.parse(
+  bool tools, {
+  bool cancelled = false,
+  bool stoppedAtLimit = false,
+}) => ChatCompletionStreamParser.parse(
   tokenStream: tokens,
   templateResult: rendered,
   parseToolCallsEnabled: tools,
@@ -1125,6 +1389,8 @@ Stream<LlamaCompletionChunk> _stream(
   modelName: 'gemma4',
   completionId: 'gemma4-loose-stream',
   tools: _tools,
+  cancelled: () => cancelled,
+  stoppedAtLimit: () => stoppedAtLimit,
 );
 
 Future<void> _expectStream(
@@ -1134,13 +1400,24 @@ Future<void> _expectStream(
   String reasoning,
   List<(String, Map<String, String>)> calls,
   bool tools,
-  String partition,
-) async {
+  String partition, {
+  bool cancelled = false,
+  bool stoppedAtLimit = false,
+}) async {
   var visible = '';
   var thought = '';
   var terminal = false;
   var deltaIndex = 0;
-  await for (final chunk in _stream(tokens, rendered, tools)) {
+  final expectedCalls = stoppedAtLimit
+      ? _expectedCalls([])
+      : _expectedCalls(calls);
+  await for (final chunk in _stream(
+    tokens,
+    rendered,
+    tools,
+    cancelled: cancelled,
+    stoppedAtLimit: stoppedAtLimit,
+  )) {
     final choice = chunk.choices.single;
     final delta = choice.delta;
     final reason =
@@ -1155,10 +1432,17 @@ Future<void> _expectStream(
       expect(emitted, isEmpty, reason: reason);
     } else {
       terminal = true;
-      expect(choice.finishReason, calls.isEmpty ? 'stop' : 'tool_calls');
-      expect(emitted.map(_callValue), _expectedCalls(calls));
+      expect(
+        choice.finishReason,
+        stoppedAtLimit
+            ? 'length'
+            : calls.isEmpty
+            ? 'stop'
+            : 'tool_calls',
+      );
+      expect(emitted.map(_callValue), expectedCalls);
       expect(emitted.map((call) => call.id), [
-        for (var i = 0; i < calls.length; i++) 'call_$i',
+        for (var i = 0; i < expectedCalls.length; i++) 'call_$i',
       ]);
     }
   }

@@ -165,6 +165,9 @@ class ChatCompletionStreamParser {
     var lastPartialParseAtMs = 0;
     final partialParseStopwatch = Stopwatch()..start();
     final traits = _traitsOf(templateResult);
+    final wakesOnFunctionCall =
+        parseToolCallsEnabled &&
+        templateResult.format == ChatFormat.gemma4.index;
     final bareCallOpenings = [
       if (bareFirstCallOf(templateResult))
         for (final tool in tools ?? const <ToolDefinition>[])
@@ -496,9 +499,11 @@ class ChatCompletionStreamParser {
       final intervalElapsed =
           elapsedMs - lastPartialParseAtMs >= partialParseMinIntervalMs;
       final signalParseReady =
-          tokenHasSignal &&
           intervalElapsed &&
-          tokensSincePartialParse >= signalDrivenPartialParseMinTokens;
+          tokensSincePartialParse >= signalDrivenPartialParseMinTokens &&
+          (tokenHasSignal ||
+              (wakesOnFunctionCall &&
+                  (token.contains('(') || token.contains(')'))));
       final periodicParseReady =
           (sawStructuredOutputSignal &&
               tokensSincePartialParse >= structuredPartialParseInterval) ||
@@ -566,23 +571,19 @@ class ChatCompletionStreamParser {
             ) &&
             !partialParsed.hasToolCalls;
         if (!suppressToolEnvelopeContent &&
-            partialContent.length > streamedContent.length) {
+            partialContent.length > streamedContent.length &&
+            partialContent.startsWith(streamedContent)) {
           final delta = partialContent.substring(streamedContent.length);
-          if (delta.isNotEmpty) {
-            yield _chunk(
-              completionId: completionId,
-              modelName: modelName,
-              delta: LlamaCompletionChunkDelta(content: delta),
-            );
-          }
+          yield _chunk(
+            completionId: completionId,
+            modelName: modelName,
+            delta: LlamaCompletionChunkDelta(content: delta),
+          );
+          streamedContent = partialContent;
         }
 
         if (partialReasoning.length >= streamedReasoning.length) {
           streamedReasoning = partialReasoning;
-        }
-        if (!suppressToolEnvelopeContent &&
-            partialContent.length >= streamedContent.length) {
-          streamedContent = partialContent;
         }
       } catch (_) {
         // Partial parser failures are expected during incremental generation.
@@ -808,8 +809,6 @@ class ChatCompletionStreamParser {
     for (var i = 0; i < token.length; i++) {
       switch (token.codeUnitAt(i)) {
         case 0x22: // "
-        case 0x28: // (
-        case 0x29: // )
         case 0x2C: // ,
         case 0x3A: // :
         case 0x3C: // <

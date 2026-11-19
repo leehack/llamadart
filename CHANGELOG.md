@@ -4,7 +4,7 @@ Releases before 0.10.0 are in the
 ## Unreleased
 
 - Keep undeclared, fenced, and inline-backtick JSON as text in Gemma 4 loose-JSON tool parsing, release non-matching streams once the name is known, and preserve text after a loose call ([#2081](https://github.com/leehack/llamadart/issues/2081)).
-- Gate Gemma 4 function-call-syntax fallback on declared tool names across final and streaming output, and strip `</tool_call>` and `;` residue after loose JSON calls ([#2095](https://github.com/leehack/llamadart/issues/2095)).
+- Recover Gemma 4 function calls only for declared tools with valid syntax, preserve visible text when native calls supersede loose calls, and strip `</tool_call>` and `;` residue after recovered loose calls ([#2095](https://github.com/leehack/llamadart/issues/2095)).
 
 ## 0.20.2
 

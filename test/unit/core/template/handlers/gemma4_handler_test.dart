@@ -256,6 +256,76 @@ void main() {
       expect(undeclared.content, 'rm(path="/")');
     });
 
+    test('only an accepted native envelope supersedes a loose function', () {
+      const thought = '<|channel>thought\nNeed weather<channel|>';
+      const function = 'weather(city="A")';
+      const suffix = ' then later visible text ';
+      const nativeBody = '<|tool_call>call:weather{city:<|"|>Seoul<|"|>}';
+      const malformed = '<|tool_call>call:weather{city:}<tool_call|>';
+      final tools = [
+        ToolDefinition(
+          name: 'weather',
+          description: 'Weather',
+          parameters: [ToolParam.string('city')],
+        ),
+      ];
+      for (final (tail, nativeWins) in [
+        ('', false),
+        ('<|tool_', false),
+        ('<|tool_call>', false),
+        ('<|tool_call>call:weather{city:<|"|>Seo', false),
+        (malformed, false),
+        (nativeBody, true),
+        ('$nativeBody<tool_', true),
+        ('$nativeBody<tool_call|>', true),
+        ('$malformed$nativeBody<tool_call|>', true),
+      ]) {
+        for (final partial in [true, false]) {
+          final result = ChatTemplateEngine.parse(
+            ChatFormat.gemma4.index,
+            '$thought$function$suffix$tail',
+            isPartial: partial,
+            tools: tools,
+          );
+          expect(result.reasoningContent, 'Need weather', reason: tail);
+          expect(
+            result.content,
+            nativeWins
+                ? '$function$suffix'
+                : partial
+                ? ''
+                : suffix,
+            reason: tail,
+          );
+          final call = result.toolCalls.single;
+          expect(call.index, 0, reason: tail);
+          expect(call.function?.name, 'weather', reason: tail);
+          expect(jsonDecode(call.function!.arguments!), {
+            'city': nativeWins ? 'Seoul' : 'A',
+          }, reason: tail);
+        }
+      }
+    });
+
+    test('a leading loose function keeps later loose JSON as prose', () {
+      const suffix = ' example {"name":"weather","arguments":{"city":"B"}}';
+      final parsed = ChatTemplateEngine.parse(
+        ChatFormat.gemma4.index,
+        'weather(city="A")$suffix',
+        tools: [
+          ToolDefinition(
+            name: 'weather',
+            description: 'Weather',
+            parameters: [ToolParam.string('city')],
+          ),
+        ],
+      );
+      expect(parsed.content, suffix);
+      final call = parsed.toolCalls.single;
+      expect(call.function?.name, 'weather');
+      expect(jsonDecode(call.function!.arguments!), {'city': 'A'});
+    });
+
     test('streams an open thought channel as partial reasoning', () {
       const output = '<|channel>thought\nNeed weather';
 

@@ -314,13 +314,13 @@ void main() {
         expect(parsed.content, expected, reason: input);
       }
 
-      final wrappedParallel = parseToolCallsFromLooseText(
+      final wrapped = parseToolCallsFromLooseText(
         'Ok <tool_call>$call; $call Done',
         preserveJsonProse: true,
         allowedToolNames: const {'weather'},
       );
-      expect(wrappedParallel.toolCalls, hasLength(2));
-      expect(wrappedParallel.content, 'Ok Done');
+      expect(wrapped.toolCalls, hasLength(1));
+      expect(wrapped.content, 'Ok $call Done');
     });
 
     test('holds partial closing tag prefix after a bare loose call', () {
@@ -378,6 +378,23 @@ void main() {
         'city': 'Seoul',
       });
       expect(declared.content, isEmpty);
+    });
+
+    test('holds whitespace that might precede a closing tool tag', () {
+      const call = '{"name":"weather","arguments":{"city":"Seoul"}}';
+      final partial = parseToolCallsFromLooseText(
+        'Plan\t\t$call \t',
+        preserveJsonProse: true,
+        isPartial: true,
+        allowedToolNames: const {'weather'},
+      );
+      final completed = parseToolCallsFromLooseText(
+        'Plan\t\t$call \t</tool_call>',
+        preserveJsonProse: true,
+        allowedToolNames: const {'weather'},
+      );
+      expect(partial.content, 'Plan\t\t');
+      expect(completed.content, partial.content);
     });
 
     test('releases partial function-call syntax once name cannot match', () {
