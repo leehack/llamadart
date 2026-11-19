@@ -9,7 +9,7 @@ import 'package:test/test.dart';
 import '../../../tool/release/pr_changelog.dart';
 
 Future<ProcessResult> _validate(String? body) async {
-  final temp = Directory.systemTemp.createTempSync('cps-pr-event-');
+  final temp = Directory.systemTemp.createTempSync('clfix-pr-event-');
   try {
     final event = File('${temp.path}/event.json')
       ..writeAsStringSync(
@@ -41,49 +41,27 @@ N/A: Updates tests for the existing behavior.
 ''';
 
 void main() {
-  test(
-    'preserves Markdown and removes only recognized terminal Git trailers',
-    () {
-      const message = '''
+  test('preserves Markdown from the landed body', () {
+    const message = '''
 Improve setup (#9)
 
 ## Changelog
 - [core] Update the `--setup` [guide](https://example.org).
 - [packages/genkit_llamadart] Add package instructions.
-
-Signed-off-by: Example <example@example.invalid>
-Co-authored-by: Example <example@example.invalid>
 ''';
-      final trailers = message.substring(message.indexOf('Signed-off-by:'));
-      final section = parsePrChangelog(landedPrBody(message, trailers));
-      expect(section.bullets, [
-        (
-          target: 'core',
-          text: 'Update the `--setup` [guide](https://example.org).',
-        ),
-        (
-          target: 'packages/genkit_llamadart',
-          text: 'Add package instructions.',
-        ),
-      ]);
-      expect(
-        () => parsePrChangelog(landedPrBody(message, '')),
-        throwsFormatException,
-      );
-      expect(
-        () => parsePrChangelog(
-          landedPrBody(
-            message.replaceFirst(
-              'Signed-off-by:',
-              'Free prose.\n\nSigned-off-by:',
-            ),
-            trailers,
-          ),
-        ),
-        throwsFormatException,
-      );
-    },
-  );
+    final section = parsePrChangelog(landedPrBody(message));
+    expect(section.bullets, [
+      (
+        target: 'core',
+        text: 'Update the `--setup` [guide](https://example.org).',
+      ),
+      (target: 'packages/genkit_llamadart', text: 'Add package instructions.'),
+    ]);
+    expect(
+      () => parsePrChangelog(landedPrBody('$message\nFree prose.')),
+      throwsFormatException,
+    );
+  });
 
   final valid = {
     'multiple bullets, core and package scopes': '''
@@ -99,6 +77,7 @@ Co-authored-by: Example <example@example.invalid>
 ''',
     'specific N/A': '## Changelog\n\nN/A: Updates release tooling tests.',
     'CRLF and ATX end': '## Changelog\r\n- One.\r\n# Summary\r\nText.',
+    'lone CR line endings': '## Changelog\r- One.\r# Summary\rText.',
     'examples outside the section': '''
 ## Summary
 ```markdown
@@ -139,8 +118,8 @@ Co-authored-by: Example <example@example.invalid>
     'tilde fenced heading': '~~~~\n~~~\n## Changelog\n- Example.\n~~~~',
     'quoted heading': '> ## Changelog\n> - Example.',
     'commented heading': '<!--\n## Changelog\n- Example.\n-->',
-    'heading nested in a list': '- Example:\n  ## Changelog\n  - Text.',
-    'indented code heading': '    ## Changelog\n    - Example.',
+    'heading nested in a list': '- Example:\n  ## Changelog\n- Text.',
+    'indented code heading': '    ## Changelog\n- Example.',
     'fenced content': '## Changelog\n```\n- Example.\n```',
     'wrong level': '### Changelog\n- Text.',
     'wrong case': '## ChangeLog\n- Text.',
@@ -151,7 +130,10 @@ Co-authored-by: Example <example@example.invalid>
     'checked box': '## Changelog\n- [X] Done',
     'continued bullet': '## Changelog\n- First line\n  second line',
     'comment-only bullet': '## Changelog\n- <!-- template value -->',
+    'same-line comment': '## Changelog\n- A note. <!-- guidance -->',
+    'unclosed guidance comment': '## Changelog\n- A note.\n<!-- guidance',
     'markup-only bullet': '## Changelog\n- ** **',
+    'format-only bullet': '## Changelog\n- **\u2060\u200D**',
     'placeholder bullet': '## Changelog\n- TBD',
     'placeholder reason': '## Changelog\nN/A: <specific reason>',
     'bare N/A': '## Changelog\nN/A',

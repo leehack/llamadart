@@ -29,6 +29,7 @@ final _commentToken = RegExp(r'`+|<!--');
 final _scope = RegExp(r'^\[(core|packages/[^\]]*)\](?![([])');
 final _checkBox = RegExp(r'^\[[ xX]\](?:\s|$)');
 final _notApplicable = RegExp(r'^N/A\s*(?::|$)', caseSensitive: false);
+final _invisibleText = RegExp(r'[\p{Cf}\s*_~`\[\]]', unicode: true);
 final _placeholder = RegExp(
   r'^\s*(?:tbd|todo|placeholder|fill (?:me|this) in|insert (?:text|reason) here|<[^>]+>)[.!]?\s*$',
   caseSensitive: false,
@@ -136,12 +137,7 @@ PrChangelog parsePrChangelog(String body) {
 Never _invalid(String problem) => throw FormatException('Changelog: $problem');
 
 void _validateText(String text) {
-  if (!text
-          .replaceAll(RegExp(r'[\s*_~`\[\]]'), '')
-          .runes
-          .any(
-            (code) => !const {0x200b, 0x200c, 0x200d, 0xfeff}.contains(code),
-          ) ||
+  if (text.replaceAll(_invisibleText, '').isEmpty ||
       _checkBox.hasMatch(text) ||
       _notApplicable.hasMatch(text) ||
       _placeholder.hasMatch(text) ||
@@ -180,22 +176,12 @@ void _validateText(String text) {
   return (visible.toString(), inComment);
 }
 
-/// Removes the subject and the terminal trailers identified by Git's
-/// `%(trailers:only)` formatter. The event parser never strips trailer text.
-String landedPrBody(String message, String gitTrailers) {
+/// Removes the subject from a commit message after Git trailer removal.
+String landedPrBody(String message) {
   final lines = const LineSplitter().convert(message);
-  if (lines.isEmpty) return '';
   final nonEmpty = lines.lastIndexWhere((line) => line.trim().isNotEmpty);
   if (nonEmpty <= 0) return '';
-  var end = nonEmpty + 1;
-  if (gitTrailers.trim().isNotEmpty) {
-    final separator = lines.lastIndexWhere(
-      (line) => line.trim().isEmpty,
-      nonEmpty,
-    );
-    if (separator >= 1) end = separator;
-  }
-  return lines.sublist(1, end).join('\n');
+  return lines.sublist(1, nonEmpty + 1).join('\n');
 }
 
 void main(List<String> args) {
