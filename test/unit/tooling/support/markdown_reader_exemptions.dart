@@ -103,7 +103,7 @@ const Map<String, String> _ciToolFiles = {
   'tool/testing/validation/internal_diagnostic.dart': 'ls-files',
   'tool/testing/validation/remote.dart': 'listSync',
   'tool/testing/verify_release_docs_versions.dart':
-      '.md | CHANGELOG | README | git show | website/',
+      '.md | CHANGELOG | README | SKILL | git show | skills/ | website/',
   'website/lib/src/site/sidebar.dart': 'doc/',
   'website/lib/src/site/site_model.dart': '.md',
 };
@@ -121,7 +121,7 @@ const Map<String, String> _releaseToolFiles = {
   'tool/testing/check_released_changelog_sections.dart':
       '.md | CHANGELOG | doc/ | find | git cat-file | git show | website/',
   'tool/testing/verify_release_docs_versions.dart':
-      '.md | CHANGELOG | README | git show | website/',
+      '.md | CHANGELOG | README | SKILL | git show | skills/ | website/',
 };
 
 const Map<String, String> _pinTableFiles = {
@@ -363,15 +363,6 @@ const Map<String, Exemption> suiteExemptions = {
     reason: _llamaCppSource,
     evidence: {
       'tool/testing/prepare_llama_cpp_source.sh': 'git checkout | git clone',
-    },
-    gate: null,
-  ),
-  'test/unit/tooling/build_site_script_test.dart': (
-    reason: _tempTree,
-    evidence: {
-      'test/unit/tooling/build_site_script_test.dart': 'website/',
-      'website/lib/src/site/sidebar.dart': 'doc/',
-      'website/lib/src/site/site_model.dart': '.md',
     },
     gate: null,
   ),

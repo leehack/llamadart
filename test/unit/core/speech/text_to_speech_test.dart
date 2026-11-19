@@ -180,6 +180,30 @@ void main() {
         expect(events.whereType<TextToSpeechAudioChunkEvent>(), isEmpty);
       });
 
+      test('emits the output format even when capabilities differ', () async {
+        backend
+          ..capabilities = streaming
+          ..outputFormat = (sampleRateHz: 32000, channelCount: 2)
+          ..streamChunks = [
+            Float32List.fromList([-1, -0.5]),
+            Float32List.fromList([0.5, 1]),
+          ];
+        await _loadTextToSpeechModel(llamaEngine);
+
+        final task = await speechEngine.synthesize(
+          const TextToSpeechRequest(text: 'Hello.', streamAudio: true),
+        );
+        final chunks = (await task.events.toList())
+            .whereType<TextToSpeechAudioChunkEvent>();
+        final result = await task.result;
+
+        expect(chunks.map((chunk) => chunk.sampleOffset), [0, 2]);
+        expect(chunks.map((chunk) => chunk.sampleRateHz), [32000, 32000]);
+        expect(chunks.map((chunk) => chunk.channelCount), [2, 2]);
+        expect(result.sampleRateHz, 32000);
+        expect(result.channelCount, 2);
+      });
+
       test('refuses with the backend reason and frees the lease', () async {
         backend.capabilities = const BackendTextToSpeechCapabilities(
           isSupported: true,
@@ -1282,6 +1306,7 @@ class _TextToSpeechBackend
     Float32List.fromList(<double>[-1, -0.5]),
     Float32List.fromList(<double>[0, 0.5, 1]),
   ];
+  ({int sampleRateHz, int channelCount})? outputFormat;
   bool blockCapabilities = false;
   bool blockSynthesis = false;
   bool blockFinalDecode = false;
@@ -1389,6 +1414,8 @@ class _TextToSpeechBackend
             framesGenerated: 3,
             truncated: false,
             audio: chunk,
+            sampleRateHz: outputFormat?.sampleRateHz,
+            channelCount: outputFormat?.channelCount,
           ),
         );
       }
@@ -1400,9 +1427,11 @@ class _TextToSpeechBackend
       await _finalDecodeRelease.future;
     }
     return BackendTextToSpeechResult(
-      samples: Float32List.fromList(<double>[-1, -0.5, 0, 0.5, 1]),
-      sampleRateHz: 24000,
-      channelCount: 1,
+      samples: Float32List.fromList(
+        streamChunks.expand((chunk) => chunk).toList(),
+      ),
+      sampleRateHz: outputFormat?.sampleRateHz ?? 24000,
+      channelCount: outputFormat?.channelCount ?? 1,
       framesGenerated: 3,
       truncated: false,
     );

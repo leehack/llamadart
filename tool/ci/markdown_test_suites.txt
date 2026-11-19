@@ -1,4 +1,5 @@
 test/unit/hook/native_release_pins_test.dart
+test/unit/tooling/build_site_script_test.dart
 test/unit/tooling/check_released_changelog_sections_test.dart
 test/unit/tooling/check_webgpu_bridge_tag_test.dart
 test/unit/tooling/companion_inventory_test.dart

@@ -68,27 +68,47 @@ const Map<String, List<String>> _currentDocDependencies =
       ],
     };
 
-final Map<String, RegExp> _currentNativePins = <String, RegExp>{
-  'lib/src/hook/native_release_pins.dart': RegExp(
-    r"const llamaCppTag = '([^']+)';",
+const _nativePinSource = 'lib/src/hook/native_release_pins.dart';
+const _installation = 'website/docs/getting-started/installation.md';
+const _supportMatrix = 'website/docs/platforms/support-matrix.md';
+
+final List<(String, RegExp)> _currentNativePins = [
+  (_nativePinSource, RegExp(r"const llamaCppTag = '([^']+)';")),
+  (
+    'packages/llamadart_llama_cpp_flutter/darwin/'
+        'llamadart_llama_cpp_flutter/Package.swift',
+    RegExp(r'let llamaCppTag = "([^"]+)"'),
   ),
-  'packages/llamadart_llama_cpp_flutter/darwin/'
-      'llamadart_llama_cpp_flutter/Package.swift': RegExp(
-    r'let llamaCppTag = "([^"]+)"',
+  (
+    'packages/llamadart_llama_cpp_flutter/README.md',
+    RegExp(
+      r'The Apple SwiftPM manifest pins\s+`leehack/llamadart-native@([^`]+)`\.',
+    ),
   ),
-  'packages/llamadart_llama_cpp_flutter/README.md': RegExp(
-    r'The Apple SwiftPM manifest pins\s+`leehack/llamadart-native@([^`]+)`\.',
+  (
+    'README.md',
+    RegExp(
+      r'\| Native llama\.cpp / GGUF \| `leehack/llamadart-native@([^`]+)` \|',
+    ),
   ),
-  'README.md': RegExp(
-    r'\| Native llama\.cpp / GGUF \| `leehack/llamadart-native@([^`]+)` \|',
+  (_installation, RegExp(r'llamadart_native_tag:\s*([^\s#]+)')),
+  (
+    _installation,
+    RegExp(
+      r'ABI-compatible with the default\s+`leehack/llamadart-native@([^`]+)`',
+    ),
   ),
-  'website/docs/getting-started/installation.md': RegExp(
-    r'llamadart_native_tag:\s*([^\s#]+)',
+  (
+    _supportMatrix,
+    RegExp(
+      r'The native-assets hook currently pins `llamadart-native` tag\s+`([^`]+)`',
+    ),
   ),
-  'website/docs/platforms/support-matrix.md': RegExp(
-    r'The native-assets hook currently pins `llamadart-native` tag\s+`([^`]+)`',
+  (
+    _supportMatrix,
+    RegExp(r'\| llama\.cpp native \| `leehack/llamadart-native@([^`]+)` \|'),
   ),
-};
+];
 
 /// Current docs whose prose calls a specific native tag the default runtime.
 ///
@@ -96,16 +116,10 @@ final Map<String, RegExp> _currentNativePins = <String, RegExp>{
 /// describe the pin that was current when they were written. The WebGPU pages
 /// are excluded too: bridge assets deliberately trail the native pin, and
 /// `tool/testing/check_webgpu_bridge_tag.dart` owns that divergence.
-/// `README.md` and `website/docs/getting-started/installation.md` are excluded
-/// as well, but their coverage differs by site. [_currentNativePins] checks
-/// `README.md`'s pin table row and `installation.md`'s `llamadart_native_tag:`
-/// override, so scanning those here would duplicate that contract.
-/// `installation.md`'s prose `leehack/llamadart-native@<tag>` claim is not in
-/// [_currentNativePins]; `tool/native/sync_native_release_pins.py` rewrites
-/// every `leehack/llamadart-native@<tag>` occurrence in these docs and owns
-/// keeping it current.
+/// [_currentNativePins] checks the README pin table and the installation
+/// guide's override tag and ABI note.
 const List<String> defaultRuntimeClaimDocs = <String>[
-  'website/docs/platforms/support-matrix.md',
+  _supportMatrix,
   'website/docs/guides/performance-tuning.md',
 ];
 
@@ -905,41 +919,6 @@ Map<String, String> installDocVersions(
   return result;
 }
 
-/// Changelogs whose first release heading must name the version being
-/// published.
-const _releasePrepChangelogs = <String>[
-  'CHANGELOG.md',
-  'website/docs/changelog/recent-releases.md',
-];
-
-final RegExp _unreleasedHeading = RegExp(r'^##\s+Unreleased\s*$');
-
-/// Problems with `## Unreleased` among [changelog]'s level-two [headings].
-///
-/// `main` keeps exactly one `## Unreleased`, above every released section,
-/// and release prep removes it. Union merges of the changelogs never conflict,
-/// so a rebase across a release can leave a stray copy without any warning.
-List<String> unreleasedHeadingProblems(
-  String changelog,
-  List<String> headings, {
-  required bool releasePrep,
-}) {
-  final positions = [
-    for (final (index, heading) in headings.indexed)
-      if (_unreleasedHeading.hasMatch(heading)) index,
-  ];
-  if (positions.isEmpty) return const [];
-  if (!releasePrep) {
-    return positions.length == 1 && positions.single == 0
-        ? const []
-        : [
-            '$changelog must have at most one `## Unreleased`, above every '
-                'released section.',
-          ];
-  }
-  return ['$changelog must not keep `## Unreleased` when publishing.'];
-}
-
 /// Docs changelog whose releases stop at the previous minor; `CHANGELOG.md`
 /// keeps the rest.
 const _docsChangelog = 'website/docs/changelog/recent-releases.md';
@@ -1017,35 +996,47 @@ String _firstDifference(String core, String docs) {
       'page ${line(docsLines)}';
 }
 
-/// Released sections that [docs] keeps from [core] but words differently.
+/// Drift between the Unreleased notes and the retained releases in both files.
 ///
-/// Both changelogs are edited by hand and union-merge, so nothing else keeps
-/// a retained release's bullets identical. The docs page must use its
-/// prescribed bridge wording (`- ` marker, no "the"), which normalising both
-/// sides would otherwise let a `*` or "the default" through.
+/// The docs page must use its prescribed bridge wording (`- ` marker, no
+/// "the"), which normalizing both sides would otherwise let through.
 List<String> docsChangelogDriftProblems(
   Map<String, String> core,
   Map<String, String> docs,
 ) {
-  final normalized = _normalizedBridgeLines;
-  return [
-    for (final MapEntry(key: heading, value: body) in docs.entries)
-      if (heading != 'Unreleased') ...[
-        for (final line in body.split('\n'))
-          if (_bridgeBulletLine.hasMatch(line) &&
-              (line.startsWith('* ') ||
-                  line.contains('the default WebGPU bridge assets')))
-            '$_docsChangelog section "## $heading": bridge line must read '
-                '"- ... default WebGPU bridge assets ..." (a "-" marker, no '
-                '"the"); got ${jsonEncode(line)}',
-        if (core.containsKey(heading) &&
-            normalized(core[heading]!) != normalized(body))
-          '$_docsChangelog section "## $heading" differs from CHANGELOG.md '
-              '${_firstDifference(normalized(core[heading]!), normalized(body))}'
-              '; keep the bullets of every retained release identical (apart '
-              'from the bullet marker and "the" on the WebGPU bridge line).',
-      ],
-  ];
+  final headings = {
+    ...docs.keys,
+    if (core.containsKey('Unreleased')) 'Unreleased',
+  };
+  final problems = <String>[];
+  for (final heading in headings) {
+    final docsBody = docs[heading] ?? '';
+    for (final line in docsBody.split('\n')) {
+      if (_bridgeBulletLine.hasMatch(line) &&
+          (line.startsWith('* ') ||
+              line.contains('the default WebGPU bridge assets'))) {
+        problems.add(
+          '$_docsChangelog section "## $heading": bridge line must read '
+          '"- ... default WebGPU bridge assets ..." (a "-" marker, no '
+          '"the"); got ${jsonEncode(line)}',
+        );
+      }
+    }
+    final coreBody = heading == 'Unreleased'
+        ? core[heading] ?? ''
+        : core[heading];
+    if (coreBody == null) continue;
+    final normalizedCore = _normalizedBridgeLines(coreBody);
+    final normalizedDocs = _normalizedBridgeLines(docsBody);
+    if (normalizedCore != normalizedDocs) {
+      problems.add(
+        '$_docsChangelog section "## $heading" differs from CHANGELOG.md '
+        '${_firstDifference(normalizedCore, normalizedDocs)}'
+        '; keep the bullets identical apart from the prescribed WebGPU bridge wording.',
+      );
+    }
+  }
+  return problems;
 }
 
 void main(List<String> arguments) {
@@ -1096,7 +1087,8 @@ void main(List<String> arguments) {
         errors: errors,
       );
     }
-    nativePin = _checkCurrentNativePins(errors);
+    nativePin = checkCurrentNativePins(Directory.current, errors);
+    checkLiteRtLmDocs(Directory.current, errors);
     if (nativePin != null) {
       for (final path in defaultRuntimeClaimDocs) {
         final lines = _readLines(path, errors);
@@ -1114,7 +1106,7 @@ void main(List<String> arguments) {
     }
     if (releasePrep) {
       final expected = '## ${versions['llamadart']}';
-      for (final changelog in _releasePrepChangelogs) {
+      for (final changelog in releasedChangelogs) {
         final heading = _matchInFile(
           Directory.current,
           changelog,
@@ -1127,7 +1119,7 @@ void main(List<String> arguments) {
         }
       }
     }
-    for (final changelog in _releasePrepChangelogs) {
+    for (final changelog in releasedChangelogs) {
       final lines = _readLines(changelog, errors);
       if (lines != null) {
         final headings = lines.where(RegExp(r'^##\s').hasMatch).toList();
@@ -1203,32 +1195,21 @@ void main(List<String> arguments) {
   }
 }
 
-String? _checkCurrentNativePins(List<String> errors) {
-  final pins = <String, String>{};
-  for (final entry in _currentNativePins.entries) {
-    final file = File(entry.key);
-    if (!file.existsSync()) {
-      errors.add('${entry.key} does not exist.');
-      continue;
-    }
-
-    String text;
-    try {
-      text = file.readAsStringSync();
-    } on FileSystemException catch (error) {
-      errors.add('Could not read ${entry.key}: ${error.message}.');
-      continue;
-    }
-
-    final match = entry.value.firstMatch(text);
-    if (match == null) {
-      errors.add('${entry.key} does not contain its current native pin.');
-      continue;
-    }
-    final pin = match.group(1)!;
+/// Checks each current llama.cpp pin claim against the hook's source pin.
+String? checkCurrentNativePins(Directory repoRoot, List<String> errors) {
+  String? expectedPin;
+  for (final (path, pattern) in _currentNativePins) {
+    final pin = _matchInFile(
+      repoRoot,
+      path,
+      pattern,
+      'current native pin',
+      errors,
+    );
+    if (pin == null) continue;
     if (!isValidNativeReleaseTag(pin)) {
       errors.add(
-        '${entry.key} uses unsupported native tag $pin; expected stable '
+        '$path uses unsupported native tag $pin; expected stable '
         'vMAJOR.MINOR.PATCH, stable wrapper rebuild '
         'vMAJOR.MINOR.PATCH-N, canonical historical/nightly bNNNN without '
         'leading zeros, nightly wrapper '
@@ -1236,23 +1217,85 @@ String? _checkCurrentNativePins(List<String> errors) {
       );
       continue;
     }
-    pins[entry.key] = pin;
-  }
-
-  if (pins.isEmpty) {
-    return null;
-  }
-  final expectedPin =
-      pins['lib/src/hook/native_release_pins.dart'] ?? pins.values.first;
-  for (final entry in pins.entries) {
-    if (entry.value != expectedPin) {
+    if (path == _nativePinSource) {
+      expectedPin = pin;
+    } else if (expectedPin != null && pin != expectedPin) {
       errors.add(
-        '${entry.key} pins native tag ${entry.value}, but '
-        'lib/src/hook/native_release_pins.dart pins $expectedPin.',
+        '$path pins native tag $pin, but $_nativePinSource pins $expectedPin.',
       );
     }
   }
   return expectedPin;
+}
+
+/// Checks the README's LiteRT-LM tag and the current source claims against the
+/// archived owner manifest used to validate the companion's SwiftPM pins.
+void checkLiteRtLmDocs(Directory repoRoot, List<String> errors) {
+  const readme = 'README.md';
+  final pin = _matchInFile(
+    repoRoot,
+    readme,
+    RegExp(
+      r'\| Native LiteRT-LM / `\.litertlm` \| `leehack/litert-lm-native@([^`]+)` \|',
+    ),
+    'current LiteRT-LM pin',
+    errors,
+  );
+  if (pin != null && pin != liteRtLmReleaseTag) {
+    errors.add(
+      '$readme pins LiteRT-LM $pin, but $_nativePinSource pins $liteRtLmReleaseTag.',
+    );
+  }
+
+  final fixtureTag = liteRtLmReleaseTag.replaceAll(RegExp(r'[.-]'), '_');
+  final fixture = 'test/fixtures/native/litert_lm_${fixtureTag}_manifest.json';
+  final Object? manifest;
+  try {
+    manifest = jsonDecode(File('${repoRoot.path}/$fixture').readAsStringSync());
+  } on IOException catch (error) {
+    errors.add('$fixture could not be read: $error');
+    return;
+  } on FormatException {
+    errors.add('$fixture is not valid JSON.');
+    return;
+  }
+  final commit = RegExp(r'^[0-9a-f]{40}$');
+  if (manifest case {
+    'release': {'tag': liteRtLmReleaseTag},
+    'native': {'commit': final String owner},
+    'upstream': {'commit': final String upstream},
+  } when commit.hasMatch(owner) && commit.hasMatch(upstream)) {
+    final expected = (owner.substring(0, 8), upstream.substring(0, 8));
+    final claim = RegExp(
+      r'published(?: native)?\s+'
+      r'(?:\[[^\]]+\]\(https://github\.com/leehack/litert-lm-native/releases/tag/[^)]+\),?|v[^\s`]+)'
+      r'\s+\(?owner(?: source)? `([0-9a-f]{8})`(?: /|,) upstream\s+`([0-9a-f]{8})`',
+    );
+    for (final path in [
+      readme,
+      _supportMatrix,
+      'website/docs/maintainers/native-and-web-sync.md',
+      'skills/llamadart-getting-started/SKILL.md',
+    ]) {
+      final lines = _readLines(path, errors, repoRoot: repoRoot);
+      if (lines == null) continue;
+      final match = claim.firstMatch(lines.join('\n'));
+      if (match == null) {
+        errors.add(
+          '$path does not contain its current LiteRT-LM source claim.',
+        );
+      } else if ((match[1], match[2]) != expected) {
+        errors.add(
+          '$path names LiteRT-LM owner ${match[1]} / upstream ${match[2]}, '
+          'but $fixture records ${expected.$1} / ${expected.$2}.',
+        );
+      }
+    }
+  } else {
+    errors.add(
+      '$fixture must record $liteRtLmReleaseTag and its full source commits.',
+    );
+  }
 }
 
 Version? _parseCoreVersion(String version, List<String> errors) {
@@ -1346,8 +1389,12 @@ void _checkCurrentDoc({
   }
 }
 
-List<String>? _readLines(String path, List<String> errors) {
-  final file = File(path);
+List<String>? _readLines(
+  String path,
+  List<String> errors, {
+  Directory? repoRoot,
+}) {
+  final file = File(repoRoot == null ? path : '${repoRoot.path}/$path');
   if (!file.existsSync()) {
     errors.add('$path does not exist.');
     return null;

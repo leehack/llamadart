@@ -89,7 +89,7 @@ class SelectionTest(unittest.TestCase):
                     jobs = ci.select([path], pull_request=pull_request)['jobs']
                     self.assertNotEqual(jobs['markdown-tests'], jobs['test-linux-coverage'])
         for path in ('tool/docs/build_site.sh', 'website/lib/src/site/site_model.dart',
-                     'packages/genkit_llamadart/lib/a.dart', 'LICENSE'):
+                     'LICENSE'):
             with self.subTest(path=path):
                 plan = ci.select([path])
                 self.assertTrue(plan['jobs']['markdown-tests'])
@@ -101,8 +101,10 @@ class SelectionTest(unittest.TestCase):
         for raw in (b'D\0website/docs/integrations/genkit.md\0',
                     b'R100\0packages/genkit_llamadart/README.md\0website/docs/new.md\0'):
             plan = ci.select(ci.inventory(raw))
-            self.assertTrue(plan['jobs']['markdown-tests'])
             self.assertTrue(plan['jobs']['genkit'])
+            source_is_package = raw.startswith(b'R')
+            self.assertEqual(plan['jobs']['test-linux-coverage'], source_is_package)
+            self.assertEqual(plan['jobs']['markdown-tests'], not source_is_package)
             self.assertEqual(plan['apps'], [])
             self.assertEqual(plan['desktops'], [])
 
@@ -136,12 +138,12 @@ class SelectionTest(unittest.TestCase):
         self.assertEqual(plan['companions'], [])
         self.assertEqual(plan['apps'], [])
 
-    def test_genkit_is_independent_but_core_and_shared_changes_test_the_adapter(self):
+    def test_genkit_package_changes_run_root_readers_and_the_adapter(self):
         for path in ('lib/genkit_llamadart.dart', 'README.md', 'pubspec.yaml',
                      '.github/check_docs.py', 'test/contract_test.dart'):
             plan = ci.select(['packages/genkit_llamadart/' + path])
             self.assertEqual({j for j, v in plan['jobs'].items() if v},
-                             {'genkit', 'markdown-tests'})
+                             {'genkit', 'test-linux-coverage'})
             self.assertEqual(plan['companions'], [])
             self.assertEqual(plan['apps'], [])
             self.assertEqual(plan['desktops'], [])
@@ -206,12 +208,12 @@ class SelectionTest(unittest.TestCase):
                 self.assertTrue(plan['jobs']['studio'], path)
                 self.assertTrue(ci.expected_jobs(plan)['studio-macos'], path)
 
-    def test_model_store_is_independent_but_core_changes_test_it(self):
+    def test_model_store_package_changes_run_root_readers_and_package_tests(self):
         for path in ('lib/llamadart_model_store.dart', 'README.md', 'pubspec.yaml',
                      'test/model_store_test.dart'):
             plan = ci.select(['packages/llamadart_model_store/' + path])
             self.assertEqual({j for j, v in plan['jobs'].items() if v},
-                             {'model-store', 'markdown-tests'})
+                             {'model-store', 'test-linux-coverage'})
             self.assertEqual(plan['companions'], [])
             self.assertEqual(plan['apps'], [])
             self.assertEqual(plan['desktops'], [])

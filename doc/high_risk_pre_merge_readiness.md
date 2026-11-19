@@ -121,12 +121,13 @@ snippet must occur in its exact candidate blob, like any source reference.
 This does not admit other harness assets or arbitrary package paths, or relax
 compiled-grammar, independent-audit or external-authentication requirements.
 
-Studio admits production references only under
+The evaluator admits Studio production references under
 `packages/llamadart_studio_core/lib/` and `packages/llamadart_studio/lib/`.
-Its tests are the corresponding `test/**/*_test.dart` trees and the Flutter
-app's `integration_test/**/*_test.dart` tree. These paths retain exact-blob,
-complete changed-production coverage, snippet and observed causal-control
-requirements; they do not admit arbitrary packages or platform assets.
+It admits tests from both packages' `test/**/*_test.dart` trees and the Flutter
+app's `integration_test/**/*_test.dart` tree. It does not require package-local pairing.
+The independent reviewer verifies each test reaches the cited production code.
+Exact-blob, complete changed-production coverage, snippet and observed
+causal-control requirements apply.
 Studio inference, message/settings, MCP schema, and Chat/Coding boundaries are
 conservative structured-output surfaces with all three minimum impacts.
 An unchanged root grammar does not establish that adapter-produced schemas,

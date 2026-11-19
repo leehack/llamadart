@@ -460,8 +460,10 @@ jobs) fails such a PR: everything from the first `## <version>` heading down
 must match the merge base with the PR's base branch byte-for-byte, and the
 error names the file and first differing line. Move the bullet back under
 `## Unreleased`. Release-prep PRs, detected by the same label and branch rules
-as `release_on_prep_merge.yml`, are exempt. CI reads labels from the event
-that started the run, so push again after adding the `release-prep` label.
+as `release_on_prep_merge.yml`, can edit released sections. The PR check
+requires both changelogs to drop the `## Unreleased` heading. CI reads labels
+from the event that started the run, so push again after adding the
+`release-prep` label.
 
 One change to a released section is allowed outside release prep: the docs
 changelog may lose its oldest sections. It passes when what remains is an

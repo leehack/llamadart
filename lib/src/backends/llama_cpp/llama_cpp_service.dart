@@ -10833,7 +10833,7 @@ class LlamaCppService {
 
   /// PCM from [offset] that the native task has produced so far, or null when
   /// nothing new exists.
-  Float32List? _readTtsPcmSince(
+  ({Float32List samples, int sampleRateHz, int channelCount})? _readTtsPcmSince(
     _TtsApi api,
     Pointer<llama_dart_tts> task,
     int offset,
@@ -10873,7 +10873,11 @@ class LlamaCppService {
             '${outputCount.value}/$count samples',
           );
         }
-        return Float32List.fromList(pcm.asTypedList(count));
+        return (
+          samples: Float32List.fromList(pcm.asTypedList(count)),
+          sampleRateHz: outputInfo.ref.sample_rate,
+          channelCount: outputInfo.ref.channels,
+        );
       } finally {
         malloc.free(pcm);
         malloc.free(outputCount);
@@ -11277,14 +11281,16 @@ class LlamaCppService {
           if (startStreaming != null) {
             final tail = _readTtsPcmSince(api, task, streamedSamples);
             if (tail != null) {
-              streamedSamples += tail.length;
+              streamedSamples += tail.samples.length;
               onProgress?.call(
                 BackendTextToSpeechProgress(
                   phase: BackendTextToSpeechPhase.generating,
                   promptTokensRemaining: progress.ref.prompt_tokens_remaining,
                   framesGenerated: framesGenerated,
                   truncated: truncated,
-                  audio: tail,
+                  audio: tail.samples,
+                  sampleRateHz: tail.sampleRateHz,
+                  channelCount: tail.channelCount,
                 ),
               );
             }
@@ -11307,7 +11313,7 @@ class LlamaCppService {
                 state == llama_dart_tts_state.LLAMA_DART_TTS_STATE_GENERATING
             ? _readTtsPcmSince(api, task, streamedSamples)
             : null;
-        if (audio != null) streamedSamples += audio.length;
+        if (audio != null) streamedSamples += audio.samples.length;
         onProgress?.call(
           BackendTextToSpeechProgress(
             phase:
@@ -11318,7 +11324,9 @@ class LlamaCppService {
             promptTokensRemaining: progress.ref.prompt_tokens_remaining,
             framesGenerated: framesGenerated,
             truncated: truncated,
-            audio: audio,
+            audio: audio?.samples,
+            sampleRateHz: audio?.sampleRateHz,
+            channelCount: audio?.channelCount,
           ),
         );
         await Future<void>.delayed(Duration.zero);

@@ -10,6 +10,7 @@ PR. A path filter must not prevent a required workflow from reporting.
 |---|---|---|
 | Documentation, website, docs tooling | Docs build/tool tests plus version and bridge-pin checks | None |
 | Any path | Adds `Markdown Tests`, unless the Linux VM tests are selected | None |
+| Genkit or Model Store package | Affected package checks and root Linux VM tests | None |
 | Studio core or UI package (`web/`, `windows/`, `linux/` packaging vs shared/macOS) | Studio core and Flutter UI format, analysis and VM tests; `studio-macos` for non-exempt inputs; Web files also run version and bridge-pin checks | None |
 | One companion package | Root static checks, affected package's Flutter/SwiftPM/publish checks, Apple cache check, root Linux coverage and full macOS/Windows VM checks, Studio + `studio-macos`, Web Chat consumer | Android, Web, iOS inputs |
 | Validation package tests/schemas or unbundled assets (`process_memory_test.dart` / `process_memory_probe.dart` also run Mac memory) | Root static checks, Linux VM tests, private suite and Flutter consumer contracts | None |
@@ -23,7 +24,7 @@ PR. A path filter must not prevent a required workflow from reporting.
 | Root `test/**` (extant Linux-only leaf suite on PR vs host-sensitive suite, helper/fixture, deleted/unknown, or push) | Static, all Linux VM tests, Chrome and Windows host tests; Mac native shards only when `test_shards.dart hosts-json` reports host-relevant or on helper/fixture/push/probe-failure; shared fixtures/helpers also run Studio, `studio-macos` and Apple cache | None |
 | Browser backend trees (`lib/src/backends/web/**`, `lib/src/backends/webgpu/**`) | Non-Mac full graph (Linux, Chrome, Windows native, Ubuntu Studio, Web Chat, Genkit, Model Store, examples) with zero Mac allocations | Linux, Windows desktops; apps (PR defers Android) |
 | Root runtime/hooks/dependencies, other example packages, conditional backend entrypoints | Full behavioral graph | All targets; a PR defers macOS desktop and Android unless it changes their build inputs (`.flutter-version` included for `macos-15`) |
-| Workflow/selector or unclassified paths | Full graph including synthetic artifact transport (workflows/selector) | All targets; a PR defers `macos-15` and `android` unless it changes their build inputs (`validation_bundles.yml`, `select_jobs.py`, `hook/`, `lib/src/hook/`, `pubspec.*`, `.flutter-version`, `tool/testing/validation*`, or compiled `packages/llamadart_validation/` for `macos-15`) |
+| Workflow/selector or unclassified paths | Full graph including synthetic artifact transport (workflows/selector) | All targets; a PR defers `macos-15` and `android` unless it changes their build inputs (`validation_bundles.yml`, `select_jobs.py`, `hook/`, `lib/src/hook/`, `pubspec.*`, `.flutter-version` for `macos-15`, `tool/testing/validation*`, or compiled `packages/llamadart_validation/`) |
 | Missing, empty or invalid diff; explicit manual bundle run | Full fallback | All targets (`macos-15` retained) |
 
 Selections combine for mixed changes. Version checks already executed by the
@@ -57,8 +58,10 @@ This is executable job accounting, not a new repository protection setting.
 `tool/ci/markdown_test_suites.txt`, for every change that selects no Linux VM
 tests. It carries no coverage, so a Markdown-only commit uploads none to
 Codecov. Every path selects it, not only Markdown: any file a root suite
-reaches can start reading Markdown without a test changing, and the website,
-Genkit and Model Store lanes run no other root test.
+reaches can start reading Markdown without a test changing. Website changes
+run the site build script's root suite here. Genkit and Model Store package
+changes select the Linux VM tests because root tooling also reads their
+package files.
 
 `markdown_test_suites_test.dart` keeps the inventory complete. Every root suite
 whose static reach shows Markdown evidence must be listed in the inventory or

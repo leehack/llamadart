@@ -71,14 +71,26 @@ void main() {
       expect(published, isNotEmpty);
       for (final MapEntry(key: tag, value: checksum) in published.entries) {
         expect(checksum, llamaCppCompatibleAppleCompanionChecksums[previous]);
-        // Release tags are absent from shallow CI checkouts; the recorded
-        // value is checked against the tag wherever it is present.
+        final ref = 'refs/tags/$tag';
+        final tagExists =
+            Process.runSync('git', [
+              'show-ref',
+              '--verify',
+              '--quiet',
+              ref,
+            ]).exitCode ==
+            0;
+        if (!tagExists &&
+            Platform.environment['LLAMADART_REQUIRE_PUBLISHED_COMPANION_TAGS'] !=
+                '1') {
+          continue;
+        }
         final shown = Process.runSync('git', [
           'show',
-          '$tag:packages/llamadart_llama_cpp_flutter/darwin/'
+          '$ref:packages/llamadart_llama_cpp_flutter/darwin/'
               'llamadart_llama_cpp_flutter/Package.swift',
         ]);
-        if (shown.exitCode != 0) continue;
+        expect(shown.exitCode, 0, reason: '$ref: ${shown.stderr}');
         final manifest = shown.stdout as String;
         expect(
           manifest,

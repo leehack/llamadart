@@ -129,7 +129,7 @@ def select(paths, force_full=False, pull_request=False, host_suites=None):
         elif path == 'website/docs/integrations/genkit.md':
             jobs.update(('docs-check', 'docs-versions', 'genkit'))
         elif path.startswith('packages/genkit_llamadart/'):
-            jobs.add('genkit')
+            jobs.update(('genkit', 'test-linux-coverage'))
         elif path.startswith(('packages/llamadart_studio/',
                               'packages/llamadart_studio_core/')):
             jobs.add('studio')
@@ -142,7 +142,7 @@ def select(paths, force_full=False, pull_request=False, host_suites=None):
         elif path == 'website/docs/guides/model-store.md':
             jobs.update(('docs-check', 'docs-versions', 'model-store'))
         elif path.startswith('packages/llamadart_model_store/'):
-            jobs.add('model-store')
+            jobs.update(('model-store', 'test-linux-coverage'))
         elif (path in ('README.md', 'CHANGELOG.md', 'CONTRIBUTING.md', 'AGENTS.md', 'LICENSE')
               or path.startswith(('doc/', 'website/', 'tool/docs/'))
               or (path.startswith(('packages/', 'example/')) and path.endswith('.md'))):

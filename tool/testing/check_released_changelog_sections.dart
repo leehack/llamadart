@@ -8,7 +8,7 @@
 /// into the new `## X.Y.Z` section. Everything from the first `## <version>`
 /// heading down must therefore match the merge base with the PR's base branch
 /// byte-for-byte. Release-prep PRs, detected as `release_on_prep_merge.yml`
-/// detects them, are exempt because they create the new section.
+/// detects them, may change these sections and must remove `## Unreleased`.
 ///
 /// The docs changelog keeps only the current and previous minor, so it may
 /// also lose its oldest sections: its tail may be cut at a `## <version>`
@@ -34,6 +34,34 @@ const releasedChangelogs = <String>[
   'CHANGELOG.md',
   'website/docs/changelog/recent-releases.md',
 ];
+
+final RegExp _unreleasedHeading = RegExp(r'^##\s+Unreleased\s*$');
+
+/// Problems with `## Unreleased` among [changelog]'s level-two [headings].
+///
+/// `main` keeps exactly one `## Unreleased`, above every released section,
+/// and release prep removes it. Union merges of the changelogs never conflict,
+/// so a rebase across a release can leave a stray copy without any warning.
+List<String> unreleasedHeadingProblems(
+  String changelog,
+  List<String> headings, {
+  required bool releasePrep,
+}) {
+  final positions = [
+    for (final (index, heading) in headings.indexed)
+      if (_unreleasedHeading.hasMatch(heading)) index,
+  ];
+  if (positions.isEmpty) return const [];
+  if (!releasePrep) {
+    return positions.length == 1 && positions.single == 0
+        ? const []
+        : [
+            '$changelog must have at most one `## Unreleased`, above every '
+                'released section.',
+          ];
+  }
+  return ['$changelog must not keep `## Unreleased` when publishing.'];
+}
 
 /// Changelogs that may lose their oldest released sections.
 const truncatableChangelogs = <String>{
@@ -274,7 +302,22 @@ List<String> checkReleasedChangelogSections(
     repository: repository,
   )) {
     log?.call('Release-prep PR: released changelog sections may change.');
-    return const [];
+    final problems = <String>[];
+    for (final path in releasedChangelogs) {
+      final file = File('${repoRoot.path}/$path');
+      if (!file.existsSync()) {
+        problems.add('$path is missing.');
+        continue;
+      }
+      problems.addAll(
+        unreleasedHeadingProblems(
+          path,
+          file.readAsLinesSync(),
+          releasePrep: true,
+        ),
+      );
+    }
+    return problems;
   }
 
   final mergeBase = _git(repoRoot, ['merge-base', 'HEAD', 'origin/$baseRef']);
@@ -375,7 +418,7 @@ void main(List<String> arguments) {
       log: stdout.writeln,
     );
     if (problems.isNotEmpty) {
-      stderr.writeln('Released changelog sections changed:');
+      stderr.writeln('Changelog check failed:');
       for (final problem in problems) {
         stderr.writeln('- $problem');
       }
