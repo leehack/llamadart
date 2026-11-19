@@ -675,6 +675,22 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
         'Qwen3-ASR prompt speech routing changes.',
   ),
   TestMatrixRow(
+    id: 'macos-mic-asr',
+    tier: 'platform',
+    mode: 'manual local-only',
+    covers:
+        'named macOS AVFoundation input and one CPU ASR model per receipt '
+        '(Voxtral Realtime, LFM3-Audio, or Qwen3-ASR windowed), live partial, '
+        'timed stop, cancellation, and recapture',
+    command:
+        'dart run tool/testing/run_local_e2e.dart --scenario macos-mic-asr '
+        '--model-preset <voxtral|lfm3|qwen> --model-path <model.gguf> '
+        '--mmproj-path <mmproj.gguf>',
+    useWhen:
+        'Qualifying a physical macOS microphone through the public Dart '
+        'speech SDK. Use paced file replay to verify the pipeline.',
+  ),
+  TestMatrixRow(
     id: 'litert-lm-asr-smoke',
     tier: 'targeted',
     mode: 'local-only',
