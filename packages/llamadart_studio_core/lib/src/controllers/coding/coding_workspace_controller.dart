@@ -109,6 +109,7 @@ class CodingWorkspaceController {
   static const Duration _streamPublishInterval = Duration(milliseconds: 40);
 
   final Map<String?, String> _promptDrafts = <String?, String>{};
+  final Set<String> _revertingChangeIds = <String>{};
 
   bool _awaitingModel = false;
   int? _drainingTurnEpoch;
@@ -116,6 +117,7 @@ class CodingWorkspaceController {
   int _workspaceEpoch = 0;
   int _navigationEpoch = 0;
   int _refreshEpoch = 0;
+  int _fileEpoch = 0;
   int _workspaceSelection = 0;
   Timer? _streamFlushTimer;
   ActiveTurnStreamState? _pendingStreamState;
@@ -218,6 +220,7 @@ class CodingWorkspaceController {
       }
       ++_navigationEpoch;
       ++_refreshEpoch;
+      ++_fileEpoch;
       _store.update(
         (CodingWorkspaceState s) => s.copyWith(
           workspaceRoot: trimmed,
@@ -292,6 +295,7 @@ class CodingWorkspaceController {
   /// Opens a bounded workspace-relative file slice; returns whether it loaded.
   Future<bool> openFile(String relativePath) async {
     final epoch = _workspaceEpoch;
+    ++_fileEpoch;
     final root = _store.state.workspaceRoot;
     if (root == null) {
       return false;
@@ -321,6 +325,7 @@ class CodingWorkspaceController {
   Future<void> refreshExplorer() async {
     final epoch = _workspaceEpoch;
     final refreshEpoch = ++_refreshEpoch;
+    final fileEpoch = ++_fileEpoch;
     final root = _store.state.workspaceRoot;
     if (root == null) {
       return;
@@ -338,15 +343,20 @@ class CodingWorkspaceController {
           refreshedSlice = await _readFile(root, selected, maxLines: 300);
         } catch (_) {}
       }
-      if (epoch != _workspaceEpoch || refreshEpoch != _refreshEpoch) return;
+      if (epoch != _workspaceEpoch) return;
+      final listingFresh = refreshEpoch == _refreshEpoch;
+      final previewFresh =
+          refreshedSlice != null &&
+          fileEpoch == _fileEpoch &&
+          _store.state.selectedFilePath == selected;
+      if (!listingFresh && !previewFresh) return;
       _store.update(
         (CodingWorkspaceState s) => s.copyWith(
-          files: entries,
-          selectedFileSlice:
-              refreshedSlice != null && s.selectedFilePath == selected
+          files: listingFresh ? entries : null,
+          selectedFileSlice: previewFresh && s.selectedFilePath == selected
               ? refreshedSlice
               : s.selectedFileSlice,
-          clearLastError: true,
+          clearLastError: listingFresh,
         ),
       );
     } catch (error) {
@@ -406,15 +416,20 @@ class CodingWorkspaceController {
   /// Reverts an agent-produced [CodingFileChange] by restoring its prior
   /// content or deleting newly created files.
   Future<bool> revertChange(String changeId) async {
+    if (!_revertingChangeIds.add(changeId)) {
+      return false;
+    }
     final epoch = _workspaceEpoch;
     final root = _store.state.workspaceRoot;
     if (root == null) {
+      _revertingChangeIds.remove(changeId);
       return false;
     }
     final idx = _store.state.recentChanges.indexWhere(
       (CodingFileChange c) => c.id == changeId && c.canRevert,
     );
     if (idx < 0) {
+      _revertingChangeIds.remove(changeId);
       return false;
     }
     final target = _store.state.recentChanges[idx];
@@ -446,6 +461,8 @@ class CodingWorkspaceController {
             s.copyWith(lastError: humanizeStudioError(error)),
       );
       return false;
+    } finally {
+      _revertingChangeIds.remove(changeId);
     }
   }
 

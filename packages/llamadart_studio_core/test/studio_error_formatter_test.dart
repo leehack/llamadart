@@ -28,4 +28,12 @@ void main() {
       'Aborted an unrelated operation',
     );
   });
+
+  test('MediaEngine playback error suggests checking a playback device', () {
+    final message = humanizeStudioError(
+      'PlatformException(4, MediaEngine error, Failed to set source, null)',
+    );
+    expect(message.toLowerCase(), contains('check a playback device'));
+    expect(message, isNot(contains('PlatformException')));
+  });
 }

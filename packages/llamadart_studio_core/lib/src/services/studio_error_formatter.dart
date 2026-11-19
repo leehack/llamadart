@@ -45,5 +45,8 @@ String humanizeStudioError(
     return 'Browser model loading stopped. Try a smaller model or reduce the '
         'context and batch sizes in Expert tuning, then reload.';
   }
+  if (raw.contains('MediaEngine error')) {
+    return 'Audio output device unavailable. Connect or check a playback device and try again.';
+  }
   return raw;
 }

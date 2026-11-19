@@ -114,6 +114,7 @@ jobs:
           flutter analyze --fatal-infos
           TMPDIR="$(mktemp -d)" flutter test --exclude-tags local-only
           flutter test --platform chrome test/web_recording_test.dart test/web_platform_acceptance_test.dart test/tool_availability_widget_test.dart
+          python3 -m unittest tool/test/test_android_release_acceptance.py
 
 
   studio-macos:

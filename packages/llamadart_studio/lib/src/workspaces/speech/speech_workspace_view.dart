@@ -80,11 +80,20 @@ class _SpeechWorkspaceViewState extends State<SpeechWorkspaceView> {
   Future<AudioPlayer?> _ensureAudioPlayer() async {
     final player = await _audioPlayback.getOrCreate();
     if (player == null || !mounted) return null;
-    _playerCompleteSub ??= player.onPlayerComplete.listen((_) {
-      if (mounted) {
-        setState(() => _playingClipId = null);
-      }
-    });
+    _playerCompleteSub ??= player.onPlayerComplete.listen(
+      (_) {
+        if (mounted) {
+          setState(() => _playingClipId = null);
+        }
+      },
+      onError: (Object error, StackTrace stackTrace) {
+        if (!mounted) return;
+        if (_playingClipId != null) {
+          setState(() => _playingClipId = null);
+        }
+        _showPlaybackError(error);
+      },
+    );
     _playerStateSub ??= player.onPlayerStateChanged.listen((PlayerState state) {
       if (!mounted) {
         return;
@@ -258,10 +267,16 @@ class _SpeechWorkspaceViewState extends State<SpeechWorkspaceView> {
       if (_playbackSequence == seq) {
         setState(() => _playingClipId = null);
       }
-      ScaffoldMessenger.maybeOf(
-        context,
-      )?.showSnackBar(SnackBar(content: Text('Audio playback failed: $error')));
+      _showPlaybackError(error);
     }
+  }
+
+  void _showPlaybackError(Object error) {
+    ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+      SnackBar(
+        content: Text('Audio playback failed: ${humanizeStudioError(error)}'),
+      ),
+    );
   }
 
   Future<void> _saveWavClip(StudioSynthesizedClipEntry entry) async {
