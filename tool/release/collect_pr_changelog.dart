@@ -28,6 +28,10 @@ final _prNumber = RegExp(r'\(#([1-9][0-9]*)\)$');
 final _reverts = RegExp(
   r'^(?:This reverts commit ([a-f0-9]{40})\.|Reverts-Commit: ([a-f0-9]{40}))$',
 );
+final _githubRevert = RegExp(
+  r'^Reverts ([A-Za-z0-9-]+/[A-Za-z0-9_.-]+#[1-9][0-9]*)$',
+);
+final _trailerContinuation = RegExp(r'^[ \t\r\v\f]');
 final _docsCut = RegExp(r'^docs: cut version (\S+)$');
 final _releaseHeading = RegExp(r'^##[ \t]+([^\r\n]+)', multiLine: true);
 final _bridgeClaim = RegExp(
@@ -289,23 +293,76 @@ class _Git {
   bool hasBlob(String sha, String path) =>
       run(['cat-file', '-e', '$sha:$path']).exitCode == 0;
 
-  ({String subject, String body, String trailers, int parents}) commit(
-    String sha,
-  ) {
+  ({
+    String subject,
+    String body,
+    String trailers,
+    bool mixedTrailers,
+    int parents,
+  })
+  commit(String sha) {
+    // The folded records mark Git's parsed key/value pairs, including the
+    // same trailers exposed by interpret-trailers --parse (which unfolds).
     final fields = text([
       'show',
       '-s',
-      '--format=%s%x00%P%x00%B%x00%(trailers:only)',
+      '--format=%s%x00%P%x00%B%x00%(trailers:only)%x00%(trailers)%x00'
+          '%(trailers:separator=%x1e,key_value_separator=%x1f)%x00',
       sha,
     ]).split('\x00');
-    if (fields.length != 4) {
+    if (fields.length != 7) {
       throw FormatException('Cannot read commit $sha.');
     }
+    final (message, mixedTrailers) = fields[3].isEmpty
+        ? (fields[2], false)
+        : _stripTrailers(sha, fields[2], fields[4], fields[5]);
     return (
       subject: fields[0],
-      body: landedPrBody(fields[2], fields[3]),
+      body: landedPrBody(message),
       trailers: fields[3],
+      mixedTrailers: mixedTrailers,
       parents: fields[1].isEmpty ? 0 : fields[1].split(' ').length,
+    );
+  }
+
+  (String, bool) _stripTrailers(
+    String sha,
+    String message,
+    String block,
+    String records,
+  ) {
+    Never unaligned() =>
+        throw FormatException('Cannot safely separate Git trailers at $sha.');
+
+    final start = message.lastIndexOf('\n$block') + 1;
+    if (block.isEmpty ||
+        start == 0 ||
+        message.substring(start + block.length).trim().isNotEmpty ||
+        block.contains('\x1e') ||
+        block.contains('\x1f')) {
+      unaligned();
+    }
+    final raw = block.replaceFirst(RegExp(r'\n$'), '').split('\n');
+    final retained = <String>[];
+    var index = 0;
+    for (final record in records.split('\x1e')) {
+      if (index >= raw.length) unaligned();
+      final line = raw[index++];
+      if (record.contains('\x1f')) {
+        if (_trailerContinuation.hasMatch(line)) unaligned();
+        while (index < raw.length &&
+            _trailerContinuation.hasMatch(raw[index])) {
+          index++;
+        }
+      } else {
+        if (line.trimRight() != record.trimRight()) unaligned();
+        retained.add(line);
+      }
+    }
+    if (index != raw.length) unaligned();
+    return (
+      message.substring(0, start) + retained.join('\n'),
+      retained.isNotEmpty,
     );
   }
 
@@ -417,6 +474,20 @@ class _Entry {
   String disposition;
   final PrChangelog? section;
   final List<String> targets;
+  late final String? sectionSha256 = switch (section) {
+    final section? =>
+      sha256
+          .convert(
+            utf8.encode(
+              jsonEncode({
+                'reason': section.reason,
+                'bullets': _bulletRows(section),
+              }),
+            ),
+          )
+          .toString(),
+    null => null,
+  };
 
   Map<String, Object?> toJson() {
     final section = this.section;
@@ -426,16 +497,7 @@ class _Entry {
       'source': source,
       'disposition': disposition,
       if (section != null) ...{
-        'sectionSha256': sha256
-            .convert(
-              utf8.encode(
-                jsonEncode({
-                  'reason': section.reason,
-                  'bullets': _bulletRows(section),
-                }),
-              ),
-            )
-            .toString(),
+        'sectionSha256': sectionSha256,
         if (section.reason != null) 'reason': section.reason,
         if (section.bullets.isNotEmpty) 'bullets': _bulletRows(section),
       },
@@ -485,12 +547,15 @@ class _Collector {
 
   Future<List<_Entry>> collect() async {
     final rows = <_Entry>[];
-    final seen = <int>{};
+    final seen = <int, _Entry>{};
     for (final sha in window) {
       final commit = git.commit(sha);
       final number = int.tryParse(
         _prNumber.firstMatch(commit.subject)?[1] ?? '',
       );
+      if (commit.mixedTrailers) {
+        _warn(sha, number, 'kept non-trailer lines in the Git trailer block.');
+      }
       if (commit.parents != 1) {
         _warn(sha, number, 'unsupported main commit shape.');
         rows.add(_Entry(sha, number, 'git', 'unresolved'));
@@ -533,9 +598,10 @@ class _Collector {
     String source,
     PrChangelog section,
     String trailers,
-    Set<int> seen,
+    Map<int, _Entry> seen,
   ) {
-    final disposition = !seen.add(number)
+    final first = seen[number];
+    final disposition = first != null
         ? 'duplicate-pr'
         : section.reason != null
         ? 'n/a'
@@ -548,7 +614,12 @@ class _Collector {
         if (_reverts.firstMatch(line) case final marker?)
           (marker[1] ?? marker[2])!,
     }.toList();
-    return _Entry(
+    for (final line in section.outsideLines) {
+      if (_githubRevert.firstMatch(line) case final marker?) {
+        _warn(sha, number, 'GitHub revert of ${marker[1]} needs review.');
+      }
+    }
+    final row = _Entry(
       sha,
       number,
       source,
@@ -556,6 +627,16 @@ class _Collector {
       section: section,
       targets: targets,
     );
+    if (first == null) {
+      seen[number] = row;
+    } else if (first.sectionSha256 != row.sectionSha256) {
+      _warn(
+        sha,
+        number,
+        'Changelog section differs from ${first.sha}. Kept the first section.',
+      );
+    }
+    return row;
   }
 
   void _applyReverts(List<_Entry> rows) {

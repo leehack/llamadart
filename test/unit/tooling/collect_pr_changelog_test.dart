@@ -45,11 +45,14 @@ class _Repo {
     String? legacyDocs,
     String previous = '0.20.2',
     String history = _oldRelease,
+    String activationSection = 'N/A: Enables maintainer tooling.',
+    String? taggedVersion,
   }) : from = 'v$previous' {
     git(['init', '-b', 'main']);
     git(['config', 'core.autocrlf', 'false']);
     commit('Previous release', {
-      'pubspec.yaml': 'name: llamadart\nversion: $previous\n',
+      'pubspec.yaml':
+          'name: llamadart\nversion: ${taggedVersion ?? previous}\n',
       _root: '$_rootIntro$history',
       _docs: '$_docsIntro$history',
       _archive: '# Archive\n\n## 0.8.0\n\n- Archived.\n',
@@ -77,7 +80,7 @@ const String webBridgeManifestSha256 =
           '$_docsIntro## Unreleased\n\n${legacyDocs ?? legacyRoot ?? ''}$history',
     });
     activation = commit(
-      'Activate changelog collection (#1)\n\n## Changelog\nN/A: Enables maintainer tooling.',
+      'Activate changelog collection (#1)\n\n## Changelog\n$activationSection',
       {
         _marker: jsonEncode({'commit': boundary, 'tag': from}),
         _root: '$_rootIntro$history',
@@ -86,7 +89,7 @@ const String webBridgeManifestSha256 =
     );
   }
 
-  final dir = Directory.systemTemp.createTempSync('cps-changelog-git-');
+  final dir = Directory.systemTemp.createTempSync('clfix-changelog-git-');
   final String from;
   late final String boundary;
   late final String activation;
@@ -155,18 +158,28 @@ _Repo _repo({
   String? legacyDocs,
   String previous = '0.20.2',
   String history = _oldRelease,
+  String activationSection = 'N/A: Enables maintainer tooling.',
+  String? taggedVersion,
 }) {
   final repo = _Repo(
     legacyRoot: legacyRoot,
     legacyDocs: legacyDocs,
     previous: previous,
     history: history,
+    activationSection: activationSection,
+    taggedVersion: taggedVersion,
   );
   addTearDown(() => repo.dir.deleteSync(recursive: true));
   return repo;
 }
 
 String _draft(String stdout) => stdout.substring(stdout.indexOf('## 0.20.3\n'));
+
+Matcher _formatError(String message) => isA<FormatException>().having(
+  (e) => e.message,
+  'message',
+  contains(message),
+);
 
 void main() {
   test(
@@ -213,6 +226,127 @@ void main() {
       );
     },
   );
+  test('keeps the loose-list bullet glued to a Git trailer (ADV3)', () async {
+    final repo = _repo();
+    final commit = repo.commit(
+      'Change (#4)\n\n## Changelog\n- A note.\n\n- B note.\n'
+      'Signed-off-by: X <x@example.invalid>',
+    );
+    final message = repo.file('message')
+      ..writeAsStringSync(repo.git(['show', '-s', '--format=%B', commit]));
+    expect(
+      repo.git(['interpret-trailers', '--parse', '--no-divider', message.path]),
+      'Signed-off-by: X <x@example.invalid>\n',
+    );
+    final output = await _collect(repo, repo.args());
+    expect(output, contains('WARNING $commit (#4):'));
+    expect(_draft(output), contains('- A note.\n- B note.'));
+    expect(output, isNot(contains('Signed-off-by:')));
+  });
+
+  test(
+    'removes folded Git trailers on either side of a loose bullet',
+    () async {
+      final repo = _repo();
+      final commit = repo.commit(
+        'Change (#4)\n\n## Changelog\n- A note.\n\n'
+        'Signed-off-by: X <x@example.invalid>\n  Folded value.\n'
+        '- B note.\nCo-authored-by:\n  Y <y@example.invalid>',
+      );
+      final output = await _collect(repo, repo.args());
+      expect(output, contains('WARNING $commit (#4): kept non-trailer lines'));
+      expect(_draft(output), contains('- A note.\n- B note.'));
+      expect(output, isNot(contains('Folded value.')));
+    },
+  );
+
+  test(
+    'fails with the commit SHA if Git omits a line from its trailer records',
+    () async {
+      final repo = _repo();
+      repo.git(['config', 'core.commentChar', '#']);
+      final commit = repo.commit(
+        'Change (#4)\n\n## Changelog\n- A note.\n\n- B note.\n'
+        '# Heading\nSigned-off-by: X <x@example.invalid>',
+      );
+      await expectLater(
+        _collect(repo, repo.args()),
+        throwsA(
+          _formatError('Cannot safely separate Git trailers at $commit.'),
+        ),
+      );
+    },
+  );
+
+  test('warns about conflicting duplicate PR sections (ADV1)', () async {
+    final repo = _repo();
+    final first = repo.pr(7, '- First landing.');
+    final matching = repo.commit(
+      'Same section (#7)\n\n## Changelog\n- [core] First landing.',
+    );
+    final different = repo.commit(
+      'Follow-up direct push (#7)\n\n## Changelog\n- Different follow-up note.',
+    );
+    final output = await _collect(repo, repo.args());
+    expect(
+      output,
+      contains(
+        'WARNING $different (#7): Changelog section differs from $first',
+      ),
+    );
+    expect(output, isNot(contains('WARNING $matching')));
+    expect('First landing.'.allMatches(_draft(output)), hasLength(1));
+    expect(_draft(output), isNot(contains('Different follow-up note.')));
+  });
+
+  test('rejects an activation commit with a bullet instead of N/A', () async {
+    final repo = _repo(activationSection: '- Adds a release note.');
+    await expectLater(
+      _collect(repo, repo.args()),
+      throwsA(_formatError('introduced by its N/A activation commit')),
+    );
+  });
+
+  test('rejects --from when it differs from the latest heading', () async {
+    final repo = _repo(
+      history: '## 0.20.4\n\n- Later release.\n\n$_oldRelease',
+    );
+    await expectLater(
+      _collect(repo, repo.args()),
+      throwsA(
+        _formatError('--from does not match the latest pinned changelog'),
+      ),
+    );
+  });
+
+  test(
+    'rejects a core tag whose version differs from the root pubspec',
+    () async {
+      final repo = _repo(taggedVersion: '0.20.1');
+      await expectLater(
+        _collect(repo, repo.args()),
+        throwsA(
+          _formatError('Core tag v0.20.2 disagrees with its root pubspec'),
+        ),
+      );
+    },
+  );
+
+  test(
+    'rejects shallow history even when the entire range is present',
+    () async {
+      final repo = _repo();
+      final shallow = File('${repo.dir.path}/.git/shallow')
+        ..writeAsStringSync(repo.git(['rev-parse', '${repo.from}^{commit}']));
+      expect(shallow.readAsStringSync(), isNotEmpty);
+      expect(repo.git(['rev-parse', '--is-shallow-repository']).trim(), 'true');
+      await expectLater(
+        _collect(repo, repo.args()),
+        throwsA(_formatError('needs full Git history')),
+      );
+    },
+  );
+
   test(
     'includes the matching legacy seed once and skips it after a newer tag',
     () async {
@@ -362,6 +496,33 @@ void main() {
     expect(repo.file(_docs).readAsStringSync(), 'Dirty docs changelog.\n');
   });
 
+  test('restores the first output if replacing the second fails', () async {
+    final repo = _repo();
+    final root = repo.file(_root);
+    final docs = repo.file(_docs);
+    final priorRoot = root.readAsBytesSync();
+    final priorDocs = docs.readAsBytesSync();
+    final overrides = _FailSecondReplacement(docs.path, () {
+      expect(root.readAsStringSync(), contains('## 0.20.3'));
+      expect(docs.readAsBytesSync(), priorDocs);
+    });
+    await expectLater(
+      IOOverrides.runWithIOOverrides(
+        () => _collect(repo, repo.args(write: true)),
+        overrides,
+      ),
+      throwsA(
+        isA<FileSystemException>().having(
+          (e) => e.message,
+          'message',
+          'Fixture refused the second replacement.',
+        ),
+      ),
+    );
+    expect(root.readAsBytesSync(), priorRoot);
+    expect(docs.readAsBytesSync(), priorDocs);
+  });
+
   test(
     'walks first parents and warns on unknown direct pushes or merge shapes',
     () async {
@@ -465,6 +626,93 @@ void main() {
     expect(_draft(output), contains(_baseline));
   });
 
+  test('requires a second commit associated with a rebase envelope', () async {
+    final repo = _repo();
+    final first = repo.commit('Missing body (#4)');
+    final last = repo.pr(5, '- Later squash.');
+    final envelope = _pull(10, last, body: '## Changelog\n- Unverified batch.');
+    final output = await _collect(repo, repo.args(), {
+      'commits/$first/pulls': [
+        [envelope],
+      ],
+      'commits/$last/pulls': [[]],
+      'pulls/10': envelope,
+    });
+    expect(output, contains('WARNING $first (#4): no matching merged main PR'));
+    expect(_draft(output), isNot(contains('Unverified batch.')));
+  });
+
+  test('rejects ambiguity between an exact PR and a rebase envelope', () async {
+    final repo = _repo();
+    final first = repo.commit('Missing body (#4)');
+    final last = repo.pr(5, '- Last commit.');
+    final exact = _pull(4, first, body: '## Changelog\n- Exact PR.');
+    final envelope = _pull(10, last, body: '## Changelog\n- Batch PR.');
+    await expectLater(
+      _collect(repo, repo.args(), {
+        'commits/$first/pulls': [
+          [exact],
+          [envelope],
+        ],
+        'commits/$last/pulls': [
+          [envelope],
+        ],
+        'pulls/4': exact,
+        'pulls/10': envelope,
+      }),
+      throwsA(
+        _formatError(
+          '$first (#4): ambiguous merged main PR associations (#4, #10)',
+        ),
+      ),
+    );
+  });
+
+  test('rejects a subject PR associated with the wrong merge SHA', () async {
+    final repo = _repo();
+    final commit = repo.commit('Missing body (#4)');
+    final unrelated = repo.pr(5, '- Later squash.');
+    await expectLater(
+      _collect(repo, repo.args(), {
+        'commits/$commit/pulls': [
+          [_pull(4, unrelated)],
+        ],
+        'commits/$unrelated/pulls': [[]],
+      }),
+      throwsA(
+        _formatError('$commit (#4): PR association has the wrong merge commit'),
+      ),
+    );
+  });
+
+  test(
+    'ignores an envelope whose merge commit precedes the candidate',
+    () async {
+      final repo = _repo();
+      final earlier = repo.pr(3, '- Landed earlier.');
+      final commit = repo.commit('Missing body (#4)');
+      final envelope = _pull(
+        10,
+        earlier,
+        body: '## Changelog\n- Earlier batch.',
+      );
+      final output = await _collect(repo, repo.args(), {
+        'commits/$commit/pulls': [
+          [envelope],
+        ],
+        'commits/$earlier/pulls': [
+          [envelope],
+        ],
+        'pulls/10': envelope,
+      });
+      expect(
+        output,
+        contains('WARNING $commit (#4): no matching merged main PR'),
+      );
+      expect(_draft(output), isNot(contains('Earlier batch.')));
+    },
+  );
+
   for (final mismatch in ['sha', 'repository', 'branch']) {
     test('rejects a fallback detail with the wrong $mismatch', () async {
       final repo = _repo();
@@ -565,6 +813,25 @@ void main() {
     expect(result, contains('WARNING $revert (#5)'));
     expect(_draft(result), contains('Original feature.'));
     expect(_draft(result), contains('Separate user-visible effect.'));
+  });
+
+  test('warns and keeps both notes for a GitHub UI revert (ADV6)', () async {
+    final repo = _repo();
+    repo.pr(4, '- Original feature.', {'one.txt': 'New.\n'});
+    repo.file('one.txt').deleteSync();
+    final revert = repo.commit(
+      'Revert "Change (#4)" (#5)\n\nReverts leehack/llamadart#4\n\n'
+      '## Changelog\n- Reverted feature.',
+    );
+    final output = await _collect(repo, repo.args());
+    expect(
+      output,
+      contains('WARNING $revert (#5): GitHub revert of leehack/llamadart#4'),
+    );
+    expect(
+      _draft(output),
+      contains('- Original feature.\n- Reverted feature.'),
+    );
   });
 
   test('keeps the chain for a partial revert of a revert', () async {
@@ -671,6 +938,56 @@ void main() {
     expect(_draft(output), contains('Batch union.'));
     expect(_draft(output), contains('Reverted batch constituent.'));
   });
+}
+
+final class _FailSecondReplacement extends IOOverrides {
+  _FailSecondReplacement(this.destination, this.beforeFailure);
+
+  final String destination;
+  final void Function() beforeFailure;
+
+  @override
+  File createFile(String path) {
+    final file = super.createFile(path);
+    return file.uri.pathSegments.last == 'next'
+        ? _StagedFile(file, destination, beforeFailure)
+        : file;
+  }
+}
+
+class _StagedFile implements File {
+  _StagedFile(this.file, this.destination, this.beforeFailure);
+
+  final File file;
+  final String destination;
+  final void Function() beforeFailure;
+
+  @override
+  void writeAsStringSync(
+    String contents, {
+    FileMode mode = FileMode.write,
+    Encoding encoding = utf8,
+    bool flush = false,
+  }) => file.writeAsStringSync(
+    contents,
+    mode: mode,
+    encoding: encoding,
+    flush: flush,
+  );
+
+  @override
+  File renameSync(String newPath) {
+    if (newPath == destination) {
+      beforeFailure();
+      throw const FileSystemException(
+        'Fixture refused the second replacement.',
+      );
+    }
+    return file.renameSync(newPath);
+  }
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
 Future<String> _collect(
