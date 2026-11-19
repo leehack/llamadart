@@ -70,6 +70,7 @@ class MicCycleReceipt {
   int? finalAfterFinishMs;
   int? recognizerAudioDurationMs;
   int? captureExitCode;
+  String? captureStopReason;
   String? captureInputFormat;
   String? transcript;
   String? completion;
@@ -84,6 +85,7 @@ class MicCycleReceipt {
     'final_after_finish_ms': finalAfterFinishMs,
     'recognizer_audio_duration_ms': recognizerAudioDurationMs,
     'capture_exit_code': captureExitCode,
+    'capture_stop_reason': captureStopReason,
     'capture_input_format': captureInputFormat,
     'capture_warnings': captureWarnings,
     'completion': completion,
@@ -156,42 +158,45 @@ Future<List<MicDevice>> listMicDevices() async {
   return devices;
 }
 
-Future<Process> startMicCapture({MicDevice? device, String? audioPath}) =>
-    Process.start('ffmpeg', [
-      '-hide_banner',
-      '-loglevel',
-      'level+info',
-      '-nostats',
-      '-nostdin',
-      '-xerror',
-      if (device != null) ...[
-        '-f',
-        'avfoundation',
-        '-analyzeduration',
-        '100000',
-        '-probesize',
-        '32768',
-        '-i',
-        ':${device.index}',
-      ] else ...[
-        '-re',
-        '-i',
-        audioPath!,
-      ],
-      '-map',
-      '0:a:0',
-      '-t',
-      '$micCaptureSeconds',
-      '-ac',
-      '1',
-      '-ar',
-      '$micSampleRate',
-      '-c:a',
-      'pcm_f32le',
+Future<Process> startMicCapture({
+  MicDevice? device,
+  String? audioPath,
+  Future<Process> Function(String, List<String>) startProcess = Process.start,
+}) {
+  return startProcess('ffmpeg', [
+    '-hide_banner',
+    '-loglevel',
+    'level+info',
+    '-nostats',
+    '-nostdin',
+    '-xerror',
+    if (device != null) ...[
       '-f',
-      'f32le',
-      'pipe:1',
-    ]);
+      'avfoundation',
+      '-analyzeduration',
+      '100000',
+      '-probesize',
+      '32768',
+      '-i',
+      ':${device.index}',
+    ] else ...[
+      '-re',
+      '-i',
+      audioPath!,
+    ],
+    '-map',
+    '0:a:0',
+    '-ac',
+    '1',
+    '-ar',
+    '$micSampleRate',
+    '-c:a',
+    'pcm_f32le',
+    '-f',
+    'f32le',
+    'pipe:1',
+  ]);
+}
 
 /// Owns one capture process and the session it feeds.
 Future<MicCycleReceipt> captureMicCycle({
@@ -245,9 +250,9 @@ Future<MicCycleReceipt> captureMicCycle({
     onDone: eventsDone.complete,
   );
 
-  Future<void> pump() async {
+  Future<bool> pump() async {
     while (acceptingPcm && await reader!.moveNext()) {
-      if (!acceptingPcm) return;
+      if (!acceptingPcm) return false;
       if (!clock.isRunning) {
         clock.start();
         report('Speak now.');
@@ -255,10 +260,20 @@ Future<MicCycleReceipt> captureMicCycle({
           cancelTimer = Timer(cancelAfter, cancel.complete);
         }
       }
-      final pcm = reader!.current;
+      var pcm = reader!.current;
+      // Gaps in input timestamps can make FFmpeg's duration limit cut PCM short.
+      final remaining = expectedSamples - receipt.samples;
+      if (cancelAfter == null && pcm.length > remaining) {
+        pcm = Float32List.sublistView(pcm, 0, remaining);
+      }
       await session.addPcm(pcm);
-      if (acceptingPcm) receipt.samples += pcm.length;
+      if (!acceptingPcm) return false;
+      receipt.samples += pcm.length;
+      if (cancelAfter == null && receipt.samples == expectedSamples) {
+        return true;
+      }
     }
+    return false;
   }
 
   try {
@@ -286,41 +301,46 @@ Future<MicCycleReceipt> captureMicCycle({
     });
     // Buffered stdout is still valid after a clean process exit.
     final captured = () async {
-      await pump();
+      if (await pump()) return 'sample_target';
       await producerExit;
       await diagnosticsDone;
+      return 'eof';
     }();
     final stop = await Future.any([
-      captured.then((_) => 'eof'),
+      captured,
       cancel.future.then((_) => 'cancel'),
       interrupted.then((_) => 'interrupt'),
     ]).timeout(captureDeadline);
+    receipt.captureStopReason = stop;
     acceptingPcm = false;
-    if (stop == 'cancel' &&
+    if (stop == 'interrupt') {
+      throw StateError('Operator interrupted capture.');
+    }
+    // Raw PCM has no trailer, and flushing could block on unread stdout.
+    final signalSent =
+        stop != 'eof' &&
         !producerExited &&
-        producer.kill(ProcessSignal.sigkill)) {
+        producer.kill(ProcessSignal.sigkill);
+    if (stop == 'cancel' && signalSent) {
       report('Cancelling capture.');
       await session.cancel().timeout(finishDeadline);
-      await producerExit.timeout(const Duration(seconds: 5));
-      await diagnosticsDone.timeout(const Duration(seconds: 5));
-      if (receipt.captureExitCode != -ProcessSignal.sigkill.signalNumber ||
-          receipt.captureWarnings.isNotEmpty) {
-        throw StateError(
-          'FFmpeg failed around cancellation (exit '
-          '${receipt.captureExitCode}).',
-        );
-      }
-    } else if (stop == 'interrupt') {
-      throw StateError('Operator interrupted capture.');
-    } else {
-      if (receipt.captureExitCode != 0 || receipt.captureWarnings.isNotEmpty) {
-        throw StateError(
-          'FFmpeg capture failed (exit ${receipt.captureExitCode}).',
-        );
-      }
-      if (cancelAfter != null) {
+    }
+    await producerExit.timeout(const Duration(seconds: 5));
+    await diagnosticsDone.timeout(const Duration(seconds: 5));
+    final killedByHarness =
+        signalSent &&
+        receipt.captureExitCode == -ProcessSignal.sigkill.signalNumber;
+    if (receipt.captureWarnings.isNotEmpty ||
+        (!killedByHarness && receipt.captureExitCode != 0)) {
+      throw StateError(
+        'FFmpeg capture failed (exit ${receipt.captureExitCode}).',
+      );
+    }
+    if (cancelAfter != null) {
+      if (!killedByHarness) {
         throw StateError('Capture ended before the scheduled cancellation.');
       }
+    } else {
       if (receipt.samples != expectedSamples) {
         throw StateError(
           'Capture ended early: ${receipt.samples}/$expectedSamples samples.',

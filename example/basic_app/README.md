@@ -28,7 +28,8 @@ LFM3-Audio), run `dart run bin/llamadart_live_asr_example.dart <model.gguf>
 <mmproj.gguf> <audio.f32le>` (pass `--qwen-windowed` to opt into bounded 8 s
 windowed live input on Qwen3-ASR). It streams mono 16 kHz little-endian float32
 PCM incrementally and renders confirmed deltas plus replaceable pending text.
-Ctrl-C cancels the session.
+Pass `-` in place of `<audio.f32le>` to read PCM from stdin. Ctrl-C cancels the
+session.
 
 ## Features
 

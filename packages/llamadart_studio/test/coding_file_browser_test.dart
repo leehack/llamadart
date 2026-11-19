@@ -27,11 +27,12 @@ Future<void> _tap(WidgetTester tester, String key) async {
 Future<void> _waitFor(
   WidgetTester tester,
   bool Function() done,
-  String phase,
-) async {
+  String phase, {
+  Duration timeout = const Duration(seconds: 5),
+}) async {
   final elapsed = Stopwatch()..start();
   while (!done()) {
-    if (elapsed.elapsed > const Duration(seconds: 5)) {
+    if (elapsed.elapsed > timeout) {
       throw TestFailure('Timed out waiting for $phase.');
     }
     await tester.pump();
@@ -96,4 +97,49 @@ void main() {
       expect(tester.takeException(), isNull);
     });
   }
+
+  testWidgets('phone file browser fails clearly on a missing path', (
+    tester,
+  ) async {
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final root = Directory.systemTemp.createTempSync('coding_browser_missing_');
+    addTearDown(() => root.deleteSync(recursive: true));
+    File('${root.path}/nested/bonjour.txt')
+      ..createSync(recursive: true)
+      ..writeAsStringSync(_text);
+    final deps = await buildTestDeps(
+      isMobile: true,
+      appDataDirectory: root.path,
+    );
+    addTearDown(deps.dispose);
+    await tester.runAsync(
+      () => deps.codingController.setWorkspaceRoot(root.path),
+    );
+    await tester.binding.setSurfaceSize(const Size(412, 915));
+    await tester.pumpWidget(LlamadartStudioApp(dependencies: deps));
+    await deps.shellController.selectWorkspace(StudioWorkspace.coding);
+    await tester.pumpAndSettle();
+    await tester.tap(find.textContaining('Files ('));
+    await tester.pumpAndSettle();
+
+    TestFailure? missingFailure;
+    try {
+      await openCodingBrowserFile(
+        'nested/missing.txt',
+        tap: (key) => _tap(tester, key),
+        waitFor: (done, phase) => _waitFor(
+          tester,
+          done,
+          phase,
+          timeout: const Duration(milliseconds: 200),
+        ),
+      );
+    } on TestFailure catch (failure) {
+      missingFailure = failure;
+    }
+    expect(missingFailure, isNotNull);
+    expect(missingFailure!.message, contains('coding_file_nested/missing.txt'));
+    expect(deps.codingController.state.selectedFilePath, isNull);
+    expect(tester.takeException(), isNull);
+  });
 }

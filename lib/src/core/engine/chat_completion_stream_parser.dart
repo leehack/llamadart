@@ -556,6 +556,7 @@ class ChatCompletionStreamParser {
         }
 
         final suppressToolEnvelopeContent =
+            !(parseToolCallsEnabled && traits.handlerOwnsPartialToolContent) &&
             _isToolCallEnvelopeBuffer(
               buffer.toString(),
               startTag: startTag,

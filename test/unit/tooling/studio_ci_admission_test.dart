@@ -136,4 +136,26 @@ void main() {
       expect(output['expected']['studio-macos'], isFalse, reason: path);
     }
   });
+
+  test('Studio admission executes Android release acceptance unit tests', () {
+    final workflow =
+        loadYaml(File('.github/workflows/ci.yml').readAsStringSync()) as Map;
+    final steps = (workflow['jobs'] as Map)['studio']['steps'] as List;
+    final step =
+        steps.singleWhere(
+              (step) =>
+                  step['working-directory'] == 'packages/llamadart_studio',
+            )
+            as Map;
+    final lines = (step['run'] as String)
+        .split('\n')
+        .map((line) => line.trim());
+    expect(
+      lines,
+      contains(
+        'python3 -m unittest tool/test/test_android_release_acceptance.py',
+      ),
+    );
+    expect(step.containsKey('continue-on-error'), isFalse);
+  });
 }

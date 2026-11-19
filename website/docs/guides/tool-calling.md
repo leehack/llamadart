@@ -266,11 +266,11 @@ model left unescaped when no closing quote could stand there, so
 `print(f"hi {name}")` arrives whole. A quote followed by `,`, `}` or `]`
 (except `}"`) still ends the string. When the model never writes the closing
 quote of the last string argument, the call still ends at exactly
-`}}]<|tool_call_end|>`; no whitespace may sit between those closers, and the
-text must hold no `<|` and not end in a raw `"` or `"}`
-([#1609](https://github.com/leehack/llamadart/issues/1609)). A closed string
-argument may hold `<|` (`text <| f x`) but not the literal
-`<|tool_call_end|>`, so the grammar ends the output at that marker
+`}}]<|tool_call_end|>`. The closers take no intervening whitespace, and the
+unfinished string cannot end in a raw `"` or `"}`
+([#1609](https://github.com/leehack/llamadart/issues/1609)). Plain strings may
+hold `<|` (`text <| f x`), including when the last string has no closing
+quote. The grammar reserves the literal `<|tool_call_end|>`
 ([#1987](https://github.com/leehack/llamadart/issues/1987)).
 
 When a backend reports a length cutoff inside an LFM tool envelope,
@@ -694,4 +694,10 @@ normally, and `ToolChoice.auto` allows text without a call.
 Its reasoning comes from channel frames; literal `<think>`/`</think>`
 text stays literal, including in tool arguments. Gemma 4 preserves visible text
 after a tool envelope, including its whitespace, across split token delivery.
+Final parsing also recovers text and later calls after a malformed envelope
+with an unclosed string delimiter.
 Calls still arrive complete in the final chunk.
+
+MiniMax M3 recognizes its namespaced tool-call opener. Quoted markup such as
+`<tool_call>` stays visible before a namespaced call, including when it arrives
+in several chunks.
