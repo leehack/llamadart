@@ -280,22 +280,32 @@ import 'package:llamadart/llamadart.dart';
 
 Future<LlamaEngine> loadOnTwoGpus(String path) async {
   final LlamaEngine engine = LlamaEngine(LlamaBackend());
-  // mainGpu counts the devices of one backend, so keep only CUDA devices.
-  final List<GpuDeviceInfo> gpus = [
-    for (final GpuDeviceInfo gpu in await engine.listGpuDevices(
-      probeBackends: const [GpuBackend.cuda],
-    ))
-      if (gpu.backend == GpuBackend.cuda) gpu,
-  ];
-  await engine.loadModel(
-    path,
-    modelParams: LlamaCppModelParams(
-      preferredBackend: GpuBackend.cuda,
-      gpuDevices: [gpus[0].mainGpu, gpus[1].mainGpu],
-      tensorSplit: const [3, 1],
-    ),
-  );
-  return engine;
+  try {
+    // mainGpu counts the devices of one backend, so keep only CUDA devices.
+    final List<GpuDeviceInfo> gpus = [
+      for (final GpuDeviceInfo gpu in await engine.listGpuDevices(
+        probeBackends: const [GpuBackend.cuda],
+      ))
+        if (gpu.backend == GpuBackend.cuda) gpu,
+    ];
+    if (gpus.length < 2) {
+      throw LlamaUnsupportedException(
+        'Expected at least 2 CUDA devices, found ${gpus.length}.',
+      );
+    }
+    await engine.setModel(
+      LlamaModel(ModelSource.path(path)),
+      params: LlamaCppModelParams(
+        preferredBackend: GpuBackend.cuda,
+        gpuDevices: [gpus[0].mainGpu, gpus[1].mainGpu],
+        tensorSplit: const [3, 1],
+      ),
+    );
+    return engine;
+  } catch (_) {
+    await engine.dispose();
+    rethrow;
+  }
 }
 ```
 

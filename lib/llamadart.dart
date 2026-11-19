@@ -19,18 +19,22 @@
 /// ### Simple Example
 ///
 /// ```dart
-/// final engine = LlamaEngine(LlamaBackend());
-/// await engine.loadModel('path/to/model.gguf'); // or model.litertlm
+/// final engine = await LlamaEngine.load(
+///   // or model.litertlm, or a download: ModelSource.parse('hf://...')
+///   LlamaModel(ModelSource.path('path/to/model.gguf')),
+/// );
 ///
-/// final session = ChatSession(engine);
-/// await for (final chunk in session.create([LlamaTextContent('Hello!')])) {
-///   stdout.write(chunk.text);
+/// try {
+///   final session = ChatSession(engine);
+///   await for (final chunk in session.create([LlamaTextContent('Hello!')])) {
+///     stdout.write(chunk.text);
+///   }
+///
+///   final reply = await session.send('Say that again, shorter.');
+///   print(reply.text);
+/// } finally {
+///   await engine.dispose();
 /// }
-///
-/// final reply = await session.send('Say that again, shorter.');
-/// print(reply.text);
-///
-/// await engine.dispose();
 /// ```
 library;
 
