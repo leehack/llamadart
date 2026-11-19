@@ -126,6 +126,94 @@ void main() {
     );
 
     test(
+      'cancels during quiet verification without publishing and can restart',
+      () async {
+        final verificationStarted = Completer<void>();
+        final backend = _WindowedFakeBackend(
+          decodeStarted: verificationStarted,
+          decodeGate: Completer<void>(),
+          gatedCall: 2,
+        );
+        final recognizer = await loadRecognizer(backend);
+        addTearDown(recognizer.dispose);
+
+        final session = await recognizer.startStream();
+        final events = <SpeechToTextEvent>[];
+        final sub = session.events.listen(events.add);
+        addTearDown(sub.cancel);
+        final push = session.addPcm(
+          Float32List(32000)..fillRange(0, 32000, 0.001),
+        );
+        // The push must stay blocked until the second decode settles.
+        final started = await Future.any([
+          verificationStarted.future.then((_) => true),
+          push.then((_) => false),
+        ]);
+        expect(started, isTrue);
+        await expectLater(
+          session.addPcm(Float32List(1)),
+          throwsA(isA<LlamaStateException>()),
+        );
+        expect(events, isEmpty);
+
+        await session.cancel();
+        await push;
+        expect(
+          (await session.done).state,
+          SpeechToTextCompletionState.cancelled,
+        );
+        expect(events, isEmpty);
+
+        final reused = await recognizer.startStream();
+        await reused.addPcm(Float32List(16000)..fillRange(0, 16000, 0.2));
+        await reused.finish();
+        expect(
+          (await reused.done).state,
+          SpeechToTextCompletionState.completed,
+        );
+      },
+    );
+
+    test(
+      'propagates errors and truncation during quiet verification',
+      () async {
+        for (final (failure, limit, errorMatcher) in [
+          (
+            StateError('verification decoder exploded'),
+            <int>{},
+            isA<LlamaInferenceException>(),
+          ),
+          (null, {2}, isA<LlamaSpeechTranscriptTruncatedException>()),
+        ]) {
+          final backend = _WindowedFakeBackend(
+            failWith: failure,
+            failAtCall: 2,
+            limitAtCalls: limit,
+          );
+          final recognizer = await loadRecognizer(backend);
+          final session = await recognizer.startStream();
+          final events = <SpeechToTextEvent>[];
+          final errors = <Object>[];
+          final sub = session.events.listen(events.add, onError: errors.add);
+          try {
+            await expectLater(
+              session.addPcm(Float32List(32000)..fillRange(0, 32000, 0.001)),
+              throwsA(errorMatcher),
+            );
+            final done = await session.done;
+            expect(done.state, SpeechToTextCompletionState.failed);
+            expect(done.error, errorMatcher);
+            expect(errors, [same(done.error)]);
+            expect(events, isEmpty);
+          } finally {
+            await sub.cancel();
+            await recognizer.dispose();
+          }
+        }
+      },
+    );
+
+    test(
       'coalesces partials while paused or unlistened and delivers terminal result without listener',
       () async {
         final backend = _WindowedFakeBackend();
@@ -308,8 +396,10 @@ class _WindowedFakeBackend
         BackendGenerationLimitReporting {
   Completer<void>? decodeStarted;
   Completer<void>? decodeGate;
+  final int? gatedCall;
   final Set<int> limitAtCalls;
   final Object? failWith;
+  final int? failAtCall;
   final List<int> seenMaxTokens = <int>[];
 
   int _decodeCalls = 0;
@@ -320,8 +410,10 @@ class _WindowedFakeBackend
   _WindowedFakeBackend({
     this.decodeStarted,
     this.decodeGate,
+    this.gatedCall,
     this.limitAtCalls = const <int>{},
     this.failWith,
+    this.failAtCall,
   });
 
   @override
@@ -423,34 +515,36 @@ class _WindowedFakeBackend
     GenerationParams params, {
     List<LlamaContentPart>? parts,
   }) {
-    _decodeCalls++;
+    final call = ++_decodeCalls;
+    final gate = gatedCall == null || gatedCall == call ? decodeGate : null;
+    final started = gatedCall == null || gatedCall == call
+        ? decodeStarted
+        : null;
     seenMaxTokens.add(params.maxTokens);
     late final StreamController<List<int>> controller;
     var cancelled = false;
     controller = StreamController<List<int>>(
       onListen: () async {
-        if (failWith != null) {
+        if (failWith != null && (failAtCall == null || failAtCall == call)) {
           controller.addError(failWith!);
           await controller.close();
           return;
         }
-        if (decodeStarted != null && !decodeStarted!.isCompleted) {
-          decodeStarted!.complete();
+        if (started != null && !started.isCompleted) {
+          started.complete();
         }
-        if (decodeGate != null) {
-          await decodeGate!.future;
+        if (gate != null) {
+          await gate.future;
         }
         if (!cancelled && !controller.isClosed) {
-          controller.add(
-            utf8.encode('language English<asr_text> w$_decodeCalls'),
-          );
+          controller.add(utf8.encode('language English<asr_text> w$call'));
           await controller.close();
         }
       },
       onCancel: () {
         cancelled = true;
-        if (decodeGate != null && !decodeGate!.isCompleted) {
-          decodeGate!.complete();
+        if (gate != null && !gate.isCompleted) {
+          gate.complete();
         }
       },
     );

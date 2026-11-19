@@ -102,6 +102,237 @@ void main() {
   });
 
   group('QwenWindowedAsrSession', () {
+    for (final isSpeech in [false, true]) {
+      test(
+        'verifies quiet ${isSpeech ? 'speech' : 'noise'} before publication',
+        () async {
+          const sample = 0.00125;
+          final pcm = Float32List(128000);
+          for (var i = 0; i < pcm.length; i++) {
+            pcm[i] = isSpeech || i.isEven ? sample : -sample;
+          }
+          pcm[112000] = sample * 2;
+          final originalPcm = Float32List.fromList(pcm);
+          final calls = <(int, int, int)>[];
+          const originalText = 'Transcreva este áudio com precisão.';
+          final session = QwenWindowedAsrSession(
+            sourceFormat: const SpeechAudioFormat(
+              sampleRateHz: 16000,
+              channelCount: 1,
+              encoding: 'pcm-f32le',
+            ),
+            onClosed: () {},
+            decodeWindow:
+                (
+                  wavBytes, {
+                  required confirmedPrefix,
+                  required registerCancel,
+                  required isCancelled,
+                }) async {
+                  final wav = ByteData.sublistView(wavBytes);
+                  final first = wav.getInt16(44, Endian.little);
+                  calls.add((
+                    wav.getUint32(40, Endian.little) ~/ 2,
+                    first,
+                    wav.getInt16(46, Endian.little),
+                  ));
+                  if (first < 100) return originalText;
+                  return isSpeech ? 'Different verification wording' : '';
+                },
+          );
+          final events = <SpeechToTextEvent>[];
+          final errors = <Object>[];
+          final sub = session.events.listen(events.add, onError: errors.add);
+          addTearDown(sub.cancel);
+          addTearDown(session.cancel);
+
+          await session.addPcm(pcm);
+          await session.finish();
+          final done = await session.done;
+
+          final partials = events.whereType<SpeechToTextPartialEvent>();
+          expect(partials, hasLength(4));
+          expect(
+            partials.map((event) => event.text),
+            everyElement(isSpeech ? originalText : isEmpty),
+          );
+          expect(
+            partials.last.confirmedText,
+            isSpeech ? originalText : isEmpty,
+          );
+          expect(
+            partials.map((event) => event.acceptedAudioDuration),
+            [2, 4, 6, 8].map((seconds) => Duration(seconds: seconds)),
+          );
+          if (isSpeech) {
+            expect(done.result!.text, '$originalText\n$originalText');
+            expect(done.result!.audioDuration, const Duration(seconds: 8));
+            expect(events.whereType<SpeechToTextFinalEvent>(), hasLength(1));
+            expect(errors, isEmpty);
+          } else {
+            expect(done.state, SpeechToTextCompletionState.failed);
+            expect(errors.single, isA<LlamaSpeechException>());
+            expect(events.whereType<SpeechToTextFinalEvent>(), isEmpty);
+          }
+          expect(pcm, originalPcm);
+          final sign = isSpeech ? 1 : -1;
+          expect(calls, [
+            for (final length in [32000, 64000, 96000, 112000]) ...[
+              (length, 41, 41 * sign),
+              (length, 655, 655 * sign),
+            ],
+            (16000, 82, 41 * sign),
+            (16000, 1311, 655 * sign),
+          ]);
+        },
+      );
+    }
+
+    test(
+      'bounds verification gain and reuses verified checkpoints at finish',
+      () async {
+        for (final (label, first, rest, hypothesis, expectedSamples) in [
+          ('quiet, empty', 0.00125, 0.00125, '', [41]),
+          ('silent despite nonempty hypothesis', 0.0, 0.0, 'speech', [0]),
+          ('below frame gate', 0.0069, 0.0069, 'speech', [226, 655]),
+          ('above frame gate', 0.0071, 0.0071, 'speech', [233]),
+          ('ordinary level', 0.02, 0.02, 'speech', [655]),
+          (
+            'isolated positive transient',
+            0.2,
+            0.00125,
+            'speech',
+            [6553, 29490],
+          ),
+          (
+            'isolated negative transient',
+            -0.2,
+            0.00125,
+            'speech',
+            [-6554, -29491],
+          ),
+          ('absolute gain cap', 0.00002, 0.00002, 'speech', [1, 168]),
+        ]) {
+          final pcm = Float32List(32000)..fillRange(0, 32000, rest);
+          pcm[0] = first;
+          final firstSamples = <int>[];
+          final session = QwenWindowedAsrSession(
+            sourceFormat: const SpeechAudioFormat(
+              sampleRateHz: 16000,
+              channelCount: 1,
+              encoding: 'pcm-f32le',
+            ),
+            onClosed: () {},
+            decodeWindow:
+                (
+                  wavBytes, {
+                  required confirmedPrefix,
+                  required registerCancel,
+                  required isCancelled,
+                }) async {
+                  expect(wavBytes.length, 44 + 32000 * 2);
+                  firstSamples.add(
+                    ByteData.sublistView(wavBytes).getInt16(44, Endian.little),
+                  );
+                  return hypothesis;
+                },
+          );
+          await session.addPcm(pcm);
+          await session.finish();
+          await session.done;
+          expect(firstSamples, expectedSamples, reason: label);
+        }
+      },
+    );
+
+    test(
+      'rechecks the final after a rejected checkpoint crosses the frame gate',
+      () async {
+        final calls = <(int, int)>[];
+        final session = QwenWindowedAsrSession(
+          sourceFormat: const SpeechAudioFormat(
+            sampleRateHz: 16000,
+            channelCount: 1,
+            encoding: 'pcm-f32le',
+          ),
+          onClosed: () {},
+          decodeWindow:
+              (
+                wavBytes, {
+                required confirmedPrefix,
+                required registerCancel,
+                required isCancelled,
+              }) async {
+                final wav = ByteData.sublistView(wavBytes);
+                final length = wav.getUint32(40, Endian.little) ~/ 2;
+                final first = wav.getInt16(44, Endian.little);
+                calls.add((length, first));
+                return first == 41 ? 'Transcribe this audio accurately.' : '';
+              },
+        );
+        final events = <SpeechToTextEvent>[];
+        final sub = session.events.listen(events.add, onError: (Object _) {});
+        addTearDown(sub.cancel);
+        addTearDown(session.cancel);
+
+        await session.addPcm(Float32List(32000)..fillRange(0, 32000, 0.00125));
+        await session.addPcm(Float32List(48000)..fillRange(0, 48000, 0.008));
+        await session.finish();
+
+        expect(calls.map((call) => call.$1), [
+          32000,
+          32000,
+          64000,
+          64000,
+          80000,
+          80000,
+        ]);
+        expect(calls.where((call) => call.$2 == 41), hasLength(3));
+        expect(
+          events.whereType<SpeechToTextPartialEvent>().map((e) => e.text),
+          ['', ''],
+        );
+        expect(events.whereType<SpeechToTextFinalEvent>(), isEmpty);
+        expect((await session.done).state, SpeechToTextCompletionState.failed);
+      },
+    );
+
+    test(
+      'does not start quiet verification after first decode cancellation',
+      () async {
+        late final QwenWindowedAsrSession session;
+        var calls = 0;
+        session = QwenWindowedAsrSession(
+          sourceFormat: const SpeechAudioFormat(
+            sampleRateHz: 16000,
+            channelCount: 1,
+            encoding: 'pcm-f32le',
+          ),
+          onClosed: () {},
+          decodeWindow:
+              (
+                wavBytes, {
+                required confirmedPrefix,
+                required registerCancel,
+                required isCancelled,
+              }) async {
+                if (++calls == 1) {
+                  await Future<void>.delayed(Duration.zero);
+                  unawaited(session.cancel());
+                }
+                return 'Nonempty result from a cancelled decode';
+              },
+        );
+        addTearDown(session.cancel);
+        await session.addPcm(Float32List(32000)..fillRange(0, 32000, 0.00125));
+        expect(
+          (await session.done).state,
+          SpeechToTextCompletionState.cancelled,
+        );
+        expect(calls, 1);
+      },
+    );
+
     test(
       'produces identical intervals and final across fixed, irregular, and offset views',
       () async {
