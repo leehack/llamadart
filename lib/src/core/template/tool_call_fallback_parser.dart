@@ -1,4 +1,7 @@
+import 'dart:math';
+
 import '../models/chat/completion_chunk.dart';
+import 'thinking_utils.dart';
 import 'tool_call_parsing_utils.dart';
 
 /// Result of parsing loose tool-call text fallback.
@@ -20,23 +23,42 @@ class ToolCallFallbackParseResult {
 ///
 /// This is intentionally permissive and used only when a format-specific
 /// parser fails to extract explicit tool-call structures.
-ToolCallFallbackParseResult parseToolCallsFromLooseText(String input) {
+/// With [preserveJsonProse], keep the raw text preceding a loose JSON call.
+/// While [isPartial], hold only the suffix that can still become such a call.
+ToolCallFallbackParseResult parseToolCallsFromLooseText(
+  String input, {
+  bool preserveJsonProse = false,
+  bool isPartial = false,
+}) {
   final trimmed = input.trim();
   if (trimmed.isEmpty) {
-    return const ToolCallFallbackParseResult(
-      content: '',
-      toolCalls: <LlamaCompletionChunkToolCall>[],
+    return ToolCallFallbackParseResult(
+      content: preserveJsonProse ? input : '',
+      toolCalls: const <LlamaCompletionChunkToolCall>[],
     );
   }
 
-  final normalized = _stripToolFence(trimmed);
+  final (payload, payloadStart) = _stripToolFence(trimmed);
 
-  final jsonCalls = _parseJsonLikeToolCalls(normalized);
-  if (jsonCalls.isNotEmpty) {
-    return ToolCallFallbackParseResult(content: '', toolCalls: jsonCalls);
+  final json = _parseJsonLikeToolCalls(payload);
+  if (json != null) {
+    var contentEnd = 0;
+    if (preserveJsonProse) {
+      final leadingSpace = input.length - input.trimLeft().length;
+      contentEnd = _looseJsonWrapperStart(
+        input.substring(0, leadingSpace + payloadStart + json.start),
+      );
+      if (isPartial) {
+        contentEnd = min(contentEnd, _pendingLooseJsonStart(input));
+      }
+    }
+    return ToolCallFallbackParseResult(
+      content: input.substring(0, contentEnd),
+      toolCalls: json.calls,
+    );
   }
 
-  final functionCall = _parseFunctionCallSyntax(normalized);
+  final functionCall = _parseFunctionCallSyntax(payload);
   if (functionCall != null) {
     return ToolCallFallbackParseResult(
       content: '',
@@ -45,9 +67,47 @@ ToolCallFallbackParseResult parseToolCallsFromLooseText(String input) {
   }
 
   return ToolCallFallbackParseResult(
-    content: trimmed,
+    content: !preserveJsonProse
+        ? trimmed
+        : isPartial
+        ? input.substring(0, _pendingLooseJsonStart(input))
+        : input,
     toolCalls: const <LlamaCompletionChunkToolCall>[],
   );
+}
+
+final _looseJsonWrapper = RegExp(
+  r'(?:<tool_call>|```(?:tool_code|tool|json)?)\s*(?:\[\s*)?$|\[\s*$',
+);
+
+int _looseJsonWrapperStart(String prefix) =>
+    _looseJsonWrapper.firstMatch(prefix)?.start ?? prefix.length;
+
+int _pendingLooseJsonStart(String input) {
+  const wrapperOpenings = ['<tool_call>', '```json', '```tool', '```tool_code'];
+  final wrapperPrefix = withoutTrailingTagPrefix(input, wrapperOpenings);
+  var holdFrom = min(wrapperPrefix.length, _looseJsonWrapperStart(input));
+
+  // The fallback tries semicolon-delimited parts and the whole reply. A
+  // semicolon can also be inside a JSON string, so both can still complete.
+  for (final start in {0, input.lastIndexOf(';') + 1}) {
+    final remainder = input.substring(start);
+    final trimmed = remainder.trimLeft();
+    final array = start + remainder.length - trimmed.length;
+    if (trimmed.startsWith('[') &&
+        ToolCallParsingUtils.findStructuredJsonEnd(input, array) == null) {
+      holdFrom = min(holdFrom, array);
+    }
+    final object = input.indexOf('{', start);
+    if (object >= 0 &&
+        ToolCallParsingUtils.findStructuredJsonEnd(input, object) == null) {
+      holdFrom = min(
+        holdFrom,
+        _looseJsonWrapperStart(input.substring(0, object)),
+      );
+    }
+  }
+  return holdFrom;
 }
 
 /// Decodes tool arguments JSON/object text into a map.
@@ -115,52 +175,56 @@ String normalizeFallbackToolName(
   return trimmed;
 }
 
-List<LlamaCompletionChunkToolCall> _parseJsonLikeToolCalls(String input) {
-  final parts = input
-      .split(RegExp(r'\s*;\s*'))
-      .map((part) => part.trim())
-      .where((part) => part.isNotEmpty)
-      .toList(growable: false);
+({List<LlamaCompletionChunkToolCall> calls, int start})?
+_parseJsonLikeToolCalls(String input) {
+  final parts = input.split(';');
 
-  if (parts.length > 1) {
+  if (parts.where((part) => part.trim().isNotEmpty).skip(1).isNotEmpty) {
     final calls = <LlamaCompletionChunkToolCall>[];
+    var offset = 0;
+    int? firstCall;
     for (final part in parts) {
-      final partDecoded = _decodeJsonLoose(part);
-      if (partDecoded == null) {
-        continue;
-      }
-
-      calls.addAll(
-        _toolCallsFromDecoded(partDecoded, startIndex: calls.length),
+      final partStart = offset + part.length - part.trimLeft().length;
+      offset += part.length + 1;
+      final decoded = _decodeJsonLoose(part.trim());
+      if (decoded == null) continue;
+      final partCalls = _toolCallsFromDecoded(
+        decoded.value,
+        startIndex: calls.length,
       );
+      if (partCalls.isEmpty) continue;
+      firstCall ??= partStart + decoded.start;
+      calls.addAll(partCalls);
     }
 
-    if (calls.isNotEmpty) {
-      return List<LlamaCompletionChunkToolCall>.unmodifiable(calls);
+    if (firstCall != null) {
+      return (calls: List.unmodifiable(calls), start: firstCall);
     }
   }
 
   final decoded = _decodeJsonLoose(input);
   if (decoded != null) {
-    return _toolCallsFromDecoded(decoded, startIndex: 0);
+    final calls = _toolCallsFromDecoded(decoded.value, startIndex: 0);
+    if (calls.isNotEmpty) return (calls: calls, start: decoded.start);
   }
 
-  return const <LlamaCompletionChunkToolCall>[];
+  return null;
 }
 
-Object? _decodeJsonLoose(String input) {
+({Object value, int start})? _decodeJsonLoose(String input) {
   final direct = ToolCallParsingUtils.decodeJsonValue(input);
   if (direct != null) {
-    return direct;
+    return (value: direct, start: 0);
   }
 
   final normalized = _normalizeLooseJsonIdentifiers(input);
   final normalizedDecoded = ToolCallParsingUtils.decodeJsonValue(normalized);
   if (normalizedDecoded != null) {
-    return normalizedDecoded;
+    return (value: normalizedDecoded, start: 0);
   }
 
-  return ToolCallParsingUtils.extractFirstJsonObject(normalized);
+  final object = ToolCallParsingUtils.extractFirstJsonObject(normalized);
+  return object == null ? null : (value: object, start: input.indexOf('{'));
 }
 
 List<LlamaCompletionChunkToolCall> _toolCallsFromDecoded(
@@ -442,24 +506,28 @@ Map<String, dynamic>? _parseFunctionArguments(String raw) {
   return result;
 }
 
-String _stripToolFence(String input) {
+(String, int) _stripToolFence(String input) {
   // Require a whitespace boundary after the optional language token so a
   // payload like ```jsonify{...} does not get "json" consumed as the language
   // (which would leave "ify{...}" as the body and corrupt the JSON).
   final fenced = RegExp(
-    r'^```(?:(?:tool_code|tool|json)(?=\s))?\s*([\s\S]*?)\s*```$',
+    r'^(```(?:(?:tool_code|tool|json)(?=\s))?\s*)([\s\S]*?)\s*```$',
   );
   final match = fenced.firstMatch(input);
   if (match == null) {
-    return input;
+    return (input, 0);
   }
 
-  final inner = match.group(1);
-  if (inner == null || inner.trim().isEmpty) {
-    return input;
+  final inner = match.group(2)!;
+  final payload = inner.trimLeft();
+  if (payload.isEmpty) {
+    return (input, 0);
   }
 
-  return inner.trim();
+  return (
+    payload.trimRight(),
+    match.group(1)!.length + inner.length - payload.length,
+  );
 }
 
 String _normalizeLooseJsonIdentifiers(String input) {

@@ -18,6 +18,8 @@ modalities and speculative strategies before offering them.
 
 ## Guidelines
 
+- With Gemma 4 tools enabled, ordinary prose before a loose JSON call can
+  stream immediately. A potential JSON tool suffix is held while it is ambiguous.
 - At a backend-reported length cutoff, LFM `chunk.partialToolCalls` and collected
   `reply.partialToolCalls` hold raw named-call diagnostics from an unfinished
   envelope, in order. `function.arguments` preserves exact Python/JSON text,

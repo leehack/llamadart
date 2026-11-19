@@ -7,6 +7,7 @@ Releases before 0.10.0 are in the
 - Add opt-in `Qwen3WindowedAsrAdapter` for bounded 8 s windowed live PCM speech recognition on native Qwen3-ASR (2/4/6 s replaceable partials, quiet-boundary commits with 8 s hard cut; Web, `SpeechToTextEngine.attach`, and non-`qwen3a` projectors throw `LlamaUnsupportedException`), and expose `SpeechToTextInputMode` via `SpeechToTextCapabilities.inputMode` ([#327](https://github.com/leehack/llamadart/issues/327)).
 - Document measured live ASR throughput on two-thread Linux and Windows x64 CPU runs. Voxtral Realtime takes about four times the audio duration, while LFM3-Audio keeps up with live input ([#327](https://github.com/leehack/llamadart/issues/327)).
 - Document the Windows system commit limit for very large llama.cpp contexts and advise keeping a system-managed pagefile with adequate disk space or reducing `contextSize` ([llamadart-native#211](https://github.com/leehack/llamadart-native/issues/211)).
+- Keep Gemma 4 prose before loose JSON tool calls visible while streaming and in the final reply ([#1930](https://github.com/leehack/llamadart/issues/1930)).
 
 ## 0.20.1
 

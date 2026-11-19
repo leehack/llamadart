@@ -213,6 +213,10 @@ segment is a token reports that token, unless it repeats the URL's userinfo
 credential, which reports `llama_model`. An OpenAI-compatible server that
 exposes its own model id should set that id on its responses instead.
 
+With Gemma 4 tools enabled, confirmed prose can stream while a possible loose
+JSON tool payload is still arriving. The parser keeps preceding prose in the
+completed reply and publishes executable calls on the final chunk.
+
 ## Token usage and timings
 
 On native llama.cpp, and on WebGPU, the final
