@@ -156,5 +156,166 @@ void main() {
         containsPair('city', 'Seoul'),
       );
     });
+
+    test('filters loose JSON calls by allowedToolNames when provided', () {
+      const undeclared = '{"name":"other","arguments":{"city":"Seoul"}}';
+      const schema =
+          '{"type":"object","properties":{"city":{"type":"string"}}}';
+      const declared = '{"name":"weather","arguments":{"city":"Seoul"}}';
+
+      final rejectedName = parseToolCallsFromLooseText(
+        'Prose $undeclared',
+        preserveJsonProse: true,
+        allowedToolNames: const {'weather'},
+      );
+      expect(rejectedName.toolCalls, isEmpty);
+      expect(rejectedName.content, 'Prose $undeclared');
+
+      final rejectedSchema = parseToolCallsFromLooseText(
+        'Schema: $schema',
+        preserveJsonProse: true,
+        allowedToolNames: const {'weather'},
+      );
+      expect(rejectedSchema.toolCalls, isEmpty);
+      expect(rejectedSchema.content, 'Schema: $schema');
+
+      final accepted = parseToolCallsFromLooseText(
+        'Prose $declared',
+        preserveJsonProse: true,
+        allowedToolNames: const {'weather'},
+      );
+      expect(accepted.toolCalls, hasLength(1));
+      expect(accepted.toolCalls.single.function?.name, 'weather');
+      expect(accepted.content, 'Prose ');
+    });
+
+    test('never parses JSON inside Markdown fences or inline backticks', () {
+      const jsonCall = '{"name":"weather","arguments":{"city":"Seoul"}}';
+      for (final sample in [
+        '```json\n$jsonCall\n```',
+        '```\n$jsonCall\n```',
+        '~~~json\n$jsonCall\n~~~',
+        'Run `$jsonCall` now.',
+        'Run ``$jsonCall`` now.',
+      ]) {
+        final direct = parseToolCallsFromLooseText(
+          sample,
+          allowedToolNames: const {'weather'},
+        );
+        expect(direct.toolCalls, isEmpty, reason: sample);
+        expect(direct.content, sample, reason: sample);
+
+        final prose = parseToolCallsFromLooseText(
+          sample,
+          preserveJsonProse: true,
+          allowedToolNames: const {'weather'},
+        );
+        expect(prose.toolCalls, isEmpty, reason: sample);
+        expect(prose.content, sample, reason: sample);
+      }
+    });
+
+    test('preserves trailing text after a loose JSON tool call', () {
+      final parsed = parseToolCallsFromLooseText(
+        'Before. {"name":"weather","arguments":{"city":"Seoul"}} After.',
+        preserveJsonProse: true,
+        allowedToolNames: const {'weather'},
+      );
+
+      expect(parsed.toolCalls, hasLength(1));
+      expect(parsed.toolCalls.single.function?.name, 'weather');
+      expect(parsed.content, 'Before. After.');
+    });
+
+    test('releases partial JSON once name is known not to match', () {
+      for (final partial in [
+        'Here: {"name":"other"',
+        'Here: {"type":"object"',
+        'Here: {"name": nope,',
+        'Try {"type":"function","function":{"name":"rm"',
+      ]) {
+        final parsed = parseToolCallsFromLooseText(
+          partial,
+          preserveJsonProse: true,
+          isPartial: true,
+          allowedToolNames: const {'weather'},
+        );
+        expect(parsed.toolCalls, isEmpty, reason: partial);
+        expect(parsed.content, partial, reason: partial);
+      }
+    });
+
+    test('rejects explicit non-tool type even with a declared tool name', () {
+      const sample =
+          '{"type":"object","name":"weather","arguments":{"city":"Seoul"}}';
+      final parsed = parseToolCallsFromLooseText(
+        sample,
+        preserveJsonProse: true,
+        allowedToolNames: const {'weather'},
+      );
+
+      expect(parsed.toolCalls, isEmpty);
+      expect(parsed.content, sample);
+    });
+
+    test('unclosed rejected outer object hides nested declared call', () {
+      const sample =
+          'Here {"name":"other","x":{"name":"weather","arguments":{}}';
+      final parsed = parseToolCallsFromLooseText(
+        sample,
+        preserveJsonProse: true,
+        allowedToolNames: const {'weather'},
+      );
+
+      expect(parsed.toolCalls, isEmpty);
+      expect(parsed.content, sample);
+    });
+
+    test('strips wrapper residue and normalizes junction whitespace', () {
+      const call = '{"name":"weather","arguments":{"city":"Seoul"}}';
+      for (final (input, expected) in [
+        ('$call</tool_call> Done', ' Done'),
+        ('Ok $call</tool_call> Done', 'Ok Done'),
+        ('Ok $call </tool_call>\nDone', 'Ok \nDone'),
+        ('Ok </tool_call> $call', 'Ok </tool_call> '),
+        ('Ok $call foo </tool_call>', 'Ok foo </tool_call>'),
+        ('$call</tool_', ''),
+        ('Ok $call</tool_', 'Ok '),
+        ('Ok $call\n</tool_', 'Ok '),
+        ('Ok $call</tool_ Done', 'Ok </tool_ Done'),
+        ('Ok $call;', 'Ok '),
+        ('Ok $call; then done', 'Ok then done'),
+        ('$call; then done', 'then done'),
+        ('Ok $call;\nDone', 'Ok \nDone'),
+        ('Ok $call; $call; bye', 'Ok bye'),
+        ('Ok $call\n; then done', 'Ok \n; then done'),
+        ('Ok${call}Done', 'OkDone'),
+        ('Ok\n$call\nDone', 'Ok\n\nDone'),
+        ('Ok$call Done', 'Ok Done'),
+        ('Ok ${call}Done', 'Ok Done'),
+        ('Ok\t$call\tDone', 'Ok Done'),
+      ]) {
+        final parsed = parseToolCallsFromLooseText(
+          input,
+          preserveJsonProse: true,
+          allowedToolNames: const {'weather'},
+        );
+        expect(parsed.toolCalls, isNotEmpty, reason: input);
+        expect(parsed.content, expected, reason: input);
+      }
+    });
+
+    test('holds partial closing tag prefix after a bare loose call', () {
+      const partial = '{"name":"weather","arguments":{}}</tool_';
+      final parsed = parseToolCallsFromLooseText(
+        partial,
+        preserveJsonProse: true,
+        isPartial: true,
+        allowedToolNames: const {'weather'},
+      );
+
+      expect(parsed.toolCalls, hasLength(1));
+      expect(parsed.content, isNot(contains('</tool_')));
+    });
   });
 }

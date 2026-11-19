@@ -13,6 +13,8 @@ validate against the exact release tag notes.
 
 ## Unreleased
 
+- Keep undeclared, fenced, and inline-backtick JSON as text in Gemma 4 loose-JSON tool parsing, release non-matching streams once the name is known, and preserve text after a loose call ([#2081](https://github.com/leehack/llamadart/issues/2081)).
+
 ## 0.20.2
 
 - Adopt `llamadart-native@v1.0.0-3` for the Windows Visual C++ runtime and GPU memory fit fixes, plus native speech cancellation and text handling fixes ([#2087](https://github.com/leehack/llamadart/pull/2087)).
