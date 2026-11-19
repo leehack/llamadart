@@ -532,16 +532,16 @@ jobs:
   test-linux-vm:
     needs: changes
     if: needs.changes.outputs.test-linux-coverage == 'true'
-    name: Test Linux VM (${{ matrix.shard }}/${{ strategy.job-total }})
+    name: ${{ github.event_name == 'pull_request' && 'Test Linux VM' || format('Test Linux VM ({0}/{1})', matrix.shard, strategy.job-total) }}
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: ${{ github.event_name == 'pull_request' && 100 || 30 }}
     strategy:
       fail-fast: false
       # tool/ci/test_shards.dart puts every root test file in exactly one shard,
       # balanced by measured time; each keeps -j 1. After merge each also
       # writes raw coverage that test-linux-coverage merges.
       matrix:
-        shard: [1, 2, 3]
+        shard: ${{ fromJSON(github.event_name == 'pull_request' && '["1 2 3"]' || '["1","2","3"]') }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -599,10 +599,12 @@ jobs:
               "llama.cpp-$ref/models/templates"
 
       - name: Isolate system temp with a LiteRT-LM cache canary
+        if: github.event_name != 'pull_request'
         shell: bash
         run: bash tool/ci/litert_lm_temp_canary.sh seed
 
       - name: Select shard test files
+        if: github.event_name != 'pull_request'
         id: shard
         run: dart tool/ci/test_shards.dart linux-vm ${{ matrix.shard }} ${{ strategy.job-total }}
 
@@ -619,6 +621,7 @@ jobs:
 
       # Collecting coverage doubles the VM time, so only post-merge runs do.
       - name: Run VM tests
+        if: github.event_name != 'pull_request'
         env:
           LLAMADART_TEST_MODELS_DIR: ${{ github.workspace }}/.dart_tool/test_models
           LLAMA_CPP_TEMPLATES_DIR: ${{ github.workspace }}/.dart_tool/llama_cpp_templates
@@ -627,16 +630,16 @@ jobs:
         run: dart test -p vm -j 1 --exclude-tags local-only ${{ needs.changes.outputs.coverage == 'true' && '--coverage=coverage' || '' }} --file-reporter=json:.dart_tool/test_events.jsonl ${{ steps.shard.outputs.files }}
 
       - name: Check the LiteRT-LM cache canary
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && github.event_name != 'pull_request' }}
         shell: bash
         run: bash tool/ci/litert_lm_temp_canary.sh check
 
       - name: Summarize test timing
-        if: ${{ !cancelled() && hashFiles('.dart_tool/test_events.jsonl') != '' }}
+        if: ${{ !cancelled() && github.event_name != 'pull_request' && hashFiles('.dart_tool/test_events.jsonl') != '' }}
         run: dart tool/ci/native_test_timing.dart .dart_tool/test_events.jsonl .dart_tool/test_timing.json
 
       - name: Upload test timing
-        if: ${{ !cancelled() && hashFiles('.dart_tool/test_timing.json') != '' }}
+        if: ${{ !cancelled() && github.event_name != 'pull_request' && hashFiles('.dart_tool/test_timing.json') != '' }}
         uses: actions/upload-artifact@v7
         with:
           name: test-timing-linux-vm-${{ matrix.shard }}-${{ github.run_attempt }}
@@ -653,6 +656,26 @@ jobs:
           if-no-files-found: error
           retention-days: 1
           overwrite: true
+
+      - name: Run consolidated VM tests
+        if: github.event_name == 'pull_request'
+        shell: bash
+        env:
+          LINUX_VM_SHARDS: ${{ matrix.shard }}
+          LLAMADART_TEST_MODELS_DIR: ${{ github.workspace }}/.dart_tool/test_models
+          LLAMA_CPP_TEMPLATES_DIR: ${{ github.workspace }}/.dart_tool/llama_cpp_templates
+          REQUIRE_LLAMA_CPP_TEMPLATES: '1'
+          LLAMADART_REQUIRE_PUBLISHED_COMPANION_TAGS: '1'
+        run: bash tool/ci/run_linux_vm_shards.sh "$LINUX_VM_SHARDS" .dart_tool/lvm-linux-vm-timing
+
+      - name: Upload consolidated test timing
+        if: ${{ !cancelled() && github.event_name == 'pull_request' && hashFiles('.dart_tool/lvm-linux-vm-timing/*/test_timing.json') != '' }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: test-timing-linux-vm-pr-${{ github.run_attempt }}
+          path: .dart_tool/lvm-linux-vm-timing/*/test_timing.json
+          if-no-files-found: error
+          retention-days: 14
 
   # Runs after merge (push and manual runs) only; a failure here fails main.
   test-linux-coverage:

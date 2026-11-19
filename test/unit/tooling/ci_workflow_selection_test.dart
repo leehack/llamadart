@@ -73,6 +73,17 @@ void expectGuardedUpload(Map<String, dynamic> job, String demo) {
   }
 }
 
+List<String> linuxVmGroups(Map job, String event) {
+  final expression = job['strategy']['matrix']['shard'];
+  expect(expression, isA<String>(), reason: 'PRs need a single shard group');
+  final match = RegExp(
+    r"^\$\{\{ fromJSON\(github\.event_name == 'pull_request' && '([^']+)' \|\| '([^']+)'\) \}\}$",
+  ).firstMatch(expression as String);
+  expect(match, isNotNull, reason: expression);
+  return (jsonDecode(match!.group(event == 'pull_request' ? 1 : 2)!) as List)
+      .cast<String>();
+}
+
 Future<Map<String, bool>> deploymentGuardVerdicts() async {
   final scratch = await Directory.systemTemp.createTemp('deploy-order-');
   addTearDown(() => scratch.delete(recursive: true));
@@ -1877,6 +1888,8 @@ runs:
         return [for (final shard in shards) (shard, shards.length)];
       }
 
+      final linuxVm = linuxVmGroups(all['test-linux-vm'] as Map, 'push');
+
       expect(
         all['test-other-os']['strategy']['matrix']['include'],
         r'${{ fromJSON(needs.changes.outputs.test-other-os-matrix) }}',
@@ -1901,7 +1914,9 @@ runs:
       }
       return {
         'linux-vm': (
-          legs: uniform('test-linux-vm'),
+          legs: [
+            for (final shard in linuxVm) (int.parse(shard), linuxVm.length),
+          ],
           select: selectOf('test-linux-vm'),
         ),
         'chrome': (legs: uniform('test-web'), select: selectOf('test-web')),
@@ -1962,6 +1977,148 @@ runs:
       expect(rootTestFiles().toSet(), listed);
     });
 
+    group('consolidated Linux VM', () {
+      Future<void> runShards({int? failShard, int? pruneShard}) async {
+        final job = jobs()['test-linux-vm'] as Map;
+        final groups = linuxVmGroups(job, 'pull_request');
+        final pushShards = linuxVmGroups(job, 'push');
+        expect(groups, [pushShards.join(' ')]);
+        expect(linuxVmGroups(job, 'workflow_dispatch'), pushShards);
+        final steps = (job['steps'] as List).cast<Map>();
+        final step = steps.singleWhere(
+          (step) => step['name'] == 'Run consolidated VM tests',
+        );
+        expect(step['if'], "github.event_name == 'pull_request'");
+        expect(step['shell'], 'bash');
+        expect(step['continue-on-error'], isNull);
+        final env = step['env'] as Map;
+        final pushTests = steps.singleWhere(
+          (step) => step['name'] == 'Run VM tests',
+        );
+        expect(pushTests['if'], "github.event_name != 'pull_request'");
+        expect(env, {
+          ...pushTests['env'] as Map,
+          'LINUX_VM_SHARDS': r'${{ matrix.shard }}',
+        });
+        final timingUpload = steps.singleWhere(
+          (step) => step['name'] == 'Upload consolidated test timing',
+        );
+        expect(
+          timingUpload['with']['path'],
+          '.dart_tool/lvm-linux-vm-timing/*/test_timing.json',
+        );
+        expect(timingUpload['if'], contains('!cancelled()'));
+
+        final scratch = await Directory.systemTemp.createTemp(
+          'lvm-shard-test-',
+        );
+        addTearDown(() => scratch.delete(recursive: true));
+        final timing = '${scratch.path}/timing';
+        final summary = File('${scratch.path}/summary');
+        final runs = File('${scratch.path}/runs');
+        await File('${scratch.path}/dart').writeAsString(r'''#!/usr/bin/env bash
+set -eu
+case "$1" in
+  test)
+    [[ "$2 $3 $4 $5 $6 $7" == '-p vm -j 1 --exclude-tags local-only' ]]
+    events=${8#--file-reporter=json:}
+    shift 8
+    shard=${TMPDIR%/*}
+    shard=${shard##*/}
+    printf '%s %s\n' "$shard" "$*" >> "$RUNS"
+    printf '{}\n' > "$events"
+    if [[ "$shard" == "$PRUNE_SHARD" ]]; then
+      rm "$TMPDIR"/llamadart_litert_lm/ci-canary.*
+    fi
+    [[ "$shard" != "$FAIL_SHARD" ]]
+    ;;
+  tool/ci/native_test_timing.dart)
+    [[ -s "$2" ]]
+    printf '{}\n' > "$3"
+    ;;
+  tool/ci/test_shards.dart)
+    exec "$REAL_DART" "$@"
+    ;;
+  *) exit 64 ;;
+esac
+''');
+        await File(
+          '${scratch.path}/timeout',
+        ).writeAsString('#!/usr/bin/env bash\nshift 2\nexec "\$@"\n');
+        await File(
+          '${scratch.path}/node',
+        ).writeAsString('#!/usr/bin/env bash\necho v22\n');
+        final chmod = await Process.run('chmod', [
+          '+x',
+          for (final file in ['dart', 'timeout', 'node'])
+            '${scratch.path}/$file',
+        ]);
+        expect(chmod.exitCode, 0, reason: '${chmod.stderr}');
+
+        final command = (step['run'] as String).replaceFirst(
+          '.dart_tool/lvm-linux-vm-timing',
+          '"\$TEST_TIMING"',
+        );
+        final result = await Process.run(
+          'bash',
+          ['-eo', 'pipefail', '-c', command],
+          environment: {
+            'PATH': '${scratch.path}:${Platform.environment['PATH']}',
+            'REAL_DART': Platform.resolvedExecutable,
+            'RUNNER_TEMP': scratch.path,
+            'GITHUB_STEP_SUMMARY': summary.path,
+            'LINUX_VM_SHARDS': groups.single,
+            'TEST_TIMING': timing,
+            'RUNS': runs.path,
+            'FAIL_SHARD': '${failShard ?? ''}',
+            'PRUNE_SHARD': '${pruneShard ?? ''}',
+          },
+        );
+        final failures = {
+          if (failShard != null) failShard,
+          if (pruneShard != null) pruneShard,
+        };
+        expect(
+          result.exitCode,
+          failures.isEmpty ? 0 : 1,
+          reason: '${result.stdout}\n${result.stderr}',
+        );
+        final shards = partitionTests(
+          laneFiles('linux-vm', rootTestFiles()),
+          readWeights()['linux-vm']!,
+          pushShards.length,
+        );
+        expect(runs.readAsLinesSync(), [
+          for (final (index, files) in shards.indexed)
+            '${index + 1} ${files.join(' ')}',
+        ]);
+        final output = summary.readAsStringSync();
+        for (final shard in pushShards.map(int.parse)) {
+          final label = 'Linux VM shard $shard/${pushShards.length}';
+          expect(result.stdout, contains('::group::$label'));
+          expect(
+            output,
+            contains(
+              '$label | ${failures.contains(shard) ? 'Failed' : 'Passed'}',
+            ),
+          );
+          expect(File('$timing/$shard/test_timing.json').existsSync(), isTrue);
+          if (failures.contains(shard)) {
+            expect(result.stderr, contains('::error title=$label failed::'));
+          }
+        }
+        if (pruneShard != null) {
+          expect(result.stderr, contains('useSuiteSystemTemp'));
+        }
+      }
+
+      test('runs every selected Linux VM shard in one PR job', runShards);
+
+      test('fails the PR job and continues after test and canary failures', () {
+        return runShards(failShard: 1, pruneShard: 2);
+      });
+    }, skip: Platform.isWindows ? 'requires a POSIX Bash runtime' : false);
+
     test('each run step tests exactly its shard and timing names are unique', () {
       final all = jobs();
       for (final (job, run) in [
@@ -2018,8 +2175,19 @@ runs:
       expect(seed, greaterThanOrEqualTo(0), reason: job);
       expect(tests, greaterThan(seed), reason: job);
       expect(check, greaterThan(tests), reason: job);
-      expect((steps[seed] as Map).containsKey('if'), isFalse, reason: job);
-      expect(steps[check]['if'], r'${{ !cancelled() }}', reason: job);
+      final isLinuxVm = job == 'test-linux-vm';
+      expect(
+        steps[seed]['if'],
+        isLinuxVm ? "github.event_name != 'pull_request'" : null,
+        reason: job,
+      );
+      expect(
+        steps[check]['if'],
+        isLinuxVm
+            ? r"${{ !cancelled() && github.event_name != 'pull_request' }}"
+            : r'${{ !cancelled() }}',
+        reason: job,
+      );
     }
   });
 

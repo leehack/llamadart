@@ -1273,9 +1273,11 @@ Every root test lane (Linux VM, Chrome, macOS and Windows `Test Native`) also
 writes a JSON file reporter; the ordinary reporter and test exit status are
 unchanged. `test-timing-<lane>-<shard>-<attempt>` artifacts
 contain sanitized suite paths, source lines, test IDs, intervals, hidden/skip
-flags and results. Test names, printed messages and errors stay out of the
-uploaded summary. Hidden intervals include suite loading and group setup or
-teardown; they are not separately classified as build-hook time.
+flags and results. PR Linux VM reports share the
+`test-timing-linux-vm-pr-<attempt>` artifact, with a `test_timing.json` in each
+shard's numbered subdirectory. Test names, printed messages and errors stay
+out of the uploaded summary. Hidden intervals include suite loading and group
+setup or teardown; they are not separately classified as build-hook time.
 
 To summarize a local run, use an isolated system temp directory on macOS and run:
 

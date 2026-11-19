@@ -165,10 +165,20 @@ file counts as the median suite until the weights are refreshed
 (`doc/testing_matrix.md`, "Test timing and shards"). Windows keeps tooling and
 runtime suites in separate processes: a tooling suite's `dart run` child cannot
 replace `.dart_tool/lib` DLLs a native suite in the same process holds open.
-Stale weights only unbalance shards; they cannot drop or repeat a file. A shard
-count is the length of its matrix, which `ci_workflow_selection_test.dart`
-checks against the selector call. VM shards keep `-j 1 --exclude-tags
-local-only` and their own LiteRT-LM temp canary.
+Stale weights only unbalance shards; they cannot drop or repeat a file. VM
+shards keep `-j 1 --exclude-tags local-only` and each has its own LiteRT-LM
+temp canary.
+
+On PRs, `Test Linux VM` runs the three selected Linux VM shards sequentially
+after one checkout, dependency install and fixture setup. A failing shard is
+named in the job summary and logs, and the remaining shards still run. The
+job fails if any shard fails, including a shard whose tests delete the
+`useSuiteSystemTemp` canary. Per-shard timing reports are in the numbered
+directories of the `test-timing-linux-vm-pr-<attempt>` artifact. The
+`Test Linux & Web (with Coverage)` aggregate consumes the same Linux VM job
+ID on every event. Pushes and manual runs use the existing three Linux VM
+matrix jobs. `ci_workflow_selection_test.dart` compares the PR group with
+that matrix and checks the selector's file assignment and failure handling.
 Coverage is collected after merge only: it doubles the Linux VM time. The
 selector's `coverage` output is false for pull requests and true for pushes
 to `main` and manual runs. Then each Linux shard runs with `--coverage` and
