@@ -252,6 +252,84 @@ void main() {
       await playback.dispose();
     }
   });
+
+  for (final workspace in [StudioWorkspace.speech, StudioWorkspace.notes]) {
+    for (final errorViaStream in [false, true]) {
+      testWidgets(
+        '${workspace.name} maps MediaEngine playback error (${errorViaStream ? 'onPlayerComplete' : 'play'})',
+        (tester) async {
+          final channels = _Channels(tester);
+          addTearDown(channels.dispose);
+          final deps = await buildTestDeps();
+          addTearDown(deps.dispose);
+          await deps.speechController.loadTtsModel(
+            CuratedModelCatalog.byId('qwen3-tts-1.7b-base-q4-k-m')!,
+          );
+          await deps.speechController.synthesizeText(text: 'Playback test');
+          await deps.notebookController.createNote(
+            title: 'Recorded note',
+            audioWavBytes: Uint8List(44),
+          );
+          final playerCreated = Completer<_Player>();
+          final playbackError = PlatformException(
+            code: '4',
+            message: 'MediaEngine error',
+            details: 'No audio output device',
+          );
+          final playback = StudioAudioPlayback(
+            unavailableReason: () async => null,
+            createPlayer: () {
+              final player = _Player(
+                playError: errorViaStream ? null : playbackError,
+              );
+              playerCreated.complete(player);
+              return player;
+            },
+          );
+          addTearDown(() async {
+            await tester.pumpWidget(const SizedBox.shrink());
+            await _waitFor(tester, playback.dispose());
+            await tester.pumpAndSettle();
+          });
+
+          await tester.pumpWidget(
+            StudioScope(
+              deps: deps,
+              child: MaterialApp(
+                theme: StudioTheme.dark(),
+                home: Scaffold(
+                  body: workspace == StudioWorkspace.speech
+                      ? SpeechWorkspaceView(audioPlayback: playback)
+                      : NotebookWorkspaceView(audioPlayback: playback),
+                ),
+              ),
+            ),
+          );
+          await tester.pumpAndSettle();
+
+          await _play(
+            tester,
+            workspace,
+            waitFor: () async {
+              final player = await playerCreated.future;
+              await player.waitForPlays(1);
+              if (errorViaStream) {
+                player.completeError(playbackError);
+              }
+            },
+          );
+          await tester.pumpAndSettle();
+
+          expect(
+            find.textContaining('check a playback device'),
+            findsOneWidget,
+          );
+          expect(find.textContaining('PlatformException'), findsNothing);
+          expect(tester.takeException(), isNull);
+        },
+      );
+    }
+  }
 }
 
 Future<void> _play(
@@ -301,6 +379,9 @@ Future<void> _waitFor(WidgetTester tester, Future<void> completion) async {
 }
 
 class _Player implements AudioPlayer {
+  _Player({this.playError});
+
+  final Object? playError;
   final _completed = StreamController<void>.broadcast();
   final _states = StreamController<PlayerState>.broadcast();
   final _played = StreamController<int>.broadcast();
@@ -314,6 +395,7 @@ class _Player implements AudioPlayer {
   int completionListeners = 0;
   int stateListeners = 0;
   void complete() => _completed.add(null);
+  void completeError(Object error) => _completed.addError(error);
   @override
   Stream<void> get onPlayerComplete {
     completionListeners++;
@@ -354,6 +436,9 @@ class _Player implements AudioPlayer {
   }) async {
     plays++;
     _played.add(plays);
+    if (playError != null) {
+      throw playError!;
+    }
   }
 }
 

@@ -369,4 +369,61 @@ void main() {
       expect(h.controller.state.selectedFileSlice?.relativePath, 'other.txt');
     },
   );
+
+  test(
+    'refreshExplorer applies preview of unchanged selected file when openDirectory invalidates only listing',
+    () async {
+      final h = _ExplorerRaceHarness();
+      await h.controller.setWorkspaceRoot(rootDir.path);
+      await h.controller.openFile('top.txt');
+
+      h.gateReads.add('top.txt');
+      final refreshFuture = h.controller.refreshExplorer();
+      await Future<void>.delayed(Duration.zero);
+      expect(h.readGates['top.txt'], isNotNull);
+
+      await h.controller.openDirectory('nested');
+      expect(h.controller.state.currentSubdir, 'nested');
+      expect(h.filePaths, <String>['nested/inner.txt']);
+      expect(h.controller.state.selectedFilePath, 'top.txt');
+
+      h.readGates['top.txt']!.complete(
+        const WorkspaceFileSlice(
+          relativePath: 'top.txt',
+          content: 'updated top',
+          numberedPreview: '1: updated top',
+          startLine: 1,
+          endLine: 1,
+          totalLines: 1,
+          truncated: false,
+        ),
+      );
+      await refreshFuture;
+
+      expect(h.controller.state.currentSubdir, 'nested');
+      expect(h.filePaths, <String>['nested/inner.txt']);
+      expect(h.controller.state.selectedFilePath, 'top.txt');
+      expect(h.controller.state.selectedFileSlice?.content, 'updated top');
+    },
+  );
+
+  test('same-root setWorkspaceRoot cancels in-flight openDirectory', () async {
+    final h = _ExplorerRaceHarness();
+    await h.controller.setWorkspaceRoot(rootDir.path);
+
+    h.gateSubdirs.add('nested');
+    final openFuture = h.controller.openDirectory('nested');
+    await Future<void>.delayed(Duration.zero);
+    expect(h.listGates['nested'], isNotNull);
+
+    await h.controller.setWorkspaceRoot(rootDir.path);
+    expect(h.controller.state.currentSubdir, '');
+    expect(h.filePaths, <String>['nested', 'top.txt']);
+
+    h.listGates['nested']!.complete(_nestedEntries);
+    await openFuture;
+
+    expect(h.controller.state.currentSubdir, '');
+    expect(h.filePaths, <String>['nested', 'top.txt']);
+  });
 }

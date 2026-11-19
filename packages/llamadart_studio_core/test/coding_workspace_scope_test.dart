@@ -186,6 +186,43 @@ void main() {
       );
     },
   );
+
+  test(
+    'concurrent revertChange on the same change does not leave a stale error',
+    () async {
+      final write = controller.buildCodingTools().firstWhere(
+        (tool) => tool.name == 'write',
+      );
+      await File('${first.path}/slow.txt').writeAsString('before A');
+      await write.invoke(<String, dynamic>{
+        'path': 'slow.txt',
+        'content': 'after A',
+      });
+      final changeId = controller.state.recentChanges.single.id;
+      final overrides = _GatedWriteOverrides();
+      final firstRevert = IOOverrides.runWithIOOverrides(
+        () => controller.revertChange(changeId),
+        overrides,
+      );
+      await overrides.entered.future;
+      var secondCompleted = false;
+      late bool secondResult;
+      final secondRevert = controller.revertChange(changeId).then((result) {
+        secondCompleted = true;
+        secondResult = result;
+        return result;
+      });
+      await Future<void>.delayed(Duration.zero);
+      expect(secondCompleted, isTrue);
+      expect(secondResult, isFalse);
+      overrides.release.complete();
+      expect(await firstRevert, isTrue);
+      expect(await secondRevert, isFalse);
+      expect(controller.state.recentChanges.single.reverted, isTrue);
+      expect(controller.state.lastError, isNull);
+      expect(await File('${first.path}/slow.txt').readAsString(), 'before A');
+    },
+  );
 }
 
 final class _GatedWriteOverrides extends IOOverrides {

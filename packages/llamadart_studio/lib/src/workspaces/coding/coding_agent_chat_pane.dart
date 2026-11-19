@@ -356,7 +356,7 @@ CodingFileChange? matchingCodingChangeForCall(
 String _normalizeCodingRelativePath(String rawPath) =>
     p.posix.normalize(rawPath.trim().replaceAll('\\', '/'));
 
-class _CodingMessageCard extends StatelessWidget {
+class _CodingMessageCard extends StatefulWidget {
   const _CodingMessageCard({
     required this.message,
     required this.recentChanges,
@@ -369,12 +369,33 @@ class _CodingMessageCard extends StatelessWidget {
   final Future<bool> Function(String changeId) onRevertChange;
   final Future<void> Function(String relativePath) onOpenFile;
 
+  @override
+  State<_CodingMessageCard> createState() => _CodingMessageCardState();
+}
+
+class _CodingMessageCardState extends State<_CodingMessageCard> {
+  final Set<String> _revertingChangeIds = <String>{};
+
   CodingFileChange? _matchingChangeForCall(StudioToolInvocation call) =>
-      matchingCodingChangeForCall(call, recentChanges);
+      matchingCodingChangeForCall(call, widget.recentChanges);
+
+  Future<void> _handleRevert(String changeId) async {
+    if (!_revertingChangeIds.add(changeId)) return;
+    setState(() {});
+    try {
+      await widget.onRevertChange(changeId);
+    } finally {
+      _revertingChangeIds.remove(changeId);
+      if (mounted) {
+        setState(() {});
+      }
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     final palette = StudioPalette.of(context);
+    final message = widget.message;
     final isUser = message.role == StudioRole.user;
 
     return Container(
@@ -489,8 +510,9 @@ class _CodingMessageCard extends StatelessWidget {
                             Expanded(
                               child: InkWell(
                                 onTap: matchedChange != null
-                                    ? () =>
-                                          onOpenFile(matchedChange.relativePath)
+                                    ? () => widget.onOpenFile(
+                                        matchedChange.relativePath,
+                                      )
                                     : null,
                                 child: ConstrainedBox(
                                   constraints: const BoxConstraints(
@@ -542,8 +564,12 @@ class _CodingMessageCard extends StatelessWidget {
                                   tapTargetSize:
                                       MaterialTapTargetSize.shrinkWrap,
                                 ),
-                                onPressed: () =>
-                                    onRevertChange(matchedChange.id),
+                                onPressed:
+                                    _revertingChangeIds.contains(
+                                      matchedChange.id,
+                                    )
+                                    ? null
+                                    : () => _handleRevert(matchedChange.id),
                                 icon: Icon(
                                   Icons.undo_rounded,
                                   size: 13,
