@@ -157,6 +157,7 @@ Future<int> _run({
         : 'operator_selected_avfoundation',
     'device_name': device?.name ?? 'FFmpeg paced file',
     'device_index': device?.index,
+    if (device != null) 'avfoundation_frame_delivery': 'unverified',
     'ffmpeg': ffmpegVersion,
     'backend': 'llama.cpp CPU',
     'requested_model_profile': _profiles[profile],
