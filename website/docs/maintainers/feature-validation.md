@@ -17,6 +17,7 @@ the user page's "Qualified on" line in step with what you can reproduce.
 | Native reranking | [`doc/native_reranking.md`](https://github.com/leehack/llamadart/blob/main/doc/native_reranking.md) |
 | Decision models (timings, parity, web check) | [`doc/decision_engine.md`](https://github.com/leehack/llamadart/blob/main/doc/decision_engine.md) |
 | LiteRT-LM chat templates | [`doc/litert_lm_templates.md`](https://github.com/leehack/llamadart/blob/main/doc/litert_lm_templates.md) |
+| Chat app native device qualification | [Firebase Test Lab runbook](https://github.com/leehack/llamadart/blob/main/doc/chat_app_native_qualification.md) |
 | Image seamless textures | [`doc/image_seamless_textures.md`](https://github.com/leehack/llamadart/blob/main/doc/image_seamless_textures.md) |
 | Local image sets | [`doc/local_image_sets.md`](https://github.com/leehack/llamadart/blob/main/doc/local_image_sets.md) |
 | Image editing | [`doc/image_editing.md`](https://github.com/leehack/llamadart/blob/main/doc/image_editing.md) |
