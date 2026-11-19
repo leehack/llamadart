@@ -2091,6 +2091,7 @@ class LlamaCppService {
       requestedBackend: reportedBackend,
       resolvedGpuLayers: gpuLayers,
       forcedCpuFallback: forcedCpuFallback,
+      filteredDevices: placement == null ? vulkan.devices : null,
     );
     _modelResolvedBackends[handle] = resolvedBackend;
     _modelBackendNames[handle] = placement == null
@@ -2937,9 +2938,16 @@ class LlamaCppService {
     required GpuBackend requestedBackend,
     required int resolvedGpuLayers,
     required bool forcedCpuFallback,
+    List<GgmlDeviceEntry>? filteredDevices,
   }) {
     if (forcedCpuFallback || resolvedGpuLayers <= 0) {
       return _backendDisplayName('cpu');
+    }
+    // Filtering can install a Vulkan list for a different backend request.
+    // Android context and prompt defaults depend on the resulting placement.
+    if (_isAndroid &&
+        (filteredDevices?.any((device) => device.isVulkan) ?? false)) {
+      return _backendDisplayName('vulkan');
     }
 
     final backendInfo = getBackendInfo().join(', ');
