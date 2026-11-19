@@ -19,20 +19,33 @@ void main() {
       expect(selectQwenWindowCut(window, window.length), 128000);
     });
 
-    test(
-      'accepts 5 aligned frames at RMS == 0.01 and rejects RMS == 0.012',
-      () {
-        final exact = Float32List(qwenWindowedMaxSamples)
-          ..fillRange(0, 128000, 0.2);
-        exact.fillRange(96000, 96000 + 5 * 320, 0.01);
-        expect(selectQwenWindowCut(exact, exact.length), 96800);
+    test('counts a frame with computed RMS exactly 0.01 as quiet', () {
+      final frame = Float32List(320)..fillRange(0, 320, 0.01);
+      // Float32 rounds 0.01 down. These samples make the computed RMS exact.
+      final bits = Uint32List.view(frame.buffer);
+      bits[318] = 0x3c67b4a0;
+      bits[319] = 0x366b2adf;
+      var sumSquares = 0.0;
+      for (final sample in frame) {
+        sumSquares += sample * sample;
+      }
+      expect(math.sqrt(sumSquares / frame.length), 0.01);
 
-        final above = Float32List(qwenWindowedMaxSamples)
-          ..fillRange(0, 128000, 0.2);
-        above.fillRange(96000, 96000 + 5 * 320, 0.012);
-        expect(selectQwenWindowCut(above, above.length), 128000);
-      },
-    );
+      final window = Float32List(qwenWindowedMaxSamples)
+        ..fillRange(0, qwenWindowedMaxSamples, 0.2);
+      for (var start = 96000; start < 97600; start += frame.length) {
+        window.setRange(start, start + frame.length, frame);
+      }
+      expect(selectQwenWindowCut(window, window.length), 96800);
+    });
+
+    test('rejects five frames just above the quiet RMS threshold', () {
+      final window = Float32List(qwenWindowedMaxSamples)
+        ..fillRange(0, qwenWindowedMaxSamples, 0.2);
+      window.fillRange(96000, 97600, 0.010000001);
+
+      expect(selectQwenWindowCut(window, window.length), 128000);
+    });
 
     test('selects the midpoint of the latest >= 100 ms quiet run', () {
       final window = Float32List(qwenWindowedMaxSamples);

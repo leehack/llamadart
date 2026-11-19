@@ -1517,10 +1517,12 @@ class SpeechToTextEngine implements LlamadartEngine<SpeechToTextCapabilities> {
   /// bounded backpressure can throttle the producer.
   ///
   /// With [Qwen3WindowedAsrAdapter], each 2, 4, and 6 s checkpoint re-decodes
-  /// the whole uncommitted prefix (first confirmation arrives after up to 8 s
-  /// of audio plus a decode), `maxOutputTokens` (1024 here) applies per
-  /// decode, empty intermediate windows are suppressed, and confirmed windows
-  /// are joined with `\n` in the final text. [dispose] cancels the session.
+  /// the whole uncommitted prefix. The first window commits after 8 s of audio
+  /// plus a decode, and later full windows need 6.05–8 s of new audio plus a
+  /// decode. [SpeechToTextStreamingSession.finish] flushes remaining audio.
+  /// `maxOutputTokens` (1024 here) applies per decode, empty intermediate
+  /// windows are suppressed, and confirmed windows are joined with `\n`
+  /// in the final text. [dispose] cancels the session.
   /// Throws [LlamaStateException] after [dispose].
   Future<SpeechToTextStreamingSession> startStream({
     SpeechAudioFormat format = _liteRtLmPcmFormat,
