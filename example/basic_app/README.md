@@ -25,9 +25,10 @@ listed voices; `--speaker` clones a WAV, and Chatterbox Multilingual needs
 
 For native live PCM speech recognition on llama.cpp (Voxtral Realtime or
 LFM3-Audio), run `dart run bin/llamadart_live_asr_example.dart <model.gguf>
-<mmproj.gguf> <audio.f32le>`. It streams mono 16 kHz little-endian float32 PCM
-incrementally through `LlamaCppLiveAsrAdapter` and prints partial and final
-transcripts. Ctrl-C cancels the session.
+<mmproj.gguf> <audio.f32le>` (pass `--qwen-windowed` to opt into bounded 8 s
+windowed live input on Qwen3-ASR). It streams mono 16 kHz little-endian float32
+PCM incrementally and renders confirmed deltas plus replaceable pending text.
+Ctrl-C cancels the session.
 
 ## Features
 

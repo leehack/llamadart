@@ -38,6 +38,14 @@ Use this checklist when upgrading `llamadart` across minor or major versions.
 
 ## Version-specific notes
 
+### 0.20.2: opt-in `Qwen3WindowedAsrAdapter` and `SpeechToTextCapabilities.inputMode`
+
+`Qwen3WindowedAsrAdapter` subclasses `Qwen3AsrAdapter` for opt-in bounded
+windowed live PCM on native Qwen3-ASR (refused in `SpeechToTextEngine.attach`
+and on Web), and `SpeechToTextCapabilities.inputMode` is an extension getter
+returning `SpeechToTextInputMode`. See
+[`MIGRATION.md`](https://github.com/leehack/llamadart/blob/main/MIGRATION.md#0201---0202-opt-in-qwen3windowedasradapter-and-speechtotextcapabilitiesinputmode).
+
 ### 0.20.1: experimental speech `LlamaCppLiveAsrAdapter` and `streamingInputUnsupportedReason`
 
 `SpeechToTextAdapter` gains `LlamaCppLiveAsrAdapter` and

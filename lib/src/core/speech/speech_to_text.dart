@@ -23,6 +23,7 @@ import 'litert_lm_speech_to_text_driver_stub.dart'
     if (dart.library.io) 'litert_lm_speech_to_text_driver_io.dart';
 import 'projector_file_reader_stub.dart'
     if (dart.library.io) '../../platform/io/projector_file_reader_io.dart';
+import 'qwen_windowed_asr.dart';
 import 'speech_engine_lease.dart';
 import 'speech_to_text_model.dart';
 import 'speech_platform_stub.dart'
@@ -66,6 +67,21 @@ enum SpeechToTextImplementation {
 
   /// A backend-native, dedicated speech recognition API.
   dedicatedBackend,
+}
+
+/// High-level input mode exposed by [SpeechToTextCapabilities.inputMode].
+enum SpeechToTextInputMode {
+  /// Speech recognition is unavailable on the current runtime or model.
+  unavailable,
+
+  /// Only complete encoded audio inputs are accepted.
+  wholeInput,
+
+  /// Incremental PCM is re-transcribed in bounded windows on a prompt model.
+  windowed,
+
+  /// Incremental PCM is streamed into a dedicated stateful ASR runtime.
+  stateful,
 }
 
 /// Audio metadata supplied with speech input.
@@ -269,6 +285,29 @@ class SpeechToTextCapabilities implements EngineCapabilities {
     this.supportsInputBackpressure = false,
     this.maxConcurrentTasks = 0,
   });
+}
+
+/// Derives [SpeechToTextInputMode] from a [SpeechToTextCapabilities] snapshot.
+extension SpeechToTextCapabilitiesInputModeExtension
+    on SpeechToTextCapabilities {
+  /// The effective input mode for this capability snapshot.
+  SpeechToTextInputMode get inputMode {
+    if (!isSupported) {
+      return SpeechToTextInputMode.unavailable;
+    }
+    return switch (implementation) {
+      SpeechToTextImplementation.unavailable =>
+        SpeechToTextInputMode.unavailable,
+      SpeechToTextImplementation.multimodalPromptAdapter =>
+        supportsStreamingInput
+            ? SpeechToTextInputMode.windowed
+            : SpeechToTextInputMode.wholeInput,
+      SpeechToTextImplementation.dedicatedBackend =>
+        supportsStreamingInput
+            ? SpeechToTextInputMode.stateful
+            : SpeechToTextInputMode.unavailable,
+    };
+  }
 }
 
 /// A recognized word with optional backend-provided metadata.
@@ -583,10 +622,12 @@ abstract interface class SpeechToTextStreamingSession {
 /// a [SpeechToTextPromptAdapter] on a `LlamaEngine` the caller loaded and
 /// keeps owning. The model's adapter picks the runtime: a prompt adapter,
 /// such as [Qwen3AsrAdapter], sends encoded audio through multimodal chat on
-/// a `LlamaEngine`; [LlamaCppLiveAsrAdapter] runs incremental live PCM
-/// streaming on native `llama.cpp` (such as Voxtral Realtime and LFM3-Audio);
-/// and [LiteRtLmAsrAdapter] runs a dedicated native LiteRT-LM recognizer with
-/// incremental PCM input and partial transcripts.
+/// a `LlamaEngine`; [Qwen3WindowedAsrAdapter] adds opt-in windowed live PCM
+/// transcription on native `llama.cpp` Qwen3-ASR; [LlamaCppLiveAsrAdapter]
+/// runs stateful incremental live PCM streaming on native `llama.cpp` (such
+/// as Voxtral Realtime and LFM3-Audio); and [LiteRtLmAsrAdapter] runs a
+/// dedicated native LiteRT-LM recognizer with incremental PCM input and
+/// partial transcripts.
 ///
 /// ```dart
 /// final recognizer = await SpeechToTextEngine.load(
@@ -646,6 +687,16 @@ class SpeechToTextEngine implements LlamadartEngine<SpeechToTextCapabilities> {
   SpeechToTextEngine._llamaCppLiveAsr(
     LlamaEngine engine,
     LlamaCppLiveAsrAdapter this.adapter,
+  ) : _engine = engine,
+      _ownsEngine = true,
+      _engineLease = SpeechEngineLease.forEngine(engine),
+      _liteRtLmConfig = null,
+      _liteRtLmDriver = null,
+      _liteRtLmLibraryPath = null;
+
+  SpeechToTextEngine._qwenWindowed(
+    LlamaEngine engine,
+    Qwen3WindowedAsrAdapter this.adapter,
   ) : _engine = engine,
       _ownsEngine = true,
       _engineLease = SpeechEngineLease.forEngine(engine),
@@ -787,6 +838,64 @@ class SpeechToTextEngine implements LlamadartEngine<SpeechToTextCapabilities> {
     LlamaBackend? backend,
   }) async {
     switch (model.adapter) {
+      case final Qwen3WindowedAsrAdapter adapter:
+        if (!speechToTextSupportsLlamaCppLiveAsr) {
+          await _rejectLoad(
+            backend,
+            LlamaUnsupportedException(
+              'Windowed live speech recognition (${adapter.name}) is not '
+              'supported on Web; the WebGPU bridge does not expose native '
+              'windowed live ASR (requires a native platform with llama.cpp).',
+            ),
+          );
+        }
+        if (model.tokenizer != null) {
+          await _rejectLoad(
+            backend,
+            LlamaArgumentException(
+              'A ${adapter.name} model takes no tokenizer file; the tokenizer '
+              'is part of the model. Leave SpeechToTextModel.tokenizer unset.',
+              name: 'model.tokenizer',
+            ),
+          );
+        }
+        if (model.projector == null) {
+          await _rejectLoad(
+            backend,
+            LlamaArgumentException(
+              'A ${adapter.name} model requires its multimodal audio '
+              'projector. Set SpeechToTextModel.projector.',
+              name: 'model.projector',
+            ),
+          );
+        }
+        final (engine, _) = await loadLlamaEngine(
+          LlamaModel(model.source, projector: model.projector),
+          params: params ?? const ModelParams(),
+          download: download,
+          onProgress: onProgress,
+          store: store,
+          backend: backend,
+          operation: 'SpeechToTextEngine model loading',
+        );
+        try {
+          final recognizer = SpeechToTextEngine._qwenWindowed(engine, adapter);
+          final capabilities = await recognizer.capabilities;
+          if (!capabilities.isSupported) {
+            throw LlamaUnsupportedException(
+              capabilities.unsupportedReason ??
+                  'The loaded model cannot run windowed speech recognition.',
+            );
+          }
+          return recognizer;
+        } catch (_) {
+          try {
+            await engine.dispose();
+          } catch (_) {
+            // The load failure is the error the caller needs.
+          }
+          rethrow;
+        }
       case final SpeechToTextPromptAdapter adapter:
         if (model.tokenizer != null) {
           await _rejectLoad(
@@ -984,7 +1093,15 @@ class SpeechToTextEngine implements LlamadartEngine<SpeechToTextCapabilities> {
   static SpeechToTextEngine attach(
     LlamaEngine engine, {
     required SpeechToTextPromptAdapter adapter,
-  }) => SpeechToTextEngine._prompt(engine, adapter, ownsEngine: false);
+  }) {
+    if (adapter is Qwen3WindowedAsrAdapter) {
+      throw LlamaUnsupportedException(
+        'Qwen3WindowedAsrAdapter requires SpeechToTextEngine.load so the '
+        'recognizer owns its LlamaEngine and audio projector.',
+      );
+    }
+    return SpeechToTextEngine._prompt(engine, adapter, ownsEngine: false);
+  }
 
   /// Model-specific adapter selected by the caller.
   ///
@@ -993,6 +1110,10 @@ class SpeechToTextEngine implements LlamadartEngine<SpeechToTextCapabilities> {
   @Deprecated('Read adapter instead.')
   SpeechToTextModelProfile get modelProfile => switch (adapter) {
     LiteRtLmAsrAdapter() => SpeechToTextModelProfile.liteRtLmDedicated,
+    Qwen3WindowedAsrAdapter() => throw LlamaStateException(
+      'This SpeechToTextEngine runs ${adapter.name}, which has no '
+      'SpeechToTextModelProfile. Read adapter instead.',
+    ),
     Qwen3AsrAdapter() => SpeechToTextModelProfile.qwen3Asr,
     _ => throw LlamaStateException(
       'This SpeechToTextEngine runs ${adapter.name}, which has no '
@@ -1022,14 +1143,22 @@ class SpeechToTextEngine implements LlamadartEngine<SpeechToTextCapabilities> {
 
   bool get _usesLlamaCppLiveAsr => adapter is LlamaCppLiveAsrAdapter;
 
-  bool get _usesPcmStreaming => _usesLiteRtLm || _usesLlamaCppLiveAsr;
+  bool get _usesQwenWindowedAsr => adapter is Qwen3WindowedAsrAdapter;
 
-  static String _promptStreamingUnsupportedReason(
-    SpeechToTextAdapter adapter,
-  ) =>
-      'The ${adapter.name} prompt adapter accepts complete encoded audio only. '
-      'Use LlamaCppLiveAsrAdapter or LiteRtLmAsrAdapter for incremental PCM '
-      'streaming.';
+  bool get _usesPcmStreaming =>
+      _usesLiteRtLm || _usesLlamaCppLiveAsr || _usesQwenWindowedAsr;
+
+  static String _promptStreamingUnsupportedReason(SpeechToTextAdapter adapter) {
+    if (adapter is Qwen3AsrAdapter) {
+      return 'The ${adapter.name} prompt adapter accepts complete encoded audio '
+          'only. Use Qwen3WindowedAsrAdapter for opt-in windowed live PCM on '
+          'Qwen3-ASR, or LlamaCppLiveAsrAdapter / LiteRtLmAsrAdapter for '
+          'stateful incremental PCM streaming.';
+    }
+    return 'The ${adapter.name} prompt adapter accepts complete encoded audio only. '
+        'Use LlamaCppLiveAsrAdapter or LiteRtLmAsrAdapter for incremental PCM '
+        'streaming.';
+  }
 
   SpeechToTextPromptAdapter get _promptAdapter =>
       adapter as SpeechToTextPromptAdapter;
@@ -1123,6 +1252,85 @@ class SpeechToTextEngine implements LlamadartEngine<SpeechToTextCapabilities> {
         isSupported: true,
         backendName: backendName,
         implementation: SpeechToTextImplementation.dedicatedBackend,
+        inputKinds: const <SpeechAudioInputKind>{
+          SpeechAudioInputKind.pcmFloat32,
+        },
+        supportsPartialResults: true,
+        supportsStreamingInput: true,
+        supportsCancellation: true,
+        supportsInputBackpressure: true,
+        maxConcurrentTasks: 1,
+      );
+    }
+    if (_usesQwenWindowedAsr) {
+      if (!speechToTextSupportsLlamaCppLiveAsr) {
+        return SpeechToTextCapabilities(
+          isSupported: false,
+          unsupportedReason:
+              'Windowed live speech recognition (${adapter.name}) is not '
+              'supported on Web; the WebGPU bridge does not expose native '
+              'windowed live ASR (requires a native platform with llama.cpp).',
+        );
+      }
+      if (!engine.isReady) {
+        return const SpeechToTextCapabilities(
+          isSupported: false,
+          unsupportedReason:
+              'Load a model and its audio-capable multimodal projector first.',
+        );
+      }
+      String? backendName;
+      try {
+        backendName = await engine.getBackendName();
+      } catch (_) {
+        // Capability discovery can still use the audio and projector probes.
+      }
+      if (backendName?.toLowerCase().contains('litert-lm') ?? false) {
+        return SpeechToTextCapabilities(
+          isSupported: false,
+          unsupportedReason:
+              'A chat-model LiteRT-LM engine is not a llama.cpp windowed ASR '
+              'session.',
+          backendName: backendName,
+        );
+      }
+      bool supportsAudio;
+      try {
+        supportsAudio = await engine.supportsAudio;
+      } catch (error) {
+        return SpeechToTextCapabilities(
+          isSupported: false,
+          unsupportedReason: 'The audio capability probe failed: $error',
+          backendName: backendName,
+        );
+      }
+      if (!supportsAudio) {
+        return SpeechToTextCapabilities(
+          isSupported: false,
+          unsupportedReason: engine.hasMultimodalProjector
+              ? 'The loaded multimodal projector does not report audio support.'
+              : 'No multimodal projector is loaded. Load the model with its '
+                    'audio projector, as LlamaModel(source, projector: ...).',
+          backendName: backendName,
+        );
+      }
+      final projectorType = await _loadedAudioProjectorType(engine);
+      if (projectorType != _qwen3AsrProjectorType) {
+        return SpeechToTextCapabilities(
+          isSupported: false,
+          unsupportedReason: projectorType == null
+              ? 'Could not verify a Qwen3-ASR (\'$_qwen3AsrProjectorType\') '
+                    'audio projector for ${adapter.name}.'
+              : "The loaded audio projector's type is '$projectorType', not "
+                    "${adapter.name}'s '$_qwen3AsrProjectorType'. Load a "
+                    '${adapter.name} model with its own projector.',
+          backendName: backendName,
+        );
+      }
+      return SpeechToTextCapabilities(
+        isSupported: true,
+        backendName: backendName,
+        implementation: SpeechToTextImplementation.multimodalPromptAdapter,
         inputKinds: const <SpeechAudioInputKind>{
           SpeechAudioInputKind.pcmFloat32,
         },
@@ -1232,17 +1440,19 @@ class SpeechToTextEngine implements LlamadartEngine<SpeechToTextCapabilities> {
   /// task.
   ///
   /// A [SpeechToTextPromptAdapter] accepts encoded files or bytes, and its
-  /// task emits one [SpeechToTextFinalEvent]. Dedicated LiteRT-LM ASR
-  /// accepts [SpeechAudioPcmInput] and emits any intermediate
-  /// [SpeechToTextPartialEvent] updates before its final result. Invalid
-  /// input and unsupported preflight checks throw before a task is returned;
+  /// task emits one [SpeechToTextFinalEvent]. [Qwen3WindowedAsrAdapter],
+  /// [LlamaCppLiveAsrAdapter], and [LiteRtLmAsrAdapter] accept
+  /// [SpeechAudioPcmInput] and emit intermediate [SpeechToTextPartialEvent]
+  /// updates before their final result. Invalid input and unsupported preflight
+  /// checks throw before a task is returned;
   /// failures after startup are reported by [SpeechToTextTask.done] and
   /// [SpeechToTextTask.result]. Throws [LlamaStateException] after
   /// [dispose] and after [LlamaEngine.dispose] of an attached engine.
   ///
-  /// On native llama.cpp, a prompt-adapted task that reaches the context
-  /// size or [SpeechToTextRequest.maxOutputTokens] before the transcript ends
-  /// fails with [LlamaSpeechTranscriptTruncatedException].
+  /// On native llama.cpp, a prompt-adapted task (including each decode of
+  /// [Qwen3WindowedAsrAdapter]) that reaches the context size or
+  /// [SpeechToTextRequest.maxOutputTokens] before the transcript ends fails
+  /// with [LlamaSpeechTranscriptTruncatedException].
   ///
   /// [SpeechToTextTask.cancel] stops only this task's generation: it does
   /// not cancel chat or other requests on the same [LlamaEngine]. [dispose],
@@ -1299,12 +1509,18 @@ class SpeechToTextEngine implements LlamadartEngine<SpeechToTextCapabilities> {
     SpeechToTextRequest request,
   ) async => (await transcribe(request)).result;
 
-  /// Starts an incremental dedicated-ASR session.
+  /// Starts an incremental live-PCM recognition session.
   ///
-  /// Available with [LiteRtLmAsrAdapter] and [LlamaCppLiveAsrAdapter]. The
-  /// accepted [format] is mono 16 kHz `pcm-f32le`. Await every
-  /// [SpeechToTextStreamingSession.addPcm] call so bounded native
-  /// backpressure can throttle the producer. [dispose] cancels the session.
+  /// Available with [LiteRtLmAsrAdapter], [LlamaCppLiveAsrAdapter], and opt-in
+  /// [Qwen3WindowedAsrAdapter]. The accepted [format] is mono 16 kHz
+  /// `pcm-f32le`. Await every [SpeechToTextStreamingSession.addPcm] call so
+  /// bounded backpressure can throttle the producer.
+  ///
+  /// With [Qwen3WindowedAsrAdapter], each 2, 4, and 6 s checkpoint re-decodes
+  /// the whole uncommitted prefix (first confirmation arrives after up to 8 s
+  /// of audio plus a decode), `maxOutputTokens` (1024 here) applies per
+  /// decode, empty intermediate windows are suppressed, and confirmed windows
+  /// are joined with `\n` in the final text. [dispose] cancels the session.
   /// Throws [LlamaStateException] after [dispose].
   Future<SpeechToTextStreamingSession> startStream({
     SpeechAudioFormat format = _liteRtLmPcmFormat,
@@ -1318,6 +1534,9 @@ class SpeechToTextEngine implements LlamadartEngine<SpeechToTextCapabilities> {
     _validatePcmFormat(format);
     if (_usesLlamaCppLiveAsr) {
       return _startLlamaCppStream(format);
+    }
+    if (_usesQwenWindowedAsr) {
+      return _startQwenWindowedStream(format);
     }
     if (_liteRtLmTaskActive) {
       throw LlamaStateException(
@@ -1399,6 +1618,82 @@ class SpeechToTextEngine implements LlamadartEngine<SpeechToTextCapabilities> {
             _activeStream = null;
           }
         },
+      );
+      lease.onUnload(_leaseOwner, () => unawaited(session.cancel()));
+      return _activeStream = session;
+    } catch (_) {
+      lease.release(_leaseOwner);
+      rethrow;
+    } finally {
+      if (identical(_pendingStreamStart, startup.future)) {
+        _pendingStreamStart = null;
+      }
+      startup.complete();
+    }
+  }
+
+  Future<SpeechToTextStreamingSession> _startQwenWindowedStream(
+    SpeechAudioFormat format, {
+    int maxOutputTokens = 1024,
+  }) async {
+    final lease = _engineLease!;
+    if (!lease.acquire(_leaseOwner)) {
+      throw LlamaStateException(
+        'This LlamaEngine already has an active typed speech task '
+        '(${lease.activeOwner}).',
+      );
+    }
+    final engine = _engine!;
+    final startup = Completer<void>();
+    _pendingStreamStart = startup.future;
+    try {
+      final currentCapabilities = await capabilities;
+      _throwIfDisposed();
+      if (engine.isDisposed) {
+        throw LlamaStateException(_engineDisposedMessage);
+      }
+      if (!currentCapabilities.isSupported) {
+        throw LlamaUnsupportedException(
+          currentCapabilities.unsupportedReason ??
+              'Windowed live speech recognition is unavailable.',
+        );
+      }
+      final emptyHint = await _unverifiedModelHint();
+      if (_disposal != null) {
+        _throwIfDisposed();
+      }
+      late final QwenWindowedAsrSession session;
+      session = QwenWindowedAsrSession(
+        sourceFormat: format,
+        emptyTranscriptDetails: emptyHint,
+        onClosed: () {
+          lease.release(_leaseOwner);
+          if (identical(_activeStream, session)) {
+            _activeStream = null;
+          }
+        },
+        decodeWindow:
+            (
+              wavBytes, {
+              required confirmedPrefix,
+              required registerCancel,
+              required isCancelled,
+            }) async {
+              final request = SpeechToTextRequest(
+                audio: SpeechAudioBytesInput(
+                  wavBytes,
+                  format: const SpeechAudioFormat(encoding: 'wav'),
+                ),
+                maxOutputTokens: maxOutputTokens,
+              );
+              final transcript = await _decodePromptAudio(
+                request,
+                registerCancel: registerCancel,
+                isCancelled: isCancelled,
+                confirmedPrefix: confirmedPrefix,
+              );
+              return transcript.text;
+            },
       );
       lease.onUnload(_leaseOwner, () => unawaited(session.cancel()));
       return _activeStream = session;
@@ -1513,7 +1808,12 @@ class SpeechToTextEngine implements LlamadartEngine<SpeechToTextCapabilities> {
     SpeechToTextRequest request,
   ) async {
     final audio = request.audio as SpeechAudioPcmInput;
-    final session = await startStream(format: audio.format!);
+    final session = _usesQwenWindowedAsr
+        ? await _startQwenWindowedStream(
+            audio.format!,
+            maxOutputTokens: request.maxOutputTokens,
+          )
+        : await startStream(format: audio.format!);
     late final SpeechToTextTask task;
     task = SpeechToTextTask._(onCancel: () => unawaited(session.cancel()));
     _activeTask = task;
@@ -1619,7 +1919,7 @@ class SpeechToTextEngine implements LlamadartEngine<SpeechToTextCapabilities> {
         );
       }
       _validatePcmFormat(format);
-      if (_usesLlamaCppLiveAsr) {
+      if (_usesLlamaCppLiveAsr || _usesQwenWindowedAsr) {
         _validatePcmSamples(audio.samples);
       }
       return;
@@ -1723,94 +2023,19 @@ class SpeechToTextEngine implements LlamadartEngine<SpeechToTextCapabilities> {
         return;
       }
 
-      final output = StringBuffer();
-      final tokenStreamDone = Completer<void>();
-      StreamSubscription<String>? tokenSubscription;
-      Future<void>? tokenStreamCancellation;
-      void cancelTokenStream() {
-        if (tokenStreamCancellation != null) {
-          return;
-        }
-        final subscription = tokenSubscription;
-        if (subscription == null) {
-          return;
-        }
-        late final Future<void> cancellation;
-        try {
-          cancellation = subscription.cancel();
-        } catch (error, stackTrace) {
-          cancellation = Future<void>.error(error, stackTrace);
-        }
-        tokenStreamCancellation = cancellation;
-        unawaited(cancellation.catchError((Object _, StackTrace _) {}));
-        if (!tokenStreamDone.isCompleted) {
-          tokenStreamDone.complete();
-        }
-      }
-
-      Object? tokenStreamError;
-      StackTrace? tokenStreamStackTrace;
-      BackendGenerationLimit? generationLimit;
-      try {
-        final tokens = _promptAdapterTokens(
-          request,
-          onLimit: (limit) => generationLimit = limit,
-        );
-        tokenSubscription = tokens.listen(
-          (token) {
-            if (!task.isCancellationRequested && tokenStreamError == null) {
-              output.write(token);
-            }
-          },
-          onError: (Object error, StackTrace stackTrace) {
-            tokenStreamError ??= error;
-            tokenStreamStackTrace ??= stackTrace;
-            if (!tokenStreamDone.isCompleted) {
-              tokenStreamDone.complete();
-            }
-          },
-          onDone: () {
-            if (!tokenStreamDone.isCompleted) {
-              tokenStreamDone.complete();
-            }
-          },
-          cancelOnError: false,
-        );
-        task._cancelTokenStream = cancelTokenStream;
-        if (task.isCancellationRequested) {
-          cancelTokenStream();
-        }
-        await tokenStreamDone.future;
-      } catch (error, stackTrace) {
-        tokenStreamError ??= error;
-        tokenStreamStackTrace ??= stackTrace;
-      } finally {
-        if (identical(task._cancelTokenStream, cancelTokenStream)) {
-          task._cancelTokenStream = null;
-        }
-        try {
-          cancelTokenStream();
-          await tokenStreamCancellation;
-        } catch (error, stackTrace) {
-          tokenStreamError ??= error;
-          tokenStreamStackTrace ??= stackTrace;
-        }
-      }
-      final error = tokenStreamError;
-      if (error != null) {
-        Error.throwWithStackTrace(error, tokenStreamStackTrace!);
-      }
+      final normalized = await _decodePromptAudio(
+        request,
+        registerCancel: (cancel) {
+          task._cancelTokenStream = cancel;
+        },
+        isCancelled: () => task.isCancellationRequested,
+      );
 
       if (task.isCancellationRequested) {
         _completeCancelled(task);
         return;
       }
 
-      final normalized = _promptAdapter.parseTranscript(output.toString());
-      final limit = generationLimit;
-      if (limit != null) {
-        throw _truncatedTranscript(limit, normalized.text);
-      }
       if (normalized.text.isEmpty) {
         throw LlamaSpeechException(
           'Speech recognition produced an empty transcript.',
@@ -1840,6 +2065,99 @@ class SpeechToTextEngine implements LlamadartEngine<SpeechToTextCapabilities> {
         _activeTask = null;
       }
     }
+  }
+
+  Future<SpeechToTextTranscript> _decodePromptAudio(
+    SpeechToTextRequest request, {
+    required void Function(void Function()? cancel) registerCancel,
+    required bool Function() isCancelled,
+    String confirmedPrefix = '',
+  }) async {
+    final output = StringBuffer();
+    final tokenStreamDone = Completer<void>();
+    StreamSubscription<String>? tokenSubscription;
+    Future<void>? tokenStreamCancellation;
+    void cancelTokenStream() {
+      if (tokenStreamCancellation != null) {
+        return;
+      }
+      final subscription = tokenSubscription;
+      if (subscription == null) {
+        return;
+      }
+      late final Future<void> cancellation;
+      try {
+        cancellation = subscription.cancel();
+      } catch (error, stackTrace) {
+        cancellation = Future<void>.error(error, stackTrace);
+      }
+      tokenStreamCancellation = cancellation;
+      unawaited(cancellation.catchError((Object _, StackTrace _) {}));
+      if (!tokenStreamDone.isCompleted) {
+        tokenStreamDone.complete();
+      }
+    }
+
+    Object? tokenStreamError;
+    StackTrace? tokenStreamStackTrace;
+    BackendGenerationLimit? generationLimit;
+    try {
+      final tokens = _promptAdapterTokens(
+        request,
+        onLimit: (limit) => generationLimit = limit,
+      );
+      tokenSubscription = tokens.listen(
+        (token) {
+          if (!isCancelled() && tokenStreamError == null) {
+            output.write(token);
+          }
+        },
+        onError: (Object error, StackTrace stackTrace) {
+          tokenStreamError ??= error;
+          tokenStreamStackTrace ??= stackTrace;
+          if (!tokenStreamDone.isCompleted) {
+            tokenStreamDone.complete();
+          }
+        },
+        onDone: () {
+          if (!tokenStreamDone.isCompleted) {
+            tokenStreamDone.complete();
+          }
+        },
+        cancelOnError: false,
+      );
+      registerCancel(cancelTokenStream);
+      if (isCancelled()) {
+        cancelTokenStream();
+      }
+      await tokenStreamDone.future;
+    } catch (error, stackTrace) {
+      tokenStreamError ??= error;
+      tokenStreamStackTrace ??= stackTrace;
+    } finally {
+      registerCancel(null);
+      try {
+        cancelTokenStream();
+        await tokenStreamCancellation;
+      } catch (error, stackTrace) {
+        tokenStreamError ??= error;
+        tokenStreamStackTrace ??= stackTrace;
+      }
+    }
+    final error = tokenStreamError;
+    if (error != null) {
+      Error.throwWithStackTrace(error, tokenStreamStackTrace!);
+    }
+    if (isCancelled()) {
+      return const SpeechToTextTranscript('');
+    }
+    final normalized = _promptAdapter.parseTranscript(output.toString());
+    final limit = generationLimit;
+    if (limit != null) {
+      final partial = joinWindowTranscript(confirmedPrefix, normalized.text);
+      throw _truncatedTranscript(limit, partial);
+    }
+    return normalized;
   }
 
   /// Null once the loaded projector is known to be the adapter's; otherwise

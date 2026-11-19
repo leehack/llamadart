@@ -5,18 +5,27 @@ import 'dart:typed_data';
 import 'package:llamadart/llamadart.dart';
 
 Future<void> main(List<String> arguments) async {
-  if (arguments.length != 3) {
+  var qwenWindowed = false;
+  final positional = <String>[];
+  for (final arg in arguments) {
+    if (arg == '--qwen-windowed') {
+      qwenWindowed = true;
+    } else {
+      positional.add(arg);
+    }
+  }
+  if (positional.length != 3) {
     stderr.writeln(
       'Usage: dart run bin/llamadart_live_asr_example.dart '
-      '<model.gguf> <mmproj.gguf> <audio.f32le>',
+      '[--qwen-windowed] <model.gguf> <mmproj.gguf> <audio.f32le>',
     );
     exitCode = 64;
     return;
   }
 
-  final modelSource = ModelSource.parse(arguments[0]);
-  final projectorSource = ModelSource.parse(arguments[1]);
-  final audioFile = File(arguments[2]);
+  final modelSource = ModelSource.parse(positional[0]);
+  final projectorSource = ModelSource.parse(positional[1]);
+  final audioFile = File(positional[2]);
   if (!await audioFile.exists()) {
     stderr.writeln('Audio file not found: ${audioFile.path}');
     exitCode = 66;
@@ -29,7 +38,9 @@ Future<void> main(List<String> arguments) async {
       SpeechToTextModel(
         modelSource,
         projector: projectorSource,
-        adapter: const LlamaCppLiveAsrAdapter(),
+        adapter: qwenWindowed
+            ? const Qwen3WindowedAsrAdapter()
+            : const LlamaCppLiveAsrAdapter(),
       ),
       params: const ModelParams(contextSize: 4096),
     );
@@ -42,21 +53,54 @@ Future<void> main(List<String> arguments) async {
   StreamSubscription<ProcessSignal>? interrupt;
   try {
     final session = await recognizer.startStream();
-    var printedLength = 0;
+    var confirmedPrintedLength = 0;
+    var lastPending = '';
     final events = session.events.listen(
       (event) {
         switch (event) {
-          case SpeechToTextPartialEvent(:final text):
-            if (text.length > printedLength) {
-              stdout.write(text.substring(printedLength));
-              printedLength = text.length;
+          case SpeechToTextPartialEvent(
+            :final text,
+            :final confirmedText,
+            :final pendingText,
+          ):
+            final confirmed = confirmedText ?? text;
+            final pending = pendingText ?? '';
+            if (confirmed.length > confirmedPrintedLength) {
+              if (stdout.hasTerminal && lastPending.isNotEmpty) {
+                stdout.write('\r\x1b[K');
+              }
+              lastPending = '';
+              final delta = confirmed.substring(confirmedPrintedLength);
+              if (qwenWindowed) {
+                final trimmed = delta.trimLeft();
+                if (trimmed.isNotEmpty) {
+                  stdout.writeln(trimmed);
+                }
+              } else {
+                stdout.write(delta);
+              }
+              confirmedPrintedLength = confirmed.length;
+            }
+            if (pending.isNotEmpty && pending != lastPending) {
+              if (stdout.hasTerminal) {
+                stdout.write('\r\x1b[K[pending] $pending');
+              } else {
+                stdout.writeln('[pending] $pending');
+              }
+              lastPending = pending;
             }
           case SpeechToTextFinalEvent(:final result):
-            if (result.text.length > printedLength) {
-              stdout.write(result.text.substring(printedLength));
-              printedLength = result.text.length;
+            if (stdout.hasTerminal && lastPending.isNotEmpty) {
+              stdout.write('\r\x1b[K');
             }
-            stdout.writeln();
+            lastPending = '';
+            if (result.text.length > confirmedPrintedLength) {
+              final tail = result.text.substring(confirmedPrintedLength);
+              stdout.writeln(qwenWindowed ? tail.trimLeft() : tail);
+              confirmedPrintedLength = result.text.length;
+            } else if (!qwenWindowed || confirmedPrintedLength == 0) {
+              stdout.writeln();
+            }
         }
       },
       onError: (Object error) {

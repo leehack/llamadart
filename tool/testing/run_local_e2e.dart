@@ -1098,6 +1098,42 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
       },
     ),
     LocalE2eScenario(
+      name: 'speech-to-text-windowed-smoke',
+      group: LocalE2eScenarioGroup.dartLocalOnly,
+      description:
+          'Run opt-in Qwen3-ASR windowed live PCM E2E (44s repetition, '
+          'boundaries, second utterance, 300s sustained run; set '
+          'LLAMADART_STT_STREAM_QWEN_MODEL_PATH / _MMPROJ_PATH).',
+      requiresDevice: false,
+      stepsBuilder: (context) => [
+        LocalE2eCommandStep(
+          workingDirectory: context.projectRoot,
+          executable: 'dart',
+          arguments: const [
+            'test',
+            '--run-skipped',
+            '-t',
+            'local-only',
+            'test/e2e/backends/qwen_windowed_asr_e2e_test.dart',
+          ],
+          environment: {
+            for (final key in const [
+              'LLAMADART_STT_LIVE_PACED',
+              'LLAMADART_STT_STREAM_QWEN_MODEL_PATH',
+              'LLAMADART_STT_STREAM_QWEN_MMPROJ_PATH',
+              'LLAMADART_STT_STREAM_AUDIO_PATH',
+              'LLAMADART_STT_WINDOWED_SECOND_AUDIO_PATH',
+              'LLAMADART_STT_MODEL_PATH',
+              'LLAMADART_STT_MMPROJ_PATH',
+            ])
+              if (Platform.environment[key] != null)
+                key: Platform.environment[key]!,
+          },
+          description: 'Opt-in Qwen3-ASR windowed live PCM E2E',
+        ),
+      ],
+    ),
+    LocalE2eScenario(
       name: 'litert-lm-asr-smoke',
       group: LocalE2eScenarioGroup.dartLocalOnly,
       description:

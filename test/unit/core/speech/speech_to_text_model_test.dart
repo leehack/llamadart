@@ -38,6 +38,18 @@ void main() {
     });
   });
 
+  group('Qwen3WindowedAsrAdapter', () {
+    const adapter = Qwen3WindowedAsrAdapter();
+
+    test('extends Qwen3AsrAdapter and rejects context prompts', () {
+      expect(adapter, isA<Qwen3AsrAdapter>());
+      expect(adapter.name, 'Qwen3-ASR');
+      expect(adapter.supportsContextPrompt, isFalse);
+      expect(adapter.supportsLanguageHints, isFalse);
+      expect(adapter.supportsLanguageDetection, isFalse);
+    });
+  });
+
   test('LiteRtLmAsrAdapter defaults match the runtime config', () {
     const adapter = LiteRtLmAsrAdapter(LiteRtLmAsrModelPreset.moonshineTiny);
     const config = LiteRtLmAsrRuntimeConfig(
