@@ -175,7 +175,9 @@ const params = LlamaCppModelParams(
   `llamadart-native` v1.0.0-2 or later, both counting other processes' VRAM in
   the free figure). On Windows, CUDA TCC or `GGML_CUDA_DEVICES` virtual devices
   cannot read system-wide free memory and are refused with
-  `LlamaGpuMemoryFitException`.
+  `LlamaGpuMemoryFitException`. For the Windows system commit limit on very large
+  contexts, see
+  [Known platform issues](../platforms/known-platform-issues#linux-and-windows).
 
 ```dart
 const params = LlamaCppModelParams(
