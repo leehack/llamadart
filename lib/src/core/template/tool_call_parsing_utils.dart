@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import '../exceptions.dart';
+import '../grammar/json_schema_converter.dart';
 import '../grammar/json_value_depth.dart';
 import '../models/chat/completion_chunk.dart';
 
@@ -239,8 +240,9 @@ class ToolCallParsingUtils {
   /// null.
   ///
   /// [payload] must end with `}}]` and the model never wrote the closing
-  /// quote. The string holds no `<|` and does not end with a raw `"`, or a raw
-  /// `"` and `}`, which the grammar reads as part of an inner-quote run.
+  /// quote. The string holds no literal LFM2 end marker and does not end with
+  /// a raw `"`, or a raw `"` and `}`, which the grammar reads as part of an
+  /// inner-quote run.
   static List<Object?>? decodeJsonCallListWithUnclosedLastString(
     String payload,
   ) {
@@ -250,7 +252,14 @@ class ToolCallParsingUtils {
     final repaired = '$head"$closers';
     final out = StringBuffer();
     final innerQuotes = <int>[];
-    _scanInnerQuoteJson(repaired, 0, out, innerQuotes);
+    int? lastStringStart;
+    _scanInnerQuoteJson(
+      repaired,
+      0,
+      out,
+      innerQuotes: innerQuotes,
+      onStringValueStart: (start) => lastStringStart = start,
+    );
     final decoded = decodeJsonValue(out.toString());
     if (decoded is! List || decoded.isEmpty) return null;
     final call = decoded.last;
@@ -258,7 +267,12 @@ class ToolCallParsingUtils {
     final arguments = call['arguments'] as Map;
     if (arguments.isEmpty) return null;
     final last = arguments.values.last;
-    if (last is! String || last.contains('<|')) return null;
+    final start = lastStringStart;
+    if (last is! String ||
+        start == null ||
+        head.indexOf(JsonSchemaConverter.lfm2EndMarker, start) != -1) {
+      return null;
+    }
     // A raw quote needs a character after it that the string can go on with.
     final lastInnerQuote = innerQuotes.isEmpty ? -1 : innerQuotes.last;
     if (lastInnerQuote == head.length - 1 ||
@@ -280,12 +294,14 @@ class ToolCallParsingUtils {
   /// opens at [start], or null when that container is unclosed.
   ///
   /// [innerQuotes] collects the offset of every quote read as text.
+  /// [onStringValueStart] receives each value's opening quote offset.
   static int? _scanInnerQuoteJson(
     String text,
     int start,
-    StringBuffer? out, [
+    StringBuffer? out, {
     List<int>? innerQuotes,
-  ]) {
+    void Function(int)? onStringValueStart,
+  }) {
     final objects = <bool>[];
     var key = false;
     for (var i = start; i < text.length; i++) {
@@ -310,6 +326,7 @@ class ToolCallParsingUtils {
         }
         continue;
       }
+      if (!key) onStringValueStart?.call(i);
       for (i++; i < text.length; i++) {
         final inner = text[i];
         if (inner == r'\') {

@@ -8,6 +8,53 @@ import 'package:test/test.dart';
 import 'specialized_handler_test_fixtures.dart';
 
 void main() {
+  group('MiniMax M3 exact-start partial thought tags', () {
+    final rendered = ChatTemplateEngine.render(
+      templateSource: ']<]minimax[>[<tool_call><invoke name=',
+      messages: const [],
+      metadata: const {},
+    );
+    for (final (raw, content, reasoning, finalContent, finalReasoning) in [
+      ('Plan it </mm:thin', 'Plan it </mm:thin', '', 'Plan it </mm:thin', ''),
+      ('Answer<mm:thi', 'Answer<mm:thi', '', 'Answer<mm:thi', ''),
+      (
+        '<mm:think>Plan</mm:think>Answer</mm:th',
+        'Answer</mm:th',
+        'Plan',
+        'Answer</mm:th',
+        'Plan',
+      ),
+      ('</mm:think>Answer<mm:thi', 'Answer<mm:thi', '', 'Answer<mm:thi', ''),
+      (' <mm:thi', '<mm:thi', '', '<mm:thi', ''),
+      (' </mm:thi', '</mm:thi', '', '</mm:thi', ''),
+      ('<mm:thi', '', '', '<mm:thi', ''),
+      ('</mm:thi', '', '', '</mm:thi', ''),
+      ('<mm:think>Plan</mm:thi', '', 'Plan', '', 'Plan</mm:thi'),
+      ('<mm:think>Plan<mm:thi', '', 'Plan<mm:thi', '', 'Plan<mm:thi'),
+      ('<mm:think>Plan</mm:thiX', '', 'Plan</mm:thiX', '', 'Plan</mm:thiX'),
+      ('<mm:think>Plan</mm:think>Answer', 'Answer', 'Plan', 'Answer', 'Plan'),
+    ]) {
+      test(raw, () {
+        expect(rendered.format, ChatFormat.minimaxM3.index);
+        final partial = ChatTemplateEngine.parseRendered(
+          rendered,
+          raw,
+          isPartial: true,
+          parseToolCalls: false,
+        );
+        expect(partial.content, content);
+        expect(partial.reasoningContent ?? '', reasoning);
+        final complete = ChatTemplateEngine.parseRendered(
+          rendered,
+          raw,
+          parseToolCalls: false,
+        );
+        expect(complete.content, finalContent);
+        expect(complete.reasoningContent ?? '', finalReasoning);
+      });
+    }
+  });
+
   group('MiniMax M1', () {
     test('parses parallel newline-delimited calls and surrounding content', () {
       const output =

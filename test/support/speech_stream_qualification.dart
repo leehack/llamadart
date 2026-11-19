@@ -191,13 +191,16 @@ String currentHostArch() {
   return abi.toString();
 }
 
-Duration voxtralSpeechStreamTimeout(
-  Duration baseTimeout, {
+({Duration short, Duration timed}) voxtralSpeechStreamTimeouts({
   required String arch,
   required String backend,
 }) {
   // At RTF 4.3, the 300 s run takes over 21 minutes before setup and warm-up.
-  return arch == 'x64' && backend == 'cpu' ? baseTimeout * 3 : baseTimeout;
+  final scale = arch == 'x64' && backend == 'cpu' ? 3 : 1;
+  return (
+    short: const Duration(minutes: 10) * scale,
+    timed: const Duration(minutes: 15) * scale,
+  );
 }
 
 String resolveEffectiveBackendKey({

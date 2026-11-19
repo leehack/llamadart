@@ -83,11 +83,20 @@ class _NotebookWorkspaceViewState extends State<NotebookWorkspaceView> {
   Future<AudioPlayer?> _ensureAudioPlayer() async {
     final player = await _audioPlayback.getOrCreate();
     if (player == null || !mounted) return null;
-    _playerCompleteSub ??= player.onPlayerComplete.listen((_) {
-      if (mounted) {
-        setState(() => _playingNoteId = null);
-      }
-    });
+    _playerCompleteSub ??= player.onPlayerComplete.listen(
+      (_) {
+        if (mounted) {
+          setState(() => _playingNoteId = null);
+        }
+      },
+      onError: (Object error, StackTrace stackTrace) {
+        if (!mounted) return;
+        if (_playingNoteId != null) {
+          setState(() => _playingNoteId = null);
+        }
+        _showPlaybackError(error);
+      },
+    );
     _playerStateSub ??= player.onPlayerStateChanged.listen((PlayerState state) {
       if (!mounted) {
         return;
@@ -574,12 +583,16 @@ class _NotebookWorkspaceViewState extends State<NotebookWorkspaceView> {
       if (_playbackSequence == seq) {
         setState(() => _playingNoteId = null);
       }
-      ScaffoldMessenger.maybeOf(context)?.showSnackBar(
-        SnackBar(
-          content: Text('Audio playback failed: ${humanizeStudioError(error)}'),
-        ),
-      );
+      _showPlaybackError(error);
     }
+  }
+
+  void _showPlaybackError(Object error) {
+    ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+      SnackBar(
+        content: Text('Audio playback failed: ${humanizeStudioError(error)}'),
+      ),
+    );
   }
 
   Future<void> _sendVaultToChat(StudioDependencies deps) async {

@@ -2,6 +2,7 @@
 library;
 
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'dart:ui' as ui;
 
@@ -16,6 +17,33 @@ import 'package:llamadart_studio_core/llamadart_studio_core.dart';
 import 'package:path/path.dart' as p;
 
 import 'studio_widget_test_helpers.dart';
+
+Future<void> _waitUntil(
+  WidgetTester tester,
+  bool Function() predicate,
+  String description,
+) async {
+  final elapsed = Stopwatch()..start();
+  while (!predicate()) {
+    if (elapsed.elapsed > const Duration(seconds: 5)) {
+      fail('Timed out waiting for $description.');
+    }
+    await tester.pump();
+    await tester.runAsync(() => Future<void>.delayed(Duration.zero));
+  }
+  await tester.pump();
+}
+
+Future<void> _waitForSingleRevert(
+  WidgetTester tester,
+  CodingWorkspaceController controller,
+) async {
+  expect(controller.state.recentChanges, hasLength(1));
+  await _waitUntil(tester, () {
+    expect(controller.state.recentChanges, hasLength(1));
+    return controller.state.recentChanges.first.reverted;
+  }, 'reverted change');
+}
 
 class _FileInference extends FakeInferencePort {
   final events = StreamController<StudioTurnEvent>();
@@ -220,10 +248,12 @@ void main() {
           alignment: 0.5,
         );
         await tester.pumpAndSettle();
-        await tester.runAsync(() async {
-          await tester.tap(find.text('write({"path":"main.dart"})'));
-          await Future<void>.delayed(const Duration(milliseconds: 60));
-        });
+        await tester.tap(find.text('write({"path":"main.dart"})'));
+        await _waitUntil(
+          tester,
+          () => deps.codingController.state.selectedFilePath == 'main.dart',
+          'main.dart preview',
+        );
         await tester.pumpAndSettle();
         expect(
           find.byKey(const Key('coding_file_syntax_preview')),
@@ -238,15 +268,8 @@ void main() {
           alignment: 0.5,
         );
         await tester.pumpAndSettle();
-        await tester.runAsync(() async {
-          await tester.tap(find.text('Revert'));
-          for (var i = 0; i < 250; i++) {
-            if (deps.codingController.state.recentChanges.single.reverted) {
-              break;
-            }
-            await Future<void>.delayed(const Duration(milliseconds: 20));
-          }
-        });
+        await tester.tap(find.text('Revert'));
+        await _waitForSingleRevert(tester, deps.codingController);
         await tester.pumpAndSettle();
         expect(file.readAsStringSync(), 'before');
         expect(
@@ -368,10 +391,12 @@ void main() {
     await tester.tap(find.text('Files (1)'));
     await tester.pumpAndSettle();
     await tester.enterText(find.byType(TextFormField), 'main');
-    await tester.runAsync(() async {
-      await tester.tap(find.byKey(const Key('coding_file_main.dart')));
-      await Future<void>.delayed(const Duration(milliseconds: 60));
-    });
+    await tester.tap(find.byKey(const Key('coding_file_main.dart')));
+    await _waitUntil(
+      tester,
+      () => deps.codingController.state.selectedFilePath == 'main.dart',
+      'main.dart preview',
+    );
     await tester.pumpAndSettle();
     final detail = find.byKey(const Key('coding_back_to_files'));
     expect(detail, findsOneWidget);
@@ -560,10 +585,12 @@ void main() {
         tester.getSize(find.byKey(const Key('coding_revert_change_0'))).height,
         greaterThanOrEqualTo(44),
       );
-      await tester.runAsync(() async {
-        await tester.tap(find.text('main.dart'));
-        await Future<void>.delayed(const Duration(milliseconds: 60));
-      });
+      await tester.tap(find.text('main.dart'));
+      await _waitUntil(
+        tester,
+        () => deps.codingController.state.selectedFilePath == 'main.dart',
+        'main.dart preview',
+      );
       await tester.pumpAndSettle();
       final preview = find.byKey(const Key('coding_file_syntax_preview'));
       expect(preview, findsOneWidget);
@@ -614,10 +641,12 @@ void main() {
       expect(tester.widget<TextField>(prompt).controller!.text, 'Retain draft');
       // Missing file after the list was populated must stay in Files with details.
       file.deleteSync();
-      await tester.runAsync(() async {
-        await tester.tap(find.byKey(const Key('coding_file_main.dart')));
-        await Future<void>.delayed(const Duration(milliseconds: 60));
-      });
+      await tester.tap(find.byKey(const Key('coding_file_main.dart')));
+      await _waitUntil(
+        tester,
+        () => deps.codingController.state.lastError != null,
+        'missing file error',
+      );
       await tester.pumpAndSettle();
       expect(preview, findsNothing);
       expect(find.byKey(const Key('coding_error_banner')), findsOneWidget);
@@ -636,10 +665,14 @@ void main() {
       ).join('\n\n');
       await tester.tap(find.text('Agent'));
       await tester.pumpAndSettle();
-      await tester.runAsync(() async {
-        await tester.tap(find.byKey(const Key('coding_send_button')));
-        await Future<void>.delayed(const Duration(milliseconds: 60));
-      });
+      await tester.tap(find.byKey(const Key('coding_send_button')));
+      await _waitUntil(
+        tester,
+        () =>
+            !deps.codingController.activeStreamStore.state.isGenerating &&
+            deps.codingController.state.messages.length >= 2,
+        'chat turn completion',
+      );
       await tester.pumpAndSettle();
       final conversation = tester.widget<ListView>(
         find.byKey(const Key('coding_conversation')),
@@ -655,10 +688,15 @@ void main() {
       await tester.ensureVisible(find.text('write({"path":"main.dart"})'));
       await tester.pumpAndSettle();
       await _capture(tester, '390-task-tool-card');
-      await tester.runAsync(() async {
-        await tester.tap(find.text('write({"path":"main.dart"})'));
-        await Future<void>.delayed(const Duration(milliseconds: 60));
-      });
+      await tester.tap(find.text('write({"path":"main.dart"})'));
+      await _waitUntil(
+        tester,
+        () =>
+            deps.codingController.state.selectedFilePath == 'main.dart' &&
+            deps.codingController.state.lastError == null &&
+            preview.evaluate().isNotEmpty,
+        'main.dart preview',
+      );
       await tester.pumpAndSettle();
       expect(preview, findsOneWidget);
       expect(deps.codingController.state.includeSelectedFileContext, isFalse);
@@ -666,24 +704,22 @@ void main() {
       file.writeAsStringSync('concurrent edit');
       await tester.tap(find.text('Edits (1)'));
       await tester.pumpAndSettle();
-      await tester.runAsync(() async {
-        await tester.tap(find.byKey(const Key('coding_revert_change_0')));
-        await Future<void>.delayed(const Duration(milliseconds: 60));
-      });
+      await tester.tap(find.byKey(const Key('coding_revert_change_0')));
+      await _waitUntil(
+        tester,
+        () => deps.codingController.state.lastError != null,
+        'concurrent-edit revert error',
+      );
       await tester.pumpAndSettle();
+      expect(deps.codingController.state.lastError, isNotNull);
       expect(file.readAsStringSync(), 'concurrent edit');
       expect(
         deps.codingController.state.recentChanges.single.reverted,
         isFalse,
       );
       file.writeAsStringSync('after owned write');
-      await tester.runAsync(() async {
-        await tester.tap(find.byKey(const Key('coding_revert_change_0')));
-        for (var i = 0; i < 250; i++) {
-          if (deps.codingController.state.recentChanges.single.reverted) break;
-          await Future<void>.delayed(const Duration(milliseconds: 20));
-        }
-      });
+      await tester.tap(find.byKey(const Key('coding_revert_change_0')));
+      await _waitForSingleRevert(tester, deps.codingController);
       await tester.pumpAndSettle();
       expect(file.readAsStringSync(), 'before');
       expect(deps.codingController.state.recentChanges.single.reverted, isTrue);
@@ -814,10 +850,12 @@ void main() {
     await _mount(tester, deps, const Size(1280, 900));
     await tester.tap(find.byKey(const Key('coding_explorer_toggle')));
     await tester.pumpAndSettle();
-    await tester.runAsync(() async {
-      await tester.tap(find.byKey(const Key('coding_file_desktop.dart')));
-      await Future<void>.delayed(const Duration(milliseconds: 60));
-    });
+    await tester.tap(find.byKey(const Key('coding_file_desktop.dart')));
+    await _waitUntil(
+      tester,
+      () => deps.codingController.state.selectedFilePath == 'desktop.dart',
+      'desktop.dart preview',
+    );
     await tester.pumpAndSettle();
     expect(find.byKey(const Key('coding_file_syntax_preview')), findsOneWidget);
     expect(find.text('Explorer'), findsOneWidget);
@@ -880,4 +918,141 @@ void main() {
     expect((await cancelled as Map)['rejected'], isTrue);
     await tester.pumpWidget(const SizedBox.shrink());
   });
+
+  testWidgets(
+    'Chat-card Revert button disables while in flight and re-enables on failure',
+    (tester) async {
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      final inference = _FileInference();
+      final root = Directory.systemTemp.createTempSync('coding_revert_guard_');
+      addTearDown(() => root.deleteSync(recursive: true));
+      final deps = await buildTestDeps(
+        isMobile: true,
+        appDataDirectory: root.path,
+        inferencePort: inference,
+      );
+      addTearDown(deps.dispose);
+      addTearDown(() => unawaited(inference.events.close()));
+      final file = File('${root.path}/main.dart')..writeAsStringSync('before');
+      await tester.runAsync(() async {
+        await deps.codingController.setWorkspaceRoot(root.path);
+        await deps.codingController
+            .buildCodingTools()
+            .firstWhere((t) => t.name == 'write')
+            .invoke({'path': 'main.dart', 'content': 'after'});
+        await deps.codingController.sendCodingPrompt('Edit main.dart');
+      });
+      await deps.shellController.selectWorkspace(StudioWorkspace.coding);
+      await _mount(tester, deps, const Size(390, 844));
+      await Scrollable.ensureVisible(
+        tester.element(find.text('Revert')),
+        alignment: 0.5,
+      );
+      await tester.pumpAndSettle();
+
+      ButtonStyleButton revertButton() => tester.widget<ButtonStyleButton>(
+        find.ancestor(
+          of: find.text('Revert'),
+          matching: find.bySubtype<ButtonStyleButton>(),
+        ),
+      );
+
+      expect(revertButton().enabled, isTrue);
+
+      final overrides = _GatedRevertOverrides();
+      await IOOverrides.runWithIOOverrides(() async {
+        await tester.tap(find.text('Revert'));
+        await _waitUntil(
+          tester,
+          () => overrides.entered.isCompleted,
+          'in-flight revert',
+        );
+        expect(revertButton().enabled, isFalse);
+        overrides.release.completeError(const FileSystemException('disk full'));
+        await _waitUntil(
+          tester,
+          () => deps.codingController.state.lastError != null,
+          'revert failure',
+        );
+      }, overrides);
+      await tester.pumpAndSettle();
+
+      expect(
+        deps.codingController.state.recentChanges.single.reverted,
+        isFalse,
+      );
+      expect(revertButton().enabled, isTrue);
+
+      await tester.tap(find.text('Revert'));
+      await _waitForSingleRevert(tester, deps.codingController);
+      await tester.pumpAndSettle();
+      expect(file.readAsStringSync(), 'before');
+      expect(find.text('REVERTED'), findsOneWidget);
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+  );
+}
+
+final class _GatedRevertOverrides extends IOOverrides {
+  final Completer<void> entered = Completer<void>();
+  final Completer<void> release = Completer<void>();
+
+  @override
+  File createFile(String path) {
+    final file = super.createFile(path);
+    return path.replaceAll(r'\', '/').endsWith('/main.dart')
+        ? _GatedRevertFile(file, entered, release)
+        : file;
+  }
+}
+
+class _GatedRevertFile implements File {
+  _GatedRevertFile(this.delegate, this.entered, this.release);
+  final File delegate;
+  final Completer<void> entered;
+  final Completer<void> release;
+
+  @override
+  Future<bool> exists() => delegate.exists();
+
+  @override
+  Future<int> length() => delegate.length();
+
+  @override
+  String resolveSymbolicLinksSync() => delegate.resolveSymbolicLinksSync();
+
+  @override
+  Directory get parent => delegate.parent;
+
+  @override
+  Future<String> readAsString({Encoding encoding = utf8}) =>
+      delegate.readAsString(encoding: encoding);
+
+  @override
+  Stream<List<int>> openRead([int? start, int? end]) =>
+      delegate.openRead(start, end);
+
+  @override
+  Future<RandomAccessFile> open({FileMode mode = FileMode.read}) =>
+      delegate.open(mode: mode);
+
+  @override
+  Future<File> writeAsString(
+    String contents, {
+    FileMode mode = FileMode.write,
+    Encoding encoding = utf8,
+    bool flush = false,
+  }) async {
+    if (!entered.isCompleted) entered.complete();
+    await release.future;
+    return delegate.writeAsString(
+      contents,
+      mode: mode,
+      encoding: encoding,
+      flush: flush,
+    );
+  }
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }

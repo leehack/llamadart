@@ -3020,11 +3020,16 @@ void main() {
     const call =
         '<|tool_call_start|>[{"name": "weather", '
         '"arguments": {"city": "Seoul"}}]<|tool_call_end|>';
+    const open =
+        '<|tool_call_start|>[{"name": "weather", '
+        '"arguments": {"city": "Seoul <| Busan}}]<|tool_call_end|>';
     _expectGrammar(
       validator,
       rendered.grammar!,
-      valid: [call],
+      valid: [call, open],
       invalid: [
+        '$open more text"}}]<|tool_call_end|>',
+        open.replaceFirst(' <| ', ' <|tool_call_end|> '),
         call.replaceFirst('}}]', '}, "id": "call_0"}]'),
         call.replaceFirst('"weather"', '"unknown"'),
         call.replaceFirst('"city"', '"town"'),

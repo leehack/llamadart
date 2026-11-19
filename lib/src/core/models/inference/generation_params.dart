@@ -953,7 +953,8 @@ class GenerationParams {
   ///
   /// The native llama.cpp backend keeps an eager grammar applied while budgeted
   /// reasoning is active only when its root takes the forced-open thought
-  /// (`think-body` or `seed-thought`). Every lazy grammar, whatever its root,
+  /// (`think-body` or `seed-thought`), including Granite's required-call
+  /// grammar with a forced-open thought. Every lazy grammar, whatever its root,
   /// and every other grammar, including the required tool-call grammars of
   /// Qwen3-Coder XML, Ling 3, DeepSeek R1/V3.2/V4, Laguna, Kimi K3 and
   /// MiniMax M3, waits and restarts after the thought. Native LiteRT-LM applies

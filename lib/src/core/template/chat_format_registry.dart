@@ -95,6 +95,7 @@ final class ChatFormatTraits {
     this.forcedThoughtContentOpenings = const [],
     this.budgetThoughtClosePrefix = '',
     this.mayEmbedToolEnvelopeAfterContent = false,
+    this.handlerOwnsPartialToolContent = false,
     this.retainsTextAroundToolCalls = false,
     this.endsThoughtAtToolCallOpening = false,
     this.hasRepeatedContentChannels = false,
@@ -158,6 +159,9 @@ final class ChatFormatTraits {
   /// Whether a tool envelope may follow content, so a stream with tools
   /// parses from its first token instead of deciding from how output starts.
   final bool mayEmbedToolEnvelopeAfterContent;
+
+  /// Whether the handler alone withholds its tool envelopes in partial parses.
+  final bool handlerOwnsPartialToolContent;
 
   /// Whether the parse keeps the text around tool calls as content, so a
   /// reply that starts with a call still streams the content it returns.
@@ -239,6 +243,8 @@ chatFormatRegistrations = List.unmodifiable(<ChatFormatRegistration>[
       takesThoughtOnlyAtReplyStart: true,
       thoughtStartsReplyExactly: true,
       mayEmbedToolEnvelopeAfterContent: true,
+      handlerOwnsPartialToolContent: true,
+      retainsTextAroundToolCalls: true,
     ),
   ),
   // DeepSeek V3.2/V4 DSML family. The marker is assembled from a Jinja
