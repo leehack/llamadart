@@ -62,11 +62,12 @@ class CoreArchiveTest(unittest.TestCase):
                 with self.subTest(bad=bad), self.assertRaises(ValueError):
                     archive.archive_files(bad, root)
 
-    def test_private_harness_and_chat_must_both_be_absent(self):
+    def test_checkout_only_files_must_be_absent(self):
         valid = ['pubspec.yaml', 'lib/llamadart.dart', 'hook/build.dart',
                  'example/basic_app/pubspec.yaml',
                  'example/basic_app/bin/llamadart_litert_embedding_example.dart']
-        self.assertEqual(archive.archive_errors(valid), [])
+        self.assertEqual(
+            archive.archive_errors(valid + ['example/basic_app/assets/demo.wav']), [])
         for path in ('packages/llamadart_validation/lib/llamadart_validation.dart',
                      'example/chat_app/pubspec.yaml',
                      'packages/genkit_llamadart/pubspec.yaml',
@@ -74,6 +75,10 @@ class CoreArchiveTest(unittest.TestCase):
                      'packages/llamadart_studio_core/pubspec.yaml',
                      'packages/llamadart_studio/pubspec.yaml'):
             self.assertTrue(archive.archive_errors(valid + [path]), path)
+        for path in ('test/fixtures/librispeech_dev_clean/1272-128104-0000.wav',
+                     'test/e2e/backends/fixtures/clip.FLAC'):
+            self.assertEqual(archive.archive_errors(valid + [path]),
+                             ['checkout-only test audio included: ' + path])
         for path in valid:
             self.assertTrue(archive.archive_errors([p for p in valid if p != path]), path)
 

@@ -73,3 +73,6 @@ AGENTS.md
 # rather than shipping an example whose local dependency cannot resolve.
 /packages/llamadart_validation/
 /example/chat_app/
+
+# The local speech smoke reads this fixture from the checkout.
+/test/fixtures/librispeech_dev_clean/
