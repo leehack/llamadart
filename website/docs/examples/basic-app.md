@@ -24,10 +24,6 @@ Variants:
 # Embeddings (downloads embeddinggemma-300M-Q8_0.gguf, 334 MB)
 dart run bin/llamadart_embedding_example.dart -i "hello world" -i "rag"
 
-# LiteRT-LM media embeddings: supply a compatible embedding bundle and image
-# (CPU only; no automatic model download)
-dart run bin/llamadart_litert_embedding_example.dart model.litertlm image.png
-
 # Retrieval: embeddings stored and searched in SQLite with sqlite_vector
 dart run bin/llamadart_sqlite_vector_example.dart \
   -q "How do I improve embedding throughput?" \
@@ -42,6 +38,26 @@ dart run bin/llamadart_decision_example.dart
 # runtime and the pinned sdxs-512-tinySDdistilled_Q8_0.gguf, 683 MB);
 # Ctrl-C cancels
 dart run bin/llamadart_image_example.dart -p "a red fox in autumn leaves"
+```
+
+For LiteRT-LM media embeddings on CPU, first add `litert_lm` to
+`llamadart_native_runtimes` in `example/basic_app/pubspec.yaml` (the example's
+checked-in list omits `litert_lm` so GGUF and image runs skip downloading it;
+`all` also keeps all three):
+
+```yaml
+hooks:
+  user_defines:
+    llamadart:
+      llamadart_native_runtimes: [llama_cpp, litert_lm, stable_diffusion]
+```
+
+Then run `dart pub get` and supply an existing compatible `.litertlm` embedding
+bundle and local PNG or JPEG (CPU only; macOS arm64, iOS arm64, Android arm64,
+Linux x64/arm64, or Windows x64; no automatic model download):
+
+```bash
+dart run bin/llamadart_litert_embedding_example.dart model.litertlm image.png
 ```
 
 ## What it demonstrates
