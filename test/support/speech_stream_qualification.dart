@@ -96,11 +96,81 @@ final Map<SpeechStreamProfileKey, int> speechStreamMemoryCeilings =
         mode: SpeechStreamPacingMode.fast,
       ): 416 * _mibBytes,
       SpeechStreamProfileKey(
+        family: SpeechStreamFamily.voxtral,
+        hostOs: 'macos',
+        arch: 'arm64',
+        backend: 'cpu',
+        mode: SpeechStreamPacingMode.paced,
+      ): 416 * _mibBytes,
+      SpeechStreamProfileKey(
         family: SpeechStreamFamily.lfm3,
         hostOs: 'macos',
         arch: 'arm64',
         backend: 'cpu',
         mode: SpeechStreamPacingMode.fast,
+      ): 64 * _mibBytes,
+      SpeechStreamProfileKey(
+        family: SpeechStreamFamily.lfm3,
+        hostOs: 'macos',
+        arch: 'arm64',
+        backend: 'cpu',
+        mode: SpeechStreamPacingMode.paced,
+      ): 64 * _mibBytes,
+      SpeechStreamProfileKey(
+        family: SpeechStreamFamily.voxtral,
+        hostOs: 'linux',
+        arch: 'x64',
+        backend: 'cpu',
+        mode: SpeechStreamPacingMode.fast,
+      ): 416 * _mibBytes,
+      SpeechStreamProfileKey(
+        family: SpeechStreamFamily.voxtral,
+        hostOs: 'linux',
+        arch: 'x64',
+        backend: 'cpu',
+        mode: SpeechStreamPacingMode.paced,
+      ): 416 * _mibBytes,
+      SpeechStreamProfileKey(
+        family: SpeechStreamFamily.lfm3,
+        hostOs: 'linux',
+        arch: 'x64',
+        backend: 'cpu',
+        mode: SpeechStreamPacingMode.fast,
+      ): 64 * _mibBytes,
+      SpeechStreamProfileKey(
+        family: SpeechStreamFamily.lfm3,
+        hostOs: 'linux',
+        arch: 'x64',
+        backend: 'cpu',
+        mode: SpeechStreamPacingMode.paced,
+      ): 64 * _mibBytes,
+      SpeechStreamProfileKey(
+        family: SpeechStreamFamily.voxtral,
+        hostOs: 'windows',
+        arch: 'x64',
+        backend: 'cpu',
+        mode: SpeechStreamPacingMode.fast,
+      ): 384 * _mibBytes,
+      SpeechStreamProfileKey(
+        family: SpeechStreamFamily.voxtral,
+        hostOs: 'windows',
+        arch: 'x64',
+        backend: 'cpu',
+        mode: SpeechStreamPacingMode.paced,
+      ): 384 * _mibBytes,
+      SpeechStreamProfileKey(
+        family: SpeechStreamFamily.lfm3,
+        hostOs: 'windows',
+        arch: 'x64',
+        backend: 'cpu',
+        mode: SpeechStreamPacingMode.fast,
+      ): 64 * _mibBytes,
+      SpeechStreamProfileKey(
+        family: SpeechStreamFamily.lfm3,
+        hostOs: 'windows',
+        arch: 'x64',
+        backend: 'cpu',
+        mode: SpeechStreamPacingMode.paced,
       ): 64 * _mibBytes,
     });
 
@@ -119,6 +189,15 @@ String currentHostArch() {
     return 'x64';
   }
   return abi.toString();
+}
+
+Duration voxtralSpeechStreamTimeout(
+  Duration baseTimeout, {
+  required String arch,
+  required String backend,
+}) {
+  // At RTF 4.3, the 300 s run takes over 21 minutes before setup and warm-up.
+  return arch == 'x64' && backend == 'cpu' ? baseTimeout * 3 : baseTimeout;
 }
 
 String resolveEffectiveBackendKey({
@@ -169,26 +248,22 @@ String? requireSpeechStreamInput(
   return trimmed;
 }
 
-/// Prepares [dirPath] for a fresh run's receipts by clearing any existing
-/// `.json` receipt files (or failing if [refuseNonEmpty] is true and any exist).
+/// Prepares [dirPath] for a fresh run by clearing known leg receipts.
+/// With [refuseNonEmpty], an existing leg receipt causes an error.
 void prepareReceiptDir(String dirPath, {bool refuseNonEmpty = false}) {
   final dir = Directory(dirPath);
   if (!dir.existsSync()) {
     dir.createSync(recursive: true);
     return;
   }
-  final existing = dir
-      .listSync()
-      .whereType<File>()
-      .where((f) => f.path.endsWith('.json'))
-      .toList();
+  final existing = speechStreamReceiptFiles(dir).toList();
   if (existing.isEmpty) {
     return;
   }
   if (refuseNonEmpty) {
     throw StateError(
       'Receipt directory is not empty: $dirPath '
-      '(${existing.length} existing .json files).',
+      '(${existing.length} existing leg receipts).',
     );
   }
   for (final file in existing) {
@@ -745,6 +820,15 @@ const List<String> requiredSpeechStreamQualificationLegIds = <String>[
   'lfm3_paced',
   'qwen_refusal',
 ];
+
+Iterable<File> speechStreamReceiptFiles(Directory directory) sync* {
+  for (final legId in requiredSpeechStreamQualificationLegIds) {
+    final file = File('${directory.path}/$legId.json');
+    if (file.existsSync()) {
+      yield file;
+    }
+  }
+}
 
 final class SpeechStreamLegReceipt {
   const SpeechStreamLegReceipt({

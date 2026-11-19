@@ -540,6 +540,22 @@ void main() {
   final hasLfm3 = _exists(lfm3Model) && _exists(lfm3Mmproj);
   final hasQwen = _exists(qwenModel) && _exists(qwenMmproj);
   final runPaced = _shouldRunPaced();
+  final arch = currentHostArch();
+  final backend = _requestedBackend();
+  final voxtralShortTimeout = Timeout(
+    voxtralSpeechStreamTimeout(
+      const Duration(minutes: 10),
+      arch: arch,
+      backend: backend,
+    ),
+  );
+  final voxtralTimedTimeout = Timeout(
+    voxtralSpeechStreamTimeout(
+      const Duration(minutes: 15),
+      arch: arch,
+      backend: backend,
+    ),
+  );
 
   test(
     'Voxtral Realtime short parity, irregular chunkings, truncation, cancel/reuse',
@@ -694,7 +710,7 @@ void main() {
         ? 'Set LLAMADART_STT_STREAM_VOXTRAL_MODEL_PATH and '
               'LLAMADART_STT_STREAM_VOXTRAL_MMPROJ_PATH (and jfk.wav).'
         : false,
-    timeout: const Timeout(Duration(minutes: 10)),
+    timeout: voxtralShortTimeout,
   );
 
   test(
@@ -730,7 +746,7 @@ void main() {
         ? 'Set LLAMADART_STT_STREAM_VOXTRAL_MODEL_PATH and '
               'LLAMADART_STT_STREAM_VOXTRAL_MMPROJ_PATH (and jfk.wav).'
         : false,
-    timeout: const Timeout(Duration(minutes: 15)),
+    timeout: voxtralTimedTimeout,
   );
 
   test(
@@ -766,7 +782,7 @@ void main() {
         ? 'Set LLAMADART_STT_LIVE_PACED=1 (or LLAMADART_STT_STREAM_QUALIFY=1) '
               'and Voxtral model/mmproj paths.'
         : false,
-    timeout: const Timeout(Duration(minutes: 15)),
+    timeout: voxtralTimedTimeout,
   );
 
   test(

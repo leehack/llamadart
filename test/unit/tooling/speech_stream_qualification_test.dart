@@ -1,12 +1,14 @@
 @TestOn('vm')
 library;
 
+import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:test/test.dart';
 
 import '../../support/speech_stream_qualification.dart';
+import 'support/bounded_process.dart';
 
 void main() {
   group('SpeechStreamQualification threshold logic', () {
@@ -29,70 +31,71 @@ void main() {
       expect(computeCalibratedCeilingBytes([64 * mib]), 96 * mib);
     });
 
-    test(
-      'looks up checked-in ceilings by family, host, arch, backend, mode',
-      () {
-        const mib = 1024 * 1024;
-        expect(
-          lookupMemoryCeilingBytes(
-            const SpeechStreamProfileKey(
-              family: SpeechStreamFamily.voxtral,
-              hostOs: 'macos',
-              arch: 'arm64',
+    for (final (os, arch, voxtralMiB) in const [
+      ('macos', 'arm64', 416),
+      ('linux', 'x64', 416),
+      ('windows', 'x64', 384),
+    ]) {
+      for (final mode in SpeechStreamPacingMode.values) {
+        test('looks up $os/$arch CPU ${mode.name} ceilings', () {
+          const mib = 1024 * 1024;
+          for (final (family, ceilingMiB) in [
+            (SpeechStreamFamily.voxtral, voxtralMiB),
+            (SpeechStreamFamily.lfm3, 64),
+          ]) {
+            final profile = SpeechStreamProfileKey(
+              family: family,
+              hostOs: os,
+              arch: arch,
               backend: 'cpu',
-              mode: SpeechStreamPacingMode.fast,
-            ),
-          ),
-          416 * mib,
-        );
-        expect(
-          lookupMemoryCeilingBytes(
-            const SpeechStreamProfileKey(
-              family: SpeechStreamFamily.lfm3,
-              hostOs: 'macos',
-              arch: 'arm64',
-              backend: 'cpu',
-              mode: SpeechStreamPacingMode.fast,
-            ),
-          ),
-          64 * mib,
-        );
+              mode: mode,
+            );
+            expect(
+              lookupMemoryCeilingBytes(profile),
+              ceilingMiB * mib,
+              reason: '$profile',
+            );
+          }
+        });
+      }
+    }
 
-        // Paced and other hosts are uncalibrated until measured.
-        for (final uncalibrated in const [
-          SpeechStreamProfileKey(
-            family: SpeechStreamFamily.voxtral,
-            hostOs: 'macos',
-            arch: 'arm64',
-            backend: 'cpu',
-            mode: SpeechStreamPacingMode.paced,
-          ),
-          SpeechStreamProfileKey(
-            family: SpeechStreamFamily.lfm3,
-            hostOs: 'macos',
-            arch: 'arm64',
-            backend: 'cpu',
-            mode: SpeechStreamPacingMode.paced,
-          ),
-          SpeechStreamProfileKey(
-            family: SpeechStreamFamily.voxtral,
-            hostOs: 'linux',
-            arch: 'x64',
-            backend: 'cpu',
-            mode: SpeechStreamPacingMode.fast,
-          ),
-          SpeechStreamProfileKey(
-            family: SpeechStreamFamily.voxtral,
-            hostOs: 'windows',
-            arch: 'x64',
-            backend: 'cuda',
-            mode: SpeechStreamPacingMode.fast,
-          ),
-        ]) {
-          expect(lookupMemoryCeilingBytes(uncalibrated), isNull);
+    test('leaves Windows x64 CUDA profiles uncalibrated', () {
+      for (final family in SpeechStreamFamily.values) {
+        for (final mode in SpeechStreamPacingMode.values) {
+          expect(
+            lookupMemoryCeilingBytes(
+              SpeechStreamProfileKey(
+                family: family,
+                hostOs: 'windows',
+                arch: 'x64',
+                backend: 'cuda',
+                mode: mode,
+              ),
+            ),
+            isNull,
+          );
         }
-      },
-    );
+      }
+    });
+
+    test('scales both Voxtral timeouts for x64 CPU', () {
+      for (final (baseMinutes, scaledMinutes) in const [(10, 30), (15, 45)]) {
+        final base = Duration(minutes: baseMinutes);
+        expect(
+          voxtralSpeechStreamTimeout(base, arch: 'x64', backend: 'cpu'),
+          Duration(minutes: scaledMinutes),
+        );
+        expect(
+          voxtralSpeechStreamTimeout(base, arch: 'arm64', backend: 'cpu'),
+          base,
+        );
+        expect(
+          voxtralSpeechStreamTimeout(base, arch: 'x64', backend: 'cuda'),
+          base,
+        );
+      }
+    });
 
     test(
       'evaluates budget with exact byte boundary and rejects uncalibrated',
@@ -360,6 +363,33 @@ void main() {
       expect(eval.failures, isNotEmpty);
     });
 
+    test('evaluates known receipt files alongside unrelated JSON', () async {
+      final dir = Directory.systemTemp.createTempSync('cei-receipt-evaluate-');
+      addTearDown(() => dir.deleteSync(recursive: true));
+      for (final leg in validLegs()) {
+        File(
+          '${dir.path}/${leg.legId}.json',
+        ).writeAsStringSync(jsonEncode(leg.toJson()));
+      }
+      File('${dir.path}/metadata.json').writeAsStringSync('{}');
+
+      final result = await runBoundedProcess(
+        Platform.resolvedExecutable,
+        [
+          'tool/testing/verify_speech_stream_qualification.dart',
+          '--evaluate',
+          '--receipt-dir',
+          dir.path,
+          '--backend',
+          'cpu',
+        ],
+        timeout: const Duration(seconds: 15),
+        environment: {'LLAMADART_STT_STREAM_COLLECT_BASELINE': '0'},
+      );
+      expect(result.exitCode, 0, reason: '${result.stdout}${result.stderr}');
+      expect(result.stdout, contains('qualification PASS (7 legs'));
+    });
+
     test('fails on missing LFM3 leg', () {
       final legs = validLegs()..removeWhere((l) => l.legId == 'lfm3_fast');
       final eval = evaluateQualificationReport(
@@ -507,18 +537,26 @@ void main() {
       },
     );
 
-    test('clears stale .json receipts and refuses when configured', () {
-      final tempDir = Directory.systemTemp.createTempSync('asrm_receipts_');
+    test('clears known leg receipts and preserves unrelated JSON', () {
+      final tempDir = Directory.systemTemp.createTempSync('cei-receipts-');
       addTearDown(() => tempDir.deleteSync(recursive: true));
-      final stale = File('${tempDir.path}/stale.json')..writeAsStringSync('{}');
-      expect(stale.existsSync(), isTrue);
+      final unrelated = File('${tempDir.path}/metadata.json')
+        ..writeAsStringSync('{"source":"manual"}');
+      final stale = [
+        for (final id in requiredSpeechStreamQualificationLegIds)
+          File('${tempDir.path}/$id.json')..writeAsStringSync('{}'),
+      ];
 
       expect(
         () => prepareReceiptDir(tempDir.path, refuseNonEmpty: true),
         throwsA(isA<StateError>()),
       );
+      expect(stale.every((file) => file.existsSync()), isTrue);
       prepareReceiptDir(tempDir.path);
-      expect(stale.existsSync(), isFalse);
+      expect(stale.any((file) => file.existsSync()), isFalse);
+      expect(unrelated.existsSync(), isTrue);
+      expect(unrelated.readAsStringSync(), '{"source":"manual"}');
+      prepareReceiptDir(tempDir.path, refuseNonEmpty: true);
     });
   });
 
@@ -527,6 +565,48 @@ void main() {
       final meter = SpeechStreamRssMeter();
       meter.startBaseline();
       expect(meter.baselineRssBytes, greaterThan(0));
+    });
+
+    test('throws for an uncalibrated profile in strict qualify mode', () async {
+      await expectLater(
+        runTimedSpeechStreamLeg(
+          legId: 'voxtral_fast',
+          family: SpeechStreamFamily.voxtral,
+          mode: SpeechStreamPacingMode.fast,
+          hostOs: 'windows',
+          arch: 'x64',
+          requestedBackend: 'cuda',
+          backendUsed: 'CUDA',
+          exposedDevices: const ['CPU', 'CUDA'],
+          resolvedGpuLayers: 99,
+          unitPcm: Float32List(4),
+          targetSamples: 4,
+          slabSize: 4,
+          meter: SpeechStreamRssMeter(readRssBytes: () => 100),
+          readPostDisposeRss: () => 100,
+          qualify: true,
+          runWarmup: () async {},
+          runMeasuredSession: (driveProducer) async {
+            await driveProducer((_) async {}, () {});
+            return const SpeechStreamTimedSessionResult(
+              flushDuration: Duration.zero,
+              audioDurationMs: 300000,
+              firstPartialWallMs: 1,
+              firstPartialAudioMs: 1,
+            );
+          },
+          disposeEngine: () async {},
+        ),
+        throwsA(
+          isA<StateError>().having(
+            (e) => e.message,
+            'message',
+            contains(
+              'voxtral/windows/x64/cuda/fast(ctx=4096,t=2) is uncalibrated',
+            ),
+          ),
+        ),
+      );
     });
 
     test(
