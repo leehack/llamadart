@@ -488,6 +488,35 @@ void main() {
     expect((seen.nBatch, seen.nUbatch), (4096, 4096));
   });
 
+  test(
+    'an automatic context measures distinct batch and micro-batch sizes',
+    () {
+      model = writeSyntheticLlamaGguf(
+        '${dir.path}/long-ubatch.gguf',
+        contextLength: 8192,
+      ).path;
+      fit.trainedContext = 8192;
+      start();
+      const requested = ModelParams(
+        contextSize: 0,
+        preferredBackend: GpuBackend.cuda,
+        gpuMemoryFit: GpuMemoryFit(marginBytes: _gib),
+        batchSize: 4096,
+        microBatchSize: 1024,
+      );
+      final handle = service.loadModel(model, requested);
+      try {
+        service.createContext(handle, requested);
+      } on Object {
+        // Only the recorded parameters matter.
+      }
+      final seen = fit.seen.single;
+      final created = recorder.contextConfigs.single;
+      expect((seen.nBatch, seen.nUbatch), (created.nBatch, created.nUbatch));
+      expect((seen.nBatch, seen.nUbatch), (4096, 1024));
+    },
+  );
+
   test('the fit measures the context that is created', () {
     start();
     final measured = ModelParams(

@@ -101,6 +101,22 @@ class QualificationControls(unittest.TestCase):
         self.assertTrue(v.scope('v0.9.0', True)['finalNative3Qualified'])
         self.assertFalse(v.scope('v1.0.0', False)['finalNative3Qualified'])
         self.assertTrue(v.scope('v1.0.0', True)['finalNative3Qualified'])
+        self.assertFalse(v.scope('v1.0.0-1', False)['finalNative3Qualified'])
+        self.assertTrue(v.scope('v1.0.0-1', True)['finalNative3Qualified'])
+
+    def test_legacy_v1_0_0_1_receipt_requires_legacy_native3_flag(self):
+        output = self.root / 'legacy-v1-0-0-1'
+        (output / 'logs').mkdir(parents=True)
+        qualify.seal_terminal(output, {'completed': True, **v.scope('v1.0.0-1', True)})
+        receipt = v.verify_seal(output)
+        self.assertTrue(receipt['finalNative3Qualified'])
+        with self.assertRaisesRegex(v.Refusal, 'terminal native3 scope contradicts completion'):
+            qualify.seal_terminal(output, {
+                'completed': True,
+                **v.scope('v1.0.0-1', True),
+                'finalNative3Qualified': False,
+            })
+            v.verify_seal(output)
 
     def test_tag_is_verification_only_and_mismatch_refused(self):
         for tag in v.TAGS:
