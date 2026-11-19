@@ -51,14 +51,16 @@ An engine reaches its runtime through `LlamaBackend`. The
 
 ## Where to go next
 
-- **New to llamadart:** [Install it](./getting-started/installation), then
-  run the [Quickstart](./getting-started/quickstart).
-- **Building a Flutter app:** follow the
-  [Flutter chat app tutorial](./tutorials/flutter-chat-app).
-- **Choosing a model:** [Finding models](./getting-started/finding-models) and
-  [Model families](./getting-started/model-families).
-- **Answering from your own documents:** the
-  [RAG tutorial](./tutorials/rag).
+- **New to llamadart:** [Install it](./getting-started/installation), run the
+  [Quickstart](./getting-started/quickstart), and read
+  [Finding models](./getting-started/finding-models).
+- **Tutorials:** build a [Flutter chat app](./tutorials/flutter-chat-app), or
+  answer from your own documents with the [RAG tutorial](./tutorials/rag).
+- **Concepts and compatibility:** check
+  [Model compatibility](./getting-started/model-families) and
+  [Choosing llama.cpp or LiteRT-LM](./guides/backend-selection).
+- **Choosing a runnable app:** see the
+  [Examples overview](./examples/overview).
 - **Shipping:** the [support matrix](./platforms/support-matrix),
   [performance tuning](./guides/performance-tuning) and
   [troubleshooting](./troubleshooting/common-issues).
