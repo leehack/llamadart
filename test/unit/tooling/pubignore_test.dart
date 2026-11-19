@@ -86,7 +86,7 @@ void main() {
     },
   );
 
-  test('the core archive check rejects independent packages', () async {
+  test('core archive rejects checkout-only files', () async {
     const shipped = <String>[
       'pubspec.yaml',
       'lib/llamadart.dart',
@@ -119,6 +119,19 @@ void main() {
     ]) {
       expect(await errors([...shipped, package]), isNotEmpty, reason: package);
     }
+    for (final audio in [
+      'test/fixtures/librispeech_dev_clean/1272-128104-0000.wav',
+      'test/e2e/backends/fixtures/clip.FLAC',
+    ]) {
+      expect(await errors([...shipped, audio]), [
+        'checkout-only test audio included: $audio',
+      ]);
+    }
+    expect(
+      await _isIgnored(repository, 'test/fixtures/librispeech_dev_clean/'),
+      isTrue,
+      reason: 'LibriSpeech fixture directory',
+    );
   });
 
   test('leaves companion checkout overrides out of the core archive', () async {
