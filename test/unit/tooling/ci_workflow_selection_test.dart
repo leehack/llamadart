@@ -618,7 +618,7 @@ for event,mode,oldflag,owner,attempt,cancel,good,main in itertools.product(('pus
   test('Studio macOS runs each native lifecycle and semantics regression', () {
     final job = readWorkflow('ci')['jobs']['studio-macos'] as Map;
     expect(job['runs-on'], 'macos-15');
-    expect(job['if'], "needs.changes.outputs.studio == 'true'");
+    expect(job['if'], "needs.changes.outputs.studio-macos == 'true'");
     final steps = job['steps'] as List;
     final native =
         steps.singleWhere((step) => '${step['run']}'.contains('flutter test'))
@@ -922,14 +922,23 @@ for event,flag,native,cancel,good,main in itertools.product(('push','pull_reques
     );
     expect(
       memory['if'],
-      "\${{ !cancelled() && needs.changes.outputs.validation-harness == 'true' }}",
+      "\${{ !cancelled() && needs.changes.outputs.macos-validation-memory == 'true' }}",
+    );
+    final cacheInstall = steps.singleWhere(
+      (s) =>
+          s['name'] ==
+          'Install root dependencies for the Apple companion cache check',
+    );
+    expect(
+      cacheInstall['if'],
+      "\${{ !cancelled() && needs.changes.outputs.apple-cache == 'true' }}",
     );
     final cache = steps.singleWhere(
       (s) => s['name'] == 'Verify Flutter Apple companion cache transitions',
     );
     expect(
       cache['if'],
-      "\${{ !cancelled() && needs.changes.outputs.test-other-os == 'true' }}",
+      "\${{ !cancelled() && needs.changes.outputs.apple-cache == 'true' }}",
     );
   });
 
@@ -1157,18 +1166,20 @@ for event,flag,native,cancel,good,main in itertools.product(('push','pull_reques
 
   test('selector exposes the companion job and validation harness OS', () {
     final outputs = readWorkflow('ci')['jobs']['changes']['outputs'] as Map;
-    expect(
-      outputs['companion-job'],
-      r'${{ steps.select.outputs.companion-job }}',
-    );
-    expect(
-      outputs['validation-harness-os'],
-      r'${{ steps.select.outputs.validation-harness-os }}',
-    );
+    for (final key in [
+      'companion-job',
+      'validation-harness-os',
+      'studio-macos',
+      'macos-validation-memory',
+      'apple-cache',
+      'test-other-os-matrix',
+    ]) {
+      expect(outputs[key], '\${{ steps.select.outputs.$key }}', reason: key);
+    }
     expect(outputs.containsKey('genkit-lower-bounds'), isFalse);
   });
 
-  test('Windows runs the validation process memory test in exactly one job', () {
+  test('Windows runs the validation process memory test in exactly one job', () async {
     final jobs = readWorkflow('ci')['jobs'] as Map<String, dynamic>;
     final harness = jobs['validation-harness'] as Map;
     expect(
@@ -1187,11 +1198,14 @@ for event,flag,native,cancel,good,main in itertools.product(('push','pull_reques
       (s) => s['name'] == 'Test validation process memory',
     );
     expect(memory['run'], 'dart test test/process_memory_test.dart');
-    const selected =
+    const memorySelected =
         "\${{ !cancelled() && matrix.lane == 'windows-runtime' && matrix.shard == 2 && needs.changes.outputs.validation-harness == 'true' }}";
-    final legs =
-        (jobs['test-other-os']['strategy']['matrix']['include'] as List)
-            .cast<Map>();
+    expect(
+      jobs['test-other-os']['strategy']['matrix']['include'],
+      r'${{ fromJSON(needs.changes.outputs.test-other-os-matrix) }}',
+    );
+    final full = await selected(['lib/llamadart.dart']);
+    final legs = (full['test-other-os-matrix'] as List).cast<Map>();
     expect(
       legs.where(
         (leg) => leg['lane'] == 'windows-runtime' && leg['shard'] == 2,
@@ -1204,11 +1218,59 @@ for event,flag,native,cancel,good,main in itertools.product(('push','pull_reques
       )['os'],
       'windows-latest',
     );
-    expect(memory['if'], selected);
+    expect(memory['if'], memorySelected);
     // PowerShell keeps only the last command's exit code, so this is a step.
     final install = native[native.indexOf(memory) - 1];
     expect(install['run'], 'dart pub get');
-    expect(install['if'], selected);
+    expect(install['if'], memorySelected);
+
+    // Dynamic test-other-os-matrix covers Windows-only, Mac-only, both, and neither.
+    Future<Map<String, dynamic>> probePlan(
+      List<String> paths, {
+      Map<String, bool>? hostSuites,
+    }) async {
+      final result = await Process.run(
+        Platform.isWindows ? 'python' : 'python3',
+        [
+          '-c',
+          'import json,runpy,sys; m=runpy.run_path("tool/ci/select_jobs.py"); '
+              'p=m["select"](json.loads(sys.argv[1]), pull_request=True, '
+              'host_suites=json.loads(sys.argv[2])); '
+              'print(json.dumps({"plan":p,"harness":m["validation_harness_oses"](p)}))',
+          jsonEncode(paths),
+          jsonEncode(hostSuites),
+        ],
+      );
+      expect(result.exitCode, 0, reason: '${result.stderr}');
+      return jsonDecode(result.stdout as String) as Map<String, dynamic>;
+    }
+
+    final winOnly = await probePlan(
+      ['test/unit/core/grammar/response_schema_validation_test.dart'],
+      hostSuites: {
+        'test/unit/core/grammar/response_schema_validation_test.dart': false,
+      },
+    );
+    expect(
+      (winOnly['plan']['test-other-os-matrix'] as List)
+          .map((e) => e['os'])
+          .toSet(),
+      {'windows-latest'},
+    );
+
+    final macOnly = await probePlan([
+      'example/chat_app/ios/Runner.xcodeproj/project.pbxproj',
+    ]);
+    expect(
+      (macOnly['plan']['test-other-os-matrix'] as List)
+          .map((e) => e['os'])
+          .toSet(),
+      {'macos-latest'},
+    );
+    expect(macOnly['harness'], contains('windows-latest'));
+
+    final neither = await probePlan(['README.md']);
+    expect(neither['plan']['test-other-os-matrix'], isEmpty);
   });
 
   test('Genkit lower bounds run on a fresh tree before Flutter is set up', () {
@@ -1773,8 +1835,21 @@ runs:
         return [for (final shard in shards) (shard, shards.length)];
       }
 
+      expect(
+        all['test-other-os']['strategy']['matrix']['include'],
+        r'${{ fromJSON(needs.changes.outputs.test-other-os-matrix) }}',
+      );
+      final selectResult =
+          Process.runSync(Platform.isWindows ? 'python' : 'python3', [
+            '-c',
+            'import json,runpy; m=runpy.run_path("tool/ci/select_jobs.py"); '
+                'print(json.dumps(m["select"](["lib/llamadart.dart"])))',
+          ]);
+      expect(selectResult.exitCode, 0, reason: '${selectResult.stderr}');
       final native =
-          (all['test-other-os']['strategy']['matrix']['include'] as List)
+          ((jsonDecode(selectResult.stdout as String)
+                      as Map<String, dynamic>)['test-other-os-matrix']
+                  as List)
               .cast<Map>();
       for (final leg in native) {
         expect(

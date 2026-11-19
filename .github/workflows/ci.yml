@@ -61,6 +61,10 @@ jobs:
       example-packages: ${{ steps.select.outputs.example-packages }}
       model-store: ${{ steps.select.outputs.model-store }}
       studio: ${{ steps.select.outputs.studio }}
+      studio-macos: ${{ steps.select.outputs.studio-macos }}
+      macos-validation-memory: ${{ steps.select.outputs.macos-validation-memory }}
+      apple-cache: ${{ steps.select.outputs.apple-cache }}
+      test-other-os-matrix: ${{ steps.select.outputs.test-other-os-matrix }}
       markdown-tests: ${{ steps.select.outputs.markdown-tests }}
     steps:
       - uses: actions/checkout@v7
@@ -69,6 +73,13 @@ jobs:
           persist-credentials: false
       - name: Test CI selection
         run: python3 -m unittest discover -s test/ci -p 'test_*.py'
+      - name: Check whether PR test-suite probe needs Dart
+        id: preflight
+        run: python3 tool/ci/select_jobs.py preflight
+      - uses: dart-lang/setup-dart@v1
+        if: steps.preflight.outputs.needs-dart == 'true'
+        with:
+          sdk: 3.13.1
       - id: select
         run: python3 tool/ci/select_jobs.py select
 
@@ -107,7 +118,7 @@ jobs:
 
   studio-macos:
     needs: changes
-    if: needs.changes.outputs.studio == 'true'
+    if: needs.changes.outputs.studio-macos == 'true'
     name: Studio macOS lifecycle and accessibility
     runs-on: macos-15
     timeout-minutes: 20
@@ -437,18 +448,18 @@ jobs:
           package: packages/llamadart_stable_diffusion_flutter
 
       - name: Test validation process memory
-        if: ${{ !cancelled() && needs.changes.outputs.validation-harness == 'true' }}
+        if: ${{ !cancelled() && needs.changes.outputs.macos-validation-memory == 'true' }}
         working-directory: packages/llamadart_validation
         run: |
           dart pub get
           dart test test/process_memory_test.dart
 
       - name: Install root dependencies for the Apple companion cache check
-        if: ${{ !cancelled() && needs.changes.outputs.test-other-os == 'true' }}
+        if: ${{ !cancelled() && needs.changes.outputs.apple-cache == 'true' }}
         run: flutter pub get
 
       - name: Verify Flutter Apple companion cache transitions
-        if: ${{ !cancelled() && needs.changes.outputs.test-other-os == 'true' }}
+        if: ${{ !cancelled() && needs.changes.outputs.apple-cache == 'true' }}
         run: dart test -p vm --run-skipped test/integration/apple_companion_flutter_cache_test.dart
 
   docs-check:
@@ -1067,13 +1078,7 @@ jobs:
       # OS, balanced by measured time; Linux VM runs every file. Windows keeps
       # tooling and runtime suites in separate processes (windowsToolingPaths).
       matrix:
-        include:
-          - {os: macos-latest, lane: macos, shard: 1, shards: 3}
-          - {os: macos-latest, lane: macos, shard: 2, shards: 3}
-          - {os: macos-latest, lane: macos, shard: 3, shards: 3}
-          - {os: windows-latest, lane: windows-tooling, shard: 1, shards: 1}
-          - {os: windows-latest, lane: windows-runtime, shard: 1, shards: 2}
-          - {os: windows-latest, lane: windows-runtime, shard: 2, shards: 2}
+        include: ${{ fromJSON(needs.changes.outputs.test-other-os-matrix) }}
 
     steps:
       - uses: actions/checkout@v7

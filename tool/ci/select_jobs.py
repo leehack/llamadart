@@ -29,20 +29,27 @@ CORE_JOBS = (
 # selected: the Linux VM test shards. The planned test-linux-coverage job only
 # merges their coverage, which runs after merge (push and manual runs).
 SHARD_JOBS = {'test-linux-vm': 'test-linux-coverage'}
-# The companion-packages job also hosts macOS steps selected apart from the
-# packages, so it runs, and must succeed, when any of these checks is selected.
-COMPANION_JOB_CHECKS = ('companion-packages', 'test-other-os', 'validation-harness')
+MACOS_SHARDS = (
+    {'os': 'macos-latest', 'lane': 'macos', 'shard': 1, 'shards': 3},
+    {'os': 'macos-latest', 'lane': 'macos', 'shard': 2, 'shards': 3},
+    {'os': 'macos-latest', 'lane': 'macos', 'shard': 3, 'shards': 3},
+)
+WINDOWS_SHARDS = (
+    {'os': 'windows-latest', 'lane': 'windows-tooling', 'shard': 1, 'shards': 1},
+    {'os': 'windows-latest', 'lane': 'windows-runtime', 'shard': 1, 'shards': 2},
+    {'os': 'windows-latest', 'lane': 'windows-runtime', 'shard': 2, 'shards': 2},
+)
 DESKTOPS = ('ubuntu-24.04', 'windows-2022', 'macos-15')
 APPS = ('android', 'web', 'ios-inputs')
 # Bundle targets a pull request builds only when it changes their own build
 # inputs; pushes to main and manual runs build them for every selecting change.
 # Their Dart code also compiles in the Linux desktop and Web builds.
-_BUNDLE_WORKFLOW = ('.github/workflows/validation_bundles.yml', 'tool/ci/select_jobs.py')
+_BUNDLE_WORKFLOW = ('.github/workflows/', '.github/actions/', 'tool/ci/', 'test/ci/')
 _NATIVE_BUILD_INPUTS = ('hook/', 'lib/src/hook/', 'pubspec.yaml', 'pubspec.lock',
                         'tool/testing/validation/', 'tool/testing/validation.dart')
 POST_MERGE_TARGETS = {
-    'macos-15': _BUNDLE_WORKFLOW + _NATIVE_BUILD_INPUTS,
-    'android': _BUNDLE_WORKFLOW + _NATIVE_BUILD_INPUTS + tuple(
+    'macos-15': _BUNDLE_WORKFLOW + _NATIVE_BUILD_INPUTS + ('.flutter-version',),
+    'android': ('.github/workflows/validation_bundles.yml', 'tool/ci/select_jobs.py') + _NATIVE_BUILD_INPUTS + tuple(
         'packages/' + name + '/' + part for name in COMPANIONS
         for part in ('lib/', 'pubspec.yaml')),
 }
@@ -89,25 +96,39 @@ def builds_target(target, path):
     return False
 
 
-def select(paths, force_full=False, pull_request=False):
+def select(paths, force_full=False, pull_request=False, host_suites=None):
     jobs, companions, desktops, apps = set(), set(), set(), set()
     reasons = []
+    macos_native = False
+    windows_native = False
+    studio_macos = False
+    macos_validation_memory = False
+    apple_cache = False
+    keep_macos_desktop = False
 
     def full(reason):
+        nonlocal macos_native, windows_native, studio_macos, macos_validation_memory, apple_cache
         # Do not clear an artifact check selected by another changed path.
         jobs.update(job for job in CORE_JOBS if job != 'artifact-contract')
         companions.update(COMPANIONS)
         desktops.update(DESKTOPS)
         apps.update(APPS)
+        macos_native = True
+        windows_native = True
+        studio_macos = True
+        macos_validation_memory = True
+        apple_cache = True
         reasons.append(reason)
 
     if force_full or not paths:
         full('manual, missing or unavailable change inventory')
         jobs.add('artifact-contract')
+        keep_macos_desktop = True
     for path in paths:
         if path.startswith(('.github/workflows/', '.github/actions/', 'tool/ci/', 'test/ci/')):
             full('workflow or selector change')
             jobs.add('artifact-contract')
+            keep_macos_desktop = True
         elif path == 'website/docs/integrations/genkit.md':
             jobs.update(('docs-check', 'docs-versions', 'genkit'))
         elif path.startswith('packages/genkit_llamadart/'):
@@ -117,6 +138,10 @@ def select(paths, force_full=False, pull_request=False):
             jobs.add('studio')
             if path.startswith('packages/llamadart_studio/web/'):
                 jobs.add('docs-versions')
+            if not path.startswith(('packages/llamadart_studio/web/',
+                                    'packages/llamadart_studio/windows/',
+                                    'packages/llamadart_studio/linux/')):
+                studio_macos = True
         elif path == 'website/docs/guides/model-store.md':
             jobs.update(('docs-check', 'docs-versions', 'model-store'))
         elif path.startswith('packages/llamadart_model_store/'):
@@ -132,6 +157,10 @@ def select(paths, force_full=False, pull_request=False):
             jobs.update(('analyze', 'companion-packages', 'test-linux-coverage',
                          'test-other-os', 'web-chat-contract', 'studio'))
             apps.update(APPS)
+            macos_native = True
+            windows_native = True
+            studio_macos = True
+            apple_cache = True
         # Root suites import, copy and read files throughout the validation
         # trees and the chat app, so no list of files or suites can stand in
         # for the root Linux tests there.
@@ -147,6 +176,11 @@ def select(paths, force_full=False, pull_request=False):
             if compiled:
                 desktops.update(DESKTOPS)
                 apps.update(APPS)
+            if compiled or path in (
+                'packages/llamadart_validation/test/process_memory_test.dart',
+                'packages/llamadart_validation/test/fixtures/process_memory_probe.dart',
+            ):
+                macos_validation_memory = True
         elif path.startswith(('tool/testing/validation/', 'tool/testing/validation.dart')):
             jobs.update(('analyze', 'validation-harness', 'validation-integration',
                          'test-linux-coverage'))
@@ -159,21 +193,58 @@ def select(paths, force_full=False, pull_request=False):
                 apps.add('android')
             elif path.startswith('example/chat_app/ios/'):
                 apps.add('ios-inputs')
+                macos_native = True
+                apple_cache = True
+            elif path.startswith('example/chat_app/macos/'):
+                jobs.update(('web-chat-contract', 'validation-harness'))
+                apps.update(APPS)
+                macos_native = True
+                apple_cache = True
             elif path.startswith('example/chat_app/web/'):
                 jobs.add('web-chat-contract')
                 apps.add('web')
+            elif path.startswith(('example/chat_app/linux/', 'example/chat_app/windows/')):
+                jobs.update(('web-chat-contract', 'validation-harness'))
+                apps.update(APPS)
             elif path.startswith(('example/chat_app/test/', 'example/chat_app/test_vm/')):
                 jobs.add('web-chat-contract')
+                if path == 'example/chat_app/test_vm/physical_ios_speech_e2e_support_test.dart':
+                    apple_cache = True
             else:
                 jobs.update(('web-chat-contract', 'validation-harness'))
                 apps.update(APPS)
+                apple_cache = True
         elif path.startswith('test/'):
-            # Preserve all root test inventories, including platform-sensitive tests.
-            # Studio core tests import and read root test support and fixtures.
-            jobs.update(('analyze', 'test-linux-coverage', 'test-web', 'test-other-os',
-                         'studio'))
+            # Preserve all root test inventories, including Linux/Chrome/Windows.
+            jobs.update(('analyze', 'test-linux-coverage', 'test-web', 'test-other-os'))
+            windows_native = True
+            if path.endswith('_test.dart'):
+                if path == 'test/integration/apple_companion_flutter_cache_test.dart':
+                    macos_native = True
+                    apple_cache = True
+                elif host_suites is not None and host_suites.get(path) is False:
+                    pass
+                else:
+                    macos_native = True
+                    if host_suites is not None and path not in host_suites:
+                        reasons.append('missing host-suite probe result: ' + path)
+            else:
+                # Studio core tests import and read root test support and fixtures.
+                jobs.add('studio')
+                studio_macos = True
+                macos_native = True
+                apple_cache = True
+        elif path.startswith(('lib/src/backends/web/', 'lib/src/backends/webgpu/')):
+            jobs.update(job for job in CORE_JOBS
+                        if job not in ('artifact-contract', 'companion-packages'))
+            windows_native = True
+            desktops.update(d for d in DESKTOPS if d != 'macos-15')
+            apps.update(APPS)
+        elif path.startswith(('lib/', 'example/')):
+            full('shared/runtime or example path: ' + path)
         else:
             full('shared/runtime or unclassified path: ' + path)
+            keep_macos_desktop = True
         # Root tests scan all maintained Markdown, and any file a root suite
         # reaches can start reading it, so every path runs those suites and
         # their reader-inventory guard unless Linux coverage runs them.
@@ -185,11 +256,25 @@ def select(paths, force_full=False, pull_request=False):
     if 'test-linux-coverage' in jobs and 'web-chat-contract' in jobs:
         # Both root provider tests and all Flutter consumer tests are covered.
         jobs.discard('validation-integration')
+    if macos_native or windows_native:
+        jobs.add('test-other-os')
+    else:
+        jobs.discard('test-other-os')
+    if companions:
+        jobs.add('companion-packages')
+    else:
+        jobs.discard('companion-packages')
     if pull_request and paths and not force_full:
         for target in POST_MERGE_TARGETS:
+            if target == 'macos-15' and keep_macos_desktop:
+                continue
             if not any(builds_target(target, path) for path in paths):
                 desktops.discard(target)
                 apps.discard(target)
+    other_os_matrix = [
+        *(MACOS_SHARDS if macos_native else ()),
+        *(WINDOWS_SHARDS if windows_native else ()),
+    ]
     return {
         'schema_version': 1,
         'jobs': {job: job in jobs for job in CORE_JOBS},
@@ -198,6 +283,12 @@ def select(paths, force_full=False, pull_request=False):
         'companions': ['packages/' + name for name in COMPANIONS if name in companions],
         'desktops': [name for name in DESKTOPS if name in desktops],
         'apps': [name for name in APPS if name in apps],
+        'studio-macos': studio_macos,
+        'macos-native': macos_native,
+        'windows-native': windows_native,
+        'macos-validation-memory': macos_validation_memory,
+        'apple-cache': apple_cache,
+        'test-other-os-matrix': other_os_matrix,
         'reasons': reasons,
     }
 
@@ -210,8 +301,10 @@ def validate_plan(plan):
         raise ValueError('Incomplete job selection')
     if any(type(value) is not bool for value in jobs.values()):
         raise ValueError('Selections must be boolean')
-    if type(plan.get('coverage')) is not bool:
-        raise ValueError('Coverage selection must be boolean')
+    for field in ('coverage', 'studio-macos', 'macos-native', 'windows-native',
+                  'macos-validation-memory', 'apple-cache'):
+        if type(plan.get(field)) is not bool:
+            raise ValueError(f'{field} selection must be boolean')
     for field, allowed in (
         ('companions', ['packages/' + name for name in COMPANIONS]),
         ('desktops', DESKTOPS), ('apps', APPS),
@@ -223,6 +316,14 @@ def validate_plan(plan):
             raise ValueError('Duplicate target')
     if jobs['companion-packages'] != bool(plan['companions']):
         raise ValueError('Companion matrix disagrees with job selection')
+    expected_matrix = [
+        *(MACOS_SHARDS if plan['macos-native'] else ()),
+        *(WINDOWS_SHARDS if plan['windows-native'] else ()),
+    ]
+    if plan.get('test-other-os-matrix') != expected_matrix:
+        raise ValueError('Other-OS matrix disagrees with host selections')
+    if jobs['test-other-os'] != (plan['macos-native'] or plan['windows-native']):
+        raise ValueError('Other-OS job disagrees with host selections')
 
 
 def expected_jobs(plan, bundle=False):
@@ -234,17 +335,18 @@ def expected_jobs(plan, bundle=False):
         **{job: plan['jobs'][fed] for job, fed in SHARD_JOBS.items()},
         'test-linux-coverage': plan['jobs']['test-linux-coverage'] and plan['coverage'],
         'companion-packages': companion_job_selected(plan),
-        'studio-macos': plan['jobs']['studio'],
+        'studio-macos': plan['studio-macos'],
     }
 
 
 def companion_job_selected(plan):
-    return any(plan['jobs'][check] for check in COMPANION_JOB_CHECKS)
+    return (bool(plan['companions']) or plan['macos-validation-memory']
+            or plan['apple-cache'])
 
 
 def validation_harness_oses(plan):
     """Windows runs the harness test in Test Native whenever that job is selected."""
-    return ['ubuntu-latest'] + ([] if plan['jobs']['test-other-os'] else ['windows-latest'])
+    return ['ubuntu-latest'] + ([] if plan['windows-native'] else ['windows-latest'])
 
 
 def aggregate(plan, needs, bundle=False):
@@ -280,9 +382,50 @@ def event_paths(event_name, event):
     return inventory(raw)
 
 
+def probe_candidates(paths):
+    """Extant root test suites whose host sensitivity can decide Mac admission."""
+    return sorted({
+        path for path in paths
+        if path.startswith('test/') and path.endswith('_test.dart')
+        and path != 'test/integration/apple_companion_flutter_cache_test.dart'
+        and Path(path).is_file()
+    })
+
+
+def needs_dart_probe(paths, pull_request=False):
+    if not pull_request or not paths:
+        return False
+    candidates = probe_candidates(paths)
+    if not candidates:
+        return False
+    hypothetical = select(paths, pull_request=True,
+                          host_suites={path: False for path in candidates})
+    return not hypothetical['macos-native']
+
+
+def run_host_suite_probe(suites):
+    try:
+        completed = subprocess.run(
+            ['dart', 'tool/ci/test_shards.dart', 'hosts-json'],
+            input=json.dumps(suites),
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        if completed.returncode != 0:
+            return None, f'Host-suite probe exited {completed.returncode}'
+        decoded = json.loads(completed.stdout)
+        if (not isinstance(decoded, dict) or set(decoded) != set(suites)
+                or any(type(v) is not bool for v in decoded.values())):
+            return None, 'Host-suite probe returned malformed output'
+        return decoded, None
+    except (OSError, subprocess.SubprocessError, ValueError, TypeError) as error:
+        return None, f'Host-suite probe failed: {type(error).__name__}'
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('command', choices=('select', 'aggregate'))
+    parser.add_argument('command', choices=('select', 'aggregate', 'preflight'))
     parser.add_argument('--bundle', action='store_true')
     args = parser.parse_args()
     if args.command == 'aggregate':
@@ -294,10 +437,26 @@ def main():
             print(error, file=sys.stderr)
         return int(bool(errors))
     pull_request = os.environ.get('GITHUB_EVENT_NAME') == 'pull_request'
+    if args.command == 'preflight':
+        try:
+            event = json.loads(Path(os.environ['GITHUB_EVENT_PATH']).read_text())
+            paths = event_paths(os.environ['GITHUB_EVENT_NAME'], event)
+            needs_dart = needs_dart_probe(paths, pull_request=pull_request)
+        except (KeyError, ValueError, TypeError, OSError, subprocess.SubprocessError):
+            needs_dart = False
+        with open(os.environ['GITHUB_OUTPUT'], 'a') as out:
+            out.write(f'needs-dart={str(needs_dart).lower()}\n')
+        return 0
     try:
         event = json.loads(Path(os.environ['GITHUB_EVENT_PATH']).read_text())
-        plan = select(event_paths(os.environ['GITHUB_EVENT_NAME'], event),
-                      pull_request=pull_request)
+        paths = event_paths(os.environ['GITHUB_EVENT_NAME'], event)
+        host_suites = None
+        probe_reason = None
+        if needs_dart_probe(paths, pull_request=pull_request):
+            host_suites, probe_reason = run_host_suite_probe(probe_candidates(paths))
+        plan = select(paths, pull_request=pull_request, host_suites=host_suites)
+        if probe_reason:
+            plan['reasons'].append(probe_reason)
     except (KeyError, ValueError, TypeError, OSError, subprocess.SubprocessError) as error:
         plan = select([], force_full=True, pull_request=pull_request)
         plan['reasons'] = ['Full fallback: ' + type(error).__name__]
@@ -309,6 +468,10 @@ def main():
             out.write(f'{name}={str(selected).lower()}\n')
         out.write(f'companion-job={str(companion_job_selected(plan)).lower()}\n')
         out.write(f'coverage={str(plan["coverage"]).lower()}\n')
+        out.write(f'studio-macos={str(plan["studio-macos"]).lower()}\n')
+        out.write(f'macos-validation-memory={str(plan["macos-validation-memory"]).lower()}\n')
+        out.write(f'apple-cache={str(plan["apple-cache"]).lower()}\n')
+        out.write('test-other-os-matrix=' + json.dumps(plan['test-other-os-matrix'], separators=(',', ':')) + '\n')
         out.write('validation-harness-os=' + json.dumps(validation_harness_oses(plan), separators=(',', ':')) + '\n')
         for name in ('companions', 'desktops', 'apps'):
             out.write(name + '=' + json.dumps(plan[name], separators=(',', ':')) + '\n')

@@ -57,10 +57,27 @@ void main() {
     void expectCurrentJobNames(Map<String, String> commands) {
       final jobs = ci['jobs'] as Map;
       final native = jobs['test-other-os'] as Map;
+      expect(
+        native['strategy']['matrix']['include'],
+        r'${{ fromJSON(needs.changes.outputs.test-other-os-matrix) }}',
+      );
+      final selectResult = Process.runSync(
+        Platform.pathSeparator == r'\' ? 'python' : 'python3',
+        [
+          '-c',
+          'import json,runpy; m=runpy.run_path("tool/ci/select_jobs.py"); '
+              'print(json.dumps(m["select"](["lib/llamadart.dart"])))',
+        ],
+      );
+      expect(selectResult.exitCode, 0, reason: '${selectResult.stderr}');
+      final matrixInclude =
+          ((jsonDecode(selectResult.stdout as String)
+                      as Map<String, dynamic>)['test-other-os-matrix']
+                  as List)
+              .cast<Map>();
       // The row names the Windows shards once, with a placeholder shard.
       final windowsNames = {
-        for (final entry
-            in (native['strategy']['matrix']['include'] as List).cast<Map>())
+        for (final entry in matrixInclude)
           if (entry['os'] == 'windows-latest')
             (native['name'] as String)
                 .replaceAll(r'${{ matrix.lane }}', entry['lane'] as String)

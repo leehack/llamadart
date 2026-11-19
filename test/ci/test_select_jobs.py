@@ -329,8 +329,6 @@ class SelectionTest(unittest.TestCase):
                      'example/chat_app/test/unit_test.dart',
                      'example/chat_app/pubspec.lock',
                      'example/chat_app/web/index.html',
-                     'example/chat_app/macos/Runner/Configs/AppInfo.xcconfig',
-                     'example/chat_app/ios/Runner.xcodeproj/project.pbxproj',
                      'example/chat_app/android/app/src/main/AndroidManifest.xml',
                      'packages/llamadart_validation/lib/src/case_catalog.dart',
                      'packages/llamadart_validation/bin/run.dart',
@@ -344,6 +342,18 @@ class SelectionTest(unittest.TestCase):
                     self.assertFalse(jobs['markdown-tests'])
                     self.assertFalse(jobs['test-web'])
                     self.assertFalse(jobs['test-other-os'])
+        for path in ('example/chat_app/macos/Runner/Configs/AppInfo.xcconfig',
+                     'example/chat_app/ios/Runner.xcodeproj/project.pbxproj'):
+            for pull_request in (True, False):
+                with self.subTest(path=path, pull_request=pull_request):
+                    plan = ci.select([path], pull_request=pull_request)
+                    self.assertTrue(plan['jobs']['test-linux-coverage'])
+                    self.assertFalse(plan['jobs']['markdown-tests'])
+                    self.assertFalse(plan['jobs']['test-web'])
+                    self.assertTrue(plan['jobs']['test-other-os'])
+                    self.assertTrue(plan['macos-native'])
+                    self.assertFalse(plan['windows-native'])
+                    self.assertTrue(plan['apple-cache'])
 
     def test_every_file_a_root_suite_imports_runs_the_root_linux_tests(self):
         imported = root_suite_imports()
@@ -364,7 +374,6 @@ class SelectionTest(unittest.TestCase):
 
     def test_pull_requests_build_macos_desktop_and_android_for_their_inputs_only(self):
         for paths in (['lib/llamadart.dart'], ['lib/src/core/engine.dart', 'README.md'],
-                      ['.github/workflows/ci.yml'], ['new/unknown.file'],
                       ['example/basic_app/lib/main.dart'], ['example/chat_app/web/config'],
                       ['example/chat_app/test/unit_test.dart']):
             with self.subTest(paths=paths):
@@ -385,6 +394,11 @@ class SelectionTest(unittest.TestCase):
                 plan = ci.select([path], pull_request=True)
                 self.assertIn('macos-15', plan['desktops'])
                 self.assertIn('android', plan['apps'])
+        for path in ('.flutter-version', '.github/workflows/ci.yml', 'new/unknown.file'):
+            with self.subTest(path=path):
+                plan = ci.select([path], pull_request=True)
+                self.assertIn('macos-15', plan['desktops'])
+                self.assertNotIn('android', plan['apps'])
         for path in ('example/chat_app/android/app/build.gradle', 'example/chat_app/lib/main.dart',
                      'example/chat_app/pubspec.yaml',
                      'packages/llamadart_llama_cpp_flutter/pubspec.yaml'):
@@ -435,7 +449,10 @@ class SelectionTest(unittest.TestCase):
         for left in paths:
             for right in paths:
                 forward, reverse = ci.select([left, right]), ci.select([right, left])
-                for key in ('jobs', 'companions', 'desktops', 'apps'):
+                for key in ('jobs', 'companions', 'desktops', 'apps',
+                            'studio-macos', 'macos-native', 'windows-native',
+                            'macos-validation-memory', 'apple-cache',
+                            'test-other-os-matrix'):
                     self.assertEqual(forward[key], reverse[key], (left, right, key))
 
     def test_rename_delete_and_union(self):
@@ -631,6 +648,223 @@ class AggregateTest(unittest.TestCase):
         self.assertEqual(ci.aggregate(plan, needs), [])
         needs['new-unaccounted-job'] = {'result': 'success'}
         self.assertTrue(ci.aggregate(plan, needs))
+
+
+class MacosPathGatingTest(unittest.TestCase):
+    def _assert_zero_macos(self, plan):
+        self.assertFalse(plan['macos-native'])
+        self.assertFalse(plan['studio-macos'])
+        self.assertFalse(plan['macos-validation-memory'])
+        self.assertFalse(plan['apple-cache'])
+        self.assertEqual(plan['companions'], [])
+        self.assertNotIn('macos-15', plan['desktops'])
+        self.assertFalse(ci.companion_job_selected(plan))
+        self.assertNotIn('macos', {row['lane'] for row in plan['test-other-os-matrix']})
+
+    def test_isolated_linux_only_root_suite_admits_zero_macos_jobs_on_pr(self):
+        suite = 'test/unit/core/grammar/response_schema_validation_test.dart'
+        plan = ci.select([suite], pull_request=True, host_suites={suite: False})
+        self._assert_zero_macos(plan)
+        self.assertTrue(plan['jobs']['test-linux-coverage'])
+        self.assertTrue(plan['jobs']['test-web'])
+        self.assertTrue(plan['jobs']['test-other-os'])
+        self.assertTrue(plan['windows-native'])
+        self.assertEqual(plan['test-other-os-matrix'], list(ci.WINDOWS_SHARDS))
+        self.assertFalse(plan['jobs']['studio'])
+
+    def test_pr_2053_pair_admits_macos_native_and_desktop_only(self):
+        suite = 'test/unit/tooling/validation_remote_test.dart'
+        plan = ci.select(
+            [suite, 'tool/testing/validation/bundle.dart'],
+            pull_request=True,
+            host_suites={suite: True},
+        )
+        self.assertTrue(plan['macos-native'])
+        self.assertTrue(plan['windows-native'])
+        self.assertIn('macos-15', plan['desktops'])
+        self.assertFalse(plan['studio-macos'])
+        self.assertFalse(plan['macos-validation-memory'])
+        self.assertFalse(plan['apple-cache'])
+        self.assertFalse(ci.companion_job_selected(plan))
+        self.assertEqual(plan['companions'], [])
+
+    def test_docs_only_main_push_keeps_incremental_selection_without_macos_overlay(self):
+        for pull_request in (True, False):
+            with self.subTest(pull_request=pull_request):
+                plan = ci.select(['README.md'], pull_request=pull_request)
+                self._assert_zero_macos(plan)
+                self.assertEqual(plan['coverage'], not pull_request)
+
+    def test_validation_profile_vs_memory_probe_and_speech_runner(self):
+        profile = ci.select(['packages/llamadart_validation/assets/profiles/chat-gguf-cpu.json'],
+                            pull_request=True)
+        self._assert_zero_macos(profile)
+        self.assertEqual(ci.validation_harness_oses(profile), ['ubuntu-latest', 'windows-latest'])
+        for path in ('packages/llamadart_validation/test/process_memory_test.dart',
+                     'packages/llamadart_validation/test/fixtures/process_memory_probe.dart',
+                     'packages/llamadart_validation/lib/src/speech_runner.dart',
+                     'packages/llamadart_validation/pubspec.yaml'):
+            with self.subTest(path=path):
+                plan = ci.select([path], pull_request=True)
+                self.assertTrue(plan['macos-validation-memory'])
+                self.assertTrue(ci.companion_job_selected(plan))
+                self.assertFalse(plan['macos-native'])
+                self.assertFalse(plan['studio-macos'])
+                self.assertFalse(plan['apple-cache'])
+
+    def test_web_backend_exemption_and_conditional_entrypoint_pins(self):
+        for path in ('lib/src/backends/web/web_backend.dart',
+                     'lib/src/backends/webgpu/webgpu_backend.dart'):
+            for pull_request in (True, False):
+                with self.subTest(path=path, pull_request=pull_request):
+                    plan = ci.select([path], pull_request=pull_request)
+                    self._assert_zero_macos(plan)
+                    self.assertTrue(plan['jobs']['test-linux-coverage'])
+                    self.assertTrue(plan['jobs']['test-web'])
+                    self.assertTrue(plan['jobs']['web-chat-contract'])
+                    self.assertTrue(plan['jobs']['studio'])
+                    self.assertTrue(plan['windows-native'])
+        for entrypoint in ('lib/src/backends/backend.dart', 'lib/backend.dart'):
+            plan = ci.select([entrypoint], pull_request=True)
+            self.assertTrue(plan['macos-native'])
+            self.assertTrue(plan['studio-macos'])
+            self.assertEqual(plan['companions'], ['packages/' + name for name in ci.COMPANIONS])
+        # Detect any new production import of web/ or webgpu/ outside the
+        # established browser trees and the pinned conditional entrypoints.
+        directive = re.compile(r'''^\s*(?:import|export|part)\s+((?:[^;'"]|'[^']*'|"[^"]*")*);''', re.M)
+        imports_web = []
+        for dart_file in sorted((ROOT / 'lib').rglob('*.dart')):
+            rel = dart_file.relative_to(ROOT).as_posix()
+            if rel.startswith(('lib/src/backends/web/', 'lib/src/backends/webgpu/')):
+                continue
+            text = dart_file.read_text(encoding='utf-8')
+            for match in directive.finditer(text):
+                for uri in re.findall(r'''['"]([^'"]+)['"]''', match.group(1)):
+                    resolved = ('lib/' + uri[len('package:llamadart/'):]
+                                if uri.startswith('package:llamadart/')
+                                else (posixpath.normpath(posixpath.join(posixpath.dirname(rel), uri))
+                                      if ':' not in uri else ''))
+                    if resolved.startswith(('lib/src/backends/web/', 'lib/src/backends/webgpu/')):
+                        imports_web.append(rel)
+                        break
+        self.assertEqual(
+            imports_web,
+            ['lib/src/backends/backend.dart', 'lib/src/backends/litert_lm/litert_lm_backend_web.dart'],
+        )
+
+    def test_studio_packaging_exemptions_vs_shared_ui(self):
+        for path in ('packages/llamadart_studio/web/index.html',
+                     'packages/llamadart_studio/windows/runner/main.cpp',
+                     'packages/llamadart_studio/linux/my_application.cc'):
+            with self.subTest(path=path):
+                plan = ci.select([path], pull_request=True)
+                self.assertTrue(plan['jobs']['studio'])
+                self._assert_zero_macos(plan)
+        for path in ('packages/llamadart_studio/lib/main.dart',
+                     'packages/llamadart_studio/macos/Runner/AppDelegate.swift',
+                     'packages/llamadart_studio/test/macos_app_delegate_test.dart',
+                     'packages/llamadart_studio_core/lib/src/studio.dart'):
+            with self.subTest(path=path):
+                plan = ci.select([path], pull_request=True)
+                self.assertTrue(plan['jobs']['studio'])
+                self.assertTrue(plan['studio-macos'])
+                self.assertFalse(plan['macos-native'])
+
+    def test_chat_app_apple_vs_portable_inputs(self):
+        for path in ('example/chat_app/pubspec.lock',
+                     'example/chat_app/lib/main.dart',
+                     'example/chat_app/integration_test/physical_ios_speech_e2e_test.dart',
+                     'example/chat_app/test_vm/physical_ios_speech_e2e_support_test.dart'):
+            with self.subTest(path=path):
+                plan = ci.select([path], pull_request=True)
+                self.assertTrue(plan['apple-cache'])
+                self.assertTrue(ci.companion_job_selected(plan))
+                self.assertFalse(plan['macos-native'])
+        for path in ('example/chat_app/android/app/build.gradle',
+                     'example/chat_app/web/index.html',
+                     'example/chat_app/linux/CMakeLists.txt',
+                     'example/chat_app/windows/CMakeLists.txt',
+                     'example/chat_app/test/unit_test.dart'):
+            with self.subTest(path=path):
+                self._assert_zero_macos(ci.select([path], pull_request=True))
+
+    def test_mixed_deleted_and_missing_probe_stay_conservative(self):
+        mixed = ci.select(['lib/src/backends/web/web_backend.dart', 'lib/llamadart.dart'],
+                          pull_request=True)
+        self.assertTrue(mixed['macos-native'])
+        self.assertEqual(mixed['companions'], ['packages/' + name for name in ci.COMPANIONS])
+        suite = 'test/unit/core/grammar/response_schema_validation_test.dart'
+        # Missing probe result or deleted/unknown root test input stays conservative.
+        self.assertTrue(ci.select([suite], pull_request=True)['macos-native'])
+        self.assertTrue(ci.select([suite], pull_request=True, host_suites={})['macos-native'])
+        self.assertTrue(ci.select(['test/support/helper.dart'], pull_request=True)['studio-macos'])
+        self.assertTrue(ci.select(['test/support/helper.dart'], pull_request=True)['apple-cache'])
+
+    def test_cli_pr_probe_and_fallback_and_main_push(self):
+        with tempfile.TemporaryDirectory() as scratch:
+            def git(*args):
+                return subprocess.check_output(['git', '-C', scratch, *args], text=True).strip()
+            git('init', '-q')
+            git('config', 'user.email', 'test@example.invalid')
+            git('config', 'user.name', 'CI test')
+            (Path(scratch) / 'tool/ci').mkdir(parents=True)
+            (Path(scratch) / 'test/unit/core').mkdir(parents=True)
+            (Path(scratch) / 'tool/ci/select_jobs.py').write_text((ROOT / 'tool/ci/select_jobs.py').read_text())
+            (Path(scratch) / 'tool/ci/test_shards.dart').write_text((ROOT / 'tool/ci/test_shards.dart').read_text())
+            (Path(scratch) / 'README.md').write_text('base\n')
+            (Path(scratch) / 'test/unit/core/neutral_test.dart').write_text('void main() {}\n')
+            git('add', '.')
+            git('commit', '-qm', 'base')
+            base = git('rev-parse', 'HEAD')
+            (Path(scratch) / 'test/unit/core/neutral_test.dart').write_text('void main() { /* edit */ }\n')
+            git('add', '.')
+            git('commit', '-qm', 'edit neutral test')
+            head = git('rev-parse', 'HEAD')
+
+            event = Path(scratch) / 'event.json'
+            event.write_text(json.dumps({'pull_request': {'base': {'sha': base}, 'head': {'sha': head}}}))
+            output = Path(scratch) / 'output'
+            env = dict(os.environ, GITHUB_EVENT_NAME='pull_request',
+                       GITHUB_EVENT_PATH=str(event), GITHUB_OUTPUT=str(output))
+            result = subprocess.run([sys.executable, 'tool/ci/select_jobs.py', 'select'],
+                                    cwd=scratch, env=env, capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            plan = json.loads(result.stdout)
+            self._assert_zero_macos(plan)
+
+            # Missing Dart falls back conservatively to Mac native.
+            no_dart_env = dict(env, PATH='/usr/bin:/bin')
+            fallback = subprocess.run([sys.executable, 'tool/ci/select_jobs.py', 'select'],
+                                      cwd=scratch, env=no_dart_env, capture_output=True, text=True)
+            self.assertEqual(fallback.returncode, 0, fallback.stderr)
+            self.assertTrue(json.loads(fallback.stdout)['macos-native'])
+
+            # Docs-only main push keeps zero Mac jobs.
+            (Path(scratch) / 'README.md').write_text('docs\n')
+            git('add', 'README.md')
+            git('commit', '-qm', 'docs')
+            docs_head = git('rev-parse', 'HEAD')
+            event.write_text(json.dumps({'before': head, 'after': docs_head}))
+            push_env = dict(os.environ, GITHUB_EVENT_NAME='push',
+                            GITHUB_EVENT_PATH=str(event), GITHUB_OUTPUT=str(output))
+            push_res = subprocess.run([sys.executable, 'tool/ci/select_jobs.py', 'select'],
+                                      cwd=scratch, env=push_env, capture_output=True, text=True)
+            self.assertEqual(push_res.returncode, 0, push_res.stderr)
+            self._assert_zero_macos(json.loads(push_res.stdout))
+
+    def test_validate_plan_checks_macos_fields_and_matrix_consistency(self):
+        for field, value in [
+            ('studio-macos', 'true'),
+            ('macos-native', 1),
+            ('windows-native', 'false'),
+            ('macos-validation-memory', None),
+            ('apple-cache', 0),
+            ('test-other-os-matrix', [{'os': 'macos-latest', 'lane': 'macos', 'shard': 1, 'shards': 3}]),
+        ]:
+            plan = ci.select(['lib/llamadart.dart'])
+            plan[field] = value
+            with self.subTest(field=field), self.assertRaises(ValueError):
+                ci.validate_plan(plan)
 
 
 if __name__ == '__main__':

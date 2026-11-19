@@ -143,10 +143,8 @@ void main() {
             as YamlMap;
     final job = workflow['jobs']['test-other-os'];
     expect(
-      (job['strategy']['matrix']['include'] as YamlList).map(
-        (leg) => leg['os'],
-      ),
-      containsAll(['macos-latest', 'windows-latest']),
+      job['strategy']['matrix']['include'],
+      r'${{ fromJSON(needs.changes.outputs.test-other-os-matrix) }}',
     );
     final steps = job['steps'] as YamlList;
     final run = steps.singleWhere((step) => step['name'] == 'Run native tests');
