@@ -9,7 +9,7 @@ import 'package:test/test.dart';
 import '../../../tool/release/pr_changelog.dart';
 
 Future<ProcessResult> _validate(String? body) async {
-  final temp = Directory.systemTemp.createTempSync('clfix-pr-event-');
+  final temp = Directory.systemTemp.createTempSync('clpre-pr-event-');
   try {
     final event = File('${temp.path}/event.json')
       ..writeAsStringSync(
@@ -108,6 +108,96 @@ Improve setup (#9)
       expect(result.exitCode, 0, reason: '${result.stderr}');
     });
   }
+
+  test('keeps visible combining marks and emoji selectors intact', () async {
+    const text = '한글, cafe\u0301, and ✈\ufe0f.';
+    final body = '## Changelog\n- $text';
+    expect((await _validate(body)).exitCode, 0);
+    expect(parsePrChangelog(body).bullets.single.text, text);
+    expect(parsePrChangelog('## Changelog\nN/A: $text').reason, text);
+  });
+
+  for (final codePoint in [
+    0x034f,
+    0xfe0f,
+    0x3164,
+    0x115f,
+    0xffa0,
+    0x2800,
+    0xe0100,
+  ]) {
+    for (final prefix in ['- ', 'N/A: ']) {
+      test(
+        'event rejects invisible U+${codePoint.toRadixString(16)} in $prefix',
+        () async {
+          final character = String.fromCharCode(codePoint);
+          for (final text in [character, '** $character \u2060 **']) {
+            final body = '## Changelog\n$prefix$text';
+            expect((await _validate(body)).exitCode, 1);
+            expect(() => parsePrChangelog(body), throwsFormatException);
+          }
+        },
+      );
+    }
+  }
+
+  group('release input metadata', () {
+    final previous = 'a' * 40;
+    final through = 'b' * 40;
+    final digest = 'c' * 64;
+    final receipt =
+        '## Release notes input\n\nPrevious-tag: v0.20.2+1@$previous\nThrough: $through\nInput-SHA256: $digest\n';
+    final examples = [
+      '~~~md\n$receipt~~~\n',
+      '<!--\n$receipt-->\n',
+      receipt.split('\n').map((line) => '> $line').join('\n'),
+      '- Old receipt:\n${receipt.split('\n').map((line) => '  $line').join('\n')}',
+    ];
+    test('ignores quoted, fenced, nested and commented examples', () {
+      final landed =
+          'Prepare release (#123)\n\n${examples.join('\n')}\n$receipt';
+      expect(parseReleaseNotesInput(landed), (
+        previousTag: 'v0.20.2+1',
+        previousSha: previous,
+        through: through,
+        inputSha256: digest,
+      ));
+      for (final example in examples) {
+        expect(() => parseReleaseNotesInput(example), throwsFormatException);
+      }
+    });
+    test('requires one real receipt with exactly three well-formed fields', () {
+      for (final bad in [
+        '$receipt\n$receipt',
+        '$receipt\nThrough: $through\n',
+        '$receipt\nReviewed: Yes\n',
+        receipt.replaceFirst('v0.20.2+1', 'v0.20.2-dev'),
+        receipt.replaceFirst('Through: $through\n', ''),
+        receipt.replaceFirst(digest, digest.toUpperCase()),
+        receipt.replaceFirst('Previous-tag:', 'Previous-tag :'),
+      ]) {
+        expect(() => parseReleaseNotesInput(bad), throwsFormatException);
+      }
+    });
+    test('requires a unique SHA and specific text in each review entry', () {
+      const heading = '## Release notes review';
+      expect(
+        parseReleaseNotesReview(
+          '$receipt\n$heading\n- $through Combined with the setup entry.',
+        ),
+        {through: 'Combined with the setup entry.'},
+      );
+      for (final bad in [
+        '$heading\n- $through Acknowledged',
+        '$heading\n- $through \u034f',
+        '$heading\n- ${through.substring(1)} Combined with the setup entry.',
+        '$heading\n- $through Reworded the setup entry.\n- $through Merged elsewhere.',
+        '$heading\n- $through Reworded the setup entry.\n$heading\n- $previous Merged elsewhere.',
+      ]) {
+        expect(() => parseReleaseNotesReview(bad), throwsFormatException);
+      }
+    });
+  });
 
   final invalid = <String, String?>{
     'missing section': '## Summary\n- Something changed.',
