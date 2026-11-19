@@ -207,6 +207,9 @@ or shipping runtimes the app does not use.
   `ComputeDevice.gpu` only on devices the app has validated. Adreno 750
   driver `2150604839` is excluded: an explicit GPU request throws; automatic
   selection with a Vulkan preference falls back to CPU with a warning.
+  With `ComputeDevice.auto`, a bundled OpenCL backend without a device can
+  fall back to registered Vulkan devices. The active backend reports `Vulkan`
+  and uses the Vulkan settings even if devices below Vulkan 1.2 were filtered.
   A shader-compiler workaround alone does not qualify quantized output. Leave
   `ModelParams.microBatchSize` unset on Android Vulkan: its eight-token
   prompt calls were faster on the Mali GPU measured. With a llama.cpp runtime

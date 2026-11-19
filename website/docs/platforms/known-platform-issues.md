@@ -163,15 +163,18 @@ feature. For which runtime supports which feature, see the
 - Android NPU depends on the device SoC, the `.litertlm` bundle and the LiteRT
   dispatch libraries (`LiteRtLmModelParams.dispatchLibDir`). If native
   LiteRT-LM cannot create an NPU engine, use `cpu` or `gpu`.
-- Android llama.cpp Vulkan is experimental and device-dependent. `auto` runs
-  llama.cpp on the CPU there; Vulkan runs only when the app asks for
-  `ComputeDevice.gpu` or `GpuBackend.vulkan`. Previously observed runtime
+- Android llama.cpp Vulkan is experimental and device-dependent. The default
+  `ComputeDevice.auto` without a backend preference runs on the CPU. Use
+  `ComputeDevice.gpu` or prefer `GpuBackend.vulkan` to request Vulkan.
+  Previously observed runtime
   failures: a Galaxy A35 (Mali-G68) is reported to time out in `llama_decode`
   ([#1092](https://github.com/leehack/llamadart/issues/1092)); a Galaxy S24
   (Adreno 750) crashes on the first generation
   ([llamadart-native#79](https://github.com/leehack/llamadart-native/issues/79)).
-  A request for another GPU backend with no device of its own can land on an
-  already registered Vulkan device, and it gets the same settings.
+  With `ComputeDevice.auto`, a bundled backend such as OpenCL that offers no
+  device can fall back to already registered Vulkan devices. The active
+  backend reports `Vulkan` and uses the same context settings and prompt
+  limits even when the load filters out devices below Vulkan 1.2.
 
   Before ggml `0.28.0` (llamadart-native `v0.8.0`), llama.cpp's Vulkan
   small-matmul tile gave wrong results for micro-batches above 32 tokens on

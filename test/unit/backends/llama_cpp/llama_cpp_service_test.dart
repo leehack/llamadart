@@ -5,6 +5,7 @@ import 'dart:convert';
 import 'dart:ffi';
 import 'dart:io';
 import 'dart:isolate';
+import 'dart:math';
 import 'dart:mirrors';
 import 'dart:typed_data';
 
@@ -3169,30 +3170,38 @@ void main() {
         expect(records, isEmpty);
       });
 
-      for (final (:requested, :placed) in [
-        (requested: GpuBackend.vulkan, placed: 'Vulkan'),
-        (requested: GpuBackend.opencl, placed: 'Vulkan'),
-        (requested: GpuBackend.opencl, placed: 'OpenCL'),
+      const vulkan11 = 1 << 22 | 1 << 12;
+      const vulkan12 = VulkanDeviceFacts.vulkan12;
+      for (final (requested, registered, placed, vulkanVersions) in [
+        (GpuBackend.vulkan, 'Vulkan', 'Vulkan', <int>[]),
+        (GpuBackend.opencl, 'Vulkan', 'Vulkan', <int>[]),
+        (GpuBackend.opencl, 'OpenCL', 'OpenCL', <int>[]),
+        (GpuBackend.opencl, 'Vulkan', 'Vulkan', [vulkan11, vulkan12]),
+        (GpuBackend.opencl, 'Vulkan', 'CPU', [vulkan11, vulkan11]),
       ]) {
-        final conservative = placed == 'Vulkan';
+        final probeSuffix = vulkanVersions.isEmpty
+            ? ''
+            : ' after probing two Vulkan devices';
+        final cpu = placed == 'CPU';
+        final promptCap = placed == 'Vulkan';
+        final disableOffload = promptCap || cpu;
         test(
-          'gives a ${requested.name} request placed on Android $placed '
-          '${conservative ? 'the conservative' : 'full-offload'} context '
-          'settings and ${conservative ? 'prompt cap' : 'no prompt cap'}',
+          'gives an Android ${requested.name} request placed on $placed '
+          '${disableOffload ? 'disabled' : 'enabled'} context offload '
+          'and ${promptCap ? 'a prompt cap' : 'no prompt cap'}$probeSuffix',
           () async {
             final real = ExitTeardownApi.tryResolve(
               isWindows: Platform.isWindows,
             )!;
             final recorder = RecordingExitTeardown(real);
-            // The host has no Vulkan device: only the native load is
-            // substituted, and the service still resolves the placement.
+            // Keep fake registry pointers out of the real CPU load.
             recorder.modelLoad = (file, params) {
               params.devices = nullptr;
               params.n_gpu_layers = 0;
               return real.modelLoadFromFile(file, params);
             };
             final android = _VulkanReportingService(
-              gpuBackend: placed,
+              gpuBackend: registered,
               objectCalls: LlamaCppObjectCalls.tracked(recorder.api),
               deviceTypes: (requested) => [
                 requested == GpuBackend.auto
@@ -3200,16 +3209,30 @@ void main() {
                     : ggml_backend_dev_type.GGML_BACKEND_DEVICE_TYPE_CPU.value,
               ],
               registeredDevices: () => [
-                GgmlDeviceEntry(
-                  name: '${placed}0',
-                  registry: placed,
-                  type:
-                      ggml_backend_dev_type.GGML_BACKEND_DEVICE_TYPE_GPU.value,
-                ),
+                for (var i = 0; i < max(1, vulkanVersions.length); i++)
+                  GgmlDeviceEntry(
+                    name: '$registered$i',
+                    registry: registered,
+                    description: 'GPU $i',
+                    device: Pointer.fromAddress(0x1000 + i),
+                    type: ggml_backend_dev_type
+                        .GGML_BACKEND_DEVICE_TYPE_GPU
+                        .value,
+                  ),
               ],
-              backendDevices: (_) => null,
-              vulkanDeviceProbe: () =>
-                  const VulkanDeviceProbe.unavailable('not read in this case'),
+              backendDevices: (_) => [],
+              vulkanDeviceProbe: () => vulkanVersions.isEmpty
+                  ? const VulkanDeviceProbe.unavailable('no loader')
+                  : VulkanDeviceProbe.devices([
+                      for (final (i, version) in vulkanVersions.indexed)
+                        VulkanDeviceFacts(
+                          name: 'GPU $i',
+                          deviceType: 2,
+                          instanceApiVersion: vulkan12,
+                          apiVersion: version,
+                          subgroupSize: 16,
+                        ),
+                    ]),
             );
             addTearDown(android.dispose);
             final moduleDir = path.join(tempDir.path, 'modules');
@@ -3233,28 +3256,20 @@ void main() {
             );
 
             final model = android.loadModel(modelPath, params);
-            expect(android.getActiveBackendName(), placed);
-            expect(android.getResolvedGpuLayers(), 99);
+            if (cpu) {
+              expect(
+                recorder.loadDevices.single,
+                allOf(hasLength(1), isNot(contains(anyOf(0x1000, 0x1001)))),
+              );
+            } else {
+              expect(
+                recorder.loadDevices.single,
+                vulkanVersions.isEmpty ? isNull : [0x1001],
+              );
+            }
+            expect(recorder.loadGpuLayers.single, cpu ? 0 : 99);
             final context = android.createContext(model, params);
 
-            expect(
-              recorder.contextOffload.single,
-              conservative
-                  ? (
-                      offloadKqv: false,
-                      opOffload: false,
-                      flashAttnType: llama_flash_attn_type
-                          .LLAMA_FLASH_ATTN_TYPE_DISABLED
-                          .value,
-                    )
-                  : (
-                      offloadKqv: true,
-                      opOffload: true,
-                      flashAttnType: llama_flash_attn_type
-                          .LLAMA_FLASH_ATTN_TYPE_AUTO
-                          .value,
-                    ),
-            );
             recorder.clearCalls();
             final cancel = calloc<Int8>();
             addTearDown(() => calloc.free(cancel));
@@ -3266,15 +3281,31 @@ void main() {
                   cancel.address,
                 )
                 .drain<void>();
-            if (conservative) {
-              expect(recorder.decodedTokens.take(12), everyElement(8));
-            } else {
-              expect(recorder.decodedTokens, isNotEmpty);
-              expect(
-                recorder.decodedTokens.any((tokens) => tokens > 8),
-                isTrue,
-              );
-            }
+            expect(recorder.decodedTokens, isNotEmpty);
+            expect(
+              (
+                backend: android.getActiveBackendName(),
+                gpuLayers: android.getResolvedGpuLayers(),
+                offload: recorder.contextOffload.single,
+              ),
+              (
+                backend: placed,
+                gpuLayers: cpu ? 0 : 99,
+                offload: (
+                  offloadKqv: !disableOffload,
+                  opOffload: !disableOffload,
+                  flashAttnType: disableOffload
+                      ? llama_flash_attn_type
+                            .LLAMA_FLASH_ATTN_TYPE_DISABLED
+                            .value
+                      : llama_flash_attn_type.LLAMA_FLASH_ATTN_TYPE_AUTO.value,
+                ),
+              ),
+            );
+            expect(
+              recorder.decodedTokens.reduce(max),
+              promptCap ? 8 : greaterThan(8),
+            );
           },
         );
       }
