@@ -60,6 +60,59 @@ Run a scenario with `dart run tool/testing/run_local_e2e.dart --list`, then
   smoke-tested on macOS CPU and Metal with Qwen3.5-0.8B weights, a
   `qwen3vl_merger` projector and the Qwen3-VL template.
 
+## Image and audio embeddings
+
+### Native llama.cpp media embeddings
+
+EmbeddingGemma-2 needs a compatible projector, native `v0.7.0-1` or later,
+and one complete physical micro-batch per input. The
+[BF16 validation pack](https://github.com/leehack/llamadart/blob/main/doc/cross_platform_validation.md#multimodal-embedding-pack)
+has CPU qualification on macOS arm64, Linux x64, Windows x64, Android and
+iOS, plus macOS Metal.
+
+The November 14, 2026 media-vector receipts used EmbeddingGemma-2 BF16 with
+the gemma4v/gemma4a projector:
+
+| Platform | Device and driver | Package | Result |
+| --- | --- | --- | --- |
+| Linux x64 | NVIDIA L4, driver 580.178 | 0.19.9 | CPU, CUDA and Vulkan ([Linux receipt](https://github.com/leehack/llamadart/issues/1189#issuecomment-6877631575)) |
+| Windows Server 2022 x64 | NVIDIA L4, GRID driver 596.86 | 0.19.10 | CPU, CUDA and Vulkan ([Windows receipt](https://github.com/leehack/llamadart/issues/1189#issuecomment-6881250817)) |
+| Android arm64 | Galaxy S24, Adreno 750, API 36 | 0.19.10 | OpenCL passed. Vulkan driver 2150604839 gave a typed refusal ([Android receipt](https://github.com/leehack/llamadart/issues/1189#issuecomment-6883121575)) |
+| Android arm64 | Pixel 9 Pro, Mali-G715, API 35 | 0.19.10 | Vulkan passed. OpenCL gave a typed refusal ([Android receipt](https://github.com/leehack/llamadart/issues/1189#issuecomment-6883121575)) |
+
+These receipts cover the recorded native artifacts, models, backends and
+devices. Native 1.0, core 0.20 and other GPU combinations require their own
+qualification.
+
+### WebGPU media embeddings
+
+The loaded bridge must report API-version-1 modality support, and the model
+needs a compatible projector. The
+[Web receipts](https://github.com/leehack/llamadart/blob/main/doc/multimodal_embeddings_web.md#current-evidence-and-limits)
+cover EmbeddingGemma-2 on Chrome CPU wasm memory64 and Chrome WebGPU on an
+Apple GPU with Metal, compared with native CPU and Metal. The wasm32 repeat
+batch check passed on the then-pinned assets with the fix available from
+`v0.1.76`. Use memory64 for more heap headroom.
+
+The [NVIDIA L4 receipt](https://github.com/leehack/llamadart/blob/main/doc/multimodal_embeddings_web.md#nvidia-l4-qualification-on-the-recorded-source)
+covers Ubuntu 24.04.5, Chrome 157.0.8103.78, driver 615.71.09 and bridge
+`v0.1.85` on wasm64. Direct and worker runs at source `eb18767e` had the
+GPU active and passed against the native `v0.7.0-1` CPU pack reference.
+Fresh native `v0.9.0` parity, GPU device-loss recovery and other GPU
+combinations remain unqualified.
+
+### LiteRT-LM media embeddings
+
+Native bundle processors are qualified on CPU on macOS arm64, iOS arm64,
+Android arm64 (Galaxy S24 and arm64 emulators), Linux x64 and arm64, and
+Windows x64. This uses the separate embedding engine with a compatible
+bundle.
+
+LiteRT-LM Web is unsupported. Web CPU cannot load the external text-encoder
+weights, and the pinned WebGPU vectors missed the native CPU parity gate.
+See the [basic app](../examples/basic-app#run) for the native CPU recipe and
+its platform and bundle requirements.
+
 ## LiteRT-LM Qwen3 bundles
 
 The updated Qwen3-0.6B bundle is verified on macOS CPU, and Linux and Windows
