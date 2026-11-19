@@ -392,11 +392,38 @@ void main() {
       String open(String tail) =>
           '<|tool_call_start|>[{"name": "search", "arguments": '
           '{"query": "$tail<|tool_call_end|>';
-      for (final tail in ['x}} ]', 'x}}\n]', 'a <|b}}]']) {
+      for (final tail in ['x}} ]', 'x}}\n]']) {
         expect(grammar.accepts(open(tail)), isFalse, reason: tail);
       }
       expect(Lfm2Handler().parse(open('x}} ]')).toolCalls, isEmpty);
       expect(Lfm2Handler().parse(open('x}}]\n')).toolCalls, isEmpty);
+    });
+
+    test('an open final string only reserves the literal LFM2 end marker', () {
+      final grammar = GbnfRecognizer(render([search]).grammar!);
+      String open(String raw) =>
+          '<|tool_call_start|>[{"name": "search", "arguments": '
+          '{"query": "$raw}}]<|tool_call_end|>';
+      for (final (raw, value) in [
+        ('text <| f x', 'text <| f x'),
+        ('<|tool_call_end|', '<|tool_call_end|'),
+        ('"use "<|tool_call', '"use "<|tool_call'),
+        (r'\u003c|tool_call_end|>', '<|tool_call_end|>'),
+      ]) {
+        final output = open(raw);
+        expect(grammar.accepts(output), isTrue, reason: raw);
+        final parsed = Lfm2Handler().parseWithTools(output, tools: [search]);
+        expect(parsed.toolCalls, hasLength(1), reason: raw);
+        expect(jsonDecode(parsed.toolCalls.single.function!.arguments!), {
+          'query': value,
+        }, reason: raw);
+      }
+      final reserved = open('<<|tool_call_end|> after');
+      expect(grammar.accepts(reserved), isFalse);
+      expect(
+        Lfm2Handler().parseWithTools(reserved, tools: [search]).toolCalls,
+        isEmpty,
+      );
     });
 
     test('parser robustness: an open string reads only at the very end', () {
