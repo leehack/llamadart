@@ -430,6 +430,21 @@ dart run tool/testing/run_local_e2e.dart --scenario speech-to-text-smoke \
   --audio-path /path/to/known-speech.wav \
   --expect "Exact expected transcript."
 
+# Live PCM streaming ASR (`speech-to-text-stream-smoke`) runs each family and
+# pacing leg in a fresh process at 4096 context and 2 threads (`--backend cpu`
+# or `--backend cuda`), warming up with the 11s JFK clip before sampling
+# baseline RSS and feeding 4,800,000 samples (300s) via a reusable <=5120 slab.
+# Calibrated RSS growth ceilings (max(64 MiB, ceil_32MiB(1.25 * max_observed))):
+#   - voxtral / macos / arm64 / cpu / fast: 416 MiB above warm baseline
+#   - lfm3 / macos / arm64 / cpu / fast: 64 MiB above warm baseline
+# Paced runs and other host/backend profiles remain `unbounded / qualification
+# pending` until calibrated from three independent baseline runs. Set
+# `LLAMADART_STT_STREAM_QUALIFY=1` to preflight all 6 model/mmproj SHA-256
+# digests, run both fast and paced legs, and fail on any skip, wrong placement,
+# truncation, or uncalibrated/exceeded memory ceiling.
+dart run tool/testing/run_local_e2e.dart --scenario speech-to-text-stream-smoke \
+  --backend cpu
+
 dart run tool/testing/run_local_e2e.dart \
   --scenario chat-app-web-speech-to-text-smoke \
   --audio-path /path/to/known-speech.wav \

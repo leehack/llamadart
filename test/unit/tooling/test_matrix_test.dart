@@ -958,7 +958,9 @@ void main() {
         (row) => row.id == 'speech-to-text-stream-smoke',
       );
       expect(row.command, contains('speech-to-text-stream-smoke'));
+      expect(row.command, contains('--backend cpu'));
       expect(row.covers, contains('LlamaCppLiveAsrAdapter'));
+      expect(row.covers, contains('LLAMADART_STT_STREAM_QUALIFY=1'));
     });
 
     test('Web speech rows name their scenarios and the WER gate', () {

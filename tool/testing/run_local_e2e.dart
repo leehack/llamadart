@@ -976,42 +976,126 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
       group: LocalE2eScenarioGroup.dartLocalOnly,
       description:
           'Run typed native llama.cpp live PCM streaming ASR (Voxtral Realtime, '
-          'LFM3-Audio, Qwen3 refusal, 300s bounds; set '
-          'LLAMADART_STT_STREAM_VOXTRAL_MODEL_PATH / _MMPROJ_PATH, '
+          'LFM3-Audio, Qwen3 refusal, 300s bounds in fresh processes per leg; '
+          'set LLAMADART_STT_STREAM_VOXTRAL_MODEL_PATH / _MMPROJ_PATH, '
           'LLAMADART_STT_STREAM_LFM3_MODEL_PATH / _MMPROJ_PATH, '
           'LLAMADART_STT_STREAM_QWEN_MODEL_PATH / _MMPROJ_PATH, optional '
-          'LLAMADART_STT_STREAM_AUDIO_PATH and LLAMADART_STT_LIVE_PACED=1).',
+          'LLAMADART_STT_STREAM_AUDIO_PATH, LLAMADART_STT_LIVE_PACED=1, and '
+          'LLAMADART_STT_STREAM_QUALIFY=1 with --backend cpu|cuda).',
       requiresDevice: false,
-      stepsBuilder: (context) => [
-        LocalE2eCommandStep(
-          workingDirectory: context.projectRoot,
-          executable: 'dart',
-          arguments: const [
-            'test',
-            '--run-skipped',
-            '-t',
-            'local-only',
-            'test/e2e/backends/speech_to_text_stream_e2e_test.dart',
-          ],
-          environment: {
-            for (final key in const [
-              'LLAMADART_STT_LIVE_PACED',
-              'LLAMADART_STT_STREAM_VOXTRAL_MODEL_PATH',
-              'LLAMADART_STT_STREAM_VOXTRAL_MMPROJ_PATH',
-              'LLAMADART_STT_STREAM_LFM3_MODEL_PATH',
-              'LLAMADART_STT_STREAM_LFM3_MMPROJ_PATH',
-              'LLAMADART_STT_STREAM_QWEN_MODEL_PATH',
-              'LLAMADART_STT_STREAM_QWEN_MMPROJ_PATH',
-              'LLAMADART_STT_STREAM_AUDIO_PATH',
-              'LLAMADART_STT_MODEL_PATH',
-              'LLAMADART_STT_MMPROJ_PATH',
-            ])
-              if (Platform.environment[key] != null)
-                key: Platform.environment[key]!,
-          },
-          description: 'Typed live PCM speech-to-text real-model smoke',
-        ),
-      ],
+      stepsBuilder: (context) {
+        final qualify =
+            context.environment['LLAMADART_STT_STREAM_QUALIFY'] == '1';
+        final runPaced =
+            qualify || context.environment['LLAMADART_STT_LIVE_PACED'] == '1';
+        final receiptDir = context
+            .environment['LLAMADART_STT_STREAM_RECEIPT_DIR']
+            ?.trim();
+        final resolvedReceiptDir = (receiptDir != null && receiptDir.isNotEmpty)
+            ? receiptDir
+            : '${context.projectRoot}/build/speech-to-text-stream-smoke';
+        final forwardedEnv = <String, String>{
+          for (final key in const [
+            'LLAMADART_STT_LIVE_PACED',
+            'LLAMADART_STT_STREAM_QUALIFY',
+            'LLAMADART_STT_STREAM_COLLECT_BASELINE',
+            'LLAMADART_STT_STREAM_VOXTRAL_MODEL_PATH',
+            'LLAMADART_STT_STREAM_VOXTRAL_MMPROJ_PATH',
+            'LLAMADART_STT_STREAM_LFM3_MODEL_PATH',
+            'LLAMADART_STT_STREAM_LFM3_MMPROJ_PATH',
+            'LLAMADART_STT_STREAM_QWEN_MODEL_PATH',
+            'LLAMADART_STT_STREAM_QWEN_MMPROJ_PATH',
+            'LLAMADART_STT_STREAM_AUDIO_PATH',
+            'LLAMADART_STT_MODEL_PATH',
+            'LLAMADART_STT_MMPROJ_PATH',
+          ])
+            if (context.environment[key] != null)
+              key: context.environment[key]!,
+          'LLAMADART_STT_STREAM_BACKEND': context.backend,
+          'LLAMADART_STT_STREAM_RECEIPT_DIR': resolvedReceiptDir,
+        };
+
+        LocalE2eCommandStep legStep(String nameFilter, String description) {
+          return LocalE2eCommandStep(
+            workingDirectory: context.projectRoot,
+            executable: 'dart',
+            arguments: [
+              'test',
+              '--run-skipped',
+              '-t',
+              'local-only',
+              'test/e2e/backends/speech_to_text_stream_e2e_test.dart',
+              '--name',
+              nameFilter,
+            ],
+            environment: forwardedEnv,
+            description: description,
+          );
+        }
+
+        return [
+          if (qualify)
+            LocalE2eCommandStep(
+              workingDirectory: context.projectRoot,
+              executable: 'dart',
+              arguments: const [
+                'run',
+                'tool/testing/verify_speech_stream_qualification.dart',
+                '--preflight',
+              ],
+              environment: forwardedEnv,
+              description:
+                  'Preflight all 6 speech-stream model/projector paths and WAV digest',
+            ),
+          legStep(
+            'Voxtral Realtime short parity',
+            'Voxtral Realtime short parity, truncation, paused consumer and cancel/reuse',
+          ),
+          legStep(
+            'Voxtral Realtime 300s fast-producer',
+            'Voxtral Realtime 300s fast-producer memory and throughput',
+          ),
+          if (runPaced)
+            legStep(
+              'Voxtral Realtime 300s live-paced',
+              'Voxtral Realtime 300s live-paced memory and throughput',
+            ),
+          legStep(
+            'LFM3-Audio 2048 floor',
+            'LFM3-Audio 2048 floor restart, chunking parity and cancel/reuse',
+          ),
+          legStep(
+            'LFM3-Audio 300s fast-producer',
+            'LFM3-Audio 300s fast-producer memory and throughput',
+          ),
+          if (runPaced)
+            legStep(
+              'LFM3-Audio 300s live-paced',
+              'LFM3-Audio 300s live-paced memory and throughput',
+            ),
+          legStep(
+            'Qwen3-ASR projector refuses',
+            'Qwen3-ASR projector refusal on LlamaCppLiveAsrAdapter',
+          ),
+          if (qualify)
+            LocalE2eCommandStep(
+              workingDirectory: context.projectRoot,
+              executable: 'dart',
+              arguments: [
+                'run',
+                'tool/testing/verify_speech_stream_qualification.dart',
+                '--evaluate',
+                '--receipt-dir',
+                resolvedReceiptDir,
+                '--backend',
+                context.backend,
+              ],
+              environment: forwardedEnv,
+              description:
+                  'Evaluate speech-stream qualification receipts and memory ceilings',
+            ),
+        ];
+      },
     ),
     LocalE2eScenario(
       name: 'litert-lm-asr-smoke',
