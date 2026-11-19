@@ -3,10 +3,12 @@
 library;
 
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
 import 'dart:typed_data';
 
+import 'package:crypto/crypto.dart';
 import 'package:llamadart/llamadart.dart';
 import 'package:llamadart/src/core/speech/qwen_windowed_asr.dart';
 import 'package:test/test.dart';
@@ -437,53 +439,62 @@ void main() {
     timeout: const Timeout(Duration(minutes: 5)),
   );
 
-  for (final (noiseSeconds, seed) in [(4, 257), (5, 327)]) {
-    test(
-      'Qwen3-ASR does not transcribe a ${noiseSeconds}s quiet noise tail',
-      () async {
-        if (modelPath == null || projectorPath == null) {
-          markTestSkipped('Set the Qwen model and projector paths.');
-          return;
-        }
+  for (final (label, noiseSeconds, seed, scale, click) in [
+    ('4s', 4, 257, 1.0, 0.0),
+    ('5s', 5, 327, 1.0, 0.0),
+    ('4s click 0.06', 4, 257, 1.0, 0.06),
+    ('5s click 0.06', 5, 327, 1.0, 0.06),
+    ('4s click 0.2', 4, 257, 1.0, 0.2),
+    ('5s click 0.2', 5, 327, 1.0, 0.2),
+    ('5s checkpoint-to-final RMS 0.00506', 5, 257, 4.0, 0.0),
+    ('5s RMS 0.0063', 5, 257, 5.0, 0.0),
+  ]) {
+    test('Qwen3-ASR does not transcribe a quiet noise tail ($label)', () async {
+      if (modelPath == null || projectorPath == null) {
+        markTestSkipped('Set the Qwen model and projector paths.');
+        return;
+      }
 
-        final engine = await SpeechToTextEngine.load(
-          SpeechToTextModel(
-            ModelSource.path(modelPath),
-            projector: ModelSource.path(projectorPath),
-            adapter: const Qwen3WindowedAsrAdapter(),
-          ),
-          params: params,
+      final engine = await SpeechToTextEngine.load(
+        SpeechToTextModel(
+          ModelSource.path(modelPath),
+          projector: ModelSource.path(projectorPath),
+          adapter: const Qwen3WindowedAsrAdapter(),
+        ),
+        params: params,
+      );
+      try {
+        const speechEnd = 112000;
+        final speech = _decodeWavPcm16Mono16k(_defaultSecondWav);
+        final noise = _quietNoise(noiseSeconds * 16000, seed, scale: scale);
+        for (var i = 0; i < 40 && click > 0; i++) {
+          noise[40000 + i] += click * exp(-i / 8) * (i.isEven ? 1 : -1);
+        }
+        final pcm = Float32List(speechEnd + noise.length)
+          ..setRange(0, speech.length, speech)
+          ..setRange(speechEnd, speechEnd + noise.length, noise);
+        final run = await _streamChunks(engine, pcm, [4000]);
+
+        expect(run.duration, Duration(seconds: 7 + noiseSeconds));
+        final committed = run.partials.firstWhere(
+          (event) => event.confirmedText!.isNotEmpty,
         );
-        try {
-          const speechEnd = 112000;
-          final speech = _decodeWavPcm16Mono16k(_defaultSecondWav);
-          final noise = _quietNoise(noiseSeconds * 16000, seed);
-          final pcm = Float32List(speechEnd + noise.length)
-            ..setRange(0, speech.length, speech)
-            ..setRange(speechEnd, speechEnd + noise.length, noise);
-          final run = await _streamChunks(engine, pcm, [4000]);
-
-          expect(run.duration, Duration(seconds: 7 + noiseSeconds));
-          final committed = run.partials.firstWhere(
-            (event) => event.confirmedText!.isNotEmpty,
-          );
-          final tailPartials = run.partials.skipWhile(
-            (event) => !identical(event, committed),
-          );
-          expect(tailPartials.length, greaterThan(1));
-          expect([
-            run.text,
-            ...tailPartials.map((event) => event.text),
-          ], everyElement(committed.confirmedText));
-          expect(
-            _normalizeWords(run.text),
-            _normalizeWords(_loadSiblingTranscript(_defaultSecondWav)!),
-          );
-        } finally {
-          await engine.dispose();
-        }
-      },
-    );
+        final tailPartials = run.partials.skipWhile(
+          (event) => !identical(event, committed),
+        );
+        expect(tailPartials.length, greaterThan(1));
+        expect([
+          run.text,
+          ...tailPartials.map((event) => event.text),
+        ], everyElement(committed.confirmedText));
+        expect(
+          _normalizeWords(run.text),
+          _normalizeWords(_loadSiblingTranscript(_defaultSecondWav)!),
+        );
+      } finally {
+        await engine.dispose();
+      }
+    });
   }
 
   test('Qwen3-ASR retains quiet speech and a quieter final word', () async {
@@ -561,6 +572,62 @@ void main() {
   );
 
   test(
+    'Qwen3-ASR replays all 23 quiet-speech audit controls unchanged',
+    () async {
+      final manifestPath = _envFile(
+        'LLAMADART_STT_WINDOWED_QUIET_SPEECH_MANIFEST',
+      );
+      if (modelPath == null || projectorPath == null || manifestPath == null) {
+        markTestSkipped(
+          'Set the Qwen model/projector and quiet-speech manifest paths.',
+        );
+        return;
+      }
+
+      final manifest = File(manifestPath);
+      final cases = (jsonDecode(manifest.readAsStringSync()) as List)
+          .cast<Map<String, Object?>>();
+      expect(cases.map((entry) => entry['file']).toSet(), hasLength(23));
+      final engine = await SpeechToTextEngine.load(
+        SpeechToTextModel(
+          ModelSource.path(modelPath),
+          projector: ModelSource.path(projectorPath),
+          adapter: const Qwen3WindowedAsrAdapter(),
+        ),
+        params: params,
+      );
+      try {
+        for (final entry in cases) {
+          final name = entry['file']! as String;
+          final samples = File.fromUri(
+            manifest.absolute.uri.resolve(name),
+          ).readAsBytesSync();
+          expect(
+            sha256.convert(samples).toString(),
+            entry['sha256'],
+            reason: name,
+          );
+          final bytes = ByteData.sublistView(samples);
+          final pcm = Float32List(samples.length ~/ 4);
+          for (var i = 0; i < pcm.length; i++) {
+            pcm[i] = bytes.getFloat32(i * 4, Endian.little);
+          }
+          final run = await _streamChunks(engine, pcm, [4000]);
+          expect(run.text, entry['text'], reason: name);
+          expect(
+            run.partials.map((event) => event.text).toSet().toList(),
+            entry['partials'],
+            reason: name,
+          );
+        }
+      } finally {
+        await engine.dispose();
+      }
+    },
+    timeout: const Timeout(Duration(minutes: 5)),
+  );
+
+  test(
     'Qwen3-ASR 300s sustained public-session run with RSS and lag metrics',
     () async {
       if (modelPath == null || projectorPath == null) {
@@ -587,7 +654,13 @@ void main() {
         );
         final baselineRss = ProcessInfo.currentRss;
 
-        final pcm300s = _repeatPcm(jfkPcm, 300);
+        final quietTails =
+            Platform
+                .environment['LLAMADART_STT_WINDOWED_SUSTAINED_QUIET_TAILS'] ==
+            '1';
+        final pcm300s = quietTails
+            ? _repeatPcm(_speechAndNoiseBlock(), 300)
+            : _repeatPcm(jfkPcm, 300);
         final wallWatch = Stopwatch()..start();
         final run = await _streamChunks(engine, pcm300s, <int>[
           4000,
@@ -602,7 +675,7 @@ void main() {
         final deltaRssMiB = (run.maxRssBytes - baselineRss) / (1024 * 1024);
 
         stderr.writeln(
-          'Qwen3-ASR 300s (${runPaced ? "paced" : "fast"}): '
+          'Qwen3-ASR 300s (${runPaced ? "paced" : "fast"}${quietTails ? ", quiet tails" : ""}): '
           'elapsed=${wallWatch.elapsed}, rtf=${rtf.toStringAsFixed(3)}, '
           'firstPending=${run.firstPendingWall}, '
           'firstConfirmed=${run.firstConfirmedWall}, '
@@ -622,16 +695,37 @@ void main() {
           prevConfirmed = p.confirmedText!;
         }
         final norm300s = _normalizeWords(run.text).join(' ');
-        expect(
-          _countOccurrences(norm300s, 'americans'),
-          greaterThanOrEqualTo(25),
-        );
+        if (quietTails) {
+          final reference = _normalizeWords(
+            _loadSiblingTranscript(_defaultSecondWav)!,
+          ).join(' ');
+          final normalized = norm300s.replaceAll(
+            'mr quilter',
+            'mister quilter',
+          );
+          final repetitions = List.filled(22, reference).join(' ');
+          expect(normalized, repetitions);
+        } else {
+          expect(
+            _countOccurrences(norm300s, 'americans'),
+            greaterThanOrEqualTo(25),
+          );
+        }
       } finally {
         await engine.dispose();
       }
     },
     timeout: const Timeout(Duration(minutes: 10)),
   );
+}
+
+Float32List _speechAndNoiseBlock() {
+  const speechInterval = 7 * 16000;
+  final speech = _decodeWavPcm16Mono16k(_defaultSecondWav);
+  final noise = _quietNoise(5 * 16000, 257, scale: 4.0);
+  return Float32List(speechInterval * 2)
+    ..setRange(0, speech.length, speech)
+    ..setRange(speechInterval, speechInterval + noise.length, noise);
 }
 
 double _rms(Float32List pcm) {
@@ -642,7 +736,7 @@ double _rms(Float32List pcm) {
   return sqrt(sumSquares / pcm.length);
 }
 
-Float32List _quietNoise(int sampleCount, int seed) {
+Float32List _quietNoise(int sampleCount, int seed, {double scale = 1.0}) {
   final noise = Float32List(sampleCount);
   var state = seed;
   var filtered = 0.0;
@@ -650,7 +744,7 @@ Float32List _quietNoise(int sampleCount, int seed) {
     state = (1664525 * state + 1013904223) & 0xffffffff;
     final white = 2.0 * (state / 4294967296.0) - 1.0;
     filtered = 0.96 * filtered + 0.04 * white;
-    noise[i] = 0.015 * filtered;
+    noise[i] = 0.015 * scale * filtered;
   }
   return noise;
 }

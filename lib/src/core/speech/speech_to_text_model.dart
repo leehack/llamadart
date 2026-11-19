@@ -177,7 +177,9 @@ class Qwen3AsrAdapter extends SpeechToTextPromptAdapter {
 /// The first window commits after 8 s of audio plus inference. Subsequent full
 /// windows need 6.05–8 s of new audio plus inference. Finishing flushes any
 /// remaining audio. Quiet intervals with a nonempty decode may take a second
-/// inference pass on amplified audio to suppress false text. Background noise
+/// inference pass on amplified audio to suppress false text. An isolated
+/// transient has limited influence on quiet classification. Later decodes of
+/// a rejected window are checked again before publication. Background noise
 /// can still affect accuracy.
 ///
 /// Requires `SpeechToTextEngine.load` on a native platform with a loaded

@@ -194,6 +194,12 @@ For the Qwen spoken-instruction control, set
 “Transcreva este áudio com precisão.” The test reduces its RMS to 0.00125.
 The macOS control uses `say -v Luciana` and FFmpeg to produce that WAV.
 Set `LLAMADART_STT_LIVE_PACED=1` for the 300 s run at the input audio rate.
+Set `LLAMADART_STT_WINDOWED_SUSTAINED_QUIET_TAILS=1` to repeat the LibriSpeech
+clip with seeded quiet-noise tails in the 300 s run.
+For the 23 audit speech controls, set
+`LLAMADART_STT_WINDOWED_QUIET_SPEECH_MANIFEST` to the replay JSON. Each entry has
+a relative `file` with mono 16 kHz float32 little-endian samples, its `sha256`,
+and the expected final `text` and distinct `partials` in order.
 
 `litert-lm-asr-preservation` is a local-only CPU campaign using the public
 `SpeechToTextEngine` and normal published native assets, with Whisper Tiny

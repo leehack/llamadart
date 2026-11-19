@@ -1126,7 +1126,6 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
               'LLAMADART_STT_STREAM_QWEN_MMPROJ_PATH',
               'LLAMADART_STT_STREAM_AUDIO_PATH',
               'LLAMADART_STT_WINDOWED_SECOND_AUDIO_PATH',
-              'LLAMADART_STT_WINDOWED_PORTUGUESE_AUDIO_PATH',
               'LLAMADART_STT_MODEL_PATH',
               'LLAMADART_STT_MMPROJ_PATH',
             ])

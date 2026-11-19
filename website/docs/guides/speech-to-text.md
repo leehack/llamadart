@@ -287,10 +287,12 @@ ring buffer (`SpeechToTextInputMode.windowed`). When the buffer fills, it
 commits at a quiet boundary or hard-cuts at 8 s.
 
 When a quiet interval produces text, the adapter may decode the same interval
-at higher gain before publishing it. If the second decode is empty, the adapter
-suppresses the hypothesis. Otherwise, it keeps the original wording. This can
-add latency to partial updates, commits, or the final flush. Background noise
-can still affect transcription accuracy.
+at higher gain before publishing it. Quiet classification uses the majority
+of 20 ms frames, and the amplified pass limits isolated peaks. If the second
+decode is empty, the adapter suppresses the hypothesis and checks later decodes
+of that window again. A nonempty second decode preserves the original wording.
+Verification can add latency to partial updates, commits, or the final flush.
+Background noise can still affect transcription accuracy.
 
 ```dart
 final recognizer = await SpeechToTextEngine.load(

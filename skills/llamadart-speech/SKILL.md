@@ -68,7 +68,8 @@ description: >-
     and later full windows need 6.05–8 s of new audio plus inference.
     A nonempty quiet decode may take a second pass at higher gain before
     publishing text, including during the `finish()` flush. An empty second
-    decode suppresses the hypothesis. Background noise can still affect accuracy.
+    decode suppresses the hypothesis and keeps later decodes of that window
+    subject to verification. Background noise can still affect accuracy.
     A full buffer commits at a quiet boundary or hard-cuts at 8 s, which can
     split a word. Confirmed windows
     join with `\n`, empty intermediate windows are suppressed, and

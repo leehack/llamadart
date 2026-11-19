@@ -1521,7 +1521,8 @@ class SpeechToTextEngine implements LlamadartEngine<SpeechToTextCapabilities> {
   /// plus inference, and later full windows need 6.05–8 s of new audio plus
   /// inference. [SpeechToTextStreamingSession.finish] flushes remaining audio.
   /// Quiet intervals with a nonempty decode may add a second inference pass
-  /// before publishing text, including during the final flush.
+  /// before publishing text. Rejected hypotheses keep their window subject to
+  /// verification at later checkpoints, commit, and final flush.
   /// `maxOutputTokens` (1024 here) applies per decode, empty intermediate
   /// windows are suppressed, and confirmed windows are joined with `\n`
   /// in the final text. [dispose] cancels the session.
