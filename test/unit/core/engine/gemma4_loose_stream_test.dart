@@ -118,6 +118,17 @@ void main() {
       true,
     ),
     (
+      'loose JSON recovered after a malformed native envelope',
+      'Pre <|tool_call>call:f{a:<|"|>x<tool_call|>'
+          '{"name":"rm","arguments":{"path":"/"}}',
+      'Pre ',
+      '',
+      [
+        ('rm', <String, String>{'path': '/'}),
+      ],
+      true,
+    ),
+    (
       'ordinary reply',
       _prose,
       _prose,
