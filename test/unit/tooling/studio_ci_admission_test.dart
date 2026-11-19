@@ -71,9 +71,12 @@ void main() {
       final workflow =
           loadYaml(File('.github/workflows/ci.yml').readAsStringSync()) as Map;
       final jobs = workflow['jobs'] as Map;
-      for (final name in ['studio', 'studio-macos']) {
+      for (final (name, expectedIf) in [
+        ('studio', "needs.changes.outputs.studio == 'true'"),
+        ('studio-macos', "needs.changes.outputs.studio-macos == 'true'"),
+      ]) {
         final job = jobs[name] as Map;
-        expect(job['if'], "needs.changes.outputs.studio == 'true'");
+        expect(job['if'], expectedIf, reason: name);
         final setup =
             (job['steps'] as List).singleWhere(
                   (step) =>
@@ -109,4 +112,28 @@ void main() {
       }
     },
   );
+
+  test('Studio packaging-only changes omit Studio macOS admission', () async {
+    for (final path in [
+      'packages/llamadart_studio/web/index.html',
+      'packages/llamadart_studio/windows/runner/main.cpp',
+      'packages/llamadart_studio/linux/my_application.cc',
+    ]) {
+      final result = await Process.run(
+        Platform.isWindows ? 'python' : 'python3',
+        [
+          '-c',
+          'import json,runpy,sys; m=runpy.run_path("tool/ci/select_jobs.py"); '
+              'p=m["select"]([sys.argv[1]], pull_request=True); '
+              'print(json.dumps({"plan":p,"expected":m["expected_jobs"](p)}))',
+          path,
+        ],
+      );
+      expect(result.exitCode, 0, reason: '${result.stderr}');
+      final output =
+          jsonDecode(result.stdout as String) as Map<String, dynamic>;
+      expect(output['expected']['studio'], isTrue, reason: path);
+      expect(output['expected']['studio-macos'], isFalse, reason: path);
+    }
+  });
 }

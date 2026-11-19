@@ -106,7 +106,11 @@ List<String> hostReasons(String file, [String root = '.']) {
   if (file.endsWith('_io_test.dart')) reasons.add('dart:io implementation');
   final history = hostHistoryTests[file];
   if (history != null) reasons.add('host history: $history');
-  final own = _read(root, file);
+  final own = _readOrNull(root, file);
+  if (own == null) {
+    reasons.add('missing source $file');
+    return reasons.toList()..sort();
+  }
   if (_hostCheck.hasMatch(own.replaceAll(_windowsSkipGuard, ''))) {
     reasons.add('checks the host OS');
   }
@@ -118,7 +122,7 @@ List<String> hostReasons(String file, [String root = '.']) {
   while (pending.isNotEmpty) {
     final current = pending.removeLast();
     if (!seen.add(current)) continue;
-    final source = current == file ? own : _read(root, current);
+    final source = current == file ? own : (_readOrNull(root, current) ?? '');
     final via = current == file ? '' : ' via $current';
     if (_modelLoad.hasMatch(source)) reasons.add('loads a test model$via');
     if (_platformBackend.hasMatch(source)) {
@@ -136,9 +140,51 @@ List<String> hostReasons(String file, [String root = '.']) {
   return reasons.toList()..sort();
 }
 
-String _read(String root, String path) {
+String? _readOrNull(String root, String path) {
   final file = File('$root/$path');
-  return file.existsSync() ? file.readAsStringSync() : '';
+  return file.existsSync() ? file.readAsStringSync() : null;
+}
+
+/// Root test suites that have non-empty [hostReasons] or are transitively
+/// imported, exported, or parted by a suite that does.
+Set<String> hostRelevantTestFiles([String root = '.']) {
+  final relevant = <String>{};
+  for (final suite in rootTestFiles(root)) {
+    if (hostReasons(suite, root).isEmpty) continue;
+    relevant.add(suite);
+    final seen = <String>{};
+    final pending = [suite];
+    while (pending.isNotEmpty) {
+      final current = pending.removeLast();
+      if (!seen.add(current)) continue;
+      final source = _readOrNull(root, current);
+      if (source == null) continue;
+      for (final uri in _imports(source)) {
+        final target = _resolve(current, uri);
+        if (target.startsWith('test/') && target.endsWith('.dart')) {
+          if (target.endsWith('_test.dart')) {
+            relevant.add(target);
+          }
+          pending.add(target);
+        }
+      }
+    }
+  }
+  return relevant;
+}
+
+/// Evaluates [files] for host-OS relevance, validating paths and existence.
+Map<String, bool> probeHostSuites(List<String> files, [String root = '.']) {
+  for (final file in files) {
+    if (!_safeTestPath.hasMatch(file) || file.split('/').contains('..')) {
+      throw FormatException('Unsupported test file path: $file');
+    }
+    if (!File('$root/$file').existsSync()) {
+      throw FileSystemException('Missing test file', '$root/$file');
+    }
+  }
+  final relevant = hostRelevantTestFiles(root);
+  return {for (final file in files) file: relevant.contains(file)};
 }
 
 Iterable<String> _imports(String source) sync* {
@@ -300,12 +346,30 @@ Usage:
   dart tool/ci/test_shards.dart hosts [<test file>...]
       Prints whether each root test file (default: all) runs on Linux only
       or on every OS, and why.
+  dart tool/ci/test_shards.dart hosts-json
+      Reads a JSON array of test file paths from stdin and prints a JSON
+      object mapping each path to whether it runs on host OSes.
   dart tool/ci/test_shards.dart weights <source> <timing.json>...
       Replaces <source>'s weights in $weightsPath with the suite times of
       native_test_timing.dart summaries, such as one lane's CI artifacts.
       Sources: linux-vm, chrome, macos, windows.''';
 
-void main(List<String> arguments) {
+Future<void> main(List<String> arguments) async {
+  if (arguments.length == 1 && arguments.first == 'hosts-json') {
+    try {
+      final raw = await utf8.decodeStream(stdin);
+      final decoded = jsonDecode(raw);
+      if (decoded is! List || decoded.any((item) => item is! String)) {
+        return _fail('Expected a JSON array of test file paths on stdin.');
+      }
+      stdout.writeln(jsonEncode(probeHostSuites(decoded.cast<String>())));
+    } on FormatException catch (error) {
+      return _fail('Invalid hosts-json input: ${error.message}');
+    } on FileSystemException catch (error) {
+      return _fail('Unreadable test file: ${error.path ?? error.message}');
+    }
+    return;
+  }
   if (arguments.isNotEmpty && arguments.first == 'hosts') {
     final files = arguments.length > 1 ? arguments.skip(1) : rootTestFiles();
     for (final file in files) {

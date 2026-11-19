@@ -266,6 +266,89 @@ void main() => test('renders', () {});
         );
       }
     });
+
+    test('missing test file cannot quietly become neutral', () {
+      expect(hostReasons('test/unit/core/missing_test.dart', root.path), [
+        'missing source test/unit/core/missing_test.dart',
+      ]);
+    });
+  });
+
+  group('probeHostSuites', () {
+    late Directory root;
+    setUp(() => root = Directory.systemTemp.createTempSync('test-probe-'));
+    tearDown(() => root.deleteSync(recursive: true));
+
+    void write(String path, String source) => File('${root.path}/$path')
+      ..createSync(recursive: true)
+      ..writeAsStringSync(source);
+
+    test(
+      'agrees with hostReasons on neutral, native, history and helper suites',
+      () {
+        write('test/unit/core/neutral_test.dart', 'void main() {}\n');
+        write('test/unit/core/consumed_test.dart', 'void main() {}\n');
+        write(
+          'test/support/cond_helper.dart',
+          "import 'stub.dart'\n"
+              "    if (dart.library.io) "
+              "'package:llamadart/src/platform/io/native_diagnostics.dart';\n",
+        );
+        write(
+          'test/unit/core/via_helper_test.dart',
+          "import '../../support/cond_helper.dart';\n",
+        );
+        write(
+          'test/unit/backends/native/native_test.dart',
+          "import '../../core/consumed_test.dart';\n",
+        );
+        write(
+          'test/unit/tooling/prepare_workspace_test.dart',
+          'void main() {}\n',
+        );
+
+        final suites = [
+          'test/unit/core/neutral_test.dart',
+          'test/unit/core/consumed_test.dart',
+          'test/unit/core/via_helper_test.dart',
+          'test/unit/backends/native/native_test.dart',
+          'test/unit/tooling/prepare_workspace_test.dart',
+        ];
+        expect(probeHostSuites(suites, root.path), {
+          'test/unit/core/neutral_test.dart': false,
+          'test/unit/core/consumed_test.dart': true,
+          'test/unit/core/via_helper_test.dart': true,
+          'test/unit/backends/native/native_test.dart': true,
+          'test/unit/tooling/prepare_workspace_test.dart': true,
+        });
+        expect(
+          hostReasons('test/unit/core/neutral_test.dart', root.path),
+          isEmpty,
+        );
+        expect(
+          hostReasons('test/unit/core/via_helper_test.dart', root.path),
+          isNotEmpty,
+        );
+        expect(
+          hostReasons(
+            'test/unit/tooling/prepare_workspace_test.dart',
+            root.path,
+          ),
+          isNotEmpty,
+        );
+      },
+    );
+
+    test('rejects missing or unsafe paths', () {
+      expect(
+        () => probeHostSuites(['test/unit/core/missing_test.dart'], root.path),
+        throwsA(isA<FileSystemException>()),
+      );
+      expect(
+        () => probeHostSuites(['test/../lib/a_test.dart'], root.path),
+        throwsFormatException,
+      );
+    });
   });
 
   group('host OS lanes', () {
@@ -388,6 +471,51 @@ void main() => test('renders', () {});
         expect(result.exitCode, 64);
         expect(result.stdout, isEmpty);
       });
+    }
+
+    test('hosts-json evaluates real repo suites from stdin', () async {
+      final process = await Process.start(Platform.resolvedExecutable, [
+        'tool/ci/test_shards.dart',
+        'hosts-json',
+      ]);
+      process.stdin.write(
+        jsonEncode([
+          'test/unit/core/grammar/response_schema_validation_test.dart',
+          'test/unit/tooling/prepare_workspace_test.dart',
+          'test/integration/apple_companion_flutter_cache_test.dart',
+        ]),
+      );
+      await process.stdin.close();
+      final stdoutText = await utf8.decodeStream(process.stdout);
+      final stderrText = await utf8.decodeStream(process.stderr);
+      expect(await process.exitCode, 0, reason: stderrText);
+      expect(jsonDecode(stdoutText), {
+        'test/unit/core/grammar/response_schema_validation_test.dart': false,
+        'test/unit/tooling/prepare_workspace_test.dart': true,
+        'test/integration/apple_companion_flutter_cache_test.dart': true,
+      });
+    });
+
+    for (final badInput in [
+      '',
+      '{not json',
+      '{"a": true}',
+      '[123]',
+      '["test/unit/core/missing_test.dart"]',
+      '["test/../lib/a_test.dart"]',
+    ]) {
+      test(
+        'hosts-json rejects malformed or missing input: $badInput',
+        () async {
+          final process = await Process.start(Platform.resolvedExecutable, [
+            'tool/ci/test_shards.dart',
+            'hosts-json',
+          ]);
+          process.stdin.write(badInput);
+          await process.stdin.close();
+          expect(await process.exitCode, 64);
+        },
+      );
     }
   });
 }

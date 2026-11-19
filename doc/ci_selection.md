@@ -10,19 +10,21 @@ PR. A path filter must not prevent a required workflow from reporting.
 |---|---|---|
 | Documentation, website, docs tooling | Docs build/tool tests plus version and bridge-pin checks | None |
 | Any path | Adds `Markdown Tests`, unless the Linux VM tests are selected | None |
-| Studio core or UI package | Studio core and Flutter UI format, analysis and VM tests; native macOS regressions; Web files also run version and bridge-pin checks | None |
-| One companion package | Root static checks, affected package's Flutter/SwiftPM/publish checks, root Linux coverage and full macOS/Windows VM checks, Web Chat consumer | Android, Web, iOS inputs |
-| Validation package tests/schemas or unbundled assets | Root static checks, Linux VM tests, private suite and Flutter consumer contracts | None |
+| Studio core or UI package (`web/`, `windows/`, `linux/` packaging vs shared/macOS) | Studio core and Flutter UI format, analysis and VM tests; `studio-macos` for non-exempt inputs; Web files also run version and bridge-pin checks | None |
+| One companion package | Root static checks, affected package's Flutter/SwiftPM/publish checks, Apple cache check, root Linux coverage and full macOS/Windows VM checks, Studio + `studio-macos`, Web Chat consumer | Android, Web, iOS inputs |
+| Validation package tests/schemas or unbundled assets (`process_memory_test.dart` / `process_memory_probe.dart` also run Mac memory) | Root static checks, Linux VM tests, private suite and Flutter consumer contracts | None |
 | Validation assets the chat app bundles (`flutter.assets`, such as profiles) | Same validation checks and Web Chat | None |
-| Validation implementation/dependencies | Same validation checks and Web Chat | All desktop and app targets |
-| Validation provider/build helpers | Same validation checks | All desktop and app targets |
-| Android/iOS/Web chat packaging | Root static checks and Linux VM tests; Web Chat for Web inputs | Affected app target |
-| Other chat app implementation/dependencies | Static, Linux VM tests, private harness, Web Chat | All app targets |
-| Chat app unit tests | Static, Linux VM tests and Web Chat | None |
-| Root tests/fixtures | Static, all Linux VM tests, Chrome and macOS/Windows host tests | None |
-| Root runtime/hooks/dependencies, other example packages, shared or unknown paths | Full behavioral graph | All targets; a PR defers macOS desktop and Android unless it changes their build inputs |
-| Workflow/selector changes | Full graph including synthetic artifact transport | All targets; a PR defers macOS desktop and Android unless it changes the bundle workflow or selector |
-| Missing, empty or invalid diff; explicit manual bundle run | Full fallback | All targets |
+| Validation implementation/dependencies | Same validation checks, Mac memory and Web Chat | All desktop and app targets |
+| Validation provider/build helpers | Same validation checks (no Mac memory) | All desktop and app targets |
+| Android/Web/Linux/Windows chat packaging | Root static checks and Linux VM tests; Web Chat/harness as applicable | Affected app target (Android/Web) |
+| iOS/macOS chat packaging | Root static checks, Linux VM tests, Apple cache check and Mac native shards | iOS inputs (`ios/`) |
+| Other chat app implementation/dependencies (`lib/**`, `pubspec.*`, `integration_test/**`, `physical_ios_speech_e2e_support_test.dart`) | Static, Linux VM tests, private harness, Apple cache check, Web Chat | All app targets |
+| Chat app unit tests (other than `physical_ios_speech_e2e_support_test.dart`) | Static, Linux VM tests and Web Chat | None |
+| Root `test/**` (extant Linux-only leaf suite on PR vs host-sensitive suite, helper/fixture, deleted/unknown, or push) | Static, all Linux VM tests, Chrome and Windows host tests; Mac native shards only when `test_shards.dart hosts-json` reports host-relevant or on helper/fixture/push/probe-failure; shared fixtures/helpers also run Studio, `studio-macos` and Apple cache | None |
+| Browser backend trees (`lib/src/backends/web/**`, `lib/src/backends/webgpu/**`) | Non-Mac full graph (Linux, Chrome, Windows native, Ubuntu Studio, Web Chat, Genkit, Model Store, examples) with zero Mac allocations | Linux, Windows desktops; apps (PR defers Android) |
+| Root runtime/hooks/dependencies, other example packages, conditional backend entrypoints | Full behavioral graph | All targets; a PR defers macOS desktop and Android unless it changes their build inputs (`.flutter-version` included for `macos-15`) |
+| Workflow/selector or unclassified paths | Full graph including synthetic artifact transport (workflows/selector) | All targets; a PR defers `macos-15` and `android` unless it changes their build inputs (`validation_bundles.yml`, `select_jobs.py`, `hook/`, `lib/src/hook/`, `pubspec.*`, `.flutter-version`, `tool/testing/validation*`, or compiled `packages/llamadart_validation/` for `macos-15`) |
+| Missing, empty or invalid diff; explicit manual bundle run | Full fallback | All targets (`macos-15` retained) |
 
 Selections combine for mixed changes. Version checks already executed by the
 root static job are not duplicated in the docs-only job. Root suites import,
@@ -122,7 +124,7 @@ step ([#1670](https://github.com/leehack/llamadart/issues/1670)).
 The three files have explicit CODEOWNERS assignments, but requiring owner
 approval still depends on repository protection settings.
 
-**Branch protection, as of 2026-11-12.** `main` has no branch protection rule.
+**Branch protection, as of 2026-11-18.** `main` has no branch protection rule.
 Its only ruleset, "Copilot review for default branch" (active), blocks deletion
 and non-fast-forward pushes and requests Copilot review; it has no
 `pull_request` rule and no required status checks. So neither a required review
@@ -132,6 +134,25 @@ of this change.
 
 Root tests run as file shards: Linux VM (3), Chrome (3), macOS `Test Native`
 (3) and Windows `Test Native` (1 `windows-tooling`, 2 `windows-runtime`).
+`Test Native` (`test-other-os`) builds its `matrix.include` from separate
+`macos-native` and `windows-native` decisions (`test-other-os-matrix`), so a
+PR can run Windows-only or Mac-only shards instead of always allocating both.
+On PRs where Mac admission depends solely on extant changed root `*_test.dart`
+files, a cheap `preflight` step requests Dart 3.13.1 and `select_jobs.py`
+queries `dart tool/ci/test_shards.dart hosts-json` (which uses the same
+`hostReasons` and transitive import graph as `hosts` and `laneFiles`, plus
+transitive consumption by host suites). Missing SDK, missing/unreadable files,
+or malformed/partial output conservatively admit Mac tests.
+
+Pushes to `main` keep incremental path selection (no main-push full-Mac
+overlay): release workflows and main coverage gates already cover `main`, and
+avoiding a full-Mac overlay keeps macOS runner demand low.
+
+Triage for cancelled macOS jobs: inspect runner assignment, steps and
+`gh api repos/leehack/llamadart/check-runs/<job-id>/annotations` to separate
+PR supersession from explicit hosted-runner acquisition errors; for a
+still-current run with a confirmed acquisition error, rerun failed jobs once
+capacity returns.
 Linux VM and Chrome run every root test file; macOS and Windows run only the
 host tests described under "Host OS lanes". `tool/ci/test_shards.dart` lists
 every root `*_test.dart` file and assigns each to exactly one shard of each
@@ -172,14 +193,17 @@ checks as two matrix legs.
 
 Checks share a job to stay under GitHub Free's limit of 5 concurrent macOS jobs
 across the owner's repositories, and each keeps its own selection on its step:
-`Companion Packages (macOS)` runs when companion packages, `Test Native` or the
-validation harness is selected, then runs the selected companion packages, the
-validation process memory test and the Apple companion cache-transition test,
-each even if an earlier one failed. On Windows the process memory test runs in
-`Test Native` when that job is selected, and otherwise in a
-`Validation harness` matrix leg, so a validation-only change starts no native
-tests. The Genkit job runs Dart 3.12.0 lower bounds on a fresh tree before it
-sets up Flutter, so `FLUTTER_ROOT` and Flutter's Dart cannot affect them.
+`Companion Packages (macOS)` runs when `companion-job` is true (the OR of
+selected `companions`, `macos-validation-memory`, and `apple-cache`), then runs
+only the selected steps (`companions` packages, `Test validation process
+memory` via `macos-validation-memory`, and the Apple companion cache-transition
+setup/test via `apple-cache`), each even if an earlier one failed. On Windows
+the process memory test runs in `Test Native` when `windows-native` is true, and
+otherwise in a `Validation harness` matrix leg (`validation_harness_oses` checks
+`windows-native`, not `test-other-os`), so a validation-only or Mac-only change
+keeps Windows memory coverage without extra native shards. The Genkit job runs
+Dart 3.12.0 lower bounds on a fresh tree before it sets up Flutter, so
+`FLUTTER_ROOT` and Flutter's Dart cannot affect them.
 
 `Studio packages` checks both checkout-only Studio packages together on Ubuntu.
 It uses Flutter 3.50.0 (Dart 3.14.0), pinned independently in
@@ -191,8 +215,10 @@ Root formatting uses `python3 tool/ci/check_format.py` to skip only these two
 Studio packages, whose Dart language version requires their independent SDK;
 all other package and example directories remain in the root formatter.
 The lane runs model-free VM tests with isolated temporary directories. A paired
-macOS lane runs the native lifecycle and accessibility regressions against the
-SPM Flutter framework; both lanes must pass whenever Studio is selected.
+macOS lane (`studio-macos`) runs the native lifecycle and accessibility
+regressions against the SPM Flutter framework when `studio-macos` is true (all
+non-packaging Studio inputs, companions, root fixtures/helpers, and shared/full
+changes; exempting `packages/llamadart_studio/{web,windows,linux}/`).
 
 `Example Package Tests` runs the model-free tests (`--exclude-tags
 local-only`) of every example package except the chat app, which Web Chat
