@@ -1674,6 +1674,226 @@ void main() {
       );
     });
   });
+
+  group('Qwen3WindowedAsrAdapter routing and capabilities', () {
+    late Directory directory;
+    late _SpeechBackend backend;
+    late LlamaEngine llamaEngine;
+
+    setUp(() async {
+      directory = await Directory.systemTemp.createTemp(
+        'llamadart_qwen_windowed_test_',
+      );
+      backend = _SpeechBackend();
+      llamaEngine = LlamaEngine(backend);
+    });
+
+    tearDown(() async {
+      await llamaEngine.dispose();
+      await directory.delete(recursive: true);
+    });
+
+    test('attach refuses Qwen3WindowedAsrAdapter explicitly', () {
+      expect(
+        () => SpeechToTextEngine.attach(
+          llamaEngine,
+          adapter: const Qwen3WindowedAsrAdapter(),
+        ),
+        throwsA(
+          isA<LlamaUnsupportedException>().having(
+            (e) => e.message,
+            'message',
+            contains('SpeechToTextEngine.load'),
+          ),
+        ),
+      );
+    });
+
+    test('load refuses missing projector and tokenizer', () async {
+      final modelPath = p.join(directory.path, 'qwen.gguf');
+      await File(modelPath).writeAsBytes(<int>[1, 2, 3]);
+
+      await expectLater(
+        SpeechToTextEngine.load(
+          SpeechToTextModel(
+            ModelSource.path(modelPath),
+            adapter: const Qwen3WindowedAsrAdapter(),
+          ),
+          backend: backend,
+        ),
+        throwsA(isA<LlamaArgumentException>()),
+      );
+      expect(backend.disposeCalls, 1);
+
+      final secondBackend = _SpeechBackend();
+      await expectLater(
+        SpeechToTextEngine.load(
+          SpeechToTextModel(
+            ModelSource.path(modelPath),
+            projector: ModelSource.path(modelPath),
+            tokenizer: ModelSource.path(modelPath),
+            adapter: const Qwen3WindowedAsrAdapter(),
+          ),
+          backend: secondBackend,
+        ),
+        throwsA(isA<LlamaArgumentException>()),
+      );
+      expect(secondBackend.disposeCalls, 1);
+    });
+
+    test(
+      'load fails closed when projector type is unreadable or mismatched',
+      () async {
+        final modelPath = p.join(directory.path, 'qwen.gguf');
+        final unreadableProjector = p.join(directory.path, 'unreadable.gguf');
+        final mismatchedProjector = p.join(directory.path, 'voxtral.gguf');
+        await File(modelPath).writeAsBytes(<int>[1, 2, 3]);
+        await File(unreadableProjector).writeAsBytes(<int>[1, 2, 3]);
+        await File(mismatchedProjector).writeAsBytes(
+          _ggufHeader({'clip.audio.projector_type': 'voxtral_rt'}),
+        );
+
+        await expectLater(
+          SpeechToTextEngine.load(
+            SpeechToTextModel(
+              ModelSource.path(modelPath),
+              projector: ModelSource.path(unreadableProjector),
+              adapter: const Qwen3WindowedAsrAdapter(),
+            ),
+            backend: backend,
+          ),
+          throwsA(
+            isA<LlamaUnsupportedException>().having(
+              (e) => e.message,
+              'message',
+              contains('qwen3a'),
+            ),
+          ),
+        );
+        expect(backend.disposeCalls, 1);
+
+        final secondBackend = _SpeechBackend();
+        await expectLater(
+          SpeechToTextEngine.load(
+            SpeechToTextModel(
+              ModelSource.path(modelPath),
+              projector: ModelSource.path(mismatchedProjector),
+              adapter: const Qwen3WindowedAsrAdapter(),
+            ),
+            backend: secondBackend,
+          ),
+          throwsA(
+            isA<LlamaUnsupportedException>().having(
+              (e) => e.message,
+              'message',
+              allOf(contains('voxtral_rt'), contains('qwen3a')),
+            ),
+          ),
+        );
+        expect(secondBackend.disposeCalls, 1);
+      },
+    );
+
+    test(
+      'load succeeds on verified qwen3a and reports windowed capabilities',
+      () async {
+        final modelPath = p.join(directory.path, 'qwen.gguf');
+        final projectorPath = p.join(directory.path, 'mmproj-qwen.gguf');
+        await File(modelPath).writeAsBytes(<int>[1, 2, 3]);
+        await File(
+          projectorPath,
+        ).writeAsBytes(_ggufHeader({'clip.audio.projector_type': 'qwen3a'}));
+
+        final recognizer = await SpeechToTextEngine.load(
+          SpeechToTextModel(
+            ModelSource.path(modelPath),
+            projector: ModelSource.path(projectorPath),
+            adapter: const Qwen3WindowedAsrAdapter(),
+          ),
+          backend: backend,
+        );
+        try {
+          final caps = await recognizer.capabilities;
+          expect(caps.isSupported, isTrue);
+          expect(
+            caps.implementation,
+            SpeechToTextImplementation.multimodalPromptAdapter,
+          );
+          expect(caps.inputMode, SpeechToTextInputMode.windowed);
+          expect(
+            caps.inputKinds,
+            equals(<SpeechAudioInputKind>{SpeechAudioInputKind.pcmFloat32}),
+          );
+          expect(caps.encodedAudioFormats, isEmpty);
+          expect(caps.supportsPartialResults, isTrue);
+          expect(caps.supportsStreamingInput, isTrue);
+          expect(caps.supportsCancellation, isTrue);
+          expect(caps.supportsInputBackpressure, isTrue);
+          expect(caps.maxConcurrentTasks, 1);
+          expect(caps.supportsTimestamps, isFalse);
+          expect(caps.supportsConfidence, isFalse);
+          expect(caps.supportsSpeakerDiarization, isFalse);
+          expect(caps.supportsLanguageDetection, isFalse);
+          expect(caps.supportsLanguageHints, isFalse);
+          expect(caps.supportsOutputBackpressure, isFalse);
+        } finally {
+          await recognizer.dispose();
+        }
+        expect(backend.disposeCalls, 1);
+      },
+    );
+
+    test('SpeechToTextCapabilities.inputMode covers all combinations', () {
+      expect(
+        const SpeechToTextCapabilities(
+          isSupported: false,
+          implementation: SpeechToTextImplementation.multimodalPromptAdapter,
+          supportsStreamingInput: true,
+        ).inputMode,
+        SpeechToTextInputMode.unavailable,
+      );
+      expect(
+        const SpeechToTextCapabilities(
+          isSupported: true,
+          implementation: SpeechToTextImplementation.multimodalPromptAdapter,
+          supportsStreamingInput: false,
+        ).inputMode,
+        SpeechToTextInputMode.wholeInput,
+      );
+      expect(
+        const SpeechToTextCapabilities(
+          isSupported: true,
+          implementation: SpeechToTextImplementation.multimodalPromptAdapter,
+          supportsStreamingInput: true,
+        ).inputMode,
+        SpeechToTextInputMode.windowed,
+      );
+      expect(
+        const SpeechToTextCapabilities(
+          isSupported: true,
+          implementation: SpeechToTextImplementation.dedicatedBackend,
+          supportsStreamingInput: true,
+        ).inputMode,
+        SpeechToTextInputMode.stateful,
+      );
+      expect(
+        const SpeechToTextCapabilities(
+          isSupported: true,
+          implementation: SpeechToTextImplementation.dedicatedBackend,
+          supportsStreamingInput: false,
+        ).inputMode,
+        SpeechToTextInputMode.unavailable,
+      );
+      expect(
+        const SpeechToTextCapabilities(
+          isSupported: true,
+          implementation: SpeechToTextImplementation.unavailable,
+          supportsStreamingInput: true,
+        ).inputMode,
+        SpeechToTextInputMode.unavailable,
+      );
+    });
+  });
 }
 
 /// A GGUF header with [metadata] (string, bool and `uint8` array values) and

@@ -442,6 +442,55 @@ void main() {
       expect(backend.disposeCalls, 1);
     },
   );
+
+  test(
+    'Qwen3WindowedAsrAdapter rejects Web before model fetch, progress, or bridge calls',
+    () async {
+      final backend = _WebSpeechBackend(promptSpeechToTextSupported: true);
+      var progressCalls = 0;
+
+      await expectLater(
+        () => SpeechToTextEngine.load(
+          SpeechToTextModel(
+            ModelSource.parse('https://example.com/qwen3-asr.gguf'),
+            projector: ModelSource.parse(
+              'https://example.com/mmproj-qwen3-asr.gguf',
+            ),
+            adapter: const Qwen3WindowedAsrAdapter(),
+          ),
+          backend: backend,
+          onProgress: (_) => progressCalls++,
+        ),
+        throwsA(
+          isA<LlamaUnsupportedException>().having(
+            (e) => e.message,
+            'message',
+            allOf(contains('Web'), contains('windowed')),
+          ),
+        ),
+      );
+      expect(progressCalls, 0);
+      expect(backend.modelUrl, isNull);
+      expect(backend.projectorUrl, isNull);
+      expect(backend.disposeCalls, 1);
+    },
+  );
+
+  test(
+    'SpeechToTextCapabilities.inputMode reports wholeInput on validated Web',
+    () async {
+      final engine = await _loadedEngine(promptSpeechToTextSupported: true);
+      final recognizer = SpeechToTextEngine.attach(
+        engine,
+        adapter: const Qwen3AsrAdapter(),
+      );
+
+      final capabilities = await recognizer.capabilities;
+
+      expect(capabilities.inputMode, SpeechToTextInputMode.wholeInput);
+      await engine.dispose();
+    },
+  );
 }
 
 Future<LlamaEngine> _loadedEngine({

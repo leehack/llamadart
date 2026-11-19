@@ -2,6 +2,21 @@
 
 This document covers the major breaking upgrade paths.
 
+## `0.20.1` -> `0.20.2`: opt-in `Qwen3WindowedAsrAdapter` and `SpeechToTextCapabilities.inputMode`
+
+`SpeechToTextModel` accepts the new opt-in `Qwen3WindowedAsrAdapter` (a `final class`
+subtype of `Qwen3AsrAdapter`) for bounded 8-second windowed live PCM recognition
+on native Qwen3-ASR. Exhaustive `switch` statements over `SpeechToTextAdapter`
+that match `Qwen3AsrAdapter` already match `Qwen3WindowedAsrAdapter` unless they
+handle the windowed subtype explicitly. `SpeechToTextEngine.attach` refuses
+`Qwen3WindowedAsrAdapter` because it requires exclusive engine ownership via
+`SpeechToTextEngine.load`.
+
+`SpeechToTextCapabilities.inputMode` is exposed as a public extension getter
+returning `SpeechToTextInputMode` (`unavailable`, `wholeInput`, `windowed`, or
+`stateful`), so external `implements SpeechToTextCapabilities` classes need no
+new instance member.
+
 ## `0.20.0` -> `0.20.1`: experimental speech `LlamaCppLiveAsrAdapter` and `streamingInputUnsupportedReason`
 
 `SpeechToTextAdapter` is `sealed` and gains `LlamaCppLiveAsrAdapter` for native

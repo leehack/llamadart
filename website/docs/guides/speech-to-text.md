@@ -18,15 +18,18 @@ adapter that drives it. The adapter picks the runtime.
 | Approach | API | Runtimes | Input | Output |
 | --- | --- | --- | --- | --- |
 | Qwen3-ASR, whole file | `SpeechToTextEngine.load` with `Qwen3AsrAdapter`, or `attach` | Native llama.cpp; WebGPU (pinned bridge assets) | A complete WAV, MP3, or FLAC file or bytes; bytes only on Web | One final transcript |
+| Qwen3-ASR, windowed live (opt-in) | `SpeechToTextEngine.load` with `Qwen3WindowedAsrAdapter` | Native llama.cpp (`qwen3a` projector required) | Mono 16 kHz finite normalized float32 PCM, pushed incrementally or as one buffer | Replaceable 2/4/6 s partials, quiet-boundary or 8 s hard-cut commits, then final |
 | Another audio chat model, whole file | `load` or `attach` with your own `SpeechToTextPromptAdapter` | As Qwen3-ASR | As Qwen3-ASR | One final transcript |
 | llama.cpp, live streaming | `SpeechToTextEngine.load` with `LlamaCppLiveAsrAdapter` | Native llama.cpp (`llamadart-native@v1.0.0-1`+) | Mono 16 kHz finite normalized float32 PCM, pushed incrementally or as one buffer | Cumulative confirmed partials, then a final transcript |
 | LiteRT-LM, live streaming | `SpeechToTextEngine.load` with `LiteRtLmAsrAdapter` | Native LiteRT-LM, CPU only | Mono 16 kHz float PCM, pushed incrementally or as one buffer | Replaceable partial text, then a final transcript |
 | Generic audio chat | `LlamaAudioContent` in `engine.create` | Audio-capable GGUF projectors; `.litertlm` bundles with audio | Audio as a chat content part | Ordinary chat output, no transcript contract |
 
-LiteRT-LM Web supports none of these. A prompt adapter reports
-`SpeechToTextImplementation.multimodalPromptAdapter`: it runs whole-audio
-generation on a `LlamaEngine`. `LlamaCppLiveAsrAdapter` and
-`LiteRtLmAsrAdapter` report `SpeechToTextImplementation.dedicatedBackend`.
+LiteRT-LM Web supports none of these. `Qwen3AsrAdapter` and
+`Qwen3WindowedAsrAdapter` report
+`SpeechToTextImplementation.multimodalPromptAdapter`;
+`SpeechToTextCapabilities.inputMode` distinguishes `wholeInput` from `windowed`.
+`LlamaCppLiveAsrAdapter` and `LiteRtLmAsrAdapter` report
+`SpeechToTextImplementation.dedicatedBackend` (`inputMode == SpeechToTextInputMode.stateful`).
 
 The adapter is an explicit declaration: an audio-understanding model is not
 advertised as ASR merely because it accepts audio.

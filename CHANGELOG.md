@@ -3,6 +3,8 @@ Releases before 0.10.0 are in the
 
 ## Unreleased
 
+- Add opt-in `Qwen3WindowedAsrAdapter` for bounded 8 s windowed live PCM speech recognition on native Qwen3-ASR (2/4/6 s replaceable partials, quiet-boundary commits with 8 s hard cut; Web, `SpeechToTextEngine.attach`, and non-`qwen3a` projectors throw `LlamaUnsupportedException`), and expose `SpeechToTextInputMode` via `SpeechToTextCapabilities.inputMode` ([#327](https://github.com/leehack/llamadart/issues/327)).
+
 ## 0.20.1
 
 - Adopt `leehack/llamadart-native@v1.0.0-2` (llama.cpp `v1.0.0`, `b1b770d9`): Windows CUDA `ModelParams.gpuMemoryFit` now accounts for VRAM held by other processes, matching Vulkan, and refuses TCC or `GGML_CUDA_DEVICES` virtual devices with `LlamaGpuMemoryFitException` when system-wide free memory cannot be read; Apple apps may still pair `llamadart_llama_cpp_flutter` `0.20.0` (`v1.0.0-1`) with an upgrade warning ([#2034](https://github.com/leehack/llamadart/issues/2034)).

@@ -167,6 +167,28 @@ class Qwen3AsrAdapter extends SpeechToTextPromptAdapter {
   }
 }
 
+/// Opt-in windowed live PCM speech recognition for Qwen3-ASR on native
+/// `llama.cpp`.
+///
+/// Re-transcribes short 2, 4, and 6 second prefixes inside a bounded 8 second
+/// (128,000-sample) ring buffer through the Qwen3-ASR prompt path, then commits
+/// at a quiet boundary (latest contiguous >= 100 ms run with RMS <= 0.01 in
+/// the final 2 seconds) or hard-cuts at 8 seconds.
+///
+/// Requires `SpeechToTextEngine.load` on a native platform with a loaded
+/// Qwen3-ASR model and verified `qwen3a` audio [SpeechToTextModel.projector].
+/// It accepts mono 16 kHz finite normalized float32 PCM (`pcm-f32le`) via
+/// `SpeechToTextEngine.startStream` and `SpeechToTextEngine.transcribe` /
+/// `transcribeOnce`, and rejects `SpeechToTextEngine.attach`, Web, file or
+/// encoded-byte inputs, language hints, and context prompts.
+final class Qwen3WindowedAsrAdapter extends Qwen3AsrAdapter {
+  /// Creates the opt-in windowed Qwen3-ASR adapter.
+  const Qwen3WindowedAsrAdapter();
+
+  @override
+  bool get supportsContextPrompt => false;
+}
+
 /// Dedicated LiteRT-LM ASR: a `.tflite` speech model and its tokenizer run
 /// natively in a worker isolate, with incremental PCM input and partial
 /// transcripts.

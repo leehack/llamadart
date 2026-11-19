@@ -654,6 +654,25 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
         'public streaming speech API, or native pins change.',
   ),
   TestMatrixRow(
+    id: 'speech-to-text-windowed-smoke',
+    tier: 'targeted',
+    mode: 'local-only',
+    covers:
+        'opt-in Qwen3-ASR windowed live PCM streaming via '
+        'Qwen3WindowedAsrAdapter (44s JFK repetition, chunking parity, '
+        'boundaries, second utterance, and 300s sustained run; requires '
+        'LLAMADART_STT_STREAM_QWEN_MODEL_PATH, '
+        'LLAMADART_STT_STREAM_QWEN_MMPROJ_PATH, optional '
+        'LLAMADART_STT_WINDOWED_SECOND_AUDIO_PATH and '
+        'LLAMADART_STT_LIVE_PACED=1)',
+    command:
+        'dart run tool/testing/run_local_e2e.dart --scenario '
+        'speech-to-text-windowed-smoke',
+    useWhen:
+        'Qwen3WindowedAsrAdapter, windowed ring/cut/stitching logic, or '
+        'Qwen3-ASR prompt speech routing changes.',
+  ),
+  TestMatrixRow(
     id: 'litert-lm-asr-smoke',
     tier: 'targeted',
     mode: 'local-only',

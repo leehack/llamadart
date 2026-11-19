@@ -59,6 +59,13 @@ description: >-
   - Qwen3-ASR (whole file, one final transcript): `Qwen3AsrAdapter` with the
     Qwen3-ASR GGUF as `source` and its mmproj as `projector`. Native
     llama.cpp, or WebGPU (pinned bridge assets).
+  - Qwen3-ASR (opt-in windowed live PCM): `Qwen3WindowedAsrAdapter` with
+    `SpeechToTextEngine.load` on native llama.cpp and a verified `qwen3a`
+    `projector` (`attach` and Web throw `LlamaUnsupportedException`). Accepts
+    mono 16 kHz `pcm-f32le` via `startStream()` or `transcribeOnce()`, updates
+    replaceable `pendingText` every 2 s, and commits at a quiet boundary or 8 s
+    hard cut (continuous speech or noise can split a word at 8 s). Rejects
+    context prompts and language hints; `capabilities.inputMode` is `windowed`.
   - Native llama.cpp live PCM ASR (cumulative confirmed partials, then a
     final transcript): `LlamaCppLiveAsrAdapter` with a Voxtral Realtime or
     LFM3-Audio GGUF as `source` and its audio mmproj as `projector` (leave
