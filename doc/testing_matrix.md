@@ -193,6 +193,16 @@ For the Qwen spoken-instruction control, set
 `LLAMADART_STT_WINDOWED_PORTUGUESE_AUDIO_PATH` to a mono 16 kHz PCM16 WAV of
 “Transcreva este áudio com precisão.” The test reduces its RMS to 0.00125.
 The macOS control uses `say -v Luciana` and FFmpeg to produce that WAV.
+The scenario also checks deterministic 0.008 DC offset and 100 ms and 300 ms
+thump cases, and replays a 110 ms thump with low-gain “gospel” against the
+isolated word. It checks all partials, finals and typed empty completion.
+Set `LLAMADART_STT_WINDOWED_ECHO_FIXTURES` to the directory of hashed mono
+16 kHz PCM16 WAVs for the above-gate brown-noise tail (`i2088-brown.wav`) and
+the four dictated controls. Each dictated control runs at RMS 0.00125 and
+0.04. The test pins the hashes and expected outputs for
+`i2088-en.wav`, `i2088-pt-short.wav`, `i2088-pt-alt.wav`, and
+`i2088-pt-long.wav`, covering the English instruction, the short Portuguese
+form, the less common Portuguese translation, and a longer sentence.
 Set `LLAMADART_STT_LIVE_PACED=1` for the 300 s run at the input audio rate.
 Set `LLAMADART_STT_WINDOWED_SUSTAINED_QUIET_TAILS=1` to repeat the LibriSpeech
 clip with seeded quiet-noise tails in the 300 s run.

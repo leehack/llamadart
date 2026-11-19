@@ -1,5 +1,6 @@
 import '../../backends/litert_lm/litert_lm_asr_types.dart';
 import '../models/model_source.dart';
+import 'qwen_windowed_asr.dart';
 import 'speech_to_text.dart';
 
 /// A speech-recognition model: its files and the adapter that drives it.
@@ -149,7 +150,7 @@ class Qwen3AsrAdapter extends SpeechToTextPromptAdapter {
 
   @override
   String promptFor(SpeechToTextRequest request) {
-    final prompt = StringBuffer('Transcribe this audio accurately.');
+    final prompt = StringBuffer(qwen3AsrDefaultInstruction);
     final contextPrompt = request.contextPrompt?.trim();
     if (contextPrompt != null && contextPrompt.isNotEmpty) {
       prompt.write(' Context: $contextPrompt');
@@ -179,8 +180,11 @@ class Qwen3AsrAdapter extends SpeechToTextPromptAdapter {
 /// remaining audio. Quiet intervals with a nonempty decode may take a second
 /// inference pass on amplified audio to suppress false text. An isolated
 /// transient has limited influence on quiet classification. Later decodes of
-/// a rejected window are checked again before publication. Background noise
-/// can still affect accuracy.
+/// a rejected quiet window are checked again before publication. If a window
+/// returns the default instruction or a known Portuguese variant, one more
+/// decode of the original audio with an audio-only prompt must agree before
+/// the original wording is published. These checks can add latency to a push
+/// or the final flush. Other echoes and recognition errors are still possible.
 ///
 /// Requires `SpeechToTextEngine.load` on a native platform with a loaded
 /// Qwen3-ASR model and verified `qwen3a` audio [SpeechToTextModel.projector].

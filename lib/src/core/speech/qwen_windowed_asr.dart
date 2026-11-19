@@ -28,13 +28,47 @@ const double qwenWindowedQuietRmsThreshold = 0.01;
 
 const double _verificationFrameRms = 0.007;
 
+/// Shared transcription instruction for Qwen3-ASR's instructed prompt.
+const String qwen3AsrDefaultInstruction = 'Transcribe this audio accurately.';
+
+final _instructionHypotheses = {
+  _normalizeInstruction(qwen3AsrDefaultInstruction),
+  'transcreva este audio com precisao',
+  'transcreva este audio',
+  'transcreva este audio acertadamente',
+};
+
+final _instructionWhitespace = RegExp(r'\s+');
+final _instructionTerminalPunctuation = RegExp(r'[.!?…]+$');
+final _instructionCombiningAccents = RegExp(r'[\u0301\u0303]');
+
+String _normalizeInstruction(String text) => text
+    .toLowerCase()
+    .replaceAll('á', 'a')
+    .replaceAll('ã', 'a')
+    .replaceAll(_instructionCombiningAccents, '')
+    .trim()
+    .replaceAll(_instructionWhitespace, ' ')
+    .replaceFirst(_instructionTerminalPunctuation, '')
+    .trimRight();
+
 /// RIFF/WAVE header byte length for PCM16 LE mono audio.
 const int qwenWindowedWavHeaderBytes = 44;
+
+/// Prompt used to decode a window of Qwen3-ASR audio.
+enum QwenWindowPrompt {
+  /// The normal Qwen3-ASR transcription instruction.
+  instructed,
+
+  /// Qwen3-ASR's reference prompt with an audio-only user turn.
+  reference,
+}
 
 /// Decodes one bounded RIFF/WAVE interval for [QwenWindowedAsrSession].
 typedef QwenWindowDecode =
     Future<String> Function(
       Uint8List wavBytes, {
+      required QwenWindowPrompt prompt,
       required String confirmedPrefix,
       required void Function(void Function()? cancel) registerCancel,
       required bool Function() isCancelled,
@@ -343,13 +377,33 @@ class QwenWindowedAsrSession implements SpeechToTextStreamingSession {
   }
 
   Future<String> _decodeInterval(int length) {
-    final future = _decodeVerified(length);
+    final future = _decodeForPublication(length);
     _activeDecode = future;
     return future.whenComplete(() {
       if (identical(_activeDecode, future)) {
         _activeDecode = null;
       }
     });
+  }
+
+  Future<String> _decodeForPublication(int length) async {
+    final decoded = await _decodeVerified(length);
+    if (decoded.isEmpty || _cancelled || _closed) {
+      return decoded;
+    }
+    final normalized = _normalizeInstruction(decoded);
+    if (!_instructionHypotheses.contains(normalized)) {
+      return decoded;
+    }
+
+    // Re-encode from the ring because quiet verification may have amplified
+    // the contents of the shared WAV buffer.
+    final reference = await _decodeAtGain(
+      length,
+      1.0,
+      prompt: QwenWindowPrompt.reference,
+    );
+    return _normalizeInstruction(reference) == normalized ? decoded : '';
   }
 
   Future<String> _decodeVerified(int length) async {
@@ -402,6 +456,7 @@ class QwenWindowedAsrSession implements SpeechToTextStreamingSession {
     int length,
     double gain, {
     double peakLimit = 1.0,
+    QwenWindowPrompt prompt = QwenWindowPrompt.instructed,
   }) async {
     final wavBytes = encodePcm16WavInto(
       _ring,
@@ -413,6 +468,7 @@ class QwenWindowedAsrSession implements SpeechToTextStreamingSession {
     try {
       return await _decodeWindow(
         wavBytes,
+        prompt: prompt,
         confirmedPrefix: _confirmedText,
         registerCancel: (cancel) {
           _cancelActiveDecode = cancel;

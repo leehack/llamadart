@@ -113,7 +113,8 @@ void main() {
           }
           pcm[112000] = sample * 2;
           final originalPcm = Float32List.fromList(pcm);
-          final calls = <(int, int, int)>[];
+          final calls = <(QwenWindowPrompt, int, int, int)>[];
+          final originalWavs = <int, Uint8List>{};
           const originalText = 'Transcreva este áudio com precisão.';
           final session = QwenWindowedAsrSession(
             sourceFormat: const SpeechAudioFormat(
@@ -125,18 +126,28 @@ void main() {
             decodeWindow:
                 (
                   wavBytes, {
+                  required prompt,
                   required confirmedPrefix,
                   required registerCancel,
                   required isCancelled,
                 }) async {
                   final wav = ByteData.sublistView(wavBytes);
                   final first = wav.getInt16(44, Endian.little);
+                  final length = wav.getUint32(40, Endian.little) ~/ 2;
                   calls.add((
-                    wav.getUint32(40, Endian.little) ~/ 2,
+                    prompt,
+                    length,
                     first,
                     wav.getInt16(46, Endian.little),
                   ));
-                  if (first < 100) return originalText;
+                  if (prompt == QwenWindowPrompt.reference) {
+                    expect(wavBytes, originalWavs[length]);
+                    return '  TRANSCREVA\teste a\u0301udio  com precisa\u0303o! ';
+                  }
+                  if (first < 100) {
+                    originalWavs[length] = Uint8List.fromList(wavBytes);
+                    return originalText;
+                  }
                   return isSpeech ? 'Different verification wording' : '';
                 },
           );
@@ -176,14 +187,142 @@ void main() {
           }
           expect(pcm, originalPcm);
           final sign = isSpeech ? 1 : -1;
+          const instructed = QwenWindowPrompt.instructed;
+          const reference = QwenWindowPrompt.reference;
           expect(calls, [
             for (final length in [32000, 64000, 96000, 112000]) ...[
-              (length, 41, 41 * sign),
-              (length, 655, 655 * sign),
+              (instructed, length, 41, 41 * sign),
+              (instructed, length, 655, 655 * sign),
+              if (isSpeech) (reference, length, 41, 41 * sign),
             ],
-            (16000, 82, 41 * sign),
-            (16000, 1311, 655 * sign),
+            (instructed, 16000, 82, 41 * sign),
+            (instructed, 16000, 1311, 655 * sign),
+            if (isSpeech) (reference, 16000, 82, 41 * sign),
           ]);
+        },
+      );
+    }
+
+    test(
+      'adjudicates above-gate checkpoints, commits, and the final tail',
+      () async {
+        const instructed = QwenWindowPrompt.instructed;
+        const reference = QwenWindowPrompt.reference;
+        const spoken = 'Transcreva este áudio acertadamente.';
+        const longer = 'Por favor, transcreva este áudio com precisão.';
+        final calls = <(QwenWindowPrompt, int, String)>[];
+        final session = QwenWindowedAsrSession(
+          sourceFormat: const SpeechAudioFormat(
+            sampleRateHz: 16000,
+            channelCount: 1,
+            encoding: 'pcm-f32le',
+          ),
+          onClosed: () {},
+          decodeWindow:
+              (
+                wavBytes, {
+                required prompt,
+                required confirmedPrefix,
+                required registerCancel,
+                required isCancelled,
+              }) async {
+                final length =
+                    (wavBytes.length - qwenWindowedWavHeaderBytes) ~/ 2;
+                calls.add((prompt, length, confirmedPrefix));
+                return switch ((prompt, length)) {
+                  (instructed, 32000) => 'Transcribe this audio accurately.',
+                  (reference, 32000) => 'Possível',
+                  (instructed, 64000) => 'Transcreva este áudio.',
+                  (reference, 64000) => '',
+                  (instructed, 96000) => longer,
+                  (instructed, 128000) => spoken,
+                  (reference, 128000) => 'transcreva este audio acertadamente',
+                  (instructed, 16000) => 'Transcreva este áudio com precisão.',
+                  (reference, 16000) => 'Die.',
+                  _ => throw StateError('Unexpected decode: ${calls.last}'),
+                };
+              },
+        );
+        final events = <SpeechToTextEvent>[];
+        final sub = session.events.listen(events.add);
+        addTearDown(sub.cancel);
+        addTearDown(session.cancel);
+
+        await session.addPcm(Float32List(144000)..fillRange(0, 144000, 0.04));
+        await session.finish();
+        expect(calls, [
+          (instructed, 32000, ''),
+          (reference, 32000, ''),
+          (instructed, 64000, ''),
+          (reference, 64000, ''),
+          (instructed, 96000, ''),
+          (instructed, 128000, ''),
+          (reference, 128000, ''),
+          (instructed, 16000, spoken),
+          (reference, 16000, spoken),
+        ]);
+        expect(
+          events.whereType<SpeechToTextPartialEvent>().map(
+            (event) => (event.confirmedText, event.pendingText),
+          ),
+          [('', ''), ('', ''), ('', longer), (spoken, '')],
+        );
+        final done = await session.done;
+        expect(done.result!.text, spoken);
+        expect(
+          events.whereType<SpeechToTextFinalEvent>().single.result,
+          done.result,
+        );
+      },
+    );
+
+    for (final agrees in [true, false]) {
+      test(
+        'reuses a ${agrees ? 'confirmed' : 'rejected'} exact checkpoint',
+        () async {
+          const spoken = 'Transcreva este áudio.';
+          final calls = <QwenWindowPrompt>[];
+          final session = QwenWindowedAsrSession(
+            sourceFormat: const SpeechAudioFormat(
+              sampleRateHz: 16000,
+              channelCount: 1,
+              encoding: 'pcm-f32le',
+            ),
+            onClosed: () {},
+            decodeWindow:
+                (
+                  wavBytes, {
+                  required prompt,
+                  required confirmedPrefix,
+                  required registerCancel,
+                  required isCancelled,
+                }) async {
+                  calls.add(prompt);
+                  if (prompt == QwenWindowPrompt.instructed) return spoken;
+                  return agrees ? 'transcreva este audio' : '嗯。';
+                },
+          );
+          final events = <SpeechToTextEvent>[];
+          final sub = session.events.listen(events.add, onError: (Object _) {});
+          addTearDown(sub.cancel);
+          addTearDown(session.cancel);
+
+          await session.addPcm(Float32List(32000)..fillRange(0, 32000, 0.04));
+          await session.finish();
+          expect(calls, [
+            QwenWindowPrompt.instructed,
+            QwenWindowPrompt.reference,
+          ]);
+          final done = await session.done;
+          final partial = events.whereType<SpeechToTextPartialEvent>().single;
+          expect(partial.confirmedText, '');
+          expect(partial.pendingText, agrees ? spoken : '');
+          expect(done.result?.text, agrees ? spoken : isNull);
+          expect(done.error, agrees ? isNull : isA<LlamaSpeechException>());
+          expect(
+            events.whereType<SpeechToTextFinalEvent>(),
+            hasLength(agrees ? 1 : 0),
+          );
         },
       );
     }
@@ -226,6 +365,7 @@ void main() {
             decodeWindow:
                 (
                   wavBytes, {
+                  required prompt,
                   required confirmedPrefix,
                   required registerCancel,
                   required isCancelled,
@@ -259,6 +399,7 @@ void main() {
           decodeWindow:
               (
                 wavBytes, {
+                required prompt,
                 required confirmedPrefix,
                 required registerCancel,
                 required isCancelled,
@@ -298,38 +439,49 @@ void main() {
     );
 
     test(
-      'does not start quiet verification after first decode cancellation',
+      'cancels each verification stage and clears the completed reference hook',
       () async {
-        late final QwenWindowedAsrSession session;
-        var calls = 0;
-        session = QwenWindowedAsrSession(
-          sourceFormat: const SpeechAudioFormat(
-            sampleRateHz: 16000,
-            channelCount: 1,
-            encoding: 'pcm-f32le',
-          ),
-          onClosed: () {},
-          decodeWindow:
-              (
-                wavBytes, {
-                required confirmedPrefix,
-                required registerCancel,
-                required isCancelled,
-              }) async {
-                if (++calls == 1) {
-                  await Future<void>.delayed(Duration.zero);
-                  unawaited(session.cancel());
-                }
-                return 'Nonempty result from a cancelled decode';
-              },
-        );
-        addTearDown(session.cancel);
-        await session.addPcm(Float32List(32000)..fillRange(0, 32000, 0.00125));
-        expect(
-          (await session.done).state,
-          SpeechToTextCompletionState.cancelled,
-        );
-        expect(calls, 1);
+        for (final cancelAt in [1, 2, null]) {
+          late final QwenWindowedAsrSession session;
+          var calls = 0;
+          var staleCancelCalls = 0;
+          session = QwenWindowedAsrSession(
+            sourceFormat: const SpeechAudioFormat(
+              sampleRateHz: 16000,
+              channelCount: 1,
+              encoding: 'pcm-f32le',
+            ),
+            onClosed: () {},
+            decodeWindow:
+                (
+                  wavBytes, {
+                  required prompt,
+                  required confirmedPrefix,
+                  required registerCancel,
+                  required isCancelled,
+                }) async {
+                  if (prompt == QwenWindowPrompt.reference) {
+                    registerCancel(() => staleCancelCalls++);
+                  }
+                  if (++calls == cancelAt) {
+                    await Future<void>.delayed(Duration.zero);
+                    unawaited(session.cancel());
+                  }
+                  return 'Transcribe this audio accurately.';
+                },
+          );
+          addTearDown(session.cancel);
+          await session.addPcm(
+            Float32List(32000)..fillRange(0, 32000, 0.00125),
+          );
+          await session.cancel();
+          expect(
+            (await session.done).state,
+            SpeechToTextCompletionState.cancelled,
+          );
+          expect(calls, cancelAt ?? 3);
+          expect(staleCancelCalls, 0);
+        }
       },
     );
 
@@ -363,6 +515,7 @@ void main() {
             decodeWindow:
                 (
                   wavBytes, {
+                  required prompt,
                   required confirmedPrefix,
                   required registerCancel,
                   required isCancelled,
@@ -505,6 +658,7 @@ void main() {
           decodeWindow:
               (
                 wavBytes, {
+                required prompt,
                 required confirmedPrefix,
                 required registerCancel,
                 required isCancelled,
@@ -536,6 +690,7 @@ void main() {
           decodeWindow:
               (
                 wavBytes, {
+                required prompt,
                 required confirmedPrefix,
                 required registerCancel,
                 required isCancelled,
@@ -576,6 +731,7 @@ void main() {
           decodeWindow:
               (
                 wavBytes, {
+                required prompt,
                 required confirmedPrefix,
                 required registerCancel,
                 required isCancelled,
@@ -627,6 +783,7 @@ void main() {
             decodeWindow:
                 (
                   wavBytes, {
+                  required prompt,
                   required confirmedPrefix,
                   required registerCancel,
                   required isCancelled,
@@ -677,6 +834,7 @@ void main() {
           decodeWindow:
               (
                 wavBytes, {
+                required prompt,
                 required confirmedPrefix,
                 required registerCancel,
                 required isCancelled,
@@ -709,6 +867,7 @@ void main() {
           decodeWindow:
               (
                 wavBytes, {
+                required prompt,
                 required confirmedPrefix,
                 required registerCancel,
                 required isCancelled,
@@ -743,6 +902,7 @@ void main() {
             decodeWindow:
                 (
                   wavBytes, {
+                  required prompt,
                   required confirmedPrefix,
                   required registerCancel,
                   required isCancelled,
