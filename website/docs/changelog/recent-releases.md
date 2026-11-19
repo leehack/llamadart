@@ -11,6 +11,8 @@ For upgrade planning, combine this page with the
 [Upgrade Checklist](../migration/upgrade-checklist). For breaking changes,
 validate against the exact release tag notes.
 
+## Unreleased
+
 ## 0.20.1
 
 - Adopt `leehack/llamadart-native@v1.0.0-2` (llama.cpp `v1.0.0`, `b1b770d9`): Windows CUDA `ModelParams.gpuMemoryFit` now accounts for VRAM held by other processes, matching Vulkan, and refuses TCC or `GGML_CUDA_DEVICES` virtual devices with `LlamaGpuMemoryFitException` when system-wide free memory cannot be read; Apple apps may still pair `llamadart_llama_cpp_flutter` `0.20.0` (`v1.0.0-1`) with an upgrade warning ([#2034](https://github.com/leehack/llamadart/issues/2034)).
