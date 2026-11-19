@@ -89,7 +89,8 @@ description: >-
   text after a tool envelope, including its whitespace; the envelope itself
   stays out of content even across split tokens. GPT-OSS reasoning comes from
   channel frames; literal `<think>`/`</think>` text stays literal, including in
-  tool arguments.
+  tool arguments. MiniMax M3 keeps quoted `<tool_call>` text visible across
+  chunks and recognizes only its namespaced tool-call opener.
 - By hand, invoke through `tool.invoke(call.arguments)`, which wraps the
   arguments in `ToolParams` for typed access; schema-factory tools validate them, and
   throws `LlamaStateException` for a tool without a handler. Read required

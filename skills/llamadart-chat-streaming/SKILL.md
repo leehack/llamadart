@@ -149,7 +149,9 @@ modalities and speculative strategies before offering them.
   When the prompt opens no thought, most formats stream
   only a thought that starts the reply as `chunk.thinking`; a `</think>`
   before any `<think>` and thinking tags later in the reply stay in
-  `chunk.text`, as in llama-server. A boolean `enable_thinking` or `thinking` in
+  `chunk.text`, as in llama-server. MiniMax M3 requires the tag at the exact
+  reply start and preserves tag fragments in the visible body across chunks.
+  A boolean `enable_thinking` or `thinking` in
   `chatTemplateKwargs` overrides it, as in llama-server, and every chat
   template receives the result as `enable_thinking`. A template's own
   setting in `chatTemplateKwargs`, such as `reasoning_effort` (Hy3, Cohere2

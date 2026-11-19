@@ -363,6 +363,10 @@ LiteRT-LM chat generation on bundles with a thinking channel support a budget
 backends reject it explicitly, and it cannot be combined with speculative
 decoding.
 
+When a MiniMax M3 reply starts outside a thought, a thinking delimiter can
+open or close a thought only at the very start. Once the response body begins,
+full and split thinking tags in that body stay visible.
+
 ## Structured JSON output
 
 Use `LlamaStructuredOutput` when you want strict JSON plus final validation and
