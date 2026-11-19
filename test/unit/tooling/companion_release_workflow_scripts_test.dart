@@ -51,7 +51,19 @@ fi
   'git': r'''
 case "$1" in
   rev-parse)
-    echo "$STUB_HEAD"
+    if [[ "$*" == *'^1' ]]; then
+      echo "$STUB_BASE"
+    else
+      echo "$STUB_HEAD"
+    fi
+    ;;
+  show)
+    case "$2 $3" in
+      '-s --format=%P') echo "$STUB_BASE" ;;
+      '-s --format=%s') echo 'Prepare release (#104)' ;;
+      '-s --format=%B') echo 'Immutable release message' ;;
+      *) printf 'name: llamadart\nversion: 0.12.9\n' ;;
+    esac
     ;;
   ls-remote)
     if [[ -f "$STUB_STATE/ls_remote_failures" ]]; then
@@ -215,6 +227,9 @@ class _Sandbox {
         'STUB_LOG': log,
         'STUB_STATE': state,
         'STUB_HEAD': _releaseSha,
+        'STUB_BASE': _otherSha,
+        'PR_NUMBER': '104',
+        'RUNNER_TEMP': root,
         ...env,
       },
     );
@@ -281,6 +296,9 @@ _Release _release(
 const _coreListing = 'https://pub.dev/api/packages/llamadart';
 const _preflightScript = 'tool/release/companion_pub_preflight.dart';
 const _verifierScript = 'tool/testing/verify_release_docs_versions.dart';
+const _candidateScript = 'tool/release/verify_release_candidate.sh';
+const _collectorScript = 'tool/release/collect_pr_changelog.dart';
+const _strictBridge = 'tool/testing/check_webgpu_bridge_tag.dart';
 
 /// Whether Actions keeps running the job's later steps after [step] fails.
 bool _continuesOnError(YamlMap step) =>
@@ -308,6 +326,7 @@ _runRelease(String workflow, _Release release) {
   sandbox
     ..file('repo/pubspec.yaml', 'name: llamadart\nversion: $version\n')
     ..file('repo/CHANGELOG.md', '## $version\n\n- Release.\n')
+    ..file('repo/$_candidateScript', _read(_candidateScript))
     ..pub(_coreListing, '{"versions":[{"version":"$version"}]}');
   File(
     '${sandbox.state}/dart_failures',
@@ -1034,6 +1053,30 @@ void main() {
       }
     });
 
+    for (final gate in [_collectorScript, _verifierScript, _strictBridge]) {
+      test(
+        'never writes refs when $gate fails, including same-SHA retries',
+        () {
+          final run = _runRelease(workflow, (
+            name: gate,
+            version: null,
+            failingDart: {gate},
+            missingCompanions: const {},
+            remote: (sandbox) =>
+                sandbox.remoteTag(_releaseSha, 'refs/tags/v0.13.0'),
+          ));
+          expect(run.validate.exitCode, isNot(0));
+          expect(run.publish, isNull);
+          expect(_pushedAnyTag(run.calls), isFalse);
+          expect(
+            run.calls,
+            contains(contains('git show -s --format=%B $_releaseSha')),
+          );
+          expect(run.calls, contains(contains('dart run $gate')));
+        },
+      );
+    }
+
     test('stops a prerelease core or a failed check before any tag', () {
       expect(_releaseGuardProblems(workflow), isEmpty);
     });
@@ -1056,8 +1099,8 @@ void main() {
           'dart run $_preflightScript || true\n',
         ),
         'ignores a failed release verifier': (source) => source.replaceFirst(
-          'dart run $_verifierScript --release-prep\n',
-          'dart run $_verifierScript --release-prep || true\n',
+          r'bash tool/release/verify_release_candidate.sh "$through" "$release_sha" "$landed_body"',
+          r'bash tool/release/verify_release_candidate.sh "$through" "$release_sha" "$landed_body" || true',
         ),
         'continues past a failed validation': (source) => source.replaceFirst(
           '        id: release\n',

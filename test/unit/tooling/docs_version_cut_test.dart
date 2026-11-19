@@ -6,11 +6,9 @@ import 'dart:io';
 import 'package:test/test.dart';
 import 'package:yaml/yaml.dart';
 
-import '../../../tool/release/reopen_unreleased_changelog.dart';
-
 const _script = 'tool/release/reopen_unreleased_changelog.dart';
 const _workflow = '.github/workflows/docs_version_cut.yml';
-const _commitStep = 'Commit versioned docs and reopen Unreleased';
+const _commitStep = 'Commit versioned docs';
 const _docsChangelog = 'website/docs/changelog/recent-releases.md';
 const _posixOnly = 'runs the workflow step under a POSIX Bash runtime';
 
@@ -19,86 +17,6 @@ const _docsIntro =
     '---\ntitle: Recent releases\n---\n\nFor full notes, see CHANGELOG.md.\n\n';
 
 void main() {
-  group('reopenUnreleased', () {
-    test('inserts the heading above the first released section only', () {
-      expect(reopenUnreleased(_released), '## Unreleased\n\n$_released');
-      expect(
-        reopenUnreleased('$_docsIntro$_released'),
-        '$_docsIntro## Unreleased\n\n$_released',
-      );
-    });
-
-    test('leaves a changelog that already starts with Unreleased alone', () {
-      for (final contents in [
-        '## Unreleased\n\n$_released',
-        '## Unreleased\n\n- Pending.\n\n$_released',
-        '$_docsIntro## Unreleased\n\n$_released',
-      ]) {
-        expect(reopenUnreleased(contents), same(contents));
-      }
-    });
-
-    test('refuses a changelog it cannot place the heading in', () {
-      expect(
-        () => reopenUnreleased('# Changelog\n\nNothing released.\n'),
-        throwsFormatException,
-      );
-      expect(
-        () => reopenUnreleased('## 1.0.0\n\n- Shipped.\n\n## Unreleased\n'),
-        throwsFormatException,
-      );
-    });
-  });
-
-  group('reopenUnreleasedChangelogs', () {
-    late Directory root;
-    setUp(() => root = Directory.systemTemp.createTempSync('reopen-unrel-'));
-    tearDown(() => root.deleteSync(recursive: true));
-
-    void write(String path, String contents) => File('${root.path}/$path')
-      ..parent.createSync(recursive: true)
-      ..writeAsStringSync(contents);
-    String read(String path) => File('${root.path}/$path').readAsStringSync();
-
-    test('updates both core changelogs and reports what changed', () {
-      write('CHANGELOG.md', _released);
-      write(_docsChangelog, '$_docsIntro$_released');
-
-      expect(reopenUnreleasedChangelogs(root), unreleasedChangelogs);
-      expect(read('CHANGELOG.md'), '## Unreleased\n\n$_released');
-      expect(read(_docsChangelog), '$_docsIntro## Unreleased\n\n$_released');
-      expect(reopenUnreleasedChangelogs(root), isEmpty);
-    });
-
-    test('writes nothing when either changelog is malformed', () {
-      write('CHANGELOG.md', _released);
-      write(_docsChangelog, '$_docsIntro## 1.0.0\n\n## Unreleased\n');
-
-      expect(
-        () => reopenUnreleasedChangelogs(root),
-        throwsA(
-          isA<FormatException>().having(
-            (error) => error.message,
-            'message',
-            startsWith(_docsChangelog),
-          ),
-        ),
-      );
-      expect(read('CHANGELOG.md'), _released);
-    });
-
-    test('the CLI rejects arguments and reports failures', () {
-      write('CHANGELOG.md', _released);
-      final usage = _runScript(root, ['v1.0.0']);
-      expect(usage.exitCode, 64);
-
-      final missing = _runScript(root, const []);
-      expect(missing.exitCode, 1);
-      expect(missing.stderr, contains('Could not reopen ## Unreleased'));
-      expect(read('CHANGELOG.md'), _released);
-    });
-  });
-
   group('docs_version_cut.yml', () {
     test('runs only on core release tags', () {
       final on = (loadYaml(_read(_workflow)) as YamlMap)['on'] as YamlMap;
@@ -106,6 +24,13 @@ void main() {
       // Genkit tags are `genkit_llamadart-v*` and companion tags
       // `<package>-v*`, so neither can match.
       expect((on['push'] as YamlMap)['tags'], ['v*']);
+    });
+
+    test('the active snapshot writer only stages versioned docs', () {
+      final source = _read(_workflow);
+      expect(source, isNot(contains(_script)));
+      expect(source, isNot(contains('git commit --amend')));
+      expect(source, isNot(contains('git add CHANGELOG.md')));
     });
 
     group('commit step', () {
@@ -117,7 +42,7 @@ void main() {
       });
       tearDown(() => root.deleteSync(recursive: true));
 
-      test('cuts docs and reopens Unreleased in one commit', () {
+      test('cuts only versioned docs in one commit', () {
         final before = origin.mainSha();
         final result = origin.runStep(cutDocs: true);
         expect(result.exitCode, 0, reason: '${result.stdout}${result.stderr}');
@@ -130,17 +55,12 @@ void main() {
         expect(
           origin.git(['show', '--name-only', '--format=', 'main']).split('\n'),
           unorderedEquals([
-            'CHANGELOG.md',
-            _docsChangelog,
             'website/versioned_docs/version-1.0.0/index.md',
             'website/versions.json',
           ]),
         );
-        expect(origin.mainFile('CHANGELOG.md'), '## Unreleased\n\n$_released');
-        expect(
-          origin.mainFile(_docsChangelog),
-          '$_docsIntro## Unreleased\n\n$_released',
-        );
+        expect(origin.mainFile('CHANGELOG.md'), _released);
+        expect(origin.mainFile(_docsChangelog), '$_docsIntro$_released');
       });
 
       test('a rerun after the cut pushes nothing', () {
@@ -155,21 +75,19 @@ void main() {
         }
       });
 
-      test('reopens Unreleased on its own when there is nothing to cut', () {
-        final before = origin.mainSha();
-        final result = origin.runStep(cutDocs: false);
-        expect(result.exitCode, 0, reason: '${result.stdout}${result.stderr}');
+      test(
+        'the frozen release workflow still invokes a zero-write command',
+        () {
+          final before = origin.mainSha();
+          final retry = _runScript(origin.seed.directory, const []);
+          expect(retry.exitCode, 0, reason: '${retry.stderr}');
+          expect(origin.seed.git(['status', '--porcelain']), isEmpty);
+          expect(origin.mainSha(), before);
+        },
+      );
 
-        expect(origin.git(['rev-parse', 'main~1']), before);
-        expect(
-          origin.git(['log', '-1', '--format=%s', 'main']),
-          'docs: reopen Unreleased after 1.0.0',
-        );
-        expect(origin.mainFile('CHANGELOG.md'), '## Unreleased\n\n$_released');
-      });
-
-      test('keeps an Unreleased section main gained after the tag', () {
-        const pending = '## Unreleased\n\n- Pending fix.\n\n$_released';
+      test('preserves core changelog bytes on advanced main', () {
+        const pending = '## 1.0.1\n\n- Published fix.\n\n$_released';
         origin.commitToMain({
           'CHANGELOG.md': pending,
           _docsChangelog: '$_docsIntro$pending',
@@ -189,48 +107,6 @@ void main() {
       });
     }, skip: Platform.isWindows ? _posixOnly : false);
   });
-
-  group('.gitattributes', () {
-    late Directory root;
-    setUp(() => root = Directory.systemTemp.createTempSync('changelog-union-'));
-    tearDown(() => root.deleteSync(recursive: true));
-
-    test('union-merges only the core changelogs', () {
-      final repo = _Repo.init(root, {
-        '.gitattributes': _read('.gitattributes'),
-      });
-      String mergeAttribute(String path) =>
-          repo.git(['check-attr', 'merge', '--', path]).split(': ').last;
-
-      expect(mergeAttribute('CHANGELOG.md'), 'union');
-      expect(mergeAttribute(_docsChangelog), 'union');
-      for (final path in [
-        'packages/llamadart_llama_cpp_flutter/CHANGELOG.md',
-        'packages/genkit_llamadart/CHANGELOG.md',
-        'website/versioned_docs/version-1.0.0/changelog/recent-releases.md',
-      ]) {
-        expect(mergeAttribute(path), 'unspecified', reason: path);
-      }
-    });
-
-    test('keeps both bullets two branches add under Unreleased', () {
-      final repo = _Repo.init(root, {
-        '.gitattributes': _read('.gitattributes'),
-        'CHANGELOG.md': '## Unreleased\n\n$_released',
-      });
-      repo.git(['checkout', '-q', '-b', 'first']);
-      repo.commit({'CHANGELOG.md': '## Unreleased\n\n- First.\n\n$_released'});
-      repo.git(['checkout', '-q', '-b', 'second', 'main']);
-      repo.commit({'CHANGELOG.md': '## Unreleased\n\n- Second.\n\n$_released'});
-
-      repo.git(['rebase', '-q', 'first']);
-
-      expect(
-        repo.read('CHANGELOG.md'),
-        '## Unreleased\n\n- First.\n- Second.\n\n$_released',
-      );
-    });
-  }, skip: Platform.isWindows ? _posixOnly : false);
 }
 
 String _read(String path) =>
@@ -293,9 +169,6 @@ class _Repo {
     git(['add', '-A']);
     git(['commit', '-q', '-m', 'change']);
   }
-
-  String read(String path) =>
-      File('${directory.path}/$path').readAsStringSync();
 }
 
 /// A bare `origin` whose `main` is tagged `v1.0.0`, as after a core release.

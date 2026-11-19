@@ -3,6 +3,9 @@ title: Maintain the model store package
 description: Versioning, CI and release status of the independently versioned llamadart_model_store package.
 ---
 
+Use `[packages/llamadart_model_store]` for Model Store PR notes and
+maintain the unpublished package changelog independently.
+
 `packages/llamadart_model_store` is an independently versioned Flutter
 package, as decided in
 [#160](https://github.com/leehack/llamadart/issues/160#issuecomment-6432945840).

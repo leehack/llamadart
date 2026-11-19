@@ -238,6 +238,51 @@ void main() {
         '$_rootIntro$section$_oldRelease',
       );
     },
+    timeout: const Timeout(Duration(minutes: 2)),
+  );
+
+  for (final trailer in [
+    'Signed-off-by: A <a@example.invalid>',
+    '---------\n\nCo-authored-by: A <a@example.invalid>',
+  ]) {
+    test('verifies an immutable prep message ending with $trailer', () async {
+      final repo = _repo();
+      final through = repo.pr(3, '- Included note.');
+      final preview = await _collect(repo, repo.args(write: true));
+      final candidate = repo.commit(
+        'Prepare release (#10)\n\n## Changelog\nN/A: Cuts the release.\n\n'
+        '${_receiptBlock(preview)}\n$trailer',
+      );
+      final input = repo.file('.git/clact2-landed-message.md')
+        ..writeAsStringSync(repo.git(['show', '-s', '--format=%B', candidate]));
+      expect(
+        await _collect(
+          repo,
+          repo.args(through: through, verify: input.path, candidate: candidate),
+        ),
+        contains('Release notes input verified.'),
+      );
+    });
+  }
+
+  test(
+    'rejects write in verification and candidate without verification',
+    () async {
+      final repo = _repo();
+      final preview = await _collect(repo, repo.args());
+      final input = repo.file('.git/clact2-receipt.md')
+        ..writeAsStringSync(_receiptBlock(preview));
+      for (final args in [
+        repo.args(write: true, verify: input.path),
+        repo.args(candidate: repo.head),
+      ]) {
+        await expectLater(
+          _collect(repo, args),
+          throwsA(_formatError('Usage:')),
+        );
+      }
+      expect(repo.git(['status', '--porcelain']), isEmpty);
+    },
   );
   test('keeps the loose-list bullet glued to a Git trailer (ADV3)', () async {
     final repo = _repo();
@@ -510,6 +555,7 @@ void main() {
       );
       final preview = await _collect(repo, repo.args());
       expect(preview, contains('The reversal uses a separate migration.'));
+      expect(preview, contains('"reverts":["$feature"]'));
       expect(
         preview,
         contains(
@@ -572,6 +618,7 @@ void main() {
     'requires a SHA-specific disposition for a removed candidate note',
     () async {
       final repo = _repo();
+      final retained = repo.pr(8, '- Keep this note.');
       final source = repo.pr(9, '- Restore the missing feature.');
       final through = repo.head;
       final output = await _collect(repo, repo.args(write: true));
@@ -604,6 +651,40 @@ void main() {
       expect(result, contains('Release notes input verified.'));
       expect(result, contains('--- generated/CHANGELOG.md'));
       expect(result, contains('\n-- Restore the missing feature.\n'));
+      file.writeAsStringSync(
+        '${file.readAsStringSync()}'
+        '- $retained Accounted for in maintainer notes.\n',
+      );
+      await expectLater(
+        _collect(repo, args),
+        throwsA(_formatError('unrelated dispositions for $retained')),
+      );
+    },
+  );
+
+  test(
+    'one candidate bullet cannot account for two identical sources',
+    () async {
+      final repo = _repo();
+      final first = repo.pr(2, '- Shared wording.');
+      final through = repo.pr(3, '- Shared wording.');
+      final preview = await _collect(repo, repo.args(write: true));
+      final candidate = repo.commit('Prepare release (#10)', {
+        for (final path in [_root, _docs])
+          path: repo
+              .file(path)
+              .readAsStringSync()
+              .replaceFirst('- Shared wording.\n', ''),
+      });
+      final input = repo.file('.git/clact2-receipt.md')
+        ..writeAsStringSync(_receiptBlock(preview));
+      await expectLater(
+        _collect(
+          repo,
+          repo.args(through: through, verify: input.path, candidate: candidate),
+        ),
+        throwsA(_formatError('missing dispositions for $first, $through')),
+      );
     },
   );
 
@@ -780,12 +861,29 @@ void main() {
     () async {
       final oldest = '## 0.18.7\n\n- ${'x' * (256 * 1024)}.\n';
       final repo = _repo(history: '$_oldRelease$oldest');
+      const rootPrefix = 'Releases before 0.18.7 are in the\narchive.\n\n';
+      const archivePrefix =
+          'Releases of `llamadart` before 0.18.7, moved verbatim from\nroot.\n\n';
       final priorArchive = repo.file(_archive).readAsStringSync();
+      repo.commit(
+        'Boundary wording (#10)\n\n## Changelog\nN/A: Test archive introductions.',
+        {
+          _root: '$rootPrefix$_oldRelease$oldest',
+          _archive: priorArchive.replaceFirst('# Archive\n\n', archivePrefix),
+        },
+      );
       await _collect(repo, repo.args(write: true));
-      expect(repo.file(_root).readAsStringSync(), endsWith(_oldRelease));
+      final released = repo.file(_root).readAsStringSync();
+      expect(released, startsWith(rootPrefix.replaceFirst('0.18.7', '0.19.3')));
+      expect(released, endsWith(_oldRelease));
       expect(
         repo.file(_archive).readAsStringSync(),
-        priorArchive.replaceFirst('## 0.8.0', '$oldest## 0.8.0'),
+        priorArchive
+            .replaceFirst(
+              '# Archive\n\n',
+              archivePrefix.replaceFirst('0.18.7', '0.19.3'),
+            )
+            .replaceFirst('## 0.8.0', '$oldest## 0.8.0'),
       );
     },
   );
@@ -1307,7 +1405,7 @@ void main() {
 
   test('warns and keeps both notes for a GitHub UI revert (ADV6)', () async {
     final repo = _repo();
-    repo.pr(4, '- Original feature.', {'one.txt': 'New.\n'});
+    final original = repo.pr(4, '- Original feature.', {'one.txt': 'New.\n'});
     repo.file('one.txt').deleteSync();
     final revert = repo.commit(
       'Revert "Change (#4)" (#5)\n\nReverts leehack/llamadart#4\n\n'
@@ -1322,6 +1420,29 @@ void main() {
       _draft(output),
       contains('- Original feature.\n- Reverted feature.'),
     );
+    final jsonLines = const LineSplitter().convert(output);
+    final previous = repo.git(['rev-parse', '${repo.from}^{commit}']).trim();
+    final canonical = [
+      jsonEncode({
+        'version': '0.20.3',
+        'previousTag': repo.from,
+        'previousSha': previous,
+        'through': revert,
+        'cutoverTag': repo.from,
+        'cutoverSha': repo.boundary,
+        'activationSha': repo.activation,
+      }),
+      ...jsonLines.where((line) => line.startsWith('{')),
+      jsonEncode({
+        'sha': revert,
+        'pr': 5,
+        'reviewCode': 'github-revert',
+        'reviewShas': [revert, original],
+        'reference': 'leehack/llamadart#4',
+      }),
+    ];
+    final digest = sha256.convert(utf8.encode('${canonical.join('\n')}\n'));
+    expect(_receiptBlock(output), contains('Input-SHA256: $digest'));
   });
 
   test('keeps the chain for a partial revert of a revert', () async {

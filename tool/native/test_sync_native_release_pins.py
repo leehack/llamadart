@@ -3953,92 +3953,23 @@ class NativeReleaseTagGrammarCorpusTest(unittest.TestCase):
                     pins.normalize_release_tag(tag)
 
 
-class CoreChangelogNativePinTest(unittest.TestCase):
-    repo = "leehack/llamadart-native"
-
-    def test_writes_a_dash_bullet_and_replaces_a_legacy_star_entry(self) -> None:
-        legacy = (
-            "## Unreleased\n\n* Updated the default llama.cpp native runtime pin to\n"
-            "  `leehack/llamadart-native@b1`, old.\n\n- Kept.\n\n## 1.0.0\n"
-        )
-        updated = pins.update_core_changelog_native_pin(legacy, self.repo, "b2")
-        self.assertIn("\n- Updated the default llama.cpp native runtime pin to\n", updated)
-        self.assertIn("`leehack/llamadart-native@b2`", updated)
-        self.assertNotIn("b1", updated)
-        self.assertNotIn("\n* ", updated)
-        self.assertIn("- Kept.", updated)
-
-    def test_replaces_a_hand_written_entry_with_unindented_continuation_lines(
-        self,
-    ) -> None:
-        handwritten = (
-            "## Unreleased\n\n- Updated the default llama.cpp native runtime pin to\n"
-            "`leehack/llamadart-native@b1`, hand written\n"
-            "continuation.\n\n\n- Kept.\n\n## 1.0.0\n\n- Released.\n"
-        )
-        updated = pins.update_core_changelog_native_pin(handwritten, self.repo, "b2")
-        self.assertNotIn("b1", updated)
-        self.assertNotIn("continuation", updated)
-        self.assertIn("`leehack/llamadart-native@b2`", updated)
-        self.assertTrue(updated.endswith("- Kept.\n\n## 1.0.0\n\n- Released.\n"))
-        self.assertEqual(updated.count("- Updated the default llama.cpp"), 1)
-
-    def _update_with_following(self, following: str) -> str:
-        handwritten = (
-            "## Unreleased\n\n- Updated the default llama.cpp native runtime pin to\n"
-            "`leehack/llamadart-native@b1`, hand written\n"
-            f"continuation.\n{following}\n\n## 1.0.0\n"
-        )
-        updated = pins.update_core_changelog_native_pin(handwritten, self.repo, "b2")
-        self.assertNotIn("b1", updated)
-        self.assertNotIn("continuation", updated)
-        return updated
-
-    def test_keeps_an_adjacent_dash_bullet(self) -> None:
-        updated = self._update_with_following("- Adjacent dash.")
-        self.assertIn("\n- Adjacent dash.\n", updated)
-
-    def test_keeps_an_adjacent_star_bullet(self) -> None:
-        updated = self._update_with_following("* Adjacent star.")
-        self.assertIn("\n* Adjacent star.\n", updated)
-
-    def test_keeps_an_adjacent_heading(self) -> None:
-        updated = self._update_with_following("### Adjacent heading")
-        self.assertIn("\n### Adjacent heading\n", updated)
-
-    def test_keeps_an_adjacent_h2_heading(self) -> None:
-        updated = self._update_with_following("## Adjacent heading")
-        self.assertIn("\n## Adjacent heading\n", updated)
-
-    def test_keeps_an_adjacent_empty_heading(self) -> None:
-        updated = self._update_with_following("#")
-        self.assertIn("\n#\n", updated)
-
-    def test_consumes_a_continuation_line_starting_with_an_issue_reference(
-        self,
-    ) -> None:
-        updated = self._update_with_following("#1234 follow-up")
-        self.assertNotIn("#1234", updated)
-        self.assertNotIn("follow-up", updated)
-
-    def test_consumes_a_continuation_line_starting_with_a_hashtag(self) -> None:
-        updated = self._update_with_following("#hashtag")
-        self.assertNotIn("#hashtag", updated)
-
-    def test_consumes_a_continuation_line_with_seven_hashes(self) -> None:
-        updated = self._update_with_following("####### not a heading")
-        self.assertNotIn("not a heading", updated)
-
-    def test_consumes_trailing_blank_lines_but_keeps_the_next_paragraph(self) -> None:
-        handwritten = (
-            "## Unreleased\n\n- Prior.\n\n"
-            "- Updated the default llama.cpp native runtime pin to\n"
-            "`leehack/llamadart-native@b1`, hand written\n"
-            "continuation.\n\n\nNext paragraph.\n\n## 1.0.0\n"
-        )
-        updated = pins.update_core_changelog_native_pin(handwritten, self.repo, "b2")
-        self.assertIn("\n\n- Prior.\n\nNext paragraph.\n\n## 1.0.0\n", updated)
-        self.assertNotIn("\n\n\n", updated)
+class NativePrChangelogTest(unittest.TestCase):
+    def test_each_owner_and_no_change(self) -> None:
+        base = ("const llamaCppTag = 'v1.0.0';\n"
+                "const liteRtLmReleaseTag = 'v0.19.1';\n"
+                "const stableDiffusionReleaseTag = 'v0.4.0';\n")
+        self.assertIn("N/A: ", pins.native_changelog_section(base, base))
+        for label, old, new in (
+            ("llama.cpp", "v1.0.0", "v1.0.0-1"),
+            ("LiteRT-LM", "v0.19.1", "v0.19.1-1"),
+            ("Stable Diffusion", "v0.4.0", "v0.4.0-1"),
+        ):
+            with self.subTest(label=label):
+                notes = pins.native_changelog_section(base, base.replace(old, new))
+                self.assertTrue(notes.startswith(f"- Update the {label} native"))
+                self.assertIn(f"from `{old}`", notes)
+                self.assertIn(f"@{new}`.", notes)
+                self.assertNotIn("\n", notes)
 
 
 class CompanionChangelogUnreleasedTest(unittest.TestCase):

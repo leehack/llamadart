@@ -1,6 +1,24 @@
 ## Summary
 -
 
+## Changelog
+
+<!--
+Write one column-zero "- " bullet per user-facing change, on one line each.
+Optional prefixes are [core], [packages/llamadart_llama_cpp_flutter],
+[packages/llamadart_litert_lm_flutter], [packages/llamadart_stable_diffusion_flutter],
+[packages/genkit_llamadart], and [packages/llamadart_model_store].
+Ordinary leading Markdown links are allowed. Package notes do not enter core
+release notes. Update the package changelog when required.
+-->
+
+<!--
+- [core] Explain the user-visible change.
+- [packages/genkit_llamadart] Explain the package change.
+N/A: Changes maintainer release tooling.
+Use either bullets or a specific standalone N/A reason.
+-->
+
 ## Production-readiness scope
 - **User-facing scope:** <!-- What can users do after this merges? -->
 - **Supported platforms/paths:** <!-- Native/WebGPU/Flutter app/docs-only/etc. -->
@@ -10,7 +28,7 @@
 ## Completeness checklist
 - [ ] Declared scope is fully implemented, or explicitly reduced above.
 - [ ] Unsupported platform/option combinations fail loudly with actionable diagnostics or are clearly documented as unavailable.
-- [ ] Public API docs, README/website docs, examples, support matrices, and changelog entries are updated where relevant.
+- [ ] Public API docs, README/website docs, examples, support matrices, and the PR changelog section are updated where relevant.
 - [ ] Regression coverage covers the original issue plus key negative/version-skew paths where relevant.
 - [ ] Public capability changes update the validation coverage registry with a pack or a reasoned, issue-linked exemption; inventory checks pass (or N/A with scope).
 - [ ] Security/privacy review completed: no secrets, bearer tokens, signed URLs, or raw secret-bearing paths leak through logs, cache keys, metadata, errors, or snapshots.

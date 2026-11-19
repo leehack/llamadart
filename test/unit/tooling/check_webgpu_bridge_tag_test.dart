@@ -210,10 +210,10 @@ Future<List<String>> _verifyManifestJson(
   );
 }
 
-String _currentReleaseNotes(String path) {
+String _publishedReleaseNotes(String path) {
   final section = currentReleaseNotesSection(
     File(path).readAsStringSync(),
-    readRootPackageVersion(Directory.current),
+    '0.20.2',
   );
   expect(
     section,
@@ -224,6 +224,54 @@ String _currentReleaseNotes(String path) {
 }
 
 void main() {
+  test('strict prep requires the exact prior version and full runtime baseline', () {
+    const manifest = bridgeManifestSha256;
+    final baseline =
+        'Runtime baseline: native llama.cpp `v1.0.0-3` and Web use '
+        'upstream `$bridgeLlamaCppTag@$bridgeLlamaCppCommit`; native LiteRT-LM uses '
+        '`v0.19.1-5` and stable-diffusion uses `v0.4.0`. '
+        'Web LiteRT-LM uses `@litert-lm/core@0.19.0`. Manifest SHA-256: `$manifest`.';
+    const claim =
+        '- Keep the default WebGPU bridge assets at `v9.9.9` (unchanged from 1.2.2).';
+    final root = _fakeRepo(
+      'v9.9.9',
+      files: {
+        'example/chat_app/web/index.html':
+            'https://cdn.jsdelivr.net/npm/@litert-lm/core@0.19.0/+esm',
+        nativeLlamaCppTagPath:
+            "const llamaCppTag = 'v1.0.0-3';\n"
+            "const liteRtLmReleaseTag = 'v0.19.1-5';\n"
+            "const stableDiffusionReleaseTag = 'v0.4.0';\n",
+        'CHANGELOG.md': '## 1.2.3\n\n$claim\n\n$baseline\n',
+        'website/docs/changelog/recent-releases.md':
+            '## 1.2.3\n\n${claim.replaceFirst('the default', 'default')}\n\n$baseline\n',
+      },
+    );
+    List<String> verify({String old = 'v9.9.9'}) =>
+        findPreparedReleaseNotesDrift(root, 'v9.9.9', '1.2.2', old);
+    expect(verify(), isEmpty);
+    expect(verify(old: 'v9.9.8'), isNotEmpty);
+    final changelog = File('${root.path}/CHANGELOG.md');
+    final valid = changelog.readAsStringSync();
+    for (final wrong in [
+      valid.replaceFirst('1.2.2', '1.2.1'),
+      valid.replaceFirst(baseline, ''),
+      '$valid$baseline\n',
+      valid.replaceFirst('@litert-lm/core@0.19.0', '@litert-lm/core@0.18.0'),
+      valid.replaceFirst(
+        manifest,
+        '0000000000000000000000000000000000000000000000000000000000000000',
+      ),
+      valid.replaceFirst(
+        bridgeLlamaCppCommit,
+        '2222222222222222222222222222222222222222',
+      ),
+    ]) {
+      changelog.writeAsStringSync(wrong);
+      expect(verify(), isNotEmpty, reason: wrong);
+    }
+  });
+
   test('default assets include the qualified media embedding API', () {
     expect(readPinnedBridgeTag(Directory.current), 'v0.1.86');
     expect(bridgeNativeReleaseTag, 'v1.0.0');
@@ -294,40 +342,23 @@ void main() {
   });
 
   test(
-    'current release notes keep exact Web provenance and LiteRT separation',
+    'v0.20.2 release notes keep exact Web provenance and LiteRT separation',
     () {
-      for (final path in const <String>[
-        'CHANGELOG.md',
-        'website/docs/changelog/recent-releases.md',
-      ]) {
-        final current = _currentReleaseNotes(path);
-        expect(current, contains('`v0.1.86`'), reason: path);
-        expect(current, contains(bridgeManifestSha256), reason: path);
-        expect(
-          current,
-          contains('$bridgeLlamaCppTag@$bridgeLlamaCppCommit'),
-          reason: path,
-        );
-        expect(
-          current,
-          contains(
-            RegExp(
-              'native llama\\.cpp `${RegExp.escape(normalizeNativeLlamaCppTag(bridgeApprovedNativePin)!)}(?:-\\d+)?`',
-            ),
-          ),
-          reason: path,
-        );
-        expect(findRuntimeBaselineDrift(Directory.current), isEmpty);
-        expect(current, contains('@litert-lm/core@0.19.0'), reason: path);
-      }
-
+      const path =
+          'website/versioned_docs/version-0.20.2/changelog/recent-releases.md';
+      final shipped = _publishedReleaseNotes(path);
+      expect(shipped, contains('`v0.1.86`'));
       expect(
-        File('example/chat_app/web/index.html').readAsStringSync(),
-        contains('@litert-lm/core@0.19.0/+esm'),
+        shipped,
+        contains('v1.0.0@b1b770d90d94cad9e9ea5b993bdbc383a522fb28'),
       );
+      expect(shipped, contains('native llama.cpp `v1.0.0-3`'));
+      expect(shipped, contains('@litert-lm/core@0.19.0'));
       expect(
-        File(nativeLlamaCppTagPath).readAsStringSync(),
-        contains("const liteRtLmReleaseTag = 'v0.19.1-5';"),
+        shipped,
+        contains(
+          'd589fbe3c334e4fcb0ccbac3efc4500209358a010b6662ee8523e598a433a0f2',
+        ),
       );
     },
   );
@@ -591,14 +622,11 @@ void main() {
       }
     }
 
-    test('the aggregate pin gate rejects a stale unchanged baseline', () {
+    test('live pin checks ignore a frozen release baseline', () {
       final root = baselineRepo('1.2.3', tag: 'v0.0.1');
       expect(
         findBridgeTagDrift(root, 'v9.9.9'),
-        containsAll([
-          for (final pin in releaseNotesPins)
-            '${pin.path}: pins v0.0.1, expected v9.9.9',
-        ]),
+        isNot(contains(contains('CHANGELOG.md'))),
       );
     });
 
@@ -975,17 +1003,16 @@ void main() {
       ]);
     });
 
-    test('the aggregate gate runs the baseline check', () async {
+    test('normal live checks ignore the shipped baseline', () async {
       final root = baselineRepo(
         changelog: paragraph(sd: 'v0.3.0-2'),
         docs: paragraph(),
       );
       expect(
         await findBridgeProblems(root, 'v9.9.9'),
-        contains(contains('Runtime baseline names stable-diffusion')),
+        isNot(contains(contains('Runtime baseline names stable-diffusion'))),
       );
     });
-
     group('with a released section below Unreleased', () {
       Directory cycleRepo({
         String unreleased = '',

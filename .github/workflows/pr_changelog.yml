@@ -1,0 +1,73 @@
+name: PR changelog
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, reopened, synchronize, edited, ready_for_review, labeled, unlabeled]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pr-changelog-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
+
+jobs:
+  changelog:
+    name: PR changelog
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      verify-prep: ${{ steps.route.outputs.verify-prep }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          persist-credentials: false
+      - uses: dart-lang/setup-dart@v1
+        with:
+          sdk: 3.13.1
+      - run: dart tool/release/pr_changelog.dart --event
+      - name: Route verification
+        id: route
+        if: >-
+          github.event.label.name == 'release-prep' ||
+          (github.event.pull_request.head.repo.full_name == github.repository &&
+           (contains(github.event.pull_request.labels.*.name, 'release-prep') ||
+            startsWith(github.event.pull_request.head.ref, 'release/')))
+        run: dart tool/release/pr_changelog.dart --prep-event >> "$GITHUB_OUTPUT"
+
+  release-prep:
+    name: Verify release prep
+    needs: changelog
+    if: needs.changelog.outputs.verify-prep == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: dart-lang/setup-dart@v1
+        with:
+          sdk: 3.13.1
+      - name: Check the real PR head and tested merge result
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          base="$(jq -r .pull_request.base.sha "$GITHUB_EVENT_PATH")"
+          head="$(jq -r .pull_request.head.sha "$GITHUB_EVENT_PATH")"
+          [[ "$(git show -s --format=%P HEAD)" == "$base $head" ]]
+          dart tool/testing/check_released_changelog_sections.dart > "$RUNNER_TEMP/changelog-policy.txt"
+          cat "$RUNNER_TEMP/changelog-policy.txt"
+          if grep -Fxq 'Core release prep: true' "$RUNNER_TEMP/changelog-policy.txt"; then
+            jq -r .pull_request.body "$GITHUB_EVENT_PATH" > "$RUNNER_TEMP/release-prep-body.md"
+            dart pub get
+            bash tool/release/verify_release_candidate.sh "$base" HEAD "$RUNNER_TEMP/release-prep-body.md"
+          fi

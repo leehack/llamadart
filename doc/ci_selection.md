@@ -461,3 +461,11 @@ validates and tests an existing build. Model files are never added to the
 uploaded app. The corresponding matrix row is `web-production-artifact-smoke`.
 The concrete saving is one removed production Flutter setup/dependency/build;
 no hosted timing or cost percentage is claimed before measurement.
+
+
+The path-unfiltered `PR changelog` workflow runs on PR description edits
+without starting heavy CI. Core release prep adds a candidate verification
+job for initial, head, receipt or review changes. Adding or removing the
+release-prep label checks the real head's changelog policy again. Analyze
+and docs-versions both carry the full-history policy check. When Analyze
+runs, selection folds the duplicate docs-versions check into it.
