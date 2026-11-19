@@ -804,8 +804,7 @@ their `run_local_e2e.dart` scenarios before moving that gate.
 Historically, core `0.17.1` moved the llama.cpp pin to `v0.8.0-1`, built from upstream `v0.8.0`, inside
 the `0.17` minor. It kept companion `0.17.0` (`v0.7.0-3`) through
 `llamaCppCompatibleAppleCompanionTags` because that core called no symbol that
-framework lacked; `test/fixtures/native/llama_cpp_apple_compatibility.json` records
-the historical per-slice check. The
+framework lacked, verified by a per-slice symbol check. The
 reverse pair is unsafe (`mtmd_helper_init_opt` grows to 32 bytes), so companion
 `0.17.1` needs `llamadart: '>=0.17.1 <0.18.0'`.
 
