@@ -38,6 +38,11 @@ Future<int> _runPreflight() async {
   };
 
   try {
+    final receiptDir = Platform.environment['LLAMADART_STT_STREAM_RECEIPT_DIR']
+        ?.trim();
+    if (receiptDir != null && receiptDir.isNotEmpty) {
+      prepareReceiptDir(receiptDir);
+    }
     final verified = await preflightSpeechStreamInputs(
       pathsByInputKey: paths,
       verifyDigests: true,

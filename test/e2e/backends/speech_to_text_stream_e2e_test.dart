@@ -33,16 +33,13 @@ String? _envFile(String key, [String? fallbackKey]) {
 
 bool _exists(String? path) => path != null && File(path).existsSync();
 
-String? _requireStreamInput(String? path, String envKey) {
-  if (path == null || path.isEmpty) {
-    markTestSkipped('Set $envKey to run the live ASR stream E2E.');
-    return null;
-  }
-  if (!File(path).existsSync()) {
-    throw StateError('$envKey does not exist: $path');
-  }
-  return path;
-}
+String? _requireStreamInput(String? path, String envKey) =>
+    requireSpeechStreamInput(
+      path,
+      envKey,
+      qualify: _isQualifyMode(),
+      onSkip: markTestSkipped,
+    );
 
 String _requestedBackend() =>
     (Platform.environment['LLAMADART_STT_STREAM_BACKEND'] ?? 'auto')
@@ -153,27 +150,6 @@ _captureDiagnostics(NativeLlamaBackend backend, String requestedBackend) async {
     vramTotalBytes: vramTotalBytes,
     vramFreeBytes: vramFreeBytes,
   );
-}
-
-String _effectiveBackendKey({
-  required String requestedBackend,
-  required String backendName,
-  required int resolvedGpuLayers,
-}) {
-  if (requestedBackend == 'cpu' || resolvedGpuLayers == 0) {
-    return 'cpu';
-  }
-  final lower = backendName.toLowerCase();
-  if (lower.contains('cuda')) {
-    return 'cuda';
-  }
-  if (lower.contains('metal')) {
-    return 'metal';
-  }
-  if (lower.contains('vulkan')) {
-    return 'vulkan';
-  }
-  return requestedBackend == 'auto' ? 'cpu' : requestedBackend;
 }
 
 void _writeReceiptIfConfigured(SpeechStreamLegReceipt receipt) {
@@ -422,180 +398,109 @@ Future<void> _run300sTimedLeg({
   );
 
   final jfk = _decodeWavPcm16Mono16k(jfkPath);
-  late final ({
-    String backendName,
-    List<String> availableBackends,
-    int resolvedGpuLayers,
-    int? vramTotalBytes,
-    int? vramFreeBytes,
-  })
-  diag;
-
-  final meter = SpeechStreamRssMeter();
-  late final SpeechStreamProducerStats producerStats;
-  late final Duration flushDuration;
-  late final SpeechToTextCompletion completion;
-  Duration? firstPartialWall;
-  Duration? firstPartialAudio;
-  final partials = <SpeechToTextPartialEvent>[];
-  final finals = <SpeechToTextFinalEvent>[];
   var engineDisposed = false;
 
   try {
-    diag = await _captureDiagnostics(backend, requestedBackend);
-
-    // 11s warm-up at 4096 context, finish and release session before baseline.
-    final warmupText = await _streamChunks(engine, jfk, const [5120]);
-    expect(_normalizeWords(warmupText), contains('fellow americans'));
-
-    meter.startBaseline();
-    meter.startPeriodicSampling();
-
-    final sw = Stopwatch()..start();
-    final session = await engine.startStream();
-    final sub = session.events.listen((event) {
-      switch (event) {
-        case SpeechToTextPartialEvent():
-          partials.add(event);
-          if (event.text.trim().isNotEmpty && firstPartialWall == null) {
-            firstPartialWall = sw.elapsed;
-            firstPartialAudio = event.acceptedAudioDuration;
-          }
-        case SpeechToTextFinalEvent():
-          finals.add(event);
-      }
-    });
-
-    try {
-      producerStats = await streamCyclicPcm300s(
-        unit: jfk,
-        slabSize: speechStreamMaxSlabSamples,
-        paced: mode == SpeechStreamPacingMode.paced,
-        onSlab: session.addPcm,
-        onAfterPush: meter.sampleNow,
-      );
-      final flushSw = Stopwatch()..start();
-      await session.finish();
-      completion = await session.done;
-      flushSw.stop();
-      sw.stop();
-      flushDuration = flushSw.elapsed;
-    } finally {
-      meter.stopPeriodicSampling();
-      await session.cancel();
-      await sub.cancel();
-    }
-
-    expect(completion.state, SpeechToTextCompletionState.completed);
-    final result = completion.result!;
-    expect(finals, hasLength(1));
-    expect(partials, isNotEmpty);
-    expect(firstPartialWall, isNotNull);
-    expect(
-      result.audioDuration,
-      const Duration(seconds: speechStreamTargetSeconds300s),
-    );
-    expect(producerStats.pushedSamples, speechStreamTargetSamples300s);
-    _assertMonotonicPartials(partials, result.text);
-
-    final norm = _normalizeWords(result.text);
-    expect(norm, contains('fellow americans'));
-    expect(norm, contains('country'));
-    expect(
-      _countOccurrences(norm, 'fellow americans'),
-      greaterThanOrEqualTo(25),
-    );
-
-    await engine.dispose();
-    engineDisposed = true;
-    final postDisposeRss = ProcessInfo.currentRss;
-    final rssSummary = meter.finish(postDisposeRssBytes: postDisposeRss);
-
-    final effectiveBackend = _effectiveBackendKey(
-      requestedBackend: requestedBackend,
-      backendName: diag.backendName,
-      resolvedGpuLayers: diag.resolvedGpuLayers,
-    );
-    final profileKey = SpeechStreamProfileKey(
-      family: family,
-      hostOs: currentHostOs(),
-      arch: currentHostArch(),
-      backend: effectiveBackend,
-      mode: mode,
-    );
-    final ceilingBytes = lookupMemoryCeilingBytes(profileKey);
-    final budgetEval = evaluateMemoryBudget(
-      baselineRssBytes: rssSummary.baselineRssBytes,
-      peakRssBytes: rssSummary.peakRssBytes,
-      ceilingBytes: ceilingBytes,
-    );
-
-    final memoryStatusLabel = switch (budgetEval.status) {
-      SpeechStreamMemoryStatus.pass => 'pass',
-      SpeechStreamMemoryStatus.fail => 'fail',
-      SpeechStreamMemoryStatus.unboundedQualificationPending =>
-        'unbounded / qualification pending',
-    };
-
-    final totalWallMs = producerStats.wallMs + flushDuration.inMilliseconds;
-    final rtf = totalWallMs / (speechStreamTargetSeconds300s * 1000.0);
-
-    final receipt = SpeechStreamLegReceipt(
+    final diag = await _captureDiagnostics(backend, requestedBackend);
+    final outcome = await runTimedSpeechStreamLeg(
       legId: legId,
-      family: family.name,
-      mode: mode.name,
+      family: family,
+      mode: mode,
       hostOs: currentHostOs(),
       arch: currentHostArch(),
-      backendRequested: requestedBackend,
+      requestedBackend: requestedBackend,
       backendUsed: diag.backendName,
       exposedDevices: diag.availableBackends,
-      usedDevices: [diag.backendName],
-      gpuLayersOffloaded: diag.resolvedGpuLayers,
-      threads: 2,
-      threadsBatch: 2,
-      contextSize: 4096,
-      pushedSamples: producerStats.pushedSamples,
-      audioDurationMs: result.audioDuration!.inMilliseconds,
-      wallMs: totalWallMs,
-      flushMs: flushDuration.inMilliseconds,
-      firstPartialWallMs: firstPartialWall?.inMilliseconds,
-      firstPartialAudioMs: firstPartialAudio?.inMilliseconds,
-      p95PushMs: producerStats.p95PushMs,
-      maxPushMs: producerStats.maxPushMs,
-      maxLagMs: producerStats.maxLagMs,
-      rtf: rtf,
-      baselineRssBytes: rssSummary.baselineRssBytes,
-      peakRssBytes: rssSummary.peakRssBytes,
-      endRssBytes: rssSummary.endRssBytes,
-      postDisposeRssBytes: rssSummary.postDisposeRssBytes,
-      rssSampleCount: rssSummary.sampleCount,
+      resolvedGpuLayers: diag.resolvedGpuLayers,
+      unitPcm: jfk,
       vramTotalBytes: diag.vramTotalBytes,
       vramFreeBytes: diag.vramFreeBytes,
-      ceilingBytes: ceilingBytes,
-      memoryStatus: memoryStatusLabel,
-      outcome:
-          (ceilingBytes == null &&
-                  _isQualifyMode() &&
-                  !_isCollectBaselineMode()) ||
-              (ceilingBytes != null && !budgetEval.passed)
-          ? 'fail'
-          : 'pass',
-      failureReason: ceilingBytes == null
-          ? 'unbounded / qualification pending for $profileKey'
-          : (budgetEval.passed
-                ? null
-                : 'peakDeltaBytes=${budgetEval.peakDeltaBytes} > '
-                      'ceilingBytes=$ceilingBytes'),
+      qualify: _isQualifyMode(),
+      collectBaseline: _isCollectBaselineMode(),
+      receiptDir: Platform.environment['LLAMADART_STT_STREAM_RECEIPT_DIR'],
+      runWarmup: () async {
+        final warmupText = await _streamChunks(engine, jfk, const [5120]);
+        expect(_normalizeWords(warmupText), contains('fellow americans'));
+      },
+      runMeasuredSession: (driveProducer) async {
+        final sw = Stopwatch()..start();
+        Duration? firstPartialWall;
+        Duration? firstPartialAudio;
+        final partials = <SpeechToTextPartialEvent>[];
+        final finals = <SpeechToTextFinalEvent>[];
+        late final Duration flushDuration;
+        late final SpeechToTextCompletion completion;
+
+        final session = await engine.startStream();
+        final sub = session.events.listen((event) {
+          switch (event) {
+            case SpeechToTextPartialEvent():
+              partials.add(event);
+              if (event.text.trim().isNotEmpty && firstPartialWall == null) {
+                firstPartialWall = sw.elapsed;
+                firstPartialAudio = event.acceptedAudioDuration;
+              }
+            case SpeechToTextFinalEvent():
+              finals.add(event);
+          }
+        });
+
+        try {
+          await driveProducer(session.addPcm, () {});
+          final flushSw = Stopwatch()..start();
+          await session.finish();
+          completion = await session.done;
+          flushSw.stop();
+          sw.stop();
+          flushDuration = flushSw.elapsed;
+        } finally {
+          await session.cancel();
+          await sub.cancel();
+        }
+
+        expect(completion.state, SpeechToTextCompletionState.completed);
+        final result = completion.result!;
+        expect(finals, hasLength(1));
+        expect(partials, isNotEmpty);
+        expect(firstPartialWall, isNotNull);
+        expect(
+          result.audioDuration,
+          const Duration(seconds: speechStreamTargetSeconds300s),
+        );
+        _assertMonotonicPartials(partials, result.text);
+
+        final norm = _normalizeWords(result.text);
+        expect(norm, contains('fellow americans'));
+        expect(norm, contains('country'));
+        expect(
+          _countOccurrences(norm, 'fellow americans'),
+          greaterThanOrEqualTo(25),
+        );
+
+        return SpeechStreamTimedSessionResult(
+          flushDuration: flushDuration,
+          audioDurationMs: result.audioDuration!.inMilliseconds,
+          firstPartialWallMs: firstPartialWall?.inMilliseconds,
+          firstPartialAudioMs: firstPartialAudio?.inMilliseconds,
+        );
+      },
+      disposeEngine: () async {
+        await engine.dispose();
+        engineDisposed = true;
+      },
     );
-    _writeReceiptIfConfigured(receipt);
 
     const mib = 1024 * 1024;
+    final rssSummary = outcome.rssSummary;
+    final producerStats = outcome.producerStats;
+    final ceilingBytes = outcome.receipt.ceilingBytes;
     stderr.writeln(
-      '[$legId] profile=$profileKey backend=${diag.backendName} '
-      'gpuLayers=${diag.resolvedGpuLayers} wallMs=$totalWallMs '
-      'flushMs=${flushDuration.inMilliseconds} rtf=${rtf.toStringAsFixed(3)} '
-      'firstPartialWallMs=${firstPartialWall?.inMilliseconds} '
-      'firstPartialAudioMs=${firstPartialAudio?.inMilliseconds} '
+      '[$legId] profile=${outcome.profileKey} backend=${diag.backendName} '
+      'gpuLayers=${diag.resolvedGpuLayers} wallMs=${outcome.receipt.wallMs} '
+      'flushMs=${outcome.receipt.flushMs} '
+      'rtf=${outcome.receipt.rtf!.toStringAsFixed(3)} '
+      'firstPartialWallMs=${outcome.receipt.firstPartialWallMs} '
+      'firstPartialAudioMs=${outcome.receipt.firstPartialAudioMs} '
       'p95PushMs=${producerStats.p95PushMs.toStringAsFixed(2)} '
       'maxPushMs=${producerStats.maxPushMs.toStringAsFixed(2)} '
       'maxLagMs=${producerStats.maxLagMs} '
@@ -606,25 +511,9 @@ Future<void> _run300sTimedLeg({
       'postDisposeMiB=${(rssSummary.postDisposeRssBytes / mib).toStringAsFixed(1)} '
       'samples=${rssSummary.sampleCount} '
       'ceilingMiB=${ceilingBytes != null ? (ceilingBytes / mib).toStringAsFixed(1) : 'uncalibrated'} '
-      'memoryStatus=$memoryStatusLabel',
+      'memoryStatus=${outcome.receipt.memoryStatus}',
     );
-
-    if (ceilingBytes != null) {
-      expect(
-        budgetEval.passed,
-        isTrue,
-        reason:
-            'RSS delta ${budgetEval.peakDeltaBytes} bytes exceeded ceiling '
-            '$ceilingBytes bytes for $profileKey.',
-      );
-    } else if (_isQualifyMode() && !_isCollectBaselineMode()) {
-      fail(
-        'Memory profile $profileKey is uncalibrated '
-        '(unbounded / qualification pending).',
-      );
-    }
   } finally {
-    meter.stopPeriodicSampling();
     if (!engineDisposed) {
       await engine.dispose();
     }

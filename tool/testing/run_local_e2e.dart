@@ -1021,7 +1021,7 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
             executable: 'dart',
             arguments: [
               'test',
-              if (!qualify) '--run-skipped',
+              '--run-skipped',
               '-t',
               'local-only',
               'test/e2e/backends/speech_to_text_stream_e2e_test.dart',

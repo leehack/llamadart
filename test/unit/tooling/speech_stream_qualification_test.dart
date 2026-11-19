@@ -1,6 +1,7 @@
 @TestOn('vm')
 library;
 
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:test/test.dart';
@@ -389,13 +390,45 @@ void main() {
     });
 
     test('passes on boundary equality and fails 1 byte over budget', () {
-      const lfm3Ceiling = 64 * 1024 * 1024;
+      const mib = 1024 * 1024;
+      const lfm3Ceiling = 64 * mib;
+      final table = <SpeechStreamProfileKey, int>{
+        const SpeechStreamProfileKey(
+          family: SpeechStreamFamily.voxtral,
+          hostOs: 'macos',
+          arch: 'arm64',
+          backend: 'cpu',
+          mode: SpeechStreamPacingMode.fast,
+        ): 416 * mib,
+        const SpeechStreamProfileKey(
+          family: SpeechStreamFamily.voxtral,
+          hostOs: 'macos',
+          arch: 'arm64',
+          backend: 'cpu',
+          mode: SpeechStreamPacingMode.paced,
+        ): 416 * mib,
+        const SpeechStreamProfileKey(
+          family: SpeechStreamFamily.lfm3,
+          hostOs: 'macos',
+          arch: 'arm64',
+          backend: 'cpu',
+          mode: SpeechStreamPacingMode.fast,
+        ): lfm3Ceiling,
+        const SpeechStreamProfileKey(
+          family: SpeechStreamFamily.lfm3,
+          hostOs: 'macos',
+          arch: 'arm64',
+          backend: 'cpu',
+          mode: SpeechStreamPacingMode.paced,
+        ): lfm3Ceiling,
+      };
       final boundary = evaluateQualificationReport(
         SpeechStreamQualificationReport(
           requestedBackend: 'cpu',
           isBaselineCollection: false,
           legs: validLegs(lfm3Ceiling: lfm3Ceiling, lfm3PeakDelta: lfm3Ceiling),
         ),
+        ceilingTable: table,
       );
       expect(boundary.passed, isTrue, reason: boundary.failures.join('; '));
 
@@ -408,6 +441,7 @@ void main() {
             lfm3PeakDelta: lfm3Ceiling + 1,
           ),
         ),
+        ceilingTable: table,
       );
       expect(overByOne.passed, isFalse);
       expect(overByOne.failures.join('\n'), contains('lfm3_fast'));
@@ -424,5 +458,195 @@ void main() {
       expect(eval.passed, isFalse);
       expect(eval.failures.join('\n'), contains('baseline'));
     });
+
+    test('ignores inflated receipt ceilingBytes and uses checked-in table', () {
+      const mib = 1024 * 1024;
+      // lfm3/macos/arm64/cpu/fast checked-in ceiling is 64 MiB.
+      // Receipt claims 10 GiB, but peak delta is 65 MiB -> must FAIL.
+      final eval = evaluateQualificationReport(
+        SpeechStreamQualificationReport(
+          requestedBackend: 'cpu',
+          isBaselineCollection: false,
+          legs: validLegs(
+            lfm3Ceiling: 10 * 1024 * mib,
+            lfm3PeakDelta: 65 * mib,
+          ),
+        ),
+      );
+      expect(eval.passed, isFalse);
+      expect(eval.failures.join('\n'), contains('lfm3_fast'));
+    });
+  });
+
+  group('requireSpeechStreamInput and prepareReceiptDir', () {
+    test(
+      'fails under qualify=true when path is missing and skips when false',
+      () {
+        String? skippedReason;
+        final skipped = requireSpeechStreamInput(
+          null,
+          'LLAMADART_STT_STREAM_VOXTRAL_MODEL_PATH',
+          qualify: false,
+          onSkip: (msg) => skippedReason = msg,
+        );
+        expect(skipped, isNull);
+        expect(
+          skippedReason,
+          contains('LLAMADART_STT_STREAM_VOXTRAL_MODEL_PATH'),
+        );
+
+        expect(
+          () => requireSpeechStreamInput(
+            null,
+            'LLAMADART_STT_STREAM_VOXTRAL_MODEL_PATH',
+            qualify: true,
+            onSkip: (_) => fail('must not skip in qualify mode'),
+          ),
+          throwsA(isA<StateError>()),
+        );
+      },
+    );
+
+    test('clears stale .json receipts and refuses when configured', () {
+      final tempDir = Directory.systemTemp.createTempSync('asrm_receipts_');
+      addTearDown(() => tempDir.deleteSync(recursive: true));
+      final stale = File('${tempDir.path}/stale.json')..writeAsStringSync('{}');
+      expect(stale.existsSync(), isTrue);
+
+      expect(
+        () => prepareReceiptDir(tempDir.path, refuseNonEmpty: true),
+        throwsA(isA<StateError>()),
+      );
+      prepareReceiptDir(tempDir.path);
+      expect(stale.existsSync(), isFalse);
+    });
+  });
+
+  group('SpeechStreamRssMeter default reader and runTimedSpeechStreamLeg', () {
+    test('default RSS reader reports positive process RSS', () {
+      final meter = SpeechStreamRssMeter();
+      meter.startBaseline();
+      expect(meter.baselineRssBytes, greaterThan(0));
+    });
+
+    test(
+      'runs warm-up before baseline and enforces budget pass/fail',
+      () async {
+        final events = <String>[];
+        final rssValues = <int>[100, 150, 140, 120];
+        var rssIndex = 0;
+        var tick = 1000;
+        final meter = SpeechStreamRssMeter(
+          readRssBytes: () {
+            events.add('readRss');
+            return rssValues[rssIndex < rssValues.length
+                ? rssIndex++
+                : rssValues.length - 1];
+          },
+          nowMicros: () => tick += 100,
+        );
+        final unit = Float32List.fromList(const [0.1, 0.2, 0.3, 0.4]);
+
+        final outcome = await runTimedSpeechStreamLeg(
+          legId: 'lfm3_fast',
+          family: SpeechStreamFamily.lfm3,
+          mode: SpeechStreamPacingMode.fast,
+          hostOs: 'macos',
+          arch: 'arm64',
+          requestedBackend: 'cpu',
+          backendUsed: 'CPU',
+          exposedDevices: const ['CPU'],
+          resolvedGpuLayers: 0,
+          unitPcm: unit,
+          targetSamples: 10,
+          slabSize: 4,
+          meter: meter,
+          readPostDisposeRss: () {
+            events.add('postDisposeRss');
+            return 110;
+          },
+          ceilingTable: {
+            const SpeechStreamProfileKey(
+              family: SpeechStreamFamily.lfm3,
+              hostOs: 'macos',
+              arch: 'arm64',
+              backend: 'cpu',
+              mode: SpeechStreamPacingMode.fast,
+            ): 50,
+          },
+          runWarmup: () async => events.add('warmup'),
+          runMeasuredSession: (driveProducer) async {
+            await driveProducer(
+              (slab) async => events.add('push:${slab.length}'),
+              () {},
+            );
+            return const SpeechStreamTimedSessionResult(
+              flushDuration: Duration(milliseconds: 5),
+              audioDurationMs: 300000,
+              firstPartialWallMs: 1,
+              firstPartialAudioMs: 1,
+            );
+          },
+          disposeEngine: () async => events.add('dispose'),
+        );
+
+        expect(outcome.budgetEvaluation.passed, isTrue);
+        expect(events.first, 'warmup');
+        expect(events.indexOf('warmup'), lessThan(events.indexOf('readRss')));
+        expect(
+          events.indexOf('dispose'),
+          lessThan(events.indexOf('postDisposeRss')),
+        );
+
+        // Exceed ceiling by 1 byte -> must throw StateError.
+        var overIdx = 0;
+        final overValues = <int>[100, 151, 120];
+        await expectLater(
+          () => runTimedSpeechStreamLeg(
+            legId: 'lfm3_fast',
+            family: SpeechStreamFamily.lfm3,
+            mode: SpeechStreamPacingMode.fast,
+            hostOs: 'macos',
+            arch: 'arm64',
+            requestedBackend: 'cpu',
+            backendUsed: 'CPU',
+            exposedDevices: const ['CPU'],
+            resolvedGpuLayers: 0,
+            unitPcm: unit,
+            targetSamples: 4,
+            slabSize: 4,
+            meter: SpeechStreamRssMeter(
+              readRssBytes: () =>
+                  overValues[overIdx < overValues.length
+                      ? overIdx++
+                      : overValues.length - 1],
+              nowMicros: () => tick += 100,
+            ),
+            readPostDisposeRss: () => 110,
+            ceilingTable: {
+              const SpeechStreamProfileKey(
+                family: SpeechStreamFamily.lfm3,
+                hostOs: 'macos',
+                arch: 'arm64',
+                backend: 'cpu',
+                mode: SpeechStreamPacingMode.fast,
+              ): 50,
+            },
+            runWarmup: () async {},
+            runMeasuredSession: (driveProducer) async {
+              await driveProducer((_) async {}, () {});
+              return const SpeechStreamTimedSessionResult(
+                flushDuration: Duration(milliseconds: 5),
+                audioDurationMs: 300000,
+                firstPartialWallMs: 1,
+                firstPartialAudioMs: 1,
+              );
+            },
+            disposeEngine: () async {},
+          ),
+          throwsA(isA<StateError>()),
+        );
+      },
+    );
   });
 }

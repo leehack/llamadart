@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:ffi' show Abi;
 import 'dart:io';
 import 'dart:math';
@@ -103,6 +104,8 @@ final Map<SpeechStreamProfileKey, int> speechStreamMemoryCeilings =
       ): 64 * _mibBytes,
     });
 
+int readDefaultProcessRssBytes() => ProcessInfo.currentRss;
+
 String currentHostOs() => Platform.operatingSystem.toLowerCase();
 
 String currentHostArch() {
@@ -116,6 +119,81 @@ String currentHostArch() {
     return 'x64';
   }
   return abi.toString();
+}
+
+String resolveEffectiveBackendKey({
+  required String requestedBackend,
+  required String backendName,
+  required int resolvedGpuLayers,
+}) {
+  final req = requestedBackend.toLowerCase();
+  if (req == 'cpu' || resolvedGpuLayers == 0) {
+    return 'cpu';
+  }
+  final lower = backendName.toLowerCase();
+  if (lower.contains('cuda')) {
+    return 'cuda';
+  }
+  if (lower.contains('metal')) {
+    return 'metal';
+  }
+  if (lower.contains('vulkan')) {
+    return 'vulkan';
+  }
+  return req == 'auto' ? 'cpu' : req;
+}
+
+/// Resolves an input file path for a speech-stream test leg.
+///
+/// Under [qualify], a missing path throws [StateError] instead of skipping,
+/// enforcing "fail on any skip". Outside [qualify], [onSkip] is invoked.
+String? requireSpeechStreamInput(
+  String? path,
+  String envKey, {
+  required bool qualify,
+  required void Function(String message) onSkip,
+}) {
+  final trimmed = path?.trim();
+  if (trimmed == null || trimmed.isEmpty) {
+    if (qualify) {
+      throw StateError(
+        'Missing required $envKey under LLAMADART_STT_STREAM_QUALIFY=1.',
+      );
+    }
+    onSkip('Set $envKey to run the live ASR stream E2E.');
+    return null;
+  }
+  if (!File(trimmed).existsSync()) {
+    throw StateError('$envKey does not exist: $trimmed');
+  }
+  return trimmed;
+}
+
+/// Prepares [dirPath] for a fresh run's receipts by clearing any existing
+/// `.json` receipt files (or failing if [refuseNonEmpty] is true and any exist).
+void prepareReceiptDir(String dirPath, {bool refuseNonEmpty = false}) {
+  final dir = Directory(dirPath);
+  if (!dir.existsSync()) {
+    dir.createSync(recursive: true);
+    return;
+  }
+  final existing = dir
+      .listSync()
+      .whereType<File>()
+      .where((f) => f.path.endsWith('.json'))
+      .toList();
+  if (existing.isEmpty) {
+    return;
+  }
+  if (refuseNonEmpty) {
+    throw StateError(
+      'Receipt directory is not empty: $dirPath '
+      '(${existing.length} existing .json files).',
+    );
+  }
+  for (final file in existing) {
+    file.deleteSync();
+  }
 }
 
 /// Computes `max(64 MiB, ceil_32MiB(1.25 * max(observedDeltasBytes)))`.
@@ -218,7 +296,7 @@ class SpeechStreamRssMeter {
     int Function()? readRssBytes,
     int Function()? nowMicros,
     this.sampleInterval = const Duration(milliseconds: 50),
-  }) : _readRssBytes = readRssBytes ?? (() => ProcessInfo.currentRss),
+  }) : _readRssBytes = readRssBytes ?? readDefaultProcessRssBytes,
        _nowMicros = nowMicros;
 
   final int Function() _readRssBytes;
@@ -401,6 +479,221 @@ Future<SpeechStreamProducerStats> streamCyclicPcm300s({
     p95PushMs: p95PushMs,
     maxPushMs: maxPushMs,
     maxLagMs: maxLagMs,
+  );
+}
+
+final class SpeechStreamTimedSessionResult {
+  const SpeechStreamTimedSessionResult({
+    required this.flushDuration,
+    required this.audioDurationMs,
+    required this.firstPartialWallMs,
+    required this.firstPartialAudioMs,
+  });
+
+  final Duration flushDuration;
+  final int audioDurationMs;
+  final int? firstPartialWallMs;
+  final int? firstPartialAudioMs;
+}
+
+final class SpeechStreamTimedLegOutcome {
+  const SpeechStreamTimedLegOutcome({
+    required this.receipt,
+    required this.budgetEvaluation,
+    required this.rssSummary,
+    required this.producerStats,
+    required this.profileKey,
+  });
+
+  final SpeechStreamLegReceipt receipt;
+  final SpeechStreamBudgetEvaluation budgetEvaluation;
+  final SpeechStreamRssSummary rssSummary;
+  final SpeechStreamProducerStats producerStats;
+  final SpeechStreamProfileKey profileKey;
+}
+
+/// Runs the warm-up, baseline RSS sampling, cyclic PCM streaming, disposal,
+/// receipt emission, and memory-budget assertion for one timed leg.
+Future<SpeechStreamTimedLegOutcome> runTimedSpeechStreamLeg({
+  required String legId,
+  required SpeechStreamFamily family,
+  required SpeechStreamPacingMode mode,
+  required String hostOs,
+  required String arch,
+  required String requestedBackend,
+  required String backendUsed,
+  required List<String> exposedDevices,
+  required int resolvedGpuLayers,
+  required Float32List unitPcm,
+  required Future<void> Function() runWarmup,
+  required Future<SpeechStreamTimedSessionResult> Function(
+    Future<void> Function(
+      Future<void> Function(Float32List slab) onSlab,
+      void Function() onAfterPush,
+    )
+    driveProducer,
+  )
+  runMeasuredSession,
+  required Future<void> Function() disposeEngine,
+  SpeechStreamRssMeter? meter,
+  int Function()? readPostDisposeRss,
+  int targetSamples = speechStreamTargetSamples300s,
+  int slabSize = speechStreamMaxSlabSamples,
+  int contextSize = 4096,
+  int threads = 2,
+  int threadsBatch = 2,
+  int? vramTotalBytes,
+  int? vramFreeBytes,
+  Map<SpeechStreamProfileKey, int>? ceilingTable,
+  bool qualify = false,
+  bool collectBaseline = false,
+  String? receiptDir,
+}) async {
+  final rssMeter = meter ?? SpeechStreamRssMeter();
+  final readPostDispose = readPostDisposeRss ?? readDefaultProcessRssBytes;
+
+  // Warm-up must complete before sampling baseline RSS.
+  await runWarmup();
+
+  rssMeter.startBaseline();
+  rssMeter.startPeriodicSampling();
+
+  late final SpeechStreamProducerStats producerStats;
+  late final SpeechStreamTimedSessionResult sessionResult;
+  var engineDisposed = false;
+
+  try {
+    sessionResult = await runMeasuredSession((onSlab, onAfterPush) async {
+      producerStats = await streamCyclicPcm300s(
+        unit: unitPcm,
+        slabSize: slabSize,
+        targetSamples: targetSamples,
+        paced: mode == SpeechStreamPacingMode.paced,
+        onSlab: onSlab,
+        onAfterPush: () {
+          rssMeter.sampleNow();
+          onAfterPush();
+        },
+      );
+    });
+  } finally {
+    rssMeter.stopPeriodicSampling();
+  }
+
+  await disposeEngine();
+  engineDisposed = true;
+  final postDisposeRss = readPostDispose();
+  final rssSummary = rssMeter.finish(postDisposeRssBytes: postDisposeRss);
+
+  final effectiveBackend = resolveEffectiveBackendKey(
+    requestedBackend: requestedBackend,
+    backendName: backendUsed,
+    resolvedGpuLayers: resolvedGpuLayers,
+  );
+  final profileKey = SpeechStreamProfileKey(
+    family: family,
+    hostOs: hostOs,
+    arch: arch,
+    backend: effectiveBackend,
+    mode: mode,
+    contextSize: contextSize,
+    threads: threads,
+  );
+  final ceilingBytes = lookupMemoryCeilingBytes(
+    profileKey,
+    table: ceilingTable,
+  );
+  final budgetEval = evaluateMemoryBudget(
+    baselineRssBytes: rssSummary.baselineRssBytes,
+    peakRssBytes: rssSummary.peakRssBytes,
+    ceilingBytes: ceilingBytes,
+  );
+
+  final memoryStatusLabel = switch (budgetEval.status) {
+    SpeechStreamMemoryStatus.pass => 'pass',
+    SpeechStreamMemoryStatus.fail => 'fail',
+    SpeechStreamMemoryStatus.unboundedQualificationPending =>
+      'unbounded / qualification pending',
+  };
+
+  final totalWallMs =
+      producerStats.wallMs + sessionResult.flushDuration.inMilliseconds;
+  final rtf = totalWallMs / (speechStreamTargetSeconds300s * 1000.0);
+
+  final failedUncalibrated =
+      ceilingBytes == null && qualify && !collectBaseline;
+  final failedBudget = ceilingBytes != null && !budgetEval.passed;
+
+  final receipt = SpeechStreamLegReceipt(
+    legId: legId,
+    family: family.name,
+    mode: mode.name,
+    hostOs: hostOs,
+    arch: arch,
+    backendRequested: requestedBackend,
+    backendUsed: backendUsed,
+    exposedDevices: exposedDevices,
+    usedDevices: [backendUsed],
+    gpuLayersOffloaded: resolvedGpuLayers,
+    threads: threads,
+    threadsBatch: threadsBatch,
+    contextSize: contextSize,
+    pushedSamples: producerStats.pushedSamples,
+    audioDurationMs: sessionResult.audioDurationMs,
+    wallMs: totalWallMs,
+    flushMs: sessionResult.flushDuration.inMilliseconds,
+    firstPartialWallMs: sessionResult.firstPartialWallMs,
+    firstPartialAudioMs: sessionResult.firstPartialAudioMs,
+    p95PushMs: producerStats.p95PushMs,
+    maxPushMs: producerStats.maxPushMs,
+    maxLagMs: producerStats.maxLagMs,
+    rtf: rtf,
+    baselineRssBytes: rssSummary.baselineRssBytes,
+    peakRssBytes: rssSummary.peakRssBytes,
+    endRssBytes: rssSummary.endRssBytes,
+    postDisposeRssBytes: rssSummary.postDisposeRssBytes,
+    rssSampleCount: rssSummary.sampleCount,
+    vramTotalBytes: vramTotalBytes,
+    vramFreeBytes: vramFreeBytes,
+    ceilingBytes: ceilingBytes,
+    memoryStatus: memoryStatusLabel,
+    outcome: (failedUncalibrated || failedBudget) ? 'fail' : 'pass',
+    failureReason: ceilingBytes == null
+        ? 'unbounded / qualification pending for $profileKey'
+        : (budgetEval.passed
+              ? null
+              : 'peakDeltaBytes=${budgetEval.peakDeltaBytes} > '
+                    'ceilingBytes=$ceilingBytes'),
+  );
+
+  if (receiptDir != null && receiptDir.trim().isNotEmpty) {
+    final dir = Directory(receiptDir.trim())..createSync(recursive: true);
+    File('${dir.path}/$legId.json').writeAsStringSync(
+      const JsonEncoder.withIndent('  ').convert(receipt.toJson()),
+    );
+  }
+
+  assert(engineDisposed);
+
+  if (ceilingBytes != null && !budgetEval.passed) {
+    throw StateError(
+      'RSS delta ${budgetEval.peakDeltaBytes} bytes exceeded ceiling '
+      '$ceilingBytes bytes for $profileKey.',
+    );
+  }
+  if (failedUncalibrated) {
+    throw StateError(
+      'Memory profile $profileKey is uncalibrated '
+      '(unbounded / qualification pending).',
+    );
+  }
+
+  return SpeechStreamTimedLegOutcome(
+    receipt: receipt,
+    budgetEvaluation: budgetEval,
+    rssSummary: rssSummary,
+    producerStats: producerStats,
+    profileKey: profileKey,
   );
 }
 
@@ -648,9 +941,28 @@ final class SpeechStreamEvaluationResult {
   final List<String> failures;
 }
 
+SpeechStreamFamily? _parseFamily(String raw) {
+  for (final value in SpeechStreamFamily.values) {
+    if (value.name == raw) {
+      return value;
+    }
+  }
+  return null;
+}
+
+SpeechStreamPacingMode? _parsePacingMode(String raw) {
+  for (final value in SpeechStreamPacingMode.values) {
+    if (value.name == raw) {
+      return value;
+    }
+  }
+  return null;
+}
+
 SpeechStreamEvaluationResult evaluateQualificationReport(
-  SpeechStreamQualificationReport report,
-) {
+  SpeechStreamQualificationReport report, {
+  Map<SpeechStreamProfileKey, int>? ceilingTable,
+}) {
   final failures = <String>[];
   if (report.isBaselineCollection) {
     failures.add(
@@ -707,16 +1019,38 @@ SpeechStreamEvaluationResult evaluateQualificationReport(
           'audioDurationMs=${leg.audioDurationMs}.',
         );
       }
+      final family = _parseFamily(leg.family);
+      final mode = _parsePacingMode(leg.mode);
+      int? authoritativeCeiling;
+      if (family != null && mode != null) {
+        final effectiveBackend = resolveEffectiveBackendKey(
+          requestedBackend: leg.backendRequested,
+          backendName: leg.backendUsed,
+          resolvedGpuLayers: leg.gpuLayersOffloaded,
+        );
+        authoritativeCeiling = lookupMemoryCeilingBytes(
+          SpeechStreamProfileKey(
+            family: family,
+            hostOs: leg.hostOs,
+            arch: leg.arch,
+            backend: effectiveBackend,
+            mode: mode,
+            contextSize: leg.contextSize,
+            threads: leg.threads,
+          ),
+          table: ceilingTable,
+        );
+      }
       final eval = evaluateMemoryBudget(
         baselineRssBytes: leg.baselineRssBytes,
         peakRssBytes: leg.peakRssBytes,
-        ceilingBytes: leg.ceilingBytes,
+        ceilingBytes: authoritativeCeiling,
       );
       if (!eval.passed) {
         failures.add(
           'Leg ${leg.legId} failed memory budget: status=${eval.status.name}, '
           'peakDeltaBytes=${eval.peakDeltaBytes}, '
-          'ceilingBytes=${eval.ceilingBytes}.',
+          'ceilingBytes=$authoritativeCeiling.',
         );
       }
     }

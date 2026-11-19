@@ -2881,7 +2881,7 @@ Future<void> main(List<String> args) async {
         expect(result.stdout, contains('LFM3-Audio 300s live-paced'));
         expect(result.stdout, contains('--evaluate'));
         expect(result.stdout, contains('--backend cuda'));
-        expect(result.stdout, isNot(contains('--run-skipped')));
+        expect(result.stdout, contains('--run-skipped'));
       },
     );
 
