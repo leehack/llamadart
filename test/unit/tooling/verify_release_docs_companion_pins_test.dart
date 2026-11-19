@@ -7,6 +7,7 @@ import 'dart:io';
 import 'package:test/test.dart';
 
 import '../../../tool/testing/verify_release_docs_versions.dart';
+import '../../support/dart_script_snapshot.dart';
 
 /// Builds a repo holding only what [checkCompanionSwiftPins] reads for
 /// `llamadart_llama_cpp_flutter`, plus a valid litert companion so the second
@@ -420,7 +421,99 @@ void main() {
         checkLiteRtLmDocs(root, errors);
         expect(errors, [startsWith('$path names LiteRT-LM owner 11111111')]);
       });
+
+      test('$path rejects a stale LiteRT-LM upstream commit', () {
+        replace(
+          path,
+          RegExp(r'upstream\s+`[0-9a-f]{8}`'),
+          'upstream `22222222`',
+        );
+        final errors = <String>[];
+        checkLiteRtLmDocs(root, errors);
+        expect(errors, [
+          allOf(
+            startsWith('$path names LiteRT-LM owner '),
+            contains('/ upstream 22222222,'),
+          ),
+        ]);
+      });
     }
+
+    test('release docs CLI runs checkLiteRtLmDocs', () async {
+      final packages = File('.dart_tool/package_config.json').absolute.path;
+      final verifier = await compileDartScript(
+        'tool/testing/verify_release_docs_versions.dart',
+      );
+      final cliRoot = Directory.systemTemp.createTempSync('cli-litert-docs-');
+      addTearDown(() => cliRoot.deleteSync(recursive: true));
+
+      final grammarFixture =
+          jsonDecode(
+                File(
+                  'tool/native/fixtures/native_release_tag_grammar.json',
+                ).readAsStringSync(),
+              )
+              as Map<String, dynamic>;
+      final docContract =
+          grammarFixture['documentation_contract'] as Map<String, dynamic>;
+      final contractDocs = (docContract['docs'] as Map<String, dynamic>).keys
+          .toList();
+
+      final paths = <String>{
+        'AGENTS.md',
+        'CHANGELOG.md',
+        'LICENSE',
+        'README.md',
+        '.github/workflows/sync_native_bindings.yml',
+        'lib/src/hook/native_release_pins.dart',
+        'pubspec.yaml',
+        'skills/llamadart-getting-started/SKILL.md',
+        'test/fixtures/native/litert_lm_v0_19_1_5_manifest.json',
+        'tool/native/fixtures/native_release_tag_grammar.json',
+        'website/docs/changelog/recent-releases.md',
+        'website/docs/getting-started/installation.md',
+        'website/docs/guides/performance-tuning.md',
+        'website/docs/maintainers/native-and-web-sync.md',
+        'website/docs/platforms/support-matrix.md',
+        'packages/genkit_llamadart/pubspec.yaml',
+        for (final pkg in companionSwiftPins) ...[
+          pkg.pubspecPath,
+          pkg.changelogPath,
+          pkg.swiftPackagePath,
+          '${pkg.root}/README.md',
+        ],
+        ...contractDocs,
+      };
+      for (final path in paths) {
+        final src = File(path);
+        if (!src.existsSync()) continue;
+        final dst = File('${cliRoot.path}/$path');
+        dst.parent.createSync(recursive: true);
+        src.copySync(dst.path);
+      }
+
+      ProcessResult runCli() => Process.runSync(Platform.resolvedExecutable, [
+        '--packages=$packages',
+        verifier,
+      ], workingDirectory: cliRoot.path);
+
+      final baseline = runCli();
+      expect(baseline.exitCode, 0, reason: baseline.stderr.toString());
+
+      final readme = File('${cliRoot.path}/README.md');
+      final original = readme.readAsStringSync();
+      final mutated = original.replaceFirst(
+        RegExp(r'upstream `[0-9a-f]{8}`'),
+        'upstream `22222222`',
+      );
+      expect(mutated, isNot(original));
+      readme.writeAsStringSync(mutated);
+
+      final failed = runCli();
+      expect(failed.exitCode, 1);
+      expect(failed.stderr, contains('README.md names LiteRT-LM owner '));
+      expect(failed.stderr, contains('/ upstream 22222222,'));
+    });
   });
 
   test('checked-in SwiftPM pins are recorded in released or pending notes', () {
