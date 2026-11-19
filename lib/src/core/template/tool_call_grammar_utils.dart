@@ -107,8 +107,8 @@ class ToolCallGrammarUtils {
   ///
   /// The string stays open until `}}]`, so text that closes the call is
   /// the only way to end it. The closers take no whitespace: every token
-  /// before them is one the closed string already admits. The text holds no
-  /// `<|`, so it cannot hold an end marker.
+  /// before them is one the closed string already admits, including the
+  /// reservation of the literal LFM2 end marker.
   static String _withUnclosedLastString(
     String grammar, {
     required int toolCount,
@@ -145,16 +145,12 @@ class ToolCallGrammarUtils {
     lines[rootIndex] =
         '${lines[rootIndex]} | "[" space $repeated'
         'root-item-open';
-    final openRules = [
+    return [
+      ...lines,
       'root-item-open ::= $openRule',
-      r'open-0 ::= "}}]" | open-c open-0 | "<" open-1 | open-iq',
-      r'open-1 ::= "}}]" | open-d open-0 | "<" open-1 | open-iq',
-      r'open-c ::= [^"\\<\x7F\x00-\x1F] | open-esc',
-      r'open-d ::= [^"\\<|\x7F\x00-\x1F] | open-esc',
-      r'open-esc ::= [\\] (["\\bfnrt] | "u" [0-9a-fA-F]{4})',
-      r'open-iq ::= inner-quote-run* "\"" " "* ( [^"\\<\x7F\x00-\x1F ,}\]] open-0 | "<" open-1 | open-esc open-0 )',
-    ];
-    return '${[...lines, ...openRules].join('\n')}\n';
+      ...JsonSchemaConverter.unclosedInnerQuoteRules(),
+      '',
+    ].join('\n');
   }
 
   /// The item that opens [itemRule]'s last required string, or null when that

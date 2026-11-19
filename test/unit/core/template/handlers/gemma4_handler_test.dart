@@ -753,6 +753,32 @@ void main() {
         expect(parsed.content, isEmpty);
       });
 
+      for (final delimiter in ['<|"|>', '<escape>']) {
+        test('a final parse recovers after an unclosed $delimiter string', () {
+          final output =
+              'Before. <|tool_call>call:f{value:${delimiter}broken<tool_call|>'
+              'Between. <|tool_call>call:g{x:1}<tool_call|>After.';
+
+          final parsed = ChatTemplateEngine.parse(
+            ChatFormat.gemma4.index,
+            output,
+          );
+          expect(parsed.content, 'Before. Between. After.');
+          expect(parsed.toolCalls.map((call) => call.function?.name), ['g']);
+          expect(jsonDecode(parsed.toolCalls.single.function!.arguments!), {
+            'x': 1,
+          });
+
+          final partial = ChatTemplateEngine.parse(
+            ChatFormat.gemma4.index,
+            output,
+            isPartial: true,
+          );
+          expect(partial.content, 'Before. ');
+          expect(partial.toolCalls, isEmpty);
+        });
+      }
+
       test('trims only ASCII whitespace from bare keys', () {
         for (final (raw, key) in [('a ', 'a'), ('a\u00a0', 'a\u00a0')]) {
           final parsed = ChatTemplateEngine.parse(

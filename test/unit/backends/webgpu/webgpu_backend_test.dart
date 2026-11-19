@@ -6888,8 +6888,8 @@ void main() {
     );
 
     final rejectsPresencePenalty = throwsA(
-      isA<UnsupportedError>().having(
-        (error) => '${error.message}',
+      isA<LlamaUnsupportedException>().having(
+        (error) => error.message,
         'message',
         allOf(contains('presence penalty'), contains('presencePenalty')),
       ),

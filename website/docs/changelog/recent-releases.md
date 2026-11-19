@@ -13,6 +13,10 @@ validate against the exact release tag notes.
 
 ## Unreleased
 
+- Keep Gemma 4 reply text and later valid tool calls when a malformed call has an unclosed string delimiter ([#2042](https://github.com/leehack/llamadart/pull/2042)).
+- Preserve partial LFM2 end-marker text such as `<|` in the last plain string argument when the model omits its closing quote ([#1988](https://github.com/leehack/llamadart/pull/1988)).
+- Clarify that a thinking budget keeps forced-open Granite required-call grammars applied and pauses Ling 3 required-call grammars ([#1965](https://github.com/leehack/llamadart/pull/1965)).
+- Throw `LlamaUnsupportedException` when the loaded WebGPU assets lack `presencePenalty` support ([#1965](https://github.com/leehack/llamadart/pull/1965)).
 - Streamed text-to-speech chunks now report the sample rate and channel count of the actual native PCM ([#2048](https://github.com/leehack/llamadart/issues/2048)).
 - Add opt-in `Qwen3WindowedAsrAdapter` for bounded 8 s windowed live PCM speech recognition on native Qwen3-ASR (2/4/6 s replaceable partials, quiet-boundary commits with 8 s hard cut; Web, `SpeechToTextEngine.attach`, and non-`qwen3a` projectors throw `LlamaUnsupportedException`), and expose `SpeechToTextInputMode` via `SpeechToTextCapabilities.inputMode` ([#327](https://github.com/leehack/llamadart/issues/327)).
 - Fixed MiniMax M3 streaming so quoted tool markup and literal thinking-tag fragments stay visible across token splits ([#1930](https://github.com/leehack/llamadart/issues/1930)).

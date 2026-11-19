@@ -1944,7 +1944,7 @@ class WebGpuLlamaBackend
       );
     }
     if (params.presencePenalty != 0.0 && !capabilities.presencePenalty) {
-      throw UnsupportedError(
+      throw LlamaUnsupportedException(
         'WebGPU presence penalty needs bridge assets whose '
         'getCompletionCapabilities() reports presencePenalty; the loaded '
         'assets do not.',
@@ -1973,9 +1973,8 @@ class WebGpuLlamaBackend
         ToolCallGrammarUtils.keepsAppliedThroughThought(grammar);
     if (keepGrammarApplied && !capabilities.thinkingBudgetPauseGrammar) {
       throw LlamaUnsupportedException(
-        'WebGPU thinking-budget control with an eager grammar that takes the '
-        'thought (responseFormat or required tool calls on templates that '
-        'open or model one) needs bridge assets v0.1.84+ whose '
+        'WebGPU thinking-budget control with an eager grammar rooted at '
+        'think-body or seed-thought needs bridge assets v0.1.84+ whose '
         'getCompletionCapabilities() reports thinkingBudgetPauseGrammar; '
         'the loaded core pauses every grammar while the model reasons, so '
         'the reply would not be constrained.',

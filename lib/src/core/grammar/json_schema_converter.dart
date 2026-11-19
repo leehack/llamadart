@@ -11,21 +11,28 @@ class _BuiltinRule {
 /// Whitespace rule matching llama.cpp's SPACE_RULE.
 const _spaceRule = '| " " | "\\n"{1,2} [ \\t]{0,20}';
 
-/// End marker that LFM2 string arguments cannot contain.
-const _lfm2EndMarker = '<|tool_call_end|>';
-
 const _innerQuoteEscape = r'[\\] (["\\bfnrt] | "u" [0-9a-fA-F]{4})';
 
 /// Body of the inner-quote rule that follows [matched] marker characters.
-String _innerQuoteState(int matched) {
-  final next = matched == 0 ? '' : _lfm2EndMarker[matched];
-  final advance = matched == 0 || matched + 1 == _lfm2EndMarker.length
+String _innerQuoteState(
+  int matched, {
+  required String rule,
+  required String end,
+  required String quote,
+}) {
+  const marker = JsonSchemaConverter.lfm2EndMarker;
+  final next = matched == 0 ? '' : marker[matched];
+  final advance = matched == 0 || matched + 1 == marker.length
       ? ''
-      : '"$next" inner-quote-${matched + 1} | ';
-  return 'inner-quote-end | "<" inner-quote-1 | $advance'
-      '[^"\\\\<$next\\x7F\\x00-\\x1F] inner-quote-0 | '
-      '$_innerQuoteEscape inner-quote-0 | inner-quote-q';
+      : '"$next" $rule-${matched + 1} | ';
+  return '$end | "<" $rule-1 | $advance'
+      '[^"\\\\<$next\\x7F\\x00-\\x1F] $rule-0 | '
+      '$_innerQuoteEscape $rule-0 | $quote';
 }
+
+String _innerQuoteAfterQuote(String rule) =>
+    r'inner-quote-run* "\"" " "* ( [^"\\<\x7F\x00-\x1F ,}\]] '
+    '$rule-0 | "<" $rule-1 | $_innerQuoteEscape $rule-0 )';
 
 /// Primitive GBNF rules matching llama.cpp's PRIMITIVE_RULES.
 final _primitiveRules = <String, _BuiltinRule>{
@@ -62,21 +69,26 @@ final _primitiveRules = <String, _BuiltinRule>{
   // still end the string, so a model that miscounts closers is corrected
   // rather than left inside the string.
   //
-  // The text never holds [_lfm2EndMarker]: a string that could contain it
+  // The text never holds the literal LFM2 end marker: a string that contains it
   // would keep the grammar live after the marker. Rule `inner-quote-k` follows
   // k matched marker characters; a quote starts over because it is not one.
   'inner-quote-string': _BuiltinRule(r'"\"" inner-quote-0', [
-    for (var k = 0; k < _lfm2EndMarker.length; k++) 'inner-quote-$k',
+    for (var k = 0; k < JsonSchemaConverter.lfm2EndMarker.length; k++)
+      'inner-quote-$k',
     'inner-quote-q',
     'inner-quote-end',
     'inner-quote-run',
   ]),
-  for (var k = 0; k < _lfm2EndMarker.length; k++)
-    'inner-quote-$k': _BuiltinRule(_innerQuoteState(k), []),
-  'inner-quote-q': _BuiltinRule(
-    r'inner-quote-run* "\"" " "* ( [^"\\<\x7F\x00-\x1F ,}\]] inner-quote-0 | "<" inner-quote-1 | [\\] (["\\bfnrt] | "u" [0-9a-fA-F]{4}) inner-quote-0 )',
-    [],
-  ),
+  for (var k = 0; k < JsonSchemaConverter.lfm2EndMarker.length; k++)
+    'inner-quote-$k': _BuiltinRule(
+      _innerQuoteState(
+        k,
+        rule: 'inner-quote',
+        end: 'inner-quote-end',
+        quote: 'inner-quote-q',
+      ),
+    ),
+  'inner-quote-q': _BuiltinRule(_innerQuoteAfterQuote('inner-quote')),
   'inner-quote-end': _BuiltinRule(r'inner-quote-run* "\"" space', []),
   'inner-quote-run': _BuiltinRule(r'"\"" "}"?', []),
   'null': _BuiltinRule('"null" space', []),
@@ -142,6 +154,24 @@ const _literalEscapes = <String, String>{
 ///
 /// Port of llama.cpp's `SchemaConverter` (json-schema-to-grammar.mjs).
 class JsonSchemaConverter {
+  /// The literal marker reserved by the LFM2 inner-quote string grammar.
+  static const String lfm2EndMarker = '<|tool_call_end|>';
+
+  /// Reuses the closed-string transitions, ending at the call-list closers
+  /// instead of a quote. The caller adds the outer end marker.
+  static Iterable<String> unclosedInnerQuoteRules() sync* {
+    for (var k = 0; k < lfm2EndMarker.length; k++) {
+      final body = _innerQuoteState(
+        k,
+        rule: 'open',
+        end: '"}}]"',
+        quote: 'open-iq',
+      );
+      yield 'open-$k ::= $body';
+    }
+    yield 'open-iq ::= ${_innerQuoteAfterQuote('open')}';
+  }
+
   /// Creates a converter; see [convert] for [innerQuoteStrings].
   JsonSchemaConverter({this.innerQuoteStrings = false});
 

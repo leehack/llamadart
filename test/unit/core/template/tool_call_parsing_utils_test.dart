@@ -143,8 +143,8 @@ void main() {
         if (inSchema) expect(inOpen, isTrue, reason: output);
         if (!inOpen || inClosed) continue;
         added++;
-        // The closed string holds no `<|`, so the end marker is the one part
-        // of the output that is not a prefix of a closed-string output.
+        // The end marker is the one part of the output that is not a prefix
+        // of a closed-string output.
         expect(
           closed.accepts(
             '${output.substring(0, output.length - '<|tool_call_end|>'.length)}'
@@ -175,6 +175,21 @@ void main() {
         );
       }
       expect(added, greaterThan(100));
+    });
+
+    test('distinguishes a raw end marker from escaped string data', () {
+      List<Object?>? decode(String raw) =>
+          ToolCallParsingUtils.decodeJsonCallListWithUnclosedLastString(
+            '[{"name":"run","arguments":{"code":"$raw}}]',
+          );
+
+      expect(decode('<<|tool_call_end|>'), isNull);
+      expect(decode(r'\u003c|tool_call_end|>'), [
+        {
+          'name': 'run',
+          'arguments': {'code': '<|tool_call_end|>'},
+        },
+      ]);
     });
 
     test('parser robustness: non-map arguments read as no call', () {

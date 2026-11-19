@@ -535,7 +535,10 @@ class Gemma4Handler extends ChatTemplateHandler
         tools: tools,
       );
       if (parsed == null) {
-        final end = _findToolCallEnd(output, start);
+        final scannedEnd = _findToolCallEnd(output, start);
+        final end = scannedEnd == -1 && !isPartial
+            ? output.indexOf(_toolCallEnd, start + _toolCallStart.length)
+            : scannedEnd;
         if (end == -1) {
           break;
         }

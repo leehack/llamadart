@@ -85,9 +85,9 @@ description: >-
 - GPT-OSS channel and assistant frames wait for final parsing, including headers
   continued from the model's prompt, with or without tools. Ordinary prose
   streams normally, and `ToolChoice.auto` still allows text without a call.
-  Gemma 4 keeps visible
-  text after a tool envelope, including its whitespace; the envelope itself
-  stays out of content even across split tokens. GPT-OSS reasoning comes from
+  Gemma 4 keeps visible text after a tool envelope, including its whitespace.
+  Final parsing can recover text and later calls after a malformed envelope
+  with an unclosed string delimiter. GPT-OSS reasoning comes from
   channel frames; literal `<think>`/`</think>` text stays literal, including in
   tool arguments. MiniMax M3 keeps quoted `<tool_call>` text visible across
   chunks and recognizes only its namespaced tool-call opener.
@@ -136,8 +136,9 @@ description: >-
   the model left unescaped where no closing quote could stand; a quote before
   `,`, `}` or `]` still ends the string. A last string argument whose closing
   quote the model never wrote ends at exactly `}}]<|tool_call_end|>`, with no
-  whitespace between the closers. A string cannot contain the literal `<|tool_call_end|>`; an unclosed one
-  holds no `<|`. Auto grammar
+  whitespace between the closers. Plain strings may hold `<|`, including
+  when the last string has no closing quote. The grammar reserves the literal
+  `<|tool_call_end|>`. Auto grammar
   preserves copied bare text and balanced object/list spellings as strings only for one required
   plain string argument (excluding `<` and `>` from unquoted copied spellings). Copied path-like values may retain a trailing backslash
   or an unmatched opening quote, in a singleton list without a terminal comma.
