@@ -1,0 +1,349 @@
+{
+  "llamaCppCommit": "cd959bae99ff4bed22bef2604f45241c09bbb8c8",
+  "template": "test/fixtures/llama_cpp_templates/MiniMax-M3.jinja",
+  "templateSha256": "11421244f67553498e5c8112dae02802025bcc4305ec45ad380af95c96f9fe64",
+  "request": {
+    "messages": [
+      {
+        "role": "user",
+        "content": "Hi"
+      }
+    ],
+    "tools": [
+      {
+        "type": "function",
+        "function": {
+          "name": "weather",
+          "description": "Weather",
+          "parameters": {
+            "type": "object",
+            "properties": {
+              "city": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "city"
+            ]
+          }
+        }
+      }
+    ],
+    "tool_choice": "auto",
+    "parallel": true,
+    "enable_thinking": true,
+    "kwargs": {
+      "thinking_mode": "adaptive"
+    }
+  },
+  "cases": [
+    {
+      "id": "hermes-literal",
+      "input": "<tool_call> quoted as text. ]<]minimax[>[<tool_call>\n]<]minimax[>[<invoke name=\"weather\">\n]<]minimax[>[<city>Seoul]<]minimax[>[</city>\n]<]minimax[>[</invoke>\n]<]minimax[>[</tool_call>",
+      "partitions": [
+        [
+          3,
+          28
+        ],
+        [
+          28,
+          66
+        ]
+      ],
+      "partial": [
+        {
+          "cut": 3,
+          "content": "<to",
+          "reasoning": "",
+          "tool_calls": []
+        },
+        {
+          "cut": 28,
+          "content": "<tool_call> quoted as text. ",
+          "reasoning": "",
+          "tool_calls": []
+        },
+        {
+          "cut": 66,
+          "content": "<tool_call> quoted as text. ",
+          "reasoning": "",
+          "tool_calls": []
+        }
+      ],
+      "final": {
+        "content": "<tool_call> quoted as text. ",
+        "reasoning": "",
+        "tool_calls": [
+          {
+            "name": "weather",
+            "arguments": "{\"city\":\"Seoul\"}"
+          }
+        ]
+      }
+    },
+    {
+      "id": "json-literal",
+      "input": "{\"tool_call\":\"quoted\"} prose. ]<]minimax[>[<tool_call>\n]<]minimax[>[<invoke name=\"weather\">\n]<]minimax[>[<city>Seoul]<]minimax[>[</city>\n]<]minimax[>[</invoke>\n]<]minimax[>[</tool_call>",
+      "partitions": [
+        [
+          3,
+          30
+        ],
+        [
+          30,
+          68
+        ]
+      ],
+      "partial": [
+        {
+          "cut": 3,
+          "content": "{\"t",
+          "reasoning": "",
+          "tool_calls": []
+        },
+        {
+          "cut": 30,
+          "content": "{\"tool_call\":\"quoted\"} prose. ",
+          "reasoning": "",
+          "tool_calls": []
+        },
+        {
+          "cut": 68,
+          "content": "{\"tool_call\":\"quoted\"} prose. ",
+          "reasoning": "",
+          "tool_calls": []
+        }
+      ],
+      "final": {
+        "content": "{\"tool_call\":\"quoted\"} prose. ",
+        "reasoning": "",
+        "tool_calls": [
+          {
+            "name": "weather",
+            "arguments": "{\"city\":\"Seoul\"}"
+          }
+        ]
+      }
+    },
+    {
+      "id": "function-literal",
+      "input": "<function=quoted> prose. ]<]minimax[>[<tool_call>\n]<]minimax[>[<invoke name=\"weather\">\n]<]minimax[>[<city>Seoul]<]minimax[>[</city>\n]<]minimax[>[</invoke>\n]<]minimax[>[</tool_call>",
+      "partitions": [
+        [
+          3,
+          25
+        ],
+        [
+          25,
+          63
+        ]
+      ],
+      "partial": [
+        {
+          "cut": 3,
+          "content": "<fu",
+          "reasoning": "",
+          "tool_calls": []
+        },
+        {
+          "cut": 25,
+          "content": "<function=quoted> prose. ",
+          "reasoning": "",
+          "tool_calls": []
+        },
+        {
+          "cut": 63,
+          "content": "<function=quoted> prose. ",
+          "reasoning": "",
+          "tool_calls": []
+        }
+      ],
+      "final": {
+        "content": "<function=quoted> prose. ",
+        "reasoning": "",
+        "tool_calls": [
+          {
+            "name": "weather",
+            "arguments": "{\"city\":\"Seoul\"}"
+          }
+        ]
+      }
+    },
+    {
+      "id": "native-scope-prefix",
+      "input": "Before ]<]minimax[>[<tool_call>\n]<]minimax[>[<invoke name=\"weather\">\n]<]minimax[>[<city>Seoul]<]minimax[>[</city>\n]<]minimax[>[</invoke>\n]<]minimax[>[</tool_call>\nAfter",
+      "partitions": [
+        [
+          11
+        ],
+        [
+          30
+        ]
+      ],
+      "partial": [
+        {
+          "cut": 11,
+          "content": "Before ",
+          "reasoning": "",
+          "tool_calls": []
+        },
+        {
+          "cut": 30,
+          "content": "Before ",
+          "reasoning": "",
+          "tool_calls": []
+        }
+      ],
+      "final": {
+        "error": "The model produced output that does not match the expected peg-minimax-m3 format"
+      }
+    },
+    {
+      "id": "literal-thought-closer",
+      "input": "Plan it </mm:thin",
+      "partitions": [
+        [
+          9
+        ],
+        [
+          14
+        ],
+        [
+          17
+        ]
+      ],
+      "partial": [
+        {
+          "cut": 9,
+          "content": "Plan it <",
+          "reasoning": "",
+          "tool_calls": []
+        },
+        {
+          "cut": 14,
+          "content": "Plan it </mm:t",
+          "reasoning": "",
+          "tool_calls": []
+        },
+        {
+          "cut": 17,
+          "content": "Plan it </mm:thin",
+          "reasoning": "",
+          "tool_calls": []
+        }
+      ],
+      "final": {
+        "content": "Plan it </mm:thin",
+        "reasoning": "",
+        "tool_calls": []
+      }
+    },
+    {
+      "id": "literal-thought-opener",
+      "input": "Answer<mm:thi",
+      "partitions": [
+        [
+          8
+        ],
+        [
+          13
+        ]
+      ],
+      "partial": [
+        {
+          "cut": 8,
+          "content": "Answer<m",
+          "reasoning": "",
+          "tool_calls": []
+        },
+        {
+          "cut": 13,
+          "content": "Answer<mm:thi",
+          "reasoning": "",
+          "tool_calls": []
+        }
+      ],
+      "final": {
+        "content": "Answer<mm:thi",
+        "reasoning": "",
+        "tool_calls": []
+      }
+    },
+    {
+      "id": "exact-leading-thought",
+      "input": "<mm:think>Plan</mm:think>Answer</mm:th",
+      "partitions": [
+        [
+          6,
+          20
+        ],
+        [
+          24,
+          35
+        ]
+      ],
+      "partial": [
+        {
+          "cut": 6,
+          "content": "",
+          "reasoning": "",
+          "tool_calls": []
+        },
+        {
+          "cut": 20,
+          "content": "",
+          "reasoning": "Plan",
+          "tool_calls": []
+        },
+        {
+          "cut": 24,
+          "content": "",
+          "reasoning": "Plan",
+          "tool_calls": []
+        },
+        {
+          "cut": 35,
+          "content": "Answer</mm",
+          "reasoning": "Plan",
+          "tool_calls": []
+        }
+      ],
+      "final": {
+        "content": "Answer</mm:th",
+        "reasoning": "Plan",
+        "tool_calls": []
+      }
+    },
+    {
+      "id": "exact-leading-closer",
+      "input": "</mm:think>Answer<mm:thi",
+      "partitions": [
+        [
+          8,
+          20
+        ]
+      ],
+      "partial": [
+        {
+          "cut": 8,
+          "content": "",
+          "reasoning": "",
+          "tool_calls": []
+        },
+        {
+          "cut": 20,
+          "content": "Answer<mm",
+          "reasoning": "",
+          "tool_calls": []
+        }
+      ],
+      "final": {
+        "content": "Answer<mm:thi",
+        "reasoning": "",
+        "tool_calls": []
+      }
+    }
+  ],
+  "format": "peg-minimax-m3",
+  "generationPrompt": "]~b]ai\n"
+}

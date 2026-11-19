@@ -181,15 +181,6 @@ class MinimaxM3Handler extends DirectJinjaHandler
     bool parseToolCalls = true,
     bool thinkingForcedOpen = false,
   }) {
-    // Partial markers are provisional: emitting them now cannot be undone
-    // when the remaining bytes complete a thinking delimiter. Final parsing
-    // keeps unmatched prefixes as literal text.
-    final thinkingInput = isPartial
-        ? hideIncompleteProtocolSuffix(
-            hideIncompleteProtocolSuffix(output, thinkingEndTag),
-            thinkingStartTag,
-          )
-        : output;
     final thinking = thinkingForcedOpen
         ? extractForcedOpenThoughtVerbatim(
             output,
@@ -197,9 +188,10 @@ class MinimaxM3Handler extends DirectJinjaHandler
             isPartial: isPartial,
           )
         : extractThinking(
-            thinkingInput,
+            output,
             startTag: thinkingStartTag,
             endTag: thinkingEndTag,
+            isPartial: isPartial,
           );
     if (!parseToolCalls) {
       return ChatParseResult(

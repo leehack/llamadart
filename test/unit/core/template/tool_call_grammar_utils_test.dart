@@ -440,15 +440,11 @@ void main() {
       innerQuoteStrings: true,
       allowUnclosedLastString: unclosed,
     );
-    const openRules = r'''
-open-0 ::= "}}]" | open-c open-0 | "<" open-1 | open-iq
-open-1 ::= "}}]" | open-d open-0 | "<" open-1 | open-iq
-open-c ::= [^"\\<\x7F\x00-\x1F] | open-esc
-open-d ::= [^"\\<|\x7F\x00-\x1F] | open-esc
-open-esc ::= [\\] (["\\bfnrt] | "u" [0-9a-fA-F]{4})
-open-iq ::= inner-quote-run* "\"" " "* ( [^"\\<\x7F\x00-\x1F ,}\]] open-0 | "<" open-1 | open-esc open-0 )
-''';
-    // Today's grammar with its root widened and the open rules appended.
+    String beforeOpenStringRules(
+      List<ToolDefinition> tools, {
+      bool parallel = false,
+    }) => build(tools, parallel: parallel)!.split('\nopen-0 ::= ').first;
+
     String expected(
       List<ToolDefinition> tools, {
       required String open,
@@ -463,7 +459,7 @@ open-iq ::= inner-quote-run* "\"" " "* ( [^"\\<\x7F\x00-\x1F ,}\]] open-0 | "<" 
           : '"[" space root-item-open';
       expect(closed, contains('root ::= "<s>" ($list) "</s>"'));
       return '${closed.replaceFirst('($list)', '($list | $openList)')}'
-          'root-item-open ::= $open\n$openRules';
+          'root-item-open ::= $open';
     }
 
     const name = r'root-item-name-kv "," space "\"arguments\"" space ":" space';
@@ -488,7 +484,7 @@ open-iq ::= inner-quote-run* "\"" " "* ( [^"\\<\x7F\x00-\x1F ,}\]] open-0 | "<" 
         tool('f', [ToolParam.string('a', required: true)]),
       ];
       expect(
-        build(tools),
+        beforeOpenStringRules(tools),
         expected(
           tools,
           open:
@@ -505,7 +501,7 @@ open-iq ::= inner-quote-run* "\"" " "* ( [^"\\<\x7F\x00-\x1F ,}\]] open-0 | "<" 
         ]),
       ];
       expect(
-        build(tools),
+        beforeOpenStringRules(tools),
         expected(
           tools,
           open:
@@ -523,7 +519,7 @@ open-iq ::= inner-quote-run* "\"" " "* ( [^"\\<\x7F\x00-\x1F ,}\]] open-0 | "<" 
         ]),
       ];
       expect(
-        build(tools),
+        beforeOpenStringRules(tools),
         expected(
           tools,
           open:
@@ -561,14 +557,13 @@ open-iq ::= inner-quote-run* "\"" " "* ( [^"\\<\x7F\x00-\x1F ,}\]] open-0 | "<" 
       final closed = build(tools, unclosed: false)!;
       const list = '"[" space root-item  "]" space';
       expect(
-        build(tools),
+        beforeOpenStringRules(tools),
         '${closed.replaceFirst('($list)', '($list | "[" space root-item-open)')}'
         'root-item-open ::= '
         r'"{" space root-item-0-name-kv "," space "\"arguments\"" space ":" space '
         r'"{" space "\"a\"" space ":" space "\"" open-0 | '
         r'"{" space root-item-2-name-kv "," space "\"arguments\"" space ":" space '
-        r'"{" space "\"q\"" space ":" space "\"" open-0'
-        '\n$openRules',
+        r'"{" space "\"q\"" space ":" space "\"" open-0',
       );
     });
 
@@ -577,7 +572,7 @@ open-iq ::= inner-quote-run* "\"" " "* ( [^"\\<\x7F\x00-\x1F ,}\]] open-0 | "<" 
         tool('f', [ToolParam.string('a', required: true)]),
       ];
       expect(
-        build(tools, parallel: true),
+        beforeOpenStringRules(tools, parallel: true),
         expected(
           tools,
           parallel: true,

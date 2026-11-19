@@ -103,9 +103,11 @@ in the llamadart-getting-started and llamadart-chat-streaming skills.
     unless `withTextHistory()` is used and the loaded runtime supports them. Unreported
     controls throw `LlamaUnsupportedException`; `engine.runtime` names the
     runtime, so never sniff the `.litertlm` extension after loading.
-  - A `ThinkingBudget` with an eager grammar whose root takes the forced-open
-    thought (`think-body` or `seed-thought`; lazy grammars always pause) needs assets that report `thinkingBudgetPauseGrammar`; older assets throw
-    `LlamaUnsupportedException`.
+  - A `ThinkingBudget` with an eager `think-body` or `seed-thought` root needs
+    assets that report `thinkingBudgetPauseGrammar`. This includes Granite
+    required calls with a forced-open thought. Ling 3 required calls and all
+    lazy grammars pause until the thought ends. Older assets reject the
+    kept-applied combination with `LlamaUnsupportedException`.
   - `engine.supportsNextTokenScoring` and
     `engine.supportsStatePersistence`.
   - Runtime LoRA calls, and loads with `ModelParams.loras`, throw

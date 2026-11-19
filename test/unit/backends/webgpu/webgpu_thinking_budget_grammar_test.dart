@@ -46,6 +46,9 @@ void main() {
   };
 
   const seedThought = 'root ::= seed-thought call\ncall ::= "x"\n';
+  const lingThought =
+      'root ::= ling3-thought call\n'
+      'ling3-thought ::= "</think>"\ncall ::= "x"\n';
 
   test('keeps a grammar that takes or models the thought applied', () async {
     await load();
@@ -65,6 +68,7 @@ void main() {
     for (final params in [
       const GenerationParams(thinkingBudget: budget),
       const GenerationParams(grammar: 'root ::= "ok"', thinkingBudget: budget),
+      const GenerationParams(grammar: lingThought, thinkingBudget: budget),
       GenerationParams(
         grammar: taking,
         grammarLazy: true,
@@ -97,6 +101,8 @@ void main() {
               allOf(
                 contains('thinkingBudgetPauseGrammar'),
                 contains('v0.1.84+'),
+                contains('think-body'),
+                contains('seed-thought'),
               ),
             ),
           ),

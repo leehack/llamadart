@@ -12,37 +12,38 @@ import '../../../tool/audio_chat_smoke_support.dart';
 import '../../../tool/testing/run_local_e2e.dart';
 
 void main() {
+  const macosMicArgs = [
+    '--scenario',
+    'macos-mic-asr',
+    '--model-preset',
+    'qwen',
+    '--model-path',
+    'model.gguf',
+    '--mmproj-path',
+    'proj.gguf',
+  ];
+
   test(
     'dry run selects the interactive harness and leaves profiles explicit',
     () async {
-      const args = [
-        '--scenario',
-        'macos-mic-asr',
-        '--model-preset',
-        'qwen',
-        '--model-path',
-        'model.gguf',
-        '--mmproj-path',
-        'proj.gguf',
-      ];
       final result = await runLocalE2e([
-        ...args,
+        ...macosMicArgs,
         '--dry-run',
       ], projectRoot: '/repo');
       expect(result.exitCode, 0);
       expect(result.stdout, contains('bin/llamadart_macos_mic_asr.dart'));
       expect(result.stdout, contains('--profile qwen'));
       final invalid = await runLocalE2e([
-        ...args,
+        ...macosMicArgs,
         '--audio-path',
         'file.wav',
         '--dry-run',
       ]);
       expect(invalid.exitCode, 64);
       for (final simulated in [false, true]) {
-        await runLocalE2e(
+        final result = await runLocalE2e(
           [
-            ...args,
+            ...macosMicArgs,
             if (simulated) ...[
               '--audio-path',
               'file.wav',
@@ -56,9 +57,24 @@ void main() {
             return ProcessResult(0, 0, '', '');
           },
         );
+        expect(result.exitCode, 0, reason: result.stderr);
       }
     },
   );
+
+  test('macos-mic-asr rejects --expect without --audio-path', () async {
+    final result = await runLocalE2e([
+      ...macosMicArgs,
+      '--expect',
+      'a red bike',
+      '--dry-run',
+    ], projectRoot: '/repo');
+    expect(result.exitCode, 64);
+    expect(
+      result.stderr,
+      contains('accepts --audio-path and --expect together'),
+    );
+  });
 
   group('default native consumer AOT scenario', () {
     const identity = {
@@ -2930,6 +2946,40 @@ Future<void> main(List<String> args) async {
         expect(result.stdout, contains('--evaluate'));
         expect(result.stdout, contains('--backend cuda'));
         expect(result.stdout, contains('--run-skipped'));
+      },
+    );
+
+    test(
+      'speech-to-text-stream-smoke qualification requires cpu or cuda',
+      () async {
+        for (final backend in [null, 'auto', 'metal']) {
+          final result = await runLocalE2e(
+            [
+              '--scenario',
+              'speech-to-text-stream-smoke',
+              if (backend != null) ...['--backend', backend],
+              '--dry-run',
+            ],
+            projectRoot: '/repo',
+            environment: const {'LLAMADART_STT_STREAM_QUALIFY': '1'},
+          );
+          expect(result.exitCode, 64, reason: 'backend: $backend');
+          expect(result.stderr, contains('requires --backend cpu or cuda'));
+        }
+      },
+    );
+
+    test(
+      'speech-to-text-stream-smoke defaults to auto outside qualification',
+      () async {
+        final result = await runLocalE2e(
+          ['--scenario', 'speech-to-text-stream-smoke', '--dry-run'],
+          projectRoot: '/repo',
+          displayShell: LocalE2eDisplayShell.posix,
+          environment: const {},
+        );
+        expect(result.exitCode, 0);
+        expect(result.stdout, contains('LLAMADART_STT_STREAM_BACKEND=auto'));
       },
     );
 

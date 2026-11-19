@@ -992,6 +992,15 @@ void main() {
       expect(scenario.description, contains('Qwen3-ASR windowed'));
     });
 
+    test('macos-mic-asr has a manual platform matrix row', () {
+      final row = testMatrixRows.singleWhere(
+        (row) => row.id == 'macos-mic-asr',
+      );
+      expect(row.tier, 'platform');
+      expect(row.mode, 'manual local-only');
+      expect(row.command, contains('--scenario macos-mic-asr'));
+    });
+
     test('Web speech rows name their scenarios and the WER gate', () {
       final scenarios = buildLocalE2eScenarios().map((s) => s.name).toSet();
       final web = testMatrixRows.singleWhere(

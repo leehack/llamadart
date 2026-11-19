@@ -23,7 +23,8 @@ Stream<Float32List> readLiveAsrPcm(Stream<List<int>> input) async* {
   }
   if (carry.isNotEmpty) {
     throw FormatException(
-      'Trailing ${carry.length} byte(s) of incomplete float32 PCM.',
+      'Trailing ${carry.length} byte(s) of incomplete PCM. '
+      'Expected 4-byte aligned mono 16 kHz float32 (little-endian).',
     );
   }
 }

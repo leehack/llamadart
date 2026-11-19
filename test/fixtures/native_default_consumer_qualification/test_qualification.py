@@ -116,6 +116,7 @@ class QualificationControls(unittest.TestCase):
                 **v.scope('v1.0.0-1', True),
                 'finalNative3Qualified': False,
             })
+        with self.assertRaisesRegex(v.Refusal, 'terminal native3 scope contradicts completion'):
             v.verify_seal(output)
 
     def test_tag_is_verification_only_and_mismatch_refused(self):
