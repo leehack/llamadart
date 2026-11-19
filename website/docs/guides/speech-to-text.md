@@ -260,7 +260,9 @@ try {
 }
 ```
 
-- **Capability branching**: inspect `capabilities.supportsStreamingInput` and
+- **Capability branching**: inspect `capabilities.inputMode`
+  (`SpeechToTextInputMode`: `wholeInput`, `windowed`, `stateful`, or
+  `unavailable`), `capabilities.supportsStreamingInput`, and
   `capabilities.streamingInputUnsupportedReason` before calling `startStream()`.
 - **Context policy**: `LFM3-Audio` (prompted-chunks mode) requires an actual
   per-sequence context capacity of at least `2048` (`4096` recommended).
@@ -269,6 +271,57 @@ try {
   text and fails with `LlamaSpeechTranscriptTruncatedException`.
 - **Example**: see `example/basic_app/bin/llamadart_live_asr_example.dart` for
   an incremental `.f32le` file streamer.
+
+## Stream live audio with Qwen3-ASR (opt-in windowed)
+
+`Qwen3WindowedAsrAdapter` enables opt-in windowed live PCM transcription on
+native `llama.cpp` Qwen3-ASR models with a verified `qwen3a` projector. Unlike
+`LlamaCppLiveAsrAdapter` (`SpeechToTextInputMode.stateful`), it re-decodes
+2, 4, and 6 second uncommitted prefixes through the prompt path in a bounded 8 s
+ring buffer and commits at a quiet boundary or at an 8 s hard cut
+(`SpeechToTextInputMode.windowed`):
+
+```dart
+final recognizer = await SpeechToTextEngine.load(
+  SpeechToTextModel(
+    ModelSource.path('/models/Qwen3-ASR-0.6B-Q8_0.gguf'),
+    projector: ModelSource.path('/models/mmproj-Qwen3-ASR-0.6B-Q8_0.gguf'),
+    adapter: const Qwen3WindowedAsrAdapter(),
+  ),
+  params: const ModelParams(contextSize: 4096),
+);
+try {
+  final capabilities = await recognizer.capabilities;
+  if (capabilities.inputMode != SpeechToTextInputMode.windowed) {
+    throw StateError('Expected windowed mode: ${capabilities.inputMode}');
+  }
+  final session = await recognizer.startStream();
+  final sub = session.events.listen((event) {
+    if (event is SpeechToTextPartialEvent) {
+      print('confirmed=${event.confirmedText} pending=${event.pendingText}');
+    }
+  });
+  try {
+    await for (final chunk in mono16kPcmChunks) {
+      await session.addPcm(chunk);
+    }
+    await session.finish();
+    final completion = await session.done;
+    print(completion.result?.text);
+  } finally {
+    await session.cancel();
+    await sub.cancel();
+  }
+} finally {
+  await recognizer.dispose();
+}
+```
+
+- **Example**: pass `--qwen-windowed` to
+  `example/basic_app/bin/llamadart_live_asr_example.dart`.
+- **Unsupported paths**: `SpeechToTextEngine.attach`, Web, missing/non-`qwen3a`
+  projectors, non-PCM inputs, context prompts, and language hints throw
+  `LlamaUnsupportedException`.
 
 ## Stream live audio with LiteRT-LM
 
@@ -435,7 +488,19 @@ needs enough memory for the roughly 1.02 GB Qwen3-ASR
 - There are no word/segment timestamps, confidence scores, or speaker
   diarization. Incremental audio and partial text are native-only
   (`LlamaCppLiveAsrAdapter` on llama.cpp and `LiteRtLmAsrAdapter` on
-  LiteRT-LM); Web throws `LlamaUnsupportedException` for live streaming.
+  LiteRT-LM for stateful streaming, plus opt-in `Qwen3WindowedAsrAdapter` on
+  llama.cpp for windowed live PCM); Web throws `LlamaUnsupportedException` for
+  live streaming.
+- For `Qwen3WindowedAsrAdapter`:
+  - Confirmed windows are joined with `\n` in `confirmedText` and `result.text`.
+  - The first confirmation arrives after up to 8 s of audio plus a decode (2, 4,
+    and 6 s partials are replaceable).
+  - Each checkpoint re-decodes the whole uncommitted prefix, and an 8 s hard cut
+    under continuous speech or background noise can split a word across windows.
+  - `maxOutputTokens` applies per decode (`1024` for `startStream`, configurable
+    on `transcribe`/`transcribeOnce`); empty intermediate windows are
+    suppressed.
+  - Evidence so far covers only English on macOS arm64 CPU.
 - Inference backend correctness and performance remain device dependent;
   establish a CPU baseline before claiming GPU support for a deployment.
 - On the Web, Qwen3-ASR 0.6B Q8_0 returned the exact transcript of an

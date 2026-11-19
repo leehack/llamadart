@@ -241,15 +241,19 @@ void main() {
     test('rejects streaming on the prompt adapter', () async {
       await _loadSpeechModel(llamaEngine);
 
+      const expectedReason =
+          'The Qwen3-ASR prompt adapter accepts complete encoded audio only. '
+          'Use Qwen3WindowedAsrAdapter for opt-in windowed live PCM on '
+          'Qwen3-ASR, or LlamaCppLiveAsrAdapter / LiteRtLmAsrAdapter for '
+          'stateful incremental PCM streaming.';
+
       await expectLater(
         speechEngine.startStream(),
         throwsA(
           isA<LlamaUnsupportedException>().having(
             (error) => error.message,
             'message',
-            'The Qwen3-ASR prompt adapter accepts complete encoded audio only. '
-                'Use LlamaCppLiveAsrAdapter or LiteRtLmAsrAdapter for '
-                'incremental PCM streaming.',
+            expectedReason,
           ),
         ),
       );
@@ -258,12 +262,7 @@ void main() {
       final capabilities = await speechEngine.capabilities;
       expect(capabilities.isSupported, isTrue);
       expect(capabilities.supportsStreamingInput, isFalse);
-      expect(
-        capabilities.streamingInputUnsupportedReason,
-        'The Qwen3-ASR prompt adapter accepts complete encoded audio only. '
-        'Use LlamaCppLiveAsrAdapter or LiteRtLmAsrAdapter for incremental '
-        'PCM streaming.',
-      );
+      expect(capabilities.streamingInputUnsupportedReason, expectedReason);
     });
 
     test('turns an audio probe failure into capability diagnostics', () async {

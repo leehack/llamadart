@@ -622,10 +622,12 @@ abstract interface class SpeechToTextStreamingSession {
 /// a [SpeechToTextPromptAdapter] on a `LlamaEngine` the caller loaded and
 /// keeps owning. The model's adapter picks the runtime: a prompt adapter,
 /// such as [Qwen3AsrAdapter], sends encoded audio through multimodal chat on
-/// a `LlamaEngine`; [LlamaCppLiveAsrAdapter] runs incremental live PCM
-/// streaming on native `llama.cpp` (such as Voxtral Realtime and LFM3-Audio);
-/// and [LiteRtLmAsrAdapter] runs a dedicated native LiteRT-LM recognizer with
-/// incremental PCM input and partial transcripts.
+/// a `LlamaEngine`; [Qwen3WindowedAsrAdapter] adds opt-in windowed live PCM
+/// transcription on native `llama.cpp` Qwen3-ASR; [LlamaCppLiveAsrAdapter]
+/// runs stateful incremental live PCM streaming on native `llama.cpp` (such
+/// as Voxtral Realtime and LFM3-Audio); and [LiteRtLmAsrAdapter] runs a
+/// dedicated native LiteRT-LM recognizer with incremental PCM input and
+/// partial transcripts.
 ///
 /// ```dart
 /// final recognizer = await SpeechToTextEngine.load(
@@ -1146,12 +1148,17 @@ class SpeechToTextEngine implements LlamadartEngine<SpeechToTextCapabilities> {
   bool get _usesPcmStreaming =>
       _usesLiteRtLm || _usesLlamaCppLiveAsr || _usesQwenWindowedAsr;
 
-  static String _promptStreamingUnsupportedReason(
-    SpeechToTextAdapter adapter,
-  ) =>
-      'The ${adapter.name} prompt adapter accepts complete encoded audio only. '
-      'Use LlamaCppLiveAsrAdapter or LiteRtLmAsrAdapter for incremental PCM '
-      'streaming.';
+  static String _promptStreamingUnsupportedReason(SpeechToTextAdapter adapter) {
+    if (adapter is Qwen3AsrAdapter) {
+      return 'The ${adapter.name} prompt adapter accepts complete encoded audio '
+          'only. Use Qwen3WindowedAsrAdapter for opt-in windowed live PCM on '
+          'Qwen3-ASR, or LlamaCppLiveAsrAdapter / LiteRtLmAsrAdapter for '
+          'stateful incremental PCM streaming.';
+    }
+    return 'The ${adapter.name} prompt adapter accepts complete encoded audio only. '
+        'Use LlamaCppLiveAsrAdapter or LiteRtLmAsrAdapter for incremental PCM '
+        'streaming.';
+  }
 
   SpeechToTextPromptAdapter get _promptAdapter =>
       adapter as SpeechToTextPromptAdapter;
@@ -1433,17 +1440,19 @@ class SpeechToTextEngine implements LlamadartEngine<SpeechToTextCapabilities> {
   /// task.
   ///
   /// A [SpeechToTextPromptAdapter] accepts encoded files or bytes, and its
-  /// task emits one [SpeechToTextFinalEvent]. Dedicated LiteRT-LM ASR
-  /// accepts [SpeechAudioPcmInput] and emits any intermediate
-  /// [SpeechToTextPartialEvent] updates before its final result. Invalid
-  /// input and unsupported preflight checks throw before a task is returned;
+  /// task emits one [SpeechToTextFinalEvent]. [Qwen3WindowedAsrAdapter],
+  /// [LlamaCppLiveAsrAdapter], and [LiteRtLmAsrAdapter] accept
+  /// [SpeechAudioPcmInput] and emit intermediate [SpeechToTextPartialEvent]
+  /// updates before their final result. Invalid input and unsupported preflight
+  /// checks throw before a task is returned;
   /// failures after startup are reported by [SpeechToTextTask.done] and
   /// [SpeechToTextTask.result]. Throws [LlamaStateException] after
   /// [dispose] and after [LlamaEngine.dispose] of an attached engine.
   ///
-  /// On native llama.cpp, a prompt-adapted task that reaches the context
-  /// size or [SpeechToTextRequest.maxOutputTokens] before the transcript ends
-  /// fails with [LlamaSpeechTranscriptTruncatedException].
+  /// On native llama.cpp, a prompt-adapted task (including each decode of
+  /// [Qwen3WindowedAsrAdapter]) that reaches the context size or
+  /// [SpeechToTextRequest.maxOutputTokens] before the transcript ends fails
+  /// with [LlamaSpeechTranscriptTruncatedException].
   ///
   /// [SpeechToTextTask.cancel] stops only this task's generation: it does
   /// not cancel chat or other requests on the same [LlamaEngine]. [dispose],
@@ -1500,12 +1509,18 @@ class SpeechToTextEngine implements LlamadartEngine<SpeechToTextCapabilities> {
     SpeechToTextRequest request,
   ) async => (await transcribe(request)).result;
 
-  /// Starts an incremental dedicated-ASR session.
+  /// Starts an incremental live-PCM recognition session.
   ///
-  /// Available with [LiteRtLmAsrAdapter] and [LlamaCppLiveAsrAdapter]. The
-  /// accepted [format] is mono 16 kHz `pcm-f32le`. Await every
-  /// [SpeechToTextStreamingSession.addPcm] call so bounded native
-  /// backpressure can throttle the producer. [dispose] cancels the session.
+  /// Available with [LiteRtLmAsrAdapter], [LlamaCppLiveAsrAdapter], and opt-in
+  /// [Qwen3WindowedAsrAdapter]. The accepted [format] is mono 16 kHz
+  /// `pcm-f32le`. Await every [SpeechToTextStreamingSession.addPcm] call so
+  /// bounded backpressure can throttle the producer.
+  ///
+  /// With [Qwen3WindowedAsrAdapter], each 2, 4, and 6 s checkpoint re-decodes
+  /// the whole uncommitted prefix (first confirmation arrives after up to 8 s
+  /// of audio plus a decode), `maxOutputTokens` (1024 here) applies per
+  /// decode, empty intermediate windows are suppressed, and confirmed windows
+  /// are joined with `\n` in the final text. [dispose] cancels the session.
   /// Throws [LlamaStateException] after [dispose].
   Future<SpeechToTextStreamingSession> startStream({
     SpeechAudioFormat format = _liteRtLmPcmFormat,

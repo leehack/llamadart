@@ -12,11 +12,27 @@ void main() {
       final window = Float32List(qwenWindowedMaxSamples);
       window.fillRange(0, window.length, 0.2);
 
-      // 4 contiguous quiet frames (80 ms) is below the 100 ms threshold.
-      window.fillRange(100000, 100000 + 4 * 320, 0.0);
+      // 4 contiguous quiet frames (80 ms) aligned to the 20 ms frame grid at
+      // 96000 is below the 100 ms (5-frame) threshold.
+      window.fillRange(96000, 96000 + 4 * 320, 0.0);
 
       expect(selectQwenWindowCut(window, window.length), 128000);
     });
+
+    test(
+      'accepts 5 aligned frames at RMS == 0.01 and rejects RMS == 0.012',
+      () {
+        final exact = Float32List(qwenWindowedMaxSamples)
+          ..fillRange(0, 128000, 0.2);
+        exact.fillRange(96000, 96000 + 5 * 320, 0.01);
+        expect(selectQwenWindowCut(exact, exact.length), 96800);
+
+        final above = Float32List(qwenWindowedMaxSamples)
+          ..fillRange(0, 128000, 0.2);
+        above.fillRange(96000, 96000 + 5 * 320, 0.012);
+        expect(selectQwenWindowCut(above, above.length), 128000);
+      },
+    );
 
     test('selects the midpoint of the latest >= 100 ms quiet run', () {
       final window = Float32List(qwenWindowedMaxSamples);
@@ -164,6 +180,20 @@ void main() {
         }
 
         final fixed = await runWithChunkSizes(<int>[4000]);
+        expect(fixed.intervals, const <(int, int)>[
+          (0, 32000),
+          (0, 64000),
+          (0, 96000),
+          (0, 112800),
+          (112800, 144800),
+          (112800, 176800),
+          (112800, 208800),
+          (112800, 216960),
+          (216960, 248960),
+          (216960, 280960),
+          (216960, 312960),
+          (216960, 320000),
+        ]);
         final whole = await runWithChunkSizes(<int>[
           totalSamples,
         ], viewOffset: 13);
@@ -307,7 +337,8 @@ void main() {
                 required isCancelled,
               }) async {
                 decodeCount++;
-                return 'exact two second text.';
+                final sampleCount = (wavBytes.length - 44) ~/ 2;
+                return 'hyp-${sampleCount ~/ 16000}s';
               },
         );
 
@@ -319,15 +350,20 @@ void main() {
         });
 
         await session.addPcm(audio);
+        await session.addPcm(audio);
+        await session.addPcm(audio);
         await session.finish();
         final completion = await session.done;
         await sub.cancel();
 
-        expect(decodeCount, 1);
-        expect(partials, hasLength(1));
-        expect(partials.single.confirmedText, '');
-        expect(partials.single.pendingText, 'exact two second text.');
-        expect(completion.result!.text, 'exact two second text.');
+        expect(decodeCount, 3);
+        expect(partials.map((p) => p.pendingText).toList(), <String>[
+          'hyp-2s',
+          'hyp-4s',
+          'hyp-6s',
+        ]);
+        expect(partials.every((p) => p.confirmedText == ''), isTrue);
+        expect(completion.result!.text, 'hyp-6s');
       },
     );
 
@@ -446,6 +482,68 @@ void main() {
         expect(errors, hasLength(1));
       },
     );
+
+    test(
+      'cancel takes precedence over decode error mid-push and during finish tail',
+      () async {
+        for (final duringFinish in <bool>[false, true]) {
+          final decodeStarted = Completer<void>();
+          final decodeGate = Completer<void>();
+          final session = QwenWindowedAsrSession(
+            sourceFormat: const SpeechAudioFormat(
+              sampleRateHz: 16000,
+              channelCount: 1,
+              encoding: 'pcm-f32le',
+            ),
+            onClosed: () {},
+            decodeWindow:
+                (
+                  wavBytes, {
+                  required confirmedPrefix,
+                  required registerCancel,
+                  required isCancelled,
+                }) async {
+                  registerCancel(() async {
+                    if (!decodeGate.isCompleted) {
+                      decodeGate.complete();
+                    }
+                  });
+                  if (!decodeStarted.isCompleted) {
+                    decodeStarted.complete();
+                  }
+                  await decodeGate.future;
+                  throw LlamaInferenceException('aborted by cancel');
+                },
+          );
+
+          final errors = <Object>[];
+          final sub = session.events.listen((_) {}, onError: errors.add);
+
+          final Future<void> activeOp;
+          if (duringFinish) {
+            await session.addPcm(Float32List(16000)..fillRange(0, 16000, 0.2));
+            activeOp = session.finish();
+          } else {
+            activeOp = session.addPcm(
+              Float32List(32000)..fillRange(0, 32000, 0.2),
+            );
+          }
+
+          await decodeStarted.future;
+          await session.cancel();
+          await activeOp;
+          final completion = await session.done;
+          await sub.cancel();
+
+          expect(
+            completion.state,
+            SpeechToTextCompletionState.cancelled,
+            reason: 'duringFinish=$duringFinish',
+          );
+          expect(errors, isEmpty, reason: 'duringFinish=$duringFinish');
+        }
+      },
+    );
   });
 }
 
@@ -501,7 +599,7 @@ Float32List _buildTaggedSpeech(
           offset == 0 &&
           (sample - 0.25).abs() < 0.0001 &&
           sampleCount > 160 &&
-          (data.getInt16(44 + 160 * 2, Endian.little) / 32767.0) > 0.25;
+          (data.getInt16(44 + 160 * 2, Endian.little) / 32767.0) > 0.2502;
       if (isMidpointStart) {
         final startSample = decodeFrameAt(160) * 320 - 160;
         return (startSample, startSample + sampleCount);

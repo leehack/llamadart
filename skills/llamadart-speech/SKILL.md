@@ -62,10 +62,15 @@ description: >-
   - Qwen3-ASR (opt-in windowed live PCM): `Qwen3WindowedAsrAdapter` with
     `SpeechToTextEngine.load` on native llama.cpp and a verified `qwen3a`
     `projector` (`attach` and Web throw `LlamaUnsupportedException`). Accepts
-    mono 16 kHz `pcm-f32le` via `startStream()` or `transcribeOnce()`, updates
-    replaceable `pendingText` every 2 s, and commits at a quiet boundary or 8 s
-    hard cut (continuous speech or noise can split a word at 8 s). Rejects
-    context prompts and language hints; `capabilities.inputMode` is `windowed`.
+    mono 16 kHz `pcm-f32le` via `startStream()` or `transcribeOnce()`,
+    re-decodes the uncommitted prefix at 2/4/6 s checkpoints for replaceable
+    `pendingText`, and commits at a quiet boundary or 8 s hard cut (first
+    confirmation needs up to 8 s of audio plus a decode; continuous speech or
+    noise can split a word at 8 s). Confirmed windows join with `\n`, empty
+    intermediate windows are suppressed, and `maxOutputTokens` applies per
+    decode (`1024` for `startStream`). Rejects context prompts and language
+    hints; `capabilities.inputMode` is `windowed`. Evidence so far covers only
+    English on macOS arm64 CPU.
   - Native llama.cpp live PCM ASR (cumulative confirmed partials, then a
     final transcript): `LlamaCppLiveAsrAdapter` with a Voxtral Realtime or
     LFM3-Audio GGUF as `source` and its audio mmproj as `projector` (leave

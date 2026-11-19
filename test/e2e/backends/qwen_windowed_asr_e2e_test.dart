@@ -8,6 +8,7 @@ import 'dart:math';
 import 'dart:typed_data';
 
 import 'package:llamadart/llamadart.dart';
+import 'package:llamadart/src/core/speech/qwen_windowed_asr.dart';
 import 'package:test/test.dart';
 
 const String _defaultJfkWav =
@@ -210,6 +211,9 @@ void main() {
   );
   final jfkPath = _envFile('LLAMADART_STT_STREAM_AUDIO_PATH') ?? _defaultJfkWav;
   final secondAudioPath = _envFile('LLAMADART_STT_WINDOWED_SECOND_AUDIO_PATH');
+  final secondReference = Platform
+      .environment['LLAMADART_STT_WINDOWED_SECOND_REFERENCE']
+      ?.trim();
   final runPaced = Platform.environment['LLAMADART_STT_LIVE_PACED'] == '1';
 
   const params = ModelParams(
@@ -324,8 +328,7 @@ void main() {
         expect(_countOccurrences(norm44s, 'ask not'), 4);
         expect(norm44s, endsWith('do for your country'));
 
-        // Shifted boundary / continuous speech across 8s cut (no silence at 8s)
-        // and silence between utterances (JFK + 3s silence + JFK).
+        // Utterance gap across quiet boundary (JFK + 3s silence + JFK).
         final silence3s = Float32List(48000);
         final withSilence = Float32List(jfkPcm.length * 2 + silence3s.length)
           ..setRange(0, jfkPcm.length, jfkPcm)
@@ -342,6 +345,35 @@ void main() {
         final normSilence = _normalizeWords(silenceRun.text).join(' ');
         expect(_countOccurrences(normSilence, 'americans'), 2);
 
+        // Forced 8s hard-cut probe: add deterministic uniform noise (RMS 0.015)
+        // across all 44s so no 100ms quiet frame run has RMS <= 0.01.
+        final noisy44s = _addUniformNoise(repeated44s, targetRms: 0.015);
+        for (
+          var offset = 0;
+          offset + qwenWindowedMaxSamples <= noisy44s.length;
+          offset += qwenWindowedMaxSamples
+        ) {
+          final slice = Float32List.sublistView(
+            noisy44s,
+            offset,
+            offset + qwenWindowedMaxSamples,
+          );
+          expect(
+            selectQwenWindowCut(slice, slice.length),
+            qwenWindowedMaxSamples,
+          );
+        }
+        final hardCutRun = await _streamChunks(windowedEngine, noisy44s, <int>[
+          4000,
+        ]);
+        final hardCutWer = _wordErrorRate(ref44s, hardCutRun.text);
+        stderr.writeln(
+          'Hard-cut 44s noisy JFK ($hardCutWer WER, duration=${hardCutRun.duration}): '
+          '${hardCutRun.text}',
+        );
+        expect(hardCutRun.duration, const Duration(seconds: 44));
+        expect(hardCutWer, lessThanOrEqualTo(0.10));
+
         // Digital silence only must fail with LlamaSpeechException.
         final silentSession = await windowedEngine.startStream();
         final silentErrors = <Object>[];
@@ -356,20 +388,31 @@ void main() {
         expect(silentDone.state, SpeechToTextCompletionState.failed);
         expect(silentDone.error, isA<LlamaSpeechException>());
 
-        // Second independently transcribed utterance.
+        // Second utterance with published human ground-truth transcript.
         if (wholeSecondText != null) {
+          final refText =
+              secondReference ?? _loadSiblingTranscript(secondAudioPath!);
+          expect(
+            refText,
+            isNotNull,
+            reason:
+                'Provide LLAMADART_STT_WINDOWED_SECOND_REFERENCE or a sibling '
+                '.txt human transcript for $secondAudioPath',
+          );
           final secondPcm = _decodeWavPcm16Mono16k(secondAudioPath!);
           final secondRun = await _streamChunks(
             windowedEngine,
             secondPcm,
             <int>[4000],
           );
-          final secondWer = _wordErrorRate(wholeSecondText, secondRun.text);
+          final wholeAbsWer = _wordErrorRate(refText!, wholeSecondText);
+          final windowedAbsWer = _wordErrorRate(refText, secondRun.text);
           stderr.writeln(
-            'Second utterance (whole="$wholeSecondText", '
-            'windowed="${secondRun.text}", relative WER=$secondWer)',
+            'Second utterance (ref="$refText", '
+            'whole="$wholeSecondText" [abs WER=$wholeAbsWer], '
+            'windowed="${secondRun.text}" [abs WER=$windowedAbsWer])',
           );
-          expect(secondWer, lessThanOrEqualTo(0.10));
+          expect(windowedAbsWer, lessThanOrEqualTo(0.15));
         }
 
         // Active cancellation and immediate reuse.
@@ -463,4 +506,33 @@ void main() {
     },
     timeout: const Timeout(Duration(minutes: 10)),
   );
+}
+
+Float32List _addUniformNoise(
+  Float32List input, {
+  required double targetRms,
+  int seed = 7,
+}) {
+  final rng = Random(seed);
+  final amplitude = targetRms * sqrt(3.0);
+  final out = Float32List(input.length);
+  for (var i = 0; i < input.length; i++) {
+    final noise = (rng.nextDouble() * 2.0 - 1.0) * amplitude;
+    final sample = input[i] + noise;
+    out[i] = sample < -1.0 ? -1.0 : (sample > 1.0 ? 1.0 : sample);
+  }
+  return out;
+}
+
+String? _loadSiblingTranscript(String audioPath) {
+  final dot = audioPath.lastIndexOf('.');
+  final txtPath = dot > 0
+      ? '${audioPath.substring(0, dot)}.txt'
+      : '$audioPath.txt';
+  final file = File(txtPath);
+  if (!file.existsSync()) {
+    return null;
+  }
+  final text = file.readAsStringSync().trim();
+  return text.isEmpty ? null : text;
 }

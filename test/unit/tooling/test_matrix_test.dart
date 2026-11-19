@@ -961,6 +961,18 @@ void main() {
       expect(row.covers, contains('LlamaCppLiveAsrAdapter'));
     });
 
+    test('speech-to-text-windowed-smoke row and scenario are registered', () {
+      final row = testMatrixRows.singleWhere(
+        (row) => row.id == 'speech-to-text-windowed-smoke',
+      );
+      expect(row.command, contains('speech-to-text-windowed-smoke'));
+      expect(row.covers, contains('Qwen3WindowedAsrAdapter'));
+      final scenario = buildLocalE2eScenarios().singleWhere(
+        (s) => s.name == 'speech-to-text-windowed-smoke',
+      );
+      expect(scenario.description, contains('Qwen3-ASR windowed'));
+    });
+
     test('Web speech rows name their scenarios and the WER gate', () {
       final scenarios = buildLocalE2eScenarios().map((s) => s.name).toSet();
       final web = testMatrixRows.singleWhere(

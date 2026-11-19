@@ -66,33 +66,41 @@ Future<void> main(List<String> arguments) async {
             final confirmed = confirmedText ?? text;
             final pending = pendingText ?? '';
             if (confirmed.length > confirmedPrintedLength) {
-              if (lastPending.isNotEmpty) {
-                stdout.write(stdout.hasTerminal ? '\r\x1b[K' : '\n');
-                lastPending = '';
-              } else if (confirmedPrintedLength > 0 && qwenWindowed) {
-                stdout.writeln();
+              if (stdout.hasTerminal && lastPending.isNotEmpty) {
+                stdout.write('\r\x1b[K');
               }
-              stdout.write(confirmed.substring(confirmedPrintedLength));
+              lastPending = '';
+              final delta = confirmed.substring(confirmedPrintedLength);
+              if (qwenWindowed) {
+                final trimmed = delta.trimLeft();
+                if (trimmed.isNotEmpty) {
+                  stdout.writeln(trimmed);
+                }
+              } else {
+                stdout.write(delta);
+              }
               confirmedPrintedLength = confirmed.length;
             }
             if (pending.isNotEmpty && pending != lastPending) {
               if (stdout.hasTerminal) {
                 stdout.write('\r\x1b[K[pending] $pending');
               } else {
-                stdout.writeln('\n[pending] $pending');
+                stdout.writeln('[pending] $pending');
               }
               lastPending = pending;
             }
           case SpeechToTextFinalEvent(:final result):
-            if (lastPending.isNotEmpty) {
-              stdout.write(stdout.hasTerminal ? '\r\x1b[K' : '\n');
-              lastPending = '';
+            if (stdout.hasTerminal && lastPending.isNotEmpty) {
+              stdout.write('\r\x1b[K');
             }
+            lastPending = '';
             if (result.text.length > confirmedPrintedLength) {
-              stdout.write(result.text.substring(confirmedPrintedLength));
+              final tail = result.text.substring(confirmedPrintedLength);
+              stdout.writeln(qwenWindowed ? tail.trimLeft() : tail);
               confirmedPrintedLength = result.text.length;
+            } else if (!qwenWindowed || confirmedPrintedLength == 0) {
+              stdout.writeln();
             }
-            stdout.writeln();
         }
       },
       onError: (Object error) {
