@@ -1059,8 +1059,8 @@ class TextToSpeechEngine implements LlamadartEngine<TextToSpeechCapabilities> {
               TextToSpeechAudioChunkEvent(
                 samples: audio,
                 sampleOffset: streamedSamples,
-                sampleRateHz: sampleRateHz,
-                channelCount: channelCount,
+                sampleRateHz: progress.sampleRateHz ?? sampleRateHz,
+                channelCount: progress.channelCount ?? channelCount,
               ),
             );
             streamedSamples += audio.length;

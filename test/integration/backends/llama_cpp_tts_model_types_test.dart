@@ -292,6 +292,9 @@ void main() {
           Float32List.fromList([0, 0.1]),
           Float32List.fromList([0.2, 0.3, 0.4]),
         ]);
+        final chunks = progress.where((p) => p.audio != null);
+        expect(chunks.map((p) => p.sampleRateHz), [24000, 24000]);
+        expect(chunks.map((p) => p.channelCount), [1, 1]);
         expect(result.samples, Float32List.fromList([0, 0.1, 0.2, 0.3, 0.4]));
         expect(h.reads, [(2, 0), (4, 2), (4, 0)]);
       },
