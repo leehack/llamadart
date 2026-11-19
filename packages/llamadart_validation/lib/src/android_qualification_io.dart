@@ -29,9 +29,9 @@ Map<String, dynamic> readAndroidQualificationBinding(
       value['schema'] != 1 ||
       value['plan_sha256'] != (consumerPlanHash ?? plan.hash) ||
       value['source_dirty'] != false ||
-      value['native_tag'] != 'v1.0.0-2' ||
+      value['native_tag'] != 'v1.0.0-3' ||
       value['native_archive_sha256'] !=
-          '05094c8ff94f928f48b7167e3436d1131d620c6a8954adfc53af74ccea0ff4d8') {
+          'fe838f4775d72842be64bb0279b86fd67c46ff6e4624c3beb35f2e51711f235c') {
     throw const FormatException('Android diagnostic build binding mismatch');
   }
   for (final key in ['source_commit', 'source_tree']) {

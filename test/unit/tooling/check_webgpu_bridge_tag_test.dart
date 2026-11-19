@@ -227,7 +227,7 @@ void main() {
   test('default assets include the qualified media embedding API', () {
     expect(readPinnedBridgeTag(Directory.current), 'v0.1.86');
     expect(bridgeNativeReleaseTag, 'v1.0.0');
-    expect(bridgeApprovedNativePin, 'v1.0.0-2');
+    expect(bridgeApprovedNativePin, 'v1.0.0-3');
     expect(
       normalizeNativeLlamaCppTag(bridgeApprovedNativePin),
       bridgeLlamaCppTag,

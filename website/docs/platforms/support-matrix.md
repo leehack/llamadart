@@ -255,7 +255,7 @@ web are on [Known platform issues](./known-platform-issues).
 
 | Runtime | Pinned release |
 | --- | --- |
-| llama.cpp native | `leehack/llamadart-native@v1.0.0-2` |
+| llama.cpp native | `leehack/llamadart-native@v1.0.0-3` |
 | LiteRT-LM native | `leehack/litert-lm-native@v0.19.1-5` |
 | stable-diffusion.cpp native (opt-in, Preview) | `leehack/stable-diffusion-native@v0.4.0`, for [image generation](../guides/image-generation); see [Opt-in stable_diffusion runtime](./native-build-hooks#opt-in-stable_diffusion-runtime-experimental). Flutter iOS/macOS apps link its XCFramework through `llamadart_stable_diffusion_flutter` |
 | WebGPU bridge assets | `leehack/llama-web-bridge-assets`; see [Pinned bridge assets](./webgpu-bridge#pinned-bridge-assets) |
@@ -263,8 +263,11 @@ web are on [Known platform issues](./known-platform-issues).
 SD `v0.3.0-6` passed four full-VAE load/dispose cycles and eight decodes per device on iPhone 16 Pro (iOS 18.3.2) and iPhone 17 Pro (iOS 26.5.1), tested at `6b191b28`. Small nonzero residual memory remains; this single session is not proof of zero leaks (#2004).
 
 The native-assets hook currently pins `llamadart-native` tag
-`v1.0.0-2` and
+`v1.0.0-3` and
 `litert-lm-native` release `v0.19.1-5` (`lib/src/hook/native_release_pins.dart`).
+The Windows llama.cpp bundles select the newest Visual C++ runtime per
+architecture. The published Apple llama.cpp companions `0.20.0` and `0.20.1`
+remain compatible with an upgrade warning and use their own native builds.
 
 The direct native client, service probes and speech worker share ABI-aware
 discovery. Public selection admits legacy runtimes and C API 1.0.x; unknown

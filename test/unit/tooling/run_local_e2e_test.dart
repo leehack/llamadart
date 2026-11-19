@@ -155,7 +155,13 @@ void main() {
       expect(wrongTag.exitCode, 64);
     });
 
-    for (final tag in ['v0.8.0-2', 'v1.0.0', 'v1.0.0-1', 'v1.0.0-2']) {
+    for (final tag in [
+      'v0.8.0-2',
+      'v1.0.0',
+      'v1.0.0-1',
+      'v1.0.0-2',
+      'v1.0.0-3',
+    ]) {
       test('execution forwards $tag and opaque paths as argv', () async {
         var launches = 0;
         final actual = await runLocalE2e(

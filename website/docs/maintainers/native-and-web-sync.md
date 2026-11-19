@@ -817,6 +817,14 @@ across all five Apple XCFramework slices
 (`test/fixtures/native/llama_cpp_apple_compatibility.json`), while pre-`v1.0.0`
 runtimes stay rejected because consumers require the ARM F16 accumulation fix.
 
+For the core 0.20.2 repin to `v1.0.0-3`, the published llama.cpp companions
+`0.20.0` (`v1.0.0-1`) and `0.20.1` (`v1.0.0-2`) remain admitted with their
+exact XCFramework checksums and an upgrade warning. All three artifacts share
+the same upstream commit, declarations and exports across all five Apple
+XCFramework slices. The repin includes native speech fixes that the earlier
+frameworks lack. The matching companion needs a core floor of `0.20.2`, since
+earlier cores reject its new pin.
+
 The 0.18.0 preparation moves to `v0.8.0-3` and requires its matching Apple
 companion. Older runtimes are no longer admitted: they lack the speculative
 rollback and model-creation ownership fixes. All three Apple companions are

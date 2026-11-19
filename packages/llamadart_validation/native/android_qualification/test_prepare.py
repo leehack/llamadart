@@ -26,7 +26,7 @@ class PreparationTest(unittest.TestCase):
         self.assertRegex(build_probe.HEADERS_SHA, r"^[a-f0-9]{64}$")
         self.assertEqual(
             build_probe.HEADERS_SHA,
-            "bebc1482d41da2d58bec0aed9195056f41810dcc2b4d3dbbaa7a6627ecc6a1a9",
+            "e40814c2a08e6169b895ad246dc7ad9970c47a100d0d3d78e769a5d7aa28c9e1",
         )
 
     def test_archive_traversal_and_links_fail(self):
