@@ -8,9 +8,15 @@
         "getting-started/installation",
         "getting-started/quickstart",
         "getting-started/first-chat-session",
-        "getting-started/finding-models",
-        "getting-started/model-families",
-        "tutorials/flutter-chat-app"
+        "getting-started/finding-models"
+      ]
+    },
+    {
+      "type": "category",
+      "label": "Tutorials",
+      "items": [
+        "tutorials/flutter-chat-app",
+        "tutorials/rag"
       ]
     },
     {
@@ -21,7 +27,6 @@
         "guides/tool-calling",
         "guides/embeddings",
         "guides/reranking",
-        "tutorials/rag",
         "guides/multimodal",
         "guides/speech-to-text",
         "guides/text-to-speech",
@@ -45,6 +50,11 @@
         "guides/backend-selection",
         "guides/api-levels",
         "guides/chat-template-and-parsing",
+        {
+          "type": "doc",
+          "id": "getting-started/model-families",
+          "label": "Model compatibility"
+        },
         "guides/glossary"
       ]
     },
