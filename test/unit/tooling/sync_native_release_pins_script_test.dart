@@ -6,6 +6,9 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:analyzer/dart/analysis/utilities.dart';
+import 'package:analyzer/dart/ast/ast.dart';
+import 'package:analyzer/dart/ast/visitor.dart';
 import 'package:crypto/crypto.dart';
 import 'package:path/path.dart' as path;
 import 'package:test/test.dart';
@@ -1131,6 +1134,35 @@ paths=(
       );
     },
   );
+
+  test('workflow checklist cites tests that exist in the named files', () {
+    const workflowPath = '.github/workflows/sync_native_bindings.yml';
+    final workflow = File(workflowPath).readAsStringSync();
+    final citations = RegExp(
+      r'\\?`([^`\\\r\n]+)\\?` +in +\\?`(test/[^`\\\s]+\.dart)\\?`',
+    ).allMatches(workflow);
+    expect(citations, isNotEmpty, reason: 'No test citations in $workflowPath');
+    for (final citation in citations) {
+      final name = citation[1]!;
+      final testPath = citation[2]!;
+      final file = File(testPath);
+      expect(
+        file.existsSync(),
+        isTrue,
+        reason: '$workflowPath cites $testPath',
+      );
+      final tests = _TestNames();
+      parseString(
+        content: file.readAsStringSync(),
+        path: testPath,
+      ).unit.accept(tests);
+      expect(
+        tests.names,
+        contains(name),
+        reason: '$workflowPath cites "$name" in $testPath',
+      );
+    }
+  });
 
   test('native tag consumers use canonical nightly core grammar', () async {
     final sources = <String, String>{
@@ -3020,6 +3052,21 @@ const _fixtureHexCharacters = <String>[
   'b',
   'c',
 ];
+
+final class _TestNames extends RecursiveAstVisitor<void> {
+  final names = <String>{};
+
+  @override
+  void visitMethodInvocation(MethodInvocation node) {
+    if (node.target == null && node.methodName.name == 'test') {
+      final description = node.argumentList.arguments.firstOrNull;
+      if (description is StringLiteral && description.stringValue != null) {
+        names.add(description.stringValue!);
+      }
+    }
+    super.visitMethodInvocation(node);
+  }
+}
 
 final class _LlamaSyncSetup {
   const _LlamaSyncSetup(this.root, this.releaseDir);

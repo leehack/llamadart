@@ -13,8 +13,9 @@ validate against the exact release tag notes.
 
 ## 0.20.2
 
-- Adopt `llamadart-native@v1.0.0-3` for the Windows Visual C++ runtime and GPU memory fit fixes, plus native speech cancellation and text handling fixes ([#2059](https://github.com/leehack/llamadart/issues/2059)).
-- Add opt-in `Qwen3WindowedAsrAdapter` and `SpeechToTextCapabilities.inputMode` for bounded native Qwen3-ASR live PCM. It emits replaceable partials at 2, 4 and 6 seconds, commits at quiet boundaries or 8 seconds, and suppresses false transcripts from quiet noise. Web, `SpeechToTextEngine.attach` and non-`qwen3a` projectors throw `LlamaUnsupportedException`. On two-thread Linux and Windows x64 CPUs, LFM3-Audio kept up with live audio and Voxtral Realtime took about four times the audio duration ([#327](https://github.com/leehack/llamadart/issues/327), [#2079](https://github.com/leehack/llamadart/issues/2079)).
+- Adopt `llamadart-native@v1.0.0-3` for the Windows Visual C++ runtime and GPU memory fit fixes, plus native speech cancellation and text handling fixes ([#2087](https://github.com/leehack/llamadart/pull/2087)).
+- Add opt-in `Qwen3WindowedAsrAdapter` and expose `SpeechToTextInputMode` via `SpeechToTextCapabilities.inputMode` for bounded native Qwen3-ASR live PCM. It emits replaceable partials at 2, 4 and 6 seconds, commits at quiet boundaries or 8 seconds, and reduces false transcripts from quiet noise. Web, `SpeechToTextEngine.attach` and non-`qwen3a` projectors throw `LlamaUnsupportedException` ([#327](https://github.com/leehack/llamadart/issues/327), [#2079](https://github.com/leehack/llamadart/issues/2079)).
+- Document measured `LlamaCppLiveAsrAdapter` throughput on two-thread Linux and Windows x64 CPUs. LFM3-Audio kept up with live input and Voxtral Realtime took about four times the audio duration ([#327](https://github.com/leehack/llamadart/issues/327)).
 - Document `-` for stdin in the live ASR example and report the required PCM format when input ends mid-sample.
 - Report Vulkan and apply Android Vulkan context settings and prompt limits when an OpenCL preference falls back to a filtered list of Vulkan devices ([#2020](https://github.com/leehack/llamadart/issues/2020)).
 - Keep Gemma 4 reply text and later valid tool calls when a malformed call has an unclosed string delimiter ([#2042](https://github.com/leehack/llamadart/pull/2042)).
