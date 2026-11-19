@@ -99,7 +99,7 @@ at 256 or 512 px with phase progress, cancellation, a reusable seed and PNG
 save. A model that does not fit in memory shows the engine's refusal, with an
 offer to unload the chat model. The web and targets without the runtime show
 why generation is unavailable. See [Image generation](../guides/image-generation),
-including its [model licenses](../guides/image-generation#model-licenses).
+and the [model licenses](./basic-app#model-licenses).
 
 ## Test
 
