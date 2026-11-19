@@ -1191,6 +1191,37 @@ void main() {
       expect(overrides.createdDuringTypeCheck, isTrue);
       expect(server.requestCount, 0);
     });
+
+    test(
+      'stops retrying lock key resolution after 8 directory-appeared retries',
+      () async {
+        final entryDir = entryDirectory();
+        await entryDir.create(recursive: true);
+        final overrides = _AlwaysFailingResolveDirectory(entryDir.path);
+
+        await IOOverrides.runWithIOOverrides(
+          () => expectLater(
+            manager.ensureModel(
+              source(),
+              options: ModelLoadOptions(
+                cachePolicy: ModelCachePolicy.cacheOnly,
+              ),
+            ),
+            throwsA(
+              isA<LlamaStateException>().having(
+                (error) => error.message,
+                'message',
+                contains('Cannot resolve the model cache directory'),
+              ),
+            ),
+          ),
+          overrides,
+        );
+
+        expect(overrides.resolveAttempts, 9);
+        expect(server.requestCount, 0);
+      },
+    );
   });
 }
 
@@ -1245,6 +1276,48 @@ final class _DirectoryAppearsDuringLockKeyResolution extends IOOverrides {
     }
     return super.fseGetTypeSync(path, followLinks);
   }
+}
+
+final class _AlwaysFailingResolveDirectory extends IOOverrides {
+  _AlwaysFailingResolveDirectory(this._targetPath);
+
+  final String _targetPath;
+  int resolveAttempts = 0;
+
+  @override
+  Directory createDirectory(String path) {
+    final directory = super.createDirectory(path);
+    if (path != _targetPath) {
+      return directory;
+    }
+    return _FailingResolveDirectory(directory, () {
+      resolveAttempts++;
+    });
+  }
+}
+
+final class _FailingResolveDirectory implements Directory {
+  _FailingResolveDirectory(this._directory, this._onResolve);
+
+  final Directory _directory;
+  final void Function() _onResolve;
+
+  @override
+  String get path => _directory.path;
+
+  @override
+  String resolveSymbolicLinksSync() {
+    _onResolve();
+    throw FileSystemException(
+      'Cannot resolve symbolic links',
+      path,
+      const OSError('No such file or directory', 2),
+    );
+  }
+
+  @override
+  Object? noSuchMethod(Invocation invocation) =>
+      throw UnsupportedError('${invocation.memberName} on $path');
 }
 
 // A top-level function, so the closure sent to the isolate captures only
