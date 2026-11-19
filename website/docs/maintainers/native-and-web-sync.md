@@ -809,6 +809,15 @@ the historical per-slice check. The
 reverse pair is unsafe (`mtmd_helper_init_opt` grows to 32 bytes), so companion
 `0.17.1` needs `llamadart: '>=0.17.1 <0.18.0'`.
 
+Core `0.20.1` moves the llama.cpp pin to `v1.0.0-2` for the Windows CUDA VRAM
+fit fix while keeping published companion `0.20.0` (`v1.0.0-1`) admitted
+through `llamaCppCompatibleAppleCompanionTags` with its exact XCFramework
+checksum and an upgrade warning. Both releases share upstream
+`v1.0.0@b1b770d90d94cad9e9ea5b993bdbc383a522fb28` and export identical symbols
+across all five Apple XCFramework slices
+(`test/fixtures/native/llama_cpp_apple_compatibility.json`), while pre-`v1.0.0`
+runtimes stay rejected because consumers require the ARM F16 accumulation fix.
+
 The 0.18.0 preparation moves to `v0.8.0-3` and requires its matching Apple
 companion. Older runtimes are no longer admitted: they lack the speculative
 rollback and model-creation ownership fixes. All three Apple companions are

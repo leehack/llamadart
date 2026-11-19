@@ -22,11 +22,16 @@ const llamaCppAppleCompanionVersion = '0.20.1';
 /// companion pins and the build still accepts, each mapped to what its
 /// frameworks lack compared with [llamaCppTag].
 ///
-/// No older Apple runtime is admitted for v1.0.0: consumers need its ARM F16
-/// accumulation fix. Native pin sync clears this map whenever the pin moves;
-/// additions require exact artifact compatibility evidence and matching
-/// checksums below.
-const llamaCppCompatibleAppleCompanionTags = <String, String>{};
+/// Pre-`v1.0.0` Apple runtimes remain excluded because consumers need its ARM
+/// F16 accumulation fix. `v1.0.0-1` (pinned by `llamadart_llama_cpp_flutter`
+/// `0.20.0`) is admitted because `v1.0.0-2` only changes Windows CUDA VRAM fit
+/// and exports identical Apple XCFramework symbols. Native pin sync clears this
+/// map whenever the pin moves; additions require exact artifact compatibility
+/// evidence and matching checksums below.
+const llamaCppCompatibleAppleCompanionTags = <String, String>{
+  'v1.0.0-1':
+      'the Windows CUDA VRAM fit fix (native#209 / #2034), which has no Apple impact',
+};
 
 /// Exact XCFramework checksums for [llamaCppTag] and any admitted earlier
 /// [llamaCppCompatibleAppleCompanionTags] entries.
@@ -34,6 +39,8 @@ const llamaCppCompatibleAppleCompanionTags = <String, String>{};
 /// Native pin sync preserves this proof on a same-tag refresh and replaces it
 /// with the newly published artifact's checksum when the pin moves.
 const llamaCppCompatibleAppleCompanionChecksums = <String, String>{
+  'v1.0.0-1':
+      '0c66ca422bfc8ba266845b57fea99d2792ea67c84233f49358301a640846d669',
   'v1.0.0-2':
       '641020c50159a001096dcd66cc7356fe3c81915b26f985ebd48b2cec87169bcb',
 };
