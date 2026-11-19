@@ -821,16 +821,37 @@ class MacosPathGatingTest(unittest.TestCase):
             git('commit', '-qm', 'edit neutral test')
             head = git('rev-parse', 'HEAD')
 
+            # Hermetic fake `dart` on PATH so this suite runs without a Dart SDK.
+            fake_bin = Path(scratch) / 'bin'
+            fake_bin.mkdir()
+            fake_dart = fake_bin / 'dart'
+            fake_dart.write_text(
+                f'#!{sys.executable}\n'
+                'import json, sys\n'
+                'assert sys.argv[1:] == ["tool/ci/test_shards.dart", "hosts-json"]\n'
+                'files = json.loads(sys.stdin.read())\n'
+                'print(json.dumps({f: False for f in files}))\n'
+            )
+            fake_dart.chmod(0o755)
+
             event = Path(scratch) / 'event.json'
             event.write_text(json.dumps({'pull_request': {'base': {'sha': base}, 'head': {'sha': head}}}))
             output = Path(scratch) / 'output'
-            env = dict(os.environ, GITHUB_EVENT_NAME='pull_request',
+            env = dict(os.environ, PATH=f'{fake_bin}:/usr/bin:/bin',
+                       GITHUB_EVENT_NAME='pull_request',
                        GITHUB_EVENT_PATH=str(event), GITHUB_OUTPUT=str(output))
             result = subprocess.run([sys.executable, 'tool/ci/select_jobs.py', 'select'],
                                     cwd=scratch, env=env, capture_output=True, text=True)
             self.assertEqual(result.returncode, 0, result.stderr)
             plan = json.loads(result.stdout)
             self._assert_zero_macos(plan)
+
+            # Malformed probe output falls back conservatively to Mac native.
+            fake_dart.write_text(f'#!{sys.executable}\nprint("not-json")\n')
+            bad_out = subprocess.run([sys.executable, 'tool/ci/select_jobs.py', 'select'],
+                                     cwd=scratch, env=env, capture_output=True, text=True)
+            self.assertEqual(bad_out.returncode, 0, bad_out.stderr)
+            self.assertTrue(json.loads(bad_out.stdout)['macos-native'])
 
             # Missing Dart falls back conservatively to Mac native.
             no_dart_env = dict(env, PATH='/usr/bin:/bin')

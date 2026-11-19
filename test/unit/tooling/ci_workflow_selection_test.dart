@@ -1165,7 +1165,8 @@ for event,flag,native,cancel,good,main in itertools.product(('push','pull_reques
   );
 
   test('selector exposes the companion job and validation harness OS', () {
-    final outputs = readWorkflow('ci')['jobs']['changes']['outputs'] as Map;
+    final changes = readWorkflow('ci')['jobs']['changes'] as Map;
+    final outputs = changes['outputs'] as Map;
     for (final key in [
       'companion-job',
       'validation-harness-os',
@@ -1177,6 +1178,27 @@ for event,flag,native,cancel,good,main in itertools.product(('push','pull_reques
       expect(outputs[key], '\${{ steps.select.outputs.$key }}', reason: key);
     }
     expect(outputs.containsKey('genkit-lower-bounds'), isFalse);
+
+    // The real select step must run after preflight and conditional setup-dart.
+    final steps = (changes['steps'] as List).cast<Map>();
+    final preflightIdx = steps.indexWhere((s) => s['id'] == 'preflight');
+    final setupDartIdx = steps.indexWhere(
+      (s) => '${s['uses']}'.startsWith('dart-lang/setup-dart@'),
+    );
+    final selectIdx = steps.indexWhere((s) => s['id'] == 'select');
+    expect(preflightIdx, greaterThanOrEqualTo(0));
+    expect(setupDartIdx, greaterThan(preflightIdx));
+    expect(selectIdx, greaterThan(setupDartIdx));
+    expect(
+      steps[preflightIdx]['run'],
+      'python3 tool/ci/select_jobs.py preflight',
+    );
+    expect(
+      steps[setupDartIdx]['if'],
+      "steps.preflight.outputs.needs-dart == 'true'",
+    );
+    expect(steps[setupDartIdx]['with']['sdk'], '3.13.1');
+    expect(steps[selectIdx]['run'], 'python3 tool/ci/select_jobs.py select');
   });
 
   test('Windows runs the validation process memory test in exactly one job', () async {
