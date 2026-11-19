@@ -23,6 +23,11 @@ class PreparationTest(unittest.TestCase):
         checksum = re.search(r"'android-arm64':\s*'([a-f0-9]{64})'", checksum_map)
         self.assertIsNotNone(checksum)
         self.assertEqual(build_probe.ARCHIVE_SHA, checksum.group(1))
+        self.assertRegex(build_probe.HEADERS_SHA, r"^[a-f0-9]{64}$")
+        self.assertEqual(
+            build_probe.HEADERS_SHA,
+            "bebc1482d41da2d58bec0aed9195056f41810dcc2b4d3dbbaa7a6627ecc6a1a9",
+        )
 
     def test_archive_traversal_and_links_fail(self):
         with tempfile.TemporaryDirectory() as temporary:

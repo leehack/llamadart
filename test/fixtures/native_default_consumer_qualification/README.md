@@ -33,7 +33,7 @@ symlink/reparse ancestors; `/private/tmp` is the canonical macOS temp root.
 hook configuration. The generated consumer config contains only the documented
 `llamadart_native_runtimes: [llama_cpp]` filter. The `v0.8.0-2` baseline
 reports `pipelineOnly: true`. The legacy `finalNative3Qualified` field retains
-its meaning for earlier receipts. For `v1.0.0-1`, read `completed` alongside
+its meaning for earlier receipts. For `v1.0.0-2`, read `completed` alongside
 `expectedNativeTag` and the reported host. Each exact pin requires published
 owner assets, all same-platform gates and independent acceptance.
 
