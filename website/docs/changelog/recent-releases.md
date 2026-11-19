@@ -11,6 +11,8 @@ For upgrade planning, combine this page with the
 [Upgrade Checklist](../migration/upgrade-checklist). For breaking changes,
 validate against the exact release tag notes.
 
+## Unreleased
+
 ## 0.20.2
 
 - Adopt `llamadart-native@v1.0.0-3` for the Windows Visual C++ runtime and GPU memory fit fixes, plus native speech cancellation and text handling fixes ([#2087](https://github.com/leehack/llamadart/pull/2087)).
