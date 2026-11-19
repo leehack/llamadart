@@ -34,6 +34,11 @@ const _identity = {
   'GIT_COMMITTER_EMAIL': 'fixture@example.invalid',
 };
 
+String _fixtureBridgeDefault(String tag) =>
+    r'ASSETS_TAG="${WEBGPU_BRIDGE_ASSETS_TAG:-'
+    '$tag'
+    r'}"';
+
 class _Repo {
   _Repo({
     String? legacyRoot,
@@ -48,8 +53,7 @@ class _Repo {
       _root: '$_rootIntro$history',
       _docs: '$_docsIntro$history',
       _archive: '# Archive\n\n## 0.8.0\n\n- Archived.\n',
-      'scripts/fetch_webgpu_bridge_assets.sh':
-          r'ASSETS_TAG="${WEBGPU_BRIDGE_ASSETS_TAG:-v9.9.86}"',
+      'scripts/fetch_webgpu_bridge_assets.sh': _fixtureBridgeDefault('v9.9.86'),
       'tool/testing/check_webgpu_bridge_tag.dart': '''
 const String bridgeLlamaCppTag = 'v1.0.0';
 const String bridgeLlamaCppCommit = '1111111111111111111111111111111111111111';
@@ -296,8 +300,9 @@ void main() {
         3,
         '- Aligned the default WebGPU bridge assets to `v9.9.87` with a new feature.',
         {
-          'scripts/fetch_webgpu_bridge_assets.sh':
-              r'ASSETS_TAG="${WEBGPU_BRIDGE_ASSETS_TAG:-v9.9.87}"',
+          'scripts/fetch_webgpu_bridge_assets.sh': _fixtureBridgeDefault(
+            'v9.9.87',
+          ),
           'example/chat_app/web/index.html':
               'https://cdn.jsdelivr.net/npm/@litert-lm/core@0.20.0/+esm',
         },
