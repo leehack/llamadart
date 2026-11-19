@@ -570,11 +570,13 @@ fallback does not add grammar enforcement to LiteRT-LM. See
 [Chat templates and output parsing](./chat-template-and-parsing) for runtime
 routing and [model families](../getting-started/model-families) for formats.
 
-Gemma 4 can recover loose JSON tool calls alongside its native tool envelopes
-when the parsed name matches a declared tool for the request. JSON inside
-Markdown code fences or inline backticks stays text, and text before and after
-a recovered loose call is preserved, including when prose arrived in earlier
-chunks.
+Gemma 4 can recover loose JSON and whole-reply function-call-syntax tool calls
+alongside its native tool envelopes when the parsed name matches a declared
+tool for the request (with no tools declared, neither fallback recovers calls).
+JSON inside Markdown code fences or inline backticks stays text, and text
+before and after a recovered loose call is preserved, including when prose
+arrived in earlier chunks, with adjacent `;` and `</tool_call>` stripped and
+horizontal whitespace at the junction collapsed to a single space.
 
 ### Tool results on templates without a tool role
 

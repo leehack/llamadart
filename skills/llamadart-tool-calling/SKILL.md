@@ -193,14 +193,17 @@ description: >-
 - Consume all parsed Solar Open content-channel segments, preserving the
   whitespace between them. Parsed and streamed completions remove channel
   framing while retaining the accepted content.
-- Gemma 4 loose-JSON tool fallback only accepts calls whose name matches a
-  declared tool, ignores JSON inside Markdown code fences or inline backticks,
-  and keeps text before and after a recovered call visible. While streaming,
-  a candidate payload is held only until it fails syntax, completes as non-call
-  JSON, reveals a non-matching tool name, enters a Markdown code fence, or
-  closes an inline backtick span (a candidate call after an unmatched backtick
-  stays held until a blank line or EOF); executable calls arrive on the final
-  chunk.
+- Gemma 4 loose-JSON and function-call-syntax fallbacks only accept calls
+  whose name matches a declared tool (with no tools declared, neither recovers
+  calls), ignore JSON inside Markdown code fences or inline backticks, and
+  keep text before and after a recovered loose-JSON call visible while
+  stripping adjacent `;`, `</tool_call>`, and trailing `</tool_call>` tag
+  prefixes at EOF, and collapsing horizontal whitespace at the call junction
+  to one space. While streaming, a candidate payload is held only until it
+  fails syntax, completes as non-call JSON, reveals a non-matching tool name,
+  enters a Markdown code fence, or closes an inline backtick span (a candidate
+  call after an unmatched backtick stays held until a blank line or EOF);
+  executable calls arrive on the final chunk.
 - Always cap the number of tool rounds (`maxRounds`, default 5); a model can
   call tools forever.
 - `ToolChoice.auto` lets the model decide, `ToolChoice.required` forces a call

@@ -223,8 +223,17 @@ void main() {
 
     test('parses loose function call syntax emitted by Gemma 4 LiteRT-LM', () {
       const output = 'get_weather(location="Seoul")';
+      final weatherTool = ToolDefinition(
+        name: 'get_weather',
+        description: 'Weather',
+        parameters: [ToolParam.string('location', required: true)],
+      );
 
-      final parsed = ChatTemplateEngine.parse(ChatFormat.gemma4.index, output);
+      final parsed = ChatTemplateEngine.parse(
+        ChatFormat.gemma4.index,
+        output,
+        tools: [weatherTool],
+      );
 
       expect(parsed.content, isEmpty);
       expect(parsed.toolCalls, hasLength(1));
@@ -233,6 +242,18 @@ void main() {
         jsonDecode(parsed.toolCalls.first.function!.arguments!),
         equals({'location': 'Seoul'}),
       );
+
+      final noTools = ChatTemplateEngine.parse(ChatFormat.gemma4.index, output);
+      expect(noTools.toolCalls, isEmpty);
+      expect(noTools.content, output);
+
+      final undeclared = ChatTemplateEngine.parse(
+        ChatFormat.gemma4.index,
+        'rm(path="/")',
+        tools: [weatherTool],
+      );
+      expect(undeclared.toolCalls, isEmpty);
+      expect(undeclared.content, 'rm(path="/")');
     });
 
     test('streams an open thought channel as partial reasoning', () {

@@ -808,6 +808,8 @@ class ChatCompletionStreamParser {
     for (var i = 0; i < token.length; i++) {
       switch (token.codeUnitAt(i)) {
         case 0x22: // "
+        case 0x28: // (
+        case 0x29: // )
         case 0x2C: // ,
         case 0x3A: // :
         case 0x3C: // <

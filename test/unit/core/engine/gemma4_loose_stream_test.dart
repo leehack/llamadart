@@ -342,6 +342,94 @@ void main() {
       true,
     ),
     (
+      'semicolon before closing tag',
+      '$_prose $_json;</tool_call> Done',
+      '$_prose Done',
+      '',
+      [_weather],
+      true,
+    ),
+    (
+      'semicolon inside unclosed tool_call tag',
+      '$_prose <tool_call>$_json; Done',
+      '$_prose Done',
+      '',
+      [_weather],
+      true,
+    ),
+    (
+      'semicolon after closed tool_call tag stays',
+      '$_prose <tool_call>$_json</tool_call>; Done',
+      '$_prose ; Done',
+      '',
+      [_weather],
+      true,
+    ),
+    (
+      'CR before semicolon stays',
+      '$_prose $_json\r; then',
+      '$_prose \r; then',
+      '',
+      [_weather],
+      true,
+    ),
+    (
+      'trailing spaces after bare call keep junction space',
+      '$_prose $_json  ',
+      '$_prose ',
+      '',
+      [_weather],
+      true,
+    ),
+    (
+      'leading spaces before call with trailing prose',
+      '  $_json  Done',
+      ' Done',
+      '',
+      [_weather],
+      true,
+    ),
+    (
+      'declared function syntax',
+      'weather(city="Seoul")',
+      '',
+      '',
+      [_weather],
+      true,
+    ),
+    (
+      'indented declared function syntax',
+      '\n  weather(city="Seoul")',
+      '',
+      '',
+      [_weather],
+      true,
+    ),
+    (
+      'undeclared function syntax stays text',
+      'rm(path="/")',
+      'rm(path="/")',
+      '',
+      <(String, Map<String, String>)>[],
+      true,
+    ),
+    (
+      'undeclared dotted function syntax stays text',
+      'os.system(cmd="ls")',
+      'os.system(cmd="ls")',
+      '',
+      <(String, Map<String, String>)>[],
+      true,
+    ),
+    (
+      'function syntax with tools disabled stays text',
+      'weather(city="Seoul")',
+      'weather(city="Seoul")',
+      '',
+      <(String, Map<String, String>)>[],
+      false,
+    ),
+    (
       'thinking before loose JSON',
       '<|channel>thought\nPlan.<channel|>$_prose $_json',
       '$_prose ',
@@ -832,6 +920,16 @@ void main() {
         ),
         ('prose with trailing semicolon', ['$_prose $_json', ';'], '$_prose '),
         ('bare trailing semicolon', [_json, '; '], ''),
+        (
+          'prose with semicolon and truncated close tag',
+          ['$_prose $_json', ';', '</tool_'],
+          '$_prose ',
+        ),
+        (
+          'wrapped unclosed semicolon',
+          ['$_prose <tool_call>$_json', '; '],
+          '$_prose ',
+        ),
       ]) {
         for (final atLimit in [false, true]) {
           final chunks = await ChatCompletionStreamParser.parse(
@@ -857,6 +955,144 @@ void main() {
           );
         }
       }
+    },
+  );
+
+  test(
+    'function-call syntax matches final parse at every prefix and cancel/limit',
+    () async {
+      final rendered = render();
+      for (final (label, raw, tools) in [
+        ('declared', 'weather(city="Seoul")', _tools),
+        ('undeclared', 'rm(path="/")', _tools),
+        ('undeclared dotted', 'os.system(cmd="ls")', _tools),
+        ('shared-prefix undeclared', 'get_other(location="Paris")', _tools),
+        ('prose starting with tool name', 'weather is sunny today.', _tools),
+        ('no tools', 'weather(city="Seoul")', const <ToolDefinition>[]),
+      ]) {
+        final finalParsed = ChatTemplateEngine.parseRendered(
+          rendered,
+          raw,
+          tools: tools,
+        );
+        for (var i = 1; i <= raw.length; i++) {
+          final prefix = raw.substring(0, i);
+          final partial = ChatTemplateEngine.parseRendered(
+            rendered,
+            prefix,
+            isPartial: true,
+            tools: tools,
+          );
+          expect(
+            finalParsed.content,
+            startsWith(partial.content.trimRight()),
+            reason: '$label @$i',
+          );
+
+          final expectedPrefixFinal = ChatTemplateEngine.parseRendered(
+            rendered,
+            prefix,
+            tools: tools,
+          );
+          for (final atLimit in [false, true]) {
+            for (final charwise in [true, false]) {
+              final chunks = await ChatCompletionStreamParser.parse(
+                tokenStream: Stream.fromIterable(
+                  charwise ? prefix.split('') : [prefix],
+                ),
+                templateResult: rendered,
+                parseToolCallsEnabled: true,
+                enableThinking: true,
+                modelName: 'gemma4',
+                completionId: 'gemma4-func-$label-$i-$atLimit-$charwise',
+                tools: tools,
+                cancelled: () => !atLimit,
+                stoppedAtLimit: () => atLimit,
+              ).toList();
+              expect(
+                _content(chunks),
+                expectedPrefixFinal.content,
+                reason: '$label @$i limit=$atLimit charwise=$charwise',
+              );
+            }
+          }
+        }
+      }
+    },
+  );
+
+  test(
+    'streaming releases undeclared function-call names once name fails to match',
+    () async {
+      final rendered = render();
+      for (final (label, prefix, tail, tools) in [
+        ('undeclared', 'rm(', 'path="/")', _tools),
+        ('shared-prefix', 'get_o', 'ther(location="Paris")', _tools),
+        ('boundary mismatch', 'get(', 'location="Paris")', _tools),
+        ('prose after name', 'weather i', 's clear today.', _tools),
+        ('no tools', 'weather(', 'city="Seoul")', const <ToolDefinition>[]),
+      ]) {
+        final controller = StreamController<String>();
+        final chunks = <LlamaCompletionChunk>[];
+        final done = ChatCompletionStreamParser.parse(
+          tokenStream: controller.stream,
+          templateResult: rendered,
+          parseToolCallsEnabled: true,
+          enableThinking: true,
+          modelName: 'gemma4',
+          completionId: 'gemma4-func-release-$label',
+          tools: tools,
+        ).forEach(chunks.add);
+        try {
+          for (final token
+              in prefix.substring(0, prefix.length - 1).split('')) {
+            controller.add(token);
+          }
+          await Future<void>.delayed(const Duration(milliseconds: 30));
+          controller.add(prefix[prefix.length - 1]);
+          await pumpEventQueue(times: 4);
+          expect(_content(chunks), prefix, reason: label);
+          controller.add(tail);
+        } finally {
+          await controller.close();
+          await done;
+        }
+        expect(_content(chunks), '$prefix$tail', reason: label);
+        expect(chunks.last.choices.single.finishReason, 'stop', reason: label);
+      }
+
+      final declaredController = StreamController<String>();
+      final declaredChunks = <LlamaCompletionChunk>[];
+      final declaredDone = _stream(
+        declaredController.stream,
+        rendered,
+        true,
+      ).forEach(declaredChunks.add);
+      try {
+        for (final token in 'weather(city="Seoul"'.split('')) {
+          declaredController.add(token);
+        }
+        await pumpEventQueue(times: 4);
+        expect(_content(declaredChunks), isEmpty);
+        declaredController.add(')');
+      } finally {
+        await declaredController.close();
+        await declaredDone;
+      }
+      expect(_content(declaredChunks), isEmpty);
+      expect(declaredChunks.last.choices.single.finishReason, 'tool_calls');
+      expect(
+        declaredChunks
+            .last
+            .choices
+            .single
+            .delta
+            .toolCalls!
+            .single
+            .function
+            ?.name,
+        'weather',
+      );
     },
   );
 }

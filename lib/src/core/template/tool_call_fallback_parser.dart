@@ -26,8 +26,9 @@ class ToolCallFallbackParseResult {
 /// parser fails to extract explicit tool-call structures.
 /// With [preserveJsonProse], keep the raw text preceding and following a loose
 /// JSON call. While [isPartial], hold only the suffix that can still become
-/// such a call. When [allowedToolNames] is provided, loose JSON calls are
-/// accepted only if their name is in [allowedToolNames].
+/// such a call. When [allowedToolNames] is provided, loose JSON and
+/// function-syntax calls are accepted only if their name is in
+/// [allowedToolNames].
 ToolCallFallbackParseResult parseToolCallsFromLooseText(
   String input, {
   bool preserveJsonProse = false,
@@ -85,7 +86,10 @@ ToolCallFallbackParseResult parseToolCallsFromLooseText(
     );
   }
 
-  final functionCall = _parseFunctionCallSyntax(trimmed);
+  final functionCall = _parseFunctionCallSyntax(
+    trimmed,
+    allowedNames: allowedNames,
+  );
   if (functionCall != null) {
     return ToolCallFallbackParseResult(
       content: '',
@@ -97,16 +101,18 @@ ToolCallFallbackParseResult parseToolCallsFromLooseText(
     content: !preserveJsonProse
         ? trimmed
         : isPartial
-        ? input.substring(
-            0,
-            _pendingLooseJsonStart(
-              input,
-              scanEnd: input.length,
-              endLimit: input.length,
-              codeSpans: codeSpans,
-              allowedNames: allowedNames,
-            ),
-          )
+        ? (_hasPendingFunctionCallPrefix(input, allowedNames: allowedNames)
+              ? ''
+              : input.substring(
+                  0,
+                  _pendingLooseJsonStart(
+                    input,
+                    scanEnd: input.length,
+                    endLimit: input.length,
+                    codeSpans: codeSpans,
+                    allowedNames: allowedNames,
+                  ),
+                ))
         : input,
     toolCalls: const <LlamaCompletionChunkToolCall>[],
   );
@@ -114,12 +120,9 @@ ToolCallFallbackParseResult parseToolCallsFromLooseText(
 
 final _looseJsonWrapper = RegExp(r'<tool_call>\s*(?:\[\s*)?$|\[\s*$');
 
-({int start, bool hasToolCallTag}) _looseJsonWrapperMatch(String prefix) {
+int _looseJsonWrapperStart(String prefix) {
   final match = _looseJsonWrapper.firstMatch(prefix);
-  if (match == null) {
-    return (start: prefix.length, hasToolCallTag: false);
-  }
-  return (start: match.start, hasToolCallTag: match[0]!.startsWith('<'));
+  return match == null ? prefix.length : match.start;
 }
 
 int _pendingLooseJsonStart(
@@ -137,10 +140,7 @@ int _pendingLooseJsonStart(
   final wrapperPrefix = withoutTrailingTagPrefix(prefixSlice, const [
     '<tool_call>',
   ]);
-  var holdFrom = min(
-    wrapperPrefix.length,
-    _looseJsonWrapperMatch(prefixSlice).start,
-  );
+  var holdFrom = min(wrapperPrefix.length, _looseJsonWrapperStart(prefixSlice));
 
   var pos = 0;
   while (pos < scanEnd) {
@@ -173,18 +173,12 @@ int _pendingLooseJsonStart(
           scan.end,
           allowedNames: allowedNames,
         )) {
-          return min(
-            holdFrom,
-            _looseJsonWrapperMatch(input.substring(0, pos)).start,
-          );
+          return min(holdFrom, _looseJsonWrapperStart(input.substring(0, pos)));
         }
         pos = scan.end;
       case _JsonScanStatus.pending:
         if (!scan.rejectedName) {
-          return min(
-            holdFrom,
-            _looseJsonWrapperMatch(input.substring(0, pos)).start,
-          );
+          return min(holdFrom, _looseJsonWrapperStart(input.substring(0, pos)));
         }
         // Skip nested objects inside a still-open outer object whose name is
         // rejected.
@@ -851,69 +845,66 @@ _parseJsonLikeToolCalls(
     return null;
   }
 
-  final wrapper = _looseJsonWrapperMatch(input.substring(0, first.callStart));
-  final contentPrefixEnd = wrapper.start;
+  final contentPrefixEnd = _looseJsonWrapperStart(
+    input.substring(0, first.callStart),
+  );
   final calls = <LlamaCompletionChunkToolCall>[...first.calls];
   var callEnd = first.callEnd;
   int? holdTrailingFrom;
-  var strippedSemicolon = false;
 
-  if (!wrapper.hasToolCallTag) {
-    // Collect semicolon-separated continuation calls (`call1; call2`) while
-    // holding only a trailing `;` whose following text can still become a call.
-    while (callEnd < input.length) {
-      var ws = callEnd;
-      while (ws < input.length && ' \t\r\n'.contains(input[ws])) {
-        ws++;
-      }
-      if (ws >= input.length || input[ws] != ';') {
-        break;
-      }
-
-      final afterSemi = ws + 1;
-      final next = _findFirstLooseCall(
-        input,
-        from: afterSemi,
-        startIndex: calls.length,
-        codeSpans: codeSpans,
-        allowedNames: allowedNames,
-      );
-      if (next != null &&
-          input.substring(afterSemi, next.callStart).trim().isEmpty) {
-        if (isPartial && codeSpans.isOpenInlineAt(next.callStart)) {
-          holdTrailingFrom = callEnd;
-          break;
-        }
-        calls.addAll(next.calls);
-        callEnd = next.callEnd;
-        continue;
-      }
-
-      if (isPartial) {
-        final tail = input.substring(afterSemi);
-        if (tail.trim().isEmpty ||
-            _pendingLooseJsonStart(
-                  tail,
-                  scanEnd: tail.length,
-                  endLimit: tail.length,
-                  codeSpans: _MarkdownCodeSpans.parse(tail),
-                  allowedNames: allowedNames,
-                ) <
-                tail.length) {
-          holdTrailingFrom = callEnd;
-          break;
-        }
-      }
-
-      if (!_containsNewline(input, callEnd, ws)) {
-        callEnd = _skipHorizontalWhitespace(input, afterSemi);
-        strippedSemicolon = true;
-      }
+  // Collect semicolon-separated continuation calls (`call1; call2`) while
+  // holding only a trailing `;` whose following text can still become a call.
+  while (callEnd < input.length) {
+    var ws = callEnd;
+    while (ws < input.length && ' \t\r\n'.contains(input[ws])) {
+      ws++;
+    }
+    if (ws >= input.length || input[ws] != ';') {
       break;
     }
+
+    final afterSemi = ws + 1;
+    final next = _findFirstLooseCall(
+      input,
+      from: afterSemi,
+      startIndex: calls.length,
+      codeSpans: codeSpans,
+      allowedNames: allowedNames,
+    );
+    if (next != null &&
+        input.substring(afterSemi, next.callStart).trim().isEmpty) {
+      if (isPartial && codeSpans.isOpenInlineAt(next.callStart)) {
+        holdTrailingFrom = callEnd;
+        break;
+      }
+      calls.addAll(next.calls);
+      callEnd = next.callEnd;
+      continue;
+    }
+
+    if (isPartial) {
+      final tail = input.substring(afterSemi);
+      if (tail.trim().isEmpty ||
+          _pendingLooseJsonStart(
+                tail,
+                scanEnd: tail.length,
+                endLimit: tail.length,
+                codeSpans: _MarkdownCodeSpans.parse(tail),
+                allowedNames: allowedNames,
+              ) <
+              tail.length) {
+        holdTrailingFrom = callEnd;
+        break;
+      }
+    }
+
+    if (!_containsNewline(input, callEnd, ws)) {
+      callEnd = _skipHorizontalWhitespace(input, afterSemi);
+    }
+    break;
   }
 
-  if (holdTrailingFrom == null && !strippedSemicolon) {
+  if (holdTrailingFrom == null) {
     final after = _consumeClosingToolCallTag(
       input,
       from: callEnd,
@@ -1260,7 +1251,14 @@ Map<String, dynamic> _toArgumentsObject(Object? raw) {
   return const <String, dynamic>{};
 }
 
-LlamaCompletionChunkToolCall? _parseFunctionCallSyntax(String input) {
+LlamaCompletionChunkToolCall? _parseFunctionCallSyntax(
+  String input, {
+  Set<String>? allowedNames,
+}) {
+  if (allowedNames != null && allowedNames.isEmpty) {
+    return null;
+  }
+
   final match = RegExp(
     r'^([A-Za-z_][A-Za-z0-9_\.-]*)\s*(?:\((.*)\))?$',
     dotAll: true,
@@ -1287,6 +1285,10 @@ LlamaCompletionChunkToolCall? _parseFunctionCallSyntax(String input) {
     return null;
   }
 
+  if (allowedNames != null && !allowedNames.contains(normalizedName)) {
+    return null;
+  }
+
   if (rawArgs.isEmpty && normalizedName == nameRaw) {
     return null;
   }
@@ -1297,6 +1299,54 @@ LlamaCompletionChunkToolCall? _parseFunctionCallSyntax(String input) {
     arguments: normalizedArgs,
   );
 }
+
+bool _hasPendingFunctionCallPrefix(
+  String input, {
+  required Set<String>? allowedNames,
+}) {
+  if (allowedNames != null && allowedNames.isEmpty) {
+    return false;
+  }
+
+  final trimmed = input.trimLeft();
+  if (trimmed.isEmpty || !_isIdentifierStart(trimmed.codeUnitAt(0))) {
+    return false;
+  }
+
+  var nameEnd = 1;
+  while (nameEnd < trimmed.length &&
+      _isIdentifierContinue(trimmed.codeUnitAt(nameEnd))) {
+    nameEnd++;
+  }
+
+  final namePrefix = trimmed.substring(0, nameEnd);
+  if (nameEnd == trimmed.length) {
+    return allowedNames == null ||
+        allowedNames.any((name) => name.startsWith(namePrefix));
+  }
+
+  final normalizedName = normalizeFallbackToolName(namePrefix);
+  if (allowedNames != null && !allowedNames.contains(normalizedName)) {
+    return false;
+  }
+
+  var afterWs = nameEnd;
+  while (afterWs < trimmed.length && trimmed[afterWs].trim().isEmpty) {
+    afterWs++;
+  }
+  return afterWs == trimmed.length || trimmed.codeUnitAt(afterWs) == 0x28;
+}
+
+bool _isIdentifierStart(int codeUnit) =>
+    (codeUnit >= 0x41 && codeUnit <= 0x5A) ||
+    (codeUnit >= 0x61 && codeUnit <= 0x7A) ||
+    codeUnit == 0x5F;
+
+bool _isIdentifierContinue(int codeUnit) =>
+    _isIdentifierStart(codeUnit) ||
+    (codeUnit >= 0x30 && codeUnit <= 0x39) ||
+    codeUnit == 0x2E ||
+    codeUnit == 0x2D;
 
 /// Splits `key=value` argument lists on top-level commas only, leaving commas
 /// inside single/double-quoted values intact (e.g. `note='a, b'`).
