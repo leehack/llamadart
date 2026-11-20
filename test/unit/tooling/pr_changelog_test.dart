@@ -204,6 +204,136 @@ Improve setup (#9)
     );
   });
 
+  group('landed changelog wraps', () {
+    for (final width in [70, 71, 72]) {
+      test('adjacent dash after $width scalars', () {
+        final body = '## Changelog\n- ${'a' * (width - 2)}\n- Second.';
+        expect(parsePrChangelog(body).bullets, hasLength(2));
+        if (width == 70) {
+          expect(parseLandedPrChangelog(body).bullets, hasLength(2));
+        } else {
+          expect(() => parseLandedPrChangelog(body), throwsFormatException);
+        }
+      });
+    }
+
+    test('counts an astral character as one scalar', () {
+      final first = '🚀${'a' * 67}';
+      final section = parseLandedPrChangelog('## Changelog\n- $first\n- Two.');
+      expect(section.bullets.map((bullet) => bullet.text), [first, 'Two.']);
+    });
+
+    test('checks the physical tail before a genuine scoped bullet', () {
+      final first = 'a' * 70;
+      final section = parseLandedPrChangelog(
+        '## Changelog\n- $first\nContinued.\n'
+        '- [packages/genkit_llamadart] Explain the new option.',
+      );
+      expect(section.bullets, [
+        (target: 'core', text: '$first Continued.'),
+        (target: 'packages/genkit_llamadart', text: 'Explain the new option.'),
+      ]);
+    });
+
+    test('keeps an overlong word whole and checks its following boundary', () {
+      final word = 'a' * 79;
+      final body = '## Changelog\n- Keep\n$word\n';
+      expect(
+        parseLandedPrChangelog('${body}whole.').bullets.single.text,
+        'Keep $word whole.',
+      );
+      expect(
+        () => parseLandedPrChangelog('$body- Maybe another entry.'),
+        throwsFormatException,
+      );
+    });
+
+    test('unwraps a long N/A and preserves original outside rows', () {
+      final first = 'a' * 66;
+      const before = 'This reverts commit 0123456789abcdef.  ';
+      const after = 'Keep outside  spacing.  ';
+      final body =
+          '$before\n## Changelog\nN/A: $first\n'
+          'continues here.\n\n## Summary\n$after';
+      final section = parseLandedPrChangelog(body);
+      expect(section.reason, '$first continues here.');
+      expect(section.bullets, isEmpty);
+      expect(section.outsideLines, [before, '## Summary', after]);
+      expect(() => parsePrChangelog(body), throwsFormatException);
+    });
+
+    test('preserves interior spacing in single-line entries', () {
+      const body =
+          '## Changelog\n- Keep  double spaces.\n'
+          '- Preserve\tinterior tabs.\n';
+      expect(
+        parseLandedPrChangelog(body).bullets,
+        parsePrChangelog(body).bullets,
+      );
+    });
+
+    test('keeps a verbatim over-width bullet as a single line', () {
+      final body = '## Changelog\n- Keep ${'a' * 74}.\n- Separate bullet.';
+      expect(
+        parseLandedPrChangelog(body).bullets,
+        parsePrChangelog(body).bullets,
+      );
+    });
+
+    test('blank rows separate even bullets at the wrap limit', () {
+      final body = '## Changelog\n- ${'a' * 70}\n\n';
+      expect(
+        parseLandedPrChangelog('$body- A separate bullet.').bullets,
+        hasLength(2),
+      );
+      expect(
+        () => parseLandedPrChangelog('${body}Unattached prose.'),
+        throwsFormatException,
+      );
+    });
+
+    for (final boundary in [
+      '## Summary',
+      '### Summary',
+      '<!-- guidance -->',
+      '> Example',
+      '```md\nExample\n```',
+      '+ Other list syntax',
+      '1. Ordered example',
+      '---------',
+    ]) {
+      test('declines a wrap-compatible structural row $boundary', () {
+        expect(
+          () =>
+              parseLandedPrChangelog('## Changelog\n- ${'a' * 70}\n$boundary'),
+          throwsFormatException,
+        );
+      });
+    }
+
+    test('declines continuations without the exact greedy rows', () {
+      for (final (first, continuation) in [
+        ('a' * 68, 'b still fits on the preceding row.'),
+        ('a' * 70, ' leading indentation.'),
+        ('a' * 70, 'double  spaces.'),
+        ('a' * 70, '${'a' * 70} multiple words.'),
+        ('a' * 70, '<!-- guidance -->\nContinued.'),
+      ]) {
+        expect(
+          () => parseLandedPrChangelog('## Changelog\n- $first\n$continuation'),
+          throwsFormatException,
+        );
+      }
+    });
+
+    test('the PR event still rejects a manually wrapped description', () async {
+      final body = '## Changelog\n- ${'a' * 70}\nManual continuation.';
+      expect(parseLandedPrChangelog(body).bullets, hasLength(1));
+      expect(() => parsePrChangelog(body), throwsFormatException);
+      expect((await _validate(body)).exitCode, 1);
+    });
+  });
+
   final valid = {
     'multiple bullets, core and package scopes': '''
 ## Changelog

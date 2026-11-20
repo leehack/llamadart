@@ -457,6 +457,14 @@ dart tool/release/collect_pr_changelog.dart --version "$version" \
   --from "$previous_tag" --through "$through" --write
 ```
 
+The collector prefers the landed commit's changelog after removing Git
+attribution. It rejoins adjacent lines that match GitHub's greedy wrap at 72
+Unicode code points. If a `- ` row could be a continuation or a new bullet,
+the ledger identifies the commit and boundary. The collector then reads the
+authored description through the verified merged-main PR association. The
+description uses one physical line per entry. Missing or conflicting
+provenance blocks generation.
+
 Review the entire ledger including legacy seed, package-only notes, N/A
 entries, duplicates, fallbacks and reversals. Keep the ledger with the PR.
 Copy the emitted `## Release notes input` into the prep body beside its

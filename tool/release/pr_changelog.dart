@@ -43,15 +43,28 @@ final _placeholder = RegExp(
   caseSensitive: false,
 );
 
-/// Parses a PR description or a commit body after Git trailer removal.
-PrChangelog parsePrChangelog(String body) {
+/// Parses a PR description with one physical line per entry.
+PrChangelog parsePrChangelog(String body) =>
+    _parsePrChangelog(_markdownLines(body));
+
+/// Parses a landed commit body after Git trailer removal.
+PrChangelog parseLandedPrChangelog(String body) =>
+    _parsePrChangelog(_landedChangelogLines(_markdownLines(body)));
+
+/// The landed bytes admit more than one interpretation of an entry boundary.
+class AmbiguousLandedChangelog extends FormatException {
+  AmbiguousLandedChangelog(int line)
+    : super('ambiguous landed Changelog boundary at body line $line.');
+}
+
+PrChangelog _parsePrChangelog(Iterable<_MarkdownLine> rows) {
   final bullets = <ChangelogBullet>[];
   final outside = <String>[];
   String? reason;
   var found = false;
   var inSection = false;
   var inComment = false;
-  for (final row in _markdownLines(body)) {
+  for (final row in rows) {
     final (
       index: _,
       :line,
@@ -151,6 +164,94 @@ typedef _MarkdownLine = ({
   String? example,
   bool inComment,
 });
+
+const _githubWrapColumn = 72;
+final _wrapWord = RegExp(r'[^\p{White_Space}\u001c-\u001f]+', unicode: true);
+final _wrapStructure = RegExp(
+  r'^(?:#{1,6}(?: |$)|[-+*]$|[-=]+ *$|(?:(?:\* *){3,}|(?:- *){3,}|(?:_ *){3,})$)',
+);
+
+Iterable<_MarkdownLine> _landedChangelogLines(
+  Iterable<_MarkdownLine> rows,
+) sync* {
+  var inSection = false;
+  final entry = <_MarkdownLine>[];
+  for (final row in rows) {
+    if (entry.isNotEmpty) {
+      final previous = entry.last.line;
+      final word = _wrapWord.matchAsPrefix(row.line);
+      if (word != null &&
+          previous.runes.length + 1 + word[0]!.runes.length >
+              _githubWrapColumn &&
+          _isGreedyWrapRow(previous)) {
+        if (_isWrapBoundary(row)) {
+          throw AmbiguousLandedChangelog(row.index + 1);
+        }
+        // Folded rows use single spaces and fit the limit, except for a lone
+        // overlong word. Checking this and each break proves the greedy refill.
+        if (!_isGreedyWrapRow(row.line)) {
+          _invalid(
+            'cannot reconstruct the landed entry at line ${row.index + 1}.',
+          );
+        }
+        entry.add(row);
+        continue;
+      }
+      yield _joinLandedEntry(entry);
+      entry.clear();
+    }
+    if (row.heading case final heading?) {
+      inSection = _isSection(heading, 'Changelog');
+    }
+    if (inSection &&
+        row.visible == row.line &&
+        (_startsChangelogBullet(row.line) ||
+            _startsChangelogReason(row.line))) {
+      entry.add(row);
+    } else {
+      yield row;
+    }
+  }
+  if (entry.isNotEmpty) yield _joinLandedEntry(entry);
+}
+
+bool _startsChangelogBullet(String line) =>
+    line == '-' || line.startsWith('- ');
+
+bool _startsChangelogReason(String line) =>
+    line == 'N/A:' || line.startsWith('N/A: ');
+
+bool _isWrapBoundary(_MarkdownLine row) =>
+    row.heading != null ||
+    row.example != null ||
+    row.nested ||
+    row.visible != row.line ||
+    row.inComment ||
+    _startsChangelogBullet(row.line) ||
+    _startsChangelogReason(row.line) ||
+    _listMarker.hasMatch(row.line) ||
+    _wrapStructure.hasMatch(row.line);
+
+bool _isGreedyWrapRow(String line) {
+  final words = _wrapWord.allMatches(line).map((word) => word[0]!).toList();
+  return (line.runes.length <= _githubWrapColumn || words.length == 1) &&
+      words.join(' ') == line;
+}
+
+_MarkdownLine _joinLandedEntry(List<_MarkdownLine> entry) {
+  final first = entry.first;
+  if (entry.length == 1) return first;
+  final line = entry.map((row) => row.line).join(' ');
+  return (
+    index: first.index,
+    line: line,
+    visible: _withoutComments(line, false).$1,
+    heading: first.heading,
+    nested: first.nested,
+    example: first.example,
+    inComment: first.inComment,
+  );
+}
 
 Iterable<_MarkdownLine> _markdownLines(String body) sync* {
   var inComment = false;
