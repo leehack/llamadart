@@ -90,6 +90,15 @@ case "$1" in
       exit 2
     fi
     ;;
+  fetch)
+    [[ ! -f "$STUB_STATE/main_fetch_fails" ]]
+    ;;
+  ls-tree)
+    [[ ! -f "$STUB_STATE/main_tree_fails" ]] || exit 1
+    if [[ -f "$STUB_STATE/consumed_prep" ]]; then
+      printf '100644 blob %s\t%s\n' "$STUB_HEAD" "${*: -1}"
+    fi
+    ;;
   *)
     exit 1
     ;;
@@ -991,6 +1000,75 @@ void main() {
 
   group('release_on_prep_merge.yml', () {
     final workflow = _read(_releaseWorkflow);
+
+    List<String> stalePrepProblems(String source) {
+      final errors = <String>[];
+      for (final state in [
+        'consumed_prep',
+        'main_fetch_fails',
+        'main_tree_fails',
+      ]) {
+        final release = _runRelease(source, (
+          name: state,
+          remote: (sandbox) => sandbox.file('state/$state', ''),
+          missingCompanions: const {},
+          version: null,
+          failingDart: const {},
+        ));
+        if (release.validate.exitCode != 0 ||
+            release.publish?.exitCode == 0 ||
+            release.publish == null ||
+            _pushedAnyTag(release.calls) ||
+            !release.calls.contains(
+              'git fetch --no-tags --no-recurse-submodules https://github.com/leehack/llamadart.git refs/heads/main',
+            ) ||
+            (state != 'main_fetch_fails' &&
+                !release.calls.contains(
+                  'git ls-tree FETCH_HEAD -- tool/release/recoveries/$_releaseSha.json',
+                ))) {
+          errors.add(
+            '$state did not block the valid candidate before writing a tag.',
+          );
+        }
+      }
+      return errors;
+    }
+
+    test(
+      'refuses a consumed prep or an unavailable owner main before tagging',
+      () {
+        expect(stalePrepProblems(workflow), isEmpty);
+      },
+    );
+
+    test('detects a publisher that ignores the consumed marker', () {
+      final mutant = workflow.replaceFirst(
+        'if [[ -n "\$consumed" ]]; then',
+        'if false; then',
+      );
+      expect(mutant, isNot(workflow));
+      expect(stalePrepProblems(mutant), contains(contains('consumed_prep')));
+    });
+
+    test('ordinary recovery PR never takes the core publish route', () {
+      final sandbox = _Sandbox();
+      sandbox.file('event.json', '''
+{"pull_request":{"head":{"ref":"fix/unpublished-prep","repo":{"full_name":"leehack/llamadart"}},"labels":[]}}
+''');
+      sandbox.file('output', '');
+      final result = sandbox.run(
+        _step(workflow, 'release', 'Check release-prep gate'),
+        workingDirectory: sandbox.root,
+        env: {
+          'GITHUB_EVENT_PATH': '${sandbox.root}/event.json',
+          'GITHUB_REPOSITORY': 'leehack/llamadart',
+          'GITHUB_OUTPUT': '${sandbox.root}/output',
+        },
+      );
+      expect(result.exitCode, 0, reason: '${result.stderr}');
+      expect(_outputs('${sandbox.root}/output')['should_release'], 'false');
+      expect(sandbox.calls, isEmpty);
+    });
 
     test('resumes companion publication only at the release commit', () {
       expect(_releaseResumeProblems(workflow), isEmpty);

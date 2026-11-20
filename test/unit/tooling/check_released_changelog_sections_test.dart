@@ -1,13 +1,15 @@
 @TestOn('vm')
 library;
 
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:test/test.dart';
 
 import '../../../tool/testing/check_released_changelog_sections.dart';
 
-const _repoName = 'owner/repo';
+const _notFound = '{"error":{"code":"NotFound"}}';
+const _repoName = 'leehack/llamadart';
 const _root = 'CHANGELOG.md';
 const _docs = 'website/docs/changelog/recent-releases.md';
 const _published = '## 1.2.3\n\n- Shipped.\n\n## 1.1.2\n\n- Older.\n';
@@ -89,19 +91,25 @@ class _Repo {
     ...edits,
   });
 
-  List<String> check(
+  Future<List<String>> check(
     String head, {
     bool prep = false,
     String repo = _repoName,
     String? eventBase,
     void Function(String)? log,
+    GithubLookup? lookup,
+    RecoveryTagLookup? tags,
+    RecoveryPubGet? pub,
+    String? proposedMerge,
+    String baseRef = 'main',
+    String headRef = 'fixture',
   }) {
     final event = {
       'pull_request': {
-        'base': {'sha': eventBase ?? base},
+        'base': {'sha': eventBase ?? base, 'ref': baseRef},
         'head': {
           'sha': head,
-          'ref': 'fixture',
+          'ref': headRef,
           'repo': {'full_name': repo},
         },
         'labels': [
@@ -114,8 +122,169 @@ class _Repo {
       event,
       repository: _repoName,
       log: log,
+      lookup:
+          lookup ??
+          ((_, {required paginate}) => fail("Unexpected GitHub lookup")),
+      tags: tags ?? ((_) => fail("Unexpected tag lookup")),
+      pub: pub ?? ((_) => fail("Unexpected pub.dev lookup")),
+      proposedMerge: proposedMerge,
     );
   }
+}
+
+class _RecoveryFixture {
+  _RecoveryFixture(
+    this.repo, {
+    Map<String, String> prepEdits = const {},
+    Map<String, String> beforeEdits = const {},
+    Map<String, String> publishedEdits = const {},
+    bool twoParents = false,
+  }) {
+    if (publishedEdits.isNotEmpty) repo.base = repo.commit(publishedEdits);
+    repo.git(['tag', 'v1.2.3']);
+    remote = Directory.systemTemp.createTempSync('w2117-remote-');
+    addTearDown(() => remote.deleteSync(recursive: true));
+    repo.git(['init', '--bare', remote.path]);
+    original = repo.base;
+    tag('v1.2.3', original);
+    before = repo.commit({'ordinary.txt': 'keep this\n', ...beforeEdits});
+    final single = repo.prep(edits: {'README.md': 'attempt\n', ...prepEdits});
+    prep = twoParents
+        ? repo.git([
+            'commit-tree',
+            '$single^{tree}',
+            '-p',
+            before,
+            '-p',
+            original,
+            '-m',
+            'Two-parent prep',
+          ])
+        : single;
+    if (twoParents) repo.git(['checkout', '--detach', prep]);
+    repo.base = repo.commit({'later.txt': 'also keep this\n'});
+  }
+
+  final _Repo repo;
+  late final Directory remote;
+  late final String original;
+  late final String before;
+  late final String prep;
+  String get path => 'tool/release/recoveries/$prep.json';
+
+  void tag(String name, String sha) {
+    repo.git([
+      '--git-dir=${remote.path}',
+      'fetch',
+      '--no-tags',
+      repo.root.path,
+      sha,
+    ]);
+    repo.git([
+      '--git-dir=${remote.path}',
+      'update-ref',
+      'refs/tags/$name',
+      sha,
+    ]);
+  }
+
+  Map<String, Object> get detail => {
+    'number': 42,
+    'merged': true,
+    'merge_commit_sha': prep,
+    'head': {
+      'ref': 'release/prep-1.2.4',
+      'repo': {'full_name': _repoName},
+    },
+    'base': {
+      'ref': 'main',
+      'sha': original,
+      'repo': {'full_name': _repoName},
+    },
+  };
+
+  Map<String, Object> activity(String tip, {int id = 10}) => {
+    'id': id,
+    'ref': 'refs/heads/main',
+    'activity_type': 'pr_merge',
+    'before': tip,
+    'after': prep,
+  };
+
+  String recovery({
+    String? markerBefore,
+    bool wider = false,
+    Map<String, String> edits = const {},
+  }) {
+    repo.git(['checkout', '--detach', repo.base]);
+    final parents = repo
+        .git(['rev-list', '--parents', '-n', '1', prep])
+        .split(' ');
+    repo.git([
+      'revert',
+      '--no-commit',
+      if (parents.length > 2) ...['-m', '1'],
+      prep,
+    ]);
+    if (wider) repo.git(['rm', 'ordinary.txt']);
+    return repo.commit({
+      path:
+          '${jsonEncode({'version': '1.2.4', 'prep': prep, 'before': markerBefore ?? before, 'pr': 42})}\n',
+      ...edits,
+    });
+  }
+
+  Future<List<String>> check(
+    String head, {
+    Object? pages,
+    Map<String, Object>? pull,
+    Object? releases,
+    RecoveryPubGet? pub,
+    String? eventBase,
+    String? proposedMerge,
+    bool routed = false,
+    String repository = _repoName,
+    bool failActivity = false,
+  }) => repo.check(
+    head,
+    repo: repository,
+    prep: routed,
+    eventBase: eventBase,
+    proposedMerge:
+        proposedMerge ??
+        repo.git([
+          'commit-tree',
+          '$head^{tree}',
+          '-p',
+          eventBase ?? repo.base,
+          '-p',
+          head,
+          '-m',
+          'Proposed recovery',
+        ]),
+    lookup: (endpoint, {required paginate}) async {
+      if (endpoint == 'repos/$_repoName/pulls/42') {
+        expect(paginate, isFalse);
+        return pull ?? detail;
+      }
+      if (endpoint.startsWith('repos/$_repoName/activity?')) {
+        expect(paginate, isTrue);
+        if (failActivity) throw const FormatException('GitHub read failed.');
+        return pages ??
+            [
+              [activity(before)],
+            ];
+      }
+      if (endpoint == 'repos/$_repoName/releases?per_page=100') {
+        expect(paginate, isTrue);
+        return releases ?? [<Object>[]];
+      }
+      fail('Unexpected endpoint $endpoint');
+    },
+    tags: (refs) async =>
+        repo.git(['ls-remote', '--tags', remote.path, ...refs]),
+    pub: pub ?? ((_) async => (status: 404, body: _notFound)),
+  );
 }
 
 void main() {
@@ -123,33 +292,393 @@ void main() {
   setUp(() => repo = _Repo());
   tearDown(() => repo.root.deleteSync(recursive: true));
 
+  test(
+    'an exact unpublished prep recovery preserves ordinary main work',
+    () async {
+      final fixture = _RecoveryFixture(repo, prepEdits: {_root: 'malformed\n'});
+      final head = fixture.recovery();
+      expect(await fixture.check(head), isEmpty);
+      expect(await fixture.check(head), isEmpty);
+      expect(repo.file('ordinary.txt').readAsStringSync(), 'keep this\n');
+      expect(repo.file('later.txt').readAsStringSync(), 'also keep this\n');
+      expect(await fixture.check(head, proposedMerge: head), [
+        contains('tested merge'),
+      ]);
+      expect(await fixture.check(head, routed: true), [
+        contains('ordinary same-repository'),
+      ]);
+      expect(await fixture.check(head, repository: 'fork/repo'), [
+        contains('ordinary same-repository'),
+      ]);
+      expect(checkReleasePrepTrees(repo.root, repo.base, head), [
+        contains('preserve all'),
+      ]);
+    },
+  );
+
+  test(
+    'both exact inverses cannot substitute for the GitHub boundary',
+    () async {
+      final fixture = _RecoveryFixture(repo);
+      final narrow = fixture.recovery();
+      final wide = fixture.recovery(
+        markerBefore: fixture.original,
+        wider: true,
+      );
+      expect(await fixture.check(narrow), isEmpty);
+      expect(await fixture.check(wide), [contains('prove one main commit')]);
+      final rebase = [
+        [fixture.activity(fixture.original)],
+      ];
+      expect(await fixture.check(narrow, pages: rebase), [
+        contains('prove one main commit'),
+      ]);
+      expect(await fixture.check(wide, pages: rebase), [
+        contains('prove one main commit'),
+      ]);
+    },
+  );
+
+  test(
+    'rejects both claimed boundaries of a four-commit update like #2030',
+    () async {
+      repo.git(['tag', 'v1.2.3']);
+      final original = repo.base;
+      repo.commit({'first': 'ab\n'});
+      repo.commit({'second': 'cd\n'});
+      final parent = repo.commit({'third': 'ef\n'});
+      final prep = repo.prep();
+      repo.base = prep;
+      final recoveryPath = 'tool/release/recoveries/$prep.json';
+      for (final before in [original, parent]) {
+        repo.git(['checkout', '--detach', prep]);
+        repo.git([
+          'restore',
+          '--staged',
+          '--worktree',
+          '--source=$before',
+          '.',
+        ]);
+        final head = repo.commit({
+          recoveryPath:
+              '${jsonEncode({'version': '1.2.4', 'prep': prep, 'before': before, 'pr': 2030})}\n',
+        });
+        final proposed = repo.git([
+          'commit-tree',
+          '$head^{tree}',
+          '-p',
+          prep,
+          '-p',
+          head,
+          '-m',
+          'Recovery',
+        ]);
+        final problems = await repo.check(
+          head,
+          proposedMerge: proposed,
+          lookup: (endpoint, {required paginate}) async {
+            if (!paginate) {
+              return {
+                'number': 2030,
+                'merged': true,
+                'merge_commit_sha': prep,
+                'base': {
+                  'ref': 'main',
+                  'repo': {'full_name': _repoName},
+                },
+                'head': {
+                  'ref': 'release/prep-1.2.4',
+                  'repo': {'full_name': _repoName},
+                },
+              };
+            }
+            return [
+              [
+                {
+                  'id': 50596625102,
+                  'ref': 'refs/heads/main',
+                  'activity_type': 'pr_merge',
+                  'before': original,
+                  'after': prep,
+                },
+              ],
+            ];
+          },
+        );
+        expect(problems, [contains('prove one main commit')]);
+      }
+    },
+  );
+
+  test(
+    'rejects missing, malformed, conflicting or failed GitHub activity',
+    () async {
+      final fixture = _RecoveryFixture(repo);
+      final head = fixture.recovery();
+      for (final pages in [
+        [[]],
+        [],
+        [
+          [fixture.activity(fixture.before)],
+          null,
+        ],
+        [
+          [
+            fixture.activity(fixture.before),
+            fixture.activity(fixture.before, id: 11),
+          ],
+        ],
+        [
+          [
+            {...fixture.activity(fixture.before), 'ref': 'refs/heads/other'},
+          ],
+        ],
+        [
+          [
+            {...fixture.activity(fixture.before), 'activity_type': 'push'},
+          ],
+        ],
+      ]) {
+        expect(await fixture.check(head, pages: pages), isNotEmpty);
+      }
+      expect(await fixture.check(head, failActivity: true), [
+        contains('GitHub read failed'),
+      ]);
+      expect(
+        await fixture.check(head, pull: {...fixture.detail, 'number': 43}),
+        [contains('identify')],
+      );
+    },
+  );
+
+  test('a recorded two-parent main update cannot be recovered', () async {
+    final fixture = _RecoveryFixture(repo, twoParents: true);
+    expect(await fixture.check(fixture.recovery()), [
+      contains('prove one main commit'),
+    ]);
+  });
+
+  test('requires previous release ancestry and numbered bytes', () async {
+    final fixture = _RecoveryFixture(
+      repo,
+      beforeEdits: {_root: _published.replaceFirst('Shipped.', 'Changed.')},
+    );
+    final head = fixture.recovery();
+    expect(await fixture.check(head), [contains('previous published history')]);
+    repo.git(['tag', '-f', 'v1.2.3', head]);
+    fixture.tag('v1.2.3', head);
+    expect(await fixture.check(head), [
+      contains('pre-prep first-parent chain'),
+    ]);
+  });
+
+  test(
+    'the authenticated prep must still be on current first-parent main',
+    () async {
+      final fixture = _RecoveryFixture(repo);
+      final lookalike = repo.git([
+        'commit-tree',
+        '${fixture.prep}^{tree}',
+        '-p',
+        fixture.before,
+        '-m',
+        'Lookalike',
+      ]);
+      repo.base = lookalike;
+      expect(await fixture.check(fixture.recovery()), [
+        contains('prove one main commit'),
+      ]);
+    },
+  );
+
+  test(
+    'records are permanent and only one recovery per version can land',
+    () async {
+      final fixture = _RecoveryFixture(repo);
+      final valid = fixture.recovery();
+      expect(await fixture.check(valid), isEmpty);
+      final persisted = repo.file(fixture.path).readAsStringSync();
+      final second = repo.prep();
+      repo.base = second;
+      repo.git(['revert', '--no-commit', second]);
+      final secondRecovery = repo.commit({
+        'tool/release/recoveries/$second.json':
+            '${jsonEncode({'version': '1.2.4', 'prep': second, 'before': valid, 'pr': 43})}\n',
+      });
+      expect(await fixture.check(secondRecovery), [
+        contains('already has a consumed recovery'),
+      ]);
+
+      repo.base = valid;
+      repo.git(['checkout', '--detach', valid]);
+      final changed = repo.commit({fixture.path: '$persisted\n'});
+      expect(await fixture.check(changed), [
+        contains('preserve all existing records'),
+      ]);
+      repo.git(['rm', fixture.path]);
+      final removed = repo.commit({});
+      expect(await fixture.check(removed), [
+        contains('preserve all existing records'),
+      ]);
+      final renamed = repo.commit({'${fixture.path}.moved': persisted});
+      expect(await fixture.check(renamed), [
+        contains('preserve all existing records'),
+      ]);
+
+      repo.base = fixture.prep;
+      repo.git(['checkout', '--detach', fixture.prep]);
+      repo.git(['revert', '--no-commit', fixture.prep]);
+      final twoRecords = repo.commit({
+        fixture.path: persisted,
+        'tool/release/recoveries/${fixture.before}.json': '{}\n',
+      });
+      expect(await fixture.check(twoRecords), [
+        contains('add one regular record'),
+      ]);
+    },
+  );
+
+  test(
+    'a published unchanged companion can stay but cannot be tagged at the failed prep',
+    () async {
+      const name = 'llamadart_llama_cpp_flutter';
+      const version = '1.2.2';
+      final fixture = _RecoveryFixture(
+        repo,
+        publishedEdits: {
+          'packages/$name/pubspec.yaml': 'name: $name\nversion: $version\n',
+        },
+      );
+      final head = fixture.recovery();
+      Future<({int status, String body})> get(Uri uri) async =>
+          uri.path.endsWith('/$version')
+          ? (
+              status: 200,
+              body: '{"version":"$version","pubspec":{"name":"$name"}}',
+            )
+          : (status: 404, body: _notFound);
+      expect(await fixture.check(head, pub: get), isEmpty);
+      fixture.tag('$name-v$version', fixture.prep);
+      expect(await fixture.check(head, pub: get), [
+        contains('$name-v$version already exists'),
+      ]);
+    },
+  );
+
+  test('rejects changed blobs, modes, paths and overlapping edits', () async {
+    final fixture = _RecoveryFixture(repo);
+    expect(
+      await fixture.check(fixture.recovery(edits: {'README.md': 'wrong\n'})),
+      [contains('exactly invert')],
+    );
+    expect(await fixture.check(fixture.recovery(edits: {'unexpected': '\n'})), [
+      contains('exactly invert'),
+    ]);
+    fixture.recovery();
+    repo.git(['update-index', '--chmod=+x', _root]);
+    repo.git(['commit', '-qm', 'Change restored mode']);
+    expect(await fixture.check(repo.git(['rev-parse', 'HEAD'])), [
+      contains('exactly invert'),
+    ]);
+    repo.git(['restore', '--worktree', _root]);
+    final exact = fixture.recovery();
+    repo.git(['checkout', '--detach', fixture.before]);
+    final stale = repo.commit({'moved.txt': '\n'});
+    expect(await fixture.check(exact, eventBase: stale), [
+      contains('up-to-date'),
+    ]);
+  });
+
+  test(
+    'rejects publication and probes the actual bumped companion version',
+    () async {
+      const companion = 'llamadart_llama_cpp_flutter';
+      final fixture = _RecoveryFixture(
+        repo,
+        prepEdits: {
+          'packages/$companion/darwin/$companion/Package.swift': '// fixture',
+          'packages/$companion/pubspec.yaml':
+              'name: $companion\nversion: 1.2.9\n',
+        },
+      );
+      final head = fixture.recovery();
+      final paths = <String>[];
+      expect(
+        await fixture.check(
+          head,
+          pub: (uri) async {
+            paths.add(uri.path);
+            return (status: 404, body: _notFound);
+          },
+        ),
+        isEmpty,
+      );
+      expect(paths, [
+        '/api/packages/llamadart/versions/1.2.4',
+        '/api/packages/$companion/versions/1.2.9',
+      ]);
+      for (final status in [200, 401, 503]) {
+        expect(
+          await fixture.check(
+            head,
+            pub: (uri) async => (
+              status: uri.path.endsWith('/1.2.9') ? status : 404,
+              body: _notFound,
+            ),
+          ),
+          [contains('HTTP $status')],
+        );
+      }
+      expect(
+        await fixture.check(
+          head,
+          releases: [
+            [
+              {'tag_name': 'v1.2.4', 'draft': true},
+            ],
+          ],
+        ),
+        [contains('GitHub Release')],
+      );
+      fixture.tag('$companion-v1.2.9', fixture.original);
+      expect(await fixture.check(head), [
+        contains('$companion-v1.2.9 already exists'),
+      ]);
+      fixture.tag('v1.2.4', fixture.prep);
+      expect(await fixture.check(head), [contains('v1.2.4 already exists')]);
+    },
+  );
+
   for (final (path, replacement) in [
     (_root, '# Moved intro\n\n$_published'),
     (_docs, '## Unreleased\n\n- Pending.\n\n$_published'),
     (changelogArchive, '$_archive\n'),
     (changelogCutover, '$_marker\n'),
   ]) {
-    test('ordinary PR protects $path even from a clean merge checkout', () {
-      final head = repo.commit({path: replacement});
-      repo.git(['checkout', '-q', '--detach', repo.base]);
-      expect(repo.check(head), [contains(path)]);
-    });
+    test(
+      'ordinary PR protects $path even from a clean merge checkout',
+      () async {
+        final head = repo.commit({path: replacement});
+        repo.git(['checkout', '-q', '--detach', repo.base]);
+        expect(await repo.check(head), [contains(path)]);
+      },
+    );
   }
 
-  test('deletion, rename and executable modes are protected', () {
+  test('deletion, rename and executable modes are protected', () async {
     repo.file(changelogCutover).deleteSync();
     repo.file(changelogArchive).renameSync(repo.file('archive.md').path);
     repo.git(['update-index', '--chmod=+x', _root]);
     repo.git(['commit', '-qam', 'evidence', '--allow-empty']);
     expect(
-      repo.check(repo.git(['rev-parse', 'HEAD'])),
+      await repo.check(repo.git(['rev-parse', 'HEAD'])),
       containsAll([contains(changelogCutover)]),
     );
-    expect(repo.check(repo.git(['rev-parse', 'HEAD~1'])), isEmpty);
+    expect(await repo.check(repo.git(['rev-parse', 'HEAD~1'])), isEmpty);
   });
 
-  test('allows an exact prep with published bytes unchanged', () {
-    expect(repo.check(repo.prep(), prep: true), isEmpty);
+  test('allows an exact prep with published bytes unchanged', () async {
+    expect(await repo.check(repo.prep(), prep: true), isEmpty);
   });
 
   for (final (label, edits) in [
@@ -173,44 +702,49 @@ void main() {
     ('changed archive join', {changelogArchive: '$_archive\n'}),
     ('repin', {changelogCutover: '$_marker\n'}),
   ]) {
-    test('core prep rejects $label', () {
-      expect(repo.check(repo.prep(edits: edits), prep: true), isNotEmpty);
+    test('core prep rejects $label', () async {
+      expect(await repo.check(repo.prep(edits: edits), prep: true), isNotEmpty);
     });
   }
 
   test(
     'a release-prep label cannot grant a fork or a Genkit change access',
-    () {
+    () async {
       final head = repo.prep();
-      expect(repo.check(head, prep: true, repo: 'fork/repo'), isNotEmpty);
+      expect(await repo.check(head, prep: true, repo: 'fork/repo'), isNotEmpty);
       final genkit = repo.commit({
         'packages/genkit_llamadart/file.txt': 'other',
       });
-      expect(repo.check(genkit, prep: true), isNotEmpty);
+      expect(await repo.check(genkit, prep: true), isNotEmpty);
     },
   );
 
-  test('core prep moves history only to meet the changelog size limit', () {
-    final previousMinor = _published.indexOf('## 1.1.2');
-    final head = repo.prep(
-      edits: {
-        _root: '# Releases\n\n$_new${_published.substring(0, previousMinor)}',
-        changelogArchive: '${_published.substring(previousMinor)}$_archive',
-      },
-    );
-    expect(repo.check(head, prep: true), [contains('pub.dev size limit')]);
-  });
+  test(
+    'core prep moves history only to meet the changelog size limit',
+    () async {
+      final previousMinor = _published.indexOf('## 1.1.2');
+      final head = repo.prep(
+        edits: {
+          _root: '# Releases\n\n$_new${_published.substring(0, previousMinor)}',
+          changelogArchive: '${_published.substring(previousMinor)}$_archive',
+        },
+      );
+      expect(await repo.check(head, prep: true), [
+        contains('pub.dev size limit'),
+      ]);
+    },
+  );
 
-  test('a metadata-only pubspec edit uses ordinary protection', () {
+  test('a metadata-only pubspec edit uses ordinary protection', () async {
     final head = repo.commit({
       'pubspec.yaml': 'name: llamadart\nversion: 1.2.3\ndescription: Changed\n',
     });
     final logs = <String>[];
-    expect(repo.check(head, prep: true, log: logs.add), isEmpty);
+    expect(await repo.check(head, prep: true, log: logs.add), isEmpty);
     expect(logs, ['Core release prep: false']);
   });
 
-  test('Unreleased must precede all numbered sections at cutover', () {
+  test('Unreleased must precede all numbered sections at cutover', () async {
     expect(
       () => ChangelogHistory.parse(
         '$_published\n$_pending',
@@ -220,20 +754,23 @@ void main() {
     );
   });
 
-  test('legacy seed parity is required and numbered bytes stay fixed', () {
-    final legacy = ChangelogHistory.parse(
-      '## Unreleased\n\n- Seed.\n\n$_published',
-      allowUnreleased: true,
-    );
-    expect(legacySeedNotes(legacy, legacy), ['Seed.']);
-    final different = ChangelogHistory.parse(
-      '## Unreleased\n\n- Other.\n\n$_published',
-      allowUnreleased: true,
-    );
-    expect(() => legacySeedNotes(legacy, different), throwsFormatException);
-  });
+  test(
+    'legacy seed parity is required and numbered bytes stay fixed',
+    () async {
+      final legacy = ChangelogHistory.parse(
+        '## Unreleased\n\n- Seed.\n\n$_published',
+        allowUnreleased: true,
+      );
+      expect(legacySeedNotes(legacy, legacy), ['Seed.']);
+      final different = ChangelogHistory.parse(
+        '## Unreleased\n\n- Other.\n\n$_published',
+        allowUnreleased: true,
+      );
+      expect(() => legacySeedNotes(legacy, different), throwsFormatException);
+    },
+  );
 
-  test('event accepts exactly one migration against its pinned main', () {
+  test('event accepts exactly one migration against its pinned main', () async {
     final legacy = _Repo(activated: false);
     addTearDown(() => legacy.root.deleteSync(recursive: true));
     final expected = {
@@ -243,18 +780,20 @@ void main() {
       changelogCutover: '{"tag":"v1.2.3","commit":"${legacy.base}"}\n',
     };
     final head = legacy.commit(expected);
-    expect(legacy.check(head), isEmpty);
+    expect(await legacy.check(head), isEmpty);
     final wrongMarker = legacy.commit({
       changelogCutover: '{"tag":"v1.2.3","commit":"$head"}\n',
     });
-    expect(legacy.check(wrongMarker), [contains('last legacy main')]);
+    expect(await legacy.check(wrongMarker), [contains('last legacy main')]);
     legacy.git(['checkout', '--detach', legacy.base]);
     final movedMain = legacy.commit({'other.txt': 'A change on main\n'});
-    expect(legacy.check(head, eventBase: movedMain), [
+    expect(await legacy.check(head, eventBase: movedMain), [
       contains('last legacy main'),
     ]);
     legacy.git(['checkout', '--detach', head]);
     final mutated = legacy.commit({_root: '${expected[_root]}\n'});
-    expect(legacy.check(mutated), [contains('prescribed pending wording')]);
+    expect(await legacy.check(mutated), [
+      contains('prescribed pending wording'),
+    ]);
   });
 }

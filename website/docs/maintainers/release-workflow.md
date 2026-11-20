@@ -419,25 +419,60 @@ rsync -a --delete \
 
 ## 5. If automation is blocked
 
-If **Validate release state** fails after the prep lands, record the
-landed SHA and failed check. Confirm that
-`git ls-remote --tags origin "v$version" "*-v$version"` succeeds and returns
-no core or companion tags. Reproduce the failure from that SHA with its first
-parent and the immutable message from `git show -s --format=%B`. If a transient
-dependency or service failed, rerun the original workflow at the same SHA
-after it recovers.
+If **Validate release state** fails after the prep lands, record the failed
+run, landed prep SHA and current main SHA. Reproduce the failure at the
+landed SHA with its immutable message from `git show -s --format=%B`.
+Retry a transient failure at the same SHA after the dependency has recovered.
 
-If the receipt or candidate tree is invalid, open a release-blocking issue.
-A rebase merge, a merge commit or an edited squash message belongs in this
-recovery path. A rerun reads the same bytes, and a new prep needs the previous
-core tag.
-Hold publication while maintainers review a recovery PR that inverts the
-prep squash and restores the last tagged release metadata and changelog bytes
-while retaining unrelated main changes. The protected-changelog gate rejects
-a normal revert, so the recovery must include a reviewed policy change scoped to
-that unpublished prep. Verify the recovery at its proposed merge tree,
-then regenerate the prep and its receipt from current main. Keep the
-existing tags and use the normal publisher for the new squash.
+For a deterministic failure, open a release-blocking issue and hold
+publication. Stop or drain existing publishers and hold reruns until the
+recovery lands. Reruns that predate the consumed-record guard can still use
+their original workflow.
+
+1. Look up the merged prep PR and its main ref update in GitHub repository
+   activity. The update must end at the landed prep SHA and start at its sole
+   Git parent. The start of that update is `before`.
+2. Confirm the owner repository has no exact tag or GitHub Release for the
+   attempted core version or any new Apple companion version. Check draft
+   releases with maintainer access. Check each package's exact pub.dev
+   version endpoint, using the companion's own version. Previously shipped
+   companion versions can stay. If any attempted version reached a tag,
+   GitHub Release or pub.dev, use the partial-publication and resume procedure
+   in [Propagation waits](#propagation-waits).
+3. Start an ordinary branch at current main. Apply the inverse with
+   `git revert --no-commit "$prep"`. If a later main change overlaps the
+   prep, keep publication held and take the conflict to the blocking issue.
+   Add one regular, nonexecutable record at
+   `tool/release/recoveries/<full-landed-sha>.json`. Use the exact key order
+   and compact JSON encoding below, followed by one newline. The two SHAs
+   must be full and lowercase. Set `pr` to the positive original PR number.
+
+   ```json
+   {"version":"0.20.4","prep":"1111111111111111111111111111111111111111","before":"2222222222222222222222222222222222222222","pr":1234}
+   ```
+
+4. Open a same-repository PR to main with an ordinary branch name and a
+   specific Changelog N/A. Run the protected-changelog policy against the
+   immutable event base and head and the tested merge commit. For a local
+   check, save the real PR event fields and use `GITHUB_EVENT_NAME=pull_request`,
+   `GITHUB_EVENT_PATH` for that file, `GITHUB_REPOSITORY=leehack/llamadart` and
+   `GITHUB_SHA` for the two-parent tested merge when running
+   `dart run tool/testing/check_released_changelog_sections.dart`.
+   Compare the intended squash tree with the tested tree. Immediately before
+   approving that squash, recheck artifact absence and confirm both the PR
+   head and the tested main base are current.
+5. Regenerate release notes from the recovered main and the last published
+   tag. The ledger records the failed prep and the recovery SHA. Attach the
+   new ledger and receipt to a fresh prep for the same version. Run the
+   normal CI, pre-tag checks and independent audit.
+
+For a multi-commit main update, a two-parent merge or unavailable GitHub
+boundary evidence, keep publication held and attach the PR and activity
+evidence, Git graph and candidate path diffs to the release-blocking issue.
+Retry missing reads. If the boundary still cannot be verified, a maintainer
+must independently establish the actual previous main tip and review a
+case-specific repair and its collector impact. Keep the marker absent and the
+protected-changelog policy active during that review.
 
 If the docs snapshot workflow cannot push directly to main, generate the
 snapshot from the release tag with `dart run tool/cut_version.dart VERSION`
@@ -513,10 +548,13 @@ gh api graphql -f owner=leehack -f name=llamadart -F number="$number" -f query='
 
 `PR changelog` validates PR descriptions, including docs, bots and batch
 envelopes. Analyze and docs version CI compare the real PR head against
-its merge base with the immutable event base. Only core release prep may
-change numbered core changelogs or the archive. Published section bytes
-and the cutover marker stay fixed. Apple companion, Genkit and Model
-Store package notes follow their own changelog rules.
+its merge base with the immutable event base. Core release prep can change
+numbered core changelogs or the archive. The
+[unpublished prep recovery](#5-if-automation-is-blocked) is the only other
+route. It restores the exact pre-prep tree entries and adds a single immutable
+recovery record. Published section bytes and the cutover marker stay fixed.
+Apple companion, Genkit and Model Store package notes follow their own
+changelog rules.
 
 ## Changelog size
 

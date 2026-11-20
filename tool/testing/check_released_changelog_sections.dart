@@ -1,9 +1,11 @@
 #!/usr/bin/env dart
 
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
 import '../release/pr_changelog.dart';
+import '../release/pub_dev_api.dart';
 
 export '../release/pr_changelog.dart' show isCoreReleasePrep;
 
@@ -14,6 +16,9 @@ const releasedChangelogs = <String>[
 const changelogArchive = 'doc/changelog_archive.md';
 const changelogCutover = 'tool/release/changelog_pr_cutover.json';
 const changelogSizeLimit = 256 * 1024;
+const _recoveryDirectory = 'tool/release/recoveries';
+const _ownerRepository = 'leehack/llamadart';
+const _mainRef = 'refs/heads/main';
 
 final _unreleasedHeading = RegExp(
   r'^ {0,3}##[ \t]+Unreleased(?:[ \t]+#+)?[ \t]*$',
@@ -112,13 +117,19 @@ List<String> retainedReleaseHeadings(
   ];
 }
 
-String? coreVersionFromPubspec(String text) {
+String? coreVersionFromPubspec(String text) =>
+    _versionFromPubspec(text, 'llamadart');
+
+String? _versionFromPubspec(String text, String package) {
   final version = RegExp(
     r'^version:[ \t]+([^\s]+)[ \t]*\r?$',
     multiLine: true,
   ).allMatches(text).toList();
-  final name = RegExp(r'^name:[ \t]+llamadart[ \t]*\r?$', multiLine: true);
-  if (version.length == 1 && name.hasMatch(text)) {
+  final names = RegExp(
+    r'^name:[ \t]+([^\s]+)[ \t]*\r?$',
+    multiLine: true,
+  ).allMatches(text).toList();
+  if (version.length == 1 && names.length == 1 && names.single[1] == package) {
     final value = version.single[1]!;
     if (coreReleaseVersion.hasMatch(value)) return value;
   }
@@ -126,6 +137,16 @@ String? coreVersionFromPubspec(String text) {
 }
 
 typedef _TreeEntry = ({String mode, String type, String id});
+typedef _Change = ({
+  String oldMode,
+  String newMode,
+  String oldId,
+  String newId,
+});
+typedef GithubLookup =
+    Future<Object?> Function(String endpoint, {required bool paginate});
+typedef RecoveryTagLookup = Future<String> Function(List<String> refs);
+typedef RecoveryPubGet = Future<PubDevResponse> Function(Uri uri);
 
 class _Git {
   const _Git(this.root);
@@ -145,16 +166,62 @@ class _Git {
   }
 
   String blob(String sha, String path) => run(['show', '$sha:$path']);
+
+  Map<String, _Change> changes(String base, String head, {String? path}) {
+    final result = Process.runSync(
+      'git',
+      [
+        'diff',
+        '--raw',
+        '--no-abbrev',
+        '--no-renames',
+        '--no-ext-diff',
+        '-z',
+        base,
+        head,
+        '--',
+        ?path,
+      ],
+      workingDirectory: root.path,
+      stdoutEncoding: latin1,
+    );
+    if (result.exitCode != 0) throw StateError('Git tree comparison failed.');
+    final rows = (result.stdout as String).split('\x00');
+    return {
+      for (var i = 0; i + 1 < rows.length; i += 2)
+        rows[i + 1]: _change(rows[i]),
+    };
+  }
+
+  _Change _change(String row) {
+    final fields = row.substring(1).split(' ');
+    return (
+      oldMode: fields[0],
+      newMode: fields[1],
+      oldId: fields[2],
+      newId: fields[3],
+    );
+  }
+
+  List<String> firstParents(String sha) =>
+      run(['rev-list', '--first-parent', sha]).trim().split('\n');
+
+  List<String> parents(String sha) =>
+      run(['show', '-s', '--format=%P', sha]).trim().split(' ');
 }
 
 /// Determines the PR's release route and compares the real head with its merge
 /// base. The event's immutable base SHA also anchors the activation boundary.
-List<String> checkReleasedChangelogSections(
+Future<List<String>> checkReleasedChangelogSections(
   Directory repoRoot,
   Map<String, Object?> event, {
   required String repository,
   void Function(String message)? log,
-}) {
+  GithubLookup lookup = recoveryGithubGet,
+  RecoveryTagLookup tags = _ownerTags,
+  RecoveryPubGet pub = _readRecoveryPub,
+  String? proposedMerge,
+}) async {
   final request = event['pull_request'];
   if (request is! Map) {
     throw StateError('The event has no pull request base SHA.');
@@ -177,20 +244,601 @@ List<String> checkReleasedChangelogSections(
   }
   final git = _Git(repoRoot);
   final fork = git.run(['merge-base', base, head]).trim();
-  final prep =
-      isCoreReleasePrep(
-        labels: [
-          for (final label in request['labels'] as List? ?? const [])
-            if (label is Map && label['name'] is String)
-              label['name'] as String,
-        ],
-        headRef: ref,
-        headRepository: headRepository,
-        repository: repository,
-      ) &&
-      _isCorePrepDiff(git, fork, head);
+  final labels = _labels(request);
+  final routedPrep = isCoreReleasePrep(
+    labels: labels,
+    headRef: ref,
+    headRepository: headRepository,
+    repository: repository,
+  );
+  final prep = routedPrep && _isCorePrepDiff(git, fork, head);
   log?.call('Core release prep: $prep');
+  final records = _recoveryChanges(git.changes(fork, head));
+  if (records.isNotEmpty) {
+    if (repository != _ownerRepository ||
+        headRepository != repository ||
+        (request['base'] as Map)['ref'] != 'main' ||
+        fork != base ||
+        routedPrep ||
+        ref.startsWith('release/genkit_llamadart-') ||
+        labels.contains('release-prep:genkit_llamadart')) {
+      return [
+        'Recovery requires an up-to-date ordinary same-repository PR onto main.',
+      ];
+    }
+    if (proposedMerge == null ||
+        !_sha.hasMatch(proposedMerge) ||
+        git.parents(proposedMerge).join(' ') != '$base $head') {
+      return [
+        'Recovery requires the tested merge with the event base and head as parents.',
+      ];
+    }
+    try {
+      final recovery = await _proveRecovery(git, base, proposedMerge, lookup);
+      if (recovery == null ||
+          git.run(['rev-parse', '$proposedMerge^{tree}']).trim() !=
+              git.run(['rev-parse', '$head^{tree}']).trim()) {
+        throw const FormatException(
+          'The tested recovery tree differs from the PR head.',
+        );
+      }
+      await _requireUnpublished(git, recovery, lookup, tags, pub);
+      log?.call('Unpublished core prep recovery: ${recovery.prep}');
+      return [];
+    } on FormatException catch (error) {
+      return [error.message];
+    } on StateError catch (error) {
+      return [error.message];
+    }
+  }
   return _checkTrees(git, fork, head, prep: prep, eventBase: base);
+}
+
+List<String> _labels(Map request) => [
+  for (final label in request['labels'] as List? ?? const [])
+    if (label is Map && label['name'] is String) label['name'] as String,
+];
+
+Map<String, _Change> _recoveryChanges(Map<String, _Change> changes) =>
+    Map.fromEntries(
+      changes.entries.where(
+        (row) =>
+            row.key == _recoveryDirectory ||
+            row.key.startsWith('$_recoveryDirectory/'),
+      ),
+    );
+
+typedef _Recovery = ({
+  String version,
+  String prep,
+  String before,
+  int pr,
+  String previousTag,
+  String previousRelease,
+});
+
+typedef RecoveredPrep = ({String prep, int pr, String recovery});
+
+/// Verifies each introduction in the input window before collection can write.
+Future<List<RecoveredPrep>> verifyPrepRecoveryIntroductions(
+  Directory root,
+  List<String> window,
+  GithubLookup lookup,
+) async {
+  if (window.isEmpty) return [];
+  final git = _Git(root);
+  final recovered = <RecoveredPrep>[];
+  final start = git.parents(window.first).first;
+  final introductions = git
+      .run([
+        'rev-list',
+        '--first-parent',
+        '--full-history',
+        '--reverse',
+        '$start..${window.last}',
+        '--',
+        _recoveryDirectory,
+      ])
+      .trim()
+      .split('\n');
+  for (final commit in introductions.where((sha) => sha.isNotEmpty)) {
+    final parents = git.parents(commit);
+    final changes = git.changes(
+      parents.first,
+      commit,
+      path: _recoveryDirectory,
+    );
+    if (changes.isEmpty) continue;
+    if (parents.length != 1) {
+      throw const FormatException(
+        'A recovery must be introduced by a single-parent main commit.',
+      );
+    }
+    final recovery = (await _proveRecovery(
+      git,
+      parents.single,
+      commit,
+      lookup,
+    ))!;
+    if (!window.contains(recovery.prep)) {
+      throw const FormatException(
+        'Recovery and failed prep must be in the same first-parent window.',
+      );
+    }
+    recovered.add((prep: recovery.prep, pr: recovery.pr, recovery: commit));
+  }
+  return recovered;
+}
+
+Future<_Recovery?> _proveRecovery(
+  _Git git,
+  String base,
+  String result,
+  GithubLookup lookup,
+) async {
+  final changes = git.changes(base, result);
+  final records = _recoveryChanges(changes);
+  if (records.isEmpty) return null;
+  if (records.length != 1 ||
+      records.values.single.oldMode != '000000' ||
+      records.values.single.newMode != '100644') {
+    throw const FormatException(
+      'Recovery must add one regular record and preserve all existing records.',
+    );
+  }
+  final path = records.keys.single;
+  final (version, prep, before, pr) = _readRecoveryRecord(git, result, path);
+  for (final oldPath
+      in git
+          .run([
+            'ls-tree',
+            '-r',
+            '--name-only',
+            '-z',
+            base,
+            '--',
+            _recoveryDirectory,
+          ])
+          .split('\x00')
+          .where((path) => path.isNotEmpty)) {
+    if (_readRecoveryRecord(git, base, oldPath).$1 == version) {
+      throw FormatException(
+        'Release $version already has a consumed recovery.',
+      );
+    }
+  }
+  await _proveRecoveryLanding(git, base, before, prep, pr, lookup);
+  final footprint = git.changes(prep, before);
+  if (git.entry(before, changelogCutover)?.mode != '100644' ||
+      footprint.containsKey(changelogCutover) ||
+      _recoveryChanges(footprint).isNotEmpty ||
+      !_isCorePrepDiff(git, before, prep)) {
+    throw const FormatException(
+      'Failed prep must bump core and preserve the cutover and recovery records.',
+    );
+  }
+  if (changes.length != footprint.length + 1 ||
+      footprint.entries.any((entry) => changes[entry.key] != entry.value)) {
+    throw const FormatException(
+      'Recovery tree must exactly invert the failed prep without overlapping later edits.',
+    );
+  }
+  final previous = coreVersionFromPubspec(git.blob(before, 'pubspec.yaml'))!;
+  final attempted = coreVersionFromPubspec(git.blob(prep, 'pubspec.yaml'));
+  if (attempted != version || !_versionIncreases(previous, version)) {
+    throw const FormatException(
+      'Recovery marker must identify the attempted stable core version increase.',
+    );
+  }
+  final tag = 'v$previous';
+  final previousRelease = git.run([
+    'rev-parse',
+    '--verify',
+    'refs/tags/$tag^{commit}',
+  ]).trim();
+  if (!git.firstParents(before).contains(previousRelease) ||
+      git.entry(previousRelease, 'pubspec.yaml')?.mode != '100644' ||
+      coreVersionFromPubspec(git.blob(previousRelease, 'pubspec.yaml')) !=
+          previous) {
+    throw FormatException(
+      'Previous core tag $tag must match its package on the pre-prep first-parent chain.',
+    );
+  }
+  _verifyPublishedHistory(git, previousRelease, before, previous);
+  return (
+    version: version,
+    prep: prep,
+    before: before,
+    pr: pr,
+    previousTag: tag,
+    previousRelease: previousRelease,
+  );
+}
+
+bool _versionIncreases(String previous, String next) {
+  final old = coreReleaseVersion.firstMatch(previous)!;
+  final current = coreReleaseVersion.firstMatch(next)!;
+  for (var index = 1; index <= 3; index++) {
+    final delta = BigInt.parse(
+      current[index]!,
+    ).compareTo(BigInt.parse(old[index]!));
+    if (delta != 0) return delta > 0;
+  }
+  return false;
+}
+
+(String, String, String, int) _readRecoveryRecord(
+  _Git git,
+  String commit,
+  String path,
+) {
+  if (git.entry(commit, path)?.mode != '100644') {
+    throw const FormatException('Recovery records must be regular files.');
+  }
+  final source = git.blob(commit, path);
+  if (jsonDecode(source)
+      case {
+        'version': final String version,
+        'prep': final String prep,
+        'before': final String before,
+        'pr': final int pr,
+      }
+      when coreReleaseVersion.hasMatch(version) &&
+          _sha.hasMatch(prep) &&
+          _sha.hasMatch(before) &&
+          pr > 0 &&
+          path == '$_recoveryDirectory/$prep.json') {
+    final canonical = jsonEncode({
+      'version': version,
+      'prep': prep,
+      'before': before,
+      'pr': pr,
+    });
+    if (source == '$canonical\n') return (version, prep, before, pr);
+  }
+  throw const FormatException(
+    'Invalid canonical unpublished prep recovery record.',
+  );
+}
+
+Future<void> _proveRecoveryLanding(
+  _Git git,
+  String base,
+  String before,
+  String prep,
+  int pr,
+  GithubLookup lookup,
+) async {
+  final detail = await lookup(
+    'repos/$_ownerRepository/pulls/$pr',
+    paginate: false,
+  );
+  if (detail
+      case {
+        'number': int number,
+        'merged': true,
+        'merge_commit_sha': String merged,
+        'base': {'ref': 'main', 'repo': {'full_name': _ownerRepository}},
+        'head': {
+          'ref': final String ref,
+          'repo': {'full_name': _ownerRepository},
+        },
+      }
+      when number == pr &&
+          merged == prep &&
+          !ref.startsWith('release/genkit_llamadart-')) {
+    final byBranch = isCoreReleasePrep(
+      labels: const [],
+      headRef: ref,
+      headRepository: _ownerRepository,
+      repository: _ownerRepository,
+    );
+    if (!byBranch && !await _wasPrepLabeled(lookup, pr, prep)) {
+      throw FormatException('PR #$pr was outside core prep routing at merge.');
+    }
+  } else {
+    throw FormatException(
+      'PR #$pr does not identify the same-repository main prep at $prep.',
+    );
+  }
+  final pages = await _recoveryPages(
+    lookup,
+    'activity?ref=refs%2Fheads%2Fmain&activity_type=pr_merge&per_page=100',
+  );
+  final matches = <int, String>{};
+  for (final row in pages) {
+    if (row case {
+      'id': final int id,
+      'ref': _mainRef,
+      'activity_type': 'pr_merge',
+      'after': final String after,
+      'before': final String previous,
+    } when id > 0 && _sha.hasMatch(previous) && _sha.hasMatch(after)) {
+      if (after != prep) continue;
+      if (matches.containsKey(id) && matches[id] != previous) {
+        throw FormatException('Conflicting GitHub activity for prep $prep.');
+      }
+      matches[id] = previous;
+    } else {
+      throw const FormatException('Malformed GitHub main merge activity.');
+    }
+  }
+  if (matches.length != 1 ||
+      matches.values.single != before ||
+      git.parents(prep).join(' ') != before ||
+      !git.firstParents(base).contains(prep)) {
+    throw FormatException(
+      'GitHub activity must prove one main commit from $before to $prep.',
+    );
+  }
+}
+
+Future<bool> _wasPrepLabeled(GithubLookup lookup, int pr, String prep) async {
+  final timeline = await _recoveryPages(
+    lookup,
+    'issues/$pr/timeline?per_page=100',
+  );
+  var labeled = false;
+  bool? atMerge;
+  for (final event in timeline) {
+    switch (event) {
+      case {'event': 'merged', 'commit_id': String sha} when sha == prep:
+        if (atMerge != null) {
+          throw FormatException('Conflicting merged events for PR #$pr.');
+        }
+        atMerge = labeled;
+      case {'event': 'labeled', 'label': {'name': 'release-prep'}}:
+        labeled = true;
+      case {'event': 'unlabeled', 'label': {'name': 'release-prep'}}:
+        labeled = false;
+    }
+  }
+  return atMerge == true;
+}
+
+Future<List<Map>> _recoveryPages(GithubLookup lookup, String endpoint) async {
+  final response = await lookup(
+    'repos/$_ownerRepository/$endpoint',
+    paginate: true,
+  );
+  if (response is! List ||
+      response.isEmpty ||
+      response.any((page) => page is! List || page.any((row) => row is! Map))) {
+    throw const FormatException(
+      'Incomplete or malformed paginated GitHub response.',
+    );
+  }
+  return [for (final page in response.cast<List>()) ...page.cast<Map>()];
+}
+
+void _verifyPublishedHistory(
+  _Git git,
+  String release,
+  String before,
+  String version,
+) {
+  ChangelogHistory read(String sha, String path) {
+    if (git.entry(sha, path)?.mode != '100644') {
+      throw FormatException(
+        'Published history requires a regular file at $path.',
+      );
+    }
+    return ChangelogHistory.parse(
+      git.blob(sha, path),
+      allowUnreleased:
+          sha == release && version == '0.20.2' && path != changelogArchive,
+    );
+  }
+
+  List<MapEntry<String, String>> numbered(ChangelogHistory history) => [
+    for (final row in history.sections.entries)
+      if (row.key != 'Unreleased') row,
+  ];
+  final oldRoot = numbered(read(release, releasedChangelogs.first));
+  final oldArchive = numbered(read(release, changelogArchive));
+  final root = numbered(read(before, releasedChangelogs.first));
+  final archive = numbered(read(before, changelogArchive));
+  final oldDocs = numbered(read(release, releasedChangelogs.last));
+  final docs = numbered(read(before, releasedChangelogs.last));
+  final parts = coreReleaseVersion.firstMatch(version)!;
+  final retained = retainedReleaseHeadings(
+    [...oldRoot, ...oldArchive].map((row) => '## ${row.key}'),
+    major: int.parse(parts[1]!),
+    minor: int.parse(parts[2]!),
+  ).toSet();
+  if (root.first.key != version ||
+      docs.first.key != version ||
+      root.length > oldRoot.length ||
+      !_sameSections([...oldRoot, ...oldArchive], [...root, ...archive]) ||
+      !_sameSections(
+        oldDocs.where((row) => retained.contains('## ${row.key}')).toList(),
+        docs,
+      )) {
+    throw const FormatException(
+      'The pre-prep numbered changelogs must preserve the previous published history.',
+    );
+  }
+}
+
+Future<void> _requireUnpublished(
+  _Git git,
+  _Recovery recovery,
+  GithubLookup lookup,
+  RecoveryTagLookup tags,
+  RecoveryPubGet pub,
+) async {
+  final remotePrevious = await _tagSha(tags, recovery.previousTag);
+  if (remotePrevious != recovery.previousRelease) {
+    throw FormatException(
+      'Owner tag ${recovery.previousTag} disagrees with the previous release.',
+    );
+  }
+  final before = _companionVersions(git, recovery.before);
+  final prep = _companionVersions(git, recovery.prep);
+  final released = _companionVersions(git, recovery.previousRelease);
+  if (!prep.keys.toSet().containsAll({...before.keys, ...released.keys})) {
+    throw const FormatException(
+      'Cannot confirm every existing Apple companion in the prep tree.',
+    );
+  }
+  final attempted = <String, String>{'llamadart': recovery.version, ...prep};
+  final newTags = <String>{};
+  for (final entry in attempted.entries) {
+    final name = entry.key;
+    final version = entry.value;
+    final tag = name == 'llamadart' ? 'v$version' : '$name-v$version';
+    final oldVersion = before[name] == version && released[name] == version;
+    final sha = await _tagSha(tags, tag);
+    if (sha != null && (!oldVersion || sha == recovery.prep)) {
+      throw FormatException(
+        'Owner tag $tag already exists at $sha; reconcile publication.',
+      );
+    }
+    final response = await pub(pubDevVersionUri(name, version));
+    if (response.status == HttpStatus.ok && oldVersion) {
+      if (jsonDecode(response.body) case {
+        'version': String actual,
+        'pubspec': {'name': String package},
+      } when actual == version && package == name) {
+        continue;
+      }
+      throw FormatException('Malformed pub.dev response for $name $version.');
+    }
+    if (response.status != HttpStatus.notFound) {
+      throw FormatException(
+        'pub.dev $name $version returned HTTP ${response.status}; cannot establish absence.',
+      );
+    }
+    if (jsonDecode(response.body) case {'error': {'code': 'NotFound'}}) {
+      if (sha == null) newTags.add(tag);
+    } else {
+      throw FormatException('Malformed pub.dev 404 for $name $version.');
+    }
+  }
+  for (final row in await _recoveryPages(lookup, 'releases?per_page=100')) {
+    if (row['tag_name'] case final String tag when tag.isNotEmpty) {
+      if (newTags.contains(tag)) {
+        throw FormatException(
+          'GitHub Release for $tag already exists; reconcile publication.',
+        );
+      }
+    } else {
+      throw const FormatException('Malformed GitHub Releases response.');
+    }
+  }
+}
+
+Map<String, String> _companionVersions(_Git git, String sha) {
+  final paths = git
+      .run(['ls-tree', '-r', '--name-only', '-z', sha, '--', 'packages'])
+      .split('\x00');
+  final names = <String>{};
+  for (final path in paths) {
+    final parts = path.split('/');
+    if (parts.length == 3 &&
+        parts[2] == 'pubspec.yaml' &&
+        const {
+          'llamadart_llama_cpp_flutter',
+          'llamadart_litert_lm_flutter',
+          'llamadart_stable_diffusion_flutter',
+        }.contains(parts[1])) {
+      names.add(parts[1]);
+    }
+    if (parts.length == 5 &&
+        parts[2] == 'darwin' &&
+        parts[1] == parts[3] &&
+        parts[4] == 'Package.swift') {
+      names.add(parts[1]);
+    }
+  }
+  final found = <String, String>{};
+  for (final name in names) {
+    final pubspec = 'packages/$name/pubspec.yaml';
+    final version = git.entry(sha, pubspec)?.mode == '100644'
+        ? _versionFromPubspec(git.blob(sha, pubspec), name)
+        : null;
+    if (!RegExp(r'^[a-z][a-z0-9_]*$').hasMatch(name) || version == null) {
+      throw FormatException(
+        'Cannot determine publication identity for $pubspec.',
+      );
+    }
+    found[name] = version;
+  }
+  return found;
+}
+
+Future<PubDevResponse> _readRecoveryPub(Uri uri) =>
+    pubDevGet(uri, followRedirects: false);
+
+Future<String?> _tagSha(RecoveryTagLookup lookup, String tag) async {
+  final ref = 'refs/tags/$tag';
+  final peeled = '$ref^{}';
+  final result = await lookup([ref, peeled]);
+  final refs = <String, String>{};
+  for (final line in const LineSplitter().convert(result)) {
+    final fields = line.split('\t');
+    if (fields.length != 2 ||
+        !_sha.hasMatch(fields[0]) ||
+        ![ref, peeled].contains(fields[1]) ||
+        refs.containsKey(fields[1])) {
+      throw FormatException('Malformed owner ref response for $tag.');
+    }
+    refs[fields[1]] = fields[0];
+  }
+  if (refs.containsKey(peeled) && !refs.containsKey(ref)) {
+    throw FormatException('Incomplete owner ref response for $tag.');
+  }
+  return refs[peeled] ?? refs[ref];
+}
+
+Future<String> _ownerTags(List<String> refs) => _readProcess('git', [
+  'ls-remote',
+  '--tags',
+  'https://github.com/$_ownerRepository.git',
+  ...refs,
+], 'Owner tag lookup');
+
+Future<Object?> recoveryGithubGet(
+  String endpoint, {
+  required bool paginate,
+}) async => jsonDecode(
+  await _readProcess('gh', [
+    'api',
+    '--hostname',
+    'github.com',
+    '--method',
+    'GET',
+    if (paginate) ...['--paginate', '--slurp'],
+    endpoint,
+  ], 'GitHub lookup'),
+);
+
+Future<String> _readProcess(
+  String executable,
+  List<String> args,
+  String description,
+) async {
+  final process = await Process.start(
+    executable,
+    args,
+    environment: const {'GIT_TERMINAL_PROMPT': '0'},
+  );
+  final output = process.stdout.transform(utf8.decoder).join();
+  final diagnostics = process.stderr.drain<void>();
+  try {
+    final status = await process.exitCode.timeout(const Duration(seconds: 90));
+    await diagnostics;
+    final body = await output;
+    if (status != 0) {
+      throw FormatException('$description failed (exit $status).');
+    }
+    return body;
+  } on TimeoutException {
+    process.kill(ProcessSignal.sigkill);
+    await process.exitCode;
+    await Future.wait([output, diagnostics]);
+    throw FormatException('$description timed out.');
+  }
 }
 
 bool _isCorePrepDiff(_Git git, String base, String head) {
@@ -219,6 +867,9 @@ List<String> checkReleasePrepTrees(
     throw StateError('Release prep requires full Git commit SHAs.');
   }
   final git = _Git(root);
+  if (_recoveryChanges(git.changes(base, candidate)).isNotEmpty) {
+    return ['Core prep must preserve all unpublished prep recovery records.'];
+  }
   if (!_isCorePrepDiff(git, base, candidate)) {
     return ['Core prep must bump the root version and exclude Genkit changes.'];
   }
@@ -459,7 +1110,7 @@ List<String> legacySeedNotes(ChangelogHistory root, ChangelogHistory docs) {
   ];
 }
 
-void main(List<String> arguments) {
+Future<void> main(List<String> arguments) async {
   final environment = Platform.environment;
   try {
     final List<String> problems;
@@ -475,10 +1126,11 @@ void main(List<String> arguments) {
       final event = jsonDecode(
         File(environment['GITHUB_EVENT_PATH']!).readAsStringSync(),
       );
-      problems = checkReleasedChangelogSections(
+      problems = await checkReleasedChangelogSections(
         Directory.current,
         event,
         repository: environment['GITHUB_REPOSITORY']!,
+        proposedMerge: environment['GITHUB_SHA'],
         log: stdout.writeln,
       );
     }
@@ -496,6 +1148,9 @@ void main(List<String> arguments) {
     exitCode = 1;
   } on FileSystemException catch (error) {
     stderr.writeln(error);
+    exitCode = 1;
+  } on Exception {
+    stderr.writeln('Could not complete unpublished prep recovery checks.');
     exitCode = 1;
   }
 }

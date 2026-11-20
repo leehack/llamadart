@@ -36,6 +36,10 @@ def root_suite_imports():
 
 
 class SelectionTest(unittest.TestCase):
+    def test_marker_only_tamper_runs_protected_changelog_policy(self):
+        marker = 'tool/release/recoveries/' + 'a' * 40 + '.json'
+        self.assertTrue(ci.select([marker], pull_request=True)['jobs']['analyze'])
+
     def test_documentation_omits_native_and_bundles(self):
         for path in ('website/pubspec.lock', 'website/sidebars.json'):
             with self.subTest(path=path):

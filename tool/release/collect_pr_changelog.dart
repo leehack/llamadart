@@ -49,9 +49,6 @@ final _bridgeClaim = RegExp(
   r'Keep (?:the )?default WebGPU bridge assets at) `(v\d+\.\d+\.\d+)`',
 );
 
-typedef GithubLookup =
-    Future<Object?> Function(String endpoint, {required bool paginate});
-
 Future<void> main(List<String> args) async {
   try {
     stdout.write(await runPrChangelogCollector(args));
@@ -144,7 +141,7 @@ Future<String> runPrChangelogCollector(
       chain,
       window,
       activation,
-      lookup ?? _githubGet,
+      lookup ?? recoveryGithubGet,
     );
     final entries = await collector.collect();
     final seedRows = [
@@ -699,6 +696,7 @@ class _Entry {
     this.section,
     this.targets = const [],
     this.failure,
+    this.recovery,
   });
 
   final String sha;
@@ -708,6 +706,7 @@ class _Entry {
   final PrChangelog? section;
   final List<String> targets;
   final String? failure;
+  final String? recovery;
   late final String? sectionSha256 = switch (section) {
     final section? => _sectionDigest(section),
     null => null,
@@ -721,6 +720,7 @@ class _Entry {
       'source': source,
       'disposition': disposition,
       if (failure != null) 'reason': failure,
+      if (recovery != null) 'recovery': recovery,
       if (section != null) ...{
         'sectionSha256': sectionSha256,
         if (section.reason != null) 'reason': section.reason,
@@ -809,9 +809,40 @@ class _Collector {
   final _details = <int, Future<Object?>>{};
 
   Future<List<_Entry>> collect() async {
+    final Map<String, RecoveredPrep> recovered;
+    try {
+      recovered = {
+        for (final row in await verifyPrepRecoveryIntroductions(
+          git.directory,
+          window,
+          lookup,
+        ))
+          row.prep: row,
+      };
+    } on FormatException catch (error) {
+      throw _IncompleteInput('INCOMPLETE: ${error.message}');
+    } on StateError catch (error) {
+      throw _IncompleteInput('INCOMPLETE: ${error.message}');
+    } on Exception {
+      throw _IncompleteInput(
+        'INCOMPLETE: could not verify unpublished prep recovery.',
+      );
+    }
     final rows = <_Entry>[];
     final seen = <int, _Entry>{};
     for (final sha in window) {
+      if (recovered[sha] case final row?) {
+        rows.add(
+          _Entry(
+            sha,
+            row.pr,
+            'recovery',
+            'recovered-prep',
+            recovery: row.recovery,
+          ),
+        );
+        continue;
+      }
       final commit = git.commit(sha);
       final number = int.tryParse(
         _prNumber.firstMatch(commit.subject)?[1] ?? '',
@@ -1159,22 +1190,6 @@ class _Collector {
 
 String _location(String sha, int? number) =>
     number == null ? sha : '$sha (#$number)';
-
-Future<Object?> _githubGet(String endpoint, {required bool paginate}) async {
-  final result = await Process.run('gh', [
-    'api',
-    '--hostname',
-    'github.com',
-    '--method',
-    'GET',
-    if (paginate) ...['--paginate', '--slurp'],
-    endpoint,
-  ]);
-  if (result.exitCode != 0) {
-    throw const FormatException('GitHub request failed.');
-  }
-  return jsonDecode(result.stdout as String);
-}
 
 String _singleMatch(String source, RegExp pattern, String label) {
   final matches = pattern.allMatches(source).toList();

@@ -208,6 +208,138 @@ Map<String, Object?> _ledgerRow(String output, int number) => output
     .singleWhere((row) => row['pr'] == number);
 
 void main() {
+  for (final (wide, skipped, badInverse, failure, ambiguous) in [
+    (false, 0, false, null, false),
+    (false, 0, false, null, true),
+    (true, 0, false, 'prove one main commit', false),
+    (false, 3, false, 'prove one main commit', false),
+    (true, 3, false, 'prove one main commit', false),
+    (false, 0, true, 'exactly invert', false),
+    (false, 0, false, 'read failed', false),
+    (false, 0, false, 'missing final PR', false),
+  ]) {
+    test(
+      'collector recovery wide=$wide priorRows=$skipped inverse=${!badInverse} result=$failure ambiguous=$ambiguous',
+      () async {
+        final repo = _repo();
+        final original = repo.head;
+        for (var index = 0; index < skipped - 1; index++) {
+          repo.pr(30 + index, '- Keep main row $index.', {
+            'extra$index.txt': 'extra',
+          });
+        }
+        final before = repo.pr(41, '- Keep the ordinary change.', {
+          'ordinary.txt': 'kept',
+        });
+        final prep = repo.commit(
+          ambiguous
+              ? 'Prepare release (#42)\n\n${_changelogFixture('landed_changelog_dash')}'
+              : 'Prep with edited subject\n\n## Release notes input\n\nThrough: invalid',
+          {
+            'pubspec.yaml': 'name: llamadart\nversion: 0.20.3\n',
+            _root: '$_rootIntro## 0.20.3\n\n- Attempt.\n\n$_oldRelease',
+            _docs: '$_docsIntro## 0.20.3\n\n- Attempt.\n\n$_oldRelease',
+          },
+        );
+        if (failure == 'missing final PR') {
+          repo.commit('Unresolved ordinary main commit');
+        } else {
+          repo.pr(43, '- Keep the intervening change.');
+        }
+        final restored = wide ? original : before;
+        repo.git(['revert', '--no-commit', prep]);
+        if (wide) {
+          repo.git([
+            'rm',
+            'ordinary.txt',
+            for (var i = 0; i < skipped - 1; i++) 'extra$i.txt',
+          ]);
+        }
+        final recovery = repo.pr(44, 'N/A: Restores the unpublished prep.', {
+          'tool/release/recoveries/$prep.json':
+              '{"version":"0.20.3","prep":"$prep","before":"$restored","pr":42}\n',
+          if (badInverse) 'extra-change': 'unexpected',
+        });
+        Future<String> collect(String body, {required bool write}) =>
+            runPrChangelogCollector(
+              repo.args(write: write),
+              directory: repo.dir,
+              lookup: (endpoint, {required paginate}) async {
+                if (endpoint == 'repos/leehack/llamadart/pulls/42') {
+                  return {
+                    'number': 42,
+                    'merged': true,
+                    'merge_commit_sha': prep,
+                    'base': {
+                      'ref': 'main',
+                      'sha': original,
+                      'repo': {'full_name': 'leehack/llamadart'},
+                    },
+                    'head': {
+                      'ref': 'release/prep-0.20.3',
+                      'repo': {'full_name': 'leehack/llamadart'},
+                    },
+                    'body': body,
+                  };
+                }
+                if (endpoint.startsWith('repos/leehack/llamadart/activity?')) {
+                  if (failure == 'read failed') {
+                    throw const FormatException('GitHub read failed.');
+                  }
+                  expect(paginate, isTrue);
+                  return [
+                    [
+                      {
+                        'id': 50596625102,
+                        'ref': 'refs/heads/main',
+                        'activity_type': 'pr_merge',
+                        'before': skipped == 0 ? before : original,
+                        'after': prep,
+                      },
+                    ],
+                  ];
+                }
+                fail('Unexpected lookup: $endpoint');
+              },
+            );
+        final work = collect(
+          '## Changelog\n- Never substitute this mutable text.',
+          write: true,
+        );
+        if (failure != null) {
+          await expectLater(work, throwsA(_formatError(failure)));
+          expect(repo.git(['status', '--porcelain']), isEmpty);
+        } else {
+          final output = await work;
+          expect(
+            output,
+            contains(
+              jsonEncode({
+                'sha': prep,
+                'pr': 42,
+                'source': 'recovery',
+                'disposition': 'recovered-prep',
+                'recovery': recovery,
+              }),
+            ),
+          );
+          expect(output, contains('- Keep the ordinary change.'));
+          expect(output, contains('- Keep the intervening change.'));
+          expect(output, contains('Through: $recovery'));
+          expect(output, isNot(contains('Never substitute')));
+          if (ambiguous) {
+            expect(output, isNot(contains('ambiguous landed Changelog')));
+            final replay = await collect(
+              '## Changelog\nN/A: Edited after merge.',
+              write: false,
+            );
+            expect(replay, output);
+          }
+        }
+      },
+    );
+  }
+
   test('pins the committed changelog cutover tag and first parent', () {
     expect(jsonDecode(File(_marker).readAsStringSync()), {
       'tag': 'v0.20.2',
