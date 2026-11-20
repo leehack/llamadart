@@ -253,6 +253,13 @@ const metadataLockPaths = <String, String>{
   'website/examples/observability/pubspec.lock': '../../..',
 };
 
+const _metadataBaseline =
+    'Runtime baseline: native llama.cpp `v1.0.0-3` '
+    'and Web use upstream `v1.0.0@1111111111111111111111111111111111111111`; '
+    'native LiteRT-LM uses `v0.19.1-5` and stable-diffusion uses `v0.4.0`. '
+    'Web LiteRT-LM uses `@litert-lm/core@0.19.0`. Manifest SHA-256: '
+    '`2222222222222222222222222222222222222222222222222222222222222222`.';
+
 Map<String, Map<String, ReadinessFile>> metadataFiles() {
   ReadinessFile file(String text) => (mode: '100644', contents: text);
   final base = <String, ReadinessFile>{
@@ -262,7 +269,7 @@ Map<String, Map<String, ReadinessFile>> metadataFiles() {
     for (final path in releaseMetadataDocs)
       path: file(
         path.contains('CHANGELOG') || path.contains('recent-releases')
-            ? '# Changes\n\n## Unreleased\n\n* Update.\n\n## 0.8.22\n\n* History.\n'
+            ? '# Changes\n\n## 0.8.22\n\n* History.\n\n$_metadataBaseline\n'
             : '# Install\n\n```yaml\ndependencies:\n  llamadart: ^0.8.22\n```\n',
       ),
     for (final lock in metadataLockPaths.entries)
@@ -291,7 +298,10 @@ Map<String, Map<String, ReadinessFile>> metadataFiles() {
     final old = base[path]!;
     head[path] = file(
       path.contains('CHANGELOG') || path.contains('recent-releases')
-          ? old.contents.replaceFirst('## Unreleased', '## 0.8.23')
+          ? old.contents.replaceFirst(
+              '## 0.8.22',
+              '## 0.8.23\n\n- Update.\n\n$_metadataBaseline\n\n## 0.8.22',
+            )
           : old.contents.replaceAll('0.8.22', '0.8.23'),
     );
   }
@@ -3023,6 +3033,26 @@ final segment = '${Object()}ImageEditingRequest${Object()}';
 
   group('bounded metadata-only release evidence', () {
     test(
+      'the next patch must preserve the previous runtime baseline',
+      () async {
+        final files = metadataFiles();
+        const path = 'CHANGELOG.md';
+        final changelog = files[headSha]![path]!;
+        files[headSha]![path] = (
+          mode: changelog.mode,
+          contents: changelog.contents.replaceFirst(
+            _metadataBaseline,
+            _metadataBaseline.replaceFirst('v1.0.0-3', 'v1.0.0-4'),
+          ),
+        );
+        expectFailure(
+          await evaluateMetadata(files: files),
+          ReadinessFailureClassification.invalidReleaseMetadata,
+        );
+      },
+    );
+
+    test(
       'new release prefix cannot duplicate or invent historical sections',
       () async {
         for (final heading in ['## 0.8.22', '## 9.0.0', '## Migration']) {
@@ -3031,8 +3061,8 @@ final segment = '${Object()}ImageEditingRequest${Object()}';
           files[headSha]!['CHANGELOG.md'] = (
             mode: old.mode,
             contents: old.contents.replaceFirst(
-              '* Update.',
-              '* Update.\n\n$heading\n\n* Duplicate.',
+              '- Update.',
+              '- Update.\n\n$heading\n\n* Duplicate.',
             ),
           );
           expectFailure(

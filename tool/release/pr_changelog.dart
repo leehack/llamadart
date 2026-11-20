@@ -226,6 +226,14 @@ Set<int> visibleReleaseBulletLines(String body) => {
       row.index,
 };
 
+Iterable<String> visibleReleaseLines(String body) sync* {
+  for (final row in _markdownLines(body)) {
+    if (!row.nested && row.visible == row.line && row.example == null) {
+      yield row.line;
+    }
+  }
+}
+
 /// The independently resolved identifiers written into a release prep body.
 typedef ReleaseNotesInput = ({
   String previousTag,
@@ -354,6 +362,20 @@ List<String>? _metadataSection(String body, String title) {
   return (visible.toString(), inComment);
 }
 
+String formatRuntimeBaseline({
+  required String native,
+  required String upstream,
+  required String upstreamCommit,
+  required String liteRt,
+  required String stableDiffusion,
+  required String module,
+  required String manifest,
+}) =>
+    'Runtime baseline: native llama.cpp `$native` and Web use upstream '
+    '`$upstream@$upstreamCommit`; native LiteRT-LM uses `$liteRt` and '
+    'stable-diffusion uses `$stableDiffusion`. Web LiteRT-LM uses `$module`. '
+    'Manifest SHA-256: `$manifest`.';
+
 /// Removes the subject from a commit message after Git trailer removal.
 String landedPrBody(String message) {
   final lines = const LineSplitter().convert(message);
@@ -363,8 +385,19 @@ String landedPrBody(String message) {
 }
 
 void main(List<String> args) {
-  if (args.length != 1 || args.single != '--event') {
-    stderr.writeln('Usage: dart tool/release/pr_changelog.dart --event');
+  if (args case ['--body', final path]) {
+    try {
+      parsePrChangelog(File(path).readAsStringSync());
+    } on FormatException catch (error) {
+      stderr.writeln(error.message);
+      exitCode = 1;
+    }
+    return;
+  }
+  if (args.length != 1 || !['--event', '--prep-event'].contains(args.single)) {
+    stderr.writeln(
+      'Usage: dart tool/release/pr_changelog.dart --event|--prep-event|--body FILE',
+    );
     exitCode = 64;
     return;
   }
@@ -374,7 +407,9 @@ void main(List<String> args) {
       _invalid('GITHUB_EVENT_PATH is required.');
     }
     final event = jsonDecode(File(eventPath).readAsStringSync());
-    if (event case {'pull_request': {'body': final String body}}) {
+    if (args.single == '--prep-event' && event is Map<String, Object?>) {
+      stdout.writeln('verify-prep=${_verifyPrepEvent(event)}');
+    } else if (event case {'pull_request': {'body': final String body}}) {
       parsePrChangelog(body);
       stdout.writeln('Changelog section is valid.');
     } else {
@@ -387,4 +422,57 @@ void main(List<String> args) {
     stderr.writeln('Changelog: could not read GITHUB_EVENT_PATH.');
     exitCode = 1;
   }
+}
+
+final _prepRef = RegExp(
+  r'^release/(prep-[0-9]+\.[0-9]+\.[0-9]+([-+][A-Za-z0-9._-]+)?'
+  r'|[0-9]+\.[0-9]+\.[0-9]+([-+][A-Za-z0-9._-]+)?-prep)$',
+);
+
+bool isCoreReleasePrep({
+  required Iterable<String> labels,
+  required String headRef,
+  required String headRepository,
+  required String repository,
+}) =>
+    headRepository == repository &&
+    !headRef.startsWith('release/genkit_llamadart-') &&
+    (labels.contains('release-prep') || _prepRef.hasMatch(headRef));
+
+bool _verifyPrepEvent(Map<String, Object?> event) {
+  final action = event['action'];
+  if (action == 'labeled' || action == 'unlabeled') {
+    return (event['label'] as Map?)?['name'] == 'release-prep';
+  }
+  if (event
+      case {
+        'pull_request': {
+          'head': {
+            'ref': final String ref,
+            'repo': {'full_name': final String headRepo},
+          },
+          'labels': final List labels,
+          'body': final String body,
+        },
+      }
+      when isCoreReleasePrep(
+        labels: labels.whereType<Map>().map((label) => '${label['name']}'),
+        headRef: ref,
+        headRepository: headRepo,
+        repository: Platform.environment['GITHUB_REPOSITORY'] ?? '',
+      )) {
+    if (action != 'edited') return true;
+    final changes = event['changes'] as Map?;
+    if (changes?.containsKey('base') ?? false) return true;
+    final oldBody = (changes?['body'] as Map?)?['from'];
+    if (oldBody is! String) return false;
+    try {
+      return parseReleaseNotesInput(oldBody) != parseReleaseNotesInput(body) ||
+          jsonEncode(parseReleaseNotesReview(oldBody)) !=
+              jsonEncode(parseReleaseNotesReview(body));
+    } on FormatException {
+      return true;
+    }
+  }
+  return false;
 }

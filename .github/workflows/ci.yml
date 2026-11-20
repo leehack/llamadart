@@ -318,7 +318,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          # The released-changelog check diffs against the merge base.
+          # The changelog policy compares immutable event commits and their merge base.
           fetch-depth: 0
 
       - name: Setup Flutter
@@ -354,7 +354,7 @@ jobs:
       - name: Verify release docs versions
         run: dart run tool/testing/verify_release_docs_versions.dart
 
-      - name: Check released changelog sections
+      - name: Check protected core changelogs
         run: dart run tool/testing/check_released_changelog_sections.dart
 
       - name: Check WebGPU bridge asset tag
@@ -1230,7 +1230,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          # The released-changelog check diffs against the merge base.
+          # The changelog policy compares immutable event commits and their merge base.
           fetch-depth: 0
       - uses: subosito/flutter-action@v2
         with:

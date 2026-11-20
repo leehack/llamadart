@@ -243,6 +243,7 @@ bool _isReleaseAutomation(String path) {
   if (path.startsWith('tool/release/') ||
       path.startsWith('scripts/release/') ||
       path == 'tool/testing/verify_release_docs_versions.dart' ||
+      path == 'tool/testing/check_released_changelog_sections.dart' ||
       path == 'tool/ci/deploy_guard.py' ||
       path == 'tool/ci/web_deployment.py' ||
       // The deploy guard reuses this selection to decide whether a newer push
@@ -256,7 +257,8 @@ bool _isReleaseAutomation(String path) {
       name.contains('release') ||
       name.contains('deploy') ||
       name.contains('sync') ||
-      name == 'docs_version_cut.yml';
+      name == 'docs_version_cut.yml' ||
+      name == 'pr_changelog.yml';
 }
 
 bool _isRegressionPolicy(String path) {

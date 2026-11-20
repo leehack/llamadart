@@ -15,6 +15,9 @@ import 'package:llamadart/src/hook/native_bundle_config.dart';
 import 'package:llamadart/src/web_setup/web_bridge_setup.dart';
 
 /// The file whose default decides what a fresh vendoring run downloads.
+import '../release/pr_changelog.dart';
+import 'check_released_changelog_sections.dart';
+
 const String bridgeTagSourcePath = 'scripts/fetch_webgpu_bridge_assets.sh';
 
 // Any assignment to the name, wherever it sits: indented, after `export` or
@@ -306,10 +309,7 @@ List<String> findBridgeTagDrift(Directory repoRoot, String expectedTag) {
       problems.add('${pin.path}: pins $found, expected $expectedTag');
     }
   }
-  return <String>[
-    ...problems,
-    ...findCurrentReleaseNotesDrift(repoRoot, expectedTag),
-  ];
+  return problems;
 }
 
 /// Returns one message per [releaseNotesPins] site whose current section
@@ -1309,7 +1309,6 @@ Future<List<String>> findBridgeProblems(
   ...findBridgeTagDrift(repoRoot, expectedTag),
   ...findUnregisteredTagSites(repoRoot, expectedTag),
   ...findBridgeRuntimeDrift(repoRoot, bridgeLlamaCppTag),
-  ...findRuntimeBaselineDrift(repoRoot),
   ...findBridgeProvenanceDrift(repoRoot),
   if (verifyPublishedManifest)
     ...await verifyPublishedRelease(
@@ -1331,15 +1330,142 @@ Future<List<String>> findBridgeProblems(
     ),
 ];
 
+/// Checks the new published section against the exact candidate's runtime pins.
+List<String> findPreparedReleaseNotesDrift(
+  Directory root,
+  String bridge,
+  String previousVersion,
+  String previousBridge,
+) {
+  final files = [
+    for (final path in releasedChangelogs) File('${root.path}/$path'),
+  ];
+  final problems = <String>[];
+  try {
+    final version = readRootPackageVersion(root);
+    final modulePath = 'example/chat_app/web/index.html';
+    final modules = RegExp(
+      r'https://cdn\.jsdelivr\.net/npm/(@litert-lm/core@\d+\.\d+\.\d+)/\+esm',
+    ).allMatches(File('${root.path}/$modulePath').readAsStringSync()).toList();
+    if (modules.length != 1) {
+      return ['$modulePath must pin one Web LiteRT-LM module.'];
+    }
+    final module = modules.single[1]!;
+    final native = File(
+      '${root.path}/$nativeLlamaCppTagPath',
+    ).readAsStringSync();
+    final pins = <String>[];
+    for (final claim in _runtimeBaselineClaims) {
+      final matches = claim.source.allMatches(native).toList();
+      if (matches.length != 1) {
+        return [
+          '$nativeLlamaCppTagPath must pin exactly one ${claim.label} tag.',
+        ];
+      }
+      pins.add(matches.single[1]!);
+    }
+    final [cpp, liteRt, stableDiffusion] = pins;
+    final expectedBaseline = formatRuntimeBaseline(
+      native: cpp,
+      upstream: bridgeLlamaCppTag,
+      upstreamCommit: bridgeLlamaCppCommit,
+      liteRt: liteRt,
+      stableDiffusion: stableDiffusion,
+      module: module,
+      manifest: bridgeManifestSha256,
+    );
+    for (final (index, file) in files.indexed) {
+      final path = releasedChangelogs[index];
+      final sections = ChangelogHistory.parse(file.readAsStringSync()).sections;
+      if (sections.keys.first != version) {
+        problems.add('$path must begin with the exact release $version.');
+        continue;
+      }
+      final section = visibleReleaseLines(sections.values.first).join('\n');
+      final article = index == 0 ? 'the ' : '';
+      final claims = _bridgePinBullet
+          .allMatches(section)
+          .map((match) => match[0]!.trimRight())
+          .toList();
+      final expected = bridge == previousBridge
+          ? '- Keep ${article}default WebGPU bridge assets at `$bridge` (unchanged from $previousVersion).'
+          : '- Aligned ${article}default WebGPU bridge assets to `$bridge`';
+      if (claims.length != 1 ||
+          (bridge == previousBridge
+              ? claims.single != expected
+              : !RegExp(
+                  '^${RegExp.escape(expected)}(?:[ .,:].*)?\$',
+                ).hasMatch(claims.single))) {
+        problems.add(
+          '$path must contain exactly one matching WebGPU bridge claim for this release.',
+        );
+      }
+      final paragraphs = _runtimeBaselineParagraph.allMatches(section).toList();
+      if (paragraphs.length != 1 || paragraphs.single[0] != expectedBaseline) {
+        problems.add(
+          '$path must contain one complete Runtime baseline matching the candidate pins.',
+        );
+      }
+    }
+  } on FormatException catch (error) {
+    problems.add(error.message);
+  } on FileSystemException catch (error) {
+    problems.add(error.message);
+  }
+  return problems;
+}
+
+List<String> _verifyPreparedRelease(Directory root, String bridge, String tag) {
+  if (!tag.startsWith('v') || !coreReleaseVersion.hasMatch(tag.substring(1))) {
+    return ['Expected a stable previous release tag.'];
+  }
+  String readTagFile(String path) {
+    final result = Process.runSync('git', [
+      'show',
+      'refs/tags/$tag:$path',
+    ], workingDirectory: root.path);
+    if (result.exitCode != 0) {
+      throw FormatException('Cannot read $path from $tag.');
+    }
+    return result.stdout as String;
+  }
+
+  try {
+    final previous = tag.substring(1);
+    if (coreVersionFromPubspec(readTagFile(rootPubspecPath)) != previous) {
+      return ['Previous tag $tag disagrees with its root pubspec.'];
+    }
+    final oldPin = _sourceOfTruth
+        .allMatches(readTagFile(bridgeTagSourcePath))
+        .toList();
+    if (oldPin.length != 1) {
+      return ['Previous tag $tag must identify one bridge pin.'];
+    }
+    return findPreparedReleaseNotesDrift(
+      root,
+      bridge,
+      previous,
+      oldPin.single[1]!,
+    );
+  } on FormatException catch (error) {
+    return [error.message];
+  }
+}
+
 Future<void> main(List<String> arguments) async {
   final verifyManifestFlag = arguments.contains('--verify-manifest');
-  final unknown = arguments.where(
-    (argument) => argument != '--verify-manifest',
-  );
+  final flags = arguments
+      .where((argument) => argument != '--verify-manifest')
+      .toList();
+  final previousTag = switch (flags) {
+    ['--release-prep', final tag] => tag,
+    _ => null,
+  };
+  final unknown = previousTag == null ? flags : const <String>[];
   if (unknown.isNotEmpty) {
     stderr.writeln(
       '[webgpu-bridge-tag] Unknown argument(s): ${unknown.join(', ')}. '
-      'Usage: check_webgpu_bridge_tag.dart [--verify-manifest]',
+      'Usage: check_webgpu_bridge_tag.dart [--verify-manifest] [--release-prep PREVIOUS_TAG]',
     );
     exit(64);
   }
@@ -1358,6 +1484,9 @@ Future<void> main(List<String> arguments) async {
     expectedTag,
     verifyPublishedManifest: verifyManifestFlag,
   );
+  if (previousTag != null) {
+    problems.addAll(_verifyPreparedRelease(repoRoot, expectedTag, previousTag));
+  }
   if (problems.isNotEmpty) {
     stderr.writeln(
       '[webgpu-bridge-tag] $bridgeTagSourcePath pins $expectedTag, but:',
@@ -1370,7 +1499,7 @@ Future<void> main(List<String> arguments) async {
 
   stdout.writeln(
     '[webgpu-bridge-tag] OK: '
-    '${bridgeTagPins.length + releaseNotesPins.length} pins agree on '
+    '${bridgeTagPins.length} live pins agree on '
     '$expectedTag.',
   );
   stdout.writeln(

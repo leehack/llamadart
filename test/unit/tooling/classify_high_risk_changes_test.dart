@@ -12,6 +12,18 @@ Future<HighRiskCliResult> runClassifier(List<int> input) =>
     classifyHighRiskInput(Stream.value(input));
 
 void main() {
+  test('PR changelog workflow and guard are release automation', () {
+    for (final path in [
+      '.github/workflows/pr_changelog.yml',
+      'tool/testing/check_released_changelog_sections.dart',
+    ]) {
+      expect(
+        assessHighRiskFiles([path]).surfaces,
+        contains(HighRiskSurface.releaseAutomation),
+      );
+    }
+  });
+
   test('impact hints separate known boundaries and union mixed effects', () {
     const render = 'lib/src/core/template/template_render_context.dart';
     const parser = 'lib/src/core/template/peg_chat_parser.dart';

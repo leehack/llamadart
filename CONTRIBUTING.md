@@ -309,7 +309,7 @@ Every non-trivial pull request should explain:
   fail loudly with clear errors, disabled UI, or documented fallback behavior.
   They must not appear to succeed silently.
 - **Docs and release notes**: README, website docs, examples, support matrices,
-  and changelog entries are updated when public behavior changes.
+  and the PR changelog section are updated when public behavior changes.
 - **Regression coverage**: tests cover the original issue and important
   negative/version-skew paths where applicable.
 - **Security/privacy**: logs, errors, cache keys, metadata, and snapshots must
@@ -349,3 +349,13 @@ advisory that warns rather than fails.
   build/link checks or review performed.
 
 Thank you for contributing!
+
+
+### PR changelog
+
+Fill the PR template's `## Changelog` with a column-zero, one-line
+`- ` bullet per user-visible change, or a specific standalone
+`N/A: reason`. The template lists the optional core and package targets.
+Use normal Markdown links in the text. Core release prep produces the
+numbered changelogs from landed PR notes. Maintain package-local changelogs
+under their own release rules.

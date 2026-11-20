@@ -78,7 +78,7 @@ version alignment:
 ## 2. Version and docs updates
 
 - Update `pubspec.yaml` version.
-- Update `CHANGELOG.md`.
+- Generate both core changelogs from the exact reviewed main revision as described below.
 - Regenerate tracked path-dependency locks after the core bump. Workspace
   preparation updates the chat-app lock; run `dart pub get` in
   `packages/llamadart_validation` and `website/examples/observability` too.
@@ -151,26 +151,10 @@ version alignment:
   check. Archive selection skips dependency validation because the candidate
   core is not published yet; companion publishing retains its normal dependency
   resolution, dry-run validation and publication checks.
-- Move accumulated `Unreleased` entries in `CHANGELOG.md` and
-  `website/docs/changelog/recent-releases.md` into the new version section and
-  remove the heading. `--release-prep` fails while either keeps
-  `## Unreleased`; after the release, `docs_version_cut.yml` puts an empty one
-  back on `main`, so the next change only adds a bullet.
-- In a release that opens a new minor, trim
-  `website/docs/changelog/recent-releases.md` to the new current and previous
-  minor by deleting the sections older than that, so `0.18.0` keeps `0.18.x`
-  and `0.17.x` and drops `0.16.x`. Patch releases trim nothing, and
-  `CHANGELOG.md` trims nothing (see [Changelog size](#changelog-size)). The
-  trim is a manual step:
-  `verify_release_docs_versions.dart` fails, with or without `--release-prep`,
-  when the page omits any current or previous published minor patch listed
-  in `CHANGELOG.md`, or keeps older sections. For a new major at minor zero,
-  retain the last published minor of the previous major; for the first minor
-  ever published, retain that series alone. The gate derives actual headings
-  from the full changelog rather than inventing missing patch numbers.
-  The same gate fails when a retained release's bullets differ between the two
-  files. Only the bullet marker (`*` or `-`) and "the" on the WebGPU bridge line
-  below are exempt.
+- The collector mirrors core notes and keeps the current and previous
+  published minor on the docs page, including rollover to a new major.
+  It moves whole root sections verbatim to the archive when the published
+  file exceeds 256 KiB. See [Changelog size](#changelog-size).
 - Each current core release section must state the pinned WebGPU bridge tag.
   If it is unchanged, use an explicit baseline instead of repeating the old
   release's fixes. In `CHANGELOG.md`, use:
@@ -193,8 +177,6 @@ version alignment:
   newly shipped fixes. The bridge-tag gate checks the complete baseline wording,
   rejects missing, stale or multiple claims, and never borrows a baseline from
   an older release when the promoted current section omits it.
-- Both core changelogs union-merge (see [Changelog merges](#changelog-merges)).
-  Turn union off before rebasing or merging the release-prep branch.
 - Update `MIGRATION.md` if breaking behavior changed.
 - Keep docs pages aligned with new defaults/options.
 - Keep local SwiftPM artifact caches out of pub archives. Apple SPM binary
@@ -385,11 +367,9 @@ rsync -a --delete \
   archives. CI's companion publish dry-run points the same override at the
   checkout; the real publish drops it.
 
-- `docs_version_cut.yml`: creates versioned docs snapshot on `v*` tags,
-  restores an empty `## Unreleased` heading in both core changelogs with
-  `tool/release/reopen_unreleased_changelog.dart` in the same commit, and
-  pushes it to `main` with `GITHUB_TOKEN`, so that commit starts no CI or demo
-  deploy run. Genkit and companion tags do not match `v*`.
+- `docs_version_cut.yml` generates the site snapshot from the core release
+  tag, rebases the snapshot-only commit onto current main, and pushes it
+  with `GITHUB_TOKEN`. This direct push starts no CI or demo deployment.
 - `docs_pages.yml`: deploys docs to GitHub Pages after successful
   `docs_version_cut.yml` runs (and can be manually triggered).
 - `ci.yml` (`deploy-chat-app`) and `laya_tetris_hf_static_deploy.yml`: the
@@ -439,68 +419,66 @@ rsync -a --delete \
 
 ## 5. If automation is blocked
 
-If `docs_version_cut.yml` cannot push directly to `main` (for example due to
-branch protections), run the version cut locally and open a PR:
+If **Validate release state** fails after the prep squash lands, record the
+squash SHA and failed check. Confirm that no core or companion tag was
+created, then reproduce the failure from that SHA with its first parent and
+the immutable message from `git show -s --format=%B`. If a transient
+dependency or service failed, rerun the original workflow at the same SHA
+after it recovers.
+
+If the receipt or candidate tree is invalid, open a release-blocking issue.
+A rerun reads the same bytes, and a new prep needs the previous core tag.
+Hold publication while maintainers review a targeted recovery that restores
+the last tagged release metadata and changelog bytes while retaining
+unrelated main changes. The protected-changelog gate rejects a normal
+revert, so the recovery must include a reviewed policy change scoped to
+that unpublished prep. Verify the recovery at its proposed merge tree,
+then regenerate the prep and its receipt from current main. Keep the
+existing tags and use the normal publisher for the new squash.
+
+If the docs snapshot workflow cannot push directly to main, generate the
+snapshot from the release tag with `dart run tool/cut_version.dart VERSION`
+in `website/`. Rebase the versions, versioned docs and versioned sidebars
+onto current main and open a PR with a specific changelog N/A.
+
+## Collect and review core release notes
+
+Use the approved release version, its previous core tag and the exact
+current main SHA. Run from the root with full tag history.
 
 ```bash
-dart tool/release/reopen_unreleased_changelog.dart
-cd website
 dart pub get
-dart run tool/cut_version.dart <release-version>
+dart tool/release/collect_pr_changelog.dart --version "$version" \
+  --from "$previous_tag" --through "$through"
+dart tool/release/collect_pr_changelog.dart --version "$version" \
+  --from "$previous_tag" --through "$through" --write
 ```
 
-## Changelog merges
+Review the entire ledger including legacy seed, package-only notes, N/A
+entries, duplicates, fallbacks and reversals. Keep the ledger with the PR.
+Copy the emitted `## Release notes input` into the prep body beside its
+`## Changelog`. To compact, pass a local `--curated FILE` to the writer and
+use `--review FILE` with the draft prep body. In
+`## Release notes review`, record `- <full SHA> <specific disposition>`
+for each required source affected by editorial changes. Fix unresolved
+input at its source before continuing.
 
-`.gitattributes` sets `merge=union` on `CHANGELOG.md` and
-`website/docs/changelog/recent-releases.md`. When two branches add bullets
-under `## Unreleased`, a local rebase or merge keeps both instead of
-conflicting. GitHub may still report the conflict; rebase locally and update
-the PR branch with `tool/git/safe_pr_head_update.dart`.
+Before merge, the checks verify single-parent squashes with the tested
+merge tree and the PR title and body, including variants with GitHub
+co-author and sign-off trailers. End the receipt block with no trailing
+attribution or whitespace. Before tag creation, the checks read the actual
+squash. The receipt binds effective inputs. Running from the candidate and
+landed trees binds the renderer and verifier to the code under review. The
+publisher requires a single-parent squash and reads the receipt from its
+immutable commit message. Refresh the ledger, review and receipt if main
+moves. Retry at the same landed SHA even when its tag already exists.
 
-Union never conflicts: it keeps both sides of any edit, so it cannot tell
-a new bullet from a heading rename. A branch that added a bullet before a
-release and is rebased after it can end up with that bullet, and stale copies
-of the released bullets, inside the new `## X.Y.Z` section. CI's
-`check_released_changelog_sections.dart` (in the Analyze and docs-version
-jobs) fails such a PR: everything from the first `## <version>` heading down
-must match the merge base with the PR's base branch byte-for-byte, and the
-error names the file and first differing line. Move the bullet back under
-`## Unreleased`. Release-prep PRs, detected by the same label and branch rules
-as `release_on_prep_merge.yml`, can edit released sections. The PR check
-requires both changelogs to drop the `## Unreleased` heading. CI reads labels
-from the event that started the run, so push again after adding the
-`release-prep` label.
-
-One change to a released section is allowed outside release prep: the docs
-changelog may lose its oldest sections. It passes when what remains is an
-exact prefix of the base's released sections and the first removed line is a
-`## <version>` heading, and every removed section is older than the current
-and previous published minor. A trim cannot cut a section in half, drop a retained patch
-or edit one that stays.
-
-`CHANGELOG.md` may instead move its oldest sections to
-`doc/changelog_archive.md` (see [Changelog size](#changelog-size)). It passes
-when the changelog's released sections followed by the archive's, ignoring
-blank lines where they join, match the base byte-for-byte, so a section can
-move only whole and unchanged, from the end of the changelog to the start of
-the archive's releases, and the changelog keeps at least one release.
-
-Turn union off for release prep, which renames `## Unreleased` and rewrites
-its bullets, and for any rebase across a release-prep commit whose result you
-would rather resolve by hand. `.git/info/attributes` overrides `.gitattributes`
-for every worktree of the clone:
-
-```bash
-attributes="$(git rev-parse --git-path info/attributes)"
-printf '%s\n' '/CHANGELOG.md merge=text' \
-  '/website/docs/changelog/recent-releases.md merge=text' >> "$attributes"
-# ... rebase or merge, resolving conflicts by hand ...
-# then remove those two lines from "$attributes".
-```
-
-`verify_release_docs_versions.dart` fails when `## Unreleased` appears twice
-or below a released section, and with `--release-prep` whenever it remains,
-which catches the stray headings union can leave.
+`PR changelog` validates PR descriptions, including docs, bots and batch
+envelopes. Analyze and docs version CI compare the real PR head against
+its merge base with the immutable event base. Only core release prep may
+change numbered core changelogs or the archive. Published section bytes
+and the cutover marker stay fixed. Apple companion, Genkit and Model
+Store package notes follow their own changelog rules.
 
 ## Changelog size
 

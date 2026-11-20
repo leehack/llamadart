@@ -46,21 +46,6 @@ void main() {
     );
   });
 
-  test('rejects missing or changed Unreleased bullets on either side', () {
-    const pending = {'Unreleased': '- Pending.\n'};
-    for (final (core, docs) in [
-      (pending, {'Unreleased': '- Different.\n'}),
-      (pending, {'Unreleased': ''}),
-      (pending, <String, String>{}),
-      (<String, String>{}, pending),
-    ]) {
-      expect(docsChangelogDriftProblems(core, docs), [
-        contains('section "## Unreleased" differs from CHANGELOG.md'),
-      ]);
-    }
-    expect(docsChangelogDriftProblems({'Unreleased': '\n'}, {}), isEmpty);
-  });
-
   test('ignores released sections that are present in only one file', () {
     expect(
       docsChangelogDriftProblems({'0.1.0': '- Old.\n'}, {'0.2.0': '- New.\n'}),
