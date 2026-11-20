@@ -675,6 +675,16 @@ PrChangelog? _readChangelog(String body) {
   }
 }
 
+(PrChangelog?, String?) _readLandedChangelog(String body) {
+  try {
+    return (parseLandedPrChangelog(body), null);
+  } on AmbiguousLandedChangelog catch (error) {
+    return (null, error.message);
+  } on FormatException {
+    return (null, null);
+  }
+}
+
 List<String> _legacySeed(_Git git, String sha) => legacySeedNotes(
   ChangelogHistory.parse(git.blob(sha, _root), allowUnreleased: true),
   ChangelogHistory.parse(git.blob(sha, _docs), allowUnreleased: true),
@@ -826,16 +836,22 @@ class _Collector {
         );
         continue;
       }
-      final landed = _readChangelog(commit.body);
+      final (landed, ambiguity) = _readLandedChangelog(commit.body);
+      if (ambiguity != null) _warn(sha, number, ambiguity);
       if (landed != null && number != null) {
         rows.add(_row(sha, number, 'git', landed, commit.trailers, seen));
       } else if (number != null) {
-        final (section, reason) = await _fallback(sha, number);
-        rows.add(
-          section != null
-              ? _row(sha, number, 'api', section, '', seen)
-              : _unresolved(sha, number, 'api', reason!),
-        );
+        try {
+          final (section, reason) = await _fallback(sha, number);
+          rows.add(
+            section != null
+                ? _row(sha, number, 'api', section, '', seen)
+                : _unresolved(sha, number, 'api', reason!),
+          );
+        } on FormatException catch (error) {
+          if (ambiguity == null) rethrow;
+          throw FormatException('${error.message} $ambiguity');
+        }
       } else if (landed == null && _generatedDocs(sha, commit.subject)) {
         rows.add(_Entry(sha, null, 'git', 'generated-docs'));
       } else {

@@ -10,6 +10,7 @@ import 'package:test/test.dart';
 import 'package:yaml/yaml.dart';
 
 import '../../../tool/release/collect_pr_changelog.dart';
+import '../../../tool/release/pr_changelog.dart';
 
 const _root = 'CHANGELOG.md';
 const _docs = 'website/docs/changelog/recent-releases.md';
@@ -196,6 +197,15 @@ Matcher _formatError(String message) => isA<FormatException>().having(
   'message',
   contains(message),
 );
+
+String _changelogFixture(String name) =>
+    File('test/fixtures/release_prep/$name.txt').readAsStringSync();
+
+Map<String, Object?> _ledgerRow(String output, int number) => output
+    .split('\n')
+    .where((line) => line.startsWith('{'))
+    .map((line) => jsonDecode(line) as Map<String, Object?>)
+    .singleWhere((row) => row['pr'] == number);
 
 void main() {
   test('pins the committed changelog cutover tag and first parent', () {
@@ -1351,6 +1361,157 @@ exec cat "$FIXTURE_GITHUB_SQUASH"
       expect(repo.file('.git/cps-changelog-write.lock').existsSync(), isFalse);
     },
   );
+
+  for (final (number, sha, digest) in [
+    (
+      2093,
+      '5804c8fedc4d3891af87030039b956a606557a8b',
+      '48987105406d8e6a6922fb86fb2d603566e5adc565cba0770a0c04f869a6c9e3',
+    ),
+    (
+      2109,
+      '030220c111a10416390d97981a72f93756738de7',
+      '2300506502f8388889c6d2a418c4b3afd381bf7ad137756234f279bda08758e4',
+    ),
+  ]) {
+    test(
+      'collects the landed #$number wrap ($sha) without API access',
+      () async {
+        final repo = _repo();
+        final landed = _changelogFixture('pr_${number}_changelog_landed');
+        final authored = _changelogFixture('pr_${number}_changelog_authored');
+        final bullet = parsePrChangelog(authored).bullets.single;
+        expect(() => parsePrChangelog(landed), throwsFormatException);
+        final commit = repo.commit(
+          'Change (#$number)\n\n$landed\n$_coauthorBlock\n$_signoff',
+        );
+
+        final output = await _collect(repo, repo.args());
+        expect(_ledgerRow(output, number), {
+          'sha': commit,
+          'pr': number,
+          'source': 'git',
+          'disposition': 'included',
+          'sectionSha256': digest,
+          'bullets': [
+            {'target': 'core', 'text': bullet.text},
+          ],
+        });
+        expect(_draft(output), contains('- ${bullet.text}\n'));
+      },
+    );
+  }
+
+  group('ambiguous landed dash', () {
+    const number = 4;
+    late _Repo repo;
+    late String commit;
+    late String landed;
+    late List<String> lines;
+
+    setUp(() {
+      repo = _repo();
+      landed = _changelogFixture('landed_changelog_dash');
+      commit = repo.commit('Change (#$number)\n\n$landed');
+      lines = landed
+          .split('\n')
+          .where((line) => line.startsWith('- '))
+          .toList();
+    });
+
+    test('uses the verified authored one- and two-bullet forms', () async {
+      expect(parsePrChangelog(landed).bullets, hasLength(2));
+      final inputs = [
+        ['${lines.first}  ${lines.last}'],
+        lines,
+      ];
+      final receipts = <String>[];
+      for (final bullets in inputs) {
+        final body = '## Changelog\n${bullets.join('\n')}';
+        final pull = _pull(number, commit, body: body);
+        final calls = <String>[];
+        final output = await _collect(repo, repo.args(), {
+          'commits/$commit/pulls': [
+            [pull],
+          ],
+          'pulls/$number': pull,
+        }, calls);
+        expect(calls, ['commits/$commit/pulls', 'pulls/$number']);
+        final ledger = _ledgerRow(output, number);
+        expect(ledger['source'], 'api');
+        expect(ledger['disposition'], 'included');
+        expect(ledger['bullets'], [
+          for (final bullet in bullets)
+            {'target': 'core', 'text': bullet.substring(2)},
+        ]);
+        expect(output, contains('WARNING $commit (#$number):'));
+        expect(output, contains('ambiguous landed Changelog boundary'));
+        expect(_draft(output), contains('${bullets.join('\n')}\n'));
+        receipts.add(_receiptBlock(output));
+      }
+      expect(receipts.first, isNot(receipts.last));
+    });
+
+    test(
+      'blocks missing or invalid provenance before rendering or writing',
+      () async {
+        final before = repo.file(_root).readAsBytesSync();
+        final docs = repo.file(_docs).readAsBytesSync();
+        final matches = 'commits/$commit/pulls';
+        for (final (responses, message) in [
+          (
+            {
+              matches: [[]],
+            },
+            'no matching merged main PR association',
+          ),
+          (
+            {
+              matches: [
+                [_pull(number, commit)],
+              ],
+              'pulls/$number': _pull(number, repo.activation, body: landed),
+            },
+            'PR detail conflicts with the commit association',
+          ),
+        ]) {
+          await expectLater(
+            _collect(repo, repo.args(write: true), responses),
+            throwsA(
+              allOf([
+                _formatError('$commit (#$number)'),
+                _formatError('ambiguous landed Changelog boundary'),
+                _formatError(message),
+                isNot(_formatError('## Release notes input')),
+                isNot(_formatError('## 0.20.3')),
+              ]),
+            ),
+          );
+          expect(repo.file(_root).readAsBytesSync(), before);
+          expect(repo.file(_docs).readAsBytesSync(), docs);
+        }
+      },
+    );
+  });
+
+  test('association fallback rejects manually wrapped API text', () async {
+    final repo = _repo();
+    final commit = repo.commit('Missing landed section (#4)');
+    final pull = _pull(
+      4,
+      commit,
+      body: _changelogFixture('pr_2109_changelog_landed'),
+    );
+    await expectLater(
+      _collect(repo, repo.args(), {
+        'commits/$commit/pulls': [
+          [pull],
+        ],
+        'pulls/4': pull,
+      }),
+      throwsA(_formatError('associated PR has no valid Changelog section')),
+    );
+  });
 
   test(
     'uses paginated association fallback and the exact merged main PR',
