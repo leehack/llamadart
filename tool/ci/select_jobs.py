@@ -56,6 +56,7 @@ POST_MERGE_TARGETS = {
 # The validation package's `flutter.assets`, which the chat app bundles.
 VALIDATION_BUNDLED_ASSETS = (
     'packages/llamadart_validation/assets/profiles/',
+    'packages/llamadart_validation/assets/fixtures/s24/chat-litert-gpu-legacy.json',
     'packages/llamadart_validation/assets/decision/',
     'packages/llamadart_validation/assets/embeddings/v1/',
 )

@@ -67,6 +67,26 @@ class _TokenizerBackend implements LlamaBackend {
 }
 
 void main() {
+  test('standard LiteRT chat profiles lock the corrected Qwen3 bundle', () {
+    const revision = 'e6687177e00897731e7716267eebd4eba0dde7c2';
+    for (final backend in ['cpu', 'gpu', 'auto']) {
+      final profile = _chatProfile(backend);
+      expect(profile['id'], 'chat-litert-$backend');
+      expect(profile['backend'], backend);
+      expect(profile['model'], {
+        'id': 'chat-litert',
+        'revision': revision,
+        'filename': 'Qwen3-0.6B.litertlm',
+        'sha256': qwen3UpdatedModelSha256,
+        'bytes': 613722264,
+        'kind': 'chat',
+        'url':
+            'https://huggingface.co/litert-community/Qwen3-0.6B/resolve/'
+            '$revision/Qwen3-0.6B.litertlm',
+      }, reason: 'chat-litert-$backend');
+    }
+  });
+
   test('hosted CPU workflow runs the fixture on its locked model', () async {
     final workflow =
         loadYaml(
@@ -74,18 +94,7 @@ void main() {
             )
             as YamlMap;
     final env = workflow['env'] as YamlMap;
-    final profile =
-        jsonDecode(
-              File(
-                'packages/llamadart_validation/assets/profiles/chat-litert-cpu.json',
-              ).readAsStringSync(),
-            )
-            as Map<String, dynamic>;
-    final model = profile['model'] as Map<String, dynamic>;
-    expect(model['sha256'], qwen3UpdatedModelSha256);
-    expect(model['bytes'], 613722264);
-    expect(model['revision'], 'e6687177e00897731e7716267eebd4eba0dde7c2');
-    expect(model['url'], contains('/resolve/${model['revision']}/'));
+    final model = _chatProfile('cpu')['model'] as Map<String, dynamic>;
     expect(env['LITERT_LM_SMOKE_MODEL_SHA256'], model['sha256']);
     expect(env['LITERT_LM_SMOKE_MODEL_REVISION'], model['revision']);
     final jobs = workflow['jobs'] as YamlMap;
@@ -119,18 +128,6 @@ void main() {
         'tool/litert_lm_chat_features_smoke.dart '
         'Qwen3-0.6B.litertlm cpu',
       ),
-    );
-    final gpu =
-        jsonDecode(
-              File(
-                'packages/llamadart_validation/assets/profiles/chat-litert-gpu.json',
-              ).readAsStringSync(),
-            )
-            as Map<String, dynamic>;
-    expect(
-      gpu['model']['sha256'],
-      qwen3OriginalModelSha256,
-      reason: 'GPU adoption requires independent qualification',
     );
   });
 
@@ -196,3 +193,11 @@ void main() {
     });
   }
 }
+
+Map<String, dynamic> _chatProfile(String backend) =>
+    jsonDecode(
+          File(
+            'packages/llamadart_validation/assets/profiles/chat-litert-$backend.json',
+          ).readAsStringSync(),
+        )
+        as Map<String, dynamic>;

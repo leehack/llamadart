@@ -46,9 +46,12 @@ void main() {
       );
     }
     for (final backend in ['cpu', 'gpu']) {
+      final profileAsset = backend == 'gpu'
+          ? s24LiteRtLegacyGpuProfileAsset
+          : 'assets/profiles/chat-litert-cpu.json';
       final actual = jsonDecode(
         await rootBundle.loadString(
-          'packages/llamadart_validation/assets/profiles/chat-litert-$backend.json',
+          'packages/llamadart_validation/$profileAsset',
         ),
       );
       final expected = (config['binding'] as Map)['profiles'][backend];

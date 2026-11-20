@@ -6,10 +6,11 @@ and model-free checks authorize no APK build or device/cloud execution.
 
 The corrected CPU profile is unchanged `chat-litert-cpu`: Qwen3 SHA-256
 `c5f39b4191926786c3e6668b62af4d6eb15248dfc7a5348252a9b406f33f2108`,
-613,722,264 bytes, revision `e6687177`. The separate GPU profile retains
+613,722,264 bytes, revision `e6687177`. The immutable legacy GPU fixture retains
 `555579ff2f4fd13379abe69c1c3ab5200f7338bc92471557f1d6614a6e5ab0b4`,
-614,236,160 bytes, revision `8414150f`. Their URLs, metadata, prompts and
-oracles cannot be interchanged.
+614,236,160 bytes, revision `8414150f`. It lives at
+`assets/fixtures/s24/chat-litert-gpu-legacy.json` relative to the validation
+package and retains the embedded ID `chat-litert-gpu`.
 
 Both use the maintained C04 fixtures: “Reply with one short sentence saying
 hello.” with `\bhello\b`, and “What is 3 + 4? Reply with only the number.” with
@@ -229,6 +230,12 @@ complete installed APK libraries, child executable and canonical Qwen template
 hashes, both unchanged profiles, run id and the existing shared budget receipt
 hash. Owner `7ea10d0` is explicitly rejected as the aborted candidate.
 No final owner payload is selected by these source files.
+
+Use the decoded `assets/profiles/chat-litert-cpu.json` as `profiles.cpu` and
+`assets/fixtures/s24/chat-litert-gpu-legacy.json` as `profiles.gpu` in
+`binding.json`. The instrumentation checks these against the bundled assets.
+The standard `assets/profiles/chat-litert-gpu.json` now locks the corrected
+artifact and will fail admission for the legacy guard.
 
 Future native preparation compiles `main.cpp` as an Android arm64 PIE executable
 with NDK 28.2.13676358, links `-ldl`, and packages it as

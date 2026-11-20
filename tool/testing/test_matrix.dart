@@ -1392,6 +1392,22 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
         'No GPU, device, or Web qualification.',
   ),
   TestMatrixRow(
+    id: 'qwen3-litert-gpu-unicode',
+    tier: 'targeted',
+    mode: 'local-only',
+    covers:
+        'Known Qwen3-0.6B artifacts on native LiteRT-LM GPU: exact split-token '
+        'decode, Unicode and literal text round trips, and exact C02 Unicode '
+        'generation on the first request',
+    command:
+        'dart run tool/testing/run_local_e2e.dart --scenario '
+        'qwen3-litert-gpu-unicode --model-path <Qwen3-0.6B.litertlm> --backend gpu',
+    useWhen:
+        'Changing the Qwen3 LiteRT-LM GPU artifact or tokenizer fidelity. '
+        'Run the corrected and legacy bundles under the same GPU backend '
+        'and retain native placement logs. The legacy bundle must fail decoded equality.',
+  ),
+  TestMatrixRow(
     id: 'litert-lm-web-text-history',
     tier: 'targeted',
     mode: 'local-only',

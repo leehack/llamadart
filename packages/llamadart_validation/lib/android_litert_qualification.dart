@@ -12,6 +12,8 @@ const s24LiteRtCpuHash =
     'c5f39b4191926786c3e6668b62af4d6eb15248dfc7a5348252a9b406f33f2108';
 const s24LiteRtGpuHash =
     '555579ff2f4fd13379abe69c1c3ab5200f7338bc92471557f1d6614a6e5ab0b4';
+const s24LiteRtLegacyGpuProfileAsset =
+    'assets/fixtures/s24/chat-litert-gpu-legacy.json';
 const s24LiteRtFallbackWarning =
     'LiteRT-LM could not create a GPU engine under ComputeDevice.auto; '
     'retrying on the CPU.';

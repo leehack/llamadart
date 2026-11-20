@@ -124,18 +124,29 @@ See [the full plan](../../doc/cross_platform_validation_plan.md) for subsequent
 platform and feature qualification. A quick run does not qualify a release.
 
 `assets/profiles/` locks each model URL/revision/SHA256/size and inference
-configuration. The `chat-litert-cpu` profile uses the corrected Qwen3-0.6B
-bundle (`e6687177`, SHA-256 `c5f39b41…`) checked by the maintained
-`qwen3-litert-cpu-unicode` root scenario. The `chat-litert-gpu` profile retains
-the legacy artifact pending separate qualification of the updated bundle; CPU
-checks do not qualify GPU/device/Web adoption.
+configuration. The standard `chat-litert-cpu`, `chat-litert-gpu` and
+`chat-litert-auto` profiles lock the corrected Qwen3-0.6B bundle, checked by the
+`qwen3-litert-cpu-unicode` and `qwen3-litert-gpu-unicode` root scenarios. The
+GPU scenario checks exact public split-token decoding and the `C02.generate`
+fixture as the first request on a fresh engine. Qualification follows the
+executed platform, backend and request sequence.
+The S24 negative control retains its original GPU profile outside the standard
+inventory. See [the S24 staging instructions](native/android_litert/README.md).
+
+If you supplied a legacy `Qwen3-0.6B.litertlm` with `--model`, download the
+corrected file from the revision-locked URL in the profile. Verify its
+613,722,264-byte size and SHA-256
+`c5f39b4191926786c3e6668b62af4d6eb15248dfc7a5348252a9b406f33f2108`,
+then replace the old file or point `--model` at the verified copy. Both
+revisions use the same filename. Managed validation downloads use a
+digest-specific cache directory.
+
 A LiteRT profile with `backend: auto` passes `ComputeDevice.auto` and
 `GpuBackend.auto`, allowing the runtime's platform default and GPU-to-CPU
 fallback. It does not force CPU placement or prove accelerator execution;
 explicit `cpu`, `gpu` and `npu` profiles retain their device requests.
-`chat-litert-auto` is `chat-litert-gpu` under `auto`, for the Galaxy S24 GPU
-engine failure and CPU retry
-([#1458](https://github.com/leehack/llamadart/issues/1458)).
+`chat-litert-auto` can exercise the Galaxy S24 GPU engine failure and CPU
+retry. Record the observed placement in each run. [#1458](https://github.com/leehack/llamadart/issues/1458)
 
 `lib/llamadart_validation.dart` is the platform-neutral suite; conditional native
 adapters and `lib/io.dart` handle filesystem/runtime checks. `bin/run.dart` and `bin/report.dart` are the

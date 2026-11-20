@@ -1071,6 +1071,27 @@ Future<void> main(List<String> args) async {
     },
   );
 
+  test(
+    'Qwen GPU Unicode requires a model and rejects another backend',
+    () async {
+      const scenario = ['--scenario', 'qwen3-litert-gpu-unicode', '--dry-run'];
+      final missingModel = await runLocalE2e(scenario, projectRoot: '/repo');
+      expect(missingModel.exitCode, 64);
+      expect(missingModel.stderr, contains('--model-path is required'));
+      for (final backend in ['cpu', 'auto']) {
+        final invalid = await runLocalE2e([
+          ...scenario,
+          '--model-path',
+          'model',
+          '--backend',
+          backend,
+        ], projectRoot: '/repo');
+        expect(invalid.exitCode, 64);
+        expect(invalid.stderr, contains('requires --backend gpu'));
+      }
+    },
+  );
+
   for (final route in ['direct', 'service', 'speech']) {
     test(
       'public v1 $route requires identities and reaches its uninjected qualifier',

@@ -2517,6 +2517,40 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
       ],
     ),
     LocalE2eScenario(
+      name: 'qwen3-litert-gpu-unicode',
+      group: LocalE2eScenarioGroup.dartLocalOnly,
+      description:
+          'Check known Qwen3 artifacts for split-token decoding and first-request GPU Unicode.',
+      requiresDevice: false,
+      stepsBuilder: (context) => [
+        _prepareValidationPackage(context),
+        LocalE2eCommandStep(
+          workingDirectory:
+              '${context.projectRoot}/packages/llamadart_validation',
+          executable: 'dart',
+          arguments: const [
+            'test',
+            '-p',
+            'vm',
+            '-j',
+            '1',
+            '-r',
+            'expanded',
+            'test/qwen3_litert_gpu_unicode_test.dart',
+          ],
+          environment: {
+            'LITERT_LM_QWEN3_UNICODE_MODEL': _projectPath(
+              context.projectRoot,
+              context.modelPath!,
+            ),
+          },
+          description:
+              'Qwen3 exact split-token decode and first-request Unicode generation',
+          foregroundStdoutEncoding: utf8,
+        ),
+      ],
+    ),
+    LocalE2eScenario(
       name: 'litert-lm-json-schema',
       group: LocalE2eScenarioGroup.dartLocalOnly,
       description:
@@ -3544,6 +3578,14 @@ Future<LocalE2eResult> runLocalE2e(
       stderr: '${scenario.name} requires --backend cpu.\n',
     );
   }
+  if (scenario.name == 'qwen3-litert-gpu-unicode' &&
+      parsed.backendProvided &&
+      parsed.backend != 'gpu') {
+    return LocalE2eResult(
+      64,
+      stderr: '${scenario.name} requires --backend gpu.\n',
+    );
+  }
   if (scenario.name == 'gguf-chat-features-smoke' && parsed.audioPath != null) {
     return const LocalE2eResult(
       64,
@@ -3828,6 +3870,7 @@ Future<LocalE2eResult> runLocalE2e(
           scenario.name == 'litert-lm-web-truncation' ||
           scenario.name == 'litert-lm-chat-features-smoke' ||
           scenario.name == 'qwen3-litert-cpu-unicode' ||
+          scenario.name == 'qwen3-litert-gpu-unicode' ||
           scenario.name == 'native-prompt-cancel' ||
           scenario.name == 'native-exit-teardown' ||
           scenario.name == 'image-exit-teardown' ||
