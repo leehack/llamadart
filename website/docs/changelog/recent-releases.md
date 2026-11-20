@@ -14,7 +14,7 @@ validate against the exact release tag notes.
 ## 0.20.3
 
 - Reduce known Qwen3-ASR instruction echoes in windowed partials and finals. Keep the original wording with changing voiced speech or audio-only agreement within one word edit. Quiet or misrecognized dictation can be dropped, with an empty-transcript error if no text survives ([#2088](https://github.com/leehack/llamadart/issues/2088)).
-- Keep Gemma 4 undeclared calls and fenced or inline JSON as text, recover only valid standalone function calls to declared tools, and preserve prose when calls are recovered or superseded by native calls. Strip stray call delimiters after recovery and release non-matching streamed text once the tool name is known ([#2081](https://github.com/leehack/llamadart/issues/2081), [#2095](https://github.com/leehack/llamadart/issues/2095)).
+- Keep Gemma 4 undeclared calls and fenced or inline-backtick JSON as text, recover only valid standalone function calls to declared tools, and preserve prose when calls are recovered or superseded by native calls. Strip stray call delimiters after recovery and release non-matching streamed text once the tool name is known ([#2081](https://github.com/leehack/llamadart/issues/2081), [#2095](https://github.com/leehack/llamadart/issues/2095)).
 - Clarify which speech-to-text modes emit partial transcripts and when to split whole-file Qwen3-ASR recordings.
 - Keep default WebGPU bridge assets at `v0.1.86` (unchanged from 0.20.2).
 
