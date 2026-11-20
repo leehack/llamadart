@@ -315,6 +315,9 @@ jobs:
     name: Analyze & Lint
     runs-on: ubuntu-latest
     timeout-minutes: 25
+    permissions:
+      contents: read
+      pull-requests: read
     steps:
       - uses: actions/checkout@v7
         with:
@@ -355,6 +358,8 @@ jobs:
         run: dart run tool/testing/verify_release_docs_versions.dart
 
       - name: Check protected core changelogs
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: dart run tool/testing/check_released_changelog_sections.dart
 
       - name: Check WebGPU bridge asset tag
@@ -1227,6 +1232,9 @@ jobs:
     if: needs.changes.outputs.docs-versions == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    permissions:
+      contents: read
+      pull-requests: read
     steps:
       - uses: actions/checkout@v7
         with:
@@ -1239,7 +1247,9 @@ jobs:
           cache: true
       - run: dart pub get
       - run: dart run tool/testing/verify_release_docs_versions.dart
-      - run: dart run tool/testing/check_released_changelog_sections.dart
+      - env:
+          GH_TOKEN: ${{ github.token }}
+        run: dart run tool/testing/check_released_changelog_sections.dart
       - run: dart run tool/testing/check_webgpu_bridge_tag.dart
 
   validation-integration:

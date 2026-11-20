@@ -203,6 +203,17 @@ jobs:
 
           push_tag() {
             local tag="$1"
+            local consumed
+            if ! git fetch --no-tags --no-recurse-submodules \
+              https://github.com/leehack/llamadart.git refs/heads/main ||
+              ! consumed="$(git ls-tree FETCH_HEAD -- "tool/release/recoveries/$RELEASE_SHA.json")"; then
+              echo "Could not check current owner main for a consumed release prep. No tag was written." >&2
+              return 1
+            fi
+            if [[ -n "$consumed" ]]; then
+              echo "Release prep $RELEASE_SHA was recovered on main. Refusing to tag it." >&2
+              return 1
+            fi
             echo "Creating tag $tag at $RELEASE_SHA"
             GH_TOKEN="$RELEASE_TOKEN" gh api \
               --method POST \

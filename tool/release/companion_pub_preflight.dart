@@ -27,6 +27,9 @@ import 'package:yaml/yaml.dart';
 
 import '../testing/verify_release_docs_versions.dart';
 import 'companion_package_contents.dart';
+import 'pub_dev_api.dart';
+
+export 'pub_dev_api.dart';
 
 /// A Flutter Apple SwiftPM companion package checked out under `packages/`.
 typedef CompanionPackage = ({String name, String path});
@@ -107,14 +110,6 @@ release, the package owner must:
   3. On the same page, enable automated publishing from GitHub Actions for
      repository leehack/llamadart with tag pattern $name-v{{version}}.''';
 }
-
-/// The pub.dev endpoint describing [version] of [package], including the
-/// pubspec it was published with.
-Uri pubDevVersionUri(String package, String version) =>
-    Uri.https('pub.dev', '/api/packages/$package/versions/$version');
-
-/// A response body and status from pub.dev.
-typedef PubDevResponse = ({int status, String body});
 
 /// Problems that must stop the release before any tag is pushed: one per
 /// companion whose checked-out version is already on pub.dev with a
@@ -315,26 +310,6 @@ bool _sameConstraint(String? local, Object? published) {
     return VersionConstraint.parse(local) == VersionConstraint.parse(published);
   } on FormatException {
     return false;
-  }
-}
-
-/// Fetches [uri], failing when the connection takes over 30 seconds, or the
-/// response headers or [bodyTimeout] pass first.
-Future<PubDevResponse> pubDevGet(
-  Uri uri, {
-  Duration bodyTimeout = const Duration(seconds: 60),
-}) async {
-  final client = HttpClient()..connectionTimeout = const Duration(seconds: 30);
-  try {
-    final request = await client.getUrl(uri);
-    final response = await request.close().timeout(const Duration(seconds: 60));
-    final body = await response
-        .transform(utf8.decoder)
-        .join()
-        .timeout(bodyTimeout);
-    return (status: response.statusCode, body: body);
-  } finally {
-    client.close(force: true);
   }
 }
 
