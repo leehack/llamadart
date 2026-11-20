@@ -463,11 +463,12 @@ use `--review FILE` with the draft prep body. In
 for each required source affected by editorial changes. Fix unresolved
 input at its source before continuing.
 
-Before merge, the checks read a synthesized single-parent squash with the
-tested merge tree and the PR title and body. Before tag creation, they
-read the actual squash. The
-receipt binds effective inputs. Executing from the candidate and landed
-trees binds the renderer and verifier to the code under review. The
+Before merge, the checks verify single-parent squashes with the tested
+merge tree and the PR title and body, including variants with GitHub
+co-author and sign-off trailers. End the receipt block with no trailing
+attribution or whitespace. Before tag creation, the checks read the actual
+squash. The receipt binds effective inputs. Running from the candidate and
+landed trees binds the renderer and verifier to the code under review. The
 publisher requires a single-parent squash and reads the receipt from its
 immutable commit message. Refresh the ledger, review and receipt if main
 moves. Retry at the same landed SHA even when its tag already exists.

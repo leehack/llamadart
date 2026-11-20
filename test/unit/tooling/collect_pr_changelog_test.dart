@@ -36,6 +36,8 @@ const _identity = {
   'GIT_COMMITTER_NAME': 'Release fixture',
   'GIT_COMMITTER_EMAIL': 'fixture@example.invalid',
 };
+const _coauthorBlock = '---------\n\nCo-authored-by: A <a@example.invalid>';
+const _signoff = 'Signed-off-by: B <b@example.invalid>';
 
 String _fixtureBridgeDefault(String tag) =>
     r'ASSETS_TAG="${WEBGPU_BRIDGE_ASSETS_TAG:-'
@@ -196,6 +198,13 @@ Matcher _formatError(String message) => isA<FormatException>().having(
 );
 
 void main() {
+  test('pins the committed changelog cutover tag and first parent', () {
+    expect(jsonDecode(File(_marker).readAsStringSync()), {
+      'tag': 'v0.20.2',
+      'commit': 'adbb25f0af22e769208e43b69851e34c24a97ce5',
+    });
+  });
+
   test(
     'CLI writes both files from first-parent Git with immutable history',
     () async {
@@ -242,37 +251,81 @@ void main() {
     timeout: const Timeout(Duration(minutes: 2)),
   );
 
-  for (final (shape, suffix) in [
-    ('no trailers', ''),
-    ('only a sign-off', 'Signed-off-by: A <a@example.invalid>'),
+  for (final (shape, receiptEnding, lineEnding, valid) in [
+    ('no trailers', '', '\n', true),
+    ('only a sign-off', '\n\n$_signoff', '\n', true),
     (
       'a GitHub co-author block',
-      '---------\n\nCo-authored-by: A <a@example.invalid>\n'
-          'Co-authored-by: B <b@example.invalid>',
+      '\n\n$_coauthorBlock\nCo-authored-by: B <b@example.invalid>',
+      '\n',
+      true,
     ),
     (
       'a GitHub co-author block with blank lines',
-      '---------\n\nCo-authored-by: A <a@example.invalid>\n\n'
-          'Co-authored-by: B <b@example.invalid>',
+      '\n\n$_coauthorBlock\n\nCo-authored-by: B <b@example.invalid>',
+      '\n',
+      true,
+    ),
+    (
+      'a mixed-case folded co-author trailer',
+      '\n\nCo-Authored-By: A\n <a@example.invalid>',
+      '\n',
+      true,
+    ),
+    ('CRLF and a GitHub co-author block', '\n\n$_coauthorBlock', '\r\n', true),
+    (
+      'a user separator and sign-off',
+      '\n\n---------\n\n$_signoff',
+      '\n',
+      false,
+    ),
+    (
+      'a user sign-off paragraph before a GitHub co-author block',
+      '\n\n$_signoff\n\n$_coauthorBlock',
+      '\n',
+      false,
+    ),
+    (
+      'trailing field whitespace before a GitHub co-author block',
+      '  \n\n$_coauthorBlock',
+      '\n',
+      false,
     ),
   ]) {
     test('verifies the immutable prep message with $shape', () async {
       final repo = _repo();
       final through = repo.pr(3, '- Included note.');
       final preview = await _collect(repo, repo.args(write: true));
-      final candidate = repo.commit(
-        'Prepare release (#10)\n\n## Changelog\nN/A: Cuts the release.\n\n'
-        '${_receiptBlock(preview)}\n$suffix',
+      repo.git(['add', '-A']);
+      final tree = repo.git(['write-tree']).trim();
+      final message =
+          'Prepare release (#10)\n\n## Changelog\nN/A: Cuts the release.\n\n'
+          '${_receiptBlock(preview).trimRight()}$receiptEnding\n';
+      final input = repo.file('.git/clact4-landed-message.md')
+        ..writeAsStringSync(message.replaceAll('\n', lineEnding));
+      final candidate = repo.git([
+        'commit-tree',
+        tree,
+        '-p',
+        through,
+        '-F',
+        input.path,
+      ]).trim();
+      input.writeAsStringSync(
+        repo.git(['show', '-s', '--format=%B', candidate]),
       );
-      final input = repo.file('.git/clact3-landed-message.md')
-        ..writeAsStringSync(repo.git(['show', '-s', '--format=%B', candidate]));
-      expect(
-        await _collect(
-          repo,
-          repo.args(through: through, verify: input.path, candidate: candidate),
-        ),
-        contains('Release notes input verified.'),
+      final result = _collect(
+        repo,
+        repo.args(through: through, verify: input.path, candidate: candidate),
       );
+      if (valid) {
+        expect(await result, contains('Release notes input verified.'));
+      } else {
+        await expectLater(
+          result,
+          throwsA(_formatError('duplicate or malformed field')),
+        );
+      }
     });
   }
 
@@ -294,7 +347,7 @@ void main() {
   });
 
   test(
-    'prep CI verifies the synthesized single-parent squash with no trailers',
+    'prep CI verifies each squash attribution variant and rejects unsafe bodies',
     () async {
       final repo = _repo();
       final through = repo.pr(3, '- Included note.');
@@ -317,18 +370,19 @@ void main() {
         'Test merge',
       ]).trim();
       repo.git(['checkout', '--detach', merge]);
-      final event = repo.file('.git/clact3-prep-event.json')
-        ..writeAsStringSync(
-          jsonEncode({
-            'pull_request': {
-              'number': 10,
-              'title': title,
-              'body': body,
-              'base': {'sha': through},
-              'head': {'sha': head},
-            },
-          }),
-        );
+      final event = repo.file('.git/clact4-prep-event.json');
+      void setBody(String body) => event.writeAsStringSync(
+        jsonEncode({
+          'pull_request': {
+            'number': 10,
+            'title': title,
+            'body': body,
+            'base': {'sha': through},
+            'head': {'sha': head},
+          },
+        }),
+      );
+      setBody(body);
       final script = File('tool/release/verify_release_candidate.sh');
       repo.write(script.path, script.readAsStringSync());
       final dart = File('tool/release/collect_pr_changelog.dart').absolute.path;
@@ -371,7 +425,10 @@ fi
       );
       final result = await run();
       expect(result.exitCode, 0, reason: '${result.stdout}\n${result.stderr}');
-      expect(result.stdout, contains('Release notes input verified.'));
+      expect(
+        'Release notes input verified.'.allMatches(result.stdout as String),
+        hasLength(4),
+      );
       final squash = repo.head;
       expect(repo.git(['show', '-s', '--format=%P', squash]).trim(), through);
       expect(repo.git(['rev-parse', 'HEAD^{tree}']).trim(), tree);
@@ -382,6 +439,23 @@ fi
       final mismatched = await run();
       expect(mismatched.exitCode, isNot(0));
       expect(mismatched.stdout, isNot(contains('Core release prep: true')));
+
+      for (final ending in ['\n\n$_signoff\n', '  \n']) {
+        repo.git(['checkout', '--detach', merge]);
+        setBody('${body.trimRight()}$ending');
+        final rejected = await run();
+        expect(
+          rejected.exitCode,
+          isNot(0),
+          reason: '${rejected.stdout}\n${rejected.stderr}',
+        );
+        expect(
+          rejected.stderr,
+          contains(
+            'End the receipt block with no trailing attribution or whitespace.',
+          ),
+        );
+      }
     },
     skip: Platform.isWindows ? 'Runs the Bash workflow step.' : false,
   );

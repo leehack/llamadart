@@ -3033,6 +3033,26 @@ final segment = '${Object()}ImageEditingRequest${Object()}';
 
   group('bounded metadata-only release evidence', () {
     test(
+      'the next patch must preserve the previous runtime baseline',
+      () async {
+        final files = metadataFiles();
+        const path = 'CHANGELOG.md';
+        final changelog = files[headSha]![path]!;
+        files[headSha]![path] = (
+          mode: changelog.mode,
+          contents: changelog.contents.replaceFirst(
+            _metadataBaseline,
+            _metadataBaseline.replaceFirst('v1.0.0-3', 'v1.0.0-4'),
+          ),
+        );
+        expectFailure(
+          await evaluateMetadata(files: files),
+          ReadinessFailureClassification.invalidReleaseMetadata,
+        );
+      },
+    );
+
+    test(
       'new release prefix cannot duplicate or invent historical sections',
       () async {
         for (final heading in ['## 0.8.22', '## 9.0.0', '## Migration']) {

@@ -86,6 +86,13 @@ void main() {
         },
       );
 
+      test('the frozen release command rejects unexpected arguments', () {
+        final result = _runScript(origin.seed.directory, ['--write']);
+        expect(result.exitCode, 64, reason: '${result.stderr}');
+        expect(result.stderr, contains('Usage: dart $_script'));
+        expect(origin.seed.git(['status', '--porcelain']), isEmpty);
+      });
+
       test('preserves core changelog bytes on advanced main', () {
         const pending = '## 1.0.1\n\n- Published fix.\n\n$_released';
         origin.commitToMain({
