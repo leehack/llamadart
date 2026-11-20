@@ -17,8 +17,6 @@ jobs:
     name: PR changelog
     runs-on: ubuntu-latest
     timeout-minutes: 5
-    outputs:
-      verify-prep: ${{ steps.route.outputs.verify-prep }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -28,25 +26,32 @@ jobs:
         with:
           sdk: 3.13.1
       - run: dart tool/release/pr_changelog.dart --event
-      - name: Route verification
-        id: route
-        if: >-
-          github.event.label.name == 'release-prep' ||
-          (github.event.pull_request.head.repo.full_name == github.repository &&
-           (contains(github.event.pull_request.labels.*.name, 'release-prep') ||
-            startsWith(github.event.pull_request.head.ref, 'release/')))
-        run: dart tool/release/pr_changelog.dart --prep-event >> "$GITHUB_OUTPUT"
 
   release-prep:
     name: Verify release prep
     needs: changelog
-    if: needs.changelog.outputs.verify-prep == 'true'
+    # The implicit success() would skip this check after a body validation failure.
+    if: >-
+      !cancelled() &&
+      (github.event.label.name == 'release-prep' ||
+       (github.event.pull_request.head.repo.full_name == github.repository &&
+        (contains(github.event.pull_request.labels.*.name, 'release-prep') ||
+         startsWith(github.event.pull_request.head.ref, 'release/'))))
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
       contents: read
       pull-requests: read
     steps:
+      - name: Require PR changelog validation to pass
+        env:
+          CHANGELOG_RESULT: ${{ needs.changelog.result }}
+        shell: bash
+        run: |
+          if [[ "$CHANGELOG_RESULT" != success ]]; then
+            echo 'PR changelog validation did not pass. See the PR changelog job.' >&2
+            exit 1
+          fi
       - uses: actions/checkout@v7
         with:
           ref: ${{ github.sha }}
