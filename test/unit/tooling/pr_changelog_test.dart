@@ -9,22 +9,19 @@ import 'package:yaml/yaml.dart';
 
 import '../../../tool/release/pr_changelog.dart';
 
-Future<ProcessResult> _validate(String? body) => _command('--event', {
-  'pull_request': {'body': body},
-});
-
-Future<ProcessResult> _command(String mode, Map<String, Object?> event) async {
+Future<ProcessResult> _validate(String? body) async {
   final temp = Directory.systemTemp.createTempSync('clact2-pr-event-');
   try {
     final payload = File('${temp.path}/event.json')
-      ..writeAsStringSync(jsonEncode(event));
+      ..writeAsStringSync(
+        jsonEncode({
+          'pull_request': {'body': body},
+        }),
+      );
     return await Process.run(
       Platform.resolvedExecutable,
-      ['tool/release/pr_changelog.dart', mode],
-      environment: {
-        'GITHUB_EVENT_PATH': payload.path,
-        'GITHUB_REPOSITORY': 'owner/repo',
-      },
+      ['tool/release/pr_changelog.dart', '--event'],
+      environment: {'GITHUB_EVENT_PATH': payload.path},
     );
   } finally {
     temp.deleteSync(recursive: true);
@@ -45,19 +42,36 @@ N/A: Updates tests for the existing behavior.
 ''';
 
 void main() {
+  final workflow =
+      loadYaml(File('.github/workflows/pr_changelog.yml').readAsStringSync())
+          as YamlMap;
+  final pullRequest = workflow['on']['pull_request'] as YamlMap;
+  final jobs = workflow['jobs'] as YamlMap;
+  final verify = jobs['release-prep'] as YamlMap;
+
   test('the PR workflow keeps body edits separate from heavy CI', () {
-    final workflow = File(
-      '.github/workflows/pr_changelog.yml',
-    ).readAsStringSync();
+    expect(pullRequest['branches'], ['main']);
+    expect(pullRequest['types'], [
+      'opened',
+      'reopened',
+      'synchronize',
+      'edited',
+      'ready_for_review',
+      'labeled',
+      'unlabeled',
+    ]);
+    final steps = jobs['changelog']['steps'] as YamlList;
+    final checkout = steps.first as YamlMap;
     expect(
-      workflow,
-      contains(
-        'opened, reopened, synchronize, edited, ready_for_review, labeled, unlabeled',
-      ),
+      checkout['with']['ref'],
+      r'${{ github.event.pull_request.base.sha }}',
     );
-    expect(workflow, contains('dart tool/release/pr_changelog.dart --event'));
-    expect(workflow, contains('github.event.pull_request.base.sha'));
-    expect(workflow, contains('persist-credentials: false'));
+    expect(checkout['with']['persist-credentials'], isFalse);
+    final validate = steps.cast<YamlMap>().singleWhere(
+      (step) => step['run'] == 'dart tool/release/pr_changelog.dart --event',
+    );
+    expect(validate['if'], isNull);
+    expect(validate['continue-on-error'], isNull);
     expect(
       File('.github/workflows/ci.yml').readAsStringSync(),
       isNot(contains('- edited')),
@@ -65,88 +79,51 @@ void main() {
   });
 
   test(
-    'prep event routes meaningful changes and both release-prep label transitions',
-    () async {
-      const previous = '1111111111111111111111111111111111111111';
-      const through = '2222222222222222222222222222222222222222';
-      const digest =
-          '3333333333333333333333333333333333333333333333333333333333333333';
-      const body =
-          '## Changelog\n\nN/A: Release prep.\n\n## Release notes input\n\nPrevious-tag: v1.0.0@$previous\nThrough: $through\nInput-SHA256: $digest\n';
-      Future<bool> route(
-        String action, {
-        String current = body,
-        String? before,
-        String? label,
-        bool prep = true,
-        bool retargeted = false,
-      }) async {
-        final result = await _command('--prep-event', {
-          'action': action,
-          'pull_request': {
-            'body': current,
-            'head': {
-              'ref': 'fixture',
-              'repo': {'full_name': 'owner/repo'},
-            },
-            'labels': [
-              if (prep) {'name': 'release-prep'},
-            ],
-          },
-          if (before != null || retargeted)
-            'changes': {
-              if (before != null) 'body': {'from': before},
-              if (retargeted)
-                'base': {
-                  'ref': {'from': 'old-base'},
-                },
-            },
-          if (label != null) 'label': {'name': label},
-        });
-        expect(result.exitCode, 0, reason: '${result.stderr}');
-        return (result.stdout as String).trim() == 'verify-prep=true';
-      }
-
-      expect(await route('opened'), isTrue);
-      expect(await route('opened', prep: false), isFalse);
-      expect(await route('edited', retargeted: true), isTrue);
+    'the named prep job routes by identity even after body validation fails',
+    () {
+      expect(verify['name'], 'Verify release prep');
+      expect(verify['needs'], 'changelog');
       expect(
-        await route(
-          'edited',
-          current: '## Summary\n\nNew context.\n\n$body',
-          before: body,
-        ),
-        isTrue,
+        (verify['if'] as String).replaceAll(RegExp(r'\s+'), ' '),
+        "!cancelled() && (github.event.label.name == 'release-prep' || "
+        '(github.event.pull_request.head.repo.full_name == github.repository && '
+        "(contains(github.event.pull_request.labels.*.name, 'release-prep') || "
+        "startsWith(github.event.pull_request.head.ref, 'release/'))))",
       );
-      expect(await route('edited'), isFalse);
-      expect(
-        await route(
-          'edited',
-          current: body.replaceFirst(
-            digest,
-            previous + previous.substring(0, 24),
-          ),
-          before: body,
-        ),
-        isTrue,
-      );
-      expect(
-        await route(
-          'edited',
-          current: body.replaceFirst(digest, 'broken'),
-          before: body,
-        ),
-        isTrue,
-      );
-      expect(await route('labeled', label: 'release-prep'), isTrue);
-      expect(
-        await route('unlabeled', label: 'release-prep', prep: false),
-        isTrue,
-      );
-      expect(await route('labeled', label: 'docs'), isFalse);
-      expect((await _validate(_template)).exitCode, 1);
-      expect((await _validate(body)).exitCode, 0);
     },
+  );
+
+  test(
+    'the named prep job fails invalid descriptions before checkout',
+    () async {
+      final step = (verify['steps'] as YamlList).first as YamlMap;
+      expect(step['if'], isNull);
+      expect(step['continue-on-error'], isNull);
+      expect(step['shell'], 'bash');
+      expect(step['env']['CHANGELOG_RESULT'], r'${{ needs.changelog.result }}');
+      Future<ProcessResult> gate(String result) => Process.run(
+        'bash',
+        ['-e', '-c', step['run'] as String],
+        environment: {'CHANGELOG_RESULT': result},
+      );
+
+      final valid = File(
+        'test/fixtures/release_prep/pr_2114_description.md',
+      ).readAsStringSync();
+      for (final body in [null, '', _template, valid]) {
+        final upstream = await _validate(body);
+        expect(upstream.exitCode, body == valid ? 0 : 1);
+        final result = await gate(
+          upstream.exitCode == 0 ? 'success' : 'failure',
+        );
+        expect(result.exitCode, upstream.exitCode, reason: '${result.stderr}');
+        if (upstream.exitCode != 0) {
+          expect(result.stderr, contains('PR changelog validation'));
+        }
+      }
+      expect((await gate('skipped')).exitCode, 1);
+    },
+    skip: Platform.isWindows ? 'Runs the Bash workflow step.' : false,
   );
 
   test('both selected docs validation paths enforce protected changelogs', () {

@@ -479,7 +479,14 @@ PR title and body as written, variants with co-author and sign-off trailers,
 and GitHub's default squash message. GitHub rewraps description lines over
 72 characters in its default message. A receipt value can move to the line
 after its key, and a review entry can continue on adjacent unindented lines.
-The verifier reads both forms. Any edit to the PR body reruns the check.
+The verifier reads both forms. Opening, reopening, pushing to, editing or
+retargeting a prep, marking it ready, and adding or removing any label rerun
+the check. An invalid description fails the check. Removing the `release-prep`
+label from a prep without a versioned prep branch rechecks the protected
+changelogs under the ordinary PR rules.
+Before merging, require a completed success from the latest run for the
+current head, base and description. If the run was cancelled or superseded,
+wait for a completed current run.
 End the receipt block with no trailing attribution or whitespace.
 
 Land a release prep using **Squash and merge** only. Use GitHub's default
