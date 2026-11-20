@@ -421,9 +421,9 @@ void main(List<String> args) {
     }
     return;
   }
-  if (args.length != 1 || !['--event', '--prep-event'].contains(args.single)) {
+  if (args.length != 1 || args.single != '--event') {
     stderr.writeln(
-      'Usage: dart tool/release/pr_changelog.dart --event|--prep-event|--body FILE',
+      'Usage: dart tool/release/pr_changelog.dart --event|--body FILE',
     );
     exitCode = 64;
     return;
@@ -434,9 +434,7 @@ void main(List<String> args) {
       _invalid('GITHUB_EVENT_PATH is required.');
     }
     final event = jsonDecode(File(eventPath).readAsStringSync());
-    if (args.single == '--prep-event' && event is Map<String, Object?>) {
-      stdout.writeln('verify-prep=${_verifyPrepEvent(event)}');
-    } else if (event case {'pull_request': {'body': final String body}}) {
+    if (event case {'pull_request': {'body': final String body}}) {
       parsePrChangelog(body);
       stdout.writeln('Changelog section is valid.');
     } else {
@@ -465,34 +463,3 @@ bool isCoreReleasePrep({
     headRepository == repository &&
     !headRef.startsWith('release/genkit_llamadart-') &&
     (labels.contains('release-prep') || _prepRef.hasMatch(headRef));
-
-bool _verifyPrepEvent(Map<String, Object?> event) {
-  final action = event['action'];
-  if (action == 'labeled' || action == 'unlabeled') {
-    return (event['label'] as Map?)?['name'] == 'release-prep';
-  }
-  if (event
-      case {
-        'pull_request': {
-          'head': {
-            'ref': final String ref,
-            'repo': {'full_name': final String headRepo},
-          },
-          'labels': final List labels,
-          'body': String _,
-        },
-      }
-      when isCoreReleasePrep(
-        labels: labels.whereType<Map>().map((label) => '${label['name']}'),
-        headRef: ref,
-        headRepository: headRepo,
-        repository: Platform.environment['GITHUB_REPOSITORY'] ?? '',
-      )) {
-    if (action != 'edited') return true;
-    // GitHub derives its default squash message from the whole description.
-    final changes = event['changes'] as Map?;
-    return changes != null &&
-        (changes.containsKey('base') || changes.containsKey('body'));
-  }
-  return false;
-}
