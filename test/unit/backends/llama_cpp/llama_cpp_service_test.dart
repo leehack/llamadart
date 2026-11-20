@@ -266,31 +266,30 @@ void main() {
       () async {
         final temp = Directory.systemTemp.createTempSync('budget-single-api-');
         addTearDown(() => temp.deleteSync(recursive: true));
-        final library = path.join(
-          temp.path,
-          Platform.isWindows
-              ? 'budget.dll'
-              : Platform.isMacOS
-              ? 'budget.dylib'
-              : 'budget.so',
+        final recorder = RecordingExitTeardown(
+          ExitTeardownApi.tryResolve(isWindows: Platform.isWindows)!,
         );
-        final build = await Process.run(Platform.isWindows ? 'clang' : 'cc', [
-          if (Platform.isWindows) '-fuse-ld=lld',
-          Platform.isMacOS ? '-dynamiclib' : '-shared',
-          if (!Platform.isWindows) '-fPIC',
-          'test/fixtures/reasoning_budget_single_runtime.c',
-          '-o',
-          library,
-        ]);
-        expect(build.exitCode, 0, reason: '${build.stdout}\n${build.stderr}');
-        final wrapper = DynamicLibrary.open(library);
-        addTearDown(wrapper.close);
-        final service = LlamaCppService()..initializeBackend();
+        final service = LlamaCppService(
+          objectCalls: LlamaCppObjectCalls.tracked(recorder.api),
+        )..initializeBackend();
         addTearDown(service.dispose);
-        expect(resolve(service, [library], open: (_) => wrapper), isNotNull);
+        final api = reflect(
+          _invokePrivateForTesting<Object>(
+            service,
+            '_resolveReasoningBudgetApi',
+            const [],
+          ),
+        );
+        // Retain the real single-end FFI call while simulating the export set
+        // of an older wrapper without a compiler subprocess in the VM suite.
+        final singleEndApi = api.type.newInstance(Symbol.empty, const [], {
+          #init: api.getField(#init).reflectee,
+        }).reflectee;
+        _writePrivateForTesting(service, '_reasoningBudgetApi', singleEndApi);
 
         const modelParams = ModelParams(
           contextSize: 1024,
+          preferredBackend: GpuBackend.cpu,
           gpuLayers: 0,
           numberOfThreads: 2,
           numberOfThreadsBatch: 2,
@@ -308,13 +307,15 @@ void main() {
         final cancel = calloc<Int8>();
         addTearDown(() => calloc.free(cancel));
         await expectLater(
-          service.generate(
-            context,
-            '<think>',
-            GenerationParams(thinkingBudget: budget),
-            cancel.address,
-          ),
-          emitsError(
+          service
+              .generate(
+                context,
+                '<think>',
+                GenerationParams(thinkingBudget: budget),
+                cancel.address,
+              )
+              .drain<void>(),
+          throwsA(
             isA<LlamaUnsupportedException>().having(
               (error) => error.message,
               'message',
@@ -325,6 +326,24 @@ void main() {
             ),
           ),
         );
+        expect(recorder.decodedTokens, isEmpty);
+
+        await service
+            .generate(
+              context,
+              '<think>',
+              const GenerationParams(
+                maxTokens: 1,
+                thinkingBudget: ThinkingBudget(
+                  maxTokens: 0,
+                  startTag: '<think>',
+                  endTag: '</think>',
+                ),
+              ),
+              cancel.address,
+            )
+            .drain<void>();
+        expect(recorder.decodedTokens, isNotEmpty);
       },
     );
 
