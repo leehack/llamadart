@@ -131,7 +131,9 @@ real_kill=p.os.killpg
 def start(*args,**kwargs):
  assert kwargs.get('start_new_session') is True
  child=real_popen(*args,**kwargs)
- (root/'owned-pid').write_text(str(child.pid))
+ pid_file=root/'owned-pid.tmp'
+ pid_file.write_text(str(child.pid))
+ pid_file.replace(root/'owned-pid')
  if launch: os.kill(os.getpid(),signum)
  return child
 def kill(*args,**kwargs):
@@ -150,12 +152,14 @@ except p.CaptureInterrupted as error:
         owned_pid = None
         try:
             end = time.monotonic() + 5
-            marker = self.root / 'owned-pid' if during_launch else ready
-            while not marker.exists() and process.poll() is None and time.monotonic() < end:
+            pid_file = self.root / 'owned-pid'
+            while (not (pid_file.exists() and (during_launch or ready.exists()))
+                   and process.poll() is None and time.monotonic() < end):
                 time.sleep(0.01)
-            self.assertTrue(marker.exists(), 'synthetic child did not start')
-            owned_pid = int((self.root / 'owned-pid').read_text())
+            self.assertTrue(pid_file.exists(), 'supervisor did not record the owned PID')
+            owned_pid = int(pid_file.read_text())
             if not during_launch:
+                self.assertTrue(ready.exists(), 'synthetic child did not start')
                 os.kill(process.pid, signum)
             stdout, stderr = process.communicate(timeout=8)
             self.assertEqual(process.returncode, 128 + signum, stderr.decode())
