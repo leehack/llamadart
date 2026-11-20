@@ -251,32 +251,42 @@ void main() {
     timeout: const Timeout(Duration(minutes: 2)),
   );
 
-  for (final (shape, receiptEnding, lineEnding, valid) in [
-    ('no trailers', '', '\n', true),
-    ('only a sign-off', '\n\n$_signoff', '\n', true),
+  for (final (shape, receiptEnding, lineEnding, valid, rewrapped) in [
+    ('no trailers', '', '\n', true, false),
+    ('only a sign-off', '\n\n$_signoff', '\n', true, false),
     (
       'a GitHub co-author block',
       '\n\n$_coauthorBlock\nCo-authored-by: B <b@example.invalid>',
       '\n',
       true,
+      false,
     ),
     (
       'a GitHub co-author block with blank lines',
       '\n\n$_coauthorBlock\n\nCo-authored-by: B <b@example.invalid>',
       '\n',
       true,
+      false,
     ),
     (
       'a mixed-case folded co-author trailer',
       '\n\nCo-Authored-By: A\n <a@example.invalid>',
       '\n',
       true,
+      false,
     ),
-    ('CRLF and a GitHub co-author block', '\n\n$_coauthorBlock', '\r\n', true),
+    (
+      'CRLF and a GitHub co-author block',
+      '\n\n$_coauthorBlock',
+      '\r\n',
+      true,
+      false,
+    ),
     (
       'a user separator and sign-off',
       '\n\n---------\n\n$_signoff',
       '\n',
+      false,
       false,
     ),
     (
@@ -284,12 +294,29 @@ void main() {
       '\n\n$_signoff\n\n$_coauthorBlock',
       '\n',
       false,
+      false,
     ),
     (
       'trailing field whitespace before a GitHub co-author block',
       '  \n\n$_coauthorBlock',
       '\n',
       false,
+      false,
+    ),
+    ('a rewrapped receipt', '', '\n', true, true),
+    (
+      'a rewrapped receipt and co-author block',
+      '\n\n$_coauthorBlock',
+      '\n',
+      true,
+      true,
+    ),
+    (
+      'a rewrapped receipt and directly appended sign-off',
+      '\n$_signoff',
+      '\n',
+      true,
+      true,
     ),
   ]) {
     test('verifies the immutable prep message with $shape', () async {
@@ -298,9 +325,13 @@ void main() {
       final preview = await _collect(repo, repo.args(write: true));
       repo.git(['add', '-A']);
       final tree = repo.git(['write-tree']).trim();
+      var receipt = _receiptBlock(preview).trimRight();
+      if (rewrapped) {
+        receipt = receipt.replaceFirst('Input-SHA256: ', 'Input-SHA256:\n');
+      }
       final message =
           'Prepare release (#10)\n\n## Changelog\nN/A: Cuts the release.\n\n'
-          '${_receiptBlock(preview).trimRight()}$receiptEnding\n';
+          '$receipt$receiptEnding\n';
       final input = repo.file('.git/clact4-landed-message.md')
         ..writeAsStringSync(message.replaceAll('\n', lineEnding));
       final candidate = repo.git([
@@ -346,47 +377,59 @@ void main() {
     expect(_draft(output), contains('- Refreshed native pins.'));
   });
 
-  test(
-    'prep CI verifies each squash attribution variant and rejects unsafe bodies',
-    () async {
-      final repo = _repo();
-      final through = repo.pr(3, '- Included note.');
-      final preview = await _collect(repo, repo.args(write: true));
-      final body =
-          '## Changelog\nN/A: Cuts the release.\n\n${_receiptBlock(preview)}';
-      const title = 'Prepare release';
-      final head = repo.commit(title, {
-        'pubspec.yaml': 'name: llamadart\nversion: 0.20.3\n',
-      });
-      final tree = repo.git(['rev-parse', 'HEAD^{tree}']).trim();
-      final merge = repo.git([
-        'commit-tree',
-        tree,
-        '-p',
-        through,
-        '-p',
-        head,
-        '-m',
-        'Test merge',
-      ]).trim();
-      repo.git(['checkout', '--detach', merge]);
-      final event = repo.file('.git/clact4-prep-event.json');
-      void setBody(String body) => event.writeAsStringSync(
-        jsonEncode({
-          'pull_request': {
-            'number': 10,
-            'title': title,
-            'body': body,
-            'base': {'sha': through},
-            'head': {'sha': head},
-          },
-        }),
-      );
-      setBody(body);
-      final script = File('tool/release/verify_release_candidate.sh');
-      repo.write(script.path, script.readAsStringSync());
-      final dart = File('tool/release/collect_pr_changelog.dart').absolute.path;
-      repo.write('.git/dart', r'''#!/usr/bin/env bash
+  for (final (failure, headline, message) in [
+    (null, 'Prepare release (#10)', 'rewrapped'),
+    ('a fenced receipt', 'Prepare release (#10)', 'fenced'),
+    ('a null body', 'Prepare release (#10)', null),
+    ('a null headline', null, 'rewrapped'),
+    ('a wrong PR suffix', 'Prepare release (#11)', 'rewrapped'),
+    ('a failed fetch', 'Prepare release (#10)', 'unavailable'),
+  ]) {
+    test(
+      failure == null
+          ? 'prep CI verifies each squash attribution variant and the GitHub message'
+          : 'prep CI rejects the GitHub message with $failure',
+      () async {
+        final repo = _repo();
+        final through = repo.pr(3, '- Included note.');
+        final preview = await _collect(repo, repo.args(write: true));
+        final body =
+            '## Changelog\nN/A: Cuts the release.\n\n${_receiptBlock(preview)}';
+        const title = 'Prepare release';
+        final head = repo.commit(title, {
+          'pubspec.yaml': 'name: llamadart\nversion: 0.20.3\n',
+        });
+        final tree = repo.git(['rev-parse', 'HEAD^{tree}']).trim();
+        final merge = repo.git([
+          'commit-tree',
+          tree,
+          '-p',
+          through,
+          '-p',
+          head,
+          '-m',
+          'Test merge',
+        ]).trim();
+        repo.git(['checkout', '--detach', merge]);
+        final event = repo.file('.git/clact4-prep-event.json');
+        void setBody(String body) => event.writeAsStringSync(
+          jsonEncode({
+            'pull_request': {
+              'number': 10,
+              'title': title,
+              'body': body,
+              'base': {'sha': through},
+              'head': {'sha': head},
+            },
+          }),
+        );
+        setBody(body);
+        final script = File('tool/release/verify_release_candidate.sh');
+        repo.write(script.path, script.readAsStringSync());
+        final dart = File(
+          'tool/release/collect_pr_changelog.dart',
+        ).absolute.path;
+        repo.write('.git/dart', r'''#!/usr/bin/env bash
 if [[ "$1" == tool/testing/check_released_changelog_sections.dart ]]; then
   echo 'Core release prep: true'
 elif [[ "$2" == tool/release/collect_pr_changelog.dart ]]; then
@@ -394,71 +437,130 @@ elif [[ "$2" == tool/release/collect_pr_changelog.dart ]]; then
   exec "$FIXTURE_DART" "$FIXTURE_COLLECTOR" "$@"
 fi
 ''');
-      final chmod = Process.runSync('chmod', [
-        '+x',
-        repo.file('.git/dart').path,
-      ]);
-      expect(chmod.exitCode, 0, reason: '${chmod.stderr}');
-      final workflow =
-          loadYaml(
-                File('.github/workflows/pr_changelog.yml').readAsStringSync(),
-              )
-              as YamlMap;
-      final steps = workflow['jobs']['release-prep']['steps'] as YamlList;
-      final verify = steps.cast<YamlMap>().singleWhere(
-        (step) =>
-            step['name'] == 'Check the real PR head and tested merge result',
-      );
-      final env = {
-        ..._identity,
-        'GITHUB_EVENT_PATH': event.path,
-        'RUNNER_TEMP': repo.file('.git').path,
-        'PATH': '${repo.file('.git').path}:${Platform.environment['PATH']}',
-        'FIXTURE_DART': Platform.resolvedExecutable,
-        'FIXTURE_COLLECTOR': dart,
-      };
-      Future<ProcessResult> run() => Process.run(
-        'bash',
-        ['-c', verify['run'] as String],
-        workingDirectory: repo.dir.path,
-        environment: env,
-      );
-      final result = await run();
-      expect(result.exitCode, 0, reason: '${result.stdout}\n${result.stderr}');
-      expect(
-        'Release notes input verified.'.allMatches(result.stdout as String),
-        hasLength(4),
-      );
-      final squash = repo.head;
-      expect(repo.git(['show', '-s', '--format=%P', squash]).trim(), through);
-      expect(repo.git(['rev-parse', 'HEAD^{tree}']).trim(), tree);
-      expect(
-        repo.git(['show', '-s', '--format=%B', squash]).trimRight(),
-        '$title (#10)\n\n${body.trimRight()}',
-      );
-      final mismatched = await run();
-      expect(mismatched.exitCode, isNot(0));
-      expect(mismatched.stdout, isNot(contains('Core release prep: true')));
+        // Stands in for GitHub's viewerMergeHeadlineText and viewerMergeBodyText.
+        final github = repo.file('.git/clact4-github-squash.json');
+        final rewrapped = body.trimRight().replaceFirst(
+          'Input-SHA256: ',
+          'Input-SHA256:\n',
+        );
+        if (message != 'unavailable') {
+          github.writeAsStringSync(
+            jsonEncode({
+              'data': {
+                'repository': {
+                  'pullRequest': {
+                    'viewerMergeHeadlineText': headline,
+                    'viewerMergeBodyText': switch (message) {
+                      'rewrapped' => rewrapped,
+                      'fenced' => rewrapped.replaceFirst(
+                        '## Release notes input',
+                        '```',
+                      ),
+                      _ => null,
+                    },
+                  },
+                },
+              },
+            }),
+          );
+        }
+        repo.write('.git/gh', r'''#!/usr/bin/env bash
+[[ "$*" == "api graphql -f owner=owner -f name=repo -F number=10 -f query="* ]] || exit 64
+[[ "$*" == *'viewerMergeHeadlineText(mergeType: SQUASH)'* ]] || exit 64
+[[ "$*" == *'viewerMergeBodyText(mergeType: SQUASH)'* ]] || exit 64
+exec cat "$FIXTURE_GITHUB_SQUASH"
+''');
+        final chmod = Process.runSync('chmod', [
+          '+x',
+          repo.file('.git/dart').path,
+          repo.file('.git/gh').path,
+        ]);
+        expect(chmod.exitCode, 0, reason: '${chmod.stderr}');
+        final workflow =
+            loadYaml(
+                  File('.github/workflows/pr_changelog.yml').readAsStringSync(),
+                )
+                as YamlMap;
+        final steps = workflow['jobs']['release-prep']['steps'] as YamlList;
+        final verify = steps.cast<YamlMap>().singleWhere(
+          (step) =>
+              step['name'] == 'Check the real PR head and tested merge result',
+        );
+        final env = {
+          ..._identity,
+          'GITHUB_EVENT_PATH': event.path,
+          'RUNNER_TEMP': repo.file('.git').path,
+          'PATH': '${repo.file('.git').path}:${Platform.environment['PATH']}',
+          'FIXTURE_DART': Platform.resolvedExecutable,
+          'FIXTURE_COLLECTOR': dart,
+          'FIXTURE_GITHUB_SQUASH': github.path,
+          'GITHUB_REPOSITORY': 'owner/repo',
+        };
+        Future<ProcessResult> run() => Process.run(
+          'bash',
+          ['-c', verify['run'] as String],
+          workingDirectory: repo.dir.path,
+          environment: env,
+        );
+        final result = await run();
+        final verified = 'Release notes input verified.'.allMatches(
+          result.stdout as String,
+        );
+        if (failure != null) {
+          expect(
+            result.exitCode,
+            isNot(0),
+            reason: '${result.stdout}\n${result.stderr}',
+          );
+          expect(verified, hasLength(4));
+          if (message == 'fenced') {
+            expect(
+              result.stderr,
+              contains("GitHub's default squash message fails verification."),
+            );
+          }
+          return;
+        }
 
-      for (final ending in ['\n\n$_signoff\n', '  \n']) {
-        repo.git(['checkout', '--detach', merge]);
-        setBody('${body.trimRight()}$ending');
-        final rejected = await run();
         expect(
-          rejected.exitCode,
-          isNot(0),
-          reason: '${rejected.stdout}\n${rejected.stderr}',
+          result.exitCode,
+          0,
+          reason: '${result.stdout}\n${result.stderr}',
         );
+        expect(verified, hasLength(5));
+        final squash = repo.head;
+        expect(repo.git(['show', '-s', '--format=%P', squash]).trim(), through);
+        expect(repo.git(['rev-parse', 'HEAD^{tree}']).trim(), tree);
         expect(
-          rejected.stderr,
-          contains(
-            'End the receipt block with no trailing attribution or whitespace.',
-          ),
+          repo.git(['show', '-s', '--format=%B', squash]).trimRight(),
+          '$title (#10)\n\n$rewrapped',
         );
-      }
-    },
-    skip: Platform.isWindows ? 'Runs the Bash workflow step.' : false,
-  );
+
+        final mismatched = await run();
+        expect(mismatched.exitCode, isNot(0));
+        expect(mismatched.stdout, isNot(contains('Core release prep: true')));
+
+        for (final ending in ['\n\n$_signoff\n', '  \n']) {
+          repo.git(['checkout', '--detach', merge]);
+          setBody('${body.trimRight()}$ending');
+          final rejected = await run();
+          expect(
+            rejected.exitCode,
+            isNot(0),
+            reason: '${rejected.stdout}\n${rejected.stderr}',
+          );
+          expect(
+            rejected.stderr,
+            contains(
+              'End the receipt block with no trailing attribution or whitespace.',
+            ),
+          );
+        }
+      },
+      skip: Platform.isWindows ? 'Runs the Bash workflow step.' : false,
+      timeout: const Timeout(Duration(minutes: 2)),
+    );
+  }
 
   test(
     'rejects write in verification and candidate without verification',
