@@ -9,22 +9,19 @@ import 'package:yaml/yaml.dart';
 
 import '../../../tool/release/pr_changelog.dart';
 
-Future<ProcessResult> _validate(String? body) => _command('--event', {
-  'pull_request': {'body': body},
-});
-
-Future<ProcessResult> _command(String mode, Map<String, Object?> event) async {
+Future<ProcessResult> _validate(String? body) async {
   final temp = Directory.systemTemp.createTempSync('clact2-pr-event-');
   try {
     final payload = File('${temp.path}/event.json')
-      ..writeAsStringSync(jsonEncode(event));
+      ..writeAsStringSync(
+        jsonEncode({
+          'pull_request': {'body': body},
+        }),
+      );
     return await Process.run(
       Platform.resolvedExecutable,
-      ['tool/release/pr_changelog.dart', mode],
-      environment: {
-        'GITHUB_EVENT_PATH': payload.path,
-        'GITHUB_REPOSITORY': 'owner/repo',
-      },
+      ['tool/release/pr_changelog.dart', '--event'],
+      environment: {'GITHUB_EVENT_PATH': payload.path},
     );
   } finally {
     temp.deleteSync(recursive: true);
@@ -45,19 +42,36 @@ N/A: Updates tests for the existing behavior.
 ''';
 
 void main() {
+  final workflow =
+      loadYaml(File('.github/workflows/pr_changelog.yml').readAsStringSync())
+          as YamlMap;
+  final pullRequest = workflow['on']['pull_request'] as YamlMap;
+  final jobs = workflow['jobs'] as YamlMap;
+  final verify = jobs['release-prep'] as YamlMap;
+
   test('the PR workflow keeps body edits separate from heavy CI', () {
-    final workflow = File(
-      '.github/workflows/pr_changelog.yml',
-    ).readAsStringSync();
+    expect(pullRequest['branches'], ['main']);
+    expect(pullRequest['types'], [
+      'opened',
+      'reopened',
+      'synchronize',
+      'edited',
+      'ready_for_review',
+      'labeled',
+      'unlabeled',
+    ]);
+    final steps = jobs['changelog']['steps'] as YamlList;
+    final checkout = steps.first as YamlMap;
     expect(
-      workflow,
-      contains(
-        'opened, reopened, synchronize, edited, ready_for_review, labeled, unlabeled',
-      ),
+      checkout['with']['ref'],
+      r'${{ github.event.pull_request.base.sha }}',
     );
-    expect(workflow, contains('dart tool/release/pr_changelog.dart --event'));
-    expect(workflow, contains('github.event.pull_request.base.sha'));
-    expect(workflow, contains('persist-credentials: false'));
+    expect(checkout['with']['persist-credentials'], isFalse);
+    final validate = steps.cast<YamlMap>().singleWhere(
+      (step) => step['run'] == 'dart tool/release/pr_changelog.dart --event',
+    );
+    expect(validate['if'], isNull);
+    expect(validate['continue-on-error'], isNull);
     expect(
       File('.github/workflows/ci.yml').readAsStringSync(),
       isNot(contains('- edited')),
@@ -65,88 +79,51 @@ void main() {
   });
 
   test(
-    'prep event routes meaningful changes and both release-prep label transitions',
-    () async {
-      const previous = '1111111111111111111111111111111111111111';
-      const through = '2222222222222222222222222222222222222222';
-      const digest =
-          '3333333333333333333333333333333333333333333333333333333333333333';
-      const body =
-          '## Changelog\n\nN/A: Release prep.\n\n## Release notes input\n\nPrevious-tag: v1.0.0@$previous\nThrough: $through\nInput-SHA256: $digest\n';
-      Future<bool> route(
-        String action, {
-        String current = body,
-        String? before,
-        String? label,
-        bool prep = true,
-        bool retargeted = false,
-      }) async {
-        final result = await _command('--prep-event', {
-          'action': action,
-          'pull_request': {
-            'body': current,
-            'head': {
-              'ref': 'fixture',
-              'repo': {'full_name': 'owner/repo'},
-            },
-            'labels': [
-              if (prep) {'name': 'release-prep'},
-            ],
-          },
-          if (before != null || retargeted)
-            'changes': {
-              if (before != null) 'body': {'from': before},
-              if (retargeted)
-                'base': {
-                  'ref': {'from': 'old-base'},
-                },
-            },
-          if (label != null) 'label': {'name': label},
-        });
-        expect(result.exitCode, 0, reason: '${result.stderr}');
-        return (result.stdout as String).trim() == 'verify-prep=true';
-      }
-
-      expect(await route('opened'), isTrue);
-      expect(await route('opened', prep: false), isFalse);
-      expect(await route('edited', retargeted: true), isTrue);
+    'the named prep job routes by identity even after body validation fails',
+    () {
+      expect(verify['name'], 'Verify release prep');
+      expect(verify['needs'], 'changelog');
       expect(
-        await route(
-          'edited',
-          current: '## Summary\n\nNew context.\n\n$body',
-          before: body,
-        ),
-        isTrue,
+        (verify['if'] as String).replaceAll(RegExp(r'\s+'), ' '),
+        "!cancelled() && (github.event.label.name == 'release-prep' || "
+        '(github.event.pull_request.head.repo.full_name == github.repository && '
+        "(contains(github.event.pull_request.labels.*.name, 'release-prep') || "
+        "startsWith(github.event.pull_request.head.ref, 'release/'))))",
       );
-      expect(await route('edited'), isFalse);
-      expect(
-        await route(
-          'edited',
-          current: body.replaceFirst(
-            digest,
-            previous + previous.substring(0, 24),
-          ),
-          before: body,
-        ),
-        isTrue,
-      );
-      expect(
-        await route(
-          'edited',
-          current: body.replaceFirst(digest, 'broken'),
-          before: body,
-        ),
-        isTrue,
-      );
-      expect(await route('labeled', label: 'release-prep'), isTrue);
-      expect(
-        await route('unlabeled', label: 'release-prep', prep: false),
-        isTrue,
-      );
-      expect(await route('labeled', label: 'docs'), isFalse);
-      expect((await _validate(_template)).exitCode, 1);
-      expect((await _validate(body)).exitCode, 0);
     },
+  );
+
+  test(
+    'the named prep job fails invalid descriptions before checkout',
+    () async {
+      final step = (verify['steps'] as YamlList).first as YamlMap;
+      expect(step['if'], isNull);
+      expect(step['continue-on-error'], isNull);
+      expect(step['shell'], 'bash');
+      expect(step['env']['CHANGELOG_RESULT'], r'${{ needs.changelog.result }}');
+      Future<ProcessResult> gate(String result) => Process.run(
+        'bash',
+        ['-e', '-c', step['run'] as String],
+        environment: {'CHANGELOG_RESULT': result},
+      );
+
+      final valid = File(
+        'test/fixtures/release_prep/pr_2114_description.md',
+      ).readAsStringSync();
+      for (final body in [null, '', _template, valid]) {
+        final upstream = await _validate(body);
+        expect(upstream.exitCode, body == valid ? 0 : 1);
+        final result = await gate(
+          upstream.exitCode == 0 ? 'success' : 'failure',
+        );
+        expect(result.exitCode, upstream.exitCode, reason: '${result.stderr}');
+        if (upstream.exitCode != 0) {
+          expect(result.stderr, contains('PR changelog validation'));
+        }
+      }
+      expect((await gate('skipped')).exitCode, 1);
+    },
+    skip: Platform.isWindows ? 'Runs the Bash workflow step.' : false,
   );
 
   test('both selected docs validation paths enforce protected changelogs', () {
@@ -225,6 +202,136 @@ Improve setup (#9)
       () => parsePrChangelog(landedPrBody('$message\nFree prose.')),
       throwsFormatException,
     );
+  });
+
+  group('landed changelog wraps', () {
+    for (final width in [70, 71, 72]) {
+      test('adjacent dash after $width scalars', () {
+        final body = '## Changelog\n- ${'a' * (width - 2)}\n- Second.';
+        expect(parsePrChangelog(body).bullets, hasLength(2));
+        if (width == 70) {
+          expect(parseLandedPrChangelog(body).bullets, hasLength(2));
+        } else {
+          expect(() => parseLandedPrChangelog(body), throwsFormatException);
+        }
+      });
+    }
+
+    test('counts an astral character as one scalar', () {
+      final first = '🚀${'a' * 67}';
+      final section = parseLandedPrChangelog('## Changelog\n- $first\n- Two.');
+      expect(section.bullets.map((bullet) => bullet.text), [first, 'Two.']);
+    });
+
+    test('checks the physical tail before a genuine scoped bullet', () {
+      final first = 'a' * 70;
+      final section = parseLandedPrChangelog(
+        '## Changelog\n- $first\nContinued.\n'
+        '- [packages/genkit_llamadart] Explain the new option.',
+      );
+      expect(section.bullets, [
+        (target: 'core', text: '$first Continued.'),
+        (target: 'packages/genkit_llamadart', text: 'Explain the new option.'),
+      ]);
+    });
+
+    test('keeps an overlong word whole and checks its following boundary', () {
+      final word = 'a' * 79;
+      final body = '## Changelog\n- Keep\n$word\n';
+      expect(
+        parseLandedPrChangelog('${body}whole.').bullets.single.text,
+        'Keep $word whole.',
+      );
+      expect(
+        () => parseLandedPrChangelog('$body- Maybe another entry.'),
+        throwsFormatException,
+      );
+    });
+
+    test('unwraps a long N/A and preserves original outside rows', () {
+      final first = 'a' * 66;
+      const before = 'This reverts commit 0123456789abcdef.  ';
+      const after = 'Keep outside  spacing.  ';
+      final body =
+          '$before\n## Changelog\nN/A: $first\n'
+          'continues here.\n\n## Summary\n$after';
+      final section = parseLandedPrChangelog(body);
+      expect(section.reason, '$first continues here.');
+      expect(section.bullets, isEmpty);
+      expect(section.outsideLines, [before, '## Summary', after]);
+      expect(() => parsePrChangelog(body), throwsFormatException);
+    });
+
+    test('preserves interior spacing in single-line entries', () {
+      const body =
+          '## Changelog\n- Keep  double spaces.\n'
+          '- Preserve\tinterior tabs.\n';
+      expect(
+        parseLandedPrChangelog(body).bullets,
+        parsePrChangelog(body).bullets,
+      );
+    });
+
+    test('keeps a verbatim over-width bullet as a single line', () {
+      final body = '## Changelog\n- Keep ${'a' * 74}.\n- Separate bullet.';
+      expect(
+        parseLandedPrChangelog(body).bullets,
+        parsePrChangelog(body).bullets,
+      );
+    });
+
+    test('blank rows separate even bullets at the wrap limit', () {
+      final body = '## Changelog\n- ${'a' * 70}\n\n';
+      expect(
+        parseLandedPrChangelog('$body- A separate bullet.').bullets,
+        hasLength(2),
+      );
+      expect(
+        () => parseLandedPrChangelog('${body}Unattached prose.'),
+        throwsFormatException,
+      );
+    });
+
+    for (final boundary in [
+      '## Summary',
+      '### Summary',
+      '<!-- guidance -->',
+      '> Example',
+      '```md\nExample\n```',
+      '+ Other list syntax',
+      '1. Ordered example',
+      '---------',
+    ]) {
+      test('declines a wrap-compatible structural row $boundary', () {
+        expect(
+          () =>
+              parseLandedPrChangelog('## Changelog\n- ${'a' * 70}\n$boundary'),
+          throwsFormatException,
+        );
+      });
+    }
+
+    test('declines continuations without the exact greedy rows', () {
+      for (final (first, continuation) in [
+        ('a' * 68, 'b still fits on the preceding row.'),
+        ('a' * 70, ' leading indentation.'),
+        ('a' * 70, 'double  spaces.'),
+        ('a' * 70, '${'a' * 70} multiple words.'),
+        ('a' * 70, '<!-- guidance -->\nContinued.'),
+      ]) {
+        expect(
+          () => parseLandedPrChangelog('## Changelog\n- $first\n$continuation'),
+          throwsFormatException,
+        );
+      }
+    });
+
+    test('the PR event still rejects a manually wrapped description', () async {
+      final body = '## Changelog\n- ${'a' * 70}\nManual continuation.';
+      expect(parseLandedPrChangelog(body).bullets, hasLength(1));
+      expect(() => parsePrChangelog(body), throwsFormatException);
+      expect((await _validate(body)).exitCode, 1);
+    });
   });
 
   final valid = {

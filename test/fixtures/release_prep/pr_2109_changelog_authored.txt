@@ -1,0 +1,3 @@
+## Changelog
+
+- Recover only standalone Gemma 4 function calls with declared tool names and valid syntax, preserve visible text when native calls supersede loose calls, and strip `</tool_call>` and `;` residue after recovered loose calls ([#2095](https://github.com/leehack/llamadart/issues/2095)).

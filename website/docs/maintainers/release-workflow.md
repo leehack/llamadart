@@ -492,6 +492,14 @@ dart tool/release/collect_pr_changelog.dart --version "$version" \
   --from "$previous_tag" --through "$through" --write
 ```
 
+The collector prefers the landed commit's changelog after removing Git
+attribution. It rejoins adjacent lines that match GitHub's greedy wrap at 72
+Unicode code points. If a `- ` row could be a continuation or a new bullet,
+the ledger identifies the commit and boundary. The collector then reads the
+authored description through the verified merged-main PR association. The
+description uses one physical line per entry. Missing or conflicting
+provenance blocks generation.
+
 Review the entire ledger including legacy seed, package-only notes, N/A
 entries, duplicates, fallbacks and reversals. Keep the ledger with the PR.
 Copy the emitted `## Release notes input` into the prep body beside its
@@ -506,7 +514,14 @@ PR title and body as written, variants with co-author and sign-off trailers,
 and GitHub's default squash message. GitHub rewraps description lines over
 72 characters in its default message. A receipt value can move to the line
 after its key, and a review entry can continue on adjacent unindented lines.
-The verifier reads both forms. Any edit to the PR body reruns the check.
+The verifier reads both forms. Opening, reopening, pushing to, editing or
+retargeting a prep, marking it ready, and adding or removing any label rerun
+the check. An invalid description fails the check. Removing the `release-prep`
+label from a prep without a versioned prep branch rechecks the protected
+changelogs under the ordinary PR rules.
+Before merging, require a completed success from the latest run for the
+current head, base and description. If the run was cancelled or superseded,
+wait for a completed current run.
 End the receipt block with no trailing attribution or whitespace.
 
 Land a release prep using **Squash and merge** only. Use GitHub's default

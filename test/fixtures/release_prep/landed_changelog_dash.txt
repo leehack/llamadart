@@ -1,0 +1,4 @@
+## Changelog
+
+- Fix the streaming parser so it keeps the visible text when a call ends
+- and the model continues, as in the wrapped `a - b` case.

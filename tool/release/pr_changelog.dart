@@ -43,15 +43,28 @@ final _placeholder = RegExp(
   caseSensitive: false,
 );
 
-/// Parses a PR description or a commit body after Git trailer removal.
-PrChangelog parsePrChangelog(String body) {
+/// Parses a PR description with one physical line per entry.
+PrChangelog parsePrChangelog(String body) =>
+    _parsePrChangelog(_markdownLines(body));
+
+/// Parses a landed commit body after Git trailer removal.
+PrChangelog parseLandedPrChangelog(String body) =>
+    _parsePrChangelog(_landedChangelogLines(_markdownLines(body)));
+
+/// The landed bytes admit more than one interpretation of an entry boundary.
+class AmbiguousLandedChangelog extends FormatException {
+  AmbiguousLandedChangelog(int line)
+    : super('ambiguous landed Changelog boundary at body line $line.');
+}
+
+PrChangelog _parsePrChangelog(Iterable<_MarkdownLine> rows) {
   final bullets = <ChangelogBullet>[];
   final outside = <String>[];
   String? reason;
   var found = false;
   var inSection = false;
   var inComment = false;
-  for (final row in _markdownLines(body)) {
+  for (final row in rows) {
     final (
       index: _,
       :line,
@@ -151,6 +164,94 @@ typedef _MarkdownLine = ({
   String? example,
   bool inComment,
 });
+
+const _githubWrapColumn = 72;
+final _wrapWord = RegExp(r'[^\p{White_Space}\u001c-\u001f]+', unicode: true);
+final _wrapStructure = RegExp(
+  r'^(?:#{1,6}(?: |$)|[-+*]$|[-=]+ *$|(?:(?:\* *){3,}|(?:- *){3,}|(?:_ *){3,})$)',
+);
+
+Iterable<_MarkdownLine> _landedChangelogLines(
+  Iterable<_MarkdownLine> rows,
+) sync* {
+  var inSection = false;
+  final entry = <_MarkdownLine>[];
+  for (final row in rows) {
+    if (entry.isNotEmpty) {
+      final previous = entry.last.line;
+      final word = _wrapWord.matchAsPrefix(row.line);
+      if (word != null &&
+          previous.runes.length + 1 + word[0]!.runes.length >
+              _githubWrapColumn &&
+          _isGreedyWrapRow(previous)) {
+        if (_isWrapBoundary(row)) {
+          throw AmbiguousLandedChangelog(row.index + 1);
+        }
+        // Folded rows use single spaces and fit the limit, except for a lone
+        // overlong word. Checking this and each break proves the greedy refill.
+        if (!_isGreedyWrapRow(row.line)) {
+          _invalid(
+            'cannot reconstruct the landed entry at line ${row.index + 1}.',
+          );
+        }
+        entry.add(row);
+        continue;
+      }
+      yield _joinLandedEntry(entry);
+      entry.clear();
+    }
+    if (row.heading case final heading?) {
+      inSection = _isSection(heading, 'Changelog');
+    }
+    if (inSection &&
+        row.visible == row.line &&
+        (_startsChangelogBullet(row.line) ||
+            _startsChangelogReason(row.line))) {
+      entry.add(row);
+    } else {
+      yield row;
+    }
+  }
+  if (entry.isNotEmpty) yield _joinLandedEntry(entry);
+}
+
+bool _startsChangelogBullet(String line) =>
+    line == '-' || line.startsWith('- ');
+
+bool _startsChangelogReason(String line) =>
+    line == 'N/A:' || line.startsWith('N/A: ');
+
+bool _isWrapBoundary(_MarkdownLine row) =>
+    row.heading != null ||
+    row.example != null ||
+    row.nested ||
+    row.visible != row.line ||
+    row.inComment ||
+    _startsChangelogBullet(row.line) ||
+    _startsChangelogReason(row.line) ||
+    _listMarker.hasMatch(row.line) ||
+    _wrapStructure.hasMatch(row.line);
+
+bool _isGreedyWrapRow(String line) {
+  final words = _wrapWord.allMatches(line).map((word) => word[0]!).toList();
+  return (line.runes.length <= _githubWrapColumn || words.length == 1) &&
+      words.join(' ') == line;
+}
+
+_MarkdownLine _joinLandedEntry(List<_MarkdownLine> entry) {
+  final first = entry.first;
+  if (entry.length == 1) return first;
+  final line = entry.map((row) => row.line).join(' ');
+  return (
+    index: first.index,
+    line: line,
+    visible: _withoutComments(line, false).$1,
+    heading: first.heading,
+    nested: first.nested,
+    example: first.example,
+    inComment: first.inComment,
+  );
+}
 
 Iterable<_MarkdownLine> _markdownLines(String body) sync* {
   var inComment = false;
@@ -421,9 +522,9 @@ void main(List<String> args) {
     }
     return;
   }
-  if (args.length != 1 || !['--event', '--prep-event'].contains(args.single)) {
+  if (args.length != 1 || args.single != '--event') {
     stderr.writeln(
-      'Usage: dart tool/release/pr_changelog.dart --event|--prep-event|--body FILE',
+      'Usage: dart tool/release/pr_changelog.dart --event|--body FILE',
     );
     exitCode = 64;
     return;
@@ -434,9 +535,7 @@ void main(List<String> args) {
       _invalid('GITHUB_EVENT_PATH is required.');
     }
     final event = jsonDecode(File(eventPath).readAsStringSync());
-    if (args.single == '--prep-event' && event is Map<String, Object?>) {
-      stdout.writeln('verify-prep=${_verifyPrepEvent(event)}');
-    } else if (event case {'pull_request': {'body': final String body}}) {
+    if (event case {'pull_request': {'body': final String body}}) {
       parsePrChangelog(body);
       stdout.writeln('Changelog section is valid.');
     } else {
@@ -465,34 +564,3 @@ bool isCoreReleasePrep({
     headRepository == repository &&
     !headRef.startsWith('release/genkit_llamadart-') &&
     (labels.contains('release-prep') || _prepRef.hasMatch(headRef));
-
-bool _verifyPrepEvent(Map<String, Object?> event) {
-  final action = event['action'];
-  if (action == 'labeled' || action == 'unlabeled') {
-    return (event['label'] as Map?)?['name'] == 'release-prep';
-  }
-  if (event
-      case {
-        'pull_request': {
-          'head': {
-            'ref': final String ref,
-            'repo': {'full_name': final String headRepo},
-          },
-          'labels': final List labels,
-          'body': String _,
-        },
-      }
-      when isCoreReleasePrep(
-        labels: labels.whereType<Map>().map((label) => '${label['name']}'),
-        headRef: ref,
-        headRepository: headRepo,
-        repository: Platform.environment['GITHUB_REPOSITORY'] ?? '',
-      )) {
-    if (action != 'edited') return true;
-    // GitHub derives its default squash message from the whole description.
-    final changes = event['changes'] as Map?;
-    return changes != null &&
-        (changes.containsKey('base') || changes.containsKey('body'));
-  }
-  return false;
-}
