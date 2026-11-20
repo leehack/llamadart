@@ -314,7 +314,7 @@ class _ReasoningBudgetApi {
       'llamadart-native v1.0.0-4 or newer with $_multiSymbol.';
 
   final _LlamaDartReasoningBudgetInitDart init;
-  final _LlamaDartReasoningBudgetMultiInitDart? initMulti;
+  final DartLlama_dart_sampler_init_reasoning_budget_multi? initMulti;
 
   _ReasoningBudgetApi requireMultiEnd(bool required) {
     if (required && initMulti == null) {
@@ -383,8 +383,8 @@ class _ReasoningBudgetApi {
           >(_singleSymbol),
       initMulti: library.providesSymbol(_multiSymbol)
           ? library.lookupFunction<
-              _LlamaDartReasoningBudgetMultiInitNative,
-              _LlamaDartReasoningBudgetMultiInitDart
+              NativeLlama_dart_sampler_init_reasoning_budget_multi,
+              DartLlama_dart_sampler_init_reasoning_budget_multi
             >(_multiSymbol)
           : null,
     );

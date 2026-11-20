@@ -421,7 +421,7 @@ first model load, for diagnosis or controlled deployments:
 This llamadart version pins bridge assets `v0.1.87`, which include the
 API-version-1 media embedding contract and `thinkingBudgetMultiEnd`.
 
-- The pinned `v0.1.87` bridge assets embed llama.cpp `v1.0.0`, matching the native runtime `v1.0.0-3`.
+- The pinned `v0.1.87` bridge assets embed llama.cpp `v1.0.0`, matching the native runtime `v1.0.0-4`.
 
 Provenance and the pinned manifest digest are in
 [`doc/webgpu_bridge.md`](https://github.com/leehack/llamadart/blob/main/doc/webgpu_bridge.md).

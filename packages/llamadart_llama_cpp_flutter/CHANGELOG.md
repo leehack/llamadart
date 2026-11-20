@@ -1,3 +1,7 @@
+## Unreleased
+
+- Update the Apple SwiftPM pin to `leehack/llamadart-native@v1.0.0-4` for XML thinking-budget ends.
+
 ## 0.20.3
 
 - Update the installation example to core `0.20.3`. Apple SwiftPM stays pinned to `leehack/llamadart-native@v1.0.0-3`.

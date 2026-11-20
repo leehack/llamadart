@@ -302,36 +302,6 @@ typedef _LlamaDartReasoningBudgetInitDart =
       Pointer<Int32>,
       int,
     );
-typedef _LlamaDartReasoningBudgetMultiInitNative =
-    Pointer<llama_sampler> Function(
-      Pointer<llama_vocab>,
-      Pointer<Char>,
-      Pointer<Char>,
-      Pointer<Char>,
-      Pointer<Pointer<Char>>,
-      Int32,
-      Int32,
-      Int32,
-      Bool,
-      Pointer<llama_sampler>,
-      Pointer<Int32>,
-      Int32,
-    );
-typedef _LlamaDartReasoningBudgetMultiInitDart =
-    Pointer<llama_sampler> Function(
-      Pointer<llama_vocab>,
-      Pointer<Char>,
-      Pointer<Char>,
-      Pointer<Char>,
-      Pointer<Pointer<Char>>,
-      int,
-      int,
-      int,
-      bool,
-      Pointer<llama_sampler>,
-      Pointer<Int32>,
-      int,
-    );
 typedef _LlamaDartSpeculativeInitNative =
     Pointer<llama_dart_speculative> Function(
       Pointer<llama_model>,

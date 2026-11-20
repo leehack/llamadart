@@ -5,7 +5,7 @@
 library;
 
 /// `leehack/llamadart-native` release tag downloaded for the llama.cpp runtime.
-const llamaCppTag = 'v1.0.0-3';
+const llamaCppTag = 'v1.0.0-4';
 
 /// The first `llamadart_llama_cpp_flutter` release whose `Package.swift` pins
 /// [llamaCppTag].
@@ -16,18 +16,20 @@ const llamaCppTag = 'v1.0.0-3';
 /// `MAJOR.MINOR`, and its own minor's first release otherwise. The native pin
 /// sync sets it to the companion's next release whenever it moves the
 /// companion pin.
-const llamaCppAppleCompanionVersion = '0.20.2';
+const llamaCppAppleCompanionVersion = '0.20.4';
 
 /// Earlier `leehack/llamadart-native` tags that a published Apple llama.cpp
 /// companion pins and the build still accepts, each mapped to what its
 /// frameworks lack compared with [llamaCppTag].
 ///
-/// The Apple artifacts for `v1.0.0-1` and `v1.0.0-2` share the current ABI.
+/// The Apple artifacts for `v1.0.0-1` through `v1.0.0-3` share the current
+/// ABI for singleton budgets. The SDK probes the multi-end export at runtime.
 /// Pre-`v1.0.0` artifacts lack the ARM F16 accumulation fix. Native pin sync
 /// clears this map on a pin change, so earlier tags need new compatibility proof.
 const llamaCppCompatibleAppleCompanionTags = <String, String>{
-  'v1.0.0-1': 'the v1.0.0-3 native speech fixes',
-  'v1.0.0-2': 'the v1.0.0-3 native speech fixes',
+  'v1.0.0-1': 'the v1.0.0-3 speech fixes and multi-end thinking-budget export',
+  'v1.0.0-2': 'the v1.0.0-3 speech fixes and multi-end thinking-budget export',
+  'v1.0.0-3': 'the multi-end thinking-budget export',
 };
 
 /// Exact XCFramework checksums for [llamaCppTag] and any admitted earlier
@@ -42,6 +44,8 @@ const llamaCppCompatibleAppleCompanionChecksums = <String, String>{
       '641020c50159a001096dcd66cc7356fe3c81915b26f985ebd48b2cec87169bcb',
   'v1.0.0-3':
       '0ba46bb6428ce0f32633aea84bdb4d9530089850461ea721cfb0430961ca24c1',
+  'v1.0.0-4':
+      '6c1ee1100497518363022f9acac1e381f9ae40d73b2b39fb56628b1beb85c07e',
 };
 
 /// SHA-256 of each published `llamadart-native-<bundle>-<llamaCppTag>.tar.gz`
@@ -51,27 +55,27 @@ const llamaCppCompatibleAppleCompanionChecksums = <String, String>{
 /// against this map before extracting it.
 const llamaCppBundleSha256 = <String, String>{
   'android-arm64':
-      'fe838f4775d72842be64bb0279b86fd67c46ff6e4624c3beb35f2e51711f235c',
+      '0770358efdc51146261092f90068c4bd19da4c5fa1e3956bba4a9e5f753f6ef3',
   'android-x64':
-      '67732aa55eaa40a68265760321b75d5746b373efcb6ec9793d76e82f65f6b415',
+      '5feb388cc3c6f26b04e613d8e159c4d65a60c1e2f7f60389b0de108f60adf3ef',
   'ios-arm64':
-      '8df21cb384b0c594e6499bd2c369c63d99c2e0f3cee9892fba3f03d3e7da2c44',
+      'a85b35453181f52b1989f8d5a308fd1215bf7e7e8e9fe8432d2bfd7fe104ac7d',
   'ios-arm64-sim':
-      '717f8161811d7709a004aaf8ad2e403dec1d86253af2a130fb9a302e6b806beb',
+      '9bbfbce86024cdeed1de2035e6261101ff104a12e66720e1eef84796aa1484b1',
   'ios-x86_64-sim':
-      '237d7ded50b542e574bc48ba4b55dc10b203f94da21f9d5cabe6fa3784f820ac',
+      'd11e0e95b5753943ebbe96270e82f53ed3f4dcdf0b682c9911602b6d5fda7fb2',
   'linux-arm64':
-      '1701d938a5ceb1f4232cfdb5aa7bf8d5d5d1203ad1f435e1fcc225bdc3fe1be4',
+      'caa889d3d2e678141d9e2c11ff543f8569c084cd5b53cd50a27bbdb9b5fadf66',
   'linux-x64':
-      'f1194c1af3319d7c6e40be67ed44c27176cf4d2758818327aaba68043c53ef0b',
+      '3d59223a83610c9b155ef1c4f522f27b404c7bd3ff6539f0444aca1b1ee48e45',
   'macos-arm64':
-      '80a467779049e045931d7a66cfce4e6726c337019d507f3aa483fab20f2318be',
+      '5e1393a8c7f51c2a1e2228146689601a8b884154fd11e23fd7d60e3103b29bc8',
   'macos-x86_64':
-      'ee0e8af6104dd8bd3b5a75e514284bc1d96c571ac71b49ba0f131c8f9ed033f0',
+      'e6265ccdb0e9ee275af7f0acb32df2162a0e64411b4bc0eb447a7e77226b63b3',
   'windows-arm64':
-      '3452c38d7cee41ddfcbfb130cdc3536725d65e34087f8a6084e3a175053120e3',
+      '64f6b3afc13cea1212a6a1b57dd6a6b81a1e8addace210c8f24c94b9452640a8',
   'windows-x64':
-      '3d2b0dd1da6a9bea7a430fa762280aa6880786dc2cb7ff94acb3becf41aeedfe',
+      '60d025ba02543f43005e7fc778b27526881277009430081940fcc857fd82733a',
 };
 
 /// The `hook_contract_version` of the [llamaCppTag] release's `assets.json`.
@@ -108,7 +112,7 @@ const llamaCppBackendSidecarSpecs = <LlamaCppBackendSidecarSpec>[
     bundle: 'windows-x64',
     backend: 'cuda',
     archive: 'windows-x64-cuda12',
-    sha256: '7e54ff8679c337fde5db3f60b085ea8b641bd195a15b819c0437e76a7975577c',
+    sha256: 'b7440cd3f6d7a393443dc5f21b0b171277365652d00b930c33216aca5b876a3b',
   ),
 ];
 

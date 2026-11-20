@@ -283,9 +283,11 @@ void main() {
           library,
         ]);
         expect(build.exitCode, 0, reason: '${build.stdout}\n${build.stderr}');
+        final wrapper = DynamicLibrary.open(library);
+        addTearDown(wrapper.close);
         final service = LlamaCppService()..initializeBackend();
         addTearDown(service.dispose);
-        expect(resolve(service, [library]), isNotNull);
+        expect(resolve(service, [library], open: (_) => wrapper), isNotNull);
 
         const modelParams = ModelParams(
           contextSize: 1024,

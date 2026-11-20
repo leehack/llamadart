@@ -1,16 +1,19 @@
 {
-  "current_tag": "v1.0.0-3",
+  "current_tag": "v1.0.0-4",
   "upstream_commit": "b1b770d90d94cad9e9ea5b993bdbc383a522fb28",
   "xcframework_checksums": {
     "v1.0.0-1": "0c66ca422bfc8ba266845b57fea99d2792ea67c84233f49358301a640846d669",
     "v1.0.0-2": "641020c50159a001096dcd66cc7356fe3c81915b26f985ebd48b2cec87169bcb",
-    "v1.0.0-3": "0ba46bb6428ce0f32633aea84bdb4d9530089850461ea721cfb0430961ca24c1"
+    "v1.0.0-3": "0ba46bb6428ce0f32633aea84bdb4d9530089850461ea721cfb0430961ca24c1",
+    "v1.0.0-4": "6c1ee1100497518363022f9acac1e381f9ae40d73b2b39fb56628b1beb85c07e"
   },
   "published_companion_tags": {
     "llamadart_llama_cpp_flutter-v0.20.0": "v1.0.0-1",
-    "llamadart_llama_cpp_flutter-v0.20.1": "v1.0.0-2"
+    "llamadart_llama_cpp_flutter-v0.20.1": "v1.0.0-2",
+    "llamadart_llama_cpp_flutter-v0.20.2": "v1.0.0-3",
+    "llamadart_llama_cpp_flutter-v0.20.3": "v1.0.0-3"
   },
-  "core_symbols_checked": 300,
+  "core_symbols_checked": 306,
   "slices": [
     {
       "library": "ios-arm64",
@@ -18,12 +21,26 @@
       "exported_symbols": {
         "v1.0.0-1": 7373,
         "v1.0.0-2": 7373,
-        "v1.0.0-3": 7373
+        "v1.0.0-3": 7373,
+        "v1.0.0-4": 7374
       },
       "missing_core_symbols": {
         "v1.0.0-1": [],
         "v1.0.0-2": [],
-        "v1.0.0-3": []
+        "v1.0.0-3": [],
+        "v1.0.0-4": []
+      },
+      "missing_optional_symbols": {
+        "v1.0.0-1": [
+          "llama_dart_sampler_init_reasoning_budget_multi"
+        ],
+        "v1.0.0-2": [
+          "llama_dart_sampler_init_reasoning_budget_multi"
+        ],
+        "v1.0.0-3": [
+          "llama_dart_sampler_init_reasoning_budget_multi"
+        ],
+        "v1.0.0-4": []
       }
     },
     {
@@ -32,12 +49,26 @@
       "exported_symbols": {
         "v1.0.0-1": 7373,
         "v1.0.0-2": 7373,
-        "v1.0.0-3": 7373
+        "v1.0.0-3": 7373,
+        "v1.0.0-4": 7374
       },
       "missing_core_symbols": {
         "v1.0.0-1": [],
         "v1.0.0-2": [],
-        "v1.0.0-3": []
+        "v1.0.0-3": [],
+        "v1.0.0-4": []
+      },
+      "missing_optional_symbols": {
+        "v1.0.0-1": [
+          "llama_dart_sampler_init_reasoning_budget_multi"
+        ],
+        "v1.0.0-2": [
+          "llama_dart_sampler_init_reasoning_budget_multi"
+        ],
+        "v1.0.0-3": [
+          "llama_dart_sampler_init_reasoning_budget_multi"
+        ],
+        "v1.0.0-4": []
       }
     },
     {
@@ -46,12 +77,26 @@
       "exported_symbols": {
         "v1.0.0-1": 8350,
         "v1.0.0-2": 8350,
-        "v1.0.0-3": 8350
+        "v1.0.0-3": 8350,
+        "v1.0.0-4": 8353
       },
       "missing_core_symbols": {
         "v1.0.0-1": [],
         "v1.0.0-2": [],
-        "v1.0.0-3": []
+        "v1.0.0-3": [],
+        "v1.0.0-4": []
+      },
+      "missing_optional_symbols": {
+        "v1.0.0-1": [
+          "llama_dart_sampler_init_reasoning_budget_multi"
+        ],
+        "v1.0.0-2": [
+          "llama_dart_sampler_init_reasoning_budget_multi"
+        ],
+        "v1.0.0-3": [
+          "llama_dart_sampler_init_reasoning_budget_multi"
+        ],
+        "v1.0.0-4": []
       }
     },
     {
@@ -60,12 +105,26 @@
       "exported_symbols": {
         "v1.0.0-1": 7385,
         "v1.0.0-2": 7385,
-        "v1.0.0-3": 7385
+        "v1.0.0-3": 7385,
+        "v1.0.0-4": 7386
       },
       "missing_core_symbols": {
         "v1.0.0-1": [],
         "v1.0.0-2": [],
-        "v1.0.0-3": []
+        "v1.0.0-3": [],
+        "v1.0.0-4": []
+      },
+      "missing_optional_symbols": {
+        "v1.0.0-1": [
+          "llama_dart_sampler_init_reasoning_budget_multi"
+        ],
+        "v1.0.0-2": [
+          "llama_dart_sampler_init_reasoning_budget_multi"
+        ],
+        "v1.0.0-3": [
+          "llama_dart_sampler_init_reasoning_budget_multi"
+        ],
+        "v1.0.0-4": []
       }
     },
     {
@@ -74,17 +133,34 @@
       "exported_symbols": {
         "v1.0.0-1": 8374,
         "v1.0.0-2": 8374,
-        "v1.0.0-3": 8374
+        "v1.0.0-3": 8374,
+        "v1.0.0-4": 8377
       },
       "missing_core_symbols": {
         "v1.0.0-1": [],
         "v1.0.0-2": [],
-        "v1.0.0-3": []
+        "v1.0.0-3": [],
+        "v1.0.0-4": []
+      },
+      "missing_optional_symbols": {
+        "v1.0.0-1": [
+          "llama_dart_sampler_init_reasoning_budget_multi"
+        ],
+        "v1.0.0-2": [
+          "llama_dart_sampler_init_reasoning_budget_multi"
+        ],
+        "v1.0.0-3": [
+          "llama_dart_sampler_init_reasoning_budget_multi"
+        ],
+        "v1.0.0-4": []
       }
     }
   ],
   "current_only_symbols": [],
   "types_changed_and_unused_by_core": [],
   "additive_enums_used_by_core": [],
-  "by_value_struct_growth": {}
+  "by_value_struct_growth": {},
+  "optional_current_symbols": [
+    "llama_dart_sampler_init_reasoning_budget_multi"
+  ]
 }
