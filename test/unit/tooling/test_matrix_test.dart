@@ -336,6 +336,32 @@ void main() {
       );
     },
   );
+  test('Qwen GPU Unicode matrix runs the first-request test', () async {
+    final row = testMatrixRows.singleWhere(
+      (row) => row.id == 'qwen3-litert-gpu-unicode',
+    );
+    expect(row.mode, contains('local-only'));
+    final command = row.command.split(' ');
+    expect(command.take(3), ['dart', 'run', 'tool/testing/run_local_e2e.dart']);
+    final args = command
+        .skip(3)
+        .map((arg) => arg.startsWith('<') ? 'models/Qwen3-0.6B.litertlm' : arg);
+    expect(args, containsAllInOrder(['--backend', 'gpu']));
+    final result = await runLocalE2e(
+      [...args, '--dry-run'],
+      projectRoot: '/repo',
+      displayShell: LocalE2eDisplayShell.posix,
+    );
+    expect(result.exitCode, 0, reason: result.stderr);
+    expect(
+      result.stdout,
+      contains(
+        'cd /repo/packages/llamadart_validation && '
+        'LITERT_LM_QWEN3_UNICODE_MODEL=/repo/models/Qwen3-0.6B.litertlm '
+        'dart test -p vm -j 1 -r expanded test/qwen3_litert_gpu_unicode_test.dart',
+      ),
+    );
+  });
   test('Web grammar matrix dispatches both pinned-asset Wasm suites', () async {
     final row = testMatrixRows.singleWhere(
       (row) => row.id == 'web-lazy-grammar',

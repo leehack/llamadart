@@ -270,7 +270,7 @@ user's model without silently replacing a failing standard fixture.
 | `tiny-gguf` | stories15M.gguf, 98.36 MB | Packaging, raw stream, backend/lifecycle; not an instruction-quality oracle |
 | `chat-gguf` | Qwen3.5-0.8B Q4_K_M GGUF | Representative chat/thinking/tools; qualify template and semantic fixtures first |
 | `dense-state` | Qwen2.5-0.5B Q4_K_M GGUF | Dense context/state/prompt-reuse checks, targeted pack |
-| `chat-litert` | Qwen3-0.6B.litertlm, 614.24 MB | Native LiteRT core plus retained arithmetic/tokenizer diagnostics |
+| `chat-litert` | Corrected Qwen3-0.6B.litertlm, 613.72 MB | Native LiteRT core plus arithmetic and Unicode checks |
 | `npu-qualcomm-sm8650` | Gemma 3 1B IT, Qualcomm SM8650-specific LiteRT bundle, 4-bit per-channel, about 658 MB | Next-milestone S24 NPU qualification; separate artifact from CPU/GPU models |
 | `npu-tensor-g5` | Gemma 3 1B IT, Tensor G5-specific LiteRT bundle, 8-bit per-channel, about 1.7 GB | Next-milestone Pixel 10 NPU qualification; separate vendor runtime and artifact |
 | `tools-litert` | FunctionGemma 270M compatible LiteRT bundle | Optional native tool fixtures; verify actual template/tool support first |
@@ -292,12 +292,21 @@ tokenizer/template identity, license/access requirements, companion hashes,
 supported feature flags and measured memory envelope. Reject a manifest with
 missing hashes or floating revisions. Do not download gated assets without access.
 
-Pinned pilot fixtures:
+Pinned core fixtures:
 
 | ID | Repository / revision / filename | SHA256 |
 | --- | --- | --- |
 | tiny-gguf | `ggml-org/tiny-llamas` / `99dd1a73db5a37100bd4ae633f4cfce6560e1567` / `stories15M.gguf` | `61b50d457809a5194818fd22e6724b456cd7bb9a6264c52c8110684c53f3704a` |
-| chat-litert | `litert-community/Qwen3-0.6B` / `8414150f2e9dcc82449bcc9c5abc404b399a4d06` / `Qwen3-0.6B.litertlm` | `555579ff2f4fd13379abe69c1c3ab5200f7338bc92471557f1d6614a6e5ab0b4` |
+| chat-litert | `litert-community/Qwen3-0.6B` / `e6687177e00897731e7716267eebd4eba0dde7c2` / `Qwen3-0.6B.litertlm` | `c5f39b4191926786c3e6668b62af4d6eb15248dfc7a5348252a9b406f33f2108` |
+
+The standard `chat-litert-{cpu,gpu,auto}` profiles share this model lock. The
+legacy `8414150f` file has the same filename. Verify the new download against
+the current profile before replacing an existing local copy. Preserve the
+legacy bytes for the separate S24 guard binding and historical receipts.
+Qualify split-token generation with a hash-pinned profile using
+`selection: focused` and `focus_features: ["unicode"]`. Keep exact
+`C02.generate` output and observed placement for each route. Track mobile CPU,
+explicit GPU, automatic placement, browser WASM and browser WebGPU separately.
 
 Hash downloaded files before load; record cache hit/miss and bytes. Download and
 checksum time are separate from inference. Do not assume Firebase preserves app

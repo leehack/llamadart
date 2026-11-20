@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:crypto/crypto.dart';
 // The binding must admit the runtime the hook pins.
 // ignore: implementation_imports
 import 'package:llamadart/src/hook/native_release_pins.dart';
@@ -10,7 +11,11 @@ import 'package:test/test.dart';
 
 Map<String, dynamic> profile(String backend) =>
     jsonDecode(
-          File('assets/profiles/chat-litert-$backend.json').readAsStringSync(),
+          File(
+            backend == 'gpu'
+                ? s24LiteRtLegacyGpuProfileAsset
+                : 'assets/profiles/chat-litert-cpu.json',
+          ).readAsStringSync(),
         )
         as Map<String, dynamic>;
 String repeated(String value, int count) => List.filled(count, value).join();
@@ -82,6 +87,14 @@ Map<String, dynamic> observation({
 };
 
 void main() {
+  test('the legacy GPU profile preserves the original binding bytes', () {
+    expect(
+      sha256
+          .convert(File(s24LiteRtLegacyGpuProfileAsset).readAsBytesSync())
+          .toString(),
+      '652e6ab2103e5ae2d5509339c0ebe03a70a200f360da442e2f3104bd6cc07722',
+    );
+  });
   test(
     'maintained profiles keep distinct byte identities and fixed C04 oracles',
     () {
@@ -98,6 +111,21 @@ void main() {
       (prompt['fixtures'] as Map)['arithmetic']['prompt'] = 'What is 2 + 2?';
       expect(
         () => requireS24LiteRtProfile(prompt, 'cpu'),
+        throwsFormatException,
+      );
+    },
+  );
+  test(
+    'the corrected standard GPU profile cannot replace the legacy guard',
+    () {
+      final standardGpu =
+          jsonDecode(
+                File('assets/profiles/chat-litert-gpu.json').readAsStringSync(),
+              )
+              as Map<String, dynamic>;
+      expect(standardGpu['model']['sha256'], s24LiteRtCpuHash);
+      expect(
+        () => requireS24LiteRtProfile(standardGpu, 'gpu'),
         throwsFormatException,
       );
     },

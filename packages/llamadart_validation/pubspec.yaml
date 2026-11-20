@@ -19,6 +19,7 @@ dev_dependencies:
 flutter:
   assets:
     - assets/profiles/
+    - assets/fixtures/s24/chat-litert-gpu-legacy.json
     - assets/decision/
     - assets/embeddings/v1/
 hooks:

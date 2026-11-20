@@ -133,11 +133,14 @@ modalities and speculative strategies before offering them.
   Web backends always
   return `null` diagnostics. Reloaded contexts keep their own counter availability. Treat null as
   unavailable diagnostics for the cancelled or unsent request.
-- Native CPU Qwen3-0.6B: prefer the updated litert-community artifact at revision
-  `e6687177e00897731e7716267eebd4eba0dde7c2`, SHA-256
+- For native Qwen3-0.6B, use the corrected litert-community artifact at revision
+  `e6687177e00897731e7716267eebd4eba0dde7c2` (613,722,264 bytes), SHA-256
   `c5f39b4191926786c3e6668b62af4d6eb15248dfc7a5348252a9b406f33f2108`.
-  The legacy bundle can emit `ĠðŁĺĬ` in place of emoji; replace the bundle,
-  preserve literal user text, and validate GPU/device/Web paths separately.
+  The legacy tokenizer can render emoji as `ĠðŁĺĬ`. Both files are named
+  `Qwen3-0.6B.litertlm`. Download and verify the corrected revision, unload the
+  old model, and replace the cached file or update the load path before
+  reloading. Preserve literal user text. Native CPU and Apple Metal GPU
+  have exact Unicode checks. Qualify physical mobile and browser routes separately.
 - Always set `GenerationParams.maxTokens`. Pass `enableThinking: false` to
   `engine.create` when reasoning output is not wanted; a `<think>` block a
   DeepSeek V3.1, Qwen3, QwQ or Qwen3.5 model still writes then stays in
