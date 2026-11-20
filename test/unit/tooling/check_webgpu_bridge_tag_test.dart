@@ -223,57 +223,145 @@ String _publishedReleaseNotes(String path) {
   return section!;
 }
 
+const _preparedNativePins =
+    "const llamaCppTag = 'v1.0.0-3';\n"
+    "const liteRtLmReleaseTag = 'v0.19.1-5';\n"
+    "const stableDiffusionReleaseTag = 'v0.4.0';\n";
+
+const _keptBridgeClaim =
+    '- Keep the default WebGPU bridge assets at `v9.9.9` (unchanged from 1.2.2).';
+const _preparedBaseline =
+    'Runtime baseline: native llama.cpp `v1.0.0-3` and Web use '
+    'upstream `$bridgeLlamaCppTag@$bridgeLlamaCppCommit`; native LiteRT-LM uses '
+    '`v0.19.1-5` and stable-diffusion uses `v0.4.0`. '
+    'Web LiteRT-LM uses `@litert-lm/core@0.19.0`. Manifest SHA-256: `$bridgeManifestSha256`.';
+
+const _preparedChangelogs = [
+  'CHANGELOG.md',
+  'website/docs/changelog/recent-releases.md',
+];
+
+Directory _preparedReleaseRepo([String claim = _keptBridgeClaim]) => _fakeRepo(
+  'v9.9.9',
+  files: {
+    'example/chat_app/web/index.html':
+        'https://cdn.jsdelivr.net/npm/@litert-lm/core@0.19.0/+esm',
+    nativeLlamaCppTagPath: _preparedNativePins,
+    for (final (index, path) in _preparedChangelogs.indexed)
+      path:
+          '## 1.2.3\n\n'
+          '${index == 0 ? claim : claim.replaceFirst('the default', 'default')}\n\n'
+          '$_preparedBaseline\n',
+  },
+);
+
+List<String> _verifyPreparedRelease(
+  Directory root, {
+  String previousBridge = 'v9.9.9',
+  String previousNativePins = _preparedNativePins,
+}) => findPreparedReleaseNotesDrift(
+  root,
+  'v9.9.9',
+  '1.2.2',
+  previousBridge,
+  previousNativePins: previousNativePins,
+);
+
 void main() {
-  test('strict prep requires the exact prior version and full runtime baseline', () {
-    const manifest = bridgeManifestSha256;
-    final baseline =
-        'Runtime baseline: native llama.cpp `v1.0.0-3` and Web use '
-        'upstream `$bridgeLlamaCppTag@$bridgeLlamaCppCommit`; native LiteRT-LM uses '
-        '`v0.19.1-5` and stable-diffusion uses `v0.4.0`. '
-        'Web LiteRT-LM uses `@litert-lm/core@0.19.0`. Manifest SHA-256: `$manifest`.';
-    const claim =
-        '- Keep the default WebGPU bridge assets at `v9.9.9` (unchanged from 1.2.2).';
-    final root = _fakeRepo(
-      'v9.9.9',
-      files: {
-        'example/chat_app/web/index.html':
-            'https://cdn.jsdelivr.net/npm/@litert-lm/core@0.19.0/+esm',
-        nativeLlamaCppTagPath:
-            "const llamaCppTag = 'v1.0.0-3';\n"
-            "const liteRtLmReleaseTag = 'v0.19.1-5';\n"
-            "const stableDiffusionReleaseTag = 'v0.4.0';\n",
-        'CHANGELOG.md': '## 1.2.3\n\n$claim\n\n$baseline\n',
-        'website/docs/changelog/recent-releases.md':
-            '## 1.2.3\n\n${claim.replaceFirst('the default', 'default')}\n\n$baseline\n',
+  test(
+    'strict prep requires the exact prior version and full runtime baseline',
+    () {
+      final root = _preparedReleaseRepo();
+      expect(_verifyPreparedRelease(root), isEmpty);
+      expect(
+        _verifyPreparedRelease(root, previousBridge: 'v9.9.8'),
+        isNotEmpty,
+      );
+      final changelog = File('${root.path}/CHANGELOG.md');
+      final valid = changelog.readAsStringSync();
+      for (final wrong in [
+        valid.replaceFirst('1.2.2', '1.2.1'),
+        '${valid.replaceFirst('## 1.2.3', '## 1.2.1')}\n'
+            '## 1.2.3\n\n- Candidate without bridge evidence.\n',
+        valid.replaceFirst(
+          _keptBridgeClaim,
+          '$_keptBridgeClaim\n$_keptBridgeClaim',
+        ),
+        valid.replaceFirst(_preparedBaseline, ''),
+        '$valid$_preparedBaseline\n',
+        valid.replaceFirst('@litert-lm/core@0.19.0', '@litert-lm/core@0.18.0'),
+        valid.replaceFirst(
+          bridgeManifestSha256,
+          '0000000000000000000000000000000000000000000000000000000000000000',
+        ),
+        valid.replaceFirst(
+          bridgeLlamaCppCommit,
+          '2222222222222222222222222222222222222222',
+        ),
+      ]) {
+        changelog.writeAsStringSync(wrong);
+        expect(_verifyPreparedRelease(root), isNotEmpty, reason: wrong);
+      }
+    },
+  );
+
+  for (final path in _preparedChangelogs) {
+    test(
+      'strict prep rejects an unchanged suffix on a changed bridge in $path',
+      () {
+        final root = _preparedReleaseRepo(
+          '- Aligned the default WebGPU bridge assets to `v9.9.9`.',
+        );
+        List<String> verify() =>
+            _verifyPreparedRelease(root, previousBridge: 'v9.9.8');
+        expect(verify(), isEmpty);
+
+        final changelog = File('${root.path}/$path');
+        changelog.writeAsStringSync(
+          changelog.readAsStringSync().replaceFirst(
+            '`v9.9.9`.',
+            '`v9.9.9` (unchanged from 1.2.2).',
+          ),
+        );
+        expect(verify(), contains(startsWith('$path ')));
       },
     );
-    List<String> verify({String old = 'v9.9.9'}) =>
-        findPreparedReleaseNotesDrift(root, 'v9.9.9', '1.2.2', old);
-    expect(verify(), isEmpty);
-    expect(verify(old: 'v9.9.8'), isNotEmpty);
-    final changelog = File('${root.path}/CHANGELOG.md');
-    final valid = changelog.readAsStringSync();
-    for (final wrong in [
-      valid.replaceFirst('1.2.2', '1.2.1'),
-      '${valid.replaceFirst('## 1.2.3', '## 1.2.1')}\n'
-          '## 1.2.3\n\n- Candidate without bridge evidence.\n',
-      valid.replaceFirst(claim, '$claim\n$claim'),
-      valid.replaceFirst(baseline, ''),
-      '$valid$baseline\n',
-      valid.replaceFirst('@litert-lm/core@0.19.0', '@litert-lm/core@0.18.0'),
-      valid.replaceFirst(
-        manifest,
-        '0000000000000000000000000000000000000000000000000000000000000000',
-      ),
-      valid.replaceFirst(
-        bridgeLlamaCppCommit,
-        '2222222222222222222222222222222222222222',
-      ),
+  }
+
+  for (final path in _preparedChangelogs) {
+    for (final (runtime, pin, previousPin) in [
+      ('native llama.cpp', 'v1.0.0-3', 'v1.0.0-2'),
+      ('LiteRT-LM', 'v0.19.1-5', 'v0.19.1-4'),
+      ('stable-diffusion', 'v0.4.0', 'v0.3.0'),
     ]) {
-      changelog.writeAsStringSync(wrong);
-      expect(verify(), isNotEmpty, reason: wrong);
+      test(
+        'strict prep verifies $runtime retention against the previous pins in $path',
+        () {
+          final root = _preparedReleaseRepo();
+          final changelog = File('${root.path}/$path');
+          final original = changelog.readAsStringSync();
+          final previousPins = _preparedNativePins.replaceFirst(
+            pin,
+            previousPin,
+          );
+          List<String> verify(String prior) =>
+              _verifyPreparedRelease(root, previousNativePins: prior);
+          expect(verify(previousPins), isEmpty);
+
+          changelog.writeAsStringSync(
+            original.replaceFirst('`$pin`', '`$pin` (unchanged from 1.2.2)'),
+          );
+          expect(verify(_preparedNativePins), isEmpty);
+          expect(verify(previousPins), contains(startsWith('$path ')));
+
+          changelog.writeAsStringSync(
+            original.replaceFirst('`$pin`', '`$pin` (unchanged from 1.2.1)'),
+          );
+          expect(verify(_preparedNativePins), contains(startsWith('$path ')));
+        },
+      );
     }
-  });
+  }
 
   test('default assets include the qualified media embedding API', () {
     expect(readPinnedBridgeTag(Directory.current), 'v0.1.86');
