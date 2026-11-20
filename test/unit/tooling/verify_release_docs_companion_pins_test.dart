@@ -57,8 +57,8 @@ void _copyNativeTagGrammarFixture(Directory root) {
 List<String> _releaseWorkflowContractProblems(String workflow) {
   final problems = <String>[];
   final strictGate = RegExp(
-    r'^\s+dart run tool/testing/verify_release_docs_versions\.dart '
-    r'--release-prep\s*$',
+    r'^ +bash tool/release/verify_release_candidate\.sh '
+    r'"\$through" "\$release_sha" "\$landed_body"$',
     multiLine: true,
   );
   final gateMatches = strictGate.allMatches(workflow).toList();
@@ -179,8 +179,7 @@ void main() {
       '.github/workflows/release_on_prep_merge.yml',
     ).readAsStringSync();
     const strictCommand =
-        'dart run tool/testing/verify_release_docs_versions.dart '
-        '--release-prep';
+        r'bash tool/release/verify_release_candidate.sh "$through" "$release_sha" "$landed_body"';
     const publishStep = '- name: Publish core tag and companion packages';
 
     expect(

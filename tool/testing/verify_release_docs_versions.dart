@@ -996,7 +996,7 @@ String _firstDifference(String core, String docs) {
       'page ${line(docsLines)}';
 }
 
-/// Drift between the Unreleased notes and the retained releases in both files.
+/// Drift between numbered release sections in both files.
 ///
 /// The docs page must use its prescribed bridge wording (`- ` marker, no
 /// "the"), which normalizing both sides would otherwise let through.
@@ -1004,12 +1004,8 @@ List<String> docsChangelogDriftProblems(
   Map<String, String> core,
   Map<String, String> docs,
 ) {
-  final headings = {
-    ...docs.keys,
-    if (core.containsKey('Unreleased')) 'Unreleased',
-  };
   final problems = <String>[];
-  for (final heading in headings) {
+  for (final heading in docs.keys) {
     final docsBody = docs[heading] ?? '';
     for (final line in docsBody.split('\n')) {
       if (_bridgeBulletLine.hasMatch(line) &&
@@ -1022,9 +1018,7 @@ List<String> docsChangelogDriftProblems(
         );
       }
     }
-    final coreBody = heading == 'Unreleased'
-        ? core[heading] ?? ''
-        : core[heading];
+    final coreBody = core[heading];
     if (coreBody == null) continue;
     final normalizedCore = _normalizedBridgeLines(coreBody);
     final normalizedDocs = _normalizedBridgeLines(docsBody);
@@ -1104,60 +1098,55 @@ void main(List<String> arguments) {
     if (releasePrep) {
       errors.addAll(pending.map((bump) => bump.toString()));
     }
-    if (releasePrep) {
-      final expected = '## ${versions['llamadart']}';
-      for (final changelog in releasedChangelogs) {
-        final heading = _matchInFile(
-          Directory.current,
-          changelog,
-          RegExp(r'^(## .*)$', multiLine: true),
-          'first release heading',
-          errors,
-        );
-        if (heading != expected) {
-          errors.add('$changelog must start with $expected before publishing.');
+    final core = _changelogSections(Directory.current, 'CHANGELOG.md', errors);
+    final docs = _changelogSections(Directory.current, _docsChangelog, errors);
+    final expected = versions['llamadart'];
+    for (final (path, sections) in [
+      ('CHANGELOG.md', core),
+      (_docsChangelog, docs),
+    ]) {
+      final lines = _readLines(path, errors);
+      if (lines == null) continue;
+      if (hasUnreleasedHeading(lines.join('\n'))) {
+        errors.add('$path must not keep `## Unreleased`.');
+      }
+      if (sections == null) continue;
+      final firstHeading = lines
+          .where(RegExp(r'^ {0,3}##(?:[ \t]|$)').hasMatch)
+          .firstOrNull;
+      if (firstHeading != '## $expected') {
+        errors.add('$path must start with ## $expected before publishing.');
+      }
+      for (final heading in sections.keys) {
+        if (!_releaseHeading.hasMatch('## $heading') &&
+            heading != 'Unreleased') {
+          errors.add(
+            '$path contains a malformed release heading: ## $heading.',
+          );
         }
       }
     }
-    for (final changelog in releasedChangelogs) {
-      final lines = _readLines(changelog, errors);
-      if (lines != null) {
-        final headings = lines.where(RegExp(r'^##\s').hasMatch).toList();
+    final archive = File(changelogArchive).existsSync()
+        ? _changelogSections(Directory.current, changelogArchive, errors)
+        : null;
+    if (core != null && docs != null) {
+      try {
         errors.addAll(
-          unreleasedHeadingProblems(
-            changelog,
-            headings,
-            releasePrep: releasePrep,
+          docsChangelogRetentionProblems(
+            _docsChangelog,
+            docs.keys.map((heading) => '## $heading').toList(),
+            Version.parse(versions['llamadart']!),
+            coreHeadings: [
+              for (final heading in core.keys) '## $heading',
+              if (archive != null)
+                for (final heading in archive.keys) '## $heading',
+            ],
           ),
         );
-        if (changelog == _docsChangelog) {
-          try {
-            errors.addAll(
-              docsChangelogRetentionProblems(
-                changelog,
-                headings,
-                Version.parse(versions['llamadart']!),
-                coreHeadings: _readLines('CHANGELOG.md', errors) ?? const [],
-              ),
-            );
-          } on FormatException {
-            // `_parseCoreVersion` below reports a version that is not semver.
-          }
-          final core = _changelogSections(
-            Directory.current,
-            'CHANGELOG.md',
-            <String>[],
-          );
-          final docs = _changelogSections(
-            Directory.current,
-            changelog,
-            <String>[],
-          );
-          if (core != null && docs != null) {
-            errors.addAll(docsChangelogDriftProblems(core, docs));
-          }
-        }
+      } on FormatException {
+        // The root version is validated below.
       }
+      errors.addAll(docsChangelogDriftProblems({...?archive, ...core}, docs));
     }
     final coreVersion = _parseCoreVersion(versions['llamadart']!, errors);
     if (coreVersion != null) {

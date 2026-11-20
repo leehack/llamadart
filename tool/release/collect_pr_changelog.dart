@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:crypto/crypto.dart';
+import 'package:llamadart/src/hook/native_release_tag.dart';
 
 import '../testing/check_released_changelog_sections.dart';
 import '../testing/verify_release_docs_versions.dart';
@@ -19,10 +20,6 @@ const _docs = 'website/docs/changelog/recent-releases.md';
 const _archive = 'doc/changelog_archive.md';
 const _sizeLimit = 256 * 1024;
 
-final _version = RegExp(
-  r'^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)'
-  r'(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$',
-);
 final _sha = RegExp(r'^[a-f0-9]{40}$');
 final _prNumber = RegExp(r'\(#([1-9][0-9]*)\)$');
 final _reverts = RegExp(
@@ -31,9 +28,22 @@ final _reverts = RegExp(
 final _githubRevert = RegExp(
   r'^Reverts ([A-Za-z0-9-]+/[A-Za-z0-9_.-]+#[1-9][0-9]*)$',
 );
+final _trailingAttribution = RegExp(
+  r'(?:(\n---------)\n[ \t]*\n|\n)'
+  r'(?:(?:Signed-off-by|Co-authored-by):[^\n]*(?:\n[ \t]+[^\n]+)*\n*)+$',
+  caseSensitive: false,
+);
+final _coauthor = RegExp(
+  r'^Co-authored-by:',
+  caseSensitive: false,
+  multiLine: true,
+);
+
+bool _isGithubCoauthorBlock(RegExpMatch attribution) =>
+    attribution[1] != null && _coauthor.hasMatch(attribution[0]!);
+
 final _trailerContinuation = RegExp(r'^[ \t\r\v\f]');
 final _docsCut = RegExp(r'^docs: cut version (\S+)$');
-final _releaseHeading = RegExp(r'^##[ \t]+([^\r\n]+)', multiLine: true);
 final _bridgeClaim = RegExp(
   r'^(?:Aligned (?:the )?default WebGPU bridge assets to|'
   r'Keep (?:the )?default WebGPU bridge assets at) `(v\d+\.\d+\.\d+)`',
@@ -45,6 +55,9 @@ typedef GithubLookup =
 Future<void> main(List<String> args) async {
   try {
     stdout.write(await runPrChangelogCollector(args));
+  } on _IncompleteInput catch (error) {
+    stdout.writeln(error.message);
+    exitCode = 1;
   } on FormatException catch (error) {
     stderr.writeln(error.message);
     exitCode = 1;
@@ -64,6 +77,12 @@ Future<String> runPrChangelogCollector(
   Directory? directory,
   GithubLookup? lookup,
 }) async {
+  if (args.length == 2 &&
+      args.first == '--section-sha256' &&
+      !args.last.startsWith('--')) {
+    final section = parsePrChangelog(File(args.last).readAsStringSync());
+    return '${_sectionDigest(section)}\n';
+  }
   final options = _Options.parse(args);
   final git = _Git(directory ?? Directory.current);
   if (git.text(['rev-parse', '--is-shallow-repository']).trim() != 'false') {
@@ -104,6 +123,7 @@ Future<String> runPrChangelogCollector(
     if (activationMarker is! Map ||
         activationMarker['commit'] != cutover ||
         activationMarker['tag'] != tag ||
+        activationCommit.trailerState == _TrailerState.unaligned ||
         activationCommit.parents != 1 ||
         !_prNumber.hasMatch(activationCommit.subject) ||
         _readChangelog(activationCommit.body)?.reason == null) {
@@ -119,23 +139,67 @@ Future<String> runPrChangelogCollector(
         : <String>[];
     final first = startIndex <= markerIndex ? markerIndex : startIndex;
     final window = chain.skip(first + 1).toList();
-    final collector = _Collector(git, chain, window, lookup ?? _githubGet);
+    final collector = _Collector(
+      git,
+      chain,
+      window,
+      activation,
+      lookup ?? _githubGet,
+    );
     final entries = await collector.collect();
-    final root = _Changelog.parse(git.blob(through, _root));
-    final docs = _Changelog.parse(git.blob(through, _docs));
-    final archive = _Changelog.parse(git.blob(through, _archive));
+    final seedRows = [
+      for (final text in legacy)
+        {
+          'sha': cutover,
+          'source': 'legacy-seed',
+          'target': 'core',
+          'text': text,
+        },
+    ];
+    final entryRows = entries.map((entry) => entry.toJson()).toList();
+    final ledger = [
+      'From: ${options.from}@$start',
+      'Through: $through',
+      ...seedRows.map(jsonEncode),
+      ...entryRows.map(jsonEncode),
+      for (final diagnostic in collector.diagnostics) diagnostic.toString(),
+    ].join('\n');
+    if (entries.any((entry) => entry.disposition == 'unresolved')) {
+      throw _IncompleteInput(
+        '$ledger\n\nINCOMPLETE: resolve all changelog inputs before releasing.',
+      );
+    }
+
+    final receipt = _inputReceipt(
+      options: options,
+      start: start,
+      through: through,
+      cutoverTag: tag,
+      cutover: cutover,
+      activation: activation,
+      rows: [
+        ...seedRows,
+        ...entryRows,
+        for (final diagnostic in collector.diagnostics)
+          if (diagnostic.reviewCode != null) diagnostic.toJson(),
+      ],
+    );
+    final root = ChangelogHistory.parse(git.blob(through, _root));
+    final docs = ChangelogHistory.parse(git.blob(through, _docs));
+    final archive = ChangelogHistory.parse(git.blob(through, _archive));
     if (root.sections.keys.first != options.from.substring(1)) {
       throw const FormatException(
         '--from does not match the latest pinned changelog heading.',
       );
     }
-    final canonical = [
-      ...legacy,
+    final sources = [
+      for (final note in legacy) (sha: cutover, text: note),
       for (final entry in entries)
         if (entry.disposition == 'included')
           for (final bullet in entry.section!.bullets)
-            if (bullet.target == 'core') bullet.text,
+            if (bullet.target == 'core') (sha: entry.sha, text: bullet.text),
     ];
+    final canonical = sources.map((note) => note.text).toList();
     final pins = _Pins.read(git, through);
     final oldBridge = _bridgeTag(git.blob(start, _bridgeDefault));
     final generated = _render(
@@ -147,6 +211,48 @@ Future<String> runPrChangelogCollector(
       pins,
       oldBridge,
     );
+
+    final reviewShas = {
+      for (final diagnostic in collector.diagnostics) ...diagnostic.reviewShas,
+    };
+    if (options.verify case final path?) {
+      final candidate = options.candidate == null
+          ? null
+          : git.resolve(options.candidate!);
+      final body = git.receiptBody(File(path).readAsStringSync(), candidate);
+      _verifyReceipt(parseReleaseNotesInput(body), receipt);
+      final diffs = <String>[];
+      if (candidate != null) {
+        for (final changelog in [_root, _docs]) {
+          final actual = ChangelogHistory.parse(git.blob(candidate, changelog));
+          if (actual.sections.keys.first != options.version) {
+            throw FormatException(
+              '$changelog: expected candidate release ${options.version}.',
+            );
+          }
+          final section = actual.sections[options.version]!;
+          final expected = generated.sections[changelog]!;
+          if (section == expected) continue;
+          diffs.add(_sectionDiff(changelog, expected, section));
+          _requireMissingNotes(
+            reviewShas,
+            sources,
+            generated.bullets[changelog]!,
+            section,
+          );
+        }
+      }
+      final report = [ledger, ...diffs].join('\n\n');
+      _verifyReview(
+        body,
+        reviewShas,
+        report,
+        optional: options.candidate == null
+            ? sources.map((source) => source.sha)
+            : const [],
+      );
+      return '$report\n\nRelease notes input verified.\n';
+    }
 
     var result = generated;
     if (options.curated case final path?) {
@@ -168,6 +274,22 @@ Future<String> runPrChangelogCollector(
     }
 
     if (options.write) {
+      for (final changelog in [_root, _docs]) {
+        if (result.sections[changelog] == generated.sections[changelog]) {
+          continue;
+        }
+        _requireMissingNotes(
+          reviewShas,
+          sources,
+          generated.bullets[changelog]!,
+          result.sections[changelog]!,
+        );
+      }
+      _verifyReview(
+        options.review == null ? '' : File(options.review!).readAsStringSync(),
+        reviewShas,
+        '$ledger\n\n${_receiptBlock(receipt)}',
+      );
       final gitDir = git.text(['rev-parse', '--absolute-git-dir']).trim();
       final lock = File('$gitDir/cps-changelog-write.lock');
       try {
@@ -183,25 +305,15 @@ Future<String> runPrChangelogCollector(
         lock.deleteSync();
       }
     }
-    return [
-      'From: ${options.from}@$start',
-      'Through: $through',
-      for (final text in legacy)
-        jsonEncode({
-          'sha': cutover,
-          'source': 'legacy-seed',
-          'target': 'core',
-          'text': text,
-        }),
-      for (final entry in entries) jsonEncode(entry.toJson()),
-      ...collector.warnings,
-      '',
-      result.draft,
-    ].join('\n');
+    return '$ledger\n\n${_receiptBlock(receipt)}\n${result.draft}';
   }
   throw const FormatException(
     'Invalid cutover marker. Expected a full commit SHA and core release tag.',
   );
+}
+
+class _IncompleteInput extends FormatException {
+  const _IncompleteInput(super.message);
 }
 
 class _Options {
@@ -211,6 +323,9 @@ class _Options {
     this.through,
     this.write,
     this.curated,
+    this.verify,
+    this.candidate,
+    this.review,
   );
 
   final String version;
@@ -218,11 +333,17 @@ class _Options {
   final String through;
   final bool write;
   final String? curated;
+  final String? verify;
+  final String? candidate;
+  final String? review;
 
   static _Options parse(List<String> args) {
     const usage =
         'Usage: collect_pr_changelog.dart --version V --from vPREVIOUS '
-        '--through BASE [--write] [--curated FILE]';
+        '--through BASE [--curated FILE] [--write [--review FILE]]\n'
+        '   or: collect_pr_changelog.dart --version V --from vPREVIOUS '
+        '--through BASE --verify-input FILE [--candidate SHA]\n'
+        '   or: collect_pr_changelog.dart --section-sha256 FILE';
     final values = <String, String>{};
     var write = false;
     for (var i = 0; i < args.length; i++) {
@@ -234,6 +355,9 @@ class _Options {
             '--from',
             '--through',
             '--curated',
+            '--verify-input',
+            '--candidate',
+            '--review',
           }.contains(flag) &&
           !values.containsKey(flag) &&
           i + 1 < args.length &&
@@ -243,16 +367,121 @@ class _Options {
         throw const FormatException(usage);
       }
     }
-    if (values case {
-      '--version': final String version,
-      '--from': final String from,
-      '--through': final String through,
-    } when _version.hasMatch(version)) {
-      return _Options(version, from, through, write, values['--curated']);
+    final curated = values['--curated'];
+    final verify = values['--verify-input'];
+    final candidate = values['--candidate'];
+    final review = values['--review'];
+    if (values
+        case {
+          '--version': final String version,
+          '--from': final String from,
+          '--through': final String through,
+        }
+        when coreReleaseVersion.hasMatch(version) &&
+            (verify == null || (!write && curated == null)) &&
+            (candidate == null ||
+                (verify != null && _sha.hasMatch(candidate))) &&
+            (review == null || write)) {
+      return _Options(
+        version,
+        from,
+        through,
+        write,
+        curated,
+        verify,
+        candidate,
+        review,
+      );
     }
     throw const FormatException(usage);
   }
 }
+
+ReleaseNotesInput _inputReceipt({
+  required _Options options,
+  required String start,
+  required String through,
+  required String cutoverTag,
+  required String cutover,
+  required String activation,
+  required List<Map<String, Object?>> rows,
+}) {
+  final header = {
+    'version': options.version,
+    'previousTag': options.from,
+    'previousSha': start,
+    'through': through,
+    'cutoverTag': cutoverTag,
+    'cutoverSha': cutover,
+    'activationSha': activation,
+  };
+  final canonical = StringBuffer();
+  for (final row in [header, ...rows]) {
+    canonical.writeln(jsonEncode(row));
+  }
+  return (
+    previousTag: options.from,
+    previousSha: start,
+    through: through,
+    inputSha256: sha256.convert(utf8.encode(canonical.toString())).toString(),
+  );
+}
+
+String _receiptBlock(ReleaseNotesInput receipt) =>
+    '## Release notes input\n\n'
+    'Previous-tag: ${receipt.previousTag}@${receipt.previousSha}\n'
+    'Through: ${receipt.through}\n'
+    'Input-SHA256: ${receipt.inputSha256}\n';
+
+void _verifyReceipt(ReleaseNotesInput received, ReleaseNotesInput expected) {
+  if (received.previousTag != expected.previousTag ||
+      received.previousSha != expected.previousSha) {
+    throw const FormatException(
+      'Release notes input: Previous-tag does not match.',
+    );
+  }
+  if (received.through != expected.through) {
+    throw const FormatException('Release notes input: Through does not match.');
+  }
+  if (received.inputSha256 != expected.inputSha256) {
+    throw const FormatException(
+      'Release notes input: Input-SHA256 does not match.',
+    );
+  }
+}
+
+void _verifyReview(
+  String body,
+  Set<String> required,
+  String context, {
+  Iterable<String> optional = const [],
+}) {
+  final Map<String, String> dispositions;
+  try {
+    dispositions = parseReleaseNotesReview(body);
+  } on FormatException catch (error) {
+    throw FormatException('$context\n\n${error.message}');
+  }
+  final missing = required.difference(dispositions.keys.toSet());
+  final unrelated = dispositions.keys.toSet().difference({
+    ...required,
+    ...optional,
+  });
+  if (missing.isNotEmpty || unrelated.isNotEmpty) {
+    throw FormatException(
+      [
+        context,
+        '',
+        if (missing.isNotEmpty)
+          'Release notes review: missing dispositions for ${missing.join(', ')}.',
+        if (unrelated.isNotEmpty)
+          'Release notes review: unrelated dispositions for ${unrelated.join(', ')}.',
+      ].join('\n'),
+    );
+  }
+}
+
+enum _TrailerState { clean, mixed, unaligned }
 
 class _Git {
   _Git(this.directory);
@@ -293,11 +522,32 @@ class _Git {
   bool hasBlob(String sha, String path) =>
       run(['cat-file', '-e', '$sha:$path']).exitCode == 0;
 
+  String receiptBody(String input, String? candidate) {
+    if (candidate == null) return input;
+    final raw = text(['show', '-s', '--format=%B', candidate]);
+    if (raw.trimRight() != input.trimRight()) return input;
+
+    // Git can classify the receipt fields themselves as trailers.
+    final message = raw.replaceAll('\r\n', '\n').trimRight();
+    final attribution = _trailingAttribution.firstMatch(message);
+    return landedPrBody(
+      attribution == null
+          ? message
+          : message.substring(
+              0,
+              attribution.start +
+                  (_isGithubCoauthorBlock(attribution)
+                      ? 0
+                      : attribution[1]?.length ?? 0),
+            ),
+    );
+  }
+
   ({
     String subject,
     String body,
     String trailers,
-    bool mixedTrailers,
+    _TrailerState trailerState,
     int parents,
   })
   commit(String sha) {
@@ -313,26 +563,29 @@ class _Git {
     if (fields.length != 7) {
       throw FormatException('Cannot read commit $sha.');
     }
-    final (message, mixedTrailers) = fields[3].isEmpty
-        ? (fields[2], false)
-        : _stripTrailers(sha, fields[2], fields[4], fields[5]);
+    final (message, trailerState) = fields[3].isEmpty
+        ? (fields[2], _TrailerState.clean)
+        : _stripTrailers(fields[2], fields[4], fields[5]);
+    final raw = fields[2].trimRight();
+    final attribution = _trailingAttribution.firstMatch(raw);
+    final body = attribution != null && _isGithubCoauthorBlock(attribution)
+        ? raw.substring(0, attribution.start)
+        : message;
     return (
       subject: fields[0],
-      body: landedPrBody(message),
+      body: landedPrBody(body),
       trailers: fields[3],
-      mixedTrailers: mixedTrailers,
+      trailerState: trailerState,
       parents: fields[1].isEmpty ? 0 : fields[1].split(' ').length,
     );
   }
 
-  (String, bool) _stripTrailers(
-    String sha,
+  (String, _TrailerState) _stripTrailers(
     String message,
     String block,
     String records,
   ) {
-    Never unaligned() =>
-        throw FormatException('Cannot safely separate Git trailers at $sha.');
+    final unaligned = (message, _TrailerState.unaligned);
 
     final start = message.lastIndexOf('\n$block') + 1;
     if (block.isEmpty ||
@@ -340,29 +593,29 @@ class _Git {
         message.substring(start + block.length).trim().isNotEmpty ||
         block.contains('\x1e') ||
         block.contains('\x1f')) {
-      unaligned();
+      return unaligned;
     }
     final raw = block.replaceFirst(RegExp(r'\n$'), '').split('\n');
     final retained = <String>[];
     var index = 0;
     for (final record in records.split('\x1e')) {
-      if (index >= raw.length) unaligned();
+      if (index >= raw.length) return unaligned;
       final line = raw[index++];
       if (record.contains('\x1f')) {
-        if (_trailerContinuation.hasMatch(line)) unaligned();
+        if (_trailerContinuation.hasMatch(line)) return unaligned;
         while (index < raw.length &&
             _trailerContinuation.hasMatch(raw[index])) {
           index++;
         }
       } else {
-        if (line.trimRight() != record.trimRight()) unaligned();
+        if (line.trimRight() != record.trimRight()) return unaligned;
         retained.add(line);
       }
     }
-    if (index != raw.length) unaligned();
+    if (index != raw.length) return unaligned;
     return (
       message.substring(0, start) + retained.join('\n'),
-      retained.isNotEmpty,
+      retained.isEmpty ? _TrailerState.clean : _TrailerState.mixed,
     );
   }
 
@@ -392,7 +645,7 @@ class _Git {
 }
 
 String _releaseTag(_Git git, String tag) {
-  if (!tag.startsWith('v') || !_version.hasMatch(tag.substring(1))) {
+  if (!tag.startsWith('v') || !coreReleaseVersion.hasMatch(tag.substring(1))) {
     throw const FormatException(
       '--from and cutover must use a canonical stable core tag.',
     );
@@ -422,41 +675,10 @@ PrChangelog? _readChangelog(String body) {
   }
 }
 
-List<String> _legacySeed(_Git git, String sha) {
-  final root = _Changelog.parse(git.blob(sha, _root), allowUnreleased: true);
-  final docs = _Changelog.parse(git.blob(sha, _docs), allowUnreleased: true);
-  final rootPending = root.sections['Unreleased'];
-  final docsPending = docs.sections['Unreleased'];
-  if (rootPending == null || docsPending == null) {
-    throw const FormatException('Missing legacy Unreleased section.');
-  }
-  final body = _sectionBody(rootPending);
-  if (docsChangelogDriftProblems(
-    {'Unreleased': body},
-    {'Unreleased': _sectionBody(docsPending)},
-  ).isNotEmpty) {
-    throw const FormatException(
-      'Legacy Unreleased entries differ between changelogs.',
-    );
-  }
-  if (body.trim().isEmpty) return [];
-  final bullets = RegExp(r'^[*-] ', multiLine: true).allMatches(body).toList();
-  if (bullets.isEmpty ||
-      body.substring(0, bullets.first.start).trim().isNotEmpty) {
-    throw const FormatException(
-      'Legacy Unreleased section must start with a bullet.',
-    );
-  }
-  return [
-    for (final (index, bullet) in bullets.indexed)
-      body
-          .substring(
-            bullet.end,
-            index + 1 < bullets.length ? bullets[index + 1].start : body.length,
-          )
-          .replaceFirst(RegExp(r'(?:\r?\n[ \t]*)+$'), ''),
-  ];
-}
+List<String> _legacySeed(_Git git, String sha) => legacySeedNotes(
+  ChangelogHistory.parse(git.blob(sha, _root), allowUnreleased: true),
+  ChangelogHistory.parse(git.blob(sha, _docs), allowUnreleased: true),
+);
 
 class _Entry {
   _Entry(
@@ -466,6 +688,7 @@ class _Entry {
     this.disposition, {
     this.section,
     this.targets = const [],
+    this.failure,
   });
 
   final String sha;
@@ -474,18 +697,9 @@ class _Entry {
   String disposition;
   final PrChangelog? section;
   final List<String> targets;
+  final String? failure;
   late final String? sectionSha256 = switch (section) {
-    final section? =>
-      sha256
-          .convert(
-            utf8.encode(
-              jsonEncode({
-                'reason': section.reason,
-                'bullets': _bulletRows(section),
-              }),
-            ),
-          )
-          .toString(),
+    final section? => _sectionDigest(section),
     null => null,
   };
 
@@ -496,6 +710,7 @@ class _Entry {
       'pr': pr,
       'source': source,
       'disposition': disposition,
+      if (failure != null) 'reason': failure,
       if (section != null) ...{
         'sectionSha256': sectionSha256,
         if (section.reason != null) 'reason': section.reason,
@@ -504,11 +719,48 @@ class _Entry {
       if (targets.isNotEmpty) 'reverts': targets,
     };
   }
+}
 
-  List<Map<String, String>> _bulletRows(PrChangelog section) => [
-    for (final bullet in section.bullets)
-      {'target': bullet.target, 'text': bullet.text},
-  ];
+List<Map<String, String>> _bulletRows(PrChangelog section) => [
+  for (final bullet in section.bullets)
+    {'target': bullet.target, 'text': bullet.text},
+];
+
+String _sectionDigest(PrChangelog section) => sha256
+    .convert(
+      utf8.encode(
+        jsonEncode({'reason': section.reason, 'bullets': _bulletRows(section)}),
+      ),
+    )
+    .toString();
+
+class _Diagnostic {
+  const _Diagnostic(
+    this.sha,
+    this.pr,
+    this.problem, {
+    this.reviewCode,
+    this.reviewShas = const [],
+    this.reference,
+  });
+
+  final String sha;
+  final int? pr;
+  final String problem;
+  final String? reviewCode;
+  final List<String> reviewShas;
+  final String? reference;
+
+  Map<String, Object?> toJson() => {
+    'sha': sha,
+    'pr': pr,
+    'reviewCode': reviewCode,
+    'reviewShas': reviewShas,
+    if (reference != null) 'reference': reference,
+  };
+
+  @override
+  String toString() => 'WARNING ${_location(sha, pr)}: $problem';
 }
 
 typedef _Pull = ({int number, String mergeSha});
@@ -531,7 +783,7 @@ _Pull? _mergedMainPull(Object? data) {
 }
 
 class _Collector {
-  _Collector(this.git, this.chain, this.window, this.lookup)
+  _Collector(this.git, this.chain, this.window, this.activation, this.lookup)
     : positions = Map.fromEntries(
         chain.indexed.map((entry) => MapEntry(entry.$2, entry.$1)),
       );
@@ -539,9 +791,10 @@ class _Collector {
   final _Git git;
   final List<String> chain;
   final List<String> window;
+  final String activation;
   final GithubLookup lookup;
   final Map<String, int> positions;
-  final warnings = <String>[];
+  final diagnostics = <_Diagnostic>[];
   final _associations = <String, Future<Set<_Pull>>>{};
   final _details = <int, Future<Object?>>{};
 
@@ -553,41 +806,50 @@ class _Collector {
       final number = int.tryParse(
         _prNumber.firstMatch(commit.subject)?[1] ?? '',
       );
-      if (commit.mixedTrailers) {
+      if (commit.trailerState == _TrailerState.unaligned) {
+        rows.add(
+          _unresolved(
+            sha,
+            number,
+            'git',
+            'Cannot safely separate Git trailers.',
+          ),
+        );
+        continue;
+      }
+      if (commit.trailerState == _TrailerState.mixed) {
         _warn(sha, number, 'kept non-trailer lines in the Git trailer block.');
       }
       if (commit.parents != 1) {
-        _warn(sha, number, 'unsupported main commit shape.');
-        rows.add(_Entry(sha, number, 'git', 'unresolved'));
+        rows.add(
+          _unresolved(sha, number, 'git', 'unsupported main commit shape.'),
+        );
         continue;
       }
       final landed = _readChangelog(commit.body);
-      if (landed == null &&
-          number == null &&
-          _generatedDocs(sha, commit.subject)) {
-        rows.add(_Entry(sha, null, 'git', 'generated-docs'));
-        continue;
-      }
       if (landed != null && number != null) {
         rows.add(_row(sha, number, 'git', landed, commit.trailers, seen));
+      } else if (number != null) {
+        final (section, reason) = await _fallback(sha, number);
+        rows.add(
+          section != null
+              ? _row(sha, number, 'api', section, '', seen)
+              : _unresolved(sha, number, 'api', reason!),
+        );
+      } else if (landed == null && _generatedDocs(sha, commit.subject)) {
+        rows.add(_Entry(sha, null, 'git', 'generated-docs'));
       } else {
-        final fallback = await _fallback(sha, number, landed);
-        if (fallback != null) {
-          rows.add(
-            _row(
-              sha,
-              fallback.$1,
-              landed == null ? 'api' : 'git',
-              fallback.$2,
-              landed == null ? '' : commit.trailers,
-              seen,
-            ),
-          );
-        } else {
-          rows.add(_Entry(sha, number, 'api', 'unresolved'));
-        }
+        rows.add(
+          _unresolved(
+            sha,
+            null,
+            'git',
+            'missing final PR number in commit subject.',
+          ),
+        );
       }
     }
+    _reviewGitHubReverts(rows);
     _applyReverts(rows);
     return rows;
   }
@@ -614,11 +876,6 @@ class _Collector {
         if (_reverts.firstMatch(line) case final marker?)
           (marker[1] ?? marker[2])!,
     }.toList();
-    for (final line in section.outsideLines) {
-      if (_githubRevert.firstMatch(line) case final marker?) {
-        _warn(sha, number, 'GitHub revert of ${marker[1]} needs review.');
-      }
-    }
     final row = _Entry(
       sha,
       number,
@@ -634,9 +891,39 @@ class _Collector {
         sha,
         number,
         'Changelog section differs from ${first.sha}. Kept the first section.',
+        reviewCode: 'divergent-duplicate',
+        reviewShas: [first.sha, sha],
       );
     }
     return row;
+  }
+
+  void _reviewGitHubReverts(List<_Entry> rows) {
+    for (final row in rows) {
+      for (final line in row.section?.outsideLines ?? const <String>[]) {
+        final reference = _githubRevert.firstMatch(line)?[1];
+        if (reference == null) continue;
+        final number = reference.toLowerCase().startsWith('$_repository#')
+            ? int.tryParse(reference.split('#').last)
+            : null;
+        final targets = [
+          for (final target in rows)
+            if (target.sha != row.sha &&
+                target.pr == number &&
+                target.section != null)
+              target.sha,
+        ];
+        _warn(
+          row.sha,
+          row.pr,
+          'GitHub revert of $reference needs review.'
+          '${targets.isEmpty ? '' : ' Target commits: ${targets.join(', ')}.'}',
+          reviewCode: 'github-revert',
+          reviewShas: [row.sha, ...targets],
+          reference: reference,
+        );
+      }
+    }
   }
 
   void _applyReverts(List<_Entry> rows) {
@@ -663,6 +950,16 @@ class _Collector {
           git.inverseOf(row.sha, target.sha)) {
         target.disposition = 'reverted';
         row.disposition = 'exact-revert';
+        if (row.section!.bullets.isNotEmpty ||
+            (target.targets.isNotEmpty && target.section!.bullets.isNotEmpty)) {
+          _warn(
+            row.sha,
+            row.pr,
+            'exact revert of ${target.sha} suppressed authored reversal notes.',
+            reviewCode: 'authored-exact-revert',
+            reviewShas: [target.sha, row.sha],
+          );
+        }
       } else {
         keepForReview.addAll([row.sha, ...row.targets]);
         final targetLabel = target?.pr == null
@@ -672,6 +969,12 @@ class _Collector {
           row.sha,
           row.pr,
           'revert of ${row.targets.join(', ')}$targetLabel needs review. Kept its notes.',
+          reviewCode: 'unconfirmed-revert',
+          reviewShas: [
+            row.sha,
+            for (final target in row.targets)
+              if (target != row.sha && bySha[target]?.section != null) target,
+          ],
         );
       }
     }
@@ -711,37 +1014,48 @@ class _Collector {
         );
   }
 
-  Future<(int, PrChangelog)?> _fallback(
-    String sha,
-    int? subjectNumber,
-    PrChangelog? landed,
-  ) async {
-    final candidates = await _associated(sha, subjectNumber);
-    final matches = <_Pull>[];
-    for (final candidate in candidates) {
-      final exact =
-          candidate.mergeSha == sha &&
-          (subjectNumber == null || subjectNumber == candidate.number);
-      if (exact || await _sameRebaseBatch(sha, candidate)) {
-        matches.add(candidate);
-      }
-    }
-    if (matches.length > 1) {
-      final numbers = matches.map((pull) => '#${pull.number}').join(', ');
+  Future<(PrChangelog?, String?)> _fallback(String sha, int number) async {
+    final candidates = await _associated(sha, number);
+    final numbered = candidates.where((pull) => pull.number == number).toList();
+    if (numbered.length > 1) {
       throw FormatException(
-        '${_location(sha, subjectNumber)}: ambiguous merged main PR associations ($numbers).',
+        '${_location(sha, number)}: PR association has conflicting merge commits.',
       );
     }
-    if (matches.isEmpty) {
-      if (candidates.any((pull) => pull.number == subjectNumber)) {
+    final exact = candidates.where((pull) => pull.mergeSha == sha).toList();
+    final pull = exact.where((pull) => pull.number == number).firstOrNull;
+    const unmatched = 'no matching merged main PR association.';
+    if (pull == null) {
+      if (numbered.isNotEmpty &&
+          !await _sharedAssociation(sha, numbered.single)) {
         throw FormatException(
-          '${_location(sha, subjectNumber)}: PR association has the wrong merge commit.',
+          '${_location(sha, number)}: PR association has the wrong merge commit.',
         );
       }
-      _warn(sha, subjectNumber, 'no matching merged main PR association.');
-      return null;
+      return (null, unmatched);
     }
-    final pull = matches.single;
+
+    final matches = [
+      ...exact,
+      for (final candidate in candidates)
+        if (candidate.mergeSha != sha &&
+            await _sharedAssociation(sha, candidate))
+          candidate,
+    ];
+    if (matches.length > 1) {
+      final numbers = matches.map((pull) => pull.number).toList()..sort();
+      throw FormatException(
+        '${_location(sha, number)}: ambiguous merged main PR associations '
+        '(${numbers.map((number) => '#$number').join(', ')}).',
+      );
+    }
+    if (await _sharedAssociation(sha, pull)) {
+      return (
+        null,
+        'shared batch association requires a landed Changelog section.',
+      );
+    }
+
     final detail = await _details.putIfAbsent(
       pull.number,
       () => _get('pulls/${pull.number}', sha, pull.number),
@@ -751,24 +1065,21 @@ class _Collector {
         '${_location(sha, pull.number)}: PR detail conflicts with the commit association.',
       );
     }
-    if (landed != null) return (pull.number, landed);
     final body = detail is Map ? detail['body'] : null;
     final section = body is String ? _readChangelog(body) : null;
-    if (section == null) {
-      _warn(sha, pull.number, 'associated PR has no valid Changelog section.');
-      return null;
-    }
-    return (pull.number, section);
+    return section == null
+        ? (null, 'associated PR has no valid Changelog section.')
+        : (section, null);
   }
 
-  Future<bool> _sameRebaseBatch(String sha, _Pull candidate) async {
+  Future<bool> _sharedAssociation(String sha, _Pull candidate) async {
     final current = positions[sha]!;
     final end = positions[candidate.mergeSha];
     if (end == null || end < current) return false;
-    // The final rebase-merged SHA alone cannot distinguish an envelope from
-    // an unrelated squash. Require the same association on a second commit.
     final other = end == current ? current - 1 : end;
-    if (other < 0 || other < positions[window.first]!) return false;
+    if (other < positions[window.first]! || chain[other] == activation) {
+      return false;
+    }
     return (await _associated(
       chain[other],
       candidate.number,
@@ -804,8 +1115,29 @@ class _Collector {
     }
   }
 
-  void _warn(String sha, int? number, String problem) {
-    warnings.add('WARNING ${_location(sha, number)}: $problem');
+  _Entry _unresolved(String sha, int? number, String source, String reason) {
+    _warn(sha, number, reason);
+    return _Entry(sha, number, source, 'unresolved', failure: reason);
+  }
+
+  void _warn(
+    String sha,
+    int? number,
+    String problem, {
+    String? reviewCode,
+    List<String> reviewShas = const [],
+    String? reference,
+  }) {
+    diagnostics.add(
+      _Diagnostic(
+        sha,
+        number,
+        problem,
+        reviewCode: reviewCode,
+        reviewShas: reviewShas,
+        reference: reference,
+      ),
+    );
   }
 }
 
@@ -826,37 +1158,6 @@ Future<Object?> _githubGet(String endpoint, {required bool paginate}) async {
     throw const FormatException('GitHub request failed.');
   }
   return jsonDecode(result.stdout as String);
-}
-
-class _Changelog {
-  const _Changelog(this.preamble, this.sections);
-
-  final String preamble;
-  final Map<String, String> sections;
-
-  static _Changelog parse(String source, {bool allowUnreleased = false}) {
-    final heads = _releaseHeading.allMatches(source).toList();
-    if (heads.isEmpty) {
-      throw const FormatException('Changelog has no release headings.');
-    }
-    final sections = <String, String>{};
-    for (final (index, head) in heads.indexed) {
-      final version = head[1]!.trim();
-      if (version == 'Unreleased'
-          ? !allowUnreleased
-          : !_version.hasMatch(version)) {
-        throw const FormatException('Unexpected changelog heading.');
-      }
-      if (sections.containsKey(version)) {
-        throw const FormatException('Duplicate changelog heading.');
-      }
-      sections[version] = source.substring(
-        head.start,
-        index + 1 < heads.length ? heads[index + 1].start : source.length,
-      );
-    }
-    return _Changelog(source.substring(0, heads.first.start), sections);
-  }
 }
 
 String _singleMatch(String source, RegExp pattern, String label) {
@@ -892,10 +1193,10 @@ class _Pins {
       name,
     );
     const tag = r'v[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9]+)?';
-    final cpp = pin('llamaCppTag', native, tag);
+    final cpp = pin('llamaCppTag', native, r"[^']+");
     final litert = pin('liteRtLmReleaseTag', native, tag);
     final sd = pin('stableDiffusionReleaseTag', native, tag);
-    final upstream = pin('bridgeLlamaCppTag', bridge, tag);
+    final upstream = pin('bridgeLlamaCppTag', bridge, r"[^']+");
     final upstreamCommit = pin('bridgeLlamaCppCommit', bridge, '[a-f0-9]{40}');
     final manifest = pin(
       'webBridgeManifestSha256',
@@ -910,39 +1211,48 @@ class _Pins {
       'default Web LiteRT-LM module',
     );
     final bridgeTag = _bridgeTag(git.blob(sha, _bridgeDefault));
-    if (!cpp.startsWith('$upstream-') && cpp != upstream) {
+    if (normalizeNativeLlamaCppTag(cpp) != upstream ||
+        normalizeNativeLlamaCppTag(upstream) != upstream) {
       throw const FormatException(
         'Native and Web llama.cpp upstream pins disagree.',
       );
     }
     return _Pins(
       bridgeTag,
-      'Runtime baseline: native llama.cpp `$cpp` and Web use upstream '
-      '`$upstream@$upstreamCommit`; native LiteRT-LM uses `$litert` and '
-      'stable-diffusion uses `$sd`. Web LiteRT-LM uses `$module`. '
-      'Manifest SHA-256: `$manifest`.',
+      formatRuntimeBaseline(
+        native: cpp,
+        upstream: upstream,
+        upstreamCommit: upstreamCommit,
+        liteRt: litert,
+        stableDiffusion: sd,
+        module: module,
+        manifest: manifest,
+      ),
     );
   }
 }
 
 class _Rendered {
-  const _Rendered(this.draft, this.files);
+  const _Rendered(this.files, this.sections, this.bullets);
 
-  final String draft;
   final Map<String, String> files;
+  final Map<String, String> sections;
+  final Map<String, List<String>> bullets;
+
+  String get draft => sections[_root]!;
 }
 
 _Rendered _render(
   _Options options,
-  _Changelog root,
-  _Changelog docs,
-  _Changelog archive,
+  ChangelogHistory root,
+  ChangelogHistory docs,
+  ChangelogHistory archive,
   List<String> notes,
   _Pins pins,
   String oldBridge,
 ) {
   final version = options.version;
-  final series = _version.firstMatch(version)!;
+  final series = coreReleaseVersion.firstMatch(version)!;
   final history = {...root.sections, ...archive.sections};
   if (history.containsKey(version) || docs.sections.containsKey(version)) {
     throw const FormatException(
@@ -965,19 +1275,21 @@ _Rendered _render(
         )
       : -1;
 
-  String release({required bool docs}) {
+  List<String> authoredBullets({required bool docs}) => [
+    for (final (i, note) in notes.indexed)
+      if (i == announcement)
+        '- ${note.replaceFirst(RegExp(r'Aligned (?:the )?default'), docs ? 'Aligned default' : 'Aligned the default')}'
+      else if (_bridgeClaim.hasMatch(note))
+        '- WebGPU: ${_docsBridgeText(note)}'
+      else
+        '- ${docs ? _docsBridgeText(note) : note}',
+  ];
+
+  String release(List<String> bullets, {required bool docs}) {
     final article = docs ? '' : 'the ';
     final output = StringBuffer('## $version\n\n');
-    for (final (i, note) in notes.indexed) {
-      if (i == announcement) {
-        output.writeln(
-          '- ${note.replaceFirst(RegExp(r'Aligned (?:the )?default'), 'Aligned ${article}default')}',
-        );
-      } else if (_bridgeClaim.hasMatch(note)) {
-        output.writeln('- WebGPU: ${_docsBridgeText(note)}');
-      } else {
-        output.writeln('- ${docs ? _docsBridgeText(note) : note}');
-      }
+    for (final bullet in bullets) {
+      output.writeln(bullet);
     }
     if (announcement < 0) {
       output.writeln(
@@ -989,8 +1301,10 @@ _Rendered _render(
     return (output..writeln('\n${pins.baseline}\n')).toString();
   }
 
-  final draft = release(docs: false);
-  final docsDraft = release(docs: true);
+  final rootBullets = authoredBullets(docs: false);
+  final docsBullets = authoredBullets(docs: true);
+  final draft = release(rootBullets, docs: false);
+  final docsDraft = release(docsBullets, docs: true);
   final retained = retainedReleaseHeadings(
     ['## $version', for (final heading in history.keys) '## $heading'],
     major: int.parse(series[1]!),
@@ -1019,37 +1333,54 @@ _Rendered _render(
 
   final rootSections = root.sections.values.toList();
   final archived = <String>[];
-  var size = utf8.encode(root.preamble + draft + rootSections.join()).length;
-  while (size > _sizeLimit && rootSections.isNotEmpty) {
+  final oldBoundary = root.sections.keys.last;
+  String boundary() => rootSections.isEmpty
+      ? version
+      : root.sections.keys.elementAt(rootSections.length - 1);
+  String rootPreamble() =>
+      archiveBoundary(root.preamble, oldBoundary, boundary());
+  final draftSize = utf8.encode(draft).length;
+  var historySize = utf8.encode(rootSections.join()).length;
+  int size() => utf8.encode(rootPreamble()).length + draftSize + historySize;
+  while (size() > _sizeLimit && rootSections.isNotEmpty) {
     final oldest = rootSections.removeLast();
     if (!oldest.endsWith('\n')) {
       throw const FormatException(
         'Cannot join the oldest root section to the archive losslessly.',
       );
     }
-    size -= utf8.encode(oldest).length;
+    historySize -= utf8.encode(oldest).length;
     archived.add(oldest);
   }
-  if (size > _sizeLimit) {
+  if (size() > _sizeLimit) {
     throw const FormatException(
       'The new root changelog section exceeds the pub.dev size limit.',
     );
   }
+  final archivePreamble = archiveBoundary(
+    archive.preamble,
+    oldBoundary,
+    boundary(),
+  );
   final keep = retained.toSet();
-  return _Rendered(draft, {
-    _root: root.preamble + draft + rootSections.join(),
-    _docs:
-        docs.preamble +
-        docsDraft +
-        docs.sections.entries
-            .where((entry) => keep.contains(entry.key))
-            .map((entry) => entry.value)
-            .join(),
-    _archive:
-        archive.preamble +
-        archived.reversed.join() +
-        archive.sections.values.join(),
-  });
+  return _Rendered(
+    {
+      _root: rootPreamble() + draft + rootSections.join(),
+      _docs:
+          docs.preamble +
+          docsDraft +
+          docs.sections.entries
+              .where((entry) => keep.contains(entry.key))
+              .map((entry) => entry.value)
+              .join(),
+      _archive:
+          archivePreamble +
+          archived.reversed.join() +
+          archive.sections.values.join(),
+    },
+    {_root: draft, _docs: docsDraft},
+    {_root: rootBullets, _docs: docsBullets},
+  );
 }
 
 String _docsBridgeText(String note) =>
@@ -1059,6 +1390,58 @@ String _docsBridgeText(String note) =>
 
 String _sectionBody(String section) =>
     section.substring(section.indexOf('\n') + 1);
+
+String _sectionDiff(String path, String expected, String actual) {
+  final before = const LineSplitter().convert(expected);
+  final after = const LineSplitter().convert(actual);
+  return [
+    '--- generated/$path',
+    '+++ candidate/$path',
+    '@@ -1,${before.length} +1,${after.length} @@',
+    for (final line in before) '-$line',
+    for (final line in after) '+$line',
+  ].join('\n');
+}
+
+void _requireMissingNotes(
+  Set<String> required,
+  List<({String sha, String text})> sources,
+  List<String> generated,
+  String candidate,
+) {
+  final lineEndings = RegExp(r'\r\n?');
+  final normalized = candidate.replaceAll(lineEndings, '\n');
+  final baseline = normalized.lastIndexOf('\n\nRuntime baseline: ');
+  final notes = baseline < 0 ? normalized : normalized.substring(0, baseline);
+  final lines = const LineSplitter().convert(notes);
+  final visible = visibleReleaseBulletLines(notes);
+  final listMarker = RegExp(r'^[-*+] ');
+  final markers = [
+    for (final (index, line) in lines.indexed)
+      if (listMarker.hasMatch(line)) index,
+  ];
+  final available = <String, int>{};
+  for (final (index, start) in markers.indexed) {
+    if (!visible.contains(start)) continue;
+    final end = index + 1 < markers.length ? markers[index + 1] : lines.length;
+    final bullet = lines
+        .getRange(start, end)
+        .join('\n')
+        .replaceFirst(RegExp(r'(?:\n[ \t]*)+$'), '');
+    available.update(bullet, (count) => count + 1, ifAbsent: () => 1);
+  }
+  final expected = <String, List<String>>{};
+  for (final (index, bullet) in generated.indexed) {
+    final normalizedBullet = bullet.replaceAll(lineEndings, '\n');
+    (expected[normalizedBullet] ??= []).add(sources[index].sha);
+  }
+  for (final entry in expected.entries) {
+    if ((available[entry.key] ?? 0) < entry.value.length) {
+      // Identical prose does not identify which of its sources was omitted.
+      required.addAll(entry.value);
+    }
+  }
+}
 
 void _writeChanges(
   _Git git,

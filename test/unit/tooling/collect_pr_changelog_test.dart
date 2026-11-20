@@ -1,10 +1,13 @@
 @TestOn('vm')
+@Timeout(Duration(minutes: 2))
 library;
 
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:crypto/crypto.dart';
 import 'package:test/test.dart';
+import 'package:yaml/yaml.dart';
 
 import '../../../tool/release/collect_pr_changelog.dart';
 
@@ -33,6 +36,8 @@ const _identity = {
   'GIT_COMMITTER_NAME': 'Release fixture',
   'GIT_COMMITTER_EMAIL': 'fixture@example.invalid',
 };
+const _coauthorBlock = '---------\n\nCo-authored-by: A <a@example.invalid>';
+const _signoff = 'Signed-off-by: B <b@example.invalid>';
 
 String _fixtureBridgeDefault(String tag) =>
     r'ASSETS_TAG="${WEBGPU_BRIDGE_ASSETS_TAG:-'
@@ -89,7 +94,7 @@ const String webBridgeManifestSha256 =
     );
   }
 
-  final dir = Directory.systemTemp.createTempSync('clfix-changelog-git-');
+  final dir = Directory.systemTemp.createTempSync('clpre-changelog-git-');
   final String from;
   late final String boundary;
   late final String activation;
@@ -134,6 +139,9 @@ const String webBridgeManifestSha256 =
     String? from,
     bool write = false,
     String? curated,
+    String? verify,
+    String? candidate,
+    String? review,
   }) => [
     '--version',
     version,
@@ -143,6 +151,9 @@ const String webBridgeManifestSha256 =
     through ?? head,
     if (write) '--write',
     if (curated != null) ...['--curated', curated],
+    if (verify != null) ...['--verify-input', verify],
+    if (candidate != null) ...['--candidate', candidate],
+    if (review != null) ...['--review', review],
   ];
 
   Future<ProcessResult> cli(List<String> args) => Process.run(
@@ -175,6 +186,11 @@ _Repo _repo({
 
 String _draft(String stdout) => stdout.substring(stdout.indexOf('## 0.20.3\n'));
 
+String _receiptBlock(String output) => RegExp(
+  r'^## Release notes input\n\nPrevious-tag: [^\n]+\nThrough: [a-f0-9]{40}\nInput-SHA256: [a-f0-9]{64}\n',
+  multiLine: true,
+).firstMatch(output)!.group(0)!;
+
 Matcher _formatError(String message) => isA<FormatException>().having(
   (e) => e.message,
   'message',
@@ -182,6 +198,13 @@ Matcher _formatError(String message) => isA<FormatException>().having(
 );
 
 void main() {
+  test('pins the committed changelog cutover tag and first parent', () {
+    expect(jsonDecode(File(_marker).readAsStringSync()), {
+      'tag': 'v0.20.2',
+      'commit': 'adbb25f0af22e769208e43b69851e34c24a97ce5',
+    });
+  });
+
   test(
     'CLI writes both files from first-parent Git with immutable history',
     () async {
@@ -225,6 +248,236 @@ void main() {
         '$_rootIntro$section$_oldRelease',
       );
     },
+    timeout: const Timeout(Duration(minutes: 2)),
+  );
+
+  for (final (shape, receiptEnding, lineEnding, valid) in [
+    ('no trailers', '', '\n', true),
+    ('only a sign-off', '\n\n$_signoff', '\n', true),
+    (
+      'a GitHub co-author block',
+      '\n\n$_coauthorBlock\nCo-authored-by: B <b@example.invalid>',
+      '\n',
+      true,
+    ),
+    (
+      'a GitHub co-author block with blank lines',
+      '\n\n$_coauthorBlock\n\nCo-authored-by: B <b@example.invalid>',
+      '\n',
+      true,
+    ),
+    (
+      'a mixed-case folded co-author trailer',
+      '\n\nCo-Authored-By: A\n <a@example.invalid>',
+      '\n',
+      true,
+    ),
+    ('CRLF and a GitHub co-author block', '\n\n$_coauthorBlock', '\r\n', true),
+    (
+      'a user separator and sign-off',
+      '\n\n---------\n\n$_signoff',
+      '\n',
+      false,
+    ),
+    (
+      'a user sign-off paragraph before a GitHub co-author block',
+      '\n\n$_signoff\n\n$_coauthorBlock',
+      '\n',
+      false,
+    ),
+    (
+      'trailing field whitespace before a GitHub co-author block',
+      '  \n\n$_coauthorBlock',
+      '\n',
+      false,
+    ),
+  ]) {
+    test('verifies the immutable prep message with $shape', () async {
+      final repo = _repo();
+      final through = repo.pr(3, '- Included note.');
+      final preview = await _collect(repo, repo.args(write: true));
+      repo.git(['add', '-A']);
+      final tree = repo.git(['write-tree']).trim();
+      final message =
+          'Prepare release (#10)\n\n## Changelog\nN/A: Cuts the release.\n\n'
+          '${_receiptBlock(preview).trimRight()}$receiptEnding\n';
+      final input = repo.file('.git/clact4-landed-message.md')
+        ..writeAsStringSync(message.replaceAll('\n', lineEnding));
+      final candidate = repo.git([
+        'commit-tree',
+        tree,
+        '-p',
+        through,
+        '-F',
+        input.path,
+      ]).trim();
+      input.writeAsStringSync(
+        repo.git(['show', '-s', '--format=%B', candidate]),
+      );
+      final result = _collect(
+        repo,
+        repo.args(through: through, verify: input.path, candidate: candidate),
+      );
+      if (valid) {
+        expect(await result, contains('Release notes input verified.'));
+      } else {
+        await expectLater(
+          result,
+          throwsA(_formatError('duplicate or malformed field')),
+        );
+      }
+    });
+  }
+
+  test('reads the final changelog before a GitHub co-author block', () async {
+    final repo = _repo();
+    final commit = repo.commit(
+      'Sync release (#4)\n\n## Changelog\n- Refreshed native pins.\n\n'
+      '---------\n\nCo-authored-by: A <a@example.invalid>\n'
+      'Co-authored-by: B <b@example.invalid>',
+    );
+    final output = await _collect(repo, repo.args());
+    expect(
+      output,
+      contains(
+        '"sha":"$commit","pr":4,"source":"git","disposition":"included"',
+      ),
+    );
+    expect(_draft(output), contains('- Refreshed native pins.'));
+  });
+
+  test(
+    'prep CI verifies each squash attribution variant and rejects unsafe bodies',
+    () async {
+      final repo = _repo();
+      final through = repo.pr(3, '- Included note.');
+      final preview = await _collect(repo, repo.args(write: true));
+      final body =
+          '## Changelog\nN/A: Cuts the release.\n\n${_receiptBlock(preview)}';
+      const title = 'Prepare release';
+      final head = repo.commit(title, {
+        'pubspec.yaml': 'name: llamadart\nversion: 0.20.3\n',
+      });
+      final tree = repo.git(['rev-parse', 'HEAD^{tree}']).trim();
+      final merge = repo.git([
+        'commit-tree',
+        tree,
+        '-p',
+        through,
+        '-p',
+        head,
+        '-m',
+        'Test merge',
+      ]).trim();
+      repo.git(['checkout', '--detach', merge]);
+      final event = repo.file('.git/clact4-prep-event.json');
+      void setBody(String body) => event.writeAsStringSync(
+        jsonEncode({
+          'pull_request': {
+            'number': 10,
+            'title': title,
+            'body': body,
+            'base': {'sha': through},
+            'head': {'sha': head},
+          },
+        }),
+      );
+      setBody(body);
+      final script = File('tool/release/verify_release_candidate.sh');
+      repo.write(script.path, script.readAsStringSync());
+      final dart = File('tool/release/collect_pr_changelog.dart').absolute.path;
+      repo.write('.git/dart', r'''#!/usr/bin/env bash
+if [[ "$1" == tool/testing/check_released_changelog_sections.dart ]]; then
+  echo 'Core release prep: true'
+elif [[ "$2" == tool/release/collect_pr_changelog.dart ]]; then
+  shift 2
+  exec "$FIXTURE_DART" "$FIXTURE_COLLECTOR" "$@"
+fi
+''');
+      final chmod = Process.runSync('chmod', [
+        '+x',
+        repo.file('.git/dart').path,
+      ]);
+      expect(chmod.exitCode, 0, reason: '${chmod.stderr}');
+      final workflow =
+          loadYaml(
+                File('.github/workflows/pr_changelog.yml').readAsStringSync(),
+              )
+              as YamlMap;
+      final steps = workflow['jobs']['release-prep']['steps'] as YamlList;
+      final verify = steps.cast<YamlMap>().singleWhere(
+        (step) =>
+            step['name'] == 'Check the real PR head and tested merge result',
+      );
+      final env = {
+        ..._identity,
+        'GITHUB_EVENT_PATH': event.path,
+        'RUNNER_TEMP': repo.file('.git').path,
+        'PATH': '${repo.file('.git').path}:${Platform.environment['PATH']}',
+        'FIXTURE_DART': Platform.resolvedExecutable,
+        'FIXTURE_COLLECTOR': dart,
+      };
+      Future<ProcessResult> run() => Process.run(
+        'bash',
+        ['-c', verify['run'] as String],
+        workingDirectory: repo.dir.path,
+        environment: env,
+      );
+      final result = await run();
+      expect(result.exitCode, 0, reason: '${result.stdout}\n${result.stderr}');
+      expect(
+        'Release notes input verified.'.allMatches(result.stdout as String),
+        hasLength(4),
+      );
+      final squash = repo.head;
+      expect(repo.git(['show', '-s', '--format=%P', squash]).trim(), through);
+      expect(repo.git(['rev-parse', 'HEAD^{tree}']).trim(), tree);
+      expect(
+        repo.git(['show', '-s', '--format=%B', squash]).trimRight(),
+        '$title (#10)\n\n${body.trimRight()}',
+      );
+      final mismatched = await run();
+      expect(mismatched.exitCode, isNot(0));
+      expect(mismatched.stdout, isNot(contains('Core release prep: true')));
+
+      for (final ending in ['\n\n$_signoff\n', '  \n']) {
+        repo.git(['checkout', '--detach', merge]);
+        setBody('${body.trimRight()}$ending');
+        final rejected = await run();
+        expect(
+          rejected.exitCode,
+          isNot(0),
+          reason: '${rejected.stdout}\n${rejected.stderr}',
+        );
+        expect(
+          rejected.stderr,
+          contains(
+            'End the receipt block with no trailing attribution or whitespace.',
+          ),
+        );
+      }
+    },
+    skip: Platform.isWindows ? 'Runs the Bash workflow step.' : false,
+  );
+
+  test(
+    'rejects write in verification and candidate without verification',
+    () async {
+      final repo = _repo();
+      final preview = await _collect(repo, repo.args());
+      final input = repo.file('.git/clact2-receipt.md')
+        ..writeAsStringSync(_receiptBlock(preview));
+      for (final args in [
+        repo.args(write: true, verify: input.path),
+        repo.args(candidate: repo.head),
+      ]) {
+        await expectLater(
+          _collect(repo, args),
+          throwsA(_formatError('Usage:')),
+        );
+      }
+      expect(repo.git(['status', '--porcelain']), isEmpty);
+    },
   );
   test('keeps the loose-list bullet glued to a Git trailer (ADV3)', () async {
     final repo = _repo();
@@ -260,21 +513,52 @@ void main() {
     },
   );
 
-  test(
-    'fails with the commit SHA if Git omits a line from its trailer records',
-    () async {
+  for (final (kind, body) in [
+    ('omitted comment', '- A note.\n\n- B note.\n# Heading'),
+    ('glued heading', '- A note.'),
+    ('unit separator', '- First.\n\n- Keep \x1f this.'),
+    ('record separator', '- First.\n\n- Keep \x1e this.'),
+  ]) {
+    test('reports only the unaligned commit with $kind', () async {
       final repo = _repo();
       repo.git(['config', 'core.commentChar', '#']);
-      final commit = repo.commit(
-        'Change (#4)\n\n## Changelog\n- A note.\n\n- B note.\n'
-        '# Heading\nSigned-off-by: X <x@example.invalid>',
+      final bad = repo.commit(
+        'Change (#4)\n\n## Changelog\n$body\nSigned-off-by: X <x@example.invalid>',
       );
+      final good = repo.pr(5, '- Keep the later note.');
       await expectLater(
         _collect(repo, repo.args()),
         throwsA(
-          _formatError('Cannot safely separate Git trailers at $commit.'),
+          allOf([
+            _formatError(
+              'WARNING $bad (#4): Cannot safely separate Git trailers',
+            ),
+            _formatError(
+              '"sha":"$bad","pr":4,"source":"git","disposition":"unresolved"',
+            ),
+            _formatError(
+              '"sha":"$good","pr":5,"source":"git","disposition":"included"',
+            ),
+            _formatError('Keep the later note.'),
+            isNot(_formatError('## Release notes input')),
+          ]),
         ),
       );
+    });
+  }
+
+  test(
+    'CLI prints the incomplete ledger and exits nonzero without a receipt',
+    () async {
+      final repo = _repo();
+      final missing = repo.commit('Unknown direct push');
+      final later = repo.pr(4, '- A later valid note.');
+      final result = await repo.cli(repo.args());
+      expect(result.exitCode, 1);
+      expect(result.stdout, contains('WARNING $missing'));
+      expect(result.stdout, contains('"sha":"$later","pr":4'));
+      expect(result.stdout, contains('INCOMPLETE'));
+      expect(result.stdout, isNot(contains('## Release notes input')));
     },
   );
 
@@ -298,6 +582,362 @@ void main() {
     expect('First landing.'.allMatches(_draft(output)), hasLength(1));
     expect(_draft(output), isNot(contains('Different follow-up note.')));
   });
+
+  test(
+    'issues an input receipt and independently checks all three fields',
+    () async {
+      final repo = _repo();
+      final through = repo.pr(9, '- First note.');
+      final output = await _collect(repo, repo.args());
+      final receipt = _receiptBlock(output);
+      final receiptFile = repo.file('.git/clpre-receipt.md');
+      receiptFile.writeAsStringSync(
+        '## Changelog\nN/A: Prepares the release.\n\n$receipt',
+      );
+      expect(
+        await _collect(repo, repo.args(verify: receiptFile.path)),
+        contains('Release notes input verified.'),
+      );
+      for (final label in ['Previous-tag', 'Through', 'Input-SHA256']) {
+        receiptFile.writeAsStringSync(
+          receipt.replaceFirstMapped(
+            RegExp('^$label: (.*)([0-9a-f])\$', multiLine: true),
+            (match) => '$label: ${match[1]}${match[2] == '0' ? '1' : '0'}',
+          ),
+        );
+        await expectLater(
+          _collect(repo, repo.args(verify: receiptFile.path)),
+          throwsA(_formatError('$label does not match')),
+        );
+      }
+      receiptFile.writeAsStringSync(receipt);
+      repo.pr(10, 'N/A: Internal maintenance.');
+      await expectLater(
+        _collect(repo, repo.args(verify: receiptFile.path)),
+        throwsA(_formatError('Through does not match')),
+      );
+      expect(
+        await _collect(
+          repo,
+          repo.args(verify: receiptFile.path, through: through),
+        ),
+        contains('Release notes input verified.'),
+      );
+    },
+  );
+
+  test('hashes the golden JSONL input in order with a final LF', () async {
+    final repo = _repo(legacyRoot: '- Seed café.\n\n');
+    final first = repo.pr(
+      4,
+      '- Fixture note.\n- [packages/genkit_llamadart] Package note.',
+    );
+    final last = repo.pr(4, '- Different note.');
+    final previous = repo.git(['rev-parse', '${repo.from}^{commit}']).trim();
+    final boundary = repo.boundary;
+    final activation = repo.activation;
+    final golden =
+        '''
+{"version":"0.20.3","previousTag":"v0.20.2","previousSha":"$previous","through":"$last","cutoverTag":"v0.20.2","cutoverSha":"$boundary","activationSha":"$activation"}
+{"sha":"$boundary","source":"legacy-seed","target":"core","text":"Seed café."}
+{"sha":"$activation","pr":1,"source":"git","disposition":"n/a","sectionSha256":"b7f96b7b559169a4b6132b21424227f837fae1e54a3968b8b0544af97246b1de","reason":"Enables maintainer tooling."}
+{"sha":"$first","pr":4,"source":"git","disposition":"included","sectionSha256":"96d99d0973a16f4f4d7722fe3aedbae3bc5de11dbf45c2cae3924aacee1e959b","bullets":[{"target":"core","text":"Fixture note."},{"target":"packages/genkit_llamadart","text":"Package note."}]}
+{"sha":"$last","pr":4,"source":"git","disposition":"duplicate-pr","sectionSha256":"2315e4528f90a220599d685dbbf3ea15ebb7dceb3fe3b2b96692375ebb703156","bullets":[{"target":"core","text":"Different note."}]}
+{"sha":"$last","pr":4,"reviewCode":"divergent-duplicate","reviewShas":["$first","$last"]}
+''';
+    final hash = sha256.convert(utf8.encode(golden));
+    final expected =
+        '## Release notes input\n\nPrevious-tag: v0.20.2@$previous\nThrough: $last\nInput-SHA256: $hash\n';
+    for (var repeat = 0; repeat < 2; repeat++) {
+      final preview = await _collect(repo, repo.args());
+      expect(preview, contains(expected));
+    }
+    final body = repo.file('.git/clpre-digest.md')
+      ..writeAsStringSync(
+        '## Summary\n\n## Changelog\n- [core] Fixture note.\n- [packages/genkit_llamadart] Package note.',
+      );
+    final digest = await _collect(repo, ['--section-sha256', body.path]);
+    expect(
+      digest,
+      '96d99d0973a16f4f4d7722fe3aedbae3bc5de11dbf45c2cae3924aacee1e959b\n',
+    );
+    body.writeAsStringSync('## Changelog\n- ');
+    await expectLater(
+      _collect(repo, ['--section-sha256', body.path]),
+      throwsFormatException,
+    );
+  });
+
+  test(
+    'detects effective API changes without requiring a different core draft',
+    () async {
+      final repo = _repo();
+      final landed = repo.commit('Missing body (#4)');
+      Map<String, Object?> lookup(String body, {bool reorderedPages = false}) {
+        final exact = _pull(4, landed, body: body);
+        final irrelevant = _pull(91, landed, branch: 'side');
+        return {
+          'commits/$landed/pulls': reorderedPages
+              ? [
+                  [irrelevant],
+                  [exact],
+                ]
+              : [
+                  [exact],
+                  [irrelevant],
+                ],
+          'pulls/4': exact,
+        };
+      }
+
+      const core = '- Core stays the same.';
+      const a = '- [packages/genkit_llamadart] First package note.';
+      const b = '- [packages/genkit_llamadart] Second package note.';
+      const section = '## Changelog\n$core\n$a\n$b';
+      final preview = await _collect(repo, repo.args(), lookup(section));
+      final reordered = await _collect(
+        repo,
+        repo.args(),
+        lookup(section, reorderedPages: true),
+      );
+      expect(reordered, preview);
+
+      final prep = repo.commit(
+        'Prepare release (#10)\n\n## Changelog\nN/A: Prepares a release.\n\n${_receiptBlock(preview)}',
+      );
+      final input = repo.file('.git/clpre-landed-body.md')
+        ..writeAsStringSync(repo.git(['show', '-s', '--format=%B', prep]));
+      final command = repo.args(through: landed, verify: input.path);
+      for (final changed in [
+        section.replaceFirst('First package note.', 'Edited package note.'),
+        section.replaceFirst(
+          'packages/genkit_llamadart',
+          'packages/llamadart_model_store',
+        ),
+        '## Changelog\n$core\n$b\n$a',
+        'Reverts leehack/llamadart#123\n\n$section',
+      ]) {
+        final current = await _collect(
+          repo,
+          repo.args(through: landed),
+          lookup(changed),
+        );
+        expect(_draft(current), _draft(preview));
+        await expectLater(
+          _collect(repo, command, lookup(changed)),
+          throwsA(_formatError('Input-SHA256 does not match')),
+        );
+      }
+      expect(
+        await _collect(repo, command, lookup(section)),
+        contains('Release notes input verified.'),
+      );
+    },
+  );
+
+  test(
+    'requires review for both divergent duplicates and suppressed authored reverts',
+    () async {
+      final repo = _repo();
+      final first = repo.pr(4, '- First landing.');
+      final duplicate = repo.pr(4, '- Divergent note.');
+      final feature = repo.pr(5, '- Added the feature.', {
+        'feature.txt': 'Enabled.\n',
+      });
+      repo.file('feature.txt').deleteSync();
+      final reversal = repo.commit(
+        'Reverse a feature (#6)\n\nThis reverts commit $feature.\n\n## Changelog\n- The reversal uses a separate migration.',
+      );
+      final preview = await _collect(repo, repo.args());
+      expect(preview, contains('The reversal uses a separate migration.'));
+      expect(preview, contains('"reverts":["$feature"]'));
+      expect(
+        preview,
+        contains(
+          'exact revert of $feature suppressed authored reversal notes.',
+        ),
+      );
+      expect(preview, contains('Divergent note.'));
+      final input = repo.file('.git/clpre-review.md')
+        ..writeAsStringSync(_receiptBlock(preview));
+      final verify = repo.args(verify: input.path);
+      final missing = _formatError(
+        'missing dispositions for $first, $duplicate, $feature, $reversal',
+      );
+      await expectLater(_collect(repo, verify), throwsA(missing));
+      await expectLater(
+        _collect(repo, repo.args(write: true)),
+        throwsA(missing),
+      );
+
+      input.writeAsStringSync(
+        '${_receiptBlock(preview)}\n## Release notes review\n'
+        '- $first Keep the first landing as the actual behavior.\n'
+        '- $duplicate Omit the duplicate because it only adds fixture coverage.\n'
+        '- $feature Omit the cancelled feature.\n'
+        '- $reversal Keep the migration in the separate upgrade guide.\n',
+      );
+      expect(
+        await _collect(repo, verify),
+        contains('Release notes input verified.'),
+      );
+      expect(
+        _receiptBlock(
+          await _collect(repo, repo.args(write: true, review: input.path)),
+        ),
+        _receiptBlock(preview),
+      );
+    },
+  );
+
+  test('cancels an unambiguous inverse with N/A without a review', () async {
+    final repo = _repo();
+    final feature = repo.pr(5, '- Added the feature.', {
+      'feature.txt': 'Enabled.\n',
+    });
+    repo.file('feature.txt').deleteSync();
+    final reversal = repo.commit(
+      'Reverse a feature (#6)\n\nThis reverts commit $feature.\n\n## Changelog\nN/A: Cancels the unshipped feature.',
+    );
+    final preview = await _collect(repo, repo.args(write: true));
+    expect(
+      preview,
+      contains(
+        '"sha":"$reversal","pr":6,"source":"git","disposition":"exact-revert"',
+      ),
+    );
+    expect(_draft(preview), isNot(contains('Added the feature.')));
+  });
+
+  test(
+    'requires a SHA-specific disposition for a removed candidate note',
+    () async {
+      final repo = _repo();
+      final retained = repo.pr(8, '- Keep this note.');
+      final source = repo.pr(9, '- Restore the missing feature.');
+      final through = repo.head;
+      final output = await _collect(repo, repo.args(write: true));
+      final receipt = _receiptBlock(output);
+      final candidate = repo.commit('Prepare release (#10)', {
+        for (final path in [_root, _docs])
+          path: repo
+              .file(path)
+              .readAsStringSync()
+              .replaceFirst('- Restore the missing feature.\n', ''),
+      });
+      final file = repo.file('.git/clpre-receipt.md');
+      final args = repo.args(
+        through: through,
+        verify: file.path,
+        candidate: candidate,
+      );
+      for (final review in [
+        '',
+        '## Release notes review\n- ${repo.activation} Combined in the release summary.\n',
+        '## Release notes review\n- $source TBD\n',
+      ]) {
+        file.writeAsStringSync('$receipt\n$review');
+        await expectLater(_collect(repo, args), throwsA(_formatError(source)));
+      }
+      file.writeAsStringSync(
+        '$receipt\n## Release notes review\n- $source Combined in the release summary.\n',
+      );
+      final result = await _collect(repo, args);
+      expect(result, contains('Release notes input verified.'));
+      expect(result, contains('--- generated/CHANGELOG.md'));
+      expect(result, contains('\n-- Restore the missing feature.\n'));
+      file.writeAsStringSync(
+        '${file.readAsStringSync()}'
+        '- $retained Accounted for in maintainer notes.\n',
+      );
+      await expectLater(
+        _collect(repo, args),
+        throwsA(_formatError('unrelated dispositions for $retained')),
+      );
+    },
+  );
+
+  test(
+    'one candidate bullet cannot account for two identical sources',
+    () async {
+      final repo = _repo();
+      final first = repo.pr(2, '- Shared wording.');
+      final through = repo.pr(3, '- Shared wording.');
+      final preview = await _collect(repo, repo.args(write: true));
+      final candidate = repo.commit('Prepare release (#10)', {
+        for (final path in [_root, _docs])
+          path: repo
+              .file(path)
+              .readAsStringSync()
+              .replaceFirst('- Shared wording.\n', ''),
+      });
+      final input = repo.file('.git/clact2-receipt.md')
+        ..writeAsStringSync(_receiptBlock(preview));
+      await expectLater(
+        _collect(
+          repo,
+          repo.args(through: through, verify: input.path, candidate: candidate),
+        ),
+        throwsA(_formatError('missing dispositions for $first, $through')),
+      );
+    },
+  );
+
+  test('a hidden candidate bullet still requires a disposition', () async {
+    final repo = _repo();
+    final source = repo.pr(9, '- Restore the missing feature.');
+    final draft = await _collect(repo, repo.args(write: true));
+    final input = repo.file('.git/clpre-receipt.md')
+      ..writeAsStringSync(_receiptBlock(draft));
+    final original = {
+      for (final path in [_root, _docs])
+        path: repo.file(path).readAsStringSync(),
+    };
+    for (final (open, close) in [('~~~markdown', '~~~'), ('<!--', '-->')]) {
+      final candidate = repo.commit('Prepare release (#10)', {
+        for (final entry in original.entries)
+          entry.key: entry.value.replaceFirst(
+            '- Restore the missing feature.',
+            '$open\n- Restore the missing feature.\n- Example.\n$close',
+          ),
+      });
+      await expectLater(
+        _collect(
+          repo,
+          repo.args(through: source, verify: input.path, candidate: candidate),
+        ),
+        throwsA(_formatError('missing dispositions for $source')),
+      );
+    }
+  });
+
+  test(
+    'accepts supported native nightlies for the matching upstream family',
+    () async {
+      final repo = _repo();
+      for (final tag in ['b1049', 'b1049-1', 'b1049-llamadart.1']) {
+        repo.pr(9, 'N/A: Tests native pin inputs.', {
+          'tool/testing/check_webgpu_bridge_tag.dart': repo
+              .file('tool/testing/check_webgpu_bridge_tag.dart')
+              .readAsStringSync()
+              .replaceAll('v1.0.0', 'b1049'),
+          'lib/src/hook/native_release_pins.dart':
+              "const llamaCppTag = '$tag';\nconst liteRtLmReleaseTag = 'v0.19.1-5';\nconst stableDiffusionReleaseTag = 'v0.4.0';\n",
+        });
+        expect(
+          await _collect(repo, repo.args()),
+          contains('native llama.cpp `$tag` and Web use upstream `b1049@'),
+        );
+      }
+      for (final tag in ['b01049', 'b1049-0', 'b1050-2', 'v1.0.0-2']) {
+        repo.pr(9, 'N/A: Tests native pin inputs.', {
+          'lib/src/hook/native_release_pins.dart':
+              "const llamaCppTag = '$tag';\nconst liteRtLmReleaseTag = 'v0.19.1-5';\nconst stableDiffusionReleaseTag = 'v0.4.0';\n",
+        });
+        await expectLater(_collect(repo, repo.args()), throwsFormatException);
+      }
+    },
+  );
 
   test('rejects an activation commit with a bullet instead of N/A', () async {
     final repo = _repo(activationSection: '- Adds a release note.');
@@ -416,12 +1056,29 @@ void main() {
     () async {
       final oldest = '## 0.18.7\n\n- ${'x' * (256 * 1024)}.\n';
       final repo = _repo(history: '$_oldRelease$oldest');
+      const rootPrefix = 'Releases before 0.18.7 are in the\narchive.\n\n';
+      const archivePrefix =
+          'Releases of `llamadart` before 0.18.7, moved verbatim from\nroot.\n\n';
       final priorArchive = repo.file(_archive).readAsStringSync();
+      repo.commit(
+        'Boundary wording (#10)\n\n## Changelog\nN/A: Test archive introductions.',
+        {
+          _root: '$rootPrefix$_oldRelease$oldest',
+          _archive: priorArchive.replaceFirst('# Archive\n\n', archivePrefix),
+        },
+      );
       await _collect(repo, repo.args(write: true));
-      expect(repo.file(_root).readAsStringSync(), endsWith(_oldRelease));
+      final released = repo.file(_root).readAsStringSync();
+      expect(released, startsWith(rootPrefix.replaceFirst('0.18.7', '0.19.3')));
+      expect(released, endsWith(_oldRelease));
       expect(
         repo.file(_archive).readAsStringSync(),
-        priorArchive.replaceFirst('## 0.8.0', '$oldest## 0.8.0'),
+        priorArchive
+            .replaceFirst(
+              '# Archive\n\n',
+              archivePrefix.replaceFirst('0.18.7', '0.19.3'),
+            )
+            .replaceFirst('## 0.8.0', '$oldest## 0.8.0'),
       );
     },
   );
@@ -456,17 +1113,34 @@ void main() {
     'writes reviewed canonical prose and refuses to replace it with a draft',
     () async {
       final repo = _repo();
-      repo.pr(3, '- Draft note.');
-      final through = repo.head;
-      final dir = Directory.systemTemp.createTempSync('cps-reviewed-');
-      addTearDown(() => dir.deleteSync(recursive: true));
-      final curated = File('${dir.path}/cps-notes.md')
+      final through = repo.pr(3, '- Draft note.');
+      final curated = repo.file('.git/clpre-curated.md')
         ..writeAsStringSync('- Reviewed note.\n');
-      await _collect(repo, repo.args(through: through, write: true));
-      await _collect(
+      final review = repo.file('.git/clpre-review.md')
+        ..writeAsStringSync(
+          '## Release notes review\n- $through Reworded the setup note for release readers.\n',
+        );
+      final uncurated = await _collect(
         repo,
-        repo.args(through: through, write: true, curated: curated.path),
+        repo.args(through: through, write: true),
       );
+      await expectLater(
+        _collect(
+          repo,
+          repo.args(through: through, write: true, curated: curated.path),
+        ),
+        throwsA(_formatError('missing dispositions for $through')),
+      );
+      final written = await _collect(
+        repo,
+        repo.args(
+          through: through,
+          write: true,
+          curated: curated.path,
+          review: review.path,
+        ),
+      );
+      expect(_receiptBlock(written), _receiptBlock(uncurated));
       final root = repo.file(_root).readAsStringSync();
       final docs = repo.file(_docs).readAsStringSync();
       expect(root, contains('- Reviewed note.'));
@@ -524,7 +1198,7 @@ void main() {
   });
 
   test(
-    'walks first parents and warns on unknown direct pushes or merge shapes',
+    'rejects every release operation for a direct push or merge and keeps later notes',
     () async {
       final repo = _repo();
       repo.git(['switch', '-c', 'side']);
@@ -535,15 +1209,44 @@ void main() {
       });
       repo.git(['merge', '--no-ff', '--no-edit', 'side']);
       final merge = repo.head;
-      final output = await _collect(repo, repo.args(), {
-        'commits/$unknown/pulls': [[]],
-      });
-      expect(
-        output,
-        contains('WARNING $unknown: no matching merged main PR association'),
-      );
-      expect(output, contains('WARNING $merge: unsupported main commit shape'));
-      expect(output, isNot(contains('Side branch note.')));
+      final good = repo.pr(51, '- Keep the later note.');
+      final review = repo.file('.git/clpre-review.md')
+        ..writeAsStringSync(
+          '## Release notes review\n- $unknown Keep as internal maintenance.\n',
+        );
+      final curated = repo.file('.git/clpre-curated.md')
+        ..writeAsStringSync('- Keep the later note.\n- An editorial note.\n');
+      final outputs = {
+        for (final path in [_root, _docs, _archive])
+          path: repo.file(path).readAsBytesSync(),
+      };
+      for (final args in [
+        repo.args(),
+        repo.args(write: true),
+        repo.args(write: true, curated: curated.path),
+        repo.args(write: true, curated: curated.path, review: review.path),
+        repo.args(verify: review.path),
+      ]) {
+        await expectLater(
+          _collect(repo, args),
+          throwsA(
+            allOf([
+              _formatError('WARNING $unknown: missing final PR number'),
+              _formatError('WARNING $merge: unsupported main commit shape'),
+              _formatError(
+                '"sha":"$good","pr":51,"source":"git","disposition":"included"',
+              ),
+              _formatError('INCOMPLETE'),
+              isNot(_formatError('Side branch note.')),
+              isNot(_formatError('## Release notes input')),
+            ]),
+          ),
+        );
+      }
+      for (final entry in outputs.entries) {
+        expect(repo.file(entry.key).readAsBytesSync(), entry.value);
+      }
+      expect(repo.file('.git/cps-changelog-write.lock').existsSync(), isFalse);
     },
   );
 
@@ -569,77 +1272,138 @@ void main() {
     },
   );
 
-  test(
-    'collects one union for a rebase batch and ignores closed constituents',
-    () async {
+  for (final (kind, missingFirst, missingLast, numbered, envelopeNote) in [
+    (
+      'planner replay with envelope N/A',
+      true,
+      false,
+      true,
+      'N/A: Contains the constituent PRs listed below.',
+    ),
+    (
+      'first member with envelope union',
+      true,
+      false,
+      true,
+      '- Envelope union.',
+    ),
+    ('last member at the envelope SHA', false, true, true, '- Envelope union.'),
+    ('sole member at the envelope SHA', true, true, true, '- Envelope union.'),
+    ('missing anchored suffix', true, true, false, '- Envelope union.'),
+  ]) {
+    test('blocks batch fallback for $kind', () async {
       final repo = _repo();
-      final a = repo.commit('One mentions (#91) (#4)');
-      final b = repo.commit('Two (#5)');
-      final wrapper = _pull(
-        10,
-        b,
-        body: '## Changelog\n- First note.\n- Second note.',
-      );
+      final a = missingFirst
+          ? repo.commit(
+              numbered ? 'One mentions (#91) (#4)' : 'One (#4) in prose',
+            )
+          : repo.pr(4, '- First constituent note.');
+      final b = missingLast && missingFirst
+          ? a
+          : missingLast
+          ? repo.commit('Two (#5)')
+          : repo.pr(5, '- Second constituent note.');
+      final bad = missingFirst ? a : b;
+      final number = numbered ? (missingFirst ? 4 : 5) : null;
+      final wrapper = _pull(999990, b, body: '## Changelog\n$envelopeNote');
       final calls = <String>[];
-      final output = await _collect(repo, repo.args(), {
+      final outputs = {
+        for (final path in [_root, _docs, _archive])
+          path: repo.file(path).readAsStringSync(),
+      };
+      final result = _collect(repo, repo.args(write: true), {
         'commits/$a/pulls': [
-          [_pull(4, a, merged: false), wrapper],
+          [wrapper],
         ],
         'commits/$b/pulls': [
-          [_pull(5, b, merged: false), wrapper],
+          [wrapper],
         ],
-        'pulls/10': wrapper,
+        'pulls/999990': wrapper,
       }, calls);
-      expect('First note.'.allMatches(_draft(output)), hasLength(1));
-      expect('Second note.'.allMatches(_draft(output)), hasLength(1));
-      expect(
-        output,
-        contains('"pr":10,"source":"api","disposition":"duplicate-pr"'),
+      await expectLater(
+        result,
+        throwsA(
+          allOf([
+            _formatError('"sha":"$bad","pr":$number'),
+            _formatError('"disposition":"unresolved"'),
+            if (a != b)
+              _formatError(
+                missingFirst
+                    ? 'Second constituent note.'
+                    : 'First constituent note.',
+              ),
+          ]),
+        ),
       );
-      expect(calls.where((call) => call == 'pulls/10'), hasLength(1));
-      expect(calls, isNot(contains(anyOf('pulls/4', 'pulls/5'))));
+      expect(calls, isNot(contains('pulls/999990')));
+      for (final entry in outputs.entries) {
+        expect(repo.file(entry.key).readAsStringSync(), entry.value);
+      }
+    });
+  }
+
+  test(
+    'renders validated constituents offline one time in their landed order',
+    () async {
+      final repo = _repo();
+      repo.pr(4, '- First constituent note.');
+      repo.pr(5, '- Second constituent note.');
+      final result = await _collect(repo, repo.args());
+      expect(
+        _draft(result),
+        startsWith(
+          '## 0.20.3\n\n- First constituent note.\n- Second constituent note.\n',
+        ),
+      );
+      expect('constituent note.'.allMatches(_draft(result)), hasLength(2));
     },
   );
 
-  test('warns about a missing PR and an invalid associated body', () async {
+  test('reports an invalid associated body as unresolved', () async {
     final repo = _repo();
-    final noPr = repo.commit('Unknown change');
     final invalid = repo.commit('Unusable pull request (#4)');
     final pull = _pull(4, invalid, body: '## Changelog\n- ');
-    final output = await _collect(repo, repo.args(write: true), {
-      'commits/$noPr/pulls': [[]],
-      'commits/$invalid/pulls': [
-        [pull],
-      ],
-      'pulls/4': pull,
-    });
-    expect(
-      output,
-      contains('WARNING $noPr: no matching merged main PR association'),
-    );
-    expect(
-      output,
-      contains(
-        'WARNING $invalid (#4): associated PR has no valid Changelog section',
+    await expectLater(
+      _collect(repo, repo.args(write: true), {
+        'commits/$invalid/pulls': [
+          [pull],
+        ],
+        'pulls/4': pull,
+      }),
+      throwsA(
+        allOf(
+          _formatError(
+            'WARNING $invalid (#4): associated PR has no valid Changelog section',
+          ),
+          _formatError('"disposition":"unresolved"'),
+        ),
       ),
     );
-    expect(_draft(output), contains(_baseline));
   });
 
-  test('requires a second commit associated with a rebase envelope', () async {
+  test('blocks a matching exact PR shared by adjacent commits', () async {
     final repo = _repo();
-    final first = repo.commit('Missing body (#4)');
-    final last = repo.pr(5, '- Later squash.');
-    final envelope = _pull(10, last, body: '## Changelog\n- Unverified batch.');
-    final output = await _collect(repo, repo.args(), {
-      'commits/$first/pulls': [
-        [envelope],
-      ],
-      'commits/$last/pulls': [[]],
-      'pulls/10': envelope,
-    });
-    expect(output, contains('WARNING $first (#4): no matching merged main PR'));
-    expect(_draft(output), isNot(contains('Unverified batch.')));
+    final first = repo.pr(4, '- Valid member.');
+    final last = repo.commit('Missing body (#5)');
+    final envelope = _pull(
+      5,
+      last,
+      body: '## Changelog\nN/A: Contains constituent PRs.',
+    );
+    final calls = <String>[];
+    await expectLater(
+      _collect(repo, repo.args(), {
+        'commits/$first/pulls': [
+          [envelope],
+        ],
+        'commits/$last/pulls': [
+          [envelope],
+        ],
+        'pulls/5': envelope,
+      }, calls),
+      throwsA(_formatError('WARNING $last (#5): shared batch association')),
+    );
+    expect(calls, isNot(contains('pulls/5')));
   });
 
   test('rejects ambiguity between an exact PR and a rebase envelope', () async {
@@ -663,6 +1427,26 @@ void main() {
       throwsA(
         _formatError(
           '$first (#4): ambiguous merged main PR associations (#4, #10)',
+        ),
+      ),
+    );
+  });
+
+  test('rejects conflicting merge SHAs for the same PR across pages', () async {
+    final repo = _repo();
+    final commit = repo.commit('Missing body (#4)');
+    final valid = _pull(4, commit, body: '## Changelog\n- Exact detail.');
+    await expectLater(
+      _collect(repo, repo.args(), {
+        'commits/$commit/pulls': [
+          [valid],
+          [_pull(4, repo.activation)],
+        ],
+        'pulls/4': valid,
+      }),
+      throwsA(
+        _formatError(
+          '$commit (#4): PR association has conflicting merge commits',
         ),
       ),
     );
@@ -696,20 +1480,19 @@ void main() {
         earlier,
         body: '## Changelog\n- Earlier batch.',
       );
-      final output = await _collect(repo, repo.args(), {
-        'commits/$commit/pulls': [
-          [envelope],
-        ],
-        'commits/$earlier/pulls': [
-          [envelope],
-        ],
-        'pulls/10': envelope,
-      });
-      expect(
-        output,
-        contains('WARNING $commit (#4): no matching merged main PR'),
+      await expectLater(
+        _collect(repo, repo.args(), {
+          'commits/$commit/pulls': [
+            [envelope],
+          ],
+        }),
+        throwsA(
+          allOf(
+            _formatError('WARNING $commit (#4): no matching merged main PR'),
+            isNot(_formatError('Earlier batch.')),
+          ),
+        ),
       );
-      expect(_draft(output), isNot(contains('Earlier batch.')));
     },
   );
 
@@ -783,7 +1566,7 @@ void main() {
           if (kind == 'extra') 'other.txt': 'Extra.\n',
         },
       );
-      final output = await _collect(repo, repo.args(write: true));
+      final output = await _collect(repo, repo.args());
       final draft = _draft(output);
       if (kind == 'exact') {
         expect(draft, isNot(contains('Original feature.')));
@@ -817,7 +1600,7 @@ void main() {
 
   test('warns and keeps both notes for a GitHub UI revert (ADV6)', () async {
     final repo = _repo();
-    repo.pr(4, '- Original feature.', {'one.txt': 'New.\n'});
+    final original = repo.pr(4, '- Original feature.', {'one.txt': 'New.\n'});
     repo.file('one.txt').deleteSync();
     final revert = repo.commit(
       'Revert "Change (#4)" (#5)\n\nReverts leehack/llamadart#4\n\n'
@@ -832,6 +1615,29 @@ void main() {
       _draft(output),
       contains('- Original feature.\n- Reverted feature.'),
     );
+    final jsonLines = const LineSplitter().convert(output);
+    final previous = repo.git(['rev-parse', '${repo.from}^{commit}']).trim();
+    final canonical = [
+      jsonEncode({
+        'version': '0.20.3',
+        'previousTag': repo.from,
+        'previousSha': previous,
+        'through': revert,
+        'cutoverTag': repo.from,
+        'cutoverSha': repo.boundary,
+        'activationSha': repo.activation,
+      }),
+      ...jsonLines.where((line) => line.startsWith('{')),
+      jsonEncode({
+        'sha': revert,
+        'pr': 5,
+        'reviewCode': 'github-revert',
+        'reviewShas': [revert, original],
+        'reference': 'leehack/llamadart#4',
+      }),
+    ];
+    final digest = sha256.convert(utf8.encode('${canonical.join('\n')}\n'));
+    expect(_receiptBlock(output), contains('Input-SHA256: $digest'));
   });
 
   test('keeps the chain for a partial revert of a revert', () async {
@@ -857,30 +1663,30 @@ void main() {
   });
 
   test(
-    'does not suppress the batch union when a member reverses a squash',
+    'keeps both notes when only the API body claims an exact inverse',
     () async {
       final repo = _repo();
       final target = repo.pr(4, '- Original feature.', {'one.txt': 'New.\n'});
       repo.file('one.txt').deleteSync();
-      final a = repo.commit('One (#5)');
-      final b = repo.commit('Two (#6)');
-      final wrapper = _pull(
-        10,
-        b,
-        body: 'This reverts commit $target.\n\n## Changelog\n- Batch union.',
+      final revert = repo.commit('Reverse a feature (#5)');
+      final pull = _pull(
+        5,
+        revert,
+        body:
+            'This reverts commit $target.\n\n## Changelog\n- Revert the feature.',
       );
       final result = await _collect(repo, repo.args(), {
-        'commits/$a/pulls': [
-          [wrapper],
+        'commits/$target/pulls': [
+          [_pull(4, target)],
         ],
-        'commits/$b/pulls': [
-          [wrapper],
+        'commits/$revert/pulls': [
+          [pull],
         ],
-        'pulls/10': wrapper,
+        'pulls/5': pull,
       });
-      expect(result, contains('WARNING $a (#10)'));
+      expect(result, contains('WARNING $revert (#5): revert of $target'));
       expect(_draft(result), contains('Original feature.'));
-      expect(_draft(result), contains('Batch union.'));
+      expect(_draft(result), contains('Revert the feature.'));
     },
   );
 
@@ -916,7 +1722,7 @@ void main() {
     },
   );
 
-  test('warns and keeps even an inverse of a rebase batch commit', () async {
+  test('an inverse does not account for a missing batch member', () async {
     final repo = _repo();
     final a = repo.commit('One (#4)', {'one.txt': 'New.\n'});
     final b = repo.commit('Two (#5)');
@@ -925,18 +1731,25 @@ void main() {
       'Revert (#6)\n\nThis reverts commit $a.\n\n## Changelog\n- Reverted batch constituent.',
     );
     final wrapper = _pull(10, b, body: '## Changelog\n- Batch union.');
-    final output = await _collect(repo, repo.args(), {
-      'commits/$a/pulls': [
-        [wrapper],
-      ],
-      'commits/$b/pulls': [
-        [wrapper],
-      ],
-      'pulls/10': wrapper,
-    });
-    expect(output, contains('WARNING $revert (#6): revert of $a (target #10)'));
-    expect(_draft(output), contains('Batch union.'));
-    expect(_draft(output), contains('Reverted batch constituent.'));
+    await expectLater(
+      _collect(repo, repo.args(), {
+        'commits/$a/pulls': [
+          [wrapper],
+        ],
+        'commits/$b/pulls': [
+          [wrapper],
+        ],
+        'pulls/10': wrapper,
+      }),
+      throwsA(
+        allOf([
+          _formatError('WARNING $a (#4): no matching merged main PR'),
+          _formatError('WARNING $revert (#6): revert of $a (target #4)'),
+          _formatError('Reverted batch constituent.'),
+          isNot(_formatError('Batch union.')),
+        ]),
+      ),
+    );
   });
 }
 

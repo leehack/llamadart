@@ -5,22 +5,26 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:test/test.dart';
+import 'package:yaml/yaml.dart';
 
 import '../../../tool/release/pr_changelog.dart';
 
-Future<ProcessResult> _validate(String? body) async {
-  final temp = Directory.systemTemp.createTempSync('clfix-pr-event-');
+Future<ProcessResult> _validate(String? body) => _command('--event', {
+  'pull_request': {'body': body},
+});
+
+Future<ProcessResult> _command(String mode, Map<String, Object?> event) async {
+  final temp = Directory.systemTemp.createTempSync('clact2-pr-event-');
   try {
-    final event = File('${temp.path}/event.json')
-      ..writeAsStringSync(
-        jsonEncode({
-          'pull_request': {'body': body},
-        }),
-      );
+    final payload = File('${temp.path}/event.json')
+      ..writeAsStringSync(jsonEncode(event));
     return await Process.run(
       Platform.resolvedExecutable,
-      ['tool/release/pr_changelog.dart', '--event'],
-      environment: {'GITHUB_EVENT_PATH': event.path},
+      ['tool/release/pr_changelog.dart', mode],
+      environment: {
+        'GITHUB_EVENT_PATH': payload.path,
+        'GITHUB_REPOSITORY': 'owner/repo',
+      },
     );
   } finally {
     temp.deleteSync(recursive: true);
@@ -41,6 +45,165 @@ N/A: Updates tests for the existing behavior.
 ''';
 
 void main() {
+  test('the PR workflow keeps body edits separate from heavy CI', () {
+    final workflow = File(
+      '.github/workflows/pr_changelog.yml',
+    ).readAsStringSync();
+    expect(
+      workflow,
+      contains(
+        'opened, reopened, synchronize, edited, ready_for_review, labeled, unlabeled',
+      ),
+    );
+    expect(workflow, contains('dart tool/release/pr_changelog.dart --event'));
+    expect(workflow, contains('github.event.pull_request.base.sha'));
+    expect(workflow, contains('persist-credentials: false'));
+    expect(
+      File('.github/workflows/ci.yml').readAsStringSync(),
+      isNot(contains('- edited')),
+    );
+  });
+
+  test(
+    'prep event routes meaningful changes and both release-prep label transitions',
+    () async {
+      const previous = '1111111111111111111111111111111111111111';
+      const through = '2222222222222222222222222222222222222222';
+      const digest =
+          '3333333333333333333333333333333333333333333333333333333333333333';
+      const body =
+          '## Changelog\n\nN/A: Release prep.\n\n## Release notes input\n\nPrevious-tag: v1.0.0@$previous\nThrough: $through\nInput-SHA256: $digest\n';
+      Future<bool> route(
+        String action, {
+        String current = body,
+        String? before,
+        String? label,
+        bool prep = true,
+        bool retargeted = false,
+      }) async {
+        final result = await _command('--prep-event', {
+          'action': action,
+          'pull_request': {
+            'body': current,
+            'head': {
+              'ref': 'fixture',
+              'repo': {'full_name': 'owner/repo'},
+            },
+            'labels': [
+              if (prep) {'name': 'release-prep'},
+            ],
+          },
+          if (before != null || retargeted)
+            'changes': {
+              if (before != null) 'body': {'from': before},
+              if (retargeted)
+                'base': {
+                  'ref': {'from': 'old-base'},
+                },
+            },
+          if (label != null) 'label': {'name': label},
+        });
+        expect(result.exitCode, 0, reason: '${result.stderr}');
+        return (result.stdout as String).trim() == 'verify-prep=true';
+      }
+
+      expect(await route('opened'), isTrue);
+      expect(await route('opened', prep: false), isFalse);
+      expect(await route('edited', retargeted: true), isTrue);
+      expect(
+        await route(
+          'edited',
+          current: '## Summary\n\nNew context.\n\n$body',
+          before: body,
+        ),
+        isFalse,
+      );
+      expect(
+        await route(
+          'edited',
+          current: body.replaceFirst(
+            digest,
+            previous + previous.substring(0, 24),
+          ),
+          before: body,
+        ),
+        isTrue,
+      );
+      expect(
+        await route(
+          'edited',
+          current: body.replaceFirst(digest, 'broken'),
+          before: body,
+        ),
+        isTrue,
+      );
+      expect(await route('labeled', label: 'release-prep'), isTrue);
+      expect(
+        await route('unlabeled', label: 'release-prep', prep: false),
+        isTrue,
+      );
+      expect(await route('labeled', label: 'docs'), isFalse);
+      expect((await _validate(_template)).exitCode, 1);
+      expect((await _validate(body)).exitCode, 0);
+    },
+  );
+
+  test('both selected docs validation paths enforce protected changelogs', () {
+    final ci = loadYaml(File('.github/workflows/ci.yml').readAsStringSync());
+    final jobs = ci['jobs'] as YamlMap;
+    for (final name in ['analyze', 'docs-versions']) {
+      final steps = (jobs[name] as Map)['steps'] as List;
+      expect(
+        steps.where(
+          (step) =>
+              step['run'] ==
+                  'dart run tool/testing/check_released_changelog_sections.dart' &&
+              step['if'] == null &&
+              step['continue-on-error'] != true,
+        ),
+        hasLength(1),
+        reason: name,
+      );
+    }
+  });
+
+  test(
+    'native sync validates the generated body before opening or editing a PR',
+    () {
+      final workflow = File(
+        '.github/workflows/sync_native_bindings.yml',
+      ).readAsStringSync();
+      final generate = workflow.indexOf(
+        'sync_native_release_pins.py changelog-section',
+      );
+      final validate = workflow.indexOf(
+        r'dart tool/release/pr_changelog.dart --body "${body_file}"',
+      );
+      expect(generate, greaterThanOrEqualTo(0));
+      expect(validate, greaterThan(generate));
+      expect(validate, lessThan(workflow.indexOf('gh pr edit', generate)));
+      expect(validate, lessThan(workflow.indexOf('gh pr create', generate)));
+    },
+  );
+
+  test('the PR template requires an authored changelog entry', () {
+    final body = File('.github/pull_request_template.md').readAsStringSync();
+    expect(
+      body.indexOf('## Changelog'),
+      greaterThan(body.indexOf('## Summary')),
+    );
+    expect(
+      body.indexOf('## Changelog'),
+      lessThan(body.indexOf('## Production-readiness scope')),
+    );
+    expect(() => parsePrChangelog(body), throwsFormatException);
+    final filled = body.replaceFirst(
+      '## Changelog',
+      '## Changelog\n\nN/A: Changes maintainer tooling.',
+    );
+    expect(parsePrChangelog(filled).reason, 'Changes maintainer tooling.');
+  });
+
   test('preserves Markdown from the landed body', () {
     const message = '''
 Improve setup (#9)
@@ -108,6 +271,96 @@ Improve setup (#9)
       expect(result.exitCode, 0, reason: '${result.stderr}');
     });
   }
+
+  test('keeps visible combining marks and emoji selectors intact', () async {
+    const text = '한글, cafe\u0301, and ✈\ufe0f.';
+    final body = '## Changelog\n- $text';
+    expect((await _validate(body)).exitCode, 0);
+    expect(parsePrChangelog(body).bullets.single.text, text);
+    expect(parsePrChangelog('## Changelog\nN/A: $text').reason, text);
+  });
+
+  for (final codePoint in [
+    0x034f,
+    0xfe0f,
+    0x3164,
+    0x115f,
+    0xffa0,
+    0x2800,
+    0xe0100,
+  ]) {
+    for (final prefix in ['- ', 'N/A: ']) {
+      test(
+        'event rejects invisible U+${codePoint.toRadixString(16)} in $prefix',
+        () async {
+          final character = String.fromCharCode(codePoint);
+          for (final text in [character, '** $character \u2060 **']) {
+            final body = '## Changelog\n$prefix$text';
+            expect((await _validate(body)).exitCode, 1);
+            expect(() => parsePrChangelog(body), throwsFormatException);
+          }
+        },
+      );
+    }
+  }
+
+  group('release input metadata', () {
+    final previous = 'a' * 40;
+    final through = 'b' * 40;
+    final digest = 'c' * 64;
+    final receipt =
+        '## Release notes input\n\nPrevious-tag: v0.20.2+1@$previous\nThrough: $through\nInput-SHA256: $digest\n';
+    final examples = [
+      '~~~md\n$receipt~~~\n',
+      '<!--\n$receipt-->\n',
+      receipt.split('\n').map((line) => '> $line').join('\n'),
+      '- Old receipt:\n${receipt.split('\n').map((line) => '  $line').join('\n')}',
+    ];
+    test('ignores quoted, fenced, nested and commented examples', () {
+      final landed =
+          'Prepare release (#123)\n\n${examples.join('\n')}\n$receipt';
+      expect(parseReleaseNotesInput(landed), (
+        previousTag: 'v0.20.2+1',
+        previousSha: previous,
+        through: through,
+        inputSha256: digest,
+      ));
+      for (final example in examples) {
+        expect(() => parseReleaseNotesInput(example), throwsFormatException);
+      }
+    });
+    test('requires one real receipt with exactly three well-formed fields', () {
+      for (final bad in [
+        '$receipt\n$receipt',
+        '$receipt\nThrough: $through\n',
+        '$receipt\nReviewed: Yes\n',
+        receipt.replaceFirst('v0.20.2+1', 'v0.20.2-dev'),
+        receipt.replaceFirst('Through: $through\n', ''),
+        receipt.replaceFirst(digest, digest.toUpperCase()),
+        receipt.replaceFirst('Previous-tag:', 'Previous-tag :'),
+      ]) {
+        expect(() => parseReleaseNotesInput(bad), throwsFormatException);
+      }
+    });
+    test('requires a unique SHA and specific text in each review entry', () {
+      const heading = '## Release notes review';
+      expect(
+        parseReleaseNotesReview(
+          '$receipt\n$heading\n- $through Combined with the setup entry.',
+        ),
+        {through: 'Combined with the setup entry.'},
+      );
+      for (final bad in [
+        '$heading\n- $through Acknowledged',
+        '$heading\n- $through \u034f',
+        '$heading\n- ${through.substring(1)} Combined with the setup entry.',
+        '$heading\n- $through Reworded the setup entry.\n- $through Merged elsewhere.',
+        '$heading\n- $through Reworded the setup entry.\n$heading\n- $previous Merged elsewhere.',
+      ]) {
+        expect(() => parseReleaseNotesReview(bad), throwsFormatException);
+      }
+    });
+  });
 
   final invalid = <String, String?>{
     'missing section': '## Summary\n- Something changed.',
