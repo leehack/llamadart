@@ -419,19 +419,22 @@ rsync -a --delete \
 
 ## 5. If automation is blocked
 
-If **Validate release state** fails after the prep squash lands, record the
-squash SHA and failed check. Confirm that no core or companion tag was
-created, then reproduce the failure from that SHA with its first parent and
-the immutable message from `git show -s --format=%B`. If a transient
+If **Validate release state** fails after the prep lands, record the
+landed SHA and failed check. Confirm that
+`git ls-remote --tags origin "v$version" "*-v$version"` succeeds and returns
+no core or companion tags. Reproduce the failure from that SHA with its first
+parent and the immutable message from `git show -s --format=%B`. If a transient
 dependency or service failed, rerun the original workflow at the same SHA
 after it recovers.
 
 If the receipt or candidate tree is invalid, open a release-blocking issue.
-A rerun reads the same bytes, and a new prep needs the previous core tag.
-Hold publication while maintainers review a targeted recovery that restores
-the last tagged release metadata and changelog bytes while retaining
-unrelated main changes. The protected-changelog gate rejects a normal
-revert, so the recovery must include a reviewed policy change scoped to
+A rebase merge, a merge commit or an edited squash message belongs in this
+recovery path. A rerun reads the same bytes, and a new prep needs the previous
+core tag.
+Hold publication while maintainers review a recovery PR that inverts the
+prep squash and restores the last tagged release metadata and changelog bytes
+while retaining unrelated main changes. The protected-changelog gate rejects
+a normal revert, so the recovery must include a reviewed policy change scoped to
 that unpublished prep. Verify the recovery at its proposed merge tree,
 then regenerate the prep and its receipt from current main. Keep the
 existing tags and use the normal publisher for the new squash.
@@ -463,15 +466,35 @@ use `--review FILE` with the draft prep body. In
 for each required source affected by editorial changes. Fix unresolved
 input at its source before continuing.
 
-Before merge, the checks verify single-parent squashes with the tested
-merge tree and the PR title and body, including variants with GitHub
-co-author and sign-off trailers. End the receipt block with no trailing
-attribution or whitespace. Before tag creation, the checks read the actual
-squash. The receipt binds effective inputs. Running from the candidate and
-landed trees binds the renderer and verifier to the code under review. The
-publisher requires a single-parent squash and reads the receipt from its
-immutable commit message. Refresh the ledger, review and receipt if main
-moves. Retry at the same landed SHA even when its tag already exists.
+Before merge, **Verify release prep** checks the tested merge tree with the
+PR title and body as written, variants with co-author and sign-off trailers,
+and GitHub's default squash message. GitHub rewraps description lines over
+72 characters in its default message. A receipt value can move to the line
+after its key, and a review entry can continue on adjacent unindented lines.
+The verifier reads both forms. Any edit to the PR body reruns the check.
+End the receipt block with no trailing attribution or whitespace.
+
+Land a release prep using **Squash and merge** only. Use GitHub's default
+message or the exact PR title and body. A rebase merge, a merge commit or an
+edited squash message can fail the publisher after merge. Before creating a
+tag, the publisher reads the receipt from the immutable squash message and
+verifies it with the landed tree. Refresh the ledger, review and receipt if
+main moves. Retry at the same landed SHA even when its tag already exists.
+
+For a local rehearsal, fetch the same headline and body. Set `number` to the
+release-prep PR number.
+
+```bash
+gh api graphql -f owner=leehack -f name=llamadart -F number="$number" -f query='
+  query($owner: String!, $name: String!, $number: Int!) {
+    repository(owner: $owner, name: $name) {
+      pullRequest(number: $number) {
+        viewerMergeHeadlineText(mergeType: SQUASH)
+        viewerMergeBodyText(mergeType: SQUASH)
+      }
+    }
+  }'
+```
 
 `PR changelog` validates PR descriptions, including docs, bots and batch
 envelopes. Analyze and docs version CI compare the real PR head against
