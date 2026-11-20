@@ -137,11 +137,12 @@ The Linux arm64 GPU stays unqualified.
 
 ## Speech to text
 
-Qwen3-ASR 0.6B Q8_0 was validated on WAV up to 33 s, and on MP3 and FLAC
-copies of the 11 s `jfk.wav`, on native macOS and in headless Chromium.
-Language-marker behavior has no dedicated validation contract yet. Built-in
-windowing for inputs over 30 s is tracked in
-[#327](https://github.com/leehack/llamadart/issues/327).
+Whole-file Qwen3-ASR 0.6B Q8_0 returned the expected transcript for a 33 s
+WAV made from three copies of `jfk.wav`. Validation on native macOS and in
+headless Chromium also covered MP3 and FLAC copies of the 11 s clip.
+Language-marker behavior has no dedicated validation contract yet. See
+[#327](https://github.com/leehack/llamadart/issues/327) for remaining windowing
+work on long encoded files.
 
 ## Image generation
 

@@ -2,8 +2,8 @@
 name: llamadart-speech
 description: >-
   Use when adding speech to a llamadart app: transcribing audio files with
-  Qwen3-ASR through SpeechToTextEngine, streaming live PCM dictation with
-  LiteRT-LM ASR, synthesizing speech with Qwen3-TTS, LFM3-Audio, Soprano,
+  Qwen3-ASR through SpeechToTextEngine, streaming live PCM with native
+  llama.cpp or LiteRT-LM, synthesizing speech with Qwen3-TTS, LFM3-Audio, Soprano,
   Chatterbox or Pocket TTS through TextToSpeechEngine, selecting predefined voices, saving WAV output, handling LlamaAudioFormatException or
   LlamaSpeechTranscriptTruncatedException, or checking speech support on
   native and Web runtimes.
@@ -56,9 +56,10 @@ description: >-
     low-level runtime config of local files.
 - Pick the adapter by model family. The adapter is a required declaration;
   audio support alone never makes a model ASR:
-  - Qwen3-ASR (whole file, one final transcript): `Qwen3AsrAdapter` with the
-    Qwen3-ASR GGUF as `source` and its mmproj as `projector`. Native
-    llama.cpp, or WebGPU (pinned bridge assets).
+  - Qwen3-ASR (whole file): `Qwen3AsrAdapter` with the Qwen3-ASR GGUF as
+    `source` and its mmproj as `projector`. Native llama.cpp, or WebGPU
+    (pinned bridge assets). Returns one final transcript with one untimed
+    segment.
   - Qwen3-ASR (opt-in windowed live PCM): `Qwen3WindowedAsrAdapter` with
     `SpeechToTextEngine.load` on native llama.cpp and a verified `qwen3a`
     `projector` (`attach` and Web throw `LlamaUnsupportedException`). Accepts
@@ -79,15 +80,15 @@ description: >-
     If no final text survives, the session completes with an empty-transcript
     error. Other echoes can still appear.
     A full buffer commits at a quiet boundary or hard-cuts at 8 s, which can
-    split a word. Confirmed windows
-    join with `\n`, empty intermediate windows are suppressed, and
-    `maxOutputTokens` applies per decode (`1024` for `startStream`).
+    split a word. `confirmedText` joins committed windows with `\n`. Empty
+    intermediate windows are suppressed. `maxOutputTokens` applies per decode
+    (`1024` for `startStream`).
     Rejects context prompts and language hints. `capabilities.inputMode` is
     `windowed`. Windowed evidence on macOS arm64 CPU includes English speech
     and dictated-instruction controls in English and Portuguese.
-  - Native llama.cpp live PCM ASR (cumulative confirmed partials, then a
-    final transcript): `LlamaCppLiveAsrAdapter` with a Voxtral Realtime or
-    LFM3-Audio GGUF as `source` and its audio mmproj as `projector` (leave
+  - Native llama.cpp live PCM ASR (cumulative `confirmedText`, empty
+    `pendingText`, then final): `LlamaCppLiveAsrAdapter` with a Voxtral Realtime
+    or LFM3-Audio GGUF as `source` and its audio mmproj as `projector` (leave
     `tokenizer` unset; `attach` is prompt-only). Requires
     `llamadart-native@v1.0.0-1`+ on a native platform; Web and older runtimes
     throw `LlamaUnsupportedException` before downloading. Accepts mono 16 kHz
@@ -101,7 +102,7 @@ description: >-
     sent before the audio) and `parseTranscript(output)` (returns a
     `SpeechToTextTranscript`); override `supportsLanguageHints`,
     `supportsContextPrompt` or `supportsLanguageDetection` as needed.
-  - LiteRT-LM ASR (live partials, then a final transcript):
+  - LiteRT-LM ASR (stable `confirmedText`, replaceable `pendingText`, then final):
     `LiteRtLmAsrAdapter(preset)` with the `.tflite` model, or a dedicated ASR
     `.litertlm` container such as Whisper tiny, as `source` and its tokenizer
     JSON as `tokenizer` (still required for a container, which uses its
@@ -174,10 +175,9 @@ description: >-
   and never throws. `transcribeOnce` / `synthesizeOnce` are
   `(await start(request)).result`. After `dispose()`, starting a task throws
   `LlamaStateException`.
-- Qwen3-ASR limits:
-  - It is validated only up to 30 seconds per input; longer audio can
-    silently drop or repeat sentences. Split recordings into windows of 30
-    seconds or less.
+- `Qwen3AsrAdapter` whole-file limits:
+  - Split longer recordings into encoded clips of at most 30 seconds.
+    Longer inputs can silently drop or repeat sentences.
   - The audio prompt costs about 13 tokens per second and shares context
     with the transcript. On native llama.cpp, reaching the context size or
     `maxOutputTokens` (default 1024) fails with
@@ -193,10 +193,9 @@ description: >-
     adapter unless the projector was verified as the adapter's.
   - A nonempty `languageHint` throws `LlamaUnsupportedException`; use
     `contextPrompt` for vocabulary. LiteRT-LM rejects `contextPrompt`.
-- Results carry no timestamps, confidence or diarization. Qwen3-ASR returns
-  one untimed segment. Only LiteRT-LM emits `SpeechToTextPartialEvent`:
-  `confirmedText` is stable, while `pendingText` can change on the next
-  window.
+- Results carry no timestamps, confidence or diarization. The three native
+  live PCM modes above can emit `SpeechToTextPartialEvent` before the final
+  result.
 - LiteRT-LM initialization failures settle with a `LlamaSpeechException` and
   release the task slot, so `startStream()` or `transcribe()` can be retried.
   Await `transcribe()` and then `task.result`; startup can fail before a task
