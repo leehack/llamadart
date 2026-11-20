@@ -1550,6 +1550,15 @@ for event,flag,native,cancel,good,main in itertools.product(('push','pull_reques
     },
   );
 
+  test('only the bundled S24 fixture selects Web Chat Contract', () async {
+    const fixtures = 'packages/llamadart_validation/assets/fixtures/s24';
+    final bundled = await selected(['$fixtures/chat-litert-gpu-legacy.json']);
+    final unbundled = await selected(['$fixtures/other.json']);
+
+    expect(bundled['jobs']['web-chat-contract'], isTrue);
+    expect(unbundled['jobs']['web-chat-contract'], isFalse);
+  });
+
   test(
     'isolated validation keeps root and Flutter consumer assertions',
     () async {
