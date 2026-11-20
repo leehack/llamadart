@@ -1330,13 +1330,36 @@ Future<List<String>> findBridgeProblems(
     ),
 ];
 
+final _unchangedFrom = RegExp(r'\(\s*unchanged\s+from\b', caseSensitive: false);
+
+String _stripVerifiedRuntimeRetention(
+  String baseline,
+  String previousNativePins,
+  String suffix,
+) {
+  for (final claim in _runtimeBaselineClaims) {
+    final shown = claim.claim.firstMatch(baseline);
+    if (shown == null || !baseline.startsWith(suffix, shown.end)) continue;
+    final previous = claim.source.allMatches(previousNativePins).singleOrNull;
+    if (previous?[1] == shown[1]) {
+      baseline = baseline.replaceRange(
+        shown.end,
+        shown.end + suffix.length,
+        '',
+      );
+    }
+  }
+  return baseline;
+}
+
 /// Checks the new published section against the exact candidate's runtime pins.
 List<String> findPreparedReleaseNotesDrift(
   Directory root,
   String bridge,
   String previousVersion,
-  String previousBridge,
-) {
+  String previousBridge, {
+  required String previousNativePins,
+}) {
   final files = [
     for (final path in releasedChangelogs) File('${root.path}/$path'),
   ];
@@ -1374,6 +1397,7 @@ List<String> findPreparedReleaseNotesDrift(
       module: module,
       manifest: bridgeManifestSha256,
     );
+    final unchangedSuffix = ' (unchanged from $previousVersion)';
     for (final (index, file) in files.indexed) {
       final path = releasedChangelogs[index];
       final sections = ChangelogHistory.parse(file.readAsStringSync()).sections;
@@ -1381,14 +1405,15 @@ List<String> findPreparedReleaseNotesDrift(
         problems.add('$path must begin with the exact release $version.');
         continue;
       }
-      final section = visibleReleaseLines(sections.values.first).join('\n');
+      final visibleLines = visibleReleaseLines(sections.values.first).toList();
+      final section = visibleLines.join('\n');
       final article = index == 0 ? 'the ' : '';
       final claims = _bridgePinBullet
           .allMatches(section)
           .map((match) => match[0]!.trimRight())
           .toList();
       final expected = bridge == previousBridge
-          ? '- Keep ${article}default WebGPU bridge assets at `$bridge` (unchanged from $previousVersion).'
+          ? '- Keep ${article}default WebGPU bridge assets at `$bridge`$unchangedSuffix.'
           : '- Aligned ${article}default WebGPU bridge assets to `$bridge`';
       if (claims.length != 1 ||
           (bridge == previousBridge
@@ -1400,10 +1425,32 @@ List<String> findPreparedReleaseNotesDrift(
           '$path must contain exactly one matching WebGPU bridge claim for this release.',
         );
       }
-      final paragraphs = _runtimeBaselineParagraph.allMatches(section).toList();
-      if (paragraphs.length != 1 || paragraphs.single[0] != expectedBaseline) {
+      final baseline = _runtimeBaselineParagraph
+          .allMatches(section)
+          .singleOrNull?[0];
+      final matchingBaseline =
+          baseline != null &&
+          _stripVerifiedRuntimeRetention(
+                baseline,
+                previousNativePins,
+                unchangedSuffix,
+              ) ==
+              expectedBaseline;
+      if (!matchingBaseline) {
         problems.add(
           '$path must contain one complete Runtime baseline matching the candidate pins.',
+        );
+      }
+      final unverified = visibleLines
+          .where(
+            (line) =>
+                (!matchingBaseline || line != baseline) &&
+                (bridge != previousBridge || line.trimRight() != expected),
+          )
+          .join('\n');
+      if (_unchangedFrom.hasMatch(unverified)) {
+        problems.add(
+          '$path contains an (unchanged from ...) claim that does not match the previous release.',
         );
       }
     }
@@ -1446,6 +1493,7 @@ List<String> _verifyPreparedRelease(Directory root, String bridge, String tag) {
       bridge,
       previous,
       oldPin.single[1]!,
+      previousNativePins: readTagFile(nativeLlamaCppTagPath),
     );
   } on FormatException catch (error) {
     return [error.message];
