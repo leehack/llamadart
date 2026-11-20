@@ -6,6 +6,7 @@ test/unit/tooling/collect_pr_changelog_test.dart
 test/unit/tooling/companion_inventory_test.dart
 test/unit/tooling/companion_release_workflow_scripts_test.dart
 test/unit/tooling/docs_changelog_drift_test.dart
+test/unit/tooling/docs_version_cut_test.dart
 test/unit/tooling/genkit_doc_floor_test.dart
 test/unit/tooling/genkit_package_staging_test.dart
 test/unit/tooling/genkit_release_routing_test.dart
@@ -16,11 +17,11 @@ test/unit/tooling/macos_litert_lm_prepare_app_script_test.dart
 test/unit/tooling/macos_swiftpm_bootstrap_docs_test.dart
 test/unit/tooling/markdown_test_suites_test.dart
 test/unit/tooling/package_skills_test.dart
+test/unit/tooling/pr_changelog_test.dart
 test/unit/tooling/pub_content_limits_test.dart
 test/unit/tooling/pubignore_test.dart
 test/unit/tooling/release_install_snippets_test.dart
 test/unit/tooling/release_prep_heading_test.dart
-test/unit/tooling/reopen_unreleased_changelog_test.dart
 test/unit/tooling/safe_pr_head_update_test.dart
 test/unit/tooling/studio_ci_admission_test.dart
 test/unit/tooling/sync_native_release_pins_script_test.dart

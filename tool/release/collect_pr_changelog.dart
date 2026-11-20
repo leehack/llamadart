@@ -28,9 +28,22 @@ final _reverts = RegExp(
 final _githubRevert = RegExp(
   r'^Reverts ([A-Za-z0-9-]+/[A-Za-z0-9_.-]+#[1-9][0-9]*)$',
 );
+final _trailingAttribution = RegExp(
+  r'(?:(\n---------)\n[ \t]*\n|\n)'
+  r'(?:(?:Signed-off-by|Co-authored-by):[^\n]*(?:\n[ \t]+[^\n]+)*\n*)+$',
+  caseSensitive: false,
+);
+final _coauthor = RegExp(
+  r'^Co-authored-by:',
+  caseSensitive: false,
+  multiLine: true,
+);
+
+bool _isGithubCoauthorBlock(RegExpMatch attribution) =>
+    attribution[1] != null && _coauthor.hasMatch(attribution[0]!);
+
 final _trailerContinuation = RegExp(r'^[ \t\r\v\f]');
 final _docsCut = RegExp(r'^docs: cut version (\S+)$');
-final _releaseHeading = RegExp(r'^##[ \t]+([^\r\n]+)', multiLine: true);
 final _bridgeClaim = RegExp(
   r'^(?:Aligned (?:the )?default WebGPU bridge assets to|'
   r'Keep (?:the )?default WebGPU bridge assets at) `(v\d+\.\d+\.\d+)`',
@@ -171,9 +184,9 @@ Future<String> runPrChangelogCollector(
           if (diagnostic.reviewCode != null) diagnostic.toJson(),
       ],
     );
-    final root = _Changelog.parse(git.blob(through, _root));
-    final docs = _Changelog.parse(git.blob(through, _docs));
-    final archive = _Changelog.parse(git.blob(through, _archive));
+    final root = ChangelogHistory.parse(git.blob(through, _root));
+    final docs = ChangelogHistory.parse(git.blob(through, _docs));
+    final archive = ChangelogHistory.parse(git.blob(through, _archive));
     if (root.sections.keys.first != options.from.substring(1)) {
       throw const FormatException(
         '--from does not match the latest pinned changelog heading.',
@@ -203,13 +216,15 @@ Future<String> runPrChangelogCollector(
       for (final diagnostic in collector.diagnostics) ...diagnostic.reviewShas,
     };
     if (options.verify case final path?) {
-      final body = File(path).readAsStringSync();
+      final candidate = options.candidate == null
+          ? null
+          : git.resolve(options.candidate!);
+      final body = git.receiptBody(File(path).readAsStringSync(), candidate);
       _verifyReceipt(parseReleaseNotesInput(body), receipt);
       final diffs = <String>[];
-      if (options.candidate case final revision?) {
-        final candidate = git.resolve(revision);
+      if (candidate != null) {
         for (final changelog in [_root, _docs]) {
-          final actual = _Changelog.parse(git.blob(candidate, changelog));
+          final actual = ChangelogHistory.parse(git.blob(candidate, changelog));
           if (actual.sections.keys.first != options.version) {
             throw FormatException(
               '$changelog: expected candidate release ${options.version}.',
@@ -507,6 +522,27 @@ class _Git {
   bool hasBlob(String sha, String path) =>
       run(['cat-file', '-e', '$sha:$path']).exitCode == 0;
 
+  String receiptBody(String input, String? candidate) {
+    if (candidate == null) return input;
+    final raw = text(['show', '-s', '--format=%B', candidate]);
+    if (raw.trimRight() != input.trimRight()) return input;
+
+    // Git can classify the receipt fields themselves as trailers.
+    final message = raw.replaceAll('\r\n', '\n').trimRight();
+    final attribution = _trailingAttribution.firstMatch(message);
+    return landedPrBody(
+      attribution == null
+          ? message
+          : message.substring(
+              0,
+              attribution.start +
+                  (_isGithubCoauthorBlock(attribution)
+                      ? 0
+                      : attribution[1]?.length ?? 0),
+            ),
+    );
+  }
+
   ({
     String subject,
     String body,
@@ -530,9 +566,14 @@ class _Git {
     final (message, trailerState) = fields[3].isEmpty
         ? (fields[2], _TrailerState.clean)
         : _stripTrailers(fields[2], fields[4], fields[5]);
+    final raw = fields[2].trimRight();
+    final attribution = _trailingAttribution.firstMatch(raw);
+    final body = attribution != null && _isGithubCoauthorBlock(attribution)
+        ? raw.substring(0, attribution.start)
+        : message;
     return (
       subject: fields[0],
-      body: landedPrBody(message),
+      body: landedPrBody(body),
       trailers: fields[3],
       trailerState: trailerState,
       parents: fields[1].isEmpty ? 0 : fields[1].split(' ').length,
@@ -634,41 +675,10 @@ PrChangelog? _readChangelog(String body) {
   }
 }
 
-List<String> _legacySeed(_Git git, String sha) {
-  final root = _Changelog.parse(git.blob(sha, _root), allowUnreleased: true);
-  final docs = _Changelog.parse(git.blob(sha, _docs), allowUnreleased: true);
-  final rootPending = root.sections['Unreleased'];
-  final docsPending = docs.sections['Unreleased'];
-  if (rootPending == null || docsPending == null) {
-    throw const FormatException('Missing legacy Unreleased section.');
-  }
-  final body = _sectionBody(rootPending);
-  if (docsChangelogDriftProblems(
-    {'Unreleased': body},
-    {'Unreleased': _sectionBody(docsPending)},
-  ).isNotEmpty) {
-    throw const FormatException(
-      'Legacy Unreleased entries differ between changelogs.',
-    );
-  }
-  if (body.trim().isEmpty) return [];
-  final bullets = RegExp(r'^[*-] ', multiLine: true).allMatches(body).toList();
-  if (bullets.isEmpty ||
-      body.substring(0, bullets.first.start).trim().isNotEmpty) {
-    throw const FormatException(
-      'Legacy Unreleased section must start with a bullet.',
-    );
-  }
-  return [
-    for (final (index, bullet) in bullets.indexed)
-      body
-          .substring(
-            bullet.end,
-            index + 1 < bullets.length ? bullets[index + 1].start : body.length,
-          )
-          .replaceFirst(RegExp(r'(?:\r?\n[ \t]*)+$'), ''),
-  ];
-}
+List<String> _legacySeed(_Git git, String sha) => legacySeedNotes(
+  ChangelogHistory.parse(git.blob(sha, _root), allowUnreleased: true),
+  ChangelogHistory.parse(git.blob(sha, _docs), allowUnreleased: true),
+);
 
 class _Entry {
   _Entry(
@@ -1150,37 +1160,6 @@ Future<Object?> _githubGet(String endpoint, {required bool paginate}) async {
   return jsonDecode(result.stdout as String);
 }
 
-class _Changelog {
-  const _Changelog(this.preamble, this.sections);
-
-  final String preamble;
-  final Map<String, String> sections;
-
-  static _Changelog parse(String source, {bool allowUnreleased = false}) {
-    final heads = _releaseHeading.allMatches(source).toList();
-    if (heads.isEmpty) {
-      throw const FormatException('Changelog has no release headings.');
-    }
-    final sections = <String, String>{};
-    for (final (index, head) in heads.indexed) {
-      final version = head[1]!.trim();
-      if (version == 'Unreleased'
-          ? !allowUnreleased
-          : !coreReleaseVersion.hasMatch(version)) {
-        throw const FormatException('Unexpected changelog heading.');
-      }
-      if (sections.containsKey(version)) {
-        throw const FormatException('Duplicate changelog heading.');
-      }
-      sections[version] = source.substring(
-        head.start,
-        index + 1 < heads.length ? heads[index + 1].start : source.length,
-      );
-    }
-    return _Changelog(source.substring(0, heads.first.start), sections);
-  }
-}
-
 String _singleMatch(String source, RegExp pattern, String label) {
   final matches = pattern.allMatches(source).toList();
   if (matches.length != 1) throw FormatException('Expected one $label.');
@@ -1240,10 +1219,15 @@ class _Pins {
     }
     return _Pins(
       bridgeTag,
-      'Runtime baseline: native llama.cpp `$cpp` and Web use upstream '
-      '`$upstream@$upstreamCommit`; native LiteRT-LM uses `$litert` and '
-      'stable-diffusion uses `$sd`. Web LiteRT-LM uses `$module`. '
-      'Manifest SHA-256: `$manifest`.',
+      formatRuntimeBaseline(
+        native: cpp,
+        upstream: upstream,
+        upstreamCommit: upstreamCommit,
+        liteRt: litert,
+        stableDiffusion: sd,
+        module: module,
+        manifest: manifest,
+      ),
     );
   }
 }
@@ -1260,9 +1244,9 @@ class _Rendered {
 
 _Rendered _render(
   _Options options,
-  _Changelog root,
-  _Changelog docs,
-  _Changelog archive,
+  ChangelogHistory root,
+  ChangelogHistory docs,
+  ChangelogHistory archive,
   List<String> notes,
   _Pins pins,
   String oldBridge,
@@ -1349,26 +1333,39 @@ _Rendered _render(
 
   final rootSections = root.sections.values.toList();
   final archived = <String>[];
-  var size = utf8.encode(root.preamble + draft + rootSections.join()).length;
-  while (size > _sizeLimit && rootSections.isNotEmpty) {
+  final oldBoundary = root.sections.keys.last;
+  String boundary() => rootSections.isEmpty
+      ? version
+      : root.sections.keys.elementAt(rootSections.length - 1);
+  String rootPreamble() =>
+      archiveBoundary(root.preamble, oldBoundary, boundary());
+  final draftSize = utf8.encode(draft).length;
+  var historySize = utf8.encode(rootSections.join()).length;
+  int size() => utf8.encode(rootPreamble()).length + draftSize + historySize;
+  while (size() > _sizeLimit && rootSections.isNotEmpty) {
     final oldest = rootSections.removeLast();
     if (!oldest.endsWith('\n')) {
       throw const FormatException(
         'Cannot join the oldest root section to the archive losslessly.',
       );
     }
-    size -= utf8.encode(oldest).length;
+    historySize -= utf8.encode(oldest).length;
     archived.add(oldest);
   }
-  if (size > _sizeLimit) {
+  if (size() > _sizeLimit) {
     throw const FormatException(
       'The new root changelog section exceeds the pub.dev size limit.',
     );
   }
+  final archivePreamble = archiveBoundary(
+    archive.preamble,
+    oldBoundary,
+    boundary(),
+  );
   final keep = retained.toSet();
   return _Rendered(
     {
-      _root: root.preamble + draft + rootSections.join(),
+      _root: rootPreamble() + draft + rootSections.join(),
       _docs:
           docs.preamble +
           docsDraft +
@@ -1377,7 +1374,7 @@ _Rendered _render(
               .map((entry) => entry.value)
               .join(),
       _archive:
-          archive.preamble +
+          archivePreamble +
           archived.reversed.join() +
           archive.sections.values.join(),
     },

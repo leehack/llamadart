@@ -119,7 +119,7 @@ dart test -p chrome --exclude-tags local-only
   default path keep it and inject `availableCores`
   (`llama_cpp_service_default_threads_test.dart`).
 - A public capability or platform-support change updates README, website
-  docs/support matrix, examples and changelog in the same PR.
+  docs/support matrix, examples and the PR changelog section in the same PR.
 - Map public capability changes to a validation pack or a reasoned, issue-linked
   exemption in `packages/llamadart_validation/assets/capability_coverage.json`.
   Run `dart test -p vm test/unit/tooling/validation_coverage_test.dart`;
@@ -156,32 +156,22 @@ analyze and the relevant tests before the final commit.
 
 ## Changelog and releases
 
-- New entries go under `## Unreleased` in `CHANGELOG.md` and
-  `website/docs/changelog/recent-releases.md`. `main` always has that heading,
-  empty or not: release prep removes it and `docs_version_cut.yml` restores it
-  after the release. Never add to a released section. Move `Unreleased` into a
-  version only in an explicit release task.
-- Both changelogs union-merge (`.gitattributes`), so a rebase never conflicts
-  there but can move bullets silently; CI fails a non-release-prep PR that
-  changes a released section. Release prep turns union off first
-  (`website/docs/maintainers/release-workflow.md`).
-- One short user-facing bullet per change; implementation detail and migration
-  notes go in the PR or maintainer docs.
-- When release prep moves `Unreleased` into a version, compact it in both
-  files: merge related or follow-up bullets, drop duplicates and items users
-  cannot observe, and tighten wording. Released sections stay as published.
-- Every release stays recorded: `CHANGELOG.md` from 0.10.0 on, older ones
-  verbatim in `doc/changelog_archive.md`. pub.dev rejects a `CHANGELOG.md`,
-  `README.md`, `LICENSE` or example file over 256 KiB, and
-  `verify_release_docs_versions.dart` fails first; to make room, move the
-  oldest `CHANGELOG.md` sections unchanged to the top of the archive's
-  releases. The docs changelog
-  (`website/docs/changelog/recent-releases.md`) keeps only `Unreleased` and the
-  current and previous minor, and links `CHANGELOG.md` for older ones: when
-  release prep opens a new minor, delete the minor two back from it (`0.18.0`
-  keeps `0.18.x` and `0.17.x`). `verify_release_docs_versions.dart` fails on
-  older sections. The released-section check lets only that page lose whole
-  sections from its tail, and `CHANGELOG.md` only move them to the archive.
+- Every PR has a top-level `## Changelog` with one-line, column-zero
+  `- ` bullets or a specific standalone `N/A: reason`. Use the optional
+  `[core]` or a package prefix from the PR template. Package scopes are
+  informational to core and package changelogs follow their package rules.
+- The PR or its landed Git message supplies release notes.
+  `CHANGELOG.md`, `website/docs/changelog/recent-releases.md`,
+  `doc/changelog_archive.md` and the cutover marker are protected outputs.
+  Core release prep runs the collector against the reviewed first-parent
+  range and includes its input receipt. The workflow verifies the candidate
+  before merge and the landed commit before tagging.
+- Same-repo core release prep prepends one numbered section, preserving all
+  published bytes. The collector keeps the current and previous published
+  minor in the docs changelog and moves whole root sections to the archive
+  only when needed for pub.dev's 256 KiB file limit. Compact related bullets
+  and record specific SHA-based dispositions for material rewrites.
+  See [Release workflow](website/docs/maintainers/release-workflow.md).
 - Before release prep or a change to current install snippets, run
   `dart run tool/testing/verify_release_docs_versions.dart`, then again with
   `--release-prep`; resolve pending companion bumps in the release-prep PR.

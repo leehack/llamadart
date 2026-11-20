@@ -1,5 +1,7 @@
 import 'package:yaml/yaml.dart';
 
+import 'check_released_changelog_sections.dart';
+
 /// Fixed existing evidence for a core patch release with unchanged runtime pins.
 const releaseMetadataRow = 'release-metadata-verification';
 const releaseMetadataTest =
@@ -100,49 +102,25 @@ String? validateReleaseMetadata(Map<String, ReadinessFilePair> files) {
     }
     if (path == 'CHANGELOG.md' ||
         path == 'website/docs/changelog/recent-releases.md') {
-      final historical = RegExp(
-        r'^## [0-9]+\.[0-9]+\.[0-9]+\s*$',
-        multiLine: true,
-      ).firstMatch(pair.base.contents);
-      if (historical == null ||
-          !pair.head.contents.endsWith(
-            pair.base.contents.substring(historical.start),
-          ) ||
-          RegExp(
-                '^## ${RegExp.escape(newVersion)}\$',
-                multiLine: true,
-              ).allMatches(pair.head.contents).length !=
-              1 ||
-          RegExp(
-            r'^## Unreleased\s*$',
-            multiLine: true,
-          ).hasMatch(pair.head.contents)) {
-        return 'Release changelogs must name the new patch and preserve all '
-            'historical numbered sections: $path.';
-      }
-      // Historical bytes are already immutable. Do not reinterpret their old
-      // Markdown with a new parser; inspect only the mutable release prefix.
-      final historyLength = pair.base.contents.length - historical.start;
-      baseProse = pair.base.contents.substring(0, historical.start);
-      headProse = pair.head.contents.substring(
-        0,
-        pair.head.contents.length - historyLength,
-      );
-      final headings = RegExp(r'^## ([^\n]+)$', multiLine: true);
-      final before = headings
-          .allMatches(baseProse)
-          .map((m) => m.group(1))
-          .toList();
-      final after = headings
-          .allMatches(headProse)
-          .map((m) => m.group(1))
-          .toList();
-      if (before.length != 1 ||
-          before.single != 'Unreleased' ||
-          after.length != 1 ||
-          after.single != newVersion) {
-        return 'Metadata release must replace only the Unreleased section '
-            'heading with the next core patch: $path.';
+      try {
+        final old = ChangelogHistory.parse(baseProse);
+        final next = ChangelogHistory.parse(headProse);
+        if (old.sections.keys.first != oldVersion ||
+            next.sections.keys.first != newVersion ||
+            old.preamble != next.preamble ||
+            old.sections.values.join() != next.sections.values.skip(1).join()) {
+          return 'Release changelogs must prepend the next patch and preserve '
+              'all existing bytes: $path.';
+        }
+        final before = _baselineIdentity(old.sections.values.first);
+        final after = _baselineIdentity(next.sections.values.first);
+        if (before == null || after != before) {
+          return 'Metadata release must preserve the previous runtime baseline: $path.';
+        }
+        baseProse = old.preamble;
+        headProse = next.preamble + next.sections.values.first;
+      } on FormatException {
+        return 'Invalid release changelog: $path.';
       }
     }
     // This exception is for Markdown prose/code examples, not active MDX.
@@ -151,8 +129,10 @@ String? validateReleaseMetadata(Map<String, ReadinessFilePair> files) {
     if (_activeFragments(baseProse) != '' ||
         _activeFragments(headProse) != '' ||
         _frontMatter(pair.base.contents) != _frontMatter(pair.head.contents) ||
-        _runtimeIdentities(pair.base.contents) !=
-            _runtimeIdentities(pair.head.contents)) {
+        (path != 'CHANGELOG.md' &&
+            path != 'website/docs/changelog/recent-releases.md' &&
+            _runtimeIdentities(pair.base.contents) !=
+                _runtimeIdentities(pair.head.contents))) {
       return 'Metadata release docs require inactive Markdown, unchanged '
           'frontmatter and unchanged runtime identities: $path.';
     }
@@ -296,6 +276,17 @@ String? _activeFragments(String source) {
 
 String _frontMatter(String source) =>
     RegExp(r'^---\n[\s\S]*?\n---\n').firstMatch(source)?.group(0) ?? '';
+
+String? _baselineIdentity(String section) {
+  final baseline = RegExp(
+    r'^Runtime baseline: native llama\.cpp `([^`]+)` and Web use upstream '
+    r'`([^`]+@[a-f0-9]{40})`; native LiteRT-LM uses `([^`]+)` and '
+    r'stable-diffusion uses `([^`]+)`\. Web LiteRT-LM uses `(@litert-lm/core@[^`]+)`\. '
+    r'Manifest SHA-256: `([a-f0-9]{64})`\.$',
+    multiLine: true,
+  ).allMatches(section).toList();
+  return baseline.length == 1 ? baseline.single[0] : null;
+}
 
 String _runtimeIdentities(String source) {
   final identities = RegExp(

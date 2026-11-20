@@ -569,10 +569,20 @@ paths=(
 
     final coreChangelogFile = File(path.join(root.path, 'CHANGELOG.md'));
     final coreChangelog = await coreChangelogFile.readAsString();
-    expect(coreChangelog, startsWith('## Unreleased'));
-    expect(coreChangelog, contains('`leehack/llamadart-native@$llamaTag`'));
-    expect(coreChangelog, contains('* Existing unreleased note.'));
-    expect(coreChangelog, isNot(contains('b0001')));
+    expect(coreChangelog, '''
+## Unreleased
+
+* Updated the default llama.cpp native runtime pin to
+  `leehack/llamadart-native@b1`, regenerated matching Dart FFI bindings,
+  refreshed the `llamadart_llama_cpp_flutter` Apple SwiftPM checksum, and
+  aligned current README/website native override docs.
+
+* Existing unreleased note.
+
+## 0.1.0
+
+* Previous release.
+''');
 
     final litertSwift = await File(
       path.join(
@@ -704,21 +714,7 @@ paths=(
     final rerunCoreChangelog = await File(
       path.join(root.path, 'CHANGELOG.md'),
     ).readAsString();
-    expect(
-      rerunCoreChangelog,
-      contains('`leehack/llamadart-native@$nextLlamaTag`'),
-    );
-    expect(
-      rerunCoreChangelog,
-      isNot(contains('`leehack/llamadart-native@$llamaTag`')),
-    );
-    expect(
-      _occurrences(
-        rerunCoreChangelog,
-        '- Updated the default llama.cpp native runtime pin to',
-      ),
-      1,
-    );
+    expect(rerunCoreChangelog, curatedCoreChangelog);
 
     final rerunLlamaChangelog = await File(
       path.join(root.path, 'packages/llamadart_llama_cpp_flutter/CHANGELOG.md'),

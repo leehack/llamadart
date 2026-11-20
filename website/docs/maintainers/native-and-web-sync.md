@@ -3,6 +3,12 @@ title: Native and web sync flows
 description: Follow the correct workflow when syncing native bindings, companion package pins, or published web bridge assets.
 ---
 
+The native sync PR supplies core notes for changed runtime pins in its
+description. Apple companion pin changes also update their package
+changelogs. Confirm the latest applicable PR changelog check before merge.
+GitHub can suppress event runs from bot description edits or hold runs from
+bot branch updates for maintainer approval.
+
 ## Apple companion compatibility
 
 The hook binds the complete maintained SwiftPM template, normalizing only its

@@ -80,7 +80,7 @@ const Map<String, String> _ciToolFiles = {
   'tool/ci/web_deployment.py': 'git diff',
   'tool/native/sync_native_headers_and_bindings.sh': 'find',
   'tool/native/sync_native_release_pins.py':
-      '.md | CHANGELOG | README | find | website/',
+      '.md | CHANGELOG | README | find | git archive | git show | website/',
   'tool/native/test_native_header_archive.py': 'copytree | listdir',
   'tool/native/test_sync_native_headers_and_bindings.py': 'glob',
   'tool/native/test_sync_native_release_pins.py':
@@ -91,9 +91,9 @@ const Map<String, String> _ciToolFiles = {
   'tool/release/stage_genkit_package.py': '.md | CHANGELOG | README | glob',
   'tool/testing/check_platform_boundaries.dart': 'listSync',
   'tool/testing/check_released_changelog_sections.dart':
-      '.md | CHANGELOG | doc/ | find | git cat-file | git show | website/',
+      '.md | CHANGELOG | doc/ | git diff | git ls-tree | git show | website/',
   'tool/testing/check_webgpu_bridge_tag.dart':
-      '.md | CHANGELOG | README | doc/ | ls-files | website/',
+      '.md | CHANGELOG | README | doc/ | git show | ls-files | website/',
   'tool/testing/prepare_llama_cpp_source.sh': 'git checkout | git clone',
   'tool/testing/run_local_e2e.dart': '.md',
   'tool/testing/test_matrix.dart':
@@ -119,14 +119,14 @@ const Map<String, String> _validationFiles = {
 const Map<String, String> _releaseToolFiles = {
   'tool/release/pub_content_limits.dart': '.md | CHANGELOG | README | doc/',
   'tool/testing/check_released_changelog_sections.dart':
-      '.md | CHANGELOG | doc/ | find | git cat-file | git show | website/',
+      '.md | CHANGELOG | doc/ | git diff | git ls-tree | git show | website/',
   'tool/testing/verify_release_docs_versions.dart':
       '.md | CHANGELOG | README | SKILL | git show | skills/ | website/',
 };
 
 const Map<String, String> _pinTableFiles = {
   'tool/native/sync_native_release_pins.py':
-      '.md | CHANGELOG | README | find | website/',
+      '.md | CHANGELOG | README | find | git archive | git show | website/',
 };
 
 /// Non-suite files that many suites reach and whose tokens are not reads. A

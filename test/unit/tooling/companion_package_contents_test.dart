@@ -104,8 +104,12 @@ Map<String, ReadinessFilePair> _metadataCandidate() {
     for (final path in releaseMetadataDocs)
       path: path.contains('CHANGELOG') || path.contains('recent-releases')
           ? (
-              base: file('## Unreleased\n\n* Fix.\n\n## 0.17.4\n\n* Old.\n'),
-              head: file('## 0.17.5\n\n* Fix.\n\n## 0.17.4\n\n* Old.\n'),
+              base: file(
+                '## 0.17.4\n\n* Old.\n\nRuntime baseline: native llama.cpp `v1.0.0-3` and Web use upstream `v1.0.0@1111111111111111111111111111111111111111`; native LiteRT-LM uses `v0.19.1-5` and stable-diffusion uses `v0.4.0`. Web LiteRT-LM uses `@litert-lm/core@0.19.0`. Manifest SHA-256: `2222222222222222222222222222222222222222222222222222222222222222`.\n',
+              ),
+              head: file(
+                '## 0.17.5\n\n* Fix.\n\nRuntime baseline: native llama.cpp `v1.0.0-3` and Web use upstream `v1.0.0@1111111111111111111111111111111111111111`; native LiteRT-LM uses `v0.19.1-5` and stable-diffusion uses `v0.4.0`. Web LiteRT-LM uses `@litert-lm/core@0.19.0`. Manifest SHA-256: `2222222222222222222222222222222222222222222222222222222222222222`.\n\n## 0.17.4\n\n* Old.\n\nRuntime baseline: native llama.cpp `v1.0.0-3` and Web use upstream `v1.0.0@1111111111111111111111111111111111111111`; native LiteRT-LM uses `v0.19.1-5` and stable-diffusion uses `v0.4.0`. Web LiteRT-LM uses `@litert-lm/core@0.19.0`. Manifest SHA-256: `2222222222222222222222222222222222222222222222222222222222222222`.\n',
+              ),
             )
           : pair(_readme),
   };

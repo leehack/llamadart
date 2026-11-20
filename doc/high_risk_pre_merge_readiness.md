@@ -272,8 +272,8 @@ not a `metadata_only` flag or a caller-provided inventory:
 - `pubspec.yaml` changes only its canonical stable version to the next patch;
   every other byte, including dependencies, SDK, hooks and overrides, is fixed.
 - Both current changelogs and the four maintained installation README/docs
-  pages are modified. Historical numbered changelog sections, runtime identity
-  identities, frontmatter and already-prepared companion constraints remain
+  pages are modified. Each changelog prepends one next-patch section. Historical numbered bytes,
+  structured runtime identities, frontmatter and already-prepared companion constraints remain
   unchanged; current core snippets name the new patch. Mutable release prose
   must be inactive Markdown with no MDX expressions/imports/exports or HTML
   outside inert code examples. Executable `mdx-code-block` fences are rejected.
@@ -502,21 +502,28 @@ the `release-prep` label or a `release/prep-*` branch name.
    head before it joins a batch.
 2. **Integration branch.** Cut a new branch from current `main` and add the
    constituents as one commit each, so each stays individually revertable.
+   Fetch each constituent's body and head together and require the pinned
+   head. Copy its validated `## Changelog` section into its single commit.
    Each commit subject ends with `(#<constituent PR number>)`. Resolve
    conflicts once, inside the commit of the constituent being applied. Publish
    the branch through `tool/git/safe_pr_head_update.dart`.
 3. **Conflict resolutions.** A resolution only reconciles hunks that two sides
-   both changed: a real merge conflict, or the mechanical union of changelog
-   or doc lines. Anything else, including a fix for a defect found in a
+   both changed. Anything else, including a fix for a defect found in a
    constituent, goes back to that constituent's PR and is re-audited there.
 4. **Integration PR body.** Besides the normal template, it lists:
-   - for every constituent, its PR number, risk class, pinned head SHA and
-     audit result (or the passing CI run for a standard-risk one);
+   - the envelope's `## Changelog` with a specific N/A for the integration;
+   - each constituent's PR number, risk class, pinned head, normalized
+     section SHA-256 (`collect_pr_changelog.dart --section-sha256 FILE`)
+     and audit result or passing CI run;
    - every conflict resolution, listed per hunk, not per file;
    - the closing keywords (`Closes #N`) of every constituent, because a PR
      that is closed without merging does not close its issues.
 5. **Integration audit.** One independent auditor reviews the integration PR's
-   exact head against current `main`, blocking-only. The auditor took no part
+   exact head against current `main`, blocking-only. Compare the entire
+   first-parent sequence one-for-one with the recorded PR numbers, pinned
+   heads and section digests. Recheck source bodies and heads before landing
+   and reject missing, extra, reordered, duplicate or changed constituents.
+   An envelope cannot recover invalid constituent notes at release time. The auditor took no part
    in implementing any constituent or in the integration; having audited a
    constituent does not disqualify. The audit checks only what is new:
    - the tree is a clean combination of the pinned heads plus the listed

@@ -1,11 +1,6 @@
 Releases before 0.10.0 are in the
 [changelog archive](https://github.com/leehack/llamadart/blob/main/doc/changelog_archive.md).
 
-## Unreleased
-
-- Reduce known Qwen3-ASR instruction echoes in windowed partials and finals. Keep the original wording with changing voiced speech or audio-only agreement within one word edit. Quiet or misrecognized dictation can be dropped, with an empty-transcript error if no text survives ([#2088](https://github.com/leehack/llamadart/issues/2088)).
-- Keep undeclared, fenced, and inline-backtick JSON as text in Gemma 4 loose-JSON tool parsing, release non-matching streams once the name is known, and preserve text after a loose call ([#2081](https://github.com/leehack/llamadart/issues/2081)).
-
 ## 0.20.2
 
 - Adopt `llamadart-native@v1.0.0-3` for the Windows Visual C++ runtime and GPU memory fit fixes, plus native speech cancellation and text handling fixes ([#2087](https://github.com/leehack/llamadart/pull/2087)).

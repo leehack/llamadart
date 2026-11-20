@@ -3,6 +3,10 @@ title: Maintain the Genkit package
 description: Source provenance, completed repository cutover, and independent maintenance and releases for genkit_llamadart.
 ---
 
+Put Genkit changes in the PR changelog with the
+`[packages/genkit_llamadart]` scope and keep the package's independently
+dated changelog.
+
 `packages/genkit_llamadart` is a separately versioned published package, not an
 Apple runtime companion. Its imports, license, tests, examples and consumer
 skills stay in that package. The dependency is one-way:

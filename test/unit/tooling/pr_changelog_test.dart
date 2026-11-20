@@ -5,22 +5,26 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:test/test.dart';
+import 'package:yaml/yaml.dart';
 
 import '../../../tool/release/pr_changelog.dart';
 
-Future<ProcessResult> _validate(String? body) async {
-  final temp = Directory.systemTemp.createTempSync('clpre-pr-event-');
+Future<ProcessResult> _validate(String? body) => _command('--event', {
+  'pull_request': {'body': body},
+});
+
+Future<ProcessResult> _command(String mode, Map<String, Object?> event) async {
+  final temp = Directory.systemTemp.createTempSync('clact2-pr-event-');
   try {
-    final event = File('${temp.path}/event.json')
-      ..writeAsStringSync(
-        jsonEncode({
-          'pull_request': {'body': body},
-        }),
-      );
+    final payload = File('${temp.path}/event.json')
+      ..writeAsStringSync(jsonEncode(event));
     return await Process.run(
       Platform.resolvedExecutable,
-      ['tool/release/pr_changelog.dart', '--event'],
-      environment: {'GITHUB_EVENT_PATH': event.path},
+      ['tool/release/pr_changelog.dart', mode],
+      environment: {
+        'GITHUB_EVENT_PATH': payload.path,
+        'GITHUB_REPOSITORY': 'owner/repo',
+      },
     );
   } finally {
     temp.deleteSync(recursive: true);
@@ -41,6 +45,165 @@ N/A: Updates tests for the existing behavior.
 ''';
 
 void main() {
+  test('the PR workflow keeps body edits separate from heavy CI', () {
+    final workflow = File(
+      '.github/workflows/pr_changelog.yml',
+    ).readAsStringSync();
+    expect(
+      workflow,
+      contains(
+        'opened, reopened, synchronize, edited, ready_for_review, labeled, unlabeled',
+      ),
+    );
+    expect(workflow, contains('dart tool/release/pr_changelog.dart --event'));
+    expect(workflow, contains('github.event.pull_request.base.sha'));
+    expect(workflow, contains('persist-credentials: false'));
+    expect(
+      File('.github/workflows/ci.yml').readAsStringSync(),
+      isNot(contains('- edited')),
+    );
+  });
+
+  test(
+    'prep event routes meaningful changes and both release-prep label transitions',
+    () async {
+      const previous = '1111111111111111111111111111111111111111';
+      const through = '2222222222222222222222222222222222222222';
+      const digest =
+          '3333333333333333333333333333333333333333333333333333333333333333';
+      const body =
+          '## Changelog\n\nN/A: Release prep.\n\n## Release notes input\n\nPrevious-tag: v1.0.0@$previous\nThrough: $through\nInput-SHA256: $digest\n';
+      Future<bool> route(
+        String action, {
+        String current = body,
+        String? before,
+        String? label,
+        bool prep = true,
+        bool retargeted = false,
+      }) async {
+        final result = await _command('--prep-event', {
+          'action': action,
+          'pull_request': {
+            'body': current,
+            'head': {
+              'ref': 'fixture',
+              'repo': {'full_name': 'owner/repo'},
+            },
+            'labels': [
+              if (prep) {'name': 'release-prep'},
+            ],
+          },
+          if (before != null || retargeted)
+            'changes': {
+              if (before != null) 'body': {'from': before},
+              if (retargeted)
+                'base': {
+                  'ref': {'from': 'old-base'},
+                },
+            },
+          if (label != null) 'label': {'name': label},
+        });
+        expect(result.exitCode, 0, reason: '${result.stderr}');
+        return (result.stdout as String).trim() == 'verify-prep=true';
+      }
+
+      expect(await route('opened'), isTrue);
+      expect(await route('opened', prep: false), isFalse);
+      expect(await route('edited', retargeted: true), isTrue);
+      expect(
+        await route(
+          'edited',
+          current: '## Summary\n\nNew context.\n\n$body',
+          before: body,
+        ),
+        isFalse,
+      );
+      expect(
+        await route(
+          'edited',
+          current: body.replaceFirst(
+            digest,
+            previous + previous.substring(0, 24),
+          ),
+          before: body,
+        ),
+        isTrue,
+      );
+      expect(
+        await route(
+          'edited',
+          current: body.replaceFirst(digest, 'broken'),
+          before: body,
+        ),
+        isTrue,
+      );
+      expect(await route('labeled', label: 'release-prep'), isTrue);
+      expect(
+        await route('unlabeled', label: 'release-prep', prep: false),
+        isTrue,
+      );
+      expect(await route('labeled', label: 'docs'), isFalse);
+      expect((await _validate(_template)).exitCode, 1);
+      expect((await _validate(body)).exitCode, 0);
+    },
+  );
+
+  test('both selected docs validation paths enforce protected changelogs', () {
+    final ci = loadYaml(File('.github/workflows/ci.yml').readAsStringSync());
+    final jobs = ci['jobs'] as YamlMap;
+    for (final name in ['analyze', 'docs-versions']) {
+      final steps = (jobs[name] as Map)['steps'] as List;
+      expect(
+        steps.where(
+          (step) =>
+              step['run'] ==
+                  'dart run tool/testing/check_released_changelog_sections.dart' &&
+              step['if'] == null &&
+              step['continue-on-error'] != true,
+        ),
+        hasLength(1),
+        reason: name,
+      );
+    }
+  });
+
+  test(
+    'native sync validates the generated body before opening or editing a PR',
+    () {
+      final workflow = File(
+        '.github/workflows/sync_native_bindings.yml',
+      ).readAsStringSync();
+      final generate = workflow.indexOf(
+        'sync_native_release_pins.py changelog-section',
+      );
+      final validate = workflow.indexOf(
+        r'dart tool/release/pr_changelog.dart --body "${body_file}"',
+      );
+      expect(generate, greaterThanOrEqualTo(0));
+      expect(validate, greaterThan(generate));
+      expect(validate, lessThan(workflow.indexOf('gh pr edit', generate)));
+      expect(validate, lessThan(workflow.indexOf('gh pr create', generate)));
+    },
+  );
+
+  test('the PR template requires an authored changelog entry', () {
+    final body = File('.github/pull_request_template.md').readAsStringSync();
+    expect(
+      body.indexOf('## Changelog'),
+      greaterThan(body.indexOf('## Summary')),
+    );
+    expect(
+      body.indexOf('## Changelog'),
+      lessThan(body.indexOf('## Production-readiness scope')),
+    );
+    expect(() => parsePrChangelog(body), throwsFormatException);
+    final filled = body.replaceFirst(
+      '## Changelog',
+      '## Changelog\n\nN/A: Changes maintainer tooling.',
+    );
+    expect(parsePrChangelog(filled).reason, 'Changes maintainer tooling.');
+  });
+
   test('preserves Markdown from the landed body', () {
     const message = '''
 Improve setup (#9)

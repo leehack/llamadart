@@ -58,6 +58,7 @@ test/unit/tooling/safe_pr_head_update_test.dart @leehack
 tool/testing/verify_release_docs_versions.dart @leehack
 tool/testing/check_released_changelog_sections.dart @leehack
 test/unit/tooling/release_prep_heading_test.dart @leehack
+/test/unit/tooling/docs_version_cut_test.dart @leehack
 /test/unit/tooling/pr_changelog_test.dart @leehack
 /test/unit/tooling/collect_pr_changelog_test.dart @leehack
 tool/release/companion_pub_preflight.dart @leehack

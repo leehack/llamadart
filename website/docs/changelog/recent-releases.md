@@ -1,20 +1,15 @@
 ---
 title: Recent releases
-description: Release notes for the unreleased changes and the current and previous llamadart minor, with a link to the full changelog for older releases.
+description: Release notes for the current and previous llamadart minor, with a link to the full changelog for older releases.
 ---
 
-This page keeps the unreleased changes and the current and previous minor
+This page keeps the current and previous minor
 releases. Notes for every older release are in
 [`CHANGELOG.md`](https://github.com/leehack/llamadart/blob/main/CHANGELOG.md).
 
 For upgrade planning, combine this page with the
 [Upgrade Checklist](../migration/upgrade-checklist). For breaking changes,
 validate against the exact release tag notes.
-
-## Unreleased
-
-- Reduce known Qwen3-ASR instruction echoes in windowed partials and finals. Keep the original wording with changing voiced speech or audio-only agreement within one word edit. Quiet or misrecognized dictation can be dropped, with an empty-transcript error if no text survives ([#2088](https://github.com/leehack/llamadart/issues/2088)).
-- Keep undeclared, fenced, and inline-backtick JSON as text in Gemma 4 loose-JSON tool parsing, release non-matching streams once the name is known, and preserve text after a loose call ([#2081](https://github.com/leehack/llamadart/issues/2081)).
 
 ## 0.20.2
 
