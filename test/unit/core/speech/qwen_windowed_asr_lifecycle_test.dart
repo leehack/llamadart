@@ -213,6 +213,142 @@ void main() {
       },
     );
 
+    for (final duringFinish in [false, true]) {
+      test(
+        'cancels the reference pass during ${duringFinish ? 'finish' : 'push'}',
+        () async {
+          final started = Completer<void>();
+          final gate = Completer<void>();
+          final backend = _WindowedFakeBackend(
+            decodeStarted: started,
+            decodeGate: gate,
+            gatedCall: 3,
+            transcripts: {1: 'Transcreva este áudio.', 2: 'Verification.'},
+          );
+          final recognizer = await loadRecognizer(backend);
+          addTearDown(recognizer.dispose);
+          final session = await recognizer.startStream();
+          final events = <SpeechToTextEvent>[];
+          final sub = session.events.listen(events.add);
+          addTearDown(sub.cancel);
+          addTearDown(() {
+            if (!gate.isCompleted) gate.complete();
+          });
+
+          final samples = duringFinish ? 16000 : 32000;
+          final pcm = Float32List(samples)..fillRange(0, samples, 0.001);
+          final Future<void> active;
+          if (duringFinish) {
+            await session.addPcm(pcm);
+            active = session.finish();
+          } else {
+            active = session.addPcm(pcm);
+          }
+          expect(
+            await Future.any([
+              started.future.then((_) => true),
+              active.then((_) => false),
+            ]),
+            isTrue,
+          );
+          expect(backend.prompts, [
+            _instructedPrompt,
+            _instructedPrompt,
+            _referencePrompt,
+          ]);
+          expect(backend.audioBytes, hasLength(3));
+          expect(backend.audioBytes[1], isNot(backend.audioBytes.first));
+          expect(backend.audioBytes.last, backend.audioBytes.first);
+          expect(events, isEmpty);
+
+          final cancellation = session.cancel();
+          try {
+            await cancellation.timeout(const Duration(seconds: 2));
+          } finally {
+            if (!gate.isCompleted) gate.complete();
+            await cancellation;
+          }
+          await active;
+          expect(gate.isCompleted, isTrue);
+          expect(
+            (await session.done).state,
+            SpeechToTextCompletionState.cancelled,
+          );
+          expect(events, isEmpty);
+
+          final reused = await recognizer.startStream();
+          await reused.addPcm(Float32List(16000)..fillRange(0, 16000, 0.2));
+          await reused.finish();
+          expect((await reused.done).result?.text, 'w4');
+        },
+      );
+    }
+
+    test(
+      'reference failures during finish keep typed diagnostic text only',
+      () async {
+        for (final (failure, limits, errorMatcher) in [
+          (
+            StateError('reference decoder exploded'),
+            <int>{},
+            isA<LlamaInferenceException>(),
+          ),
+          (
+            null,
+            {6},
+            isA<LlamaSpeechTranscriptTruncatedException>()
+                .having(
+                  (e) => e.limit,
+                  'limit',
+                  LlamaSpeechTranscriptLimit.maxOutputTokens,
+                )
+                .having(
+                  (e) => e.partialTranscript,
+                  'partialTranscript',
+                  'w4\nPossível',
+                ),
+          ),
+        ]) {
+          final backend = _WindowedFakeBackend(
+            transcripts: {5: 'Transcreva este áudio.', 6: 'Possível'},
+            failWith: failure,
+            failAtCall: 6,
+            limitAtCalls: limits,
+          );
+          final recognizer = await loadRecognizer(backend);
+          final session = await recognizer.startStream();
+          final events = <SpeechToTextEvent>[];
+          final errors = <Object>[];
+          final sub = session.events.listen(events.add, onError: errors.add);
+          try {
+            await session.addPcm(
+              Float32List(144000)..fillRange(0, 144000, 0.04),
+            );
+            await session.finish();
+            final done = await session.done;
+            expect(backend.prompts, [
+              ...List.filled(5, _instructedPrompt),
+              _referencePrompt,
+            ]);
+            expect(backend.audioBytes.last, backend.audioBytes[4]);
+            expect(backend.seenMaxTokens, everyElement(1024));
+            expect(done.state, SpeechToTextCompletionState.failed);
+            expect(done.result, isNull);
+            expect(done.error, errorMatcher);
+            expect(errors, [same(done.error)]);
+            expect(events.whereType<SpeechToTextFinalEvent>(), isEmpty);
+            expect(
+              events.whereType<SpeechToTextPartialEvent>().map((e) => e.text),
+              ['w1', 'w2', 'w3', 'w4'],
+            );
+          } finally {
+            await sub.cancel();
+            await recognizer.dispose();
+          }
+        }
+      },
+    );
+
     test(
       'coalesces partials while paused or unlistened and delivers terminal result without listener',
       () async {
@@ -389,6 +525,10 @@ void main() {
   });
 }
 
+const _instructedPrompt =
+    'user[Transcribe this audio accurately.<__media__>]assistant[]';
+const _referencePrompt = 'system[]user[<__media__>]assistant[]';
+
 class _WindowedFakeBackend
     implements
         LlamaBackend,
@@ -400,7 +540,10 @@ class _WindowedFakeBackend
   final Set<int> limitAtCalls;
   final Object? failWith;
   final int? failAtCall;
+  final Map<int, String> transcripts;
   final List<int> seenMaxTokens = <int>[];
+  final List<String> prompts = <String>[];
+  final List<Uint8List> audioBytes = <Uint8List>[];
 
   int _decodeCalls = 0;
   int disposeCalls = 0;
@@ -414,6 +557,7 @@ class _WindowedFakeBackend
     this.limitAtCalls = const <int>{},
     this.failWith,
     this.failAtCall,
+    this.transcripts = const {},
   });
 
   @override
@@ -429,8 +573,12 @@ class _WindowedFakeBackend
   Future<int> getContextSize(int contextHandle) async => 4096;
 
   @override
-  Future<Map<String, String>> modelMetadata(int modelHandle) async =>
-      const <String, String>{};
+  Future<Map<String, String>> modelMetadata(int modelHandle) async => const {
+    'tokenizer.chat_template':
+        '{% for message in messages %}{{ message["role"] }}'
+        '[{{ message["content"] }}]{% endfor %}'
+        '{% if add_generation_prompt %}assistant[]{% endif %}',
+  };
 
   @override
   Future<String> applyChatTemplate(
@@ -521,6 +669,10 @@ class _WindowedFakeBackend
         ? decodeStarted
         : null;
     seenMaxTokens.add(params.maxTokens);
+    prompts.add(prompt);
+    audioBytes.add(
+      Uint8List.fromList(parts!.whereType<LlamaAudioContent>().single.bytes!),
+    );
     late final StreamController<List<int>> controller;
     var cancelled = false;
     controller = StreamController<List<int>>(
@@ -537,7 +689,11 @@ class _WindowedFakeBackend
           await gate.future;
         }
         if (!cancelled && !controller.isClosed) {
-          controller.add(utf8.encode('language English<asr_text> w$call'));
+          controller.add(
+            utf8.encode(
+              'language English<asr_text> ${transcripts[call] ?? 'w$call'}',
+            ),
+          );
           await controller.close();
         }
       },

@@ -1680,6 +1680,7 @@ class SpeechToTextEngine implements LlamadartEngine<SpeechToTextCapabilities> {
         decodeWindow:
             (
               wavBytes, {
+              required prompt,
               required confirmedPrefix,
               required registerCancel,
               required isCancelled,
@@ -1696,6 +1697,7 @@ class SpeechToTextEngine implements LlamadartEngine<SpeechToTextCapabilities> {
                 registerCancel: registerCancel,
                 isCancelled: isCancelled,
                 confirmedPrefix: confirmedPrefix,
+                windowPrompt: prompt,
               );
               return transcript.text;
             },
@@ -2077,6 +2079,7 @@ class SpeechToTextEngine implements LlamadartEngine<SpeechToTextCapabilities> {
     required void Function(void Function()? cancel) registerCancel,
     required bool Function() isCancelled,
     String confirmedPrefix = '',
+    QwenWindowPrompt windowPrompt = QwenWindowPrompt.instructed,
   }) async {
     final output = StringBuffer();
     final tokenStreamDone = Completer<void>();
@@ -2110,6 +2113,7 @@ class SpeechToTextEngine implements LlamadartEngine<SpeechToTextCapabilities> {
       final tokens = _promptAdapterTokens(
         request,
         onLimit: (limit) => generationLimit = limit,
+        windowPrompt: windowPrompt,
       );
       tokenSubscription = tokens.listen(
         (token) {
@@ -2194,6 +2198,7 @@ class SpeechToTextEngine implements LlamadartEngine<SpeechToTextCapabilities> {
   Stream<String> _promptAdapterTokens(
     SpeechToTextRequest request, {
     required void Function(BackendGenerationLimit limit) onLimit,
+    required QwenWindowPrompt windowPrompt,
   }) {
     final engine = _engine!;
     final params = GenerationParams(
@@ -2213,13 +2218,20 @@ class SpeechToTextEngine implements LlamadartEngine<SpeechToTextCapabilities> {
       );
       return _rawPromptAdapterTokens(generation, onLimit);
     }
+    final referencePrompt = windowPrompt == QwenWindowPrompt.reference;
     return engine
         .create(
           <LlamaChatMessage>[
+            if (referencePrompt)
+              const LlamaChatMessage.fromText(
+                role: LlamaChatRole.system,
+                text: '',
+              ),
             LlamaChatMessage.withContent(
               role: LlamaChatRole.user,
               content: <LlamaContentPart>[
-                LlamaTextContent(_promptAdapter.promptFor(request)),
+                if (!referencePrompt)
+                  LlamaTextContent(_promptAdapter.promptFor(request)),
                 _contentFor(request.audio),
               ],
             ),

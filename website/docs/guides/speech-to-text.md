@@ -290,9 +290,16 @@ When a quiet interval produces text, the adapter may decode the same interval
 at higher gain before publishing it. Quiet classification uses the majority
 of 20 ms frames, and the amplified pass limits isolated peaks. If the second
 decode is empty, the adapter suppresses the hypothesis and checks later decodes
-of that window again. A nonempty second decode preserves the original wording.
-Verification can add latency to partial updates, commits, or the final flush.
-Background noise can still affect transcription accuracy.
+of that window again. When the entire window transcript matches the default
+English instruction or a known Portuguese variant, the adapter keeps the
+original wording if it detects changing voiced speech. Otherwise it decodes
+the original audio with an audio-only prompt and keeps the original wording
+if the results differ by at most one word edit. That extra decode can delay
+pending or confirmed text, or the final flush. Quiet or misrecognized
+dictation can be dropped, including whispered (even at normal levels), sung,
+robotic, or very low-pitched (below about 100 Hz) dictation of the exact
+instruction. If no final text survives, the session completes with an
+empty-transcript error. Other instruction echoes can still appear.
 
 ```dart
 final recognizer = await SpeechToTextEngine.load(
@@ -514,7 +521,8 @@ needs enough memory for the roughly 1.02 GB Qwen3-ASR
   - `maxOutputTokens` applies per decode (`1024` for `startStream`, configurable
     on `transcribe`/`transcribeOnce`); empty intermediate windows are
     suppressed.
-  - Evidence so far covers only English on macOS arm64 CPU.
+  - Windowed accuracy and timing were measured on macOS arm64 CPU with
+    English speech and English and Portuguese dictated-instruction controls.
 - Inference backend correctness and performance remain device dependent;
   establish a CPU baseline before claiming GPU support for a deployment.
 - On the Web, Qwen3-ASR 0.6B Q8_0 returned the exact transcript of an

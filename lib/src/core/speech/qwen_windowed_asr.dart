@@ -27,14 +27,118 @@ const int qwenWindowedQuietMinFrames = 5;
 const double qwenWindowedQuietRmsThreshold = 0.01;
 
 const double _verificationFrameRms = 0.007;
+const int _voicingDownsample = 4;
+const int _voicingFrameSize =
+    qwenWindowedQuietFrameSamples ~/ _voicingDownsample;
+const int _voicingMinLag = 10;
+const int _voicingMaxLag = 40;
+const double _voicingMinRms = 0.007;
+const double _voicingMinCorrelation = 0.75;
+const int _voicingMinCrossingChange = 3;
+const int _voicingMinChanges = 4;
+
+/// Shared transcription instruction for Qwen3-ASR's instructed prompt.
+const String qwen3AsrDefaultInstruction = 'Transcribe this audio accurately.';
+
+final _instructionHypotheses = {
+  _normalizeInstruction(qwen3AsrDefaultInstruction),
+  'transcreva este audio com precisao',
+  'transcreva este audio',
+  'transcreva este audio acertadamente',
+};
+
+final _instructionWhitespace = RegExp(r'\s+');
+final _instructionTerminalPunctuation = RegExp(r'[.!?…]+$');
+final _instructionCombiningAccents = RegExp(r'[\u0301\u0303]');
+
+String _normalizeInstruction(String text) => text
+    .toLowerCase()
+    .replaceAll('á', 'a')
+    .replaceAll('ã', 'a')
+    .replaceAll(_instructionCombiningAccents, '')
+    .trim()
+    .replaceAll(_instructionWhitespace, ' ')
+    .replaceFirst(_instructionTerminalPunctuation, '')
+    .trimRight();
+
+bool _referenceAgrees(String original, String reference) {
+  if (original == reference) {
+    return true;
+  }
+  final originalWords = original.split(' ');
+  final referenceWords = reference.split(' ');
+  if ((originalWords.length - referenceWords.length).abs() > 1) {
+    return false;
+  }
+  var originalIndex = 0;
+  var referenceIndex = 0;
+  var edits = 0;
+  while (originalIndex < originalWords.length &&
+      referenceIndex < referenceWords.length) {
+    if (originalWords[originalIndex] == referenceWords[referenceIndex]) {
+      originalIndex++;
+      referenceIndex++;
+    } else {
+      if (++edits > 1) {
+        return false;
+      }
+      if (originalWords.length >= referenceWords.length) {
+        originalIndex++;
+      }
+      if (referenceWords.length >= originalWords.length) {
+        referenceIndex++;
+      }
+    }
+  }
+  return edits +
+          (originalWords.length - originalIndex) +
+          (referenceWords.length - referenceIndex) <=
+      1;
+}
+
+bool _hasVoicingPeriod(Float64List differences) {
+  const correlationStart = _voicingFrameSize - _voicingMaxLag;
+  var energy = 0.0;
+  for (var i = correlationStart; i < _voicingFrameSize; i++) {
+    energy += differences[i] * differences[i];
+  }
+  for (var lag = _voicingMinLag; lag <= _voicingMaxLag; lag++) {
+    var dot = 0.0;
+    var delayedEnergy = 0.0;
+    for (var i = correlationStart; i < _voicingFrameSize; i++) {
+      final delayed = differences[i - lag];
+      dot += differences[i] * delayed;
+      delayedEnergy += delayed * delayed;
+    }
+    if (dot > 0 &&
+        dot * dot >=
+            _voicingMinCorrelation *
+                _voicingMinCorrelation *
+                energy *
+                delayedEnergy) {
+      return true;
+    }
+  }
+  return false;
+}
 
 /// RIFF/WAVE header byte length for PCM16 LE mono audio.
 const int qwenWindowedWavHeaderBytes = 44;
+
+/// Prompt used to decode a window of Qwen3-ASR audio.
+enum QwenWindowPrompt {
+  /// The normal Qwen3-ASR transcription instruction.
+  instructed,
+
+  /// Qwen3-ASR's reference prompt with an audio-only user turn.
+  reference,
+}
 
 /// Decodes one bounded RIFF/WAVE interval for [QwenWindowedAsrSession].
 typedef QwenWindowDecode =
     Future<String> Function(
       Uint8List wavBytes, {
+      required QwenWindowPrompt prompt,
       required String confirmedPrefix,
       required void Function(void Function()? cancel) registerCancel,
       required bool Function() isCancelled,
@@ -343,13 +447,80 @@ class QwenWindowedAsrSession implements SpeechToTextStreamingSession {
   }
 
   Future<String> _decodeInterval(int length) {
-    final future = _decodeVerified(length);
+    final future = _decodeForPublication(length);
     _activeDecode = future;
     return future.whenComplete(() {
       if (identical(_activeDecode, future)) {
         _activeDecode = null;
       }
     });
+  }
+
+  Future<String> _decodeForPublication(int length) async {
+    final decoded = await _decodeVerified(length);
+    if (decoded.isEmpty || _cancelled || _closed) {
+      return decoded;
+    }
+    final normalized = _normalizeInstruction(decoded);
+    if (!_instructionHypotheses.contains(normalized) ||
+        _hasChangingVoicing(length)) {
+      return decoded;
+    }
+
+    // Re-encode from the ring because quiet verification may have amplified
+    // the contents of the shared WAV buffer.
+    final reference = await _decodeAtGain(
+      length,
+      1.0,
+      prompt: QwenWindowPrompt.reference,
+    );
+    return _referenceAgrees(normalized, _normalizeInstruction(reference))
+        ? decoded
+        : '';
+  }
+
+  bool _hasChangingVoicing(int length) {
+    final differences = Float64List(_voicingFrameSize);
+    var changes = 0;
+    int? previousCrossings;
+    var previousSample = 0.0;
+    for (
+      var start = 0;
+      start + qwenWindowedQuietFrameSamples <= length;
+      start += qwenWindowedQuietFrameSamples
+    ) {
+      var sum = 0.0;
+      var squares = 0.0;
+      var crossings = 0;
+      for (var k = 0; k < _voicingFrameSize; k++) {
+        final i = start + k * _voicingDownsample;
+        final sample =
+            (_ring[i] + _ring[i + 1] + _ring[i + 2] + _ring[i + 3]) /
+            _voicingDownsample;
+        sum += sample;
+        squares += sample * sample;
+        differences[k] = i == 0 ? 0.0 : sample - previousSample;
+        previousSample = sample;
+        if (k > 0 && (differences[k] > 0) != (differences[k - 1] > 0)) {
+          crossings++;
+        }
+      }
+      final centeredEnergy = squares - sum * sum / _voicingFrameSize;
+      if (centeredEnergy <
+              _voicingFrameSize * _voicingMinRms * _voicingMinRms ||
+          !_hasVoicingPeriod(differences)) {
+        previousCrossings = null;
+        continue;
+      }
+      // Stationary tones can be loud and periodic without changing voicing.
+      if (previousCrossings != null &&
+          (crossings - previousCrossings).abs() >= _voicingMinCrossingChange &&
+          ++changes >= _voicingMinChanges) {
+        return true;
+      }
+      previousCrossings = crossings;
+    }
+    return false;
   }
 
   Future<String> _decodeVerified(int length) async {
@@ -402,6 +573,7 @@ class QwenWindowedAsrSession implements SpeechToTextStreamingSession {
     int length,
     double gain, {
     double peakLimit = 1.0,
+    QwenWindowPrompt prompt = QwenWindowPrompt.instructed,
   }) async {
     final wavBytes = encodePcm16WavInto(
       _ring,
@@ -413,6 +585,7 @@ class QwenWindowedAsrSession implements SpeechToTextStreamingSession {
     try {
       return await _decodeWindow(
         wavBytes,
+        prompt: prompt,
         confirmedPrefix: _confirmedText,
         registerCancel: (cancel) {
           _cancelActiveDecode = cancel;

@@ -113,7 +113,8 @@ void main() {
           }
           pcm[112000] = sample * 2;
           final originalPcm = Float32List.fromList(pcm);
-          final calls = <(int, int, int)>[];
+          final calls = <(QwenWindowPrompt, int, int, int)>[];
+          final originalWavs = <int, Uint8List>{};
           const originalText = 'Transcreva este áudio com precisão.';
           final session = QwenWindowedAsrSession(
             sourceFormat: const SpeechAudioFormat(
@@ -125,18 +126,28 @@ void main() {
             decodeWindow:
                 (
                   wavBytes, {
+                  required prompt,
                   required confirmedPrefix,
                   required registerCancel,
                   required isCancelled,
                 }) async {
                   final wav = ByteData.sublistView(wavBytes);
                   final first = wav.getInt16(44, Endian.little);
+                  final length = wav.getUint32(40, Endian.little) ~/ 2;
                   calls.add((
-                    wav.getUint32(40, Endian.little) ~/ 2,
+                    prompt,
+                    length,
                     first,
                     wav.getInt16(46, Endian.little),
                   ));
-                  if (first < 100) return originalText;
+                  if (prompt == QwenWindowPrompt.reference) {
+                    expect(wavBytes, originalWavs[length]);
+                    return '  TRANSCREVA\teste a\u0301udio  com precisa\u0303o! ';
+                  }
+                  if (first < 100) {
+                    originalWavs[length] = Uint8List.fromList(wavBytes);
+                    return originalText;
+                  }
                   return isSpeech ? 'Different verification wording' : '';
                 },
           );
@@ -176,17 +187,365 @@ void main() {
           }
           expect(pcm, originalPcm);
           final sign = isSpeech ? 1 : -1;
+          const instructed = QwenWindowPrompt.instructed;
+          const reference = QwenWindowPrompt.reference;
           expect(calls, [
             for (final length in [32000, 64000, 96000, 112000]) ...[
-              (length, 41, 41 * sign),
-              (length, 655, 655 * sign),
+              (instructed, length, 41, 41 * sign),
+              (instructed, length, 655, 655 * sign),
+              if (isSpeech) (reference, length, 41, 41 * sign),
             ],
-            (16000, 82, 41 * sign),
-            (16000, 1311, 655 * sign),
+            (instructed, 16000, 82, 41 * sign),
+            (instructed, 16000, 1311, 655 * sign),
+            if (isSpeech) (reference, 16000, 82, 41 * sign),
           ]);
         },
       );
     }
+
+    test(
+      'adjudicates above-gate checkpoints, commits, and the final tail',
+      () async {
+        const instructed = QwenWindowPrompt.instructed;
+        const reference = QwenWindowPrompt.reference;
+        const spoken = 'Transcreva este áudio acertadamente.';
+        const longer = 'Por favor, transcreva este áudio com precisão.';
+        final calls = <(QwenWindowPrompt, int, String)>[];
+        final session = QwenWindowedAsrSession(
+          sourceFormat: const SpeechAudioFormat(
+            sampleRateHz: 16000,
+            channelCount: 1,
+            encoding: 'pcm-f32le',
+          ),
+          onClosed: () {},
+          decodeWindow:
+              (
+                wavBytes, {
+                required prompt,
+                required confirmedPrefix,
+                required registerCancel,
+                required isCancelled,
+              }) async {
+                final length =
+                    (wavBytes.length - qwenWindowedWavHeaderBytes) ~/ 2;
+                calls.add((prompt, length, confirmedPrefix));
+                return switch ((prompt, length)) {
+                  (instructed, 32000) => 'Transcribe this audio accurately.',
+                  (reference, 32000) => 'Possível',
+                  (instructed, 64000) => 'Transcreva este áudio.',
+                  (reference, 64000) => '',
+                  (instructed, 96000) => longer,
+                  (instructed, 128000) => spoken,
+                  (reference, 128000) => 'transcreva este audio acertadamente',
+                  (instructed, 16000) => 'Transcreva este áudio com precisão.',
+                  (reference, 16000) => 'Die.',
+                  _ => throw StateError('Unexpected decode: ${calls.last}'),
+                };
+              },
+        );
+        final events = <SpeechToTextEvent>[];
+        final sub = session.events.listen(events.add);
+        addTearDown(sub.cancel);
+        addTearDown(session.cancel);
+
+        await session.addPcm(Float32List(144000)..fillRange(0, 144000, 0.04));
+        await session.finish();
+        expect(calls, [
+          (instructed, 32000, ''),
+          (reference, 32000, ''),
+          (instructed, 64000, ''),
+          (reference, 64000, ''),
+          (instructed, 96000, ''),
+          (instructed, 128000, ''),
+          (reference, 128000, ''),
+          (instructed, 16000, spoken),
+          (reference, 16000, spoken),
+        ]);
+        expect(
+          events.whereType<SpeechToTextPartialEvent>().map(
+            (event) => (event.confirmedText, event.pendingText),
+          ),
+          [('', ''), ('', ''), ('', longer), (spoken, '')],
+        );
+        final done = await session.done;
+        expect(done.result!.text, spoken);
+        expect(
+          events.whereType<SpeechToTextFinalEvent>().single.result,
+          done.result,
+        );
+      },
+    );
+
+    for (final agrees in [true, false]) {
+      test(
+        'reuses a ${agrees ? 'confirmed' : 'rejected'} exact checkpoint',
+        () async {
+          const spoken = 'Transcreva este áudio.';
+          final calls = <QwenWindowPrompt>[];
+          final session = QwenWindowedAsrSession(
+            sourceFormat: const SpeechAudioFormat(
+              sampleRateHz: 16000,
+              channelCount: 1,
+              encoding: 'pcm-f32le',
+            ),
+            onClosed: () {},
+            decodeWindow:
+                (
+                  wavBytes, {
+                  required prompt,
+                  required confirmedPrefix,
+                  required registerCancel,
+                  required isCancelled,
+                }) async {
+                  calls.add(prompt);
+                  if (prompt == QwenWindowPrompt.instructed) return spoken;
+                  return agrees ? 'transcreva este audio' : '嗯。';
+                },
+          );
+          final events = <SpeechToTextEvent>[];
+          final sub = session.events.listen(events.add, onError: (Object _) {});
+          addTearDown(sub.cancel);
+          addTearDown(session.cancel);
+
+          await session.addPcm(Float32List(32000)..fillRange(0, 32000, 0.04));
+          await session.finish();
+          expect(calls, [
+            QwenWindowPrompt.instructed,
+            QwenWindowPrompt.reference,
+          ]);
+          final done = await session.done;
+          final partial = events.whereType<SpeechToTextPartialEvent>().single;
+          expect(partial.confirmedText, '');
+          expect(partial.pendingText, agrees ? spoken : '');
+          expect(done.result?.text, agrees ? spoken : isNull);
+          expect(done.error, agrees ? isNull : isA<LlamaSpeechException>());
+          expect(
+            events.whereType<SpeechToTextFinalEvent>(),
+            hasLength(agrees ? 1 : 0),
+          );
+        },
+      );
+    }
+
+    group('instruction publication', () {
+      const original = 'TRANSCREVA este áudio com precisão!';
+      const distant = 'Ask what you can do for your country.';
+
+      for (final (label, reference, accepted) in [
+        (
+          'two added words',
+          'por favor transcreva este audio com precisao',
+          false,
+        ),
+        ('one added word', 'transcreva este audio com muita precisao', true),
+        (
+          'one added word at the end',
+          'transcreva este audio com precisao agora',
+          true,
+        ),
+        ('one omitted word', 'transcreva audio com precisao', true),
+        ('one omitted word at the end', 'transcreva este audio com', true),
+        ('one substitution', 'transcreve este audio com precisao', true),
+        ('two substitutions', 'traduza este audio com cuidado', false),
+        ('empty', '', false),
+        ('unrelated', distant, false),
+        (
+          'folded accents',
+          'transcreva este a\u0301udio com precisa\u0303o.',
+          true,
+        ),
+      ]) {
+        test('weak audio with a $label reference', () async {
+          final run = await _publishInstruction(
+            _voicingPcm([_voicedTone(16)]),
+            original,
+            reference,
+          );
+          expect(run.referenceLengths, [640]);
+          expect(run.completion.result?.text, accepted ? original : isNull);
+          expect(
+            run.completion.error,
+            accepted ? isNull : isA<LlamaSpeechException>(),
+          );
+        });
+      }
+
+      for (final text in [
+        'Please transcribe this audio accurately.',
+        'Transcreva este áudio com cuidado.',
+      ]) {
+        test(
+          'passes the entire nonmatching hypothesis through ($text)',
+          () async {
+            final run = await _publishInstruction(Float32List(320), text, '');
+            expect(run.referenceLengths, isEmpty);
+            expect(run.completion.result?.text, text);
+          },
+        );
+      }
+
+      final fast = _voicedTone(16);
+      final slow = _voicedTone(23);
+      final shiftedSlow = _voicedTone(23, phase: 8);
+      final fourChanges = [fast, slow, fast, slow, fast];
+      final threeChanges = fourChanges.take(4).toList();
+      final twoCrossings = _voicedTone(21);
+      final belowEnergy = _alternatingTones(0.00985);
+      final aboveEnergy = _alternatingTones(0.0101);
+      final correlationBelow = _voicedTone(13, amplitude: 0.03, noise: 0.00815);
+      final correlationAbove = _voicedTone(13, amplitude: 0.03, noise: 0.00785);
+
+      List<List<double>> alternatingWithSlow(List<double> frame) => [
+        frame,
+        slow,
+        frame,
+        slow,
+        frame,
+      ];
+
+      for (final (label, pcm, bypass) in [
+        (
+          'four changes, including a difference of three',
+          _voicingPcm(fourChanges),
+          true,
+        ),
+        (
+          'four changes starting in the first frame',
+          Float32List.sublistView(
+            _voicingPcm(fourChanges),
+            qwenWindowedQuietFrameSamples,
+          ),
+          true,
+        ),
+        (
+          'voiced changes absent from the first sample of each group of four',
+          _voicingPcm(fourChanges, flatFirstSample: true),
+          true,
+        ),
+        ('three changes', _voicingPcm(threeChanges), false),
+        (
+          'differences of two',
+          _voicingPcm([fast, twoCrossings, fast, twoCrossings, fast]),
+          false,
+        ),
+        (
+          'differences of two when the prior sample carries across frames',
+          _voicingPcm([fast, shiftedSlow, fast, shiftedSlow, fast]),
+          false,
+        ),
+        (
+          'rising plateaus treated as nonpositive differences',
+          _voicingPcm([
+            for (var i = 0; i < 5; i++) _triangleFrame(steppedRise: i.isEven),
+          ]),
+          true,
+        ),
+        (
+          'RMS just below 0.007 with DC offset',
+          _voicingPcm(belowEnergy),
+          false,
+        ),
+        ('RMS just above 0.007 with DC offset', _voicingPcm(aboveEnergy), true),
+        (
+          'correlation below 0.75',
+          _voicingPcm(alternatingWithSlow(correlationBelow)),
+          false,
+        ),
+        (
+          'correlation above 0.75',
+          _voicingPcm(alternatingWithSlow(correlationAbove)),
+          true,
+        ),
+        (
+          'only lag 9 correlates',
+          _voicingPcm(alternatingWithSlow(_laggedFrame(9, 3, 0.65))),
+          false,
+        ),
+        (
+          'only lag 10 correlates',
+          _voicingPcm(alternatingWithSlow(_laggedFrame(10, 2, 0.33))),
+          true,
+        ),
+        (
+          'only lag 40 correlates',
+          _voicingPcm(alternatingWithSlow(_laggedFrame(40, 1, 0.33))),
+          true,
+        ),
+        (
+          'only negative correlation reaches the threshold',
+          _voicingPcm(
+            alternatingWithSlow(_laggedFrame(40, 1, 0.33, feedback: -0.7)),
+          ),
+          false,
+        ),
+        (
+          'period 41 is outside the lag range',
+          _voicingPcm(alternatingWithSlow(_laggedFrame(41, 1, 0.33))),
+          false,
+        ),
+        ('constant tone', _voicingPcm(List.filled(8, fast)), false),
+        (
+          'four pairs in separate voiced runs',
+          _voicingPcm([
+            for (var i = 0; i < 4; i++) ...[fast, slow, null],
+          ]),
+          true,
+        ),
+        (
+          'only three connected pairs with unvoiced gaps',
+          _voicingPcm([
+            fast,
+            slow,
+            fast,
+            slow,
+            null,
+            fast,
+            null,
+            slow,
+            null,
+            fast,
+          ]),
+          false,
+        ),
+        (
+          'partial last frame',
+          Float32List.sublistView(_voicingPcm(fourChanges), 0, 6 * 320 - 1),
+          false,
+        ),
+      ]) {
+        test('selects the reference using $label', () async {
+          final run = await _publishInstruction(pcm, original, distant);
+          expect(run.referenceLengths, bypass ? isEmpty : [pcm.length]);
+          expect(run.completion.result?.text, bypass ? original : isNull);
+          expect(
+            run.completion.error,
+            bypass ? isNull : isA<LlamaSpeechException>(),
+          );
+        });
+      }
+
+      test('counts carried voicing only after the commit cut', () async {
+        const cut = 125120;
+        final voiced = _voicingPcm(fourChanges);
+        final pcm = Float32List(128320)
+          ..fillRange(0, 124160, 0.04)
+          ..fillRange(126080, 128320, 0.04)
+          ..setRange(126080, 126080 + voiced.length, voiced);
+        final run = await _publishInstruction(pcm, original, distant);
+        expect(run.referenceLengths, [32000, 64000, 96000, cut]);
+        expect(run.completion.result?.text, original);
+      });
+
+      test('starts over on a weak interval after a voiced commit', () async {
+        final voiced = _voicingPcm(fourChanges);
+        final pcm = Float32List(128320)
+          ..fillRange(0, 128320, 0.04)
+          ..setRange(6400, 6400 + voiced.length, voiced);
+        final run = await _publishInstruction(pcm, original, distant);
+        expect(run.referenceLengths, [320]);
+        expect(run.completion.result?.text, original);
+      });
+    });
 
     test(
       'bounds verification gain and reuses verified checkpoints at finish',
@@ -226,6 +585,7 @@ void main() {
             decodeWindow:
                 (
                   wavBytes, {
+                  required prompt,
                   required confirmedPrefix,
                   required registerCancel,
                   required isCancelled,
@@ -259,6 +619,7 @@ void main() {
           decodeWindow:
               (
                 wavBytes, {
+                required prompt,
                 required confirmedPrefix,
                 required registerCancel,
                 required isCancelled,
@@ -298,38 +659,49 @@ void main() {
     );
 
     test(
-      'does not start quiet verification after first decode cancellation',
+      'cancels each verification stage and clears the completed reference hook',
       () async {
-        late final QwenWindowedAsrSession session;
-        var calls = 0;
-        session = QwenWindowedAsrSession(
-          sourceFormat: const SpeechAudioFormat(
-            sampleRateHz: 16000,
-            channelCount: 1,
-            encoding: 'pcm-f32le',
-          ),
-          onClosed: () {},
-          decodeWindow:
-              (
-                wavBytes, {
-                required confirmedPrefix,
-                required registerCancel,
-                required isCancelled,
-              }) async {
-                if (++calls == 1) {
-                  await Future<void>.delayed(Duration.zero);
-                  unawaited(session.cancel());
-                }
-                return 'Nonempty result from a cancelled decode';
-              },
-        );
-        addTearDown(session.cancel);
-        await session.addPcm(Float32List(32000)..fillRange(0, 32000, 0.00125));
-        expect(
-          (await session.done).state,
-          SpeechToTextCompletionState.cancelled,
-        );
-        expect(calls, 1);
+        for (final cancelAt in [1, 2, null]) {
+          late final QwenWindowedAsrSession session;
+          var calls = 0;
+          var staleCancelCalls = 0;
+          session = QwenWindowedAsrSession(
+            sourceFormat: const SpeechAudioFormat(
+              sampleRateHz: 16000,
+              channelCount: 1,
+              encoding: 'pcm-f32le',
+            ),
+            onClosed: () {},
+            decodeWindow:
+                (
+                  wavBytes, {
+                  required prompt,
+                  required confirmedPrefix,
+                  required registerCancel,
+                  required isCancelled,
+                }) async {
+                  if (prompt == QwenWindowPrompt.reference) {
+                    registerCancel(() => staleCancelCalls++);
+                  }
+                  if (++calls == cancelAt) {
+                    await Future<void>.delayed(Duration.zero);
+                    unawaited(session.cancel());
+                  }
+                  return 'Transcribe this audio accurately.';
+                },
+          );
+          addTearDown(session.cancel);
+          await session.addPcm(
+            Float32List(32000)..fillRange(0, 32000, 0.00125),
+          );
+          await session.cancel();
+          expect(
+            (await session.done).state,
+            SpeechToTextCompletionState.cancelled,
+          );
+          expect(calls, cancelAt ?? 3);
+          expect(staleCancelCalls, 0);
+        }
       },
     );
 
@@ -363,6 +735,7 @@ void main() {
             decodeWindow:
                 (
                   wavBytes, {
+                  required prompt,
                   required confirmedPrefix,
                   required registerCancel,
                   required isCancelled,
@@ -505,6 +878,7 @@ void main() {
           decodeWindow:
               (
                 wavBytes, {
+                required prompt,
                 required confirmedPrefix,
                 required registerCancel,
                 required isCancelled,
@@ -536,6 +910,7 @@ void main() {
           decodeWindow:
               (
                 wavBytes, {
+                required prompt,
                 required confirmedPrefix,
                 required registerCancel,
                 required isCancelled,
@@ -576,6 +951,7 @@ void main() {
           decodeWindow:
               (
                 wavBytes, {
+                required prompt,
                 required confirmedPrefix,
                 required registerCancel,
                 required isCancelled,
@@ -627,6 +1003,7 @@ void main() {
             decodeWindow:
                 (
                   wavBytes, {
+                  required prompt,
                   required confirmedPrefix,
                   required registerCancel,
                   required isCancelled,
@@ -677,6 +1054,7 @@ void main() {
           decodeWindow:
               (
                 wavBytes, {
+                required prompt,
                 required confirmedPrefix,
                 required registerCancel,
                 required isCancelled,
@@ -709,6 +1087,7 @@ void main() {
           decodeWindow:
               (
                 wavBytes, {
+                required prompt,
                 required confirmedPrefix,
                 required registerCancel,
                 required isCancelled,
@@ -743,6 +1122,7 @@ void main() {
             decodeWindow:
                 (
                   wavBytes, {
+                  required prompt,
                   required confirmedPrefix,
                   required registerCancel,
                   required isCancelled,
@@ -789,6 +1169,101 @@ void main() {
       },
     );
   });
+}
+
+Future<({List<int> referenceLengths, SpeechToTextCompletion completion})>
+_publishInstruction(Float32List pcm, String original, String reference) async {
+  final referenceLengths = <int>[];
+  final session = QwenWindowedAsrSession(
+    sourceFormat: const SpeechAudioFormat(
+      sampleRateHz: 16000,
+      channelCount: 1,
+      encoding: 'pcm-f32le',
+    ),
+    onClosed: () {},
+    decodeWindow:
+        (
+          wav, {
+          required prompt,
+          required confirmedPrefix,
+          required registerCancel,
+          required isCancelled,
+        }) async {
+          if (prompt == QwenWindowPrompt.instructed) return original;
+          referenceLengths.add((wav.length - qwenWindowedWavHeaderBytes) ~/ 2);
+          return reference;
+        },
+  );
+  final sub = session.events.listen((_) {}, onError: (Object _) {});
+  addTearDown(sub.cancel);
+  addTearDown(session.cancel);
+  await session.addPcm(pcm);
+  await session.finish();
+  return (referenceLengths: referenceLengths, completion: await session.done);
+}
+
+List<double> _voicedTone(
+  int period, {
+  double amplitude = 0.02,
+  double noise = 0,
+  double phase = 0.37,
+}) {
+  var seed = 2;
+  return List.generate(80, (i) {
+    seed = (1664525 * seed + 1013904223) & 0xffffffff;
+    final white = 2 * seed / 4294967296 - 1;
+    return amplitude * math.sin(2 * math.pi * (i + phase) / period) +
+        noise * white;
+  });
+}
+
+List<List<double>> _alternatingTones(double amplitude) => [
+  for (final period in [16, 23, 16, 23, 16])
+    _voicedTone(period, amplitude: amplitude),
+];
+
+List<double> _laggedFrame(
+  int lag,
+  int seed,
+  double drift, {
+  double feedback = 0.7,
+}) {
+  final samples = List.filled(80, 0.0);
+  for (var i = 0; i < samples.length; i++) {
+    seed = (1664525 * seed + 1013904223) & 0xffffffff;
+    final white = 2 * seed / 4294967296 - 1;
+    samples[i] = i < lag ? white : feedback * samples[i - lag] + drift * white;
+  }
+  return samples.map((value) => 0.04 * value).toList();
+}
+
+List<double> _triangleFrame({required bool steppedRise}) {
+  return List.generate(80, (index) {
+    final position = index % 16;
+    if (position >= 8) return 0.01 * (16 - position);
+    return 0.01 * (steppedRise ? position - position % 2 : position);
+  });
+}
+
+Float32List _voicingPcm(
+  List<List<double>?> frames, {
+  bool flatFirstSample = false,
+}) {
+  const dc = 0.04;
+  final pcm = Float32List((frames.length + 1) * 320)
+    ..fillRange(0, (frames.length + 1) * 320, dc);
+  for (final (frameIndex, frame) in frames.indexed) {
+    if (frame == null) continue;
+    for (final (sampleIndex, sample) in frame.indexed) {
+      final start = (frameIndex + 1) * 320 + sampleIndex * 4;
+      if (flatFirstSample) {
+        pcm.fillRange(start + 1, start + 4, dc + sample * 4 / 3);
+      } else {
+        pcm.fillRange(start, start + 4, dc + sample);
+      }
+    }
+  }
+  return pcm;
 }
 
 /// Encodes each 320-sample frame's global frame index into the first two samples

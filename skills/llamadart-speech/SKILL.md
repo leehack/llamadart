@@ -69,13 +69,22 @@ description: >-
     A nonempty quiet decode may take a second pass at higher gain before
     publishing text, including during the `finish()` flush. An empty second
     decode suppresses the hypothesis and keeps later decodes of that window
-    subject to verification. Background noise can still affect accuracy.
+    subject to verification. When the entire window transcript matches the
+    default instruction or a known Portuguese variant, changing voiced speech
+    preserves the original wording. Otherwise an audio-only decode of the
+    original audio must corroborate it within one word edit. The extra decode
+    can delay a partial or the final flush. Quiet or misrecognized dictation can
+    be dropped, including whispered (even at normal levels), sung, robotic, or
+    very low-pitched (below about 100 Hz) dictation of the exact instruction.
+    If no final text survives, the session completes with an empty-transcript
+    error. Other echoes can still appear.
     A full buffer commits at a quiet boundary or hard-cuts at 8 s, which can
     split a word. Confirmed windows
     join with `\n`, empty intermediate windows are suppressed, and
     `maxOutputTokens` applies per decode (`1024` for `startStream`).
     Rejects context prompts and language hints. `capabilities.inputMode` is
-    `windowed`. Evidence so far covers only English on macOS arm64 CPU.
+    `windowed`. Windowed evidence on macOS arm64 CPU includes English speech
+    and dictated-instruction controls in English and Portuguese.
   - Native llama.cpp live PCM ASR (cumulative confirmed partials, then a
     final transcript): `LlamaCppLiveAsrAdapter` with a Voxtral Realtime or
     LFM3-Audio GGUF as `source` and its audio mmproj as `projector` (leave

@@ -117,16 +117,17 @@ int _countOccurrences(String haystack, String needle) {
 
 Future<
   ({
-    String text,
-    Duration duration,
+    SpeechToTextCompletion completion,
     List<SpeechToTextPartialEvent> partials,
+    List<SpeechToTextFinalEvent> finals,
     Duration? firstPendingWall,
     Duration? firstConfirmedWall,
     List<int> pushMicros,
+    int finishMicros,
     int maxRssBytes,
   })
 >
-_streamChunks(
+_collectStream(
   SpeechToTextEngine engine,
   Float32List pcm,
   List<int> chunkSizes, {
@@ -140,68 +141,142 @@ _streamChunks(
   Duration? firstConfirmedWall;
   var maxRssBytes = ProcessInfo.currentRss;
 
-  final sub = session.events.listen((event) {
-    switch (event) {
-      case SpeechToTextPartialEvent():
-        partials.add(event);
-        if (firstPendingWall == null &&
-            (event.pendingText?.isNotEmpty ?? false)) {
-          firstPendingWall = stopwatch.elapsed;
-        }
-        if (firstConfirmedWall == null &&
-            (event.confirmedText?.isNotEmpty ?? false)) {
-          firstConfirmedWall = stopwatch.elapsed;
-        }
-      case SpeechToTextFinalEvent():
-        finals.add(event);
-    }
-  });
+  final drained = Completer<void>();
+  final sub = session.events.listen(
+    (event) {
+      switch (event) {
+        case SpeechToTextPartialEvent():
+          partials.add(event);
+          if (firstPendingWall == null &&
+              (event.pendingText?.isNotEmpty ?? false)) {
+            firstPendingWall = stopwatch.elapsed;
+          }
+          if (firstConfirmedWall == null &&
+              (event.confirmedText?.isNotEmpty ?? false)) {
+            firstConfirmedWall = stopwatch.elapsed;
+          }
+        case SpeechToTextFinalEvent():
+          finals.add(event);
+      }
+    },
+    onError: (Object _) {},
+    onDone: drained.complete,
+  );
 
   final pushMicros = <int>[];
   final pushWatch = Stopwatch();
   var pos = 0;
   var chunkIndex = 0;
   var audioSeconds = 0.0;
-  while (pos < pcm.length) {
-    final size = chunkSizes[chunkIndex % chunkSizes.length];
-    final end = min(pos + size, pcm.length);
-    final slice = Float32List.sublistView(pcm, pos, end);
-    if (paced) {
-      final targetWallMicros = (audioSeconds * 1000000).round();
-      final lag = targetWallMicros - stopwatch.elapsedMicroseconds;
-      if (lag > 0) {
-        await Future<void>.delayed(Duration(microseconds: lag));
+  try {
+    while (pos < pcm.length) {
+      final size = chunkSizes[chunkIndex % chunkSizes.length];
+      final end = min(pos + size, pcm.length);
+      final slice = Float32List.sublistView(pcm, pos, end);
+      if (paced) {
+        final targetWallMicros = (audioSeconds * 1000000).round();
+        final lag = targetWallMicros - stopwatch.elapsedMicroseconds;
+        if (lag > 0) {
+          await Future<void>.delayed(Duration(microseconds: lag));
+        }
       }
+      pushWatch
+        ..reset()
+        ..start();
+      await session.addPcm(slice);
+      pushWatch.stop();
+      pushMicros.add(pushWatch.elapsedMicroseconds);
+      final rss = ProcessInfo.currentRss;
+      if (rss > maxRssBytes) {
+        maxRssBytes = rss;
+      }
+      audioSeconds += (end - pos) / 16000.0;
+      pos = end;
+      chunkIndex++;
     }
-    pushWatch
-      ..reset()
-      ..start();
-    await session.addPcm(slice);
-    pushWatch.stop();
-    pushMicros.add(pushWatch.elapsedMicroseconds);
-    final rss = ProcessInfo.currentRss;
-    if (rss > maxRssBytes) {
-      maxRssBytes = rss;
-    }
-    audioSeconds += (end - pos) / 16000.0;
-    pos = end;
-    chunkIndex++;
+    final finishWatch = Stopwatch()..start();
+    await session.finish();
+    finishWatch.stop();
+    final completion = await session.done;
+    await drained.future;
+    return (
+      completion: completion,
+      partials: partials,
+      finals: finals,
+      firstPendingWall: firstPendingWall,
+      firstConfirmedWall: firstConfirmedWall,
+      pushMicros: pushMicros,
+      finishMicros: finishWatch.elapsedMicroseconds,
+      maxRssBytes: maxRssBytes,
+    );
+  } finally {
+    await sub.cancel();
+    await session.cancel();
   }
-  await session.finish();
-  final completion = await session.done;
-  await sub.cancel();
-  stopwatch.stop();
+}
 
-  expect(completion.state, SpeechToTextCompletionState.completed);
-  expect(finals, hasLength(1));
+Future<
+  ({
+    String text,
+    Duration duration,
+    List<SpeechToTextPartialEvent> partials,
+    Duration? firstPendingWall,
+    Duration? firstConfirmedWall,
+    List<int> pushMicros,
+    int finishMicros,
+    int maxRssBytes,
+  })
+>
+_streamChunks(
+  SpeechToTextEngine engine,
+  Float32List pcm,
+  List<int> chunkSizes, {
+  bool paced = false,
+}) async {
+  final run = await _collectStream(engine, pcm, chunkSizes, paced: paced);
+  expect(run.completion.state, SpeechToTextCompletionState.completed);
+  expect(run.finals, hasLength(1));
+  expect(run.finals.single.result, run.completion.result);
+  final result = run.finals.single.result;
   return (
-    text: finals.single.result.text,
-    duration: finals.single.result.audioDuration!,
-    partials: partials,
-    firstPendingWall: firstPendingWall,
-    firstConfirmedWall: firstConfirmedWall,
-    pushMicros: pushMicros,
-    maxRssBytes: maxRssBytes,
+    text: result.text,
+    duration: result.audioDuration!,
+    partials: run.partials,
+    firstPendingWall: run.firstPendingWall,
+    firstConfirmedWall: run.firstConfirmedWall,
+    pushMicros: run.pushMicros,
+    finishMicros: run.finishMicros,
+    maxRssBytes: run.maxRssBytes,
+  );
+}
+
+Future<void> _expectEmptyStream(
+  SpeechToTextEngine engine,
+  Float32List pcm,
+  int checkpoints,
+) async {
+  final run = await _collectStream(engine, pcm, [4000]);
+  expect(
+    {
+      'partials': run.partials
+          .map((event) => (event.text, event.confirmedText, event.pendingText))
+          .toList(),
+      'finals': run.finals.map((event) => event.result.text).toList(),
+      'state': run.completion.state,
+      'result': run.completion.result?.text,
+      'error': run.completion.error,
+    },
+    {
+      'partials': List.filled(checkpoints, ('', '', '')),
+      'finals': isEmpty,
+      'state': SpeechToTextCompletionState.failed,
+      'result': isNull,
+      'error': isA<LlamaSpeechException>().having(
+        (error) => error.message,
+        'message',
+        'Speech recognition produced an empty transcript.',
+      ),
+    },
   );
 }
 
@@ -220,6 +295,7 @@ void main() {
   );
   final secondAudioPath = secondAudioOverride ?? _defaultSecondWav;
   final runPaced = Platform.environment['LLAMADART_STT_LIVE_PACED'] == '1';
+  final echoFixtureDir = _envFile('LLAMADART_STT_WINDOWED_ECHO_FIXTURES');
 
   const params = ModelParams(
     preferredBackend: GpuBackend.cpu,
@@ -532,6 +608,152 @@ void main() {
     }
   });
 
+  Future<SpeechToTextEngine> loadWindowed(String model, String projector) {
+    return SpeechToTextEngine.load(
+      SpeechToTextModel(
+        ModelSource.path(model),
+        projector: ModelSource.path(projector),
+        adapter: const Qwen3WindowedAsrAdapter(),
+      ),
+      params: params,
+    );
+  }
+
+  test('Qwen3-ASR suppresses the DC offset 0.008 instruction echo', () async {
+    if (modelPath == null || projectorPath == null) {
+      markTestSkipped('Set the Qwen model and projector paths.');
+      return;
+    }
+
+    final engine = await loadWindowed(modelPath, projectorPath);
+    try {
+      final pcm = _quietNoise(96000, 257);
+      for (var i = 0; i < pcm.length; i++) {
+        pcm[i] += 0.008;
+      }
+      _addThump(pcm, 45600, 3200, 0.25, seed: 412, decay: 2);
+      expect(
+        sha256.convert(Uint8List.sublistView(pcm)).toString(),
+        'db6bd09f3b116398c0ff0ecdf935025ccf18edd657928d5769a9bbad39aa1e29',
+      );
+
+      await _expectEmptyStream(engine, pcm, 3);
+    } finally {
+      await engine.dispose();
+    }
+  });
+
+  test('Qwen3-ASR suppresses the original 100 ms thump partial', () async {
+    if (modelPath == null || projectorPath == null) {
+      markTestSkipped('Set the Qwen model and projector paths.');
+      return;
+    }
+    final engine = await loadWindowed(modelPath, projectorPath);
+    try {
+      final pcm = _quietNoise(96000, 257);
+      _addThump(pcm, 50000, 1600, 0.3, seed: 99, decay: 3);
+      expect(
+        sha256.convert(Uint8List.sublistView(pcm)).toString(),
+        'c93d65754a8bb5649324fcb6433c5b560aa91f059970f4ecba7a3bca9b8f2ba4',
+      );
+      await _expectEmptyStream(engine, pcm, 3);
+    } finally {
+      await engine.dispose();
+    }
+  });
+
+  for (final brownTail in [false, true]) {
+    test(
+      'Qwen3-ASR preserves speech before the ${brownTail ? 'brown noise' : '300 ms thump'} tail',
+      () async {
+        if (modelPath == null ||
+            projectorPath == null ||
+            (brownTail && echoFixtureDir == null)) {
+          markTestSkipped(
+            'Set the Qwen model, projector and echo fixture paths.',
+          );
+          return;
+        }
+        final engine = await loadWindowed(modelPath, projectorPath);
+        try {
+          final speech = _decodeWavPcm16Mono16k(_defaultSecondWav);
+          final Float32List tail;
+          if (brownTail) {
+            final brown = _hashedWav(
+              echoFixtureDir!,
+              'i2088-brown.wav',
+              'df71c04f2f103a896b5120e6bec5e8ef6868db9a6af58de5a3cd3daea72aee01',
+            );
+            tail = _repeatPcm(brown, 5);
+            _scaleRms(tail, 0.008);
+          } else {
+            tail = _quietNoise(80000, 327);
+            _addThump(tail, 40000, 4800, 0.15, seed: 4242, decay: 3);
+          }
+          final pcm = Float32List(192000)
+            ..setRange(0, speech.length, speech)
+            ..setRange(112000, 192000, tail);
+          final run = await _streamChunks(engine, pcm, [4000]);
+          final expected =
+              '${brownTail ? 'Mr.' : 'Mister.'} Quilter is the '
+              'apostle of the middle classes, and we are glad to welcome his gospel.';
+          expect(run.text, expected);
+          expect(run.partials.map((event) => event.text), [
+            'Mr. Quilter is the apostle.',
+            'Mr. Quilter is the apostle of the middle classes, and we are glad.',
+            'Mr. Quilter is the apostle of the middle classes, and we are glad to welcome his gospel.',
+            expected,
+            expected,
+            expected,
+          ]);
+          expect(
+            run.partials
+                .skip(3)
+                .map((event) => (event.confirmedText, event.pendingText)),
+            everyElement((expected, '')),
+          );
+        } finally {
+          await engine.dispose();
+        }
+      },
+    );
+  }
+
+  test('Qwen3-ASR preserves the original thump plus gospel behavior', () async {
+    if (modelPath == null || projectorPath == null) {
+      markTestSkipped('Set the Qwen model and projector paths.');
+      return;
+    }
+    final engine = await loadWindowed(modelPath, projectorPath);
+    try {
+      final speech = _decodeWavPcm16Mono16k(_defaultSecondWav);
+      final word = Float32List.sublistView(speech, 77500, 86700);
+      final activeThreshold =
+          word.map((sample) => sample.abs()).reduce(max) * 0.02;
+      final active = Float32List.fromList(
+        word.where((sample) => sample.abs() > activeThreshold).toList(),
+      );
+      final gain = 0.0004 / _rms(active);
+      final isolated = Float32List(64000);
+      final withThump = _quietNoise(64000, 327);
+      for (var i = 0; i < word.length; i++) {
+        isolated[51760 + i] = word[i] * gain;
+        withThump[51760 + i] += isolated[51760 + i];
+      }
+      _addThump(withThump, 50000, 1760, 0.08, seed: 412, decay: 2);
+      expect(
+        sha256.convert(Uint8List.sublistView(withThump)).toString(),
+        '56a88a49db04cea2abe1306ed211d06def7319006f95362459d6db91e05f2610',
+      );
+      await _expectEmptyStream(engine, withThump, 2);
+      final control = await _streamChunks(engine, isolated, [4000]);
+      expect(control.text, 'Gospel.');
+      expect(control.partials.map((event) => event.text), ['', 'Gospel.']);
+    } finally {
+      await engine.dispose();
+    }
+  });
+
   test(
     'Qwen3-ASR retains the spoken Portuguese instruction at low gain',
     () async {
@@ -546,20 +768,10 @@ void main() {
         return;
       }
 
-      final engine = await SpeechToTextEngine.load(
-        SpeechToTextModel(
-          ModelSource.path(modelPath),
-          projector: ModelSource.path(projectorPath),
-          adapter: const Qwen3WindowedAsrAdapter(),
-        ),
-        params: params,
-      );
+      final engine = await loadWindowed(modelPath, projectorPath);
       try {
         final speech = _decodeWavPcm16Mono16k(spokenPath);
-        final gain = 0.00125 / _rms(speech);
-        for (var i = 0; i < speech.length; i++) {
-          speech[i] *= gain;
-        }
+        _scaleRms(speech, 0.00125);
         final run = await _streamChunks(engine, speech, [4000]);
         expect(
           run.text.trim().toLowerCase().replaceFirst(RegExp(r'[.!?]$'), ''),
@@ -570,6 +782,229 @@ void main() {
       }
     },
   );
+
+  test('Qwen3-ASR retains eight spoken instruction controls', () async {
+    if (modelPath == null || projectorPath == null || echoFixtureDir == null) {
+      markTestSkipped('Set the Qwen model, projector and echo fixture paths.');
+      return;
+    }
+    final engine = await loadWindowed(modelPath, projectorPath);
+    try {
+      for (final (name, hash, expected) in [
+        (
+          'en',
+          '8cdd984e63bea0abab656330e182839b74c1b01f80d23bb10d792d70b77c06e2',
+          'Transcribe this audio accurately.',
+        ),
+        (
+          'pt-short',
+          'b5071e36e8f8969dbb270abc67ee25046222bba4aa8339cf85b0bdd2f887088b',
+          'transcreva este áudio',
+        ),
+        (
+          'pt-alt',
+          '2f6728cd6458ea76f89feff4dbc08a7b7b3abe4f581243331e7f27a4483af4e7',
+          'transcreva este áudio acertadamente',
+        ),
+        (
+          'pt-long',
+          'fb27050e1388d58f336060f20dcd0704e1745c6d82713e7c29bc1e559cc12530',
+          'Por favor, transcreva este áudio com precisão para o relatório.',
+        ),
+      ]) {
+        final samples = _hashedWav(echoFixtureDir, 'i2088-$name.wav', hash);
+        for (final level in [0.00125, 0.04]) {
+          final pcm = Float32List.fromList(samples);
+          _scaleRms(pcm, level);
+          final run = await _streamChunks(engine, pcm, [4000]);
+          final partials = switch ((name, level)) {
+            ('pt-alt', 0.00125) => ['transcreva este áudio acerca da'],
+            ('pt-alt', _) => [expected],
+            ('pt-long', _) => [
+              startsWith('Por favor, transcreva '),
+              allOf(
+                startsWith('Por favor, transcreva '),
+                endsWith('com precisão para o relatório.'),
+              ),
+            ],
+            _ => <String>[],
+          };
+          expect(run.text, expected, reason: '$name RMS $level');
+          expect(
+            run.partials.map((event) => event.text),
+            partials,
+            reason: '$name RMS $level',
+          );
+        }
+      }
+    } finally {
+      await engine.dispose();
+    }
+  });
+
+  const quilter =
+      'Mr. Quilter is the apostle of the middle classes, and we are glad to welcome his gospel.';
+  const samantha = '$quilter\nTranscribe this audio accurately.';
+  const jfk =
+      'And so, my fellow Americans, ask not what your country can do for you.';
+  for (final (name, hash, expected, partials) in [
+    (
+      'samantha-afterlibri',
+      '9bf017575f81c8b412f08b9b25f84214de7f7f58e109363538293f5ce87032e8',
+      samantha,
+      [
+        'Mr. Quilter is the apostle.',
+        'Mr. Quilter is the apostle of the middle classes, and we are glad.',
+        quilter,
+        quilter,
+        samantha,
+      ],
+    ),
+    (
+      'eddy-0.04',
+      'a188fe010cacefb9198d40e6fcfb4526a71dfebdcf09a2fb12b6ca883b22f356',
+      'Transcreva este áudio com precisão.',
+      ['Transcreva este áudio com'],
+    ),
+    (
+      'joana-0.00125',
+      '64ba1331ab712c2f10b743e1dd955f26dbd8b83135f8b6b5687b74b5a24f4be2',
+      'Transcreva este áudio acertadamente.',
+      ['transcreva este áudio assim'],
+    ),
+    (
+      'jfk-floportu',
+      '1820cfb3a22fa52b3f3d520bd895ae53b4a49bf4295e4bdd5aadc2455716ee93',
+      '$jfk\nTranscreva este audio com precisão.',
+      [
+        'And so, my fellow Americans.',
+        'And so, my fellow Americans, ask.',
+        'And so, my fellow Americans, ask not what your country.',
+        jfk,
+        '$jfk\nAsk what you can do for your.',
+        '$jfk\nAsk what you can do for your country.',
+        '$jfk\nAsk what you can do for your country.',
+      ],
+    ),
+  ]) {
+    test('Qwen3-ASR retains audited dictation ($name)', () async {
+      if (modelPath == null ||
+          projectorPath == null ||
+          echoFixtureDir == null) {
+        markTestSkipped(
+          'Set the Qwen model, projector and echo fixture paths.',
+        );
+        return;
+      }
+      final pcm = _hashedFloatPcm(
+        File.fromUri(
+          Directory(echoFixtureDir).absolute.uri.resolve('i2088b-$name.f32le'),
+        ),
+        hash,
+      );
+      final engine = await loadWindowed(modelPath, projectorPath);
+      try {
+        final run = await _collectStream(engine, pcm, [4000]);
+        expect(
+          {
+            'partials': run.partials.map((event) => event.text).toList(),
+            'finals': run.finals.map((event) => event.result.text).toList(),
+            'state': run.completion.state,
+            'result': run.completion.result?.text,
+            'error': run.completion.error,
+          },
+          {
+            'partials': partials,
+            'finals': [expected],
+            'state': SpeechToTextCompletionState.completed,
+            'result': expected,
+            'error': isNull,
+          },
+        );
+      } finally {
+        await engine.dispose();
+      }
+    });
+  }
+
+  test(
+    'Qwen3-ASR known limitation: whispered instruction can be dropped',
+    () async {
+      final whisperPath = _envFile('LLAMADART_STT_WINDOWED_WHISPER_PCM_PATH');
+      if (modelPath == null || projectorPath == null || whisperPath == null) {
+        markTestSkipped(
+          'Set the Qwen model, projector and whispered PCM paths.',
+        );
+        return;
+      }
+      final pcm = _hashedFloatPcm(
+        File(whisperPath),
+        '89e7a073a8d37057f12bcda69a26538ddd2de1fc9c5bf17e0b183cd9ccb9ad5c',
+      );
+      final engine = await loadWindowed(modelPath, projectorPath);
+      try {
+        final run = await _collectStream(engine, pcm, [4000]);
+        expect(run.finals, isEmpty);
+        expect(run.completion.state, SpeechToTextCompletionState.failed);
+        expect(run.completion.result, isNull);
+        expect(
+          run.completion.error,
+          isA<LlamaSpeechException>().having(
+            (error) => error.message,
+            'message',
+            'Speech recognition produced an empty transcript.',
+          ),
+        );
+      } finally {
+        await engine.dispose();
+      }
+    },
+  );
+
+  for (final (name, hash) in [
+    (
+      'faint tone',
+      '3fbe9988176f28b2de77842cad937da9b26be358846cd43a85bc7a2bd9cbee5b',
+    ),
+    (
+      'loud tone',
+      '78ed154c0e3a8591528360d6b125a3e3b3f09da8d0b5b7f627bf7100a7543256',
+    ),
+    (
+      'loud filtered noise',
+      'b1caf4d67c67213d12b82527911567d21460411e0d6e7f38dde02dc00e0e0ed3',
+    ),
+  ]) {
+    test('Qwen3-ASR rejects a noise burst ($name)', () async {
+      if (modelPath == null || projectorPath == null) {
+        markTestSkipped('Set the Qwen model and projector paths.');
+        return;
+      }
+      final pcm = _quietNoise(96000, 257);
+      for (var i = 0; i < pcm.length; i++) {
+        pcm[i] += 0.008;
+      }
+      final faint = name == 'faint tone';
+      final offset = faint ? 5000 : 4000;
+      final samples = faint ? 6400 : 10400;
+      final filtered = _quietNoise(samples, 257);
+      for (var i = 0; i < samples; i++) {
+        pcm[offset + i] = switch (name) {
+          'faint tone' => 0.000005 * sin(2 * pi * 200 * i / 16000),
+          'loud tone' => 0.06 * sin(2 * pi * 200 * i / 16000),
+          _ => 32 * filtered[i],
+        };
+      }
+      _addThump(pcm, 45600, 3200, 0.25, seed: 412, decay: 2);
+      expect(sha256.convert(Uint8List.sublistView(pcm)).toString(), hash);
+      final engine = await loadWindowed(modelPath, projectorPath);
+      try {
+        await _expectEmptyStream(engine, pcm, 3);
+      } finally {
+        await engine.dispose();
+      }
+    });
+  }
 
   test(
     'Qwen3-ASR replays all 23 quiet-speech audit controls unchanged',
@@ -599,19 +1034,10 @@ void main() {
       try {
         for (final entry in cases) {
           final name = entry['file']! as String;
-          final samples = File.fromUri(
-            manifest.absolute.uri.resolve(name),
-          ).readAsBytesSync();
-          expect(
-            sha256.convert(samples).toString(),
-            entry['sha256'],
-            reason: name,
+          final pcm = _hashedFloatPcm(
+            File.fromUri(manifest.absolute.uri.resolve(name)),
+            entry['sha256']! as String,
           );
-          final bytes = ByteData.sublistView(samples);
-          final pcm = Float32List(samples.length ~/ 4);
-          for (var i = 0; i < pcm.length; i++) {
-            pcm[i] = bytes.getFloat32(i * 4, Endian.little);
-          }
           final run = await _streamChunks(engine, pcm, [4000]);
           expect(run.text, entry['text'], reason: name);
           expect(
@@ -681,6 +1107,7 @@ void main() {
           'firstConfirmed=${run.firstConfirmedWall}, '
           'p95PushMs=${p95PushMs.toStringAsFixed(1)}, '
           'maxPushMs=${maxPushMs.toStringAsFixed(1)}, '
+          'finishMs=${(run.finishMicros / 1000).toStringAsFixed(1)}, '
           'baselineRssMiB=${(baselineRss / (1024 * 1024)).toStringAsFixed(1)}, '
           'peakRssMiB=${(run.maxRssBytes / (1024 * 1024)).toStringAsFixed(1)}, '
           'deltaRssMiB=${deltaRssMiB.toStringAsFixed(1)}, '
@@ -734,6 +1161,50 @@ double _rms(Float32List pcm) {
     sumSquares += sample * sample;
   }
   return sqrt(sumSquares / pcm.length);
+}
+
+void _scaleRms(Float32List pcm, double target) {
+  final gain = target / _rms(pcm);
+  for (var i = 0; i < pcm.length; i++) {
+    pcm[i] *= gain;
+  }
+}
+
+Float32List _hashedWav(String directory, String name, String hash) {
+  final file = File.fromUri(Directory(directory).absolute.uri.resolve(name));
+  expect(sha256.convert(file.readAsBytesSync()).toString(), hash, reason: name);
+  return _decodeWavPcm16Mono16k(file.path);
+}
+
+Float32List _hashedFloatPcm(File file, String hash) {
+  final samples = file.readAsBytesSync();
+  expect(
+    sha256.convert(samples).toString(),
+    hash,
+    reason: file.uri.pathSegments.last,
+  );
+  final bytes = ByteData.sublistView(samples);
+  final pcm = Float32List(samples.length ~/ 4);
+  for (var i = 0; i < pcm.length; i++) {
+    pcm[i] = bytes.getFloat32(i * 4, Endian.little);
+  }
+  return pcm;
+}
+
+void _addThump(
+  Float32List pcm,
+  int offset,
+  int samples,
+  double peak, {
+  required int seed,
+  required double decay,
+}) {
+  var state = seed;
+  for (var i = 0; i < samples; i++) {
+    state = (1664525 * state + 1013904223) & 0xffffffff;
+    final white = 2 * (state / 4294967296.0) - 1;
+    pcm[offset + i] += peak * white * exp(-decay * i / samples);
+  }
 }
 
 Float32List _quietNoise(int sampleCount, int seed, {double scale = 1.0}) {
