@@ -113,8 +113,28 @@ jobs:
           dart format --output=none --set-exit-if-changed .
           flutter analyze --fatal-infos
           TMPDIR="$(mktemp -d)" flutter test --exclude-tags local-only
-          flutter test --platform chrome test/web_recording_test.dart test/web_platform_acceptance_test.dart test/tool_availability_widget_test.dart
-          python3 -m unittest tool/test/test_android_release_acceptance.py
+      - name: Run Studio UI Chrome tests with bounded shutdown
+        working-directory: packages/llamadart_studio
+        run: >-
+          python3 ../../tool/ci/supervise_chrome_test.py
+          --output-dir "$RUNNER_TEMP/studio-ui-chrome"
+          --reporter-file "$RUNNER_TEMP/studio-ui-chrome/reporter.jsonl"
+          --timeout-seconds 600 --
+          flutter test --platform chrome
+          --file-reporter "json:$RUNNER_TEMP/studio-ui-chrome/reporter.jsonl"
+          test/web_recording_test.dart test/web_platform_acceptance_test.dart
+          test/tool_availability_widget_test.dart
+      - name: Run Studio Android release acceptance unit tests
+        working-directory: packages/llamadart_studio
+        run: python3 -m unittest tool/test/test_android_release_acceptance.py
+      - name: Upload Studio UI Chrome diagnostics
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: studio-ui-chrome-diagnostics
+          path: ${{ runner.temp }}/studio-ui-chrome
+          if-no-files-found: ignore
+          retention-days: 7
 
 
   studio-macos:

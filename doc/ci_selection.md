@@ -339,17 +339,29 @@ full-code speedup or local measurements as GitHub-hosted results.
 
 ## Flutter Chrome test shutdown
 
-Flutter 3.47.1's `flutter test --platform chrome` waits with no timeout for
-Chrome's reply to DevTools `Browser.close`, so it hangs after reporting results
-when Chrome exits before the reply arrives (#1702). Web Chat Contract therefore
-runs its Chrome tests under `tool/ci/supervise_chrome_test.py` with a 10-minute
-deadline and uploads `chat-app-chrome-diagnostics`. If the command is still
-running 30 seconds after its JSON file reporter's `done` event and no browser
-process remains, the supervisor stops it, logs a warning, records
-`browser_close_stall` in `result.json` and exits with the reporter's result: 0
-only when the run succeeded with at least one test, 1 when a test failed. Any
-other stall still fails at the deadline. Browser tests that need no Flutter API
-use `dart test -p chrome`, which stops Chrome with a signal (Model Store).
+`flutter test --platform chrome` in Flutter 3.47.1 and 3.50.0 waits indefinitely
+for Chrome's DevTools `Browser.close` reply if Chrome exits before the reply
+arrives (#1702). Both CI lanes use `tool/ci/supervise_chrome_test.py` with a
+10-minute deadline and always upload their diagnostics.
+
+| CI lane | Flutter pin | Diagnostics artifact |
+| --- | --- | --- |
+| Web Chat Contract | `.flutter-version` (3.47.1) | `chat-app-chrome-diagnostics` |
+| Studio UI browser tests | `packages/llamadart_studio/.flutter-version` (3.50.0) | `studio-ui-chrome-diagnostics` |
+
+If the command is still running 30 seconds after its JSON reporter's `done`
+event and no browser process remains, the supervisor stops it, warns, and
+records `browser_close_stall` in `result.json`. It returns 0 for a successful
+run with at least one test or 1 for a failed test run. Other stalls fail at the
+deadline. Model Store uses `dart test -p chrome`, which stops Chrome with a
+signal and has its own timeout and cleanup diagnostics.
+
+At each independent Flutter pin roll, check that the candidate contains the
+[upstream shutdown fix](https://github.com/flutter/flutter/pull/196211).
+For that lane, suppress the `Browser.close` acknowledgement and confirm that
+raw Flutter exits 0 after the passing suite. Verify Linux child cleanup and
+that a genuine test failure still yields a nonzero exit before retiring that
+lane's reporter recovery. Keep Model Store's Dart runner and diagnostics.
 
 ## Tested Web deployment and previews
 
