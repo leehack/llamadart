@@ -175,7 +175,13 @@ Current default runtime pins:
 | --- | --- |
 | Native llama.cpp / GGUF | `leehack/llamadart-native@v1.0.0-3` |
 | Native LiteRT-LM / `.litertlm` | `leehack/litert-lm-native@v0.19.1-5` |
-| Web llama.cpp / GGUF | `leehack/llama-web-bridge-assets@v0.1.86` |
+| Web llama.cpp / GGUF | `leehack/llama-web-bridge-assets@v0.1.87` |
+
+On thinking-capable Qwen3-Coder XML templates, a generated `<tool_call>`
+ends the thinking budget and generation continues into the call. This needs
+llamadart-native `v1.0.0-4` or a WebGPU bridge core reporting
+`thinkingBudgetMultiEnd` (assets `v0.1.87+`). An explicit
+`ThinkingBudget.endTag` selects a single delimiter.
 | Web LiteRT-LM / `.litertlm` | `@litert-lm/core@0.19.0` |
 
 Native LiteRT-LM uses a lazy ABI-aware client for direct calls, services and

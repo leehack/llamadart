@@ -1,4 +1,5 @@
 import 'package:llamadart/llamadart.dart';
+import 'package:llamadart/src/core/template/resolved_thinking_budget.dart';
 import 'package:test/test.dart';
 
 import '../../../support/raw_tool_schema_fixture.dart';
@@ -16,6 +17,17 @@ void main() {
       );
 
       expect(resolved.maxTokens, 8);
+      expect(resolved, isA<ResolvedThinkingBudget>());
+      expect((resolved as ResolvedThinkingBudget).naturalEndTags, [
+        '\n</think>',
+        '</think>',
+        '<tool_call>',
+      ]);
+      expect(resolved.grammarReplayEndIndex, isNull);
+      expect(
+        ChatTemplateEngine.resolveThinkingBudget(qwenXml, resolved),
+        same(resolved),
+      );
       expect(resolved.startTag, tags.startTag);
       expect(resolved.endTag, tags.endTag);
       expect(resolved.forcedMessage, '\n');
@@ -64,6 +76,30 @@ void main() {
       expect(resolved.forcedMessage, 'Stop.');
     });
 
+    test(
+      'an explicit canonical end stays single and a start-only override does not',
+      () {
+        final explicit = ChatTemplateEngine.resolveThinkingBudget(
+          qwenXml,
+          const ThinkingBudget(
+            maxTokens: 8,
+            endTag: '</think>',
+            forcedMessage: 'Done',
+          ),
+        );
+        expect(explicit, isNot(isA<ResolvedThinkingBudget>()));
+        expect(explicit.forcedMessage, 'Done');
+        final resolved =
+            ChatTemplateEngine.resolveThinkingBudget(
+                  qwenXml,
+                  const ThinkingBudget(maxTokens: 8, startTag: '<custom>'),
+                )
+                as ResolvedThinkingBudget;
+        expect(resolved.startTag, '<custom>');
+        expect(resolved.naturalEndTags.last, '<tool_call>');
+      },
+    );
+
     test('adds no prefix when the backend does not render the prompt', () {
       final resolved = ChatTemplateEngine.resolveThinkingBudget(
         qwenXml,
@@ -72,6 +108,7 @@ void main() {
       );
 
       expect(resolved.forcedMessage, isNull);
+      expect(resolved, isNot(isA<ResolvedThinkingBudget>()));
     });
 
     test('takes the generic tags for an index past the end of ChatFormat', () {

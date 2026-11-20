@@ -184,7 +184,11 @@ modalities and speculative strategies before offering them.
   reject values below `1.0`. Its thinking budget applies to `engine.create`
   on bundles with a thinking channel (Gemma 4), closes that channel with the
   bundle's own marker, and rejects `0`, `forcedMessage` and speculative
-  decoding. Min-P stays unsupported there.
+  decoding. Min-P stays unsupported there. On thinking-capable Qwen3-Coder XML,
+  omission of `endTag` lets `<tool_call>` end the budget and the call continue.
+  This requires llamadart-native `v1.0.0-4` or WebGPU assets `v0.1.87+` with `thinkingBudgetMultiEnd`. `supportsThinkingBudget` describes
+  basic support. An explicit `endTag`, including `</think>`, selects a
+  single delimiter.
 - Token usage (`chunk.usage`) is only on the final chunk and may be null (for
   example on LiteRT-LM or a cancelled request). Never assume it is present.
 - `chunk.model` is the last path segment of the model source (`qwen.gguf`),

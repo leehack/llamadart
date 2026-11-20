@@ -305,9 +305,25 @@ class _AsrStreamApi {
 }
 
 class _ReasoningBudgetApi {
-  const _ReasoningBudgetApi({required this.init});
+  const _ReasoningBudgetApi({required this.init, this.initMulti});
+
+  static const _singleSymbol = 'llama_dart_sampler_init_reasoning_budget';
+  static const _multiSymbol = 'llama_dart_sampler_init_reasoning_budget_multi';
+  static const _multiEndRequirement =
+      'llama.cpp template-derived thinking-budget ends require '
+      'llamadart-native v1.0.0-4 or newer with $_multiSymbol.';
 
   final _LlamaDartReasoningBudgetInitDart init;
+  final _LlamaDartReasoningBudgetMultiInitDart? initMulti;
+
+  _ReasoningBudgetApi requireMultiEnd(bool required) {
+    if (required && initMulti == null) {
+      throw LlamaUnsupportedException(
+        '$_multiEndRequirement The selected native runtime does not export it.',
+      );
+    }
+    return this;
+  }
 
   Pointer<llama_sampler> initSampler({
     required Pointer<llama_vocab> vocab,
@@ -316,28 +332,47 @@ class _ReasoningBudgetApi {
     required Pointer<llama_sampler> grammarSampler,
     required Pointer<Int32> promptTokens,
     required int promptTokenCount,
-  }) {
-    final startTag = config.startTag.toNativeUtf8();
-    final endTag = config.endTag.toNativeUtf8();
-    final forcedMessage = config.forcedMessage.toNativeUtf8();
-    try {
-      return init(
+  }) => using((arena) {
+    final startTag = config.startTag
+        .toNativeUtf8(allocator: arena)
+        .cast<Char>();
+    final endTag = config.endTag.toNativeUtf8(allocator: arena).cast<Char>();
+    final forcedMessage = config.forcedMessage
+        .toNativeUtf8(allocator: arena)
+        .cast<Char>();
+    final ends = config.naturalEndTags;
+    if (ends != null) {
+      final tags = arena<Pointer<Char>>(ends.length);
+      for (var i = 0; i < ends.length; i++) {
+        tags[i] = ends[i].toNativeUtf8(allocator: arena).cast<Char>();
+      }
+      return initMulti!(
         vocab,
-        startTag.cast(),
-        endTag.cast(),
-        forcedMessage.cast(),
+        startTag,
+        endTag,
+        forcedMessage,
+        tags,
+        ends.length,
+        pauseGrammarDuringReasoning ? config.grammarReplayEndIndex ?? -1 : -1,
         config.maxTokens,
         pauseGrammarDuringReasoning,
         grammarSampler,
         promptTokens,
         promptTokenCount,
       );
-    } finally {
-      malloc.free(startTag);
-      malloc.free(endTag);
-      malloc.free(forcedMessage);
     }
-  }
+    return init(
+      vocab,
+      startTag,
+      endTag,
+      forcedMessage,
+      config.maxTokens,
+      pauseGrammarDuringReasoning,
+      grammarSampler,
+      promptTokens,
+      promptTokenCount,
+    );
+  });
 
   static _ReasoningBudgetApi load(DynamicLibrary library) {
     return _ReasoningBudgetApi(
@@ -345,7 +380,13 @@ class _ReasoningBudgetApi {
           .lookupFunction<
             _LlamaDartReasoningBudgetInitNative,
             _LlamaDartReasoningBudgetInitDart
-          >('llama_dart_sampler_init_reasoning_budget'),
+          >(_singleSymbol),
+      initMulti: library.providesSymbol(_multiSymbol)
+          ? library.lookupFunction<
+              _LlamaDartReasoningBudgetMultiInitNative,
+              _LlamaDartReasoningBudgetMultiInitDart
+            >(_multiSymbol)
+          : null,
     );
   }
 }

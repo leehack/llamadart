@@ -67,11 +67,11 @@ an earlier `<script>`:
 
 ## Pinned assets
 
-Default pinned tag in the example is `v0.1.86`.
+Default pinned tag in the example is `v0.1.87`.
 Vendor the pinned assets into the chat app with:
 
 ```bash
-WEBGPU_BRIDGE_ASSETS_TAG=v0.1.86 ./scripts/fetch_webgpu_bridge_assets.sh
+WEBGPU_BRIDGE_ASSETS_TAG=v0.1.87 ./scripts/fetch_webgpu_bridge_assets.sh
 ```
 
 `WEBGPU_BRIDGE_OUT_DIR` changes the destination. The script verifies
@@ -90,20 +90,28 @@ the chat app, set the bootstrap globals before the bootstrap runs:
 ```html
 <script>
   window.__llamadartBridgeAssetsRepo = 'leehack/llama-web-bridge-assets';
-  window.__llamadartBridgeAssetsTag = 'v0.1.86';
+  window.__llamadartBridgeAssetsTag = 'v0.1.87';
 </script>
 ```
 
 That release embeds llama.cpp `v1.0.0`, matching the `hook/build.dart` native pin
 (`v1.0.0-3`, both built from upstream llama.cpp `v1.0.0@b1b770d90d94cad9e9ea5b993bdbc383a522fb28`)
-even though the bridge asset tag `v0.1.86` differs from the native runtime tag
-`v1.0.0-3`. Provenance for this immutable consumer artifact: release `449436143`,
-tag commit `dd164fb6fa05276e6a1700c563573842831ea362`, bridge source
-`7c81e03cf79952625b561c910c8e6e182b75df49`, and manifest SHA-256
-`d589fbe3c334e4fcb0ccbac3efc4500209358a010b6662ee8523e598a433a0f2`.
+even though the bridge asset tag `v0.1.87` differs from the native runtime tag
+`v1.0.0-3`. Provenance for this immutable consumer artifact: release `453141343`,
+tag commit `42be158f58427b7b9a168e1c2121f74c3c4cc413`, bridge source
+`3cf2aaed32acefade1ea603748d3dedb760125bd`, and manifest SHA-256
+`922574bd6389f9ec8ce1ba41d291ba80b1d9f50906f860e8c74f7a9997c0edf9`.
 They expose the API-version-1 media embedding contract. State and extraction
 qualification covers wasm32 and memory64 through direct and worker runtimes. Existing decision,
 scoring, sampling, LoRA, speculative decoding and speech APIs remain available.
+
+The loaded core must report literal `thinkingBudgetMultiEnd: true` for a
+template-derived XML budget. Direct and worker generation receive the ordered
+`naturalEndTags` array in `CompletionOptions.thinkingBudget`. For a paused XML
+tool grammar, `grammarReplayEndIndex: 2` replays the matched `<tool_call>`.
+Exhaustion forces the existing `forcedMessage + endTag` bytes. A singleton
+request omits both multi-end fields. The separate `thinkingBudgetPauseGrammar`
+bit controls whether a grammar can stay applied during the thought.
 
 Published release qualification covers CPU/WASM state persistence, multimodal
 input, ASR and TTS. It does not establish hardware WebGPU acceleration,

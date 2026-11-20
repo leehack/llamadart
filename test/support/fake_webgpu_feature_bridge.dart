@@ -232,11 +232,13 @@ class FakeFeatureBridge {
         final result = completionCapabilitiesResult;
         if (result != null) return Future<JSAny?>.value(result).toJS;
         final flags = JSObject();
-        for (final name in const [
+        for (final name in [
           'presencePenalty',
           'minP',
           'thinkingBudget',
           'thinkingBudgetPauseGrammar',
+          if (completionCapabilities.containsKey('thinkingBudgetMultiEnd'))
+            'thinkingBudgetMultiEnd',
           'penaltyPromptTokens',
           'penaltyPromptTokensWithGrammar',
           'lazyGrammar',

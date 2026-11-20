@@ -23,6 +23,7 @@ import '../../core/models/inference/model_params.dart';
 import '../../core/models/inference/model_params_runtime_support.dart';
 import '../../core/models/inference/next_token_scores.dart';
 import '../../core/template/media_placeholders.dart';
+import '../../core/template/resolved_thinking_budget.dart';
 import '../../core/template/tool_call_grammar_utils.dart';
 import '../backend.dart';
 import '../model_params_loras.dart';
@@ -45,6 +46,7 @@ typedef _WebGpuCompletionCapabilities = ({
   bool minP,
   bool thinkingBudget,
   bool thinkingBudgetPauseGrammar,
+  bool thinkingBudgetMultiEnd,
   bool penaltyPromptTokens,
   bool penaltyPromptTokensWithGrammar,
   bool lazyGrammar,
@@ -106,6 +108,7 @@ class WebGpuLlamaBackend
     minP: false,
     thinkingBudget: false,
     thinkingBudgetPauseGrammar: false,
+    thinkingBudgetMultiEnd: false,
     penaltyPromptTokens: false,
     penaltyPromptTokensWithGrammar: false,
     lazyGrammar: false,
@@ -1094,6 +1097,7 @@ class WebGpuLlamaBackend
         presencePenalty: reported(capabilities.presencePenalty),
         minP: reported(capabilities.minP),
         thinkingBudget: reported(capabilities.thinkingBudget),
+        thinkingBudgetMultiEnd: reported(capabilities.thinkingBudgetMultiEnd),
         thinkingBudgetPauseGrammar: reported(
           capabilities.thinkingBudgetPauseGrammar,
         ),
@@ -1958,6 +1962,11 @@ class WebGpuLlamaBackend
       );
     }
     final thinkingBudget = params.thinkingBudget;
+    if (thinkingBudget is ResolvedThinkingBudget &&
+        (!capabilities.thinkingBudgetMultiEnd ||
+            !capabilities.thinkingBudget)) {
+      throw LlamaUnsupportedException(webGpuThinkingBudgetMultiEndRequired);
+    }
     if (thinkingBudget != null && !capabilities.thinkingBudget) {
       throw LlamaUnsupportedException(
         'WebGPU thinking-budget control needs bridge assets v0.1.54+ whose '
@@ -2394,6 +2403,16 @@ class WebGpuLlamaBackend
       endTag: endTag,
       forcedMessage: budget.forcedMessage ?? '',
     );
+    if (budget is ResolvedThinkingBudget) {
+      options.naturalEndTags = budget.naturalEndTags
+          .map((tag) => tag.toJS)
+          .toList(growable: false)
+          .toJS;
+      final replayIndex = budget.grammarReplayEndIndex;
+      if (pauseGrammar && replayIndex != null) {
+        options.grammarReplayEndIndex = replayIndex;
+      }
+    }
     // Sent only to keep a grammar applied, so every other request is
     // unchanged on the wire.
     if (!pauseGrammar) options.pauseGrammar = false;

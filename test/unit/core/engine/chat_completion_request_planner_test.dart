@@ -12,6 +12,8 @@ import 'package:llamadart/src/core/models/inference/tool_choice.dart';
 import 'package:llamadart/src/core/models/tools/tool_definition.dart';
 import 'package:llamadart/src/core/models/tools/tool_param.dart';
 import 'package:llamadart/src/core/template/chat_format.dart';
+import 'package:llamadart/src/core/template/chat_template_engine.dart';
+import 'package:llamadart/src/core/template/resolved_thinking_budget.dart';
 import 'package:llamadart/src/core/template/handlers/hermes_handler.dart';
 import 'package:llamadart/src/core/template/template_internal_metadata.dart';
 import 'package:test/test.dart';
@@ -702,6 +704,103 @@ void main() {
       expect(plan.generationParams.thinkingBudget?.maxTokens, 64);
       expect(plan.generationParams.thinkingBudget?.startTag, '<think>');
       expect(plan.generationParams.thinkingBudget?.endTag, '</think>');
+    });
+
+    group('XML thinking-budget grammar replay', () {
+      const messages = [
+        LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'Weather?'),
+      ];
+      ChatCompletionRequestPlan plan(
+        ToolChoice choice, {
+        LlamaBackend? backend,
+        List<ToolDefinition>? tools,
+        String? callerGrammar,
+        Map<String, dynamic>? responseFormat,
+        bool enableThinking = true,
+      }) {
+        final rendered = ChatTemplateEngine.render(
+          templateSource:
+              '{# <tool_call><function=><parameter=><function><parameters> #}<think>\n',
+          messages: messages,
+          metadata: const {},
+          tools: tools,
+          responseFormat: responseFormat,
+          toolChoice: choice,
+          enableThinking: enableThinking,
+        );
+        expect(rendered.format, ChatFormat.qwen3CoderXml.index);
+        return ChatCompletionRequestPlanner.build(
+          backend: backend ?? _PromptBackend(),
+          templateResult: rendered,
+          messages: messages,
+          params: GenerationParams(
+            grammar: callerGrammar,
+            thinkingBudget: const ThinkingBudget(maxTokens: 4),
+          ),
+          tools: tools,
+          responseFormat: responseFormat,
+          toolChoice: choice,
+          parallelToolCalls: false,
+        );
+      }
+
+      for (final choice in [ToolChoice.auto, ToolChoice.required]) {
+        test('replays into the $choice XML tool grammar', () {
+          final params = plan(choice, tools: [_weatherTool]).generationParams;
+          expect(params.grammar, contains('<function=get_weather>'));
+          expect(params.grammarLazy, choice == ToolChoice.auto);
+          expect(
+            params.grammarTriggers,
+            hasLength(choice == ToolChoice.auto ? 1 : 0),
+          );
+          final budget = params.thinkingBudget as ResolvedThinkingBudget;
+          expect(
+            budget.naturalEndTags[budget.grammarReplayEndIndex!],
+            '<tool_call>',
+          );
+        });
+      }
+
+      test('excludes a caller eager grammar and response schema grammar', () {
+        final caller = plan(
+          ToolChoice.required,
+          callerGrammar: 'root ::= "ok"',
+        ).generationParams;
+        expect(caller.grammar, 'root ::= "ok"');
+        expect(
+          (caller.thinkingBudget as ResolvedThinkingBudget)
+              .grammarReplayEndIndex,
+          isNull,
+        );
+
+        final schema = plan(
+          ToolChoice.required,
+          responseFormat: const {'type': 'json_object'},
+        ).generationParams;
+        expect(schema.grammar, isNot(contains('<function=get_weather>')));
+        expect(
+          (schema.thinkingBudget as ResolvedThinkingBudget)
+              .grammarReplayEndIndex,
+          isNull,
+        );
+      });
+
+      test('keeps a forced-closed render and native messages single-ended', () {
+        final closed = plan(
+          ToolChoice.auto,
+          enableThinking: false,
+        ).generationParams.thinkingBudget!;
+        expect(closed, isNot(isA<ResolvedThinkingBudget>()));
+        expect(closed.forcedMessage, '\n');
+
+        final native = plan(ToolChoice.auto, backend: _NativeChatBackend());
+        expect(native.usesNativeChatGeneration, isTrue);
+        expect(
+          native.generationParams.thinkingBudget,
+          isNot(isA<ResolvedThinkingBudget>()),
+        );
+        expect(native.generationParams.thinkingBudget!.forcedMessage, isNull);
+      });
     });
 
     group('thinking-budget thought close', () {

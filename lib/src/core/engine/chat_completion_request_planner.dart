@@ -15,8 +15,10 @@ import '../models/inference/tool_choice.dart';
 import '../models/tools/tool_definition.dart';
 import '../template/chat_format.dart';
 import '../template/chat_template_engine.dart';
-import '../template/template_internal_metadata.dart';
 import '../template/response_format.dart';
+import '../template/template_internal_metadata.dart';
+import '../template/thinking_utils.dart';
+import '../template/xml_tool_call_format.dart';
 
 /// Prepared generation inputs for a chat-completion request.
 ///
@@ -248,12 +250,33 @@ class ChatCompletionRequestPlanner {
             parallelToolCalls: parallelToolCalls,
           );
     final requestedThinkingBudget = params?.thinkingBudget;
+    const xmlToolOpening = XmlToolCallFormat.qwen3CoderScopeStart;
+    final replayXmlToolOpening =
+        requestedThinkingBudget != null &&
+        effectiveGrammar != null &&
+        effectiveGrammar.isNotEmpty &&
+        !strictResponseFormat &&
+        templateResult.format == ChatFormat.qwen3CoderXml.index &&
+        (effectiveGrammarLazy
+            ? effectiveGrammarTriggers.any(
+                (trigger) =>
+                    trigger.triggerType == GrammarTriggerType.word &&
+                    trigger.value == xmlToolOpening,
+              )
+            : hasTemplateGrammar &&
+                  toolChoice == ToolChoice.required &&
+                  tools != null &&
+                  tools.isNotEmpty);
     final effectiveThinkingBudget = requestedThinkingBudget == null
         ? null
-        : _resolveThinkingBudgetTags(
+        : resolveTemplateThinkingBudget(
+            templateResult.format,
             requestedThinkingBudget,
-            templateResult,
             rendersPrompt: nativeChatBackend == null && schemaBackend == null,
+            allowMultiEnd:
+                !thinkingForcedClosedOf(templateResult) &&
+                !thoughtClosedForThinkingOffOf(templateResult),
+            grammarReplayEnd: replayXmlToolOpening ? xmlToolOpening : null,
           );
 
     final generationParams = (params ?? const GenerationParams()).copyWith(
@@ -298,18 +321,6 @@ class ChatCompletionRequestPlanner {
     );
     LlamaLogger.instance.debug(
       '  Thinking forced open: ${templateResult.thinkingForcedOpen}',
-    );
-  }
-
-  static ThinkingBudget _resolveThinkingBudgetTags(
-    ThinkingBudget budget,
-    LlamaChatTemplateResult templateResult, {
-    required bool rendersPrompt,
-  }) {
-    return ChatTemplateEngine.resolveThinkingBudget(
-      templateResult.format,
-      budget,
-      rendersPrompt: rendersPrompt,
     );
   }
 

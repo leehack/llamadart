@@ -839,8 +839,15 @@ class SpeculativeDecodingConfig {
 /// llama.cpp accepts values from zero through 2,147,483,647.
 ///
 /// [LlamaEngine.create] resolves omitted [startTag] and [endTag] from the
-/// rendered chat template. Callers using raw generation should supply both
-/// tags explicitly because models do not share a universal reasoning syntax.
+/// rendered chat template. For a thinking-capable Qwen3-Coder XML prompt,
+/// an omitted end allows a generated `<tool_call>` to end the budget and
+/// continue the tool call. Exhaustion still forces a line break and
+/// `</think>`. An explicit end, including `</think>`, selects a single
+/// delimiter. Multiple ends require llamadart-native `v1.0.0-4` or bridge
+/// assets `v0.1.87+` with a core reporting `thinkingBudgetMultiEnd`.
+///
+/// For raw generation, supply both tags explicitly or use
+/// `ChatTemplateEngine.resolveThinkingBudget` to select format defaults.
 class ThinkingBudget {
   /// Creates a thinking-token budget.
   const ThinkingBudget({

@@ -33,6 +33,8 @@ import 'package:llamadart/src/core/models/config/gpu_device_info.dart';
 import 'package:llamadart/src/core/models/config/log_level.dart';
 import 'package:llamadart/src/core/models/inference/generation_params.dart';
 import 'package:llamadart/src/core/models/inference/model_params.dart';
+import 'package:llamadart/src/core/template/chat_format.dart';
+import 'package:llamadart/src/core/template/chat_template_engine.dart';
 import 'package:llamadart/src/hook/native_release_pins.dart';
 import 'package:path/path.dart' as path;
 import 'package:test/test.dart';
@@ -258,6 +260,71 @@ void main() {
       }
       fail('Expected the production resolver to reject an unavailable helper');
     }
+
+    test(
+      'an old-only wrapper refuses multi-end before prompt evaluation',
+      () async {
+        final temp = Directory.systemTemp.createTempSync('budget-single-api-');
+        addTearDown(() => temp.deleteSync(recursive: true));
+        final library = path.join(
+          temp.path,
+          Platform.isWindows
+              ? 'budget.dll'
+              : Platform.isMacOS
+              ? 'budget.dylib'
+              : 'budget.so',
+        );
+        final build = await Process.run(Platform.isWindows ? 'clang' : 'cc', [
+          if (Platform.isWindows) '-fuse-ld=lld',
+          Platform.isMacOS ? '-dynamiclib' : '-shared',
+          if (!Platform.isWindows) '-fPIC',
+          'test/fixtures/reasoning_budget_single_runtime.c',
+          '-o',
+          library,
+        ]);
+        expect(build.exitCode, 0, reason: '${build.stdout}\n${build.stderr}');
+        final service = LlamaCppService()..initializeBackend();
+        addTearDown(service.dispose);
+        expect(resolve(service, [library]), isNotNull);
+
+        const modelParams = ModelParams(
+          contextSize: 1024,
+          gpuLayers: 0,
+          numberOfThreads: 2,
+          numberOfThreadsBatch: 2,
+        );
+        final model = writeSyntheticLlamaGguf(
+          path.join(temp.path, 'model.gguf'),
+        );
+        final handle = service.loadModel(model.path, modelParams);
+        final context = service.createContext(handle, modelParams);
+        expect(service.generationCapabilities(handle).thinkingBudget, isTrue);
+        final budget = ChatTemplateEngine.resolveThinkingBudget(
+          ChatFormat.qwen3CoderXml.index,
+          const ThinkingBudget(maxTokens: 0),
+        );
+        final cancel = calloc<Int8>();
+        addTearDown(() => calloc.free(cancel));
+        await expectLater(
+          service.generate(
+            context,
+            '<think>',
+            GenerationParams(thinkingBudget: budget),
+            cancel.address,
+          ),
+          emitsError(
+            isA<LlamaUnsupportedException>().having(
+              (error) => error.message,
+              'message',
+              allOf(
+                contains('v1.0.0-4'),
+                contains('llama_dart_sampler_init_reasoning_budget_multi'),
+              ),
+            ),
+          ),
+        );
+      },
+    );
 
     test('a real library without the export reports lookup, not open', () {
       final systemLibrary = Platform.isWindows

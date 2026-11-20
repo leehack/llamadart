@@ -1,5 +1,5 @@
-/// Real pinned-asset check that a response-format grammar stays applied
-/// through a budgeted forced-open thought on Qwen3.5 (#1954).
+/// Pinned-asset Qwen3.5 checks for schema grammars through a forced-open
+/// thought (#1954) and natural XML thinking-budget ends (#1949).
 ///
 /// Uses build/web_lazy_grammar/config.json, adding "reasoningModel" (a
 /// Qwen3.5 GGUF) and, for the version-skew control, "legacyAssets" (bridge
@@ -19,6 +19,8 @@ import 'package:llamadart/src/backends/webgpu/interop.dart';
 import 'package:llamadart/src/backends/webgpu/webgpu_backend.dart';
 import 'package:test/test.dart';
 import 'package:web/web.dart' show window;
+
+import '../../support/qwen_xml_budget_tool_replay.dart';
 
 const _messages = [
   LlamaChatMessage.fromText(
@@ -42,7 +44,9 @@ const _responseFormat = {
 };
 
 const _model = ModelParams(
-  contextSize: 4096,
+  contextSize: 2048,
+  batchSize: 128,
+  microBatchSize: 32,
   gpuLayers: 0,
   preferredBackend: GpuBackend.cpu,
   numberOfThreads: 2,
@@ -113,6 +117,100 @@ void main() {
   });
 
   for (final worker in [false, true]) {
+    test('${worker ? 'worker' : 'direct'}: XML opener ends the budget', () async {
+      final engine = newEngine(
+        'assets',
+        await bridgeConstructor('assets'),
+        worker,
+      );
+      addTearDown(engine.dispose);
+      await engine.loadModelFromUrl(
+        fixture('reasoningModel').toString(),
+        modelParams: _model,
+      );
+      expect((await engine.capabilities).supportsThinkingBudget, isTrue);
+      final metadata = await engine.getMetadata();
+      expect(
+        metadata['llamadart.webgpu.execution'],
+        worker ? 'worker' : 'main-thread',
+      );
+      expect(metadata['llamadart.webgpu.worker_fallback_reason'], isNull);
+      final template = await engine.chatTemplate(
+        _messages,
+        enableThinking: true,
+      );
+      expect(template.format, ChatFormat.qwen3CoderXml.index);
+      expect(template.thinkingForcedOpen, isTrue);
+      final opener = await engine.tokenize('<tool_call>', addSpecial: false);
+      const prompt =
+          '<|im_start|>user\nCall get_weather for Seoul. '
+          'Start immediately with the XML tool call.<|im_end|>\n'
+          '<|im_start|>assistant\n<think>\n';
+      const sampling = GenerationParams(
+        maxTokens: 20,
+        temp: 0,
+        topK: 1,
+        seed: 1,
+        penalty: 1,
+        reusePromptPrefix: false,
+        preservedTokens: ['<think>', '</think>', '<tool_call>', '</tool_call>'],
+      );
+      final steered = sampling.copyWith(
+        grammar:
+            'root ::= think-body !<[42]>*\nthink-body ::= <[${opener.single}]>\n',
+      );
+      ThinkingBudget budget(int maxTokens, String forcedMessage) =>
+          ChatTemplateEngine.resolveThinkingBudget(
+            template.format,
+            ThinkingBudget(maxTokens: maxTokens, forcedMessage: forcedMessage),
+          );
+      Future<String> raw(String text, GenerationParams params) =>
+          engine.generate(text, params: params).join();
+
+      final control = await raw(prompt, steered);
+      expect(control, startsWith('<tool_call>'));
+      expect(
+        await raw(
+          prompt,
+          steered.copyWith(thinkingBudget: budget(1, 'BUDGET1949')),
+        ),
+        control,
+      );
+      const prefilled = '$prompt<tool_call>\n<function=get_weather>\n';
+      final prefilledControl = await raw(prefilled, sampling);
+      expect(prefilledControl, isNotEmpty);
+      expect(
+        await raw(
+          prefilled,
+          sampling.copyWith(thinkingBudget: budget(0, 'BUDGET1949')),
+        ),
+        prefilledControl,
+      );
+      expect(
+        await raw(
+          prompt,
+          sampling.copyWith(
+            maxTokens: 3,
+            thinkingBudget: budget(0, '<tool_call>'),
+          ),
+        ),
+        '<tool_call>\n</think>',
+      );
+
+      const singleton = ThinkingBudget(
+        maxTokens: 0,
+        startTag: '<think>',
+        endTag: '</think>',
+        forcedMessage: 'SINGLE',
+      );
+      expect(
+        await raw(prefilled, sampling.copyWith(thinkingBudget: singleton)),
+        startsWith('SINGLE</think>'),
+      );
+      expect(await raw(prefilled, sampling), prefilledControl);
+      await expectQwenXmlBudgetToolReplay(engine);
+    });
+
     test('${worker ? 'worker' : 'direct'}: constrained JSON survives a '
         'budgeted thought', () async {
       final engine = newEngine(
@@ -157,7 +255,14 @@ void main() {
       'city': isA<String>(),
     });
     await expectLater(
-      run(engine, const ThinkingBudget(maxTokens: 4)),
+      run(
+        engine,
+        const ThinkingBudget(
+          maxTokens: 4,
+          endTag: '</think>',
+          forcedMessage: '\n',
+        ),
+      ),
       throwsA(
         isA<LlamaUnsupportedException>().having(
           (error) => error.message,

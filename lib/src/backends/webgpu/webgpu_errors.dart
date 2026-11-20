@@ -54,10 +54,15 @@ final RegExp _bridgeArgument = RegExp(
 
 final RegExp _bridgeUnsupportedCompletion = RegExp(
   r'^The loaded WebGPU core does not support CompletionOptions\.'
-  r'(?:presencePenalty|minP|thinkingBudget\.pauseGrammar|thinkingBudget|grammarLazy|grammarRoot|penaltyPromptTokensWithGrammar|speculativeDecoding)'
+  r'(?:presencePenalty|minP|thinkingBudget\.(?:pauseGrammar|naturalEndTags)|thinkingBudget|grammarLazy|grammarRoot|penaltyPromptTokensWithGrammar|speculativeDecoding)'
   r'(?: or CompletionOptions\.'
-  r'(?:presencePenalty|minP|thinkingBudget\.pauseGrammar|thinkingBudget|grammarLazy|grammarRoot|penaltyPromptTokensWithGrammar|speculativeDecoding))*\.$',
+  r'(?:presencePenalty|minP|thinkingBudget\.(?:pauseGrammar|naturalEndTags)|thinkingBudget|grammarLazy|grammarRoot|penaltyPromptTokensWithGrammar|speculativeDecoding))*\.$',
 );
+
+/// Required core capability for template-derived thinking-budget ends.
+const String webGpuThinkingBudgetMultiEndRequired =
+    'WebGPU template-derived thinking-budget ends require bridge assets '
+    'v0.1.87+ whose core reports thinkingBudgetMultiEnd.';
 
 /// Classifies request rejections without reclassifying unknown runtime errors.
 ///
@@ -83,7 +88,11 @@ LlamaException? webGpuBridgeRequestError(
             'CompletionOptions.penaltyPromptTokensWithGrammar',
           )) &&
       _bridgeUnsupportedCompletion.hasMatch(message)) {
-    return LlamaUnsupportedException(message);
+    return LlamaUnsupportedException(
+      message.contains('CompletionOptions.thinkingBudget.naturalEndTags')
+          ? '$message $webGpuThinkingBudgetMultiEndRequired'
+          : message,
+    );
   }
   if (name == 'Error' &&
       (message ==

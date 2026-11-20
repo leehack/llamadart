@@ -136,7 +136,10 @@ class LlamaEngineCapabilities implements EngineCapabilities {
   /// Whether a non-zero [GenerationParams.minP] is applied.
   final bool supportsMinP;
 
-  /// Whether [GenerationParams.thinkingBudget] is applied.
+  /// Whether the backend applies a basic [GenerationParams.thinkingBudget].
+  ///
+  /// An older llama.cpp runtime or WebGPU bridge can report basic support
+  /// and reject a template-derived budget with multiple natural ends.
   ///
   /// A runtime that applies it can still reject it for generation with media
   /// parts or speculative decoding.

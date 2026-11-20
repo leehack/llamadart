@@ -23,6 +23,7 @@ import 'handlers/deepseek_v3_handler.dart';
 import 'handlers/ling3_handler.dart';
 import 'handlers/hermes_handler.dart';
 import 'handlers/qwen3_coder_xml_handler.dart';
+import 'resolved_thinking_budget.dart';
 import 'response_format.dart';
 import 'tool_call_grammar_utils.dart';
 import 'tool_schema_utils.dart';
@@ -1029,28 +1030,30 @@ class ChatTemplateEngine {
   /// the [thinkingTagsFor] value. With [ThinkingBudget.endTag] omitted, a
   /// format whose template closes a thought with a line break, such as
   /// Qwen3-Coder XML, appends that prefix to [ThinkingBudget.forcedMessage],
-  /// as llama.cpp does. A caller-set end tag is left as given.
+  /// as llama.cpp does. An omitted end tag with the XML format also permits
+  /// natural closure at `<tool_call>`. With only a format index, this helper
+  /// selects the XML family's defaults even for plain Qwen3-Coder. A
+  /// caller-set end tag, including `</think>`, requests a single end.
+  ///
+  /// Multiple ends require llamadart-native `v1.0.0-4` or WebGPU bridge
+  /// assets `v0.1.87+` with a core reporting `thinkingBudgetMultiEnd`.
   ///
   /// Set [rendersPrompt] to false for a backend that takes chat messages and
-  /// closes the thought itself, which rejects a forced message: only the
-  /// line-break prefix is skipped, and a [ThinkingBudget.forcedMessage] you
+  /// closes the thought itself. The line-break prefix and alternate ends
+  /// are skipped, and a [ThinkingBudget.forcedMessage] you
   /// set is kept as given. [formatIndex] follows the [thinkingTagsFor] rules.
   static ThinkingBudget resolveThinkingBudget(
     int formatIndex,
     ThinkingBudget budget, {
     bool rendersPrompt = true,
   }) {
-    final tags = thinkingTagsFor(formatIndex);
-    final closePrefix = rendersPrompt && budget.endTag == null
-        ? budgetThoughtClosePrefix(formatIndex)
-        : '';
-    return ThinkingBudget(
-      maxTokens: budget.maxTokens,
-      startTag: budget.startTag ?? tags.startTag,
-      endTag: budget.endTag ?? tags.endTag,
-      forcedMessage: closePrefix.isEmpty
-          ? budget.forcedMessage
-          : '${budget.forcedMessage ?? ''}$closePrefix',
+    if (formatIndex >= 0 && rendersPrompt && budget is ResolvedThinkingBudget) {
+      return budget;
+    }
+    return resolveTemplateThinkingBudget(
+      formatIndex,
+      budget,
+      rendersPrompt: rendersPrompt,
     );
   }
 
@@ -1249,9 +1252,53 @@ List<String> closedThoughtMarkers(int formatIndex) {
 bool reopensClosedThought(int formatIndex) =>
     _traitsOf(formatIndex).reopensThoughtClosedForThinkingOff;
 
-/// The text a thinking budget forces before the [formatIndex] end tag.
-String budgetThoughtClosePrefix(int formatIndex) =>
-    _traitsOf(formatIndex).budgetThoughtClosePrefix;
+/// Resolves the budget using the dispatch and grammar selected for the request.
+ThinkingBudget resolveTemplateThinkingBudget(
+  int formatIndex,
+  ThinkingBudget budget, {
+  required bool rendersPrompt,
+  bool allowMultiEnd = true,
+  String? grammarReplayEnd,
+}) {
+  final tags = ChatTemplateEngine.thinkingTagsFor(formatIndex);
+  final traits = _traitsOf(formatIndex);
+  final resolved = budget is ResolvedThinkingBudget ? budget : null;
+  final usesDefaultEnd = budget.endTag == null || resolved != null;
+  final originalForcedMessage = resolved == null
+      ? budget.forcedMessage
+      : resolved.originalForcedMessage;
+  final closePrefix = rendersPrompt && usesDefaultEnd
+      ? traits.budgetThoughtClosePrefix
+      : '';
+  final forcedMessage = closePrefix.isEmpty
+      ? originalForcedMessage
+      : '${originalForcedMessage ?? ''}$closePrefix';
+  final startTag = budget.startTag ?? tags.startTag;
+  final endTag = budget.endTag ?? tags.endTag;
+  final naturalEnds = rendersPrompt && allowMultiEnd && usesDefaultEnd
+      ? resolved?.naturalEndTags ?? traits.thinkingBudgetNaturalEnds
+      : const <String>[];
+  if (naturalEnds.isNotEmpty) {
+    final replayIndex = grammarReplayEnd == null
+        ? -1
+        : naturalEnds.indexOf(grammarReplayEnd);
+    return ResolvedThinkingBudget(
+      maxTokens: budget.maxTokens,
+      startTag: startTag,
+      endTag: endTag,
+      forcedMessage: resolved?.forcedMessage ?? forcedMessage,
+      originalForcedMessage: originalForcedMessage,
+      naturalEndTags: naturalEnds,
+      grammarReplayEndIndex: replayIndex < 0 ? null : replayIndex,
+    );
+  }
+  return ThinkingBudget(
+    maxTokens: budget.maxTokens,
+    startTag: startTag,
+    endTag: endTag,
+    forcedMessage: forcedMessage,
+  );
+}
 
 ChatFormatTraits _traitsOf(int formatIndex) =>
     formatIndex < ChatFormat.values.length

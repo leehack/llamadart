@@ -112,9 +112,14 @@ sequenceDiagram
   grammar such as Granite 3.3's) first takes the rest of the thought and its end tag, as
   llama.cpp's reasoning parser does. The Qwen3-Coder XML required-call grammar
   instead takes any text without a call opening before the calls, the thought
-  included, as llama.cpp (`cd959bae9`) does. A thinking budget on that format
-  forces a line break before `</think>`, as llama.cpp does, so the reply after
-  it does not continue the thought.
+  included, as llama.cpp (`cd959bae9`) does. An implicit budget end on a
+  thinking-capable XML render resolves to the ordered natural ends
+  `\n</think>`, `</think>`, and `<tool_call>`. Exhaustion still forces
+  the caller's message followed by `\n</think>`. A natural tool opener
+  is replayed into a paused lazy tool grammar or the selected eager required
+  XML tool grammar so it can constrain the call. An explicit end tag, a
+  plain or forced-closed XML render, or native-message dispatch uses a
+  single end.
 - Under a thinking budget these required-call grammars wait through the
   thought and restart on the reply after its end tag: Qwen3-Coder XML, Ling 3,
   DeepSeek R1/V3.2/V4, Laguna, Kimi K3 and MiniMax M3.

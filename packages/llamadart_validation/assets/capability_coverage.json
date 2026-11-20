@@ -396,6 +396,16 @@
     },
     {
       "surfaces": [
+        "matrix:Template-derived thinking-budget end sequences"
+      ],
+      "exemption": {
+        "id": "xml-thinking-budget-natural-ends",
+        "reason": "The sampler pack's raw Stories15M budget uses explicit tags and cannot exercise XML template routing. test/integration/core/engine/qwen_xml_thinking_budget_ends_test.dart checks generated and prefilled tool openers with Qwen3.5 and original Qwen3-Coder GGUFs. Planner and WebGPU tests cover template scope, wire options and capability rejection. No versioned XML multi-end profile is bound.",
+        "issue": "https://github.com/leehack/llamadart/issues/1949"
+      }
+    },
+    {
+      "surfaces": [
         "matrix:Renamed legacy Qwen3 thinking switch"
       ],
       "exemption": {
