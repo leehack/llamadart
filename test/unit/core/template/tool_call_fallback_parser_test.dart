@@ -289,6 +289,16 @@ void main() {
         ('Ok $call;\nDone', 'Ok \nDone'),
         ('Ok $call; $call; bye', 'Ok bye'),
         ('Ok $call\n; then done', 'Ok \n; then done'),
+        ('Ok $call\r; then done', 'Ok \r; then done'),
+        ('Ok $call;</tool_call> Done', 'Ok Done'),
+        ('$call;</tool_call> Done', ' Done'),
+        ('Ok $call; </tool_call>\nDone', 'Ok \nDone'),
+        ('Ok <tool_call>$call; Done', 'Ok Done'),
+        ('Ok <tool_call>$call;</tool_call> Done', 'Ok Done'),
+        ('Ok <tool_call>$call</tool_call>; Done', 'Ok ; Done'),
+        ('Ok $call  ', 'Ok '),
+        ('Ok$call  ', 'Ok '),
+        ('  $call  Done', ' Done'),
         ('Ok${call}Done', 'OkDone'),
         ('Ok\n$call\nDone', 'Ok\n\nDone'),
         ('Ok$call Done', 'Ok Done'),
@@ -303,6 +313,14 @@ void main() {
         expect(parsed.toolCalls, isNotEmpty, reason: input);
         expect(parsed.content, expected, reason: input);
       }
+
+      final wrapped = parseToolCallsFromLooseText(
+        'Ok <tool_call>$call; $call Done',
+        preserveJsonProse: true,
+        allowedToolNames: const {'weather'},
+      );
+      expect(wrapped.toolCalls, hasLength(1));
+      expect(wrapped.content, 'Ok $call Done');
     });
 
     test('holds partial closing tag prefix after a bare loose call', () {
@@ -316,6 +334,203 @@ void main() {
 
       expect(parsed.toolCalls, hasLength(1));
       expect(parsed.content, isNot(contains('</tool_')));
+    });
+
+    test('gates function-call syntax by allowedToolNames', () {
+      for (final undeclared in [
+        'rm(path="/")',
+        'os.system(cmd="ls")',
+        'weather_extra(city="Seoul")',
+      ]) {
+        for (final preserve in [false, true]) {
+          final parsed = parseToolCallsFromLooseText(
+            undeclared,
+            preserveJsonProse: preserve,
+            allowedToolNames: const {'weather'},
+          );
+          expect(parsed.toolCalls, isEmpty, reason: '$undeclared/$preserve');
+          expect(parsed.content, undeclared, reason: '$undeclared/$preserve');
+        }
+      }
+
+      for (final preserve in [false, true]) {
+        final noTools = parseToolCallsFromLooseText(
+          'weather(city="Seoul")',
+          preserveJsonProse: preserve,
+          allowedToolNames: const <String>{},
+        );
+        expect(noTools.toolCalls, isEmpty, reason: 'noTools/$preserve');
+        expect(
+          noTools.content,
+          'weather(city="Seoul")',
+          reason: 'noTools/$preserve',
+        );
+      }
+
+      final declared = parseToolCallsFromLooseText(
+        '  weather(city="Seoul")  ',
+        preserveJsonProse: true,
+        allowedToolNames: const {'weather'},
+      );
+      expect(declared.toolCalls, hasLength(1));
+      expect(declared.toolCalls.single.function?.name, 'weather');
+      expect(jsonDecode(declared.toolCalls.single.function!.arguments!), {
+        'city': 'Seoul',
+      });
+      expect(declared.content, isEmpty);
+    });
+
+    for (final explanation in [
+      'would retrieve the current weather information.',
+      'is my call',
+    ]) {
+      test('leaves a leading function followed by "$explanation" as text', () {
+        final output = 'get_weather(location="Paris") $explanation';
+        for (final partial in [false, true]) {
+          final parsed = parseToolCallsFromLooseText(
+            output,
+            preserveJsonProse: true,
+            isPartial: partial,
+            allowedToolNames: const {'get_weather'},
+          );
+          expect(parsed.toolCalls, isEmpty);
+          expect(parsed.content, output);
+        }
+      });
+    }
+
+    test('holds an unclosed nested function argument', () {
+      const output = 'weather(city=lookup(a';
+      final partial = parseToolCallsFromLooseText(
+        output,
+        preserveJsonProse: true,
+        isPartial: true,
+        allowedToolNames: const {'weather'},
+      );
+      expect(partial.content, isEmpty);
+      expect(partial.toolCalls, isEmpty);
+
+      final completed = parseToolCallsFromLooseText(
+        '$output))',
+        preserveJsonProse: true,
+        allowedToolNames: const {'weather'},
+      );
+      expect(completed.content, isEmpty);
+      expect(jsonDecode(completed.toolCalls.single.function!.arguments!), {
+        'city': 'lookup(a)',
+      });
+    });
+
+    test('keeps an escaped quote inside a function argument', () {
+      final parsed = parseToolCallsFromLooseText(
+        r'weather(city="A\"B")',
+        preserveJsonProse: true,
+        allowedToolNames: const {'weather'},
+      );
+      expect(parsed.content, isEmpty);
+      expect(jsonDecode(parsed.toolCalls.single.function!.arguments!), {
+        'city': r'A\"B',
+      });
+    });
+
+    for (final input in [
+      'weather(city="A", city="B")',
+      'weather(city="A")\n;',
+      'weather(city={"name":unknown ',
+    ]) {
+      test('releases invalid function syntax "$input"', () {
+        for (final partial in [false, true]) {
+          final parsed = parseToolCallsFromLooseText(
+            input,
+            preserveJsonProse: true,
+            isPartial: partial,
+            allowedToolNames: const {'weather'},
+          );
+          expect(parsed.content, input);
+          expect(parsed.toolCalls, isEmpty);
+        }
+      });
+    }
+
+    test('holds whitespace that might precede a closing tool tag', () {
+      const call = '{"name":"weather","arguments":{"city":"Seoul"}}';
+      final partial = parseToolCallsFromLooseText(
+        'Plan\t\t$call \t',
+        preserveJsonProse: true,
+        isPartial: true,
+        allowedToolNames: const {'weather'},
+      );
+      final completed = parseToolCallsFromLooseText(
+        'Plan\t\t$call \t</tool_call>',
+        preserveJsonProse: true,
+        allowedToolNames: const {'weather'},
+      );
+      expect(partial.content, 'Plan\t\t');
+      expect(completed.content, partial.content);
+    });
+
+    test('releases partial function-call syntax once name cannot match', () {
+      for (final partial in ['r', 'rm']) {
+        final parsed = parseToolCallsFromLooseText(
+          partial,
+          preserveJsonProse: true,
+          isPartial: true,
+          allowedToolNames: const {'weather'},
+        );
+        expect(parsed.toolCalls, isEmpty, reason: partial);
+        expect(parsed.content, partial, reason: partial);
+      }
+
+      for (final partial in [
+        'rm',
+        'rm(',
+        'rm(path="/"',
+        'os.system(cmd="ls"',
+        'read_other',
+        'read(',
+        'weather_extra',
+        'weather is sunny',
+        '  rm(pa',
+      ]) {
+        final parsed = parseToolCallsFromLooseText(
+          partial,
+          preserveJsonProse: true,
+          isPartial: true,
+          allowedToolNames: const {'weather', 'read_file'},
+        );
+        expect(parsed.toolCalls, isEmpty, reason: partial);
+        expect(parsed.content, partial, reason: partial);
+      }
+
+      final noToolsPartial = parseToolCallsFromLooseText(
+        'weather(city="Se',
+        preserveJsonProse: true,
+        isPartial: true,
+        allowedToolNames: const <String>{},
+      );
+      expect(noToolsPartial.toolCalls, isEmpty);
+      expect(noToolsPartial.content, 'weather(city="Se');
+
+      for (final held in [
+        'w',
+        'wea',
+        'weather',
+        'weather ',
+        'weather(',
+        'weather(city="Seoul"',
+        '  r',
+        '  read',
+        '  read_file(',
+      ]) {
+        final parsed = parseToolCallsFromLooseText(
+          held,
+          preserveJsonProse: true,
+          isPartial: true,
+          allowedToolNames: const {'weather', 'read_file'},
+        );
+        expect(parsed.toolCalls, isEmpty, reason: held);
+        expect(parsed.content, isEmpty, reason: held);
+      }
     });
   });
 }

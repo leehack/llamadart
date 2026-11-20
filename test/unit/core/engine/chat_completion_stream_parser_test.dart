@@ -1059,6 +1059,49 @@ void main() {
       },
     );
 
+    test(
+      'LFM2 keeps its paced delivery cadence after a parenthetical',
+      () async {
+        final tokens = [
+          'The',
+          ' weather',
+          ' (forecast)',
+          ...List.filled(22, ' stays'),
+        ];
+        var received = 0;
+        Stream<String> paced() async* {
+          for (final token in tokens) {
+            await Future<void>.delayed(const Duration(milliseconds: 35));
+            received++;
+            yield token;
+          }
+        }
+
+        final deliveries = <int>[];
+        final visible = StringBuffer();
+        await for (final chunk in ChatCompletionStreamParser.parse(
+          tokenStream: paced(),
+          templateResult: LlamaChatTemplateResult(
+            prompt: '',
+            format: ChatFormat.lfm2.index,
+          ),
+          parseToolCallsEnabled: true,
+          enableThinking: true,
+          modelName: 'LFM2',
+          completionId: 'lfm2-paced-parenthetical',
+          tools: [_weatherTool],
+        )) {
+          final text = chunk.choices.single.delta.content ?? '';
+          if (text.isNotEmpty) {
+            deliveries.add(received);
+            visible.write(text);
+          }
+        }
+        expect(deliveries, [1, 5, 9, 13, 17, 21, 25]);
+        expect(visible.toString(), tokens.join());
+      },
+    );
+
     test('LFM2 and Kimi K2 gate tool calls in content and thoughts', () async {
       for (final (format, call, opening) in [
         (

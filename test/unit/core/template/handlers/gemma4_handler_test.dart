@@ -223,8 +223,17 @@ void main() {
 
     test('parses loose function call syntax emitted by Gemma 4 LiteRT-LM', () {
       const output = 'get_weather(location="Seoul")';
+      final weatherTool = ToolDefinition(
+        name: 'get_weather',
+        description: 'Weather',
+        parameters: [ToolParam.string('location', required: true)],
+      );
 
-      final parsed = ChatTemplateEngine.parse(ChatFormat.gemma4.index, output);
+      final parsed = ChatTemplateEngine.parse(
+        ChatFormat.gemma4.index,
+        output,
+        tools: [weatherTool],
+      );
 
       expect(parsed.content, isEmpty);
       expect(parsed.toolCalls, hasLength(1));
@@ -233,6 +242,80 @@ void main() {
         jsonDecode(parsed.toolCalls.first.function!.arguments!),
         equals({'location': 'Seoul'}),
       );
+
+      final noTools = ChatTemplateEngine.parse(ChatFormat.gemma4.index, output);
+      expect(noTools.toolCalls, isEmpty);
+      expect(noTools.content, output);
+
+      final undeclared = ChatTemplateEngine.parse(
+        ChatFormat.gemma4.index,
+        'rm(path="/")',
+        tools: [weatherTool],
+      );
+      expect(undeclared.toolCalls, isEmpty);
+      expect(undeclared.content, 'rm(path="/")');
+    });
+
+    test('only an accepted native envelope supersedes a loose function', () {
+      const thought = '<|channel>thought\nNeed weather<channel|>';
+      const function = 'weather(city="A")';
+      const nativeBody = '<|tool_call>call:weather{city:<|"|>Seoul<|"|>}';
+      const malformed = '<|tool_call>call:weather{city:}<tool_call|>';
+      final tools = [
+        ToolDefinition(
+          name: 'weather',
+          description: 'Weather',
+          parameters: [ToolParam.string('city')],
+        ),
+      ];
+      for (final (tail, nativeWins) in [
+        ('', false),
+        ('<|tool_', false),
+        ('<|tool_call>', false),
+        ('<|tool_call>call:weather{city:<|"|>Seo', false),
+        (malformed, false),
+        (nativeBody, true),
+        ('$nativeBody<tool_', true),
+        ('$nativeBody<tool_call|>', true),
+        ('$malformed$nativeBody<tool_call|>', true),
+      ]) {
+        for (final partial in [true, false]) {
+          final result = ChatTemplateEngine.parse(
+            ChatFormat.gemma4.index,
+            '$thought$function$tail',
+            isPartial: partial,
+            tools: tools,
+          );
+          expect(result.reasoningContent, 'Need weather', reason: tail);
+          expect(result.content, nativeWins ? function : '', reason: tail);
+          final call = result.toolCalls.single;
+          expect(call.index, 0, reason: tail);
+          expect(call.function?.name, 'weather', reason: tail);
+          expect(jsonDecode(call.function!.arguments!), {
+            'city': nativeWins ? 'Seoul' : 'A',
+          }, reason: tail);
+        }
+      }
+    });
+
+    test('loose JSON recovery preserves preceding function-like prose', () {
+      const prose = 'weather(city="A") example ';
+      const json = '{"name":"weather","arguments":{"city":"B"}}';
+      final parsed = ChatTemplateEngine.parse(
+        ChatFormat.gemma4.index,
+        '$prose$json',
+        tools: [
+          ToolDefinition(
+            name: 'weather',
+            description: 'Weather',
+            parameters: [ToolParam.string('city')],
+          ),
+        ],
+      );
+      expect(parsed.content, prose);
+      final call = parsed.toolCalls.single;
+      expect(call.function?.name, 'weather');
+      expect(jsonDecode(call.function!.arguments!), {'city': 'B'});
     });
 
     test('streams an open thought channel as partial reasoning', () {

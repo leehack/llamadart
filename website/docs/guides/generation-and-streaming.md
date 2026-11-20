@@ -214,10 +214,15 @@ credential, which reports `llama_model`. An OpenAI-compatible server that
 exposes its own model id should set that id on its responses instead.
 
 With Gemma 4 tools enabled, confirmed prose can stream while a possible loose
-JSON tool payload is still arriving. Fenced and closed inline-backtick JSON
-stream as text, non-matching tool names release once the name is known, and the
-parser keeps text before and after a recovered call while publishing executable
-calls on the final chunk.
+JSON or function-call-syntax payload is still arriving. Fenced and closed
+inline-backtick JSON stream as text, non-matching tool names release once the
+name is known, and function-like prose releases once it can no longer form a
+standalone call. A closed argument list followed by explanatory prose stays
+text. The parser keeps text around recovered loose JSON calls, strips adjacent
+`;` and `</tool_call>` residue, and collapses horizontal junction whitespace to
+one space. A recovered loose JSON call can delay following prose until the stream
+ends or a valid native call appears. If the native call wins, the literal
+fallback text streams in order. Executable calls arrive on the final chunk.
 
 ## Token usage and timings
 
