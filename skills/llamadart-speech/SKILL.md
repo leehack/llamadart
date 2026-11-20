@@ -74,7 +74,9 @@ description: >-
     preserves the original wording. Otherwise an audio-only decode of the
     original audio must corroborate it within one word edit. The extra decode
     can delay a partial or the final flush. Quiet or misrecognized dictation can
-    be dropped. If no text survives, the session completes with an empty-transcript
+    be dropped, including whispered (even at normal levels), sung, robotic, or
+    very low-pitched (below about 100 Hz) dictation of the exact instruction.
+    If no final text survives, the session completes with an empty-transcript
     error. Other echoes can still appear.
     A full buffer commits at a quiet boundary or hard-cuts at 8 s, which can
     split a word. Confirmed windows

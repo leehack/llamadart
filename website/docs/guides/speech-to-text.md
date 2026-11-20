@@ -296,7 +296,9 @@ original wording if it detects changing voiced speech. Otherwise it decodes
 the original audio with an audio-only prompt and keeps the original wording
 if the results differ by at most one word edit. That extra decode can delay
 pending or confirmed text, or the final flush. Quiet or misrecognized
-dictation can be dropped. If no text survives, the session completes with an
+dictation can be dropped, including whispered (even at normal levels), sung,
+robotic, or very low-pitched (below about 100 Hz) dictation of the exact
+instruction. If no final text survives, the session completes with an
 empty-transcript error. Other instruction echoes can still appear.
 
 ```dart

@@ -185,9 +185,11 @@ class Qwen3AsrAdapter extends SpeechToTextPromptAdapter {
 /// Portuguese variant, changing voiced speech preserves the original wording.
 /// Otherwise an audio-only decode of the original audio must corroborate it
 /// within one word edit. The extra decode can delay a partial or the final
-/// flush. Quiet or misrecognized dictation can be dropped. If no text survives,
-/// the session completes with an empty-transcript error. Other echoes can
-/// still appear.
+/// flush. Quiet or misrecognized dictation can be dropped, including whispered
+/// (even at normal levels), sung, robotic, or very low-pitched (below about
+/// 100 Hz) dictation of the exact instruction. If no final text survives, the
+/// session completes with an empty-transcript error. Other echoes can still
+/// appear.
 ///
 /// Requires `SpeechToTextEngine.load` on a native platform with a loaded
 /// Qwen3-ASR model and verified `qwen3a` audio [SpeechToTextModel.projector].

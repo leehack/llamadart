@@ -927,6 +927,40 @@ void main() {
     });
   }
 
+  test(
+    'Qwen3-ASR known limitation: whispered instruction can be dropped',
+    () async {
+      final whisperPath = _envFile('LLAMADART_STT_WINDOWED_WHISPER_PCM_PATH');
+      if (modelPath == null || projectorPath == null || whisperPath == null) {
+        markTestSkipped(
+          'Set the Qwen model, projector and whispered PCM paths.',
+        );
+        return;
+      }
+      final pcm = _hashedFloatPcm(
+        File(whisperPath),
+        '89e7a073a8d37057f12bcda69a26538ddd2de1fc9c5bf17e0b183cd9ccb9ad5c',
+      );
+      final engine = await loadWindowed(modelPath, projectorPath);
+      try {
+        final run = await _collectStream(engine, pcm, [4000]);
+        expect(run.finals, isEmpty);
+        expect(run.completion.state, SpeechToTextCompletionState.failed);
+        expect(run.completion.result, isNull);
+        expect(
+          run.completion.error,
+          isA<LlamaSpeechException>().having(
+            (error) => error.message,
+            'message',
+            'Speech recognition produced an empty transcript.',
+          ),
+        );
+      } finally {
+        await engine.dispose();
+      }
+    },
+  );
+
   for (final (name, hash) in [
     (
       'faint tone',

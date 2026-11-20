@@ -214,6 +214,12 @@ directory to check exact partial and final text in the
 | `i2088b-joana-0.00125.f32le` | `64ba1331ab712c2f10b743e1dd955f26dbd8b83135f8b6b5687b74b5a24f4be2` | Quiet dictation with a one-word reference mismatch |
 | `i2088b-jfk-floportu.f32le` | `1820cfb3a22fa52b3f3d520bd895ae53b4a49bf4295e4bdd5aadc2455716ee93` | FloPortu dictating after JFK with an unrelated audio-only reference |
 
+For the known whispered-dictation limitation, set
+`LLAMADART_STT_WINDOWED_WHISPER_PCM_PATH` to the PR #2093 audit fixture
+`a2093c-repro-au-en-full-Whisper-0.04.f32le` (mono 16 kHz float32 little-endian,
+SHA-256 `89e7a073a8d37057f12bcda69a26538ddd2de1fc9c5bf17e0b183cd9ccb9ad5c`).
+The local-only replay expects no final and a typed empty-transcript error.
+
 The scenario also checks a faint tone and loud tone and filtered-noise bursts
 against three empty partials, zero finals, and a typed empty completion.
 Set `LLAMADART_STT_LIVE_PACED=1` for the 300 s run at the input audio rate.

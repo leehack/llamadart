@@ -386,10 +386,11 @@ void main() {
 
       final fast = _voicedTone(16);
       final slow = _voicedTone(23);
+      final shiftedSlow = _voicedTone(23, phase: 8);
       final fourChanges = [fast, slow, fast, slow, fast];
       final threeChanges = fourChanges.take(4).toList();
       final twoCrossings = _voicedTone(21);
-      final belowEnergy = _alternatingTones(0.0098);
+      final belowEnergy = _alternatingTones(0.00985);
       final aboveEnergy = _alternatingTones(0.0101);
       final correlationBelow = _voicedTone(13, amplitude: 0.03, noise: 0.00815);
       final correlationAbove = _voicedTone(13, amplitude: 0.03, noise: 0.00785);
@@ -408,11 +409,36 @@ void main() {
           _voicingPcm(fourChanges),
           true,
         ),
+        (
+          'four changes starting in the first frame',
+          Float32List.sublistView(
+            _voicingPcm(fourChanges),
+            qwenWindowedQuietFrameSamples,
+          ),
+          true,
+        ),
+        (
+          'voiced changes absent from the first sample of each group of four',
+          _voicingPcm(fourChanges, flatFirstSample: true),
+          true,
+        ),
         ('three changes', _voicingPcm(threeChanges), false),
         (
           'differences of two',
           _voicingPcm([fast, twoCrossings, fast, twoCrossings, fast]),
           false,
+        ),
+        (
+          'differences of two when the prior sample carries across frames',
+          _voicingPcm([fast, shiftedSlow, fast, shiftedSlow, fast]),
+          false,
+        ),
+        (
+          'rising plateaus treated as nonpositive differences',
+          _voicingPcm([
+            for (var i = 0; i < 5; i++) _triangleFrame(steppedRise: i.isEven),
+          ]),
+          true,
         ),
         (
           'RMS just below 0.007 with DC offset',
@@ -444,6 +470,13 @@ void main() {
           'only lag 40 correlates',
           _voicingPcm(alternatingWithSlow(_laggedFrame(40, 1, 0.33))),
           true,
+        ),
+        (
+          'only negative correlation reaches the threshold',
+          _voicingPcm(
+            alternatingWithSlow(_laggedFrame(40, 1, 0.33, feedback: -0.7)),
+          ),
+          false,
         ),
         (
           'period 41 is outside the lag range',
@@ -1173,12 +1206,13 @@ List<double> _voicedTone(
   int period, {
   double amplitude = 0.02,
   double noise = 0,
+  double phase = 0.37,
 }) {
   var seed = 2;
   return List.generate(80, (i) {
     seed = (1664525 * seed + 1013904223) & 0xffffffff;
     final white = 2 * seed / 4294967296 - 1;
-    return amplitude * math.sin(2 * math.pi * (i + 0.37) / period) +
+    return amplitude * math.sin(2 * math.pi * (i + phase) / period) +
         noise * white;
   });
 }
@@ -1188,17 +1222,33 @@ List<List<double>> _alternatingTones(double amplitude) => [
     _voicedTone(period, amplitude: amplitude),
 ];
 
-List<double> _laggedFrame(int lag, int seed, double drift) {
+List<double> _laggedFrame(
+  int lag,
+  int seed,
+  double drift, {
+  double feedback = 0.7,
+}) {
   final samples = List.filled(80, 0.0);
   for (var i = 0; i < samples.length; i++) {
     seed = (1664525 * seed + 1013904223) & 0xffffffff;
     final white = 2 * seed / 4294967296 - 1;
-    samples[i] = i < lag ? white : 0.7 * samples[i - lag] + drift * white;
+    samples[i] = i < lag ? white : feedback * samples[i - lag] + drift * white;
   }
   return samples.map((value) => 0.04 * value).toList();
 }
 
-Float32List _voicingPcm(List<List<double>?> frames) {
+List<double> _triangleFrame({required bool steppedRise}) {
+  return List.generate(80, (index) {
+    final position = index % 16;
+    if (position >= 8) return 0.01 * (16 - position);
+    return 0.01 * (steppedRise ? position - position % 2 : position);
+  });
+}
+
+Float32List _voicingPcm(
+  List<List<double>?> frames, {
+  bool flatFirstSample = false,
+}) {
   const dc = 0.04;
   final pcm = Float32List((frames.length + 1) * 320)
     ..fillRange(0, (frames.length + 1) * 320, dc);
@@ -1206,7 +1256,11 @@ Float32List _voicingPcm(List<List<double>?> frames) {
     if (frame == null) continue;
     for (final (sampleIndex, sample) in frame.indexed) {
       final start = (frameIndex + 1) * 320 + sampleIndex * 4;
-      pcm.fillRange(start, start + 4, dc + sample);
+      if (flatFirstSample) {
+        pcm.fillRange(start + 1, start + 4, dc + sample * 4 / 3);
+      } else {
+        pcm.fillRange(start, start + 4, dc + sample);
+      }
     }
   }
   return pcm;
