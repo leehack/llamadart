@@ -1494,6 +1494,35 @@ exec cat "$FIXTURE_GITHUB_SQUASH"
     );
   });
 
+  test('blocks writing when a joined landed bullet opens a comment', () async {
+    final repo = _repo();
+    final commit = repo.pr(
+      4,
+      '\n- Keep `a visible in the rendered release notes when parsing backtick xy\n'
+      'b `<!--` and everything after this is hidden in rendered Markdown',
+    );
+    repo.pr(5, '\n- Second note stays visible.');
+    final before = {
+      for (final path in [_root, _docs])
+        path: repo.file(path).readAsBytesSync(),
+    };
+
+    await expectLater(
+      _collect(repo, repo.args(write: true), {
+        'commits/$commit/pulls': [[]],
+      }),
+      throwsA(
+        allOf([
+          _formatError('WARNING $commit (#4): no matching merged main PR'),
+          _formatError('INCOMPLETE'),
+        ]),
+      ),
+    );
+    for (final entry in before.entries) {
+      expect(repo.file(entry.key).readAsBytesSync(), entry.value);
+    }
+  });
+
   test('association fallback rejects manually wrapped API text', () async {
     final repo = _repo();
     final commit = repo.commit('Missing landed section (#4)');

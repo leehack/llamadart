@@ -245,7 +245,7 @@ _MarkdownLine _joinLandedEntry(List<_MarkdownLine> entry) {
   return (
     index: first.index,
     line: line,
-    visible: line,
+    visible: _withoutComments(line, false).$1,
     heading: first.heading,
     nested: first.nested,
     example: first.example,
