@@ -126,24 +126,23 @@ void main() {
     skip: Platform.isWindows ? 'Runs the Bash workflow step.' : false,
   );
 
-  test('both selected docs validation paths enforce protected changelogs', () {
-    final ci = loadYaml(File('.github/workflows/ci.yml').readAsStringSync());
-    final jobs = ci['jobs'] as YamlMap;
-    for (final name in ['analyze', 'docs-versions']) {
-      final steps = (jobs[name] as Map)['steps'] as List;
-      expect(
-        steps.where(
-          (step) =>
-              step['run'] ==
-                  'dart run tool/testing/check_released_changelog_sections.dart' &&
-              step['if'] == null &&
-              step['continue-on-error'] != true,
-        ),
-        hasLength(1),
-        reason: name,
+  final ci = loadYaml(File('.github/workflows/ci.yml').readAsStringSync());
+  final ciJobs = ci['jobs'] as YamlMap;
+  for (final name in ['analyze', 'docs-versions']) {
+    test('$name runs the protected changelog policy with GitHub access', () {
+      final job = ciJobs[name] as YamlMap;
+      final steps = (job['steps'] as YamlList).cast<YamlMap>();
+      final policy = steps.singleWhere(
+        (step) =>
+            step['run'] ==
+            'dart run tool/testing/check_released_changelog_sections.dart',
       );
-    }
-  });
+      expect(policy['if'], isNull);
+      expect(policy['continue-on-error'], isNot(true));
+      expect((policy['env'] as Map?)?['GH_TOKEN'], r'${{ github.token }}');
+      expect((job['permissions'] as Map?)?['pull-requests'], 'read');
+    });
+  }
 
   test(
     'native sync validates the generated body before opening or editing a PR',

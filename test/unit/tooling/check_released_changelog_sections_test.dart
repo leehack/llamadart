@@ -58,7 +58,7 @@ class _Repo {
   String git(List<String> args) {
     final result = Process.runSync(
       'git',
-      ['-c', 'commit.gpgsign=false', ...args],
+      ['-c', 'commit.gpgsign=false', '-c', 'core.autocrlf=false', ...args],
       workingDirectory: root.path,
       environment: {
         'GIT_AUTHOR_NAME': 'Fixture',
@@ -84,12 +84,18 @@ class _Repo {
     return git(['rev-parse', 'HEAD']);
   }
 
-  String prep({Map<String, String> edits = const {}}) => commit({
-    'pubspec.yaml': 'name: llamadart\nversion: 1.2.4\n',
-    _root: '# Releases\n\n$_new$_published',
-    _docs: '$_new$_published',
-    ...edits,
-  });
+  String prep({
+    String version = '1.2.4',
+    Map<String, String> edits = const {},
+  }) {
+    final notes = '## $version\n\n- New.\n\n$_published';
+    return commit({
+      'pubspec.yaml': 'name: llamadart\nversion: $version\n',
+      _root: '# Releases\n\n$notes',
+      _docs: notes,
+      ...edits,
+    });
+  }
 
   Future<List<String>> check(
     String head, {
@@ -135,6 +141,7 @@ class _Repo {
 class _RecoveryFixture {
   _RecoveryFixture(
     this.repo, {
+    this.version = '1.2.4',
     Map<String, String> prepEdits = const {},
     Map<String, String> beforeEdits = const {},
     Map<String, String> publishedEdits = const {},
@@ -148,7 +155,10 @@ class _RecoveryFixture {
     original = repo.base;
     tag('v1.2.3', original);
     before = repo.commit({'ordinary.txt': 'keep this\n', ...beforeEdits});
-    final single = repo.prep(edits: {'README.md': 'attempt\n', ...prepEdits});
+    final single = repo.prep(
+      version: version,
+      edits: {'README.md': 'attempt\n', ...prepEdits},
+    );
     prep = twoParents
         ? repo.git([
             'commit-tree',
@@ -166,6 +176,7 @@ class _RecoveryFixture {
   }
 
   final _Repo repo;
+  final String version;
   late final Directory remote;
   late final String original;
   late final String before;
@@ -188,12 +199,12 @@ class _RecoveryFixture {
     ]);
   }
 
-  Map<String, Object> get detail => {
+  Map<String, Object> pullDetail({String? headRef}) => {
     'number': 42,
     'merged': true,
     'merge_commit_sha': prep,
     'head': {
-      'ref': 'release/prep-1.2.4',
+      'ref': headRef ?? 'release/prep-$version',
       'repo': {'full_name': _repoName},
     },
     'base': {
@@ -211,8 +222,13 @@ class _RecoveryFixture {
     'after': prep,
   };
 
+  String record({String? markerVersion, String? markerBefore}) =>
+      '${jsonEncode({'version': markerVersion ?? version, 'prep': prep, 'before': markerBefore ?? before, 'pr': 42})}\n';
+
   String recovery({
     String? markerBefore,
+    String? recordPath,
+    String? recordContents,
     bool wider = false,
     Map<String, String> edits = const {},
   }) {
@@ -228,8 +244,8 @@ class _RecoveryFixture {
     ]);
     if (wider) repo.git(['rm', 'ordinary.txt']);
     return repo.commit({
-      path:
-          '${jsonEncode({'version': '1.2.4', 'prep': prep, 'before': markerBefore ?? before, 'pr': 42})}\n',
+      (recordPath ?? path):
+          recordContents ?? record(markerBefore: markerBefore),
       ...edits,
     });
   }
@@ -238,6 +254,7 @@ class _RecoveryFixture {
     String head, {
     Object? pages,
     Map<String, Object>? pull,
+    List<Map<String, Object>>? timeline,
     Object? releases,
     RecoveryPubGet? pub,
     String? eventBase,
@@ -265,7 +282,12 @@ class _RecoveryFixture {
     lookup: (endpoint, {required paginate}) async {
       if (endpoint == 'repos/$_repoName/pulls/42') {
         expect(paginate, isFalse);
-        return pull ?? detail;
+        return pull ?? pullDetail();
+      }
+      if (endpoint == 'repos/$_repoName/issues/42/timeline?per_page=100' &&
+          timeline != null) {
+        expect(paginate, isTrue);
+        return [timeline];
       }
       if (endpoint.startsWith('repos/$_repoName/activity?')) {
         expect(paginate, isTrue);
@@ -313,6 +335,130 @@ void main() {
       expect(checkReleasePrepTrees(repo.root, repo.base, head), [
         contains('preserve all'),
       ]);
+    },
+  );
+
+  test(
+    'recovery marker version must match the attempted core version',
+    () async {
+      final fixture = _RecoveryFixture(repo);
+      final head = fixture.recovery(
+        recordContents: fixture.record(markerVersion: '1.2.5'),
+      );
+      expect(await fixture.check(head), [
+        contains('attempted stable core version'),
+      ]);
+    },
+  );
+
+  test('recovery record path must use the full prep SHA', () async {
+    final fixture = _RecoveryFixture(repo);
+    for (final path in [
+      'tool/release/recoveries/${fixture.before}.json',
+      'tool/release/recoveries/nested/${fixture.prep}.json',
+      'tool/release/recoveries/${fixture.prep}.JSON',
+      'tool/release/recoveries/${fixture.prep}',
+    ]) {
+      final head = fixture.recovery(recordPath: path);
+      expect(await fixture.check(head), [
+        contains('Invalid canonical'),
+      ], reason: path);
+    }
+  });
+
+  test('recovery record bytes must be canonical', () async {
+    final fixture = _RecoveryFixture(repo);
+    final canonical = fixture.record();
+    final fields = jsonDecode(canonical) as Map<String, dynamic>;
+    final variants = {
+      'pretty-printed':
+          '${const JsonEncoder.withIndent(' ').convert(fields)}\n',
+      'reordered': '${jsonEncode({'prep': fields['prep'], ...fields})}\n',
+      'missing newline': canonical.trimRight(),
+      'CRLF': '${canonical.trimRight()}\r\n',
+      'duplicate key': '{"version":"9.9.9",${canonical.substring(1)}',
+      'extra key': '${jsonEncode({...fields, 'extra': 1})}\n',
+      'uppercase SHA':
+          '${jsonEncode({...fields, 'before': fixture.before.toUpperCase()})}\n',
+      'string PR': '${jsonEncode({...fields, 'pr': '42'})}\n',
+      'zero PR': '${jsonEncode({...fields, 'pr': 0})}\n',
+      'prerelease version': fixture.record(markerVersion: '1.2.4-dev'),
+    };
+    expect(await fixture.check(fixture.recovery()), isEmpty);
+    for (final entry in variants.entries) {
+      final head = fixture.recovery(recordContents: entry.value);
+      expect(await fixture.check(head), [
+        contains('Invalid canonical'),
+      ], reason: entry.key);
+    }
+  });
+
+  test('a prep that decreases the core version cannot be recovered', () async {
+    final fixture = _RecoveryFixture(repo, version: '1.2.2');
+    expect(await fixture.check(fixture.recovery()), [
+      contains('attempted stable core version increase'),
+    ]);
+  });
+
+  test(
+    'label-routed recovery requires release-prep at the merge event',
+    () async {
+      final fixture = _RecoveryFixture(repo);
+      final head = fixture.recovery();
+      final pull = fixture.pullDetail(headRef: 'custom-prep');
+      const label = {'name': 'release-prep'};
+      const labeled = {'event': 'labeled', 'label': label};
+      const unlabeled = {'event': 'unlabeled', 'label': label};
+      final merged = {'event': 'merged', 'commit_id': fixture.prep};
+      expect(
+        await fixture.check(
+          head,
+          pull: pull,
+          timeline: [labeled, merged, unlabeled],
+        ),
+        isEmpty,
+      );
+      for (final timeline in [
+        [merged, labeled],
+        [labeled, unlabeled, merged],
+        [labeled],
+      ]) {
+        expect(await fixture.check(head, pull: pull, timeline: timeline), [
+          contains('outside core prep routing at merge'),
+        ], reason: '$timeline');
+      }
+      expect(
+        await fixture.check(
+          head,
+          pull: pull,
+          timeline: [labeled, merged, merged],
+        ),
+        [contains('Conflicting merged events')],
+      );
+    },
+  );
+
+  test(
+    'a Genkit prep branch cannot recover as core even with the core label',
+    () async {
+      final fixture = _RecoveryFixture(repo);
+      final head = fixture.recovery();
+      expect(
+        await fixture.check(
+          head,
+          pull: fixture.pullDetail(
+            headRef: 'release/genkit_llamadart-prep-1.2.4',
+          ),
+          timeline: [
+            {
+              'event': 'labeled',
+              'label': {'name': 'release-prep'},
+            },
+            {'event': 'merged', 'commit_id': fixture.prep},
+          ],
+        ),
+        [contains('does not identify the same-repository main prep')],
+      );
     },
   );
 
@@ -445,7 +591,10 @@ void main() {
         contains('GitHub read failed'),
       ]);
       expect(
-        await fixture.check(head, pull: {...fixture.detail, 'number': 43}),
+        await fixture.check(
+          head,
+          pull: {...fixture.pullDetail(), 'number': 43},
+        ),
         [contains('identify')],
       );
     },
@@ -471,6 +620,30 @@ void main() {
       contains('pre-prep first-parent chain'),
     ]);
   });
+
+  test(
+    'recovery requires the owner tag to match the previous release',
+    () async {
+      final fixture = _RecoveryFixture(repo);
+      final head = fixture.recovery();
+      expect(await fixture.check(head), isEmpty);
+
+      fixture.tag('v1.2.3', fixture.before);
+      expect(await fixture.check(head), [
+        contains('disagrees with the previous release'),
+      ]);
+
+      repo.git([
+        '--git-dir=${fixture.remote.path}',
+        'update-ref',
+        '-d',
+        'refs/tags/v1.2.3',
+      ]);
+      expect(await fixture.check(head), [
+        contains('disagrees with the previous release'),
+      ]);
+    },
+  );
 
   test(
     'the authenticated prep must still be on current first-parent main',
@@ -646,6 +819,32 @@ void main() {
       ]);
       fixture.tag('v1.2.4', fixture.prep);
       expect(await fixture.check(head), [contains('v1.2.4 already exists')]);
+    },
+  );
+
+  test(
+    'recovery requires a pub.dev NotFound error body for HTTP 404',
+    () async {
+      final fixture = _RecoveryFixture(repo);
+      final head = fixture.recovery();
+      expect(await fixture.check(head), isEmpty);
+      for (final body in ['{}', '{"error":{"code":"Unavailable"}}']) {
+        expect(
+          await fixture.check(
+            head,
+            pub: (_) async => (status: 404, body: body),
+          ),
+          [contains('Malformed pub.dev 404')],
+          reason: body,
+        );
+      }
+      expect(
+        await fixture.check(
+          head,
+          pub: (_) async => (status: 404, body: '<html>'),
+        ),
+        isNotEmpty,
+      );
     },
   );
 
