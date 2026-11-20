@@ -245,6 +245,7 @@ typedef ReleaseNotesInput = ({
 final _previousField = RegExp(r'^Previous-tag: (v[^@ ]+)@([a-f0-9]{40})$');
 final _throughField = RegExp(r'^Through: ([a-f0-9]{40})$');
 final _inputDigestField = RegExp(r'^Input-SHA256: ([a-f0-9]{64})$');
+final _bareField = RegExp(r'^[A-Za-z0-9-]+:$');
 final _reviewRow = RegExp(r'^- ([a-f0-9]{40}) (\S.*)$');
 final _genericReview = RegExp(
   r'^(?:ack(?:nowledged)?|reviewed|done|ok|omit(?:ted)?|drop(?:ped)?|keep|kept|combine(?:d)?)[.!]?$',
@@ -254,10 +255,13 @@ final _genericReview = RegExp(
 /// Reads the receipt from a prep PR body or landed message.
 ReleaseNotesInput parseReleaseNotesInput(String body) {
   const title = 'Release notes input';
-  final lines = _metadataSection(body, title);
-  if (lines == null) throw const FormatException('$title: add one section.');
+  final rows = _metadataSection(body, title);
+  if (rows == null) throw const FormatException('$title: add one section.');
   final fields = <String, Match>{};
-  for (final line in lines) {
+  for (final line in _unwrapped(
+    rows,
+    (previous, _) => _bareField.hasMatch(previous),
+  )) {
     if (_previousField.firstMatch(line) case final tag?
         when coreReleaseVersion.hasMatch(tag[1]!.substring(1)) &&
             !fields.containsKey('Previous-tag')) {
@@ -289,7 +293,8 @@ ReleaseNotesInput parseReleaseNotesInput(String body) {
 Map<String, String> parseReleaseNotesReview(String body) {
   const title = 'Release notes review';
   final reviews = <String, String>{};
-  for (final line in _metadataSection(body, title) ?? const <String>[]) {
+  final rows = _metadataSection(body, title) ?? const <_MetadataLine>[];
+  for (final line in _unwrapped(rows, (_, line) => !line.startsWith('- '))) {
     final row = _reviewRow.firstMatch(line);
     if (row == null) {
       throw const FormatException(
@@ -309,8 +314,28 @@ Map<String, String> parseReleaseNotesReview(String body) {
   return reviews;
 }
 
-List<String>? _metadataSection(String body, String title) {
-  List<String>? lines;
+typedef _MetadataLine = ({int index, String line});
+
+// GitHub's default squash message rewraps lines over 72 columns.
+List<String> _unwrapped(
+  List<_MetadataLine> rows,
+  bool Function(String previous, String line) continues,
+) {
+  final lines = <String>[];
+  int? lastIndex;
+  for (final (:index, :line) in rows) {
+    if (lastIndex == index - 1 && continues(lines.last, line)) {
+      lines.last = '${lines.last} $line';
+    } else {
+      lines.add(line);
+    }
+    lastIndex = index;
+  }
+  return lines;
+}
+
+List<_MetadataLine>? _metadataSection(String body, String title) {
+  List<_MetadataLine>? lines;
   var inSection = false;
   for (final row in _markdownLines(body)) {
     if (row.heading case final heading?) {
@@ -324,10 +349,12 @@ List<String>? _metadataSection(String body, String title) {
       }
     }
     if (!inSection || row.visible.trim().isEmpty) continue;
-    if (row.nested || row.line != row.visible) {
+    if (row.nested ||
+        row.line != row.visible ||
+        row.line != row.line.trimLeft()) {
       throw FormatException('$title: malformed field or review entry.');
     }
-    lines!.add(row.line);
+    lines!.add((index: row.index, line: row.line));
   }
   return lines;
 }
@@ -452,7 +479,7 @@ bool _verifyPrepEvent(Map<String, Object?> event) {
             'repo': {'full_name': final String headRepo},
           },
           'labels': final List labels,
-          'body': final String body,
+          'body': String _,
         },
       }
       when isCoreReleasePrep(
@@ -462,17 +489,10 @@ bool _verifyPrepEvent(Map<String, Object?> event) {
         repository: Platform.environment['GITHUB_REPOSITORY'] ?? '',
       )) {
     if (action != 'edited') return true;
+    // GitHub derives its default squash message from the whole description.
     final changes = event['changes'] as Map?;
-    if (changes?.containsKey('base') ?? false) return true;
-    final oldBody = (changes?['body'] as Map?)?['from'];
-    if (oldBody is! String) return false;
-    try {
-      return parseReleaseNotesInput(oldBody) != parseReleaseNotesInput(body) ||
-          jsonEncode(parseReleaseNotesReview(oldBody)) !=
-              jsonEncode(parseReleaseNotesReview(body));
-    } on FormatException {
-      return true;
-    }
+    return changes != null &&
+        (changes.containsKey('base') || changes.containsKey('body'));
   }
   return false;
 }

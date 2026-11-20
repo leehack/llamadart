@@ -116,8 +116,9 @@ void main() {
           current: '## Summary\n\nNew context.\n\n$body',
           before: body,
         ),
-        isFalse,
+        isTrue,
       );
+      expect(await route('edited'), isFalse);
       expect(
         await route(
           'edited',
@@ -340,6 +341,66 @@ Improve setup (#9)
         receipt.replaceFirst('Previous-tag:', 'Previous-tag :'),
       ]) {
         expect(() => parseReleaseNotesInput(bad), throwsFormatException);
+      }
+    });
+    test("reads GitHub's default squash rewrap of a real prep description", () {
+      String fixture(String name) =>
+          File('test/fixtures/release_prep/$name').readAsStringSync();
+      final description = fixture('pr_2114_description.md');
+      final landed =
+          'Prepare llamadart 0.20.3 release (#2114)\n\n'
+          '${fixture('pr_2114_github_squash_body.txt')}';
+      expect(landed, contains('\nInput-SHA256:\na6fcb06a8dee8c18'));
+      expect(
+        const LineSplitter().convert(landed).map((line) => line.runes.length),
+        everyElement(lessThanOrEqualTo(72)),
+      );
+      expect(
+        parseReleaseNotesInput(landed),
+        parseReleaseNotesInput(description),
+      );
+      final reviews = parseReleaseNotesReview(description);
+      expect(reviews, hasLength(2));
+      expect(parseReleaseNotesReview(landed), reviews);
+    });
+    test('joins only the lines a rewrap can split', () {
+      const heading = '## Release notes review';
+      final wrapped = receipt.replaceFirst('Input-SHA256: ', 'Input-SHA256:\n');
+      expect(parseReleaseNotesInput(wrapped), parseReleaseNotesInput(receipt));
+      final longTag = receipt.replaceFirst('v0.20.2+1', 'v0.20.2+${'1' * 25}');
+      expect(
+        parseReleaseNotesInput(
+          longTag.replaceFirst('Previous-tag: ', 'Previous-tag:\n'),
+        ),
+        parseReleaseNotesInput(longTag),
+      );
+      expect(
+        parseReleaseNotesReview(
+          '$heading\n- $through Combined with\nthe setup entry.\n\n- $previous Reworded.',
+        ),
+        {through: 'Combined with the setup entry.', previous: 'Reworded.'},
+      );
+      for (final bad in [
+        receipt.replaceFirst('Input-SHA256: ', 'Input-SHA256:\n\n'),
+        receipt.replaceFirst('Input-SHA256: ', 'Input-SHA256:\n '),
+        receipt.replaceFirst('Input-SHA256: $digest', 'Input-SHA256:'),
+        receipt.replaceFirst('Through: ', 'Input-SHA256:\nThrough: '),
+        receipt.replaceFirst(
+          digest,
+          '${digest.substring(0, 32)}\n${digest.substring(32)}',
+        ),
+      ]) {
+        expect(() => parseReleaseNotesInput(bad), throwsFormatException);
+      }
+      for (final bad in [
+        '$heading\nthe setup entry.\n- $through Combined with',
+        '$heading\n- $through Combined with\n\nthe setup entry.',
+        '$heading\n- $through Combined with\n- the setup entry.',
+        '$heading\n- $through Combined with\n- ${previous.substring(1)} Reworded.',
+        '$heading\n- $through Combined with\n  the setup entry.',
+        '$heading\n- $through Combined with\n the setup entry.',
+      ]) {
+        expect(() => parseReleaseNotesReview(bad), throwsFormatException);
       }
     });
     test('requires a unique SHA and specific text in each review entry', () {

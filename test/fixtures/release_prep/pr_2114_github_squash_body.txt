@@ -1,0 +1,195 @@
+## Summary
+
+- Prepare core and all three Apple Flutter runtime companions at
+`0.20.3` for #2099. The companion bumps ship updated installation
+examples. Their core constraints and SwiftPM pins are identical to
+`0.20.2`.
+- Regenerate the chat app, validation harness, and observability
+lockfiles. Only local package versions changed.
+- Promote the Qwen3-ASR and Gemma 4 fixes and the speech guide
+correction in both core changelogs. The docs changelog retains the
+`0.20.x` and `0.19.x` series. The root changelog is 158,846 bytes.
+
+## Changelog
+
+N/A: Prepares release metadata and promotes the already landed changelog
+entries to 0.20.3.
+
+## Production-readiness scope
+
+- **User-facing scope:** Release notes and current installation guidance
+for core and the three Apple companions.
+- **Supported platforms/paths:** Core pub archive, Apple Flutter
+companion packages with SwiftPM, and the docs site. The release notes
+record existing model and runtime behavior.
+- **Unsupported or intentionally unavailable paths:** N/A. This prep
+introduces no runtime paths or options.
+- **Out of scope / follow-ups:** Publication requires separate approval.
+Independent review of this prep and CI on its head are pending. Confirm
+the three pub.dev automated-publishing settings before merge.
+
+## Completeness checklist
+
+- [x] Release version, changelogs, current install docs, and generated
+consumer locks are in scope and updated.
+- [x] Unsupported platform/option changes are N/A for release metadata.
+- [x] Current install docs and the prep changelog are updated. API docs,
+examples, and support matrix changes are N/A for release metadata.
+- [x] Release regression coverage uses the repository tooling suites and
+the synthesized squash rehearsal.
+- [x] Capability inventory passes. Registry changes are N/A because the
+prep adds no public capability.
+- [x] No credentials, signed URLs, or private paths are in the PR diff
+or receipt.
+- [x] Open release items are recorded above under #2099.
+
+## PR type guidance
+
+- **Release prep:** Exact release candidate and its squash message are
+checked through the PR and pre-tag publisher validators. Feature,
+bugfix, and docs-only guidance are N/A for this metadata PR.
+
+## Test Plan
+
+- [x] `dart run tool/prepare_workspace.dart` from the clean release
+commit
+- [x] `python3 tool/ci/check_format.py`, the repository formatter entry
+point using the SDK pins
+- [x] `dart analyze` and `dart run
+tool/testing/check_platform_boundaries.dart`
+- [x] `dart test -p vm -j 1 --exclude-tags local-only` with isolated
+`TMPDIR`
+- [x] `dart test -p chrome --exclude-tags local-only`
+- [x] `coverage-lib` is N/A for this release metadata diff.
+- [x] Tooling and Markdown suites, docs build, Studio packages with
+Flutter 3.50.0, and model-free example tests
+- [x] Core archive dry-run and all three companion publish dry-runs with
+checkout overrides, plus registry and native asset metadata checks
+- [x] PR and publisher rehearsal from the candidate merge tree,
+including the unchanged runtime baseline and the four squash message
+shapes. A changed receipt digest was rejected
+
+## Matrix Evidence
+
+| Matrix row | Scope covered | Platform / model / backend | Result |
+Evidence / notes |
+| --- | --- | --- | --- | --- |
+| `static-format-analyze` | format, analyzer, web/native import
+boundaries | macOS arm64 | PASS | Pinned Flutter 3.47.1; clean workspace
+preparation; 1,912 files formatted; analyzer and platform boundaries
+clean. |
+| `root-vm` | native-safe unit/integration coverage on the Dart VM |
+macOS arm64 | PASS | Full `--exclude-tags local-only` run with a fresh
+temp directory; tooling and Markdown suites also passed separately. |
+| `root-chrome` | browser-compatible unit/integration coverage | macOS
+arm64 / Chrome | PASS | 5,160 passed and one skipped. |
+| `coverage-lib` | >=70% line coverage for maintainable lib/ code; CI
+enforces it after merge only | — | N/A | Release metadata changes only.
+|
+| `high-risk-exact-head-independent-qa` | independent blocking-only
+review of exact head/current base, live threads, production call sites,
+adversarial negatives, and tests sensitive to production-branch
+deletion, bypass, or miswiring | — | Pending | Independent QA before
+mark-ready. |
+| `docs-site` | website build, docs metadata, generated docs routes |
+macOS arm64 | PASS | 4,400 pages and 64 sitemap entries; no broken
+internal links. |
+| `release-doc-version-consistency` | current README/website install
+snippets, companion README versions, and each companion SwiftPM pin
+against its own released CHANGELOG section | macOS arm64 | PASS |
+Standard and strict verifiers, released-byte guard, and 37 companion pin
+regression tests. |
+| `webgpu-bridge-tag-consistency` | every site pinning the WebGPU bridge
+asset tag matches the fetch script default, and the bridge assets'
+llama.cpp build matches the native pin unless a divergence is recorded |
+Pinned `v0.1.86` assets | PASS | 14 live sites, unchanged-runtime
+release gate, published manifest digest and upstream `v1.0.0` at the
+pinned commit. |
+| `examples-tests` | example package unit tests and Flutter app
+regressions | macOS arm64 / Dart and Flutter | PASS | Basic app 51
+passed. Chat app 698 passed and eight skipped. Studio core and UI
+format, analysis, VM, and targeted Chrome passed with Flutter 3.50.0. |
+| `release-companion-pub-gate` | Flutter Apple SPM companion package
+pub.dev availability and core constraints around the post-merge core tag
+| pub.dev / Apple SwiftPM | PASS (local preflight) | Published `0.20.2`
+versions respond 200; `0.20.3` versions respond 404. Publisher preflight
+and three staged dry-runs passed. Owner Admin settings remain a
+pre-merge check. |
+| `release-representative-smokes` | representative examples before
+publishing a package release | macOS arm64 / pub archive | PASS
+(model-free) | Core pub selected 2,017 files; a fresh consumer and
+packaged basic app resolved and analyzed. |
+
+## Review Notes
+
+- Independent review status is pending on this draft.
+- CI is pending on `2f079df0f5c04fefeda2e59aa062cefb3b3b14b8`.
+
+## High-risk regression review
+
+- **Classification:** high-risk / `artifactConsumer`
+- **Implementation task:** #2099, 0.20.3 release prep
+- **Independent blocking QA task:** Pending before mark-ready.
+- **Exact head / current base:**
+`2f079df0f5c04fefeda2e59aa062cefb3b3b14b8` /
+`5a7e3afeded96cb94712978d6c926406f15b2ddd`
+- **Production-branch deletion, bypass, or miswire proof:** Release
+verifier regression suite and malformed-receipt negative control.
+Independent review pending.
+- **Affected-family real-model/artifact evidence:** Core selected-file
+archive and staged Apple packages. The existing native XCFramework
+archives and checksum assets are present at their pinned tags.
+- **Explicit unavailable-family or other N/A evidence:** Model/device
+qualification is N/A for the prep diff. Runtime identities match
+`0.20.2`.
+- **Known PR-caused P1 regressions:** 0 known by the author. Independent
+review pending.
+- **Unresolved review threads:** 0 at draft creation.
+
+## Collector ledger
+
+The collector read `v0.20.2` through the parent recorded below. The
+cutover seed at `adbb25f0af22e769208e43b69851e34c24a97ce5` carries the
+sole legacy file bullet, from #2091. Its source and #2109 are retained
+in one edited entry. The previous docs cut is outside the PR ledger.
+
+| Source | Disposition | Release note or reason |
+| --- | --- | --- |
+| #2091 | Included, legacy seed | Gemma 4 loose-JSON parsing (#2081). |
+| #2093 | Included | Qwen3-ASR instruction echo filtering (#2088). |
+| #2109 | Included | Gemma 4 loose function-call validation (#2095). |
+| #2113 | Included | Partial transcripts and whole-file Qwen3-ASR
+documentation. |
+| #2096, #2097, #2100, #2103 | N/A, pre-cutover source declarations |
+Documentation corrections for LiteRT-LM, installed package links, and
+code samples. |
+| #2101, #2102, #2104, #2105, #2106 | N/A, pre-cutover source
+declarations | Guides, support pages, and maintainer documentation
+restructuring. |
+| #2107 | N/A, pre-cutover source declaration | Maintainer receipt
+tooling. |
+| #2110, #2111, #2112 | N/A, collector | Changelog activation, skill
+validation, and runtime claim checks. |
+
+Four included PRs, zero excluded PRs, 13 N/A, and zero unresolved
+entries. The collector itself reported three included, three N/A, and
+one legacy-seed bullet. The pre-cutover N/A entries are accounted for
+from the landed commit bodies.
+
+## Release notes review
+
+- adbb25f0af22e769208e43b69851e34c24a97ce5 Combine the legacy #2091
+Gemma 4 loose-JSON note with #2109. Retain the declared-name gate,
+literal JSON handling, streamed text release, and text after a loose
+call.
+- 030220c111a10416390d97981a72f93756738de7 Combine #2109 with the legacy
+Gemma 4 note. Retain standalone syntax and declared-name requirements,
+prose preservation when native calls supersede loose calls, and removal
+of trailing call delimiters.
+
+## Release notes input
+
+Previous-tag: v0.20.2@b44fb2653d76508c51b24659af78f694c25df1b4
+Through: 5a7e3afeded96cb94712978d6c926406f15b2ddd
+Input-SHA256:
+a6fcb06a8dee8c18cb562feafccb3996ca3c24ab376b8f5309a9255642dda6ac
