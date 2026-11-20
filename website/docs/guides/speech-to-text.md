@@ -1,7 +1,7 @@
 ---
 title: On-device speech to text
 sidebar_label: Speech to text
-description: Transcribe audio files with Qwen3-ASR or stream live PCM with LiteRT-LM through the experimental typed SpeechToTextEngine API.
+description: Transcribe encoded audio with Qwen3-ASR or stream live PCM with native llama.cpp or LiteRT-LM.
 ---
 
 `SpeechToTextEngine` is the typed, experimental API for speech recognition. It
@@ -18,10 +18,10 @@ adapter that drives it. The adapter picks the runtime.
 | Approach | API | Runtimes | Input | Output |
 | --- | --- | --- | --- | --- |
 | Qwen3-ASR, whole file | `SpeechToTextEngine.load` with `Qwen3AsrAdapter`, or `attach` | Native llama.cpp; WebGPU (pinned bridge assets) | A complete WAV, MP3, or FLAC file or bytes; bytes only on Web | One final transcript |
-| Qwen3-ASR, windowed live (opt-in) | `SpeechToTextEngine.load` with `Qwen3WindowedAsrAdapter` | Native llama.cpp (`qwen3a` projector required) | Mono 16 kHz finite normalized float32 PCM, pushed incrementally or as one buffer | Replaceable 2/4/6 s partials, commits when the 8 s buffer fills, then final |
+| Qwen3-ASR, windowed live (opt-in) | `SpeechToTextEngine.load` with `Qwen3WindowedAsrAdapter` | Native llama.cpp (`qwen3a` projector required) | Mono 16 kHz finite normalized float32 PCM, pushed incrementally or as one buffer | Replaceable `pendingText` at 2/4/6 s, committed windows in `confirmedText`, then final |
 | Another audio chat model, whole file | `load` or `attach` with your own `SpeechToTextPromptAdapter` | As Qwen3-ASR | As Qwen3-ASR | One final transcript |
-| llama.cpp, live streaming | `SpeechToTextEngine.load` with `LlamaCppLiveAsrAdapter` | Native llama.cpp (`llamadart-native@v1.0.0-1`+) | Mono 16 kHz finite normalized float32 PCM, pushed incrementally or as one buffer | Cumulative confirmed partials, then a final transcript |
-| LiteRT-LM, live streaming | `SpeechToTextEngine.load` with `LiteRtLmAsrAdapter` | Native LiteRT-LM, CPU only | Mono 16 kHz float PCM, pushed incrementally or as one buffer | Replaceable partial text, then a final transcript |
+| llama.cpp, live streaming | `SpeechToTextEngine.load` with `LlamaCppLiveAsrAdapter` | Native llama.cpp (`llamadart-native@v1.0.0-1`+) | Mono 16 kHz finite normalized float32 PCM, pushed incrementally or as one buffer | Cumulative `confirmedText`, empty `pendingText`, then final |
+| LiteRT-LM, live streaming | `SpeechToTextEngine.load` with `LiteRtLmAsrAdapter` | Native LiteRT-LM, CPU only | Mono 16 kHz float PCM, pushed incrementally or as one buffer | Stable `confirmedText` with replaceable `pendingText`, then final |
 | Generic audio chat | `LlamaAudioContent` in `engine.create` | Audio-capable GGUF projectors; `.litertlm` bundles with audio | Audio as a chat content part | Ordinary chat output, no transcript contract |
 
 LiteRT-LM Web supports none of these. `Qwen3AsrAdapter` and
@@ -446,10 +446,10 @@ active task per `SpeechToTextEngine` instance.
 
 ## Input formats and length
 
-Qwen3-ASR recognition is validated up to 30 seconds per input. Longer inputs
-can drop or repeat sentences without reaching any limit, so split longer
-recordings into windows of at most 30 seconds. Built-in windowing is not
-available yet.
+For whole-file transcription with `Qwen3AsrAdapter`, split longer recordings
+into encoded clips of at most 30 seconds. Longer inputs can silently drop or
+repeat sentences. For incremental native PCM, see
+[Stream live audio with Qwen3-ASR](#stream-live-audio-with-qwen3-asr-opt-in-windowed).
 
 A Qwen3-ASR prompt grows by about 13 tokens per second of audio, and the
 transcript shares the same context. On native llama.cpp, a prompt-adapter task
@@ -506,11 +506,7 @@ needs enough memory for the roughly 1.02 GB Qwen3-ASR
   detected-language metadata until language behavior has a dedicated
   validation contract.
 - There are no word/segment timestamps, confidence scores, or speaker
-  diarization. Incremental audio and partial text are native-only
-  (`LlamaCppLiveAsrAdapter` on llama.cpp and `LiteRtLmAsrAdapter` on
-  LiteRT-LM for stateful streaming, plus opt-in `Qwen3WindowedAsrAdapter` on
-  llama.cpp for windowed live PCM); Web throws `LlamaUnsupportedException` for
-  live streaming.
+  diarization. Web throws `LlamaUnsupportedException` for live PCM streaming.
 - For `Qwen3WindowedAsrAdapter`:
   - Confirmed windows are joined with `\n` in `confirmedText` and `result.text`.
   - The first window commits after 8 s of audio plus a decode. Later full
