@@ -80,7 +80,7 @@ Important fields:
   for a device index the host lacks, a split for another number of devices,
   several GPU backends under `auto`, and a load that would fall back to the
   CPU; the Web and LiteRT-LM reject both fields. After a load with either
-  field, `getBackendName()` names the devices, such as `CUDA (CUDA0, CUDA2)`.
+  field, `getBackendName()` names the devices, such as `CUDA (CUDA0, CUDA1)`.
   A speculative draft model loads on the same devices and split, and
   decision heads and multimodal projectors run on the listed GPU `mainGpu`
   counts within the list, or the first one when it is out of range. Only GPUs
