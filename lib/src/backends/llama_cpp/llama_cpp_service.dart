@@ -3955,7 +3955,7 @@ class LlamaCppService {
     );
   }
 
-  String _reasoningBudgetUnavailableMessage({required bool requireMultiEnd}) {
+  String _reasoningBudgetUnavailableMessage({bool requireMultiEnd = false}) {
     final requirement = requireMultiEnd
         ? '${_ReasoningBudgetApi._multiEndRequirement} '
         : '';
