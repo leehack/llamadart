@@ -91,3 +91,37 @@ jobs:
               fi
             done
           fi
+
+  default-squash-token-probe:
+    name: Probe default squash workflow token
+    if: github.head_ref == 'fix/release-receipt-github-wrap'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - name: Read the default squash message
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          number="$(jq -r .pull_request.number "$GITHUB_EVENT_PATH")"
+          # GraphQL expands its query variables.
+          # shellcheck disable=SC2016
+          gh api graphql -f owner="${GITHUB_REPOSITORY%/*}" -f name="${GITHUB_REPOSITORY#*/}" \
+            -F number="$number" -f query='
+            query($owner: String!, $name: String!, $number: Int!) {
+              repository(owner: $owner, name: $name) {
+                pullRequest(number: $number) {
+                  viewerMergeHeadlineText(mergeType: SQUASH)
+                  viewerMergeBodyText(mergeType: SQUASH)
+                }
+              }
+            }' | jq -e -r --arg suffix " (#$number)" '
+            .data.repository.pullRequest
+            | select((.viewerMergeHeadlineText | type) == "string" and
+                     (.viewerMergeBodyText | type) == "string" and
+                     (.viewerMergeHeadlineText | endswith($suffix)))
+            | "\(.viewerMergeHeadlineText)\n\n\(.viewerMergeBodyText)"' | wc -l
