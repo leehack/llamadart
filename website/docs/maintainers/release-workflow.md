@@ -419,6 +419,23 @@ rsync -a --delete \
 
 ## 5. If automation is blocked
 
+If **Validate release state** fails after the prep squash lands, record the
+squash SHA and failed check. Confirm that no core or companion tag was
+created, then reproduce the failure from that SHA with its first parent and
+the immutable message from `git show -s --format=%B`. If a transient
+dependency or service failed, rerun the original workflow at the same SHA
+after it recovers.
+
+If the receipt or candidate tree is invalid, open a release-blocking issue.
+A rerun reads the same bytes, and a new prep needs the previous core tag.
+Hold publication while maintainers review a targeted recovery that restores
+the last tagged release metadata and changelog bytes while retaining
+unrelated main changes. The protected-changelog gate rejects a normal
+revert, so the recovery must include a reviewed policy change scoped to
+that unpublished prep. Verify the recovery at its proposed merge tree,
+then regenerate the prep and its receipt from current main. Keep the
+existing tags and use the normal publisher for the new squash.
+
 If the docs snapshot workflow cannot push directly to main, generate the
 snapshot from the release tag with `dart run tool/cut_version.dart VERSION`
 in `website/`. Rebase the versions, versioned docs and versioned sidebars
@@ -446,8 +463,9 @@ use `--review FILE` with the draft prep body. In
 for each required source affected by editorial changes. Fix unresolved
 input at its source before continuing.
 
-The collector and strict Web/runtime and release-docs checks run from the
-candidate tree before merge and the merged tree before tag creation. The
+Before merge, the checks read a synthesized single-parent squash with the
+tested merge tree and the PR title and body. Before tag creation, they
+read the actual squash. The
 receipt binds effective inputs. Executing from the candidate and landed
 trees binds the renderer and verifier to the code under review. The
 publisher requires a single-parent squash and reads the receipt from its

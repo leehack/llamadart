@@ -7,6 +7,7 @@ import 'dart:io';
 
 import 'package:crypto/crypto.dart';
 import 'package:test/test.dart';
+import 'package:yaml/yaml.dart';
 
 import '../../../tool/release/collect_pr_changelog.dart';
 
@@ -241,19 +242,29 @@ void main() {
     timeout: const Timeout(Duration(minutes: 2)),
   );
 
-  for (final trailer in [
-    'Signed-off-by: A <a@example.invalid>',
-    '---------\n\nCo-authored-by: A <a@example.invalid>',
+  for (final (shape, suffix) in [
+    ('no trailers', ''),
+    ('only a sign-off', 'Signed-off-by: A <a@example.invalid>'),
+    (
+      'a GitHub co-author block',
+      '---------\n\nCo-authored-by: A <a@example.invalid>\n'
+          'Co-authored-by: B <b@example.invalid>',
+    ),
+    (
+      'a GitHub co-author block with blank lines',
+      '---------\n\nCo-authored-by: A <a@example.invalid>\n\n'
+          'Co-authored-by: B <b@example.invalid>',
+    ),
   ]) {
-    test('verifies an immutable prep message ending with $trailer', () async {
+    test('verifies the immutable prep message with $shape', () async {
       final repo = _repo();
       final through = repo.pr(3, '- Included note.');
       final preview = await _collect(repo, repo.args(write: true));
       final candidate = repo.commit(
         'Prepare release (#10)\n\n## Changelog\nN/A: Cuts the release.\n\n'
-        '${_receiptBlock(preview)}\n$trailer',
+        '${_receiptBlock(preview)}\n$suffix',
       );
-      final input = repo.file('.git/clact2-landed-message.md')
+      final input = repo.file('.git/clact3-landed-message.md')
         ..writeAsStringSync(repo.git(['show', '-s', '--format=%B', candidate]));
       expect(
         await _collect(
@@ -264,6 +275,116 @@ void main() {
       );
     });
   }
+
+  test('reads the final changelog before a GitHub co-author block', () async {
+    final repo = _repo();
+    final commit = repo.commit(
+      'Sync release (#4)\n\n## Changelog\n- Refreshed native pins.\n\n'
+      '---------\n\nCo-authored-by: A <a@example.invalid>\n'
+      'Co-authored-by: B <b@example.invalid>',
+    );
+    final output = await _collect(repo, repo.args());
+    expect(
+      output,
+      contains(
+        '"sha":"$commit","pr":4,"source":"git","disposition":"included"',
+      ),
+    );
+    expect(_draft(output), contains('- Refreshed native pins.'));
+  });
+
+  test(
+    'prep CI verifies the synthesized single-parent squash with no trailers',
+    () async {
+      final repo = _repo();
+      final through = repo.pr(3, '- Included note.');
+      final preview = await _collect(repo, repo.args(write: true));
+      final body =
+          '## Changelog\nN/A: Cuts the release.\n\n${_receiptBlock(preview)}';
+      const title = 'Prepare release';
+      final head = repo.commit(title, {
+        'pubspec.yaml': 'name: llamadart\nversion: 0.20.3\n',
+      });
+      final tree = repo.git(['rev-parse', 'HEAD^{tree}']).trim();
+      final merge = repo.git([
+        'commit-tree',
+        tree,
+        '-p',
+        through,
+        '-p',
+        head,
+        '-m',
+        'Test merge',
+      ]).trim();
+      repo.git(['checkout', '--detach', merge]);
+      final event = repo.file('.git/clact3-prep-event.json')
+        ..writeAsStringSync(
+          jsonEncode({
+            'pull_request': {
+              'number': 10,
+              'title': title,
+              'body': body,
+              'base': {'sha': through},
+              'head': {'sha': head},
+            },
+          }),
+        );
+      final script = File('tool/release/verify_release_candidate.sh');
+      repo.write(script.path, script.readAsStringSync());
+      final dart = File('tool/release/collect_pr_changelog.dart').absolute.path;
+      repo.write('.git/dart', r'''#!/usr/bin/env bash
+if [[ "$1" == tool/testing/check_released_changelog_sections.dart ]]; then
+  echo 'Core release prep: true'
+elif [[ "$2" == tool/release/collect_pr_changelog.dart ]]; then
+  shift 2
+  exec "$FIXTURE_DART" "$FIXTURE_COLLECTOR" "$@"
+fi
+''');
+      final chmod = Process.runSync('chmod', [
+        '+x',
+        repo.file('.git/dart').path,
+      ]);
+      expect(chmod.exitCode, 0, reason: '${chmod.stderr}');
+      final workflow =
+          loadYaml(
+                File('.github/workflows/pr_changelog.yml').readAsStringSync(),
+              )
+              as YamlMap;
+      final steps = workflow['jobs']['release-prep']['steps'] as YamlList;
+      final verify = steps.cast<YamlMap>().singleWhere(
+        (step) =>
+            step['name'] == 'Check the real PR head and tested merge result',
+      );
+      final env = {
+        ..._identity,
+        'GITHUB_EVENT_PATH': event.path,
+        'RUNNER_TEMP': repo.file('.git').path,
+        'PATH': '${repo.file('.git').path}:${Platform.environment['PATH']}',
+        'FIXTURE_DART': Platform.resolvedExecutable,
+        'FIXTURE_COLLECTOR': dart,
+      };
+      Future<ProcessResult> run() => Process.run(
+        'bash',
+        ['-c', verify['run'] as String],
+        workingDirectory: repo.dir.path,
+        environment: env,
+      );
+      final result = await run();
+      expect(result.exitCode, 0, reason: '${result.stdout}\n${result.stderr}');
+      expect(result.stdout, contains('Release notes input verified.'));
+      final squash = repo.head;
+      expect(repo.git(['show', '-s', '--format=%P', squash]).trim(), through);
+      expect(repo.git(['rev-parse', 'HEAD^{tree}']).trim(), tree);
+      expect(
+        repo.git(['show', '-s', '--format=%B', squash]).trimRight(),
+        '$title (#10)\n\n${body.trimRight()}',
+      );
+      final mismatched = await run();
+      expect(mismatched.exitCode, isNot(0));
+      expect(mismatched.stdout, isNot(contains('Core release prep: true')));
+    },
+    skip: Platform.isWindows ? 'Runs the Bash workflow step.' : false,
+  );
 
   test(
     'rejects write in verification and candidate without verification',

@@ -4,8 +4,14 @@ set -euo pipefail
 through="$1"
 candidate="$(git rev-parse --verify "$2^{commit}")"
 body="$3"
-[[ "$(git rev-parse HEAD)" == "$candidate" ]]
-[[ "$(git rev-parse "$candidate^1")" == "$through" ]]
+if [[ "$(git rev-parse HEAD)" != "$candidate" ]]; then
+  echo "Release candidate must be checked out." >&2
+  exit 1
+fi
+if [[ "$(git rev-parse "$candidate^1")" != "$through" ]]; then
+  echo "Release candidate must have the verified through commit as its first parent." >&2
+  exit 1
+fi
 
 previous="$(git show "$through:pubspec.yaml" | awk '/^version:[[:space:]]+/ {print $2}')"
 version="$(awk '/^version:[[:space:]]+/ {print $2}' pubspec.yaml)"

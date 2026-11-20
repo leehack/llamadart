@@ -255,6 +255,9 @@ void main() {
     final valid = changelog.readAsStringSync();
     for (final wrong in [
       valid.replaceFirst('1.2.2', '1.2.1'),
+      '${valid.replaceFirst('## 1.2.3', '## 1.2.1')}\n'
+          '## 1.2.3\n\n- Candidate without bridge evidence.\n',
+      valid.replaceFirst(claim, '$claim\n$claim'),
       valid.replaceFirst(baseline, ''),
       '$valid$baseline\n',
       valid.replaceFirst('@litert-lm/core@0.19.0', '@litert-lm/core@0.18.0'),

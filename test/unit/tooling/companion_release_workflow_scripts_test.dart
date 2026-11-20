@@ -52,15 +52,17 @@ fi
 case "$1" in
   rev-parse)
     if [[ "$*" == *'^1' ]]; then
-      echo "$STUB_BASE"
+      echo "${STUB_CANDIDATE_PARENT:-$STUB_BASE}"
+    elif [[ "$2" == --verify ]]; then
+      echo "${STUB_CANDIDATE:-$STUB_HEAD}"
     else
       echo "$STUB_HEAD"
     fi
     ;;
   show)
     case "$2 $3" in
-      '-s --format=%P') echo "$STUB_BASE" ;;
-      '-s --format=%s') echo 'Prepare release (#104)' ;;
+      '-s --format=%P') echo "${STUB_PARENTS:-$STUB_BASE}" ;;
+      '-s --format=%s') echo "${STUB_SUBJECT:-Prepare release (#104)}" ;;
       '-s --format=%B') echo 'Immutable release message' ;;
       *) printf 'name: llamadart\nversion: 0.12.9\n' ;;
     esac
@@ -297,6 +299,7 @@ const _coreListing = 'https://pub.dev/api/packages/llamadart';
 const _preflightScript = 'tool/release/companion_pub_preflight.dart';
 const _verifierScript = 'tool/testing/verify_release_docs_versions.dart';
 const _candidateScript = 'tool/release/verify_release_candidate.sh';
+const _policyScript = 'tool/testing/check_released_changelog_sections.dart';
 const _collectorScript = 'tool/release/collect_pr_changelog.dart';
 const _strictBridge = 'tool/testing/check_webgpu_bridge_tag.dart';
 
@@ -319,7 +322,11 @@ bool _runsAfterFailure(YamlMap step) =>
   String output,
   List<String> problems,
 })
-_runRelease(String workflow, _Release release) {
+_runRelease(
+  String workflow,
+  _Release release, {
+  Map<String, String> env = const {},
+}) {
   final version = release.version ?? '0.13.0';
   final sandbox = _Sandbox();
   final repo = '${sandbox.root}/repo';
@@ -356,7 +363,7 @@ _runRelease(String workflow, _Release release) {
   final validate = sandbox.run(
     validateStep,
     workingDirectory: repo,
-    env: {'GITHUB_OUTPUT': githubOutput},
+    env: {'GITHUB_OUTPUT': githubOutput, ...env},
   );
   if (validate.exitCode != 0 &&
       !_continuesOnError(validateStep) &&
@@ -1053,7 +1060,45 @@ void main() {
       }
     });
 
-    for (final gate in [_collectorScript, _verifierScript, _strictBridge]) {
+    test('verifies the candidate bytes against the release parent', () {
+      final run = _runRelease(workflow, _release('candidate verification'));
+      expect(run.validate.exitCode, 0, reason: '${run.validate.stderr}');
+      expect(
+        run.calls,
+        contains(
+          matches(
+            r'^dart run tool/release/collect_pr_changelog[.]dart '
+            '--version 0.13.0 --from v0.12.9 --through $_otherSha '
+            '--verify-input .+/release-prep-message.md --candidate $_releaseSha\$',
+          ),
+        ),
+      );
+    });
+
+    for (final (label, override) in [
+      ('extra squash parent', {'STUB_PARENTS': '$_otherSha $_tagObjectSha'}),
+      ('wrong PR in subject', {'STUB_SUBJECT': 'Prepare release (#105)'}),
+      ('different checkout', {'STUB_CANDIDATE': _tagObjectSha}),
+      ('different candidate parent', {'STUB_CANDIDATE_PARENT': _tagObjectSha}),
+    ]) {
+      test('stops before checking or publishing a release with $label', () {
+        final run = _runRelease(workflow, _release(label), env: override);
+        expect(run.validate.exitCode, isNot(0));
+        expect(run.publish, isNull);
+        expect(
+          run.calls,
+          isNot(contains(startsWith('dart run $_policyScript'))),
+        );
+        expect(_pushedAnyTag(run.calls), isFalse);
+      });
+    }
+
+    for (final gate in [
+      _policyScript,
+      _collectorScript,
+      _verifierScript,
+      _strictBridge,
+    ]) {
       test(
         'never writes refs when $gate fails, including same-SHA retries',
         () {

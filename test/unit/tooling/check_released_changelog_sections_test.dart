@@ -93,10 +93,12 @@ class _Repo {
     String head, {
     bool prep = false,
     String repo = _repoName,
+    String? eventBase,
+    void Function(String)? log,
   }) {
     final event = {
       'pull_request': {
-        'base': {'sha': base},
+        'base': {'sha': eventBase ?? base},
         'head': {
           'sha': head,
           'ref': 'fixture',
@@ -107,7 +109,12 @@ class _Repo {
         ],
       },
     };
-    return checkReleasedChangelogSections(root, event, repository: _repoName);
+    return checkReleasedChangelogSections(
+      root,
+      event,
+      repository: _repoName,
+      log: log,
+    );
   }
 }
 
@@ -158,6 +165,10 @@ void main() {
             '# Releases\n\n$_new${_published.replaceFirst('Shipped.', 'Shipped. ')}',
       },
     ),
+    (
+      'changed retained docs bytes',
+      {_docs: '$_new${_published.replaceFirst('Shipped.', 'Shipped. ')}'},
+    ),
     ('extra heading', {_docs: '$_new## Accidental heading\n\n$_published'}),
     ('changed archive join', {changelogArchive: '$_archive\n'}),
     ('repin', {changelogCutover: '$_marker\n'}),
@@ -178,6 +189,36 @@ void main() {
       expect(repo.check(genkit, prep: true), isNotEmpty);
     },
   );
+
+  test('core prep moves history only to meet the changelog size limit', () {
+    final previousMinor = _published.indexOf('## 1.1.2');
+    final head = repo.prep(
+      edits: {
+        _root: '# Releases\n\n$_new${_published.substring(0, previousMinor)}',
+        changelogArchive: '${_published.substring(previousMinor)}$_archive',
+      },
+    );
+    expect(repo.check(head, prep: true), [contains('pub.dev size limit')]);
+  });
+
+  test('a metadata-only pubspec edit uses ordinary protection', () {
+    final head = repo.commit({
+      'pubspec.yaml': 'name: llamadart\nversion: 1.2.3\ndescription: Changed\n',
+    });
+    final logs = <String>[];
+    expect(repo.check(head, prep: true, log: logs.add), isEmpty);
+    expect(logs, ['Core release prep: false']);
+  });
+
+  test('Unreleased must precede all numbered sections at cutover', () {
+    expect(
+      () => ChangelogHistory.parse(
+        '$_published\n$_pending',
+        allowUnreleased: true,
+      ),
+      throwsFormatException,
+    );
+  });
 
   test('legacy seed parity is required and numbered bytes stay fixed', () {
     final legacy = ChangelogHistory.parse(
@@ -203,6 +244,16 @@ void main() {
     };
     final head = legacy.commit(expected);
     expect(legacy.check(head), isEmpty);
+    final wrongMarker = legacy.commit({
+      changelogCutover: '{"tag":"v1.2.3","commit":"$head"}\n',
+    });
+    expect(legacy.check(wrongMarker), [contains('last legacy main')]);
+    legacy.git(['checkout', '--detach', legacy.base]);
+    final movedMain = legacy.commit({'other.txt': 'A change on main\n'});
+    expect(legacy.check(head, eventBase: movedMain), [
+      contains('last legacy main'),
+    ]);
+    legacy.git(['checkout', '--detach', head]);
     final mutated = legacy.commit({_root: '${expected[_root]}\n'});
     expect(legacy.check(mutated), [contains('prescribed pending wording')]);
   });

@@ -28,6 +28,20 @@ final _reverts = RegExp(
 final _githubRevert = RegExp(
   r'^Reverts ([A-Za-z0-9-]+/[A-Za-z0-9_.-]+#[1-9][0-9]*)$',
 );
+final _trailingAttribution = RegExp(
+  r'(?:(\n---------)\n[ \t]*\n|\n)'
+  r'(?:(?:Signed-off-by|Co-authored-by):[^\n]*(?:\n[ \t]+[^\n]+)*\n*)+$',
+  caseSensitive: false,
+);
+final _coauthor = RegExp(
+  r'^Co-authored-by:',
+  caseSensitive: false,
+  multiLine: true,
+);
+
+bool _isGithubCoauthorBlock(RegExpMatch attribution) =>
+    attribution[1] != null && _coauthor.hasMatch(attribution[0]!);
+
 final _trailerContinuation = RegExp(r'^[ \t\r\v\f]');
 final _docsCut = RegExp(r'^docs: cut version (\S+)$');
 final _bridgeClaim = RegExp(
@@ -513,19 +527,20 @@ class _Git {
     final raw = text(['show', '-s', '--format=%B', candidate]);
     if (raw.trimRight() != input.trimRight()) return input;
 
-    final landed = commit(candidate);
-    if (landed.trailerState == _TrailerState.unaligned) {
-      throw const FormatException('Cannot align landed release trailers.');
-    }
-    if (landed.trailerState == _TrailerState.clean &&
-        RegExp(
-          r'^Co-authored-by:',
-          caseSensitive: false,
-          multiLine: true,
-        ).hasMatch(landed.trailers)) {
-      return landed.body.replaceFirst(RegExp(r'\n---------\s*$'), '');
-    }
-    return landed.body;
+    // Git can classify the receipt fields themselves as trailers.
+    final message = raw.replaceAll('\r\n', '\n').trimRight();
+    final attribution = _trailingAttribution.firstMatch(message);
+    return landedPrBody(
+      attribution == null
+          ? message
+          : message.substring(
+              0,
+              attribution.start +
+                  (_isGithubCoauthorBlock(attribution)
+                      ? 0
+                      : attribution[1]?.length ?? 0),
+            ),
+    );
   }
 
   ({
@@ -551,9 +566,14 @@ class _Git {
     final (message, trailerState) = fields[3].isEmpty
         ? (fields[2], _TrailerState.clean)
         : _stripTrailers(fields[2], fields[4], fields[5]);
+    final raw = fields[2].trimRight();
+    final attribution = _trailingAttribution.firstMatch(raw);
+    final body = attribution != null && _isGithubCoauthorBlock(attribution)
+        ? raw.substring(0, attribution.start)
+        : message;
     return (
       subject: fields[0],
-      body: landedPrBody(message),
+      body: landedPrBody(body),
       trailers: fields[3],
       trailerState: trailerState,
       parents: fields[1].isEmpty ? 0 : fields[1].split(' ').length,

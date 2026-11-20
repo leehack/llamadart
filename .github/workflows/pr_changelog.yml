@@ -63,11 +63,20 @@ jobs:
           set -euo pipefail
           base="$(jq -r .pull_request.base.sha "$GITHUB_EVENT_PATH")"
           head="$(jq -r .pull_request.head.sha "$GITHUB_EVENT_PATH")"
-          [[ "$(git show -s --format=%P HEAD)" == "$base $head" ]]
+          if [[ "$(git show -s --format=%P HEAD)" != "$base $head" ]]; then
+            echo "Tested merge must have the PR base and head as parents." >&2
+            exit 1
+          fi
           dart tool/testing/check_released_changelog_sections.dart > "$RUNNER_TEMP/changelog-policy.txt"
           cat "$RUNNER_TEMP/changelog-policy.txt"
           if grep -Fxq 'Core release prep: true' "$RUNNER_TEMP/changelog-policy.txt"; then
-            jq -r .pull_request.body "$GITHUB_EVENT_PATH" > "$RUNNER_TEMP/release-prep-body.md"
+            # Verify the merge tree with the single parent and message the publisher reads.
+            message="$RUNNER_TEMP/release-prep-message.md"
+            jq -r '.pull_request | "\(.title) (#\(.number))\n\n\(.body)"' "$GITHUB_EVENT_PATH" > "$message"
+            squash="$(git -c user.name='Release prep CI' -c user.email='release-prep@users.noreply.github.com' \
+              commit-tree "$(git rev-parse 'HEAD^{tree}')" -p "$base" -F "$message")"
+            git checkout --detach "$squash"
+            git show -s --format=%B "$squash" > "$message"
             dart pub get
-            bash tool/release/verify_release_candidate.sh "$base" HEAD "$RUNNER_TEMP/release-prep-body.md"
+            bash tool/release/verify_release_candidate.sh "$base" "$squash" "$message"
           fi
