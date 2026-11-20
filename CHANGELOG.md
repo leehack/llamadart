@@ -1,6 +1,15 @@
 Releases before 0.10.0 are in the
 [changelog archive](https://github.com/leehack/llamadart/blob/main/doc/changelog_archive.md).
 
+## 0.20.3
+
+- Reduce known Qwen3-ASR instruction echoes in windowed partials and finals. Keep the original wording with changing voiced speech or audio-only agreement within one word edit. Quiet or misrecognized dictation can be dropped, with an empty-transcript error if no text survives ([#2088](https://github.com/leehack/llamadart/issues/2088)).
+- Keep Gemma 4 undeclared calls and fenced or inline-backtick JSON as text, recover only valid standalone function calls to declared tools, and preserve prose when calls are recovered or superseded by native calls. Strip stray call delimiters after recovery and release non-matching streamed text once the tool name is known ([#2081](https://github.com/leehack/llamadart/issues/2081), [#2095](https://github.com/leehack/llamadart/issues/2095)).
+- Clarify which speech-to-text modes emit partial transcripts and when to split whole-file Qwen3-ASR recordings.
+- Keep the default WebGPU bridge assets at `v0.1.86` (unchanged from 0.20.2).
+
+Runtime baseline: native llama.cpp `v1.0.0-3` and Web use upstream `v1.0.0@b1b770d90d94cad9e9ea5b993bdbc383a522fb28`; native LiteRT-LM uses `v0.19.1-5` and stable-diffusion uses `v0.4.0`. Web LiteRT-LM uses `@litert-lm/core@0.19.0`. Manifest SHA-256: `d589fbe3c334e4fcb0ccbac3efc4500209358a010b6662ee8523e598a433a0f2`.
+
 ## 0.20.2
 
 - Adopt `llamadart-native@v1.0.0-3` for the Windows Visual C++ runtime and GPU memory fit fixes, plus native speech cancellation and text handling fixes ([#2087](https://github.com/leehack/llamadart/pull/2087)).
