@@ -8,35 +8,70 @@ import 'package:test/test.dart';
 import 'package:yaml/yaml.dart';
 
 void main() {
-  test('Studio admission executes browser-only contracts in both packages', () {
+  test('Studio core admission executes browser-only contracts', () {
     final workflow =
         loadYaml(File('.github/workflows/ci.yml').readAsStringSync()) as Map;
     final steps = (workflow['jobs'] as Map)['studio']['steps'] as List;
-    for (final (package, command) in [
-      (
-        'llamadart_studio_core',
+    final step =
+        steps.singleWhere(
+              (step) => step['name'] == 'Analyze and test Studio core',
+            )
+            as Map;
+    expect(step['working-directory'], 'packages/llamadart_studio_core');
+    expect(
+      (step['run'] as String).split('\n').map((line) => line.trim()),
+      contains(
         'dart test -p chrome test/browser_platform_contract_test.dart '
-            'test/web_engine_batch_settings_test.dart '
-            'test/studio_error_formatter_test.dart',
+        'test/web_engine_batch_settings_test.dart '
+        'test/studio_error_formatter_test.dart',
       ),
-      (
-        'llamadart_studio',
-        'flutter test --platform chrome test/web_recording_test.dart '
-            'test/web_platform_acceptance_test.dart '
-            'test/tool_availability_widget_test.dart',
-      ),
-    ]) {
-      final step =
-          steps.singleWhere(
-                (step) => step['working-directory'] == 'packages/$package',
-              )
-              as Map;
-      final lines = (step['run'] as String)
-          .split('\n')
-          .map((line) => line.trim());
-      expect(lines, contains(command), reason: package);
-      expect(step.containsKey('continue-on-error'), isFalse);
-    }
+    );
+    expect(step.containsKey('continue-on-error'), isFalse);
+  });
+
+  test('Studio UI admission supervises its only Flutter Chrome invocation', () {
+    final workflow =
+        loadYaml(File('.github/workflows/ci.yml').readAsStringSync()) as Map;
+    final job = (workflow['jobs'] as Map)['studio'] as Map;
+    final steps = (job['steps'] as List).cast<Map>();
+    final chromeCommand = RegExp(r'\bflutter\s+test\s+--platform\s+chrome\b');
+    final step = steps.singleWhere(
+      (step) => chromeCommand.hasMatch('${step['run']}'),
+    );
+    final command = (step['run'] as String).trim().replaceAll(
+      RegExp(r'\s+'),
+      ' ',
+    );
+    expect(chromeCommand.allMatches(command), hasLength(1));
+    expect(job['runs-on'], 'ubuntu-latest');
+    expect(job['timeout-minutes'], 20);
+    expect(step['working-directory'], 'packages/llamadart_studio');
+    expect(step.containsKey('continue-on-error'), isFalse);
+    expect(step.containsKey('if'), isFalse);
+    expect(
+      command,
+      'python3 ../../tool/ci/supervise_chrome_test.py '
+      r'--output-dir "$RUNNER_TEMP/studio-ui-chrome" '
+      r'--reporter-file "$RUNNER_TEMP/studio-ui-chrome/reporter.jsonl" '
+      '--timeout-seconds 600 -- flutter test --platform chrome '
+      r'--file-reporter "json:$RUNNER_TEMP/studio-ui-chrome/reporter.jsonl" '
+      'test/web_recording_test.dart test/web_platform_acceptance_test.dart '
+      'test/tool_availability_widget_test.dart',
+    );
+    expect(
+      steps.indexWhere((step) => step['name'] == 'Analyze and test Studio UI'),
+      inInclusiveRange(0, steps.indexOf(step) - 1),
+    );
+
+    final diagnostics = steps.singleWhere(
+      (step) => step['with']?['name'] == 'studio-ui-chrome-diagnostics',
+    );
+    expect(steps.indexOf(diagnostics), greaterThan(steps.indexOf(step)));
+    expect(diagnostics['uses'], startsWith('actions/upload-artifact@'));
+    expect(diagnostics['if'], 'always()');
+    expect(diagnostics['with']['path'], r'${{ runner.temp }}/studio-ui-chrome');
+    expect(diagnostics['with']['if-no-files-found'], 'ignore');
+    expect(diagnostics['with']['retention-days'], 7);
   });
 
   test(
@@ -89,15 +124,26 @@ void main() {
         );
       }
       final steps = jobs['studio']['steps'] as List;
-      for (final (package, analyze, test) in [
-        ('llamadart_studio_core', 'dart analyze --fatal-infos', 'dart test'),
-        ('llamadart_studio', 'flutter analyze --fatal-infos', 'flutter test'),
+      for (final (name, package, analyze, test) in [
+        (
+          'Studio core',
+          'llamadart_studio_core',
+          'dart analyze --fatal-infos',
+          'dart test',
+        ),
+        (
+          'Studio UI',
+          'llamadart_studio',
+          'flutter analyze --fatal-infos',
+          'flutter test',
+        ),
       ]) {
         final step =
             steps.singleWhere(
-                  (step) => step['working-directory'] == 'packages/$package',
+                  (step) => step['name'] == 'Analyze and test $name',
                 )
                 as Map;
+        expect(step['working-directory'], 'packages/$package');
         final command = step['run'] as String;
         expect(
           command,
@@ -140,22 +186,20 @@ void main() {
   test('Studio admission executes Android release acceptance unit tests', () {
     final workflow =
         loadYaml(File('.github/workflows/ci.yml').readAsStringSync()) as Map;
-    final steps = (workflow['jobs'] as Map)['studio']['steps'] as List;
-    final step =
-        steps.singleWhere(
-              (step) =>
-                  step['working-directory'] == 'packages/llamadart_studio',
-            )
-            as Map;
-    final lines = (step['run'] as String)
-        .split('\n')
-        .map((line) => line.trim());
-    expect(
-      lines,
-      contains(
-        'python3 -m unittest tool/test/test_android_release_acceptance.py',
-      ),
+    final steps = ((workflow['jobs'] as Map)['studio']['steps'] as List)
+        .cast<Map>();
+    const acceptance =
+        'python3 -m unittest tool/test/test_android_release_acceptance.py';
+    final step = steps.singleWhere(
+      (step) => '${step['run']}'.contains(acceptance),
     );
+    final chrome = steps.indexWhere(
+      (step) => '${step['run']}'.contains('flutter test --platform chrome'),
+    );
+    expect(chrome, inInclusiveRange(0, steps.indexOf(step) - 1));
+    expect(step['run'].trim(), acceptance);
+    expect(step['working-directory'], 'packages/llamadart_studio');
+    expect(step.containsKey('if'), isFalse);
     expect(step.containsKey('continue-on-error'), isFalse);
   });
 }
