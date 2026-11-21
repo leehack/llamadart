@@ -120,6 +120,10 @@ reused engine. On an Apple M4 Max, median Qwen3.5-0.8B int8 decode throughput
 was 109 tokens/s with the guard and 151 tokens/s with only the state reset.
 [Runtime fix and qualification](https://github.com/leehack/litert-lm-native/pull/122).
 
+LiteRT-LM `v0.19.1-7` fixes the GPU command-buffer race that could duplicate
+tokens with sampler lookahead enabled. Qwen3-0.6B keeps lookahead on Metal.
+[Backport and qualification](https://github.com/leehack/litert-lm-native/pull/123).
+
 ## Generation tuning (`GenerationParams`)
 
 ```dart

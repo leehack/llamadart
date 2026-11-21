@@ -331,7 +331,7 @@ void main() {
     const maintainer = 'website/docs/maintainers/native-and-web-sync.md';
     const skill = 'skills/llamadart-getting-started/SKILL.md';
     const companion = 'packages/llamadart_llama_cpp_flutter';
-    const fixture = 'test/fixtures/native/litert_lm_v0_19_1_6_manifest.json';
+    const fixture = 'test/fixtures/native/litert_lm_v0_19_1_7_manifest.json';
 
     setUp(() {
       root = Directory.systemTemp.createTempSync('sw2-runtime-docs-');
@@ -467,7 +467,7 @@ void main() {
         'lib/src/hook/native_release_pins.dart',
         'pubspec.yaml',
         'skills/llamadart-getting-started/SKILL.md',
-        'test/fixtures/native/litert_lm_v0_19_1_6_manifest.json',
+        'test/fixtures/native/litert_lm_v0_19_1_7_manifest.json',
         'tool/native/fixtures/native_release_tag_grammar.json',
         'website/docs/changelog/recent-releases.md',
         'website/docs/getting-started/installation.md',
