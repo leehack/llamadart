@@ -1700,6 +1700,28 @@ from the provider export. Replay verified 259 embedded captures and extracted
 counts. The graph covers corrected Qwen3 C04, while Qwen3.5 fresh-engine parity
 and the exact `Montréal 👋` fixture require separate device scenarios.
 
+The same graph requalified the published LiteRT-LM `v0.19.1-7` bundle on
+Galaxy S24 SC-51E, API 36, SM8650, from source
+`19131ea459b2103283b262375c8c255be82554b1`.
+[Test Lab matrix `5637049545946379077`](https://console.firebase.google.com/project/llamadart-cuda-qa-20260916/testlab/histories/bh.192ffd589740b368/matrices/5637049545946379077) (`matrix-2e8zwu0og6bi7`, run
+`w2134a-litert0191-7-s24-20261121`) used Android arm64 archive
+SHA-256 `ad437e55e0c2c56b0d76c4711923eca71b027bcdffee293b2b48ffe6de3a7d3a` and
+`libLiteRtLm.so` SHA-256 `c55e4b66008f96b7775281302ddab46e6a68ef808c866d76ceb23fec76407b3e`.
+It passed in one attempt.
+
+All 20 cases passed and six engine lifetimes closed. The 12 corrected
+Qwen3-0.6B hello and arithmetic replies matched the `v0.19.1-6` run byte for
+byte, with the same four legacy semantic failures. Native GPU and corrected
+auto used OpenCL with full `LITERT_CL` delegation, 1306/1306 decode and
+1358/1358 prefill. The corrected auto route stayed on GPU across both
+lifetimes.
+
+The two provider journal aliases matched SHA-256
+`2dcd81526363b3571a5f5dce29e886a5b029e21ce5b2146e6ec74db2daa238ea` and
+included final completion. The export omitted standalone sidecars. Replay
+verified 259 embedded captures and reconstructed 15 sidecars from the
+journal. Provider logcat independently confirmed the OpenCL graph counts.
+
 ## Linux x64 strict JSON Schema on CPU and GPU (2026-11-14)
 
 `run_local_e2e.dart --scenario litert-lm-json-schema` on a GCE g2-standard-8

@@ -253,7 +253,7 @@ output and grammars, sampling controls and speculative decoding. Guides:
 Device, OS and driver limits on iOS, macOS, Android, Linux, Windows and the
 web are on [Known platform issues](./known-platform-issues).
 
-LiteRT-LM `v0.19.1-6` passed Qwen3-0.6B hello and arithmetic on CPU and
+LiteRT-LM `v0.19.1-7` passed Qwen3-0.6B hello and arithmetic on CPU and
 OpenCL on Galaxy S24 (SC-51E, API 36). The corrected model stayed on GPU
 across both automatic-selection lifetimes.
 [Device qualification record](https://github.com/leehack/llamadart/blob/main/doc/cross_platform_validation.md#galaxy-s24-litert-lm-cpu-and-opencl-requalification).

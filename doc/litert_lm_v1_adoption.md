@@ -97,7 +97,7 @@ fallback, and the same four legacy semantic failures. The OpenCL route is the
 qualified one here; the WebGPU route is covered by the W1c run (Gemma 4 E2B, not
 this graph). See the
 [S24 requalification record](cross_platform_validation.md#galaxy-s24-litert-lm-cpu-and-opencl-requalification)
-for `v0.19.1-6`.
+for `v0.19.1-6` and `v0.19.1-7`.
 
 ## Metal sampler lookahead regression
 

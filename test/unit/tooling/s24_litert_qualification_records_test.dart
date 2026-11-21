@@ -69,6 +69,13 @@ void main() {
       path: validationNotes,
       heading: requalificationSection,
     ),
+    (
+      tags: ['v0.19.1-7'],
+      matrix: '5637049545946379077',
+      run: 'w2134a-litert0191-7-s24-20261121',
+      path: validationNotes,
+      heading: requalificationSection,
+    ),
   ];
 
   test('each admitted S24 runtime maps to exactly one recorded run', () {
