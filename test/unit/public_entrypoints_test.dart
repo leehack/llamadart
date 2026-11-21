@@ -172,6 +172,7 @@ const _appNames = <String>{
   'LlamaModel',
   'LlamaGpuMemoryFitException',
   'LlamaModelException',
+  'LlamaModelUnloadedException',
   'LlamaModelFormatException',
   'LlamaModelLoadOperation',
   'LlamaNextTokenScores',
