@@ -332,6 +332,8 @@ web backend load options).
 
 - The first load of a model URL fetches from the network and stores it in the
   cache; later loads of the same URL can come from the cache.
+  Cache eligibility uses the document base on a page and the script URL in an
+  application-owned worker.
 - Model URLs with userinfo, a fragment or a credential-like query key (such as
   `token`, `key`, `sig`, `signature`, `expires`, `session`, or any `x-amz-*` or
   `x-goog-*` key) are treated as credential-sensitive: `llamadart` passes

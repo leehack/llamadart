@@ -1,4 +1,7 @@
-import 'package:web/web.dart' show URL, document;
+import 'dart:js_interop';
+import 'dart:js_interop_unsafe';
+
+import 'package:web/web.dart' show URL, WorkerLocation, document;
 
 import '../../core/cache_policy.dart';
 
@@ -23,7 +26,11 @@ String webGpuDocumentUrl(String url) {
 String? webGpuPersistentCacheUrl(String reference) {
   if (reference.isEmpty) return null;
   try {
-    final url = URL(reference, document.baseURI);
+    final documentBase = globalContext.has('document') ? document.baseURI : '';
+    final base = documentBase.isNotEmpty
+        ? documentBase
+        : globalContext.getProperty<WorkerLocation?>('location'.toJS)?.href;
+    final url = base == null ? URL(reference) : URL(reference, base);
     final parsed = Uri.tryParse(url.href);
     if ((url.protocol == 'http:' || url.protocol == 'https:') &&
         url.host.isNotEmpty &&
