@@ -35,6 +35,22 @@ def root_suite_imports():
     return {path for path in seen if not path.startswith('test/')}
 
 
+def root_flutter_versions(workflow_name, workflow):
+    job = None
+    for line_number, line in enumerate(workflow.splitlines(), start=1):
+        header = re.fullmatch(r'  ([\w-]+):[ \t]*(?:#.*)?', line)
+        if header:
+            job = header[1]
+        if workflow_name == 'ci.yml' and job in ('studio', 'studio-macos'):
+            continue
+        pin = re.fullmatch(r""" +(['"]?)flutter-version\1:[ \t]*(.*)""", line)
+        if pin:
+            version = re.split(r'(?:^|[ \t]+)#', pin[2], maxsplit=1)[0].rstrip()
+            if version.startswith(("'", '"')) and version.endswith(version[0]):
+                version = version[1:-1]
+            yield line_number, version
+
+
 class SelectionTest(unittest.TestCase):
     def test_marker_only_tamper_runs_protected_changelog_policy(self):
         marker = 'tool/release/recoveries/' + 'a' * 40 + '.json'
@@ -184,10 +200,44 @@ class SelectionTest(unittest.TestCase):
         self.assertIn('macos_app_delegate_test.dart', native)
 
     def test_ci_passes_the_root_sdk_pin_directly(self):
-        workflow = (ROOT / '.github/workflows/ci.yml').read_text()
         root_pin = (ROOT / '.flutter-version').read_text().strip()
-        root_lanes = workflow.split('\n  genkit:\n', 1)[1]
-        self.assertIn(f'flutter-version: {root_pin}', root_lanes)
+        workflows = ROOT / '.github/workflows'
+        pins = [
+            (path.relative_to(ROOT), line, version)
+            for pattern in ('*.yml', '*.yaml')
+            for path in sorted(workflows.glob(pattern))
+            for line, version in root_flutter_versions(
+                path.name, path.read_text(encoding='utf-8'))
+        ]
+        self.assertTrue(any(path.name == 'ci.yml' for path, _, _ in pins),
+                        'No explicit root Flutter pins found in ci.yml')
+        for path, line, version in pins:
+            with self.subTest(workflow=path.as_posix(), line=line):
+                self.assertEqual(version, root_pin)
+
+    def test_root_flutter_versions_include_each_input_and_skip_studio_jobs(self):
+        workflow = """jobs:
+  studio:
+    steps:
+      - with:
+          flutter-version: 3.50.0
+  root:
+    steps:
+      - with:
+          flutter-version: 3.47.1
+      - with:
+          flutter-version: '3.47.0' # stale
+      - with:
+          "flutter-version": "3.47.1"
+  studio-macos:
+    steps:
+      - with:
+          flutter-version: 3.50.0
+"""
+        root_inputs = [(9, '3.47.1'), (11, '3.47.0'), (13, '3.47.1')]
+        self.assertEqual(list(root_flutter_versions('ci.yml', workflow)), root_inputs)
+        self.assertEqual(list(root_flutter_versions('other.yaml', workflow)),
+                         [(5, '3.50.0'), *root_inputs, (17, '3.50.0')])
 
     def test_studio_web_changes_run_the_shared_bridge_pin_gate(self):
         plan = ci.select(['packages/llamadart_studio/web/index.html'])
