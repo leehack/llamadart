@@ -599,6 +599,12 @@ in both runtimes.
   fetch-backed loading after a streamed staging failure.
 - `window.__llamadartBridgeForceRemoteFetchBackend`: default `false`. `true`
   forces fetch-backed loading from the first attempt, for diagnostics only.
+  With the pinned bridge assets, limit forced loads to four per threaded core.
+  WasmFS retains a proxy thread per load, so the fifth stalls on the default
+  four-thread pool. The fetch backend can also truncate the GGUF URL to its
+  directory. Both fixes are planned for `v0.1.90`.
+  [Bridge #301](https://github.com/leehack/llama-web-bridge/issues/301),
+  [bridge #288](https://github.com/leehack/llama-web-bridge/issues/288).
 - `window.__llamadartBridgeRemoteFetchChunkBytes`: positive integer bytes;
   default `4 * 1024 * 1024`, clamped to 4 KiB..16 MiB. Applies to fetch-backed
   loading.
