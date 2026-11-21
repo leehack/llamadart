@@ -1272,6 +1272,22 @@ void main() {
   group('publish_companion_pubdev.yml', () {
     final workflow = _read(_companionWorkflow);
 
+    test('companion publishing installs the root Flutter SDK pin', () {
+      final steps =
+          (loadYaml(workflow)['jobs']['publish-companion']['steps'] as YamlList)
+              .cast<YamlMap>();
+      final setup = steps.singleWhere(
+        (step) =>
+            '${step['uses']}'.startsWith('flutter-actions/setup-flutter@'),
+      );
+      expect(setup['with']?['version'], _read('.flutter-version').trim());
+      expect(setup['if'], "steps.publish.outputs.should_publish == 'true'");
+      expect(
+        steps.indexOf(setup),
+        lessThan(steps.indexWhere((step) => step['name'] == 'Prepare package')),
+      );
+    });
+
     test('publishes a copy without the checkout override', () {
       expect(_companionPublishProblems(workflow), isEmpty);
     });

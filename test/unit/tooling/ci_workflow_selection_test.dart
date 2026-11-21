@@ -133,6 +133,39 @@ const String linuxVmRun =
     r'${{ steps.shard.outputs.files }}';
 
 void main() {
+  test('CI artifact actions use full SHAs with version comments', () {
+    final source = File('.github/workflows/ci.yml').readAsStringSync();
+    final lines = const LineSplitter().convert(source);
+    final jobs = (loadYaml(source) as YamlMap)['jobs'] as YamlMap;
+    final artifact = RegExp(r'^actions/(upload|download)-artifact@');
+    final versions = <String, Set<String>>{};
+
+    for (final job in jobs.values.cast<YamlMap>()) {
+      for (final step in (job['steps'] as List? ?? []).cast<YamlMap>()) {
+        final uses = step.nodes['uses'];
+        final ref = uses?.value as String?;
+        if (ref == null) continue;
+        final match = artifact.firstMatch(ref);
+        if (match == null) continue;
+        final span = uses!.span;
+        final line = lines[span.start.line];
+        final comment = line.substring(span.end.column);
+        expect(
+          ref.substring(match.end),
+          matches(r'^[a-f0-9]{40}$'),
+          reason: line,
+        );
+        expect(comment, matches(r'^\s+# v\d+\.\d+\.\d+\s*$'), reason: line);
+        versions.putIfAbsent(match[1]!, () => {}).add(ref + comment.trim());
+      }
+    }
+
+    expect(versions.keys, unorderedEquals(['upload', 'download']));
+    for (final refs in versions.values) {
+      expect(refs, hasLength(1));
+    }
+  });
+
   test(
     'registered manual bootstrap calls the same-revision read-only qualifier',
     () {
@@ -642,7 +675,7 @@ for event,mode,oldflag,owner,attempt,cancel,good,main in itertools.product(('pus
     );
     final diagnostics = step('Upload Chrome process and phase diagnostics');
     expect(diagnostics['if'], 'always()');
-    expect(diagnostics['uses'], 'actions/upload-artifact@v7');
+    expect(diagnostics['uses'], startsWith('actions/upload-artifact@'));
     expect(steps.indexOf(diagnostics), steps.indexOf(chrome) + 1);
     final unchanged = step('Check the lane leaves the package unchanged');
     expect(unchanged.containsKey('if'), isFalse);
@@ -860,7 +893,7 @@ for event,flag,native,cancel,good,main in itertools.product(('push','pull_reques
     });
     expect(steps.any((s) => s.containsKey('continue-on-error')), isFalse);
     final upload = steps.singleWhere(
-      (s) => s['uses'] == 'actions/upload-artifact@v7',
+      (s) => '${s['uses']}'.startsWith('actions/upload-artifact@'),
     );
     expect(upload['if'], r'${{ always() }}');
     expect(upload['with']['overwrite'], isFalse);

@@ -109,6 +109,8 @@ jobs:
 
       - uses: flutter-actions/setup-flutter@80479eab6de1d7909df79ed6aea93aa7f7e8e859
         if: steps.publish.outputs.should_publish == 'true'
+        with:
+          version: 3.47.1
 
       # Without the checkout's pubspec_overrides.yaml, pub resolves the
       # companion's llamadart constraint against pub.dev, so this publishes
