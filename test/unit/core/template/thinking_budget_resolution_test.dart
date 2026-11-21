@@ -23,7 +23,7 @@ void main() {
         '</think>',
         '<tool_call>',
       ]);
-      expect(resolved.grammarReplayEndIndex, isNull);
+      expect(resolved.replayEndIndexFor(const GenerationParams()), isNull);
       expect(
         ChatTemplateEngine.resolveThinkingBudget(qwenXml, resolved),
         same(resolved),

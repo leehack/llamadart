@@ -1035,6 +1035,11 @@ class ChatTemplateEngine {
   /// selects the XML family's defaults even for plain Qwen3-Coder. A
   /// caller-set end tag, including `</think>`, requests a single end.
   ///
+  /// In raw generation, the opener is replayed once into a paused lazy
+  /// grammar with a word, pattern, or full-pattern trigger whose value is
+  /// exactly `<tool_call>`. Eager replay requires the XML tool grammar and
+  /// `root` selected by `LlamaEngine.create` with `ToolChoice.required`.
+  ///
   /// Multiple ends require llamadart-native `v1.0.0-4` or WebGPU bridge
   /// assets `v0.1.87+` with a core reporting `thinkingBudgetMultiEnd`.
   ///
@@ -1258,7 +1263,7 @@ ThinkingBudget resolveTemplateThinkingBudget(
   ThinkingBudget budget, {
   required bool rendersPrompt,
   bool allowMultiEnd = true,
-  String? grammarReplayEnd,
+  ThinkingBudgetGrammarBinding? grammarBinding,
 }) {
   final tags = ChatTemplateEngine.thinkingTagsFor(formatIndex);
   final traits = _traitsOf(formatIndex);
@@ -1279,9 +1284,6 @@ ThinkingBudget resolveTemplateThinkingBudget(
       ? resolved?.naturalEndTags ?? traits.thinkingBudgetNaturalEnds
       : const <String>[];
   if (naturalEnds.isNotEmpty) {
-    final replayIndex = grammarReplayEnd == null
-        ? -1
-        : naturalEnds.indexOf(grammarReplayEnd);
     return ResolvedThinkingBudget(
       maxTokens: budget.maxTokens,
       startTag: startTag,
@@ -1289,7 +1291,7 @@ ThinkingBudget resolveTemplateThinkingBudget(
       forcedMessage: resolved?.forcedMessage ?? forcedMessage,
       originalForcedMessage: originalForcedMessage,
       naturalEndTags: naturalEnds,
-      grammarReplayEndIndex: replayIndex < 0 ? null : replayIndex,
+      grammarBinding: grammarBinding,
     );
   }
   return ThinkingBudget(

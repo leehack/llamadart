@@ -185,7 +185,12 @@ modalities and speculative strategies before offering them.
   on bundles with a thinking channel (Gemma 4), closes that channel with the
   bundle's own marker, and rejects `0`, `forcedMessage` and speculative
   decoding. Min-P stays unsupported there. On thinking-capable Qwen3-Coder XML,
-  omission of `endTag` lets `<tool_call>` end the budget and the call continue.
+  omission of `endTag` lets a generated `<tool_call>` end the budget.
+  A paused lazy grammar with a `word`, `pattern`, or `patternFull` trigger
+  exactly equal to `<tool_call>` receives the opener once. With a
+  format-resolved budget this also works in raw `engine.generate`. Use
+  `engine.create` with declared tools and `ToolChoice.required` for replay into
+  the planner-selected eager XML tool grammar at `root`.
   This requires llamadart-native `v1.0.0-4` or WebGPU assets `v0.1.87+` with `thinkingBudgetMultiEnd`. `supportsThinkingBudget` describes
   basic support. An explicit `endTag`, including `</think>`, selects a
   single delimiter.

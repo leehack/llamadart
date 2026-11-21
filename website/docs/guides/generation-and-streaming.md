@@ -372,6 +372,13 @@ thought (plain Qwen3-Coder) or renders it closed. The format-only helper
 selects the XML family defaults. An explicit `endTag`, including
 `</think>`, selects a single end and leaves `forcedMessage` as supplied.
 
+When a generated opener ends counting, a paused lazy grammar receives it once
+if a `word`, `pattern`, or `patternFull` trigger has the exact value
+`<tool_call>`. This also applies to raw generation with a format-resolved
+budget. For eager replay, use `engine.create` with `ToolChoice.required` and
+declared tools. Replay stays bound to the selected XML tool grammar and its
+`root` start rule when the generation parameters are forwarded.
+
 Multiple ends require llamadart-native `v1.0.0-4` or WebGPU assets
 `v0.1.87+` with a core reporting `thinkingBudgetMultiEnd`.
 `supportsThinkingBudget` reports basic support. An older runtime can

@@ -4929,7 +4929,7 @@ class LlamaCppService {
       endTag: endTag,
       forcedMessage: budget.forcedMessage ?? '',
       naturalEndTags: resolved?.naturalEndTags,
-      grammarReplayEndIndex: resolved?.grammarReplayEndIndex,
+      grammarReplayEndIndex: resolved?.replayEndIndexFor(params),
     );
   }
 

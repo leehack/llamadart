@@ -2039,6 +2039,7 @@ class WebGpuLlamaBackend
         ? null
         : _bridgeThinkingBudget(
             thinkingBudget,
+            params,
             hasMediaParts: mediaParts != null,
             pauseGrammar: !keepGrammarApplied,
           );
@@ -2366,7 +2367,8 @@ class WebGpuLlamaBackend
   /// Validates [budget] as native llama.cpp generation does and converts it
   /// for the bridge.
   WebGpuThinkingBudgetOptions _bridgeThinkingBudget(
-    ThinkingBudget budget, {
+    ThinkingBudget budget,
+    GenerationParams params, {
     required bool hasMediaParts,
     required bool pauseGrammar,
   }) {
@@ -2408,7 +2410,7 @@ class WebGpuLlamaBackend
           .map((tag) => tag.toJS)
           .toList(growable: false)
           .toJS;
-      final replayIndex = budget.grammarReplayEndIndex;
+      final replayIndex = budget.replayEndIndexFor(params);
       if (pauseGrammar && replayIndex != null) {
         options.grammarReplayEndIndex = replayIndex;
       }

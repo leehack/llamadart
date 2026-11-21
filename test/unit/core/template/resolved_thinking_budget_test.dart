@@ -11,7 +11,7 @@ import 'package:llamadart/src/core/template/resolved_thinking_budget.dart';
 import 'package:test/test.dart';
 
 void main() {
-  test('worker request carries copied budget ends and replay policy', () async {
+  test('worker chooses replay from the carried request grammar', () async {
     const messages = [
       LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'Use a tool'),
     ];
@@ -24,6 +24,7 @@ void main() {
       messages: messages,
       metadata: const {},
       tools: tools,
+      toolChoice: ToolChoice.required,
     );
     final plan = ChatCompletionRequestPlanner.build(
       backend: _GrammarBackend(),
@@ -32,26 +33,50 @@ void main() {
       params: const GenerationParams(
         thinkingBudget: ThinkingBudget(maxTokens: 2),
       ),
-      toolChoice: ToolChoice.auto,
+      toolChoice: ToolChoice.required,
       parallelToolCalls: false,
       tools: tools,
     );
     final port = ReceivePort();
     addTearDown(port.close);
-    final request = GenerateRequest(
-      1,
-      result.prompt,
-      plan.generationParams.copyWith(maxTokens: 20),
-      0,
-      port.sendPort,
+    final required = plan.generationParams;
+    final rawLazy = required.copyWith(
+      thinkingBudget: ChatTemplateEngine.resolveThinkingBudget(
+        result.format,
+        const ThinkingBudget(maxTokens: 2),
+      ),
+      grammarLazy: true,
+      grammarTriggers: const [
+        GenerationGrammarTrigger.typed(
+          type: GrammarTriggerType.word,
+          value: '<tool_call>',
+        ),
+      ],
     );
-    final budget =
-        await Isolate.run(() => request.params.thinkingBudget)
-            as ResolvedThinkingBudget;
-    expect(budget.naturalEndTags, ['\n</think>', '</think>', '<tool_call>']);
-    expect(budget.grammarReplayEndIndex, 2);
-    expect(budget.forcedMessage, '\n');
-    expect(() => budget.naturalEndTags.add('bad'), throwsUnsupportedError);
+    for (final (params, expected) in [
+      (rawLazy, 2),
+      (required.copyWith(maxTokens: 20), 2),
+      (required.copyWith(grammar: 'root ::= "{}"'), null),
+      (required.copyWith(grammarRoot: 'answer'), null),
+      (rawLazy.copyWith(grammarTriggers: const []), null),
+    ]) {
+      final request = GenerateRequest(
+        1,
+        result.prompt,
+        params,
+        0,
+        port.sendPort,
+      );
+      final (budget, replay) = await Isolate.run(() {
+        final params = request.params;
+        final budget = params.thinkingBudget as ResolvedThinkingBudget;
+        return (budget, budget.replayEndIndexFor(params));
+      });
+      expect(budget.naturalEndTags, ['\n</think>', '</think>', '<tool_call>']);
+      expect(replay, expected);
+      expect(budget.forcedMessage, '\n');
+      expect(() => budget.naturalEndTags.add('bad'), throwsUnsupportedError);
+    }
   });
 }
 

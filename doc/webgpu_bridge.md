@@ -107,8 +107,12 @@ scoring, sampling, LoRA, speculative decoding and speech APIs remain available.
 
 The loaded core must report literal `thinkingBudgetMultiEnd: true` for a
 template-derived XML budget. Direct and worker generation receive the ordered
-`naturalEndTags` array in `CompletionOptions.thinkingBudget`. For a paused XML
-tool grammar, `grammarReplayEndIndex: 2` replays the matched `<tool_call>`.
+`naturalEndTags` array in `CompletionOptions.thinkingBudget`. A generated
+`<tool_call>` ends counting. For a paused lazy grammar with a `word`,
+`pattern`, or `patternFull` trigger exactly equal to `<tool_call>`,
+`grammarReplayEndIndex: 2` feeds that opener to the grammar once. A paused
+eager grammar gets this index only for the `root` of the XML tool grammar
+selected by the chat planner for `ToolChoice.required`.
 Exhaustion forces the existing `forcedMessage + endTag` bytes. A singleton
 request omits both multi-end fields. The separate `thinkingBudgetPauseGrammar`
 bit controls whether a grammar can stay applied during the thought.

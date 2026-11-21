@@ -241,6 +241,93 @@ void main() {
   });
 
   group('reasoning-budget resolver diagnostics', () {
+    const opener = '<tool_call>';
+    const grammar = 'root ::= "<tool_call>"';
+    const wordTrigger = GenerationGrammarTrigger.typed(
+      type: GrammarTriggerType.word,
+      value: opener,
+    );
+    final rawBudget = ChatTemplateEngine.resolveThinkingBudget(
+      ChatFormat.qwen3CoderXml.index,
+      const ThinkingBudget(maxTokens: 2, forcedMessage: 'done'),
+    );
+    for (final (name, source, lazy, triggers, replay) in [
+      for (final type in [
+        GrammarTriggerType.word,
+        GrammarTriggerType.pattern,
+        GrammarTriggerType.patternFull,
+      ])
+        (
+          type.name,
+          grammar,
+          true,
+          [GenerationGrammarTrigger.typed(type: type, value: opener)],
+          2,
+        ),
+      for (final marker in ['<action>', '</think>', ' <tool_call>', '<.*>'])
+        (
+          marker,
+          grammar,
+          true,
+          [
+            GenerationGrammarTrigger.typed(
+              type: GrammarTriggerType.pattern,
+              value: marker,
+            ),
+          ],
+          null,
+        ),
+      (
+        'token',
+        grammar,
+        true,
+        [
+          const GenerationGrammarTrigger.typed(
+            type: GrammarTriggerType.token,
+            token: 1,
+            value: opener,
+          ),
+        ],
+        null,
+      ),
+      ('missing grammar', null, true, const [wordTrigger], null),
+      ('blank grammar', '  ', true, const [wordTrigger], null),
+      ('raw eager grammar', grammar, false, const [wordTrigger], null),
+      (
+        'eager JSON',
+        'root ::= "{}"',
+        false,
+        const <GenerationGrammarTrigger>[],
+        null,
+      ),
+    ]) {
+      test('raw multi-end budget with $name', () {
+        final config = reflect(
+          _invokePrivateForTesting<Object>(
+            LlamaCppService(),
+            '_resolveLlamaCppThinkingBudgetConfig',
+            [
+              GenerationParams(
+                thinkingBudget: rawBudget,
+                grammar: source,
+                grammarLazy: lazy,
+                grammarTriggers: triggers,
+              ),
+            ],
+            {#hasMediaParts: false},
+          ),
+        );
+        expect(config.getField(#naturalEndTags).reflectee, [
+          '\n</think>',
+          '</think>',
+          opener,
+        ]);
+        expect(config.getField(#endTag).reflectee, '</think>');
+        expect(config.getField(#forcedMessage).reflectee, 'done\n');
+        expect(config.getField(#grammarReplayEndIndex).reflectee, replay);
+      });
+    }
+
     Object? resolve(
       LlamaCppService service,
       List<String> candidates, {

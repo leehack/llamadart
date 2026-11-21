@@ -15,10 +15,10 @@ import '../models/inference/tool_choice.dart';
 import '../models/tools/tool_definition.dart';
 import '../template/chat_format.dart';
 import '../template/chat_template_engine.dart';
+import '../template/resolved_thinking_budget.dart';
 import '../template/response_format.dart';
 import '../template/template_internal_metadata.dart';
 import '../template/thinking_utils.dart';
-import '../template/xml_tool_call_format.dart';
 
 /// Prepared generation inputs for a chat-completion request.
 ///
@@ -250,23 +250,30 @@ class ChatCompletionRequestPlanner {
             parallelToolCalls: parallelToolCalls,
           );
     final requestedThinkingBudget = params?.thinkingBudget;
-    const xmlToolOpening = XmlToolCallFormat.qwen3CoderScopeStart;
-    final replayXmlToolOpening =
-        requestedThinkingBudget != null &&
-        effectiveGrammar != null &&
-        effectiveGrammar.isNotEmpty &&
+    final isXmlToolFormat =
+        templateResult.format == ChatFormat.qwen3CoderXml.index;
+    final grammarRoot = params?.grammarRoot ?? 'root';
+    final grantsEagerReplay =
+        !effectiveGrammarLazy &&
+        hasTemplateGrammar &&
+        isXmlToolFormat &&
         !strictResponseFormat &&
-        templateResult.format == ChatFormat.qwen3CoderXml.index &&
-        (effectiveGrammarLazy
-            ? effectiveGrammarTriggers.any(
-                (trigger) =>
-                    trigger.triggerType == GrammarTriggerType.word &&
-                    trigger.value == xmlToolOpening,
-              )
-            : hasTemplateGrammar &&
-                  toolChoice == ToolChoice.required &&
-                  tools != null &&
-                  tools.isNotEmpty);
+        grammarRoot == 'root' &&
+        toolChoice == ToolChoice.required &&
+        (tools?.isNotEmpty ?? false);
+    final deniesLazyReplay =
+        effectiveGrammarLazy && (strictResponseFormat || !isXmlToolFormat);
+    final ThinkingBudgetGrammarBinding? grammarBinding =
+        requestedThinkingBudget != null &&
+            effectiveGrammar != null &&
+            (grantsEagerReplay || deniesLazyReplay)
+        ? (
+            grammar: effectiveGrammar,
+            root: grammarRoot,
+            lazy: effectiveGrammarLazy,
+            replay: grantsEagerReplay,
+          )
+        : null;
     final effectiveThinkingBudget = requestedThinkingBudget == null
         ? null
         : resolveTemplateThinkingBudget(
@@ -276,7 +283,7 @@ class ChatCompletionRequestPlanner {
             allowMultiEnd:
                 !thinkingForcedClosedOf(templateResult) &&
                 !thoughtClosedForThinkingOffOf(templateResult),
-            grammarReplayEnd: replayXmlToolOpening ? xmlToolOpening : null,
+            grammarBinding: grammarBinding,
           );
 
     final generationParams = (params ?? const GenerationParams()).copyWith(

@@ -115,9 +115,12 @@ sequenceDiagram
   included, as llama.cpp (`cd959bae9`) does. An implicit budget end on a
   thinking-capable XML render resolves to the ordered natural ends
   `\n</think>`, `</think>`, and `<tool_call>`. Exhaustion still forces
-  the caller's message followed by `\n</think>`. A natural tool opener
-  is replayed into a paused lazy tool grammar or the selected eager required
-  XML tool grammar so it can constrain the call. An explicit end tag, a
+  the caller's message followed by `\n</think>`. A generated tool opener
+  ends counting. A paused lazy grammar receives it once if a `word`,
+  `pattern`, or `patternFull` trigger is exactly `<tool_call>`. The planner
+  grants eager replay only to its required XML tool grammar at `root`.
+  Generation checks the current grammar, start rule, mode and triggers for
+  eligibility. An explicit end tag, a
   plain or forced-closed XML render, or native-message dispatch uses a
   single end.
 - Under a thinking budget these required-call grammars wait through the

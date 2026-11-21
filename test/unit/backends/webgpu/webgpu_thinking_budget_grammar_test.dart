@@ -6,6 +6,7 @@ import 'dart:js_interop_unsafe';
 
 import 'package:llamadart/llamadart.dart';
 import 'package:llamadart/src/backends/webgpu/webgpu_backend.dart';
+import 'package:llamadart/src/core/engine/chat_completion_request_planner.dart';
 import 'package:llamadart/src/core/template/tool_call_grammar_utils.dart';
 import 'package:test/test.dart';
 
@@ -99,6 +100,41 @@ void main() {
     ChatFormat.qwen3CoderXml.index,
     const ThinkingBudget(maxTokens: 8),
   );
+  final xmlWireBudget = <String, Object?>{
+    ...paused,
+    'forcedMessage': '\n',
+    'naturalEndTags': ['\n</think>', '</think>', '<tool_call>'],
+  };
+
+  test('raw XML lazy grammar replays only its exact opener', () async {
+    fake.completionCapabilities['thinkingBudgetMultiEnd'] = true;
+    await load();
+    for (final (grammar, grammarLazy, trigger, replay) in [
+      ('root ::= "<tool_call>"', true, '<tool_call>', 2),
+      ('root ::= "<tool_call>"', true, '</think>', null),
+      ('root ::= "{}"', false, '<tool_call>', null),
+      (null, false, null, null),
+    ]) {
+      await generate(
+        GenerationParams(
+          grammar: grammar,
+          grammarLazy: grammarLazy,
+          grammarTriggers: [
+            if (trigger != null)
+              GenerationGrammarTrigger.typed(
+                type: GrammarTriggerType.word,
+                value: trigger,
+              ),
+          ],
+          thinkingBudget: xmlBudget,
+        ),
+      );
+      expect(fake.completionOption('thinkingBudget'), {
+        ...xmlWireBudget,
+        if (replay != null) 'grammarReplayEndIndex': replay,
+      });
+    }
+  });
 
   for (final value in <bool?>[null, false]) {
     test('requires the multi-end capability, received $value', () async {
@@ -167,11 +203,7 @@ void main() {
     };
     await load();
     await generate(GenerationParams(thinkingBudget: xmlBudget));
-    expect(fake.completionOption('thinkingBudget'), {
-      ...paused,
-      'forcedMessage': '\n',
-      'naturalEndTags': ['\n</think>', '</think>', '<tool_call>'],
-    });
+    expect(fake.completionOption('thinkingBudget'), xmlWireBudget);
     await expectLater(
       generate(GenerationParams(grammar: taking, thinkingBudget: xmlBudget)),
       throwsA(
@@ -188,6 +220,21 @@ void main() {
 
   for (final choice in [ToolChoice.auto, ToolChoice.required]) {
     test('sends the selected $choice XML grammar and its replay index', () async {
+      const template =
+          '{# <tool_call><function=><parameter=><function><parameters> #}<think>\n';
+      const messages = [
+        LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'Weather?'),
+      ];
+      const params = GenerationParams(
+        thinkingBudget: ThinkingBudget(maxTokens: 8),
+      );
+      final tools = [
+        ToolDefinition(
+          name: 'get_weather',
+          description: 'Look up the weather',
+          parameters: [ToolParam.string('location', required: true)],
+        ),
+      ];
       fake.completionCapabilities['thinkingBudgetMultiEnd'] = true;
       fake.completionPieces = const [
         '<tool_call>\n<function=get_weather>\n<parameter=location>\n'
@@ -195,31 +242,15 @@ void main() {
       ];
       await engine.loadModelFromUrl(
         'https://example.com/tiny.gguf',
-        modelParams: const ModelParams(
-          chatTemplate:
-              '{# <tool_call><function=><parameter=><function><parameters> #}<think>\n',
-        ),
+        modelParams: const ModelParams(chatTemplate: template),
       );
       final chunks = await engine
           .create(
-            const [
-              LlamaChatMessage.fromText(
-                role: LlamaChatRole.user,
-                text: 'Weather?',
-              ),
-            ],
+            messages,
             enableThinking: true,
-            tools: [
-              ToolDefinition(
-                name: 'get_weather',
-                description: 'Look up the weather',
-                parameters: [ToolParam.string('location', required: true)],
-              ),
-            ],
+            tools: tools,
             toolChoice: choice,
-            params: const GenerationParams(
-              thinkingBudget: ThinkingBudget(maxTokens: 8),
-            ),
+            params: params,
           )
           .toList();
       expect(chunks.last.choices.single.finishReason, 'tool_calls');
@@ -229,11 +260,33 @@ void main() {
       );
       expect(fake.completionOption('grammarLazy'), choice == ToolChoice.auto);
       expect(fake.completionOption('thinkingBudget'), {
-        ...paused,
-        'forcedMessage': '\n',
-        'naturalEndTags': ['\n</think>', '</think>', '<tool_call>'],
+        ...xmlWireBudget,
         'grammarReplayEndIndex': 2,
       });
+
+      final plan = ChatCompletionRequestPlanner.build(
+        backend: engine.backend,
+        templateResult: ChatTemplateEngine.render(
+          templateSource: template,
+          messages: messages,
+          metadata: const {},
+          tools: tools,
+          toolChoice: choice,
+        ),
+        messages: messages,
+        tools: tools,
+        toolChoice: choice,
+        parallelToolCalls: false,
+        params: params,
+      );
+      await generate(
+        plan.generationParams.copyWith(
+          grammar: 'root ::= "{}"',
+          grammarLazy: false,
+          grammarTriggers: const [],
+        ),
+      );
+      expect(fake.completionOption('thinkingBudget'), xmlWireBudget);
     });
   }
 

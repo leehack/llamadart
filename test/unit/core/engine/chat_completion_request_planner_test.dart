@@ -710,32 +710,47 @@ void main() {
       const messages = [
         LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'Weather?'),
       ];
+      const openerTrigger = GenerationGrammarTrigger.typed(
+        type: GrammarTriggerType.word,
+        value: '<tool_call>',
+      );
+      const rawBudget = ThinkingBudget(maxTokens: 4, forcedMessage: 'Done.');
+      int? replay(GenerationParams params) =>
+          (params.thinkingBudget as ResolvedThinkingBudget).replayEndIndexFor(
+            params,
+          );
+
       ChatCompletionRequestPlan plan(
         ToolChoice choice, {
         LlamaBackend? backend,
         List<ToolDefinition>? tools,
         String? callerGrammar,
+        String grammarRoot = 'root',
+        ThinkingBudget budget = rawBudget,
+        LlamaChatTemplateResult? templateResult,
         Map<String, dynamic>? responseFormat,
         bool enableThinking = true,
       }) {
-        final rendered = ChatTemplateEngine.render(
-          templateSource:
-              '{# <tool_call><function=><parameter=><function><parameters> #}<think>\n',
-          messages: messages,
-          metadata: const {},
-          tools: tools,
-          responseFormat: responseFormat,
-          toolChoice: choice,
-          enableThinking: enableThinking,
-        );
-        expect(rendered.format, ChatFormat.qwen3CoderXml.index);
+        final rendered =
+            templateResult ??
+            ChatTemplateEngine.render(
+              templateSource:
+                  '{# <tool_call><function=><parameter=><function><parameters> #}<think>\n',
+              messages: messages,
+              metadata: const {},
+              tools: tools,
+              responseFormat: responseFormat,
+              toolChoice: choice,
+              enableThinking: enableThinking,
+            );
         return ChatCompletionRequestPlanner.build(
           backend: backend ?? _PromptBackend(),
           templateResult: rendered,
           messages: messages,
           params: GenerationParams(
             grammar: callerGrammar,
-            thinkingBudget: const ThinkingBudget(maxTokens: 4),
+            grammarRoot: grammarRoot,
+            thinkingBudget: budget,
           ),
           tools: tools,
           responseFormat: responseFormat,
@@ -754,12 +769,125 @@ void main() {
             hasLength(choice == ToolChoice.auto ? 1 : 0),
           );
           final budget = params.thinkingBudget as ResolvedThinkingBudget;
-          expect(
-            budget.naturalEndTags[budget.grammarReplayEndIndex!],
-            '<tool_call>',
-          );
+          expect(budget.naturalEndTags[replay(params)!], '<tool_call>');
         });
       }
+
+      test('checks the copied grammar, root, lazy mode and triggers', () {
+        final required = plan(
+          ToolChoice.required,
+          tools: [_weatherTool],
+        ).generationParams;
+        expect(replay(required.copyWith(maxTokens: 12)), 2);
+        expect(replay(required.copyWith(grammar: 'root ::= "{}"')), isNull);
+        expect(replay(required.copyWith(grammarRoot: 'answer')), isNull);
+        expect(replay(required.copyWith(grammarLazy: true)), isNull);
+        expect(
+          replay(
+            required.copyWith(
+              grammarLazy: true,
+              grammarTriggers: [openerTrigger],
+            ),
+          ),
+          2,
+        );
+
+        final lazy = plan(
+          ToolChoice.auto,
+          tools: [_weatherTool],
+        ).generationParams;
+        expect(
+          replay(
+            lazy.copyWith(
+              grammarTriggers: const [
+                GenerationGrammarTrigger.typed(
+                  type: GrammarTriggerType.word,
+                  value: '</think>',
+                ),
+              ],
+            ),
+          ),
+          isNull,
+        );
+        expect(replay(lazy.copyWith(grammarLazy: false)), isNull);
+      });
+
+      test(
+        'replanning selects a fresh binding without repeating the close prefix',
+        () {
+          final resolved = ChatTemplateEngine.resolveThinkingBudget(
+            ChatFormat.qwen3CoderXml.index,
+            rawBudget,
+          );
+          final required = plan(
+            ToolChoice.required,
+            tools: [_weatherTool],
+            budget: resolved,
+          ).generationParams;
+          expect(replay(required), 2);
+          expect(required.thinkingBudget!.forcedMessage, 'Done.\n');
+          final previouslyGranted = required.thinkingBudget!;
+          expect(
+            ChatTemplateEngine.resolveThinkingBudget(
+              ChatFormat.qwen3CoderXml.index,
+              previouslyGranted,
+            ),
+            same(previouslyGranted),
+          );
+          for (final (tools, grammarRoot, responseFormat) in [
+            ([_weatherTool], 'root', null),
+            ([_weatherTool], 'answer', null),
+            (null, 'root', null),
+            (null, 'root', const {'type': 'json_object'}),
+          ]) {
+            final replanned = plan(
+              ToolChoice.required,
+              tools: tools,
+              grammarRoot: grammarRoot,
+              responseFormat: responseFormat,
+              budget: previouslyGranted,
+            ).generationParams;
+            expect(
+              replay(replanned),
+              tools != null && grammarRoot == 'root' ? 2 : null,
+            );
+            expect(replanned.thinkingBudget!.forcedMessage, 'Done.\n');
+          }
+        },
+      );
+
+      test(
+        'strict and non-XML routes deny replay for their selected lazy grammar',
+        () {
+          final resolved = ChatTemplateEngine.resolveThinkingBudget(
+            ChatFormat.qwen3CoderXml.index,
+            rawBudget,
+          );
+          for (final strict in [true, false]) {
+            final planned = plan(
+              ToolChoice.auto,
+              budget: resolved,
+              responseFormat: strict ? const {'type': 'json_object'} : null,
+              templateResult: LlamaChatTemplateResult(
+                prompt: 'prompt',
+                format: strict
+                    ? ChatFormat.qwen3CoderXml.index
+                    : ChatFormat.hermes.index,
+                grammar: 'root ::= "<tool_call>"',
+                grammarLazy: true,
+                grammarTriggers: const [
+                  GrammarTrigger(type: 0, value: '<tool_call>'),
+                ],
+              ),
+            ).generationParams;
+            expect(replay(planned), isNull);
+            expect(
+              replay(planned.copyWith(grammar: 'root ::= "<tool_call> hi"')),
+              2,
+            );
+          }
+        },
+      );
 
       test('excludes a caller eager grammar and response schema grammar', () {
         final caller = plan(
@@ -767,22 +895,14 @@ void main() {
           callerGrammar: 'root ::= "ok"',
         ).generationParams;
         expect(caller.grammar, 'root ::= "ok"');
-        expect(
-          (caller.thinkingBudget as ResolvedThinkingBudget)
-              .grammarReplayEndIndex,
-          isNull,
-        );
+        expect(replay(caller), isNull);
 
         final schema = plan(
           ToolChoice.required,
           responseFormat: const {'type': 'json_object'},
         ).generationParams;
         expect(schema.grammar, isNot(contains('<function=get_weather>')));
-        expect(
-          (schema.thinkingBudget as ResolvedThinkingBudget)
-              .grammarReplayEndIndex,
-          isNull,
-        );
+        expect(replay(schema), isNull);
       });
 
       test('keeps a forced-closed render and native messages single-ended', () {
@@ -791,7 +911,7 @@ void main() {
           enableThinking: false,
         ).generationParams.thinkingBudget!;
         expect(closed, isNot(isA<ResolvedThinkingBudget>()));
-        expect(closed.forcedMessage, '\n');
+        expect(closed.forcedMessage, 'Done.\n');
 
         final native = plan(ToolChoice.auto, backend: _NativeChatBackend());
         expect(native.usesNativeChatGeneration, isTrue);
@@ -799,7 +919,14 @@ void main() {
           native.generationParams.thinkingBudget,
           isNot(isA<ResolvedThinkingBudget>()),
         );
-        expect(native.generationParams.thinkingBudget!.forcedMessage, isNull);
+        expect(native.generationParams.thinkingBudget!.forcedMessage, 'Done.');
+
+        final explicit = plan(
+          ToolChoice.required,
+          tools: [_weatherTool],
+          budget: const ThinkingBudget(maxTokens: 4, endTag: '</think>'),
+        ).generationParams.thinkingBudget;
+        expect(explicit, isNot(isA<ResolvedThinkingBudget>()));
       });
     });
 
