@@ -11,6 +11,15 @@ For upgrade planning, combine this page with the
 [Upgrade Checklist](../migration/upgrade-checklist). For breaking changes,
 validate against the exact release tag notes.
 
+## 0.20.5
+
+- Recognize committed WebKit model cache entries across cache formats and reuse cached projectors in the Web backend and chat app.
+- Throw `LlamaModelUnloadedException` when a Web request needs a fresh model load after a core abort.
+- Aligned default WebGPU bridge assets to `v0.1.90` to use the correct model URL for fetch-backed loads and prevent repeated loads from stalling.
+- Fix intermittent duplicate tokens and wrong arithmetic in LiteRT-LM text generation on macOS Metal (#2134).
+
+Runtime baseline: native llama.cpp `v1.0.0-4` and Web use upstream `v1.0.0@b1b770d90d94cad9e9ea5b993bdbc383a522fb28`; native LiteRT-LM uses `v0.19.1-7` and stable-diffusion uses `v0.4.0`. Web LiteRT-LM uses `@litert-lm/core@0.19.0`. Manifest SHA-256: `c247b099018f55472dc83e561f0105a83f4ce03aa153d32365a07b34cde129f1`.
+
 ## 0.20.4
 
 - Use the corrected Qwen3-0.6B LiteRT-LM bundle in GPU and automatic validation profiles so split emoji tokens decode correctly (#554).

@@ -1,6 +1,6 @@
-## Unreleased
+## 0.20.5
 
-- Updated Apple SwiftPM native pin to `leehack/litert-lm-native@v0.19.1-7`.
+- Update the Apple SwiftPM runtime to `leehack/litert-lm-native@v0.19.1-7` to fix duplicate tokens and wrong arithmetic on macOS Metal. Requires core `>=0.20.5 <0.21.0`.
 
 ## 0.20.4
 
