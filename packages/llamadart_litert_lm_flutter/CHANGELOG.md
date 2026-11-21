@@ -1,6 +1,6 @@
-## Unreleased
+## 0.20.4
 
-- Updated Apple SwiftPM native pin to `leehack/litert-lm-native@v0.19.1-6`.
+- Update the Apple SwiftPM runtime to `leehack/litert-lm-native@v0.19.1-6` to fix Qwen3.5 engine reuse on macOS CPU and Metal. Requires core `>=0.20.4 <0.21.0`.
 
 ## 0.20.3
 

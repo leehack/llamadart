@@ -11,6 +11,15 @@ For upgrade planning, combine this page with the
 [Upgrade Checklist](../migration/upgrade-checklist). For breaking changes,
 validate against the exact release tag notes.
 
+## 0.20.4
+
+- Use the corrected Qwen3-0.6B LiteRT-LM bundle in GPU and automatic validation profiles so split emoji tokens decode correctly (#554).
+- End the thinking budget when a thinking-capable Qwen3-Coder XML template starts a tool call, so a forced closing tag cannot interrupt the call (#1949).
+- Fix drift and prompt echoes when reusing a LiteRT-LM engine for independent Qwen3.5 requests on macOS CPU or Metal (#672).
+- Aligned default WebGPU bridge assets to `v0.1.87`.
+
+Runtime baseline: native llama.cpp `v1.0.0-4` and Web use upstream `v1.0.0@b1b770d90d94cad9e9ea5b993bdbc383a522fb28`; native LiteRT-LM uses `v0.19.1-6` and stable-diffusion uses `v0.4.0`. Web LiteRT-LM uses `@litert-lm/core@0.19.0`. Manifest SHA-256: `922574bd6389f9ec8ce1ba41d291ba80b1d9f50906f860e8c74f7a9997c0edf9`.
+
 ## 0.20.3
 
 - Reduce known Qwen3-ASR instruction echoes in windowed partials and finals. Keep the original wording with changing voiced speech or audio-only agreement within one word edit. Quiet or misrecognized dictation can be dropped, with an empty-transcript error if no text survives ([#2088](https://github.com/leehack/llamadart/issues/2088)).

@@ -1,6 +1,6 @@
-## Unreleased
+## 0.20.4
 
-- Update the Apple SwiftPM pin to `leehack/llamadart-native@v1.0.0-4` for XML thinking-budget ends.
+- Update the Apple SwiftPM runtime to `leehack/llamadart-native@v1.0.0-4` for Qwen3-Coder XML thinking-budget ends. Requires core `>=0.20.4 <0.21.0`.
 
 ## 0.20.3
 
