@@ -94,7 +94,9 @@ decoder accepted journal `5adffed6` plus 15 extracted sidecars, full
 fallback, and the same four legacy semantic failures. The OpenCL route is the
 qualified one here; the WebGPU route is covered by the W1c run (Gemma 4 E2B, not
 this graph). The qualifier binding admits `v0.19.1`, `v0.19.1-1` (same Android
-binaries), `v0.19.1-2` and `v0.19.1-5`.
+binaries), `v0.19.1-2` and `v0.19.1-5`. See the
+[S24 requalification record](cross_platform_validation.md#galaxy-s24-litert-lm-cpu-and-opencl-requalification)
+for `v0.19.1-6`.
 
 ## Required coverage
 
