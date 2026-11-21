@@ -167,11 +167,70 @@ void main() {
       expect(pin.containsKey('working-directory'), isFalse);
       expect(pin.containsKey('if'), isFalse);
       expect(pin.containsKey('continue-on-error'), isFalse);
-      expect((pin['run'] as String).trim(), r'''
-version=$(cat packages/llamadart_studio/.flutter-version)
-test -n "$version"
-echo "version=$version" >> "$GITHUB_OUTPUT"''');
+      expect(pin['run'], isA<String>());
     });
+
+    group('$name Flutter pin reader', () {
+      const pinPath = 'packages/llamadart_studio/.flutter-version';
+      late Directory checkout;
+      late File output;
+      late String script;
+
+      setUp(() {
+        final workflow = loadYaml(
+          File('.github/workflows/ci.yml').readAsStringSync(),
+        );
+        final steps = (workflow['jobs'][name]['steps'] as List).cast<Map>();
+        script =
+            steps.singleWhere((step) => step['id'] == 'pin')['run'] as String;
+        checkout = Directory.systemTemp.createTempSync('w2098c-studio-pin-');
+        output = File('${checkout.path}/github-output')..createSync();
+        addTearDown(() => checkout.deleteSync(recursive: true));
+      });
+
+      Future<ProcessResult> readPin(String? contents) {
+        if (contents != null) {
+          File('${checkout.path}/$pinPath')
+            ..createSync(recursive: true)
+            ..writeAsStringSync(contents);
+        }
+        return Process.run(
+          'bash',
+          ['--noprofile', '--norc', '-e', '-o', 'pipefail', '-c', script],
+          workingDirectory: checkout.path,
+          environment: {'GITHUB_OUTPUT': output.path},
+        );
+      }
+
+      for (final (label, contents) in [
+        ('bare version', '3.50.0'),
+        ('trailing blank lines', '3.50.0\n\n'),
+        ('spaces and tabs', ' \t3.50.0\t \n'),
+        ('CRLF', '\r\n3.50.0\r\n'),
+      ]) {
+        test('emits a bare version for $label', () async {
+          final result = await readPin(contents);
+          expect(result.exitCode, 0, reason: '${result.stderr}');
+          expect(output.readAsStringSync(), 'version=3.50.0\n');
+        });
+      }
+
+      for (final (label, contents) in [
+        ('missing pin', null),
+        ('empty pin', ''),
+        ('whitespace-only pin', ' \t\r\n'),
+        ('channel alias', 'stable'),
+        ('partial version', '3.50'),
+        ('multiple lines', '3.50.0\n3.50.1\n'),
+      ]) {
+        test('rejects $label with the pin path', () async {
+          final result = await readPin(contents);
+          expect(result.exitCode, isNonZero);
+          expect(result.stderr, contains(pinPath));
+          expect(output.readAsStringSync(), isEmpty);
+        });
+      }
+    }, skip: Platform.isWindows ? 'Runs the POSIX workflow reader' : false);
   }
 
   test('Studio packaging-only changes omit Studio macOS admission', () async {

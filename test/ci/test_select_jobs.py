@@ -37,13 +37,20 @@ def root_suite_imports():
 
 def root_flutter_versions(workflow_name, workflow):
     job = None
+    companion_setup = False
     for line_number, line in enumerate(workflow.splitlines(), start=1):
         header = re.fullmatch(r'  ([\w-]+):[ \t]*(?:#.*)?', line)
         if header:
             job = header[1]
         if workflow_name == 'ci.yml' and job in ('studio', 'studio-macos'):
             continue
-        pin = re.fullmatch(r""" +(['"]?)flutter-version\1:[ \t]*(.*)""", line)
+        if workflow_name == 'publish_companion_pubdev.yml':
+            if line.startswith('      - '):
+                companion_setup = False
+            if re.match(r' +(?:- )?uses: flutter-actions/setup-flutter@', line):
+                companion_setup = True
+        input_name = 'version' if companion_setup else 'flutter-version'
+        pin = re.fullmatch(rf""" +(['"]?){input_name}\1:[ \t]*(.*)""", line)
         if pin:
             version = re.split(r'(?:^|[ \t]+)#', pin[2], maxsplit=1)[0].rstrip()
             if version.startswith(("'", '"')) and version.endswith(version[0]):
@@ -211,6 +218,9 @@ class SelectionTest(unittest.TestCase):
         ]
         self.assertTrue(any(path.name == 'ci.yml' for path, _, _ in pins),
                         'No explicit root Flutter pins found in ci.yml')
+        self.assertTrue(any(path.name == 'publish_companion_pubdev.yml'
+                            for path, _, _ in pins),
+                        'No explicit root Flutter pin found in publish_companion_pubdev.yml')
         for path, line, version in pins:
             with self.subTest(workflow=path.as_posix(), line=line):
                 self.assertEqual(version, root_pin)
@@ -238,6 +248,21 @@ class SelectionTest(unittest.TestCase):
         self.assertEqual(list(root_flutter_versions('ci.yml', workflow)), root_inputs)
         self.assertEqual(list(root_flutter_versions('other.yaml', workflow)),
                          [(5, '3.50.0'), *root_inputs, (17, '3.50.0')])
+
+    def test_root_flutter_versions_include_the_companion_setup_version(self):
+        workflow = """jobs:
+  publish-companion:
+    steps:
+      - uses: flutter-actions/setup-flutter@sha
+        if: steps.publish.outputs.should_publish == 'true'
+        with:
+          version: '3.47.0' # stale
+      - uses: other/action@sha
+        with:
+          version: 2.0.0
+"""
+        self.assertEqual(list(root_flutter_versions('publish_companion_pubdev.yml', workflow)),
+                         [(7, '3.47.0')])
 
     def test_studio_web_changes_run_the_shared_bridge_pin_gate(self):
         plan = ci.select(['packages/llamadart_studio/web/index.html'])
