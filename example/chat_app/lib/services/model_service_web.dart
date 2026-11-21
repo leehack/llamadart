@@ -24,38 +24,27 @@ class ModelServiceWeb implements ModelService, WebCachePrefetchModelService {
     final downloaded = prefs.getStringList(_downloadedModelsKey) ?? const [];
     final markers = ModelAssetCacheMarkers(downloaded);
     final cachedModels = <String>{};
-    final cache = await _openModelCache();
-    var markersChanged = false;
-
-    for (final model in models) {
-      markersChanged =
-          await _syncMarkersWithCache(
-            markers,
-            _remoteSourcesFor(model),
-            cache: cache,
-          ) ||
-          markersChanged;
-
-      if (markers.isProfileCached(model, web: true)) {
-        cachedModels.add(model.filename);
-        continue;
-      }
-
-      if (markers.migrateLegacyProfileMarker(model, web: true)) {
-        markersChanged = true;
-        markersChanged =
+    final sources = models.expand(_remoteSourcesFor).toList();
+    final markersChanged = await _withCacheScan(sources, (lookup) async {
+      var changed = false;
+      for (final model in models) {
+        if (!markers.isProfileCached(model, web: true)) {
+          changed =
+              markers.migrateLegacyProfileMarker(model, web: true) || changed;
+        }
+        changed =
             await _syncMarkersWithCache(
               markers,
               _remoteSourcesFor(model),
-              cache: cache,
+              lookup,
             ) ||
-            markersChanged;
+            changed;
+        if (markers.isProfileCached(model, web: true)) {
+          cachedModels.add(model.filename);
+        }
       }
-
-      if (markers.isProfileCached(model, web: true)) {
-        cachedModels.add(model.filename);
-      }
-    }
+      return changed;
+    });
 
     if (markersChanged) {
       await prefs.setStringList(_downloadedModelsKey, markers.toSet().toList());
@@ -71,11 +60,10 @@ class ModelServiceWeb implements ModelService, WebCachePrefetchModelService {
     final prefs = await SharedPreferences.getInstance();
     final downloaded = prefs.getStringList(_downloadedModelsKey) ?? const [];
     final markers = ModelAssetCacheMarkers(downloaded);
-    final cache = await _openModelCache();
-    final changed = await _syncMarkersWithCache(
-      markers,
-      _remoteSourcesFor(model),
-      cache: cache,
+    final sources = _remoteSourcesFor(model);
+    final changed = await _withCacheScan(
+      sources,
+      (lookup) => _syncMarkersWithCache(markers, sources, lookup),
     );
     if (changed) {
       await prefs.setStringList(_downloadedModelsKey, markers.toSet().toList());
@@ -120,13 +108,12 @@ class ModelServiceWeb implements ModelService, WebCachePrefetchModelService {
     final downloaded =
         prefs.getStringList(_downloadedModelsKey)?.toSet() ?? <String>{};
     final markers = ModelAssetCacheMarkers(downloaded);
-    final cache = await _openModelCache();
+    final sources = _remoteSourcesFor(model);
     var markersChanged = markers.migrateLegacyProfileMarker(model, web: true);
     markersChanged =
-        await _syncMarkersWithCache(
-          markers,
-          _remoteSourcesFor(model),
-          cache: cache,
+        await _withCacheScan(
+          sources,
+          (lookup) => _syncMarkersWithCache(markers, sources, lookup),
         ) ||
         markersChanged;
     if (markersChanged) {
@@ -159,17 +146,16 @@ class ModelServiceWeb implements ModelService, WebCachePrefetchModelService {
       onSuccess(model.filename);
       return;
     }
-    if (pendingAssets.any(
-      (asset) => llama.hasPersistentCacheSensitiveUrlParts(asset.source.url),
-    )) {
+    if (pendingAssets.any((asset) => !_canCacheUrl(asset.source.url))) {
       onError(
         UnsupportedError(
-          'Browser cache prefetch skipped for credentialed remote URL; load the model directly to avoid storing sensitive URL parts.',
+          'Browser cache prefetch skipped for a non-HTTP(S) or credentialed URL; load the model directly to avoid storing sensitive URL parts.',
         ),
       );
       return;
     }
-    if (!_hasCacheStorageApi()) {
+    final cache = await _openModelCache();
+    if (cache == null) {
       onError(
         UnsupportedError(
           'Browser CacheStorage is unavailable; remote models can still be loaded directly.',
@@ -195,9 +181,11 @@ class ModelServiceWeb implements ModelService, WebCachePrefetchModelService {
       return;
     }
 
+    var finished = false;
     try {
       unawaited(
         cancelToken.whenCancel.then((_) {
+          if (finished) return;
           try {
             bridge.cancel();
           } catch (_) {
@@ -210,6 +198,9 @@ class ModelServiceWeb implements ModelService, WebCachePrefetchModelService {
       // prefetchModelToCache) now surfaces as a real error instead of silently
       // marking the model cached.
       for (var i = 0; i < pendingAssets.length; i++) {
+        if (cancelToken.isCancelled) {
+          throw _cancelledException(remoteModelSource.url);
+        }
         final asset = pendingAssets[i];
         await _prefetchStage(
           bridge,
@@ -224,7 +215,15 @@ class ModelServiceWeb implements ModelService, WebCachePrefetchModelService {
           onProgress: onProgress,
           onProgressDetail: onProgressDetail,
         );
-        if (!await _isRemoteAssetInCache(asset.source, cache: cache)) {
+        final cached = await _isRemoteAssetInCache(
+          asset.source,
+          bridge: bridge,
+          cache: cache,
+        );
+        if (cancelToken.isCancelled) {
+          throw _cancelledException(remoteModelSource.url);
+        }
+        if (cached != true) {
           throw StateError(
             'Browser cache prefetch completed, but ${asset.source.filename} '
             'was not found in Cache Storage. Reload the page and try again.',
@@ -249,14 +248,8 @@ class ModelServiceWeb implements ModelService, WebCachePrefetchModelService {
         onError(error);
       }
     } finally {
-      try {
-        final disposePromise = bridge.dispose();
-        if (disposePromise != null) {
-          await disposePromise.toDart;
-        }
-      } catch (_) {
-        // best-effort bridge disposal
-      }
+      finished = true;
+      await _disposeBridge(bridge);
     }
   }
 
@@ -278,14 +271,7 @@ class ModelServiceWeb implements ModelService, WebCachePrefetchModelService {
       );
       return prefetchMember != null && prefetchMember.isA<JSFunction>();
     } finally {
-      try {
-        final disposePromise = bridge.dispose();
-        if (disposePromise != null) {
-          await disposePromise.toDart;
-        }
-      } catch (_) {
-        // best-effort bridge disposal
-      }
+      await _disposeBridge(bridge);
     }
   }
 
@@ -302,19 +288,38 @@ class ModelServiceWeb implements ModelService, WebCachePrefetchModelService {
     }
   }
 
+  Future<T> _withCacheScan<T>(
+    List<RemoteModelAssetSource> sources,
+    Future<T> Function(_CacheLookup lookup) scan,
+  ) async {
+    final cache = sources.any((source) => _canCacheUrl(source.url))
+        ? await _openModelCache()
+        : null;
+    final bridge = cache != null && await _awaitBridgeReady()
+        ? _tryCreateBridge()
+        : null;
+    try {
+      return await scan(
+        (source) => _isRemoteAssetInCache(source, bridge: bridge, cache: cache),
+      );
+    } finally {
+      await _disposeBridge(bridge);
+    }
+  }
+
   Future<bool> _syncMarkersWithCache(
     ModelAssetCacheMarkers markers,
-    Iterable<RemoteModelAssetSource> sources, {
-    _BrowserCache? cache,
-  }) async {
+    Iterable<RemoteModelAssetSource> sources,
+    _CacheLookup lookup,
+  ) async {
     var changed = false;
     for (final source in sources) {
       final marked = markers.containsAsset(source);
-      final cached = await _isRemoteAssetInCache(source, cache: cache);
-      if (cached && !marked) {
+      final cached = await lookup(source);
+      if (cached == true && !marked) {
         markers.markAssetCached(source);
         changed = true;
-      } else if (!cached && marked) {
+      } else if (cached == false && marked) {
         markers.removeAssets(<RemoteModelAssetSource>[source]);
         changed = true;
       }
@@ -339,20 +344,45 @@ class ModelServiceWeb implements ModelService, WebCachePrefetchModelService {
     }
   }
 
-  Future<bool> _isRemoteAssetInCache(
+  bool _canCacheUrl(String url) {
+    final uri = Uri.tryParse(url);
+    return uri != null &&
+        (uri.isScheme('http') || uri.isScheme('https')) &&
+        !llama.hasPersistentCacheSensitiveUrlParts(url);
+  }
+
+  Future<bool?> _isRemoteAssetInCache(
     RemoteModelAssetSource source, {
-    _BrowserCache? cache,
+    required _WebModelCacheBridge? bridge,
+    required _BrowserCache? cache,
   }) async {
-    final modelCache = cache ?? await _openModelCache();
-    if (modelCache == null) {
-      return false;
-    }
+    if (!_canCacheUrl(source.url)) return false;
+    if (bridge == null || cache == null) return null;
 
     try {
-      final response = await modelCache.match(source.url).toDart;
-      return response != null;
+      final capability = _WebModelCacheBridge.supportsModelCacheQuery;
+      if (capability.isA<JSBoolean>() && (capability as JSBoolean).toDart) {
+        final hit = await bridge
+            .isModelCached(
+              source.url,
+              _WebModelCacheOptions(cacheName: _modelCacheName.toJS),
+            )
+            .toDart;
+        return hit.isA<JSBoolean>() ? (hit as JSBoolean).toDart : null;
+      }
+
+      final response = await cache.match(source.url).toDart;
+      return response != null && response.ok && response.status != 204;
     } catch (_) {
-      return false;
+      return null;
+    }
+  }
+
+  Future<void> _disposeBridge(_WebModelCacheBridge? bridge) async {
+    try {
+      await bridge?.dispose()?.toDart;
+    } catch (_) {
+      // Cache checks and downloads already have an outcome.
     }
   }
 
@@ -443,6 +473,7 @@ class ModelServiceWeb implements ModelService, WebCachePrefetchModelService {
     Function(ModelDownloadProgress progress)? onProgressDetail,
   }) async {
     var stageDownloadedBytes = 0;
+    var reportedProgress = false;
     int? stageTotalBytes;
 
     void emit(bool resumed) {
@@ -468,6 +499,7 @@ class ModelServiceWeb implements ModelService, WebCachePrefetchModelService {
         force: false,
         cacheName: _modelCacheName.toJS,
         progressCallback: ((JSAny? payload) {
+          reportedProgress = true;
           final snapshot = _parseBridgeProgress(payload);
           if (snapshot.loaded > stageDownloadedBytes) {
             stageDownloadedBytes = snapshot.loaded;
@@ -483,8 +515,20 @@ class ModelServiceWeb implements ModelService, WebCachePrefetchModelService {
       ),
     );
 
-    if (prefetchPromise != null) {
-      await prefetchPromise.toDart;
+    if (prefetchPromise == null) {
+      throw StateError('The Web bridge did not start cache prefetch.');
+    }
+    await prefetchPromise.toDart;
+
+    // The bridge can commit an empty response before rejecting it on load.
+    if (reportedProgress && stageDownloadedBytes == 0) {
+      await bridge
+          .evictModelFromCache(
+            url,
+            _WebModelCacheOptions(cacheName: _modelCacheName.toJS),
+          )
+          ?.toDart;
+      throw StateError('Web cache prefetch received an empty model response.');
     }
 
     final completedBytes = stageTotalBytes != null && stageTotalBytes! > 0
@@ -548,11 +592,12 @@ class ModelServiceWeb implements ModelService, WebCachePrefetchModelService {
       return true;
     }
 
-    final normalized = '$error'.toLowerCase();
-    return normalized.contains('aborterror') ||
-        normalized.contains('aborted') ||
-        normalized.contains('cancelled') ||
-        normalized.contains('canceled');
+    try {
+      final name = (error as JSObject).getProperty<JSAny?>('name'.toJS);
+      return name.isA<JSString>() && (name as JSString).toDart == 'AbortError';
+    } catch (_) {
+      return false;
+    }
   }
 
   DioException _cancelledException(String url) {
@@ -593,6 +638,7 @@ class ModelServiceWeb implements ModelService, WebCachePrefetchModelService {
 
     try {
       for (final source in _remoteSourcesFor(model)) {
+        if (!_canCacheUrl(source.url)) continue;
         final evictPromise = bridge.evictModelFromCache(
           source.url,
           _WebModelCacheOptions(cacheName: _modelCacheName.toJS),
@@ -604,17 +650,12 @@ class ModelServiceWeb implements ModelService, WebCachePrefetchModelService {
     } catch (_) {
       // best-effort cache eviction
     } finally {
-      try {
-        final disposePromise = bridge.dispose();
-        if (disposePromise != null) {
-          await disposePromise.toDart;
-        }
-      } catch (_) {
-        // ignore disposal failures
-      }
+      await _disposeBridge(bridge);
     }
   }
 }
+
+typedef _CacheLookup = Future<bool?> Function(RemoteModelAssetSource source);
 
 class _BridgeProgressSnapshot {
   final int loaded;
@@ -633,6 +674,13 @@ class _PendingWebCacheAsset {
 @JS('LlamaWebGpuBridge')
 extension type _WebModelCacheBridge._(JSObject _) implements JSObject {
   external factory _WebModelCacheBridge([_WebModelCacheBridgeConfig? config]);
+
+  external static JSAny? get supportsModelCacheQuery;
+
+  external JSPromise<JSAny?> isModelCached(
+    String url, [
+    _WebModelCacheOptions? options,
+  ]);
 
   external JSPromise<JSAny?>? prefetchModelToCache(
     String url, [
@@ -674,7 +722,13 @@ extension type _BrowserCacheStorage._(JSObject _) implements JSObject {
 }
 
 extension type _BrowserCache._(JSObject _) implements JSObject {
-  external JSPromise<JSAny?> match(String request);
+  external JSPromise<_BrowserCacheResponse?> match(String request);
 }
 
 ModelService createModelService() => ModelServiceWeb();
+
+@JS()
+extension type _BrowserCacheResponse._(JSObject _) implements JSObject {
+  external bool get ok;
+  external int get status;
+}

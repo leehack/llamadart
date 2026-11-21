@@ -452,6 +452,8 @@ class WebGpuDraftModel {
         ),
       );
     } catch (error) {
+      final unloaded = webGpuModelUnloadedError(error);
+      if (unloaded != null) throw unloaded;
       final message = webGpuBridgeErrorText(error, sourceUrls: <String>[url]);
       if (message.startsWith('No model loaded') ||
           message.contains('Bridge has been disposed') ||

@@ -167,6 +167,16 @@ class LlamaStateException extends LlamaException {
   LlamaStateException(super.message, [super.details]);
 }
 
+/// The WebAssembly core unloaded the current Web model after an abort.
+///
+/// Reload the model before retrying the operation. Reload any projector,
+/// draft model, or LoRA adapters the operation needs.
+final class LlamaModelUnloadedException extends LlamaStateException {
+  /// Creates an error requiring a fresh model load.
+  LlamaModelUnloadedException()
+    : super('The Web model was unloaded after a core abort. Reload the model.');
+}
+
 /// Exception thrown by `ModelDownloadManager.remove` and `clear` when they
 /// leave cache entries in place because another caller is using them.
 ///

@@ -2852,6 +2852,95 @@ void main() {
       expect(lastTokenEventFlushChars, 48);
     });
 
+    for (final errorShape in ['direct', 'worker', 'message only']) {
+      test(
+        'maps model-unloaded bridge errors by identity ($errorShape)',
+        () async {
+          final error = _jsError(
+            'The native core aborted and unloaded the model.',
+          );
+          if (errorShape == 'direct') {
+            error.setProperty('name'.toJS, 'ModelUnloadedError'.toJS);
+          }
+          if (errorShape != 'message only') {
+            error.setProperty(
+              'code'.toJS,
+              'MODEL_UNLOADED_AFTER_CORE_ABORT'.toJS,
+            );
+          }
+          bridge.setProperty(
+            'createCompletion'.toJS,
+            ((String prompt, JSObject options) => _rejectPromise(error)).toJS,
+          );
+
+          await backend.modelLoadFromUrl(
+            'https://example.com/model.gguf',
+            const ModelParams(),
+          );
+
+          final expected = errorShape == 'message only'
+              ? 'LlamaInferenceException'
+              : 'LlamaModelUnloadedException';
+          await expectLater(
+            backend.generate(1, 'Hello', const GenerationParams()),
+            emitsError(
+              isA<LlamaException>().having(
+                (error) => error.runtimeType.toString(),
+                'runtime type',
+                expected,
+              ),
+            ),
+          );
+        },
+      );
+    }
+
+    test(
+      'uses bridge cache queries before model load and forwards projector options',
+      () async {
+        final constructor = JSObject()
+          ..setProperty('supportsModelCacheQuery'.toJS, true.toJS);
+        bridge.setProperty('constructor'.toJS, constructor);
+        final queries = <(String, String)>[];
+        bridge.setProperty(
+          'isModelCached'.toJS,
+          ((String url, JSObject options) {
+            queries.add((
+              url,
+              options.getProperty<JSString>('cacheName'.toJS).toDart,
+            ));
+            return Future<JSBoolean>.value(true.toJS).toJS;
+          }).toJS,
+        );
+        final projectors = <(String, bool, String)>[];
+        bridge.setProperty(
+          'loadMultimodalProjector'.toJS,
+          ((String url, JSObject options) {
+            projectors.add((
+              url,
+              options.getProperty<JSBoolean>('useCache'.toJS).toDart,
+              options.getProperty<JSString>('cacheName'.toJS).toDart,
+            ));
+            return Future<JSNumber>.value(1.toJS).toJS;
+          }).toJS,
+        );
+
+        const model = 'https://example.com/model-00001-of-00002.gguf';
+        const projector = 'https://example.com/mmproj.gguf';
+        const signedProjector = 'https://example.com/mmproj.gguf?token=secret';
+        const cacheName = 'llamadart-webgpu-model-cache-v1';
+        await backend.modelLoadFromUrl(model, const ModelParams());
+        expect(queries, [(model, cacheName)]);
+        expect(lastRequestedForceRemoteFetchBackend, isFalse);
+        await backend.multimodalContextCreate(1, projector);
+        await backend.multimodalContextCreate(1, signedProjector);
+        expect(projectors, [
+          (projector, true, cacheName),
+          (signedProjector, false, cacheName),
+        ]);
+      },
+    );
+
     test(
       'emits a returned completion when token callbacks are absent',
       () async {

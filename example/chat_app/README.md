@@ -666,6 +666,12 @@ await prefs.setInt('preferred_backend', backendIndex);
   replacing normal text paste. Clipboard attachments are capped at 64 MB.
 - On web, model files are loaded by URL (local file download/cache flow differs from native).
 - On web, **Download** prefetches model/mmproj bytes into browser Cache Storage with progress.
+  Use file endpoints that return a non-empty response. With bridge assets
+  `v0.1.89+`, the app recognizes committed WebKit cache entries for models
+  and projectors. A later load can fetch from the network if a cached part
+  is missing or damaged.
+- After `LlamaModelUnloadedException` in direct Web mode, reload the model
+  and any projector before retrying.
 - Loading a remote HTTP(S) model URL first prefetches it into the browser
   cache. If `CacheStorage` is unavailable, over quota, or rejects the write,
   the app loads the model from the network instead of failing. Model URLs with

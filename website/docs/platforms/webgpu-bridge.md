@@ -416,12 +416,26 @@ first model load, for diagnosis or controlled deployments:
 | `__llamadartBridgeRemoteFetchChunkBytes` | Fetch-backed chunk size; default 4 MiB, clamped to 4 KiB to 16 MiB |
 | `__llamadartAllowSafariWebGpu` | `true` bypasses the Safari CPU safeguard |
 
+## Browser cache and core recovery
+
+With assets `v0.1.89+`, the Web backend and chat app check the bridge cache
+for every model shard and reuse prefetched projectors by URL. WebKit cache
+hits indicate a committed manifest. The bridge checks the parts during load
+and may fetch the asset again when one is missing or damaged. Use non-empty
+HTTP(S) file endpoints for prefetch, and keep URLs containing credentials out
+of persistent browser storage.
+
+After a direct Wasm core abort, further model calls can throw
+`LlamaModelUnloadedException`. Reload the model and any required projector,
+draft model, or LoRA adapters. The worker runtime normally replaces the
+worker and restores the model on the next call.
+
 ## Pinned bridge assets
 
-This llamadart version pins bridge assets `v0.1.87`, which include the
+This llamadart version pins bridge assets `v0.1.89`, which include the
 API-version-1 media embedding contract and `thinkingBudgetMultiEnd`.
 
-- The pinned `v0.1.87` bridge assets embed llama.cpp `v1.0.0`, matching the native runtime `v1.0.0-4`.
+- The pinned `v0.1.89` bridge assets embed llama.cpp `v1.0.0`, matching the native runtime `v1.0.0-4`.
 
 Provenance and the pinned manifest digest are in
 [`doc/webgpu_bridge.md`](https://github.com/leehack/llamadart/blob/main/doc/webgpu_bridge.md).
@@ -429,7 +443,7 @@ Provenance and the pinned manifest digest are in
 In a llamadart checkout, vendor the pinned assets into the chat app with:
 
 ```bash
-WEBGPU_BRIDGE_ASSETS_TAG=v0.1.87 ./scripts/fetch_webgpu_bridge_assets.sh
+WEBGPU_BRIDGE_ASSETS_TAG=v0.1.89 ./scripts/fetch_webgpu_bridge_assets.sh
 ```
 
 The chat app bootstrap takes its CDN source from these globals:
@@ -437,7 +451,7 @@ The chat app bootstrap takes its CDN source from these globals:
 ```html
 <script>
   window.__llamadartBridgeAssetsRepo = 'leehack/llama-web-bridge-assets';
-  window.__llamadartBridgeAssetsTag = 'v0.1.87';
+  window.__llamadartBridgeAssetsTag = 'v0.1.89';
 </script>
 ```
 

@@ -1269,7 +1269,7 @@ class WebGpuLlamaBackend
       allowCpuFallback: !setup.requireGpu,
     );
     LlamaUnsupportedException? gpuInactive;
-    final cachedWebModel = await _isModelResponseCachedForUrl(url);
+    bool? cachedWebModel;
     Object? lastError;
     Map<String, String> lastRuntimeHints = const <String, String>{};
     var escalation = WebGpuLoadEscalation(
@@ -1295,12 +1295,13 @@ class WebGpuLlamaBackend
         await _activateBridge();
         final bridge = _requireBridge();
         bridgeForAttempt = bridge;
+        cachedWebModel ??= await _isModelResponseCachedForUrl(bridge, url);
 
         if (_forceRemoteFetchBackendOverride != null) {
           forceRemoteFetchBackend = _forceRemoteFetchBackendOverride;
         } else if (_getGlobalBool('__llamadartBridgeForceRemoteFetchBackend')) {
           forceRemoteFetchBackend = true;
-        } else if (cachedWebModel) {
+        } else if (cachedWebModel == true) {
           forceRemoteFetchBackend = false;
         }
 
@@ -2926,6 +2927,8 @@ class WebGpuLlamaBackend
   }
 
   static LlamaException _mediaEmbeddingError(Object error) {
+    final unloaded = webGpuModelUnloadedError(error);
+    if (unloaded != null) return unloaded;
     final code = _embeddingBridgeCode(error);
     // Only known stable codes cross this boundary; diagnostics may carry media,
     // paths or URLs. Unknown codes are untrusted input too.
@@ -3174,7 +3177,13 @@ class WebGpuLlamaBackend
     }
 
     if (value.isA<JSPromise>()) {
-      return (value as JSPromise<JSAny?>).toDart;
+      try {
+        return await (value as JSPromise<JSAny?>).toDart;
+      } catch (error) {
+        final unloaded = webGpuModelUnloadedError(error);
+        if (unloaded != null) throw unloaded;
+        rethrow;
+      }
     }
 
     return value;
@@ -3421,10 +3430,12 @@ class WebGpuLlamaBackend
     String action,
     Object error,
     String path,
-  ) => LlamaStateException(
-    'The Web runtime could not $action the state.',
-    webGpuBridgeErrorText(error, sourceUrls: <String>[path]),
-  );
+  ) =>
+      webGpuModelUnloadedError(error) ??
+      LlamaStateException(
+        'The Web runtime could not $action the state.',
+        webGpuBridgeErrorText(error, sourceUrls: <String>[path]),
+      );
 
   @override
   Future<Map<String, String>> modelMetadata(int modelHandle) async {
@@ -3521,15 +3532,28 @@ class WebGpuLlamaBackend
   ) async {
     final bridge = _requireBridge();
     mmProjPath = webGpuDocumentUrl(mmProjPath);
-    final cachedBlobUrl = await _cachedModelBlobUrlFor(mmProjPath);
-    final projectorPath = cachedBlobUrl ?? mmProjPath;
+    final supportsCacheQuery = _supportsModelCacheQuery(bridge);
+    final cachedBlobUrl = supportsCacheQuery
+        ? null
+        : await _cachedModelBlobUrlFor(mmProjPath);
     var retainedCachedBlobUrl = false;
 
     try {
       final JSAny? result;
       try {
-        result = await _toFuture(bridge.loadMultimodalProjector(projectorPath));
+        final load = supportsCacheQuery
+            ? bridge.loadMultimodalProjector(
+                mmProjPath,
+                WebGpuProjectorLoadOptions(
+                  useCache: _canCacheUrl(mmProjPath),
+                  cacheName: _defaultModelCacheName,
+                ),
+              )
+            : bridge.loadMultimodalProjector(cachedBlobUrl ?? mmProjPath);
+        result = await _toFuture(load);
       } catch (error) {
+        final unloaded = webGpuModelUnloadedError(error);
+        if (unloaded != null) throw unloaded;
         throw LlamaModelException(
           'The Web runtime could not load the multimodal projector.',
           webGpuBridgeErrorText(error, sourceUrls: <String>[mmProjPath]),
@@ -3585,14 +3609,23 @@ class WebGpuLlamaBackend
     }
   }
 
-  Future<String?> _cachedModelBlobUrlFor(String sourceUrl) async {
+  bool _canCacheUrl(String sourceUrl) {
     final uri = Uri.tryParse(sourceUrl);
-    if (uri == null || !(uri.isScheme('http') || uri.isScheme('https'))) {
-      return null;
-    }
-    if (hasPersistentCacheSensitiveUrlParts(sourceUrl)) {
-      return null;
-    }
+    return uri != null &&
+        (uri.isScheme('http') || uri.isScheme('https')) &&
+        !hasPersistentCacheSensitiveUrlParts(sourceUrl);
+  }
+
+  bool _supportsModelCacheQuery(LlamaWebGpuBridge bridge) {
+    final constructor = bridge.getProperty<JSAny?>('constructor'.toJS);
+    if (!constructor.isA<JSObject>()) return false;
+    final flag =
+        (constructor as WebGpuBridgeConstructor).supportsModelCacheQuery;
+    return flag.isA<JSBoolean>() && (flag as JSBoolean).toDart;
+  }
+
+  Future<String?> _cachedModelBlobUrlFor(String sourceUrl) async {
+    if (!_canCacheUrl(sourceUrl)) return null;
 
     try {
       final caches = globalContext.getProperty<JSAny?>('caches'.toJS);
@@ -3602,7 +3635,9 @@ class WebGpuLlamaBackend
 
       final cache = await window.caches.open(_defaultModelCacheName).toDart;
       final cachedResponse = await cache.match(sourceUrl.toJS).toDart;
-      if (cachedResponse == null) {
+      if (cachedResponse == null ||
+          !cachedResponse.ok ||
+          cachedResponse.status == 204) {
         return null;
       }
 
@@ -3613,16 +3648,22 @@ class WebGpuLlamaBackend
     }
   }
 
-  Future<bool> _isModelResponseCachedForUrl(String sourceUrl) async {
-    final uri = Uri.tryParse(sourceUrl);
-    if (uri == null || !(uri.isScheme('http') || uri.isScheme('https'))) {
-      return false;
-    }
-    if (hasPersistentCacheSensitiveUrlParts(sourceUrl)) {
-      return false;
-    }
+  Future<bool> _isModelResponseCachedForUrl(
+    LlamaWebGpuBridge bridge,
+    String sourceUrl,
+  ) async {
+    if (!_canCacheUrl(sourceUrl)) return false;
 
     try {
+      if (_supportsModelCacheQuery(bridge)) {
+        final hit = await bridge
+            .isModelCached(
+              sourceUrl,
+              WebGpuCacheQueryOptions(cacheName: _defaultModelCacheName),
+            )
+            .toDart;
+        return hit.toDart;
+      }
       final caches = globalContext.getProperty<JSAny?>('caches'.toJS);
       if (caches == null || !caches.isA<JSObject>()) {
         return false;
@@ -3630,7 +3671,9 @@ class WebGpuLlamaBackend
 
       final cache = await window.caches.open(_defaultModelCacheName).toDart;
       final cachedResponse = await cache.match(sourceUrl.toJS).toDart;
-      return cachedResponse != null;
+      return cachedResponse != null &&
+          cachedResponse.ok &&
+          cachedResponse.status != 204;
     } catch (_) {
       return false;
     }
