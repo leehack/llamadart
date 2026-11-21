@@ -99,6 +99,25 @@ this graph). See the
 [S24 requalification record](cross_platform_validation.md#galaxy-s24-litert-lm-cpu-and-opencl-requalification)
 for `v0.19.1-6`.
 
+## Metal sampler lookahead regression
+
+Run the #2134 regression with the hash-locked corrected Qwen3-0.6B bundle on
+macOS arm64:
+
+```sh
+TMPDIR="$(mktemp -d)" LITERT_LM_MODEL=/path/to/Qwen3-0.6B.litertlm LITERT_LM_BACKEND=gpu \
+  dart test --run-skipped -t local-only -p vm -r expanded \
+  test/e2e/backends/litert_lm_metal_lookahead_e2e_test.dart
+```
+
+Run again with `LITERT_LM_BACKEND=cpu` for the CPU control. The SDK test
+checks exact arithmetic and `Montréal 👋` replies across 100 independent
+conversations per prompt with 16 local SHA-256 workers. For Metal, retain the
+`backend=Metal` and `Sampler will handle decode input tensors.` native log
+lines and check for Dawn validation errors. For a negative control, point
+`LLAMADART_LITERT_LM_LIB_DIR` to the complete published `v0.19.1-6` macOS
+runtime and verify its archive and library hashes before running.
+
 ## Required coverage
 
 | Public call path | Preparation and evidence | Remaining admission work |

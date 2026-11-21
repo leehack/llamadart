@@ -11,7 +11,7 @@
       "fileName": "libGemmaModelConstraintProvider.so",
       "path": "bin/android/arm64/libGemmaModelConstraintProvider.so",
       "platform": "android",
-      "releaseTag": "v0.19.1-6",
+      "releaseTag": "v0.19.1-7",
       "runtime": "native",
       "sha256": "c7c7188b831ae75fcc7ec6fe613118365b311995805423a4ca265372f07f4783",
       "upstreamCommit": "7a03724cece417f1724c923b3d527b4319730841",
@@ -25,7 +25,7 @@
       "fileName": "libLiteRtGpuAccelerator.so",
       "path": "bin/android/arm64/libLiteRtGpuAccelerator.so",
       "platform": "android",
-      "releaseTag": "v0.19.1-6",
+      "releaseTag": "v0.19.1-7",
       "runtime": "native",
       "sha256": "49055120bddce4f4bfb681ae1b929094ef22b238b5d9b91e8e57aeddcd58f8c8",
       "upstreamCommit": "7a03724cece417f1724c923b3d527b4319730841",
@@ -37,9 +37,9 @@
       "fileName": "libLiteRtLm.so",
       "path": "bin/android/arm64/libLiteRtLm.so",
       "platform": "android",
-      "releaseTag": "v0.19.1-6",
+      "releaseTag": "v0.19.1-7",
       "runtime": "native",
-      "sha256": "c0ead005d1fda4dd9859bd5d3af5c179d30851c1319b7516f63bcac3a10a3d4e",
+      "sha256": "c55e4b66008f96b7775281302ddab46e6a68ef808c866d76ceb23fec76407b3e",
       "upstreamCommit": "7a03724cece417f1724c923b3d527b4319730841",
       "upstreamTag": "v0.19.1"
     },
@@ -51,7 +51,7 @@
       "fileName": "libLiteRtOpenClAccelerator.so",
       "path": "bin/android/arm64/libLiteRtOpenClAccelerator.so",
       "platform": "android",
-      "releaseTag": "v0.19.1-6",
+      "releaseTag": "v0.19.1-7",
       "runtime": "native",
       "sha256": "ef9776d87b0a4fe4793e8fa3f325dd9fecca4a2faaace14973bae6c6be2698a5",
       "upstreamCommit": "7a03724cece417f1724c923b3d527b4319730841",
@@ -65,7 +65,7 @@
       "fileName": "libLiteRtWebGpuAccelerator.so",
       "path": "bin/android/arm64/libLiteRtWebGpuAccelerator.so",
       "platform": "android",
-      "releaseTag": "v0.19.1-6",
+      "releaseTag": "v0.19.1-7",
       "runtime": "native",
       "sha256": "5952041260e13c719754903c95d2400c813785b1f7d0de6495f401b2d0ef956c",
       "upstreamCommit": "7a03724cece417f1724c923b3d527b4319730841",
@@ -79,7 +79,7 @@
       "fileName": "libwebgpu_dawn.so",
       "path": "bin/android/arm64/libwebgpu_dawn.so",
       "platform": "android",
-      "releaseTag": "v0.19.1-6",
+      "releaseTag": "v0.19.1-7",
       "runtime": "native",
       "sha256": "7282aacdb076ce89f0c9d93107a145b991b99eb1dfbd5b5746dd0d99466ab3c3",
       "upstreamCommit": "7a03724cece417f1724c923b3d527b4319730841",
@@ -91,7 +91,7 @@
       "fileName": "libGemmaModelConstraintProvider.so",
       "path": "bin/android/x64/libGemmaModelConstraintProvider.so",
       "platform": "android",
-      "releaseTag": "v0.19.1-6",
+      "releaseTag": "v0.19.1-7",
       "runtime": "native",
       "sha256": "bf6ba9677729631005c921abdd75bb95396b3549814a1b5c3bdf74b5f6ae3a7d",
       "upstreamCommit": "7a03724cece417f1724c923b3d527b4319730841",
@@ -105,7 +105,7 @@
       "fileName": "libLiteRtGpuAccelerator.so",
       "path": "bin/android/x64/libLiteRtGpuAccelerator.so",
       "platform": "android",
-      "releaseTag": "v0.19.1-6",
+      "releaseTag": "v0.19.1-7",
       "runtime": "native",
       "sha256": "9bc7b1cd5c70742fb1c6855ad3dd3c30cf32d88c856e5248416e1ac2602e57a0",
       "upstreamCommit": "7a03724cece417f1724c923b3d527b4319730841",
@@ -117,9 +117,9 @@
       "fileName": "libLiteRtLm.so",
       "path": "bin/android/x64/libLiteRtLm.so",
       "platform": "android",
-      "releaseTag": "v0.19.1-6",
+      "releaseTag": "v0.19.1-7",
       "runtime": "native",
-      "sha256": "5ef4e2cdc6c57bbe76a1e95b1c8392c72145128af0ba17441ec89bcc922bc256",
+      "sha256": "c1d6f20cb491942edcc19b9e847a876884907116628d283323a566a1b50ecdf7",
       "upstreamCommit": "7a03724cece417f1724c923b3d527b4319730841",
       "upstreamTag": "v0.19.1"
     },
@@ -131,7 +131,7 @@
       "fileName": "libLiteRtOpenClAccelerator.so",
       "path": "bin/android/x64/libLiteRtOpenClAccelerator.so",
       "platform": "android",
-      "releaseTag": "v0.19.1-6",
+      "releaseTag": "v0.19.1-7",
       "runtime": "native",
       "sha256": "3fb2e3732b6f5966762a1c03cbad865fc3af186ea63874e8cfba00283b998005",
       "upstreamCommit": "7a03724cece417f1724c923b3d527b4319730841",
@@ -145,7 +145,7 @@
       "fileName": "libLiteRtWebGpuAccelerator.so",
       "path": "bin/android/x64/libLiteRtWebGpuAccelerator.so",
       "platform": "android",
-      "releaseTag": "v0.19.1-6",
+      "releaseTag": "v0.19.1-7",
       "runtime": "native",
       "sha256": "de2ac3cdbb1ba9b2da26a9f10b73b11b3cf7ee23111e6ad2a980cd947c96ccc6",
       "upstreamCommit": "7a03724cece417f1724c923b3d527b4319730841",
@@ -159,7 +159,7 @@
       "fileName": "libwebgpu_dawn.so",
       "path": "bin/android/x64/libwebgpu_dawn.so",
       "platform": "android",
-      "releaseTag": "v0.19.1-6",
+      "releaseTag": "v0.19.1-7",
       "runtime": "native",
       "sha256": "fcfb9a0b902f7dd3f81f01295f381c10b22a2d5774f95ee0db813f284a0ab087",
       "upstreamCommit": "7a03724cece417f1724c923b3d527b4319730841",
@@ -171,7 +171,7 @@
       "fileName": "CLiteRTLM",
       "path": "bin/ios/arm64/CLiteRTLM.framework/CLiteRTLM",
       "platform": "ios",
-      "releaseTag": "v0.19.1-6",
+      "releaseTag": "v0.19.1-7",
       "runtime": "native",
       "sha256": "6350484ce91fb1ab8d68ea78b90e806eac92274f06173deb15764df321403af6",
       "upstreamCommit": "7a03724cece417f1724c923b3d527b4319730841",
@@ -183,7 +183,7 @@
       "fileName": "Info.plist",
       "path": "bin/ios/arm64/CLiteRTLM.framework/Info.plist",
       "platform": "ios",
-      "releaseTag": "v0.19.1-6",
+      "releaseTag": "v0.19.1-7",
       "runtime": "native",
       "sha256": "5873179cbb12c31c333fcbbac89d0f15c93e9befff03a32167f597e97d2fc5ae",
       "upstreamCommit": "7a03724cece417f1724c923b3d527b4319730841",
@@ -195,7 +195,7 @@
       "fileName": "Info.plist",
       "path": "bin/ios/arm64/LiteRtLm.framework/Info.plist",
       "platform": "ios",
-      "releaseTag": "v0.19.1-6",
+      "releaseTag": "v0.19.1-7",
       "runtime": "native",
       "sha256": "c37c410a689a5450505826a0ad324404a5974166489c7727b98fbbdc71fc900a",
       "upstreamCommit": "7a03724cece417f1724c923b3d527b4319730841",
@@ -207,7 +207,7 @@
       "fileName": "LiteRtLm",
       "path": "bin/ios/arm64/LiteRtLm.framework/LiteRtLm",
       "platform": "ios",
-      "releaseTag": "v0.19.1-6",
+      "releaseTag": "v0.19.1-7",
       "runtime": "native",
       "sha256": "35e1fbaca88277f6b58dfffbef1836822ff2d51d29c7343ef89b171e2e90309f",
       "upstreamCommit": "7a03724cece417f1724c923b3d527b4319730841",
@@ -219,7 +219,7 @@
       "fileName": "libLiteRtLm.dylib",
       "path": "bin/ios/arm64/libLiteRtLm.dylib",
       "platform": "ios",
-      "releaseTag": "v0.19.1-6",
+      "releaseTag": "v0.19.1-7",
       "runtime": "native",
       "sha256": "9ad9a62bd471baf66d5074531abb516340002c856f59e262e5edf212dc6b1476",
       "upstreamCommit": "7a03724cece417f1724c923b3d527b4319730841",
@@ -231,7 +231,7 @@
       "fileName": "CLiteRTLM",
       "path": "bin/ios/arm64-sim/CLiteRTLM.framework/CLiteRTLM",
       "platform": "ios",
-      "releaseTag": "v0.19.1-6",
+      "releaseTag": "v0.19.1-7",
       "runtime": "native",
       "sha256": "3206ca22c03d8ca9334ef1058e5e8e719564d2145ddff15c29ad7a409ed27a45",
       "upstreamCommit": "7a03724cece417f1724c923b3d527b4319730841",
@@ -243,7 +243,7 @@
       "fileName": "Info.plist",
       "path": "bin/ios/arm64-sim/CLiteRTLM.framework/Info.plist",
       "platform": "ios",
-      "releaseTag": "v0.19.1-6",
+      "releaseTag": "v0.19.1-7",
       "runtime": "native",
       "sha256": "154d84161580ebee24030cb901d816f43edecee78b829feb942c98a7eb39b584",
       "upstreamCommit": "7a03724cece417f1724c923b3d527b4319730841",
@@ -255,7 +255,7 @@
       "fileName": "Info.plist",
       "path": "bin/ios/arm64-sim/LiteRtLm.framework/Info.plist",
       "platform": "ios",
-      "releaseTag": "v0.19.1-6",
+      "releaseTag": "v0.19.1-7",
       "runtime": "native",
       "sha256": "025b44d8381f1346b86c57dadb6b9a1db39192c815e890ab8e04b39058135567",
       "upstreamCommit": "7a03724cece417f1724c923b3d527b4319730841",
@@ -267,7 +267,7 @@
       "fileName": "LiteRtLm",
       "path": "bin/ios/arm64-sim/LiteRtLm.framework/LiteRtLm",
       "platform": "ios",
-      "releaseTag": "v0.19.1-6",
+      "releaseTag": "v0.19.1-7",
       "runtime": "native",
       "sha256": "fa2f178de2239a4e49441c3b98c57b940d12fdfc5db9463c1fc45114b4bf9133",
       "upstreamCommit": "7a03724cece417f1724c923b3d527b4319730841",
@@ -279,7 +279,7 @@
       "fileName": "libLiteRtLm.dylib",
       "path": "bin/ios/arm64-sim/libLiteRtLm.dylib",
       "platform": "ios",
-      "releaseTag": "v0.19.1-6",
+      "releaseTag": "v0.19.1-7",
       "runtime": "native",
       "sha256": "ded0164284507ea21d71a1193efe8bf17c6badeb0e7c9094f932b5e6b9294bd3",
       "upstreamCommit": "7a03724cece417f1724c923b3d527b4319730841",
@@ -291,7 +291,7 @@
       "fileName": "libGemmaModelConstraintProvider.so",
       "path": "bin/linux/arm64/libGemmaModelConstraintProvider.so",
       "platform": "linux",
-      "releaseTag": "v0.19.1-6",
+      "releaseTag": "v0.19.1-7",
       "runtime": "native",
       "sha256": "37c5e71bd7012a65005d483a165c034975763758e0d27d97d926d8557c079e94",
       "upstreamCommit": "7a03724cece417f1724c923b3d527b4319730841",
@@ -303,7 +303,7 @@
       "fileName": "libLiteRt.so",
       "path": "bin/linux/arm64/libLiteRt.so",
       "platform": "linux",
-      "releaseTag": "v0.19.1-6",
+      "releaseTag": "v0.19.1-7",
       "runtime": "native",
       "sha256": "d9bb4e715e255d5a23e3aef549407d571bf49f60546a5933202c2f1ba152a969",
       "upstreamCommit": "7a03724cece417f1724c923b3d527b4319730841",
@@ -315,9 +315,9 @@
       "fileName": "libLiteRtLm.so",
       "path": "bin/linux/arm64/libLiteRtLm.so",
       "platform": "linux",
-      "releaseTag": "v0.19.1-6",
+      "releaseTag": "v0.19.1-7",
       "runtime": "native",
-      "sha256": "49217551f75a98cf8b8053bae401b7759f7b09aef743e202315834c5105fba8e",
+      "sha256": "4bb258fe89c5138c8d58a44c909b83b8460daf4f6508a1de60cc19df6847e26f",
       "upstreamCommit": "7a03724cece417f1724c923b3d527b4319730841",
       "upstreamTag": "v0.19.1"
     },
@@ -329,7 +329,7 @@
       "fileName": "libLiteRtWebGpuAccelerator.so",
       "path": "bin/linux/arm64/libLiteRtWebGpuAccelerator.so",
       "platform": "linux",
-      "releaseTag": "v0.19.1-6",
+      "releaseTag": "v0.19.1-7",
       "runtime": "native",
       "sha256": "0b2b368a079ccf49054aa80b20be564573d3f85c896e9669c2561beafc27ad24",
       "upstreamCommit": "7a03724cece417f1724c923b3d527b4319730841",
@@ -343,7 +343,7 @@
       "fileName": "libwebgpu_dawn.so",
       "path": "bin/linux/arm64/libwebgpu_dawn.so",
       "platform": "linux",
-      "releaseTag": "v0.19.1-6",
+      "releaseTag": "v0.19.1-7",
       "runtime": "native",
       "sha256": "47624f67cd812df3b100aa34d97985b1f36543737ed54b05f2899297d5f05922",
       "upstreamCommit": "7a03724cece417f1724c923b3d527b4319730841",
@@ -355,7 +355,7 @@
       "fileName": "libGemmaModelConstraintProvider.so",
       "path": "bin/linux/x64/libGemmaModelConstraintProvider.so",
       "platform": "linux",
-      "releaseTag": "v0.19.1-6",
+      "releaseTag": "v0.19.1-7",
       "runtime": "native",
       "sha256": "00718621486f3e498c8c6ef00d81236f51da7513f9279f3a02cd841624ea88fb",
       "upstreamCommit": "7a03724cece417f1724c923b3d527b4319730841",
@@ -367,7 +367,7 @@
       "fileName": "libLiteRt.so",
       "path": "bin/linux/x64/libLiteRt.so",
       "platform": "linux",
-      "releaseTag": "v0.19.1-6",
+      "releaseTag": "v0.19.1-7",
       "runtime": "native",
       "sha256": "3df66fa23f297e9684292ba2566ae210933e891c2a735b28274a691b2e4594ec",
       "upstreamCommit": "7a03724cece417f1724c923b3d527b4319730841",
@@ -379,9 +379,9 @@
       "fileName": "libLiteRtLm.so",
       "path": "bin/linux/x64/libLiteRtLm.so",
       "platform": "linux",
-      "releaseTag": "v0.19.1-6",
+      "releaseTag": "v0.19.1-7",
       "runtime": "native",
-      "sha256": "74403b4c4cbf5e2d78b1b73d9a16836c6cc597e44acdbef2702f9b6065760006",
+      "sha256": "3c43af39b00e1a71cf298f603a2a37f5660d0a18080b7d1bb7f140df161bfdb5",
       "upstreamCommit": "7a03724cece417f1724c923b3d527b4319730841",
       "upstreamTag": "v0.19.1"
     },
@@ -393,7 +393,7 @@
       "fileName": "libLiteRtWebGpuAccelerator.so",
       "path": "bin/linux/x64/libLiteRtWebGpuAccelerator.so",
       "platform": "linux",
-      "releaseTag": "v0.19.1-6",
+      "releaseTag": "v0.19.1-7",
       "runtime": "native",
       "sha256": "991982356e6f966ff7f901326f3ead41c3ff1e08152f1a990980e6784068ce25",
       "upstreamCommit": "7a03724cece417f1724c923b3d527b4319730841",
@@ -407,7 +407,7 @@
       "fileName": "libwebgpu_dawn.so",
       "path": "bin/linux/x64/libwebgpu_dawn.so",
       "platform": "linux",
-      "releaseTag": "v0.19.1-6",
+      "releaseTag": "v0.19.1-7",
       "runtime": "native",
       "sha256": "9fc1571efd855a67ceee41b660dc66b60e324fcf9c1d246b16a73a26c4542aa4",
       "upstreamCommit": "7a03724cece417f1724c923b3d527b4319730841",
@@ -419,7 +419,7 @@
       "fileName": "libCLiteRTLM_mac.dylib",
       "path": "bin/macos/arm64/libCLiteRTLM_mac.dylib",
       "platform": "macos",
-      "releaseTag": "v0.19.1-6",
+      "releaseTag": "v0.19.1-7",
       "runtime": "native",
       "sha256": "8fde094d7a7f4eac06c5602e61b8f5587beabf0278f98f59348030226c281052",
       "upstreamCommit": "7a03724cece417f1724c923b3d527b4319730841",
@@ -431,7 +431,7 @@
       "fileName": "libGemmaModelConstraintProvider.dylib",
       "path": "bin/macos/arm64/libGemmaModelConstraintProvider.dylib",
       "platform": "macos",
-      "releaseTag": "v0.19.1-6",
+      "releaseTag": "v0.19.1-7",
       "runtime": "native",
       "sha256": "f98767361b14bb4ad12866b32d62611875134c8f2de7e64d071df5f4510fe64a",
       "upstreamCommit": "7a03724cece417f1724c923b3d527b4319730841",
@@ -443,9 +443,9 @@
       "fileName": "libLiteRtLm.dylib",
       "path": "bin/macos/arm64/libLiteRtLm.dylib",
       "platform": "macos",
-      "releaseTag": "v0.19.1-6",
+      "releaseTag": "v0.19.1-7",
       "runtime": "native",
-      "sha256": "3bd6e53c6c42962c1533e82ed5f4dcf608c031bb5c74dcafab3244435adf57a1",
+      "sha256": "d8f56c3014571cf77e78c77fc6f79c91c8df7d87561d5972ccbbcf3e88d66a45",
       "upstreamCommit": "7a03724cece417f1724c923b3d527b4319730841",
       "upstreamTag": "v0.19.1"
     },
@@ -457,7 +457,7 @@
       "fileName": "libwebgpu_dawn.dylib",
       "path": "bin/macos/arm64/libwebgpu_dawn.dylib",
       "platform": "macos",
-      "releaseTag": "v0.19.1-6",
+      "releaseTag": "v0.19.1-7",
       "runtime": "native",
       "sha256": "c07c685f28a048420e56a30666a58c488acabbee50471964fa313aae71cedc40",
       "upstreamCommit": "7a03724cece417f1724c923b3d527b4319730841",
@@ -469,9 +469,9 @@
       "fileName": "LiteRtLm.dll",
       "path": "bin/windows/x64/LiteRtLm.dll",
       "platform": "windows",
-      "releaseTag": "v0.19.1-6",
+      "releaseTag": "v0.19.1-7",
       "runtime": "native",
-      "sha256": "d61831ff3017152e77fac9f04ed492560d80bde32a3bd2fcb08c6075723a1431",
+      "sha256": "6a9a982dc289d6608a04d85fefa57b9916ffa754ed183151e6ff8d5dc13f39ba",
       "upstreamCommit": "7a03724cece417f1724c923b3d527b4319730841",
       "upstreamTag": "v0.19.1"
     },
@@ -481,7 +481,7 @@
       "fileName": "dxcompiler.dll",
       "path": "bin/windows/x64/dxcompiler.dll",
       "platform": "windows",
-      "releaseTag": "v0.19.1-6",
+      "releaseTag": "v0.19.1-7",
       "runtime": "native",
       "sha256": "b86a738ece4c05dbe2d9bbb29668a2ccb28a0740773c9b027cdc61e8d07b4d75",
       "upstreamCommit": "7a03724cece417f1724c923b3d527b4319730841",
@@ -493,7 +493,7 @@
       "fileName": "dxil.dll",
       "path": "bin/windows/x64/dxil.dll",
       "platform": "windows",
-      "releaseTag": "v0.19.1-6",
+      "releaseTag": "v0.19.1-7",
       "runtime": "native",
       "sha256": "058f2f52a680c38b223a5615b7df969def21f77e577562e5099d971dede992de",
       "upstreamCommit": "7a03724cece417f1724c923b3d527b4319730841",
@@ -505,7 +505,7 @@
       "fileName": "libGemmaModelConstraintProvider.dll",
       "path": "bin/windows/x64/libGemmaModelConstraintProvider.dll",
       "platform": "windows",
-      "releaseTag": "v0.19.1-6",
+      "releaseTag": "v0.19.1-7",
       "runtime": "native",
       "sha256": "49ca48d969ffcde4b56e0ef7a604d9cc5c7ad37a599f00dc81f093a687796d52",
       "upstreamCommit": "7a03724cece417f1724c923b3d527b4319730841",
@@ -517,7 +517,7 @@
       "fileName": "libGemmaModelConstraintProvider.lib",
       "path": "bin/windows/x64/libGemmaModelConstraintProvider.lib",
       "platform": "windows",
-      "releaseTag": "v0.19.1-6",
+      "releaseTag": "v0.19.1-7",
       "runtime": "native",
       "sha256": "29c5ec68c097726a659d15cfff10d3344348f6d2094e2335c69b94bd9dcab786",
       "upstreamCommit": "7a03724cece417f1724c923b3d527b4319730841",
@@ -529,7 +529,7 @@
       "fileName": "libLiteRt.dll",
       "path": "bin/windows/x64/libLiteRt.dll",
       "platform": "windows",
-      "releaseTag": "v0.19.1-6",
+      "releaseTag": "v0.19.1-7",
       "runtime": "native",
       "sha256": "dc64a8dcdf55bf409c5c9e4e37c8bd7d396c5a502de169833eb945d38632f8e4",
       "upstreamCommit": "7a03724cece417f1724c923b3d527b4319730841",
@@ -543,7 +543,7 @@
       "fileName": "libLiteRtWebGpuAccelerator.dll",
       "path": "bin/windows/x64/libLiteRtWebGpuAccelerator.dll",
       "platform": "windows",
-      "releaseTag": "v0.19.1-6",
+      "releaseTag": "v0.19.1-7",
       "runtime": "native",
       "sha256": "ae9f4ab7aa5f5453f818b0fc6297d5bff110ede0b07a32867dc5f22c4471ef4d",
       "upstreamCommit": "7a03724cece417f1724c923b3d527b4319730841",
@@ -557,7 +557,7 @@
       "fileName": "libwebgpu_dawn.dll",
       "path": "bin/windows/x64/libwebgpu_dawn.dll",
       "platform": "windows",
-      "releaseTag": "v0.19.1-6",
+      "releaseTag": "v0.19.1-7",
       "runtime": "native",
       "sha256": "3b16ef13395e1b1885384f21f09f5f338089cb0465c17313842152d413a1bb8d",
       "upstreamCommit": "7a03724cece417f1724c923b3d527b4319730841",
@@ -569,7 +569,7 @@
       "fileName": "msvcp140.dll",
       "path": "bin/windows/x64/msvcp140.dll",
       "platform": "windows",
-      "releaseTag": "v0.19.1-6",
+      "releaseTag": "v0.19.1-7",
       "runtime": "native",
       "sha256": "59d325227321d52b9a523ea401ce6787a5d59f78229a0ff3a6f124e5d3445685",
       "upstreamCommit": "7a03724cece417f1724c923b3d527b4319730841",
@@ -581,7 +581,7 @@
       "fileName": "vcruntime140.dll",
       "path": "bin/windows/x64/vcruntime140.dll",
       "platform": "windows",
-      "releaseTag": "v0.19.1-6",
+      "releaseTag": "v0.19.1-7",
       "runtime": "native",
       "sha256": "eb1ee979bf02324712346e5bdbfc59c785388bc50d18cc2688aae4b0734915a0",
       "upstreamCommit": "7a03724cece417f1724c923b3d527b4319730841",
@@ -593,7 +593,7 @@
       "fileName": "vcruntime140_1.dll",
       "path": "bin/windows/x64/vcruntime140_1.dll",
       "platform": "windows",
-      "releaseTag": "v0.19.1-6",
+      "releaseTag": "v0.19.1-7",
       "runtime": "native",
       "sha256": "a14b4a42a2c6df04d6d53a8340816023d953406f7f3d94996c7cab30c414ff63",
       "upstreamCommit": "7a03724cece417f1724c923b3d527b4319730841",
@@ -605,7 +605,7 @@
       "fileName": "vcruntime140_threads.dll",
       "path": "bin/windows/x64/vcruntime140_threads.dll",
       "platform": "windows",
-      "releaseTag": "v0.19.1-6",
+      "releaseTag": "v0.19.1-7",
       "runtime": "native",
       "sha256": "44a0a0b925242699f2b31bf40a43b54ab3513584dfe7869521d1983e40ea1f06",
       "upstreamCommit": "7a03724cece417f1724c923b3d527b4319730841",
@@ -619,7 +619,7 @@
       "fileName": "webgpu_dawn.dll",
       "path": "bin/windows/x64/webgpu_dawn.dll",
       "platform": "windows",
-      "releaseTag": "v0.19.1-6",
+      "releaseTag": "v0.19.1-7",
       "runtime": "native",
       "sha256": "44646604a3cbe2f854a7dd6832a53b62d5b2fa68467f3a9c04ad1e2025d3d505",
       "upstreamCommit": "7a03724cece417f1724c923b3d527b4319730841",
@@ -631,7 +631,7 @@
       "fileName": "CLiteRTLM.xcframework.zip",
       "path": "dist/official/v0.19.1/CLiteRTLM.xcframework.zip",
       "platform": null,
-      "releaseTag": "v0.19.1-6",
+      "releaseTag": "v0.19.1-7",
       "runtime": "archive",
       "sha256": "21cf294b3dfdd9c8166b0f7934ed392d5c69c8bfa57cd1a20e341a7d16874017",
       "upstreamCommit": "7a03724cece417f1724c923b3d527b4319730841",
@@ -643,7 +643,7 @@
       "fileName": "CLiteRTLM_mac.xcframework.zip",
       "path": "dist/official/v0.19.1/CLiteRTLM_mac.xcframework.zip",
       "platform": null,
-      "releaseTag": "v0.19.1-6",
+      "releaseTag": "v0.19.1-7",
       "runtime": "archive",
       "sha256": "cedd331e78e94bf98ca8f2f28aeb3d543e20277fcd51570c12deed6d49524fb6",
       "upstreamCommit": "7a03724cece417f1724c923b3d527b4319730841",
@@ -655,7 +655,7 @@
       "fileName": "litert_lm_c_api-1.0.0.zip",
       "path": "dist/official/v0.19.1/litert_lm_c_api-1.0.0.zip",
       "platform": null,
-      "releaseTag": "v0.19.1-6",
+      "releaseTag": "v0.19.1-7",
       "runtime": "archive",
       "sha256": "1d430d80eaf536f696a4922270ba55eb3d112189ac198c3066d487a45e3b4d4c",
       "upstreamCommit": "7a03724cece417f1724c923b3d527b4319730841",
@@ -667,7 +667,7 @@
       "fileName": "litert_lm_macos_arm64.tar.gz",
       "path": "dist/official/v0.19.1/litert_lm_macos_arm64.tar.gz",
       "platform": null,
-      "releaseTag": "v0.19.1-6",
+      "releaseTag": "v0.19.1-7",
       "runtime": "archive",
       "sha256": "897c89218a7996c04168d1e87a37abe53b6b560ef54d931cec2079567894aff7",
       "upstreamCommit": "7a03724cece417f1724c923b3d527b4319730841",
@@ -676,48 +676,48 @@
     {
       "accelerators": [],
       "arch": null,
-      "fileName": "litert-lm-native-apple-CLiteRTLM-xcframework-v0.19.1-6.zip",
-      "path": "dist/spm/v0.19.1-6/litert-lm-native-apple-CLiteRTLM-xcframework-v0.19.1-6.zip",
+      "fileName": "litert-lm-native-apple-CLiteRTLM-xcframework-v0.19.1-7.zip",
+      "path": "dist/spm/v0.19.1-7/litert-lm-native-apple-CLiteRTLM-xcframework-v0.19.1-7.zip",
       "platform": null,
-      "releaseTag": "v0.19.1-6",
+      "releaseTag": "v0.19.1-7",
       "runtime": "archive",
-      "sha256": "6a9dab34b8da2a4240c4f6f06b0855b6eec33fcd6540c9cad8bd0f36fabc4812",
+      "sha256": "4965f806ee14cba9f25839582aad79ed52b9396cfee09c193fdffed9dc93b8b7",
       "upstreamCommit": "7a03724cece417f1724c923b3d527b4319730841",
       "upstreamTag": "v0.19.1"
     },
     {
       "accelerators": [],
       "arch": null,
-      "fileName": "litert-lm-native-apple-CLiteRTLMMac-xcframework-v0.19.1-6.zip",
-      "path": "dist/spm/v0.19.1-6/litert-lm-native-apple-CLiteRTLMMac-xcframework-v0.19.1-6.zip",
+      "fileName": "litert-lm-native-apple-CLiteRTLMMac-xcframework-v0.19.1-7.zip",
+      "path": "dist/spm/v0.19.1-7/litert-lm-native-apple-CLiteRTLMMac-xcframework-v0.19.1-7.zip",
       "platform": null,
-      "releaseTag": "v0.19.1-6",
+      "releaseTag": "v0.19.1-7",
       "runtime": "archive",
-      "sha256": "9962a65d2c7072e23b1c3861e1d8a9a2c4fc36c124289edfc03a6c1d64eaecf1",
+      "sha256": "bb693507fa54f3728497fc0b330932b6d43fcd46fcf77767204f5e469db848b4",
       "upstreamCommit": "7a03724cece417f1724c923b3d527b4319730841",
       "upstreamTag": "v0.19.1"
     },
     {
       "accelerators": [],
       "arch": null,
-      "fileName": "litert-lm-native-apple-GemmaModelConstraintProvider-xcframework-v0.19.1-6.zip",
-      "path": "dist/spm/v0.19.1-6/litert-lm-native-apple-GemmaModelConstraintProvider-xcframework-v0.19.1-6.zip",
+      "fileName": "litert-lm-native-apple-GemmaModelConstraintProvider-xcframework-v0.19.1-7.zip",
+      "path": "dist/spm/v0.19.1-7/litert-lm-native-apple-GemmaModelConstraintProvider-xcframework-v0.19.1-7.zip",
       "platform": null,
-      "releaseTag": "v0.19.1-6",
+      "releaseTag": "v0.19.1-7",
       "runtime": "archive",
-      "sha256": "84c0edecbf3f7c0bf23800385409c3a8847ce2ba95388c932ffa1e3ac2173747",
+      "sha256": "44288ce62debdda9db2ce009177a429d68ae6bf6762f4483dd6a7e63b15abeda",
       "upstreamCommit": "7a03724cece417f1724c923b3d527b4319730841",
       "upstreamTag": "v0.19.1"
     },
     {
       "accelerators": [],
       "arch": null,
-      "fileName": "litert-lm-native-apple-LiteRtLm-xcframework-v0.19.1-6.zip",
-      "path": "dist/spm/v0.19.1-6/litert-lm-native-apple-LiteRtLm-xcframework-v0.19.1-6.zip",
+      "fileName": "litert-lm-native-apple-LiteRtLm-xcframework-v0.19.1-7.zip",
+      "path": "dist/spm/v0.19.1-7/litert-lm-native-apple-LiteRtLm-xcframework-v0.19.1-7.zip",
       "platform": null,
-      "releaseTag": "v0.19.1-6",
+      "releaseTag": "v0.19.1-7",
       "runtime": "archive",
-      "sha256": "96e308ed784788cce458fbed45ea716d5f62c8cef973be1d378467e1d70f0184",
+      "sha256": "e636614b981f8ced4a17294bf47a530e66158388a4aa2c906dbd38c7fd2fddec",
       "upstreamCommit": "7a03724cece417f1724c923b3d527b4319730841",
       "upstreamTag": "v0.19.1"
     },
@@ -726,12 +726,12 @@
         "webgpu"
       ],
       "arch": null,
-      "fileName": "litert-lm-native-apple-WebgpuDawn-xcframework-v0.19.1-6.zip",
-      "path": "dist/spm/v0.19.1-6/litert-lm-native-apple-WebgpuDawn-xcframework-v0.19.1-6.zip",
+      "fileName": "litert-lm-native-apple-WebgpuDawn-xcframework-v0.19.1-7.zip",
+      "path": "dist/spm/v0.19.1-7/litert-lm-native-apple-WebgpuDawn-xcframework-v0.19.1-7.zip",
       "platform": null,
-      "releaseTag": "v0.19.1-6",
+      "releaseTag": "v0.19.1-7",
       "runtime": "archive",
-      "sha256": "d3954d8d742bf0bbde593a983e376974640341d7c5970bc16c5c71caa422a243",
+      "sha256": "6b0414c076e15b88881d805c9e4e7fe0715c65f581534afaab748b643f6d1202",
       "upstreamCommit": "7a03724cece417f1724c923b3d527b4319730841",
       "upstreamTag": "v0.19.1"
     }
@@ -744,7 +744,7 @@
     "textGeneration": true
   },
   "native": {
-    "commit": "9246bf2a4aa83f0748ef51a90964eb9317f3eaf6",
+    "commit": "930a3e292468366f986ee5bbcddde63503c7f0e8",
     "repository": "leehack/litert-lm-native"
   },
   "package": "litert-lm-native",
@@ -765,7 +765,7 @@
         "bin/android/arm64/libwebgpu_dawn.so"
       ],
       "platform": "android",
-      "releaseAsset": "litert-lm-native-runtime-android-arm64-v0.19.1-6.tar.gz"
+      "releaseAsset": "litert-lm-native-runtime-android-arm64-v0.19.1-7.tar.gz"
     },
     {
       "accelerators": [
@@ -783,7 +783,7 @@
         "bin/android/x64/libwebgpu_dawn.so"
       ],
       "platform": "android",
-      "releaseAsset": "litert-lm-native-runtime-android-x64-v0.19.1-6.tar.gz"
+      "releaseAsset": "litert-lm-native-runtime-android-x64-v0.19.1-7.tar.gz"
     },
     {
       "accelerators": [],
@@ -796,7 +796,7 @@
         "bin/ios/arm64/libLiteRtLm.dylib"
       ],
       "platform": "ios",
-      "releaseAsset": "litert-lm-native-runtime-ios-arm64-v0.19.1-6.tar.gz"
+      "releaseAsset": "litert-lm-native-runtime-ios-arm64-v0.19.1-7.tar.gz"
     },
     {
       "accelerators": [],
@@ -809,7 +809,7 @@
         "bin/ios/arm64-sim/libLiteRtLm.dylib"
       ],
       "platform": "ios",
-      "releaseAsset": "litert-lm-native-runtime-ios-arm64-sim-v0.19.1-6.tar.gz"
+      "releaseAsset": "litert-lm-native-runtime-ios-arm64-sim-v0.19.1-7.tar.gz"
     },
     {
       "accelerators": [
@@ -824,7 +824,7 @@
         "bin/linux/arm64/libwebgpu_dawn.so"
       ],
       "platform": "linux",
-      "releaseAsset": "litert-lm-native-runtime-linux-arm64-v0.19.1-6.tar.gz"
+      "releaseAsset": "litert-lm-native-runtime-linux-arm64-v0.19.1-7.tar.gz"
     },
     {
       "accelerators": [
@@ -839,7 +839,7 @@
         "bin/linux/x64/libwebgpu_dawn.so"
       ],
       "platform": "linux",
-      "releaseAsset": "litert-lm-native-runtime-linux-x64-v0.19.1-6.tar.gz"
+      "releaseAsset": "litert-lm-native-runtime-linux-x64-v0.19.1-7.tar.gz"
     },
     {
       "accelerators": [
@@ -853,7 +853,7 @@
         "bin/macos/arm64/libwebgpu_dawn.dylib"
       ],
       "platform": "macos",
-      "releaseAsset": "litert-lm-native-runtime-macos-arm64-v0.19.1-6.tar.gz"
+      "releaseAsset": "litert-lm-native-runtime-macos-arm64-v0.19.1-7.tar.gz"
     },
     {
       "accelerators": [
@@ -876,7 +876,7 @@
         "bin/windows/x64/webgpu_dawn.dll"
       ],
       "platform": "windows",
-      "releaseAsset": "litert-lm-native-runtime-windows-x64-v0.19.1-6.tar.gz"
+      "releaseAsset": "litert-lm-native-runtime-windows-x64-v0.19.1-7.tar.gz"
     }
   ],
   "realModelSmokes": [
@@ -897,19 +897,19 @@
       "id": "litert_lm_asr_moonshine",
       "library": {
         "fileName": "libLiteRtLm.so",
-        "sha256": "74403b4c4cbf5e2d78b1b73d9a16836c6cc597e44acdbef2702f9b6065760006"
+        "sha256": "3c43af39b00e1a71cf298f603a2a37f5660d0a18080b7d1bb7f140df161bfdb5"
       },
       "model": {
         "fileName": "moonshine_tiny_5s_i8.tflite",
         "sha256": "97abdeea122d579229091659c24c59d988c6419d453a200f6471241a53b9a9b9"
       },
-      "nativeCommit": "9246bf2a4aa83f0748ef51a90964eb9317f3eaf6",
+      "nativeCommit": "930a3e292468366f986ee5bbcddde63503c7f0e8",
       "platform": "linux",
       "result": "pass",
       "source": {
         "fixture": "https://raw.githubusercontent.com/ggml-org/whisper.cpp/592feef04a1802b18cbeffd0fd0eb5d02570c2ec/samples/jfk.wav",
         "model": "https://huggingface.co/litert-community/moonshine-tiny/resolve/beb49ee5028b4fb21eb989bcbd2db30a433373db/moonshine_tiny_5s_i8.tflite",
-        "runtimeReleaseAsset": "litert-lm-native-runtime-linux-x64-v0.19.1-6.tar.gz",
+        "runtimeReleaseAsset": "litert-lm-native-runtime-linux-x64-v0.19.1-7.tar.gz",
         "tokenizer": "https://huggingface.co/UsefulSensors/moonshine-tiny/resolve/390624ed33d594443aa4aa221f5b9f283b545b5a/tokenizer.json"
       },
       "tokenizer": {
@@ -936,19 +936,19 @@
       "id": "litert_lm_asr_moonshine",
       "library": {
         "fileName": "libLiteRtLm.dylib",
-        "sha256": "3bd6e53c6c42962c1533e82ed5f4dcf608c031bb5c74dcafab3244435adf57a1"
+        "sha256": "d8f56c3014571cf77e78c77fc6f79c91c8df7d87561d5972ccbbcf3e88d66a45"
       },
       "model": {
         "fileName": "moonshine_tiny_5s_i8.tflite",
         "sha256": "97abdeea122d579229091659c24c59d988c6419d453a200f6471241a53b9a9b9"
       },
-      "nativeCommit": "9246bf2a4aa83f0748ef51a90964eb9317f3eaf6",
+      "nativeCommit": "930a3e292468366f986ee5bbcddde63503c7f0e8",
       "platform": "macos",
       "result": "pass",
       "source": {
         "fixture": "https://raw.githubusercontent.com/ggml-org/whisper.cpp/592feef04a1802b18cbeffd0fd0eb5d02570c2ec/samples/jfk.wav",
         "model": "https://huggingface.co/litert-community/moonshine-tiny/resolve/beb49ee5028b4fb21eb989bcbd2db30a433373db/moonshine_tiny_5s_i8.tflite",
-        "runtimeReleaseAsset": "litert-lm-native-runtime-macos-arm64-v0.19.1-6.tar.gz",
+        "runtimeReleaseAsset": "litert-lm-native-runtime-macos-arm64-v0.19.1-7.tar.gz",
         "tokenizer": "https://huggingface.co/UsefulSensors/moonshine-tiny/resolve/390624ed33d594443aa4aa221f5b9f283b545b5a/tokenizer.json"
       },
       "tokenizer": {
@@ -975,19 +975,19 @@
       "id": "litert_lm_asr_moonshine",
       "library": {
         "fileName": "LiteRtLm.dll",
-        "sha256": "d61831ff3017152e77fac9f04ed492560d80bde32a3bd2fcb08c6075723a1431"
+        "sha256": "6a9a982dc289d6608a04d85fefa57b9916ffa754ed183151e6ff8d5dc13f39ba"
       },
       "model": {
         "fileName": "moonshine_tiny_5s_i8.tflite",
         "sha256": "97abdeea122d579229091659c24c59d988c6419d453a200f6471241a53b9a9b9"
       },
-      "nativeCommit": "9246bf2a4aa83f0748ef51a90964eb9317f3eaf6",
+      "nativeCommit": "930a3e292468366f986ee5bbcddde63503c7f0e8",
       "platform": "windows",
       "result": "pass",
       "source": {
         "fixture": "https://raw.githubusercontent.com/ggml-org/whisper.cpp/592feef04a1802b18cbeffd0fd0eb5d02570c2ec/samples/jfk.wav",
         "model": "https://huggingface.co/litert-community/moonshine-tiny/resolve/beb49ee5028b4fb21eb989bcbd2db30a433373db/moonshine_tiny_5s_i8.tflite",
-        "runtimeReleaseAsset": "litert-lm-native-runtime-windows-x64-v0.19.1-6.tar.gz",
+        "runtimeReleaseAsset": "litert-lm-native-runtime-windows-x64-v0.19.1-7.tar.gz",
         "tokenizer": "https://huggingface.co/UsefulSensors/moonshine-tiny/resolve/390624ed33d594443aa4aa221f5b9f283b545b5a/tokenizer.json"
       },
       "tokenizer": {
@@ -1002,8 +1002,8 @@
     "channel": "stable",
     "githubPrerelease": true,
     "kind": "rebuild",
-    "rebuild": 6,
-    "tag": "v0.19.1-6"
+    "rebuild": 7,
+    "tag": "v0.19.1-7"
   },
   "schemaVersion": 2,
   "upstream": {
@@ -1216,6 +1216,42 @@
         "scope": "source-built runtimes only; excludes official upstream prebuilts",
         "sha256": "b236381eb1568347fcfdb5514932bb13ae35e99304ade48ef906c1439da61014",
         "source": "runtime/executor/llm_litert_compiled_model_executor.cc"
+      },
+      {
+        "id": "litert-stage-spatial-tensors",
+        "path": "native/bridge/litert_stage_spatial_tensors.patch",
+        "postimageSha256Lf": "ee5943a90770691b5e959152c02aaad642d9f6b42ddfbe08b1e3cb79bf8e614a",
+        "preimageSha256Lf": "94510294e45a568440e87366facbae6294a1087a52bbbcbab05e5f6ceec6d3dd",
+        "scope": "source-built runtimes only; excludes official upstream prebuilts; backports google-ai-edge/LiteRT@aa9e40cd5e2d892b3a5d8579a7ec6faa696e321e",
+        "sha256": "6012c5203a7f2586294cac3642dc0a7cc16d36c33cf1d8aee02f23599ed95436",
+        "source": "LiteRT@dcb657e8a537b2dc944e53e14c7eb43bcd9ededa/ml_drift_delegate/delegate/gpu_backend_vulkan.cc"
+      },
+      {
+        "id": "litert-stage-spatial-tensors",
+        "path": "native/bridge/litert_stage_spatial_tensors.patch",
+        "postimageSha256Lf": "0695e45c94da94b87bbb91325b37ff0162c48deaaf5755abeaa51e68f6d1f0ed",
+        "preimageSha256Lf": "10482b2f4cc84e5db67f7385499307dcc930ffa24bfba397e42d2299808d9736",
+        "scope": "source-built runtimes only; excludes official upstream prebuilts; backports google-ai-edge/LiteRT@aa9e40cd5e2d892b3a5d8579a7ec6faa696e321e",
+        "sha256": "6012c5203a7f2586294cac3642dc0a7cc16d36c33cf1d8aee02f23599ed95436",
+        "source": "LiteRT@dcb657e8a537b2dc944e53e14c7eb43bcd9ededa/ml_drift_delegate/delegate/gpu_backend_vulkan.h"
+      },
+      {
+        "id": "litert-stage-spatial-tensors",
+        "path": "native/bridge/litert_stage_spatial_tensors.patch",
+        "postimageSha256Lf": "d2d0fc662b7dfd0b9fa5f95c04ada48f414b08c8f350a9e1169022371d3df968",
+        "preimageSha256Lf": "633b5483a3b25660135e5fff01edbebf43854c547726b85583a0fe4906fb7b8e",
+        "scope": "source-built runtimes only; excludes official upstream prebuilts; backports google-ai-edge/LiteRT@aa9e40cd5e2d892b3a5d8579a7ec6faa696e321e",
+        "sha256": "6012c5203a7f2586294cac3642dc0a7cc16d36c33cf1d8aee02f23599ed95436",
+        "source": "LiteRT@dcb657e8a537b2dc944e53e14c7eb43bcd9ededa/ml_drift_delegate/delegate/gpu_backend_webgpu.cc"
+      },
+      {
+        "id": "litert-stage-spatial-tensors",
+        "path": "native/bridge/litert_stage_spatial_tensors.patch",
+        "postimageSha256Lf": "5b756ac60ad2f183eae4981679bf6235befb2e70b82d6ad0807f7831277706b4",
+        "preimageSha256Lf": "bf318922fa10a4de702c9ac39212188e90809a0f9de918c29480c5317229c65c",
+        "scope": "source-built runtimes only; excludes official upstream prebuilts; backports google-ai-edge/LiteRT@aa9e40cd5e2d892b3a5d8579a7ec6faa696e321e",
+        "sha256": "6012c5203a7f2586294cac3642dc0a7cc16d36c33cf1d8aee02f23599ed95436",
+        "source": "LiteRT@dcb657e8a537b2dc944e53e14c7eb43bcd9ededa/ml_drift_delegate/delegate/gpu_backend_webgpu.h"
       }
     ],
     "tag": "v0.19.1"

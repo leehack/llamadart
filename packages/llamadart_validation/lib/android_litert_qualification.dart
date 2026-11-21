@@ -32,6 +32,7 @@ const s24LiteRtNativeLibraries = {
 /// `v0.19.1-5` changes the Android `libLiteRtLm.so` again (it links the WebGPU
 /// top-k sampler, #1998) and is admitted for its S24 requalification.
 /// `v0.19.1-6` is admitted for S24 requalification of the recurrent-state fix (#672).
+/// `v0.19.1-7` is admitted for S24 requalification of the GPU binding fix (#2134).
 const s24LiteRtRuntimeTags = {
   'v0.19.1',
   'v0.19.1-1',
@@ -40,6 +41,7 @@ const s24LiteRtRuntimeTags = {
   'v0.19.1-4',
   'v0.19.1-5',
   'v0.19.1-6',
+  'v0.19.1-7',
 };
 
 // These rebuilds retain byte-identical Android libraries (#1808, #1798, #1911).

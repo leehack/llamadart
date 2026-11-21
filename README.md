@@ -174,7 +174,7 @@ Current default runtime pins:
 | Runtime | Pin |
 | --- | --- |
 | Native llama.cpp / GGUF | `leehack/llamadart-native@v1.0.0-4` |
-| Native LiteRT-LM / `.litertlm` | `leehack/litert-lm-native@v0.19.1-6` |
+| Native LiteRT-LM / `.litertlm` | `leehack/litert-lm-native@v0.19.1-7` |
 | Web llama.cpp / GGUF | `leehack/llama-web-bridge-assets@v0.1.89` |
 
 The Web backend reuses cached HTTP(S) projectors through the pinned bridge.
@@ -192,8 +192,8 @@ Native LiteRT-LM uses a lazy ABI-aware client for direct calls, services and
 speech. The public selector admits legacy runtimes and C API 1.0.x; unknown or
 future versions are refused before engine calls. The pinned runtime is
 published native
-[v0.19.1-6](https://github.com/leehack/litert-lm-native/releases/tag/v0.19.1-6),
-owner source `9246bf2a` / upstream `7a03724c`. The selected loader requires
+[v0.19.1-7](https://github.com/leehack/litert-lm-native/releases/tag/v0.19.1-7),
+owner source `930a3e29` / upstream `7a03724c`. The selected loader requires
 macOS 14+ before owned library loads, including legacy libraries and custom
 paths. Web LiteRT-LM uses `@litert-lm/core@0.19.0`; through
 `LlamaBackend.withTextHistory()` it forwards chat history, supports tool

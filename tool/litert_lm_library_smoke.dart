@@ -98,7 +98,8 @@ bool liteRtLmSmokeUsesCApiV1(String releaseTag) {
     'v0.19.1-3' ||
     'v0.19.1-4' ||
     'v0.19.1-5' ||
-    'v0.19.1-6' => true,
+    'v0.19.1-6' ||
+    'v0.19.1-7' => true,
     'v0.18.1-4' => false,
     _ => throw UnsupportedError(
       'LiteRT-LM library smoke has no reviewed C API inventory for $releaseTag.',
