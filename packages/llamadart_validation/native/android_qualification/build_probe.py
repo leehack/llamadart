@@ -7,9 +7,9 @@ import subprocess
 import tarfile
 
 ROOT = Path(__file__).resolve().parents[4]
-NATIVE_TAG = "v1.0.0-3"
-ARCHIVE_SHA = "fe838f4775d72842be64bb0279b86fd67c46ff6e4624c3beb35f2e51711f235c"
-HEADERS_SHA = "e40814c2a08e6169b895ad246dc7ad9970c47a100d0d3d78e769a5d7aa28c9e1"
+NATIVE_TAG = "v1.0.0-4"
+ARCHIVE_SHA = "0770358efdc51146261092f90068c4bd19da4c5fa1e3956bba4a9e5f753f6ef3"
+HEADERS_SHA = "f47021e6017f8f2ed5e0362d14e9d15ecdc0902a8dfaa47babd4192d9d5a1b53"
 
 def sha(path):
     value = hashlib.sha256()

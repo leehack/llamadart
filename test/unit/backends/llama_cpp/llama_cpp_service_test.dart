@@ -33,6 +33,8 @@ import 'package:llamadart/src/core/models/config/gpu_device_info.dart';
 import 'package:llamadart/src/core/models/config/log_level.dart';
 import 'package:llamadart/src/core/models/inference/generation_params.dart';
 import 'package:llamadart/src/core/models/inference/model_params.dart';
+import 'package:llamadart/src/core/template/chat_format.dart';
+import 'package:llamadart/src/core/template/chat_template_engine.dart';
 import 'package:llamadart/src/hook/native_release_pins.dart';
 import 'package:path/path.dart' as path;
 import 'package:test/test.dart';
@@ -239,6 +241,93 @@ void main() {
   });
 
   group('reasoning-budget resolver diagnostics', () {
+    const opener = '<tool_call>';
+    const grammar = 'root ::= "<tool_call>"';
+    const wordTrigger = GenerationGrammarTrigger.typed(
+      type: GrammarTriggerType.word,
+      value: opener,
+    );
+    final rawBudget = ChatTemplateEngine.resolveThinkingBudget(
+      ChatFormat.qwen3CoderXml.index,
+      const ThinkingBudget(maxTokens: 2, forcedMessage: 'done'),
+    );
+    for (final (name, source, lazy, triggers, replay) in [
+      for (final type in [
+        GrammarTriggerType.word,
+        GrammarTriggerType.pattern,
+        GrammarTriggerType.patternFull,
+      ])
+        (
+          type.name,
+          grammar,
+          true,
+          [GenerationGrammarTrigger.typed(type: type, value: opener)],
+          2,
+        ),
+      for (final marker in ['<action>', '</think>', ' <tool_call>', '<.*>'])
+        (
+          marker,
+          grammar,
+          true,
+          [
+            GenerationGrammarTrigger.typed(
+              type: GrammarTriggerType.pattern,
+              value: marker,
+            ),
+          ],
+          null,
+        ),
+      (
+        'token',
+        grammar,
+        true,
+        [
+          const GenerationGrammarTrigger.typed(
+            type: GrammarTriggerType.token,
+            token: 1,
+            value: opener,
+          ),
+        ],
+        null,
+      ),
+      ('missing grammar', null, true, const [wordTrigger], null),
+      ('blank grammar', '  ', true, const [wordTrigger], null),
+      ('raw eager grammar', grammar, false, const [wordTrigger], null),
+      (
+        'eager JSON',
+        'root ::= "{}"',
+        false,
+        const <GenerationGrammarTrigger>[],
+        null,
+      ),
+    ]) {
+      test('raw multi-end budget with $name', () {
+        final config = reflect(
+          _invokePrivateForTesting<Object>(
+            LlamaCppService(),
+            '_resolveLlamaCppThinkingBudgetConfig',
+            [
+              GenerationParams(
+                thinkingBudget: rawBudget,
+                grammar: source,
+                grammarLazy: lazy,
+                grammarTriggers: triggers,
+              ),
+            ],
+            {#hasMediaParts: false},
+          ),
+        );
+        expect(config.getField(#naturalEndTags).reflectee, [
+          '\n</think>',
+          '</think>',
+          opener,
+        ]);
+        expect(config.getField(#endTag).reflectee, '</think>');
+        expect(config.getField(#forcedMessage).reflectee, 'done\n');
+        expect(config.getField(#grammarReplayEndIndex).reflectee, replay);
+      });
+    }
+
     Object? resolve(
       LlamaCppService service,
       List<String> candidates, {
@@ -258,6 +347,92 @@ void main() {
       }
       fail('Expected the production resolver to reject an unavailable helper');
     }
+
+    test(
+      'an old-only wrapper refuses multi-end before prompt evaluation',
+      () async {
+        final temp = Directory.systemTemp.createTempSync('budget-single-api-');
+        addTearDown(() => temp.deleteSync(recursive: true));
+        final recorder = RecordingExitTeardown(
+          ExitTeardownApi.tryResolve(isWindows: Platform.isWindows)!,
+        );
+        final service = LlamaCppService(
+          objectCalls: LlamaCppObjectCalls.tracked(recorder.api),
+        )..initializeBackend();
+        addTearDown(service.dispose);
+        final api = reflect(
+          _invokePrivateForTesting<Object>(
+            service,
+            '_resolveReasoningBudgetApi',
+            const [],
+          ),
+        );
+        // Retain the real single-end FFI call while simulating the export set
+        // of an older wrapper without a compiler subprocess in the VM suite.
+        final singleEndApi = api.type.newInstance(Symbol.empty, const [], {
+          #init: api.getField(#init).reflectee,
+        }).reflectee;
+        _writePrivateForTesting(service, '_reasoningBudgetApi', singleEndApi);
+
+        const modelParams = ModelParams(
+          contextSize: 1024,
+          preferredBackend: GpuBackend.cpu,
+          gpuLayers: 0,
+          numberOfThreads: 2,
+          numberOfThreadsBatch: 2,
+        );
+        final model = writeSyntheticLlamaGguf(
+          path.join(temp.path, 'model.gguf'),
+        );
+        final handle = service.loadModel(model.path, modelParams);
+        final context = service.createContext(handle, modelParams);
+        expect(service.generationCapabilities(handle).thinkingBudget, isTrue);
+        final budget = ChatTemplateEngine.resolveThinkingBudget(
+          ChatFormat.qwen3CoderXml.index,
+          const ThinkingBudget(maxTokens: 0),
+        );
+        final cancel = calloc<Int8>();
+        addTearDown(() => calloc.free(cancel));
+        await expectLater(
+          service
+              .generate(
+                context,
+                '<think>',
+                GenerationParams(thinkingBudget: budget),
+                cancel.address,
+              )
+              .drain<void>(),
+          throwsA(
+            isA<LlamaUnsupportedException>().having(
+              (error) => error.message,
+              'message',
+              allOf(
+                contains('v1.0.0-4'),
+                contains('llama_dart_sampler_init_reasoning_budget_multi'),
+              ),
+            ),
+          ),
+        );
+        expect(recorder.decodedTokens, isEmpty);
+
+        await service
+            .generate(
+              context,
+              '<think>',
+              const GenerationParams(
+                maxTokens: 1,
+                thinkingBudget: ThinkingBudget(
+                  maxTokens: 0,
+                  startTag: '<think>',
+                  endTag: '</think>',
+                ),
+              ),
+              cancel.address,
+            )
+            .drain<void>();
+        expect(recorder.decodedTokens, isNotEmpty);
+      },
+    );
 
     test('a real library without the export reports lookup, not open', () {
       final systemLibrary = Platform.isWindows

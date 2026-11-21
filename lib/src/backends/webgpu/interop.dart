@@ -300,6 +300,12 @@ extension type WebGpuThinkingBudgetOptions._(JSObject _) implements JSObject {
     @JS('forcedMessage') required String forcedMessage,
   });
 
+  /// Ordered natural delimiters for a template-derived budget.
+  external set naturalEndTags(JSArray<JSString> value);
+
+  /// Index of the natural delimiter to replay into a paused tool grammar.
+  external set grammarReplayEndIndex(int value);
+
   /// `false` keeps the grammar applied inside a reasoning block; set only
   /// when the loaded core reports `thinkingBudgetPauseGrammar`.
   @JS('pauseGrammar')
@@ -321,6 +327,9 @@ extension type WebGpuCompletionCapabilities._(JSObject _) implements JSObject {
   /// Whether the loaded core applies `thinkingBudget`.
   @JS('thinkingBudget')
   external JSAny? get thinkingBudget;
+
+  /// Whether the loaded core applies template-derived natural ends.
+  external JSAny? get thinkingBudgetMultiEnd;
 
   /// Whether the loaded core applies `thinkingBudget.pauseGrammar`.
   @JS('thinkingBudgetPauseGrammar')

@@ -33,6 +33,7 @@ import '../../core/models/inference/reranking.dart';
 import '../../core/models/inference/next_token_scores.dart';
 import '../../core/models/inference/state_identity.dart';
 import '../../core/template/chat_template_engine.dart';
+import '../../core/template/resolved_thinking_budget.dart';
 import '../../core/template/tool_call_grammar_utils.dart';
 import '../../hook/native_release_pins.dart';
 import '../../platform/io/ios_simulator.dart';
@@ -143,12 +144,16 @@ class _LlamaCppThinkingBudgetConfig {
     required this.startTag,
     required this.endTag,
     required this.forcedMessage,
+    this.naturalEndTags,
+    this.grammarReplayEndIndex,
   });
 
   final int maxTokens;
   final String startTag;
   final String endTag;
   final String forcedMessage;
+  final List<String>? naturalEndTags;
+  final int? grammarReplayEndIndex;
 }
 
 class _LlamaCppSpeculativeConfig {
@@ -3905,29 +3910,30 @@ class LlamaCppService {
   }
 
   _ReasoningBudgetApi _resolveReasoningBudgetApi({
+    bool requireMultiEnd = false,
     List<String>? candidates,
     DynamicLibrary Function(String)? open,
   }) {
     final cached = _reasoningBudgetApi;
     if (cached != null) {
-      return cached;
+      return cached.requireMultiEnd(requireMultiEnd);
     }
 
     if (_reasoningBudgetApiLookupAttempted) {
-      throw LlamaUnsupportedException(_reasoningBudgetUnavailableMessage());
+      throw LlamaUnsupportedException(
+        _reasoningBudgetUnavailableMessage(requireMultiEnd: requireMultiEnd),
+      );
     }
     _reasoningBudgetApiLookupAttempted = true;
 
     for (final candidate
         in candidates ?? _llamadartWrapperLibraryCandidates()) {
       var stage = 'open';
+      final _ReasoningBudgetApi api;
       try {
         final library = (open ?? _openWrapperLibrary)(candidate);
         stage = 'lookup';
-        final api = _ReasoningBudgetApi.load(library);
-        _reasoningBudgetApi = api;
-        _reasoningBudgetLoadFailures.clear();
-        return api;
+        api = _ReasoningBudgetApi.load(library);
       } catch (error) {
         final diagnostic = stage == 'lookup'
             ? 'lookup: required export unavailable'
@@ -3937,17 +3943,26 @@ class LlamaCppService {
           (count) => count + 1,
           ifAbsent: () => 1,
         );
+        continue;
       }
+      _reasoningBudgetApi = api;
+      _reasoningBudgetLoadFailures.clear();
+      return api.requireMultiEnd(requireMultiEnd);
     }
 
-    throw LlamaUnsupportedException(_reasoningBudgetUnavailableMessage());
+    throw LlamaUnsupportedException(
+      _reasoningBudgetUnavailableMessage(requireMultiEnd: requireMultiEnd),
+    );
   }
 
-  String _reasoningBudgetUnavailableMessage() {
+  String _reasoningBudgetUnavailableMessage({bool requireMultiEnd = false}) {
+    final requirement = requireMultiEnd
+        ? '${_ReasoningBudgetApi._multiEndRequirement} '
+        : '';
     return 'llama.cpp thinking-budget control is unavailable in this native '
         'runtime bundle (could not resolve '
         'llama_dart_sampler_init_reasoning_budget). '
-        'Use the package-pinned reasoning-budget wrapper and ensure its sibling '
+        '${requirement}Use the package-pinned reasoning-budget wrapper and ensure its sibling '
         'DLLs and Microsoft runtime dependencies can load. '
         'loaderDiagnostics=['
         '${_reasoningBudgetLoadFailures.entries.map((entry) => '${entry.key} '
@@ -4907,11 +4922,14 @@ class LlamaCppService {
       );
     }
 
+    final resolved = budget is ResolvedThinkingBudget ? budget : null;
     return _LlamaCppThinkingBudgetConfig(
       maxTokens: budget.maxTokens,
       startTag: startTag,
       endTag: endTag,
       forcedMessage: budget.forcedMessage ?? '',
+      naturalEndTags: resolved?.naturalEndTags,
+      grammarReplayEndIndex: resolved?.replayEndIndexFor(params),
     );
   }
 
@@ -5595,7 +5613,9 @@ class LlamaCppService {
       );
       final reasoningBudgetApi = thinkingBudgetConfig == null
           ? null
-          : _resolveReasoningBudgetApi();
+          : _resolveReasoningBudgetApi(
+              requireMultiEnd: thinkingBudgetConfig.naturalEndTags != null,
+            );
       // 1. Reset Context
       ctx = _resetContext(
         contextHandle,
@@ -7380,26 +7400,37 @@ class LlamaCppService {
         _freeSamplerChain(sampler);
         throw StateError('Missing llama.cpp reasoning-budget sampler API.');
       }
-      final budgetSampler = api.initSampler(
-        vocab: vocab,
-        config: thinkingBudgetConfig,
-        pauseGrammarDuringReasoning:
-            grammarSampler != nullptr &&
-            (useLazyGrammar ||
-                !ToolCallGrammarUtils.keepsAppliedThroughThought(
-                  params.grammar!,
-                )),
-        grammarSampler: grammarSampler,
-        promptTokens: tokensPtr,
-        promptTokenCount: promptTokenCount,
-      );
+      final Pointer<llama_sampler> budgetSampler;
+      try {
+        budgetSampler = api.initSampler(
+          vocab: vocab,
+          config: thinkingBudgetConfig,
+          pauseGrammarDuringReasoning:
+              grammarSampler != nullptr &&
+              (useLazyGrammar ||
+                  !ToolCallGrammarUtils.keepsAppliedThroughThought(
+                    params.grammar!,
+                  )),
+          grammarSampler: grammarSampler,
+          promptTokens: tokensPtr,
+          promptTokenCount: promptTokenCount,
+        );
+      } catch (_) {
+        if (grammarSampler != nullptr) {
+          llama_sampler_free(grammarSampler);
+        }
+        _freeSamplerChain(sampler);
+        rethrow;
+      }
       if (budgetSampler == nullptr) {
         if (grammarSampler != nullptr) {
           llama_sampler_free(grammarSampler);
         }
         _freeSamplerChain(sampler);
         _calls.failures.throwIfCaught(
-          'llama_dart_sampler_init_reasoning_budget',
+          thinkingBudgetConfig.naturalEndTags == null
+              ? _ReasoningBudgetApi._singleSymbol
+              : _ReasoningBudgetApi._multiSymbol,
           LlamaInferenceException.new,
           windowsFreeOnly: [vocab],
         );

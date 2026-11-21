@@ -113,7 +113,10 @@ interface does not establish backend/model support; read `await engine.capabilit
   `engine.runtime` names the runtime and `await engine.capabilities` reports
   every option it applies; gate features on these, never on the file
   extension or `getBackendName()` text. Native thinking-budget support requires
-  the runtime's reasoning-budget export. Native `mtp` stays advertised for
+  the runtime's reasoning-budget export. `supportsThinkingBudget` describes
+  basic support. Template-derived XML end sequences need llamadart-native
+  `v1.0.0-4` or WebGPU assets `v0.1.87+` with
+  `thinkingBudgetMultiEnd`. Native `mtp` stays advertised for
   external drafts; in-file MTP needs an MTP head and `loadMtp: true`. Other
   draft strategies need `draftModel` or throw `LlamaArgumentException` at start.
 - KV-state save/load is not an exact generation checkpoint. On native

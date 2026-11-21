@@ -148,7 +148,17 @@ final class _AstContext implements generator.Context {
     parameters: [cg.Parameter(name: 'params', type: cg.PointerType(params))],
     loadFromNativeAsset: true,
   );
-  final bindings = parser.transformBindings([function, params], context);
+  final reasoningBudgetMulti = cg.Func(
+    name: 'llama_dart_sampler_init_reasoning_budget_multi',
+    returnType: integer,
+    parameters: [cg.Parameter(name: 'budget', type: integer)],
+    loadFromNativeAsset: true,
+  );
+  final bindings = parser.transformBindings([
+    function,
+    reasoningBudgetMulti,
+    params,
+  ], context);
   final output = cg.Library.fromContext(
     bindings: bindings,
     context: context,
@@ -157,6 +167,18 @@ final class _AstContext implements generator.Context {
 }
 
 void main() {
+  test('generates both typedefs for the optional multi-end export', () {
+    final output = _transform().output;
+    for (final prefix in ['Native', 'Dart']) {
+      expect(
+        output,
+        contains(
+          'typedef ${prefix}Llama_dart_sampler_init_reasoning_budget_multi =',
+        ),
+      );
+    }
+  });
+
   test(
     'repo policy keeps pointer-only libc FILE opaque and its alias usable',
     () {

@@ -6761,6 +6761,23 @@ external ffi.Pointer<llama_sampler> llama_dart_sampler_init_reasoning_budget(
   int prompt_token_count,
 );
 
+@ffi.Native<NativeLlama_dart_sampler_init_reasoning_budget_multi>()
+external ffi.Pointer<llama_sampler>
+llama_dart_sampler_init_reasoning_budget_multi(
+  ffi.Pointer<llama_vocab> vocab,
+  ffi.Pointer<ffi.Char> start_tag,
+  ffi.Pointer<ffi.Char> end_tag,
+  ffi.Pointer<ffi.Char> forced_message,
+  ffi.Pointer<ffi.Pointer<ffi.Char>> natural_end_tags,
+  int natural_end_tag_count,
+  int grammar_replay_end_index,
+  int budget_tokens,
+  bool pause_grammar_while_reasoning,
+  ffi.Pointer<llama_sampler> grammar_sampler,
+  ffi.Pointer<llama_token> prompt_tokens,
+  int prompt_token_count,
+);
+
 @ffi.Native<
   llama_token Function(
     ffi.Pointer<llama_sampler>,
@@ -9863,6 +9880,37 @@ const int LLAMA_STATE_SEQ_MAGIC = 1734833009;
 const int LLAMA_STATE_SEQ_VERSION = 4;
 
 const int LLAMA_TOKEN_NULL = -1;
+
+typedef NativeLlama_dart_sampler_init_reasoning_budget_multi =
+    ffi.Pointer<llama_sampler> Function(
+      ffi.Pointer<llama_vocab> vocab,
+      ffi.Pointer<ffi.Char> start_tag,
+      ffi.Pointer<ffi.Char> end_tag,
+      ffi.Pointer<ffi.Char> forced_message,
+      ffi.Pointer<ffi.Pointer<ffi.Char>> natural_end_tags,
+      ffi.Int32 natural_end_tag_count,
+      ffi.Int32 grammar_replay_end_index,
+      ffi.Int32 budget_tokens,
+      ffi.Bool pause_grammar_while_reasoning,
+      ffi.Pointer<llama_sampler> grammar_sampler,
+      ffi.Pointer<llama_token> prompt_tokens,
+      ffi.Int32 prompt_token_count,
+    );
+typedef DartLlama_dart_sampler_init_reasoning_budget_multi =
+    ffi.Pointer<llama_sampler> Function(
+      ffi.Pointer<llama_vocab> vocab,
+      ffi.Pointer<ffi.Char> start_tag,
+      ffi.Pointer<ffi.Char> end_tag,
+      ffi.Pointer<ffi.Char> forced_message,
+      ffi.Pointer<ffi.Pointer<ffi.Char>> natural_end_tags,
+      int natural_end_tag_count,
+      int grammar_replay_end_index,
+      int budget_tokens,
+      bool pause_grammar_while_reasoning,
+      ffi.Pointer<llama_sampler> grammar_sampler,
+      ffi.Pointer<llama_token> prompt_tokens,
+      int prompt_token_count,
+    );
 
 final class UnnamedStruct extends ffi.Struct {
   @ffi.Float()

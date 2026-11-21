@@ -358,10 +358,32 @@ await for (final chunk in engine.create(
 ```
 
 `engine.create(...)` fills the start and end delimiters from recognized chat
-templates. Raw `engine.generate(...)` calls must provide both delimiters in
-`ThinkingBudget`. A budget of `0` immediately forces the end delimiter. On
-Qwen3-Coder XML templates (Qwen3.5, Nemotron 3 Nano, StepFun 3.5 Flash) the
-forced text is a line break before the end delimiter, as llama.cpp forces it.
+templates. Raw `engine.generate(...)` calls supply both delimiters or first
+resolve them with `ChatTemplateEngine.resolveThinkingBudget`. A budget of
+`0` immediately forces the close of an open thought.
+
+With no explicit end tag, thinking-capable Qwen3-Coder XML templates
+(Qwen3.5, Nemotron 3 Nano, StepFun 3.5 Flash) count until `\n</think>`,
+`</think>` or `<tool_call>`. When the budget runs out, the sampler still
+forces a line break followed by `</think>`. A generated tool opener ends
+counting and generation continues inside the call. A stop sequence ends the
+completion. The chat path uses a single end when the XML template has no
+thought (plain Qwen3-Coder) or renders it closed. The format-only helper
+selects the XML family defaults. An explicit `endTag`, including
+`</think>`, selects a single end and leaves `forcedMessage` as supplied.
+
+When a generated opener ends counting, a paused lazy grammar receives it once
+if a `word`, `pattern`, or `patternFull` trigger has the exact value
+`<tool_call>`. This also applies to raw generation with a format-resolved
+budget. For eager replay, use `engine.create` with `ToolChoice.required` and
+declared tools. Replay stays bound to the selected XML tool grammar and its
+`root` start rule when the generation parameters are forwarded.
+
+Multiple ends require llamadart-native `v1.0.0-4` or WebGPU assets
+`v0.1.87+` with a core reporting `thinkingBudgetMultiEnd`.
+`supportsThinkingBudget` reports basic support. An older runtime can
+report it and still throw `LlamaUnsupportedException` for multiple ends.
+
 On native llama.cpp and WebGPU, an eager grammar stays applied while the
 model reasons only with a `think-body` or `seed-thought` root. This includes
 Granite's required-call grammar when the prompt forces a thought open. It

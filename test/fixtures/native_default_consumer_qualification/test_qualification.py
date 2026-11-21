@@ -134,7 +134,7 @@ class QualificationControls(unittest.TestCase):
             self.assertNotIn(forbidden, config)
 
     def test_rebuild_receipt_reports_exact_pin_completion(self):
-        for tag in ('v1.0.0-2', 'v1.0.0-3'):
+        for tag in ('v1.0.0-2', 'v1.0.0-3', 'v1.0.0-4'):
             with self.subTest(tag=tag):
                 self.assertIn('macos-arm64', v.pins(pin_fixture(tag), tag, 'macos-arm64'))
                 output = self.root / tag

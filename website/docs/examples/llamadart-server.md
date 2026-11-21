@@ -51,8 +51,10 @@ curl http://127.0.0.1:8080/v1/chat/completions \
   runs them and sends the results back ([Tool calling](../guides/tool-calling)).
 - Qwen thinking off by default, turned on per request with
   `"enable_thinking": true` and capped with llama.cpp's
-  `thinking_budget_tokens`
-  ([Generation and streaming](../guides/generation-and-streaming)).
+  `thinking_budget_tokens`. On thinking-capable Qwen3-Coder XML,
+  llamadart-native `v1.0.0-4` or newer lets the tool opener end the budget
+  and the call continue. The request still supplies only the token limit.
+  [Generation and streaming](../guides/generation-and-streaming)
 - Local paths, HTTP(S) URLs and `hf://` sources through
   `LlamaEngine.setModel` ([Downloads and cache](../guides/model-downloads)).
 - Optional bearer auth, CORS, an OpenAPI spec at `/openapi.json` and Swagger UI

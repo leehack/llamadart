@@ -831,6 +831,16 @@ XCFramework slices. The repin includes native speech fixes that the earlier
 frameworks lack. The matching companion needs a core floor of `0.20.2`, since
 earlier cores reject its new pin.
 
+For the core 0.20.4 repin to `v1.0.0-4`, the published llama.cpp companions
+`0.20.0` (`v1.0.0-1`), `0.20.1` (`v1.0.0-2`), and `0.20.2` and `0.20.3`
+(`v1.0.0-3`) stay admitted with the exact XCFramework checksums and an
+upgrade warning. All five architecture slices from each release retain the
+required SDK exports. Only `v1.0.0-4` exposes the XML multi-end budget
+sampler. The SDK probes it and rejects multi-end requests on older
+companions with `LlamaUnsupportedException`. Release prep bumps the matching
+companion and sets its core dependency to `>=0.20.4 <0.21.0`. Earlier cores
+reject the new companion pin.
+
 The 0.18.0 preparation moves to `v0.8.0-3` and requires its matching Apple
 companion. Older runtimes are no longer admitted: they lack the speculative
 rollback and model-creation ownership fixes. All three Apple companions are

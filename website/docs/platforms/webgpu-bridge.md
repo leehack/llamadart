@@ -298,7 +298,11 @@ The feature-by-runtime table is in the
   or `seed-thought`, as in `responseFormat` and required tool calls) and pauses
   every lazy and every other grammar until reasoning ends; the former needs assets whose probe reports
   `thinkingBudgetPauseGrammar` (`v0.1.84+`) and throws `LlamaUnsupportedException`
-  without it. A LoRA adapter is a `ModelSource` whose URL the bridge downloads once
+  without it. An implicit thinking budget end on thinking-capable
+  Qwen3-Coder XML requires a core reporting `thinkingBudgetMultiEnd`
+  (`v0.1.87+`). The tool opener ends the budget while generation
+  continues into the call. Supply an explicit `endTag` for a single end
+  on older cores. A LoRA adapter is a `ModelSource` whose URL the bridge downloads once
   per model load (a `ModelSource.path` is a URL relative to the document, or a `blob:` URL), through Cache Storage unless the URL carries credentials; reload
   adapters after loading another model. An aLoRA adapter throws
   `LlamaUnsupportedException`, and an adapter the bridge cannot load, such as
@@ -414,10 +418,10 @@ first model load, for diagnosis or controlled deployments:
 
 ## Pinned bridge assets
 
-This llamadart version pins bridge assets `v0.1.86`, which include the
-API-version-1 media embedding contract.
+This llamadart version pins bridge assets `v0.1.87`, which include the
+API-version-1 media embedding contract and `thinkingBudgetMultiEnd`.
 
-- The pinned `v0.1.86` bridge assets embed llama.cpp `v1.0.0`, matching the native runtime `v1.0.0-3`.
+- The pinned `v0.1.87` bridge assets embed llama.cpp `v1.0.0`, matching the native runtime `v1.0.0-4`.
 
 Provenance and the pinned manifest digest are in
 [`doc/webgpu_bridge.md`](https://github.com/leehack/llamadart/blob/main/doc/webgpu_bridge.md).
@@ -425,7 +429,7 @@ Provenance and the pinned manifest digest are in
 In a llamadart checkout, vendor the pinned assets into the chat app with:
 
 ```bash
-WEBGPU_BRIDGE_ASSETS_TAG=v0.1.86 ./scripts/fetch_webgpu_bridge_assets.sh
+WEBGPU_BRIDGE_ASSETS_TAG=v0.1.87 ./scripts/fetch_webgpu_bridge_assets.sh
 ```
 
 The chat app bootstrap takes its CDN source from these globals:
@@ -433,7 +437,7 @@ The chat app bootstrap takes its CDN source from these globals:
 ```html
 <script>
   window.__llamadartBridgeAssetsRepo = 'leehack/llama-web-bridge-assets';
-  window.__llamadartBridgeAssetsTag = 'v0.1.86';
+  window.__llamadartBridgeAssetsTag = 'v0.1.87';
 </script>
 ```
 

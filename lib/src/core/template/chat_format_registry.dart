@@ -94,6 +94,7 @@ final class ChatFormatTraits {
     this.reopensThoughtClosedForThinkingOff = false,
     this.forcedThoughtContentOpenings = const [],
     this.budgetThoughtClosePrefix = '',
+    this.thinkingBudgetNaturalEnds = const [],
     this.mayEmbedToolEnvelopeAfterContent = false,
     this.handlerOwnsPartialToolContent = false,
     this.retainsTextAroundToolCalls = false,
@@ -155,6 +156,9 @@ final class ChatFormatTraits {
   /// Text a thinking budget forces before the end tag when it closes a
   /// thought, as llama.cpp forces the first of the format's end sequences.
   final String budgetThoughtClosePrefix;
+
+  /// Ordered natural reasoning ends when the caller omits the end tag.
+  final List<String> thinkingBudgetNaturalEnds;
 
   /// Whether a tool envelope may follow content, so a stream with tools
   /// parses from its first token instead of deciding from how output starts.
@@ -447,6 +451,11 @@ chatFormatRegistrations = List.unmodifiable(<ChatFormatRegistration>[
       reopensThoughtClosedForThinkingOff: true,
       forcedThoughtContentOpenings: [XmlToolCallFormat.qwen3CoderScopeStart],
       budgetThoughtClosePrefix: '\n',
+      thinkingBudgetNaturalEnds: [
+        '\n</think>',
+        '</think>',
+        XmlToolCallFormat.qwen3CoderScopeStart,
+      ],
     ),
   ),
   ChatFormatRegistration(

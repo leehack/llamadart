@@ -16,8 +16,8 @@ import 'package:test/test.dart';
 void main() {
   final sha256Pattern = RegExp(r'^[0-9a-f]{64}$');
 
-  test('llama.cpp pins the approved v1.0.0-3 release', () {
-    expect(llamaCppTag, 'v1.0.0-3');
+  test('llama.cpp pins the approved v1.0.0-4 release', () {
+    expect(llamaCppTag, 'v1.0.0-4');
   });
 
   test('llama.cpp tag follows the native release tag grammar', () {
@@ -77,6 +77,18 @@ void main() {
         final missing = slice['missing_core_symbols'] as Map<String, dynamic>;
         expect(missing.keys, unorderedEquals(checksums.keys));
         expect(missing.values, everyElement(isEmpty));
+      }
+    });
+
+    test('older Apple slices need a runtime probe for multi-end budgets', () {
+      const multi = 'llama_dart_sampler_init_reasoning_budget_multi';
+      expect(proof['optional_current_symbols'], [multi]);
+      for (final slice in (proof['slices'] as List).cast<Map>()) {
+        final missing = slice['missing_optional_symbols'] as Map;
+        expect(missing.keys, unorderedEquals(checksums.keys));
+        for (final tag in checksums.keys) {
+          expect(missing[tag], tag == llamaCppTag ? isEmpty : [multi]);
+        }
       }
     });
 

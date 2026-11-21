@@ -404,9 +404,9 @@ void main() {
         'hook_sha256': hash,
         'probe_sha256': hash,
         'selector_sha256': hash,
-        'native_tag': 'v1.0.0-3',
+        'native_tag': 'v1.0.0-4',
         'native_archive_sha256':
-            'fe838f4775d72842be64bb0279b86fd67c46ff6e4624c3beb35f2e51711f235c',
+            '0770358efdc51146261092f90068c4bd19da4c5fa1e3956bba4a9e5f753f6ef3',
         'libraries': {
           for (final name in selection['packaged'] as List<String>)
             name: archive[name],

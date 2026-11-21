@@ -17,6 +17,9 @@ headers:
     - '.dart_tool/llamadart/ffigen_headers/llama_cpp/tools/mtmd/mtmd-helper.h'
     - '.dart_tool/llamadart/ffigen_headers/libllamadart/llama_dart_wrapper.h'
 functions:
+  expose-typedefs:
+    include:
+      - 'llama_dart_sampler_init_reasoning_budget_multi'
   exclude:
     # Not kill-safe from Dart: an isolate killed between begin and end never
     # reaches end, and a Dart program that returns from main after teardown

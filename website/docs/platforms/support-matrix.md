@@ -193,6 +193,7 @@ native and web. Model architecture support depends on the pinned runtime; see
 | Row split (`ModelSplitMode.row`) | Needs llama.cpp split buffer types, which no bundled backend provides; a load on a bundled GPU backend whose module loads (Metal, CUDA, HIP, Vulkan, OpenCL), with `GpuBackend.blas` or `GpuBackend.cpu`, with `auto` on Android, the iOS simulator and macOS x86_64 (which runs on the CPU), or that falls back to the CPU because the requested backend is missing or Vulkan is refused, throws `LlamaUnsupportedException` before the model loads, so use `ModelSplitMode.layer`; a bundled module that fails to load or finds no device loads row on the CPU instead ([#1576](https://github.com/leehack/llamadart/issues/1576)) | No | No | No |
 | Renamed legacy Qwen3 thinking switch | N/A: GGUF metadata | N/A: GGUF metadata | `chatTemplate: liteRtLmQwen3ChatTemplate`; requires native template setter | Canonical override throws at load: no template setter in `@litert-lm/core@0.19.0` |
 | Thinking budget | Text-only, without speculative decoding, when the native reasoning-budget export resolves | Text-only, with bridge assets whose `getCompletionCapabilities()` reports `thinkingBudget` ([llama-web-bridge#144](https://github.com/leehack/llama-web-bridge/pull/144)); otherwise rejected | Native chat, without speculative decoding, on bundles whose first response channel is a thinking channel (Gemma 4); bounds that channel only; `0` and `forcedMessage` rejected | No |
+| Template-derived thinking-budget end sequences | Thinking-capable Qwen3-Coder XML, text-only, with llamadart-native `v1.0.0-4` or newer | Same templates with assets `v0.1.87+` whose core reports `thinkingBudgetMultiEnd` | Bundle-owned single end | No |
 | Strict `responseFormat` | Yes | Yes, without tools | macOS arm64 CPU/GPU, iOS arm64 CPU/GPU (simulator runs; Gemma 4 GPU fails engine creation), Android arm64 CPU/GPU (Galaxy S24 and Pixel 9 Pro runs with Qwen3 and Gemma 4; the GPU through OpenCL), Linux x64 CPU/GPU (NVIDIA L4 over Vulkan, driver 615.71; Qwen3 and Gemma 4), Windows x64 CPU/GPU (NVIDIA L4 over Direct3D 12, GRID driver 596.86; Qwen3 and Gemma 4), Linux arm64 CPU (its GPU is not qualified); every other host, GPU or NPU refused, admitted Qwen3 (canonical text template) or Gemma 4 (bundle template) model; the schema subset both GBNF and LLGuidance enforce (nested objects, arrays, `$ref`, `anyOf`, anchored patterns, `uuid`/`date` formats, bounds); thinking with Gemma 4 only; no tools/media/speculation/caller stops | No |
 | Lazy grammar | Yes | Yes when the loaded bridge reports `lazyGrammar`; otherwise first-token `root` only | No GBNF grammar | No GBNF grammar |
 | Presence penalty | Yes | With bridge assets whose `getCompletionCapabilities()` reports `presencePenalty` ([llama-web-bridge#140](https://github.com/leehack/llama-web-bridge/pull/140)); otherwise rejects a non-zero value | Yes, without speculative decoding; counts only tokens of the current send | No: rejects a non-zero value |
@@ -255,7 +256,7 @@ web are on [Known platform issues](./known-platform-issues).
 
 | Runtime | Pinned release |
 | --- | --- |
-| llama.cpp native | `leehack/llamadart-native@v1.0.0-3` |
+| llama.cpp native | `leehack/llamadart-native@v1.0.0-4` |
 | LiteRT-LM native | `leehack/litert-lm-native@v0.19.1-5` |
 | stable-diffusion.cpp native (opt-in, Preview) | `leehack/stable-diffusion-native@v0.4.0`, for [image generation](../guides/image-generation); see [Opt-in stable_diffusion runtime](./native-build-hooks#opt-in-stable_diffusion-runtime-experimental). Flutter iOS/macOS apps link its XCFramework through `llamadart_stable_diffusion_flutter` |
 | WebGPU bridge assets | `leehack/llama-web-bridge-assets`; see [Pinned bridge assets](./webgpu-bridge#pinned-bridge-assets) |
@@ -263,7 +264,7 @@ web are on [Known platform issues](./known-platform-issues).
 SD `v0.3.0-6` passed four full-VAE load/dispose cycles and eight decodes per device on iPhone 16 Pro (iOS 18.3.2) and iPhone 17 Pro (iOS 26.5.1), tested at `6b191b28`. Small nonzero residual memory remains; this single session is not proof of zero leaks (#2004).
 
 The native-assets hook currently pins `llamadart-native` tag
-`v1.0.0-3` and
+`v1.0.0-4` and
 `litert-lm-native` release `v0.19.1-5` (`lib/src/hook/native_release_pins.dart`).
 The Windows llama.cpp bundles select the newest Visual C++ runtime per
 architecture. The published Apple llama.cpp companions `0.20.0` and `0.20.1`
