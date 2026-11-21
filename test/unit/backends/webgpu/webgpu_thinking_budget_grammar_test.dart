@@ -131,7 +131,7 @@ void main() {
       );
       expect(fake.completionOption('thinkingBudget'), {
         ...xmlWireBudget,
-        if (replay != null) 'grammarReplayEndIndex': replay,
+        'grammarReplayEndIndex': ?replay,
       });
     }
   });
