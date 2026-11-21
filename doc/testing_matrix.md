@@ -1638,7 +1638,9 @@ rejection controls must preserve the runtime and subsequent plain output.
 
 The runner also compiles an app-owned worker. It checks that the first model
 load stores a cache entry and a fresh engine reuses it for both absolute and
-worker-relative references to the staged model.
+worker-relative references to the staged model. A separate control forces six
+fetch-backed loads of the full model URL on one threaded wasm32 core and
+checks that each load uses the fetch backend and can tokenize.
 
 The prompt-penalty control also runs wasm32 and memory64 in both direct and
 worker modes, checking actual runtime metadata. It finds a decisive scored

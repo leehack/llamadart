@@ -7,6 +7,14 @@ import 'package:llamadart/src/backends/webgpu/interop.dart';
 import 'package:llamadart/src/backends/webgpu/webgpu_backend.dart';
 import 'package:web/web.dart' show DedicatedWorkerGlobalScope;
 
+const _modelParams = ModelParams(
+  contextSize: 512,
+  gpuLayers: 0,
+  preferredBackend: GpuBackend.cpu,
+  numberOfThreads: 2,
+  numberOfThreadsBatch: 2,
+);
+
 Future<void> main() async {
   final worker = globalContext as DedicatedWorkerGlobalScope;
   try {
@@ -18,7 +26,7 @@ Future<void> main() async {
     final config =
         jsonDecode((await response.text().toDart).toDart)
             as Map<String, dynamic>;
-    final mode = script.queryParameters['modelUrl'];
+    final mode = script.queryParameters['mode'];
     final configuredModel = Uri.parse(config['model'] as String);
     if (configuredModel.hasScheme || configuredModel.hasAuthority) {
       throw StateError('Stage a worker-relative model URL in config.json');
@@ -37,6 +45,20 @@ Future<void> main() async {
       asset('llama_webgpu_bridge.js').toJS,
     ).toDart;
     final constructor = module['LlamaWebGpuBridge']! as JSFunction;
+    LlamaWebGpuBridge createBridge() =>
+        constructor.callAsConstructor<LlamaWebGpuBridge>(
+          JSObject()
+            ..['disableWorker'] = true.toJS
+            ..['coreModuleUrl'] = asset('llama_webgpu_core.js').toJS
+            ..['wasmUrl'] = asset('llama_webgpu_core.wasm').toJS,
+        );
+    if (mode == 'forced-fetch') {
+      worker.postMessage(
+        jsonEncode({'loads': await _forceFetchLoads(createBridge, model)}).toJS,
+      );
+      return;
+    }
+
     final cache = await worker.caches
         .open('llamadart-webgpu-model-cache-v1')
         .toDart;
@@ -47,27 +69,12 @@ Future<void> main() async {
     try {
       for (var i = 0; i < 2; i++) {
         final engine = LlamaEngine(
-          WebGpuLlamaBackend(
-            bridgeFactory: ([_]) {
-              return constructor.callAsConstructor<LlamaWebGpuBridge>(
-                JSObject()
-                  ..['disableWorker'] = true.toJS
-                  ..['coreModuleUrl'] = asset('llama_webgpu_core.js').toJS
-                  ..['wasmUrl'] = asset('llama_webgpu_core.wasm').toJS,
-              );
-            },
-          ),
+          WebGpuLlamaBackend(bridgeFactory: ([_]) => createBridge()),
         );
         try {
           await engine.loadModelFromUrl(
             reference.toString(),
-            modelParams: const ModelParams(
-              contextSize: 512,
-              gpuLayers: 0,
-              preferredBackend: GpuBackend.cpu,
-              numberOfThreads: 2,
-              numberOfThreadsBatch: 2,
-            ),
+            modelParams: _modelParams,
           );
           final metadata = await engine.getMetadata();
           loads.add({
@@ -84,5 +91,48 @@ Future<void> main() async {
     worker.postMessage(jsonEncode({'loads': loads}).toJS);
   } catch (error, stack) {
     worker.postMessage(jsonEncode({'error': '$error\n$stack'}).toJS);
+  }
+}
+
+Future<List<Map<String, Object?>>> _forceFetchLoads(
+  LlamaWebGpuBridge Function() createBridge,
+  Uri model,
+) async {
+  globalContext['__llamadartBridgeForceRemoteFetchBackend'] = true.toJS;
+  late LlamaWebGpuBridge bridge;
+  final backend = WebGpuLlamaBackend(
+    bridgeFactory: ([_]) => bridge = createBridge(),
+  );
+  JSAny? originalCore;
+  final loads = <Map<String, Object?>>[];
+  try {
+    // Freeing the backend between loads would also free the core and hide
+    // exhaustion of its four-thread pool.
+    for (var i = 0; i < 6; i++) {
+      final handle = await backend
+          .modelLoadFromUrl(model.toString(), _modelParams)
+          .timeout(const Duration(seconds: 20));
+      final runtime = (bridge as JSObject)['_runtime'] as JSObject;
+      final core = runtime['_core'];
+      originalCore ??= core;
+      if (core == null || !identical(core, originalCore)) {
+        throw StateError('Load ${i + 1} did not reuse the original Wasm core');
+      }
+      final metadata = await backend.modelMetadata(handle);
+      final source = metadata['llamadart.webgpu.model_source'];
+      if (source != 'network-fetch') {
+        throw StateError(
+          'Load ${i + 1} used $source. '
+          '${metadata['llamadart.webgpu.runtime_notes']}',
+        );
+      }
+      loads.add({
+        'source': source,
+        'tokens': await backend.tokenize(handle, 'Hello'),
+      });
+    }
+    return loads;
+  } finally {
+    await backend.dispose();
   }
 }

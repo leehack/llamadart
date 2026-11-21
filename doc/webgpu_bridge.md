@@ -67,11 +67,11 @@ an earlier `<script>`:
 
 ## Pinned assets
 
-Default pinned tag in the example is `v0.1.89`.
+Default pinned tag in the example is `v0.1.90`.
 Vendor the pinned assets into the chat app with:
 
 ```bash
-WEBGPU_BRIDGE_ASSETS_TAG=v0.1.89 ./scripts/fetch_webgpu_bridge_assets.sh
+WEBGPU_BRIDGE_ASSETS_TAG=v0.1.90 ./scripts/fetch_webgpu_bridge_assets.sh
 ```
 
 `WEBGPU_BRIDGE_OUT_DIR` changes the destination. The script verifies
@@ -90,17 +90,17 @@ the chat app, set the bootstrap globals before the bootstrap runs:
 ```html
 <script>
   window.__llamadartBridgeAssetsRepo = 'leehack/llama-web-bridge-assets';
-  window.__llamadartBridgeAssetsTag = 'v0.1.89';
+  window.__llamadartBridgeAssetsTag = 'v0.1.90';
 </script>
 ```
 
 That release embeds llama.cpp `v1.0.0`, matching the `hook/build.dart` native pin
 (`v1.0.0-4`, both built from upstream llama.cpp `v1.0.0@b1b770d90d94cad9e9ea5b993bdbc383a522fb28`)
-even though the bridge asset tag `v0.1.89` differs from the native runtime tag
-`v1.0.0-4`. Provenance for this immutable consumer artifact: release `453680519`,
-tag commit `88e606a64b2f2d0d300a26017fe802e00997959a`, bridge source
-`8d911fccf84f131440d104a85fb283b51e32f967`, and manifest SHA-256
-`36824ae55158b57e9c56bb6f754e4d06a658db11904de212e9db8faa67f8becd`.
+even though the bridge asset tag `v0.1.90` differs from the native runtime tag
+`v1.0.0-4`. Provenance for this immutable consumer artifact: release `453978695`,
+tag commit `de9a81631df869835109913eb89c5ca84a534da8`, bridge source
+`c281e07766e8ad9d231e275ea81196124f6fd6ac`, and manifest SHA-256
+`c247b099018f55472dc83e561f0105a83f4ce03aa153d32365a07b34cde129f1`.
 They expose the API-version-1 media embedding contract. State and extraction
 qualification covers wasm32 and memory64 through direct and worker runtimes. Existing decision,
 scoring, sampling, LoRA, speculative decoding and speech APIs remain available.
@@ -225,6 +225,10 @@ physical playback, intelligibility or speaker-reference fidelity.
   with `CrossOriginIsolationError` (`code: 'CROSS_ORIGIN_ISOLATION_REQUIRED'`);
   `gpu_unavailable:<reason>` appears in the runtime notes when `nGpuLayers > 0`
   and the GPU is not active; at 0 GPU layers the WebGPU backend is not created.
+- `v0.1.90+`: fetch-backed loads request the full GGUF URL and reuse the
+  WasmFS fetch worker across loads on the same core.
+  [Bridge #298](https://github.com/leehack/llama-web-bridge/pull/298),
+  [#302](https://github.com/leehack/llama-web-bridge/pull/302).
 - `v0.1.84+`: `getCompletionCapabilities()` reports
   `thinkingBudgetPauseGrammar`, and `thinkingBudget.pauseGrammar: false` keeps a
   grammar applied while the model reasons
@@ -315,6 +319,10 @@ assets lack the adaptive Safari probe (`__llamadartBridgeAdaptiveSafariGpu`).
 Adaptive assets keep GPU enabled, run a short generation probe, and cap GPU
 layers or fall back to CPU when output looks unstable.
 `window.__llamadartAllowSafariWebGpu = true` bypasses the safeguard.
+On Apple Safari before version 27, assets `v0.1.90+` apply the default
+one-layer cap to omitted and negative `nGpuLayers` in direct JS calls as well.
+The Dart backend always sends an explicit layer count, including zero for CPU.
+[Bridge #307](https://github.com/leehack/llama-web-bridge/pull/307).
 
 ## Browser compatibility targets
 
@@ -601,12 +609,7 @@ in both runtimes.
   fetch-backed loading after a streamed staging failure.
 - `window.__llamadartBridgeForceRemoteFetchBackend`: default `false`. `true`
   forces fetch-backed loading from the first attempt, for diagnostics only.
-  With the pinned bridge assets, limit forced loads to four per threaded core.
-  WasmFS retains a proxy thread per load, so the fifth stalls on the default
-  four-thread pool. The fetch backend can also truncate the GGUF URL to its
-  directory. Both fixes are planned for `v0.1.90`.
-  [Bridge #301](https://github.com/leehack/llama-web-bridge/issues/301),
-  [bridge #288](https://github.com/leehack/llama-web-bridge/issues/288).
+  Use a threaded core and a model origin that serves valid byte ranges.
 - `window.__llamadartBridgeRemoteFetchChunkBytes`: positive integer bytes;
   default `4 * 1024 * 1024`, clamped to 4 KiB..16 MiB. Applies to fetch-backed
   loading.
