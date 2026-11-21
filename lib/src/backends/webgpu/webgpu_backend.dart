@@ -9,7 +9,6 @@ import 'package:web/web.dart';
 
 import '../../core/engine/engine_observer.dart';
 import '../../core/models/chat/content_part.dart';
-import '../../core/cache_policy.dart';
 import '../../core/exceptions.dart';
 import '../../core/models/config/compute_device.dart';
 import '../../core/models/config/gpu_backend.dart';
@@ -1253,6 +1252,7 @@ class WebGpuLlamaBackend
     void Function(double progress)? onProgress,
   }) async {
     url = webGpuDocumentUrl(url);
+    final cacheUrl = webGpuPersistentCacheUrl(url);
     final setup = _prepareUrlLoad(url, params, onProgress);
     if (setup.requireGpu && !await webGpuAdapterAvailable()) {
       throw LlamaUnsupportedException(
@@ -1295,7 +1295,7 @@ class WebGpuLlamaBackend
         await _activateBridge();
         final bridge = _requireBridge();
         bridgeForAttempt = bridge;
-        cachedWebModel ??= await _isModelResponseCachedForUrl(bridge, url);
+        cachedWebModel ??= await _isModelResponseCachedForUrl(bridge, cacheUrl);
 
         if (_forceRemoteFetchBackendOverride != null) {
           forceRemoteFetchBackend = _forceRemoteFetchBackendOverride;
@@ -1306,7 +1306,7 @@ class WebGpuLlamaBackend
         }
 
         final loadPromise = bridge.loadModelFromUrl(
-          url,
+          cacheUrl ?? url,
           WebGpuLoadModelOptions(
             nCtx: attempt.contextSize,
             nThreads: attemptThreads,
@@ -1325,7 +1325,7 @@ class WebGpuLlamaBackend
             ropeFrequencyScale: params.ropeFrequencyScale,
             splitMode: params.splitMode.llamaCppValue,
             mainGpu: params.mainGpu,
-            useCache: !hasPersistentCacheSensitiveUrlParts(url),
+            useCache: cacheUrl != null,
             forceRemoteFetchBackend: forceRemoteFetchBackend,
             remoteFetchChunkBytes: escalation.remoteFetchChunkBytes,
             modelBytesHint: params.modelBytesHint,
@@ -1932,6 +1932,8 @@ class WebGpuLlamaBackend
     List<LlamaContentPart>? parts,
     bool countPromptTokensInPenalties = false,
   }) {
+    final activeBridge = _activeBridge;
+    if (activeBridge != null) webGpuThrowIfModelUnloaded(activeBridge);
     final capabilities = _completionCapabilities;
     if (countPromptTokensInPenalties &&
         !capabilities.penaltyPromptTokensWithGrammar) {
@@ -2452,6 +2454,7 @@ class WebGpuLlamaBackend
     int mmContextHandle,
   ) async {
     final bridge = _requireBridge();
+    webGpuThrowIfModelUnloaded(bridge);
     if (!_mmContextActive) {
       return const BackendTextToSpeechCapabilities(
         isSupported: false,
@@ -2470,6 +2473,7 @@ class WebGpuLlamaBackend
 
     try {
       final raw = await _toFuture(bridge.getTextToSpeechCapabilities());
+      webGpuThrowIfModelUnloaded(bridge);
       if (raw == null || !raw.isA<JSObject>()) {
         return const BackendTextToSpeechCapabilities(
           isSupported: false,
@@ -2527,6 +2531,8 @@ class WebGpuLlamaBackend
         supportsCancellation: true,
         incrementalAudioUnsupportedReason: _webTtsStreamingUnsupportedReason,
       );
+    } on LlamaModelUnloadedException {
+      rethrow;
     } catch (error) {
       return BackendTextToSpeechCapabilities(
         isSupported: false,
@@ -2751,6 +2757,7 @@ class WebGpuLlamaBackend
       mediaUnsupportedReason: _mediaEmbeddingRequirement,
     );
     final bridge = _bridge!;
+    webGpuThrowIfModelUnloaded(bridge);
     final epoch = _embeddingCancelEpoch;
     void checkCancelled() {
       if (!identical(bridge, _activeBridge) || epoch != _embeddingCancelEpoch) {
@@ -2778,6 +2785,7 @@ class WebGpuLlamaBackend
       throw _mediaEmbeddingError(error);
     }
     checkCancelled();
+    webGpuThrowIfModelUnloaded(bridge);
     if (!value.isA<JSObject>()) return legacy;
     final object = value as JSObject;
     final version = object.getProperty<JSAny?>('apiVersion'.toJS)?.dartify();
@@ -3533,9 +3541,10 @@ class WebGpuLlamaBackend
     final bridge = _requireBridge();
     mmProjPath = webGpuDocumentUrl(mmProjPath);
     final supportsCacheQuery = _supportsModelCacheQuery(bridge);
+    final cacheUrl = webGpuPersistentCacheUrl(mmProjPath);
     final cachedBlobUrl = supportsCacheQuery
         ? null
-        : await _cachedModelBlobUrlFor(mmProjPath);
+        : await _cachedModelBlobUrlFor(cacheUrl);
     var retainedCachedBlobUrl = false;
 
     try {
@@ -3543,9 +3552,9 @@ class WebGpuLlamaBackend
       try {
         final load = supportsCacheQuery
             ? bridge.loadMultimodalProjector(
-                mmProjPath,
+                cacheUrl ?? mmProjPath,
                 WebGpuProjectorLoadOptions(
-                  useCache: _canCacheUrl(mmProjPath),
+                  useCache: cacheUrl != null,
                   cacheName: _defaultModelCacheName,
                 ),
               )
@@ -3609,13 +3618,6 @@ class WebGpuLlamaBackend
     }
   }
 
-  bool _canCacheUrl(String sourceUrl) {
-    final uri = Uri.tryParse(sourceUrl);
-    return uri != null &&
-        (uri.isScheme('http') || uri.isScheme('https')) &&
-        !hasPersistentCacheSensitiveUrlParts(sourceUrl);
-  }
-
   bool _supportsModelCacheQuery(LlamaWebGpuBridge bridge) {
     final constructor = bridge.getProperty<JSAny?>('constructor'.toJS);
     if (!constructor.isA<JSObject>()) return false;
@@ -3624,8 +3626,8 @@ class WebGpuLlamaBackend
     return flag.isA<JSBoolean>() && (flag as JSBoolean).toDart;
   }
 
-  Future<String?> _cachedModelBlobUrlFor(String sourceUrl) async {
-    if (!_canCacheUrl(sourceUrl)) return null;
+  Future<String?> _cachedModelBlobUrlFor(String? sourceUrl) async {
+    if (sourceUrl == null) return null;
 
     try {
       final caches = globalContext.getProperty<JSAny?>('caches'.toJS);
@@ -3650,9 +3652,9 @@ class WebGpuLlamaBackend
 
   Future<bool> _isModelResponseCachedForUrl(
     LlamaWebGpuBridge bridge,
-    String sourceUrl,
+    String? sourceUrl,
   ) async {
-    if (!_canCacheUrl(sourceUrl)) return false;
+    if (sourceUrl == null) return false;
 
     try {
       if (_supportsModelCacheQuery(bridge)) {
@@ -3707,6 +3709,7 @@ class WebGpuLlamaBackend
       return false;
     }
 
+    webGpuThrowIfModelUnloaded(bridge);
     return bridge.supportsVision() ?? false;
   }
 
@@ -3721,6 +3724,7 @@ class WebGpuLlamaBackend
       return false;
     }
 
+    webGpuThrowIfModelUnloaded(bridge);
     return bridge.supportsAudio() ?? false;
   }
 

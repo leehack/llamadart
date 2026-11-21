@@ -705,6 +705,8 @@ class TextToSpeechEngine implements LlamadartEngine<TextToSpeechCapabilities> {
     BackendTextToSpeechCapabilities backendCapabilities;
     try {
       backendCapabilities = await _engine.backendTextToSpeechCapabilities;
+    } on LlamaModelUnloadedException {
+      rethrow;
     } catch (error) {
       return TextToSpeechCapabilities(
         isSupported: false,

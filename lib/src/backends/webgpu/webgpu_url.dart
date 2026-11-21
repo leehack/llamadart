@@ -1,5 +1,7 @@
 import 'package:web/web.dart' show URL, document;
 
+import '../../core/cache_policy.dart';
+
 final RegExp _absolute = RegExp(r'^(?:[A-Za-z][A-Za-z0-9+.-]*:|//)');
 
 /// [url] as the bridge fetches it: a path resolved against the document
@@ -15,4 +17,23 @@ String webGpuDocumentUrl(String url) {
   } catch (_) {
     return url;
   }
+}
+
+/// Returns the browser-resolved HTTP(S) URL if it can be stored in Cache Storage.
+String? webGpuPersistentCacheUrl(String reference) {
+  if (reference.isEmpty) return null;
+  try {
+    final url = URL(reference, document.baseURI);
+    final parsed = Uri.tryParse(url.href);
+    if ((url.protocol == 'http:' || url.protocol == 'https:') &&
+        url.host.isNotEmpty &&
+        parsed != null &&
+        parsed.host.isNotEmpty &&
+        !hasPersistentCacheSensitiveUrlParts(url.href)) {
+      return url.href;
+    }
+  } catch (_) {
+    return null;
+  }
+  return null;
 }

@@ -123,17 +123,59 @@ void main() {
     },
   );
 
-  test('an invalid query response preserves existing markers', () async {
-    final prefs = await SharedPreferences.getInstance();
-    final keys = [
-      profile.modelSourceFor(web: true).cacheKey,
-      profile.multimodalProjectorSourceFor(web: true)!.cacheKey,
-    ];
-    await prefs.setStringList(markersKey, keys);
-    queryUnavailable = true;
-    expect(await service.getDownloadedModels([profile]), {profile.filename});
-    expect(prefs.getStringList(markersKey), unorderedEquals(keys));
-  });
+  test(
+    'an invalid query preserves markers and reports unknown assets as unavailable',
+    () async {
+      final prefs = await SharedPreferences.getInstance();
+      final keys = [
+        profile.modelSourceFor(web: true).cacheKey,
+        profile.multimodalProjectorSourceFor(web: true)!.cacheKey,
+      ];
+      await prefs.setStringList(markersKey, keys);
+      queryUnavailable = true;
+      expect(await service.getDownloadedModels([profile]), isEmpty);
+      expect((await service.getModelCacheState(profile)).isReady, isFalse);
+      expect(prefs.getStringList(markersKey), unorderedEquals(keys));
+    },
+  );
+
+  test(
+    'explicit download fails when saved markers cannot be verified',
+    () async {
+      final prefs = await SharedPreferences.getInstance();
+      final keys = [
+        profile.modelSourceFor(web: true).cacheKey,
+        profile.multimodalProjectorSourceFor(web: true)!.cacheKey,
+      ];
+      await prefs.setStringList(markersKey, keys);
+      final cache = await window.caches.open(name).toDart;
+      expect(await cache.match(profile.url.toJS).toDart, isNull);
+      expect(await cache.match(profile.mmprojUrl!.toJS).toDart, isNull);
+      globalContext.delete('LlamaWebGpuBridge'.toJS);
+      globalContext.setProperty(
+        '__llamadartBridgeLoadError'.toJS,
+        'fixture import failed'.toJS,
+      );
+      addTearDown(
+        () => globalContext.delete('__llamadartBridgeLoadError'.toJS),
+      );
+
+      String? completed;
+      Object? failure;
+      await service.downloadModel(
+        model: profile,
+        modelsDir: 'browser-cache',
+        cancelToken: CancelToken(),
+        onProgress: (_) {},
+        onSuccess: (name) => completed = name,
+        onError: (error) => failure = error,
+      );
+      expect(completed, isNull);
+      expect(failure, isA<StateError>());
+      expect(prefetches, isEmpty);
+      expect(prefs.getStringList(markersKey), unorderedEquals(keys));
+    },
+  );
 
   test('older bridges can recognize legacy whole responses', () async {
     constructor.delete('supportsModelCacheQuery'.toJS);

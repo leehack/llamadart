@@ -345,8 +345,10 @@ web backend load options).
   load can retry from the network when a part is missing or damaged.
 - For the same assets, projector loads pass the original resolved URL and
   use the prefetch cache name. Only HTTP(S) URLs without credential-sensitive
-  parts are eligible. Older bridges use the whole-response or blob-URL path
-  for existing Cache Storage entries.
+  parts are eligible. Cache policy checks the URL resolved by the browser.
+  Older bridges use the whole-response or blob-URL path for existing Cache
+  Storage entries. An explicit chat-app download requires a confirmed cache
+  hit or a successful prefetch. A failed cache query preserves saved markers.
 - Prefetch only file URLs that return a non-empty model or projector. An
   endpoint that can respond with 204 is unsuitable for prefetch. The app
   rejects a prefetch that reports zero bytes and evicts the empty entry.
