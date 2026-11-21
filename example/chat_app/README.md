@@ -694,13 +694,8 @@ await prefs.setInt('preferred_backend', backendIndex);
   opt-in also permits fetch-backed recovery retries after streamed staging
   failures. For diagnostics that must use fetch-backed loading from the first
   attempt, set `window.__llamadartBridgeForceRemoteFetchBackend = true`.
-  Prefer the automatic opt-in for ordinary deployments.
-  With the pinned bridge assets, limit forced loads to four per threaded core.
-  The fifth stalls on the default four-thread pool. Fetch-backed loading can
-  also truncate the GGUF URL to its directory. Both fixes are planned for
-  `v0.1.90`.
-  [Bridge #301](https://github.com/leehack/llama-web-bridge/issues/301),
-  [bridge #288](https://github.com/leehack/llama-web-bridge/issues/288).
+  Prefer the automatic opt-in for ordinary deployments. Assets `v0.1.90+`
+  send the full model URL and reuse the fetch worker across loads.
 - You can tune fetch-backed model read chunk size by setting
   `window.__llamadartBridgeRemoteFetchChunkBytes = <bytes>` before bridge bootstrap
   (default `4 * 1024 * 1024`, clamped to `4KiB..16MiB`).
