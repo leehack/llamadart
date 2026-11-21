@@ -3,6 +3,8 @@ library;
 
 import 'dart:io';
 
+import 'package:analyzer/dart/analysis/utilities.dart';
+import 'package:analyzer/dart/ast/ast.dart';
 import 'package:test/test.dart';
 
 // The root Markdown lane does not resolve the private validation package.
@@ -14,6 +16,27 @@ const adoptionSection = 'Accepted artifact and device scope';
 const validationNotes = 'doc/cross_platform_validation.md';
 const requalificationSection =
     'Galaxy S24 LiteRT-LM CPU and OpenCL requalification';
+const qualificationSource =
+    'packages/llamadart_validation/lib/android_litert_qualification.dart';
+
+Map<String, String> readRuntimeAliases() {
+  final source = parseString(
+    content: File(qualificationSource).readAsStringSync(),
+    path: qualificationSource,
+  );
+  final declaration = source.unit.declarations
+      .whereType<TopLevelVariableDeclaration>()
+      .expand((declaration) => declaration.variables.variables)
+      .singleWhere(
+        (variable) => variable.name.lexeme == '_s24LiteRtRuntimeAliases',
+      );
+  final literal = declaration.initializer as SetOrMapLiteral;
+  return {
+    for (final element in literal.elements.cast<MapLiteralEntry>())
+      (element.key as StringLiteral).stringValue!:
+          (element.value as StringLiteral).stringValue!,
+  };
+}
 
 void main() {
   // Rebuilds with identical Android libraries share the original device run.
@@ -55,9 +78,15 @@ void main() {
     );
   });
 
+  test('each Android rebuild alias maps to its recorded runtime', () {
+    expect(readRuntimeAliases(), {
+      for (final record in recordedRuns)
+        for (final alias in record.tags.skip(1)) alias: record.tags.first,
+    });
+  });
+
   for (final record in recordedRuns) {
-    final testedTag = record.tags.first;
-    test('$testedTag is documented with its S24 matrix and run', () {
+    test('${record.tags.first} and its aliases name the same S24 run', () {
       final notes = File(
         record.path,
       ).readAsStringSync().replaceAll('\r\n', '\n');
@@ -66,24 +95,27 @@ void main() {
         (section) => section.startsWith('${record.heading}\n'),
         orElse: () => '',
       );
-      final runtimeTag = RegExp(
-        '(?:^|[\\s`])${RegExp.escape(testedTag)}(?=[\\s`])',
-      );
-      expect(
-        section
-            .split('\n\n')
-            .any(
-              (paragraph) =>
-                  runtimeTag.hasMatch(paragraph) &&
-                  paragraph.contains('`${record.matrix}`') &&
-                  paragraph.contains('`${record.run}`'),
-            ),
-        isTrue,
-        reason:
-            '${record.path} under "${record.heading}" must identify '
-            '$testedTag, matrix ${record.matrix}, and run ${record.run} '
-            'in the same paragraph.',
-      );
+      final runParagraph = section
+          .split('\n\n')
+          .singleWhere(
+            (paragraph) =>
+                paragraph.contains('`${record.matrix}`') &&
+                paragraph.contains('`${record.run}`'),
+            orElse: () => '',
+          );
+      for (final tag in record.tags) {
+        final runtimeTag = RegExp(
+          '(?:^|[\\s`])${RegExp.escape(tag)}(?=\$|[\\s`])',
+        );
+        expect(
+          runParagraph,
+          matches(runtimeTag),
+          reason:
+              '${record.path} under "${record.heading}" must identify '
+              '$tag, matrix ${record.matrix}, and run ${record.run} '
+              'in the same paragraph.',
+        );
+      }
     });
   }
 }
