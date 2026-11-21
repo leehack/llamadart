@@ -26,12 +26,9 @@ const s24LiteRtNativeLibraries = {
   'libwebgpu_dawn.so',
 };
 
-/// Owner runtime tags the S24 binding admits. `v0.19.1-1` rebuilt only the
-/// Linux and Windows hosts; its Android binaries are byte-identical to
-/// `v0.19.1` (#1808). `v0.19.1-2` changes only the Android `libLiteRtLm.so`
-/// and passed the full S24 graph again (Test Lab `matrix-wmalbq6nz437a`,
-/// #1830). `v0.19.1-3` and `v0.19.1-4` leave Android unchanged: their
-/// Android arm64 archives hold the same libraries as `v0.19.1-2` (#1798, #1911).
+/// Owner runtime tags the S24 binding admits. `v0.19.1-2` changes only the
+/// Android `libLiteRtLm.so` and passed the full S24 graph again
+/// (Test Lab `matrix-wmalbq6nz437a`, #1830).
 /// `v0.19.1-5` changes the Android `libLiteRtLm.so` again (it links the WebGPU
 /// top-k sampler, #1998) and is admitted for its S24 requalification.
 /// `v0.19.1-6` is admitted for S24 requalification of the recurrent-state fix (#672).
@@ -43,6 +40,13 @@ const s24LiteRtRuntimeTags = {
   'v0.19.1-4',
   'v0.19.1-5',
   'v0.19.1-6',
+};
+
+// These rebuilds retain byte-identical Android libraries (#1808, #1798, #1911).
+const _s24LiteRtRuntimeAliases = {
+  'v0.19.1-1': 'v0.19.1',
+  'v0.19.1-3': 'v0.19.1-2',
+  'v0.19.1-4': 'v0.19.1-2',
 };
 
 /// Fixed prospective stage caps sum to 1,050s; FTL still caps the run at 1,200s.
@@ -129,10 +133,13 @@ void requireS24LiteRtProfile(Map<String, dynamic> value, String backend) {
 
 /// Validates a prospective final build binding, independently of run claims.
 void requireS24LiteRtBinding(Map<String, dynamic> value) {
+  final runtimeTag = value['runtime_tag'];
   _require(
     value['schema'] == 1 &&
         value['source_dirty'] == false &&
-        s24LiteRtRuntimeTags.contains(value['runtime_tag']) &&
+        s24LiteRtRuntimeTags.contains(
+          _s24LiteRtRuntimeAliases[runtimeTag] ?? runtimeTag,
+        ) &&
         value['abi'] == 'android-arm64' &&
         value['test_class'] ==
             'com.example.llamadart_chat_example.S24LiteRtPublicTest' &&

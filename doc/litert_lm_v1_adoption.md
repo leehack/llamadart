@@ -70,7 +70,8 @@ completion was present, and the unchanged decoder accepted the journal plus 15
 sidecars extracted from its lossless envelopes. Native GPU and both public
 corrected-auto lifetimes initialized OpenCL with full `LITERT_CL` delegation
 (1306/1306 decode, 1358/1358 prefill) and no CPU fallback. The four legacy
-semantic failures are unchanged.
+semantic failures are unchanged. The host rebuild `v0.19.1-1` shares this run
+because its Android libraries are byte-identical.
 
 It passed again on v0.19.1-2 (matrix `matrix-wmalbq6nz437a`, run
 `pr1830-litert0191-2-s24-20261108`, source `3dd5356d`, 2026-11-08). That
@@ -80,7 +81,8 @@ LiteRT marker. The APK packaged the archive libraries byte-identically. The
 results match v0.19.1: 20/20 PASS, six lifetimes closed, completion present,
 the unchanged decoder accepted journal `a71fb3b3` plus 15 extracted sidecars,
 full `LITERT_CL` delegation with no CPU fallback, and the same four legacy
-semantic failures.
+semantic failures. The rebuilds `v0.19.1-3` and `v0.19.1-4` share this run
+because their Android libraries are byte-identical.
 
 It passed again on v0.19.1-5 (Test Lab matrix `8700956042671373601`, run
 `pr2003-litert0191-5-s24-20261114`, source `73b2a2fe`, 2026-11-14). That Android
@@ -93,8 +95,7 @@ decoder accepted journal `5adffed6` plus 15 extracted sidecars, full
 `LITERT_CL` delegation (1306/1306 decode, 1358/1358 prefill) with no CPU
 fallback, and the same four legacy semantic failures. The OpenCL route is the
 qualified one here; the WebGPU route is covered by the W1c run (Gemma 4 E2B, not
-this graph). The qualifier binding admits `v0.19.1`, `v0.19.1-1` (same Android
-binaries), `v0.19.1-2` and `v0.19.1-5`. See the
+this graph). See the
 [S24 requalification record](cross_platform_validation.md#galaxy-s24-litert-lm-cpu-and-opencl-requalification)
 for `v0.19.1-6`.
 
