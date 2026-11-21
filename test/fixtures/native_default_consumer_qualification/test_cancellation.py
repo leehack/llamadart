@@ -266,10 +266,14 @@ class CancellationControls(unittest.TestCase):
         pid = None
         try:
             deadline = time.monotonic() + 5
-            while not child_pid.exists() and time.monotonic() < deadline and process.poll() is None:
-                time.sleep(.01)
-            self.assertTrue(child_pid.exists(), 'synthetic child did not become ready')
-            pid = int(child_pid.read_text())
+            while time.monotonic() < deadline and process.poll() is None:
+                try:
+                    pid = int(child_pid.read_text())
+                except (FileNotFoundError, ValueError):
+                    time.sleep(.01)
+                else:
+                    break
+            self.assertIsNotNone(pid, 'synthetic child did not publish a valid PID')
             cancelled_at = time.monotonic()
             os.kill(process.pid, signal.SIGTERM)
             _, stderr = process.communicate(timeout=5)
