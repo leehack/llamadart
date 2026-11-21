@@ -209,8 +209,8 @@ Dart 3.12.0 lower bounds on a fresh tree before it sets up Flutter, so
 `FLUTTER_ROOT` and Flutter's Dart cannot affect them.
 
 `Studio packages` checks both checkout-only Studio packages together on Ubuntu.
-It uses Flutter 3.50.0 (Dart 3.14.0), pinned independently in
-`packages/llamadart_studio/.flutter-version`; other lanes retain the root SDK pin.
+Both Studio CI jobs read `packages/llamadart_studio/.flutter-version` and pass
+its Flutter version (3.50.0, with Dart 3.14.0) directly to the setup action.
 Studio changes select this lane without root runtime tests or portable bundles;
 shared runtime and companion changes also select it because Studio consumes them.
 Studio Web files also select the shared version and bridge-pin checks.

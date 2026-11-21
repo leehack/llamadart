@@ -101,28 +101,11 @@ void main() {
   );
 
   test(
-    'Studio admission uses its pinned SDK and fatal analysis for both packages',
+    'Studio admission runs formatting, fatal analysis and both VM suites',
     () {
       final workflow =
           loadYaml(File('.github/workflows/ci.yml').readAsStringSync()) as Map;
       final jobs = workflow['jobs'] as Map;
-      for (final (name, expectedIf) in [
-        ('studio', "needs.changes.outputs.studio == 'true'"),
-        ('studio-macos', "needs.changes.outputs.studio-macos == 'true'"),
-      ]) {
-        final job = jobs[name] as Map;
-        expect(job['if'], expectedIf, reason: name);
-        final setup =
-            (job['steps'] as List).singleWhere(
-                  (step) =>
-                      '${step['uses']}'.startsWith('subosito/flutter-action@'),
-                )
-                as Map;
-        expect(
-          setup['with']['flutter-version-file'],
-          'packages/llamadart_studio/.flutter-version',
-        );
-      }
       final steps = jobs['studio']['steps'] as List;
       for (final (name, package, analyze, test) in [
         (
@@ -158,6 +141,38 @@ void main() {
       }
     },
   );
+
+  for (final name in ['studio', 'studio-macos']) {
+    test('$name explicitly resolves the Studio Flutter pin', () {
+      final workflow =
+          loadYaml(File('.github/workflows/ci.yml').readAsStringSync()) as Map;
+      final job = workflow['jobs'][name] as Map;
+      expect(job['if'], "needs.changes.outputs.$name == 'true'");
+      final steps = (job['steps'] as List).cast<Map>();
+      final setup = steps.singleWhere(
+        (step) => '${step['uses']}'.startsWith('subosito/flutter-action@'),
+      );
+      expect(
+        setup['with']['flutter-version'],
+        r'${{ steps.pin.outputs.version }}',
+      );
+      expect(setup['with']['flutter-version-file'], isNull);
+      expect(setup.containsKey('if'), isFalse);
+      final pin = steps.singleWhere((step) => step['id'] == 'pin');
+      final checkout = steps.singleWhere(
+        (step) => '${step['uses']}'.startsWith('actions/checkout@'),
+      );
+      expect(steps.indexOf(pin), greaterThan(steps.indexOf(checkout)));
+      expect(steps.indexOf(pin), lessThan(steps.indexOf(setup)));
+      expect(pin.containsKey('working-directory'), isFalse);
+      expect(pin.containsKey('if'), isFalse);
+      expect(pin.containsKey('continue-on-error'), isFalse);
+      expect((pin['run'] as String).trim(), r'''
+version=$(cat packages/llamadart_studio/.flutter-version)
+test -n "$version"
+echo "version=$version" >> "$GITHUB_OUTPUT"''');
+    });
+  }
 
   test('Studio packaging-only changes omit Studio macOS admission', () async {
     for (final path in [
