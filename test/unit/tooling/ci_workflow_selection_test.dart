@@ -395,6 +395,48 @@ for event,mode,oldflag,owner,attempt,cancel,good,main in itertools.product(('pus
     expect(warmUp.exitCode, 0, reason: '${warmUp.stderr}');
   });
 
+  test('diagnostic archive downloads bind to the upload ID and retry once', () {
+    final steps =
+        readWorkflow('ci')['jobs']['artifact-contract']['steps'] as List;
+    final upload = steps.singleWhere((step) => step['id'] == 'fixture-upload');
+    expect(upload['with']['name'], 'web-chat-contract-fixture');
+
+    final downloads = steps
+        .where(
+          (step) => '${step['uses']}'.startsWith('actions/download-artifact@'),
+        )
+        .toList();
+    for (final step in downloads) {
+      final inputs = step['with'] as Map;
+      expect(
+        inputs['artifact-ids'],
+        r'${{ steps.fixture-upload.outputs.artifact-id }}',
+      );
+      expect(inputs.keys, isNot(contains(anyOf('name', 'pattern'))));
+      expect(inputs['digest-mismatch'], 'error');
+    }
+    expect(downloads, hasLength(2));
+    final [first, retry] = downloads;
+    expect(steps.indexOf(first), greaterThan(steps.indexOf(upload)));
+    expect(first['id'], 'fixture-download');
+    expect(first['if'], "steps.fixture-upload.outputs.artifact-id != ''");
+    expect(first['continue-on-error'], isTrue);
+    final wait = steps[steps.indexOf(first) + 1];
+    expect(wait['if'], retry['if']);
+    expect(wait['run'], 'sleep 5');
+    expect(steps[steps.indexOf(wait) + 1], same(retry));
+    expect(retry['id'], 'fixture-download-retry');
+    expect(retry['if'], "steps.fixture-download.outcome == 'failure'");
+    expect(retry['continue-on-error'], isNot(isTrue));
+    expect(retry['with']['path'], isNot(first['with']['path']));
+    final verify = steps[steps.indexOf(retry) + 1];
+    expect(
+      verify['env']['DOWNLOAD_PATH'],
+      r'${{ steps.fixture-download-retry.outputs.download-path || '
+      r'steps.fixture-download.outputs.download-path }}',
+    );
+  });
+
   test(
     'production deployment consumes the gated same-run artifact without rebuild',
     () {

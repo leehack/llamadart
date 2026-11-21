@@ -566,7 +566,7 @@ class WorkflowTest(unittest.TestCase):
 
     def test_web_chat_chrome_tests_take_only_their_own_reporter_result(self):
         workflow = (ROOT / '.github/workflows/ci.yml').read_text()
-        lane = workflow.split('\n  web-chat-contract:\n', 1)[1].split('\n  deploy-chat-app:\n', 1)[0]
+        lane = workflow.split('\n  web-chat-contract:\n', 1)[1].split('\n  artifact-contract:\n', 1)[0]
         chrome = lane.index('name: Run chat app Chrome tests with bounded shutdown')
         upload = lane.index('name: Upload chat app Chrome diagnostics')
         restore = lane.index('name: Restore the chat app pubspec')

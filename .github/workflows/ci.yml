@@ -1032,15 +1032,34 @@ jobs:
           retention-days: 1
 
       - name: Download named diagnostic archive
+        id: fixture-download
+        if: steps.fixture-upload.outputs.artifact-id != ''
+        continue-on-error: true
         uses: actions/download-artifact@v8
         with:
-          name: web-chat-contract-fixture
+          artifact-ids: ${{ steps.fixture-upload.outputs.artifact-id }}
+          digest-mismatch: error
           path: downloaded-diagnostics
+
+      # The download action lists artifacts even by ID, and a finalized upload can take time to appear.
+      - name: Allow time for the artifact to become visible
+        if: steps.fixture-download.outcome == 'failure'
+        run: sleep 5
+
+      - name: Retry diagnostic archive download
+        id: fixture-download-retry
+        if: steps.fixture-download.outcome == 'failure'
+        uses: actions/download-artifact@v8
+        with:
+          artifact-ids: ${{ steps.fixture-upload.outputs.artifact-id }}
+          digest-mismatch: error
+          path: retried-diagnostics
 
       - name: Verify archive paths and exact contents
         env:
           ARTIFACT_ID: ${{ steps.fixture-upload.outputs.artifact-id }}
           ARTIFACT_DIGEST: ${{ steps.fixture-upload.outputs.artifact-digest }}
+          DOWNLOAD_PATH: ${{ steps.fixture-download-retry.outputs.download-path || steps.fixture-download.outputs.download-path }}
         run: |
           python3 - <<'PYTHON'
           import os
@@ -1049,7 +1068,7 @@ jobs:
 
           assert os.environ['ARTIFACT_ID'].isdigit()
           assert re.fullmatch(r'[0-9a-f]{64}', os.environ['ARTIFACT_DIGEST'])
-          root = Path('downloaded-diagnostics')
+          root = Path(os.environ['DOWNLOAD_PATH'])
           expected = {'llamadart-build.json', 'webgpu_bridge/manifest.json', 'webgpu_bridge/sha256sums.txt'}
           actual = {p.relative_to(root).as_posix() for p in root.rglob('*') if p.is_file()}
           assert actual == expected, (actual, expected)
