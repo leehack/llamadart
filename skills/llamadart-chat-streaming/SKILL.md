@@ -256,6 +256,13 @@ modalities and speculative strategies before offering them.
 - Use `engine.getTokenCount(text)` for context budgeting instead of estimating
   from characters.
 
+On Web, with bridge assets `v0.1.89+`, catch
+`LlamaModelUnloadedException` to prompt a fresh model load after a direct
+WebAssembly core abort. Load any required projector, draft model or LoRA
+adapters again before retrying. The worker runtime normally restores its
+model automatically. For browser cache prefetch, use HTTP(S) endpoints
+that always return non-empty model bytes and contain no credentials.
+
 ## Examples
 
 Multi-turn chat with cancellation:

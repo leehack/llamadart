@@ -1,7 +1,6 @@
 import 'dart:js_interop';
 import 'dart:js_interop_unsafe';
 
-import '../../core/cache_policy.dart';
 import '../../core/exceptions.dart';
 import 'interop.dart';
 import 'webgpu_decision.dart';
@@ -69,6 +68,8 @@ class WebGpuLoraAdapters {
     final int handle;
     try {
       handle = await pending;
+    } on LlamaModelUnloadedException {
+      rethrow;
     } catch (_) {
       return;
     }
@@ -95,12 +96,11 @@ class WebGpuLoraAdapters {
 
   Future<int> _load(LlamaWebGpuBridge bridge, String path) async {
     try {
+      final cacheUrl = webGpuPersistentCacheUrl(path);
       final raw = await _settle(
         bridge.loadLoraAdapter(
-          path,
-          WebGpuLoraAdapterLoadOptions(
-            useCache: !hasPersistentCacheSensitiveUrlParts(path),
-          ),
+          cacheUrl ?? path,
+          WebGpuLoraAdapterLoadOptions(useCache: cacheUrl != null),
         ),
       );
       final handle = raw != null && raw.isA<JSObject>()
@@ -126,6 +126,7 @@ class WebGpuLoraAdapters {
     if (bridge == null) {
       throw UnsupportedError(_unsupported('no model is loaded'));
     }
+    webGpuThrowIfModelUnloaded(bridge);
     for (final name in const <String>[
       'getLoraAdapterCapabilities',
       'loadLoraAdapter',
@@ -143,10 +144,13 @@ class WebGpuLoraAdapters {
     try {
       raw = await _settle(bridge.getLoraAdapterCapabilities());
     } catch (error) {
+      final unloaded = webGpuModelUnloadedError(error);
+      if (unloaded != null) throw unloaded;
       throw UnsupportedError(
         _unsupported('the probe failed: ${webGpuBridgeErrorText(error)}'),
       );
     }
+    webGpuThrowIfModelUnloaded(bridge);
     if (raw == null || !raw.isA<JSObject>()) {
       throw UnsupportedError(_unsupported('the probe response is invalid'));
     }

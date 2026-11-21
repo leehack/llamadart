@@ -67,11 +67,11 @@ an earlier `<script>`:
 
 ## Pinned assets
 
-Default pinned tag in the example is `v0.1.87`.
+Default pinned tag in the example is `v0.1.89`.
 Vendor the pinned assets into the chat app with:
 
 ```bash
-WEBGPU_BRIDGE_ASSETS_TAG=v0.1.87 ./scripts/fetch_webgpu_bridge_assets.sh
+WEBGPU_BRIDGE_ASSETS_TAG=v0.1.89 ./scripts/fetch_webgpu_bridge_assets.sh
 ```
 
 `WEBGPU_BRIDGE_OUT_DIR` changes the destination. The script verifies
@@ -90,17 +90,17 @@ the chat app, set the bootstrap globals before the bootstrap runs:
 ```html
 <script>
   window.__llamadartBridgeAssetsRepo = 'leehack/llama-web-bridge-assets';
-  window.__llamadartBridgeAssetsTag = 'v0.1.87';
+  window.__llamadartBridgeAssetsTag = 'v0.1.89';
 </script>
 ```
 
 That release embeds llama.cpp `v1.0.0`, matching the `hook/build.dart` native pin
 (`v1.0.0-4`, both built from upstream llama.cpp `v1.0.0@b1b770d90d94cad9e9ea5b993bdbc383a522fb28`)
-even though the bridge asset tag `v0.1.87` differs from the native runtime tag
-`v1.0.0-4`. Provenance for this immutable consumer artifact: release `453141343`,
-tag commit `42be158f58427b7b9a168e1c2121f74c3c4cc413`, bridge source
-`3cf2aaed32acefade1ea603748d3dedb760125bd`, and manifest SHA-256
-`922574bd6389f9ec8ce1ba41d291ba80b1d9f50906f860e8c74f7a9997c0edf9`.
+even though the bridge asset tag `v0.1.89` differs from the native runtime tag
+`v1.0.0-4`. Provenance for this immutable consumer artifact: release `453680519`,
+tag commit `88e606a64b2f2d0d300a26017fe802e00997959a`, bridge source
+`8d911fccf84f131440d104a85fb283b51e32f967`, and manifest SHA-256
+`36824ae55158b57e9c56bb6f754e4d06a658db11904de212e9db8faa67f8becd`.
 They expose the API-version-1 media embedding contract. State and extraction
 qualification covers wasm32 and memory64 through direct and worker runtimes. Existing decision,
 scoring, sampling, LoRA, speculative decoding and speech APIs remain available.
@@ -332,14 +332,28 @@ web backend load options).
 
 - The first load of a model URL fetches from the network and stores it in the
   cache; later loads of the same URL can come from the cache.
+  Cache eligibility uses the document base on a page and the script URL in an
+  application-owned worker.
 - Model URLs with userinfo, a fragment or a credential-like query key (such as
   `token`, `key`, `sig`, `signature`, `expires`, `session`, or any `x-amz-*` or
   `x-goog-*` key) are treated as credential-sensitive: `llamadart` passes
   `useCache: false`, so the bridge loads them with no persistent Cache Storage
   key. Other query strings, such as Hugging Face's `?download=true`, keep the
   cache; `hasPersistentCacheSensitiveUrlParts` applies the rule.
-- Multimodal projector loads are direct bridge fetches and do not use the
-  model cache.
+- With assets `v0.1.89+`, the backend and chat app use
+  `LlamaWebGpuBridge.supportsModelCacheQuery === true` to query committed
+  records through `isModelCached`. Split models require every shard. A WebKit
+  hit is advisory because the query does not read or verify the parts. A later
+  load can retry from the network when a part is missing or damaged.
+- For the same assets, projector loads pass the original resolved URL and
+  use the prefetch cache name. Only HTTP(S) URLs without credential-sensitive
+  parts are eligible. Cache policy checks the URL resolved by the browser.
+  Older bridges use the whole-response or blob-URL path for existing Cache
+  Storage entries. An explicit chat-app download requires a confirmed cache
+  hit or a successful prefetch. A failed cache query preserves saved markers.
+- Prefetch only file URLs that return a non-empty model or projector. An
+  endpoint that can respond with 204 is unsuitable for prefetch. The app
+  rejects a prefetch that reports zero bytes and evicts the empty entry.
 - Cache availability depends on browser storage quota and private-mode policy.
   Chromium keeps Cache Storage in memory in Incognito windows and other
   off-the-record profiles, including Playwright's `browser.new_context()`, and
@@ -438,6 +452,7 @@ window.LlamaWebGpuBridge = class LlamaWebGpuBridge {
 
 - `loadModelFromUrl(url, { nCtx, nThreads, nThreadsBatch, nBatch, nUbatch, nGpuLayers, nSeqMax, flashAttention, cacheTypeK, cacheTypeV, kvUnified, ropeFrequencyBase, ropeFrequencyScale, splitMode, mainGpu, useCache, forceRemoteFetchBackend, remoteFetchChunkBytes, loadMtp, speculativeRollbackTokenMax, progressCallback })`
 - `prefetchModelToCache(url, { useCache, force, cacheName, progressCallback })`
+- `isModelCached(url, { cacheName })` when the static cache query flag is true
 - `evictModelFromCache(url, { cacheName })`
 - `loadMultimodalProjector(url)`
 - `unloadMultimodalProjector()`
@@ -586,6 +601,12 @@ in both runtimes.
   fetch-backed loading after a streamed staging failure.
 - `window.__llamadartBridgeForceRemoteFetchBackend`: default `false`. `true`
   forces fetch-backed loading from the first attempt, for diagnostics only.
+  With the pinned bridge assets, limit forced loads to four per threaded core.
+  WasmFS retains a proxy thread per load, so the fifth stalls on the default
+  four-thread pool. The fetch backend can also truncate the GGUF URL to its
+  directory. Both fixes are planned for `v0.1.90`.
+  [Bridge #301](https://github.com/leehack/llama-web-bridge/issues/301),
+  [bridge #288](https://github.com/leehack/llama-web-bridge/issues/288).
 - `window.__llamadartBridgeRemoteFetchChunkBytes`: positive integer bytes;
   default `4 * 1024 * 1024`, clamped to 4 KiB..16 MiB. Applies to fetch-backed
   loading.
@@ -600,6 +621,14 @@ in both runtimes.
   [Safari compatibility](#safari-compatibility).
 
 ## Request errors
+
+With assets `v0.1.89+`, a model-dependent call after direct Wasm core
+retirement surfaces `LlamaModelUnloadedException` when the bridge reports
+`MODEL_UNLOADED_AFTER_CORE_ABORT`. Reload the model and any required
+projector, draft model or LoRA adapters. The call that triggered retirement
+still reports the original failure. Worker mode normally replaces the worker
+and restores the model and its active LoRA adapters on demand. A plain error
+message containing "aborted" does not trigger the Dart load retry policy.
 
 Invalid WebGPU request arguments surface as `LlamaArgumentException`;
 capability rejections remain `LlamaUnsupportedException`. `scoreNextToken`

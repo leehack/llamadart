@@ -2,6 +2,7 @@ import 'dart:js_interop';
 import 'dart:js_interop_unsafe';
 
 import '../../core/exceptions.dart';
+import 'interop.dart';
 import 'webgpu_decision.dart';
 
 /// Preserves argument validation as a typed backend failure.
@@ -64,6 +65,50 @@ const String webGpuThinkingBudgetMultiEndRequired =
     'WebGPU template-derived thinking-budget ends require bridge assets '
     'v0.1.87+ whose core reports thinkingBudgetMultiEnd.';
 
+/// Maps the bridge's stable post-abort state error on either runtime.
+LlamaModelUnloadedException? webGpuModelUnloadedError(Object error) {
+  if (error is LlamaModelUnloadedException) return error;
+  try {
+    final object = error as JSObject;
+    final code = object.getProperty<JSAny?>('code'.toJS);
+    if (code.isA<JSString>() &&
+        (code as JSString).toDart == 'MODEL_UNLOADED_AFTER_CORE_ABORT') {
+      return LlamaModelUnloadedException();
+    }
+  } catch (_) {
+    // Primitive rejections carry no bridge error code.
+  }
+  return null;
+}
+
+/// Preserves direct core retirement when a capability preflight would mask it.
+void webGpuThrowIfModelUnloaded(LlamaWebGpuBridge bridge) {
+  final bool unloaded;
+  try {
+    final metadata = bridge.getModelMetadata();
+    if (metadata == null ||
+        metadata
+                .getProperty<JSString?>('llamadart.webgpu.execution'.toJS)
+                ?.toDart !=
+            'main-thread' ||
+        metadata
+                .getProperty<JSString?>('llamadart.webgpu.model_bytes'.toJS)
+                ?.toDart !=
+            '0') {
+      return;
+    }
+    // The bridge publishes core_retired on the direct runtime snapshot. The
+    // model byte count distinguishes retirement from notes retained after load.
+    final notes = metadata
+        .getProperty<JSString?>('llamadart.webgpu.runtime_notes'.toJS)
+        ?.toDart;
+    unloaded = notes?.split(';').contains('core_retired') ?? false;
+  } catch (_) {
+    return;
+  }
+  if (unloaded) throw LlamaModelUnloadedException();
+}
+
 /// Classifies request rejections without reclassifying unknown runtime errors.
 ///
 /// General request validators expose JS RangeError/TypeError. Media embedding
@@ -73,6 +118,8 @@ LlamaException? webGpuBridgeRequestError(
   Iterable<String> sourceUrls = const <String>[],
 }) {
   if (error is LlamaException) return error;
+  final unloaded = webGpuModelUnloadedError(error);
+  if (unloaded != null) return unloaded;
   String? name;
   try {
     final value = (error as JSObject).getProperty<JSAny?>('name'.toJS);

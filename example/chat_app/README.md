@@ -666,6 +666,12 @@ await prefs.setInt('preferred_backend', backendIndex);
   replacing normal text paste. Clipboard attachments are capped at 64 MB.
 - On web, model files are loaded by URL (local file download/cache flow differs from native).
 - On web, **Download** prefetches model/mmproj bytes into browser Cache Storage with progress.
+  Use file endpoints that return a non-empty response. With bridge assets
+  `v0.1.89+`, the app recognizes committed WebKit cache entries for models
+  and projectors. A later load can fetch from the network if a cached part
+  is missing or damaged.
+- After `LlamaModelUnloadedException` in direct Web mode, reload the model
+  and any projector before retrying.
 - Loading a remote HTTP(S) model URL first prefetches it into the browser
   cache. If `CacheStorage` is unavailable, over quota, or rejects the write,
   the app loads the model from the network instead of failing. Model URLs with
@@ -687,8 +693,14 @@ await prefs.setInt('preferred_backend', backendIndex);
   bootstrap only for a controlled range-capable model origin. This explicit
   opt-in also permits fetch-backed recovery retries after streamed staging
   failures. For diagnostics that must use fetch-backed loading from the first
-  attempt, set `window.__llamadartBridgeForceRemoteFetchBackend = true`;
-  prefer the automatic opt-in for ordinary deployments.
+  attempt, set `window.__llamadartBridgeForceRemoteFetchBackend = true`.
+  Prefer the automatic opt-in for ordinary deployments.
+  With the pinned bridge assets, limit forced loads to four per threaded core.
+  The fifth stalls on the default four-thread pool. Fetch-backed loading can
+  also truncate the GGUF URL to its directory. Both fixes are planned for
+  `v0.1.90`.
+  [Bridge #301](https://github.com/leehack/llama-web-bridge/issues/301),
+  [bridge #288](https://github.com/leehack/llama-web-bridge/issues/288).
 - You can tune fetch-backed model read chunk size by setting
   `window.__llamadartBridgeRemoteFetchChunkBytes = <bytes>` before bridge bootstrap
   (default `4 * 1024 * 1024`, clamped to `4KiB..16MiB`).

@@ -1694,7 +1694,7 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
       description:
           'Check pinned-asset lazy grammar activation, custom roots, '
           'thinking-budget grammar and typed rejection/reuse in direct and '
-          'worker CPU Wasm runtimes.',
+          'worker CPU Wasm runtimes, plus app-owned worker model caching.',
       requiresDevice: false,
       stepsBuilder: (context) => [
         LocalE2eCommandStep(
@@ -1711,6 +1711,18 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
           workingDirectory: context.projectRoot,
           executable: 'dart',
           arguments: const [
+            'compile',
+            'js',
+            'test/e2e/webgpu/fixtures/worker_model_cache.dart',
+            '-o',
+            'build/web_lazy_grammar/worker_model_cache.js',
+          ],
+          description: 'Compile the app-owned worker cache probe',
+        ),
+        LocalE2eCommandStep(
+          workingDirectory: context.projectRoot,
+          executable: 'dart',
+          arguments: const [
             'test',
             '-p',
             'chrome-webgpu',
@@ -1720,10 +1732,11 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
             'test/e2e/webgpu/lazy_grammar_e2e_test.dart',
             'test/e2e/webgpu/prompt_penalty_grammar_e2e_test.dart',
             'test/e2e/webgpu/thinking_budget_grammar_e2e_test.dart',
+            'test/e2e/webgpu/worker_model_cache_e2e_test.dart',
           ],
           description:
               'Web lazy grammar, prompt penalties, thinking-budget grammar '
-              'and error recovery',
+              'and app-owned worker model caching',
         ),
       ],
     ),
