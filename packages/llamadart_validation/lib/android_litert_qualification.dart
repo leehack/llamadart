@@ -34,6 +34,7 @@ const s24LiteRtNativeLibraries = {
 /// Android arm64 archives hold the same libraries as `v0.19.1-2` (#1798, #1911).
 /// `v0.19.1-5` changes the Android `libLiteRtLm.so` again (it links the WebGPU
 /// top-k sampler, #1998) and is admitted for its S24 requalification.
+/// `v0.19.1-6` is admitted for S24 requalification of the recurrent-state fix (#672).
 const s24LiteRtRuntimeTags = {
   'v0.19.1',
   'v0.19.1-1',
@@ -41,6 +42,7 @@ const s24LiteRtRuntimeTags = {
   'v0.19.1-3',
   'v0.19.1-4',
   'v0.19.1-5',
+  'v0.19.1-6',
 };
 
 /// Fixed prospective stage caps sum to 1,050s; FTL still caps the run at 1,200s.
