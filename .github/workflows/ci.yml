@@ -93,9 +93,15 @@ jobs:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
+      - name: Read Studio Flutter pin
+        id: pin
+        run: |
+          version=$(cat packages/llamadart_studio/.flutter-version)
+          test -n "$version"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
       - uses: subosito/flutter-action@v2
         with:
-          flutter-version-file: packages/llamadart_studio/.flutter-version
+          flutter-version: ${{ steps.pin.outputs.version }}
           channel: stable
           cache: true
       - name: Analyze and test Studio core
@@ -147,9 +153,15 @@ jobs:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
+      - name: Read Studio Flutter pin
+        id: pin
+        run: |
+          version=$(cat packages/llamadart_studio/.flutter-version)
+          test -n "$version"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
       - uses: subosito/flutter-action@v2
         with:
-          flutter-version-file: packages/llamadart_studio/.flutter-version
+          flutter-version: ${{ steps.pin.outputs.version }}
           channel: stable
           cache: true
       - name: Exercise the native Flutter accessibility and lifecycle bridge

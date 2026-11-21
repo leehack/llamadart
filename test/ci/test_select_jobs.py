@@ -183,15 +183,11 @@ class SelectionTest(unittest.TestCase):
         self.assertIn('macos_static_semantics_test.dart', native)
         self.assertIn('macos_app_delegate_test.dart', native)
 
-    def test_studio_uses_its_own_sdk_pin_without_changing_other_lanes(self):
+    def test_ci_passes_the_root_sdk_pin_directly(self):
         workflow = (ROOT / '.github/workflows/ci.yml').read_text()
-        studio = workflow.split('\n  studio:\n', 1)[1].split('\n  genkit:\n', 1)[0]
-        self.assertIn('flutter-version-file: packages/llamadart_studio/.flutter-version',
-                      studio)
-        self.assertNotIn('flutter-version:', studio)
-        self.assertIn('working-directory: packages/llamadart_studio_core', studio)
-        self.assertIn('working-directory: packages/llamadart_studio', studio)
-        self.assertIn('flutter-version: 3.47.1', workflow)
+        root_pin = (ROOT / '.flutter-version').read_text().strip()
+        root_lanes = workflow.split('\n  genkit:\n', 1)[1]
+        self.assertIn(f'flutter-version: {root_pin}', root_lanes)
 
     def test_studio_web_changes_run_the_shared_bridge_pin_gate(self):
         plan = ci.select(['packages/llamadart_studio/web/index.html'])
