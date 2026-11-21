@@ -1674,6 +1674,32 @@ step rather than each request; the shipped binary is not attested against the
 sources read; the Pixel has no system-side GPU telemetry; Set B ran on a Debug app and the
 CPU runs on `v0.19.1-4`. The runs cover one schema contract and two models, not every model or driver.
 
+## Galaxy S24 LiteRT-LM CPU and OpenCL requalification
+
+The fixed native and public service graph ran on Galaxy S24 SC-51E, API 36,
+SM8650, from source `c35bd5ded9ba18dd31dd854ecb0087386d44d309`.
+Test Lab matrix `5478981892550641608` (`matrix-3335g4hz2ur71`, run
+`pr2133-litert0191-6-s24-20261121`) used the published LiteRT-LM `v0.19.1-6`
+Android arm64 archive SHA-256
+`2c1d9dfb62b02ef2a2c73f7bb4089f84a8c10363d8f2e36560263f62aa984fcb`.
+The packaged `libLiteRtLm.so` matched the release digest
+`c0ead005d1fda4dd9859bd5d3af5c179d30851c1319b7516f63bcac3a10a3d4e`.
+
+The result matched the `v0.19.1-5` matrix `8700956042671373601`. All 20 cases
+passed, six engine lifetimes closed, and all 12 corrected Qwen3-0.6B hello and
+arithmetic replies matched byte for byte. Native GPU and public auto used
+OpenCL with full `LITERT_CL` delegation (1306/1306 decode and 1358/1358 prefill);
+corrected auto stayed on GPU in both lifetimes. Legacy auto fell back to CPU as
+expected and had the same four hello and arithmetic semantic failures.
+
+Both provider journal aliases matched SHA-256
+`38a49f4103d9bc59eba9bd1af7e66afc9886eda4e5a96c72181e8d04a42f8d5b`
+with final completion. As in the predecessor, standalone sidecars were absent
+from the provider export. Replay verified 259 embedded captures and extracted
+15 sidecars from the journal. Provider logcat corroborated the OpenCL graph
+counts. The graph covers corrected Qwen3 C04, while Qwen3.5 fresh-engine parity
+and the exact `Montréal 👋` fixture require separate device scenarios.
+
 ## Linux x64 strict JSON Schema on CPU and GPU (2026-11-14)
 
 `run_local_e2e.dart --scenario litert-lm-json-schema` on a GCE g2-standard-8

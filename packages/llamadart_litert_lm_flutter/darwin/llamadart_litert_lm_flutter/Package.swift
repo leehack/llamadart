@@ -4,7 +4,7 @@ import PackageDescription
 
 let packageRoot = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
 let artifactsRoot = packageRoot.appendingPathComponent("Artifacts")
-let liteRtLmTag = "v0.19.1-5"
+let liteRtLmTag = "v0.19.1-6"
 
 func localArtifactPath(_ name: String) -> String? {
     let path = artifactsRoot.appendingPathComponent(name).path
@@ -47,28 +47,28 @@ let package = Package(
             repository: "leehack/litert-lm-native",
             artifactName: "litert-lm-native-apple-LiteRtLm-xcframework-\(liteRtLmTag).zip",
             tag: liteRtLmTag,
-            checksum: "ba8850a5eddad1076f9f972d628235fbe6faa76f19d8e80ed41b7b07c9e9fab5"
+            checksum: "96e308ed784788cce458fbed45ea716d5f62c8cef973be1d378467e1d70f0184"
         ),
         nativeRepoBinaryTarget(
             name: "CLiteRTLM",
             repository: "leehack/litert-lm-native",
             artifactName: "litert-lm-native-apple-CLiteRTLM-xcframework-\(liteRtLmTag).zip",
             tag: liteRtLmTag,
-            checksum: "a5de01e7eda7f06816be516b897897d8ac4cdd4bfeaf2a82fcf12f945125b9ba"
+            checksum: "6a9dab34b8da2a4240c4f6f06b0855b6eec33fcd6540c9cad8bd0f36fabc4812"
         ),
         nativeRepoBinaryTarget(
             name: "CLiteRTLMMac",
             repository: "leehack/litert-lm-native",
             artifactName: "litert-lm-native-apple-CLiteRTLMMac-xcframework-\(liteRtLmTag).zip",
             tag: liteRtLmTag,
-            checksum: "baccbd0a9768880c7b7758a65461f11c7000710db639eeee80c8289d4afa25b8"
+            checksum: "9962a65d2c7072e23b1c3861e1d8a9a2c4fc36c124289edfc03a6c1d64eaecf1"
         ),
         nativeRepoBinaryTarget(
             name: "WebgpuDawn",
             repository: "leehack/litert-lm-native",
             artifactName: "litert-lm-native-apple-WebgpuDawn-xcframework-\(liteRtLmTag).zip",
             tag: liteRtLmTag,
-            checksum: "db96a071efe166c0648f6e469c2365207ca5e7ad43c070c8d1d0ba145c6ea229"
+            checksum: "d3954d8d742bf0bbde593a983e376974640341d7c5970bc16c5c71caa422a243"
         ),
         .target(
             name: "llamadart_litert_lm_flutter",

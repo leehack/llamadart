@@ -249,12 +249,12 @@ void main() {
   });
 
   test('LiteRT-LM SwiftPM targets match the published owner manifest', () {
-    // Published manifest SHA-256 b8d5d196e1c9c64026aad52ae14a9909228eabe6eceb4837a7cab60fffe58d9f;
-    // verified against GitHub asset metadata and the independent #2003 receipt.
+    // Published manifest SHA-256 489f5f1936a09d2f77f99a5d66af060762c335abd548262f3dcbb13e06af1621;
+    // verified against GitHub asset metadata for litert-lm-native#122.
     final manifest =
         jsonDecode(
               File(
-                'test/fixtures/native/litert_lm_v0_19_1_5_manifest.json',
+                'test/fixtures/native/litert_lm_v0_19_1_6_manifest.json',
               ).readAsStringSync(),
             )
             as Map<String, dynamic>;

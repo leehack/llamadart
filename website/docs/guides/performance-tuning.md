@@ -114,6 +114,12 @@ Native LiteRT-LM `.litertlm` loads have their own opt-in fields, listed in
 After changing the activation type or prefill chunk size, benchmark load time,
 prefill and decode throughput, and output quality on the deployment device.
 
+On macOS Metal, LiteRT-LM `v0.19.1-6` disables sampler lookahead for models
+that declare linear attention to keep independent requests consistent on a
+reused engine. On an Apple M4 Max, median Qwen3.5-0.8B int8 decode throughput
+was 109 tokens/s with the guard and 151 tokens/s with only the state reset.
+[Runtime fix and qualification](https://github.com/leehack/litert-lm-native/pull/122).
+
 ## Generation tuning (`GenerationParams`)
 
 ```dart
