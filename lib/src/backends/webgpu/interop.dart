@@ -27,6 +27,12 @@ extension type LlamaWebGpuBridge._(JSObject _) implements JSObject {
     WebGpuCacheOptions? options,
   ]);
 
+  /// Checks for a committed cache record for every shard of [url].
+  external JSPromise<JSBoolean> isModelCached(
+    String url, [
+    WebGpuCacheQueryOptions? options,
+  ]);
+
   /// Generates completion output for a prompt.
   external JSPromise<JSAny?>? createCompletion(
     String prompt, [
@@ -47,7 +53,10 @@ extension type LlamaWebGpuBridge._(JSObject _) implements JSObject {
   external JSPromise<JSAny?>? unloadDraftModel();
 
   /// Loads multimodal projector from URL/path.
-  external JSPromise<JSAny?>? loadMultimodalProjector(String url);
+  external JSPromise<JSAny?>? loadMultimodalProjector(
+    String url, [
+    WebGpuProjectorLoadOptions? options,
+  ]);
 
   /// Unloads multimodal projector if loaded.
   external JSPromise<JSAny?>? unloadMultimodalProjector();
@@ -182,6 +191,31 @@ extension type WebGpuBridgeConfig._(JSObject _) implements JSObject {
     int? remoteFetchChunkBytes,
     int? logLevel,
     JSObject? logger,
+  });
+}
+
+/// Static capabilities on the JS bridge constructor.
+extension type WebGpuBridgeConstructor._(JSObject _) implements JSObject {
+  /// Whether the bridge supports cache queries and cached projector loads.
+  external JSAny? get supportsModelCacheQuery;
+}
+
+/// Model cache query options.
+@JS()
+@anonymous
+extension type WebGpuCacheQueryOptions._(JSObject _) implements JSObject {
+  /// Selects the cache to query.
+  external factory WebGpuCacheQueryOptions({required String cacheName});
+}
+
+/// Multimodal projector cache options.
+@JS()
+@anonymous
+extension type WebGpuProjectorLoadOptions._(JSObject _) implements JSObject {
+  /// Selects whether the bridge reads or writes its projector cache.
+  external factory WebGpuProjectorLoadOptions({
+    required bool useCache,
+    required String cacheName,
   });
 }
 

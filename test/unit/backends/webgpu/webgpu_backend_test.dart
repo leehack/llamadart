@@ -20,6 +20,7 @@ import 'package:web/web.dart'
         BlobPropertyBag,
         DOMException,
         Event,
+        HTMLBaseElement,
         Response,
         URL,
         document,
@@ -40,6 +41,12 @@ external JSObject _jsRangeError(String message);
 
 @JS('TypeError')
 external JSObject _jsTypeError(String message);
+
+JSObject _retiredBridgeMetadata() => JSObject()
+  ..['llamadart.webgpu.execution'] = 'main-thread'.toJS
+  ..['llamadart.webgpu.model_bytes'] = '0'.toJS
+  ..['llamadart.webgpu.runtime_notes'] =
+      'core_retired;core_retired_threads_unavailable'.toJS;
 
 void main() {
   group('WebGpuLlamaBackend Unit', () {
@@ -2850,6 +2857,121 @@ void main() {
       expect(lastTokenEventEncoding, 'bytes');
       expect(lastTokenEventFlushMs, 28);
       expect(lastTokenEventFlushChars, 48);
+    });
+
+    for (final errorShape in ['direct', 'worker', 'message only']) {
+      test(
+        'maps model-unloaded bridge errors by identity ($errorShape)',
+        () async {
+          final error = _jsError(
+            'The native core aborted and unloaded the model.',
+          );
+          if (errorShape == 'direct') {
+            error.setProperty('name'.toJS, 'ModelUnloadedError'.toJS);
+          }
+          if (errorShape != 'message only') {
+            error.setProperty(
+              'code'.toJS,
+              'MODEL_UNLOADED_AFTER_CORE_ABORT'.toJS,
+            );
+          }
+          bridge.setProperty(
+            'createCompletion'.toJS,
+            ((String prompt, JSObject options) => _rejectPromise(error)).toJS,
+          );
+
+          await backend.modelLoadFromUrl(
+            'https://example.com/model.gguf',
+            const ModelParams(),
+          );
+
+          final expected = errorShape == 'message only'
+              ? 'LlamaInferenceException'
+              : 'LlamaModelUnloadedException';
+          await expectLater(
+            backend.generate(1, 'Hello', const GenerationParams()),
+            emitsError(
+              isA<LlamaException>().having(
+                (error) => error.runtimeType.toString(),
+                'runtime type',
+                expected,
+              ),
+            ),
+          );
+        },
+      );
+    }
+
+    test(
+      'uses bridge cache queries before model load and forwards projector options',
+      () async {
+        final constructor = JSObject()
+          ..setProperty('supportsModelCacheQuery'.toJS, true.toJS);
+        bridge.setProperty('constructor'.toJS, constructor);
+        final queries = <(String, String)>[];
+        bridge.setProperty(
+          'isModelCached'.toJS,
+          ((String url, JSObject options) {
+            queries.add((
+              url,
+              options.getProperty<JSString>('cacheName'.toJS).toDart,
+            ));
+            return Future<JSBoolean>.value(true.toJS).toJS;
+          }).toJS,
+        );
+        final projectors = <(String, bool, String)>[];
+        bridge.setProperty(
+          'loadMultimodalProjector'.toJS,
+          ((String url, JSObject options) {
+            projectors.add((
+              url,
+              options.getProperty<JSBoolean>('useCache'.toJS).toDart,
+              options.getProperty<JSString>('cacheName'.toJS).toDart,
+            ));
+            return Future<JSNumber>.value(1.toJS).toJS;
+          }).toJS,
+        );
+
+        const model = 'https://example.com/model-00001-of-00002.gguf';
+        const projector = 'https://example.com/mmproj.gguf';
+        const signedProjector = 'https://example.com/mmproj.gguf?token=secret';
+        const cacheName = 'llamadart-webgpu-model-cache-v1';
+        await backend.modelLoadFromUrl(model, const ModelParams());
+        expect(queries, [(model, cacheName)]);
+        expect(lastRequestedForceRemoteFetchBackend, isFalse);
+        await backend.multimodalContextCreate(1, projector);
+        await backend.multimodalContextCreate(1, signedProjector);
+        expect(projectors, [
+          (projector, true, cacheName),
+          (signedProjector, false, cacheName),
+        ]);
+      },
+    );
+
+    test('checks projector cache policy on the browser-resolved URL', () async {
+      final base = document.createElement('base') as HTMLBaseElement
+        ..href = 'https://fixture.invalid/app/';
+      document.head!.prepend(base);
+      addTearDown(() => base.remove());
+      bridge['constructor'] = JSObject()
+        ..['supportsModelCacheQuery'] = true.toJS;
+      final cacheFlags = <bool>[];
+      bridge['loadMultimodalProjector'] = ((String url, JSObject options) {
+        cacheFlags.add(options.getProperty<JSBoolean>('useCache'.toJS).toDart);
+        return Future<JSNumber>.value(1.toJS).toJS;
+      }).toJS;
+      await backend.modelLoadFromUrl(
+        'https://fixture.invalid/model.gguf',
+        const ModelParams(),
+      );
+      for (final reference in [
+        'https:projector.gguf?token=fixture',
+        '//fixture.invalid/projector.gguf?token=fixture',
+        'https:projector.gguf?download=true',
+      ]) {
+        await backend.multimodalContextCreate(1, reference);
+      }
+      expect(cacheFlags, [false, false, true]);
     });
 
     test(
@@ -6070,6 +6192,51 @@ void main() {
       expect(sawAudioBytes, isTrue);
     });
 
+    test('speech and media preflights preserve direct retirement', () async {
+      backend = WebGpuLlamaBackend(
+        promptSpeechToTextSupported: true,
+        bridgeFactory: ([WebGpuBridgeConfig? config]) =>
+            bridge as LlamaWebGpuBridge,
+      );
+      final engine = LlamaEngine(backend);
+      addTearDown(engine.dispose);
+      await engine.loadModelFromUrl('https://example.invalid/model.gguf');
+      await engine.loadMultimodalProjectorSource(
+        ModelSource.parse('https://example.invalid/projector.gguf'),
+      );
+      final speech = TextToSpeechEngine.attach(
+        engine,
+        adapter: const Qwen3TtsAdapter(),
+      );
+      addTearDown(speech.dispose);
+      final recognition = SpeechToTextEngine.attach(
+        engine,
+        adapter: const Qwen3AsrAdapter(),
+      );
+      addTearDown(recognition.dispose);
+      bridge['getModelMetadata'] = _retiredBridgeMetadata.toJS;
+
+      await expectLater(
+        speech.synthesize(const TextToSpeechRequest(text: 'Hello')),
+        throwsA(isA<LlamaModelUnloadedException>()),
+      );
+      await expectLater(
+        recognition.transcribe(
+          SpeechToTextRequest(
+            audio: SpeechAudioBytesInput(
+              Uint8List.fromList([1, 2, 3]),
+              format: const SpeechAudioFormat(encoding: 'wav'),
+            ),
+          ),
+        ),
+        throwsA(isA<LlamaModelUnloadedException>()),
+      );
+      await expectLater(
+        engine.embeddingCapabilities,
+        throwsA(isA<LlamaModelUnloadedException>()),
+      );
+    });
+
     test('requires versioned bridge methods for text-to-speech', () async {
       await backend.modelLoadFromUrl(
         'https://example.com/model.gguf',
@@ -7481,6 +7648,46 @@ void main() {
     });
 
     group('LoRA adapters', () {
+      test(
+        'public LoRA calls preserve the reload error after direct retirement',
+        () async {
+          final engine = LlamaEngine(backend);
+          addTearDown(engine.dispose);
+          await engine.loadModelFromUrl('model.gguf');
+          final source = ModelSource.path('adapter.gguf');
+          await engine.setLoraSource(source);
+          fake().object['getModelMetadata'] = _retiredBridgeMetadata.toJS;
+          fake().loraCapabilitiesResult = JSObject()
+            ..['apiVersion'] = 1.toJS
+            ..['supported'] = false.toJS
+            ..['reason'] = 'WebGPU core is not initialized'.toJS;
+          final rejected = _jsError(
+            'The native core aborted and unloaded the model',
+          )..['code'] = 'MODEL_UNLOADED_AFTER_CORE_ABORT'.toJS;
+          fake().object['clearLoraAdapters'] = (() => _rejectPromise(
+            rejected,
+          )).toJS;
+
+          for (final operation in <Future<void> Function()>[
+            engine.clearLoras,
+            () => engine.setLoraSource(source),
+            () => engine.removeLoraSource(source),
+          ]) {
+            await expectLater(
+              operation(),
+              throwsA(isA<LlamaModelUnloadedException>()),
+            );
+          }
+          fake().object['getModelMetadata'] =
+              (() => _retiredBridgeMetadata()
+                    ..['llamadart.webgpu.model_bytes'] = '123'.toJS)
+                  .toJS;
+          fake().loraCapabilitiesResult = null;
+          await engine.setLoraSource(source, scale: 0.5);
+          expect(fake().appliedAdapters.values, [0.5]);
+        },
+      );
+
       test('applies adapters through the active bridge', () async {
         await loadModel();
         await backend.setLoraAdapter(1, 'adapter.gguf', 0.5);

@@ -1384,6 +1384,8 @@ class SpeechToTextEngine implements LlamadartEngine<SpeechToTextCapabilities> {
     bool supportsAudio;
     try {
       supportsAudio = await engine.supportsAudio;
+    } on LlamaModelUnloadedException {
+      rethrow;
     } catch (error) {
       return SpeechToTextCapabilities(
         isSupported: false,

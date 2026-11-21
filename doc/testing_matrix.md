@@ -1636,6 +1636,10 @@ requested grammar for word, pattern and pattern-full triggers. A scored token
 checks token activation. Custom-root, missing-trigger, invalid-grammar and replay
 rejection controls must preserve the runtime and subsequent plain output.
 
+The runner also compiles an app-owned worker. It checks that the first model
+load stores a cache entry and a fresh engine reuses it for both absolute and
+worker-relative references to the staged model.
+
 The prompt-penalty control also runs wasm32 and memory64 in both direct and
 worker modes, checking actual runtime metadata. It finds a decisive scored
 prompt token, verifies unchanged ordinary grammar defaults, and verifies that

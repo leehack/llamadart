@@ -362,7 +362,7 @@ void main() {
       ),
     );
   });
-  test('Web grammar matrix dispatches both pinned-asset Wasm suites', () async {
+  test('Web grammar matrix dispatches pinned-asset Wasm suites', () async {
     final row = testMatrixRows.singleWhere(
       (row) => row.id == 'web-lazy-grammar',
     );
@@ -378,13 +378,22 @@ void main() {
       },
     );
     expect(result.exitCode, 0, reason: result.stderr);
-    expect(steps, hasLength(2));
+    expect(steps, hasLength(3));
     final fetch = steps.first;
     expect(fetch.executable, 'bash');
     expect(fetch.arguments, ['scripts/fetch_webgpu_bridge_assets.sh']);
     expect(fetch.environment, {
       'WEBGPU_BRIDGE_OUT_DIR': '/repo/build/web_lazy_grammar/bridge',
     });
+    final compile = steps[1];
+    expect(compile.executable, 'dart');
+    expect(compile.arguments, [
+      'compile',
+      'js',
+      'test/e2e/webgpu/fixtures/worker_model_cache.dart',
+      '-o',
+      'build/web_lazy_grammar/worker_model_cache.js',
+    ]);
     final tests = steps.last;
     expect(tests.executable, 'dart');
     expect(tests.arguments, [
@@ -397,6 +406,7 @@ void main() {
       'test/e2e/webgpu/lazy_grammar_e2e_test.dart',
       'test/e2e/webgpu/prompt_penalty_grammar_e2e_test.dart',
       'test/e2e/webgpu/thinking_budget_grammar_e2e_test.dart',
+      'test/e2e/webgpu/worker_model_cache_e2e_test.dart',
     ]);
     for (final step in steps) {
       expect(step.workingDirectory, '/repo');

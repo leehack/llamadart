@@ -105,7 +105,6 @@ void main() {
         'out of memory',
         'memory access out of bounds',
         'bad_alloc',
-        'aborted(native code called abort())',
       ]) {
         expect(
           isMemoryPressureErrorText('prefix $phrase suffix'),
@@ -402,50 +401,44 @@ void main() {
       ]);
     });
 
-    test('a native abort error during a fetch attempt counts as an abort', () {
+    test('abort message text does not restart a fetch attempt', () {
       final decision = classifyWebGpuLoadFailure(
         _failure(
           coreVariant: 'wasm32',
-          errorText:
-              'error: aborted(native code called abort()) | '
-              'aborted(native code called abort())',
+          errorText: 'aborted(native code called abort())',
           runtimeNotes: 'model_fetch_backend_attempt',
           remoteFetchBackendOptedIn: true,
         ),
         _escalation(),
       );
 
-      expect(decision.action, WebGpuRetryAction.restart);
-      expect(decision.escalation.remoteFetchBackendKnownUnstable, isTrue);
-      expect(decision.escalation.retriedWithoutRemoteFetchBackend, isTrue);
-      expect(decision.forceRemoteFetchBackend, isFalse);
-      expect(decision.logMessages, <String>[
-        'WebGpuLlamaBackend: fetch-backed model loading aborted on '
-            'wasm32; retrying with wasm64 core and streamed '
-            'network loading.',
-      ]);
+      expect(decision.action, WebGpuRetryAction.giveUp);
+      expect(decision.escalation.remoteFetchBackendKnownUnstable, isFalse);
     });
 
-    test('neither abort marker counts without a fetch attempt', () {
-      for (final failure in <WebGpuLoadFailure>[
-        _failure(
-          coreVariant: 'wasm32',
-          errorText: 'out of memory',
-          runtimeNotes: 'core_abort',
-          remoteFetchBackendOptedIn: true,
-        ),
-        _failure(
-          coreVariant: 'wasm32',
-          errorText: 'aborted(native code called abort())',
-          remoteFetchBackendOptedIn: true,
-        ),
-      ]) {
-        final decision = classifyWebGpuLoadFailure(failure, _escalation());
+    test(
+      'a core abort does not mark fetch loading unstable without a fetch attempt',
+      () {
+        for (final failure in <WebGpuLoadFailure>[
+          _failure(
+            coreVariant: 'wasm32',
+            errorText: 'out of memory',
+            runtimeNotes: 'core_abort',
+            remoteFetchBackendOptedIn: true,
+          ),
+          _failure(
+            coreVariant: 'wasm32',
+            errorText: 'out of memory',
+            remoteFetchBackendOptedIn: true,
+          ),
+        ]) {
+          final decision = classifyWebGpuLoadFailure(failure, _escalation());
 
-        expect(decision.escalation.remoteFetchBackendKnownUnstable, isFalse);
-        expect(decision.forceRemoteFetchBackend, isTrue);
-      }
-    });
+          expect(decision.escalation.remoteFetchBackendKnownUnstable, isFalse);
+          expect(decision.forceRemoteFetchBackend, isTrue);
+        }
+      },
+    );
   });
 
   group('wasm32 restart after a wasm64 interop failure', () {

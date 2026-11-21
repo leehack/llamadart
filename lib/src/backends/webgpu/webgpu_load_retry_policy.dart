@@ -16,14 +16,12 @@ const int maxRemoteFetchChunkRestarts = 10;
 const int fsWriteRetryChunkBytes = 128 * 1024;
 
 /// Whether [loweredErrorText] carries 'array buffer allocation failed',
-/// 'out of memory', 'memory access out of bounds', 'bad_alloc', or
-/// 'aborted(native code called abort())'.
+/// 'out of memory', 'memory access out of bounds', or 'bad_alloc'.
 bool isMemoryPressureErrorText(String loweredErrorText) {
   return loweredErrorText.contains('array buffer allocation failed') ||
       loweredErrorText.contains('out of memory') ||
       loweredErrorText.contains('memory access out of bounds') ||
-      loweredErrorText.contains('bad_alloc') ||
-      loweredErrorText.contains('aborted(native code called abort())');
+      loweredErrorText.contains('bad_alloc');
 }
 
 /// Whether [loweredErrorText] carries both 'cannot convert' and 'bigint'.
@@ -140,8 +138,7 @@ class WebGpuLoadEscalation {
   /// Latched by [classifyWebGpuLoadFailure] when a failure's runtime notes
   /// carry 'model_fetch_backend_abort', which needs no
   /// 'model_fetch_backend_attempt' marker, or carry
-  /// 'model_fetch_backend_attempt' together with either 'core_abort' in the
-  /// notes or 'aborted(native code called abort())' in the error text.
+  /// 'model_fetch_backend_attempt' together with 'core_abort' in the notes.
   final bool remoteFetchBackendKnownUnstable;
 
   /// Whether the restart that warns 'wasm64 BigInt interop failure detected'
@@ -230,9 +227,7 @@ WebGpuRetryDecision classifyWebGpuLoadFailure(
   );
   final remoteFetchAborted =
       runtimeNotes.contains('model_fetch_backend_abort') ||
-      (remoteFetchAttempted && runtimeNotes.contains('core_abort')) ||
-      (remoteFetchAttempted &&
-          errorText.contains('aborted(native code called abort())'));
+      (remoteFetchAttempted && runtimeNotes.contains('core_abort'));
   final threadConstructorFailure =
       isThreadConstructorFailureText(errorText) ||
       runtimeNotes.contains('thread_constructor_failed') ||

@@ -2,7 +2,6 @@ import 'dart:js_interop';
 import 'dart:js_interop_unsafe';
 import 'dart:math' as math;
 
-import '../../core/cache_policy.dart';
 import '../../core/exceptions.dart';
 import '../../core/models/inference/generation_params.dart';
 import 'interop.dart';
@@ -442,16 +441,19 @@ class WebGpuDraftModel {
     _url = null;
     final JSAny? raw;
     try {
+      final cacheUrl = webGpuPersistentCacheUrl(url);
       raw = await _settle(
         bridge.loadDraftModel(
-          url,
+          cacheUrl ?? url,
           WebGpuDraftModelLoadOptions(
-            useCache: !hasPersistentCacheSensitiveUrlParts(url),
+            useCache: cacheUrl != null,
             signal: signal,
           ),
         ),
       );
     } catch (error) {
+      final unloaded = webGpuModelUnloadedError(error);
+      if (unloaded != null) throw unloaded;
       final message = webGpuBridgeErrorText(error, sourceUrls: <String>[url]);
       if (message.startsWith('No model loaded') ||
           message.contains('Bridge has been disposed') ||

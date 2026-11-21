@@ -233,6 +233,13 @@ interface does not establish backend/model support; read `await engine.capabilit
 - Native runtimes are fetched by the build hook on first build; no C++
   toolchain is needed. Do not vendor llama.cpp or LiteRT-LM into the app.
 
+On Web, with bridge assets `v0.1.89+`, catch
+`LlamaModelUnloadedException` to prompt a fresh model load after a direct
+WebAssembly core abort. Load any required projector, draft model or LoRA
+adapters again before retrying. The worker runtime normally restores its
+model automatically. For browser cache prefetch, use HTTP(S) endpoints
+that always return non-empty model bytes and contain no credentials.
+
 ## Examples
 
 Load a model from Hugging Face and run one stateless completion:
