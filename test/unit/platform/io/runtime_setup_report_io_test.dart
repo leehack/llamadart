@@ -57,7 +57,7 @@ void main() {
         ]);
         expect(report.runtimes.map((runtime) => runtime.expectedReleaseTag), [
           'v1.0.0-4',
-          'v0.19.1-5',
+          'v0.19.1-6',
           'v0.4.0',
         ]);
         expect(report.dartVersion, '3.13.1');

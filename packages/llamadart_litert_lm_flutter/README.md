@@ -18,9 +18,10 @@ LiteRT-LM is not available on x86_64 macOS: `litert-lm-native` publishes
 arm64-only macOS runtimes. A universal app still launches on an Intel Mac or
 under Rosetta, where LiteRT-LM throws `LlamaUnsupportedException`. Building the
 macOS app for arm64 only, for example with `EXCLUDED_ARCHS = x86_64`, just
-silences the linker warnings. The core uses this macOS runtime only when it recognizes this package's
-manifest; with an older companion it keeps LiteRT-LM in its hook cache and
-warns.
+silences the linker warnings. The core uses this macOS runtime when it
+recognizes this package's manifest and accepts its pin. If the companion pins
+a newer build than the core accepts, LiteRT-LM stays in the hook cache and the
+build warns.
 
 The iOS artifacts include arm64 device and arm64 Simulator slices. Apps that
 also request an x86_64 Simulator slice must exclude x86_64 for LiteRT-LM builds.
@@ -34,8 +35,9 @@ dependencies:
 This package has no runtime Dart API of its own. Import `package:llamadart`
 normally from the core package and use `LlamaBackend()` / `LlamaEngine` there.
 
-The Apple SwiftPM manifest pins `leehack/litert-lm-native@v0.19.1-5`.
-That runtime loads dedicated ASR `.litertlm` containers such as Whisper tiny.
+The Apple SwiftPM manifest pins `leehack/litert-lm-native@v0.19.1-6`.
+This pin requires core `0.20.4` or later in the `0.20` minor. The runtime
+loads dedicated ASR `.litertlm` containers such as Whisper tiny.
 
 Use the companion that shares the core's `MAJOR.MINOR`: companion `0.20.x` pairs
 with core `0.20.x`. Earlier pairings are in the

@@ -1,3 +1,7 @@
+## Unreleased
+
+- Updated Apple SwiftPM native pin to `leehack/litert-lm-native@v0.19.1-6`.
+
 ## 0.20.3
 
 - Update the installation example to core `0.20.3`. Apple SwiftPM stays pinned to `leehack/litert-lm-native@v0.19.1-5`.

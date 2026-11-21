@@ -425,10 +425,13 @@ parameters. The public lazy facade, service metadata/finish probes and speech
 worker share discovery and ABI selection. `_liteRtLmV1ProductionSelection` in
 `litert_lm_runtime_facade.dart` enables public C API 1.0.x dispatch. The native
 hook and Apple companion source now pin published
-[v0.19.1-5](https://github.com/leehack/litert-lm-native/releases/tag/v0.19.1-5),
-owner `bb4e7709` / upstream `7a03724c`, which keeps C API 1.0.0 and the
-`v0.19.0` exports and adds the in-process LiteRT marker
-`litert_lm_native_in_process_litert_abi_version` (1 on every platform); the
+[v0.19.1-6](https://github.com/leehack/litert-lm-native/releases/tag/v0.19.1-6),
+owner `9246bf2a` / upstream `7a03724c`. It keeps C API 1.0.0, the
+`v0.19.0` exports and the in-process LiteRT marker
+`litert_lm_native_in_process_litert_abi_version` (1 on every platform). It
+resets recurrent state for independent requests on a reused engine and
+disables sampler lookahead on macOS GPU for models that declare linear
+attention ([#672](https://github.com/leehack/llamadart/issues/672)). The
 `LiteRT-LM Smoke` library step fails when the bundled Linux x64 or Windows
 x64 runtime lacks the export or does not report 1, and prints the value as
 `inProcessLiteRtAbi`; Linux arm64 has no CI runner for it. Rolling the pin back
@@ -477,7 +480,7 @@ blocks unload and dispose. On Linux ext4, releasing a freshly written CPU
 XNNPACK weight cache flushes it to disk, about 4 s for Qwen3 0.6B's 600 MB
 cache on CI disks ([#1814](https://github.com/leehack/llamadart/issues/1814)).
 
-Public ABI-aware selection and the v0.19.1-5 source pin are enabled; remaining
+Public ABI-aware selection and the v0.19.1-6 source pin are enabled. Remaining
 consumer, feature and platform gates are recorded in
 `doc/litert_lm_v1_adoption.md`. This transport contract alone does not qualify a
 model or device. The owner proxy's
@@ -695,6 +698,13 @@ Use this checklist in native sync PRs:
 - Update public docs that mention the pinned native versions or source table.
 
 ## Companion package release handoff
+
+The LiteRT-LM `v0.19.1-6` repin for core `0.20.4` needs a new LiteRT-LM
+companion release constrained to `llamadart: '>=0.20.4 <0.21.0'`. Core
+`0.20.0` through `0.20.3` keep LiteRT-LM in the hook cache when they resolve
+this newer companion. Core `0.20.4` still loads the complete macOS runtime
+from the previous companion, which embeds `v0.19.1-5`, and logs an upgrade
+warning. Release prep owns the companion version and dependency floor.
 
 Core `0.19.1` preparation moves LiteRT-LM to `v0.19.1-2`, which adds the
 in-process LiteRT marker, and pairs all three Apple companions at `0.19.1`
