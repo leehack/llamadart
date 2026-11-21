@@ -1694,7 +1694,8 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
       description:
           'Check pinned-asset lazy grammar activation, custom roots, '
           'thinking-budget grammar and typed rejection/reuse in direct and '
-          'worker CPU Wasm runtimes, plus app-owned worker model caching.',
+          'worker CPU Wasm runtimes, plus app-owned worker caching and '
+          'repeated forced fetch-backed loads.',
       requiresDevice: false,
       stepsBuilder: (context) => [
         LocalE2eCommandStep(
@@ -1717,7 +1718,7 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
             '-o',
             'build/web_lazy_grammar/worker_model_cache.js',
           ],
-          description: 'Compile the app-owned worker cache probe',
+          description: 'Compile the app-owned worker model load probe',
         ),
         LocalE2eCommandStep(
           workingDirectory: context.projectRoot,
@@ -1736,7 +1737,7 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
           ],
           description:
               'Web lazy grammar, prompt penalties, thinking-budget grammar '
-              'and app-owned worker model caching',
+              'and app-owned worker model loads',
         ),
       ],
     ),

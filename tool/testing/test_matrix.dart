@@ -973,7 +973,8 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
         'cover wasm32 and memory64; a Qwen3.5 response-format grammar stays '
         'applied through a budgeted thought, and assets without '
         'thinkingBudgetPauseGrammar reject it; app-owned workers store and '
-        'reuse absolute and relative model URLs; no tool accuracy or GPU claim',
+        'reuse absolute and relative model URLs and complete six forced '
+        'fetch-backed loads on one core; no tool accuracy or GPU claim',
     command:
         'dart run tool/testing/run_local_e2e.dart --scenario web-lazy-grammar',
     useWhen:

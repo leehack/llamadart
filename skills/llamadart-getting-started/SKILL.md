@@ -239,6 +239,8 @@ WebAssembly core abort. Load any required projector, draft model or LoRA
 adapters again before retrying. The worker runtime normally restores its
 model automatically. For browser cache prefetch, use HTTP(S) endpoints
 that always return non-empty model bytes and contain no credentials.
+Use the pinned assets `v0.1.90+` when opting into fetch-backed loads from an
+origin that serves HTTP byte ranges.
 
 ## Examples
 
