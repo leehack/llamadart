@@ -2304,10 +2304,11 @@ void main() {
           return bridge;
         }).toJS;
         addTearDown(() => globalContext.delete(factoryName.toJS));
-        final globalConstructor = _jsFunction(
-          'config',
-          'return globalThis.$factoryName(config);',
-        );
+        final globalConstructor = (globalContext['Function'] as JSFunction)
+            .callAsConstructor<JSFunction>(
+              'config'.toJS,
+              'return globalThis.$factoryName(config);'.toJS,
+            );
         bridge['constructor'] = globalConstructor;
         globalContext['LlamaWebGpuBridge'] = globalConstructor;
         bridgeRuntimeHints[notesKey] = 'model_staging_js_backed';

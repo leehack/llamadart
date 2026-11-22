@@ -16,7 +16,6 @@ Future<JSString> _run(JSObject options) async {
   final staging = (options['jsBackedModelStaging'] as JSBoolean?)?.toDart;
   final preferMemory64 = (options['preferMemory64'] as JSBoolean).toDart;
   final gpu = (options['gpu'] as JSBoolean).toDart;
-  final cancelDuringLoad = (options['cancelDuringLoad'] as JSBoolean).toDart;
   final reuse = (options['reuse'] as JSBoolean).toDart;
   final model = LlamaModel(ModelSource.parse(modelUrl));
   final params = LlamaCppModelParams(
@@ -30,25 +29,9 @@ Future<JSString> _run(JSObject options) async {
   );
 
   final engine = LlamaEngine(LlamaBackend());
-  var cancelled = false;
   try {
-    Future<Map<String, String?>> loadAndGenerate({bool cancel = false}) async {
-      await engine.setModel(
-        model,
-        params: params,
-        onProgress: cancel
-            ? (progress) {
-                final fraction = progress.fraction;
-                if (!cancelled &&
-                    fraction != null &&
-                    fraction > 0 &&
-                    fraction < 1) {
-                  cancelled = true;
-                  engine.cancelGeneration();
-                }
-              }
-            : null,
-      );
+    Future<Map<String, String?>> loadAndGenerate() async {
+      await engine.setModel(model, params: params);
       if (mmprojUrl != null) {
         await engine.loadMultimodalProjectorSource(
           ModelSource.parse(mmprojUrl),
@@ -77,18 +60,7 @@ Future<JSString> _run(JSObject options) async {
       };
     }
 
-    final Map<String, String?> first;
-    try {
-      first = await loadAndGenerate(cancel: cancelDuringLoad);
-    } on LlamaModelException catch (error) {
-      if (!cancelled || !cancelDuringLoad) rethrow;
-      if (!error.toString().toLowerCase().contains('cancel')) rethrow;
-      return jsonEncode({
-        'cancelled': true,
-        'reloaded': await loadAndGenerate(),
-      }).toJS;
-    }
-
+    final first = await loadAndGenerate();
     if (!reuse) return jsonEncode(first).toJS;
     await engine.unloadModel();
     return jsonEncode({...first, 'reloaded': await loadAndGenerate()}).toJS;

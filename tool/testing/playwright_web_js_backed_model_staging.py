@@ -38,28 +38,43 @@ ISOLATION_HEADERS = {
 # owns the core so a worker's linear memory is never reported as page JS heap.
 MEASURE_LOADER = """
 export default async (config) => {
-  const core = await createCore(config);
-  const ref = new WeakRef(core);
+  const startedAt = performance.timeOrigin + performance.now();
+  let memoryRef;
+  const Memory = WebAssembly.Memory;
+  WebAssembly.Memory = new Proxy(Memory, {
+    construct(target, args, newTarget) {
+      const instance = Reflect.construct(target, args, newTarget);
+      memoryRef = new WeakRef(instance);
+      return instance;
+    },
+  });
+  let core;
+  try {
+    core = await createCore(config);
+  } finally {
+    WebAssembly.Memory = Memory;
+  }
   const inWorker = typeof document === 'undefined';
   let peakWasmBytes = 0;
   let peakJsBytes = 0;
   const sample = () => {
-    const current = ref.deref();
+    const current = memoryRef?.deref();
     if (!current) {
       clearInterval(timer);
       return;
     }
-    const wasmBytes = current.HEAPU8?.buffer?.byteLength ?? null;
+    const wasmBytes = current.buffer.byteLength;
     const jsBytes = globalThis.performance?.memory?.usedJSHeapSize ?? null;
-    peakWasmBytes = Math.max(peakWasmBytes, wasmBytes ?? 0);
+    peakWasmBytes = Math.max(peakWasmBytes, wasmBytes);
     peakJsBytes = Math.max(peakJsBytes, jsBytes ?? 0);
     const memory = {
       scope: inWorker ? 'worker' : 'page',
+      startedAt,
       wasmBytes, peakWasmBytes: peakWasmBytes || null,
       jsBytes, peakJsBytes: peakJsBytes || null,
     };
     if (inWorker) postMessage({type: 'stagingFixtureMemory', memory});
-    else globalThis.stagingFixtureMemory = memory;
+    else globalThis.recordStagingFixtureMemory(memory);
   };
   const timer = setInterval(sample, 50);
   sample();
@@ -87,13 +102,23 @@ BOOTSTRAP = """async ({
 
   let constructions = 0;
   let loads = 0;
+  let latestCoreMemory = null;
+  let peakWasmBytes = 0;
+  const recordMemory = (memory) => {
+    // A retired core can still be sampled until its memory is collected.
+    if (!latestCoreMemory || memory.startedAt >= latestCoreMemory.startedAt) {
+      latestCoreMemory = memory;
+    }
+    peakWasmBytes = Math.max(peakWasmBytes, memory.peakWasmBytes);
+  };
+  window.recordStagingFixtureMemory = recordMemory;
   const NativeWorker = window.Worker;
   window.Worker = class extends NativeWorker {
     constructor(url, options) {
       super(url, options);
       this.addEventListener('message', ({data}) => {
         if (data?.type === 'stagingFixtureMemory') {
-          window.stagingFixtureMemory = data.memory;
+          recordMemory(data.memory);
         }
       });
     }
@@ -134,7 +159,7 @@ BOOTSTRAP = """async ({
     }
     return {
       ...result, adapter, constructions, loads,
-      coreMemory: window.stagingFixtureMemory ?? null,
+      coreMemory: latestCoreMemory && {...latestCoreMemory, peakWasmBytes},
       pageJsPeak, pageJsBytes: performance.memory?.usedJSHeapSize ?? null,
     };
   } finally {
@@ -198,8 +223,8 @@ def assert_success(result, *, worker, mem64, staged, projector=False,
 
 def run_case(browser, origin, model_url, *, name, worker, stage=None, mem64=False,
              webkit=False, old_bridge=None, old_worker=False,
-             old_core=False, forced_fetch=False, mmproj_url=None, cancel=False,
-             reuse=False, gpu=False, allow_failure=False):
+             old_core=False, forced_fetch=False, mmproj_url=None,
+             reuse=False, gpu=False, extra_control=False):
     fixture = f"{origin}/{BUILD.as_posix()}/probe.html"
     context = browser.new_context(user_agent=WEBKIT_UA if webkit else None)
     requests = []
@@ -219,15 +244,14 @@ def run_case(browser, origin, model_url, *, name, worker, stage=None, mem64=Fals
             "oldBridge": old_bridge, "oldWorker": old_worker, "oldCore": old_core,
             "forcedFetch": forced_fetch, "config": {
                 "modelUrl": model_url, "jsBackedModelStaging": stage,
-                "mmprojUrl": mmproj_url, "gpu": gpu, "cancelDuringLoad": cancel,
-                "reuse": reuse,
+                "mmprojUrl": mmproj_url, "gpu": gpu, "reuse": reuse,
             },
         })
         print(json.dumps({
             "case": name, "worker": worker, "memory64": mem64,
             "staging": stage, "model_requests": requests, "result": result,
         }), flush=True)
-        if old_bridge or old_worker or old_core or forced_fetch:
+        if old_bridge or (old_worker and stage is True) or old_core or forced_fetch:
             reason = ("__llamadartBridgeForceRemoteFetchBackend" if forced_fetch
                       else "MODEL_STAGING_UNSUPPORTED" if old_worker or old_core
                       else "v0.1.92+")
@@ -236,20 +260,25 @@ def run_case(browser, origin, model_url, *, name, worker, stage=None, mem64=Fals
             assert result["constructions"] == (0 if old_bridge or forced_fetch else 1)
             assert result["loads"] == (0 if old_bridge or forced_fetch else 1)
             return None
-        if allow_failure and "model_error" in result:
+        if extra_control and "model_error" in result:
             return result
-        expect = dict(worker=worker, mem64=mem64, staged=stage is True or
+        # A large GGUF can exhaust standard wasm32 staging and succeed on
+        # the backend's wasm64 retry. Explicit staging must use its requested core.
+        control_retried_on_wasm64 = (
+            extra_control and not mem64 and result.get("core_variant") == "wasm64"
+        )
+        expect = dict(worker=worker, mem64=mem64 or control_retried_on_wasm64,
+                      staged=stage is True or
                       (stage is None and webkit), projector=mmproj_url is not None,
                       gpu=gpu)
-        if cancel:
-            assert result.get("cancelled") is True, result
-        else:
-            assert_success(result, **expect)
-        if reuse or cancel:
+        assert_success(result, **expect)
+        memory = result["coreMemory"]
+        assert memory and memory["scope"] == ("worker" if worker else "page"), result
+        assert memory["peakWasmBytes"] >= memory["wasmBytes"] > 0, result
+        if reuse:
             reloaded = result["reloaded"]
             assert_success(reloaded, **expect)
-            if not cancel:
-                assert reloaded["output"] == result["output"], result
+            assert reloaded["output"] == result["output"], result
         return result
     finally:
         context.close()
@@ -298,7 +327,7 @@ def main():
                     if args.model_url:
                         extra = dict(mmproj_url=args.mmproj_url, **common)
                         baseline = run_case(browser, origin, args.model_url,
-                                            name="extra-default", allow_failure=True, **extra)
+                                            name="extra-default", extra_control=True, **extra)
                         staged = run_case(browser, origin, args.model_url,
                                           name="extra-staged", stage=True, reuse=True, **extra)
                         if "output" in baseline:
@@ -310,10 +339,10 @@ def main():
                          stage=True, forced_fetch=True, worker=worker)
                 run_case(browser, origin, model, name="old-core",
                          stage=True, old_core=True, worker=worker)
-                run_case(browser, origin, model, name="cancel-and-reuse",
-                         stage=True, cancel=True, worker=worker)
             run_case(browser, origin, model, name="old-worker",
                      stage=True, old_worker=True, worker=True)
+            run_case(browser, origin, model, name="old-worker-opt-out",
+                     stage=False, old_worker=True, worker=True)
         finally:
             browser.close()
 

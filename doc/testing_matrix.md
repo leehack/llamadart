@@ -1627,8 +1627,8 @@ Run
 first, then omit `--dry-run` after adopting the matching v0.1.92+ assets.
 The scenario compares omitted, enabled and disabled settings in direct and
 worker runtimes, with both Wasm widths and a WebKit user-agent control. It
-checks recovery after bridge cancellation, unload and reload, and records
-generation output and runtime notes. It also checks pre-download refusals for
+checks unload and reload, and records generation output and runtime notes.
+It also checks pre-download refusals for
 old bridge, worker and core assets and for forced fetch-backed loading.
 
 Use `--model-url` for a larger GGUF. Pair it with `--mmproj-url` for a
