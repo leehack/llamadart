@@ -111,7 +111,9 @@ jobs:
             --folder hf-space-sync \
             --commit-message "chore: deploy chat app ${SHORT_SHA}" \
             --delete-pattern '*' \
-            --delete-pattern '**/*'
+            --delete-pattern '**/*' \
+            --max-folder-bytes 250000000 \
+            --squash-history
 
       - name: Verify deployed production artifact
         if: steps.current.outputs.deploy == 'true'

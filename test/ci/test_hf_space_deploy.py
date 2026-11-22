@@ -1,6 +1,9 @@
 """Behavioral checks for the Hugging Face Space deploy retry policy."""
+import os
 from pathlib import Path
 import sys
+from tempfile import TemporaryDirectory
+from types import SimpleNamespace
 import unittest
 from unittest import mock
 
@@ -21,10 +24,10 @@ def missing_space_api():
     return api
 
 
-def run_deploy(api, **options):
+def run_deploy(api, *, folder='build', log=lambda *a, **k: None, **options):
     sleeps = []
-    hf.deploy(api, 'org/space', 'build', 'msg', ['*'], True,
-              sleep=sleeps.append, jitter=lambda: 1.0, log=lambda *a, **k: None, **options)
+    hf.deploy(api, 'org/space', folder, 'msg', ['*'], True,
+              sleep=sleeps.append, jitter=lambda: 1.0, log=log, **options)
     return sleeps
 
 
@@ -243,6 +246,224 @@ class ProvisioningTest(unittest.TestCase):
                   jitter=lambda: 1.0, log=lambda line, **k: lines.append(line))
         self.assertEqual(lines, ['repo_info: HTTP 429 on attempt 1/5; retrying in 5s'])
         api.create_repo.assert_not_called()
+
+
+class SquashTest(unittest.TestCase):
+    def test_squash_history_runs_after_upload_with_exact_arguments(self):
+        for enabled in (False, True):
+            with self.subTest(enabled=enabled):
+                api = mock.Mock()
+                run_deploy(api, squash_history=enabled)
+                calls = [
+                    mock.call.repo_info(repo_id='org/space', repo_type='space'),
+                    mock.call.upload_folder(
+                        repo_id='org/space', repo_type='space', folder_path='build',
+                        revision='main', delete_patterns=['*'], commit_message='msg'),
+                ]
+                if enabled:
+                    calls.append(mock.call.super_squash_history(
+                        repo_id='org/space', repo_type='space', branch='main',
+                        commit_message='msg'))
+                self.assertEqual(api.mock_calls, calls)
+
+    def test_squash_history_retries_429_within_shared_budget(self):
+        for final_delay in (100, 101):
+            with self.subTest(final_delay=final_delay):
+                api = missing_space_api()
+                api.repo_info.side_effect = [HttpError(429, {'Retry-After': '60'}), HttpError(404)]
+                api.create_repo.side_effect = [HttpError(429, {'Retry-After': '40'}), None]
+                api.upload_folder.side_effect = [HttpError(429, {'Retry-After': '40'}), None]
+                error = HttpError(429, {'Retry-After': str(final_delay)})
+                api.super_squash_history.side_effect = [error, None]
+                sleeps = []
+
+                def deploy():
+                    hf.deploy(api, 'org/space', 'build', 'msg', ['*'], True,
+                              squash_history=True, sleep=sleeps.append, log=mock.Mock())
+
+                if final_delay == 100:
+                    deploy()
+                    self.assertEqual(sleeps, [60.0, 40.0, 40.0, 100.0])
+                    self.assertEqual(api.super_squash_history.call_count, 2)
+                else:
+                    with self.assertRaises(HttpError) as raised:
+                        deploy()
+                    self.assertIs(raised.exception, error)
+                    self.assertEqual(sleeps, [60.0, 40.0, 40.0])
+                    api.super_squash_history.assert_called_once()
+                self.assertEqual(api.upload_folder.call_count, 2)
+
+    def test_squash_history_non_429_errors_fail_immediately(self):
+        for status in (400, 401, 403, 500):
+            with self.subTest(status=status):
+                api = mock.Mock()
+                error = HttpError(status)
+                api.super_squash_history.side_effect = error
+                sleep = mock.Mock()
+                with self.assertRaises(HttpError) as raised:
+                    hf.deploy(api, 'org/space', 'build', 'msg', ['*'], True,
+                              squash_history=True, sleep=sleep)
+                self.assertIs(raised.exception, error)
+                api.super_squash_history.assert_called_once()
+                sleep.assert_not_called()
+
+    def test_squash_history_not_called_when_upload_fails(self):
+        for status in (403, 500):
+            with self.subTest(status=status):
+                api = mock.Mock()
+                error = HttpError(status)
+                api.upload_folder.side_effect = error
+                with self.assertRaises(HttpError) as raised:
+                    run_deploy(api, squash_history=True)
+                self.assertIs(raised.exception, error)
+                api.super_squash_history.assert_not_called()
+
+    def test_squash_history_retry_logs_exclude_secrets(self):
+        api = mock.Mock()
+        error = HttpError(429)
+        error.args = ('hf_test_secret https://example.invalid/artifact?X-Amz-Signature=secret',)
+        api.super_squash_history.side_effect = [error, None]
+        log = mock.Mock()
+        self.assertEqual(run_deploy(api, squash_history=True, log=log), [5.0])
+        log.assert_called_once_with(
+            'super_squash_history: HTTP 429 on attempt 1/5; retrying in 5s', file=sys.stderr)
+
+
+class PreflightTest(unittest.TestCase):
+    def setUp(self):
+        scratch = TemporaryDirectory(prefix='w2155-')
+        self.addCleanup(scratch.cleanup)
+        self.root = Path(scratch.name)
+        self.folder = self.root / 'site'
+        self.folder.mkdir()
+        self.api = mock.Mock()
+
+    def test_max_folder_bytes_blocks_oversized_folder_before_api_calls(self):
+        (self.folder / 'index.html').write_bytes(b'demo')
+        nested = self.folder / 'assets'
+        nested.mkdir()
+        (nested / 'asset').write_bytes(b'asset')
+        with self.assertRaisesRegex(ValueError, 'Folder size 9 bytes exceeds.*limit 8 bytes'):
+            self.deploy(max_folder_bytes=8)
+        self.assertEqual(self.api.mock_calls, [])
+
+        for limit in (9, 10):
+            with self.subTest(limit=limit):
+                self.api.reset_mock()
+                self.deploy(max_folder_bytes=limit)
+                self.api.upload_folder.assert_called_once()
+                self.api.super_squash_history.assert_called_once()
+
+    def test_max_folder_bytes_rejects_nonpositive_limits_and_invalid_folders(self):
+        file_path = self.root / 'file'
+        file_path.touch()
+        for folder, limit in ((self.folder, 0), (self.folder, -1),
+                              (file_path, 1), (self.root / 'missing', 1)):
+            with self.subTest(folder=folder.name, limit=limit):
+                with self.assertRaises(ValueError):
+                    run_deploy(self.api, folder=folder, max_folder_bytes=limit)
+                self.assertEqual(self.api.mock_calls, [])
+
+    def test_max_folder_bytes_rejects_file_directory_and_broken_symlinks(self):
+        large_file = self.root / 'external-file'
+        with large_file.open('wb') as stream:
+            stream.truncate(250_000_001)
+        internal_directory = self.folder / 'assets'
+        internal_directory.mkdir()
+        for target, link_name, is_directory in (
+                (large_file, 'large-link', False),
+                (internal_directory, 'directory-link', True),
+                (self.root / 'missing-target', 'broken-link', False)):
+            with self.subTest(link=link_name):
+                link = self.folder / link_name
+                try:
+                    link.symlink_to(target, target_is_directory=is_directory)
+                except OSError as error:
+                    if getattr(error, 'winerror', None) == 1314:
+                        self.skipTest('Creating symlinks requires Windows developer mode or privilege')
+                    raise
+                try:
+                    with self.assertRaisesRegex(ValueError, link_name) as raised:
+                        self.deploy(max_folder_bytes=250_000_000)
+                    self.assertNotIn(str(target), str(raised.exception))
+                    self.assertEqual(self.api.mock_calls, [])
+                finally:
+                    link.unlink()
+
+    def test_max_folder_bytes_rejects_walk_errors(self):
+        denied = self.folder / 'denied'
+
+        def failed_walk(folder, *, followlinks=False, onerror=None):
+            if onerror is not None:
+                onerror(PermissionError(13, 'Permission denied', denied))
+            yield folder, [], []
+
+        with mock.patch.object(hf.os, 'walk', side_effect=failed_walk):
+            with self.assertRaisesRegex(ValueError, 'denied'):
+                self.deploy(max_folder_bytes=10)
+        self.assertEqual(self.api.mock_calls, [])
+
+    def test_max_folder_bytes_rejects_stat_errors(self):
+        vanished = self.folder / 'vanished'
+        vanished.touch()
+        real_lstat = os.lstat
+
+        def failed_lstat(path, *args, **kwargs):
+            if Path(path) == vanished:
+                raise FileNotFoundError(2, 'No such file or directory', path)
+            return real_lstat(path, *args, **kwargs)
+
+        with mock.patch.object(hf.os, 'lstat', side_effect=failed_lstat):
+            with self.assertRaisesRegex(ValueError, 'vanished'):
+                self.deploy(max_folder_bytes=10)
+        self.assertEqual(self.api.mock_calls, [])
+
+    def deploy(self, **options):
+        run_deploy(self.api, folder=self.folder, squash_history=True, **options)
+
+
+class StorageWarningTest(unittest.TestCase):
+    def test_used_storage_warning_logs_for_camel_and_snake_case(self):
+        for info, expected_mb in (
+                (SimpleNamespace(usedStorage=750_000_000), '750.0'),
+                (SimpleNamespace(used_storage=951_000_000), '951.0'),
+                (SimpleNamespace(used_storage=True, usedStorage=750_000_000), '750.0')):
+            with self.subTest(info=info):
+                api = mock.Mock()
+                api.repo_info.return_value = info
+                log = mock.Mock()
+                run_deploy(api, squash_history=True, log=log)
+                log.assert_called_once_with(
+                    f'repo_info: Space usedStorage is {expected_mb} MB (limit 1000.0 MB)',
+                    file=sys.stderr)
+                api.upload_folder.assert_called_once()
+                api.super_squash_history.assert_called_once()
+
+    def test_below_threshold_and_invalid_storage_do_not_warn(self):
+        for info in (SimpleNamespace(usedStorage=749_999_999),
+                     SimpleNamespace(used_storage=True), SimpleNamespace(usedStorage=-1),
+                     SimpleNamespace(usedStorage='750000000'), mock.Mock()):
+            with self.subTest(info=info):
+                api = mock.Mock()
+                api.repo_info.return_value = info
+                log = mock.Mock()
+                run_deploy(api, log=log)
+                log.assert_not_called()
+                api.upload_folder.assert_called_once()
+
+
+class CliTest(unittest.TestCase):
+    def test_cli_parses_squash_history_and_max_folder_bytes(self):
+        hub = mock.Mock()
+        with (mock.patch.dict(sys.modules, {'huggingface_hub': hub}),
+              mock.patch.dict(os.environ, {'HF_TOKEN': 'mock-token'}),
+              mock.patch.object(hf, 'deploy') as deploy):
+            hf.main(['--repo', 'org/space', '--folder', 'build', '--commit-message', 'msg',
+                     '--delete-pattern', '*', '--public', '--squash-history',
+                     '--max-folder-bytes', '250000000'])
+        deploy.assert_called_once_with(
+            hub.HfApi.return_value, 'org/space', 'build', 'msg', ['*'], True,
+            squash_history=True, max_folder_bytes=250_000_000)
 
 
 if __name__ == '__main__':
