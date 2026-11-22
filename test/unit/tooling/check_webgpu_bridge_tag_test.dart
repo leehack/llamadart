@@ -419,6 +419,7 @@ void main() {
         '- Another runtime\n  $badClaim.',
         '- Another runtime\n  - Other files $badClaim.',
         '> Another runtime $badClaim.',
+        '> Another runtime unchanged from\n> 1.2.1.',
         '- Another runtime $badClaim. <!-- review note -->',
         '- Another runtime unchanged from `1.2.1`.',
         '- Another runtime unchanged since 1.2.1.',
@@ -437,6 +438,81 @@ void main() {
       );
       expect(_verifyPreparedRelease(root), isEmpty);
     });
+
+    for (final (shape, example) in [
+      ('quoted backticks', '> ```html\n> <!--\n> ```'),
+      ('nested quoted tildes', '> > ~~~~html\n>> ~~~\n> > <!--\n> > ~~~~'),
+      (
+        'literal quote marker in a fence',
+        '> ```html\n> > Literal code (unchanged from 1.2.1).\n> > ```\n> <!--\n> ````',
+      ),
+      ('unclosed nested fence', '> > ```html\n>> <!--'),
+      ('unclosed quoted comment', '> <!--\n> Hidden (unchanged from 1.2.1).'),
+    ]) {
+      test('strict prep keeps the baseline after $shape in $path', () {
+        final root = _preparedReleaseRepo();
+        final changelog = File('${root.path}/$path');
+        final valid = changelog.readAsStringSync();
+        changelog.writeAsStringSync(
+          valid.replaceFirst(
+            _preparedBaseline,
+            '$example\n\n$_preparedBaseline',
+          ),
+        );
+        expect(_verifyPreparedRelease(root), isEmpty);
+      });
+
+      test('strict prep checks visible claims after $shape in $path', () {
+        final root = _preparedReleaseRepo();
+        final changelog = File('${root.path}/$path');
+        final valid = changelog.readAsStringSync();
+        changelog.writeAsStringSync(
+          '$valid\n$example\n\n'
+          '- Native audio remains pinned to v9.9.8 (unchanged from 1.2.1).\n',
+        );
+        expect(
+          _verifyPreparedRelease(root),
+          contains(
+            allOf(
+              startsWith(path),
+              contains('does not match the previous release'),
+            ),
+          ),
+        );
+      });
+    }
+
+    test('strict prep ignores retention text in quoted code in $path', () {
+      final root = _preparedReleaseRepo();
+      final changelog = File('${root.path}/$path');
+      final valid = changelog.readAsStringSync();
+      changelog.writeAsStringSync(
+        '$valid\n> ```text\n> Literal marker (unchanged from 1.2.1).\n> ```\n',
+      );
+      expect(_verifyPreparedRelease(root), isEmpty);
+    });
+
+    test(
+      'strict prep ends a nested code fence at its quote boundary in $path',
+      () {
+        final root = _preparedReleaseRepo();
+        final changelog = File('${root.path}/$path');
+        final valid = changelog.readAsStringSync();
+        changelog.writeAsStringSync(
+          '$valid\n> > ```html\n> > <!--\n'
+          '> Native audio remains pinned to v9.9.8 (unchanged from 1.2.1).\n',
+        );
+        expect(
+          _verifyPreparedRelease(root),
+          contains(
+            allOf(
+              startsWith(path),
+              contains('does not match the previous release'),
+            ),
+          ),
+        );
+      },
+    );
   }
 
   for (final path in _preparedChangelogs) {
