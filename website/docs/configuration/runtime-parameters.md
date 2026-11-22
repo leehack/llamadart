@@ -256,6 +256,11 @@ const params = LlamaCppModelParams(
   (mem64) bridge core; see
   [Model size and memory64](../platforms/webgpu-bridge#model-size-and-memory64).
   Native loads reject them.
+- `jsBackedModelStaging` (Web llama.cpp only) defaults to the browser policy
+  when omitted. `true` requires JavaScript-backed staging on v0.1.92+ assets.
+  `false` disables it, including on WebKit. Native llama.cpp and LiteRT-LM
+  reject explicit values. See
+  [JS-backed model and projector staging](../platforms/webgpu-bridge#js-backed-model-and-projector-staging).
 - LiteRT-LM options: set them with `LiteRtLmModelParams`; see
   [LiteRT-LM runtime controls](#litert-lm-runtime-controls). The matching
   `liteRtLm*` arguments of `ModelParams` are deprecated, and llama.cpp loads
@@ -308,7 +313,7 @@ or KV-cache types: the load
 throws `LlamaUnsupportedException` naming each rejected field, so a GGUF
 tuning profile never appears to apply silently. That includes `loadMtp`,
 `speculativeRollbackTokenMax`, `cpuMoeLayers`, `moeCacheBytes`,
-`gpuMemoryFit`, `preferMemory64` and `modelBytesHint`.
+`gpuMemoryFit`, `preferMemory64`, `modelBytesHint` and `jsBackedModelStaging`.
 LiteRT-LM web accepts `device` or `liteRtLmBackend` for CPU or GPU selection
 and rejects every other field in the table the same way.
 

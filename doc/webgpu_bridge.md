@@ -67,11 +67,11 @@ an earlier `<script>`:
 
 ## Pinned assets
 
-Default pinned tag in the example is `v0.1.90`.
+Default pinned tag in the example is `v0.1.92`.
 Vendor the pinned assets into the chat app with:
 
 ```bash
-WEBGPU_BRIDGE_ASSETS_TAG=v0.1.90 ./scripts/fetch_webgpu_bridge_assets.sh
+WEBGPU_BRIDGE_ASSETS_TAG=v0.1.92 ./scripts/fetch_webgpu_bridge_assets.sh
 ```
 
 `WEBGPU_BRIDGE_OUT_DIR` changes the destination. The script verifies
@@ -90,17 +90,17 @@ the chat app, set the bootstrap globals before the bootstrap runs:
 ```html
 <script>
   window.__llamadartBridgeAssetsRepo = 'leehack/llama-web-bridge-assets';
-  window.__llamadartBridgeAssetsTag = 'v0.1.90';
+  window.__llamadartBridgeAssetsTag = 'v0.1.92';
 </script>
 ```
 
 That release embeds llama.cpp `v1.0.0`, matching the `hook/build.dart` native pin
 (`v1.0.0-4`, both built from upstream llama.cpp `v1.0.0@b1b770d90d94cad9e9ea5b993bdbc383a522fb28`)
-even though the bridge asset tag `v0.1.90` differs from the native runtime tag
-`v1.0.0-4`. Provenance for this immutable consumer artifact: release `453978695`,
-tag commit `de9a81631df869835109913eb89c5ca84a534da8`, bridge source
-`c281e07766e8ad9d231e275ea81196124f6fd6ac`, and manifest SHA-256
-`c247b099018f55472dc83e561f0105a83f4ce03aa153d32365a07b34cde129f1`.
+even though the bridge asset tag `v0.1.92` differs from the native runtime tag
+`v1.0.0-4`. Provenance for this immutable consumer artifact: release `454541989`,
+tag commit `056f474f389feaa4e02a62a3125549cb9154fabf`, bridge source
+`d7236223d2393d51dab541df6caf3ef88f06d49b`, and manifest SHA-256
+`4f2fb82d55a932e9182e703d5265f3fc5875f808d4d9aa0ba18a0585d0d7784b`.
 They expose the API-version-1 media embedding contract. State and extraction
 qualification covers wasm32 and memory64 through direct and worker runtimes. Existing decision,
 scoring, sampling, LoRA, speculative decoding and speech APIs remain available.
@@ -229,6 +229,11 @@ physical playback, intelligibility or speaker-reference fidelity.
   WasmFS fetch worker across loads on the same core.
   [Bridge #298](https://github.com/leehack/llama-web-bridge/pull/298),
   [#302](https://github.com/leehack/llama-web-bridge/pull/302).
+- `v0.1.92+`: the bridge constructor and worker handshake declare
+  `supportsJsBackedModelStaging`. Dart uses the flag to gate explicit
+  `ModelParams.jsBackedModelStaging` opt-in. The bridge also exposes
+  `MODEL_TRANSFER_LENGTH_ERROR` on direct and worker rejections without
+  retrying the transfer.
 - `v0.1.84+`: `getCompletionCapabilities()` reports
   `thinkingBudgetPauseGrammar`, and `thinkingBudget.pauseGrammar: false` keeps a
   grammar applied while the model reasons
@@ -499,6 +504,18 @@ window.LlamaWebGpuBridge = class LlamaWebGpuBridge {
 `WebGpuLlamaBackend` gates these options on runtime probes, not on an asset
 tag:
 
+- `ModelParams.jsBackedModelStaging: true` requires a literal `true` on
+  `LlamaWebGpuBridge.supportsJsBackedModelStaging` before construction. A
+  worker missing the ready flag or a core missing staging ABI v3 rejects
+  before model or projector fetch with `MODEL_STAGING_UNSUPPORTED`. Explicit
+  opt-in disables automatic fetch-backed loading and rejects a forced
+  fetch-backed request.
+- Omit the staging option to preserve the bridge's browser default. On
+  supported WebKit cores, this enables staging automatically. An explicit
+  `false` reaches the bridge even when it predates the probe. Dart checks
+  `model_staging_js_backed` and `mmproj_staging_js_backed` in runtime notes
+  after their respective loads and rejects an explicit setting that does
+  not match.
 - After each model load it calls `getCompletionCapabilities()` once. It sends
   a non-zero `minP` or `presencePenalty`, or a `thinkingBudget`, only when the
   probe reports that flag `true`; otherwise `generate` throws before calling
@@ -624,6 +641,20 @@ in both runtimes.
   [Safari compatibility](#safari-compatibility).
 
 ## Request errors
+
+With assets v0.1.92+, bridge `ModelStagingError` codes `MODEL_STAGING_UNSUPPORTED` and
+`MODEL_TENSOR_SIZE_LIMIT_EXCEEDED` map to `LlamaUnsupportedException`.
+Allocation and mount failures map to `LlamaModelException`, as does
+`ModelTransferLengthError` with code `MODEL_TRANSFER_LENGTH_ERROR`.
+Older bridge assets can report the transfer-length error without a code. Dart
+recognizes the legacy name and response-size diagnostic together.
+These failures surface before Dart's model retry policy and remain typed on
+the first explicit projector load. The worker transports the name, message
+and code. Dart redacts paths and URL secrets from error details.
+
+A remembered projector restored after a worker restart can still trigger
+another restart on a transfer-length failure. See
+[llama-web-bridge#329](https://github.com/leehack/llama-web-bridge/issues/329).
 
 With assets `v0.1.89+`, a model-dependent call after direct Wasm core
 retirement surfaces `LlamaModelUnloadedException` when the bridge reports

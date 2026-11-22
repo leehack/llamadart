@@ -183,6 +183,16 @@
   "mappings": [
     {
       "surfaces": [
+        "matrix:JS-backed GGUF and projector staging"
+      ],
+      "exemption": {
+        "id": "web-js-backed-staging-browser-evidence",
+        "issue": "https://github.com/leehack/llamadart/issues/2115",
+        "reason": "The Chromium evidence in https://github.com/leehack/llamadart/pull/2165#matrix-evidence, produced by the follow-up PR's browser driver, covers real staged and standard loads, direct and worker execution, and version-skew refusals. Validation-pack profiles do not encode bridge asset skew, browser staging or separate JavaScript and Wasm memory measurements."
+      }
+    },
+    {
+      "surfaces": [
         "matrix:GPU device list and split (gpuDevices, tensorSplit)"
       ],
       "exemption": {

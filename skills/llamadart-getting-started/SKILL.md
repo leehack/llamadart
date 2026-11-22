@@ -177,7 +177,12 @@ interface does not establish backend/model support; read `await engine.capabilit
 - A load throws `LlamaUnsupportedException` naming every `ModelParams` field
   the model's runtime would ignore: `liteRtLm*` fields on a GGUF model,
   llama.cpp tuning such as `batchSize` or `loadMtp` on a `.litertlm` model,
-  `preferMemory64` / `modelBytesHint` off the Web. Build one per runtime with
+  `preferMemory64`, `modelBytesHint` or `jsBackedModelStaging` off the Web.
+  Web llama.cpp leaves staging to the bridge with `null` (automatic on
+  supported WebKit cores), requires it with `true` on v0.1.92+ assets, and
+  disables it with `false`. Staging can reduce Wasm heap use while increasing
+  JavaScript heap use during load. LiteRT-LM rejects explicit staging settings.
+  Build one per runtime with
   `LlamaCppModelParams(...)` for GGUF or `LiteRtLmModelParams(...)` for
   `.litertlm` (LiteRT-LM options without the prefix: `cacheDir`,
   `dispatchLibDir`, `embeddingEngine`, ...); either one used for the other

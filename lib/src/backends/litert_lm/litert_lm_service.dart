@@ -2060,6 +2060,7 @@ class LiteRtLmService {
           'speculativeRollbackTokenMax',
         if (params.preferMemory64 != null) 'preferMemory64',
         if (params.modelBytesHint != null) 'modelBytesHint',
+        if (params.jsBackedModelStaging != null) 'jsBackedModelStaging',
       ];
       if (ignored.isNotEmpty) {
         throw LlamaUnsupportedException(

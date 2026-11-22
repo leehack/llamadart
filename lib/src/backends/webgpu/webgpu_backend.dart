@@ -129,6 +129,7 @@ class WebGpuLlamaBackend
 
   LlamaWebGpuBridge? _bridge;
   bool _usingBridge = false;
+  bool? _activeJsBackedModelStaging;
   bool _isReady = false;
   int _embeddingCancelEpoch = 0;
   String? _chatTemplate;
@@ -334,7 +335,7 @@ class WebGpuLlamaBackend
     }
   }
 
-  WebGpuBridgeConfig _createBridgeConfig() {
+  WebGpuBridgeConfig _createBridgeConfig(bool? jsBackedModelStaging) {
     final logger = JSObject();
     logger.setProperty(
       'debug'.toJS,
@@ -379,9 +380,10 @@ class WebGpuLlamaBackend
     // Keep bridge remote-fetch loading opt-in until malformed responses can be
     // rejected without risking an unrecoverable core abort. Forced mode is an
     // explicit opt-in and must enable the bridge capability end to end.
-    final allowAutoRemoteFetchBackend = _isRemoteFetchBackendOptedIn();
+    final allowAutoRemoteFetchBackend =
+        jsBackedModelStaging != true && _isRemoteFetchBackendOptedIn();
 
-    return WebGpuBridgeConfig(
+    final config = WebGpuBridgeConfig(
       wasmUrl: wasmUrl?.toJS,
       wasmUrlMem64: wasmUrlMem64?.toJS,
       workerUrl: workerModuleUrl?.toJS,
@@ -394,6 +396,10 @@ class WebGpuLlamaBackend
       logLevel: _logLevel.index,
       logger: logger,
     );
+    if (jsBackedModelStaging != null) {
+      config.jsBackedModelStaging = jsBackedModelStaging;
+    }
+    return config;
   }
 
   Future<void> _waitForPreloadedBridge() async {
@@ -415,20 +421,34 @@ class WebGpuLlamaBackend
     }
   }
 
-  Future<bool> _ensureBridge() async {
+  Future<bool> _ensureBridge(bool? jsBackedModelStaging) async {
     if (_bridge != null) {
       return true;
     }
 
     if (_bridgeFactory != null) {
-      _bridge = _bridgeFactory(_createBridgeConfig());
+      _bridge = _bridgeFactory(_createBridgeConfig(jsBackedModelStaging));
+      if (jsBackedModelStaging == true &&
+          !_constructorSupportsJsBackedModelStaging(_bridge!['constructor'])) {
+        throw LlamaUnsupportedException(webGpuJsBackedStagingRequired);
+      }
       return true;
     }
 
     if (!globalContext.has('LlamaWebGpuBridge')) {
       final scriptUrl = _bridgeScriptUrl;
       if (scriptUrl != null && scriptUrl.isNotEmpty) {
-        await _loadBridgeScript();
+        try {
+          await _loadBridgeScript();
+        } on Exception {
+          if (jsBackedModelStaging == true) {
+            throw LlamaUnsupportedException(
+              'The configured WebGPU bridge module could not be loaded. '
+              '$webGpuJsBackedStagingRequired',
+            );
+          }
+          rethrow;
+        }
       } else {
         await _waitForPreloadedBridge();
       }
@@ -438,7 +458,12 @@ class WebGpuLlamaBackend
       return false;
     }
 
-    _bridge = LlamaWebGpuBridge(_createBridgeConfig());
+    final constructor = globalContext['LlamaWebGpuBridge'];
+    if (jsBackedModelStaging == true &&
+        !_constructorSupportsJsBackedModelStaging(constructor)) {
+      throw LlamaUnsupportedException(webGpuJsBackedStagingRequired);
+    }
+    _bridge = LlamaWebGpuBridge(_createBridgeConfig(jsBackedModelStaging));
     return true;
   }
 
@@ -446,6 +471,7 @@ class WebGpuLlamaBackend
     final bridge = _bridge;
     final abortController = _generationAbort?.controller;
     _bridge = null;
+    _activeJsBackedModelStaging = null;
     _generationAbort = null;
     _chatTemplate = null;
     _decisionHeads.clear();
@@ -477,18 +503,24 @@ class WebGpuLlamaBackend
     _webGpuMultimodalWarmupAttempted = false;
   }
 
-  Future<void> _activateBridge() async {
-    if (_usingBridge && _bridge != null) {
-      return;
+  Future<void> _activateBridge(bool? jsBackedModelStaging) async {
+    if (_bridge != null &&
+        _activeJsBackedModelStaging != jsBackedModelStaging) {
+      await _safeDisposeBridge();
     }
+    if (_usingBridge && _bridge != null) return;
 
-    final ready = await _ensureBridge();
+    final ready = await _ensureBridge(jsBackedModelStaging);
     if (!ready || _bridge == null) {
+      if (jsBackedModelStaging == true) {
+        throw LlamaUnsupportedException(webGpuJsBackedStagingRequired);
+      }
       final loadError = _getBridgeLoadError();
       final message = _buildBridgeUnavailableMessage(loadError);
       throw UnsupportedError(message);
     }
 
+    _activeJsBackedModelStaging = jsBackedModelStaging;
     _usingBridge = true;
     _syncBridgeLogLevel();
   }
@@ -642,6 +674,41 @@ class WebGpuLlamaBackend
     }
 
     return null;
+  }
+
+  bool _constructorSupportsJsBackedModelStaging(JSAny? constructor) {
+    if (!constructor.isA<JSObject>()) return false;
+    final flag =
+        (constructor as WebGpuBridgeConstructor).supportsJsBackedModelStaging;
+    return flag.isA<JSBoolean>() && (flag as JSBoolean).toDart;
+  }
+
+  LlamaUnsupportedException? _verifyJsBackedModelStaging(
+    LlamaWebGpuBridge bridge, {
+    required bool projector,
+  }) {
+    final requested = _activeJsBackedModelStaging;
+    if (requested == null) return null;
+    final metadata = _hasBridgeFunction(bridge, 'getModelMetadata')
+        ? bridge.getModelMetadata()
+        : null;
+    final rawNotes = metadata?['llamadart.webgpu.runtime_notes'];
+    final expected = projector
+        ? 'mmproj_staging_js_backed'
+        : 'model_staging_js_backed';
+    final active =
+        rawNotes.isA<JSString>() &&
+        (rawNotes as JSString).toDart.split(';').contains(expected);
+    if (active == requested) return null;
+    if (requested) {
+      return LlamaUnsupportedException(webGpuJsBackedStagingRequired);
+    }
+    final target = projector ? 'projector' : 'model';
+    return LlamaUnsupportedException(
+      'The loaded WebGPU bridge enabled JS-backed $target staging despite '
+      'ModelParams.jsBackedModelStaging: false. Update to '
+      'llama-web-bridge-assets v0.1.92+.',
+    );
   }
 
   bool _isRemoteFetchBackendOptedIn() {
@@ -1169,7 +1236,8 @@ class WebGpuLlamaBackend
     final requireGpu = params.device == ComputeDevice.gpu;
     _preferMemory64Override = _resolvePreferMemory64(params);
     _forceRemoteFetchBackendOverride = null;
-    final remoteFetchBackendOptedIn = _isRemoteFetchBackendOptedIn();
+    final remoteFetchBackendOptedIn =
+        params.jsBackedModelStaging != true && _isRemoteFetchBackendOptedIn();
 
     final requestedThreads = params.numberOfThreads > 0
         ? params.numberOfThreads
@@ -1254,6 +1322,17 @@ class WebGpuLlamaBackend
     url = webGpuDocumentUrl(url);
     final cacheUrl = webGpuPersistentCacheUrl(url);
     final setup = _prepareUrlLoad(url, params, onProgress);
+    final forceRemoteFetch = _getGlobalBool(
+      '__llamadartBridgeForceRemoteFetchBackend',
+    );
+    final jsBackedModelStaging = params.jsBackedModelStaging;
+    if (jsBackedModelStaging == true && forceRemoteFetch) {
+      throw LlamaUnsupportedException(
+        'JS-backed model staging cannot be combined with forced fetch-backed '
+        'loading (__llamadartBridgeForceRemoteFetchBackend). Disable forced '
+        'fetch-backed loading or omit ModelParams.jsBackedModelStaging.',
+      );
+    }
     if (setup.requireGpu && !await webGpuAdapterAvailable()) {
       throw LlamaUnsupportedException(
         'ComputeDevice.gpu needs WebGPU for llama.cpp on the Web, but this '
@@ -1268,7 +1347,6 @@ class WebGpuLlamaBackend
       requestedGpuLayers: setup.requestedGpuLayers,
       allowCpuFallback: !setup.requireGpu,
     );
-    LlamaUnsupportedException? gpuInactive;
     bool? cachedWebModel;
     Object? lastError;
     Map<String, String> lastRuntimeHints = const <String, String>{};
@@ -1292,12 +1370,14 @@ class WebGpuLlamaBackend
       );
 
       try {
-        await _activateBridge();
+        await _activateBridge(jsBackedModelStaging);
         final bridge = _requireBridge();
         bridgeForAttempt = bridge;
         cachedWebModel ??= await _isModelResponseCachedForUrl(bridge, cacheUrl);
 
-        if (_forceRemoteFetchBackendOverride != null) {
+        if (jsBackedModelStaging == true) {
+          forceRemoteFetchBackend = false;
+        } else if (_forceRemoteFetchBackendOverride != null) {
           forceRemoteFetchBackend = _forceRemoteFetchBackendOverride;
         } else if (_getGlobalBool('__llamadartBridgeForceRemoteFetchBackend')) {
           forceRemoteFetchBackend = true;
@@ -1340,6 +1420,12 @@ class WebGpuLlamaBackend
         if (loadPromise != null) {
           await loadPromise.toDart;
         }
+        final unverifiedStaging = _verifyJsBackedModelStaging(
+          bridge,
+          projector: false,
+        );
+        if (unverifiedStaging != null) throw unverifiedStaging;
+
         if (setup.requireGpu && bridge.isGpuActive() != true) {
           var gpuDetail = '';
           try {
@@ -1350,7 +1436,7 @@ class WebGpuLlamaBackend
                   '',
             );
           } catch (_) {}
-          throw gpuInactive = LlamaUnsupportedException(
+          throw LlamaUnsupportedException(
             'ComputeDevice.gpu needs WebGPU for llama.cpp on the Web, but the '
             'runtime loaded the model without GPU layers.$gpuDetail Use '
             'ComputeDevice.auto or cpu.',
@@ -1373,15 +1459,19 @@ class WebGpuLlamaBackend
         _resetWebGpuMultimodalWarmupState();
         _completionCapabilities = await _probeCompletionCapabilities(bridge);
         return 1;
+      } on LlamaUnsupportedException {
+        await _safeDisposeBridge();
+        rethrow;
       } catch (e) {
-        if (identical(e, gpuInactive)) {
-          await _safeDisposeBridge();
-          rethrow;
-        }
         final isolationError = webGpuCrossOriginIsolationError(e);
         if (isolationError != null) {
           await _safeDisposeBridge();
           throw isolationError;
+        }
+        final stagingError = webGpuModelStagingError(e, sourceUrls: [url]);
+        if (stagingError != null) {
+          await _safeDisposeBridge();
+          throw stagingError;
         }
         lastError = e;
         Map<String, String> runtimeHints = const <String, String>{};
@@ -3563,10 +3653,28 @@ class WebGpuLlamaBackend
       } catch (error) {
         final unloaded = webGpuModelUnloadedError(error);
         if (unloaded != null) throw unloaded;
+        final stagingError = webGpuModelStagingError(
+          error,
+          sourceUrls: [mmProjPath],
+        );
+        if (stagingError != null) throw stagingError;
         throw LlamaModelException(
           'The Web runtime could not load the multimodal projector.',
           webGpuBridgeErrorText(error, sourceUrls: <String>[mmProjPath]),
         );
+      }
+      final unverifiedStaging = _verifyJsBackedModelStaging(
+        bridge,
+        projector: true,
+      );
+      if (unverifiedStaging != null) {
+        _mmContextActive = true;
+        try {
+          await multimodalContextFree(1);
+        } catch (_) {
+          // Keep the staging mismatch when projector cleanup also fails.
+        }
+        throw unverifiedStaging;
       }
       _releaseCachedMmProjectorBlobUrl();
       if (cachedBlobUrl != null) {
