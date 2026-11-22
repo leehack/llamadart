@@ -308,6 +308,9 @@ if __name__ == '__main__':
                 print(error.code, file=sys.stderr)
                 raise SystemExit(1) from None
             raise
-        except Exception:
+        except KeyboardInterrupt:
+            traceback.print_exc()
+            raise SystemExit(130) from None
+        except BaseException:
             traceback.print_exc()
             raise SystemExit(1) from None

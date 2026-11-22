@@ -876,6 +876,40 @@ with mock.patch.dict(sys.modules, {'huggingface_hub': mock.Mock(HfApi=make_clien
         self.assertNotIn('AUDIT_INIT', result.stderr)
         self.assertNotIn('AUDIT_INIT', result.stdout)
 
+    def test_cli_redacts_an_interrupted_upload(self):
+        runner = '''
+import runpy
+import sys
+from unittest import mock
+
+from test_hf_space_deploy import SensitiveHttpError, ROOT
+
+def make_client(**kwargs):
+    api = mock.Mock()
+    def interrupted_upload(**kwargs):
+        try:
+            raise ConnectionError(SensitiveHttpError.signed_url('connection'))
+        except ConnectionError:
+            raise KeyboardInterrupt
+    api.upload_folder.side_effect = interrupted_upload
+    return api
+
+script = ROOT / 'tool/ci/hf_space_deploy.py'
+sys.argv = [str(script), '--repo', 'org/space', '--folder', 'build',
+            '--commit-message', 'msg', '--delete-pattern', '*']
+with mock.patch.dict(sys.modules, {'huggingface_hub': mock.Mock(HfApi=make_client)}):
+    runpy.run_path(str(script), run_name='__main__')
+'''
+        result = subprocess.run(
+            [sys.executable, '-B', '-c', runner], cwd=Path(__file__).parent,
+            env={**os.environ, 'HF_TOKEN': 'mock-token'},
+            capture_output=True, text=True, timeout=15)
+        self.assertEqual(result.returncode, 130, result.stderr)
+        self.assertIn('KeyboardInterrupt', result.stderr)
+        for stream in (result.stdout, result.stderr):
+            self.assertNotIn('X-Amz-Signature', stream)
+            self.assertNotIn('example.invalid', stream)
+
     def test_cli_redacts_retry_logs_from_offline_hub_wheel(self):
         wheel = os.environ.get('LLAMADART_HF_HUB_WHEEL')
         if not wheel or not Path(wheel).is_file():
