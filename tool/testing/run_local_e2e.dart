@@ -1742,6 +1742,66 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
       ],
     ),
     LocalE2eScenario(
+      name: 'web-js-backed-model-staging',
+      group: LocalE2eScenarioGroup.webSmoke,
+      description:
+          'Compare standard and JS-backed GGUF staging in direct and worker '
+          'runtimes, including version-skew refusals.',
+      requiresDevice: false,
+      stepsBuilder: (context) => [
+        LocalE2eCommandStep(
+          workingDirectory: context.projectRoot,
+          executable: 'bash',
+          arguments: const ['scripts/fetch_webgpu_bridge_assets.sh'],
+          environment: {
+            'WEBGPU_BRIDGE_OUT_DIR':
+                '${context.projectRoot}/build/web_js_backed_model_staging/bridge',
+          },
+          description: 'Fetch pinned WebGPU bridge assets',
+        ),
+        LocalE2eCommandStep(
+          workingDirectory: context.projectRoot,
+          executable: 'dart',
+          arguments: const [
+            'compile',
+            'js',
+            'test/e2e/webgpu/fixtures/js_backed_model_staging.dart',
+            '-o',
+            'build/web_js_backed_model_staging/js_backed_model_staging.js',
+          ],
+          description: 'Compile the public Dart GGUF load fixture',
+        ),
+        LocalE2eCommandStep(
+          workingDirectory: context.projectRoot,
+          executable: context.python,
+          arguments: [
+            'tool/testing/serve_static_with_headers.py',
+            '--port',
+            '${context.port}',
+            '--directory',
+            context.projectRoot,
+            '--coep',
+            'require-corp',
+          ],
+          description: 'Serve the model and bridge files',
+          background: true,
+          waitForPort: context.port,
+        ),
+        LocalE2eCommandStep(
+          workingDirectory: context.projectRoot,
+          executable: context.python,
+          arguments: [
+            'tool/testing/playwright_web_js_backed_model_staging.py',
+            'http://127.0.0.1:${context.port}',
+            if (context.modelUrl case final url?) ...['--model-url', url],
+            if (context.mmprojUrl case final url?) ...['--mmproj-url', url],
+            if (context.webgpuRequested) '--gpu',
+          ],
+          description: 'Verify staging, generation and typed refusals',
+        ),
+      ],
+    ),
+    LocalE2eScenario(
       name: 'web-webgpu-generation',
       group: LocalE2eScenarioGroup.webSmoke,
       description:
@@ -3488,21 +3548,25 @@ Future<LocalE2eResult> runLocalE2e(
           'also accepts firefox.\n',
     );
   }
-  if (scenario.name == 'chat-app-web-real-model-smoke' &&
+  const webGpuSmokeScenarios = {
+    'chat-app-web-real-model-smoke',
+    'web-js-backed-model-staging',
+  };
+  if (webGpuSmokeScenarios.contains(scenario.name) &&
       parsed.backendProvided &&
       !const ['cpu', 'webgpu'].contains(parsed.backend)) {
-    return const LocalE2eResult(
+    return LocalE2eResult(
       64,
-      stderr:
-          'chat-app-web-real-model-smoke requires --backend cpu or webgpu.\n',
+      stderr: '${scenario.name} requires --backend cpu or webgpu.\n',
     );
   }
-  if (scenario.name != 'chat-app-web-real-model-smoke' &&
+  if (!webGpuSmokeScenarios.contains(scenario.name) &&
       parsed.backend == 'webgpu') {
     return LocalE2eResult(
       64,
       stderr:
-          '--backend webgpu applies only to chat-app-web-real-model-smoke; '
+          '--backend webgpu applies only to chat-app-web-real-model-smoke '
+          'and web-js-backed-model-staging; '
           '${scenario.name} does not accept it.\n',
     );
   }

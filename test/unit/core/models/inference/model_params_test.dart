@@ -10,6 +10,35 @@ import 'package:llamadart/src/core/models/inference/model_params.dart';
 import 'package:test/test.dart';
 
 void main() {
+  test('LlamaCppModelParams copies and clears JS-backed staging', () {
+    const params = LlamaCppModelParams(jsBackedModelStaging: true);
+    expect(params.copyWith().jsBackedModelStaging, isTrue);
+    final disabled = params.copyWith(jsBackedModelStaging: false);
+    expect(disabled.jsBackedModelStaging, isFalse);
+    expect(
+      disabled.copyWith(clearJsBackedModelStaging: true).jsBackedModelStaging,
+      isNull,
+    );
+  });
+
+  test('LiteRtLmModelParams rejects JS-backed staging copy arguments', () {
+    const params = LiteRtLmModelParams();
+    final invalid = throwsA(
+      isA<LlamaArgumentException>().having(
+        (error) => error.message,
+        'message',
+        contains('JsBackedModelStaging'),
+      ),
+    );
+    for (final value in [true, false]) {
+      expect(
+        () => params.copyWith(jsBackedModelStaging: value),
+        throwsA(isA<LlamaArgumentException>()),
+      );
+    }
+    expect(() => params.copyWith(clearJsBackedModelStaging: true), invalid);
+  });
+
   test(
     'embedding-only loading is explicit and survives model parameter copies',
     () {

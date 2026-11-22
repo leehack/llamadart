@@ -2195,6 +2195,314 @@ void main() {
       },
     );
 
+    group('JS-backed staging', () {
+      const url = 'https://example.com/model.gguf';
+      const projectorUrl = 'https://example.com/projector.gguf';
+      const notesKey = 'llamadart.webgpu.runtime_notes';
+      const optIn = LlamaCppModelParams(
+        gpuLayers: 0,
+        jsBackedModelStaging: true,
+      );
+      const optOut = LlamaCppModelParams(
+        gpuLayers: 0,
+        jsBackedModelStaging: false,
+      );
+      const omitted = LlamaCppModelParams(gpuLayers: 0);
+      late JSObject constructor;
+      late int disposeCount;
+      late int projectorLoads;
+      late JSObject? projectorError;
+      late bool projectorStages;
+
+      final unsupported = throwsA(
+        isA<LlamaUnsupportedException>().having(
+          (error) => error.toString(),
+          'diagnostic',
+          allOf(contains('jsBackedModelStaging'), contains('v0.1.92+')),
+        ),
+      );
+
+      setUp(() {
+        constructor = JSObject()..['supportsJsBackedModelStaging'] = true.toJS;
+        bridge['constructor'] = constructor;
+        disposeCount = 0;
+        projectorLoads = 0;
+        projectorError = null;
+        projectorStages = false;
+        bridge['dispose'] = (() {
+          disposeCount++;
+          return Future<void>.value().toJS;
+        }).toJS;
+        bridge['loadMultimodalProjector'] = ((String _) {
+          projectorLoads++;
+          // Model the worker facade's terminal typed rejection at the JS boundary.
+          if (projectorError case final error?) return _rejectPromise(error);
+          mmLoaded = true;
+          if (projectorStages) {
+            bridgeRuntimeHints[notesKey] =
+                '${bridgeRuntimeHints[notesKey] ?? ''};mmproj_staging_js_backed';
+          }
+          return Future<JSNumber>.value(1.toJS).toJS;
+        }).toJS;
+      });
+
+      test(
+        'forwards true and disables opt-in automatic remote fetch',
+        () async {
+          globalContext['__llamadartBridgeAllowAutoRemoteFetchBackend'] =
+              true.toJS;
+          bridgeRuntimeHints[notesKey] =
+              'core_pthreads:1;model_staging_js_backed';
+          await backend.modelLoadFromUrl(url, optIn);
+          expect(
+            (lastBridgeConfig!['jsBackedModelStaging'] as JSBoolean).toDart,
+            isTrue,
+          );
+          expect(
+            (lastBridgeConfig!['allowAutoRemoteFetchBackend'] as JSBoolean)
+                .toDart,
+            isFalse,
+          );
+          projectorStages = true;
+          expect(await backend.multimodalContextCreate(1, projectorUrl), 1);
+          expect(projectorLoads, 1);
+          expect(mmLoaded, isTrue);
+        },
+      );
+
+      for (final (label, flag) in [
+        ('missing', null),
+        ('false', false.toJS),
+        ('string', 'true'.toJS),
+        ('number', 1.toJS),
+      ]) {
+        test(
+          'refuses a factory bridge with a $label flag before load',
+          () async {
+            if (flag == null) {
+              constructor.delete('supportsJsBackedModelStaging'.toJS);
+            } else {
+              constructor['supportsJsBackedModelStaging'] = flag;
+            }
+            bridgeRuntimeHints[notesKey] = 'model_staging_js_backed';
+            await expectLater(
+              backend.modelLoadFromUrl(url, optIn),
+              unsupported,
+            );
+            expect(requestedContextSizes, isEmpty);
+            expect(disposeCount, 1);
+            expect(backend.isReady, isFalse);
+          },
+        );
+      }
+
+      test('checks the global flag before invoking the constructor', () async {
+        const factoryName = '__llamadartTestCreateStagingBridge';
+        var constructions = 0;
+        globalContext[factoryName] = ((JSObject? config) {
+          constructions++;
+          return bridge;
+        }).toJS;
+        addTearDown(() => globalContext.delete(factoryName.toJS));
+        final globalConstructor = _jsFunction(
+          'config',
+          'return globalThis.$factoryName(config);',
+        );
+        bridge['constructor'] = globalConstructor;
+        globalContext['LlamaWebGpuBridge'] = globalConstructor;
+        bridgeRuntimeHints[notesKey] = 'model_staging_js_backed';
+        backend = WebGpuLlamaBackend();
+        await expectLater(backend.modelLoadFromUrl(url, optIn), unsupported);
+        expect(constructions, 0);
+        expect(requestedContextSizes, isEmpty);
+
+        globalConstructor['supportsJsBackedModelStaging'] = true.toJS;
+        await backend.modelLoadFromUrl(url, optIn);
+        expect(constructions, 1);
+        expect(requestedContextSizes, hasLength(1));
+      });
+
+      test(
+        'leaves the WebKit default to a legacy bridge when omitted',
+        () async {
+          constructor.delete('supportsJsBackedModelStaging'.toJS);
+          bridgeRuntimeHints[notesKey] = 'model_staging_js_backed';
+          await backend.modelLoadFromUrl(url, omitted);
+          expect(lastBridgeConfig!.has('jsBackedModelStaging'), isFalse);
+          projectorStages = true;
+          expect(await backend.multimodalContextCreate(1, projectorUrl), 1);
+        },
+      );
+
+      test(
+        'forwards false to a legacy bridge and verifies the opt-out',
+        () async {
+          constructor.delete('supportsJsBackedModelStaging'.toJS);
+          await backend.modelLoadFromUrl(url, optOut);
+          expect(lastBridgeConfig!.has('jsBackedModelStaging'), isTrue);
+          expect(
+            (lastBridgeConfig!['jsBackedModelStaging'] as JSBoolean).toDart,
+            isFalse,
+          );
+          expect(await backend.multimodalContextCreate(1, projectorUrl), 1);
+        },
+      );
+
+      for (final params in [optIn, optOut]) {
+        test(
+          'rejects an inconsistent model note for ${params.jsBackedModelStaging}',
+          () async {
+            bridgeRuntimeHints[notesKey] = params.jsBackedModelStaging!
+                ? 'model_staging_js_backed_default_unavailable'
+                : 'model_staging_js_backed';
+            await expectLater(
+              backend.modelLoadFromUrl(url, params),
+              unsupported,
+            );
+            expect(requestedContextSizes, hasLength(1));
+            expect(disposeCount, 1);
+            expect(backend.isReady, isFalse);
+          },
+        );
+
+        test(
+          'unloads an inconsistent projector for ${params.jsBackedModelStaging}',
+          () async {
+            if (params.jsBackedModelStaging!) {
+              bridgeRuntimeHints[notesKey] = 'model_staging_js_backed';
+            }
+            await backend.modelLoadFromUrl(url, params);
+            projectorStages = !params.jsBackedModelStaging!;
+            await expectLater(
+              backend.multimodalContextCreate(1, projectorUrl),
+              unsupported,
+            );
+            expect(projectorLoads, 1);
+            expect(mmLoaded, isFalse);
+            expect(disposeCount, 0);
+            expect(backend.isReady, isTrue);
+          },
+        );
+      }
+
+      for (final (origin, name, code, capabilityError) in [
+        ('old core', 'ModelStagingError', 'MODEL_STAGING_UNSUPPORTED', true),
+        (
+          'legacy worker',
+          'ModelStagingError',
+          'MODEL_STAGING_UNSUPPORTED',
+          true,
+        ),
+        (
+          'allocation',
+          'ModelStagingError',
+          'MODEL_STAGING_ALLOCATION_FAILED',
+          false,
+        ),
+        ('mount', 'ModelStagingError', 'MODEL_STAGING_MOUNT_FAILED', false),
+        (
+          'tensor limit',
+          'ModelStagingError',
+          'MODEL_TENSOR_SIZE_LIMIT_EXCEEDED',
+          true,
+        ),
+        (
+          'transfer length',
+          'ModelTransferLengthError',
+          'MODEL_TRANSFER_LENGTH_ERROR',
+          false,
+        ),
+      ]) {
+        Matcher failure() => throwsA(
+          (capabilityError
+                  ? isA<LlamaUnsupportedException>()
+                  : isA<LlamaModelException>())
+              .having((e) => e.toString(), 'diagnostic', contains(code))
+              .having(
+                (e) => e.toString(),
+                'diagnostic',
+                isNot(contains('hidden-file')),
+              ),
+        );
+
+        JSObject bridgeError() => _jsError(origin)
+          ..['name'] = name.toJS
+          ..['code'] = code.toJS
+          ..['llamadartLoadedBytes'] = 123.toJS
+          ..['llamadartFilePath'] = '/sensitive/hidden-file'.toJS;
+
+        test(
+          'fails model load once for $origin before retry classification',
+          () async {
+            globalContext['__llamadartBridgeAllowAutoRemoteFetchBackend'] =
+                true.toJS;
+            bridgeRuntimeHints[notesKey] = 'model_fs_write_arraybuffer_oom';
+            bridgeRuntimeHints['llamadart.webgpu.core_variant'] = 'wasm32';
+            bridge['loadModelFromUrl'] = ((String url, JSObject? config) {
+              recordLoadConfig(config);
+              return _rejectPromise(bridgeError());
+            }).toJS;
+
+            await expectLater(backend.modelLoadFromUrl(url, optIn), failure());
+            expect(requestedContextSizes, hasLength(1));
+            expect(requestedForceRemoteFetchBackends, [false]);
+            expect(disposeCount, 1);
+            expect(backend.isReady, isFalse);
+          },
+        );
+
+        test('preserves a worker projector error for $origin', () async {
+          bridgeRuntimeHints['llamadart.webgpu.execution'] = 'worker';
+          bridgeRuntimeHints[notesKey] = 'model_staging_js_backed';
+          await backend.modelLoadFromUrl(url, optIn);
+          projectorError = bridgeError()
+            ..delete('llamadartLoadedBytes'.toJS)
+            ..delete('llamadartFilePath'.toJS);
+          await expectLater(
+            backend.multimodalContextCreate(1, projectorUrl),
+            failure(),
+          );
+          expect(projectorLoads, 1);
+          expect(mmLoaded, isFalse);
+          expect(disposeCount, 0);
+          expect(backend.isReady, isTrue);
+        });
+      }
+
+      test('refuses forced remote fetch before creating a bridge', () async {
+        globalContext['__llamadartBridgeForceRemoteFetchBackend'] = true.toJS;
+        await expectLater(
+          backend.modelLoadFromUrl(url, optIn),
+          throwsA(
+            isA<LlamaUnsupportedException>().having(
+              (e) => e.message,
+              'message',
+              contains('__llamadartBridgeForceRemoteFetchBackend'),
+            ),
+          ),
+        );
+        expect(lastBridgeConfig, isNull);
+        expect(requestedContextSizes, isEmpty);
+      });
+
+      test(
+        'recreates a bridge when the model staging setting changes',
+        () async {
+          await backend.modelLoadFromUrl(url, omitted);
+          final original = lastBridgeConfig;
+          expect(original!.has('jsBackedModelStaging'), isFalse);
+          bridgeRuntimeHints[notesKey] = 'model_staging_js_backed';
+          await backend.modelLoadFromUrl(url, optIn);
+          expect(lastBridgeConfig, isNot(same(original)));
+          expect(
+            (lastBridgeConfig!['jsBackedModelStaging'] as JSBoolean).toDart,
+            isTrue,
+          );
+          expect(disposeCount, 1);
+        },
+      );
+    });
+
     group('cross-origin isolation error', () {
       JSPromise<JSAny?> rejectIsolation({String? name, String? code}) {
         final error = JSObject();

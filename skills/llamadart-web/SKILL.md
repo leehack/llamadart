@@ -92,6 +92,12 @@ in the llamadart-getting-started and llamadart-chat-streaming skills.
   Both are GGUF-on-Web only: native and LiteRT-LM loads throw
   `LlamaUnsupportedException` when either is set, so set them only under
   `kIsWeb` for a GGUF model.
+- On Web llama.cpp, omit `ModelParams.jsBackedModelStaging` to keep the
+  bridge default, which enables staging on supported WebKit cores. Set
+  `true` to require it with matching v0.1.92+ assets or `false` to opt out.
+  Staging reduces Wasm memory pressure by holding downloads in JavaScript
+  memory during load. Account for both heaps. Explicit opt-in excludes
+  fetch-backed loading. Native llama.cpp and LiteRT-LM reject either value.
 - Gate optional features on probes, not on the browser or the asset tag
   (the tag floors below are for diagnosing old assets only):
   - `await engine.capabilities` for `supportsPresencePenalty`,

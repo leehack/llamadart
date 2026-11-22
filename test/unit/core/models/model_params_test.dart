@@ -5,6 +5,21 @@ import 'package:llamadart/src/core/models/inference/model_params.dart';
 import 'package:test/test.dart';
 
 void main() {
+  test('ModelParams preserves all three JS-backed staging settings', () {
+    const params = ModelParams();
+    expect(params.jsBackedModelStaging, isNull);
+    final enabled = params.copyWith(jsBackedModelStaging: true);
+    expect(enabled.jsBackedModelStaging, isTrue);
+    expect(enabled.copyWith(contextSize: 512).jsBackedModelStaging, isTrue);
+    final disabled = enabled.copyWith(jsBackedModelStaging: false);
+    expect(disabled.jsBackedModelStaging, isFalse);
+    expect(disabled.copyWith().jsBackedModelStaging, isFalse);
+    expect(
+      disabled.copyWith(clearJsBackedModelStaging: true).jsBackedModelStaging,
+      isNull,
+    );
+  });
+
   group('ModelParams mem64 fields', () {
     test('default to null', () {
       const params = ModelParams();

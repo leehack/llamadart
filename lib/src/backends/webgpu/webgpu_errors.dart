@@ -191,6 +191,69 @@ LlamaUnsupportedException? webGpuCrossOriginIsolationError(Object error) {
   );
 }
 
+/// Required bridge capability for an explicit JS-backed staging request.
+const String webGpuJsBackedStagingRequired =
+    'JS-backed model staging (ModelParams.jsBackedModelStaging) requires '
+    'llama-web-bridge-assets v0.1.92+ exposing '
+    'LlamaWebGpuBridge.supportsJsBackedModelStaging with a staging-capable '
+    'worker and Wasm core (ABI v3+). Run dart run llamadart:web_setup to '
+    'update bridge assets, or omit or disable jsBackedModelStaging.';
+
+final RegExp _stagingErrorPath = RegExp(
+  r'''(?:[a-zA-Z][a-zA-Z0-9+.-]*:)?[/\\][^\s'"<>),;]+''',
+);
+
+/// Maps terminal staging and length failures by the bridge's wire identifiers.
+LlamaException? webGpuModelStagingError(
+  Object error, {
+  Iterable<String> sourceUrls = const <String>[],
+}) {
+  final String name;
+  final String code;
+  try {
+    final object = error as JSObject;
+    final rawName = object['name'];
+    final rawCode = object['code'];
+    if (!rawName.isA<JSString>() || !rawCode.isA<JSString>()) return null;
+    name = (rawName as JSString).toDart;
+    code = (rawCode as JSString).toDart;
+  } catch (_) {
+    return null;
+  }
+
+  if (name == 'ModelStagingError') {
+    switch (code) {
+      case 'MODEL_STAGING_UNSUPPORTED':
+        return LlamaUnsupportedException(
+          '$code: $webGpuJsBackedStagingRequired',
+        );
+      case 'MODEL_TENSOR_SIZE_LIMIT_EXCEEDED':
+        return LlamaUnsupportedException(
+          '$code: A model tensor exceeds the wasm32 4 GiB limit. '
+          'Use ModelParams(preferMemory64: true) with a memory64-capable browser.',
+        );
+    }
+  }
+
+  final message = switch ((name, code)) {
+    ('ModelStagingError', 'MODEL_STAGING_ALLOCATION_FAILED') =>
+      'JS-backed model staging could not allocate JavaScript memory',
+    ('ModelStagingError', 'MODEL_STAGING_MOUNT_FAILED') =>
+      'JS-backed model staging could not mount or retain its private filesystem',
+    ('ModelTransferLengthError', 'MODEL_TRANSFER_LENGTH_ERROR') =>
+      'Web model transfer length did not match the declared response size',
+    _ => null,
+  };
+  if (message == null) return null;
+  return LlamaModelException(
+    '$message ($code).',
+    webGpuBridgeErrorText(
+      error,
+      sourceUrls: sourceUrls,
+    ).replaceAll(_stagingErrorPath, '<path>'),
+  );
+}
+
 final RegExp _gpuUnavailableNote = RegExp(r'(?:^|;)gpu_unavailable:([^;]+)');
 
 /// Why the bridge ran without GPU layers, from its `gpu_unavailable:<reason>`

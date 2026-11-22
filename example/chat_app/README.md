@@ -686,6 +686,10 @@ await prefs.setInt('preferred_backend', backendIndex);
 - If optional `llama_webgpu_core_mem64` bridge assets are present and supported by the browser, chat app bridge bootstrapping can prefer wasm64 core and transparently fall back to wasm32.
 - Large single-file web model loading requires cross-origin isolation
   (`window.crossOriginIsolated === true`).
+- Web GGUF loads can use `LlamaCppModelParams(jsBackedModelStaging: true)`
+  with matching bridge assets v0.1.92+. The app leaves the setting unset,
+  which lets the bridge enable staging on supported WebKit cores. Set
+  `jsBackedModelStaging: false` in Dart to opt out.
 - Chat app defaults to wasm32-first for stability. You can opt into wasm64 preference with
   `window.__llamadartBridgeEnableMem64 = true` before bridge bootstrap.
 - Fetch-backed loading is disabled by default. Set

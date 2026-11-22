@@ -192,12 +192,18 @@ extension type WebGpuBridgeConfig._(JSObject _) implements JSObject {
     int? logLevel,
     JSObject? logger,
   });
+
+  /// Controls staging when set. Omitting the key keeps the browser default.
+  external set jsBackedModelStaging(bool value);
 }
 
 /// Static capabilities on the JS bridge constructor.
 extension type WebGpuBridgeConstructor._(JSObject _) implements JSObject {
   /// Whether the bridge supports cache queries and cached projector loads.
   external JSAny? get supportsModelCacheQuery;
+
+  /// Whether the bridge honors JS-backed staging and checks worker/core support.
+  external JSAny? get supportsJsBackedModelStaging;
 }
 
 /// Model cache query options.

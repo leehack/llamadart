@@ -591,6 +591,17 @@ class ModelParams {
   /// LiteRT-LM reject a non-null value.
   final int? modelBytesHint;
 
+  /// Controls JavaScript-backed GGUF and projector staging on Web llama.cpp.
+  ///
+  /// `null` leaves the bridge's browser default in effect, including automatic
+  /// staging on supported WebKit cores. `true` requires staging-capable bridge
+  /// assets (v0.1.92+), worker and Wasm core, and prohibits fetch-backed model
+  /// loading. `false` explicitly disables JavaScript-backed staging.
+  ///
+  /// Native llama.cpp and LiteRT-LM reject either explicit value with
+  /// [LlamaUnsupportedException].
+  final bool? jsBackedModelStaging;
+
   /// Maximum number of GPU layers to safely offload all layers.
   static const int maxGpuLayers = 999;
 
@@ -688,6 +699,7 @@ class ModelParams {
     this.gpuMemoryFit,
     this.preferMemory64,
     this.modelBytesHint,
+    this.jsBackedModelStaging,
   });
 
   ModelParams._copy(ModelParams other)
@@ -729,7 +741,8 @@ class ModelParams {
       moeCacheBytes = other.moeCacheBytes,
       gpuMemoryFit = other.gpuMemoryFit,
       preferMemory64 = other.preferMemory64,
-      modelBytesHint = other.modelBytesHint;
+      modelBytesHint = other.modelBytesHint,
+      jsBackedModelStaging = other.jsBackedModelStaging;
 
   /// Validates the parameter combination. Throws [LlamaArgumentException]
   /// when a value is out of range or the combination is incompatible with
@@ -1153,6 +1166,8 @@ class ModelParams {
     bool clearPreferMemory64 = false,
     int? modelBytesHint,
     bool clearModelBytesHint = false,
+    bool? jsBackedModelStaging,
+    bool clearJsBackedModelStaging = false,
   }) {
     return ModelParams(
       liteRtLmEmbeddingEngine:
@@ -1221,6 +1236,9 @@ class ModelParams {
       modelBytesHint: clearModelBytesHint
           ? null
           : (modelBytesHint ?? this.modelBytesHint),
+      jsBackedModelStaging: clearJsBackedModelStaging
+          ? null
+          : (jsBackedModelStaging ?? this.jsBackedModelStaging),
     );
   }
 }
@@ -1266,8 +1284,8 @@ final class GpuMemoryFit {
 /// be set by mistake, and a load of a LiteRT-LM model with it throws
 /// `LlamaUnsupportedException`. Each field means what it does on
 /// [ModelParams]. [useMmap] and [useMlock] apply natively only, and
-/// [preferMemory64] and [modelBytesHint] on the Web only; a load elsewhere
-/// throws `LlamaUnsupportedException` naming them.
+/// [preferMemory64], [modelBytesHint], and [jsBackedModelStaging] apply only
+/// on Web. A load elsewhere throws `LlamaUnsupportedException` naming them.
 ///
 /// ```dart
 /// final engine = await LlamaEngine.load(
@@ -1308,6 +1326,7 @@ class LlamaCppModelParams extends ModelParams {
     super.gpuMemoryFit,
     super.preferMemory64,
     super.modelBytesHint,
+    super.jsBackedModelStaging,
   });
 
   LlamaCppModelParams._copy(super.other) : super._copy();
@@ -1429,6 +1448,8 @@ class LlamaCppModelParams extends ModelParams {
     bool clearPreferMemory64 = false,
     int? modelBytesHint,
     bool clearModelBytesHint = false,
+    bool? jsBackedModelStaging,
+    bool clearJsBackedModelStaging = false,
   }) {
     _rejectCopyArguments('LlamaCppModelParams', 'LiteRtLmModelParams', {
       'liteRtLmEmbeddingEngine': liteRtLmEmbeddingEngine,
@@ -1490,6 +1511,8 @@ class LlamaCppModelParams extends ModelParams {
         clearPreferMemory64: clearPreferMemory64,
         modelBytesHint: modelBytesHint,
         clearModelBytesHint: clearModelBytesHint,
+        jsBackedModelStaging: jsBackedModelStaging,
+        clearJsBackedModelStaging: clearJsBackedModelStaging,
       ),
     );
   }
@@ -1705,6 +1728,8 @@ class LiteRtLmModelParams extends ModelParams {
     bool clearPreferMemory64 = false,
     int? modelBytesHint,
     bool clearModelBytesHint = false,
+    bool? jsBackedModelStaging,
+    bool clearJsBackedModelStaging = false,
   }) {
     _rejectCopyArguments('LiteRtLmModelParams', 'LlamaCppModelParams', {
       'splitMode': splitMode,
@@ -1730,6 +1755,7 @@ class LiteRtLmModelParams extends ModelParams {
       'gpuMemoryFit': gpuMemoryFit,
       'preferMemory64': preferMemory64,
       'modelBytesHint': modelBytesHint,
+      'jsBackedModelStaging': jsBackedModelStaging,
       if (clearGpuDevices) 'clearGpuDevices': true,
       if (clearTensorSplit) 'clearTensorSplit': true,
       if (clearGpuMemoryFit) 'clearGpuMemoryFit': true,
@@ -1738,6 +1764,7 @@ class LiteRtLmModelParams extends ModelParams {
       if (clearRopeFrequencyScale) 'clearRopeFrequencyScale': true,
       if (clearPreferMemory64) 'clearPreferMemory64': true,
       if (clearModelBytesHint) 'clearModelBytesHint': true,
+      if (clearJsBackedModelStaging) 'clearJsBackedModelStaging': true,
     });
     return LiteRtLmModelParams._copy(
       super.copyWith(
