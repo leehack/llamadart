@@ -191,6 +191,24 @@ LlamaUnsupportedException? webGpuCrossOriginIsolationError(Object error) {
   );
 }
 
+/// Whether the core preflight reports missing assets or an older worker.
+bool webGpuCorePreflightUnsupported(Object error) {
+  try {
+    final object = error as JSObject;
+    final name = object['name'];
+    final code = object['code'];
+    return name.isA<JSString>() &&
+        (name as JSString).toDart == 'CoreAssetError' &&
+        code.isA<JSString>() &&
+        const {
+          'CORE_ASSET_UNAVAILABLE',
+          'CORE_PREFLIGHT_UNSUPPORTED',
+        }.contains((code as JSString).toDart);
+  } catch (_) {
+    return false;
+  }
+}
+
 final RegExp _gpuUnavailableNote = RegExp(r'(?:^|;)gpu_unavailable:([^;]+)');
 
 /// Why the bridge ran without GPU layers, from its `gpu_unavailable:<reason>`

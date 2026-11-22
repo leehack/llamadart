@@ -120,11 +120,14 @@ load:
 </script>
 ```
 
-This requires `llama-web-bridge-assets` v0.1.87 or newer. The opt-in takes
+This requires `llama-web-bridge-assets` v0.1.92 or newer. The opt-in takes
 effect only when `window.crossOriginIsolated === false`. Isolated pages use
-the threaded core. Check `getMetadata()` for `core_single_thread` and
-`core_pthreads:0` in `llamadart.webgpu.runtime_notes`, and check
-`llamadart.webgpu.core_variant` for `wasm32` or `wasm64`.
+the threaded core. The bridge initializes the selected core before fetching
+the GGUF. Missing core assets or an older bridge or worker produce
+`LlamaUnsupportedException`. In `getMetadata()`, check
+`llamadart.webgpu.runtime_notes` for the `core_preflight_variant`,
+`core_preflight_threading` and `core_preflight_fallback` entries. The bridge
+reports the loaded width separately in `llamadart.webgpu.core_variant`.
 
 The core uses one CPU thread. GPU layers can still be offloaded on a browser
 with a suitable WebGPU adapter. Fetch-backed loading requires pthreads and

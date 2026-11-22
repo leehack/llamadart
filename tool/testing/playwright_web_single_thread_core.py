@@ -89,7 +89,7 @@ def run_case(browser, origin, model_url, *, worker, isolated=False,
         if legacy or not opt_in or (forced_fetch and not isolated):
             assert "unsupported" in result, result
             detail = result["unsupported"]
-            expected = "v0.1.87" if legacy else (
+            expected = "v0.1.92" if legacy else (
                 "COOP/COEP" if not opt_in else "fetch-backed"
             )
             assert expected in detail, result
@@ -115,6 +115,9 @@ def run_case(browser, origin, model_url, *, worker, isolated=False,
                 assert result["model_source"] == "network-fetch", result
         else:
             assert "core_pthreads:0" in notes and "core_single_thread" in notes, result
+            preflight_variant = "memory64" if result["core_variant"] == "wasm64" else "wasm32"
+            assert f"core_preflight_variant:{preflight_variant}" in notes, result
+            assert "core_preflight_threading:single-thread" in notes, result
             assert result["n_threads"] == result["n_threads_batch"] == "1", result
             assert "model_fetch_backend_attempt" not in notes, result
         if gpu:
@@ -130,10 +133,13 @@ def run_bootstrap_case(browser, fixture, model_url, *, worker, case):
     responses = []
     legacy_assets = {}
     missing_asset = {
-        "legacy": "llama_webgpu_core_st.js",
+        "adjacent-wasm-404": "llama_webgpu_core_st.wasm",
+        "mem64-unused-wasm32": "llama_webgpu_core_st.wasm",
         "loader-404": "llama_webgpu_core_st.js",
         "wasm-404": "llama_webgpu_core_st.wasm",
     }.get(case)
+
+    mem64 = case == "mem64-unused-wasm32"
 
     def serve_asset(route):
         name = Path(urlsplit(route.request.url).path).name
@@ -165,7 +171,7 @@ def run_bootstrap_case(browser, fixture, model_url, *, worker, case):
         page.route(f"{base}probe.html", lambda route: route.fulfill(
             body=html, content_type="text/html"
         ))
-        if case in {"model-404", "bad-model"}:
+        if case in {"model-404", "bad-model", "mem64-unused-wasm32"}:
             status = 404 if case == "model-404" else 200
             page.context.route(model_url, lambda route: route.fulfill(
                 status=status, body=b"invalid GGUF", content_type="application/octet-stream"
@@ -179,7 +185,8 @@ def run_bootstrap_case(browser, fixture, model_url, *, worker, case):
             "window.__llamadartBridgeReady === true && typeof runSingleThreadCore === 'function'"
         )
         actual = page.evaluate(
-            """async ({worker, modelUrl}) => {
+            """async ({worker, modelUrl, mem64, adjacentWasm}) => {
+              if (adjacentWasm) delete window.__llamadartBridgeWasmUrlSt;
               window.LlamaWebGpuBridge = class extends window.LlamaWebGpuBridge {
                 constructor(config) { super({...config, disableWorker: !worker}); }
               };
@@ -187,25 +194,35 @@ def run_bootstrap_case(browser, fixture, model_url, *, worker, case):
                 isolated: crossOriginIsolated,
                 source: window.__llamadartBridgeAssetSource,
                 coreModuleUrl: window.__llamadartBridgeCoreModuleUrlSt,
-                wasmUrl: window.__llamadartBridgeWasmUrlSt,
-                result: JSON.parse(await runSingleThreadCore(modelUrl, false, false)),
+                wasmUrl: window.__llamadartBridgeWasmUrlSt ?? null,
+                result: JSON.parse(await runSingleThreadCore(modelUrl, mem64, false)),
               };
             }""",
-            dict(worker=worker, modelUrl=model_url),
+            dict(worker=worker, modelUrl=model_url, mem64=mem64,
+                 adjacentWasm=case == "adjacent-wasm-404"),
         )
         print(json.dumps(dict(bootstrap_case=case, worker=worker, **actual,
                               responses=responses)), flush=True)
         assert actual["isolated"] is False and actual["source"] == "local", actual
         assert urlsplit(actual["coreModuleUrl"]).path.endswith("/llama_webgpu_core_st.js"), actual
-        assert urlsplit(actual["wasmUrl"]).path.endswith("/llama_webgpu_core_st.wasm"), actual
-        assert (("llama_webgpu_bridge_worker.js", 200) in responses) == worker, responses
-        result = actual["result"]
-        if missing_asset:
-            assert (missing_asset, 404) in responses, responses
-            assert ("model.gguf", 200) not in responses, responses
-            detail = result.get("unsupported", "")
-            assert all(text in detail for text in ("Single-thread", "COOP/COEP", "v0.1.87")), result
+        if case == "adjacent-wasm-404":
+            assert actual["wasmUrl"] is None, actual
         else:
+            assert urlsplit(actual["wasmUrl"]).path.endswith("/llama_webgpu_core_st.wasm"), actual
+        assert (("llama_webgpu_bridge_worker.js", 200) in responses) == (worker and case != "legacy"), responses
+        result = actual["result"]
+        if case == "legacy" or (missing_asset and not mem64):
+            if missing_asset:
+                assert (missing_asset, 404) in responses, responses
+            else:
+                assert responses == [("llama_webgpu_bridge.js", 200)], responses
+            assert all(name != "model.gguf" for name, _ in responses), responses
+            detail = result.get("unsupported", "")
+            assert all(text in detail for text in ("Single-thread", "COOP/COEP", "v0.1.92")), result
+        else:
+            if mem64:
+                assert ("llama_webgpu_core_mem64_st.wasm", 200) in responses, responses
+                assert all(name != missing_asset for name, _ in responses), responses
             assert ("model.gguf", status) in responses, responses
             assert "model_error" in result, result
     finally:
@@ -215,7 +232,10 @@ def run_bootstrap_case(browser, fixture, model_url, *, worker, case):
 def check_bootstrap_errors(browser, fixture, model_url):
     failures = []
     for worker in [False, True]:
-        for case in ["legacy", "loader-404", "wasm-404", "model-404", "bad-model"]:
+        for case in [
+            "legacy", "loader-404", "wasm-404", "adjacent-wasm-404",
+            "model-404", "bad-model", "mem64-unused-wasm32",
+        ]:
             try:
                 run_bootstrap_case(browser, fixture, model_url, worker=worker, case=case)
             except AssertionError as error:

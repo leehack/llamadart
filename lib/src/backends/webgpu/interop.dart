@@ -9,6 +9,9 @@ extension type LlamaWebGpuBridge._(JSObject _) implements JSObject {
   /// Creates a bridge instance.
   external factory LlamaWebGpuBridge([WebGpuBridgeConfig? config]);
 
+  /// Initializes the selected core before any model request.
+  external JSPromise<JSAny?>? preflightCore();
+
   /// Loads a GGUF model from a URL.
   external JSPromise<JSAny?>? loadModelFromUrl(
     String url, [
@@ -199,6 +202,24 @@ extension type WebGpuBridgeConfig._(JSObject _) implements JSObject {
 extension type WebGpuBridgeConstructor._(JSObject _) implements JSObject {
   /// Whether the bridge supports cache queries and cached projector loads.
   external JSAny? get supportsModelCacheQuery;
+
+  /// Whether the bridge offers a core preflight before model loading.
+  external JSAny? get supportsCorePreflight;
+}
+
+/// Fields from the selected core that are safe to report in runtime notes.
+extension type WebGpuCorePreflightResult._(JSObject _) implements JSObject {
+  /// The selected variant, `wasm32` or `memory64`.
+  external JSAny? get variant;
+
+  /// The selected core's threading mode.
+  external JSAny? get threading;
+
+  /// Whether initialization switched to a fallback core.
+  external JSAny? get fallback;
+
+  /// The bridge's fallback reason, when available.
+  external JSAny? get fallbackReason;
 }
 
 /// Model cache query options.

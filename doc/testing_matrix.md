@@ -1629,9 +1629,11 @@ Chromium, verifies actual isolation and shared-memory availability, and
 compares direct and worker execution for both wasm widths. It also exercises
 the default COOP/COEP refusal, a forced-fetch refusal and an isolated threaded
 worker that successfully loads through the fetch backend. The shipped chat
-bootstrap runs on a non-isolated page with v0.1.86 assets and with a missing
-loader or Wasm file. The direct and worker controls require typed unsupported
-errors for those cases and model errors for a GGUF download 404 or invalid GGUF.
+bootstrap refuses legacy v0.1.86 before core or worker requests, and reports
+typed unsupported errors for missing loaders and explicit or adjacent Wasm
+files. In both execution modes a GGUF download 404 or invalid GGUF retains
+its model error. Invalid GGUF on memory64 leaves the unused wasm32 binary
+unrequested.
 
 Add `--backend webgpu` to require GPU offload for non-isolated Stories15M
 generation. Pass `--model-url` to measure another GGUF in a single-thread

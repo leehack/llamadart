@@ -385,18 +385,19 @@ assets can time out during core initialization.
 
 Setting `__llamadartBridgeAllowSingleThreadCore` to literal `true` affects
 only a non-isolated page. Dart passes `allowSingleThreadCore: true` and selects
-the single-thread URLs for both wasm widths. After a successful model load,
-the bridge's native pthread probe must report `core_pthreads:0` and
-`core_single_thread` in the runtime notes. Those notes and `core_variant`
-identify the actual loaded core. The wasm32 single-thread loader URL is
-required because older bridge releases accepted the option without publishing
-single-thread assets and could otherwise try a threaded core. A missing
-loader URL, an isolation error from a legacy bridge, or a completed load
-without these notes surfaces `LlamaUnsupportedException` naming the minimum
-asset version. If core initialization fails, Dart checks the configured
-wasm32 loader and Wasm URLs. A confirmed HTTP 404 or 410 on a core asset
-produces the same typed refusal. Model download and GGUF errors retain their
-model error path.
+the single-thread URLs for both wasm widths. The opt-in requires assets
+v0.1.92+. Dart checks the constructor's `supportsCorePreflight` flag and calls
+`preflightCore()` before model loading. The bridge initializes the core in
+the chosen execution mode and handles memory64 fallback and adjacent Wasm
+resolution. The model load reuses that core. Missing core assets and older
+bridges or workers produce `LlamaUnsupportedException` naming the asset
+requirement and COOP/COEP. Model download and GGUF failures retain their
+ordinary error types.
+
+The preflight must report `threading: 'single-thread'`. After model load,
+`llamadart.webgpu.runtime_notes` includes the preflight variant, threading
+and fallback result. The bridge also reports the actual loaded
+`core_variant` and the `core_single_thread` runtime note.
 Fetch-backed loading requires pthreads. Dart excludes it from automatic
 staging recovery on the single-thread path and rejects a forced request.
 
@@ -473,6 +474,8 @@ window.LlamaWebGpuBridge = class LlamaWebGpuBridge {
 ## Required methods
 
 `WebGpuLlamaBackend` can use these methods if present:
+
+- `preflightCore()` when the constructor reports `supportsCorePreflight: true`
 
 - `loadModelFromUrl(url, { nCtx, nThreads, nThreadsBatch, nBatch, nUbatch, nGpuLayers, nSeqMax, flashAttention, cacheTypeK, cacheTypeV, kvUnified, ropeFrequencyBase, ropeFrequencyScale, splitMode, mainGpu, useCache, forceRemoteFetchBackend, remoteFetchChunkBytes, loadMtp, speculativeRollbackTokenMax, progressCallback })`
 - `prefetchModelToCache(url, { useCache, force, cacheName, progressCallback })`
@@ -620,7 +623,7 @@ in both runtimes.
 ## Runtime globals read by `llamadart`
 
 - `window.__llamadartBridgeAllowSingleThreadCore`: literal `true` opts into
-  GGUF loading on non-isolated pages using matching v0.1.87+ bridge assets.
+  GGUF loading on non-isolated pages using matching v0.1.92+ bridge assets.
 - `window.__llamadartBridgeCoreModuleUrlSt` and
   `window.__llamadartBridgeWasmUrlSt` supply the single-thread wasm32 core.
   `window.__llamadartBridgeCoreModuleUrlMem64St` and

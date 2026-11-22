@@ -59,11 +59,12 @@ in the llamadart-getting-started and llamadart-chat-streaming skills.
   reject with `LlamaUnsupportedException` naming COOP/COEP by default.
   When the host cannot isolate the page, run `dart run llamadart:web_setup`
   and set `window.__llamadartBridgeAllowSingleThreadCore = true` before the
-  first GGUF load. This requires matching v0.1.87+ assets and affects only
+  first GGUF load. This requires matching v0.1.92+ assets and affects only
   non-isolated pages. For custom hosting, configure
   `__llamadartBridgeCoreModuleUrlSt` / `__llamadartBridgeWasmUrlSt` and
   `__llamadartBridgeCoreModuleUrlMem64St` / `__llamadartBridgeWasmUrlMem64St`.
-  Verify `core_pthreads:0` and `core_single_thread` in
+  The bridge checks and initializes the core before model loading.
+  Verify `core_preflight_threading:single-thread` in
   `llamadart.webgpu.runtime_notes`. A single-thread core runs streamed model
   staging and rejects forced fetch-backed loading. It can offload GPU layers
   when the adapter supports WebGPU.
