@@ -698,7 +698,7 @@ class WebGpuLlamaBackend
     try {
       raw = await bridge.preflightCore()?.toDart;
     } catch (error) {
-      if (webGpuCorePreflightUnsupported(error)) {
+      if (webGpuCoreAssetErrorCode(error) == 'CORE_PREFLIGHT_UNSUPPORTED') {
         throw LlamaUnsupportedException(_singleThreadCoreUnavailable);
       }
       rethrow;
@@ -1486,6 +1486,10 @@ class WebGpuLlamaBackend
         if (e is LlamaUnsupportedException) {
           await _safeDisposeBridge();
           rethrow;
+        }
+        if (webGpuCoreAssetErrorCode(e) == 'CORE_ASSET_UNAVAILABLE') {
+          await _safeDisposeBridge();
+          throw LlamaUnsupportedException(_singleThreadCoreUnavailable);
         }
         final isolationError = webGpuCrossOriginIsolationError(e);
         if (isolationError != null) {

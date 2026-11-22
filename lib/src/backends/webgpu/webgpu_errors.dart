@@ -191,22 +191,21 @@ LlamaUnsupportedException? webGpuCrossOriginIsolationError(Object error) {
   );
 }
 
-/// Whether the core preflight reports missing assets or an older worker.
-bool webGpuCorePreflightUnsupported(Object error) {
+/// The stable code carried by a bridge core-asset error on either runtime.
+String? webGpuCoreAssetErrorCode(Object error) {
   try {
     final object = error as JSObject;
     final name = object['name'];
     final code = object['code'];
-    return name.isA<JSString>() &&
+    if (name.isA<JSString>() &&
         (name as JSString).toDart == 'CoreAssetError' &&
-        code.isA<JSString>() &&
-        const {
-          'CORE_ASSET_UNAVAILABLE',
-          'CORE_PREFLIGHT_UNSUPPORTED',
-        }.contains((code as JSString).toDart);
+        code.isA<JSString>()) {
+      return (code as JSString).toDart;
+    }
   } catch (_) {
-    return false;
+    // Primitive rejections carry no bridge error code.
   }
+  return null;
 }
 
 final RegExp _gpuUnavailableNote = RegExp(r'(?:^|;)gpu_unavailable:([^;]+)');

@@ -2536,7 +2536,7 @@ void main() {
       }
 
       test(
-        'a post-preflight CoreAssetError stays on the model error path',
+        'a missing core asset reported by model dispatch is typed unsupported',
         () async {
           bridge['loadModelFromUrl'] = ((String url, JSObject? config) {
             calls.add('model');
@@ -2545,7 +2545,7 @@ void main() {
 
           await expectLater(
             backend.modelLoadFromUrl(modelUrl, params),
-            throwsA(isA<LlamaModelException>()),
+            unsupported,
           );
           expect(calls, ['preflight', 'model']);
         },
