@@ -580,6 +580,20 @@ def make_client(**kwargs):
     logging.getLogger('urllib3.connectionpool').warning(
         'PUT %s HTTP/1.1 503', '/asset?X-Amz-Signature=relative')
     warnings.warn(f'SDK upload warning {url("warning")}')
+    logging.getLogger().warning('root record %s', url('root'))
+    logging.getLogger('py.warnings').addHandler(logging.StreamHandler())
+    logging.captureWarnings(True)
+    warnings.warn(f'captured warning {url("captured")}')
+    logging.captureWarnings(False)
+    extra_handler = logging.StreamHandler(sys.stdout)
+    extra_handler.setFormatter(logging.Formatter('extra %(target)s'))
+    extra_logger = logging.getLogger('app.extra')
+    extra_logger.addHandler(extra_handler)
+    extra_logger.warning('extra field', extra={'target': url('extra')})
+    logging.getLogger('app').warning(
+        'encoded https%3A%2F%2Fexample.invalid%2Fe%3FX-Amz-Signature%3Dencoded '
+        'and url=/asset?X-Amz-Signature=equals')
+    logging.makeLogRecord({})
     return mock.Mock()
 
 script = ROOT / 'tool/ci/hf_space_deploy.py'
@@ -596,8 +610,12 @@ with mock.patch.dict(sys.modules, {'huggingface_hub': mock.Mock(HfApi=make_clien
         self.assertEqual(result.stderr.count('HTTP 503 PUT'), 3, result.stderr)
         self.assertIn('HTTP/1.1 503', result.stderr)
         self.assertIn('SDK upload warning', result.stderr)
-        self.assertNotIn('X-Amz-Signature', result.stderr)
-        self.assertNotIn('example.invalid', result.stderr)
+        self.assertIn('root record', result.stderr)
+        self.assertIn('captured warning', result.stderr)
+        self.assertIn('extra ', result.stdout)
+        for stream in (result.stdout, result.stderr):
+            self.assertNotIn('X-Amz-Signature', stream)
+            self.assertNotIn('example.invalid', stream)
 
     def test_cli_redacts_retry_logs_from_offline_hub_wheel(self):
         wheel = os.environ.get('LLAMADART_HF_HUB_WHEEL')

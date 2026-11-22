@@ -32,8 +32,8 @@ MAX_BACKOFF = 30.0
 BASE_BACKOFF = 5.0
 STORAGE_WARN_BYTES = 750_000_000
 _MISSING_SPACE = object()
-_HUB_LOGGERS = {'huggingface_hub', 'requests', 'urllib3'}
-_URL = re.compile(r"""https?://\S+|(?<![^\s"'])/[^\s?]*\?\S*""", re.IGNORECASE)
+_URL = re.compile(r"""https?(?:://|%3A%2F%2F)\S+|(?<![^\s"'=])/[^\s?]*\?\S*""", re.IGNORECASE)
+_STANDARD_RECORD_FIELDS = frozenset(vars(logging.makeLogRecord({}))) | {'message', 'asctime'}
 
 
 def _redact_urls(message):
@@ -47,14 +47,28 @@ def _redact_hub_diagnostics():
 
     def make_record(*args, **kwargs):
         record = factory(*args, **kwargs)
-        if record.name.partition('.')[0] in _HUB_LOGGERS:
-            record.msg = _redact_urls(record.getMessage())
-            record.args = ()
-            if record.exc_info:
-                record.exc_text = _redact_urls(formatter.formatException(record.exc_info))
-                record.exc_info = None
-            if record.stack_info:
-                record.stack_info = _redact_urls(record.stack_info)
+        # Redact every record: SDK, transport, root and py.warnings records can all carry URLs.
+        try:
+            message = record.getMessage()
+        except Exception:
+            message = str(record.msg)
+        record.msg = _redact_urls(message)
+        record.args = ()
+        if record.exc_info:
+            record.exc_text = _redact_urls(formatter.formatException(record.exc_info))
+            record.exc_info = None
+        if record.stack_info:
+            record.stack_info = _redact_urls(record.stack_info)
+        return record
+
+    make_logger_record = logging.Logger.makeRecord
+
+    def make_record_with_extra(self, *args, **kwargs):
+        # `extra` fields are set after the record factory runs.
+        record = make_logger_record(self, *args, **kwargs)
+        for key, value in vars(record).items():
+            if key not in _STANDARD_RECORD_FIELDS and isinstance(value, str):
+                setattr(record, key, _redact_urls(value))
         return record
 
     def show_warning(message, category, filename, lineno, file=None, line=None):
@@ -67,9 +81,11 @@ def _redact_hub_diagnostics():
         warnings.showwarning = show_warning
         # Parent logger filters miss child records, and the Hub installs its own handler.
         logging.setLogRecordFactory(make_record)
+        logging.Logger.makeRecord = make_record_with_extra
         try:
             yield
         finally:
+            logging.Logger.makeRecord = make_logger_record
             logging.setLogRecordFactory(factory)
 
 
