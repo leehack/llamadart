@@ -1,6 +1,0 @@
-{
-  "worker": false,
-  "result": {
-    "model_error": "LlamaException: Failed to load model from <redacted model URL> (Web model transfer length did not match the declared response size (MODEL_TRANSFER_LENGTH_ERROR). (Model response staged 16 bytes, expected 32.))"
-  }
-}

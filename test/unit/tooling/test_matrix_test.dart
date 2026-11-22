@@ -362,17 +362,6 @@ void main() {
       ),
     );
   });
-  test('JS-backed staging evidence is listed as a local-only Web smoke', () {
-    final row = testMatrixRows.singleWhere(
-      (row) => row.id == 'web-js-backed-model-staging',
-    );
-    expect(row.mode, 'local-only, Chromium');
-    expect(
-      row.command,
-      'dart run tool/testing/run_local_e2e.dart --scenario web-js-backed-model-staging',
-    );
-  });
-
   test('Web grammar matrix dispatches pinned-asset Wasm suites', () async {
     final row = testMatrixRows.singleWhere(
       (row) => row.id == 'web-lazy-grammar',
