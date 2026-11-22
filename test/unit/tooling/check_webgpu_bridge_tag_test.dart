@@ -506,6 +506,10 @@ void main() {
     for (final (shape, example) in [
       ('quoted indented code', '>     Literal example (unchanged from 1.2.1).'),
       (
+        'quoted HTML code',
+        '> <pre><code>Literal example (unchanged from 1.2.1).</code></pre>',
+      ),
+      (
         'quoted list-item fence',
         '> - ```text\n>   Literal example (unchanged from 1.2.1).\n>   ```',
       ),
