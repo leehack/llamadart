@@ -105,6 +105,32 @@ class RetryTest(unittest.TestCase):
                 self.assertEqual(getattr(api, step).call_count, 1, (status, step))
                 self.assertEqual(sleeps, [], (status, step))
 
+    def test_wrapped_upload_failure_reports_the_chained_status(self):
+        for status in (403, 429):
+            with self.subTest(status=status):
+                api = missing_space_api()
+                wrapped = RuntimeError(SensitiveHttpError.signed_url('wrapper'))
+                wrapped.__cause__ = SensitiveHttpError(status, '0', 'cause')
+                api.upload_folder.side_effect = wrapped
+                sleeps = []
+                with self.assertRaises(hf.DeployError) as raised:
+                    hf.deploy(api, 'r', 'f', 'm', ['*'], False, sleep=sleeps.append,
+                              log=lambda *a, **k: None)
+                self.assertEqual(str(raised.exception),
+                                 f'upload_folder: failed (HTTP {status}, RuntimeError)')
+                self.assertEqual(api.upload_folder.call_count, 1)
+                self.assertEqual(sleeps, [])
+
+    def test_cyclic_exception_chain_reports_unavailable_status(self):
+        api = missing_space_api()
+        first, second = RuntimeError('a'), ValueError('b')
+        first.__context__, second.__context__ = second, first
+        api.upload_folder.side_effect = first
+        with self.assertRaises(hf.DeployError) as raised:
+            run_deploy(api)
+        self.assertEqual(str(raised.exception),
+                         'upload_folder: failed (HTTP status unavailable, RuntimeError)')
+
     def test_logs_never_include_the_token(self):
         api = missing_space_api()
         api.create_repo.side_effect = [HttpError(429), None]

@@ -34,6 +34,18 @@ def status_of(error):
     return getattr(getattr(error, 'response', None), 'status_code', None)
 
 
+def reported_status(error):
+    # huggingface_hub wraps LFS upload failures in RuntimeError; the HTTP error is in the chain.
+    seen = set()
+    while error is not None and id(error) not in seen:
+        seen.add(id(error))
+        status = status_of(error)
+        if type(status) is int:
+            return status
+        error = error.__cause__ or error.__context__
+    return None
+
+
 def retry_after(error):
     value = getattr(getattr(error, 'response', None), 'headers', {}).get('Retry-After')
     try:
@@ -73,8 +85,8 @@ def _call_hub(label, call, budget, *, allow_missing=False, **retry_options):
     try:
         return with_retry(label, call, budget, **retry_options)
     except Exception as error:
-        status = status_of(error)
-        if allow_missing and status == 404:
+        status = reported_status(error)
+        if allow_missing and status_of(error) == 404:
             return _MISSING_SPACE
         http = f'HTTP {status}' if type(status) is int else 'HTTP status unavailable'
         message = f'{label}: failed ({http}, {type(error).__name__})'
