@@ -15,12 +15,18 @@ any Hub call. Existing Spaces warn at 750 MB of usedStorage.
 A terminal Hub error reports only the operation, HTTP status and error type.
 """
 import argparse
+from contextlib import ExitStack, contextmanager
+from io import TextIOBase
+import logging
 import os
 from pathlib import Path
 import random
+import re
 import stat
 import sys
+from threading import RLock
 import time
+import traceback
 
 MAX_ATTEMPTS = 5
 MAX_TOTAL_WAIT = 240.0
@@ -28,6 +34,99 @@ MAX_BACKOFF = 30.0
 BASE_BACKOFF = 5.0
 STORAGE_WARN_BYTES = 750_000_000
 _MISSING_SPACE = object()
+_URL = re.compile(
+    r'https?(?:://|%3A%2F%2F)\S+|(?<![\w/%.-])(?:/|%2F)[^\s?]*?(?:\?|%3F)\S*',
+    re.IGNORECASE,
+)
+_SIGNING_PARAMETER = re.compile(
+    r'\b(?:X-Amz-[A-Za-z-]+|X-Goog-Signature|Signature|Expires|sig)(?:=|%3D)'
+    r'(?:[^\S\r\n]+signature\b)?[^\S\r\n]*\S+',
+    re.IGNORECASE,
+)
+
+
+def _redact_text(text):
+    # Some diagnostics separate the signature from the URL with spaces.
+    text = _SIGNING_PARAMETER.sub('<redacted-signing-parameter>', text)
+    return _URL.sub('<redacted URL>', text)
+
+
+class _RedactingStream(TextIOBase):
+    def __init__(self, stream):
+        self._stream = stream
+        self._pending = ''
+        self._lock = RLock()
+
+    @property
+    def encoding(self):
+        return self._stream.encoding
+
+    @property
+    def errors(self):
+        return self._stream.errors
+
+    def writable(self):
+        return self._stream.writable()
+
+    def isatty(self):
+        return self._stream.isatty()
+
+    def write(self, text):
+        with self._lock:
+            if self.closed:
+                raise ValueError('I/O operation on closed stream')
+            complete, newline, self._pending = (self._pending + text).rpartition('\n')
+            if newline:
+                self._stream.write(_redact_text(complete + newline))
+        return len(text)
+
+    def flush(self):
+        with self._lock:
+            if self._pending:
+                self._stream.write(_redact_text(self._pending))
+                self._pending = ''
+            self._stream.flush()
+
+
+def _stream_handlers():
+    # Include SDK handlers that have been created but have not been attached to a logger.
+    handlers = [ref() for ref in logging._handlerList[:]]
+    handlers.append(logging.lastResort)
+    return {handler for handler in handlers if isinstance(handler, logging.StreamHandler)}
+
+
+def _swap_handler_streams(handlers, source_streams, target_streams):
+    for handler in handlers:
+        handler.acquire()
+        try:
+            stream = getattr(handler, 'stream', None)
+            for source, target in zip(source_streams, target_streams):
+                if stream is source:
+                    handler.stream = target
+                    break
+        finally:
+            handler.release()
+
+
+@contextmanager
+def _redact_hub_diagnostics():
+    original_stdout, original_stderr = original = sys.stdout, sys.stderr
+    handlers = _stream_handlers()
+    with ExitStack() as stack:
+        stdout = stack.enter_context(_RedactingStream(original_stdout))
+        stderr = stdout if original_stderr is original_stdout else stack.enter_context(
+            _RedactingStream(original_stderr))
+        sys.stdout, sys.stderr = wrapped = stdout, stderr
+        try:
+            # The default lastResort resolves sys.stderr dynamically and already sees the wrapper.
+            _swap_handler_streams(handlers, original, wrapped)
+            yield
+        finally:
+            if sys.stdout is stdout:
+                sys.stdout = original_stdout
+            if sys.stderr is stderr:
+                sys.stderr = original_stderr
+            _swap_handler_streams(handlers | _stream_handlers(), wrapped, original)
 
 
 def status_of(error):
@@ -174,6 +273,11 @@ def deploy(api, repo, folder, commit_message, delete_patterns, public, *,
 
 
 def main(argv=None):
+    with _redact_hub_diagnostics():
+        _run_cli(argv)
+
+
+def _run_cli(argv):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--repo', required=True)
     parser.add_argument('--folder', required=True)
@@ -195,4 +299,18 @@ def main(argv=None):
 
 
 if __name__ == '__main__':
-    main()
+    with _redact_hub_diagnostics():
+        # Python would render uncaught exceptions after the streams have been restored.
+        try:
+            _run_cli(None)
+        except SystemExit as error:
+            if error.code is not None and not isinstance(error.code, int):
+                print(error.code, file=sys.stderr)
+                raise SystemExit(1) from None
+            raise
+        except KeyboardInterrupt:
+            traceback.print_exc()
+            raise SystemExit(130) from None
+        except BaseException:
+            traceback.print_exc()
+            raise SystemExit(1) from None
