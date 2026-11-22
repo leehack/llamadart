@@ -851,6 +851,55 @@ Future<void> main(List<String> args) async {
     });
   });
 
+  test(
+    'staging smoke compiles its public Dart fixture and forwards options',
+    () async {
+      final result = await runLocalE2e(
+        [
+          '--scenario',
+          'web-js-backed-model-staging',
+          '--backend',
+          'webgpu',
+          '--model-url',
+          'http://localhost:7357/vision.gguf',
+          '--mmproj-url',
+          'http://localhost:7357/projector.gguf',
+          '--port',
+          '7357',
+          '--python',
+          'python3',
+          '--dry-run',
+        ],
+        projectRoot: '/repo',
+        displayShell: LocalE2eDisplayShell.posix,
+      );
+      expect(result.exitCode, 0, reason: result.stderr);
+      expect(
+        result.stdout,
+        contains(
+          'WEBGPU_BRIDGE_OUT_DIR=/repo/build/web_js_backed_model_staging/bridge '
+          'bash scripts/fetch_webgpu_bridge_assets.sh',
+        ),
+      );
+      expect(
+        result.stdout,
+        contains(
+          'dart compile js test/e2e/webgpu/fixtures/js_backed_model_staging.dart '
+          '-o build/web_js_backed_model_staging/js_backed_model_staging.js',
+        ),
+      );
+      expect(result.stdout, contains('--coep require-corp &'));
+      expect(
+        result.stdout,
+        contains(
+          'python3 tool/testing/playwright_web_js_backed_model_staging.py '
+          'http://127.0.0.1:7357 --model-url http://localhost:7357/vision.gguf '
+          '--mmproj-url http://localhost:7357/projector.gguf --gpu',
+        ),
+      );
+    },
+  );
+
   group('web-webgpu-generation', () {
     test(
       'dry-run fetches pinned assets and runs the WebGPU platform',
