@@ -133,6 +133,15 @@ const String linuxVmRun =
     r'${{ steps.shard.outputs.files }}';
 
 void main() {
+  test('CI uses the updated payload when a release-prep label is added', () {
+    final pullRequest = readWorkflow('ci')['on']['pull_request'] as Map;
+    expect(pullRequest['branches'], ['main']);
+    expect(
+      pullRequest['types'],
+      unorderedEquals(['opened', 'synchronize', 'reopened', 'labeled']),
+    );
+  });
+
   test('CI artifact actions use full SHAs with version comments', () {
     final source = File('.github/workflows/ci.yml').readAsStringSync();
     final lines = const LineSplitter().convert(source);

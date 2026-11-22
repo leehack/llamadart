@@ -89,12 +89,19 @@ jobs:
               git show -s --format=%B "$squash" > "$message" || return 1
               bash tool/release/verify_release_candidate.sh "$base" "$squash" "$message"
             }
-            for attribution in "$coauthor" "$signoff" "$coauthor"$'\n'"$signoff" ''; do
+            for variant in coauthor signoff combined plain; do
+              case "$variant" in
+                coauthor) attribution="$coauthor"; description='with co-author trailer' ;;
+                signoff) attribution="$signoff"; description='with sign-off trailer' ;;
+                combined) attribution="$coauthor"$'\n'"$signoff"; description='with co-author and sign-off trailers' ;;
+                plain) attribution=''; description='without trailers' ;;
+              esac
               jq -r '.pull_request | "\(.title) (#\(.number))\n\n\(.body)"' "$GITHUB_EVENT_PATH" > "$message"
               if [[ -n "$attribution" ]]; then
                 printf '\n%s\n' "$attribution" >> "$message"
               fi
               if ! verify_squash; then
+                echo "Squash variant $description failed." >&2
                 echo 'If the receipt is malformed, edit the PR body. End the receipt block with no trailing attribution or whitespace.' >&2
                 exit 1
               fi

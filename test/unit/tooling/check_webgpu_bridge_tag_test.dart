@@ -320,6 +320,7 @@ void main() {
           '$_keptBridgeClaim\n$_keptBridgeClaim',
         ),
         valid.replaceFirst(_preparedBaseline, ''),
+        valid.replaceFirst('native LiteRT-LM uses', 'native LiteRT-LM stays'),
         '$valid$_preparedBaseline\n',
         valid.replaceFirst('@litert-lm/core@0.19.0', '@litert-lm/core@0.18.0'),
         valid.replaceFirst(
@@ -336,6 +337,56 @@ void main() {
       }
     },
   );
+
+  test('prep CLI reads prior native pins from the requested tag', () async {
+    final root = _preparedReleaseRepo();
+    final candidatePubspec = File('${root.path}/$rootPubspecPath');
+    final candidatePins = File('${root.path}/$nativeLlamaCppTagPath');
+    final pubspec = candidatePubspec.readAsStringSync();
+    final pins = candidatePins.readAsStringSync();
+    final coreChangelog = File('${root.path}/CHANGELOG.md');
+    final notes = coreChangelog.readAsStringSync();
+    final script = File('tool/testing/check_webgpu_bridge_tag.dart').absolute;
+    final packages = File('.dart_tool/package_config.json').absolute.path;
+    void git(List<String> args) {
+      final result = Process.runSync(
+        'git',
+        args,
+        workingDirectory: root.path,
+        environment: {
+          'GIT_AUTHOR_NAME': 'Release fixture',
+          'GIT_AUTHOR_EMAIL': 'release-fixture@example.invalid',
+          'GIT_COMMITTER_NAME': 'Release fixture',
+          'GIT_COMMITTER_EMAIL': 'release-fixture@example.invalid',
+        },
+      );
+      expect(result.exitCode, 0, reason: '${result.stderr}');
+    }
+
+    git(['init', '--quiet']);
+    candidatePubspec.writeAsStringSync(pubspec.replaceFirst('1.2.3', '1.2.2'));
+    candidatePins.writeAsStringSync(pins.replaceFirst('v1.0.0-3', 'v1.0.0-2'));
+    git(['add', rootPubspecPath, nativeLlamaCppTagPath, bridgeTagSourcePath]);
+    git(['commit', '--quiet', '-m', 'Last release']);
+    git(['tag', 'v1.2.2']);
+    candidatePubspec.writeAsStringSync(pubspec);
+    candidatePins.writeAsStringSync(pins);
+    coreChangelog.writeAsStringSync(
+      notes.replaceFirst('`v1.0.0-3`', '`v1.0.0-3` (unchanged from 1.2.2)'),
+    );
+
+    final result = await Process.run(Platform.resolvedExecutable, [
+      '--packages=$packages',
+      script.path,
+      '--release-prep',
+      'v1.2.2',
+    ], workingDirectory: root.path);
+    expect(result.exitCode, 1, reason: '${result.stdout}');
+    expect(
+      result.stderr,
+      contains('CHANGELOG.md must contain one complete Runtime baseline'),
+    );
+  });
 
   for (final path in _preparedChangelogs) {
     test(
@@ -358,6 +409,34 @@ void main() {
         expect(verify(), contains(startsWith('$path ')));
       },
     );
+    test('strict prep verifies visible retention claims throughout $path', () {
+      final root = _preparedReleaseRepo();
+      final changelog = File('${root.path}/$path');
+      final valid = changelog.readAsStringSync();
+      const badClaim = '(unchanged from 1.2.1)';
+      const reason = 'does not match the previous release';
+      for (final claim in [
+        '- Another runtime\n  $badClaim.',
+        '- Another runtime\n  - Other files $badClaim.',
+        '> Another runtime $badClaim.',
+        '- Another runtime $badClaim. <!-- review note -->',
+        '- Another runtime unchanged from `1.2.1`.',
+        '- Another runtime unchanged since 1.2.1.',
+      ]) {
+        changelog.writeAsStringSync('$valid\n$claim\n');
+        expect(
+          _verifyPreparedRelease(root),
+          contains(allOf(startsWith(path), contains(reason))),
+          reason: claim,
+        );
+      }
+      changelog.writeAsStringSync(
+        '$valid\n<!-- Another runtime $badClaim. -->\n'
+        '```markdown\n- Example $badClaim.\n```\n'
+        '- Pass the prompt unchanged from the caller.\n',
+      );
+      expect(_verifyPreparedRelease(root), isEmpty);
+    });
   }
 
   for (final path in _preparedChangelogs) {

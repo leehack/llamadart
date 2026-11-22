@@ -253,7 +253,10 @@ _MarkdownLine _joinLandedEntry(List<_MarkdownLine> entry) {
   );
 }
 
-Iterable<_MarkdownLine> _markdownLines(String body) sync* {
+Iterable<_MarkdownLine> _markdownLines(
+  String body, {
+  bool includeQuotes = false,
+}) sync* {
   var inComment = false;
   String? fence;
   var listIndent = 0;
@@ -267,7 +270,7 @@ Iterable<_MarkdownLine> _markdownLines(String body) sync* {
       }
       continue;
     }
-    if (!inComment && _quote.hasMatch(line)) {
+    if (!includeQuotes && !inComment && _quote.hasMatch(line)) {
       yield (
         index: index,
         line: line,
@@ -327,11 +330,14 @@ Set<int> visibleReleaseBulletLines(String body) => {
       row.index,
 };
 
-Iterable<String> visibleReleaseLines(String body) sync* {
-  for (final row in _markdownLines(body)) {
-    if (!row.nested && row.visible == row.line && row.example == null) {
-      yield row.line;
-    }
+Iterable<({String text, bool canonical})> releaseNoteLines(String body) sync* {
+  for (final row in _markdownLines(body, includeQuotes: true)) {
+    if (row.example != null) continue;
+    yield (
+      text: row.visible,
+      canonical:
+          !row.nested && row.visible == row.line && !_quote.hasMatch(row.line),
+    );
   }
 }
 

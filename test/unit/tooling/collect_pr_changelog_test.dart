@@ -693,6 +693,10 @@ exec cat "$FIXTURE_GITHUB_SQUASH"
           );
           expect(
             rejected.stderr,
+            contains('Squash variant with co-author trailer failed'),
+          );
+          expect(
+            rejected.stderr,
             contains(
               'End the receipt block with no trailing attribution or whitespace.',
             ),

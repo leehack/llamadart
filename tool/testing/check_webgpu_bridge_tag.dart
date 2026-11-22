@@ -1332,7 +1332,11 @@ Future<List<String>> findBridgeProblems(
     ),
 ];
 
-final _unchangedFrom = RegExp(r'\(\s*unchanged\s+from\b', caseSensitive: false);
+final _unchangedFrom = RegExp(
+  r'\(\s*unchanged\s+(?:from|since)\b|'
+  r'\bunchanged\s+(?:from|since)\s+`?\d+\.\d+\.\d+\b',
+  caseSensitive: false,
+);
 
 String _stripVerifiedRuntimeRetention(
   String baseline,
@@ -1407,8 +1411,11 @@ List<String> findPreparedReleaseNotesDrift(
         problems.add('$path must begin with the exact release $version.');
         continue;
       }
-      final visibleLines = visibleReleaseLines(sections.values.first).toList();
-      final section = visibleLines.join('\n');
+      final visibleLines = releaseNoteLines(sections.values.first).toList();
+      final section = visibleLines
+          .where((line) => line.canonical)
+          .map((line) => line.text)
+          .join('\n');
       final article = index == 0 ? 'the ' : '';
       final claims = _bridgePinBullet
           .allMatches(section)
@@ -1446,9 +1453,12 @@ List<String> findPreparedReleaseNotesDrift(
       final unverified = visibleLines
           .where(
             (line) =>
-                (!matchingBaseline || line != baseline) &&
-                (bridge != previousBridge || line.trimRight() != expected),
+                !line.canonical ||
+                ((!matchingBaseline || line.text != baseline) &&
+                    (bridge != previousBridge ||
+                        line.text.trimRight() != expected)),
           )
+          .map((line) => line.text)
           .join('\n');
       if (_unchangedFrom.hasMatch(unverified)) {
         problems.add(
