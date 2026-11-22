@@ -422,7 +422,7 @@ class PreflightTest(unittest.TestCase):
             run_deploy(self.api, folder=folder, max_folder_bytes=3)
         self.assertEqual(self.api.mock_calls, [])
         run_deploy(self.api, folder=folder, max_folder_bytes=4)
-        self.assertEqual(self.api.upload_folder.call_args.kwargs['folder_path'], folder)
+        self.assertEqual(self.api.upload_folder.call_args.kwargs['folder_path'], str(self.folder))
 
     def test_max_folder_bytes_measures_home_relative_folder_that_upload_uses(self):
         (self.folder / 'index.html').write_bytes(b'demo')
@@ -430,10 +430,12 @@ class PreflightTest(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'Folder size 4 bytes exceeds.*limit 3 bytes'):
                 run_deploy(self.api, folder='~/site', max_folder_bytes=3)
             self.assertEqual(self.api.mock_calls, [])
-            run_deploy(self.api, folder='~/site', max_folder_bytes=4)
-            expected = os.path.expanduser('~/site')
-        self.assertNotIn('~', expected)
-        self.assertEqual(self.api.upload_folder.call_args.kwargs['folder_path'], expected)
+            for folder in ('~/site', './~/site'):
+                with self.subTest(folder=folder):
+                    self.api.reset_mock()
+                    run_deploy(self.api, folder=folder, max_folder_bytes=4)
+                    self.assertEqual(
+                        self.api.upload_folder.call_args.kwargs['folder_path'], str(self.folder))
 
     def assert_preflight_rejects_root_link(self, folder):
         api = mock.Mock()

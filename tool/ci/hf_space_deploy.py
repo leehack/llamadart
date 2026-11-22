@@ -16,6 +16,7 @@ A terminal squash error reports the HTTP status and error type.
 """
 import argparse
 import os
+from pathlib import Path
 import random
 import stat
 import sys
@@ -111,8 +112,8 @@ def folder_size_bytes(folder):
 
 def deploy(api, repo, folder, commit_message, delete_patterns, public, *,
            squash_history=False, max_folder_bytes=None, **retry_options):
-    # upload_folder expands '~'; preflight must measure the same folder it uploads.
-    folder = os.path.expanduser(os.fspath(folder))
+    # Normalize as huggingface_hub's upload_folder does, so preflight measures the folder it uploads.
+    folder = os.fspath(Path(folder).expanduser())
     if max_folder_bytes is not None:
         if max_folder_bytes <= 0:
             raise ValueError('--max-folder-bytes must be positive')
