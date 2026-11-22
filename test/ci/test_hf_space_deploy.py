@@ -555,6 +555,113 @@ class StorageWarningTest(unittest.TestCase):
 
 
 class CliTest(unittest.TestCase):
+    def test_cli_redacts_sdk_and_transport_diagnostics(self):
+        runner = '''
+import logging
+import runpy
+import sys
+import warnings
+from unittest import mock
+
+from test_hf_space_deploy import SensitiveHttpError, ROOT
+
+def make_client(**kwargs):
+    url = SensitiveHttpError.signed_url
+    handler = logging.StreamHandler()
+    for name in ('huggingface_hub', 'urllib3', 'requests'):
+        logger = logging.getLogger(name)
+        logger.addHandler(handler)
+        child = logging.getLogger(f'{name}.late.child')
+        try:
+            raise RuntimeError(url('exception'))
+        except RuntimeError:
+            child.warning(f'HTTP 503 PUT {url("message")} then %s',
+                          url('argument'), exc_info=True)
+    logging.getLogger('urllib3.connectionpool').warning(
+        'PUT %s HTTP/1.1 503', '/asset?X-Amz-Signature=relative')
+    warnings.warn(f'SDK upload warning {url("warning")}')
+    return mock.Mock()
+
+script = ROOT / 'tool/ci/hf_space_deploy.py'
+sys.argv = [str(script), '--repo', 'org/space', '--folder', 'build',
+            '--commit-message', 'msg', '--delete-pattern', '*']
+with mock.patch.dict(sys.modules, {'huggingface_hub': mock.Mock(HfApi=make_client)}):
+    runpy.run_path(str(script), run_name='__main__')
+'''
+        result = subprocess.run(
+            [sys.executable, '-B', '-c', runner], cwd=Path(__file__).parent,
+            env={**os.environ, 'HF_TOKEN': 'mock-token'},
+            capture_output=True, text=True, timeout=15)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stderr.count('HTTP 503 PUT'), 3, result.stderr)
+        self.assertIn('HTTP/1.1 503', result.stderr)
+        self.assertIn('SDK upload warning', result.stderr)
+        self.assertNotIn('X-Amz-Signature', result.stderr)
+        self.assertNotIn('example.invalid', result.stderr)
+
+    def test_cli_redacts_retry_logs_from_offline_hub_wheel(self):
+        wheel = os.environ.get('LLAMADART_HF_HUB_WHEEL')
+        if not wheel or not Path(wheel).is_file():
+            self.skipTest('Set LLAMADART_HF_HUB_WHEEL to a local SDK 0.36.2 wheel')
+        runner = '''
+import os
+import runpy
+import sys
+import time
+from unittest import mock
+
+from test_hf_space_deploy import SensitiveHttpError, ROOT
+
+def block_network(event, args):
+    if event.startswith('socket.'):
+        raise AssertionError('Network is disabled in the offline SDK test')
+
+sys.addaudithook(block_network)
+sys.path.insert(0, os.path.abspath(os.environ['LLAMADART_HF_HUB_WHEEL']))
+from huggingface_hub import __version__
+from huggingface_hub.utils import http_backoff
+import requests
+
+assert __version__ == '0.36.2', __version__
+signed_url = SensitiveHttpError.signed_url('put')
+response = requests.Response()
+response.status_code = 503
+response.url = signed_url
+response._content = b'{}'
+
+def upload(**kwargs):
+    try:
+        http_backoff('PUT', signed_url)
+    except requests.HTTPError as error:
+        raise RuntimeError('LFS upload failed') from error
+
+api = mock.Mock()
+api.upload_folder.side_effect = upload
+script = ROOT / 'tool/ci/hf_space_deploy.py'
+sys.argv = [str(script), '--repo', 'org/space', '--folder', 'build',
+            '--commit-message', 'msg', '--delete-pattern', '*']
+with (mock.patch('huggingface_hub.HfApi', return_value=api),
+      mock.patch.object(requests.Session, 'request', return_value=response) as request,
+      mock.patch.object(time, 'sleep') as sleep):
+    try:
+        runpy.run_path(str(script), run_name='__main__')
+    finally:
+        assert request.call_count == 6, request.call_count
+        assert sleep.call_args_list == [mock.call(n) for n in (1, 2, 4, 8, 8)], sleep.call_args_list
+'''
+        result = subprocess.run(
+            [sys.executable, '-B', '-c', runner], cwd=Path(__file__).parent,
+            env={**os.environ, 'LLAMADART_HF_HUB_WHEEL': str(Path(wheel).resolve()),
+                 'HF_TOKEN': 'mock-token', 'HF_HUB_VERBOSITY': 'warning'},
+            capture_output=True, text=True, timeout=15)
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertEqual(result.stderr.count('HTTP Error 503 thrown while requesting PUT'), 6,
+                         result.stderr)
+        self.assertTrue(result.stderr.endswith('upload_folder: failed (HTTP 503, RuntimeError)\n'),
+                        result.stderr)
+        self.assertNotIn('X-Amz-Signature', result.stderr)
+        self.assertNotIn('example.invalid', result.stderr)
+
     def test_upload_failure_omits_provider_details_in_outer_handler(self):
         for status, retry_after, retries in TERMINAL_CASES:
             for chain in ('cause', 'context'):

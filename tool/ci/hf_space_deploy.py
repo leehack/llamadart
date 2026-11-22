@@ -15,12 +15,16 @@ any Hub call. Existing Spaces warn at 750 MB of usedStorage.
 A terminal Hub error reports only the operation, HTTP status and error type.
 """
 import argparse
+from contextlib import contextmanager
+import logging
 import os
 from pathlib import Path
 import random
+import re
 import stat
 import sys
 import time
+import warnings
 
 MAX_ATTEMPTS = 5
 MAX_TOTAL_WAIT = 240.0
@@ -28,6 +32,45 @@ MAX_BACKOFF = 30.0
 BASE_BACKOFF = 5.0
 STORAGE_WARN_BYTES = 750_000_000
 _MISSING_SPACE = object()
+_HUB_LOGGERS = {'huggingface_hub', 'requests', 'urllib3'}
+_URL = re.compile(r"""https?://\S+|(?<![^\s"'])/[^\s?]*\?\S*""", re.IGNORECASE)
+
+
+def _redact_urls(message):
+    return _URL.sub('<redacted URL>', message)
+
+
+@contextmanager
+def _redact_hub_diagnostics():
+    factory = logging.getLogRecordFactory()
+    formatter = logging.Formatter()
+
+    def make_record(*args, **kwargs):
+        record = factory(*args, **kwargs)
+        if record.name.partition('.')[0] in _HUB_LOGGERS:
+            record.msg = _redact_urls(record.getMessage())
+            record.args = ()
+            if record.exc_info:
+                record.exc_text = _redact_urls(formatter.formatException(record.exc_info))
+                record.exc_info = None
+            if record.stack_info:
+                record.stack_info = _redact_urls(record.stack_info)
+        return record
+
+    def show_warning(message, category, filename, lineno, file=None, line=None):
+        text = warnings.formatwarning(message, category, filename, lineno, line)
+        output = sys.stderr if file is None else file
+        if output is not None:
+            output.write(_redact_urls(text))
+
+    with warnings.catch_warnings():
+        warnings.showwarning = show_warning
+        # Parent logger filters miss child records, and the Hub installs its own handler.
+        logging.setLogRecordFactory(make_record)
+        try:
+            yield
+        finally:
+            logging.setLogRecordFactory(factory)
 
 
 def status_of(error):
@@ -184,14 +227,15 @@ def main(argv=None):
     parser.add_argument('--max-folder-bytes', type=int)
     args = parser.parse_args(argv)
 
-    from huggingface_hub import HfApi
+    with _redact_hub_diagnostics():
+        from huggingface_hub import HfApi
 
-    try:
-        deploy(HfApi(token=os.environ['HF_TOKEN']), args.repo, args.folder, args.commit_message,
-               args.delete_pattern, args.public, squash_history=args.squash_history,
-               max_folder_bytes=args.max_folder_bytes)
-    except DeployError as error:
-        raise SystemExit(str(error)) from None
+        try:
+            deploy(HfApi(token=os.environ['HF_TOKEN']), args.repo, args.folder, args.commit_message,
+                   args.delete_pattern, args.public, squash_history=args.squash_history,
+                   max_folder_bytes=args.max_folder_bytes)
+        except DeployError as error:
+            raise SystemExit(str(error)) from None
 
 
 if __name__ == '__main__':
