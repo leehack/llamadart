@@ -45,4 +45,20 @@ void main() {
     },
     timeout: const Timeout(Duration(minutes: 2)),
   );
+
+  test('the preview sweep deletes only closed PR Spaces', () async {
+    final result =
+        await Process.run(Platform.isWindows ? 'python' : 'python3', [
+          '-B',
+          '-m',
+          'unittest',
+          'discover',
+          '-s',
+          'test/ci',
+          '-p',
+          'test_preview_sweep.py',
+        ]);
+    expect(result.exitCode, 0, reason: '${result.stdout}\n${result.stderr}');
+    expect(result.stderr, contains('OK'));
+  }, timeout: const Timeout(Duration(minutes: 2)));
 }

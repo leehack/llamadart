@@ -315,15 +315,16 @@ part of this batch.
 python3 -m unittest discover -s test/ci -p 'test_*.py'
 dart run tool/testing/run_local_e2e.dart --scenario ci-selection
 actionlint .github/workflows/ci.yml .github/workflows/validation_bundles.yml
-actionlint -ignore '^unexpected key "queue" for "concurrency" section\. expected one of "cancel-in-progress", "group"$' .github/workflows/chat_app_hf_static_deploy.yml
+actionlint -ignore '^unexpected key "queue" for "concurrency" section\. expected one of "cancel-in-progress", "group"$' .github/workflows/chat_app_hf_static_deploy.yml .github/workflows/chat_app_hf_pr_preview.yml .github/workflows/chat_app_hf_pr_preview_sweep.yml
 ```
 
 Actionlint 1.7.12 rejects GitHub's documented `concurrency.queue` key
 ([upstream issue](https://github.com/rhysd/actionlint/issues/657),
 [pending fix](https://github.com/rhysd/actionlint/pull/654)). Retain its unfiltered
 diagnostic as evidence before the second invocation: that invocation excludes
-only this known schema diagnostic for the reusable deploy workflow. Its queue
-policy is covered by the workflow tests; other lint diagnostics still fail.
+only this known schema diagnostic for the listed workflows. Workflow tests
+cover queue settings and require the preview sweep to share the preview write
+group. Other lint diagnostics still fail.
 
 Tests cover docs-only and package changes, shared/runtime/unknown inputs,
 platform targets, workflow changes, actual Git rename/deletion histories,

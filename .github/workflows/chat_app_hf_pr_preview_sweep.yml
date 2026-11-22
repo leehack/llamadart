@@ -1,0 +1,66 @@
+name: Sweep Chat App HF PR Previews
+
+on:
+  schedule:
+    - cron: '23 6 * * *'
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  list:
+    name: Find closed PR previews
+    if: github.repository == 'leehack/llamadart' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      prs: ${{ steps.list.outputs.prs }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Install Hugging Face Hub client
+        run: python3 -m pip install "huggingface_hub>=0.36.0,<0.37.0"
+      - name: List preview Spaces for closed PRs
+        id: list
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: python3 tool/ci/preview_sweep.py list
+
+  delete:
+    name: Remove preview for PR ${{ matrix.pr }}
+    needs: list
+    if: needs.list.outputs.prs != '' && needs.list.outputs.prs != '[]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        pr: ${{ fromJSON(needs.list.outputs.prs) }}
+    # Share the write queue with preview deploys and close-time cleanup.
+    concurrency:
+      group: chat-app-hf-pr-preview-write-${{ matrix.pr }}
+      cancel-in-progress: false
+      queue: max
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Install Hugging Face Hub client
+        run: python3 -m pip install "huggingface_hub>=0.36.0,<0.37.0"
+      - name: Recheck live PR and delete the preview Space
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          PREVIEW_PR_NUMBER: ${{ matrix.pr }}
+        run: python3 tool/ci/preview_sweep.py delete
