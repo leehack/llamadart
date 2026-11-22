@@ -421,7 +421,7 @@ When retries run out, the load throws an error with runtime hints such as
 | Safari forces CPU | Safari safeguard | Set `__llamadartBridgeAdaptiveSafariGpu` from the loaded assets, or `__llamadartAllowSafariWebGpu` for testing. |
 | Works on `localhost` but not hosted | Deployment | Check base href, asset paths, COOP/COEP headers and service-worker cache. |
 | `MODEL_STAGING_UNSUPPORTED` | Missing staging capability in the bridge, worker or core | Run `dart run llamadart:web_setup` with matching v0.1.92+ assets. |
-| `MODEL_TENSOR_SIZE_LIMIT_EXCEEDED` | A tensor exceeds the wasm32 4 GiB limit | Use `preferMemory64: true` on a browser with memory64 support. |
+| `MODEL_TENSOR_SIZE_LIMIT_EXCEEDED` | An individual tensor or the combined tensor data exceeds the wasm32 4 GiB limit | Use `preferMemory64: true` on a browser with memory64 support. |
 | `MODEL_STAGING_ALLOCATION_FAILED` | JavaScript staging allocation failed | Close other memory-intensive pages or use a smaller model. |
 | `MODEL_STAGING_MOUNT_FAILED` | The staging filesystem could not be mounted or retained | Reload the page and check that the bridge, worker and core assets match. |
 | `MODEL_TRANSFER_LENGTH_ERROR` | The response body length differs from its declared size | Check the model or projector origin and its range responses. |

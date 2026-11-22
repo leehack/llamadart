@@ -438,7 +438,17 @@ class WebGpuLlamaBackend
     if (!globalContext.has('LlamaWebGpuBridge')) {
       final scriptUrl = _bridgeScriptUrl;
       if (scriptUrl != null && scriptUrl.isNotEmpty) {
-        await _loadBridgeScript();
+        try {
+          await _loadBridgeScript();
+        } on Exception {
+          if (jsBackedModelStaging == true) {
+            throw LlamaUnsupportedException(
+              'The configured WebGPU bridge module could not be loaded. '
+              '$webGpuJsBackedStagingRequired',
+            );
+          }
+          rethrow;
+        }
       } else {
         await _waitForPreloadedBridge();
       }

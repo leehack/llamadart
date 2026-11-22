@@ -30,6 +30,53 @@ void main() {
       });
     }
 
+    test(
+      'describes individual and combined tensor sizes at the wasm32 limit',
+      () {
+        final error = JSObject()
+          ..['name'] = 'ModelStagingError'.toJS
+          ..['code'] = 'MODEL_TENSOR_SIZE_LIMIT_EXCEEDED'.toJS;
+        expect(
+          webGpuModelStagingError(error),
+          isA<LlamaUnsupportedException>().having(
+            (e) => e.message,
+            'wasm32 limit',
+            contains('individually or in total, exceed the wasm32 4 GiB limit'),
+          ),
+        );
+      },
+    );
+
+    test('recognizes the legacy name with a bridge transfer-length message', () {
+      for (final message in [
+        'Model response did not match its declared decoded size.',
+        'Model response ended before its declared byte length.',
+        'Model response exceeded its declared byte length.',
+        'Model response reported conflicting Content-Range and X-Linked-Size totals.',
+        'Model response staged 16 bytes, expected 32.',
+        'Model response staged 16 bytes, expected at least 32.',
+      ]) {
+        final error = JSObject()
+          ..['name'] = 'ModelTransferLengthError'.toJS
+          ..['message'] = message.toJS;
+        expect(
+          webGpuModelStagingError(error),
+          isA<LlamaModelException>()
+              .having(
+                (e) => e.message,
+                'code',
+                contains('MODEL_TRANSFER_LENGTH_ERROR'),
+              )
+              .having((e) => e.details, 'detail', message),
+        );
+        error['code'] = 'OTHER'.toJS;
+        expect(webGpuModelStagingError(error), isNull);
+        error.delete('code'.toJS);
+        error['name'] = 'Error'.toJS;
+        expect(webGpuModelStagingError(error), isNull);
+      }
+    });
+
     for (final (name, code, expectedCode) in [
       (
         'ModelStagingError',
@@ -90,6 +137,10 @@ void main() {
         webGpuModelStagingError(StateError('ModelTransferLengthError')),
         isNull,
       );
+      final error = JSObject()
+        ..['name'] = 'ModelTransferLengthError'.toJS
+        ..['message'] = 'Model response could not be downloaded.'.toJS;
+      expect(webGpuModelStagingError(error), isNull);
     });
   });
 

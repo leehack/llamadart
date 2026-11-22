@@ -203,6 +203,15 @@ final RegExp _stagingErrorPath = RegExp(
   r'''(?:[a-zA-Z][a-zA-Z0-9+.-]*:)?[/\\][^\s'"<>),;]+''',
 );
 
+const String _modelTransferLengthErrorCode = 'MODEL_TRANSFER_LENGTH_ERROR';
+
+final RegExp _legacyModelTransferLengthMessage = RegExp(
+  r'^Model response (?:did not match its declared decoded size|'
+  r'ended before its declared byte length|exceeded its declared byte length|'
+  r'reported conflicting Content-Range and X-Linked-Size totals|'
+  r'staged \d+ bytes, expected (?:at least )?\d+)\.$',
+);
+
 /// Maps terminal staging and length failures by the bridge's wire identifiers.
 LlamaException? webGpuModelStagingError(
   Object error, {
@@ -214,9 +223,22 @@ LlamaException? webGpuModelStagingError(
     final object = error as JSObject;
     final rawName = object['name'];
     final rawCode = object['code'];
-    if (!rawName.isA<JSString>() || !rawCode.isA<JSString>()) return null;
+    if (!rawName.isA<JSString>()) return null;
     name = (rawName as JSString).toDart;
-    code = (rawCode as JSString).toDart;
+    if (rawCode.isA<JSString>()) {
+      code = (rawCode as JSString).toDart;
+    } else {
+      // Legacy bridges expose the name and message without a code.
+      if (rawCode != null || name != 'ModelTransferLengthError') return null;
+      final rawMessage = object['message'];
+      if (!rawMessage.isA<JSString>() ||
+          !_legacyModelTransferLengthMessage.hasMatch(
+            (rawMessage as JSString).toDart,
+          )) {
+        return null;
+      }
+      code = _modelTransferLengthErrorCode;
+    }
   } catch (_) {
     return null;
   }
@@ -229,7 +251,8 @@ LlamaException? webGpuModelStagingError(
         );
       case 'MODEL_TENSOR_SIZE_LIMIT_EXCEEDED':
         return LlamaUnsupportedException(
-          '$code: A model tensor exceeds the wasm32 4 GiB limit. '
+          '$code: Model tensors, individually or in total, exceed the wasm32 '
+          '4 GiB limit. '
           'Use ModelParams(preferMemory64: true) with a memory64-capable browser.',
         );
     }
@@ -240,7 +263,7 @@ LlamaException? webGpuModelStagingError(
       'JS-backed model staging could not allocate JavaScript memory',
     ('ModelStagingError', 'MODEL_STAGING_MOUNT_FAILED') =>
       'JS-backed model staging could not mount or retain its private filesystem',
-    ('ModelTransferLengthError', 'MODEL_TRANSFER_LENGTH_ERROR') =>
+    ('ModelTransferLengthError', _modelTransferLengthErrorCode) =>
       'Web model transfer length did not match the declared response size',
     _ => null,
   };

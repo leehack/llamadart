@@ -2270,6 +2270,27 @@ void main() {
         },
       );
 
+      test(
+        'explicit staging excludes automatic remote-fetch retries',
+        () async {
+          globalContext['__llamadartBridgeAllowAutoRemoteFetchBackend'] =
+              true.toJS;
+          bridgeRuntimeHints['llamadart.webgpu.core_variant'] = 'wasm64';
+          bridgeRuntimeHints[notesKey] = 'model_fs_write_arraybuffer_oom';
+          failLoads(
+            message: 'Array buffer allocation failed',
+            firstAttempts: 9,
+          );
+
+          await expectLater(
+            backend.modelLoadFromUrl(url, optIn),
+            throwsA(anything),
+          );
+          expect(requestedContextSizes, hasLength(1));
+          expect(requestedForceRemoteFetchBackends, [false]);
+        },
+      );
+
       for (final (label, flag) in [
         ('missing', null),
         ('false', false.toJS),
@@ -2324,6 +2345,49 @@ void main() {
       });
 
       test(
+        'refuses staging when the preloaded bridge is unavailable',
+        () async {
+          globalContext.delete('LlamaWebGpuBridge'.toJS);
+          globalContext['__llamadartBridgeLoadError'] = 'missing'.toJS;
+          backend = WebGpuLlamaBackend();
+
+          await expectLater(backend.modelLoadFromUrl(url, optIn), unsupported);
+          expect(requestedContextSizes, isEmpty);
+        },
+      );
+
+      for (final params in [optIn, optOut, omitted]) {
+        test(
+          'classifies a failed custom bridge import for staging ${params.jsBackedModelStaging}',
+          () async {
+            final moduleUrl = URL.createObjectURL(
+              Blob(<JSAny>[].toJS, BlobPropertyBag(type: 'text/javascript')),
+            );
+            URL.revokeObjectURL(moduleUrl);
+            backend = WebGpuLlamaBackend(bridgeScriptUrl: moduleUrl);
+
+            await expectLater(
+              backend.modelLoadFromUrl(url, params),
+              params.jsBackedModelStaging == true
+                  ? throwsA(
+                      isA<LlamaUnsupportedException>().having(
+                        (e) => e.message,
+                        'diagnostic',
+                        allOf(
+                          contains('bridge module could not be loaded'),
+                          contains('jsBackedModelStaging'),
+                          contains('v0.1.92+'),
+                        ),
+                      ),
+                    )
+                  : throwsA(isA<LlamaModelException>()),
+            );
+            expect(requestedContextSizes, isEmpty);
+          },
+        );
+      }
+
+      test(
         'leaves the WebKit default to a legacy bridge when omitted',
         () async {
           constructor.delete('supportsJsBackedModelStaging'.toJS);
@@ -2348,6 +2412,39 @@ void main() {
           expect(await backend.multimodalContextCreate(1, projectorUrl), 1);
         },
       );
+
+      for (final execution in ['main-thread', 'worker']) {
+        test(
+          'fails once for a legacy transfer-length error on $execution',
+          () async {
+            constructor.delete('supportsJsBackedModelStaging'.toJS);
+            bridgeRuntimeHints['llamadart.webgpu.execution'] = execution;
+            bridgeRuntimeHints['llamadart.webgpu.core_variant'] = 'wasm32';
+            bridgeRuntimeHints[notesKey] = 'model_fs_write_arraybuffer_oom';
+            final error = _jsError(
+              'Model response staged 16 bytes, expected 32.',
+            )..['name'] = 'ModelTransferLengthError'.toJS;
+            bridge['loadModelFromUrl'] = ((String url, JSObject? config) {
+              recordLoadConfig(config);
+              return _rejectPromise(error);
+            }).toJS;
+
+            await expectLater(
+              backend.modelLoadFromUrl(url, optOut),
+              throwsA(
+                isA<LlamaModelException>().having(
+                  (e) => e.message,
+                  'code',
+                  contains('MODEL_TRANSFER_LENGTH_ERROR'),
+                ),
+              ),
+            );
+            expect(requestedContextSizes, hasLength(1));
+            expect(disposeCount, 1);
+            expect(backend.isReady, isFalse);
+          },
+        );
+      }
 
       for (final params in [optIn, optOut]) {
         test(

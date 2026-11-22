@@ -646,6 +646,8 @@ With assets v0.1.92+, bridge `ModelStagingError` codes `MODEL_STAGING_UNSUPPORTE
 `MODEL_TENSOR_SIZE_LIMIT_EXCEEDED` map to `LlamaUnsupportedException`.
 Allocation and mount failures map to `LlamaModelException`, as does
 `ModelTransferLengthError` with code `MODEL_TRANSFER_LENGTH_ERROR`.
+Older bridge assets can report the transfer-length error without a code. Dart
+recognizes the legacy name and response-size diagnostic together.
 These failures surface before Dart's model retry policy and remain typed on
 the first explicit projector load. The worker transports the name, message
 and code. Dart redacts paths and URL secrets from error details.
