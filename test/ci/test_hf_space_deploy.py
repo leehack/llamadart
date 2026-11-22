@@ -424,6 +424,15 @@ class PreflightTest(unittest.TestCase):
         run_deploy(self.api, folder=folder, max_folder_bytes=4)
         self.assertEqual(self.api.upload_folder.call_args.kwargs['folder_path'], folder)
 
+    def test_max_folder_bytes_measures_home_relative_folder_that_upload_uses(self):
+        (self.folder / 'index.html').write_bytes(b'demo')
+        with mock.patch.dict(os.environ, {'HOME': str(self.root), 'USERPROFILE': str(self.root)}):
+            with self.assertRaisesRegex(ValueError, 'Folder size 4 bytes exceeds.*limit 3 bytes'):
+                run_deploy(self.api, folder='~/site', max_folder_bytes=3)
+            self.assertEqual(self.api.mock_calls, [])
+            run_deploy(self.api, folder='~/site', max_folder_bytes=4)
+        self.assertEqual(self.api.upload_folder.call_args.kwargs['folder_path'], str(self.folder))
+
     def assert_preflight_rejects_root_link(self, folder):
         api = mock.Mock()
         with self.assertRaisesRegex(ValueError, r"^Deploy folder contains a symlink at '\.'$"):

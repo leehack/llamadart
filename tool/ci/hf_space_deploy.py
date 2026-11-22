@@ -111,6 +111,8 @@ def folder_size_bytes(folder):
 
 def deploy(api, repo, folder, commit_message, delete_patterns, public, *,
            squash_history=False, max_folder_bytes=None, **retry_options):
+    # upload_folder expands '~'; preflight must measure the same folder it uploads.
+    folder = os.path.expanduser(os.fspath(folder))
     if max_folder_bytes is not None:
         if max_folder_bytes <= 0:
             raise ValueError('--max-folder-bytes must be positive')
