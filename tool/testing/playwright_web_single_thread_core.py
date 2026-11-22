@@ -12,6 +12,13 @@ from playwright.sync_api import sync_playwright
 def run_case(browser, origin, model_url, *, worker, isolated=False,
              opt_in=True, mem64=False, legacy=False, forced_fetch=False, gpu=False,
              allow_wasm64_retry=False):
+    legacy_assets_url = (
+        Path("test/e2e/webgpu/fixtures/single_thread_legacy_assets_url.txt")
+        .read_text(encoding="utf-8")
+        .strip()
+        if legacy
+        else None
+    )
     page = browser.new_page()
     wasm_files = []
 
@@ -41,10 +48,8 @@ def run_case(browser, origin, model_url, *, worker, isolated=False,
         assert page.evaluate("crossOriginIsolated") == isolated
         assert page.evaluate("typeof SharedArrayBuffer === 'function'") == isolated
         result = json.loads(page.evaluate(
-            """async ({ worker, optIn, mem64, legacy, forcedFetch, gpu, modelUrl }) => {
-              const base = legacy
-                ? 'https://cdn.jsdelivr.net/gh/leehack/llama-web-bridge-assets@v0.1.86/'
-                : new URL('bridge/', location.href).href;
+            """async ({ worker, optIn, mem64, legacyAssetsUrl, forcedFetch, gpu, modelUrl }) => {
+              const base = legacyAssetsUrl ?? new URL('bridge/', location.href).href;
               const asset = (file) => new URL(file, base).href;
               const {LlamaWebGpuBridge} = await import(asset('llama_webgpu_bridge.js'));
               window.LlamaWebGpuBridge = class extends LlamaWebGpuBridge {
@@ -60,7 +65,7 @@ def run_case(browser, origin, model_url, *, worker, isolated=False,
               window.__llamadartBridgeWasmUrl = asset('llama_webgpu_core.wasm');
               window.__llamadartBridgeCoreModuleUrlMem64 = asset('llama_webgpu_core_mem64.js');
               window.__llamadartBridgeWasmUrlMem64 = asset('llama_webgpu_core_mem64.wasm');
-              if (!legacy) {
+              if (!legacyAssetsUrl) {
                 window.__llamadartBridgeCoreModuleUrlSt = asset('llama_webgpu_core_st.js');
                 window.__llamadartBridgeWasmUrlSt = asset('llama_webgpu_core_st.wasm');
                 window.__llamadartBridgeCoreModuleUrlMem64St = asset('llama_webgpu_core_mem64_st.js');
@@ -68,7 +73,7 @@ def run_case(browser, origin, model_url, *, worker, isolated=False,
               }
               return window.runSingleThreadCore(modelUrl, mem64, gpu);
             }""",
-            dict(worker=worker, optIn=opt_in, mem64=mem64, legacy=legacy,
+            dict(worker=worker, optIn=opt_in, mem64=mem64, legacyAssetsUrl=legacy_assets_url,
                  forcedFetch=forced_fetch, gpu=gpu, modelUrl=model_url),
         ))
         print(json.dumps(dict(
