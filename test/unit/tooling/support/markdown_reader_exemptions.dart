@@ -389,7 +389,8 @@ const Map<String, Exemption> suiteExemptions = {
     gate: null,
   ),
   'test/unit/tooling/ci_workflow_selection_test.dart': (
-    reason: 'Only passes Markdown paths to the selector.',
+    reason:
+        'Passes Markdown paths to the selector and inspects YAML without running preview helpers.',
     evidence: {
       ..._studioSourceFiles,
       ..._validationFiles,
@@ -397,8 +398,10 @@ const Map<String, Exemption> suiteExemptions = {
       'test/unit/tooling/ci_workflow_selection_test.dart':
           '.md | AGENTS | CONTRIBUTING | README | doc/ | git checkout | git clone | listSync | website/',
       'tool/ci/deploy_guard.py': '.md | git diff',
+      'tool/ci/preview_guard.py': '.md | README | git diff | git show',
       'tool/ci/select_jobs.py':
           '.md | AGENTS | CHANGELOG | CONTRIBUTING | README | doc/ | git diff | website/',
+      'tool/ci/web_deployment.py': 'git diff',
       'tool/testing/validation/coverage_catalog.dart': '.md',
       'tool/testing/validation/remote.dart': 'listSync',
       'website/lib/src/site/sidebar.dart': 'doc/',

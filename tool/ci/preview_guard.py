@@ -90,6 +90,15 @@ def run_operation(operation, call, budget, before=None):
         raise OperationFailed(operation, status if isinstance(status, int) else None) from None
 
 
+def delete_preview(api, space, *, before):
+    before()
+    try:
+        api.delete_repo(repo_id=space, repo_type='space')
+    except Exception as error:
+        if status_of(error) != 404:
+            raise
+
+
 class Preview:
     def __init__(self, event, read=gh_json):
         self.event, self.read = event, read
@@ -164,12 +173,7 @@ class Preview:
                 delete_patterns=['*', '**/*'],
                 commit_message=f'deploy PR #{self.number} {self.sha[:7]}'), budget, before=recheck)
         else:
-            self.guard(action)
-            try:
-                api.delete_repo(repo_id=space, repo_type='space')
-            except Exception as error:
-                if status_of(error) != 404:
-                    raise
+            delete_preview(api, space, before=lambda: self.guard(action))
 
     def comment(self, action, body):
         marker = '<!-- llamadart-chat-app-hf-pr-preview -->'

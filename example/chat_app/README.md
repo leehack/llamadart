@@ -771,9 +771,14 @@ await prefs.setInt('preferred_backend', backendIndex);
   sources, or the web bridge asset script.
 - Creates or updates a per-PR static Space named
   `llamadart-chat-pr-<number>` and comments the preview URL on the PR.
-- Deletes the preview Space when the PR is closed.
-- Required repository secret: `HF_TOKEN` with write/create access to the preview
-  namespace.
+- Deletes the preview Space when the close event runs the workflow. GitHub
+  can skip that event's workflow when the PR has merge conflicts.
+- `chat_app_hf_pr_preview_sweep.yml` runs daily on `main` and sweeps
+  `leehack/llamadart-chat-pr-<number>` Spaces for closed PRs. Each deletion
+  waits in the PR's preview write queue and checks that the PR is still closed.
+  Run it manually with `gh workflow run chat_app_hf_pr_preview_sweep.yml --ref main`.
+- Required repository secret: `HF_TOKEN` with create, write, and delete access
+  to the preview namespace.
 - Optional repository variable: `HF_CHAT_APP_PREVIEW_NAMESPACE`. If omitted,
   the workflow uses the owner portion of `HF_CHAT_APP_SPACE_REPO`.
 - Fork PRs are skipped so repository secrets are not exposed to untrusted code.
