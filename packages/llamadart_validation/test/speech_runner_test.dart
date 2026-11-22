@@ -2662,23 +2662,42 @@ void main() {
     'existing output directory is never modified on CLI rejection',
     () async {
       final directory = Directory.systemTemp.createTempSync('speech-output-');
-      try {
-        final sentinel = File('${directory.path}/failure.json')
-          ..writeAsStringSync('keep');
-        final result = await Process.run(Platform.resolvedExecutable, [
-          'run',
-          'bin/speech.dart',
-          '--pack',
-          'tts',
-          '--out',
-          directory.path,
-        ]);
-        expect(result.exitCode, isNot(0));
-        expect(sentinel.readAsStringSync(), 'keep');
-        expect(directory.listSync(), hasLength(1));
-      } finally {
-        directory.deleteSync(recursive: true);
-      }
+      addTearDown(() => directory.deleteSync(recursive: true));
+      final kernelDir = Directory.systemTemp.createTempSync('speech-kernel-');
+      addTearDown(() => kernelDir.deleteSync(recursive: true));
+      final speechKernel = '${kernelDir.path}/speech.dill';
+      final compiled = await Process.run(Platform.resolvedExecutable, [
+        'compile',
+        'kernel',
+        'bin/speech.dart',
+        '-o',
+        speechKernel,
+      ]);
+      expect(
+        compiled.exitCode,
+        0,
+        reason: 'stdout:\n${compiled.stdout}\nstderr:\n${compiled.stderr}',
+      );
+      final sentinel = File('${directory.path}/failure.json')
+        ..writeAsStringSync('keep');
+      final result = await Process.run(Platform.resolvedExecutable, [
+        speechKernel,
+        '--pack',
+        'tts',
+        '--out',
+        directory.path,
+      ]);
+      expect(
+        result.exitCode,
+        1,
+        reason: 'stdout:\n${result.stdout}\nstderr:\n${result.stderr}',
+      );
+      expect(
+        '${result.stderr}',
+        contains('Speech validation failed: StateError'),
+      );
+      expect(sentinel.readAsStringSync(), 'keep');
+      expect(directory.listSync(), hasLength(1));
     },
   );
 
