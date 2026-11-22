@@ -41,6 +41,8 @@ void main() {
       final run = script.substring(start);
       expect(run, isNot(contains('||')));
       expect(run, isNot(contains('huggingface_hub')));
+      expect(run, contains('--squash-history'), reason: workflow);
+      expect(run, contains('--max-folder-bytes 250000000'), reason: workflow);
       return run;
     }
 

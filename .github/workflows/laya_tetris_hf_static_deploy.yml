@@ -99,6 +99,8 @@ jobs:
             --commit-message "chore: deploy Laya Tetris ${GITHUB_SHA:0:7}" \
             --delete-pattern '*' \
             --delete-pattern '**/*' \
+            --max-folder-bytes 250000000 \
+            --squash-history \
             --public
 
       - name: Verify the deployed app
