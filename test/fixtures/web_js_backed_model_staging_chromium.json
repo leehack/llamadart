@@ -1,0 +1,14 @@
+{
+  "case": "explicit-on",
+  "worker": false,
+  "memory64": false,
+  "staging": true,
+  "result": {
+    "output": ", there was a little girl named L",
+    "execution": "main-thread",
+    "worker_fallback_reason": null,
+    "core_variant": "wasm32",
+    "runtime_notes": "core_wasm32_active;model_staging_js_backed;model_network_stream;model_response_stream;model_cache_stored;model_staging_heap_resident;model_file_released",
+    "mmproj_loaded": "0"
+  }
+}
