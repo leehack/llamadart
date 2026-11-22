@@ -35,10 +35,13 @@ Future<void> main() async {
       queryParameters: {
         ...configuredModel.queryParameters,
         'worker-cache-test': mode,
+        if (mode == 'sensitive') 'token': 'synthetic-worker-cache-test',
       },
     );
     final model = script.resolveUri(relativeModel);
-    final reference = mode == 'relative' ? relativeModel : model;
+    final reference = mode == 'relative' || mode == 'sensitive'
+        ? relativeModel
+        : model;
     final assets = script.resolve(config['assets'] as String);
     String asset(String file) => assets.resolve(file).toString();
     final module = await importModule(
@@ -78,6 +81,7 @@ Future<void> main() async {
           );
           final metadata = await engine.getMetadata();
           loads.add({
+            'cached': (await cache.match(cacheKey).toDart) != null,
             'notes': metadata['llamadart.webgpu.runtime_notes'],
             'tokens': await engine.tokenize('Hello'),
           });

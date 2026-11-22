@@ -1,0 +1,90 @@
+{
+  "v0.19.1": {
+    "archive_sha256": "abe6732029a99a5825dd644655eae18fb0e193f8af1bdf41f5c5ff5aa69650b9",
+    "libraries": {
+      "libGemmaModelConstraintProvider.so": "c7c7188b831ae75fcc7ec6fe613118365b311995805423a4ca265372f07f4783",
+      "libLiteRtGpuAccelerator.so": "49055120bddce4f4bfb681ae1b929094ef22b238b5d9b91e8e57aeddcd58f8c8",
+      "libLiteRtLm.so": "bdab4d4a4c0b55f839a30224e078d8e25aa3679c3df5aed5c6650f06ab998547",
+      "libLiteRtOpenClAccelerator.so": "ef9776d87b0a4fe4793e8fa3f325dd9fecca4a2faaace14973bae6c6be2698a5",
+      "libLiteRtWebGpuAccelerator.so": "5952041260e13c719754903c95d2400c813785b1f7d0de6495f401b2d0ef956c",
+      "libwebgpu_dawn.so": "7282aacdb076ce89f0c9d93107a145b991b99eb1dfbd5b5746dd0d99466ab3c3"
+    }
+  },
+  "v0.19.1-1": {
+    "archive_sha256": "0f719f12595963f9c3718b920c85be94c0813089e051e95326351d92356f2d21",
+    "libraries": {
+      "libGemmaModelConstraintProvider.so": "c7c7188b831ae75fcc7ec6fe613118365b311995805423a4ca265372f07f4783",
+      "libLiteRtGpuAccelerator.so": "49055120bddce4f4bfb681ae1b929094ef22b238b5d9b91e8e57aeddcd58f8c8",
+      "libLiteRtLm.so": "bdab4d4a4c0b55f839a30224e078d8e25aa3679c3df5aed5c6650f06ab998547",
+      "libLiteRtOpenClAccelerator.so": "ef9776d87b0a4fe4793e8fa3f325dd9fecca4a2faaace14973bae6c6be2698a5",
+      "libLiteRtWebGpuAccelerator.so": "5952041260e13c719754903c95d2400c813785b1f7d0de6495f401b2d0ef956c",
+      "libwebgpu_dawn.so": "7282aacdb076ce89f0c9d93107a145b991b99eb1dfbd5b5746dd0d99466ab3c3"
+    }
+  },
+  "v0.19.1-2": {
+    "archive_sha256": "1b72d7f6b144b3c7514e7c8a1573abf190e57dfc9808037302c113d1713c1bf5",
+    "libraries": {
+      "libGemmaModelConstraintProvider.so": "c7c7188b831ae75fcc7ec6fe613118365b311995805423a4ca265372f07f4783",
+      "libLiteRtGpuAccelerator.so": "49055120bddce4f4bfb681ae1b929094ef22b238b5d9b91e8e57aeddcd58f8c8",
+      "libLiteRtLm.so": "9a56e701739768bcae43a8bb643fb70648dc3422e8142505c21c0788c8ab9fad",
+      "libLiteRtOpenClAccelerator.so": "ef9776d87b0a4fe4793e8fa3f325dd9fecca4a2faaace14973bae6c6be2698a5",
+      "libLiteRtWebGpuAccelerator.so": "5952041260e13c719754903c95d2400c813785b1f7d0de6495f401b2d0ef956c",
+      "libwebgpu_dawn.so": "7282aacdb076ce89f0c9d93107a145b991b99eb1dfbd5b5746dd0d99466ab3c3"
+    }
+  },
+  "v0.19.1-3": {
+    "archive_sha256": "c79e5d825537f0c914cefc6a94001cbb5aa55dab1d9f44aa4d76c61c86e1a069",
+    "libraries": {
+      "libGemmaModelConstraintProvider.so": "c7c7188b831ae75fcc7ec6fe613118365b311995805423a4ca265372f07f4783",
+      "libLiteRtGpuAccelerator.so": "49055120bddce4f4bfb681ae1b929094ef22b238b5d9b91e8e57aeddcd58f8c8",
+      "libLiteRtLm.so": "9a56e701739768bcae43a8bb643fb70648dc3422e8142505c21c0788c8ab9fad",
+      "libLiteRtOpenClAccelerator.so": "ef9776d87b0a4fe4793e8fa3f325dd9fecca4a2faaace14973bae6c6be2698a5",
+      "libLiteRtWebGpuAccelerator.so": "5952041260e13c719754903c95d2400c813785b1f7d0de6495f401b2d0ef956c",
+      "libwebgpu_dawn.so": "7282aacdb076ce89f0c9d93107a145b991b99eb1dfbd5b5746dd0d99466ab3c3"
+    }
+  },
+  "v0.19.1-4": {
+    "archive_sha256": "1a75bcb89152db7659fdf565e45efac01ff3e486ecbd6e86971392a62ffacd6e",
+    "libraries": {
+      "libGemmaModelConstraintProvider.so": "c7c7188b831ae75fcc7ec6fe613118365b311995805423a4ca265372f07f4783",
+      "libLiteRtGpuAccelerator.so": "49055120bddce4f4bfb681ae1b929094ef22b238b5d9b91e8e57aeddcd58f8c8",
+      "libLiteRtLm.so": "9a56e701739768bcae43a8bb643fb70648dc3422e8142505c21c0788c8ab9fad",
+      "libLiteRtOpenClAccelerator.so": "ef9776d87b0a4fe4793e8fa3f325dd9fecca4a2faaace14973bae6c6be2698a5",
+      "libLiteRtWebGpuAccelerator.so": "5952041260e13c719754903c95d2400c813785b1f7d0de6495f401b2d0ef956c",
+      "libwebgpu_dawn.so": "7282aacdb076ce89f0c9d93107a145b991b99eb1dfbd5b5746dd0d99466ab3c3"
+    }
+  },
+  "v0.19.1-5": {
+    "archive_sha256": "09da4ead66bfe95d32aefb890c5b45b10074c60545b99d6c10266d054d93e55f",
+    "libraries": {
+      "libGemmaModelConstraintProvider.so": "c7c7188b831ae75fcc7ec6fe613118365b311995805423a4ca265372f07f4783",
+      "libLiteRtGpuAccelerator.so": "49055120bddce4f4bfb681ae1b929094ef22b238b5d9b91e8e57aeddcd58f8c8",
+      "libLiteRtLm.so": "cc8de93eceb24313f86682dc02364dbfef5b8f04f2072c2503ddff7d0c6aa057",
+      "libLiteRtOpenClAccelerator.so": "ef9776d87b0a4fe4793e8fa3f325dd9fecca4a2faaace14973bae6c6be2698a5",
+      "libLiteRtWebGpuAccelerator.so": "5952041260e13c719754903c95d2400c813785b1f7d0de6495f401b2d0ef956c",
+      "libwebgpu_dawn.so": "7282aacdb076ce89f0c9d93107a145b991b99eb1dfbd5b5746dd0d99466ab3c3"
+    }
+  },
+  "v0.19.1-6": {
+    "archive_sha256": "2c1d9dfb62b02ef2a2c73f7bb4089f84a8c10363d8f2e36560263f62aa984fcb",
+    "libraries": {
+      "libGemmaModelConstraintProvider.so": "c7c7188b831ae75fcc7ec6fe613118365b311995805423a4ca265372f07f4783",
+      "libLiteRtGpuAccelerator.so": "49055120bddce4f4bfb681ae1b929094ef22b238b5d9b91e8e57aeddcd58f8c8",
+      "libLiteRtLm.so": "c0ead005d1fda4dd9859bd5d3af5c179d30851c1319b7516f63bcac3a10a3d4e",
+      "libLiteRtOpenClAccelerator.so": "ef9776d87b0a4fe4793e8fa3f325dd9fecca4a2faaace14973bae6c6be2698a5",
+      "libLiteRtWebGpuAccelerator.so": "5952041260e13c719754903c95d2400c813785b1f7d0de6495f401b2d0ef956c",
+      "libwebgpu_dawn.so": "7282aacdb076ce89f0c9d93107a145b991b99eb1dfbd5b5746dd0d99466ab3c3"
+    }
+  },
+  "v0.19.1-7": {
+    "archive_sha256": "ad437e55e0c2c56b0d76c4711923eca71b027bcdffee293b2b48ffe6de3a7d3a",
+    "libraries": {
+      "libGemmaModelConstraintProvider.so": "c7c7188b831ae75fcc7ec6fe613118365b311995805423a4ca265372f07f4783",
+      "libLiteRtGpuAccelerator.so": "49055120bddce4f4bfb681ae1b929094ef22b238b5d9b91e8e57aeddcd58f8c8",
+      "libLiteRtLm.so": "c55e4b66008f96b7775281302ddab46e6a68ef808c866d76ceb23fec76407b3e",
+      "libLiteRtOpenClAccelerator.so": "ef9776d87b0a4fe4793e8fa3f325dd9fecca4a2faaace14973bae6c6be2698a5",
+      "libLiteRtWebGpuAccelerator.so": "5952041260e13c719754903c95d2400c813785b1f7d0de6495f401b2d0ef956c",
+      "libwebgpu_dawn.so": "7282aacdb076ce89f0c9d93107a145b991b99eb1dfbd5b5746dd0d99466ab3c3"
+    }
+  }
+}

@@ -230,7 +230,9 @@ commit, runtime archive and manifest hashes, complete owner archive libraries,
 complete installed APK libraries, child executable and canonical Qwen template
 hashes, both unchanged profiles, run id and the existing shared budget receipt
 hash. Owner `7ea10d0` is explicitly rejected as the aborted candidate.
-No final owner payload is selected by these source files.
+The validator checks the archive and library digests against the published
+Android arm64 release for the exact tag, including rebuilds with identical
+library bytes.
 
 Use the decoded `assets/profiles/chat-litert-cpu.json` as `profiles.cpu` and
 `assets/fixtures/s24/chat-litert-gpu-legacy.json` as `profiles.gpu` in

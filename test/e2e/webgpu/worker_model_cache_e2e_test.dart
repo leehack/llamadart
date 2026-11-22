@@ -19,8 +19,21 @@ void main() {
       expect(loads.last['tokens'], loads.first['tokens']);
       expect(loads.first['notes'], contains('model_cache_stored'));
       expect(loads.last['notes'], contains('model_cache_hit'));
+      expect(loads.map((load) => load['cached']), everyElement(isTrue));
     }, timeout: const Timeout(Duration(minutes: 2)));
   }
+
+  test(
+    'app-owned worker never caches a credential-bearing model URL',
+    () async {
+      final loads = await _workerLoads('sensitive');
+      expect(loads, hasLength(2));
+      expect(loads.map((load) => load['cached']), everyElement(isFalse));
+      expect(loads.first['tokens'], isNotEmpty);
+      expect(loads.last['tokens'], loads.first['tokens']);
+    },
+    timeout: const Timeout(Duration(minutes: 2)),
+  );
 
   test('app-owned worker can force six fetch loads on one core', () async {
     final loads = await _workerLoads('forced-fetch');

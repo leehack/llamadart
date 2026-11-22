@@ -19,10 +19,21 @@ Map<String, dynamic> profile(String backend) =>
         )
         as Map<String, dynamic>;
 String repeated(String value, int count) => List.filled(count, value).join();
-Map<String, dynamic> binding() {
+// Archive digests come from GitHub's release assets; library digests come from
+// those releases' Android arm64 entries in manifest.json.
+final publishedRuntimeDigests =
+    jsonDecode(
+          File(
+            'test/fixtures/s24_android_runtime_digests.json',
+          ).readAsStringSync(),
+        )
+        as Map<String, dynamic>;
+
+Map<String, dynamic> binding([String tag = 'v0.19.1']) {
+  final published = publishedRuntimeDigests[tag] as Map;
   final libraries = {
-    for (final name in s24LiteRtNativeLibraries)
-      name: {'bytes': 7, 'sha256': repeated('a', 64)},
+    for (final entry in (published['libraries'] as Map).entries)
+      entry.key: {'bytes': 7, 'sha256': entry.value},
   };
   return {
     'schema': 1,
@@ -32,13 +43,13 @@ Map<String, dynamic> binding() {
     'owner_commit': repeated('c', 40),
     for (final key in [
       'source_inventory_sha256',
-      'runtime_archive_sha256',
       'runtime_manifest_sha256',
       'shared_budget_receipt_sha256',
       'template_sha256',
     ])
       key: repeated('d', 64),
-    'runtime_tag': 'v0.19.1',
+    'runtime_tag': tag,
+    'runtime_archive_sha256': published['archive_sha256'],
     'abi': 'android-arm64',
     'test_class': 'com.example.llamadart_chat_example.S24LiteRtPublicTest',
     'max_minutes': 20,
@@ -153,6 +164,7 @@ void main() {
     },
   );
   test('binding admits only the listed runtime tags, including the pin', () {
+    expect(s24LiteRtRuntimeTags, unorderedEquals(publishedRuntimeDigests.keys));
     expect(
       s24LiteRtRuntimeTags,
       contains(liteRtLmReleaseTag),
@@ -161,7 +173,7 @@ void main() {
           'Android arm64 binaries match an admitted tag.',
     );
     for (final tag in s24LiteRtRuntimeTags) {
-      requireS24LiteRtBinding(binding()..['runtime_tag'] = tag);
+      requireS24LiteRtBinding(binding(tag));
     }
     for (final tag in <Object?>[
       'v0.19.0',
@@ -177,6 +189,20 @@ void main() {
         throwsFormatException,
         reason: '$tag',
       );
+    }
+  });
+  test('binding rejects v0.19.1-6 payload metadata relabeled as v0.19.1-7', () {
+    const previous = 'v0.19.1-6';
+    const current = 'v0.19.1-7';
+    final old = binding(previous);
+    final relabeled = binding(previous)..['runtime_tag'] = current;
+    final wrongArchive = binding(current)
+      ..['runtime_archive_sha256'] = old['runtime_archive_sha256'];
+    final wrongLibraries = binding(previous)
+      ..['runtime_tag'] = current
+      ..['runtime_archive_sha256'] = binding(current)['runtime_archive_sha256'];
+    for (final invalid in [relabeled, wrongArchive, wrongLibraries]) {
+      expect(() => requireS24LiteRtBinding(invalid), throwsFormatException);
     }
   });
   test('raw capture preserves invalid UTF8 and NUL without interpretation', () {
