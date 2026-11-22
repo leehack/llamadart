@@ -44,6 +44,60 @@ const s24LiteRtRuntimeTags = {
   'v0.19.1-7',
 };
 
+// Pin the exact Android archive for every tag, including rebuilds that share
+// library bytes. The inventory digest hashes canonical JSON of basename to SHA-256.
+const _s24LiteRtPublishedDigests =
+    <String, ({String archive, String libraries})>{
+      'v0.19.1': (
+        archive:
+            'abe6732029a99a5825dd644655eae18fb0e193f8af1bdf41f5c5ff5aa69650b9',
+        libraries:
+            '1b60e80533a1bb1dee19bac289de9006823660d176a3b1fba539a4e6c4a960a4',
+      ),
+      'v0.19.1-1': (
+        archive:
+            '0f719f12595963f9c3718b920c85be94c0813089e051e95326351d92356f2d21',
+        libraries:
+            '1b60e80533a1bb1dee19bac289de9006823660d176a3b1fba539a4e6c4a960a4',
+      ),
+      'v0.19.1-2': (
+        archive:
+            '1b72d7f6b144b3c7514e7c8a1573abf190e57dfc9808037302c113d1713c1bf5',
+        libraries:
+            'c21036e25fe26518ca48bf2199b1377c8cfdd75bdb1b92d486ee54536122e806',
+      ),
+      'v0.19.1-3': (
+        archive:
+            'c79e5d825537f0c914cefc6a94001cbb5aa55dab1d9f44aa4d76c61c86e1a069',
+        libraries:
+            'c21036e25fe26518ca48bf2199b1377c8cfdd75bdb1b92d486ee54536122e806',
+      ),
+      'v0.19.1-4': (
+        archive:
+            '1a75bcb89152db7659fdf565e45efac01ff3e486ecbd6e86971392a62ffacd6e',
+        libraries:
+            'c21036e25fe26518ca48bf2199b1377c8cfdd75bdb1b92d486ee54536122e806',
+      ),
+      'v0.19.1-5': (
+        archive:
+            '09da4ead66bfe95d32aefb890c5b45b10074c60545b99d6c10266d054d93e55f',
+        libraries:
+            'ae8452144db326698fac50d2c4da20411468b7715fd2d1eae9e73827cec8f50a',
+      ),
+      'v0.19.1-6': (
+        archive:
+            '2c1d9dfb62b02ef2a2c73f7bb4089f84a8c10363d8f2e36560263f62aa984fcb',
+        libraries:
+            'b36636e0b03c1bab7cf48b44bc601245d3cf3245135bbae561b4dc50fcea8a28',
+      ),
+      'v0.19.1-7': (
+        archive:
+            'ad437e55e0c2c56b0d76c4711923eca71b027bcdffee293b2b48ffe6de3a7d3a',
+        libraries:
+            '8ceef81c639c619a5638862b85bf88e8192937e2cf18f0e72c56a68ddfbf1a98',
+      ),
+    };
+
 // These rebuilds retain byte-identical Android libraries (#1808, #1798, #1911).
 const _s24LiteRtRuntimeAliases = {
   'v0.19.1-1': 'v0.19.1',
@@ -136,12 +190,14 @@ void requireS24LiteRtProfile(Map<String, dynamic> value, String backend) {
 /// Validates a prospective final build binding, independently of run claims.
 void requireS24LiteRtBinding(Map<String, dynamic> value) {
   final runtimeTag = value['runtime_tag'];
+  final published = _s24LiteRtPublishedDigests[runtimeTag];
   _require(
     value['schema'] == 1 &&
         value['source_dirty'] == false &&
         s24LiteRtRuntimeTags.contains(
           _s24LiteRtRuntimeAliases[runtimeTag] ?? runtimeTag,
         ) &&
+        published != null &&
         value['abi'] == 'android-arm64' &&
         value['test_class'] ==
             'com.example.llamadart_chat_example.S24LiteRtPublicTest' &&
@@ -224,6 +280,19 @@ void requireS24LiteRtBinding(Map<String, dynamic> value) {
       'Invalid runtime library identity',
     );
   }
+  _require(
+    value['runtime_archive_sha256'] == published!.archive,
+    'S24 runtime archive digest differs from the published tag',
+  );
+  final ownerLibraries = value['owner_libraries'] as Map;
+  _require(
+    s24LiteRtHash({
+          for (final entry in ownerLibraries.entries)
+            entry.key: entry.value['sha256'],
+        }) ==
+        published.libraries,
+    'S24 owner library digests differ from the published tag',
+  );
 }
 
 /// Grades copied public bytes only after the caller has persisted them.
