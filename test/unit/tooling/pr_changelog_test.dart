@@ -247,6 +247,38 @@ Improve setup (#9)
       );
     });
 
+    test('recovers an overlong first word after a bare marker', () {
+      final word = 'a' * 79;
+      expect(
+        parseLandedPrChangelog('## Changelog\n-\n$word').bullets.single.text,
+        word,
+      );
+      expect(parseLandedPrChangelog('## Changelog\nN/A:\n$word').reason, word);
+    });
+
+    test('treats a wrap-compatible N/A marker as ambiguous', () {
+      final body = '## Changelog\n- ${'a' * 70}\nN/A: Another entry.';
+      expect(
+        () => parseLandedPrChangelog(body),
+        throwsA(isA<AmbiguousLandedChangelog>()),
+      );
+    });
+
+    test('rejects a commented bullet even if the next row fits the wrap', () {
+      final body =
+          '## Changelog\n- <!-- note --> ${'a' * 54}\nAlso  repeated spacing.';
+      expect(
+        () => parseLandedPrChangelog(body),
+        throwsA(
+          isA<FormatException>().having(
+            (error) => error.message,
+            'message',
+            contains('put guidance comments on their own lines'),
+          ),
+        ),
+      );
+    });
+
     test('unwraps a long N/A and preserves original outside rows', () {
       final first = 'a' * 66;
       const before = 'This reverts commit 0123456789abcdef.  ';

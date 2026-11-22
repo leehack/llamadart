@@ -320,6 +320,7 @@ void main() {
           '$_keptBridgeClaim\n$_keptBridgeClaim',
         ),
         valid.replaceFirst(_preparedBaseline, ''),
+        valid.replaceFirst('native LiteRT-LM uses', 'native LiteRT-LM stays'),
         '$valid$_preparedBaseline\n',
         valid.replaceFirst('@litert-lm/core@0.19.0', '@litert-lm/core@0.18.0'),
         valid.replaceFirst(
@@ -336,6 +337,56 @@ void main() {
       }
     },
   );
+
+  test('prep CLI reads prior native pins from the requested tag', () async {
+    final root = _preparedReleaseRepo();
+    final candidatePubspec = File('${root.path}/$rootPubspecPath');
+    final candidatePins = File('${root.path}/$nativeLlamaCppTagPath');
+    final pubspec = candidatePubspec.readAsStringSync();
+    final pins = candidatePins.readAsStringSync();
+    final coreChangelog = File('${root.path}/CHANGELOG.md');
+    final notes = coreChangelog.readAsStringSync();
+    final script = File('tool/testing/check_webgpu_bridge_tag.dart').absolute;
+    final packages = File('.dart_tool/package_config.json').absolute.path;
+    void git(List<String> args) {
+      final result = Process.runSync(
+        'git',
+        args,
+        workingDirectory: root.path,
+        environment: {
+          'GIT_AUTHOR_NAME': 'Release fixture',
+          'GIT_AUTHOR_EMAIL': 'release-fixture@example.invalid',
+          'GIT_COMMITTER_NAME': 'Release fixture',
+          'GIT_COMMITTER_EMAIL': 'release-fixture@example.invalid',
+        },
+      );
+      expect(result.exitCode, 0, reason: '${result.stderr}');
+    }
+
+    git(['init', '--quiet']);
+    candidatePubspec.writeAsStringSync(pubspec.replaceFirst('1.2.3', '1.2.2'));
+    candidatePins.writeAsStringSync(pins.replaceFirst('v1.0.0-3', 'v1.0.0-2'));
+    git(['add', rootPubspecPath, nativeLlamaCppTagPath, bridgeTagSourcePath]);
+    git(['commit', '--quiet', '-m', 'Last release']);
+    git(['tag', 'v1.2.2']);
+    candidatePubspec.writeAsStringSync(pubspec);
+    candidatePins.writeAsStringSync(pins);
+    coreChangelog.writeAsStringSync(
+      notes.replaceFirst('`v1.0.0-3`', '`v1.0.0-3` (unchanged from 1.2.2)'),
+    );
+
+    final result = await Process.run(Platform.resolvedExecutable, [
+      '--packages=$packages',
+      script.path,
+      '--release-prep',
+      'v1.2.2',
+    ], workingDirectory: root.path);
+    expect(result.exitCode, 1, reason: '${result.stdout}');
+    expect(
+      result.stderr,
+      contains('CHANGELOG.md must contain one complete Runtime baseline'),
+    );
+  });
 
   for (final path in _preparedChangelogs) {
     test(
@@ -358,6 +409,119 @@ void main() {
         expect(verify(), contains(startsWith('$path ')));
       },
     );
+    test(
+      'strict prep ignores retention examples in comments and code in $path',
+      () {
+        final root = _preparedReleaseRepo();
+        final changelog = File('${root.path}/$path');
+        final valid = changelog.readAsStringSync();
+        const badClaim = '(unchanged from 1.2.1)';
+        changelog.writeAsStringSync(
+          '$valid\n<!-- Another runtime $badClaim. -->\n'
+          '```markdown\n- Example $badClaim.\n```\n'
+          '- Pass the prompt unchanged from the caller.\n',
+        );
+        expect(_verifyPreparedRelease(root), isEmpty);
+      },
+    );
+
+    for (final (shape, example) in [
+      ('quoted backticks', '> ```html\n> <!--\n> ```'),
+      ('nested quoted tildes', '> > ~~~~html\n>> ~~~\n> > <!--\n> > ~~~~'),
+      (
+        'literal quote marker in a fence',
+        '> ```html\n> > Literal code (unchanged from 1.2.1).\n> > ```\n> <!--\n> ````',
+      ),
+      ('unclosed nested fence', '> > ```html\n>> <!--'),
+      ('unclosed quoted comment', '> <!--\n> Hidden (unchanged from 1.2.1).'),
+    ]) {
+      test('strict prep keeps the baseline after $shape in $path', () {
+        final root = _preparedReleaseRepo();
+        final changelog = File('${root.path}/$path');
+        final valid = changelog.readAsStringSync();
+        changelog.writeAsStringSync(
+          valid.replaceFirst(
+            _preparedBaseline,
+            '$example\n\n$_preparedBaseline',
+          ),
+        );
+        expect(_verifyPreparedRelease(root), isEmpty);
+      });
+
+      test('strict prep checks visible claims after $shape in $path', () {
+        final root = _preparedReleaseRepo();
+        final changelog = File('${root.path}/$path');
+        final valid = changelog.readAsStringSync();
+        changelog.writeAsStringSync(
+          '$valid\n$example\n\n'
+          '- Native audio remains pinned to v9.9.8 (unchanged from 1.2.1).\n',
+        );
+        expect(
+          _verifyPreparedRelease(root),
+          contains(
+            allOf(
+              startsWith(path),
+              contains('does not match the previous release'),
+            ),
+          ),
+        );
+      });
+    }
+
+    test('strict prep ignores retention text in quoted code in $path', () {
+      final root = _preparedReleaseRepo();
+      final changelog = File('${root.path}/$path');
+      final valid = changelog.readAsStringSync();
+      changelog.writeAsStringSync(
+        '$valid\n> ```text\n> Literal marker (unchanged from 1.2.1).\n> ```\n',
+      );
+      expect(_verifyPreparedRelease(root), isEmpty);
+    });
+
+    for (final (shape, markup, ending) in [
+      ('inline emphasis', '<em><!-- previous release -->', '</em>'),
+      ('wrap hint', '<wbr><!-- editorial -->', ''),
+      ('line break', '<br> <!-- wrap -->', ''),
+    ]) {
+      test('strict prep rejects a wrapped claim with $shape in $path', () {
+        final root = _preparedReleaseRepo();
+        final changelog = File('${root.path}/$path');
+        final valid = changelog.readAsStringSync();
+        changelog.writeAsStringSync(
+          '$valid\nNative audio remains pinned to v9.9.8 (unchanged\n'
+          '$markup\nfrom 1.2.1$ending).\n',
+        );
+        expect(
+          _verifyPreparedRelease(root),
+          contains(
+            allOf(
+              startsWith(path),
+              contains('does not match the previous release'),
+            ),
+          ),
+        );
+      });
+    }
+
+    for (final (shape, example) in [
+      ('quoted indented code', '>     Literal example (unchanged from 1.2.1).'),
+      (
+        'quoted list-item fence',
+        '> - ```text\n>   Literal example (unchanged from 1.2.1).\n>   ```',
+      ),
+      (
+        'separate paragraphs',
+        'The public API is unchanged\n\n> From 1.2.1 onward, use the new CLI.',
+      ),
+    ]) {
+      test('strict prep accepts valid notes with $shape in $path', () {
+        final root = _preparedReleaseRepo();
+        final changelog = File('${root.path}/$path');
+        final valid = changelog.readAsStringSync();
+        changelog.writeAsStringSync('$valid\n$example\n');
+        expect(_verifyPreparedRelease(root), isEmpty);
+      });
+    }
   }
 
   for (final path in _preparedChangelogs) {

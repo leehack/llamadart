@@ -454,7 +454,11 @@ their original workflow.
 4. Open a same-repository PR to main with an ordinary branch name and a
    specific Changelog N/A. Run the protected-changelog policy against the
    immutable event base and head and the tested merge commit. For a local
-   check, save the real PR event fields and use `GITHUB_EVENT_NAME=pull_request`,
+   check, fetch the PR merge ref with `git fetch origin "refs/pull/$number/merge"`
+   using the recovery PR number. Resolve it with `git rev-parse FETCH_HEAD`,
+   confirm its parents match the event base and head in that order, and run the
+   check from a worktree at that merge commit. Save the real PR event fields
+   and use `GITHUB_EVENT_NAME=pull_request`,
    `GITHUB_EVENT_PATH` for that file, `GITHUB_REPOSITORY=leehack/llamadart` and
    `GITHUB_SHA` for the two-parent tested merge when running
    `dart run tool/testing/check_released_changelog_sections.dart`.
